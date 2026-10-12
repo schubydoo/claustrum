@@ -2202,7 +2202,7 @@ three frames and their cells. `89cb6289` answers those requests normally.
 |---|---|
 | `git <verb> failed under "<folder of the daemon>": <last error line of git>` | A test call failed. The folder is in quotes as Go's `%q` quotes it |
 | `git <verb> failed under "<folder>": signal: killed` | The daemon ended a test call after 30 seconds (Linux and macOS VMs). On a Windows VM the end is `exit status 1` |
-| the same with ` (git version <v>)` at its end | The failed or ended call was `init` (cell C2 of round `val-s3p2b2-7`, Linux VM, for an `init` that exits 1) |
+| the same with ` (git version <v>)` at its end | The failed or ended call was `init` (cell C2 of round `val-s3p2b2-7`, Linux VM and Windows VM, for an `init` that exits 1) |
 | `mkdir <path>: <reason>` or `open <path>: <reason>`, with no quotes | A folder or the lock file of the daemon cannot be made |
 
 From the code: call 7 gives the Go error of the call, and a `config --get` call
@@ -2307,7 +2307,7 @@ A change of the root folder or of its `.git` entry makes the daemon ask again.
 | exit 128 with a text, such as git's "dubious ownership" text | The "no repository" answer of each method. No config is read, and no copy is made |
 | exit 1, or exit 128 with no text | `git could not check this repository on the remote machine: at "<root>": exit status <n>` |
 | exit 1 with a text | the same text with the text of git in the place of `exit status 1`. The text has one line in the cells (cells P3 of round `val-s3p2b2-7`, Linux VM) |
-| another path than the git directory, in two calls | `git and Claude disagree about which repository holds this folder: from "<root>" git finds "<path>", Claude finds "<git directory>"; try again` |
+| another path than the git directory, in two calls | `git and Claude disagree about which repository holds this folder: from "<root>" git finds "<path>", Claude finds "<git directory>"; try again`. `<path>` is the path as git printed it: with forward slashes on Windows (table P2 of round `val-s3p2b2-7`, Windows VM) |
 | no answer in 30 seconds | `git could not check this repository on the remote machine: it did not finish within 30 seconds in "<root>"; try again` |
 
 The three texts have the shapes of the start test. The cells are 37 to 39 of round

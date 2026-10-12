@@ -209,6 +209,8 @@ The JSON-RPC surface is identical on every OS. Full internals →
       the entry path. An entry with a `locked` file stays (`89cb6289`, cells A9
       and A9b, Linux and macOS VMs). On Windows that step is one `os.RemoveAll` of the
       entry path, with no `locked` test (not measured).
+      In the state `shadow` that Windows step does not run if `.git` is no
+      longer the folder that the create holds (not measured).
       The second rollback follows a successful add. On Linux and
       macOS four refusals come before it, and they delete nothing. Two answer
       a `.git` file of the new worktree that names no registration of the
@@ -256,7 +258,11 @@ The JSON-RPC surface is identical on every OS. Full internals →
       Windows, the registration of the rollback is the folder that the `.git`
       file of the leaf names. If its `gitdir` record does not name the leaf, the
       rollback does not delete it. If it does not resolve strictly inside the
-      registrations directory of `baseRepo`, the same holds. That delete acts on the resolved path that its check
+      registrations directory of `baseRepo`, the same holds. On Windows in the
+      state `shadow`, the rollback deletes no registration if `.git` is no
+      longer the folder that the create holds. `5fd08069` keeps the
+      registration there (cells X1c-11 and X1p-11 of round `val-s3p2b2-7`,
+      Windows VM). That delete acts on the resolved path that its check
       verified, and on Linux and macOS through a root at the registrations
       directory, which must still have the identity that the check saw. On Linux and macOS the placement of the index removes a
       file, a link or an empty folder at `<registration>/index`, after a create
@@ -295,8 +301,16 @@ The JSON-RPC surface is identical on every OS. Full internals →
       maintainer decided on 2026-10-11 to build that step as measured. It runs
       in the state `shadow` only, after a good `git worktree add` and before
       the daemon makes its own staging folder. The guards run in this order.
-      One `os.Root` at the git directory that the trust check pinned is open
-      from before the add, and each step acts through it. The entries are
+      The create holds the git directory open from its gate to its reply
+      (`acceptedGitDir`, `gitdiraccept.go`). The folder must be a real
+      directory, no link and no junction, before the gate. The open folder
+      must have that identity after it. Before the cleanup the path must
+      still name that folder. If not, the create is refused, and nothing is
+      removed or made. `5fd08069` refuses there and leaves an old entry in the
+      target of a junction at `.git` (cells X1c-10 and X1p-10 of round
+      `val-s3p2b2-7`, Windows VM). One `os.Root` at that held folder is the
+      root of the cleanup and of the move, and each step acts through it. No
+      step resolves the path of the git directory again. The entries are
       listed through that root, so each name is a direct entry of the git
       directory. The name must start with the fixed prefix, with the dash. The
       entry is read with `Lstat` through the root, so no link and no junction

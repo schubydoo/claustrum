@@ -131,6 +131,9 @@ The daemon keeps its own copy of the git settings of the repository, and its git
 - A bare `baseRepo` gets `not_a_repo`.
 - On Windows the add writes the registration of the new worktree into a short-lived folder of the daemon. The daemon then copies it into `<git dir>\.claude-new-worktree-<16 hex>` and renames that folder to `<git dir>\worktrees\<name>`.
 - On Windows, before that step, a create removes old entries of the git directory. Such an entry has a name that starts with `.claude-new-worktree-` and a write time of 1 hour or more. The request did not make those entries. A junction goes as a junction, and its target stays.
+- On Windows a create holds the git directory open from its first test to its reply. If `.git` is then no longer that real directory, the create is refused at its next step. The old entries and the registration go through the held folder, so nothing is removed or made in another folder. `5fd08069` refuses there too (cells X1c and X1p of round `val-s3p2b2-7`, Windows VM). The [record](../record/git-settings-copy.md) has the text of each step.
+- On Windows, a failed `rev-parse --absolute-git-dir` stops the create with `git worktree add failed: cannot locate the repository's git directory: exit status 128`.
+- On Windows, a step before the add that fails gives `git worktree add failed: cannot prepare the repository's worktrees directory: <cause>`, and git does not run.
 
 `"shadowDirOff": true` turns the copy off for one request, and none of these steps runs. The same holds on a host whose git does not work on such a copy. The [record of the copy](../record/git-settings-copy.md) has the cells.
 

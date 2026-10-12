@@ -21,6 +21,7 @@ The cells ran on three VMs. The Linux VM has git 2.43.0, the macOS VM has git 2.
 | `val-s3p2b2-1`, `val-s3p2b2-3`, `val-s3p2b2-5` | Linux, macOS and Windows VMs | `5fd08069` and a build of this change. Some cells also ran `89cb6289` |
 | `val-s3p2b2-6` | Linux, macOS and Windows VMs | `5fd08069` and a build with the edits after round `val-s3p2b2-5`. Some Linux cells also ran `89cb6289` |
 | `val-s3p2b2-7` | a second Linux VM | `5fd08069` and the build of round `val-s3p2b2-6` |
+| `val-s3p2b2-7`, Windows part | Windows VM, 400 cell runs | `5fd08069` and a build of this change. Its cells are named with "Windows VM" below |
 
 Five `val-s3p2b2` rounds compared a build of this change with `5fd08069`. The edits for the rows of rounds `val-s3p2b2-6` and `val-s3p2b2-7` have tests and ran on no VM. "claustrum and `5fd08069`" below names what each round left open.
 
@@ -86,7 +87,10 @@ The state `fallback-git`, on `5fd08069`:
 | B4 of round `s3` | Linux VM, macOS VM | A daemon that the driver ended with `SIGKILL` leaves `<S>` |
 | G1 of round `val-s3p2b2-7` | Linux VM, 2 of 2 runs for each build and form | At `-stop` both builds remove the folder of the daemon through a symbolic link at `git-shadow`. The link and the other entries of its target stay |
 | R1 of round `val-s3p2b2-7` | Linux VM | With `-socket s.sock` and with `-socket rel/rpc.sock` the folder `git-shadow` is under the working directory of the daemon. Each path of the settings copy has the absolute form: the argv, the working directory and the variables of the test calls, and the variables of the later calls. The five replies and the call lists equal those of the absolute socket path |
+| R1 of round `val-s3p2b2-7` | Windows VM | With `-socket s.sock` from `C:\o\w\wd`, the folder `git-shadow` is `C:\o\w\wd\git-shadow`. The test calls have absolute path arguments and an absolute `GIT_DIR`. The later calls have `GIT_COMMON_DIR=C:\o\w\wd\git-shadow\<S>\<R>`. The five replies are normal. The log line is `listening on s.sock` |
 | F1 of round `val-s3p2b2-7` | Linux VM, 1 run | With `<S>` of mode 0500 after the first request, `git.status` answers `{"isRepo":false,"clean":false}` after 4 calls. A create answers `git worktree add failed (checkout): mkdir <S>/.index-<n>: permission denied` with `worktree_add_failed` |
+| F1 of round `val-s3p2b2-7` | Windows VM, the two privileges of the next row off | With a deny entry for new files and new folders on `<S>` after the first request, `git.status` answers `{"isRepo":false,"clean":false}` after 4 calls. A create answers `git worktree add failed: cannot prepare the repository's worktrees directory: mkdir C:\o\w\run\git-shadow\<S>\.s<n>: Access is denied.` after 9 calls |
+| F1 and W3 of round `val-s3p2b2-7` | Windows VM, `SeRestorePrivilege` and `SeBackupPrivilege` on in the daemon | The deny entry does not stop `5fd08069`: `git.status` answers normally after 21 calls, and the create succeeds after 13 calls |
 
 Two daemons with two sockets in one run folder have no result on a macOS VM. The start of the second daemon ends the first one there, on `5fd08069` and on `89cb6289` (cell 41 of round `s3p2b-edges2`).
 
@@ -155,6 +159,7 @@ The failure text. Each cause has one frame: `Claude could not test git on the re
 | 31 of round `s3p2b-edges` | Linux VM | a `rev-parse --verify` held 32 s or 40 s | `git rev-parse failed under "<S>": signal: killed` |
 | W8a of round `s3b` | Linux VM | two `worktree add` calls of 31 s each | `git worktree failed under "<S>": signal: killed`, reply at 62.5 s |
 | C2 of round `val-s3p2b2-7` | Linux VM, 2 of 2 runs | an `init` that exits 1 after 3 s | `git init failed under "<S>": fatal: forced failure by the test wrapper (git version 2.43.0)`. The request makes 4 calls: the excludes read, the `init`, `version` in the root folder and `version` in `.check-<n>`. Three requests that wait get that one text with one `init` call |
+| C2 of round `val-s3p2b2-7` | Windows VM, 2 of 2 runs | the same | `git init failed under "C:\\o\\w\\run\\git-shadow\\<S>": fatal: forced failure by the test wrapper (git version 2.55.0.windows.3)`, as the reply shows it. The request makes the same 4 calls. Five requests that wait get that one text with one `init` call |
 | S4 of round `val-s3p2b2-1` | macOS VM | `init`, `rev-parse --verify` or `worktree add` held 32 s | the three Linux forms, with `(git version 2.50.1 (Apple Git-155))` after the `init` |
 | Q-S4h of round `val-s3p2b2-1` | Windows VM | the same three holds | `exit status 1` in place of `signal: killed`, and `(git version 2.55.0.windows.3)` after the `init` |
 | C1 of round `s3p2`, 30 of round `s3p2b-edges` | Linux VM, macOS VM | `<run>` with mode 0500 | `mkdir <run>/git-shadow: permission denied` |
@@ -450,6 +455,8 @@ The answers (cell 39 of round `s3p2b-edges`, Linux VM, where the wrapper answers
 | exit 128 with no text | the same with `exit status 128` | 1, 1, 1, 1, 2 | 13, 2, 2, 2, 4 |
 | exit 1 with the text `fatal: text of the wrapper for p3` | the same with that text in the place of `exit status 1` (cells P3 of round `val-s3p2b2-7`, Linux VM, `git.info` and `git.status`) | 1 and 1 | 13 and 2 |
 | exit 0, prints `/elsewhere/.git` | `git and Claude disagree about which repository holds this folder: from "<repo>" git finds "/elsewhere/.git", Claude finds "<repo>/.git"; try again` | 2, 2, 2, 2, 4 | 13, 2, 2, 2, 4 |
+| exit 0, prints `C:/o/w/other/.git` (table P2 of round `val-s3p2b2-7`, Windows VM, `git.info`, `git.status`, `git.info`) | the same text with `git finds "C:/o/w/other/.git"`: the path as git printed it. The two other paths have backslashes | 2, 2, 2 | 13, 2, 2 |
+| exit 0, prints `C:\o\w\other\.git` (the same table) | the same text with `git finds "C:\\o\\w\\other\\.git"`, as the reply shows it | 2, 2, 2 | 13, 2, 2 |
 | exit 0, prints nothing | the same text with `git finds "<repo>"` | 2, 2, 2, 2, 4 | 13, 2, 2, 2, 4 |
 
 The call counts of the last column are from cell 39 of round `val-s3p2b2-5` (Linux VM). After an exit 1, with or without a text, and after an exit 128 with no text, one `git version` call follows. It runs in the root folder with no variable.
@@ -636,6 +643,43 @@ On a Linux VM no build removes two planted entries of 120 and 5 minutes (cell H2
 
 Round `val-s3p2b2-5` ran a build of this change in the 170 cells and in M1 and M2. It cleared and kept the entries that `5fd08069` cleared and kept. In each of the 42 junction rows the target folder and its marker file were there after the cell, with the marker text unchanged.
 
+### A git directory that is replaced while a create runs
+
+Cells X1c, X1p and W1 of round `val-s3p2b2-7` (Windows VM). T is another folder with an old entry `.claude-new-worktree-x`, a marker file in it and one more file. After a warm-up `git.info`, the wrapper lets git call N of the create end and waits 2 s. In that wait the driver renames `repo\.git` to `repo\.git-real` and makes a junction `repo\.git` to T. In cells X1c, T is a copy of the git directory. In cells X1p, T is no git directory. `<link>` below is `this repository's git config cannot be used: "C:\\o\\w\\repo\\.git\\config": is, or is reached through, a link that Claude does not follow here; replace the link with what it points to`. `<real>` is `".git" is a link or a file where Claude needs a real directory; put the directory itself in its place`. Each reply has `worktree_add_failed`.
+
+| Junction after call N of `5fd08069` | T | `error` on `5fd08069` | Calls |
+|---|---|---|---|
+| 1 or 2 (the first listing, `rev-parse --is-inside-work-tree`) | copy, 3 of 3 runs | `<link>` | 3: the third is the call about the repository |
+| 3 or 4 (`rev-parse --abbrev-ref HEAD` and its listing) | copy, 3 of 3 runs | `git worktree add failed: cannot locate the repository's git directory: <link>` | 5 |
+| 5 (the listing of `rev-parse --absolute-git-dir`) | copy, 3 of 3 runs | `git worktree add failed: <link>` | 10 |
+| 6 (`rev-parse --absolute-git-dir`) | copy (3 of 3 runs) and no git directory | `git worktree add failed: cannot list the repository's worktree entries: <real>` | 7 |
+| 1 | no git directory | `not a git repository` with `not_a_repo` | 2 |
+| 2 to 5 | no git directory | `git worktree add failed: cannot locate the repository's git directory: exit status 128`. Call 6 is `rev-parse --absolute-git-dir` with `GIT_DIR=NUL`, and it exits 128 | 6 |
+| 9 (the listing of the `worktree add`) | both | `git worktree add failed: cannot prepare the repository's worktrees directory: <link>` | 9 |
+| 10 (the `worktree add`) | copy | `git worktree add failed (completing the new worktree's git files): <real>; and the undo could not finish for <leaf>: branch w1 still exists; delete it by hand (for example: git branch -d w1, which git refuses if that would lose commits) before retrying this branch name: could not check whether another branch or remote-tracking ref reaches its commits (<link>)` | 11 |
+| 10 | no git directory | the same text with `(exit status 128)` at its end | 12 |
+| 11 (the first listing in the new worktree) | both | `git worktree add failed (checkout): <link>; and the undo could not finish for <leaf>: the worktree registration and the branch remain; remove them by hand before retrying (<real>)` | 11 |
+
+- In each row the old entry of T and its marker are there at the reply, 1.2 s later and after `-stop`. T gets no new entry.
+- After calls 1 to 10 there is no folder of the new worktree and no registration `w1` in `repo\.git-real\worktrees`. After call 10 the reply says that the branch `w1` stays. After call 11 the registration `w1` stays there with `HEAD`, `commondir`, `gitdir` and `refs`, and the folder of the new worktree is gone.
+- The control without a junction removes the old entry inside the real `.git` (3 of 3 runs).
+- After calls 7 and 8 of `5fd08069` the rename failed with "used by another process", and the create passed. Those calls have `repo\.git` as their working directory.
+- Cell W1c holds `rev-parse --absolute-git-dir` before git runs and makes the junction then. `5fd08069` makes 6 calls and answers the `exit status 128` text.
+- Cell W1d holds the `worktree add` the same way. `5fd08069` answers `git worktree add failed: fatal: not a git repository: 'C:\o\w\repo\.git'`.
+
+The build of that round followed the junction. With T as a copy and a junction after its calls 1 to 7, it removed the old entry of T and made `T\worktrees\w1`. With T as no git directory and a junction after its call 7, it made an empty folder `T\worktrees`. The edits after the round hold the git directory open from the gate to the reply. They test at each step that `.git` is still that real directory, and the cleanup and the move act through the held folder. Their tests ran on Linux with a symbolic link. The Windows tests ran on no system.
+
+### A step before the add that fails
+
+Table W3 of round `val-s3p2b2-7` (Windows VM):
+
+| Cell | `error` on `5fd08069` | Calls |
+|---|---|---|
+| `.git\worktrees` is a file | `git worktree add failed: cannot prepare the repository's worktrees directory: "C:\\o\\w\\repo\\.git\\worktrees" is not a directory`, as the reply shows it. The file is unchanged | 8 |
+| a deny entry for new folders on `<S>`, the two privileges off | `git worktree add failed: cannot prepare the repository's worktrees directory: mkdir C:\o\w\run\git-shadow\<S>\.s<n>: Access is denied.` | 9 |
+
+After each refused create there is no branch `w1`, no registration and no folder of the new worktree. `<S>` holds `.probe`, `<R>` and `lock`. The last call of both cells is the listing of the `worktree add`.
+
 ## `config.worktree`
 
 The repository has `extensions.worktreeConfig = true` and a file `<gitdir>/config.worktree`. On `5fd08069`:
@@ -719,6 +763,8 @@ Measured differences that stay. The reply lines are equal in each of them, excep
 |---|---|---|---|
 | a listing with `--show-scope` in a create | none | one `--git-dir=<gitdir> config -z --list --show-scope` call, in the new worktree, with the four light values and `GIT_COMMON_DIR=<gitdir>` | rounds `val-s3p2b2-3` and `val-s3p2b2-5`, Linux, macOS and Windows VMs |
 | the pair after `rev-parse --absolute-git-dir` in a create | `--git-dir=<gitdir> config -z --list`, then `--git-dir=<gitdir> --work-tree=<repo> rev-parse --show-toplevel` | no such pair | the same rounds and systems |
+| a create whose `<S>` takes no new folder (table W3 of round `val-s3p2b2-7`) | 9 calls, with that pair | 7 calls | Windows VM |
+| a deny entry on `<S>` with `SeRestorePrivilege` and `SeBackupPrivilege` on in the daemon | the entry does not stop it: the create succeeds and `git.status` answers normally | `mkdirat .s<n>: Access is denied.` in the create and `mkdirat .gitdir-<n>: Access is denied.` in `git.status`, on the build of that round | tables W3 and F1 of round `val-s3p2b2-7`, Windows VM |
 | a create with `worktreeRoot` | 31 calls: three rounds of six calls | 18 calls: one round | cell `n3-root` of round `val-s3p2b2-5`, Linux VM. Cell A4 of round `val-s3p2b1`, macOS VM |
 | a repeated remove with `worktreeRoot` | 12 calls, and 17 with `branchName`: two `--git-dir=` pairs | 8 and 13 calls | cell `n3-root` of round `val-s3p2b2-5`, Linux VM |
 | a create with `existingBranch` | two listings in a row before the attach add, and none before the `-b` add after it failed | one listing in each place | cells A3 and B2 of round `val-s3p2b2-5`, Linux, macOS and Windows VMs |
@@ -740,6 +786,13 @@ Round `val-s3p2b2-7` ran the same build beside `5fd08069` on a second Linux VM, 
 - The text of git in the reply after a call about the repository that exits 1. The text has one line in the cells (cells P3).
 - The order of `GIT_DIR` and `GIT_COMMON_DIR` with a daemon `GIT_DIR`, and the copy with both variables in the daemon environment (cells O1).
 - The git version at the end of the cause of a failed `init` (cell C2).
+
+The Windows part of round `val-s3p2b2-7` ran a build of this change beside `5fd08069` in cells P2, J1, W2, W3, W1, R1, F1 and C2. Cells J1 and W2 are equal: the junction with the member, and two creates at one time in 120 pairs. Tables C2 and R1 gave the Windows rows for the git version in the cause and for the relative socket path. The build of that round did not have those two edits. The edits for the other rows follow that round. Their tests ran on Linux and macOS forms only, and the Windows tests ran on no system:
+
+- The held git directory of a create and its step texts (cells X1c, X1p and W1).
+- The stop after a failed `rev-parse --absolute-git-dir` in the state `shadow` on Windows (cell W1c).
+- The two texts of a step before the add that fails (table W3). The call count of the deny cell stays 7.
+- The path of git in the "disagree" text, as git printed it (table P2).
 
 ## Not measured
 
@@ -772,6 +825,12 @@ On `5fd08069`:
 - A daemon folder that takes no new entry for another cause than mode 0500.
 - The mode of the create of the new `.git` file. No cell has a daemon umask of 000.
 - A staging move that fails on Windows.
+- A junction at `.git` after call 12 or 13 of a create. A junction after calls 7 and 8, where the rename failed. A symbolic link in place of the junction. Another real directory at `.git`.
+- A `.git` that is a junction before the first request. The link text is measured for a junction that was put there during a create.
+- A replaced git directory during a create on Linux and macOS VMs, and with the member or in the state `fallback-git`.
+- A failed `rev-parse --absolute-git-dir` of a create outside the state `shadow` on Windows, and on Linux and macOS VMs.
+- `.git\worktrees` as a link or a junction. A folder `worktrees` that cannot be made.
+- An answer of the call about the repository that is not clean or not absolute, in the "disagree" text.
 
 On claustrum, from the code and its tests:
 

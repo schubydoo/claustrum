@@ -138,9 +138,11 @@ type shadowHost struct {
 // absolute form in every path of the settings copy: the argv, the working
 // directory and the variables of the test calls, and the folder variables of
 // the later calls. Its replies, call lists and copied texts equal those of the
-// absolute socket path (cell R1 of val-s3p2b2-7-linux2, Linux VM). A working
-// directory that the system does not give is not measured: the path stays as
-// it is.
+// absolute socket path (cell R1 of val-s3p2b2-7-linux2, Linux VM). On a
+// Windows VM with `-socket s.sock` its folder `git-shadow` is under the
+// working directory, its test calls have absolute arguments, and its five
+// replies are normal (table R1 of val-s3p2b2-7-windows). A working directory
+// that the system does not give is not measured: the path stays as it is.
 func newShadowHost(runDir string) *shadowHost {
 	if runDir != "" {
 		if abs, err := filepath.Abs(runDir); err == nil {
@@ -679,7 +681,9 @@ func shadowTestCalls(dir, check string) (state, cause string) {
 // with ` (git version 2.43.0)` (s3p2b-edges-linux2 cell 31, Linux VM). After an
 // `init` that exits 1 with a text it is `git init failed under "<S>": fatal:
 // forced failure by the test wrapper (git version 2.43.0)` (cell C2 of
-// val-s3p2b2-7-linux2, Linux VM, 2 of 2 runs and the control). The first call
+// val-s3p2b2-7-linux2, Linux VM, 2 of 2 runs and the control). On a Windows
+// VM the same cause ends with ` (git version 2.55.0.windows.3)`, with the same
+// four calls (table C2 of val-s3p2b2-7-windows, 2 of 2 runs). The first call
 // has no option list, the root folder as its working directory and no added
 // variable. The second has the option list, the folder and the variables of a
 // test call. Which of the two gives the text is not measured.

@@ -951,8 +951,11 @@ func (r *statusRun) git(noLocks bool, excludes string, args ...string) ([]byte, 
 // `.gitdir-<n>` cannot be made in the folder of the daemon. git.status then
 // answers isRepo:false. With a folder of the daemon of mode 0500, 5fd08069
 // answers `{"isRepo":false,"clean":false}` after 4 git calls (cell f1-0500 of
-// val-s3p2b2-7-linux2, Linux VM). Only mode 0500 ran, one time. Another
-// cause, such as a full disk, gets the same answer (not measured). With the
+// val-s3p2b2-7-linux2, Linux VM). Only mode 0500 ran there, one time. On a
+// Windows VM a deny entry for new entries on that folder gives the same line
+// after 4 calls (table F1 of val-s3p2b2-7-windows, with the two privileges of
+// that table off). Another cause, such as a full disk, gets the same answer
+// (not measured). With the
 // member the folder is in the
 // temporary folder, and a failure there keeps its error text (not measured on
 // 5fd08069).
