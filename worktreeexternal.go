@@ -526,8 +526,13 @@ func externalWorkTreeRefusal(req *request, repo string, off jsonTrueSwitch) (str
 	// VMs). The
 	// call that it makes to git on a refusal is the light `rev-parse
 	// --show-toplevel` that follows the listing below.
-	if msg := req.settingsGateRefusal(t, off, repo, false, "--show-toplevel"); msg != "" {
+	// A bad answer of git about the repository is not measured with worktreeRoot.
+	// Its text is the reason, and git's own refusal gets the reason of a folder
+	// with no repository.
+	if msg, noRepo := req.settingsGateRefusal(t, off, repo, false, "--show-toplevel"); msg != "" {
 		return workTreeUnknownPrefix + msg, ""
+	} else if noRepo {
+		return workTreeUnknownPrefix + "exit status 128", ""
 	}
 	u = req.use
 	// This listing is light, and the rev-parse below runs its own heavy one. That is

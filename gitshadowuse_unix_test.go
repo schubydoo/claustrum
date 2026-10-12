@@ -66,7 +66,7 @@ func TestShadowRequestEntries(t *testing.T) {
 			t.Fatalf("git.status = %s", raw)
 		}
 		dir := daemonFolder(t, f.run)
-		entries := []string{shadowRepoName(f.gitDir), shadowLockName}
+		entries := []string{shadowProbeName, shadowRepoName(f.gitDir), shadowLockName}
 		if got := argOf(calls, "--git-dir="+dir+"/"); !regexp.MustCompile(`^\.gitdir-[0-9]+$`).MatchString(got) {
 			t.Errorf("the temporary git folder of git.status = %q, want .gitdir-<n> in %s", got, dir)
 		}
@@ -111,7 +111,7 @@ func TestShadowRequestEntries(t *testing.T) {
 		if got := argOf(calls, "--git-dir="+daemonFolder(t, f.run)+"/"); !strings.HasPrefix(got, ".gitdir-") {
 			t.Errorf("the temporary git folder of git.status = %q", got)
 		}
-		if got, want := left(t, f), []string{shadowRepoName(f.gitDir), shadowLockName}; !slices.Equal(got, want) {
+		if got, want := left(t, f), []string{shadowProbeName, shadowRepoName(f.gitDir), shadowLockName}; !slices.Equal(got, want) {
 			t.Errorf("after the failed git.status the folder of the daemon holds %v, want %v", got, want)
 		}
 	})
@@ -126,7 +126,7 @@ func TestShadowRequestEntries(t *testing.T) {
 		if got := argOf(calls, "GIT_INDEX_FILE="+daemonFolder(t, f.run)+"/"); !strings.HasPrefix(got, ".index-") {
 			t.Errorf("GIT_INDEX_FILE of the checkout = %q", got)
 		}
-		if got, want := left(t, f), []string{shadowRepoName(f.gitDir), shadowLockName}; !slices.Equal(got, want) {
+		if got, want := left(t, f), []string{shadowProbeName, shadowRepoName(f.gitDir), shadowLockName}; !slices.Equal(got, want) {
 			t.Errorf("after the failed checkout the folder of the daemon holds %v, want %v", got, want)
 		}
 		if _, err := os.Lstat(leafOf(f)); !os.IsNotExist(err) {

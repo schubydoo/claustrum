@@ -83,7 +83,7 @@ func TestShadowIncludeStepEntries(t *testing.T) {
 	if withIndex != len(modes) {
 		t.Errorf("the index folder was there at %d of %d looks at the pattern file, want all", withIndex, len(modes))
 	}
-	if got, want := entryNames(t, dir), []string{shadowRepoName(f.gitDir), shadowLockName}; !slices.Equal(got, want) {
+	if got, want := entryNames(t, dir), []string{shadowProbeName, shadowRepoName(f.gitDir), shadowLockName}; !slices.Equal(got, want) {
 		t.Errorf("after the create the folder of the daemon holds %v, want %v", got, want)
 	}
 }

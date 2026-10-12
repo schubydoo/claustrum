@@ -411,7 +411,11 @@ func TestGitCallShapePerState(t *testing.T) {
 			}
 			first := []string{"none | config --includes --path core.excludesFile | <tmp> | GIT_DIR=/dev/null"}
 			if state == stateShadow {
-				first = append(first, "none | config --no-includes --file - --list -z | / | GIT_DIR=/dev/null {L}")
+				// The call about the repository, then the read of the config. The
+				// ceiling of the call is in TestProbeCallShape.
+				first = append(first,
+					"?core.hooksPath=/dev/null core.fsmonitor=false | rev-parse --git-dir | <repo> | GIT_COMMON_DIR=<S>/.probe GIT_OBJECT_DIRECTORY=<S>/.probe/objects GIT_ALLOW_PROTOCOL=denied_by_claude_ssh GIT_NO_LAZY_FETCH=1 GIT_TERMINAL_PROMPT=0 {L}",
+					"none | config --no-includes --file - --list -z | / | GIT_DIR=/dev/null {L}")
 			}
 			if len(got) < len(first) || !slices.Equal(got[:len(first)], first) {
 				t.Fatalf("the first calls of the first request = %q\nwant %q", got[:min(len(got), len(first))], first)

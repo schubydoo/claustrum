@@ -195,6 +195,7 @@ component_management:
         # the settings control: the state of git.info, the folder of one daemon and the start test (5fd08069).
         - gitshadow.go
         - gitshadowconfig.go
+        - gitshadowprobe.go
         - gitshadowrepo.go
         - gitshadowuse.go
         - gitshadow_unix.go

@@ -320,8 +320,10 @@ func gitInfo(req *request) response {
 	// The start test and the daemon's own read of the repository's config come
 	// before the listing (settingsGateRefusal). Their place after the count check is
 	// not measured.
-	if msg := req.settingsGateRefusal(t, p.ShadowDirOff, p.Path, true, "--git-dir"); msg != "" {
+	if msg, noRepo := req.settingsGateRefusal(t, p.ShadowDirOff, p.Path, true, "--git-dir"); msg != "" {
 		return errResult(req.ID, codeInternal, msg)
+	} else if noRepo {
+		return notRepo()
 	}
 	req.listEntryConfig(t)
 	// If the repo's config cannot be enumerated (e.g. an `include.path` with no value), the
@@ -601,8 +603,10 @@ func gitStatus(req *request) response {
 	}
 	// The daemon's own read of the repository's config comes before the listing
 	// (repoConfigGateRefusal).
-	if msg := req.settingsGateRefusal(t, p.ShadowDirOff, p.BaseRepo, true, "--absolute-git-dir"); msg != "" {
+	if msg, noRepo := req.settingsGateRefusal(t, p.ShadowDirOff, p.BaseRepo, true, "--absolute-git-dir"); msg != "" {
 		return errResult(req.ID, codeInternal, msg)
+	} else if noRepo {
+		return notRepo
 	}
 	// A repo whose config cannot be enumerated is refused with -32603 (row o22b). The
 	// listing runs in baseRepo as sent and carries the heavy profile (K1 call 2).
@@ -700,8 +704,10 @@ func gitListBranches(req *request) response {
 	}
 	// The daemon's own read of the repository's config comes before the listing
 	// (repoConfigGateRefusal). The answer has the error object of git.info (cell X1).
-	if msg := req.settingsGateRefusal(t, p.ShadowDirOff, p.Path, true, "--git-dir"); msg != "" {
+	if msg, noRepo := req.settingsGateRefusal(t, p.ShadowDirOff, p.Path, true, "--git-dir"); msg != "" {
 		return errResult(req.ID, codeInternal, msg)
+	} else if noRepo {
+		return okResult(req.ID, branchesResult{Branches: []string{}})
 	}
 	// A repo whose config cannot be enumerated is refused with -32603 (7d193f89),
 	// measured on an ephemeral VM.
@@ -806,8 +812,10 @@ func gitWorktreeCreateLocked(req *request, p *gitParams, repo string) response {
 	}
 	// The daemon's own read of the repository's config comes before the listing
 	// (repoConfigGateRefusal). Nothing is created (cells W7 and E1, Linux VM).
-	if msg := req.settingsGateRefusal(t, p.ShadowDirOff, repo, false, "--is-inside-work-tree"); msg != "" {
+	if msg, noRepo := req.settingsGateRefusal(t, p.ShadowDirOff, repo, false, "--is-inside-work-tree"); msg != "" {
 		return okResult(req.ID, worktreeResult{Success: false, Error: msg, ErrorCode: "worktree_add_failed"})
+	} else if noRepo {
+		return okResult(req.ID, worktreeResult{Success: false, Error: "not a git repository", ErrorCode: "not_a_repo"})
 	}
 	// A repo whose config cannot be enumerated is refused before git runs — the
 	// reference surfaces the same "config-defined hooks could not be pinned off"
@@ -1390,6 +1398,20 @@ func gitWorktreeCreateLocked(req *request, p *gitParams, repo string) response {
 	return okResult(req.ID, worktreeResult{Success: true, Path: p.WorktreePath, SourceBranch: source, Branch: worktreeBranch})
 }
 
+// removeGate is the settings gate of a git.worktree_remove without worktreeRoot
+// (settingsGateRefusal). After a bad answer of git about the repository, the
+// gate runs one more time, and its second result is the answer. On 5fd08069 a
+// remove makes that call two times for each bad answer, where the other
+// methods make it one time (cells 38 and 39 of s3p2b-edges-linux2, Linux VM).
+// With an ended call the reply comes after both calls, at 62.02 s (cell 38).
+func (req *request) removeGate(t gitDirTrust, off jsonTrueSwitch, repo string) (msg string, noRepo bool) {
+	msg, noRepo = req.settingsGateRefusal(t, off, repo, true, "--absolute-git-dir")
+	if req.gitRefused {
+		msg, noRepo = req.settingsGateRefusal(t, off, repo, true, "--absolute-git-dir")
+	}
+	return msg, noRepo
+}
+
 func gitWorktreeRemove(req *request) response {
 	var p gitParams
 	if bad := bindParams(req, &p); bad != nil {
@@ -1632,8 +1654,10 @@ func gitWorktreeRemoveLocked(req *request, p *gitParams, repo string) response {
 		// path is worktreePath as sent, and it is not cut (cells X12). A worktree
 		// folder that is gone gets the same refusal (removeGoneWorktree). With
 		// worktreeRoot the read is in externalWorkTreeRefusal, with its own text.
-		if msg := req.settingsGateRefusal(t, p.ShadowDirOff, repo, true, "--absolute-git-dir"); msg != "" {
+		if msg, noRepo := req.removeGate(t, p.ShadowDirOff, repo); msg != "" {
 			return refuse("failed to remove worktree: could not check whether " + p.WorktreePath + " is locked: " + msg)
+		} else if noRepo {
+			return refuse(lockCheckRefusal(p.WorktreePath))
 		}
 		// The listing carries the heavy profile of the rev-parse that follows it, as on
 		// f6010b97 (Linux, macOS and Windows VMs). When the check fails, f6010b97 runs it
@@ -1879,8 +1903,10 @@ func removeGoneWorktree(req *request, p *gitParams, repo, path string) response 
 		// same refusal in cells N1. Their states are format version `2`, a config of
 		// 20 MiB and an info/exclude of 20 MiB. With worktreeRoot the read came
 		// before this function (externalWorkTreeRefusal, cells N14).
-		if msg := req.settingsGateRefusal(t, p.ShadowDirOff, repo, true, "--absolute-git-dir"); msg != "" {
+		if msg, noRepo := req.removeGate(t, p.ShadowDirOff, repo); msg != "" {
 			return refuse("failed to remove worktree: could not check whether " + p.WorktreePath + " is locked: " + msg)
+		} else if noRepo {
+			return refuse(lockCheckRefusal(p.WorktreePath))
 		}
 		switch t.verdict {
 		case gitDirNoRepo:

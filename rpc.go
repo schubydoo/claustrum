@@ -71,6 +71,9 @@ type request struct {
 	// atReply are the removals that wait for the reply of the request
 	// (runAtReply).
 	atReply []func()
+	// gitRefused is true when the last settings gate of the request got a bad
+	// answer of git about the repository (shadowHost.askGit).
+	gitRefused bool
 }
 
 // runAtReply removes the short-lived folders that stay until the reply. On

@@ -663,7 +663,7 @@ func TestShadowRepoFolderPerState(t *testing.T) {
 		var names []string
 		for _, daemon := range daemonFolders(t, run) {
 			for _, name := range entryNames(t, filepath.Join(run, shadowRootName, daemon)) {
-				if name != shadowLockName {
+				if name != shadowLockName && name != shadowProbeName {
 					names = append(names, name)
 				}
 			}

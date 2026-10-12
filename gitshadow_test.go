@@ -297,8 +297,9 @@ func TestShadowFolderLife(t *testing.T) {
 	f := newShadowFixture(t)
 	f.info(t, f.repo, nil)
 	first := daemonFolder(t, f.run)
-	// The test folder is gone, and the folder of the repository is there.
-	if got, want := entryNames(t, first), []string{shadowRepoName(filepath.Join(f.repo, ".git")), shadowLockName}; !slices.Equal(got, want) {
+	// The test folder is gone. The folder of the call about the repository
+	// and the folder of the repository are there (s3-linux cell A3, Linux VM).
+	if got, want := entryNames(t, first), []string{shadowProbeName, shadowRepoName(filepath.Join(f.repo, ".git")), shadowLockName}; !slices.Equal(got, want) {
 		t.Fatalf("folder of the daemon after the test holds %v, want %v", got, want)
 	}
 	if fi, err := os.Stat(filepath.Join(first, shadowLockName)); err != nil || fi.Size() != 0 {

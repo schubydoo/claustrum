@@ -279,6 +279,7 @@ func profileArgsWithExcludes(heavy bool, excludes string, args ...string) []stri
 // first listing, measured on Linux and Windows VMs.
 func hookPrecursor(ctx context.Context, u gitUse, dir string, heavy bool) listingRun {
 	userExcludesFile()
+	u.recheck(dir)
 	return runListing(ctx, dir, "", u.precursorEnv(heavy, u.pin(dir)))
 }
 

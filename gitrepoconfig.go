@@ -985,9 +985,17 @@ func keepRepoVerdict(k repoVerdictKey, v *repoVerdict) {
 // `open <file>:` text is read again on each request. That rule is claustrum's
 // own.
 func repoReadVerdict(t gitDirTrust) *repoVerdict {
+	return readRepoVerdict(t, true)
+}
+
+// readRepoVerdict is repoReadVerdict with a choice for a refused config.
+// Without keepRefused a kept read with a refusal is not used: the request reads
+// again. That is the form of a request in the state shadow, where
+// 5fd08069 reads a refused config again in each request (repoConfigGateAfterGit).
+func readRepoVerdict(t gitDirTrust, keepRefused bool) *repoVerdict {
 	home, _ := os.UserHomeDir()
 	k := repoVerdictKey{gitDir: t.pinCommonDir, home: home}
-	if v, ok := keptRepoVerdict(k); ok {
+	if v, ok := keptRepoVerdict(k); ok && (keepRefused || v.refusal == "") {
 		return v
 	}
 	ctx, cancel := gitCtx()
@@ -1137,20 +1145,7 @@ func repoConfigGate(t gitDirTrust, off jsonTrueSwitch, dir string, heavy bool, p
 	if v == nil {
 		return "", nil
 	}
-	refusal := v.refusal
-	if refusal == "" {
-		if d := entryConfigDetail(v.worktreeConfig, t.worktreeEntry, nil); d != "" {
-			refusal = repoConfigPrefix + d
-		}
-	}
-	if refusal == "" {
-		// The tests of shallow, info/attributes and info/exclude run in each
-		// request and are no part of the kept read. On 5fd08069 a change of one of
-		// these files leads to no new read of the config and to no new copy of it
-		// (cells 19a to 19c of val-s3p2b2-3-linux, 15-19a to 15-19c of
-		// val-s3p2b2-3-macos and E15b of val-s3p2b2-3-windows).
-		refusal = gitDirFilesRefusal(t.pinCommonDir)
-	}
+	refusal := requestRefusal(t, v)
 	if refusal == "" {
 		return "", v
 	}
@@ -1170,4 +1165,49 @@ func repoConfigGate(t gitDirTrust, off jsonTrueSwitch, dir string, heavy bool, p
 		v.keepOwnerAnswer(asked)
 	}
 	return refusal, nil
+}
+
+// repoConfigGateAfterGit is repoConfigGate for a request without the member in
+// the state shadow, after git accepted the repository in the call of
+// shadowHost.askGit. It makes no call to git about the owner: that call already
+// answered a repository of another owner with the "no repository" answers,
+// before any read. A refused read is not kept.
+//
+// On 5fd08069 a first request on a repository with a refused config makes the
+// call about the repository and the reads, and each later request makes the
+// reads again: 1 call in 19 cells, 4 with a chain of four included files and
+// 17 with seventeen. It makes no `rev-parse` call of its own there (cells of
+// group E and cells 10a to 10e of val-s3p2b2-3-linux, Linux VM. Rows D3 of
+// val-s3p2b2-3-macos and D7 of val-s3p2b2-3-windows). The `version` call that
+// 5fd08069 makes after a read with a syntax error is not built here.
+func repoConfigGateAfterGit(t gitDirTrust) (msg string, accepted *repoVerdict) {
+	v := readRepoVerdict(t, false)
+	if v == nil {
+		return "", nil
+	}
+	if refusal := requestRefusal(t, v); refusal != "" {
+		return refusal, nil
+	}
+	return "", v
+}
+
+// requestRefusal is the refusal of one request on the trust verdict t with the
+// read v, or "": the refusal of the config, then that of the `config.worktree`
+// file of a linked worktree, then that of another file of the git directory.
+func requestRefusal(t gitDirTrust, v *repoVerdict) string {
+	refusal := v.refusal
+	if refusal == "" {
+		if d := entryConfigDetail(v.worktreeConfig, t.worktreeEntry, nil); d != "" {
+			refusal = repoConfigPrefix + d
+		}
+	}
+	if refusal == "" {
+		// The tests of shallow, info/attributes and info/exclude run in each
+		// request and are no part of the kept read. On 5fd08069 a change of one of
+		// these files leads to no new read of the config and to no new copy of it
+		// (cells 19a to 19c of val-s3p2b2-3-linux, 15-19a to 15-19c of
+		// val-s3p2b2-3-macos and E15b of val-s3p2b2-3-windows).
+		refusal = gitDirFilesRefusal(t.pinCommonDir)
+	}
+	return refusal
 }

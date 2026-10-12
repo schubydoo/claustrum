@@ -303,8 +303,13 @@ func TestShadowRepoFailureRefusesTheRequest(t *testing.T) {
 			if method == "git.worktree_create" && !strings.HasSuffix(raw, `,"errorCode":"worktree_add_failed"}}`) {
 				t.Errorf("%s = %s, want the errorCode worktree_add_failed", method, raw)
 			}
+			// Request 1 makes two git calls on 5fd08069: the call about the
+			// repository and one read of the config (the same cells).
+			if n := len(calls); n != 3 || !calls[0].excludesRead() || !calls[1].isProbe() || !calls[2].configRead() {
+				t.Errorf("%s made %d calls, want the excludes read, the call about the repository and the config read", method, n)
+			}
 			for _, c := range calls {
-				if !c.excludesRead() && !c.configRead() {
+				if !c.excludesRead() && !c.configRead() && !c.isProbe() {
 					t.Errorf("%s ran %q after the folder step failed", method, c.argv)
 				}
 			}

@@ -111,6 +111,11 @@ type shadowHost struct {
 	// (syncRepo).
 	repoMu sync.Mutex
 	repos  map[string]*shadowRepo
+
+	// probeMu guards probes, the kept good answers of git about a repository, by
+	// the root of the work tree (askGit).
+	probeMu sync.Mutex
+	probes  map[string]keptProbe
 }
 
 // newShadowHost returns the settings control of a daemon whose socket is in
@@ -436,9 +441,16 @@ func shadowTestEnv() []string {
 
 // shadowGit runs one git call of the test in dir with env and the full argv.
 func shadowGit(dir string, env []string, argv ...string) shadowRun {
+	return boundedGit(shadowCallBound, dir, env, argv...)
+}
+
+// boundedGit runs one git call of the daemon's own in dir with env and the
+// full argv. The call ends at bound, and the wait for its output pipes after
+// that ends at shadowCallDrain.
+func boundedGit(bound time.Duration, dir string, env []string, argv ...string) shadowRun {
 	base, cancelBase := gitCtx()
 	defer cancelBase()
-	ctx, cancel := context.WithTimeout(base, shadowCallBound)
+	ctx, cancel := context.WithTimeout(base, bound)
 	defer cancel()
 	cmd := exec.CommandContext(ctx, "git", argv...)
 	cmd.Dir = dir
@@ -736,10 +748,25 @@ func writeShadowTestFiles(shadowDir string, head, config []byte) error {
 }
 
 // settingsGateRefusal is the refusal text of a git method before its first git
-// call in the repository of the trust verdict t, or "". The start test comes
-// first, then the daemon's own read of the repository config
-// (repoConfigGateRefusal). On 5fd08069 the first request of a daemon runs the
-// test calls before that read (s3p2-linux cell B3a, Linux VM).
+// call in the repository of the trust verdict t, or "". noRepo is true when the
+// method answers as if the folder held no repository. The order of a first
+// request is that of 5fd08069: the start test, the call that asks git about the
+// repository (askGit), the daemon's own read of the config with its included
+// files, and then the folder of the repository. The call log of a first git.info
+// has the ten test calls, that one call, the reads and then the first listing
+// (s3p2-linux cell B3a and cell 1 of s3p2b-edges2-linux, Linux VM).
+//
+// A bad answer of git ends the gate before the read: the request makes no
+// other git call, and the repository gets no folder (cell 39 of
+// s3p2b-edges-linux2). For git's own refusal of the repository the method gives
+// its "no repository" answer, and for every other bad answer the text. Each
+// method gives that text the shape of a failed start test (cells 38 and 39).
+//
+// In the state shadow the daemon makes no call of its own about the owner for
+// a refused config, and it keeps no refused read: 5fd08069 reads the config
+// again in each request there (repoConfigGateAfterGit). The call about the
+// owner of the config gate stays for a server with no run folder, which has no
+// call of askGit.
 //
 // The test runs for a trusted git directory only. A folder in which the daemon
 // finds no usable git folder starts no test and makes no folder (s3p2-linux
@@ -747,19 +774,17 @@ func writeShadowTestFiles(shadowDir string, head, config []byte) error {
 // failed test the shape that it gives a refused config: the error object on
 // git.info, git.status and git.list_branches, and the result object on
 // git.worktree_create and git.worktree_remove (s3p2b-edges-linux2 cell 30, Linux
-// VM). With worktreeRoot a remove reaches no gate: its shape is not measured.
+// VM). With worktreeRoot a remove gives it as the reason of its work-tree
+// refusal (externalWorkTreeRefusal): that shape is not measured.
 //
 // In the state fallback-git the read of the config does not run
 // (readsRepoConfig), and the daemon keeps no folder of a repository: its own
 // folder holds the lock file only there (s3p2-oldgit section 5, Linux VM).
-//
-// Without the extra call of 5fd08069 that asks git about the repository, a
-// repository of another owner with an accepted config gets a folder here. On
-// 5fd08069 it gets none (cell 39 of s3p2b-edges-linux2, Linux VM).
-func (req *request) settingsGateRefusal(t gitDirTrust, off jsonTrueSwitch, dir string, heavy bool, probe string) string {
+func (req *request) settingsGateRefusal(t gitDirTrust, off jsonTrueSwitch, dir string, heavy bool, probe string) (msg string, noRepo bool) {
+	req.gitRefused = false
 	if t.verdict == gitDirTrusted {
 		if msg := req.shadow.gate(bool(off)); msg != "" {
-			return msg
+			return msg, false
 		}
 	}
 	if !req.shadow.readsRepoConfig() {
@@ -769,11 +794,20 @@ func (req *request) settingsGateRefusal(t gitDirTrust, off jsonTrueSwitch, dir s
 			req.use = req.shadow.folderUse()
 			req.use.atReply = &req.atReply
 		}
-		return ""
+		return "", false
 	}
-	msg, read := repoConfigGate(t, off, dir, heavy, probe)
+	var read *repoVerdict
+	if req.shadow.asksGit(t, bool(off)) {
+		if a := req.shadow.askGit(t, dir); a.bad() {
+			req.gitRefused = true
+			return a.text, a.noRepo
+		}
+		msg, read = repoConfigGateAfterGit(t)
+	} else {
+		msg, read = repoConfigGate(t, off, dir, heavy, probe)
+	}
 	if msg != "" || read == nil || req.shadow.control(bool(off)) != controlShadow {
-		return msg
+		return msg, false
 	}
 	// The repository is accepted: the daemon makes its folder or brings it up to
 	// date (syncRepo), and the git calls of the request name it from here on
@@ -782,11 +816,11 @@ func (req *request) settingsGateRefusal(t gitDirTrust, off jsonTrueSwitch, dir s
 	req.repoRead = read
 	use, err := req.shadow.syncRepo(t.pinCommonDir, read)
 	if err != nil {
-		return shadowRepoFailureText(err)
+		return shadowRepoFailureText(err), false
 	}
 	req.use = use
 	req.use.atReply = &req.atReply
-	return ""
+	return "", false
 }
 
 // shadowRepoFailureText is the refusal of a request whose folder of the
