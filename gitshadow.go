@@ -468,8 +468,25 @@ func shadowTestEnv() []string {
 }
 
 // shadowGit runs one git call of the test in dir with env and the full argv.
+//
+// A call that exits in time counts by its exit code and its output so far,
+// also when a child keeps its output pipes open past the wait of
+// shadowCallDrain. With a child that holds the pipes of the `init` call for 5
+// s, 5fd08069 starts the next test call 1.02 s and 1.06 s after the `init`
+// ended, and the test passes (cell N-a of val-s3p2b2-8-linux2, Linux VM, 2 of
+// 2 runs). The eight other calls with that wait get the same rule (not
+// measured).
 func shadowGit(dir string, env []string, argv ...string) shadowRun {
-	return boundedGit(shadowCallBound, dir, env, argv...)
+	return exitedInTime(boundedGit(shadowCallBound, dir, env, argv...))
+}
+
+// exitedInTime takes the error out of a run whose only failure is the wait
+// for its output pipes: the process ended with exit 0 before that.
+func exitedInTime(r shadowRun) shadowRun {
+	if errors.Is(r.err, exec.ErrWaitDelay) {
+		r.err = nil
+	}
+	return r
 }
 
 // boundedGit runs one git call of the daemon's own in dir with env and the
@@ -482,6 +499,12 @@ func boundedGit(bound time.Duration, dir string, env []string, argv ...string) s
 // boundedGitInput is boundedGit with stdin as the standard input of the call,
 // or with none for nil.
 func boundedGitInput(bound time.Duration, dir string, env []string, stdin []byte, argv ...string) shadowRun {
+	return boundedGitDrain(bound, shadowCallDrain, dir, env, stdin, argv...)
+}
+
+// boundedGitDrain is boundedGitInput with drain as the wait for the output
+// pipes.
+func boundedGitDrain(bound, drain time.Duration, dir string, env []string, stdin []byte, argv ...string) shadowRun {
 	base, cancelBase := gitCtx()
 	defer cancelBase()
 	ctx, cancel := context.WithTimeout(base, bound)
@@ -494,7 +517,7 @@ func boundedGitInput(bound time.Duration, dir string, env []string, stdin []byte
 	}
 	var out, errOut bytes.Buffer
 	cmd.Stdout, cmd.Stderr = &out, &errOut
-	cmd.WaitDelay = shadowCallDrain
+	cmd.WaitDelay = drain
 	err := cmd.Run()
 	return shadowRun{
 		out:    strings.TrimRight(out.String(), "\r\n"),
@@ -609,15 +632,26 @@ func shadowTestCalls(dir, check string) (state, cause string) {
 	if err != nil {
 		return "", err.Error()
 	}
-	// Call 7 has claustrum's bound and pipe wait of the nine other calls
-	// (boundedGit). A child that keeps the output pipe open for more than the
-	// wait fails the start test. No row has a test call of 5fd08069 with such a
-	// child and a call that ended in time. No row has call 7 held or failed.
-	// Its cause is the exec error alone, as before.
-	listed := boundedGitInput(shadowCallBound, gitVersionDir, repoConfigListEnv(), text,
-		"config", "--no-includes", "--file", "-", "--list", "-z")
+	// Call 7 ends at the bound of a test call, and it has no short wait for its
+	// output pipes. The rows are cells N-b and N-c of val-s3p2b2-8-linux2 (Linux
+	// VM, 2 of 2 runs each):
+	//
+	//   - A child holds the pipes for 5 s after the call ended: 5fd08069 starts
+	//     the next call at 5.345 s and 5.189 s, and the test passes.
+	//   - The call itself runs 29 s: the test passes. It runs 40 s: 5fd08069
+	//     ends it at 30 s, and the cause is the text of callSevenEnded.
+	//
+	// A child that holds the pipes for more than 30 s is not measured. claustrum
+	// waits for the pipes one bound and one pipe wait after the call ended,
+	// and then goes on by the exit code of the call. A call 7 that fails on its
+	// own is not measured: its cause is the exec error alone.
+	listed := exitedInTime(boundedGitDrain(shadowCallBound, shadowCallBound+shadowCallDrain, gitVersionDir,
+		repoConfigListEnv(), text, "config", "--no-includes", "--file", "-", "--list", "-z"))
+	if listed.ended {
+		return "", callSevenEnded(filepath.Join(gitDir, "config"))
+	}
 	if listed.err != nil {
-		return failed("config", shadowRun{err: listed.err, ended: listed.ended})
+		return failed("config", shadowRun{err: listed.err})
 	}
 	if err := fillShadowTestCopy(gitDir, shadowDir, []byte(listed.out)); err != nil {
 		return "", err.Error()
@@ -673,6 +707,16 @@ func shadowTestCalls(dir, check string) (state, cause string) {
 		return controlFallback, ""
 	}
 	return controlShadow, ""
+}
+
+// callSevenEnded is the cause of a start test whose call 7 the bound ended.
+// path is the config of the test repository. 5fd08069 answers `Claude could
+// not test git on the remote machine (this repository's git config cannot be
+// used: git did not finish reading "<S>/.check-<n>/real/.git/config" within
+// 30 seconds; try again). Check free disk space and quota there, then try
+// again.` (cell N-c of val-s3p2b2-8-linux2, Linux VM, 2 of 2 runs).
+func callSevenEnded(path string) string {
+	return repoConfigPrefix + "git did not finish reading " + quoteOperand(path) + " within 30 seconds; try again"
 }
 
 // shadowVersionNote is the end of the cause after an `init` that failed: the
