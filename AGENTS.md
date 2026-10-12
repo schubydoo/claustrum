@@ -483,12 +483,13 @@ The JSON-RPC surface is identical on every OS. Full internals →
       never widen a delete of these steps.
     - On Windows a directory symbolic link at `.git` is refused as a junction
       is, on every git method without `"shadowDirOff":true`, before any write
-      or remove (`gitDirIsSymlink`). `5fd08069` refuses it too (Windows VM).
+      or remove (`gitDirIsSymlink`). `5fd08069` refuses it with equal replies,
+      and the folder behind the link is unchanged on both (Windows VM).
       Before that rule, a create through such a link made its worktree in the
       target of the link, and its cleanup removed an old staging entry there.
-      With `"shadowDirOff":true` nothing is refused, and git follows the
-      link. The junction form is measured (Windows VM), and the link form is
-      not.
+      With `"shadowDirOff":true` nothing is refused, and git makes and
+      removes the worktree in the folder behind the link. `5fd08069` does the
+      same for a junction and for a directory symbolic link (Windows VM).
   [git.worktree_create](docs/protocol/git-worktree-create.md#the-held-git-directory)
   has the rules for a reader, and its record has the cells.
 - In the state `shadow` `git.worktree_create` writes into the git directory of

@@ -67,11 +67,16 @@ func resolveGitDirLinks(g string) string {
 // the daemon starts and for one that is put there between two requests. A
 // git.status on a linked worktree of that repository gets the same text
 // (cells D-symd-start, D-symd-late and DT-symd-late-to-T of
-// val-s3p2b2-12-windows, Windows VM, 2 of 2 runs each).
+// val-s3p2b2-12-windows, Windows VM, 2 of 2 runs each). claustrum gives equal
+// replies in those cells, and the folder behind the link is unchanged
+// (section 1.1 of val-s3p2b2-13-windows, Windows VM, 2 of 2 runs each).
 //
-// Not measured: a link that a daemon GIT_DIR or a `.git` file names, a link
-// in a folder above the git directory together with one at it, and a request
-// with "shadowDirOff":true. They get the same rule.
+// With "shadowDirOff":true in every request, both builds accept the link, and
+// git works in the folder behind it (section 1.2 of that round).
+//
+// Not measured: a link that a daemon GIT_DIR or a `.git` file names, and a
+// link in a folder above the git directory together with one at it. They get
+// the same rule.
 func gitDirIsSymlink(g string) bool {
 	isLink := func(p string) bool {
 		fi, err := os.Lstat(p)

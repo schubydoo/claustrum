@@ -91,7 +91,10 @@ func probeStat(path string) os.FileInfo {
 // the cell. On Windows Lstat gives ModeIrregular for a junction. A symbolic
 // link keeps the Stat rule, on every system. On 5fd08069 later requests make
 // no call with a directory symbolic link too (part D of
-// val-s3p2b2-12-windows). The rule of claustrum for it ran on no VM.
+// val-s3p2b2-12-windows). claustrum makes one call for each later request
+// with a link to a real git directory, and none with a link to the copy T of
+// cell DT-symd-late-to-T (section 1.8 of val-s3p2b2-13-windows, Windows VM, 2
+// of 2 runs).
 func probeGitStat(path string) os.FileInfo {
 	if fi, err := os.Lstat(path); err == nil && fi.Mode()&os.ModeIrregular != 0 {
 		os.SameFile(fi, fi)

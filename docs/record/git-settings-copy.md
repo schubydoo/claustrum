@@ -30,8 +30,9 @@ The cells ran on three VMs. The Linux VM has git 2.43.0, the macOS VM has git 2.
 | `val-s3p2b2-11` | the second Linux VM (23 cells) and the macOS VM (cells A to E, G, H and I, 2 runs each) | `5fd08069` and the build of commit `1084fb7`, which has the edits after round `val-s3p2b2-10` |
 | `val-s3p2b2-12` | Windows VM, 344 cell runs | `5fd08069` and the build of commit `43df7af`. Its cells are named with "Windows VM" below |
 | `val-s3p2b2-13` | the second Linux VM and the macOS VM (110 cell runs on macOS) | `5fd08069` and the build of commit `ce95a6d`. The cells of round `val-s3p2b2-11` ran on that build, against the stored records of `5fd08069` |
+| `val-s3p2b2-13`, Windows part | Windows VM, 353 cell runs | `5fd08069` and the build of commit `ce95a6d`. Its cells are named with "Windows VM" below |
 
-On Linux and macOS, round `val-s3p2b2-13` ran the build of commit `ce95a6d`. On Windows, round `val-s3p2b2-12` ran the build of commit `43df7af`. The edits after those two builds ran on no VM. Each has a test. "claustrum and `5fd08069`" below names what each round left open.
+Round `val-s3p2b2-13` ran the build of commit `ce95a6d` on the Linux, macOS and Windows VMs. Two edits came after that build, and they ran on no VM. Both are for Linux and macOS: the test after the read-tree call of a create, and the order of the step for the `.git` file of the new worktree. Each has a test. "claustrum and `5fd08069`" below names what each round left open.
 
 ## The member and the states
 
@@ -694,7 +695,7 @@ Round `val-s3p2b2-12` ran the build of commit `43df7af` beside `5fd08069` (Windo
 - The rename of `repo\.git` passed on that build at each of its points 1 to 12, in both forms of T (3 of 3 runs), and in cells W1a to W1d (2 of 2 runs).
 - T was unchanged on both builds in every swap run of a create: 72 runs of claustrum in cells X1c and X1p, and 8 in cells W1a to W1d.
 - The replies were equal at points 1 to 4, 6 to 9 and 11 of claustrum, and in cells W1a to W1d. At point 9 claustrum holds its own `--show-scope` listing, and its reply is that of call 11 of `5fd08069`.
-- Seven rows differed. The edits after the round follow `5fd08069` in them, and they ran on no Windows VM:
+- Seven rows differed. The edits after the round follow `5fd08069` in them. Round `val-s3p2b2-13` ran them on the Windows VM, and the reply texts are equal in all seven:
   - A directory symbolic link (`mklink /D`) at `repo\.git`, there before the daemon starts or put there between two requests. `5fd08069` refuses each git method with `<link>`, as for a junction (2 of 2 runs each). That build of claustrum followed the link. With a link to T between two requests, its create made `worktrees\w1` and the branch in T. An old entry `.claude-new-worktree-x` of T was gone after it.
   - The junction to a copy after call 5. `5fd08069` answers `git worktree add failed: <link>`, as in the table. That build answered the text of call 6.
   - The junction while the first listing of the checkout runs. `5fd08069` answers the text of call 11 of the table. That build ran its `read-tree` call, which failed.
@@ -703,10 +704,23 @@ Round `val-s3p2b2-12` ran the build of commit `43df7af` beside `5fd08069` (Windo
   - Table S2. A wrapper answers the `read-tree` call with exit 1, and the driver puts 5000 files into the new worktree. The junction comes while the rollback clears them. `5fd08069` keeps the registration and the branch, and its text ends with `the worktree registration and the branch remain; remove them by hand before retrying (<real>)`. That build removed the registration from the real git directory.
   - Table S9. A create with `existingBranch` finds a file at `.git\worktrees`. `5fd08069` answers the `is not a directory` text of table W3 one time, after 11 calls. That build added `(attaching to the existing branch eb was refused first: ...)` to it.
 - Three differences stay:
-  - After the junction of call 5, `5fd08069` makes three calls on T before its refusal, and 10 calls in all. From the code, claustrum makes 7.
-  - With the file after `rev-parse --absolute-git-dir`, the listing of the add of `5fd08069` carries `GIT_DIR=<X>` and a copy of X. From the code, the listing of claustrum keeps the variables of the request.
+  - After the junction of call 5, `5fd08069` makes three calls on T before its refusal, and 10 calls in all. claustrum makes 7, and none on T (round `val-s3p2b2-13`, Windows VM).
+  - With the file after `rev-parse --absolute-git-dir`, the listing of the add of `5fd08069` carries `GIT_DIR=<X>` and a copy of X. From the code, the listing of claustrum keeps the variables of the request. In round `val-s3p2b2-13` that listing exits 128 on claustrum and 0 on `5fd08069`, with equal replies (Windows VM, 2 runs).
   - Table S6, with a wrapper that leaves the repository before its wait. While `rev-parse --is-inside-work-tree` of a create is held, a rename of the repository folder passes on `5fd08069`. On claustrum it fails with `Access is denied.` At the later points it fails on both builds. From the code, claustrum holds the git directory open from its gate, which is before that call. That hold is the likely cause (not measured).
-- Not run on claustrum: a file `gitdir: <X>` at `.git` while the first listing of the checkout runs. `5fd08069` then answers `git worktree add failed (checkout): Claude could not read your own git config on the remote machine (exit status 128). Run git config --list there to see the problem.` and the undo text of call 11 (cell CX 11, 2 runs).
+- A file `gitdir: <X>` at `.git` while the first listing of the checkout runs. `5fd08069` then answers `git worktree add failed (checkout): Claude could not read your own git config on the remote machine (exit status 128). Run git config --list there to see the problem.` and the undo text of call 11 (cell CX 11, 2 runs). claustrum answers the text of call 11 of the table. The table of the [differences that stay](#claustrum-and-5fd08069) has the row.
+
+The Windows part of round `val-s3p2b2-13` ran the build of commit `ce95a6d` beside `5fd08069` (Windows VM). Each cell has 2 runs on each build, unless a row says another count.
+
+- The directory symbolic link at `repo\.git` leads to a real git directory or to T. It is there from the start, or it is put there after one good `git.info`. Both builds refuse each request of the five git methods with `<link>`, and the replies are equal. T and the real git directory are unchanged on both, and the old entry of T stays. The junction forms give the same.
+- The swap points of a create ran with a junction (cells X1c and X1p, 112 runs) and with a directory symbolic link to T (72 runs). By the held call, each reply of claustrum is that of `5fd08069`. T is unchanged on both builds in every run.
+- A link after the `read-tree` call ended (point 12 of claustrum, call 13 of `5fd08069`). Both builds answer the text of call 13 of the table, and no git call follows the swap. The registration stays with no `index`, and the branch stays.
+- Table S2, in four forms. Both builds keep the registration and the branch, and both say so in the reply. The 5000 files and the folder of the new worktree are gone, and T is unchanged.
+- Table S9. Both builds answer the `is not a directory` text one time. claustrum makes 10 calls, and `5fd08069` makes 11.
+- A file `gitdir: <X>` at `.git`, and a directory symbolic link to X (part C, 80 runs). X is unchanged in every run. With the link, each reply of claustrum is that of `5fd08069` by the held call. With the file, two reply texts differ. They are in the table of the [differences that stay](#claustrum-and-5fd08069).
+- With the member in every request, both builds accept a junction and a directory symbolic link at `.git`. Each of the five methods answers as for a plain repository, with `"settingsControl":"off-switch"` in `git.info`. With a link to T, the create makes `worktrees\w1` and `refs\heads\w1` in T, and the remove takes them away again. The old entry of T stays, and the real git directory is unchanged. The replies are equal.
+- Cells W1a to W1d and control H1 ran on claustrum only (1 run). The replies are those of round `val-s3p2b2-12`.
+- Three plain creates and removes pass on both builds with equal replies (1 run). claustrum makes 12, 13 and 13 calls in the creates, and `5fd08069` makes 13, 14 and 14.
+- The test binary of that build ran on the same VM. 973 top-level tests passed and 32 were skipped. The 11 that failed are all `TestDocs` tests. The 17 tests of the Windows rules for a link at `.git` and for the held git directory passed, with no skip.
 
 The swap cells of round `val-s3p2b2-9` (Linux VM, 2 of 2 runs for each form, and macOS VM, 7 of 7 and 4 of 4 runs). The wrapper waits 2 s after `rev-parse --absolute-git-dir` ended. In that wait the driver renames `<repo>/.git` to `<repo>/.git-real` and makes a symbolic link `<repo>/.git` to T. No other swap point ran.
 
@@ -752,7 +766,7 @@ Round `val-s3p2b2-13` ran the build of commit `ce95a6d` beside `5fd08069` (Linux
 
 - T is unchanged on both builds in each run of the first two rows.
 - The cells of round `val-s3p2b2-11` gave the replies and the end states of that round on this build: 19 cells on the Linux VM and 21 of 22 on the macOS VM. Cell i-ctl is the one that changed.
-- The edits after the round follow `5fd08069` in the first and the last row. They ran on no VM.
+- The edits after the round follow `5fd08069` in the first and the last row. The top of this page says where they ran.
 
 ### A step before the add that fails
 
@@ -842,7 +856,7 @@ The Windows VM of that round has the same rows for the keys, the second read, th
 - No start test for a `git.info` on a path that does not exist, and no git call beyond the excludes read of a first request (cell F1).
 - The item of `core.sparsecheckout` on the calls of `git.status` in the temporary git folder (cell P2-X2).
 
-Measured differences that stay. The reply lines are equal in each of them, except in the git-lfs cells.
+Measured differences that stay. The reply lines are equal in each of them, except in the git-lfs cells and in the two rows of a file `gitdir: <X>`.
 
 | Difference | `5fd08069` | claustrum | Cell and system |
 |---|---|---|---|
@@ -851,7 +865,12 @@ Measured differences that stay. The reply lines are equal in each of them, excep
 | a create whose `<S>` takes no new folder (table W3 of rounds `val-s3p2b2-7` and `val-s3p2b2-9`) | 9 calls, with that pair | 7 calls | Windows VM |
 | a deny entry on `<S>` with `SeRestorePrivilege` and `SeBackupPrivilege` on in the daemon | the entry does not stop it: the create succeeds and `git.status` answers normally | `mkdirat .s<n>: Access is denied.` in the create and `mkdirat .gitdir-<n>: Access is denied.` in `git.status`, on the build of that round. The build of round `val-s3p2b2-9` has the `mkdir <S>\.s<n>: Access is denied.` text of table W3 after 7 calls, and `{"isRepo":false,"clean":false}` after 4 calls. `5fd08069` makes 13 and 21 calls | tables W3 and F1 of rounds `val-s3p2b2-7` and `val-s3p2b2-9`, Windows VM |
 | the write time of the file `config.worktree` of a new registration | 0.5 to 18.0 ms before the creation time of the file, in 40 of 40 creates | 0.0 to 1.9 ms after it, in 40 of 40 creates | round `val-s3p2b2-9`, Windows VM |
-| a later request on a repository whose `.git` is a junction before the daemon starts (part Q) | no git call | one call about the repository, on the build of that round. The edits after the round read the junction entry itself for the kept answer. In round `val-s3p2b2-12` the later requests make no call on both builds, but for one call in 1 of 4 runs of claustrum | rounds `val-s3p2b2-9` and `val-s3p2b2-12`, Windows VM |
+| a later request on a repository whose `.git` is a junction before the daemon starts (part Q) | no git call | one call about the repository, on the build of that round. The edits after the round read the junction entry itself for the kept answer. In round `val-s3p2b2-12` the later requests make no call on both builds, but for one call in 1 of 4 runs of claustrum. In round `val-s3p2b2-13` they make no call on both builds (1 run for each form) | rounds `val-s3p2b2-9`, `val-s3p2b2-12` and `val-s3p2b2-13`, Windows VM |
+| a later request on a repository whose `.git` is a directory symbolic link to a real git directory | no git call | one call, `rev-parse --git-dir`, with exit 0, for each later request. Both builds refuse each request with the same text. With a link to T, both builds make no call | cells `D-symd-start` and `D-symd-late` of round `val-s3p2b2-13`, Windows VM, 2 of 2 runs |
+| a junction or a directory symbolic link to a copy at `.git`, put there at the listing before `rev-parse --absolute-git-dir` of a create | 10 calls, 5 of them after the swap. Two run in T: `--git-dir=<T> config -z --list`, and `--git-dir=<T> --work-tree=<repo> rev-parse --show-toplevel` | 7 calls, 2 of them after the swap, both in `<repo>`: `rev-parse --absolute-git-dir` and `rev-parse --git-dir`. T is unchanged on both builds | point 5 of round `val-s3p2b2-13`, Windows VM |
+| the reply of a create when `.git` becomes a file `gitdir: <X>` at the `worktree add` | `git worktree add failed (completing the new worktree's git files): <real>`, with no undo text, after 16 calls | the text of call 10 of the swap table, with the undo text, after 8 calls. The branch stays on both builds | part C of round `val-s3p2b2-13`, Windows VM, 2 runs |
+| the same file at the first listing with `--git-dir=` of the checkout | `git worktree add failed (checkout): Claude could not read your own git config on the remote machine (exit status 128). Run git config --list there to see the problem.`, then the undo text of call 11, after 12 calls | the text of call 11 of the swap table, after 10 calls. The registration and the branch stay on both builds | part C of round `val-s3p2b2-13`, Windows VM, 2 runs |
+| the call count of a create | 13 or 14 in a plain create, 12 with the member, and 11 in table S9 | 12 or 13 in a plain create, 10 with the member, and 10 in table S9 | round `val-s3p2b2-13`, Windows VM |
 | a create with `worktreeRoot` | 31 calls: three rounds of six calls | 18 calls: one round | cell `n3-root` of round `val-s3p2b2-5`, Linux VM. Cell A4 of round `val-s3p2b1`, macOS VM |
 | a repeated remove with `worktreeRoot` | 12 calls, and 17 with `branchName`: two `--git-dir=` pairs | 8 and 13 calls | cell `n3-root` of round `val-s3p2b2-5`, Linux VM |
 | a create with `existingBranch` | two listings in a row before the attach add, and none before the `-b` add after it failed | one listing in each place | cells A3 and B2 of round `val-s3p2b2-5`, Linux, macOS and Windows VMs |
@@ -932,7 +951,7 @@ On `5fd08069`:
 - The pair of a remove with a daemon `GIT_COMMON_DIR` and no `GIT_DIR`.
 - A staging move that fails on Windows.
 - A junction at `.git` after calls 7 and 8 of a create, where the rename failed. Another real directory at `.git`.
-- On Windows, a directory symbolic link at `.git` that a daemon `GIT_DIR` or a `.git` file names, and such a link with `"shadowDirOff":true`.
+- On Windows, a directory symbolic link at `.git` that a daemon `GIT_DIR` or a `.git` file names.
 - A replaced git directory with the member or in the state `fallback-git`. A second change of the path after a create went on in the directory that git answered.
 - On Linux and macOS VMs, a `.git` that becomes a file with `gitdir: <X>`, or a link to the git directory of another repository, before `rev-parse --absolute-git-dir` of a create. Part C of round `val-s3p2b2-12` has the file and the directory symbolic link at points 1 and 5 on a Windows VM.
 - In attach mode, a failed step before the add other than a file at `.git\worktrees` (table S9). On Linux and macOS, attach mode with a swap before the add: from the code, claustrum answers the two-part text there.
@@ -944,4 +963,4 @@ On `5fd08069`:
 On claustrum, from the code and its tests:
 
 - The Windows steps of the create ran in round `val-s3p2b2-5`. Round `val-s3p2b2-6` ran creates on a Windows VM with the edits after that round.
-- The git calls of a request with the member on a build of this change. Round `val-s3p2b2-1` ran the replies of such requests (cells S1). The two later rounds sent no member.
+- The git calls of a request with the member on a build of this change. Round `val-s3p2b2-1` ran the replies of such requests (cells S1). The two later rounds sent no member. Round `val-s3p2b2-13` has the call counts of the five methods with the member on a Windows VM.

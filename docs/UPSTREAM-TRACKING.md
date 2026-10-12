@@ -559,6 +559,8 @@ traps that matter for telling drift from expected:
     config reads that `5fd08069` ends early.
   - claustrum leaves the `git-shadow` folder of a daemon that ended with
     `SIGKILL`. `5fd08069` removes it at the first request of the next daemon.
+  - On Windows, two reply texts of a create whose `.git` becomes a file
+    `gitdir: <X>` while the create runs (Windows VM).
   - The top of the [record](record/git-settings-copy.md) says which edits of
     the copy ran on no VM.
 - The reap of a child record with a `program` key splits the pins too, off the

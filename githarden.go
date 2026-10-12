@@ -509,7 +509,9 @@ func hardenedGitCheckout(ctx context.Context, u gitUse, leaf, gitDir, indexFile 
 // longer the folder that the create holds. The Windows rows are of 5fd08069
 // with a junction at `repo\.git` (table of section 2 of val-s3p2b2-12-windows,
 // both forms of T, Windows VM, 3 of 3 runs). In both rows the leaf is gone at
-// the reply, and the registration and the branch stay.
+// the reply, and the registration and the branch stay. claustrum answers both
+// texts there (table X1 of val-s3p2b2-13-windows, points 10 and 12, Windows
+// VM, 2 runs for each form).
 //
 //   - errGitDirChanged, on Windows: the junction was put there while the first
 //     listing of the checkout ran (the call 11 of that build). No other call

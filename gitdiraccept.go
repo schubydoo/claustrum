@@ -107,8 +107,8 @@ func realDirText(gitDir string) string {
 // That is sound for what the test decides: no act of the daemon inside the
 // git directory goes through the path (gitdirheld.go). On a Windows VM the
 // test sees the junction at points 1 to 11 of a create (the table of section
-// 2 of val-s3p2b2-12-windows). The test after the read-tree call came after
-// that round (not run on a VM).
+// 2 of val-s3p2b2-12-windows), and after the read-tree call at point 12
+// (section 1.4 of val-s3p2b2-13-windows).
 func gitDirIdentity(path string) os.FileInfo {
 	fi, err := os.Lstat(path)
 	if err != nil || !goesAsTree(fi.Mode()) {
@@ -233,7 +233,8 @@ func (a *acceptedGitDir) stands() bool {
 // no refusal right after `rev-parse --absolute-git-dir`, although the path no
 // longer names the held folder. gitDir is the directory that git answered.
 // The rows are of 5fd08069 on a Windows VM (val-s3p2b2-12-windows, 2 or 3 runs
-// each):
+// each). claustrum gives the same reply texts in them (table X1 and part C of
+// val-s3p2b2-13-windows, Windows VM, 2 runs each):
 //
 //   - Git answered another directory than the held one: a junction to a copy T
 //     of the git directory, or a directory symbolic link to the git directory
@@ -243,7 +244,7 @@ func (a *acceptedGitDir) stands() bool {
 //     section 2, point 5, and part C, the symbolic link at point 5). With the
 //     junction it makes three calls on T first: one read of the config of T, a
 //     listing with `--git-dir=<T>` and `rev-parse --show-toplevel` in T.
-//     claustrum makes none of them.
+//     claustrum makes none of them (section 1.7 of val-s3p2b2-13-windows).
 //   - The path is a regular file now: a file `gitdir: <X>` was put at `.git`
 //     after the call. 5fd08069 goes on and refuses before the `worktree add`
 //     with the text of openAddStage (part C, the file at point 6). Its
@@ -337,9 +338,12 @@ func (u gitUse) swapped(step string) bool {
 //     refuses before the `worktree add` (part C of val-s3p2b2-12-windows, the
 //     file at point 6, Windows VM, 2 of 2 runs). That refusal is in
 //     openAddStage. Each other step refuses with the text of a git directory
-//     behind a link, and no call runs in X. Those steps are not measured on
-//     5fd08069 for a file: the text is the one of the junction rows. The
-//     step `branch` is one of them, so no branch call runs with a `.git` file
+//     behind a link, and no call runs in X. The text is the one of the
+//     junction rows. For a file, 5fd08069 has another text at two of those
+//     steps: at the `worktree add` and at the first listing of the checkout
+//     (table C of val-s3p2b2-13-windows, Windows VM, 2 runs each). At the
+//     second listing and at the read-tree call the texts are equal. The
+//     step `branch` refuses so too, so no branch call runs with a `.git` file
 //     that names another repository.
 //   - On Linux and macOS the gate runs on that git directory, and a gate that
 //     passes gives no refusal here. With a symbolic link at `.git` to a copy

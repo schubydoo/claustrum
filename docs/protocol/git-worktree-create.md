@@ -141,7 +141,7 @@ The daemon keeps its own copy of the git settings of the repository, and its git
 
 In the state `shadow` a create holds the git directory of `baseRepo` open from its gate to its reply.
 
-- The git directory must be a real directory at the gate. On Windows a junction or a directory symbolic link there is refused, on every git method without `"shadowDirOff": true`. On Linux and macOS a `.git` that is a symbolic link before the request is resolved first, and the daemon holds its target. A change of that link is a change of the path too.
+- The git directory must be a real directory at the gate. On Windows a junction or a directory symbolic link there is refused, on every git method without `"shadowDirOff": true`. With that member both link kinds pass, and git works in the folder behind the link, as on `5fd08069` (Windows VM). On Linux and macOS a `.git` that is a symbolic link before the request is resolved first, and the daemon holds its target. A change of that link is a change of the path too.
 - The daemon's own deletes, renames, new folders and file writes inside the git directory go through the held folder. A folder that is put at the path while the create runs gets none of them, except the directory that the hold moves to (the rule for Linux and macOS below).
 - The hold stops no rename of the git directory by another process. On Windows the handle of the hold shares delete access for that. On Windows a rename of the repository folder fails from an earlier call of a create than on `5fd08069`. The record has the row.
 - The steps of the create test that the path still names the held folder. A swap after `rev-parse --absolute-git-dir` and before the add is refused before the add. Git itself goes by the path.

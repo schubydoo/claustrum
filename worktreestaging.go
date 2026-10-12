@@ -234,6 +234,8 @@ type addStage struct {
 //     at that path the text is `".git" is a link or a file where Claude needs
 //     a real directory; …` (part C and cells CX of val-s3p2b2-12-windows, the
 //     file at point 6 and at the listing of the add, 2 of 2 runs each).
+//     claustrum answers that text in both rows (table C of
+//     val-s3p2b2-13-windows, Windows VM, 2 runs each).
 //   - `worktrees` is a file: `"<git directory>\\worktrees" is not a directory`
 //     (table W3, with 8 git calls on both builds). A link or a junction there
 //     is not measured: it gets the same text.
@@ -435,8 +437,9 @@ func (e *addIncomplete) Error() string { return e.text }
 // `.git\worktrees`, 5fd08069 answers `git worktree add failed: cannot prepare
 // the repository's worktrees directory: "C:\\o\\w\\repo\\.git\\worktrees" is
 // not a directory`, one time, after 11 git calls (table S9 of
-// val-s3p2b2-12-windows, Windows VM, 2 of 2 runs). The other failed steps are
-// not measured in attach mode: they get the same rule.
+// val-s3p2b2-12-windows, Windows VM, 2 of 2 runs). claustrum answers the same
+// after 10 calls (table S9 of val-s3p2b2-13-windows, 2 runs). The other failed
+// steps are not measured in attach mode: they get the same rule.
 type addNotPrepared struct{ text string }
 
 func (e *addNotPrepared) Error() string { return e.text }

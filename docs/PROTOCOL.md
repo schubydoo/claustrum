@@ -2371,7 +2371,8 @@ place, in a repository with that extension and a `config.worktree` file:
 The [record](record/git-settings-copy.md#claustrum-and-5fd08069) has the rounds
 that compared a claustrum build with `5fd08069`, and the differences that stay.
 In each of them the reply lines are equal, except in the git-lfs cells of
-`git.worktree_create`. The top of that record says which edits ran on no VM.
+`git.worktree_create` and in two Windows rows of a create whose `.git` becomes
+a file. The top of that record says which edits ran on no VM.
 
 #### Hardened git calls
 
