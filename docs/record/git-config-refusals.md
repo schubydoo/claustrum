@@ -634,6 +634,8 @@ Cells P6w and P6x ran on the Windows VM, with a config of 20 MiB, on `git.info` 
 - The frames of the five methods for format version `2` are the golden `testdata/socket_git_config_refusal.golden.json`.
 - From the code: claustrum has each refusal text of this page. The Windows texts are in the Windows build only.
 - The rules, the differences from `5fd08069` and the choices of claustrum are in [Repository config refusals](../PROTOCOL.md#repository-config-refusals).
+- "The config that the daemon writes for git" in cells E10 and A7b is the copied settings file. The [record of the settings copy](git-settings-copy.md) has its text, and the keys of a `config.worktree` file that it carries.
+- Since the settings copy claustrum asks git no question about the owner, and it uses no kept refused read. The lines below on the owner call and on the kept owner answer are of builds before the copy. Rounds `val-s3p2b2-3` and `val-s3p2b2-5` ran a build with the copy. In the cells X9 of round `val-s3p2b2-5` its reply lines equal those of `5fd08069`. That holds in 32 requests on a Linux VM and in 36 on a macOS VM. That record has the cells.
 - The third validation round ran a claustrum with the rules of this page, but with no kept owner answer. In the cells P1 to P5 and P6 its reply lines equal those of `5fd08069`, and so does the disk. The same holds in cells P7w and P8w.
 - That claustrum ran cells N4, N5, N11, N13-b, N14 and N15-a on Linux and macOS VMs. It ran cells N4, N5 and N11 on a Windows VM. Its reply lines equal those of `5fd08069` there. In cells N14 and N15-a the disk is equal too.
 - That claustrum made one `rev-parse` call at each refused request of cells P5 and N10 (Linux, macOS and Windows VMs). With the config of 20 MiB each of the ten requests took 0.7 to 1.1 s. In cell P7 it answered `isRepo` false from 0 s on.
@@ -661,12 +663,11 @@ Cells P6w and P6x ran on the Windows VM, with a config of 20 MiB, on `git.info` 
 - The order of the two bounds and an include problem, beyond the two cells of 200000 include lines.
 - 16 `include.path` lines of missing files on macOS.
 - The kind test and the size test of the `config.worktree` file of the main worktree.
-- Content of a `config.worktree` file or of the file of an `includeIf` section, beyond a format version `2`. An open error at such a file.
+- Content of the file of an `includeIf` section, beyond a format version `2`. Content of a `config.worktree` file beyond that value and the keys in the record of the settings copy. An open error at such a file.
 - A read of the config that does not finish, and a config that changes its size during the read.
 - Which change of a file makes `5fd08069` read the config again, beyond the one changed config of cell B4. A rewrite of the same size with the file time set back.
-- What the 4 to 5 seconds of cell P7 count from on `5fd08069`: the change of the owner, or its last call to git. That cell on macOS and Windows.
-- A `rev-parse` call of more than 1 second in a repository of another owner whose config is not a regular file, and one of more than 5 seconds with another refusal.
-- A config over its size bound that includes a FIFO, in a repository of the daemon's user. From the code of claustrum: if git waits in that FIFO, each request answers the size refusal after 5 seconds. That git waits there is not measured.
+- Cell P7 on macOS and Windows. The 5 seconds of that cell count from the end of the call about the repository (cell 34 of round `s3p2b-edges`, Linux VM).
+- A config over its size bound that includes a FIFO, in a repository of the daemon's user.
 - A config whose listing by git has more than 64 MiB. From the code: claustrum tests the name bound and the count of settings on the first 64 MiB. If neither refuses, its read has no verdict.
 - An error of the daemon itself in an open, such as a full file table.
 - A bare repository with a refused config on a host where git refuses bare repositories.

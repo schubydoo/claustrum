@@ -19,7 +19,7 @@ A failed request can leave files on disk. The section [After a failure](#after-a
 | `existingBranch` | no | A local branch to attach to. If it names no local branch, the daemon creates `branchName` instead. If the attach fails, the daemon does the same. For example, git refuses an attach to a branch that is checked out in `baseRepo`. The request can then still succeed. `branch` in the response says which branch the worktree is on: see [Response](#response). |
 | `worktreeRoot` | no | A location outside the repository. Linux and macOS only. |
 | `timeoutMs` | no | A deadline that starts at the add. It stops only the checkout. The daemon tests it again after the add and after the copy step. With no value or `0` there is no deadline. |
-| `shadowDirOff` | no | `true` turns off the filter rule of the checkout for this request, and the daemon's own read of the git config of the repository. Any other value does nothing and is no error. See [Git filters](#git-filters) and [Repository config refusals](../PROTOCOL.md#repository-config-refusals). |
+| `shadowDirOff` | no | `true` turns off three things for this request: the filter rule of the checkout, the daemon's own read of the git config of the repository, and the settings copy. Any other value does nothing and is no error. See [Git filters](#git-filters), [Repository config refusals](../PROTOCOL.md#repository-config-refusals) and [The settings copy](#the-settings-copy). |
 
 Where the worktree can go:
 
@@ -54,7 +54,7 @@ Decide by `errorCode` first.
 |---|---|
 | `unsafe_path` | The daemon refuses a path. For example, `worktreePath` is relative, has a `..` component, is outside `baseRepo`, or exists. A `worktreeRoot` that is not safe gives this code too. So does a worktree that git registered in an unexpected place. |
 | `symlinked_component` | A directory between `baseRepo` and the worktree is a symbolic link, for example a symlinked `.claude` or `.claude/worktrees`. |
-| `not_a_repo` | `baseRepo` is not a git repository. |
+| `not_a_repo` | `baseRepo` is not a git repository, or git itself does not accept it. A bare `baseRepo` gets this code too while the daemon works on its settings copy. |
 | `nested_base_repo` | `baseRepo` is inside a directory of managed worktrees, or the daemon does not accept it as a trust root. |
 | `mkdir_failed` | The daemon cannot create a directory for the worktree. |
 | `worktree_add_failed` | `git worktree add` or the checkout failed. The text holds the message of git, or a refusal of the daemon that came before the add. |
@@ -64,6 +64,8 @@ Decide by `errorCode` first.
 These eight are all the codes of this method.
 
 If the daemon does not accept the git config of the repository, the code is `worktree_add_failed` and nothing is made. For example, the format version of the repository is not `0` or `1`. The texts are in [Repository config refusals](../PROTOCOL.md#repository-config-refusals).
+
+Three failures of the settings copy give `worktree_add_failed` too, and nothing is made. The test of the git of the host failed. The call that asks git about the repository failed. Or the daemon cannot make the folder of the copy. See [The settings copy](#the-settings-copy).
 
 A request with no `branchName` gets the JSON-RPC error `-32602`.
 
@@ -78,6 +80,8 @@ A request can create three things outside the worktree, and no failure removes t
 - directories above the worktree
 - the registrations directory `<git dir>/worktrees`
 - with `worktreeRoot`, the marker file `.claude-managed-worktrees` at the `<directory>` level
+
+On Windows a fourth thing can stay. If a step after a good add fails, a folder `.claude-new-worktree-<16 hex>` can stay in the git directory. A later create removes it once it is 1 hour old.
 
 A request can also remove a stale registration of this worktree path before the add.
 
@@ -118,6 +122,18 @@ Three values of the repository pass: `smudge = cat` under each name, and `git-lf
 
 claustrum follows the reference build `5fd08069` here, with the differences that the record lists. The [measurement record](../record/git-worktree-create.md#git-filters-of-the-checkout) has the cells.
 
+## The settings copy
+
+The daemon keeps its own copy of the git settings of the repository, and its git calls read that copy. [The settings copy](../PROTOCOL.md#the-settings-copy) in the protocol reference has the states, the texts and the folder. These rules are for this method:
+
+- If the directory `<git dir>/worktrees` is missing, the daemon makes it before the add. The directory stays after an add that fails. If the repository has `core.sharedRepository = group`, the new directory gets the write bit of the group and the set-group-ID bit.
+- If the repository has `extensions.worktreeConfig` and a file `<git dir>/config.worktree`, the new worktree gets its own `config.worktree` file. It holds the text of that file without `core.bare` and `core.worktree`.
+- A bare `baseRepo` gets `not_a_repo`.
+- On Windows the add writes the registration of the new worktree into a short-lived folder of the daemon. The daemon then copies it into `<git dir>\.claude-new-worktree-<16 hex>` and renames that folder to `<git dir>\worktrees\<name>`.
+- On Windows, before that step, a create removes old entries of the git directory. Such an entry has a name that starts with `.claude-new-worktree-` and a write time of 1 hour or more. The request did not make those entries. A junction goes as a junction, and its target stays.
+
+`"shadowDirOff": true` turns the copy off for one request, and none of these steps runs. The same holds on a host whose git does not work on such a copy. The [record of the copy](../record/git-settings-copy.md) has the cells.
+
 ## The copy of ignored files
 
 After the checkout, the daemon copies two sets of files from `baseRepo` into the new worktree:
@@ -139,12 +155,14 @@ A copy that fails does not fail the request. If the deadline of `timeoutMs` expi
 | A junction between `baseRepo` and the worktree | Does not apply. | Refused with `mkdir_failed`. |
 | Tests of the new registration after `git worktree add` | They run. A failure gives `unsafe_path`. | They do not run. |
 | A stale registration of the worktree path before the add | If it is the one stale entry and is not locked, the daemon removes it. | The daemon removes it, with no such test. |
+| Where the add writes the registration | Through the link `worktrees` of the settings copy, into `<git dir>/worktrees`. | Into a short-lived folder of the daemon. The daemon moves it into the git directory. |
+| Old `.claude-new-worktree-*` entries of the git directory | They stay. | A create removes each one that is 1 hour old or more. |
 
 ## Differences from the reference
 
-claustrum is built to answer as the reference daemon does. The pinned build `89cb6289` runs a git filter that only the repository defines. claustrum follows `5fd08069` and refuses it, with the differences that the record lists: see [Git filters](#git-filters). claustrum also follows `5fd08069` in the refusal of a repository config: see [Repository config refusals](../PROTOCOL.md#repository-config-refusals). These entries of the divergence catalog apply to this method:
+claustrum is built to answer as the reference daemon does. The pinned build `89cb6289` runs a git filter that only the repository defines. claustrum follows `5fd08069` and refuses it, with the differences that the record lists: see [Git filters](#git-filters). claustrum also follows `5fd08069` in the refusal of a repository config: see [Repository config refusals](../PROTOCOL.md#repository-config-refusals). It follows `5fd08069` in the settings copy too, with the differences that the [record of the copy](../record/git-settings-copy.md#claustrum-and-5fd08069) lists. These entries of the divergence catalog apply to this method:
 
-- [D2](../DIVERGENCES.md#d2): a delete refuses a path that is the home directory or holds it.
+- [D2](../DIVERGENCES.md#d2): a delete refuses a path that is the home directory or holds it. That covers the Windows removal of old `.claude-new-worktree-*` entries.
 - [D5](../DIVERGENCES.md#d5): an optional deadline on the git calls. It is off by default.
 - [D24](../DIVERGENCES.md#d24): on Linux and macOS, a rollback keeps a registration directory that something replaced after the add.
 

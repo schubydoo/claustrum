@@ -109,6 +109,7 @@ nav:
       - git.list_branches: record/git-list-branches.md
       - git.worktree_create: record/git-worktree-create.md
       - Repository config refusals: record/git-config-refusals.md
+      - The settings copy: record/git-settings-copy.md
       - process.stdin: record/process-stdin.md
       - process.killAndWait: record/process-killandwait.md
       - process.reattach: record/process-reattach.md

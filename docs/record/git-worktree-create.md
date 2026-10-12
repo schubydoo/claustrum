@@ -546,7 +546,12 @@ To use the method, read [git.worktree_create](../protocol/git-worktree-create.md
     disk. A `baseRepo` that is a subfolder of a repository creates (cell S-a).
     So do a repository with a separate git directory (cell S-c) and a daemon
     `GIT_DIR` alone (cell S-d). A bare repository answers `not_a_repo` (cell S-b).
-    Those four ran on Linux and macOS VMs. An attach creates, and so does an
+    Those four ran on Linux and macOS VMs. With its settings copy `5fd08069`
+    answers `not_a_repo` for a bare repository after 15 calls. The last one,
+    `rev-parse --is-inside-work-tree`, prints `true` there (cell `x2-bare-create`
+    of round `val-s3p2b2-5`, Linux VM, 3 of 3 runs). claustrum refuses a
+    `baseRepo` whose git directory no folder holds as its `.git` entry. That
+    test is claustrum's own. An attach creates, and so does an
     attach that falls back to a new branch (cells Se0 and S-e, Linux VM).
   - The daemon environment holds `GIT_COMMON_DIR` of another repository X, and
     `baseRepo` and X hold a commit with the same id. git makes the registration in
@@ -946,7 +951,11 @@ copies end still fails it, as `timeoutMs` above describes:
   VM only.
 - If the manifest is a regular file, the daemon runs `git version`. The call has no `-c`
   option and no `-C`. It runs in the daemon's working directory, with the
-  daemon's environment unchanged. The first `git version ` in the output counts,
+  daemon's environment unchanged. With its settings copy `5fd08069` runs that
+  call in the first of two such creates of one daemon, and not in the second.
+  That is cell `v5-create` of round `val-s3p2b2-5` (Linux VM, 4 of 4 runs). From the
+  code: claustrum keeps the answer of a call that exited 0 for the life of the
+  daemon, for a request that names a copy. The first `git version ` in the output counts,
   even after other text. A digit must follow it. Git 2.32.0 or later gets the
   directory scan. Older git gets the full scan, and so does output that does not
   parse. A non-zero exit also gets the full scan, even with valid output. Major
@@ -1046,7 +1055,13 @@ copies end still fails it, as `timeoutMs` above describes:
     one of 36 012 characters did not. The temp file name starts with a 27-byte
     prefix, the same length as in the measured `f6010b97` argv. A random
     decimal suffix follows it. The measured suffix had 8 to 10 digits in both
-    daemons.
+    daemons. Since the settings copy the pattern file is a file `patterns` in a
+    folder: `.worktreeinclude-<n>` in the folder of the daemon, or
+    `claude-ssh-worktreeinclude-<n>` in the temporary directory with
+    `"shadowDirOff":true`. `5fd08069` has those names in cell A3 of round
+    `val-s3p2b1` (Linux, macOS and Windows VMs). From the code: the budget
+    counts the path without its last name `patterns`. Where `5fd08069` splits
+    the batches with that longer path is not measured.
     A failed batch is skipped, and the other batches are still copied.
   - Only the paths from the directory batches go to `git check-ignore --stdin -z`.
     It keeps the paths that git's standard rules ignore. The file candidates are
@@ -1120,7 +1135,7 @@ copies end still fails it, as `timeoutMs` above describes:
 
 ## The option lists in replies and on disk
 
-The calls of this method carry the `-c` lists of `5fd08069`. [Hardened git calls](../PROTOCOL.md#hardened-git-calls) has the lists and the variables. Round `val-s3p2b1` ran four builds side by side: `89cb6289`, `5fd08069`, claustrum before the lists (`b027ede`) and claustrum with them. `5fd08069` and claustrum with the lists ran each cell except B9 with and without `"shadowDirOff":true`. On macOS `89cb6289` and `b027ede` ran without the member only. The member changes no reply line and no disk state below. In each cell below `b027ede` equals `89cb6289`, and claustrum with the lists equals `5fd08069`.
+The calls of this method carry the `-c` lists of `5fd08069`. [Hardened git calls](../PROTOCOL.md#hardened-git-calls) has the lists and the variables. The [record of the settings copy](git-settings-copy.md) has the calls and the disk steps of a create that names the copy. Round `val-s3p2b1` ran four builds side by side: `89cb6289`, `5fd08069`, claustrum before the lists (`b027ede`) and claustrum with them. `5fd08069` and claustrum with the lists ran each cell except B9 with and without `"shadowDirOff":true`. On macOS `89cb6289` and `b027ede` ran without the member only. The member changes no reply line and no disk state below. In each cell below `b027ede` equals `89cb6289`, and claustrum with the lists equals `5fd08069`.
 
 - Cell B2 (Linux, macOS and Windows VMs): the failure texts. The repository has no `info/grafts` file. The `branchName` of the create is the branch of another worktree, so `worktree add` fails. `5fd08069` and claustrum answer `git worktree add failed: Preparing worktree (new branch '<b>') fatal: a branch named '<b>' already exists`. The text of `89cb6289` has 8 `hint:` lines of git about `info/grafts` before `Preparing`. A create in a repository with a removed blob fails in the read-tree call. `5fd08069` and claustrum answer `git worktree add failed (checkout): error: unable to read sha1 file of a.txt (<id>)`. The text of `89cb6289` has the 8 lines before `error:`. No build leaves a worktree or a registration.
 - The 8 lines come from `GIT_GRAFT_FILE`: plain git prints them with `GIT_GRAFT_FILE=/dev/null` and no `info/grafts` file (macOS VM). The item `advice.graftFileDeprecated=false` of the light list turns them off. With an `info/grafts` file of one line, `worktree add` and `read-tree` print them on `89cb6289` only (cell B5, Linux and Windows VMs). The create of cell B5 succeeds on each build (Linux, macOS and Windows VMs). The remove succeeds too (Linux and macOS VMs).
@@ -1399,14 +1414,13 @@ What claustrum does:
 - A name over 200 bytes with a value that does not pass is refused before the read-tree call, with the frame of cell D5. A name with `=` is refused there too, with the frame of cell Q3.
 - A filter that only the repository defines, with a name that is not valid UTF-8, is refused before the read-tree call on every system. The text is claustrum's own: `git worktree add failed (checkout): this repository's git config cannot be used: the filter "<name>" is defined only there, and its name is not valid UTF-8; define it in ~/.gitconfig on the remote machine, or rename it`, with `worktree_add_failed`. For the bytes `FF 78` the name in the text is `"\xffx"` (cells S3 and X1).
 - The rollback of each refusal is the rollback of a failed checkout.
-- With `"shadowDirOff":true` the scoped listing does not run and the read-tree call has no pair (cells E1 and L8). Its one other effect in claustrum is on the read of the repository config: see [Repository config refusals](../PROTOCOL.md#repository-config-refusals).
+- With `"shadowDirOff":true` the scoped listing does not run and the read-tree call has no pair (cells E1 and L8). Its two other effects in claustrum are on the read of the repository config and on the settings copy. See [Repository config refusals](../PROTOCOL.md#repository-config-refusals) and [The settings copy](../PROTOCOL.md#the-settings-copy).
 - Only the JSON value `true` is the switch. Any other value of the member is no error, on each git method, and changes no frame of claustrum.
 
 Where claustrum differs from `5fd08069`. Each of these stays. In cells Q2, Q15 and V13 the texts differed by git's hint about `info/grafts`. They are equal now: see cell B9 in [the option lists in replies and on disk](#the-option-lists-in-replies-and-on-disk).
 
 - Cell Q1 (Linux VM). `5fd08069` runs the outside `smudge` filter and answers ok. claustrum answers `git worktree add failed (checkout): the git filter "m" has values in this repository's git config that no option of git can replace for the checkout`, with `worktree_add_failed`. No filter runs and nothing is left. A `-c` pair cannot remove the `process` key of the repository, and an empty `process` value stops the outside `smudge` filter too.
 - Cell Q10 (Linux VM). `5fd08069` answers the filter refusal. claustrum passes no pair and answers `worktree_add_failed` with git's `missing value for 'filter.m.smudge'` text. Nothing is left on both.
-- Cell Q12 (Linux VM). A `git.info` of claustrum has no `settingsControl` member, as on `89cb6289`.
 - Cell R2 (Linux VM). `5fd08069` answers the filter refusal. claustrum answers `not_a_repo` after 2 git calls, as `89cb6289` does.
 - Cell R4c (Linux VM). A `~/.gitconfig` that is a directory gets another text on `5fd08069`. claustrum has the text of `89cb6289`. Cells R4a (Linux VM) and W2 (Windows VM) have a syntax error in the config of the repository. claustrum answers the text of `5fd08069` in that state (from the code). The code is `worktree_add_failed` on each build.
 - Cells R5a and R5b (Linux VM) and W4 (Windows VM). With a temporary directory that cannot be used, `5fd08069` answers the filter refusal. claustrum fails as `89cb6289` does. Its line equals the line of `89cb6289` byte for byte in cells R5a and W4. In cell R5b only the random number of the folder name differs.
