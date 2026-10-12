@@ -360,6 +360,15 @@ func TestProbeAnswers(t *testing.T) {
 		// error (cells p3 of val-s3p2b2-7-linux2, Linux VM, 13 and 2 calls).
 		{name: "p3: exit 1 with a text", exit: 1, calls: 1, version: true, stderr: "fatal: text of the wrapper for p3\n",
 			text: "git could not check this repository on the remote machine: at %[1]q: fatal: text of the wrapper for p3"},
+		// Two lines stand in the reply with one space between them, and exit 2
+		// with a text has the rule of exit 1 (cell N-f of val-s3p2b2-8-linux2,
+		// Linux VM, 13 and 2 calls). With the last line alone the first row
+		// starts with `hint:`.
+		{name: "N-f: exit 1 with two lines", exit: 1, calls: 1, version: true,
+			stderr: "fatal: line one of the wrapper for p3\nhint: line two of the wrapper for p3\n",
+			text:   "git could not check this repository on the remote machine: at %[1]q: fatal: line one of the wrapper for p3 hint: line two of the wrapper for p3"},
+		{name: "N-f: exit 2 with a text", exit: 2, calls: 1, version: true, stderr: "fatal: text of the wrapper for p3 with exit 2\n",
+			text: "git could not check this repository on the remote machine: at %[1]q: fatal: text of the wrapper for p3 with exit 2"},
 		{name: "exit 128, not a git repository", exit: 128, calls: 1,
 			stderr: "fatal: not a git repository (or any of the parent directories): .git\n"},
 		{name: "exit 128, another owner", exit: 128, calls: 1,

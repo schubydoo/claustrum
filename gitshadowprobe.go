@@ -251,10 +251,11 @@ func probeArgs() []string {
 //     one `git version` call (versionAfterFailure). Exit 1 with a text on the
 //     error output has that text in the place of the exec error: `… at
 //     "<root>": fatal: text of the wrapper for p3`, with the same call count
-//     (cells p3 of val-s3p2b2-7-linux2, Linux VM). The text had one line. With
-//     more lines the last one stands there, as in the cause of a failed start
-//     test (not measured). Another exit code is not measured: it has the rule
-//     of exit 1.
+//     (cells p3 of val-s3p2b2-7-linux2, Linux VM). A text of two lines stands
+//     there with one space between the lines (shadowRun.allLines, cell N-f of
+//     val-s3p2b2-8-linux2, Linux VM). Exit 2 with a text has the rule of exit 1,
+//     with 13 and 2 calls (the same cell). Another exit code is not measured: it
+//     has the rule of exit 1.
 //   - Exit 0 and another path, or no output: the call runs one more time. The
 //     same answer then gives the error `git and Claude disagree about which
 //     repository holds this folder: …`. With no output the path of git is the
@@ -311,7 +312,7 @@ func (h *shadowHost) askGit(t gitDirTrust, dir string) repoAnswer {
 				return repoAnswer{noRepo: true}
 			}
 			versionAfterFailure()
-			return repoAnswer{text: fmt.Sprintf("git could not check this repository on the remote machine: at %q: %s", root, r.detail())}
+			return repoAnswer{text: fmt.Sprintf("git could not check this repository on the remote machine: at %q: %s", root, r.allLines())}
 		}
 		found = filepath.FromSlash(r.out)
 		if !filepath.IsAbs(found) {
@@ -325,6 +326,27 @@ func (h *shadowHost) askGit(t gitDirTrust, dir string) repoAnswer {
 		}
 	}
 	return repoAnswer{text: fmt.Sprintf("git and Claude disagree about which repository holds this folder: from %q git finds %q, Claude finds %q; try again", root, shown, want)}
+}
+
+// allLines is detail with every line that git wrote to its error output: the
+// lines are joined by one space. The call about the repository has that form.
+// For the two lines `fatal: line one of the wrapper for p3` and `hint: line two
+// of the wrapper for p3` 5fd08069 answers `… at "<root>": fatal: line one of
+// the wrapper for p3 hint: line two of the wrapper for p3` (cell N-f of
+// val-s3p2b2-8-linux2, Linux VM, `git.info` and `git.status`). An empty line
+// between two lines, and a line with spaces at its ends, are not measured:
+// claustrum drops the empty line and those spaces.
+func (r shadowRun) allLines() string {
+	var lines []string
+	for _, line := range strings.Split(r.stderr, "\n") {
+		if line = strings.TrimSpace(line); line != "" {
+			lines = append(lines, line)
+		}
+	}
+	if len(lines) == 0 {
+		return r.detail()
+	}
+	return strings.Join(lines, " ")
 }
 
 // printedProbePath is the path of git in the "disagree" text: out, the answer
