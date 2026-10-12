@@ -163,12 +163,13 @@ var worktreeConfigDropKeys = []string{"core.bare", "core.worktree"}
 // 48 bytes in the other cells (section 1.1 of the report of
 // val-s3p2b2-5-linux).
 //
-// No poll saw the folder `.config-<n>`. So three things are not measured: the
-// mode of its file, whether 5fd08069 makes the folder when it runs no
-// `--unset-all` call, and when the folder goes. claustrum makes the folder in
-// each such create and writes the file with mode 0600. It removes the folder
-// at the reply of the create, as the index folder (request.runAtReply). The
-// shutdown of the daemon removes it with the folder of the daemon.
+// The folder `.config-<n>` has mode 0700 and its file mode 0600, on 5fd08069
+// too. That build removes the folder before its next git call: a listing each 2
+// ms saw it for 24 to 43 ms in the 9 cells with an `--unset-all` call, and not
+// in the 11 other cells. A trace of cell 12f has the mkdir and the two removes
+// in one millisecond (section 0.2 item 4 of the report of val-s3p2b2-6-linux,
+// Linux VM). So the folder is made in each such create, and it goes when this
+// function returns.
 //
 // The read of the file is the read of the config gate. Three kinds of file
 // give no file in the new worktree: one that is not a regular file, one over
@@ -192,11 +193,7 @@ func (req *request) newWorktreeConfig(repo, gitDir string) (text []byte, ok bool
 		logWarnf("[GitHandler] the config.worktree file of the new worktree was not made: %v", err)
 		return nil, false
 	}
-	if u.atReply != nil {
-		*u.atReply = append(*u.atReply, remove)
-	} else {
-		defer remove()
-	}
+	defer remove()
 	root, err := os.OpenRoot(dir)
 	if err != nil {
 		logWarnf("[GitHandler] the config.worktree file of the new worktree was not made: %v", err)
