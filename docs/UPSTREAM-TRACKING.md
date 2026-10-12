@@ -453,7 +453,6 @@ traps that matter for telling drift from expected:
   - With a `smudge` key that has no value, `5fd08069` answers the filter
     refusal. claustrum answers `worktree_add_failed` with git's own text
     (Linux VM).
-  - `git.info` of claustrum has no `settingsControl` member (Linux VM).
   - With a `GIT_DIR` and a `GIT_WORK_TREE` of another repository in the daemon
     environment, `5fd08069` answers the filter refusal. claustrum answers
     `not_a_repo`, as `89cb6289` does (Linux VM).
@@ -500,22 +499,13 @@ traps that matter for telling drift from expected:
   `cannot determine the repository's work tree: ` before the refusal (Linux
   and macOS VMs).
 
-  Against `5fd08069` these differences are not drift. On git 2.11.4 and 2.12.5,
-  `5fd08069` gives no refusal in four refused states, and claustrum refuses
-  (Linux VM). On Windows a config path of 262 characters and more with a config
-  of 20 MiB gets another answer (Windows VM). In some states git itself refuses
-  a value of the config. `5fd08069` gives the answer of a repository there, and
-  claustrum answers as `89cb6289`. The call logs of a refused request differ:
-  `5fd08069` reads a config with a refused format version again, and claustrum
-  asks git about the owner. A request with that owner call takes about 1 s with
-  a config of 20 MiB, or with a FIFO as the config. After a change of the owner
-  of a refused repository, the two keep the refusal for 4 s and answer "not a
-  repository" from 5 s on (cell P7, Linux VM). On a host where that owner call takes more
-  than 1 second, a repository of another owner whose config is not a regular
-  file gets the refusal on claustrum and "not a repository" on `5fd08069`
-  (from the code). With another refusal the same holds for an owner call of
-  more than 5 seconds (from the code). A config whose listing by git passes
-  64 MiB can get no refusal on claustrum (from the code, not measured on
+  Against `5fd08069` these differences are not drift. On Windows a long config
+  path with a config of 20 MiB got another answer on a build before the settings
+  copy (Windows VM). On a config that changes many
+  times each second, `5fd08069` makes more config reads than claustrum (Linux
+  VM). For a config with a very long key, `5fd08069` ends config read calls
+  early, and claustrum lets them end (Windows VM). A config whose listing by git
+  passes 64 MiB can get no refusal on claustrum (from the code, not measured on
   `5fd08069`). On a FIFO config, two
   `shadowDirOff` requests get no answer. `5fd08069` then gives no answer to two
   later requests, and claustrum answers them (Linux VM).
@@ -533,11 +523,37 @@ traps that matter for telling drift from expected:
   [the record](record/git-worktree-create.md#the-option-lists-in-replies-and-on-disk)
   and in [Hardened git calls](PROTOCOL.md#hardened-git-calls).
 
-  Against `5fd08069` the reply lines are equal, with the `settingsControl`
-  member of `git.info` aside. The call logs differ in `git.worktree_create`,
-  and in more calls without the `shadowDirOff` member. Those differences are not
-  drift. See "Not equal to `5fd08069`" in
-  [PROTOCOL.md](PROTOCOL.md#hardened-git-calls).
+  Against `5fd08069` the call logs differ in `git.worktree_create`. claustrum
+  makes one listing with `--show-scope`. `5fd08069` makes a pair after
+  `rev-parse --absolute-git-dir`, more rounds with `worktreeRoot`, and other
+  listings with `existingBranch`. Those differences are not drift. See "Not equal
+  to `5fd08069`" in [PROTOCOL.md](PROTOCOL.md#hardened-git-calls).
+- The settings copy of the git methods splits the builds too, not drift.
+  `scripts/UPSTREAM_SHA` names `89cb6289`, and claustrum follows `5fd08069`.
+  Against `89cb6289` a triager can meet these points. Each is in
+  [The settings copy](PROTOCOL.md#the-settings-copy):
+  - `git.info` has a last member `settingsControl`.
+  - The run folder has a folder `git-shadow`.
+  - A first git request makes 12 more git calls.
+  - Four texts are new. They start with
+    `Claude could not test git on the remote machine`,
+    `git could not check this repository on the remote machine`,
+    `git and Claude disagree about which repository holds this folder` and
+    `Claude could not prepare its own files on the remote machine`.
+  - A config value that git refuses gets a normal answer where the copy leaves
+    it out.
+  - On Windows a create removes old `.claude-new-worktree-*` entries of the git
+    directory. See [git.worktree_create](protocol/git-worktree-create.md#the-settings-copy).
+
+  Against `5fd08069` these differences are not drift. Each has its cells in the
+  [record](record/git-settings-copy.md#claustrum-and-5fd08069):
+  - The git-lfs cells of a create: other reply texts, other read-tree items and
+    no git-lfs log file.
+  - The config reads on a config that changes many times each second, and the
+    config reads that `5fd08069` ends early.
+  - claustrum leaves the `git-shadow` folder of a daemon that ended with
+    `SIGKILL`. `5fd08069` removes it at the first request of the next daemon.
+  - The last edits of the copy ran on no VM. The record lists them.
 - The reap of a child record with a `program` key splits the pins too, off the
   wire. claustrum follows `89cb6289`. On Linux, if the process runs `program` or
   holds it as one whole argument, `89cb6289` accepts the record. Linux rows PG02a, PG02b,
