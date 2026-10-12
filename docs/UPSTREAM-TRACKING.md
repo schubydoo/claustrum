@@ -544,7 +544,8 @@ traps that matter for telling drift from expected:
     `cannot prepare the repository's worktrees directory`,
     `git worktree add failed (completing the new worktree's git files)` and
     `".git" is a link or a file where Claude needs a real directory`.
-  - On Windows each git method refuses a junction at `.git` with the link text.
+  - On Windows each git method refuses a junction or a directory symbolic link
+    at `.git` with the link text, without `"shadowDirOff":true`.
   - A config value that git refuses gets a normal answer where the copy leaves
     it out.
   - On Windows a create removes old `.claude-new-worktree-*` entries of the git

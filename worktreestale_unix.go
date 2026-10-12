@@ -42,9 +42,11 @@ import (
 // A record that spells the leaf as the request does, through a symlink, goes on
 // 5fd08069, and the create succeeds: cell i-ctl of val-s3p2b2-11-macos (macOS VM,
 // 2 of 2 runs), where /tmp is a symlink to /private/tmp. Cell h-ctl there is the
-// control with the real path in the record and in the request. Not measured: that
-// record on 89cb6289 and on a Linux VM, and a request and a record that go through
-// two different symlinks (the entry stays here).
+// control with the real path in the record and in the request. claustrum equals
+// 5fd08069 in both cells (val-s3p2b2-13-linux2, Linux VM, and
+// val-s3p2b2-13-macos, macOS VM). Not measured: that record on 89cb6289, and a
+// request and a record that go through two different symlinks (the entry stays
+// here).
 //
 // With two or three stale entries, 89cb6289 removes none of them: old9 and w1
 // (cell A13), old8, old9 and w1 (cell S1), old8 and old9 (cell S2), and two

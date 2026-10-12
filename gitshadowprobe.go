@@ -89,7 +89,9 @@ func probeStat(path string) os.FileInfo {
 // driver, each request of 5fd08069 makes the call again (control cell Qk). The
 // time and the identity of the junction entry are the same at every view of
 // the cell. On Windows Lstat gives ModeIrregular for a junction. A symbolic
-// link keeps the Stat rule, on every system (not measured).
+// link keeps the Stat rule, on every system. On 5fd08069 later requests make
+// no call with a directory symbolic link too (part D of
+// val-s3p2b2-12-windows). The rule of claustrum for it ran on no VM.
 func probeGitStat(path string) os.FileInfo {
 	if fi, err := os.Lstat(path); err == nil && fi.Mode()&os.ModeIrregular != 0 {
 		os.SameFile(fi, fi)

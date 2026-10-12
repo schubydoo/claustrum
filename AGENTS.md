@@ -172,9 +172,9 @@ The JSON-RPC surface is identical on every OS. Full internals →
       `baseRepo` that does not exist.
       Without `worktreeRoot` and with a daemon `GIT_DIR` and `GIT_COMMON_DIR`,
       `<git dir>` is the repository that `GIT_DIR` names. The remove holds no
-      git directory. A swap of `.git` during a remove leads the delete of the
-      registration into the folder at the path, as on `5fd08069` (Linux and
-      macOS VMs). Each delete goes through an `os.Root`, so no delete
+      git directory. On Linux and macOS a swap of `.git` during a remove leads
+      the delete of the registration into the folder at the path, as on
+      `5fd08069` (Linux and macOS VMs). Windows is not measured. Each delete goes through an `os.Root`, so no delete
       follows a symlink out of the leaf or its parent. A leaf that is a symlink
       or not a directory is refused. A worktree LOCKED in the `.git` folder of
       `baseRepo` is refused, not deleted, also where `89cb6289` answers success (D22).
@@ -205,14 +205,17 @@ The JSON-RPC surface is identical on every OS. Full internals →
       it runs no git call and removes the leaf only if the leaf is an empty
       directory. Before the add, on Linux and macOS, create removes one stale
       entry of `<baseRepo>/.git/worktrees`: an entry whose `gitdir` record
-      names the `.git` of the new leaf. It removes that entry only if it is the
+      names the `.git` of the new leaf. The compare is by text, with the
+      resolved path or with the path as the request spells it. The second
+      form follows `5fd08069` (cell i-ctl, Linux and macOS VMs). It removes that entry only if it is the
       only stale entry of the folder (`89cb6289`, cells A13, A13b and S1 to S7c,
       Linux and macOS VMs). The delete is one `os.Root.RemoveAll`
       of the entry name through a root at that folder, after `wipesHomeDir` on
       the entry path. An entry with a `locked` file stays (`89cb6289`, cells A9
       and A9b, Linux and macOS VMs). On Windows that step has no `locked` test (not measured).
       It is one `os.Root.RemoveAll` through the held git directory, or one
-      `os.RemoveAll` of the entry path for a create that holds none.
+      `os.RemoveAll` of the entry path for a create that holds none or holds
+      another folder than `<baseRepo>\.git`.
       The second rollback follows a successful add. On Linux and
       macOS four refusals come before it, and they delete nothing. Two answer
       a `.git` file of the new worktree that names no registration of the
@@ -310,8 +313,9 @@ The JSON-RPC surface is identical on every OS. Full internals →
       git directory" below). Before the cleanup the path must still name
       that folder. If not, the create is refused, and nothing is removed or
       made in the git directory or in the folder at its path. Round
-      `val-s3p2b2-12` ran that refusal on claustrum: the folder at the path
-      was unchanged in 72 swap runs (Windows VM). The entries are
+      `val-s3p2b2-12` put a junction at `.git` at each of the 12 calls of a
+      create on a claustrum build. The folder behind it was unchanged in 72
+      runs, 6 of them at this step (Windows VM). The entries are
       listed through that root, so each name is a direct entry of the git
       directory. The name must start with the fixed prefix, with the dash. The
       entry is read with `Lstat` through the root, so no link and no junction
@@ -465,7 +469,9 @@ The JSON-RPC surface is identical on every OS. Full internals →
     - By the path stay: git itself, a request that holds no git directory
       (`"shadowDirOff":true`, the state `fallback-git`, no run folder), and
       on Linux and macOS a `worktrees` entry that is a symbolic link. The
-      index and the rollback delete keep the identity test of D24 there.
+      index and the rollback delete keep the identity test of D24 there. The
+      stale step stays by the path too when `<baseRepo>/.git` is not the held
+      folder (from the code).
     - One step takes a new folder from the path. On Linux and macOS, right
       after `rev-parse --absolute-git-dir`, a path that leads to another git
       directory which passes the gate becomes the held folder
@@ -476,10 +482,13 @@ The JSON-RPC surface is identical on every OS. Full internals →
       no other step that resolves the path of the git directory again, and
       never widen a delete of these steps.
     - On Windows a directory symbolic link at `.git` is refused as a junction
-      is, on every git method, before any write or remove
-      (`gitDirIsSymlink`). `5fd08069` refuses it too (Windows VM). Before
-      that rule, a create through such a link made its worktree in the
+      is, on every git method without `"shadowDirOff":true`, before any write
+      or remove (`gitDirIsSymlink`). `5fd08069` refuses it too (Windows VM).
+      Before that rule, a create through such a link made its worktree in the
       target of the link, and its cleanup removed an old staging entry there.
+      With `"shadowDirOff":true` nothing is refused, and git follows the
+      link. The junction form is measured (Windows VM), and the link form is
+      not.
   [git.worktree_create](docs/protocol/git-worktree-create.md#the-held-git-directory)
   has the rules for a reader, and its record has the cells.
 - In the state `shadow` `git.worktree_create` writes into the git directory of

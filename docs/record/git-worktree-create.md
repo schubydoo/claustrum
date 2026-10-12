@@ -443,8 +443,10 @@ To use the method, read [git.worktree_create](../protocol/git-worktree-create.md
     control with the real path in the request and in the record, and claustrum
     equals `5fd08069` there (the same VM). In cell i-ctl the claustrum build of
     that round kept the entry, and git refused the add. The compare with the
-    path as sent came after that round. It has a test, and it ran on no VM.
-    Not measured: that record on `89cb6289` and on a Linux VM, and a request
+    path as sent came after that round. Round `val-s3p2b2-13` ran it: both
+    builds remove the entry and succeed in cell i-ctl (Linux VM, with
+    `baseRepo` through a symbolic link, and macOS VM, 2 of 2 runs).
+    Not measured: that record on `89cb6289`, and a request
     and a record through two different symlinks. claustrum keeps the entry in
     that last state.
   - An entry that holds a `locked` file stays (cells A9 and A9b, an empty file).

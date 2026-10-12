@@ -204,7 +204,9 @@ func undoFailedCheckout(u gitUse, repo, worktreePath, branch string, cp worktree
 	// junction that is put at `repo\.git` while step A clears a leaf of 5000
 	// files, 5fd08069 keeps the registration and the branch and answers that
 	// they remain (table S2 of val-s3p2b2-12-windows, both forms of T, Windows
-	// VM, 2 of 2 runs). Linux and macOS are not measured for the second test.
+	// VM, 2 of 2 runs). With a symbolic link, 5fd08069 and claustrum do the
+	// same (cells k4 of val-s3p2b2-13-linux2, Linux VM, 7 of 7 runs, and of
+	// val-s3p2b2-13-macos, macOS VM, 21 of 21 runs).
 	var heldErr error
 	var heldRegistration string
 	held := false

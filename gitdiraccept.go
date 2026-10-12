@@ -30,7 +30,9 @@ import (
 //     (acceptGitDir). The open folder must have that identity. While it is
 //     open, no new folder gets that identity.
 //   - Each later step tests that the path still names that folder (stands). A
-//     step that fails the test refuses the create with the text of that step.
+//     step that fails the test refuses the create with the text of that step,
+//     leaves the refusal to a later step (swapRefusal, answeredElsewhere), or
+//     moves the hold (movedTo).
 //   - The acts of the create inside the git directory go through the held
 //     folder, never through the path. The list is at the top of gitdirheld.go.
 //     The test of a step is therefore no guard of such an act. It decides the
@@ -104,8 +106,9 @@ func realDirText(gitDir string) string {
 // stands only when the entry at the second open is the held folder itself.
 // That is sound for what the test decides: no act of the daemon inside the
 // git directory goes through the path (gitdirheld.go). On a Windows VM the
-// test sees the junction at each swap point of a create (the table of section
-// 2 of val-s3p2b2-12-windows).
+// test sees the junction at points 1 to 11 of a create (the table of section
+// 2 of val-s3p2b2-12-windows). The test after the read-tree call came after
+// that round (not run on a VM).
 func gitDirIdentity(path string) os.FileInfo {
 	fi, err := os.Lstat(path)
 	if err != nil || !goesAsTree(fi.Mode()) {
@@ -206,9 +209,10 @@ func (a *acceptedGitDir) release() {
 // stands reports whether the path still names the held folder, as a real
 // directory.
 //
-// The spelling of the request is tested too (sent). A `.git` that is a
-// symbolic link before the request is resolved by the trust check, so path is
-// its target. A link that then leads to another folder is seen through sent.
+// The spelling of the request is tested too (sent). On Linux and macOS a
+// `.git` that is a symbolic link before the request is resolved by the trust
+// check, so path is its target. A link that then leads to another folder is
+// seen through sent.
 // With such a change after `rev-parse --absolute-git-dir`, 5fd08069 fails the
 // create and leaves no branch, registration or folder of the new worktree
 // (cell dlink-swap of val-s3p2b2-10-linux2 and cell d-dswap of

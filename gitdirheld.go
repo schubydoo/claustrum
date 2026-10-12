@@ -43,8 +43,11 @@ import (
 //   - Git itself, which takes the git directory as a path.
 //   - A request that holds no git directory: "shadowDirOff":true, the state
 //     fallback-git and a server with no run folder.
-//   - On Linux and macOS, a `worktrees` entry that is a symbolic link, and the
-//     registrations folder of another git directory (registrationsRoot).
+//   - On Linux and macOS, a `worktrees` entry that is a symbolic link
+//     (registrationsRoot).
+//   - On every system, the stale step and a registrations folder when
+//     `<baseRepo>/.git` is not the held folder, such as a daemon GIT_DIR of
+//     another repository (from the code, not measured).
 //   - The reads of the create that decide a refusal.
 //
 // One step takes a new folder from the path, on Linux and macOS: right after
