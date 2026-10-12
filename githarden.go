@@ -449,6 +449,11 @@ func hardenedGitCheckout(ctx context.Context, u gitUse, leaf, gitDir, indexFile 
 		r := runListing(ctx, leaf, gitDir, precursorEnv(false, pin))
 		pre = &r
 	}
+	// On Windows the path of the git directory must still name the held folder
+	// after the first listing (errGitDirChanged).
+	if shadowStagesAdd && u.swapped("listed") {
+		return "", false, errGitDirChanged
+	}
 	hooks := pre.hooks()
 	env := append(hardenedGitEnv(false, pin, hooks), "GIT_INDEX_FILE="+indexFile)
 	list := slices.Clone(filters.args)
@@ -500,6 +505,30 @@ func hardenedGitCheckout(ctx context.Context, u gitUse, leaf, gitDir, indexFile 
 	return errBuf.String(), drained, err
 }
 
+// Two errors of the checkout of a create on Windows, for a git directory that
+// is no longer the folder that the create holds. The rows are of 5fd08069 with
+// a junction at `repo\.git` (table of section 2 of val-s3p2b2-12-windows, both
+// forms of T, Windows VM, 3 of 3 runs). In both rows the leaf is gone at the
+// reply, and the registration and the branch stay.
+//
+//   - errGitDirChanged: the junction was put there while the first listing of
+//     the checkout ran (the call 11 of that build). No other call follows. The
+//     text is `git worktree add failed (checkout): this repository's git
+//     config cannot be used: …; and the undo could not finish for <leaf>: the
+//     worktree registration and the branch remain; …`.
+//   - errGitDirNotReal: the junction was put there after the read-tree call
+//     ended (the point 13 of that build). The registration gets no index. The
+//     text is `git worktree add failed (checkout): ".git" is a link or a file
+//     where Claude needs a real directory; …` with the same undo text.
+//
+// A junction that is put there while the second listing runs gets no test:
+// the read-tree call then runs and fails by itself (points 11 and 12).
+// Linux and macOS are not measured at these two steps and keep their steps.
+var (
+	errGitDirChanged = errors.New("the git directory changed after the first listing of the checkout")
+	errGitDirNotReal = errors.New("the git directory changed after the read-tree call")
+)
+
 // runWorktreeCheckout is the read-tree checkout of git.worktree_create. It reads rev
 // into a new index in a fresh temporary directory, fills leaf from it, and, when
 // git exits 0, places that index in adminDir, the new worktree's registration
@@ -533,8 +562,8 @@ func runWorktreeCheckout(ctx context.Context, u gitUse, leaf, workTree, gitDir, 
 		"--git-dir="+gitDir, "--work-tree="+workTree,
 		"read-tree", "-u", "--reset", "--no-recurse-submodules", rev)
 	if err == nil || drained {
-		if createStepHook != nil && u.accepted != nil {
-			createStepHook("index")
+		if u.swapped("index") && shadowStagesAdd {
+			return stderr, drained, errGitDirNotReal, nil
 		}
 		if u.accepted != nil && tested.path == "" {
 			// A create that holds its git directory, with no registration that

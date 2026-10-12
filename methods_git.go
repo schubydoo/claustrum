@@ -1237,9 +1237,8 @@ func gitWorktreeCreateLocked(req *request, p *gitParams, repo string) response {
 	// After a call that answered, the path of the git directory must still name
 	// the held folder. On Windows the create is refused here (cells X1c-06 and
 	// X1p-06: a junction that was put at `.git` after the call). The text names
-	// the git directory of the request. A `.git` that became a file or a link
-	// to another git directory, so that git answered a real folder, is not
-	// measured: it gets the same text. On Linux and macOS 5fd08069 makes more
+	// the git directory of the request. Two states get no refusal at this step
+	// on Windows (answeredElsewhere). On Linux and macOS 5fd08069 makes more
 	// calls before it refuses (cells swap-copy and swap-marker of
 	// val-s3p2b2-9-macos, macOS VM): the refusal is at the step of the add
 	// (swapRefusal, worktreeAdd).
@@ -1257,15 +1256,19 @@ func gitWorktreeCreateLocked(req *request, p *gitParams, repo string) response {
 	//     path leads to it since a step before the call: the create goes on in
 	//     that directory (acceptedGitDir.movedTo).
 	if gitAnswered && req.use.swapped("answered") {
-		if shadowStagesAdd {
+		switch {
+		case shadowStagesAdd && answeredElsewhere(req.use, gitDir):
+			// No refusal here: the step of the add comes next.
+		case shadowStagesAdd:
 			return refuseAdd("git worktree add failed: " + listEntriesPrefix + realDirText(req.use.gitDir))
-		}
-		if _, err := os.Lstat(filepath.Join(gitDir, "commondir")); err != nil && !errors.Is(err, fs.ErrNotExist) {
-			return refuseAdd(gitDirAddWrap + err.Error())
-		}
-		if next := req.use.accepted.movedTo(gitDir, repo); next != nil {
-			defer next.release()
-			req.use.accepted = next
+		default:
+			if _, err := os.Lstat(filepath.Join(gitDir, "commondir")); err != nil && !errors.Is(err, fs.ErrNotExist) {
+				return refuseAdd(gitDirAddWrap + err.Error())
+			}
+			if next := req.use.accepted.movedTo(gitDir, repo); next != nil {
+				defer next.release()
+				req.use.accepted = next
+			}
 		}
 	}
 	// A caller-supplied timeoutMs (4534d86) bounds the add, the checkout and the copy
@@ -1308,8 +1311,10 @@ func gitWorktreeCreateLocked(req *request, p *gitParams, repo string) response {
 		// deleted the leaf or put a new directory in its place. Then the request
 		// answers the attach add's own failure. Measured against f6010b97 and 90fca6e6
 		// on a macOS VM, with the leaf deleted and with it replaced by a new empty
-		// directory. A leaf left as it was gets the fallback.
-		if verifyCreatedWorktree(p.WorktreePath, checkpoint) != "" {
+		// directory. A leaf left as it was gets the fallback. An add that did not
+		// run on Windows gets no fallback either (addNotPrepared).
+		var notPrepared *addNotPrepared
+		if verifyCreatedWorktree(p.WorktreePath, checkpoint) != "" || errors.As(addErr, &notPrepared) {
 			undoFailedAdd(p.WorktreePath, checkpoint)
 			return okResult(req.ID, worktreeResult{
 				Success:   false,
@@ -1464,19 +1469,27 @@ func gitWorktreeCreateLocked(req *request, p *gitParams, repo string) response {
 	// worktree registration and the branch remain; remove them by hand before
 	// retrying (".git" is a link or a file …)`. The leaf is gone and the
 	// registration stays (cells X1c-11 and X1p-11 of val-s3p2b2-7-windows,
-	// Windows VM). claustrum tests at two steps: before the file of the
-	// registration and before the read-tree call. The first is not measured.
+	// Windows VM). claustrum tests at two steps before the listings of the
+	// checkout: before the file of the registration and before the first
+	// listing. Neither is a row of 5fd08069: that build makes no call between
+	// its `worktree add` and that listing. Two more tests are in the checkout,
+	// on Windows (errGitDirChanged).
+	// goneCheckout answers a checkout that stops for such a git directory, with
+	// detail after the words of the checkout.
+	goneCheckout := func(detail string) response {
+		undo, kept := undoFailedCheckout(req.use, repo, p.WorktreePath, createdBranch, checkpoint, tested)
+		return okResult(req.ID, worktreeResult{
+			Success:    false,
+			Error:      "git worktree add failed (checkout): " + detail + undo,
+			ErrorCode:  "worktree_add_failed",
+			BranchKept: kept,
+		})
+	}
 	swappedCheckout := func(step string) (response, bool) {
 		if !req.use.swapped(step) {
 			return response{}, false
 		}
-		undo, kept := undoFailedCheckout(req.use, repo, p.WorktreePath, createdBranch, checkpoint, tested)
-		return okResult(req.ID, worktreeResult{
-			Success:    false,
-			Error:      "git worktree add failed (checkout): " + repoConfigPrefix + gitDirLinkText(req.use.gitDir) + undo,
-			ErrorCode:  "worktree_add_failed",
-			BranchKept: kept,
-		}), true
+		return goneCheckout(repoConfigPrefix + gitDirLinkText(req.use.gitDir)), true
 	}
 	if resp, ok := swappedCheckout("registration"); ok {
 		return resp
@@ -1535,6 +1548,10 @@ func gitWorktreeCreateLocked(req *request, p *gitParams, repo string) response {
 			indexDir, tested, checkoutRev, req.use.gitDirPin(repo), filters)
 		refusedName, filterRefused := filters.refusedFilter(rtStderr)
 		switch {
+		case errors.Is(rtErr, errGitDirChanged):
+			return goneCheckout(repoConfigPrefix + gitDirLinkText(req.use.gitDir))
+		case errors.Is(rtErr, errGitDirNotReal):
+			return goneCheckout(realDirText(req.use.gitDir))
 		case installErr != nil:
 			// git exited 0, and the index did not reach the registration. On Linux and
 			// macOS VMs 89cb6289 answers that as a failed checkout and rolls back (rows

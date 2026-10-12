@@ -282,6 +282,31 @@ func TestStagedAddWithASwappedGitDir(t *testing.T) {
 			t.Errorf("the folder of the daemon still holds %q", got)
 		}
 	})
+	// Part C and cells CX of val-s3p2b2-12-windows (Windows VM): a file
+	// `gitdir: <X>` is at the path. 5fd08069 answers the text of a git
+	// directory that is no real directory, and git does not run. Without the
+	// test of the kind of the entry the text is that of a config behind a
+	// link.
+	t.Run("a file before the folder of the add", func(t *testing.T) {
+		f := newStagedSwapFixture(t)
+		atStep(t, "prepare", func() {
+			if err := os.Rename(f.gitDir, f.gitDir+"-real"); err != nil {
+				t.Errorf("the rename of the git directory: %v", err)
+				return
+			}
+			mustWrite(t, f.gitDir, "gitdir: "+filepath.ToSlash(f.target.dir)+"\n")
+		})
+		_, stderr, err := stagedAdd(t, f.repoFolderFixture, f.u)
+		const want = `cannot prepare the repository's worktrees directory: ".git" is a link or a file where Claude needs a real directory; put the directory itself in its place`
+		var notPrepared *addNotPrepared
+		if !errors.As(err, &notPrepared) || err.Error() != want || stderr != "" {
+			t.Errorf("the add = %v, %q\nwant %s", err, stderr, want)
+		}
+		f.target.untouched(t)
+		if _, err := os.Lstat(filepath.Join(f.gitDir+"-real", "refs", "heads", "w1")); !os.IsNotExist(err) {
+			t.Errorf("the branch of a create that was refused before git: %v", err)
+		}
+	})
 	t.Run("after the test of that step", func(t *testing.T) {
 		f := newStagedSwapFixture(t)
 		swapAt(t, "prepared", f.gitDir, f.target.dir)
@@ -361,10 +386,67 @@ func TestStagedAddWithAFileAtWorktrees(t *testing.T) {
 	if err == nil || err.Error() != want || stderr != "" {
 		t.Errorf("the add = %v, %q\nwant %s", err, stderr, want)
 	}
+	// The create in attach mode makes no second add after this error (table
+	// S9 of val-s3p2b2-12-windows).
+	var notPrepared *addNotPrepared
+	if !errors.As(err, &notPrepared) {
+		t.Errorf("the add = %T, want the error of an add that did not run", err)
+	}
 	if got := mustRead(t, worktrees); got != "a file\n" {
 		t.Errorf("the file at worktrees = %q", got)
 	}
 	if got := addFolders(t, u.folder); len(got) != 0 {
 		t.Errorf("the folder of the daemon still holds %q", got)
+	}
+}
+
+// TestAnsweredElsewhere pins the two states that get no refusal right after
+// `rev-parse --absolute-git-dir` on Windows (table of section 2 and part C of
+// val-s3p2b2-12-windows, Windows VM). A link at the path with an answer that
+// names the path keeps the refusal, and so does a path that still names the
+// held folder. Without the test of the answered directory the first row is
+// false, and without the test of the file the second one is.
+func TestAnsweredElsewhere(t *testing.T) {
+	for _, row := range []struct {
+		name string
+		// entry is what takes the place of the git directory: "" for no
+		// change, "link" or "file".
+		entry    string
+		answered func(gitDir, other string) string
+		want     bool
+	}{
+		{"point 5: git answered the folder behind the link", "link", func(_, other string) string { return other }, true},
+		{"part C: a file at the path after the call", "file", func(gitDir, _ string) string { return gitDir }, true},
+		{"point 6: a link at the path after the call", "link", func(gitDir, _ string) string { return gitDir }, false},
+		{"no change", "", func(gitDir, _ string) string { return gitDir }, false},
+	} {
+		t.Run(row.name, func(t *testing.T) {
+			base := resolveTestRoot(t, t.TempDir())
+			gitDir, other := filepath.Join(base, ".git"), filepath.Join(base, "other")
+			for _, p := range []string{gitDir, other} {
+				if err := os.Mkdir(p, 0o755); err != nil {
+					t.Fatal(err)
+				}
+			}
+			u := gitUse{gitDir: gitDir, accepted: acceptGitDir(gitDir, gitDirIdentity(gitDir))}
+			if u.accepted == nil {
+				t.Fatal("the folder is not accepted")
+			}
+			defer u.accepted.release()
+			if row.entry != "" {
+				if err := os.Rename(gitDir, gitDir+"-real"); err != nil {
+					t.Fatal(err)
+				}
+			}
+			switch row.entry {
+			case "link":
+				linkAt(t, gitDir, other)
+			case "file":
+				mustWrite(t, gitDir, "gitdir: "+filepath.ToSlash(other)+"\n")
+			}
+			if got := answeredElsewhere(u, row.answered(gitDir, other)); got != row.want {
+				t.Errorf("answeredElsewhere = %v, want %v", got, row.want)
+			}
+		})
 	}
 }

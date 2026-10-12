@@ -198,16 +198,28 @@ func undoFailedCheckout(u gitUse, repo, worktreePath, branch string, cp worktree
 	// registrations folder through it. With tested not set,
 	// acceptedGitDir.removeCreatedRegistration does. heldRegistration is the
 	// path that the `.git` file of the leaf names now. A path that changes
-	// after this test leads the delete nowhere else.
+	// after the tests leads the delete nowhere else.
+	//
+	// The path is tested two times: here, and again after step A. With a
+	// junction that is put at `repo\.git` while step A clears a leaf of 5000
+	// files, 5fd08069 keeps the registration and the branch and answers that
+	// they remain (table S2 of val-s3p2b2-12-windows, both forms of T, Windows
+	// VM, 2 of 2 runs). Linux and macOS are not measured for the second test.
 	var heldErr error
 	var heldRegistration string
-	held := u.accepted != nil && !u.accepted.stands()
-	switch {
-	case held:
-		tested = testedRegistration{}
+	held := false
+	testHeld := func(step string) {
+		if held || !u.swapped(step) {
+			return
+		}
+		held, tested = true, testedRegistration{}
 		if u.accepted.moved {
 			heldErr = errors.New(realDirText(u.accepted.path))
 		}
+	}
+	testHeld("undo")
+	switch {
+	case held:
 	case tested.path != "":
 	case u.accepted != nil:
 		if admin := worktreeAdminDir(worktreePath); admin != "" {
@@ -229,6 +241,7 @@ func undoFailedCheckout(u gitUse, repo, worktreePath, branch string, cp worktree
 			return fmt.Sprintf("; and the undo could not finish for %s: %s; remove them by hand before retrying (%s)", worktreePath, remain, detail), false
 		}
 	}
+	testHeld("leaf cleared")
 	// A registration that cannot be deleted stays, and then the branch step does not
 	// run: 89cb6289 runs no git call after it (row A14, Linux VM).
 	var res branchStepResult

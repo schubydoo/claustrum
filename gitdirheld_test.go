@@ -162,6 +162,48 @@ func TestRollbackOfAHeldCreate(t *testing.T) {
 	}
 }
 
+// TestRollbackWithASwapWhileTheLeafGoes must match table S2 of
+// val-s3p2b2-12-windows (Windows VM): the link takes the place of the git
+// directory while the rollback clears the leaf. 5fd08069 then keeps the
+// registration and the branch and answers that they remain. The leaf is gone.
+// Without the second test of the held folder the recorder gets the delete of
+// the registration, and the branch step runs.
+func TestRollbackWithASwapWhileTheLeafGoes(t *testing.T) {
+	f := newHeldFixture(t)
+	leaf, stderr, err := stagedAdd(t, f.repoFolderFixture, f.u)
+	if err != nil {
+		t.Fatalf("the add failed: %v, %s", err, stderr)
+	}
+	f.u.accepted.moved = true
+	cp := checkpointCreatedWorktree(leaf)
+	t.Cleanup(cp.release)
+	atStep(t, "leaf cleared", func() {
+		if err := os.Rename(f.gitDir, f.realDir); err != nil {
+			t.Errorf("the rename of the git directory: %v", err)
+			return
+		}
+		linkAt(t, f.gitDir, f.other)
+	})
+	text, kept := undoFailedCheckout(f.u, f.repo, leaf, "w1", cp, testedRegistration{})
+	want := "; and the undo could not finish for " + leaf + ": the worktree registration and the branch remain; " +
+		`remove them by hand before retrying (".git" is a link or a file where Claude needs a real directory; put the directory itself in its place)`
+	if text != want || kept {
+		t.Errorf("the undo text = %q, kept %v\nwant %q", text, kept, want)
+	}
+	if len(*f.removals) != 0 {
+		t.Errorf("the rollback asked to remove %q, want nothing", *f.removals)
+	}
+	for _, name := range []string{filepath.Join("worktrees", "w1", "HEAD"), filepath.Join("refs", "heads", "w1")} {
+		if _, err := os.Lstat(filepath.Join(f.realDir, name)); err != nil {
+			t.Errorf("%s in the real git directory: %v, want it kept", name, err)
+		}
+	}
+	if _, err := os.Lstat(leaf); !os.IsNotExist(err) {
+		t.Errorf("the leaf: %v, want it gone", err)
+	}
+	f.otherUntouched(t)
+}
+
 // TestHeldIndexPlacement is the guard test of the index placement. After the
 // swap the index goes into the registration of the held folder, and the index
 // of T keeps its bytes. No temporary file stays. With a placement by the path

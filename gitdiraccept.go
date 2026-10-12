@@ -221,6 +221,39 @@ func (a *acceptedGitDir) stands() bool {
 	return err == nil && os.SameFile(sent, a.info)
 }
 
+// answeredElsewhere reports the two states in which a create on Windows gets
+// no refusal right after `rev-parse --absolute-git-dir`, although the path no
+// longer names the held folder. gitDir is the directory that git answered.
+// The rows are of 5fd08069 on a Windows VM (val-s3p2b2-12-windows, 2 or 3 runs
+// each):
+//
+//   - Git answered another directory than the held one: a junction to a copy T
+//     of the git directory, or a directory symbolic link to the git directory
+//     X of a second repository, was put at `.git` before the call. 5fd08069
+//     goes on and refuses at the step of the add with `git worktree add
+//     failed: this repository's git config cannot be used: …` (table of
+//     section 2, point 5, and part C, the symbolic link at point 5). With the
+//     junction it makes three calls on T first: one read of the config of T, a
+//     listing with `--git-dir=<T>` and `rev-parse --show-toplevel` in T.
+//     claustrum makes none of them.
+//   - The path is a regular file now: a file `gitdir: <X>` was put at `.git`
+//     after the call. 5fd08069 goes on and refuses before the `worktree add`
+//     with the text of openAddStage (part C, the file at point 6). Its
+//     listing of the add carries GIT_DIR=<X> and a copy of X there. The
+//     listing of claustrum keeps the variables of the request.
+//
+// A link that was put there after the call keeps the refusal of this step
+// (point 6 of both forms, and the symbolic link at point 6 of part C).
+// Another real directory at the path is not measured: it keeps that refusal
+// too.
+func answeredElsewhere(u gitUse, gitDir string) bool {
+	if !u.accepted.isAt(gitDir) {
+		return true
+	}
+	fi, err := os.Lstat(u.gitDir)
+	return err == nil && fi.Mode().IsRegular()
+}
+
 // movedTo is the hold of a create on the git directory gitDir that git
 // answered, when that is another real directory than the held one and passes
 // the gate. It is nil in every other case. repo is the baseRepo of the create.
@@ -283,12 +316,22 @@ func (u gitUse) swapped(step string) bool {
 // the create goes on.
 //
 // The trust check can also pin another git directory than the held one: a
-// `.git` that became a file with `gitdir: <X>`, or a symbolic link to X, where
-// X is a git directory that the trust check accepts.
+// `.git` that became a file with `gitdir: <X>`, or on Linux and macOS a
+// symbolic link to X, where X is a git directory that the trust check
+// accepts. On Windows a directory symbolic link at `.git` is pinned as it is
+// spelled, like a junction (gitDirIsSymlink).
 //
-//   - On Windows the step then refuses with the text of a git directory
-//     behind a link, and no call runs in X. That state is not measured on
-//     5fd08069: the text is the one of the measured junction rows.
+//   - On Windows the step `add` then runs the gate on X, and a gate that
+//     passes gives no refusal. With a file `gitdir: <X>` at `.git` after
+//     `rev-parse --absolute-git-dir`, 5fd08069 makes the call about the
+//     repository, one read of a config and the listing of the add, and then
+//     refuses before the `worktree add` (part C of val-s3p2b2-12-windows, the
+//     file at point 6, Windows VM, 2 of 2 runs). That refusal is in
+//     openAddStage. Each other step refuses with the text of a git directory
+//     behind a link, and no call runs in X. Those steps are not measured on
+//     5fd08069 for a file: the text is the one of the junction rows. The
+//     step `branch` is one of them, so no branch call runs with a `.git` file
+//     that names another repository.
 //   - On Linux and macOS the gate runs on that git directory, and a gate that
 //     passes gives no refusal here. With a symbolic link at `.git` to a copy
 //     of the git directory, put there after `rev-parse --absolute-git-dir`,
@@ -305,7 +348,7 @@ func (u gitUse) swapRefusal(step, dir string) string {
 	if !u.shadow() || daemonCommonDirStays() || t.verdict != gitDirTrusted || t.pinCommonDir == "" {
 		return ""
 	}
-	if shadowStagesAdd && !sameGitDirPath(t.pinCommonDir, u.gitDir) {
+	if shadowStagesAdd && step != "add" && !sameGitDirPath(t.pinCommonDir, u.gitDir) {
 		return repoConfigPrefix + gitDirLinkText(u.gitDir)
 	}
 	if u.host != nil && u.host.asksGit(t, false) && u.host.askGit(t, dir).bad() {

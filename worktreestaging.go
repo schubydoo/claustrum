@@ -6,7 +6,6 @@ import (
 	"crypto/rand"
 	"encoding/hex"
 	"errors"
-	"fmt"
 	"io"
 	"io/fs"
 	"os"
@@ -231,7 +230,10 @@ type addStage struct {
 //     answers it for a junction at `.git` to a copy of the git directory and to
 //     a folder that is no git directory (cells X1c-09 and X1p-09). It makes
 //     nothing in the target of the junction. Another real directory at that
-//     path is not measured: it gets the same text.
+//     path is not measured: it gets the same text. With a file `gitdir: <X>`
+//     at that path the text is `".git" is a link or a file where Claude needs
+//     a real directory; …` (part C and cells CX of val-s3p2b2-12-windows, the
+//     file at point 6 and at the listing of the add, 2 of 2 runs each).
 //   - `worktrees` is a file: `"<git directory>\\worktrees" is not a directory`
 //     (table W3, with 8 git calls on both builds). A link or a junction there
 //     is not measured: it gets the same text.
@@ -245,6 +247,9 @@ func openAddStage(u gitUse) (*addStage, error) {
 	switch {
 	case u.accepted != nil:
 		if u.swapped("prepare") {
+			if fi, err := os.Lstat(u.gitDir); err == nil && fi.Mode().IsRegular() {
+				return nil, errors.New(realDirText(u.gitDir))
+			}
 			return nil, errors.New(repoConfigPrefix + gitDirLinkText(u.gitDir))
 		}
 		if createStepHook != nil {
@@ -424,6 +429,18 @@ type addIncomplete struct{ text string }
 
 func (e *addIncomplete) Error() string { return e.text }
 
+// addNotPrepared is the error of a `worktree add` call that did not run,
+// because a step before it failed (openAddStage). A create in attach mode then
+// makes no second add with a new branch. With `existingBranch` and a file at
+// `.git\worktrees`, 5fd08069 answers `git worktree add failed: cannot prepare
+// the repository's worktrees directory: "C:\\o\\w\\repo\\.git\\worktrees" is
+// not a directory`, one time, after 11 git calls (table S9 of
+// val-s3p2b2-12-windows, Windows VM, 2 of 2 runs). The other failed steps are
+// not measured in attach mode: they get the same rule.
+type addNotPrepared struct{ text string }
+
+func (e *addNotPrepared) Error() string { return e.text }
+
 // worktreeAddStaged runs one `worktree add` of git.worktree_create with the
 // folder `.s<n>`, and the steps after a good call. The listing before the call
 // carries GIT_COMMON_DIR=<copy of the repository>, and the call carries
@@ -436,7 +453,7 @@ func worktreeAddStaged(ctx context.Context, u gitUse, repo, leaf string, cp work
 	cmd := hardenedGitCmd(ctx, u, repo, false, nil, args...)
 	st, err := openAddStage(u)
 	if err != nil {
-		return "", fmt.Errorf(prepareWorktreesPrefix+"%w", err)
+		return "", &addNotPrepared{text: prepareWorktreesPrefix + err.Error()}
 	}
 	defer st.close()
 	cmd.Env = withAddCopy(cmd.Env, u.repoDir, st.dir)
