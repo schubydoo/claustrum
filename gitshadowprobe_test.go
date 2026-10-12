@@ -348,9 +348,10 @@ func TestProbeAnswers(t *testing.T) {
 			text: "git could not check this repository on the remote machine: at %[1]q: exit status 1"},
 		{name: "exit 128, no text", exit: 128, calls: 1, version: true,
 			text: "git could not check this repository on the remote machine: at %[1]q: exit status 128"},
-		// Exit 1 with a text has no row: claustrum answers the error.
-		{name: "exit 1 with a text (not measured)", exit: 1, calls: 1, version: true, stderr: "fatal: some text\n",
-			text: "git could not check this repository on the remote machine: at %[1]q: exit status 1"},
+		// Exit 1 with a text: the text of git stands in the place of the exec
+		// error (cells p3 of val-s3p2b2-7-linux2, Linux VM, 13 and 2 calls).
+		{name: "p3: exit 1 with a text", exit: 1, calls: 1, version: true, stderr: "fatal: text of the wrapper for p3\n",
+			text: "git could not check this repository on the remote machine: at %[1]q: fatal: text of the wrapper for p3"},
 		{name: "exit 128, not a git repository", exit: 128, calls: 1,
 			stderr: "fatal: not a git repository (or any of the parent directories): .git\n"},
 		{name: "exit 128, another owner", exit: 128, calls: 1,

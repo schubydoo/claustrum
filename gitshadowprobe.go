@@ -248,9 +248,13 @@ func probeArgs() []string {
 //     .git` (cells D1 and D3 of s3p2-linux2, s3p2-macos and s3p2-windows).
 //   - Exit 1, or exit 128 with no text: the error `git could not check this
 //     repository on the remote machine: at "<root>": exit status <n>`, after
-//     one `git version` call (versionAfterFailure). Another exit code, and
-//     exit 1 with a text, are not measured: they get that error with their
-//     exec error, and the call.
+//     one `git version` call (versionAfterFailure). Exit 1 with a text on the
+//     error output has that text in the place of the exec error: `… at
+//     "<root>": fatal: text of the wrapper for p3`, with the same call count
+//     (cells p3 of val-s3p2b2-7-linux2, Linux VM). The text had one line. With
+//     more lines the last one stands there, as in the cause of a failed start
+//     test (not measured). Another exit code is not measured: it has the rule
+//     of exit 1.
 //   - Exit 0 and another path, or no output: the call runs one more time. The
 //     same answer then gives the error `git and Claude disagree about which
 //     repository holds this folder: …`. With no output the path of git is the
@@ -300,7 +304,7 @@ func (h *shadowHost) askGit(t gitDirTrust, dir string) repoAnswer {
 				return repoAnswer{noRepo: true}
 			}
 			versionAfterFailure()
-			return repoAnswer{text: fmt.Sprintf("git could not check this repository on the remote machine: at %q: %s", root, r.err)}
+			return repoAnswer{text: fmt.Sprintf("git could not check this repository on the remote machine: at %q: %s", root, r.detail())}
 		}
 		found = filepath.FromSlash(r.out)
 		if !filepath.IsAbs(found) {
