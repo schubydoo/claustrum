@@ -945,6 +945,15 @@ func (r *statusRun) git(noLocks bool, excludes string, args ...string) ([]byte, 
 	return cmd.Output()
 }
 
+// errStatusNoFolder is the error of statusChanges for a request whose folder
+// `.gitdir-<n>` cannot be made in the folder of the daemon. git.status then
+// answers isRepo:false. With a folder of the daemon of mode 0500, 5fd08069
+// answers `{"isRepo":false,"clean":false}` after 4 git calls (cell f1-0500 of
+// val-s3p2b2-7-linux2, Linux VM). With the member the folder is in the
+// temporary folder, and a failure there keeps its error text (not measured on
+// 5fd08069).
+var errStatusNoFolder = errors.New("the temporary git folder cannot be made in the folder of the daemon")
+
 // statusChanges builds `changes` for the worktree at path, whose entry passed the
 // gate. It runs four commands in this order, each with cwd `path` (K1 calls 10, 14,
 // 18 and 22):
@@ -969,6 +978,9 @@ func statusChanges(u gitUse, path, common string, e statusEntry) ([]string, erro
 	// val-s3p2b2-3-linux2, Linux VM).
 	tmp, removeTmp, err := u.requestDir(shadowStatusDirPrefix, statusGitDirTempPrefix)
 	if err != nil {
+		if u.inFolder() {
+			return nil, errStatusNoFolder
+		}
 		return nil, err
 	}
 	defer removeTmp()

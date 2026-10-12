@@ -406,6 +406,13 @@ const (
 // The shutdown of the daemon removes its folder with every such entry in it,
 // also while the request runs (close). 5fd08069 does so with a `.gitdir-<n>`
 // in flight (s3p2-linux2 cell F3, Linux VM).
+//
+// The error of a folder that cannot be made in the folder of the daemon names
+// its full path, with the operation `mkdir`. With a folder of the daemon of
+// mode 0500 a create of 5fd08069 answers `git worktree add failed (checkout):
+// mkdir <S>/.index-<n>: permission denied` (cell f1-0500 of
+// val-s3p2b2-7-linux2, Linux VM). A folder of the daemon that cannot be opened
+// is not measured: it gives the error of that open.
 func (u gitUse) requestDir(shadowPrefix, tempPrefix string) (dir string, remove func(), err error) {
 	if !u.inFolder() {
 		dir, err = os.MkdirTemp("", tempPrefix)
@@ -430,6 +437,10 @@ func (u gitUse) requestDir(shadowPrefix, tempPrefix string) (dir string, remove 
 			continue
 		}
 		if err != nil {
+			var pe *os.PathError
+			if errors.As(err, &pe) {
+				err = &os.PathError{Op: "mkdir", Path: filepath.Join(u.folder, name), Err: pe.Err}
+			}
 			return "", func() {}, err
 		}
 		rel := filepath.Join(filepath.Base(u.folder), name)

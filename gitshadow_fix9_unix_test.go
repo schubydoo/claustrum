@@ -93,3 +93,37 @@ func TestNoRepositoryCallsWithAnUnreadableHead(t *testing.T) {
 		t.Errorf("git-shadow holds %v, want no folder of the daemon", got)
 	}
 }
+
+// TestDaemonFolderThatTakesNoNewEntry: the folder of the daemon has mode 0500
+// after the first request. git.status then answers isRepo:false, and a create
+// answers the error of the mkdir with the full path of its index folder. On
+// 5fd08069 the lines are `{"isRepo":false,"clean":false}` and `git worktree add
+// failed (checkout): mkdir <S>/.index-<n>: permission denied` (cell f1-0500 of
+// val-s3p2b2-7-linux2, Linux VM).
+func TestDaemonFolderThatTakesNoNewEntry(t *testing.T) {
+	if os.Getuid() == 0 {
+		t.Skip("the root user makes an entry in a folder of mode 0500")
+	}
+	f := newSeededShadowFixture(t)
+	if raw, _ := f.info(t, f.repo, nil); !strings.Contains(raw, `"settingsControl":"shadow"`) {
+		t.Fatalf("git.info = %s", raw)
+	}
+	dir := daemonFolder(t, f.run)
+	if err := os.Chmod(dir, 0o500); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = os.Chmod(dir, 0o700) })
+
+	if raw, _ := f.call(t, "git.status", map[string]any{"path": f.wt, "baseRepo": f.repo}); raw != entryStatusNoRepo {
+		t.Errorf("git.status = %s\nwant %s", raw, entryStatusNoRepo)
+	}
+	leaf := filepath.Join(f.repo, ".claude", "worktrees", "w1")
+	raw, _ := f.call(t, "git.worktree_create", map[string]any{"baseRepo": f.repo, "branchName": "w1", "worktreePath": leaf})
+	start := `{"jsonrpc":"2.0","id":1,"result":{"success":false,"error":"git worktree add failed (checkout): mkdir ` +
+		strings.Trim(jsonQuoted(t, filepath.Join(dir, shadowIndexDirPrefix)), `"`)
+	rest, ok := strings.CutPrefix(raw, start)
+	n, tail, _ := strings.Cut(rest, ":")
+	if !ok || n == "" || strings.Trim(n, "0123456789") != "" || tail != ` permission denied","errorCode":"worktree_add_failed"}}` {
+		t.Errorf("git.worktree_create = %s\nwant it to start %s<n>: permission denied", raw, start)
+	}
+}

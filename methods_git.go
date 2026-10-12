@@ -663,6 +663,9 @@ func gitStatus(req *request) response {
 	// diff-index. A relative path passes the gate and
 	// then fails here, because git gets it as sent (row n25c).
 	changes, err := statusChanges(req.use, p.Path, common, entry)
+	if errors.Is(err, errStatusNoFolder) {
+		return notRepo
+	}
 	if err != nil {
 		return errResult(req.ID, codeInternal, err.Error())
 	}
