@@ -623,6 +623,13 @@ func gitStatus(req *request) response {
 		return notRepo
 	}
 	common := filepath.Clean(strings.TrimRight(out, "\r"))
+	// On Windows the request goes on with the git directory that git printed,
+	// when it is another spelling of the same folder (usePrintedGitDir).
+	if statusFollowsPrintedGitDir {
+		if msg := req.usePrintedGitDir(t, common); msg != "" {
+			return errResult(req.ID, codeInternal, msg)
+		}
+	}
 	// No `worktrees` folder in the common directory: no further git call (rows n18
 	// and n18c).
 	if fi, err := os.Stat(filepath.Join(common, "worktrees")); err != nil || !fi.IsDir() {
@@ -632,10 +639,16 @@ func gitStatus(req *request) response {
 	if !ok {
 		return notRepo
 	}
-	if ok, err := statusWorkTreeProbe(common, sp.probeTree, statusCommonPin(req.use, common)); err != nil {
+	top, ok, err := statusWorkTreeProbe(common, sp.probeTree, statusCommonPin(req.use, common))
+	if err != nil {
 		return errResult(req.ID, codeInternal, err.Error())
 	} else if !ok {
 		return notRepo
+	}
+	if statusFollowsPrintedGitDir {
+		if s, ok := statusPrintedRootSpelling(p.Path, p.BaseRepo, top); ok {
+			sp.spellings = append(sp.spellings, s)
+		}
 	}
 	entry, ok := statusEntryOf(common, sp)
 	if !ok {

@@ -270,20 +270,98 @@ func linkBelow(base, p string) bool {
 //
 // A listing that fails is a refusal: its text is the hooks refusal, and `git version`
 // runs after it (row o22, Linux VM). A `rev-parse` that fails answers isRepo:false
-// (row n17). claustrum does not read the output of the `rev-parse`. What 89cb6289
-// does with it is not measured.
-func statusWorkTreeProbe(common, workTree string, pin []string) (ok bool, err error) {
+// (row n17). top is the output of the `rev-parse`. On Linux and macOS claustrum
+// does not use it. On Windows it gives one more spelling of `path`
+// (statusPrintedRootSpelling). What 89cb6289 and 5fd08069 do with it is not
+// measured.
+func statusWorkTreeProbe(common, workTree string, pin []string) (top string, ok bool, err error) {
 	ctx, cancel := gitCtx()
 	defer cancel()
 	l := runListing(ctx, common, common, precursorEnv(true, pin))
 	if l.err != nil {
-		return false, statusRefusal(failedListingText(gitUse{}, l, true))
+		return "", false, statusRefusal(failedListingText(gitUse{}, l, true))
 	}
 	cmd := exec.CommandContext(ctx, "git", hardenedProfileArgs(true,
 		"--git-dir="+common, "--work-tree="+workTree, "rev-parse", "--show-toplevel")...)
 	cmd.Dir = common
 	cmd.Env = hardenedGitEnv(true, pin, l.hooks())
-	return cmd.Run() == nil, nil
+	out, runErr := cmd.Output()
+	return strings.TrimRight(string(out), "\r\n"), runErr == nil, nil
+}
+
+// usePrintedGitDir makes the request go on with the git directory common that
+// `rev-parse --absolute-git-dir` printed, when that path is another spelling of
+// the git directory of the request and both are one folder on disk. It returns
+// a refusal text, or "".
+//
+// On a Windows VM a git.status with a `baseRepo` through a junction gets the
+// real path from git: `C:/o/w/repo/.git` for the request path `C:\o\w\jrepo`.
+// 5fd08069 then reads the config of that git directory with one more call,
+// makes a second folder whose name is the sha256 of the real path, and runs its
+// other calls with --git-dir=<real path>, GIT_COMMON_DIR=<that folder> and
+// GIT_OBJECT_DIRECTORY=<real path>\objects (cell D6j-junction of
+// val-s3p2b2-3-windows, request 2, 22 calls. s3p2-windows cell D6j has the two
+// folders). Another letter case of the same path gives no second folder (cell
+// D6c), so the compare of the two spellings ignores case there
+// (sameGitDirPath).
+//
+// The read is the read of the config gate, for the printed path. A refusal of
+// that read is not measured: the request answers it. A request with no copy
+// (the member, the state fallback-git) changes nothing here.
+func (req *request) usePrintedGitDir(t gitDirTrust, common string) string {
+	u := req.use
+	if !u.shadow() || sameGitDirPath(filepath.Clean(common), filepath.Clean(u.gitDir)) || !sameProbeFolder(common, u.gitDir) {
+		return ""
+	}
+	t.pinCommonDir = common
+	msg, read := repoConfigGate(t, false)
+	if msg != "" || read == nil {
+		return msg
+	}
+	use, err := req.shadow.syncRepo(common, read)
+	if err != nil {
+		return shadowRepoFailureText(err)
+	}
+	use.atReply = u.atReply
+	req.use, req.repoRead = use, read
+	return ""
+}
+
+// statusPrintedRootSpelling is one more spelling of a `path` inside baseRepo:
+// the root top that `rev-parse --show-toplevel` printed, joined with the part
+// of `path` below baseRepo. ok is false when top is no absolute path, when
+// `path` is not inside baseRepo, or when that spelling and `path` are not one
+// folder on disk.
+//
+// Only Windows uses it (statusFollowsPrintedGitDir). There the `gitdir` file of
+// a worktree names the real path, and a `path` through a junction at baseRepo
+// has the junction in both spellings of statusPathOf. 89cb6289 and 5fd08069
+// answer isRepo:true for that request, and git prints `C:/o/w/repo` in the call
+// before (s3p2-windows cell D6j and val-s3p2b2-3-windows cell D6j-junction,
+// Windows VM). Which value those builds compare with the `gitdir` file is not
+// in the rows: this spelling is fitted to the one cell.
+func statusPrintedRootSpelling(path, baseRepo, top string) (string, bool) {
+	root := filepath.Clean(filepath.FromSlash(top))
+	if top == "" || !filepath.IsAbs(root) {
+		return "", false
+	}
+	absPath, err := filepath.Abs(filepath.Clean(path))
+	if err != nil {
+		return "", false
+	}
+	absBase, err := filepath.Abs(baseRepo)
+	if err != nil || !pathStrictlyUnder(absPath, absBase) {
+		return "", false
+	}
+	rel, err := filepath.Rel(absBase, absPath)
+	if err != nil {
+		return "", false
+	}
+	spelling := filepath.Join(root, rel)
+	if !sameProbeFolder(spelling, absPath) {
+		return "", false
+	}
+	return spelling, true
 }
 
 // errNotRegularFile is the error of an entry file that is not a regular file.

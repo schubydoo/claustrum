@@ -19,6 +19,13 @@ const shadowLinksWorktrees = false
 // s3p2b-edges2-windows and 47 to 49 of s3p2b-edges3-windows).
 const shadowStagesAdd = true
 
+// statusFollowsPrintedGitDir is true on Windows. The trust check resolves no
+// junction there, so git can print another spelling of the git directory of a
+// request. A git.status then goes on with the printed path (usePrintedGitDir,
+// statusPrintedRootSpelling). 5fd08069 does so on a Windows VM (cell D6j-junction
+// of val-s3p2b2-3-windows).
+const statusFollowsPrintedGitDir = true
+
 // openShadowLockFile makes the lock file of the daemon (0 bytes) and opens it
 // with no sharing. The open handle is the hold. A Windows VM measured the lock
 // file of a live 5fd08069 daemon. Every open with data access fails there, with

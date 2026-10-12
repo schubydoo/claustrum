@@ -17,6 +17,11 @@ const shadowLinksWorktrees = true
 // (s3p2-linux cells H1 and H2, Linux VM. On a macOS VM no such entry was seen).
 const shadowStagesAdd = false
 
+// statusFollowsPrintedGitDir is false on Linux and macOS. The trust check
+// resolves the links of the request path there, and a path through a link gets
+// one folder (s3p2-macos cells B1 and B2, macOS VM).
+const statusFollowsPrintedGitDir = false
+
 // openShadowLockFile makes the lock file of the daemon (0600, 0 bytes) and
 // takes the lock of the daemon on it. The daemon holds the lock until it closes
 // the file. On a Linux VM /proc/locks shows `FLOCK  ADVISORY  WRITE <daemon

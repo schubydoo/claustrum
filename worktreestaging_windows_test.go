@@ -11,7 +11,8 @@ import (
 	"time"
 )
 
-// The Windows side of the staged `worktree add`. No test of this file ran on the host of the build: a Windows run
+// The Windows side of the staged `worktree add` and of git.status through a
+// junction. No test of this file ran on the host of the build: a Windows run
 // must match the cell that each test names. TestCreateStagesTheAddOnWindowsOnly
 // has the good create (cells 44a, 49a and control M1 of cell 48).
 
@@ -111,5 +112,50 @@ func TestSweepRemovesAJunctionAsALink(t *testing.T) {
 	}
 	if text := mustRead(t, filepath.Join(f.target, "marker.txt")); text != "marker of the junction target\n" {
 		t.Errorf("the marker in the target of the junction = %q", text)
+	}
+}
+
+// TestStatusThroughAJunction must match cell D6j-junction of
+// val-s3p2b2-3-windows, request 2: a git.status whose `path` and `baseRepo` go
+// through a junction to the repository. The reply names a repository. The
+// daemon has two folders of a repository: the one of the junction path and the
+// one of the real path. Each call with --git-dir=<git directory> names the real
+// git directory and carries GIT_COMMON_DIR=<the folder of the real path> and
+// GIT_OBJECT_DIRECTORY=<real git directory>\objects.
+func TestStatusThroughAJunction(t *testing.T) {
+	f := newSeededShadowFixture(t)
+	jrepo := filepath.Join(resolveTestRoot(t, t.TempDir()), "jrepo")
+	makeJunction(t, jrepo, f.repo)
+	if raw, _ := f.info(t, jrepo, nil); !strings.Contains(raw, `"isRepo":true`) {
+		t.Fatalf("git.info through the junction = %s", raw)
+	}
+	raw, calls := f.call(t, "git.status", map[string]any{
+		"path": filepath.Join(jrepo, ".claude", "worktrees", "wr"), "baseRepo": jrepo})
+	if !strings.Contains(raw, `"result":{"isRepo":true,`) {
+		t.Errorf("git.status through the junction = %s, want a repository", raw)
+	}
+	folder := filepath.Join(f.run, shadowRootName, daemonFolders(t, f.run)[0])
+	viaJunction := shadowRepoName(filepath.Join(jrepo, ".git"))
+	real := shadowRepoName(f.gitDir)
+	for _, name := range []string{viaJunction, real} {
+		if _, err := os.Lstat(filepath.Join(folder, name, "config")); err != nil {
+			t.Errorf("the folder %s of a repository: %v", name, err)
+		}
+	}
+	n := 0
+	for _, c := range calls {
+		if !slices.Contains(c.argv, "--git-dir="+f.gitDir) {
+			continue
+		}
+		n++
+		if v, _ := envValue(c.env, "GIT_COMMON_DIR"); v != filepath.Join(folder, real) {
+			t.Errorf("the call %q has GIT_COMMON_DIR=%s, want %s", c.argv, v, filepath.Join(folder, real))
+		}
+		if v, _ := envValue(c.env, "GIT_OBJECT_DIRECTORY"); v != filepath.Join(f.gitDir, "objects") {
+			t.Errorf("the call %q has GIT_OBJECT_DIRECTORY=%s, want %s", c.argv, v, filepath.Join(f.gitDir, "objects"))
+		}
+	}
+	if n == 0 {
+		t.Error("no call names the real git directory with --git-dir=")
 	}
 }
