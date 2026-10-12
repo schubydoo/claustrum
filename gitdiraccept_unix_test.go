@@ -169,10 +169,16 @@ func TestCreateWithASwappedGitDir(t *testing.T) {
 //     GIT_DIR=/dev/null follows, and the text is `cannot list the repository's
 //     worktree entries: ".git" is a link or a file …`.
 //
-// The other rows are not measured. A link to the git directory X of a second
-// repository, a copy of the git directory as a real directory, and a swap at
-// another step get the rule of the two rows. A file with `gitdir: <X>` fails
-// the `rev-parse --absolute-git-dir` call, and the create stops there.
+// Two more rows are cells swc-file and swc-link of val-s3p2b2-10-linux2 (Linux
+// VM, and cells c-cfile and c-clink of val-s3p2b2-10-macos). After the call,
+// a file with `gitdir: <X>` gives the `lstat … commondir: not a directory`
+// text with no call after it, and a link to X gives the text of the copy
+// after three calls. Without the lstat the file row gets the link text.
+//
+// The other rows are not measured. A copy of the git directory as a real
+// directory and a swap before the add get the rule of the measured rows. A
+// file with `gitdir: <X>` before the call fails the `rev-parse
+// --absolute-git-dir` call, and the create stops there.
 //
 // No `worktree add` runs, and no folder gets a registration or a branch.
 // Without the test before the plain add each row runs that call.
@@ -189,8 +195,8 @@ func TestCreateWithAnotherGitDirAtThePath(t *testing.T) {
 		{"swap-copy: a link to a copy after the gitdir call", "answered", "link to the copy", prepare, 3},
 		{"swap-marker: a link to no repository after the gitdir call", "answered", "none", list, 1},
 		{"a file that names X", "leaf", "file", "git worktree add failed: cannot locate the repository's git directory: exit status 128", -1},
-		{"a link to X", "leaf", "link", prepare, -1},
-		{"a link to X before the gitdir call", "gitdir", "link", prepare, -1},
+		{"swc-file: a file that names X after the gitdir call", "answered", "file", "git worktree add failed: cannot locate the repository's git directory: lstat <gitdir>/commondir: not a directory", 0},
+		{"swc-link: a link to X after the gitdir call", "answered", "link", prepare, 3},
 		{"a link to X before the add", "add", "link", prepare, -1},
 		{"another real directory", "gitdir", "copy", prepare, -1},
 		{"no repository before the add", "add", "none", list, -1},
@@ -228,8 +234,8 @@ func TestCreateWithAnotherGitDirAtThePath(t *testing.T) {
 			})
 			leaf := filepath.Join(f.repo, ".claude", "worktrees", "w1")
 			raw, calls := f.call(t, "git.worktree_create", map[string]any{"baseRepo": f.repo, "branchName": "w1", "worktreePath": leaf})
-			if got := createError(t, raw); got != row.want {
-				t.Errorf("the error = %s\n    want %s", got, row.want)
+			if got, want := createError(t, raw), strings.ReplaceAll(row.want, "<gitdir>", f.gitDir); got != want {
+				t.Errorf("the error = %s\n    want %s", got, want)
 			}
 			if slices.ContainsFunc(calls, func(c envCall) bool {
 				return slices.Contains(c.argv, "worktree") && slices.Contains(c.argv, "add")
@@ -242,6 +248,10 @@ func TestCreateWithAnotherGitDirAtThePath(t *testing.T) {
 				if held < 0 || len(rest) != row.after {
 					t.Fatalf("%d calls after the gitdir call, want %d", len(rest), row.after)
 				}
+			}
+			if row.after > 0 {
+				held := slices.IndexFunc(calls, func(c envCall) bool { return slices.Contains(c.argv, "--absolute-git-dir") })
+				rest := calls[held+1:]
 				last := rest[len(rest)-1]
 				if !slices.Contains(last.argv, "--list") || last.cwd != f.repo {
 					t.Errorf("the last call = %q in %s, want the listing of the add in the repository", last.argv, last.cwd)
@@ -326,4 +336,160 @@ func TestCreateStepsOfAHeldGitDir(t *testing.T) {
 			t.Errorf("the index of the held folder: %v, want the index of the checkout", err)
 		}
 	})
+}
+
+// TestCreateGoesOnInTheGitDirThatGitAnswers: a symbolic link to another git
+// directory is put at `.git` before `rev-parse --absolute-git-dir`. Git then
+// answers that directory, and the create goes on in it, as on 5fd08069 (cells
+// swb-first and swb-abbrev of val-s3p2b2-10-linux2, Linux VM, and cells
+// b-first and b-abbrev of val-s3p2b2-10-macos, macOS VM). The copy T gets the
+// registration, the branch and the index. The `.git` file of the leaf names
+// `T/worktrees/w1`. The `worktree add` keeps GIT_DIR=<repo>/.git, and the
+// read-tree names T and its objects. The real git directory gets nothing.
+// Without the move of the hold the create is refused before its add.
+//
+// The row with the git directory X of a second repository is not measured: it
+// gets the same rule.
+func TestCreateGoesOnInTheGitDirThatGitAnswers(t *testing.T) {
+	for _, row := range []struct{ name, step, entry string }{
+		{"swb-first: a link to a copy after the first calls", "leaf", "copy"},
+		{"swb-abbrev: a link to a copy before the gitdir call", "gitdir", "copy"},
+		{"a link to X before the gitdir call", "gitdir", "X"},
+	} {
+		t.Run(row.name, func(t *testing.T) {
+			f := newSeededShadowFixture(t)
+			_, other := configRepo(t)
+			copied := filepath.Join(resolveTestRoot(t, t.TempDir()), "copy")
+			if err := os.CopyFS(copied, os.DirFS(f.gitDir)); err != nil {
+				t.Fatal(err)
+			}
+			if raw, _ := f.info(t, f.repo, nil); !strings.Contains(raw, `"settingsControl":"shadow"`) {
+				t.Fatalf("git.info = %s", raw)
+			}
+			target := copied
+			if row.entry == "X" {
+				target = other
+			}
+			swapAt(t, row.step, f.gitDir, target)
+			leaf := filepath.Join(f.repo, ".claude", "worktrees", "w1")
+			raw, calls := f.call(t, "git.worktree_create", map[string]any{"baseRepo": f.repo, "branchName": "w1", "worktreePath": leaf})
+			if !strings.Contains(raw, `"success":true`) {
+				t.Fatalf("git.worktree_create = %s, want a good create", raw)
+			}
+			for _, name := range []string{filepath.Join("worktrees", "w1", "HEAD"), filepath.Join("worktrees", "w1", "index"), filepath.Join("refs", "heads", "w1")} {
+				if _, err := os.Lstat(filepath.Join(target, name)); err != nil {
+					t.Errorf("%s in the directory that git answered: %v", name, err)
+				}
+				if _, err := os.Lstat(filepath.Join(f.gitDir+"-real", name)); !os.IsNotExist(err) {
+					t.Errorf("%s in the real git directory: %v, want none", name, err)
+				}
+			}
+			if got, want := mustRead(t, filepath.Join(leaf, ".git")), "gitdir: "+filepath.Join(target, "worktrees", "w1")+"\n"; got != want {
+				t.Errorf("the .git file of the leaf = %q, want %q", got, want)
+			}
+			add := slices.IndexFunc(calls, func(c envCall) bool { return slices.Contains(c.argv, "worktree") && slices.Contains(c.argv, "add") })
+			tree := slices.IndexFunc(calls, func(c envCall) bool { return slices.Contains(c.argv, "read-tree") })
+			if add < 0 || tree < 0 {
+				t.Fatalf("the calls have no worktree add or no read-tree")
+			}
+			if !slices.Contains(calls[add].env, "GIT_DIR="+f.gitDir) {
+				t.Errorf("the worktree add has no GIT_DIR=%s: %q", f.gitDir, calls[add].env)
+			}
+			if !slices.Contains(calls[tree].argv, "--git-dir="+target) || !slices.Contains(calls[tree].env, "GIT_OBJECT_DIRECTORY="+filepath.Join(target, "objects")) {
+				t.Errorf("the read-tree = %q with %q, want the directory that git answered and its objects", calls[tree].argv, calls[tree].env)
+			}
+		})
+	}
+}
+
+// TestCreateWithAGitDirThatChangedAtTheAdd: right after a good `worktree add`
+// the path of the git directory no longer names the held folder. 5fd08069
+// answers `refusing to create worktree: <leaf> was not populated by git
+// worktree add` with `unsafe_path`, makes no other call and rolls nothing back
+// (cell swb-wtadd of val-s3p2b2-10-linux2, Linux VM, and cells b-postadd and
+// b-precfg of val-s3p2b2-10-macos, macOS VM). The real git directory keeps
+// the registration and the branch, and T gets nothing. Without the test after
+// the add the text is that of a `.git` file that names no registration.
+func TestCreateWithAGitDirThatChangedAtTheAdd(t *testing.T) {
+	f := newSeededShadowFixture(t)
+	copied := filepath.Join(resolveTestRoot(t, t.TempDir()), "copy")
+	if err := os.CopyFS(copied, os.DirFS(f.gitDir)); err != nil {
+		t.Fatal(err)
+	}
+	if raw, _ := f.info(t, f.repo, nil); !strings.Contains(raw, `"settingsControl":"shadow"`) {
+		t.Fatalf("git.info = %s", raw)
+	}
+	swapAt(t, "added", f.gitDir, copied)
+	leaf := filepath.Join(f.repo, ".claude", "worktrees", "w1")
+	raw, calls := f.call(t, "git.worktree_create", map[string]any{"baseRepo": f.repo, "branchName": "w1", "worktreePath": leaf})
+	if got, want := createError(t, raw), "refusing to create worktree: "+leaf+" was not populated by git worktree add"; got != want {
+		t.Errorf("the error = %s\n    want %s", got, want)
+	}
+	if !strings.Contains(raw, `"errorCode":"unsafe_path"`) {
+		t.Errorf("the reply = %s, want the code unsafe_path", raw)
+	}
+	if last := calls[len(calls)-1]; !slices.Contains(last.argv, "worktree") || !slices.Contains(last.argv, "add") {
+		t.Errorf("the last call = %q, want the worktree add", last.argv)
+	}
+	for _, name := range []string{filepath.Join("worktrees", "w1", "HEAD"), filepath.Join("refs", "heads", "w1")} {
+		if _, err := os.Lstat(filepath.Join(f.gitDir+"-real", name)); err != nil {
+			t.Errorf("%s in the real git directory: %v, want it kept", name, err)
+		}
+		if _, err := os.Lstat(filepath.Join(copied, name)); !os.IsNotExist(err) {
+			t.Errorf("%s in the copy: %v, want none", name, err)
+		}
+	}
+}
+
+// TestCreateWithALinkedGitDirThatChanges: `.git` is a symbolic link to a real
+// git directory before the first request, and the daemon serves the
+// repository (cell D part 1 of val-s3p2b2-10-linux2). After `rev-parse
+// --absolute-git-dir` the link is replaced by a link to a copy T. The create
+// is refused before its `worktree add`, and no folder gets a branch, a
+// registration or a leaf. That end state is the one of 5fd08069 in cell
+// dlink-swap (Linux VM) and cell d-dswap (macOS VM). The text is that of the
+// nearest measured step, cell sw-copy: 5fd08069 answers another text there,
+// after a `worktree add` and a rollback. Without the test of the spelling of
+// the request the create answers success in the first git directory.
+func TestCreateWithALinkedGitDirThatChanges(t *testing.T) {
+	f := newSeededShadowFixture(t)
+	realgd := filepath.Join(resolveTestRoot(t, t.TempDir()), "realgd")
+	if err := os.Rename(f.gitDir, realgd); err != nil {
+		t.Fatal(err)
+	}
+	linkAt(t, f.gitDir, realgd)
+	copied := filepath.Join(resolveTestRoot(t, t.TempDir()), "copy")
+	if err := os.CopyFS(copied, os.DirFS(realgd)); err != nil {
+		t.Fatal(err)
+	}
+	if raw, _ := f.info(t, f.repo, nil); !strings.Contains(raw, `"settingsControl":"shadow"`) || !strings.Contains(raw, `"isRepo":true`) {
+		t.Fatalf("git.info = %s", raw)
+	}
+	atStep(t, "answered", func() {
+		if err := os.Remove(f.gitDir); err != nil {
+			t.Errorf("the remove of the link: %v", err)
+			return
+		}
+		linkAt(t, f.gitDir, copied)
+	})
+	leaf := filepath.Join(f.repo, ".claude", "worktrees", "w1")
+	raw, calls := f.call(t, "git.worktree_create", map[string]any{"baseRepo": f.repo, "branchName": "w1", "worktreePath": leaf})
+	want := "git worktree add failed: cannot prepare the repository's worktrees directory: " +
+		`".git" is a link or a file where Claude needs a real directory; put the directory itself in its place`
+	if got := createError(t, raw); got != want {
+		t.Errorf("the error = %s\n    want %s", got, want)
+	}
+	if slices.ContainsFunc(calls, func(c envCall) bool { return slices.Contains(c.argv, "worktree") && slices.Contains(c.argv, "add") }) {
+		t.Error("a worktree add call ran")
+	}
+	if _, err := os.Lstat(leaf); !os.IsNotExist(err) {
+		t.Errorf("the leaf: %v, want it gone", err)
+	}
+	for _, dir := range []string{realgd, copied} {
+		for _, name := range []string{filepath.Join("worktrees", "w1"), filepath.Join("refs", "heads", "w1")} {
+			if _, err := os.Lstat(filepath.Join(dir, name)); !os.IsNotExist(err) {
+				t.Errorf("%s in %s: %v, want none", name, dir, err)
+			}
+		}
+	}
 }

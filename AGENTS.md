@@ -171,7 +171,10 @@ The JSON-RPC surface is identical on every OS. Full internals →
       `<git dir>/worktrees`. Without `worktreeRoot`, the entry stays for a
       `baseRepo` that does not exist.
       Without `worktreeRoot` and with a daemon `GIT_DIR` and `GIT_COMMON_DIR`,
-      `<git dir>` is the repository that `GIT_DIR` names. Each delete goes through an `os.Root`, so no delete
+      `<git dir>` is the repository that `GIT_DIR` names. The remove holds no
+      git directory. A swap of `.git` during a remove leads the delete of the
+      registration into the folder at the path, as on `5fd08069` (Linux and
+      macOS VMs). Each delete goes through an `os.Root`, so no delete
       follows a symlink out of the leaf or its parent. A leaf that is a symlink
       or not a directory is refused. A worktree LOCKED in the `.git` folder of
       `baseRepo` is refused, not deleted, also where `89cb6289` answers success (D22).
@@ -461,8 +464,12 @@ The JSON-RPC surface is identical on every OS. Full internals →
       (`"shadowDirOff":true`, the state `fallback-git`, no run folder), and
       on Linux and macOS a `worktrees` entry that is a symbolic link. The
       index and the rollback delete keep the identity test of D24 there.
-    - Never add a step that resolves the path of the git directory again,
-      and never widen a delete of these steps.
+    - One step takes a new folder from the path. On Linux and macOS, right
+      after `rev-parse --absolute-git-dir`, a path that leads to another git
+      directory which passes the gate becomes the held folder
+      (`acceptedGitDir.movedTo`). `5fd08069` goes on in that directory. Add
+      no other step that resolves the path of the git directory again, and
+      never widen a delete of these steps.
   [git.worktree_create](docs/protocol/git-worktree-create.md#the-held-git-directory)
   has the rules for a reader, and its record has the cells.
 - In the state `shadow` `git.worktree_create` writes into the git directory of

@@ -306,7 +306,7 @@ func writeWorktreeConfig(u gitUse, registration, leaf string, tested testedRegis
 	reg := filepath.Clean(registration)
 	name := filepath.Base(reg)
 	if registration == "" || !u.shadow() || name == "." || name == ".." ||
-		!sameGitDirPath(filepath.Dir(reg), filepath.Join(filepath.Clean(u.gitDir), worktreesSubdir)) {
+		!sameGitDirPath(filepath.Dir(reg), filepath.Join(filepath.Clean(u.heldGitDir()), worktreesSubdir)) {
 		return errors.New("the registration is no entry of the worktrees folder of the repository")
 	}
 	if tested.path == "" && adminRecordChecked && readAdminRecord(reg, leaf) != recordNamesLeaf {

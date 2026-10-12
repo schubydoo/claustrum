@@ -37,6 +37,11 @@ import (
 //     registrations folder of another git directory (registrationsRoot).
 //   - The reads of the create that decide a refusal.
 //
+// One step takes a new folder from the path, on Linux and macOS: right after
+// `rev-parse --absolute-git-dir`, when git answered another real directory
+// that passes the gate (acceptedGitDir.movedTo). The steps above then act
+// through that folder.
+//
 // What 5fd08069 does with a swapped git directory is in the section "A git
 // directory that is replaced while a create runs" of
 // docs/record/git-settings-copy.md. No row has a swap between the test of a

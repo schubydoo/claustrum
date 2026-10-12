@@ -141,9 +141,12 @@ The daemon keeps its own copy of the git settings of the repository, and its git
 
 In the state `shadow` a create holds the git directory of `baseRepo` open from its gate to its reply.
 
-- The git directory must be a real directory at the gate. On Windows a junction there is refused. On Linux and macOS a `.git` that is a symbolic link before the request is resolved first, and the daemon holds its target.
+- The git directory must be a real directory at the gate. On Windows a junction there is refused. On Linux and macOS a `.git` that is a symbolic link before the request is resolved first, and the daemon holds its target. A change of that link is a change of the path too.
 - The daemon's own deletes, renames, new folders and file writes inside the git directory go through the held folder. A folder that is put at the path while the create runs gets none of them.
 - The steps of the create test that the path still names the held folder. If it does not, the create is refused at that step, or at the latest before its `worktree add`.
+- On Linux and macOS one step moves the hold. If the path leads to another git directory before `rev-parse --absolute-git-dir`, and that directory passes the gate, the create goes on in it, as on `5fd08069`.
+- On Linux and macOS, a `.git` that became a file after that call gives `git worktree add failed: cannot locate the repository's git directory: lstat <baseRepo>/.git/commondir: not a directory`.
+- On Linux and macOS, a path that no longer names the held folder right after a good `worktree add` gives `refusing to create worktree: <leaf> was not populated by git worktree add` with `unsafe_path`. Nothing is rolled back.
 - By the path stay: git itself, a request with `"shadowDirOff": true`, a host in the state `fallback-git` or with no run folder, and on Linux and macOS a `worktrees` entry that is a symbolic link.
 
 The [record](../record/git-settings-copy.md#a-git-directory-that-is-replaced-while-a-create-runs) has the cells of `5fd08069` and the text of each measured step.

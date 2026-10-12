@@ -71,6 +71,16 @@ func (u gitUse) inFolder() bool {
 	return u.folder != ""
 }
 
+// heldGitDir is the path of the git directory that the request acts in: the
+// held folder of a create, or gitDir. The two differ only after a create moved
+// its hold (acceptedGitDir.movedTo).
+func (u gitUse) heldGitDir() string {
+	if u.accepted != nil {
+		return u.accepted.path
+	}
+	return u.gitDir
+}
+
 // shadow reports whether the calls of the request name the copy.
 func (u gitUse) shadow() bool {
 	return u.repoDir != ""
@@ -115,7 +125,12 @@ func worktreeAdd(ctx context.Context, u gitUse, repo, leaf string, cp worktreeCh
 	// A create that holds its git directory runs no `worktree add` when the
 	// path no longer names the held folder. The test comes after the listing.
 	if u.swapped("plain add") {
-		return "", errors.New(plainAddRefusal(u.gitDir, named))
+		// The text has the name of the git directory as the request spells it.
+		gitDir := u.gitDir
+		if u.accepted != nil && u.accepted.sent != "" {
+			gitDir = u.accepted.sent
+		}
+		return "", errors.New(plainAddRefusal(gitDir, named))
 	}
 	if named {
 		u.makeWorktreesFolder()
@@ -247,7 +262,7 @@ func repointWorktreeGitFile(u gitUse, leaf string, cp worktreeCheckpoint) {
 		if !ok || name == "" || name == "." || name == ".." || strings.ContainsAny(name, "/\\\r\n") {
 			return "", false
 		}
-		return "gitdir: " + filepath.Join(u.gitDir, worktreesSubdir, name) + "\n", true
+		return "gitdir: " + filepath.Join(u.heldGitDir(), worktreesSubdir, name) + "\n", true
 	})
 }
 
@@ -410,7 +425,9 @@ func (u gitUse) gitDirPin(dir string) []string {
 	if _, ok := u.names(dir); !ok {
 		return commonDirPinEnv(dir)
 	}
-	return u.commonVars()
+	// After a create moved its hold, a call with --git-dir= names the objects
+	// of that folder (cell swb-first of val-s3p2b2-10-linux2, Linux VM).
+	return []string{"GIT_COMMON_DIR=" + u.repoDir, "GIT_OBJECT_DIRECTORY=" + filepath.Join(u.heldGitDir(), "objects")}
 }
 
 // profileEnv is profileEnv for a call of this request. In the state shadow a

@@ -25,8 +25,9 @@ The cells ran on three VMs. The Linux VM has git 2.43.0, the macOS VM has git 2.
 | `val-s3p2b2-8` | the second Linux VM, 106 cell runs | `5fd08069` and a build with the edits after round `val-s3p2b2-7` |
 | `val-s3p2b2-7`, Windows part | Windows VM, 400 cell runs | `5fd08069` and a build of this change. Its cells are named with "Windows VM" below |
 | `val-s3p2b2-9` | the second Linux VM (95 cell runs) and the macOS VM (58 cell runs) | `5fd08069` and a build with the edits after round `val-s3p2b2-8`. This page has its swap cells |
+| `val-s3p2b2-10` | the second Linux VM (32 swap cell runs) and the macOS VM (two runs of each cell) | `5fd08069` and a build with the edits after round `val-s3p2b2-9`. This page has its swap cells |
 
-What ran on no VM: the edits after round `val-s3p2b2-9`, and on Windows the edits after the Windows part of round `val-s3p2b2-7`. Each has a test. "claustrum and `5fd08069`" below names what each round left open.
+What ran on no VM: the edits after round `val-s3p2b2-10`, and on Windows the edits after the Windows part of round `val-s3p2b2-7`. Each has a test. "claustrum and `5fd08069`" below names what each round left open.
 
 ## The member and the states
 
@@ -684,6 +685,27 @@ The swap cells of round `val-s3p2b2-9` (Linux VM, 2 of 2 runs for each form, and
 - The edits after the round hold the git directory on Linux and macOS too. The create keeps the variables of its gate while the trust check finds a git directory at the path. It tests the path after the listing of the add and answers the text of the row.
 - In the copy form the `git.info` after the create makes 8 calls with `GIT_DIR=<repo>/.git` and the folder `<R>` of the request before the swap on `5fd08069` (Linux VM). The build of that round makes 10 calls there, with the git directory T. The edits after the round do not change that request. Both replies are equal.
 
+Round `val-s3p2b2-10` put the link at other points (Linux VM, 1 run for each cell, and macOS VM, 2 of 2 runs). T is a copy of the git directory, and X is the git directory of a second repository. The call counts are those of the Linux VM.
+
+| Point | `5fd08069` | Calls |
+|---|---|---|
+| after the first call of the create, and after `rev-parse --abbrev-ref HEAD` | Success. T has `worktrees/w1`, `refs/heads/w1` and `logs/refs/heads/w1`. The `.git` file of the leaf has 47 bytes and names `T/worktrees/w1`. `rev-parse --absolute-git-dir` answers T, one read of the config follows, and the calls with `--git-dir=` name T | 16 |
+| after the listing with `--git-dir=` that follows `rev-parse --absolute-git-dir` | the `cannot prepare` text of the table above | 11 |
+| after the `worktree add` ended | `refusing to create worktree: <leaf> was not populated by git worktree add` with `unsafe_path`. The real git directory keeps the registration and the branch, and T is unchanged | 10: the add is the last |
+| while a wrapper holds the `worktree add` before git runs (macOS VM) | the same text and code. Git makes 9 entries in T: the registration and the branch | the add is the last |
+| while a wrapper holds the `read-tree` call | `git worktree add failed (checkout): fatal: Not a valid object name refs/heads/w1; and the undo could not finish for <leaf>: the worktree registration and the branch remain; remove them by hand before retrying (<real>)` | 13 |
+| a file `gitdir: <X>` at `.git` after `rev-parse --absolute-git-dir` | `git worktree add failed: cannot locate the repository's git directory: lstat <repo>/.git/commondir: not a directory`. X is unchanged | 6: that call is the last |
+| a link to X at the same point | the `cannot prepare` text. X is unchanged | 9 |
+| `.git` is a symbolic link to a git directory before the first request | `git.info`, `git.status`, `git.list_branches`, a create and a remove answer normally | |
+| that link is replaced by a link to T after `rev-parse --absolute-git-dir` | `git worktree add failed (checkout): fatal: Not a valid object name refs/heads/w1`. No branch, registration or folder of `w1` is left. T has new directory times only | 21 |
+| a link to T during `git.worktree_remove`, after its first git call | `{"success":true}`. `worktrees/w1` of T is gone, and the registration in the real git directory stays | 2 |
+
+- The build of that round refused the create at the two points of the first row, with 9 calls. It answered success in the first git directory in the row of the replaced link. It had other texts in the rows of the `worktree add` and of the file. The remove row and the `read-tree` row were equal.
+- The edits after the round follow the rows, with these differences. They are from the code:
+  - In the second row claustrum makes 7 calls. It has no pair after `rev-parse --absolute-git-dir`, so its call at that place is the listing of the add.
+  - In the row of the replaced link claustrum refuses before its `worktree add`, with the `cannot prepare` text. The end state is that of `5fd08069`: no branch, registration or folder of `w1`. `5fd08069` runs the `worktree add` and rolls it back.
+  - `git.worktree_remove` holds no git directory on either build.
+
 ### A step before the add that fails
 
 Table W3 of round `val-s3p2b2-7` (Windows VM):
@@ -860,8 +882,8 @@ On `5fd08069`:
 - A staging move that fails on Windows.
 - A junction at `.git` after call 12 or 13 of a create. A junction after calls 7 and 8, where the rename failed. A symbolic link in place of the junction. Another real directory at `.git`.
 - A `.git` that is a junction before the first request. The link text is measured for a junction that was put there during a create.
-- A replaced git directory during a create on Linux and macOS VMs at another step than after `rev-parse --absolute-git-dir`. A replaced git directory with the member or in the state `fallback-git`.
-- A `.git` that becomes a file with `gitdir: <X>`, or a link to the git directory of another repository, while a create runs. A first request of a daemon on a repository whose `.git` is a symbolic link.
+- A replaced git directory with the member or in the state `fallback-git`. A second change of the path after a create went on in the directory that git answered.
+- A `.git` that becomes a file with `gitdir: <X>`, or a link to the git directory of another repository, before `rev-parse --absolute-git-dir` of a create.
 - The reply of a create in attach mode when a step before the add fails: the two-part text with that step text in both parts.
 - A swap between the test of a step and a delete, a rename or a file write of the daemon in the git directory. claustrum makes those through the held folder.
 - A failed `rev-parse --absolute-git-dir` of a create outside the state `shadow` on Windows, and on Linux and macOS VMs.

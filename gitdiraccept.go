@@ -201,9 +201,60 @@ func (a *acceptedGitDir) release() {
 
 // stands reports whether the path still names the held folder, as a real
 // directory.
+//
+// The spelling of the request is tested too (sent). A `.git` that is a
+// symbolic link before the request is resolved by the trust check, so path is
+// its target. A link that then leads to another folder is seen through sent.
+// With such a change after `rev-parse --absolute-git-dir`, 5fd08069 fails the
+// create and leaves no branch, registration or folder of the new worktree
+// (cell dlink-swap of val-s3p2b2-10-linux2 and cell d-dswap of
+// val-s3p2b2-10-macos, Linux and macOS VMs).
 func (a *acceptedGitDir) stands() bool {
 	fi := gitDirIdentity(a.path)
-	return fi != nil && os.SameFile(fi, a.info)
+	if fi == nil || !os.SameFile(fi, a.info) {
+		return false
+	}
+	if a.sent == "" {
+		return true
+	}
+	sent, err := os.Stat(a.sent)
+	return err == nil && os.SameFile(sent, a.info)
+}
+
+// movedTo is the hold of a create on the git directory gitDir that git
+// answered, when that is another real directory than the held one and passes
+// the gate. It is nil in every other case. repo is the baseRepo of the create.
+// The caller releases the new hold.
+//
+// The rows are cells swb-first and swb-abbrev of val-s3p2b2-10-linux2 and
+// cells b-first and b-abbrev of val-s3p2b2-10-macos (Linux and macOS VMs, 2 of
+// 2 runs on macOS). A symbolic link to a copy T of the git directory is put at
+// `.git` before `rev-parse --absolute-git-dir`. Git then answers T. 5fd08069
+// reads the config again, goes on in T and answers success: T has the
+// registration, the branch and the index of the new worktree, and the `.git`
+// file of the leaf names `T/worktrees/<name>`. Its calls in baseRepo keep
+// GIT_DIR=<baseRepo>/.git, and its calls with --git-dir= name T.
+//
+// The new hold keeps the trust verdict of the gate, so the calls in baseRepo
+// keep their variables. Not measured: a T that is the git directory of another
+// repository, and a second change after this step.
+func (a *acceptedGitDir) movedTo(gitDir, repo string) *acceptedGitDir {
+	if a == nil || a.isAt(gitDir) {
+		return nil
+	}
+	before := gitDirIdentity(gitDir)
+	t := gitDirTrustFor(repo)
+	if before == nil || t.verdict != gitDirTrusted || !sameGitDirPath(t.pinCommonDir, gitDir) {
+		return nil
+	}
+	if msg, _ := repoConfigGate(t, false); msg != "" {
+		return nil
+	}
+	next := acceptGitDir(gitDir, before)
+	if next != nil {
+		next.holdFor(repo, a.trust)
+	}
+	return next
 }
 
 // swapped runs the seam of step and reports whether the request holds a git
@@ -244,8 +295,8 @@ func (u gitUse) swapped(step string) bool {
 //     5fd08069 makes the call about the repository and the read of the config,
 //     then the listing of the add, and refuses at the step before the add
 //     (cells swap-copy of val-s3p2b2-9-macos, macOS VM, 7 of 7 runs). The
-//     refusal is in worktreeAdd. A swap at another step is not measured there:
-//     it gets the same rule.
+//     refusal is in worktreeAdd. With that link before the call, git answers
+//     the copy, and the create goes on in it (movedTo).
 func (u gitUse) swapRefusal(step, dir string) string {
 	if !u.swapped(step) {
 		return ""

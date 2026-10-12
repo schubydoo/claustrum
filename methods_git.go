@@ -1243,8 +1243,30 @@ func gitWorktreeCreateLocked(req *request, p *gitParams, repo string) response {
 	// calls before it refuses (cells swap-copy and swap-marker of
 	// val-s3p2b2-9-macos, macOS VM): the refusal is at the step of the add
 	// (swapRefusal, worktreeAdd).
-	if gitAnswered && req.use.swapped("answered") && shadowStagesAdd {
-		return refuseAdd("git worktree add failed: " + listEntriesPrefix + realDirText(req.use.gitDir))
+	//
+	// On Linux and macOS two rows of 5fd08069 come first:
+	//
+	//   - A `.git` that became a file with `gitdir: <X>` after the call: the
+	//     create stops with `git worktree add failed: cannot locate the
+	//     repository's git directory: lstat <repo>/.git/commondir: not a
+	//     directory`, and that call is its last (cell swc-file of
+	//     val-s3p2b2-10-linux2 and cell c-cfile of val-s3p2b2-10-macos). An
+	//     lstat of `commondir` in the answered directory that fails with
+	//     another error than "does not exist" gives that text.
+	//   - Git answered another real directory than the held one, because the
+	//     path leads to it since a step before the call: the create goes on in
+	//     that directory (acceptedGitDir.movedTo).
+	if gitAnswered && req.use.swapped("answered") {
+		if shadowStagesAdd {
+			return refuseAdd("git worktree add failed: " + listEntriesPrefix + realDirText(req.use.gitDir))
+		}
+		if _, err := os.Lstat(filepath.Join(gitDir, "commondir")); err != nil && !errors.Is(err, fs.ErrNotExist) {
+			return refuseAdd(gitDirAddWrap + err.Error())
+		}
+		if next := req.use.accepted.movedTo(gitDir, repo); next != nil {
+			defer next.release()
+			req.use.accepted = next
+		}
 	}
 	// A caller-supplied timeoutMs (4534d86) bounds the add, the checkout and the copy
 	// step. At timeoutMs 0 with D5 off, both contexts are the unbounded context that
@@ -1336,6 +1358,23 @@ func gitWorktreeCreateLocked(req *request, p *gitParams, repo string) response {
 			Success:   false,
 			Error:     "git worktree add failed: " + worktreeGitText(addStderr, addErr),
 			ErrorCode: "worktree_add_failed",
+		})
+	}
+	// On Linux and macOS, a git directory that is no longer the held folder
+	// right after a good `worktree add` refuses the create. Nothing is rolled
+	// back, and no git call follows. 5fd08069 answers this text with
+	// `unsafe_path` in two rows. In cell swb-wtadd of val-s3p2b2-10-linux2 and
+	// cell b-postadd of val-s3p2b2-10-macos the link is put at `.git` after the
+	// call ended, and the real git directory keeps the registration and the
+	// branch. In cell b-precfg of val-s3p2b2-10-macos the link to a copy T is
+	// put there while a wrapper holds the call before git runs, and git makes
+	// the registration and the branch in T. How 5fd08069 finds that state is
+	// not measured. On Windows the staged add has its own test.
+	if !shadowStagesAdd && req.use.swapped("added") {
+		return okResult(req.ID, worktreeResult{
+			Success:   false,
+			Error:     fmt.Sprintf("refusing to create worktree: %s was not populated by git worktree add", parentResolvedPath(p.WorktreePath)),
+			ErrorCode: "unsafe_path",
 		})
 	}
 	// The read of the `config.worktree` file of the repository, and the text
