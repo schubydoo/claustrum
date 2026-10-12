@@ -2,6 +2,7 @@ package main
 
 import (
 	"encoding/json"
+	"fmt"
 	"io"
 	"os"
 	"os/exec"
@@ -11,6 +12,7 @@ import (
 	"slices"
 	"strconv"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 )
@@ -70,35 +72,79 @@ func newWTFixture(t *testing.T, linked bool) wtFixture {
 	return f
 }
 
-// installGitSlowStub puts this test binary first on PATH as `git`, in the
-// "git-slow" helper mode, with realGit as the git it passes calls through to.
-func installGitSlowStub(t *testing.T, realGit string) {
+// The folder of gitSlowStubDir. It is made once per test binary.
+var (
+	gitStubDirOnce sync.Once
+	gitStubDirPath string
+	gitStubDirFail string
+)
+
+// gitSlowStubDir returns the one folder that holds this test binary under the
+// name `git`. The first call makes it under the fixture template root. The
+// file is a symlink, or a copy on Windows, where a symlink needs a privilege.
+// The stub takes all its behavior from its environment and its arguments
+// (runHelper and runGitSlow in helperproc_test.go), so one file serves every
+// test. A copy per call cost each Windows test a write and a first start of the
+// whole test binary.
+func gitSlowStubDir(t *testing.T) string {
 	t.Helper()
-	exe, err := os.Executable()
-	if err != nil {
-		t.Fatalf("os.Executable: %v", err)
-	}
-	bin := t.TempDir()
-	if runtime.GOOS == "windows" {
-		// A copy, because a symlink needs a privilege on Windows.
+	gitStubDirOnce.Do(func() {
+		fail := func(what string, err error) { gitStubDirFail = fmt.Sprintf("git stub folder: %s: %v", what, err) }
+		if fixtureTplRoot == "" {
+			gitStubDirFail = "no fixture template root: TestMain did not call makeFixtureTemplateRoot"
+			return
+		}
+		exe, err := os.Executable()
+		if err != nil {
+			fail("os.Executable", err)
+			return
+		}
+		bin, err := os.MkdirTemp(fixtureTplRoot, "git-stub-")
+		if err != nil {
+			fail("mkdir", err)
+			return
+		}
+		if runtime.GOOS != "windows" {
+			if err := os.Symlink(exe, filepath.Join(bin, "git")); err != nil {
+				fail("symlink git", err)
+				return
+			}
+			gitStubDirPath = bin
+			return
+		}
 		src, err := os.Open(exe)
 		if err != nil {
-			t.Fatal(err)
+			fail("open", err)
+			return
 		}
 		defer func() { _ = src.Close() }()
 		dst, err := os.OpenFile(filepath.Join(bin, "git.exe"), os.O_CREATE|os.O_WRONLY, 0o755)
 		if err != nil {
-			t.Fatal(err)
+			fail("create git.exe", err)
+			return
 		}
 		if _, err := io.Copy(dst, src); err != nil {
-			t.Fatal(err)
+			_ = dst.Close()
+			fail("copy", err)
+			return
 		}
 		if err := dst.Close(); err != nil {
-			t.Fatal(err)
+			fail("close git.exe", err)
+			return
 		}
-	} else if err := os.Symlink(exe, filepath.Join(bin, "git")); err != nil {
-		t.Fatalf("symlink git: %v", err)
+		gitStubDirPath = bin
+	})
+	if gitStubDirFail != "" {
+		t.Fatal(gitStubDirFail)
 	}
+	return gitStubDirPath
+}
+
+// installGitSlowStub puts this test binary first on PATH as `git`, in the
+// "git-slow" helper mode, with realGit as the git it passes calls through to.
+func installGitSlowStub(t *testing.T, realGit string) {
+	t.Helper()
+	bin := gitSlowStubDir(t)
 	t.Setenv("PATH", bin+string(os.PathListSeparator)+os.Getenv("PATH"))
 	t.Setenv("CLAUSTRUM_TEST_HELPER", "git-slow")
 	t.Setenv("CLAUSTRUM_GITSTUB_REAL", realGit)

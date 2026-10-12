@@ -23,8 +23,12 @@ func wantShapeRefusal(cd string) string {
 // methods are served, and git runs with the main git directory pinned (rows T01 and
 // T02a to T02e). Mutation: keep refusing every commondir.
 func TestStrayCommondirDotIsTrusted(t *testing.T) {
+	// A row sets no environment variable and no working folder, and it writes
+	// package state only through caches that hold a lock. So the rows run in
+	// parallel.
 	for _, content := range []string{".", "./", ".\n", ".\r\n", "./\r\n", ".\n\n"} {
 		t.Run(strings.NewReplacer("\n", `\n`, "\r", `\r`).Replace(content), func(t *testing.T) {
+			t.Parallel()
 			r := newTrustRepo(t)
 			gitDir := filepath.Join(r.T, ".git")
 			writeFile(t, filepath.Join(gitDir, "commondir"), content, 0o644)
