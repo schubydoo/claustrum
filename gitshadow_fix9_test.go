@@ -2,6 +2,7 @@ package main
 
 import (
 	"path/filepath"
+	"runtime"
 	"slices"
 	"strings"
 	"testing"
@@ -96,5 +97,47 @@ func TestShadowInfoOnAPathThatDoesNotExist(t *testing.T) {
 	// Windows VM, and the "no repository" answer here on Linux.
 	if versions != 1 {
 		t.Errorf("git.info on a file = %s with %d version calls, want 1", raw, versions)
+	}
+}
+
+// TestShadowInfoOnAFileInARepository: a git.info on a file inside a repository
+// is the first git request of a daemon. The request makes the call about the
+// repository and the read of its config, and the daemon then has `.probe` and
+// the copy. The next git.info on the repository makes neither call. On
+// 5fd08069 the two requests have 14 and 8 calls, and the two calls are calls
+// 12 and 13 of the first (row Q1 of val-s3p2b2-8-linux2, Linux VM). The reply
+// of the first request is that of each system. macOS and Windows are not
+// measured.
+//
+// Without the gate for the folder of the file, the first request makes neither
+// call, and the second makes both.
+func TestShadowInfoOnAFileInARepository(t *testing.T) {
+	f := newShadowFixture(t)
+	file := filepath.Join(f.repo, "a-file.txt")
+	mustWrite(t, file, "x\n")
+	raw, calls := f.info(t, file, nil)
+	if runtime.GOOS != "windows" {
+		if want := `{"jsonrpc":"2.0","id":1,"result":{"isRepo":false,"repoSlug":"","defaultBranch":"","settingsControl":"shadow"}}`; raw != want {
+			t.Errorf("git.info on the file = %s\nwant %s", raw, want)
+		}
+	}
+	probes, reads := probeCalls(calls), configReads(calls)
+	// One read is call 7 of the start test, and one is the read of the config.
+	if len(probes) != 1 || len(reads) != 2 {
+		t.Fatalf("git.info on the file made %d calls about the repository and %d config reads, want 1 and 2", len(probes), len(reads))
+	}
+	if cwd := probes[0].cwd; cwd != f.repo {
+		t.Errorf("the call about the repository ran in %s, want %s", cwd, f.repo)
+	}
+	names := entryNames(t, daemonFolder(t, f.run))
+	for _, want := range []string{shadowProbeName, shadowRepoName(f.gitDir)} {
+		if !slices.Contains(names, want) {
+			t.Errorf("the folder of the daemon holds %v, want %s too", names, want)
+		}
+	}
+	raw, calls = f.info(t, f.repo, nil)
+	if !strings.Contains(raw, `"isRepo":true`) || len(probeCalls(calls)) != 0 || len(configReads(calls)) != 0 {
+		t.Errorf("the next git.info = %s with %d calls about the repository and %d config reads, want a normal reply and none",
+			raw, len(probeCalls(calls)), len(configReads(calls)))
 	}
 }

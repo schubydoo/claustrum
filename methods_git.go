@@ -312,16 +312,18 @@ func gitInfo(req *request) response {
 	}
 	// A path that does not exist gets the "no repository" answer here, with no
 	// start test and no git call beyond the excludes read of a first request.
-	// The place of this test after the count refusal, an empty path and a
-	// dangling link are not measured. One path form ran.
+	// The place of this test after the count refusal is not measured.
 	// On 5fd08069 such a git.info as the first git
 	// request of a daemon makes 1 call, the excludes read, and its reply has no
 	// settingsControl member. The next request on a repository runs the start
 	// test. A later git.info on such a path makes 0 calls (cell F1 of
 	// val-s3p2b2-6-windows, Windows VM, 2 of 2 runs, and request 3 of the 15
-	// runs of its group P1). Linux and macOS are not measured: they get the same
-	// rule. A path that is a file is not such a path: both builds run a `git
-	// version` call there and answer the hooks refusal (the same cell).
+	// runs of its group P1). A Linux VM has the same counts for a missing
+	// path, a path with a missing parent and a dangling link. An empty path
+	// makes 3 calls there, and 2 later (row Q1 of val-s3p2b2-8-linux2). macOS is
+	// not measured: it gets the same rule. A path that is a file is not such a
+	// path: both builds run a `git version` call there and answer the hooks
+	// refusal (cell F1).
 	if p.Path != "" {
 		if _, err := os.Stat(p.Path); errors.Is(err, fs.ErrNotExist) {
 			return notRepo()
@@ -338,10 +340,31 @@ func gitInfo(req *request) response {
 	// The start test and the daemon's own read of the repository's config come
 	// before the listing (settingsGateRefusal). Their place after the count check is
 	// not measured.
-	if msg, noRepo := req.settingsGateRefusal(t, p.ShadowDirOff, p.Path); msg != "" {
+	//
+	// A path that is a regular file inside a repository gets the gate of the
+	// repository of its folder: the call about the repository, the read of
+	// its config and the folder of the repository. As the first git request of
+	// a daemon, such a git.info of 5fd08069 makes 14 calls. Calls 12 and 13 are
+	// `rev-parse --git-dir` in the root of the repository and the read of the
+	// config, and the daemon then has `.probe` and the copy. The next git.info
+	// on the repository makes 8 calls (row Q1 of val-s3p2b2-8-linux2, Linux VM).
+	// The calls after the gate keep their form: the request has no copy for
+	// them. A refusal of that gate, another kind of file, and macOS and Windows
+	// are not measured.
+	gateTrust, gateDir := t, p.Path
+	inFile := false
+	if fi, err := os.Stat(p.Path); err == nil && fi.Mode().IsRegular() && t.verdict == gitDirTrusted && t.pinCommonDir == "" {
+		if ft := requestGitDirTrust(filepath.Dir(p.Path), true); ft.verdict == gitDirTrusted && ft.pinCommonDir != "" {
+			gateTrust, gateDir, inFile = ft, filepath.Dir(p.Path), true
+		}
+	}
+	if msg, noRepo := req.settingsGateRefusal(gateTrust, p.ShadowDirOff, gateDir); msg != "" {
 		return errResult(req.ID, codeInternal, msg)
 	} else if noRepo {
 		return notRepo()
+	}
+	if inFile {
+		req.use = gitUse{}
 	}
 	req.listEntryConfig(t)
 	// If the repo's config cannot be enumerated (e.g. an `include.path` with no value), the
