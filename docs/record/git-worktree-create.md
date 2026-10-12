@@ -567,9 +567,10 @@ To use the method, read [git.worktree_create](../protocol/git-worktree-create.md
   (`89cb6289`, Linux and macOS VMs). From the code: git answers X as the git
   directory there, and claustrum finds the entry in X.
 
-  From the code: the four tests need the git directory that git answered. If
-  `rev-parse --absolute-git-dir` gave no answer before the add, claustrum runs
-  none of the four tests and puts the index into `<path>`. That is claustrum's
+  From the code: the four tests need the git directory that git answered.
+  Outside the state `shadow`, if `rev-parse --absolute-git-dir` gave no answer
+  before the add, claustrum runs none of the four tests and puts the index into
+  `<path>`. That is claustrum's
   choice (not measured). With a `baseRepo` that is a subfolder of a repository,
   the read-tree then fails, and the create answers the failed checkout below.
   With an answer, a subfolder creates (cell S-a, Linux and macOS VMs).

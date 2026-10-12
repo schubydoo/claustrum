@@ -1925,7 +1925,7 @@ version and the extensions of an included file are not tested (cells X7 and X9).
 | `fatal: bad config line <n> in "<file>"` | The config or an included file has a syntax error. The text is that of git, with the path in quotes |
 | `"<included file>" is outside "<repo>", and on Windows Claude reads a repository's settings only from inside it; if the line that includes it is yours and you trust the file, put that line into ~/.gitconfig on the remote machine instead` | Windows: a relative include that leaves the repository. For a bare repository `<repo>` is its git directory (cell W6) |
 | `"<file>" includes "<value>", and on Windows Claude follows an include only if its path is relative and stays inside the repository; if that line is yours and you trust the file, put the line into ~/.gitconfig on the remote machine instead` | Windows: an absolute include value, also to a missing file, `~/x` and `~root/x`. An absolute value and `~/x` get it in an `includeIf` section whose condition does not match too (cells N12w). `<value>` is cut to its first 300 characters. A value of 300 characters is whole, and one of 301 shows 300 (cells P7w, Windows VM) |
-| `"<file>": is, or is reached through, a link that Claude does not follow here; replace the link with what it points to` | Windows: the config is a file link. Windows, every git method that reads the config: the git directory is a junction or a link, and `<file>` is `<git dir>\config`. `5fd08069` answers that text for a junction that was put at `.git` while a create ran (cells X1c-01 to X1c-05 of round `val-s3p2b2-7`, Windows VM). A junction that is there before the first request is not measured |
+| `"<file>": is, or is reached through, a link that Claude does not follow here; replace the link with what it points to` | Windows: the config is a file link. Windows, every git method that reads the config: the git directory is a junction, and `<file>` is `<git dir>\config`. The [record](record/git-settings-copy.md#a-git-directory-that-is-replaced-while-a-create-runs) has the cells |
 
 The path of an included file is the folder of the file that holds the setting, one
 separator, and the value as written. On a Windows VM `path = <dir>/inc.cfg` gives
@@ -2132,8 +2132,8 @@ The record of the copy has what they compared.
   bare repositories (`safe.bareRepository = explicit`), gets the refusal.
 - An `includeIf` line in a file three levels below the config gets the "includes
   go past" text.
-- On Windows claustrum refuses a link at a config file and at an included file, and
-  it tests no folder above the file. It also refuses an include value that starts
+- On Windows claustrum refuses a link at a config file, at an included file and at
+  the git directory itself. It tests no other folder above the file. It also refuses an include value that starts
   with a slash or a drive.
 
 #### The settings copy
@@ -2163,8 +2163,11 @@ last member of the result. No other method sends it, and an error reply has none
   `{"isRepo":false,"repoSlug":"","defaultBranch":"","settingsControl":"shadow"}`.
 - A `git.info` on a path that does not exist starts no test. As the first git
   request of a daemon it makes one call, the excludes read, and its reply has no
-  member. A later one makes none (cell F1 of round `val-s3p2b2-6`, Windows VM).
-  Linux and macOS are not measured.
+  member. A later one makes none.
+- A `git.info` on a regular file gets the gate of the repository of its folder.
+  Outside any repository it starts no test, and its reply has no member. The
+  [record](record/git-settings-copy.md#claustrum-and-5fd08069) has the cells of
+  both rules.
 - A request with `"shadowDirOff":true` gets `"off-switch"` in three more cases. It
   is the first request of a daemon. Or its reply is "no repository". Or a failed
   start test is kept. The cells are A1 and B1 of round `s3` and cell 32 of round
@@ -2201,12 +2204,13 @@ three frames and their cells. `89cb6289` answers those requests normally.
 | `<cause>` | When |
 |---|---|
 | `git <verb> failed under "<folder of the daemon>": <last error line of git>` | A test call failed. The folder is in quotes as Go's `%q` quotes it |
-| `git <verb> failed under "<folder>": signal: killed` | The daemon ended a test call after 30 seconds (Linux and macOS VMs). On a Windows VM the end is `exit status 1` |
+| `git <verb> failed under "<folder>": signal: killed` | The daemon ended a test call other than call 7 after 30 seconds (Linux and macOS VMs). On a Windows VM the end is `exit status 1` |
 | the same with ` (git version <v>)` at its end | The failed or ended call was `init` (cell C2 of round `val-s3p2b2-7`, Linux VM and Windows VM, for an `init` that exits 1) |
 | `mkdir <path>: <reason>` or `open <path>: <reason>`, with no quotes | A folder or the lock file of the daemon cannot be made |
 
-From the code: call 7 gives the Go error of the call, and a `config --get` call
-with another answer gives `unexpected answer`. Neither is measured. The cells of
+From the code: a call 7 that fails on its own gives the Go error of the call, and
+a `config --get` call with another answer gives `unexpected answer`. Neither is
+measured. The cells of
 a failed call have one error line.
 
 - The daemon keeps a failure for 10 seconds from the end of the failed test. A
@@ -2220,16 +2224,14 @@ a failed call have one error line.
 - From the code: claustrum bounds a test call at 30 seconds, and it waits 1 more
   second for the output of that call. The 1 second is fitted from the Linux rows.
 - A test call that exits in time counts by its exit code, also while a child
-  holds its output pipes. With such a child on the `init` call, `5fd08069` starts
-  the next call about 1 s later and the test passes (cell N-a of round
-  `val-s3p2b2-8`, Linux VM). The eight other calls with that wait get the same
-  rule (not measured).
-- Call 7, the listing of the test config, has no such 1 second wait. With a child
-  that holds its pipes 5 s, `5fd08069` goes on when the pipes close, and the test
-  passes (cell N-b). A call 7 that runs 40 s ends at 30 s with the cause `this
-  repository's git config cannot be used: git did not finish reading "<config of
-  the test repository>" within 30 seconds; try again` (cell N-c). A child that
-  holds the pipes of call 7 for more than 30 s is not measured.
+  holds its output pipes past that wait.
+- Call 7, the listing of the test config, waits for its pipes until one bound and
+  1 second after the call ended. A call 7 that the bound ended, or whose pipes a
+  child still holds then, gives the cause `this repository's git config cannot be
+  used: git did not finish reading "<config of the test repository>" within 30
+  seconds; try again`.
+- The [record](record/git-settings-copy.md#claustrum-and-5fd08069) has cells N-a
+  to N-c of `5fd08069` with their times.
 
 ##### The folders
 
@@ -2366,7 +2368,7 @@ place, in a repository with that extension and a `config.worktree` file:
 The [record](record/git-settings-copy.md#claustrum-and-5fd08069) has the rounds
 that compared a claustrum build with `5fd08069`, and the differences that stay.
 In each of them the reply lines are equal, except in the git-lfs cells of
-`git.worktree_create`. The last edits of this change ran on no VM.
+`git.worktree_create`. The top of that record says which edits ran on no VM.
 
 #### Hardened git calls
 
@@ -2522,8 +2524,8 @@ that measured it.
       its test: `claude-ssh-gitdir-<n>`, `claude-ssh-index-<n>` and
       `claude-ssh-worktreeinclude-<n>/patterns`. `5fd08069` has those names in
       cells A1 and A3 of round `val-s3p2b1` (Linux, macOS and Windows VMs).
-    - The last edits of the settings copy follow rows of rounds `val-s3p2b2-6`
-      and `val-s3p2b2-7` and ran on no VM. The record of the copy lists them.
+    - The [record of the copy](record/git-settings-copy.md) says which edits
+      ran in which VM round.
 - Graft hint. With `GIT_GRAFT_FILE` set, git can print 8 `hint:` lines about
   `info/grafts` on standard error. The light list turns them
   off with `advice.graftFileDeprecated=false`. The heavy list does not. On
@@ -3289,9 +3291,10 @@ claustrum opens each file without blocking and reads a regular file only.
   that cannot be made answers the raw Go error.
 - In the states `shadow` and `fallback-git` a `.gitdir-<n>` that cannot be made
   answers `{"isRepo":false,"clean":false}`. `5fd08069` answers so in the state
-  `shadow` for a folder of the daemon of mode 0500 (cell F1 of round
-  `val-s3p2b2-7`, Linux VM, one run). The state `fallback-git` and another cause
-  are from the code.
+  `shadow` for a folder of the daemon of mode 0500, for a deny entry on Windows
+  and for a file system with no free inode. The
+  [record](record/git-settings-copy.md#claustrum-and-5fd08069) has the cells. The
+  state `fallback-git` and another cause are from the code.
 - Not measured: a failure of the listing in the temporary folder. claustrum answers
   the hooks refusal, as for the listing of rule 5.
 - `changes` starts with the stdout lines of `status`. Stderr warnings never appear.

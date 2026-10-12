@@ -535,11 +535,16 @@ traps that matter for telling drift from expected:
   - `git.info` has a last member `settingsControl`.
   - The run folder has a folder `git-shadow`.
   - A first git request makes 12 more git calls.
-  - Four texts are new. They start with
+  - These texts are new. They start with
     `Claude could not test git on the remote machine`,
     `git could not check this repository on the remote machine`,
     `git and Claude disagree about which repository holds this folder` and
-    `Claude could not prepare its own files on the remote machine`.
+    `Claude could not prepare its own files on the remote machine`. A create
+    also answers `cannot list the repository's worktree entries`,
+    `cannot prepare the repository's worktrees directory`,
+    `git worktree add failed (completing the new worktree's git files)` and
+    `".git" is a link or a file where Claude needs a real directory`.
+  - On Windows each git method refuses a junction at `.git` with the link text.
   - A config value that git refuses gets a normal answer where the copy leaves
     it out.
   - On Windows a create removes old `.claude-new-worktree-*` entries of the git
@@ -553,7 +558,8 @@ traps that matter for telling drift from expected:
     config reads that `5fd08069` ends early.
   - claustrum leaves the `git-shadow` folder of a daemon that ended with
     `SIGKILL`. `5fd08069` removes it at the first request of the next daemon.
-  - The last edits of the copy ran on no VM. The record lists them.
+  - The top of the [record](record/git-settings-copy.md) says which edits of
+    the copy ran on no VM.
 - The reap of a child record with a `program` key splits the pins too, off the
   wire. claustrum follows `89cb6289`. On Linux, if the process runs `program` or
   holds it as one whole argument, `89cb6289` accepts the record. Linux rows PG02a, PG02b,

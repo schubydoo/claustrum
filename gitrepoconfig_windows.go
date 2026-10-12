@@ -17,8 +17,8 @@ import (
 const openNoTerminal = 0
 
 // configLinkDetail refuses a config file that is a symbolic link (cell C4b: a
-// file link made with mklink). A git directory that is a link or a junction has
-// its own test (gitDirLinkDetail). Another link in a folder above the file is
+// file link made with mklink). A git directory that is a junction has its
+// own test (gitDirLinkDetail). Another link in a folder above the file is
 // not measured, and claustrum does not test for it. An included file gets the
 // same test (not measured).
 func configLinkDetail(path string) string {

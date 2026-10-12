@@ -30,17 +30,17 @@ import (
 //     open, no new folder gets that identity.
 //   - Each later step tests that the path still names that folder (stands). A
 //     step that fails the test refuses the create with the text of that step.
-//   - Every delete, rename, mkdir and file write of the create and of its
-//     rollback inside the git directory acts through the held folder, never
-//     through the path (openAddStage, sweepOldStaging, addStage.move,
-//     writeWorktreeConfig and gitdirheld.go). The test of a step is therefore
-//     no guard of such an act. It decides the reply, and whether a git call
-//     runs: git takes the git directory as a path.
+//   - The acts of the create inside the git directory go through the held
+//     folder, never through the path. The list is at the top of gitdirheld.go.
+//     The test of a step is therefore no guard of such an act. It decides the
+//     reply, and whether a git call runs: git takes the git directory as a
+//     path.
 //
 // A folder at the path that is another real directory is not measured. Its
 // trust check pins the same path. At the steps `leaf`, `gitdir` and `add` it
-// gets no refusal when its config is accepted (swapRefusal). The step
-// `answered` is the first that refuses it, with the text of that step.
+// gets no refusal when its config is accepted (swapRefusal). On Windows the
+// step `answered` is the first that refuses it, with the text of that step. On
+// Linux and macOS it is the step before the add (plainAddRefusal).
 
 // acceptedGitDir is the held git directory of one create.
 type acceptedGitDir struct {
@@ -113,8 +113,10 @@ func gitDirIdentity(path string) os.FileInfo {
 	return fi
 }
 
-// gitDirLinkDetail refuses a git directory that is a link or a junction, where
-// gitDirMustBeReal is set. The text names the config of that directory. With a
+// gitDirLinkDetail refuses a git directory that is a junction, where
+// gitDirMustBeReal is set. A symbolic link at `.git` that is there before the
+// request is resolved by the trust check first, so gitDir is then its target
+// (not run on Windows). The text names the config of that directory. With a
 // junction at `repo\.git`, 5fd08069 answers `this repository's git config
 // cannot be used: "C:\\o\\w\\repo\\.git\\config": is, or is reached through, a
 // link that Claude does not follow here; replace the link with what it points

@@ -56,7 +56,8 @@ func TestShadowRelativeRunFolder(t *testing.T) {
 // request on a repository runs the start test. A later request on the path
 // makes no call. A path that is a file still gets its `git version` call. On
 // 5fd08069 the calls are 1, then 22, then 0 (cell F1 of val-s3p2b2-6-windows,
-// Windows VM, 2 of 2 runs). Linux and macOS are not measured.
+// Windows VM, 2 of 2 runs). A Linux VM and a macOS VM have 1, 20 and 0 calls
+// (val-s3p2b2-9-linux2 and cell q1-missing of val-s3p2b2-9-macos).
 func TestShadowInfoOnAPathThatDoesNotExist(t *testing.T) {
 	f := newShadowFixture(t)
 	gone := filepath.Join(filepath.Dir(f.repo), "no-such-folder")

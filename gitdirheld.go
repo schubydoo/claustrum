@@ -9,20 +9,38 @@ import (
 	"strings"
 )
 
-// The steps of a git.worktree_create that act inside the git directory through
-// the held folder (acceptedGitDir.root). A create that holds its git directory
-// makes no delete, no rename, no mkdir and no file write there by a path. So a
-// link, a junction or another folder that is put at the path of the git
-// directory while the create runs gets none of these steps: each one acts on
-// the folder that the gate accepted.
+// The held git directory of a git.worktree_create (acceptedGitDir), and the
+// steps that act through it. This comment is the home of the step list.
 //
-// Four steps are here. The staged add has its own (openAddStage,
-// sweepOldStaging and addStage.move), and so has the `config.worktree` file of
-// the new registration (writeWorktreeConfig).
+// A create that holds its git directory makes each delete, rename, mkdir and
+// file write inside that directory through the held folder
+// (acceptedGitDir.root), not through the path. A link, a junction or another
+// folder that is put at the path while the create runs gets none of them.
 //
-// What 5fd08069 does in these four steps with a swapped git directory is not
-// measured. Cells X1c and X1p of val-s3p2b2-7-windows (Windows VM) show that it
-// removes nothing and makes nothing in the folder behind a junction.
+//   - The stale registration before the add: dropStaleRegistration on Windows,
+//     and dropStaleWorktreeRegistration with registrationsRoot on Linux and
+//     macOS.
+//   - The folder `worktrees`: makeWorktreesFolder, and openAddStage on Windows.
+//   - The Windows staging steps: openAddStage, sweepOldStaging, addStage.move.
+//   - The `config.worktree` file of the registration: writeWorktreeConfig.
+//   - The index: installIndex on Windows, and installTestedWorktreeIndex with
+//     registrationsRoot on Linux and macOS.
+//   - The registration of a rollback: removeCreatedRegistration, and
+//     removeTestedRegistration with registrationsRoot on Linux and macOS.
+//
+// By the path stay:
+//
+//   - Git itself, which takes the git directory as a path.
+//   - A request that holds no git directory: "shadowDirOff":true, the state
+//     fallback-git and a server with no run folder.
+//   - On Linux and macOS, a `worktrees` entry that is a symbolic link, and the
+//     registrations folder of another git directory (registrationsRoot).
+//   - The reads of the create that decide a refusal.
+//
+// What 5fd08069 does with a swapped git directory is in the section "A git
+// directory that is replaced while a create runs" of
+// docs/record/git-settings-copy.md. No row has a swap between the test of a
+// step and one of these acts.
 
 // removeHeldEntry removes the entry name with its content through root, the
 // held git directory. A test replaces it. Production never does.
@@ -57,8 +75,8 @@ func (a *acceptedGitDir) removeRegistration(name string) {
 	_ = removeHeldEntry(a.root, filepath.Join(worktreesSubdir, name))
 }
 
-// dropStaleRegistration is the step of a create before the leaf is made, for a
-// create that holds its git directory: it removes the registration whose
+// dropStaleRegistration is the Windows step of a create before the leaf is
+// made, for a create that holds its git directory. It removes the registration whose
 // `gitdir` record names worktreePath, which the caller found missing. The rule
 // is that of the Windows step (dropStaleWorktreeRegistration): the first match
 // in name order goes, with no test of a `locked` file. The listing, the read of

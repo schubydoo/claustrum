@@ -207,10 +207,9 @@ The JSON-RPC surface is identical on every OS. Full internals →
       Linux and macOS VMs). The delete is one `os.Root.RemoveAll`
       of the entry name through a root at that folder, after `wipesHomeDir` on
       the entry path. An entry with a `locked` file stays (`89cb6289`, cells A9
-      and A9b, Linux and macOS VMs). On Windows that step is one `os.RemoveAll` of the
-      entry path, with no `locked` test (not measured).
-      In the state `shadow` that Windows step does not run if `.git` is no
-      longer the folder that the create holds (not measured).
+      and A9b, Linux and macOS VMs). On Windows that step has no `locked` test (not measured).
+      It is one `os.Root.RemoveAll` through the held git directory, or one
+      `os.RemoveAll` of the entry path for a create that holds none.
       The second rollback follows a successful add. On Linux and
       macOS four refusals come before it, and they delete nothing. Two answer
       a `.git` file of the new worktree that names no registration of the
@@ -254,17 +253,19 @@ The JSON-RPC surface is identical on every OS. Full internals →
       While that handle is open, a new folder does not get that identity. If
       the open fails, the identity comes from a stat of the path (not
       measured). The rollback deletes nothing if the folder at the path is not
-      the accepted one at that test (D24). With no answer of git, and on
-      Windows, the registration of the rollback is the folder that the `.git`
-      file of the leaf names. If its `gitdir` record does not name the leaf, the
+      the accepted one at that test (D24). In the state `shadow` a failed
+      `rev-parse --absolute-git-dir` stops the create. So "no answer of git"
+      below is a create outside that state, or an empty answer. A create
+      that holds its git directory deletes the registration by its name
+      through the held folder. If `.git` is no longer that folder, the
+      rollback deletes no registration. A create that holds none, and has no
+      answer of git or runs on Windows, takes the folder that the `.git` file
+      of the leaf names. If its `gitdir` record does not name the leaf, the
       rollback does not delete it. If it does not resolve strictly inside the
-      registrations directory of `baseRepo`, the same holds. On Windows in the
-      state `shadow`, the rollback deletes no registration if `.git` is no
-      longer the folder that the create holds. `5fd08069` keeps the
-      registration there (cells X1c-11 and X1p-11 of round `val-s3p2b2-7`,
-      Windows VM). That delete acts on the resolved path that its check
-      verified, and on Linux and macOS through a root at the registrations
-      directory, which must still have the identity that the check saw. On Linux and macOS the placement of the index removes a
+      registrations directory of `baseRepo`, the same holds. That delete acts
+      on the resolved path that its check verified, and on Linux and macOS
+      through a root at the registrations directory, which must still have
+      the identity that the check saw. On Linux and macOS the placement of the index removes a
       file, a link or an empty folder at `<registration>/index`, after a create
       there answered "file exists". That is one
       `os.Root.Remove` of the fixed name `index`, never a tree. The
@@ -301,26 +302,11 @@ The JSON-RPC surface is identical on every OS. Full internals →
       maintainer decided on 2026-10-11 to build that step as measured. It runs
       in the state `shadow` only, after a good `git worktree add` and before
       the daemon makes its own staging folder. The guards run in this order.
-      The create holds the git directory open from its gate to its reply
-      (`acceptedGitDir`, `gitdiraccept.go`). The folder must be a real
-      directory, no link and no junction, before the gate. The open folder
-      must have that identity after it. Before the cleanup the path must
-      still name that folder. If not, the create is refused, and nothing is
-      removed or made. `5fd08069` refuses there and leaves an old entry in the
-      target of a junction at `.git` (cells X1c-10 and X1p-10 of round
-      `val-s3p2b2-7`, Windows VM). One `os.Root` at that held folder is the
-      root of the cleanup and of the move, and each step acts through it. No
-      step resolves the path of the git directory again. On all three
-      systems the same held folder is the root of each delete, rename, new
-      folder and file write that a create or its rollback makes inside the
-      git directory (`gitdirheld.go`): the stale registration before the
-      add, the folder `worktrees`, the `config.worktree` file, the index and
-      the registration of a rollback. On Linux and macOS a `worktrees` entry
-      that is a symbolic link is still opened by its path. A request with
-      `"shadowDirOff":true`, the state `fallback-git` and a server with no
-      run folder hold no git directory, and keep the steps by the path.
-      `5fd08069` leaves the folder behind a swapped `.git` as it is (swap
-      cells of round `val-s3p2b2-9`, Linux and macOS VMs). The entries are
+      The create holds the git directory open from its gate to its reply, and
+      the cleanup and the move act through that held folder (see "holds the
+      git directory" below). Before the cleanup the path must still name
+      that folder. If not, the create is refused, and nothing is removed or
+      made in the git directory or in the folder at its path. The entries are
       listed through that root, so each name is a direct entry of the git
       directory. The name must start with the fixed prefix, with the dash. The
       entry is read with `Lstat` through the root, so no link and no junction
@@ -464,14 +450,27 @@ The JSON-RPC surface is identical on every OS. Full internals →
   short-lived folders are `os.MkdirTemp` folders in the temporary directory, and
   each goes with `os.RemoveAll`, as before. Do not build a name below
   `git-shadow` from a request value.
+- In the state `shadow` `git.worktree_create` holds the git directory of
+  `baseRepo` open from its gate to its reply (`acceptedGitDir`). Hold these
+  rules:
+    - Each delete, rename, new folder and file write of the create and of its
+      rollback inside the git directory goes through the held folder, never
+      through the path. The comment at the top of `gitdirheld.go` has the
+      list of the steps.
+    - By the path stay: git itself, a request that holds no git directory
+      (`"shadowDirOff":true`, the state `fallback-git`, no run folder), and
+      on Linux and macOS a `worktrees` entry that is a symbolic link. The
+      index and the rollback delete keep the identity test of D24 there.
+    - Never add a step that resolves the path of the git directory again,
+      and never widen a delete of these steps.
+  [git.worktree_create](docs/protocol/git-worktree-create.md#the-held-git-directory)
+  has the rules for a reader, and its record has the cells.
 - In the state `shadow` `git.worktree_create` writes into the git directory of
   `baseRepo` and into the new worktree. None of these steps is a tree delete.
-  Each of the first four goes through an `os.Root`, with a fixed name or a name
-  that the daemon read through that root. The fifth uses path calls: a temp file
-  `index.tmp-*` in the registration, one `os.Rename` onto `index`, and a plain
-  `os.Remove` of the temp file after a failure. The steps are these:
+  Each goes through an `os.Root`, with a fixed name or a name that the daemon
+  read through that root. The steps are these:
     - The folder `<git dir>/worktrees` (0777 less the umask), made before the
-      add through a root at the pinned git directory. It stays after a failed
+      add through the held folder. It stays after a failed
       add, as on `5fd08069` (cells N2 of round `val-s3p2b2-3`, Linux and macOS
       VMs). On Linux and macOS, with the value `group`, `true`, `all`, `world`,
       `everybody` or an octal number that git accepts, one
@@ -490,12 +489,12 @@ The JSON-RPC surface is identical on every OS. Full internals →
       of 6 runs).
     - The new file `<git dir>/worktrees/<name>/config.worktree` (0666 less
       the umask), made
-      with an exclusive create (`writeWorktreeConfig`). It goes through a root
-      at the pinned git directory and then a root at the registration. The
+      with an exclusive create (`writeWorktreeConfig`). It goes through the
+      held folder and then a root at the registration. The
       registration must be a direct entry of `<git dir>/worktrees` and a real
       folder. On Linux and macOS it must be the folder that the tests after
-      the add accepted, by identity. With no answer of git, its `gitdir`
-      record must name the leaf. On Windows neither test runs.
+      the add accepted, by identity. After an empty answer of git, its
+      `gitdir` record must name the leaf. On Windows neither test runs.
       A file at that name stays. `5fd08069` leaves such a file after a create
       (round `val-s3p2b2-5`, Linux VM). How it gets there is not measured.
       Before that step the daemon runs `git config --file <its own file>
@@ -512,7 +511,11 @@ The JSON-RPC surface is identical on every OS. Full internals →
       VM).
     - On Windows the index of the new worktree is copied into the
       registration and not moved (`5fd08069`, cell V5i of round
-      `val-s3p2b2-5`, Windows VM).
+      `val-s3p2b2-5`, Windows VM). That is a temp file `index.tmp-<16 hex>`
+      in the registration, one `os.Root.Rename` onto `index`, and a plain
+      `os.Root.Remove` of the temp file after a failure, all through the
+      held folder. A create outside the state `shadow` makes those three
+      steps as path calls.
 - The marker step of `files.extract_tar` is a further recursive delete, and it
   is safe by construction. After the entries it removes the fixed name `.synced`
   at the top of `destDir` as a tree (`writeSyncedMarker`). Then it creates the

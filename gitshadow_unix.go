@@ -23,8 +23,8 @@ const shadowStagesAdd = false
 // (acceptedGitDir). On a macOS VM, 5fd08069 refuses a create whose `.git`
 // became a symbolic link to another folder after `rev-parse
 // --absolute-git-dir`, and that folder keeps every entry as it was (cells
-// swap-copy, swap-copyold and swap-marker of val-s3p2b2-9-macos). Linux is not
-// measured: it gets the rule of macOS. A `.git` entry that is a symbolic link
+// swap-copy, swap-copyold and swap-marker of val-s3p2b2-9-macos). The Linux VM
+// has the same rows (val-s3p2b2-9-linux2). A `.git` entry that is a symbolic link
 // before the request is resolved by the trust check (resolveGitDirLinks), so
 // the held folder is the folder behind that link, and gitDirLinkDetail finds
 // no link. It is a variable so that a test can switch the steps off.

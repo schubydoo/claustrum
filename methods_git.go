@@ -320,8 +320,9 @@ func gitInfo(req *request) response {
 	// val-s3p2b2-6-windows, Windows VM, 2 of 2 runs, and request 3 of the 15
 	// runs of its group P1). A Linux VM has the same counts for a missing
 	// path, a path with a missing parent and a dangling link. An empty path
-	// makes 3 calls there, and 2 later (row Q1 of val-s3p2b2-8-linux2). macOS is
-	// not measured: it gets the same rule. A path that is a file is not such a
+	// makes 3 calls there, and 2 later (row Q1 of val-s3p2b2-8-linux2). A macOS
+	// VM makes 1 and 0 calls for a missing path (cell q1-missing of
+	// val-s3p2b2-9-macos). A path that is a file is not such a
 	// path: both builds run a `git version` call there and answer the hooks
 	// refusal (cell F1).
 	if p.Path != "" {
@@ -358,10 +359,10 @@ func gitInfo(req *request) response {
 	//     val-s3p2b2-8-macos, macOS VM, 2 of 2 runs).
 	//
 	// The calls after the gate keep their form: the request has no copy for
-	// them. Not measured: a refusal of that gate, a folder whose git directory
-	// the trust check refuses, another kind of file, a file inside a
-	// repository on macOS and Windows, and a file outside one on Linux and
-	// Windows.
+	// them. Round val-s3p2b2-9 has both rows on the Linux and macOS VMs, and a
+	// refused config of the repository of the file (Linux VM). Not measured:
+	// a folder whose git directory the trust check refuses, another kind of
+	// file, and Windows.
 	gateTrust, gateDir, gate := t, p.Path, true
 	inFile := false
 	if fi, err := os.Stat(p.Path); err == nil && fi.Mode().IsRegular() && t.verdict == gitDirTrusted && t.pinCommonDir == "" {
@@ -1073,9 +1074,7 @@ func gitWorktreeCreateLocked(req *request, p *gitParams, repo string) response {
 	// is locked, the remove failed, or it is one of two or more. It is empty on
 	// Windows.
 	// A create that holds its git directory runs the step through the held
-	// folder, when that folder is the `.git` of baseRepo. It then lists, reads
-	// and removes nothing by the path, so a folder that was put at the path
-	// gets nothing (not measured).
+	// folder (gitdirheld.go).
 	if createStepHook != nil && req.use.accepted != nil {
 		createStepHook("stale")
 	}

@@ -149,7 +149,8 @@ func worktreeAdd(ctx context.Context, u gitUse, repo, leaf string, cp worktreeCh
 //     …`, with the same end (cells swap-marker, 4 of 4 runs). The listing
 //     carries GIT_DIR=/dev/null there.
 //
-// Linux is not measured: it gets the texts of macOS. On Windows the call comes
+// The Linux VM has the same two texts (val-s3p2b2-9-linux2, 2 of 2 runs for
+// each form). On Windows the call comes
 // here only when it does not name the copy. The text is that of a junction
 // that was put at `.git` after the listing of the add (cells X1c-09 and
 // X1p-09 of val-s3p2b2-7-windows, Windows VM).
