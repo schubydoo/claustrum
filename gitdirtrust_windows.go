@@ -37,14 +37,51 @@ func sameGitDirPath(a, b string) bool {
 // both a link and a short name is not measured. The kept path is cleaned, so the
 // forward slashes that git writes in a .git file become backslashes, as in the
 // f6010b97 texts (rows C14 and D02). Cleaning keeps short names.
+//
+// A git directory that is a directory symbolic link is kept as it is spelled
+// too (gitDirIsSymlink). The link test of the gate then finds the link at that
+// path and refuses the request, as it does for a junction (gitDirLinkDetail).
+// filepath.EvalSymlinks resolves such a link and no junction, so the gate got
+// the target of the link, a real directory, and accepted it.
 func resolveGitDirLinks(g string) string {
 	if !hasLinkComponent(g) {
+		return filepath.Clean(g)
+	}
+	if gitDirIsSymlink(g) {
 		return filepath.Clean(g)
 	}
 	if r, err := filepath.EvalSymlinks(g); err == nil {
 		return r
 	}
 	return g
+}
+
+// gitDirIsSymlink reports whether the git directory g is a symbolic link, or
+// whether g is an entry `worktrees\<name>` of a git directory that is one.
+//
+// With a directory symbolic link (`mklink /D`) at `repo\.git`, 5fd08069
+// refuses each git method with the text of a junction there: `this
+// repository's git config cannot be used: "C:\\o\\w\\repo\\.git\\config": is,
+// or is reached through, a link that Claude does not follow here; replace the
+// link with what it points to`. It does so for a link that is there before
+// the daemon starts and for one that is put there between two requests. A
+// git.status on a linked worktree of that repository gets the same text
+// (cells D-symd-start, D-symd-late and DT-symd-late-to-T of
+// val-s3p2b2-12-windows, Windows VM, 2 of 2 runs each).
+//
+// Not measured: a link that a daemon GIT_DIR or a `.git` file names, a link
+// in a folder above the git directory together with one at it, and a request
+// with "shadowDirOff":true. They get the same rule.
+func gitDirIsSymlink(g string) bool {
+	isLink := func(p string) bool {
+		fi, err := os.Lstat(p)
+		return err == nil && fi.Mode()&os.ModeSymlink != 0
+	}
+	if isLink(g) {
+		return true
+	}
+	parent := filepath.Dir(filepath.Clean(g))
+	return filepath.Base(parent) == "worktrees" && isLink(filepath.Dir(parent))
 }
 
 // hasLinkComponent reports whether p or one of its parents is a symlink or a junction.
