@@ -77,14 +77,6 @@ func TestGitUseFolderVariables(t *testing.T) {
 		}
 	}
 
-	// The calls that keep the git directory itself: the same four names, with
-	// GIT_COMMON_DIR=<git directory>.
-	own := []string{"GIT_COMMON_DIR=" + f.gitDir, "GIT_OBJECT_DIRECTORY=" + filepath.Join(f.gitDir, "objects"),
-		"GIT_DIR=" + f.gitDir, "GIT_WORK_TREE=" + f.repo}
-	if got := u.ownConfigCalls().pin(f.repo); !slices.Equal(got, own) {
-		t.Errorf("ownConfigCalls: pin = %q\nwant %q", got, own)
-	}
-
 	// A folder of another repository keeps the pin of that repository.
 	other, otherGit := configRepo(t)
 	if got, want := u.pin(other), []string{"GIT_COMMON_DIR=" + otherGit}; !slices.Equal(got, want) {

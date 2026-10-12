@@ -12,6 +12,11 @@ import (
 // A3, s3-macos cell A3).
 const shadowLinksWorktrees = true
 
+// shadowStagesAdd is false on Linux and macOS. No daemon makes a `.s<n>` folder
+// or a `.claude-new-worktree-*` entry there, and none removes such an entry
+// (s3p2-linux cells H1 and H2, Linux VM. On a macOS VM no such entry was seen).
+const shadowStagesAdd = false
+
 // openShadowLockFile makes the lock file of the daemon (0600, 0 bytes) and
 // takes the lock of the daemon on it. The daemon holds the lock until it closes
 // the file. On a Linux VM /proc/locks shows `FLOCK  ADVISORY  WRITE <daemon

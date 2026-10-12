@@ -33,9 +33,6 @@ type gitUse struct {
 	// brought up to date. repoDir is the folder of that copy, <S>/<32 hex>.
 	gitDir  string
 	repoDir string
-	// ownConfig is true for the calls that keep GIT_COMMON_DIR=<gitDir> in the
-	// state shadow (ownConfigCalls).
-	ownConfig bool
 	// atReply takes the removal of a short-lived folder that stays until the
 	// reply of the request (request.runAtReply), or it is nil.
 	atReply *[]func()
@@ -65,18 +62,6 @@ func (u gitUse) shadow() bool {
 	return u.repoDir != ""
 }
 
-// ownConfigCalls is u for the `worktree add` calls of git.worktree_create and
-// the listing before each on Windows. Those calls keep GIT_COMMON_DIR=<git
-// directory> there in this build, with the other three folder variables of
-// 5fd08069. On a Windows VM the add of 5fd08069 carries the folder `.s<n>`
-// (cell 50 of s3p2b-edges), which this build does not make. So the add reads
-// the repository's own config there, as it did before, and the listing that
-// gives its hook pins reads it too.
-func (u gitUse) ownConfigCalls() gitUse {
-	u.ownConfig = true
-	return u
-}
-
 // worktreeAdd runs one `git worktree add` of git.worktree_create in repo, with
 // its listing before it. It returns the stderr of the call, untrimmed, and the
 // exec error. stdout is not kept, because the failure frames of
@@ -96,15 +81,19 @@ func (u gitUse) ownConfigCalls() gitUse {
 //   - After the add ended and before the next call, the daemon looks at the
 //     `.git` file of the new worktree (repointWorktreeGitFile).
 //
-// On Windows neither step runs (ownConfigCalls).
+// On Windows the copy has no link `worktrees`. There the call gets a folder of
+// its own in the state shadow, and other steps follow it (worktreeAddStaged).
+// With the member and in the state fallback-git the call names no copy, on
+// every system: on a Windows VM the add of 5fd08069 carries
+// GIT_COMMON_DIR=<git directory> in the state fallback-git, and no `.s<n>`
+// folder is made (val-s3p2b2-3-windows cell Q-S4c).
 func worktreeAdd(ctx context.Context, u gitUse, repo, leaf string, cp worktreeCheckpoint, args ...string) (string, error) {
 	_, named := u.names(repo)
-	named = named && shadowLinksWorktrees
-	addUse := u
-	if !shadowLinksWorktrees {
-		addUse = u.ownConfigCalls()
+	if named && shadowStagesAdd {
+		return worktreeAddStaged(ctx, u, repo, leaf, cp, args...)
 	}
-	cmd := hardenedGitCmd(ctx, addUse, repo, false, nil, args...)
+	named = named && shadowLinksWorktrees
+	cmd := hardenedGitCmd(ctx, u, repo, false, nil, args...)
 	if named {
 		makeWorktreesFolder(u.gitDir)
 	}
@@ -149,47 +138,66 @@ func makeWorktreesFolder(gitDir string) {
 //
 // The file is replaced only after the daemon read it and its text is that one
 // line: `gitdir: `, the folder of the copy, `/worktrees/`, one name with no
-// separator, and a newline. Every other text is left as it is. The remove and
-// the new file go through a root at leaf, with the fixed name `.git`, and leaf
-// must still be the folder that the create made and holds open (cp). The mode
-// of the new file is not measured: it is 0644, the mode of the file of git.
+// separator, and a newline. Every other text is left as it is
+// (replaceWorktreeGitFile). The mode of the new file is not measured: it is
+// 0644, the mode of the file of git.
 func repointWorktreeGitFile(u gitUse, leaf string, cp worktreeCheckpoint) {
+	replaceWorktreeGitFile(leaf, cp, func(old string) (string, bool) {
+		prefix := "gitdir: " + filepath.Join(u.repoDir, worktreesSubdir) + string(filepath.Separator)
+		name, ok := strings.CutPrefix(old, prefix)
+		if !ok {
+			return "", false
+		}
+		name, ok = strings.CutSuffix(name, "\n")
+		if !ok || name == "" || name == "." || name == ".." || strings.ContainsAny(name, "/\\\r\n") {
+			return "", false
+		}
+		return "gitdir: " + filepath.Join(u.gitDir, worktreesSubdir, name) + "\n", true
+	})
+}
+
+// replaceWorktreeGitFile replaces the `.git` file of the new worktree leaf with
+// the text that next gives for its old text. It reports whether the new file
+// was written. Nothing is changed when next refuses the old text.
+//
+// The remove and the new file go through a root at leaf, with the fixed name
+// `.git`. leaf must still be the folder that the create made and holds open
+// (cp), and `.git` must be a regular file of at most repointMaxBytes.
+func replaceWorktreeGitFile(leaf string, cp worktreeCheckpoint, next func(old string) (string, bool)) bool {
 	if cp.info == nil {
-		return
+		return false
 	}
 	root, err := os.OpenRoot(leaf)
 	if err != nil {
-		return
+		return false
 	}
 	defer func() { _ = root.Close() }()
 	if fi, err := root.Stat("."); err != nil || !os.SameFile(fi, cp.info) {
-		return
+		return false
 	}
 	if fi, err := root.Lstat(".git"); err != nil || !fi.Mode().IsRegular() || fi.Size() > repointMaxBytes {
-		return
+		return false
 	}
 	old, err := root.ReadFile(".git")
 	if err != nil {
-		return
+		return false
 	}
-	prefix := "gitdir: " + filepath.Join(u.repoDir, worktreesSubdir) + string(filepath.Separator)
-	name, ok := strings.CutPrefix(string(old), prefix)
+	text, ok := next(string(old))
 	if !ok {
-		return
-	}
-	name, ok = strings.CutSuffix(name, "\n")
-	if !ok || name == "" || name == "." || name == ".." || strings.ContainsAny(name, "/\\\r\n") {
-		return
+		return false
 	}
 	if err := root.Remove(".git"); err != nil {
-		return
+		return false
 	}
 	f, err := root.OpenFile(".git", os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0o644)
 	if err != nil {
-		return
+		return false
 	}
-	_, _ = f.WriteString("gitdir: " + filepath.Join(u.gitDir, worktreesSubdir, name) + "\n")
-	_ = f.Close()
+	_, err = f.WriteString(text)
+	if cerr := f.Close(); err == nil {
+		err = cerr
+	}
+	return err == nil
 }
 
 // repointMaxBytes bounds the read of the `.git` file of a new worktree
@@ -217,11 +225,7 @@ func (u gitUse) names(dir string) (gitDirTrust, bool) {
 // B3a) too. A bare
 // repository has GIT_OBJECT_DIRECTORY=<repo>/objects (s3p2-linux cell B3c).
 func (u gitUse) commonVars() []string {
-	common := u.repoDir
-	if u.ownConfig {
-		common = u.gitDir
-	}
-	return []string{"GIT_COMMON_DIR=" + common, "GIT_OBJECT_DIRECTORY=" + filepath.Join(u.gitDir, "objects")}
+	return []string{"GIT_COMMON_DIR=" + u.repoDir, "GIT_OBJECT_DIRECTORY=" + filepath.Join(u.gitDir, "objects")}
 }
 
 // pin is the folder variables of a git call in dir with no --git-dir= in its

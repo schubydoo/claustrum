@@ -200,6 +200,8 @@ component_management:
         - gitshadowuse.go
         - gitshadow_unix.go
         - gitshadow_windows.go
+        # the folder of one `worktree add` and the staging step of a create on Windows (5fd08069).
+        - worktreestaging.go
         # the gate and the answer of git.status (89cb6289).
         - gitstatus.go
         # the git.info root per OS (89cb6289).

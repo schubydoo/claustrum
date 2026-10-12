@@ -12,6 +12,13 @@ import (
 // and cell 22 of s3p2b-edges, Windows VM).
 const shadowLinksWorktrees = false
 
+// shadowStagesAdd is true on Windows. The `worktree add` of a create gets a
+// folder `.s<n>` of its own there in the state shadow, and the registration
+// goes into the git directory by a staging folder and a rename
+// (worktreeAddStaged). 5fd08069 does so on a Windows VM (cells 44 of
+// s3p2b-edges2-windows and 47 to 49 of s3p2b-edges3-windows).
+const shadowStagesAdd = true
+
 // openShadowLockFile makes the lock file of the daemon (0 bytes) and opens it
 // with no sharing. The open handle is the hold. A Windows VM measured the lock
 // file of a live 5fd08069 daemon. Every open with data access fails there, with
