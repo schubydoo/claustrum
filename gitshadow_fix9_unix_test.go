@@ -4,9 +4,11 @@ package main
 
 import (
 	"os"
+	"os/exec"
 	"path/filepath"
 	"regexp"
 	"slices"
+	"strconv"
 	"strings"
 	"testing"
 )
@@ -251,5 +253,40 @@ func TestDaemonGitDirAndCommonDir(t *testing.T) {
 	// --show-scope.
 	if got := []int{len(both[0]), len(both[1]), len(both[2]), len(both[3])}; !slices.Equal(got, []int{20, 2, 4, 12}) {
 		t.Errorf("the first four requests made %v calls, want 20, 2, 4 and 12", got)
+	}
+}
+
+// TestFailedInitNamesTheGitVersion: the first call of the start test exits 1
+// with a text. The cause then ends with the answer of `git version` in
+// brackets, after two version calls: one in the root folder, and one with the
+// form of a test call. On 5fd08069 the text is `git init failed under "<S>":
+// fatal: forced failure by the test wrapper (git version 2.43.0)`, and the
+// request makes 4 git calls (cell C2 of val-s3p2b2-7-linux2, Linux VM).
+func TestFailedInitNamesTheGitVersion(t *testing.T) {
+	out, err := exec.Command("git", "version").Output()
+	if err != nil {
+		t.Fatal(err)
+	}
+	version := strings.TrimSpace(string(out))
+	f := newShadowFixture(t)
+	slowGit(t, "init", "fail", 0, "fatal: forced failure by the test wrapper\n", "")
+	raw, calls := f.info(t, f.repo, nil)
+	dir := daemonFolder(t, f.run)
+	want := jsonQuoted(t, failedTestText("git init failed under "+strconv.Quote(dir)+": fatal: forced failure by the test wrapper ("+version+")"))
+	if !strings.Contains(raw, `"message":`+want) {
+		t.Errorf("git.info = %s\nwant the message %s", raw, want)
+	}
+	if len(calls) != 4 || !calls[0].excludesRead() || !slices.Contains(calls[1].argv, "init") {
+		t.Fatalf("%d calls, want the excludes read, the init and two version calls", len(calls))
+	}
+	plain, inTest := calls[2], calls[3]
+	if !slices.Equal(plain.argv, []string{"version"}) || plain.cwd != "/" {
+		t.Errorf("the first version call = %q in %s, want it plain and in the root folder", plain.argv, plain.cwd)
+	}
+	if inTest.argv[len(inTest.argv)-1] != "version" || filepath.Dir(inTest.cwd) != dir || inTest.env[0] != "GIT_CONFIG_NOSYSTEM=1" {
+		t.Errorf("the second version call = %q in %s, want the form of a test call", inTest.argv, inTest.cwd)
+	}
+	if got := entryNames(t, dir); !slices.Equal(got, []string{shadowLockName}) {
+		t.Errorf("the folder of the daemon after the failed test holds %v, want the lock file only", got)
 	}
 }

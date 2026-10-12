@@ -567,10 +567,7 @@ func shadowTestCalls(dir, check string) (state, cause string) {
 	// Calls 1 to 5 make the repository `real` with one empty commit.
 	if r := run(plainEnv, "init", "-q", "--template=", realDir); r.err != nil {
 		_, cause := failed("init", r)
-		if r.ended {
-			cause += shadowVersionNote(check, plainEnv)
-		}
-		return "", cause
+		return "", cause + shadowVersionNote(check, plainEnv)
 	}
 	if r := run(realEnv, "config", "helper.check", "real"); r.err != nil {
 		return failed("config", r)
@@ -674,14 +671,21 @@ func shadowTestCalls(dir, check string) (state, cause string) {
 	return controlShadow, ""
 }
 
-// shadowVersionNote is the end of the cause after an `init` that the bound
-// ended: the answer of `git version` in brackets. 5fd08069 then runs `git
-// version` two times before the reply. Its cause ends with ` (git version
-// 2.43.0)` (s3p2b-edges-linux2 cell 31, Linux VM). The first call has no option
-// list, the root folder as its working directory and no added variable. The
-// second has the option list, the folder and the variables of a test call.
-// Which of the two gives the text is not measured, and an `init` that fails
-// another way is not measured: it gets no such end.
+// shadowVersionNote is the end of the cause after an `init` that failed: the
+// answer of `git version` in brackets. 5fd08069 then runs `git version` two
+// times before the reply. After an `init` that the bound ended its cause ends
+// with ` (git version 2.43.0)` (s3p2b-edges-linux2 cell 31, Linux VM). After an
+// `init` that exits 1 with a text it is `git init failed under "<S>": fatal:
+// forced failure by the test wrapper (git version 2.43.0)` (cell C2 of
+// val-s3p2b2-7-linux2, Linux VM, 2 of 2 runs and the control). The first call
+// has no option list, the root folder as its working directory and no added
+// variable. The second has the option list, the folder and the variables of a
+// test call. Which of the two gives the text is not measured.
+//
+// The other calls of the test get no such end. A failed or ended `rev-parse
+// --verify` and a failed or ended `worktree add` have none in their rows
+// (cells 26 and 31 of s3p2b-edges-linux2). No record has a failed `config`,
+// `mktree`, `commit-tree` or `update-ref` call: not measured.
 func shadowVersionNote(check string, env []string) string {
 	first := shadowGit(gitVersionDir, shadowDaemonEnv(), "version")
 	second := shadowGit(check, env, append(shadowTestPrefix(), "version")...)
