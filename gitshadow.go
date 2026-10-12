@@ -459,6 +459,12 @@ func shadowGit(dir string, env []string, argv ...string) shadowRun {
 // full argv. The call ends at bound, and the wait for its output pipes after
 // that ends at shadowCallDrain.
 func boundedGit(bound time.Duration, dir string, env []string, argv ...string) shadowRun {
+	return boundedGitInput(bound, dir, env, nil, argv...)
+}
+
+// boundedGitInput is boundedGit with stdin as the standard input of the call,
+// or with none for nil.
+func boundedGitInput(bound time.Duration, dir string, env []string, stdin []byte, argv ...string) shadowRun {
 	base, cancelBase := gitCtx()
 	defer cancelBase()
 	ctx, cancel := context.WithTimeout(base, bound)
@@ -466,6 +472,9 @@ func boundedGit(bound time.Duration, dir string, env []string, argv ...string) s
 	cmd := exec.CommandContext(ctx, "git", argv...)
 	cmd.Dir = dir
 	cmd.Env = env
+	if stdin != nil {
+		cmd.Stdin = bytes.NewReader(stdin)
+	}
 	var out, errOut bytes.Buffer
 	cmd.Stdout, cmd.Stderr = &out, &errOut
 	cmd.WaitDelay = shadowCallDrain
@@ -586,16 +595,16 @@ func shadowTestCalls(dir, check string) (state, cause string) {
 	if err != nil {
 		return "", err.Error()
 	}
-	base, cancelBase := gitCtx()
-	ctx, cancel := context.WithTimeout(base, shadowCallBound)
-	listing, err := listConfigText(ctx, text, gitVersionDir, repoConfigListEnv())
-	ended := ctx.Err() != nil
-	cancel()
-	cancelBase()
-	if err != nil {
-		return failed("config", shadowRun{err: err, ended: ended})
+	// Call 7 has the bound and the wait for its pipes of the nine other calls
+	// (boundedGit). A child of git that keeps the output pipe open then does not
+	// hold the test. Its cause is the exec error alone, as before: a failed
+	// call 7 is not measured.
+	listed := boundedGitInput(shadowCallBound, gitVersionDir, repoConfigListEnv(), text,
+		"config", "--no-includes", "--file", "-", "--list", "-z")
+	if listed.err != nil {
+		return failed("config", shadowRun{err: listed.err, ended: listed.ended})
 	}
-	if err := fillShadowTestCopy(gitDir, shadowDir, listing); err != nil {
+	if err := fillShadowTestCopy(gitDir, shadowDir, []byte(listed.out)); err != nil {
 		return "", err.Error()
 	}
 	if _, cause, ok := reads(); !ok {

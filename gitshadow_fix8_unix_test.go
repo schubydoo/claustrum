@@ -6,6 +6,7 @@ import (
 	"os"
 	"path/filepath"
 	"slices"
+	"strconv"
 	"strings"
 	"syscall"
 	"testing"
@@ -128,5 +129,25 @@ func TestShutdownBeforeTheRepoFolderLeavesNoFolder(t *testing.T) {
 	}
 	if got := daemonFolders(t, f.run); len(got) != 0 {
 		t.Errorf("git-shadow holds %v after the shutdown, want nothing", got)
+	}
+}
+
+// TestStartTestCallSevenHasTheBound: call 7 of the start test lists the config
+// of the test repository from standard input. A child of that call keeps its
+// output pipe open for 20 s here. The test then ends after the wait for the
+// pipes, as for the nine other calls, and not after the 20 s. The cause is the
+// exec error of the call. 5fd08069 is not measured with such a child on call 7.
+func TestStartTestCallSevenHasTheBound(t *testing.T) {
+	f := newShadowFixture(t)
+	lowerShadowBound(t, 20*time.Second, 200*time.Millisecond)
+	slowGit(t, "--no-includes", "hold", 20*time.Second, "", "")
+	start := time.Now()
+	msg := f.s.gitShadow.gate(false)
+	if d := time.Since(start); d > 10*time.Second {
+		t.Errorf("the start test ended after %v, want it soon after the wait of 200 ms", d)
+	}
+	want := failedTestText("git config failed under " + strconv.Quote(daemonFolder(t, f.run)) + ": exec: WaitDelay expired before I/O complete")
+	if msg != want {
+		t.Errorf("the start test = %q\nwant %q", msg, want)
 	}
 }
