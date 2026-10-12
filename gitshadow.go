@@ -438,14 +438,25 @@ var shadowTestNames = []string{
 	"GIT_DIR", "GIT_WORK_TREE", "GIT_COMMON_DIR", "GIT_OBJECT_DIRECTORY",
 }
 
-// shadowDaemonEnv is the daemon's own environment as a test call gets it. Which
-// entries of the daemon 5fd08069 passes is not measured. claustrum drops the
-// entries that it drops for its other own calls (gitVersionRun), and the names
-// that the test sets, so that the test stays in its own folder.
+// shadowTestDropped are two variables of the daemon that 5fd08069 does not
+// pass to a test call. With GIT_DEFAULT_HASH=sha256 in the daemon, its test
+// repository is a SHA-1 repository and the test passes, and the later calls
+// have the variable. With GIT_CONFIG_SYSTEM in the daemon the same holds
+// (cells H1 and H3 of val-s3p2b2-15-linux2, Linux VM, one run each). With the
+// first one in a test call, `git init` makes a SHA-256 repository and the
+// fixed tree id of call 4 fails.
+var shadowTestDropped = []string{"GIT_DEFAULT_HASH", "GIT_CONFIG_SYSTEM"}
+
+// shadowDaemonEnv is the daemon's own environment as a test call gets it.
+// claustrum drops the entries that it drops for its other own calls
+// (gitVersionRun), the names that the test sets, so that the test stays in its
+// own folder, and shadowTestDropped. Which other entries of the daemon
+// 5fd08069 passes is not measured.
 func shadowDaemonEnv() []string {
 	env := withoutConfigCountSet(listingEnvBase())
 	return slices.DeleteFunc(env, func(kv string) bool {
-		return slices.Contains(shadowTestNames, envName(kv))
+		name := envName(kv)
+		return slices.Contains(shadowTestNames, name) || slices.Contains(shadowTestDropped, name)
 	})
 }
 

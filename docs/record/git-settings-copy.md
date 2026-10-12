@@ -32,6 +32,7 @@ The cells ran on three VMs. The Linux VM has git 2.43.0, the macOS VM has git 2.
 | `val-s3p2b2-13` | the second Linux VM and the macOS VM (110 cell runs on macOS) | `5fd08069` and the build of commit `ce95a6d`. The cells of round `val-s3p2b2-11` ran on that build, against the stored records of `5fd08069` |
 | `val-s3p2b2-13`, Windows part | Windows VM, 353 cell runs | `5fd08069` and the build of commit `ce95a6d`. Its cells are named with "Windows VM" below |
 | `val-s3p2b2-14` | the second Linux VM and the macOS VM | `5fd08069` and the build of commit `bb9bad7`. The swap after the read-tree call (3 runs for each form of the other folder, on each system), the swap after `worktree add` (Linux, 2 runs), and the cells of round `val-s3p2b2-13` again |
+| `val-s3p2b2-15` | the second Linux VM, 10 cells | `5fd08069` and the build of commit `bb9bad7`, with `GIT_DEFAULT_HASH` in the daemon environment and `init.defaultObjectFormat` in the user and system config |
 
 Round `val-s3p2b2-13` ran the build of commit `ce95a6d` on the Linux, macOS and Windows VMs. Two edits for Linux and macOS came after that build: the test after the read-tree call of a create, and the order of the step for the `.git` file of the new worktree. Round `val-s3p2b2-14` ran them on the Linux and macOS VMs, and both cells are equal to `5fd08069` there. The Windows build has no edit after `ce95a6d`. "claustrum and `5fd08069`" below names what each round left open.
 
@@ -131,6 +132,7 @@ The calls of `5fd08069`. The Linux rows are cell B3a of round `s3p2`. Cell S3 of
 - The argv starts with `-c core.hooksPath=/dev/null -c gc.auto=0 -c maintenance.auto=false -c commit.gpgsign=false`. On the Windows VM the first item is `core.hooksPath=NUL`.
 - The working directory is `<S>/.check-<n>`.
 - The variables, in the order of the Linux and macOS logs: `GIT_CONFIG_NOSYSTEM=1 GIT_CONFIG_GLOBAL=/dev/null LC_ALL=C LANGUAGE=C GIT_TERMINAL_PROMPT=0 GIT_AUTHOR_NAME=c GIT_AUTHOR_EMAIL=c@c GIT_COMMITTER_NAME=c GIT_COMMITTER_EMAIL=c@c`. On the Windows VM `GIT_CONFIG_GLOBAL` is `/dev/null` too.
+- Two variables of the daemon do not go to a test call: `GIT_DEFAULT_HASH` and `GIT_CONFIG_SYSTEM`. With `GIT_DEFAULT_HASH=sha256` in the daemon, `5fd08069` makes its 9 test calls without it, all with exit 0, and answers the five methods normally. Its later calls have the variable. The same holds for `GIT_CONFIG_SYSTEM` (cells H1 and H3 of round `val-s3p2b2-15`, Linux VM, one run each). Which other variables of the daemon it leaves out is not measured.
 - "+real" adds `GIT_DIR=<S>/.check-<n>/real/.git GIT_WORK_TREE=<S>/.check-<n>/real`. "+shadow" adds `GIT_COMMON_DIR=<S>/.check-<n>/shadow GIT_OBJECT_DIRECTORY=<S>/.check-<n>/real/.git/objects` after those two.
 
 | # | argv after the prefix | More variables |

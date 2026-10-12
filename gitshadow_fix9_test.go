@@ -178,3 +178,44 @@ func TestShadowInfoOnAFileOutsideARepository(t *testing.T) {
 		t.Errorf("git.info on the repository = %s with %d test calls, want the start test", raw, len(testCalls(calls)))
 	}
 }
+
+// TestStartTestWithoutTheDaemonHashDefault: a daemon with GIT_DEFAULT_HASH=sha256
+// or GIT_CONFIG_SYSTEM in its environment passes the start test. No test call
+// has the variable, and the calls after the test have it. On 5fd08069 the
+// daemon answers normally there, with 9 test calls and the variable in the
+// later calls only (cells H1 and H3 of val-s3p2b2-15-linux2, Linux VM). With
+// GIT_DEFAULT_HASH in a test call, `git init` makes a SHA-256 repository and
+// the commit-tree call of the test fails.
+func TestStartTestWithoutTheDaemonHashDefault(t *testing.T) {
+	for _, kv := range [][2]string{
+		{"GIT_DEFAULT_HASH", "sha256"},
+		{"GIT_CONFIG_SYSTEM", filepath.Join(t.TempDir(), "sysconfig")},
+	} {
+		t.Run(kv[0], func(t *testing.T) {
+			t.Setenv(kv[0], kv[1])
+			f := newShadowFixture(t)
+			raw, calls := f.info(t, f.repo, nil)
+			if !strings.Contains(raw, `"isRepo":true`) || !strings.Contains(raw, `"settingsControl":"shadow"`) {
+				t.Fatalf("git.info = %s", raw)
+			}
+			test := testCalls(calls)
+			if len(test) == 0 {
+				t.Fatal("no test call ran")
+			}
+			for _, c := range test {
+				if v, ok := lookupExact(c.env, kv[0]); ok {
+					t.Errorf("the test call %v has %s=%s", c.argv, kv[0], v)
+				}
+			}
+			later := 0
+			for _, c := range calls[len(calls)-3:] {
+				if v, ok := lookupExact(c.env, kv[0]); ok && v == kv[1] {
+					later++
+				}
+			}
+			if later == 0 {
+				t.Errorf("no call after the test has %s", kv[0])
+			}
+		})
+	}
+}
