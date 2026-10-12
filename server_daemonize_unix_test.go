@@ -5,6 +5,7 @@ package main
 import (
 	"bufio"
 	"encoding/json"
+	"fmt"
 	"net"
 	"os"
 	"os/exec"
@@ -13,6 +14,7 @@ import (
 	"runtime"
 	"strconv"
 	"strings"
+	"sync"
 	"syscall"
 	"testing"
 	"time"
@@ -97,17 +99,44 @@ func TestServeDaemonizeWithAmbientChildMarker(t *testing.T) {
 	}
 }
 
-// buildClaustrum compiles the package under test into a temp binary, matching the
-// production build's CGO_ENABLED=0.
+// The claustrum binary of buildClaustrum. It is built once per test binary.
+var (
+	claustrumBinOnce sync.Once
+	claustrumBinPath string
+	claustrumBinFail string
+)
+
+// buildClaustrum compiles the package under test into a binary, matching the
+// production build's CGO_ENABLED=0. The first call builds it, into its own
+// folder under the fixture template root, and every call returns that one
+// path. No file is beside it, so the daemon finds no claustrum.conf there. A
+// caller must not change or remove the binary: a test that needs to do so
+// copies it first. A failed build fails each caller with the build output.
 func buildClaustrum(t *testing.T) string {
 	t.Helper()
-	bin := filepath.Join(t.TempDir(), "claustrum")
-	build := exec.Command("go", "build", "-o", bin, ".")
-	build.Env = append(os.Environ(), "CGO_ENABLED=0")
-	if out, err := build.CombinedOutput(); err != nil {
-		t.Fatalf("go build: %v\n%s", err, out)
+	claustrumBinOnce.Do(func() {
+		if fixtureTplRoot == "" {
+			claustrumBinFail = "no fixture template root: TestMain did not call makeFixtureTemplateRoot"
+			return
+		}
+		dir, err := os.MkdirTemp(fixtureTplRoot, "claustrum-bin-")
+		if err != nil {
+			claustrumBinFail = fmt.Sprintf("folder for the claustrum binary: %v", err)
+			return
+		}
+		bin := filepath.Join(dir, "claustrum")
+		build := exec.Command("go", "build", "-o", bin, ".")
+		build.Env = append(os.Environ(), "CGO_ENABLED=0")
+		if out, err := build.CombinedOutput(); err != nil {
+			claustrumBinFail = fmt.Sprintf("go build: %v\n%s", err, out)
+			return
+		}
+		claustrumBinPath = bin
+	})
+	if claustrumBinFail != "" {
+		t.Fatal(claustrumBinFail)
 	}
-	return bin
+	return claustrumBinPath
 }
 
 // dialWithRetry polls the socket until it accepts a connection or the deadline
