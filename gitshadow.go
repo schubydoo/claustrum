@@ -815,6 +815,15 @@ func writeShadowTestFiles(shadowDir string, head, config []byte) error {
 // folder holds the lock file only there (s3p2-oldgit section 5, Linux VM).
 func (req *request) settingsGateRefusal(t gitDirTrust, off jsonTrueSwitch, dir string) (msg string, noRepo bool) {
 	req.gitRefused, req.configRefused = false, false
+	// git.info and git.list_branches skip the trust check with a GIT_COMMON_DIR
+	// in the daemon environment (requestGitDirTrust). With a GIT_DIR there too,
+	// the request still gets its copy (daemonCommonDirStays). The gate then
+	// takes the verdict of the check for the copy alone.
+	if !bool(off) && t.verdict == gitDirTrusted && t.pinCommonDir == "" && daemonCommonDirSet() && !daemonCommonDirStays() {
+		if judged := gitDirTrustFor(dir); judged.verdict == gitDirTrusted {
+			t = judged
+		}
+	}
 	if t.verdict == gitDirTrusted {
 		if msg := req.shadow.gate(bool(off)); msg != "" {
 			return msg, false

@@ -861,11 +861,11 @@ func (r *statusRun) entryItems() []string {
 // `commondir` file of the temporary folder still names the git directory of the
 // repository (cell 22 of s3p2b-edges, Windows VM).
 func statusCommonPin(u gitUse, common string) []string {
+	if u.shadow() && !daemonCommonDirStays() {
+		return u.commonVars()
+	}
 	if daemonCommonDirSet() {
 		return nil
-	}
-	if u.shadow() {
-		return u.commonVars()
 	}
 	return []string{"GIT_COMMON_DIR=" + common}
 }
@@ -993,7 +993,7 @@ func statusChanges(u gitUse, path, common string, e statusEntry) ([]string, erro
 	r := &statusRun{ctx: ctx, path: path, common: common, tmp: tmp,
 		pin: []string{"GIT_COMMON_DIR=" + common}, commonPin: statusCommonPin(u, common), attrSource: attrSource,
 		front: u.gitDirFront()}
-	if u.shadow() && !daemonCommonDirSet() {
+	if u.shadow() && !daemonCommonDirStays() {
 		r.pin = r.commonPin
 		r.entryConfig = e.config
 	}

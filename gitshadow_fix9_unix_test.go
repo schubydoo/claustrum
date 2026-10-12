@@ -5,6 +5,7 @@ package main
 import (
 	"os"
 	"path/filepath"
+	"regexp"
 	"slices"
 	"strings"
 	"testing"
@@ -125,5 +126,130 @@ func TestDaemonFolderThatTakesNoNewEntry(t *testing.T) {
 	n, tail, _ := strings.Cut(rest, ":")
 	if !ok || n == "" || strings.Trim(n, "0123456789") != "" || tail != ` permission denied","errorCode":"worktree_add_failed"}}` {
 		t.Errorf("git.worktree_create = %s\nwant it to start %s<n>: permission denied", raw, start)
+	}
+}
+
+// folderVars are the names of the folder variables of a call, in the order of
+// its environment.
+func folderVars(c envCall) []string {
+	var out []string
+	for _, kv := range c.env {
+		switch n := envName(kv); n {
+		case "GIT_DIR", "GIT_COMMON_DIR", "GIT_OBJECT_DIRECTORY", "GIT_WORK_TREE":
+			out = append(out, n)
+		}
+	}
+	return out
+}
+
+// TestDaemonGitDirStaysFirst: the daemon has a GIT_DIR of another repository
+// in its environment. Each call that names the copy then has GIT_DIR, then
+// GIT_COMMON_DIR=<copy>, then GIT_OBJECT_DIRECTORY, and no GIT_WORK_TREE. The
+// copy is the one of the other repository. On 5fd08069 the 27 calls of the five
+// requests have that order (cell o1-gd-v2 of val-s3p2b2-7-linux2, Linux VM).
+func TestDaemonGitDirStaysFirst(t *testing.T) {
+	f := newShadowFixture(t)
+	_, otherGitDir := configRepo(t)
+	t.Setenv("GIT_DIR", otherGitDir)
+	raw, calls := f.info(t, f.repo, nil)
+	if !strings.Contains(raw, `"isRepo":true`) || !strings.Contains(raw, `"settingsControl":"shadow"`) {
+		t.Fatalf("git.info = %s", raw)
+	}
+	copyOf := filepath.Join(daemonFolder(t, f.run), shadowRepoName(otherGitDir))
+	if _, err := os.Lstat(filepath.Join(copyOf, "config")); err != nil {
+		t.Fatalf("the copy of the other repository: %v", err)
+	}
+	named := 0
+	for _, c := range calls {
+		if v, _ := lookupExact(c.env, "GIT_COMMON_DIR"); v != copyOf {
+			continue
+		}
+		named++
+		if got, want := folderVars(c), []string{"GIT_DIR", "GIT_COMMON_DIR", "GIT_OBJECT_DIRECTORY"}; !slices.Equal(got, want) {
+			t.Errorf("the call %q has the folder variables %q, want %q", c.argv[len(c.argv)-2:], got, want)
+		}
+		if v, _ := lookupExact(c.env, "GIT_DIR"); v != otherGitDir {
+			t.Errorf("GIT_DIR of the call = %s, want %s", v, otherGitDir)
+		}
+	}
+	if named < 8 {
+		t.Errorf("%d calls name the copy, want at least 8", named)
+	}
+}
+
+// TestDaemonGitDirAndCommonDir: the daemon has GIT_DIR and GIT_COMMON_DIR of
+// another repository in its environment. The five requests then make the calls
+// that they make with GIT_DIR alone, and each call that names a copy has
+// GIT_COMMON_DIR=<copy> in the place of the value of the daemon. On 5fd08069
+// the call counts are 20, 2, 4, 11 and 2 in both cells, and the folder of the
+// repository is made (cells o1-gd-v2 and o1-gdcd-v2 of val-s3p2b2-7-linux2,
+// Linux VM).
+func TestDaemonGitDirAndCommonDir(t *testing.T) {
+	run := func(t *testing.T, both bool) (lists [][]string, replies []string) {
+		f := newShadowFixture(t)
+		_, otherGitDir := configRepo(t)
+		t.Setenv("GIT_DIR", otherGitDir)
+		if both {
+			t.Setenv("GIT_COMMON_DIR", otherGitDir)
+		}
+		copyOf := ""
+		for _, m := range f.fiveRequests(nil) {
+			raw, calls := f.call(t, m.method, m.params)
+			replies = append(replies, strings.ReplaceAll(raw, f.repo, "<repo>"))
+			if copyOf == "" {
+				copyOf = filepath.Join(daemonFolder(t, f.run), shadowRepoName(otherGitDir))
+				if _, err := os.Lstat(filepath.Join(copyOf, "config")); err != nil {
+					t.Fatalf("the copy of the other repository after %s: %v", m.method, err)
+				}
+			}
+			var list []string
+			for _, c := range calls {
+				line := strings.Join(c.argv, " ")
+				for _, old := range []string{filepath.Dir(copyOf), f.run, f.repo, otherGitDir} {
+					line = strings.ReplaceAll(line, old, "<x>")
+				}
+				common, _ := lookupExact(c.env, "GIT_COMMON_DIR")
+				// Two kinds of call have no row with both variables and keep
+				// their form: the `--show-scope` listing, which is claustrum's
+				// own, and the pair of a remove that finds the registration.
+				ownForm := slices.Contains(c.argv, "--show-scope") ||
+					(m.method == "git.worktree_remove" && slices.ContainsFunc(c.argv, func(a string) bool { return strings.HasPrefix(a, "--git-dir=") }))
+				switch {
+				case ownForm:
+				case common == copyOf:
+					line += " [copy]"
+				case strings.Contains(common, ".check-"), common == "" || c.configRead() || c.excludesRead():
+				default:
+					t.Errorf("%s: the call %q has GIT_COMMON_DIR=%s, want the copy %s", m.method, c.argv[len(c.argv)-2:], common, copyOf)
+				}
+				list = append(list, line)
+			}
+			lists = append(lists, list)
+		}
+		return lists, replies
+	}
+	var alone, both [][]string
+	var aloneReplies, bothReplies []string
+	t.Run("GIT_DIR", func(t *testing.T) { alone, aloneReplies = run(t, false) })
+	t.Run("GIT_DIR and GIT_COMMON_DIR", func(t *testing.T) { both, bothReplies = run(t, true) })
+	if len(alone) != 5 || len(both) != 5 {
+		t.Fatalf("%d and %d requests ran, want 5 and 5", len(alone), len(both))
+	}
+	if !slices.Equal(aloneReplies, bothReplies) {
+		t.Errorf("the replies differ:\n%q\n%q", aloneReplies, bothReplies)
+	}
+	// The object ids and the numbers of the short-lived folders differ per run.
+	varying := regexp.MustCompile(`[0-9a-f]{40}|[0-9]+`)
+	for i := range alone {
+		a, b := varying.ReplaceAllString(strings.Join(alone[i], "\n"), "#"), varying.ReplaceAllString(strings.Join(both[i], "\n"), "#")
+		if a != b {
+			t.Errorf("request %d: %d calls with GIT_DIR alone and %d with both variables\n%s\n---\n%s", i+1, len(alone[i]), len(both[i]), a, b)
+		}
+	}
+	// 5fd08069 makes 20, 2 and 4 calls in the first three requests of both
+	// cells. Its create makes 11: claustrum has one more, the listing with
+	// --show-scope.
+	if got := []int{len(both[0]), len(both[1]), len(both[2]), len(both[3])}; !slices.Equal(got, []int{20, 2, 4, 12}) {
+		t.Errorf("the first four requests made %v calls, want 20, 2, 4 and 12", got)
 	}
 }

@@ -110,7 +110,7 @@ func (u gitUse) front(dir string) []string {
 // worktree (statusRun.entryItems). On the read-tree of a create the items come after the
 // lfs.storage item (cells 12a and 12c of val-s3p2b2-3-linux).
 func (u gitUse) gitDirFront() []string {
-	if !u.shadow() || daemonCommonDirSet() {
+	if !u.shadow() || daemonCommonDirStays() {
 		return nil
 	}
 	return u.items

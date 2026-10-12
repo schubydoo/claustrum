@@ -242,10 +242,10 @@ const repointMaxBytes = 8192
 // names reports whether a call in dir names the copy of this request. It does
 // when the request has a copy, and the trust check pins dir to the git
 // directory of that copy. A call in any other folder keeps the form of commonDirPinEnv. With a
-// GIT_COMMON_DIR in the daemon's own environment no call names the copy (not
-// measured).
+// GIT_COMMON_DIR and no GIT_DIR in the daemon's own environment no call names
+// the copy (daemonCommonDirStays).
 func (u gitUse) names(dir string) (gitDirTrust, bool) {
-	if !u.shadow() || daemonCommonDirSet() {
+	if !u.shadow() || daemonCommonDirStays() {
 		return gitDirTrust{}, false
 	}
 	t := gitDirTrustFor(dir)
@@ -304,8 +304,13 @@ func (u gitUse) commonVars() []string {
 //     VM). A bare repository has no GIT_WORK_TREE (s3p2-linux cell B3c).
 //
 // With a GIT_DIR in the daemon's own environment, the trust check judges that
-// directory, and the walk from dir does not find it. The call then gets the
-// judged directory as GIT_DIR and no GIT_WORK_TREE of its own (not measured).
+// directory, and the walk from dir does not find it. The call then gets the two
+// first variables only. The daemon's own GIT_DIR stays at its place in the
+// environment, before the profile values, and the call has no GIT_WORK_TREE.
+// On 5fd08069 each such call has GIT_DIR=<the daemon's value>, the profile
+// values, GIT_COMMON_DIR=<copy> and GIT_OBJECT_DIRECTORY=<that git
+// directory>/objects, in this order (cell o1-gd-v2 of val-s3p2b2-7-linux2,
+// Linux VM, 27 calls). A relative GIT_DIR of the daemon is not measured.
 func (u gitUse) pin(dir string) []string {
 	t, ok := u.names(dir)
 	if !ok {
@@ -315,10 +320,10 @@ func (u gitUse) pin(dir string) []string {
 	if t.worktreeEntry != "" {
 		gitDir = t.worktreeEntry
 	}
-	env := append(u.commonVars(), "GIT_DIR="+gitDir)
 	if os.Getenv("GIT_DIR") != "" {
-		return env
+		return u.commonVars()
 	}
+	env := append(u.commonVars(), "GIT_DIR="+gitDir)
 	if root, _ := gitWalkRoot(dir); root != "" {
 		env = append(env, "GIT_WORK_TREE="+root)
 	}
