@@ -47,6 +47,85 @@ func TestStaleStepThroughTheHeldGitDir(t *testing.T) {
 	}
 }
 
+// TestStaleStepAndTheFolderOfItsRoot: the stale step opens the registrations
+// folder through the held git directory in two states that it opened by the
+// path before. T holds one old registration whose record names the missing
+// leaf, and the removal is a recorder. From the code, not measured on
+// 5fd08069.
+//
+//   - The held folder has no `worktrees` folder, as in the first create of a
+//     repository: the step opens nothing and asks for no removal. With an open
+//     by the path the recorder gets the entry of T.
+//   - The request spells baseRepo through a symbolic link above it: the step
+//     goes through the held folder. With a compare of the path texts alone it
+//     goes by the path, into T.
+//
+// Two rows are controls. With no held folder the step goes by the path, so the
+// entry of T is one that the step finds. A spelling that named another folder
+// at the hold is the path of another git directory, and it goes by the path
+// too.
+func TestStaleStepAndTheFolderOfItsRoot(t *testing.T) {
+	type row struct {
+		name string
+		// noWorktrees removes the folder `worktrees` of the held folder.
+		// heldOld gives the held folder a stale entry of its own.
+		noWorktrees, heldOld bool
+		// through is the spelling of baseRepo: "" for the resolved path, "link"
+		// for a link above it that the hold saw, "late" for that link with the
+		// hold taken after the swap.
+		through string
+		noHold  bool
+		want    string
+	}
+	for _, r := range []row{
+		{name: "no worktrees folder in the held folder", noWorktrees: true, want: ""},
+		{name: "control: no held folder", noWorktrees: true, noHold: true, want: "old other"},
+		{name: "baseRepo through a link above it", heldOld: true, through: "link", want: "old held"},
+		{name: "control: a spelling that named another folder at the hold", heldOld: true, through: "late", want: "old other"},
+	} {
+		t.Run(r.name, func(t *testing.T) {
+			f := newHeldFixture(t)
+			// The steps remove through a root at the folder `worktrees`.
+			removals := f.removals
+			if !r.noWorktrees {
+				removals = heldWorktrees(t, f)
+			}
+			leaf := filepath.Join(f.repo, ".claude", "worktrees", "gone")
+			record := filepath.Join(leaf, ".git") + "\n"
+			mustWrite(t, filepath.Join(f.other, "worktrees", "old", "gitdir"), record)
+			if r.heldOld {
+				mustWrite(t, filepath.Join(f.gitDir, "worktrees", "old", "gitdir"), record)
+			}
+			if r.noWorktrees {
+				if err := os.RemoveAll(filepath.Join(f.gitDir, "worktrees")); err != nil {
+					t.Fatal(err)
+				}
+			}
+			repo := f.repo
+			if r.through != "" {
+				above := filepath.Join(resolveTestRoot(t, t.TempDir()), "above")
+				linkAt(t, above, filepath.Dir(f.repo))
+				repo = filepath.Join(above, filepath.Base(f.repo))
+			}
+			if r.through == "link" {
+				f.u.accepted.holdFor(repo, gitDirTrust{})
+			}
+			f.swap(t)
+			if r.through == "late" {
+				f.u.accepted.holdFor(repo, gitDirTrust{})
+			}
+			held := f.u.accepted
+			if r.noHold {
+				held = nil
+			}
+			dropStaleWorktreeRegistration(repo, leaf, held)
+			if got := strings.Join(*removals, ","); got != r.want {
+				t.Errorf("the step asked to remove %q, want %q", got, r.want)
+			}
+		})
+	}
+}
+
 // TestTestedRegistrationThroughTheHeldGitDir: the rollback delete and the
 // placement of the index of an accepted registration go through the held
 // folder. Both have the identity test of D24, so a step by the path removes

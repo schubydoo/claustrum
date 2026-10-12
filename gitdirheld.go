@@ -3,6 +3,7 @@ package main
 import (
 	"crypto/rand"
 	"encoding/hex"
+	"errors"
 	"os"
 	"path/filepath"
 	"strings"
@@ -151,20 +152,33 @@ func (a *acceptedGitDir) installIndex(src, adminDir string) {
 }
 
 // registrationsRoot opens the registrations folder at dir for a delete or a
-// file write of a create. When dir is the folder `worktrees` of the held git
-// directory, and that entry is a real folder, the root is opened through the
-// held folder: a folder that was put at the path of the git directory gets
-// nothing. It is safe on nil.
+// file write of a create, on Linux and macOS. It is safe on nil.
 //
-// Every other folder is opened by its path (openRegistrationsRoot), as before:
-// a create that holds no git directory, the registrations folder of another
-// git directory, and a `worktrees` entry that is a symbolic link. 89cb6289
-// creates with such a link (rows D-1 and D-3 to D-5, Linux VM).
+// When dir is the folder `worktrees` of the held git directory (isAt), the
+// root is opened through the held folder: a folder that was put at the path of
+// the git directory gets nothing. With no entry `worktrees` in the held folder
+// nothing is opened, and the error is that of a folder that does not exist.
+//
+// Two cases are opened by the path (openRegistrationsRoot), as before the
+// hold. The first is a create that holds no git directory, or a dir of another
+// git directory. The second is a `worktrees` entry of the held folder that is
+// a symbolic link: 89cb6289 creates with such a link (rows D-1 and D-3 to D-5,
+// Linux VM). The index and the rollback delete keep their identity test there
+// (replacedIn, D24). The stale step has none.
 func (a *acceptedGitDir) registrationsRoot(dir string) (*os.Root, error) {
-	if a != nil && sameGitDirPath(filepath.Clean(dir), filepath.Join(filepath.Clean(a.path), worktreesSubdir)) {
-		if fi, err := a.root.Lstat(worktreesSubdir); err == nil && goesAsTree(fi.Mode()) {
-			return a.root.OpenRoot(worktreesSubdir)
-		}
+	if filepath.Base(dir) != worktreesSubdir || !a.isAt(filepath.Dir(filepath.Clean(dir))) {
+		return openRegistrationsRoot(dir)
 	}
-	return openRegistrationsRoot(dir)
+	fi, err := a.root.Lstat(worktreesSubdir)
+	if err != nil {
+		var pe *os.PathError
+		if errors.As(err, &pe) {
+			err = pe.Err
+		}
+		return nil, &os.PathError{Op: "open", Path: dir, Err: err}
+	}
+	if fi.Mode()&os.ModeSymlink != 0 {
+		return openRegistrationsRoot(dir)
+	}
+	return a.root.OpenRoot(worktreesSubdir)
 }

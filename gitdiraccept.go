@@ -52,6 +52,9 @@ type acceptedGitDir struct {
 	// verdict (gitUse.names).
 	dir   string
 	trust gitDirTrust
+	// sent is `<dir>/.git` as the request spells it, when that path named the
+	// held folder at the hold (holdFor). It is "" otherwise.
+	sent string
 	// moved is true after a good `worktree add`: the repository then has the
 	// registration of the new worktree.
 	moved bool
@@ -160,6 +163,31 @@ func acceptGitDir(path string, before os.FileInfo) *acceptedGitDir {
 		return nil
 	}
 	return a
+}
+
+// holdFor records the baseRepo dir of the create and its trust verdict t. It
+// also decides, once and by identity, whether `<dir>/.git` is the held folder:
+// a baseRepo can be spelled in another way than the resolved path of its git
+// directory (a symbolic link above it, a short name on Windows). The decision
+// is made here, while the hold is fresh, and not at a later step: a folder
+// that is put at the path afterwards has another identity, and a step that
+// asked then went to that folder by its path.
+func (a *acceptedGitDir) holdFor(dir string, t gitDirTrust) {
+	a.dir, a.trust, a.sent = dir, t, ""
+	sent := filepath.Join(dir, ".git")
+	if fi, err := os.Stat(sent); err == nil && os.SameFile(fi, a.info) {
+		a.sent = sent
+	}
+}
+
+// isAt reports whether gitDir is a path of the held folder: its resolved path
+// by text, or the spelling that holdFor accepted. It is safe on nil.
+func (a *acceptedGitDir) isAt(gitDir string) bool {
+	if a == nil {
+		return false
+	}
+	g := filepath.Clean(gitDir)
+	return sameGitDirPath(g, filepath.Clean(a.path)) || (a.sent != "" && g == a.sent)
 }
 
 // release closes the held folder. It is safe on nil.

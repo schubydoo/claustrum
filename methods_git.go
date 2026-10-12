@@ -907,7 +907,7 @@ func gitWorktreeCreateLocked(req *request, p *gitParams, repo string) response {
 				Error: repoConfigPrefix + gitDirLinkText(req.use.gitDir), ErrorCode: "worktree_add_failed"})
 		}
 		defer held.release()
-		held.dir, held.trust = repo, t
+		held.holdFor(repo, t)
 		req.use.accepted = held
 	}
 	// A repo whose config cannot be enumerated is refused before git runs — the

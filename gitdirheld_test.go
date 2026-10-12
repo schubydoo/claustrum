@@ -238,3 +238,31 @@ func TestHeldWorktreeConfig(t *testing.T) {
 		t.Errorf("the file of the held folder = %q", got)
 	}
 }
+
+// TestHeldFolderSpelling: a baseRepo that the request spells through a link
+// above it is the held folder, by the identity of its `.git` at the hold. The
+// stale step of every system decides with isAt. A spelling that names another
+// folder at the hold is not the held folder, and neither is the path of T.
+// With a compare of the path texts alone the first test fails.
+func TestHeldFolderSpelling(t *testing.T) {
+	f := newHeldFixture(t)
+	above := filepath.Join(resolveTestRoot(t, t.TempDir()), "above")
+	linkAt(t, above, filepath.Dir(f.repo))
+	spelled := filepath.Join(above, filepath.Base(f.repo))
+	a := f.u.accepted
+	if a.isAt(filepath.Join(spelled, ".git")) {
+		t.Error("the spelling counts before the hold saw it")
+	}
+	a.holdFor(spelled, gitDirTrust{})
+	if !a.isAt(filepath.Join(spelled, ".git")) || !a.isAt(f.gitDir) {
+		t.Error("the spelling of the request or the resolved path is not the held folder")
+	}
+	if a.isAt(f.other) || (*acceptedGitDir)(nil).isAt(f.gitDir) {
+		t.Error("another folder, or no hold, counts as the held folder")
+	}
+	f.swap(t)
+	a.holdFor(spelled, gitDirTrust{})
+	if a.isAt(filepath.Join(spelled, ".git")) {
+		t.Error("a spelling that names another folder at the hold counts as the held folder")
+	}
+}
