@@ -827,14 +827,15 @@ type statusRun struct {
 // in the temporary folder then start with `-c core.sparsecheckoutcone=true`,
 // before the --attr-source option (cell p2-K-sparsecheckoutcone-true of
 // val-s3p2b2-6-linux, Linux VM, and row U2 of val-s3p2b2-6-macos, macOS VM, 2
-// of 2 runs). With a file of 0 bytes 5fd08069 makes no second read (cell
-// p2-K-none-empty-file of the Linux round).
+// of 2 runs). A Windows VM has the same two reads, as calls 5 and 9 of 23, for
+// `sparsecheckoutcone` and for `sparsecheckout = true` (cells P2-K4 and P2-X2
+// of val-s3p2b2-6-windows, 2 runs and 1 run). With a file of 0 bytes 5fd08069
+// makes no second read (cell p2-K-none-empty-file of the Linux round).
 //
 // The file of that cell is a copy of the file of the repository. So which file
 // 5fd08069 reads there is not measured: claustrum lists the text that the test
-// of the entry read. A file with `core.sparsecheckout` or `index.sparse` is not
-// measured in the state shadow: it gets the read, and `index.sparse` gives no
-// item. A read that fails gives no item (not measured). With the member and in
+// of the entry read. A file with `index.sparse` is not measured in the state
+// shadow: it gets the read and gives no item. A read that fails gives no item (not measured). With the member and in
 // the state fallback-git the read is not measured: none runs.
 func (r *statusRun) entryItems() []string {
 	if r.entryRead || len(r.entryConfig) == 0 {

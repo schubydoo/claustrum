@@ -127,7 +127,8 @@ func selectsIncludeScan(host *shadowHost) bool {
 // five creates with the member on the first, the second and the fifth, the
 // counts are 1, 0, 0, 0 and 0. With the member on the third of four they are
 // 1, 0, 0 and 0 (cells p3m-member and p3-include of val-s3p2b2-6-linux, Linux
-// VM, 2 of 2 and 3 of 3 runs). A call that did not exit 0 is not measured: its
+// VM, 2 of 2 and 3 of 3 runs, and cells P3 and F2 of val-s3p2b2-6-windows,
+// Windows VM, 2 runs each). A call that did not exit 0 is not measured: its
 // answer is not kept. The state fallback-git is not measured: it keeps the
 // answer too.
 func (h *shadowHost) includeScan() bool {

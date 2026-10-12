@@ -24,7 +24,7 @@ import (
 // before.
 
 // worktreeConfigItemKeys are the keys of a `config.worktree` file whose
-// settings go to the git calls as `-c` items. 5fd08069 sends these seven:
+// settings go to the git calls as `-c` items. 5fd08069 sends these twelve:
 //
 //   - `-c core.filemode=false` and `-c core.sparsecheckout=true` from the file
 //     of the repository (cells 12a to 12c and 12f of val-s3p2b2-3-linux, cells
@@ -36,15 +36,24 @@ import (
 //     core.symlinks=false` and `-c core.sparsecheckoutcone=true` from the file
 //     of the repository. Each ran as the one key of the file (the four cells
 //     p2-K of val-s3p2b2-6-linux with those names, Linux VM, and row U1 of
-//     val-s3p2b2-6-macos, macOS VM, 2 of 2 runs).
+//     val-s3p2b2-6-macos, macOS VM, 2 of 2 runs). A Windows VM has the same
+//     four items (section 0 item 4 of the report of val-s3p2b2-6-windows, 2 of
+//     2 runs).
+//   - `core.safecrlf = true`, `core.quotepath = false`,
+//     `core.precomposeunicode = true`, `core.untrackedcache = true` and
+//     `core.longpaths = true`, each as the one key of the file (the extra rows
+//     of that item, Windows VM, 1 run each).
 //
 // `core.bare` and `core.worktree` of that file give no item (cells 12a, 12d,
 // 12e, 9a and 9k of val-s3p2b2-3-linux). `core.hookspath` and `user.name` give
 // none either (cells p2-K-hookspath-x and p2-K-user-name-n of
-// val-s3p2b2-6-linux). Every other key is not measured: it gives no item here.
+// val-s3p2b2-6-linux). `core.protectntfs = false` and
+// `status.showUntrackedFiles = no` give none (the extra rows of the Windows
+// round). A key with no row is not passed: it gives no item here.
 var worktreeConfigItemKeys = []string{
 	"core.filemode", "core.sparsecheckout", "core.eol",
 	"core.autocrlf", "core.ignorecase", "core.symlinks", "core.sparsecheckoutcone",
+	"core.safecrlf", "core.quotepath", "core.precomposeunicode", "core.untrackedcache", "core.longpaths",
 }
 
 // worktreeConfigItems are the `-c` items of settings, the listing of one
@@ -171,7 +180,10 @@ var worktreeConfigDropKeys = []string{"core.bare", "core.worktree"}
 // in one millisecond (section 0.2 item 4 of the report of val-s3p2b2-6-linux,
 // Linux VM). On a macOS VM the folder goes after the file of the new
 // registration is written and before `.index-<n>` comes, in 7 of 7 sightings
-// (row U3 of val-s3p2b2-6-macos). So the folder is made in each such create.
+// (row U3 of val-s3p2b2-6-macos). On a Windows VM it was last seen 0 to 9 ms
+// before the first sight of that file, in 22 create runs (section 0 item 6 of
+// the report of val-s3p2b2-6-windows). So the folder is made in each such
+// create.
 // drop removes it, and it does nothing with no folder. The create calls it
 // after it wrote the file of the registration (placeWorktreeConfig). A create
 // that is refused before that step calls it at its reply (not measured).

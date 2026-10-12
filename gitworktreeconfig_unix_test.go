@@ -522,7 +522,9 @@ func TestEmptyMainWorktreeConfigIsNotListed(t *testing.T) {
 // start with the item of the file, before the --attr-source option. On
 // 5fd08069 the read is call 9 of 23, with `-c core.sparsecheckoutcone=true` on
 // those four calls (cell p2-K-sparsecheckoutcone-true of val-s3p2b2-6-linux,
-// Linux VM, and row U2 of val-s3p2b2-6-macos, macOS VM). With a file of 0 bytes it makes one read and the calls keep the
+// Linux VM, and row U2 of val-s3p2b2-6-macos, macOS VM). A Windows VM has it
+// for `sparsecheckout = true` too (cells P2-K4 and P2-X2 of
+// val-s3p2b2-6-windows). With a file of 0 bytes it makes one read and the calls keep the
 // plain list (cell p2-K-none-empty-file of that round). With the member the
 // second read is not measured: claustrum makes none.
 func TestStatusReadsTheEntryConfigASecondTime(t *testing.T) {
@@ -534,6 +536,7 @@ func TestStatusReadsTheEntryConfigASecondTime(t *testing.T) {
 		front      []string
 	}{
 		{"p2-K-sparsecheckoutcone-true", cone, nil, 2, []string{"core.sparsecheckoutcone=true"}},
+		{"P2-X2 of the Windows round: sparsecheckout", "[core]\n\tsparsecheckout = true\n", nil, 2, []string{"core.sparsecheckout=true"}},
 		{"p2-K-none-empty-file", "", nil, 1, nil},
 		{"with the member (not measured)", cone, map[string]any{"shadowDirOff": true}, 1, nil},
 	} {

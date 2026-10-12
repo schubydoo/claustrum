@@ -13,7 +13,9 @@ import (
 // val-s3p2b2-3-linux). It sends no item for `core.bare` and `core.worktree`
 // (cells 12a, 12d, 12e and 9a). The six rows p2-K are the cells of
 // val-s3p2b2-6-linux with those names (Linux VM). Row U1 of val-s3p2b2-6-macos
-// has the four keys with an item on a macOS VM. Four keys give an item, and
+// has the four keys with an item on a macOS VM. The Windows extra rows are
+// those of section 0 item 4 of the report of val-s3p2b2-6-windows (Windows VM,
+// 1 run each). Four keys give an item, and
 // `core.hookspath` and `user.name` give none. Every other key has no row and
 // gives no item.
 func TestWorktreeConfigItems(t *testing.T) {
@@ -39,6 +41,13 @@ func TestWorktreeConfigItems(t *testing.T) {
 		{"p2-K-sparsecheckoutcone-true", []repoSetting{set("core.sparsecheckoutcone", "true")}, []string{"-c", "core.sparsecheckoutcone=true"}},
 		{"p2-K-hookspath-x", []repoSetting{set("core.hookspath", "/x")}, nil},
 		{"p2-K-user-name-n", []repoSetting{set("user.name", "n")}, nil},
+		{"Windows extra row: safecrlf", []repoSetting{set("core.safecrlf", "true")}, []string{"-c", "core.safecrlf=true"}},
+		{"Windows extra row: quotepath", []repoSetting{set("core.quotepath", "false")}, []string{"-c", "core.quotepath=false"}},
+		{"Windows extra row: precomposeunicode", []repoSetting{set("core.precomposeunicode", "true")}, []string{"-c", "core.precomposeunicode=true"}},
+		{"Windows extra row: untrackedcache", []repoSetting{set("core.untrackedcache", "true")}, []string{"-c", "core.untrackedcache=true"}},
+		{"Windows extra row: longpaths", []repoSetting{set("core.longpaths", "true")}, []string{"-c", "core.longpaths=true"}},
+		{"Windows extra row: protectntfs", []repoSetting{set("core.protectntfs", "false")}, nil},
+		{"Windows extra row: status.showuntrackedfiles", []repoSetting{set("status.showuntrackedfiles", "no")}, nil},
 		{"a key with no row", []repoSetting{set("core.fsmonitor", "true"), set("core.sshcommand", "x")}, nil},
 		{"a key with no value (not measured)", []repoSetting{{key: "core.filemode"}}, nil},
 		{"no file", nil, nil},

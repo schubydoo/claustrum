@@ -2161,6 +2161,9 @@ last member of the result. No other method sends it, and an error reply has none
 
 - After the test, the "no repository" reply has the member too:
   `{"isRepo":false,"repoSlug":"","defaultBranch":"","settingsControl":"shadow"}`.
+- A `git.info` on a path that does not exist starts no test and runs no git
+  call. As the first git request of a daemon its reply has no member (cell F1 of
+  round `val-s3p2b2-6`, Windows VM). Linux and macOS are not measured.
 - A request with `"shadowDirOff":true` gets `"off-switch"` in three more cases. It
   is the first request of a daemon. Or its reply is "no repository". Or a failed
   start test is kept. The cells are A1 and B1 of round `s3` and cell 32 of round
@@ -2327,12 +2330,13 @@ The copy has no `extensions.worktreeConfig` setting, so git reads no
 `config.worktree` file in the state `shadow`. The daemon does two things in its
 place, in a repository with that extension and a `config.worktree` file:
 
-- Seven settings of the file go before the option list of the git calls as `-c`
+- Twelve settings of the file go before the option list of the git calls as `-c`
   items: `core.filemode`, `core.sparsecheckout`, `core.eol`, `core.autocrlf`,
-  `core.ignorecase`, `core.symlinks` and `core.sparsecheckoutcone`. A call on a
-  linked worktree gets the items of the file of that worktree. The cells are in
-  rounds `val-s3p2b2-3` and `val-s3p2b2-6`, on a Linux VM, and cell N16c on a
-  Windows VM. claustrum sends no other key. The
+  `core.ignorecase`, `core.symlinks`, `core.sparsecheckoutcone`, `core.safecrlf`,
+  `core.quotepath`, `core.precomposeunicode`, `core.untrackedcache` and
+  `core.longpaths`. A call on a linked worktree gets the items of the file of
+  that worktree. The cells are in rounds `val-s3p2b2-3` and `val-s3p2b2-6`, on
+  Linux, macOS and Windows VMs. The last five keys ran on a Windows VM only. claustrum sends no other key. The
   [record](record/git-settings-copy.md) has the keys that give no
   item.
 - A new worktree of `git.worktree_create` gets its own `config.worktree` file. See
