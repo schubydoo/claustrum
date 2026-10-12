@@ -439,6 +439,37 @@ func TestStatusEntryConfigReadInTheStateShadow(t *testing.T) {
 	}
 }
 
+// TestEmptyMainWorktreeConfigIsNotListed: the first git.info on a repository
+// with the worktreeConfig switch lists the `config.worktree` file of the git
+// directory two times, and a file of 0 bytes not at all. On 5fd08069 that
+// request makes 21 calls with the empty file and no read of it (cell
+// p2-K-none-empty-file of val-s3p2b2-6-linux, Linux VM). With a file of 34
+// bytes it lists the file two times (cell p2-K-sparsecheckoutcone-true).
+func TestEmptyMainWorktreeConfigIsNotListed(t *testing.T) {
+	reads := func(t *testing.T, text string) int {
+		f := newSeededShadowFixture(t)
+		dropFixtureWorktree(t, f)
+		enableWorktreeConfig(t, f, text)
+		raw, calls := f.info(t, f.repo, nil)
+		if !strings.Contains(raw, `"isRepo":true`) {
+			t.Fatalf("git.info = %s", raw)
+		}
+		n := 0
+		for _, c := range calls {
+			if c.configRead() {
+				n++
+			}
+		}
+		return n
+	}
+	var empty, cone int
+	t.Run("p2-K-none-empty-file", func(t *testing.T) { empty = reads(t, "") })
+	t.Run("p2-K-sparsecheckoutcone-true", func(t *testing.T) { cone = reads(t, "[core]\n\tsparsecheckoutcone = true\n") })
+	if empty < 1 || cone != empty+2 {
+		t.Errorf("%d reads with the empty file and %d with a file of 34 bytes\nwant the read of the config alone, and two more for the file", empty, cone)
+	}
+}
+
 // TestStatusReadsTheEntryConfigASecondTime: a git.status on a worktree whose
 // `config.worktree` file has a setting lists that file two times. The second
 // read comes after the first `hash-object` call and right before the first

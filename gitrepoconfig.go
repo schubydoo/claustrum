@@ -715,6 +715,11 @@ func entryConfigDetail(worktreeConfig bool, entry string, log *repoReadLog) stri
 // is not a regular file, that is over the size bound of a config or that git
 // cannot list is not measured: its settings are not used and nothing is
 // refused.
+//
+// A file of 0 bytes is not listed. On 5fd08069 the first git.info then makes 21
+// calls, with no read of that file (cell p2-K-none-empty-file of
+// val-s3p2b2-6-linux, Linux VM). The create of that cell still lists the file
+// after its `worktree add` (newWorktreeConfig).
 func readRepoConfig(ctx context.Context, gitDir string, log *repoReadLog) (*repoConfigRead, string) {
 	r := &repoConfigRead{ctx: ctx, gitDir: gitDir, log: log}
 	if d := r.file(filepath.Join(gitDir, "config"), 0); d != "" || r.unlisted {
@@ -738,6 +743,9 @@ func readRepoConfig(ctx context.Context, gitDir string, log *repoReadLog) (*repo
 	if r.worktreeConfig {
 		path := filepath.Join(gitDir, "config.worktree")
 		log.note(path)
+		if fi, err := os.Stat(path); err == nil && fi.Mode().IsRegular() && fi.Size() == 0 {
+			return r, ""
+		}
 		if settings, ok := listConfigFile(ctx, path); ok {
 			r.worktree = settings
 			listConfigFile(ctx, path)
