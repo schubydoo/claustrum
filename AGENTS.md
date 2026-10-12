@@ -310,7 +310,17 @@ The JSON-RPC surface is identical on every OS. Full internals →
       target of a junction at `.git` (cells X1c-10 and X1p-10 of round
       `val-s3p2b2-7`, Windows VM). One `os.Root` at that held folder is the
       root of the cleanup and of the move, and each step acts through it. No
-      step resolves the path of the git directory again. The entries are
+      step resolves the path of the git directory again. On all three
+      systems the same held folder is the root of each delete, rename, new
+      folder and file write that a create or its rollback makes inside the
+      git directory (`gitdirheld.go`): the stale registration before the
+      add, the folder `worktrees`, the `config.worktree` file, the index and
+      the registration of a rollback. On Linux and macOS a `worktrees` entry
+      that is a symbolic link is still opened by its path. A request with
+      `"shadowDirOff":true`, the state `fallback-git` and a server with no
+      run folder hold no git directory, and keep the steps by the path.
+      `5fd08069` leaves the folder behind a swapped `.git` as it is (swap
+      cells of round `val-s3p2b2-9`, Linux and macOS VMs). The entries are
       listed through that root, so each name is a direct entry of the git
       directory. The name must start with the fixed prefix, with the dash. The
       entry is read with `Lstat` through the root, so no link and no junction

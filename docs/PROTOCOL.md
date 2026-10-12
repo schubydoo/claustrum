@@ -1925,7 +1925,7 @@ version and the extensions of an included file are not tested (cells X7 and X9).
 | `fatal: bad config line <n> in "<file>"` | The config or an included file has a syntax error. The text is that of git, with the path in quotes |
 | `"<included file>" is outside "<repo>", and on Windows Claude reads a repository's settings only from inside it; if the line that includes it is yours and you trust the file, put that line into ~/.gitconfig on the remote machine instead` | Windows: a relative include that leaves the repository. For a bare repository `<repo>` is its git directory (cell W6) |
 | `"<file>" includes "<value>", and on Windows Claude follows an include only if its path is relative and stays inside the repository; if that line is yours and you trust the file, put the line into ~/.gitconfig on the remote machine instead` | Windows: an absolute include value, also to a missing file, `~/x` and `~root/x`. An absolute value and `~/x` get it in an `includeIf` section whose condition does not match too (cells N12w). `<value>` is cut to its first 300 characters. A value of 300 characters is whole, and one of 301 shows 300 (cells P7w, Windows VM) |
-| `"<file>": is, or is reached through, a link that Claude does not follow here; replace the link with what it points to` | Windows: the config is a file link |
+| `"<file>": is, or is reached through, a link that Claude does not follow here; replace the link with what it points to` | Windows: the config is a file link. Windows, every git method that reads the config: the git directory is a junction or a link, and `<file>` is `<git dir>\config`. `5fd08069` answers that text for a junction that was put at `.git` while a create ran (cells X1c-01 to X1c-05 of round `val-s3p2b2-7`, Windows VM). A junction that is there before the first request is not measured |
 
 The path of an included file is the folder of the file that holds the setting, one
 separator, and the value as written. On a Windows VM `path = <dir>/inc.cfg` gives
@@ -2315,7 +2315,7 @@ A change of the root folder or of its `.git` entry makes the daemon ask again.
 |---|---|
 | exit 128 with a text, such as git's "dubious ownership" text | The "no repository" answer of each method. No config is read, and no copy is made |
 | exit 1, or exit 128 with no text | `git could not check this repository on the remote machine: at "<root>": exit status <n>` |
-| exit 1 or exit 2 with a text | the same text with the text of git in the place of `exit status 1`. Two lines stand there with one space between them (cells P3 of round `val-s3p2b2-7` and cell N-f of round `val-s3p2b2-8`, Linux VM) |
+| exit 1 or exit 2 with a text | the same text with the text of git in the place of `exit status 1`. Two lines stand there with one space between them (cells P3 of round `val-s3p2b2-7` and cell N-f of round `val-s3p2b2-8`, Linux VM). From the code: claustrum cuts the blanks at both ends of each line and drops an empty line (not measured) |
 | another path than the git directory, in two calls | `git and Claude disagree about which repository holds this folder: from "<root>" git finds "<path>", Claude finds "<git directory>"; try again`. `<path>` is the path as git printed it: with forward slashes on Windows (table P2 of round `val-s3p2b2-7`, Windows VM) |
 | no answer in 30 seconds | `git could not check this repository on the remote machine: it did not finish within 30 seconds in "<root>"; try again` |
 
