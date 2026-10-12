@@ -63,8 +63,9 @@ type gitParams struct {
 	// the repository's filter and succeeds (cell E1, Linux VM). It also turns off
 	// the daemon's own read of the repository's config on the five git methods
 	// (repoConfigGate). Cells X1 measured that on git.info and git.status, and
-	// cells V2 on the three other methods. Any other effect of the member on
-	// 5fd08069 is not built here. Only the JSON value true sets it (jsonTrueSwitch).
+	// cells V2 on the three other methods. It turns off the settings copy for the
+	// request too (shadowHost.control). Only the JSON value true sets it
+	// (jsonTrueSwitch).
 	ShadowDirOff jsonTrueSwitch `json:"shadowDirOff,omitempty"`
 }
 

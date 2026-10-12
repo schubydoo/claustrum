@@ -549,7 +549,7 @@ func TestShadowTopLevelPairOfARemove(t *testing.T) {
 	}
 }
 
-// TestShadowBothAddsKeepTheGitDirectory pins the variables of the two `worktree
+// TestShadowBothAddsNameTheCopy pins the variables of the two `worktree
 // add` calls of a create with existingBranch whose attach add fails. In the
 // state shadow both carry GIT_COMMON_DIR=<R> with the three other folder
 // variables, as on 5fd08069 on a Linux VM (val-s3p2b1-linux cell
