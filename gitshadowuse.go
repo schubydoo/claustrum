@@ -217,6 +217,33 @@ func (u gitUse) names(dir string) (gitDirTrust, bool) {
 	return t, t.verdict == gitDirTrusted && t.pinCommonDir == u.gitDir
 }
 
+// noWorkTree reports whether dir is a repository with no work tree whose calls
+// name the copy. That is a bare repository, or a folder inside a git directory.
+//
+// For a bare `baseRepo` the `rev-parse --is-inside-work-tree` call of a create
+// prints `true` in the state shadow. The call carries GIT_DIR and the copy, and
+// no GIT_WORK_TREE. 5fd08069 answers "not a git repository" with `not_a_repo`
+// after that call, its call 15, and makes nothing (cell x2-bare-create of
+// val-s3p2b2-5-linux2, Linux VM, 3 of 3 runs). With the member claustrum
+// answers the same line, because git prints `false` there. 5fd08069 is not
+// measured with the member.
+//
+// Which test of 5fd08069 refuses is not measured. It is not the `core.bare`
+// value of the copy. Cell 9a has `bare = true` in the `config.worktree` file of
+// a repository with a work tree. The copy then holds `bare = "true"` as its
+// last `core` block, and the create of 5fd08069 succeeds (s3p2b-edges2-linux
+// and val-s3p2b2-5-linux, Linux VM). claustrum tests what the walk of the
+// trust check found: a git directory that no folder holds as its `.git` entry
+// (gitWalkRoot). With a GIT_DIR in the daemon's own environment the walk does
+// not say that, and the test does not run (not measured).
+func (u gitUse) noWorkTree(dir string) bool {
+	if _, ok := u.names(dir); !ok || os.Getenv("GIT_DIR") != "" {
+		return false
+	}
+	root, _ := gitWalkRoot(dir)
+	return root == ""
+}
+
 // commonVars are the two folder variables that every call on the repository
 // carries in the state shadow: GIT_COMMON_DIR=<copy> and
 // GIT_OBJECT_DIRECTORY=<git directory>/objects. The call logs of 5fd08069 show

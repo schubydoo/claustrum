@@ -844,7 +844,10 @@ func gitWorktreeCreateLocked(req *request, p *gitParams, repo string) response {
 	// The reference checks the target is a repo BEFORE attempting the worktree
 	// add, returning a clean not_a_repo error rather than leaking git's raw
 	// "fatal: not a git repository …" output as a worktree_add_failed.
-	if c.noRepo || !isRepo(req.use, repo, c.listing) {
+	//
+	// A baseRepo with no work tree gets that answer too, also when the call
+	// prints `true` (gitUse.noWorkTree).
+	if c.noRepo || !isRepo(req.use, repo, c.listing) || req.use.noWorkTree(repo) {
 		return okResult(req.ID, worktreeResult{
 			Success:   false,
 			Error:     "not a git repository",
