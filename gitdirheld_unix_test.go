@@ -59,6 +59,10 @@ func TestStaleStepThroughTheHeldGitDir(t *testing.T) {
 //   - The request spells baseRepo through a symbolic link above it: the step
 //     goes through the held folder. With a compare of the path texts alone it
 //     goes by the path, into T.
+//   - The request and the record spell the leaf through that link, as in cell
+//     i-ctl of val-s3p2b2-11-macos (5fd08069, macOS VM): the step finds the
+//     entry, and it asks the held folder. Without the compare against the path
+//     as sent it asks for no removal.
 //
 // Two rows are controls. With no held folder the step goes by the path, so the
 // entry of T is one that the step finds. A spelling that named another folder
@@ -74,13 +78,16 @@ func TestStaleStepAndTheFolderOfItsRoot(t *testing.T) {
 		// for a link above it that the hold saw, "late" for that link with the
 		// hold taken after the swap.
 		through string
-		noHold  bool
-		want    string
+		// sentRecord spells the leaf and the record through the link too.
+		sentRecord bool
+		noHold     bool
+		want       string
 	}
 	for _, r := range []row{
 		{name: "no worktrees folder in the held folder", noWorktrees: true, want: ""},
 		{name: "control: no held folder", noWorktrees: true, noHold: true, want: "old other"},
 		{name: "baseRepo through a link above it", heldOld: true, through: "link", want: "old held"},
+		{name: "i-ctl: baseRepo and the record through a link above it", heldOld: true, through: "link", sentRecord: true, want: "old held"},
 		{name: "control: a spelling that named another folder at the hold", heldOld: true, through: "late", want: "old other"},
 	} {
 		t.Run(r.name, func(t *testing.T) {
@@ -90,7 +97,16 @@ func TestStaleStepAndTheFolderOfItsRoot(t *testing.T) {
 			if !r.noWorktrees {
 				removals = heldWorktrees(t, f)
 			}
+			repo := f.repo
+			if r.through != "" {
+				above := filepath.Join(resolveTestRoot(t, t.TempDir()), "above")
+				linkAt(t, above, filepath.Dir(f.repo))
+				repo = filepath.Join(above, filepath.Base(f.repo))
+			}
 			leaf := filepath.Join(f.repo, ".claude", "worktrees", "gone")
+			if r.sentRecord {
+				leaf = filepath.Join(repo, ".claude", "worktrees", "gone")
+			}
 			record := filepath.Join(leaf, ".git") + "\n"
 			mustWrite(t, filepath.Join(f.other, "worktrees", "old", "gitdir"), record)
 			if r.heldOld {
@@ -100,12 +116,6 @@ func TestStaleStepAndTheFolderOfItsRoot(t *testing.T) {
 				if err := os.RemoveAll(filepath.Join(f.gitDir, "worktrees")); err != nil {
 					t.Fatal(err)
 				}
-			}
-			repo := f.repo
-			if r.through != "" {
-				above := filepath.Join(resolveTestRoot(t, t.TempDir()), "above")
-				linkAt(t, above, filepath.Dir(f.repo))
-				repo = filepath.Join(above, filepath.Base(f.repo))
 			}
 			if r.through == "link" {
 				f.u.accepted.holdFor(repo, gitDirTrust{})

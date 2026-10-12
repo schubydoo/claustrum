@@ -413,7 +413,8 @@ To use the method, read [git.worktree_create](../protocol/git-worktree-create.md
     below. The record loses blanks and newlines at both ends.
     A relative record counts from the entry folder. The path is then cleaned,
     and no symlink of it is resolved. The other side is `worktreePath` with the
-    symlinks of its existing part resolved, plus `/.git`.
+    symlinks of its existing part resolved, plus `/.git`. A record that equals
+    the cleaned `worktreePath` as sent, plus `/.git`, is stale too.
   - With one stale entry, `89cb6289` removes it for these records: `<L>/.git`
     with and without
     a newline (cells A3 and A4), `<L>/.git/` (cells A1 and A2), `<L>/.git//`
@@ -434,6 +435,18 @@ To use the method, read [git.worktree_create](../protocol/git-worktree-create.md
     another path (cell A11). A record that spells the path through a symlink
     stays for a request with the real path (cell A12b). A record with the real
     path goes for a request through a symlink (cell A12c).
+  - `5fd08069` removes the entry when the request and the record spell the
+    path through the same symlink, and the create succeeds. That is cell i-ctl
+    of round `val-s3p2b2-11` (macOS VM, 2 of 2 runs), where `/tmp` is a symlink
+    to `/private/tmp`. The reply has the path as sent. The new `gitdir` record
+    and the `.git` file of the worktree have the real path. Cell h-ctl is the
+    control with the real path in the request and in the record, and claustrum
+    equals `5fd08069` there (the same VM). In cell i-ctl the claustrum build of
+    that round kept the entry, and git refused the add. The compare with the
+    path as sent came after that round. It has a test, and it ran on no VM.
+    Not measured: that record on `89cb6289` and on a Linux VM, and a request
+    and a record through two different symlinks. claustrum keeps the entry in
+    that last state.
   - An entry that holds a `locked` file stays (cells A9 and A9b, an empty file).
   - The remove is best effort, and no error of it reaches the frame. With the
     entry at mode 0500 only `logs/HEAD` goes (cell A10). With the `worktrees`

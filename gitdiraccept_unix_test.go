@@ -493,3 +493,56 @@ func TestCreateWithALinkedGitDirThatChanges(t *testing.T) {
 		}
 	}
 }
+
+// TestCreateOverAnOldRegistrationInTheSpellingOfTheRequest: the git directory
+// holds one old registration `w1` whose record names the `.git` of the new
+// leaf, and the leaf does not exist. The create removes that registration and
+// succeeds, as on 5fd08069 in two cells of val-s3p2b2-11-macos (macOS VM, 2 of
+// 2 runs).
+//
+//   - i-ctl: baseRepo, worktreePath and the record go through a symbolic link
+//     above the repository. The reply has the path as sent. The `.git` file of
+//     the leaf and the new record have the real path.
+//   - h-ctl, the control: all three have the real path.
+//
+// Without the compare against the path as sent, the registration of row i-ctl
+// stays, and git refuses the add of a registered worktree.
+func TestCreateOverAnOldRegistrationInTheSpellingOfTheRequest(t *testing.T) {
+	for _, row := range []struct {
+		name string
+		link bool
+	}{
+		{"i-ctl: through a link above the repository", true},
+		{"h-ctl: the real path", false},
+	} {
+		t.Run(row.name, func(t *testing.T) {
+			f := newSeededShadowFixture(t)
+			repo := f.repo
+			if row.link {
+				above := filepath.Join(resolveTestRoot(t, t.TempDir()), "above")
+				linkAt(t, above, filepath.Dir(f.repo))
+				repo = filepath.Join(above, filepath.Base(f.repo))
+			}
+			leaf := filepath.Join(repo, ".claude", "worktrees", "w1")
+			old := filepath.Join(f.gitDir, "worktrees", "w1")
+			mustWrite(t, filepath.Join(old, "gitdir"), filepath.Join(leaf, ".git")+"\n")
+			mustWrite(t, filepath.Join(old, "HEAD"), "ref: refs/heads/w1\n")
+			mustWrite(t, filepath.Join(old, "commondir"), "../..\n")
+			mustWrite(t, filepath.Join(old, "marker-stale.txt"), "the old registration\n")
+			raw, _ := f.call(t, "git.worktree_create", map[string]any{"baseRepo": repo, "branchName": "w1", "worktreePath": leaf})
+			if !strings.Contains(raw, `"success":true,"path":"`+leaf+`"`) {
+				t.Fatalf("git.worktree_create = %s, want a good create at %s", raw, leaf)
+			}
+			if _, err := os.Lstat(filepath.Join(old, "marker-stale.txt")); !os.IsNotExist(err) {
+				t.Errorf("the marker of the old registration: %v, want it gone", err)
+			}
+			realLeaf := filepath.Join(f.repo, ".claude", "worktrees", "w1")
+			if got, want := mustRead(t, filepath.Join(realLeaf, ".git")), "gitdir: "+old+"\n"; got != want {
+				t.Errorf("the .git file of the leaf = %q, want %q", got, want)
+			}
+			if got, want := mustRead(t, filepath.Join(old, "gitdir")), filepath.Join(realLeaf, ".git")+"\n"; got != want {
+				t.Errorf("the record of the registration = %q, want %q", got, want)
+			}
+		})
+	}
+}
