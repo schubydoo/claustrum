@@ -7,6 +7,7 @@ import (
 	"path/filepath"
 	"runtime"
 	"slices"
+	"strconv"
 	"strings"
 	"testing"
 )
@@ -108,48 +109,61 @@ func TestRemoveReadsARefusedConfigTwice(t *testing.T) {
 	}
 }
 
-// TestWorktreesFolderOfASharedRepository: the repository has
-// `core.sharedRepository = group`. The folder `worktrees` that the daemon makes
-// before the `worktree add` call then has the write bit of the group and the
-// set-group-ID bit. On 5fd08069 it is `d 2775`. The registration that git makes
-// in it is `d 2755` (cell H3 of val-s3p2b2-5-linux, Linux VM, 2 of 2 runs).
-// Every other value of the key has no row: the folder keeps the mode of its
-// mkdir.
+// TestWorktreesFolderOfASharedRepository: the folder `worktrees` that the
+// daemon makes before the `worktree add` call is made with mode 0777 before
+// the umask. With a `core.sharedRepository` value other than `umask` it then
+// gets one mode call. The registration that git makes in it takes the
+// set-group-ID bit from it. Each row is a row of group P5 of
+// val-s3p2b2-6-linux (Linux VM, 5fd08069): section 0.2 item 6 of its report
+// has the table. Cell H3 of val-s3p2b2-5-linux has the row `group` too.
 func TestWorktreesFolderOfASharedRepository(t *testing.T) {
 	if runtime.GOOS != "linux" {
-		t.Skip("the row is a Linux cell")
+		t.Skip("the rows are Linux cells")
 	}
 	for _, row := range []struct {
-		value string
-		group bool
-	}{{"group", true}, {"true", false}} {
-		t.Run(row.value, func(t *testing.T) {
+		value               string
+		umask               int
+		worktrees, registry os.FileMode
+	}{
+		{"group", 0o022, 0o2775, 0o2755},
+		{"true", 0o022, 0o2775, 0o2755},
+		{"all", 0o022, 0o2775, 0o2755},
+		{"world", 0o022, 0o2775, 0o2755},
+		{"everybody", 0o022, 0o2775, 0o2755},
+		{"0660", 0o022, 0o2770, 0o2755},
+		{"0640", 0o022, 0o2750, 0o2755},
+		{"umask", 0o022, 0o755, 0o755},
+		{"", 0o022, 0o755, 0o755},
+		{"", 0o002, 0o775, 0o775},
+		{"0640", 0o002, 0o2750, 0o2775},
+	} {
+		t.Run(row.value+" umask "+strconv.FormatInt(int64(row.umask), 8), func(t *testing.T) {
 			f := newSeededShadowFixture(t)
 			dropFixtureWorktree(t, f)
-			runGit(t, f.repo, "config", "core.sharedRepository", row.value)
+			if row.value != "" {
+				runGit(t, f.repo, "config", "core.sharedRepository", row.value)
+			}
 			worktrees := filepath.Join(f.gitDir, worktreesSubdir)
 			if _, err := os.Lstat(worktrees); !os.IsNotExist(err) {
 				t.Fatalf("the fixture still has a worktrees folder: %v", err)
 			}
+			useUmask(t, row.umask)
 			leaf := filepath.Join(f.repo, ".claude", "worktrees", "w1")
 			if raw, _ := f.call(t, "git.worktree_create", map[string]any{"baseRepo": f.repo, "branchName": "w1", "worktreePath": leaf}); !strings.Contains(raw, `"success":true`) {
 				t.Fatalf("git.worktree_create = %s", raw)
 			}
-			for _, name := range []string{worktrees, filepath.Join(worktrees, "w1")} {
+			for name, want := range map[string]os.FileMode{worktrees: row.worktrees, filepath.Join(worktrees, "w1"): row.registry} {
 				fi, err := os.Lstat(name)
 				if err != nil {
 					t.Fatal(err)
 				}
-				if got := fi.Mode()&os.ModeSetgid != 0; got != row.group {
-					t.Errorf("%s has the set-group-ID bit: %v, want %v (mode %v)", name, got, row.group, fi.Mode())
+				got := fi.Mode().Perm()
+				if fi.Mode()&os.ModeSetgid != 0 {
+					got |= 0o2000
 				}
-			}
-			fi, err := os.Lstat(worktrees)
-			if err != nil {
-				t.Fatal(err)
-			}
-			if got := fi.Mode().Perm()&0o020 != 0; row.group && !got {
-				t.Errorf("the worktrees folder has mode %o, want the write bit of the group", fi.Mode().Perm())
+				if got != want {
+					t.Errorf("%s has mode %o, want %o", name, got, want)
+				}
 			}
 		})
 	}

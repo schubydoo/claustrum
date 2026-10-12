@@ -1,6 +1,7 @@
 package main
 
 import (
+	"os"
 	"strconv"
 	"strings"
 )
@@ -52,11 +53,11 @@ var shadowBoolKeys = map[string]bool{
 // value here ran in a cell: A1 and A3 of s3p2-linux, 04k, 13c, 13e and F6 of
 // s3p2b-edges-linux, and E9 of s3p2-linux. Another value of these keys is not
 // measured and is left out, such as `core.eol = crlf` and `index.version = 2`.
+// `core.sharedrepository` has its own rule (sharedRepositoryOf).
 // `extensions.objectformat = sha1` is carried with format version 0 and 1 (cells
 // X8 of val-s3p2b2-3-linux2, Linux VM).
 var shadowWordKeys = map[string][]string{
 	"core.eol":                      {"lf"},
-	"core.sharedrepository":         {"group", "0660"},
 	"index.version":                 {"3", "4"},
 	"extensions.objectformat":       {"sha256", "sha1"},
 	"extensions.compatobjectformat": {"sha256"},
@@ -69,6 +70,78 @@ var shadowWordKeys = map[string][]string{
 var shadowBoolOrWord = map[string]string{
 	"core.autocrlf": "input",
 	"core.safecrlf": "warn",
+}
+
+// sharedRepository is how the daemon reads one `core.sharedRepository` value.
+// The zero value is a value that it does not use.
+type sharedRepository struct {
+	// word is the value of the line in the copy of the settings, or "" for no
+	// line.
+	word string
+	// sets is true when the folder `worktrees` that the daemon makes gets a mode
+	// call. bits are the mode bits of that call. With adds they are added to the
+	// mode of the mkdir, and without it they are the whole mode.
+	sets bool
+	adds bool
+	bits os.FileMode
+}
+
+// sharedRepositoryOf reads the setting s of the key `core.sharedrepository`.
+//
+// The lines of the copy on 5fd08069: `"group"` for `group` and `true`,
+// `"everybody"` for `all`, `world` and `everybody`, and the value itself for
+// `0660`, `0640` and `umask` (the 18 rows of group P5 of val-s3p2b2-6-linux,
+// Linux VM, and the copies of those cells).
+//
+// A value with no row follows the rule of the git documentation for this key.
+// `false` reads as `umask`. An octal number of the form `0xxx` is carried as it
+// is, when it gives the owner the read bit and the write bit: git refuses
+// another number. None of those is measured. Every other value gives no line
+// and no mode call: a key with no value, another letter case, `yes`, `1` and
+// `2` among them (not measured).
+func sharedRepositoryOf(s repoSetting) sharedRepository {
+	if !s.hasValue {
+		return sharedRepository{}
+	}
+	switch s.value {
+	case "group", "true":
+		return sharedRepository{word: "group", sets: true, adds: true, bits: 0o660}
+	case "all", "world", "everybody":
+		return sharedRepository{word: "everybody", sets: true, adds: true, bits: 0o664}
+	case "umask", "false":
+		return sharedRepository{word: "umask"}
+	}
+	if len(s.value) != 4 || s.value[0] != '0' {
+		return sharedRepository{}
+	}
+	n, err := strconv.ParseUint(s.value, 8, 9)
+	if err != nil || n&0o600 != 0o600 {
+		return sharedRepository{}
+	}
+	return sharedRepository{word: s.value, sets: true, bits: os.FileMode(n)}
+}
+
+// folderMode is the mode that the folder `worktrees` gets after its mkdir gave
+// it the mode made. ok is false for no mode call.
+//
+// The rule is fitted to the measured rows. The bits of the value are added to
+// the mode of the mkdir, or they replace it. Then each read bit gives its
+// execute bit, and the set-group-ID bit is set. On 5fd08069 the folder is
+// `d 2775` for `group`, `true`, `all`, `world` and `everybody`, `d 2770` for
+// `0660` and `d 2750` for `0640`, each with a daemon umask of 022 and of 002.
+// A trace has `fchmod(11, 02770)` by the daemon for `0660` (the 18 rows of
+// group P5 of val-s3p2b2-6-linux, Linux VM). It is the rule that git has for a
+// folder of such a repository. Another octal value is not measured.
+func (r sharedRepository) folderMode(made os.FileMode) (mode os.FileMode, ok bool) {
+	if !r.sets {
+		return 0, false
+	}
+	mode = r.bits
+	if r.adds {
+		mode |= made.Perm()
+	}
+	mode |= (mode & 0o444) >> 2
+	return mode | os.ModeSetgid, true
 }
 
 // shadowBool is the written form of a boolean value, or false for a value that
@@ -275,6 +348,7 @@ func shadowInsteadOf(u string, rules [][2]string) (resolved string, changed bool
 //     The value 2 gets no block, and the key of an included file never does
 //     (cells 15a to 15k of s3p2b-edges-linux).
 //   - the keys of shadowBoolKeys, shadowWordKeys and shadowBoolOrWord.
+//   - core.sharedrepository, by the rule of sharedRepositoryOf.
 //   - extensions.partialclone with the name of a remote (cell E9).
 //   - remote.<name>.url, .promisor and .partialclonefilter, and
 //     remote.lfsdefault. The filter ran as `blob:none` only (cell A5).
@@ -361,6 +435,9 @@ func shadowConfigText(settings, worktree []repoSetting) string {
 					value, ok = w, true
 				}
 			}
+		case s.key == "core.sharedrepository":
+			value = sharedRepositoryOf(s).word
+			ok = value != ""
 		case shadowBoolOrWord[s.key] != "":
 			if value, ok = s.value, s.value == shadowBoolOrWord[s.key]; !ok {
 				value, ok = shadowBool(s)

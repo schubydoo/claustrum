@@ -882,11 +882,10 @@ type repoVerdict struct {
 	// worktreeItems are the `-c` items of the `config.worktree` file of the git
 	// directory (worktreeConfigItems), or nil.
 	worktreeItems []string
-	// sharedGroup is true when the last `core.sharedRepository` setting of the
-	// config and its included files is the word `group` (makeWorktreesFolder).
-	// Every other value is not measured.
-	sharedGroup bool
-	states      []repoFileState
+	// shared is the last `core.sharedRepository` setting of the config and its
+	// included files (sharedRepositoryOf, makeWorktreesFolder).
+	shared sharedRepository
+	states []repoFileState
 }
 
 // repoVerdictsMax is the most git directories and linked worktrees whose verdict
@@ -976,7 +975,7 @@ func repoReadVerdict(t gitDirTrust) *repoVerdict {
 		v.worktreeItems = worktreeConfigItems(r.worktree)
 		for _, s := range r.settings {
 			if s.key == "core.sharedrepository" {
-				v.sharedGroup = s.hasValue && s.value == "group"
+				v.shared = sharedRepositoryOf(s)
 			}
 		}
 	}

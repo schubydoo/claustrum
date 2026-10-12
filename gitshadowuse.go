@@ -41,9 +41,9 @@ type gitUse struct {
 	// worktree of a git.info. Both are nil with no such file.
 	items      []string
 	entryItems []string
-	// sharedGroup is true when the config of the repository has
-	// `core.sharedRepository = group` (makeWorktreesFolder).
-	sharedGroup bool
+	// shared is the `core.sharedRepository` setting of the config of the
+	// repository (makeWorktreesFolder).
+	shared sharedRepository
 }
 
 // inFolder reports whether the request keeps its short-lived folders in the
@@ -103,7 +103,7 @@ func worktreeAdd(ctx context.Context, u gitUse, repo, leaf string, cp worktreeCh
 	named = named && shadowLinksWorktrees
 	cmd := hardenedGitCmd(ctx, u, repo, false, nil, args...)
 	if named {
-		makeWorktreesFolder(u.gitDir, u.sharedGroup)
+		makeWorktreesFolder(u.gitDir, u.shared)
 	}
 	var errBuf bytes.Buffer
 	cmd.Stderr = &errBuf
@@ -115,35 +115,42 @@ func worktreeAdd(ctx context.Context, u gitUse, repo, leaf string, cp worktreeCh
 }
 
 // makeWorktreesFolder makes the folder `worktrees` in the git directory gitDir
-// when there is none. On 5fd08069 that folder is there, empty and with mode
-// 0755, before the `worktree add` call starts, and no git process runs when it
-// appears. It stays after an add that fails. 89cb6289 makes no such folder:
-// there git makes it (cells N2 of val-s3p2b2-3-linux, 9 of 9 and 6 of 6 runs,
-// Linux VM, and of val-s3p2b2-3-macos, macOS VM).
+// when there is none. On 5fd08069 that folder is there, empty, before the
+// `worktree add` call starts, and no git process runs when it appears. It
+// stays after an add that fails. 89cb6289 makes no such folder: there git makes
+// it (cells N2 of val-s3p2b2-3-linux, 9 of 9 and 6 of 6 runs, Linux VM, and of
+// val-s3p2b2-3-macos, macOS VM).
 //
 // The folder is made through a root at gitDir with the fixed name `worktrees`.
 // gitDir is the git directory that the trust check pinned. A folder that
 // cannot be made is not measured: the add runs and gives its own error.
 //
-// group is true for a repository with `core.sharedRepository = group`. The
-// folder that this call made then gets the write bit of the group and the
-// set-group-ID bit. On 5fd08069 and on 89cb6289 that folder is `d 2775` after
-// a create there. The registration that git made in it is `d 2755`. The cell
-// is H3 of val-s3p2b2-5-linux (Linux VM, 2 of 2 runs, umask 022). Who sets the
-// mode on 5fd08069 is not measured: the cell has no poll. Not measured either:
-// every other value of that key, another umask, macOS and Windows. The folder
-// keeps the mode of its mkdir there.
-func makeWorktreesFolder(gitDir string, group bool) {
+// The mkdir has mode 0777, and the umask of the daemon takes its bits from
+// that. With no `core.sharedRepository` key and with the value `umask` the
+// folder keeps that mode: `d 0755` with umask 022 and `d 0775` with 002. With
+// another value the folder that this call made gets one mode call
+// (sharedRepository.folderMode). A trace of 5fd08069 has `mkdirat(15,
+// "worktrees", 0777)` and then the mode call (the 18 rows of group P5 of
+// val-s3p2b2-6-linux, Linux VM). The registration that git makes in the folder
+// takes the set-group-ID bit from it: `d 2755` with umask 022.
+//
+// Not measured: a folder `worktrees` that is there before the create, macOS and
+// Windows. A folder that is there gets no mode call.
+func makeWorktreesFolder(gitDir string, shared sharedRepository) {
 	root, err := os.OpenRoot(gitDir)
 	if err != nil {
 		return
 	}
 	defer func() { _ = root.Close() }()
-	if err := root.Mkdir(worktreesSubdir, 0o755); err != nil || !group {
+	if err := root.Mkdir(worktreesSubdir, 0o777); err != nil {
 		return
 	}
-	if fi, err := root.Lstat(worktreesSubdir); err == nil && fi.IsDir() {
-		_ = root.Chmod(worktreesSubdir, fi.Mode().Perm()|0o020|os.ModeSetgid)
+	fi, err := root.Lstat(worktreesSubdir)
+	if err != nil || !fi.IsDir() {
+		return
+	}
+	if mode, ok := shared.folderMode(fi.Mode()); ok {
+		_ = root.Chmod(worktreesSubdir, mode)
 	}
 }
 

@@ -165,7 +165,10 @@ func TestShadowConfigLeavesOutWhatNoCellShows(t *testing.T) {
 	}{
 		{"a value of core.eol that no cell ran", []repoSetting{set("core.eol", "crlf")}, ""},
 		{"a value of index.version that no cell ran", []repoSetting{set("index.version", "2")}, ""},
-		{"a value of core.sharedrepository that no cell ran", []repoSetting{set("core.sharedrepository", "0640")}, ""},
+		{"a value of core.sharedrepository that git refuses", []repoSetting{set("core.sharedrepository", "0440")}, ""},
+		{"core.sharedrepository in another letter case", []repoSetting{set("core.sharedrepository", "GROUP")}, ""},
+		{"core.sharedrepository as a number", []repoSetting{set("core.sharedrepository", "1")}, ""},
+		{"core.sharedrepository with no value", []repoSetting{{key: "core.sharedrepository"}}, ""},
 		{"a boolean with a sign", []repoSetting{set("core.filemode", "-1")}, ""},
 		{"a boolean with a unit letter", []repoSetting{set("core.filemode", "1k")}, ""},
 		{"another filter of a partial clone", []repoSetting{set("remote.origin.partialclonefilter", "tree:0")}, ""},
@@ -215,5 +218,73 @@ func TestShadowConfigLeavesOutWhatNoCellShows(t *testing.T) {
 	worktree := []repoSetting{set("core.filemode", "false"), set("core.bare", "maybe"), set("core.bare", "yes")}
 	if got, want := shadowConfigText(nil, worktree), "[core]\n\tbare = \"true\"\n"+shadowConfigTail; got != want {
 		t.Errorf("config.worktree:\n got %q\nwant %q", got, want)
+	}
+}
+
+// TestSharedRepositoryValues pins the reading of each `core.sharedRepository`
+// value: the line of the copy, and the mode of the folder `worktrees` after a
+// mkdir with a daemon umask of 022 and of 002. The measured rows are the 18
+// rows of group P5 of val-s3p2b2-6-linux (Linux VM): section 0.2 item 6 of its
+// report has the table. The last rows have no cell. They follow the rule of the
+// git documentation for the key, or they give nothing.
+func TestSharedRepositoryValues(t *testing.T) {
+	const none = os.FileMode(0)
+	for _, row := range []struct {
+		value        string
+		line         string
+		u022, u002   os.FileMode
+		notMeasured  bool
+		withoutValue bool
+	}{
+		{value: "group", line: "group", u022: 0o2775, u002: 0o2775},
+		{value: "true", line: "group", u022: 0o2775, u002: 0o2775},
+		{value: "all", line: "everybody", u022: 0o2775, u002: 0o2775},
+		{value: "world", line: "everybody", u022: 0o2775, u002: 0o2775},
+		{value: "everybody", line: "everybody", u022: 0o2775, u002: 0o2775},
+		{value: "0660", line: "0660", u022: 0o2770, u002: 0o2770},
+		{value: "0640", line: "0640", u022: 0o2750, u002: 0o2750},
+		{value: "umask", line: "umask", u022: none, u002: none},
+		{value: "false", line: "umask", u022: none, u002: none, notMeasured: true},
+		{value: "0600", line: "0600", u022: 0o2700, u002: 0o2700, notMeasured: true},
+		{value: "0664", line: "0664", u022: 0o2775, u002: 0o2775, notMeasured: true},
+		{value: "0440", notMeasured: true},
+		{value: "660", notMeasured: true},
+		{value: "0668", notMeasured: true},
+		{value: "Group", notMeasured: true},
+		{value: "yes", notMeasured: true},
+		{value: "2", notMeasured: true},
+		{value: "", notMeasured: true},
+		{withoutValue: true, notMeasured: true},
+	} {
+		name := row.value
+		if row.notMeasured {
+			name += " (not measured)"
+		}
+		t.Run(name, func(t *testing.T) {
+			s := repoSetting{key: "core.sharedrepository", value: row.value, hasValue: !row.withoutValue}
+			r := sharedRepositoryOf(s)
+			if r.word != row.line {
+				t.Errorf("the value of the line = %q, want %q", r.word, row.line)
+			}
+			want := shadowConfigTail
+			if row.line != "" {
+				want = "[core]\n\tsharedrepository = \"" + row.line + "\"\n" + shadowConfigTail
+			}
+			if got := shadowConfigText([]repoSetting{s}, nil); got != want {
+				t.Errorf("the copy = %q, want %q", got, want)
+			}
+			for _, m := range []struct {
+				made, want os.FileMode
+			}{{0o755, row.u022}, {0o775, row.u002}} {
+				mode, ok := r.folderMode(os.ModeDir | m.made)
+				got := mode.Perm()
+				if mode&os.ModeSetgid != 0 {
+					got |= 0o2000
+				}
+				if ok != (m.want != none) || got != m.want {
+					t.Errorf("after a mkdir of %o: mode %o, %v, want %o", m.made, got, ok, m.want)
+				}
+			}
+		})
 	}
 }
