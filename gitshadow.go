@@ -130,8 +130,22 @@ type shadowHost struct {
 }
 
 // newShadowHost returns the settings control of a daemon whose socket is in
-// runDir.
+// runDir. A relative runDir counts from the working directory of the daemon at
+// this call, its start, and the control keeps the absolute form.
+//
+// With `-socket s.sock` and with `-socket rel/rpc.sock` 5fd08069 has the
+// absolute form in every path of the settings copy: the argv, the working
+// directory and the variables of the test calls, and the folder variables of
+// the later calls. Its replies, call lists and copied texts equal those of the
+// absolute socket path (cell R1 of val-s3p2b2-7-linux2, Linux VM). A working
+// directory that the system does not give is not measured: the path stays as
+// it is.
 func newShadowHost(runDir string) *shadowHost {
+	if runDir != "" {
+		if abs, err := filepath.Abs(runDir); err == nil {
+			runDir = abs
+		}
+	}
 	return &shadowHost{runDir: runDir}
 }
 
