@@ -29,6 +29,13 @@ type filterFixture struct {
 func newFilterFixture(t *testing.T, attrs string) filterFixture {
 	t.Helper()
 	isolateGitConfig(t)
+	return buildFilterFixture(t, attrs)
+}
+
+// buildFilterFixture is newFilterFixture without isolateGitConfig. A test with
+// parallel rows calls isolateGitConfig once itself, and each row calls this.
+func buildFilterFixture(t *testing.T, attrs string) filterFixture {
+	t.Helper()
 	f := filterFixture{wtFixture: newWTFixture(t, false), marks: t.TempDir()}
 	writeFile(t, filepath.Join(f.top, "z.txt"), "z\n", 0o644)
 	writeFile(t, filepath.Join(f.top, ".gitattributes"), attrs, 0o644)
@@ -512,12 +519,15 @@ func TestWorktreeCreateOutsideKeysThatDefineNothing(t *testing.T) {
 // Cells V2 to V6, V8 and V9. Each value is refused. No marker is in them, so the
 // reply is the proof.
 func TestWorktreeCreateRefusedFilterValues(t *testing.T) {
+	// The rows share the git config isolation of the test, so they run in parallel.
+	isolateGitConfig(t)
 	for _, tc := range []struct{ filter, value string }{
 		{"m", "cat "}, {"m", "/bin/cat"}, {"m", "cat -"}, {"m", "cat %f"}, {"m", "true"},
 		{"m", "git-lfs smudge -- %f"}, {"lfs", "git lfs smudge -- %f"},
 	} {
 		t.Run(tc.filter+" "+tc.value, func(t *testing.T) {
-			f := newFilterFixture(t, "t.txt filter="+tc.filter+"\n")
+			t.Parallel()
+			f := buildFilterFixture(t, "t.txt filter="+tc.filter+"\n")
 			f.own(t, "filter."+tc.filter+".smudge", tc.value)
 			raw, _ := f.create(t, newTestServer(t), "w1", "", 0)
 			wantError(t, raw, repositoryOnlyFilterText(tc.filter), "repository_only_filter")

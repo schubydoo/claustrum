@@ -28,6 +28,13 @@ func newSourceFixture(t *testing.T) *sourceFixture {
 	t.Helper()
 	requireGit(t)
 	isolateGitConfig(t)
+	return buildSourceFixture(t)
+}
+
+// buildSourceFixture is newSourceFixture without isolateGitConfig. A test with
+// parallel rows calls isolateGitConfig once itself, and each row calls this.
+func buildSourceFixture(t *testing.T) *sourceFixture {
+	t.Helper()
 	root := resolveTestRoot(t, t.TempDir())
 	fx := &sourceFixture{
 		t:      t,
@@ -266,9 +273,13 @@ func TestWorktreeSourceClaudeConfigRule(t *testing.T) {
 		// a .claude change on the origin side only does not count.
 		{"diverged origin-only .claude", []map[string]string{{"local.txt": "l\n"}}, map[string]string{".claude/settings.json": "{}\n"}, false},
 	}
+	// The rows share the git config isolation of the test, so they run in parallel.
+	requireGit(t)
+	isolateGitConfig(t)
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
-			fx := newSourceFixture(t)
+			t.Parallel()
+			fx := buildSourceFixture(t)
 			fx.originBranch("feat")
 			runGit(t, fx.repo, "branch", "-q", "--no-track", "feat", "origin/feat")
 			var l string
