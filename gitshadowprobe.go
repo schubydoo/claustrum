@@ -267,6 +267,13 @@ func probeArgs() []string {
 // again (cells 37 and 39). On Windows git prints the path with forward slashes.
 // A path of git that names the same folder in another spelling counts as the
 // git directory (not measured).
+//
+// The "disagree" text shows the path of git as git printed it. For the answer
+// `C:/o/w/other/.git` 5fd08069 writes `git finds "C:/o/w/other/.git"`. For
+// the same path with backslashes it writes the backslashes (table P2 of
+// val-s3p2b2-7-windows, Windows VM). The paths of the root and of the daemon
+// keep their backslashes in both rows. A printed path that is not clean, or
+// not absolute, is not measured: it is shown cleaned and from the root.
 func (h *shadowHost) askGit(t gitDirTrust, dir string) repoAnswer {
 	root, _ := gitWalkRoot(dir)
 	if root == "" {
@@ -292,7 +299,7 @@ func (h *shadowHost) askGit(t gitDirTrust, dir string) repoAnswer {
 	}
 	h.ensureProbeFolder(folder)
 	env := probeEnv(folder, root)
-	found := ""
+	found, shown := "", ""
 	for try := 0; try < 2; try++ {
 		r := boundedGit(probeCallBound, root, env, probeArgs()...)
 		if r.ended {
@@ -311,12 +318,24 @@ func (h *shadowHost) askGit(t gitDirTrust, dir string) repoAnswer {
 			found = filepath.Join(root, found)
 		}
 		found = filepath.Clean(found)
+		shown = printedProbePath(r.out, found, string(filepath.Separator))
 		if found == filepath.Clean(want) || sameProbeFolder(found, want) {
 			h.keepProbe(root)
 			return repoAnswer{}
 		}
 	}
-	return repoAnswer{text: fmt.Sprintf("git and Claude disagree about which repository holds this folder: from %q git finds %q, Claude finds %q; try again", root, found, want)}
+	return repoAnswer{text: fmt.Sprintf("git and Claude disagree about which repository holds this folder: from %q git finds %q, Claude finds %q; try again", root, shown, want)}
+}
+
+// printedProbePath is the path of git in the "disagree" text: out, the answer
+// as git printed it, when only the direction of its slashes differs from found,
+// the cleaned path. Every other answer is shown as found. sep is the separator
+// of the system.
+func printedProbePath(out, found, sep string) string {
+	if strings.ReplaceAll(out, "/", sep) == found {
+		return out
+	}
+	return found
 }
 
 // versionAfterFailure runs one `git version` call, with the root folder as its

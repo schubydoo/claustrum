@@ -338,12 +338,20 @@ func TestProbeAnswers(t *testing.T) {
 		version bool
 	}
 	// The other path is absolute on the system of the test. Git prints a path
-	// with forward slashes on Windows too.
+	// with forward slashes on Windows too, and the text shows it as printed.
+	// On 5fd08069 the answer `C:/o/w/other/.git` gives `git finds
+	// "C:/o/w/other/.git"`, and the answer with backslashes gives that path
+	// with its backslashes (table P2 of val-s3p2b2-7-windows, Windows VM). No
+	// test of the Windows rows ran on the host of the build.
 	elsewhere := "/elsewhere/.git"
+	var windowsRows []answer
 	if runtime.GOOS == "windows" {
 		elsewhere = "C:/elsewhere/.git"
+		windowsRows = []answer{{name: "another path, backslashes", stdout: `C:\elsewhere\.git` + "\n", calls: 2,
+			text: "git and Claude disagree about which repository holds this folder: from %[1]q git finds " +
+				strconv.Quote(`C:\elsewhere\.git`) + ", Claude finds %[2]q; try again"}}
 	}
-	for _, a := range []answer{
+	for _, a := range append([]answer{
 		{name: "exit 1, no text", exit: 1, calls: 1, version: true,
 			text: "git could not check this repository on the remote machine: at %[1]q: exit status 1"},
 		{name: "exit 128, no text", exit: 128, calls: 1, version: true,
@@ -358,10 +366,10 @@ func TestProbeAnswers(t *testing.T) {
 			stderr: "fatal: detected dubious ownership in repository at '/x/repo'\n"},
 		{name: "another path", stdout: elsewhere + "\n", calls: 2,
 			text: "git and Claude disagree about which repository holds this folder: from %[1]q git finds " +
-				strings.ReplaceAll(strconv.Quote(filepath.FromSlash(elsewhere)), "%", "%%") + ", Claude finds %[2]q; try again"},
+				strings.ReplaceAll(strconv.Quote(elsewhere), "%", "%%") + ", Claude finds %[2]q; try again"},
 		{name: "no output", calls: 2,
 			text: "git and Claude disagree about which repository holds this folder: from %[1]q git finds %[1]q, Claude finds %[2]q; try again"},
-	} {
+	}, windowsRows...) {
 		for i, method := range []string{"git.info", "git.status", "git.list_branches", "git.worktree_create", "git.worktree_remove"} {
 			t.Run(a.name+"/"+method, func(t *testing.T) {
 				f := newSeededShadowFixture(t)
@@ -413,6 +421,25 @@ func TestProbeAnswers(t *testing.T) {
 					t.Errorf("a worktree was made: %v", err)
 				}
 			})
+		}
+	}
+}
+
+// TestPrintedProbePath pins the path of git in the "disagree" text, with the
+// separator of Windows on every system. The rows are table P2 of
+// val-s3p2b2-7-windows (Windows VM): an answer with forward slashes and one
+// with backslashes are each shown as printed. An answer that is not clean is
+// not measured: it is shown cleaned. Without the compare the first row shows
+// backslashes.
+func TestPrintedProbePath(t *testing.T) {
+	for _, row := range []struct{ out, found, want string }{
+		{`C:/o/w/alt/.git`, `C:\o\w\alt\.git`, `C:/o/w/alt/.git`},
+		{`C:\o\w\alt\.git`, `C:\o\w\alt\.git`, `C:\o\w\alt\.git`},
+		{`C:/o/w/x/../alt/.git`, `C:\o\w\alt\.git`, `C:\o\w\alt\.git`},
+		{`.git`, `C:\o\w\repo\.git`, `C:\o\w\repo\.git`},
+	} {
+		if got := printedProbePath(row.out, row.found, `\`); got != row.want {
+			t.Errorf("printedProbePath(%q, %q) = %q, want %q", row.out, row.found, got, row.want)
 		}
 	}
 }
