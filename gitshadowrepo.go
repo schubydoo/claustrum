@@ -12,6 +12,7 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
+	"syscall"
 )
 
 // The folder of one repository in the folder of the daemon, as 5fd08069 keeps
@@ -222,21 +223,24 @@ func (h *shadowHost) syncRepoFolder(dir, name, gitDir string, read *repoVerdict)
 	// The copies then come from what the daemon read before: the config is not
 	// read again for it (cell 54 of s3p2b-edges3-linux2, Linux VM).
 	//
-	// The folder is made by its full path, so the error of a folder that cannot
-	// be made names that path, as on 5fd08069: `mkdir <S>/<32 hex>: permission
-	// denied` under a folder of mode 0500, and `mkdir <S>/<32 hex>: not a
-	// directory` for a plain file of that name (cells N4 of val-s3p2b2-3-linux2
-	// and val-s3p2b2-3-macos, Linux and macOS VMs). On a Windows VM the file
-	// gives `mkdir <path>: The system cannot find the path specified.` (cells N4
-	// of val-s3p2b2-3-windows). Those are the texts of os.MkdirAll. The path is
-	// the folder of the daemon and a name that the daemon computes, and every
-	// later step goes through a root at that folder.
+	// The error of a folder that cannot be made names its full path, as on
+	// 5fd08069: `mkdir <S>/<32 hex>: permission denied` under a folder of mode
+	// 0500, and `mkdir <S>/<32 hex>: not a directory` for a plain file of that
+	// name (cells N4 of val-s3p2b2-3-linux2 and val-s3p2b2-3-macos, Linux and
+	// macOS VMs). On a Windows VM the file gives `mkdir <path>: The system cannot
+	// find the path specified.` (cells N4 of val-s3p2b2-3-windows).
+	//
+	// The folder is made by its name through the root at the folder of the
+	// daemon, and never with its parents. A shutdown that removed the folder of
+	// the daemon after the test of syncRepo then leaves no folder behind: the
+	// mkdir fails (not measured, and no client gets that reply).
 	st := h.repos[name]
 	path := filepath.Join(dir, name)
 	if _, err := os.Lstat(path); errors.Is(err, fs.ErrNotExist) {
 		st = nil
 	}
-	if err := os.MkdirAll(path, 0o700); err != nil {
+	shadowRepoBeforeMkdir()
+	if err := mkdirShadowRepo(base, name, path); err != nil {
 		return err
 	}
 	root, err := base.OpenRoot(name)
@@ -294,6 +298,33 @@ func (h *shadowHost) syncRepoFolder(dir, name, gitDir string, read *repoVerdict)
 		return h.writeCopy(st, root, rel, "BISECT_LOG", nil)
 	}
 	return h.dropCopy(st, rel, "BISECT_LOG")
+}
+
+// shadowRepoBeforeMkdir is a seam for the tests. It runs right before the mkdir
+// of the folder of a repository. Production never reassigns it.
+var shadowRepoBeforeMkdir = func() {}
+
+// mkdirShadowRepo makes the folder name in base, the root at the folder of the
+// daemon, with mode 0700. A folder that is there passes. path is the full path
+// of the folder: an error names it, with the operation `mkdir`. Another entry
+// at that name gives the error of os.MkdirAll for a path that is no folder.
+func mkdirShadowRepo(base *os.Root, name, path string) error {
+	err := base.Mkdir(name, 0o700)
+	if err == nil {
+		return nil
+	}
+	if errors.Is(err, fs.ErrExist) {
+		fi, serr := base.Stat(name)
+		if serr == nil && fi.IsDir() {
+			return nil
+		}
+		err = syscall.ENOTDIR
+	}
+	var pe *os.PathError
+	if errors.As(err, &pe) {
+		err = pe.Err
+	}
+	return &os.PathError{Op: "mkdir", Path: path, Err: err}
 }
 
 // shadowLink makes the symbolic link name in root with the target, when no

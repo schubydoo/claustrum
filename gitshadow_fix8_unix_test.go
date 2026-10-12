@@ -102,3 +102,31 @@ func TestIncludePatternsModeWithTheMember(t *testing.T) {
 		t.Errorf("after the create the temporary folder holds %v, want no such folder", got)
 	}
 }
+
+// TestShutdownBeforeTheRepoFolderLeavesNoFolder: the shutdown removes the
+// folder of the daemon after a request passed the test for a closed daemon and
+// before it makes the folder of its repository. The request then makes no
+// folder: the mkdir goes through the root at the folder of the daemon and
+// makes no parent. The reply is the refusal of a folder that cannot be made.
+// That state is not measured on 5fd08069, and no client gets the reply.
+func TestShutdownBeforeTheRepoFolderLeavesNoFolder(t *testing.T) {
+	f := newSeededShadowFixture(t)
+	if raw, _ := f.info(t, f.repo, nil); !strings.Contains(raw, `"isRepo":true`) {
+		t.Fatalf("git.info = %s", raw)
+	}
+	dir := daemonFolder(t, f.run)
+	old := shadowRepoBeforeMkdir
+	shadowRepoBeforeMkdir = f.s.gitShadow.close
+	t.Cleanup(func() { shadowRepoBeforeMkdir = old })
+	raw, _ := f.info(t, f.repo, nil)
+	want := "cannot write its copy of the repository's git config: mkdir " + filepath.Join(dir, shadowRepoName(f.gitDir)) + ": no such file or directory"
+	if !strings.Contains(raw, want) {
+		t.Errorf("git.info = %s\nwant the cause %s", raw, want)
+	}
+	if _, err := os.Lstat(dir); !os.IsNotExist(err) {
+		t.Errorf("the folder of the daemon after the shutdown: %v, want none", err)
+	}
+	if got := daemonFolders(t, f.run); len(got) != 0 {
+		t.Errorf("git-shadow holds %v after the shutdown, want nothing", got)
+	}
+}
