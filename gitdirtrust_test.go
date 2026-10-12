@@ -461,8 +461,9 @@ func TestGitDirTrustBrokenNestedDotGitStopsTheWalk(t *testing.T) {
 // judged on its HEAD. A passing HEAD makes it the repository (it has no branches). A
 // failing HEAD means no repository. Git itself walks on to T, which has branches.
 func TestGitDirTrustHeadTest(t *testing.T) {
-	// A row changes no state of the process, so the rows of both tables run in
-	// parallel.
+	// A row sets no environment variable and no working folder, and it writes
+	// package state only through caches that hold a lock. So the rows of both
+	// tables run in parallel.
 	for _, tc := range []struct {
 		name string
 		head string

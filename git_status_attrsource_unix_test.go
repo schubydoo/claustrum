@@ -75,10 +75,11 @@ func TestGitStatusIgnoresInRepoGitattributes(t *testing.T) {
 }
 
 // resetAttrSourceForTest clears the once-cached --attr-source probe so it re-runs
-// under a controlled PATH. Direct assignment is safe in a test that does not call
-// t.Parallel(): nothing else is probing concurrently. A top-level test with
-// t.Parallel() starts after every such test ended. Parallel rows end before their
-// own top-level test does.
+// under a controlled PATH. Direct assignment is safe in a test that is not parallel
+// and has no parallel parent: nothing else probes at that time. A top-level test
+// with t.Parallel() starts after every sequential top-level test ended. Parallel
+// rows end before their own top-level test does. Each test that resets the probe
+// also calls t.Setenv, and Go refuses t.Setenv in a parallel test.
 func resetAttrSourceForTest() {
 	attrSourceOnce = sync.Once{}
 	attrSourceOK = false

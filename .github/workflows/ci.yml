@@ -158,13 +158,15 @@ jobs:
       # The Windows legs write and start many new copies of the test binary in the
       # temp folder. This step asks Microsoft Defender to leave out that folder and
       # the Go build and module caches. No run measured the time that it saves.
-      # TEMP can hold a short 8.3 name, so the long form under LOCALAPPDATA is
-      # added too. The step never fails the job. With no Defender on the runner it
-      # prints one line, and the tests run as before.
+      # TEMP can hold a short 8.3 name (not checked on the runner), so the long
+      # form under LOCALAPPDATA is added too. An error in the step does not fail
+      # the job, and the step has its own time limit. With no Defender on the
+      # runner it prints one line, and the tests run as before.
       - name: Exclude the test folders from Microsoft Defender
         if: runner.os == 'Windows'
         shell: pwsh
         continue-on-error: true
+        timeout-minutes: 2
         run: |
           try {
             $paths = @($env:TEMP, (Join-Path $env:LOCALAPPDATA 'Temp'), (go env GOCACHE), (go env GOMODCACHE)) |

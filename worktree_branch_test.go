@@ -290,7 +290,9 @@ func TestWorktreeRemoveBranchStep(t *testing.T) {
 			runGit(t, f.repo, "update-ref", "-d", "refs/heads/main")
 		}},
 	} {
-		// A row changes no state of the process, so the rows run in parallel.
+		// A row sets no environment variable and no working folder, and it writes
+		// package state only through caches that hold a lock. So the rows run in
+		// parallel.
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
 			f := newRmFixture(t)

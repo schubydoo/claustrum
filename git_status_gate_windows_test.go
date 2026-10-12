@@ -80,7 +80,9 @@ func TestGitStatusWindowsSpellings(t *testing.T) {
 			return s0
 		}, statusNotRepo},
 	}
-	// A row changes no state of the process, so the rows run in parallel.
+	// A row sets no environment variable and no working folder, and it writes
+	// package state only through caches that hold a lock. So the rows run in
+	// parallel.
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
 			t.Parallel()
@@ -163,8 +165,9 @@ func TestGitStatusWindowsInsidePathRows(t *testing.T) {
 			return j
 		}, statusNotRepo},
 	}
-	// A row of the table changes no state of the process, so those rows run in
-	// parallel. They start when this function returns, so after row x5.
+	// A row of the table sets no environment variable and no working folder, and
+	// it writes package state only through caches that hold a lock. So those rows
+	// run in parallel. They start when this function returns, so after row x5.
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
 			t.Parallel()
