@@ -211,11 +211,11 @@ func TestDaemonGitDirAndCommonDir(t *testing.T) {
 					line = strings.ReplaceAll(line, old, "<x>")
 				}
 				common, _ := lookupExact(c.env, "GIT_COMMON_DIR")
-				// Two kinds of call have no row with both variables and keep
-				// their form: the `--show-scope` listing, which is claustrum's
-				// own, and the pair of a remove that finds the registration.
-				ownForm := slices.Contains(c.argv, "--show-scope") ||
-					(m.method == "git.worktree_remove" && slices.ContainsFunc(c.argv, func(a string) bool { return strings.HasPrefix(a, "--git-dir=") }))
+				// The `--show-scope` listing is claustrum's own and keeps its
+				// form. The pair of a remove carries the copy: on 5fd08069 the
+				// calls 3 to 6 of a second remove do (cell N-g of
+				// val-s3p2b2-8-linux2, Linux VM).
+				ownForm := slices.Contains(c.argv, "--show-scope")
 				switch {
 				case ownForm:
 				case common == copyOf:

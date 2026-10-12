@@ -454,6 +454,15 @@ func baseRepoLockRefusal(repo, commonDir, gitDir, path, worktreePath string, sp 
 // GIT_COMMON_DIR=<copy> and GIT_OBJECT_DIRECTORY=<git directory>/objects. They
 // have no GIT_DIR and no GIT_WORK_TREE. 5fd08069 sends them so without
 // "shadowDirOff" (val-s3p2b1-linux table A6, Linux VM).
+//
+// With GIT_DIR and GIT_COMMON_DIR in the daemon's environment the request has a
+// copy too (daemonCommonDirStays), and both calls carry the two variables of
+// the copy in the place of the daemon's GIT_COMMON_DIR. On 5fd08069 the calls 3
+// to 6 of a second remove have GIT_DIR=<the daemon's value>, the six profile
+// values, GIT_COMMON_DIR=<S>/<R> and GIT_OBJECT_DIRECTORY=<that git
+// directory>/objects, in this order (cell N-g of val-s3p2b2-8-linux2, Linux
+// VM). With a daemon GIT_COMMON_DIR and no GIT_DIR the calls keep the daemon's
+// value (not measured).
 type registrationProbe struct {
 	use      gitUse
 	gitDir   string
@@ -475,11 +484,11 @@ func (r registrationProbe) run() string {
 		return ""
 	}
 	var pin []string
-	if !daemonCommonDirSet() {
+	switch {
+	case r.use.shadow() && !daemonCommonDirStays():
+		pin = r.use.commonVars()
+	case !daemonCommonDirSet():
 		pin = []string{"GIT_COMMON_DIR=" + r.gitDir}
-		if r.use.shadow() {
-			pin = r.use.commonVars()
-		}
 	}
 	out, err := gitDirWorkTreeToplevel(r.gitDir, r.workTree, pin, r.use.gitDirFront())
 	if err != nil {
