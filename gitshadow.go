@@ -14,6 +14,7 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 )
 
@@ -504,6 +505,10 @@ func boundedGitInput(bound time.Duration, dir string, env []string, stdin []byte
 
 // boundedGitDrain is boundedGitInput with drain as the wait for the output
 // pipes.
+//
+// ended is true only when the bound ended the process itself. A call that
+// exits in time and whose child holds the output pipes past the bound is not
+// ended: it counts by its exit code. That state is not measured on 5fd08069.
 func boundedGitDrain(bound, drain time.Duration, dir string, env []string, stdin []byte, argv ...string) shadowRun {
 	base, cancelBase := gitCtx()
 	defer cancelBase()
@@ -518,12 +523,19 @@ func boundedGitDrain(bound, drain time.Duration, dir string, env []string, stdin
 	var out, errOut bytes.Buffer
 	cmd.Stdout, cmd.Stderr = &out, &errOut
 	cmd.WaitDelay = drain
+	// The exec package calls Cancel only while the process runs. The kill is
+	// the one that it makes with no Cancel set.
+	var killed atomic.Bool
+	cmd.Cancel = func() error {
+		killed.Store(true)
+		return cmd.Process.Kill()
+	}
 	err := cmd.Run()
 	return shadowRun{
 		out:    strings.TrimRight(out.String(), "\r\n"),
 		stderr: errOut.String(),
 		err:    err,
-		ended:  err != nil && ctx.Err() != nil,
+		ended:  err != nil && killed.Load(),
 	}
 }
 
