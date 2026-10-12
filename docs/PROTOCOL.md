@@ -2326,11 +2326,14 @@ The copy has no `extensions.worktreeConfig` setting, so git reads no
 `config.worktree` file in the state `shadow`. The daemon does two things in its
 place, in a repository with that extension and a `config.worktree` file:
 
-- Three settings of the file go before the option list of the git calls as `-c`
-  items: `core.filemode`, `core.sparsecheckout` and `core.eol`. A call on a linked
-  worktree gets the items of the file of that worktree. The cells are in round
-  `val-s3p2b2-3`, on a Linux VM, and cell N16c on a Windows VM. No cell has another
-  key, and claustrum sends no other key.
+- Seven settings of the file go before the option list of the git calls as `-c`
+  items: `core.filemode`, `core.sparsecheckout`, `core.eol`, `core.autocrlf`,
+  `core.ignorecase`, `core.symlinks` and `core.sparsecheckoutcone`. A call on a
+  linked worktree gets the items of the file of that worktree. The cells are in
+  rounds `val-s3p2b2-3` and `val-s3p2b2-6`, on a Linux VM, and cell N16c on a
+  Windows VM. claustrum sends no other key. The
+  [record](record/git-settings-copy.md) has the keys that give no
+  item.
 - A new worktree of `git.worktree_create` gets its own `config.worktree` file. See
   [git.worktree_create](protocol/git-worktree-create.md).
 
@@ -2498,8 +2501,8 @@ that measured it.
       its test: `claude-ssh-gitdir-<n>`, `claude-ssh-index-<n>` and
       `claude-ssh-worktreeinclude-<n>/patterns`. `5fd08069` has those names in
       cells A1 and A3 of round `val-s3p2b1` (Linux, macOS and Windows VMs).
-    - The last edits of the settings copy follow rows of round `val-s3p2b2-5` and
-      ran on no VM. The record of the copy lists them.
+    - The last edits of the settings copy follow rows of rounds `val-s3p2b2-5`
+      and `val-s3p2b2-6` and ran on no VM. The record of the copy lists them.
 - Graft hint. With `GIT_GRAFT_FILE` set, git can print 8 `hint:` lines about
   `info/grafts` on standard error. The light list turns them
   off with `advice.graftFileDeprecated=false`. The heavy list does not. On

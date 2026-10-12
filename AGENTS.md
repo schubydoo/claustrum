@@ -427,7 +427,9 @@ The JSON-RPC surface is identical on every OS. Full internals →
       write left.
     - The short-lived entries of one request: `.gitdir-<n>`, `.index-<n>`,
       `.worktreeinclude-<n>`, `.config-<n>`, and `.s<n>` on Windows. Each goes
-      at the end of its step or at the reply.
+      at the end of its step or at the reply. `.config-<n>` goes before the
+      next git call of its create, as on `5fd08069` (round `val-s3p2b2-6`,
+      Linux VM).
   On Linux and macOS the folder of a repository holds a link `worktrees` into
   the git directory. The root removes that link and not its target
   (`TestShadowFolderRemovalLeavesLinkTargets`). A new copy is a temp file plus
@@ -440,16 +442,16 @@ The JSON-RPC surface is identical on every OS. Full internals →
   `baseRepo` and into the new worktree. None of these steps is a tree delete.
   Each goes through an `os.Root`, with a fixed name or a name that the daemon
   read through that root:
-    - The folder `<git dir>/worktrees` (0755), made before the add through a
-      root at the pinned git directory. It stays after a failed add, as on
-      `5fd08069` (cells N2 of round `val-s3p2b2-3`, Linux and macOS VMs). With
-      `core.sharedRepository = group`, one `os.Root.Chmod` adds the write bit
-      of the group and the set-group-ID bit. That chmod acts only on the folder
-      that this call just made (`5fd08069`, cell H3 of round `val-s3p2b2-5`,
-      Linux VM). Every other value of that key is not measured.
+    - The folder `<git dir>/worktrees` (0777 less the umask), made before the
+      add through a root at the pinned git directory. It stays after a failed
+      add, as on `5fd08069` (cells N2 of round `val-s3p2b2-3`, Linux and macOS
+      VMs). With a `core.sharedRepository` value other than `umask`, one
+      `os.Root.Chmod` sets its mode by that value, with the set-group-ID bit.
+      That chmod acts only on the folder that this call just made (`5fd08069`,
+      the 18 rows of group P5 of round `val-s3p2b2-6`, Linux VM).
     - On Linux and macOS, the `.git` file of the new worktree
       (`replaceWorktreeGitFile`). It is one `os.Root.Remove` of the fixed name
-      `.git` and one exclusive create with mode 0644, through a root at the
+      `.git` and one exclusive create with mode 0666, through a root at the
       leaf. Three tests come first. The leaf must be the folder of the
       checkpoint, by identity with the held handle. `.git` must be a regular
       file of at most 8192 bytes. Its text must be `gitdir: `, the folder of
@@ -457,7 +459,8 @@ The JSON-RPC surface is identical on every OS. Full internals →
       other text stays as it is. On `5fd08069` that file is a new file 4 to 25
       ms after the add. That is cell N1 of round `val-s3p2b2-3` (Linux VM, 6
       of 6 runs).
-    - The new file `<git dir>/worktrees/<name>/config.worktree` (0644), made
+    - The new file `<git dir>/worktrees/<name>/config.worktree` (0666 less
+      the umask), made
       with an exclusive create (`writeWorktreeConfig`). It goes through a root
       at the pinned git directory and then a root at the registration. The
       registration must be a direct entry of `<git dir>/worktrees` and a real

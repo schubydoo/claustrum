@@ -953,9 +953,10 @@ copies end still fails it, as `timeoutMs` above describes:
   option and no `-C`. It runs in the daemon's working directory, with the
   daemon's environment unchanged. With its settings copy `5fd08069` runs that
   call in the first of two such creates of one daemon, and not in the second.
-  That is cell `v5-create` of round `val-s3p2b2-5` (Linux VM, 4 of 4 runs). From the
-  code: claustrum keeps the answer of a call that exited 0 for the life of the
-  daemon, for a request that names a copy. The first `git version ` in the output counts,
+  That is cell `v5-create` of round `val-s3p2b2-5` (Linux VM, 4 of 4 runs). A create
+  with `"shadowDirOff":true` shares that one call (cells `p3m-member` and
+  `p3-include` of round `val-s3p2b2-6`, Linux VM). From the code: claustrum keeps
+  the answer of a call that exited 0 for the life of the daemon. The first `git version ` in the output counts,
   even after other text. A digit must follow it. Git 2.32.0 or later gets the
   directory scan. Older git gets the full scan, and so does output that does not
   parse. A non-zero exit also gets the full scan, even with valid output. Major

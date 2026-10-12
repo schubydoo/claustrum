@@ -126,7 +126,7 @@ claustrum follows the reference build `5fd08069` here, with the differences that
 
 The daemon keeps its own copy of the git settings of the repository, and its git calls read that copy. [The settings copy](../PROTOCOL.md#the-settings-copy) in the protocol reference has the states, the texts and the folder. These rules are for this method:
 
-- If the directory `<git dir>/worktrees` is missing, the daemon makes it before the add. The directory stays after an add that fails. If the repository has `core.sharedRepository = group`, the new directory gets the write bit of the group and the set-group-ID bit.
+- If the directory `<git dir>/worktrees` is missing, the daemon makes it before the add. The directory stays after an add that fails. The new directory gets mode 0777 less the umask of the daemon. If the repository has a `core.sharedRepository` value other than `umask`, the daemon then sets the mode by that value. The [record](../record/git-settings-copy.md) has the table.
 - If the repository has `extensions.worktreeConfig` and a file `<git dir>/config.worktree`, the new worktree gets its own `config.worktree` file. It holds the text of that file without `core.bare` and `core.worktree`.
 - A bare `baseRepo` gets `not_a_repo`.
 - On Windows the add writes the registration of the new worktree into a short-lived folder of the daemon. The daemon then copies it into `<git dir>\.claude-new-worktree-<16 hex>` and renames that folder to `<git dir>\worktrees\<name>`.
