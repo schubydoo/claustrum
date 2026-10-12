@@ -648,8 +648,9 @@ func shadowTestCalls(dir, check string) (state, cause string) {
 	//
 	//   - The call exits 0 at 0.2 s and a child holds the pipes for 35 s: 5fd08069
 	//     answers the text of callSevenEnded at 31.2 s (cell N-b of
-	//     val-s3p2b2-9-linux2, Linux VM, 1 run). The wait for the pipes is
-	//     therefore one bound and 1 s after the call ended.
+	//     val-s3p2b2-9-linux2, Linux VM, 1 run). The reply comes about 31 s
+	//     after call 7 started. The row does not tell a bound from the start
+	//     of the call from a bound after its end.
 	//
 	// From the code: a call 7 that fails on its own gives the exec error alone
 	// (not measured).

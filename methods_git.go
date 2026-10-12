@@ -360,9 +360,11 @@ func gitInfo(req *request) response {
 	//
 	// The calls after the gate keep their form: the request has no copy for
 	// them. Round val-s3p2b2-9 has both rows on the Linux and macOS VMs, and a
-	// refused config of the repository of the file (Linux VM). Not measured:
-	// a folder whose git directory the trust check refuses, another kind of
-	// file, and Windows.
+	// refused config of the repository of the file (Linux VM). On a Windows VM
+	// both builds answer the hooks refusal for such a file, with `fork/exec
+	// <git.exe>: The directory name is invalid.` (part V of
+	// val-s3p2b2-9-windows, 2 runs). Not measured: a folder whose git
+	// directory the trust check refuses, and another kind of file.
 	gateTrust, gateDir, gate := t, p.Path, true
 	inFile := false
 	if fi, err := os.Stat(p.Path); err == nil && fi.Mode().IsRegular() && t.verdict == gitDirTrusted && t.pinCommonDir == "" {
@@ -1251,7 +1253,8 @@ func gitWorktreeCreateLocked(req *request, p *gitParams, repo string) response {
 	//     directory`, and that call is its last (cell swc-file of
 	//     val-s3p2b2-10-linux2 and cell c-cfile of val-s3p2b2-10-macos). An
 	//     lstat of `commondir` in the answered directory that fails with
-	//     another error than "does not exist" gives that text.
+	//     another error than "does not exist" gives that text. Only "not a
+	//     directory" is measured.
 	//   - Git answered another real directory than the held one, because the
 	//     path leads to it since a step before the call: the create goes on in
 	//     that directory (acceptedGitDir.movedTo).

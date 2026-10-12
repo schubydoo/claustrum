@@ -19,7 +19,7 @@ import (
 // Windows VM. The text was `The process cannot access the file because it is
 // being used by another process`. The rename passed between two requests
 // (section 1.1 and control H1 of val-s3p2b2-9-windows). On 5fd08069 the rename
-// passes during a create (60 swaps of that round).
+// passes during a create, except after its calls 7 and 8 (that round).
 //
 // Root.OpenRoot opens a name inside a root with NtCreateFile and the share mode
 // `FILE_SHARE_READ|FILE_SHARE_WRITE|FILE_SHARE_DELETE`
@@ -28,8 +28,9 @@ import (
 // before the return. The open follows no link at the last name: a junction
 // there is an error. A parent folder that the daemon cannot open is not
 // measured: the create is then refused as for a git directory that changed. A
-// path with no parent folder, the root of a volume, is opened by the path. Not
-// run on a Windows system.
+// path with no parent folder, the root of a volume, is opened by the path.
+// With this open the rename passes on claustrum at each swap point of a
+// create (section 1.4 of val-s3p2b2-12-windows, Windows VM).
 func openHeldGitDir(path string) (*os.Root, error) {
 	clean := filepath.Clean(path)
 	dir := filepath.Dir(clean)

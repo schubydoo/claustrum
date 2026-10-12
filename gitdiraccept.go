@@ -9,8 +9,9 @@ import (
 // The git directory of one git.worktree_create, held from its gate to its
 // reply. It runs where gitDirMustBeReal is set: on every system.
 //
-// On Linux and macOS VMs a symbolic link takes the place of the junction, and
-// 5fd08069 refuses there too and leaves T as it is (the swap cells of
+// On Linux and macOS VMs a symbolic link takes the place of the junction. For
+// a link that is put there after `rev-parse --absolute-git-dir`, 5fd08069
+// refuses there too and leaves T as it is (the swap cells of
 // val-s3p2b2-9-linux2 and val-s3p2b2-9-macos, see plainAddRefusal).
 //
 // The rows are cells X1c and X1p of val-s3p2b2-7-windows (Windows VM). While a
@@ -102,8 +103,9 @@ func realDirText(gitDir string) string {
 // folder. A path that changes between the two opens can therefore pass
 // stands only when the entry at the second open is the held folder itself.
 // That is sound for what the test decides: no act of the daemon inside the
-// git directory goes through the path (gitdirheld.go). Not run on a Windows
-// system.
+// git directory goes through the path (gitdirheld.go). On a Windows VM the
+// test sees the junction at each swap point of a create (the table of section
+// 2 of val-s3p2b2-12-windows).
 func gitDirIdentity(path string) os.FileInfo {
 	fi, err := os.Lstat(path)
 	if err != nil || !goesAsTree(fi.Mode()) {
@@ -114,9 +116,11 @@ func gitDirIdentity(path string) os.FileInfo {
 }
 
 // gitDirLinkDetail refuses a git directory that is a junction, where
-// gitDirMustBeReal is set. A symbolic link at `.git` that is there before the
-// request is resolved by the trust check first, so gitDir is then its target
-// (not run on Windows). The text names the config of that directory. With a
+// gitDirMustBeReal is set. On Linux and macOS a symbolic link at `.git` that
+// is there before the request is resolved by the trust check first, so gitDir
+// is then its target. On Windows the trust check keeps a directory symbolic
+// link as it is spelled, and it is refused here (gitDirIsSymlink). The text
+// names the config of that directory. With a
 // junction at `repo\.git`, 5fd08069 answers `this repository's git config
 // cannot be used: "C:\\o\\w\\repo\\.git\\config": is, or is reached through, a
 // link that Claude does not follow here; replace the link with what it points
@@ -310,7 +314,8 @@ func (u gitUse) swapped(step string) bool {
 //
 // With a junction to a copy of the git directory, 5fd08069 makes that one
 // call, which passes, and then answers the refusal of the config (cells X1c-01
-// to X1c-05, Windows VM). With a junction to a folder that is no git directory
+// to X1c-04, Windows VM. Cell X1c-05 makes more calls first). With a junction
+// to a folder that is no git directory
 // it makes no such call and goes on: its next calls carry GIT_DIR=NUL (cells
 // X1p-02 to X1p-06). A bad answer of the call at such a step is not measured:
 // the create goes on.

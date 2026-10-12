@@ -309,7 +309,9 @@ The JSON-RPC surface is identical on every OS. Full internals →
       the cleanup and the move act through that held folder (see "holds the
       git directory" below). Before the cleanup the path must still name
       that folder. If not, the create is refused, and nothing is removed or
-      made in the git directory or in the folder at its path. The entries are
+      made in the git directory or in the folder at its path. Round
+      `val-s3p2b2-12` ran that refusal on claustrum: the folder at the path
+      was unchanged in 72 swap runs (Windows VM). The entries are
       listed through that root, so each name is a direct entry of the git
       directory. The name must start with the fixed prefix, with the dash. The
       entry is read with `Lstat` through the root, so no link and no junction
@@ -467,9 +469,17 @@ The JSON-RPC surface is identical on every OS. Full internals →
     - One step takes a new folder from the path. On Linux and macOS, right
       after `rev-parse --absolute-git-dir`, a path that leads to another git
       directory which passes the gate becomes the held folder
-      (`acceptedGitDir.movedTo`). `5fd08069` goes on in that directory. Add
+      (`acceptedGitDir.movedTo`). With a link to a copy of the git directory,
+      `5fd08069` goes on in the copy (Linux and macOS VMs). Another git
+      directory is not measured. No cell has an old registration in that
+      folder or a failed checkout after the move. Add
       no other step that resolves the path of the git directory again, and
       never widen a delete of these steps.
+    - On Windows a directory symbolic link at `.git` is refused as a junction
+      is, on every git method, before any write or remove
+      (`gitDirIsSymlink`). `5fd08069` refuses it too (Windows VM). Before
+      that rule, a create through such a link made its worktree in the
+      target of the link, and its cleanup removed an old staging entry there.
   [git.worktree_create](docs/protocol/git-worktree-create.md#the-held-git-directory)
   has the rules for a reader, and its record has the cells.
 - In the state `shadow` `git.worktree_create` writes into the git directory of

@@ -478,7 +478,8 @@ func worktreeAddStaged(ctx context.Context, u gitUse, repo, leaf string, cp work
 // An old entry in the target of the junction stays, and the target gets no
 // registration (cells X1c-10 and X1p-10 of val-s3p2b2-7-windows, Windows VM).
 // Both steps act through the held folder, so a folder that is put at the path
-// after this test gets nothing either.
+// after this test gets nothing either (from the code: no row has a swap at
+// that moment).
 //
 // A move that fails is not measured. The daemon logs one line and goes on. The
 // `.git` file of the new worktree then names no registration of the repository.
@@ -525,8 +526,10 @@ var removeStagingEntry = func(root *os.Root, name string, tree bool) error {
 //  1. The entries are listed through the root, and every step below acts
 //     through the root. No path is built from a value of the request, and no
 //     path is resolved again: a junction that is put at the path of the git
-//     directory while the create runs does not lead the cleanup to its target
-//     (cells X1c of val-s3p2b2-7-windows, Windows VM).
+//     directory while the create runs does not lead the cleanup to its target.
+//     5fd08069 leaves the target as it is (cells X1c of val-s3p2b2-7-windows,
+//     Windows VM), and so does claustrum (72 swap runs, section 1.3 of
+//     val-s3p2b2-12-windows).
 //  2. The name must start with the fixed prefix (isStagingName). The names come
 //     from the listing, so each is one name of the folder itself.
 //  3. The entry itself is read with Lstat through the root. Nothing follows a

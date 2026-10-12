@@ -132,7 +132,7 @@ The daemon keeps its own copy of the git settings of the repository, and its git
 - On Windows the add writes the registration of the new worktree into a short-lived folder of the daemon. The daemon then copies it into `<git dir>\.claude-new-worktree-<16 hex>` and renames that folder to `<git dir>\worktrees\<name>`.
 - On Windows, before that step, a create removes old entries of the git directory. Such an entry has a name that starts with `.claude-new-worktree-` and a write time of 1 hour or more. The request did not make those entries. A junction goes as a junction, and its target stays.
 - A create holds the git directory open from its gate to its reply. [The held git directory](#the-held-git-directory) has the rules.
-- A failed `rev-parse --absolute-git-dir` stops the create with `git worktree add failed: cannot locate the repository's git directory: exit status 128`.
+- In the state `shadow`, a failed `rev-parse --absolute-git-dir` stops the create with `git worktree add failed: cannot locate the repository's git directory: exit status 128`. The text after the last colon is the error of the call. That is measured on a Windows VM. Linux and macOS get the same stop (not measured).
 - On Windows, a step before the add that fails gives `git worktree add failed: cannot prepare the repository's worktrees directory: <cause>`, and the `worktree add` call does not run.
 
 `"shadowDirOff": true` turns the copy off for one request, and none of these steps runs. The same holds on a host whose git does not work on such a copy. The [record of the copy](../record/git-settings-copy.md) has the cells.
@@ -141,13 +141,14 @@ The daemon keeps its own copy of the git settings of the repository, and its git
 
 In the state `shadow` a create holds the git directory of `baseRepo` open from its gate to its reply.
 
-- The git directory must be a real directory at the gate. On Windows a junction there is refused. On Linux and macOS a `.git` that is a symbolic link before the request is resolved first, and the daemon holds its target. A change of that link is a change of the path too.
-- The daemon's own deletes, renames, new folders and file writes inside the git directory go through the held folder. A folder that is put at the path while the create runs gets none of them.
-- The hold stops no rename of the git directory by another process. On Windows the handle of the hold shares delete access for that. That form ran on no Windows system.
-- The steps of the create test that the path still names the held folder. If it does not, the create is refused at that step, or at the latest before its `worktree add`.
-- On Linux and macOS one step moves the hold. The path can lead to another git directory before `rev-parse --absolute-git-dir`. If that directory passes the gate, the create goes on in it, as on `5fd08069`.
-- On Linux and macOS, a `.git` that became a file after that call gives `git worktree add failed: cannot locate the repository's git directory: lstat <baseRepo>/.git/commondir: not a directory`.
-- On Linux and macOS, a path that no longer names the held folder right after a good `worktree add` gives `refusing to create worktree: <leaf> was not populated by git worktree add` with `unsafe_path`. Nothing is rolled back.
+- The git directory must be a real directory at the gate. On Windows a junction or a directory symbolic link there is refused, on every git method. On Linux and macOS a `.git` that is a symbolic link before the request is resolved first, and the daemon holds its target. A change of that link is a change of the path too.
+- The daemon's own deletes, renames, new folders and file writes inside the git directory go through the held folder. A folder that is put at the path while the create runs gets none of them, except the directory that the hold moves to (the rule for Linux and macOS below).
+- The hold stops no rename of the git directory by another process. On Windows the handle of the hold shares delete access for that.
+- The steps of the create test that the path still names the held folder. A swap after `rev-parse --absolute-git-dir` and before the add is refused before the add. Git itself goes by the path.
+- On Windows, a swap after the first listing of the checkout or after the read-tree call fails the create. The text starts with `git worktree add failed (checkout): `. The registration and the branch then stay, and the text says so.
+- On Linux and macOS one step moves the hold. The measured case is a link to a copy of the git directory. It is put there after the first call or after `rev-parse --abbrev-ref HEAD`. `5fd08069` then goes on in the copy (Linux and macOS VMs), and so does claustrum (Linux VM). Another git directory that passes the gate gets the same rule (not measured).
+- On Linux and macOS, a `.git` that became a file with `gitdir: <another git directory>` after that call gives `git worktree add failed: cannot locate the repository's git directory: lstat <baseRepo>/.git/commondir: not a directory`.
+- On Linux and macOS, a `.git` that is a symbolic link to a copy of the git directory right after a good `worktree add` gives `refusing to create worktree: <leaf> was not populated by git worktree add` with `unsafe_path`. Nothing is rolled back.
 - By the path stay: git itself, a request with `"shadowDirOff": true`, and a host in the state `fallback-git` or with no run folder. On Linux and macOS a `worktrees` entry that is a symbolic link stays by the path too.
 
 The [record](../record/git-settings-copy.md#a-git-directory-that-is-replaced-while-a-create-runs) has the cells of `5fd08069` and the text of each measured step.

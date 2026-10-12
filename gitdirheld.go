@@ -15,11 +15,14 @@ import (
 // A create that holds its git directory makes each delete, rename, mkdir and
 // file write inside that directory through the held folder
 // (acceptedGitDir.root), not through the path. A link, a junction or another
-// folder that is put at the path while the create runs gets none of them.
+// folder that is put at the path while the create runs gets none of them,
+// except the directory that the hold moves to (movedTo, below).
 //
 // The hold stops no rename of the folder by another process. On Windows its
 // handle shares delete access for that (openHeldGitDir): on 5fd08069 a rename
-// of `repo\.git` passes during a create (val-s3p2b2-9-windows, Windows VM).
+// of `repo\.git` passes during a create, except after its calls 7 and 8
+// (val-s3p2b2-9-windows, Windows VM). On claustrum it passes at each of the
+// 12 swap points (section 1.4 of val-s3p2b2-12-windows, 3 of 3 runs).
 // After a rename the acts below still go to the held folder, at its new name.
 // Not measured: a rename at the moment when a step has an entry of the folder
 // open.
@@ -52,7 +55,8 @@ import (
 // What 5fd08069 does with a swapped git directory is in the section "A git
 // directory that is replaced while a create runs" of
 // docs/record/git-settings-copy.md. No row has a swap between the test of a
-// step and one of these acts.
+// step and one of these acts. In the swap cells of val-s3p2b2-12-windows the
+// folder at the path is unchanged on claustrum (section 1.3, Windows VM).
 
 // removeHeldEntry removes the entry name with its content through root, the
 // held git directory. A test replaces it. Production never does.

@@ -1925,7 +1925,7 @@ version and the extensions of an included file are not tested (cells X7 and X9).
 | `fatal: bad config line <n> in "<file>"` | The config or an included file has a syntax error. The text is that of git, with the path in quotes |
 | `"<included file>" is outside "<repo>", and on Windows Claude reads a repository's settings only from inside it; if the line that includes it is yours and you trust the file, put that line into ~/.gitconfig on the remote machine instead` | Windows: a relative include that leaves the repository. For a bare repository `<repo>` is its git directory (cell W6) |
 | `"<file>" includes "<value>", and on Windows Claude follows an include only if its path is relative and stays inside the repository; if that line is yours and you trust the file, put the line into ~/.gitconfig on the remote machine instead` | Windows: an absolute include value, also to a missing file, `~/x` and `~root/x`. An absolute value and `~/x` get it in an `includeIf` section whose condition does not match too (cells N12w). `<value>` is cut to its first 300 characters. A value of 300 characters is whole, and one of 301 shows 300 (cells P7w, Windows VM) |
-| `"<file>": is, or is reached through, a link that Claude does not follow here; replace the link with what it points to` | Windows: the config is a file link. Windows, every git method that reads the config: the git directory is a junction, and `<file>` is `<git dir>\config`. The [record](record/git-settings-copy.md#a-git-directory-that-is-replaced-while-a-create-runs) has the cells |
+| `"<file>": is, or is reached through, a link that Claude does not follow here; replace the link with what it points to` | Windows: the config is a file link. Windows, every git method that reads the config: the git directory is a junction or a directory symbolic link, and `<file>` is `<git dir>\config`. The [record](record/git-settings-copy.md#a-git-directory-that-is-replaced-while-a-create-runs) has the cells |
 
 The path of an included file is the folder of the file that holds the setting, one
 separator, and the value as written. On a Windows VM `path = <dir>/inc.cfg` gives
@@ -2132,8 +2132,8 @@ The record of the copy has what they compared.
   bare repositories (`safe.bareRepository = explicit`), gets the refusal.
 - An `includeIf` line in a file three levels below the config gets the "includes
   go past" text.
-- On Windows claustrum refuses a link at a config file, at an included file and at
-  the git directory itself. It tests no other folder above the file. It also refuses an include value that starts
+- On Windows claustrum refuses a link at a config file and at an included file, and
+  a junction or a directory symbolic link at the git directory itself. It tests no other folder above the file. It also refuses an include value that starts
   with a slash or a drive.
 
 #### The settings copy
@@ -2165,7 +2165,9 @@ last member of the result. No other method sends it, and an error reply has none
   request of a daemon it makes one call, the excludes read, and its reply has no
   member. A later one makes none.
 - A `git.info` on a regular file gets the gate of the repository of its folder.
-  Outside any repository it starts no test, and its reply has no member. The
+  Outside any repository it starts no test, and its reply has no member. That is
+  the reply on Linux and macOS. On Windows the reply is the hooks refusal, with
+  `fork/exec <git.exe>: The directory name is invalid.` The
   [record](record/git-settings-copy.md#claustrum-and-5fd08069) has the cells of
   both rules.
 - A request with `"shadowDirOff":true` gets `"off-switch"` in three more cases. It
@@ -2225,13 +2227,14 @@ a failed call have one error line.
   second for the output of that call. The 1 second is fitted from the Linux rows.
 - A test call that exits in time counts by its exit code, also while a child
   holds its output pipes past that wait.
-- Call 7, the listing of the test config, waits for its pipes until one bound and
-  1 second after the call ended. A call 7 that the bound ended, or whose pipes a
+- From the code: call 7, the listing of the test config, waits for its pipes until
+  one bound and 1 second after the call ended. A call 7 that the bound ended, or whose pipes a
   child still holds then, gives the cause `this repository's git config cannot be
   used: git did not finish reading "<config of the test repository>" within 30
   seconds; try again`.
 - The [record](record/git-settings-copy.md#claustrum-and-5fd08069) has cells N-a
-  to N-c of `5fd08069` with their times.
+  to N-c of `5fd08069` with their times (Linux VM. Not measured on macOS and
+  Windows).
 
 ##### The folders
 
