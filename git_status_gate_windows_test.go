@@ -80,8 +80,10 @@ func TestGitStatusWindowsSpellings(t *testing.T) {
 			return s0
 		}, statusNotRepo},
 	}
+	// A row changes no state of the process, so the rows run in parallel.
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
+			t.Parallel()
 			f := newStatusFixture(t)
 			path := c.edit(t, f)
 			if got := statusFrame(t, path, f.T); got != c.want {
@@ -161,8 +163,11 @@ func TestGitStatusWindowsInsidePathRows(t *testing.T) {
 			return j
 		}, statusNotRepo},
 	}
+	// A row of the table changes no state of the process, so those rows run in
+	// parallel. They start when this function returns, so after row x5.
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
+			t.Parallel()
 			f := build(t)
 			path := c.edit(t, f)
 			if got := statusFrame(t, path, f.T); got != c.want {
@@ -171,7 +176,8 @@ func TestGitStatusWindowsInsidePathRows(t *testing.T) {
 		})
 	}
 	// Row x5: a relative path that lies inside baseRepo goes to git as sent, the
-	// rev-parse fails, and the answer is isRepo:false.
+	// rev-parse fails, and the answer is isRepo:false. It changes the working
+	// directory, so it is not parallel.
 	t.Run("x5 relative path", func(t *testing.T) {
 		f := build(t)
 		t.Chdir(f.root)
