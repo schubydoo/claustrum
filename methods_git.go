@@ -310,6 +310,20 @@ func gitInfo(req *request) response {
 	if msg, bad := daemonCountRefusal(); bad {
 		return errResult(req.ID, codeInternal, msg)
 	}
+	// A path that does not exist gets the "no repository" answer here, with no
+	// start test and no git call. On 5fd08069 such a git.info as the first git
+	// request of a daemon makes 1 call, the excludes read, and its reply has no
+	// settingsControl member. The next request on a repository runs the start
+	// test. A later git.info on such a path makes 0 calls (cell F1 of
+	// val-s3p2b2-6-windows, Windows VM, 2 of 2 runs, and request 3 of the 15
+	// runs of its group P1). Linux and macOS are not measured: they get the same
+	// rule. A path that is a file is not such a path: both builds run a `git
+	// version` call there and answer the hooks refusal (the same cell).
+	if p.Path != "" {
+		if _, err := os.Stat(p.Path); errors.Is(err, fs.ErrNotExist) {
+			return notRepo()
+		}
+	}
 	if t.verdict == gitDirNoRepo {
 		// A listing that fails here refuses (rows A-N1 and A-X2 on Linux and macOS VMs,
 		// cells P3-infoN and P3-infoX on a Windows VM).

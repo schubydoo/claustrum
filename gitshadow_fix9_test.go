@@ -2,6 +2,7 @@ package main
 
 import (
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 )
@@ -45,5 +46,55 @@ func TestRelativeRunFolder(t *testing.T) {
 				t.Errorf("no call names the folder of the daemon %s", dir)
 			}
 		})
+	}
+}
+
+// TestInfoOnAPathThatDoesNotExist: a git.info on a path that does not exist
+// runs no start test and no git call beyond the excludes read. As the first
+// git request of a daemon its reply has no settingsControl member. The next
+// request on a repository runs the start test. A later request on the path
+// makes no call. A path that is a file still gets its `git version` call. On
+// 5fd08069 the calls are 1, then 22, then 0 (cell F1 of val-s3p2b2-6-windows,
+// Windows VM, 2 of 2 runs). Linux and macOS are not measured.
+func TestInfoOnAPathThatDoesNotExist(t *testing.T) {
+	f := newShadowFixture(t)
+	gone := filepath.Join(filepath.Dir(f.repo), "no-such-folder")
+	raw, calls := f.info(t, gone, nil)
+	if want := `{"jsonrpc":"2.0","id":1,"result":{"isRepo":false,"repoSlug":"","defaultBranch":""}}`; raw != want {
+		t.Errorf("the first git.info = %s\nwant %s", raw, want)
+	}
+	if len(calls) != 1 || !calls[0].excludesRead() {
+		t.Errorf("the first git.info made %d calls, want the excludes read alone", len(calls))
+	}
+	if got := daemonFolders(t, f.run); len(got) != 0 {
+		t.Errorf("git-shadow holds %v after the first request, want no folder", got)
+	}
+
+	raw, calls = f.info(t, f.repo, nil)
+	if !strings.Contains(raw, `"settingsControl":"shadow"`) || len(testCalls(calls)) < 9 {
+		t.Fatalf("git.info on the repository = %s with %d test calls, want the start test", raw, len(testCalls(calls)))
+	}
+
+	raw, calls = f.info(t, gone, nil)
+	if want := `{"jsonrpc":"2.0","id":1,"result":{"isRepo":false,"repoSlug":"","defaultBranch":"","settingsControl":"shadow"}}`; raw != want {
+		t.Errorf("a later git.info = %s\nwant %s", raw, want)
+	}
+	if len(calls) != 0 {
+		t.Errorf("a later git.info made %d calls, want none: %q", len(calls), calls[0].argv)
+	}
+
+	file := filepath.Join(filepath.Dir(f.repo), "a-file")
+	mustWrite(t, file, "x")
+	raw, calls = f.info(t, file, nil)
+	versions := 0
+	for _, c := range calls {
+		if slices.Contains(c.argv, "version") {
+			versions++
+		}
+	}
+	// The reply for a file is that of each system: the hooks refusal on a
+	// Windows VM, and the "no repository" answer here on Linux.
+	if versions != 1 {
+		t.Errorf("git.info on a file = %s with %d version calls, want 1", raw, versions)
 	}
 }
