@@ -228,9 +228,10 @@ func listingEnvBase() []string {
 	return out
 }
 
-// noRepoListingRefusal runs the configuration listing in dir, a folder in which the
-// trust check finds no repository, and returns the refusal text of a listing that
-// refuses, or "". heavy is the profile of the listing. With a broken GIT_CONFIG_KEY_<n>
+// noRepoCalls runs the configuration listing in dir, a folder in which the trust
+// check finds no repository, and returns the refusal text of a listing that
+// refuses, or "". After a listing that passed it runs the call args in dir.
+// heavy is the profile of both calls, and u their form. With a broken GIT_CONFIG_KEY_<n>
 // in the daemon's environment git fails that listing, and 89cb6289 then refuses
 // git.info, git.list_branches and git.worktree_create. Rows A-N1, A-N2, A-N3, A-N6 and
 // A-X2 show that on Linux and macOS VMs. Cells P3-infoN, P3-infoX, P3-lbN and P3-crN,
@@ -254,14 +255,18 @@ func listingEnvBase() []string {
 //
 // Not measured: a listing that passes and exceeds a limit of parseConfigListing, and
 // a `.git` file with no gitdir line. claustrum answers them by hostileConfigRefusal.
-func noRepoListingRefusal(t gitDirTrust, dir string, heavy bool) string {
+func noRepoCalls(t gitDirTrust, u gitUse, dir string, heavy bool, args ...string) string {
 	if !t.noRepoPinned() {
 		return ""
 	}
-	return hostileConfigRefusal(gitUse{}, dir, heavy).refusal
+	c := hostileConfigRefusal(u, dir, heavy)
+	if !c.refused() {
+		hardenedGitFirst(u, dir, heavy, c.listing, args...)
+	}
+	return c.refusal
 }
 
-// noRepoInfoCalls is noRepoListingRefusal for git.info, with one more call. After a
+// noRepoInfoCalls is noRepoCalls for git.info. After a
 // listing that passed, 5fd08069 runs the heavy `rev-parse --git-dir` in the folder,
 // with GIT_DIR=<null device> and the hook pins of the listing. The call exits 128.
 // The reply is the "no repository" answer, as without the call. The rows are a
@@ -270,16 +275,30 @@ func noRepoListingRefusal(t gitDirTrust, dir string, heavy bool) string {
 // val-s3p2b2-3-macos (macOS VM), row D6 of val-s3p2b2-3-windows (Windows VM) and
 // cell E5-HEAD-garbage of val-s3p2b2-3-linux (Linux VM). The Linux and macOS call
 // logs of those cells do not keep the order of the variables. claustrum does not
-// read the answer. The other methods have no such row.
+// read the answer.
+//
+// git.list_branches makes the same two calls. On 5fd08069 a git.list_branches on
+// a repository whose HEAD has mode 000 makes the listing and then that heavy
+// `rev-parse --git-dir`, with GIT_DIR=<null device> and exit 128 (cell
+// h1-mode000 of val-s3p2b2-7-linux2, Linux VM). A folder with no `.git` entry
+// is not measured for git.list_branches: it gets the call too.
 func noRepoInfoCalls(t gitDirTrust, dir string) string {
-	if !t.noRepoPinned() {
-		return ""
-	}
-	c := hostileConfigRefusal(gitUse{}, dir, true)
-	if !c.refused() {
-		hardenedGitFirst(gitUse{}, dir, true, c.listing, "rev-parse", "--git-dir")
-	}
-	return c.refusal
+	return noRepoCalls(t, gitUse{}, dir, true, "rev-parse", "--git-dir")
+}
+
+// noRepoCreateCalls is noRepoCalls for git.worktree_create. On 5fd08069 a create on a repository whose HEAD has mode 000 makes
+// the listing and then the light `rev-parse --is-inside-work-tree`, with
+// GIT_DIR=<null device>, the hook pins and exit 128. Both calls carry the six
+// values of gitUse.profileEnv in its order, in a daemon that has no state yet
+// (cell h1-mode000 of val-s3p2b2-7-linux2, Linux VM). The reply is the "not a
+// git repository" answer, as without the call.
+//
+// six is true for a request without the member of a daemon with a run folder.
+// With the member and with no run folder the two calls keep the four light
+// values (not measured). A folder with no `.git` entry is not measured: it
+// gets the call too.
+func noRepoCreateCalls(t gitDirTrust, six bool, dir string) string {
+	return noRepoCalls(t, gitUse{lightSix: six}, dir, false, "rev-parse", "--is-inside-work-tree")
 }
 
 // gitVersionRun runs the plain `git version` that 89cb6289 runs after a listing that

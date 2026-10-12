@@ -44,6 +44,9 @@ type gitUse struct {
 	// shared is the `core.sharedRepository` setting of the config of the
 	// repository (makeWorktreesFolder).
 	shared sharedRepository
+	// lightSix gives the light calls of a request with no folder the six values
+	// of profileEnv (noRepoCreateCalls).
+	lightSix bool
 }
 
 // inFolder reports whether the request keeps its short-lived folders in the
@@ -346,7 +349,7 @@ func (u gitUse) gitDirPin(dir string) []string {
 // The listings and the read-tree in the new worktree keep the four values in
 // both forms (rows N3 and N4). They do not come here.
 func (u gitUse) profileEnv(heavy bool) []string {
-	if heavy || !u.inFolder() {
+	if heavy || (!u.inFolder() && !u.lightSix) {
 		return profileEnv(heavy)
 	}
 	return []string{

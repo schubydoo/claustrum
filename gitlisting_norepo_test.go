@@ -315,7 +315,7 @@ func TestPlainFolderFramesWithoutBrokenPair(t *testing.T) {
 // that they had before the daemon read that listing. The worktreeRoot row does not
 // run on Windows, as in the rows above.
 // Mutations: read the answer of the listing without noRepoPinned in
-// noRepoListingRefusal (create), in removeGoneWorktree (remove) and in
+// noRepoCreateCalls (create), in removeGoneWorktree (remove) and in
 // externalWorkTreeRefusal (remove with worktreeRoot).
 func TestDaemonCommonDirKeepsNoRepoFrames(t *testing.T) {
 	f := newNoRepoFixture(t)

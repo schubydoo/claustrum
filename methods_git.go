@@ -713,7 +713,8 @@ func gitListBranches(req *request) response {
 	if t.verdict == gitDirNoRepo {
 		// A listing that fails here refuses (row A-N2 on Linux and macOS VMs, cell
 		// P3-lbN on a Windows VM).
-		if msg := noRepoListingRefusal(t, p.Path, true); msg != "" {
+		// One more call follows a listing that passed (noRepoInfoCalls).
+		if msg := noRepoInfoCalls(t, p.Path); msg != "" {
 			return errResult(req.ID, codeInternal, msg)
 		}
 		return okResult(req.ID, branchesResult{Branches: []string{}})
@@ -821,7 +822,8 @@ func gitWorktreeCreateLocked(req *request, p *gitParams, repo string) response {
 		// A listing that fails here refuses, with and without worktreeRoot, and nothing
 		// is created (rows A-N3, A-N6 and A-N6b on Linux and macOS VMs, cells P3-crN
 		// and Wf-P3-crNroot on a Windows VM).
-		if msg := noRepoListingRefusal(t, repo, false); msg != "" {
+		// One more call follows a listing that passed (noRepoCreateCalls).
+		if msg := noRepoCreateCalls(t, !bool(p.ShadowDirOff) && req.shadow.active(), repo); msg != "" {
 			return okResult(req.ID, worktreeResult{Success: false, Error: msg, ErrorCode: "worktree_add_failed"})
 		}
 		return okResult(req.ID, worktreeResult{Success: false, Error: "not a git repository", ErrorCode: "not_a_repo"})
