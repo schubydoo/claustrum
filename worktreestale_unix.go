@@ -68,9 +68,13 @@ import (
 // repository that is sent through a symlink (it counts from the resolved entry
 // folder here), and a `locked` entry whose stat fails with another error than "does
 // not exist" (the entry stays).
-func dropStaleWorktreeRegistration(repo, worktreePath string) (kept []string) {
+//
+// held is the git directory that the create holds, or nil. When base is its
+// folder `worktrees`, the root is opened through the held folder
+// (acceptedGitDir.registrationsRoot).
+func dropStaleWorktreeRegistration(repo, worktreePath string, held *acceptedGitDir) (kept []string) {
 	base := filepath.Join(repo, ".git", worktreesSubdir)
-	root, err := openRegistrationsRoot(base)
+	root, err := held.registrationsRoot(base)
 	if err != nil {
 		return nil
 	}
@@ -128,7 +132,7 @@ func dropStaleWorktreeRegistration(repo, worktreePath string) (kept []string) {
 // home guard. It reports whether the entry is still there afterwards.
 func removeStaleRegistration(root *os.Root, name, entry string) (stays bool) {
 	if _, err := root.Lstat(name + "/locked"); errors.Is(err, fs.ErrNotExist) && !wipesHomeDir(entry) {
-		_ = root.RemoveAll(name)
+		_ = removeHeldEntry(root, name)
 	}
 	_, err := root.Lstat(name)
 	return !errors.Is(err, fs.ErrNotExist)

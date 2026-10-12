@@ -18,11 +18,17 @@ const shadowLinksWorktrees = true
 // No macOS cell planted one.
 const shadowStagesAdd = false
 
-// gitDirMustBeReal is false on Linux and macOS. No row has a create there whose
-// git directory is replaced while it runs, and a `.git` entry that is a
-// symbolic link is resolved by the trust check (resolveGitDirLinks). The steps
-// of acceptedGitDir do not run. It is a variable so that a test can run them.
-var gitDirMustBeReal = false
+// gitDirMustBeReal is true on Linux and macOS. A create holds the git directory
+// that its gate accepted, and tests at its steps that the path still names it
+// (acceptedGitDir). On a macOS VM, 5fd08069 refuses a create whose `.git`
+// became a symbolic link to another folder after `rev-parse
+// --absolute-git-dir`, and that folder keeps every entry as it was (cells
+// swap-copy, swap-copyold and swap-marker of val-s3p2b2-9-macos). Linux is not
+// measured: it gets the rule of macOS. A `.git` entry that is a symbolic link
+// before the request is resolved by the trust check (resolveGitDirLinks), so
+// the held folder is the folder behind that link, and gitDirLinkDetail finds
+// no link. It is a variable so that a test can switch the steps off.
+var gitDirMustBeReal = true
 
 // statusFollowsPrintedGitDir is false on Linux and macOS. The trust check
 // resolves the links of the request path there, and a path through a link gets

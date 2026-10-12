@@ -142,7 +142,7 @@ func TestDropStaleWorktreeRegistrationRecords(t *testing.T) {
 			}
 
 			var kept []string
-			doneWithin(t, "dropStaleWorktreeRegistration", func() { kept = dropStaleWorktreeRegistration(sentRepo, sentLeaf) })
+			doneWithin(t, "dropStaleWorktreeRegistration", func() { kept = dropStaleWorktreeRegistration(sentRepo, sentLeaf, nil) })
 			_ = os.Chmod(registry, 0o755)
 			_ = os.Chmod(entry, 0o755)
 
@@ -752,7 +752,7 @@ func TestDropStaleWorktreeRegistrationFolderGone(t *testing.T) {
 		return r, err
 	}
 	leaf := filepath.Join(repo, ".claude", "worktrees", "w1")
-	if kept := dropStaleWorktreeRegistration(repo, leaf); len(kept) != 0 {
+	if kept := dropStaleWorktreeRegistration(repo, leaf, nil); len(kept) != 0 {
 		t.Errorf("kept = %v, want none", kept)
 	}
 }
@@ -814,7 +814,7 @@ func TestDropStaleWorktreeRegistrationCount(t *testing.T) {
 					mkdirForTest(t, entry)
 				}
 			}
-			kept := dropStaleWorktreeRegistration(repo, leaf)
+			kept := dropStaleWorktreeRegistration(repo, leaf, nil)
 			ents, err := os.ReadDir(registry)
 			if err != nil {
 				t.Fatal(err)
@@ -1027,7 +1027,7 @@ func TestDropStaleWorktreeRegistrationRetargetedRegistry(t *testing.T) {
 				}
 				return r, err
 			}
-			kept := dropStaleWorktreeRegistration(repo, leaf)
+			kept := dropStaleWorktreeRegistration(repo, leaf, nil)
 			if opens != 1 {
 				t.Fatalf("the registrations folder was opened %d times, want 1: the test did not stage the change", opens)
 			}

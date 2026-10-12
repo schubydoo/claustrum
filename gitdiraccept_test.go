@@ -83,6 +83,20 @@ func swapAt(t *testing.T, step, gitDir, target string) {
 	}
 }
 
+// atStep runs do when the create reaches step, one time.
+func atStep(t *testing.T, step string, do func()) {
+	t.Helper()
+	old := createStepHook
+	t.Cleanup(func() { createStepHook = old })
+	done := false
+	createStepHook = func(at string) {
+		if at == step && !done {
+			done = true
+			do()
+		}
+	}
+}
+
 // TestAcceptGitDir: the create holds a real directory, and the path stands as
 // long as it names that folder. A link at the path and another real directory
 // at the path do not stand, and neither is accepted with the identity of the
@@ -170,6 +184,41 @@ func TestGitDirLinkDetail(t *testing.T) {
 	var log repoReadLog
 	if _, got := readRepoConfig(context.Background(), link, &log); got != want {
 		t.Errorf("the read of the config = %q\nwant %q", got, want)
+	}
+}
+
+// TestKeptReadAndALinkAtTheGitDir: a link at the path of the git directory is
+// refused also after a request kept the read of its config. The link leads to
+// the folder that was read, so each file has the state of the kept read.
+// Without the link test before the kept read the gate gives no refusal. A
+// junction that is put at `.git` between two requests is not measured on
+// 5fd08069: the text is that of cells X1c-01 to X1c-05 of val-s3p2b2-7-windows
+// (Windows VM).
+func TestKeptReadAndALinkAtTheGitDir(t *testing.T) {
+	f := newRefusalFixture(t)
+	setGitDirMustBeReal(t, true)
+	trust := gitDirTrust{verdict: gitDirTrusted, pinCommonDir: f.gitDir}
+	if msg, v := repoConfigGate(trust, false); msg != "" || v == nil {
+		t.Fatalf("the first gate = %q, want an accepted read", msg)
+	}
+	if err := os.Rename(f.gitDir, f.gitDir+"-real"); err != nil {
+		t.Fatal(err)
+	}
+	linkAt(t, f.gitDir, f.gitDir+"-real")
+	want := "this repository's git config cannot be used: " + quoteOperand(filepath.Join(f.gitDir, "config")) +
+		": is, or is reached through, a link that Claude does not follow here; replace the link with what it points to"
+	if msg, _ := repoConfigGate(trust, false); msg != want {
+		t.Errorf("the gate with a link = %q\nwant %q", msg, want)
+	}
+	// The real directory at the path again answers as before.
+	if err := os.Remove(f.gitDir); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Rename(f.gitDir+"-real", f.gitDir); err != nil {
+		t.Fatal(err)
+	}
+	if msg, v := repoConfigGate(trust, false); msg != "" || v == nil {
+		t.Errorf("the gate after the link went = %q, want an accepted read", msg)
 	}
 }
 
@@ -285,7 +334,8 @@ func TestStagedAddNeedsAHeldGitDir(t *testing.T) {
 	f := newRepoFolderFixture(t)
 	clearFolderEnv(t)
 	setGitDirMustBeReal(t, true)
-	if _, _, err := stagedAdd(t, f, f.useOf(t, f.repo)); err == nil ||
+	if _, err := worktreeAddStaged(context.Background(), f.useOf(t, f.repo), f.repo, filepath.Join(f.repo, "w1"), worktreeCheckpoint{},
+		"worktree", "add", filepath.Join(f.repo, "w1")); err == nil ||
 		err.Error() != "cannot prepare the repository's worktrees directory: the create holds no git directory" {
 		t.Errorf("the add = %v, want the refusal", err)
 	}

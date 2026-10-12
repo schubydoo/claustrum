@@ -7,7 +7,11 @@ import (
 )
 
 // The git directory of one git.worktree_create, held from its gate to its
-// reply. It runs where gitDirMustBeReal is set (Windows).
+// reply. It runs where gitDirMustBeReal is set: on every system.
+//
+// On Linux and macOS VMs a symbolic link takes the place of the junction, and
+// 5fd08069 refuses there too and leaves T as it is (the swap cells of
+// val-s3p2b2-9-linux2 and val-s3p2b2-9-macos, see plainAddRefusal).
 //
 // The rows are cells X1c and X1p of val-s3p2b2-7-windows (Windows VM). While a
 // create runs, the driver renames `repo\.git` and puts a junction to another
@@ -24,18 +28,30 @@ import (
 //   - After the gate the create opens it and holds it open until the reply
 //     (acceptGitDir). The open folder must have that identity. While it is
 //     open, no new folder gets that identity.
-//   - Each later step tests that the path still names that folder (stands).
-//   - The cleanup of old staging entries and the move of the new registration
-//     act through the held folder (openAddStage), never through the path.
+//   - Each later step tests that the path still names that folder (stands). A
+//     step that fails the test refuses the create with the text of that step.
+//   - Every delete, rename, mkdir and file write of the create and of its
+//     rollback inside the git directory acts through the held folder, never
+//     through the path (openAddStage, sweepOldStaging, addStage.move,
+//     writeWorktreeConfig and gitdirheld.go). The test of a step is therefore
+//     no guard of such an act. It decides the reply, and whether a git call
+//     runs: git takes the git directory as a path.
 //
-// A folder at the path that is another real directory is not measured. It gets
-// the text of the step, as a link does.
+// A folder at the path that is another real directory is not measured. Its
+// trust check pins the same path. At the steps `leaf`, `gitdir` and `add` it
+// gets no refusal when its config is accepted (swapRefusal). The step
+// `answered` is the first that refuses it, with the text of that step.
 
 // acceptedGitDir is the held git directory of one create.
 type acceptedGitDir struct {
 	path string
 	root *os.Root
 	info os.FileInfo
+	// dir is the baseRepo of the create, and trust is its trust verdict at the
+	// gate. The calls of the create in dir keep naming the copy of that
+	// verdict (gitUse.names).
+	dir   string
+	trust gitDirTrust
 	// moved is true after a good `worktree add`: the repository then has the
 	// registration of the new worktree.
 	moved bool
@@ -72,6 +88,19 @@ func realDirText(gitDir string) string {
 // identity read now, or nil when path is no real directory. On Windows
 // os.SameFile reads the identity of a FileInfo from the path at the first
 // compare (probeStat).
+//
+// On Linux and macOS the mode and the identity come from the one Lstat call.
+// On Windows they come from two opens of the path: Go has no call that gives
+// both for a path from one handle and follows no link. From the code of Go
+// 1.26.9 (os/types_windows.go, loadFileId), the second open is that of the
+// entry itself, with FILE_FLAG_OPEN_REPARSE_POINT, and follows no junction. So
+// the identity is that of the entry at the path at the second open. An entry
+// that is a junction to the held folder has its own identity, not that of the
+// folder. A path that changes between the two opens can therefore pass
+// stands only when the entry at the second open is the held folder itself.
+// That is sound for what the test decides: no act of the daemon inside the
+// git directory goes through the path (gitdirheld.go). Not run on a Windows
+// system.
 func gitDirIdentity(path string) os.FileInfo {
 	fi, err := os.Lstat(path)
 	if err != nil || !goesAsTree(fi.Mode()) {
@@ -171,13 +200,32 @@ func (u gitUse) swapped(step string) bool {
 // it makes no such call and goes on: its next calls carry GIT_DIR=NUL (cells
 // X1p-02 to X1p-06). A bad answer of the call at such a step is not measured:
 // the create goes on.
+//
+// The trust check can also pin another git directory than the held one: a
+// `.git` that became a file with `gitdir: <X>`, or a symbolic link to X, where
+// X is a git directory that the trust check accepts.
+//
+//   - On Windows the step then refuses with the text of a git directory
+//     behind a link, and no call runs in X. That state is not measured on
+//     5fd08069: the text is the one of the measured junction rows.
+//   - On Linux and macOS the gate runs on that git directory, and a gate that
+//     passes gives no refusal here. With a symbolic link at `.git` to a copy
+//     of the git directory, put there after `rev-parse --absolute-git-dir`,
+//     5fd08069 makes the call about the repository and the read of the config,
+//     then the listing of the add, and refuses at the step before the add
+//     (cells swap-copy of val-s3p2b2-9-macos, macOS VM, 7 of 7 runs). The
+//     refusal is in worktreeAdd. A swap at another step is not measured there:
+//     it gets the same rule.
 func (u gitUse) swapRefusal(step, dir string) string {
 	if !u.swapped(step) {
 		return ""
 	}
-	t, ok := u.names(dir)
-	if !ok {
+	t := gitDirTrustFor(dir)
+	if !u.shadow() || daemonCommonDirStays() || t.verdict != gitDirTrusted || t.pinCommonDir == "" {
 		return ""
+	}
+	if shadowStagesAdd && !sameGitDirPath(t.pinCommonDir, u.gitDir) {
+		return repoConfigPrefix + gitDirLinkText(u.gitDir)
 	}
 	if u.host != nil && u.host.asksGit(t, false) && u.host.askGit(t, dir).bad() {
 		return ""

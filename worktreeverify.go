@@ -192,14 +192,28 @@ func undoFailedCheckout(u gitUse, repo, worktreePath, branch string, cp worktree
 	// of val-s3p2b2-7-windows, Windows VM). After an add that the daemon did not
 	// complete there is no registration to delete, and the branch step runs
 	// (cells X1c-10 and X1p-10).
+	//
+	// With the path still on the held folder, the registration goes through
+	// that folder. With tested set, removeTestedRegistration opens the
+	// registrations folder through it. With tested not set,
+	// acceptedGitDir.removeCreatedRegistration does. heldRegistration is the
+	// path that the `.git` file of the leaf names now. A path that changes
+	// after this test leads the delete nowhere else.
 	var heldErr error
+	var heldRegistration string
 	held := u.accepted != nil && !u.accepted.stands()
-	if held {
+	switch {
+	case held:
 		tested = testedRegistration{}
 		if u.accepted.moved {
 			heldErr = errors.New(realDirText(u.accepted.path))
 		}
-	} else if tested.path == "" {
+	case tested.path != "":
+	case u.accepted != nil:
+		if admin := worktreeAdminDir(worktreePath); admin != "" {
+			heldRegistration = absoluteAdminDir(worktreePath, admin)
+		}
+	default:
 		registration = createdWorktreeAdminDir(repo, worktreePath)
 	}
 	leafSafe := func() bool {
@@ -224,6 +238,8 @@ func undoFailedCheckout(u gitUse, repo, worktreePath, branch string, cp worktree
 		regErr = heldErr
 	case tested.path != "":
 		regErr = removeTestedRegistration(tested)
+	case u.accepted != nil:
+		u.accepted.removeCreatedRegistration(heldRegistration, worktreePath)
 	default:
 		regErr = removeCreatedRegistration(registration)
 	}
@@ -351,6 +367,10 @@ type testedRegistration struct {
 	info os.FileInfo
 	// held is an open handle on that folder, or nil. See acceptRegistration.
 	held *os.File
+	// git is the held git directory of the create, or nil. The rollback delete
+	// and the placement of the index open the registrations folder through it
+	// (acceptedGitDir.registrationsRoot).
+	git *acceptedGitDir
 }
 
 // acceptRegistration records the registration that createdRegistrationRefusal
@@ -443,7 +463,7 @@ func removeTestedRegistration(reg testedRegistration) error {
 	if wipesHomeDir(reg.path) {
 		return nil
 	}
-	root, err := openRegistrationsRoot(filepath.Dir(reg.path))
+	root, err := reg.git.registrationsRoot(filepath.Dir(reg.path))
 	if err != nil {
 		if os.IsNotExist(err) {
 			return nil
@@ -455,7 +475,7 @@ func removeTestedRegistration(reg testedRegistration) error {
 	if reg.replacedIn(root, name) {
 		return nil
 	}
-	return root.RemoveAll(name)
+	return removeHeldEntry(root, name)
 }
 
 // staleRegistrationRefusal is the answer of git.worktree_create when the

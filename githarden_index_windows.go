@@ -24,6 +24,11 @@ import (
 // written the index. If the copy fails, the worktree has no index, as after
 // `worktree add --no-checkout`. Linux and macOS make a new file too
 // (githarden_index_unix.go).
+//
+// A create that holds its git directory does not come here: its placement
+// goes through the held folder (acceptedGitDir.installIndex). This placement
+// by the path is that of a request with "shadowDirOff":true, of the state
+// fallback-git and of a server with no run folder.
 func installWorktreeIndex(src, adminDir string) error {
 	dst := filepath.Join(adminDir, "index")
 	b, err := os.ReadFile(src)
@@ -65,6 +70,8 @@ var (
 // delete is not reported, so it always returns nil: the rollback of 89cb6289 with a
 // registration that stays is not measured there. The delete uses no root, so it
 // has neither the direct child test nor the identity test of Linux and macOS.
+// A create that holds its git directory does not come here
+// (acceptedGitDir.removeCreatedRegistration).
 func removeCreatedRegistration(reg createdRegistration) error {
 	if reg.resolved != "" {
 		_ = os.RemoveAll(reg.resolved)

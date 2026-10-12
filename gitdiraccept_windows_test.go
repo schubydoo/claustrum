@@ -7,6 +7,7 @@ import (
 	"io/fs"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -138,6 +139,79 @@ func TestCreateWithAJunctionAtTheGitDirOnWindows(t *testing.T) {
 			}
 			if _, err := os.Lstat(leaf); !os.IsNotExist(err) {
 				t.Errorf("the leaf: %v, want it gone", err)
+			}
+		})
+	}
+}
+
+// TestCreateWithAnotherGitDirAtThePathOnWindows: at one step of the create,
+// `repo\.git` goes to `repo\.git-real`, and the path gets another entry that
+// leads to the git directory X of a second repository, or is a copy of the
+// git directory as a real directory. No row of 5fd08069 has these forms: the
+// texts are those of the junction rows of val-s3p2b2-7-windows (cells X1c-01,
+// X1c-03, X1c-05 and X1c-06). X gets no registration and no branch, and no
+// `worktree add` runs.
+func TestCreateWithAnotherGitDirAtThePathOnWindows(t *testing.T) {
+	const realDir = `".git" is a link or a file where Claude needs a real directory; put the directory itself in its place`
+	for _, row := range []struct {
+		name, step, entry string
+		want              func(link string) string
+	}{
+		{"a file that names X", "leaf", "file", func(link string) string { return link }},
+		{"a file that names X before the gitdir call", "gitdir", "file", func(link string) string {
+			return "git worktree add failed: cannot locate the repository's git directory: " + link
+		}},
+		{"a file that names X before the add", "add", "file", func(link string) string { return "git worktree add failed: " + link }},
+		{"another real directory", "gitdir", "copy", func(string) string {
+			return "git worktree add failed: cannot list the repository's worktree entries: " + realDir
+		}},
+	} {
+		t.Run(row.name, func(t *testing.T) {
+			f := newSeededShadowFixture(t)
+			_, other := configRepo(t)
+			copied := filepath.Join(resolveTestRoot(t, t.TempDir()), "copy")
+			copyGitDir(t, f.gitDir, copied)
+			if raw, _ := f.info(t, f.repo, nil); !strings.Contains(raw, `"settingsControl":"shadow"`) {
+				t.Fatalf("git.info = %s", raw)
+			}
+			atStep(t, row.step, func() {
+				if err := os.Rename(f.gitDir, f.gitDir+"-real"); err != nil {
+					t.Errorf("the rename of the git directory: %v", err)
+					return
+				}
+				if row.entry == "file" {
+					mustWrite(t, f.gitDir, "gitdir: "+filepath.ToSlash(other)+"\n")
+				} else if err := os.Rename(copied, f.gitDir); err != nil {
+					t.Errorf("the rename of the copy: %v", err)
+				}
+			})
+			leaf := filepath.Join(f.repo, ".claude", "worktrees", "w1")
+			raw, calls := f.call(t, "git.worktree_create", map[string]any{"baseRepo": f.repo, "branchName": "w1", "worktreePath": leaf})
+			var reply struct {
+				Result struct {
+					Success bool
+					Error   string
+				}
+			}
+			if err := json.Unmarshal([]byte(raw), &reply); err != nil {
+				t.Fatalf("the reply %s: %v", raw, err)
+			}
+			link := "this repository's git config cannot be used: " + quoteOperand(filepath.Join(f.gitDir, "config")) +
+				": is, or is reached through, a link that Claude does not follow here; replace the link with what it points to"
+			if want := row.want(link); reply.Result.Success || reply.Result.Error != want {
+				t.Errorf("git.worktree_create = %s\nwant the error %s", raw, want)
+			}
+			for _, c := range calls {
+				if slices.Contains(c.argv, "worktree") && slices.Contains(c.argv, "add") {
+					t.Error("a worktree add call ran")
+				}
+			}
+			for _, dir := range []string{other, f.gitDir + "-real"} {
+				for _, name := range []string{filepath.Join("worktrees", "w1"), filepath.Join("refs", "heads", "w1")} {
+					if _, err := os.Lstat(filepath.Join(dir, name)); !os.IsNotExist(err) {
+						t.Errorf("%s in %s: %v, want none", name, dir, err)
+					}
+				}
 			}
 		})
 	}

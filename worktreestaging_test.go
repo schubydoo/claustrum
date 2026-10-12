@@ -508,7 +508,7 @@ func TestOpenAddStage(t *testing.T) {
 		}
 	}
 
-	st, err := openAddStage(u)
+	st, err := openAddStage(heldUse(t, f.gitDir, u))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -558,7 +558,7 @@ func TestOpenAddStageWithNoRegistration(t *testing.T) {
 		t.Fatal(err)
 	}
 	u := f.useOf(t, f.repo)
-	st, err := openAddStage(u)
+	st, err := openAddStage(heldUse(t, f.gitDir, u))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -577,10 +577,27 @@ func TestOpenAddStageWithNoRegistration(t *testing.T) {
 	}
 }
 
+// heldUse is u with the hold of a create on gitDir, where the switch is set
+// and u holds no git directory yet.
+func heldUse(t *testing.T, gitDir string, u gitUse) gitUse {
+	t.Helper()
+	if u.accepted != nil || !gitDirMustBeReal {
+		return u
+	}
+	u.accepted = acceptGitDir(gitDir, gitDirIdentity(gitDir))
+	if u.accepted == nil {
+		t.Fatal("the git directory of the fixture is not accepted")
+	}
+	t.Cleanup(u.accepted.release)
+	return u
+}
+
 // stagedAdd runs one staged add of the branch w1 on the fixture and returns
-// the leaf, the stderr text and the error of the call.
+// the leaf, the stderr text and the error of the call. A use that holds no
+// git directory gets the hold of a create first, where the switch is set.
 func stagedAdd(t *testing.T, f repoFolderFixture, u gitUse, args ...string) (leaf, stderr string, err error) {
 	t.Helper()
+	u = heldUse(t, f.gitDir, u)
 	leaf = filepath.Join(f.repo, ".claude", "worktrees", "w1")
 	if err := os.MkdirAll(leaf, 0o755); err != nil {
 		t.Fatal(err)
@@ -756,6 +773,7 @@ func TestWorktreeAddStagedWithNoCheckpoint(t *testing.T) {
 	f := newRepoFolderFixture(t)
 	clearFolderEnv(t)
 	u := f.useOf(t, f.repo)
+	u = heldUse(t, f.gitDir, u)
 	leaf := filepath.Join(f.repo, ".claude", "worktrees", "w1")
 	if err := os.MkdirAll(leaf, 0o755); err != nil {
 		t.Fatal(err)

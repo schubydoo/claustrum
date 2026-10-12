@@ -964,6 +964,13 @@ func keepRepoVerdict(k repoVerdictKey, v *repoVerdict) {
 // `open <file>:` text is read again on each request. That rule is claustrum's
 // own.
 func repoReadVerdict(t gitDirTrust) *repoVerdict {
+	// The link test of the git directory comes before a kept read. The kept
+	// read tests the state of each file, and a link to the same folder keeps
+	// those states. The refusal is not kept. A link that is there before the
+	// first request of a repository is not measured (gitDirLinkDetail).
+	if d := gitDirLinkDetail(t.pinCommonDir); d != "" {
+		return &repoVerdict{refusal: repoConfigPrefix + d}
+	}
 	home, _ := os.UserHomeDir()
 	k := repoVerdictKey{gitDir: t.pinCommonDir, home: home}
 	if v, ok := keptRepoVerdict(k); ok && v.refusal == "" {

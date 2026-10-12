@@ -312,11 +312,19 @@ func writeWorktreeConfig(u gitUse, registration, leaf string, tested testedRegis
 	if tested.path == "" && adminRecordChecked && readAdminRecord(reg, leaf) != recordNamesLeaf {
 		return errors.New("the registration has no gitdir record that names the new worktree")
 	}
-	root, err := os.OpenRoot(u.gitDir)
-	if err != nil {
-		return err
+	// A create that holds its git directory writes through the held folder
+	// (acceptedGitDir), and opens nothing by the path.
+	var root *os.Root
+	if u.accepted != nil {
+		root = u.accepted.root
+	} else {
+		opened, err := os.OpenRoot(u.gitDir)
+		if err != nil {
+			return err
+		}
+		defer func() { _ = opened.Close() }()
+		root = opened
 	}
-	defer func() { _ = root.Close() }()
 	rel := filepath.Join(worktreesSubdir, name)
 	if fi, err := root.Lstat(rel); err != nil || !fi.IsDir() {
 		return errors.New("the registration is not a folder")

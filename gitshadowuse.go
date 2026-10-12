@@ -112,8 +112,13 @@ func worktreeAdd(ctx context.Context, u gitUse, repo, leaf string, cp worktreeCh
 	}
 	named = named && shadowLinksWorktrees
 	cmd := hardenedGitCmd(ctx, u, repo, false, nil, args...)
+	// A create that holds its git directory runs no `worktree add` when the
+	// path no longer names the held folder. The test comes after the listing.
+	if u.swapped("plain add") {
+		return "", errors.New(plainAddRefusal(u.gitDir, named))
+	}
 	if named {
-		makeWorktreesFolder(u.gitDir, u.shared)
+		u.makeWorktreesFolder()
 	}
 	var errBuf bytes.Buffer
 	cmd.Stderr = &errBuf
@@ -127,6 +132,37 @@ func worktreeAdd(ctx context.Context, u gitUse, repo, leaf string, cp worktreeCh
 	return errBuf.String(), err
 }
 
+// plainAddRefusal is the error of a `worktree add` that does not run, because
+// the path of the git directory gitDir no longer names the folder that the
+// create holds. named says whether the call names the copy of the request.
+//
+// On a macOS VM `.git` becomes a symbolic link after `rev-parse
+// --absolute-git-dir`. 5fd08069 then makes the listing of the add and no
+// `worktree add` (val-s3p2b2-9-macos, macOS VM):
+//
+//   - The link leads to a copy of the git directory: `git worktree add failed:
+//     cannot prepare the repository's worktrees directory: ".git" is a link or
+//     a file where Claude needs a real directory; put the directory itself in
+//     its place` (cells swap-copy and swap-copyold, 7 of 7 runs).
+//   - The link leads to a folder with one marker file: `git worktree add
+//     failed: cannot list the repository's worktree entries: ".git" is a link
+//     …`, with the same end (cells swap-marker, 4 of 4 runs). The listing
+//     carries GIT_DIR=/dev/null there.
+//
+// Linux is not measured: it gets the texts of macOS. On Windows the call comes
+// here only when it does not name the copy. The text is that of a junction
+// that was put at `.git` after the listing of the add (cells X1c-09 and
+// X1p-09 of val-s3p2b2-7-windows, Windows VM).
+func plainAddRefusal(gitDir string, named bool) string {
+	switch {
+	case shadowStagesAdd:
+		return prepareWorktreesPrefix + repoConfigPrefix + gitDirLinkText(gitDir)
+	case named:
+		return prepareWorktreesPrefix + realDirText(gitDir)
+	}
+	return listEntriesPrefix + realDirText(gitDir)
+}
+
 // makeWorktreesFolder makes the folder `worktrees` in the git directory gitDir
 // when there is none. On 5fd08069 that folder is there, empty, before the
 // `worktree add` call starts, and no git process runs when it appears. It
@@ -135,8 +171,10 @@ func worktreeAdd(ctx context.Context, u gitUse, repo, leaf string, cp worktreeCh
 // val-s3p2b2-3-macos, macOS VM).
 //
 // The folder is made through a root at gitDir with the fixed name `worktrees`.
-// gitDir is the git directory that the trust check pinned. A folder that
-// cannot be made is not measured: the add runs and gives its own error.
+// gitDir is the git directory that the trust check pinned. A create that holds
+// its git directory uses the held folder as that root (acceptedGitDir), and
+// opens nothing by the path. A folder that cannot be made is not measured: the
+// add runs and gives its own error.
 //
 // The mkdir has mode 0777, and the umask of the daemon takes its bits from
 // that. With no `core.sharedRepository` key and with the value `umask` the
@@ -149,12 +187,22 @@ func worktreeAdd(ctx context.Context, u gitUse, repo, leaf string, cp worktreeCh
 //
 // Not measured: a folder `worktrees` that is there before the create, macOS and
 // Windows. A folder that is there gets no mode call.
-func makeWorktreesFolder(gitDir string, shared sharedRepository) {
-	root, err := os.OpenRoot(gitDir)
+func (u gitUse) makeWorktreesFolder() {
+	if u.accepted != nil {
+		makeWorktreesFolderIn(u.accepted.root, u.shared)
+		return
+	}
+	root, err := os.OpenRoot(u.gitDir)
 	if err != nil {
 		return
 	}
 	defer func() { _ = root.Close() }()
+	makeWorktreesFolderIn(root, u.shared)
+}
+
+// makeWorktreesFolderIn is makeWorktreesFolder through root, the root at the
+// git directory.
+func makeWorktreesFolderIn(root *os.Root, shared sharedRepository) {
 	if err := root.Mkdir(worktreesSubdir, 0o777); err != nil {
 		return
 	}
@@ -260,6 +308,17 @@ func (u gitUse) names(dir string) (gitDirTrust, bool) {
 		return gitDirTrust{}, false
 	}
 	t := gitDirTrustFor(dir)
+	// A create that holds its git directory keeps the verdict of its gate for
+	// its baseRepo, as long as the trust check finds a git directory there.
+	// After a symbolic link to a copy of the git directory was put at `.git`,
+	// the next listing of 5fd08069 carries GIT_COMMON_DIR=<copy of the
+	// request>, GIT_DIR=<repo>/.git and GIT_WORK_TREE=<repo>, as before the
+	// swap (cells swap-copy of val-s3p2b2-9-macos, macOS VM). With a link to a
+	// folder that is no git directory it carries GIT_DIR=/dev/null (cells
+	// swap-marker).
+	if a := u.accepted; a != nil && a.dir != "" && dir == a.dir && t.verdict == gitDirTrusted && t.pinCommonDir != "" {
+		return a.trust, true
+	}
 	return t, t.verdict == gitDirTrusted && t.pinCommonDir == u.gitDir
 }
 

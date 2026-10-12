@@ -533,7 +533,17 @@ func runWorktreeCheckout(ctx context.Context, u gitUse, leaf, workTree, gitDir, 
 		"--git-dir="+gitDir, "--work-tree="+workTree,
 		"read-tree", "-u", "--reset", "--no-recurse-submodules", rev)
 	if err == nil || drained {
-		installErr = guardedInstallWorktreeIndex(idx, adminDir, leaf, tested)
+		if createStepHook != nil && u.accepted != nil {
+			createStepHook("index")
+		}
+		if u.accepted != nil && tested.path == "" {
+			// A create that holds its git directory, with no registration that
+			// the tests after the add accepted (Windows): the index goes
+			// through the held folder, and no error of that step is reported.
+			u.accepted.installIndex(idx, adminDir)
+		} else {
+			installErr = guardedInstallWorktreeIndex(idx, adminDir, leaf, tested)
+		}
 	}
 	return stderr, drained, err, installErr
 }

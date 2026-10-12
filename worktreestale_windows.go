@@ -29,7 +29,21 @@ import (
 // delete (worktreestale_unix.go). No Windows row of 89cb6289 measures this step, so
 // Windows keeps the compare and the delete that it had. The result is always nil:
 // Windows remembers no entry.
-func dropStaleWorktreeRegistration(repo, worktreePath string) (kept []string) {
+//
+// held is the git directory that the create holds, or nil. With a held folder
+// the step goes through it, when it is the `.git` of repo
+// (acceptedGitDir.dropStaleRegistration). It then lists, reads and removes
+// nothing by the path. With a held folder that is not the `.git` of repo no
+// step runs, as before. The step by the path is that of a request with
+// "shadowDirOff":true, of the state fallback-git and of a server with no run
+// folder.
+func dropStaleWorktreeRegistration(repo, worktreePath string, held *acceptedGitDir) (kept []string) {
+	if held != nil {
+		if sameGitDirPath(filepath.Join(repo, ".git"), filepath.Clean(held.path)) {
+			held.dropStaleRegistration(worktreePath)
+		}
+		return nil
+	}
 	base := filepath.Join(repo, ".git", "worktrees")
 	ents, err := os.ReadDir(base)
 	if err != nil {

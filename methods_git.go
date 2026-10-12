@@ -907,6 +907,7 @@ func gitWorktreeCreateLocked(req *request, p *gitParams, repo string) response {
 				Error: repoConfigPrefix + gitDirLinkText(req.use.gitDir), ErrorCode: "worktree_add_failed"})
 		}
 		defer held.release()
+		held.dir, held.trust = repo, t
 		req.use.accepted = held
 	}
 	// A repo whose config cannot be enumerated is refused before git runs — the
@@ -1071,12 +1072,14 @@ func gitWorktreeCreateLocked(req *request, p *gitParams, repo string) response {
 	// staleKept holds each stale entry that is still there (Linux and macOS): it
 	// is locked, the remove failed, or it is one of two or more. It is empty on
 	// Windows.
-	// The step does not run when the git directory is no longer the folder that
-	// the create holds (acceptedGitDir, not measured). A later step refuses.
-	var staleKept []string
-	if !req.use.swapped("stale") {
-		staleKept = dropStaleWorktreeRegistration(repo, p.WorktreePath)
+	// A create that holds its git directory runs the step through the held
+	// folder, when that folder is the `.git` of baseRepo. It then lists, reads
+	// and removes nothing by the path, so a folder that was put at the path
+	// gets nothing (not measured).
+	if createStepHook != nil && req.use.accepted != nil {
+		createStepHook("stale")
 	}
+	staleKept := dropStaleWorktreeRegistration(repo, p.WorktreePath, req.use.accepted)
 	// `git worktree add` does not create leading directories, so the reference
 	// makes the parent before adding — this is what lets a nested session path
 	// such as <repo>/.claude/worktrees/<id> succeed on a fresh repo. The parent comes
@@ -1226,16 +1229,23 @@ func gitWorktreeCreateLocked(req *request, p *gitParams, repo string) response {
 	// status 128`. The cells are W1c and X1p-02 to X1p-05 of
 	// val-s3p2b2-7-windows (Windows VM): the call exits 128 after `.git` became
 	// a junction to a folder that is no git directory. The text after the
-	// colon is the exec error. A call that a signal ended, the other states and
-	// the other systems are not measured: there the create goes on with the
-	// directory of repoGitDir.
+	// colon is the exec error. Linux and macOS are not measured: they get the
+	// same stop. A call that a signal ended is not measured either. In the
+	// other states the create goes on with the directory of repoGitDir.
 	if gitDirMustBeReal && req.use.shadow() && gitDirErr != nil {
 		return refuseAdd(gitDirAddWrap + gitDirErr.Error())
 	}
-	// The directory that git answered must be a real directory (cells X1c-06 and
-	// X1p-06: a junction that was put at `.git` after the call).
-	if gitAnswered && req.use.swapped("answered") && gitDirIdentity(gitDir) == nil {
-		return refuseAdd("git worktree add failed: " + listEntriesPrefix + realDirText(gitDir))
+	// After a call that answered, the path of the git directory must still name
+	// the held folder. On Windows the create is refused here (cells X1c-06 and
+	// X1p-06: a junction that was put at `.git` after the call). The text names
+	// the git directory of the request. A `.git` that became a file or a link
+	// to another git directory, so that git answered a real folder, is not
+	// measured: it gets the same text. On Linux and macOS 5fd08069 makes more
+	// calls before it refuses (cells swap-copy and swap-marker of
+	// val-s3p2b2-9-macos, macOS VM): the refusal is at the step of the add
+	// (swapRefusal, worktreeAdd).
+	if gitAnswered && req.use.swapped("answered") && shadowStagesAdd {
+		return refuseAdd("git worktree add failed: " + listEntriesPrefix + realDirText(req.use.gitDir))
 	}
 	// A caller-supplied timeoutMs (4534d86) bounds the add, the checkout and the copy
 	// step. At timeoutMs 0 with D5 off, both contexts are the unbounded context that
@@ -1371,6 +1381,7 @@ func gitWorktreeCreateLocked(req *request, p *gitParams, repo string) response {
 			})
 		}
 		tested = acceptRegistration(indexDir)
+		tested.git = req.use.accepted
 		defer tested.release()
 		// A stale entry that the step before the add left is not the registration of
 		// this create. 89cb6289 answers the refusal there after 9 git calls, and the
@@ -2294,6 +2305,12 @@ func worktreeAdminBelongsTo(adminDir, worktreePath string) (belongs bool, readEr
 	if err != nil {
 		return false, err
 	}
+	return adminRecordNames(adminDir, b, worktreePath), nil
+}
+
+// adminRecordNames reports whether b, the text of the `gitdir` record of
+// adminDir, names the `.git` file of worktreePath (worktreeAdminBelongsTo).
+func adminRecordNames(adminDir string, b []byte, worktreePath string) bool {
 	record := strings.TrimSpace(string(b))
 	if !filepath.IsAbs(record) {
 		record = filepath.Join(adminDir, record)
@@ -2303,7 +2320,7 @@ func worktreeAdminBelongsTo(adminDir, worktreePath string) (belongs bool, readEr
 	// spellings differ only in slash direction. Measured against f6010b97 on a
 	// Windows 11 VM, where the reference deletes the entry.
 	return sameCanonicalPath(canonicalPathOfGone(record),
-		canonicalPathOfGone(filepath.Join(worktreePath, ".git"))), nil
+		canonicalPathOfGone(filepath.Join(worktreePath, ".git")))
 }
 
 // canonicalPathOfGone is canonicalPath for a path that possibly no longer exists. It resolves
