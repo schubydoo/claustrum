@@ -105,7 +105,8 @@ func (u gitUse) front(dir string) []string {
 // and on its four `hash-object` calls. The cells are A7b of val-s3p2b2-3-linux
 // (Linux VM) and N16c of val-s3p2b2-3-windows (Windows VM). The four calls of
 // a git.status with --git-dir=<S>/.gitdir-<n> keep the plain list of 28 items
-// in both cells. On the read-tree of a create the items come after the
+// in both cells. Those four calls get the items of the file of their own
+// worktree (statusRun.entryItems). On the read-tree of a create the items come after the
 // lfs.storage item (cells 12a and 12c of val-s3p2b2-3-linux).
 func (u gitUse) gitDirFront() []string {
 	if !u.shadow() || daemonCommonDirSet() {

@@ -570,13 +570,15 @@ func statusDirNames(root *os.Root, dir string) ([]string, error) {
 // 5fd08069 runs it so (cell 1c of val-s3p2b2-5-linux, call 5 of the git.status,
 // Linux VM). With the member and in the state fallback-git the call of 5fd08069
 // is not measured: it keeps the form of 89cb6289.
-func statusEntryConfig(root *os.Root, copied bool) (present, ok bool) {
+//
+// text is the text of the file as this test read it, for a file that passed.
+func statusEntryConfig(root *os.Root, copied bool) (text []byte, present, ok bool) {
 	if _, err := root.Lstat("config.worktree"); errors.Is(err, fs.ErrNotExist) {
-		return false, true
+		return nil, false, true
 	}
 	b, err := statusReadFile(root, "config.worktree", statusFileMaxBytes)
 	if err != nil {
-		return true, false
+		return nil, true, false
 	}
 	ctx, cancel := gitCtx()
 	defer cancel()
@@ -586,7 +588,7 @@ func statusEntryConfig(root *os.Root, copied bool) (present, ok bool) {
 	}
 	out, err := listConfigText(ctx, b, dir, env)
 	if err != nil {
-		return true, false
+		return nil, true, false
 	}
 	for _, rec := range bytes.Split(out, []byte{0}) {
 		if len(rec) == 0 {
@@ -594,10 +596,10 @@ func statusEntryConfig(root *os.Root, copied bool) (present, ok bool) {
 		}
 		key, _, _ := bytes.Cut(rec, []byte{'\n'})
 		if !slices.Contains(statusConfigKeys, string(key)) {
-			return true, false
+			return nil, true, false
 		}
 	}
-	return true, true
+	return b, true, true
 }
 
 // statusEntry is the matched worktree entry after the gate.
@@ -606,6 +608,7 @@ type statusEntry struct {
 	root      *os.Root // dir, opened once at the match: every read goes through it
 	shared    []string // the sharedindex.* names
 	hasConfig bool     // the entry holds a config.worktree
+	config    []byte   // the text of that file, as the gate read it
 	reftable  []string // the file names of the entry's reftable folder to copy
 }
 
@@ -637,7 +640,7 @@ func statusEntryOf(common string, sp statusPath, copied bool) (e statusEntry, ok
 	if !ok {
 		return statusEntry{}, false
 	}
-	hasConfig, ok := statusEntryConfig(root, copied)
+	config, hasConfig, ok := statusEntryConfig(root, copied)
 	if !ok {
 		return statusEntry{}, false
 	}
@@ -645,7 +648,7 @@ func statusEntryOf(common string, sp statusPath, copied bool) (e statusEntry, ok
 	if !ok {
 		return statusEntry{}, false
 	}
-	return statusEntry{dir: dir, root: root, shared: shared, hasConfig: hasConfig, reftable: reftable}, true
+	return statusEntry{dir: dir, root: root, shared: shared, hasConfig: hasConfig, config: config, reftable: reftable}, true
 }
 
 // statusEntryMatched is a seam for the tests. It runs right after the match, with the
@@ -801,8 +804,46 @@ type statusRun struct {
 	commonPin  []string
 	attrSource bool // git takes --attr-source (attrSourceArgs)
 	// front are the `-c` items before the list of the `hash-object` call
-	// (gitUse.gitDirFront). The calls in the temporary folder have none.
+	// (gitUse.gitDirFront).
 	front []string
+	// entryConfig is the text of the `config.worktree` file of the entry, in the
+	// state shadow, or nil. tempFront are the `-c` items of that file, before the
+	// list of the calls in the temporary folder, once entryRead (entryItems).
+	entryConfig []byte
+	tempFront   []string
+	entryRead   bool
+}
+
+// entryItems lists the `config.worktree` file of the entry one more time and
+// keeps its `-c` items for the calls in the temporary folder
+// (worktreeConfigItems). It runs once in a request, after the first two calls
+// of emptyTree and before the first listing in the temporary folder.
+//
+// On 5fd08069 a git.status on a worktree whose file is `sparsecheckoutcone =
+// true` makes that read as call 9 of 23. It is between the first `hash-object`
+// call and the first `--git-dir=<S>/.gitdir-<n> config -z --list`. It has the
+// form of the first read: the root folder, GIT_DIR=<null device>, LC_ALL=C and
+// LANGUAGE=C, and the 34 bytes of the file on standard input. The four calls
+// in the temporary folder then start with `-c core.sparsecheckoutcone=true`,
+// before the --attr-source option (cell p2-K-sparsecheckoutcone-true of
+// val-s3p2b2-6-linux, Linux VM). With a file of 0 bytes 5fd08069 makes no
+// second read (cell p2-K-none-empty-file of that round).
+//
+// The file of that cell is a copy of the file of the repository. So which file
+// 5fd08069 reads there is not measured: claustrum lists the text that the test
+// of the entry read. A file with `core.sparsecheckout` or `index.sparse` is not
+// measured in the state shadow: it gets the read, and `index.sparse` gives no
+// item. A read that fails gives no item (not measured). With the member and in
+// the state fallback-git the read is not measured: none runs.
+func (r *statusRun) entryItems() []string {
+	if r.entryRead || len(r.entryConfig) == 0 {
+		return r.tempFront
+	}
+	r.entryRead = true
+	if out, err := listConfigText(r.ctx, r.entryConfig, gitVersionDir, repoConfigListEnv()); err == nil {
+		r.tempFront = worktreeConfigItems(listedSettings(out))
+	}
+	return r.tempFront
 }
 
 // statusCommonPin is the GIT_COMMON_DIR pin of the calls that carry
@@ -875,6 +916,7 @@ func isObjectID(s string) bool {
 func (r *statusRun) git(noLocks bool, excludes string, args ...string) ([]byte, error) {
 	// Calls 7 and 8 run before every command, whatever attrSource says.
 	id := r.emptyTree()
+	front := r.entryItems()
 	var attr []string
 	if r.attrSource {
 		attr = []string{"--attr-source=" + id}
@@ -891,8 +933,8 @@ func (r *statusRun) git(noLocks bool, excludes string, args ...string) ([]byte, 
 		// follows the refusal (row y1, Linux and macOS VMs).
 		return nil, statusRefusal(hooksRefusalPrefix + l.detail())
 	}
-	full := append(attr, profileArgsWithExcludes(true, excludes,
-		append([]string{"--git-dir=" + r.tmp, "--work-tree=" + r.path}, args...)...)...)
+	full := withFront(front, append(attr, profileArgsWithExcludes(true, excludes,
+		append([]string{"--git-dir=" + r.tmp, "--work-tree=" + r.path}, args...)...)...))
 	cmd := exec.CommandContext(r.ctx, "git", full...)
 	cmd.Dir = r.path
 	cmd.Env = hardenedGitEnv(true, r.pin, l.hooks())
@@ -940,6 +982,7 @@ func statusChanges(u gitUse, path, common string, e statusEntry) ([]string, erro
 		front: u.gitDirFront()}
 	if u.shadow() && !daemonCommonDirSet() {
 		r.pin = r.commonPin
+		r.entryConfig = e.config
 	}
 	excludes := statusExcludesFile()
 

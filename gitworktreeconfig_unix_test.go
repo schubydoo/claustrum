@@ -439,6 +439,87 @@ func TestStatusEntryConfigReadInTheStateShadow(t *testing.T) {
 	}
 }
 
+// TestStatusReadsTheEntryConfigASecondTime: a git.status on a worktree whose
+// `config.worktree` file has a setting lists that file two times. The second
+// read comes after the first `hash-object` call and right before the first
+// listing in the temporary git folder. The four calls in that folder then
+// start with the item of the file, before the --attr-source option. On
+// 5fd08069 the read is call 9 of 23, with `-c core.sparsecheckoutcone=true` on
+// those four calls (cell p2-K-sparsecheckoutcone-true of val-s3p2b2-6-linux,
+// Linux VM). With a file of 0 bytes it makes one read and the calls keep the
+// plain list (cell p2-K-none-empty-file of that round). With the member the
+// second read is not measured: claustrum makes none.
+func TestStatusReadsTheEntryConfigASecondTime(t *testing.T) {
+	const cone = "[core]\n\tsparsecheckoutcone = true\n"
+	for _, row := range []struct {
+		name, text string
+		extra      map[string]any
+		reads      int
+		front      []string
+	}{
+		{"p2-K-sparsecheckoutcone-true", cone, nil, 2, []string{"core.sparsecheckoutcone=true"}},
+		{"p2-K-none-empty-file", "", nil, 1, nil},
+		{"with the member (not measured)", cone, map[string]any{"shadowDirOff": true}, 1, nil},
+	} {
+		t.Run(row.name, func(t *testing.T) {
+			f := newSeededShadowFixture(t)
+			enableWorktreeConfig(t, f, row.text)
+			mustWrite(t, filepath.Join(f.gitDir, worktreesSubdir, "wr", worktreeConfigName), row.text)
+			if raw, _ := f.info(t, f.repo, nil); !strings.Contains(raw, `"isRepo":true`) {
+				t.Fatalf("git.info = %s", raw)
+			}
+			params := map[string]any{"path": f.wt, "baseRepo": f.repo}
+			for k, v := range row.extra {
+				params[k] = v
+			}
+			raw, calls := f.call(t, "git.status", params)
+			if raw != entryStatusClean {
+				t.Fatalf("git.status = %s", raw)
+			}
+			// The item of the file stands before the --attr-source option.
+			split := func(argv []string) (front, values, rest []string) {
+				for len(argv) > 1 && argv[0] == "-c" && !strings.HasPrefix(argv[1], gitHardenHeavy[0]) {
+					front, argv = append(front, argv[1]), argv[2:]
+				}
+				values, rest = optionList(argv)
+				return front, values, rest
+			}
+			var reads, temp []int
+			for i, c := range calls {
+				_, _, rest := split(c.argv)
+				switch {
+				case c.configRead():
+					reads = append(reads, i)
+				case !c.listing() && len(rest) > 0 && strings.HasPrefix(rest[0], "--git-dir=") && slices.Contains(rest, "--work-tree="+f.wt):
+					temp = append(temp, i)
+				}
+			}
+			if len(reads) != row.reads || len(temp) != 4 {
+				t.Fatalf("%d reads of a config file and %d calls in the temporary git folder, want %d and 4", len(reads), len(temp), row.reads)
+			}
+			for _, i := range temp {
+				front, values, rest := split(calls[i].argv)
+				if !slices.Equal(front, row.front) || len(values) != len(gitHardenHeavy) {
+					t.Errorf("the call %q starts with the items %q and has %d more\nwant %q and then the %d items", rest, front, len(values), row.front, len(gitHardenHeavy))
+				}
+			}
+			if row.reads != 2 {
+				return
+			}
+			second := calls[reads[1]]
+			if reads[1]+2 != temp[0] || !calls[reads[1]+1].listing() || !slices.Contains(calls[reads[1]-1].argv, "hash-object") {
+				t.Errorf("the second read is call %d and the first call in the temporary git folder is call %d\nwant the read after a hash-object call and right before the listing of that call", reads[1]+1, temp[0]+1)
+			}
+			if second.cwd != gitVersionDir {
+				t.Errorf("the working directory of the second read = %s, want %s", second.cwd, gitVersionDir)
+			}
+			if v, ok := lookupExact(second.env, "GIT_DIR"); !ok || v != os.DevNull {
+				t.Errorf("GIT_DIR of the second read = %q, %v, want the null device", v, ok)
+			}
+		})
+	}
+}
+
 // TestWriteWorktreeConfigGuards: the file goes into the registration of the
 // create only. Each other state writes nothing.
 func TestWriteWorktreeConfigGuards(t *testing.T) {
