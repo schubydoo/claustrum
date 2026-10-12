@@ -135,8 +135,8 @@ func TestShadowStatusFolderComesBeforeTheVersionCall(t *testing.T) {
 // gets a copy that is a plain file with the text `ref: <target>` and a newline,
 // and the methods answer normally. 5fd08069 writes `ref: refs/heads/main`, 21
 // bytes, mode 0600 (cells N4-headlink of val-s3p2b2-3-linux2 and
-// val-s3p2b2-3-macos, Linux and macOS VMs). A link with another target is not
-// measured: the request is refused.
+// val-s3p2b2-3-macos, Linux and macOS VMs). A link to a ref outside
+// `refs/heads/` gets the same form of copy (cell H1 of val-s3p2b2-7-linux2).
 func TestShadowHeadThatIsALink(t *testing.T) {
 	f := newSeededShadowFixture(t)
 	head := filepath.Join(f.gitDir, "HEAD")
@@ -162,16 +162,42 @@ func TestShadowHeadThatIsALink(t *testing.T) {
 		t.Errorf("git.list_branches = %s", raw)
 	}
 
-	// A link with a target outside refs/heads/ has no row: no copy, a refusal.
+	// A link to a ref outside refs/heads/ gets its copy too, also when the ref
+	// does not exist (cell H1 of val-s3p2b2-7-linux2, Linux VM). git.info then
+	// has no `branch` member, and git.list_branches lists the branches.
+	if err := os.MkdirAll(filepath.Join(f.gitDir, "refs", "remotes", "origin"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	mustWrite(t, filepath.Join(f.gitDir, "refs", "remotes", "origin", "main"), mustRead(t, filepath.Join(f.gitDir, "refs", "heads", "main")))
+	for _, target := range []string{"refs/remotes/origin/main", "refs/remotes/origin/nope"} {
+		if err := os.Remove(head); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.Symlink(target, head); err != nil {
+			t.Fatal(err)
+		}
+		want := `{"jsonrpc":"2.0","id":1,"result":{"isRepo":true,"repo":"repo","root":` + jsonQuoted(t, f.repo) + `,"repoSlug":"","defaultBranch":"","settingsControl":"shadow"}}`
+		if raw, _ := f.info(t, f.repo, nil); raw != want {
+			t.Errorf("git.info with a link to %s = %s\nwant %s", target, raw, want)
+		}
+		if got := mustRead(t, copyOf); got != "ref: "+target+"\n" || len(got) != 30 {
+			t.Errorf("the copy of HEAD with a link to %s = %q", target, got)
+		}
+		if raw, _ := f.call(t, "git.list_branches", map[string]any{"path": f.repo}); !strings.Contains(raw, `"isRepo":true,"branches":["main","wr"]`) {
+			t.Errorf("git.list_branches with a link to %s = %s", target, raw)
+		}
+	}
+
+	// A link whose target does not start with refs/ has no row. The trust check
+	// finds no repository there, so the request never comes to the copy.
 	if err := os.Remove(head); err != nil {
 		t.Fatal(err)
 	}
-	mustWrite(t, filepath.Join(f.gitDir, "refs", "other"), mustRead(t, filepath.Join(f.gitDir, "refs", "heads", "main")))
-	if err := os.Symlink("refs/other", head); err != nil {
+	if err := os.Symlink(filepath.Join(f.gitDir, "refs", "heads", "main"), head); err != nil {
 		t.Fatal(err)
 	}
-	if raw, _ := f.info(t, f.repo, nil); !strings.Contains(raw, "the HEAD of the repository cannot be read") {
-		t.Errorf("git.info with a link to refs/other = %s", raw)
+	if raw, _ := f.info(t, f.repo, nil); !strings.Contains(raw, `"isRepo":false`) {
+		t.Errorf("git.info with a link to an absolute path = %s", raw)
 	}
 }
 

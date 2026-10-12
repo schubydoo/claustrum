@@ -117,7 +117,7 @@ func readShadowSource(path string, max int64, cut bool) (data []byte, ok bool) {
 
 // shadowHeadLinkPrefix starts the target of a HEAD that is a symbolic link and
 // still gets a copy (readShadowHead).
-const shadowHeadLinkPrefix = "refs/heads/"
+const shadowHeadLinkPrefix = "refs/"
 
 // readShadowHead is the content of the copy of the HEAD of gitDir.
 //
@@ -126,9 +126,16 @@ const shadowHeadLinkPrefix = "refs/heads/"
 // the text `ref: refs/heads/main` and a newline, 21 bytes: "ref: ", the target
 // of the link as it is written, and a newline. 5fd08069 writes that copy and
 // answers all five methods normally (cells N4-headlink of val-s3p2b2-3-linux2
-// and val-s3p2b2-3-macos, Linux and macOS VMs). That one target ran. A link
-// with another target, such as an absolute path or a name outside
-// `refs/heads/`, is not measured: it gets no copy, and the request is refused.
+// and val-s3p2b2-3-macos, Linux and macOS VMs).
+//
+// A link to a ref outside `refs/heads/` gets its copy the same way. 5fd08069
+// writes `ref: refs/remotes/origin/main` and a newline, 30 bytes, and goes on.
+// It does so for `refs/remotes/origin/nope` too, a ref that does not exist.
+// The methods then answer by what git says there (cell H1 of
+// val-s3p2b2-7-linux2, Linux VM). Those three targets ran. A target that does
+// not start with `refs/`, such as an absolute path, is not measured. The trust
+// check finds no repository there, so such a HEAD does not come here. If it
+// does, it gets no copy and the request is refused.
 func readShadowHead(gitDir string) ([]byte, bool) {
 	path := filepath.Join(gitDir, "HEAD")
 	if fi, err := os.Lstat(path); err == nil && fi.Mode()&fs.ModeSymlink != 0 {
