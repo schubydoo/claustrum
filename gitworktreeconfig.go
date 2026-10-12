@@ -24,7 +24,7 @@ import (
 // before.
 
 // worktreeConfigItemKeys are the keys of a `config.worktree` file whose
-// settings go to the git calls as `-c` items. 5fd08069 sends these three:
+// settings go to the git calls as `-c` items. 5fd08069 sends these seven:
 //
 //   - `-c core.filemode=false` and `-c core.sparsecheckout=true` from the file
 //     of the repository (cells 12a to 12c and 12f of val-s3p2b2-3-linux, cells
@@ -32,18 +32,29 @@ import (
 //     Windows VM (cell N16c of val-s3p2b2-3-windows).
 //   - `-c core.eol=lf` from the file of a linked worktree (cell 1c of
 //     val-s3p2b2-3-linux, Linux VM).
+//   - `-c core.autocrlf=input`, `-c core.ignorecase=true`, `-c
+//     core.symlinks=false` and `-c core.sparsecheckoutcone=true` from the file
+//     of the repository. Each ran as the one key of the file (the four cells
+//     p2-K of val-s3p2b2-6-linux with those names, Linux VM).
 //
 // `core.bare` and `core.worktree` of that file give no item (cells 12a, 12d,
-// 12e, 9a and 9k of val-s3p2b2-3-linux). Every other key is not measured: it
-// gives no item here.
-var worktreeConfigItemKeys = []string{"core.filemode", "core.sparsecheckout", "core.eol"}
+// 12e, 9a and 9k of val-s3p2b2-3-linux). `core.hookspath` and `user.name` give
+// none either (cells p2-K-hookspath-x and p2-K-user-name-n of
+// val-s3p2b2-6-linux). Every other key is not measured: it gives no item here.
+var worktreeConfigItemKeys = []string{
+	"core.filemode", "core.sparsecheckout", "core.eol",
+	"core.autocrlf", "core.ignorecase", "core.symlinks", "core.sparsecheckoutcone",
+}
 
 // worktreeConfigItems are the `-c` items of settings, the listing of one
 // `config.worktree` file, in the order of the file. The key is the name that
 // git lists, in lower case. The value is the listed value as it is. The cells
-// have `false`, `true` and `lf`. Three things are not measured: another
-// spelling of a value, a key with no value and a key that is set two times. A
-// key with no value gives no item.
+// have `false`, `true`, `lf` and `input`. Three things are not measured:
+// another spelling of a value, a key with no value and a key that is set two
+// times. A key with no value gives no item. The order of two items is measured
+// for `core.filemode` before `core.sparsecheckout` only (cell 12a). No cell has
+// one of the four keys of val-s3p2b2-6-linux beside a second key: the order of
+// the file holds there too (not measured).
 func worktreeConfigItems(settings []repoSetting) []string {
 	var items []string
 	for _, s := range settings {
