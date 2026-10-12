@@ -145,7 +145,7 @@ func acceptGitDir(path string, before os.FileInfo) *acceptedGitDir {
 	if before == nil {
 		return nil
 	}
-	root, err := os.OpenRoot(path)
+	root, err := openHeldGitDir(path)
 	if err != nil {
 		return nil
 	}

@@ -4,8 +4,45 @@ package main
 
 import (
 	"os"
+	"path/filepath"
 	"syscall"
 )
+
+// openHeldGitDir opens the git directory at path as the root that a create
+// holds until it answers (acceptGitDir). The handle shares read, write and
+// delete, so another process can rename the folder while the create runs.
+//
+// os.OpenRoot gives no such handle. From the code of Go 1.26.9, it opens the
+// path with syscall.Open (os/root_windows.go, openRootNolog), and that call has
+// the share mode `FILE_SHARE_READ | FILE_SHARE_WRITE`
+// (syscall/syscall_windows.go, Open). With that hold, a rename of `repo\.git`
+// during a create failed with `The process cannot access the file because it
+// is being used by another process`, and it passed between two requests
+// (section 1.1 and control H1 of val-s3p2b2-9-windows, Windows VM). On 5fd08069
+// the rename passes during a create (60 swaps of that round).
+//
+// Root.OpenRoot opens a name inside a root with NtCreateFile and the share mode
+// `FILE_SHARE_READ|FILE_SHARE_WRITE|FILE_SHARE_DELETE`
+// (internal/syscall/windows/at_windows.go, Openat). So the folder is opened by
+// its last name through a root of its parent folder, and that root is closed
+// before the return. The open follows no link at the last name: a junction
+// there is an error. A parent folder that the daemon cannot open is not
+// measured: the create is then refused as for a git directory that changed. A
+// path with no parent folder, the root of a volume, is opened by the path. Not
+// run on a Windows system.
+func openHeldGitDir(path string) (*os.Root, error) {
+	clean := filepath.Clean(path)
+	dir := filepath.Dir(clean)
+	if dir == clean {
+		return os.OpenRoot(path)
+	}
+	parent, err := os.OpenRoot(dir)
+	if err != nil {
+		return nil, err
+	}
+	defer func() { _ = parent.Close() }()
+	return parent.OpenRoot(filepath.Base(clean))
+}
 
 // shadowLinksWorktrees is false on Windows. The copy of a repository has no
 // `worktrees` entry and no reparse point there on 5fd08069 (s3-windows cell A3

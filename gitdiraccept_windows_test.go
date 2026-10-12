@@ -216,3 +216,36 @@ func TestCreateWithAnotherGitDirAtThePathOnWindows(t *testing.T) {
 		})
 	}
 }
+
+// TestHeldGitDirTakesARenameOnWindows: another process can rename the git
+// directory that a create holds. On 5fd08069 a rename of `repo\.git` passes
+// during a create (60 swaps of val-s3p2b2-9-windows, Windows VM). With a hold
+// that os.OpenRoot opened by the path, the rename failed with `The process
+// cannot access the file because it is being used by another process`
+// (section 1.1 of that round). After the rename the held root still acts in
+// the folder, at its new name. A junction at the last name is not opened.
+func TestHeldGitDirTakesARenameOnWindows(t *testing.T) {
+	dir := filepath.Join(resolveTestRoot(t, t.TempDir()), "g")
+	if err := os.Mkdir(dir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	root, err := openHeldGitDir(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = root.Close() }()
+	if err := os.Rename(dir, dir+"-real"); err != nil {
+		t.Fatalf("the rename of the held folder: %v", err)
+	}
+	if err := root.Mkdir("made", 0o755); err != nil {
+		t.Fatalf("a folder through the held root: %v", err)
+	}
+	if _, err := os.Lstat(filepath.Join(dir+"-real", "made")); err != nil {
+		t.Errorf("the folder in the renamed git directory: %v", err)
+	}
+	linkAt(t, dir, dir+"-real")
+	if linked, err := openHeldGitDir(dir); err == nil {
+		_ = linked.Close()
+		t.Error("a junction at the last name is opened as the held folder")
+	}
+}

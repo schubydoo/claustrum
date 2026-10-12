@@ -17,6 +17,13 @@ import (
 // (acceptedGitDir.root), not through the path. A link, a junction or another
 // folder that is put at the path while the create runs gets none of them.
 //
+// The hold stops no rename of the folder by another process. On Windows its
+// handle shares delete access for that (openHeldGitDir): on 5fd08069 a rename
+// of `repo\.git` passes during a create (val-s3p2b2-9-windows, Windows VM).
+// After a rename the acts below still go to the held folder, at its new name.
+// Not measured: a rename at the moment when a step has an entry of the folder
+// open.
+//
 //   - The stale registration before the add: dropStaleRegistration on Windows,
 //     and dropStaleWorktreeRegistration with registrationsRoot on Linux and
 //     macOS.

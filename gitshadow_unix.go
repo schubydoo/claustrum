@@ -30,6 +30,13 @@ const shadowStagesAdd = false
 // no link. It is a variable so that a test can switch the steps off.
 var gitDirMustBeReal = true
 
+// openHeldGitDir opens the git directory at path as the root that a create
+// holds until it answers (acceptGitDir). An open folder stops no rename and no
+// remove of it on Linux and macOS.
+func openHeldGitDir(path string) (*os.Root, error) {
+	return os.OpenRoot(path)
+}
+
 // statusFollowsPrintedGitDir is false on Linux and macOS. The trust check
 // resolves the links of the request path there, and a path through a link gets
 // one folder (s3p2-macos cells B1 and B2, macOS VM).
