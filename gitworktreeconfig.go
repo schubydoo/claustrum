@@ -35,7 +35,8 @@ import (
 //   - `-c core.autocrlf=input`, `-c core.ignorecase=true`, `-c
 //     core.symlinks=false` and `-c core.sparsecheckoutcone=true` from the file
 //     of the repository. Each ran as the one key of the file (the four cells
-//     p2-K of val-s3p2b2-6-linux with those names, Linux VM).
+//     p2-K of val-s3p2b2-6-linux with those names, Linux VM, and row U1 of
+//     val-s3p2b2-6-macos, macOS VM, 2 of 2 runs).
 //
 // `core.bare` and `core.worktree` of that file give no item (cells 12a, 12d,
 // 12e, 9a and 9k of val-s3p2b2-3-linux). `core.hookspath` and `user.name` give
@@ -141,7 +142,7 @@ var worktreeConfigDropKeys = []string{"core.bare", "core.worktree"}
 // newWorktreeConfig is the text of the `config.worktree` file that the new
 // worktree of a create gets. It runs after the `worktree add` call of that
 // create in repo. ok is false when the new worktree gets no file from the
-// daemon.
+// daemon. drop removes the short-lived folder of this step.
 //
 // The repository has the worktreeConfig switch and a `config.worktree` file.
 // On 5fd08069 a create there lists that file with one git call right after its
@@ -168,8 +169,12 @@ var worktreeConfigDropKeys = []string{"core.bare", "core.worktree"}
 // ms saw it for 24 to 43 ms in the 9 cells with an `--unset-all` call, and not
 // in the 11 other cells. A trace of cell 12f has the mkdir and the two removes
 // in one millisecond (section 0.2 item 4 of the report of val-s3p2b2-6-linux,
-// Linux VM). So the folder is made in each such create, and it goes when this
-// function returns.
+// Linux VM). On a macOS VM the folder goes after the file of the new
+// registration is written and before `.index-<n>` comes, in 7 of 7 sightings
+// (row U3 of val-s3p2b2-6-macos). So the folder is made in each such create.
+// drop removes it, and it does nothing with no folder. The create calls it
+// after it wrote the file of the registration (placeWorktreeConfig). A create
+// that is refused before that step calls it at its reply (not measured).
 //
 // The read of the file is the read of the config gate. Three kinds of file
 // give no file in the new worktree: one that is not a regular file, one over
@@ -177,32 +182,39 @@ var worktreeConfigDropKeys = []string{"core.bare", "core.worktree"}
 // call that fails gives none either (not measured). A request that names no
 // copy comes here for the listing only: the file of its new worktree is left
 // to git. macOS and Windows have no cell with such a create.
-func (req *request) newWorktreeConfig(repo, gitDir string) (text []byte, ok bool) {
+func (req *request) newWorktreeConfig(repo, gitDir string) (text []byte, ok bool, drop func()) {
+	drop = func() {}
 	if req.repoRead == nil || !req.repoRead.worktreeConfig {
-		return nil, false
+		return nil, false, drop
 	}
 	ctx, cancel := gitCtx()
 	defer cancel()
 	source, settings, ok := listConfigFileText(ctx, filepath.Join(gitDir, worktreeConfigName))
 	u := req.use
 	if _, named := u.names(repo); !ok || !named {
-		return nil, false
+		return nil, false, drop
 	}
 	dir, remove, err := u.requestDir(shadowConfigDirPrefix, "")
 	if err != nil {
 		logWarnf("[GitHandler] the config.worktree file of the new worktree was not made: %v", err)
-		return nil, false
+		return nil, false, drop
 	}
-	defer remove()
+	gone := false
+	drop = func() {
+		if !gone {
+			gone = true
+			remove()
+		}
+	}
 	root, err := os.OpenRoot(dir)
 	if err != nil {
 		logWarnf("[GitHandler] the config.worktree file of the new worktree was not made: %v", err)
-		return nil, false
+		return nil, false, drop
 	}
 	defer func() { _ = root.Close() }()
 	if err := writeRootFile(root, worktreeConfigName, source, 0o600); err != nil {
 		logWarnf("[GitHandler] the config.worktree file of the new worktree was not made: %v", err)
-		return nil, false
+		return nil, false, drop
 	}
 	file := filepath.Join(dir, worktreeConfigName)
 	for _, key := range worktreeConfigDropKeys {
@@ -213,20 +225,20 @@ func (req *request) newWorktreeConfig(repo, gitDir string) (text []byte, ok bool
 			"config", "--file", file, "--unset-all", key)
 		if r.err != nil {
 			logWarnf("[GitHandler] the config.worktree file of the new worktree was not made: git config --unset-all %s: %s", key, r.detail())
-			return nil, false
+			return nil, false, drop
 		}
 	}
 	fi, err := root.Lstat(worktreeConfigName)
 	if err != nil || !fi.Mode().IsRegular() || fi.Size() > repoConfigMaxBytes {
 		logWarnf("[GitHandler] the config.worktree file of the new worktree was not made: its text cannot be read")
-		return nil, false
+		return nil, false, drop
 	}
 	text, err = root.ReadFile(worktreeConfigName)
 	if err != nil {
 		logWarnf("[GitHandler] the config.worktree file of the new worktree was not made: %v", err)
-		return nil, false
+		return nil, false, drop
 	}
-	return text, true
+	return text, true, drop
 }
 
 // writeRootFile makes the new file name in root with the content data and the

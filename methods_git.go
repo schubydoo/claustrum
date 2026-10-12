@@ -1183,7 +1183,8 @@ func gitWorktreeCreateLocked(req *request, p *gitParams, repo string) response {
 	// The read of the `config.worktree` file of the repository, and the text
 	// that the new worktree gets from it (newWorktreeConfig). The text goes into
 	// the registration below, after the tests of that registration.
-	entryConfig, hasEntryConfig := req.newWorktreeConfig(repo, t.pinCommonDir)
+	entryConfig, hasEntryConfig, dropConfigDir := req.newWorktreeConfig(repo, t.pinCommonDir)
+	defer dropConfigDir()
 	// The add succeeded. The .git file of the new worktree must name a registration
 	// of this repository, and the commondir file and the gitdir record of that
 	// registration must be files that can be read (createdRegistrationRefusal, cells
@@ -1259,6 +1260,7 @@ func gitWorktreeCreateLocked(req *request, p *gitParams, repo string) response {
 	if hasEntryConfig {
 		placeWorktreeConfig(req.use, indexDir, p.WorktreePath, tested, entryConfig)
 	}
+	dropConfigDir()
 	// If the caller's deadline expired during the add, the request
 	// answers timeout "before the checkout started" and rolls back. errorCode
 	// "timeout" is reserved for the caller's own deadline. The reference has no D5.

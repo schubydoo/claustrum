@@ -173,8 +173,10 @@ func TestCreateGivesTheNewWorktreeItsConfigFile(t *testing.T) {
 // create is gone when the next git call of the create runs. On 5fd08069 a
 // listing each 2 ms saw it for 24 to 43 ms, the time of its `--unset-all`
 // calls, and a trace has its removes in the millisecond of its mkdir (section
-// 0.2 item 4 of the report of val-s3p2b2-6-linux, Linux VM). The stub holds the
-// read-tree call, and the test looks at the folder of the daemon in that time.
+// 0.2 item 4 of the report of val-s3p2b2-6-linux, Linux VM). On a macOS VM it
+// goes before `.index-<n>` comes and before the read-tree (row U3 of
+// val-s3p2b2-6-macos). The stub holds the read-tree call, and the test looks
+// at the folder of the daemon in that time.
 func TestConfigFolderGoesBeforeTheNextGitCall(t *testing.T) {
 	f := newSeededShadowFixture(t)
 	dropFixtureWorktree(t, f)
@@ -520,7 +522,7 @@ func TestEmptyMainWorktreeConfigIsNotListed(t *testing.T) {
 // start with the item of the file, before the --attr-source option. On
 // 5fd08069 the read is call 9 of 23, with `-c core.sparsecheckoutcone=true` on
 // those four calls (cell p2-K-sparsecheckoutcone-true of val-s3p2b2-6-linux,
-// Linux VM). With a file of 0 bytes it makes one read and the calls keep the
+// Linux VM, and row U2 of val-s3p2b2-6-macos, macOS VM). With a file of 0 bytes it makes one read and the calls keep the
 // plain list (cell p2-K-none-empty-file of that round). With the member the
 // second read is not measured: claustrum makes none.
 func TestStatusReadsTheEntryConfigASecondTime(t *testing.T) {

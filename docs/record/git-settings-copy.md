@@ -631,14 +631,15 @@ The repository has `extensions.worktreeConfig = true` and a file `<gitdir>/confi
 | 1c of round `val-s3p2b2-3` | Linux VM | The calls on a linked worktree with its own file start with `-c core.eol=lf` |
 | N16c of round `val-s3p2b2-3` | Windows VM | `core.filemode=true` is the first item, on the calls of `git.info`, on `rev-parse --absolute-git-dir`, on both `rev-parse --show-toplevel` calls and on the four `hash-object` calls |
 | A7b of round `val-s3p2b2-3`, N16c of that round | Linux VM, Windows VM | The four `git.status` calls with `--git-dir=<S>/.gitdir-<n>` keep the list of 28 items |
-| the six `p2-K` cells of round `val-s3p2b2-6` | Linux VM | `core.autocrlf = input`, `core.ignorecase = true`, `core.symlinks = false` and `core.sparsecheckoutcone = true` each give a `-c` item, as the one key of the file. `core.hookspath = /x` and `user.name = n` give none |
-| `p2-K-sparsecheckoutcone-true` of that round | Linux VM | `git.status` on the new worktree makes 23 calls and lists the `config.worktree` file two times, with 34 bytes on standard input. The second read is call 9, after the first `hash-object` call and before the first `--git-dir=<S>/.gitdir-<n> config -z --list`. The four calls with `--git-dir=<S>/.gitdir-<n>` then start with `-c core.sparsecheckoutcone=true`, before the `--attr-source` option |
+| the six `p2-K` cells of round `val-s3p2b2-6`, and row U1 of that round for the four keys with an item | Linux VM, macOS VM (2 of 2 runs) | `core.autocrlf = input`, `core.ignorecase = true`, `core.symlinks = false` and `core.sparsecheckoutcone = true` each give a `-c` item, as the one key of the file. `core.hookspath = /x` and `user.name = n` give none |
+| `p2-K-sparsecheckoutcone-true` of that round, and row U2 | Linux VM, macOS VM (2 of 2 runs) | `git.status` on the new worktree makes 23 calls and lists the `config.worktree` file two times, with 34 bytes on standard input. The second read is call 9, after the first `hash-object` call and before the first `--git-dir=<S>/.gitdir-<n> config -z --list`. The four calls with `--git-dir=<S>/.gitdir-<n>` then start with `-c core.sparsecheckoutcone=true`, before the `--attr-source` option |
 | `p2-K-none-empty-file` of that round | Linux VM | With a file of 0 bytes in the new registration, `git.status` lists it one time |
 | 12a and 12c of round `val-s3p2b2-3` | Linux VM | On the read-tree the items come after the `lfs.storage` item |
 | 12a, 12b, 12d, 12e, H6, 1b, 9a and 9k of round `val-s3p2b2-3` | Linux VM | After the `worktree add`: `config --file <S>/.config-<n>/config.worktree --unset-all core.bare`, in the folder of the daemon, with `GIT_DIR=/dev/null`. In 12d and H6 a second call follows with `core.worktree`. That is 10 calls in 8 cells |
 | 12c, 12f and 1a of round `val-s3p2b2-3` | Linux VM | With `filemode = false` alone no such call runs |
 | the cells `p2u-12a`, `p2u-12d` and `p2u-12f` of round `val-s3p2b2-6` | Linux VM | With a daemon umask of 002 that file is `f 0664`. A trace has its open with mode 0666 |
 | section 0.2 item 4 of round `val-s3p2b2-6` | Linux VM, 20 cells | `<S>/.config-<n>` is `d 0700` and its file `f 0600`. A listing each 2 ms saw the folder for 24 to 43 ms in the 9 cells with an `--unset-all` call. It saw none in the 11 others. A trace of cell 12f has the mkdir and the two removes in one millisecond |
+| row U3 of round `val-s3p2b2-6` | macOS VM, 2 of 2 runs | `<S>/.config-<n>` goes after the file of the new registration is written and before `.index-<n>` comes, in 7 of 7 sightings. In cell 12a the registration file is there at 1.186 s, and the folder is gone at 1.197 s |
 | section 1.1 of round `val-s3p2b2-5` | Linux VM | After the create, `<gitdir>/worktrees/w1/config.worktree` (0644) holds the text of the file without `core.bare` and `core.worktree`. It has 0 bytes in 12d, 12e, 9a, 9k and H6. It has 25 bytes in 12c, 12f and 1a, and 48 bytes in 12a, 12b and 1b |
 | section 2 of round `val-s3p2b2-5` | Linux VM | `git.status` on the new worktree answers `{"isRepo":false,"clean":false}` in 12a, 12b, 12c, 12f, 1a and 1b, with 5 calls. In 12d, 12e and 9k it answers `{"isRepo":true,"clean":true}` |
 | 9a of round `s3p2b-edges2` | Linux VM | A create succeeds with `core.bare = true` in that file |
@@ -677,7 +678,7 @@ Round `val-s3p2b2-6` ran a build with those edits beside `5fd08069` on a Linux V
 - Four more keys of a `config.worktree` file as `-c` items (the `p2-K` cells).
 - The second read of the `config.worktree` file in `git.status` and its items (cell `p2-K-sparsecheckoutcone-true`).
 - No read of a `config.worktree` file of 0 bytes in the read of the config (cell `p2-K-none-empty-file`).
-- The folder `.config-<n>` goes before the next git call.
+- The folder `.config-<n>` goes after the file of the registration is written, before the next git call.
 - Mode 0666 before the umask for the `config.worktree` file of the registration and for the new `.git` file.
 - Each value of `core.sharedRepository` in the copy and in the mode of `<gitdir>/worktrees` (group P5).
 - One `version` call of the include step for each daemon with the member, and mode 0644 for its `patterns` file (group P3).

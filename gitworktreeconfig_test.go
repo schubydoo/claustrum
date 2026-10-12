@@ -12,7 +12,8 @@ import (
 // N16c of val-s3p2b2-3-windows, Windows VM) and `core.eol=lf` (cell 1c of
 // val-s3p2b2-3-linux). It sends no item for `core.bare` and `core.worktree`
 // (cells 12a, 12d, 12e and 9a). The six rows p2-K are the cells of
-// val-s3p2b2-6-linux with those names (Linux VM): four keys give an item, and
+// val-s3p2b2-6-linux with those names (Linux VM). Row U1 of val-s3p2b2-6-macos
+// has the four keys with an item on a macOS VM. Four keys give an item, and
 // `core.hookspath` and `user.name` give none. Every other key has no row and
 // gives no item.
 func TestWorktreeConfigItems(t *testing.T) {

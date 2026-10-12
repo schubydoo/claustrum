@@ -826,8 +826,9 @@ type statusRun struct {
 // LANGUAGE=C, and the 34 bytes of the file on standard input. The four calls
 // in the temporary folder then start with `-c core.sparsecheckoutcone=true`,
 // before the --attr-source option (cell p2-K-sparsecheckoutcone-true of
-// val-s3p2b2-6-linux, Linux VM). With a file of 0 bytes 5fd08069 makes no
-// second read (cell p2-K-none-empty-file of that round).
+// val-s3p2b2-6-linux, Linux VM, and row U2 of val-s3p2b2-6-macos, macOS VM, 2
+// of 2 runs). With a file of 0 bytes 5fd08069 makes no second read (cell
+// p2-K-none-empty-file of the Linux round).
 //
 // The file of that cell is a copy of the file of the repository. So which file
 // 5fd08069 reads there is not measured: claustrum lists the text that the test

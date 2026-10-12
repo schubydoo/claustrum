@@ -429,7 +429,7 @@ The JSON-RPC surface is identical on every OS. Full internals →
       `.worktreeinclude-<n>`, `.config-<n>`, and `.s<n>` on Windows. Each goes
       at the end of its step or at the reply. `.config-<n>` goes before the
       next git call of its create, as on `5fd08069` (round `val-s3p2b2-6`,
-      Linux VM).
+      Linux and macOS VMs).
   On Linux and macOS the folder of a repository holds a link `worktrees` into
   the git directory. The root removes that link and not its target
   (`TestShadowFolderRemovalLeavesLinkTargets`). A new copy is a temp file plus
