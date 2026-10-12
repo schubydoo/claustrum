@@ -19,8 +19,10 @@ The cells ran on three VMs. The Linux VM has git 2.43.0, the macOS VM has git 2.
 | `s3p2b-edges`, `s3p2b-edges2`, `s3p2b-edges3` | Linux, macOS and Windows VMs. The third round on Linux and Windows VMs | the same three |
 | `val-s3p2b1` | Linux, macOS and Windows VMs | `89cb6289`, `5fd08069` and two claustrum builds |
 | `val-s3p2b2-1`, `val-s3p2b2-3`, `val-s3p2b2-5` | Linux, macOS and Windows VMs | `5fd08069` and a build of this change. Some cells also ran `89cb6289` |
+| `val-s3p2b2-6` | Linux, macOS and Windows VMs | `5fd08069` and a build with the edits after round `val-s3p2b2-5`. Some Linux cells also ran `89cb6289` |
+| `val-s3p2b2-7` | a second Linux VM | `5fd08069` and the build of round `val-s3p2b2-6` |
 
-The three `val-s3p2b2` rounds compared a build of this change with `5fd08069`. The last edits of this change came after round `val-s3p2b2-5`. They have tests and ran on no VM. "claustrum and `5fd08069`" below names what that round left open.
+Five `val-s3p2b2` rounds compared a build of this change with `5fd08069`. The edits for the rows of rounds `val-s3p2b2-6` and `val-s3p2b2-7` have tests and ran on no VM. "claustrum and `5fd08069`" below names what each round left open.
 
 ## The member and the states
 
@@ -82,9 +84,9 @@ The state `fallback-git`, on `5fd08069`:
 | section 1 of round `s3p2`, A3 of round `s3` | Linux VM (93 cells), macOS VM, Windows VM | At `-stop` the daemon removes `<S>`. The empty `<run>/git-shadow` (0700) stays |
 | F3 of round `s3p2`, 48 of round `s3p2b-edges` | Linux VM (6 runs), macOS VM and Windows VM (3 runs each form) | At `server.shutdown` or `-stop` during a slow `git.status` the daemon empties `<run>/git-shadow`, also `<S>/.gitdir-<n>`. The slow git child gets no signal, and the slow request gets no reply line. The Linux runs have `server.shutdown` only |
 | B4 of round `s3` | Linux VM, macOS VM | A daemon that the driver ended with `SIGKILL` leaves `<S>` |
-| G1 of round `val-s3p2b2-7` | Linux VM, 2 of 2 runs for each build and form | At a stop both builds remove the folder of the daemon through a symbolic link at `git-shadow`. The link and the other entries of its target stay |
+| G1 of round `val-s3p2b2-7` | Linux VM, 2 of 2 runs for each build and form | At `-stop` both builds remove the folder of the daemon through a symbolic link at `git-shadow`. The link and the other entries of its target stay |
 | R1 of round `val-s3p2b2-7` | Linux VM | With `-socket s.sock` and with `-socket rel/rpc.sock` the folder `git-shadow` is under the working directory of the daemon. Each path of the settings copy has the absolute form: the argv, the working directory and the variables of the test calls, and the variables of the later calls. The five replies and the call lists equal those of the absolute socket path |
-| F1 of round `val-s3p2b2-7` | Linux VM | With `<S>` of mode 0500 after the first request, `git.status` answers `{"isRepo":false,"clean":false}` after 4 calls. A create answers `git worktree add failed (checkout): mkdir <S>/.index-<n>: permission denied` with `worktree_add_failed` |
+| F1 of round `val-s3p2b2-7` | Linux VM, 1 run | With `<S>` of mode 0500 after the first request, `git.status` answers `{"isRepo":false,"clean":false}` after 4 calls. A create answers `git worktree add failed (checkout): mkdir <S>/.index-<n>: permission denied` with `worktree_add_failed` |
 
 Two daemons with two sockets in one run folder have no result on a macOS VM. The start of the second daemon ends the first one there, on `5fd08069` and on `89cb6289` (cell 41 of round `s3p2b-edges2`).
 
@@ -99,7 +101,7 @@ The entries of `<S>`, on `5fd08069`:
 | `.gitdir-<n>/` with `index`, `commondir` and `HEAD` | one `git.status`. It is there before the one-time `--attr-source=<empty tree> version` call and goes at the reply | T1 of round `s3b` (Linux VM). 22 of round `s3p2b-edges` (Windows VM). V5 of round `val-s3p2b2-3` (Linux VM, 6 of 6 runs) |
 | `.index-<n>/` (0700) with `index` | one create. It goes at the reply, also after a failed read-tree | V5 of round `val-s3p2b2-3` (Linux VM, 15 of 15 creates). 44a and 44c of round `s3p2b-edges2` (Windows VM) |
 | `.worktreeinclude-<n>/` (0700) with `patterns` | one create with a `.worktreeinclude` file. It comes after the read-tree. On the Linux VM it goes right after its `ls-files` call starts. On the Windows VM it is there to the reply. `patterns` has 11 bytes, `secret.env\n`, and mode 0644 on Linux and macOS VMs | A3 of round `val-s3p2b1`. V5 of round `val-s3p2b2-3` (Linux VM, 5 of 5 creates. macOS VM, row D1. Windows VM, cell V5i) |
-| `.config-<n>/` (0700) with `config.worktree` (0600) | one create in a repository with a `config.worktree` file. It goes before the next git call | section "`config.worktree`" |
+| `.config-<n>/` (0700) with `config.worktree` (0600) | one create in a repository with a `config.worktree` file. It goes right after the file of the registration is written | section "`config.worktree`" |
 | `.s<n>\` | Windows, one `worktree add` of a create | section "The create on Windows" |
 
 For a request on a linked worktree `ws`, `.gitdir-<n>` holds three files. `HEAD` has 19 bytes, `ref: refs/heads/ws\n`. `commondir` has 17 bytes, `C:\o\w\repo\.git\n`. `index` has 137 bytes. The `commondir` file names the git directory of the repository, not `<R>` (cell 22 of round `s3p2b-edges`, Windows VM). `89cb6289` has the same three sizes in its temp folder there.
@@ -130,7 +132,7 @@ The calls of `5fd08069`. The Linux rows are cell B3a of round `s3p2`. Cell S3 of
 | 9 | `rev-parse --verify -q HEAD^{commit}` | +real +shadow |
 | 10 | `worktree add --no-checkout --detach <S>/.check-<n>/wt <the commit id>` | +real +shadow |
 
-- Call 7 gets the config of `real` on standard input. It has 115 bytes on the Linux VM (cell 1 of round `s3p2b-edges2`). It has 160 bytes on the macOS VM and 153 bytes on the Windows VM (cell S3 of round `val-s3p2b2-1`). On the Windows VM its working directory is that of the daemon, and it has `GIT_DIR=NUL`. From the code: claustrum ends that call at the bound of the nine other calls and waits 1 s for its pipes. A call 7 that fails or that is ended is not measured.
+- Call 7 gets the config of `real` on standard input. It has 115 bytes on the Linux VM (cell 1 of round `s3p2b-edges2`). It has 160 bytes on the macOS VM and 153 bytes on the Windows VM (cell S3 of round `val-s3p2b2-1`). On the Windows VM its working directory is that of the daemon, and it has `GIT_DIR=NUL`. From the code: claustrum ends that call at the bound of the nine other calls and waits 1 s for its pipes. A call 7 that fails or that is ended is not measured. A call that exits in time while a child holds its output pipe fails the test on claustrum. That state is not measured on `5fd08069` for any test call.
 - Pass: both `config --get` calls print `shadow`, call 9 prints the commit id, and call 10 exits 0. The state is `shadow` (section 4 of round `s3p2-oldgit`, Linux VM).
 - If call 9 exits 1 with no output, the same call runs again with +real only. An exit 0 of it gives `fallback-git`, and no `worktree add` runs. The test then has 9 calls (section 4 of round `s3p2-oldgit` and cell 28 of round `s3p2b-edges`, Linux VM).
 - If call 10 fails, `worktree add --no-checkout --detach <S>/.check-<n>/wt2 <id>` runs with +real only. An exit 0 of it gives `fallback-git`. A second failure fails the request (cells 29 and 26 of round `s3p2b-edges`, Linux VM. Cell 33 of that round and section S4 of round `val-s3p2b2-1`, macOS and Windows VMs).
@@ -229,8 +231,8 @@ The entries. The modes are those of the Linux and macOS VMs.
 
 - The 8192 bytes of `HEAD`: a file of 8191 or 8192 bytes is copied whole. A file of 8193 bytes or of 1 MiB gives a copy of 8192 bytes with no newline at its end. The `git.info` reply of the four size rows has no `branch` member.
 - A `HEAD` that is a symbolic link to `refs/heads/main` gives a plain file `HEAD` (0600, 21 bytes, `ref: refs/heads/main\n`). The five methods answer normally (cells N4 of round `val-s3p2b2-3`, Linux and macOS VMs).
-- A `HEAD` that is a symbolic link to `refs/remotes/origin/main` gives the copy `ref: refs/remotes/origin/main\n` (0600, 30 bytes). So does a link to `refs/remotes/origin/nope`, a ref that does not exist. `git.info` then has no `branch` member, and a create answers the text of git for its `worktree add` (cell H1 of round `val-s3p2b2-7`, Linux VM). From the code: a link whose target does not start with `refs/` gets the "no repository" answers of the trust check.
-- With a `HEAD` file of mode 000 the five methods give their "no repository" answers, and no folder of the repository is made. `git.list_branches` makes 2 calls: the listing and the heavy `rev-parse --git-dir`. A create makes 2 calls: the listing and the light `rev-parse --is-inside-work-tree`, both with six profile values. Each call has `GIT_DIR=/dev/null`, and the second one exits 128 (cell H1 of that round, Linux VM).
+- A `HEAD` that is a symbolic link to `refs/remotes/origin/main` gives the copy `ref: refs/remotes/origin/main\n` (0600, 30 bytes). So does a link to `refs/remotes/origin/nope`, a ref that does not exist. `git.info` then has no `branch` member, and a create answers the text of git for its `worktree add` (cell H1 of round `val-s3p2b2-7`, Linux VM, one run). From the code: a link whose target does not start with `refs/` gets the "no repository" answers of the trust check.
+- With a `HEAD` file of mode 000, `git.info`, `git.status`, `git.list_branches` and a create give their "no repository" answers. A remove answers `{"success":true}`. One run. No folder of the repository is made. `git.list_branches` makes 2 calls: the listing and the heavy `rev-parse --git-dir`. A create makes 2 calls: the listing and the light `rev-parse --is-inside-work-tree`, both with six profile values. Each call has `GIT_DIR=/dev/null`, and the second one exits 128 (cell H1 of that round, Linux VM).
 - No entry is made for `packed-refs` and `MERGE_HEAD`. The cells are B3 of round `s3p2` (Linux VM) and 24 f and 24 h of round `s3p2b-edges` (macOS and Windows VMs).
 - Cells 20b to 20i of round `s3p2b-edges` show eight more names with no entry (Linux VM). Five are `CHERRY_PICK_HEAD`, `REVERT_HEAD`, `sequencer/`, `ORIG_HEAD` and `FETCH_HEAD`. Three are `info/grafts`, `info/sparse-checkout` and `objects/info/alternates`.
 - `git.list_branches` answers `{"isRepo":true,"branches":["main","w0"]}` while `<R>/refs` is empty (cell B0 of round `s3`, Linux VM).
@@ -450,7 +452,7 @@ The answers (cell 39 of round `s3p2b-edges`, Linux VM, where the wrapper answers
 | exit 0, prints `/elsewhere/.git` | `git and Claude disagree about which repository holds this folder: from "<repo>" git finds "/elsewhere/.git", Claude finds "<repo>/.git"; try again` | 2, 2, 2, 2, 4 | 13, 2, 2, 2, 4 |
 | exit 0, prints nothing | the same text with `git finds "<repo>"` | 2, 2, 2, 2, 4 | 13, 2, 2, 2, 4 |
 
-The call counts of the last column are from cell 39 of round `val-s3p2b2-5` (Linux VM). After an exit 1 or an exit 128 with no text, one `git version` call follows, in the root folder with no variable.
+The call counts of the last column are from cell 39 of round `val-s3p2b2-5` (Linux VM). After an exit 1, with or without a text, and after an exit 128 with no text, one `git version` call follows. It runs in the root folder with no variable.
 
 The five "no repository" lines. `5fd08069` sends them for git's own "dubious ownership" answer too. The cells are D1 and D3 of round `s3p2` and X3 of round `val-s3p2b2-5` (Linux, macOS and Windows VMs).
 
@@ -531,7 +533,7 @@ A daemon with `GIT_DIR` of another repository in its environment (cells O1 of ro
 | Cell | Fact on `5fd08069` |
 |---|---|
 | `GIT_DIR` alone | Each of the 27 calls after the test has `GIT_DIR=<other>/.git`, then the profile values, then `GIT_COMMON_DIR=<R>` and `GIT_OBJECT_DIRECTORY=<other>/.git/objects`. No call has `GIT_WORK_TREE`. `<R>` is the copy of the other repository. The five requests make 20, 2, 4, 11 and 2 calls |
-| `GIT_DIR` and `GIT_COMMON_DIR` | The same 27 calls with the same variables, and the folder `<R>` is made. The start test calls and the config reads keep the `GIT_COMMON_DIR` of the daemon |
+| `GIT_DIR` and `GIT_COMMON_DIR` | Both name the git directory of the other repository. Two different values are not measured. The same 27 calls with the same variables, and the folder `<R>` is made. The start test calls and the config reads keep the `GIT_COMMON_DIR` of the daemon |
 | both cells | A create makes the branch `w1` in the other repository |
 
 From the code: the pair of calls of a remove that finds the registration keeps the `GIT_COMMON_DIR` of the daemon. No cell has that pair with both variables.
@@ -544,10 +546,11 @@ From the code: the pair of calls of a remove that finds the registration keeps t
 | N2 of that round | Linux VM (6 of 6 runs), macOS VM | After a `worktree add` that the wrapper fails, the empty folder stays. `89cb6289` leaves no such folder |
 | H3 of round `val-s3p2b2-5` | Linux VM, 2 of 2 runs, umask 022 | With `core.sharedRepository = group` the folder is `d 2775`, and `worktrees/w1` is `d 2755`. `89cb6289` has the same modes |
 | group P5 of round `val-s3p2b2-6` | Linux VM, 18 rows | The folder is made with mode 0777 before the umask, and the daemon then sets its mode by the value of `core.sharedRepository`. The table below has each row. A trace has `mkdirat(15, "worktrees", 0777)` and `fchmod(11, 02770)` for `0660` |
-| the three `p2u` cells and the ten rows of group P5 with umask 002, round `val-s3p2b2-6` | Linux VM, 13 of 13 creates | With a daemon umask of 002 the new `.git` file of the worktree is `f 0664` |
+| the three `p2u` cells and 10 creates of group P5 with umask 002, round `val-s3p2b2-6` | Linux VM, 13 of 13 creates | With a daemon umask of 002 the new `.git` file of the worktree is `f 0664`. No trace has its open |
 | N1 of round `val-s3p2b2-3` | Linux VM, 6 of 6 runs | Git writes `gitdir: <R>/worktrees/w1\n` into the `.git` file of the new worktree (128 bytes). 4 to 25 ms after the call ended, `.git` is a new file of 55 bytes, `gitdir: <gitdir>/worktrees/w1\n`. That is before the next call. The first file then has 0 links |
 | N1 of that round | macOS VM | Git writes `gitdir: <gitdir>/worktrees/w1\n` (46 bytes, 0644). The file has one text and one inode from its first sighting to the reply |
 | N1 of that round | Linux VM | `worktrees/w1/gitdir` is `<repo>/.claude/worktrees/w1/.git\n` and `commondir` is `../..\n`. Both stay as git wrote them |
+| H1 of round `s3p2` | Linux VM (7 runs), macOS VM | No daemon makes a `.claude-new-worktree*` entry or a `.s<n>` folder |
 
 The modes of `<gitdir>/worktrees` and of `worktrees/w1` after a create, by the value of `core.sharedRepository` (group P5 of round `val-s3p2b2-6`, Linux VM). `89cb6289` has the same modes in 18 of 18 rows.
 
@@ -561,7 +564,6 @@ The modes of `<gitdir>/worktrees` and of `worktrees/w1` after a create, by the v
 | no key | no line | 755 and 755 | 775 and 775 |
 
 From the code: `false` gets the line `"umask"`. Another octal number `0xxx` gets its own line and its mode, if it gives the owner the read and the write bit. That is the rule of the git documentation for the key. No cell has those values.
-| H1 of round `s3p2` | Linux VM (7 runs), macOS VM | No daemon makes a `.claude-new-worktree*` entry or a `.s<n>` folder |
 
 On `89cb6289` the `.git` file has one text, `gitdir: <gitdir>/worktrees/w1\n`, and stays one file (6 of 6 runs, Linux VM).
 
@@ -650,10 +652,10 @@ The repository has `extensions.worktreeConfig = true` and a file `<gitdir>/confi
 | N16c of round `val-s3p2b2-3` | Windows VM | `core.filemode=true` is the first item, on the calls of `git.info`, on `rev-parse --absolute-git-dir`, on both `rev-parse --show-toplevel` calls and on the four `hash-object` calls |
 | A7b of round `val-s3p2b2-3`, N16c of that round | Linux VM, Windows VM | The four `git.status` calls with `--git-dir=<S>/.gitdir-<n>` keep the list of 28 items |
 | the six `p2-K` cells of round `val-s3p2b2-6`, and row U1 of that round for the four keys with an item | Linux VM, macOS VM (2 of 2 runs) | `core.autocrlf = input`, `core.ignorecase = true`, `core.symlinks = false` and `core.sparsecheckoutcone = true` each give a `-c` item, as the one key of the file. `core.hookspath = /x` and `user.name = n` give none |
-| `p2-K-sparsecheckoutcone-true` of that round, and row U2 | Linux VM, macOS VM (2 of 2 runs) | `git.status` on the new worktree makes 23 calls and lists the `config.worktree` file two times, with 34 bytes on standard input. The second read is call 9, after the first `hash-object` call and before the first `--git-dir=<S>/.gitdir-<n> config -z --list`. The four calls with `--git-dir=<S>/.gitdir-<n>` then start with `-c core.sparsecheckoutcone=true`, before the `--attr-source` option |
-| `p2-K-none-empty-file` of that round | Linux VM | With a file of 0 bytes in the new registration, `git.status` lists it one time |
+| `p2-K-sparsecheckoutcone-true` of that round, and row U2 | Linux VM, macOS VM (2 of 2 runs) | `git.status` on the new worktree makes 23 calls and lists the `config.worktree` file two times, with 34 bytes on standard input. The file of `w1` is a copy of the main file, so the cell cannot say which of the two files gives the read or the item. The second read is call 9, after the first `hash-object` call and before the first `--git-dir=<S>/.gitdir-<n> config -z --list`. The four calls with `--git-dir=<S>/.gitdir-<n>` then start with `-c core.sparsecheckoutcone=true`, before the `--attr-source` option |
+| `p2-K-none-empty-file` of that round | Linux VM | With a file of 0 bytes in the new registration, `git.status` lists it one time: 22 calls with one read (the call record of the cell) |
 | section 0 item 4 of round `val-s3p2b2-6` | Windows VM, 2 runs for each asked row and 1 for each extra row | The same four keys give an item. Five more do, each as the one key of the file: `core.safecrlf = true`, `core.quotepath = false`, `core.precomposeunicode = true`, `core.untrackedcache = true` and `core.longpaths = true`. `core.protectntfs = false` and `status.showUntrackedFiles = no` give none |
-| P2-K4 and P2-X2 of round `val-s3p2b2-6` | Windows VM, 2 runs and 1 run | `git.status` on the new worktree lists its `config.worktree` file as calls 5 and 9 of 23, for `sparsecheckoutcone = true` and for `sparsecheckout = true`. The four calls with `--git-dir=<S>\.gitdir-<n>` have 29 items, with the item of the file first |
+| P2-K4 and P2-X2 of round `val-s3p2b2-6` | Windows VM, 2 runs and 1 run | `git.status` on the new worktree lists its `config.worktree` file as calls 5 and 9 of 23, for `sparsecheckoutcone = true` and for `sparsecheckout = true`. The four calls with `--git-dir=<S>\.gitdir-<n>` have 29 items, with the item of the file first. The limit of the row of `p2-K-sparsecheckoutcone-true` holds here too |
 | F1 of round `val-s3p2b2-6` | Windows VM, 2 of 2 runs | A `git.info` on a path that does not exist, as the first git request of a daemon, makes 1 call, the excludes read. Its reply has no `settingsControl` member. The next `git.info` on the repository runs the start test. A later `git.info` on such a path makes 0 calls. On a path that is a file both builds make one `version` call |
 | 12a and 12c of round `val-s3p2b2-3` | Linux VM | On the read-tree the items come after the `lfs.storage` item |
 | 12a, 12b, 12d, 12e, H6, 1b, 9a and 9k of round `val-s3p2b2-3` | Linux VM | After the `worktree add`: `config --file <S>/.config-<n>/config.worktree --unset-all core.bare`, in the folder of the daemon, with `GIT_DIR=/dev/null`. In 12d and H6 a second call follows with `core.worktree`. That is 10 calls in 8 cells |
@@ -661,14 +663,14 @@ The repository has `extensions.worktreeConfig = true` and a file `<gitdir>/confi
 | the cells `p2u-12a`, `p2u-12d` and `p2u-12f` of round `val-s3p2b2-6` | Linux VM | With a daemon umask of 002 that file is `f 0664`. A trace has its open with mode 0666 |
 | section 0.2 item 4 of round `val-s3p2b2-6` | Linux VM, 20 cells | `<S>/.config-<n>` is `d 0700` and its file `f 0600`. A listing each 2 ms saw the folder for 24 to 43 ms in the 9 cells with an `--unset-all` call. It saw none in the 11 others. A trace of cell 12f has the mkdir and the two removes in one millisecond |
 | row U3 of round `val-s3p2b2-6` | macOS VM, 2 of 2 runs | `<S>/.config-<n>` goes after the file of the new registration is written and before `.index-<n>` comes, in 7 of 7 sightings. In cell 12a the registration file is there at 1.186 s, and the folder is gone at 1.197 s |
-| section 0 item 6 of round `val-s3p2b2-6` | Windows VM, 22 create runs | `<S>\.config-<n>` goes when the registration file appears. It was last seen 0 to 9 ms before the first sight of that file |
+| section 0 item 6 of round `val-s3p2b2-6` | Windows VM, 22 create runs | `<S>\.config-<n>` goes when the registration file appears. It was last seen 0 to 9 ms before the first sight of that file, in 19 of 22 create runs. The poll did not see the folder in the 3 others |
 | section 1.1 of round `val-s3p2b2-5` | Linux VM | After the create, `<gitdir>/worktrees/w1/config.worktree` (0644) holds the text of the file without `core.bare` and `core.worktree`. It has 0 bytes in 12d, 12e, 9a, 9k and H6. It has 25 bytes in 12c, 12f and 1a, and 48 bytes in 12a, 12b and 1b |
 | section 2 of round `val-s3p2b2-5` | Linux VM | `git.status` on the new worktree answers `{"isRepo":false,"clean":false}` in 12a, 12b, 12c, 12f, 1a and 1b, with 5 calls. In 12d, 12e and 9k it answers `{"isRepo":true,"clean":true}` |
 | 9a of round `s3p2b-edges2` | Linux VM | A create succeeds with `core.bare = true` in that file |
 
 `89cb6289` leaves the whole text there, with `core.bare`, in cells 12a, 12b, 12d and 12e of round `s3p2b-edges` (Linux VM). With `bare = true` in cell 9a of round `s3p2b-edges2` it refuses the create with `not_a_repo`.
 
-The way the file reaches the registration is not measured. No macOS or Windows cell has a create in such a repository.
+The way the file reaches the registration is not measured.
 
 ## claustrum and `5fd08069`
 
@@ -683,10 +685,10 @@ Round `val-s3p2b2-5` ran a build of this change beside `5fd08069`.
 | Windows VM | the cells of the round, 1363 wire lines of `5fd08069` | No reply line differs. 459 copied texts in 137 cell runs are equal |
 | Windows VM | cell 48, 170 cells and two controls | No row differs |
 
-The last edits of this change follow the rows that the round left open. They ran on no VM. Each has a test:
+The edits after that round follow the rows that it left open. Each has a test:
 
 - The bare `baseRepo` (cell `x2-bare-create`). claustrum refuses a `baseRepo` whose git directory no folder holds as its `.git` entry. That test is claustrum's own.
-- The `config.worktree` cells: the `-c` items, the `--unset-all` calls and the file of the new registration. claustrum sends `core.filemode`, `core.sparsecheckout` and `core.eol` as items. No cell has another key, and claustrum sends none. claustrum writes the file of the registration as a new file.
+- The `config.worktree` cells: the `-c` items, the `--unset-all` calls and the file of the new registration. claustrum then sent `core.filemode`, `core.sparsecheckout` and `core.eol` as items. The nine later keys are below. claustrum writes the file of the registration as a new file.
 - The `version` call of the include step, one time for each daemon (cell `v5-create`).
 - The second config read of a remove with a refused config (cells `x9-v3-own` and E1).
 - The `git version` call after a failed call about the repository and after a syntax error (cell 39, cells `x9-syntax-own` and E1b).
@@ -700,15 +702,15 @@ Round `val-s3p2b2-6` ran a build with those edits beside `5fd08069` on a Linux V
 - Four more keys of a `config.worktree` file as `-c` items (the `p2-K` cells).
 - The second read of the `config.worktree` file in `git.status` and its items (cell `p2-K-sparsecheckoutcone-true`).
 - No read of a `config.worktree` file of 0 bytes in the read of the config (cell `p2-K-none-empty-file`).
-- The folder `.config-<n>` goes after the file of the registration is written, before the next git call.
-- Mode 0666 before the umask for the `config.worktree` file of the registration and for the new `.git` file.
-- Each value of `core.sharedRepository` in the copy and in the mode of `<gitdir>/worktrees` (group P5).
+- The folder `.config-<n>` goes right after the file of the registration is written.
+- Mode 0666 before the umask for the `config.worktree` file of the registration and for the new `.git` file. For the `.git` file that mode is fitted: with umask 002 the file is `f 0664`, and no trace has its open.
+- The nine measured values of `core.sharedRepository` in the copy and in the mode of `<gitdir>/worktrees` (group P5).
 - One `version` call of the include step for each daemon with the member, and mode 0644 for its `patterns` file (group P3).
 
 The Windows VM of that round has the same rows for the keys, the second read, the folder `.config-<n>` and the `version` call. Three more edits follow its rows:
 
 - Five more keys of a `config.worktree` file as `-c` items (section 0 item 4).
-- No start test and no git call for a `git.info` on a path that does not exist (cell F1).
+- No start test for a `git.info` on a path that does not exist, and no git call beyond the excludes read of a first request (cell F1).
 - The item of `core.sparsecheckout` on the calls of `git.status` in the temporary git folder (cell P2-X2).
 
 Measured differences that stay. The reply lines are equal in each of them, except in the git-lfs cells.
@@ -732,10 +734,10 @@ claustrum has no sweep of the folders of other daemons and no limit on the count
 Round `val-s3p2b2-7` ran the same build beside `5fd08069` on a second Linux VM, in 74 cell runs. Cells P1, K1 and G1 are equal. Seven points differed. The edits for them follow the rows of that round and ran on no VM. Each has a test:
 
 - The absolute form of the run folder with a relative socket path (cell R1).
-- The copy of a `HEAD` link to a ref outside `refs/heads/` (cell H1).
-- One more call in `git.list_branches` and in a create where the trust check finds no repository (cell H1, mode 000).
-- The answers of `git.status` and of a create with a daemon folder that takes no new entry (cell F1).
-- The text of git in the reply after a call about the repository that exits 1 (cells P3).
+- The copy of a `HEAD` link to `refs/remotes/origin/<name>` (cell H1).
+- One more call in `git.list_branches` and in a create for a `HEAD` of mode 000 (cell H1).
+- The answers of `git.status` and of a create with a daemon folder of mode 0500 (cell F1).
+- The text of git in the reply after a call about the repository that exits 1. The text has one line in the cells (cells P3).
 - The order of `GIT_DIR` and `GIT_COMMON_DIR` with a daemon `GIT_DIR`, and the copy with both variables in the daemon environment (cells O1).
 - The git version at the end of the cause of a failed `init` (cell C2).
 
@@ -758,15 +760,21 @@ On `5fd08069`:
 - A `worktree add` that git itself fails on Windows. The cells used a wrapper.
 - `.s<n>` for a repository with `shallow`, `info\attributes` or a rebase.
 - The staging step and the cleanup on a macOS VM, beyond "no such entry is made".
-- A `config.worktree` key other than the eighteen of the cells. Twelve give an item, and six give none: `core.bare`, `core.worktree`, `core.hookspath`, `user.name`, `core.protectntfs` and `status.showUntrackedFiles`. Two of the nine new keys in one file. The five keys of the Windows extra rows on Linux and macOS VMs. A create in such a repository on macOS and Windows VMs.
+- A `config.worktree` key other than the eighteen of the cells. Twelve give an item, and six give none: `core.bare`, `core.worktree`, `core.hookspath`, `user.name`, `core.protectntfs` and `status.showUntrackedFiles`. Two of the nine new keys in one file. The five keys of the Windows extra rows on Linux and macOS VMs. `core.eol` on a macOS VM. A second value of a key other than `core.filemode`.
 - The second `config.worktree` read of `git.status` for a file with `index.sparse`, and with the member.
-- A `git.info` on a path that does not exist on Linux and macOS VMs.
+- A `git.info` on a path that does not exist on Linux and macOS VMs. The place of that test among the refusals, an empty path and a dangling link.
 - `core.sharedRepository` as `false` or as another octal number, a `worktrees` folder that is there before the create, and macOS and Windows VMs.
 - A bare `baseRepo` with the member.
 - Two requests at the same time during a start test.
+- A test call that exits in time while a child holds its output pipe. Call 7 of the test held, failed or ended.
+- A `HEAD` link to `refs/tags/<name>` or to another name under `refs/`.
+- A call about the repository that exits 1 with two error lines, or that exits 2 with a text.
+- A daemon folder that takes no new entry for another cause than mode 0500.
+- The mode of the create of the new `.git` file. No cell has a daemon umask of 000.
+- A staging move that fails on Windows.
 
 On claustrum, from the code and its tests:
 
-- The last edits of this change, listed above.
-- The Windows steps of the create ran in round `val-s3p2b2-5`. The edits after that round ran on no Windows VM.
+- The edits for the rows of rounds `val-s3p2b2-6` and `val-s3p2b2-7`, listed above.
+- The Windows steps of the create ran in round `val-s3p2b2-5`. Round `val-s3p2b2-6` ran creates on a Windows VM with the edits after that round.
 - The git calls of a request with the member on a build of this change. Round `val-s3p2b2-1` ran the replies of such requests (cells S1). The two later rounds sent no member.

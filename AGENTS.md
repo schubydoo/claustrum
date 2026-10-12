@@ -291,7 +291,7 @@ The JSON-RPC surface is identical on every OS. Full internals →
       directory of `baseRepo` (`sweepOldStaging`, `worktreestaging.go`). Those
       are entries whose name starts with `.claude-new-worktree-`. The daemon
       did not make them, and `baseRepo` comes from the request. `5fd08069` does
-      the same (cell 48 of round `s3p2b-edges3`, 248 cells, Windows VM). The
+      the same (cell 48 of round `s3p2b-edges3`, Windows VM). The
       maintainer decided on 2026-10-11 to build that step as measured. It runs
       in the state `shadow` only, after a good `git worktree add` and before
       the daemon makes its own staging folder. The guards run in this order.
@@ -300,17 +300,18 @@ The JSON-RPC surface is identical on every OS. Full internals →
       listed through that root, so each name is a direct entry of the git
       directory. The name must start with the fixed prefix, with the dash. The
       entry is read with `Lstat` through the root, so no link and no junction
-      is followed. Its own write time must be 1 hour old or more. On
-      `5fd08069` an entry of 3596.42 s stays and one of 3601.28 s goes.
+      is followed. Its own write time must be 1 hour old or more.
       `wipesHomeDir` then refuses an entry that is home or holds it. Only a
       real folder goes as a tree, with one `os.Root.RemoveAll` of that name. A
       file, a link and a junction go with one plain `os.Root.Remove`, so the
-      target of a junction stays. Round `val-s3p2b2-5` ran 170 cells and two
-      controls on a claustrum build and on `5fd08069` (Windows VM). No row
-      differs. In each of the 42 junction rows the target folder and its
-      marker file stayed. An entry that cannot be removed logs one line, and
+      target of a junction stays. Round `val-s3p2b2-5` ran a claustrum build
+      beside `5fd08069` in that cell (Windows VM). No row differs, and the
+      target of each junction stayed. The
+      [record](docs/record/git-settings-copy.md#the-cleanup-of-old-staging-entries)
+      has the rows. An entry that cannot be removed logs one line, and
       the create goes on (not measured). `git.info` and `git.status` remove no
-      entry (`5fd08069`, 120 cells). From the code: a create that fails, a
+      entry (`5fd08069`, the same cell). From the code: a create whose
+      `worktree add` fails, a
       request with `"shadowDirOff":true` and the state `fallback-git` run no
       cleanup. Those three are not measured on `5fd08069`. Linux and macOS run
       no such step (`5fd08069`, cell H2 of round `s3p2`, Linux VM). Do not
@@ -427,9 +428,10 @@ The JSON-RPC surface is identical on every OS. Full internals →
       write left.
     - The short-lived entries of one request: `.gitdir-<n>`, `.index-<n>`,
       `.worktreeinclude-<n>`, `.config-<n>`, and `.s<n>` on Windows. Each goes
-      at the end of its step or at the reply. `.config-<n>` goes before the
-      next git call of its create, as on `5fd08069` (round `val-s3p2b2-6`,
-      Linux and macOS VMs).
+      at the end of its step or at the reply. `.config-<n>` goes right after
+      the file of the registration is written, as on `5fd08069` (round
+      `val-s3p2b2-6`, Linux and macOS VMs). It goes at the reply of a create
+      that is refused before that step.
   On Linux and macOS the folder of a repository holds a link `worktrees` into
   the git directory. The root removes that link and not its target
   (`TestShadowFolderRemovalLeavesLinkTargets`). A new copy is a temp file plus
@@ -440,12 +442,15 @@ The JSON-RPC surface is identical on every OS. Full internals →
   `git-shadow` from a request value.
 - In the state `shadow` `git.worktree_create` writes into the git directory of
   `baseRepo` and into the new worktree. None of these steps is a tree delete.
-  Each goes through an `os.Root`, with a fixed name or a name that the daemon
-  read through that root:
+  Each of the first four goes through an `os.Root`, with a fixed name or a name
+  that the daemon read through that root. The fifth uses path calls: a temp file
+  `index.tmp-*` in the registration, one `os.Rename` onto `index`, and a plain
+  `os.Remove` of the temp file after a failure. The steps are these:
     - The folder `<git dir>/worktrees` (0777 less the umask), made before the
       add through a root at the pinned git directory. It stays after a failed
       add, as on `5fd08069` (cells N2 of round `val-s3p2b2-3`, Linux and macOS
-      VMs). With a `core.sharedRepository` value other than `umask`, one
+      VMs). On Linux and macOS, with the value `group`, `true`, `all`, `world`,
+      `everybody` or an octal number that git accepts, one
       `os.Root.Chmod` sets its mode by that value, with the set-group-ID bit.
       That chmod acts only on the folder that this call just made (`5fd08069`,
       the 18 rows of group P5 of round `val-s3p2b2-6`, Linux VM).
@@ -464,8 +469,9 @@ The JSON-RPC surface is identical on every OS. Full internals →
       with an exclusive create (`writeWorktreeConfig`). It goes through a root
       at the pinned git directory and then a root at the registration. The
       registration must be a direct entry of `<git dir>/worktrees` and a real
-      folder. It must be the folder that the tests after the add accepted, by
-      identity. With no answer of git, its `gitdir` record must name the leaf.
+      folder. On Linux and macOS it must be the folder that the tests after
+      the add accepted, by identity. With no answer of git, its `gitdir`
+      record must name the leaf. On Windows neither test runs.
       A file at that name stays. `5fd08069` leaves such a file after a create
       (round `val-s3p2b2-5`, Linux VM). How it gets there is not measured.
       Before that step the daemon runs `git config --file <its own file>
@@ -583,8 +589,10 @@ goes on as it did before that read. `git.worktree_create` is the exception. Its
 rollback deletes after a failed or killed read-tree checkout, and it removes an
 empty leaf after a failed add. Never read a fired `git-timeout` as "git refused".
 Opting D5 in is wire-visible. From the code: the deadline also bounds the calls
-of the settings copy, which have a bound of 30 seconds of their own. A kill
-there refuses the request and starts no delete. The Windows cleanup of old
+of the settings copy, which have a bound of 30 seconds of their own. A kill of
+a test call or of the call about the repository refuses the request. A kill of
+an `--unset-all` call leaves the new worktree without its `config.worktree`
+file. None starts a delete. The Windows cleanup of old
 staging entries runs after a good add only.
 
 D13 is a non-flag divergence: verify-before-decompress ordering, on `-cli-url` and on a `-cli-zst` blob with a checksum. D13 is

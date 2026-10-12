@@ -869,7 +869,7 @@ below give the trigger and the result shape. Codes are `-32602` unless noted.
 | git.status / git.list_branches | `signal: killed` | -32603, D5 opt-in only |
 | git.status | `<file>: not a regular file` | -32603. claustrum's own text, from the copy into the temporary git folder after the gate passed. `<file>` is `info/sparse-checkout` when that entry is a folder or a FIFO. The reference is not measured there |
 | git.status | `<file> is larger than <n> bytes` | -32603. claustrum's own text, for a copied file over its bound, also one that grew after the gate. `<n>` is 1073741824 for `index`, `sharedindex.*`, `info/sparse-checkout` and a reftable file, and 1048576 for `HEAD` and `config.worktree`. The reference is not measured there |
-| git.status | `<os error>` of the copy or of the temporary folder, for example `openat index: permission denied` or `stat <dir>: no such file or directory` | -32603. The raw Go error when a file of the entry cannot be copied, as an `index` of mode 000, or when the temporary git folder or a file in it cannot be made. The reference is not measured there |
+| git.status | `<os error>` of the copy or of the temporary folder, for example `openat index: permission denied` or `stat <dir>: no such file or directory` | -32603. The raw Go error when a file of the entry cannot be copied, as an `index` of mode 000, or when a file of the temporary git folder cannot be made. With `"shadowDirOff":true`, and on a server with no run folder, a temporary folder that cannot be made answers the raw Go error too. The reference is not measured there. In the states `shadow` and `fallback-git` a `.gitdir-<n>` that cannot be made answers `{"isRepo":false,"clean":false}`. `5fd08069` answers so in the state `shadow` for a folder of the daemon of mode 0500 (cell F1 of round `val-s3p2b2-7`, Linux VM, one run). The state `fallback-git` and another cause are from the code |
 | git.* | `config-defined hooks could not be pinned off; git not run: inherited GIT_CONFIG_COUNT "<value>" is not a count` | in the frame of each method, when the daemon's own `GIT_CONFIG_COUNT` does not parse. See "The daemon's own git environment" |
 | git.* | `config-defined hooks could not be pinned off; git not run: inherited GIT_CONFIG pair <n> is incomplete` | in the frame of each method, when a pair below the daemon's `GIT_CONFIG_COUNT` is not set. See "The daemon's own git environment" |
 | git.* | `config-defined hooks could not be pinned off; git not run: listing the configuration in force: exit status 128: <git text>` | in the frame of each method, for a `GIT_CONFIG_KEY_<n>` of the daemon that git cannot read. A folder that holds no repository gets it too. `89cb6289` answers so in rows A-N1 to A-N6, A-N5b, A-S1 and A-X2 on Linux and macOS VMs, except row A-N5 on macOS. On a Windows VM the cells are P3-infoN, P3-infoX, P3-lbN, P3-statN, P3-crN, P3-rmN and Wf-P3-crNroot. See "The daemon's own git environment" |
@@ -879,7 +879,7 @@ below give the trigger and the result shape. Codes are `-32602` unless noted.
 | git.* | `a file in this repository's .git directory cannot be used: <detail>` | The same frames. See [Repository config refusals](#repository-config-refusals) |
 | git.* | `Claude could not test git on the remote machine (<cause>). Check free disk space and quota there, then try again.` | -32603 on `git.info`, `git.status` and `git.list_branches`, and in the frame of `git.worktree_create` and `git.worktree_remove`. Since `5fd08069`. See [The settings copy](#the-settings-copy) |
 | git.* | `Claude could not prepare its own files on the remote machine: cannot write its copy of the repository's git config: <cause>` | The same frames. The daemon cannot make the folder of the copy |
-| git.* | `git could not check this repository on the remote machine: at "<root>": exit status <n>` | The same frames, for a failed call about the repository. After an exit 1 with a text, the last error line of git stands in the place of `exit status <n>` |
+| git.* | `git could not check this repository on the remote machine: at "<root>": exit status <n>` | The same frames, for a failed call about the repository. After an exit 1 with a text, the text of git stands in the place of `exit status <n>` (one line in the cell) |
 | git.* | `git could not check this repository on the remote machine: it did not finish within 30 seconds in "<root>"; try again` | The same frames, for a call about the repository that the daemon ended |
 | git.* | `git and Claude disagree about which repository holds this folder: from "<root>" git finds "<path>", Claude finds "<git directory>"; try again` | The same frames, for a call about the repository that names another path |
 | git.* | `config-defined hooks could not be pinned off; git not run: listing the configuration in force: a configuration key is longer than the listing reads` | in the frame of each method (see the table in "Git-directory trust check" for `git.worktree_remove`), for a configuration key over 1048576 bytes. `89cb6289` measured `git.info`. See "Hardened git calls" |
@@ -2154,16 +2154,17 @@ last member of the result. No other method sends it, and an error reply has none
 
 | `settingsControl` | When | What it changes |
 |---|---|---|
-| no member | The daemon ran no start test yet | Nothing. A folder with no repository, or a `HEAD` that is no ref, starts no test (cell E5 of round `s3p2`, Linux VM) |
+| no member | No start test of the daemon gave a state yet | Nothing. A folder with no repository, or a `HEAD` that is no ref, starts no test (cell E5 of round `s3p2`, Linux VM) |
 | `"shadow"` | The start test passed | The git calls name the copy. Before them the daemon asks git about the repository |
 | `"fallback-git"` | The git of the host does not work on such a copy. `5fd08069` reports it on git 2.11.4 and 2.12.5 (round `s3p2-oldgit`, Linux VM) | The git calls name the git directory. The daemon reads no config of the repository and gives no config refusal. It makes no copy and does not ask git about the repository |
 | `"off-switch"` | The request has `"shadowDirOff":true` | For that request the git calls name the git directory. No test runs, no folder is made and no config is read |
 
 - After the test, the "no repository" reply has the member too:
   `{"isRepo":false,"repoSlug":"","defaultBranch":"","settingsControl":"shadow"}`.
-- A `git.info` on a path that does not exist starts no test and runs no git
-  call. As the first git request of a daemon its reply has no member (cell F1 of
-  round `val-s3p2b2-6`, Windows VM). Linux and macOS are not measured.
+- A `git.info` on a path that does not exist starts no test. As the first git
+  request of a daemon it makes one call, the excludes read, and its reply has no
+  member. A later one makes none (cell F1 of round `val-s3p2b2-6`, Windows VM).
+  Linux and macOS are not measured.
 - A request with `"shadowDirOff":true` gets `"off-switch"` in three more cases. It
   is the first request of a daemon. Or its reply is "no repository". Or a failed
   start test is kept. The cells are A1 and B1 of round `s3` and cell 32 of round
@@ -2190,14 +2191,12 @@ reply. If the test fails, the request gets this text:
 
 `Claude could not test git on the remote machine (<cause>). Check free disk space and quota there, then try again.`
 
-| Method | Answer |
-|---|---|
-| `git.info`, `git.status`, `git.list_branches` | `{"jsonrpc":"2.0","id":N,"error":{"code":-32603,"message":"<text>"}}` |
-| `git.worktree_create` | `{"result":{"success":false,"error":"<text>","errorCode":"worktree_add_failed"}}` |
-| `git.worktree_remove` | `{"result":{"success":false,"error":"failed to remove worktree: could not check whether <worktreePath> is locked: <text>"}}`, with no `errorCode` |
-
-The shapes are cell 30 of round `s3p2b-edges` (Linux VM) and section S4 of round
-`val-s3p2b2-1` (macOS and Windows VMs). `89cb6289` answers those requests normally.
+The text has three shapes. `git.info`, `git.status` and `git.list_branches` answer
+it as a `-32603` error. `git.worktree_create` answers it in `error`, with the
+`errorCode` `worktree_add_failed`. `git.worktree_remove` answers it after `failed
+to remove worktree: could not check whether <worktreePath> is locked: `, with no
+`errorCode`. The [record](record/git-settings-copy.md#the-start-test) has the
+three frames and their cells. `89cb6289` answers those requests normally.
 
 | `<cause>` | When |
 |---|---|
@@ -2206,16 +2205,22 @@ The shapes are cell 30 of round `s3p2b-edges` (Linux VM) and section S4 of round
 | the same with ` (git version <v>)` at its end | The failed or ended call was `init` (cell C2 of round `val-s3p2b2-7`, Linux VM, for an `init` that exits 1) |
 | `mkdir <path>: <reason>` or `open <path>: <reason>`, with no quotes | A folder or the lock file of the daemon cannot be made |
 
+From the code: call 7 gives the Go error of the call, and a `config --get` call
+with another answer gives `unexpected answer`. Neither is measured. The cells of
+a failed call have one error line.
+
 - The daemon keeps a failure for 10 seconds from the end of the failed test. A
-  request in that time gets the kept text with no git call. On `5fd08069` 9.90 s is
-  kept and 10.00 s tests again (cell 26 of round `s3p2b-edges`, Linux VM). The
-  macOS and Windows values are 9.904 and 10.007 s, and 9.910 and 10.006 s.
+  request in that time gets the kept text with no git call. The
+  [record](record/git-settings-copy.md#the-start-test) has the times of the
+  Linux, macOS and Windows VMs.
 - The kept failure holds after its cause is gone. A request with
   `"shadowDirOff":true` works in that time.
 - A test call that a wrapper holds 29 s passes. One held 32 s gives the error at
   about 31 s (cell 31 of round `s3p2b-edges`, Linux VM).
 - From the code: claustrum bounds a test call at 30 seconds, and it waits 1 more
-  second for the output of that call. That split is fitted to the 31 s.
+  second for the output of that call. The 1 second is fitted from the Linux rows.
+  A call that exits in time while a child holds its output pipe for more than
+  that wait fails the test. That state is not measured on `5fd08069`.
 
 ##### The folders
 
@@ -2233,8 +2238,8 @@ in it for its whole life. On Windows the hold is an open handle with no sharing.
 - The folder of one repository is `<folder of the daemon>/<32 hex>`. The name is
   the first 32 hex digits of the sha256 of the path of the git directory. A linked
   worktree uses the folder of its main repository.
-- That folder holds `HEAD`, `config`, `info/exclude` and the empty folders
-  `objects` and `refs`. On Linux and macOS it holds a link `worktrees` to the
+- That folder holds `HEAD`, `config`, the empty folders `objects` and `refs`,
+  and `info/exclude` where the repository has it. On Linux and macOS it holds a link `worktrees` to the
   `worktrees` folder of the git directory. On Windows it has no such entry.
 - More copies follow the state of the repository: `shallow`, `info/attributes`,
   `rebase-merge/head-name`, `rebase-apply/head-name` and `BISECT_START`. The
@@ -2246,24 +2251,25 @@ in it for its whole life. On Windows the hold is an open handle with no sharing.
   (cell Q-S4c of round `val-s3p2b2-3`, Windows VM).
 - One request also keeps short-lived entries in the folder of the daemon:
   `.gitdir-<n>` for a `git.status`, and `.index-<n>` and `.worktreeinclude-<n>` for
-  a create. With `"shadowDirOff":true` those entries are in the temporary folder,
-  as `claude-ssh-gitdir-<n>`, `claude-ssh-index-<n>` and
-  `claude-ssh-worktreeinclude-<n>`.
+  a create. Also `.config-<n>` for a create in a repository with a
+  `config.worktree` file, and `.s<n>` on Windows. With `"shadowDirOff":true` the
+  first three are in the temporary folder, as `claude-ssh-gitdir-<n>`,
+  `claude-ssh-index-<n>` and `claude-ssh-worktreeinclude-<n>`.
 
 If the folder of a repository cannot be made, the request gets this text in the
 three shapes of the start test:
 
 `Claude could not prepare its own files on the remote machine: cannot write its copy of the repository's git config: <cause>`
 
-`5fd08069` answers `mkdir <path>: permission denied` and `mkdir <path>: not a
-directory` as the cause on a Linux VM. On a Windows VM it answers `mkdir <path>: The
-system cannot find the path specified.` (cells N4 of round `val-s3p2b2-3`). The same
-request again gets the same line with no git call.
+The cause is the `mkdir` error of the folder. The
+[record](record/git-settings-copy.md#the-folder-of-one-repository) has the three
+causes of `5fd08069` (cells N4 of round `val-s3p2b2-3`, Linux and Windows VMs).
+The same request again gets the same line with no git call.
 
 claustrum does not remove the folder of another daemon, and it has no limit on the
-count of repositories. A daemon that ended with `SIGKILL` leaves its folder.
-`5fd08069` removes that folder at the first request of the next daemon (cell B4 of
-round `s3`, Linux and macOS VMs).
+count of repositories. The
+[record](record/git-settings-copy.md#claustrum-and-5fd08069) has the cells of
+`5fd08069` for a daemon that ended with `SIGKILL`.
 
 ##### The copied settings file
 
@@ -2300,7 +2306,7 @@ A change of the root folder or of its `.git` entry makes the daemon ask again.
 |---|---|
 | exit 128 with a text, such as git's "dubious ownership" text | The "no repository" answer of each method. No config is read, and no copy is made |
 | exit 1, or exit 128 with no text | `git could not check this repository on the remote machine: at "<root>": exit status <n>` |
-| exit 1 with a text | the same text with the last error line of git in the place of `exit status 1` (cells P3 of round `val-s3p2b2-7`, Linux VM) |
+| exit 1 with a text | the same text with the text of git in the place of `exit status 1`. The text has one line in the cells (cells P3 of round `val-s3p2b2-7`, Linux VM) |
 | another path than the git directory, in two calls | `git and Claude disagree about which repository holds this folder: from "<root>" git finds "<path>", Claude finds "<git directory>"; try again` |
 | no answer in 30 seconds | `git could not check this repository on the remote machine: it did not finish within 30 seconds in "<root>"; try again` |
 
@@ -2311,7 +2317,7 @@ request asks again, and a remove asks two times. For a repository of another own
 with no `safe.directory`, `git.worktree_remove` answers the lock-check refusal that
 ends `(its registrations could not be examined); retry`.
 
-After a call that failed with no text, one `git version` call follows. The same
+After a call that exits 1, or exits 128 with no text, one `git version` call follows. The same
 call follows a config read that failed with a syntax error (cells 39 and
 `x9-syntax-own` of round `val-s3p2b2-5`, Linux VM).
 
@@ -2336,7 +2342,9 @@ place, in a repository with that extension and a `config.worktree` file:
   `core.quotepath`, `core.precomposeunicode`, `core.untrackedcache` and
   `core.longpaths`. A call on a linked worktree gets the items of the file of
   that worktree. The cells are in rounds `val-s3p2b2-3` and `val-s3p2b2-6`, on
-  Linux, macOS and Windows VMs. The last five keys ran on a Windows VM only. claustrum sends no other key. The
+  Linux, macOS and Windows VMs. `core.eol` ran on Linux and Windows VMs. The
+  last five keys ran on a Windows VM only. In the rows of the record each key
+  but `core.filemode` has one value. claustrum sends no other key. The
   [record](record/git-settings-copy.md) has the keys that give no
   item.
 - A new worktree of `git.worktree_create` gets its own `config.worktree` file. See
@@ -2389,11 +2397,10 @@ that measured it.
   `89cb6289` sends four heavy variables: it has no `GIT_NO_REPLACE_OBJECTS` and no
   `GIT_GRAFT_FILE` there. Without the member, in the states `shadow` and
   `fallback-git`, the light calls of a create and their listings carry six values.
-  They are, in this order, `GIT_ALLOW_PROTOCOL=denied_by_claude_ssh`,
-  `GIT_TERMINAL_PROMPT=0`, `GIT_NO_REPLACE_OBJECTS=1`, `GIT_GRAFT_FILE=<null>`,
-  `GIT_NO_LAZY_FETCH=1` and an empty `GIT_ASKPASS`. The three listings of the branch
-  step of a remove carry them too. `5fd08069` sends them in cells A3 and A4 of round
-  `val-s3p2b1` (Linux, macOS and Windows VMs, the order from Linux and macOS VMs).
+  The three listings of the branch step of a remove carry them too. The
+  [record](record/git-settings-copy.md#the-git-calls-in-the-state-shadow) has the
+  six values in order, with the cells of `5fd08069` (cells A3 and A4 of round
+  `val-s3p2b1`).
   Cell Q-S4c of round `val-s3p2b2-3` shows the values in the state `fallback-git`
   (Windows VM). The checkout and its listings keep the four light values. Then comes
   `GIT_COMMON_DIR` when the
@@ -2506,8 +2513,8 @@ that measured it.
       its test: `claude-ssh-gitdir-<n>`, `claude-ssh-index-<n>` and
       `claude-ssh-worktreeinclude-<n>/patterns`. `5fd08069` has those names in
       cells A1 and A3 of round `val-s3p2b1` (Linux, macOS and Windows VMs).
-    - The last edits of the settings copy follow rows of rounds `val-s3p2b2-5`
-      and `val-s3p2b2-6` and ran on no VM. The record of the copy lists them.
+    - The last edits of the settings copy follow rows of rounds `val-s3p2b2-6`
+      and `val-s3p2b2-7` and ran on no VM. The record of the copy lists them.
 - Graft hint. With `GIT_GRAFT_FILE` set, git can print 8 `hint:` lines about
   `info/grafts` on standard error. The light list turns them
   off with `advice.graftFileDeprecated=false`. The heavy list does not. On
@@ -2618,8 +2625,10 @@ that measured it.
 - Temporary names. In the states `shadow` and `fallback-git` the short-lived
   folders of a request are in the folder of the daemon: `.gitdir-<n>` for
   `git status`, `.index-<n>` for the checkout and `.worktreeinclude-<n>` for the
-  include step. See [The settings copy](#the-settings-copy). With
-  `"shadowDirOff":true` they are in the temporary directory. The git dir of
+  include step. Two more are `.config-<n>` for a create in a repository with a
+  `config.worktree` file, and `.s<n>` on Windows. See
+  [The settings copy](#the-settings-copy). With
+  `"shadowDirOff":true` the first three are in the temporary directory. The git dir of
   `git status` then starts with `claude-ssh-gitdir-`, and the folder of the include
   step with `claude-ssh-worktreeinclude-`. `5fd08069` has those two names in cells A1
   and A3 of round `val-s3p2b1` (Linux, macOS and Windows VMs). The temporary index
@@ -2824,8 +2833,8 @@ check (Windows VM).
 `{path[,shadowDirOff]}` → repo: `{"isRepo":true,"repo":"<dir>","branch":"<b>","root":"<abs>","repoSlug":"<owner/repo>","defaultBranch":"<b>"[,"settingsControl":"<state>"]}` · non-repo: `{"isRepo":false,"repoSlug":"","defaultBranch":""[,"settingsControl":"<state>"]}`
 
 - `settingsControl` is the last member, since `5fd08069`. Its values are
-  `"shadow"`, `"fallback-git"` and `"off-switch"`. A daemon that ran no start test
-  yet sends no such member. See [The settings copy](#the-settings-copy).
+  `"shadow"`, `"fallback-git"` and `"off-switch"`. Before a start test of the
+  daemon gave a state, there is no such member. See [The settings copy](#the-settings-copy).
 
 - `repo` is the base name of `root`. A name that starts with `-` or `+` leaves the
   member out, and the other members keep their order: `{"isRepo":true,"branch":"main","root":"<F>/-repo","repoSlug":"i/r","defaultBranch":"main"}`.
@@ -3265,9 +3274,15 @@ claustrum opens each file without blocking and reads a regular file only.
   gate passed. The reference is not measured in any of them. `<file>: not a regular
   file` answers an `info/sparse-checkout` that is a folder or a FIFO.
   `<file> is larger than <n> bytes` answers a copied file over its bound, also one
-  that grew after the gate. A file that cannot be copied
-  and a temporary folder that cannot be made answer the raw Go error, for example
-  `openat index: permission denied`.
+  that grew after the gate. A file that cannot be copied answers the raw Go
+  error, for example `openat index: permission denied`. With
+  `"shadowDirOff":true`, and on a server with no run folder, a temporary folder
+  that cannot be made answers the raw Go error.
+- In the states `shadow` and `fallback-git` a `.gitdir-<n>` that cannot be made
+  answers `{"isRepo":false,"clean":false}`. `5fd08069` answers so in the state
+  `shadow` for a folder of the daemon of mode 0500 (cell F1 of round
+  `val-s3p2b2-7`, Linux VM, one run). The state `fallback-git` and another cause
+  are from the code.
 - Not measured: a failure of the listing in the temporary folder. claustrum answers
   the hooks refusal, as for the listing of rule 5.
 - `changes` starts with the stdout lines of `status`. Stderr warnings never appear.
