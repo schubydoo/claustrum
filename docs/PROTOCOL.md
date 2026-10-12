@@ -2219,8 +2219,17 @@ a failed call have one error line.
   about 31 s (cell 31 of round `s3p2b-edges`, Linux VM).
 - From the code: claustrum bounds a test call at 30 seconds, and it waits 1 more
   second for the output of that call. The 1 second is fitted from the Linux rows.
-  A call that exits in time while a child holds its output pipe for more than
-  that wait fails the test. That state is not measured on `5fd08069`.
+- A test call that exits in time counts by its exit code, also while a child
+  holds its output pipes. With such a child on the `init` call, `5fd08069` starts
+  the next call about 1 s later and the test passes (cell N-a of round
+  `val-s3p2b2-8`, Linux VM). The eight other calls with that wait get the same
+  rule (not measured).
+- Call 7, the listing of the test config, has no such 1 second wait. With a child
+  that holds its pipes 5 s, `5fd08069` goes on when the pipes close, and the test
+  passes (cell N-b). A call 7 that runs 40 s ends at 30 s with the cause `this
+  repository's git config cannot be used: git did not finish reading "<config of
+  the test repository>" within 30 seconds; try again` (cell N-c). A child that
+  holds the pipes of call 7 for more than 30 s is not measured.
 
 ##### The folders
 
@@ -2306,7 +2315,7 @@ A change of the root folder or of its `.git` entry makes the daemon ask again.
 |---|---|
 | exit 128 with a text, such as git's "dubious ownership" text | The "no repository" answer of each method. No config is read, and no copy is made |
 | exit 1, or exit 128 with no text | `git could not check this repository on the remote machine: at "<root>": exit status <n>` |
-| exit 1 with a text | the same text with the text of git in the place of `exit status 1`. The text has one line in the cells (cells P3 of round `val-s3p2b2-7`, Linux VM) |
+| exit 1 or exit 2 with a text | the same text with the text of git in the place of `exit status 1`. Two lines stand there with one space between them (cells P3 of round `val-s3p2b2-7` and cell N-f of round `val-s3p2b2-8`, Linux VM) |
 | another path than the git directory, in two calls | `git and Claude disagree about which repository holds this folder: from "<root>" git finds "<path>", Claude finds "<git directory>"; try again`. `<path>` is the path as git printed it: with forward slashes on Windows (table P2 of round `val-s3p2b2-7`, Windows VM) |
 | no answer in 30 seconds | `git could not check this repository on the remote machine: it did not finish within 30 seconds in "<root>"; try again` |
 

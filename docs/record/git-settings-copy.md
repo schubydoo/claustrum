@@ -21,6 +21,7 @@ The cells ran on three VMs. The Linux VM has git 2.43.0, the macOS VM has git 2.
 | `val-s3p2b2-1`, `val-s3p2b2-3`, `val-s3p2b2-5` | Linux, macOS and Windows VMs | `5fd08069` and a build of this change. Some cells also ran `89cb6289` |
 | `val-s3p2b2-6` | Linux, macOS and Windows VMs | `5fd08069` and a build with the edits after round `val-s3p2b2-5`. Some Linux cells also ran `89cb6289` |
 | `val-s3p2b2-7` | a second Linux VM | `5fd08069` and the build of round `val-s3p2b2-6` |
+| `val-s3p2b2-8` | the second Linux VM, 106 cell runs | `5fd08069` and a build with the edits after round `val-s3p2b2-7` |
 | `val-s3p2b2-7`, Windows part | Windows VM, 400 cell runs | `5fd08069` and a build of this change. Its cells are named with "Windows VM" below |
 
 Five `val-s3p2b2` rounds compared a build of this change with `5fd08069`. The edits for the rows of rounds `val-s3p2b2-6` and `val-s3p2b2-7` have tests and ran on no VM. "claustrum and `5fd08069`" below names what each round left open.
@@ -543,7 +544,7 @@ A daemon with `GIT_DIR` of another repository in its environment (cells O1 of ro
 | `GIT_DIR` and `GIT_COMMON_DIR` | Both name the git directory of the other repository. Two different values are not measured. The same 27 calls with the same variables, and the folder `<R>` is made. The start test calls and the config reads keep the `GIT_COMMON_DIR` of the daemon |
 | both cells | A create makes the branch `w1` in the other repository |
 
-From the code: the pair of calls of a remove that finds the registration keeps the `GIT_COMMON_DIR` of the daemon. No cell has that pair with both variables.
+With both variables in the daemon environment, calls 3 to 6 of a second remove are two `--git-dir=` pairs. On `5fd08069` each has `GIT_DIR=<other>/.git`, the six profile values, `GIT_COMMON_DIR=<S>/<R>` and `GIT_OBJECT_DIRECTORY=<other>/.git/objects`, in this order (cell N-g of round `val-s3p2b2-8`, Linux VM). The replies and both repositories are equal on both builds. The create makes the branch and the registration in the other repository, and the remove leaves the branch there.
 
 ## The create on Linux and macOS
 
@@ -747,7 +748,7 @@ Round `val-s3p2b2-6` ran a build with those edits beside `5fd08069` on a Linux V
 - The second read of the `config.worktree` file in `git.status` and its items (cell `p2-K-sparsecheckoutcone-true`).
 - No read of a `config.worktree` file of 0 bytes in the read of the config (cell `p2-K-none-empty-file`).
 - The folder `.config-<n>` goes right after the file of the registration is written.
-- Mode 0666 before the umask for the `config.worktree` file of the registration and for the new `.git` file. For the `.git` file that mode is fitted: with umask 002 the file is `f 0664`, and no trace has its open.
+- Mode 0666 before the umask for the `config.worktree` file of the registration and for the new `.git` file. With a daemon umask of 000 both files are `f 0666` on both builds, with 002 `f 0664` and with 022 `f 0644` (cell N-d of round `val-s3p2b2-8`, Linux VM).
 - The nine measured values of `core.sharedRepository` in the copy and in the mode of `<gitdir>/worktrees` (group P5).
 - One `version` call of the include step for each daemon with the member, and mode 0644 for its `patterns` file (group P3).
 
@@ -787,6 +788,22 @@ Round `val-s3p2b2-7` ran the same build beside `5fd08069` on a second Linux VM, 
 - The order of `GIT_DIR` and `GIT_COMMON_DIR` with a daemon `GIT_DIR`, and the copy with both variables in the daemon environment (cells O1).
 - The git version at the end of the cause of a failed `init` (cell C2).
 
+Round `val-s3p2b2-8` ran a build with those seven edits beside `5fd08069` on the second Linux VM. All seven points are equal now. Four more points differed, and these rows confirm rules that were not measured before:
+
+| Cell | Linux VM | `5fd08069` |
+|---|---|---|
+| N-a | 2 of 2 runs | A child holds the output pipes of the test `init` for 5 s. The next test call starts 1.02 s and 1.06 s after the `init` ended. The first reply is normal at 1.477 s and 2.301 s. With a child of 0.5 s the next call starts at 0.572 s |
+| N-b | 2 of 2 runs | The same child on call 7. The next call starts at 5.345 s and 5.189 s, and the replies are normal |
+| N-c | 2 of 2 runs | Call 7 runs 40 s. The wrapper process is gone at 30.483 s and 30.219 s, and the reply is `Claude could not test git on the remote machine (this repository's git config cannot be used: git did not finish reading "<S>/.check-<n>/real/.git/config" within 30 seconds; try again). Check free disk space and quota there, then try again.` The request right after gets the same text with no git call. With 29 s the replies are normal |
+| N-d | 1 run for each umask | `<w1>/.git` and `<gitdir>/worktrees/w1/config.worktree` are `f 0666` with umask 000, `f 0664` with 002 and `f 0644` with 022 |
+| N-e | 1 run for each link | A `HEAD` link to `refs/tags/v1` gives the copy `ref: refs/tags/v1\n` (0600, 18 bytes), and a link to `refs/x` gives `ref: refs/x\n` (12 bytes). `git.info` has no `branch` member. A create answers `git worktree add failed: Preparing worktree (new branch 'w1') fatal: HEAD not found below refs/heads!` |
+| N-f | `git.info` and `git.status` | The call about the repository exits 1 with two error lines: both lines are in the reply, with one space between them. Exit 2 with one line gives that line. 13 and 2 calls |
+| N-h | 1 run | `git-shadow` on a file system with no free inode: `git.status` answers `{"isRepo":false,"clean":false}` after 4 calls. A create answers `git worktree add failed (checkout): mkdir <S>/.index-<n>: no space left on device` after 16 calls |
+| Q1 | 1 run for each path | A `git.info` on a missing path, on a path with a missing parent and on a dangling link makes 1 call as the first git request, and 0 calls later. An empty path makes 3 calls, and 2 later. The first reply has no `settingsControl` member |
+| Q1, a file inside a repository | 1 run | A `git.info` on `<repo>/a.txt` as the first git request makes 14 calls. Calls 12 and 13 are the call about the repository and the config read, and call 14 is `version`. `<S>` then holds `.probe` and `<R>`. The next `git.info` on the repository makes 8 calls |
+
+The edits for cells N-a to N-c, N-f, N-g and the file row of Q1 follow those rows and ran on no VM. Each has a test.
+
 The Windows part of round `val-s3p2b2-7` ran a build of this change beside `5fd08069` in cells P2, J1, W2, W3, W1, R1, F1 and C2. Cells J1 and W2 are equal: the junction with the member, and two creates at one time in 120 pairs. Tables C2 and R1 gave the Windows rows for the git version in the cause and for the relative socket path. The build of that round did not have those two edits. The edits for the other rows follow that round. Their tests ran on Linux and macOS forms only, and the Windows tests ran on no system:
 
 - The held git directory of a create and its step texts (cells X1c, X1p and W1).
@@ -815,15 +832,15 @@ On `5fd08069`:
 - The staging step and the cleanup on a macOS VM, beyond "no such entry is made".
 - A `config.worktree` key other than the eighteen of the cells. Twelve give an item, and six give none: `core.bare`, `core.worktree`, `core.hookspath`, `user.name`, `core.protectntfs` and `status.showUntrackedFiles`. Two of the nine new keys in one file. The five keys of the Windows extra rows on Linux and macOS VMs. `core.eol` on a macOS VM. A second value of a key other than `core.filemode`.
 - The second `config.worktree` read of `git.status` for a file with `index.sparse`, and with the member.
-- A `git.info` on a path that does not exist on Linux and macOS VMs. The place of that test among the refusals, an empty path and a dangling link.
+- A `git.info` on a path that does not exist on a macOS VM. The place of that test among the refusals.
+- A `git.info` on a file inside a repository on macOS and Windows VMs. Another kind of file there, and a refused config of that repository.
 - `core.sharedRepository` as `false` or as another octal number, a `worktrees` folder that is there before the create, and macOS and Windows VMs.
 - A bare `baseRepo` with the member.
 - Two requests at the same time during a start test.
-- A test call that exits in time while a child holds its output pipe. Call 7 of the test held, failed or ended.
-- A `HEAD` link to `refs/tags/<name>` or to another name under `refs/`.
-- A call about the repository that exits 1 with two error lines, or that exits 2 with a text.
-- A daemon folder that takes no new entry for another cause than mode 0500.
-- The mode of the create of the new `.git` file. No cell has a daemon umask of 000.
+- A child that holds the output pipes of a test call other than `init` and call 7. A child that holds the pipes of call 7 for more than 30 s. A call 7 that fails on its own. When a daemon tests again after the 30 s error of call 7.
+- A call about the repository with an empty error line between two lines, or with more than two lines.
+- A daemon folder that takes no new entry for another cause than mode 0500, a file system with no free inode, and a deny entry on Windows.
+- The pair of a remove with a daemon `GIT_COMMON_DIR` and no `GIT_DIR`.
 - A staging move that fails on Windows.
 - A junction at `.git` after call 12 or 13 of a create. A junction after calls 7 and 8, where the rename failed. A symbolic link in place of the junction. Another real directory at `.git`.
 - A `.git` that is a junction before the first request. The link text is measured for a junction that was put there during a create.
