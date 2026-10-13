@@ -192,7 +192,7 @@ var copyFileBody = io.Copy
 // The copy never writes over an entry. The target is made with an exclusive
 // create, so a file, a link or a folder that is already at dst stays as it is,
 // and nothing is written through a link there. A target that the copy could not
-// complete is removed.
+// complete is removed, unless another entry took its place.
 //
 // The copy is created 0666-subject-to-umask and the SOURCE MODE IS NOT
 // PRESERVED, matching the reference. Probe-measured by varying the launcher's
@@ -222,11 +222,16 @@ func copyFile(src, dst string) {
 	if err != nil {
 		return
 	}
+	made, statErr := out.Stat()
 	_, err = copyFileBody(out, in)
 	if cerr := out.Close(); err == nil {
 		err = cerr
 	}
-	if err != nil {
+	if err == nil || statErr != nil {
+		return
+	}
+	// Remove the target only while it is still the file that this copy made.
+	if cur, lerr := os.Lstat(dst); lerr == nil && os.SameFile(made, cur) {
 		_ = os.Remove(dst)
 	}
 }

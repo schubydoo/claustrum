@@ -316,6 +316,36 @@ func TestCopyFileDoesNotWriteThroughALink(t *testing.T) {
 	}
 }
 
+// TestCopyFileKeepsAReplacementOfAFailedTarget: when another entry took the place of
+// the target during a copy that fails, that entry stays. Not parallel: it replaces
+// copyFileBody.
+func TestCopyFileKeepsAReplacementOfAFailedTarget(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("an open file cannot be replaced by name on Windows")
+	}
+	dir := t.TempDir()
+	src := filepath.Join(dir, "a.txt")
+	writeFile(t, src, "some bytes to write\n", 0o644)
+	dst := filepath.Join(dir, "out", "a.txt")
+	old := copyFileBody
+	copyFileBody = func(io.Writer, io.Reader) (int64, error) {
+		if err := os.Remove(dst); err != nil {
+			t.Errorf("replace the target: %v", err)
+		}
+		writeFile(t, dst, "of another process\n", 0o644)
+		return 0, errors.New("no space left on device")
+	}
+	t.Cleanup(func() { copyFileBody = old })
+	copyFile(src, dst)
+	got, err := os.ReadFile(dst)
+	if err != nil {
+		t.Fatalf("the replacement is gone after the failed copy: %v", err)
+	}
+	if string(got) != "of another process\n" {
+		t.Errorf("replacement content = %q, want it unchanged", got)
+	}
+}
+
 // The copy helpers are best-effort by design: a failure must leave the worktree
 // alone rather than turn a successful git.worktree_create into an error. These
 // cover the give-up paths.
