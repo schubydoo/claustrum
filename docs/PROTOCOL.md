@@ -4229,9 +4229,9 @@ as id-less stream notifications, and it buffers them for a later replay.
   `--fork-session`. The superseded process is killed through the
   SIGTERM-then-SIGKILL path, and its exit frame reaches its client. That
   frame carries `killedBy:"client"` (rows B1 to B3 below). A spawn with
-  no session key, or with a different session id, supersedes nothing. The argument
-  after a bare `--session-id` or `--resume` is its value only (`5fd08069`, cells K1
-  and K2, Linux VM). claustrum also serializes concurrent spawns of one session.
+  no session key, or with a different session id, supersedes nothing. claustrum reads
+  the argument after a bare flag as its value, as `5fd08069` does for `--resume`
+  (K1, K2, Linux VM). claustrum also serializes concurrent spawns of one session.
   The daemon ends the other process and waits for its end before it starts the new
   one. The reply of the new spawn therefore comes after the exit frame of the old
   process. Linux and macOS VMs measured that against `89cb6289` (rows B1 to B4, two
