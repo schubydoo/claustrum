@@ -68,7 +68,3 @@ claustrum is built to answer as the reference daemon does. The pinned build `89c
 
 - [D5](../DIVERGENCES.md#d5): an optional deadline on the git calls. It is off by default.
 - [D9](../DIVERGENCES.md#d9): a member of another `git.*` method with the wrong type gets `-32602`, although this method does not use it.
-
-## More detail
-
-The order of the internal checks and the measurements against the reference are in the [measurement record](../record/git-list-branches.md). Most readers do not need that page.

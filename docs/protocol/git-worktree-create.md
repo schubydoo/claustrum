@@ -24,7 +24,7 @@ A failed request can leave files on disk. The section [After a failure](#after-a
 Where the worktree can go:
 
 - Without `worktreeRoot`, `worktreePath` must be an absolute path inside `baseRepo`. The usual place is `<baseRepo>/.claude/worktrees/<name>`.
-- With `worktreeRoot`, `worktreePath` must be `<worktreeRoot>/<directory>/<name>`. A root that exists must belong to the user of the daemon. Its mode must have no write bit for the group or for others. If the group of the root is the private group of that user, the group can have the write bit. The daemon judges the directories above the root by a looser rule. Neither the root nor a directory above it can hold a `.git` entry. The [measurement record](../record/git-worktree-create.md) has the exact rules.
+- With `worktreeRoot`, `worktreePath` must be `<worktreeRoot>/<directory>/<name>`. A root that exists must belong to the user of the daemon. Its mode must have no write bit for the group or for others. If the group of the root is the private group of that user, the group can have the write bit. The daemon judges the directories above the root by a looser rule. Neither the root nor a directory above it can hold a `.git` entry.
 
 ## Response
 
@@ -36,7 +36,7 @@ Success:
 
 `path` is `worktreePath` as sent, after the `~` expansion. `branch` is the branch of the worktree. If the daemon attached to `existingBranch`, it is that branch. If not, it is `branchName`.
 
-If the daemon created a branch, `sourceBranch` is the name that the start commit came from. The daemon reads that name as two refs: the local branch `<name>` and the remote-tracking ref `origin/<name>`. It fetches nothing. If both exist, the daemon selects one of them. It selects `origin/<name>` in most states. For example, a local branch that is behind `origin/<name>` or equal to it gives `origin/<name>`. The response holds the name as sent in each case. So the response does not say which of the two refs the new branch started from. The [measurement record](../record/git-worktree-create.md) has the rules.
+If the daemon created a branch, `sourceBranch` is the name that the start commit came from. The daemon reads that name as two refs: the local branch `<name>` and the remote-tracking ref `origin/<name>`. It fetches nothing. If both exist, the daemon selects one of them. It selects `origin/<name>` in most states. For example, a local branch that is behind `origin/<name>` or equal to it gives `origin/<name>`. The response holds the name as sent in each case. So the response does not say which of the two refs the new branch started from.
 
 If the value as sent named neither a local branch nor a branch of `origin`, that is not an error. The new branch then starts at HEAD, and the response holds the current branch, not the value as sent. Compare the value that you sent with the value in the response. On a detached HEAD, the response then has no `sourceBranch`. That applies to a request with a `sourceBranch` and to a request without one.
 
@@ -120,13 +120,13 @@ Three values of the repository pass: `smudge = cat` under each name, and `git-lf
 
 `"shadowDirOff": true` turns the rule off for one request. The daemon then runs the filter of the repository.
 
-claustrum follows the reference build `5fd08069` here, with the differences that the record lists. The [measurement record](../record/git-worktree-create.md#git-filters-of-the-checkout) has the cells.
+claustrum follows the reference build `5fd08069` here, with some differences.
 
 ## The settings copy
 
 The daemon keeps its own copy of the git settings of the repository, and its git calls read that copy. [The settings copy](../PROTOCOL.md#the-settings-copy) in the protocol reference has the states, the texts and the folder. These rules are for this method:
 
-- If the directory `<git dir>/worktrees` is missing, the daemon makes it before the add. The directory stays after an add that fails. The new directory gets mode 0777 less the umask of the daemon. On Linux and macOS, with the value `group`, `true`, `all`, `world`, `everybody` or an octal number that git accepts, the daemon then sets the mode by that value. The [record](../record/git-settings-copy.md) has the table.
+- If the directory `<git dir>/worktrees` is missing, the daemon makes it before the add. The directory stays after an add that fails. The new directory gets mode 0777 less the umask of the daemon. On Linux and macOS, with the value `group`, `true`, `all`, `world`, `everybody` or an octal number that git accepts, the daemon then sets the mode by that value.
 - If the repository has `extensions.worktreeConfig` and a file `<git dir>/config.worktree`, the new worktree gets its own `config.worktree` file. It holds the text of that file without `core.bare` and `core.worktree`.
 - A bare `baseRepo` gets `not_a_repo`.
 - On Windows the add writes the registration of the new worktree into a short-lived folder of the daemon. The daemon then copies it into `<git dir>\.claude-new-worktree-<16 hex>` and renames that folder to `<git dir>\worktrees\<name>`.
@@ -135,7 +135,7 @@ The daemon keeps its own copy of the git settings of the repository, and its git
 - In the state `shadow`, a failed `rev-parse --absolute-git-dir` stops the create with `git worktree add failed: cannot locate the repository's git directory: exit status 128`. The text after the last colon is the error of the call. That is measured on a Windows VM. Linux and macOS get the same stop (not measured).
 - On Windows, a step before the add that fails gives `git worktree add failed: cannot prepare the repository's worktrees directory: <cause>`, and the `worktree add` call does not run.
 
-`"shadowDirOff": true` turns the copy off for one request, and none of these steps runs. The same holds on a host whose git does not work on such a copy. The [record of the copy](../record/git-settings-copy.md) has the cells.
+`"shadowDirOff": true` turns the copy off for one request, and none of these steps runs. The same holds on a host whose git does not work on such a copy.
 
 ## The held git directory
 
@@ -143,15 +143,13 @@ In the state `shadow` a create holds the git directory of `baseRepo` open from i
 
 - The git directory must be a real directory at the gate. On Windows a junction or a directory symbolic link there is refused, on every git method without `"shadowDirOff": true`. With that member both link kinds pass, and git works in the folder behind the link, as on `5fd08069` (Windows VM). On Linux and macOS a `.git` that is a symbolic link before the request is resolved first, and the daemon holds its target. A change of that link is a change of the path too.
 - The daemon's own deletes, renames, new folders and file writes inside the git directory go through the held folder. A folder that is put at the path while the create runs gets none of them, except the directory that the hold moves to (the rule for Linux and macOS below).
-- The hold stops no rename of the git directory by another process. On Windows the handle of the hold shares delete access for that. On Windows a rename of the repository folder fails from an earlier call of a create than on `5fd08069`. The record has the row.
+- The hold stops no rename of the git directory by another process. On Windows the handle of the hold shares delete access for that. On Windows a rename of the repository folder fails from an earlier call of a create than on `5fd08069`.
 - The steps of the create test that the path still names the held folder. A swap after `rev-parse --absolute-git-dir` and before the add is refused before the add. Git itself goes by the path.
 - A swap after the read-tree call fails the create, and the registration gets no index. On Windows a swap after the first listing of the checkout fails it too. The text starts with `git worktree add failed (checkout): `. The registration and the branch then stay, and the text says so.
 - On Linux and macOS one step moves the hold. The measured case is a link to a copy of the git directory. It is put there after the first call or after `rev-parse --abbrev-ref HEAD`. `5fd08069` then goes on in the copy (Linux and macOS VMs), and so does claustrum (Linux and macOS VMs). Another git directory that passes the gate gets the same rule (not measured).
 - On Linux and macOS, a `.git` that became a file with `gitdir: <another git directory>` after `rev-parse --absolute-git-dir` gives `git worktree add failed: cannot locate the repository's git directory: lstat <baseRepo>/.git/commondir: not a directory`.
 - On Linux and macOS, a `.git` that is a symbolic link to a copy of the git directory right after a good `worktree add` gives `refusing to create worktree: <leaf> was not populated by git worktree add` with `unsafe_path`. Nothing is rolled back, and the `.git` file of the new worktree keeps the text that git wrote.
 - By the path stay: git itself, a request with `"shadowDirOff": true`, and a host in the state `fallback-git` or with no run folder. On Linux and macOS a `worktrees` entry that is a symbolic link stays by the path too. So does the step for an old registration when `<baseRepo>/.git` is not the held folder (from the code).
-
-The [record](../record/git-settings-copy.md#a-git-directory-that-is-replaced-while-a-create-runs) has the cells of `5fd08069` and the text of each measured step.
 
 ## The copy of ignored files
 
@@ -160,7 +158,7 @@ After the checkout, the daemon copies two sets of files from `baseRepo` into the
 - The ignored files that the file `.worktreeinclude` at the root of the repository names. That file uses the syntax of `.gitignore`.
 - The ignored files under `.claude/`.
 
-Neither set includes `.claude/worktrees` or the session state of Claude under `.claude/`, for example `checkpoints`, `mailbox` and `scheduled_tasks.json`. A new worktree does not inherit the session state of the repository. The [measurement record](../record/git-worktree-create.md) lists each name.
+Neither set includes `.claude/worktrees` or the session state of Claude under `.claude/`, for example `checkpoints`, `mailbox` and `scheduled_tasks.json`. A new worktree does not inherit the session state of the repository.
 
 A copy does not keep the mode of its source. The daemon creates each file with mode `0666` less its umask. So an executable file arrives without its execute bit, and a `0400` file gets a wider mode. The daemon also skips symbolic links. Name configuration files in `.worktreeinclude`, not secrets or scripts.
 
@@ -179,12 +177,8 @@ A copy that fails does not fail the request. If the deadline of `timeoutMs` expi
 
 ## Differences from the reference
 
-claustrum is built to answer as the reference daemon does. The pinned build `89cb6289` runs a git filter that only the repository defines. claustrum follows `5fd08069` and refuses it, with the differences that the record lists: see [Git filters](#git-filters). claustrum also follows `5fd08069` in the refusal of a repository config: see [Repository config refusals](../PROTOCOL.md#repository-config-refusals). It follows `5fd08069` in the settings copy too, with the differences that the [record of the copy](../record/git-settings-copy.md#claustrum-and-5fd08069) lists. These entries of the divergence catalog apply to this method:
+claustrum is built to answer as the reference daemon does. The pinned build `89cb6289` runs a git filter that only the repository defines. claustrum follows `5fd08069` and refuses it, with some differences: see [Git filters](#git-filters). claustrum also follows `5fd08069` in the refusal of a repository config: see [Repository config refusals](../PROTOCOL.md#repository-config-refusals). It follows `5fd08069` in the settings copy too, with some differences. These entries of the divergence catalog apply to this method:
 
 - [D2](../DIVERGENCES.md#d2): a delete refuses a path that is the home directory or holds it. That covers the Windows removal of old `.claude-new-worktree-*` entries.
 - [D5](../DIVERGENCES.md#d5): an optional deadline on the git calls. It is off by default.
 - [D24](../DIVERGENCES.md#d24): on Linux and macOS, a rollback keeps a registration directory that something replaced after the add.
-
-## More detail
-
-The order of the internal checks, the rules for unusual states of a repository and the measurements against the reference are in the [measurement record](../record/git-worktree-create.md). The tests of the repository pin those cases. Most readers do not need that page.

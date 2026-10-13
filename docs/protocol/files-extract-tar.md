@@ -4,8 +4,6 @@
 
 A failed request can leave the directory empty or partly filled. The section [After a failure](#after-a-failure) says what stays.
 
-The measurements behind the modes and the texts of `5fd08069` are in the [record](../record/files-extract-tar.md).
-
 ## Request
 
 ```json
@@ -135,9 +133,7 @@ claustrum is built to answer as the reference daemon does. These entries of the 
 - [D2](../DIVERGENCES.md#d2): claustrum refuses a `destDir` that is the home directory or holds it. The reference deletes the home directory for `"destDir": "~"`.
 - [D3](../DIVERGENCES.md#d3): the optional size limit. It is off by default.
 
-The reference pin is `89cb6289`. This method follows `5fd08069`. The examples in the table of the `error` texts are from `5fd08069` too. The [record](../record/files-extract-tar.md) has the rows of both builds.
-
-The record has the rows for the steps of `destDir` under [The preparation of destDir](../record/files-extract-tar.md#the-preparation-of-destdir).
+The reference pin is `89cb6289`. This method follows `5fd08069`. The examples in the table of the `error` texts are from `5fd08069` too.
 
 The test for a replaced `destDir` is claustrum's own, and it is part of [D2](../DIVERGENCES.md#d2). No measurement says what the reference does there. The test of the two views of `destDir` before the delete is claustrum's own too, and it is part of D2. Both reference builds extract there (Windows VM).
 

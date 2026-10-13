@@ -76,7 +76,3 @@ claustrum is built to answer as the reference daemon does. One entry of the dive
 - [CT-1](../DIVERGENCES.md#ct-1): the optional `wantPid` parameter with the members `pid` and `startTime`. A request without `wantPid` gets no such member.
 
 The exact time that the reference keeps a process that exited is not known. The measurements bracket it to more than 45 seconds and at most 960 seconds. The 15 minutes of claustrum are its own choice inside that range, and so is the extra time of up to about one minute.
-
-## More detail
-
-The measurements against the reference are in the [measurement record](../record/process-reattach.md). Most readers do not need that page.

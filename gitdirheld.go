@@ -55,9 +55,7 @@ import (
 // that passes the gate (acceptedGitDir.movedTo). The steps above then act
 // through that folder.
 //
-// What 5fd08069 does with a swapped git directory is in the section "A git
-// directory that is replaced while a create runs" of
-// docs/record/git-settings-copy.md. No row has a swap between the test of a
+// No VM row has a swap between the test of a
 // step and one of these acts. In the swap cells of val-s3p2b2-12-windows the
 // folder at the path is unchanged on claustrum (section 1.3, Windows VM).
 

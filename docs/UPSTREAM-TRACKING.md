@@ -7,9 +7,6 @@ detect a new build. It also tells you how to find out whether that build changed
 anything claustrum must match. For the running history of which builds changed
 what, see the [reference build ledger](REFERENCE-BUILDS.md).
 
-The measured cells of a method are in its record under `docs/record/`, for
-example the [record of git.worktree_create](record/git-worktree-create.md).
-
 ## How the reference is distributed
 
 - Per-version manifest:
@@ -290,8 +287,6 @@ file that another process holds under a lease is not drift either. From the
 code, it comes from the `O_NONBLOCK` open of claustrum. No VM row has that
 case.
 
-The [measurement record](record/files-read.md) holds the rows.
-
 ### Triage gotchas — when a probe result is misleading
 
 [docs/DIVERGENCES.md](DIVERGENCES.md) holds the full measurements. These are the
@@ -322,8 +317,7 @@ traps that matter for telling drift from expected:
   calls print the hint on stderr, and no reply holds it. A hint in a frame
   of `f6010b97` and none in the frame of claustrum is therefore not drift. The
   texts of `5fd08069` have no hint either, and those of `89cb6289` have it (cell
-  B2 of round `val-s3p2b1`, Linux, macOS and Windows VMs). See the
-  [record](record/git-worktree-create.md#the-option-lists-in-replies-and-on-disk).
+  B2 of round `val-s3p2b1`, Linux, macOS and Windows VMs).
 - In a repo with no `.claude/`, a `timeoutMs` that expires during the copy step
   splits the pins. `f6010b97` runs no copy `ls-files` and answers success.
   `90fca6e6` and claustrum answer `timeout` "after the checkout finished" and roll
@@ -334,7 +328,7 @@ traps that matter for telling drift from expected:
   registration. In cell B6b it is the registration of a live sibling worktree
   that a wrapper moved to that path (Linux and macOS VMs). The frames are
   equal. A kept
-  folder there is D24, not drift (the [measurement record](record/git-worktree-create.md) of `git.worktree_create`).
+  folder there is D24, not drift.
 - The branch step of `git.worktree_remove` and of the create rollbacks splits the
   pins. claustrum follows `89cb6289`, the build that `scripts/UPSTREAM_SHA`
   names. Against `f6010b97`, `server.capabilities` differs by the
@@ -430,8 +424,6 @@ traps that matter for telling drift from expected:
   a folder with the exact name, and `5fd08069` into the folder with no dot or
   space (Windows VM). A `destDir` whose last name is the home folder by
   identity gets the home refusal. See [D2](DIVERGENCES.md#d2).
-
-  See the record of [files.extract_tar](record/files-extract-tar.md).
 - The git filters of the `git.worktree_create` checkout split the builds too,
   not drift. `scripts/UPSTREAM_SHA` names `89cb6289`, and claustrum follows
   `5fd08069`. Against `89cb6289` these answers differ:
@@ -479,8 +471,6 @@ traps that matter for telling drift from expected:
     and the listings before the checkout differ.
 
   macOS is not measured on any build.
-
-  See the record of [git.worktree_create](record/git-worktree-create.md#git-filters-of-the-checkout).
 - The refusals of a repository config split the builds too, not drift.
   `scripts/UPSTREAM_SHA` names `89cb6289`, and claustrum follows `5fd08069`.
   Against `89cb6289` a config that the daemon does not accept gets a text that
@@ -511,8 +501,7 @@ traps that matter for telling drift from expected:
   later requests, and claustrum answers them (Linux VM).
 
   The states, the bounds and the cells are in
-  [PROTOCOL.md](PROTOCOL.md#repository-config-refusals) and the
-  [record](record/git-config-refusals.md).
+  [PROTOCOL.md](PROTOCOL.md#repository-config-refusals).
 - The option lists of the git calls split the builds too, not drift.
   `scripts/UPSTREAM_SHA` names `89cb6289`, and claustrum follows `5fd08069`.
   So claustrum differs from `89cb6289` in four states: `git.status` with replace
@@ -520,8 +509,7 @@ traps that matter for telling drift from expected:
   tree path on Windows, and the paths of a new worktree with
   `worktree.useRelativePaths`. The call logs differ in the `-c` lists and in two
   variables. The cells and the systems are in
-  [the record](record/git-worktree-create.md#the-option-lists-in-replies-and-on-disk)
-  and in [Hardened git calls](PROTOCOL.md#hardened-git-calls).
+  [Hardened git calls](PROTOCOL.md#hardened-git-calls).
 
   Against `5fd08069` the call logs differ in `git.worktree_create`. claustrum
   makes one listing with `--show-scope`. `5fd08069` makes a pair after
@@ -551,8 +539,7 @@ traps that matter for telling drift from expected:
   - On Windows a create removes old `.claude-new-worktree-*` entries of the git
     directory. See [git.worktree_create](protocol/git-worktree-create.md#the-settings-copy).
 
-  Against `5fd08069` these differences are not drift. Each has its cells in the
-  [record](record/git-settings-copy.md#claustrum-and-5fd08069):
+  Against `5fd08069` these differences are not drift:
   - The git-lfs cells of a create: other reply texts, other read-tree items and
     no git-lfs log file.
   - The config reads on a config that changes many times each second, and the
@@ -561,8 +548,6 @@ traps that matter for telling drift from expected:
     `SIGKILL`. `5fd08069` removes it at the first request of the next daemon.
   - On Windows, two reply texts of a create whose `.git` becomes a file
     `gitdir: <X>` while the create runs (Windows VM).
-  - The top of the [record](record/git-settings-copy.md) says which round
-    ran which build of the copy.
 - The reap of a child record with a `program` key splits the pins too, off the
   wire. claustrum follows `89cb6289`. On Linux, if the process runs `program` or
   holds it as one whole argument, `89cb6289` accepts the record. Linux rows PG02a, PG02b,

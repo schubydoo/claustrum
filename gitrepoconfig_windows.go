@@ -9,8 +9,7 @@ import (
 )
 
 // The Windows rules of the config read (gitrepoconfig.go). 5fd08069 answers
-// these three texts on a Windows VM (cells C3b, C3c, C3d and C4b of the record
-// of these refusals).
+// these three texts on a Windows VM (cells C3b, C3c, C3d and C4b).
 
 // openNoTerminal adds nothing on Windows, where an open gives the daemon no
 // controlling terminal.

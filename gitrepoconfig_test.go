@@ -17,7 +17,7 @@ import (
 )
 
 // The tests of the daemon's own read of a repository's config (gitrepoconfig.go).
-// The cell names are those of docs/record/git-config-refusals.md. 5fd08069
+// The cell names are those of the VM rounds. 5fd08069
 // answered each text on a Linux VM, unless a comment names another system.
 
 // baseRepoConfig is the config that `git init` writes on Linux, without the
@@ -720,7 +720,7 @@ func TestGitDirShallowHoldsObjectIDs(t *testing.T) {
 
 // TestRepoConfigSyntaxError pins the text of a syntax error in a config file: the
 // text of git with the path in quotes (cell X10, and cell W2 of
-// docs/record/git-worktree-create.md on a Windows VM). A file with a NUL byte in
+// git.worktree_create on a Windows VM). A file with a NUL byte in
 // a value and an empty file are no refusal (cells X10).
 func TestRepoConfigSyntaxError(t *testing.T) {
 	repo, gitDir := configRepo(t)
