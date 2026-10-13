@@ -537,10 +537,13 @@ func newServerOnSocket(socket, token, metricsAddr string, wlopt wireLogOptions, 
 		return nil, fmt.Errorf("listen unix: %v", err)
 	}
 	keepSocketFileAtClose(ln)
+	// The identity of the socket that this start bound. It is nil only when the stat
+	// itself failed, and removeSocketIfOwned then removes the path with no test.
+	bound, _ := os.Stat(socket)
 	if err := chmodSocket(socket, 0o600); err != nil {
 		// On Linux and macOS a failed chmod ends the start. On Windows the start
 		// goes on (see socketChmodFailed).
-		if err := socketChmodFailed(ln, socket, err); err != nil {
+		if err := socketChmodFailed(ln, socket, bound, err); err != nil {
 			return nil, err
 		}
 	}

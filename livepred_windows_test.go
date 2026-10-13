@@ -154,7 +154,7 @@ func TestSocketChmodFailedGoesOnOnWindows(t *testing.T) {
 	}
 	old := os.Stderr
 	os.Stderr = w
-	got := socketChmodFailed(nil, "", errors.New("seam: chmod refused"))
+	got := socketChmodFailed(nil, "", nil, errors.New("seam: chmod refused"))
 	os.Stderr = old
 	_ = w.Close()
 	out, _ := io.ReadAll(r)

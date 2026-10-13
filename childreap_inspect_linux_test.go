@@ -241,3 +241,34 @@ func TestNamespaceTestOnEveryRead(t *testing.T) {
 		t.Errorf("another namespace: sameLeader = %d, want verdictUnknown", v)
 	}
 }
+
+// TestReapTargetsNamespaceLinkGoesAfterSIGTERM: a target verifies and gets SIGTERM.
+// Then its pid namespace link goes, while its stat still reads as alive and its group
+// still answers. No SIGKILL goes out: the settle read stays on the stat, so the gone
+// link never reaches reapGoneLeader. The group is given up after the grace, its record
+// goes, and it counts as dropped. That result is claustrum's own, not measured.
+func TestReapTargetsNamespaceLinkGoesAfterSIGTERM(t *testing.T) {
+	st := stageInspect(t)
+	st.sim.group[inspChild] = true
+	st.sim.onKill[inspChild] = func(sig syscall.Signal) error {
+		if sig == syscall.SIGTERM {
+			if err := os.Remove(st.path(inspChild, "ns/pid")); err != nil {
+				t.Errorf("remove the namespace link: %v", err)
+			}
+		}
+		return nil
+	}
+	tg := reapTarget{pid: inspChild, start: "9000", name: st.name, rec: orphanRecord(inspChild, "/n", "")}
+	var counts reapCounts
+	reapTargets(simCtx(t, st.runDir), []reapTarget{tg}, &counts)
+
+	if len(st.sim.kills) != 1 || st.sim.kills[0].sig != syscall.SIGTERM {
+		t.Errorf("kills = %v, want exactly one SIGTERM and no SIGKILL", st.sim.kills)
+	}
+	if recordExists(st.runDir, st.name) {
+		t.Error("the record is still there, want it removed")
+	}
+	if want := (reapCounts{signalled: 1, forgotten: 1}); counts != want {
+		t.Errorf("counts = %+v, want %+v", counts, want)
+	}
+}

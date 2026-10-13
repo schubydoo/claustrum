@@ -86,6 +86,39 @@ func TestNewServerOnSocketChmodFailureEndsTheStart(t *testing.T) {
 	}
 }
 
+// A failed chmod removes only the socket that this start bound. Here the chmod seam
+// puts a plain file at the socket path before it fails. The start ends with the chmod
+// error, and the file stays. TestNewServerOnSocketChmodFailureEndsTheStart is the
+// control: there the path still holds our own socket, and it goes.
+func TestNewServerOnSocketChmodFailureKeepsAnotherEntry(t *testing.T) {
+	dir := shortTempDir(t)
+	sock := filepath.Join(dir, "c.sock")
+
+	oldChmod := chmodSocket
+	chmodSocket = func(path string, _ os.FileMode) error {
+		if err := os.Remove(path); err != nil {
+			t.Errorf("remove the bound socket: %v", err)
+		}
+		if err := os.WriteFile(path, []byte("other"), 0o600); err != nil {
+			t.Errorf("write the other entry: %v", err)
+		}
+		return errChmodRefused
+	}
+	t.Cleanup(func() { chmodSocket = oldChmod })
+
+	s, bootErr := newServerOnSocket(sock, "chmod-token", "", wireLogOptions{}, false, false)
+	if s != nil {
+		t.Cleanup(func() { s.signalShutdown(); s.closeAll(sock) })
+		t.Error("newServerOnSocket returned a server after a failed chmod")
+	}
+	if want := "chmod socket: " + errChmodRefused.Error(); bootErr == nil || bootErr.Error() != want {
+		t.Errorf("newServerOnSocket = %v, want the error %q", bootErr, want)
+	}
+	if b, err := os.ReadFile(sock); err != nil || string(b) != "other" {
+		t.Errorf("the other entry at the socket path = %q, %v, want it left alone", b, err)
+	}
+}
+
 // When the re-exec of our own executable cannot even be started there is no
 // daemon and nothing to wait for, so the launcher reports "daemonize: <err>" and
 // exits 1 immediately — it must not fall through to the wait-for-accept line,

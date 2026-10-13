@@ -46,7 +46,7 @@ func keepSocketFileAtClose(net.Listener) {}
 // socketChmodFailed prints one line for a failed chmod of the socket, and the start
 // goes on. That is the rule that claustrum had before on every system. Nothing is
 // measured on Windows.
-func socketChmodFailed(_ net.Listener, _ string, err error) error {
+func socketChmodFailed(_ net.Listener, _ string, _ os.FileInfo, err error) error {
 	fmt.Fprintf(os.Stderr, "claustrum: chmod socket: %v\n", err)
 	return nil
 }
