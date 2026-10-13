@@ -3,6 +3,7 @@
 package main
 
 import (
+	"fmt"
 	"net"
 	"os"
 	"time"
@@ -63,4 +64,16 @@ func keepSocketFileAtClose(ln net.Listener) {
 	if ul, ok := ln.(*net.UnixListener); ok {
 		ul.SetUnlinkOnClose(false)
 	}
+}
+
+// socketChmodFailed ends a start whose chmod of the socket failed. It closes the
+// listener, removes the socket path and returns the error of the start. `5fd08069`
+// ends the start there with that text (cell H6, Linux VM). On macOS that is not
+// measured. The remove of the socket path is claustrum's own, not measured: cell H6
+// used an abstract socket, which has no path. The path goes only while it still is
+// the socket that this start bound (removeSocketIfOwned). Another entry there stays.
+func socketChmodFailed(ln net.Listener, socket string, bound os.FileInfo, err error) error {
+	_ = ln.Close()
+	removeSocketIfOwned(socket, bound)
+	return fmt.Errorf("chmod socket: %v", err)
 }

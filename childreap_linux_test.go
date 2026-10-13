@@ -235,10 +235,10 @@ func TestRealReadLiveProcFakeProcfs(t *testing.T) {
 		}
 	}
 
-	// No ')' in stat -> unparseable -> not ours.
+	// No ')' in stat -> unparseable -> cannot be inspected.
 	mk(10, "10 broken stat line", "x\x00", "")
-	if lp := realReadLiveProc(10, true); lp.state != procNotOurs {
-		t.Errorf("unparseable stat: state = %d, want procNotOurs", lp.state)
+	if lp := realReadLiveProc(10, true); lp.state != procUnknown {
+		t.Errorf("unparseable stat: state = %d, want procUnknown", lp.state)
 	}
 	// Zombie state -> gone.
 	mk(11, "11 (proc) Z "+fields19(), "x\x00", "")

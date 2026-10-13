@@ -3,9 +3,12 @@
 package main
 
 import (
+	"errors"
+	"io"
 	"net"
 	"os"
 	"path/filepath"
+	"strings"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -139,5 +142,27 @@ func TestStaleSocketIdentKeepsTheFileItSaw(t *testing.T) {
 	}
 	if !os.SameFile(old, stale) {
 		t.Fatal("the identity taken before the replace does not match the first file")
+	}
+}
+
+// On Windows a failed chmod of the socket does not end the start: it prints one line
+// and returns no error. The listener and the socket path are not used.
+func TestSocketChmodFailedGoesOnOnWindows(t *testing.T) {
+	r, w, err := os.Pipe()
+	if err != nil {
+		t.Fatal(err)
+	}
+	old := os.Stderr
+	os.Stderr = w
+	got := socketChmodFailed(nil, "", nil, errors.New("seam: chmod refused"))
+	os.Stderr = old
+	_ = w.Close()
+	out, _ := io.ReadAll(r)
+	_ = r.Close()
+	if got != nil {
+		t.Errorf("socketChmodFailed = %v, want nil on Windows", got)
+	}
+	if want := "claustrum: chmod socket: seam: chmod refused\n"; !strings.Contains(string(out), want) {
+		t.Errorf("stderr = %q, want %q", out, want)
 	}
 }

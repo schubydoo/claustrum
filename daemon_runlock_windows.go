@@ -19,6 +19,7 @@ func claimRunDir(socket, role string) runDirClaim {
 type runDirClaim struct {
 	release  func()
 	complete func(instanceID string, startedAt int64)
+	holder   bool // never set: there is no lock
 }
 
 // stopRunDirHolder is the -stop fallback after a failed connect. Windows has no

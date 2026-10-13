@@ -99,20 +99,27 @@ const (
 	verdictGone        = 1 // the live process is gone; forget the record, nothing to end
 	verdictSkip        = 2 // skip with a reason (logged); forget the record
 	verdictPassthrough = 3 // the process disowns us; skip WITHOUT forgetting the record
+	verdictUnknown     = 4 // the process cannot be inspected now: keep the record, signal nothing
 )
 
 // live process states from readLiveProc.
 const (
 	procAlive   = 0 // the process is readable and running
 	procGone    = 1 // the process is absent, or a zombie or dead
-	procNotOurs = 2 // the process is unreadable, or not this daemon's to judge
+	procNotOurs = 2 // the process is not this daemon's to judge
+	// procUnknown: the process is there and cannot be inspected now. The record
+	// stays and no signal goes out.
+	procUnknown = 3
+	// procNotChild: the process is not a child to end. The record goes and no
+	// signal goes out. For a recorded daemon it reads as alive (daemonAlive).
+	procNotChild = 4
 )
 
 // liveProc is the live process state the reap reads to judge a record. The env fields are
 // populated only when readLiveProc is called with wantEnv true (the full verify), not for
 // the lighter start-time and leadership re-checks.
 type liveProc struct {
-	state      int    // procAlive, procGone, or procNotOurs
+	state      int    // procAlive, procGone, procNotOurs, procUnknown or procNotChild
 	startTicks string // the process start-time, compared as a string to childRecord.Start
 	pgid       int    // the process group id
 	program    string // argv[0]
@@ -128,6 +135,13 @@ type liveProc struct {
 	// unreadable says why a wantEnv read gave procNotOurs, when the reader knows a
 	// text for it. Only the linux reader sets it, for an environment it cannot read.
 	unreadable string
+	// why is the reason of a procUnknown or a procNotChild state.
+	why string
+	// nsState is the state that the pid namespace test gives a child, on a read with
+	// wantEnv false. Such a read keeps state as the stat gives it, because the read
+	// of a daemon has no namespace test (claustrum's own, not measured). sameLeader
+	// applies nsState. Only the linux reader sets it.
+	nsState int
 }
 
 // Seams. Each is a package var so a unit test replaces it to drive the decision tree and
@@ -202,6 +216,8 @@ type reapCtx struct {
 	// late holds the record names of the signalled groups that are done. The sweep
 	// removes them together when the last group is done (forgetLate).
 	late []string
+	// unknown holds the pids of the signalled groups that got the lookAgain line.
+	unknown map[int]bool
 }
 
 // openChildrenDir opens the children folder below root, which is the run dir. The
@@ -317,6 +333,10 @@ func (m *procManager) reapOrphans() {
 				// reference keeps for this cause at the first test.
 				logInfof("[process.Reaper] child %d (%s): %s", rec.Pid, name, why.own)
 				counts.skipped++ // the process disowns us; keep the record
+			case verdictUnknown:
+				// The text is the reference's (`5fd08069`, cell H2d, Linux VM).
+				logInfof("[process.Registry] record %s: pid %d cannot be inspected now (%s); keeping the record, signalling nothing", name, rec.Pid, why.ref)
+				counts.skipped++
 			}
 			continue
 		}
@@ -415,10 +435,21 @@ func (c *reapCtx) verify(rec childRecord) (int, skipReason) {
 		return verdictSkip, skipReason{"record names no program to verify against", "the record names no program to verify against"}
 	}
 
+	skip := func(own, ref string) (int, skipReason) {
+		verdict, _ := settleThenVerdict(pid, verdictSkip, own)
+		if verdict == verdictGone {
+			return verdictGone, skipReason{}
+		}
+		return verdictSkip, skipReason{own, ref}
+	}
 	lp := readLiveProc(pid, true)
 	switch lp.state {
 	case procGone:
 		return verdictGone, skipReason{}
+	case procUnknown:
+		return verdictUnknown, sameReason(lp.why)
+	case procNotChild:
+		return skip(lp.why, lp.why)
 	case procNotOurs:
 		// The process disowns this daemon (another pid namespace on linux, or an unreadable
 		// live-process read). Keep the record and let a daemon that owns it decide.
@@ -436,13 +467,6 @@ func (c *reapCtx) verify(rec childRecord) (int, skipReason) {
 		return verdictPassthrough, why
 	}
 
-	skip := func(own, ref string) (int, skipReason) {
-		verdict, _ := settleThenVerdict(pid, verdictSkip, own)
-		if verdict == verdictGone {
-			return verdictGone, skipReason{}
-		}
-		return verdictSkip, skipReason{own, ref}
-	}
 	// The pid-reuse guard: the live start-time must still match the record's. The
 	// compare is exact on every system, as on 89cb6289. On macOS the start is a date
 	// text with one blank between its words (darwinProcStart). A record or a
@@ -591,13 +615,20 @@ func parsePSLine(line string) (pgid int, stat, text string, ok bool) {
 // counts as gone so the child is treated as an orphan. Otherwise it is alive only when the
 // process is running and, if the record carries a daemon start-time, that start-time still
 // matches (a pid-reuse guard on the daemon itself).
+//
+// claustrum counts a daemon that is there and cannot be inspected as alive. `5fd08069`
+// keeps the record of the child and sends no signal there (cells H2a to H2c, Linux
+// VM). Not measured on macOS: claustrum does the same there.
 func daemonAlive(daemonPid int, daemonStart string, ownDaemonPid int) bool {
 	if daemonPid < 2 || daemonPid == ownDaemonPid {
 		return false
 	}
 	lp := readLiveProc(daemonPid, false)
-	if lp.state != procAlive {
+	if lp.state == procGone {
 		return false
+	}
+	if lp.state != procAlive {
+		return true
 	}
 	if daemonStart == "" {
 		return true
@@ -656,12 +687,17 @@ func reapTargets(c *reapCtx, targets []reapTarget, counts *reapCounts) {
 	// Phase 1: re-check identity, then SIGTERM the whole group.
 	var signaled []reapTarget
 	for _, t := range targets {
-		switch sameLeader(t.pid, t.start) {
+		verdict, reason := sameLeader(t.pid, t.start)
+		switch verdict {
 		case verdictGone, verdictSkip:
 			// Ended, reused or no longer a group leader since the walk: never signal.
 			// Not measured: claustrum counts the record as dropped.
 			counts.forgotten++
 			c.forget(t.name)
+		case verdictUnknown:
+			// Not measured at this test: the line is the one of the walk.
+			logInfof("[process.Registry] record %s: pid %d cannot be inspected now (%s); keeping the record, signalling nothing", t.name, t.pid, reason)
+			counts.skipped++
 		default: // verdictReap: still the same live leader
 			if err := killGroup(t.pid, syscall.SIGTERM); err != nil {
 				counts.forgotten++
@@ -697,6 +733,8 @@ func reapTargets(c *reapCtx, targets []reapTarget, counts *reapCounts) {
 			killed = append(killed, t)
 		case verdictGone:
 			gone = append(gone, t) // the leader ended between the last poll and this test
+		case verdictUnknown:
+			c.keepUnknown(t, reason, counts)
 		default:
 			c.drop(t, reason, counts)
 		}
@@ -712,6 +750,8 @@ func reapTargets(c *reapCtx, targets []reapTarget, counts *reapCounts) {
 			killed = append(killed, t)
 		case verdictGone:
 			c.drop(t, "its state changed between two reads", counts)
+		case verdictUnknown:
+			c.keepUnknown(t, reason, counts)
 		default:
 			c.drop(t, reason, counts)
 		}
@@ -722,6 +762,28 @@ func reapTargets(c *reapCtx, targets []reapTarget, counts *reapCounts) {
 		logInfof("[process.Reaper] child %d (%s): still present after SIGKILL", t.pid, t.name)
 		// The record is KEPT so a later daemon can find a group this one could not end.
 	}
+}
+
+// lookAgain prints the line of a signalled group that cannot be inspected, once for
+// each group. The text is the reference's (`5fd08069`, cell H4, Linux VM).
+func (c *reapCtx) lookAgain(t reapTarget, reason string) {
+	if c.unknown[t.pid] {
+		return
+	}
+	if c.unknown == nil {
+		c.unknown = map[int]bool{}
+	}
+	c.unknown[t.pid] = true
+	logInfof("[process.Registry] group %d cannot be inspected now (%s); looking again until the wait is up, sending nothing more unless it verifies again or is seen gone", t.pid, reason)
+}
+
+// keepUnknown ends the wait for a signalled group that still cannot be inspected. The
+// group gets no SIGKILL, and its record stays for the next start, counted as kept.
+// The text is the reference's (`5fd08069`, cell H4, Linux VM).
+func (c *reapCtx) keepUnknown(t reapTarget, reason string, counts *reapCounts) {
+	c.lookAgain(t, reason)
+	logInfof("[process.Registry] group %d could still not be inspected when the wait was up; keeping its record for the next start", t.pid)
+	counts.skipped++
 }
 
 // killAfterGrace sends the SIGKILL to a group that still passes the record test at the
@@ -769,6 +831,13 @@ func reapWait(c *reapCtx, targets []reapTarget, timeout time.Duration, reapedCou
 				still = append(still, t) // still the recorded child; keep waiting
 			case verdictGone:
 				gone = append(gone, t)
+			case verdictUnknown:
+				// Cannot be inspected: no signal, and the next poll looks again. After
+				// the SIGKILL the group stays pending with no line, as before.
+				if full {
+					c.lookAgain(t, reason)
+				}
+				still = append(still, t)
 			default: // no longer ours to signal
 				c.drop(t, reason, counts)
 			}
@@ -788,7 +857,7 @@ func reapWait(c *reapCtx, targets []reapTarget, timeout time.Duration, reapedCou
 // reason. A gone verdict is not final: settleGone decides it.
 func (c *reapCtx) check(t reapTarget, full bool) (int, string) {
 	if !full {
-		return sameLeader(t.pid, t.start), ""
+		return sameLeader(t.pid, t.start)
 	}
 	verdict, why := c.verify(t.rec)
 	return verdict, why.ref
@@ -902,20 +971,41 @@ func (c *reapCtx) forget(name string) {
 
 // sameLeader re-reads the process just before a kill and reports whether the target is
 // still the same, group-leading process. It returns verdictGone when the process is gone,
-// verdictSkip when the pid was reused (start-time changed) or the process no longer leads
-// its group, and verdictReap when it is still safe to signal.
-func sameLeader(pid int, recStart string) int {
+// verdictSkip when the pid was reused (start-time changed), the process no longer leads
+// its group or it is not a child to end, and verdictReap when it is still safe to
+// signal. It returns verdictUnknown, with the reason, for a process that cannot be
+// inspected or is not this daemon's to judge: that one gets no signal.
+//
+// claustrum applies the pid namespace test of a child here too. That is claustrum's
+// own, not measured at this test. The settle reads (settleThenVerdict, settleGone)
+// stay on the stat alone. So a namespace link that is gone never leads to the group
+// SIGKILL of reapGoneLeader.
+func sameLeader(pid int, recStart string) (int, string) {
 	lp := readLiveProc(pid, false)
+	if lp.state == procAlive && lp.nsState != procAlive {
+		lp.state = lp.nsState
+	}
 	// A start-time mismatch is only meaningful when the live process HAS a start-time. A
 	// gone process has none, and that is not a reuse; it falls through to the gone check.
 	if lp.startTicks != "" && lp.startTicks != recStart {
-		return verdictSkip
+		return verdictSkip, ""
 	}
-	if lp.state == procGone {
-		return verdictGone
+	switch lp.state {
+	case procGone:
+		return verdictGone, ""
+	case procNotChild:
+		return verdictSkip, ""
+	case procAlive:
+		if pid != lp.pgid {
+			return verdictSkip, ""
+		}
+		return verdictReap, ""
 	}
-	if lp.state == procAlive && pid != lp.pgid {
-		return verdictSkip
+	// procUnknown and procNotOurs. The reason is the one of the reader. It is empty
+	// for procNotOurs, which is another pid namespace on linux and a `ps` line that
+	// does not parse on darwin.
+	if lp.why == "" {
+		return verdictUnknown, "the process is not this daemon's to judge"
 	}
-	return verdictReap
+	return verdictUnknown, lp.why
 }

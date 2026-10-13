@@ -25,7 +25,7 @@ var machineIDPaths = []string{"/etc/machine-id", "/var/lib/dbus/machine-id"}
 // what a later daemon uses to decide whether a leftover child of a since-exited
 // daemon is an orphan to reap. Reaping itself is a separate slice.
 func (m *procManager) recordChild(pid int, argv0, program string) {
-	if m.runDir == "" || pid < 2 {
+	if m.runDir == "" || pid < 2 || m.noRecords {
 		return
 	}
 	start := procStartTicks(pid)

@@ -5,6 +5,7 @@ package main
 import (
 	"errors"
 	"io"
+	"net"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -12,7 +13,7 @@ import (
 	"testing"
 )
 
-// The two sentinels the seams below fail with, so each arm's stderr line is
+// The two sentinels the seams below fail with, so each arm's error text is
 // asserted against text this file owns rather than against a substring of some
 // real OS error.
 var (
@@ -43,42 +44,78 @@ func captureStderr(t *testing.T, fn func()) string {
 	return string(out)
 }
 
-// A socket whose 0600 tightening fails is reported and then carried past: the
-// boot continues, the token is still persisted and the daemon still serves. That
-// is the whole content of the arm — it neither returns an error nor closes the
-// listener — so the assertions are the warning text plus the boot completing.
-func TestNewServerOnSocketChmodFailureIsNonFatal(t *testing.T) {
+// A socket whose 0600 tightening fails ends the start with the error "chmod socket:
+// <error>", and nothing listens (`5fd08069`, cell H6, Linux VM). The socket path is
+// gone too. The remove of the socket path is not measured. The start stops before the
+// token is persisted. The control is the same start with the real chmod: it serves.
+func TestNewServerOnSocketChmodFailureEndsTheStart(t *testing.T) {
+	dir := shortTempDir(t)
+	sock := filepath.Join(dir, "c.sock")
+
+	control, err := newServerOnSocket(sock, "chmod-token", "", wireLogOptions{}, false, false)
+	if err != nil {
+		t.Fatalf("control: newServerOnSocket = %v, want a start with the real chmod", err)
+	}
+	if _, err := os.Stat(sock); err != nil {
+		t.Errorf("control: no socket after a good start: %v", err)
+	}
+	control.signalShutdown()
+	control.closeAll(sock)
+
 	oldChmod := chmodSocket
 	chmodSocket = func(string, os.FileMode) error { return errChmodRefused }
 	t.Cleanup(func() { chmodSocket = oldChmod })
 
+	s, bootErr := newServerOnSocket(sock, "chmod-token", "", wireLogOptions{}, false, false)
+	if s != nil {
+		t.Cleanup(func() { s.signalShutdown(); s.closeAll(sock) })
+		t.Error("newServerOnSocket returned a server after a failed chmod")
+	}
+	if want := "chmod socket: " + errChmodRefused.Error(); bootErr == nil || bootErr.Error() != want {
+		t.Errorf("newServerOnSocket = %v, want the error %q", bootErr, want)
+	}
+	if _, err := os.Lstat(sock); !errors.Is(err, os.ErrNotExist) {
+		t.Errorf("the socket path is still there after a failed chmod: %v", err)
+	}
+	if c, err := net.Dial("unix", sock); err == nil {
+		_ = c.Close()
+		t.Error("a listener still answers after a failed chmod")
+	}
+	if _, err := os.Lstat(filepath.Join(dir, persistedTokenName)); !errors.Is(err, os.ErrNotExist) {
+		t.Errorf("%s exists after a failed chmod: %v", persistedTokenName, err)
+	}
+}
+
+// A failed chmod removes only the socket that this start bound. Here the chmod seam
+// puts a plain file at the socket path before it fails. The start ends with the chmod
+// error, and the file stays. TestNewServerOnSocketChmodFailureEndsTheStart is the
+// control: there the path still holds our own socket, and it goes.
+func TestNewServerOnSocketChmodFailureKeepsAnotherEntry(t *testing.T) {
 	dir := shortTempDir(t)
 	sock := filepath.Join(dir, "c.sock")
 
-	var s *server
-	var bootErr error
-	stderr := captureStderr(t, func() {
-		s, bootErr = newServerOnSocket(sock, "chmod-token", "", wireLogOptions{}, false, false)
-	})
-	if bootErr != nil {
-		t.Fatalf("newServerOnSocket = %v, want the chmod failure to be non-fatal", bootErr)
+	oldChmod := chmodSocket
+	chmodSocket = func(path string, _ os.FileMode) error {
+		if err := os.Remove(path); err != nil {
+			t.Errorf("remove the bound socket: %v", err)
+		}
+		if err := os.WriteFile(path, []byte("other"), 0o600); err != nil {
+			t.Errorf("write the other entry: %v", err)
+		}
+		return errChmodRefused
 	}
-	if s == nil {
-		t.Fatal("newServerOnSocket returned a nil server for a non-fatal chmod failure")
-	}
-	t.Cleanup(func() { s.signalShutdown(); s.closeAll(sock) })
+	t.Cleanup(func() { chmodSocket = oldChmod })
 
-	want := "claustrum: chmod socket: " + errChmodRefused.Error()
-	if !strings.Contains(stderr, want) {
-		t.Errorf("stderr = %q, want it to contain %q", stderr, want)
+	s, bootErr := newServerOnSocket(sock, "chmod-token", "", wireLogOptions{}, false, false)
+	if s != nil {
+		t.Cleanup(func() { s.signalShutdown(); s.closeAll(sock) })
+		t.Error("newServerOnSocket returned a server after a failed chmod")
 	}
-	// The arm does not unbind: the socket is still there and the token was still
-	// persisted beside it, which is what "non-fatal" has to mean.
-	if _, err := os.Stat(sock); err != nil {
-		t.Errorf("socket missing after a failed chmod: %v", err)
+	if want := "chmod socket: " + errChmodRefused.Error(); bootErr == nil || bootErr.Error() != want {
+		t.Errorf("newServerOnSocket = %v, want the error %q", bootErr, want)
 	}
-	if b, err := os.ReadFile(filepath.Join(dir, persistedTokenName)); err != nil || string(b) != "chmod-token" {
-		t.Errorf("%s = %q (err %v), want the boot to have carried on to persistToken", persistedTokenName, b, err)
+	if b, err := os.ReadFile(sock); err != nil || string(b) != "other" {
+		t.Errorf("the other entry at the socket path = %q, %v, want it left alone", b, err)
 	}
 }
 

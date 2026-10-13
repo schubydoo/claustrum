@@ -22,7 +22,7 @@ import (
 // darwinProcStart) rather than /proc clock ticks. The
 // on-disk record (field order, string-vs-number typing, path) is identical to linux.
 func (m *procManager) recordChild(pid int, argv0, program string) {
-	if m.runDir == "" || pid < 2 {
+	if m.runDir == "" || pid < 2 || m.noRecords {
 		return
 	}
 	start := darwinProcStart(pid)

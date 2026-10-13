@@ -60,8 +60,8 @@ func TestRealReadLiveProcNeedsVsizeField(t *testing.T) {
 	// 20 fields after the paren: state, ppid, pgrp, 16 zeros, starttime. Index 20 is
 	// absent. claustrum's floor admits this today and answers procAlive.
 	mk(73, "stat", "1 (x) R 1 73 "+strings.Repeat("0 ", 16)+"9000")
-	if lp := realReadLiveProc(73, false); lp.state != procNotOurs {
-		t.Errorf("stat line without a vsize field: state = %d, want procNotOurs", lp.state)
+	if lp := realReadLiveProc(73, false); lp.state != procUnknown {
+		t.Errorf("stat line without a vsize field: state = %d, want procUnknown", lp.state)
 	}
 
 	// 21 fields is the first line the new read can judge.

@@ -33,8 +33,9 @@ func readExecChildError(r *os.File) error {
 // <R>//run/./c1/rpc.sock gives <R>/run/c1. The record of the child is in the children
 // folder below that run dir in each row. No test of the socket shape decides it.
 //
-// Not measured: an abstract socket name (@name). It gives the run dir "." here, with
-// no special case.
+// A Linux abstract socket name (@name) gives the run dir "." here, with no special
+// case. The start then ends at the chmod of the socket, as on `5fd08069` (cell H6,
+// Linux VM).
 func execChildRunDir(socket string) string {
 	if socket == "" {
 		return ""
