@@ -337,8 +337,8 @@ The daemon then signals nothing and logs three lines. On a Linux VM (row ST02),
 
 claustrum logs the third line at every start that ends without the lock. The other
 cases without the lock are not measured. A record with another role text is not
-measured. On Linux and macOS claustrum still records and reaps children in that
-state. What the reference does in that state is not measured.
+measured. Such a daemon runs no reap and writes no child record, as on
+`5fd08069` (cell H5, Linux VM).
 
 The lock, the owner record, and the eviction run on Linux and macOS only. The
 machine identity (`node`) is the boot id joined to the pid-namespace inode on

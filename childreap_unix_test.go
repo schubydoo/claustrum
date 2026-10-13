@@ -862,7 +862,7 @@ func TestSameLeader(t *testing.T) {
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
 			fakeLiveProcs(t, map[int]liveProc{pid: tc.live})
-			if got := sameLeader(pid, tc.recStrt); got != tc.want {
+			if got, _ := sameLeader(pid, tc.recStrt); got != tc.want {
 				t.Errorf("sameLeader = %d, want %d", got, tc.want)
 			}
 		})

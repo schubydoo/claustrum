@@ -456,7 +456,7 @@ func childToken(tokenFile string) (string, error) {
 
 // chmodSocket is os.Chmod behind a seam over the 0600 tightening of the socket
 // newServerOnSocket has just bound: a fresh AF_UNIX node owned by the caller does
-// not refuse chmod; without the seam the warn-and-carry-on arm fires only for a
+// not refuse chmod; without the seam the failure arm fires only for a
 // Linux abstract socket (-socket @name), which has no filesystem node to chmod
 // and is not a shape Desktop passes.
 // Distinct from install.go's chmodStaged, which seams the staged CLI binary.
@@ -523,7 +523,13 @@ func newServerOnSocket(socket, token, metricsAddr string, wlopt wireLogOptions, 
 	// stale socket file, or ENOENT when there is none (rows D1a and D1b: the first
 	// connection worked 2.2 to 2.4 s after the start, for a child that ignores
 	// SIGTERM). A no-op off linux and darwin (see childreap_*.go).
-	procs.reapOrphans()
+	//
+	// A daemon that does not hold the run-dir lock runs no reap and writes no child
+	// record (`5fd08069`, cell H5, Linux VM).
+	procs.noRecords = !claim.holder
+	if claim.holder {
+		procs.reapOrphans()
+	}
 
 	_ = os.Remove(socket) // clear a stale socket
 	ln, err := net.Listen("unix", socket)
@@ -532,7 +538,10 @@ func newServerOnSocket(socket, token, metricsAddr string, wlopt wireLogOptions, 
 	}
 	keepSocketFileAtClose(ln)
 	if err := chmodSocket(socket, 0o600); err != nil {
-		fmt.Fprintf(os.Stderr, "claustrum: chmod socket: %v\n", err)
+		// A failed chmod ends the start (`5fd08069`, cell H6, Linux VM).
+		_ = ln.Close()
+		_ = os.Remove(socket)
+		return nil, fmt.Errorf("chmod socket: %v", err)
 	}
 	// The owner record gets its instanceId and startedAt now. Both are the values that
 	// server.capabilities answers, and the instance is the one of the listening line

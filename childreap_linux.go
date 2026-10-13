@@ -3,9 +3,12 @@
 package main
 
 import (
+	"errors"
+	"io/fs"
 	"os"
 	"strconv"
 	"strings"
+	"syscall"
 )
 
 // The linux-specific half of the orphan reap: it reads a live process from /proc and
@@ -27,19 +30,60 @@ func ownReapIdentity() (node, host string) {
 	return nodeID(), "machine-id:" + machineID()
 }
 
+// procAbsent reports whether a read error of /proc means that the process does not
+// exist. Every other error means that the process cannot be inspected.
+func procAbsent(err error) bool {
+	return errors.Is(err, fs.ErrNotExist) || errors.Is(err, syscall.ESRCH)
+}
+
+// unparseableStat is the reference's reason for a stat that does not parse
+// (`5fd08069`, cells H2d and H4, Linux VM).
+const unparseableStat = "unparseable stat"
+
+// pidNamespace compares the pid namespace link of a child with the daemon's own
+// (`5fd08069`, cells H3 and H3v, Linux VM). A link of the child that does not exist
+// gives procGone. A link that cannot be read gives procNotChild, with the reference's
+// reason. Cell H3v measures that reason for "permission denied". claustrum gives it
+// for every other read error too (not measured). Another namespace gives procNotOurs,
+// as before. With no own link there is no test, as before (not measured).
+func pidNamespace(proc string) (state int, why string) {
+	self, err := os.Readlink(procRoot + "/self/ns/pid")
+	if err != nil {
+		return procAlive, ""
+	}
+	other, err := os.Readlink(proc + "/ns/pid")
+	switch {
+	case err == nil && other == self:
+		return procAlive, ""
+	case err == nil:
+		return procNotOurs, ""
+	case procAbsent(err):
+		return procGone, ""
+	}
+	return procNotChild, "pid namespace unreadable: " + err.Error()
+}
+
 // realReadLiveProc reads /proc/<pid> for the reap. It always reads stat (state, group id,
-// and start-time). When wantEnv is set it also applies the pid-namespace guard and reads
-// the program from cmdline and the two markers from environ.
+// and start-time) and the pid namespace link. When wantEnv is set it applies the
+// pid-namespace guard to the state and reads the program from cmdline and the two
+// markers from environ. Without wantEnv the result of the guard goes into nsState.
+//
+// Only a stat that does not exist is a process that is gone. A stat that cannot be
+// read or does not parse gives procUnknown (`5fd08069`, cells H2a to H2d, Linux VM).
+// The reason text of a stat that cannot be read is claustrum's own (not measured).
 func realReadLiveProc(pid int, wantEnv bool) liveProc {
 	lp := liveProc{state: procGone}
 	proc := procRoot + "/" + strconv.Itoa(pid)
 	stat, err := procReadFile(proc + "/stat")
 	if err != nil {
-		return lp // gone
+		if !procAbsent(err) {
+			lp.state, lp.why = procUnknown, "stat unreadable: "+err.Error()
+		}
+		return lp
 	}
 	i := strings.LastIndexByte(string(stat), ')')
 	if i < 0 {
-		lp.state = procNotOurs
+		lp.state, lp.why = procUnknown, unparseableStat
 		return lp
 	}
 	fields := strings.Fields(string(stat)[i+1:])
@@ -51,7 +95,7 @@ func realReadLiveProc(pid int, wantEnv bool) liveProc {
 	// claustrum therefore reads vsize (stat field 23) alongside the state letter,
 	// which is why the floor below is 21 fields rather than 20.
 	if len(fields) <= 20 {
-		lp.state = procNotOurs
+		lp.state, lp.why = procUnknown, unparseableStat
 		return lp
 	}
 	if fields[0] == "Z" || fields[0] == "X" {
@@ -60,18 +104,22 @@ func realReadLiveProc(pid int, wantEnv bool) liveProc {
 	if fields[20] == "0" { // vsize
 		return lp
 	}
-	lp.pgid, _ = strconv.Atoi(fields[2]) // field 5 (pgrp)
-	lp.startTicks = fields[19]           // field 22 (starttime)
+	// A group field that is not an integer does not parse (cell H2d).
+	if lp.pgid, err = strconv.Atoi(fields[2]); err != nil { // field 5 (pgrp)
+		lp.state, lp.why = procUnknown, unparseableStat
+		return lp
+	}
+	lp.startTicks = fields[19] // field 22 (starttime)
 	lp.state = procAlive
+	ns, why := pidNamespace(proc)
 	if !wantEnv {
+		lp.nsState, lp.why = ns, why
 		return lp
 	}
 	// The pid-namespace guard: a process in another namespace is not ours to judge.
-	if self, e1 := os.Readlink(procRoot + "/self/ns/pid"); e1 == nil {
-		if other, e2 := os.Readlink(proc + "/ns/pid"); e2 == nil && self != other {
-			lp.state = procNotOurs
-			return lp
-		}
+	if ns != procAlive {
+		lp.state, lp.why = ns, why
+		return lp
 	}
 	cmdline, err := procReadFile(proc + "/cmdline")
 	if err != nil {

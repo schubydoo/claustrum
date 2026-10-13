@@ -22,13 +22,14 @@ func TestRealReadLiveProcStatArms(t *testing.T) {
 	// A stat line too short to carry the start-time. Without the length check the mutant
 	// indexes past the end of the field slice.
 	mk(90, "stat", "90 (x) R 1 90 too short")
-	if lp := realReadLiveProc(90, false); lp.state != procNotOurs {
-		t.Errorf("short stat line: state = %d, want procNotOurs (%+v)", lp.state, lp)
+	if lp := realReadLiveProc(90, false); lp.state != procUnknown {
+		t.Errorf("short stat line: state = %d, want procUnknown (%+v)", lp.state, lp)
 	}
 
-	// Without the environment, the read stops at the stat: the namespace link, cmdline and
-	// environ are never consulted. None of them exists in this fixture, so a mutant that
-	// dropped the early return reads the process as not ours.
+	// Without the environment, the read does not go on to cmdline and environ. Neither
+	// exists in this fixture, and it has no namespace link of this daemon, so the
+	// namespace test does not run. A mutant that dropped the early return reads the
+	// process as not ours.
 	mk(91, "stat", "91 (x) R 1 91 "+fields16+"9000 x")
 	lp := realReadLiveProc(91, false)
 	if lp.state != procAlive {

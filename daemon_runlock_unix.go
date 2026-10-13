@@ -90,6 +90,8 @@ type runDirClaim struct {
 	// complete writes the full owner record: the short record plus instanceId and
 	// startedAt. The daemon calls it after the reap of its start and the bind.
 	complete func(instanceID string, startedAt int64)
+	// holder says that this daemon holds the run-dir lock.
+	holder bool
 }
 
 // claimRunDir takes the run-dir lock and writes the short owner record of this daemon:
@@ -110,8 +112,8 @@ type runDirClaim struct {
 // The reference printed it on a Linux VM (row ST02, f6010b97 and 89cb6289). There a process
 // with no daemon record held the lock, and two other lines came first. claustrum prints it
 // on every arm that ends without the lock. The other arms are not measured. The line says "recording
-// none". claustrum still records and reaps children in that state. What the reference does
-// there is not measured.
+// none". Such a daemon runs no reap and writes no child record, see newServerOnSocket
+// (`5fd08069`, cell H5, Linux VM).
 func claimRunDir(socket, role string) runDirClaim {
 	dir := filepath.Dir(socket)
 	path := filepath.Join(dir, runDirLockName)
@@ -143,6 +145,7 @@ func claimRunDir(socket, role string) runDirClaim {
 	short := ownerRecord{Pid: os.Getpid(), Role: role, Node: nodeID()}
 	writeOwnerRecord(fd, short)
 	return runDirClaim{
+		holder: true,
 		release: func() {
 			_ = syscall.Ftruncate(fd, 0)
 			_ = syscall.Close(fd)

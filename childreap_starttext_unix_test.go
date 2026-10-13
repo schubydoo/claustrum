@@ -53,7 +53,7 @@ func TestStartTextWithTwoBlanksDoesNotMatch(t *testing.T) {
 	if !daemonAlive(daemon, one, simOwnDaemon) {
 		t.Error("a live daemon with a one-blank record reads as gone")
 	}
-	if v := sameLeader(pid, two); v != verdictSkip {
+	if v, _ := sameLeader(pid, two); v != verdictSkip {
 		t.Errorf("sameLeader with a two-blank start = %d, want skip", v)
 	}
 }
