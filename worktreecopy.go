@@ -27,8 +27,7 @@ const worktreesSubdir = "worktrees"
 //
 // Best-effort: the worktree already exists, so a copy failure does not turn into a
 // failed request.
-// The manifest copy runs first, then the `.claude/` copy. The order is observable
-// when both name the same path, because the second copy overwrites the first.
+// The manifest copy runs first, then the `.claude/` copy.
 //
 // host is the settings control of the daemon, or nil (selectsIncludeScan).
 func populateWorktree(u gitUse, host *shadowHost, repo, worktree string) {
@@ -183,7 +182,7 @@ func safeOverlayDest(worktree, rel string) string {
 }
 
 // copyFileBody moves the bytes of one copy. A test replaces it to make a copy fail
-// after the target exists.
+// after the target exists. That test must not run in parallel.
 var copyFileBody = io.Copy
 
 // copyFile copies one regular file, creating parent directories as needed.
@@ -216,10 +215,6 @@ func copyFile(src, dst string) {
 		return
 	}
 	defer in.Close()
-	// The file that was opened must be the regular file that Lstat saw.
-	if ofi, err := in.Stat(); err != nil || !ofi.Mode().IsRegular() || !os.SameFile(fi, ofi) {
-		return
-	}
 	if err := os.MkdirAll(filepath.Dir(dst), 0o755); err != nil {
 		return
 	}

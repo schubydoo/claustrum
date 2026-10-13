@@ -498,22 +498,23 @@ func TestCopyFileOpenAndWriteFailures(t *testing.T) {
 			t.Error("copyFile replaced a directory with a file")
 		}
 	})
+}
 
-	// A copy that fails after the target exists leaves no target.
-	t.Run("write_fails", func(t *testing.T) {
-		old := copyFileBody
-		copyFileBody = func(w io.Writer, _ io.Reader) (int64, error) {
-			n, _ := w.Write([]byte("half"))
-			return int64(n), errors.New("no space left on device")
-		}
-		t.Cleanup(func() { copyFileBody = old })
-		dir := t.TempDir()
-		src := filepath.Join(dir, "a.txt")
-		writeFile(t, src, "some bytes to write\n", 0o644)
-		dst := filepath.Join(dir, "out", "a.txt")
-		copyFile(src, dst)
-		if _, err := os.Lstat(dst); !os.IsNotExist(err) {
-			t.Errorf("Lstat of the target after a failed copy: err = %v, want not exist", err)
-		}
-	})
+// TestCopyFileRemovesATargetItCouldNotComplete: a copy that fails after the target
+// exists leaves no target. Not parallel: it replaces copyFileBody.
+func TestCopyFileRemovesATargetItCouldNotComplete(t *testing.T) {
+	old := copyFileBody
+	copyFileBody = func(w io.Writer, _ io.Reader) (int64, error) {
+		n, _ := w.Write([]byte("half"))
+		return int64(n), errors.New("no space left on device")
+	}
+	t.Cleanup(func() { copyFileBody = old })
+	dir := t.TempDir()
+	src := filepath.Join(dir, "a.txt")
+	writeFile(t, src, "some bytes to write\n", 0o644)
+	dst := filepath.Join(dir, "out", "a.txt")
+	copyFile(src, dst)
+	if _, err := os.Lstat(dst); !os.IsNotExist(err) {
+		t.Errorf("Lstat of the target after a failed copy: err = %v, want not exist", err)
+	}
 }
