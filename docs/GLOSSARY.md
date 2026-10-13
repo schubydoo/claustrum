@@ -154,8 +154,7 @@ Noun. The daemon's own copy of a repository's git settings. See
 
 ## sleeper
 
-Noun. A sleeper is a test process that only waits. See
-the [record of `process.killAndWait`](record/process-killandwait.md).
+Noun. A sleeper is a test process that only waits.
 
 ## spelling
 

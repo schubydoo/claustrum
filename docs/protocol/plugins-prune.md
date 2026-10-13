@@ -88,7 +88,3 @@ The paths and the `<error>` texts in `legacy` and `errors` are those of the oper
 ## Differences from the reference
 
 claustrum is built to answer as the reference daemon does, and no entry of the divergence catalog applies to this method. `kept` and `staleArchives` are in the response because the reference has them. No measurement against the reference build `19f30c46` made either one differ from `0`. The `errors` member and the request with no `params` are from the code of claustrum. No measurement against the reference covers them.
-
-## More detail
-
-The measurements against the reference are in the [measurement record](../record/plugins-prune.md). Most readers do not need that page.

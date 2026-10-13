@@ -16,7 +16,7 @@ import (
 // The filter rule of the git.worktree_create checkout. 5fd08069 refuses a create
 // whose checkout needs a git filter that only the repository's own git config
 // defines. 89cb6289 runs that filter. The cell names in the comments are those
-// of docs/record/git-worktree-create.md. A Linux VM with git 2.43.0 ran the
+// of the VM rounds. A Linux VM with git 2.43.0 ran the
 // cells, and a Windows VM ran a part of them.
 
 // filterKeys are the keys of a filter section that the checkout reads, in sorted

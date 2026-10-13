@@ -13,7 +13,7 @@ import (
 )
 
 // The filter rule of the git.worktree_create checkout (gitfilter.go). The cell
-// names are those of docs/record/git-worktree-create.md, from a Linux VM with
+// names are those of the VM rounds, from a Linux VM with
 // 5fd08069. A Windows VM ran a part of the cells. Every filter program is this
 // test binary in the "filter-mark" helper mode. Its marker file proves whether
 // it ran.

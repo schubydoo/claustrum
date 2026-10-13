@@ -140,7 +140,7 @@ const (
 
 // callRepoConfig is the daemon's own read of the config of baseRepo
 // (gitrepoconfig.go). It is not a call of 89cb6289: 5fd08069 makes it (cell C2a
-// of docs/record/git-config-refusals.md).
+// of the config refusals).
 const callRepoConfig = "/|-|config --no-includes --file - --list -z"
 
 // statusGateCalls are K1 calls 1 to 5, for a path outside baseRepo, with the read

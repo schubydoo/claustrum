@@ -730,7 +730,7 @@ func gitStatus(req *request) response {
 
 // unresolvable reports whether filepath.EvalSymlinks fails on p, for any reason.
 // git.status treats such a baseRepo as missing, and git.list_branches such a path
-// (docs/PROTOCOL.md, docs/record/git-list-branches.md).
+// (docs/PROTOCOL.md).
 func unresolvable(p string) bool {
 	_, err := filepath.EvalSymlinks(p)
 	return err != nil
@@ -752,8 +752,8 @@ func gitListBranches(req *request) response {
 	}
 	// A path inside a managed worktrees tree, and a non-empty path that does not
 	// resolve, answer the bare isRepo:false shape (branches:[]) before any git call
-	// and before the check of the daemon's own GIT_CONFIG_COUNT
-	// (docs/record/git-list-branches.md). The managed-worktrees test also runs on
+	// and before the check of the daemon's own GIT_CONFIG_COUNT.
+	// The managed-worktrees test also runs on
 	// baseRepo.
 	if baseRepoUnderManagedWorktrees(p.Path) || baseRepoUnderManagedWorktrees(p.repoDir()) ||
 		(p.Path != "" && unresolvable(p.Path)) {
@@ -864,8 +864,7 @@ func gitWorktreeCreateLocked(req *request, p *gitParams, repo string) response {
 	// (gitdirtrust.go). A refusal creates no worktree directory, no entry and no
 	// branch. When the daemon's own environment carries GIT_COMMON_DIR, the refusal
 	// text is wrapped as a failed add. The check of the daemon's own GIT_CONFIG_COUNT
-	// comes after a trust refusal and before the "no repository" answer
-	// (docs/record/git-worktree-create.md).
+	// comes after a trust refusal and before the "no repository" answer.
 	t := requestGitDirTrust(repo, false)
 	// The git directory as it is before the gate (acceptedGitDir).
 	var gitDirBefore os.FileInfo
@@ -1000,7 +999,7 @@ func gitWorktreeCreateLocked(req *request, p *gitParams, repo string) response {
 		}
 		// The root-chain step comes before the owner and write refusals of the root.
 		// The <directory> symlink refusal comes after them, then the <directory> step.
-		// docs/record/git-worktree-create.md gives the measured order.
+		// That is the measured order.
 		dir, msg, code := externalChainCheck(p.WorktreeRoot, p.WorktreePath)
 		if msg != "" {
 			return okResult(req.ID, worktreeResult{Success: false, Error: msg, ErrorCode: code})

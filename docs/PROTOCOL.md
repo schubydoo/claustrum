@@ -900,10 +900,10 @@ below give the trigger and the result shape. Codes are `-32602` unless noted.
 | git.worktree_create | `refusing to create worktree: <root> is inside a git checkout (<dir> has a .git entry); a worktree location must be outside every checkout, so that no session working in one can reach it — choose a directory that is not part of any repository` | in `error`, `errorCode:"unsafe_path"`, Linux and macOS, with `worktreeRoot`, when a directory from `/` down to the root holds a `.git` entry of any kind. A missing directory is skipped. The ancestor test answers first (rows G18, G40a and G40b). Nothing is created. Measured against `f6010b97` on Linux and macOS VMs, with a `.git` entry up to five levels above the root. `<root>` is `worktreeRoot` as sent, with a trailing slash or `//` kept. `<dir>` is that directory, resolved and cleaned. Linux and macOS VMs measured these spellings. When several directories hold a `.git` entry, the highest one is named. Linux and macOS VMs measured that too |
 | git.worktree_create | `refusing to create worktree: <dir> is itself a git checkout (it has a .git entry); a worktree location must be outside every checkout` | in `error`, `errorCode:"unsafe_path"`, Linux and macOS, with `worktreeRoot`, when the `<directory>` level holds a `.git` entry. Nothing is created. Measured against `f6010b97` on Linux and macOS VMs. Under a symlinked root, `<dir>` has the root resolved. Linux and macOS VMs measured that spelling |
 | git.worktree_create | `refusing to create worktree: <root> passes through too many symbolic links (a loop?)` | in `error`, `errorCode:"unsafe_path"`, Linux and macOS, with `worktreeRoot`, when a symlink loop is in the path of the root. A failing directory above the loop gets the ancestor text first (claustrum's choice, not measured). Nothing is created. Measured against `f6010b97` on Linux and macOS VMs. `<root>` is `worktreeRoot` without a trailing slash. claustrum also drops a `//` here, and it sends this refusal for a finite chain of more than 255 links (neither measured) |
-| git.worktree_create | `refusing to create worktree: <p> carries a .git file that does not name this repository's own worktree admin directory` | in `error`, `errorCode:"unsafe_path"`, Linux and macOS, after a successful add. In `<p>` the parent folder of the leaf has its symlinks resolved, the last name is kept, and the path is cleaned (`89cb6289` and claustrum, cells T1, T5, U2f and A12c g, Linux and macOS VMs). The `gitdir:` path in the `.git` file of the new worktree lies in a folder that is not named `worktrees`. Or `baseRepo` has a `worktrees` folder with no entry of that name (`89cb6289` in cell P-p, Linux and macOS VMs). Or the `commondir` file of the registration does not lead back to the git directory. Or the `commondir` file or the `gitdir` record of the registration cannot be read as a file (cells P-g to P-j, P-n, P-o and P-q, Linux VM with git 2.43 and macOS VM with git 2.50). No checkout runs and nothing is rolled back. Measured against `89cb6289` on a macOS VM with git 2.50: rows D-1, D-2, D-4, D-5, D-7 and D-9. Row D-11 on a Linux VM and row D-13 on both VMs show it too. The macOS VM shows it also in attach mode (cell P-a) and with a `worktreeRoot` (cell P-b). Cells P-d and Pd2 show it for a path that does not exist, on Linux and macOS VMs (Pd2 on Linux only). See the [measurement record](record/git-worktree-create.md) |
-| git.worktree_create | `refusing to create worktree: <p> was not populated by git worktree add` | in `error`, `errorCode:"unsafe_path"`, Linux and macOS, after a successful add, when the git directory of `baseRepo` has no `worktrees` folder. Or, in the state `shadow`, `.git` no longer names the held git directory right after the add (`5fd08069`, round `val-s3p2b2-10`, Linux and macOS VMs). In `<p>` the parent folder of the leaf has its symlinks resolved, the last name is kept, and the path is cleaned (`89cb6289` and claustrum, cells T4 and U2e, Linux and macOS VMs). No checkout runs and nothing is rolled back. Measured against `89cb6289` with `GIT_COMMON_DIR` of another repository in the daemon environment. Rows B-E1 and B-E3 and cell D8e ran on Linux and macOS VMs, and row D-8 on a macOS VM. With a `worktrees` folder that holds no entry of the name, `89cb6289` answers the "does not name" text (cell P-p, Linux and macOS VMs), and claustrum answers that text for such a folder too. A `worktrees` folder that holds entries of other names only is not measured, and claustrum answers the "does not name" text there. See the [measurement record](record/git-worktree-create.md) |
-| git.worktree_create | `refusing to create worktree: <p> carries a .git file naming an admin directory whose own record is of a different worktree` | in `error`, `errorCode:"unsafe_path"`, Linux and macOS, after a successful add. In `<p>` the parent folder of the leaf has its symlinks resolved, the last name is kept, and the path is cleaned (`89cb6289` and claustrum, cells T2, T10, U2d and U3b, Linux and macOS VMs). The `gitdir` record of the registration in the git directory of `baseRepo` was read and does not name `<p>/.git`. No checkout runs and nothing is rolled back. If `timeoutMs` expired during the add, the answer is the same (cell P-f). Measured against `89cb6289`: row I07a on a macOS VM, and cells P-c, P-f and P-k to P-m on a Linux VM with git 2.43 and a macOS VM with git 2.50. See the [measurement record](record/git-worktree-create.md) |
-| git.worktree_create | `refusing to create worktree: <p> carries a .git file naming an admin entry other than the one just created for it` | in `error`, `errorCode:"unsafe_path"`, Linux and macOS, after a successful add. In `<p>` the parent folder of the leaf has its symlinks resolved, the last name is kept, and the path is cleaned (`89cb6289` and claustrum, cells T3 and U2g, Linux and macOS VMs). The registration in the git directory of `baseRepo` is a stale entry that the step before the add left in place: its record names `<p>/.git`, and it stayed: it holds a `locked` file, its remove failed, or it is one of two or more stale entries. No checkout runs and nothing is rolled back. Measured against `89cb6289` on Linux and macOS VMs, with `GIT_COMMON_DIR` of another repository in the daemon environment: cells A9 g, A9b g, A10 g, A13 g, A13b g, S1 g, S5 g and S6 g. See the [measurement record](record/git-worktree-create.md) |
+| git.worktree_create | `refusing to create worktree: <p> carries a .git file that does not name this repository's own worktree admin directory` | in `error`, `errorCode:"unsafe_path"`, Linux and macOS, after a successful add. In `<p>` the parent folder of the leaf has its symlinks resolved, the last name is kept, and the path is cleaned (`89cb6289` and claustrum, cells T1, T5, U2f and A12c g, Linux and macOS VMs). The `gitdir:` path in the `.git` file of the new worktree lies in a folder that is not named `worktrees`. Or `baseRepo` has a `worktrees` folder with no entry of that name (`89cb6289` in cell P-p, Linux and macOS VMs). Or the `commondir` file of the registration does not lead back to the git directory. Or the `commondir` file or the `gitdir` record of the registration cannot be read as a file (cells P-g to P-j, P-n, P-o and P-q, Linux VM with git 2.43 and macOS VM with git 2.50). No checkout runs and nothing is rolled back. Measured against `89cb6289` on a macOS VM with git 2.50: rows D-1, D-2, D-4, D-5, D-7 and D-9. Row D-11 on a Linux VM and row D-13 on both VMs show it too. The macOS VM shows it also in attach mode (cell P-a) and with a `worktreeRoot` (cell P-b). Cells P-d and Pd2 show it for a path that does not exist, on Linux and macOS VMs (Pd2 on Linux only). |
+| git.worktree_create | `refusing to create worktree: <p> was not populated by git worktree add` | in `error`, `errorCode:"unsafe_path"`, Linux and macOS, after a successful add, when the git directory of `baseRepo` has no `worktrees` folder. Or, in the state `shadow`, `.git` no longer names the held git directory right after the add (`5fd08069`, round `val-s3p2b2-10`, Linux and macOS VMs). In `<p>` the parent folder of the leaf has its symlinks resolved, the last name is kept, and the path is cleaned (`89cb6289` and claustrum, cells T4 and U2e, Linux and macOS VMs). No checkout runs and nothing is rolled back. Measured against `89cb6289` with `GIT_COMMON_DIR` of another repository in the daemon environment. Rows B-E1 and B-E3 and cell D8e ran on Linux and macOS VMs, and row D-8 on a macOS VM. With a `worktrees` folder that holds no entry of the name, `89cb6289` answers the "does not name" text (cell P-p, Linux and macOS VMs), and claustrum answers that text for such a folder too. A `worktrees` folder that holds entries of other names only is not measured, and claustrum answers the "does not name" text there. |
+| git.worktree_create | `refusing to create worktree: <p> carries a .git file naming an admin directory whose own record is of a different worktree` | in `error`, `errorCode:"unsafe_path"`, Linux and macOS, after a successful add. In `<p>` the parent folder of the leaf has its symlinks resolved, the last name is kept, and the path is cleaned (`89cb6289` and claustrum, cells T2, T10, U2d and U3b, Linux and macOS VMs). The `gitdir` record of the registration in the git directory of `baseRepo` was read and does not name `<p>/.git`. No checkout runs and nothing is rolled back. If `timeoutMs` expired during the add, the answer is the same (cell P-f). Measured against `89cb6289`: row I07a on a macOS VM, and cells P-c, P-f and P-k to P-m on a Linux VM with git 2.43 and a macOS VM with git 2.50. |
+| git.worktree_create | `refusing to create worktree: <p> carries a .git file naming an admin entry other than the one just created for it` | in `error`, `errorCode:"unsafe_path"`, Linux and macOS, after a successful add. In `<p>` the parent folder of the leaf has its symlinks resolved, the last name is kept, and the path is cleaned (`89cb6289` and claustrum, cells T3 and U2g, Linux and macOS VMs). The registration in the git directory of `baseRepo` is a stale entry that the step before the add left in place: its record names `<p>/.git`, and it stayed: it holds a `locked` file, its remove failed, or it is one of two or more stale entries. No checkout runs and nothing is rolled back. Measured against `89cb6289` on Linux and macOS VMs, with `GIT_COMMON_DIR` of another repository in the daemon environment: cells A9 g, A9b g, A10 g, A13 g, A13b g, S1 g, S5 g and S6 g. |
 | git.worktree_create | `failed to create parent directory: lstat <path>: <errno text>` | in `error`, `errorCode:"mkdir_failed"`, Linux and macOS, with `worktreeRoot`. There are two cases. First, a root symlink names a missing target, and `<path>` is that target. Second, a directory from `/` down to the root cannot be searched. Then `<path>` is `<dir>/.git` for the highest such directory. When that directory is above the root and fails the ancestor test itself, it gets the ancestor text instead (row G36a). Nothing is created. Measured against `f6010b97` on Linux and macOS VMs. Other errors from resolving the root are sent as Go prints them (not measured) |
 | git.worktree_create | `failed to create parent directory: <path>: not a directory` | in `error`, `errorCode:"mkdir_failed"`, Linux and macOS, with `worktreeRoot`, when the deepest existing part of the root is not a directory after its symlinks are resolved. `<path>` is that resolved path. It can be the root, a path above the root, or the file that a root symlink names. A regular file above the root that fails the ancestor test gets the ancestor text first (claustrum's choice, not measured). Nothing is created. Measured against `f6010b97` on Linux and macOS VMs |
 | git.worktree_create | `failed to create parent directory: <path> is not a directory` | in `error`, `errorCode:"mkdir_failed"`, Linux and macOS. Without `worktreeRoot`, an existing component above the leaf is not a directory. `<path>` is its full path, with the symlinks of the repo resolved and with `//` and `/./` removed. With `worktreeRoot`, the `<directory>` level exists and is not a directory, and `<path>` is its path with the root resolved. A `<directory>` that is a symlink gets the symlink refusal first. Nothing is created. Measured against `f6010b97` on Linux and macOS VMs. Linux and macOS VMs measured the symlinked `baseRepo`, the `/./` and the symlinked root. A macOS VM measured the `/tmp` repo spelling. On Windows, without `worktreeRoot`, a file in the path keeps the `os.MkdirAll` text, `mkdir <path>: <OS error>` (not measured) |
@@ -911,15 +911,15 @@ below give the trigger and the result shape. Codes are `-32602` unless noted.
 | git.worktree_create | `failed to create parent directory: statat <name>/.git: <errno text>` | in `error`, `errorCode:"mkdir_failed"`, Linux and macOS, with `worktreeRoot`, when the `<directory>` level exists and cannot be searched. `<name>` is its last component. Measured against `f6010b97` on Linux and macOS VMs |
 | git.worktree_create | `failed to create parent directory: mkdirat <name>: <errno text>` | in `error`, `errorCode:"mkdir_failed"`, Linux and macOS, when a missing directory above the leaf cannot be created. Without `worktreeRoot`, `<name>` is that directory's last component. With `worktreeRoot`, `<name>` is its path relative to the deepest directory that existed before the call, for example `a/b`. A directory that the call made before the failure stays. Measured with `permission denied` and `file name too long` against `f6010b97` on Linux and macOS VMs. Other errno texts take the same shape (not measured). A root made in the same call, then a failed `<directory>`, reads `mkdirat R/cp` by the same rule (not measured) |
 | git.worktree_create | `failed to create parent directory: cannot mark <dir> as a worktree location: openat .claude-managed-worktrees: <errno text>` | in `error`, `errorCode:"mkdir_failed"`, Linux and macOS, with `worktreeRoot`, when the marker cannot be created and no entry of that name exists. `<dir>` is the `<directory>` level with the symlinks of the root resolved. The leaf is not made. Measured against `f6010b97` on Linux and macOS VMs, also under a symlinked root |
-| git.worktree_create | `git worktree add failed: <text>` | in `error`, `errorCode:"worktree_add_failed"`. `<text>` is git's stderr, made by the text rule in the [measurement record](record/git-worktree-create.md). The record also has the rule for git's graft-file `hint:` lines, which the text of claustrum does not start with. The rollback runs no git call and removes the leaf only if it is empty. A pre-existing branch is not deleted (`4534d86`). A failed add answers this frame even when the caller `timeoutMs` expired during the add (measured against `f6010b97` and `90fca6e6` on a macOS VM) |
+| git.worktree_create | `git worktree add failed: <text>` | in `error`, `errorCode:"worktree_add_failed"`. `<text>` is made from git's stderr. The text of claustrum does not start with git's graft-file `hint:` lines. The rollback runs no git call and removes the leaf only if it is empty. A pre-existing branch is not deleted (`4534d86`). A failed add answers this frame even when the caller `timeoutMs` expired during the add (measured against `f6010b97` and `90fca6e6` on a macOS VM) |
 | git.worktree_create | `git worktree add failed: <fallback text> (attaching to the existing branch <b> was refused first: <attach text>)` | in `error`, `errorCode:"worktree_add_failed"`, when the attach add for `existingBranch` fails and the fallback `-b <branchName>` add fails too. The text rule makes each text on its own, each with its own 512-byte cap. Measured against `f6010b97` and `90fca6e6` on a macOS VM |
 | git.worktree_create | `git worktree add failed (checkout): <text>` | in `error`, `errorCode:"worktree_add_failed"`, when the `read-tree` checkout fails. Same text rule, and the same rule for the `hint:` lines. The new directory is removed. The branch the call created goes only when another ref reaches its tip (see [The branch step](#the-branch-step)). In attach mode the attached branch is kept (measured against `f6010b97`). On Linux and macOS a failed placement of the index answers this frame too. The OS error is, for example, `openat <registration name>/index: permission denied` (`89cb6289`, rows A14 and A14f on a Linux VM, A14 and A14b on a macOS VM) or `open <temporary directory>/index: no such file or directory` (cell X1, Linux and macOS VMs) |
-| git.worktree_create | `Claude doesn't run the "<name>" git filter, because only this repository's own git config defines it. If you trust that filter, copy the [filter "<name>"] section from that config (usually .git/config) into ~/.gitconfig on the remote machine, then try again.` | in `error`, `errorCode:"repository_only_filter"`, when a path of the checkout uses a git filter that only the git config of the repository defines. The rollback is the one of a failed checkout. Measured against `5fd08069` on Linux and Windows VMs. A quote mark in `<name>` has a backslash before it (Linux VM). `89cb6289` runs the filter there. See the [measurement record](record/git-worktree-create.md#git-filters-of-the-checkout) |
+| git.worktree_create | `Claude doesn't run the "<name>" git filter, because only this repository's own git config defines it. If you trust that filter, copy the [filter "<name>"] section from that config (usually .git/config) into ~/.gitconfig on the remote machine, then try again.` | in `error`, `errorCode:"repository_only_filter"`, when a path of the checkout uses a git filter that only the git config of the repository defines. The rollback is the one of a failed checkout. Measured against `5fd08069` on Linux and Windows VMs. A quote mark in `<name>` has a backslash before it (Linux VM). `89cb6289` runs the filter there. |
 | git.worktree_create | `git worktree add failed (checkout): this repository's git config cannot be used: a filter defined only there has a name longer than 200 bytes (it starts "<first 40 bytes>"); define it in ~/.gitconfig on the remote machine, or rename it` | in `error`, `errorCode:"worktree_add_failed"`, for such a filter with a name of 201 or 300 bytes. The rollback is the one of a failed checkout. Measured against `5fd08069` on Linux and Windows VMs |
 | git.worktree_create | `git worktree add failed (checkout): this repository's git config cannot be used: the filter "<name>" is defined only there, and Claude cannot handle "=" in a filter's name; define it in ~/.gitconfig on the remote machine, or rename it` | in `error`, `errorCode:"worktree_add_failed"`, for such a filter with `=` in its name. The rollback is the one of a failed checkout. Measured against `5fd08069` on a Linux VM |
-| git.worktree_create | `git worktree add failed (checkout): this repository's git config cannot be used: the filter "<name>" is defined only there, and its name is not valid UTF-8; define it in ~/.gitconfig on the remote machine, or rename it` | in `error`, `errorCode:"worktree_add_failed"`, for such a filter with a name that is not valid UTF-8. The text is claustrum's own. `5fd08069` answers another text on a Linux VM and success on a Windows VM. See the [measurement record](record/git-worktree-create.md#claustrum-and-the-filter-rule) |
-| git.worktree_create | `git worktree add failed (checkout): this repository's git config cannot be used: it names a program for git-lfs ("<key>"); remove that setting, or put it into ~/.gitconfig on the remote machine` | in `error`, `errorCode:"worktree_add_failed"`, when a path uses the filter `lfs` of the user or the system config and the config of the repository has the key `<key>`, a program key of git-lfs. The rollback is the one of a failed checkout. The text is claustrum's own. A Windows VM measured the rule with the words "a transfer program for git-lfs" of build D. See the [measurement record](record/git-worktree-create.md#claustrum-and-the-filter-rule) |
-| git.worktree_create | `git worktree add failed (checkout): the git filter "<name>" has values in this repository's git config that no option of git can replace for the checkout` | in `error`, `errorCode:"worktree_add_failed"`, when the repository adds a `process` key to a filter that has none outside it. The text is claustrum's own. `5fd08069` answers success in the measured state (Linux VM). See the [measurement record](record/git-worktree-create.md#claustrum-and-the-filter-rule) |
+| git.worktree_create | `git worktree add failed (checkout): this repository's git config cannot be used: the filter "<name>" is defined only there, and its name is not valid UTF-8; define it in ~/.gitconfig on the remote machine, or rename it` | in `error`, `errorCode:"worktree_add_failed"`, for such a filter with a name that is not valid UTF-8. The text is claustrum's own. `5fd08069` answers another text on a Linux VM and success on a Windows VM. |
+| git.worktree_create | `git worktree add failed (checkout): this repository's git config cannot be used: it names a program for git-lfs ("<key>"); remove that setting, or put it into ~/.gitconfig on the remote machine` | in `error`, `errorCode:"worktree_add_failed"`, when a path uses the filter `lfs` of the user or the system config and the config of the repository has the key `<key>`, a program key of git-lfs. The rollback is the one of a failed checkout. The text is claustrum's own. A Windows VM measured the rule with the words "a transfer program for git-lfs" of build D. |
+| git.worktree_create | `git worktree add failed (checkout): the git filter "<name>" has values in this repository's git config that no option of git can replace for the checkout` | in `error`, `errorCode:"worktree_add_failed"`, when the repository adds a `process` key to a filter that has none outside it. The text is claustrum's own. `5fd08069` answers success in the measured state (Linux VM). |
 | git.worktree_create | `git worktree add timed out after <n>ms (deadline expired {before the checkout started / during the checkout): <text> / after the checkout finished})` | in `error`, `errorCode:"timeout"`, from the caller-supplied `timeoutMs` (`4534d86`). An absent `timeoutMs`, or 0, arms no deadline. `<text>` comes from the stderr of the killed git, by the same text rule |
 | git.worktree_create | `<frame>; and the undo could not finish for <leaf>: {the worktree directory, its registration, and the branch all remain; remove them by hand before retrying (RemoveAll <entry>: <OS error>) / the worktree directory remains (re-populated while undoing?); remove it by hand before retrying (removeat <leaf base name>: <OS error>)}` | appended to the checkout-failure frame and to each `timeout` frame when a step of the rollback fails. The `errorCode` stays as it was. Measured against `f6010b97` and `90fca6e6` on a Windows VM. In attach mode the first text reads `the worktree directory and its registration both remain` instead, because the call made no branch (row C08b, `f6010b97` and `89cb6289`, Linux VM). On Linux and macOS a registration that cannot be deleted gives `the worktree registration and the branch remain; remove them by hand before retrying (RemoveAll <registration name>: <OS error>)` instead, with the leaf removed (`89cb6289`, rows A14 and A14f on a Linux VM, A14 and A14b on a macOS VM). The text in the parentheses can be claustrum's own, see step 2 of the rollback. In attach mode it reads `the worktree registration remains; remove it by hand before retrying (RemoveAll <registration name>: <OS error>)` (cell X5, Linux and macOS VMs). No rmdir text joins either one (cell X11, Linux VM) |
 | git.worktree_create | `<frame>; and the undo could not finish for <leaf>: <branch part>` | appended when the branch step of the rollback keeps the branch that the call made. See [The branch step](#the-branch-step) for each `<branch part>`. After a failed leaf rmdir, the branch part follows the rmdir text after `; ` (row C05). Some cases also add `"branchKept":true` after `errorCode`. The table there gives each case with its rows and VMs |
@@ -1804,11 +1804,8 @@ refusal. claustrum follows that build here. In the state `shadow` it makes the r
 after the start test and after the call about the repository (see
 [The settings copy](#the-settings-copy)). In the state `fallback-git` it makes no
 read and gives no such refusal, as `5fd08069` (cell O4 of round `s3p2-oldgit`, Linux
-VM). The cells are in the
-[record](record/git-config-refusals.md). The rules below ran on a Linux VM. The
-record names the cells that also ran on a macOS VM and on a Windows VM. A rule for
-one system names that system. The record also names the cells that a claustrum
-build ran.
+VM). The rules below ran on a Linux VM. A rule for
+one system names that system.
 
 The five methods are `git.info`, `git.status`, `git.list_branches`,
 `git.worktree_create` and `git.worktree_remove`. `<text>` is `<class>: <detail>`.
@@ -1872,8 +1869,7 @@ reads the config of the repository of that worktree.
 From the code: claustrum runs that call in the root directory on Linux and macOS,
 and in the working directory of the daemon on Windows. The environment of the call
 is that of the daemon without `GIT_CONFIG`, `GIT_CONFIG_PARAMETERS`, `LC_ALL` and
-`LANGUAGE`. Then come `GIT_DIR=<null device>`, `LC_ALL=C` and `LANGUAGE=C`. The
-record has the values of `5fd08069`. On Linux and macOS claustrum opens each file
+`LANGUAGE`. Then come `GIT_DIR=<null device>`, `LC_ALL=C` and `LANGUAGE=C`. On Linux and macOS claustrum opens each file
 of the read with the flag that gives the daemon no controlling terminal. In cell
 V17 the config is a link to a pty slave. If the pty master closes, `89cb6289` and
 `5fd08069` stay up (Linux VM).
@@ -1925,7 +1921,7 @@ version and the extensions of an included file are not tested (cells X7 and X9).
 | `fatal: bad config line <n> in "<file>"` | The config or an included file has a syntax error. The text is that of git, with the path in quotes |
 | `"<included file>" is outside "<repo>", and on Windows Claude reads a repository's settings only from inside it; if the line that includes it is yours and you trust the file, put that line into ~/.gitconfig on the remote machine instead` | Windows: a relative include that leaves the repository. For a bare repository `<repo>` is its git directory (cell W6) |
 | `"<file>" includes "<value>", and on Windows Claude follows an include only if its path is relative and stays inside the repository; if that line is yours and you trust the file, put the line into ~/.gitconfig on the remote machine instead` | Windows: an absolute include value, also to a missing file, `~/x` and `~root/x`. An absolute value and `~/x` get it in an `includeIf` section whose condition does not match too (cells N12w). `<value>` is cut to its first 300 characters. A value of 300 characters is whole, and one of 301 shows 300 (cells P7w, Windows VM) |
-| `"<file>": is, or is reached through, a link that Claude does not follow here; replace the link with what it points to` | Windows: the config is a file link. Windows, every git method that reads the config: the git directory is a junction or a directory symbolic link, and `<file>` is `<git dir>\config`. The [record](record/git-settings-copy.md#a-git-directory-that-is-replaced-while-a-create-runs) has the cells |
+| `"<file>": is, or is reached through, a link that Claude does not follow here; replace the link with what it points to` | Windows: the config is a file link. Windows, every git method that reads the config: the git directory is a junction or a directory symbolic link, and `<file>` is `<git dir>\config`. |
 
 The path of an included file is the folder of the file that holds the setting, one
 separator, and the value as written. On a Windows VM `path = <dir>/inc.cfg` gives
@@ -1982,7 +1978,7 @@ included files have one sum between them. The file in which a sum passes 8388608
 is refused. Cells X5 found five counted sections: `core`,
 `remote`, `extensions`, `include` and `branch`. Cells V5 found seven more: `lfs`,
 `index`, `url`, `filter`, `feature`, `checkout` and `includeif`. The sections `x` and `user` do not count. This
-arithmetic is fitted to the measured bounds of the record. `5fd08069` states no
+arithmetic is fitted to the measured bounds. `5fd08069` states no
 such rule. The exact pairs are in `core` and `remote`. For each other counted
 section one cell of 200000 lines was refused (cells X5 and V5). An included file
 of 200000 `core.filemode = true` lines is refused with its own path (cells V7).
@@ -2038,7 +2034,6 @@ refusal comes there.
 
 **Where claustrum differs from `5fd08069`.** A line with "from the code" ran on no
 VM. Rounds `val-s3p2b2-3` and `val-s3p2b2-5` ran a build with the settings copy.
-The record of the copy has what they compared.
 
 - On git 2.11.4 and 2.12.5, `5fd08069` gives no refusal in the four fixtures of
   cells V18 (Linux VM). The fixtures are format version `2`, a config of 20 MiB, a
@@ -2141,8 +2136,7 @@ The record of the copy has what they compared.
 Since `5fd08069` the daemon keeps its own copy of the git settings of a repository.
 The copy is in a folder `git-shadow` beside the socket. The git calls of the five git
 methods name that copy, so git reads the copy and not the config of the repository.
-claustrum follows that build. The cells are in the
-[record](record/git-settings-copy.md), with the system of each cell. The five
+claustrum follows that build. The five
 methods are `git.info`, `git.status`, `git.list_branches`, `git.worktree_create` and
 `git.worktree_remove`.
 
@@ -2167,9 +2161,7 @@ last member of the result. No other method sends it, and an error reply has none
 - A `git.info` on a regular file gets the gate of the repository of its folder.
   Outside any repository it starts no test. As the first git request of a daemon
   its reply has no member. That is the reply on Linux and macOS. On Windows the reply is the hooks refusal, with
-  `fork/exec <git.exe>: The directory name is invalid.` The
-  [record](record/git-settings-copy.md#claustrum-and-5fd08069) has the cells of
-  both rules.
+  `fork/exec <git.exe>: The directory name is invalid.`
 - A request with `"shadowDirOff":true` gets `"off-switch"` in three more cases. It
   is the first request of a daemon. Or its reply is "no repository". Or a failed
   start test is kept. The cells are A1 and B1 of round `s3` and cell 32 of round
@@ -2182,7 +2174,7 @@ last member of the result. No other method sends it, and an error reply has none
   one (cell 28 of round `s3p2b-edges`, Linux VM). In the state `shadow` no second
   test ran up to 720 s.
 - The daemon logs one `[GitHandler]` line at the first decision of the state and
-  one at a change. The record has both texts.
+  one at a change.
 
 From the code: a claustrum server with no run folder has no state. No test runs
 there and `git.info` sends no member. The `-serve` daemon has the folder of its
@@ -2200,8 +2192,7 @@ The text has three shapes. `git.info`, `git.status` and `git.list_branches` answ
 it as a `-32603` error. `git.worktree_create` answers it in `error`, with the
 `errorCode` `worktree_add_failed`. `git.worktree_remove` answers it after `failed
 to remove worktree: could not check whether <worktreePath> is locked: `, with no
-`errorCode`. The [record](record/git-settings-copy.md#the-start-test) has the
-three frames and their cells. `89cb6289` answers those requests normally.
+`errorCode`. `89cb6289` answers those requests normally.
 
 | `<cause>` | When |
 |---|---|
@@ -2216,9 +2207,7 @@ measured. The cells of
 a failed call have one error line.
 
 - The daemon keeps a failure for 10 seconds from the end of the failed test. A
-  request in that time gets the kept text with no git call. The
-  [record](record/git-settings-copy.md#the-start-test) has the times of the
-  Linux, macOS and Windows VMs.
+  request in that time gets the kept text with no git call.
 - The kept failure holds after its cause is gone. A request with
   `"shadowDirOff":true` works in that time.
 - A test call that a wrapper holds 29 s passes. One held 32 s gives the error at
@@ -2232,9 +2221,6 @@ a failed call have one error line.
   child still holds then, gives the cause `this repository's git config cannot be
   used: git did not finish reading "<config of the test repository>" within 30
   seconds; try again`.
-- The [record](record/git-settings-copy.md#claustrum-and-5fd08069) has cells N-a
-  to N-c of `5fd08069` with their times (Linux VM. Not measured on macOS and
-  Windows).
 
 ##### The folders
 
@@ -2256,8 +2242,7 @@ in it for its whole life. On Windows the hold is an open handle with no sharing.
   and `info/exclude` where the repository has it. On Linux and macOS it holds a link `worktrees` to the
   `worktrees` folder of the git directory. On Windows it has no such entry.
 - More copies follow the state of the repository: `shallow`, `info/attributes`,
-  `rebase-merge/head-name`, `rebase-apply/head-name` and `BISECT_START`. The
-  record has the cells and systems of each.
+  `rebase-merge/head-name`, `rebase-apply/head-name` and `BISECT_START`.
 - The daemon makes the folder at the first request that accepts the config of the
   repository. After a change of a file, a later request writes its copy again.
 - In the state `fallback-git` the short-lived entries of a request are in the
@@ -2275,15 +2260,11 @@ three shapes of the start test:
 
 `Claude could not prepare its own files on the remote machine: cannot write its copy of the repository's git config: <cause>`
 
-The cause is the `mkdir` error of the folder. The
-[record](record/git-settings-copy.md#the-folder-of-one-repository) has the three
-causes of `5fd08069` (cells N4 of round `val-s3p2b2-3`, Linux and Windows VMs).
+The cause is the `mkdir` error of the folder.
 The same request again gets the same line with no git call.
 
 claustrum does not remove the folder of another daemon, and it has no limit on the
-count of repositories. The
-[record](record/git-settings-copy.md#claustrum-and-5fd08069) has the cells of
-`5fd08069` for a daemon that ended with `SIGKILL`.
+count of repositories.
 
 ##### The copied settings file
 
@@ -2292,8 +2273,7 @@ block of two lines, `[<section>]` and `<key> = "<value>"`, in the order of the f
 of the repository. The file ends with `[lfs]\n\trepositoryformatversion = 0\n`.
 
 - Carried are measured keys of `core`, `index`, `extensions`, `remote`, `branch`,
-  `lfs` and `feature`. The [record](record/git-settings-copy.md#the-carry-table)
-  has one row for each key or class, with its cells.
+  `lfs` and `feature`.
 - Dropped are the measured keys of each other section. Among them are
   `core.hooksPath`, `core.fsmonitor`, `core.sshCommand`, `user.*`, `alias.*`,
   `credential.*`, `http.*` and `filter.*`.
@@ -2306,7 +2286,7 @@ of the repository. The file ends with `[lfs]\n\trepositoryformatversion = 0\n`.
   in a sha1 repository (cell A3 of round `s3p2`, the three systems).
 - A setting of an `[include]` file is carried at the place of the include line. A
   setting of an `includeIf` file is not carried.
-- claustrum drops each key and value that no cell covers. The record lists them.
+- claustrum drops each key and value that no cell covers.
 
 ##### The call about the repository
 
@@ -2357,10 +2337,8 @@ place, in a repository with that extension and a `config.worktree` file:
   `core.longpaths`. A call on a linked worktree gets the items of the file of
   that worktree. The cells are in rounds `val-s3p2b2-3` and `val-s3p2b2-6`, on
   Linux, macOS and Windows VMs. `core.eol` ran on Linux and Windows VMs. The
-  last five keys ran on a Windows VM only. In the rows of the record each key
-  but `core.filemode` has one value. claustrum sends no other key. The
-  [record](record/git-settings-copy.md) has the keys that give no
-  item.
+  last five keys ran on a Windows VM only. In the measured rows each key
+  but `core.filemode` has one value. claustrum sends no other key.
 - A new worktree of `git.worktree_create` gets its own `config.worktree` file. See
   [git.worktree_create](protocol/git-worktree-create.md).
 
@@ -2368,11 +2346,10 @@ place, in a repository with that extension and a `config.worktree` file:
 
 ##### Where claustrum differs from `5fd08069`
 
-The [record](record/git-settings-copy.md#claustrum-and-5fd08069) has the rounds
-that compared a claustrum build with `5fd08069`, and the differences that stay.
+VM rounds compared a claustrum build with `5fd08069`.
 In each of them the reply lines are equal, except in the git-lfs cells of
 `git.worktree_create` and in two Windows rows of a create whose `.git` becomes
-a file. The top of that record says which round ran which build.
+a file.
 
 #### Hardened git calls
 
@@ -2382,8 +2359,7 @@ reply or the disk in at least four places. One is the `git.status` answer for a
 replaced `HEAD` commit (see `git.status`). The three others are in
 `git.worktree_create`. Its failure texts have no graft-file hint. A tree path of
 270 characters creates on Windows. The records of a new worktree hold absolute
-paths. See
-[the option lists in replies and on disk](record/git-worktree-create.md#the-option-lists-in-replies-and-on-disk).
+paths.
 A logging git wrapper measured
 the points below. The option lists and the variables are those of `5fd08069`. In
 the state `shadow` the folder variables name the settings copy (see
@@ -2412,10 +2388,7 @@ that measured it.
   `89cb6289` sends four heavy variables: it has no `GIT_NO_REPLACE_OBJECTS` and no
   `GIT_GRAFT_FILE` there. Without the member, in the states `shadow` and
   `fallback-git`, the light calls of a create and their listings carry six values.
-  The three listings of the branch step of a remove carry them too. The
-  [record](record/git-settings-copy.md#the-git-calls-in-the-state-shadow) has the
-  six values in order, with the cells of `5fd08069` (cells A3 and A4 of round
-  `val-s3p2b1`).
+  The three listings of the branch step of a remove carry them too.
   Cell Q-S4c of round `val-s3p2b2-3` shows the values in the state `fallback-git`
   (Windows VM). The checkout and its listings keep the four light values. Then comes
   `GIT_COMMON_DIR` when the
@@ -2518,18 +2491,13 @@ that measured it.
       listing before it. claustrum runs one listing there (cell B2, Linux, macOS
       and Windows VMs). Both rounds show it.
     - Stays, without the member: one listing with `--show-scope` in each create
-      of claustrum. `5fd08069` has no such call. See the
-      [measurement record](record/git-worktree-create.md#claustrum-and-the-filter-rule).
+      of claustrum. `5fd08069` has no such call.
     - Stays: the read-tree of claustrum carries filter items before its list in
-      some cells with a git filter or with git-lfs. The
-      [record of the settings copy](record/git-settings-copy.md#claustrum-and-5fd08069)
-      has those cells and the two differences of the config reads.
+      some cells with a git filter or with git-lfs.
     - The names of the short-lived entries with the member are from the code and
       its test: `claude-ssh-gitdir-<n>`, `claude-ssh-index-<n>` and
       `claude-ssh-worktreeinclude-<n>/patterns`. `5fd08069` has those names in
       cells A1 and A3 of round `val-s3p2b1` (Linux, macOS and Windows VMs).
-    - The [record of the copy](record/git-settings-copy.md) says which edits
-      ran in which VM round.
 - Graft hint. With `GIT_GRAFT_FILE` set, git can print 8 `hint:` lines about
   `info/grafts` on standard error. The light list turns them
   off with `advice.graftFileDeprecated=false`. The heavy list does not. On
@@ -2545,9 +2513,7 @@ that measured it.
   These cells ran with and without `"shadowDirOff":true`.
 - Reply lines against `b027ede`, the build before the option lists. Among the
   requests of round `val-s3p2b1` that both builds ran, the replies differ in cells
-  B1, B2, B4 and B9 only. `git.status` has cell B1. The
-  [measurement record](record/git-worktree-create.md#the-option-lists-in-replies-and-on-disk)
-  has the three others. Cell B7 ran the cells of groups A and B of round `s3p2` on
+  B1, B2, B4 and B9 only. `git.status` has cell B1. Cell B7 ran the cells of groups A and B of round `s3p2` on
   both builds. No reply line differs: 65 requests on a Linux VM, 76 lines on a
   macOS VM and 41 requests on a Windows VM.
 - Null device. `<null>` is `/dev/null` on Linux and macOS, and `NUL` on Windows.
@@ -2568,8 +2534,7 @@ that measured it.
   listing before the `git status` call start with `--git-dir=<dir>`. Linux, macOS
   and Windows VMs. claustrum only: `git.worktree_create` runs one more listing
   before the listing of the checkout, with `--show-scope`. It names the git
-  directory and not the copy, so it reads the config of the repository. See the
-  [measurement record](record/git-worktree-create.md#claustrum-and-the-filter-rule).
+  directory and not the copy, so it reads the config of the repository.
 - Listing locale. The listing drops the daemon's own `LC_ALL` and `LANGUAGE` and
   ends with `LC_ALL=C` and `LANGUAGE=C`, after the `GIT_COMMON_DIR` pin. `LANG` and
   the rest keep their places. git then writes its listing errors in English (row
@@ -2830,7 +2795,7 @@ remove of a gone worktree.
 |---|---|
 | `git.info` | `{"error":{"code":-32603,"message":<text>}}`, also for a plain dir, a missing dir and a file. Linux, macOS and Windows VMs |
 | `git.list_branches` | the same, also for a plain dir, a file, and an empty or absent `path`. For an empty or absent `path`, the daemon's working directory was a repository or a plain dir. Linux, macOS and Windows VMs |
-| `git.list_branches`, `path` not empty and does not resolve, or inside a managed worktrees directory | `{"isRepo":false,"branches":[]}`, before the check and with no git call. See the [record of the method](record/git-list-branches.md) |
+| `git.list_branches`, `path` not empty and does not resolve, or inside a managed worktrees directory | `{"isRepo":false,"branches":[]}`, before the check and with no git call. |
 | `git.status` | the same, also for a `path` that is a plain dir, the repository, missing or a file, and for a plain-dir `baseRepo`. Linux, macOS and Windows VMs |
 | `git.status`, `baseRepo` does not resolve | `{"isRepo":false,"clean":false}`, before the check and with no git call. See the method section. From the code: a `baseRepo` in a managed worktrees tree answers the same way. That case is not measured with a refused count |
 | `git.worktree_create` | `{"success":false,"error":<text>,"errorCode":"worktree_add_failed"}`, also for a plain-dir or missing `baseRepo` and a relative `worktreePath`. Also for a `worktreePath` with a `..` component, outside the repository or that exists. A missing `branchName` gets its `-32602` frame first. A `baseRepo` inside a managed worktrees directory gets its `nested_base_repo` frame first. Linux, macOS and Windows VMs. On Windows the check comes before the `worktreeRoot` refusal (Windows VM). A `baseRepo` that fails claustrum's own trust-root test gets that frame first too. Only the Windows VM measured that order (round 1 row C1 P1) |
@@ -3297,7 +3262,6 @@ claustrum opens each file without blocking and reads a regular file only.
   answers `{"isRepo":false,"clean":false}`. `5fd08069` answers so in the state
   `shadow` for a folder of the daemon of mode 0500, for a deny entry on Windows
   and for a file system with no free inode. The
-  [record](record/git-settings-copy.md#claustrum-and-5fd08069) has the cells. The
   state `fallback-git` and another cause are from the code.
 - Not measured: a failure of the listing in the temporary folder. claustrum answers
   the hooks refusal, as for the listing of rule 5.
@@ -4273,8 +4237,7 @@ as id-less stream notifications, and it buffers them for a later replay.
   process. Linux and macOS VMs measured that against `89cb6289` (rows B1 to B4, two
   runs each):
     - The old process exits on `SIGTERM`: the reply follows at once (row B1). Its
-      group gets no `SIGKILL` (Linux row X2a, see
-      the [record of process.killAndWait](record/process-killandwait.md)).
+      group gets no `SIGKILL` (Linux row X2a).
     - The old process ignores `SIGTERM`: the daemon sends `SIGKILL` to its group
       after 3 s, and the reply follows (row B2).
     - The old process exits, and a process in another group holds its pipes: the

@@ -73,7 +73,3 @@ claustrum is built to answer as the reference daemon does. No entry of the diver
 One case is claustrum's own choice, and no measurement of the reference covers it. For a short time after a child ends, the daemon still collects its last output and did not yet send the `exit` frame. A request in that time does not answer `alreadyExited`, and the daemon sends no first signal. If the `exit` frame comes inside the wait, the answer is `{"found": true, "died": true}`. If the wait ends first, the request goes on as for a child whose output is not complete.
 
 That missing first signal is a guard of claustrum: the operating system can give the process id (pid) of a child that ended to another process. With `"signal": "KILL"` the guard also changes the answer. The other processes of the group then do not end at once, the wait can run out, and the answer has `"escalated": true`. Item 21 of the [ledger of completed work](../IMPROVEMENTS.md) has the guard for `process.kill`.
-
-## More detail
-
-The measurements against the reference are in the [measurement record](../record/process-killandwait.md). Most readers do not need that page.

@@ -210,7 +210,6 @@ change was reconciled later, under issue 408.
    than create one. The result gains a `branch` field, and `server.capabilities`
    gains the matching feature. An absent or empty value keeps the create-a-branch
    behavior, which is parity.
-   The [measurement record of git.worktree_create](record/git-worktree-create.md) holds the frames.
 
 **Off-wire.** These source changes move no client-visible frame. Four are subsystems.
 One is a CLI mode. One raises the inherited file limit. A closing note covers windows.
@@ -491,8 +490,7 @@ byte-for-byte (values and timing) against the reference:
    reports the outcome as a result. Its params are `timeoutMs` (grace) and
    `escalate`. Its result is `{found,died[,alreadyExited][,escalated]}`.
    The page [process.killAndWait](protocol/process-killandwait.md) is
-   canonical for the defaults and the grace clamp, and its
-   [record](record/process-killandwait.md) for the escalation timing.
+   canonical for the defaults and the grace clamp.
 2. The `process.stdin.offset` contract is new. A `process.stdin` reply now always
    carries `applied`, the cumulative count of decoded bytes. An `offset` param
    makes stdin idempotent across reconnects. A duplicate becomes a

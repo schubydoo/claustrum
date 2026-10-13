@@ -71,11 +71,10 @@ The JSON-RPC surface is identical on every OS. Full internals →
 - Byte-identical wire frames are the contract. Results are ordered structs,
   not maps. Any change to `rpc.go` / `methods_*.go` / `process.go` /
   `results.go` must keep the validation battery green. An intentional
-  divergence owes three things. Give it an entry with its decision rules in
+  divergence owes two things. Give it an entry with its decision rules in
   [`docs/DIVERGENCES.md`](docs/DIVERGENCES.md). Give it its wire frames in
   [`docs/PROTOCOL.md`](docs/PROTOCOL.md), or in the page of its method under
-  `docs/protocol/`. The measured cells go into the record of that method under
-  `docs/record/`. Call it out in the PR.
+  `docs/protocol/`. Call it out in the PR.
 - Do not add a new dependency without discussion. The permitted set is
   stdlib + zstd (`klauspost/compress`) + `golang.org/x/sys` and
   `github.com/Microsoft/go-winio` (both Windows-only), with `CGO_ENABLED=0`.
@@ -86,8 +85,7 @@ The JSON-RPC surface is identical on every OS. Full internals →
   `scratch/` is gitignored on purpose.
 - Each fact of the documentation has one home. A rule that a reader acts on
   gets one or two sentences on the page of its method under `docs/protocol/`.
-  A measurement goes into the record of that method under `docs/record/`, or
-  into a test. The history of completed work goes into
+  The measurements behind it are not part of the repo docs. The history of completed work goes into
   [`docs/IMPROVEMENTS.md`](docs/IMPROVEMENTS.md). The history of a reference
   build goes into [`docs/REFERENCE-BUILDS.md`](docs/REFERENCE-BUILDS.md).
   Another document links to
@@ -325,9 +323,7 @@ The JSON-RPC surface is identical on every OS. Full internals →
       file, a link and a junction go with one plain `os.Root.Remove`, so the
       target of a junction stays. Round `val-s3p2b2-5` ran a claustrum build
       beside `5fd08069` in that cell (Windows VM). No row differs, and the
-      target of each junction stayed. The
-      [record](docs/record/git-settings-copy.md#the-cleanup-of-old-staging-entries)
-      has the rows. An entry that cannot be removed logs one line, and
+      target of each junction stayed. An entry that cannot be removed logs one line, and
       the create goes on (not measured). `git.info` and `git.status` remove no
       entry (`5fd08069`, the same cell). From the code: a create whose
       `worktree add` fails, a
@@ -491,7 +487,7 @@ The JSON-RPC surface is identical on every OS. Full internals →
       removes the worktree in the folder behind the link. `5fd08069` does the
       same for a junction and for a directory symbolic link (Windows VM).
   [git.worktree_create](docs/protocol/git-worktree-create.md#the-held-git-directory)
-  has the rules for a reader, and its record has the cells.
+  has the rules for a reader.
 - In the state `shadow` `git.worktree_create` writes into the git directory of
   `baseRepo` and into the new worktree. None of these steps is a tree delete.
   Each goes through an `os.Root`, with a fixed name or a name that the daemon
@@ -714,7 +710,6 @@ the argv", `cliError` classification, libc selection) →
 
 - Protocol / frames → [`docs/PROTOCOL.md`](docs/PROTOCOL.md)
 - One short page for each method → `docs/protocol/`
-- The measurements behind a method page → `docs/record/`
 - Divergence catalog + rules → [`docs/DIVERGENCES.md`](docs/DIVERGENCES.md)
 - Internals + driver-claim provenance → [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md)
 - Worked client examples → [`docs/EXAMPLES.md`](docs/EXAMPLES.md)

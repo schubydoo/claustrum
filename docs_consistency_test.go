@@ -38,7 +38,7 @@ func docFlat(s string) string {
 func docFiles(t *testing.T) []string {
 	t.Helper()
 	files := []string{"README.md", "AGENTS.md", "SECURITY.md", "CONTRIBUTING.md"}
-	for _, pat := range []string{"docs/*.md", "docs/protocol/*.md", "docs/record/*.md"} {
+	for _, pat := range []string{"docs/*.md", "docs/protocol/*.md"} {
 		m, err := filepath.Glob(filepath.FromSlash(pat))
 		if err != nil {
 			t.Fatal(err)
@@ -583,6 +583,73 @@ func TestDocsEveryErrorCodeIsDocumented(t *testing.T) {
 			default:
 				inTable = false
 			}
+		}
+	}
+}
+
+// docWordLimits holds the most words that each document can have. The limits exist
+// because the documents grew past what a person can read. A limit goes down, never
+// up, without the maintainer's word.
+var docWordLimits = map[string]int{
+	"AGENTS.md":                            8100,
+	"docs/ARCHITECTURE.md":                 5700,
+	"docs/DIVERGENCES.md":                  18200,
+	"docs/EXAMPLES.md":                     1300,
+	"docs/GLOSSARY.md":                     1300,
+	"docs/IMPROVEMENTS.md":                 2300,
+	"docs/PROTOCOL.md":                     76300,
+	"docs/REFERENCE-BUILDS.md":             5200,
+	"docs/UPSTREAM-TRACKING.md":            9700,
+	"docs/index.md":                        800,
+	"docs/protocol/files-extract-tar.md":   2200,
+	"docs/protocol/files-list.md":          500,
+	"docs/protocol/files-read.md":          900,
+	"docs/protocol/files-stat.md":          500,
+	"docs/protocol/files-validate.md":      400,
+	"docs/protocol/git-list-branches.md":   1000,
+	"docs/protocol/git-worktree-create.md": 3100,
+	"docs/protocol/plugins-prune.md":       1100,
+	"docs/protocol/process-killandwait.md": 1000,
+	"docs/protocol/process-reattach.md":    1000,
+	"docs/protocol/process-stdin.md":       900,
+}
+
+// The limits of a document that docWordLimits does not name.
+const (
+	docNewProtocolPageWords = 1200
+	docNewPageWords         = 1500
+)
+
+// TestDocsWordLimits: each Markdown file under docs/ and AGENTS.md has at most the
+// words of its limit. A word is a run of characters between white space.
+func TestDocsWordLimits(t *testing.T) {
+	files := []string{"AGENTS.md"}
+	err := filepath.WalkDir("docs", func(p string, d os.DirEntry, err error) error {
+		if err == nil && !d.IsDir() && strings.HasSuffix(p, ".md") {
+			files = append(files, filepath.ToSlash(p))
+		}
+		return err
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	seen := map[string]bool{}
+	for _, f := range files {
+		seen[f] = true
+		limit, ok := docWordLimits[f]
+		if !ok {
+			limit = docNewPageWords
+			if strings.HasPrefix(f, "docs/protocol/") {
+				limit = docNewProtocolPageWords
+			}
+		}
+		if n := len(strings.Fields(docRead(t, docRel(f)))); n > limit {
+			t.Errorf("%s has %d words, and its limit is %d: cut the file, do not raise the limit", f, n, limit)
+		}
+	}
+	for f := range docWordLimits {
+		if !seen[f] {
+			t.Errorf("docWordLimits names %s, which does not exist: delete the row", f)
 		}
 	}
 }

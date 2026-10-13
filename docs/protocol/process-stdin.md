@@ -65,7 +65,3 @@ The daemon never holds a request back because the queue is full. It answers `-32
 ## Differences from the reference
 
 claustrum is built to answer as the reference daemon does, and no entry of the divergence catalog applies to this method. Two rules of this page are from the code of claustrum, and no measurement against the reference covers them: the `Process not running` answer for a request with no bytes, and the behavior after the child closes its input.
-
-## More detail
-
-The measurements against the reference are in the [measurement record](../record/process-stdin.md). Most readers do not need that page.
