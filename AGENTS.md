@@ -24,7 +24,7 @@ daemon. The wire surface is the product.
 | Tests | `make test` (`go test -race -timeout 20m ./...`). This runs the unit suites and the socket-integration suites. The time limit is explicit, because a race run on one Linux host took more than 9 minutes, near the 10 minute default of `go test` |
 | Validation battery | `scratch/probe/validate.sh`. It diffs frames against the reference. The script is gitignored |
 
-- Use Go 1.25+ and `CGO_ENABLED=0`. The build toolchain is deliberately held
+- Use Go 1.26 and `CGO_ENABLED=0`. The build toolchain is deliberately held
   below 1.27. The default `jsonv2` in 1.27 moves inherited wire bytes, so build
   and CI resolve Go from `go.mod`, never from `go-version: stable`. See
   [`docs/UPSTREAM-TRACKING.md`](docs/UPSTREAM-TRACKING.md) → toolchain-induced
@@ -681,8 +681,7 @@ not exist as sent (Linux and macOS VMs). With `worktreeRoot`, rows q2 to q4
 2026-10-03. See the entry.
 
 D23, Windows only: a child gets its environment block in name order, because
-Go 1.26 sorts it and the reference builds use go1.25.14. The entry retires with
-no code change when the reference moves to Go 1.26 or newer.
+Go 1.26 sorts it and the reference builds use go1.25.14. The entry retires when the reference moves to Go 1.26 or newer.
 
 D24 is on Linux and macOS, and the frames are equal in its two cells (Linux and macOS VMs).
 If git answered `rev-parse --absolute-git-dir`, a rollback of

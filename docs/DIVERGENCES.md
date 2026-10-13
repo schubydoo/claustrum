@@ -174,7 +174,7 @@ rather than repeating them in each entry:
 | [D20](#d20) | Wait 50 ms and read again before the group `SIGKILL` of a child-group leader that reads as gone, at the reap of a `-serve` start (Linux and macOS) | always-on (Linux and macOS) | always-on | rule 3 clause (a) | a measurement that shows the reference waiting before that `SIGKILL`, or a report of a child that outlived a restart because it replaced its program |
 | [D21](#d21) | A second daemon on a live socket appends to `remote-server.log`, where `89cb6289` truncates it and loses the earlier lines of the first daemon (Windows) | always-on (Windows) | always-on | Maintainer decision of 2026-10-02. No frame, reply or exit status differs. A reader of the log file sees the kept lines | a measurement that shows the reference keeping those lines, or a reader of the log that needs the file to start with the lines of the second daemon |
 | [D22](#d22) | `git.worktree_remove` refuses a worktree locked in the `.git` folder of `baseRepo`, in four states where `89cb6289` answers success. Two have a daemon `GIT_DIR` and `GIT_COMMON_DIR` of another repository, with the folder present or gone. One has a daemon `GIT_DIR` alone. One has a `baseRepo` that does not exist as sent. With `worktreeRoot`, rows q2 to q4 (Linux VM) differ in the frame too | always-on | always-on | Maintainer decision of 2026-10-03. The frame differs from `89cb6289` in those four states and in rows q2 to q4 | a caller that needs the removal of a locked worktree there, or a measurement that shows the reference refusing there |
-| [D23](#d23) | The environment block of a child is in name order (Windows). The reference keeps the order of the launching block, then its own entries | always-on (Windows) | always-on | Maintainer decision of 2026-10-13: claustrum stays on Go 1.26, which sorts the block | the reference moves to Go 1.26 or newer |
+| [D23](#d23) | The environment block of a child is in name order (Windows). The reference does not sort it | always-on (Windows) | always-on | Maintainer decision of 2026-10-13: claustrum stays on Go 1.26, which sorts the block | the reference moves to Go 1.26 or newer |
 | [D24](#d24) | The rollback of `git.worktree_create` keeps a folder that replaced the new registration. `89cb6289` removes it in cells B6 and B6b (Linux and macOS VMs), and in B6b it holds the registration of a live sibling worktree | always-on (Linux and macOS) | always-on | Maintainer decision of 2026-10-07. The frames are equal in the measured cells (Linux and macOS VMs). The disk differs | a measurement that shows the reference keeping such a folder, or a decision to match the disk of cells B6 and B6b |
 | [D25](#d25) | With `CLAUDE_SSH_PEER_CHECK=1`, `server.capabilities` answers `"peerCheck":"unavailable"` and the daemon serves every caller. `5fd08069` answers `"peerCheck":"on","peerCheckBy":["network","pidfd"]` there (Linux VM) | always-on (Linux) | always-on | Maintainer decision of 2026-10-10. The frame differs from `5fd08069` in one of the listed values: `1` on Linux | a client that needs the `"on"` answer on Linux, or a decision to answer as `5fd08069` does there |
 | [CT-1](#ct-1) | Opt-in `wantPid` → `pid` + `startTime` on spawn/reattach | off (fields omitted) | caller sends `"wantPid":true` | sanctioned optional-param extension | — (additive, degrades both ways) |
@@ -789,7 +789,7 @@ operator-declinable. Only CT-2 and CT-5 carry a flag and a key.
   global excludes file, the reference returns `-32603 "exit status 128"`.
   claustrum returns the status result (`{"isRepo":true,"clean":false,"changes":[…]}`).
 - **Measured.** Windows VMs gave that error on `19f30c46` and on `f6010b97`. On
-  `5fd08069`, with no home folder and no user excludes file, 18 of 18 requests
+  `5fd08069`, with no user excludes file, 18 of 18 requests
   answer `exit status 128` (Windows VM).
 - **Mechanism, measured on `f6010b97`.** The status call of the reference passes
   `-c core.excludesFile=NUL`, the Windows null device. With that value, `git status`
@@ -1127,20 +1127,19 @@ operator-declinable. Only CT-2 and CT-5 carry a flag and a key.
 ### D23 · The environment block of a child is in name order (Windows) { #d23 }
 
 On claustrum the Windows environment block of a child is in name order. The
-reference keeps the launching order, then its own entries. Go sorts the block since 1.26.
-The reference uses go1.25.14.
+reference does not sort it. Go sorts the block since 1.26. The reference uses
+go1.25.14.
 
-Windows VM, 2026-10-13: one claustrum source built with go1.25.14 matched
-`5fd08069` byte for byte. Counts: 18 of 18 `process.spawn` blocks, 487 of 487
-git children in the order of names, 18 of 18 at `-install`. Built with Go
-1.26.9 it sorted every cell.
+Windows VM, 2026-10-13: a claustrum build with go1.25.14 matched `5fd08069` in
+the order. Counts: 18 of 18 `process.spawn` blocks with no `env`, 487 of 487
+git children in the order of names, 18 of 18 at `-install`. The Go 1.26.9
+build sorted every cell.
 
 claustrum stays on Go 1.26 (maintainer's decision, 2026-10-13). Go 1.26.9 fixed
 standard library advisories of go1.25.14, one in the folder handles of the
 Windows file guards (GO-2026-6604).
 
-Reopen trigger: the reference moves to Go 1.26 or newer. The entry then retires
-with no code change.
+Reopen trigger: the reference moves to Go 1.26 or newer.
 
 ### D24 · Keep a folder that replaced the new registration in the create rollback (Linux and macOS) { #d24 }
 
