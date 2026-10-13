@@ -6,7 +6,8 @@ over SSH. It combines three parts: a local CLI-version manager, a process
 supervisor, and a JSON-RPC multiplexer over an `AF_UNIX` socket. The
 multiplexer holds a replay buffer. Black-box probes of the reference binary
 captured a behavioral contract, and claustrum is built to that contract. No
-code was copied and no code was decompiled (see [`NOTICE`](NOTICE)).
+code was copied, and no decompiler or disassembler output was transcribed into
+the code (see [`NOTICE`](NOTICE)).
 
 The one hard rule: stay byte-identical to the JSON-RPC frames of the reference
 daemon. The wire surface is the product.
@@ -679,10 +680,9 @@ not exist as sent (Linux and macOS VMs). With `worktreeRoot`, rows q2 to q4
 (Linux VM) differ in the frame too. That is the maintainer's decision of
 2026-10-03. See the entry.
 
-D23 is Windows-only. The environment block of a child is in name order, because
-Go 1.26 sorts it at the process start. `89cb6289` keeps the order of its
-launching block and adds its entries after it. Name order stays by the
-maintainer's decision of 2026-10-06, not by a rule 3 clause. See the entry.
+D23, Windows only: a child gets its environment block in name order, because
+Go 1.26 sorts it and the reference builds use go1.25.14. The entry retires with
+no code change when the reference moves to Go 1.26 or newer.
 
 D24 is on Linux and macOS, and the frames are equal in its two cells (Linux and macOS VMs).
 If git answered `rev-parse --absolute-git-dir`, a rollback of

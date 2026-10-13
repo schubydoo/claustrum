@@ -174,7 +174,7 @@ rather than repeating them in each entry:
 | [D20](#d20) | Wait 50 ms and read again before the group `SIGKILL` of a child-group leader that reads as gone, at the reap of a `-serve` start (Linux and macOS) | always-on (Linux and macOS) | always-on | rule 3 clause (a) | a measurement that shows the reference waiting before that `SIGKILL`, or a report of a child that outlived a restart because it replaced its program |
 | [D21](#d21) | A second daemon on a live socket appends to `remote-server.log`, where `89cb6289` truncates it and loses the earlier lines of the first daemon (Windows) | always-on (Windows) | always-on | Maintainer decision of 2026-10-02. No frame, reply or exit status differs. A reader of the log file sees the kept lines | a measurement that shows the reference keeping those lines, or a reader of the log that needs the file to start with the lines of the second daemon |
 | [D22](#d22) | `git.worktree_remove` refuses a worktree locked in the `.git` folder of `baseRepo`, in four states where `89cb6289` answers success. Two have a daemon `GIT_DIR` and `GIT_COMMON_DIR` of another repository, with the folder present or gone. One has a daemon `GIT_DIR` alone. One has a `baseRepo` that does not exist as sent. With `worktreeRoot`, rows q2 to q4 (Linux VM) differ in the frame too | always-on | always-on | Maintainer decision of 2026-10-03. The frame differs from `89cb6289` in those four states and in rows q2 to q4 | a caller that needs the removal of a locked worktree there, or a measurement that shows the reference refusing there |
-| [D23](#d23) | The environment block of a child is in name order (Windows). `89cb6289` keeps the order of the launching block and adds its entries after it | always-on (Windows) | always-on | Maintainer decision of 2026-10-06. The response frames are equal in the measured rows. The order of the block differs | a client that depends on the order of the block, or a decision to match the block byte for byte |
+| [D23](#d23) | The environment block of a child is in name order (Windows). The reference keeps the order of the launching block, then its own entries | always-on (Windows) | always-on | Maintainer decision of 2026-10-13: claustrum stays on Go 1.26, which sorts the block | the reference moves to Go 1.26 or newer |
 | [D24](#d24) | The rollback of `git.worktree_create` keeps a folder that replaced the new registration. `89cb6289` removes it in cells B6 and B6b (Linux and macOS VMs), and in B6b it holds the registration of a live sibling worktree | always-on (Linux and macOS) | always-on | Maintainer decision of 2026-10-07. The frames are equal in the measured cells (Linux and macOS VMs). The disk differs | a measurement that shows the reference keeping such a folder, or a decision to match the disk of cells B6 and B6b |
 | [D25](#d25) | With `CLAUDE_SSH_PEER_CHECK=1`, `server.capabilities` answers `"peerCheck":"unavailable"` and the daemon serves every caller. `5fd08069` answers `"peerCheck":"on","peerCheckBy":["network","pidfd"]` there (Linux VM) | always-on (Linux) | always-on | Maintainer decision of 2026-10-10. The frame differs from `5fd08069` in one of the listed values: `1` on Linux | a client that needs the `"on"` answer on Linux, or a decision to answer as `5fd08069` does there |
 | [CT-1](#ct-1) | Opt-in `wantPid` → `pid` + `startTime` on spawn/reattach | off (fields omitted) | caller sends `"wantPid":true` | sanctioned optional-param extension | — (additive, degrades both ways) |
@@ -783,69 +783,37 @@ operator-declinable. Only CT-2 and CT-5 carry a flag and a key.
 
 ### D16 · `git.status` of a linked worktree returns the status on Windows, where the reference errors (Windows) { #d16 }
 
-- **Behavior.** `git.status` takes a `baseRepo` and a `path` that names a linked
-  worktree of that repo, and returns the porcelain status of the worktree. Both the
-  reference and claustrum build status in an isolated temp gitdir. That gitdir is a
-  fresh `GIT_DIR`
-  with the worktree's `HEAD` and `index`, `GIT_COMMON_DIR` at the shared repo, and
-  `--work-tree` at the worktree. On Linux and macOS the two are byte-identical. On
-  Windows, when the user has no global excludes file, the reference returns
-  `-32603 "exit status 128"` for a linked worktree. claustrum returns the status result (`{"isRepo":true,"clean":false,"changes":[…]}`).
-- Outcome measured 2026-09-06, and re-verified on `19f30c46` 2026-09-13. On a
-  Windows VM the reference returns `-32603 "exit status 128"` for a linked-worktree
-  `git.status`, across runs, and claustrum returns the status result. A
-  main-checkout control returns `{"isRepo":false,"clean":false}` on both binaries.
-  On 2026-09-26 the `f6010b97` reference again answered 128 on a Windows VM. The
-  claustrum side of that date is its Windows unit suite, which gets the status.
-- **Mechanism, measured 2026-09-26.** A logging git wrapper on a Windows 11 VM
-  recorded the cwd, argv and env of every git call of the reference (`f6010b97`).
-  Its status call passes `-c core.excludesFile=NUL`, the Windows null device. The
-  reference passes that value when the user has no global excludes file. That
-  status call was then replayed with Git for Windows 2.55.0, one element changed at
-  a time. With `NUL`, `git status` exits 128 with
-  `fatal: cannot use NUL as an exclude file`. With `/dev/null`, it prints the
-  status. Five other elements did not change the result. They are the working
-  directory, the argv order, the slash direction of `GIT_COMMON_DIR` and of
-  `commondir`, the temp name, and the listing before the call. In the same replay,
-  `git ls-files --others --ignored --exclude-standard` and `git check-ignore`
-  accepted `NUL`. The replay is in `scratch/f6010b97/d16-nul-excludes-raw/`.
-- **With a user excludes file, measured.** A Windows user with a global excludes
-  file gets that file in the reference's status call, not `NUL`. The reference's
-  status then works, and D16 does not arise. `89cb6289` shows that on a Windows VM:
-  in pass X of the `git.status` rows, row K1 has 22 calls with the user file as
-  `core.excludesFile`.
-- **The one element that differs on purpose.** claustrum's `git status` call has the
-  cwd, argv and env of the reference, apart from the temp dir name and the env order
-  on Windows. One value differs on purpose. On Windows claustrum passes
-  `-c core.excludesFile=/dev/null` where the reference passes `NUL`
-  (`statusExcludesFile` in `githarden.go`). The `ls-files` and `diff-index` calls of
-  `git.status` get the same value as its status call. Every other call that passes
-  `-c core.excludesFile` passes `NUL` there, as the reference does. On Linux and
-  macOS the null device is `/dev/null`, so nothing differs there. A user with a
-  global excludes file gets that file on every OS.
-- **This is reachable, not an edge.** `git.status.baseRepo` is advertised on Windows,
-  and the reference rebuilt `git.status` around session worktrees, so a Windows client
-  that runs status on a session worktree reaches this path by design. D16 is a
-  deliberate REACHABLE wire divergence, unlike the unreachable rule 3 clause (b) cases.
-- **Why diverge (claustrum is more correct).** claustrum reproduces the reference's
-  status assembly apart from the excludes value, and returns the correct status on
-  every OS. To match, claustrum must pass `NUL` to its `status`, `ls-files` and `diff-index` calls as well. The
-  reference's failure is an error for a valid status of a session worktree, the exact operation the worktree rebuild exists to
-  serve. That is the D2 and D8 pattern: the reference doing it is not a reason to
-  reproduce a break.
+- **Behavior.** `git.status` with a `baseRepo` and a `path` that names a linked
+  worktree returns the porcelain status of that worktree. On Linux and macOS the
+  reference and claustrum are byte-identical. On Windows, when the user has no
+  global excludes file, the reference returns `-32603 "exit status 128"`.
+  claustrum returns the status result (`{"isRepo":true,"clean":false,"changes":[…]}`).
+- **Measured.** Windows VMs gave that error on `19f30c46` and on `f6010b97`. On
+  `5fd08069`, with no home folder and no user excludes file, 18 of 18 requests
+  answer `exit status 128` (Windows VM).
+- **Mechanism, measured on `f6010b97`.** The status call of the reference passes
+  `-c core.excludesFile=NUL`, the Windows null device. With that value, `git status`
+  of Git for Windows 2.55.0 exits 128 with `fatal: cannot use NUL as an exclude file`.
+  With `/dev/null` it prints the status.
+- **With a user excludes file.** The reference passes that file, not `NUL`. Its
+  status then works, and D16 does not arise (`89cb6289`, Windows VM, row K1).
+- **The one value that differs.** On Windows claustrum passes
+  `-c core.excludesFile=/dev/null` to the `status`, `ls-files` and `diff-index`
+  calls of `git.status` (`statusExcludesFile` in `githarden.go`). Every other call
+  that passes `-c core.excludesFile` passes `NUL` there, as the reference does.
+- **Why diverge.** The path is reachable: a Windows client that runs status on a
+  session worktree gets it by design. The reference answers an error for a valid
+  status there. That is the D2 and D8 pattern. D16 stays by the maintainer's
+  decision of 2026-10-13.
 - **Cost.** A Windows client that diffs frames against the reference sees a result
-  where the reference sends an error. A client that reads the reference error as "no
-  repo or no changes" reads claustrum as reporting changes the reference hides.
-- **Reopen trigger.** The reference fixing its Windows `git.status` (then this becomes
-  parity). A Git for Windows release that accepts `NUL` as an exclude file in
-  `git status` (then this becomes parity too). Or a decision to put strict 1:1 above correctness, which replaces this entry
-  with reproducing the reference's Windows failure so claustrum errors 128 too. That
-  change is one value: `NUL` in the `core.excludesFile` of the `status`, `ls-files`
-  and `diff-index` calls. The reference stops at its `status` call with no excludes
-  file, so what it passes to the other two there is not measured.
-- **Pointers.** [PROTOCOL.md](PROTOCOL.md) → `git.status`. Also `methods_git.go`
-  (`gitStatus`), `gitstatus.go` (`statusChanges`) and `githarden.go` (`statusExcludesFile`).
-  Evidence in `scratch/osparity/` and `scratch/f6010b97/d16-nul-excludes-raw/`.
+  where the reference sends an error.
+- **Reopen trigger.** The reference fixing its Windows `git.status`. A Git for
+  Windows release that accepts `NUL` there. Or a decision to answer 128 as the
+  reference does: that change is the value `NUL` in those three calls. The
+  reference stops at its `status` call, so its value for the other two is not
+  measured there.
+- **Pointers.** [PROTOCOL.md](PROTOCOL.md) → `git.status`. Also `gitstatus.go`
+  (`statusChanges`) and `githarden.go` (`statusExcludesFile`).
 
 ### D17 · An abandoned `lsof` run reads as busy, not idle (macOS) { #d17 }
 
@@ -1158,70 +1126,21 @@ operator-declinable. Only CT-2 and CT-5 carry a flag and a key.
 
 ### D23 · The environment block of a child is in name order (Windows) { #d23 }
 
-- **Behavior.** On Windows the environment block of a child that claustrum
-  starts is in name order. The compare folds the ASCII letters to upper case.
-  That holds for a `process.spawn` child, for a git child and for the `--version`
-  child of `-install`. From the Go source: since Go 1.26, `os/exec`,
-  `os.StartProcess` and `syscall.StartProcess` sort the Windows environment block
-  by name. claustrum builds with Go 1.26. The daemon builds no frame from the order.
-- **Reference side, measured.** A Windows VM ran `89cb6289` on 2026-10-06. The
-  child printed its raw block in block order.
-  - Rows V1, V3 and V4. The block is the launching block of the daemon in its
-    given order, then `CLAUDE_SSH_DAEMON_CHILD=1`. The launching block of row V4
-    is not in name order. Its first entry `ZZZ_S6_FIRST` is at index 0 in the
-    child, and `CLAUDE_SSH_DAEMON_CHILD` is the last entry, in 4 of 4 runs.
-  - Row V2. The daemon has `Path=<value>` and no `PATH`. The child has no `Path`
-    entry, and `PATH=<value>` is its last entry, after `CLAUDE_SSH_DAEMON_CHILD`.
-  - Row V5. One new caller key is the last entry, in 10 of 10 runs on each of two
-    launching blocks.
-  - Row V6. A caller key that equals a name exactly replaces the value in place.
-  - Row V7. A caller key differs from a name in case only. The old entry is gone,
-    and the caller spelling is the last entry.
-  - Row V9. Three new caller keys in the request order `KB, KA, KC`, 120 runs.
-    The child got `KB, KA, KC` 91 times, `KA, KC, KB` 16 times and `KC, KB, KA`
-    13 times. Each order is a rotation of the request order. 40 of the runs
-    came from 20 daemon starts.
-  - Row V10. Nine new caller keys, 10 runs on each of two launching blocks. Each
-    set of 10 runs gave 10 different orders.
-  - Row V17h, `git.status` with the printing child as `git.exe`. The entries that
-    a git child gets come after `CLAUDE_SSH_DAEMON_CHILD`. Their order was the same
-    in the 2 runs on each of two launching blocks.
-  - Row V17i, `-install`. The `--version` child got the launching block in its
-    given order, with no `CLAUDE_SSH_DAEMON_CHILD`.
-- **claustrum side, measured.** The same rows on the same VM, build `803f5ed`.
-  The whole block was in name order in every run of every row. In row V1
-  `CLAUDE_SSH_DAEMON_CHILD` was the third of 38 entries. On `89cb6289` it was
-  the last of them. In row V9 the child got `KA, KB, KC` in 120 of 120 runs. In
-  row V10 it got name order in 20 of 20 runs.
-- **Equal in those rows.** The set of entries, names and values, was equal on
-  both sides. Row V11c is the one exception, on both sides: a request with
-  `S6_DC` and `s6_dc`. One of the two entries reached the child, and which one
-  varied per run on `89cb6289` and on claustrum. The response frames were equal
-  in 44 of 44 row groups, and the command lines were equal. In row V17i with a
-  launching block in name order, both children got the same order.
-- **Default.** Always-on, Windows only. **Activate:** always-on. There is no flag
-  and no key. On Linux and macOS the toolchain does not reorder the block, so the
-  order is the one `buildEnv` passes, and there claustrum builds no order of its
-  own. See [PROTOCOL.md](PROTOCOL.md) → process.spawn.
-- **Why always-on.** The maintainer's decision of 2026-10-06: name order stays,
-  and no code changes. For two or more new caller keys `89cb6289` gave more than
-  one order (rows V9 and V10), so no fixed order equals it there. The rest of the
-  block had one order on `89cb6289` in every run of a row, and claustrum does not
-  match that order. No clause of rule 3 covers this entry. It stands on that
-  decision, and the reopen trigger below takes it back.
-- **Cost.** A child that reads the position of an entry in its block gets another
-  position. A child that prints its block prints it in another order, so the
-  bytes of its stream frames differ. An earlier Windows VM run showed that for
-  `cmd /c set` (rows WN01a and WN01b). A lookup by name gives the same value on
-  both sides in the measured rows, apart from row V11c.
-- **Not measured.** The child of a managed launcher. One request with `PATH`,
-  `Path` and `path` together.
-- **Reopen trigger.** A client that depends on the order of the block. Or a
-  decision to match the block byte for byte. From the Go source: the sort is
-  inside the standard library and has no switch.
-- **Pointers.** [PROTOCOL.md](PROTOCOL.md) → process.spawn. Evidence in
-  `scratch/i429/s6-envorder-windows/REPORT.md` and in `cmp/table.md`,
-  `cmp/tally.md` and `cmp/detail.md` beside it.
+claustrum sorts the Windows environment block of a child by name. The reference
+keeps the launching order, then its own entries. Go sorts the block since 1.26.
+The reference uses go1.25.14.
+
+Windows VM, 2026-10-13: one claustrum source built with go1.25.14 matched
+`5fd08069` byte for byte. Counts: 18 of 18 `process.spawn` blocks, 487 of 487
+git children in the order of names, 18 of 18 at `-install`. Built with Go
+1.26.9 it sorted every cell.
+
+claustrum stays on Go 1.26 (maintainer's decision, 2026-10-13). Go 1.26.9 fixed
+standard library advisories of go1.25.14, one in the folder handles of the
+Windows file guards (GO-2026-6604).
+
+Reopen trigger: the reference moves to Go 1.26 or newer. The entry then retires
+with no code change.
 
 ### D24 · Keep a folder that replaced the new registration in the create rollback (Linux and macOS) { #d24 }
 
