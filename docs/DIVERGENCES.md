@@ -1126,8 +1126,8 @@ operator-declinable. Only CT-2 and CT-5 carry a flag and a key.
 
 ### D23 · The environment block of a child is in name order (Windows) { #d23 }
 
-claustrum sorts the Windows environment block of a child by name. The reference
-keeps the launching order, then its own entries. Go sorts the block since 1.26.
+On claustrum the Windows environment block of a child is in name order. The
+reference keeps the launching order, then its own entries. Go sorts the block since 1.26.
 The reference uses go1.25.14.
 
 Windows VM, 2026-10-13: one claustrum source built with go1.25.14 matched
