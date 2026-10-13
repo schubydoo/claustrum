@@ -67,15 +67,4 @@ split condensed the full measurement and correction notes out of this table.
 | 32 | The git methods run git on the daemon's own copy of the settings | H/L | The daemon keeps a copy of the git settings of each repository in a folder `git-shadow` beside its socket. Its git calls read that copy, as on `5fd08069`. `git.info` reports the state in a last member `settingsControl`: `shadow`, `fallback-git` or `off-switch`. The start test, the call that asks git about the repository and the folder of the copy have failure texts of their own. A refused config is read again in each request, and the daemon asks git no question about the owner. On Windows a create gives its `worktree add` a folder of its own, and it removes old `.claude-new-worktree-*` entries of the git directory. See [The settings copy](PROTOCOL.md#the-settings-copy). |
 | 33 | The measurement records leave the docs, and each doc file has a word limit | M/S | The folder `docs/record/` is removed, with each link to it. `TestDocsWordLimits` (`docs_consistency_test.go`) fails for a file of `docs/` or for `AGENTS.md` that passes its limit. |
 | 34 | On Linux and macOS a stopping daemon keeps a new daemon's socket | H/S | `keepSocketFileAtClose` (`livepred_unix.go`), `TestCloseAllKeepsSuccessorSocket`. |
-
----
-
-*Footnote on the "496/496" figure.* Older records quote a battery result of
-"496/496 frames". That figure is historical and not reproducible, for three
-reasons. First, its unit is not the unit that the harness counts today: a
-reconstruction puts the unit at output lines, not frames. Second, the June 2026
-harness that produced the figure was overwritten. Third, the battery grew after
-that date.
-Count again at the time of writing. Do not quote any figure. The full
-reconstruction is in the maintainer's `scratch/` notes, which are gitignored and
-not in the public tree.
+| 35 | Four more places where claustrum signalled, removed or wrote and `5fd08069` does not: the worktree file copy, the session key of a spawn, the host cleaner on Linux and the start reap | H/M | Each has Linux VM cells. `worktreecopy_test.go`, `sessionsupersede_test.go`, `hostclean_unexamined_linux_test.go`, `childreap_inspect_linux_test.go`. |
