@@ -2,7 +2,10 @@
 
 package main
 
-import "os"
+import (
+	"net"
+	"os"
+)
 
 // livePredecessorIdent is a nil stub on Windows. The dial-based predecessor probe has
 // no observable effect there: a second launch over a live predecessor returns in
@@ -34,3 +37,7 @@ func staleSocketIdent(socket string) os.FileInfo {
 	_ = os.SameFile(fi, fi)
 	return fi
 }
+
+// keepSocketFileAtClose does nothing on Windows: the close of the listener removes the
+// socket path there, as before.
+func keepSocketFileAtClose(net.Listener) {}

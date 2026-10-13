@@ -181,7 +181,7 @@ compares its identity (`os.SameFile`) to the one it recorded at startup. A
 restart's successor can rebind the socket and
 republish `daemon.token` to a new inode before the predecessor leaves. The
 departing predecessor then leaves the file alone. It does not delete the
-successor's token and break the new daemon's reconnect auth. The socket file
+successor's token and break the new daemon's reconnect auth. On Linux and macOS the socket file
 carries the same identity guard on the same graceful path. On Windows the
 `rpc.pipe` pointer carries it too (`removeSocketIfOwned` /
 `removePersistedToken` / `removePipeNameFileIfOwned`). Each removes its file only
