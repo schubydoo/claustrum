@@ -144,13 +144,37 @@ func TestReapKeepsChildWithUnparseableGroup(t *testing.T) {
 	}
 }
 
-// TestReapChildWithUnreadableStat: the stat of the child is there and cannot be read.
-// Not measured: claustrum keeps the record and sends nothing, as for a stat that does
-// not parse.
-func TestReapChildWithUnreadableStat(t *testing.T) {
+// TestReapDropsChildWithUnreadableStat is cell P7 of tier 0 round 3 (`5fd08069`, Linux
+// VM): the read of the stat of the child answers "permission denied". The record goes
+// with the line, no signal goes out, and there is no summary line.
+func TestReapDropsChildWithUnreadableStat(t *testing.T) {
 	noReadAsRoot(t)
 	st := stageInspect(t)
-	if err := os.Chmod(st.path(inspChild, "stat"), 0); err != nil {
+	stat := st.path(inspChild, "stat")
+	if err := os.Chmod(stat, 0); err != nil {
+		t.Fatal(err)
+	}
+	out := st.run(t)
+	if len(st.sim.kills) != 0 || recordExists(st.runDir, st.name) {
+		t.Errorf("kills = %v, record there = %v, want no signal and no record", st.sim.kills, recordExists(st.runDir, st.name))
+	}
+	want := "[process.Registry] record " + st.name + ": pid " + strconv.Itoa(inspChild) +
+		" is not a child to end (stat unreadable: open " + stat + ": permission denied); dropping the record, signalling nothing\n"
+	if !strings.Contains(out, want) || strings.Contains(out, "predecessor's children") {
+		t.Errorf("log = %q\nwant %q and no summary line", out, want)
+	}
+}
+
+// TestReapKeepsChildWithStatThatIsAFolder: the read of the stat of the child fails with
+// another error than "permission denied" and "does not exist". claustrum keeps the
+// record and sends nothing (claustrum's own, not measured).
+func TestReapKeepsChildWithStatThatIsAFolder(t *testing.T) {
+	st := stageInspect(t)
+	stat := st.path(inspChild, "stat")
+	if err := os.Remove(stat); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Mkdir(stat, 0o755); err != nil {
 		t.Fatal(err)
 	}
 	st.run(t)

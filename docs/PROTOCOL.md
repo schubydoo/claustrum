@@ -337,7 +337,7 @@ The daemon then signals nothing and logs three lines. On a Linux VM (row ST02),
 
 claustrum logs the third line at every start that ends without the lock. The other
 cases without the lock are not measured. A record with another role text is not
-measured. claustrum then runs no reap and writes no child record.
+measured. claustrum then reaps and records nothing.
 Cell H5 (`5fd08069`, Linux VM) measures a held flock.
 
 The lock, the owner record, and the eviction run on Linux and macOS only. The
@@ -4502,7 +4502,7 @@ as id-less stream notifications, and it buffers them for a later replay.
   stamps neither marker. A windows VM showed that a run-shaped-socket child has the
   same environment as a bare-socket child.
 - The orphan-child registry record is `19f30c46` parity on linux and darwin. On
-  every socket shape, a run-dir lock holder records each spawned child with a pid
+  every socket shape, a lock holder records each spawned child with a pid
   of 2 or more and a readable start-time to `<runDir>/children/<pid>.json`. The run
   dir is the folder of the socket path. The references write the record on every
   socket shape (Linux and macOS rows EV01a to EV01i, and rows F1 to F4 of both
@@ -4652,7 +4652,7 @@ as id-less stream notifications, and it buffers them for a later replay.
     A sweep that only removed records logs no summary (row C1, second start).
     `<n>` counts the groups that got `SIGTERM`. `kept` counts the records of a live
     owner or of another machine, the verified groups over 64 (row C4:
-    `6 kept`), and a process that cannot be inspected (`5fd08069`, cells H2d, H4). `dropped` counts a record with the record line (row RP07), a record of a
+    `6 kept`), and a process it cannot inspect (`5fd08069`, cells H2d, H4). `dropped` counts a record with the record line (row RP07), a record of a
     dead pid (row C1: `127 stale record(s) dropped`), and a group that no longer
     verifies after its `SIGTERM` (row PG05a). Not measured: the number
     that the other removed records take. claustrum counts each of them as dropped.
@@ -4722,7 +4722,7 @@ as id-less stream notifications, and it buffers them for a later replay.
     `it was not started by a daemon itself: its CLAUDE_SSH_CHILD does not name its own pid and start (something a child started)`
     (rows ED10c and ED10d).
     `environment unreadable: open /proc/<pid>/environ: permission denied` (one run
-    of row PG05a). `pid namespace unreadable: <error>` (`5fd08069`, cell H3v).
+    of row PG05a). `pid namespace unreadable: <error>`, `stat unreadable: <error>` (`5fd08069`, cells H3v, P7).
   - Those rows measure each text in another line of the reference, at the first
     test of a record. In the `no longer verifies` line, only the program text and
     the environment text are measured.

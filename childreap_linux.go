@@ -70,19 +70,32 @@ func pidNamespace(proc string) (state int, why string) {
 // pid-namespace guard to the state and reads the program from cmdline and the two
 // markers from environ. Without wantEnv the result of the guard goes into nsState.
 //
-// Only a stat that does not exist is a process that is gone. A stat that cannot be
-// read or does not parse gives procUnknown. `5fd08069` keeps the record and sends no
-// signal for such a stat of the daemon (cells H2a to H2c, Linux VM) and for a group
-// field of the child that is not an integer (cell H2d). The state and the reason text
-// of a child stat that cannot be read are claustrum's own, not measured.
+// Only a stat that does not exist is a process that is gone. A stat that does not
+// parse gives procUnknown. `5fd08069` keeps the record and sends no signal for a
+// group field of the child that is not an integer (cell H2d, Linux VM).
+//
+// A stat whose read answers "permission denied" gives procNotChild. `5fd08069` drops
+// the record of such a child with this reason text and sends no signal (cell P7 of
+// tier 0 round 3, Linux VM). Every other read error gives procUnknown, which is
+// claustrum's own, not measured.
+//
+// daemonAlive reads both states of a recorded daemon as alive. `5fd08069` keeps the
+// record of the child and sends no signal for a daemon stat that is a folder, has
+// mode 000 or does not parse (cells H2a to H2c, Linux VM).
 func realReadLiveProc(pid int, wantEnv bool) liveProc {
 	lp := liveProc{state: procGone}
 	proc := procRoot + "/" + strconv.Itoa(pid)
 	stat, err := procReadFile(proc + "/stat")
 	if err != nil {
-		if !procAbsent(err) {
-			lp.state, lp.why = procUnknown, "stat unreadable: "+err.Error()
+		switch {
+		case procAbsent(err):
+			return lp
+		case errors.Is(err, fs.ErrPermission):
+			lp.state = procNotChild
+		default:
+			lp.state = procUnknown
 		}
+		lp.why = "stat unreadable: " + err.Error()
 		return lp
 	}
 	i := strings.LastIndexByte(string(stat), ')')

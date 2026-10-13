@@ -111,7 +111,7 @@ const (
 	// stays and no signal goes out.
 	procUnknown = 3
 	// procNotChild: the process is not a child to end. The record goes and no
-	// signal goes out.
+	// signal goes out. For a recorded daemon it reads as alive (daemonAlive).
 	procNotChild = 4
 )
 
