@@ -252,7 +252,7 @@ func TestLockFileHeldDeviceArms(t *testing.T) {
 
 	// Sys() is not a *syscall.Stat_t: without the type-assertion guard the nil st is
 	// dereferenced when the device is encoded below the locks read.
-	if lockFileHeld(hcFakeFileInfo{sys: nil}) {
+	if held, _ := lockFileHeld(hcFakeFileInfo{sys: nil}); held {
 		t.Error("lockFileHeld reported held for a FileInfo with no stat")
 	}
 
@@ -260,13 +260,13 @@ func TestLockFileHeldDeviceArms(t *testing.T) {
 	// device the encoding cannot reproduce (00:01 here against the computed 00:00). Only the
 	// inode-suffix fallback can match it.
 	anon := hcFakeFileInfo{sys: &syscall.Stat_t{Dev: 0, Ino: ino}}
-	if !lockFileHeld(anon) {
+	if held, read := lockFileHeld(anon); !held || !read {
 		t.Error("lockFileHeld missed the major-0 anonymous-filesystem lock line")
 	}
 	// The fallback is inode-exact, not a substring: a different inode with the same suffix
 	// shape must not match.
 	other := hcFakeFileInfo{sys: &syscall.Stat_t{Dev: 0, Ino: ino + 1}}
-	if lockFileHeld(other) {
+	if held, read := lockFileHeld(other); held || !read {
 		t.Error("lockFileHeld matched a lock line for a different inode")
 	}
 }
@@ -307,7 +307,10 @@ func TestHcPrimitivesOnAVanishedProcess(t *testing.T) {
 	}
 	mk(70, "stat", hcRunningStat(70, 1, 70, "9000")) // keep the fixture a plausible process
 
-	// lockFileHeld with no /proc/locks to read: a lock nobody can see is not held.
+	// lockFileHeld with no /proc/locks to read: not held, and the read did not answer.
+	if err := os.Remove(filepath.Join(procRoot, "locks")); err != nil {
+		t.Fatal(err)
+	}
 	lockPath := filepath.Join(t.TempDir(), runDirLockName)
 	if err := os.WriteFile(lockPath, []byte(`{"pid":1}`), 0o600); err != nil {
 		t.Fatal(err)
@@ -316,7 +319,7 @@ func TestHcPrimitivesOnAVanishedProcess(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if lockFileHeld(fi) {
-		t.Error("lockFileHeld reported held with no /proc/locks to read")
+	if held, read := lockFileHeld(fi); held || read {
+		t.Errorf("lockFileHeld with no /proc/locks to read = %v %v, want false false", held, read)
 	}
 }

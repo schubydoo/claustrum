@@ -219,8 +219,7 @@ children it spawns.
   claustrum counts retire attempts there. The reference count after a refused attempt is
   not measured. The
   line before a `SIGKILL` is one more. So are the reasons for a held lock and for a
-  listener that is not our daemon. The
-  other lines keep claustrum's own wording. When the cleaner is off, the daemon logs one
+  listener that is not our daemon. When the cleaner is off, the daemon logs one
   `[daemon] host cleaning off:` line after the listening line. On macOS it reads an `lsof` run it
   gave up on as busy, and the reference side of that is not probe-measured. That one is a numbered divergence,
   [DIVERGENCES.md](DIVERGENCES.md) D17. After 30 days

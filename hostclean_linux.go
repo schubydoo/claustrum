@@ -314,15 +314,17 @@ func hcDevMajorMinor(dev uint64) (major, minor uint64) {
 }
 
 // lockFileHeld reports whether the file described by fi is currently locked by a live
-// process, by matching its device and inode against /proc/locks.
-func lockFileHeld(fi os.FileInfo) bool {
+// process, by matching its device and inode against /proc/locks. read is false when
+// /proc/locks cannot be read: the holder is then not known. A fi with no stat reads as not
+// held, as before (not measured).
+func lockFileHeld(fi os.FileInfo) (held, read bool) {
 	st, ok := fi.Sys().(*syscall.Stat_t)
 	if !ok {
-		return false
+		return false, true
 	}
 	b, err := os.ReadFile(procRoot + "/locks")
 	if err != nil {
-		return false
+		return false, false
 	}
 	major, minor := hcDevMajorMinor(st.Dev)
 	target := fmt.Sprintf("%02x:%02x:%d", major, minor, st.Ino)
@@ -333,13 +335,13 @@ func lockFileHeld(fi os.FileInfo) bool {
 			continue
 		}
 		if f[5] == target {
-			return true
+			return true, true
 		}
 		if major == 0 && strings.Count(f[5], ":") == 2 && strings.HasSuffix(f[5], tail) {
-			return true
+			return true, true
 		}
 	}
-	return false
+	return false, true
 }
 
 // ---- OS-primitive seams (linux implementations; darwin provides its own) ----
@@ -418,11 +420,17 @@ var hcLockUnreadState = hcLockUnknown
 // state, so on linux the pass logs no such line. It is a var so a test can stage the answer.
 var hcDaemonFilesUnread = func(int) bool { return false }
 
+// hcStoppedIsUninspected says that a stopped daemon is not retired. With a daemon in state
+// T, `5fd08069` logs the two "left alone" and "not inspectable" lines and sends no signal
+// (`5fd08069`, cell Q2, Linux VM). State t takes the same arm (not measured).
+var hcStoppedIsUninspected = true
+
 // hcLockHeldAt reports whether the lock file at path (described by fi) is held by a live
 // process. On linux the answer comes from fi alone (via /proc/locks); path is unused. The
-// second result is always true on linux: no command runs, so none can fail to start.
+// second result is false when /proc/locks cannot be read. The tidy then keeps the run dir,
+// also while a process holds the lock (`5fd08069`, cell Q6 and its extra row, Linux VM).
 func hcLockHeldAt(path string, fi os.FileInfo) (held, asked bool) {
-	return lockFileHeld(fi), true
+	return lockFileHeld(fi)
 }
 
 // hcSelfExe resolves this process's own executable path, dropping a trailing " (deleted)".
