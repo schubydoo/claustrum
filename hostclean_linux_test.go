@@ -18,12 +18,16 @@ import (
 )
 
 // fakeProc points procRoot at a temp tree and returns a helper to populate a pid's files.
+// The tree has an empty locks file: a lock table that can be read and names no holder.
 func fakeProc(t *testing.T) (root string, mk func(pid int, name, content string), link func(pid int, name, target string)) {
 	t.Helper()
 	root = t.TempDir()
 	old := procRoot
 	t.Cleanup(func() { procRoot = old })
 	procRoot = root
+	if err := os.WriteFile(filepath.Join(root, "locks"), nil, 0o644); err != nil {
+		t.Fatal(err)
+	}
 	mk = func(pid int, name, content string) {
 		d := filepath.Join(root, strconv.Itoa(pid))
 		if err := os.MkdirAll(filepath.Dir(filepath.Join(d, name)), 0o755); err != nil {
@@ -1057,7 +1061,7 @@ func TestLockFileHeldAndProbe(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(procRoot, "locks"), []byte(locks), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	if !lockFileHeld(fi) {
+	if held, read := lockFileHeld(fi); !held || !read {
 		t.Error("held lock not detected against /proc/locks")
 	}
 	if state, got, present := lockProbe(dir); state != hcLockHeld || got == nil || got.Pid != 4321 || !present {

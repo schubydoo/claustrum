@@ -465,6 +465,10 @@ var hcLockNeedsRecord = false
 // darwin it is that state. It is a var only so a test can stage it.
 var hcLockUnreadState = hcLockUnexamined
 
+// hcStoppedIsUninspected says that a stopped daemon is not retired. On darwin it is false: a
+// stopped daemon there is not measured, so the retire is as before.
+var hcStoppedIsUninspected = false
+
 // hcLockHeldAt reports whether a live process holds path open (its run-dir lock). darwin has no
 // /proc/locks, so it asks lsof whether any process has the path open. fi is unused on darwin.
 //

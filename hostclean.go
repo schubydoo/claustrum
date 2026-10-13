@@ -447,7 +447,7 @@ const (
 	hcLockStale      = 0 // no lock file, or a record or an empty file with no live holder
 	hcLockHeld       = 1 // a record or an empty file, and a live process holds the lock
 	hcLockUnknown    = 2 // (linux) the lock could not be opened, is no regular file, or its content does not parse
-	hcLockUnexamined = 3 // (darwin) the lock could not be opened, is no regular file, or the holder query did not answer
+	hcLockUnexamined = 3 // the holder query did not answer, or (darwin) the lock could not be opened or is no regular file
 )
 
 // hcLockHolderRead is hcLockHeldAt behind a seam, so a test on either OS can stage each
@@ -506,7 +506,7 @@ func lockProbe(dir string) (state int, rec *ownerRecord, present bool) {
 	}
 	held, asked := hcLockHolderRead(path, fi)
 	if !asked {
-		return hcLockUnreadState, rec, true
+		return hcLockUnexamined, rec, true
 	}
 	if held {
 		return hcLockHeld, rec, true
@@ -691,7 +691,8 @@ const hcDaemonChildMarker = "CLAUDE_SSH_DAEMON_CHILD=1"
 //
 // Two reasons are the reference's, measured on a Linux VM against f6010b97 and 89cb6289.
 // They are "not our daemon binary" (row HC04) and "not serving that socket" (row ST06).
-// The other four keep claustrum's own wording. Their reference texts are not measured.
+// A third is "not inspectable", for a stopped daemon on linux (`5fd08069`, cell Q2, Linux
+// VM). The other four keep claustrum's own wording. Their reference texts are not measured.
 func (c *hostCleaner) verifyListener(pid int, socket string) string {
 	t, res := inspect(pid, true)
 	if res != hcInspectOK {
@@ -702,6 +703,10 @@ func (c *hostCleaner) verifyListener(pid int, socket string) string {
 	}
 	if !t.sameNS {
 		return "the listener runs in another namespace"
+	}
+	if hcStoppedIsUninspected && t.stopped {
+		// The reference's text for a daemon in state T (`5fd08069`, cell Q2, Linux VM).
+		return "the listener could not be verified as a daemon of ours (not inspectable)"
 	}
 	if t.exe == "" || !c.roots.isDaemonBinary(t.exe) {
 		return "the listener could not be verified as a daemon of ours (not our daemon binary)"
@@ -1005,7 +1010,8 @@ func (c *hostCleaner) tidyRunDirs(entries []runDirEntry, sum *hcSummary) {
 			continue
 		case hcLockUnexamined:
 			// The reference's line, measured on a macOS VM against 89cb6289 (rows C3, D2p,
-			// D2f, D4, E7a and E7b).
+			// D2f, D4, E7a and E7b). On linux it is the line for a /proc/locks that cannot
+			// be read (`5fd08069`, cell Q6, Linux VM).
 			logInfof("[hostclean] run dir %q unused for %s: kept, its %s could not be examined", e.dirPath, hcDays(e.idle), runDirLockName)
 			continue
 		case hcLockUnknown:
@@ -1140,6 +1146,12 @@ func (c *hostCleaner) Pass() hcSummary {
 			}
 		}
 		if !idle {
+			continue
+		}
+		if hcStoppedIsUninspected && t.stopped {
+			// The reference's line and count (`5fd08069`, cell Q2, Linux VM).
+			logInfof("[hostclean] daemon pid %d left alone this pass: it could not be inspected (or is stopped)", t.pid)
+			sum.undecided++
 			continue
 		}
 		if hcDaemonFilesUnread(t.pid) {

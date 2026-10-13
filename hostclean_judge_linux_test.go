@@ -63,7 +63,7 @@ func TestProbeSocketUnusableConnections(t *testing.T) {
 }
 
 func TestLockProbeUnopenableAndEmpty(t *testing.T) {
-	fakeProc(t) // lockProbe's held check reads procRoot/locks; a bare tree means "not held"
+	fakeProc(t) // lockProbe's held check reads procRoot/locks; an empty locks file means "not held"
 
 	// A lock file that is a symlink: the probe opens with O_NOFOLLOW, so this fails with
 	// ELOOP rather than not-found. "Cannot open" is NOT "no lock" — a mutant that answered
