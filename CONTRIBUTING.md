@@ -52,7 +52,7 @@ in-progress commit, run `git commit --no-verify`.
   purpose must say so in the PR. It must add an entry to the divergence catalog
   in [docs/DIVERGENCES.md](docs/DIVERGENCES.md). It must record its wire frames
   in [docs/PROTOCOL.md](docs/PROTOCOL.md), or in the page of its method under
-  `docs/protocol/`. The measurements behind it are not part of the repo docs.
+  `docs/protocol/`.
 - Docs. Update `docs/` for any user-visible behavior change. The site is
   built with mkdocs-material and published to GitHub Pages. CI runs
   `mkdocs build --strict` on every docs change. A broken link or a bad nav entry

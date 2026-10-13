@@ -11,7 +11,7 @@ import (
 )
 
 // The Windows rules of the config read. 5fd08069 answered these texts on a
-// Windows VM (cells C3a to C3d and C4b of the record of these refusals).
+// Windows VM (cells C3a to C3d and C4b).
 
 // TestWindowsIncludeTexts pins the two include texts with the paths of the
 // cells. The expected texts are the message of the reply, with the JSON

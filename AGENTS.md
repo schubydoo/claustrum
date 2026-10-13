@@ -85,7 +85,7 @@ The JSON-RPC surface is identical on every OS. Full internals →
   `scratch/` is gitignored on purpose.
 - Each fact of the documentation has one home. A rule that a reader acts on
   gets one or two sentences on the page of its method under `docs/protocol/`.
-  The measurements behind it are not part of the repo docs. The history of completed work goes into
+  The history of completed work goes into
   [`docs/IMPROVEMENTS.md`](docs/IMPROVEMENTS.md). The history of a reference
   build goes into [`docs/REFERENCE-BUILDS.md`](docs/REFERENCE-BUILDS.md).
   Another document links to

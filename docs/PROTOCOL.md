@@ -2346,8 +2346,7 @@ place, in a repository with that extension and a `config.worktree` file:
 
 ##### Where claustrum differs from `5fd08069`
 
-VM rounds compared a claustrum build with `5fd08069`.
-In each of them the reply lines are equal, except in the git-lfs cells of
+In the differences that stay the reply lines are equal, except in the git-lfs cells of
 `git.worktree_create` and in two Windows rows of a create whose `.git` becomes
 a file.
 
