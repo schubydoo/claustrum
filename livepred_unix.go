@@ -53,3 +53,14 @@ func staleSocketIdent(socket string) os.FileInfo {
 	}
 	return fi
 }
+
+// keepSocketFileAtClose turns off Go's removal of the socket path at the close of ln.
+// Go removes the path of a unix listener that made it, whatever file is at the path
+// then. A new daemon can bind the path while this one still shuts down, and the close
+// then removed the socket of the new daemon. closeAll removes the path itself
+// (removeSocketIfOwned).
+func keepSocketFileAtClose(ln net.Listener) {
+	if ul, ok := ln.(*net.UnixListener); ok {
+		ul.SetUnlinkOnClose(false)
+	}
+}

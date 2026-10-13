@@ -530,6 +530,7 @@ func newServerOnSocket(socket, token, metricsAddr string, wlopt wireLogOptions, 
 	if err != nil {
 		return nil, fmt.Errorf("listen unix: %v", err)
 	}
+	keepSocketFileAtClose(ln)
 	if err := chmodSocket(socket, 0o600); err != nil {
 		fmt.Fprintf(os.Stderr, "claustrum: chmod socket: %v\n", err)
 	}
