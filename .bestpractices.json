@@ -62,7 +62,7 @@
   "build_status": "Met",
   "build_justification": "The software is built from source with the standard Go toolchain: `go build ./...`, or `make build` for the release-shaped binary (CGO_ENABLED=0, -trimpath, stripped). `make all` cross-compiles all six release targets. https://github.com/schubydoo/claustrum/blob/main/Makefile",
   "build_common_tools_status": "Met",
-  "build_common_tools_justification": "The build needs only the Go toolchain (Go 1.25+) and GNU make — both common and widely available. Release builds add goreleaser, syft and cosign, all also common FLOSS tools.",
+  "build_common_tools_justification": "The build needs only the Go toolchain (Go 1.26) and GNU make — both common and widely available. Release builds add goreleaser, syft and cosign, all also common FLOSS tools.",
   "build_floss_tools_status": "Met",
   "build_floss_tools_justification": "All build tooling is FLOSS: the Go toolchain (BSD-3), make (GPL), goreleaser (MIT), syft and cosign (Apache-2.0). The dependency set is stdlib plus klauspost/compress, and golang.org/x/sys and Microsoft/go-winio on Windows only — all FLOSS.",
   "test_status": "Met",
