@@ -14,7 +14,7 @@
   <a href="https://www.bestpractices.dev/projects/14131"><img alt="OpenSSF Best Practices" src="https://www.bestpractices.dev/projects/14131/badge"></a>
   <a href="https://schubydoo.github.io/claustrum/"><img alt="Docs" src="https://img.shields.io/badge/docs-mkdocs--material-526CFE?logo=materialformkdocs&logoColor=white"></a>
   <a href="https://github.com/schubydoo/claustrum/blob/main/LICENSE"><img alt="License: Apache-2.0" src="https://img.shields.io/badge/license-Apache--2.0-blue.svg"></a>
-  <a href="https://go.dev/"><img alt="Go" src="https://img.shields.io/badge/go-1.25%2B-00ADD8?logo=go&logoColor=white"></a>
+  <a href="https://go.dev/"><img alt="Go" src="https://img.shields.io/badge/go-1.26-00ADD8?logo=go&logoColor=white"></a>
   <img alt="platforms" src="https://img.shields.io/badge/platforms-linux%20%C2%B7%20macOS%20%C2%B7%20windows-555">
 </p>
 
@@ -51,7 +51,7 @@ example, it can be a building block for self-hosted tooling such as
 
 ## Install / build
 
-Claustrum requires Go 1.25 or later. The toolchain is held below 1.27, because the default
+Claustrum requires Go 1.26. The toolchain is held below 1.27, because the default
 `jsonv2` of Go 1.27 moves inherited wire bytes. See
 [docs/UPSTREAM-TRACKING.md](docs/UPSTREAM-TRACKING.md). Build with the `go.mod` toolchain.
 
