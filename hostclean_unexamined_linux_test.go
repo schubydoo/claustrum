@@ -13,7 +13,8 @@ import (
 	"time"
 )
 
-// TestTidyKeepsARunDirWhenProcLocksCannotBeRead pins cell Q6 (`5fd08069`, Linux VM). The
+// TestTidyKeepsARunDirWhenProcLocksCannotBeRead follows cell Q6 (`5fd08069`, Linux VM:
+// there a lock table of mode 000 and an empty lock). The
 // lock table of the fake /proc is gone, so the holder of daemon.lock is not known. The run
 // dir stays with the line of the reference, and the remove seam is not called. The control
 // is the same run dir with a lock table that reads and names no holder: the run dir goes
@@ -87,6 +88,9 @@ func TestRetireRefusesAStoppedDaemon(t *testing.T) {
 			return func(sig syscall.Signal) error { sent = append(sent, sig); return nil }, func() {}
 		}
 		const pid = 4600
+		oldPpid := hcGetppid
+		hcGetppid = func() int { return 1 }
+		t.Cleanup(func() { hcGetppid = oldPpid })
 		socket := "/opt/claude/run/x/rpc.sock"
 		exe := "/opt/claude/srv/a/server"
 		hcFakeDaemon(t, proot, mk, link, pid, exe, []string{exe, "--serve", "--socket", socket}, true, "1")

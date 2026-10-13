@@ -422,13 +422,13 @@ var hcDaemonFilesUnread = func(int) bool { return false }
 
 // hcStoppedIsUninspected says that a stopped daemon is not retired. With a daemon in state
 // T, `5fd08069` logs the two "left alone" and "not inspectable" lines and sends no signal
-// (`5fd08069`, cell Q2, Linux VM). It is a var only so a test can stage the darwin answer.
+// (`5fd08069`, cell Q2, Linux VM). State t takes the same arm (not measured).
 var hcStoppedIsUninspected = true
 
 // hcLockHeldAt reports whether the lock file at path (described by fi) is held by a live
 // process. On linux the answer comes from fi alone (via /proc/locks); path is unused. The
 // second result is false when /proc/locks cannot be read. The tidy then keeps the run dir,
-// also while a process holds the lock (`5fd08069`, cell Q6, Linux VM).
+// also while a process holds the lock (`5fd08069`, cell Q6 and its extra row, Linux VM).
 func hcLockHeldAt(path string, fi os.FileInfo) (held, asked bool) {
 	return lockFileHeld(fi)
 }
