@@ -182,9 +182,18 @@ func safeOverlayDest(worktree, rel string) string {
 	return filepath.Join(cur, parts[len(parts)-1])
 }
 
+// copyFileBody moves the bytes of one copy. A test replaces it to make a copy fail
+// after the target exists.
+var copyFileBody = io.Copy
+
 // copyFile copies one regular file, creating parent directories as needed.
 // Anything that is not a regular file — a symlink, a socket, a device — is
 // skipped.
+//
+// The copy never writes over an entry. The target is made with an exclusive
+// create, so a file, a link or a folder that is already at dst stays as it is,
+// and nothing is written through a link there. A target that the copy could not
+// complete is removed.
 //
 // The copy is created 0666-subject-to-umask and the SOURCE MODE IS NOT
 // PRESERVED, matching the reference. Probe-measured by varying the launcher's
@@ -207,16 +216,22 @@ func copyFile(src, dst string) {
 		return
 	}
 	defer in.Close()
+	// The file that was opened must be the regular file that Lstat saw.
+	if ofi, err := in.Stat(); err != nil || !ofi.Mode().IsRegular() || !os.SameFile(fi, ofi) {
+		return
+	}
 	if err := os.MkdirAll(filepath.Dir(dst), 0o755); err != nil {
 		return
 	}
-	out, err := os.OpenFile(dst, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, 0o666)
+	out, err := os.OpenFile(dst, os.O_CREATE|os.O_WRONLY|os.O_EXCL, 0o666)
 	if err != nil {
 		return
 	}
-	if _, err := io.Copy(out, in); err != nil {
-		_ = out.Close()
-		return
+	_, err = copyFileBody(out, in)
+	if cerr := out.Close(); err == nil {
+		err = cerr
 	}
-	_ = out.Close()
+	if err != nil {
+		_ = os.Remove(dst)
+	}
 }

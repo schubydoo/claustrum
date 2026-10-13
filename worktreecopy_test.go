@@ -1,6 +1,8 @@
 package main
 
 import (
+	"errors"
+	"io"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -265,6 +267,55 @@ func TestCopyFileSkipsNonRegular(t *testing.T) {
 	}
 }
 
+// TestCopyFileKeepsAnExistingTarget: a file that is already at the target keeps
+// its content.
+func TestCopyFileKeepsAnExistingTarget(t *testing.T) {
+	dir := t.TempDir()
+	src := filepath.Join(dir, "src.env")
+	writeFile(t, src, "from the repository\n", 0o644)
+	dst := filepath.Join(dir, "wt", "src.env")
+	writeFile(t, dst, "of the new branch\n", 0o644)
+	copyFile(src, dst)
+	got, err := os.ReadFile(dst)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(got) != "of the new branch\n" {
+		t.Errorf("target content = %q, want the content that was there before the copy", got)
+	}
+}
+
+// TestCopyFileDoesNotWriteThroughALink: a link at the target stays a link, and the
+// file that it names keeps its content.
+func TestCopyFileDoesNotWriteThroughALink(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("symlink creation needs privileges on Windows")
+	}
+	dir := t.TempDir()
+	src := filepath.Join(dir, "src.env")
+	writeFile(t, src, "from the repository\n", 0o644)
+	outside := filepath.Join(dir, "outside.txt")
+	writeFile(t, outside, "outside the worktree\n", 0o644)
+	dst := filepath.Join(dir, "wt", "src.env")
+	if err := os.MkdirAll(filepath.Dir(dst), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Symlink(outside, dst); err != nil {
+		t.Fatal(err)
+	}
+	copyFile(src, dst)
+	got, err := os.ReadFile(outside)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(got) != "outside the worktree\n" {
+		t.Errorf("file behind the link = %q, want it unchanged", got)
+	}
+	if fi, err := os.Lstat(dst); err != nil || fi.Mode()&os.ModeSymlink == 0 {
+		t.Errorf("target after the copy: mode %v, err %v, want the link that was there", fi, err)
+	}
+}
+
 // The copy helpers are best-effort by design: a failure must leave the worktree
 // alone rather than turn a successful git.worktree_create into an error. These
 // cover the give-up paths.
@@ -448,18 +499,21 @@ func TestCopyFileOpenAndWriteFailures(t *testing.T) {
 		}
 	})
 
-	// Write failure mid-copy: /dev/full accepts the open and fails every write
-	// with ENOSPC, which is the only portable way to reach the io.Copy branch.
+	// A copy that fails after the target exists leaves no target.
 	t.Run("write_fails", func(t *testing.T) {
-		if runtime.GOOS != "linux" {
-			t.Skip("/dev/full is a Linux device")
+		old := copyFileBody
+		copyFileBody = func(w io.Writer, _ io.Reader) (int64, error) {
+			n, _ := w.Write([]byte("half"))
+			return int64(n), errors.New("no space left on device")
 		}
-		if _, err := os.Stat("/dev/full"); err != nil {
-			t.Skip("/dev/full not present")
-		}
+		t.Cleanup(func() { copyFileBody = old })
 		dir := t.TempDir()
 		src := filepath.Join(dir, "a.txt")
 		writeFile(t, src, "some bytes to write\n", 0o644)
-		copyFile(src, "/dev/full") // must return without panicking
+		dst := filepath.Join(dir, "out", "a.txt")
+		copyFile(src, dst)
+		if _, err := os.Lstat(dst); !os.IsNotExist(err) {
+			t.Errorf("Lstat of the target after a failed copy: err = %v, want not exist", err)
+		}
 	})
 }
