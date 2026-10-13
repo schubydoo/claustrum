@@ -456,9 +456,9 @@ func childToken(tokenFile string) (string, error) {
 
 // chmodSocket is os.Chmod behind a seam over the 0600 tightening of the socket
 // newServerOnSocket has just bound: a fresh AF_UNIX node owned by the caller does
-// not refuse chmod; without the seam the failure arm fires only for a
-// Linux abstract socket (-socket @name), which has no filesystem node to chmod
-// and is not a shape Desktop passes.
+// not refuse chmod; without the seam the failure arm (socketChmodFailed) fires
+// only for a Linux abstract socket (-socket @name), which has no filesystem node
+// to chmod and is not a shape Desktop passes.
 // Distinct from install.go's chmodStaged, which seams the staged CLI binary.
 var chmodSocket = os.Chmod
 
@@ -525,7 +525,7 @@ func newServerOnSocket(socket, token, metricsAddr string, wlopt wireLogOptions, 
 	// SIGTERM). A no-op off linux and darwin (see childreap_*.go).
 	//
 	// A daemon that does not hold the run-dir lock runs no reap and writes no child
-	// record (`5fd08069`, cell H5, Linux VM).
+	// record. Cell H5 measures that for a held flock (`5fd08069`, Linux VM).
 	procs.noRecords = !claim.holder
 	if claim.holder {
 		procs.reapOrphans()
@@ -538,10 +538,11 @@ func newServerOnSocket(socket, token, metricsAddr string, wlopt wireLogOptions, 
 	}
 	keepSocketFileAtClose(ln)
 	if err := chmodSocket(socket, 0o600); err != nil {
-		// A failed chmod ends the start (`5fd08069`, cell H6, Linux VM).
-		_ = ln.Close()
-		_ = os.Remove(socket)
-		return nil, fmt.Errorf("chmod socket: %v", err)
+		// On Linux and macOS a failed chmod ends the start. On Windows the start
+		// goes on (see socketChmodFailed).
+		if err := socketChmodFailed(ln, socket, err); err != nil {
+			return nil, err
+		}
 	}
 	// The owner record gets its instanceId and startedAt now. Both are the values that
 	// server.capabilities answers, and the instance is the one of the listening line

@@ -114,7 +114,7 @@ children it spawns.
   holder and stamps neither marker. A windows VM showed a child under a run-shaped socket has
   the same environment as one under a bare socket.
   This behavior is off-wire. See [PROTOCOL.md](PROTOCOL.md) → process.spawn.
-- The daemon also records each spawned child to
+- A daemon that holds the run-dir lock also records each spawned child to
   `<runDir>/children/<pid>.json` (`childrecord.go` + `childrecord_linux.go` /
   `childrecord_darwin.go`). The run dir is the folder of the socket path, on every
   socket shape. The file is an ordered JSON record. A later daemon reads it to
@@ -125,7 +125,7 @@ children it spawns.
   reference daemon reports it is not the run-dir lock holder, so it records no children. A
   windows VM showed a spawned child leaves the children dir empty. This behavior is
   off-wire. See [PROTOCOL.md](PROTOCOL.md) → process.spawn.
-- At `-serve` startup the daemon reaps those
+- At `-serve` startup a daemon that holds the run-dir lock reaps those
   records (shared `childreap.go`, with the live-process read in `childreap_linux.go` /
   `childreap_darwin.go`). The reap happens right after the daemon claims the run dir,
   and before it binds the socket. During the reap the owner record of `daemon.lock`

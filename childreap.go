@@ -139,8 +139,8 @@ type liveProc struct {
 	why string
 	// nsState is the state that the pid namespace test gives a child, on a read with
 	// wantEnv false. Such a read keeps state as the stat gives it, because the read
-	// of a daemon has no namespace test. sameLeader applies nsState. Only the linux
-	// reader sets it.
+	// of a daemon has no namespace test (claustrum's own, not measured). sameLeader
+	// applies nsState. Only the linux reader sets it.
 	nsState int
 }
 
@@ -616,8 +616,9 @@ func parsePSLine(line string) (pgid int, stat, text string, ok bool) {
 // process is running and, if the record carries a daemon start-time, that start-time still
 // matches (a pid-reuse guard on the daemon itself).
 //
-// A daemon that is there and cannot be inspected counts as alive (`5fd08069`, cells
-// H2a to H2c, Linux VM). Not measured on macOS: claustrum does the same there.
+// claustrum counts a daemon that is there and cannot be inspected as alive. `5fd08069`
+// keeps the record of the child and sends no signal there (cells H2a to H2c, Linux
+// VM). Not measured on macOS: claustrum does the same there.
 func daemonAlive(daemonPid int, daemonStart string, ownDaemonPid int) bool {
 	if daemonPid < 2 || daemonPid == ownDaemonPid {
 		return false
@@ -975,12 +976,13 @@ func (c *reapCtx) forget(name string) {
 // signal. It returns verdictUnknown, with the reason, for a process that cannot be
 // inspected or is not this daemon's to judge: that one gets no signal.
 //
-// The pid namespace test of a child applies here too (`5fd08069`, cells H3 and H3v,
-// Linux VM). The settle reads (settleThenVerdict, settleGone) stay on the stat alone.
-// So a namespace link that is gone never leads to the group SIGKILL of reapGoneLeader.
+// claustrum applies the pid namespace test of a child here too. That is claustrum's
+// own, not measured at this test. The settle reads (settleThenVerdict, settleGone)
+// stay on the stat alone. So a namespace link that is gone never leads to the group
+// SIGKILL of reapGoneLeader.
 func sameLeader(pid int, recStart string) (int, string) {
 	lp := readLiveProc(pid, false)
-	if lp.state == procAlive {
+	if lp.state == procAlive && lp.nsState != procAlive {
 		lp.state = lp.nsState
 	}
 	// A start-time mismatch is only meaningful when the live process HAS a start-time. A
@@ -998,8 +1000,12 @@ func sameLeader(pid int, recStart string) (int, string) {
 			return verdictSkip, ""
 		}
 		return verdictReap, ""
-	case procNotOurs:
-		return verdictUnknown, "process is not in this daemon's namespace"
+	}
+	// procUnknown and procNotOurs. The reason is the one of the reader. It is empty
+	// for procNotOurs, which is another pid namespace on linux and a `ps` line that
+	// does not parse on darwin.
+	if lp.why == "" {
+		return verdictUnknown, "the process is not this daemon's to judge"
 	}
 	return verdictUnknown, lp.why
 }

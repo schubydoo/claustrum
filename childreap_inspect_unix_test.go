@@ -76,7 +76,6 @@ func TestReapWaitKeepsGroupItCannotInspect(t *testing.T) {
 // first line says so: "sending nothing more unless it verifies again".
 func TestReapWaitGroupThatVerifiesAgain(t *testing.T) {
 	sim, runDir, tg := simTarget(t)
-	good := *sim.live[tg.pid]
 	reads := 0
 	readLiveProc = func(pid int, wantEnv bool) liveProc {
 		lp, ok := sim.live[pid]
@@ -88,7 +87,6 @@ func TestReapWaitGroupThatVerifiesAgain(t *testing.T) {
 		}
 		return *lp
 	}
-	sim.live[tg.pid] = &good
 	sim.diesOn(tg.pid, syscall.SIGKILL)
 	var counts reapCounts
 	out := captureLog(t, func() { reapTargets(simCtx(t, runDir), []reapTarget{tg}, &counts) })
@@ -139,8 +137,9 @@ func TestReapTargetsCannotInspectBeforeSIGTERM(t *testing.T) {
 	}
 }
 
-// TestDaemonAliveCannotInspect: a recorded daemon that cannot be inspected counts as
-// alive (`5fd08069`, cells H2a to H2c, Linux VM). TestDaemonAlive has the gone case.
+// TestDaemonAliveCannotInspect: claustrum counts a recorded daemon that cannot be
+// inspected as alive. `5fd08069` keeps the record of the child and sends no signal
+// there (cells H2a to H2c, Linux VM). TestDaemonAlive has the gone case.
 func TestDaemonAliveCannotInspect(t *testing.T) {
 	for _, state := range []int{procUnknown, procNotOurs} {
 		fakeLiveProcs(t, map[int]liveProc{800: {state: state}})
@@ -151,8 +150,8 @@ func TestDaemonAliveCannotInspect(t *testing.T) {
 }
 
 // TestNotLockHolderReapsAndRecordsNothing is cell H5 (`5fd08069`, Linux VM): a daemon
-// that does not hold the run-dir lock runs no reap and writes no child record. The test
-// holds the lock itself, so nothing is there to signal. The control is the same start
+// runs no reap and writes no child record while another process holds the flock of the
+// run-dir lock. The test holds the lock itself, so nothing is there to signal. The control is the same start
 // with a free lock: the recorded group gets its SIGTERM and the daemon writes a record.
 func TestNotLockHolderReapsAndRecordsNothing(t *testing.T) {
 	if node, _ := ownReapIdentity(); node == "" {

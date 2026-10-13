@@ -235,7 +235,7 @@ type procManager struct {
 	// this daemon's children apart from its own. Read-only after startup.
 	instanceID string
 	// noRecords is set for a daemon that does not hold the run-dir lock: it writes
-	// no child record (`5fd08069`, cell H5, Linux VM).
+	// no child record. Cell H5 measures that for a held flock (`5fd08069`, Linux VM).
 	noRecords bool
 
 	// runRoot is the run dir, held open for the child records (linux and darwin, see

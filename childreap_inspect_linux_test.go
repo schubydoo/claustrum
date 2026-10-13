@@ -11,7 +11,7 @@ import (
 	"testing"
 )
 
-// The cells of round t0r2 (`5fd08069`, Linux VM) on a fake /proc tree. The reader is
+// The cells of tier 0 round 2 (`5fd08069`, Linux VM) on a fake /proc tree. The reader is
 // the real one, and the signal is a seam, so no real process gets a signal.
 
 const (
@@ -96,7 +96,8 @@ func TestReapInspectControl(t *testing.T) {
 }
 
 // TestReapKeepsChildOfDaemonItCannotInspect is cells H2a to H2c: the stat of the
-// recorded daemon is there and cannot be read or parsed. The daemon counts as alive.
+// recorded daemon is there and cannot be read or parsed. claustrum counts the daemon
+// as alive. `5fd08069` keeps the record of the child and sends no signal there.
 func TestReapKeepsChildOfDaemonItCannotInspect(t *testing.T) {
 	for _, tc := range []struct {
 		name  string
@@ -157,7 +158,7 @@ func TestReapChildWithUnreadableStat(t *testing.T) {
 }
 
 // TestReapDropsChildWithNoNamespaceLink is cell H3: the pid namespace link of the child
-// does not exist. The child counts as gone: the record goes, with no signal and no line.
+// does not exist. The record goes, with no signal and no line.
 func TestReapDropsChildWithNoNamespaceLink(t *testing.T) {
 	st := stageInspect(t)
 	if err := os.Remove(st.path(inspChild, "ns/pid")); err != nil {
@@ -194,8 +195,9 @@ func TestReapDropsChildWithUnreadableNamespaceLink(t *testing.T) {
 }
 
 // TestNamespaceTestOnEveryRead: the read without the environment carries the result of
-// the namespace test too, and the test right before a signal applies it (cells H3 and
-// H3v). The read of a daemon does not apply it: its state stays as the stat gives it.
+// the namespace test too, and the test right before a signal applies it. The read of
+// a daemon does not apply it: its state stays as the stat gives it. Both are
+// claustrum's own, not measured.
 func TestNamespaceTestOnEveryRead(t *testing.T) {
 	st := stageInspect(t)
 	if v, _ := sameLeader(inspChild, "9000"); v != verdictReap {

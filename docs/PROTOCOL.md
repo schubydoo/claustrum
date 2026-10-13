@@ -337,8 +337,8 @@ The daemon then signals nothing and logs three lines. On a Linux VM (row ST02),
 
 claustrum logs the third line at every start that ends without the lock. The other
 cases without the lock are not measured. A record with another role text is not
-measured. Such a daemon runs no reap and writes no child record, as on
-`5fd08069` (cell H5, Linux VM).
+measured. claustrum then runs no reap and writes no child record.
+Cell H5 (`5fd08069`, Linux VM) measures a held flock.
 
 The lock, the owner record, and the eviction run on Linux and macOS only. The
 machine identity (`node`) is the boot id joined to the pid-namespace inode on
@@ -4461,8 +4461,6 @@ as id-less stream notifications, and it buffers them for a later replay.
   F4). The socket
   `<R>/b/s.sock` gives `CLAUDE_SSH_RUN_DIR=<R>/b`. A relative socket `s.sock` gives
   `CLAUDE_SSH_RUN_DIR=.`. The socket `<R>//run/./c1/rpc.sock` gives `<R>/run/c1`.
-  Not measured: an abstract socket name (`@name`). claustrum gives it the run dir
-  `.`.
   The child environment is the daemon environment, where
   `CLAUDE_SSH_DAEMON_CHILD` is the last entry. A caller key that the daemon
   environment holds replaces that entry in place. A new caller key comes after the
@@ -4504,8 +4502,8 @@ as id-less stream notifications, and it buffers them for a later replay.
   stamps neither marker. A windows VM showed that a run-shaped-socket child has the
   same environment as a bare-socket child.
 - The orphan-child registry record is `19f30c46` parity on linux and darwin. On
-  every socket shape, each spawned child with a pid of 2 or more
-  and a readable start-time is recorded to `<runDir>/children/<pid>.json`. The run
+  every socket shape, a run-dir lock holder records each spawned child with a pid
+  of 2 or more and a readable start-time to `<runDir>/children/<pid>.json`. The run
   dir is the folder of the socket path. The references write the record on every
   socket shape (Linux and macOS rows EV01a to EV01i, and rows F1 to F4 of both
   systems on `89cb6289`). On macOS the start text of the record has one blank between its
@@ -4653,8 +4651,8 @@ as id-less stream notifications, and it buffers them for a later replay.
     `[daemon] serve: predecessor's children — <n> orphaned group(s): <a> ended on SIGTERM, <b> on SIGKILL, <c> survived; <d> stale record(s) dropped, <e> kept`.
     A sweep that only removed records logs no summary (row C1, second start).
     `<n>` counts the groups that got `SIGTERM`. `kept` counts the records of a live
-    owner or of another machine, and the verified groups over 64 (row C4:
-    `6 kept`). `dropped` counts a record with the record line (row RP07), a record of a
+    owner or of another machine, the verified groups over 64 (row C4:
+    `6 kept`), and a process that cannot be inspected (`5fd08069`, cells H2d, H4). `dropped` counts a record with the record line (row RP07), a record of a
     dead pid (row C1: `127 stale record(s) dropped`), and a group that no longer
     verifies after its `SIGTERM` (row PG05a). Not measured: the number
     that the other removed records take. claustrum counts each of them as dropped.
@@ -4724,7 +4722,7 @@ as id-less stream notifications, and it buffers them for a later replay.
     `it was not started by a daemon itself: its CLAUDE_SSH_CHILD does not name its own pid and start (something a child started)`
     (rows ED10c and ED10d).
     `environment unreadable: open /proc/<pid>/environ: permission denied` (one run
-    of row PG05a).
+    of row PG05a). `pid namespace unreadable: <error>` (`5fd08069`, cell H3v).
   - Those rows measure each text in another line of the reference, at the first
     test of a record. In the `no longer verifies` line, only the program text and
     the environment text are measured.

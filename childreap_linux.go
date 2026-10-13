@@ -40,12 +40,14 @@ func procAbsent(err error) bool {
 // (`5fd08069`, cells H2d and H4, Linux VM).
 const unparseableStat = "unparseable stat"
 
-// pidNamespace compares the pid namespace link of a child with the daemon's own
-// (`5fd08069`, cells H3 and H3v, Linux VM). A link of the child that does not exist
-// gives procGone. A link that cannot be read gives procNotChild, with the reference's
-// reason. Cell H3v measures that reason for "permission denied". claustrum gives it
-// for every other read error too (not measured). Another namespace gives procNotOurs,
-// as before. With no own link there is no test, as before (not measured).
+// pidNamespace compares the pid namespace link of a child with the daemon's own. A
+// link of the child that does not exist gives procGone, which is claustrum's own
+// choice. `5fd08069` removes the record there and sends no signal, with no line (cell
+// H3, Linux VM). A link that cannot be read gives procNotChild. `5fd08069` drops the
+// record there with this reason and sends no signal, for "permission denied" (cell
+// H3v, Linux VM). claustrum does so for every other read error too (not measured).
+// Another namespace gives procNotOurs, as before. With no own link there is no test,
+// as before (not measured).
 func pidNamespace(proc string) (state int, why string) {
 	self, err := os.Readlink(procRoot + "/self/ns/pid")
 	if err != nil {
@@ -69,8 +71,10 @@ func pidNamespace(proc string) (state int, why string) {
 // markers from environ. Without wantEnv the result of the guard goes into nsState.
 //
 // Only a stat that does not exist is a process that is gone. A stat that cannot be
-// read or does not parse gives procUnknown (`5fd08069`, cells H2a to H2d, Linux VM).
-// The reason text of a stat that cannot be read is claustrum's own (not measured).
+// read or does not parse gives procUnknown. `5fd08069` keeps the record and sends no
+// signal for such a stat of the daemon (cells H2a to H2c, Linux VM) and for a group
+// field of the child that is not an integer (cell H2d). The state and the reason text
+// of a child stat that cannot be read are claustrum's own, not measured.
 func realReadLiveProc(pid int, wantEnv bool) liveProc {
 	lp := liveProc{state: procGone}
 	proc := procRoot + "/" + strconv.Itoa(pid)

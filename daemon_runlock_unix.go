@@ -112,8 +112,9 @@ type runDirClaim struct {
 // The reference printed it on a Linux VM (row ST02, f6010b97 and 89cb6289). There a process
 // with no daemon record held the lock, and two other lines came first. claustrum prints it
 // on every arm that ends without the lock. The other arms are not measured. The line says "recording
-// none". Such a daemon runs no reap and writes no child record, see newServerOnSocket
-// (`5fd08069`, cell H5, Linux VM).
+// none". Such a daemon runs no reap and writes no child record, see newServerOnSocket.
+// claustrum does so on every arm. Cell H5 measures the arm of a held flock (`5fd08069`,
+// Linux VM).
 func claimRunDir(socket, role string) runDirClaim {
 	dir := filepath.Dir(socket)
 	path := filepath.Join(dir, runDirLockName)
