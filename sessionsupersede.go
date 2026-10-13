@@ -55,6 +55,9 @@ func missingCommandError(cmd *exec.Cmd) error {
 //     "--fork-session" is present (a fork is a NEW session, not a supersede);
 //   - a valid token (see validSessionToken).
 //
+// The argument after a bare "--session-id" or "--resume" is its value only. It is
+// not read again as a flag.
+//
 // The key IS the session-id / resume value. A non-stream-json spawn, or an
 // invalid/absent token, yields "" and never supersedes.
 func cliSessionKey(args []string) string {
@@ -71,13 +74,15 @@ func cliSessionKey(args []string) string {
 			forkSession = true
 		case a == "--session-id":
 			if i+1 < len(args) {
-				sessionID = args[i+1]
+				i++
+				sessionID = args[i]
 			}
 		case strings.HasPrefix(a, "--session-id="):
 			sessionID = strings.TrimPrefix(a, "--session-id=")
 		case a == "--resume":
 			if i+1 < len(args) {
-				resume = args[i+1]
+				i++
+				resume = args[i]
 			}
 		case strings.HasPrefix(a, "--resume="):
 			resume = strings.TrimPrefix(a, "--resume=")

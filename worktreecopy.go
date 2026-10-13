@@ -27,8 +27,7 @@ const worktreesSubdir = "worktrees"
 //
 // Best-effort: the worktree already exists, so a copy failure does not turn into a
 // failed request.
-// The manifest copy runs first, then the `.claude/` copy. The order is observable
-// when both name the same path, because the second copy overwrites the first.
+// The manifest copy runs first, then the `.claude/` copy.
 //
 // host is the settings control of the daemon, or nil (selectsIncludeScan).
 func populateWorktree(u gitUse, host *shadowHost, repo, worktree string) {
@@ -182,9 +181,18 @@ func safeOverlayDest(worktree, rel string) string {
 	return filepath.Join(cur, parts[len(parts)-1])
 }
 
+// copyFileBody moves the bytes of one copy. A test replaces it to make a copy fail
+// after the target exists. That test must not run in parallel.
+var copyFileBody = io.Copy
+
 // copyFile copies one regular file, creating parent directories as needed.
 // Anything that is not a regular file — a symlink, a socket, a device — is
 // skipped.
+//
+// The copy never writes over an entry. The target is made with an exclusive
+// create, so a file, a link or a folder that is already at dst stays as it is,
+// and nothing is written through a link there. A target that the copy could not
+// complete is removed, unless another entry took its place.
 //
 // The copy is created 0666-subject-to-umask and the SOURCE MODE IS NOT
 // PRESERVED, matching the reference. Probe-measured by varying the launcher's
@@ -210,13 +218,20 @@ func copyFile(src, dst string) {
 	if err := os.MkdirAll(filepath.Dir(dst), 0o755); err != nil {
 		return
 	}
-	out, err := os.OpenFile(dst, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, 0o666)
+	out, err := os.OpenFile(dst, os.O_CREATE|os.O_WRONLY|os.O_EXCL, 0o666)
 	if err != nil {
 		return
 	}
-	if _, err := io.Copy(out, in); err != nil {
-		_ = out.Close()
+	made, statErr := out.Stat()
+	_, err = copyFileBody(out, in)
+	if cerr := out.Close(); err == nil {
+		err = cerr
+	}
+	if err == nil || statErr != nil {
 		return
 	}
-	_ = out.Close()
+	// Remove the target only while it is still the file that this copy made.
+	if cur, lerr := os.Lstat(dst); lerr == nil && os.SameFile(made, cur) {
+		_ = os.Remove(dst)
+	}
 }
