@@ -106,8 +106,13 @@ func TestDaemonGitDirFileRunsNoListing(t *testing.T) {
 // Cells CbP0 and CbP3 (Linux and macOS VMs). A `.git` file names a git dir that does not exist.
 // git.info answers the "no repository" frame, with and without an empty
 // GIT_CONFIG_KEY_0. No Windows cell measures that state, so the test does not run on
-// Windows.
+// Windows. Those cells ran a git older than 2.56.
+//
+// git 2.56 fails the listing there with its gitfile text, so git.info answers the
+// listing refusal of claustrum. 5fd08069 is not measured in that state with git 2.56:
+// that frame is claustrum's today, and a row for it is owed.
 func TestGitFileToNowhereKeepsFrame(t *testing.T) {
+	newGit := gitSaysGitFileNowhere(t)
 	for _, ph := range []struct {
 		name string
 		env  []string
@@ -120,7 +125,17 @@ func TestGitFileToNowhereKeepsFrame(t *testing.T) {
 			g := filepath.Join(filepath.Dir(f.n), "G")
 			writeFile(t, filepath.Join(g, ".git"), "gitdir: "+filepath.Join(filepath.Dir(f.n), "nowhere", "gitdir")+"\n", 0o644)
 			plantEnv(t, ph.env...)
-			if got, want := f.frame(t, "git.info", map[string]any{"path": g}), resultOf(notRepoInfo); got != want {
+			want := resultOf(notRepoInfo)
+			if newGit {
+				// git names the .git file by its resolved path (macOS /var is a link).
+				rg, err := filepath.EvalSymlinks(g)
+				if err != nil {
+					t.Fatal(err)
+				}
+				want = errFrame(t, hooksRefusalPrefix+"exit status 128: fatal: gitfile does not point to a valid repository: "+
+					filepath.Join(rg, ".git"))
+			}
+			if got := f.frame(t, "git.info", map[string]any{"path": g}); got != want {
 				t.Errorf("git.info = %s\nwant %s", got, want)
 			}
 		})

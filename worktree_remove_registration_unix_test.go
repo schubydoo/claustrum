@@ -555,6 +555,11 @@ func TestWorktreeRemoveNoRepositoryCallsCarryNullGitDir(t *testing.T) {
 // Battery row N04 (Linux and macOS VMs): the `.git` file of baseRepo names a git dir
 // that is gone. The two listings of the removal fail and carry
 // GIT_COMMON_DIR=<that git dir>. With worktreeRoot the one listing carries it too.
+//
+// With git 2.56 the listing fails with its gitfile text, and 5fd08069 refuses both
+// requests with the error of its call about the repository (cell N04 of round
+// tier0-27, Linux VM). Its calls differ from those of claustrum there, so that
+// branch compares the frames only.
 func TestWorktreeRemoveGoneGitFileTargetCalls(t *testing.T) {
 	f := newRegFixture(t)
 	r := filepath.Join(f.root, "R")
@@ -563,9 +568,27 @@ func TestWorktreeRemoveGoneGitFileTargetCalls(t *testing.T) {
 	leaf := filepath.Join(f.root, "ext", "cp", "w1")
 	writeFile(t, filepath.Join(leaf, "keep.txt"), "k\n", 0o644)
 	pin := " C=<fx>/nonexistent"
+	newGit := gitSaysGitFileNowhere(t)
 	run := removeCallLog(t, f.root)
+	wp := filepath.Join(r, ".claude", "worktrees", "w1")
 	raw, calls := run("git.worktree_remove", map[string]any{"baseRepo": r,
-		"worktreePath": filepath.Join(r, ".claude", "worktrees", "w1"), "branchName": "w1"})
+		"worktreePath": wp, "branchName": "w1"})
+	if newGit {
+		check := `git could not check this repository on the remote machine: at "` + r +
+			`": fatal: gitfile does not point to a valid repository: ` + filepath.Join(r, ".git")
+		if want := refusalFrame(t, "failed to remove worktree: could not check whether "+wp+" is locked: "+check); raw != want {
+			t.Errorf("frame = %s\nwant %s", raw, want)
+		}
+		raw, _ = run("git.worktree_remove", map[string]any{"baseRepo": r, "worktreePath": leaf,
+			"branchName": "w1", "worktreeRoot": filepath.Join(f.root, "ext")})
+		if want := refusalFrame(t, wtUnknown+check); raw != want {
+			t.Errorf("with worktreeRoot: frame = %s\nwant %s", raw, want)
+		}
+		if _, err := os.Stat(filepath.Join(leaf, "keep.txt")); err != nil {
+			t.Errorf("the worktree folder was touched: %v", err)
+		}
+		return
+	}
 	if raw != removeKept {
 		t.Fatalf("frame = %s\nwant %s", raw, removeKept)
 	}

@@ -954,7 +954,7 @@ cell C-… is of round `tier0-20` against `5fd08069` on a Linux VM.
 | git.worktree_remove | `failed to remove worktree: "" does not name a directory` | in `error` (empty `worktreePath`, without `worktreeRoot`) |
 | git.worktree_remove | `failed to remove worktree: could not check whether <p> is locked (its registrations could not be examined); retry` | in `error`, with no `errorCode`. Without `worktreeRoot`, for a worktree directory that exists: the configuration of `baseRepo` cannot be read, `baseRepo` holds no repository, or the trust check refuses its git directory. When the daemon's `GIT_CONFIG_COUNT` is refused, the same holds. Linux and macOS VMs measured that also for a `baseRepo` of `<T>/missing/..`, which does not resolve. In both modes, for a worktree directory that exists: the worktree registry exists but cannot be read, or, on Linux and macOS, is a symbolic link (`5fd08069`, cell C3 of rounds `tier0-24` and `tier0-25m`, Linux and macOS VMs, cells L2 and L3 of round `tier0-26`, Linux VM). Nothing is deleted |
 | git.worktree_remove | `failed to remove worktree: could not check whether <p> is locked (the repository at <baseRepo> could not be read); retry` | in `error`, with no `errorCode`, with `worktreeRoot`, when the daemon's `GIT_CONFIG_COUNT` is refused, `baseRepo` is missing and the worktree directory exists. This row covers an absolute `baseRepo` without a `..` component. Nothing is deleted (`f6010b97`, Linux and macOS VMs). With no `git` on `PATH`, the same text answers a missing `baseRepo` in three rows (`f6010b97` and `89cb6289`, Linux VM). The worktree directory holds a file (row L13wa), is empty (row L13we), or holds a `.git` file that names its entry (row DG1) |
-| git.worktree_remove | `failed to remove worktree: cannot determine the repository's work tree: <reason>` | in `error`, with no `errorCode`, with `worktreeRoot` only. `<reason>` is a trust refusal text, `exit status 128`, the hooks refusal, or the refusal of the daemon's `GIT_CONFIG_COUNT` (`f6010b97`, Linux VM). Since `89cb6289` it is also `git finds no repository here: <git text>` (row N04). With no `git` on `PATH`, both references answer the exec error alone in nine rows where `baseRepo` exists (Linux VM, see "Git-directory trust check"). claustrum also puts the `git cannot run` text and a limit refusal of the listing there. Neither is measured with `worktreeRoot`. Nothing is deleted. See the method section |
+| git.worktree_remove | `failed to remove worktree: cannot determine the repository's work tree: <reason>` | in `error`, with no `errorCode`, with `worktreeRoot` only. `<reason>` is a trust refusal text, `exit status 128`, the hooks refusal, or the refusal of the daemon's `GIT_CONFIG_COUNT` (`f6010b97`, Linux VM). Since `89cb6289` it is also `git finds no repository here: <git text>` (row N04). With git 2.56 also the text of a failed call about the repository (round `tier0-27`). With no `git` on `PATH`, both references answer the exec error alone in nine rows where `baseRepo` exists (Linux VM, see "Git-directory trust check"). claustrum also puts the `git cannot run` text and a limit refusal of the listing there. Neither is measured with `worktreeRoot`. Nothing is deleted. See the method section |
 | git.worktree_remove | `failed to remove worktree: cannot list the repository's worktrees: <exec error>` | in `error`, with no `errorCode`, with `worktreeRoot` only. `git worktree list --porcelain -z` and then `git worktree list --porcelain` both fail in `baseRepo`. Nothing is deleted. `89cb6289` answers `exit status 128` for a repository with a valid `HEAD` whose `.git/commondir` is a dangling relative symlink (row DG2s-g, Linux VM) |
 | git.worktree_remove | `failed to remove worktree: statat .claude: permission denied` / `failed to remove worktree: open <baseRepo>: <error>` | in `error`, with no `errorCode`, without `worktreeRoot` only. `baseRepo` cannot be searched (mode 0600), or cannot be opened (mode 0000, or a regular file). On Linux and macOS the first text names the first component of `worktreePath` below `baseRepo`, for example `statat wt` or `statat a` (`89cb6289`, cells U19, N4, N5, N6a, N6b and N7a). Nothing is deleted |
 | git.worktree_remove | `failed to remove worktree: open <root>: permission denied` / `failed to remove worktree: openat <name>: permission denied` / `failed to remove worktree: statat .: permission denied` | in `error`, with no `errorCode`, Linux and macOS, for a folder that the daemon cannot read or search. With `worktreeRoot`, that is a folder from the root down to the worktree folder. Without it, that is a folder between `baseRepo` and the worktree folder. `<root>` is `worktreeRoot` with its symbolic links resolved. `<name>` is one path component. Nothing is deleted. Measured against `89cb6289` on Linux and macOS VMs (rows B1 to B6, B8 to B11b, B13a to B14c and B17a to B17d, row B18 on the macOS VM only, cells U1 to U11h and U13a to U15b). Windows is not measured. See the method section |
@@ -1507,8 +1507,7 @@ on `PATH`, the exec error replaces both texts of the table in the measured rows
 (class 1 below).
 
 Where the trust check finds no repository, the daemon still runs the configuration
-listing. The next two paragraphs name the states where a method runs no listing, or
-does not read its answer. The folder is the working directory of the listing. In a
+listing. The folder is the working directory of the listing. In a
 plain folder the listing carries `GIT_DIR=<null>`. The
 call log of `89cb6289` shows that listing with no `GIT_CONFIG_*` entry too, and the
 frames are those of the "no repository" column there. From the code: `git.info`,
@@ -1529,9 +1528,9 @@ empty `GIT_CONFIG_KEY_0` (cells CfP0 and CfP3, Linux and macOS VMs). On Windows
 repository, with and without that key. The text is the hooks refusal with `exit
 status 128: fatal: invalid gitfile format: <GIT_DIR>` (cells Wd, Windows VM). The
 other methods are not measured in that state on any system, and claustrum keeps
-their frames. A `.git` file that names a git dir that is gone keeps the "no
-repository" frame of `git.info` too. Cells CbP0 and CbP3 show that on Linux and
-macOS VMs.
+their frames. With git older than 2.56, a `.git` file that names a git dir that is
+gone keeps the "no repository" frame of `git.info` too (cells CbP0 and CbP3, Linux
+and macOS VMs).
 
 Two more states are not measured. The first is a daemon `GIT_COMMON_DIR`, where a
 listing gets no `GIT_DIR=<null>`. The second is a `.git` file that names a regular
@@ -1568,16 +1567,19 @@ The classes come in this order (Linux, macOS and Windows VMs):
    refusal (rows L13wa to L13wr, see `git.worktree_remove`). Not measured: a
    daemon-created worktree under `worktreeRoot`, and `commondir` contents other than
    `x`. Rows L13xa and L13xb ran one repository layout only.
-2. The listing exits 128, and its stderr has `fatal: not a git repository` at its
-   start in every measured row.
+2. The listing exits 128, and its stderr starts with `fatal: not a git repository`
+   in every measured row.
    Leading white space is dropped first, and letter case does not count (rows L14a,
-   L14b, L14d, L14e and N01 to N05). The answer is "no repository". Take
-   `git.worktree_remove` without `worktreeRoot`, with a `branchName`. It runs a
-   second listing for the branch step and keeps the branch. A gone worktree then
+   L14b, L14d, L14e and N01 to N05). The answer is "no repository". With a
+   `branchName`, `git.worktree_remove` without `worktreeRoot` runs a second listing
+   for the branch step and keeps the branch. A gone worktree then
    answers `{"success":true,"branchKept":true}`. For a worktree directory that
-   exists, claustrum answers the lock-check refusal. Not measured. With
-   `worktreeRoot` the work-tree refusal carries `git finds no repository here: <git
-   text>` (row N04). Exit 1 with that text is not this class (row L14c).
+   exists, claustrum answers the lock-check refusal. Not measured. Exit 1 with that
+   text is not this class (row L14c). For a `.git` file to nowhere git 2.56 says
+   `gitfile does not point to a valid repository`, for claustrum's listing a class 3
+   text. From the code, other methods keep that refusal (not measured on
+   `5fd08069`). `git.worktree_remove` answers the `5fd08069` frames of cells WR13, GF
+   and N04 there (rounds `tier0-27` and `tier0-28`, Linux VM).
 3. Any other failure, a failed start included. The daemon runs `git version` with no
    `-c` option. It runs in `/` on Linux and macOS, and in the daemon's working
    directory on Windows. In claustrum its environment is the one of the failed
@@ -2894,10 +2896,8 @@ check (Windows VM).
   `-32603` with the listing refusal that ends
   `fatal: bad config line 15 in file <P>\.git/config`, after 3 git calls. In cell B-03 the junction is outside any
   repository, and the answer is the non-repo body. The claustrum build of this change
-  answers the same frame in each of these cells (Windows VM). Since the read of the
-  repository config, claustrum answers the class 1 text in the state of cell B-15
-  (from the code). The listing refusal stays for a config that git refuses and the
-  read accepts, for example an `include.path` with no value. Its calls carry the
+  answers the same frame in each of these cells (Windows VM). For cell B-15 now,
+  see "Git-directory trust check". Its calls carry the
   same entries in these cells, except B-14. In cell B-03 it runs one call less
   (see the trust check). The claustrum test on real junctions runs on Windows
   only. It has 11 cells: B-01, B-03, B-04, B-05p, B-05r, B-07, B-08, B-15, B-16,
@@ -3340,8 +3340,10 @@ Makes a linked git worktree for a session, on a new branch or on a branch that e
   answer is the lock-check refusal. A remove makes that call
   two times after a bad answer. See
   [The settings copy](#the-settings-copy). With `worktreeRoot` claustrum gives
-  each of those texts as the reason of the work-tree refusal below. That shape is
-  not measured on `5fd08069`.
+  each of those texts as the reason of the work-tree refusal below. With git 2.56
+  `5fd08069` does so for a bad answer (round `tier0-27`, cells GF and N04, Linux
+  VM). Other
+  shapes are not measured.
 - With `worktreeRoot`, the daemon determines the repository's work tree after the
   containment checks and before the dir-symlink check. A failure answers
   `{"success":false,"error":"failed to remove worktree: cannot determine the
@@ -3379,10 +3381,11 @@ Makes a linked git worktree for a session, on a new branch or on a branch that e
      is `<reason>` (`5fd08069`, cells N14, Linux and macOS VMs).
   4. Git cannot list the configuration. `<reason>` is the refusal text of the
      failure class. When the listing says git finds no repository, `<reason>` is `git
-     finds no repository here: <git text>`. The `.git` file with a gone target gets
-     `git finds no repository here: fatal: not a git repository: <target>` here
+     finds no repository here: <git text>`. With git older than 2.56 a `.git` file
+     with a gone target gets it with `fatal: not a git repository: <target>`
      (`89cb6289`, row N04 on Linux and macOS VMs). `f6010b97` gave the hooks refusal
-     text there.
+     text there. With git 2.56 it gets the text of a failed call about the
+     repository (round `tier0-27`, cells GF and N04, Linux VM).
   5. `baseRepo` is itself a git directory, such as a bare repository or a `.git`
      directory. `<reason>` is `exit status 128`. A repository whose config sets
      `core.bare` still passes.

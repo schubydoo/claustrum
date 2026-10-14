@@ -348,7 +348,7 @@ func (h *shadowHost) askGit(t gitDirTrust, dir string) repoAnswer {
 				return repoAnswer{noRepo: true}
 			}
 			versionAfterFailure()
-			return repoAnswer{text: fmt.Sprintf("git could not check this repository on the remote machine: at %q: %s", root, r.allLines())}
+			return repoAnswer{text: repoCheckFailedText(root, r.allLines())}
 		}
 		found = filepath.FromSlash(r.out)
 		if !filepath.IsAbs(found) {
@@ -362,6 +362,12 @@ func (h *shadowHost) askGit(t gitDirTrust, dir string) repoAnswer {
 		}
 	}
 	return repoAnswer{text: fmt.Sprintf("git and Claude disagree about which repository holds this folder: from %q git finds %q, Claude finds %q; try again", root, shown, want)}
+}
+
+// repoCheckFailedText is the error of a failed call about the repository in root.
+// detail is the exec error or git's lines (allLines).
+func repoCheckFailedText(root, detail string) string {
+	return fmt.Sprintf("git could not check this repository on the remote machine: at %q: %s", root, detail)
 }
 
 // allLines is detail with every line that git wrote to its error output: the
