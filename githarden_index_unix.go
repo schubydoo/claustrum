@@ -122,11 +122,11 @@ func installIndexInto(src, adminDir string, tested testedRegistration) error {
 // verified. It is step B of undoFailedCheckout. The delete acts on the resolved path
 // that the check compared, never on a lexical clean of the raw path: a clean drops a
 // "link/.." pair and can name another folder than the kernel does. The root is the
-// resolved registrations directory, so the root is the containment from the open
-// on, and the delete never follows a symlink out of it. The open itself follows a
-// symlink that replaced the directory after the check. So the opened directory
-// must have the identity that the check recorded (os.SameFile). If it differs,
-// the delete is refused. The error of a failed delete reads "RemoveAll <name>: <OS
+// registrations directory as the repo names it, so the root is the containment
+// from the open on, and the delete never follows a symlink out of it. A symlink
+// that replaced the directory after the check is refused at the open, and the
+// opened directory must have the identity that the check recorded (os.SameFile).
+// Else the delete is refused. The error of a failed delete reads "RemoveAll <name>: <OS
 // error>", the wording of row A14.
 //
 // A registration that is not a direct child of the registrations directory is
@@ -151,7 +151,15 @@ func removeCreatedRegistration(reg createdRegistration) error {
 	if reg.resolved != filepath.Join(reg.registry, name) {
 		return fmt.Errorf("%s is not a direct child of %s", reg.resolved, reg.registry)
 	}
-	root, err := os.OpenRoot(reg.registry)
+	// The open goes by the path as the repo names it. A symbolic link that took
+	// the place of the registrations directory after the check is refused
+	// there, so nothing behind it is deleted, and the error keeps the branch
+	// (openRegistrationsFolder, not measured).
+	at := reg.spelled
+	if at == "" {
+		at = reg.registry
+	}
+	root, err := openRegistrationsFolder(at, os.OpenRoot)
 	if err != nil {
 		if os.IsNotExist(err) {
 			return nil

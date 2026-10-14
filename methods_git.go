@@ -885,6 +885,9 @@ func gitWorktreeCreateLocked(req *request, p *gitParams, repo string) response {
 		msg := t.refusal
 		if daemonCommonDirSet() {
 			msg = gitDirAddWrap + msg
+		} else if !bool(p.ShadowDirOff) && req.shadow.active() && req.shadow.readsRepoConfig() && entryIsLink(repo) {
+			msg = gitDirAddWrap + msg
+			makeRefusedLeafParents(p, repo)
 		}
 		return okResult(req.ID, worktreeResult{Success: false, Error: msg, ErrorCode: "worktree_add_failed"})
 	}
@@ -1332,6 +1335,13 @@ func gitWorktreeCreateLocked(req *request, p *gitParams, repo string) response {
 	if msg := req.use.swapRefusal("add", repo); msg != "" {
 		return refuseAdd("git worktree add failed: " + msg)
 	}
+	// With "shadowDirOff":true, a registrations folder that is a link or a file
+	// refuses the create before the add (offWorktreesRefusal).
+	if p.ShadowDirOff {
+		if msg := offWorktreesRefusal(repo); msg != "" {
+			return refuseAdd("git worktree add failed: " + msg)
+		}
+	}
 	// incompleteAdd answers an add that git ended well and that the daemon did
 	// not complete (addIncomplete), with the rollback of a failed checkout. On
 	// 5fd08069 the leaf is gone and the new branch stays, with the text of the
@@ -1441,12 +1451,22 @@ func gitWorktreeCreateLocked(req *request, p *gitParams, repo string) response {
 	// put there while a wrapper holds the call before git runs, and git makes
 	// the registration and the branch in T. How 5fd08069 finds that state is
 	// not measured. On Windows the staged add has its own test.
+	//
+	// A real directory at the path of the git directory that passes the gate is
+	// the exception: the create goes on in it (acceptedGitDir.replacedAtPath).
+	// That is cell C6 of round tier0-24 (Linux VM), by the maintainer's decision
+	// of 2026-10-14.
 	if !shadowStagesAdd && req.use.swapped("added") {
-		return okResult(req.ID, worktreeResult{
-			Success:   false,
-			Error:     fmt.Sprintf("refusing to create worktree: %s was not populated by git worktree add", parentResolvedPath(p.WorktreePath)),
-			ErrorCode: "unsafe_path",
-		})
+		next := req.use.accepted.replacedAtPath(repo)
+		if next == nil {
+			return okResult(req.ID, worktreeResult{
+				Success:   false,
+				Error:     fmt.Sprintf("refusing to create worktree: %s was not populated by git worktree add", parentResolvedPath(p.WorktreePath)),
+				ErrorCode: "unsafe_path",
+			})
+		}
+		defer next.release()
+		req.use.accepted = next
 	}
 	// The daemon replaces the `.git` file of a leaf that names the copy
 	// (repointLeaf). It does that after the tests of the registration below,
@@ -1825,6 +1845,57 @@ func gitWorktreeCreateLocked(req *request, p *gitParams, repo string) response {
 	return okResult(req.ID, worktreeResult{Success: true, Path: p.WorktreePath, SourceBranch: source, Branch: worktreeBranch})
 }
 
+// entryIsLink reports whether repo is a linked worktree whose `.git` file names
+// an entry of the registrations folder that is a symbolic link, where
+// entryLinkRefusedLate is set. The daemon's own GIT_DIR is not looked at.
+//
+// For such a baseRepo, with extensions.worktreeConfig set and a
+// `config.worktree` file in the entry, 5fd08069 answers the trust refusal of
+// the entry behind the link after `git worktree add failed: cannot locate the
+// repository's git directory: `. B/.claude and B/.claude/worktrees exist after
+// the reply (cell C7 of round tier0-24, Linux VM). It makes 16 git calls before
+// that reply. claustrum runs no git call in a folder that the trust check
+// refused, so it answers at the gate (makeRefusedLeafParents). The caller
+// applies it where the settings copy can run: a server with a run folder, not
+// in the state fallback-git, and no "shadowDirOff":true. The other states keep
+// the earlier answer (not measured). Not measured either: the same link without
+// that switch or that file. It gets the same answer.
+func entryIsLink(repo string) bool {
+	if !entryLinkRefusedLate || os.Getenv("GIT_DIR") != "" {
+		return false
+	}
+	start, err := walkStart(repo)
+	if err != nil {
+		return false
+	}
+	if start, err = filepath.Abs(start); err != nil {
+		return false
+	}
+	g, _, ok := findGitDir(start)
+	if !ok || !isWorktreeEntry(g) {
+		return false
+	}
+	fi, err := os.Lstat(g)
+	return err == nil && fi.Mode()&fs.ModeSymlink != 0
+}
+
+// makeRefusedLeafParents makes the parent folders of the new leaf of a create
+// that entryIsLink refuses, as a create makes them before its add. It runs
+// only without worktreeRoot, and only when the containment tests of the create
+// pass. An error is not reported. claustrum's own, not measured: with
+// worktreeRoot, or when a test fails, nothing is made.
+func makeRefusedLeafParents(p *gitParams, repo string) {
+	if p.WorktreeRoot != "" || p.WorktreePath == "" ||
+		worktreePathRefusal(p.BaseRepo, p.WorktreePath, "create") != "" ||
+		worktreeSymlinkRefusal(repo, p.WorktreePath, "create") != "" {
+		return
+	}
+	if _, err := os.Lstat(p.WorktreePath); err == nil {
+		return
+	}
+	_ = mkdirRepoWorktreeParents(repo, filepath.Dir(filepath.Clean(p.WorktreePath)))
+}
+
 // removeGate is the settings gate of a git.worktree_remove without worktreeRoot
 // (settingsGateRefusal). After a bad answer of git about the repository, the
 // gate runs one more time, and its second result is the answer. On 5fd08069 a
@@ -2158,6 +2229,14 @@ func gitWorktreeRemoveLocked(req *request, p *gitParams, repo string) response {
 		commonDir = registrationGitDir(repo, answered)
 		probe = newRegistrationProbe(req.use, answered, inRepoWorkTree(repo))
 	}
+	// A registrations folder that is a symbolic link refuses the remove, and
+	// nothing is deleted (registrationsLinked). The test comes before the lock
+	// tests: with a locked entry behind the link, and with worktreeRoot,
+	// 5fd08069 answers this refusal too (cells L2 and L3 of round tier0-26,
+	// Linux VM).
+	if registrationsLinked(filepath.Join(commonDir, worktreesSubdir)) {
+		return refuse(lockCheckRefusal(p.WorktreePath))
+	}
 	sp := newWorktreePathSet(target.path, p.WorktreePath)
 	// A worktree that is locked in the `.git` folder of baseRepo is refused, also when
 	// the entries are read from another git directory (D22, lockedInBaseRepo). That
@@ -2440,7 +2519,11 @@ func removeGoneWorktree(req *request, p *gitParams, repo, path string) response 
 		}
 		// A worktrees directory that cannot be read does not stop a gone remove. The
 		// reference answers success there (Linux VM, row K13 with worktreeRoot and a
-		// gone target). Without worktreeRoot no row measures it.
+		// gone target). Without worktreeRoot no row measures it. A worktrees
+		// directory that is a symbolic link is read and deleted in no place
+		// (openRegistrationsFolder), and the remove goes on. With a locked entry
+		// behind the link, 5fd08069 answers success and deletes the branch, and
+		// the registration stays (cell L1 of round tier0-26, Linux VM).
 		locked, _, matches := worktreeLockedByPath(commonDir, sp)
 		if locked {
 			return refuse(goneLocked)

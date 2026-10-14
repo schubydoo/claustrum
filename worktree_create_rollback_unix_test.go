@@ -598,6 +598,8 @@ func TestTestedRegistrationGuards(t *testing.T) {
 // folder is a symlink. Right before each open of it, the test points the link at
 // another folder that holds an entry of the same name. Nothing in that other
 // folder is deleted, and no index goes into it. No cell measured this state.
+// The delete refuses the link before any open (deleteRoot), so the seam does
+// not run there.
 func TestTestedRegistrationRetargetedRegistry(t *testing.T) {
 	for _, op := range []string{"delete", "placement"} {
 		t.Run(op, func(t *testing.T) {
@@ -627,10 +629,12 @@ func TestTestedRegistrationRetargetedRegistry(t *testing.T) {
 				return old(name)
 			}
 			var err error
+			wantOpens := 1
 			if op == "delete" {
+				wantOpens = 0
 				err = removeTestedRegistration(tested)
-				if err != nil {
-					t.Errorf("removeTestedRegistration = %v, want nil", err)
+				if want := realDirText(link); err == nil || err.Error() != want {
+					t.Errorf("removeTestedRegistration = %v, want %s", err, want)
 				}
 			} else {
 				err = guardedInstallWorktreeIndex(src, tested.path, filepath.Join(root, "leaf"), tested)
@@ -638,8 +642,8 @@ func TestTestedRegistrationRetargetedRegistry(t *testing.T) {
 					t.Errorf("placement = %v, want %s", err, want)
 				}
 			}
-			if opens != 1 {
-				t.Fatalf("the registrations folder was opened %d times, want 1: the test did not stage the change", opens)
+			if opens != wantOpens {
+				t.Fatalf("the registrations folder was opened %d times, want %d", opens, wantOpens)
 			}
 			if got, want := pathsBelow(t, filepath.Join(root, "b", "w1")), []string{"HEAD"}; !slices.Equal(got, want) {
 				t.Errorf("the entry of the other folder holds %q, want %q", got, want)
@@ -968,14 +972,18 @@ func TestWorktreeCreateRefusalNamesResolvedLeaf(t *testing.T) {
 
 // TestDropStaleWorktreeRegistrationRetargetedRegistry pins that the step before the
 // add lists, reads and removes in one opened registrations folder. That folder is
-// a symlink, and the test points the link at another folder around the open. One
-// entry w1 has a record that names the leaf, and the other names another worktree.
-// No cell measured this state.
+// a real folder, and the test puts a symlink to another folder in its place around
+// the open. One entry w1 has a record that names the leaf, and the other names
+// another worktree. No cell measured this state.
 //
-//   - The link changes right before the open, to the folder with the other record.
+//   - The link comes right before the open, to the folder with the other record.
+//     The opened folder is not the folder of the Lstat (openRegistrationsFolder).
 //     Nothing goes in either folder.
-//   - The link changes right after the open, to the folder with the stale record.
+//   - The link comes right after the open, to the folder with the stale record.
 //     The opened folder holds the other record, so nothing goes in either folder.
+//
+// A registrations folder that is a symlink before the step is not opened at all
+// (TestCreateDeletesNothingBehindALinkedRegistrationsFolder).
 func TestDropStaleWorktreeRegistrationRetargetedRegistry(t *testing.T) {
 	for _, when := range []string{"before the open", "after the open"} {
 		t.Run(when, func(t *testing.T) {
@@ -991,11 +999,11 @@ func TestDropStaleWorktreeRegistrationRetargetedRegistry(t *testing.T) {
 				first, second = other, stale
 			}
 			mkdirForTest(t, filepath.Dir(link))
-			if err := os.Symlink(first, link); err != nil {
+			if err := os.Rename(first, link); err != nil {
 				t.Fatal(err)
 			}
 			retarget := func() error {
-				if err := os.Remove(link); err != nil {
+				if err := os.Rename(link, first); err != nil {
 					return err
 				}
 				return os.Symlink(second, link)

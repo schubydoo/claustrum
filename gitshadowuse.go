@@ -7,6 +7,7 @@ import (
 	"encoding/binary"
 	"errors"
 	"fmt"
+	"io/fs"
 	"os"
 	"path/filepath"
 	"strconv"
@@ -139,6 +140,9 @@ func worktreeAdd(ctx context.Context, u gitUse, repo, leaf string, cp worktreeCh
 			return "", &addNotPrepared{text: text}
 		}
 		u.makeWorktreesFolder()
+		if text := u.worktreesOpenRefusal(); text != "" {
+			return "", &addNotPrepared{text: text}
+		}
 	}
 	var errBuf bytes.Buffer
 	cmd.Stderr = &errBuf
@@ -192,10 +196,10 @@ func plainAddRefusal(gitDir string, named bool) string {
 // measured. In attach mode 5fd08069 answers the same text one time (cell E1 of
 // round tier0-11, Linux VM): the caller makes no second add (addNotPrepared).
 //
-// The entry is read through the held git directory, or by the path for a
-// request that holds none. claustrum's own, not measured: a file at the name
-// gets the same text, and the text names the held git directory, with no cut
-// of a long path.
+// A file at the name gets the same text (cell C4 of round tier0-24, Linux
+// VM). The entry is read through the held git directory, or by the path for a
+// request that holds none. claustrum's own, not measured: the text names the
+// held git directory, with no cut of a long path.
 func (u gitUse) worktreesFolderRefusal() string {
 	var fi os.FileInfo
 	var err error
@@ -208,6 +212,65 @@ func (u gitUse) worktreesFolderRefusal() string {
 		return ""
 	}
 	return prepareWorktreesPrefix + fmt.Sprintf("%q is not a directory", filepath.Join(u.heldGitDir(), worktreesSubdir))
+}
+
+// worktreesOpenRefusal is the error of a `worktree add` that does not run,
+// because the folder `worktrees` of the git directory is there and cannot be
+// opened. It is "" in every other case. With that folder at mode 0300, 5fd08069
+// answers `git worktree add failed: cannot prepare the repository's worktrees
+// directory: openat worktrees: permission denied`. It runs no `worktree add`,
+// and no leaf, branch or registration stays (cell C5 of round tier0-24, Linux
+// VM, and round tier0-25m, macOS VM). Only mode 0300 is measured. claustrum
+// opens the folder through a root at the git directory, which gives that
+// text. The open runs after makeWorktreesFolder. A folder that does not exist
+// then keeps the earlier rule: the add runs (not measured).
+func (u gitUse) worktreesOpenRefusal() string {
+	var root *os.Root
+	if u.accepted != nil {
+		root = u.accepted.root
+	} else {
+		r, err := os.OpenRoot(u.gitDir)
+		if err != nil {
+			return ""
+		}
+		defer func() { _ = r.Close() }()
+		root = r
+	}
+	dir, err := root.OpenRoot(worktreesSubdir)
+	if err == nil {
+		_ = dir.Close()
+		return ""
+	}
+	if errors.Is(err, fs.ErrNotExist) {
+		return ""
+	}
+	return prepareWorktreesPrefix + err.Error()
+}
+
+// offWorktreesRefusal is the refusal of a create with "shadowDirOff":true in
+// repo whose registrations folder is there and is no real folder, or "". With a
+// symbolic link to a folder there, 5fd08069 answers `git worktree add failed:
+// cannot list the repository's worktree entries: "worktrees" is a link or a
+// file where Claude needs a real directory; put the directory itself in its
+// place`. It runs no `worktree add`, makes nothing behind the link and leaves
+// no branch, and R/.claude/worktrees stays (cell C2 of round tier0-24, Linux
+// VM, and of round tier0-25m, macOS VM). The folder is that of the git
+// directory that the trust check pins. claustrum's own, not measured: a file
+// at the name, and a daemon GIT_COMMON_DIR, with which git writes elsewhere.
+// Windows has no such test.
+func offWorktreesRefusal(repo string) string {
+	if !shadowLinksWorktrees {
+		return ""
+	}
+	t := gitDirTrustFor(repo)
+	if t.verdict != gitDirTrusted || t.pinCommonDir == "" {
+		return ""
+	}
+	dir := filepath.Join(t.pinCommonDir, worktreesSubdir)
+	if fi, err := os.Lstat(dir); err != nil || fi.IsDir() {
+		return ""
+	}
+	return listEntriesPrefix + realDirText(dir)
 }
 
 // makeWorktreesFolder makes the folder `worktrees` in the git directory gitDir

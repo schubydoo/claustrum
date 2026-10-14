@@ -16,7 +16,8 @@ import (
 // file write inside that directory through the held folder
 // (acceptedGitDir.root), not through the path. A link, a junction or another
 // folder that is put at the path while the create runs gets none of them,
-// except the directory that the hold moves to (movedTo, below).
+// except the directory that the hold moves to (movedTo or replacedAtPath,
+// below).
 //
 // The hold stops no rename of the folder by another process. On Windows its
 // handle shares delete access for that (openHeldGitDir): on 5fd08069 a rename
@@ -28,32 +29,34 @@ import (
 // open.
 //
 //   - The stale registration before the add: dropStaleRegistration on Windows,
-//     and dropStaleWorktreeRegistration with registrationsRoot on Linux and
-//     macOS.
+//     and dropStaleWorktreeRegistration with deleteRoot on Linux and macOS.
 //   - The folder `worktrees`: makeWorktreesFolder, and openAddStage on Windows.
 //   - The Windows staging steps: openAddStage, sweepOldStaging, addStage.move.
 //   - The `config.worktree` file of the registration: writeWorktreeConfig.
 //   - The index: installIndex on Windows, and installTestedWorktreeIndex with
 //     registrationsRoot on Linux and macOS.
 //   - The registration of a rollback: removeCreatedRegistration, and
-//     removeTestedRegistration with registrationsRoot on Linux and macOS.
+//     removeTestedRegistration with deleteRoot on Linux and macOS.
 //
 // By the path stay:
 //
 //   - Git itself, which takes the git directory as a path.
 //   - A request that holds no git directory: "shadowDirOff":true, the state
 //     fallback-git and a server with no run folder.
-//   - On Linux and macOS, a `worktrees` entry that is a symbolic link
-//     (registrationsRoot).
+//   - On Linux and macOS, the index in a `worktrees` entry that is a
+//     symbolic link (registrationsRoot). The deletes refuse such a link
+//     (deleteRoot): no delete goes behind it.
 //   - On every system, the stale step and a registrations folder whose
 //     folder `worktrees` is not in the held folder, such as a daemon GIT_DIR
 //     of another repository (from the code, not measured).
 //   - The reads of the create that decide a refusal.
 //
-// One step takes a new folder from the path, on Linux and macOS: right after
-// `rev-parse --absolute-git-dir`, when git answered another real directory
-// that passes the gate (acceptedGitDir.movedTo). The steps above then act
-// through that folder.
+// Two steps take a new folder from the path, on Linux and macOS. The first is
+// right after `rev-parse --absolute-git-dir`, when git answered another real
+// directory that passes the gate (acceptedGitDir.movedTo). The second is right
+// after a good `worktree add`, when a new real directory at the path passes
+// the gate (acceptedGitDir.replacedAtPath, cell C6 of round tier0-24). The
+// steps above then act through that folder.
 //
 // No VM row has a swap between the test of a
 // step and one of these acts. In the swap cells of val-s3p2b2-12-windows the
@@ -87,6 +90,11 @@ func (a *acceptedGitDir) registrationName(path string) (string, bool) {
 // wipesHomeDir refuses an entry that is the home folder or holds it.
 func (a *acceptedGitDir) removeRegistration(name string) {
 	if wipesHomeDir(filepath.Join(a.path, worktreesSubdir, name)) {
+		return
+	}
+	// Nothing goes behind a registrations folder that is a symbolic link
+	// (deleteRoot). On Windows that is not measured, and the step is as before.
+	if fi, err := a.root.Lstat(worktreesSubdir); registrationsLinkRefused && (err != nil || fi.Mode()&os.ModeSymlink != 0) {
 		return
 	}
 	_ = removeHeldEntry(a.root, filepath.Join(worktreesSubdir, name))
@@ -186,8 +194,8 @@ func (a *acceptedGitDir) installIndex(src, adminDir string) {
 	}
 }
 
-// registrationsRoot opens the registrations folder at dir for a delete or a
-// file write of a create, on Linux and macOS. It is safe on nil.
+// registrationsRoot opens the registrations folder at dir for the placement of
+// the index of a create, on Linux and macOS. It is safe on nil.
 //
 // When dir is the folder `worktrees` of the held git directory (isAt), the
 // root is opened through the held folder: a folder that was put at the path of
@@ -199,11 +207,28 @@ func (a *acceptedGitDir) installIndex(src, adminDir string) {
 // git directory. The second is a `worktrees` entry of the held folder that is
 // a symbolic link: 89cb6289 creates with such a link (rows D-1 and D-3 to D-5,
 // Linux VM). In the state shadow claustrum refuses that create before the add
-// (worktreesFolderRefusal), so only the stale step and a link that is put there
-// later come here. The index and the rollback delete keep their identity test
-// there (replacedIn, D24). The stale step has none.
+// (worktreesFolderRefusal), and with "shadowDirOff":true too (cells C1 and C2
+// of round tier0-24, Linux VM). The index keeps its identity test there
+// (replacedIn, D24).
 func (a *acceptedGitDir) registrationsRoot(dir string) (*os.Root, error) {
+	return a.openRegistrations(dir, false)
+}
+
+// deleteRoot is registrationsRoot for the deletes of a create: the stale step
+// and the rollback delete. A registrations folder that is a symbolic link is
+// refused there, and nothing is deleted (openRegistrationsFolder). The rule is
+// that of a remove in cell C3 of round tier0-24 (Linux VM). For a create it is
+// not measured.
+func (a *acceptedGitDir) deleteRoot(dir string) (*os.Root, error) {
+	return a.openRegistrations(dir, true)
+}
+
+// openRegistrations is registrationsRoot, and deleteRoot with refuseLink set.
+func (a *acceptedGitDir) openRegistrations(dir string, refuseLink bool) (*os.Root, error) {
 	if filepath.Base(dir) != worktreesSubdir || !a.isAt(filepath.Dir(filepath.Clean(dir))) {
+		if refuseLink {
+			return openRegistrationsFolder(dir, openRegistrationsRoot)
+		}
 		return openRegistrationsRoot(dir)
 	}
 	fi, err := a.root.Lstat(worktreesSubdir)
@@ -215,7 +240,19 @@ func (a *acceptedGitDir) registrationsRoot(dir string) (*os.Root, error) {
 		return nil, &os.PathError{Op: "open", Path: dir, Err: err}
 	}
 	if fi.Mode()&os.ModeSymlink != 0 {
+		if refuseLink && registrationsLinkRefused {
+			return nil, errors.New(realDirText(dir))
+		}
 		return openRegistrationsRoot(dir)
 	}
-	return a.root.OpenRoot(worktreesSubdir)
+	root, err := a.root.OpenRoot(worktreesSubdir)
+	if err != nil || !refuseLink || !registrationsLinkRefused {
+		return root, err
+	}
+	// A link that took the place of the folder after the Lstat is not used.
+	if !sameOpenedFolder(root, fi) {
+		_ = root.Close()
+		return nil, errors.New(realDirText(dir))
+	}
+	return root, nil
 }

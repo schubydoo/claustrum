@@ -45,14 +45,13 @@ daemon. The wire surface is the product.
 ## Architecture
 
 There is one binary. A flag selects the mode (`main.go`): `-serve`, `-bridge`,
-`-stop`, `-version`, `-install`, `-probe-cli`. `19f30c46` added the one-shot
-`-probe-cli` CLI-runnability probe.
+`-stop`, `-version`, `-install`, `-probe-cli`.
 
 | File | Role |
 |------|------|
 | `rpc.go` | request/response types, error codes, and `dispatch`. The dispatch order is parse → auth → version → route. Probes showed that dispatch tests auth before the jsonrpc version, except on the unauthenticated `server.shutdown` |
 | `server.go` | the `-serve` daemon: `AF_UNIX` listener (mode `0600`), per-conn read loop, concurrent dispatch, self-daemonize, graceful shutdown |
-| `methods_*.go` | the 20 methods across `server.*` / `files.*` / `git.*` / `launcher.*` / `process.*` / `plugins.*`. `7d193f89` removed `server.version`. `19f30c46` added `plugins.prune`. `89cb6289` added `launcher.resolve` (`methods_launcher.go`, which also holds the `process.spawn` launcher checks and the child env strip) |
+| `methods_*.go` | the 20 methods across `server.*` / `files.*` / `git.*` / `launcher.*` / `process.*` / `plugins.*`. `methods_launcher.go` also holds `launcher.resolve`, the `process.spawn` launcher checks and the child env strip |
 | `managedlauncher*.go` | the managed launcher's OS split (the settings folder, the Windows refusal) and the launcher runs of `-install` and `-probe-cli` behind `CLAUDE_SSH_MANAGED_LAUNCHER=1` (`89cb6289`) |
 | `results.go` | result structs, with fields declared in the exact order the reference emits. Never use a map. A map sorts its keys and diverges from the wire contract |
 | `process.go` | `procManager` / `managedProc`: spawn in own process group, base64 stream frames, async stdin writer (bounded queue + backpressure), per-process replay buffer, `reattach` |
@@ -176,7 +175,10 @@ The JSON-RPC surface is identical on every OS. Full internals →
       `5fd08069` (Linux and macOS VMs). Windows is not measured. Each delete goes through an `os.Root`, so no delete
       follows a symlink out of the leaf or its parent. A leaf that is a symlink
       or not a directory is refused. A worktree LOCKED in the `.git` folder of
-      `baseRepo` is refused, not deleted (D22).
+      `baseRepo` is refused, not deleted (D22). On Linux and macOS a gone
+      worktree whose locked entry sits behind a linked `<git dir>/worktrees`
+      gets success, and its branch goes. That follows `5fd08069` (cell L1 of
+      round `tier0-26`, Linux VM), by the maintainer's decision of 2026-10-14.
       A repository config, or one of three files of the git directory, that the
       daemon does not accept refuses the remove before any delete, as on
       `5fd08069`. `"shadowDirOff":true` in the request turns that refusal off.
@@ -471,25 +473,29 @@ The JSON-RPC surface is identical on every OS. Full internals →
       list of the steps.
     - By the path stay: git itself, a request that holds no git directory
       (`"shadowDirOff":true`, the state `fallback-git`, no run folder), and
-      on Linux and macOS a `worktrees` entry that is a symbolic link. The
-      index and the rollback delete keep the identity test of D24 there. The
-      stale step stays by the path too when its folder `worktrees` is not in
-      the held folder (from the code).
-    - One step takes a new folder from the path. On Linux and macOS, right
-      after `rev-parse --absolute-git-dir`, a path that leads to another git
+      on Linux and macOS the index in a `worktrees` entry that is a symbolic
+      link, with the identity test of D24. So does the stale step for a
+      folder `worktrees` outside the held folder (from the code).
+    - On Linux and macOS no delete of a create or a remove goes behind a
+      `worktrees` entry that is a symbolic link. A remove of an existing
+      worktree folder is refused there, as on `5fd08069` (cell C3 of rounds
+      `tier0-24` and `tier0-25m`, Linux and macOS VMs).
+    - Two steps take a new folder from the path, on Linux and macOS. After
+      `rev-parse --absolute-git-dir`, a path that leads to another git
       directory which passes the gate becomes the held folder
-      (`acceptedGitDir.movedTo`). With a link to a copy of the git directory,
-      `5fd08069` goes on in the copy (Linux and macOS VMs). Another git
-      directory is not measured. No cell has an old registration in that
-      folder or a failed checkout after the move. Add
-      no other step that resolves the path of the git directory again, and
-      never widen a delete of these steps.
+      (`acceptedGitDir.movedTo`). After a good `worktree add`, a new real
+      directory at the path that passes the gate does too (`replacedAtPath`,
+      by the maintainer's decision of 2026-10-14). `5fd08069` goes on in a
+      copy in both (Linux and macOS VMs, cell C6 of
+      rounds `tier0-24` and `tier0-25m`). Another git directory is not
+      measured. Add no other step that resolves the path of the git directory
+      again, and never widen a delete of these steps. A rollback after the
+      first move is not measured. After the second, `5fd08069` rolls back in
+      the copy (cell L4 of round `tier0-26`, Linux VM).
     - On Windows a directory symbolic link at `.git` is refused as a junction
       is, on every git method without `"shadowDirOff":true`, before any write
       or remove (`gitDirIsSymlink`). `5fd08069` refuses it with equal replies,
       and the folder behind the link is unchanged on both (Windows VM).
-      Before that rule, a create through such a link made its worktree in the
-      target of the link, and its cleanup removed an old staging entry there.
       With `"shadowDirOff":true` nothing is refused, and git makes and
       removes the worktree in the folder behind the link. `5fd08069` does the
       same for a junction and for a directory symbolic link (Windows VM).
@@ -583,11 +589,10 @@ The JSON-RPC surface is identical on every OS. Full internals →
   name and the socket-dir location are the reconnect contract, so they are
   deliberately not configurable. One parity caveat remains: on Windows `0600`
   is not an owner-only DACL. Do not "fix" that caveat without making the change
-  an opt-in divergence. The old caveat was that two daemons in one dir collide
-  on the file. The run-dir lock now bounds it (`daemon.lock`, parity with
-  `4534d86`). On Linux and macOS a new daemon evicts a prior live same-socket
-  daemon before it binds. The two daemons therefore no longer coexist to
-  collide. Two cases remain: eviction is refused, or the host is Windows, which
+  an opt-in divergence. Two daemons in one dir no longer collide on the file.
+  With the run-dir lock (`daemon.lock`, parity with `4534d86`), a new daemon on
+  Linux and macOS evicts a prior live same-socket daemon before it binds. Two
+  cases remain: eviction is refused, or the host is Windows, which
   ships no run-dir lock. That lock is parity, not a claustrum "fix". The macOS
   holder-verification that claustrum applies to the lock is a hardening
   divergence (D15). See [`docs/PROTOCOL.md`](docs/PROTOCOL.md) → Token
@@ -653,9 +658,7 @@ file. None starts a delete. The Windows cleanup of old
 staging entries runs after a good add only.
 
 D13 is a non-flag divergence: verify-before-decompress ordering, on `-cli-url` and on a `-cli-zst` blob with a checksum. D13 is
-always-on, but it is unresolved, not justified. D1, D4, D7, D11 and D14 are retired,
-because claustrum now matches the reference on those paths. For D4 that reference
-is `5fd08069`. The pin `89cb6289` still reads such a path.
+always-on, but it is unresolved, not justified.
 
 D17 is off-wire and macOS-only. The host cleaner reads an `lsof` run it gave
 up on at 17 s as busy (claustrum's own, not measured). It
@@ -679,11 +682,9 @@ decision of 2026-10-02, not a rule 3 clause. See the entry.
 
 D22 is on-wire and always-on. `git.worktree_remove` refuses a worktree that is
 locked in the `.git` folder of `baseRepo`. `89cb6289` answers success in
-four states. Rows p6 and p6f: a daemon `GIT_DIR` and `GIT_COMMON_DIR` of another
-repository, with the folder present or gone. Row p6e: a daemon `GIT_DIR` alone.
-Row p6d: a `baseRepo` that does not exist as sent. With `worktreeRoot`, rows q2 to q4
-(Linux VM) differ in the frame too. That is the maintainer's decision of
-2026-10-03. See the entry.
+four states (rows p6, p6d, p6e and p6f), and with `worktreeRoot` rows q2 to q4
+differ in the frame too. That is the maintainer's decision of 2026-10-03. Cell
+L1 is the one exception (Part A). See the entry.
 
 D23, Windows only: a child gets its environment block in name order, because
 Go 1.26 sorts it and the reference builds use go1.25.14. The entry retires when the reference moves to Go 1.26 or newer.
