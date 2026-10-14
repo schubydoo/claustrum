@@ -3,9 +3,11 @@ package main
 import (
 	"context"
 	"errors"
+	"maps"
 	"os"
 	"path/filepath"
 	"slices"
+	"strings"
 )
 
 // The `config.worktree` file of a repository with the worktreeConfig switch, in
@@ -23,54 +25,28 @@ import (
 // name the git directory itself. Git then uses the file by its own rules, as
 // before.
 
-// worktreeConfigItemKeys are the keys of a `config.worktree` file whose
-// settings go to the git calls as `-c` items. 5fd08069 sends these twelve:
-//
-//   - `-c core.filemode=false` and `-c core.sparsecheckout=true` from the file
-//     of the repository (cells 12a to 12c and 12f of val-s3p2b2-3-linux, cells
-//     1a and 1b of that round, Linux VM), and `-c core.filemode=true` on a
-//     Windows VM (cell N16c of val-s3p2b2-3-windows).
-//   - `-c core.eol=lf` from the file of a linked worktree (cell 1c of
-//     val-s3p2b2-3-linux, Linux VM).
-//   - `-c core.autocrlf=input`, `-c core.ignorecase=true`, `-c
-//     core.symlinks=false` and `-c core.sparsecheckoutcone=true` from the file
-//     of the repository. Each ran as the one key of the file (the four cells
-//     p2-K of val-s3p2b2-6-linux with those names, Linux VM, and row U1 of
-//     val-s3p2b2-6-macos, macOS VM, 2 of 2 runs). A Windows VM has the same
-//     four items (section 0 item 4 of the report of val-s3p2b2-6-windows, 2 of
-//     2 runs).
-//   - `core.safecrlf = true`, `core.quotepath = false`,
-//     `core.precomposeunicode = true`, `core.untrackedcache = true` and
-//     `core.longpaths = true`, each as the one key of the file (the extra rows
-//     of that item, Windows VM, 1 run each).
-//
-// `core.bare` and `core.worktree` of that file give no item (cells 12a, 12d,
-// 12e, 9a and 9k of val-s3p2b2-3-linux). `core.hookspath` and `user.name` give
-// none either (cells p2-K-hookspath-x and p2-K-user-name-n of
-// val-s3p2b2-6-linux). `core.protectntfs = false` and
-// `status.showUntrackedFiles = no` give none (the extra rows of the Windows
-// round). A key with no row is not passed: it gives no item here.
-var worktreeConfigItemKeys = []string{
-	"core.filemode", "core.sparsecheckout", "core.eol",
-	"core.autocrlf", "core.ignorecase", "core.symlinks", "core.sparsecheckoutcone",
-	"core.safecrlf", "core.quotepath", "core.precomposeunicode", "core.untrackedcache", "core.longpaths",
-}
-
 // worktreeConfigItems are the `-c` items of settings, the listing of one
-// `config.worktree` file, in the order of the file. The key is the name that
-// git lists, in lower case. The value is the listed value as it is. The cells
-// have `false`, `true`, `lf` and `input`. Three things are not measured:
-// another spelling of a value, a key with no value and a key that is set two
-// times. A key with no value gives no item. The order of two items is measured
-// for `core.filemode` before `core.sparsecheckout` only (cell 12a). No cell has
-// one of the four keys of val-s3p2b2-6-linux beside a second key: the order of
-// the file holds there too (not measured).
+// `config.worktree` file. Each key of copyKeyRules gives one item, except the
+// format version, the extensions and core.bare. The value is written by the
+// value rule of its key. The items are sorted by key. Cell C3a of tier0-14 has
+// `-c core.filemode=false -c core.quotepath=false -c core.trustctime=false`
+// from `quotepath = off`, `filemode = no` and `trustctime = false`. Cell W1 of
+// tier0-16 has `-c core.logallrefupdates=always -c core.sharedrepository=group
+// -c core.splitindex=true` (both Linux VM). A key with a subsection gives no
+// item. Not measured: a repeated key, where the last accepted value wins.
 func worktreeConfigItems(settings []repoSetting) []string {
-	var items []string
+	last := map[string]string{}
 	for _, s := range settings {
-		if s.hasValue && slices.Contains(worktreeConfigItemKeys, s.key) {
-			items = append(items, "-c", s.key+"="+s.value)
+		if s.key == "core.repositoryformatversion" || s.key == "core.bare" || strings.HasPrefix(s.key, "extensions.") {
+			continue
 		}
+		if v, ok := shadowValue(s); ok {
+			last[s.key] = v
+		}
+	}
+	var items []string
+	for _, key := range slices.Sorted(maps.Keys(last)) {
+		items = append(items, "-c", key+"="+last[key])
 	}
 	return items
 }
@@ -202,7 +178,7 @@ func (req *request) newWorktreeConfig(repo, gitDir string) (text []byte, ok bool
 	}
 	ctx, cancel := gitCtx()
 	defer cancel()
-	source, settings, ok := listConfigFileText(ctx, filepath.Join(gitDir, worktreeConfigName))
+	source, settings, _, ok := listConfigFileText(ctx, filepath.Join(gitDir, worktreeConfigName))
 	u := req.use
 	if _, named := u.names(repo); !ok || !named {
 		return nil, false, drop
@@ -343,23 +319,24 @@ func writeWorktreeConfig(u gitUse, registration, leaf string, tested testedRegis
 }
 
 // listConfigFileText is listConfigFile with the text of the file beside its
-// settings.
-func listConfigFileText(ctx context.Context, path string) (text []byte, settings []repoSetting, ok bool) {
+// settings. badLine is the syntax error text of git for the file
+// (badLineDetail), or "".
+func listConfigFileText(ctx context.Context, path string) (text []byte, settings []repoSetting, badLine string, ok bool) {
 	f, err := openRepoFile(path)
 	if err != nil || f == nil {
-		return nil, nil, false
+		return nil, nil, "", false
 	}
 	defer func() { _ = f.Close() }()
 	if repoFileKindDetail(f, path, repoConfigMaxBytes, configLarge) != "" {
-		return nil, nil, false
+		return nil, nil, "", false
 	}
 	text, _, ok = readRepoFile(f, path, repoConfigMaxBytes, configLarge)
 	if !ok {
-		return nil, nil, false
+		return nil, nil, "", false
 	}
-	out, _, err := listRepoConfigText(ctx, text, gitVersionDir, repoConfigListEnv())
+	out, errOut, err := listRepoConfigText(ctx, text, gitVersionDir, repoConfigListEnv())
 	if err != nil {
-		return nil, nil, false
+		return nil, nil, badLineDetail(errOut, path), false
 	}
-	return text, listedSettings(out), true
+	return text, listedSettings(out), "", true
 }

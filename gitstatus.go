@@ -836,8 +836,10 @@ type statusRun struct {
 // The file of that cell is a copy of the file of the repository. So which file
 // 5fd08069 reads there is not measured: claustrum lists the text that the test
 // of the entry read. A file with `index.sparse` is not measured in the state
-// shadow: it gets the read and gives no item. A read that fails gives no item (not measured). With the member and in
-// the state fallback-git the read is not measured: none runs.
+// shadow: it gets the read and gives the item `-c index.sparse=<value>`. The
+// items are sorted by key (worktreeConfigItems). A read that fails gives no
+// item (not measured). With the member and in the state fallback-git the read
+// is not measured: none runs.
 func (r *statusRun) entryItems() []string {
 	if r.entryRead || len(r.entryConfig) == 0 {
 		return r.tempFront

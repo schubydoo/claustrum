@@ -1134,6 +1134,35 @@ func TestRepoVerdictIsKept(t *testing.T) {
 	step("a refused shallow file, second request", 0, "holds something other than object ids")
 }
 
+// TestWorktreeConfigListingsBeforeAnExtensionRefusal pins the count of the
+// listings of the read with a good `config.worktree` file and the worktreeConfig
+// switch. With a refused extension under format version 1, 5fd08069 makes two
+// listings (cell Q11 of tier0-18, Linux VM). With no refusal it makes three
+// (cell C3c of tier0-14, Linux VM).
+func TestWorktreeConfigListingsBeforeAnExtensionRefusal(t *testing.T) {
+	_, gitDir := configRepo(t)
+	setIncludeFile(t, gitDir, "config.worktree", "[core]\n\tquotepath = off\n")
+	log := stubGitWithLog(t)
+	listings := 0
+	for _, row := range []struct {
+		extension, detail string
+		listings          int
+	}{
+		{"\tpreciousObjects = 1234567890\n", extensionDetail("preciousobjects"), 2},
+		{"", "", 3},
+	} {
+		setRepoConfig(t, gitDir, versionConfig("repositoryformatversion = 1")+"[extensions]\n\tworktreeConfig = true\n"+row.extension)
+		if _, got := readRepoConfig(context.Background(), gitDir, nil); got != row.detail {
+			t.Errorf("extension %q: detail = %q, want %q", row.extension, got, row.detail)
+		}
+		now := len(gitCalls(t, log, "--no-includes"))
+		if now-listings != row.listings {
+			t.Errorf("extension %q: %d listings, want %d", row.extension, now-listings, row.listings)
+		}
+		listings = now
+	}
+}
+
 // TestRepoVerdictsBound pins the bound of the kept verdicts: the oldest one goes
 // when one more than repoVerdictsMax is kept. Many requests at once are safe.
 func TestRepoVerdictsBound(t *testing.T) {

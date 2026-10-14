@@ -2,21 +2,22 @@ package main
 
 import (
 	"os"
+	"regexp"
 	"strconv"
 	"strings"
 )
 
-// The text of the settings file that the daemon keeps for one repository, as
-// 5fd08069 writes it. The file is a list of blocks. Each carried setting is one
-// block of two lines, with a new header before every key and the value in double
-// quotes. The blocks are in the order of the repository's file. The file ends
-// with one fixed block.
+// The text of the settings file that the daemon keeps for one repository. The
+// file is a list of blocks. Each carried setting is one block of two lines,
+// with a new header before every key and the value in double quotes. The
+// blocks are in the order of the repository's file. The file ends with one
+// fixed block.
 //
-// Only a setting that a VM cell showed as carried is written. A key, a section
-// or a class of characters that no cell covers is left out: git then reads only
-// what the cells show. testdata/shadow_config_cells.json has the fixture and the
-// text of each cell, and TestShadowConfigCells runs them. The rounds are s3p2,
-// s3p2b-edges and s3p2b-edges2 on a Linux VM with git 2.43.0.
+// copyKeyRules gives each carried key the rule of its accepted values. A key
+// that is not in copyKeyRules, and a value that its rule does not accept, is
+// dropped with no reply. testdata/shadow_config_cells.json has the fixture and
+// the text of each cell, and TestShadowConfigCells runs them. The rounds are
+// s3p2, s3p2b-edges, s3p2b-edges2 and tier0-14 on a Linux VM with git 2.43.0.
 
 // repoSetting is one setting of a config file, as `git config --list -z` gives
 // it. key has the section and the name in lower case, and the subsection as
@@ -32,52 +33,285 @@ type repoSetting struct {
 // and cell B3c of s3p2-linux for a bare repository).
 const shadowConfigTail = "[lfs]\n\trepositoryformatversion = 0\n"
 
-// shadowBoolKeys are the settings that are written as "true" or "false". Each
-// name is one that a cell showed as carried: cells A1, A2 and A3 of s3p2-linux,
-// cells 04d to 04n, 05b and F6 of s3p2b-edges-linux, cell A5-promisor, and for
-// the two macOS names s3-macos cell A3. The four extension names ran with the
-// value `true` only (cells E9 and 13b to 13k). `extensions.noop-v1 = true` is
-// carried as "true" with format version 0 and 1, in both letter cases of the
-// key (cells X8 of val-s3p2b2-3-linux2, Linux VM).
-var shadowBoolKeys = map[string]bool{
-	"core.filemode": true, "core.bare": true, "core.logallrefupdates": true,
-	"core.ignorecase": true, "core.symlinks": true, "core.precomposeunicode": true,
-	"core.quotepath": true, "core.untrackedcache": true, "core.splitindex": true,
-	"core.longpaths": true, "core.protectntfs": true, "core.sparsecheckout": true,
-	"feature.manyfiles": true,
-	"extensions.noop":   true, "extensions.noop-v1": true, "extensions.preciousobjects": true,
-	"extensions.relativeworktrees": true, "extensions.submodulepathconfig": true,
+// shadowValueMaxBytes bounds a carried value. A value of 5000 letters in
+// `lfs.fetchexclude` is dropped (cell C1 of round tier0-14, Linux VM). The exact
+// bound is not measured.
+const shadowValueMaxBytes = 4096
+
+// ruleKind names how a valueRule reads a value.
+type ruleKind int
+
+const (
+	ruleBool        ruleKind = iota // readBoolWord
+	ruleTrueOnly                    // trueOnlyValue
+	ruleWords                       // oneOfWords with words
+	ruleWordsOrBool                 // wordOrBool with words
+	ruleDecimal                     // cappedDecimal with max
+	ruleRemoteName                  // remoteNameValue
+	ruleText                        // plainTextValue
+	ruleURL                         // urlValue
+	ruleSharedRepo                  // sharedRepoLine
+)
+
+// valueRule is the rule of the accepted values of one key.
+type valueRule struct {
+	kind  ruleKind
+	words []string
+	max   int
 }
 
-// shadowWordKeys are the settings with a fixed set of carried values. Every
-// value here ran in a cell: A1 and A3 of s3p2-linux, 04k, 13c, 13e and F6 of
-// s3p2b-edges-linux, and E9 of s3p2-linux. Another value of these keys is not
-// measured and is left out, such as `core.eol = crlf` and `index.version = 2`.
-// `core.sharedrepository` has its own rule (sharedRepositoryOf).
-// `extensions.objectformat = sha1` is carried with format version 0 and 1 (cells
-// X8 of val-s3p2b2-3-linux2, Linux VM).
-var shadowWordKeys = map[string][]string{
-	"core.eol":                      {"lf"},
-	"index.version":                 {"3", "4"},
-	"extensions.objectformat":       {"sha256", "sha1"},
-	"extensions.compatobjectformat": {"sha256"},
-	"extensions.refstorage":         {"files", "reftable"},
+// value is the written form of the value of s, or false for a value that is
+// dropped.
+func (r valueRule) value(s repoSetting) (string, bool) {
+	switch r.kind {
+	case ruleBool:
+		return readBoolWord(s)
+	case ruleTrueOnly:
+		return trueOnlyValue(s)
+	case ruleWords:
+		return oneOfWords(s, r.words...)
+	case ruleWordsOrBool:
+		return wordOrBool(s, r.words...)
+	case ruleDecimal:
+		return cappedDecimal(s, r.max)
+	case ruleRemoteName:
+		return remoteNameValue(s)
+	case ruleText:
+		return plainTextValue(s)
+	case ruleURL:
+		return urlValue(s)
+	case ruleSharedRepo:
+		return sharedRepoLine(s)
+	}
+	return "", false
 }
 
-// shadowBoolOrWord are the settings that take a boolean or one more word:
-// `core.autocrlf = input` (cell A1) and `= TRUE` (cell F6), `core.safecrlf =
-// true` (cell 04e) and `= warn` (cell F6).
-var shadowBoolOrWord = map[string]string{
-	"core.autocrlf": "input",
-	"core.safecrlf": "warn",
+// copyKeyRules has the 41 carried keys with no subsection, each with the rule
+// of its accepted values. The keys of cells C1 to C4 of round tier0-14 are
+// measured (Linux VM). The other keys and the values beyond those cells are not
+// measured. `extensions.worktreeconfig` is not in it, so it is never written.
+// Keys with a subsection have their own rules in copyBlockOf.
+var copyKeyRules = map[string]valueRule{
+	"checkout.thresholdforparallelism": {kind: ruleDecimal, max: 1 << 30},
+	"checkout.workers":                 {kind: ruleDecimal, max: 64},
+	"core.autocrlf":                    {kind: ruleWordsOrBool, words: []string{"input"}},
+	"core.bare":                        {kind: ruleBool},
+	"core.checkstat":                   {kind: ruleWords, words: []string{"default", "minimal"}},
+	"core.eol":                         {kind: ruleWords, words: []string{"lf", "crlf", "native"}},
+	"core.filemode":                    {kind: ruleBool},
+	"core.ignorecase":                  {kind: ruleBool},
+	"core.logallrefupdates":            {kind: ruleWordsOrBool, words: []string{"always"}},
+	"core.longpaths":                   {kind: ruleBool},
+	"core.precomposeunicode":           {kind: ruleBool},
+	"core.preloadindex":                {kind: ruleBool},
+	"core.protecthfs":                  {kind: ruleTrueOnly},
+	"core.protectntfs":                 {kind: ruleTrueOnly},
+	"core.quotepath":                   {kind: ruleBool},
+	"core.repositoryformatversion":     {kind: ruleWords, words: []string{"0", "1"}},
+	"core.safecrlf":                    {kind: ruleWordsOrBool, words: []string{"warn"}},
+	"core.sharedrepository":            {kind: ruleSharedRepo},
+	"core.sparsecheckout":              {kind: ruleBool},
+	"core.sparsecheckoutcone":          {kind: ruleBool},
+	"core.splitindex":                  {kind: ruleBool},
+	"core.symlinks":                    {kind: ruleBool},
+	"core.trustctime":                  {kind: ruleBool},
+	"core.untrackedcache":              {kind: ruleWordsOrBool, words: []string{"keep"}},
+	"extensions.compatobjectformat":    {kind: ruleWords, words: []string{"sha1", "sha256"}},
+	"extensions.noop":                  {kind: ruleBool},
+	"extensions.noop-v1":               {kind: ruleBool},
+	"extensions.objectformat":          {kind: ruleWords, words: []string{"sha1", "sha256"}},
+	"extensions.partialclone":          {kind: ruleRemoteName},
+	"extensions.preciousobjects":       {kind: ruleBool},
+	"extensions.refstorage":            {kind: ruleWords, words: []string{"files", "reftable"}},
+	"extensions.relativeworktrees":     {kind: ruleBool},
+	"extensions.submodulepathconfig":   {kind: ruleBool},
+	"feature.manyfiles":                {kind: ruleBool},
+	"index.skiphash":                   {kind: ruleBool},
+	"index.sparse":                     {kind: ruleBool},
+	"index.version":                    {kind: ruleWords, words: []string{"2", "3", "4"}},
+	"lfs.fetchexclude":                 {kind: ruleText},
+	"lfs.fetchinclude":                 {kind: ruleText},
+	"lfs.url":                          {kind: ruleURL},
+	"remote.lfsdefault":                {kind: ruleRemoteName},
 }
 
-// sharedRepository is how the daemon reads one `core.sharedRepository` value.
-// The zero value is a value that it does not use.
+// shadowValue is s in the written form of its key, or false for a key that is
+// not in copyKeyRules and for a value that the copy drops.
+func shadowValue(s repoSetting) (string, bool) {
+	rule, ok := copyKeyRules[s.key]
+	if !ok || len(s.value) > shadowValueMaxBytes {
+		return "", false
+	}
+	return rule.value(s)
+}
+
+// readBoolWord is the bool rule. No value gives true. Empty, `no`, `off` and
+// `false` in any letter case give false, and `yes`, `on` and `true` give true.
+// One to nine decimal digits give true unless each digit is 0. Every other
+// value fails. Cells 03a to 03m of s3p2b-edges-linux and C1 and C3a of tier0-14
+// measured the words, and C1 measured `1`. `worktreeConfig = 2` and `10` are on
+// (cell C3c of tier0-14 and cell K1 of tier0-16). For `core.sharedrepository`,
+// no value, `on` and `9` give `group` (cells Q1 to Q3 of tier0-18). All on a
+// Linux VM. The digit bound and `0` are not measured.
+func readBoolWord(s repoSetting) (string, bool) {
+	if !s.hasValue {
+		return "true", true
+	}
+	switch strings.ToLower(s.value) {
+	case "true", "yes", "on":
+		return "true", true
+	case "false", "no", "off", "":
+		return "false", true
+	}
+	if !decimalDigits(s.value) {
+		return "", false
+	}
+	if strings.Trim(s.value, "0") != "" {
+		return "true", true
+	}
+	return "false", true
+}
+
+// decimalDigits reports whether v is one to nine decimal digits.
+func decimalDigits(v string) bool {
+	return len(v) >= 1 && len(v) <= 9 && strings.Trim(v, "0123456789") == ""
+}
+
+// trueOnlyValue keeps a value that the bool rule reads as true (cell C1 of
+// tier0-14).
+func trueOnlyValue(s repoSetting) (string, bool) {
+	if v, ok := readBoolWord(s); ok && v == "true" {
+		return v, true
+	}
+	return "", false
+}
+
+// oneOfWords keeps a value whose lower case is one of words, written in lower
+// case. A key with no value fails.
+func oneOfWords(s repoSetting, words ...string) (string, bool) {
+	if !s.hasValue {
+		return "", false
+	}
+	v := strings.ToLower(s.value)
+	for _, w := range words {
+		if v == w {
+			return w, true
+		}
+	}
+	return "", false
+}
+
+// wordOrBool tries words first and then the bool rule.
+func wordOrBool(s repoSetting, words ...string) (string, bool) {
+	if v, ok := oneOfWords(s, words...); ok {
+		return v, true
+	}
+	return readBoolWord(s)
+}
+
+// cappedDecimal keeps one to nine decimal digits, read as a decimal number and
+// cut down to max (cell C1 of tier0-14: 100 gives 64, 007 gives 7).
+func cappedDecimal(s repoSetting, max int) (string, bool) {
+	if !s.hasValue || !decimalDigits(s.value) {
+		return "", false
+	}
+	n, _ := strconv.Atoi(s.value)
+	return strconv.Itoa(min(n, max)), true
+}
+
+// shadowNamePattern holds a remote name and a value that names a remote. Cells
+// C1 and C5 of tier0-14 keep `1up` and `a..b` and drop `a/-b`. The rest of the
+// pattern is not measured.
+var shadowNamePattern = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9._+@-]*(?:/[A-Za-z0-9_+@][A-Za-z0-9._+@-]*)*$`)
+
+func remoteNameValue(s repoSetting) (string, bool) {
+	return s.value, s.hasValue && shadowNamePattern.MatchString(s.value)
+}
+
+// hasControlByte reports whether v holds a byte from 0x00 to 0x1f or 0x7f.
+func hasControlByte(v string) bool {
+	for i := 0; i < len(v); i++ {
+		if v[i] < 0x20 || v[i] == 0x7f {
+			return true
+		}
+	}
+	return false
+}
+
+// plainTextValue keeps a value with no control byte. An empty value passes
+// (cell C1 of tier0-14).
+func plainTextValue(s repoSetting) (string, bool) {
+	return s.value, s.hasValue && !hasControlByte(s.value)
+}
+
+// shadowFilterPattern holds the accepted values of
+// `remote.<name>.partialclonefilter`. `tree:0` and an empty value pass (cell
+// C1 of tier0-14).
+var shadowFilterPattern = regexp.MustCompile(`^[A-Za-z0-9:=,+.]*$`)
+
+func filterValue(s repoSetting) (string, bool) {
+	return s.value, s.hasValue && shadowFilterPattern.MatchString(s.value)
+}
+
+// urlValue keeps a value that shadowURL accepts.
+func urlValue(s repoSetting) (string, bool) {
+	return s.value, s.hasValue && shadowURL(s.value)
+}
+
+// lfsAccessWords are the values of `lfs.<url>.access` (cell C1 of tier0-14).
+var lfsAccessWords = []string{"basic", "private", "negotiate", "none"}
+
+// sharedRepoLine is the copy line of `core.sharedrepository`.
+//
+// `umask`, `group` and `everybody` stay as written, and `all` and `world` give
+// `everybody`. A value that is not one to nine octal digits takes the bool
+// rule: true gives `group`, false gives `umask`. The octal numbers 0, 1 and 2
+// give `umask`, `group` and `everybody`. A larger number is masked with 0666.
+// It is kept as `0` and three octal digits only when the owner can read and
+// write. Cell C2 of tier0-14 measured no value, empty, `yes`, `1`, `TRUE`, `0`,
+// `2`, `660` and `0777` (Linux VM). The 18 rows of group P5 of
+// val-s3p2b2-6-linux measured `group`, `true`, `all`, `world`, `everybody`,
+// `0660`, `0640` and `umask`. Other forms are not measured.
+//
+// The mode of the folder `worktrees` follows the last such line of the copy
+// (sharedRepositoryOf).
+func sharedRepoLine(s repoSetting) (string, bool) {
+	if s.hasValue {
+		switch s.value {
+		case "umask", "group", "everybody":
+			return s.value, true
+		case "all", "world":
+			return "everybody", true
+		}
+		if n, err := strconv.ParseUint(s.value, 8, 32); err == nil && decimalDigits(s.value) {
+			switch n {
+			case 0:
+				return "umask", true
+			case 1:
+				return "group", true
+			case 2:
+				return "everybody", true
+			}
+			m := n & 0o666
+			if m&0o600 != 0o600 {
+				return "", false
+			}
+			return "0" + strconv.FormatUint(m|0o1000, 8)[1:], true
+		}
+	}
+	switch v, ok := readBoolWord(s); {
+	case !ok:
+		return "", false
+	case v == "true":
+		return "group", true
+	}
+	return "umask", true
+}
+
+// sharedRepository is how the daemon reads one `core.sharedRepository` value
+// for the mode of the folder `worktrees`. The zero value is a value that gives
+// no mode call.
 type sharedRepository struct {
-	// word is the value of the line in the copy of the settings, or "" for no
-	// line.
-	word string
 	// sets is true when the folder `worktrees` that the daemon makes gets a mode
 	// call. bits are the mode bits of that call. With adds they are added to the
 	// mode of the mkdir, and without it they are the whole mode.
@@ -86,39 +320,31 @@ type sharedRepository struct {
 	bits os.FileMode
 }
 
-// sharedRepositoryOf reads the setting s of the key `core.sharedrepository`.
+// sharedRepositoryOf reads line, the last `core.sharedrepository` line of the
+// copy (sharedRepoLine), for the mode call of the folder `worktrees`.
 //
-// The lines of the copy on 5fd08069: `"group"` for `group` and `true`,
-// `"everybody"` for `all`, `world` and `everybody`, and the value itself for
-// `0660`, `0640` and `umask` (the 18 rows of group P5 of val-s3p2b2-6-linux,
-// Linux VM, and the copies of those cells).
-//
-// A value with no row follows the rule of the git documentation for this key.
-// `false` reads as `umask`. An octal number of the form `0xxx` is carried as it
-// is, when it gives the owner the read bit and the write bit: git refuses
-// another number. None of those is measured. Every other value gives no line
-// and no mode call: a key with no value, another letter case, `yes`, `1` and
-// `2` among them (not measured).
-func sharedRepositoryOf(s repoSetting) sharedRepository {
-	if !s.hasValue {
+// `group` and `everybody` start the mode call, and `umask` starts none (the 18
+// rows of group P5 of val-s3p2b2-6-linux, Linux VM). A line of the form `0xxx`
+// starts it with those bits. With umask 0002 the folder gets 2775 for `group`
+// from `yes` (cell H1 of tier0-15), 2770 for `0660` from `660` (cell S1 of
+// tier0-16) and 2775 for `everybody` from `2` (cell S2 of tier0-16). With nine
+// values whose last is `0777` the line is `0666`, and the folder gets 2777 (cell
+// C2 of tier0-14 and tier0-15). All on a Linux VM.
+func sharedRepositoryOf(line string) sharedRepository {
+	switch line {
+	case "group":
+		return sharedRepository{sets: true, adds: true, bits: 0o660}
+	case "everybody":
+		return sharedRepository{sets: true, adds: true, bits: 0o664}
+	}
+	if len(line) != 4 || line[0] != '0' {
 		return sharedRepository{}
 	}
-	switch s.value {
-	case "group", "true":
-		return sharedRepository{word: "group", sets: true, adds: true, bits: 0o660}
-	case "all", "world", "everybody":
-		return sharedRepository{word: "everybody", sets: true, adds: true, bits: 0o664}
-	case "umask", "false":
-		return sharedRepository{word: "umask"}
-	}
-	if len(s.value) != 4 || s.value[0] != '0' {
+	n, err := strconv.ParseUint(line, 8, 9)
+	if err != nil {
 		return sharedRepository{}
 	}
-	n, err := strconv.ParseUint(s.value, 8, 9)
-	if err != nil || n&0o600 != 0o600 {
-		return sharedRepository{}
-	}
-	return sharedRepository{word: s.value, sets: true, bits: os.FileMode(n)}
+	return sharedRepository{sets: true, bits: os.FileMode(n)}
 }
 
 // folderMode is the mode that the folder `worktrees` gets after its mkdir gave
@@ -131,7 +357,8 @@ func sharedRepositoryOf(s repoSetting) sharedRepository {
 // `0660` and `d 2750` for `0640`, each with a daemon umask of 022 and of 002.
 // A trace has `fchmod(11, 02770)` by the daemon for `0660` (the 18 rows of
 // group P5 of val-s3p2b2-6-linux, Linux VM). It is the rule that git has for a
-// folder of such a repository. Another octal value is not measured.
+// folder of such a repository. `0666` gives 2777 (cell C2 of tier0-14, Linux
+// VM). Another octal value is not measured.
 func (r sharedRepository) folderMode(made os.FileMode) (mode os.FileMode, ok bool) {
 	if !r.sets {
 		return 0, false
@@ -144,82 +371,12 @@ func (r sharedRepository) folderMode(made os.FileMode) (mode os.FileMode, ok boo
 	return mode | os.ModeSetgid, true
 }
 
-// shadowBool is the written form of a boolean value, or false for a value that
-// is left out. `yes`, `on`, `1`, `True`, `2` and a key with no value give
-// "true". `no`, `0`, `off`, `FALSE` and an empty value give "false". `maybe` is
-// left out (cells 03a to 03m of s3p2b-edges-linux). A number is plain decimal
-// digits here: a sign and a unit letter are not measured.
-func shadowBool(s repoSetting) (string, bool) {
-	if !s.hasValue {
-		return "true", true
-	}
-	switch strings.ToLower(s.value) {
-	case "true", "yes", "on":
-		return "true", true
-	case "false", "no", "off", "":
-		return "false", true
-	}
-	if len(s.value) > 9 || strings.Trim(s.value, "0123456789") != "" {
-		return "", false
-	}
-	if n, _ := strconv.Atoi(s.value); n != 0 {
-		return "true", true
-	}
-	return "false", true
-}
-
 func asciiLetter(c byte) bool {
 	return (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z')
 }
 
 func asciiAlnum(c byte) bool {
 	return asciiLetter(c) || (c >= '0' && c <= '9')
-}
-
-// shadowRemoteName reports whether name is carried as the name of a remote, as
-// the value of branch.<name>.remote and as the value of remote.lfsdefault. The
-// rule is fitted to cells F1, F2, F3 and F6 of s3p2b-edges-linux. Carried there:
-// letters and digits with `-`, `_`, `.`, `/`, `+` and `@` after a first letter.
-// Left out: 28 texts, among them a first `-` or `.`, a space, a quote, a
-// backslash, `:`, `,`, `~`, `%`, `;`, `=`, `#` and a letter that is not ASCII.
-// No carried name of a cell starts with another character than a letter, and
-// none has two dots in a row or a part that starts or ends with a dot or a
-// slash. Those forms are not measured and are left out.
-func shadowRemoteName(name string) bool {
-	if name == "" || !asciiLetter(name[0]) {
-		return false
-	}
-	for i := 1; i < len(name); i++ {
-		if c := name[i]; !asciiAlnum(c) && !strings.ContainsRune("-_./+@", rune(c)) {
-			return false
-		}
-	}
-	last := name[len(name)-1]
-	return last != '.' && last != '/' &&
-		!strings.Contains(name, "..") && !strings.Contains(name, "/.") &&
-		!strings.Contains(name, "./") && !strings.Contains(name, "//")
-}
-
-// shadowBranchChars are the ASCII characters, beside letters and digits, that a
-// carried branch name of cell F4 holds.
-const shadowBranchChars = " -_./+@:,~%;=\"\\#*?[^!'$&|<{(`"
-
-// shadowBranchName reports whether name is carried as the name of a branch.
-// Cell F4 of s3p2b-edges-linux carried 38 of 39 texts and left out `-org` only.
-// A byte of a character that is not ASCII is carried (`örg`). An ASCII
-// character that no text of the cell holds is not measured and is left out: a
-// control character, `)`, `]`, `}` and `>`.
-func shadowBranchName(name string) bool {
-	if name == "" || name[0] == '-' {
-		return false
-	}
-	for i := 0; i < len(name); i++ {
-		c := name[i]
-		if c < 0x80 && !asciiAlnum(c) && !strings.ContainsRune(shadowBranchChars, rune(c)) {
-			return false
-		}
-	}
-	return true
 }
 
 // shadowURLBytes reports whether no byte of u drops a URL value. A tab, a
@@ -246,20 +403,29 @@ func shadowURLBytes(u string) bool {
 //
 // The rule for `<host>:<path>` is fitted to those rows: a host of two or more
 // letters, digits, `@`, `.`, `_` and `-` that starts with a letter or a digit,
-// then one colon, then a path. A host of one letter is the Windows drive form.
-// It is left out on every system: Linux and macOS did not run it. A first `-`
-// after the scheme is not measured and is left out.
+// then one colon, then a path. The path can be empty: `example.invalid:` is
+// kept (cell C5 of tier0-14, Linux VM). A host of one letter is the Windows
+// drive form. It is left out on every system: Linux and macOS did not run it.
+// A first `-` after the scheme is not measured and is left out.
+//
+// An `ssh://` URL with a user and a password before the host is left out, as
+// `ssh://user:secret@example.invalid/x` (cell C5 of tier0-14). An `https://`
+// URL with them is carried (cell A5 of s3p2-linux). `http://` and `git://` with
+// them are carried too (not measured).
 func shadowURL(u string) bool {
 	if u == "" || !shadowURLBytes(u) {
 		return false
 	}
 	for _, scheme := range []string{"https://", "http://", "ssh://", "git://"} {
 		if rest, ok := strings.CutPrefix(u, scheme); ok {
-			return rest != "" && rest[0] != '-'
+			host, _, _ := strings.Cut(rest, "/")
+			user, _, hasUser := strings.Cut(host, "@")
+			password := scheme == "ssh://" && hasUser && strings.Contains(user, ":")
+			return rest != "" && rest[0] != '-' && !password
 		}
 	}
 	host, path, ok := strings.Cut(u, ":")
-	if !ok || len(host) < 2 || path == "" || path[0] == ':' || strings.Contains(u, "://") {
+	if !ok || len(host) < 2 || strings.HasPrefix(path, ":") || strings.Contains(u, "://") {
 		return false
 	}
 	if !asciiAlnum(host[0]) {
@@ -267,23 +433,6 @@ func shadowURL(u string) bool {
 	}
 	for i := 1; i < len(host); i++ {
 		if c := host[i]; !asciiAlnum(c) && !strings.ContainsRune("@._-", rune(c)) {
-			return false
-		}
-	}
-	return true
-}
-
-// shadowLFSPattern reports whether v is carried as the value of
-// lfs.fetchinclude and lfs.fetchexclude. Carried: `*.bin`, `*.tmp` and `a b`.
-// Left out: a value with a tab (cells A6 of s3p2-linux, F6 of
-// s3p2b-edges-linux and 6a to 6k of s3p2b-edges2-linux). Every other character
-// is not measured and is left out, also `,` and `/`.
-func shadowLFSPattern(v string) bool {
-	if v == "" {
-		return false
-	}
-	for i := 0; i < len(v); i++ {
-		if c := v[i]; !asciiAlnum(c) && c != '*' && c != '.' && c != ' ' {
 			return false
 		}
 	}
@@ -320,8 +469,8 @@ func splitSettingKey(key string) (section, subsection string, hasSub bool, name 
 	return key[:first], key[first+1 : last], true, key[last+1:]
 }
 
-// shadowInsteadOf applies the `insteadOf` rules of the repository's own config
-// to the URL u. The longest match wins (cell 08a of s3p2b-edges-linux). Of two
+// shadowInsteadOf applies the `insteadOf` rules of the config and its plain
+// includes to the URL u. The longest match wins (cell 08a of s3p2b-edges-linux). Of two
 // rules with one length the first wins: that is not measured.
 func shadowInsteadOf(u string, rules [][2]string) (resolved string, changed bool) {
 	best := -1
@@ -336,142 +485,124 @@ func shadowInsteadOf(u string, rules [][2]string) (resolved string, changed bool
 	return rules[best][0] + u[len(rules[best][1]):], true
 }
 
+// droppedFromInclude reports whether a setting of an included file is dropped:
+// the format version, each extension, core.bare and each filter key (cell C4 of
+// tier0-14 for core.bare, cells 15a to 15k of s3p2b-edges-linux for the version
+// and cell A7a for an extension). A filter key there is not measured.
+func droppedFromInclude(key string) bool {
+	return key == "core.repositoryformatversion" || key == "core.bare" ||
+		strings.HasPrefix(key, "extensions.") || strings.HasPrefix(key, "filter.")
+}
+
+// copyBlockOf is the block of one setting, or "" for a setting that the copy
+// drops. A URL that an `insteadOf` rule rewrote also gives its url block.
+func copyBlockOf(s repoSetting, rules [][2]string) (block, urlBlock string) {
+	if s.included && droppedFromInclude(s.key) {
+		return "", ""
+	}
+	section, sub, hasSub, name := splitSettingKey(s.key)
+	if len(s.value) > shadowValueMaxBytes {
+		return "", ""
+	}
+	if s.key == "lfs.url" {
+		return shadowURLEntry(s, rules, section, "", false, name)
+	}
+	if !hasSub {
+		value, ok := shadowValue(s)
+		if !ok {
+			return "", ""
+		}
+		return shadowBlock(section, "", false, name, value), ""
+	}
+	// The forms with a subsection. Cells C1 and C5 of tier0-14 measured the
+	// forms that they show, and the rest is not measured.
+	value, ok := "", false
+	switch {
+	case section == "remote" && shadowNamePattern.MatchString(sub):
+		switch name {
+		case "url", "lfsurl":
+			return shadowURLEntry(s, rules, section, sub, true, name)
+		case "promisor":
+			value, ok = readBoolWord(s)
+		case "partialclonefilter":
+			value, ok = filterValue(s)
+		}
+	case section == "lfs" && name == "access" && shadowURL(sub):
+		value, ok = oneOfWords(s, lfsAccessWords...)
+	case section == "branch" && name == "remote" && !hasControlByte(sub) && !strings.HasPrefix(sub, "-"):
+		value, ok = remoteNameValue(s)
+	}
+	if !ok {
+		return "", ""
+	}
+	return shadowBlock(section, sub, true, name, value), ""
+}
+
+// shadowURLEntry is the block of a URL setting after the `insteadOf` step, and
+// the url block of a rewritten URL (cells C3a and C4 of tier0-14). The length
+// bound tests the value before the rewrite. The length after it is not measured.
+func shadowURLEntry(s repoSetting, rules [][2]string, section, sub string, hasSub bool, name string) (block, urlBlock string) {
+	if !s.hasValue {
+		return "", ""
+	}
+	resolved, changed := shadowInsteadOf(s.value, rules)
+	if !shadowURL(resolved) {
+		return "", ""
+	}
+	if changed {
+		urlBlock = shadowBlock("url", resolved, true, "insteadOf", resolved)
+	}
+	return shadowBlock(section, sub, hasSub, name, resolved), urlBlock
+}
+
 // shadowConfigText is the text of the copy for the settings of a repository.
 // settings are those of the config with its included files, each included file
 // at the place of its include line (cells 14a to 14k of s3p2b-edges-linux and
 // 2a to 2d of s3p2b-edges2-linux). worktree are the settings of the
 // `config.worktree` file of the main repository, or nil.
 //
-// The carry table, with the cell of each row, is in the tests. In short:
+// The copy has each kept entry in the order of the entries, each as its own
+// block. Then comes the last core.bare of the `config.worktree` file, as one
+// block. Then come the url blocks of the rewritten URLs, and then the tail
+// (cells C1 to C5 of tier0-14, Linux VM).
 //
-//   - core.repositoryformatversion: the values 0 and 1 of the config itself.
-//     The value 2 gets no block, and the key of an included file never does
-//     (cells 15a to 15k of s3p2b-edges-linux).
-//   - the keys of shadowBoolKeys, shadowWordKeys and shadowBoolOrWord.
-//   - core.sharedrepository, by the rule of sharedRepositoryOf.
-//   - extensions.partialclone with the name of a remote (cell E9).
-//   - remote.<name>.url, .promisor and .partialclonefilter, and
-//     remote.lfsdefault. The filter ran as `blob:none` only (cell A5).
-//   - branch.<name>.remote.
-//   - lfs.url, lfs.fetchinclude and lfs.fetchexclude.
-//
-// A value that does not fit its key is left out with no refusal (cells A3).
-// Every key of an extension in an included file is left out: only
-// worktreeconfig ran there (cell A7a).
-//
-// An `insteadOf` rule is applied to each remote URL that it matches, and the
-// rule itself is not carried. Each remote that a rule changed gets one more
-// block, `[url "<resolved>"]` with the key `insteadOf` and the resolved URL as
-// its value. Those blocks stand after the last remote block, in the order of
-// their remotes (cells 08a to 08k of s3p2b-edges-linux and 3a to 3e of
-// s3p2b-edges2-linux). No cell has a block of another section after the
-// remotes, so their place among such blocks is not measured. A rule of an
-// included file is not applied: with no remote it is dropped (cell A7a), and
-// with a remote it is not measured. A resolved URL gets the tests of
-// shadowURL (not measured for a resolved URL that fails them).
-//
-// Of the `config.worktree` file only core.bare is carried, as one more block
-// before the tail (cells 12a to 12f of s3p2b-edges-linux and 9a of
-// s3p2b-edges2-linux).
+// An `insteadOf` rule is applied to each URL that it matches, and the rule
+// itself is not carried. A rule of a plainly included file applies too: it
+// rewrites `lfs.url` in cell C4 of tier0-14 (Linux VM). A rule of a conditional
+// include is not read (not measured).
 func shadowConfigText(settings, worktree []repoSetting) string {
 	var rules [][2]string
 	for _, s := range settings {
 		section, base, hasSub, name := splitSettingKey(s.key)
-		if section == "url" && hasSub && name == "insteadof" && !s.included && s.value != "" {
+		if section == "url" && hasSub && name == "insteadof" && s.value != "" {
 			rules = append(rules, [2]string{base, s.value})
 		}
 	}
 
-	var blocks, urlBlocks []string
-	afterRemotes := 0
+	var b strings.Builder
+	var urlBlocks []string
 	for _, s := range settings {
-		section, sub, hasSub, name := splitSettingKey(s.key)
-		value, ok := "", false
-		switch {
-		case section == "remote" && hasSub:
-			if !shadowRemoteName(sub) {
-				continue
-			}
-			switch name {
-			case "url":
-				if !s.hasValue {
-					continue
-				}
-				resolved, changed := shadowInsteadOf(s.value, rules)
-				if !shadowURL(resolved) {
-					continue
-				}
-				value, ok = resolved, true
-				if changed {
-					urlBlocks = append(urlBlocks, shadowBlock("url", resolved, true, "insteadOf", resolved))
-				}
-			case "promisor":
-				value, ok = shadowBool(s)
-			case "partialclonefilter":
-				value, ok = s.value, s.value == "blob:none"
-			}
-			if ok {
-				blocks = append(blocks, shadowBlock(section, sub, true, name, value))
-				afterRemotes = len(blocks)
-			}
-			continue
-		case section == "branch" && hasSub:
-			if name == "remote" && shadowBranchName(sub) && shadowRemoteName(s.value) {
-				blocks = append(blocks, shadowBlock(section, sub, true, name, s.value))
-			}
-			continue
-		}
-
-		// A key of another section with a subsection matches no name below.
-		switch {
-		case s.key == "core.repositoryformatversion":
-			value, ok = s.value, !s.included && (s.value == "0" || s.value == "1")
-		case section == "extensions" && s.included:
-		case shadowBoolKeys[s.key]:
-			value, ok = shadowBool(s)
-		case shadowWordKeys[s.key] != nil:
-			for _, w := range shadowWordKeys[s.key] {
-				if s.value == w {
-					value, ok = w, true
-				}
-			}
-		case s.key == "core.sharedrepository":
-			value = sharedRepositoryOf(s).word
-			ok = value != ""
-		case shadowBoolOrWord[s.key] != "":
-			if value, ok = s.value, s.value == shadowBoolOrWord[s.key]; !ok {
-				value, ok = shadowBool(s)
-			}
-		case s.key == "extensions.partialclone", s.key == "remote.lfsdefault":
-			value, ok = s.value, shadowRemoteName(s.value)
-		case s.key == "lfs.url":
-			// `https://lfs.example.invalid/o/r` is carried, and the same with a
-			// space is not (cells A6 and F6). Another scheme is not measured.
-			value, ok = s.value, strings.HasPrefix(s.value, "https://") && shadowURL(s.value)
-		case s.key == "lfs.fetchinclude", s.key == "lfs.fetchexclude":
-			value, ok = s.value, shadowLFSPattern(s.value)
-		}
-		if ok {
-			blocks = append(blocks, shadowBlock(section, "", false, name, value))
+		block, urlBlock := copyBlockOf(s, rules)
+		b.WriteString(block)
+		if urlBlock != "" {
+			urlBlocks = append(urlBlocks, urlBlock)
 		}
 	}
-
-	var b strings.Builder
-	for _, block := range blocks[:afterRemotes] {
-		b.WriteString(block)
+	// A last core.bare whose value fails the bool rule gives no block (not
+	// measured).
+	var bare *repoSetting
+	for i := range worktree {
+		if worktree[i].key == "core.bare" {
+			bare = &worktree[i]
+		}
+	}
+	if bare != nil {
+		if v, ok := readBoolWord(*bare); ok {
+			b.WriteString(shadowBlock("core", "", false, "bare", v))
+		}
 	}
 	for _, block := range urlBlocks {
 		b.WriteString(block)
-	}
-	for _, block := range blocks[afterRemotes:] {
-		b.WriteString(block)
-	}
-	for _, s := range worktree {
-		if s.key == "core.bare" {
-			if v, ok := shadowBool(s); ok {
-				b.WriteString(shadowBlock("core", "", false, "bare", v))
-			}
-		}
 	}
 	b.WriteString(shadowConfigTail)
 	return b.String()

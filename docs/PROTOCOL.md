@@ -1912,7 +1912,7 @@ version and the extensions of an included file are not tested (cells X7 and X9).
 | `"<file>" has a setting in section "<section>" whose name is longer than 1024 bytes` | The full name of a setting, with its section and subsection, has more than 1024 bytes. The pair 1024 and 1025 is measured in `core`, `remote`, `lfs`, `url`, `filter`, `extensions`, `include` and `includeif`. Cells N6 measured it in `index`, `feature` and `checkout` too (Linux, macOS and Windows VMs). `<section>` is in lower case, without the subsection. The bound holds in an included file, with the path of that file. Cells V7 measured that one level below the config, and cells N8 two and three levels below it |
 | `"<file>" has more settings than Claude reads (8 MiB); remove repeated ones` | See "The count of settings" below |
 | `open <file>: <reason>` | The daemon cannot open the config or an included file. A file of mode 000 gives `permission denied`. A socket gives `no such device or address` on a Linux VM. As the config, a socket gives `operation not supported on socket` on a macOS VM |
-| `fatal: bad config line <n> in "<file>"` | The config or an included file has a syntax error. The text is that of git, with the path in quotes |
+| `fatal: bad config line <n> in "<file>"` | The config or an included file has a syntax error. So does the `config.worktree` file of the git directory with `extensions.worktreeConfig` on (cell C3b of round `tier0-14`, Linux VM). It comes before an extension refusal (cell E3 of round `tier0-16`, Linux VM). The text is that of git, with the path in quotes |
 | `"<included file>" is outside "<repo>", and on Windows Claude reads a repository's settings only from inside it; if the line that includes it is yours and you trust the file, put that line into ~/.gitconfig on the remote machine instead` | Windows: a relative include that leaves the repository. For a bare repository `<repo>` is its git directory (cell W6) |
 | `"<file>" includes "<value>", and on Windows Claude follows an include only if its path is relative and stays inside the repository; if that line is yours and you trust the file, put the line into ~/.gitconfig on the remote machine instead` | Windows: an absolute include value, also to a missing file, `~/x` and `~root/x`. An absolute value and `~/x` get it in an `includeIf` section whose condition does not match too (cells N12w). `<value>` is cut to its first 300 characters. A value of 300 characters is whole, and one of 301 shows 300 (cells P7w, Windows VM) |
 | `"<file>": is, or is reached through, a link that Claude does not follow here; replace the link with what it points to` | Windows: the config is a file link. Windows, every git method that reads the config: the git directory is a junction or a directory symbolic link, and `<file>` is `<git dir>\config`. |
@@ -1924,19 +1924,12 @@ holding file stays as written too. With `include.path = a/../b/inc.cfg`, a
 `path = x.cfg` in that file names `<git dir>/a/../b/x.cfg` (cell N13-b, Linux and
 macOS VMs).
 
-These extension settings are refused under format version `1`:
-
-- A name outside the list below, with a value or with none. Four such names ran:
-  `foo`, `bar`, `noop2`, and `x.noop` for `[extensions "x"] noop`.
-- `objectFormat = md5`, `compatObjectFormat = md5` and `refStorage = banana`.
-- `preciousObjects = maybe`, `relativeWorktrees = maybe`,
-  `submodulePathConfig = maybe` and `noop-v1 = maybe`.
-- `partialClone` with no value, and with an empty value.
-
-The list has ten names: `objectFormat`, `compatObjectFormat`, `refStorage`,
-`worktreeConfig`, `relativeWorktrees`, `submodulePathConfig`, `noop-v1`, `noop`,
-`preciousObjects` and `partialClone`. Cells V6 measured these settings as not
-refused: `worktreeConfig = maybe`, `objectFormat = SHA256`, `refStorage = FILES`,
+Under format version `1` claustrum refuses an extension other than
+`worktreeConfig` when [the copied settings file](#the-copied-settings-file) has
+no rule for its key or does not accept its value. `5fd08069` refuses
+`preciousObjects = 1234567890`, `objectFormat = sha512`, `refStorage` with no
+value and `partialClone = a/-b` (cells R1 to R4 of round `tier0-14`, Linux VM).
+Cells V6 measured these settings as not refused: `worktreeConfig = maybe`, `objectFormat = SHA256`, `refStorage = FILES`,
 `preciousObjects = yes` and `preciousObjects = 1`. An extension in a config with no
 format version key is not refused either. Cells V6 ran on Linux, macOS and Windows
 VMs. This rule does not refuse a sha256 repository or a reftable repository.
@@ -1959,9 +1952,7 @@ ran, and claustrum does not read it.
   `extensions.worktreeConfig` to `true`, `yes`, `1` or `TRUE`, or has that key with
   no value (cells X2 and V14). `on` and `ON` start the test too, and `false`, `no`
   and `0` do not (cells N4, Linux, macOS and Windows VMs). `Yes`, `On` and `tRuE`
-  start it too (cells P2, the same three systems). From the code: claustrum takes
-  a true word of git in each letter case. The trust check of the request finds that linked
-  worktree. On `git.status` that is the worktree that `baseRepo` names. Cells V14
+  start it too (cells P2, the same three systems). The trust check of the request finds that linked worktree. On `git.status` that is the worktree that `baseRepo` names. Cells V14
   ran `git.info`, `git.status`, `git.list_branches` and `git.worktree_create`
   (Linux, macOS and Windows VMs). On the macOS VM the values other than `true` ran
   `git.info`. Cell W14 ran `git.worktree_remove` on a Linux VM.
@@ -2078,15 +2069,15 @@ VM. Rounds `val-s3p2b2-3` and `val-s3p2b2-5` ran a build with the settings copy.
 
 **claustrum's own choices** (from the code, not measured on `5fd08069`):
 
-- If the name of an extension is one of the ten, a value that no cell ran is not
-  refused.
-- `extensions.worktreeConfig` starts the `config.worktree` test in a letter case
-  that no cell ran, such as `oN`. The last such setting of the config counts.
+- `extensions.worktreeConfig` starts the `config.worktree` test with values
+  that no cell ran, such as `oN` or `007`. The last such setting of the config counts.
+- Under format version `1` the value rule refuses extension values that no cell
+  ran, such as `preciousObjects = -1`.
 - The cuts of the format version value and of the extension name count
   characters. The cells have ASCII text.
-- The `config.worktree` file of the git directory gives no refusal. With
-  `extensions.worktreeConfig` set, claustrum reads it for the settings copy. A
-  file there that is not regular, is too large or cannot be listed is not used.
+- With `extensions.worktreeConfig` on, a `config.worktree` file of the git
+  directory that is not regular or is too large is not used, and gives no
+  refusal.
 - The name bound and the count of settings are tested on a whole file before an
   include of that file is followed. That order is fitted to two cells of 200000
   include lines of a missing file, which get the "more settings" text.
@@ -2265,23 +2256,28 @@ count of repositories.
 
 The `config` of the copy is the daemon's own text. Each carried setting is one
 block of two lines, `[<section>]` and `<key> = "<value>"`, in the order of the file
-of the repository. The file ends with `[lfs]\n\trepositoryformatversion = 0\n`.
+of the repository. The last `core.bare` of `config.worktree` follows, then the
+`[url]` blocks of rewritten URLs. The file ends with
+`[lfs]\n\trepositoryformatversion = 0\n`.
 
-- Carried are measured keys of `core`, `index`, `extensions`, `remote`, `branch`,
-  `lfs` and `feature`.
-- Dropped are the measured keys of each other section. Among them are
-  `core.hooksPath`, `core.fsmonitor`, `core.sshCommand`, `user.*`, `alias.*`,
-  `credential.*`, `http.*` and `filter.*`.
-- A value that does not fit its key is left out with no refusal. One example is
-  `core.filemode = maybe`. The request then gets a normal reply. `89cb6289`
-  answers "no repository" or the hooks refusal there (cell A3 of round `s3p2`,
+- `gitshadowconfig.go` gives 41 keys one rule of accepted values each. Cells C1
+  to C5 of round `tier0-14` measured what they show (Linux VM). The rest is not
+  measured.
+- `remote.<name>.url`, `.lfsurl`, `.promisor` and `.partialclonefilter`,
+  `lfs.<url>.access` and `branch.<name>.remote` are carried too. The length of a
+  rewritten URL is not measured.
+- Every other key is dropped, such as `core.hooksPath` and `user.*`.
+- Outside the version and extension refusals, a value that its rule does not accept is left
+  out with no refusal. One example is
+  `core.filemode = maybe`. `89cb6289` answers "no repository" or the hooks refusal there (cell A3 of round `s3p2`,
   Linux, macOS and Windows VMs).
 - Where the copy carries a value that git refuses, `git.info` answers "no
   repository" with the member. One example is `extensions.objectformat = sha256`
   in a sha1 repository (cell A3 of round `s3p2`, the three systems).
-- A setting of an `[include]` file is carried at the place of the include line. A
-  setting of an `includeIf` file is not carried.
-- claustrum drops each key and value that no cell covers.
+- A setting of an `[include]` file is carried at the place of the include line.
+  Its format version, `extensions.*`, `core.bare` (cell C4 of round `tier0-14`)
+  and `filter.*` (not measured) are dropped.
+  A setting of an `includeIf` file is not carried.
 
 ##### The call about the repository
 
@@ -2324,21 +2320,17 @@ has the other points of a call.
 
 The copy has no `extensions.worktreeConfig` setting, so git reads no
 `config.worktree` file in the state `shadow`. The daemon does two things in its
-place, in a repository with that extension and a `config.worktree` file:
+place, in a repository with that extension and a `config.worktree` file.
+`worktreeConfig` values `2` and `10` turn that extension on (cells C3c and K1 of rounds
+`tier0-14` and `tier0-16`, Linux VM).
 
-- Twelve settings of the file go before the option list of the git calls as `-c`
-  items: `core.filemode`, `core.sparsecheckout`, `core.eol`, `core.autocrlf`,
-  `core.ignorecase`, `core.symlinks`, `core.sparsecheckoutcone`, `core.safecrlf`,
-  `core.quotepath`, `core.precomposeunicode`, `core.untrackedcache` and
-  `core.longpaths`. A call on a linked worktree gets the items of the file of
-  that worktree. The cells are in rounds `val-s3p2b2-3` and `val-s3p2b2-6`, on
-  Linux, macOS and Windows VMs. `core.eol` ran on Linux and Windows VMs. The
-  last five keys ran on a Windows VM only. In the measured rows each key
-  but `core.filemode` has one value. claustrum sends no other key.
+- Each key of the copied settings file but the format version, `extensions.*` and
+  `core.bare` goes before the option list of the git calls as one `-c` item, with
+  the value of the copy, sorted by key. Cells C3a of `tier0-14` and W1 of
+  `tier0-16` show six keys (Linux VM). Other keys and a repeated key are not
+  measured. A call on a linked worktree gets the items of its own file.
 - A new worktree of `git.worktree_create` gets its own `config.worktree` file. See
   [git.worktree_create](protocol/git-worktree-create.md).
-
-`core.bare` of that file is one more block of the copied settings file.
 
 ##### Where claustrum differs from `5fd08069`
 

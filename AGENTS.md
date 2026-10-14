@@ -502,11 +502,11 @@ The JSON-RPC surface is identical on every OS. Full internals →
     - The folder `<git dir>/worktrees` (0777 less the umask), made before the
       add through the held folder. It stays after a failed
       add, as on `5fd08069` (cells N2 of round `val-s3p2b2-3`, Linux and macOS
-      VMs). On Linux and macOS, with the value `group`, `true`, `all`, `world`,
-      `everybody` or an octal number that git accepts, one
-      `os.Root.Chmod` sets its mode by that value, with the set-group-ID bit.
-      That chmod acts only on the folder that this call just made (`5fd08069`,
-      the 18 rows of group P5 of round `val-s3p2b2-6`, Linux VM).
+      VMs). On Linux and macOS, a last `core.sharedrepository` copy line other
+      than `umask` sets its mode by one `os.Root.Chmod`, with the set-group-ID
+      bit, only on a folder that this call made. Measured on `5fd08069` in
+      group P5 of `val-s3p2b2-6` and cells H1, S1, S2 and C2 of `tier0-14` to
+      `tier0-16` (Linux VM). macOS is not measured.
     - On Linux and macOS, the `.git` file of the new worktree
       (`replaceWorktreeGitFile`). It is one `os.Root.Remove` of the fixed name
       `.git` and one exclusive create with mode 0666, through a root at the

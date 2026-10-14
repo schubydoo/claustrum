@@ -1829,5 +1829,136 @@
    "config": "[core]\n\trepositoryformatversion = 0\n\tfilemode = true\n\tbare = false\n\tlogallrefupdates = true\n"
   },
   "want": "[core]\n\trepositoryformatversion = \"0\"\n[core]\n\tfilemode = \"true\"\n[core]\n\tbare = \"false\"\n[core]\n\tlogallrefupdates = \"true\"\n[lfs]\n\trepositoryformatversion = 0\n"
+ },
+ {
+  "round": "tier0-14-linux",
+  "cell": "BASE",
+  "files": {
+   "config": "[core]\n\trepositoryformatversion = 0\n\tfilemode = true\n\tbare = false\n\tlogallrefupdates = true\n"
+  },
+  "want": "[core]\n\trepositoryformatversion = \"0\"\n[core]\n\tfilemode = \"true\"\n[core]\n\tbare = \"false\"\n[core]\n\tlogallrefupdates = \"true\"\n[lfs]\n\trepositoryformatversion = 0\n"
+ },
+ {
+  "round": "tier0-14-linux",
+  "cell": "C1",
+  "files": {
+   "config": "[core]\n\trepositoryformatversion = 0\n\tbare = false\n\tpreloadindex = true\n\ttrustctime = false\n\tsparsecheckoutcone = true\n\tprotecthfs = true\n\tprotecthfs = false\n\tprotectntfs = false\n\tcheckstat = minimal\n\tcheckstat = Default\n\tuntrackedcache = keep\n\tlogallrefupdates = always\n\tautocrlf = Input\n\tsafecrlf = WARN\n\teol = crlf\n\teol = Native\n\teol = LF\n[index]\n\tsparse = true\n\tskiphash = 1\n\tversion = 2\n[checkout]\n\tworkers = 100\n\tworkers = 007\n\tthresholdforparallelism = 0100\n[lfs]\n\turl = http://lfs.example.invalid/x\n\turl = git@example.invalid:o/r\n\tfetchinclude = a,b\n\tfetchinclude = dir/**\n\tfetchinclude =\n\tfetchexclude = xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\n[remote]\n\tlfsdefault = 1up\n[remote \"origin\"]\n\turl = https://example.invalid/o/r\n\tlfsurl = https://lfs.example.invalid/o\n\tpartialclonefilter = tree:0\n\tpartialclonefilter =\n[lfs \"https://lfs.example.invalid/o\"]\n\taccess = Basic\n"
+  },
+  "want": "[core]\n\trepositoryformatversion = \"0\"\n[core]\n\tbare = \"false\"\n[core]\n\tpreloadindex = \"true\"\n[core]\n\ttrustctime = \"false\"\n[core]\n\tsparsecheckoutcone = \"true\"\n[core]\n\tprotecthfs = \"true\"\n[core]\n\tcheckstat = \"minimal\"\n[core]\n\tcheckstat = \"default\"\n[core]\n\tuntrackedcache = \"keep\"\n[core]\n\tlogallrefupdates = \"always\"\n[core]\n\tautocrlf = \"input\"\n[core]\n\tsafecrlf = \"warn\"\n[core]\n\teol = \"crlf\"\n[core]\n\teol = \"native\"\n[core]\n\teol = \"lf\"\n[index]\n\tsparse = \"true\"\n[index]\n\tskiphash = \"true\"\n[index]\n\tversion = \"2\"\n[checkout]\n\tworkers = \"64\"\n[checkout]\n\tworkers = \"7\"\n[checkout]\n\tthresholdforparallelism = \"100\"\n[lfs]\n\turl = \"http://lfs.example.invalid/x\"\n[lfs]\n\turl = \"git@example.invalid:o/r\"\n[lfs]\n\tfetchinclude = \"a,b\"\n[lfs]\n\tfetchinclude = \"dir/**\"\n[lfs]\n\tfetchinclude = \"\"\n[remote]\n\tlfsdefault = \"1up\"\n[remote \"origin\"]\n\turl = \"https://example.invalid/o/r\"\n[remote \"origin\"]\n\tlfsurl = \"https://lfs.example.invalid/o\"\n[remote \"origin\"]\n\tpartialclonefilter = \"tree:0\"\n[remote \"origin\"]\n\tpartialclonefilter = \"\"\n[lfs \"https://lfs.example.invalid/o\"]\n\taccess = \"basic\"\n[lfs]\n\trepositoryformatversion = 0\n"
+ },
+ {
+  "round": "tier0-14-linux",
+  "cell": "C2",
+  "files": {
+   "config": "[core]\n\trepositoryformatversion = 0\n\tsharedrepository\n\tsharedrepository =\n\tsharedrepository = yes\n\tsharedrepository = 1\n\tsharedrepository = 0\n\tsharedrepository = 2\n\tsharedrepository = 660\n\tsharedrepository = TRUE\n\tsharedrepository = 0777\n"
+  },
+  "want": "[core]\n\trepositoryformatversion = \"0\"\n[core]\n\tsharedrepository = \"group\"\n[core]\n\tsharedrepository = \"umask\"\n[core]\n\tsharedrepository = \"group\"\n[core]\n\tsharedrepository = \"group\"\n[core]\n\tsharedrepository = \"umask\"\n[core]\n\tsharedrepository = \"everybody\"\n[core]\n\tsharedrepository = \"0660\"\n[core]\n\tsharedrepository = \"group\"\n[core]\n\tsharedrepository = \"0666\"\n[lfs]\n\trepositoryformatversion = 0\n"
+ },
+ {
+  "round": "tier0-14-linux",
+  "cell": "C3a",
+  "files": {
+   "config": "[core]\n\trepositoryformatversion = 1\n[extensions]\n\tworktreeConfig = true\n[remote \"origin\"]\n\turl = gh:o/r\n[url \"https://example.invalid/\"]\n\tinsteadOf = gh:\n[branch \"main\"]\n\tremote = origin\n",
+   "config.worktree": "[core]\n\tquotepath = off\n\tfilemode = no\n\ttrustctime = false\n\tbare = no\n\tbare = false\n"
+  },
+  "want": "[core]\n\trepositoryformatversion = \"1\"\n[remote \"origin\"]\n\turl = \"https://example.invalid/o/r\"\n[branch \"main\"]\n\tremote = \"origin\"\n[core]\n\tbare = \"false\"\n[url \"https://example.invalid/o/r\"]\n\tinsteadOf = \"https://example.invalid/o/r\"\n[lfs]\n\trepositoryformatversion = 0\n",
+  "items": [
+   "-c",
+   "core.filemode=false",
+   "-c",
+   "core.quotepath=false",
+   "-c",
+   "core.trustctime=false"
+  ]
+ },
+ {
+  "round": "tier0-14-linux",
+  "cell": "C3b",
+  "files": {
+   "config": "[core]\n\trepositoryformatversion = 1\n[extensions]\n\tworktreeConfig = true\n[remote \"origin\"]\n\turl = gh:o/r\n[url \"https://example.invalid/\"]\n\tinsteadOf = gh:\n[branch \"main\"]\n\tremote = origin\n",
+   "config.worktree": "[c\n"
+  },
+  "want": "",
+  "refusal": "this repository's git config cannot be used: fatal: bad config line 1 in \"{GITDIR}/config.worktree\""
+ },
+ {
+  "round": "tier0-14-linux",
+  "cell": "C3c",
+  "files": {
+   "config": "[core]\n\trepositoryformatversion = 1\n[extensions]\n\tworktreeConfig = 2\n[remote \"origin\"]\n\turl = gh:o/r\n[url \"https://example.invalid/\"]\n\tinsteadOf = gh:\n[branch \"main\"]\n\tremote = origin\n",
+   "config.worktree": "[core]\n\tquotepath = off\n\tfilemode = no\n\ttrustctime = false\n\tbare = no\n\tbare = false\n"
+  },
+  "want": "[core]\n\trepositoryformatversion = \"1\"\n[remote \"origin\"]\n\turl = \"https://example.invalid/o/r\"\n[branch \"main\"]\n\tremote = \"origin\"\n[core]\n\tbare = \"false\"\n[url \"https://example.invalid/o/r\"]\n\tinsteadOf = \"https://example.invalid/o/r\"\n[lfs]\n\trepositoryformatversion = 0\n",
+  "items": [
+   "-c",
+   "core.filemode=false",
+   "-c",
+   "core.quotepath=false",
+   "-c",
+   "core.trustctime=false"
+  ]
+ },
+ {
+  "round": "tier0-14-linux",
+  "cell": "C4",
+  "files": {
+   "config": "[core]\n\trepositoryformatversion = 0\n[include]\n\tpath = inc\n[remote \"origin\"]\n\turl = https://example.invalid/o/r\n",
+   "inc": "[core]\n\tbare = false\n\tfilemode = false\n[url \"https://example.invalid/\"]\n\tinsteadOf = gh:\n[lfs]\n\turl = gh:o/lfs\n"
+  },
+  "want": "[core]\n\trepositoryformatversion = \"0\"\n[core]\n\tfilemode = \"false\"\n[lfs]\n\turl = \"https://example.invalid/o/lfs\"\n[remote \"origin\"]\n\turl = \"https://example.invalid/o/r\"\n[url \"https://example.invalid/o/lfs\"]\n\tinsteadOf = \"https://example.invalid/o/lfs\"\n[lfs]\n\trepositoryformatversion = 0\n"
+ },
+ {
+  "round": "tier0-14-linux",
+  "cell": "C5",
+  "files": {
+   "config": "[core]\n\trepositoryformatversion = 0\n[remote \"origin\"]\n\turl = https://example.invalid/o/r\n[remote \"1up\"]\n\turl = https://example.invalid/a\n[remote \"a..b\"]\n\turl = https://example.invalid/b\n[remote \"a/-b\"]\n\turl = https://example.invalid/c\n[remote \"u1\"]\n\turl = ssh://example.invalid/a;b\n[remote \"u2\"]\n\turl = ssh://user:secret@example.invalid/x\n[remote \"u3\"]\n\turl = example.invalid:\n[branch \"fix)\"]\n\tremote = origin\n"
+  },
+  "want": "[core]\n\trepositoryformatversion = \"0\"\n[remote \"origin\"]\n\turl = \"https://example.invalid/o/r\"\n[remote \"1up\"]\n\turl = \"https://example.invalid/a\"\n[remote \"a..b\"]\n\turl = \"https://example.invalid/b\"\n[remote \"u1\"]\n\turl = \"ssh://example.invalid/a\"\n[remote \"u3\"]\n\turl = \"example.invalid:\"\n[branch \"fix)\"]\n\tremote = \"origin\"\n[lfs]\n\trepositoryformatversion = 0\n"
+ },
+ {
+  "round": "tier0-14-linux",
+  "cell": "R1",
+  "files": {
+   "config": "[core]\n\trepositoryformatversion = 1\n[extensions]\n\tpreciousObjects = 1234567890\n"
+  },
+  "want": "",
+  "refusal": "this repository's git config cannot be used: the repository uses git extension \"preciousobjects\", or a value of it, that this version of Claude does not support"
+ },
+ {
+  "round": "tier0-14-linux",
+  "cell": "R2",
+  "files": {
+   "config": "[core]\n\trepositoryformatversion = 1\n[extensions]\n\tobjectFormat = sha512\n"
+  },
+  "want": "",
+  "refusal": "this repository's git config cannot be used: the repository uses git extension \"objectformat\", or a value of it, that this version of Claude does not support"
+ },
+ {
+  "round": "tier0-14-linux",
+  "cell": "R3",
+  "files": {
+   "config": "[core]\n\trepositoryformatversion = 1\n[extensions]\n\trefStorage\n"
+  },
+  "want": "",
+  "refusal": "this repository's git config cannot be used: the repository uses git extension \"refstorage\", or a value of it, that this version of Claude does not support"
+ },
+ {
+  "round": "tier0-14-linux",
+  "cell": "R4",
+  "files": {
+   "config": "[core]\n\trepositoryformatversion = 1\n[extensions]\n\tpartialClone = a/-b\n"
+  },
+  "want": "",
+  "refusal": "this repository's git config cannot be used: the repository uses git extension \"partialclone\", or a value of it, that this version of Claude does not support"
+ },
+ {
+  "round": "tier0-16-linux",
+  "cell": "E3",
+  "files": {
+   "config": "[core]\n\trepositoryformatversion = 1\n[extensions]\n\tworktreeConfig = true\n\tpreciousObjects = 1234567890\n[remote \"origin\"]\n\turl = gh:o/r\n[url \"https://example.invalid/\"]\n\tinsteadOf = gh:\n[branch \"main\"]\n\tremote = origin\n",
+   "config.worktree": "[c\n"
+  },
+  "want": "",
+  "refusal": "this repository's git config cannot be used: fatal: bad config line 1 in \"{GITDIR}/config.worktree\""
  }
 ]
