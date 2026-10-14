@@ -103,19 +103,15 @@ on Windows:
   drain exceeds the caller `timeoutMs`, and after a failed read-tree checkout.
   On Linux and macOS it also happens when the daemon cannot place the index of
   the new worktree.
-  On Linux and macOS four refusals come before this rollback, and each one
-  deletes nothing.
-  Two answer a `.git` file of the new worktree that names no registration of
-  the repository. A registration whose `commondir` file or record cannot be
-  read as a file gets the first of them.
-  The third answers a registration whose record was read and names another
-  worktree. The fourth answers a registration that is a stale entry of an
-  earlier worktree at the same path. If git answered `rev-parse
+  On Linux and macOS the refusals after the add delete nothing, except an
+  empty worktree path and the rollback below. If git
+  answered `rev-parse
   --absolute-git-dir`, on Linux and macOS the index of the new
   worktree goes into the registration that passed those refusals. The rollback
-  deletes that registration, through an `os.Root` at the registrations
-  directory. Both act only while the folder at that path is still the folder
-  that the refusals saw (D24). On Windows no such guard runs.
+  deletes that registration, or after a failed `rev-parse --show-toplevel` the
+  one new entry of the listing after the add. That delete goes through an
+  `os.Root` at the registrations directory. Both act only while the folder at
+  that path is still the folder that the refusals or a stat right after that listing saw (D24). On Windows no such guard runs.
   Before the add, on Linux and macOS, the daemon removes a stale registration
   whose record names the new worktree, if it is the only such registration. That delete goes through an `os.Root` at
   the registrations directory too, after the home guard. A registration that

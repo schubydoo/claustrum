@@ -10,8 +10,11 @@ import (
 	"testing"
 )
 
-// The post-add identity check (verifyCreatedWorktree) refuses a create whose leaf
-// was swapped between mkdirWorktreeLeaf and `git worktree add`. No honest input can
+// A create whose leaf was swapped between mkdirWorktreeLeaf and the end of `git
+// worktree add` is refused before the checkout. The new leaf of this test is
+// empty. claustrum answers the text of cell V3a there, and the empty leaf goes.
+// The state is not measured. A new leaf with a .git file gets the identity test
+// (TestWorktreeCreateLeafReplaced). No honest input can
 // reach it, so the swap is staged by a `git` on PATH that delegates to the real git
 // and then replaces the leaf with a directory of its own — the RPC counterpart to
 // the seam-level TestVerifyCreatedWorktree.
@@ -54,12 +57,9 @@ func TestWorktreeCreateRefusesSwappedLeaf(t *testing.T) {
 	s := newTestServer(t)
 	raw := dispatchRaw(t, s, rpcLine(t, "git.worktree_create",
 		map[string]any{"baseRepo": repo, "branchName": "b", "worktreePath": wt}))
-	if !strings.Contains(raw, "was not populated by git worktree add") ||
-		!strings.Contains(raw, `"errorCode":"worktree_add_failed"`) {
-		t.Errorf("create over a swapped leaf = %s, want the not-populated refusal", raw)
-	}
-	if strings.Contains(raw, `"success":true`) {
-		t.Errorf("create over a swapped leaf = %s, want success:false", raw)
+	wantError(t, raw, "refusing to create worktree: "+namedLeaf(wt)+" has no .git file", "unsafe_path")
+	if _, err := os.Lstat(wt); !os.IsNotExist(err) {
+		t.Errorf("the empty leaf after the refusal: %v, want it gone", err)
 	}
 }
 

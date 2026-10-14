@@ -463,8 +463,8 @@ func TestCreateGoesOnInTheGitDirThatGitAnswers(t *testing.T) {
 // The `.git` file of the leaf keeps the text that names the copy of the
 // daemon, as on 5fd08069 (cell swb-wtadd of val-s3p2b2-13-linux2, Linux VM).
 // The test writes that text itself at the step, because git 2.50.1 writes the
-// path of the repository there. Without the test before the replacement the
-// file names the git directory.
+// path of the repository there. claustrum writes that file again only after
+// this test and the tests of the registration.
 func TestCreateWithAGitDirThatChangedAtTheAdd(t *testing.T) {
 	f := newSeededShadowFixture(t)
 	copied := filepath.Join(resolveTestRoot(t, t.TempDir()), "copy")
@@ -476,7 +476,7 @@ func TestCreateWithAGitDirThatChangedAtTheAdd(t *testing.T) {
 	}
 	leaf := filepath.Join(f.repo, ".claude", "worktrees", "w1")
 	named := "gitdir: " + filepath.Join(daemonFolder(t, f.run), shadowRepoName(f.gitDir), "worktrees", "w1") + "\n"
-	atStep(t, "repoint", func() {
+	atStep(t, "added", func() {
 		if err := os.WriteFile(filepath.Join(leaf, ".git"), []byte(named), 0o644); err != nil {
 			t.Errorf("the .git file of the leaf: %v", err)
 		}

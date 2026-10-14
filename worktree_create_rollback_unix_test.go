@@ -53,10 +53,10 @@ func pathsBelow(t *testing.T, dir string) []string {
 //   - Removed on 5fd08069: i-ctl (the request and the record go through the same
 //     symlink) and its control h-ctl (both are real). Both are cells of
 //     val-s3p2b2-11-macos (macOS VM, 2 of 2 runs).
-//   - Kept, and not remembered: A6 and A6b (no .git part), A11 (a live worktree at
+//   - Kept: A6 and A6b (no .git part), A11 (a live worktree at
 //     another path) and A12b (the record goes through a symlink, the request is
 //     real).
-//   - Kept, and remembered: A9 and A9b (a `locked` file), A10 (the entry has mode
+//   - Kept too: A9 and A9b (a `locked` file), A10 (the entry has mode
 //     0500, and only logs/HEAD goes) and A10b (the registrations folder has mode
 //     0555, the files go and the empty folder stays). The mode cells need a user
 //     that is not root.
@@ -74,7 +74,6 @@ func TestDropStaleWorktreeRegistrationRecords(t *testing.T) {
 		chmod       string // "entry" (0500) or "registry" (0555)
 		home        bool   // HOME is a folder in the entry
 		want        []string
-		remembered  bool
 	}{
 		{name: "A1", record: func(_, l string) string { return l + "/.git/" }},
 		{name: "A2", record: func(_, l string) string { return l + "/.git/\n" }},
@@ -88,20 +87,20 @@ func TestDropStaleWorktreeRegistrationRecords(t *testing.T) {
 		{name: "A7", record: func(string, string) string { return "../../../.claude/worktrees/w1/.git\n" }},
 		{name: "A8", entry: "old9", record: func(_, l string) string { return l + "/.git/" }},
 		{name: "A9", record: func(_, l string) string { return l + "/.git/" }, locked: true,
-			want: append([]string{"locked"}, all...), remembered: true},
+			want: append([]string{"locked"}, all...)},
 		{name: "A9b", record: func(_, l string) string { return l + "/.git\n" }, locked: true,
-			want: append([]string{"locked"}, all...), remembered: true},
+			want: append([]string{"locked"}, all...)},
 		{name: "A10", record: func(_, l string) string { return l + "/.git/" }, chmod: "entry",
-			want: []string{"HEAD", "ORIG_HEAD", "commondir", "gitdir", "index", "logs"}, remembered: true},
+			want: []string{"HEAD", "ORIG_HEAD", "commondir", "gitdir", "index", "logs"}},
 		{name: "A10b", record: func(_, l string) string { return l + "/.git/" }, chmod: "registry",
-			want: []string{}, remembered: true},
+			want: []string{}},
 		{name: "A11", record: func(r, _ string) string { return r + "/live/w1/.git\n" }, want: all},
 		{name: "A12b", record: func(r, _ string) string { return r + "/Tlink/.claude/worktrees/w1/.git/" }, want: all},
 		{name: "A12c", record: func(_, l string) string { return l + "/.git/" }, viaLink: true},
 		{name: "i-ctl", record: func(r, _ string) string { return r + "/Tlink/.claude/worktrees/w1/.git\n" }, viaLink: true},
 		{name: "h-ctl", record: func(_, l string) string { return l + "/.git\n" }},
 		{name: "home in the entry (claustrum's guard, not measured)", record: func(_, l string) string { return l + "/.git/" },
-			home: true, want: append(slices.Clone(all), "home"), remembered: true},
+			home: true, want: append(slices.Clone(all), "home")},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			if tc.chmod != "" && os.Geteuid() == 0 {
@@ -146,8 +145,7 @@ func TestDropStaleWorktreeRegistrationRecords(t *testing.T) {
 				sentLeaf = filepath.Join(sentRepo, ".claude", "worktrees", "w1")
 			}
 
-			var kept []string
-			doneWithin(t, "dropStaleWorktreeRegistration", func() { kept = dropStaleWorktreeRegistration(sentRepo, sentLeaf, nil) })
+			doneWithin(t, "dropStaleWorktreeRegistration", func() { dropStaleWorktreeRegistration(sentRepo, sentLeaf, nil) })
 			_ = os.Chmod(registry, 0o755)
 			_ = os.Chmod(entry, 0o755)
 
@@ -156,43 +154,34 @@ func TestDropStaleWorktreeRegistrationRecords(t *testing.T) {
 			if got := pathsBelow(t, entry); !slices.Equal(got, want) || (got == nil) != (tc.want == nil) {
 				t.Errorf("the entry holds %q, want %q (nil means the entry is gone)", got, tc.want)
 			}
-			var wantKept []string
-			if tc.remembered {
-				wantKept = []string{filepath.Join(sentRepo, ".git", "worktrees", name)}
-			}
-			if !slices.Equal(kept, wantKept) {
-				t.Errorf("kept = %q, want %q", kept, wantKept)
-			}
 		})
 	}
 }
 
-// TestStaleRegistrationRefusal pins which registration gets the text of cells A9 g,
-// A9b g and A10 g: only the entry that the step before the add left in place.
-func TestStaleRegistrationRefusal(t *testing.T) {
-	root := realTempDir(t)
-	reg, other := filepath.Join(root, "worktrees", "w1"), filepath.Join(root, "worktrees", "w11")
-	mkdirForTest(t, reg)
-	mkdirForTest(t, other)
-	const leaf = "/x/leaf"
-	want := "refusing to create worktree: /x/leaf carries a .git file naming an admin entry other than the one just created for it"
-	if got := staleRegistrationRefusal(leaf, reg, []string{reg}); got != want {
-		t.Errorf("the entry that stayed: %q, want %q", got, want)
-	}
-	if got := staleRegistrationRefusal(leaf, reg, []string{other, reg}); got != want {
-		t.Errorf("the second of two entries that stayed (cell A13 g): %q, want %q", got, want)
-	}
+// TestCreatedEntryOnly pins the listing test of the create: the registration
+// must be the one new name of the registrations folder since the listing before
+// the add. Cell V2 (5fd08069, Linux VM) has two new names. The g
+// cells of 89cb6289 have none (Linux and macOS VMs).
+func TestCreatedEntryOnly(t *testing.T) {
 	for _, tc := range []struct {
-		name, registration string
-		kept               []string
+		name          string
+		before, after []string
+		registration  string
+		want          bool
 	}{
-		{"no entry stayed (row D-12, cell P-c)", reg, nil},
-		{"another registration (cells A9 p and A10 p)", other, []string{reg}},
-		{"no registration", "", []string{reg}},
+		{"one new name, the entry (cell BASE)", nil, []string{"w1"}, "/g/worktrees/w1", true},
+		{"one new name beside an old entry (cells A9 p and A10 p)", []string{"w1"}, []string{"w1", "w11"}, "/g/worktrees/w11", true},
+		{"two new names (cell V2)", nil, []string{"w1", "w1b"}, "/g/worktrees/w1", false},
+		{"no new name (cells A9 g and A13 g)", []string{"old9", "w1"}, []string{"old9", "w1"}, "/g/worktrees/w1", false},
+		{"one new name, another entry", []string{"w1"}, []string{"w1", "w11"}, "/g/worktrees/w1", false},
 	} {
-		if got := staleRegistrationRefusal(leaf, tc.registration, tc.kept); got != "" {
-			t.Errorf("%s: %q, want no refusal", tc.name, got)
+		if got := createdEntryOnly(tc.before, tc.after, tc.registration); got != tc.want {
+			t.Errorf("%s: %v, want %v", tc.name, got, tc.want)
 		}
+	}
+	const want = "refusing to create worktree: /x/leaf carries a .git file naming an admin entry other than the one just created for it"
+	if got := otherEntryRefusal("/x/leaf"); got != want {
+		t.Errorf("otherEntryRefusal = %q, want %q", got, want)
 	}
 }
 
@@ -739,8 +728,8 @@ func TestTestedRegistrationErrorArms(t *testing.T) {
 }
 
 // TestDropStaleWorktreeRegistrationFolderGone pins the step before the add where the
-// registrations folder goes right after its open: the step ends with nothing
-// remembered and removes nothing. The state has no cell of 89cb6289.
+// registrations folder goes right after its open: the step ends and removes
+// nothing. The state has no cell of 89cb6289.
 func TestDropStaleWorktreeRegistrationFolderGone(t *testing.T) {
 	repo := realTempDir(t)
 	base := filepath.Join(repo, ".git", "worktrees")
@@ -757,8 +746,12 @@ func TestDropStaleWorktreeRegistrationFolderGone(t *testing.T) {
 		return r, err
 	}
 	leaf := filepath.Join(repo, ".claude", "worktrees", "w1")
-	if kept := dropStaleWorktreeRegistration(repo, leaf, nil); len(kept) != 0 {
-		t.Errorf("kept = %v, want none", kept)
+	dropStaleWorktreeRegistration(repo, leaf, nil)
+	if _, err := os.Lstat(base); !os.IsNotExist(err) {
+		t.Errorf("the registrations folder after the step: %v, want it still gone", err)
+	}
+	if got, want := pathsBelow(t, repo), []string{".git"}; !slices.Equal(got, want) {
+		t.Errorf("the repository holds %q, want %q", got, want)
 	}
 }
 
@@ -780,19 +773,18 @@ func TestDropStaleWorktreeRegistrationCount(t *testing.T) {
 		name string
 		in   entries
 		want []string // the names that stay
-		kept []string // the names that are remembered
 	}{
-		{"S1", entries{"old8": "stale", "old9": "stale", "w1": "stale"}, []string{"old8", "old9", "w1"}, []string{"old8", "old9", "w1"}},
-		{"S2", entries{"old8": "stale", "old9": "stale"}, []string{"old8", "old9"}, []string{"old8", "old9"}},
-		{"S3", entries{"old9": "stale", "w1": "other"}, []string{"w1"}, nil},
-		{"S4", entries{"w1": "stale", "old9": "other"}, []string{"old9"}, nil},
-		{"S5", entries{"old9": "locked", "w1": "stale"}, []string{"old9", "w1"}, []string{"old9", "w1"}},
-		{"S6", entries{"old9": "stale newline", "w1": "stale"}, []string{"old9", "w1"}, []string{"old9", "w1"}},
-		{"S7", entries{"old9": "stale", "w1": "file"}, []string{"w1"}, nil},
-		{"S7b", entries{"old9": "stale", "w1": "no record"}, []string{"w1"}, nil},
-		{"S7c", entries{"old9": "stale", "w1": "empty"}, []string{"w1"}, nil},
-		{"A13", entries{"old9": "stale", "w1": "stale"}, []string{"old9", "w1"}, []string{"old9", "w1"}},
-		{"A13b", entries{"old9": "stale", "w1": "locked"}, []string{"old9", "w1"}, []string{"old9", "w1"}},
+		{"S1", entries{"old8": "stale", "old9": "stale", "w1": "stale"}, []string{"old8", "old9", "w1"}},
+		{"S2", entries{"old8": "stale", "old9": "stale"}, []string{"old8", "old9"}},
+		{"S3", entries{"old9": "stale", "w1": "other"}, []string{"w1"}},
+		{"S4", entries{"w1": "stale", "old9": "other"}, []string{"old9"}},
+		{"S5", entries{"old9": "locked", "w1": "stale"}, []string{"old9", "w1"}},
+		{"S6", entries{"old9": "stale newline", "w1": "stale"}, []string{"old9", "w1"}},
+		{"S7", entries{"old9": "stale", "w1": "file"}, []string{"w1"}},
+		{"S7b", entries{"old9": "stale", "w1": "no record"}, []string{"w1"}},
+		{"S7c", entries{"old9": "stale", "w1": "empty"}, []string{"w1"}},
+		{"A13", entries{"old9": "stale", "w1": "stale"}, []string{"old9", "w1"}},
+		{"A13b", entries{"old9": "stale", "w1": "locked"}, []string{"old9", "w1"}},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			root := realTempDir(t)
@@ -819,7 +811,7 @@ func TestDropStaleWorktreeRegistrationCount(t *testing.T) {
 					mkdirForTest(t, entry)
 				}
 			}
-			kept := dropStaleWorktreeRegistration(repo, leaf, nil)
+			dropStaleWorktreeRegistration(repo, leaf, nil)
 			ents, err := os.ReadDir(registry)
 			if err != nil {
 				t.Fatal(err)
@@ -830,13 +822,6 @@ func TestDropStaleWorktreeRegistrationCount(t *testing.T) {
 			}
 			if !slices.Equal(got, tc.want) {
 				t.Errorf("the registrations folder holds %q, want %q", got, tc.want)
-			}
-			var wantKept []string
-			for _, name := range tc.kept {
-				wantKept = append(wantKept, filepath.Join(registry, name))
-			}
-			if !slices.Equal(kept, wantKept) {
-				t.Errorf("kept = %q, want %q", kept, wantKept)
 			}
 		})
 	}
@@ -1032,12 +1017,9 @@ func TestDropStaleWorktreeRegistrationRetargetedRegistry(t *testing.T) {
 				}
 				return r, err
 			}
-			kept := dropStaleWorktreeRegistration(repo, leaf, nil)
+			dropStaleWorktreeRegistration(repo, leaf, nil)
 			if opens != 1 {
 				t.Fatalf("the registrations folder was opened %d times, want 1: the test did not stage the change", opens)
-			}
-			if len(kept) != 0 {
-				t.Errorf("kept = %q, want none", kept)
 			}
 			for _, dir := range []string{stale, other} {
 				if got, want := pathsBelow(t, dir), []string{"w1", "w1/gitdir"}; !slices.Equal(got, want) {

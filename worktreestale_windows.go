@@ -27,8 +27,7 @@ import (
 //
 // This is the Windows step. Linux and macOS have their own compare and their own
 // delete (worktreestale_unix.go). No Windows row of 89cb6289 measures this step, so
-// Windows keeps the compare and the delete that it had. The result is always nil:
-// Windows remembers no entry.
+// Windows keeps the compare and the delete that it had.
 //
 // held is the git directory that the create holds, or nil. When the `.git` of
 // repo is the held folder (acceptedGitDir.isAt), the step goes through it
@@ -37,15 +36,15 @@ import (
 // before the hold: a request with "shadowDirOff":true, the state fallback-git,
 // a server with no run folder, and a held folder that is not the `.git` of
 // repo, such as a daemon GIT_DIR of another repository (not measured).
-func dropStaleWorktreeRegistration(repo, worktreePath string, held *acceptedGitDir) (kept []string) {
+func dropStaleWorktreeRegistration(repo, worktreePath string, held *acceptedGitDir) {
 	if held.isAt(filepath.Join(repo, ".git")) {
 		held.dropStaleRegistration(worktreePath)
-		return nil
+		return
 	}
 	base := filepath.Join(repo, ".git", "worktrees")
 	ents, err := os.ReadDir(base)
 	if err != nil {
-		return nil
+		return
 	}
 	target := resolveAsFarAsExists(worktreePath)
 	for _, e := range ents {
@@ -61,8 +60,7 @@ func dropStaleWorktreeRegistration(repo, worktreePath string, held *acceptedGitD
 		// gitdir names the worktree's own ".git" file; its parent is the worktree.
 		if resolveAsFarAsExists(filepath.Dir(strings.TrimSpace(string(gitdir)))) == target {
 			_ = os.RemoveAll(filepath.Join(base, e.Name()))
-			return nil
+			return
 		}
 	}
-	return nil
 }

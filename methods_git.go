@@ -852,7 +852,7 @@ func gitWorktreeCreate(req *request) response {
 	}
 	repo := p.repoDir()
 	defer req.runAtReply()
-	return withWorktreeRepoLock(repo, func() response {
+	return withWorktreeCreateLock(repo, func() response {
 		return gitWorktreeCreateLocked(req, &p, repo)
 	})
 }
@@ -1082,15 +1082,12 @@ func gitWorktreeCreateLocked(req *request, p *gitParams, repo string) response {
 	// such a registration if it is the only one and is not locked
 	// (dropStaleWorktreeRegistration). Windows keeps its earlier step, which has
 	// neither test.
-	// staleKept holds each stale entry that is still there (Linux and macOS): it
-	// is locked, the remove failed, or it is one of two or more. It is empty on
-	// Windows.
 	// A create that holds its git directory runs the step through the held
 	// folder (gitdirheld.go).
 	if createStepHook != nil && req.use.accepted != nil {
 		createStepHook("stale")
 	}
-	staleKept := dropStaleWorktreeRegistration(repo, p.WorktreePath, req.use.accepted)
+	dropStaleWorktreeRegistration(repo, p.WorktreePath, req.use.accepted)
 	// `git worktree add` does not create leading directories, so the reference
 	// makes the parent before adding — this is what lets a nested session path
 	// such as <repo>/.claude/worktrees/<id> succeed on a fresh repo. The parent comes
@@ -1240,8 +1237,9 @@ func gitWorktreeCreateLocked(req *request, p *gitParams, repo string) response {
 	// status 128`. The cells are W1c and X1p-02 to X1p-05 of
 	// val-s3p2b2-7-windows (Windows VM): the call exits 128 after `.git` became
 	// a junction to a folder that is no git directory. The text after the
-	// colon is the exec error. Linux and macOS are not measured: they get the
-	// same stop. A call that a signal ended is not measured either. In the
+	// colon is the exec error. On a Linux VM 5fd08069 answers the same text
+	// (cell V12 of round tier0-10). macOS is not measured: it gets the same
+	// stop. A call that a signal ended is not measured either. In the
 	// other states the create goes on with the directory of repoGitDir.
 	if gitDirMustBeReal && req.use.shadow() && gitDirErr != nil {
 		return refuseAdd(gitDirAddWrap + gitDirErr.Error())
@@ -1315,6 +1313,22 @@ func gitWorktreeCreateLocked(req *request, p *gitParams, repo string) response {
 			BranchKept: kept,
 		}), true
 	}
+	// On Linux and macOS claustrum lists the names in the registrations folder
+	// right before the add and again after it. The entry of the new worktree must
+	// be the one new name (createdEntryOnly). The listing needs the git directory
+	// that git answered. claustrum's own, not measured: when a listing fails with
+	// another error than "does not exist", the create is refused with the text of
+	// otherEntryRefusal and removes nothing. The second listing before the
+	// fallback add is claustrum's own too (not measured).
+	var entriesBefore []string
+	entriesDir, entriesListed := "", false
+	listEntriesBefore := func() {
+		if adminRecordChecked && gitAnswered {
+			entriesDir = gitDirRegistryDir(gitDir)
+			entriesBefore, entriesListed = registrationNames(entriesDir)
+		}
+	}
+	listEntriesBefore()
 	addStderr, addErr := worktreeAdd(d5Ctx, req.use, repo, p.WorktreePath, checkpoint, addArgs...)
 	if resp, ok := incompleteAdd(addErr, createdBranch); ok {
 		return resp
@@ -1324,8 +1338,10 @@ func gitWorktreeCreateLocked(req *request, p *gitParams, repo string) response {
 		// deleted the leaf or put a new directory in its place. Then the request
 		// answers the attach add's own failure. Measured against f6010b97 and 90fca6e6
 		// on a macOS VM, with the leaf deleted and with it replaced by a new empty
-		// directory. A leaf left as it was gets the fallback. An add that did not
-		// run on Windows gets no fallback either (addNotPrepared).
+		// directory. A leaf left as it was gets the fallback. An add whose
+		// worktrees folder could not be prepared gets no fallback either
+		// (addNotPrepared): the frame has its text one time (cell E1 of round
+		// tier0-11, Linux VM, for a link at `worktrees`).
 		var notPrepared *addNotPrepared
 		if verifyCreatedWorktree(p.WorktreePath, checkpoint) != "" || errors.As(addErr, &notPrepared) {
 			undoFailedAdd(p.WorktreePath, checkpoint)
@@ -1346,6 +1362,7 @@ func gitWorktreeCreateLocked(req *request, p *gitParams, repo string) response {
 		if startCommit != "" {
 			fallbackArgs = append(fallbackArgs, startCommit)
 		}
+		listEntriesBefore()
 		addStderr, addErr = worktreeAdd(d5Ctx, req.use, repo, p.WorktreePath, checkpoint, fallbackArgs...)
 		if resp, ok := incompleteAdd(addErr, p.BranchName); ok {
 			return resp
@@ -1395,11 +1412,14 @@ func gitWorktreeCreateLocked(req *request, p *gitParams, repo string) response {
 			ErrorCode: "unsafe_path",
 		})
 	}
-	// The read of the `config.worktree` file of the repository, and the text
-	// that the new worktree gets from it (newWorktreeConfig). The text goes into
-	// the registration below, after the tests of that registration.
-	entryConfig, hasEntryConfig, dropConfigDir := req.newWorktreeConfig(repo, t.pinCommonDir)
-	defer dropConfigDir()
+	// The daemon replaces the `.git` file of a leaf that names the copy
+	// (repointLeaf). It does that after the tests of the registration below,
+	// before any other git call. Where those tests do not run, the step keeps
+	// its place here (not measured).
+	registrationTests := adminRecordChecked && gitAnswered
+	if !registrationTests {
+		req.use.repointLeaf(repo, p.WorktreePath, checkpoint)
+	}
 	// The add succeeded. The .git file of the new worktree must name a registration
 	// of this repository, and the commondir file and the gitdir record of that
 	// registration must be files that can be read (createdRegistrationRefusal, cells
@@ -1421,34 +1441,65 @@ func gitWorktreeCreateLocked(req *request, p *gitParams, repo string) response {
 	// index folder is the one that the .git file names. A rollback then reads both
 	// files again for its own check (createdWorktreeAdminDir). That is claustrum's
 	// choice (not measured).
-	adminDir := worktreeAdminDir(p.WorktreePath)
+	//
+	// On Linux and macOS, and with an answer of git, the .git file of the leaf has
+	// three tests of its own first (leafGitFileRefusal). A leaf with no .git file
+	// is removed when it is empty, as after a failed add (cell V3a of round
+	// tier0-10). Without an answer of git those tests do not run (claustrum's own,
+	// not measured).
+	refuseUnsafe := func(text string) response {
+		return okResult(req.ID, worktreeResult{Success: false, Error: text, ErrorCode: "unsafe_path"})
+	}
+	var adminDir string
+	if registrationTests {
+		var text string
+		var noFile bool
+		if adminDir, text, noFile = leafGitFileRefusal(p.WorktreePath); text != "" {
+			if noFile {
+				undoFailedAdd(p.WorktreePath, checkpoint)
+			}
+			return refuseUnsafe(text)
+		}
+	} else {
+		adminDir = worktreeAdminDir(p.WorktreePath)
+	}
 	indexDir := ""
 	if adminDir != "" {
 		indexDir = absoluteAdminDir(p.WorktreePath, adminDir)
 	}
 	var tested testedRegistration
+	// newEntry is the one new name of the registrations folder since the listing
+	// before the add, or "" when there is none or more than one. It is "" too
+	// when a listing did not run, or when the two listings read two folders. The
+	// folder of the second listing comes from a second read of the commondir
+	// file of gitDir. If its path is not the path of the first listing, newEntry
+	// is "" (claustrum's own, not measured). ownEntry says that the registration
+	// of the tests has that name. created is the registration of a rollback
+	// after a failed spelling call. For another name than that of the tests, it
+	// takes the identity of the folder at newEntry right after the listing.
+	entryTested, ownEntry, newEntry := false, false, ""
+	var created testedRegistration
 	if gitAnswered {
 		var text string
 		if indexDir, text = createdRegistrationRefusal(gitDir, p.WorktreePath, adminDir); text != "" {
-			return okResult(req.ID, worktreeResult{
-				Success:   false,
-				Error:     text,
-				ErrorCode: "unsafe_path",
-			})
+			return refuseUnsafe(text)
 		}
 		tested = acceptRegistration(indexDir)
 		tested.git = req.use.accepted
 		defer tested.release()
-		// A stale entry that the step before the add left is not the registration of
-		// this create. 89cb6289 answers the refusal there after 9 git calls, and the
-		// pair of the next test is not among them (cells A9 g, A9b g and A10 g,
-		// Linux and macOS VMs).
-		if text := staleRegistrationRefusal(p.WorktreePath, indexDir, staleKept); text != "" {
-			return okResult(req.ID, worktreeResult{
-				Success:   false,
-				Error:     text,
-				ErrorCode: "unsafe_path",
-			})
+		if adminRecordChecked && indexDir != "" {
+			after, listed := registrationNames(filepath.Dir(indexDir))
+			entryTested = true
+			if entriesListed && listed && filepath.Dir(indexDir) == entriesDir {
+				newEntry, _ = newRegistrationName(entriesBefore, after)
+				ownEntry = createdEntryOnly(entriesBefore, after, indexDir)
+			}
+		}
+		created = tested
+		if newEntry != "" && !ownEntry {
+			created = acceptRegistration(filepath.Join(entriesDir, newEntry))
+			created.git = req.use.accepted
+			defer created.release()
 		}
 	}
 	// indexDir is the registration that gets the index (createdRegistrationRefusal, or
@@ -1461,18 +1512,74 @@ func gitWorktreeCreateLocked(req *request, p *gitParams, repo string) response {
 	// cells T2 and T10 (Linux and macOS VMs) the call log of 89cb6289 shows that
 	// pair twice, with baseRepo as the resolved path. The call log of claustrum
 	// shows it once, with baseRepo as sent. No frame differs.
-	// claustrum makes the calls and does not use their
-	// answer: what 89cb6289 takes from them is not measured. This test comes before
+	// This test comes before
 	// the deadline test too: with a timeoutMs that expired during the add, 89cb6289
 	// answers this refusal and keeps the leaf and the branch (cell P-f, Linux and macOS VMs).
-	if adminRecordMismatch(indexDir, p.WorktreePath) {
-		_, _ = gitDirWorkTreeToplevel(gitDir, repo, req.use.gitDirPin(repo), req.use.gitDirFront())
-		return okResult(req.ID, worktreeResult{
-			Success:   false,
-			Error:     adminRecordRefusal(p.WorktreePath),
-			ErrorCode: "unsafe_path",
-		})
+	//
+	// When the second call of the pair fails, 5fd08069 answers the text of
+	// spellingRetryText and removes the leaf, the new registration and the new
+	// branch (cell V5 of round tier0-10, Linux VM). The text has the name that
+	// the .git file of the leaf gives. In claustrum the registration that goes is
+	// the one new name of the registrations folder since the listing before the add
+	// (newEntry). In cell P1 of round tier0-11 (Linux VM, 3 of 3 runs) the .git
+	// file names an old entry w1 of another live worktree, and git made the entry
+	// w11. 5fd08069 answers "(entry w1)" and removes the leaf, w11 and the new
+	// branch. The entry w1, its worktree and its branch stay. The rollback is
+	// that of a failed checkout (undoFailedCheckout), with its home guard, its
+	// identity tests and the held git directory. For another name than that of
+	// the tests, the identity is that of the folder at the name in the listing
+	// after the add.
+	//
+	// Two conditions are claustrum's own, not measured. With no new name, or
+	// with more than one, the create keeps the refusal, and nothing is removed.
+	// And the call must fail by itself. A call that the git-timeout deadline of
+	// D5 ended keeps the refusal too: a fired deadline is not a refusal of git.
+	// The timeoutMs of the caller does not bound that call. The undo text after
+	// the frame is not measured either. What 5fd08069 takes from an answer of the
+	// call is not measured: claustrum does not use it. With no answer of git to
+	// rev-parse --absolute-git-dir the record compare is as before (not measured).
+	if adminRecordMismatch(indexDir, p.WorktreePath, gitAnswered) {
+		spellCtx, cancelSpell := gitCtx()
+		_, err := gitDirWorkTreeToplevelIn(spellCtx, gitDir, repo, req.use.gitDirPin(repo), req.use.gitDirFront())
+		ended := spellCtx.Err() != nil
+		cancelSpell()
+		if err != nil && !ended && newEntry != "" {
+			undo, kept := undoFailedCheckout(req.use, repo, p.WorktreePath, createdBranch, checkpoint, created)
+			return okResult(req.ID, worktreeResult{
+				Success:    false,
+				Error:      spellingRetryText(indexDir) + undo,
+				ErrorCode:  "worktree_add_failed",
+				BranchKept: kept,
+			})
+		}
+		return refuseUnsafe(adminRecordRefusal(p.WorktreePath))
 	}
+	// The entry of the tests must be the one new name of the registrations
+	// folder since the listing before the add (createdEntryOnly). A refusal of
+	// the tests above comes first (claustrum's order, not measured).
+	if entryTested && !ownEntry {
+		return refuseUnsafe(otherEntryRefusal(p.WorktreePath))
+	}
+	// The leaf must still be the folder that the create made, before any file is
+	// checked out. With a new folder at the path that holds a copy of the .git
+	// file, 5fd08069 answers this text, and the new folder holds .git only (cell V8
+	// of round tier0-10, Linux VM). Nothing is removed. A leaf whose path leads
+	// elsewhere or is no folder gets the same text (claustrum's own, not
+	// measured). Without an answer of git to rev-parse --absolute-git-dir, and
+	// on Windows, the test stays after the checkout alone, with its old frame
+	// (not measured).
+	if registrationTests {
+		if verifyCreatedWorktree(p.WorktreePath, checkpoint) != "" {
+			return refuseUnsafe(fmt.Sprintf("refusing to create worktree: %s is no longer the directory that was created for the worktree",
+				parentResolvedPath(p.WorktreePath)))
+		}
+		req.use.repointLeaf(repo, p.WorktreePath, checkpoint)
+	}
+	// The read of the `config.worktree` file of the repository, and the text
+	// that the new worktree gets from it (newWorktreeConfig). The text goes into
+	// the registration below.
+	entryConfig, hasEntryConfig, dropConfigDir := req.newWorktreeConfig(repo, t.pinCommonDir)
+	defer dropConfigDir()
 	// From here on the repository has the registration. A git directory that is
 	// no longer the held folder fails the checkout with the refusal of its
 	// config, and the rollback keeps the registration and the branch. With a

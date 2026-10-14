@@ -1143,7 +1143,11 @@ Reopen trigger: the reference moves to Go 1.26 or newer.
 - **Behavior.** On Linux and macOS `git.worktree_create` tests the registration
   of the new worktree right after the add. When the tests accept it, claustrum
   takes the identity of the registration folder. A rollback deletes the folder at
-  that path only if it still has that identity. The test runs on the
+  that path only if it still has that identity. After a failed `rev-parse
+  --show-toplevel` the rollback deletes the one new entry of the listing after
+  the add, with its identity from that listing. In cell P2 of round `tier0-13`
+  (Linux VM) `5fd08069` deletes a sibling registration that was moved to that
+  name during the call, and claustrum keeps it. The test runs on the
   registrations directory that the delete opened, so the test and the delete
   use one registrations directory.
   claustrum holds the accepted folder open until the create answers.

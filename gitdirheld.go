@@ -45,9 +45,9 @@ import (
 //     fallback-git and a server with no run folder.
 //   - On Linux and macOS, a `worktrees` entry that is a symbolic link
 //     (registrationsRoot).
-//   - On every system, the stale step and a registrations folder when
-//     `<baseRepo>/.git` is not the held folder, such as a daemon GIT_DIR of
-//     another repository (from the code, not measured).
+//   - On every system, the stale step and a registrations folder whose
+//     folder `worktrees` is not in the held folder, such as a daemon GIT_DIR
+//     of another repository (from the code, not measured).
 //   - The reads of the create that decide a refusal.
 //
 // One step takes a new folder from the path, on Linux and macOS: right after
@@ -198,8 +198,10 @@ func (a *acceptedGitDir) installIndex(src, adminDir string) {
 // hold. The first is a create that holds no git directory, or a dir of another
 // git directory. The second is a `worktrees` entry of the held folder that is
 // a symbolic link: 89cb6289 creates with such a link (rows D-1 and D-3 to D-5,
-// Linux VM). The index and the rollback delete keep their identity test there
-// (replacedIn, D24). The stale step has none.
+// Linux VM). In the state shadow claustrum refuses that create before the add
+// (worktreesFolderRefusal), so only the stale step and a link that is put there
+// later come here. The index and the rollback delete keep their identity test
+// there (replacedIn, D24). The stale step has none.
 func (a *acceptedGitDir) registrationsRoot(dir string) (*os.Root, error) {
 	if filepath.Base(dir) != worktreesSubdir || !a.isAt(filepath.Dir(filepath.Clean(dir))) {
 		return openRegistrationsRoot(dir)

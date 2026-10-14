@@ -894,7 +894,7 @@ func TestPostAddReadsDoNotWaitOnFifo(t *testing.T) {
 		registry = gitDirRegistryDir(gitDir)
 		_, refusal = createdRegistrationRefusal(gitDir, leaf, worktreeAdminDir(leaf))
 		record = readAdminRecord(reg, leaf)
-		mismatch = adminRecordMismatch(reg, leaf)
+		mismatch = adminRecordMismatch(reg, leaf, true)
 		installErr = guardedInstallWorktreeIndex(src, reg, leaf, testedRegistration{})
 	})
 	if want := filepath.Join(gitDir, "worktrees"); registry != want {

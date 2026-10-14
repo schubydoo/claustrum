@@ -203,10 +203,10 @@ The JSON-RPC surface is identical on every OS. Full internals →
       `worktreePath`. There are two rollbacks. After a failed `git worktree add`,
       it runs no git call and removes the leaf only if the leaf is an empty
       directory. Before the add, on Linux and macOS, create removes one stale
-      entry of `<baseRepo>/.git/worktrees`: an entry whose `gitdir` record
-      names the `.git` of the new leaf. The compare is by text, with the
-      resolved path or with the path as the request spells it. The second
-      form follows `5fd08069` (cell i-ctl, Linux and macOS VMs). It removes that entry only if it is the
+      entry of `<baseRepo>/.git/worktrees`. For a `baseRepo` that is a linked
+      worktree it is `worktrees` of the main repository
+      (`5fd08069`, cell V9 of round `tier0-10`, Linux VM). A stale
+      entry is one whose `gitdir` record names the `.git` of the new leaf. It removes that entry only if it is the
       only stale entry of the folder (`89cb6289`, cells A13, A13b and S1 to S7c,
       Linux and macOS VMs). The delete is one `os.Root.RemoveAll`
       of the entry name through a root at that folder, after `wipesHomeDir` on
@@ -216,18 +216,25 @@ The JSON-RPC surface is identical on every OS. Full internals →
       `os.RemoveAll` of the entry path for a create that holds none or holds
       another folder than `<baseRepo>\.git`.
       The second rollback follows a successful add. On Linux and
-      macOS four refusals come before it, and they delete nothing. Two answer
-      a `.git` file of the new worktree that names no registration of the
-      repository. A registration whose `commondir` file or `gitdir` record
-      cannot be read as a file gets the first of them (`89cb6289`, cells P-g to
-      P-j, Linux and macOS VMs). The third answers a registration whose `gitdir`
-      record was read and names another worktree. The fourth answers a
-      registration that is a stale entry which the step before the add left in
-      place (`89cb6289`, cells A9 g, A9b g and A10 g, Linux and macOS VMs). The first
-      three come before the
-      `timeoutMs` test that follows the add (`89cb6289`, row D-9 on a macOS VM
-      and cell P-f on Linux and macOS VMs). From the code, the fourth does too
-      (not measured).
+      macOS these refusals come before it and before the checkout. They delete
+      nothing, except an empty leaf that has no `.git` file. They answer a
+      `.git` file of the leaf that is gone, is no regular file or has no
+      `gitdir: `. They answer a registration that is a symbolic link
+      and a `commondir` path through a symbolic
+      link. They answer a record that names another worktree and a leaf
+      that is no longer the folder of the create. `5fd08069`
+      removes nothing but that empty leaf in cells V2, V3a to V3c, V5c and V6
+      to V8 of round `tier0-10` (Linux VM). They also answer a `.git` file
+      that names no registration, a `commondir`
+      file or a `gitdir` record that cannot be read, a
+      registration that is not the one new name of its folder, and a
+      listing that fails.
+      One more state deletes before the checkout. The record names another
+      path, the `rev-parse --show-toplevel` call fails by
+      itself, and the folder has one new name. The create then runs
+      the second rollback on that name, never on the name in the `.git` file (`5fd08069`, cell
+      V5 of round `tier0-10` and cell P1 of round `tier0-11`, Linux VM). A call that a deadline ended
+      starts no rollback (claustrum's own, not measured).
       The second rollback runs when the
       `timeoutMs` of the caller expired during the add, the checkout or the copy
       step. It also runs after a post-checkout drain that exceeded that
@@ -247,14 +254,15 @@ The JSON-RPC surface is identical on every OS. Full internals →
       --absolute-git-dir`, the registration of the rollback is the entry that
       the tests after the add accepted. That is the entry of the registrations
       directory of `baseRepo` with the last name of the `gitdir:` path, read
-      once after the add. The rollback reads neither the `.git` file of the leaf
+      once after the add. After a failed `rev-parse --show-toplevel` it is the
+      one new name above. The rollback reads neither the `.git` file of the leaf
       nor the `gitdir` record again. `89cb6289` removes that entry when either
       one is changed (cells Z16 and Z18 on Linux and
       macOS VMs, cells B1 to B3 and B5 on the same VMs). The delete is one
       `os.Root.RemoveAll` of that name through a root at the registrations
       directory, after `wipesHomeDir` on the entry path. After the open of the
-      root, and through it, the entry must still have the identity that the
-      tests saw. Create holds the accepted folder open until it answers.
+      root, and through it, the entry must still have its accepted
+      identity. Create holds the accepted folder open until it answers.
       While that handle is open, a new folder does not get that identity. If
       the open fails, the identity comes from a stat of the path (not
       measured). The rollback deletes nothing if the folder at the path is not
@@ -279,9 +287,7 @@ The JSON-RPC surface is identical on every OS. Full internals →
       create refuses before the checkout an entry whose `gitdir` record cannot
       be read or names another path (`89cb6289`, cells P-c and P-g to P-m,
       Linux and macOS VMs). The placement then reads no record again: a record
-      that goes during the checkout does not stop it. With the record gone,
-      `89cb6289` answers success in cell B4 (Linux and macOS VMs) and the `openat` text of
-      a 0500 folder in cell Z15 (Linux and macOS VMs). The placement has the
+      that goes during the checkout does not stop it. The placement has the
       identity test of the rollback, on the root that it opened. It places
       nothing if the folder at the path is not the accepted one at that test
       (D24, not measured). With no answer the
@@ -467,8 +473,8 @@ The JSON-RPC surface is identical on every OS. Full internals →
       (`"shadowDirOff":true`, the state `fallback-git`, no run folder), and
       on Linux and macOS a `worktrees` entry that is a symbolic link. The
       index and the rollback delete keep the identity test of D24 there. The
-      stale step stays by the path too when `<baseRepo>/.git` is not the held
-      folder (from the code).
+      stale step stays by the path too when its folder `worktrees` is not in
+      the held folder (from the code).
     - One step takes a new folder from the path. On Linux and macOS, right
       after `rev-parse --absolute-git-dir`, a path that leads to another git
       directory which passes the gate becomes the held folder
@@ -686,7 +692,7 @@ Go 1.26 sorts it and the reference builds use go1.25.14. The entry retires when 
 D24 is on Linux and macOS, and the frames are equal in its two cells (Linux and macOS VMs).
 If git answered `rev-parse --absolute-git-dir`, a rollback of
 `git.worktree_create` deletes the registration only if the
-folder at its path is still the folder that the tests after the add accepted.
+folder at its path is still the folder that the create accepted after the add.
 `89cb6289` deletes the folder at that path in cells B6 and B6b (Linux and macOS VMs, 2 runs
 each). In cell B6b that folder holds the registration of a live sibling worktree.
 The placement of the index has the same test (not measured). The guard stays by

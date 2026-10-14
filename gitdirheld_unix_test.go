@@ -192,7 +192,9 @@ func TestWorktreesFolderThroughTheHeldGitDir(t *testing.T) {
 
 // TestRegistrationsRootOfALinkedWorktreesFolder: a `worktrees` entry of the
 // held git directory that is a symbolic link is opened by its path, as before.
-// 89cb6289 creates with such a link (rows D-1 and D-3 to D-5, Linux VM).
+// 89cb6289 creates with such a link (rows D-1 and D-3 to D-5, Linux VM). In the
+// state shadow claustrum refuses that create before the add, as 5fd08069 does in
+// cell V1 of round tier0-10 (Linux VM).
 func TestRegistrationsRootOfALinkedWorktreesFolder(t *testing.T) {
 	f := newHeldFixture(t)
 	worktrees := filepath.Join(f.gitDir, "worktrees")
