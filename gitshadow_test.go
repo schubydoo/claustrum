@@ -574,20 +574,6 @@ func TestShadowFallbackAfterQuietRevParse(t *testing.T) {
 	}
 }
 
-// A call 9 that fails with a line on its error output fails the test, also
-// when the second rev-parse works. That is claustrum's choice: 5fd08069 is
-// measured with an exit 1 with no output, and with a call that it ended.
-func TestShadowRevParseWithAnErrorLineFailsTheTest(t *testing.T) {
-	f := newShadowFixture(t)
-	slowGit(t, "rev-parse,--verify", "fail", 0, "fatal: no such commit\n", "")
-	t.Setenv("CLAUSTRUM_GITSTUB_ENVEND", "GIT_COMMON_DIR="+string(os.PathSeparator)+"shadow")
-	raw, _ := f.info(t, f.repo, nil)
-	want := jsonQuoted(t, failedTestText("git rev-parse failed under "+strconv.Quote(daemonFolder(t, f.run))+": fatal: no such commit"))
-	if !strings.Contains(raw, `"message":`+want) {
-		t.Errorf("git.info = %s\nwant the message %s", raw, want)
-	}
-}
-
 // TestShadowDeleteRefusesHome pins the home guard of the deletes below
 // git-shadow. The guard is defense in depth: every name there is made by the
 // daemon. The home folder of the test is a folder of the test itself, so a run

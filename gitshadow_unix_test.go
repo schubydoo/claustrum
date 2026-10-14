@@ -270,6 +270,18 @@ func TestShadowEndedAddNeverGivesFallback(t *testing.T) {
 	}
 }
 
+// R11: an add that signal 9 ended fails the test, also when the add of `wt2`
+// works. On 5fd08069 the cause ends with `signal: killed` after 11 test calls
+// (cell N3 of round tier0-5, Linux VM).
+func TestShadowAddEndedByASignalFailsTheTest(t *testing.T) {
+	f := newShadowFixture(t)
+	stageGit(t, stagedCall{Match: stageAdd, Copy: "yes", Kill: true})
+	raw, calls := f.info(t, f.repo, nil)
+	test, after := startTestCalls(t, calls)
+	wantFailedTest(t, f, raw, after, "worktree", "signal: killed")
+	wantLastTestCall(t, test, 11, false, stageAdd...)
+}
+
 // TestShadowFolderFailures pins the cause where a folder or a file of the test
 // cannot be made: the error of the system call with its path, and no quotes.
 // 5fd08069 answers `mkdir <run>/git-shadow: permission denied` for a run folder
