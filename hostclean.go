@@ -592,7 +592,9 @@ type hostCleaner struct {
 	selfPid   int
 	selfStart string // this daemon's own /proc start-ticks
 	// busyEnded has the daemons of this pass whose busy read gave no answer because its
-	// deadline ended it (darwin). The retire refuses each with no second read.
+	// deadline ended it (darwin). The retire refuses each with no second read. A pid that
+	// changed hands stays marked for the pass (claustrum's own, not measured). The age
+	// test and the listener test of the retire run first.
 	busyEnded map[int]bool
 }
 

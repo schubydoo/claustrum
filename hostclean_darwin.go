@@ -135,8 +135,7 @@ var (
 	// with a lock file in both cases (rows C3, D2p and D2f). For the busy read of a
 	// daemon, see hcBusyCheck.
 	//
-	// The fourth result says that the deadline ended the run. Only the lock read uses it
-	// (hcLockHeldAt). The busy read and the stdio read do not, so their answers stay.
+	// The fourth result says that the deadline ended the run.
 	runLsof = func(args ...string) (out string, completed, answered, expired bool) {
 		ctx, cancel := context.WithTimeout(context.Background(), hcLsofTimeout)
 		defer cancel()
@@ -441,7 +440,9 @@ func hcBusyRead(pid int) (busy, canRead, ended bool) {
 // hcDaemonFilesUnread reports that the open files of a daemon could not be read. The pass
 // then logs that it leaves the daemon alone (rows D1i and D1k). ended says that the deadline
 // ended the read. The pass then logs no such line, and the retire refuses the daemon with
-// no second run (cells B1 and B2). It is a var so a test on either OS can stage the answer.
+// no second run. `5fd08069` sends no SIGTERM under an lsof that hangs (cells B1 and B2,
+// macOS VM), and claustrum gives the same result (round 8, macOS VM). It is a var so a
+// test on either OS can stage the answer.
 var hcDaemonFilesUnread = func(pid int) (unread, ended bool) {
 	_, canRead, ended := hcBusyRead(pid)
 	return !canRead && !ended, ended
