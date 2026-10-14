@@ -524,37 +524,44 @@ func TestWorktreeCreateRootInCheckout(t *testing.T) {
 	}
 }
 
-// On create, a D5 kill of `rev-parse --show-toplevel` or `worktree list` does not
-// refuse, and the checkout tests run without that answer. The root-chain step still
-// refuses the root, because the root or a directory above it holds a .git entry. It sends its own
-// "inside a git checkout" text with errorCode unsafe_path, and nothing is created.
-// That is claustrum's choice (not measured). The rows:
-//   - show-toplevel: the shape of row Y11b, baseRepo W/sub and the root in W, with W
-//     listed through the symlink <B>/S. Only the top level of baseRepo matches W.
-//   - worktree list: the shape of row W4, the root in the linked worktree w0.
-//   - both: the shape of row E2, baseRepo <T>/sub and the root in <T>.
+// On create, a D5 kill of `rev-parse --show-toplevel` or `worktree list` stops the
+// create with the parent-step text of a failed call, errorCode mkdir_failed. No git
+// call runs after it, and nothing is created. 5fd08069 stops so on a failed call
+// (cells C-W17b and C-W17 of round tier0-20, Linux VM). The kill itself is
+// claustrum's own (not measured). The rows:
+//   - show-toplevel: the shape of row Y11b, baseRepo W/sub and the root in W.
+//   - worktree list: the shape of row W4, the root in the linked worktree w0. The
+//     killed -z call gets no second call.
 func TestWorktreeCreateCheckoutCallKilled(t *testing.T) {
 	const w0 = "<B>/X/o/w0"
-	killTop := func(t *testing.T) { stubGitCall(t, "rev-parse --show-toplevel", "exec sleep 30", 2*time.Second) }
-	killList := func(t *testing.T) { stubGitCall(t, "worktree list", "exec sleep 30", 2*time.Second) }
-	for name, r := range map[string]r0cRow{
-		"show-toplevel": {base: "<B>/W/sub", root: "<B>/W/.claude", wp: "<B>/W/.claude/cp/c1",
-			setup: func(t *testing.T, f *r0Fixture) {
-				withW(t, f)
-				if err := os.Symlink(f.B, filepath.Join(f.B, "S")); err != nil {
-					t.Fatal(err)
-				}
-				writeFile(t, filepath.Join(f.T, ".git", "worktrees", "W", "gitdir"), f.expand("<B>/S/W/.git\n"), 0o644)
-			},
-			after: func(t *testing.T, f *r0Fixture) { killTop(t) },
-			want:  checkoutRootText("<B>/W/.claude", "<B>/W")},
-		"worktree list": {root: w0, wp: w0 + "/cp/c1", setup: withW0,
-			after: func(t *testing.T, f *r0Fixture) { killList(t) },
-			want:  checkoutRootText(w0, w0)},
-		"both": {base: "<T>/sub", root: "<T>/.claude", wp: "<T>/.claude/cp/c1",
-			after: func(t *testing.T, f *r0Fixture) { killTop(t); killList(t) },
-			want:  checkoutRootText("<T>/.claude", "<T>")},
+	for name, r := range map[string]struct {
+		row   r0cRow
+		call  string
+		text  string
+		calls []string
+	}{
+		"show-toplevel": {row: r0cRow{base: "<B>/W/sub", root: "<B>/W/.claude", wp: "<B>/W/.claude/cp/c1", setup: withW},
+			call: "rev-parse --show-toplevel", text: "cannot determine the repository's work tree: signal: killed",
+			calls: r0cCreateCalls[:5]},
+		"worktree list": {row: r0cRow{root: w0, wp: w0 + "/cp/c1", setup: withW0},
+			call: "worktree list", text: "cannot list the repository's worktrees: signal: killed",
+			calls: r0cCreateCalls},
 	} {
-		t.Run(name, r.create)
+		t.Run(name, func(t *testing.T) {
+			f, _, _ := r.row.fixture(t)
+			before := r0cState(t, f)
+			stubGitCall(t, r.call, "exec sleep 30", 2*time.Second)
+			calls := logGitArgv(t)
+			got := dispatchRaw(t, newTestServer(t), rpcLine(t, "git.worktree_create", r.row.params(f, "c1")))
+			if want := failFrame(t, "failed to create parent directory: "+r.text, "mkdir_failed"); got != want {
+				t.Errorf("create =\n  %s\nwant\n  %s", got, want)
+			}
+			if got := r0cCalls(calls()); strings.Join(got, "\n") != strings.Join(r.calls, "\n") {
+				t.Errorf("git calls = %q, want %q", got, r.calls)
+			}
+			if _, err := os.Lstat(filepath.Dir(f.expand(r.row.wp))); err == nil || r0cState(t, f) != before {
+				t.Errorf("create made %s or changed the entries; a refusal creates nothing", filepath.Dir(f.expand(r.row.wp)))
+			}
+		})
 	}
 }

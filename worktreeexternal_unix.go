@@ -21,9 +21,6 @@ func isSymlinkLoop(err error) bool {
 	return errors.Is(err, syscall.ELOOP) || err.Error() == "EvalSymlinks: too many links"
 }
 
-// parentStepPrefix starts every failure of the parent step of git.worktree_create.
-const parentStepPrefix = "failed to create parent directory: "
-
 // externalChainCheck is the root-chain step of git.worktree_create with a
 // worktreeRoot. It comes after the containment refusal and before
 // worktreeRootShareRefusal. It returns the <directory> level with the symlinks of
@@ -78,18 +75,67 @@ func externalChainCheck(worktreeRoot, worktreePath string) (dir, msg, code strin
 		}
 	}
 	for _, d := range chain {
-		_, err := os.Lstat(filepath.Join(d, ".git"))
-		if err == nil {
-			return "", fmt.Sprintf("refusing to create worktree: %s is inside a git checkout "+
-				"(%s has a .git entry); a worktree location must be outside every checkout, "+
-				"so that no session working in one can reach it — choose a directory that is "+
-				"not part of any repository", worktreeRoot, d), "unsafe_path"
-		}
-		if !errors.Is(err, fs.ErrNotExist) {
-			return "", parentStepPrefix + err.Error(), "mkdir_failed"
+		if msg, code := gitEntryRefusal(worktreeRoot, d); msg != "" {
+			return "", msg, code
 		}
 	}
 	return filepath.Join(append([]string{resolved}, append(missing, name)...)...), "", ""
+}
+
+// gitEntryRefusal refuses a worktreeRoot below the folder d when d holds a .git entry
+// of any kind, or answers "". An lstat error other than "not exist" is sent as Go
+// prints it, with errorCode mkdir_failed.
+func gitEntryRefusal(worktreeRoot, d string) (msg, code string) {
+	_, err := os.Lstat(filepath.Join(d, ".git"))
+	if err == nil {
+		return fmt.Sprintf("refusing to create worktree: %s is inside a git checkout "+
+			"(%s has a .git entry); a worktree location must be outside every checkout, "+
+			"so that no session working in one can reach it — choose a directory that is "+
+			"not part of any repository", worktreeRoot, d), "unsafe_path"
+	}
+	if !errors.Is(err, fs.ErrNotExist) {
+		return parentStepPrefix + err.Error(), "mkdir_failed"
+	}
+	return "", ""
+}
+
+// locationLinkRefusal refuses a worktreeRoot that passes through more symbolic links
+// than the kernel follows, or one that resolves to the file system root. It answers
+// "" for any other root. The kernel limit counts: filepath.EvalSymlinks follows up to
+// 255 links. 5fd08069 refuses a chain of 45 links and a loop, for a create and for a
+// remove, and nothing is made or removed (cells C-W13, C-S5 and C-W23 of round
+// tier0-20, Linux VM). It refuses a link to "/" (cells C-W20 and C-S6). The exact
+// link limit is not measured. verb is "create" or "remove".
+func locationLinkRefusal(worktreeRoot, verb string) string {
+	prefix := filepath.Clean(worktreeRoot)
+	loop, missing := false, false
+	for {
+		_, err := os.Lstat(prefix)
+		if err == nil {
+			break
+		}
+		loop = loop || errors.Is(err, syscall.ELOOP)
+		up := filepath.Dir(prefix)
+		if up == prefix {
+			break
+		}
+		missing = true
+		prefix = up
+	}
+	resolved, err := filepath.EvalSymlinks(prefix)
+	if err == nil {
+		_, serr := os.Stat(prefix)
+		loop = loop || errors.Is(serr, syscall.ELOOP)
+	}
+	if loop || err != nil && isSymlinkLoop(err) {
+		return fmt.Sprintf("refusing to %s worktree: %s passes through too many symbolic links (a loop?)",
+			verb, filepath.Clean(worktreeRoot))
+	}
+	if err == nil && !missing && isFilesystemRoot(resolved) {
+		return fmt.Sprintf("refusing to %s worktree: %s resolves to the filesystem root; choose the "+
+			"worktree location by its absolute path, without %q, beneath the filesystem root", verb, worktreeRoot, "..")
+	}
+	return ""
 }
 
 // externalDirLevelCheck tests dir, the resolved <directory> level, when it exists.
@@ -216,17 +262,36 @@ func rootAncestorFault(uid, gid uint32, mode fs.FileMode, euid int) string {
 // claustrum's choice:
 //   - Two failing directories on different branches of the resolution, where the
 //     first one reached is not the highest. claustrum names the first one reached.
-//   - A failing directory above a symlink loop, a dangling link or a regular file.
-//     The walk reaches the failing directory first and refuses.
-//   - A regular file above the root. Its mode is judged like a directory's.
-//   - An ancestor that cannot be searched, with more levels below it. The resolve
-//     fails and the walk returns "". No directory below it is judged.
+//   - A failing directory above a dangling link. The walk reaches the failing
+//     directory first and refuses. A loop is refused before the walk
+//     (locationLinkRefusal), so the loop text wins there.
+//   - An ancestor that cannot be searched, with more levels below it. Its .git test
+//     answers the lstat error with mkdir_failed. No directory below it is judged.
+//     The chain step sent the same text before (from the code).
 //   - Whether "/" is judged. claustrum judges it. It passes on every host measured.
 //   - A root of "/" itself. It is the one root that is judged, because it is its
 //     own parent.
 //   - A failed stat of a path that the walk just resolved. The walk returns "".
 //   - The target of a symlinked root is not judged itself, as the root is not.
-func worktreeRootAncestorRefusal(worktreeRoot string) string {
+//
+// 5fd08069 adds these rules (round tier0-20, Linux VM):
+//   - A folder above the root that is a symbolic link is judged by its owner. A
+//     link owned by another user than you or uid 0 refuses (cell C-W16). Its mode
+//     is not judged (not measured).
+//   - A regular file is not judged. The walk ends, and the root-chain step answers
+//     "not a directory" (cell C-W14).
+//   - After its owner and mode, each directory gets the tests of c.refusalAt and then
+//     the .git test of the root-chain step. So a checkout higher up wins over a
+//     writable directory below it (cell C-W15). The order of these tests in one
+//     directory is not measured.
+//   - These tests also run on a folder above a link in the root that leads out of
+//     it. A root through a link out of a checkout, or out of the repository, is
+//     refused (cells X1 and X2 of round tier0-22, Linux VM, cell M3 of round tier0-22,
+//     macOS VM).
+//
+// The second answer is the errorCode: unsafe_path, or mkdir_failed for an lstat
+// error of a .git entry.
+func worktreeRootAncestorRefusal(worktreeRoot string, c repoCheckouts) (msg, code string) {
 	root := filepath.Clean(worktreeRoot)
 	var above []string
 	for d, prev := filepath.Dir(root), root; d != prev; d, prev = filepath.Dir(d), d {
@@ -236,7 +301,7 @@ func worktreeRootAncestorRefusal(worktreeRoot string) string {
 	judged := map[string]bool{}
 	// judge judges each directory from "/" down to top. It reports whether the walk
 	// ends, with the refusal or "".
-	judge := func(top string) (string, bool) {
+	judge := func(top string) (string, string, bool) {
 		var chain []string
 		for d, prev := top, ""; d != prev; d, prev = filepath.Dir(d), d {
 			chain = append([]string{d}, chain...)
@@ -247,31 +312,45 @@ func worktreeRootAncestorRefusal(worktreeRoot string) string {
 			}
 			judged[d] = true
 			uid, gid, mode, err := rootAncestorStat(d)
-			if err != nil {
-				return "", true
+			if err != nil || !mode.IsDir() {
+				return "", "", true
 			}
 			if fault := rootAncestorFault(uid, gid, mode, euid); fault != "" {
 				return fmt.Sprintf("refusing to create worktree: %s passes through %s, which is %s",
-					worktreeRoot, d, fault), true
+					worktreeRoot, d, fault), "unsafe_path", true
+			}
+			if msg, _ := c.refusalAt(worktreeRoot, d, "create", false); msg != "" {
+				return msg, "unsafe_path", true
+			}
+			if msg, code := gitEntryRefusal(worktreeRoot, d); msg != "" {
+				return msg, code, true
 			}
 		}
-		return "", false
+		return "", "", false
 	}
 	for _, p := range above {
+		// A link has mode 0777 on Linux, so only its owner is judged: the mode 0
+		// below clears the write tests.
+		if uid, gid, mode, err := rootAncestorStat(p); err == nil && mode&fs.ModeSymlink != 0 {
+			if fault := rootAncestorFault(uid, gid, 0, euid); fault != "" {
+				return fmt.Sprintf("refusing to create worktree: %s passes through %s, which is %s",
+					worktreeRoot, p, fault), "unsafe_path"
+			}
+		}
 		resolved, err := filepath.EvalSymlinks(p)
 		if err != nil {
-			return ""
+			return "", ""
 		}
-		if msg, done := judge(resolved); done {
-			return msg
+		if msg, code, done := judge(resolved); done {
+			return msg, code
 		}
 	}
 	resolved, err := filepath.EvalSymlinks(root)
 	if err != nil {
-		return ""
+		return "", ""
 	}
-	msg, _ := judge(filepath.Dir(resolved))
-	return msg
+	msg, code, _ = judge(filepath.Dir(resolved))
+	return msg, code
 }
 
 // worktreeRootShareRefusal reports 7d193f89's ownership/writability refusal for an

@@ -106,7 +106,7 @@ func foreignOwner(t *testing.T, uid uint32, paths ...string) {
 
 func wantAncestor(t *testing.T, root, want string) {
 	t.Helper()
-	if got := worktreeRootAncestorRefusal(root); got != want {
+	if got, _ := worktreeRootAncestorRefusal(root, repoCheckouts{}); got != want {
 		t.Errorf("worktreeRootAncestorRefusal(%q) =\n  %q\nwant\n  %q", root, got, want)
 	}
 }
@@ -246,19 +246,29 @@ func TestRootAncestorSticky(t *testing.T) {
 	}
 }
 
-// W-M7-no-write (G29, G38a): a directory with no write bit for others passes, even
-// when its owner cannot search or read it. The root below it exists.
+// W-M7-no-write (G29, G38a): a directory with no write bit for others passes the
+// mode tests, even when its owner cannot search or read it. The root below it
+// exists. The .git test of the walk then answers the lstat error of a directory
+// that cannot be searched, as the root-chain step does in row G38a.
 func TestRootAncestorNoWriteBits(t *testing.T) {
 	for _, c := range []struct {
-		name string
-		mode fs.FileMode
-	}{{"G29_0111", 0o111}, {"G38a_0600", 0o600}} {
+		name  string
+		mode  fs.FileMode
+		lstat bool
+	}{{"G29_0111", 0o111, false}, {"G38a_0600", 0o600, true}} {
 		t.Run(c.name, func(t *testing.T) {
+			if c.lstat {
+				skipIfRoot(t)
+			}
 			sharedGroup(t)
 			p := filepath.Join(ancBase(t), "P")
 			ancDir(t, filepath.Join(p, "o"), 0o755)
 			ancDir(t, p, c.mode)
-			wantAncestor(t, filepath.Join(p, "o"), "")
+			want := ""
+			if c.lstat {
+				want = "failed to create parent directory: lstat " + p + "/.git: permission denied"
+			}
+			wantAncestor(t, filepath.Join(p, "o"), want)
 		})
 	}
 }
@@ -491,8 +501,9 @@ func TestRootAncestorNotMeasured(t *testing.T) {
 		root := filepath.Join(h, "L", "o")
 		wantAncestor(t, root, ancWrite(root, h, "its group", "0775"))
 	})
-	// A group-writable regular file above the root is judged like a directory.
-	t.Run("not_measured_group_writable_file", func(t *testing.T) {
+	// A group-writable regular file above the root is not judged. The root-chain step
+	// answers "not a directory" (5fd08069, cell C-W14 of round tier0-20, Linux VM).
+	t.Run("C-W14_group_writable_file", func(t *testing.T) {
 		sharedGroup(t)
 		b := ancBase(t)
 		f := filepath.Join(b, "F")
@@ -501,12 +512,10 @@ func TestRootAncestorNotMeasured(t *testing.T) {
 			t.Skipf("cannot set the group of %s: %v", f, err)
 		}
 		chmodForTest(t, f, 0o664)
-		root := filepath.Join(f, "o")
-		wantAncestor(t, root, ancWrite(root, f, "its group", "0664"))
+		wantAncestor(t, filepath.Join(f, "o"), "")
 	})
-	// An ancestor that cannot be searched, with more levels below it: the resolve of
-	// the next level fails, and the walk ends with no refusal. The group-writable K
-	// below it is not judged.
+	// An ancestor that cannot be searched, with more levels below it: its .git test
+	// answers the lstat error. The group-writable K below it is not judged.
 	t.Run("not_measured_unsearchable_with_levels_below", func(t *testing.T) {
 		skipIfRoot(t)
 		sharedGroup(t)
@@ -514,7 +523,7 @@ func TestRootAncestorNotMeasured(t *testing.T) {
 		ancDir(t, filepath.Join(g, "K", "o"), 0o755)
 		ancDir(t, filepath.Join(g, "K"), 0o775)
 		ancDir(t, g, 0o600)
-		wantAncestor(t, filepath.Join(g, "K", "o"), "")
+		wantAncestor(t, filepath.Join(g, "K", "o"), "failed to create parent directory: lstat "+g+"/.git: permission denied")
 	})
 }
 

@@ -176,7 +176,7 @@ The JSON-RPC surface is identical on every OS. Full internals →
       `5fd08069` (Linux and macOS VMs). Windows is not measured. Each delete goes through an `os.Root`, so no delete
       follows a symlink out of the leaf or its parent. A leaf that is a symlink
       or not a directory is refused. A worktree LOCKED in the `.git` folder of
-      `baseRepo` is refused, not deleted, also where `89cb6289` answers success (D22).
+      `baseRepo` is refused, not deleted (D22).
       A repository config, or one of three files of the git directory, that the
       daemon does not accept refuses the remove before any delete, as on
       `5fd08069`. `"shadowDirOff":true` in the request turns that refusal off.
@@ -195,10 +195,10 @@ The JSON-RPC surface is identical on every OS. Full internals →
       Since `7d193f89`, the containment of the reference refuses a
       home path first: `worktreePath` must be strictly inside `baseRepo`. On the
       default branch `wipesHomeDir` is therefore defense-in-depth. It fires in
-      one case only: a repo is an ancestor of home. On the `worktreeRoot` /
-      `external_root` branch that in-repo containment does not apply, so there
-      `wipesHomeDir` is the active home guard. Both branches run it before the
-      delete.
+      one case only: a repo is an ancestor of home. On the `worktreeRoot`
+      branch that in-repo containment does not apply, so there `wipesHomeDir`
+      is the active home guard. Both branches run it before the delete. Cells C-S1 to C-S8 delete nothing with `worktreeRoot`: `5fd08069` in
+      round `tier0-20`, claustrum in round `tier0-21` (Linux VM).
     - When `git.worktree_create` rolls back a worktree, it deletes
       `worktreePath`. There are two rollbacks. After a failed `git worktree add`,
       it runs no git call and removes the leaf only if the leaf is an empty
@@ -681,8 +681,7 @@ D22 is on-wire and always-on. `git.worktree_remove` refuses a worktree that is
 locked in the `.git` folder of `baseRepo`. `89cb6289` answers success in
 four states. Rows p6 and p6f: a daemon `GIT_DIR` and `GIT_COMMON_DIR` of another
 repository, with the folder present or gone. Row p6e: a daemon `GIT_DIR` alone.
-Those three ran on Linux, macOS and Windows VMs. Row p6d: a `baseRepo` that does
-not exist as sent (Linux and macOS VMs). With `worktreeRoot`, rows q2 to q4
+Row p6d: a `baseRepo` that does not exist as sent. With `worktreeRoot`, rows q2 to q4
 (Linux VM) differ in the frame too. That is the maintainer's decision of
 2026-10-03. See the entry.
 

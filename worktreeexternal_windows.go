@@ -19,8 +19,14 @@ func externalDirLevelCheck(dir string) (msg, code string) {
 }
 
 // worktreeRootAncestorRefusal is not needed on Windows for the same reason.
-func worktreeRootAncestorRefusal(worktreeRoot string) string {
-	_ = worktreeRoot
+func worktreeRootAncestorRefusal(worktreeRoot string, c repoCheckouts) (msg, code string) {
+	_, _ = worktreeRoot, c
+	return "", ""
+}
+
+// locationLinkRefusal is not needed on Windows for the same reason.
+func locationLinkRefusal(worktreeRoot, verb string) string {
+	_, _ = worktreeRoot, verb
 	return ""
 }
 

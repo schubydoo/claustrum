@@ -24,7 +24,8 @@ A failed request can leave files on disk. The section [After a failure](#after-a
 Where the worktree can go:
 
 - Without `worktreeRoot`, `worktreePath` must be an absolute path inside `baseRepo`. The usual place is `<baseRepo>/.claude/worktrees/<name>`.
-- With `worktreeRoot`, `worktreePath` must be `<worktreeRoot>/<directory>/<name>`. A root that exists must belong to the user of the daemon. Its mode must have no write bit for the group or for others. If the group of the root is the private group of that user, the group can have the write bit. The daemon judges the directories above the root by a looser rule. Neither the root nor a directory above it can hold a `.git` entry.
+- With `worktreeRoot`, `worktreePath` must be `<worktreeRoot>/<directory>/<name>`. A root that exists must belong to the user of the daemon. Its mode must have no write bit for others, or for a group other than the private group of that user.
+- Neither a component of the location nor the `<directory>` can be `.git` or `.claude-managed-worktrees`, in any letter case. The location must not resolve to `/`. It must not lie in a folder with a `.git` entry, the git directory of the repository, or a session folder. The `<directory>` level must not hold the repository or be writable by every user. `5fd08069` refuses so in cells C-W3 to C-W20 of round `tier0-20` and X1 and X2 of round `tier0-22` (Linux VM). Not measured: `.claude-managed-worktrees` in the location, a reserved `<name>`, and the owner and group tests of the `<directory>` level. claustrum refuses all of them.
 
 ## Response
 
@@ -36,11 +37,11 @@ Success:
 
 `path` is `worktreePath` as sent, after the `~` expansion. `branch` is the branch of the worktree. If the daemon attached to `existingBranch`, it is that branch. If not, it is `branchName`.
 
-If the daemon created a branch, `sourceBranch` is the name that the start commit came from. The daemon reads that name as two refs: the local branch `<name>` and the remote-tracking ref `origin/<name>`. It fetches nothing. If both exist, the daemon selects one of them. It selects `origin/<name>` in most states. For example, a local branch that is behind `origin/<name>` or equal to it gives `origin/<name>`. The response holds the name as sent in each case. So the response does not say which of the two refs the new branch started from.
+If the daemon created a branch, `sourceBranch` is the name that the start commit came from. The daemon reads that name as two refs: the local branch `<name>` and the remote-tracking ref `origin/<name>`. It fetches nothing. If both exist, the daemon selects one of them. It selects `origin/<name>` in most states. For example, a local branch that is behind `origin/<name>` or equal to it gives `origin/<name>`. The response holds the name as sent in each case.
 
-If the value as sent named neither a local branch nor a branch of `origin`, that is not an error. The new branch then starts at HEAD, and the response holds the current branch, not the value as sent. Compare the value that you sent with the value in the response. On a detached HEAD, the response then has no `sourceBranch`. That applies to a request with a `sourceBranch` and to a request without one.
+If the value as sent named neither a local branch nor a branch of `origin`, that is not an error. The new branch then starts at HEAD, and the response holds the current branch, not the value as sent. On a detached HEAD, the response then has no `sourceBranch`. That applies to a request with a `sourceBranch` and to a request without one.
 
-If the daemon attached to `existingBranch`, it did not use `sourceBranch`. The worktree is on the attached branch. The response can still have a `sourceBranch`, and it then says nothing about the worktree.
+After an attach the response can have a `sourceBranch`, and it then says nothing about the worktree.
 
 Failure:
 
@@ -56,12 +57,10 @@ Decide by `errorCode` first.
 | `symlinked_component` | A directory between `baseRepo` and the worktree is a symbolic link, for example a symlinked `.claude` or `.claude/worktrees`. |
 | `not_a_repo` | `baseRepo` is not a git repository, or git itself does not accept it. A bare `baseRepo` gets this code too while the daemon works on its settings copy. |
 | `nested_base_repo` | `baseRepo` is inside a directory of managed worktrees, or the daemon does not accept it as a trust root. |
-| `mkdir_failed` | The daemon cannot create a directory for the worktree. |
+| `mkdir_failed` | The daemon cannot create a directory for the worktree. Or, with `worktreeRoot`, a git call or a `.git` test failed first. |
 | `worktree_add_failed` | `git worktree add` or the checkout failed. The text holds the message of git, or a refusal of the daemon that came before the add. |
 | `repository_only_filter` | The checkout needs a git filter that only the git config of the repository defines. See [Git filters](#git-filters). |
 | `timeout` | The deadline of `timeoutMs` expired. |
-
-These eight are all the codes of this method.
 
 If the daemon does not accept the git config of the repository, the code is `worktree_add_failed` and nothing is made. For example, the format version of the repository is not `0` or `1`. The texts are in [Repository config refusals](../PROTOCOL.md#repository-config-refusals).
 
@@ -75,30 +74,25 @@ The exact texts are in the [error-string catalog](../PROTOCOL.md#error-string-ca
 
 What stays on disk depends on where the request failed.
 
-A request can create three things outside the worktree, and no failure removes them:
+A request can create four things outside the worktree, and no failure removes them:
 
 - directories above the worktree
 - the registrations directory `<git dir>/worktrees`
 - with `worktreeRoot`, the marker file `.claude-managed-worktrees` at the `<directory>` level
+- with `worktreeRoot`, the folder of a gone worktree that holds the root (`5fd08069`, cell C-W8 of round `tier0-20`, Linux VM)
 
 On Windows, if a step after a good add fails, a folder `.claude-new-worktree-<16 hex>` can stay in the git directory. A later create removes it once it is 1 hour old.
 
 A request can also remove a stale registration of this worktree path before the add. On Linux and macOS that covers the main repository of a linked `baseRepo`. For two creates through a repository and its linked worktree, the second add starts after the first ended (`5fd08069`, cell T1 of round `tier0-11`, Linux VM).
 
-The table says what stays of the worktree itself: its directory, its registration and its branch.
-
 | Failure | What stays of the worktree |
 |---|---|
-| A refusal of the request or of a path (`not_a_repo`, `nested_base_repo`, `symlinked_component`, and `unsafe_path` for a path) | Nothing. The daemon changed nothing on disk. |
+| A refusal of the request or of a path (`not_a_repo`, `nested_base_repo`, `symlinked_component`, and `unsafe_path` for a path) | Nothing, except the folder of a gone worktree above. |
 | The daemon refuses before it runs `git worktree add` (`worktree_add_failed`) | Nothing. The daemon changed nothing on disk. |
 | The daemon cannot create a directory (`mkdir_failed`) | Nothing. |
 | `git worktree add` runs and fails (`worktree_add_failed`) | If the worktree directory is empty, the daemon removes it. Files that the failed add wrote stay. A registration and a branch that the add made stay too. |
 | A test of the new worktree fails after the add. On Linux and macOS the tests come before the checkout and give `unsafe_path`. A worktree directory replaced during the checkout, or on Windows, gives `worktree_add_failed`. | Everything, except an empty worktree directory. |
 | The checkout fails, the filter rule refuses, or the deadline expires (`worktree_add_failed`, `repository_only_filter`, `timeout`). Or the text ends with `; retry`. | The daemon removes the worktree directory and its registration. If this request created the branch, the daemon removes the branch too. The cases below the table are exceptions. |
-
-`worktree_add_failed` and `unsafe_path` each have more than one row. The error text says which row applies.
-
-If the worktree directory stays, a second request with the same `worktreePath` gets `unsafe_path`, because the path exists.
 
 A rollback leaves something in these cases:
 
