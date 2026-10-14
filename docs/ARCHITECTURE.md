@@ -192,8 +192,8 @@ children it spawns.
   days, or its name carries `.removing-` from an earlier removal. Its socket is unanswered, and no live process holds its lock. An empty lock file is
   not indeterminate: the cleaner asks whether a live process holds it. On macOS the pid of
   the cleaner itself is no holder, and lock content that is no record is asked about its
-  holder too. A dir with a lock file stays if the `lsof` command does not start or writes
-  to stderr and exits 1 ([PROTOCOL.md](PROTOCOL.md) → Host cleaner). The list skips the
+  holder too. A dir with a lock file stays if the `lsof` command does not start, writes
+  to stderr and exits 1, or is ended by its deadline ([PROTOCOL.md](PROTOCOL.md) → Host cleaner). The list skips the
   cleaner's own run dir and any entry that is not a plain directory, a symlink included.
   The tidy reads the idle age again before it probes a dir, and it keeps a dir that came
   back into use, unless the dir has a staging name. It renames a stale dir to
@@ -220,7 +220,7 @@ children it spawns.
   not measured. The
   line before a `SIGKILL` is one more. So are the reasons for a held lock and for a
   listener that is not our daemon. When the cleaner is off, the daemon logs one
-  `[daemon] host cleaning off:` line after the listening line. On macOS it reads an `lsof` run it
+  `[daemon] host cleaning off:` line after the listening line. On macOS its busy read takes an `lsof` run it
   gave up on as busy, and the reference side of that is not probe-measured. That one is a numbered divergence,
   [DIVERGENCES.md](DIVERGENCES.md) D17. After 30 days
   of run-dir idleness, or at once for a run dir named with `.removing-`, the retire path can

@@ -41,7 +41,7 @@ func TestPassLeavesADaemonWithUnreadOpenFilesAlone(t *testing.T) {
 		oldUnread := hcDaemonFilesUnread
 		t.Cleanup(func() { hcDaemonFilesUnread = oldUnread })
 		var asked []int
-		hcDaemonFilesUnread = func(pid int) bool { asked = append(asked, pid); return unread }
+		hcDaemonFilesUnread = func(pid int) (bool, bool) { asked = append(asked, pid); return unread, false }
 
 		const old = 40 * 24 * time.Hour
 		self := os.Getpid()
@@ -131,7 +131,7 @@ func TestPassPastTheProcessLimitLogsNoDaemonLine(t *testing.T) {
 		f := hcNewPassFixture(t)
 		oldUnread := hcDaemonFilesUnread
 		t.Cleanup(func() { hcDaemonFilesUnread = oldUnread })
-		hcDaemonFilesUnread = func(int) bool { return true }
+		hcDaemonFilesUnread = func(int) (bool, bool) { return true, false }
 		sibling := os.Getpid() + 1
 		hcSiblingDaemon(t, f, sibling, "s1", "1", 40*24*time.Hour)
 		// Bare pid folders above the sibling: the snapshot counts them, and inspect reads
