@@ -81,9 +81,9 @@ A request can create three things outside the worktree, and no failure removes t
 - the registrations directory `<git dir>/worktrees`
 - with `worktreeRoot`, the marker file `.claude-managed-worktrees` at the `<directory>` level
 
-On Windows a fourth thing can stay. If a step after a good add fails, a folder `.claude-new-worktree-<16 hex>` can stay in the git directory. A later create removes it once it is 1 hour old.
+On Windows, if a step after a good add fails, a folder `.claude-new-worktree-<16 hex>` can stay in the git directory. A later create removes it once it is 1 hour old.
 
-A request can also remove a stale registration of this worktree path before the add.
+A request can also remove a stale registration of this worktree path before the add. On Linux and macOS that covers the main repository of a linked `baseRepo`. For two creates through a repository and its linked worktree, the second add starts after the first ended (`5fd08069`, cell T1 of round `tier0-11`, Linux VM).
 
 The table says what stays of the worktree itself: its directory, its registration and its branch.
 
@@ -93,10 +93,10 @@ The table says what stays of the worktree itself: its directory, its registratio
 | The daemon refuses before it runs `git worktree add` (`worktree_add_failed`) | Nothing. The daemon changed nothing on disk. |
 | The daemon cannot create a directory (`mkdir_failed`) | Nothing. |
 | `git worktree add` runs and fails (`worktree_add_failed`) | If the worktree directory is empty, the daemon removes it. Files that the failed add wrote stay. A registration and a branch that the add made stay too. |
-| A test of the new worktree fails after the add. On Linux and macOS a test of its registration gives `unsafe_path`. If something replaced the worktree directory during the request, the code is `worktree_add_failed`. | Everything. The daemon rolls nothing back. The worktree directory, the registration and the branch stay. |
-| The checkout fails, the filter rule refuses, or the deadline expires (`worktree_add_failed`, `repository_only_filter`, `timeout`) | The daemon removes the worktree directory and its registration. If this request created the branch, the daemon removes the branch too. The cases below the table are exceptions. |
+| A test of the new worktree fails after the add. On Linux and macOS the tests come before the checkout and give `unsafe_path`. A worktree directory replaced during the checkout, or on Windows, gives `worktree_add_failed`. | Everything, except an empty worktree directory. |
+| The checkout fails, the filter rule refuses, or the deadline expires (`worktree_add_failed`, `repository_only_filter`, `timeout`). Or the text ends with `; retry`. | The daemon removes the worktree directory and its registration. If this request created the branch, the daemon removes the branch too. The cases below the table are exceptions. |
 
-`worktree_add_failed` and `unsafe_path` each have more than one row. The code alone does not say which row applies. The error text does, and so does the disk.
+`worktree_add_failed` and `unsafe_path` each have more than one row. The error text says which row applies.
 
 If the worktree directory stays, a second request with the same `worktreePath` gets `unsafe_path`, because the path exists.
 
@@ -120,8 +120,6 @@ Three values of the repository pass: `smudge = cat` under each name, and `git-lf
 
 `"shadowDirOff": true` turns the rule off for one request. The daemon then runs the filter of the repository.
 
-claustrum follows the reference build `5fd08069` here, with some differences.
-
 ## The settings copy
 
 The daemon keeps its own copy of the git settings of the repository, and its git calls read that copy. [The settings copy](../PROTOCOL.md#the-settings-copy) in the protocol reference has the states, the texts and the folder. These rules are for this method:
@@ -132,8 +130,8 @@ The daemon keeps its own copy of the git settings of the repository, and its git
 - On Windows the add writes the registration of the new worktree into a short-lived folder of the daemon. The daemon then copies it into `<git dir>\.claude-new-worktree-<16 hex>` and renames that folder to `<git dir>\worktrees\<name>`.
 - On Windows, before that step, a create removes old entries of the git directory. Such an entry has a name that starts with `.claude-new-worktree-` and a write time of 1 hour or more. The request did not make those entries. A junction goes as a junction, and its target stays.
 - A create holds the git directory open from its gate to its reply. [The held git directory](#the-held-git-directory) has the rules.
-- In the state `shadow`, a failed `rev-parse --absolute-git-dir` stops the create with `git worktree add failed: cannot locate the repository's git directory: exit status 128`. The text after the last colon is the error of the call. That is measured on a Windows VM. Linux and macOS get the same stop (not measured).
-- On Windows, a step before the add that fails gives `git worktree add failed: cannot prepare the repository's worktrees directory: <cause>`, and the `worktree add` call does not run.
+- In the state `shadow`, a failed `rev-parse --absolute-git-dir` stops the create with `git worktree add failed: cannot locate the repository's git directory: exit status 128` (`5fd08069`, cell V12 of round `tier0-10`, Linux VM). The text after the last colon is the error of the call. macOS is not measured.
+- On Windows, a step before the add that fails gives `git worktree add failed: cannot prepare the repository's worktrees directory: <cause>`, and the `worktree add` call does not run. So does a symbolic link at `worktrees` on Linux and macOS (`5fd08069`, cell V1 of round `tier0-10`, Linux VM).
 
 `"shadowDirOff": true` turns the copy off for one request, and none of these steps runs. The same holds on a host whose git does not work on such a copy.
 
@@ -143,13 +141,13 @@ In the state `shadow` a create holds the git directory of `baseRepo` open from i
 
 - The git directory must be a real directory at the gate. On Windows a junction or a directory symbolic link there is refused, on every git method without `"shadowDirOff": true`. With that member both link kinds pass, and git works in the folder behind the link, as on `5fd08069` (Windows VM). On Linux and macOS a `.git` that is a symbolic link before the request is resolved first, and the daemon holds its target. A change of that link is a change of the path too.
 - The daemon's own deletes, renames, new folders and file writes inside the git directory go through the held folder. A folder that is put at the path while the create runs gets none of them, except the directory that the hold moves to (the rule for Linux and macOS below).
-- The hold stops no rename of the git directory by another process. On Windows the handle of the hold shares delete access for that. On Windows a rename of the repository folder fails from an earlier call of a create than on `5fd08069`.
+- The hold stops no rename of the git directory by another process. On Windows a rename of the repository folder fails from an earlier call of a create than on `5fd08069`.
 - The steps of the create test that the path still names the held folder. A swap after `rev-parse --absolute-git-dir` and before the add is refused before the add. Git itself goes by the path.
 - A swap after the read-tree call fails the create, and the registration gets no index. On Windows a swap after the first listing of the checkout fails it too. The text starts with `git worktree add failed (checkout): `. The registration and the branch then stay, and the text says so.
-- On Linux and macOS one step moves the hold. The measured case is a link to a copy of the git directory. It is put there after the first call or after `rev-parse --abbrev-ref HEAD`. `5fd08069` then goes on in the copy (Linux and macOS VMs), and so does claustrum (Linux and macOS VMs). Another git directory that passes the gate gets the same rule (not measured).
+- On Linux and macOS one step moves the hold. The measured case is a link to a copy of the git directory. It is put there after the first call or after `rev-parse --abbrev-ref HEAD`. `5fd08069` then goes on in the copy (Linux and macOS VMs). Another git directory that passes the gate gets the same rule (not measured).
 - On Linux and macOS, a `.git` that became a file with `gitdir: <another git directory>` after `rev-parse --absolute-git-dir` gives `git worktree add failed: cannot locate the repository's git directory: lstat <baseRepo>/.git/commondir: not a directory`.
 - On Linux and macOS, a `.git` that is a symbolic link to a copy of the git directory right after a good `worktree add` gives `refusing to create worktree: <leaf> was not populated by git worktree add` with `unsafe_path`. Nothing is rolled back, and the `.git` file of the new worktree keeps the text that git wrote.
-- By the path stay: git itself, a request with `"shadowDirOff": true`, and a host in the state `fallback-git` or with no run folder. On Linux and macOS a `worktrees` entry that is a symbolic link stays by the path too. So does the step for an old registration when `<baseRepo>/.git` is not the held folder (from the code).
+- By the path stay: git itself, a request with `"shadowDirOff": true`, and a host in the state `fallback-git` or with no run folder. On Linux and macOS the step for an old registration stays by the path too when its `worktrees` folder is a link or not in the held folder (from the code).
 
 ## The copy of ignored files
 
@@ -170,7 +168,7 @@ A copy that fails does not fail the request. If the deadline of `timeoutMs` expi
 |---|---|---|
 | `worktreeRoot` | Supported. | Refused with `unsafe_path`. |
 | A junction between `baseRepo` and the worktree | Does not apply. | Refused with `mkdir_failed`. |
-| Tests of the new registration after `git worktree add` | They run. A failure gives `unsafe_path`. | They do not run. |
+| Tests of the new registration after the add | They run. | They do not run. |
 | A stale registration of the worktree path before the add | If it is the one stale entry and is not locked, the daemon removes it. | The daemon removes it, with no such test. |
 | Where the add writes the registration | Through the link `worktrees` of the settings copy, into `<git dir>/worktrees`. | Into a short-lived folder of the daemon. The daemon moves it into the git directory. |
 | Old `.claude-new-worktree-*` entries of the git directory | They stay. | A create removes each one that is 1 hour old or more. |

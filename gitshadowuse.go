@@ -6,6 +6,7 @@ import (
 	"crypto/rand"
 	"encoding/binary"
 	"errors"
+	"fmt"
 	"os"
 	"path/filepath"
 	"strconv"
@@ -102,8 +103,9 @@ func (u gitUse) shadow() bool {
 //
 //   - After the listing and before the add, the daemon makes the folder
 //     `worktrees` of the git directory when it is not there (makeWorktreesFolder).
-//   - After the add ended and before the next call, the daemon looks at the
-//     `.git` file of the new worktree (repointWorktreeGitFile).
+//   - After the add ended, the daemon looks at the `.git` file of the new
+//     worktree (repointLeaf). claustrum does that after its tests of the new
+//     registration and before its next git call.
 //
 // On Windows the copy has no link `worktrees`. There the call gets a folder of
 // its own in the state shadow, and other steps follow it (worktreeAddStaged).
@@ -133,19 +135,14 @@ func worktreeAdd(ctx context.Context, u gitUse, repo, leaf string, cp worktreeCh
 		return "", errors.New(plainAddRefusal(gitDir, named))
 	}
 	if named {
+		if text := u.worktreesFolderRefusal(); text != "" {
+			return "", &addNotPrepared{text: text}
+		}
 		u.makeWorktreesFolder()
 	}
 	var errBuf bytes.Buffer
 	cmd.Stderr = &errBuf
 	err := cmd.Run()
-	// The `.git` file of the leaf keeps its text when the path no longer names
-	// the held git directory. The create is then refused right after this
-	// call (the step `added`). On 5fd08069 the file still names the copy after
-	// that refusal: 128 or 129 bytes, where the text of the git directory has
-	// 55 (cell swb-wtadd of val-s3p2b2-13-linux2, Linux VM, 2 runs).
-	if named && err == nil && !u.swapped("repoint") {
-		repointWorktreeGitFile(u, leaf, cp)
-	}
 	if err == nil && u.accepted != nil {
 		u.accepted.moved = true
 	}
@@ -182,6 +179,35 @@ func plainAddRefusal(gitDir string, named bool) string {
 		return prepareWorktreesPrefix + realDirText(gitDir)
 	}
 	return listEntriesPrefix + realDirText(gitDir)
+}
+
+// worktreesFolderRefusal is the error of a `worktree add` that does not run,
+// because the entry `worktrees` of the git directory is there and is no real
+// folder. It is "" in every other case. With a symbolic link to a folder there,
+// 5fd08069 answers `git worktree add failed: cannot prepare the repository's
+// worktrees directory: "<git directory>/worktrees" is not a directory`. It runs
+// no `worktree add`, and no leaf and no branch stay (cell V1 of round tier0-10,
+// Linux VM, 3 of 3 runs). The test is where the daemon makes that folder, so it
+// runs in the state shadow on Linux and macOS only. The other states are not
+// measured. In attach mode 5fd08069 answers the same text one time (cell E1 of
+// round tier0-11, Linux VM): the caller makes no second add (addNotPrepared).
+//
+// The entry is read through the held git directory, or by the path for a
+// request that holds none. claustrum's own, not measured: a file at the name
+// gets the same text, and the text names the held git directory, with no cut
+// of a long path.
+func (u gitUse) worktreesFolderRefusal() string {
+	var fi os.FileInfo
+	var err error
+	if u.accepted != nil {
+		fi, err = u.accepted.root.Lstat(worktreesSubdir)
+	} else {
+		fi, err = os.Lstat(filepath.Join(u.gitDir, worktreesSubdir))
+	}
+	if err != nil || fi.IsDir() {
+		return ""
+	}
+	return prepareWorktreesPrefix + fmt.Sprintf("%q is not a directory", filepath.Join(u.heldGitDir(), worktreesSubdir))
 }
 
 // makeWorktreesFolder makes the folder `worktrees` in the git directory gitDir
@@ -233,6 +259,24 @@ func makeWorktreesFolderIn(root *os.Root, shared sharedRepository) {
 	}
 	if mode, ok := shared.folderMode(fi.Mode()); ok {
 		_ = root.Chmod(worktreesSubdir, mode)
+	}
+}
+
+// repointLeaf is the step of a create in repo that looks at the `.git` file of
+// its new worktree leaf (repointWorktreeGitFile). It acts only in the state
+// shadow on Linux and macOS, where the copy has the link `worktrees`. A file
+// that does not name the copy stays as it is (repointWorktreeGitFile).
+//
+// The create runs it after its tests of the new registration. After a refusal
+// of those tests the file still names the copy on 5fd08069: `gitdir:
+// <copy>/worktrees/w1` in cells V2, V5c, V6 and V7 of round tier0-10 (Linux VM,
+// 1 run each, V7 3 runs). The same holds after the refusal of a git directory that
+// is no longer the held folder (cell swb-wtadd of val-s3p2b2-13-linux2, Linux
+// VM, 2 runs). Not measured: the order of this step and the test of the leaf
+// identity (cell V8 has one result for both orders).
+func (u gitUse) repointLeaf(repo, leaf string, cp worktreeCheckpoint) {
+	if u.shadow() && shadowLinksWorktrees {
+		repointWorktreeGitFile(u, leaf, cp)
 	}
 }
 

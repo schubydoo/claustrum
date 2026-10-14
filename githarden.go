@@ -341,6 +341,12 @@ func hardenedGitFirst(u gitUse, dir string, heavy bool, l configListing, args ..
 func gitDirWorkTreeToplevel(gitDir, workTree string, pin, front []string) (string, error) {
 	ctx, cancel := gitCtx()
 	defer cancel()
+	return gitDirWorkTreeToplevelIn(ctx, gitDir, workTree, pin, front)
+}
+
+// gitDirWorkTreeToplevelIn is gitDirWorkTreeToplevel under ctx, for a caller
+// that asks afterwards whether the deadline of ctx ended a call.
+func gitDirWorkTreeToplevelIn(ctx context.Context, gitDir, workTree string, pin, front []string) (string, error) {
 	userExcludesFile()
 	hooks := runListing(ctx, gitDir, gitDir, precursorEnv(true, pin)).hooks()
 	cmd := exec.CommandContext(ctx, "git", withFront(front, hardenedProfileArgs(true,

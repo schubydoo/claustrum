@@ -188,7 +188,10 @@ func runGitLingering(args []string) int {
 //   - "steps": the leaf is not used. CLAUSTRUM_GITSTUB_VALUE holds steps, joined
 //     by a record separator (0x1e). Each step is a verb and its arguments, joined by
 //     a unit separator (0x1f): "write" path content, "rm" path, "mkdir" path,
-//     "rename" old new, and "chmod" path mode (octal). They run in that order.
+//     "rename" old new, "chmod" path mode (octal), "symlink" target link, "snap"
+//     file copy (once, and only when the file can be read), and
+//     "git" with the arguments of one call of the real git, which runs in the
+//     folder and with the environment of the stub. They run in that order.
 //
 // When CLAUSTRUM_GITSTUB_SNAP names a file, the action then writes the leaf's
 // top-level names to it, one per line, in the order that the directory read
@@ -230,10 +233,11 @@ func runGitLingering(args []string) int {
 // fail the checkout with the first rule and change a call of the rollback's branch
 // step with the second. A call that it matches first applies CLAUSTRUM_GITSTUB_ACTION2
 // to the path CLAUSTRUM_GITSTUB_LEAF2: "rm" deletes the file, and "touch" makes an
-// empty one. With CLAUSTRUM_GITSTUB_MODE2 "ignoreterm" it then ignores SIGTERM. It
-// sleeps CLAUSTRUM_GITSTUB_MS2 milliseconds. Then it exits with
-// CLAUSTRUM_GITSTUB_EXIT2 when that is set, after it wrote CLAUSTRUM_GITSTUB_STDERR2
-// to stderr as it is (no escape is expanded there, unlike the first rule), or else
+// empty one. "steps" runs the steps of CLAUSTRUM_GITSTUB_VALUE2, in the form of
+// the "steps" action, and the leaf is not used. With CLAUSTRUM_GITSTUB_MODE2
+// "ignoreterm" it then ignores SIGTERM. It sleeps CLAUSTRUM_GITSTUB_MS2
+// milliseconds. Then it exits with CLAUSTRUM_GITSTUB_EXIT2 when that is set, after
+// it wrote CLAUSTRUM_GITSTUB_STDERR2 to stderr as it is (no escape is expanded there, unlike the first rule), or else
 // goes on as a call that the first rule does not match.
 func runGitSlow(args []string) int {
 	if log := os.Getenv("CLAUSTRUM_GITSTUB_LOG"); log != "" {
@@ -313,6 +317,12 @@ func runGitSlow(args []string) int {
 			err = os.Remove(leaf)
 		case "touch":
 			err = os.WriteFile(leaf, nil, 0o644)
+		case "steps":
+			for _, step := range strings.Split(os.Getenv("CLAUSTRUM_GITSTUB_VALUE2"), "\x1e") {
+				if err = applyGitStubStep(strings.Split(step, "\x1f")); err != nil {
+					break
+				}
+			}
 		}
 		if err != nil {
 			fmt.Fprintln(os.Stderr, err)
@@ -578,6 +588,25 @@ func applyGitStubStep(w []string) error {
 			return err
 		}
 		return os.Chmod(w[1], os.FileMode(mode))
+	case len(w) == 3 && w[0] == "symlink":
+		return os.Symlink(w[1], w[2])
+	case len(w) == 3 && w[0] == "snap":
+		// Copy the file w[1] to w[2] once: not when w[2] is there, and not
+		// when w[1] cannot be read.
+		if _, err := os.Lstat(w[2]); err == nil {
+			return nil
+		}
+		b, err := os.ReadFile(w[1])
+		if err != nil {
+			return nil
+		}
+		return os.WriteFile(w[2], b, 0o644)
+	case len(w) > 1 && w[0] == "git":
+		out, err := exec.Command(os.Getenv("CLAUSTRUM_GITSTUB_REAL"), w[1:]...).CombinedOutput()
+		if err != nil {
+			return fmt.Errorf("step git %q: %v: %s", w[1:], err, out)
+		}
+		return nil
 	}
 	return fmt.Errorf("unknown step %q of CLAUSTRUM_GITSTUB_ACTION steps", w)
 }
