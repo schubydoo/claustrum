@@ -591,6 +591,11 @@ type createdRegistration struct {
 	// repo, both with their symlinks resolved. They are the two paths that the check
 	// compared, and the delete acts on them.
 	resolved, registry string
+	// spelled is the registrations directory as the repo names it, with no
+	// symlink of its own resolved. On Linux and macOS the delete opens it
+	// with openRegistrationsFolder, so a link put there after the check gets
+	// no delete.
+	spelled string
 	// registryInfo is the identity of registry at the time of the check. On Linux
 	// and macOS the delete compares it with the directory that it opened.
 	registryInfo os.FileInfo
@@ -635,7 +640,8 @@ func createdWorktreeAdminDir(repo, worktreePath string) createdRegistration {
 	if dir := worktreeRegistryDir(repo); registrationsLinked(dir) {
 		return createdRegistration{unreadable: errors.New(realDirText(dir))}
 	}
-	reg := createdRegistration{resolved: canonicalPath(adminDir), registry: canonicalPath(worktreeRegistryDir(repo))}
+	reg := createdRegistration{resolved: canonicalPath(adminDir), registry: canonicalPath(worktreeRegistryDir(repo)),
+		spelled: worktreeRegistryDir(repo)}
 	// The identity comes first, so it is that of the directory that the read of the
 	// back-pointer goes through.
 	info, statErr := os.Stat(reg.registry)

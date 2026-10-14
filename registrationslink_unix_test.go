@@ -80,6 +80,34 @@ func TestCreateDeletesNothingBehindALinkedRegistrationsFolder(t *testing.T) {
 		}
 		wantEntryKept(t, target)
 	})
+	t.Run("a link put there after the check with no answer of git", func(t *testing.T) {
+		// The registrations folder is real at the check. Then it moves to T and
+		// a link to it takes its path. The moved folder keeps its identity, so
+		// only the refusal of the link stops the delete.
+		repo, leaf, target := linkedRegistrations(t)
+		dir := filepath.Join(repo, ".git", "worktrees")
+		if err := os.Remove(dir); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.Rename(target, dir); err != nil {
+			t.Fatal(err)
+		}
+		writeFile(t, filepath.Join(leaf, ".git"), "gitdir: "+filepath.Join(dir, "w1")+"\n", 0o644)
+		reg := createdWorktreeAdminDir(repo, leaf)
+		if reg.resolved == "" {
+			t.Fatalf("createdWorktreeAdminDir = %+v, want the registration", reg)
+		}
+		if err := os.Rename(dir, target); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.Symlink(target, dir); err != nil {
+			t.Fatal(err)
+		}
+		if err := removeCreatedRegistration(reg); err == nil {
+			t.Error("removeCreatedRegistration = nil, want the error of the link")
+		}
+		wantEntryKept(t, target)
+	})
 	t.Run("a link put there right before the open", func(t *testing.T) {
 		repo, _, target := linkedRegistrations(t)
 		dir := filepath.Join(repo, ".git", "worktrees")
