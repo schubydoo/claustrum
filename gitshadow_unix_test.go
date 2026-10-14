@@ -296,6 +296,17 @@ func TestShadowEndedFirstGetFailsTheTest(t *testing.T) {
 	wantLastTestCall(t, test, 6, true, stageGet...)
 }
 
+// A first `config --get` that signal 9 ended fails the test, and no other test
+// call runs. No cell has such a call 6: claustrum's own, not measured.
+func TestShadowFirstGetEndedByASignalFailsTheTest(t *testing.T) {
+	f := newShadowFixture(t)
+	stageGit(t, stagedCall{Match: stageGet, Copy: "yes", Nth: 1, Kill: true})
+	raw, calls := f.info(t, f.repo, nil)
+	test, after := startTestCalls(t, calls)
+	wantFailedTest(t, f, raw, after, "config", "signal: killed")
+	wantLastTestCall(t, test, 6, true, stageGet...)
+}
+
 // TestShadowFolderFailures pins the cause where a folder or a file of the test
 // cannot be made: the error of the system call with its path, and no quotes.
 // 5fd08069 answers `mkdir <run>/git-shadow: permission denied` for a run folder

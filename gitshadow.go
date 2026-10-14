@@ -442,8 +442,14 @@ func (r shadowRun) detail() string {
 // call that another process killed reads as an exit, so the signal rule holds
 // on Linux and macOS only (not measured on Windows).
 func (r shadowRun) gitSaidNo() bool {
+	return r.exited() && !r.ended && !strings.Contains(r.stderr, "No space left")
+}
+
+// exited reports whether the call failed with an exit code of its own: an exit
+// error of a process that no signal ended.
+func (r shadowRun) exited() bool {
 	var exit *exec.ExitError
-	return errors.As(r.err, &exit) && exit.Exited() && !r.ended && !strings.Contains(r.stderr, "No space left")
+	return errors.As(r.err, &exit) && exit.Exited()
 }
 
 // shadowTestPrefix is the option list of every call of the test. On a Windows
@@ -689,12 +695,15 @@ func shadowTestCalls(dir, check string) (state, cause string) {
 	// of a call 6 that exited by itself goes on too. So does a call 6 that
 	// works with a text that is neither `real` nor `shadow`. Both are
 	// claustrum's own, not measured. A call 6 that the bound ended fails the
-	// test, as every ended test call but call 7 (not measured for call 6).
+	// test, as every ended test call but call 7. So does a call 6 that a signal
+	// ended, or that did not start. Both are claustrum's own, not measured. On
+	// Windows a call that another process killed reads as an exit, so it goes
+	// on there.
 	// Between call 6 and call 8 the daemon lists the config of `real` from
 	// standard input, as it does for a repository.
 	get := []string{"config", "--get", "helper.check"}
 	first := run(shadowEnv, get...)
-	if first.ended {
+	if first.err != nil && (first.ended || !first.exited()) {
 		return failed("config", first)
 	}
 	if first.err == nil && first.out == "real" {

@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"encoding/json"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"slices"
 	"strconv"
@@ -20,7 +21,8 @@ import (
 // stagedCall is one staged answer of the git stub. Match are exact argv words.
 // Copy "yes" takes only a call with a GIT_COMMON_DIR, and "no" only a call
 // without one. Nth takes only the nth such call of the stub, counted from 1,
-// and 0 takes each. The call writes Stdout and Stderr and exits with Exit.
+// and 0 takes each. A call counts for every entry that it matches, and the
+// first entry whose count fits gives the answer. The call writes Stdout and Stderr and exits with Exit.
 // With Kill it ends itself with a kill.
 type stagedCall struct {
 	Match  []string
@@ -63,6 +65,7 @@ func stagedGitAnswer(args []string) (int, bool) {
 		return 0, false
 	}
 	_, onCopy := os.LookupEnv("GIT_COMMON_DIR")
+	chosen := -1
 	for i, c := range calls {
 		if !stubMatches(args, strings.Join(c.Match, ",")) || (c.Copy == "yes" && !onCopy) || (c.Copy == "no" && onCopy) {
 			continue
@@ -74,6 +77,12 @@ func stagedGitAnswer(args []string) (int, bool) {
 				continue
 			}
 		}
+		if chosen < 0 {
+			chosen = i
+		}
+	}
+	if chosen >= 0 {
+		c := calls[chosen]
 		_, _ = os.Stdout.WriteString(c.Stdout)
 		_, _ = os.Stderr.WriteString(c.Stderr)
 		if c.Kill {
@@ -92,6 +101,22 @@ var (
 	stageVerify = []string{"rev-parse", "--verify"}
 	stageAdd    = []string{"worktree", "add"}
 )
+
+// Two staged answers for one call, the first and the second such call: each
+// call gets its own answer. Neither call runs a real git.
+func TestShadowStagedCallsCountForEveryEntry(t *testing.T) {
+	newShadowFixture(t)
+	word := []string{"seam-check"}
+	stageGit(t,
+		stagedCall{Match: word, Nth: 1, Stdout: "one"},
+		stagedCall{Match: word, Nth: 2, Stdout: "two"})
+	for _, want := range []string{"one", "two"} {
+		out, err := exec.Command("git", word...).Output()
+		if err != nil || string(out) != want {
+			t.Errorf("staged call = %q, %v, want %q", out, err, want)
+		}
+	}
+}
 
 // startTestCalls are the calls of the start test in calls, the calls of one
 // request: all after the excludes read of a first request, up to the last one
