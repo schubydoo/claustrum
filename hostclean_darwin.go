@@ -390,8 +390,8 @@ func parseLsofFtn(out string) []lsofRec {
 // D17: an ABANDONED run answers busy. A run that finished and saw nothing and a run that was
 // given up on both produce no output. claustrum keeps them apart, because only the first is
 // evidence. The reference side is not probe-measured. This arm is reachable only when the
-// read failed outright. A run that did not answer reads as not busy here. hcBusyCheck
-// tells the two apart.
+// read failed outright. A run that did not answer reads as not busy here, and so does a
+// run that the deadline ended. hcBusyCheck tells them apart.
 func hcBusy(pid int) bool {
 	busy, _ := hcBusyCheck(pid)
 	return busy
@@ -401,14 +401,29 @@ func hcBusy(pid int) bool {
 // reading: it answers busy (D17). A run that did not answer is no reading. The retire then
 // refuses the daemon, and no SIGTERM goes out. That is
 // what 89cb6289 did on a macOS VM, for a command that did not start (rows D1i and D1k) and
-// for a run that wrote to stderr (rows E3i and E3k), 3 of 3 each.
+// for a run that wrote to stderr (rows E3i and E3k), 3 of 3 each. A run that the deadline
+// ended is no reading either (hcBusyRead).
 func hcBusyCheck(pid int) (busy, canRead bool) {
-	out, completed, answered, _ := runLsof("-p", strconv.Itoa(pid), "-F", "ftn")
+	busy, canRead, _ = hcBusyRead(pid)
+	return busy, canRead
+}
+
+// hcBusyRead is hcBusyCheck plus whether the deadline ended the lsof run. Such a run is no
+// reading, so the retire refuses the daemon after one run. With an lsof that hangs,
+// `5fd08069` runs one lsof and sends no signal, for a daemon with one client and with none
+// (cells B1 and B2, macOS VM). An ended run that wrote records gets the same answer, and so
+// does a run that exits by itself right at the deadline. Both are claustrum's own, not
+// measured.
+func hcBusyRead(pid int) (busy, canRead, ended bool) {
+	out, completed, answered, expired := runLsof("-p", strconv.Itoa(pid), "-F", "ftn")
 	if !completed {
-		return true, true
+		return true, true, false
+	}
+	if expired {
+		return false, false, true
 	}
 	if !answered {
-		return false, false
+		return false, false, false
 	}
 	unix := 0
 	for _, r := range parseLsofFtn(out) {
@@ -416,26 +431,28 @@ func hcBusyCheck(pid int) (busy, canRead bool) {
 			continue
 		}
 		if strings.HasPrefix(r.name, "->") {
-			return true, true
+			return true, true, false
 		}
 		unix++
 	}
-	return unix > 1, true
+	return unix > 1, true, false
 }
 
 // hcDaemonFilesUnread reports that the open files of a daemon could not be read. The pass
-// then logs that it leaves the daemon alone (rows D1i and D1k). It is a var so a test on
-// either OS can stage the answer.
-var hcDaemonFilesUnread = func(pid int) bool {
-	_, canRead := hcBusyCheck(pid)
-	return !canRead
+// then logs that it leaves the daemon alone (rows D1i and D1k). ended says that the deadline
+// ended the read. The pass then logs no such line, and the retire refuses the daemon with
+// no second run (cells B1 and B2). It is a var so a test on either OS can stage the answer.
+var hcDaemonFilesUnread = func(pid int) (unread, ended bool) {
+	_, canRead, ended := hcBusyRead(pid)
+	return !canRead && !ended, ended
 }
 
 // hcStdioArePipes reports whether fds 0, 1 and 2 are all pipes, the stdio signature of a
 // daemon-spawned child. lsof names a pipe's type PIPE. canRead is false when the run was
 // abandoned, did not answer, or returned nothing for the pid. One lsof run answers both.
 // The third result is false for a run that did not answer. The pass then prints the line of
-// the reference (row E5: the command did not start).
+// the reference (row E5: the command did not start). A run that the deadline ended reads
+// here as a completed run. No cell measures the stdio read under an lsof that hangs.
 func hcStdioArePipes(pid int) (pipes, canRead, answered bool) {
 	out, completed, answered, _ := runLsof("-p", strconv.Itoa(pid), "-F", "ftn")
 	if !completed {

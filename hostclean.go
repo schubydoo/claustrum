@@ -591,6 +591,9 @@ type hostCleaner struct {
 	ownRunDir string
 	selfPid   int
 	selfStart string // this daemon's own /proc start-ticks
+	// busyEnded has the daemons of this pass whose busy read gave no answer because its
+	// deadline ended it (darwin). The retire refuses each with no second read.
+	busyEnded map[int]bool
 }
 
 // hcHoldPid takes hold of a single process (not its group) before the last identity check
@@ -820,7 +823,9 @@ func (c *hostCleaner) retireAbandoned(e runDirEntry, pid int, uid uint32) (bool,
 		// Measured on a macOS VM against f6010b97 (issue 429): the reference logs this reason.
 		return false, "it is too young to judge"
 	}
-	if hcSettledBusy(pid) {
+	// With an lsof that hangs, `5fd08069` runs one lsof for the daemon, sends no signal and
+	// logs this reason. Its pass takes 15.0 s (cells B1 and B2, macOS VM).
+	if c.busyEnded[pid] || hcSettledBusy(pid) {
 		return false, hcRetireBusyReason
 	}
 	// Re-validate identity immediately before signalling, the way endGroupsTwoPhase does.
@@ -1094,6 +1099,7 @@ func (c *hostCleaner) undoRename(e runDirEntry, target, reason string) {
 // the line, 5 of 5 each.
 func (c *hostCleaner) Pass() hcSummary {
 	var sum hcSummary
+	c.busyEnded = nil
 	logInfof("[hostclean] pass starting (the next connection logged is this pass probing its own socket)")
 	switch state, peer, _ := probeSocket(c.ownSocket); {
 	case state != hcSockLive:
@@ -1129,7 +1135,7 @@ func (c *hostCleaner) Pass() hcSummary {
 	// 33 s on a run dir of 40 days got none (row F1), and a daemon of 5 minutes on a fresh
 	// run dir got none (row F2). The loop does not run past the process limit, where the
 	// tidy does not run either: the line stays inside the state it was measured in. On linux
-	// hcDaemonFilesUnread is a constant false.
+	// hcDaemonFilesUnread is a constant false, false.
 	for _, t := range procs {
 		socket := serveArgv(t.argv, c.roots.daemonBin)
 		if tooMany || t.pid < 2 || t.pid == c.selfPid || !t.sameUID || !c.roots.isDaemonBinary(t.exe) || socket == "" {
@@ -1154,7 +1160,15 @@ func (c *hostCleaner) Pass() hcSummary {
 			sum.undecided++
 			continue
 		}
-		if hcDaemonFilesUnread(t.pid) {
+		unread, ended := hcDaemonFilesUnread(t.pid)
+		if ended {
+			// No line and no count: the pass of `5fd08069` logs only the "not retired" line
+			// of the tidy there (cells B1 and B2, macOS VM).
+			if c.busyEnded == nil {
+				c.busyEnded = map[int]bool{}
+			}
+			c.busyEnded[t.pid] = true
+		} else if unread {
 			logInfof("[hostclean] daemon pid %d left alone this pass: its open files could not be inspected", t.pid)
 			sum.undecided++
 		}

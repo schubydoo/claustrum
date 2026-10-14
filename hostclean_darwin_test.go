@@ -531,8 +531,8 @@ func TestLsofRunThatDoesNotAnswerDarwin(t *testing.T) {
 		if busy, canRead := hcBusyCheck(1); busy || canRead {
 			t.Errorf("%s: hcBusyCheck = %v %v, want false false: no reading", tc.name, busy, canRead)
 		}
-		if !hcDaemonFilesUnread(1) {
-			t.Errorf("%s: hcDaemonFilesUnread = false, want true", tc.name)
+		if unread, ended := hcDaemonFilesUnread(1); !unread || ended {
+			t.Errorf("%s: hcDaemonFilesUnread = %v %v, want true false", tc.name, unread, ended)
 		}
 		if pipes, canRead, answered := hcStdioArePipes(1); pipes || canRead || answered {
 			t.Errorf("%s: hcStdioArePipes = %v %v %v, want false false false", tc.name, pipes, canRead, answered)
@@ -547,7 +547,10 @@ func TestLsofRunThatDoesNotAnswerDarwin(t *testing.T) {
 	if state, _, _ := lockProbe(locked); state != hcLockHeld {
 		t.Errorf("control: lockProbe = %d, want held", state)
 	}
-	if _, canRead := hcBusyCheck(1); !canRead || hcDaemonFilesUnread(1) {
+	if _, canRead := hcBusyCheck(1); !canRead {
+		t.Errorf("control: the busy read is no reading")
+	}
+	if unread, ended := hcDaemonFilesUnread(1); unread || ended {
 		t.Errorf("control: the busy read is no reading")
 	}
 }
@@ -622,6 +625,79 @@ func TestRetireSendsNoSignalWithoutAnLsofAnswerDarwin(t *testing.T) {
 	}
 	if retired || reason != hcRetireBusyReason {
 		t.Errorf("retired=%v reason=%q, want a refusal with %q", retired, reason, hcRetireBusyReason)
+	}
+}
+
+// TestRetireRefusesADaemonWhenTheBusyDeadlineEndsDarwin follows cells B1 and B2 (`5fd08069`,
+// macOS VM). The deadline ends the lsof run of the busy read. The retire refuses the daemon
+// with the measured reason after one lsof run, with no hold and no signal. The stage with
+// records in the output is claustrum's own, not measured. The pass read of the same run
+// answers "ended" and not "unread". The control is a completed run with no client record:
+// one SIGTERM at the seam. The daemon is a fake pid behind the kinfo seams, and the lsof run
+// is a stub.
+func TestRetireRefusesADaemonWhenTheBusyDeadlineEndsDarwin(t *testing.T) {
+	const pid = 4400
+	const exe = "/opt/claude/srv/a/server"
+	const socket = "/opt/claude/run/s1/rpc.sock"
+	const client = "p1\nf3\ntunix\nn/run/x/rpc.sock\nf7\ntunix\nn->0x1\n"
+	seamUID(t, 501)
+	oldK, oldA, oldRun, oldHold := hcKinfoPID, hcProcArgs2, runLsof, hcHoldPid
+	oldClock, oldSleep, oldPpid := hcClock, hcSleep, hcGetppid
+	t.Cleanup(func() {
+		hcKinfoPID, hcProcArgs2, runLsof, hcHoldPid = oldK, oldA, oldRun, oldHold
+		hcClock, hcSleep, hcGetppid = oldClock, oldSleep, oldPpid
+	})
+	now := time.Unix(1_700_000_000, 0)
+	hcClock = func() time.Time { return now }
+	hcSleep = func(d time.Duration) { now = now.Add(d) }
+	hcGetppid = func() int { return 1 }
+	hcProcArgs2 = func(int) ([]byte, bool) {
+		return hcProcArgsBuf(exe, []string{exe, "-serve", "-socket", socket}, []string{hcDaemonChildMarker}), true
+	}
+	c := &hostCleaner{roots: &hostRoots{roots: []string{"/opt/claude"}, daemonBin: "server"}, selfPid: 999999}
+	e := runDirEntry{name: "s1", dirPath: filepath.Dir(socket), socket: socket, idle: 40 * 24 * time.Hour}
+
+	for _, tc := range []struct {
+		name    string
+		out     string
+		expired bool
+	}{
+		{"control: a completed run with no client record", "", false},
+		{"cell B2: the deadline ended the run", "", true},
+		{"the deadline ended a run that wrote a client record", client, true},
+	} {
+		gone := false
+		hcKinfoPID = func(int) ([]byte, bool) {
+			if gone {
+				return nil, false
+			}
+			return kinfoBuf(pid, 1, pid, 501, 501, 2, uint64(now.Unix())-3600, 0), true
+		}
+		holds, runs := 0, 0
+		var signals []syscall.Signal
+		hcHoldPid = func(int) (func(syscall.Signal) error, func()) {
+			holds++
+			return func(sig syscall.Signal) error { signals = append(signals, sig); gone = true; return nil }, func() {}
+		}
+		runLsof = func(...string) (string, bool, bool, bool) { runs++; return tc.out, true, true, tc.expired }
+
+		retired, reason := c.retireAbandoned(e, pid, 501)
+
+		if !tc.expired {
+			if !retired || runs != 1 || len(signals) != 1 || signals[0] != syscall.SIGTERM {
+				t.Fatalf("%s: retired=%v reason=%q runs=%d signals=%v, want a retire with one SIGTERM", tc.name, retired, reason, runs, signals)
+			}
+			continue
+		}
+		if retired || reason != hcRetireBusyReason {
+			t.Errorf("%s: retired=%v reason=%q, want a refusal with %q", tc.name, retired, reason, hcRetireBusyReason)
+		}
+		if runs != 1 || holds != 0 || len(signals) != 0 {
+			t.Errorf("%s: runs=%d holds=%d signals=%v, want one lsof run, no hold and no signal", tc.name, runs, holds, signals)
+		}
+		if unread, ended := hcDaemonFilesUnread(pid); unread || !ended {
+			t.Errorf("%s: hcDaemonFilesUnread = %v %v, want false true", tc.name, unread, ended)
+		}
 	}
 }
 
@@ -842,9 +918,9 @@ func TestRunLsofIsBounded(t *testing.T) {
 		if !expired {
 			t.Error("a run the deadline ended did not report it")
 		}
-		// The deadline killed the command, so the run COMPLETED: the busy read learns
-		// "lsof looked and saw nothing". That is the difference D17
-		// turns on, and it is why this arm asserts ok and the next asserts !ok.
+		// The deadline killed the command, so the run COMPLETED, and the flag above
+		// tells its readers that it is no answer. D17 is the next arm only, and that
+		// is why this arm asserts ok and the next asserts !ok.
 		if !ok {
 			t.Error("a run the deadline ended reported itself abandoned")
 		}

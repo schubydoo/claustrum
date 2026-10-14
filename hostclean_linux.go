@@ -417,8 +417,9 @@ var hcLockUnreadState = hcLockUnknown
 
 // hcDaemonFilesUnread reports that the open files of a daemon could not be read, for the
 // "left alone this pass" line of the pass. The reference on linux is not measured for that
-// state, so on linux the pass logs no such line. It is a var so a test can stage the answer.
-var hcDaemonFilesUnread = func(int) bool { return false }
+// state, so on linux the pass logs no such line. ended is the darwin answer for a read
+// that its deadline ended. It is a var so a test can stage the answer.
+var hcDaemonFilesUnread = func(int) (unread, ended bool) { return false, false }
 
 // hcStoppedIsUninspected says that a stopped daemon is not retired. With a daemon in state
 // T, `5fd08069` logs the two "left alone" and "not inspectable" lines and sends no signal
