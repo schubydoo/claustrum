@@ -35,22 +35,28 @@ import (
 // worktreeExternalSpellingRefusal is steps 1 and 2. Both worktree methods check
 // baseRepo between steps 2 and 3. On git.worktree_create that order is not measured.
 //
-// claustrum also refuses, in step 1, a worktreeRoot that is the file system root. For
-// a root of "/" and a worktreePath of "/<name>", 89cb6289 sends the "is a filesystem
+// claustrum also refuses, after step 2, a worktreeRoot that is the file system root.
+// For a root of "/" and a worktreePath of "/<name>", 89cb6289 sends the "is a filesystem
 // root" text. The create sends it after 3 git calls, and the remove with no git call.
 // That holds with the folder present or gone, and for a daemon that runs as root (Linux
 // VM, cells R1n, R1u and R1r). On a macOS VM the create is cell R1a, and the remove is
 // cells R1a and R1b. The macOS cells have the folder gone and a normal user. Nothing
 // changes on disk. The calls place it before `rev-parse
-// --show-toplevel`. Its place among the earlier tests is claustrum's choice. Not
-// measured: its order against the ".." test, the worktreePath test, the baseRepo test
-// and step 3. A root with a ".." component that cleans to "/" gets the ".." text
-// (from the code, not measured).
+// --show-toplevel`. Not measured: its order against the baseRepo test and step 3. A
+// root with a ".." component that cleans to "/" gets the ".." text (from the code, not
+// measured).
 //
 // More cells ran against 89cb6289 on Linux and macOS VMs. A root of "//" or "/." gets
 // the same text, with the root as sent (cells R2 and R3). So does a worktreePath of
 // "/<directory>/<name>" under a root of "/" (cell R6). A mount point that is not "/"
 // is not refused: the create and the remove succeed (cell R4).
+//
+// On 5fd08069 a relative worktreePath wins over that text: a root of "/" with the
+// path "x/y" gets the relative-path text (cell C-W1 of round tier0-20, Linux VM). A
+// root with a component named .git or .claude-managed-worktrees, in any letter
+// case, is refused with the name as sent. The cells measure .git and .GIT (cells
+// C-W4, C-W4e and C-S2). A component .claude-managed-worktrees is refused the same
+// way (not measured). Its order against the worktreePath test is not measured.
 func worktreeExternalSpellingRefusal(worktreeRoot, worktreePath, verb string) string {
 	if !filepath.IsAbs(worktreeRoot) {
 		return fmt.Sprintf("refusing to %s worktree: %s is a relative path; choose the "+
@@ -62,23 +68,93 @@ func worktreeExternalSpellingRefusal(worktreeRoot, worktreePath, verb string) st
 			"worktree location by its absolute path, without %q, beneath the filesystem root",
 			verb, worktreeRoot, "..", "..")
 	}
+	for _, name := range strings.Split(filepath.ToSlash(worktreeRoot), "/") {
+		if reservedLocationName(name) {
+			return fmt.Sprintf("refusing to %s worktree: %s has a component named %s, which is "+
+				"reserved; choose the worktree location by its absolute path, without %q, beneath "+
+				"the filesystem root", verb, worktreeRoot, name, "..")
+		}
+	}
+	if msg := sessionFolderSpellingRefusal(worktreePath, verb); msg != "" {
+		return msg
+	}
 	if isFilesystemRoot(worktreeRoot) {
 		return fmt.Sprintf("refusing to %s worktree: %s is a filesystem root; choose the "+
 			"worktree location by its absolute path, without %q, beneath the filesystem root",
 			verb, worktreeRoot, "..")
 	}
-	return sessionFolderSpellingRefusal(worktreePath, verb)
+	return ""
+}
+
+// reservedLocationName reports whether name is .git or .claude-managed-worktrees, in
+// any letter case. A name with trailing dots or blanks is not measured, and passes.
+func reservedLocationName(name string) bool {
+	return strings.EqualFold(name, ".git") || strings.EqualFold(name, managedWorktreesMarker)
 }
 
 // worktreeExternalShapeRefusal is step 3 of the checks listed above
 // worktreeExternalSpellingRefusal. Callers run worktreeExternalSpellingRefusal first,
-// so worktreePath is absolute and has no ".." component here.
+// so worktreePath is absolute and has no ".." component here. The text quotes both
+// members as sent, with a "/./" or a final "/" kept (5fd08069, cell C-W2 of round
+// tier0-20, Linux VM).
+//
+// Then the <directory> or the <name> of the path is refused when it is a reserved
+// name, with the name as sent. The cells put it at the <directory> (cells C-W3 and
+// C-S1). A reserved <name>, and the <directory> tested first, are not measured.
 func worktreeExternalShapeRefusal(worktreeRoot, worktreePath, verb string) string {
 	root := filepath.Clean(worktreeRoot)
 	wp := filepath.Clean(worktreePath)
 	if filepath.Dir(filepath.Dir(wp)) != root {
 		return fmt.Sprintf("refusing to %s worktree: %s is not "+
-			"<worktree location>/<directory>/<name> beneath %s", verb, wp, root)
+			"<worktree location>/<directory>/<name> beneath %s", verb, worktreePath, worktreeRoot)
+	}
+	for _, name := range []string{filepath.Base(filepath.Dir(wp)), filepath.Base(wp)} {
+		if reservedLocationName(name) {
+			return fmt.Sprintf("refusing to %s worktree: %s uses the reserved name %s for a "+
+				"directory under the worktree location", verb, worktreePath, name)
+		}
+	}
+	return ""
+}
+
+// repoFolderHoldsRepoRefusal refuses a <directory> level that is the repository or
+// holds it, or answers "". The text names worktreeRoot, the <directory> level as the
+// path spells it, and baseRepo as sent. Without resolve the test compares the
+// cleaned paths. With resolve it compares them with their links followed. 5fd08069
+// refuses so with no git call in the remove (cells C-W5 and C-S3 of round tier0-20,
+// Linux VM). With a baseRepo through a link the create refuses after `worktree list`
+// (cell C-W6). The remove refuses there too, after `worktree list` (cell C-S8).
+func repoFolderHoldsRepoRefusal(worktreeRoot, worktreePath, baseRepo, repo, verb string, resolve bool) string {
+	folder := filepath.Dir(filepath.Clean(worktreePath))
+	f, r := folder, filepath.Clean(repo)
+	if resolve {
+		f, r = canonicalPathOfGone(folder), canonicalPathOfGone(repo)
+	}
+	if !samePath(r, f) && !pathStrictlyUnder(r, f) {
+		return ""
+	}
+	return fmt.Sprintf("refusing to %s worktree: %s would place worktrees in %s, which contains the "+
+		"repository %s; choose a location the repository is not inside", verb, worktreeRoot, folder, baseRepo)
+}
+
+// repoFolderInWorktreeRefusal refuses a <directory> level that is a listed worktree
+// of the repository or lies inside one, or answers "". The test compares the cleaned
+// path with each listed path as git lists it. 5fd08069 refuses so (cells C-W19 and
+// C-S7 of round tier0-20, Linux VM). A bare entry is skipped, and so is a listed
+// folder that is gone. A remove then answers that the root is not reachable, as on
+// 89cb6289 (rows Y9 and T3). The main checkout counts (not measured).
+func repoFolderInWorktreeRefusal(worktreeRoot, worktreePath, baseRepo string, listed []listedWorktree, verb string) string {
+	folder := filepath.Dir(filepath.Clean(worktreePath))
+	for _, w := range listed {
+		if w.bare || !samePath(folder, w.path) && !pathStrictlyUnder(folder, w.path) {
+			continue
+		}
+		if _, err := os.Lstat(w.path); errors.Is(err, fs.ErrNotExist) {
+			continue
+		}
+		return fmt.Sprintf("refusing to %s worktree: %s would place worktrees in %s, which is (or is "+
+			"inside) %s, a worktree of the repository %s; a worktree location must be outside the "+
+			"repository's checkouts", verb, worktreeRoot, folder, w.path, baseRepo)
 	}
 	return ""
 }
@@ -119,18 +195,19 @@ func d5Kill(ctx context.Context, err error) error {
 	return nil
 }
 
-// worktreeList runs a light `git worktree list --porcelain -z` in repo, with its
-// listing, and returns the entries in list order. git lists the main checkout first.
-// It returns nil when the call fails. git.worktree_create with a worktreeRoot makes
-// this call. git.worktree_remove uses worktreeListForRemove. The error is d5Kill of
-// the call. Any other failure, such as a git older
-// than 2.36 without `worktree list -z`, gives a nil error.
-func worktreeList(u gitUse, repo string) ([]listedWorktree, error) {
-	list, killed, err := worktreeListCall(u, repo, true)
-	if err != nil && killed {
-		return nil, err
+// worktreeListTwice runs worktreeListCall with -z. After a failure that the D5
+// deadline did not cause, it runs the call once more without -z. It answers the
+// entries in list order, whether the D5 deadline stopped the first call, and the
+// error of the last call. git lists the main checkout first. 5fd08069 makes the
+// second call in a create (cell C-W17 of round tier0-20, Linux VM) and 89cb6289 in a
+// remove (row DG2s-g, Linux VM).
+func worktreeListTwice(u gitUse, repo string) (listed []listedWorktree, killed bool, err error) {
+	listed, killed, err = worktreeListCall(u, repo, true)
+	if err == nil || killed {
+		return listed, killed, err
 	}
-	return list, nil
+	listed, _, err = worktreeListCall(u, repo, false)
+	return listed, false, err
 }
 
 // worktreeListCall runs a light `git worktree list --porcelain` in repo, with its
@@ -161,6 +238,9 @@ func worktreeListCall(u gitUse, repo string, nul bool) (list []listedWorktree, k
 	return list, false, nil
 }
 
+// parentStepPrefix starts every failure of the parent step of git.worktree_create.
+const parentStepPrefix = "failed to create parent directory: "
+
 // worktreeListRefusalPrefix starts the refusal of git.worktree_remove with
 // worktreeRoot when git cannot list the worktrees of baseRepo.
 const worktreeListRefusalPrefix = "failed to remove worktree: cannot list the repository's worktrees: "
@@ -189,40 +269,130 @@ func worktreeListForRemove(u gitUse, repo string) (listed []listedWorktree, refu
 	if _, err := os.Stat(repo); errors.Is(err, fs.ErrNotExist) {
 		return nil, ""
 	}
-	listed, killed, err := worktreeListCall(u, repo, true)
-	if err == nil {
-		return listed, ""
-	}
-	if killed {
+	listed, killed, err := worktreeListTwice(u, repo)
+	switch {
+	case killed:
 		return nil, workTreeUnknownPrefix + err.Error()
-	}
-	if listed, _, err = worktreeListCall(u, repo, false); err != nil {
+	case err != nil:
 		return nil, worktreeListRefusalPrefix + err.Error()
 	}
 	return listed, ""
 }
 
-// worktreeRootCheckoutRefusal is the refusal of a worktreeRoot that passes
-// worktreeRootInRepoRefusal but leads into a checkout of the repository, or "" when
-// the root passes. The main form comes first, then the linked form. So the main
-// checkout wins over a linked worktree nearer to the root (rows Y6 and Y11c).
-// topLevel is the answer of `rev-parse --show-toplevel` in baseRepo, and listed is
-// the answer of worktreeList. verb is "create" or "remove".
-func worktreeRootCheckoutRefusal(worktreeRoot, baseRepo, topLevel string, listed []listedWorktree, verb string) string {
-	if msg := worktreeRootResolvesIntoRepoRefusal(worktreeRoot, baseRepo, topLevel, listed, verb); msg != "" {
-		return msg
-	}
-	return worktreeRootInLinkedWorktreeRefusal(worktreeRoot, baseRepo, listed, verb)
+// repoCheckouts holds what the location tests compare a folder with: the folders of
+// the repository and its listed worktrees. baseRepo is the text of the request.
+type repoCheckouts struct {
+	baseRepo string
+	folders  []os.FileInfo
+	listed   []listedWorktree
 }
 
-// worktreeRootResolvesIntoRepoRefusal is the main form. It resolves the root as
-// canonicalPathOfGone does: the symlinks of its longest existing prefix are resolved,
-// and the missing rest is appended. Then it walks from that path up to "/".
-// The outermost path on that walk that is the same file (device and inode) as
-// topLevel, or as the main checkout, refuses the root. The text names that path, a
-// prefix of the resolved root, and worktreeRoot and baseRepo as sent. It answers "" when neither
-// checkout can be found. f6010b97 and 89cb6289 send the same frames on Linux and
-// macOS VMs:
+// newRepoCheckouts reads the folders of the repository at repo. They are topLevel,
+// the answer of `rev-parse --show-toplevel`, the main checkout that git lists first,
+// and the git directory that the trust check pinned (pruneGitDir). A folder that
+// cannot be read is left out. A bare first entry has no main checkout, so it is not
+// compared. That is claustrum's choice (not measured).
+func newRepoCheckouts(repo, baseRepo, topLevel string, listed []listedWorktree) repoCheckouts {
+	c := repoCheckouts{baseRepo: baseRepo, listed: listed}
+	paths := []string{topLevel}
+	if len(listed) > 0 && !listed[0].bare {
+		paths = append(paths, listed[0].path)
+	}
+	paths = append(paths, pruneGitDir(repo))
+	for _, p := range paths {
+		if p == "" {
+			continue
+		}
+		if fi, err := os.Stat(p); err == nil {
+			c.folders = append(c.folders, fi)
+		}
+	}
+	return c
+}
+
+// refusalAt is the refusal of a worktreeRoot that passes through the folder at, or
+// "". The repository form comes first: at is the same file (device and inode) as one
+// of the folders of the repository. Then the linked form: at is, as a string, the
+// path of a listed worktree other than the first. A listed path that does not exist
+// counts only with keepGone, and gone then holds that path and the identity of its
+// parent at this test. verb is "create" or "remove".
+func (c repoCheckouts) refusalAt(worktreeRoot, at, verb string, keepGone bool) (msg string, gone goneWorktree) {
+	if fi, err := os.Stat(at); err == nil {
+		for _, f := range c.folders {
+			if os.SameFile(fi, f) {
+				return fmt.Sprintf("refusing to %s worktree: %s leads into the repository %s (at %s); "+
+					"a worktree location must be outside the repository", verb, worktreeRoot, c.baseRepo, at), goneWorktree{}
+			}
+		}
+	}
+	for i, w := range c.listed {
+		if i == 0 || !samePath(at, w.path) {
+			continue
+		}
+		if _, err := os.Lstat(w.path); errors.Is(err, fs.ErrNotExist) {
+			if !keepGone {
+				continue
+			}
+			gone.path = w.path
+			if goneIdentityStep != nil {
+				goneIdentityStep()
+			}
+			// Lstat, so a parent that is a link here never matches the root that
+			// makeGoneWorktreeFolder opens.
+			gone.parent, _ = os.Lstat(filepath.Dir(w.path))
+		}
+		return fmt.Sprintf("refusing to %s worktree: %s leads into %s, a worktree of the repository %s (at %s); "+
+			"a worktree location must be outside the repository's checkouts", verb, worktreeRoot, w.path, c.baseRepo, w.path), gone
+	}
+	return "", goneWorktree{}
+}
+
+// goneWorktree is the folder of a listed worktree that is gone, and the identity of
+// its parent when the checkout test ran. The zero value is no such folder.
+type goneWorktree struct {
+	path   string
+	parent os.FileInfo
+}
+
+// goneIdentityStep runs right before refusalAt takes the identity of the parent, and
+// goneFolderStep right before makeGoneWorktreeFolder opens the parent. Tests set them
+// to change the parent after the checkout test.
+var goneIdentityStep, goneFolderStep func()
+
+// makeGoneWorktreeFolder makes the folder of g with mode 0700, through a root at its
+// parent. The parent must still be the folder that the checkout test saw, by
+// identity. The identity comes from an lstat of the parent, so a parent that is a
+// link at that moment or later leads nowhere, and nothing is made. Two windows are
+// not covered. A real folder put at the parent between the owner and mode tests of
+// the ancestor walk and that lstat gets the folder with no owner or mode test. A
+// folder above the parent that becomes a link between the resolve of the checkout
+// test and that lstat leads the folder behind the link. Each makes one empty 0700
+// folder and deletes nothing. A failure makes nothing and is not answered (not
+// measured).
+func makeGoneWorktreeFolder(g goneWorktree) {
+	if goneFolderStep != nil {
+		goneFolderStep()
+	}
+	if g.path == "" || g.parent == nil {
+		return
+	}
+	root, err := os.OpenRoot(filepath.Dir(g.path))
+	if err != nil {
+		return
+	}
+	defer func() { _ = root.Close() }()
+	if fi, err := root.Stat("."); err != nil || !os.SameFile(fi, g.parent) {
+		return
+	}
+	_ = root.Mkdir(filepath.Base(g.path), 0o700)
+}
+
+// worktreeRootCheckoutRefusal is the refusal of a worktreeRoot that passes
+// worktreeRootInRepoRefusal but leads into a checkout of the repository, or "" when
+// the root passes. It resolves the root as canonicalPathOfGone does and tests each
+// folder of that path from "/" down with refusalAt. The first folder that fails
+// decides. The text names that folder, and worktreeRoot and baseRepo as sent.
+// f6010b97 and 89cb6289 send the same frames on Linux and macOS VMs:
 //   - A symlinked root, or one under a symlinked prefix that does not exist (Linux
 //     rows Q6s, Q17, Q18, K4, K8 and E1, macOS rows MX12 and E1).
 //   - A baseRepo below the top level, such as T/sub (Linux rows Q19, K9 and E2).
@@ -232,106 +402,78 @@ func worktreeRootCheckoutRefusal(worktreeRoot, baseRepo, topLevel string, listed
 //     Y8), a firmlink (macOS row Y8m) and a case variant (macOS row E8). macOS /tmp
 //     gives "/private/tmp" (row E3). With baseRepo in a linked worktree, a bind
 //     mount (Linux row T1) or a case variant (macOS row T1m) of the main checkout
-//     matches too.
-//   - When the root is under topLevel and under the main checkout, the main
-//     checkout names the path (row T2b). It is also the outer one there, and
-//     claustrum names the outer match.
-func worktreeRootResolvesIntoRepoRefusal(worktreeRoot, baseRepo, topLevel string, listed []listedWorktree, verb string) string {
-	var checkouts []os.FileInfo
-	if topLevel != "" {
-		if fi, err := os.Stat(topLevel); err == nil {
-			checkouts = append(checkouts, fi)
-		}
-	}
-	// A bare first entry has no main checkout, so it is not compared. That is
-	// claustrum's choice (not measured).
-	if len(listed) > 0 && !listed[0].bare {
-		if fi, err := os.Stat(listed[0].path); err == nil {
-			checkouts = append(checkouts, fi)
-		}
-	}
-	if len(checkouts) == 0 {
-		return ""
-	}
-	outer := ""
+//     matches too. The main checkout is the outer folder in row T2b.
+//   - The linked form: rows W2, W4, Y1, Y2c, Y5, Y11a and Y10. Of two nested
+//     worktrees, the outer one is named (row Y6n). It passes w0 listed through a
+//     symlinked spelling (row Y2), a case variant of w0 (macOS row Y3), a bind mount
+//     of w0 (Linux row Y8w) and a root that holds w0 (row Y7).
+//
+// 5fd08069 refuses a root in a separate git directory of the repository with the
+// repository form (cells C-W7 and C-S4 of round tier0-20, Linux VM). It names a
+// linked worktree that holds the main checkout before that checkout (cell C-W21).
+// In a create it refuses a root in a listed worktree whose folder is gone, and it
+// makes that folder first (cell C-W8). keepGone is true for a create, and gone is
+// then the folder to make (makeGoneWorktreeFolder). In a remove such a worktree
+// passes, as on 89cb6289 (rows Y9 and T3). Any other error of the lstat keeps the
+// entry (not measured).
+func worktreeRootCheckoutRefusal(worktreeRoot string, c repoCheckouts, verb string, keepGone bool) (msg string, gone goneWorktree) {
+	var chain []string
 	for at := canonicalPathOfGone(worktreeRoot); ; at = filepath.Dir(at) {
-		if fi, err := os.Stat(at); err == nil {
-			for _, c := range checkouts {
-				if os.SameFile(fi, c) {
-					outer = at
-				}
-			}
-		}
+		chain = append([]string{at}, chain...)
 		if filepath.Dir(at) == at {
 			break
 		}
 	}
-	if outer == "" {
-		return ""
-	}
-	return fmt.Sprintf("refusing to %s worktree: %s leads into the repository %s (at %s); "+
-		"a worktree location must be outside the repository", verb, worktreeRoot, baseRepo, outer)
-}
-
-// worktreeRootInLinkedWorktreeRefusal is the linked form. It takes the entries of
-// listed in list order, without the first one (the main checkout) and without an
-// entry whose listed path does not exist. The first entry whose path, as listed, is
-// the resolved root or a parent of it by whole components refuses the root. The test
-// compares strings. It resolves no symlink in the listed path, folds no case and
-// compares no file identity. The text names that entry twice, and worktreeRoot and
-// baseRepo as sent. f6010b97 and 89cb6289 send the same frames on Linux and macOS
-// VMs:
-//   - Refused: the root is a linked worktree w0 of the repository, or lies in one
-//     (rows W2, W4, Y1, Y2c, Y5 and Y11a). A root under a symlink into w0 that does
-//     not exist (row Y10). Of two nested worktrees, the outer one is named (row Y6n).
-//   - Passed: w0 listed through a symlinked spelling (row Y2), a case variant of w0
-//     (macOS row Y3), a bind mount of w0 (Linux row Y8w), a root that holds w0 (row
-//     Y7) and a w0 that was deleted (row Y9). A locked w0 that was deleted passes too
-//     (row T3).
-//
-// Only a listed path that does not exist is skipped. Any other error of the lstat
-// keeps the entry. That is claustrum's choice (not measured).
-func worktreeRootInLinkedWorktreeRefusal(worktreeRoot, baseRepo string, listed []listedWorktree, verb string) string {
-	resolved := canonicalPathOfGone(worktreeRoot)
-	for i, w := range listed {
-		if i == 0 {
-			continue
-		}
-		if _, err := os.Lstat(w.path); errors.Is(err, fs.ErrNotExist) {
-			continue
-		}
-		if samePath(resolved, w.path) || pathStrictlyUnder(resolved, w.path) {
-			return fmt.Sprintf("refusing to %s worktree: %s leads into %s, a worktree of the repository %s (at %s); "+
-				"a worktree location must be outside the repository's checkouts", verb, worktreeRoot, w.path, baseRepo, w.path)
+	for _, at := range chain {
+		if msg, gone := c.refusalAt(worktreeRoot, at, verb, keepGone); msg != "" {
+			return msg, gone
 		}
 	}
-	return ""
+	return "", goneWorktree{}
 }
 
 // worktreeRootMissingRefusal is the refusal of git.worktree_remove for a
-// worktreeRoot that does not exist or does not resolve, or "" when it resolves. It
-// comes after worktreeRootCheckoutRefusal, before any later step of the removal, and
-// nothing is deleted. The first slot is worktreeRoot as sent. f6010b97 and 89cb6289
-// send the same frames on Linux and macOS VMs:
-//   - A root that does not exist gives "<root> does not exist", with the root as
-//     sent. That holds for a deleted linked worktree (rows Y9 and T3) and for two
-//     missing levels (row T4).
+// worktreeRoot that cannot be reached, or "" when it resolves. It comes after
+// worktreeRootCheckoutRefusal, before any later step of the removal, and nothing is
+// deleted. The first slot is worktreeRoot as sent. The reason:
+//   - A root with missing folders gets "<path> does not exist". 89cb6289 and
+//     f6010b97 send that for a deleted linked worktree (rows Y9 and T3) and for two
+//     missing levels (row T4). 5fd08069 follows the links of the existing prefix and
+//     drops a final slash (cells C-W22 and X3 on Linux VMs, M1 and M2 on a macOS VM,
+//     rounds tier0-20 and tier0-22).
+//   - A prefix that is not a folder: "<prefix>: not a directory" (5fd08069, cell
+//     C-W24). A root that is itself a file is not measured, and goes on.
 //   - A symlink that does not resolve gives the error of filepath.EvalSymlinks, for
 //     example "lstat <target>: no such file or directory" (row T5).
 //
-// claustrum sends other resolve errors the same way (not measured). Any other error
-// of the lstat keeps the old answer. For "permission denied" that answer has the
-// frame of the references (Linux row T6).
+// Any other error of the lstat keeps the old answer. For "permission denied" that
+// answer has the frame of the references (Linux row T6).
 func worktreeRootMissingRefusal(worktreeRoot string) string {
-	reason := worktreeRoot + " does not exist"
-	_, err := os.Lstat(worktreeRoot)
-	if err == nil {
-		if _, err = filepath.EvalSymlinks(worktreeRoot); err == nil {
+	prefix := filepath.Clean(worktreeRoot)
+	var missing []string
+	for {
+		_, err := os.Lstat(prefix)
+		if err == nil {
+			break
+		}
+		up := filepath.Dir(prefix)
+		if !isGoneErr(err) || up == prefix {
 			return ""
 		}
+		missing = append([]string{filepath.Base(prefix)}, missing...)
+		prefix = up
+	}
+	var reason string
+	resolved, err := filepath.EvalSymlinks(prefix)
+	switch {
+	case err != nil:
 		reason = err.Error()
-	} else if !errors.Is(err, fs.ErrNotExist) {
+	case len(missing) == 0:
 		return ""
+	case notADir(os.Stat(resolved)):
+		reason = resolved + ": not a directory"
+	default:
+		reason = filepath.Join(append([]string{resolved}, missing...)...) + " does not exist"
 	}
 	return fmt.Sprintf("failed to remove worktree: the worktree location %s is not reachable (%s); "+
 		"nothing was removed — retry once it is available, or remove the worktree by hand", worktreeRoot, reason)
@@ -341,13 +483,79 @@ func worktreeRootMissingRefusal(worktreeRoot string) string {
 // when the call fails. pre is nil when the call gets its own listing, else the
 // listing it pins (see hardenedGitCmd). The error is d5Kill of the call.
 func repoTopLevel(u gitUse, repo string, pre *configListing) (string, error) {
+	top, killed, err := repoTopLevelCall(u, repo, pre)
+	if killed {
+		return "", err
+	}
+	return top, nil
+}
+
+// repoTopLevelCall is repoTopLevel with the exec error of a failed call, and
+// whether the D5 deadline stopped it.
+func repoTopLevelCall(u gitUse, repo string, pre *configListing) (top string, killed bool, err error) {
 	ctx, cancel := gitCtx()
 	defer cancel()
 	b, err := hardenedGitCmd(ctx, u, repo, false, pre, "rev-parse", "--show-toplevel").Output()
 	if err != nil {
-		return "", d5Kill(ctx, err)
+		return "", d5Kill(ctx, err) != nil, err
 	}
-	return strings.TrimRight(string(b), "\n"), nil
+	return strings.TrimRight(string(b), "\n"), false, nil
+}
+
+// sessionLocationRefusal is the refusal of a create whose worktreeRoot lies in a
+// session worktree, or "". It resolves the root as canonicalPathOfGone does and
+// tests each folder of that path from "/" down. The first folder below a folder
+// with a .claude-managed-worktrees file, or below .claude/worktrees, decides. A
+// folder that exists gets the "leads into" text, and a missing one the "would be
+// made" text. Then a root that holds that file itself is refused. 5fd08069 refuses
+// so (cells C-W9, C-W10 and C-W11 of round tier0-20, Linux VM). A .claude/worktrees
+// folder above the root is not measured.
+func sessionLocationRefusal(worktreeRoot string) string {
+	const tail = "; beneath .claude/worktrees, or beneath a directory holding a .claude-managed-worktrees " +
+		"marker); a worktree location must be outside every session's worktree"
+	resolved := canonicalPathOfGone(worktreeRoot)
+	var chain []string
+	for at := resolved; ; at = filepath.Dir(at) {
+		chain = append([]string{at}, chain...)
+		if filepath.Dir(at) == at {
+			break
+		}
+	}
+	for _, at := range chain {
+		if !belowSessionFolder(at) {
+			continue
+		}
+		if _, err := os.Lstat(at); err == nil {
+			return fmt.Sprintf("refusing to create worktree: %s leads into a session worktree (at %s%s", worktreeRoot, at, tail)
+		}
+		return fmt.Sprintf("refusing to create worktree: %s would be made inside a session worktree or its "+
+			"per-repository directory (at %s%s", worktreeRoot, at, tail)
+	}
+	if holdsManagedMarker(resolved) {
+		return fmt.Sprintf("refusing to create worktree: %s is itself a per-repository worktree directory "+
+			"(it holds a .claude-managed-worktrees marker); choose the directory above it, or another location", worktreeRoot)
+	}
+	return ""
+}
+
+// belowSessionFolder reports whether a folder above p holds a
+// .claude-managed-worktrees file, or is a worktrees folder in a .claude folder.
+func belowSessionFolder(p string) bool {
+	for at := filepath.Dir(p); ; at = filepath.Dir(at) {
+		if holdsManagedMarker(at) || filepath.Base(at) == worktreesSubdir && filepath.Base(filepath.Dir(at)) == claudeDirName {
+			return true
+		}
+		if filepath.Dir(at) == at {
+			return false
+		}
+	}
+}
+
+// holdsManagedMarker reports whether dir holds a .claude-managed-worktrees entry that
+// is not a folder.
+func holdsManagedMarker(dir string) bool {
+	fi, err := os.Stat(filepath.Join(dir, managedWorktreesMarker))
+	return err == nil && !fi.IsDir()
 }
 
 // worktreeExternalDirSymlinkRefusal reports 7d193f89's refusal when the <directory>

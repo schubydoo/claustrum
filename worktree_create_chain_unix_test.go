@@ -304,7 +304,13 @@ func TestWorktreeCreateExternalCheckoutRefusal(t *testing.T) {
 				mkdirForTest(t, filepath.Join(f, "co"))
 				runGit(t, filepath.Join(f, "co"), "init", "-q")
 			},
-			want:   rootRefusal("co/.git/wl", "co"),
+			// The component .git of the root is reserved (5fd08069, cell C-W4e of round
+			// tier0-20, Linux VM).
+			want: func(f string) (string, string) {
+				return "refusing to create worktree: " + filepath.Join(f, "co", ".git", "wl") +
+					" has a component named .git, which is reserved; choose the worktree location by its " +
+					`absolute path, without "..", beneath the filesystem root`, "unsafe_path"
+			},
 			absent: []string{"co/.git/wl"},
 		},
 		{

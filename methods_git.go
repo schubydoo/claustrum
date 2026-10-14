@@ -102,10 +102,9 @@ func (p *gitParams) repoDir() string {
 // daemon's own read of the repository config. After a kill of that call the remove
 // goes on as it did before that read.
 // git.worktree_create is the exception: its rollback deletes after a failed or killed
-// read-tree checkout, and it removes an empty leaf after a failed add. Its checkout
-// tests run without the answer of a killed show-toplevel or `worktree list`. The
-// root-chain step still refuses a root that has, or lies below, a .git entry. A caller
-// that deletes on a git
+// read-tree checkout, and it removes an empty leaf after a failed add. A kill of
+// show-toplevel or `worktree list` stops a create with a worktreeRoot with
+// mkdir_failed. A caller that deletes on a git
 // failure must tell our deadline from git's verdict first.
 //
 // ⚠️ This used to add "no OTHER frame moves because of the deadline". That is
@@ -973,6 +972,9 @@ func gitWorktreeCreateLocked(req *request, p *gitParams, repo string) response {
 		if msg := worktreeExternalShapeRefusal(p.WorktreeRoot, p.WorktreePath, "create"); msg != "" {
 			return okResult(req.ID, worktreeResult{Success: false, Error: msg, ErrorCode: "unsafe_path"})
 		}
+		if msg := repoFolderHoldsRepoRefusal(p.WorktreeRoot, p.WorktreePath, p.BaseRepo, repo, "create", false); msg != "" {
+			return okResult(req.ID, worktreeResult{Success: false, Error: msg, ErrorCode: "unsafe_path"})
+		}
 		// A root in the repository is refused before the root-chain step. The first
 		// test compares the cleaned paths and resolves no symlink (rows K1 to K3 and
 		// MX14). Then claustrum makes the calls that f6010b97 and 89cb6289 make before
@@ -980,46 +982,80 @@ func gitWorktreeCreateLocked(req *request, p *gitParams, repo string) response {
 		// `rev-parse --absolute-git-dir` and a light `worktree list --porcelain -z`.
 		// Each runs in baseRepo with its listing. With the repo check that is 9 calls
 		// (Linux and macOS VMs, rows E2, W3, W4 and Y11a to Y11c). claustrum does not
-		// use the answer of the absolute-git-dir call. After the ancestor test,
-		// worktreeRootCheckoutRefusal refuses a root that leads into a checkout of the
-		// repository.
+		// use the answer of the absolute-git-dir call.
 		if msg := worktreeRootInRepoRefusal(p.WorktreeRoot, p.BaseRepo, "create"); msg != "" {
 			return okResult(req.ID, worktreeResult{Success: false, Error: msg, ErrorCode: "unsafe_path"})
 		}
-		// A D5 kill of show-toplevel or `worktree list` does not refuse here. The
-		// checkout tests then run without that answer. The root-chain step below still
-		// refuses a root that has, or lies below, a .git entry. A root in a listed
-		// worktree whose .git entry is gone then goes on. That is claustrum's choice
-		// (not measured).
-		topLevel, _ := repoTopLevel(req.use, repo, nil)
+		// A failed show-toplevel stops the create, and so does a `worktree list` that
+		// fails with -z and then without it. Nothing is made (5fd08069, cells C-W17b and
+		// C-W17 of round tier0-20, Linux VM). A D5 kill gets the same texts. A kill of
+		// the -z call runs no second call (not measured).
+		topLevel, _, err := repoTopLevelCall(req.use, repo, nil)
+		if err != nil {
+			return okResult(req.ID, worktreeResult{Success: false, ErrorCode: "mkdir_failed",
+				Error: parentStepPrefix + "cannot determine the repository's work tree: " + err.Error()})
+		}
 		_ = repositoryCheckError(req.use, repo, nil)
-		listed, _ := worktreeList(req.use, repo)
+		listed, _, err := worktreeListTwice(req.use, repo)
+		if err != nil {
+			return okResult(req.ID, worktreeResult{Success: false, ErrorCode: "mkdir_failed",
+				Error: parentStepPrefix + "cannot list the repository's worktrees: " + err.Error()})
+		}
+		// Not measured: this test before the ancestor walk. A failing folder above a
+		// loop gets the loop text.
+		if msg := locationLinkRefusal(p.WorktreeRoot, "create"); msg != "" {
+			return okResult(req.ID, worktreeResult{Success: false, Error: msg, ErrorCode: "unsafe_path"})
+		}
+		if msg := repoFolderHoldsRepoRefusal(p.WorktreeRoot, p.WorktreePath, p.BaseRepo, repo, "create", true); msg != "" {
+			return okResult(req.ID, worktreeResult{Success: false, Error: msg, ErrorCode: "unsafe_path"})
+		}
+		checkouts := newRepoCheckouts(repo, p.BaseRepo, topLevel, listed)
 		// A worktreeRoot is refused below a directory owned by a user other than you
 		// or uid 0. It is also refused below a directory writable by a shared group or
 		// by every user, without the sticky bit. The refusal comes after the 9 calls,
-		// with no further git call (rows K1, G2 to G18, Linux and macOS VMs). It comes
-		// before the checkout tests. In rows Y11d and T7 both references send it where
-		// the checkout text also applies. It comes before the root-chain step (rows
-		// G18, G36a, G40a and G40b) and the tests of the root itself (rows G16 and
-		// G17).
-		if msg := worktreeRootAncestorRefusal(p.WorktreeRoot); msg != "" {
-			return okResult(req.ID, worktreeResult{Success: false, Error: msg, ErrorCode: "unsafe_path"})
+		// with no further git call (rows K1, G2 to G18, Linux and macOS VMs). In rows
+		// Y11d and T7 both references send it where the checkout text also applies. It
+		// comes before the root-chain step (rows G18, G36a, G40a and G40b) and the
+		// tests of the root itself (rows G16 and G17). The walk also runs the checkout
+		// tests and the .git test on each directory, so the first failing directory
+		// from the top decides.
+		if msg, code := worktreeRootAncestorRefusal(p.WorktreeRoot, checkouts); msg != "" {
+			return okResult(req.ID, worktreeResult{Success: false, Error: msg, ErrorCode: code})
 		}
-		if msg := worktreeRootCheckoutRefusal(p.WorktreeRoot, p.BaseRepo, topLevel, listed, "create"); msg != "" {
+		// A listed worktree whose folder is gone gets that folder, empty, before the
+		// refusal (5fd08069, cell C-W8 of round tier0-20, Linux VM). Only the folder
+		// itself is made, and only below a folder that exists (not measured).
+		if msg, gone := worktreeRootCheckoutRefusal(p.WorktreeRoot, checkouts, "create", true); msg != "" {
+			makeGoneWorktreeFolder(gone)
 			return okResult(req.ID, worktreeResult{Success: false, Error: msg, ErrorCode: "unsafe_path"})
 		}
 		// The root-chain step comes before the owner and write refusals of the root.
 		// The <directory> symlink refusal comes after them, then the <directory> step.
-		// That is the measured order.
+		// That is the measured order. Not measured: the session tests before the
+		// owner and write tests of the root, and the write tests of the <directory>
+		// level before its .git test.
 		dir, msg, code := externalChainCheck(p.WorktreeRoot, p.WorktreePath)
 		if msg != "" {
 			return okResult(req.ID, worktreeResult{Success: false, Error: msg, ErrorCode: code})
 		}
 		externalDir = dir
+		if msg := sessionLocationRefusal(p.WorktreeRoot); msg != "" {
+			return okResult(req.ID, worktreeResult{Success: false, Error: msg, ErrorCode: "unsafe_path"})
+		}
 		if msg := worktreeRootShareRefusal(root); msg != "" {
 			return okResult(req.ID, worktreeResult{Success: false, Error: msg, ErrorCode: "unsafe_path"})
 		}
 		if msg := worktreeExternalDirSymlinkRefusal(p.WorktreePath, "create"); msg != "" {
+			return okResult(req.ID, worktreeResult{Success: false, Error: msg, ErrorCode: "unsafe_path"})
+		}
+		// The <directory> level gets the owner and write tests of the root. The refusal
+		// comes before the step that drops an old registration of the leaf, so that
+		// registration stays (5fd08069, cell C-W18 of round tier0-20, Linux VM). Its
+		// owner test is not measured.
+		if msg := worktreeRootShareRefusal(filepath.Dir(filepath.Clean(p.WorktreePath))); msg != "" {
+			return okResult(req.ID, worktreeResult{Success: false, Error: msg, ErrorCode: "unsafe_path"})
+		}
+		if msg := repoFolderInWorktreeRefusal(p.WorktreeRoot, p.WorktreePath, p.BaseRepo, listed, "create"); msg != "" {
 			return okResult(req.ID, worktreeResult{Success: false, Error: msg, ErrorCode: "unsafe_path"})
 		}
 		if msg, code := externalDirLevelCheck(externalDir); msg != "" {
@@ -1863,6 +1899,9 @@ func gitWorktreeRemoveLocked(req *request, p *gitParams, repo string) response {
 		if msg := worktreeExternalShapeRefusal(p.WorktreeRoot, p.WorktreePath, "remove"); msg != "" {
 			return refuse(msg)
 		}
+		if msg := repoFolderHoldsRepoRefusal(p.WorktreeRoot, p.WorktreePath, p.BaseRepo, repo, "remove", false); msg != "" {
+			return refuse(msg)
+		}
 		// A root that is baseRepo or lies beneath it is refused after the shape check,
 		// with no git call. The leaf is not looked at. f6010b97 and 89cb6289 do the
 		// same on Linux and macOS VMs. Rows Q2 to Q6 and MX10 get the shape text first.
@@ -1909,7 +1948,20 @@ func gitWorktreeRemoveLocked(req *request, p *gitParams, repo string) response {
 		if msg != "" {
 			return refuse(msg)
 		}
-		if msg := worktreeRootCheckoutRefusal(p.WorktreeRoot, p.BaseRepo, topLevel, listed, "remove"); msg != "" {
+		// The loop and filesystem-root refusals, the repository behind a link, the
+		// checkout tests and a <directory> level in a listed worktree come before the
+		// remove reads the root. Nothing is deleted (5fd08069, cells C-S4 to C-S8 and
+		// C-W23 of round tier0-20, Linux VM).
+		if msg := locationLinkRefusal(p.WorktreeRoot, "remove"); msg != "" {
+			return refuse(msg)
+		}
+		if msg := repoFolderHoldsRepoRefusal(p.WorktreeRoot, p.WorktreePath, p.BaseRepo, repo, "remove", true); msg != "" {
+			return refuse(msg)
+		}
+		if msg, _ := worktreeRootCheckoutRefusal(p.WorktreeRoot, newRepoCheckouts(repo, p.BaseRepo, topLevel, listed), "remove", false); msg != "" {
+			return refuse(msg)
+		}
+		if msg := repoFolderInWorktreeRefusal(p.WorktreeRoot, p.WorktreePath, p.BaseRepo, listed, "remove"); msg != "" {
 			return refuse(msg)
 		}
 		if msg := worktreeRootMissingRefusal(p.WorktreeRoot); msg != "" {

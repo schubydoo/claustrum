@@ -516,6 +516,8 @@ traps that matter for telling drift from expected:
   `rev-parse --absolute-git-dir`, more rounds with `worktreeRoot`, and other
   listings with `existingBranch`. Those differences are not drift. See "Not equal
   to `5fd08069`" in [PROTOCOL.md](PROTOCOL.md#hardened-git-calls).
+- The `worktreeRoot` location rules follow `5fd08069` (rounds `tier0-20` to
+  `tier0-22`), not drift. `89cb6289` is not measured in these cells.
 - The settings copy of the git methods splits the builds too, not drift.
   `scripts/UPSTREAM_SHA` names `89cb6289`, and claustrum follows `5fd08069`.
   Against `89cb6289` a triager can meet these points. Each is in
@@ -811,11 +813,11 @@ again after each Go bump.
 
 ### The symlink-loop text of `filepath.EvalSymlinks`
 
-`git.worktree_create` with a `worktreeRoot` detects a symlink loop by the error
-text of `filepath.EvalSymlinks`, "EvalSymlinks: too many links". Go does not
-export that error. The test lives in `isSymlinkLoop` (`worktreeexternal_unix.go`).
-If a Go release rewords the text, the loop frame changes from `unsafe_path` to
-`mkdir_failed`. The S1, S1b, S1c and S1d cases in
+Both worktree methods refuse a symlink loop in a `worktreeRoot`
+(`locationLinkRefusal`). A kernel ELOOP catches a long chain. A root that is itself a link in a
+loop, or starts a chain of more than 255 links, rests on the text "EvalSymlinks: too many links" of `filepath.EvalSymlinks`
+(`isSymlinkLoop`). If a Go release rewords it, that
+frame changes. The S1, S1b, S1c and S1d cases in
 `worktree_create_chain_unix_test.go` then fail. Check them after each Go bump.
 
 ### Windows junctions in `filepath.EvalSymlinks`
@@ -848,10 +850,7 @@ changes `winsymlink`.
 
 With a `worktreeRoot`, both worktree methods run `git worktree list --porcelain -z`
 (`worktreeListCall`, `worktreeexternal.go`). The `-z` option needs git 2.36 or
-later. On an older git that call fails. `git.worktree_create` then compares the root
-with the git top level of `baseRepo` only. A root in another checkout of the
-repository then passes. `git.worktree_remove` then runs `git worktree list
---porcelain` and reads its lines, so its tests run as usual. The references on such
+later. On an older git that call fails. Both methods then run `git worktree list --porcelain` (`worktreeListTwice`). The references on such
 a git are not measured. Several tests in
 `worktree_root_checkout_unix_test.go` expect a working call. They skip there
 (`requireWorktreeListZ`), so a skip in CI means a git older than 2.36.
