@@ -145,7 +145,7 @@ func TestProbeFolder(t *testing.T) {
 	}
 }
 
-// R14: a config of the folder `.probe` with another text is written again at
+// An emptied config of the folder `.probe` is written again at
 // the next call about the repository. 5fd08069 has the 36 bytes again after a
 // git.info 6 s after the file was emptied (cell C10 of round tier0-5, Linux
 // VM). HEAD stays the file that it was.

@@ -430,14 +430,17 @@ func (r shadowRun) detail() string {
 	return r.err.Error()
 }
 
-// gitSaidNo reports whether a failed call of the loop of the start test is an
-// answer of git itself: an exit error of a process that no signal ended, inside
-// the bound, whose error output does not hold `No space left`. Only such a
-// failure can give the state fallback-git (shadowTestCalls). On 5fd08069 it is
-// true for exit 128 with one error line and for exit 1 with no output (cells
-// C1, C4 and N1-control of round tier0-5, Linux VM). It is false for a call
-// that signal 9 ended and for an error text with `No space left on device`
-// (cells N3, N1 and N2). No other text is measured, so no other text counts.
+// gitSaidNo reports whether a failed call of the loop of the start test is a
+// refusal by git itself: an exit error of a process that no signal ended,
+// inside the bound, whose error output does not hold `No space left`. Only
+// such a failure can give the state fallback-git (shadowTestCalls). 5fd08069
+// answers fallback-git after exit 128 with one error line and after exit 1
+// with no output (cells C1, C4 and N1-control of round tier0-5, Linux VM). It
+// fails the test after a call that signal 9 ended and after an error text
+// with `No space left on device` (cells N3, N1 and N2 of round tier0-5, all at
+// call 10). No other text is measured, so no other text counts. On Windows a
+// call that another process killed reads as an exit, so the signal rule holds
+// on Linux and macOS only (not measured on Windows).
 func (r shadowRun) gitSaidNo() bool {
 	var exit *exec.ExitError
 	return errors.As(r.err, &exit) && exit.Exited() && !r.ended && !strings.Contains(r.stderr, "No space left")
@@ -641,7 +644,8 @@ func shadowTestCalls(dir, check string) (state, cause string) {
 	// writes two lines 5fd08069 answers `git mktree failed under "<S>": error:
 	// first forced line fatal: second forced line (git version 2.43.0)` (cell C6
 	// of round tier0-5, Linux VM). A call 10 on a full disk has both lines of
-	// git too (cell N2 of that round).
+	// git too (cell N2 of round tier0-5). The other calls share this path: not
+	// measured.
 	failed := func(verb string, r shadowRun) (string, string) {
 		return "", fmt.Sprintf("git %s failed under %q: %s", verb, dir, r.allLines())
 	}
@@ -677,17 +681,23 @@ func shadowTestCalls(dir, check string) (state, cause string) {
 		return "", err.Error()
 	}
 
-	// Call 6, the first `config --get` on the copy. Only a call that works and
-	// prints `real` decides: the state is fallback-git, and no other test call
-	// runs. 5fd08069 answers so with 6 test calls (cell C3b of round tier0-5,
-	// Linux VM). Every other result goes on. After a call 6 that exits 1 with no
-	// output, 5fd08069 runs all ten calls and the state is shadow (cell C3).
-	// Another failure of call 6, and a call 6 that the bound ended, go on too:
-	// claustrum's own, not measured.
+	// Call 6, the first `config --get` on the copy. A call that works and
+	// prints `real` gives the state fallback-git, and no other test call runs.
+	// 5fd08069 answers so with 6 test calls (cell C3b of round tier0-5, Linux
+	// VM). After a call 6 that exits 1 with no output, 5fd08069 runs all ten
+	// calls and the state is shadow (cell C3 of round tier0-5). Another failure
+	// of a call 6 that exited by itself goes on too. So does a call 6 that
+	// works with a text that is neither `real` nor `shadow`. Both are
+	// claustrum's own, not measured. A call 6 that the bound ended fails the
+	// test, as every ended test call but call 7 (not measured for call 6).
 	// Between call 6 and call 8 the daemon lists the config of `real` from
 	// standard input, as it does for a repository.
 	get := []string{"config", "--get", "helper.check"}
-	if r := run(shadowEnv, get...); r.err == nil && r.out == "real" {
+	first := run(shadowEnv, get...)
+	if first.ended {
+		return failed("config", first)
+	}
+	if first.err == nil && first.out == "real" {
 		return controlFallback, ""
 	}
 	text, err := os.ReadFile(filepath.Join(gitDir, "config"))
@@ -722,31 +732,36 @@ func shadowTestCalls(dir, check string) (state, cause string) {
 	if err := fillShadowTestCopy(gitDir, shadowDir, []byte(listed.out)); err != nil {
 		return "", err.Error()
 	}
-	// Calls 8, 9 and 10 are the three steps of one loop, and one rule judges
-	// each of them. It is measured on 5fd08069 in cells C1, C2, C4, C5, C9, N1,
-	// N2 and N3 of round tier0-5 (Linux VM):
+	// In claustrum calls 8, 9 and 10 are the three steps of one loop, and one
+	// rule judges each of them. The replies and call logs of 5fd08069 in cells
+	// C1, C2, C4, C5, C9, N1, N2 and N3 of round tier0-5 (Linux VM) fit it:
 	//
 	//   - The call works and its answer passes: the next step. After the last
 	//     step the state is shadow.
 	//   - The call works and its answer does not pass: the state is
-	//     fallback-git, and no second call runs (cells C4, C2 and C5, with 8, 9
-	//     and 10 test calls).
+	//     fallback-git, and no second call runs (cells C4, C2 and C5 of round
+	//     tier0-5, with 8, 9 and 10 test calls).
 	//   - The call fails: the second call runs, which is the same call on `real`
 	//     alone. If it works and git itself refused the first one (gitSaidNo),
-	//     the state is fallback-git (cells C4, C1 and N1-control). In every
-	//     other case the test failed, and the cause names the first call (cells
-	//     C9, N1, N2 and N3).
+	//     the state is fallback-git (cells C4, C1 and N1-control of round
+	//     tier0-5). In every other case the test failed, and the cause names
+	//     the first call (cells C9, N1, N2 and N3 of round tier0-5).
+	//
+	// Two failed calls are measured at call 9 only (cell C9 of round tier0-5).
+	// The `No space left` and signal rows are at call 10 only. The other steps
+	// share the path: not measured.
 	//
 	// git 2.11.4 and 2.12.5 exit 1 with no output at call 9, and the second
 	// call works there: the state is fallback-git (s3p2-oldgit section 4, Linux
-	// VM). A call that the bound ended is no answer of git, so the test failed
+	// VM). A call that the bound ended is no refusal by git, so the test failed
 	// with the text of that call also when the second call works. For an ended
 	// add 5fd08069 answers so on a Windows VM, with `exit status 1` as the text
 	// (val-s3p2b2-1-windows cell Q-S4h-hold32-worktree-add).
 	//
 	// The answer test of call 10 is that the folder `wt` is there after the
-	// call. In cell C5 the call exits 0 and makes nothing. Which entry of a
-	// worktree 5fd08069 looks for is not measured: the folder is claustrum's own.
+	// call. In cell C5 of round tier0-5 the call exits 0 and makes nothing. No
+	// cell has an add that exits 0 and makes a part of a worktree. The test for
+	// the folder is claustrum's own.
 	verify := []string{"rev-parse", "--verify", "-q", "HEAD^{commit}"}
 	wt := filepath.Join(check, "wt")
 	add := func(leaf string) []string {
@@ -792,26 +807,28 @@ func callSevenEnded(path string) string {
 }
 
 // shadowVersionNote is the end of the cause after a failed call of the calls
-// 1 to 5: the answer of `git version` in brackets. 5fd08069 then runs `git
-// version` two times before the reply. After an `init` that the bound ended
-// its cause ends with ` (git version 2.43.0)` (s3p2b-edges-linux2 cell 31,
-// Linux VM). After an `init` that exits 1 with a text it is `git init failed
-// under "<S>": fatal: forced failure by the test wrapper (git version 2.43.0)`
-// (cell C2 of val-s3p2b2-7-linux2, Linux VM, 2 of 2 runs and the control). On
-// a Windows VM the same cause ends with ` (git version 2.55.0.windows.3)`,
-// with the same four calls (table C2 of val-s3p2b2-7-windows, 2 of 2 runs).
-// After a failed `mktree` the cause has the same end, and the request has 5
-// test calls (cell C6 of round tier0-5, Linux VM). The first version call has
-// no option list, the root folder as its working directory and no added
-// variable. The second has the option list, the folder and the variables of a
-// test call. Which of the two gives the text is not measured.
+// 1 to 5: the answer of `git version` in brackets. After a failed `init` or
+// `mktree`, 5fd08069 runs `git version` two times before the reply. After an
+// `init` that the bound ended its cause ends with ` (git version 2.43.0)`
+// (s3p2b-edges-linux2 cell 31, Linux VM). After an `init` that exits 1 with a
+// text it is `git init failed under "<S>": fatal: forced failure by the test
+// wrapper (git version 2.43.0)` (cell C2 of val-s3p2b2-7-linux2, Linux VM, 2
+// of 2 runs and the control). On a Windows VM the same cause ends with ` (git
+// version 2.55.0.windows.3)`, with the same four calls (table C2 of
+// val-s3p2b2-7-windows, 2 of 2 runs). After a `mktree` that exits 1 the cause
+// has the same end, and the request has 5 test calls (cell C6 of round
+// tier0-5, Linux VM). The first version call has no option list, the root
+// folder as its working directory and no added variable. The second has the
+// option list, the folder and the variables of a test call. Which of the two
+// gives the text is not measured.
 //
 // The calls from call 6 on get no such end. Four rows have none: a failed
 // `worktree add` (cell 26 of s3p2b-edges-linux2 and cell N1 of round
 // tier0-5), an ended `rev-parse --verify` (cell 31 of s3p2b-edges-linux2) and an
 // ended `worktree add` (cell W8a of s3b-linux). No record has a failed
-// `config`, `commit-tree` or `update-ref` call of the calls 1 to 5: not
-// measured (setupFailed in shadowTestCalls).
+// `config`, `commit-tree` or `update-ref` call of the calls 1 to 5. Those
+// three share the path of `init` and `mktree`: not measured (setupFailed in
+// shadowTestCalls).
 func shadowVersionNote(check string, env []string) string {
 	first := shadowGit(gitVersionDir, shadowDaemonEnv(), "version")
 	second := shadowGit(check, env, append(shadowTestPrefix(), "version")...)

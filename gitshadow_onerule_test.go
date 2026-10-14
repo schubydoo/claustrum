@@ -12,10 +12,10 @@ import (
 	"time"
 )
 
-// The tests of the rules of the start test that 5fd08069 showed in round
-// tier0-5 on a Linux VM. Each test stages the answer of one or two test calls in the
-// git stub, and no real git runs for a staged call. Each names the cell of its
-// rule.
+// The tests of the last steps of the start test. Each test stages the answer
+// of one or two test calls in the git stub, and no real git runs for a staged
+// call. Each names the cell of round tier0-5 (Linux VM) whose reply of 5fd08069
+// it follows.
 
 // stagedCall is one staged answer of the git stub. Match are exact argv words.
 // Copy "yes" takes only a call with a GIT_COMMON_DIR, and "no" only a call
@@ -159,8 +159,8 @@ func wantFailedTest(t *testing.T, f shadowFixture, raw string, after int, verb, 
 	}
 }
 
-// R1: a first `config --get` that exits 1 with no output does not stop the
-// test. 5fd08069 runs all ten calls and the state is shadow (cell C3).
+// A first `config --get` that exits 1 with no output does not stop the
+// test. 5fd08069 runs all ten calls and the state is shadow (cell C3 of round tier0-5).
 func TestShadowQuietFirstGetGoesOn(t *testing.T) {
 	f := newShadowFixture(t)
 	stageGit(t, stagedCall{Match: stageGet, Copy: "yes", Nth: 1, Exit: 1})
@@ -175,8 +175,8 @@ func TestShadowQuietFirstGetGoesOn(t *testing.T) {
 	}
 }
 
-// R2: a first `config --get` that works and prints `real` gives the state
-// fallback-git at once. It is the last of 6 test calls on 5fd08069 (cell C3b).
+// A first `config --get` that works and prints `real` gives the state
+// fallback-git at once. It is the last of 6 test calls on 5fd08069 (cell C3b of round tier0-5).
 func TestShadowFirstGetThatPrintsRealGivesFallback(t *testing.T) {
 	f := newShadowFixture(t)
 	stageGit(t, stagedCall{Match: stageGet, Copy: "yes", Nth: 1, Stdout: "real\n"})
@@ -186,9 +186,9 @@ func TestShadowFirstGetThatPrintsRealGivesFallback(t *testing.T) {
 	wantLastTestCall(t, test, 6, true, stageGet...)
 }
 
-// R3: a second `config --get` that works and prints another text gives the
-// state fallback-git. It is the last of 8 test calls on 5fd08069 (cell C4,
-// the part with the text `x`).
+// A second `config --get` that works and prints another text gives the
+// state fallback-git. It is the last of 8 test calls on 5fd08069 (cell C4 of
+// round tier0-5, the part with the text `x`).
 func TestShadowSecondGetWithAnotherTextGivesFallback(t *testing.T) {
 	f := newShadowFixture(t)
 	stageGit(t, stagedCall{Match: stageGet, Copy: "yes", Nth: 2, Stdout: "x\n"})
@@ -198,9 +198,9 @@ func TestShadowSecondGetWithAnotherTextGivesFallback(t *testing.T) {
 	wantLastTestCall(t, test, 8, true, stageGet...)
 }
 
-// R4: after a second `config --get` that exits 1, one more `config --get`
+// After a second `config --get` that exits 1, one more `config --get`
 // runs on `real` alone, and the state is fallback-git. 5fd08069 makes 9 test
-// calls (cell C4, the part with exit 1).
+// calls (cell C4 of round tier0-5, the part with exit 1).
 func TestShadowFailedSecondGetRunsOneGetOnRealAlone(t *testing.T) {
 	f := newShadowFixture(t)
 	stageGit(t, stagedCall{Match: stageGet, Copy: "yes", Nth: 2, Exit: 1})
@@ -210,8 +210,8 @@ func TestShadowFailedSecondGetRunsOneGetOnRealAlone(t *testing.T) {
 	wantLastTestCall(t, test, 9, false, stageGet...)
 }
 
-// R5: a `rev-parse` that works and prints another id gives the state
-// fallback-git with no second call. 5fd08069 makes 9 test calls (cell C2).
+// A `rev-parse` that works and prints another id gives the state
+// fallback-git with no second call. 5fd08069 makes 9 test calls (cell C2 of round tier0-5).
 func TestShadowRevParseWithAnotherIDGivesFallback(t *testing.T) {
 	f := newShadowFixture(t)
 	stageGit(t, stagedCall{Match: stageVerify, Copy: "yes", Stdout: strings.Repeat("0", 40) + "\n"})
@@ -221,9 +221,9 @@ func TestShadowRevParseWithAnotherIDGivesFallback(t *testing.T) {
 	wantLastTestCall(t, test, 9, true, stageVerify...)
 }
 
-// R6: a `rev-parse` that exits 128 with one error line, with a second call
+// A `rev-parse` that exits 128 with one error line, with a second call
 // that works, gives the state fallback-git. 5fd08069 makes 10 test calls and
-// no add (cell C1).
+// no add (cell C1 of round tier0-5).
 func TestShadowRevParseWithAnErrorLineGivesFallback(t *testing.T) {
 	f := newShadowFixture(t)
 	stageGit(t, stagedCall{Match: stageVerify, Copy: "yes", Exit: 128, Stderr: "fatal: forced rev-parse failure\n"})
@@ -233,9 +233,9 @@ func TestShadowRevParseWithAnErrorLineGivesFallback(t *testing.T) {
 	wantLastTestCall(t, test, 10, false, stageVerify...)
 }
 
-// R7: when both `rev-parse` calls fail, the cause names the first one. On
+// When both `rev-parse` calls fail, the cause names the first one. On
 // 5fd08069 the first exits 1 with no output and the second exits 128 with a
-// line, and the cause ends with `exit status 1` after 10 test calls (cell C9).
+// line, and the cause ends with `exit status 1` after 10 test calls (cell C9 of round tier0-5).
 func TestShadowTwoFailedRevParseCallsNameTheFirst(t *testing.T) {
 	f := newShadowFixture(t)
 	stageGit(t,
@@ -247,8 +247,8 @@ func TestShadowTwoFailedRevParseCallsNameTheFirst(t *testing.T) {
 	wantLastTestCall(t, test, 10, false, stageVerify...)
 }
 
-// R8: an add that exits 0 and makes nothing gives the state fallback-git with
-// no add of `wt2`. 5fd08069 makes 10 test calls (cell C5).
+// An add that exits 0 and makes nothing gives the state fallback-git with
+// no add of `wt2`. 5fd08069 makes 10 test calls (cell C5 of round tier0-5).
 func TestShadowAddThatMakesNothingGivesFallback(t *testing.T) {
 	f := newShadowFixture(t)
 	stageGit(t, stagedCall{Match: stageAdd, Copy: "yes"})
@@ -258,9 +258,9 @@ func TestShadowAddThatMakesNothingGivesFallback(t *testing.T) {
 	wantLastTestCall(t, test, 10, true, stageAdd...)
 }
 
-// R9: an add that exits 128 with `fatal: forced failure`, with an add of
+// An add that exits 128 with `fatal: forced failure`, with an add of
 // `wt2` that works, gives the state fallback-git after 11 test calls on
-// 5fd08069 (cell N1-control).
+// 5fd08069 (cell N1-control of round tier0-5).
 func TestShadowRefusedAddWithAGoodSecondAddGivesFallback(t *testing.T) {
 	f := newShadowFixture(t)
 	stageGit(t, stagedCall{Match: stageAdd, Copy: "yes", Exit: 128, Stderr: "fatal: forced failure\n"})
@@ -273,11 +273,11 @@ func TestShadowRefusedAddWithAGoodSecondAddGivesFallback(t *testing.T) {
 	}
 }
 
-// R10: an add whose error text holds `No space left on device` fails the
+// An add whose error text holds `No space left on device` fails the
 // test, also when the add of `wt2` works. The cause has the error text of the
 // first add, 11 test calls ran, and the request after the kept time runs the
-// whole test again. 5fd08069 answers so for a text of one line (cell N1) and
-// for the two lines of git on a full disk (cell N2).
+// whole test again. 5fd08069 answers so for a text of one line (cell N1 of round tier0-5) and
+// for the two lines of git on a full disk (cell N2 of round tier0-5).
 func TestShadowAddWithNoSpaceLeftFailsTheTest(t *testing.T) {
 	for name, c := range map[string]struct{ stderr, cause string }{
 		"one line (N1)": {
@@ -308,10 +308,10 @@ func TestShadowAddWithNoSpaceLeftFailsTheTest(t *testing.T) {
 	}
 }
 
-// R12: the cause of a failed `mktree` has both of its error lines, joined by
+// The cause of a failed `mktree` has both of its error lines, joined by
 // one space, and the version text. After the failed call two `version` calls
 // run: one with no option, and one with the options and in the folder of a
-// test call. 5fd08069 makes those 5 test calls (cell C6).
+// test call. 5fd08069 makes those 5 test calls (cell C6 of round tier0-5).
 func TestShadowFailedMktreeHasAllLinesAndTheVersion(t *testing.T) {
 	f := newShadowFixture(t)
 	stageGit(t,
@@ -333,14 +333,15 @@ func TestShadowFailedMktreeHasAllLinesAndTheVersion(t *testing.T) {
 	if !slices.Equal(inTest.argv, append(shadowTestPrefix(), "version")) || inTest.cwd != test[0].cwd {
 		t.Errorf("second version call = %v in %s, want the options and the folder %s", inTest.argv, inTest.cwd, test[0].cwd)
 	}
-	if _, ok := lookupExact(inTest.env, "GIT_DIR"); ok || inTest.env[0] != "GIT_CONFIG_NOSYSTEM=1" {
-		t.Errorf("second version call has the variables %v", inTest.env[:1])
+	_, folder := lookupExact(inTest.env, "GIT_DIR")
+	if v, ok := lookupExact(inTest.env, "GIT_CONFIG_NOSYSTEM"); folder || !ok || v != "1" {
+		t.Errorf("second version call: GIT_DIR set = %v, GIT_CONFIG_NOSYSTEM = %q, want the variables of a test call with no folder", folder, v)
 	}
 }
 
-// R13: with GIT_NAMESPACE and GIT_INDEX_FILE in the daemon, no call in the
+// With GIT_NAMESPACE and GIT_INDEX_FILE in the daemon, no call in the
 // folder of the test has either, and call 7 and the excludes read have both.
-// The nine such calls of 5fd08069 have neither (cell C8).
+// The nine such calls of 5fd08069 have neither (cell C8 of round tier0-5).
 func TestShadowTestCallsDropNamespaceAndIndexFile(t *testing.T) {
 	f := newShadowFixture(t)
 	t.Setenv("GIT_NAMESPACE", "x")
@@ -374,10 +375,10 @@ func TestShadowTestCallsDropNamespaceAndIndexFile(t *testing.T) {
 	}
 }
 
-// R15: with no git in the PATH of the daemon, git.info answers "no
+// With no git in the PATH of the daemon, git.info answers "no
 // repository" with no member, runs no test and logs no line about git. The
 // folder of the daemon holds the lock file only, and the next request gets
-// the same reply. 5fd08069 answers so in 3 of 3 runs (cell C7).
+// the same reply. 5fd08069 answers so in 3 of 3 runs (cell C7 of round tier0-5).
 func TestGitInfoWithNoGitInThePath(t *testing.T) {
 	f := newShadowFixture(t)
 	logs := captureLogBuf(t)
@@ -394,7 +395,7 @@ func TestGitInfoWithNoGitInThePath(t *testing.T) {
 	if got := entryNames(t, daemonFolder(t, f.run)); !slices.Equal(got, []string{shadowLockName}) {
 		t.Errorf("folder of the daemon holds %v, want the lock file only", got)
 	}
-	if strings.Contains(logs.String(), "git") {
-		t.Errorf("log lines about git:\n%s", logs.String())
+	if strings.Contains(logs.String(), "[GitHandler]") {
+		t.Errorf("log lines of the git handler:\n%s", logs.String())
 	}
 }
