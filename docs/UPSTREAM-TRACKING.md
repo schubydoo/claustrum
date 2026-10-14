@@ -199,7 +199,7 @@ opt-in?
 | D19 | Always-on, Windows only | Maybe. A Windows probe with a junction at any directory between `baseRepo` and the leaf shows it (expected) | `git.worktree_remove` refuses that junction with `failed to remove worktree: openat <path from baseRepo>: path escapes from parent`. At `.claude` or `.claude\worktrees`, `f6010b97` answers success and deletes the branch, and `89cb6289` does the same for a branch that another ref reaches. At a junction `<P>\J` above `.claude`, `89cb6289` answers success after 2 git calls. No leaf and no branch existed there (Windows VM, cells J-b-wt-pj and J-b-wt-pJ). The maintainer widened the entry to those levels on 2026-10-07. That is this entry, not drift |
 | D20 | Always-on, Linux and macOS | No. Off the wire. It is a signal time at a daemon start, not a frame | 50 ms settle before the group `SIGKILL` of a leader that reads as gone. In row RP05a that `SIGKILL` comes about 50 ms later than on `89cb6289`. In row PG05a claustrum ends the child in no run, where `89cb6289` ends it in some Linux runs. In rows where the child ends on `SIGTERM`, `89cb6289` also sends a group `SIGKILL` right after it in some Linux runs, and claustrum sends none. None of these is drift |
 | D21 | Always-on, Windows only | No. Off the wire. It is the content of `remote-server.log`, not a frame | a second daemon on a live socket appends to `remote-server.log`. `89cb6289` truncates the file at that start. The earlier lines of its first daemon are lost. The later lines of that daemon sit behind a block of NUL bytes (rows WN04, WJ04). Keeping the lines is a maintainer decision of 2026-10-02. The longer log of claustrum is not drift |
-| D22 | Always-on | Maybe. A probe that reaches the path shows it (expected) | `git.worktree_remove` refuses a worktree that is locked in the `.git` folder of `baseRepo`. `89cb6289` answers success in four states. Rows p6 and p6f have a daemon `GIT_DIR` and `GIT_COMMON_DIR` of another repository, with the folder present and gone. Row p6e has a daemon `GIT_DIR` alone. Row p6d has `baseRepo` = `<T>/missing/..`. With `worktreeRoot`, rows q2 to q4 (Linux VM) differ in the frame too, and nothing is deleted on either side. Rows p6, p6e and p6f ran on Linux, macOS and Windows VMs, row p6d on Linux and macOS. A maintainer decision of 2026-10-03. The refusal is not drift |
+| D22 | Always-on | Maybe. A probe that reaches the path shows it (expected) | `git.worktree_remove` refuses a worktree that is locked in the `.git` folder of `baseRepo`. `89cb6289` answers success in four states (rows p6, p6d, p6e and p6f), and with `worktreeRoot` rows q2 to q4 differ in the frame too (see the entry). A maintainer decision of 2026-10-03. The refusal is not drift. On Linux and macOS a gone worktree whose locked entry sits behind a linked `<git dir>/worktrees` gets success, and its branch goes. That follows `5fd08069` (cell L1 of round `tier0-26`, Linux VM), by the maintainer's decision of 2026-10-14. |
 | D23 | Always-on, Windows only | Maybe. A Windows probe whose child prints its environment block shows it in the stream frames (expected) | the environment block of a child is in name order. `89cb6289` keeps the order of its launching block, then `CLAUDE_SSH_DAEMON_CHILD=1`, then the added entries (Windows VM rows V1 to V10). The set of entries and the response frames are equal in those rows. Cause: the Go version. The other order is not drift |
 | D24 | Always-on, Linux and macOS | No in the measured cells: the frames are equal and the disk differs (Linux and macOS VMs). A probe that lists the registrations folder shows it. At the placement the frame holds claustrum's own text `is not the folder that was tested after the add` (not measured) | If git answered `rev-parse --absolute-git-dir`, the rollback of `git.worktree_create` deletes the registration only if the folder at its path is still the folder that the create accepted after the add. `89cb6289` removes the folder at that path in cells B6 and B6b (Linux and macOS VMs, 2 runs each). In B6b that folder holds the registration of a live sibling worktree. The placement of the index has the same test (not measured). A maintainer decision of 2026-10-07. The kept folder is not drift |
 | D25 | Always-on, Linux only | Against `5fd08069`: yes on a Linux run with `CLAUDE_SSH_PEER_CHECK=1` in the daemon environment, and that member is equal with no variable. Against `89cb6289`: that build has no `peerCheck` member, see the `peerCheck` bullet below | `server.capabilities` answers `"peerCheck":"unavailable"`, where `5fd08069` answers `"peerCheck":"on","peerCheckBy":["network","pidfd"]` (Linux VM). claustrum has no peer check and serves every caller. Its log line there is its own text. A maintainer decision of 2026-10-10. The other answer is not drift |
@@ -472,7 +472,6 @@ traps that matter for telling drift from expected:
 
   macOS is not measured on any build.
 - The refusals of a repository config split the builds too, not drift.
-  `scripts/UPSTREAM_SHA` names `89cb6289`, and claustrum follows `5fd08069`.
   Against `89cb6289` a config that the daemon does not accept gets a text that
   starts with `this repository's git config cannot be used: `. A refused file of
   the git directory gets a text that starts with `a file in this repository's
@@ -503,8 +502,7 @@ traps that matter for telling drift from expected:
   The states, the bounds and the cells are in
   [PROTOCOL.md](PROTOCOL.md#repository-config-refusals).
 - The option lists of the git calls split the builds too, not drift.
-  `scripts/UPSTREAM_SHA` names `89cb6289`, and claustrum follows `5fd08069`.
-  So claustrum differs from `89cb6289` in four states: `git.status` with replace
+  claustrum differs from `89cb6289` in four states: `git.status` with replace
   objects, the `hint:` lines in a failure text of `git.worktree_create`, a long
   tree path on Windows, and the paths of a new worktree with
   `worktree.useRelativePaths`. The call logs differ in the `-c` lists and in two
@@ -518,8 +516,10 @@ traps that matter for telling drift from expected:
   to `5fd08069`" in [PROTOCOL.md](PROTOCOL.md#hardened-git-calls).
 - The `worktreeRoot` location rules follow `5fd08069` (rounds `tier0-20` to
   `tier0-22`), not drift. `89cb6289` is not measured in these cells.
+- A remove behind a linked `<git dir>/worktrees` follows `5fd08069`, not drift:
+  cell C3 of rounds `tier0-24` and `tier0-25m` (Linux and macOS VMs) and L1 of
+  round `tier0-26` (Linux VM). `89cb6289` is not measured.
 - The settings copy of the git methods splits the builds too, not drift.
-  `scripts/UPSTREAM_SHA` names `89cb6289`, and claustrum follows `5fd08069`.
   Against `89cb6289` a triager can meet these points. Each is in
   [The settings copy](PROTOCOL.md#the-settings-copy):
   - `git.info` has a last member `settingsControl`.

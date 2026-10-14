@@ -308,20 +308,80 @@ func loadEntryRecord(root *os.Root, dir, name string) (entryRecord, bool) {
 	return entryRecord{name: name, path: filepath.Dir(rec)}, true
 }
 
+// registrationsLinked reports whether the registrations folder dir is a symbolic
+// link, where registrationsLinkRefused is set. A remove of a worktree folder
+// that exists then deletes nothing and answers lockCheckRefusal. 5fd08069
+// answers so, and the folder, its registration behind the link and its branch
+// stay (cell C3 of rounds tier0-24 and tier0-25m, Linux and macOS VMs). With
+// worktreeRoot it answers so too (cell L3 of round tier0-26, Linux VM). A
+// create rollback with no answer of git deletes nothing there.
+func registrationsLinked(dir string) bool {
+	if !registrationsLinkRefused {
+		return false
+	}
+	fi, err := os.Lstat(dir)
+	return err == nil && fi.Mode()&fs.ModeSymlink != 0
+}
+
+// openRegistrationsFolder opens the registrations folder dir with open. Where
+// registrationsLinkRefused is set, a symbolic link at dir is refused, and the
+// opened folder must be the folder that the Lstat saw. So no record read and no
+// delete of a remove or of a create rollback goes behind such a link. The names
+// of listEntryRecords are listed by the path after that test. The error then has the
+// text of realDirText. claustrum's own text: no row has it in a frame.
+func openRegistrationsFolder(dir string, open func(string) (*os.Root, error)) (*os.Root, error) {
+	if !registrationsLinkRefused {
+		return open(dir)
+	}
+	fi, err := os.Lstat(dir)
+	if err != nil {
+		// The open gives the error that the callers had before this test. A folder
+		// that appeared since the Lstat is not used.
+		root, openErr := open(dir)
+		if openErr != nil {
+			return nil, openErr
+		}
+		_ = root.Close()
+		return nil, err
+	}
+	if fi.Mode()&fs.ModeSymlink != 0 {
+		return nil, errors.New(realDirText(dir))
+	}
+	root, err := open(dir)
+	if err != nil {
+		return nil, err
+	}
+	if !sameOpenedFolder(root, fi) {
+		_ = root.Close()
+		return nil, errors.New(realDirText(dir))
+	}
+	return root, nil
+}
+
+// sameOpenedFolder reports whether root is the folder of fi. A folder with no
+// search permission cannot be looked at through root. It passes, because no
+// act can go through such a root: each fails with its own error, as in cells
+// Z11a and Z11b (macOS VM, registrations folder of mode 0600).
+func sameOpenedFolder(root *os.Root, fi os.FileInfo) bool {
+	now, err := root.Stat(".")
+	return err != nil || os.SameFile(fi, now)
+}
+
 // listEntryRecords opens <commonDir>/worktrees and reads the record of each entry. ok
 // is false when the directory cannot be read. A missing directory gives no records
 // and ok true. The caller closes root when it is not nil.
 func listEntryRecords(commonDir string) (root *os.Root, recs []entryRecord, ok bool) {
 	dir := filepath.Join(commonDir, worktreesSubdir)
-	entries, err := os.ReadDir(dir)
+	root, err := openRegistrationsFolder(dir, os.OpenRoot)
 	if errors.Is(err, fs.ErrNotExist) {
 		return nil, nil, true
 	}
 	if err != nil {
 		return nil, nil, false
 	}
-	root, err = os.OpenRoot(dir)
+	entries, err := os.ReadDir(dir)
 	if err != nil {
+		_ = root.Close()
 		return nil, nil, false
 	}
 	for _, e := range entries {
@@ -406,7 +466,9 @@ func registrationGitDir(repo, answered string) string {
 // refused. 89cb6289 answers success for it in these rows, on Linux, macOS and
 // Windows VMs: with GIT_DIR and GIT_COMMON_DIR of another repository in the daemon's
 // environment (row p6, and row p6f with the folder gone), and with GIT_DIR alone (row
-// p6e). With worktreeRoot it deletes nothing (rows q2 to q4 on a Linux VM).
+// p6e). With worktreeRoot it deletes nothing (rows q2 to q4 on a Linux VM). A
+// `<repo>/.git/worktrees` that is a symbolic link counts as not readable, so the
+// remove answers the lock-check refusal (openRegistrationsFolder, not measured).
 func lockedInBaseRepo(repo, commonDir, gitDir, path string, sp worktreePathSet) (locked, readable bool) {
 	base := filepath.Join(repo, ".git")
 	if canonicalPath(base) == canonicalPath(commonDir) {
@@ -584,7 +646,7 @@ func verifiedWorktreeEntry(gitDir, commonDir, answered, path string, sp worktree
 		return "", notOurs
 	}
 	dir := filepath.Join(commonDir, worktreesSubdir)
-	root, err := os.OpenRoot(dir)
+	root, err := openRegistrationsFolder(dir, os.OpenRoot)
 	if err != nil {
 		return "", err
 	}
@@ -626,7 +688,7 @@ func verifiedWorktreeEntry(gitDir, commonDir, answered, path string, sp worktree
 // directory that exists but cannot be opened counts as locked. Only a race reaches
 // that case after the entry was verified, and no row measures it.
 func verifiedEntryLocked(commonDir, name string) bool {
-	root, err := os.OpenRoot(filepath.Join(commonDir, worktreesSubdir))
+	root, err := openRegistrationsFolder(filepath.Join(commonDir, worktreesSubdir), os.OpenRoot)
 	if errors.Is(err, fs.ErrNotExist) {
 		return false
 	}
@@ -640,7 +702,7 @@ func verifiedEntryLocked(commonDir, name string) bool {
 // dropWorktreeEntry deletes the verified entry name. The worktrees directory itself
 // stays, also when it is then empty (rows K01 and X01).
 func dropWorktreeEntry(commonDir, name string) error {
-	root, err := os.OpenRoot(filepath.Join(commonDir, worktreesSubdir))
+	root, err := openRegistrationsFolder(filepath.Join(commonDir, worktreesSubdir), os.OpenRoot)
 	if err != nil {
 		return err
 	}

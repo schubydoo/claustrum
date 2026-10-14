@@ -18,6 +18,13 @@ const openNonBlocking = 0
 // file names. Measured against f6010b97 on a Windows 11 VM.
 const nonDirGitDirIsNoRepo = false
 
+// registrationsLinkRefused is false on Windows: the rules of a registrations folder
+// that is a link are those of Linux (round tier0-24), and Windows is not measured.
+const registrationsLinkRefused = false
+
+// entryLinkRefusedLate is false on Windows (round tier0-24 ran on Linux only).
+const entryLinkRefusedLate = false
+
 // sameGitDirPath compares two lexically cleaned paths without regard to letter case.
 // filepath.Clean already turned every forward slash into a backslash. A `\\?\` prefix
 // or a path without a drive letter stays different. Measured against f6010b97 on a

@@ -32,7 +32,7 @@ import (
 //   - Each later step tests that the path still names that folder (stands). A
 //     step that fails the test refuses the create with the text of that step,
 //     leaves the refusal to a later step (swapRefusal, answeredElsewhere), or
-//     moves the hold (movedTo).
+//     moves the hold (movedTo, replacedAtPath).
 //   - The acts of the create inside the git directory go through the held
 //     folder, never through the path. The list is at the top of gitdirheld.go.
 //     The test of a step is therefore no guard of such an act. It decides the
@@ -284,7 +284,49 @@ func (a *acceptedGitDir) movedTo(gitDir, repo string) *acceptedGitDir {
 	if a == nil || a.isAt(gitDir) {
 		return nil
 	}
-	before := gitDirIdentity(gitDir)
+	return a.takeOver(gitDir, gitDirIdentity(gitDir), repo)
+}
+
+// replacedAtPath is the hold of a create on a new real directory at the path
+// of the held git directory, right after a good `worktree add`. It is nil when
+// the path names no real directory, still names the held folder, or names a
+// folder that fails the gate. repo is the baseRepo of the create. The caller
+// releases the new hold.
+//
+// The row is cell C6 of round tier0-24 (Linux VM, 2 runs) and of round
+// tier0-25m (macOS VM). While `worktree add` runs, `.git` is renamed and a
+// real copy of it is put at the path. Git makes the registration in the copy,
+// because the link `worktrees` of the folder of the daemon names the path.
+// 5fd08069 answers success: the copy has the registration with its index and
+// the branch, the worktree is checked out, and the old folder is unchanged.
+// The maintainer decided on 2026-10-14 to follow that outcome. The steps after
+// the add then act through the copy.
+//
+// After the move a failed read-tree rolls back in the copy, and the old folder
+// is unchanged (cell L4 of round tier0-26, Linux VM). A copy made before the
+// add holds no registration, and the tests of the registration refuse it with
+// unsafe_path (cell L5). Not measured: a swap at another moment, and a folder
+// of another repository. A link at the path keeps the refusal of the rows of
+// TestCreateWithAGitDirThatChangedAtTheAdd.
+func (a *acceptedGitDir) replacedAtPath(repo string) *acceptedGitDir {
+	if a == nil {
+		return nil
+	}
+	now := gitDirIdentity(a.path)
+	if now == nil || os.SameFile(now, a.info) {
+		return nil
+	}
+	next := a.takeOver(a.path, now, repo)
+	if next != nil {
+		next.moved = true
+	}
+	return next
+}
+
+// takeOver is the hold on the real directory gitDir, whose identity before the
+// open is before, when the trust check of repo pins it and its config passes
+// the gate. The new hold keeps the trust verdict of the first gate.
+func (a *acceptedGitDir) takeOver(gitDir string, before os.FileInfo, repo string) *acceptedGitDir {
 	t := gitDirTrustFor(repo)
 	if before == nil || t.verdict != gitDirTrusted || !sameGitDirPath(t.pinCommonDir, gitDir) {
 		return nil

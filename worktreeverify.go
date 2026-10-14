@@ -478,12 +478,13 @@ func (r testedRegistration) replacedIn(root *os.Root, name string) bool {
 // guard refuses a folder that is not the one that the tests accepted (replacedIn,
 // D24). It runs after the open of the root and on that root, so the guard and the
 // delete use one registrations folder. A registrations folder that does not exist
-// has nothing to delete.
+// has nothing to delete. One that is a symbolic link is refused with an error,
+// so nothing is deleted and the branch stays (deleteRoot, not measured).
 func removeTestedRegistration(reg testedRegistration) error {
 	if wipesHomeDir(reg.path) {
 		return nil
 	}
-	root, err := reg.git.registrationsRoot(filepath.Dir(reg.path))
+	root, err := reg.git.deleteRoot(filepath.Dir(reg.path))
 	if err != nil {
 		if os.IsNotExist(err) {
 			return nil
@@ -594,7 +595,8 @@ type createdRegistration struct {
 	// and macOS the delete compares it with the directory that it opened.
 	registryInfo os.FileInfo
 	// unreadable stands for the permission error of a back-pointer that the check cannot
-	// read. No other field is set then. On Linux and macOS the rollback reports it
+	// read, or for a registrations folder that is a symbolic link. No other field is
+	// set then. On Linux and macOS the rollback reports it
 	// as a registration that stays, and deletes nothing.
 	unreadable error
 }
@@ -626,6 +628,13 @@ func createdWorktreeAdminDir(repo, worktreePath string) createdRegistration {
 		return createdRegistration{}
 	}
 	adminDir = absoluteAdminDir(worktreePath, adminDir)
+	// A registrations folder that is a symbolic link holds nothing safe to
+	// delete (registrationsLinked). The rollback then keeps the registration
+	// and the branch and names the link, as with an answer of git
+	// (removeTestedRegistration). Not measured for a create.
+	if dir := worktreeRegistryDir(repo); registrationsLinked(dir) {
+		return createdRegistration{unreadable: errors.New(realDirText(dir))}
+	}
 	reg := createdRegistration{resolved: canonicalPath(adminDir), registry: canonicalPath(worktreeRegistryDir(repo))}
 	// The identity comes first, so it is that of the directory that the read of the
 	// back-pointer goes through.
@@ -754,7 +763,8 @@ func gitDirRegistryDir(gitDir string) string {
 //     joined as it is spelled. So a registrations directory that is a symlink
 //     passes with "../.." (rows D-1, D-3, D-4 and D-5 on the Linux VM). In
 //     the state shadow such a create is refused before the add
-//     (worktreesFolderRefusal).
+//     (worktreesFolderRefusal), and so is one with "shadowDirOff":true
+//     (offWorktreesRefusal).
 //
 //  4. The gitdir record of that registration can be read as a file. A FIFO, a
 //     folder or no file in its place cannot (cells P-g, P-i and P-j). Cell P-h has a

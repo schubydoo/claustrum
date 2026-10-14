@@ -16,6 +16,17 @@ const openNonBlocking = syscall.O_NONBLOCK
 // replaced by a file and a GIT_DIR that names a `.git` file. Measured against f6010b97 on a Linux VM.
 const nonDirGitDirIsNoRepo = true
 
+// registrationsLinkRefused is true on Linux and macOS. A registrations folder
+// (`<git dir>/worktrees`) that is a symbolic link then takes no delete. A remove
+// refuses it (cell C3 of round tier0-24, Linux VM, and of round tier0-25m,
+// macOS VM).
+const registrationsLinkRefused = true
+
+// entryLinkRefusedLate is true on Linux and macOS. A create whose baseRepo is a
+// linked worktree with a symbolic link as its entry gets the trust refusal as a
+// failed add (cell C7 of round tier0-24, Linux VM). macOS is not measured.
+const entryLinkRefusedLate = true
+
 // sameGitDirPath compares two lexically cleaned paths as plain strings. A backslash is
 // an ordinary file-name character here, so `..\..` in a commondir does not match.
 func sameGitDirPath(a, b string) bool {

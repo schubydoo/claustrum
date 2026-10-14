@@ -81,11 +81,12 @@ import (
 // not exist" (the entry stays).
 //
 // held is the git directory that the create holds, or nil. When base is its
-// folder `worktrees`, the root is opened through the held folder
-// (acceptedGitDir.registrationsRoot).
+// folder `worktrees`, the root is opened through the held folder. A base that
+// is a symbolic link is not opened, and nothing is removed
+// (acceptedGitDir.deleteRoot).
 func dropStaleWorktreeRegistration(repo, worktreePath string, held *acceptedGitDir) {
 	base := staleRegistryDir(repo)
-	root, err := held.registrationsRoot(base)
+	root, err := held.deleteRoot(base)
 	if err != nil {
 		return
 	}

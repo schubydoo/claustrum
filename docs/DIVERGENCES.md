@@ -1049,7 +1049,7 @@ operator-declinable. Only CT-2 and CT-5 carry a flag and a key.
   `.git` folder of `baseRepo`, and deletes nothing. Since `7d193f89` the reference refuses it
   too, with the same text. In four states `89cb6289` answers success for a
   worktree S that is locked in T, the `.git` folder of `baseRepo`. claustrum
-  refuses in each of them.
+  refuses in each of them. On Linux and macOS a gone worktree whose locked entry sits behind a linked `<git dir>/worktrees` gets success, and its branch goes. That follows `5fd08069` (cell L1 of round `tier0-26`, Linux VM), by the maintainer's decision of 2026-10-14.
 - **Reference side, measured.** 3 of 3 runs on each system named:
   - Row p6 (Linux, macOS, Windows). The daemon has `GIT_DIR` and `GIT_COMMON_DIR`
     of another repository X. `89cb6289` answers `{"success":true}` and deletes the
