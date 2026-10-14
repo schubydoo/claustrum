@@ -58,8 +58,7 @@ var hcLsofEnv = []string{"LC_ALL=C", "LANG=C", "PATH=/bin:/usr/bin:/usr/sbin"}
 // The three bounds on one lsof run.
 //
 // claustrum bounds every lsof run its host cleaner makes. The three values are
-// claustrum's own. The reference side is not probe-measured, because staging it needs
-// an lsof that hangs on a macOS host.
+// claustrum's own. The reference side is not probe-measured.
 //
 // Why three and not two. The deadline kills the command. The wait delay then bounds
 // how long the run waits for the output pipe to close, which covers a child that
@@ -104,7 +103,7 @@ var (
 	// runLsof runs `/usr/sbin/lsof -nP -w <args...>` with the pinned env and returns stdout;
 	// lsof exits non-zero when it simply finds nothing, so the stdout is used regardless. Like
 	// the linux lock/busy probes (which parse /proc and read an unreadable source as not-held),
-	// the caller keys only on the output and on the two flags below.
+	// the caller keys only on the output and on the flags below.
 	//
 	// Bounded three ways. An lsof that stalls on an unresponsive
 	// mount would otherwise hold the whole cleaner pass open with nothing to end it, and
@@ -134,9 +133,10 @@ var (
 	// not start, and when it wrote to stderr. The exit code is no rule: lsof exits 1
 	// with no text when it finds no holder. On a macOS VM, 89cb6289 kept a run dir
 	// with a lock file in both cases (rows C3, D2p and D2f). For the busy read of a
-	// daemon, see hcBusyCheck. An abandoned run
-	// answers true here, so its readers keep their earlier answers.
-	runLsof = func(args ...string) (out string, completed, answered bool) {
+	// daemon, see hcBusyCheck.
+	//
+	// The fourth result says that the deadline ended the run.
+	runLsof = func(args ...string) (out string, completed, answered, expired bool) {
 		ctx, cancel := context.WithTimeout(context.Background(), hcLsofTimeout)
 		defer cancel()
 		cmd := exec.CommandContext(ctx, hcLsofPath, append([]string{"-nP", "-w"}, args...)...)
@@ -147,20 +147,22 @@ var (
 		type lsofOutcome struct {
 			out      string
 			answered bool
+			expired  bool
 		}
 		done := make(chan lsofOutcome, 1)
 		go func() {
 			_ = cmd.Run()
-			// Process is set only by a good start.
-			done <- lsofOutcome{stdout.String(), cmd.Process != nil && stderr.Len() == 0}
+			// Process is set only by a good start. The context has an error only after
+			// its deadline, because cancel runs when this function returns.
+			done <- lsofOutcome{stdout.String(), cmd.Process != nil && stderr.Len() == 0, ctx.Err() != nil}
 		}()
 		abandon := time.NewTimer(hcLsofAbandon)
 		defer abandon.Stop()
 		select {
 		case r := <-done:
-			return r.out, true, r.answered
+			return r.out, true, r.answered, r.expired
 		case <-abandon.C:
-			return "", false, true // gave up on the run; the caller learns nothing about the pid
+			return "", false, true, false // gave up on the run; the caller learns nothing about the pid
 		}
 	}
 )
@@ -387,8 +389,8 @@ func parseLsofFtn(out string) []lsofRec {
 // D17: an ABANDONED run answers busy. A run that finished and saw nothing and a run that was
 // given up on both produce no output. claustrum keeps them apart, because only the first is
 // evidence. The reference side is not probe-measured. This arm is reachable only when the
-// read failed outright. A run that did not answer reads as not busy here. hcBusyCheck
-// tells the two apart.
+// read failed outright. A run that did not answer reads as not busy here, and so does a
+// run that the deadline ended. hcBusyCheck tells them apart.
 func hcBusy(pid int) bool {
 	busy, _ := hcBusyCheck(pid)
 	return busy
@@ -398,14 +400,29 @@ func hcBusy(pid int) bool {
 // reading: it answers busy (D17). A run that did not answer is no reading. The retire then
 // refuses the daemon, and no SIGTERM goes out. That is
 // what 89cb6289 did on a macOS VM, for a command that did not start (rows D1i and D1k) and
-// for a run that wrote to stderr (rows E3i and E3k), 3 of 3 each.
+// for a run that wrote to stderr (rows E3i and E3k), 3 of 3 each. A run that the deadline
+// ended is no reading either (hcBusyRead).
 func hcBusyCheck(pid int) (busy, canRead bool) {
-	out, completed, answered := runLsof("-p", strconv.Itoa(pid), "-F", "ftn")
+	busy, canRead, _ = hcBusyRead(pid)
+	return busy, canRead
+}
+
+// hcBusyRead is hcBusyCheck plus whether the deadline ended the lsof run. Such a run is no
+// reading, so the retire refuses the daemon after one run. With an lsof that hangs,
+// `5fd08069` runs one lsof and sends no signal, for a daemon with one client and with none
+// (cells B1 and B2, macOS VM). An ended run that wrote records gets the same answer, and so
+// does a run that exits by itself right at the deadline. Both are claustrum's own, not
+// measured.
+func hcBusyRead(pid int) (busy, canRead, ended bool) {
+	out, completed, answered, expired := runLsof("-p", strconv.Itoa(pid), "-F", "ftn")
 	if !completed {
-		return true, true
+		return true, true, false
+	}
+	if expired {
+		return false, false, true
 	}
 	if !answered {
-		return false, false
+		return false, false, false
 	}
 	unix := 0
 	for _, r := range parseLsofFtn(out) {
@@ -413,28 +430,32 @@ func hcBusyCheck(pid int) (busy, canRead bool) {
 			continue
 		}
 		if strings.HasPrefix(r.name, "->") {
-			return true, true
+			return true, true, false
 		}
 		unix++
 	}
-	return unix > 1, true
+	return unix > 1, true, false
 }
 
 // hcDaemonFilesUnread reports that the open files of a daemon could not be read. The pass
-// then logs that it leaves the daemon alone (rows D1i and D1k). It is a var so a test on
-// either OS can stage the answer.
-var hcDaemonFilesUnread = func(pid int) bool {
-	_, canRead := hcBusyCheck(pid)
-	return !canRead
+// then logs that it leaves the daemon alone (rows D1i and D1k). ended says that the deadline
+// ended the read. The pass then logs no such line, and the retire refuses the daemon with
+// no second run. `5fd08069` sends no SIGTERM under an lsof that hangs (cells B1 and B2,
+// macOS VM), and claustrum gives the same result (round 8, macOS VM). It is a var so a
+// test on either OS can stage the answer.
+var hcDaemonFilesUnread = func(pid int) (unread, ended bool) {
+	_, canRead, ended := hcBusyRead(pid)
+	return !canRead && !ended, ended
 }
 
 // hcStdioArePipes reports whether fds 0, 1 and 2 are all pipes, the stdio signature of a
 // daemon-spawned child. lsof names a pipe's type PIPE. canRead is false when the run was
 // abandoned, did not answer, or returned nothing for the pid. One lsof run answers both.
 // The third result is false for a run that did not answer. The pass then prints the line of
-// the reference (row E5: the command did not start).
+// the reference (row E5: the command did not start). A run that the deadline ended reads
+// here as a completed run. No cell measures the stdio read under an lsof that hangs.
 func hcStdioArePipes(pid int) (pipes, canRead, answered bool) {
-	out, completed, answered := runLsof("-p", strconv.Itoa(pid), "-F", "ftn")
+	out, completed, answered, _ := runLsof("-p", strconv.Itoa(pid), "-F", "ftn")
 	if !completed {
 		return false, false, true
 	}
@@ -479,13 +500,15 @@ var hcStoppedIsUninspected = false
 // cleaner itself held open (row C4, 3 of 3). A child of the cleaner that holds the lock is
 // a holder (row D3, 3 of 3).
 //
-// Deliberately NOT under D17: an abandoned run reads as not-held here.
-// The same argument would apply — a held lock that reads stale lets the tidy remove a live
-// daemon's run dir — but D17 was scoped to the busy predicate, and widening a divergence
-// without deciding it is how one grows by accident. Raised rather than taken.
+// asked is false too when the deadline of claustrum ended the run. `5fd08069` keeps the
+// run dir under an lsof that hangs, with the "could not be examined" line, with no holder
+// and with a live holder. Its pass takes 15.0 s there (cells L1 and L2, macOS VM). A run
+// that claustrum gave up on gets the same answer, and so does an ended run that wrote a
+// pid. A run that exits by itself right at the deadline can read as ended, which keeps
+// the run dir. All three are claustrum's own, not measured.
 func hcLockHeldAt(path string, _ os.FileInfo) (held, asked bool) {
-	out, _, answered := runLsof("-F", "p", path)
-	if !answered {
+	out, completed, answered, expired := runLsof("-F", "p", path)
+	if !completed || expired || !answered {
 		return false, false
 	}
 	self := "p" + strconv.Itoa(os.Getpid())

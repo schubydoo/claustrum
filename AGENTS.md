@@ -652,12 +652,12 @@ because claustrum now matches the reference on those paths. For D4 that referenc
 is `5fd08069`. The pin `89cb6289` still reads such a path.
 
 D17 is off-wire and macOS-only. The host cleaner reads an `lsof` run it gave
-up on as busy. A completed run that found nothing reads as not busy. The
-reference side is not probe-measured. The
-harm it refuses is the cleaner SIGTERMing a daemon that is serving a client on a
-host where `lsof` never returns. The sibling lock read is deliberately NOT
-covered: it reads a run it gave up on as not held. An `lsof` command that does
-not start is parity, not D17. The daemon then gets no SIGTERM, and a run folder
+up on at 17 s as busy (claustrum's own, not measured). It
+refuses SIGTERM to a serving daemon where an `lsof` run cannot be killed.
+A run the 15 s deadline ends is outside D17: the folder stays and the
+daemon gets no SIGTERM. `5fd08069` does both under a hung `lsof` (cells L1, L2,
+B1 and B2, macOS VM). An `lsof` command that does
+not start is parity, not D17. The daemon gets no SIGTERM, and a run folder
 with a lock file stays, as on `89cb6289` (macOS VM, 3 of 3 runs). So is a run
 that writes to stderr and exits 1. See the entry.
 

@@ -623,10 +623,10 @@ traps that matter for telling drift from expected:
   to be misread. `19f30c46` copies eight of the nine, so a file missing from a
   seeded worktree looks like a regression against the previous pin.
   [REFERENCE-BUILDS.md](REFERENCE-BUILDS.md) holds all seven, and all seven are
-  reconciled. One carries a deliberate exception. On the host cleaner's macOS busy
+  reconciled. One carries an exception. On the host cleaner's macOS busy
   probe, claustrum reads an `lsof` run it gave up on as busy. The reference side is
-  not probe-measured. That is [DIVERGENCES.md](DIVERGENCES.md) D17 rather than drift.
-  D17 is the abandoned run only. For the busy read and the lock read, an `lsof`
+  not probe-measured. That is [DIVERGENCES.md](DIVERGENCES.md) D17, not drift.
+  D17 is the abandoned run only, not a run that the deadline ends. For both reads, an `lsof`
   command that does not start is parity with `89cb6289` (macOS VM, 3 of 3 runs).
   So is a run that writes to stderr and exits 1.
 - The `90fca6e6` reconciliation shipped four PRs. A full re-check then found a

@@ -435,15 +435,14 @@ line and changed nothing in 120 s (row WN06, with no positive control).
 Before it signals a daemon whose run dir went idle past the threshold, or whose run
 dir name carries `.removing-` from an earlier removal, the cleaner
 asks whether that daemon still has a live client. On macOS it asks `lsof`. That
-run is bounded three ways: a command deadline, a wait for the output pipe, and a
-last bound after which the run is given up on. Those bounds are claustrum's own
-values and are not probe-measured.
+run has three bounds: a command deadline, a wait for the output pipe, and a
+last bound that gives up on it. Those bounds are claustrum's own.
 
 The cleaner asks `lsof` two more things on macOS: whether the stdio of an orphan
 is three pipes, and whether a process holds the `daemon.lock` of an idle run dir.
-claustrum tells four outcomes of an `lsof` run apart. A macOS VM measured the first two against
-`89cb6289`, 3 of 3 runs in each row. The row names here and in the tables below
-are rows of the macOS host cleaner round of issue 429. The rows where the command
+claustrum tells these outcomes of an `lsof` run apart. A macOS VM measured the first two against
+`89cb6289`, 3 of 3 runs in each row. The rows
+are of the macOS host cleaner round of issue 429. The rows where the command
 does not start ran under a sandbox rule that denies the exec of `lsof`. Rows E3i
 and E4 hold an idle daemon, and rows D1k and E3k hold a daemon with one client:
 
@@ -451,12 +450,12 @@ and E4 hold an idle daemon, and rows D1k and E3k hold a daemon with one client:
 |---|---|---|
 | the command does not start | the daemon gets no SIGTERM (rows D1i and D1k, as `89cb6289`) | a dir with a lock file stays (row C3, as `89cb6289`) |
 | the run writes to stderr and exits 1 | the daemon gets no SIGTERM (rows E3i, E3k and E4, as `89cb6289`) | a dir with a lock file stays (rows D2p, D2f and E4, as `89cb6289`) |
-| the run is given up on | busy, so no SIGTERM ([DIVERGENCES.md](DIVERGENCES.md) D17, not measured) | not held (not measured, claustrum's own) |
+| the run is given up on | busy, so no SIGTERM ([DIVERGENCES.md](DIVERGENCES.md) D17, not measured) | kept (not measured, claustrum's own) |
+| the 15 s deadline ends the run | no SIGTERM (`5fd08069` under a hung `lsof`, cells B1 and B2. claustrum gives the same result, round 8, macOS VM) | kept (cells L1 and L2) |
 | the run completes with nothing on stderr | the output decides | the output decides |
 
 The exit code is no rule. `lsof` exits 1 with no text when no process holds the
-file, and the dir then goes (rows C1 and C6). On a host where `lsof` does not start,
-the cleaner therefore does not SIGTERM a daemon that is serving a client. In rows
+file, and the dir then goes (rows C1 and C6). In rows
 D1i, D1k, E3i and E3k the pass of `89cb6289` and of claustrum logs these two lines
 for the daemon, the first one before every run dir line. Its summary counts
 `abandoned daemons retired 0` and `candidates left undecided 1`:

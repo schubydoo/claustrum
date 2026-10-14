@@ -155,3 +155,63 @@ func TestPassLeavesAStoppedDaemonAlone(t *testing.T) {
 		}
 	}
 }
+
+// TestBusyReadThatItsDeadlineEndedRefusesTheRetire pins the shared half of cells B1 and B2
+// (`5fd08069`, macOS VM): there the pass logs only the "not retired" line, after one lsof
+// run. The darwin answer "the deadline ended the busy read" is staged through
+// hcDaemonFilesUnread. The pass logs no "left alone" line and counts nothing, and it marks
+// the daemon. The retire then refuses a marked daemon with the measured reason, with no
+// hold and no signal. The control is the same daemon with no mark: one SIGTERM goes to the
+// seam. Each daemon is a fake pid in a temp /proc.
+func TestBusyReadThatItsDeadlineEndedRefusesTheRetire(t *testing.T) {
+	for _, ended := range []bool{true, false} {
+		f := hcNewPassFixture(t)
+		oldUnread := hcDaemonFilesUnread
+		t.Cleanup(func() { hcDaemonFilesUnread = oldUnread })
+		hcDaemonFilesUnread = func(int) (bool, bool) { return false, ended }
+		sibling := os.Getpid() + 1
+		hcSiblingDaemon(t, f, sibling, "s1", "1", 40*24*time.Hour)
+		buf := captureLogBuf(t)
+		sum := f.c.Pass()
+		if log := buf.String(); strings.Contains(log, "left alone this pass") || sum.undecided != 0 || f.c.busyEnded[sibling] != ended {
+			t.Errorf("ended=%v: undecided=%d marked=%v log=%q, want no line, no count and the mark %v", ended, sum.undecided, f.c.busyEnded[sibling], log, ended)
+		}
+
+		proot, mk, link := fakeProc(t)
+		oldSig, oldClock, oldSleep, oldUID, oldPpid := hcHoldPid, hcClock, hcSleep, hcGetuid, hcGetppid
+		t.Cleanup(func() { hcHoldPid, hcClock, hcSleep, hcGetuid, hcGetppid = oldSig, oldClock, oldSleep, oldUID, oldPpid })
+		now := time.Unix(3_000_000, 0)
+		hcClock = func() time.Time { return now }
+		hcSleep = func(d time.Duration) { now = now.Add(d) }
+		hcGetuid = func() int { return 1000 }
+		hcGetppid = func() int { return 1 }
+		holds := 0
+		var sent []syscall.Signal
+		hcHoldPid = func(int) (func(syscall.Signal) error, func()) {
+			holds++
+			return func(sig syscall.Signal) error { sent = append(sent, sig); return nil }, func() {}
+		}
+		const pid = 4700
+		socket := "/opt/claude/run/x/rpc.sock"
+		exe := "/opt/claude/srv/a/server"
+		hcFakeDaemon(t, proot, mk, link, pid, exe, []string{exe, "--serve", "--socket", socket}, true, "1")
+		link(pid, "fd/1", "/dev/null") // readable connections, none a client
+		c := &hostCleaner{roots: &hostRoots{roots: []string{"/opt/claude"}, daemonBin: "server"}, selfPid: 999999}
+		if ended {
+			c.busyEnded = map[int]bool{pid: true}
+		}
+		e := runDirEntry{name: "x", dirPath: filepath.Dir(socket), socket: socket, idle: 40 * 24 * time.Hour}
+
+		retired, reason := c.retireAbandoned(e, pid, 1000)
+
+		if !ended {
+			if holds != 1 || len(sent) != 1 || sent[0] != syscall.SIGTERM {
+				t.Errorf("control: retired=%v reason=%q holds=%d sent=%v, want one SIGTERM", retired, reason, holds, sent)
+			}
+			continue
+		}
+		if retired || reason != hcRetireBusyReason || holds != 0 || len(sent) != 0 {
+			t.Errorf("retired=%v reason=%q holds=%d sent=%v, want the refusal %q with no hold and no signal", retired, reason, holds, sent, hcRetireBusyReason)
+		}
+	}
+}
