@@ -827,6 +827,12 @@ type configCheck struct {
 	// noRepoText is git's stderr through worktreeGitText when the listing itself said
 	// "not a git repository". git.worktree_remove with worktreeRoot quotes it.
 	noRepoText string
+	// gitFileText is set beside refusal when the listing failed with the text of git
+	// 2.56 for a `.git` file that names no valid repository (saysGitFileNowhere). It
+	// is the error of a failed call about the repository, with git's lines.
+	// git.worktree_remove answers it in the cells GF and N04 of round tier0-27, as
+	// 5fd08069 does (Linux VM).
+	gitFileText string
 	// listing is the listing of a check that passed. The first hardened call after the
 	// check pins its hooks (hardenedGitFirst).
 	listing configListing
@@ -937,7 +943,17 @@ func failedListingCheck(u gitUse, r listingRun, dir string, heavy bool) configCh
 		}
 		return configCheck{}
 	}
-	return configCheck{refusal: failedListingText(u, r, heavy)}
+	c := configCheck{refusal: failedListingText(u, r, heavy)}
+	if r.saysGitFileNowhere() {
+		// The text names the folder that holds `.git`, as askGit does. In the cells
+		// that folder is baseRepo. A subfolder or a link spelling is not measured.
+		root, _ := gitWalkRoot(dir)
+		if root == "" {
+			root = dir
+		}
+		c.gitFileText = repoCheckFailedText(root, shadowRun{stderr: r.stderr, err: r.err}.allLines())
+	}
+	return c
 }
 
 // unenterableDir reports whether the listing failed because git cannot start in dir:

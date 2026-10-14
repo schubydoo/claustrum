@@ -720,8 +720,11 @@ func externalWorkTreeRefusal(req *request, repo string, off jsonTrueSwitch) (str
 			// macOS VMs, row A-N5 on a Linux VM). Windows refuses a worktreeRoot before this check. Without the
 			// entry of t.noRepoPinned the reason stays "exit status 128", as before. A
 			// daemon GIT_DIR that names a regular file is such a state. Not measured here.
+			// git 2.56 fails the listing of a gone entry with its gitfile text. 5fd08069
+			// answers "exit status 128" there, as with older gits (cell WR13 of round
+			// tier0-27, Linux VM).
 			c := hostileConfigRefusal(u, repo, false)
-			if c.refusal != "" && t.noRepoPinned() {
+			if c.refusal != "" && t.noRepoPinned() && c.gitFileText == "" {
 				return workTreeUnknownPrefix + c.refusal, ""
 			}
 			if !c.refused() {
@@ -746,6 +749,12 @@ func externalWorkTreeRefusal(req *request, repo string, off jsonTrueSwitch) (str
 	// This listing is light, and the rev-parse below runs its own heavy one. That is
 	// the order of the listings of f6010b97 here (Linux VM, rows WR00 to WR15).
 	c := hostileConfigRefusal(u, repo, false)
+	// With git 2.56 a `.git` file to a gone target fails the listing with the gitfile
+	// text. 5fd08069 then answers the error of its call about the repository (cells GF
+	// and N04 of round tier0-27, Linux VM).
+	if c.gitFileText != "" {
+		return workTreeUnknownPrefix + c.gitFileText, ""
+	}
 	if c.refusal != "" {
 		return workTreeUnknownPrefix + c.refusal, ""
 	}

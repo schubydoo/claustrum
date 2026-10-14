@@ -197,7 +197,9 @@ func TestWorktreeRemoveExternalRefusedGitDir(t *testing.T) {
 }
 
 // Rows WR10 to WR13: a baseRepo with no repository answers the prefix and
-// "exit status 128". Nothing is deleted.
+// "exit status 128". Nothing is deleted. git 2.56 fails the listing of WR13 with its
+// gitfile text, and 5fd08069 gives the same frame (cell WR13 of round tier0-27, Linux
+// VM). So the frame is the same with git 2.43 and 2.56.
 func TestWorktreeRemoveExternalNoRepositoryBase(t *testing.T) {
 	for _, tc := range []struct {
 		name  string
@@ -581,6 +583,11 @@ func TestWorktreeRemoveExternalUnenterableBase(t *testing.T) {
 // missing path in its text, and a newer git prints "(null)" there. The daemon passes
 // git's text through, so the test accepts either. Mutation: keep the listing refusal
 // text for this class.
+//
+// git 2.56 prints "fatal: gitfile does not point to a valid repository: <G>/.git"
+// there. 5fd08069 then answers the error of its call about the repository (cell GF of
+// round tier0-27, Linux VM). The second request, through a symlinked level, is not
+// measured with git 2.56.
 func TestWorktreeRemoveExternalGitFileToNowhere(t *testing.T) {
 	f := newWRFixture(t)
 	g := filepath.Join(f.base, "G")
@@ -590,6 +597,10 @@ func TestWorktreeRemoveExternalGitFileToNowhere(t *testing.T) {
 		return refusalFrame(t, wtUnknown+"git finds no repository here: fatal: not a git repository: "+name)
 	}
 	want := wantFor(nowhere)
+	if gitSaysGitFileNowhere(t) {
+		want = refusalFrame(t, wtUnknown+`git could not check this repository on the remote machine: at "`+g+
+			`": fatal: gitfile does not point to a valid repository: `+filepath.Join(g, ".git"))
+	}
 	got := f.remove(t, g, f.p0, "")
 	if got == wantFor("(null)") {
 		want = got
@@ -607,6 +618,37 @@ func TestWorktreeRemoveExternalGitFileToNowhere(t *testing.T) {
 	if _, err := os.Stat(filepath.Join(f.p0, "keep.txt")); err != nil {
 		t.Errorf("the plain folder was touched: %v", err)
 	}
+}
+
+// gitSaysGitFileNowhere runs the listing of the git on PATH in a folder whose `.git`
+// file names a path that is not there. It reports true for the text of git 2.56 and
+// false for "fatal: not a git repository" of older gits. Any other answer fails the
+// test.
+func gitSaysGitFileNowhere(t *testing.T) bool {
+	t.Helper()
+	requireGit(t)
+	dir, err := filepath.EvalSymlinks(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	g := filepath.Join(dir, "G")
+	wrWrite(t, filepath.Join(g, ".git"), "gitdir: "+filepath.Join(dir, "nowhere")+"\n")
+	cmd := exec.Command("git", "config", "-z", "--list")
+	cmd.Dir = g
+	cmd.Env = append(os.Environ(), "GIT_CEILING_DIRECTORIES="+dir, "LC_ALL=C", "LANGUAGE=C")
+	var stderr strings.Builder
+	cmd.Stderr = &stderr
+	err = cmd.Run()
+	var ee *exec.ExitError
+	switch text := stderr.String(); {
+	case !errors.As(err, &ee) || ee.ExitCode() != 128:
+	case strings.HasPrefix(text, "fatal: gitfile does not point to a valid repository: "):
+		return true
+	case strings.HasPrefix(text, "fatal: not a git repository: "):
+		return false
+	}
+	t.Fatalf("git answers %v with %q, want exit 128 and one of the two texts", err, stderr.String())
+	return false
 }
 
 // Row K13: the worktrees directory of the repository cannot be read (mode 0000). A

@@ -38,6 +38,9 @@ const (
 	hookNameMaxBytes = 1 << 16
 	// notARepoHead starts the stderr of a listing that answers "no repository".
 	notARepoHead = "fatal: not a git repository"
+	// gitFileNowhereHead starts the stderr of git 2.56 for a `.git` file that names no
+	// valid repository. Older gits print notARepoHead there.
+	gitFileNowhereHead = "fatal: gitfile does not point to a valid repository"
 )
 
 // configListing is what the daemon takes from one listing that succeeded: the hook
@@ -165,12 +168,26 @@ func (r listingRun) hooks() []string {
 // L14c). Not measured: whether 89cb6289 tests a prefix or a substring
 // (every text started with it), and exit codes other than 1 and 128.
 func (r listingRun) saysNoRepository() bool {
+	return r.exit128Says(notARepoHead)
+}
+
+// saysGitFileNowhere reports whether the listing failed with the text of git 2.56 for
+// a `.git` file that names no valid repository. Exit 128 and the exact text were
+// measured (cells WR13, GF and N04 of round tier0-27, Linux VM). The rule of white
+// space and letter case is that of saysNoRepository (not measured).
+func (r listingRun) saysGitFileNowhere() bool {
+	return r.exit128Says(gitFileNowhereHead)
+}
+
+// exit128Says reports whether the listing exited 128 with stderr that starts with
+// head once leading white space is dropped, compared without regard to letter case.
+func (r listingRun) exit128Says(head string) bool {
 	var ee *exec.ExitError
 	if !errors.As(r.err, &ee) || ee.ExitCode() != 128 {
 		return false
 	}
 	s := strings.TrimLeftFunc(r.stderr, unicode.IsSpace)
-	return len(s) >= len(notARepoHead) && strings.EqualFold(s[:len(notARepoHead)], notARepoHead)
+	return len(s) >= len(head) && strings.EqualFold(s[:len(head)], head)
 }
 
 // gitNotOnPath reports whether the listing did not start because PATH holds no git.
@@ -249,9 +266,10 @@ func listingEnvBase() []string {
 // GIT_DIR does not come here: the trust check pins it, and the listing of the method
 // fails with git's `invalid gitfile format` text (cells Wd, Windows VM). The other
 // states are a daemon GIT_COMMON_DIR and a `.git` file that names a regular file. Both
-// are not measured. A `.git` file that names a git dir that is gone gets the listing,
-// and git answers "not a git repository" there, so the frame stays (cells CbP0 and
-// CbP3, Linux and macOS VMs).
+// are not measured. A `.git` file that names a git dir that is gone gets the listing.
+// With git older than 2.56, git answers "not a git repository" there, so the frame
+// stays (cells CbP0 and CbP3, Linux and macOS VMs). git 2.56 answers its gitfile
+// text, and the listing refusal answers (from the code, not measured on 5fd08069).
 //
 // Not measured: a listing that passes and exceeds a limit of parseConfigListing, and
 // a `.git` file with no gitdir line. claustrum answers them by hostileConfigRefusal.

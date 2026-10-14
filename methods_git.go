@@ -2367,6 +2367,13 @@ func removeGoneWorktree(req *request, p *gitParams, repo, path string) response 
 			// is deleted (row A-N4 on Linux and macOS VMs, cell P3-rmN on a Windows VM).
 			// Without the entry of noRepoPinned the answer of the listing is not read.
 			c := hostileConfigRefusal(req.use, repo, true)
+			// git 2.56 fails the listing of a `.git` file to a gone target that is no
+			// entry with its gitfile text. 5fd08069 answers the error of its call about
+			// the repository then (cell N04 of round tier0-27, Linux VM). A gone entry
+			// keeps the refusal below (not measured).
+			if c.gitFileText != "" && goneNonEntryGitFile(repo) {
+				return refuse("failed to remove worktree: could not check whether " + p.WorktreePath + " is locked: " + c.gitFileText)
+			}
 			if c.refusal != "" && t.noRepoPinned() {
 				return lockCheck(c.refusal)
 			}
