@@ -822,15 +822,14 @@ operator-declinable. Only CT-2 and CT-5 carry a flag and a key.
   that gave up produces no output, and so does a run that finished and saw nothing.
   claustrum keeps them apart. A run it gave up on reads as busy, because it is not
   evidence about the pid at all. A completed run that found nothing reads as not
-  busy. The reference side of this entry is not probe-measured. Staging the
-  abandoned arm needs an `lsof` that hangs on a macOS host.
+  busy. The reference side of this entry is not probe-measured.
 - **Default.** Always-on, macOS only. The command
   deadline kills a slow run, and the wait delay bounds its pipe. Such a run therefore
   completes with no output well before the abandon bound. Reaching the abandon arm
   needs a process `SIGKILL` cannot end.
 - **Why always-on (rule 3 clause (a)).** The harm it refuses is unrecoverable. If an
   abandoned run reads as not busy, `retireAbandoned` takes that as permission to
-  continue. After the identity re-check it SIGTERMs the daemon. On a host where `lsof` never returns, that
+  continue. After the identity re-check it SIGTERMs the daemon. Where an `lsof` run cannot be killed, that
   ends a session that is in fact serving a client. The loss is that session's state,
   which extends rule 3's list rather than sitting inside it, the same extension
   [D15](#d15) made and the same reason. The other half: a slow `lsof` completes
@@ -846,9 +845,10 @@ operator-declinable. Only CT-2 and CT-5 carry a flag and a key.
   it matches what the cleaner already does for an unreadable lock. It also costs
   three wedged runs on such a host: one for the pass line and two in the sampler. Each abandoned
   run leaves a process and a goroutine behind. claustrum caps neither.
-- **The lock read is no divergence.** A run dir stays when the deadline ends the
-  `lsof` run for its lock, with the line `kept, its daemon.lock could not be
-  examined` (`5fd08069`, cells L1 and L2, macOS VM).
+- **The lock read is outside this entry.** A run dir stays when claustrum's 15 s
+  deadline ends the `lsof` run for its lock. `5fd08069` keeps it under
+  an `lsof` that hangs, with the line `kept, its daemon.lock could not be examined`
+  (cells L1 and L2, macOS VM).
 - **Only the abandoned run is this entry.** Two other `lsof` outcomes are parity
   with `89cb6289` on a macOS VM, 3 of 3 runs each: a command that does not start,
   and a run that writes to stderr and exits 1. In both, the daemon gets no SIGTERM,

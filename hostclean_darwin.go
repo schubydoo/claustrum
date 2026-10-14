@@ -58,8 +58,7 @@ var hcLsofEnv = []string{"LC_ALL=C", "LANG=C", "PATH=/bin:/usr/bin:/usr/sbin"}
 // The three bounds on one lsof run.
 //
 // claustrum bounds every lsof run its host cleaner makes. The three values are
-// claustrum's own. The reference side is not probe-measured, because staging it needs
-// an lsof that hangs on a macOS host.
+// claustrum's own. The reference side is not probe-measured.
 //
 // Why three and not two. The deadline kills the command. The wait delay then bounds
 // how long the run waits for the output pipe to close, which covers a child that
@@ -104,7 +103,7 @@ var (
 	// runLsof runs `/usr/sbin/lsof -nP -w <args...>` with the pinned env and returns stdout;
 	// lsof exits non-zero when it simply finds nothing, so the stdout is used regardless. Like
 	// the linux lock/busy probes (which parse /proc and read an unreadable source as not-held),
-	// the caller keys only on the output and on the two flags below.
+	// the caller keys only on the output and on the flags below.
 	//
 	// Bounded three ways. An lsof that stalls on an unresponsive
 	// mount would otherwise hold the whole cleaner pass open with nothing to end it, and
@@ -134,8 +133,7 @@ var (
 	// not start, and when it wrote to stderr. The exit code is no rule: lsof exits 1
 	// with no text when it finds no holder. On a macOS VM, 89cb6289 kept a run dir
 	// with a lock file in both cases (rows C3, D2p and D2f). For the busy read of a
-	// daemon, see hcBusyCheck. An abandoned run
-	// answers true here, so its readers keep their earlier answers.
+	// daemon, see hcBusyCheck.
 	//
 	// The fourth result says that the deadline ended the run. Only the lock read uses it
 	// (hcLockHeldAt). The busy read and the stdio read do not, so their answers stay.
@@ -484,11 +482,12 @@ var hcStoppedIsUninspected = false
 // cleaner itself held open (row C4, 3 of 3). A child of the cleaner that holds the lock is
 // a holder (row D3, 3 of 3).
 //
-// asked is false too when the deadline ended the run. `5fd08069` then keeps the run dir
-// with the "could not be examined" line, with no holder and with a live holder. Its pass
-// takes 15.0 s there (cells L1 and L2, macOS VM). A run that claustrum gave up on gets the
-// same answer, and so does an ended run that wrote a pid. Both are claustrum's own, not
-// measured.
+// asked is false too when the deadline of claustrum ended the run. `5fd08069` keeps the
+// run dir under an lsof that hangs, with the "could not be examined" line, with no holder
+// and with a live holder. Its pass takes 15.0 s there (cells L1 and L2, macOS VM). A run
+// that claustrum gave up on gets the same answer, and so does an ended run that wrote a
+// pid. A run that exits by itself right at the deadline can read as ended, which keeps
+// the run dir. All three are claustrum's own, not measured.
 func hcLockHeldAt(path string, _ os.FileInfo) (held, asked bool) {
 	out, completed, answered, expired := runLsof("-F", "p", path)
 	if !completed || expired || !answered {

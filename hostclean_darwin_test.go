@@ -842,8 +842,8 @@ func TestRunLsofIsBounded(t *testing.T) {
 		if !expired {
 			t.Error("a run the deadline ended did not report it")
 		}
-		// The deadline killed the command, so the run COMPLETED: the caller learns
-		// "lsof looked and saw nothing", which is a fact. That is the difference D17
+		// The deadline killed the command, so the run COMPLETED: the busy read learns
+		// "lsof looked and saw nothing". That is the difference D17
 		// turns on, and it is why this arm asserts ok and the next asserts !ok.
 		if !ok {
 			t.Error("a run the deadline ended reported itself abandoned")
