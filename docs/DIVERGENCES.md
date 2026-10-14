@@ -846,7 +846,7 @@ operator-declinable. Only CT-2 and CT-5 carry a flag and a key.
 - **A run that the 15 s deadline ends is outside this entry.** The lock read then
   keeps the run dir, and the busy read does not retire the daemon. `5fd08069` does
   both under an `lsof` that hangs (cells L1, L2, B1 and B2, macOS VM). No staging
-  reached the 17 s arm. The reference is not known to differ in the 17 s arm.
+  reached the 17 s arm.
 - **Only the abandoned run is this entry.** Two other `lsof` outcomes are parity
   with `89cb6289` on a macOS VM, 3 of 3 runs each: a command that does not start,
   and a run that writes to stderr and exits 1. In both, the daemon gets no SIGTERM,

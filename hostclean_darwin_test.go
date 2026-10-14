@@ -436,8 +436,8 @@ func TestHcLockHeldAtDarwin(t *testing.T) {
 
 // TestTidyKeepsARunDirWhenTheLsofDeadlineEndsDarwin follows cells L1 and L2 (`5fd08069`,
 // macOS VM). The deadline ends the lsof run for the lock. The run dir stays with the line of
-// the reference, the remove seam is not called, and one lsof run happens. The live holder
-// of cell L2 is not visible to the tidy: the run has no output in both cells. The stages
+// the reference, the remove seam is not called, and one lsof run happens. The stub
+// gives no output in the first stage. The stages
 // "a pid in the output" and "abandoned" are claustrum's own, not measured. The control is
 // a completed run that names no holder: the run dir goes through the seam, after a second
 // run on the renamed dir. The lsof run is a stub, and every path is under t.TempDir.
