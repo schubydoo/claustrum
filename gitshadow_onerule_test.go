@@ -364,6 +364,51 @@ func TestShadowFailedMktreeHasAllLinesAndTheVersion(t *testing.T) {
 	}
 }
 
+// A failed `config`, `commit-tree` or `update-ref` call of the calls 1 to 5
+// has the cause of a failed `mktree`: its verb, every error line, and the
+// version text after two `version` calls. No cell has such a call. The test
+// pins claustrum's own choice, not a reply of 5fd08069.
+func TestShadowFailedSetupCallsShareThePathOfMktree(t *testing.T) {
+	for _, c := range []struct {
+		verb  string
+		match []string
+		calls int
+	}{
+		{"config", []string{"config", "helper.check", "real"}, 4},
+		{"commit-tree", []string{"commit-tree"}, 6},
+		{"update-ref", []string{"update-ref"}, 7},
+	} {
+		t.Run(c.verb, func(t *testing.T) {
+			f := newShadowFixture(t)
+			stageGit(t,
+				stagedCall{Match: c.match, Exit: 1, Stderr: "error: first forced line\nfatal: second forced line\n"},
+				stagedCall{Match: []string{"version"}, Stdout: "git version 2.43.0\n"})
+			raw, calls := f.info(t, f.repo, nil)
+			test, after := startTestCalls(t, calls)
+			wantFailedTest(t, f, raw, after, c.verb, "error: first forced line fatal: second forced line (git version 2.43.0)")
+			if len(test) != c.calls || !slices.Equal(test[c.calls-1].argv, append(shadowTestPrefix(), "version")) {
+				t.Errorf("the test made %d calls, want %d with the second version call last", len(test), c.calls)
+			}
+		})
+	}
+}
+
+// A server with no settings control answers a git.info with no git in the
+// PATH as "no repository" too, and it makes no folder.
+func TestGitInfoWithNoGitAndNoRunFolder(t *testing.T) {
+	f := newShadowFixture(t)
+	// A relative folder that a broken guard makes lands in a folder of the test.
+	t.Chdir(t.TempDir())
+	f.s.gitShadow = nil
+	t.Setenv("PATH", t.TempDir())
+	if raw, _ := f.info(t, f.repo, nil); raw != noRepoLine {
+		t.Errorf("git.info = %s\nwant %s", raw, noRepoLine)
+	}
+	if names := daemonFolders(t, f.run); names != nil {
+		t.Errorf("git-shadow was made: %v", names)
+	}
+}
+
 // With GIT_NAMESPACE and GIT_INDEX_FILE in the daemon, no call in the
 // folder of the test has either, and call 7 and the excludes read have both.
 // The nine such calls of 5fd08069 have neither (cell C8 of round tier0-5).

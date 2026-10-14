@@ -418,14 +418,11 @@ type shadowRun struct {
 
 // detail is the text of a failed call with the last line that git wrote to its
 // error output, or the exec error when git wrote none. The cause of a failed
-// start test has every line (allLines). A run that did not fail has no text.
+// start test has every line (allLines). Each caller has a failed run.
 func (r shadowRun) detail() string {
 	lines := strings.Split(strings.TrimRight(r.stderr, "\r\n"), "\n")
 	if last := strings.TrimRight(lines[len(lines)-1], "\r"); last != "" {
 		return last
-	}
-	if r.err == nil {
-		return ""
 	}
 	return r.err.Error()
 }

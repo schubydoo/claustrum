@@ -139,3 +139,34 @@ func TestProbeInsideACreate(t *testing.T) {
 		t.Errorf("a create with both folders there made a call about the repository: %q", calls)
 	}
 }
+
+// A folder `.probe` that the daemon cannot open keeps its config, and the
+// request goes on to the call about the repository. Not measured: the rule is
+// claustrum's own.
+func TestProbeFolderThatCannotBeOpenedKeepsItsConfig(t *testing.T) {
+	if os.Geteuid() == 0 {
+		t.Skip("root opens a folder with mode 0300")
+	}
+	f := newShadowFixture(t)
+	now := setProbeClock(t)
+	f.info(t, f.repo, nil)
+	probe := filepath.Join(daemonFolder(t, f.run), shadowProbeName)
+	if err := os.WriteFile(filepath.Join(probe, "config"), nil, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Chmod(probe, 0o300); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = os.Chmod(probe, 0o700) })
+	*now = now.Add(probeKeep + time.Second)
+	raw, calls := f.info(t, f.repo, nil)
+	if !strings.Contains(raw, `"isRepo":true`) || !strings.Contains(raw, `"settingsControl":"shadow"`) {
+		t.Errorf("git.info = %s, want a normal reply", raw)
+	}
+	if !slices.ContainsFunc(calls, func(c envCall) bool { return slices.Contains(c.argv, "--git-dir") }) {
+		t.Error("the request made no call about the repository")
+	}
+	if fi, err := os.Stat(filepath.Join(probe, "config")); err != nil || fi.Size() != 0 {
+		t.Errorf("config after the request: %v, %v, want the 0 bytes", fi, err)
+	}
+}
