@@ -2,4 +2,4 @@
 default: patch
 ---
 
-The start test of the settings copy follows `5fd08069`: `git.info` answers `fallback-git` or `shadow` where some test calls gave an error, and an error for `No space left on device`. The error text has every line of git. With no git, `git.info` answers `isRepo:false`.
+As on `5fd08069`, `git.info` answers `fallback-git` or `shadow` where some start test calls gave an error, and every git method answers an error for `No space left on device`, with every error line. With no git in the `PATH`, `git.info` answers `isRepo:false`.

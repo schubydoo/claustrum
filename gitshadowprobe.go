@@ -198,14 +198,11 @@ func makeProbeFolder(dir string) error {
 // is not there. If HEAD is there, it writes the config again when the text of
 // that file is not probeConfigText. 5fd08069 has the 36 bytes again after a
 // git.info that came 6 s after the file was emptied (cell C10 of round
-// tier0-5, Linux VM). A request inside the kept time of an answer makes no call and
-// does not come here: not measured. A changed HEAD is not measured either: it
-// stays. It holds probeFolderMu from the look to the end of the make.
-// Without the lock a second request can find the folder between two steps of
-// the make and run its call on it. Git then answers "not a git repository",
-// and the request answers "no repository" for a good repository. The lock is
-// claustrum's own and leaves no trace on the disk. A failed make is not
-// reported: the call runs and gives its own answer (makeProbeFolder).
+// tier0-5, Linux VM). Only an emptied file is measured: a missing file and
+// another text share the path. A request inside the kept time of an answer
+// makes no call and does not come here: not measured. A changed HEAD is not
+// measured either: it stays. It holds probeFolderMu from the look to the end
+// of the make.
 func (h *shadowHost) ensureProbeFolder(folder string) {
 	h.probeFolderMu.Lock()
 	defer h.probeFolderMu.Unlock()
