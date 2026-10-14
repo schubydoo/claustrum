@@ -270,6 +270,43 @@ func TestShadowEndedAddNeverGivesFallback(t *testing.T) {
 	}
 }
 
+// An add that signal 9 ended fails the test, also when the add of `wt2`
+// works. On 5fd08069 the cause ends with `signal: killed` after 11 test calls
+// (cell N3 of round tier0-5, Linux VM).
+func TestShadowAddEndedByASignalFailsTheTest(t *testing.T) {
+	f := newShadowFixture(t)
+	stageGit(t, stagedCall{Match: stageAdd, Copy: "yes", Kill: true})
+	raw, calls := f.info(t, f.repo, nil)
+	test, after := startTestCalls(t, calls)
+	wantFailedTest(t, f, raw, after, "worktree", "signal: killed")
+	wantLastTestCall(t, test, 11, false, stageAdd...)
+}
+
+// A first `config --get` that the bound ended fails the test, and no other
+// test call runs. That is the rule of every ended test call but call 7. No
+// cell has an ended call 6: not measured.
+func TestShadowEndedFirstGetFailsTheTest(t *testing.T) {
+	f := newShadowFixture(t)
+	lowerShadowBound(t, 2*time.Second, 100*time.Millisecond)
+	slowGit(t, "config,--get,helper.check", "pre", 60*time.Second, "", "")
+	t.Setenv("CLAUSTRUM_GITSTUB_ENVEND", "GIT_COMMON_DIR=/shadow")
+	raw, calls := f.info(t, f.repo, nil)
+	test, after := startTestCalls(t, calls)
+	wantFailedTest(t, f, raw, after, "config", "signal: killed")
+	wantLastTestCall(t, test, 6, true, stageGet...)
+}
+
+// A first `config --get` that signal 9 ended fails the test, and no other test
+// call runs. No cell has such a call 6: claustrum's own, not measured.
+func TestShadowFirstGetEndedByASignalFailsTheTest(t *testing.T) {
+	f := newShadowFixture(t)
+	stageGit(t, stagedCall{Match: stageGet, Copy: "yes", Nth: 1, Kill: true})
+	raw, calls := f.info(t, f.repo, nil)
+	test, after := startTestCalls(t, calls)
+	wantFailedTest(t, f, raw, after, "config", "signal: killed")
+	wantLastTestCall(t, test, 6, true, stageGet...)
+}
+
 // TestShadowFolderFailures pins the cause where a folder or a file of the test
 // cannot be made: the error of the system call with its path, and no quotes.
 // 5fd08069 answers `mkdir <run>/git-shadow: permission denied` for a run folder

@@ -372,6 +372,17 @@ func gitInfo(req *request) response {
 		inFile = ft.verdict == gitDirTrusted && ft.pinCommonDir != ""
 		gateTrust, gateDir, gate = ft, filepath.Dir(p.Path), inFile
 	}
+	// With no git in the PATH of the daemon, 5fd08069 answers "no repository"
+	// with no member, runs no test and logs no line about git. Its folder holds
+	// the lock file only (cell C7 of round tier0-5, Linux VM, 3 of 3 runs). The
+	// other git methods are not measured there: they keep the failed start test.
+	// A request with "shadowDirOff":true is not measured either, and it keeps
+	// its answer. The settingsControl member follows the state of the daemon:
+	// a daemon that passed its test before it lost git is not measured.
+	if gate && !bool(p.ShadowDirOff) && gitLookupError() != nil {
+		req.shadow.folderWithNoTest()
+		return notRepo()
+	}
 	if gate {
 		if msg, noRepo := req.settingsGateRefusal(gateTrust, p.ShadowDirOff, gateDir); msg != "" {
 			return errResult(req.ID, codeInternal, msg)

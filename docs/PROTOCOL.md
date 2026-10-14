@@ -2158,6 +2158,9 @@ last member of the result. No other method sends it, and an error reply has none
 - A `git.info` on a path that does not exist starts no test. As the first git
   request of a daemon it makes one call, the excludes read, and its reply has no
   member. A later one makes none.
+- With no git in the daemon's `PATH`, a `git.info` on a repository answers "no
+  repository" with no test (`5fd08069`, cell C7 of round `tier0-5`, Linux VM). Its
+  member follows the daemon's state (not measured).
 - A `git.info` on a regular file gets the gate of the repository of its folder.
   Outside any repository it starts no test. As the first git request of a daemon
   its reply has no member. That is the reply on Linux and macOS. On Windows the reply is the hooks refusal, with
@@ -2188,7 +2191,7 @@ reply. If the test fails, the request gets this text:
 
 `Claude could not test git on the remote machine (<cause>). Check free disk space and quota there, then try again.`
 
-The text has three shapes. `git.info`, `git.status` and `git.list_branches` answer
+`git.info`, `git.status` and `git.list_branches` answer
 it as a `-32603` error. `git.worktree_create` answers it in `error`, with the
 `errorCode` `worktree_add_failed`. `git.worktree_remove` answers it after `failed
 to remove worktree: could not check whether <worktreePath> is locked: `, with no
@@ -2196,15 +2199,17 @@ to remove worktree: could not check whether <worktreePath> is locked: `, with no
 
 | `<cause>` | When |
 |---|---|
-| `git <verb> failed under "<folder of the daemon>": <last error line of git>` | A test call failed. The folder is in quotes as Go's `%q` quotes it |
+| `git <verb> failed under "<folder of the daemon>": <error lines of git, space-joined>` | A test call failed. Go's `%q` quotes the folder |
 | `git <verb> failed under "<folder>": signal: killed` | The daemon ended a test call other than call 7 after 30 seconds (Linux and macOS VMs). On a Windows VM the end is `exit status 1` |
-| the same with ` (git version <v>)` at its end | The failed or ended call was `init` (cell C2 of round `val-s3p2b2-7`, Linux VM and Windows VM, for an `init` that exits 1) |
+| the same with ` (git version <v>)` at its end | The failed or ended call was one of calls 1 to 5 (measured for `init` and `mktree`) |
 | `mkdir <path>: <reason>` or `open <path>: <reason>`, with no quotes | A folder or the lock file of the daemon cannot be made |
 
-From the code: a call 7 that fails on its own gives the Go error of the call, and
-a `config --get` call with another answer gives `unexpected answer`. Neither is
-measured. The cells of
-a failed call have one error line.
+A call 6 with exit 1 goes on (cell C3). `real` at call 6, or a wrong answer at calls 8
+to 10, gives `fallback-git`, as does git's refusal when that call without the copy
+works (cells C1, C2, C3b, C4 and C5). At call 10, `No space left on device` in the
+error or an end by a signal fails the test (cells N1 to N3). Two failed calls
+name the first (cell C9). All cells: round `tier0-5` on `5fd08069` (Linux
+VM).
 
 - The daemon keeps a failure for 10 seconds from the end of the failed test. A
   request in that time gets the kept text with no git call.
@@ -2212,10 +2217,6 @@ a failed call have one error line.
   `"shadowDirOff":true` works in that time.
 - A test call that a wrapper holds 29 s passes. One held 32 s gives the error at
   about 31 s (cell 31 of round `s3p2b-edges`, Linux VM).
-- From the code: claustrum bounds a test call at 30 seconds, and it waits 1 more
-  second for the output of that call. The 1 second is fitted from the Linux rows.
-- A test call that exits in time counts by its exit code, also while a child
-  holds its output pipes past that wait.
 - From the code: call 7, the listing of the test config, waits for its pipes until
   one bound and 1 second after the call ended. A call 7 that the bound ended, or whose pipes a
   child still holds then, gives the cause `this repository's git config cannot be
@@ -2293,14 +2294,15 @@ of the repository. The file ends with `[lfs]\n\trepositoryformatversion = 0\n`.
 In the state `shadow` the daemon asks git itself about the repository, before the
 config read and the calls of the method. The call is `rev-parse --git-dir` with two
 `-c` items, in the root of the work tree. It names a folder `.probe` of the daemon
-and not the repository. A good answer is kept 5 seconds from the end of the call.
+and not the repository. The daemon writes an emptied
+`.probe/config` again (`5fd08069`, cell C10 of round `tier0-5`, Linux VM). A good answer is kept 5 seconds from the end of the call.
 A change of the root folder or of its `.git` entry makes the daemon ask again.
 
 | Answer of git | Reply |
 |---|---|
 | exit 128 with a text, such as git's "dubious ownership" text | The "no repository" answer of each method. No config is read, and no copy is made |
 | exit 1, or exit 128 with no text | `git could not check this repository on the remote machine: at "<root>": exit status <n>` |
-| exit 1 or exit 2 with a text | the same text with the text of git in the place of `exit status 1`. Two lines stand there with one space between them (cells P3 of round `val-s3p2b2-7` and cell N-f of round `val-s3p2b2-8`, Linux VM). From the code: claustrum cuts the blanks at both ends of each line and drops an empty line (not measured) |
+| exit 1 or exit 2 with a text | the same text with the text of git in the place of `exit status 1`. Two lines stand there with one space between them (cells P3 of round `val-s3p2b2-7` and cell N-f of round `val-s3p2b2-8`, Linux VM). |
 | another path than the git directory, in two calls | `git and Claude disagree about which repository holds this folder: from "<root>" git finds "<path>", Claude finds "<git directory>"; try again`. `<path>` is the path as git printed it: with forward slashes on Windows (table P2 of round `val-s3p2b2-7`, Windows VM) |
 | no answer in 30 seconds | `git could not check this repository on the remote machine: it did not finish within 30 seconds in "<root>"; try again` |
 

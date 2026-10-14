@@ -145,6 +145,35 @@ func TestProbeFolder(t *testing.T) {
 	}
 }
 
+// An emptied config of the folder `.probe` is written again at
+// the next call about the repository. 5fd08069 has the 36 bytes again after a
+// git.info 6 s after the file was emptied (cell C10 of round tier0-5, Linux
+// VM). HEAD stays the file that it was.
+func TestProbeConfigIsWrittenAgain(t *testing.T) {
+	f := newShadowFixture(t)
+	now := setProbeClock(t)
+	f.info(t, f.repo, nil)
+	probe := filepath.Join(daemonFolder(t, f.run), shadowProbeName)
+	config, head := filepath.Join(probe, "config"), filepath.Join(probe, "HEAD")
+	before, err := os.Stat(head)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(config, nil, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	*now = now.Add(probeKeep + time.Second)
+	if raw, _ := f.info(t, f.repo, nil); !strings.Contains(raw, `"settingsControl":"shadow"`) {
+		t.Errorf("git.info = %s", raw)
+	}
+	if got, err := os.ReadFile(config); err != nil || string(got) != probeConfigText || len(got) != 36 {
+		t.Errorf("config after the request = %q, %v\nwant the 36 bytes %q", got, err, probeConfigText)
+	}
+	if after, err := os.Stat(head); err != nil || !os.SameFile(before, after) {
+		t.Errorf("HEAD after the request: %v, want the same file", err)
+	}
+}
+
 // TestProbeFolderIsWholeBeforeTheCall: a request never runs its call about the
 // repository on a folder `.probe` that is still in the make. The test holds the
 // lock of the make with only the top folder on the disk, as a first request

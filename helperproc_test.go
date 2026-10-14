@@ -263,6 +263,11 @@ func runGitSlow(args []string) int {
 		}
 		appendLine(log, strings.Join(args, "\x1f")+"\x1e"+string(head)+"\x1e"+string(config)+"\x1e"+worktrees+"\x1d")
 	}
+	// CLAUSTRUM_GITSTUB_STAGE names a file of staged answers (stageGit). A call
+	// that one of them matches gets that answer, and no real git runs for it.
+	if code, staged := stagedGitAnswer(args); staged {
+		return code
+	}
 	// CLAUSTRUM_GITSTUB_FAIL_LISTING acts on the listings of the filter rule of
 	// git.worktree_create. It is a comma-separated list. "scoped" is the listing
 	// with --show-scope, "outside" is the one with GIT_DIR set to the null device,
