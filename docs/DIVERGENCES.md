@@ -846,10 +846,9 @@ operator-declinable. Only CT-2 and CT-5 carry a flag and a key.
   it matches what the cleaner already does for an unreadable lock. It also costs
   three wedged runs on such a host: one for the pass line and two in the sampler. Each abandoned
   run leaves a process and a goroutine behind. claustrum caps neither.
-- **Not covered: the lock read.** `hcLockHeldAt` still reads an abandoned run as
-  not-held, although the same argument applies to it. This
-  entry was scoped to the busy predicate deliberately. Widening it is a decision, not
-  an implementation detail. The reference side is not measured.
+- **The lock read is no divergence.** A run dir stays when the deadline ends the
+  `lsof` run for its lock, with the line `kept, its daemon.lock could not be
+  examined` (`5fd08069`, cells L1 and L2, macOS VM).
 - **Only the abandoned run is this entry.** Two other `lsof` outcomes are parity
   with `89cb6289` on a macOS VM, 3 of 3 runs each: a command that does not start,
   and a run that writes to stderr and exits 1. In both, the daemon gets no SIGTERM,
@@ -1492,12 +1491,6 @@ scheduled.
   `89cb6289` exited after 12.06 s (Linux row P7, also measured on macOS and Windows), and the bound of claustrum is
   12 s now. A parent-side check answered in 0.03 s and named the actual problem: a
   better operator experience, and a divergence.
-- **The macOS lock read's abandoned run.** `hcLockHeldAt` reads an `lsof` run it gave
-  up on as not-held. The argument behind [D17](#d17) reaches
-  it too: a held lock that reads stale lets the tidy remove a live daemon's run dir.
-  D17 was scoped to the busy predicate, so this is the same shape one step away.
-  Taking it is a second divergence rather than an implementation detail. The
-  reference side is not measured.
 
 ## Explicitly out of scope (would break compatibility)
 

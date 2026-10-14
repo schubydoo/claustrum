@@ -653,10 +653,10 @@ is `5fd08069`. The pin `89cb6289` still reads such a path.
 
 D17 is off-wire and macOS-only. The host cleaner reads an `lsof` run it gave
 up on as busy. A completed run that found nothing reads as not busy. The
-reference side is not probe-measured. The
-harm it refuses is the cleaner SIGTERMing a daemon that is serving a client on a
-host where `lsof` never returns. The sibling lock read is deliberately NOT
-covered: it reads a run it gave up on as not held. An `lsof` command that does
+reference side is not probe-measured. It
+refuses a SIGTERM to a daemon that serves a client where `lsof` never returns.
+The lock read is parity: a run folder stays when the deadline ends its `lsof`
+run (`5fd08069`, cells L1 and L2, macOS VM). An `lsof` command that does
 not start is parity, not D17. The daemon then gets no SIGTERM, and a run folder
 with a lock file stays, as on `89cb6289` (macOS VM, 3 of 3 runs). So is a run
 that writes to stderr and exits 1. See the entry.

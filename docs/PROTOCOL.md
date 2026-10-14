@@ -451,12 +451,11 @@ and E4 hold an idle daemon, and rows D1k and E3k hold a daemon with one client:
 |---|---|---|
 | the command does not start | the daemon gets no SIGTERM (rows D1i and D1k, as `89cb6289`) | a dir with a lock file stays (row C3, as `89cb6289`) |
 | the run writes to stderr and exits 1 | the daemon gets no SIGTERM (rows E3i, E3k and E4, as `89cb6289`) | a dir with a lock file stays (rows D2p, D2f and E4, as `89cb6289`) |
-| the run is given up on | busy, so no SIGTERM ([DIVERGENCES.md](DIVERGENCES.md) D17, not measured) | not held (not measured, claustrum's own) |
-| the run completes with nothing on stderr | the output decides | the output decides |
+| the run is given up on | busy, so no SIGTERM ([DIVERGENCES.md](DIVERGENCES.md) D17, not measured) | kept (not measured, claustrum's own) |
+| the run completes with nothing on stderr | the output decides | the output decides, but a dir with a lock file stays if the deadline ended the run (`5fd08069`, cells L1 and L2, macOS VM) |
 
 The exit code is no rule. `lsof` exits 1 with no text when no process holds the
-file, and the dir then goes (rows C1 and C6). On a host where `lsof` does not start,
-the cleaner therefore does not SIGTERM a daemon that is serving a client. In rows
+file, and the dir then goes (rows C1 and C6). In rows
 D1i, D1k, E3i and E3k the pass of `89cb6289` and of claustrum logs these two lines
 for the daemon, the first one before every run dir line. Its summary counts
 `abandoned daemons retired 0` and `candidates left undecided 1`:
