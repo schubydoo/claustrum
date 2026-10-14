@@ -641,7 +641,8 @@ rollback deletes after a failed or killed read-tree checkout, and it removes an
 empty leaf after a failed add. Never read a fired `git-timeout` as "git refused".
 Opting D5 in is wire-visible. From the code: the deadline also bounds the calls
 of the settings copy, which have a bound of 30 seconds of their own. A kill of
-a test call or of the call about the repository refuses the request. A kill of
+a test call other than call 6, or of the call about the repository, refuses the
+request. A kill of
 an `--unset-all` call leaves the new worktree without its `config.worktree`
 file. None starts a delete. The Windows cleanup of old
 staging entries runs after a good add only.

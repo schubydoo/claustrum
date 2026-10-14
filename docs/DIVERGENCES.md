@@ -435,8 +435,8 @@ operator-declinable. Only CT-2 and CT-5 carry a flag and a key.
   From the code: the deadline also bounds the calls of the settings copy. Those
   are the calls of the start test, the call about the repository, the `git version`
   calls after them and the `--unset-all` calls of a create. Each has a bound of 30
-  seconds of its own, so only a shorter deadline counts. A test call
-  that it ends fails the start test with `signal: killed`, and that failure is
+  seconds of its own, so only a shorter deadline counts. A test call other
+  than call 6 that it ends fails the start test with `signal: killed`, and that failure is
   kept 10 seconds. A call about the repository that it ends answers the `did not
   finish within 30 seconds` text. None of these is measured.
 - **Default.** `0` = no deadline (byte-identical). **Activate:** `-git-timeout
