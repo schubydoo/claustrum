@@ -2,6 +2,7 @@ package main
 
 import (
 	"encoding/json"
+	"fmt"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -477,6 +478,82 @@ func TestListingNotARepository(t *testing.T) {
 				t.Errorf("create left %s", f.wt())
 			}
 		})
+	}
+}
+
+// The two texts of a `.git` file that names no valid repository. git 2.56 prints
+// the gitfile text, and older gits print "not a git repository". A stub stands in
+// for git, so no git is needed. Each text is one class only, and exit 1 is neither.
+// Mutation: saysGitFileNowhere returns false.
+func TestListingGitFileNowhereText(t *testing.T) {
+	installGitSlowStub(t, "")
+	for _, tc := range []struct {
+		name, stderr    string
+		code            int
+		noRepo, nowhere bool
+	}{
+		{"git 2.56", "fatal: gitfile does not point to a valid repository: /x/G/.git\n", 128, false, true},
+		{"git 2.47", "fatal: not a git repository: /x/nowhere\n", 128, true, false},
+		{"git 2.56, exit 1", "fatal: gitfile does not point to a valid repository: /x/G/.git\n", 1, false, false},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			stubListing(t, tc.code, tc.stderr)
+			r := runListing(t.Context(), t.TempDir(), "", os.Environ())
+			if got := r.saysNoRepository(); got != tc.noRepo {
+				t.Errorf("saysNoRepository = %v, want %v (stderr %q, err %v)", got, tc.noRepo, r.stderr, r.err)
+			}
+			if got := r.saysGitFileNowhere(); got != tc.nowhere {
+				t.Errorf("saysGitFileNowhere = %v, want %v (stderr %q, err %v)", got, tc.nowhere, r.stderr, r.err)
+			}
+		})
+	}
+}
+
+// failedListingCheck sets gitFileText for the git 2.56 text, and the text names the
+// folder that holds `.git`, also for a listing in a subfolder. The refusal stays set.
+// A stub stands in for git. It reads its stderr from a file, so a backslash of a
+// Windows path stays as it is. On Linux and macOS a folder name holds a backslash,
+// so the %q quoting of the root is tested there too. Mutations: drop the
+// gitFileText step, or name dir.
+func TestFailedListingGitFileText(t *testing.T) {
+	installGitSlowStub(t, "")
+	base, err := filepath.EvalSymlinks(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if runtime.GOOS != "windows" {
+		base = filepath.Join(base, `b\runner`)
+	}
+	g := filepath.Join(base, "G")
+	if err := os.MkdirAll(filepath.Join(g, "sub"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(g, ".git"), []byte("gitdir: "+filepath.Join(base, "nowhere")+"\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	stub := func(stderr string) {
+		stubListing(t, 128, "")
+		stubStderr(t, stderr, false)
+	}
+	text := "fatal: gitfile does not point to a valid repository: " + filepath.Join(g, ".git")
+	want := fmt.Sprintf("git could not check this repository on the remote machine: at %q: %s", g, text)
+	for _, dir := range []string{g, filepath.Join(g, "sub")} {
+		stub(text + "\n")
+		r := runListing(t.Context(), dir, "", os.Environ())
+		if r.stderr != text+"\n" {
+			t.Fatalf("%s: the stub printed %q, want %q", dir, r.stderr, text+"\n")
+		}
+		c := failedListingCheck(gitUse{}, r, dir, false)
+		if c.gitFileText != want {
+			t.Errorf("%s: gitFileText = %q\nwant %q", dir, c.gitFileText, want)
+		}
+		if c.refusal == "" || c.noRepo {
+			t.Errorf("%s: refusal %q, noRepo %v: want the refusal of a failed listing", dir, c.refusal, c.noRepo)
+		}
+	}
+	stub("fatal: not a git repository: " + filepath.Join(base, "nowhere") + "\n")
+	if c := failedListingCheck(gitUse{}, runListing(t.Context(), g, "", os.Environ()), g, false); c.gitFileText != "" {
+		t.Errorf("older text: gitFileText = %q, want none", c.gitFileText)
 	}
 }
 
