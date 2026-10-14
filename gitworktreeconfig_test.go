@@ -16,8 +16,8 @@ import (
 // has the four keys with an item on a macOS VM. The Windows extra rows are
 // those of section 0 item 4 of the report of val-s3p2b2-6-windows (Windows VM,
 // 1 run each). Four keys give an item, and
-// `core.hookspath` and `user.name` give none. Every other key has no row and
-// gives no item.
+// `core.hookspath` and `user.name` give none. Row C3a is cell C3a of
+// tier0-14 (Linux VM). The rows marked not measured follow copyKeyRules.
 func TestWorktreeConfigItems(t *testing.T) {
 	set := func(key, value string) repoSetting { return repoSetting{key: key, value: value, hasValue: true} }
 	for _, row := range []struct {
@@ -33,8 +33,8 @@ func TestWorktreeConfigItems(t *testing.T) {
 		{"12d: bare and worktree", []repoSetting{set("core.bare", "false"), set("core.worktree", "/x/repo")}, nil},
 		{"9a: bare = true", []repoSetting{set("core.bare", "true")}, nil},
 		{"1c: eol", []repoSetting{set("core.eol", "lf")}, []string{"-c", "core.eol=lf"}},
-		{"the order of the file", []repoSetting{set("core.sparsecheckout", "true"), set("core.filemode", "false")},
-			[]string{"-c", "core.sparsecheckout=true", "-c", "core.filemode=false"}},
+		{"sorted by key (not measured)", []repoSetting{set("core.sparsecheckout", "true"), set("core.filemode", "false")},
+			[]string{"-c", "core.filemode=false", "-c", "core.sparsecheckout=true"}},
 		{"p2-K-autocrlf-input", []repoSetting{set("core.autocrlf", "input")}, []string{"-c", "core.autocrlf=input"}},
 		{"p2-K-ignorecase-true", []repoSetting{set("core.ignorecase", "true")}, []string{"-c", "core.ignorecase=true"}},
 		{"p2-K-symlinks-false", []repoSetting{set("core.symlinks", "false")}, []string{"-c", "core.symlinks=false"}},
@@ -49,7 +49,14 @@ func TestWorktreeConfigItems(t *testing.T) {
 		{"Windows extra row: protectntfs", []repoSetting{set("core.protectntfs", "false")}, nil},
 		{"Windows extra row: status.showuntrackedfiles", []repoSetting{set("status.showuntrackedfiles", "no")}, nil},
 		{"a key with no row", []repoSetting{set("core.fsmonitor", "true"), set("core.sshcommand", "x")}, nil},
-		{"a key with no value (not measured)", []repoSetting{{key: "core.filemode"}}, nil},
+		{"a key with no value (not measured)", []repoSetting{{key: "core.filemode"}}, []string{"-c", "core.filemode=true"}},
+		{"a value that fails keeps the one before it (not measured)",
+			[]repoSetting{set("core.filemode", "false"), set("core.filemode", "maybe")}, []string{"-c", "core.filemode=false"}},
+		{"a key with a subsection (not measured)", []repoSetting{set("remote.origin.url", "https://example.invalid/o/r")}, nil},
+		{"the format version and an extension", []repoSetting{set("core.repositoryformatversion", "1"), set("extensions.noop", "true")}, nil},
+		// Cell C3a of tier0-14 (Linux VM): rewritten values, one item per key, sorted.
+		{"C3a", []repoSetting{set("core.quotepath", "off"), set("core.filemode", "no"), set("core.trustctime", "false"), set("core.bare", "true"), set("core.bare", "false")},
+			[]string{"-c", "core.filemode=false", "-c", "core.quotepath=false", "-c", "core.trustctime=false"}},
 		{"no file", nil, nil},
 	} {
 		t.Run(row.name, func(t *testing.T) {

@@ -124,7 +124,7 @@ Three values of the repository pass: `smudge = cat` under each name, and `git-lf
 
 The daemon keeps its own copy of the git settings of the repository, and its git calls read that copy. [The settings copy](../PROTOCOL.md#the-settings-copy) in the protocol reference has the states, the texts and the folder. These rules are for this method:
 
-- If the directory `<git dir>/worktrees` is missing, the daemon makes it before the add. The directory stays after an add that fails. The new directory gets mode 0777 less the umask of the daemon. On Linux and macOS, with the value `group`, `true`, `all`, `world`, `everybody` or an octal number that git accepts, the daemon then sets the mode by that value.
+- If the directory `<git dir>/worktrees` is missing, the daemon makes it before the add, with mode 0777 less its umask. It stays after a failed add. On Linux and macOS, the last `core.sharedrepository` line of the copy then sets its mode, unless that line is `umask`. Cells H1, S1, S2 and C2 of rounds `tier0-14` to `tier0-16` show this (Linux VM). macOS is not measured.
 - If the repository has `extensions.worktreeConfig` and a file `<git dir>/config.worktree`, the new worktree gets its own `config.worktree` file. It holds the text of that file without `core.bare` and `core.worktree`.
 - A bare `baseRepo` gets `not_a_repo`.
 - On Windows the add writes the registration of the new worktree into a short-lived folder of the daemon. The daemon then copies it into `<git dir>\.claude-new-worktree-<16 hex>` and renames that folder to `<git dir>\worktrees\<name>`.

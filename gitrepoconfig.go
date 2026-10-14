@@ -83,44 +83,6 @@ var repoCountedSections = map[string]bool{
 	"checkout": true, "includeif": true,
 }
 
-// repoKnownExtensions are the extension names that pass under format version 1
-// (cells E9, X8 and X9). claustrum refuses every other name, with a value or with
-// none. The names that ran are `foo`, `bar`, `noop2` and `x.noop`, the name of
-// `[extensions "x"] noop` (cells V6, Linux, macOS and Windows VMs).
-var repoKnownExtensions = map[string]bool{
-	"objectformat": true, "compatobjectformat": true, "refstorage": true,
-	"worktreeconfig": true, "relativeworktrees": true, "submodulepathconfig": true,
-	"noop-v1": true, "noop": true, "preciousobjects": true, "partialclone": true,
-}
-
-// repoRefusedExtensionValues are the measured values of a known extension that
-// are refused (cells E9, X8 and V6). `partialclone` with no value or an empty
-// value is refused too. Every other value of a known name passes: it is measured
-// as accepted, or it is not measured.
-var repoRefusedExtensionValues = map[string]string{
-	"objectformat":        "md5",
-	"refstorage":          "banana",
-	"preciousobjects":     "maybe",
-	"relativeworktrees":   "maybe",
-	"submodulepathconfig": "maybe",
-	"noop-v1":             "maybe",
-	"compatobjectformat":  "md5",
-}
-
-// startsWorktreeConfigTest reports whether value, as the value of
-// extensions.worktreeconfig, starts the test of a `config.worktree` file: a true
-// word of git in any letter case. The key with no value starts it too. `true`,
-// `yes`, `1` and `TRUE` are measured in cells X2 and V14, and `on` and `ON` in
-// cells N4 (Linux, macOS and Windows VMs). `false`, `no` and `0` start no test
-// (cells N4). `Yes`, `On` and `tRuE` start it (cells P2, the same three systems).
-func startsWorktreeConfigTest(value string) bool {
-	switch strings.ToLower(value) {
-	case "true", "yes", "on", "1":
-		return true
-	}
-	return false
-}
-
 // listConfigText runs `git config --no-includes --file - --list -z` with text as
 // its standard input, and returns the listing. git follows no include in this
 // call. dir and env are the working directory and the environment of the call:
@@ -198,6 +160,16 @@ func repoConfigListEnv() []string {
 // reads on standard input.
 var stdinSyntaxError = regexp.MustCompile(`(?m)^fatal: bad config line ([0-9]+) in standard input\s*$`)
 
+// badLineDetail is the text of git for a syntax error of the file at path, with
+// the path in quotes, or "" when errOut, the error output of a listing on
+// standard input, has no such text.
+func badLineDetail(errOut []byte, path string) string {
+	if m := stdinSyntaxError.FindSubmatch(errOut); m != nil {
+		return "fatal: bad config line " + string(m[1]) + " in " + quoteOperand(path)
+	}
+	return ""
+}
+
 // openRepoFile opens path for a read. The open does not wait, so a FIFO with no
 // writer is judged at once: 5fd08069 answers in under 350 ms there (cells C4, C5
 // and E10). A file that is missing, a dangling link included, gives nil and no
@@ -263,16 +235,18 @@ type repoExtension struct {
 	hasValue    bool
 }
 
-// refused reports whether the extension is refused under format version 1.
+// refused reports whether the extension is refused under format version 1: a
+// name other than worktreeconfig that is not in copyKeyRules, or a value that
+// its value rule does not accept. 5fd08069 refuses `preciousobjects = 1234567890`,
+// `objectformat = sha512`, `refstorage` with no value and `partialclone = a/-b`
+// (cells R1 to R4 of tier0-14, Linux VM). Cells E9, X8 and V6 measured more
+// names and values.
 func (e repoExtension) refused() bool {
-	if !repoKnownExtensions[e.name] {
-		return true
+	if e.name == "worktreeconfig" {
+		return false
 	}
-	if e.name == "partialclone" && e.value == "" {
-		return true
-	}
-	v, listed := repoRefusedExtensionValues[e.name]
-	return listed && e.hasValue && e.value == v
+	_, ok := shadowValue(repoSetting{key: "extensions." + e.name, value: e.value, hasValue: e.hasValue})
+	return !ok
 }
 
 // repoFileState is the state of one file at the time of a read: what Lstat and
@@ -358,8 +332,8 @@ type repoConfigRead struct {
 	hasVersion bool
 	// extensions are those of the config itself.
 	extensions []repoExtension
-	// worktreeConfig is true when the last extensions.worktreeconfig setting of
-	// the config itself has no value or one that startsWorktreeConfigTest accepts.
+	// worktreeConfig is true when the bool rule (readBoolWord) reads the last
+	// extensions.worktreeconfig setting of the config itself as true.
 	worktreeConfig bool
 	// includedCost is the sum of the counted settings of the included files.
 	includedCost int
@@ -457,12 +431,12 @@ func (r *repoConfigRead) file(path string, depth int) string {
 	if err != nil && !over {
 		var ee *exec.ExitError
 		if errors.As(err, &ee) {
-			if m := stdinSyntaxError.FindSubmatch(errOut); m != nil {
+			if d := badLineDetail(errOut, path); d != "" {
 				// 5fd08069 runs one `git version` after this read
 				// (versionAfterFailure). An included file with a syntax error is
 				// not measured: it gets the call too.
 				versionAfterFailure()
-				return "fatal: bad config line " + string(m[1]) + " in " + quoteOperand(path)
+				return d
 			}
 		}
 		r.unlisted = true
@@ -491,7 +465,13 @@ func (r *repoConfigRead) file(path string, depth int) string {
 		case "core.repositoryformatversion":
 			r.version, r.hasVersion = value, true
 		case "extensions.worktreeconfig":
-			r.worktreeConfig = !hasValue || startsWorktreeConfigTest(value)
+			// The bool rule reads the switch. `true`, `yes`, `1`, `TRUE`, `on`,
+			// `ON`, `Yes`, `On` and `tRuE` turn it on, and `false`, `no` and `0`
+			// do not (cells X2, V14, N4 and P2, Linux, macOS and Windows VMs).
+			// `2` and `10` turn it on (cell C3c of tier0-14 and cell K1 of
+			// tier0-16, Linux VM).
+			v, ok := readBoolWord(repoSetting{value: value, hasValue: hasValue})
+			r.worktreeConfig = ok && v == "true"
 		}
 		if name, ok := strings.CutPrefix(key, "extensions."); ok {
 			r.extensions = append(r.extensions, repoExtension{name: name, value: value, hasValue: hasValue})
@@ -541,7 +521,7 @@ func (r *repoConfigRead) file(path string, depth int) string {
 // is not a regular file or that is over repoConfigMaxBytes. It is false too
 // when git did not list the file. The open does not wait (openRepoFile).
 func listConfigFile(ctx context.Context, path string) (settings []repoSetting, ok bool) {
-	_, settings, ok = listConfigFileText(ctx, path)
+	_, settings, _, ok = listConfigFileText(ctx, path)
 	return settings, ok
 }
 
@@ -680,9 +660,8 @@ const (
 // measured). An extension in a config with no version key is not refused (cells
 // V6, `foo = true`, Linux, macOS and Windows VMs).
 //
-// With `extensions.worktreeConfig` in the config, as a true word of git
-// (startsWorktreeConfigTest) or with no value, the `config.worktree` file of entry
-// gets the kind test and the size test. Cells X2 ran git.info with a linked
+// With `extensions.worktreeConfig` in the config, true by the bool rule, the
+// `config.worktree` file of entry gets the kind test and the size test. Cells X2 ran git.info with a linked
 // worktree as its path. Cells V14 ran git.status, git.list_branches and
 // git.worktree_create too (Linux and Windows VMs), and a remove (cell W14, Linux
 // VM). The `config.worktree` file of the main worktree is not measured for these
@@ -718,9 +697,11 @@ func entryConfigDetail(worktreeConfig bool, entry string, log *repoReadLog) stri
 // 5fd08069 lists that file two times, right after the config and its included
 // files. It does not list it when the switch is off or the file is missing
 // (cells 1a to 1e, 9a and 9k of s3p2b-edges2-linux, Linux VM). claustrum lists
-// it two times and takes the settings of the first listing. A file there that
-// is not a regular file, that is over the size bound of a config or that git
-// cannot list is not measured: its settings are not used and nothing is
+// it two times and takes the settings of the first listing. With an extension
+// refusal both list it once (cell Q11 of tier0-18, Linux VM). A syntax error
+// there is refused (cell C3b of tier0-14). A file there that is not a regular
+// file, that is over the size bound of a config or that git cannot list for
+// another reason is not measured: its settings are not used and nothing is
 // refused.
 //
 // A file of 0 bytes is not listed. On 5fd08069 the first git.info then makes 21
@@ -742,6 +723,28 @@ func readRepoConfig(ctx context.Context, gitDir string, log *repoReadLog) (*repo
 		return r, "the repository uses format version " + quoteCut(r.version, versionValueMaxRunes) +
 			", which this version of Claude does not support"
 	}
+	worktreeListed := ""
+	if r.worktreeConfig {
+		path := filepath.Join(gitDir, "config.worktree")
+		log.note(path)
+		// A syntax error there refuses the request with the text of git (cell C3b
+		// of tier0-14, Linux VM). It gets the `git version` call of a config with
+		// such an error. It comes before the extension test (cell E3 of tier0-16,
+		// Linux VM). Other failures of the listing are not measured. A good file
+		// gets its second listing after the extension test, so an extension
+		// refusal comes after one listing of that file (cell Q11 of tier0-18, Linux VM).
+		if fi, err := os.Stat(path); err != nil || !fi.Mode().IsRegular() || fi.Size() != 0 {
+			_, settings, badLine, ok := listConfigFileText(ctx, path)
+			if badLine != "" {
+				versionAfterFailure()
+				return r, badLine
+			}
+			if ok {
+				r.worktree = settings
+				worktreeListed = path
+			}
+		}
+	}
 	if r.version == "1" {
 		for _, e := range r.extensions {
 			if e.refused() {
@@ -750,16 +753,8 @@ func readRepoConfig(ctx context.Context, gitDir string, log *repoReadLog) (*repo
 			}
 		}
 	}
-	if r.worktreeConfig {
-		path := filepath.Join(gitDir, "config.worktree")
-		log.note(path)
-		if fi, err := os.Stat(path); err == nil && fi.Mode().IsRegular() && fi.Size() == 0 {
-			return r, ""
-		}
-		if settings, ok := listConfigFile(ctx, path); ok {
-			r.worktree = settings
-			listConfigFile(ctx, path)
-		}
+	if worktreeListed != "" {
+		listConfigFile(ctx, worktreeListed)
 	}
 	return r, ""
 }
@@ -892,8 +887,8 @@ type repoVerdict struct {
 	// worktreeItems are the `-c` items of the `config.worktree` file of the git
 	// directory (worktreeConfigItems), or nil.
 	worktreeItems []string
-	// shared is the last `core.sharedRepository` setting of the config and its
-	// included files (sharedRepositoryOf, makeWorktreesFolder).
+	// shared is read from the last `core.sharedrepository` line of the copy
+	// (sharedRepositoryOf, makeWorktreesFolder).
 	shared sharedRepository
 	states []repoFileState
 }
@@ -992,8 +987,8 @@ func repoReadVerdict(t gitDirTrust) *repoVerdict {
 		v.shadowText = shadowConfigText(r.settings, r.worktree)
 		v.worktreeItems = worktreeConfigItems(r.worktree)
 		for _, s := range r.settings {
-			if s.key == "core.sharedrepository" {
-				v.shared = sharedRepositoryOf(s)
+			if line, ok := shadowValue(s); ok && s.key == "core.sharedrepository" {
+				v.shared = sharedRepositoryOf(line)
 			}
 		}
 	}

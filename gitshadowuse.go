@@ -224,9 +224,9 @@ func (u gitUse) worktreesFolderRefusal() string {
 // add runs and gives its own error.
 //
 // The mkdir has mode 0777, and the umask of the daemon takes its bits from
-// that. With no `core.sharedRepository` key and with the value `umask` the
-// folder keeps that mode: `d 0755` with umask 022 and `d 0775` with 002. With
-// another value the folder that this call made gets one mode call
+// that. With no `core.sharedrepository` line in the copy and with the line
+// `umask` the folder keeps that mode: `d 0755` with umask 022 and `d 0775`
+// with 002. With another line the folder that this call made gets one mode call
 // (sharedRepository.folderMode). A trace of 5fd08069 has `mkdirat(15,
 // "worktrees", 0777)` and then the mode call (the 18 rows of group P5 of
 // val-s3p2b2-6-linux, Linux VM). The registration that git makes in the folder

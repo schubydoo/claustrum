@@ -118,36 +118,72 @@ func TestRemoveReadsARefusedConfigTwice(t *testing.T) {
 
 // TestWorktreesFolderOfASharedRepository: the folder `worktrees` that the
 // daemon makes before the `worktree add` call is made with mode 0777 before
-// the umask. With the value `group`, `true`, `all`, `world`, `everybody` or an
-// octal number that git accepts, it then gets one mode call. The registration that git makes in it takes the
-// set-group-ID bit from it. Each row is a row of group P5 of
-// val-s3p2b2-6-linux (Linux VM, 5fd08069): section 0.2 item 6 of its report
-// has the table. Cell H3 of val-s3p2b2-5-linux has the row `group` too.
+// the umask. With a `core.sharedrepository` line of the copy other than
+// `umask`, it then gets one mode call. The registration that git makes in it
+// takes the set-group-ID bit from it. The rows to `0640` are rows of group P5
+// of val-s3p2b2-6-linux (Linux VM, 5fd08069): section 0.2 item 6 of its report
+// has the table. Cell H3 of val-s3p2b2-5-linux has the row `group` too. The
+// next four rows are cells H1 of tier0-15, S1 and S2 of tier0-16 and C2 of
+// tier0-14 (Linux VM). C2 has nine values in its config. The last eight rows
+// are cells Q1 to Q7 and Q10 of tier0-18 (Linux VM). Q10 has its value in
+// `config.worktree` only.
 func TestWorktreesFolderOfASharedRepository(t *testing.T) {
 	if runtime.GOOS != "linux" {
 		t.Skip("the rows are Linux cells")
 	}
+	const c2Lines = "[core]\n\tsharedrepository\n\tsharedrepository =\n\tsharedrepository = yes\n\tsharedrepository = 1\n" +
+		"\tsharedrepository = 0\n\tsharedrepository = 2\n\tsharedrepository = 660\n\tsharedrepository = TRUE\n\tsharedrepository = 0777\n"
 	for _, row := range []struct {
 		value               string
 		umask               int
 		worktrees, registry os.FileMode
+		lines               string
+		worktreeConfig      string
 	}{
-		{"group", 0o022, 0o2775, 0o2755},
-		{"true", 0o022, 0o2775, 0o2755},
-		{"all", 0o022, 0o2775, 0o2755},
-		{"world", 0o022, 0o2775, 0o2755},
-		{"everybody", 0o022, 0o2775, 0o2755},
-		{"0660", 0o022, 0o2770, 0o2755},
-		{"0640", 0o022, 0o2750, 0o2755},
-		{"umask", 0o022, 0o755, 0o755},
-		{"", 0o022, 0o755, 0o755},
-		{"", 0o002, 0o775, 0o775},
-		{"0640", 0o002, 0o2750, 0o2775},
+		{"group", 0o022, 0o2775, 0o2755, "", ""},
+		{"true", 0o022, 0o2775, 0o2755, "", ""},
+		{"all", 0o022, 0o2775, 0o2755, "", ""},
+		{"world", 0o022, 0o2775, 0o2755, "", ""},
+		{"everybody", 0o022, 0o2775, 0o2755, "", ""},
+		{"0660", 0o022, 0o2770, 0o2755, "", ""},
+		{"0640", 0o022, 0o2750, 0o2755, "", ""},
+		{"umask", 0o022, 0o755, 0o755, "", ""},
+		{"", 0o022, 0o755, 0o755, "", ""},
+		{"", 0o002, 0o775, 0o775, "", ""},
+		{"0640", 0o002, 0o2750, 0o2775, "", ""},
+		{"yes", 0o002, 0o2775, 0o2775, "", ""},
+		{"660", 0o002, 0o2770, 0o2775, "", ""},
+		{"2", 0o002, 0o2775, 0o2775, "", ""},
+		{"C2", 0o002, 0o2777, 0o2775, c2Lines, ""},
+		{"Q1", 0o002, 0o2775, 0o2775, "[core]\n\tsharedrepository\n", ""},
+		{"on", 0o002, 0o2775, 0o2775, "", ""},
+		{"9", 0o002, 0o2775, 0o2775, "", ""},
+		{"640", 0o002, 0o2750, 0o2775, "", ""},
+		{"1660", 0o002, 0o2770, 0o2775, "", ""},
+		{"00660", 0o002, 0o2770, 0o2775, "", ""},
+		{"0771", 0o002, 0o2770, 0o2775, "", ""},
+		{"Q10", 0o002, 0o775, 0o775, "[core]\n\trepositoryformatversion = 1\n[extensions]\n\tworktreeConfig = true\n",
+			"[core]\n\tsharedRepository = group\n"},
 	} {
 		t.Run(row.value+" umask "+strconv.FormatInt(int64(row.umask), 8), func(t *testing.T) {
 			f := newSeededShadowFixture(t)
 			dropFixtureWorktree(t, f)
-			if row.value != "" {
+			switch {
+			case row.lines != "":
+				config := filepath.Join(f.gitDir, "config")
+				old, err := os.ReadFile(config)
+				if err != nil {
+					t.Fatal(err)
+				}
+				if err := os.WriteFile(config, append(old, row.lines...), 0o644); err != nil {
+					t.Fatal(err)
+				}
+				if row.worktreeConfig != "" {
+					if err := os.WriteFile(filepath.Join(f.gitDir, "config.worktree"), []byte(row.worktreeConfig), 0o644); err != nil {
+						t.Fatal(err)
+					}
+				}
+			case row.value != "":
 				runGit(t, f.repo, "config", "core.sharedRepository", row.value)
 			}
 			worktrees := filepath.Join(f.gitDir, worktreesSubdir)
