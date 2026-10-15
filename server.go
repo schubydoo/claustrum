@@ -80,6 +80,10 @@ type server struct {
 	wlog    *wireLog      // optional JSON-RPC frame recorder; nil unless -wire-log set
 	connSeq atomic.Uint64 // per-daemon connection counter, only to correlate wire-log records
 
+	// lastCounted is monoNow at the last counted request, or at the start of the
+	// daemon. The idle exit reads it (orphanexit.go).
+	lastCounted atomic.Int64
+
 	// managedLog holds the last [LauncherHandler] line, so a repeat of the same
 	// launcher.resolve answer writes no second line (see managedLauncherLog).
 	managedLog managedLauncherLog
@@ -592,6 +596,7 @@ func newServerOnSocket(socket, token, metricsAddr string, wlopt wireLogOptions, 
 
 		peerCheckAsked: peerAsked,
 	}
+	s.noteCountedRequest()
 	// Optional Prometheus metrics endpoint (opt-in via -metrics-addr). A bind
 	// failure is non-fatal — the daemon's job is the socket, not the metrics.
 	if metricsAddr != "" {
@@ -922,8 +927,9 @@ func (s *server) startAcceptLoops() {
 func (s *server) run(socket string) {
 	s.startAcceptLoops()
 	// Retire this daemon if its socket path is taken over by a successor and no client
-	// is connected (matching 4534d86). Exits with the daemon's shutdown; no-op unless
-	// the durations, sockInfo, and instanceId are all set. See orphanexit.go.
+	// is connected (matching 4534d86), or after the idle limit with no client. Exits
+	// with the daemon's shutdown. A no-op on Windows, and unless the durations,
+	// sockInfo, and instanceId are all set. See orphanexit.go.
 	go s.exitWhenOrphaned(socket)
 
 	// Block here until shutdown, then tear down synchronously on the main

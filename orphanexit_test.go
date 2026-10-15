@@ -284,56 +284,6 @@ func TestExitWhenOrphanedResetsWhileConnected(t *testing.T) {
 	}
 }
 
-// TestExitWhenOrphanedRechecksConnsBeforeShutdown pins the re-check added right before
-// signalShutdown: a client that attaches AFTER a tick's top-of-loop connCount() check —
-// during the multi-second self-probe window, notably via the Windows named-pipe
-// listener that the socket self-probe never covers — must still cancel the shutdown. The
-// successor answers with a foreign id so every probe fails; on the SECOND probe (after
-// that tick's top-of-loop check) it registers a connection on this daemon, mimicking the
-// late client. With the pre-shutdown re-check the daemon resets; without it (the mutant)
-// it tears down with the client attached.
-func TestExitWhenOrphanedRechecksConnsBeforeShutdown(t *testing.T) {
-	shrinkOrphanTimers(t, 10*time.Millisecond, 10*time.Millisecond)
-	s, sock := bootOrphanServer(t)
-	if err := os.Remove(sock); err != nil {
-		t.Fatal(err)
-	}
-	ln, err := net.Listen("unix", sock)
-	if err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(func() { _ = ln.Close() })
-	var probes int64
-	go func() {
-		for {
-			c, err := ln.Accept()
-			if err != nil {
-				return
-			}
-			// On the second probe, attach a client to THIS daemon — after this tick's
-			// top-of-loop connCount() check, so only the pre-shutdown re-check can see it.
-			if atomic.AddInt64(&probes, 1) == 2 {
-				_, srv := net.Pipe()
-				s.mu.Lock()
-				s.conns[&conn{nc: srv}] = struct{}{}
-				s.mu.Unlock()
-			}
-			go func(c net.Conn) {
-				defer c.Close()
-				_, _ = bufio.NewReader(c).ReadBytes('\n')
-				_, _ = fmt.Fprintf(c, `{"jsonrpc":"2.0","id":1,"result":{"instanceId":%q}}`+"\n", "ffffffffffffffffffffffffffffffff")
-			}(c)
-		}
-	}()
-	startOrphanLoop(t, s, sock)
-	select {
-	case <-s.shutdown:
-		t.Fatal("shut down even though a client attached during the self-probe window — the pre-shutdown connCount re-check was skipped")
-	case <-time.After(300 * time.Millisecond):
-		// the pre-shutdown re-check saw the late client and reset each interval
-	}
-}
-
 func TestExitWhenOrphanedProbeReachesUsResets(t *testing.T) {
 	shrinkOrphanTimers(t, 10*time.Millisecond, 20*time.Millisecond)
 	s, sock := bootOrphanServer(t)
@@ -376,5 +326,129 @@ func TestExitWhenOrphanedNoOpWhenDisabled(t *testing.T) {
 	case <-s.shutdown:
 		t.Fatal("the no-op path still shut the daemon down")
 	default:
+	}
+}
+
+// shrinkIdleExit sets a short idle limit for a test and restores it afterward.
+func shrinkIdleExit(t *testing.T, limit time.Duration) {
+	t.Helper()
+	old := idleExitAfter
+	idleExitAfter = limit
+	t.Cleanup(func() { idleExitAfter = old })
+}
+
+// A daemon with no counted request for the limit and no client shuts down, with the
+// idle line before "shutdown requested". The idle time counts from the start.
+func TestIdleExitShutsDownWithNoRequest(t *testing.T) {
+	shrinkOrphanTimers(t, 10*time.Millisecond, 10*time.Minute)
+	shrinkIdleExit(t, 50*time.Millisecond)
+	before := monoNow()
+	s, sock := bootOrphanServer(t) // socket intact: only the idle exit can fire
+	if got := time.Duration(s.lastCounted.Load()); got < before || got > monoNow() {
+		t.Fatalf("the idle time does not count from the start of the daemon: lastCounted %s, start after %s", got, before)
+	}
+	buf := captureLogBuf(t)
+	startOrphanLoop(t, s, sock)
+	select {
+	case <-s.shutdown:
+	case <-time.After(3 * time.Second):
+		t.Fatal("a daemon with no request and no client did not shut down")
+	}
+	got := buf.String()
+	idleAt := strings.Index(got, "[Server] no request for ")
+	stopAt := strings.Index(got, "[Server] shutdown requested")
+	if idleAt < 0 || !strings.Contains(got, " and no connections; shutting down\n") || stopAt < idleAt {
+		t.Errorf("no idle line before the shutdown line:\n%s", got)
+	}
+	if strings.Contains(got, "no longer leads") {
+		t.Errorf("an intact socket wrote an orphan line:\n%s", got)
+	}
+}
+
+// An open connection that sends nothing blocks the idle exit until it closes.
+func TestIdleExitWaitsForSilentClient(t *testing.T) {
+	shrinkOrphanTimers(t, 10*time.Millisecond, 10*time.Minute)
+	shrinkIdleExit(t, 30*time.Millisecond)
+	s, sock := bootOrphanServer(t)
+	cl := dial(t, sock)
+	waitConnCount(t, s, 1)
+	startOrphanLoop(t, s, sock)
+	select {
+	case <-s.shutdown:
+		t.Fatal("shut down while a client was connected")
+	case <-time.After(300 * time.Millisecond):
+	}
+	_ = cl.nc.Close()
+	select {
+	case <-s.shutdown:
+	case <-time.After(3 * time.Second):
+		t.Fatal("no idle exit after the client closed")
+	}
+}
+
+// If both exits are due at one check, the daemon writes the idle line and not the
+// orphan lines.
+func TestIdleExitWinsOverOrphanExit(t *testing.T) {
+	shrinkIdleExit(t, time.Minute)
+	s, sock := bootOrphanServer(t)
+	if err := os.Remove(sock); err != nil {
+		t.Fatal(err)
+	}
+	buf := captureLogBuf(t)
+	base := monoNow()
+	s.lastCounted.Store(int64(base))
+	w := selfExitWatch{orphaned: true, orphanedAt: base, failedProbes: 1}
+	if !s.selfExitCheck(sock, &w, base+11*time.Minute) {
+		t.Fatal("no shutdown with both exits due")
+	}
+	got := buf.String()
+	if !strings.Contains(got, "[Server] no request for 11m0s and no connections; shutting down") || strings.Contains(got, "orphaned for") {
+		t.Errorf("want the idle line and no orphan line:\n%s", got)
+	}
+}
+
+// Cell K2 of round tier1-01 (Linux and macOS VMs): after a client that was connected
+// while the socket was orphaned leaves, no "no longer leads" line comes. Here a check
+// that sees the client starts the grace again. This runs with the production grace.
+// The exact minutes and "11m0s" below pin claustrum's own tick model with exact
+// 60 s checks. They are not the K2 timing.
+func TestOrphanGraceCountsFromLastClientCheck(t *testing.T) {
+	s, sock := bootOrphanServer(t)
+	if err := os.Remove(sock); err != nil {
+		t.Fatal(err)
+	}
+	buf := captureLogBuf(t)
+	_, srv := net.Pipe()
+	fake := &conn{nc: srv}
+	s.mu.Lock()
+	s.conns[fake] = struct{}{}
+	s.mu.Unlock()
+
+	base := monoNow()
+	s.lastCounted.Store(int64(base)) // the idle exit is far from due
+	var w selfExitWatch
+	at := func(minute int) bool { return s.selfExitCheck(sock, &w, base+time.Duration(minute)*time.Minute) }
+	at(0)
+	at(1) // the last check that sees the client
+	s.mu.Lock()
+	delete(s.conns, fake)
+	s.mu.Unlock()
+	for m := 2; m <= 11; m++ {
+		if at(m) {
+			t.Fatalf("shut down at minute %d", m)
+		}
+	}
+	if !strings.Contains(buf.String(), "did not lead back to this daemon (1/2)") {
+		t.Fatalf("no first probe line 10 min after the last check with the client:\n%s", buf.String())
+	}
+	if !at(12) {
+		t.Fatalf("no shutdown at minute 12:\n%s", buf.String())
+	}
+	got := buf.String()
+	if strings.Contains(got, "no longer leads") {
+		t.Errorf("wrote the \"no longer leads\" line after the client left:\n%s", got)
+	}
+	if !strings.Contains(got, "[Server] orphaned for 11m0s (") {
+		t.Errorf("want \"orphaned for 11m0s\":\n%s", got)
 	}
 }

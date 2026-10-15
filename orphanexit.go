@@ -18,10 +18,13 @@ import (
 // The check is deliberately conservative. It acts only after the socket has looked
 // orphaned continuously for orphanGrace with zero clients the whole time, AND two
 // consecutive self-probes (dial the socket, ask server.capabilities, compare the
-// instanceId) fail to reach THIS daemon. Any connected client, or a probe that reaches
-// us, resets it. It is cross-platform: os.SameFile compares the socket's file identity
-// portably (device+inode on unix, a file-handle compare on Windows), so a rebound path
-// is detected the same way on every OS.
+// instanceId) fail to reach THIS daemon. A path that still matches, or a probe that
+// reaches us, resets it. A check that sees a client starts the grace again with no
+// line (selfExitCheck). os.SameFile compares the socket's file identity (device+inode).
+// The checks run on Linux and macOS only (selfExitRuns).
+//
+// The same checks also run the idle exit: no counted request for idleExitAfter and no
+// client at a check shuts the daemon down.
 //
 // Shutdown is graceful (signalShutdown drives the same teardown as server.shutdown:
 // listeners closed, clients dropped, and child process groups stopped unless
@@ -49,80 +52,103 @@ const orphanProbeTimeout = 2 * time.Second
 // before an orphaned daemon shuts down: the first logs and re-checks, the second acts.
 const orphanProbeFailuresToExit = 2
 
+// idleExitAfter is the idle limit. A daemon that had no counted request for this long,
+// and has no client at a check, shuts down (see noteCountedRequest). It is a package
+// var so a test can set a short limit. No flag, conf key or environment variable sets
+// it. The limit and the counted kinds are not measured.
+var idleExitAfter = 30 * 24 * time.Hour
+
+// monoOrigin is the zero of the request clock. time.Since on it reads the monotonic
+// clock, so a step of the wall clock does not move the idle time.
+var monoOrigin = time.Now()
+
+// monoNow is the time since monoOrigin on the monotonic clock.
+func monoNow() time.Duration { return time.Since(monoOrigin) }
+
+// noteCountedRequest restarts the idle time. gate calls it for each request that
+// passed the auth step, except server.capabilities: the self-probe sends that method,
+// so the probe never restarts the idle time. newServerOnSocket calls it once, so the
+// idle time also counts from the start of the daemon.
+func (s *server) noteCountedRequest() { s.lastCounted.Store(int64(monoNow())) }
+
+// selfExitWatch is the orphan state that one check hands to the next.
+type selfExitWatch struct {
+	orphaned     bool
+	orphanedAt   time.Duration // monoNow at the start of the grace
+	failedProbes int
+}
+
 // exitWhenOrphaned runs as a goroutine for the daemon's life. It is a no-op (returns at
-// once) unless both durations are positive, the bound socket's identity was captured
-// (sockInfo), and this daemon has an instanceId to recognise itself by.
+// once) on Windows (selfExitRuns), and unless both durations are positive, the bound
+// socket's identity was captured (sockInfo), and this daemon has an instanceId to
+// recognise itself by.
 func (s *server) exitWhenOrphaned(socket string) {
-	if orphanCheckInterval <= 0 || orphanGrace <= 0 || s.sockInfo == nil || s.instanceID == "" {
+	if !selfExitRuns || orphanCheckInterval <= 0 || orphanGrace <= 0 || s.sockInfo == nil || s.instanceID == "" {
 		return
 	}
 	t := time.NewTicker(orphanCheckInterval)
 	defer t.Stop()
 
-	var orphanedSince time.Time
-	failedProbes := 0
-	reset := func() {
-		orphanedSince = time.Time{}
-		failedProbes = 0
-	}
-
+	var w selfExitWatch
 	for {
 		select {
 		case <-s.shutdown:
 			return
 		case <-t.C:
 		}
+		if s.selfExitCheck(socket, &w, monoNow()) {
+			return
+		}
+	}
+}
 
-		// A connected client always resets: never exit while someone is attached, and
-		// require the two failed probes to be consecutive with nobody connecting between.
-		if s.connCount() > 0 {
-			reset()
-			continue
-		}
-		if !s.socketLooksOrphaned(socket) {
-			reset()
-			continue
-		}
-		if orphanedSince.IsZero() {
-			orphanedSince = time.Now()
-			logInfof("[Server] socket path %s no longer leads to this daemon; shutting down if that holds for %s with nobody connected", socket, orphanGrace)
-			continue
-		}
-		if time.Since(orphanedSince) < orphanGrace {
-			continue
-		}
-		// Grace elapsed with no client connected: probe whether the path still reaches us.
-		if s.pathReachesUs(socket) {
-			logInfof("[Server] socket %s still reaches this daemon despite a changed file identity; not orphaned", socket)
-			reset()
-			continue
-		}
-		failedProbes++
-		if failedProbes < orphanProbeFailuresToExit {
-			logWarnf("[Server] socket path %s did not lead back to this daemon (%d/%d); re-checking before acting", socket, failedProbes, orphanProbeFailuresToExit)
-			continue
-		}
-		// A client may have attached during the grace + self-probe window — after this
-		// tick's top-of-loop connCount() check. On the AF_UNIX socket the reference has,
-		// this cannot happen to us: once the path is orphaned (removed or rebound) a new
-		// client reaches the successor, not this daemon (measured against 4534d86 —
-		// scratch/probe/orphanreach-4534d86.md), so connCount() cannot rise here on that
-		// path. The one endpoint that CAN attach a client mid-window is the claustrum-only
-		// named-pipe listener (CT-5), which the socket self-probe never covers. So this
-		// re-check is claustrum-only and non-divergent by construction: it can only
-		// SUPPRESS a shutdown for a pipe client, never change behavior on a
-		// reference-reachable path. Any connected client resets orphan detection, the same
-		// invariant the top of the loop enforces.
-		if s.connCount() > 0 {
-			reset()
-			continue
-		}
-		logWarnf("[Server] orphaned for %s (socket path gone or re-bound, %d self-probes failed, no connections); shutting down and killing %d child process(es)",
-			time.Since(orphanedSince).Round(time.Second), failedProbes, s.procs.runningCount())
+// selfExitCheck runs one check at the time now (monoNow). It returns true once it
+// started the shutdown.
+func (s *server) selfExitCheck(socket string, w *selfExitWatch, now time.Duration) bool {
+	clients := s.connCount()
+	// The idle exit comes first, so a check where both exits are due writes the idle
+	// line and not the orphan lines. That order is not measured.
+	if idle := now - time.Duration(s.lastCounted.Load()); clients == 0 && idle >= idleExitAfter {
+		logInfof("[Server] no request for %s and no connections; shutting down", idle.Round(time.Second))
 		logInfof("[Server] shutdown requested")
 		s.signalShutdown()
-		return
+		return true
 	}
+	if !s.socketLooksOrphaned(socket) {
+		*w = selfExitWatch{}
+		return false
+	}
+	// Orphaned while a client is connected: no line, and the grace and the two probes
+	// count again from this check. So the "no longer leads" line does not come after
+	// that client leaves (cell K2 of round tier1-01, Linux and macOS VMs).
+	if clients > 0 {
+		*w = selfExitWatch{orphaned: true, orphanedAt: now}
+		return false
+	}
+	if !w.orphaned {
+		*w = selfExitWatch{orphaned: true, orphanedAt: now}
+		logInfof("[Server] socket path %s no longer leads to this daemon; shutting down if that holds for %s with nobody connected", socket, orphanGrace)
+		return false
+	}
+	if now-w.orphanedAt < orphanGrace {
+		return false
+	}
+	// Grace elapsed with no client connected: probe whether the path still reaches us.
+	if s.pathReachesUs(socket) {
+		logInfof("[Server] socket %s still reaches this daemon despite a changed file identity; not orphaned", socket)
+		*w = selfExitWatch{}
+		return false
+	}
+	w.failedProbes++
+	if w.failedProbes < orphanProbeFailuresToExit {
+		logWarnf("[Server] socket path %s did not lead back to this daemon (%d/%d); re-checking before acting", socket, w.failedProbes, orphanProbeFailuresToExit)
+		return false
+	}
+	logWarnf("[Server] orphaned for %s (socket path gone or re-bound, %d self-probes failed, no connections); shutting down and killing %d child process(es)",
+		(now - w.orphanedAt).Round(time.Second), w.failedProbes, s.procs.runningCount())
+	logInfof("[Server] shutdown requested")
+	s.signalShutdown()
+	return true
 }
 
 // connCount returns the number of currently connected clients.
@@ -134,9 +160,9 @@ func (s *server) connCount() int {
 
 // socketLooksOrphaned reports whether the socket path no longer resolves to the inode
 // this daemon bound: the file is gone, or it is a different file (a successor rebound the
-// path). os.SameFile compares file identity portably (device+inode on unix, a file handle
-// on Windows). A stat error other than "not exist" is treated as inconclusive (not
-// orphaned) so a transient error never triggers a shutdown.
+// path). os.SameFile compares the device and inode. A stat error other than "not exist"
+// is treated as inconclusive (not orphaned) so a transient error never triggers a
+// shutdown.
 func (s *server) socketLooksOrphaned(socket string) bool {
 	cur, err := os.Stat(socket)
 	if err != nil {
