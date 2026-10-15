@@ -376,20 +376,93 @@ func TestGitDirTrustEntryWithoutCommondir(t *testing.T) {
 
 // An entry directory that is gone, found through the worktree's `.git` file,
 // means no repository on every method. Git itself fails there too, so the old answer
-// was the hooks refusal carrying git's error.
+// was the hooks refusal carrying git's error. The frames are the same with git 2.56
+// and git 2.43 (cells c01 to c08 and c26 to c27 of rounds task039-01 and task039-02,
+// Linux and Windows VMs). With git 2.56 that holds also as the first git request and
+// with "shadowDirOff":true (round task039-03, Linux VM). So each runs here.
 func TestGitDirTrustEntryGoneMeansNoRepository(t *testing.T) {
 	r := newTrustRepo(t)
 	if err := os.RemoveAll(r.entry()); err != nil {
 		t.Fatal(err)
 	}
-	wantResult(t, "info(TW)", info(t, r.TW), notRepoInfo)
-	wantResult(t, "list_branches(TW)", listBranches(t, r.TW), notRepoList)
-	r1, wt := create(t, r.TW)
-	wantResult(t, "create(TW)", r1, notRepoCreate)
+	wantEntryGoneEveryWay(t, r)
+	s, _ := newSeededShadowServer(t)
+	wantResult(t, "status(TW)", trustCallOn(t, s, "git.status", map[string]any{"path": r.TW, "baseRepo": r.TW}), notRepoStatus)
+	wantRemoveRefused(t, r.TW, r.SWW, "s1", r.T)
+}
+
+// wantEntryGoneEveryWay asserts the "no repository" answers on TW three ways. The
+// first is a daemon in the state shadow (F1, F3, F4). The second has
+// "shadowDirOff":true (cells c01off, c03off and c04off: F12, F3, F4). The third is
+// the first git request of a daemon (cells c01 first and c03 first: F11, F3). The
+// cells are of round task039-03 (Linux VM).
+func wantEntryGoneEveryWay(t *testing.T, r trustRepo) {
+	t.Helper()
+	s, _ := newSeededShadowServer(t)
+	wantEntryGoneFrames(t, s, r, nil, entryGoneShadow)
+	wantEntryGoneFrames(t, s, r, map[string]any{"shadowDirOff": true},
+		`{"isRepo":false,"repoSlug":"","defaultBranch":"","settingsControl":"off-switch"}`)
+	first, _ := newShadowServer(t)
+	wantResult(t, "first info(TW)", trustCallOn(t, first, "git.info", map[string]any{"path": r.TW}), notRepoInfo)
+	first, _ = newShadowServer(t)
+	wantResult(t, "first list_branches(TW)", trustCallOn(t, first, "git.list_branches", map[string]any{"path": r.TW}), notRepoList)
+}
+
+// trustCallOn is trustCall on the server s.
+func trustCallOn(t *testing.T, s *server, method string, params map[string]any) rpcReply {
+	t.Helper()
+	raw := dispatchRaw(t, s, rpcLine(t, method, params))
+	var r rpcReply
+	if err := json.Unmarshal([]byte(raw), &r); err != nil {
+		t.Fatalf("%s: undecodable reply %s: %v", method, raw, err)
+	}
+	return r
+}
+
+// entryGoneShadow is the "no repository" result of git.info in the state shadow.
+const entryGoneShadow = `{"isRepo":false,"repoSlug":"","defaultBranch":"","settingsControl":"shadow"}`
+
+// wantEntryGoneFrames asserts the "no repository" answers of git.info,
+// git.list_branches and git.worktree_create on TW on the server s, with the extra
+// members of each request, and that create made nothing. infoResult is the result of
+// git.info.
+func wantEntryGoneFrames(t *testing.T, s *server, r trustRepo, extra map[string]any, infoResult string) {
+	t.Helper()
+	params := func(p map[string]any) map[string]any {
+		for k, v := range extra {
+			p[k] = v
+		}
+		return p
+	}
+	wantResult(t, "info(TW)", trustCallOn(t, s, "git.info", params(map[string]any{"path": r.TW})), infoResult)
+	wantResult(t, "list_branches(TW)", trustCallOn(t, s, "git.list_branches", params(map[string]any{"path": r.TW})), notRepoList)
+	wt := filepath.Join(r.TW, ".claude", "worktrees", "w1")
+	rc := trustCallOn(t, s, "git.worktree_create", params(map[string]any{"baseRepo": r.TW, "worktreePath": wt, "branchName": "w1"}))
+	wantResult(t, "create(TW)", rc, notRepoCreate)
 	if exists(wt) {
 		t.Errorf("create(TW) left %s", wt)
 	}
-	wantRemoveRefused(t, r.TW, r.SWW, "s1", r.T)
+}
+
+// The state of the test above with a stub in place of git: each listing fails with the
+// text of git 2.56 for TW's `.git` file. So the test runs with any git. Every answer
+// is "no repository" (cells c01, c03 and c04 of round task039-01, and the cells of
+// wantEntryGoneEveryWay of round task039-03, Linux VM). Mutation: answer the listing
+// refusal for a gone entry in noRepoCalls, with or without the member.
+func TestGitDirTrustEntryGoneGitFileText(t *testing.T) {
+	r := newTrustRepo(t)
+	if err := os.RemoveAll(r.entry()); err != nil {
+		t.Fatal(err)
+	}
+	realGit, err := exec.LookPath("git")
+	if err != nil {
+		t.Fatal(err)
+	}
+	installGitSlowStub(t, realGit)
+	stubListing(t, 128, "")
+	text := "fatal: gitfile does not point to a valid repository: " + filepath.ToSlash(filepath.Join(r.TW, ".git"))
+	stubStderr(t, text+"\n", false)
+	wantEntryGoneEveryWay(t, r)
 }
 
 // commondir must be a regular file of at most 1048576 bytes. Exactly 1 MiB
