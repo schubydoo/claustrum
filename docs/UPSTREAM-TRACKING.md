@@ -581,7 +581,7 @@ traps that matter for telling drift from expected:
   - A listing that exits 128 with `fatal: not a git repository` answers the "no
     repository" shapes, and `git.worktree_remove` with `worktreeRoot` gives `git
     finds no repository here: …`. `f6010b97` gives the hooks refusal (rows L14a,
-    L14b, L14d, L14e and N01 to N04, and N05 on Windows).
+    L14b, L14d, L14e and N01 to N04).
   - When `git version` also fails, the text says git cannot run. `f6010b97` gives
     the hooks refusal, or the "no repository" shape for a git that cannot start
     (rows L11, L12 and L15).

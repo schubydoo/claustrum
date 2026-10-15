@@ -9,6 +9,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"runtime"
 	"strconv"
 	"strings"
 	"sync"
@@ -984,6 +985,38 @@ func TestGitDirFilesOrder(t *testing.T) {
 	v := repoReadVerdict(gitDirTrust{verdict: gitDirTrusted, pinCommonDir: gitDir})
 	if want := repoConfigPrefix + versionDetail("2"); v == nil || v.refusal != want {
 		t.Errorf("a refused config and three refused files: verdict = %+v, want %q", v, want)
+	}
+}
+
+// TestGitDirFilesOnAFile pins the refusal of a git directory that is a regular file:
+// the error of its open as a folder, with no quotes. A `.git` file of a linked
+// worktree gets it with the class 2 prefix (cells c19 to c22 of round task039-01, and
+// V-S3 and V-RM of round task039-02, Windows VM). A file with no `gitdir:` line gets it
+// with the config prefix, from the read of the config (cell V-Wd of round
+// task039-02, Windows VM). The tests run on every system. From the code: on Linux
+// and macOS the read of the config refuses a `.git` file first, and the trust check
+// sends no such git directory there. Mutations: drop the test in gitDirFilesDetail, drop the test in
+// readRepoConfig, or apply it to a `.git` file too.
+func TestGitDirFilesOnAFile(t *testing.T) {
+	dir := t.TempDir()
+	gitFile := filepath.Join(dir, ".git")
+	writeFile(t, gitFile, "gitdir: elsewhere\n", 0o644)
+	fileWant := "a file in this repository's .git directory cannot be used: open " + gitFile + ": not a directory"
+	if got := gitDirFilesRefusal(gitFile); got != fileWant {
+		t.Errorf("files refusal = %q\nwant %q", got, fileWant)
+	}
+	plain := filepath.Join(dir, "gitdir-file")
+	writeFile(t, plain, "x", 0o644)
+	plainWant := "this repository's git config cannot be used: open " + plain + ": not a directory"
+	if msg, _ := repoConfigGate(gitDirTrust{verdict: gitDirTrusted, pinCommonDir: plain}, false); msg != plainWant {
+		t.Errorf("plain file: refusal = %q\nwant %q", msg, plainWant)
+	}
+	msg, _ := repoConfigGate(gitDirTrust{verdict: gitDirTrusted, pinCommonDir: gitFile}, false)
+	if runtime.GOOS == "windows" && msg != fileWant {
+		t.Errorf(".git file: refusal = %q\nwant %q", msg, fileWant)
+	}
+	if msg == "this repository's git config cannot be used: open "+gitFile+": not a directory" {
+		t.Errorf(".git file: refusal = %q, the text of a file with no gitdir line", msg)
 	}
 }
 

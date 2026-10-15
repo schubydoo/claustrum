@@ -3,6 +3,7 @@
 package main
 
 import (
+	"encoding/json"
 	"os"
 	"path/filepath"
 	"strings"
@@ -46,25 +47,66 @@ func TestGitDirTrustCommondirWindowsSpelling(t *testing.T) {
 }
 
 // On Windows, with GIT_DIR=.git in the daemon's environment, a linked worktree's
-// `.git` file is trusted as a git directory that is not an entry. Git runs with the
-// common directory pinned to it. Git then fails on the entry the file
-// names: the listing exits 128 and says "fatal: not a git repository". That is the
-// "no repository" class of a failed listing, so the method answers its "no
-// repository" shape. f6010b97 answered the hooks refusal with git's error there (row
-// E02, Windows 11 VM). 89cb6289 answers the "no repository" shapes for an entry that
-// exists (row E02w-rel on a Windows VM). There the daemon started in a folder with no
-// `.git`. Row N05 on a Windows VM gives that class for a gone entry. Without the pin,
-// git reads the worktree normally and answers isRepo:true.
+// `.git` file is trusted as a git directory that is not an entry. The daemon's own
+// tests of the git directory then refuse it, before any git call: its open as a
+// folder fails. 5fd08069 answers so on git.info, git.status, git.list_branches and
+// git.worktree_create with git 2.56 (cells c19 to c22 of round task039-01, and V-S3 of
+// round task039-02, Windows VM), and on git.info with git 2.55 (cell c25). 89cb6289 answered the "no
+// repository" shapes there (row E02w-rel). The main worktree keeps its answer (cells
+// c23 and c24). Mutation: drop the test of a git directory that is a file
+// (gitDirFilesDetail).
 func TestGitDirTrustRelativeGitDirOnLinkedWorktreeWindows(t *testing.T) {
 	r := newTrustRepo(t)
 	t.Setenv("GIT_DIR", ".git")
-	wantResult(t, "info(TW)", info(t, r.TW), notRepoInfo)
-	wantResult(t, "list_branches(TW)", listBranches(t, r.TW), notRepoList)
+	want := "a file in this repository's .git directory cannot be used: open " + filepath.Join(r.TW, ".git") + ": not a directory"
+	wantRPCError(t, "info(TW)", info(t, r.TW), want)
+	wantRPCError(t, "status(TW)", status(t, r.TW, r.TW), want)
+	wantRPCError(t, "list_branches(TW)", listBranches(t, r.TW), want)
+	wantCreateRefused(t, r.TW, r.T, want)
 	wantResultPrefix(t, "info(T)", info(t, r.T), `{"isRepo":true`)
+	wantResultPrefix(t, "list_branches(T)", listBranches(t, r.T), `{"isRepo":true`)
+}
+
+// The state of the test above on git.worktree_remove from baseRepo TW, in the state
+// shadow. The refusal is the reason of the lock-check text, and nothing is deleted
+// (cell V-RM of round task039-02, Windows VM, equal on 5fd08069 and claustrum).
+// Mutation: drop the test of a git directory that is a file (gitDirFilesDetail).
+func TestGitDirTrustRelativeGitDirRemoveWindows(t *testing.T) {
+	r := newTrustRepo(t)
+	t.Setenv("GIT_DIR", ".git")
+	s, _ := newSeededShadowServer(t)
+	got := trustCallOn(t, s, "git.worktree_remove", map[string]any{"baseRepo": r.TW, "worktreePath": r.SWW, "branchName": "s1"})
+	want, _ := json.Marshal(worktreeRemoveResult{Success: false, Error: "failed to remove worktree: could not check whether " + r.SWW +
+		" is locked: a file in this repository's .git directory cannot be used: open " + filepath.Join(r.TW, ".git") + ": not a directory"})
+	wantResult(t, "remove(TW,SWW)", got, string(want))
+	if !exists(r.SWW) {
+		t.Errorf("remove refused but deleted %s", r.SWW)
+	}
+	if !branchExists(t, r.T, "s1") {
+		t.Errorf("remove refused but deleted branch s1")
+	}
+}
+
+// A daemon GIT_DIR that names a regular file with no `gitdir:` line is refused by the
+// read of the config, with the error of its open as a folder. 5fd08069 answers so on
+// git.info and git.list_branches in T and on git.info in TW (cell V-Wd of round
+// task039-02, Windows VM). Mutation: drop the test in readRepoConfig, or apply the
+// class 2 refusal first.
+func TestGitDirTrustDaemonGitDirPlainFileWindows(t *testing.T) {
+	r := newTrustRepo(t)
+	f := filepath.Join(r.base, "gitdir-file")
+	writeFile(t, f, "x", 0o644)
+	t.Setenv("GIT_DIR", f)
+	s, _ := newSeededShadowServer(t)
+	want := "this repository's git config cannot be used: open " + f + ": not a directory"
+	wantRPCError(t, "info(T)", trustCallOn(t, s, "git.info", map[string]any{"path": r.T}), want)
+	wantRPCError(t, "list_branches(T)", trustCallOn(t, s, "git.list_branches", map[string]any{"path": r.T}), want)
+	wantRPCError(t, "info(TW)", trustCallOn(t, s, "git.info", map[string]any{"path": r.TW}), want)
 }
 
 // On Windows an entry replaced by a regular file is refused as an entry
-// without commondir (M3), where Linux and macOS answer no repository.
+// without commondir (M3), where Linux and macOS answer no repository. 5fd08069
+// answers the same text (cell V-EF of round task039-02, Windows VM).
 func TestGitDirTrustEntryIsAFileWindows(t *testing.T) {
 	r := newTrustRepo(t)
 	if err := os.RemoveAll(r.entry()); err != nil {

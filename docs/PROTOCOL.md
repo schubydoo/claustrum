@@ -1444,9 +1444,9 @@ The daemon's own environment changes the check as follows:
   a plain one. A relative value is taken relative to the request directory. A
   `GIT_DIR` that names a gone entry gets M5. On Linux and macOS a `GIT_DIR` that
   names a `.git` file means "no repository". On Windows that `.git` file is trusted
-  and pinned to itself. Git then fails on the entry the file names, and the
-  configuration listing says `fatal: not a git repository`. So the methods answer
-  their "no repository" shapes (`89cb6289`, row N05 on a Windows VM). Any other
+  and pinned to itself, and without `"shadowDirOff":true` class 2 of
+  [Repository config refusals](#repository-config-refusals) answers. With its entry
+  gone that is not measured on `5fd08069`. Any other
   `GIT_DIR` that does not exist is left to git.
   Git then runs with `GIT_COMMON_DIR` pinned to that `GIT_DIR`, unless the daemon's
   environment sets `GIT_COMMON_DIR`. A relative value is
@@ -1507,34 +1507,32 @@ on `PATH`, the exec error replaces both texts of the table in the measured rows
 (class 1 below).
 
 Where the trust check finds no repository, the daemon still runs the configuration
-listing. The folder is the working directory of the listing. In a
-plain folder the listing carries `GIT_DIR=<null>`. The
+listing in that folder. In a
+plain folder it carries `GIT_DIR=<null>`. The
 call log of `89cb6289` shows that listing with no `GIT_CONFIG_*` entry too, and the
-frames are those of the "no repository" column there. From the code: `git.info`,
-`git.list_branches` and `git.worktree_create` answer after that listing, with no
-second call. A listing that fails by class 3 below gives the "refused" column.
+frames are those of the "no repository" column there. A listing that fails by class
+3 below gives the "refused" column.
 `89cb6289` answers so for a plain folder and for a folder with an empty `.git`
 folder. Rows A-N1 to A-N6, A-N5b, A-S1 and A-X2 show that on Linux and macOS VMs.
-Row A-N5 shows it on the Linux VM only. On macOS that request answers the
-`worktreePath` shape refusal with no git call, on `89cb6289` and on claustrum.
+Row A-N5 shows it on the Linux VM only. On macOS `89cb6289` and claustrum answer the
+`worktreePath` shape refusal there, with no git call.
 Cells P3-infoN, P3-infoX, P3-lbN, P3-statN, P3-crN and P3-rmN show it on a Windows
 VM. See "The daemon's own git environment".
 
 A daemon `GIT_DIR` that names a regular file differs by system. On Linux and macOS
 no listing runs, and the "no repository" column answers. `89cb6289` answers
 `git.info` so on a plain folder and on a repository. That holds with and without an
-empty `GIT_CONFIG_KEY_0` (cells CfP0 and CfP3, Linux and macOS VMs). On Windows
-`89cb6289` and claustrum refuse `git.info` there, on a plain folder and on a
-repository, with and without that key. The text is the hooks refusal with `exit
-status 128: fatal: invalid gitfile format: <GIT_DIR>` (cells Wd, Windows VM). The
-other methods are not measured in that state on any system, and claustrum keeps
-their frames. With git older than 2.56, a `.git` file that names a git dir that is
-gone keeps the "no repository" frame of `git.info` too (cells CbP0 and CbP3, Linux
-and macOS VMs).
+empty `GIT_CONFIG_KEY_0` (cells CfP0 and CfP3, Linux and macOS VMs). Other methods
+are not measured on Linux and macOS. On Windows a
+file with no `gitdir:` line gets the refusal of a config on the five methods:
+`this repository's git config cannot be used: open <GIT_DIR>: not a directory`
+(`5fd08069` in V-Wd of round `task039-02`, V-Wd2 of `task039-03`, Windows VM).
+With an older git, a `.git` file to a gone git dir keeps the "no repository" frame of
+`git.info` (cells CbP0 and CbP3, Linux and macOS VMs).
 
 Two more states are not measured. The first is a daemon `GIT_COMMON_DIR`, where a
 listing gets no `GIT_DIR=<null>`. The second is a `.git` file that names a regular
-file, on Linux and macOS. The rest of this paragraph is from the code. In both
+file, on Linux and macOS. The rest is from the code. In both
 states `git.worktree_create` runs no listing in a folder where the trust check
 finds no repository. `git.worktree_remove` runs the listing there and does not read
 its answer. Both keep the "no repository" column. In the second state `git.info`
@@ -1570,23 +1568,24 @@ The classes come in this order (Linux, macOS and Windows VMs):
 2. The listing exits 128, and its stderr starts with `fatal: not a git repository`
    in every measured row.
    Leading white space is dropped first, and letter case does not count (rows L14a,
-   L14b, L14d, L14e and N01 to N05). The answer is "no repository". With a
+   L14b, L14d, L14e and N01 to N04). The answer is "no repository". With a
    `branchName`, `git.worktree_remove` without `worktreeRoot` runs a second listing
    for the branch step and keeps the branch. A gone worktree then
    answers `{"success":true,"branchKept":true}`. For a worktree directory that
    exists, claustrum answers the lock-check refusal. Not measured. Exit 1 with that
-   text is not this class (row L14c). For a `.git` file to nowhere git 2.56 says
-   `gitfile does not point to a valid repository`, for claustrum's listing a class 3
-   text. From the code, other methods keep that refusal (not measured on
-   `5fd08069`). `git.worktree_remove` answers the `5fd08069` frames of cells WR13, GF
-   and N04 there (rounds `tier0-27` and `tier0-28`, Linux VM).
+   text is not this class (row L14c). For a `.git` file to a gone git dir, git 2.56
+   says `gitfile does not point to a valid repository`. A gone entry under
+   `.git/worktrees` answers "no repository" on each method but
+   `git.worktree_remove` (cells c01 to c04, c26 and c27). Another gone git dir
+   answers the error of the call about the repository in the folder that holds
+   `.git` (cells c09 to c12 and c18). Rounds `task039-01` to `task039-04` ran these
+   on Linux and Windows VMs. With `"shadowDirOff":true` that git dir gets the hooks refusal
+   on every method (rounds `task039-02` to `task039-04`, Linux VM).
 3. Any other failure, a failed start included. The daemon runs `git version` with no
    `-c` option. It runs in `/` on Linux and macOS, and in the daemon's working
    directory on Windows. In claustrum its environment is the one of the failed
    listing without the `GIT_COMMON_DIR` pin and without `LC_ALL=C` and `LANGUAGE=C`.
-   With a daemon `GIT_DIR` that names a regular file, the call of `89cb6289` has no
-   `GIT_DIR` entry, and the call of claustrum has the daemon's (cells Wd, Windows
-   VM). The frame and the disk are equal there. The call also gets
+   The call also gets
    no `GIT_CONFIG_COUNT`, `GIT_CONFIG_KEY_<n>` or `GIT_CONFIG_VALUE_<n>` of the
    daemon. The call logs of the A rows show that on Linux and macOS VMs. Those of
    the P3 and P11 cells show it on a Windows VM. It gets no `GIT_CONFIG_GLOBAL` of
@@ -1808,7 +1807,7 @@ Not measured:
 #### Repository config refusals
 
 Since `5fd08069` the daemon reads the config of a repository itself. If it does not
-accept the config, or one of three files of the git directory, the request gets a
+accept the config, or a file of the git directory, the request gets a
 refusal. claustrum follows that build here. In the state `shadow` it makes the read
 after the start test and after the call about the repository (see
 [The settings copy](#the-settings-copy)). In the state `fallback-git` it makes no
@@ -1991,13 +1990,15 @@ passes. A chain of three, one below the other, is refused. In the two refused
 cells the text names the third file.
 
 **Class 2** is `a file in this repository's .git directory cannot be used: <detail>`.
-The files are `shallow`, `info/attributes` and `info/exclude`.
+The files are `shallow`, `info/attributes` and `info/exclude`, and the git
+directory itself.
 
 | Detail | When |
 |---|---|
 | `"<file>" is not a regular file` | `info/attributes` or `info/exclude` is a FIFO or a directory. A symbolic link there passes, also one to the null device. `shallow` is a FIFO, a directory or a symbolic link to the null device. The daemon does not wait on a FIFO |
 | `"<file>": it is larger than 4 MiB` | `info/attributes` or `info/exclude` has more than 4194304 bytes |
 | `"<file>" is larger than 4 MiB` | `shallow` has more than 4194304 bytes |
+| `open <git dir>: not a directory` | On Windows a daemon `GIT_DIR=.git` names the `.git` file of a linked worktree, on the five methods (cells c19 to c22 of round `task039-01`, V-RM of round `task039-02`, Windows VM) |
 | `open <file>: <reason>` | `shallow` has mode 000 (`permission denied`) or is a socket (`no such device or address`, cell V10, Linux VM). The path is not in quotes. An `info/attributes` or `info/exclude` of mode 000 is not refused |
 | `"<file>" holds something other than object ids` | A line of `shallow` is not 40 or 64 hex characters in lower case. That rule is fitted to the cells. Refused are a text line, an id in upper case, and a blank line before or after an id. So are a line of 39, 41 or 63 hex characters and an id with a space after it. A file that holds one line end is refused too (cells V10). A line end of CRLF and a last line with no newline pass. An empty file passes |
 

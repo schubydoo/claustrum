@@ -751,8 +751,9 @@ func externalWorkTreeRefusal(req *request, repo string, off jsonTrueSwitch) (str
 	c := hostileConfigRefusal(u, repo, false)
 	// With git 2.56 a `.git` file to a gone target fails the listing with the gitfile
 	// text. 5fd08069 then answers the error of its call about the repository (cells GF
-	// and N04 of round tier0-27, Linux VM).
-	if c.gitFileText != "" {
+	// and N04 of round tier0-27, Linux VM). With "shadowDirOff":true it answers the
+	// listing refusal below (cell GFOFF of round task039-03, Linux VM).
+	if c.gitFileText != "" && !bool(off) {
 		return workTreeUnknownPrefix + c.gitFileText, ""
 	}
 	if c.refusal != "" {

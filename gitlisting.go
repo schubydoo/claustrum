@@ -263,21 +263,40 @@ func listingEnvBase() []string {
 // 89cb6289 answers the "no repository" frame of git.info there, on a plain folder and
 // on a repository, and its call log shows no listing. That holds with and without a
 // broken GIT_CONFIG_KEY_0 (cells CfP0 and CfP3, Linux and macOS VMs). On Windows that
-// GIT_DIR does not come here: the trust check pins it, and the listing of the method
-// fails with git's `invalid gitfile format` text (cells Wd, Windows VM). The other
+// GIT_DIR does not come here: the trust check pins it, and the daemon's own read of
+// the config refuses it (readRepoConfig, cell V-Wd of round task039-02). The other
 // states are a daemon GIT_COMMON_DIR and a `.git` file that names a regular file. Both
 // are not measured. A `.git` file that names a git dir that is gone gets the listing.
 // With git older than 2.56, git answers "not a git repository" there, so the frame
-// stays (cells CbP0 and CbP3, Linux and macOS VMs). git 2.56 answers its gitfile
-// text, and the listing refusal answers (from the code, not measured on 5fd08069).
+// stays (cells CbP0 and CbP3, Linux and macOS VMs).
+//
+// git 2.56 answers its gitfile text there (saysGitFileNowhere). A gone entry under
+// .git/worktrees then gets "no repository" (cells c01, c03 and c04 on a Linux VM, c26
+// and c27 on a Windows VM, all of round task039-01). It does so also as the first git
+// request of a daemon and with "shadowDirOff":true (cells c01 first, c03 first and
+// c01off, c03off and c04off of round task039-03, Linux VM). Any other gone git dir gets the
+// error of the call about the repository (cells c09, c11, c12 and c18, Linux and
+// Windows VMs), also as the first git request (cells c09 first to c12 first of round
+// task039-03, Linux VM, and F-S2w, Windows VM). With off, the "shadowDirOff":true
+// member of the request, it gets the listing refusal (cells c09off, c11off and c12off
+// of round task039-02, Linux VM).
 //
 // Not measured: a listing that passes and exceeds a limit of parseConfigListing, and
 // a `.git` file with no gitdir line. claustrum answers them by hostileConfigRefusal.
-func noRepoCalls(t gitDirTrust, u gitUse, dir string, heavy bool, args ...string) string {
+func noRepoCalls(t gitDirTrust, u gitUse, dir string, heavy, off bool, args ...string) string {
 	if !t.noRepoPinned() {
 		return ""
 	}
 	c := hostileConfigRefusal(u, dir, heavy)
+	if c.gitFileText != "" {
+		switch {
+		case !goneNonEntryGitFile(dir):
+			return ""
+		case off:
+			return c.refusal
+		}
+		return c.gitFileText
+	}
 	if !c.refused() {
 		hardenedGitFirst(u, dir, heavy, c.listing, args...)
 	}
@@ -300,8 +319,8 @@ func noRepoCalls(t gitDirTrust, u gitUse, dir string, heavy bool, args ...string
 // `rev-parse --git-dir`, with GIT_DIR=<null device> and exit 128 (cell
 // h1-mode000 of val-s3p2b2-7-linux2, Linux VM). A folder with no `.git` entry
 // is not measured for git.list_branches: it gets the call too.
-func noRepoInfoCalls(t gitDirTrust, dir string) string {
-	return noRepoCalls(t, gitUse{}, dir, true, "rev-parse", "--git-dir")
+func noRepoInfoCalls(t gitDirTrust, dir string, off bool) string {
+	return noRepoCalls(t, gitUse{}, dir, true, off, "rev-parse", "--git-dir")
 }
 
 // noRepoCreateCalls is noRepoCalls for git.worktree_create. On 5fd08069 a create on a repository whose HEAD has mode 000 makes
@@ -315,18 +334,15 @@ func noRepoInfoCalls(t gitDirTrust, dir string) string {
 // With the member and with no run folder the two calls keep the four light
 // values (not measured). A folder with no `.git` entry is not measured: it
 // gets the call too.
-func noRepoCreateCalls(t gitDirTrust, six bool, dir string) string {
-	return noRepoCalls(t, gitUse{lightSix: six}, dir, false, "rev-parse", "--is-inside-work-tree")
+func noRepoCreateCalls(t gitDirTrust, six, off bool, dir string) string {
+	return noRepoCalls(t, gitUse{lightSix: six}, dir, false, off, "rev-parse", "--is-inside-work-tree")
 }
 
 // gitVersionRun runs the plain `git version` that 89cb6289 runs after a listing that
 // failed for any reason other than "no repository" (rows L10 to L12, L14c and L15). It
 // has no -c option. Its working directory is gitVersionDir. In claustrum its
 // environment is the one of the failed listing without the GIT_COMMON_DIR pin and
-// without LC_ALL=C and LANGUAGE=C. With a daemon GIT_DIR that names a regular file,
-// the call of 89cb6289 has no GIT_DIR entry, and the call of claustrum has the
-// daemon's (cells Wd, Windows VM). The frame and the disk are equal there. The
-// daemon's own LC_ALL and LANGUAGE do not come back: whether they do
+// without LC_ALL=C and LANGUAGE=C. The daemon's own LC_ALL and LANGUAGE do not come back: whether they do
 // is not measured. heavy is the profile of the failed listing. After the listing of
 // unenterableBaseListing, this call gets the light environment, as on 89cb6289 (rows
 // L16a and L16b on a Linux VM). In the symlink-chain rows LNKb-g and LNKr-g, 89cb6289

@@ -3,6 +3,7 @@
 package main
 
 import (
+	"fmt"
 	"os"
 	"path/filepath"
 	"slices"
@@ -105,12 +106,19 @@ func TestDaemonGitDirFileRunsNoListing(t *testing.T) {
 
 // Cells CbP0 and CbP3 (Linux and macOS VMs). A `.git` file names a git dir that does not exist.
 // git.info answers the "no repository" frame, with and without an empty
-// GIT_CONFIG_KEY_0. No Windows cell measures that state, so the test does not run on
-// Windows. Those cells ran a git older than 2.56.
+// GIT_CONFIG_KEY_0. Those cells ran a git older than 2.56. Cell V-S2w of round
+// task039-02 measures the state on a Windows VM with git 2.56 and no such key, and
+// TestGitFileNowhereFourMethodsStub covers it there. The empty key is not measured on
+// Windows, so this test does not run there.
 //
-// git 2.56 fails the listing there with its gitfile text, so git.info answers the
-// listing refusal of claustrum. 5fd08069 is not measured in that state with git 2.56:
-// that frame is claustrum's today, and a row for it is owed.
+// git 2.56 fails the listing there with its gitfile text. In the state shadow the four
+// methods then answer the error of the call about the repository, as 5fd08069 does
+// (cells c09 to c12 of rounds task039-01 and task039-02, Linux VM). With git 2.43 the
+// four "no repository" frames stay (cells c13 to c16). So the requests run on a
+// daemon in that state. With git 2.56 the first git request of a daemon gets the same
+// error, and "shadowDirOff":true gets the listing refusal (round task039-03 and
+// cells c09off to c12off of round task039-02, Linux VM). The empty key is not measured
+// with git 2.56. The test decides by the text of the git on PATH.
 func TestGitFileToNowhereKeepsFrame(t *testing.T) {
 	newGit := gitSaysGitFileNowhere(t)
 	for _, ph := range []struct {
@@ -122,21 +130,43 @@ func TestGitFileToNowhereKeepsFrame(t *testing.T) {
 	} {
 		t.Run(ph.name, func(t *testing.T) {
 			f := newNoRepoFixture(t)
+			f.s, _ = newSeededShadowServer(t)
 			g := filepath.Join(filepath.Dir(f.n), "G")
 			writeFile(t, filepath.Join(g, ".git"), "gitdir: "+filepath.Join(filepath.Dir(f.n), "nowhere", "gitdir")+"\n", 0o644)
 			plantEnv(t, ph.env...)
-			want := resultOf(notRepoInfo)
+			want := gitFileNowhereFrames(t, g, "", false)
+			var off []methodFrame
+			check := ""
 			if newGit {
 				// git names the .git file by its resolved path (macOS /var is a link).
 				rg, err := filepath.EvalSymlinks(g)
 				if err != nil {
 					t.Fatal(err)
 				}
-				want = errFrame(t, hooksRefusalPrefix+"exit status 128: fatal: gitfile does not point to a valid repository: "+
-					filepath.Join(rg, ".git"))
+				text := "fatal: gitfile does not point to a valid repository: " + filepath.Join(rg, ".git")
+				check = fmt.Sprintf("git could not check this repository on the remote machine: at %q: %s", rg, text)
+				want = gitFileNowhereFrames(t, g, check, false)
+				off = gitFileNowhereFrames(t, g, "config-defined hooks could not be pinned off; git not run: "+
+					"listing the configuration in force: exit status 128: "+text, true)
 			}
-			if got := f.frame(t, "git.info", map[string]any{"path": g}); got != want {
-				t.Errorf("git.info = %s\nwant %s", got, want)
+			if newGit && ph.env == nil {
+				first, _ := newShadowServer(t)
+				if got, w := dispatchRaw(t, first, rpcLine(t, "git.info", map[string]any{"path": g})), errFrame(t, check); got != w {
+					t.Errorf("first git.info = %s\nwant %s", got, w)
+				}
+				want = append(want, off...)
+			}
+			for _, m := range want {
+				if m.method == "git.status" && ph.env != nil {
+					// git.status refuses the empty key on its own listing (row A-S1).
+					continue
+				}
+				if got := f.frame(t, m.method, m.params); got != m.frame {
+					t.Errorf("%s = %s\nwant %s", m.method, got, m.frame)
+				}
+			}
+			if exists(filepath.Join(g, ".claude")) {
+				t.Errorf("a request made %s", filepath.Join(g, ".claude"))
 			}
 		})
 	}
