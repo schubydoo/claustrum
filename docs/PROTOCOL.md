@@ -362,8 +362,8 @@ a lost session.
 The sweep ends no stranded daemon. A stranded daemon is a daemon whose socket path
 no longer leads to it. The cleaner sends no signal to such a daemon and none to its
 children. On a Linux VM, `f6010b97` and `89cb6289` sent none in every staged shape
-(rows ST01, ST02, ST04 to ST10, HC16 to HC19, HC23 to HC26). The stranded daemon
-ends by itself. See [Orphan-exit self-probe](#orphan-exit-self-probe). On a macOS
+(rows ST01, ST02, ST04 to ST10, HC16 to HC19, HC23 to HC26). On Linux and macOS
+the stranded daemon ends by itself. See [Orphan-exit self-probe](#orphan-exit-self-probe). On a macOS
 VM, `f6010b97` and `89cb6289` sent none either (rows ST01, ST09, ST10, HC16,
 HC18). In row ST01 on that VM, claustrum sent none either.
 
@@ -640,8 +640,9 @@ watcher closes the socket and logs
 (rows HC12a and HC12b), `89cb6289` logged that text with `5m0s` and `@`. The watcher stops as
 soon as the connection closes for any other reason, and as soon as the daemon
 shuts down. It therefore never outlives its connection. This is off the JSON-RPC wire, because it is connection lifecycle and
-sends no frame. It closes only an idle *connection*, never the daemon. A
-client-less orphan daemon is retired by the separate orphan-exit self-probe below.
+sends no frame. It closes only an idle *connection*, never the daemon. On Linux
+and macOS a client-less orphan daemon is retired by the separate orphan-exit
+self-probe below.
 
 ### Daemon log (`remote-server.log`)
 
@@ -734,27 +735,22 @@ are not configurable.
 
 ### Orphan-exit self-probe
 
-A running `-serve` daemon periodically tests whether its socket path still leads
-back to itself. If it does not, the daemon shuts down. This matches reference
-build 4534d86. It exists so that a predecessor whose socket a newer daemon took
-over retires promptly, instead of lingering indefinitely. The 5-minute idle
-timeout closes only an idle *connection*, never the daemon, so a client-less
-orphan otherwise never exits. The probe is off the JSON-RPC wire. It has two
-observable effects only: a self-directed `server.capabilities` request on the
-socket once orphaned, which is a normal authed RPC, and stderr log lines. In
-normal operation there is no self-RPC, only an `os.Stat`.
+On Linux and macOS a `-serve` daemon whose socket path no longer leads back to it
+shuts down, as on 4534d86. So a predecessor retires once a newer daemon took over its socket. The
+idle timeout closes only a *connection*. The probe is off the JSON-RPC wire. Its
+effects are log lines and, once orphaned, a self-directed authed
+`server.capabilities` request.
 
-Every 60 seconds the daemon `os.Stat`s its socket path and compares the file
-identity (`os.SameFile`) to the inode it bound. If the path is gone or now a
-different inode, and no client is connected, it starts a 10-minute grace clock.
-Any connected client resets the clock, and so does a path that still matches.
-After the grace elapses with nobody connected, the daemon self-probes. It dials
-its own socket, sends an authed `server.capabilities`, and compares the reply's
-`instanceId` to its own. A probe that reaches itself resets the clock, because a
-changed file identity that still leads back is not orphaned. Two consecutive
-failed probes, 60 seconds apart, trigger a graceful shutdown. That shutdown closes
-listeners, drops clients, and stops child process groups unless `-keep-children`
-is set. It is never a bare exit.
+Every 60 seconds the daemon compares the file identity of its socket path
+(`os.SameFile`) to the inode it bound. If the path is gone or another inode, a
+10-minute grace clock starts. A path that still matches resets the clock. A check
+that sees a client starts the clock again and writes no line. So the first line
+below does not come after that client leaves, as on `5fd08069` (cell K2 of round
+tier1-01, Linux and macOS VMs). After the grace with nobody connected, the daemon
+dials its socket and compares the `instanceId` of the reply to its own. A probe
+that reaches itself resets the clock. Two failed probes, 60 seconds apart, start a
+graceful shutdown. It closes listeners, drops clients, and stops child process
+groups unless `-keep-children` is set.
 
 A Linux VM measured the self-exit of a stranded reference daemon (rows ST09 and
 ST11, several runs). The log lines of `89cb6289` in one run:
@@ -777,9 +773,13 @@ texts, ended both children and exited with code 0 (rows ST09 and ST11). It logge
 `orphaned for 12m0s` in each of its six rows. The cause of the 60 s difference is
 not measured, and the interval of the reference is not measured.
 
-The behavior is identical on every OS, because `os.SameFile` gives the
-file-identity compare portably. It is a no-op when the daemon has no captured
-socket identity or no `instanceId`.
+A check with no client also ends a daemon after 30 days with no counted request,
+on the monotonic clock. Each request past auth counts, except
+`server.capabilities`. This idle exit is not measured on a reference build.
+
+The checks run on Linux and macOS only. On Windows a daemon whose socket file was
+deleted writes no line. `5fd08069` wrote no line and was still alive after 14 min
+(cell K3 of round tier1-01, Windows VM).
 
 ## Message shapes
 

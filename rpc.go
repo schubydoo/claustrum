@@ -242,6 +242,11 @@ func (s *server) gate(raw []byte) (request, *response) {
 		logWarnf("[Server] Unauthorized request: method=%s, id=%v", req.Method, idForLog(req.ID))
 		return req, ptr(errResult(req.ID, codeUnauthorized, "Unauthorized: invalid or missing auth token"))
 	}
+	// A request past the auth step restarts the idle time of the idle exit, except
+	// server.capabilities (see noteCountedRequest).
+	if req.Method != "server.capabilities" {
+		s.noteCountedRequest()
+	}
 	return req, nil
 }
 
