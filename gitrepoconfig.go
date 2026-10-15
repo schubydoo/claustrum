@@ -713,6 +713,17 @@ func readRepoConfig(ctx context.Context, gitDir string, log *repoReadLog) (*repo
 	if d := gitDirLinkDetail(gitDir); d != "" {
 		return r, d
 	}
+	// A git directory that is a file with no `gitdir:` line is refused here, with
+	// the error of its open as a folder. 5fd08069 answers so on a Windows VM for a
+	// daemon GIT_DIR that names such a file, on the five methods (cell V-Wd of round
+	// task039-02 and V-Wd2 of round task039-03). A `.git` file of a linked worktree
+	// passes here and gets the class 2 refusal (gitDirFilesDetail). The `gitdir:`
+	// test that tells the two apart is claustrum's own choice.
+	if _, isGitFile := readGitFile(gitDir, filepath.Dir(gitDir)); !isGitFile {
+		if d := gitDirNotFolderDetail(gitDir); d != "" {
+			return r, d
+		}
+	}
 	if d := r.file(filepath.Join(gitDir, "config"), 0); d != "" || r.unlisted {
 		if log != nil {
 			log.noVerdict = r.unlisted
@@ -766,7 +777,16 @@ func readRepoConfig(ctx context.Context, gitDir string, log *repoReadLog) (*repo
 // info/exclude. Cells P6 ran that pair four ways on a Linux VM: a file of 20
 // MiB with a FIFO, two files of 20 MiB, two FIFOs, and a FIFO with a directory.
 // A refused config comes before each of them (cells V16).
+//
+// A git directory that is a file gets the error of its open as a folder first. On a
+// Windows VM 5fd08069 answers so for a daemon GIT_DIR=.git and a linked worktree, on
+// git.info, git.status, git.list_branches and git.worktree_create (cells c19 to c22
+// of round task039-01). git.worktree_remove gives it in its lock-check text (cell
+// V-RM of round task039-02). Other systems are not measured.
 func gitDirFilesDetail(gitDir string, log *repoReadLog) string {
+	if d := gitDirNotFolderDetail(gitDir); d != "" {
+		return d
+	}
 	path := filepath.Join(gitDir, "shallow")
 	log.note(path)
 	if d := shallowFileDetail(path, log); d != "" {
@@ -779,6 +799,20 @@ func gitDirFilesDetail(gitDir string, log *repoReadLog) string {
 			return d
 		}
 	}
+	return ""
+}
+
+// gitDirNotFolderDetail is the error of the open of gitDir as a folder when gitDir
+// exists and is not a directory, or "".
+func gitDirNotFolderDetail(gitDir string) string {
+	if fi, err := os.Stat(gitDir); err != nil || fi.IsDir() {
+		return ""
+	}
+	root, err := os.OpenRoot(gitDir)
+	if err != nil {
+		return err.Error()
+	}
+	_ = root.Close()
 	return ""
 }
 

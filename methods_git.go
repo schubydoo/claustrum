@@ -332,7 +332,7 @@ func gitInfo(req *request) response {
 	if t.verdict == gitDirNoRepo {
 		// A listing that fails here refuses (rows A-N1 and A-X2 on Linux and macOS VMs,
 		// cells P3-infoN and P3-infoX on a Windows VM).
-		if msg := noRepoInfoCalls(t, p.Path); msg != "" {
+		if msg := noRepoInfoCalls(t, p.Path, bool(p.ShadowDirOff)); msg != "" {
 			return errResult(req.ID, codeInternal, msg)
 		}
 		return notRepo()
@@ -660,6 +660,9 @@ func gitStatus(req *request) response {
 		return errResult(req.ID, codeInternal, msg)
 	}
 	if t.verdict == gitDirNoRepo {
+		if msg := statusGitFileNowhere(t, p.BaseRepo, bool(p.ShadowDirOff)); msg != "" {
+			return errResult(req.ID, codeInternal, msg)
+		}
 		if msg := statusNoRepoCalls(p.BaseRepo, t.noGit); msg != "" {
 			return errResult(req.ID, codeInternal, msg)
 		}
@@ -783,7 +786,7 @@ func gitListBranches(req *request) response {
 		// A listing that fails here refuses (row A-N2 on Linux and macOS VMs, cell
 		// P3-lbN on a Windows VM).
 		// One more call follows a listing that passed (noRepoInfoCalls).
-		if msg := noRepoInfoCalls(t, p.Path); msg != "" {
+		if msg := noRepoInfoCalls(t, p.Path, bool(p.ShadowDirOff)); msg != "" {
 			return errResult(req.ID, codeInternal, msg)
 		}
 		return okResult(req.ID, branchesResult{Branches: []string{}})
@@ -899,7 +902,7 @@ func gitWorktreeCreateLocked(req *request, p *gitParams, repo string) response {
 		// is created (rows A-N3, A-N6 and A-N6b on Linux and macOS VMs, cells P3-crN
 		// and Wf-P3-crNroot on a Windows VM).
 		// One more call follows a listing that passed (noRepoCreateCalls).
-		if msg := noRepoCreateCalls(t, !bool(p.ShadowDirOff) && req.shadow.active(), repo); msg != "" {
+		if msg := noRepoCreateCalls(t, !bool(p.ShadowDirOff) && req.shadow.active(), bool(p.ShadowDirOff), repo); msg != "" {
 			return okResult(req.ID, worktreeResult{Success: false, Error: msg, ErrorCode: "worktree_add_failed"})
 		}
 		return okResult(req.ID, worktreeResult{Success: false, Error: "not a git repository", ErrorCode: "not_a_repo"})
@@ -2448,10 +2451,16 @@ func removeGoneWorktree(req *request, p *gitParams, repo, path string) response 
 			c := hostileConfigRefusal(req.use, repo, true)
 			// git 2.56 fails the listing of a `.git` file to a gone target that is no
 			// entry with its gitfile text. 5fd08069 answers the error of its call about
-			// the repository then (cell N04 of round tier0-27, Linux VM). A gone entry
-			// keeps the refusal below (not measured).
+			// the repository then (cell N04 of round tier0-27, Linux VM). With
+			// "shadowDirOff":true it answers the listing refusal in the same frame
+			// (cell N04OFF of round task039-03, Linux VM). A gone entry keeps the
+			// refusal below (not measured).
 			if c.gitFileText != "" && goneNonEntryGitFile(repo) {
-				return refuse("failed to remove worktree: could not check whether " + p.WorktreePath + " is locked: " + c.gitFileText)
+				text := c.gitFileText
+				if p.ShadowDirOff {
+					text = c.refusal
+				}
+				return refuse("failed to remove worktree: could not check whether " + p.WorktreePath + " is locked: " + text)
 			}
 			if c.refusal != "" && t.noRepoPinned() {
 				return lockCheck(c.refusal)

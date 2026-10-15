@@ -145,6 +145,29 @@ func statusNoRepoCalls(baseRepo string, noGit bool) string {
 	return ""
 }
 
+// statusGitFileNowhere is the refusal of git.status for a baseRepo whose `.git` file
+// names a gone git dir that is no entry under .git/worktrees, or "". It runs the
+// listing of the other methods there, with no GIT_DIR. git 2.56 fails it with its
+// gitfile text. 5fd08069 then answers the error of the call about the repository
+// (cell c10 of rounds task039-01 and task039-02, and c10 first of round task039-03,
+// Linux VM). With off, the "shadowDirOff":true member, it answers the listing refusal
+// and makes this listing (cell c10off of round task039-02, Linux VM). An older git
+// gives "" (cell c14). Without the member the listing is claustrum's own call.
+// 5fd08069 runs a `rev-parse --git-dir` there.
+func statusGitFileNowhere(t gitDirTrust, baseRepo string, off bool) string {
+	if !t.noRepoPinned() || !goneNonEntryGitFile(baseRepo) {
+		return ""
+	}
+	c := hostileConfigRefusal(gitUse{}, baseRepo, true)
+	if c.gitFileText == "" {
+		return ""
+	}
+	if off {
+		return c.refusal
+	}
+	return c.gitFileText
+}
+
 // statusPath is what the gate takes from `path`.
 type statusPath struct {
 	// probeTree is the --work-tree value of the `rev-parse --show-toplevel` call.

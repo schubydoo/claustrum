@@ -420,10 +420,11 @@ func judgeGitDir(g string, fromEnv bool) gitDirTrust {
 		if t, refused := judgeStrayCommondir(g, cd); refused {
 			return t
 		}
-		// Pinned to itself. Where g is a `.git` file (Windows only, see
-		// nonDirGitDirIsNoRepo), git then fails with its own "not a git repository"
-		// for the entry the file names, and the method answers "no repository"
-		// (hostileConfigRefusal). Measured against 89cb6289 on a Windows 11 VM.
+		// Pinned to itself. Where g is a file (Windows only, see
+		// nonDirGitDirIsNoRepo), the daemon's own read of the git directory refuses
+		// it before git runs (readRepoConfig and gitDirFilesDetail), without
+		// "shadowDirOff":true (not measured with it), as 5fd08069
+		// does (cells c19 to c22 of round task039-01, V-Wd of round task039-02).
 		return gitDirTrust{pinCommonDir: g}
 	}
 	repo := filepath.Dir(filepath.Dir(g))

@@ -14,8 +14,7 @@ const openNonBlocking = 0
 // nonDirGitDirIsNoRepo: on Windows a git directory that exists as a regular file is
 // judged like a directory with nothing in it. A linked-worktree entry replaced by a file
 // is therefore refused as an entry without commondir. A GIT_DIR naming a `.git` file is
-// trusted and pinned to itself, so git answers "not a git repository" for the entry the
-// file names. Measured against f6010b97 on a Windows 11 VM.
+// trusted and pinned to itself.
 const nonDirGitDirIsNoRepo = false
 
 // registrationsLinkRefused is false on Windows: the rules of a registrations folder

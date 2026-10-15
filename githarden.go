@@ -831,7 +831,10 @@ type configCheck struct {
 	// 2.56 for a `.git` file that names no valid repository (saysGitFileNowhere). It
 	// is the error of a failed call about the repository, with git's lines.
 	// git.worktree_remove answers it in the cells GF and N04 of round tier0-27, as
-	// 5fd08069 does (Linux VM).
+	// 5fd08069 does (Linux VM). The four other git methods answer it for a gone git
+	// dir that is no worktree entry (noRepoCalls, statusGitFileNowhere). With
+	// "shadowDirOff":true each of the five answers refusal there (round task039-02 part
+	// b for the four, cells GFOFF and N04OFF of round task039-03 for the remove).
 	gitFileText string
 	// listing is the listing of a check that passed. The first hardened call after the
 	// check pins its hooks (hardenedGitFirst).
@@ -855,7 +858,7 @@ func (c configCheck) refused() bool {
 //     git.worktree_remove with worktreeRoot does not come here with no git:
 //     externalWorkTreeRefusal answers first.
 //  2. The listing exits 128 and says "fatal: not a git repository": "no repository"
-//     (rows L14a, L14b, L14d, L14e and N01 to N05). See listingRun.saysNoRepository.
+//     (rows L14a, L14b, L14d, L14e and N01 to N04). See listingRun.saysNoRepository.
 //  3. Any other failure: `git version` runs. If it fails too, the refusal starts with
 //     gitCannotRunPrefix, else with hooksRefusalPrefix (rows L10 to L12, L14c and L15).
 //  4. The listing succeeded but cannot be used: a key over configKeyMaxBytes (row
@@ -945,8 +948,9 @@ func failedListingCheck(u gitUse, r listingRun, dir string, heavy bool) configCh
 	}
 	c := configCheck{refusal: failedListingText(u, r, heavy)}
 	if r.saysGitFileNowhere() {
-		// The text names the folder that holds `.git`, as askGit does. In the cells
-		// that folder is baseRepo. A subfolder or a link spelling is not measured.
+		// The text names the folder that holds `.git`, as askGit does, also for a
+		// subfolder (cell c18 of rounds task039-01 and task039-02, Linux and Windows
+		// VMs). A link spelling is not measured.
 		root, _ := gitWalkRoot(dir)
 		if root == "" {
 			root = dir
