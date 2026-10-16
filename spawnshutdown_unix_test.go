@@ -11,6 +11,7 @@ import (
 	"path/filepath"
 	"strings"
 	"sync"
+	"syscall"
 	"testing"
 	"time"
 )
@@ -253,5 +254,88 @@ func checkLateStartLeavesNoTrace(t *testing.T, keepChildren bool) {
 	}
 	if ents, err := os.ReadDir(filepath.Join(runDir, childrenDirName)); err == nil && len(ents) != 0 {
 		t.Errorf("children/ after the late start holds %d entries, want none", len(ents))
+	}
+}
+
+// TestLateStartWithAnUnreapableChildDoesNotHoldTheTeardown: the kill of a late start
+// is a no-op here, so its child is not reaped. The spawn still returns with no frame
+// after killReapGrace, and the teardown ends. Then the test ends its own child. That
+// pid is not reaped yet, so the signal reaches that child only.
+func TestLateStartWithAnUnreapableChildDoesNotHoldTheTeardown(t *testing.T) {
+	oldGrace := killReapGrace
+	killReapGrace = 100 * time.Millisecond
+	t.Cleanup(func() { killReapGrace = oldGrace })
+	realSignal := signalGroup
+	signalGroup = func(*procGroup, *os.Process, string) error { return nil }
+	t.Cleanup(func() { signalGroup = realSignal })
+
+	s, sock, _ := newTeardownServer(t)
+	held, release := make(chan int, 1), make(chan struct{})
+	var once sync.Once
+	letGo := func() { once.Do(func() { close(release) }) }
+	t.Cleanup(letGo)
+	oldHook := afterChildStart
+	afterChildStart = func(id string, pid int) {
+		if id == "stuck" {
+			held <- pid
+			<-release
+		}
+	}
+	t.Cleanup(func() { afterChildStart = oldHook })
+
+	c, _ := pipeConn(t)
+	exe, env := helperCommand(t, "sleep")
+	body, err := json.Marshal(map[string]any{
+		"jsonrpc": "2.0", "id": 1, "method": "process.spawn", "auth": testToken,
+		"params": map[string]any{"id": "stuck", "command": exe, "args": []string{"60"}, "env": env},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	got := make(chan *response, 1)
+	go func() { got <- s.dispatch(c, body) }()
+	var pid int
+	select {
+	case pid = <-held:
+	case <-time.After(10 * time.Second):
+		t.Fatal("the spawn did not start its child")
+	}
+	// endChild ends the child of the test and waits until the wait of the spawn
+	// reaped it.
+	endChild := func() {
+		_ = syscall.Kill(-pid, syscall.SIGKILL)
+		deadline := time.Now().Add(10 * time.Second)
+		for pidAlive(pid) && time.Now().Before(deadline) {
+			time.Sleep(10 * time.Millisecond)
+		}
+	}
+	s.requestShutdown()
+	letGo()
+	select {
+	case resp := <-got:
+		if resp != nil {
+			b, _ := json.Marshal(*resp)
+			t.Errorf("the late start got the frame %s, want none", b)
+		}
+	case <-time.After(30 * killReapGrace):
+		endChild()
+		<-got
+		t.Fatal("the late start did not return within 30 times killReapGrace")
+	}
+	done := make(chan struct{})
+	go func() { defer close(done); s.closeAll(sock) }()
+	select {
+	case <-done:
+	case <-time.After(10 * time.Second):
+		endChild()
+		<-done
+		t.Fatal("the teardown did not end")
+	}
+	if !pidAlive(pid) {
+		t.Fatalf("the child %d ended, so the test did not hold an unreapable child", pid)
+	}
+	endChild()
+	if pidAlive(pid) {
+		t.Errorf("the child %d did not end after the test killed it", pid)
 	}
 }

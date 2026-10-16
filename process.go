@@ -835,9 +835,25 @@ func (m *procManager) spawnVia(c *conn, id, command string, args []string, cwd s
 	// A start that returns after the shutdown began leaves no start line, no
 	// count, no table entry and no record. The kill here ends the child at once,
 	// also with -keep-children, and the wait reaps it.
+	//
+	// The wait is bounded by killReapGrace. This spawn holds the start gate, and
+	// stopStarts waits for it. A child that the kill cannot reap must not hold the
+	// gate and the teardown forever. After the bound the spawn goes on, and the
+	// goroutine reaps the child later. Nothing below touches cmd, and the pipe read
+	// ends and the group handle are not used by the wait.
 	if m.startsStopped.Load() {
 		_ = signalGroup(group, cmd.Process, "KILL")
-		_ = cmd.Wait()
+		reaped := make(chan struct{})
+		go func() {
+			_ = cmd.Wait()
+			close(reaped)
+		}()
+		bound := time.NewTimer(killReapGrace)
+		select {
+		case <-reaped:
+		case <-bound.C:
+		}
+		bound.Stop()
 		group.close()
 		closeAll(stdoutR, stderrR)
 		_ = stdin.Close()
