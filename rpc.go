@@ -96,6 +96,9 @@ type response struct {
 	ID      interface{} `json:"id"`
 	Result  interface{} `json:"result,omitempty"`
 	Error   *rpcError   `json:"error,omitempty"`
+	// noFrame marks a request that gets no reply. route then returns nil. It is
+	// unexported, so it is never in a frame.
+	noFrame bool
 }
 
 type rpcError struct {
@@ -143,10 +146,11 @@ func okResult(id interface{}, result interface{}) response {
 const methodShutdown = "server.shutdown"
 
 // dispatch validates and routes one request and returns the response to send.
-// It can still return nil only under a handler panic (the recover in
-// handleRequest leaves resp nil for server.shutdown); every normal path,
-// server.shutdown included, returns a frame: {"ok":true} for shutdown. That
-// frame races the teardown (see handleServer).
+// It returns nil for a process.spawn that reached its start after the shutdown
+// began. Every other path that returns gives a frame, server.shutdown included:
+// {"ok":true}. That frame races the teardown (see handleServer). A handler panic
+// does not return here. The recover in handleRequest then leaves resp nil for
+// server.shutdown, so that request gets no frame.
 // Stream-producing methods (process.*) use the conn to attach the client.
 func (s *server) dispatch(c *conn, raw []byte) *response {
 	req, resp := s.gate(raw)
@@ -178,7 +182,11 @@ func (s *server) route(c *conn, req request) *response {
 	case "git":
 		return ptr(s.handleGit(&req))
 	case "process":
-		return ptr(s.handleProcess(c, &req))
+		r := s.handleProcess(c, &req)
+		if r.noFrame {
+			return nil
+		}
+		return &r
 	case "plugins":
 		return ptr(s.handlePlugins(&req))
 	case "launcher":

@@ -1272,6 +1272,9 @@ Reopen trigger: the reference moves to Go 1.26 or newer.
   leaves spawned children running so they survive a daemon restart/upgrade, and it
   logs one line with the surviving count. The new daemon does not re-adopt them. An
   out-of-band consumer reconciles them through the CT-1 `pid`/`startTime`.
+- A child whose start returns after the shutdown began is ended also with the flag
+  (from the code, `TestLateStartEndedWithKeepChildren`). Its client got no reply,
+  so no client has its `pid`.
 - Caveat: survivors lose their stdio. The daemon-side pipe ends die with the
   daemon: the child sees EOF on stdin, and a later write gets SIGPIPE/EPIPE.
   Therefore only children that tolerate dead stdio genuinely survive. Not measured

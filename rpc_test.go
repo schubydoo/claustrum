@@ -27,8 +27,8 @@ func newTestServer(tb testing.TB) *server {
 }
 
 // dispatchRaw feeds a raw line through dispatch and returns the marshaled
-// response (or "" only when dispatch returns nil, which no normal path does —
-// server.shutdown now replies {"ok":true}).
+// response. It returns "" when dispatch returns nil, which happens only for a
+// process.spawn after the shutdown began. server.shutdown replies {"ok":true}.
 func dispatchRaw(t *testing.T, s *server, line string) string {
 	t.Helper()
 	resp := s.dispatch(nil, []byte(line))

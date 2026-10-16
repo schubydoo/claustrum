@@ -64,6 +64,10 @@ func (s *server) processSpawn(c *conn, req *request) response {
 		return errResult(req.ID, codeInvalidParam, "Command is required")
 	}
 	mp, err := s.procs.spawnVia(c, p.ID, p.Command, p.Args, p.Cwd, p.Env, p.DisableShellAgentSocket, p.Launcher)
+	if errors.Is(err, errStartsStopped) {
+		// No frame. The teardown closes the connection (round task003-01).
+		return response{noFrame: true}
+	}
 	if err != nil {
 		var sr *spawnRefusal
 		if errors.As(err, &sr) {
