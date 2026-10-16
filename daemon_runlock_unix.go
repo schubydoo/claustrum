@@ -205,7 +205,8 @@ func lockRunDir(fd int, path, socket string) (locked, heldElsewhere bool) {
 		// This line's wording is claustrum's own. The reference's changed-hands line was
 		// not captured at runtime.
 		logWarnf("[daemon] serve: %s changed hands during eviction; proceeding without run-dir ownership", path)
-		return false, true
+		// Only a lock that another process holds is worth the late tries.
+		return false, err == syscall.EWOULDBLOCK
 	}
 	return true, false
 }
