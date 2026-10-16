@@ -827,7 +827,7 @@ func unenterableBaseListing(repo string) string {
 	defer cancel()
 	// This listing does not use precursorEnv. Git never starts here, so its
 	// environment never reaches git, and only the Go start error reaches the frame.
-	r := runListing(ctx, repo, "", append(os.Environ(), "GIT_TERMINAL_PROMPT=0", "GIT_ALLOW_PROTOCOL=https:ssh"))
+	r := runListing(ctx, repo, "", append(gitChildEnv(), "GIT_TERMINAL_PROMPT=0", "GIT_ALLOW_PROTOCOL=https:ssh"))
 	var ee *exec.ExitError
 	if r.err != nil && !errors.As(r.err, &ee) {
 		if err != nil {

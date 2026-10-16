@@ -1583,9 +1583,7 @@ The classes come in this order (Linux, macOS and Windows VMs):
    on every method (rounds `task039-02` to `task039-04`, Linux VM).
 3. Any other failure, a failed start included. The daemon runs `git version` with no
    `-c` option. It runs in `/` on Linux and macOS, and in the daemon's working
-   directory on Windows. In claustrum its environment is the one of the failed
-   listing without the `GIT_COMMON_DIR` pin and without `LC_ALL=C` and `LANGUAGE=C`.
-   The call also gets
+   directory on Windows. The call gets
    no `GIT_CONFIG_COUNT`, `GIT_CONFIG_KEY_<n>` or `GIT_CONFIG_VALUE_<n>` of the
    daemon. The call logs of the A rows show that on Linux and macOS VMs. Those of
    the P3 and P11 cells show it on a Windows VM. It gets no `GIT_CONFIG_GLOBAL` of
@@ -1876,7 +1874,7 @@ reads the config of the repository of that worktree.
 
 From the code: claustrum runs that call in the root directory on Linux and macOS,
 and in the working directory of the daemon on Windows. The environment of the call
-is that of the daemon without `GIT_CONFIG`, `GIT_CONFIG_PARAMETERS`, `LC_ALL` and
+is that of the cleaned daemon without `GIT_CONFIG`, `GIT_CONFIG_PARAMETERS`, `LC_ALL` and
 `LANGUAGE`. Then come `GIT_DIR=<null device>`, `LC_ALL=C` and `LANGUAGE=C`. On Linux and macOS claustrum opens each file
 of the read with the flag that gives the daemon no controlling terminal. In cell
 V17 the config is a link to a pty slave. If the pty master closes, `89cb6289` and
@@ -2651,14 +2649,19 @@ that measured it.
 
 #### The daemon's own git environment
 
-A logging git wrapper measured the rules below against `f6010b97`. Each point names
-its VMs.
+A logging git wrapper measured the rules below against `f6010b97`.
 
-Four calls get the daemon's environment as it is, with only their own additions.
-These are the excludes read, the `--attr-source` version probe, the `git version`
-call of the include scan and the `config --no-includes --file -` call of `git.status`. Linux, macOS and Windows VMs. The other git calls of the
-git methods are the repository calls. These are the configuration listings, the
-hardened calls, `worktree add`, the checkout and the `git status` call.
+The excludes read and the `--attr-source` probe get the daemon's environment as it
+is, plus their own additions (`5fd08069`, rounds task004-01 and task004-02, Linux,
+macOS and Windows VMs). The repository calls are
+the listings, the hardened calls, `worktree add`, the checkout and `git status`.
+
+`5fd08069` and claustrum clean the daemon's `PATH`, `GIT_EXEC_PATH`, `GIT_SSH` and
+loader variables for the repository and start-test calls. Start-test calls also
+get no daemon `GIT_` name (rounds task004-01 and task004-02, Linux, macOS and
+Windows VMs). On `5fd08069` the `git.info` branch and the repository test of a
+create come from stdout (round task004-01, cells M1 and M4, Linux VM). claustrum
+reads every parsed value so (from the code).
 
 - `GIT_CONFIG` and `GIT_CONFIG_PARAMETERS` do not reach a repository call. The
   names match exactly, in upper case. On Windows, `git_config` and
@@ -2671,22 +2674,20 @@ hardened calls, `worktree add`, the checkout and the `git status` call.
   the pair `count` on. They are `hook.enabled=false`, an empty `hook.event`, and
   then the two pins of each hook name (`89cb6289`, rows L04 to L07). The
   `GIT_INDEX_FILE` of the checkout and the `GIT_OPTIONAL_LOCKS` of the `status`,
-  `ls-files` and `diff-index` calls follow them. The values were measured on Linux, macOS and Windows VMs, and the
-  order on Linux and macOS VMs.
+  `ls-files` and `diff-index` calls follow them. Values: Linux, macOS and Windows VMs. Order: Linux and macOS
+  VMs.
 - A hardened call gets no other `GIT_CONFIG_KEY_<digits>` or
   `GIT_CONFIG_VALUE_<digits>`. A leading-zero index such as `GIT_CONFIG_KEY_01` is
   removed too. Linux, macOS and Windows VMs. A listing keeps `GIT_CONFIG_KEY_01` in
   its place (Linux and macOS VMs). Other names, such as `GIT_CONFIGX` or
   `GIT_CONFIG_S4`, reach git. Linux, macOS and Windows VMs.
-- The daemon's `GIT_ALLOW_PROTOCOL` sets the light value. If it is not set, the
-  value is `https:ssh`. If it is set, the daemon splits it on `:` and keeps each
+- The daemon's `GIT_ALLOW_PROTOCOL` sets the light value. Unset, it is
+  `https:ssh`. Else the daemon splits it on `:` and keeps each
   entry that is exactly `https` or `ssh`, once, in its order. The match is
-  case-sensitive, with no trim. If no entry is left, the value is
-  `denied_by_claude_ssh`. Examples: `ssh:https:git` gives `ssh:https`,
-  `https::ssh` gives `https:ssh`, and an empty value, `HTTPS:SSH` or `https,ssh` gives
+  case-sensitive, with no trim. With no entry left, it is
   `denied_by_claude_ssh`. The heavy value stays `denied_by_claude_ssh`. Linux,
-  macOS and Windows VMs. On Windows a lower-case `git_allow_protocol` sets the
-  value too (Windows VM).
+  macOS and Windows VMs. On Windows a lower-case `git_allow_protocol` sets it
+  too (Windows VM).
 
 The git methods check the daemon's `GIT_CONFIG_COUNT`. The check reads the count
 and its pairs by their exact upper-case names. On Windows it does not see a
@@ -2706,11 +2707,10 @@ lower-case `git_config_count` or `git_config_key_0` (Windows VM).
   index where one is not set is refused with
   `inherited GIT_CONFIG pair <n> is incomplete`. Linux, macOS and Windows VMs.
 - An empty key is not refused here. On a repository, git then fails the listing.
-  Linux, macOS and Windows VMs. `f6010b97` also refuses `git.info` and
+  Linux, macOS and Windows VMs. `f6010b97` and `89cb6289` also refuse `git.info` and
   `git.list_branches` on a plain-directory `path`, and `git.worktree_create` and
-  `git.worktree_remove` on a plain-directory `baseRepo`. Linux, macOS and Windows
-  VMs. claustrum refuses these too, as `89cb6289` does on Linux, macOS and Windows
-  VMs.
+  `git.worktree_remove` on a plain-directory `baseRepo`, on the same VMs. So does
+  claustrum.
 
 With a key that git cannot read, git fails each configuration listing with exit
 status 128. `<text>` is then `config-defined hooks could not be pinned off; git not
@@ -3150,11 +3150,11 @@ the read of the user's excludes.
     - The daemon runs `git config --no-includes --file - --list -z` with the file on
       stdin. The call runs in the daemon's working directory with the daemon's
       environment (rows n12, n12b, n13 and n14c). It is call 6 there. Those rows
-      are of `89cb6289`. In the state `shadow` the call of `5fd08069` runs in the
-      root folder. Its variables are `GIT_DIR=<null>`, `LANGUAGE=C` and `LC_ALL=C`
-      (cell 1c of round `val-s3p2b2-5`, Linux VM). From the code: claustrum sends that form in
-      the state `shadow`, and the first form with the member and in the state
-      `fallback-git`.
+      are of `89cb6289`. With the member, `5fd08069` runs it in `/`
+      (the daemon's folder on Windows) with `GIT_DIR=<null>`, `LANGUAGE=C` and `LC_ALL=C`
+      (cell V3 of round `task004-03`, Linux, macOS and Windows VMs). `5fd08069` runs it so in the state `shadow` too (cell 1c of round
+      `val-s3p2b2-5`, Linux VM). So does claustrum. In the state `fallback-git`
+      without the member, claustrum keeps the first form, cleaned (from the code).
     - A file with `core.sparseCheckout` or `index.sparse` passes (rows n12 and n12b),
       and so does one with `core.sparseCheckoutCone` (rows o17 and v3a). `user.name`
       and `core.bare` answer `isRepo:false` (rows n13 and v3b). Not measured: every

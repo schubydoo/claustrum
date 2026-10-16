@@ -11,7 +11,8 @@ import (
 // The daemon's own GIT_* variables on the git calls of the git methods. The rules
 // are in docs/PROTOCOL.md, "The daemon's own git environment".
 //
-//   - A repository call drops GIT_CONFIG and GIT_CONFIG_PARAMETERS. The names match
+//   - A repository call (a listing, a hardened call, `worktree add`, the checkout
+//     or `git status`) drops GIT_CONFIG and GIT_CONFIG_PARAMETERS. The names match
 //     case-sensitively.
 //   - The daemon's GIT_CONFIG_COUNT must parse, and each of its pairs must be set.
 //   - A hardened call gets GIT_CONFIG_COUNT, the inherited pairs and the hook pins
@@ -20,9 +21,9 @@ import (
 //   - The light profile keeps only the https and ssh entries of the daemon's
 //     GIT_ALLOW_PROTOCOL.
 //
-// Four calls get the daemon's environment with only their own additions: the
-// excludes read, the --attr-source version probe, the plain `git version` of
-// worktreeinclude.go and the `config --no-includes --file -` call of git.status.
+// Three calls get the daemon's environment with only their own additions: the
+// excludes read, the --attr-source version probe and the `git version` of
+// worktreeinclude.go.
 //
 // GIT_CONFIG_COUNT and its pairs are read by their exact names from the environment
 // list, because os.LookupEnv ignores case on Windows. GIT_ALLOW_PROTOCOL is read

@@ -482,9 +482,11 @@ var shadowTestDropped = []string{"GIT_DEFAULT_HASH", "GIT_CONFIG_SYSTEM"}
 // claustrum drops the entries that it drops for its other own calls
 // (gitVersionRun), the names that the test sets, so that the test stays in its
 // own folder, and shadowTestDropped. Which other entries of the daemon
-// 5fd08069 passes is not measured.
+// 5fd08069 passes is not measured. The first `git version` call of
+// shadowVersionNote and versionAfterFailure get it with no cleaning.
+// shadowTestEnv cleans it for the test calls.
 func shadowDaemonEnv() []string {
-	env := withoutConfigCountSet(listingEnvBase())
+	env := withoutConfigCountSet(listingEnvOf(os.Environ()))
 	return slices.DeleteFunc(env, func(kv string) bool {
 		name := envName(kv)
 		return slices.Contains(shadowTestNames, name) || slices.Contains(shadowTestDropped, name)
@@ -501,10 +503,14 @@ var shadowCheckDropped = []string{"GIT_NAMESPACE", "GIT_INDEX_FILE"}
 // nine variables of the test, then the daemon's own without shadowCheckDropped.
 // The call log of 5fd08069 has this order on a Linux VM (s3p2-linux cell B3a).
 // GIT_CONFIG_GLOBAL is /dev/null on a Windows VM too (s3p2-windows cell B3a).
+// The daemon's part is cleaned as for every git child (gitChildEnv) and has no
+// GIT_ name (withoutGitNames). 5fd08069 does both on the nine calls of the test
+// (rounds task004-01 and task004-02, Linux, macOS and Windows VMs).
 func shadowTestEnv() []string {
-	daemon := slices.DeleteFunc(shadowDaemonEnv(), func(kv string) bool {
+	daemon := slices.DeleteFunc(cleanGitChildEnv(shadowDaemonEnv(), gitEnvWindowsForm), func(kv string) bool {
 		return slices.Contains(shadowCheckDropped, envName(kv))
 	})
+	daemon = withoutGitNames(daemon)
 	return append([]string{
 		"GIT_CONFIG_NOSYSTEM=1",
 		"GIT_CONFIG_GLOBAL=/dev/null",

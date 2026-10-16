@@ -216,6 +216,10 @@ component_management:
         - gitinforoot_windows.go
         # the daemon's own GIT_* variables on the git calls of the git methods.
         - gitenv.go
+        # the cleaning of the daemon's environment for the git children (5fd08069).
+        - gitchildenv.go
+        - gitchildenv_unix.go
+        - gitchildenv_windows.go
         # the git-directory trust check every git.* method runs first (f6010b97).
         - gitdirtrust.go
         - gitdirtrust_unix.go

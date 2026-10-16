@@ -526,8 +526,8 @@ func TestSocketTildeExpansion(t *testing.T) {
 	// id 22 — git.worktree_create's result.error, asserted off-band rather than
 	// pinned in the golden. The frame carries git's own two sentences
 	// ("Preparing worktree (new branch 'wt4')\nfatal: '<DIR>/wt2' already
-	// exists"), and git() runs the subprocess with the daemon's AMBIENT
-	// environment — no LC_ALL, no GIT_CONFIG_GLOBAL, unlike this file's runGit.
+	// exists"), and the daemon runs that git with no LC_ALL and no
+	// GIT_CONFIG_GLOBAL of its own, unlike this file's runGit.
 	// Both sentences are gettext-marked in git, so a golden would pin the host's
 	// git build and locale rather than claustrum's behavior. This test runs the
 	// darwin leg too, whose git is a different build again.

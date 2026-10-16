@@ -434,8 +434,8 @@ func TestTopLevelPairCarriesTheFrontItems(t *testing.T) {
 // form of the read of a config file. Its working directory is the root folder,
 // and it carries GIT_DIR=<null device>, LC_ALL=C and LANGUAGE=C. 5fd08069 runs
 // it so (cell 1c of val-s3p2b2-5-linux, call 5 of the git.status on w0, Linux
-// VM). With the member the call keeps the form of 89cb6289: the working
-// directory of the daemon and no added variable (rows n12 and n13).
+// VM). With the member the call has the same form (cell V3 of round task004-03,
+// Linux, macOS and Windows VMs).
 func TestStatusEntryConfigReadInTheStateShadow(t *testing.T) {
 	f := newSeededShadowFixture(t)
 	enableWorktreeConfig(t, f, "[core]\n\tfilemode = false\n")
@@ -450,7 +450,7 @@ func TestStatusEntryConfigReadInTheStateShadow(t *testing.T) {
 		vars  []string
 	}{
 		{"no member", nil, gitVersionDir, []string{"GIT_DIR=" + os.DevNull, "LC_ALL=C", "LANGUAGE=C"}},
-		{"with the member", map[string]any{"shadowDirOff": true}, daemonWorkDir(t), nil},
+		{"with the member", map[string]any{"shadowDirOff": true}, gitVersionDir, []string{"GIT_DIR=" + os.DevNull, "LC_ALL=C", "LANGUAGE=C"}},
 	} {
 		params := map[string]any{"path": f.wt, "baseRepo": f.repo}
 		for k, v := range row.extra {

@@ -109,10 +109,8 @@ func (p *gitParams) repoDir() string {
 //
 // ⚠️ This used to add "no OTHER frame moves because of the deadline". That is
 // false: the deadline is the shared gitTimeout, applied independently at the
-// helpers (git, gitStdoutErr, the hardened helpers), so a kill can surface through
-// ANY call site. gitStdoutErr turns it into -32603 "signal: killed" on
-// git.status and git.list_branches, and the repo-detection calls can answer
-// isRepo:false instead. More than one arm moves; the full set has not been
+// hardened helpers, so a kill can surface through ANY call site. The
+// repo-detection calls can answer isRepo:false. More than one arm moves; the full set has not been
 // enumerated against the code, so do not restate a count here.
 //
 // CORRECTION, 2026-08-02: that last clause used to read "every reference-reachable
@@ -120,7 +118,7 @@ func (p *gitParams) repoDir() string {
 // false when written — git.list_branches was folding git's stderr into branches[]
 // at the time. Scope a claim to the thing it was measured on.
 //
-// ⚠️ THE BOUND IS SOFTER THAN IT LOOKS ON THE D5 GIT SITES. CombinedOutput waits
+// ⚠️ THE BOUND IS SOFTER THAN IT LOOKS ON THE D5 GIT SITES. Output and CombinedOutput wait
 // for the output pipe to close, not merely for git to exit, so a git that spawns a
 // child which OUTLIVES it keeps the call blocked past the deadline — the orphan
 // still holds the pipe. Measured: a stub `sleep 30` under `sh` took the full 30s
@@ -164,40 +162,7 @@ func gitCtx() (context.Context, context.CancelFunc) {
 }
 
 // git runs git -C <dir> <args...> under gitTimeout and returns combined output + ok.
-//
-// Combined, deliberately — do NOT "fix" this to Output() to match gitStdoutErr
-// below. It once carried the failure text of git.worktree_create, whose `git
-// worktree add` writes both its progress and its fatal to stderr while leaving
-// stdout empty. git.worktree_create now quotes stderr only, through
-// worktreeAdd and worktreeGitText (measured against f6010b97 and 90fca6e6:
-// stdout never shows in those frames).
-//
-// This helper's remaining callers fall into two groups, and only the first
-// is safe by argument:
-//
-//	compare or discard   isRepo, isRepoGitDir — exit status or an exact "true",
-//	                     both of which a warning-prefixed string fails safely
-//	                     (show-ref --verify now runs through hardenedGit, and the
-//	                     branch step through its own calls in worktreebranch.go)
-//	echoes it verbatim   --show-toplevel → root/repo on Windows only, and only when
-//	                     it names the walk root (gitInfoRoot). On Linux and macOS
-//	                     git.info does not run it. branch --show-current →
-//	                     branch (rev-parse --short HEAD supplies only the
-//	                     detached-HEAD sha fallback), remote get-url → repoSlug,
-//	                     symbolic-ref → defaultBranch, rev-parse --abbrev-ref
-//	                     HEAD → sourceBranch
-//
-// The second group puts combined output on the wire unsplit. No fixture has been
-// found that makes those commands write to stderr while exiting 0, so the
-// exposure is theoretical and this change does not touch it — but it is NOT
-// covered by the argument above, and saying otherwise would repeat the mistake
-// this block already records.
-//
-// CORRECTION, 2026-08-02: this used to say "no caller of git() parses this string
-// as a line-oriented list". Two did — gitListBranches and copyWorktreeIncludes —
-// and the first put the result on the wire. They now use gitStdoutErr. Keep the
-// split: choosing between the helpers is a per-caller decision about whether
-// stderr is data or noise, not an inconsistency to tidy away.
+// git, gitContext and gitStdoutErr serve tests only. No production code calls them.
 func git(dir string, args ...string) (string, bool) {
 	ctx, cancel := gitCtx()
 	defer cancel()
@@ -722,7 +687,7 @@ func gitStatus(req *request) response {
 			sp.spellings = append(sp.spellings, s)
 		}
 	}
-	entry, ok := statusEntryOf(common, sp, req.use.shadow())
+	entry, ok := statusEntryOf(common, sp, req.use.shadow() || bool(p.ShadowDirOff))
 	if !ok {
 		return notRepo
 	}

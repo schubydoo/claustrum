@@ -576,7 +576,7 @@ func (u gitUse) precursorEnv(heavy bool, pin []string) []string {
 
 // hardenedGitEnv is hardenedGitEnv with the profile of this request.
 func (u gitUse) hardenedGitEnv(heavy bool, pin, hooks []string) []string {
-	return hardenedEnvWith(os.Environ(), u.profileEnv(heavy), pin, hooks)
+	return hardenedEnvWith(gitChildEnv(), u.profileEnv(heavy), pin, hooks)
 }
 
 // The names of the short-lived folders of one request. In the state shadow

@@ -175,8 +175,8 @@ func profileEnv(heavy bool) []string {
 }
 
 // precursorEnv is the environment of the configuration listing that runs before a
-// hardened call: listingEnvBase (the daemon's own environment without GIT_CONFIG,
-// GIT_CONFIG_PARAMETERS, LC_ALL and LANGUAGE), the profile of the call that follows
+// hardened call: listingEnvBase (the daemon's own environment after gitChildEnv,
+// without GIT_CONFIG, GIT_CONFIG_PARAMETERS, LC_ALL and LANGUAGE), the profile of the call that follows
 // it, pin, and then LC_ALL=C and LANGUAGE=C as the last two entries. git then prints
 // its listing errors in English whatever the daemon's locale (rows L01 to L03). It
 // carries no hook pins, and the daemon's GIT_CONFIG_COUNT set is kept as it is. The
@@ -193,7 +193,8 @@ func precursorEnv(heavy bool, pin []string) []string {
 }
 
 // hardenedGitEnv builds the environment for a hardened git command: the daemon's
-// own environment without GIT_CONFIG and GIT_CONFIG_PARAMETERS, less GIT_CONFIG_COUNT
+// own environment as a git child gets it (gitChildEnv), without GIT_CONFIG and
+// GIT_CONFIG_PARAMETERS, less GIT_CONFIG_COUNT
 // and every GIT_CONFIG_KEY_<digits> and GIT_CONFIG_VALUE_<digits>. Then come the
 // profile, pin, and configPinEnv: the count, the inherited pairs and the hook pins of
 // hooks (gitenv.go). docs/PROTOCOL.md gives the order.
@@ -202,7 +203,7 @@ func precursorEnv(heavy bool, pin []string) []string {
 // and diff-index calls only (gitstatus.go). The heavy `rev-parse --absolute-git-dir` of git.worktree_create and
 // git.worktree_remove runs without it.
 func hardenedGitEnv(heavy bool, pin, hooks []string) []string {
-	return hardenedEnvFrom(os.Environ(), heavy, pin, hooks)
+	return hardenedEnvFrom(gitChildEnv(), heavy, pin, hooks)
 }
 
 // hardenedEnvFrom is hardenedGitEnv with daemon as the daemon's environment. The
@@ -234,7 +235,7 @@ func branchStepEnv(pin, hooks []string) []string {
 			profile = append(profile, kv)
 		}
 	}
-	return append(hardenedEnvWith(os.Environ(), profile, pin, hooks),
+	return append(hardenedEnvWith(gitChildEnv(), profile, pin, hooks),
 		"GIT_NO_LAZY_FETCH=1", "GIT_ALLOW_PROTOCOL=denied_by_claude_ssh", "GIT_ASKPASS=")
 }
 
@@ -302,13 +303,18 @@ func hardenedGitCmd(ctx context.Context, u gitUse, dir string, heavy bool, pre *
 }
 
 // hardenedGitContext runs a git subcommand under the hardening profile and
-// environment, with the config precursor first. Combined output, like git().
+// environment, with the config precursor first. It returns stdout only.
 func hardenedGitContext(ctx context.Context, u gitUse, dir string, heavy bool, args ...string) (string, bool) {
-	return hardenedGitCombined(ctx, u, dir, heavy, nil, args...)
+	return hardenedGitAnswer(ctx, u, dir, heavy, nil, args...)
 }
 
-func hardenedGitCombined(ctx context.Context, u gitUse, dir string, heavy bool, pre *configListing, args ...string) (string, bool) {
-	out, err := hardenedGitCmd(ctx, u, dir, heavy, pre, args...).CombinedOutput()
+// hardenedGitAnswer runs one hardened call and returns its stdout and whether it
+// exited 0. Each caller parses the answer into a value or reads only the exit,
+// and no caller puts the text in an error. stderr is not part of the answer.
+// With a loader line on stderr, 5fd08069 answers "branch":"main" in git.info and
+// creates the worktree (round task004-01, cells M1 and M4, Linux VM).
+func hardenedGitAnswer(ctx context.Context, u gitUse, dir string, heavy bool, pre *configListing, args ...string) (string, bool) {
+	out, err := hardenedGitCmd(ctx, u, dir, heavy, pre, args...).Output()
 	return strings.TrimRight(string(out), "\n"), err == nil
 }
 
@@ -318,7 +324,7 @@ func hardenedGitCombined(ctx context.Context, u gitUse, dir string, heavy bool, 
 func hardenedGitFirst(u gitUse, dir string, heavy bool, l configListing, args ...string) (string, bool) {
 	ctx, cancel := gitCtx()
 	defer cancel()
-	return hardenedGitCombined(ctx, u, dir, heavy, &l, args...)
+	return hardenedGitAnswer(ctx, u, dir, heavy, &l, args...)
 }
 
 // gitDirWorkTreeToplevel runs `git --git-dir=<gitDir> config -z --list`, then the heavy
@@ -654,11 +660,12 @@ func indexInstallText(stderr string, installErr error) string {
 // worktreeBaseGitDir is the git directory of repo for git.worktree_create. answered
 // reports that `rev-parse --absolute-git-dir` gave it. If git gave no answer, the
 // directory is that of repoGitDir, which need not exist: a subfolder of a
-// repository has no .git entry. err is the exec error of a call that failed.
+// repository has no .git entry. err is the exec error of a call that failed. The
+// answer is stdout only, as for hardenedGitAnswer (claustrum's own).
 func worktreeBaseGitDir(u gitUse, repo string) (gitDir string, answered bool, err error) {
 	ctx, cancel := gitCtx()
 	defer cancel()
-	out, err := hardenedGitCmd(ctx, u, repo, true, nil, "rev-parse", "--absolute-git-dir").CombinedOutput()
+	out, err := hardenedGitCmd(ctx, u, repo, true, nil, "rev-parse", "--absolute-git-dir").Output()
 	if d := strings.TrimRight(string(out), "\n"); err == nil && d != "" {
 		return filepath.Clean(filepath.FromSlash(d)), true, nil
 	}
