@@ -295,7 +295,7 @@ traps that matter for telling drift from expected:
 - D5 (surviving-child git): a probe run that records "no
   reply from both binaries" does not discriminate. The off state blocks too.
   A surviving child makes the general D5
-  git sites soft (`CombinedOutput` waits on the output pipe, not on git's exit). The
+  git sites soft (`Output` and `CombinedOutput` wait on the output pipe, not on git's exit). The
   one exception is `git.worktree_create`'s read-tree checkout. It caps the
   post-exit drain at ~5 s and SIGKILLs the process group, which is parity with
   `4534d86` (`scratch/probe/wt-success-lingering-4534d86.md`). It gates success

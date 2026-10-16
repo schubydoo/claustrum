@@ -396,8 +396,8 @@ operator-declinable. Only CT-2 and CT-5 carry a flag and a key.
 
 ### D5 · Make the `gitTimeout` deadline opt-in { #d5 }
 
-- **Behavior.** With the deadline on, claustrum bounds every git invocation (shared
-  `gitCtx` across `git` / `gitStdoutErr` and the hardened helpers). That method runs
+- **Behavior.** With the deadline on, claustrum bounds the git invocations of the
+  hardened helpers (shared `gitCtx`). That method runs
   no `git worktree remove`. On `git.worktree_remove` the deadline starts no
   delete. A kill refuses or skips a step. One skipped step is the daemon's own read
   of the repository config. After a kill of that call the remove goes on as it did

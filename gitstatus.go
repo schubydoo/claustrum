@@ -582,20 +582,20 @@ func statusDirNames(root *os.Root, dir string) ([]string, error) {
 // is true when the entry has one. A missing file passes. A folder, a FIFO and a
 // syntax error fail, with no wait on the FIFO (rows n14, n14b and n14c).
 //
-// The daemon lists the file with `git config --no-includes --file - --list -z`. The
-// file is the stdin of that call, its working directory is that of the daemon, and it
-// gets the environment of the daemon as it is (rows n12, n12b, n13 and n14c). Every
-// key must be one of statusConfigKeys.
+// The daemon lists the file with `git config --no-includes --file - --list -z`, with
+// the file as its stdin. Every key must be one of statusConfigKeys.
 //
-// copied is true for a request that names a copy of the repository. The call
-// then has the form of the read of a config file. Its working directory is the
-// root folder, and it carries GIT_DIR=<null device>, LC_ALL=C and LANGUAGE=C.
-// 5fd08069 runs it so (cell 1c of val-s3p2b2-5-linux, call 5 of the git.status,
-// Linux VM). With the member and in the state fallback-git the call of 5fd08069
-// is not measured: it keeps the form of 89cb6289.
+// fileForm gives the call the form of the read of a config file: the working
+// directory gitVersionDir, and repoConfigListEnv with GIT_DIR=<null device>, LC_ALL=C
+// and LANGUAGE=C. 5fd08069 runs it so in the state shadow (cell 1c of
+// val-s3p2b2-5-linux, Linux VM) and with "shadowDirOff":true (cell V3 of round
+// task004-03, Linux, macOS and Windows VMs). In the state fallback-git without the
+// member that call is not measured. It keeps the form of 89cb6289 there: the working directory and the
+// environment of the daemon (rows n12, n12b, n13 and n14c), with the cleaning of
+// gitChildEnv (claustrum's own).
 //
 // text is the text of the file as this test read it, for a file that passed.
-func statusEntryConfig(root *os.Root, copied bool) (text []byte, present, ok bool) {
+func statusEntryConfig(root *os.Root, fileForm bool) (text []byte, present, ok bool) {
 	if _, err := root.Lstat("config.worktree"); errors.Is(err, fs.ErrNotExist) {
 		return nil, false, true
 	}
@@ -605,8 +605,8 @@ func statusEntryConfig(root *os.Root, copied bool) (text []byte, present, ok boo
 	}
 	ctx, cancel := gitCtx()
 	defer cancel()
-	dir, env := "", []string(nil)
-	if copied {
+	dir, env := "", gitChildEnv()
+	if fileForm {
 		dir, env = gitVersionDir, repoConfigListEnv()
 	}
 	out, err := listConfigText(ctx, b, dir, env)
@@ -640,8 +640,8 @@ type statusEntry struct {
 // of the tests after the match is not measured: each failing row broke one file only.
 //
 // The entry comes back with its root open when ok is true. The caller closes it.
-// copied is the copied of statusEntryConfig.
-func statusEntryOf(common string, sp statusPath, copied bool) (e statusEntry, ok bool) {
+// fileForm is the fileForm of statusEntryConfig.
+func statusEntryOf(common string, sp statusPath, fileForm bool) (e statusEntry, ok bool) {
 	dir, root, ok := statusMatchEntry(common, sp.spellings)
 	if !ok {
 		return statusEntry{}, false
@@ -663,7 +663,7 @@ func statusEntryOf(common string, sp statusPath, copied bool) (e statusEntry, ok
 	if !ok {
 		return statusEntry{}, false
 	}
-	config, hasConfig, ok := statusEntryConfig(root, copied)
+	config, hasConfig, ok := statusEntryConfig(root, fileForm)
 	if !ok {
 		return statusEntry{}, false
 	}

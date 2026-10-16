@@ -206,11 +206,13 @@ func (req *request) newWorktreeConfig(repo, gitDir string) (text []byte, ok bool
 		return nil, false, drop
 	}
 	file := filepath.Join(dir, worktreeConfigName)
+	// The calls get the cleaning of gitChildEnv, as on 5fd08069 (cell V2 of round
+	// task004-03, Linux, macOS and Windows VMs).
 	for _, key := range worktreeConfigDropKeys {
 		if !slices.ContainsFunc(settings, func(s repoSetting) bool { return s.key == key }) {
 			continue
 		}
-		r := boundedGit(shadowCallBound, "", append(os.Environ(), "GIT_DIR="+os.DevNull),
+		r := boundedGit(shadowCallBound, "", append(gitChildEnv(), "GIT_DIR="+os.DevNull),
 			"config", "--file", file, "--unset-all", key)
 		if r.err != nil {
 			logWarnf("[GitHandler] the config.worktree file of the new worktree was not made: git config --unset-all %s: %s", key, r.detail())

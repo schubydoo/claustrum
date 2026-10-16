@@ -233,9 +233,16 @@ func (r listingRun) detail() string {
 // GIT_CONFIG and GIT_CONFIG_PARAMETERS (gitenv.go), and without every entry named
 // LC_ALL or LANGUAGE (row L02). LANG and every other entry stay in place. Other LC_*
 // variables, such as LC_MESSAGES, stay too. Only LC_ALL, LANGUAGE and LANG were
-// measured. The names match exactly, also on Windows (not measured).
+// measured. The names match exactly, also on Windows (not measured). The base is
+// the daemon's environment as a git child gets it (gitChildEnv).
 func listingEnvBase() []string {
-	env := dropConfigOverrides(os.Environ())
+	return listingEnvOf(gitChildEnv())
+}
+
+// listingEnvOf is listingEnvBase with daemon as the daemon's environment.
+// gitVersionRun and shadowDaemonEnv give it os.Environ(), with no cleaning.
+func listingEnvOf(daemon []string) []string {
+	env := dropConfigOverrides(daemon)
 	out := env[:0]
 	for _, kv := range env {
 		if n := envName(kv); n != "LC_ALL" && n != "LANGUAGE" {
@@ -340,9 +347,8 @@ func noRepoCreateCalls(t gitDirTrust, six, off bool, dir string) string {
 
 // gitVersionRun runs the plain `git version` that 89cb6289 runs after a listing that
 // failed for any reason other than "no repository" (rows L10 to L12, L14c and L15). It
-// has no -c option. Its working directory is gitVersionDir. In claustrum its
-// environment is the one of the failed listing without the GIT_COMMON_DIR pin and
-// without LC_ALL=C and LANGUAGE=C. The daemon's own LC_ALL and LANGUAGE do not come back: whether they do
+// has no -c option. Its working directory is gitVersionDir. The daemon's own LC_ALL
+// and LANGUAGE do not come back: whether they do
 // is not measured. heavy is the profile of the failed listing. After the listing of
 // unenterableBaseListing, this call gets the light environment, as on 89cb6289 (rows
 // L16a and L16b on a Linux VM). In the symlink-chain rows LNKb-g and LNKr-g, 89cb6289
@@ -368,7 +374,7 @@ func gitVersionRun(u gitUse, heavy bool) listingRun {
 	defer cancel()
 	cmd := exec.CommandContext(ctx, "git", "version")
 	cmd.Dir = gitVersionDir
-	env := withoutConfigCountSet(listingEnvBase())
+	env := withoutConfigCountSet(listingEnvOf(os.Environ()))
 	env = slices.DeleteFunc(env, func(kv string) bool { return envName(kv) == "GIT_CONFIG_GLOBAL" })
 	cmd.Env = append(env, u.profileEnv(heavy)...)
 	var errBuf bytes.Buffer
