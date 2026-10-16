@@ -1219,8 +1219,8 @@ Windows VMs saw it at that place.
   races the close. The teardown closes the listener first, then every connection,
   before its other cleanup.
   When the frame arrives, it is `{"jsonrpc":"2.0","id":<id>,"result":{"ok":true}}`
-  followed by EOF. An idle connection gets a clean EOF with no bytes. macOS is not
-  measured yet.
+  followed by EOF. An idle connection gets a clean EOF with no bytes. On a macOS VM
+  under spawn load `5fd08069` sent it in 4 of 10 runs (round `task003-01`).
 - Log order on `server.shutdown`. The daemon logs
   `[ServerHandler] server.shutdown received over RPC`, then
   `[Server] shutdown requested`, before the teardown closes any connection.
@@ -1240,7 +1240,7 @@ Windows VMs saw it at that place.
   `[daemon] received terminated; shutting down (children will be killed)`, then
   `[Server] shutdown requested`, then the `cleanup:` line. On a Linux VM,
   `f6010b97` and `89cb6289` logged these three lines (rows RP11, RP12b, ST03).
-  The line for `SIGINT` names that signal and is not measured. With
+  The line for `SIGINT` names that signal (`5fd08069`, round `task003-01`, Linux and macOS). With
   `-keep-children` claustrum writes `kept` in place of `killed` in the first line.
   The `cleanup:` line then says `killed 0 child process group(s)`.
 - Reply delivery is a measured timing difference, not parity. The claustrum
@@ -4166,9 +4166,9 @@ as id-less stream notifications, and it buffers them for a later replay.
   replace. Its stream frames still came on its own connection, under the same
   `processId`, with seq 2 to 9. Its exit frame came there with seq 10. The
   connection of the second process got the frames of the second process only.
-  claustrum is built to that row. macOS row P2 and Windows row EVc gave the same
-  split of the frames on `89cb6289` and on claustrum. Three more Linux rows
-  measured two processes under one `id`. `89cb6289` and claustrum gave the same
+  macOS row P2 and Windows row EVc gave the same split of the frames on
+  `89cb6289` and on claustrum. Three more Linux rows measured two processes under
+  one `id`. `89cb6289` and claustrum gave the same
   frames in each:
     - Both spawns come on one connection (row N2a). That connection gets both
       streams under the one `processId`. Each process counts its own `seq`, so
@@ -4215,8 +4215,8 @@ as id-less stream notifications, and it buffers them for a later replay.
   - A session spawn whose command does not exist supersedes nothing. On a Linux VM
     (rows P3 and H1) and on a macOS VM (row P3), `89cb6289` answered
     `-32603 fork/exec <path>: no such file or directory`. The old
-    process got no signal and kept its record. claustrum is built to those rows. It
-    tests the command after it builds the child environment and before the
+    process got no signal and kept its record. claustrum is built to those rows and
+    tests the command after it builds the child environment, before the
     supersede.
   - The test is one `stat` of the command path. Linux rows H1 to H6 and H9
     measured it with `strace`. `89cb6289` and claustrum made the same `stat`
@@ -4242,9 +4242,8 @@ as id-less stream notifications, and it buffers them for a later replay.
     absolute command path. On a Windows VM (row SSm-path, 3 of 3 runs),
     `89cb6289` answered
     `-32603 fork/exec <path>: The system cannot find the file specified.` for a
-    missing path that ends in `.exe`, and the old process lived on. Build
-    `ac5cadb` of claustrum ended the old process there. claustrum is now built to
-    that row. A bare name (row SSm-bare) and a path with no extension (row
+    missing path that ends in `.exe`, and the old process lived on. claustrum is
+    built to that row. A bare name (row SSm-bare) and a path with no extension (row
     SSm-noext) answered `exec: "<name>": executable file not found in %PATH%` on
     both, with no supersede. Not measured: a relative path. claustrum runs no
     `stat` of it.
@@ -4258,23 +4257,27 @@ as id-less stream notifications, and it buffers them for a later replay.
     `ac5cadb` wrote the exit line of the old process and the `supersedes` line in
     1 of 6 Linux runs and in 2 of 2 macOS runs. That difference is open. See
     [UPSTREAM-TRACKING.md](UPSTREAM-TRACKING.md).
+- A spawn whose child start returns after the shutdown began gets no reply, and
+  claustrum ends its child, also with `-keep-children`
+  ([CT-2](DIVERGENCES.md#ct-2)). `5fd08069` left late children running (round
+  `task003-01`: Linux 64, macOS 1081, Windows 2). claustrum left none (round
+  `task003-04`, no `-keep-children`).
 - The SSH agent hand-off is `f6010b97` parity on linux and darwin, advertised as
   `process.spawn.shellAgentSocket`, and measured on both. The daemon builds the
   child env from its own env, the login-shell PATH and the caller's `env`. If that
   env has no `SSH_AUTH_SOCK` entry, the child gets `SSH_AUTH_SOCK=<socket>` after
   the caller's entries. The socket is what the user's login shell exports.
-  - An entry that is already present wins, even with an empty value. A caller can
-    therefore skip the hand-off for one spawn with `"SSH_AUTH_SOCK":""`.
+  - An entry that is already present wins, even with an empty value, such as
+    `"SSH_AUTH_SOCK":""` in the spawn `env`.
   - `"disableShellAgentSocket":true` also skips it. A non-bool value answers
     `-32602 Invalid params`, and `null` counts as `false`.
   - The daemon runs `<shell> -l -i -c …` on the first spawn that needs a socket,
     not at startup. The shell choice is the one the PATH extraction uses: `$SHELL`
     when it is executable, then `/bin/zsh`, `/bin/bash` and `/bin/sh`. The run has
-    a 4 s deadline, and a shell that the kill cannot end is given up on at 5 s. This
-    run therefore adds about 4 s to its spawn when the shell does not exit, and
-    about 5 s when the kill cannot end it. The first spawn of a daemon also runs
-    the PATH read, which has its own 4 s deadline. On a Linux VM with a shell that
-    sleeps 10 s, the first spawn of `89cb6289` answered after 8 s (row G3).
+    a 4 s deadline, and a shell that the kill cannot end is given up on at 5 s.
+    The first spawn of a daemon also runs the PATH read, which has its own 4 s
+    deadline. On a Linux VM with a shell that sleeps 10 s, the first spawn of
+    `89cb6289` answered after 8 s (row G3).
   - A socket that does not accept a connection within 250 ms is not handed on. The
     daemon caches the answer and runs the login shell again only 10 minutes after
     the last run. After 3 failed runs in a row it stops asking. A connection

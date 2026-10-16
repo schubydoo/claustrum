@@ -11,6 +11,7 @@ import (
 	"slices"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 )
 
@@ -222,6 +223,14 @@ type procManager struct {
 	spawnMu    sync.Mutex
 	spawnLocks map[string]*sessionSpawnLock
 
+	// startsStopped is set at the start of the shutdown. A spawn reads it with no
+	// lock and gives up before it starts a child. startGate orders the start of a
+	// child against the teardown. A spawn holds it for reading from its check
+	// before the start to its return, so its child and its record are done before
+	// stopStarts returns.
+	startsStopped atomic.Bool
+	startGate     sync.RWMutex
+
 	// runDir is the run dir of the daemon (CLAUDE_SSH_RUN_DIR): the folder of its
 	// socket path (execChildRunDir). It is "" only for a manager with no socket, as a
 	// unit test builds one. Set once at daemon startup (newServerOnSocket). When
@@ -313,6 +322,37 @@ func (m *procManager) pruneLoop() {
 			return
 		}
 	}
+}
+
+// errStartsStopped is the error of a spawn that reached the start of its child
+// after the shutdown began. processSpawn sends no frame for it.
+var errStartsStopped = errors.New("no child starts after the shutdown began")
+
+// beforeChildStart runs in spawnVia just before the spawn takes startGate,
+// pastStartCheck right after its check of startsStopped before the start, and
+// afterChildStart right after the start. They are seams for a test that holds a
+// spawn there. Production never reassigns them.
+var (
+	beforeChildStart = func(id string) {}
+	pastStartCheck   = func(id string) {}
+	afterChildStart  = func(id string, pid int) {}
+)
+
+// refuseStarts makes each spawn that has not passed the check before the start give
+// up before it starts a child. It does not block. signalShutdown calls it at the
+// start of the shutdown.
+func (m *procManager) refuseStarts() { m.startsStopped.Store(true) }
+
+// stopStarts refuses new starts and waits for the spawns that passed the check
+// before the start. The teardown calls it after it dropped the connections and
+// before it kills the children. Such a spawn holds startGate. If its start returned
+// before the shutdown began, this waits until its child is in the table and has its
+// record, so the kill of the teardown reaches that child. If not, the spawn ends
+// the child itself. No temp file of a record stays. Idempotent.
+func (m *procManager) stopStarts() {
+	m.refuseStarts()
+	m.startGate.Lock()
+	m.startGate.Unlock() //nolint:staticcheck // the empty section waits for the read holders
 }
 
 // close ends the prune sweep. Idempotent, and safe to call on a manager whose
@@ -691,12 +731,38 @@ func (m *procManager) spawnVia(c *conn, id, command string, args []string, cwd s
 		closeExecErr()
 		return nil, err
 	}
+	// dropUnstarted releases what a spawn made for a child that does not start.
+	dropUnstarted := func() {
+		closeAll(stdoutR, stdoutW, stderrR, stderrW)
+		closeExecErr()
+		_ = stdin.Close()
+		if f, ok := cmd.Stdin.(*os.File); ok {
+			_ = f.Close()
+		}
+	}
+	// A spawn after the start of the shutdown also supersedes nothing, so it
+	// sends no signal to the prior process of its session. This check is
+	// claustrum's own and not measured. The lock is not held over the supersede.
+	if m.startsStopped.Load() {
+		dropUnstarted()
+		return nil, errStartsStopped
+	}
 	// End the prior process of the same session and wait for its end, before the new
 	// process starts (89cb6289, rows B1 to B4). Non-session spawns (empty key) skip
 	// this. The step comes after the pre-check above and before the start: a command
 	// that does not exist supersedes nothing (row P3). A command that exists and does
 	// not start supersedes first, and its error comes after (Linux rows H4a to H4c).
 	m.supersedeSession(sessionKey, id)
+	// Once the shutdown began, no new child starts. The read lock is held to the
+	// return, so the teardown waits for a child that starts here and for its record.
+	beforeChildStart(id)
+	m.startGate.RLock()
+	defer m.startGate.RUnlock()
+	if m.startsStopped.Load() {
+		dropUnstarted()
+		return nil, errStartsStopped
+	}
+	pastStartCheck(id)
 	err = cmd.Start()
 	if err != nil && execErrR != nil {
 		// The start of the trampoline itself failed, so nothing ran. The reference
@@ -757,6 +823,42 @@ func (m *procManager) spawnVia(c *conn, id, command string, args []string, cwd s
 	// Stamp the start time the instant the child exists, so the CT-1 startTime is
 	// the process's birth moment (within ms), not a later bookkeeping point.
 	startTime := float64(time.Now().UnixNano()) / 1e9
+	afterChildStart(id, cmd.Process.Pid)
+	// Take the kill handle of the child. On Unix this is the process group from
+	// newSysProcAttr, so a kill can end the whole tree. On Windows it is a process
+	// handle of the direct child only. A failure here is non-fatal: kill falls back
+	// to the parent. It comes before the check below, which needs the handle.
+	group, err := confineProc(cmd.Process)
+	if err != nil {
+		logWarnf("[process.Manager] process-group confinement failed for %s: %v", id, err)
+	}
+	// A start that returns after the shutdown began leaves no start line, no
+	// count, no table entry and no record. The kill here ends the child at once,
+	// also with -keep-children, and the wait reaps it.
+	//
+	// The wait is bounded by killReapGrace. This spawn holds the start gate, and
+	// stopStarts waits for it. A child that the kill cannot reap must not hold the
+	// gate and the teardown forever. After the bound the spawn goes on, and the
+	// goroutine reaps the child later. Nothing below touches cmd, and the pipe read
+	// ends and the group handle are not used by the wait.
+	if m.startsStopped.Load() {
+		_ = signalGroup(group, cmd.Process, "KILL")
+		reaped := make(chan struct{})
+		go func() {
+			_ = cmd.Wait()
+			close(reaped)
+		}()
+		bound := time.NewTimer(killReapGrace)
+		select {
+		case <-reaped:
+		case <-bound.C:
+		}
+		bound.Stop()
+		group.close()
+		closeAll(stdoutR, stderrR)
+		_ = stdin.Close()
+		return nil, errStartsStopped
+	}
 	// With a launcher the line names the launcher's argv[0] only (measured).
 	program := ""
 	if launcher != nil {
@@ -766,15 +868,6 @@ func (m *procManager) spawnVia(c *conn, id, command string, args []string, cwd s
 		logInfof("[process.Manager] Process %s started, PID=%d, command=%s", id, cmd.Process.Pid, command)
 	}
 	met.spawns.Add(1)
-
-	// Take the kill handle of the child. On Unix this is the process group from
-	// newSysProcAttr, so a kill can end the whole tree. On Windows it is a process
-	// handle of the direct child only. A failure here is non-fatal: kill falls back
-	// to the parent.
-	group, err := confineProc(cmd.Process)
-	if err != nil {
-		logWarnf("[process.Manager] process-group confinement failed for %s: %v", id, err)
-	}
 
 	p := &managedProc{
 		id:         id,

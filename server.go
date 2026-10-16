@@ -1145,8 +1145,17 @@ func (s *server) handleRequest(c *conn, raw []byte, req request, ordered bool, t
 	}
 }
 
-// signalShutdown requests a graceful stop exactly once.
-func (s *server) signalShutdown() { s.once.Do(func() { close(s.shutdown) }) }
+// signalShutdown requests a graceful stop exactly once. From here a spawn that has
+// not passed the check before the start starts no child (refuseStarts). It does not
+// block, so the teardown drops the connections at once.
+func (s *server) signalShutdown() {
+	s.once.Do(func() {
+		if s.procs != nil {
+			s.procs.refuseStarts()
+		}
+		close(s.shutdown)
+	})
+}
 
 // signalWatch handles the first SIGTERM or SIGINT of a daemon. runServe starts it
 // before the claim of the run dir, so a signal that comes before the bind does not end
@@ -1289,6 +1298,11 @@ func (s *server) closeAll(socket string) {
 	if s.pipeLn != nil {
 		_ = s.pipeLn.Close()
 	}
+	// Wait for the spawns that passed the check before the start (stopStarts). It
+	// comes after the drop, so the connections still close at once. Then the kill
+	// below and the record removals of -keep-children see every child whose start
+	// returned before the shutdown began, and no record write is open at the exit.
+	s.procs.stopStarts()
 	// Unlink the socket only if it is still the inode we bound: a restart's successor
 	// may already have rebound the path.
 	removeSocketIfOwned(socket, s.sockInfo)

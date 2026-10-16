@@ -66,8 +66,8 @@ func FuzzDispatch(f *testing.F) {
 		}
 		resp := s.dispatch(nil, raw)
 		if resp == nil {
-			// Defensive: no normal dispatch path returns nil (server.shutdown, once
-			// believed silent, now replies {"ok":true} and is skipped above anyway).
+			// Defensive: dispatch returns nil only for a process.spawn after the
+			// shutdown began. process.spawn and server.shutdown are skipped above.
 			return
 		}
 		assertWellFormedResponse(t, resp, raw)

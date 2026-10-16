@@ -664,7 +664,7 @@ traps that matter for telling drift from expected:
 - A first process that lives on after a second `process.spawn` took its `id` is
   not drift. `89cb6289` sends it no signal, and a stop of the daemon leaves it
   alive. Linux and macOS rows A1 to A4 and Windows rows EV and EVInh measure that.
-  claustrum does the same. The frames of that first process still come on its own
+  The frames of that first process still come on its own
   connection, under the same `processId` (Linux row P2 against `89cb6289`).
   claustrum is built to it.
 - A `process.spawn` reply that comes 3 to 5 s late is not drift when the spawn
@@ -690,8 +690,7 @@ traps that matter for telling drift from expected:
   (Linux rows P13 and P13k), and claustrum is built to it.
 - A `-serve` launcher that gives up after 12 s is not drift. If the daemon child
   of `89cb6289` ends before the bind, its launcher exits 1 after 12.06 s (Linux
-  row P7, macOS row P7 and two Windows rows). The bound of `5db5e4a` was about
-  10 s.
+  row P7, macOS row P7 and two Windows rows).
 - A daemon that gets `SIGTERM` or `SIGINT` during its start, goes on to its bind
   and then exits 0 is not drift. `89cb6289` does that (Linux rows P5, H8a to H8c,
   N4 and N5, macOS row P5), and claustrum is built to it. Its launcher then exits
@@ -718,13 +717,11 @@ traps that matter for telling drift from expected:
       removed `daemon.token`. claustrum removed the token first (row P1).
     - claustrum logs an exit line for a child that a shutdown kills:
       `Process <id> exited with code -1, terminated by SIGKILL, signalled at shutdown request`.
-      `89cb6289` logs none (Linux row E3, macOS row A3).
+      `89cb6289` logs none (Linux row E3, macOS row A3). `5fd08069` wrote it on
+      Linux, not on macOS (round `task003-01`).
     - After a `-stop` during the wait of a supersede, claustrum can log the exit
       line of the old process and the `supersedes` line. `89cb6289` logged neither
       (row P1: Linux 1 of 6 runs against 0 of 7, macOS 2 of 2 against 0 of 2).
-      In that one Linux run build `ac5cadb` also sent the group one more
-      `SIGKILL`, which answered `ESRCH`. From the code: that call is gone, with
-      the group `SIGKILL` after a clean exit.
     - `89cb6289` calls unlink on one child record up to three times at a stop or
       a kill. claustrum calls it once. `89cb6289` also calls unlink on a record
       that it never wrote (Linux rows P1, B1, A3, P11a). The files left are the
@@ -743,6 +740,9 @@ traps that matter for telling drift from expected:
     - At a stop with one connection, `89cb6289` logged `closed 0 connection(s)`
       in 2 of 9 runs. claustrum logged `closed 1` in 9 of 9. The rate is not
       measured.
+- A child that `process.spawn` starts as a shutdown begins is known, not drift.
+  `5fd08069` left some running (round `task003-01`: Linux 64, macOS 1081,
+  Windows 2). claustrum ends them (round `task003-04`: 0 left).
 - A child environment block in name order on Windows is not drift. `f6010b97`
   and `89cb6289` keep the order of the daemon, then `CLAUDE_SSH_DAEMON_CHILD=1`
   (rows WN01a, WN01b). On `89cb6289` an added `PATH` entry and new caller keys

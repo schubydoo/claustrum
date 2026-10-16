@@ -58,6 +58,10 @@ var childRecordTempName = func(pid int) string {
 	return childrenDirName + "/.rec-" + strconv.Itoa(pid) + ".json." + strconv.FormatInt(time.Now().UnixNano(), 36)
 }
 
+// recordTempMade runs in writeChildRecordIn right after the temp file exists. It is
+// a seam for a test that holds the write there. Production never reassigns it.
+var recordTempMade = func() {}
+
 // writeChildRecordIn marshals rec and writes it to children/<rec.Pid>.json below
 // root, which is the run dir. It makes the children folder 0700, writes a temp file,
 // then renames it into place, so a reader never sees a half-written record.
@@ -87,6 +91,7 @@ func writeChildRecordIn(root *os.Root, rec childRecord) error {
 	if err != nil {
 		return err
 	}
+	recordTempMade()
 	_, err = f.Write(data)
 	if cerr := f.Close(); err == nil {
 		err = cerr
