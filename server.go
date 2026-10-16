@@ -104,11 +104,15 @@ type server struct {
 	tokenInfo os.FileInfo
 	pipeInfo  os.FileInfo
 
-	// releaseRunDir drops the run-dir lock (daemon.lock) on graceful shutdown:
-	// it truncates the owner record and unlocks the fd, leaving the file in place.
-	// A no-op on Windows (which has no run-dir lock) and when the lock was not
-	// taken this boot. See daemon_runlock_unix.go.
+	// releaseRunDir drops the run-dir lock (daemon.lock) on graceful shutdown if
+	// this daemon holds it: it truncates the owner record and unlocks the fd,
+	// leaving the file in place.
+	// A no-op on Windows (which has no run-dir lock). See daemon_runlock_unix.go.
 	releaseRunDir func()
+	// stopLateLock ends the late tries of the run-dir lock when the shutdown begins
+	// (signalShutdown). A no-op unless the daemon started without the lock while
+	// another process held it (Linux and macOS, see daemon_runlock_late_unix.go).
+	stopLateLock func()
 
 	// gitShadow is the settings control of the git methods: the state that git.info
 	// reports, the folder of this daemon beside the socket and the start test
@@ -590,6 +594,7 @@ func newServerOnSocket(socket, token, metricsAddr string, wlopt wireLogOptions, 
 		sockInfo:      sockFI,
 		tokenInfo:     tokenFI,
 		releaseRunDir: claim.release,
+		stopLateLock:  claim.stopLate,
 		instanceID:    instanceID,
 		startedAt:     startedAt,
 		gitShadow:     newShadowHost(execChildRunDir(socket)),
@@ -1153,6 +1158,11 @@ func (s *server) signalShutdown() {
 		if s.procs != nil {
 			s.procs.refuseStarts()
 		}
+		// No late try of the run-dir lock takes the lock once the shutdown began
+		// (claustrum's own, not measured).
+		if s.stopLateLock != nil {
+			s.stopLateLock()
+		}
 		close(s.shutdown)
 	})
 }
@@ -1321,8 +1331,8 @@ func (s *server) closeAll(socket string) {
 	if s.keepChildren {
 		s.procs.forgetKeptRecords()
 	}
-	// Drop the run-dir lock: truncate the owner record and unlock daemon.lock,
-	// leaving the file in place. No-op when not held.
+	// Drop the run-dir lock if this daemon holds it: truncate the owner record and
+	// unlock daemon.lock, leaving the file in place.
 	if s.releaseRunDir != nil {
 		s.releaseRunDir()
 	}

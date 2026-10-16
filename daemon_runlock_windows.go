@@ -11,14 +11,15 @@ package main
 // Windows VM measured it against f6010b97 and 89cb6289 (row K11 and every other daemon row).
 func claimRunDir(socket, role string) runDirClaim {
 	logInfof("%s", runDirNotHolderLine)
-	return runDirClaim{release: func() {}, complete: func(string, int64) {}}
+	return runDirClaim{release: func() {}, complete: func(string, int64) {}, stopLate: func() {}}
 }
 
-// runDirClaim is what claimRunDir gives back. On Windows there is no lock, so release
-// and complete do nothing.
+// runDirClaim is what claimRunDir gives back. On Windows there is no lock, so release,
+// complete and stopLate do nothing.
 type runDirClaim struct {
 	release  func()
 	complete func(instanceID string, startedAt int64)
+	stopLate func()
 	holder   bool // never set: there is no lock
 }
 
