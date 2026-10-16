@@ -1044,6 +1044,11 @@ func runHelper(mode string, args []string) int {
 		// lock path, args[1] = "term-ignore" to swallow SIGTERM (escalation case),
 		// args[2] = ready-file path.
 		return runlockHoldFixture(args)
+	case "runlock-hold-empty":
+		// Late-lock fixture (Unix): hold the flock on an empty lock file, as a process
+		// that is not a daemon does. args[0] = lock path, args[1] = ready-file path,
+		// args[2] = a file whose creation makes the fixture let go and exit 0.
+		return runlockHoldEmptyFixture(args)
 	default:
 		// "slow:N": sleep N seconds, then exit 0. This is the honest-but-slow CLI
 		// shape: correct output, correct exit code, just not fast. It is the

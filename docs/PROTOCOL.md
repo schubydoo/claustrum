@@ -199,15 +199,14 @@ Before it binds the socket, a `-serve` daemon takes an exclusive `flock` on
 record into that file. The record is a JSON object. At first it is
 `{pid, role, node}`, where `role` is `serve`. After the reap of the start and the
 bind, the daemon writes it again as `{pid, role, node, instanceId, startedAt}`.
-`node` is omitted when the machine identity is unknown. Reference build `4534d86`
-added the lock, and claustrum matches it. It is off the JSON-RPC wire, because it is a file
-beside the socket. On graceful shutdown the daemon truncates the record and drops
-the lock, but it leaves the file in place. `daemon.token` is unlinked instead. A
+`node` is omitted when the machine identity is unknown. Build `4534d86` added the
+lock, and claustrum matches it. It is a file beside the socket, off the wire. On
+graceful shutdown the daemon truncates the record, drops the lock and leaves the
+file in place. `daemon.token` is unlinked instead. A
 Linux VM measured the same end state against `89cb6289` in the stop rows:
-`daemon.token` and `rpc.sock` removed, `daemon.lock` left empty. The `instanceId`
-of the record is the instance of the listening line, and the `instanceId` that
-`server.capabilities` answers. On a Linux VM, the listening line, the lock and
-`server.capabilities` of `89cb6289` held one value in 36 of 36 daemons.
+`daemon.token` and `rpc.sock` removed, `daemon.lock` left empty. On a Linux VM the
+`instanceId` of the record, of the listening line and of `server.capabilities` held
+one value in 36 of 36 daemons of `89cb6289`.
 
 Linux and macOS VMs measured the two forms of the record against `89cb6289`. In
 row D1 a dead daemon left one recorded child that ignores `SIGTERM`. The lock of
@@ -237,12 +236,8 @@ the lock 50 ms later. It sent no `kill(pid, 0)` in that row, and none in rows E3
 P5, P6, N3 and N4. claustrum is built to it: it tries the lock every 50 ms for 2 s,
 sends the `SIGKILL`, and tries for 1 s more. That 1 s is claustrum's own value
 and is not measured. Before the `SIGKILL` claustrum tests the identity of the
-holder again. A restart
-therefore replaces its predecessor deterministically. The eviction only fires
-against a holder that is verifiably one of our own `-serve` daemons for this
-socket, on this machine. See the guards in `daemon_runlock_unix.go`. Claiming is
-best-effort. Any failure logs a warning, and the daemon serves without run-dir
-ownership rather than aborting.
+holder again. The eviction fires only against a holder that is verifiably one of
+our own `-serve` daemons for this socket, on this machine (`daemon_runlock_unix.go`).
 
 If the record of the holder has no instance, the eviction lines name its pid
 alone. On a Linux VM and on a macOS VM, `89cb6289` logged these two lines for a
@@ -323,7 +318,7 @@ each row but one, the 0.05 s gap:
   `89cb6289` then got the lock, bound and wrote its own full record. It sent the
   recorded child no signal. Build `ac5cadb` of
   claustrum read the killed daemon as alive and served without the lock. claustrum
-  now waits on the lock as `89cb6289` does, and it is built to this row.
+  now waits on the lock, as `89cb6289` does.
 
 A process that is no daemon can hold the lock, with no owner record in the file.
 The daemon then signals nothing and logs three lines. On a Linux VM (row ST02),
@@ -335,10 +330,20 @@ The daemon then signals nothing and logs three lines. On a Linux VM (row ST02),
 [daemon] serve: not the run dir's lock holder; leaving any predecessor's children alone and recording none
 ```
 
-claustrum logs the third line at every start that ends without the lock. The other
-cases without the lock are not measured. A record with another role text is not
-measured. claustrum then reaps and records nothing.
+claustrum logs the third line at every start that ends without the lock, and then
+reaps and records nothing. Other cases and role texts are not measured.
 Cell H5 (`5fd08069`, Linux VM) measures a held flock.
+With such a holder on an empty file, `5fd08069` tries the lock every 30 s, and a
+failed try logs nothing (round `task005-01`, Linux and macOS VMs). A good try writes
+the full record, holds the lock until the exit and logs this line. claustrum is built
+to both:
+
+```
+[daemon] run-dir lock acquired late (previous holder gone); recorded pid <n> (instance "<hex>")
+```
+
+claustrum also tries after its other refusals (claustrum's own), not after a failed open
+or a refused lock call.
 
 The lock, the owner record, and the eviction run on Linux and macOS only. The
 machine identity (`node`) is the boot id joined to the pid-namespace inode on

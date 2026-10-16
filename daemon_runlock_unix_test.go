@@ -211,8 +211,14 @@ func TestLockRunDirFlockError(t *testing.T) {
 		t.Fatalf("open: %v", err)
 	}
 	_ = syscall.Close(fd) // the fd is now invalid; flock yields EBADF, not EWOULDBLOCK.
-	if lockRunDir(fd, "/nonexistent/daemon.lock", "/nonexistent/s.sock") {
+	locked, heldElsewhere := lockRunDir(fd, "/nonexistent/daemon.lock", "/nonexistent/s.sock")
+	if locked {
 		t.Error("lockRunDir must fail when flock returns a non-EWOULDBLOCK error")
+	}
+	// A refused lock call is not a lock that another process holds, so the daemon makes
+	// no late tries (claustrum's own).
+	if heldElsewhere {
+		t.Error("lockRunDir reports a refused lock call as held elsewhere, so the daemon tries the lock again")
 	}
 }
 

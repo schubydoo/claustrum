@@ -109,6 +109,7 @@ component_management:
         # OS-split machine identity; a no-op on Windows, parity) and the orphan-exit
         # self-probe.
         - daemon_runlock_unix.go
+        - daemon_runlock_late_unix.go
         - daemon_runlock_linux.go
         - daemon_runlock_darwin.go
         - daemon_runlock_windows.go

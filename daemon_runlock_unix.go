@@ -90,8 +90,12 @@ type runDirClaim struct {
 	// complete writes the full owner record: the short record plus instanceId and
 	// startedAt. The daemon calls it after the reap of its start and the bind.
 	complete func(instanceID string, startedAt int64)
-	// holder says that this daemon holds the run-dir lock.
+	// holder says that this daemon holds the run-dir lock at its start.
 	holder bool
+	// stopLate ends the late tries of a daemon that started without the lock (see
+	// lateRunDirClaim). The daemon calls it when its shutdown begins. It is a no-op
+	// for every other claim.
+	stopLate func()
 }
 
 // claimRunDir takes the run-dir lock and writes the short owner record of this daemon:
@@ -105,8 +109,7 @@ type runDirClaim struct {
 // "instanceId" and "startedAt" too.
 //
 // Claiming is best-effort: every failure logs a warning and returns, and the daemon
-// serves without run-dir ownership. It never aborts startup. When the daemon does not
-// get the lock, release and complete are no-ops.
+// serves without run-dir ownership. It never aborts startup.
 //
 // A daemon that does not get the lock prints the "not the run dir's lock holder" line last.
 // The reference printed it on a Linux VM (row ST02, f6010b97 and 89cb6289). There a process
@@ -121,7 +124,7 @@ func claimRunDir(socket, role string) runDirClaim {
 	// notHolder is the return of every arm that ends without the lock.
 	notHolder := func() runDirClaim {
 		logInfof("%s", runDirNotHolderLine)
-		return runDirClaim{release: func() {}, complete: func(string, int64) {}}
+		return runDirClaim{release: func() {}, complete: func(string, int64) {}, stopLate: func() {}}
 	}
 
 	// O_NOFOLLOW: never follow a pre-existing daemon.lock symlink. If the socket dir is
@@ -139,14 +142,22 @@ func claimRunDir(socket, role string) runDirClaim {
 		logWarnf("[daemon] serve: cannot open %s (%v); proceeding without run-dir ownership", path, err)
 		return notHolder()
 	}
-	if !lockRunDir(fd, path, socket) {
+	locked, heldElsewhere := lockRunDir(fd, path, socket)
+	if !locked && heldElsewhere {
+		// Another process holds the lock and stays. The daemon keeps the descriptor and
+		// tries the lock again later (lateRunDirClaim).
+		logInfof("%s", runDirNotHolderLine)
+		return lateRunDirClaim(fd, role)
+	}
+	if !locked {
 		_ = syscall.Close(fd)
 		return notHolder()
 	}
 	short := ownerRecord{Pid: os.Getpid(), Role: role, Node: nodeID()}
 	writeOwnerRecord(fd, short)
 	return runDirClaim{
-		holder: true,
+		holder:   true,
+		stopLate: func() {},
 		release: func() {
 			_ = syscall.Ftruncate(fd, 0)
 			_ = syscall.Close(fd)
@@ -169,23 +180,24 @@ func claimRunDir(socket, role string) runDirClaim {
 // the live holder. The eviction waits on the lock, so it usually returns with the lock
 // taken. If the holder is gone and the eviction did not take the lock, lockRunDir retries
 // once. If the lock still cannot be taken it gives up (the caller serves without
-// ownership).
-func lockRunDir(fd int, path, socket string) bool {
+// ownership). heldElsewhere is true when it gave up because another process holds the
+// lock, and false when the system refused the lock call itself.
+func lockRunDir(fd int, path, socket string) (locked, heldElsewhere bool) {
 	if err := syscall.Flock(fd, syscall.LOCK_EX|syscall.LOCK_NB); err == nil {
-		return true
+		return true, false
 	} else if err != syscall.EWOULDBLOCK {
 		// The reference logs one line for ANY non-EWOULDBLOCK flock error and calls it
 		// "unsupported" with the errno text (measured 4534d86: EOPNOTSUPP/ENOLCK/EINVAL/
 		// EACCES all render the same line; scratch/probe/runlock-log-4534d86.md).
 		logWarnf("[daemon] serve: flock %s unsupported (%v); proceeding without run-dir ownership", path, err)
-		return false
+		return false, false
 	}
 	gone, locked := evictRunDirHolder(fd, path, socket)
 	if !gone {
-		return false
+		return false, true
 	}
 	if locked {
-		return true
+		return true, false
 	}
 	// The holder is gone, so the lock should now be free. Retry once — if a different
 	// process grabbed it in the gap, leave that new holder alone.
@@ -193,9 +205,10 @@ func lockRunDir(fd int, path, socket string) bool {
 		// This line's wording is claustrum's own. The reference's changed-hands line was
 		// not captured at runtime.
 		logWarnf("[daemon] serve: %s changed hands during eviction; proceeding without run-dir ownership", path)
-		return false
+		// Only a lock that another process holds is worth the late tries.
+		return false, err == syscall.EWOULDBLOCK
 	}
-	return true
+	return true, false
 }
 
 // evictRunDirHolder reads the current owner record and, when it names a live sibling
