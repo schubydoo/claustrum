@@ -9,64 +9,46 @@ import (
 	"testing"
 )
 
-// livePredecessorIdent reports a live daemon on the socket (returning its inode) and
-// nil when there is none — the launcher uses it to tell a predecessor's socket from
-// the successor's during a handoff.
-func TestLivePredecessorIdent(t *testing.T) {
-	sock := filepath.Join(t.TempDir(), "rpc.sock")
+// livePredecessorPID reports the pid of a daemon that answers on the socket, and 0
+// when no connect works. The listener here is this test process, so its pid is ours.
+func TestLivePredecessorPID(t *testing.T) {
+	sock := filepath.Join(shortTempDir(t), "rpc.sock")
 
-	if livePredecessorIdent(sock) != nil {
-		t.Error("no socket present should report no predecessor")
+	if pid := livePredecessorPID(sock); pid != 0 {
+		t.Errorf("no socket: pid %d, want 0", pid)
 	}
 
 	ln, err := net.Listen("unix", sock)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if fi := livePredecessorIdent(sock); fi == nil {
-		t.Error("a live listening socket should report a predecessor")
+	if pid := livePredecessorPID(sock); pid != os.Getpid() {
+		t.Errorf("a live listener of this process: pid %d, want %d", pid, os.Getpid())
 	}
 
-	// Closing the UnixListener unlinks the socket file, so there is no live
-	// predecessor afterward.
+	// Closing the UnixListener unlinks the socket file, so no predecessor is left.
 	_ = ln.Close()
-	if livePredecessorIdent(sock) != nil {
-		t.Error("a closed socket should report no predecessor")
+	if pid := livePredecessorPID(sock); pid != 0 {
+		t.Errorf("a closed socket: pid %d, want 0", pid)
+	}
+
+	// The socket file of a killed daemon stays on disk, and a connect is refused.
+	staleSocketFile(t, sock)
+	if pid := livePredecessorPID(sock); pid != 0 {
+		t.Errorf("a stale socket file: pid %d, want 0", pid)
 	}
 }
 
-// A socket FILE left behind by a crashed daemon (path present, nobody accepting)
-// dials ECONNREFUSED: that is a stale socket, so there is no predecessor to wait
-// for. Any other dial failure — here EACCES on an unwritable socket file — is
-// treated conservatively as "possibly live" and reports the inode.
-func TestLivePredecessorIdentStaleAndUnclassifiedSocket(t *testing.T) {
-	// Short directory, not t.TempDir(): this test's name pushes the socket path past
-	// macOS's 104-byte sun_path limit (see harness_test.go for the same pattern).
-	dir, err := os.MkdirTemp("", "cl")
-	if err != nil {
-		t.Fatal(err)
+// connPeerPID is 0 for a connection that is not a unix socket and for one whose
+// peer pid cannot be read.
+func TestConnPeerPIDUnknownIsZero(t *testing.T) {
+	a, b := net.Pipe()
+	defer a.Close()
+	defer b.Close()
+	if pid := connPeerPID(a); pid != 0 {
+		t.Errorf("a pipe connection: pid %d, want 0", pid)
 	}
-	t.Cleanup(func() { _ = os.RemoveAll(dir) })
-	sock := filepath.Join(dir, "rpc.sock")
-	ln, err := net.Listen("unix", sock)
-	if err != nil {
-		t.Fatal(err)
-	}
-	ln.(*net.UnixListener).SetUnlinkOnClose(false)
-	_ = ln.Close()
-	if _, err := os.Stat(sock); err != nil {
-		t.Fatalf("socket file should survive Close with unlink disabled: %v", err)
-	}
-	if livePredecessorIdent(sock) != nil {
-		t.Error("a stale socket file (connection refused) should report no predecessor")
-	}
-
-	skipIfRoot(t)
-	if err := os.Chmod(sock, 0); err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(func() { _ = os.Chmod(sock, 0o600) })
-	if livePredecessorIdent(sock) == nil {
-		t.Error("a permission-denied dial is not proof of death; must report the inode")
+	if pid := connPeerPID(&net.UnixConn{}); pid != 0 {
+		t.Errorf("a unix connection with no socket: pid %d, want 0", pid)
 	}
 }

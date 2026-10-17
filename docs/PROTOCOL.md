@@ -178,8 +178,8 @@ The unlink carries an inode-ownership qualifier. On graceful shutdown the
 daemon unlinks `daemon.token` only when the file on disk is still the inode this
 daemon wrote. The daemon stats the file and
 compares its identity (`os.SameFile`) to the one it recorded at startup. A
-restart's successor can rebind the socket and
-republish `daemon.token` to a new inode before the predecessor leaves. The
+restart's successor can republish `daemon.token`
+before the predecessor leaves. The
 departing predecessor then leaves the file alone. It does not delete the
 successor's token and break the new daemon's reconnect auth. On Linux and macOS the socket file
 carries the same identity guard on the same graceful path. On Windows the
@@ -525,23 +525,12 @@ own line. On Linux the pass logs no `left alone this pass` line.
 ### Daemon startup (`-serve`)
 
 If the socket's parent directory is missing, the `-serve` launcher creates it
-(mode `0700`). The launcher then does not return until the socket path exists. It
-polls every 20 ms, up to a bound of 12 seconds. To make sure that the daemon is
-ready, it dials the socket and closes the connection again. A freshly started
-daemon's log therefore holds a `New connection from: @` /
-`Connection closed: @` pair from the launcher's own probe, after the listening
-line.
-
-It waits for the path to exist, not for a successful dial. One case differs on
-Linux and macOS: the stale socket file of a killed daemon. That case is below. It
-also does not give up early when the child dies. Both behaviours are measured
-against `5db5e4a`:
-
-| start | what the launcher sees | outcome |
-|---|---|---|
-| normal | path appears, and the dial succeeds | exit `0` |
-| socket path occupied by a directory | path exists immediately | exit `0` (~0.01 s, reference 0.08 s) |
-| child can never bind (uncreatable parent dir) | path never appears | exit `1` at the launcher bound (`5db5e4a` 10.06 s) |
+(mode `0700`). The launcher connects every 50 ms (`task006-01`, C4). On Linux and macOS
+it exits `0` once a socket answers that is not the predecessor's (C3, C7b: Linux VM). At 12 s a
+connect that reached the predecessor gives `daemon did not take over`, else the
+timeout line (C4, C5, C9n, C9: Linux and macOS VMs). Each connection is closed at
+once, so the answering daemon's log holds a `New connection from: @` /
+`Connection closed: @` pair.
 
 The launcher bound of claustrum is 12 s. On a Linux VM (row P7), a daemon child of
 `89cb6289` ended before its bind, and the launcher exited `1` after 12.06 s. The
@@ -549,12 +538,7 @@ row holds three forms: a stale socket file, no socket file, and an empty run
 folder. A macOS VM measured 12.08 to 12.16 s in the same three forms (row P7). A
 Windows VM measured 12.058 s with a stale socket file and with none. The bound is
 shared code, and claustrum took 12.01 to 12.13 s in those rows. The bound of
-`5db5e4a` in the table was about 10 s, and claustrum used 10 s until that row.
-
-A Windows VM measured the occupied path against `89cb6289` (rows OCC and OCCf, two
-runs each). An empty folder or a regular file was at the socket path. On both
-sides the launcher exited `0` at once, the entry was removed, and the daemon
-served on a socket at that path. A folder with content is not measured.
+`5db5e4a` was about 10 s, and claustrum used 10 s until that row.
 
 On Linux and macOS the daemon binds the socket only after the reap of its start.
 The order is: claim `daemon.lock`, reap the recorded children of a dead daemon,
@@ -579,41 +563,20 @@ exits `1`. On success it prints the ready banner and exits `0`. After a successf
 `-serve`, the socket accepts connections before `-serve` returns. Measurement
 detail is condensed out of this reference.
 
-Reference build `7d193f89` added a daemon-to-daemon socket handoff. A unix socket
-path cannot be rebound in place, so a restart on a live socket unlinks the old
-inode and binds a fresh one. Before it spawns the child, the launcher records
-whether a live predecessor is already accepting on the path. If one is, the
-launcher also records that socket's inode identity. The probe is a short dial on
-unix. On Windows it is a no-op stub, and it has no observable effect. The launcher
-then waits not merely for the path to exist but for the inode to become different
-from the predecessor's. That is how it tells the successor's fresh socket from the
-one the predecessor is still serving. A predecessor can be present and the
-deadline can pass with the inode unchanged. The launcher then prints the distinct
-message `claustrum: daemon did not take over <socket> (predecessor still owns it)`
-to stderr and exits `1`, in place of the plain timeout line above. With no live
-predecessor and no socket file on disk, the wait is unchanged. The next paragraph
-covers a stale socket file. The
-inode-difference wait and that distinct message are unix-only. On Windows the
-predecessor probe is a no-op that always reports no predecessor. Startup there
-always takes the no-predecessor path, and on failure it emits only the ordinary
-timeout line, never the "daemon did not take over" message. This is off the
-JSON-RPC wire, because it is launcher lifecycle. The departing daemon's matching
-half is the inode-ownership unlink under
+Reference build `7d193f89` added a daemon-to-daemon socket handoff. A restart on a
+live socket unlinks the old socket and binds a new one. On Windows the first
+connect that works ends the wait, also one that the predecessor answers, as on
+`5fd08069` (round `task006-01`, cell C3, Windows VM). With a folder that holds a
+file at the path, both time out at 12 s (round `task006-02`, cell C9n, Windows VM).
+This is off the JSON-RPC wire. The departing
+daemon's matching half is the inode-ownership unlink under
 [Token persistence](#token-persistence-daemontoken).
 
-A killed daemon leaves its socket file on disk. The launcher records
-the socket file that is on disk before it starts the child. While the path still
-holds that file and no daemon answers a dial, the launcher keeps waiting. It then
-dials the new daemon once. On a Windows VM (rows WN03 and WN05), the log of a new
-`f6010b97` or `89cb6289` daemon held the connection pair in that case. On a Linux
-VM (row XA), the `-serve` command of `f6010b97` and `89cb6289` returned when the
-socket accepted, 2.06 s after its start. A dial
-that a live older daemon answers ends the wait at once, as before. On Windows a
-client that connects in that window is not measured. On Linux and macOS only a
-socket file makes the launcher wait. Another kind of file at the path counts as
-present, as in the table above. A stale socket file and a daemon that never binds
-give the timeout line at the bound and exit `1`. That is form a of row P7 above:
-`89cb6289` exited `1` after 12.06 s.
+A killed daemon leaves its socket file on disk. A connect there is refused, so the
+launcher waits for the new daemon. On a Linux VM (row XA), the `-serve` command of
+`f6010b97` and `89cb6289` returned when the socket accepted, 2.06 s after its
+start. With a daemon that never binds, `89cb6289` exited `1` after 12.06 s (form a
+of row P7).
 
 On Windows the launcher starts the serving process outside the job of the
 launcher (`CREATE_BREAKAWAY_FROM_JOB`). The SSH server of the Windows VM puts each
@@ -741,7 +704,7 @@ are not configurable.
 ### Orphan-exit self-probe
 
 On Linux and macOS a `-serve` daemon whose socket path no longer leads back to it
-shuts down, as on 4534d86. So a predecessor retires once a newer daemon took over its socket. The
+shuts down, as on 4534d86. The
 idle timeout closes only a *connection*. The probe is off the JSON-RPC wire. Its
 effects are log lines and, once orphaned, a self-directed authed
 `server.capabilities` request.

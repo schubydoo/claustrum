@@ -318,10 +318,6 @@ func TestLauncherWaitsPastAStaleSocketFile(t *testing.T) {
 	dir := shortTempDir(t)
 	sock := filepath.Join(dir, "rpc.sock")
 	staleSocketFile(t, sock)
-	stale := staleSocketIdent(sock)
-	if stale == nil {
-		t.Fatal("staleSocketIdent gave nil for a socket file")
-	}
 
 	const bindAfter = 300 * time.Millisecond
 	bound := make(chan net.Listener, 1)
@@ -336,7 +332,7 @@ func TestLauncherWaitsPastAStaleSocketFile(t *testing.T) {
 		}
 		bound <- ln
 	}()
-	ok := waitForDaemonAccept(sock, nil, stale)
+	ok, _ := waitForDaemonAccept(sock, 0)
 	took := time.Since(start)
 	if ln := <-bound; ln != nil {
 		_ = ln.Close()
@@ -346,18 +342,5 @@ func TestLauncherWaitsPastAStaleSocketFile(t *testing.T) {
 	}
 	if took < bindAfter {
 		t.Errorf("the wait took %v, want %v or more: it returned on the stale socket file", took, bindAfter)
-	}
-}
-
-// TestStaleSocketIdentIgnoresOtherKinds pins that only a socket file makes the
-// launcher wait: a directory at the socket path gives nil, so the wait for it stays as
-// measured (the launcher returns at once).
-func TestStaleSocketIdentIgnoresOtherKinds(t *testing.T) {
-	dir := shortTempDir(t)
-	if fi := staleSocketIdent(dir); fi != nil {
-		t.Errorf("staleSocketIdent of a directory = %v, want nil", fi.Name())
-	}
-	if fi := staleSocketIdent(filepath.Join(dir, "absent.sock")); fi != nil {
-		t.Errorf("staleSocketIdent of a missing path = %v, want nil", fi.Name())
 	}
 }
