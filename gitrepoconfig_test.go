@@ -913,7 +913,8 @@ func TestRepoConfigBadHeadKeepsItsAnswers(t *testing.T) {
 // TestRepoConfigWorktreeFile pins the tests of a `config.worktree` file (cells
 // X2). With extensions.worktreeConfig, the file of a linked worktree that is the
 // path of git.info gets the size test, with its own path. Its format version is
-// not tested, and the `config.worktree` of the main worktree is not tested.
+// not tested. The `config.worktree` of the main worktree gets the size test too
+// (cell R7 of round task007-03, Linux and macOS VMs).
 func TestRepoConfigWorktreeFile(t *testing.T) {
 	f := newRefusalFixture(t)
 	setRepoConfig(t, f.gitDir, version0+"[extensions]\n\tworktreeConfig = true\n")
@@ -926,8 +927,8 @@ func TestRepoConfigWorktreeFile(t *testing.T) {
 	}
 	big := strings.Repeat("#c\n", (repoConfigMaxBytes+3)/3)
 	setIncludeFile(t, f.gitDir, "config.worktree", big)
-	if got := repoConfigDetail(ctx, f.gitDir, entry, nil); got != "" {
-		t.Errorf("large config.worktree of the main worktree: detail = %q, want none", got)
+	if got, want := repoConfigDetail(ctx, f.gitDir, entry, nil), strconv.Quote(filepath.Join(f.gitDir, "config.worktree"))+configLarge; got != want {
+		t.Errorf("large config.worktree of the main worktree: detail = %q, want %q", got, want)
 	}
 	setIncludeFile(t, f.gitDir, "config.worktree", "[core]\n\tfilemode = false\n")
 	setIncludeFile(t, entry, "config.worktree", big)

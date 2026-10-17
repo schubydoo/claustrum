@@ -240,7 +240,8 @@ The JSON-RPC surface is identical on every OS. Full internals →
       The second rollback runs when the
       `timeoutMs` of the caller expired during the add, the checkout or the copy
       step. It also runs after a post-checkout drain that exceeded that
-      `timeoutMs`, and after a failed read-tree checkout. On Linux and macOS it
+      `timeoutMs`, a failed read-tree checkout and a failed `config.worktree`
+      copy. On Linux and macOS it
       also runs after a failed placement of the index of the new worktree. The
       filter rule of the checkout (`gitfilter.go`) leads to it in two ways. The
       first is a read-tree call that fails at a filter of the repository. The
@@ -531,8 +532,9 @@ The JSON-RPC surface is identical on every OS. Full internals →
       folder. On Linux and macOS it must be the folder that the tests after
       the add accepted, by identity. After an empty answer of git, its
       `gitdir` record must name the leaf. On Windows neither test runs.
-      A file at that name stays. `5fd08069` leaves such a file after a create
-      (round `val-s3p2b2-5`, Linux VM). How it gets there is not measured.
+      An entry there goes first, by one plain `os.Root.Remove` through that
+      root. On Linux and macOS a folder with content fails that remove (round `task007-01`,
+      Linux and macOS VMs).
       Before that step the daemon runs `git config --file <its own file>
       --unset-all` on a file in `.config-<n>` of its own folder.
     - On Windows, the staging folder `<git dir>\.claude-new-worktree-<16 hex>`
@@ -648,13 +650,11 @@ On `git.worktree_remove` the deadline of D5 starts no delete. That method runs n
 `git worktree remove`. A kill refuses or skips a step. One skipped step is the
 daemon's own read of the repository config. After a kill of that call the remove
 goes on as it did before that read. `git.worktree_create` is the exception. Its
-rollback deletes after a failed or killed read-tree checkout, and it removes an
-empty leaf after a failed add. Never read a fired `git-timeout` as "git refused".
+rollback deletes after a failed or killed read-tree checkout, `--unset-all` call
+or `config.worktree` listing, and it removes an empty leaf after a failed add. Never read a fired `git-timeout` as "git refused".
 Opting D5 in is wire-visible. From the code: the deadline also bounds the calls
 of the settings copy, which have a bound of 30 seconds of their own. A kill of
-a test call or of the call about the repository refuses the request. A kill of
-an `--unset-all` call leaves the new worktree without its `config.worktree`
-file. None starts a delete. The Windows cleanup of old
+a test call or of the call about the repository refuses the request. The Windows cleanup of old
 staging entries runs after a good add only.
 
 D13 is a non-flag divergence: verify-before-decompress ordering, on `-cli-url` and on a `-cli-zst` blob with a checksum. D13 is

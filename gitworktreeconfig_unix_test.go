@@ -3,6 +3,7 @@
 package main
 
 import (
+	"context"
 	"os"
 	"path/filepath"
 	"slices"
@@ -15,23 +16,6 @@ const (
 	entryStatusNoRepo = `{"jsonrpc":"2.0","id":1,"result":{"isRepo":false,"clean":false}}`
 	entryStatusClean  = `{"jsonrpc":"2.0","id":1,"result":{"isRepo":true,"clean":true}}`
 )
-
-// enableWorktreeConfig gives the repository of f the worktreeConfig switch and
-// the `config.worktree` file text.
-func enableWorktreeConfig(t *testing.T, f shadowFixture, text string) {
-	t.Helper()
-	config := filepath.Join(f.gitDir, "config")
-	mustWrite(t, config, mustRead(t, config)+"[extensions]\n\tworktreeConfig = true\n")
-	mustWrite(t, filepath.Join(f.gitDir, worktreeConfigName), text)
-}
-
-// dropFixtureWorktree removes the linked worktree of the fixture, and the
-// folder `worktrees` with it.
-func dropFixtureWorktree(t *testing.T, f shadowFixture) {
-	t.Helper()
-	runGit(t, f.repo, "worktree", "remove", "--force", f.wt)
-	_ = os.Remove(filepath.Join(f.gitDir, worktreesSubdir))
-}
 
 func daemonWorkDir(t *testing.T) string {
 	t.Helper()
@@ -646,27 +630,62 @@ func TestWriteWorktreeConfigGuards(t *testing.T) {
 			t.Errorf("the file = %q", got)
 		}
 	})
-	t.Run("a file that is there stays", func(t *testing.T) {
+	// Cells C4 to C6 of round task007-01 (Linux and macOS VMs): a file and an
+	// empty folder at the name are replaced, and a folder with content stays.
+	t.Run("a file that is there is replaced", func(t *testing.T) {
 		f := newReg(t)
-		mustWrite(t, placed(f), "[user]\n\tname = kept\n")
-		if err := writeWorktreeConfig(f.u, f.reg, f.leaf, testedRegistration{}, []byte(text)); err == nil {
-			t.Error("no error for a file that is there")
+		mustWrite(t, placed(f), "x\n")
+		if err := writeWorktreeConfig(f.u, f.reg, f.leaf, testedRegistration{}, []byte(text)); err != nil {
+			t.Fatal(err)
 		}
-		if got := mustRead(t, placed(f)); got != "[user]\n\tname = kept\n" {
-			t.Errorf("the file = %q, want it kept", got)
+		if got := mustRead(t, placed(f)); got != text {
+			t.Errorf("the file = %q, want the copy", got)
 		}
 	})
-	t.Run("a link at the file is not followed", func(t *testing.T) {
+	t.Run("an empty folder that is there is replaced", func(t *testing.T) {
+		f := newReg(t)
+		if err := os.Mkdir(placed(f), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err := writeWorktreeConfig(f.u, f.reg, f.leaf, testedRegistration{}, []byte(text)); err != nil {
+			t.Fatal(err)
+		}
+		if fi, err := os.Lstat(placed(f)); err != nil || !fi.Mode().IsRegular() || mustRead(t, placed(f)) != text {
+			t.Errorf("the entry: %v, %v, want a regular file with the copy", fi, err)
+		}
+	})
+	t.Run("a folder with content stays", func(t *testing.T) {
+		f := newReg(t)
+		mustWrite(t, filepath.Join(placed(f), "f"), "y\n")
+		cause := placeWorktreeConfig(f.u, f.reg, f.leaf, testedRegistration{}, []byte(text))
+		if cause != "removeat config.worktree: directory not empty" {
+			t.Errorf("the cause = %q, want the text of cell C6", cause)
+		}
+		if got := mustRead(t, filepath.Join(placed(f), "f")); got != "y\n" {
+			t.Errorf("the file in the folder = %q, want it kept", got)
+		}
+	})
+	t.Run("a link at the file goes as a link", func(t *testing.T) {
 		f := newReg(t)
 		target := filepath.Join(filepath.Dir(f.leaf), "target")
 		if err := os.Symlink(target, placed(f)); err != nil {
 			t.Fatal(err)
 		}
-		if err := writeWorktreeConfig(f.u, f.reg, f.leaf, testedRegistration{}, []byte(text)); err == nil {
-			t.Error("no error for a link at the file")
+		if err := writeWorktreeConfig(f.u, f.reg, f.leaf, testedRegistration{}, []byte(text)); err != nil {
+			t.Fatal(err)
 		}
 		if _, err := os.Lstat(target); !os.IsNotExist(err) {
 			t.Errorf("the target of the link: %v, want nothing written", err)
+		}
+		if fi, err := os.Lstat(placed(f)); err != nil || !fi.Mode().IsRegular() {
+			t.Errorf("the entry: %v, %v, want a regular file", fi, err)
+		}
+	})
+	t.Run("a guard refusal gives no cause", func(t *testing.T) {
+		f := newReg(t)
+		mustWrite(t, filepath.Join(f.reg, "gitdir"), filepath.Join(filepath.Dir(f.leaf), "other", ".git")+"\n")
+		if cause := placeWorktreeConfig(f.u, f.reg, f.leaf, testedRegistration{}, []byte(text)); cause != "" {
+			t.Errorf("the cause = %q, want none", cause)
 		}
 	})
 	t.Run("a folder below a registration", func(t *testing.T) {
@@ -746,6 +765,115 @@ func TestWriteWorktreeConfigGuards(t *testing.T) {
 		}
 		if _, err := os.Lstat(placed(f)); !os.IsNotExist(err) {
 			t.Errorf("the file: %v, want none", err)
+		}
+	})
+}
+
+// TestWorktreeConfigSourceKinds: the read of the source file of the step after
+// the add, for each kind of entry. A FIFO, a link out of the git directory and a
+// syntax error are cells C9 to C11 of round task007-01 (Linux and macOS VMs).
+// The other rows are claustrum's own.
+func TestWorktreeConfigSourceKinds(t *testing.T) {
+	const text = "[core]\n\tfilemode = false\n"
+	newGitDir := func(t *testing.T) (string, string) {
+		t.Helper()
+		gitDir := filepath.Join(resolveTestRoot(t, t.TempDir()), ".git")
+		if err := os.Mkdir(gitDir, 0o755); err != nil {
+			t.Fatal(err)
+		}
+		return gitDir, filepath.Join(gitDir, worktreeConfigName)
+	}
+	quoted := func(p string) string { return `"` + p + `"` }
+	linkText := func(p string) string { return repoConfigPrefix + quoted(p) + sourceLinkTail }
+	for _, row := range []struct {
+		name  string
+		stage func(t *testing.T, gitDir, path string) (gitDirArg string)
+		want  func(path string) string
+		read  bool
+	}{
+		{"missing", func(t *testing.T, gitDir, _ string) string { return gitDir }, func(string) string { return "" }, false},
+		{"a regular file", func(t *testing.T, gitDir, path string) string {
+			mustWrite(t, path, text)
+			return gitDir
+		}, func(string) string { return "" }, true},
+		{"a relative link to a file inside the git directory", func(t *testing.T, gitDir, path string) string {
+			mustWrite(t, filepath.Join(gitDir, "cw"), text)
+			symlink(t, "cw", path)
+			return gitDir
+		}, func(string) string { return "" }, true},
+		{"a relative link to a FIFO inside the git directory", func(t *testing.T, gitDir, path string) string {
+			mkfifo(t, filepath.Join(gitDir, "cw"))
+			symlink(t, "cw", path)
+			return gitDir
+		}, linkText, false},
+		{"an absolute link", func(t *testing.T, gitDir, path string) string {
+			mustWrite(t, filepath.Join(gitDir, "cw"), text)
+			symlink(t, filepath.Join(gitDir, "cw"), path)
+			return gitDir
+		}, linkText, false},
+		{"a link with a git directory that does not open", func(t *testing.T, gitDir, path string) string {
+			mustWrite(t, filepath.Join(gitDir, "cw"), text)
+			symlink(t, "cw", path)
+			return filepath.Join(gitDir, "gone")
+		}, linkText, false},
+		{"a FIFO", func(t *testing.T, gitDir, path string) string {
+			mkfifo(t, path)
+			return gitDir
+		}, func(p string) string { return repoConfigPrefix + quoted(p) + " is not a regular file" }, false},
+		{"a folder", func(t *testing.T, gitDir, path string) string {
+			if err := os.Mkdir(path, 0o755); err != nil {
+				t.Fatal(err)
+			}
+			return gitDir
+		}, func(p string) string { return repoConfigPrefix + quoted(p) + " is not a regular file" }, false},
+		{"over the size bound", func(t *testing.T, gitDir, path string) string {
+			mustWrite(t, path, "")
+			if err := os.Truncate(path, repoConfigMaxBytes+1); err != nil {
+				t.Fatal(err)
+			}
+			return gitDir
+		}, func(p string) string { return repoConfigPrefix + quoted(p) + configLarge }, false},
+		{"a syntax error", func(t *testing.T, gitDir, path string) string {
+			mustWrite(t, path, "[core]\n\tbare = false\n[broken\n")
+			return gitDir
+		}, func(p string) string { return repoConfigPrefix + "fatal: bad config line 3 in " + quoted(p) }, false},
+	} {
+		t.Run(row.name, func(t *testing.T) {
+			gitDir, path := newGitDir(t)
+			arg := row.stage(t, gitDir, path)
+			got, _, cause, present := worktreeConfigSource(context.Background(), arg, path)
+			if want := row.want(path); cause != want {
+				t.Errorf("cause = %q\nwant %q", cause, want)
+			}
+			if row.read != (string(got) == text) {
+				t.Errorf("text = %q, want the text read: %v", got, row.read)
+			}
+			if wantPresent := row.name != "missing"; present != wantPresent {
+				t.Errorf("present = %v, want %v", present, wantPresent)
+			}
+		})
+	}
+	t.Run("an open that fails", func(t *testing.T) {
+		if os.Geteuid() == 0 {
+			t.Skip("root opens a file of mode 000")
+		}
+		gitDir, path := newGitDir(t)
+		mustWrite(t, path, text)
+		if err := os.Chmod(path, 0); err != nil {
+			t.Fatal(err)
+		}
+		_, _, cause, _ := worktreeConfigSource(context.Background(), gitDir, path)
+		if want := repoConfigPrefix + "open " + path + ": permission denied"; cause != want {
+			t.Errorf("cause = %q\nwant %q", cause, want)
+		}
+	})
+	t.Run("a listing that fails", func(t *testing.T) {
+		gitDir, path := newGitDir(t)
+		mustWrite(t, path, text)
+		ctx, cancel := context.WithCancel(context.Background())
+		cancel()
+		if _, _, cause, _ := worktreeConfigSource(ctx, gitDir, path); !strings.HasPrefix(cause, repoConfigPrefix) || cause == repoConfigPrefix {
+			t.Errorf("cause = %q, want the error of the listing", cause)
 		}
 	})
 }

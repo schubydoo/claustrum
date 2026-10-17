@@ -99,6 +99,15 @@ func runBranchStep(u gitUse, repo, branch string) branchStepResult {
 	if msg := u.swapRefusal("branch", repo); msg != "" {
 		return branchStepResult{kind: branchUnchecked, err: errors.New(msg)}
 	}
+	// After a failed step of the `config.worktree` file the config is read
+	// again. 5fd08069 keeps the branch with that refusal as the cause for a FIFO
+	// and for a syntax error there (cells C9 and C11 of round task007-01, Linux
+	// and macOS VMs).
+	if u.branchGate != nil {
+		if msg := u.branchGate(); msg != "" {
+			return branchStepResult{kind: branchUnchecked, err: errors.New(msg)}
+		}
+	}
 	return checkAndDeleteBranch(u, repo, branch)
 }
 

@@ -475,9 +475,9 @@ func hardenedGitCheckout(ctx context.Context, u gitUse, leaf, gitDir, indexFile 
 		env = append(env, "LANGUAGE=C")
 		runListing(ctx, leaf, gitDir, env)
 		list = append(list, "-c", "lfs.storage="+filepath.Join(u.gitDir, "lfs"))
-		// The items of the `config.worktree` file of the repository come after
-		// that item and before the list of the profile (gitUse.gitDirFront).
-		list = append(list, u.gitDirFront()...)
+		// The items of the `config.worktree` file come after that item and
+		// before the list of the profile (gitUse.checkoutFront).
+		list = append(list, u.checkoutFront(gitDir)...)
 	}
 	cmd := exec.CommandContext(ctx, "git", append(list, hardenedProfileArgs(false, args...)...)...)
 	cmd.Dir = leaf

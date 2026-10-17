@@ -100,7 +100,8 @@ on Windows:
 - When `git.worktree_create` rolls back a worktree, it deletes the worktree path.
   That rollback happens when the caller `timeoutMs` expires during a successful
   add, the checkout or the copy step. It also happens after the post-checkout
-  drain exceeds the caller `timeoutMs`, and after a failed read-tree checkout.
+  drain exceeds the caller `timeoutMs`, after a failed read-tree checkout, and
+  after a failed copy of `config.worktree`.
   On Linux and macOS it also happens when the daemon cannot place the index of
   the new worktree.
   On Linux and macOS the refusals after the add delete nothing, except an
