@@ -214,15 +214,17 @@ func itemOn(c envCall, item string) bool {
 // C12 and C12b of round task007-02, macOS VM).
 func TestConfigStepOfALinkedBase(t *testing.T) {
 	for _, row := range []struct {
-		cell, own string
+		cell, main, own string
 	}{
-		{"C12 the base has its own file", "[core]\n\teol = lf\n"},
-		{"C12b the base has no own file", ""},
+		{"C12 the base has its own file", "[core]\n\tfilemode = false\n", "[core]\n\teol = lf\n"},
+		{"C12b the base has no own file", "[core]\n\tfilemode = false\n", ""},
+		// claustrum's own row: the file of the repository has no setting.
+		{"the file of the repository has no setting", "# none\n", "[core]\n\teol = lf\n"},
 	} {
 		t.Run(row.cell, func(t *testing.T) {
 			f := newSeededShadowFixture(t)
 			dropFixtureWorktree(t, f)
-			enableWorktreeConfig(t, f, "[core]\n\tfilemode = false\n")
+			enableWorktreeConfig(t, f, row.main)
 			base := filepath.Join(resolveTestRoot(t, t.TempDir()), "w0")
 			runGit(t, f.repo, "worktree", "add", "-q", base, "-b", "b0")
 			// git gives the new entry w0 a copy of the file of the repository.

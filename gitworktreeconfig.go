@@ -110,8 +110,11 @@ func (u gitUse) gitDirFront() []string {
 // and no item with no such file (cells C12 and C12b of round task007-02, macOS
 // VM).
 func (u gitUse) checkoutFront(gitDir string) []string {
-	if front := u.gitDirFront(); front == nil || sameGitDirPath(gitDir, u.gitDir) {
-		return front
+	if !u.shadow() || daemonCommonDirStays() {
+		return nil
+	}
+	if sameGitDirPath(gitDir, u.gitDir) {
+		return u.items
 	}
 	return u.entryItems
 }
