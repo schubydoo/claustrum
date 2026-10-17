@@ -664,8 +664,8 @@ const (
 // `config.worktree` file of entry gets the kind test and the size test. Cells X2 ran git.info with a linked
 // worktree as its path. Cells V14 ran git.status, git.list_branches and
 // git.worktree_create too (Linux and Windows VMs), and a remove (cell W14, Linux
-// VM). The `config.worktree` file of the main worktree is not measured for these
-// two tests, and claustrum does not test it.
+// VM). The `config.worktree` file of the main worktree gets its tests in
+// readRepoConfig (worktreeConfigFileDetail).
 //
 // The version value in its text is cut to its first 20 characters, with no mark
 // of the cut. The extension name is cut to its first 60. A value of 20
@@ -699,10 +699,10 @@ func entryConfigDetail(worktreeConfig bool, entry string, log *repoReadLog) stri
 // (cells 1a to 1e, 9a and 9k of s3p2b-edges2-linux, Linux VM). claustrum lists
 // it two times and takes the settings of the first listing. With an extension
 // refusal both list it once (cell Q11 of tier0-18, Linux VM). A syntax error
-// there is refused (cell C3b of tier0-14). A file there that is not a regular
-// file, that is over the size bound of a config or that git cannot list for
-// another reason is not measured: its settings are not used and nothing is
-// refused.
+// there is refused (cell C3b of tier0-14). Before any git call reads it the
+// file gets the kind test, the size test and the open of the config
+// (worktreeConfigFileDetail). A file that git cannot list for another reason is
+// not measured: its settings are not used and nothing is refused.
 //
 // A file of 0 bytes is not listed. On 5fd08069 the first git.info then makes 21
 // calls, with no read of that file (cell p2-K-none-empty-file of
@@ -744,6 +744,9 @@ func readRepoConfig(ctx context.Context, gitDir string, log *repoReadLog) (*repo
 		// Linux VM). Other failures of the listing are not measured. A good file
 		// gets its second listing after the extension test, so an extension
 		// refusal comes after one listing of that file (cell Q11 of tier0-18, Linux VM).
+		if d := worktreeConfigFileDetail(path, log); d != "" {
+			return r, d
+		}
 		if fi, err := os.Stat(path); err != nil || !fi.Mode().IsRegular() || fi.Size() != 0 {
 			_, settings, badLine, ok := listConfigFileText(ctx, path)
 			if badLine != "" {
@@ -768,6 +771,34 @@ func readRepoConfig(ctx context.Context, gitDir string, log *repoReadLog) (*repo
 		listConfigFile(ctx, worktreeListed)
 	}
 	return r, ""
+}
+
+// worktreeConfigFileDetail tests the `config.worktree` file of the git
+// directory at path, with the switch on. The open does not wait (openRepoFile).
+// A missing file passes. 5fd08069 refuses these on git.worktree_create and
+// git.info, before any add (Linux and macOS VMs):
+//
+//   - A FIFO, an empty folder and a link to the null device: `"<path>" is not a
+//     regular file` (cells C8 of round task007-01, V2 of task007-02, R2 and R3
+//     of task007-03). A FIFO also on git.status and git.list_branches (cell V1
+//     of task007-02).
+//   - A file that cannot be opened: the error of the open, `open <path>:
+//     permission denied` for mode 000 (cell R4 of task007-03).
+//   - A file over 8 MiB: the size text of a config (cell R7 of task007-03).
+//
+// Other kinds and the other methods get the same tests (from the code). A
+// dangling link passes, and so does a link to a file (cells R5 and R6).
+func worktreeConfigFileDetail(path string, log *repoReadLog) string {
+	f, err := openRepoFile(path)
+	if err != nil {
+		log.fail()
+		return err.Error()
+	}
+	if f == nil {
+		return ""
+	}
+	defer func() { _ = f.Close() }()
+	return repoFileKindDetail(f, path, repoConfigMaxBytes, configLarge)
 }
 
 // gitDirFilesDetail tests shallow, info/attributes and info/exclude of the git

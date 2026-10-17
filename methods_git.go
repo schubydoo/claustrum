@@ -102,7 +102,8 @@ func (p *gitParams) repoDir() string {
 // daemon's own read of the repository config. After a kill of that call the remove
 // goes on as it did before that read.
 // git.worktree_create is the exception: its rollback deletes after a failed or killed
-// read-tree checkout, and it removes an empty leaf after a failed add. A kill of
+// read-tree checkout or config.worktree step, and it removes an empty leaf after a
+// failed add. A kill of
 // show-toplevel or `worktree list` stops a create with a worktreeRoot with
 // mkdir_failed. A caller that deletes on a git
 // failure must tell our deadline from git's verdict first.
@@ -893,6 +894,11 @@ func gitWorktreeCreateLocked(req *request, p *gitParams, repo string) response {
 		held.holdFor(repo, t)
 		req.use.accepted = held
 	}
+	// A linked baseRepo: the calls in it get the items of the `config.worktree`
+	// file of its entry, as on git.info. 5fd08069 has `-c core.eol=lf` from that
+	// file on the rev-parse calls and on the `worktree add` (cell C12 of round
+	// task007-02, macOS VM).
+	req.listEntryConfig(t)
 	// A repo whose config cannot be enumerated is refused before git runs — the
 	// reference surfaces the same "config-defined hooks could not be pinned off"
 	// detail under errorCode worktree_add_failed. Measured on an ephemeral VM.
@@ -1602,8 +1608,32 @@ func gitWorktreeCreateLocked(req *request, p *gitParams, repo string) response {
 	// The read of the `config.worktree` file of the repository, and the text
 	// that the new worktree gets from it (newWorktreeConfig). The text goes into
 	// the registration below.
-	entryConfig, hasEntryConfig, dropConfigDir := req.newWorktreeConfig(repo, t.pinCommonDir)
+	entryConfig, hasEntryConfig, dropConfigDir, configCause := req.newWorktreeConfig(repo, t)
 	defer dropConfigDir()
+	// A failure of that step fails the create with no checkout, and the undo of a
+	// failed checkout runs (round task007-01, Linux and macOS VMs, and cell C1 on
+	// a Windows VM). Its branch step reads the config of the repository again
+	// first (branchGate). With a refusal there it keeps the branch with that
+	// refusal as its cause, as 5fd08069 does in cells C9 and C11 (Linux and
+	// macOS VMs).
+	filesFailed := func(cause string) response {
+		dropConfigDir()
+		u := req.use
+		u.branchGate = func() string {
+			msg, _ := repoConfigGate(t, false)
+			return msg
+		}
+		undo, kept := undoFailedCheckout(u, repo, p.WorktreePath, createdBranch, checkpoint, tested)
+		return okResult(req.ID, worktreeResult{
+			Success:    false,
+			Error:      completingAddPrefix + cause + undo,
+			ErrorCode:  "worktree_add_failed",
+			BranchKept: kept,
+		})
+	}
+	if configCause != "" {
+		return filesFailed(configCause)
+	}
 	// From here on the repository has the registration. A git directory that is
 	// no longer the held folder fails the checkout with the refusal of its
 	// config, and the rollback keeps the registration and the branch. With a
@@ -1639,7 +1669,9 @@ func gitWorktreeCreateLocked(req *request, p *gitParams, repo string) response {
 		return resp
 	}
 	if hasEntryConfig {
-		placeWorktreeConfig(req.use, indexDir, p.WorktreePath, tested, entryConfig)
+		if cause := placeWorktreeConfig(req.use, indexDir, p.WorktreePath, tested, entryConfig); cause != "" {
+			return filesFailed(cause)
+		}
 	}
 	dropConfigDir()
 	// If the caller's deadline expired during the add, the request

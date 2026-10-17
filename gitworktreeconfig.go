@@ -1,8 +1,10 @@
 package main
 
 import (
+	"cmp"
 	"context"
 	"errors"
+	"io/fs"
 	"maps"
 	"os"
 	"path/filepath"
@@ -101,6 +103,19 @@ func (u gitUse) gitDirFront() []string {
 	return u.items
 }
 
+// checkoutFront are the `-c` items of the read-tree of a create whose
+// --git-dir is gitDir. For the entry of a linked baseRepo they are the items of
+// the file of that entry (entryItems), and none from the file of the
+// repository. 5fd08069 has `-c core.eol=lf` from the file of the entry there,
+// and no item with no such file (cells C12 and C12b of round task007-02, macOS
+// VM).
+func (u gitUse) checkoutFront(gitDir string) []string {
+	if front := u.gitDirFront(); front == nil || sameGitDirPath(gitDir, u.gitDir) {
+		return front
+	}
+	return u.entryItems
+}
+
 // withFront is argv with the items front before it, in a new slice.
 func withFront(front, argv []string) []string {
 	if len(front) == 0 {
@@ -165,28 +180,36 @@ var worktreeConfigDropKeys = []string{"core.bare", "core.worktree"}
 // after it wrote the file of the registration (placeWorktreeConfig). A create
 // that is refused before that step calls it at its reply (not measured).
 //
-// The read of the file is the read of the config gate. Three kinds of file
-// give no file in the new worktree: one that is not a regular file, one over
-// the size bound and one that git cannot list (not measured). An `--unset-all`
-// call that fails gives none either (not measured). A request that names no
-// copy comes here for the listing only: the file of its new worktree is left
-// to git.
-func (req *request) newWorktreeConfig(repo, gitDir string) (text []byte, ok bool, drop func()) {
+// The file is read again after the add (worktreeConfigSource). With a linked
+// baseRepo it is the file of the entry of that worktree, and with no such file
+// the new worktree gets none. cause is the text of a failure of the step, or
+// "". Each failure fails the create (completingAddPrefix): a source that the
+// read refuses, an `--unset-all` call that fails or is ended, and a step of
+// the folder of the daemon that fails (that last one is claustrum's own). A
+// request that names no copy comes here for the listing only: the file of
+// its new worktree is left to git.
+func (req *request) newWorktreeConfig(repo string, t gitDirTrust) (text []byte, ok bool, drop func(), cause string) {
 	drop = func() {}
 	if req.repoRead == nil || !req.repoRead.worktreeConfig {
-		return nil, false, drop
+		return nil, false, drop, ""
 	}
 	ctx, cancel := gitCtx()
 	defer cancel()
-	source, settings, _, ok := listConfigFileText(ctx, filepath.Join(gitDir, worktreeConfigName))
+	path := filepath.Join(t.pinCommonDir, worktreeConfigName)
+	if t.worktreeEntry != "" {
+		path = filepath.Join(t.worktreeEntry, worktreeConfigName)
+	}
+	source, settings, cause, present := worktreeConfigSource(ctx, t.pinCommonDir, path)
 	u := req.use
-	if _, named := u.names(repo); !ok || !named {
-		return nil, false, drop
+	if _, named := u.names(repo); !named || (!present && cause == "") {
+		return nil, false, drop, ""
+	}
+	if cause != "" {
+		return nil, false, drop, cause
 	}
 	dir, remove, err := u.requestDir(shadowConfigDirPrefix, "")
 	if err != nil {
-		logWarnf("[GitHandler] the config.worktree file of the new worktree was not made: %v", err)
-		return nil, false, drop
+		return nil, false, drop, err.Error()
 	}
 	gone := false
 	drop = func() {
@@ -197,17 +220,19 @@ func (req *request) newWorktreeConfig(repo, gitDir string) (text []byte, ok bool
 	}
 	root, err := os.OpenRoot(dir)
 	if err != nil {
-		logWarnf("[GitHandler] the config.worktree file of the new worktree was not made: %v", err)
-		return nil, false, drop
+		return nil, false, drop, err.Error()
 	}
 	defer func() { _ = root.Close() }()
 	if err := writeRootFile(root, worktreeConfigName, source, 0o600); err != nil {
-		logWarnf("[GitHandler] the config.worktree file of the new worktree was not made: %v", err)
-		return nil, false, drop
+		return nil, false, drop, err.Error()
 	}
 	file := filepath.Join(dir, worktreeConfigName)
 	// The calls get the cleaning of gitChildEnv, as on 5fd08069 (cell V2 of round
-	// task004-03, Linux, macOS and Windows VMs).
+	// task004-03, Linux, macOS and Windows VMs). A call that fails gives the
+	// cause `removing <key> from the new worktree's config.worktree: exit status
+	// 5` (cell C1 of round task007-01, Linux, macOS and Windows VMs). A call that
+	// the bound ended gives `signal: killed` at about 30 s (cell C2, Linux and
+	// macOS VMs). The text of git is not in the cause: no cell had any.
 	for _, key := range worktreeConfigDropKeys {
 		if !slices.ContainsFunc(settings, func(s repoSetting) bool { return s.key == key }) {
 			continue
@@ -215,21 +240,100 @@ func (req *request) newWorktreeConfig(repo, gitDir string) (text []byte, ok bool
 		r := boundedGit(shadowCallBound, "", append(gitChildEnv(), "GIT_DIR="+os.DevNull),
 			"config", "--file", file, "--unset-all", key)
 		if r.err != nil {
-			logWarnf("[GitHandler] the config.worktree file of the new worktree was not made: git config --unset-all %s: %s", key, r.detail())
-			return nil, false, drop
+			return nil, false, drop, "removing " + key + " from the new worktree's config.worktree: " + r.err.Error()
 		}
 	}
 	fi, err := root.Lstat(worktreeConfigName)
 	if err != nil || !fi.Mode().IsRegular() || fi.Size() > repoConfigMaxBytes {
-		logWarnf("[GitHandler] the config.worktree file of the new worktree was not made: its text cannot be read")
-		return nil, false, drop
+		return nil, false, drop, "the config.worktree file of the new worktree cannot be read"
 	}
 	text, err = root.ReadFile(worktreeConfigName)
 	if err != nil {
-		logWarnf("[GitHandler] the config.worktree file of the new worktree was not made: %v", err)
-		return nil, false, drop
+		return nil, false, drop, err.Error()
 	}
-	return text, true, drop
+	return text, true, drop, ""
+}
+
+// sourceLinkTail ends the cause of a source file that is a link the step does
+// not follow (cell C10 of round task007-01, Linux and macOS VMs).
+const sourceLinkTail = ": it is a link that is absolute, or does not lead to a regular file inside the git directory; replace it with a copy of the file"
+
+// worktreeConfigSource reads the `config.worktree` file at path for the step
+// after the add, and lists it with one git call. present is false, with no
+// cause, for a missing file. cause is a refusal of the file with
+// repoConfigPrefix, or "".
+//
+// 5fd08069 refuses these after the add (round task007-01, Linux and macOS VMs):
+//
+//   - A FIFO: `"<path>" is not a regular file` (cell C9). The open does not
+//     wait (openRepoFile).
+//   - A link to a file outside the git directory: sourceLinkTail (cell C10). A
+//     link is opened through a root at gitDir, so only a relative link that
+//     stays inside gitDir is followed. That reading of the text is not
+//     measured for a relative link.
+//   - A syntax error: the text of git with the path in quotes (cell C11).
+//
+// The size text, an open error and a listing that fails for another reason
+// are claustrum's own causes.
+func worktreeConfigSource(ctx context.Context, gitDir, path string) (text []byte, settings []repoSetting, cause string, present bool) {
+	refuse := func(detail string) ([]byte, []repoSetting, string, bool) {
+		return nil, nil, repoConfigPrefix + detail, true
+	}
+	fi, err := os.Lstat(path)
+	if errors.Is(err, fs.ErrNotExist) {
+		return nil, nil, "", false
+	}
+	var f *os.File
+	if err == nil && fi.Mode()&fs.ModeSymlink != 0 {
+		f = openSourceLink(gitDir, path)
+		if f == nil {
+			return refuse(quoteOperand(path) + sourceLinkTail)
+		}
+	} else {
+		if f, err = openRepoFile(path); err != nil {
+			return refuse(err.Error())
+		}
+		if f == nil {
+			return nil, nil, "", false
+		}
+	}
+	defer func() { _ = f.Close() }()
+	if d := repoFileKindDetail(f, path, repoConfigMaxBytes, configLarge); d != "" {
+		return refuse(d)
+	}
+	text, detail, ok := readRepoFile(f, path, repoConfigMaxBytes, configLarge)
+	if !ok {
+		return refuse(cmp.Or(detail, quoteOperand(path)+" cannot be read"))
+	}
+	out, errOut, err := listRepoConfigText(ctx, text, gitVersionDir, repoConfigListEnv())
+	if err != nil {
+		if d := badLineDetail(errOut, path); d != "" {
+			return refuse(d)
+		}
+		return refuse(err.Error())
+	}
+	return text, listedSettings(out), "", true
+}
+
+// openSourceLink opens the link at path through a root at gitDir, or gives
+// nil. The file must be a regular file. The open does not wait.
+func openSourceLink(gitDir, path string) *os.File {
+	// A path that Rel cannot make relative gives "", which no root opens.
+	rel, _ := filepath.Rel(gitDir, path)
+	root, err := os.OpenRoot(gitDir)
+	if err != nil {
+		return nil
+	}
+	defer func() { _ = root.Close() }()
+	f, err := root.OpenFile(rel, os.O_RDONLY|openNonBlocking|openNoTerminal, 0)
+	if err != nil {
+		return nil
+	}
+	if fi, err := f.Stat(); err != nil || !fi.Mode().IsRegular() {
+		_ = f.Close()
+		return nil
+	}
+	return f
 }
 
 // writeRootFile makes the new file name in root with the content data and the
@@ -269,26 +373,46 @@ func writeRootFile(root *os.Root, name string, data []byte, perm os.FileMode) er
 //     the tests after the add accepted. With tested not set (no answer of git,
 //     and Windows), the gitdir record of the registration must name leaf where
 //     that record is compared (adminRecordChecked).
-//   - A `config.worktree` file that is there stays: the file is made with
-//     O_EXCL.
+//   - An entry at `config.worktree` goes first, with one plain remove through
+//     the root at the registration, never as a tree. 5fd08069 replaces a file
+//     there and an empty folder there with the copy (cells C4 and C5 of round
+//     task007-01, Linux and macOS VMs, and C4 on a Windows VM). A folder with
+//     content fails the remove, with the cause `removeat config.worktree:
+//     directory not empty` (cell C6, Linux and macOS VMs). A link there goes
+//     as a link (claustrum's own). Then the file is made with O_EXCL.
 //
-// A step that fails writes nothing and logs one line. The create goes on (not
-// measured).
-func placeWorktreeConfig(u gitUse, registration, leaf string, tested testedRegistration, text []byte) {
-	if err := writeWorktreeConfig(u, registration, leaf, tested, text); err != nil {
+// cause is the error of that remove or of the write, and the create fails
+// with it. A read-only registration gives `openat config.worktree: permission
+// denied` (cell C7, Linux and macOS VMs). A guard above that refuses writes
+// nothing, logs one line and gives no cause: the create goes on, as before
+// (claustrum's own).
+func placeWorktreeConfig(u gitUse, registration, leaf string, tested testedRegistration, text []byte) (cause string) {
+	err := writeWorktreeConfig(u, registration, leaf, tested, text)
+	var refused registrationRefusal
+	if errors.As(err, &refused) {
 		logWarnf("[GitHandler] the config.worktree file of the new worktree was not written: %v", err)
+		return ""
 	}
+	if err != nil {
+		return err.Error()
+	}
+	return ""
 }
 
+// registrationRefusal is a guard of writeWorktreeConfig that refused the
+// registration.
+type registrationRefusal struct{ error }
+
 func writeWorktreeConfig(u gitUse, registration, leaf string, tested testedRegistration, text []byte) error {
+	refuse := func(text string) error { return registrationRefusal{errors.New(text)} }
 	reg := filepath.Clean(registration)
 	name := filepath.Base(reg)
 	if registration == "" || !u.shadow() || name == "." || name == ".." ||
 		!sameGitDirPath(filepath.Dir(reg), filepath.Join(filepath.Clean(u.heldGitDir()), worktreesSubdir)) {
-		return errors.New("the registration is no entry of the worktrees folder of the repository")
+		return refuse("the registration is no entry of the worktrees folder of the repository")
 	}
 	if tested.path == "" && adminRecordChecked && readAdminRecord(reg, leaf) != recordNamesLeaf {
-		return errors.New("the registration has no gitdir record that names the new worktree")
+		return refuse("the registration has no gitdir record that names the new worktree")
 	}
 	// A create that holds its git directory writes through the held folder
 	// (acceptedGitDir), and opens nothing by the path.
@@ -298,23 +422,28 @@ func writeWorktreeConfig(u gitUse, registration, leaf string, tested testedRegis
 	} else {
 		opened, err := os.OpenRoot(u.gitDir)
 		if err != nil {
-			return err
+			return registrationRefusal{err}
 		}
 		defer func() { _ = opened.Close() }()
 		root = opened
 	}
 	rel := filepath.Join(worktreesSubdir, name)
 	if fi, err := root.Lstat(rel); err != nil || !fi.IsDir() {
-		return errors.New("the registration is not a folder")
+		return refuse("the registration is not a folder")
 	}
 	entry, err := root.OpenRoot(rel)
 	if err != nil {
-		return err
+		return registrationRefusal{err}
 	}
 	defer func() { _ = entry.Close() }()
 	if tested.path != "" {
 		if fi, err := entry.Stat("."); err != nil || tested.info == nil || !os.SameFile(fi, tested.info) {
-			return errors.New("the registration is not the folder that the tests after the add accepted")
+			return refuse("the registration is not the folder that the tests after the add accepted")
+		}
+	}
+	if _, err := entry.Lstat(worktreeConfigName); err == nil {
+		if err := entry.Remove(worktreeConfigName); err != nil {
+			return err
 		}
 	}
 	return writeRootFile(entry, worktreeConfigName, text, 0o666)

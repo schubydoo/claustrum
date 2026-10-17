@@ -52,6 +52,9 @@ type gitUse struct {
 	// lightSix gives the light calls of a request with no folder the six values
 	// of profileEnv (noRepoCreateCalls).
 	lightSix bool
+	// branchGate is the refusal of the config of the repository before the
+	// branch step of a rollback, or nil for no such read (runBranchStep).
+	branchGate func() string
 }
 
 // inFolder reports whether the request keeps its short-lived folders in the

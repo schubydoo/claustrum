@@ -896,6 +896,7 @@ cell C-… is of round `tier0-20` against `5fd08069` on a Linux VM.
 | git.worktree_create | `failed to create parent directory: cannot determine the repository's work tree: <exec error>` | `errorCode:"mkdir_failed"`, cell C-W17b |
 | git.worktree_create | `failed to create parent directory: cannot list the repository's worktrees: <exec error>` | `errorCode:"mkdir_failed"`, cell C-W17 |
 | git.worktree_create | `git worktree add failed: <text>` | in `error`, `errorCode:"worktree_add_failed"`. `<text>` is made from git's stderr by the [text rule](#git-directory-trust-check). The text of claustrum does not start with git's graft-file `hint:` lines. The rollback runs no git call and removes the leaf only if it is empty. A pre-existing branch is not deleted (`4534d86`). A failed add answers this frame even when the caller `timeoutMs` expired during the add (measured against `f6010b97` and `90fca6e6` on a macOS VM) |
+| git.worktree_create | `git worktree add failed (completing the new worktree's git files): <cause>` | in `error`, `errorCode:"worktree_add_failed"`, when the `config.worktree` step after the add fails. No checkout runs, and the rollback is that of a failed checkout. It wins over an expired `timeoutMs` (cell R8 of round `task007-03`, Linux VM). `5fd08069`, rounds `task007-01` and `task007-03` (Linux and macOS VMs), and cell C1 on a Windows VM |
 | git.worktree_create | `git worktree add failed: <fallback text> (attaching to the existing branch <b> was refused first: <attach text>)` | in `error`, `errorCode:"worktree_add_failed"`, when the attach add for `existingBranch` fails and the fallback `-b <branchName>` add fails too. The text rule makes each text on its own, each with its own 512-byte cap. Measured against `f6010b97` and `90fca6e6` on a macOS VM |
 | git.worktree_create | `git worktree add failed (checkout): <text>` | in `error`, `errorCode:"worktree_add_failed"`, when the `read-tree` checkout fails. Same text rule, and the same rule for the `hint:` lines. The new directory is removed. The branch the call created goes only when another ref reaches its tip (see [The branch step](#the-branch-step)). In attach mode the attached branch is kept (measured against `f6010b97`). On Linux and macOS a failed placement of the index answers this frame too. The OS error is, for example, `openat <registration name>/index: permission denied` (`89cb6289`, rows A14 and A14f on a Linux VM, A14 and A14b on a macOS VM) or `open <temporary directory>/index: no such file or directory` (cell X1, Linux and macOS VMs) |
 | git.worktree_create | `Claude doesn't run the "<name>" git filter, because only this repository's own git config defines it. If you trust that filter, copy the [filter "<name>"] section from that config (usually .git/config) into ~/.gitconfig on the remote machine, then try again.` | in `error`, `errorCode:"repository_only_filter"`, when a path of the checkout uses a git filter that only the git config of the repository defines. The rollback is the one of a failed checkout. Measured against `5fd08069` on Linux and Windows VMs. A quote mark in `<name>` has a backslash before it (Linux VM). `89cb6289` runs the filter there. |
@@ -1887,11 +1888,11 @@ version and the extensions of an included file are not tested (cells X7 and X9).
 | `the repository uses git extension "<name>", or a value of it, that this version of Claude does not support` | The format version is `1`, and an `extensions.<name>` setting is refused. `<name>` is in lower case. It is cut to its first 60 characters, with no mark. A name of 60 characters is whole, and one of 61 shows 60 (cells P1, Linux, macOS and Windows VMs). Under version `0` none of the settings that ran is refused |
 | `"<file>" includes "<value>", and Claude expands neither ~user nor %(prefix), nor ~ where no home directory is set; write that path out in full` | An include value of the form `~user/…` or `%(prefix)/…`, in an `include` section or in an `includeIf` section. The condition of the `includeIf` section does not have to match (cells N12, Linux VM). `<file>` is the file that holds the setting. `<value>` is cut to its first 100 characters (cells V12, Linux and macOS VMs) |
 | `its includes go past what Claude follows (16 files, nested 3 deep)` | More than 16 included files, or an include chain of more than 3 levels below the config. A missing file counts, and so does the file of an `includeIf` section, also a missing one (cells V8 and N7). A file that includes itself gets this text too |
-| `"<file>" is not a regular file` | The config or an included file is a FIFO or a directory. A config that is a symbolic link to the null device gets it. So does an included file that is a symbolic link to a FIFO. `include.path = ~` gets it with the path of the home folder (cell N13, Linux VM). The daemon does not wait on a FIFO |
-| `"<file>" is larger than 8 MiB` | The config or an included file has more than 8388608 bytes (cells X6 and V7) |
+| `"<file>" is not a regular file` | The config or an included file is a FIFO or a directory. A config that is a symbolic link to the null device gets it. So does an included file that is a symbolic link to a FIFO. `include.path = ~` gets it with the path of the home folder (cell N13, Linux VM). So does a `config.worktree` of the git directory with `extensions.worktreeConfig` on (cells C8, V1, V2, R2 and R3 of rounds `task007-01` to `task007-03`, Linux and macOS VMs). The daemon's own read does not wait on a FIFO |
+| `"<file>" is larger than 8 MiB` | The config, an included file or that `config.worktree` has more than 8388608 bytes (cells X6 and V7, and R7 of round `task007-03`) |
 | `"<file>" has a setting in section "<section>" whose name is longer than 1024 bytes` | The full name of a setting, with its section and subsection, has more than 1024 bytes. The pair 1024 and 1025 is measured in `core`, `remote`, `lfs`, `url`, `filter`, `extensions`, `include` and `includeif`. Cells N6 measured it in `index`, `feature` and `checkout` too (Linux, macOS and Windows VMs). `<section>` is in lower case, without the subsection. The bound holds in an included file, with the path of that file. Cells V7 measured that one level below the config, and cells N8 two and three levels below it |
 | `"<file>" has more settings than Claude reads (8 MiB); remove repeated ones` | See "The count of settings" below |
-| `open <file>: <reason>` | The daemon cannot open the config or an included file. A file of mode 000 gives `permission denied`. A socket gives `no such device or address` on a Linux VM. As the config, a socket gives `operation not supported on socket` on a macOS VM |
+| `open <file>: <reason>` | The daemon cannot open the config, an included file or that `config.worktree` (cell R4 of round `task007-03`). A file of mode 000 gives `permission denied`. A socket gives `no such device or address` on a Linux VM. As the config, a socket gives `operation not supported on socket` on a macOS VM |
 | `fatal: bad config line <n> in "<file>"` | The config or an included file has a syntax error. So does the `config.worktree` file of the git directory with `extensions.worktreeConfig` on (cell C3b of round `tier0-14`, Linux VM). It comes before an extension refusal (cell E3 of round `tier0-16`, Linux VM). The text is that of git, with the path in quotes |
 | `"<included file>" is outside "<repo>", and on Windows Claude reads a repository's settings only from inside it; if the line that includes it is yours and you trust the file, put that line into ~/.gitconfig on the remote machine instead` | Windows: a relative include that leaves the repository. For a bare repository `<repo>` is its git directory (cell W6) |
 | `"<file>" includes "<value>", and on Windows Claude follows an include only if its path is relative and stays inside the repository; if that line is yours and you trust the file, put the line into ~/.gitconfig on the remote machine instead` | Windows: an absolute include value, also to a missing file, `~/x` and `~root/x`. An absolute value and `~/x` get it in an `includeIf` section whose condition does not match too (cells N12w). `<value>` is cut to its first 300 characters. A value of 300 characters is whole, and one of 301 shows 300 (cells P7w, Windows VM) |
@@ -2057,15 +2058,14 @@ VM. Rounds `val-s3p2b2-3` and `val-s3p2b2-5` ran a build with the settings copy.
   ran, such as `preciousObjects = -1`.
 - The cuts of the format version value and of the extension name count
   characters. The cells have ASCII text.
-- With `extensions.worktreeConfig` on, a `config.worktree` file of the git
-  directory that is not regular or is too large is not used, and gives no
-  refusal.
+- The `config.worktree` open error and size bound hold on `git.status`,
+  `git.list_branches` and `git.worktree_remove` too, and every kind on Windows.
 - The name bound and the count of settings are tested on a whole file before an
   include of that file is followed. That order is fitted to two cells of 200000
   include lines of a missing file, which get the "more settings" text.
 - The two include limits come before the open of an included file.
-- The file of an `includeIf` section is not read. An open error there, and at a
-  `config.worktree` file, gives no refusal.
+- The file of an `includeIf` section is not read. An open error there gives no
+  refusal.
 - An open error other than the measured ones gets the same `open <file>: <reason>`
   form.
 - A `~/x` include is joined to the home folder and cleaned.
@@ -3836,7 +3836,9 @@ the Linux, macOS and Windows VMs of each row. `<b>` is `branchName` as sent.
   a second create at the same path, and before an attach add. claustrum does not.
   The frames are equal in rows R17a, R17b, C06, C06b, C06c and C09 (L). This is a
   gap in the calls only.
-- The steps, in order. "Keep" means that the branch stays.
+- The steps, in order. "Keep" means that the branch stays. After a failed
+  `config.worktree` step of a create the config is read first, and a refusal
+  keeps the branch (cells C9 and C11 of round `task007-01`, L M).
   1. for-each-ref fails or is stopped: keep (rows R18 and R22a, L, B2-02, M W). A
      listing that does not parse keeps the branch too. That is claustrum's choice
      (not measured). If the configuration listing before for-each-ref exits 128
@@ -3914,6 +3916,7 @@ The create rollback adds a text part after `; and the undo could not finish for
 | the same, after a failed leaf rmdir | `<rmdir text>; branch <b> was left in place: it now has commits …` with no `the worktree itself was removed, but ` | `"branchKept":true` | C05 (L W) |
 | 10001 records, a case twin, a listing that does not parse, or rev-parse exit 0 | `branch <b> still exists; delete it by hand (for example: git branch -d <b>, which git refuses if that would lose commits) before retrying this branch name: could not check whether another branch or remote-tracking ref reaches its commits` | none | C06 (L M W), C06b, B2-09c (L) |
 | for-each-ref, rev-parse or rev-list failed or stopped | the same, then a space and the process error in parentheses, for example ` (exit status 128)` or ` (signal: killed)` | none | B2-09a, B2-09b, B2-09f (L) |
+| after a failed `config.worktree` step, the config is refused at a second read | the same, with that refusal in parentheses | none | C9, C11 of round `task007-01` (L M) |
 | update-ref failed or stopped | `branch <b> still exists; delete it by hand (for example: git branch -D <b>) before retrying this branch name: <process error>`, for example `exit status 128` or `signal: terminated` | none | C07a, B2-09e (L), B2-09e (M) |
 | the same, with `refs/heads/<b>.lock` present | `… before retrying this branch name. A lock refs/heads/<b>.lock is also present: if another git process is running against this repository, the lock may be live and clears on its own; if none is, it is stale debris of the interrupted delete — remove the lock file by hand too: <process error>` | none | C07b (L) |
 | the name starts with `+`, so no call runs | `branch <b> left in place (its name is unsafe to pass to update-ref); delete it by hand` | none | X1, X2 (L) |

@@ -114,7 +114,8 @@ func undoFailedAdd(worktreePath string, cp worktreeCheckpoint) {
 }
 
 // undoFailedCheckout rolls back git.worktree_create after the add succeeded: after
-// a failed read-tree checkout, a failed placement of the index (Linux and macOS),
+// a failed read-tree checkout, a failed config.worktree step, a failed placement of
+// the index (Linux and macOS),
 // a failed spelling call of git for the registration (spellingRetryText, Linux and macOS),
 // or after the caller's timeoutMs expired during the
 // add, the checkout, a checkout drain that overran the drain cap, or the copy step.
