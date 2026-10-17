@@ -719,7 +719,6 @@ func openDaemonLog(socket string) *os.File {
 // file, no socket file, an empty run folder). macOS row P7 gives 12.08 to 12.16 s, and
 // two Windows rows give 12.058 s. 5db5e4a gave up after 10.06 s in the
 // same case, and this value was 10 s until that row.
-// The launcher then prints "timeout waiting for daemon to accept on <socket>".
 // var so tests can shrink it.
 var daemonStartTimeout = 12 * time.Second
 
@@ -790,13 +789,9 @@ func daemonizeWithToken(socket, forwardToken string) {
 		defer pr.Close() // parent's copy of the read end; the child has its own
 	}
 
-	// Record whether a LIVE predecessor daemon is already on this socket, and its
-	// inode, BEFORE the child rebinds the path — so the wait below can tell the
-	// successor's fresh socket from the predecessor's (7d193f89 handoff).
-	predInfo := livePredecessorIdent(socket)
-	// The socket file that is on disk before the child starts. The wait below does not
-	// take the stale file of a dead daemon for the socket of the child.
-	staleInfo := staleSocketIdent(socket)
+	// The pid of a daemon that answers on the socket path now, before the child
+	// starts. The wait below does not take a socket of that pid for the new one.
+	predPID := livePredecessorPID(socket)
 	if err := startDaemonChild(cmd); err != nil {
 		fmt.Fprintf(os.Stderr, "daemonize: %v\n", err)
 		osExit(1)
@@ -805,20 +800,17 @@ func daemonizeWithToken(socket, forwardToken string) {
 		_, _ = io.WriteString(pipeW, forwardToken)
 		_ = pipeW.Close() // closing the write end gives the child's read an EOF
 	}
-	// Do not return until the child is actually accepting. The reference's
-	// launcher blocks here, so a client that runs `-serve` over SSH and connects
-	// immediately always finds a listening socket; claustrum returned the moment
-	// the fork succeeded and lost that race. Measured at 5db5e4a — socket present
-	// at the instant the launcher returned: reference YES, claustrum NO.
-	if !waitForDaemonAccept(socket, predInfo, staleInfo) {
-		// The socket never appeared (or a live predecessor never handed off). The
-		// reference reports exactly this and exits 1 — measured with a zero-byte
+	accepted, sawPredecessor := waitForDaemonAccept(socket, predPID)
+	if !accepted {
+		// The reference reports this and exits 1, measured with a zero-byte
 		// -token-file, where its child refuses to start:
 		// "claude-ssh: timeout waiting for daemon to accept on <socket>", exit 1,
-		// after the full deadline (10.06 s on 5db5e4a, 12.06 s on 89cb6289, Linux row
-		// P7). When a predecessor was still holding the
-		// socket, claustrum reports the distinct "daemon did not take over" instead.
-		if predInfo != nil {
+		// after the full deadline (12.06 s on 89cb6289, Linux row P7). When a connect
+		// of the wait reached the predecessor, the text is "daemon did not take over"
+		// (round task006-01, cell C4, Linux and macOS). Otherwise it is the timeout
+		// text, also with a socket file that never accepted (cells C5 and C9n, Linux VM,
+		// C5 and C9, macOS VM).
+		if sawPredecessor {
 			fmt.Fprintf(os.Stderr, "claustrum: daemon did not take over %s (predecessor still owns it)\n", socket)
 		} else {
 			fmt.Fprintf(os.Stderr, "claustrum: timeout waiting for daemon to accept on %s\n", socket)
@@ -828,56 +820,52 @@ func daemonizeWithToken(socket, forwardToken string) {
 	osExit(0)
 }
 
-// waitForDaemonAccept waits for the daemonized child to come up, reporting
-// whether it did. It polls for the socket PATH TO EXIST, then dials once to
-// confirm, and that dial is what puts a "New connection from: @" /
-// "Connection closed: @" pair in a freshly started daemon's log, after the listening line.
+// daemonStartPoll is the time between two connects of the launcher wait. 5fd08069
+// made 234 to 240 connects in its 12 s wait (round task006-01, cell C4, Linux and
+// macOS VMs). var so tests can shrink it.
+var daemonStartPoll = 50 * time.Millisecond
+
+// daemonPeerPID is connPeerPID behind a seam, so a test can stage a peer pid that
+// cannot be read.
+var daemonPeerPID = connPeerPID
+
+// waitForDaemonAccept waits for the daemonized child to accept, and reports whether
+// it did. It connects to the socket path every daemonStartPoll until
+// daemonStartTimeout. Only a connect that works ends the wait, and the connection is
+// closed at once. So the log of the daemon that answered holds a
+// "New connection from: @" / "Connection closed: @" pair from the launcher.
 //
-// Polling for existence rather than for a successful dial is not a shortcut —
-// it is what the reference does, and the two are distinguishable. Measured at
-// 5db5e4a:
+// A socket file that does not accept yet, a folder at the path and a stale socket
+// file do not end the wait. On 5fd08069 a client connect right after the launcher
+// exit worked when the listen was late, and the launcher timed out with a folder
+// with a file at the path (round task006-01, cells C7b and C9n, Linux VM).
 //
-//	socket path occupied by a directory  path exists at once -> exit 0 in 0.08s
-//	child never binds (empty token file) path never appears  -> exit 1 at 10.06s
-//
-// On 89cb6289 the second case is exit 1 at 12.06 s (Linux row P7).
-//
-// A dial-based wait would invert both: it would sit out the full deadline on the
-// occupied path (nothing ever accepts there) and it would give up early on any
-// child that dies, where the reference keeps waiting. The confirming dial's
-// result is deliberately ignored for the same reason.
-//
-// stale is the socket file that was on disk before the child started (staleSocketIdent,
-// nil when the path held no socket). While the path still holds that file and the dial
-// fails, the wait goes on. So with the stale socket of a killed daemon on disk, the
-// launcher waits for the new daemon and dials it once. Measured on a Windows VM against
-// f6010b97 and 89cb6289 (rows WN03 and WN05), and on Linux (row XA). The log of the new
-// daemon holds the connection pair right
-// after the listening line. A dial that succeeds returns at once, also when a live older
-// daemon answers it. With stale nil the wait is the one described above.
-func waitForDaemonAccept(socket string, pred, stale os.FileInfo) bool {
+// predPID is the pid of the daemon that answered before the child started, or 0.
+// A connect to that pid does not end the wait, and sawPredecessor reports one. The
+// test is the peer pid, not the identity of the socket file: on ext4 the new
+// socket kept the inode of the old one in 40 of 40 starts of 5fd08069 (cell C3,
+// Linux VM). With predPID 0, as on Windows, the first connect that works ends the
+// wait. With predPID set, a connect whose peer pid cannot be read does not end it:
+// claustrum's own, not measured. One case is a peer that closed at once on macOS,
+// which may give no pid (not measured).
+func waitForDaemonAccept(socket string, predPID int) (accepted, sawPredecessor bool) {
 	deadline := time.Now().Add(daemonStartTimeout)
 	for {
-		if fi, err := os.Stat(socket); err == nil {
-			// A socket is present. When a LIVE predecessor was on this path, wait
-			// until the inode differs — the successor has unlinked the old socket and
-			// bound a fresh one (handoff complete). With no predecessor, a present
-			// socket is the child's, unless it is the stale file of a dead daemon. The
-			// stale test below covers that file.
-			if pred == nil || !os.SameFile(fi, pred) {
-				c, err := net.Dial("unix", socket)
-				if err == nil {
-					_ = c.Close()
-				}
-				if err == nil || stale == nil || !os.SameFile(fi, stale) {
-					return true
-				}
+		c, err := net.DialTimeout("unix", socket, max(time.Until(deadline), time.Millisecond))
+		if err == nil {
+			pid := daemonPeerPID(c)
+			_ = c.Close()
+			if predPID == 0 || (pid != 0 && pid != predPID) {
+				return true, sawPredecessor
+			}
+			if pid == predPID {
+				sawPredecessor = true
 			}
 		}
-		if time.Now().After(deadline) {
-			return false
+		if !time.Now().Before(deadline) {
+			return false, sawPredecessor
 		}
-		time.Sleep(20 * time.Millisecond)
+		time.Sleep(daemonStartPoll)
 	}
 }
 
@@ -1313,8 +1301,7 @@ func (s *server) closeAll(socket string) {
 	// below and the record removals of -keep-children see every child whose start
 	// returned before the shutdown began, and no record write is open at the exit.
 	s.procs.stopStarts()
-	// Unlink the socket only if it is still the inode we bound: a restart's successor
-	// may already have rebound the path.
+	// Unlink the socket only if it still has the file identity that we bound.
 	removeSocketIfOwned(socket, s.sockInfo)
 	removePersistedToken(socket, s.tokenInfo)
 	// Remove rpc.pipe on the same graceful path as rpc.sock/daemon.token, and with the

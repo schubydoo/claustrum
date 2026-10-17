@@ -41,3 +41,12 @@ func TestLauncherBoundIs12Seconds(t *testing.T) {
 		t.Errorf("daemonStartTimeout = %v, want 12s", daemonStartTimeout)
 	}
 }
+
+// TestLauncherPollIs50Milliseconds pins the time between two connects of the launcher
+// wait. 5fd08069 made 234 to 240 connects in 12 s (round task006-01, cell C4, Linux and
+// macOS VMs).
+func TestLauncherPollIs50Milliseconds(t *testing.T) {
+	if daemonStartPoll != 50*time.Millisecond {
+		t.Errorf("daemonStartPoll = %v, want 50ms", daemonStartPoll)
+	}
+}

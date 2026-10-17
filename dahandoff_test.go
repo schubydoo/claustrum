@@ -1,15 +1,10 @@
 package main
 
 import (
-	"context"
-	"errors"
-	"net"
 	"os"
 	"path/filepath"
 	"runtime"
-	"syscall"
 	"testing"
-	"time"
 )
 
 // removeSocketIfOwned must NOT delete a socket a successor rebound (different inode)
@@ -65,72 +60,5 @@ func TestRemoveSocketIfOwned(t *testing.T) {
 	removeSocketIfOwned(sock, nil)
 	if _, err := os.Stat(sock); err == nil {
 		t.Error("removeSocketIfOwned(nil) should unlink unconditionally")
-	}
-}
-
-// isSocketDead classifies a dial error: a missing socket file or a refused
-// connection means nothing is listening (stale socket), anything else is treated as
-// "possibly live" so the launcher keeps waiting for a genuine handoff.
-//
-// The "wrapped not exist" row is the one that guards the OpError-unwrap bug:
-// net.DialTimeout wraps its errno in *net.OpError, which os.IsNotExist does not
-// unwrap, so the old os.IsNotExist(err) arm returned false for the ENOENT a vanished
-// socket produces. errors.Is walks the chain and syscall.Errno.Is maps ENOENT onto
-// fs.ErrNotExist on every OS.
-func TestIsSocketDead(t *testing.T) {
-	cases := []struct {
-		name string
-		err  error
-		want bool
-	}{
-		{"not exist", os.ErrNotExist, true},
-		{"wrapped not exist", &net.OpError{Op: "dial", Err: &os.SyscallError{Syscall: "connect", Err: syscall.ENOENT}}, true},
-		{"refused", &net.OpError{Op: "dial", Err: &os.SyscallError{Syscall: "connect", Err: syscall.ECONNREFUSED}}, true},
-		{"timeout", context.DeadlineExceeded, false},
-		{"opaque", errors.New("something else"), false},
-	}
-	for _, c := range cases {
-		if got := isSocketDead(c.err); got != c.want {
-			t.Errorf("%s: isSocketDead(%v) = %v, want %v", c.name, c.err, got, c.want)
-		}
-	}
-}
-
-// isConnRefused / isSocketDead must recognise a dial to a stale AF_UNIX socket
-// (the file is present but nothing is accepting) as dead, on every OS. This dials a
-// REAL stale socket so each platform's own refused errno is exercised: ECONNREFUSED
-// on POSIX, WSAECONNREFUSED (10061) on the Windows CI leg — where the ECONNREFUSED
-// arm alone never matches, so this is what guards the Windows-specific arm.
-//
-// A short os.MkdirTemp prefix keeps the socket path under the AF_UNIX sun_path limit
-// (~104-108 bytes) on every runner, incl. macOS's long /var/folders temp roots.
-func TestIsConnRefusedStaleSocket(t *testing.T) {
-	dir, err := os.MkdirTemp("", "sd")
-	if err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(func() { _ = os.RemoveAll(dir) })
-	sock := filepath.Join(dir, "s.sock")
-
-	l, err := net.Listen("unix", sock)
-	if err != nil {
-		t.Fatalf("listen(unix): %v", err)
-	}
-	// Leave the socket file on disk after Close so the dial hits a stale socket with
-	// nothing accepting (a crash-leftover), not a missing path.
-	l.(*net.UnixListener).SetUnlinkOnClose(false)
-	if err := l.Close(); err != nil {
-		t.Fatalf("close: %v", err)
-	}
-
-	_, derr := net.DialTimeout("unix", sock, time.Second)
-	if derr == nil {
-		t.Fatal("dial to a stale socket unexpectedly succeeded")
-	}
-	if !isConnRefused(derr) {
-		t.Errorf("isConnRefused(%v) = false, want true", derr)
-	}
-	if !isSocketDead(derr) {
-		t.Errorf("isSocketDead(%v) = false, want true", derr)
 	}
 }

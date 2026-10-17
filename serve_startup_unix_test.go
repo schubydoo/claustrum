@@ -9,6 +9,8 @@ import (
 	"os/exec"
 	"path/filepath"
 	"strings"
+	"sync/atomic"
+	"syscall"
 	"testing"
 	"time"
 )
@@ -37,7 +39,7 @@ func TestWaitForDaemonAcceptReturnsWhenListening(t *testing.T) {
 	}()
 
 	done := make(chan bool, 1)
-	go func() { done <- waitForDaemonAccept(sock, nil, nil) }()
+	go func() { ok, _ := waitForDaemonAccept(sock, 0); done <- ok }()
 	select {
 	case ok := <-done:
 		if !ok {
@@ -48,27 +50,29 @@ func TestWaitForDaemonAcceptReturnsWhenListening(t *testing.T) {
 	}
 }
 
-// An occupied socket path counts as "up" and returns at once, even though
-// nothing will ever accept there. This is measured reference behaviour, not a
-// convenience: with the path occupied by a directory the reference's launcher
-// exits 0 in 0.08s. A dial-based wait would sit out the whole deadline here.
-func TestWaitForDaemonAcceptReturnsForAnOccupiedPath(t *testing.T) {
+// A folder with a file at the socket path does not end the wait: no connect works
+// there, so the launcher gives up at its bound. 5fd08069 exited 1 after about 12 s
+// with the timeout text (round task006-01, cell C9n Linux VM, cell C9 macOS VM).
+func TestWaitForDaemonAcceptWaitsOverAFolder(t *testing.T) {
 	old := daemonStartTimeout
-	daemonStartTimeout = 30 * time.Second // long enough that a deadline return is obvious
+	daemonStartTimeout = 300 * time.Millisecond
 	t.Cleanup(func() { daemonStartTimeout = old })
 
-	occupied := filepath.Join(t.TempDir(), "rpc.sock")
+	occupied := filepath.Join(shortTempDir(t), "rpc.sock")
 	if err := os.Mkdir(occupied, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(occupied, "keep.txt"), []byte("k"), 0o600); err != nil {
 		t.Fatal(err)
 	}
 
 	start := time.Now()
-	ok := waitForDaemonAccept(occupied, nil, nil)
-	if !ok {
-		t.Error("waitForDaemonAccept = false for an existing path, want true")
+	ok, saw := waitForDaemonAccept(occupied, 0)
+	if ok || saw {
+		t.Errorf("waitForDaemonAccept = (%v, %v) for a folder at the path, want (false, false)", ok, saw)
 	}
-	if el := time.Since(start); el > 2*time.Second {
-		t.Errorf("waited %v for a path that already exists, want an immediate return", el)
+	if el := time.Since(start); el < 250*time.Millisecond {
+		t.Errorf("returned after %v, want the %v bound: the folder ended the wait", el, daemonStartTimeout)
 	}
 }
 
@@ -80,7 +84,7 @@ func TestWaitForDaemonAcceptGivesUpAtDeadline(t *testing.T) {
 	t.Cleanup(func() { daemonStartTimeout = old })
 
 	start := time.Now()
-	if waitForDaemonAccept(filepath.Join(t.TempDir(), "never-exists.sock"), nil, nil) {
+	if ok, _ := waitForDaemonAccept(filepath.Join(shortTempDir(t), "never-exists.sock"), 0); ok {
 		t.Error("waitForDaemonAccept = true for a socket that never appears, want false")
 	}
 	el := time.Since(start)
@@ -112,7 +116,7 @@ func TestDaemonizeTimeoutPrintsToStderr(t *testing.T) {
 		t.Fatal(err)
 	}
 	os.Stderr = w
-	sock := filepath.Join(t.TempDir(), "never.sock")
+	sock := filepath.Join(shortTempDir(t), "never.sock")
 	code, exited := catchExit(func() { daemonizeWithToken(sock, "") })
 	_ = w.Close()
 	os.Stderr = old
@@ -133,9 +137,10 @@ func TestDaemonizeTimeoutPrintsToStderr(t *testing.T) {
 // line instead of the accept timeout above. Both exit 1, so only the message
 // discriminates them.
 //
-// The predecessor here is a plain listener held by the test — livePredecessorIdent
-// only asks whether something accepts on the path — and the stub child never
-// rebinds it, so waitForDaemonAccept keeps seeing the predecessor's own inode.
+// The predecessor here is a plain listener of the test process, and the stub child
+// never rebinds the path. So each connect of the wait reaches the pid that
+// livePredecessorPID read. 5fd08069 prints this text in that state (round
+// task006-01, cell C4, Linux and macOS VMs).
 func TestDaemonizePredecessorHandoffPrintsToStderr(t *testing.T) {
 	shortDaemonStart(t)
 	stubOsExit(t)
@@ -288,5 +293,221 @@ func TestServeCreatesSocketDirAndWaitsForAccept(t *testing.T) {
 	}
 	if got := fi.Mode().Perm(); got != 0o700 {
 		t.Errorf("socket dir mode = %04o, want 0700", got)
+	}
+}
+
+// countAccepts accepts on ln until it closes, and counts each connection. Each
+// connection stays open until the client closes it, so that the peer pid of a
+// live peer is read (on macOS a closed peer may give none, not measured).
+func countAccepts(ln net.Listener) *atomic.Int32 {
+	var n atomic.Int32
+	go func() {
+		for {
+			c, err := ln.Accept()
+			if err != nil {
+				return
+			}
+			n.Add(1)
+			go func(c net.Conn) {
+				_, _ = io.Copy(io.Discard, c)
+				_ = c.Close()
+			}(c)
+		}
+	}()
+	return &n
+}
+
+// A socket file that is bound but does not accept yet does not end the wait. On
+// 5fd08069 with a listen delayed 0.5 s, a client connect right after the launcher exit
+// worked 10 of 10 times (round task006-01, cell C7b, Linux VM).
+func TestWaitForDaemonAcceptWaitsForTheListen(t *testing.T) {
+	sock := filepath.Join(shortTempDir(t), "rpc.sock")
+	fd, err := syscall.Socket(syscall.AF_UNIX, syscall.SOCK_STREAM, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = syscall.Close(fd) })
+	if err := syscall.Bind(fd, &syscall.SockaddrUnix{Name: sock}); err != nil {
+		t.Fatal(err)
+	}
+
+	done := make(chan bool, 1)
+	go func() { ok, _ := waitForDaemonAccept(sock, 0); done <- ok }()
+	select {
+	case <-done:
+		t.Fatal("the wait ended on a socket file that does not accept yet")
+	case <-time.After(300 * time.Millisecond):
+	}
+	if err := syscall.Listen(fd, 8); err != nil {
+		t.Fatal(err)
+	}
+	select {
+	case ok := <-done:
+		if !ok {
+			t.Error("the wait gave up although the socket listens")
+		}
+	case <-time.After(5 * time.Second):
+		t.Fatal("the wait did not end after the listen")
+	}
+}
+
+// A new daemon's socket counts as new when it has the device and inode of the socket
+// at the start. On ext4 the new socket of 5fd08069 kept the inode of the old one in
+// 40 of 40 take-overs, and its launcher exited 0 each time (round task006-01, cell
+// C3, Linux VM). Here the socket at the start and the one that answers are one file.
+// The recorded predecessor is the pid of the parent process, which does not listen.
+func TestWaitForDaemonAcceptTakesANewSocketWithTheOldInode(t *testing.T) {
+	old := daemonStartTimeout
+	daemonStartTimeout = 3 * time.Second
+	t.Cleanup(func() { daemonStartTimeout = old })
+	sock := filepath.Join(shortTempDir(t), "rpc.sock")
+	ln, err := net.Listen("unix", sock)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = ln.Close() })
+	countAccepts(ln)
+	before, err := os.Stat(sock)
+	if err != nil {
+		t.Fatal(err)
+	}
+	pred := os.Getppid()
+	if pred == os.Getpid() || pred <= 1 {
+		t.Skipf("no usable parent pid (%d)", pred)
+	}
+
+	ok, saw := waitForDaemonAccept(sock, pred)
+	if !ok || saw {
+		t.Errorf("waitForDaemonAccept = (%v, %v), want (true, false): the old inode hid the new daemon", ok, saw)
+	}
+	after, err := os.Stat(sock)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !os.SameFile(before, after) {
+		t.Fatal("the socket at the path changed: the test did not stage one inode")
+	}
+}
+
+// While the predecessor answers, the launcher connects about every 50 ms until its
+// bound, and then reports the predecessor. 5fd08069 made 234 to 240 connects to the
+// predecessor in its 12 s wait (round task006-01, cell C4, Linux and macOS VMs).
+func TestWaitForDaemonAcceptConnectsEveryPoll(t *testing.T) {
+	old := daemonStartTimeout
+	daemonStartTimeout = 600 * time.Millisecond
+	t.Cleanup(func() { daemonStartTimeout = old })
+
+	sock := filepath.Join(shortTempDir(t), "rpc.sock")
+	ln, err := net.Listen("unix", sock)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = ln.Close() })
+	n := countAccepts(ln)
+
+	ok, saw := waitForDaemonAccept(sock, os.Getpid())
+	if ok || !saw {
+		t.Errorf("waitForDaemonAccept = (%v, %v) with only the predecessor, want (false, true)", ok, saw)
+	}
+	// 600 ms at 50 ms is 12 or 13 connects. A slow runner makes fewer, so the floor
+	// is low, and the old wait made 1.
+	for limit := time.Now().Add(2 * time.Second); n.Load() < 4 && time.Now().Before(limit); {
+		time.Sleep(10 * time.Millisecond)
+	}
+	if got := n.Load(); got < 4 {
+		t.Errorf("the predecessor got %d connects in the wait, want 4 or more", got)
+	}
+}
+
+// A predecessor that answers before the child starts and then goes, with no new
+// daemon, gives the timeout text: no connect of the wait reached the predecessor.
+// That choice is claustrum's own, not measured. The child start is seamed, and it
+// closes the predecessor.
+func TestDaemonizeTimeoutTextWhenThePredecessorGoes(t *testing.T) {
+	shortDaemonStart(t)
+	stubOsExit(t)
+
+	sock := filepath.Join(shortTempDir(t), "rpc.sock")
+	ln, err := net.Listen("unix", sock)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = ln.Close() })
+	countAccepts(ln)
+	oldStart := startDaemonChild
+	startDaemonChild = func(*exec.Cmd) error { return ln.Close() }
+	t.Cleanup(func() { startDaemonChild = oldStart })
+
+	old := os.Stderr
+	r, w, err := os.Pipe()
+	if err != nil {
+		t.Fatal(err)
+	}
+	os.Stderr = w
+	code, exited := catchExit(func() { daemonizeWithToken(sock, "") })
+	_ = w.Close()
+	os.Stderr = old
+
+	if !exited || code != 1 {
+		t.Errorf("daemonizeWithToken: exited=%v code=%d, want exit 1", exited, code)
+	}
+	out, _ := io.ReadAll(r)
+	want := "claustrum: timeout waiting for daemon to accept on " + sock
+	if !strings.Contains(string(out), want) {
+		t.Errorf("stderr = %q, want it to contain %q", out, want)
+	}
+}
+
+// With a predecessor pid on record, a connect whose peer pid cannot be read does not
+// end the wait. That rule is claustrum's own, not measured. The peer pid read is seamed to give 0.
+func TestWaitForDaemonAcceptGoesOnAtAnUnknownPeerPID(t *testing.T) {
+	old := daemonStartTimeout
+	daemonStartTimeout = 300 * time.Millisecond
+	t.Cleanup(func() { daemonStartTimeout = old })
+	oldPeer := daemonPeerPID
+	daemonPeerPID = func(net.Conn) int { return 0 }
+	t.Cleanup(func() { daemonPeerPID = oldPeer })
+
+	sock := filepath.Join(shortTempDir(t), "rpc.sock")
+	ln, err := net.Listen("unix", sock)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = ln.Close() })
+	n := countAccepts(ln)
+
+	start := time.Now()
+	ok, saw := waitForDaemonAccept(sock, os.Getpid())
+	if ok || saw {
+		t.Errorf("waitForDaemonAccept = (%v, %v) at an unknown peer pid, want (false, false)", ok, saw)
+	}
+	if el := time.Since(start); el < 250*time.Millisecond {
+		t.Errorf("returned after %v, want the %v bound", el, daemonStartTimeout)
+	}
+	if n.Load() < 1 {
+		t.Error("no connect reached the listener")
+	}
+}
+
+// With no predecessor pid, the first connect that works ends the wait, also when its
+// peer pid cannot be read. That is the Windows rule (round task006-01, cell C3,
+// Windows VM).
+func TestWaitForDaemonAcceptUnknownPredecessorEndsAtFirstConnect(t *testing.T) {
+	old := daemonStartTimeout
+	daemonStartTimeout = 2 * time.Second
+	t.Cleanup(func() { daemonStartTimeout = old })
+	oldPeer := daemonPeerPID
+	daemonPeerPID = func(net.Conn) int { return 0 }
+	t.Cleanup(func() { daemonPeerPID = oldPeer })
+
+	sock := filepath.Join(shortTempDir(t), "rpc.sock")
+	ln, err := net.Listen("unix", sock)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = ln.Close() })
+	countAccepts(ln)
+	if ok, saw := waitForDaemonAccept(sock, 0); !ok || saw {
+		t.Errorf("waitForDaemonAccept = (%v, %v), want (true, false)", ok, saw)
 	}
 }
