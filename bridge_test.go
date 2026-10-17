@@ -172,7 +172,10 @@ func TestRunBridgeRelays(t *testing.T) {
 
 	_ = inW.Close() // stdin EOF → half-close → the daemon closes → runBridge returns
 	select {
-	case <-done:
+	case err := <-done:
+		if err != nil {
+			t.Errorf("runBridge = %v after the daemon closed, want nil", err)
+		}
 	case <-time.After(5 * time.Second):
 		t.Error("runBridge did not return after the daemon closed")
 	}
