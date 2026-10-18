@@ -61,6 +61,17 @@ type acceptedGitDir struct {
 	// moved is true after a good `worktree add`: the repository then has the
 	// registration of the new worktree.
 	moved bool
+	// staged is the registration that the Windows staging step moved into
+	// `worktrees` (addStage.move), or the zero value.
+	staged stagedEntry
+}
+
+// stagedEntry is the name of a registration that the staging step moved into
+// the folder `worktrees` of the held git directory, and its identity from the
+// handle that the move held open from its mkdir to its return.
+type stagedEntry struct {
+	name string
+	info os.FileInfo
 }
 
 // createStepHook is a test seam. It runs at the start of each test of the held

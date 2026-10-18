@@ -3,6 +3,8 @@
 package main
 
 import (
+	"errors"
+	"io"
 	"os"
 	"path/filepath"
 )
@@ -52,11 +54,61 @@ func installWorktreeIndex(src, adminDir string) error {
 	return nil
 }
 
-// installTestedWorktreeIndex is installWorktreeIndex into tested.path. No create
-// reaches it on Windows: the registration tests do not run there, so no
-// registration is accepted (acceptRegistration).
+// installTestedWorktreeIndex writes the index that the checkout wrote at src
+// into tested, the registration that the staging step moved into place
+// (gitUse.stagedRegistration). The file `index` is a new file of the
+// registration, through the held git directory and a root at it, with no
+// temporary file, no rename and no rename retry (createRegistrationFile). Then its
+// access and write times get the write time of src.
+// The registration must still be the folder of the move (replacedIn). Each
+// error goes back, and the create answers it as a failed checkout.
+//
+// On 5fd08069 a folder `index` gives `git worktree add failed (checkout):
+// openat index: is a directory` (cell S12 of round task087-01, Windows VM). A
+// denied create gives `openat index: Access is denied.` (cell S11, and X6w of
+// round task009-01). The write time and the access time are equal, 7.8 to 9.1
+// ms before the creation time (cell S13, 5 runs). The text of a replaced
+// registration is claustrum's own. A registration with no held git directory
+// gets installWorktreeIndex (not measured).
 func installTestedWorktreeIndex(src string, tested testedRegistration) error {
-	return installWorktreeIndex(src, tested.path)
+	if tested.git == nil {
+		return installWorktreeIndex(src, tested.path)
+	}
+	in, err := os.Open(src)
+	if err != nil {
+		return err
+	}
+	defer func() { _ = in.Close() }()
+	st, err := in.Stat()
+	if err != nil {
+		return err
+	}
+	root, err := tested.git.registrationsRoot(filepath.Dir(tested.path))
+	if err != nil {
+		return err
+	}
+	defer func() { _ = root.Close() }()
+	name := filepath.Base(tested.path)
+	if tested.replacedIn(root, name) {
+		return errors.New("the registration " + tested.path + " is not the folder that was moved into place")
+	}
+	entry, err := root.OpenRoot(name)
+	if err != nil {
+		return err
+	}
+	defer func() { _ = entry.Close() }()
+	out, err := createRegistrationFile(entry, "index")
+	if err != nil {
+		return err
+	}
+	_, err = io.Copy(out, in)
+	if cerr := out.Close(); err == nil {
+		err = cerr
+	}
+	if err != nil {
+		return err
+	}
+	return entry.Chtimes("index", st.ModTime(), st.ModTime())
 }
 
 // indexRename and indexWrite are seams for the tests of installWorktreeIndex.

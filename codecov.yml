@@ -204,11 +204,17 @@ component_management:
         - gitshadow_windows.go
         # the folder of one `worktree add` and the staging step of a create on Windows (5fd08069).
         - worktreestaging.go
+        # the retry of a held rename on Windows: the copy write and the staging move (5fd08069).
+        - renameretry.go
+        - renameretry_other.go
+        - renameretry_windows.go
         # the held git directory of a create, and its steps through that folder (5fd08069).
         - gitdiraccept.go
         - gitdirheld.go
         # the `config.worktree` file: its settings on the git calls and the file of a new worktree (5fd08069).
         - gitworktreeconfig.go
+        - gitworktreeconfig_unix.go
+        - gitworktreeconfig_windows.go
         # the gate and the answer of git.status (89cb6289).
         - gitstatus.go
         # the git.info root per OS (89cb6289).

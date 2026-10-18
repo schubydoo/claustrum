@@ -1320,21 +1320,40 @@ func gitWorktreeCreateLocked(req *request, p *gitParams, repo string) response {
 	// not complete (addIncomplete), with the rollback of a failed checkout. On
 	// 5fd08069 the leaf is gone and the new branch stays, with the text of the
 	// branch step (cells X1c-10 and X1p-10).
+	//
+	// A refusal of the Windows staging step (addRefused) answers unsafe_path with
+	// the same rollback. On 5fd08069 the leaf and the new branch are gone (cell
+	// S2 of round task087-01, Windows VM).
 	incompleteAdd := func(err error, branch string) (response, bool) {
 		var incomplete *addIncomplete
-		if !errors.As(err, &incomplete) {
+		var refused *addRefused
+		text, code := "", "worktree_add_failed"
+		switch {
+		case errors.As(err, &incomplete):
+			text = completingAddPrefix + incomplete.text
+		case errors.As(err, &refused):
+			text, code = refused.text, "unsafe_path"
+		default:
 			return response{}, false
 		}
-		undo, kept := undoFailedCheckout(req.use, repo, p.WorktreePath, branch, checkpoint, testedRegistration{})
+		reg := testedRegistration{}
+		if refused != nil {
+			// The refusal comes before the staging folder is made, so the
+			// rollback deletes no registration. It does not follow the
+			// `.git` file of the leaf. On 5fd08069 the leaf and the branch go
+			// (cell S2 of round task087-01, Windows VM).
+			reg.noRegistration = true
+		}
+		undo, kept := undoFailedCheckout(req.use, repo, p.WorktreePath, branch, checkpoint, reg)
 		return okResult(req.ID, worktreeResult{
 			Success:    false,
-			Error:      completingAddPrefix + incomplete.text + undo,
-			ErrorCode:  "worktree_add_failed",
+			Error:      text + undo,
+			ErrorCode:  code,
 			BranchKept: kept,
 		}), true
 	}
-	// On Linux and macOS claustrum lists the names in the registrations folder
-	// right before the add and again after it. The entry of the new worktree must
+	// claustrum lists the names in the registrations folder right before the
+	// add and again after it, and on Windows after the staging move. The entry of the new worktree must
 	// be the one new name (createdEntryOnly). The listing needs the git directory
 	// that git answered. claustrum's own, not measured: when a listing fails with
 	// another error than "does not exist", the create is refused with the text of
@@ -1343,7 +1362,7 @@ func gitWorktreeCreateLocked(req *request, p *gitParams, repo string) response {
 	var entriesBefore []string
 	entriesDir, entriesListed := "", false
 	listEntriesBefore := func() {
-		if adminRecordChecked && gitAnswered {
+		if (adminRecordChecked || shadowStagesAdd) && gitAnswered {
 			entriesDir = gitDirRegistryDir(gitDir)
 			entriesBefore, entriesListed = registrationNames(entriesDir)
 		}
@@ -1532,6 +1551,21 @@ func gitWorktreeCreateLocked(req *request, p *gitParams, repo string) response {
 			defer created.release()
 		}
 	}
+	// On Windows the registration of the staging step is the one that gets the
+	// index and that a rollback removes, by its identity (stagedRegistration).
+	// A create whose rev-parse gave no answer (gitAnswered false) has no
+	// listing before the add, so it gets the refusal of otherEntryRefusal. That
+	// is claustrum's own, not measured.
+	if moved := req.use.stagedRegistration(); moved.path != "" {
+		if text := stagedRecordRefusal(req.use.accepted, p.WorktreePath); text != "" {
+			return refuseUnsafe(text)
+		}
+		after, listed := registrationNames(entriesDir)
+		if !entriesListed || !listed || !createdEntryOnly(entriesBefore, after, moved.path) {
+			return refuseUnsafe(otherEntryRefusal(p.WorktreePath))
+		}
+		indexDir, tested = moved.path, moved
+	}
 	// indexDir is the registration that gets the index (createdRegistrationRefusal, or
 	// absoluteAdminDir if rev-parse gave no answer).
 	// Its gitdir record names worktreePath after symlink resolution.
@@ -1608,7 +1642,7 @@ func gitWorktreeCreateLocked(req *request, p *gitParams, repo string) response {
 	// The read of the `config.worktree` file of the repository, and the text
 	// that the new worktree gets from it (newWorktreeConfig). The text goes into
 	// the registration below.
-	entryConfig, hasEntryConfig, dropConfigDir, configCause := req.newWorktreeConfig(repo, t)
+	entryConfig, hasEntryConfig, dropConfigDir, configCause, configWritten := req.newWorktreeConfig(repo, t)
 	defer dropConfigDir()
 	// A failure of that step fails the create with no checkout, and the undo of a
 	// failed checkout runs (round task007-01, Linux and macOS VMs, and cell C1 on
@@ -1669,7 +1703,7 @@ func gitWorktreeCreateLocked(req *request, p *gitParams, repo string) response {
 		return resp
 	}
 	if hasEntryConfig {
-		if cause := placeWorktreeConfig(req.use, indexDir, p.WorktreePath, tested, entryConfig); cause != "" {
+		if cause := placeWorktreeConfig(req.use, indexDir, p.WorktreePath, tested, entryConfig, configWritten); cause != "" {
 			return filesFailed(cause)
 		}
 	}

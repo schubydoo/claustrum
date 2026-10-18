@@ -31,12 +31,13 @@ import (
 //   - The stale registration before the add: dropStaleRegistration on Windows,
 //     and dropStaleWorktreeRegistration with deleteRoot on Linux and macOS.
 //   - The folder `worktrees`: makeWorktreesFolder, and openAddStage on Windows.
-//   - The Windows staging steps: openAddStage, sweepOldStaging, addStage.move.
+//   - The Windows staging steps: openAddStage, sweepOldStaging, addStage.move,
+//     addStage.removeOwnStaging and addStage.removeMoved.
 //   - The `config.worktree` file of the registration: writeWorktreeConfig.
-//   - The index: installIndex on Windows, and installTestedWorktreeIndex with
-//     registrationsRoot on Linux and macOS.
-//   - The registration of a rollback: removeCreatedRegistration, and
-//     removeTestedRegistration with deleteRoot on Linux and macOS.
+//   - The index: installTestedWorktreeIndex with registrationsRoot, and
+//     installIndex for a create with no tested registration.
+//   - The registration of a rollback: removeTestedRegistration with
+//     deleteRoot, and removeCreatedRegistration.
 //
 // By the path stay:
 //

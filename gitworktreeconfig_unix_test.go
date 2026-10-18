@@ -657,7 +657,7 @@ func TestWriteWorktreeConfigGuards(t *testing.T) {
 	t.Run("a folder with content stays", func(t *testing.T) {
 		f := newReg(t)
 		mustWrite(t, filepath.Join(placed(f), "f"), "y\n")
-		cause := placeWorktreeConfig(f.u, f.reg, f.leaf, testedRegistration{}, []byte(text))
+		cause := placeWorktreeConfig(f.u, f.reg, f.leaf, testedRegistration{}, []byte(text), time.Time{})
 		if cause != "removeat config.worktree: directory not empty" {
 			t.Errorf("the cause = %q, want the text of cell C6", cause)
 		}
@@ -684,7 +684,7 @@ func TestWriteWorktreeConfigGuards(t *testing.T) {
 	t.Run("a guard refusal gives no cause", func(t *testing.T) {
 		f := newReg(t)
 		mustWrite(t, filepath.Join(f.reg, "gitdir"), filepath.Join(filepath.Dir(f.leaf), "other", ".git")+"\n")
-		if cause := placeWorktreeConfig(f.u, f.reg, f.leaf, testedRegistration{}, []byte(text)); cause != "" {
+		if cause := placeWorktreeConfig(f.u, f.reg, f.leaf, testedRegistration{}, []byte(text), time.Time{}); cause != "" {
 			t.Errorf("the cause = %q, want none", cause)
 		}
 	})

@@ -3,6 +3,7 @@ package main
 import (
 	"os"
 	"path/filepath"
+	"runtime"
 	"slices"
 	"strings"
 	"testing"
@@ -97,24 +98,33 @@ func TestConfigStepUnsetAllFailureFailsTheCreate(t *testing.T) {
 // `<registration>/config.worktree` before the copy get the copy, and the create
 // succeeds (cells C4 and C5 of round task007-01, Linux and macOS VMs, and C4
 // on a Windows VM). The seam puts the entry there at the step before the copy.
+// On Windows an empty folder fails the create with `openat config.worktree: is
+// a directory` (cell S9 of round task087-01, Windows VM).
 func TestConfigStepReplacesAnEntryAtTheDestination(t *testing.T) {
 	const filemode = "[core]\n\tfilemode = false\n"
 	for _, row := range []struct {
-		cell  string
-		stage func(t *testing.T, at string)
+		cell        string
+		stage       func(t *testing.T, at string)
+		failsOnThis bool
 	}{
-		{"C4 a file", func(t *testing.T, at string) { mustWrite(t, at, "x\n") }},
+		{"C4 a file", func(t *testing.T, at string) { mustWrite(t, at, "x\n") }, false},
 		{"C5 an empty folder", func(t *testing.T, at string) {
 			if err := os.Mkdir(at, 0o755); err != nil {
 				t.Error(err)
 			}
-		}},
+		}, runtime.GOOS == "windows"},
 	} {
 		t.Run(row.cell, func(t *testing.T) {
 			f := newConfigStepFixture(t, filemode)
 			at := filepath.Join(f.reg, worktreeConfigName)
 			atStep(t, "registration", func() { row.stage(t, at) })
 			raw, _ := f.create(t)
+			if row.failsOnThis {
+				if want := failedFrame(t, completingAddPrefix+"openat config.worktree: is a directory"); raw != want {
+					t.Errorf("git.worktree_create = %s\nwant %s", raw, want)
+				}
+				return
+			}
 			if !strings.Contains(raw, `"success":true`) {
 				t.Fatalf("git.worktree_create = %s", raw)
 			}

@@ -5,8 +5,11 @@ package main
 import (
 	"os"
 	"path/filepath"
+	"regexp"
 	"slices"
 	"strings"
+	"sync"
+	"syscall"
 	"testing"
 	"time"
 )
@@ -157,5 +160,119 @@ func TestStatusThroughAJunction(t *testing.T) {
 	}
 	if n == 0 {
 		t.Error("no call names the real git directory with --git-dir=")
+	}
+}
+
+// seamStagingRename replaces stagingRename until the test ends and counts its
+// calls.
+func seamStagingRename(t *testing.T, rename func(root *os.Root, oldName, newName string) error) *int {
+	t.Helper()
+	old := stagingRename
+	var mu sync.Mutex
+	calls := new(int)
+	stagingRename = func(root *os.Root, oldName, newName string) error {
+		mu.Lock()
+		*calls++
+		mu.Unlock()
+		return rename(root, oldName, newName)
+	}
+	t.Cleanup(func() { stagingRename = old })
+	return calls
+}
+
+// TestCreateHeldStagingFolderOnWindows must match cell W3a of round
+// task009-01: the staging folder is held, and released after 300 ms. The
+// create answers success, and the registration has its files and the index.
+// Without the retry the create fails at the first rename.
+func TestCreateHeldStagingFolderOnWindows(t *testing.T) {
+	f := newSeededShadowFixture(t)
+	if raw, _ := f.info(t, f.repo, nil); !strings.Contains(raw, `"settingsControl":"shadow"`) {
+		t.Fatalf("git.info = %s", raw)
+	}
+	var held sync.Once
+	calls := seamStagingRename(t, func(root *os.Root, oldName, newName string) error {
+		held.Do(func() {
+			release, err := holdOpenErr(filepath.Join(f.gitDir, oldName), true)
+			if err != nil {
+				t.Errorf("the hold of the staging folder: %v", err)
+				return
+			}
+			t.Cleanup(release)
+			time.AfterFunc(300*time.Millisecond, release)
+		})
+		return root.Rename(oldName, newName)
+	})
+	leaf := filepath.Join(f.repo, ".claude", "worktrees", "w1")
+	raw, _ := f.call(t, "git.worktree_create", map[string]any{"baseRepo": f.repo, "branchName": "w1", "worktreePath": leaf})
+	if !strings.Contains(raw, `"result":{"success":true,`) {
+		t.Fatalf("git.worktree_create = %s, want success", raw)
+	}
+	if *calls < 2 {
+		t.Errorf("the rename ran %d times, want the retry", *calls)
+	}
+	for _, name := range []string{"HEAD", "commondir", "gitdir", "index"} {
+		if _, err := os.Lstat(filepath.Join(f.gitDir, "worktrees", "w1", name)); err != nil {
+			t.Errorf("the registration file %s: %v", name, err)
+		}
+	}
+	if got := stagingEntries(t, f.gitDir); len(got) != 0 {
+		t.Errorf("the staging entries of the git directory = %q, want none", got)
+	}
+}
+
+// TestCreateStagingRenameFailsOnWindows must match cells W3b and W3c of round
+// task009-01: the rename of the staging folder stays denied. The create
+// answers the failure after the retry, also with timeoutMs, and no reply says
+// timeout. The leaf, the branch and the staging folder are gone,
+// `.git\worktrees` stays, and no line is logged. Without the failure of the
+// create the reply is success. Without the retry the rename runs once.
+func TestCreateStagingRenameFailsOnWindows(t *testing.T) {
+	for _, row := range []struct {
+		name   string
+		params map[string]any
+	}{
+		{"no deadline", map[string]any{}},
+		{"timeoutMs", map[string]any{"timeoutMs": 50}},
+	} {
+		t.Run(row.name, func(t *testing.T) {
+			f := newSeededShadowFixture(t)
+			if raw, _ := f.info(t, f.repo, nil); !strings.Contains(raw, `"settingsControl":"shadow"`) {
+				t.Fatalf("git.info = %s", raw)
+			}
+			setRenameRetryBound(t, 300*time.Millisecond)
+			calls := seamStagingRename(t, func(_ *os.Root, oldName, newName string) error {
+				return &os.LinkError{Op: "renameat", Old: oldName, New: newName, Err: syscall.ERROR_ACCESS_DENIED}
+			})
+			logs := captureLogBuf(t)
+			leaf := filepath.Join(f.repo, ".claude", "worktrees", "w1")
+			params := map[string]any{"baseRepo": f.repo, "branchName": "w1", "worktreePath": leaf}
+			for k, v := range row.params {
+				params[k] = v
+			}
+			start := time.Now()
+			raw, _ := f.call(t, "git.worktree_create", params)
+			took := time.Since(start)
+			want := regexp.MustCompile(`"result":\{"success":false,"error":"git worktree add failed \(completing the new worktree's git files\): renameat \.claude-new-worktree-[0-9a-f]{16} worktrees\\\\w1: Access is denied\.","errorCode":"worktree_add_failed"\}\}$`)
+			if !want.MatchString(raw) {
+				t.Errorf("git.worktree_create = %s\nwant a match of %s", raw, want)
+			}
+			if *calls < 2 || took < 300*time.Millisecond {
+				t.Errorf("the rename ran %d times in %v, want the retry of the bound", *calls, took)
+			}
+			for _, gone := range []string{leaf, filepath.Join(f.gitDir, "worktrees", "w1"), filepath.Join(f.gitDir, "refs", "heads", "w1")} {
+				if _, err := os.Lstat(gone); !os.IsNotExist(err) {
+					t.Errorf("%s: %v, want it not there", gone, err)
+				}
+			}
+			if fi, err := os.Lstat(filepath.Join(f.gitDir, "worktrees")); err != nil || !fi.IsDir() {
+				t.Errorf("the worktrees folder: %v, want it kept", err)
+			}
+			if got := stagingEntries(t, f.gitDir); len(got) != 0 {
+				t.Errorf("the staging entries of the git directory = %q, want none", got)
+			}
+			if got := logs.String(); strings.Contains(got, "registration of the new worktree") || strings.Contains(got, "staging folder") {
+				t.Errorf("the failed move logged %q, want no line about it", got)
+			}
+		})
 	}
 }
