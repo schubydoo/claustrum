@@ -445,7 +445,7 @@ operator-declinable. Only CT-2 and CT-5 carry a flag and a key.
   refuses or skips a step. One skipped step is the daemon's own read of the
   repository config. After a kill of that call the remove goes on as it did before
   that read. On `git.worktree_create` a kill leads to a delete: its rollback deletes after a failed or
-  killed read-tree checkout, `--unset-all` call or `config.worktree` listing, and it removes an empty leaf after a failed add. A caller
+  killed config listing before the checkout, read-tree checkout, `--unset-all` call or `config.worktree` listing, and it removes an empty leaf after a failed add. A caller
   that deletes on a git failure must tell the deadline apart from the verdict of git
   first. The cap is also softer than it reads on the
   general git sites. `CombinedOutput`/`Output` waits on git's output pipe. So a git

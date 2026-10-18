@@ -243,11 +243,12 @@ The JSON-RPC surface is identical on every OS. Full internals →
       `timeoutMs`, a failed read-tree checkout and a failed `config.worktree`
       copy. On Linux and macOS it
       also runs after a failed placement of the index of the new worktree. The
-      filter rule of the checkout (`gitfilter.go`) leads to it in two ways. The
-      first is a read-tree call that fails at a filter of the repository. The
-      second is a refusal before that call, for a filter that the rule cannot
-      handle or after a listing of the rule that failed. `5fd08069` rolls back
-      in cells F1 and Q3 (Linux VM) and D5 (Linux and Windows VMs). It
+      filter rule of the checkout (`gitfilter.go`) leads to it after a read-tree
+      call that fails at a filter of the repository. So does a refusal before
+      it, for an unusable filter or a failed rule listing. In the state
+      `shadow` over 64 filter names and a failed or slow last listing refuse
+      too. `5fd08069` rolls back in cells F1 and Q3 (Linux VM) and D5 (Linux
+      and Windows VMs). It
       deletes the entries
       of the leaf in the order that the directory read returns them, and it
       stops at the first failure. Then it deletes the registration, runs the
@@ -650,8 +651,8 @@ On `git.worktree_remove` the deadline of D5 starts no delete. That method runs n
 `git worktree remove`. A kill refuses or skips a step. One skipped step is the
 daemon's own read of the repository config. After a kill of that call the remove
 goes on as it did before that read. `git.worktree_create` is the exception. Its
-rollback deletes after a failed or killed read-tree checkout, `--unset-all` call
-or `config.worktree` listing, and it removes an empty leaf after a failed add. Never read a fired `git-timeout` as "git refused".
+rollback deletes after a failed or killed config listing before the checkout,
+read-tree checkout, `--unset-all` call or `config.worktree` listing, and it removes an empty leaf after a failed add. Never read a fired `git-timeout` as "git refused".
 Opting D5 in is wire-visible. From the code: the deadline also bounds the calls
 of the settings copy, which have a bound of 30 seconds of their own. A kill of
 a test call or of the call about the repository refuses the request. The Windows cleanup of old

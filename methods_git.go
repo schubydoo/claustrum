@@ -1702,12 +1702,13 @@ func gitWorktreeCreateLocked(req *request, p *gitParams, repo string) response {
 		// D5), and 5fd08069 makes no read-tree call for it (Windows VM). The refusal
 		// of a name with "=" (cell Q3, Linux VM), claustrum's own refusal of a filter
 		// that no pair can replace, and a listing of the rule that fails come at that
-		// place too.
+		// place too. In the state shadow those refusals come in the checkout, after
+		// its second listing and the cap (hardenedGitCheckout).
 		var filters filterPlan
 		if !p.ShadowDirOff {
 			filters = listFilterPlan(callerCtx, req.use, p.WorktreePath, gitDir, commonDirPinEnv(repo))
 		}
-		if filters.refusal != "" {
+		if filters.refusal != "" && !req.use.shadow() {
 			undo, kept := undoFailedCheckout(req.use, repo, p.WorktreePath, createdBranch, checkpoint, tested)
 			return okResult(req.ID, worktreeResult{
 				Success:    false,
@@ -1723,7 +1724,14 @@ func gitWorktreeCreateLocked(req *request, p *gitParams, repo string) response {
 			checkoutWorkTree(p.WorktreePath, checkpoint.resolved), gitDir,
 			indexDir, tested, checkoutRev, req.use.gitDirPin(repo), filters)
 		refusedName, filterRefused := filters.refusedFilter(rtStderr)
+		var refusal checkoutRefusal
 		switch {
+		case errors.As(rtErr, &refusal):
+			// The second listing of the checkout failed, the repository has too
+			// many filters, or, in the state shadow, the plan has a refusal.
+			// 5fd08069 runs no read-tree call there and rolls back. Cells C2 and
+			// C10 of round task008-01 show it on Linux, macOS and Windows VMs.
+			return goneCheckout(string(refusal))
 		case errors.Is(rtErr, errGitDirChanged):
 			return goneCheckout(repoConfigPrefix + gitDirLinkText(req.use.gitDir))
 		case errors.Is(rtErr, errGitDirNotReal):

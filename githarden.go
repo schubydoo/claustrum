@@ -429,12 +429,16 @@ var worktreeCreateDrainCap = 5 * time.Second
 //   - A second listing runs right before the read-tree call. It has the argv of
 //     the first one, and the variables of the read-tree call: the hook pins,
 //     GIT_INDEX_FILE and LANGUAGE=C, and no added LC_ALL. claustrum does not read
-//     its answer.
+//     its output. A failure of it refuses the create (ownConfigListing). Then
+//     come the cap of the filter rule (tooManyFiltersText) and the other
+//     refusals of the plan. 5fd08069 has that order (round task008-03, cells R3
+//     to R5, Linux VM).
 //   - The read-tree call has the item lfs.storage=<git directory>/lfs before the
 //     list of the profile. The pairs of the filter rule come before that item
 //     (s3p2-linux2 cells G2 and L1, Linux VM). For a baseRepo that is a linked
 //     worktree the value is not measured: claustrum names the git directory of
-//     the repository.
+//     the repository. A user config that sets lfs.storage removes the item
+//     (round task008-01, cell C12, Linux, macOS and Windows VMs).
 //   - The read-tree call has LANGUAGE=C as its last variable.
 //
 // Both calls keep the four values of the light profile in that state.
@@ -473,8 +477,18 @@ func hardenedGitCheckout(ctx context.Context, u gitUse, leaf, gitDir, indexFile 
 		// The second listing, and the two additions of the read-tree call (the
 		// comment above).
 		env = append(env, "LANGUAGE=C")
-		runListing(ctx, leaf, gitDir, env)
-		list = append(list, "-c", "lfs.storage="+filepath.Join(u.gitDir, "lfs"))
+		if text := ownConfigListing(leaf, gitDir, env); text != "" {
+			return "", false, checkoutRefusal(text)
+		}
+		if filters.tooManyFilters {
+			return "", false, checkoutRefusal(tooManyFiltersText)
+		}
+		if filters.refusal != "" {
+			return "", false, checkoutRefusal(filters.refusal)
+		}
+		if !filters.userLfsStorage {
+			list = append(list, "-c", "lfs.storage="+filepath.Join(u.gitDir, "lfs"))
+		}
 		// The items of the `config.worktree` file come after that item and
 		// before the list of the profile (gitUse.checkoutFront).
 		list = append(list, u.checkoutFront(gitDir)...)
@@ -517,6 +531,60 @@ func hardenedGitCheckout(ctx context.Context, u gitUse, leaf, gitDir, indexFile 
 	return errBuf.String(), drained, err
 }
 
+// checkoutRefusal is a refusal of the checkout before the read-tree call. Its
+// text follows `git worktree add failed (checkout): ` in the frame, and the
+// rollback is that of a failed checkout.
+type checkoutRefusal string
+
+func (r checkoutRefusal) Error() string { return string(r) }
+
+// ownConfigBound ends the second listing of the checkout. On 5fd08069 a listing
+// held for 31 s ended at about 30 s, and one held for 29 s passed. Those are
+// cells C11 and C11b of round task008-01 (Linux and macOS VMs). Windows is not
+// measured. It is a variable so that a test can shrink it.
+var ownConfigBound = 30 * time.Second
+
+// ownConfigStopText is the cause of a second listing that ownConfigBound ended
+// (cell C11, Linux and macOS VMs).
+const ownConfigStopText = "git took too long: Claude stopped git config after 30 seconds; try again"
+
+// ownConfigListing runs the second listing of the checkout under ownConfigBound
+// and returns the refusal text of a listing that failed, or "". A listing that
+// exits non-zero gives its exec error as the cause, for example `exit status 1`
+// (cell C10, Linux, macOS and Windows VMs). The stderr of git is not in the
+// cause. That and the other kinds of failure are claustrum's own.
+//
+// The `timeoutMs` of the caller does not end the listing. With `timeoutMs`
+// 2000 and a listing held 5 s, 5fd08069 sends no signal, the listing ends by
+// itself, and then the cap or the timeout arm answers (round task008-05, cells
+// P1 and P2, Linux VM). A listing that fails after the deadline of the caller
+// gives this text too (not measured). The deadline of D5 bounds the listing.
+// A D5 kill gives its exec error as the cause (claustrum's
+// own).
+func ownConfigListing(leaf, gitDir string, env []string) string {
+	d5, cancelD5 := withGitTimeout(context.Background())
+	defer cancelD5()
+	bounded, cancel := context.WithTimeout(d5, ownConfigBound)
+	defer cancel()
+	cmd := exec.CommandContext(bounded, "git", "--git-dir="+gitDir, "config", "-z", "--list")
+	cmd.Dir = leaf
+	cmd.Env = env
+	err := cmd.Run()
+	cause := ""
+	switch {
+	case err == nil:
+		return ""
+	case d5.Err() != nil:
+		cause = err.Error()
+	case bounded.Err() != nil:
+		cause = ownConfigStopText
+	default:
+		cause = err.Error()
+	}
+	return "Claude could not read your own git config on the remote machine (" + cause +
+		"). Run git config --list there to see the problem."
+}
+
 // Two errors of the checkout of a create, for a git directory that is no
 // longer the folder that the create holds. The Windows rows are of 5fd08069
 // with a junction at `repo\.git` (table of section 2 of val-s3p2b2-12-windows,
@@ -540,7 +608,9 @@ func hardenedGitCheckout(ctx context.Context, u gitUse, leaf, gitDir, indexFile 
 //     and p-marker of val-s3p2b2-13-macos, macOS VM, 11 of 11 runs).
 //
 // A junction that is put there while the second listing runs gets no test:
-// the read-tree call then runs and fails by itself (points 11 and 12).
+// the read-tree call then runs and fails by itself (points 11 and 12). A
+// second listing that fails there now gives the text of ownConfigListing (not
+// measured).
 // Linux and macOS are not measured at the first step and have no test there.
 var (
 	errGitDirChanged = errors.New("the git directory changed after the first listing of the checkout")
