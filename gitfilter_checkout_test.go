@@ -218,33 +218,6 @@ func TestCheckoutOwnConfigListingOutlivesDeadline(t *testing.T) {
 	}
 }
 
-// TestCheckoutOwnConfigListingEndsAtGitTimeout: the deadline of D5 ends the
-// second listing, and the create answers the listing text with the exec error
-// of the kill (claustrum's own). The stub holds the listing 60 s, and the
-// reply comes long before the bound of 30 s.
-func TestCheckoutOwnConfigListingEndsAtGitTimeout(t *testing.T) {
-	f := newCheckoutRuleFixture(t)
-	old := gitTimeout
-	t.Cleanup(func() { gitTimeout = old })
-	gitTimeout = 3 * time.Second
-	stubSecondListing(t, 60*time.Second)
-	start := time.Now()
-	raw, calls := f.create(t, nil)
-	if took := time.Since(start); took > 20*time.Second {
-		t.Errorf("the reply came after %v, want it soon after the git-timeout", took)
-	}
-	// The exec error of a kill is `signal: killed` on Linux and macOS and an
-	// exit status on Windows, so the test reads the text around it.
-	head := `"error":"git worktree add failed (checkout): Claude could not read your own git config on the remote machine (`
-	if !strings.Contains(raw, head) || strings.Contains(raw, ownConfigStopText) ||
-		!strings.Contains(raw, `"errorCode":"worktree_add_failed"`) {
-		t.Fatalf("git.worktree_create = %s\nwant the listing text with the error of the kill", raw)
-	}
-	if ranReadTree(calls) {
-		t.Error("a read-tree call ran, want none")
-	}
-}
-
 // TestOwnConfigBoundIs30Seconds pins the production bound of the second
 // listing (round task008-01, cells C11 and C11b, Linux and macOS VMs).
 func TestOwnConfigBoundIs30Seconds(t *testing.T) {

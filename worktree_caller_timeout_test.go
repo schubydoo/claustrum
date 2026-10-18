@@ -148,7 +148,7 @@ func installGitSlowStub(t *testing.T, realGit string) {
 	t.Setenv("PATH", bin+string(os.PathListSeparator)+os.Getenv("PATH"))
 	t.Setenv("CLAUSTRUM_TEST_HELPER", "git-slow")
 	t.Setenv("CLAUSTRUM_GITSTUB_REAL", realGit)
-	for _, k := range []string{"LOG", "CTXLOG", "ENVLOG", "IDXMODE", "EXPAND", "STDERR_FILE", "STDERR2_FILE", "EXIT", "ACTION", "LEAF", "SNAP", "VALUE", "FAIL_LISTING", "ARGEND", "ENVEND", "STAGE",
+	for _, k := range []string{"LOG", "CTXLOG", "ENVLOG", "IDXMODE", "EXPAND", "STDERR_FILE", "STDERR2_FILE", "EXIT", "ACTION", "LEAF", "SNAP", "VALUE", "FAIL_LISTING", "HOLD_MS", "ARGEND", "ENVEND", "STAGE", "HOLDPID",
 		"MATCH2", "MODE2", "MS2", "EXIT2", "ACTION2", "LEAF2", "VALUE2"} {
 		t.Setenv("CLAUSTRUM_GITSTUB_"+k, "")
 	}
@@ -350,10 +350,6 @@ func TestWorktreeCreateCallerTimeout(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	oldTimeout := gitTimeout
-	t.Cleanup(func() { gitTimeout = oldTimeout })
-	gitTimeout = 0 // D5 off: the caller's timeoutMs is the only deadline.
-
 	installGitSlowStub(t, realGit)
 	full := calibrate(t, realGit)
 	// The deadline for the checkout and copy cases. The add and the checkout
@@ -800,9 +796,6 @@ func TestWorktreeCreateMeasuredRules(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	oldTimeout := gitTimeout
-	t.Cleanup(func() { gitTimeout = oldTimeout })
-	gitTimeout = 0
 	installGitSlowStub(t, realGit)
 
 	t.Run("Q1 fallback keeps the resolved start point", func(t *testing.T) {

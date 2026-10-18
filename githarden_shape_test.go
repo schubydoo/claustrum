@@ -292,9 +292,6 @@ func TestHardenedGitCallShape(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	oldTimeout := gitTimeout
-	t.Cleanup(func() { gitTimeout = oldTimeout })
-	gitTimeout = 0
 	installGitSlowStub(t, realGit)
 	f := newWTFixture(t, false)
 	s := newTestServer(t)

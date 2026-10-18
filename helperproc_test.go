@@ -204,7 +204,8 @@ func runGitLingering(args []string) int {
 //   - "postfail": run the real git, then print the stderr payload (not before) and
 //     exit, whatever git answered.
 //   - "hold": run the real git, start a descendant that holds this call's stdout
-//     and stderr for CLAUSTRUM_GITSTUB_MS milliseconds, and exit at once.
+//     and stderr for CLAUSTRUM_GITSTUB_MS milliseconds, and exit at once. When
+//     CLAUSTRUM_GITSTUB_HOLDPID names a file, the pid of the descendant goes in it.
 //
 // "fail" and "postfail" exit with CLAUSTRUM_GITSTUB_EXIT, 1 when it is not set.
 //
@@ -278,7 +279,8 @@ func runGitSlow(args []string) int {
 	// and "full" is the plain one with --git-dir. Each name fails its listing with
 	// exit code 128. "noscope" refuses --show-scope with exit code 129, as a git
 	// before 2.26 does. "hold-<name>" waits on that listing, so that a deadline of
-	// the caller expires during it. With CLAUSTRUM_GITSTUB_LOG set, a held listing
+	// the caller expires during it. The wait is 60 s, or CLAUSTRUM_GITSTUB_HOLD_MS
+	// milliseconds when that is set. With CLAUSTRUM_GITSTUB_LOG set, a held listing
 	// appends the line "held" and its name, joined by a unit separator.
 	//
 	// A call with --file is the read of one config file (listConfigText). It has
@@ -298,7 +300,11 @@ func runGitSlow(args []string) int {
 			if log := os.Getenv("CLAUSTRUM_GITSTUB_LOG"); log != "" {
 				appendLine(log, "held\x1f"+kind)
 			}
-			time.Sleep(60 * time.Second)
+			hold := 60 * time.Second
+			if ms, err := strconv.Atoi(os.Getenv("CLAUSTRUM_GITSTUB_HOLD_MS")); err == nil {
+				hold = time.Duration(ms) * time.Millisecond
+			}
+			time.Sleep(hold)
 		}
 		if kind == "scoped" && slices.Contains(which, "noscope") {
 			fmt.Fprintln(os.Stderr, "error: unknown option `show-scope'")
@@ -429,6 +435,9 @@ func runGitSlow(args []string) int {
 		if err := child.Start(); err != nil {
 			fmt.Fprintln(os.Stderr, err)
 			return 1
+		}
+		if f := os.Getenv("CLAUSTRUM_GITSTUB_HOLDPID"); f != "" {
+			appendLine(f, strconv.Itoa(child.Process.Pid))
 		}
 	}
 	return code

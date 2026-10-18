@@ -331,9 +331,8 @@ func TestWorktreeRemoveRootMissing(t *testing.T) {
 }
 
 // stubGitCall puts a `git` first on PATH that runs the git found before it, except
-// for a call whose arguments hold the words of call. That call runs cmd instead. It
-// also sets the D5 deadline gitTimeout to d, and 0 means no deadline.
-func stubGitCall(t *testing.T, call, cmd string, d time.Duration) {
+// for a call whose arguments hold the words of call. That call runs cmd instead.
+func stubGitCall(t *testing.T, call, cmd string) {
 	t.Helper()
 	real, err := exec.LookPath("git")
 	if err != nil {
@@ -346,45 +345,6 @@ func stubGitCall(t *testing.T, call, cmd string, d time.Duration) {
 		t.Fatal(err)
 	}
 	t.Setenv("PATH", bin+string(os.PathListSeparator)+os.Getenv("PATH"))
-	old := gitTimeout
-	gitTimeout = d
-	t.Cleanup(func() { gitTimeout = old })
-}
-
-// The row has the shape of W2: the root is the linked worktree w0, and the dirty leaf
-// is inside it. If the D5 deadline stops the first `worktree list` call, the remove
-// answers the work-tree refusal with the exec error. No git call runs after it, and
-// nothing is deleted. The reference has no such deadline, so this is claustrum's
-// choice (not measured).
-func TestWorktreeRemoveListKilledRefuses(t *testing.T) {
-	r := r0cRow{root: "<B>/X/o/w0", wp: "<B>/X/o/w0/cp/w1", leaf: "<B>/X/o/w0/cp/w1", setup: withW0,
-		after: func(t *testing.T, f *r0Fixture) { stubGitCall(t, "worktree list", "exec sleep 30", 2*time.Second) },
-		want:  "failed to remove worktree: cannot determine the repository's work tree: signal: killed"}
-	r.remove(t)
-}
-
-// baseRepo is W/sub, and git lists the linked worktree W as <B>/S/W, through the
-// symlink <B>/S to <B>. The root is W/.claude, with the dirty leaf inside it. If the
-// D5 deadline stops `rev-parse --show-toplevel`, the remove answers the work-tree
-// refusal with the exec error, and no git call runs after it. Nothing is deleted.
-// Without that refusal, the checkout tests miss W, because git lists it under
-// another spelling. The reference has no such deadline, so this is claustrum's
-// choice (not measured).
-func TestWorktreeRemoveTopLevelKilledRefuses(t *testing.T) {
-	r := r0cRow{base: "<B>/W/sub", root: "<B>/W/.claude", wp: "<B>/W/.claude/cp/w1", leaf: "<B>/W/.claude/cp/w1",
-		setup: func(t *testing.T, f *r0Fixture) {
-			withW(t, f)
-			if err := os.Symlink(f.B, filepath.Join(f.B, "S")); err != nil {
-				t.Fatal(err)
-			}
-			writeFile(t, filepath.Join(f.T, ".git", "worktrees", "W", "gitdir"), f.expand("<B>/S/W/.git\n"), 0o644)
-		},
-		after: func(t *testing.T, f *r0Fixture) {
-			stubGitCall(t, "rev-parse --show-toplevel", "exec sleep 30", 2*time.Second)
-		},
-		calls: []string{r0cRead, r0cListing, "rev-parse --show-toplevel"},
-		want:  "failed to remove worktree: cannot determine the repository's work tree: signal: killed"}
-	r.remove(t)
 }
 
 // After any other failure of `worktree list --porcelain -z`, the daemon runs `worktree
@@ -394,7 +354,7 @@ func TestWorktreeRemoveTopLevelKilledRefuses(t *testing.T) {
 // the failed calls.
 func TestWorktreeRemoveListFailsTwiceRefuses(t *testing.T) {
 	r := r0cRow{root: "<B>/X/o/w0", wp: "<B>/X/o/w0/cp/w1", leaf: "<B>/X/o/w0/cp/w1", setup: withW0,
-		after: func(t *testing.T, f *r0Fixture) { stubGitCall(t, "worktree list", "exit 129", 0) },
+		after: func(t *testing.T, f *r0Fixture) { stubGitCall(t, "worktree list", "exit 129") },
 		calls: append(slices.Clone(r0cRemoveCalls), r0cListing, "worktree list --porcelain"),
 		want:  "failed to remove worktree: cannot list the repository's worktrees: exit status 129"}
 	r.remove(t)
@@ -406,37 +366,9 @@ func TestWorktreeRemoveListFailsTwiceRefuses(t *testing.T) {
 // Mutation: do not read the output of the second call.
 func TestWorktreeRemoveListWithoutZIsRead(t *testing.T) {
 	r := r0cRow{root: "<B>/X/o/w0", wp: "<B>/X/o/w0/cp/w1", leaf: "<B>/X/o/w0/cp/w1", setup: withW0,
-		after: func(t *testing.T, f *r0Fixture) { stubGitCall(t, "worktree list --porcelain -z", "exit 129", 0) },
+		after: func(t *testing.T, f *r0Fixture) { stubGitCall(t, "worktree list --porcelain -z", "exit 129") },
 		calls: append(slices.Clone(r0cRemoveCalls), r0cListing, "worktree list --porcelain"),
 		want:  "refusing to remove worktree: <B>/X/o/w0 leads into <B>/X/o/w0, a worktree of the repository <T> (at <B>/X/o/w0)" + r0cLinkedTail}
-	r.remove(t)
-}
-
-// If the first `worktree list` call fails and the D5 deadline stops the second one,
-// the answer is the worktree-list refusal with "signal: killed". Nothing is deleted.
-// The reference has no such deadline, so this text is claustrum's own (not measured).
-func TestWorktreeRemoveListSecondCallKilledRefuses(t *testing.T) {
-	r := r0cRow{root: "<B>/X/o/w0", wp: "<B>/X/o/w0/cp/w1", leaf: "<B>/X/o/w0/cp/w1", setup: withW0,
-		after: func(t *testing.T, f *r0Fixture) {
-			real, err := exec.LookPath("git")
-			if err != nil {
-				t.Fatal(err)
-			}
-			bin := t.TempDir()
-			script := "#!/bin/sh\ncase \" $* \" in\n" +
-				"*\" worktree list --porcelain -z \"*) exit 129 ;;\n" +
-				"*\" worktree list --porcelain \"*) exec sleep 30 ;;\n" +
-				"esac\nexec '" + real + "' \"$@\"\n"
-			if err := os.WriteFile(filepath.Join(bin, "git"), []byte(script), 0o755); err != nil {
-				t.Fatal(err)
-			}
-			t.Setenv("PATH", bin+string(os.PathListSeparator)+os.Getenv("PATH"))
-			old := gitTimeout
-			gitTimeout = 2 * time.Second
-			t.Cleanup(func() { gitTimeout = old })
-		},
-		anyCalls: true,
-		want:     "failed to remove worktree: cannot list the repository's worktrees: signal: killed"}
 	r.remove(t)
 }
 
@@ -524,11 +456,12 @@ func TestWorktreeCreateRootInCheckout(t *testing.T) {
 	}
 }
 
-// On create, a D5 kill of `rev-parse --show-toplevel` or `worktree list` stops the
-// create with the parent-step text of a failed call, errorCode mkdir_failed. No git
-// call runs after it, and nothing is created. 5fd08069 stops so on a failed call
-// (cells C-W17b and C-W17 of round tier0-20, Linux VM). The kill itself is
-// claustrum's own (not measured). The rows:
+// On create, a stop of `rev-parse --show-toplevel` or `worktree list` at the time
+// limit of a call stops the create with the parent-step text and the stop text,
+// errorCode mkdir_failed. No git call runs after it, and nothing is created.
+// 5fd08069 answers so for the show-toplevel row (cell TB of round task010-02,
+// Linux VM). The worktree list row is claustrum's own (not measured). The limit
+// is shortened to 2 s here. The rows:
 //   - show-toplevel: the shape of row Y11b, baseRepo W/sub and the root in W.
 //   - worktree list: the shape of row W4, the root in the linked worktree w0. The
 //     killed -z call gets no second call.
@@ -541,16 +474,17 @@ func TestWorktreeCreateCheckoutCallKilled(t *testing.T) {
 		calls []string
 	}{
 		"show-toplevel": {row: r0cRow{base: "<B>/W/sub", root: "<B>/W/.claude", wp: "<B>/W/.claude/cp/c1", setup: withW},
-			call: "rev-parse --show-toplevel", text: "cannot determine the repository's work tree: signal: killed",
+			call: "rev-parse --show-toplevel", text: "cannot determine the repository's work tree: git took too long: Claude stopped git rev-parse after 2 minutes; try again",
 			calls: r0cCreateCalls[:5]},
 		"worktree list": {row: r0cRow{root: w0, wp: w0 + "/cp/c1", setup: withW0},
-			call: "worktree list", text: "cannot list the repository's worktrees: signal: killed",
+			call: "worktree list", text: "cannot list the repository's worktrees: git took too long: Claude stopped git worktree after 2 minutes; try again",
 			calls: r0cCreateCalls},
 	} {
 		t.Run(name, func(t *testing.T) {
 			f, _, _ := r.row.fixture(t)
 			before := r0cState(t, f)
-			stubGitCall(t, r.call, "exec sleep 30", 2*time.Second)
+			stubGitCall(t, r.call, "exec sleep 30")
+			shortGitLimit(t, 2*time.Second)
 			calls := logGitArgv(t)
 			got := dispatchRaw(t, newTestServer(t), rpcLine(t, "git.worktree_create", r.row.params(f, "c1")))
 			if want := failFrame(t, "failed to create parent directory: "+r.text, "mkdir_failed"); got != want {

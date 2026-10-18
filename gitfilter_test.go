@@ -440,37 +440,49 @@ func TestWorktreeCreateFilterListingFails(t *testing.T) {
 // no filter. The frame is the one of main at 81c8893 for a wait on the listing
 // of the checkout, and the one of cells S2 (Linux VM).
 //
+// The deadline ends a listing of the filter rule. It does not end the listing of
+// the checkout, which is the "full" one: that one runs to its end, as on
+// 5fd08069 (cell T12 of round task010-01, Linux VM). With "noscope" the full
+// listing of the rule is held first, and then the one of the checkout.
+//
 // The stub holds the listing that the seam names and no other call: its log has
-// one "held" line with that name. The read of the config file is not held, so
-// the create answers at its deadline. The stub sleeps 60 s in a held call.
+// one "held" line with that name. The read of the config file is not held. The
+// stub sleeps holdMs in a held call.
 func TestWorktreeCreateDeadlineDuringFilterListing(t *testing.T) {
 	requireGit(t)
 	realGit, err := exec.LookPath("git")
 	if err != nil {
 		t.Fatal(err)
 	}
-	oldTimeout := gitTimeout
-	t.Cleanup(func() { gitTimeout = oldTimeout })
-	gitTimeout = 0
 	installGitSlowStub(t, realGit)
 	lateMs := int((2*calibrate(t, realGit) + 500*time.Millisecond).Milliseconds())
+	holdMs := lateMs + 1000
 	for _, seam := range []string{"hold-scoped", "noscope,hold-outside", "noscope,hold-full", "hold-full"} {
 		t.Run(seam, func(t *testing.T) {
 			f := newWTFixture(t, false)
 			log := filepath.Join(t.TempDir(), "argv.log")
 			t.Setenv("CLAUSTRUM_GITSTUB_LOG", log)
 			t.Setenv("CLAUSTRUM_GITSTUB_FAIL_LISTING", seam)
+			t.Setenv("CLAUSTRUM_GITSTUB_HOLD_MS", strconv.Itoa(holdMs))
 			raw, took := f.create(t, newTestServer(t), "w1", "", lateMs)
 			wantError(t, raw, "git worktree add timed out after "+strconv.Itoa(lateMs)+
 				"ms (deadline expired during the checkout): context deadline exceeded", "timeout")
 			f.assertRolledBack(t, []string{}, false)
 			kind := seam[strings.LastIndex(seam, "hold-")+len("hold-"):]
-			if held := gitCalls(t, log, "held"); len(held) != 1 || held[0][1] != kind {
-				t.Errorf("held calls = %q, want one of the %s listing", held, kind)
+			full := kind == "full"
+			want := 1
+			if seam == "noscope,hold-full" {
+				want = 2
 			}
-			// A held call that the deadline does not end keeps the reply for 60 s.
-			if took > 45*time.Second {
-				t.Errorf("the create answered after %s, want an answer at its deadline of %d ms", took, lateMs)
+			if held := gitCalls(t, log, "held"); len(held) != want || held[0][1] != kind {
+				t.Errorf("held calls = %q, want %d of the %s listing", held, want, kind)
+			}
+			hold := time.Duration(holdMs) * time.Millisecond
+			if full && took < hold {
+				t.Errorf("the create answered after %s, want it after the held listing (%d ms)", took, holdMs)
+			}
+			if !full && took >= hold {
+				t.Errorf("the create answered after %s, want it at its deadline of %d ms", took, lateMs)
 			}
 		})
 	}

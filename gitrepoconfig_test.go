@@ -983,7 +983,7 @@ func TestGitDirFilesOrder(t *testing.T) {
 		t.Errorf("a refused shallow and two large info files: detail = %q, want %q", got, want)
 	}
 	setRepoConfig(t, gitDir, versionConfig("repositoryformatversion = 2"))
-	v := repoReadVerdict(gitDirTrust{verdict: gitDirTrusted, pinCommonDir: gitDir})
+	v := repoReadVerdict(gitDirTrust{verdict: gitDirTrusted, pinCommonDir: gitDir}, nil)
 	if want := repoConfigPrefix + versionDetail("2"); v == nil || v.refusal != want {
 		t.Errorf("a refused config and three refused files: verdict = %+v, want %q", v, want)
 	}
@@ -1009,10 +1009,10 @@ func TestGitDirFilesOnAFile(t *testing.T) {
 	plain := filepath.Join(dir, "gitdir-file")
 	writeFile(t, plain, "x", 0o644)
 	plainWant := "this repository's git config cannot be used: open " + plain + ": not a directory"
-	if msg, _ := repoConfigGate(gitDirTrust{verdict: gitDirTrusted, pinCommonDir: plain}, false); msg != plainWant {
+	if msg, _ := repoConfigGate(gitDirTrust{verdict: gitDirTrusted, pinCommonDir: plain}, false, nil); msg != plainWant {
 		t.Errorf("plain file: refusal = %q\nwant %q", msg, plainWant)
 	}
-	msg, _ := repoConfigGate(gitDirTrust{verdict: gitDirTrusted, pinCommonDir: gitFile}, false)
+	msg, _ := repoConfigGate(gitDirTrust{verdict: gitDirTrusted, pinCommonDir: gitFile}, false, nil)
 	if runtime.GOOS == "windows" && msg != fileWant {
 		t.Errorf(".git file: refusal = %q\nwant %q", msg, fileWant)
 	}
@@ -1129,7 +1129,7 @@ func TestRepoVerdictIsKept(t *testing.T) {
 	step := func(name string, want int, refusal string) {
 		t.Helper()
 		got := ""
-		if v := repoReadVerdict(trust); v != nil {
+		if v := repoReadVerdict(trust, nil); v != nil {
 			if got = v.refusal; got == "" {
 				got = gitDirFilesRefusal(trust.pinCommonDir)
 			}
@@ -1307,7 +1307,7 @@ func TestRepoVerdictNotKeptAfterAnOpenError(t *testing.T) {
 	}
 	verdict := func() string {
 		t.Helper()
-		v := repoReadVerdict(trust)
+		v := repoReadVerdict(trust, nil)
 		if v == nil {
 			t.Fatal("the read gave no verdict")
 		}

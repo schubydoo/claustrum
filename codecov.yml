@@ -183,6 +183,8 @@ component_management:
         # sourceBranch start-commit choice for git.worktree_create.
         - worktreesource.go
         - githarden.go
+        # the time limits of the git calls (5fd08069).
+        - gitstop.go
         # the index file of a new worktree and the registration step of the create rollback (89cb6289).
         - githarden_index_unix.go
         - githarden_index_windows.go

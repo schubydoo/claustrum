@@ -382,7 +382,7 @@ func TestLocationCellFailedCallStops(t *testing.T) {
 	} {
 		t.Run(r.name, func(t *testing.T) {
 			c := newLocCell(t)
-			stubGitCall(t, r.call, "exit 128", 0)
+			stubGitCall(t, r.call, "exit 128")
 			before := c.tree(t)
 			wantLocFrame(t, c.create(t, "<T>", "<X>", "<X>/p/w1"),
 				failFrame(t, "failed to create parent directory: "+r.text, "mkdir_failed"))
@@ -562,7 +562,7 @@ func TestLocationCellSeparateGitDirNotListed(t *testing.T) {
 			runGit(t, c.p("<B>/cwT"), "commit", "-q", "-m", "one")
 			c.dir(t, "<B>/cwG/loc/p/w1")
 			c.file(t, "<B>/cwG/loc/p/keep")
-			stubGitCall(t, "worktree list", `printf 'worktree %s\0branch refs/heads/main\0\0' '`+c.p("<B>/cwT")+`'; exit 0`, 0)
+			stubGitCall(t, "worktree list", `printf 'worktree %s\0branch refs/heads/main\0\0' '`+c.p("<B>/cwT")+`'; exit 0`)
 			before := c.tree(t, c.p("<B>/cwG"), c.p("<B>/cwT"))
 			text := "refusing to " + verb + " worktree: <B>/cwG/loc leads into the repository <B>/cwT (at <B>/cwG); " +
 				"a worktree location must be outside the repository"

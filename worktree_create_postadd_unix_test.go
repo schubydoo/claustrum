@@ -25,9 +25,6 @@ import (
 func postAddFixture(t *testing.T) (wtFixture, *server) {
 	t.Helper()
 	requireGit(t)
-	oldTimeout := gitTimeout
-	t.Cleanup(func() { gitTimeout = oldTimeout })
-	gitTimeout = 0
 	f := newWTFixture(t, false)
 	installGitSlowStub(t, f.realGit)
 	return f, newTestServer(t)
@@ -268,9 +265,6 @@ func TestWorktreeCreateRegistrationInOtherRepository(t *testing.T) {
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			requireGit(t)
-			oldTimeout := gitTimeout
-			t.Cleanup(func() { gitTimeout = oldTimeout })
-			gitTimeout = 0
 			// Equal dates give equal commit ids in T and X.
 			t.Setenv("GIT_AUTHOR_DATE", "2026-01-01T00:00:00Z")
 			t.Setenv("GIT_COMMITTER_DATE", "2026-01-01T00:00:00Z")
@@ -587,9 +581,6 @@ func regFiles(t *testing.T, reg string) []string {
 func stageOldRegistrationOfSameName(t *testing.T) (string, string, string) {
 	t.Helper()
 	requireGit(t)
-	oldTimeout := gitTimeout
-	t.Cleanup(func() { gitTimeout = oldTimeout })
-	gitTimeout = 0
 	// Equal dates give equal commit ids in T and X.
 	t.Setenv("GIT_AUTHOR_DATE", "2026-01-01T00:00:00Z")
 	t.Setenv("GIT_COMMITTER_DATE", "2026-01-01T00:00:00Z")

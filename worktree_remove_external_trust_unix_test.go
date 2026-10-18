@@ -12,7 +12,6 @@ import (
 	"strings"
 	"syscall"
 	"testing"
-	"time"
 )
 
 // These tests cover git.worktree_remove with worktreeRoot on a baseRepo whose git
@@ -474,49 +473,6 @@ func TestWorktreeRemoveExternalLinkedBaseCannotRedirect(t *testing.T) {
 			t.Errorf("the worktree of X is gone: %v", err)
 		}
 	})
-}
-
-// With worktreeRoot, a D5 (git-timeout) kill of the repository check answers the
-// work-tree refusal with the exec error. Nothing is deleted, and no further git
-// command runs. `rev-parse --show-toplevel` answers at once, so that its own kill
-// refusal does not come first.
-func TestWorktreeRemoveExternalRepositoryCheckTimeoutRefuses(t *testing.T) {
-	bin := t.TempDir()
-	ran := filepath.Join(bin, "ran")
-	script := "#!/bin/sh\nfor a in \"$@\"; do case \"$a\" in config) exit 0 ;; --show-toplevel) exit 0 ;; " +
-		"--absolute-git-dir) exec sleep 30 ;; esac; done\n" +
-		"echo \"$*\" >> '" + ran + "'\nexit 0\n"
-	if err := os.WriteFile(filepath.Join(bin, "git"), []byte(script), 0o755); err != nil {
-		t.Fatal(err)
-	}
-	t.Setenv("PATH", bin+string(os.PathListSeparator)+os.Getenv("PATH"))
-	old := gitTimeout
-	gitTimeout = 300 * time.Millisecond
-	t.Cleanup(func() { gitTimeout = old })
-
-	base, err := filepath.EvalSymlinks(t.TempDir())
-	if err != nil {
-		t.Fatal(err)
-	}
-	repo := filepath.Join(base, "T")
-	shapeAsGitRepo(t, repo)
-	root := filepath.Join(base, "R")
-	target := filepath.Join(root, "proj", "e0")
-	keep := filepath.Join(target, "KEEP.txt")
-	wrWrite(t, keep, "must survive")
-
-	s := newTestServer(t)
-	got := dispatchRaw(t, s, rpcLine(t, "git.worktree_remove",
-		map[string]any{"baseRepo": repo, "worktreePath": target, "worktreeRoot": root}))
-	if want := refusalFrame(t, wtUnknown+"signal: killed"); got != want {
-		t.Errorf("got  %s\nwant %s", got, want)
-	}
-	if _, err := os.Stat(keep); err != nil {
-		t.Errorf("worktreePath was deleted: %v", err)
-	}
-	if b, err := os.ReadFile(ran); err == nil {
-		t.Errorf("git ran after the killed repository check: %s", b)
-	}
 }
 
 // Rows K10, K11 and K14: a baseRepo that git cannot start in answers the work-tree

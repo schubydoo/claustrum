@@ -413,9 +413,6 @@ func installEnvStub(t *testing.T) func(method string, params map[string]any) (st
 	if err != nil {
 		t.Fatal(err)
 	}
-	oldTimeout := gitTimeout
-	t.Cleanup(func() { gitTimeout = oldTimeout })
-	gitTimeout = 0
 	installGitSlowStub(t, realGit)
 	resetUserExcludesCache(t)
 	resetAttr := func() {
@@ -583,9 +580,6 @@ func TestInheritedCountRefusalPlacement(t *testing.T) {
 	writeFile(t, filepath.Join(n, "n.txt"), "n\n", 0o644)
 	missing := filepath.Join(base, "missing")
 	s := newTestServer(t)
-	oldTimeout := gitTimeout
-	t.Cleanup(func() { gitTimeout = oldTimeout })
-	gitTimeout = 0
 
 	const pre = "config-defined hooks could not be pinned off; git not run: "
 	errFrameOf := func(msg string) string {
@@ -683,9 +677,6 @@ func TestInheritedCountRefusalOnRemove(t *testing.T) {
 	f := newWTFixture(t, false)
 	resetUserExcludesCache(t)
 	s := newTestServer(t)
-	oldTimeout := gitTimeout
-	t.Cleanup(func() { gitTimeout = oldTimeout })
-	gitTimeout = 0
 	clearDaemonConfigEnv(t)
 	t.Setenv(configCountName, "x")
 	const refusal = `config-defined hooks could not be pinned off; git not run: inherited GIT_CONFIG_COUNT "x" is not a count`
@@ -743,9 +734,6 @@ func TestInheritedCountRefusalRound4(t *testing.T) {
 		t.Fatal(err)
 	}
 	s := newTestServer(t)
-	oldTimeout := gitTimeout
-	t.Cleanup(func() { gitTimeout = oldTimeout })
-	gitTimeout = 0
 
 	const refusal = `config-defined hooks could not be pinned off; git not run: inherited GIT_CONFIG_COUNT "x" is not a count`
 	removeFrame := func(msg string) string {

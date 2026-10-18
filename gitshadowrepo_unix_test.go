@@ -116,7 +116,7 @@ func TestShadowRepoSourceKinds(t *testing.T) {
 		t.Fatal(err)
 	}
 	trust := gitDirTrustFor(f.repo)
-	read := repoReadVerdict(trust)
+	read := repoReadVerdict(trust, nil)
 
 	exclude := filepath.Join(f.gitDir, "info", "exclude")
 	mustRemove(t, exclude)

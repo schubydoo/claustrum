@@ -593,14 +593,14 @@ func TestWorktreeCreateNoAnswerKeepsOldTests(t *testing.T) {
 	})
 }
 
-// TestWorktreeCreateSpellingCallEndedByDeadline pins that a deadline does not
+// TestWorktreeCreateSpellingCallEndedByDeadline pins that a stop does not
 // start the rollback after a failed spelling call (claustrum's own, not
-// measured). The state is that of cell V5 of round tier0-10, but the git-timeout
-// deadline of D5 ends the `rev-parse --show-toplevel` call. The create keeps the
-// "different worktree" refusal, and nothing is removed.
+// measured). The state is that of cell V5 of round tier0-10, but the time limit
+// of a call (shortened to 10 s) stops the `rev-parse --show-toplevel` call. The
+// create keeps the "different worktree" refusal, and nothing is removed.
 func TestWorktreeCreateSpellingCallEndedByDeadline(t *testing.T) {
 	f, s := postAddFixture(t)
-	gitTimeout = 10 * time.Second
+	shortGitLimit(t, 10*time.Second)
 	reg := filepath.Join(f.regDir, "w1")
 	afterAddSteps(t, []string{"write", filepath.Join(reg, "gitdir"), filepath.Join(f.realRoot(t), "elsewhere", "w", ".git") + "\n"})
 	stubRule2(t, "rev-parse,--show-toplevel", "", 60*time.Second, "", "", "")
@@ -624,9 +624,6 @@ func TestWorktreeCreateSpellingCallEndedByDeadline(t *testing.T) {
 // add ended. Without the lock by git directory the copy is missing, and the
 // first create sees two new entries and is refused.
 func TestWorktreeCreateThroughLinkedWorktreeWaits(t *testing.T) {
-	oldTimeout := gitTimeout
-	t.Cleanup(func() { gitTimeout = oldTimeout })
-	gitTimeout = 0
 	f := newWTFixture(t, true)
 	installGitSlowStub(t, f.realGit)
 	s := newTestServer(t)

@@ -33,7 +33,17 @@ func (s *server) handleGit(req *request) response {
 		return *bad
 	}
 	req.shadow = s.gitShadow
-	return fn(req)
+	// The daemon-wide window of gitWideLimit counts this request while it runs.
+	if offSwitchSet(req.Params) {
+		s.offGitRequests.Add(1)
+		defer s.offGitRequests.Add(-1)
+	}
+	if !limitedGitMethod(req.Method) {
+		return fn(req)
+	}
+	req.stop = &gitStop{wide: &s.offGitRequests}
+	req.use.stop = req.stop
+	return req.stop.reply(req, fn(req))
 }
 
 type gitParams struct {
@@ -78,96 +88,10 @@ func (p *gitParams) repoDir() string {
 	return "."
 }
 
-// gitTimeout optionally bounds every git invocation. **It is OFF by default (0),
-// which is the parity position**: the reference daemon showed no deadline at or
-// below the 75 s probed (outside the branch step of 89cb6289, which has its own
-// bounds, worktreebranch.go), so a wedged git — an index/config lock, a credential
-// prompt, a stalled network or filesystem, a hung checkout hook — leaves the
-// request goroutine waiting without bound there, and now here too.
-//
-// ⚠️ Everything below describes what an operator opts INTO, measured against the
-// retracted 60 s default. It shipped always-on and that failed rule 3: a
-// wall-clock deadline cannot separate a hostile git from an honestly slow one, so
-// a large repo on a loaded host or a cold network filesystem trips it too. The
-// fallback here IS observable. On git.status and
-// git.list_branches the killed process surfaces as -32603 carrying
-// "signal: killed" (docs/protocol/git-list-branches.md; docs/DIVERGENCES.md D5).
-// Normal git ops finish well under any sane bound, but "well under" is a statement
-// about typical hosts, not a property of the predicate, and an honest 61 s git has
-// never been measured on either binary. This is D5.
-//
-// ⚠️ A TIMEOUT IS NOT "the same as any other git failure" for a caller that acts on
-// the failure. git.worktree_remove runs no `git worktree remove`. On that method the
-// deadline starts no delete. A kill refuses or skips a step. One skipped step is the
-// daemon's own read of the repository config. After a kill of that call the remove
-// goes on as it did before that read.
-// git.worktree_create is the exception: its rollback deletes after a failed or killed
-// read-tree checkout or config.worktree step, and it removes an empty leaf after a
-// failed add. A kill of
-// show-toplevel or `worktree list` stops a create with a worktreeRoot with
-// mkdir_failed. A caller that deletes on a git
-// failure must tell our deadline from git's verdict first.
-//
-// ⚠️ This used to add "no OTHER frame moves because of the deadline". That is
-// false: the deadline is the shared gitTimeout, applied independently at the
-// hardened helpers, so a kill can surface through ANY call site. The
-// repo-detection calls can answer isRepo:false. More than one arm moves; the full set has not been
-// enumerated against the code, so do not restate a count here.
-//
-// CORRECTION, 2026-08-02: that last clause used to read "every reference-reachable
-// frame is still byte-identical", which is a claim about the whole wire and was
-// false when written — git.list_branches was folding git's stderr into branches[]
-// at the time. Scope a claim to the thing it was measured on.
-//
-// ⚠️ THE BOUND IS SOFTER THAN IT LOOKS ON THE D5 GIT SITES. Output and CombinedOutput wait
-// for the output pipe to close, not merely for git to exit, so a git that spawns a
-// child which OUTLIVES it keeps the call blocked past the deadline — the orphan
-// still holds the pipe. Measured: a stub `sleep 30` under `sh` took the full 30s
-// against a 300ms gitTimeout, while the same stub as `exec sleep 30` returned
-// promptly. The general git exec sites (git.status, git.list_branches, the repo
-// probes) do NOT cap that drain: closing it means a process-group teardown that is
-// unmeasured on those paths, so it is recorded rather than fixed.
-//
-// The ONE measured exception is git.worktree_create's read-tree checkout, which
-// CAN leave a smudge/hook descendant holding the pipe. Only that path caps the
-// drain — see hardenedGitCheckout / worktreeCreateDrainCap in githarden.go —
-// reproducing 4534d86's fixed ~5s post-exit cap + descendant reap and the
-// timeoutMs-gated success-vs-timeout verdict. That is wire-visible (a timeout +
-// rollback where an unbounded drain would report success), so it is scoped to the
-// one path where it was measured, not applied blanket to every git call.
-//
-// D5 FLIP: the default is now 0 = NO DEADLINE, matching the reference. A non-zero
-// value is opt-in via -git-timeout or the git-timeout key in claustrum.conf (the
-// config key is the reachable one — Claude Desktop owns the argv). At 0 the
-// deadline is not merely large: gitCtx below bypasses context.WithTimeout
-// entirely, so no cancel path is armed and exec.CommandContext cannot kill git.
-// Do NOT "simplify" that into a huge duration — the bypass is what makes "off"
-// mean off, exactly as D3 and D10 bypass their io.LimitReaders.
-// (var, not const, so tests can shrink it and -serve can set it.)
-var gitTimeout time.Duration
-
-// gitCtx returns the context every git invocation runs under: bounded when
-// gitTimeout is positive, unbounded when it is 0 (the default).
-//
-// The zero case returns context.Background() rather than a WithTimeout carrying a
-// huge value, so exec.CommandContext has nothing to fire and ctx.Err() is nil by
-// construction — a wedged git then blocks, as the reference
-// did at every duration probed (no deadline at or below 75 s, measured on
-// git.worktree_remove only, outside the branch step; above that, unmeasured on both
-// binaries).
-func gitCtx() (context.Context, context.CancelFunc) {
-	if gitTimeout <= 0 {
-		return context.Background(), func() {}
-	}
-	return context.WithTimeout(context.Background(), gitTimeout)
-}
-
-// git runs git -C <dir> <args...> under gitTimeout and returns combined output + ok.
+// git runs git -C <dir> <args...> and returns combined output + ok.
 // git, gitContext and gitStdoutErr serve tests only. No production code calls them.
 func git(dir string, args ...string) (string, bool) {
-	ctx, cancel := gitCtx()
-	defer cancel()
-	return gitContext(ctx, dir, args...)
+	return gitContext(context.Background(), dir, args...)
 }
 
 // gitContext is git() with an explicit context, so the timeout/cancel path is
@@ -196,47 +120,38 @@ func gitContext(ctx context.Context, dir string, args ...string) (string, bool) 
 // path is unaffected: the caller reports err.Error(), which for an ExitError is
 // "exit status N" and never includes stderr.
 func gitStdoutErr(dir string, args ...string) (string, error) {
-	ctx, cancel := gitCtx()
-	defer cancel()
 	full := append([]string{"-C", dir}, args...)
-	out, err := exec.CommandContext(ctx, "git", full...).Output()
+	out, err := exec.Command("git", full...).Output()
 	return strings.TrimRight(string(out), "\n"), err
 }
 
 // worktreeCreateCtx builds the two contexts of git.worktree_create.
 //
-// d5 is the D5 global git deadline from gitCtx. It has no deadline when D5 is off.
-// The add runs under d5 only, so the caller's timeoutMs never kills the add.
+// base carries the time limits of the request (gitStop.context). The add runs
+// under base only, so the caller's timeoutMs never ends the add. A held add
+// gets the stop at 120 s, also with a timeoutMs of 5000 (cell T6 of round
+// task010-01, Linux and macOS VMs).
 //
-// caller is d5 plus the caller's timeoutMs (4534d86 parity). The read-tree checkout
-// runs under caller, so the caller's deadline kills the checkout. The daemon also
-// tests caller after the add and after the copy step. When timeoutMs is 0 or less,
-// caller is d5 itself, and with D5 also off nothing is bounded.
+// caller is base plus the caller's timeoutMs (4534d86 parity). The read-tree
+// checkout runs under caller, so the caller's deadline kills the checkout. The
+// daemon also tests caller after the add and after the copy step. When timeoutMs
+// is 0 or less, caller is base itself.
 //
-// The add and the checkout share the one D5 deadline. With D5 opted in and
-// timeoutMs 0, the checkout thus runs under the D5 time that the add left. That is a
-// change only to the claustrum-only, default-off D5 path. A D5 kill of the checkout
-// is a failed checkout: the request answers worktree_add_failed "(checkout)" and
-// rolls back.
-//
-// errCallerTimeoutMs is the cause stamped on the caller's deadline. It tells a fired
-// caller deadline apart from a fired D5 deadline. When D5 fires first,
-// context.Cause reports the D5 DeadlineExceeded instead. See callerTimeoutFired.
+// errCallerTimeoutMs is the cause stamped on the caller's deadline
+// (callerTimeoutFired).
 var errCallerTimeoutMs = errors.New("git.worktree_create caller timeoutMs deadline")
 
-func worktreeCreateCtx(timeoutMs int) (d5, caller context.Context, cancel context.CancelFunc) {
-	base, baseCancel := gitCtx()
+func worktreeCreateCtx(s *gitStop, timeoutMs int) (base, caller context.Context, cancel context.CancelFunc) {
+	base = s.context()
 	if timeoutMs <= 0 {
-		return base, base, baseCancel
+		return base, base, func() {}
 	}
 	ctx, c := context.WithTimeoutCause(base, time.Duration(timeoutMs)*time.Millisecond, errCallerTimeoutMs)
-	return base, ctx, func() { c(); baseCancel() }
+	return base, ctx, c
 }
 
 // callerTimeoutFired reports whether ctx was canceled by the caller's own timeoutMs
-// deadline, as opposed to the D5 global deadline (or any other parent cancellation).
-// Only the caller's deadline earns the 4534d86 errorCode "timeout"; a D5 kill falls
-// through to worktree_add_failed, the way a D5-only kill (no timeoutMs) already does.
+// deadline. Only that deadline earns the 4534d86 errorCode "timeout".
 func callerTimeoutFired(ctx context.Context) bool {
 	return errors.Is(context.Cause(ctx), errCallerTimeoutMs)
 }
@@ -298,7 +213,7 @@ func gitInfo(req *request) response {
 	if t.verdict == gitDirNoRepo {
 		// A listing that fails here refuses (rows A-N1 and A-X2 on Linux and macOS VMs,
 		// cells P3-infoN and P3-infoX on a Windows VM).
-		if msg := noRepoInfoCalls(t, p.Path, bool(p.ShadowDirOff)); msg != "" {
+		if msg := noRepoInfoCalls(t, req.stop, p.Path, bool(p.ShadowDirOff)); msg != "" {
 			return errResult(req.ID, codeInternal, msg)
 		}
 		return notRepo()
@@ -356,7 +271,7 @@ func gitInfo(req *request) response {
 		}
 	}
 	if inFile {
-		req.use = gitUse{}
+		req.use = gitUse{stop: req.stop}
 	}
 	req.listEntryConfig(t)
 	// If the repo's config cannot be enumerated (e.g. an `include.path` with no value), the
@@ -387,7 +302,7 @@ func gitInfo(req *request) response {
 		copyOf = req.use.gitDir
 		front = req.use.gitDirFront()
 	}
-	top := gitInfoRoot(walkRoot, walkGitDir, copyOf, req.use.gitDirPin(p.Path), front)
+	top := gitInfoRoot(req.stop, walkRoot, walkGitDir, copyOf, req.use.gitDirPin(p.Path), front)
 	// slug and defaultBranch come before the branch, matching the reference order.
 	slug := gitRepoSlug(req.use, p.Path)
 	defBranch := gitDefaultBranch(req.use, p.Path)
@@ -626,10 +541,10 @@ func gitStatus(req *request) response {
 		return errResult(req.ID, codeInternal, msg)
 	}
 	if t.verdict == gitDirNoRepo {
-		if msg := statusGitFileNowhere(t, p.BaseRepo, bool(p.ShadowDirOff)); msg != "" {
+		if msg := statusGitFileNowhere(t, req.stop, p.BaseRepo, bool(p.ShadowDirOff)); msg != "" {
 			return errResult(req.ID, codeInternal, msg)
 		}
-		if msg := statusNoRepoCalls(p.BaseRepo, t.noGit); msg != "" {
+		if msg := statusNoRepoCalls(req.stop, p.BaseRepo, t.noGit); msg != "" {
 			return errResult(req.ID, codeInternal, msg)
 		}
 		return notRepo
@@ -677,7 +592,7 @@ func gitStatus(req *request) response {
 	if !ok {
 		return notRepo
 	}
-	top, ok, err := statusWorkTreeProbe(common, sp.probeTree, statusCommonPin(req.use, common), req.use.gitDirFront())
+	top, ok, err := statusWorkTreeProbe(req.stop, common, sp.probeTree, statusCommonPin(req.use, common), req.use.gitDirFront())
 	if err != nil {
 		return errResult(req.ID, codeInternal, err.Error())
 	} else if !ok {
@@ -752,7 +667,7 @@ func gitListBranches(req *request) response {
 		// A listing that fails here refuses (row A-N2 on Linux and macOS VMs, cell
 		// P3-lbN on a Windows VM).
 		// One more call follows a listing that passed (noRepoInfoCalls).
-		if msg := noRepoInfoCalls(t, p.Path, bool(p.ShadowDirOff)); msg != "" {
+		if msg := noRepoInfoCalls(t, req.stop, p.Path, bool(p.ShadowDirOff)); msg != "" {
 			return errResult(req.ID, codeInternal, msg)
 		}
 		return okResult(req.ID, branchesResult{Branches: []string{}})
@@ -868,7 +783,7 @@ func gitWorktreeCreateLocked(req *request, p *gitParams, repo string) response {
 		// is created (rows A-N3, A-N6 and A-N6b on Linux and macOS VMs, cells P3-crN
 		// and Wf-P3-crNroot on a Windows VM).
 		// One more call follows a listing that passed (noRepoCreateCalls).
-		if msg := noRepoCreateCalls(t, !bool(p.ShadowDirOff) && req.shadow.active(), bool(p.ShadowDirOff), repo); msg != "" {
+		if msg := noRepoCreateCalls(t, req.stop, !bool(p.ShadowDirOff) && req.shadow.active(), bool(p.ShadowDirOff), repo); msg != "" {
 			return okResult(req.ID, worktreeResult{Success: false, Error: msg, ErrorCode: "worktree_add_failed"})
 		}
 		return okResult(req.ID, worktreeResult{Success: false, Error: "not a git repository", ErrorCode: "not_a_repo"})
@@ -965,15 +880,16 @@ func gitWorktreeCreateLocked(req *request, p *gitParams, repo string) response {
 		}
 		// A failed show-toplevel stops the create, and so does a `worktree list` that
 		// fails with -z and then without it. Nothing is made (5fd08069, cells C-W17b and
-		// C-W17 of round tier0-20, Linux VM). A D5 kill gets the same texts. A kill of
-		// the -z call runs no second call (not measured).
-		topLevel, _, err := repoTopLevelCall(req.use, repo, nil)
+		// C-W17 of round tier0-20, Linux VM). A show-toplevel that its time limit
+		// stopped gets the same frame, with the stop text (cell TB of round
+		// task010-02, Linux VM).
+		topLevel, err := repoTopLevelCall(req.use, repo, nil)
 		if err != nil {
 			return okResult(req.ID, worktreeResult{Success: false, ErrorCode: "mkdir_failed",
 				Error: parentStepPrefix + "cannot determine the repository's work tree: " + err.Error()})
 		}
 		_ = repositoryCheckError(req.use, repo, nil)
-		listed, _, err := worktreeListTwice(req.use, repo)
+		listed, err := worktreeListTwice(req.use, repo)
 		if err != nil {
 			return okResult(req.ID, worktreeResult{Success: false, ErrorCode: "mkdir_failed",
 				Error: parentStepPrefix + "cannot list the repository's worktrees: " + err.Error()})
@@ -1295,12 +1211,13 @@ func gitWorktreeCreateLocked(req *request, p *gitParams, repo string) response {
 			}
 		}
 	}
-	// A caller-supplied timeoutMs (4534d86) bounds the add, the checkout and the copy
-	// step. At timeoutMs 0 with D5 off, both contexts are the unbounded context that
-	// hardenedGit uses, so the default path is byte-identical.
-	d5Ctx, callerCtx, cancelCtx := worktreeCreateCtx(p.TimeoutMs)
+	// A caller-supplied timeoutMs (4534d86) bounds the checkout, and the daemon
+	// tests it after the add and after the copy step. At timeoutMs 0 both
+	// contexts are the context of the request.
+	baseCtx, callerCtx, cancelCtx := worktreeCreateCtx(req.stop, p.TimeoutMs)
 	defer cancelCtx()
-	// The caller's deadline does not kill the add. The daemon waits for git to exit.
+	// The caller's deadline does not kill the add. The daemon waits until the 2
+	// minute limit.
 	// Measured against f6010b97 and 90fca6e6 on a macOS VM. Each failure frame quotes
 	// git's stderr through worktreeGitText.
 	//
@@ -1368,11 +1285,13 @@ func gitWorktreeCreateLocked(req *request, p *gitParams, repo string) response {
 		}
 	}
 	listEntriesBefore()
-	addStderr, addErr := worktreeAdd(d5Ctx, req.use, repo, p.WorktreePath, checkpoint, addArgs...)
+	addStderr, addErr := worktreeAdd(baseCtx, req.use, repo, p.WorktreePath, checkpoint, addArgs...)
 	if resp, ok := incompleteAdd(addErr, createdBranch); ok {
 		return resp
 	}
-	if addErr != nil && attachBranch != "" {
+	// A stopped attach add gets no fallback, so one add runs, as on 5fd08069
+	// (cell T7 of round task010-01, Linux VM).
+	if addErr != nil && attachBranch != "" && !isGitStop(addErr) {
 		// A refused attach falls back to a new branch, unless the failed attach add
 		// deleted the leaf or put a new directory in its place. Then the request
 		// answers the attach add's own failure. Measured against f6010b97 and 90fca6e6
@@ -1402,7 +1321,7 @@ func gitWorktreeCreateLocked(req *request, p *gitParams, repo string) response {
 			fallbackArgs = append(fallbackArgs, startCommit)
 		}
 		listEntriesBefore()
-		addStderr, addErr = worktreeAdd(d5Ctx, req.use, repo, p.WorktreePath, checkpoint, fallbackArgs...)
+		addStderr, addErr = worktreeAdd(baseCtx, req.use, repo, p.WorktreePath, checkpoint, fallbackArgs...)
 		if resp, ok := incompleteAdd(addErr, p.BranchName); ok {
 			return resp
 		}
@@ -1427,6 +1346,11 @@ func gitWorktreeCreateLocked(req *request, p *gitParams, repo string) response {
 		// expired. The rollback runs no git call and removes the leaf only if it is
 		// empty (undoFailedAdd). A branch that existed before the call is kept.
 		// Measured against f6010b97 and 90fca6e6 on a macOS VM.
+		//
+		// An add that its time limit stopped gets this rollback too, with the stop
+		// text. On 5fd08069 the leaf is gone, and no git call follows (cells T5 to
+		// T7 of round task010-01. T5 ran on Linux, macOS and Windows VMs, T6 on
+		// Linux and macOS VMs, and T7 on a Linux VM).
 		undoFailedAdd(p.WorktreePath, checkpoint)
 		return okResult(req.ID, worktreeResult{
 			Success:   false,
@@ -1596,18 +1520,15 @@ func gitWorktreeCreateLocked(req *request, p *gitParams, repo string) response {
 	//
 	// Two conditions are claustrum's own, not measured. With no new name, or
 	// with more than one, the create keeps the refusal, and nothing is removed.
-	// And the call must fail by itself. A call that the git-timeout deadline of
-	// D5 ended keeps the refusal too: a fired deadline is not a refusal of git.
-	// The timeoutMs of the caller does not bound that call. The undo text after
+	// And the call must fail by itself. A call that its time limit stopped keeps
+	// the refusal too: a stop is not a refusal of git. The timeoutMs of the
+	// caller does not bound that call. The undo text after
 	// the frame is not measured either. What 5fd08069 takes from an answer of the
 	// call is not measured: claustrum does not use it. With no answer of git to
 	// rev-parse --absolute-git-dir the record compare is as before (not measured).
 	if adminRecordMismatch(indexDir, p.WorktreePath, gitAnswered) {
-		spellCtx, cancelSpell := gitCtx()
-		_, err := gitDirWorkTreeToplevelIn(spellCtx, gitDir, repo, req.use.gitDirPin(repo), req.use.gitDirFront())
-		ended := spellCtx.Err() != nil
-		cancelSpell()
-		if err != nil && !ended && newEntry != "" {
+		_, err := gitDirWorkTreeToplevelIn(req.stop.context(), gitDir, repo, req.use.gitDirPin(repo), req.use.gitDirFront())
+		if err != nil && !isGitStop(err) && newEntry != "" {
 			undo, kept := undoFailedCheckout(req.use, repo, p.WorktreePath, createdBranch, checkpoint, created)
 			return okResult(req.ID, worktreeResult{
 				Success:    false,
@@ -1654,7 +1575,7 @@ func gitWorktreeCreateLocked(req *request, p *gitParams, repo string) response {
 		dropConfigDir()
 		u := req.use
 		u.branchGate = func() string {
-			msg, _ := repoConfigGate(t, false)
+			msg, _ := repoConfigGate(t, false, req.stop)
 			return msg
 		}
 		undo, kept := undoFailedCheckout(u, repo, p.WorktreePath, createdBranch, checkpoint, tested)
@@ -1710,7 +1631,7 @@ func gitWorktreeCreateLocked(req *request, p *gitParams, repo string) response {
 	dropConfigDir()
 	// If the caller's deadline expired during the add, the request
 	// answers timeout "before the checkout started" and rolls back. errorCode
-	// "timeout" is reserved for the caller's own deadline. The reference has no D5.
+	// "timeout" is reserved for the caller's own deadline.
 	// Every rollback below appends an undo text when one of its steps fails.
 	if p.TimeoutMs > 0 && callerTimeoutFired(callerCtx) {
 		msg := fmt.Sprintf("git worktree add timed out after %dms (deadline expired before the checkout started)", p.TimeoutMs)
@@ -2050,10 +1971,7 @@ func gitWorktreeRemoveLocked(req *request, p *gitParams, repo string) response {
 		// repository. Then they refuse a root that does not exist or does not resolve.
 		// Nothing is deleted (Linux and macOS VMs, rows Q6s, Q17 to Q19, E1, W1, W2, Y1,
 		// Y5, Y6, Y9 and Y10). Rows T2b to T5 on both VMs, Linux row T1 and macOS row T1m
-		// measured the same. If the D5 deadline stops the first `worktree list`, the removal
-		// answers the work-tree refusal with the exec error. A D5 hit on `rev-parse
-		// --show-toplevel` or on the repository check does the same. Both are claustrum's
-		// choice (not measured). After any other failure of `worktree list -z`, the
+		// measured the same. After a failure of `worktree list -z`, the
 		// daemon runs `worktree list --porcelain` with its listing. If that call fails
 		// too, the removal is refused and nothing is deleted (89cb6289, row DG2s-g on a
 		// Linux VM). See worktreeListForRemove.

@@ -475,10 +475,13 @@ func splitScopedListing(out []byte) (full, outside []byte) {
 //
 // A listing that fails for another reason refuses the create with git's text,
 // as a failed checkout. No filter runs then. That is claustrum's choice (not
-// measured). One state is apart: ctx is done, by the timeoutMs of the caller or
-// by D5. The plan is then empty, and the read-tree call cannot start under that
-// ctx. So the caller answers as it did before the rule: the timeout arm, or the
-// failed checkout with the text of the context.
+// measured). One state is apart: ctx is done, by the timeoutMs of the caller.
+// The plan is then empty, and the read-tree call cannot start under that ctx.
+// So the caller answers as it did before the rule: the timeout arm, or the
+// failed checkout with the text of the context. 5fd08069 makes no --show-scope
+// call. So with a timeoutMs that expires while that call
+// runs, it can answer the refusal of the rule where claustrum answers timeout
+// (cell TF of round task010-02, Linux VM).
 func listFilterPlan(ctx context.Context, u gitUse, leaf, gitDir string, pin []string) filterPlan {
 	failed := func(r listingRun) filterPlan {
 		if ctx.Err() != nil {
@@ -492,7 +495,7 @@ func listFilterPlan(ctx context.Context, u gitUse, leaf, gitDir string, pin []st
 	cmd.Env = env
 	var errBuf bytes.Buffer
 	cmd.Stderr = &errBuf
-	out, err := cmd.Output()
+	out, err := gitOutput(ctx, cmd)
 	var ee *exec.ExitError
 	switch {
 	case err == nil:

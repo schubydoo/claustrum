@@ -18,7 +18,7 @@ A failed request can leave files on disk: see [After a failure](#after-a-failure
 | `sourceBranch` | no | The name that the new branch starts from. The daemon reads it as a local branch and as `origin/<name>`. The default is the current branch. An attach to `existingBranch` does not use it. A name that matches no branch is not an error: see [Response](#response). |
 | `existingBranch` | no | A local branch to attach to. If it names no local branch, the daemon creates `branchName` instead. If the attach fails, the daemon does the same. For example, git refuses an attach to a branch that is checked out in `baseRepo`. The request can then still succeed. `branch` in the response says which branch the worktree is on: see [Response](#response). |
 | `worktreeRoot` | no | A location outside the repository. Windows refuses it with `unsafe_path`. |
-| `timeoutMs` | no | A deadline that starts at the add. It stops only the checkout. The daemon tests it again after the add and after the copy step. With no value or `0` there is no deadline. |
+| `timeoutMs` | no | A deadline that starts at the add. It stops the read-tree call and the filter listings. The daemon tests it after the add and the copy step. No value or `0` sets none. |
 | `shadowDirOff` | no | `true` turns off three things for this request: the filter rule of the checkout, the daemon's own read of the git config of the repository, and the settings copy. Any other value does nothing and is no error. See [Git filters](#git-filters), [Repository config refusals](../PROTOCOL.md#repository-config-refusals) and [The settings copy](#the-settings-copy). |
 
 Where the worktree can go:
@@ -58,7 +58,7 @@ Decide by `errorCode` first.
 | `not_a_repo` | `baseRepo` is not a git repository, or git itself does not accept it. A bare `baseRepo` gets this code too while the daemon works on its settings copy. |
 | `nested_base_repo` | `baseRepo` is inside a directory of managed worktrees, or the daemon does not accept it as a trust root. |
 | `mkdir_failed` | The daemon cannot create a directory for the worktree. Or, with `worktreeRoot`, a git call or a `.git` test failed first. |
-| `worktree_add_failed` | `git worktree add`, the checkout or the `config.worktree` step failed. The text holds the message of git, or a refusal of the daemon that came before the add. |
+| `worktree_add_failed` | `git worktree add`, the checkout or the `config.worktree` step failed. The text holds the message of git, or a refusal of the daemon that came before the add. A `git worktree add` that runs 2 minutes is stopped. |
 | `repository_only_filter` | The checkout needs a git filter that only the git config of the repository defines. See [Git filters](#git-filters). |
 | `timeout` | The deadline of `timeoutMs` expired. |
 
@@ -149,7 +149,7 @@ Neither set includes `.claude/worktrees` or the session state of Claude under `.
 
 A copy does not keep the mode of its source. The daemon creates each file with mode `0666` less its umask. So an executable file loses its execute bit, and a `0400` file gets a wider mode. The daemon also skips symbolic links. A copy does not replace a file or a link that the checkout made. Name configuration files in `.worktreeinclude`, not secrets or scripts.
 
-A copy that fails does not fail the request. If the deadline of `timeoutMs` expires during the copy, the request fails with `timeout`.
+A copy that fails does not fail the request. If the deadline of `timeoutMs` expires during the copy, the request fails with `timeout`. A scan of ignored files stops at 10 minutes, and nothing is copied ([Time limits of git calls](../PROTOCOL.md#time-limits-of-git-calls)).
 
 ## Differences by system
 
@@ -160,8 +160,7 @@ A copy that fails does not fail the request. If the deadline of `timeoutMs` expi
 
 ## Differences from the reference
 
-The pinned build `89cb6289` runs a git filter that only the repository defines. claustrum follows `5fd08069` there, in the refusal of a repository config and in the settings copy. See [Git filters](#git-filters) and [Repository config refusals](../PROTOCOL.md#repository-config-refusals). These entries of the divergence catalog apply to this method:
+The pinned build `89cb6289` runs a git filter that only the repository defines. claustrum follows `5fd08069` there. See [Git filters](#git-filters) and [Repository config refusals](../PROTOCOL.md#repository-config-refusals). These entries of the divergence catalog apply to this method:
 
 - [D2](../DIVERGENCES.md#d2): a delete refuses a path that is the home directory or holds it. That covers the Windows removal of old `.claude-new-worktree-*` entries and both staging removes.
-- [D5](../DIVERGENCES.md#d5): an optional deadline on the git calls. It is off by default.
 - [D24](../DIVERGENCES.md#d24): a rollback and the index placement leave a registration directory that something replaced after the add (the Windows placement is not measured).

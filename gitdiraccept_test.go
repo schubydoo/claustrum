@@ -198,7 +198,7 @@ func TestKeptReadAndALinkAtTheGitDir(t *testing.T) {
 	f := newRefusalFixture(t)
 	setGitDirMustBeReal(t, true)
 	trust := gitDirTrust{verdict: gitDirTrusted, pinCommonDir: f.gitDir}
-	if msg, v := repoConfigGate(trust, false); msg != "" || v == nil {
+	if msg, v := repoConfigGate(trust, false, nil); msg != "" || v == nil {
 		t.Fatalf("the first gate = %q, want an accepted read", msg)
 	}
 	if err := os.Rename(f.gitDir, f.gitDir+"-real"); err != nil {
@@ -207,7 +207,7 @@ func TestKeptReadAndALinkAtTheGitDir(t *testing.T) {
 	linkAt(t, f.gitDir, f.gitDir+"-real")
 	want := "this repository's git config cannot be used: " + quoteOperand(filepath.Join(f.gitDir, "config")) +
 		": is, or is reached through, a link that Claude does not follow here; replace the link with what it points to"
-	if msg, _ := repoConfigGate(trust, false); msg != want {
+	if msg, _ := repoConfigGate(trust, false, nil); msg != want {
 		t.Errorf("the gate with a link = %q\nwant %q", msg, want)
 	}
 	// The real directory at the path again answers as before.
@@ -217,7 +217,7 @@ func TestKeptReadAndALinkAtTheGitDir(t *testing.T) {
 	if err := os.Rename(f.gitDir+"-real", f.gitDir); err != nil {
 		t.Fatal(err)
 	}
-	if msg, v := repoConfigGate(trust, false); msg != "" || v == nil {
+	if msg, v := repoConfigGate(trust, false, nil); msg != "" || v == nil {
 		t.Errorf("the gate after the link went = %q, want an accepted read", msg)
 	}
 }

@@ -473,7 +473,7 @@ func worktreeAddStaged(ctx context.Context, u gitUse, repo, leaf string, cp work
 	cmd.Env = withAddCopy(cmd.Env, u.repoDir, st.dir)
 	var errBuf bytes.Buffer
 	cmd.Stderr = &errBuf
-	err = cmd.Run()
+	err = gitRun(ctx, cmd)
 	if err == nil {
 		err = st.finish(leaf, cp)
 	}

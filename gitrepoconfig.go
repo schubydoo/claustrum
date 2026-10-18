@@ -14,6 +14,7 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"time"
 )
 
 // The daemon's own read of a repository's config, and its tests of three files of
@@ -103,6 +104,15 @@ func listConfigText(ctx context.Context, text []byte, dir string, env []string) 
 // claustrum's own, and 5fd08069 is not measured with a listing over it. A
 // variable, so that a test can lower it.
 var repoListingMaxBytes = 8 * repoConfigMaxBytes
+
+// repoReadBound ends the listing of one config file of the read of the
+// repository config, in a request with time limits (gitStop). The process gets
+// SIGKILL with no SIGTERM before it, and the request answers readStopText after
+// repoConfigPrefix. On 5fd08069 a git.status whose listing of `.git/config` was
+// held 35 s answered at 30.3 s so (cell T18 of round task010-01, Linux VM). macOS,
+// Windows, an included file and the other methods are not measured: they get
+// the same (claustrum's own). A variable, so that a test can lower it.
+var repoReadBound = 30 * time.Second
 
 // errListingTooLarge ends a listing that passes repoListingMaxBytes.
 var errListingTooLarge = errors.New("the listing of a config file is over its bound")
@@ -422,7 +432,16 @@ func (r *repoConfigRead) file(path string, depth int) string {
 		r.unlisted = detail == ""
 		return detail
 	}
-	out, errOut, err := listRepoConfigText(r.ctx, text, gitVersionDir, repoConfigListEnv())
+	ctx := r.ctx
+	if s, _ := gitStopOf(ctx); s != nil {
+		var cancel context.CancelFunc
+		ctx, cancel = context.WithTimeout(ctx, repoReadBound)
+		defer cancel()
+	}
+	out, errOut, err := listRepoConfigText(ctx, text, gitVersionDir, repoConfigListEnv())
+	if err != nil && ctx.Err() != nil {
+		return readStopText(path)
+	}
 	// A listing over its bound still gets the name bound and the count of the
 	// settings that the read kept. Those two refusals are the first in the order
 	// of the listing, so they are the ones of the whole listing. With neither,
@@ -1023,7 +1042,10 @@ func keepRepoVerdict(k repoVerdictKey, v *repoVerdict) {
 // answers this request, and the next request reads again. So a refusal with an
 // `open <file>:` text is read again on each request. That rule is claustrum's
 // own.
-func repoReadVerdict(t gitDirTrust) *repoVerdict {
+//
+// s holds the time limits of the request, or is nil. With s the listing of each
+// config file ends at repoReadBound (repoConfigRead.file).
+func repoReadVerdict(t gitDirTrust, s *gitStop) *repoVerdict {
 	// The link test of the git directory comes before a kept read. The kept
 	// read tests the state of each file, and a link to the same folder keeps
 	// those states. The refusal is not kept. A link that is there before the
@@ -1037,11 +1059,9 @@ func repoReadVerdict(t gitDirTrust) *repoVerdict {
 	if v, ok := keptRepoVerdict(k); ok && v.refusal == "" {
 		return v
 	}
-	ctx, cancel := gitCtx()
-	defer cancel()
 	var log repoReadLog
 	v := &repoVerdict{}
-	r, d := readRepoConfig(ctx, t.pinCommonDir, &log)
+	r, d := readRepoConfig(s.context(), t.pinCommonDir, &log)
 	switch {
 	case d != "":
 		v.refusal = repoConfigPrefix + d
@@ -1098,11 +1118,11 @@ func repoReadVerdict(t gitDirTrust) *repoVerdict {
 // A server with no run folder has no state and no call of askGit. It reads the
 // config and answers its refusals the same way. No real daemon is such a
 // server, so that form is not measured.
-func repoConfigGate(t gitDirTrust, off jsonTrueSwitch) (msg string, accepted *repoVerdict) {
+func repoConfigGate(t gitDirTrust, off jsonTrueSwitch, s *gitStop) (msg string, accepted *repoVerdict) {
 	if off || t.verdict != gitDirTrusted || t.pinCommonDir == "" {
 		return "", nil
 	}
-	v := repoReadVerdict(t)
+	v := repoReadVerdict(t, s)
 	if v == nil {
 		return "", nil
 	}

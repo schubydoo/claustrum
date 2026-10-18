@@ -199,8 +199,7 @@ func (req *request) newWorktreeConfig(repo string, t gitDirTrust) (text []byte, 
 	if req.repoRead == nil || !req.repoRead.worktreeConfig {
 		return nil, false, drop, "", written
 	}
-	ctx, cancel := gitCtx()
-	defer cancel()
+	ctx := context.Background()
 	path := filepath.Join(t.pinCommonDir, worktreeConfigName)
 	if t.worktreeEntry != "" {
 		path = filepath.Join(t.worktreeEntry, worktreeConfigName)

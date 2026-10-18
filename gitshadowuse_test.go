@@ -16,7 +16,7 @@ import (
 func (f repoFolderFixture) useOf(t *testing.T, dir string) gitUse {
 	t.Helper()
 	trust := gitDirTrustFor(dir)
-	v := repoReadVerdict(trust)
+	v := repoReadVerdict(trust, nil)
 	if trust.verdict != gitDirTrusted || v == nil || v.refusal != "" || gitDirFilesRefusal(trust.pinCommonDir) != "" {
 		t.Fatalf("the fixture in %s is not accepted: %+v", dir, v)
 	}

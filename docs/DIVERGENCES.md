@@ -72,7 +72,7 @@ The test is this question:
 If the honest input is reachable, and the caller cannot turn the guard off, then
 always-on is not justified. This holds no matter how the reference behaves on the
 hostile path. This test flipped every timeout and size cap from always-on to
-opt-in (D3, D5, D10, D12, and the retired D11 and D14). The retired D4 was the
+opt-in (D3, D10, D12, and the retired D5, D11 and D14). The retired D4 was the
 non-threshold sibling.
 
 *Canonical example:* D2 satisfies both halves. The reference's home-wipe is
@@ -107,7 +107,7 @@ caller can `files.stat` is not diagnostic text either.
 Every opt-in tag rests on one claim about the driver: Claude Desktop owns the
 daemon's argv on both `-serve` and `-install`. Therefore an operator cannot reach
 a flag-only knob, and the `claustrum.conf` key (read beside the executable) is the
-reachable one. This claim is the premise under D3, D5, D10, D12 and
+reachable one. This claim is the premise under D3, D10, D12 and
 under the "(opt-in)" tag itself.
 
 So much rests on the claim that it gets one canonical record. Its provenance, its
@@ -156,7 +156,6 @@ rather than repeating them in each entry:
 |----|--------------|---------|-----------------|---------------------|----------------|
 | [D2](#d2) | Refuse a destructive path that is or contains `$HOME`, on three methods and on `-install` | always-on | always-on | rule 3 clause (a). The `files.extract_tar` wipe through the parent handle and its two tests: maintainer decision of 2026-10-10 | an honest caller legitimately targeting a path that is/contains home, or a Windows `destDir` with the `\\?\` prefix and a dot or a space after its last name |
 | [D3](#d3) | Cap `files.extract_tar` output size | off (`0` = unlimited) | `-max-extract-bytes` / `max-extract-bytes` | rule 4 (who-pays) | operator's cap refuses a legit extraction, or default lets a bomb through |
-| [D5](#d5) | Deadline on every `git` invocation | off (`0`) | `-git-timeout` / key | rule 4 | opt-in kills an honest slow git |
 | [D6](#d6) | `-cli-version` must be a single path component | always-on | always-on | rule 3 clause (b) | Desktop passing a multi-component `-cli-version` |
 | [D8](#d8) | Never follow or write a foreign or symlinked `remote-server.log`. Both halves hold on Linux and macOS only | always-on | always-on | rule 3 clause (b): unreachable on the deployed path | a shared socket dir that also needs the log file, or the reference adding the same refuse-to-follow |
 | [D9](#d9) | Namespace-wide params binding (type error in an unread field → `-32602`) | always-on | always-on | rule 3 clause (b) | a real client sending a type-mismatched unread namespace field |
@@ -380,120 +379,6 @@ operator-declinable. Only CT-2 and CT-5 carry a flag and a key.
   default letting a size bomb through in normal use.
 - **Pointers.** The page [files.extract_tar](protocol/files-extract-tar.md) and
   `methods_files.go`. Measurement: forensics.
-
-### D5 · Make the `gitTimeout` deadline opt-in { #d5 }
-
-- **Behavior.** With the deadline on, claustrum bounds the git invocations of the
-  hardened helpers (shared `gitCtx`). That method runs
-  no `git worktree remove`. On `git.worktree_remove` the deadline starts no
-  delete. A kill refuses or skips a step. One skipped step is the daemon's own read
-  of the repository config. After a kill of that call the remove goes on as it did
-  before that read. If the worktree directory exists, a
-  hit on the config or repository check answers the lock-check refusal. For a gone
-  worktree, the hit gives the lock-check text with the hooks refusal, or skips the
-  registration step. With `worktreeRoot` a hit answers the work-tree refusal (`cannot
-  determine the repository's work tree`), and so does a hit on `rev-parse
-  --show-toplevel` or the first `worktree list` call. If the D5 deadline stops the
-  second `worktree list` call, the answer is `cannot list the repository's worktrees:
-  signal: killed`. If the deadline expires in the listing before that call, the text
-  ends with `context deadline exceeded`. That call runs only after the first one
-  failed. The second text has no test. A D5 stop of a call of the branch step keeps
-  the branch, and the reply adds `"branchKept":true`. In a `git.worktree_create`
-  rollback such a stop adds an undo text instead. It is one of the branch-step texts
-  in PROTOCOL.md → The branch step.
-  On `git.list_branches` a hit surfaces as `-32603 signal: killed`. On `git.status`
-  the frame of a hit depends on the call that it stops: a hit in one of the four
-  commands surfaces as `-32603 signal: killed`. The frames of a hit in the other
-  calls are from the code and not measured.
-  In `git.status` one deadline covers the 16 git calls of the answer, or 18 when
-  `HEAD` names no commit (from the code). It covered 2 calls before.
-  A killed repo-detection call answers `isRepo:false`. A killed
-  `branch --show-current` in `git.info` leaves out the `branch` member. A killed
-  `defaultBranch` verify there gives `defaultBranch` `""`. On Windows a killed root
-  pair of `git.info` falls back to the walk root. A killed first listing of a method
-  runs `git version`, and the method answers by that failure class. Two more cases
-  are from the code and exist only with the deadline on. Their text `signal: killed`
-  is the one of Linux and macOS. A killed listing in a folder that holds no
-  repository refuses with the hooks refusal that ends in `signal: killed`. A listing
-  that cannot start in an existing path runs `git version`. If the deadline kills
-  that call, the method refuses with `git cannot run on this host; git not run:
-  signal: killed`. On `git.worktree_remove` either text is inside the lock-check
-  frame, or inside the work-tree frame with `worktreeRoot`.
-  From the code: the deadline also bounds the calls of the settings copy. Those
-  are the calls of the start test, the call about the repository, the `git version`
-  calls after them and the `--unset-all` calls of a create. Each has a bound of 30
-  seconds of its own, so only a shorter deadline counts. A test call
-  that it ends fails the start test, and that failure is
-  kept 10 seconds. A call about the repository that it ends answers the `did not
-  finish within 30 seconds` text. None of these is measured.
-- **Default.** `0` = no deadline (byte-identical). **Activate:** `-git-timeout
-  <dur>` or the key. The disabled state bypasses `context.WithTimeout`.
-- **Never read a timeout as "git refused."** On `git.worktree_remove` a kill
-  refuses or skips a step. One skipped step is the daemon's own read of the
-  repository config. After a kill of that call the remove goes on as it did before
-  that read. On `git.worktree_create` a kill leads to a delete: its rollback deletes after a failed or
-  killed config listing before the checkout, read-tree checkout, `--unset-all` call or `config.worktree` listing, and it removes an empty leaf after a failed add. A caller
-  that deletes on a git failure must tell the deadline apart from the verdict of git
-  first. The cap is also softer than it reads on the
-  general git sites. `CombinedOutput`/`Output` waits on git's output pipe. So a git
-  that leaves a surviving child stays blocked past the deadline on `git.status`,
-  `git.list_branches` and the repo probes. Those paths are unmeasured for a
-  descendant-orphan case, so the drain is recorded rather than capped there. The one
-  measured exception is `git.worktree_create`'s read-tree checkout, which can run a
-  smudge/hook filter that backgrounds a pipe-holding descendant. That path alone
-  caps the post-exit drain at a fixed ~5 s from git's own exit. It also SIGKILLs
-  the process group (`hardenedGitCheckout` / `worktreeCreateDrainCap`).
-  That reproduces `4534d86`. When the caller `timeoutMs` exceeds that drain, the
-  answer is success. Otherwise the answer is
-  `errorCode:"timeout"` ("deadline expired after the checkout finished", no
-  `signal: killed`) with the worktree rolled back. Measured in
-  `scratch/probe/wt-success-lingering-4534d86.md`. This is parity, not a divergence.
-- **One opted-in arm loses data silently, on either seeding pass.** `populateWorktree`
-  runs two seeding passes, `copyWorktreeIncludes` (`worktreecopy.go`) and
-  `copyClaudeDir` (`worktreeclaude.go`), and both are best-effort. A killed call loses what
-  that call lists, and the error is dropped. Therefore `git.worktree_create`
-  still answers `{"success":true}` with files missing. Each git call gets its own deadline
-  from `gitCtx`, so a kill loses one pass and not the other: the manifest copy can
-  succeed while the `.claude/` seed is lost, or the other way round. The `.claude/`
-  pass has no manifest precondition. It runs git on every create where `.claude/`
-  holds a child other than `worktrees`. A killed `git version` selects the full
-  scan. No frame moves. This arm is absent at the
-  default.
-- **`git.worktree_create` under both deadlines.** The add and the read-tree
-  checkout run under the shared deadline. A D5 hit on the add answers `git
-  worktree add failed: …` with `errorCode:"worktree_add_failed"`. That is the same
-  failure arm as any other git error, and it is distinct from the 4534d86
-  caller-`timeoutMs` arm
-  (`errorCode:"timeout"`). A D5 hit on the read-tree checkout is a failed checkout.
-  It answers `git worktree add failed (checkout): …` with
-  `errorCode:"worktree_add_failed"`, and the create rolls back. With a `worktreeRoot`, a D5 hit on
-  `rev-parse --show-toplevel` or `worktree list` stops the create with
-  `mkdir_failed`, and nothing is made. A D5 hit on one of
-  the `sourceBranch` steps counts as a failed step. It can change the
-  start commit. If both candidate lookups are killed, the HEAD fallback runs. The
-  echoed `sourceBranch` then becomes the current branch, or is omitted on a
-  detached HEAD. When a
-  caller supplies a `timeoutMs` LONGER than `-git-timeout`, the tighter D5 deadline
-  fires first during the add. claustrum still answers `worktree_add_failed`, because
-  it attributes the kill to the deadline that actually fired. A caller `timeoutMs`
-  earns `errorCode:"timeout"` in one case only. That case is the one where the
-  caller `timeoutMs` is the deadline that fired. So the caller's
-  longer duration is never quoted for a kill D5 caused. This interaction is
-  claustrum-only, because the reference has no `-git-timeout`. It is absent at the
-  default. Implemented with
-  a distinct context cause (`errCallerTimeoutMs`, checked by `callerTimeoutFired` in
-  `methods_git.go`).
-- **Why opt-in.** The reference showed no deadline at or below 75 s on
-  `worktree_remove`, outside the branch step. That step has its own bounds on both
-  sides since `89cb6289` (PROTOCOL.md → The branch step). An honest 61 s git was
-  never measured. The deadline cleared
-  clause (a)'s not-a-frame half, but the `-32603 signal: killed` arm is an honest
-  caller observing the difference (rule 4).
-- **Reopen trigger.** An operator with `-git-timeout` set reporting an honest slow
-  git killed by it. The `-32603` arm makes a single report enough.
-- **Pointers.** [PROTOCOL.md](PROTOCOL.md) → `git.worktree_remove`, and the page
-  [git.list_branches](protocol/git-list-branches.md). Also `methods_git.go`,
-  `worktreecopy.go` and `worktreeclaude.go`.
 
 ### D6 · `-cli-version` must name a single path component (always-on) { #d6 }
 
@@ -1200,10 +1085,9 @@ Reopen trigger: the reference moves to Go 1.26 or newer.
   fail-safe. Precedence: explicit CLI flag > config > default.
 - Keys mirror the flags: `version-override`, `keep-children`, `metrics-addr`,
   `wire-log`, `wire-log-max-string`, `listen-pipe`, `max-extract-bytes` (D3), `max-cli-bytes` (D10),
-  `cli-download-timeout` (D12), `git-timeout`
-  (D5). Three more keys are deprecated and set
-  nothing: `files-read-regular-only` (retired D4), `cli-probe-timeout` (retired
-  D11) and `libc-probe-timeout` (retired D14). Durations use `time.ParseDuration`, which
+  `cli-download-timeout` (D12). Four more keys are deprecated and set
+  nothing: `files-read-regular-only` (retired D4), `git-timeout` (retired D5),
+  `cli-probe-timeout` (retired D11) and `libc-probe-timeout` (retired D14). Durations use `time.ParseDuration`, which
   rejects a bare number, except zero. Zero parses in unboundedly many spellings and
   always means disabled. No accepted oddity can switch a divergence *on*.
 - `version-override` makes claustrum a permanent drop-in. The desktop client
@@ -1305,6 +1189,20 @@ link points here.
   deprecated. Both are still accepted, both set nothing, and either one logs
   one warning on `-serve`.
 - No knob stays to read such a path. A read of one is a new divergence, and
+  rule 2 puts the burden of proof on it.
+
+### D5 · Deadline on the `git` calls (retired) { #d5 }
+
+- D5 made a deadline on every git call opt-in and off by default. Its premise
+  was that the reference has no deadline on its git calls. The old probes
+  reached 75 s only.
+- `5fd08069` stops a git call of four git methods at 2 minutes, and some steps
+  at 30 seconds or 10 minutes (rounds `task010-01` and `task010-02`).
+  claustrum now has the measured limits, always. See
+  [PROTOCOL.md → Time limits of git calls](PROTOCOL.md#time-limits-of-git-calls).
+- The `-git-timeout` flag and its `claustrum.conf` key are deprecated. Both are
+  still accepted, both set nothing, and either one logs one warning on `-serve`.
+- No knob stays to change the limits. A different limit is a new divergence, and
   rule 2 puts the burden of proof on it.
 
 ### D7 · `-cli-version` must not collide with the install temp sweep (retired) { #d7 }

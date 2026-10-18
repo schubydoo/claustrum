@@ -124,9 +124,6 @@ func newShapeFixture(t *testing.T, state shapeState) shapeFixture {
 	}
 	resetAttr()
 	t.Cleanup(resetAttr)
-	oldTimeout := gitTimeout
-	gitTimeout = 0
-	t.Cleanup(func() { gitTimeout = oldTimeout })
 	if state == stateFallback {
 		h := f.s.gitShadow
 		h.mu.Lock()

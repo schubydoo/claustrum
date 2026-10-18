@@ -126,8 +126,10 @@ type listingRun struct {
 }
 
 // runListing runs `git [--git-dir=<gitDir>] config -z --list` in dir with env. gitDir
-// is "" for the plain form.
+// is "" for the plain form. In a request with time limits the listing ends at
+// configListingLimit (gitRun).
 func runListing(ctx context.Context, dir, gitDir string, env []string) listingRun {
+	ctx = withGitLimit(ctx, listingLimit)
 	args := []string{"config", "-z", "--list"}
 	if gitDir != "" {
 		args = append([]string{"--git-dir=" + gitDir}, args...)
@@ -139,7 +141,7 @@ func runListing(ctx context.Context, dir, gitDir string, env []string) listingRu
 	// listingRun.stderr, never ee.Stderr.
 	var errBuf bytes.Buffer
 	cmd.Stderr = &errBuf
-	out, err := cmd.Output()
+	out, err := gitOutput(ctx, cmd)
 	return listingRun{out: out, stderr: errBuf.String(), err: err}
 }
 
@@ -326,8 +328,8 @@ func noRepoCalls(t gitDirTrust, u gitUse, dir string, heavy, off bool, args ...s
 // `rev-parse --git-dir`, with GIT_DIR=<null device> and exit 128 (cell
 // h1-mode000 of val-s3p2b2-7-linux2, Linux VM). A folder with no `.git` entry
 // is not measured for git.list_branches: it gets the call too.
-func noRepoInfoCalls(t gitDirTrust, dir string, off bool) string {
-	return noRepoCalls(t, gitUse{}, dir, true, off, "rev-parse", "--git-dir")
+func noRepoInfoCalls(t gitDirTrust, s *gitStop, dir string, off bool) string {
+	return noRepoCalls(t, gitUse{stop: s}, dir, true, off, "rev-parse", "--git-dir")
 }
 
 // noRepoCreateCalls is noRepoCalls for git.worktree_create. On 5fd08069 a create on a repository whose HEAD has mode 000 makes
@@ -341,8 +343,8 @@ func noRepoInfoCalls(t gitDirTrust, dir string, off bool) string {
 // With the member and with no run folder the two calls keep the four light
 // values (not measured). A folder with no `.git` entry is not measured: it
 // gets the call too.
-func noRepoCreateCalls(t gitDirTrust, six, off bool, dir string) string {
-	return noRepoCalls(t, gitUse{lightSix: six}, dir, false, off, "rev-parse", "--is-inside-work-tree")
+func noRepoCreateCalls(t gitDirTrust, s *gitStop, six, off bool, dir string) string {
+	return noRepoCalls(t, gitUse{lightSix: six, stop: s}, dir, false, off, "rev-parse", "--is-inside-work-tree")
 }
 
 // gitVersionRun runs the plain `git version` that 89cb6289 runs after a listing that
@@ -370,16 +372,14 @@ func noRepoCreateCalls(t gitDirTrust, six, off bool, dir string) string {
 // environment have no case. So a lower-case git_config_count or git_config_global
 // of the daemon stays on the call there. Not measured.
 func gitVersionRun(u gitUse, heavy bool) listingRun {
-	ctx, cancel := gitCtx()
-	defer cancel()
-	cmd := exec.CommandContext(ctx, "git", "version")
+	cmd := exec.Command("git", "version")
 	cmd.Dir = gitVersionDir
 	env := withoutConfigCountSet(listingEnvOf(os.Environ()))
 	env = slices.DeleteFunc(env, func(kv string) bool { return envName(kv) == "GIT_CONFIG_GLOBAL" })
 	cmd.Env = append(env, u.profileEnv(heavy)...)
 	var errBuf bytes.Buffer
 	cmd.Stderr = &errBuf
-	err := cmd.Run()
+	err := gitRun(u.stop.context(), cmd)
 	return listingRun{stderr: errBuf.String(), err: err}
 }
 
@@ -399,6 +399,12 @@ func gitVersionRun(u gitUse, heavy bool) listingRun {
 // `git version` that fails: the two later listings of git.status (statusWorkTreeProbe
 // and statusRun.git) and unenterableBaseListing.
 func failedListingText(u gitUse, r listingRun, heavy bool) string {
+	// A listing that its time limit stopped refuses with the hooks refusal and the
+	// stop text (gitStopped), and no `git version` follows (cell T10 of round
+	// task010-01, Linux and macOS VMs, and cell T10w on a Windows VM).
+	if isGitStop(r.err) {
+		return r.err.Error()
+	}
 	if v := gitVersionRun(u, heavy); v.err != nil {
 		return gitCannotRunPrefix + v.detail()
 	}

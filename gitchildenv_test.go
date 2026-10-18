@@ -170,9 +170,6 @@ func TestHardenedAnswerIsStdoutOnly(t *testing.T) {
 	repo := filepath.Join(t.TempDir(), "repo")
 	runGit(t, filepath.Dir(repo), "init", "-q", "-b", "main", repo)
 	runGit(t, repo, "commit", "-q", "--allow-empty", "-m", "init")
-	oldTimeout := gitTimeout
-	t.Cleanup(func() { gitTimeout = oldTimeout })
-	gitTimeout = 0
 	installGitSlowStub(t, realGit)
 	const line = `ERROR: ld.so: object 'libdoesnotexist.so' from LD_PRELOAD cannot be preloaded (cannot open shared object file): ignored.\n`
 

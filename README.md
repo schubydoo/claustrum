@@ -161,7 +161,7 @@ These knobs belong to claustrum only, and they stay off the wire:
 
 All of them are off by default.
 
-Four flags opt into a deliberate divergence from the reference. Each flag is off by default,
+Three flags opt into a deliberate divergence from the reference. Each flag is off by default,
 and each flag has a matching `claustrum.conf` key. When Claude Desktop owns the argv, that key
 is the reachable knob. That is a driver claim. See
 [docs/ARCHITECTURE.md → Driver claims and their provenance](docs/ARCHITECTURE.md#driver-claims-and-their-provenance).
@@ -171,9 +171,10 @@ measurements.
 | Flag | Default | Opts into | Scope |
 |------|---------|-----------|-------|
 | `-max-extract-bytes` (D3) | off (0) | a size cap for `files.extract_tar`, with an error frame over the cap | `-serve` |
-| `-git-timeout` (D5) | off (0) | a deadline on every git call (`-32603` `signal: killed`) | `-serve` |
 | `-max-cli-bytes` (D10) | off (0) | a size cap on the decompressed CLI + download body | `-install` |
 | `-cli-download-timeout` (D12) | off (0) | a deadline on the CLI download | `-install` |
+
+`-git-timeout` is deprecated. It sets nothing and logs one warning. The git calls of the daemon have the time limits of `5fd08069`, for example 2 minutes for one call.
 
 `-libc-probe-timeout` is deprecated. It sets nothing and logs one warning. The `ldd` libc probe always has the reference's 5 s bound.
 
