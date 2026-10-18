@@ -297,7 +297,7 @@ func TestPrecedenceMaxCLIBytes(t *testing.T) {
 		t.Errorf("empty config should leave the cap off, got %d", got)
 	}
 	// A negative flag normalises to disabled rather than reaching zstdDecompress /
-	// fetchToFile as a negative. effectiveNumeric centralises that for all the
+	// fetchCLI as a negative. effectiveNumeric centralises that for all the
 	// numeric knobs. The sibling download-timeout test covers its own negative
 	// arm. This pins the arm of maxCLIBytes, which the precedence cases above
 	// did not exercise.

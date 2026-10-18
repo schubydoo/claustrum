@@ -50,30 +50,26 @@ file is `<cli-version>.exe`.
   [PROTOCOL.md](PROTOCOL.md) → `-install`. The retired
   [D11](DIVERGENCES.md#d11) holds the history of this bound.
 - If not, claustrum gets the blob from one of two sources:
-    - `-cli-zst` names a local `.zst` file. Claustrum consumes it after the
-      `--version` run, whenever decompression succeeded. A run that fails does
-      not keep the blob. The home guard refusal (D2) does. A supplied `-cli-checksum` makes claustrum
+    - `-cli-zst` names a local `.zst` file. Claustrum removes it once the new
+      CLI is in place, before the `--version` run. Every earlier failure keeps
+      it. A supplied `-cli-checksum` makes claustrum
       verify the blob against it, case-sensitively. Without that flag claustrum
       does not verify the blob. The reference does the same. Claustrum creates
       the cli-dir before it opens the blob.
-    - `-cli-url` makes claustrum download the blob. Claustrum then verifies its
+    - `-cli-url` makes claustrum download the blob. Claustrum verifies its
       SHA-256 against `-cli-checksum` *unconditionally* (even an empty checksum
       fails).
-- Claustrum decompresses the blob with zstd to a temp path, applies
+- Claustrum decompresses the source with zstd to a temp path, verifies the
+  checksum, applies
   `chmod 0755` and renames the file into place atomically. An interrupted
   install never leaves a half-written CLI. A folder at the final path is removed
   before the rename, and a file there is replaced by it. Claustrum then runs
   `<cli> --version` at the final path, and it removes a new CLI that exits
   non-zero.
-- Claustrum prunes the directory to the `-cli-keep` newest entries (by mtime,
-  default 3). A file, a link and an empty folder count and go. A folder with
-  content counts and stays (cells F2 of `89cb6289`, Linux, macOS and Windows
-  VMs). The prune does
-  not count a name the sweep claims, a `*.zst.part` name or a `.blob-*` name,
-  and it removes none of them. `89cb6289` counts a planted `.blob-` file
-  ([D18](DIVERGENCES.md#d18)). The prune and the sweeps skip an entry that is
-  the home folder or holds it ([D2](DIVERGENCES.md#d2)). A good install with a
-  negative `-cli-keep` prints no result line and exits `2`.
+- Claustrum prunes the version files to the `-cli-keep` newest (by mtime,
+  default 3). The new CLI always stays, and a negative keep counts as 0. Every
+  other entry stays. The prune and the sweeps skip an entry that is the home
+  folder or holds it ([D2](DIVERGENCES.md#d2)).
 - Claustrum prints one line: `__INSTALL_RESULT__{json}`.
 
 ### 2 · Daemon / process supervisor (`-serve`)
@@ -401,10 +397,9 @@ count. If you need a count, re-derive it from `ensureCLI`:
 | phase | string |
 |---|---|
 | version check | `cli version "<v>" must be a single path component` |
-| | `cli version "<v>" collides with the install download blob` |
 | source | `cli <v> missing and no --cli-url or --cli-zst provided` |
 | | `opening input: <err>` (`-cli-zst` read) |
-| download | `download failed: <err>`. This is the catch-all wrap for any download error that is not one of the three bare forms below. Those errors are a transport failure before the body, the 60 s response-header limit (`Get "<url>": net/http: timeout awaiting response headers`) and a disk error while streaming the body. They also include the D10 cap (`response exceeds <n> bytes`) and the D12 deadline (`context deadline exceeded (…)`, off by default) |
+| download | `download failed: <err>`. This is the catch-all wrap for any download error that is not one of the bare forms below. Those errors are a transport failure before the body and the 60 s response-header limit (`Get "<url>": net/http: timeout awaiting response headers`). They also include the D10 cap (`response exceeds <n> bytes`) and the D12 deadline (`context deadline exceeded (…)`, off by default) |
 | | `download failed with status <code>`. Non-200, no URL, no reason phrase (bare, no prefix) |
 | | `download stalled: no data for <n>s after <got>/<total> bytes`. This is the 60s read-idle abort (always-on, `4534d86` parity, bare, no prefix) |
 | | `download interrupted after <got>/<total> bytes: <err>`. A body read that ended with a transport error (always-on, parity, bare, no prefix) |
@@ -417,16 +412,18 @@ count. If you need a count, re-derive it from `ensureCLI`:
 | | `cli unresponsive: the installed Claude Code binary started but did not answer --version within 30s (120s for a first run) and was stopped; the host is not letting it run (endpoint security software or a stalled network home are the usual causes)`. A direct `--version` run that its bound stopped |
 | | `cli path must not be or contain the home directory: "<path>"`. The D2 home guard, claustrum-only |
 | | `clearing stale dir at <path>: <err>` |
-| | `staging file vanished before install: <err>` |
+| | `rename: staging file vanished before install: <err>` |
+| | `rename: <err>` |
 | managed launcher | `cli unresponsive: the installed Claude Code binary was started through the host's managed launcher <argv0> and the run did not answer --version within 33s (123s for a first run), so it was stopped; the launcher or the host is not letting it finish`. Only with `CLAUDE_SSH_MANAGED_LAUNCHER=1` |
 
 The download forms use different wording on purpose, to match the reference. The
-status, stall and interrupted forms are fully worded and go out bare. Every other
+status, stall and interrupted forms are fully worded and go out bare.
+`staging cli:` and `decompressing:` also go out bare on `-cli-url`. Every other
 download error carries the `download failed: ` prefix. Those other errors are a
 transport failure before the body, the response-header limit, the D10 cap, the
-D12 deadline, and a disk error. The
+D12 deadline. The
 status form omits the URL, so a signed URL cannot reach whatever captures the
-`__INSTALL_RESULT__` line. A bare `chmod`/`rename` failure propagates as the raw
+`__INSTALL_RESULT__` line. A bare `chmod` failure propagates as the raw
 Go error.
 
 These strings are not free-form diagnostics: the driver reads them. A change to a
@@ -481,15 +478,15 @@ fail, an SFTP upload was re-invoked as `-cli-zst`. Both records live in `scratch
 The `cliError` and `libc` claims remain design constraints. The argv claim is a
 driver result, not a parity one. Three argv dependents (D3, D5, D12) carry
 reopen triggers for their own behavior. The other one (D10) carries a rider about
-the `cliError` claim, as does D13. All live in [DIVERGENCES.md](DIVERGENCES.md). If
+the `cliError` claim. All live in [DIVERGENCES.md](DIVERGENCES.md). If
 someone finds a route to influence the daemon's argv, the argv claim reopens. A
 Desktop release that adds such a route reopens it too. That route is a new configuration
 field, or a configuration file it turns into argv. A forwarded env var does not
 qualify, because nothing in `config.go` or `main.go` reads the
 environment for these knobs. The dependents list is maintained by hand, and it was
 incomplete every time somebody checked it. Treat it as best-known, not complete. The
-argv claim underpins D3, D5, D10 and D12. `cliError` underpins D10,
-D13 and clause (c)'s error-string rider. Both underpinned the retired D11. `libc`
+argv claim underpins D3, D5, D10 and D12. `cliError` underpins D10
+and clause (c)'s error-string rider. Both underpinned the retired D11. `cliError` also underpinned the retired D13. `libc`
 underpins no current entry. It underpinned the retired D14. One further driver claim is
 untracked and unprovenanced: D6's clause-(b) evidence, which rests on what Desktop
 emits as `-cli-version`.

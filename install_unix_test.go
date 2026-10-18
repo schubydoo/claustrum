@@ -107,6 +107,10 @@ func TestEnsureCLIReportsUnclearablePath(t *testing.T) {
 	if !strings.Contains(err.Error(), "clearing stale dir at ") {
 		t.Errorf("error = %q, want the reference's \"clearing stale dir at \" prefix", err)
 	}
+	// On 5fd08069 the blob stays (cells L12 and M5, Linux and macOS VMs).
+	if !isRegularFile(zstPath) {
+		t.Error("the -cli-zst blob was consumed by an install that failed at the clear")
+	}
 }
 
 // The staging file cannot be created when the cli-dir exists but is not
@@ -143,11 +147,11 @@ func TestSha256FileDirectory(t *testing.T) {
 	}
 }
 
-// The sweep never follows a symlink out of the cli-dir. It judges a ".fetch-*"
-// symlink by the LINK's own mtime (an lstat) and removes only the link. The
-// target, a file or a directory with a file in it, stays in every case.
-// Measured on a Linux VM against 4534d86 through f6010b97: an old link to a
-// fresh target goes, and a fresh link to an old target stays.
+// The sweep never follows a symlink out of the cli-dir, and it removes only a
+// regular file. A link with a sweep name stays at every age, and so does its
+// target, a file or a directory with a file in it. On 5fd08069 the sweeps
+// remove regular files only (cells L8, M3a and W5). A link there is not
+// measured. 4534d86 through f6010b97 removed an old link (Linux VM).
 //
 // Go has no portable lchtimes, so the link's age comes from the "now" handed to
 // the sweep: the link is created at real time, and the target's mtime is set.
@@ -170,10 +174,10 @@ func TestSweepFetchTempsJudgesTheLinkNotItsTarget(t *testing.T) {
 		if err := os.WriteFile(filepath.Join(outDir, "inner"), []byte("keep"), 0o600); err != nil {
 			t.Fatal(err)
 		}
-		if err := os.Symlink(outFile, filepath.Join(cliDir, ".fetch-lnk")); err != nil {
+		if err := os.Symlink(outFile, filepath.Join(cliDir, ".fetch-1")); err != nil {
 			t.Fatal(err)
 		}
-		if err := os.Symlink(outDir, filepath.Join(cliDir, ".fetch-lnkdir")); err != nil {
+		if err := os.Symlink(outDir, filepath.Join(cliDir, "1.0.0.zst")); err != nil {
 			t.Fatal(err)
 		}
 		return cliDir, outFile, outDir
@@ -199,9 +203,9 @@ func TestSweepFetchTempsJudgesTheLinkNotItsTarget(t *testing.T) {
 		now := time.Now().Add(time.Hour) // the links are an hour old at this "now"
 		setTargets(t, now, outFile, outDir)
 		sweepFetchTemps(cliDir, now)
-		for _, l := range []string{".fetch-lnk", ".fetch-lnkdir"} {
-			if linkExists(filepath.Join(cliDir, l)) {
-				t.Errorf("%s survived; an old link goes whatever its target's age", l)
+		for _, l := range []string{".fetch-1", "1.0.0.zst"} {
+			if !linkExists(filepath.Join(cliDir, l)) {
+				t.Errorf("%s was swept; a link is no regular file", l)
 			}
 		}
 		targetsKept(t, outFile, outDir)
@@ -211,7 +215,7 @@ func TestSweepFetchTempsJudgesTheLinkNotItsTarget(t *testing.T) {
 		cliDir, outFile, outDir := setup(t)
 		setTargets(t, time.Now().Add(-time.Hour), outFile, outDir)
 		sweepFetchTemps(cliDir, time.Now())
-		for _, l := range []string{".fetch-lnk", ".fetch-lnkdir"} {
+		for _, l := range []string{".fetch-1", "1.0.0.zst"} {
 			if !linkExists(filepath.Join(cliDir, l)) {
 				t.Errorf("%s was swept; a fresh link stays whatever its target's age", l)
 			}

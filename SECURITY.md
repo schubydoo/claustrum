@@ -77,8 +77,8 @@ token did not already give. See
 ### Network
 
 - `-install` reaches the network (HTTPS) only with a `-cli-url`. That
-  download is verified against its SHA-256 unconditionally, before extraction and
-  before the CLI is marked runnable. An empty `-cli-checksum` still fails.
+  download is verified against its SHA-256 unconditionally, before the CLI is
+  marked runnable. An empty `-cli-checksum` still fails.
 - The local `-cli-zst` (SFTP) blob is checksum-verified only with a supplied
   `-cli-checksum`. Without one, the blob is trusted. The reference does the same.
 - In `-serve` mode the daemon makes no outbound network connections. Every dial

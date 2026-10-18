@@ -334,7 +334,7 @@ func (cfg config) effectiveMaxExtractBytes(cliVal int64, cliSet bool) int64 {
 // same negative handling — the asymmetry fixed for max-extract-bytes would
 // otherwise be reintroduced here by its sibling.
 func (cfg config) effectiveMaxCLIBytes(cliVal int64, cliSet bool) int64 {
-	// [Install], not [Server]: this cap governs zstdDecompress and fetchToFile,
+	// [Install], not [Server]: this cap governs zstdDecompress and fetchCLI,
 	// and effectiveMaxCLIBytes is reached only from the -install arm.
 	return effectiveNumeric(cliVal, cliSet, cfg.maxCLIBytes, func() {
 		logWarnf("[Install] -max-cli-bytes %d is negative; treating it as 0 (cap disabled)", cliVal)
@@ -353,7 +353,7 @@ func (cfg config) effectiveGitTimeout(cliVal time.Duration, cliSet bool) time.Du
 // effectiveCLIDownloadTimeout applies the same precedence for
 // -cli-download-timeout, and the same negative handling as the size caps.
 func (cfg config) effectiveCLIDownloadTimeout(cliVal time.Duration, cliSet bool) time.Duration {
-	// [Install], not [Server]: fetchToFile is reached only from the -install arm.
+	// [Install], not [Server]: fetchCLI is reached only from the -install arm.
 	return effectiveNumeric(cliVal, cliSet, cfg.cliDownloadTimeout, func() {
 		logWarnf("[Install] -cli-download-timeout %s is negative; treating it as 0 (no timeout)", cliVal)
 	})

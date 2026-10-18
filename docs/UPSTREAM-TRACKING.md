@@ -184,7 +184,7 @@ opt-in?
 ### Which divergences a probe can see
 
 `battery-visible?` asks whether the standard frame battery (`validate.sh` /
-`battery.js`) shows a diff. The install-path entries (D10, D12 and D13) run under
+`battery.js`) shows a diff. The install-path entries (D10 and D12) run under
 `-install`, which the frame battery never drives at all.
 
 | ID | Default | Battery-visible? | What it is |
@@ -193,9 +193,8 @@ opt-in?
 | D5 | Off (`0` = no deadline) | No. Off the default path | git-invocation deadline |
 | D10 | Off (`0` = unlimited) | No. Install path | `-install` CLI size cap |
 | D12 | Off (`0` = no bound) | No. Install path | `-install` download bound |
-| D2 | Always-on | Maybe. A probe that reaches the path shows it (expected) | destructive-path home-dir refusal. On `-install` it is the `cli path must not be or contain the home directory` text. That refusal is this guard, not drift. A home folder that stays in the cli-dir after the sweep or the prune of `-install` is this guard too |
+| D2 | Always-on | Maybe. A probe that reaches the path shows it (expected) | destructive-path home-dir refusal. On `-install` it is the `cli path must not be or contain the home directory` text. That refusal is this guard, not drift. |
 | D6 | Always-on | Maybe. A probe that reaches the path shows it (expected) | `-cli-version` single path component |
-| D18 | Always-on | Maybe. A probe that reaches the path shows it (expected) | `-cli-version` must not start with `.blob-`. The `-cli-keep` prune does not count a `.blob-` name, so one more old entry stays than on `89cb6289` (cell C-12, Windows VM). It does not remove such a name either, where `89cb6289` removes a planted one (cells B1, Linux, macOS and Windows VMs). That is this entry, not drift. A good install with a negative `-cli-keep` exits `2` with no result line on both (cells Kneg and Kn-2, the same three systems). That is parity. The stderr text there is claustrum's own line, by the maintainer's decision of 2026-10-07. It is not drift and has no entry of its own |
 | D19 | Always-on, Windows only | Maybe. A Windows probe with a junction at any directory between `baseRepo` and the leaf shows it (expected) | `git.worktree_remove` refuses that junction with `failed to remove worktree: openat <path from baseRepo>: path escapes from parent`. At `.claude` or `.claude\worktrees`, `f6010b97` answers success and deletes the branch, and `89cb6289` does the same for a branch that another ref reaches. At a junction `<P>\J` above `.claude`, `89cb6289` answers success after 2 git calls. No leaf and no branch existed there (Windows VM, cells J-b-wt-pj and J-b-wt-pJ). The maintainer widened the entry to those levels on 2026-10-07. That is this entry, not drift |
 | D20 | Always-on, Linux and macOS | No. Off the wire. It is a signal time at a daemon start, not a frame | 50 ms settle before the group `SIGKILL` of a leader that reads as gone. In row RP05a that `SIGKILL` comes about 50 ms later than on `89cb6289`. In row PG05a claustrum ends the child in no run, where `89cb6289` ends it in some Linux runs. In rows where the child ends on `SIGTERM`, `89cb6289` also sends a group `SIGKILL` right after it in some Linux runs, and claustrum sends none. None of these is drift |
 | D21 | Always-on, Windows only | No. Off the wire. It is the content of `remote-server.log`, not a frame | a second daemon on a live socket appends to `remote-server.log`. `89cb6289` truncates the file at that start. The earlier lines of its first daemon are lost. The later lines of that daemon sit behind a block of NUL bytes (rows WN04, WJ04). Keeping the lines is a maintainer decision of 2026-10-02. The longer log of claustrum is not drift |
@@ -205,7 +204,6 @@ opt-in?
 | D25 | Always-on, Linux only | Against `5fd08069`: yes on a Linux run with `CLAUDE_SSH_PEER_CHECK=1` in the daemon environment, and that member is equal with no variable. Against `89cb6289`: that build has no `peerCheck` member, see the `peerCheck` bullet below | `server.capabilities` answers `"peerCheck":"unavailable"`, where `5fd08069` answers `"peerCheck":"on","peerCheckBy":["network","pidfd"]` (Linux VM). claustrum has no peer check and serves every caller. Its log line there is its own text. A maintainer decision of 2026-10-10. The other answer is not drift |
 | D8 | Always-on | No. It falls back to inherited stdio, not a frame | foreign/symlinked `remote-server.log` not followed (`.old` rotation matched, refuse-to-follow kept). Linux and macOS. On Windows see D21 |
 | D9 | Always-on | Maybe. A type-mismatched namespace field is rejected | namespace-param binding vs. the reference's ignore |
-| D13 | Always-on (unresolved in DIVERGENCES.md) | No. Install path | verify-before-decompress ordering, on `-cli-url` and on `-cli-zst` with a checksum |
 | D16 | Always-on, Windows only | Yes on a Windows run. `git.status` of a linked worktree: the reference answers `exit status 128` when the user has no global excludes file, claustrum answers the status | the `core.excludesFile` of the `status`, `ls-files` and `diff-index` calls of `git.status` is `/dev/null`, not `NUL`. The reference stops at its `status` call there, so its value for the other two is not measured |
 | CT-1 | Opt-in (`wantPid`) | Yes, on request. It adds `pid`/`startTime` | spawn/reattach reply extension |
 | CT-2 | Opt-in (`-keep-children`) | No | children survive shutdown |
@@ -213,9 +211,9 @@ opt-in?
 | CT-4 | Not built. A deferred idea, recorded in DIVERGENCES.md only | No. There is no code | opt-in hardened token persistence (a `persist-token` key, or a Windows owner-only DACL) |
 | CT-5 | Opt-in (`-listen-pipe`, Windows) | No | additional named-pipe transport |
 
-D1, D7, D11 and D14 are retired. The reference changed on the path, or a later
+D1, D7, D11, D13, D14 and D18 are retired. The reference changed on the path, or a later
 measurement corrected the premise, and claustrum now matches it. A difference on those paths is drift, not a divergence, unless
-an entry in the table above covers it (for example D6, D10, D13, D18).
+an entry in the table above covers it (for example D6, D10).
 D4 is retired too. Its paths follow `5fd08069`, so a difference against
 `89cb6289` there is expected. The paragraph on `files-read-regular-only` below
 names the differences. See
@@ -424,6 +422,14 @@ traps that matter for telling drift from expected:
   a folder with the exact name, and `5fd08069` into the folder with no dot or
   space (Windows VM). A `destDir` whose last name is the home folder by
   identity gets the home refusal. See [D2](DIVERGENCES.md#d2).
+- The `-install` prune and sweeps split the builds too, not drift. Against the
+  pin `89cb6289` they now follow `5fd08069`. Folders and links stay and take no
+  keep place. `x.zst`, `.fetch-d`, `p.zst.part` and empty folders stay in the
+  sweeps. A `.blob-` file is not counted, a negative `-cli-keep` exits `0`, and
+  the new CLI stays with `-cli-keep 0`. The blob timing, the `rename: ` prefix,
+  the Windows rename retry and the Linux launcher gate follow `5fd08069` too
+  ([PROTOCOL.md](PROTOCOL.md) → `-install`). A probe against the pin shows these
+  as a build split.
 - The git filters of the `git.worktree_create` checkout split the builds too,
   not drift. `scripts/UPSTREAM_SHA` names `89cb6289`, and claustrum follows
   `5fd08069`. Against `89cb6289` these answers differ:
@@ -596,23 +602,20 @@ traps that matter for telling drift from expected:
 
   See [PROTOCOL.md](PROTOCOL.md) → Git-directory trust check, Hardened git calls
   and git.info.
-- D12 needs a VALID zstd body. D13's ordering answers an invalid one at 0 s,
+- D12 needs a VALID zstd body. The decoder answers an invalid one at 0 s,
   which reads like "no divergence". Also, a zero download timeout frees the body
   read only: the transport still applies `net.Dialer{Timeout: 30s}`,
   `TLSHandshakeTimeout: 10s` and the 60 s response-header limit. That last limit
   is parity.
-- D13 has one honest shape: a short or truncated artifact reaches the checksum
-  (claustrum `checksum mismatch: …`). A connection reset in the body is not a D13
-  case. It answers
+- A connection reset in the body answers
   `download interrupted after <got>/<total> bytes: <err>` on both binaries
   (measured on Linux against `f6010b97` and `89cb6289`). A different text there
   is drift. A body that ends before its length is not measured, so do not call a
   difference there drift.
-- D13 also shows with equal texts. For a download that is not a zstd archive,
-  with the right checksum, both binaries answer `decompressing: …`. The reference
-  reported `fetch.bytes` 4 and one progress line in the measured row. claustrum reports the full body
-  size (4096 in the measured row) and two progress lines. That delta is D13, not
-  drift (Linux VM, `f6010b97` and `89cb6289`).
+- A download that is not a zstd archive answers `decompressing: …` with
+  `fetch.bytes` 4 and one progress line. That holds with a right and a wrong
+  checksum (`5fd08069`, cells L15a and L15b, Linux VM). For such a body,
+  another count is drift.
 - The `ldd` libc probe bounds ldd itself at 5 s on both binaries (parity since
   `19f30c46`). There is no libc probe off linux at all.
 - claustrum made seven changes for `90fca6e6` while the JSON-RPC surface stood still.

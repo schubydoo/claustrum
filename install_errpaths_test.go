@@ -256,7 +256,7 @@ func TestEnsureCLIFinalComponentSymlinkIsSafe(t *testing.T) {
 // install sweeps it once its mtime is more than 10 minutes old. claustrum refused
 // these versions before (the retired D7).
 func TestEnsureCLIInstallsSweptVersionNames(t *testing.T) {
-	for _, v := range []string{".fetch-x", "1.0.zst"} {
+	for _, v := range []string{".fetch-1", "1.0.0.zst"} {
 		t.Run(v, func(t *testing.T) {
 			root := t.TempDir()
 			cliDir := filepath.Join(root, "clidir")
@@ -268,7 +268,7 @@ func TestEnsureCLIInstallsSweptVersionNames(t *testing.T) {
 				}
 				return p
 			}
-			// On Windows the file is <v>.exe, and "1.0.zst.exe" is no swept name.
+			// On Windows the file is <v>.exe, and "1.0.0.zst.exe" is no swept name.
 			// No row measures that case. The test follows isSweptName.
 			cliPath := installCLIPath(cliDir, v)
 			swept := isSweptName(filepath.Base(cliPath))
@@ -303,9 +303,10 @@ func TestEnsureCLIInstallsSweptVersionNames(t *testing.T) {
 	}
 }
 
-// The sweep's name rule, and the validator's acceptance of every name it claims.
+// The name rules of the two sweeps (5fd08069, cells L8, M3a and W5), and the
+// validator's acceptance of every name they claim.
 func TestSweptNameRule(t *testing.T) {
-	for _, name := range []string{".fetch-x", ".fetch-", "1.0.zst", ".zst"} {
+	for _, name := range []string{".fetch-1", ".fetch-123", "1.0.0.zst", "10.2.33.zst"} {
 		if !isSweptName(name) {
 			t.Errorf("isSweptName(%q) = false, want true", name)
 		}
@@ -313,36 +314,32 @@ func TestSweptNameRule(t *testing.T) {
 			t.Errorf("validateCLIVersion(%q) = %v, want nil — the reference installs it", name, err)
 		}
 	}
-	for _, name := range []string{"1.0.86", "latest", "README", ".FETCH-u", "a.ZST", "a.zst.bak", "zst"} {
+	for _, name := range []string{".fetch-", ".fetch-d", ".fetch-x", ".fetch-1a", ".FETCH-1",
+		"x.zst", ".zst", "1.0.zst", "1.0.0.0.zst", "1.0.0", "latest", "README", "1.0.0.ZST", "1.0.0.zst.bak",
+		"1.0.0.zst.part", "1.0.0.abc.zst"} {
 		if isSweptName(name) {
 			t.Errorf("isSweptName(%q) = true, want false", name)
 		}
 	}
-}
-
-// The download blob prefix is the OTHER housekeeping name rule, and it needs the
-// same sharing. Its failure is the mirror of the sweep's: a version with this
-// prefix is not deleted, it is exempted from pruneCLI's census forever — never
-// counted against -cli-keep, never evicted, and not swept either, since neither
-// pass claims the prefix by construction.
-func TestDownloadBlobNameRuleIsShared(t *testing.T) {
-	for _, name := range []string{".blob-x", ".blob-", ".blob-123456"} {
-		if !isDownloadBlobName(name) {
-			t.Errorf("isDownloadBlobName(%q) = false, want true", name)
-		}
-		if err := validateCLIVersion(name); err == nil {
-			t.Errorf("validateCLIVersion(%q) = nil, but pruneCLI would never count it", name)
-		}
-		// It must ALSO stay outside the sweep — that is the invariant the blob
-		// itself relies on, and widening isSweptName to cover it would silently
-		// re-break the retry.
-		if isSweptName(name) {
-			t.Errorf("isSweptName(%q) = true; the sweep must not claim the download blob", name)
+	for _, name := range []string{"1.0.0.zst.part", "10.2.33.zst.part"} {
+		if !isZstPartName(name) {
+			t.Errorf("isZstPartName(%q) = false, want true", name)
 		}
 	}
-	for _, name := range []string{"1.0.86", "latest", "blob-x", ".blobby"} {
-		if isDownloadBlobName(name) {
-			t.Errorf("isDownloadBlobName(%q) = true, want false", name)
+	for _, name := range []string{"p.zst.part", ".fetch-old.zst.part", "1.0.0.ZST.PART", "1.0.0.zst", "1.0.zst.part"} {
+		if isZstPartName(name) {
+			t.Errorf("isZstPartName(%q) = true, want false", name)
+		}
+	}
+}
+
+// A version that starts with ".blob-" installs. claustrum refused it while it
+// kept a download blob of that name (the retired D18). It writes no such file
+// now.
+func TestValidateCLIVersionAcceptsTheBlobPrefix(t *testing.T) {
+	for _, name := range []string{".blob-x", ".blob-123456"} {
+		if err := validateCLIVersion(name); err != nil {
+			t.Errorf("validateCLIVersion(%q) = %v, want nil", name, err)
 		}
 	}
 }
@@ -398,7 +395,7 @@ func TestHTTPGetTruncatedBody(t *testing.T) {
 // pruneCLI is best-effort: an unlistable cliDir is a silent no-op, and a
 // subdirectory with content stays, also past the keep value.
 func TestPruneCLIEdges(t *testing.T) {
-	pruneCLI(filepath.Join(t.TempDir(), "absent"), 1) // must not panic
+	pruneCLI(filepath.Join(t.TempDir(), "absent"), 1, "") // must not panic
 
 	dir := t.TempDir()
 	sub := filepath.Join(dir, "not-a-cli")
@@ -415,7 +412,7 @@ func TestPruneCLIEdges(t *testing.T) {
 		t.Fatal(err)
 	}
 	for i, name := range []string{"1.0.0", "1.0.1"} {
-		p := filepath.Join(dir, name)
+		p := filepath.Join(dir, name+cliExeSuffix)
 		if err := os.WriteFile(p, []byte("cli"), 0o755); err != nil {
 			t.Fatal(err)
 		}
@@ -424,14 +421,14 @@ func TestPruneCLIEdges(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	pruneCLI(dir, 1)
+	pruneCLI(dir, 1, "")
 	if !isRegularFile(filepath.Join(sub, "inner")) {
 		t.Error("pruneCLI removed a subdirectory with content")
 	}
-	if _, err := os.Stat(filepath.Join(dir, "1.0.1")); err != nil {
+	if _, err := os.Stat(filepath.Join(dir, "1.0.1"+cliExeSuffix)); err != nil {
 		t.Errorf("pruneCLI removed the newest version: %v", err)
 	}
-	if _, err := os.Stat(filepath.Join(dir, "1.0.0")); !os.IsNotExist(err) {
+	if _, err := os.Stat(filepath.Join(dir, "1.0.0"+cliExeSuffix)); !os.IsNotExist(err) {
 		t.Errorf("pruneCLI kept the older version (err=%v), want pruned", err)
 	}
 }
@@ -472,6 +469,16 @@ func TestEnsureCLIRenameFailureCleansUpStaging(t *testing.T) {
 	if strings.Contains(err.Error(), "staging file vanished") {
 		t.Errorf("error = %q, but the staging file was present", err)
 	}
+	// Every rename error has the prefix "rename: ". On 5fd08069 the text is
+	// "rename: rename <tmp> <cli>: Access is denied." (cells W1 and W6, Windows
+	// VM). The prefix on Linux and macOS is claustrum's own.
+	if !strings.HasPrefix(err.Error(), "rename: rename ") {
+		t.Errorf("error = %q, want the prefix \"rename: rename \"", err)
+	}
+	// A failed rename keeps the -cli-zst blob (cells W1 and W6 of 5fd08069).
+	if !isRegularFile(zstPath) {
+		t.Error("the -cli-zst blob was consumed by an install that failed at the rename")
+	}
 	// The staging file must not be left behind as litter.
 	assertNoStagingLeftover(t, filepath.Join(cliDir, tooLong))
 }
@@ -507,23 +514,22 @@ func TestZstdDecompressOpenError(t *testing.T) {
 	}
 }
 
-// When the CLI dir is unusable AND the OS temp dir is too, fetchToFile has nowhere
-// to land the blob and reports the second CreateTemp error. os.TempDir reads TMPDIR
-// on Unix and TMP/TEMP on Windows (GetTempPath does not verify the path exists —
-// measured on the Windows VM), so pointing all three at a missing dir fails the
-// fallback on every leg.
-func TestFetchToFileFailsWhenNoTempDirUsable(t *testing.T) {
+// A cli-dir where no staging file can be made fails the download after the
+// response headers. The answer is the bare "staging cli: " text and a fetch
+// object (claustrum's own, not measured).
+func TestFetchCLIFailsWhenNoStagingFileCanBeMade(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		_, _ = w.Write([]byte("payload"))
 	}))
 	defer srv.Close()
+	lastInstallFetch = nil
 	missing := filepath.Join(t.TempDir(), "does-not-exist")
-	tmp := filepath.Join(missing, "tmp")
-	t.Setenv("TMPDIR", tmp)
-	t.Setenv("TMP", tmp)
-	t.Setenv("TEMP", tmp)
-	if _, _, err := fetchToFile(srv.URL, missing); err == nil {
-		t.Fatal("fetchToFile with no usable temp dir succeeded, want an error")
+	_, _, err := fetchCLI(srv.URL, missing)
+	if err == nil || !strings.HasPrefix(downloadError(err).Error(), "staging cli: ") {
+		t.Fatalf("fetchCLI into a missing folder = %v, want the bare staging error", err)
+	}
+	if lastInstallFetch == nil {
+		t.Error("no fetch object after the request ran")
 	}
 }
 

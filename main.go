@@ -151,7 +151,7 @@ func main() {
 		cliURL      = flag.String("cli-url", "", "Download URL for the CLI .zst")
 		cliChecksum = flag.String("cli-checksum", "", "Expected SHA256 of the compressed CLI .zst")
 		cliZst      = flag.String("cli-zst", "", "Path to an already-uploaded CLI .zst (SFTP fallback)")
-		cliKeep     = flag.Int("cli-keep", 3, "How many of the newest cli-dir entries to keep (0 keeps none, a negative value is an error)")
+		cliKeep     = flag.Int("cli-keep", 3, "How many of the newest CLI version files to keep, the new CLI among them. The new CLI always stays, so 0 or a negative value removes every older one")
 		maxCLI      = flag.Int64("max-cli-bytes", 0, "Cap the decompressed CLI and the download response body, in bytes. 0 (the default) means no cap, which is what the reference does; a non-zero value is an opt-in divergence. -install only. Claude Desktop owns the argv, so the max-cli-bytes key in claustrum.conf is usually the reachable way to set this.")
 
 		_ = flag.Duration("cli-probe-timeout", 0, "Deprecated and ignored. The direct <cli> --version run of -install always uses the bounds of the reference: 30s for a CLI that is present, 120s for a CLI that this run installed. Passing this flag, or setting the cli-probe-timeout key in claustrum.conf, logs one warning on -install and changes nothing.")
@@ -234,7 +234,7 @@ func main() {
 		// -libc-probe-timeout and its config key are deprecated no-ops. They set
 		// nothing, so the ldd probe keeps its 5 s bound (lddProbeTimeout).
 		warnDeprecatedLibcProbe(cliSet["libc-probe-timeout"], cfg.libcProbeTimeoutSeen)
-		// Same reasoning: fetchToFile reads this deep in the download path rather
+		// Same reasoning: fetchCLI reads this deep in the download path rather
 		// than taking it through installOpts.
 		cliDownloadTimeout = cfg.effectiveCLIDownloadTimeout(*cliDownload, cliSet["cli-download-timeout"])
 		runInstall(installOpts{

@@ -147,10 +147,10 @@ func (f *stubFixture) litter(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	put(".fetch-old", 11*time.Minute)
-	put("old.zst", 11*time.Minute)
-	put(".fetch-new", 0)
-	put("new.zst", 0)
+	put(".fetch-11", 11*time.Minute)
+	put("1.0.9.zst", 11*time.Minute)
+	put(".fetch-12", 0)
+	put("1.0.8.zst", 0)
 	for i, v := range stubOldVersions {
 		put(v+cliExeSuffix, time.Duration(48-i)*time.Hour)
 	}
@@ -251,7 +251,7 @@ func TestInstallStopsAPresentCLIAtTheCacheHitBound(t *testing.T) {
 	if want := factsHead(t, f.cli) + stoppedTail + "}\n"; out != want {
 		t.Errorf("stdout\n got %q\nwant %q", out, want)
 	}
-	f.wantNames(t, "B04/B10", append(oldVersionFiles(), ".fetch-new", "new.zst", filepath.Base(f.cli))...)
+	f.wantNames(t, "B04/B10", append(oldVersionFiles(), ".fetch-12", "1.0.8.zst", filepath.Base(f.cli))...)
 	if !isRegularFile(blob) {
 		t.Error("B10: the -cli-zst blob was consumed. A stopped cache hit installs nothing")
 	}
@@ -292,7 +292,7 @@ func TestInstallPresentCLIUnderTheBoundIsPresent(t *testing.T) {
 	if want := factsHead(t, f.cli) + "true}\n"; out != want {
 		t.Errorf("stdout\n got %q\nwant %q", out, want)
 	}
-	f.wantNames(t, "B03", append(oldVersionFiles(), ".fetch-new", ".fetch-old", "new.zst", "old.zst", filepath.Base(f.cli))...)
+	f.wantNames(t, "B03", append(oldVersionFiles(), ".fetch-12", ".fetch-11", "1.0.8.zst", "1.0.9.zst", filepath.Base(f.cli))...)
 }
 
 // Rows F04, F05, F15. The two bounds are two values. A CLI that answers
@@ -337,7 +337,7 @@ func TestInstallStopsANewCLIAtTheFirstRunBound(t *testing.T) {
 	if want := factsHead(t, f.cli) + stoppedTail + "}\n"; out != want {
 		t.Errorf("stdout\n got %q\nwant %q", out, want)
 	}
-	f.wantNames(t, "F05", append(oldVersionFiles(), ".fetch-new", "new.zst", filepath.Base(f.cli))...)
+	f.wantNames(t, "F05", append(oldVersionFiles(), ".fetch-12", "1.0.8.zst", filepath.Base(f.cli))...)
 	if !isRegularFile(f.cli) {
 		t.Error("F05: the new CLI must stay at its final name")
 	}
@@ -620,13 +620,13 @@ func TestInstallNewCLIRunsAtItsFinalName(t *testing.T) {
 				t.Errorf("stub START lines: %d, first %q, want one run with argv[0] %s", n, start, f.cli)
 			}
 			dir, _ := f.stubLogLine(t, "DIR ")
-			wantDir := append(oldVersionFiles(), ".fetch-new", "new.zst", filepath.Base(f.cli))
+			wantDir := append(oldVersionFiles(), ".fetch-12", "1.0.8.zst", filepath.Base(f.cli))
 			slices.Sort(wantDir)
 			if want := "DIR " + strings.Join(wantDir, ","); dir != want {
 				t.Errorf("the folder at the --version run\n got %q\nwant %q", dir, want)
 			}
 			// -cli-keep 2 keeps the new CLI and the newest old version.
-			f.wantNames(t, "F01 prune", ".fetch-new", "new.zst", "1.3.0"+cliExeSuffix, filepath.Base(f.cli))
+			f.wantNames(t, "F01 prune", ".fetch-12", "1.0.8.zst", "1.3.0"+cliExeSuffix, filepath.Base(f.cli))
 		})
 	}
 }
@@ -649,7 +649,7 @@ func TestInstallRemovesANewCLIThatDoesNotRun(t *testing.T) {
 	if n != 1 || !strings.HasPrefix(start, "START argv0="+f.cli+" ") {
 		t.Errorf("stub START lines: %d, first %q, want one run with argv[0] %s", n, start, f.cli)
 	}
-	f.wantNames(t, "F12", append(oldVersionFiles(), ".fetch-new", "new.zst")...)
+	f.wantNames(t, "F12", append(oldVersionFiles(), ".fetch-12", "1.0.8.zst")...)
 	if _, err := os.Lstat(blob); !os.IsNotExist(err) {
 		t.Errorf("F12: the blob must be consumed, Lstat err = %v", err)
 	}
@@ -668,7 +668,7 @@ func TestInstallSweepsOnceBeforeTheRun(t *testing.T) {
 	f := newStubFixture(t)
 	blob := f.stubBlob(t)
 	stubDelay(t, 7*time.Second)
-	edge := filepath.Join(f.cliDir, ".fetch-edge")
+	edge := filepath.Join(f.cliDir, ".fetch-13")
 	if err := os.WriteFile(edge, []byte("x"), 0o644); err != nil {
 		t.Fatal(err)
 	}
@@ -689,7 +689,7 @@ func TestInstallSweepsOnceBeforeTheRun(t *testing.T) {
 	if before := total - 7*time.Second; before >= 5*time.Second {
 		t.Skipf("the install took %v outside the stub run: the first sweep was possibly past the 5s margin", before)
 	}
-	f.wantNames(t, "one sweep", ".fetch-edge", filepath.Base(f.cli))
+	f.wantNames(t, "one sweep", ".fetch-13", filepath.Base(f.cli))
 }
 
 // Rows E01, B12. A cache miss with no source answers "missing" and still
@@ -700,7 +700,7 @@ func TestInstallSweepsAfterAnAttemptWithNoSource(t *testing.T) {
 		t.Run(row, func(t *testing.T) {
 			f := newStubFixture(t)
 			f.litter(t)
-			want := append(oldVersionFiles(), ".fetch-new", "new.zst")
+			want := append(oldVersionFiles(), ".fetch-12", "1.0.8.zst")
 			if row == "B12" {
 				if err := os.WriteFile(f.cli, []byte("not a cli"), 0o755); err != nil {
 					t.Fatal(err)
@@ -793,8 +793,7 @@ func TestInstallLeavesNoCLIAfterANewCLIThatDoesNotRun(t *testing.T) {
 // -cli-version with a path separator, or "." or "..", is refused before the
 // install writes or removes anything at a path built from the version. No
 // victim is deleted, nothing is staged and no CLI runs. The sweeps of the
-// cli-dir name only the cli-dir and are not behind this rule (cell P5 of
-// 89cb6289, Linux VM). Each victim
+// cli-dir name only the cli-dir and are not behind this rule. Each victim
 // is a folder with a file, the shape that the clear of the final name removes
 // as a tree. The blob holds a CLI that exits non-zero, so the remove after a
 // failed run is in reach too.
@@ -844,7 +843,7 @@ func TestInstallVersionGuardRunsBeforeTheEarlierDelete(t *testing.T) {
 
 // A staging file that is gone before the rename, with nothing at the final name,
 // is the "staging file vanished" error after one retry. The final name stays
-// empty, and the -cli-zst blob is consumed, because decompression succeeded. The
+// empty, and the -cli-zst blob stays, because the new CLI is not in place. The
 // chmod seam removes the staging file, as a concurrent sweep does.
 func TestEnsureCLIReportsAVanishedStagingFileAtAnEmptyFinalName(t *testing.T) {
 	old := chmodStaged
@@ -855,15 +854,15 @@ func TestEnsureCLIReportsAVanishedStagingFileAtAnEmptyFinalName(t *testing.T) {
 	f := newStubFixture(t)
 	blob := f.stubBlob(t)
 	err := ensureCLI(installOpts{cliDir: f.cliDir, cliVersion: "9.9.9", cliZst: blob}, f.cli)
-	if err == nil || !strings.HasPrefix(err.Error(), "staging file vanished before install: ") {
+	if err == nil || !strings.HasPrefix(err.Error(), "rename: staging file vanished before install: ") {
 		t.Fatalf("ensureCLI = %v, want the staging-vanished error", err)
 	}
 	if calls != 2 {
 		t.Errorf("the staging step ran %d times, want 2 (one retry)", calls)
 	}
 	f.wantNames(t, "vanished")
-	if _, statErr := os.Lstat(blob); !os.IsNotExist(statErr) {
-		t.Errorf("the blob must be consumed, Lstat err = %v", statErr)
+	if !isRegularFile(blob) {
+		t.Error("the blob was consumed by an install that did not finish")
 	}
 	if _, n := f.stubLogLine(t, "START "); n != 0 {
 		t.Errorf("the stub ran %d times, want 0", n)
@@ -1027,8 +1026,8 @@ func TestInstallAnswersAnEmptyCliPathWhenTheFolderCannotBeMade(t *testing.T) {
 // The Windows name rule (rows W02 to W07, E11a, E11b), run with the suffix seam so
 // that it runs on every system. The CLI file is <version>.exe. Only that name
 // counts as present. A version that ends in ".exe" gets the suffix too. The prune
-// counts every file, with or without the suffix. A folder at the bare name stays,
-// and a folder at the .exe name is replaced.
+// counts only <version>.exe files (cell W3 of 5fd08069). A folder at the bare
+// name stays, and a folder at the .exe name is replaced.
 func TestInstallExeNameRule(t *testing.T) {
 	old := cliExeSuffix
 	cliExeSuffix = ".exe"
@@ -1102,7 +1101,7 @@ func TestInstallExeNameRule(t *testing.T) {
 		}
 		f.wantNames(t, "W06", "9.9.9.exe.exe")
 	})
-	t.Run("W07: the prune counts files with and without the suffix", func(t *testing.T) {
+	t.Run("W3: the prune counts only <version>.exe files", func(t *testing.T) {
 		f := mk(t)
 		now := time.Now()
 		for i, name := range []string{"1.0.0.exe", "1.1.0.exe", "1.2.0.exe", "1.0.0", "1.1.0"} {
@@ -1120,7 +1119,7 @@ func TestInstallExeNameRule(t *testing.T) {
 		if dir, want := mustLogLine(t, f, "DIR "), "DIR 1.0.0,1.0.0.exe,1.1.0,1.1.0.exe,1.2.0.exe,9.9.9.exe"; dir != want {
 			t.Errorf("the folder at the --version run: %q, want %q", dir, want)
 		}
-		f.wantNames(t, "W07", "9.9.9.exe")
+		f.wantNames(t, "W3", "1.0.0", "1.1.0", "9.9.9.exe")
 	})
 	t.Run("E11a: a folder at the bare name stays", func(t *testing.T) {
 		f := mk(t)
