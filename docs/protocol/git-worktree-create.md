@@ -62,7 +62,7 @@ Decide by `errorCode` first.
 | `repository_only_filter` | The checkout needs a git filter that only the git config of the repository defines. See [Git filters](#git-filters). |
 | `timeout` | The deadline of `timeoutMs` expired. |
 
-If the daemon does not accept the git config of the repository, the code is `worktree_add_failed` and nothing is made. For example, the format version is not `0` or `1`. The texts are in [Repository config refusals](../PROTOCOL.md#repository-config-refusals).
+If the daemon does not accept the git config of the repository, the code is `worktree_add_failed` and nothing is made. The texts are in [Repository config refusals](../PROTOCOL.md#repository-config-refusals).
 
 Three failures of the settings copy give `worktree_add_failed` too, and nothing is made: a failed test of the host git, a failed call about the repository, or no folder for the copy. See [The settings copy](#the-settings-copy).
 
@@ -71,8 +71,6 @@ A request with no `branchName` gets the JSON-RPC error `-32602`.
 The exact texts are in the [error-string catalog](../PROTOCOL.md#error-string-catalogue).
 
 ## After a failure
-
-What stays on disk depends on where the request failed.
 
 A request can create four things outside the worktree, and no failure removes them:
 
@@ -103,17 +101,15 @@ A rollback leaves something in these cases:
 
 ## Git filters
 
-A git filter is a program that git runs for a file of the checkout. If a file of the checkout uses a filter that only the git config of the repository defines, the request fails and the daemon rolls back:
+If a file of the checkout uses a git filter that only the repository config defines, the request fails:
 
 ```json
 {"success": false, "error": "Claude doesn't run the \"<name>\" git filter, because only this repository's own git config defines it. If you trust that filter, copy the [filter \"<name>\"] section from that config (usually .git/config) into ~/.gitconfig on the remote machine, then try again.", "errorCode": "repository_only_filter"}
 ```
 
-A filter counts as defined where a `smudge` or a `process` key has a value. A filter that the user config, the system config or the environment of the daemon defines runs. If the repository defines that filter too, the values from outside the repository apply. If the repository adds a `process` key to a filter that has none outside it, the request fails with `worktree_add_failed`. With a git before 2.26, the daemon refuses a filter that a conditional include (`includeIf`) of the user config defines.
+A filter counts as defined where a `smudge` or a `process` key has a value. A filter that the user config, the system config or the daemon environment defines runs. If the repository defines that filter too, the outside values apply, except as below. With a user `lfs.storage` the checkout gets no `lfs.storage` item of the daemon (round `task008-01`, Linux, macOS and Windows VMs). A failing user `smudge` fails the request where the repository adds only `required = true`, `yes` or `1`. Linux and macOS VMs measured `true`, a Linux VM `yes` and `1`. If the repository adds a `process` key to a filter that has none outside it, the request fails with `worktree_add_failed`. With a git before 2.26, the daemon refuses a filter that a conditional include (`includeIf`) of the user config defines.
 
-Three values of the repository pass: `smudge = cat` under each name, and `git-lfs smudge -- %f` and `git-lfs filter-process` under the name `lfs`. With `smudge = cat` the daemon starts no program. If the config of the repository itself names a program for git-lfs, the filter `lfs` does not run, wherever it is defined. A file under that filter then fails the request. A filter name with `=` in it, or one that is not valid UTF-8, fails the request with `worktree_add_failed`. So does a refused name of more than 200 bytes.
-
-`"shadowDirOff": true` turns the rule off for one request. The daemon then runs the filter of the repository.
+Three values of the repository pass: `smudge = cat` under each name, and `git-lfs smudge -- %f` and `git-lfs filter-process` under the name `lfs`. With `smudge = cat` the daemon starts no program. If the repository config names a program for git-lfs, the filter `lfs` does not run, wherever it is defined. A file under it then fails the request. A filter name with `=`, or one that is not valid UTF-8, fails the request with `worktree_add_failed`. So does a refused name of over 200 bytes. In the state `shadow`, over 64 filter names in the repository config fail first. So does the last config listing before the checkout that fails or runs 30 seconds.
 
 ## The settings copy
 
@@ -167,7 +163,7 @@ A copy that fails does not fail the request. If the deadline of `timeoutMs` expi
 
 ## Differences from the reference
 
-The pinned build `89cb6289` runs a git filter that only the repository defines. claustrum follows `5fd08069` and refuses it, with some differences: see [Git filters](#git-filters). claustrum also follows `5fd08069` in the refusal of a repository config and, with some differences, in the settings copy: see [Repository config refusals](../PROTOCOL.md#repository-config-refusals). These entries of the divergence catalog apply to this method:
+The pinned build `89cb6289` runs a git filter that only the repository defines. claustrum follows `5fd08069` there, in the refusal of a repository config and in the settings copy, with some differences: see [Git filters](#git-filters) and [Repository config refusals](../PROTOCOL.md#repository-config-refusals). These entries of the divergence catalog apply to this method:
 
 - [D2](../DIVERGENCES.md#d2): a delete refuses a path that is the home directory or holds it. That covers the Windows removal of old `.claude-new-worktree-*` entries.
 - [D5](../DIVERGENCES.md#d5): an optional deadline on the git calls. It is off by default.

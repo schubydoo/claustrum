@@ -258,7 +258,7 @@ func TestWorktreeCreateSmudgeCatStartsNoProgram(t *testing.T) {
 	// The control. With the rule off, git runs the cat of PATH, so the stand-in
 	// can be reached.
 	f.assertRetryWithRuleOffRunsCat(t)
-	plan := planFilters(parseFilterListing([]byte("filter.m.smudge\ncat\x00filter.m.required\ntrue\x00")), nil, "")
+	plan := planFilters(parseFilterListing([]byte("filter.m.smudge\ncat\x00filter.m.required\ntrue\x00")), nil, "", false)
 	if want := []string{"-c", "filter.m.process=", "-c", "filter.m.required=false", "-c", "filter.m.smudge="}; !slices.Equal(plan.args, want) {
 		t.Errorf("pairs for smudge = cat: %q, want %q", plan.args, want)
 	}
@@ -308,7 +308,7 @@ func TestWorktreeCreateRefusesFilterNameThatIsNotUTF8(t *testing.T) {
 	// With a definition outside the repository too, the pairs with the outside
 	// values cannot name the filter either.
 	both := planFilters(parseFilterListing([]byte("filter.n\xffn.smudge\nout\x00filter.n\xffn.smudge\nown\x00")),
-		parseFilterListing([]byte("filter.n\xffn.smudge\nout\x00")), "")
+		parseFilterListing([]byte("filter.n\xffn.smudge\nout\x00")), "", false)
 	if both.refusal != unreplaceableFilterText("n\xffn") || len(both.args) != 0 {
 		t.Errorf("a name that is not UTF-8 on both sides: refusal %q, pairs %q", both.refusal, both.args)
 	}
@@ -591,7 +591,7 @@ func TestWorktreeCreatePassesLfsFilterOn(t *testing.T) {
 	wantFirstPairs(t, argv, "filter.lfs.smudge=git-lfs smudge -- %f")
 	f.wantCreatedLeaf(t, raw)
 
-	plan := planFilters(parseFilterListing([]byte("filter.lfs.process\ngit-lfs filter-process\x00")), nil, "")
+	plan := planFilters(parseFilterListing([]byte("filter.lfs.process\ngit-lfs filter-process\x00")), nil, "", false)
 	if want := []string{"-c", "filter.lfs.process=git-lfs filter-process"}; !slices.Equal(plan.args, want) || len(plan.refused) != 0 {
 		t.Fatalf("plan of the lfs process value = %q refused %q, want %q and none", plan.args, plan.refused, want)
 	}
@@ -759,12 +759,12 @@ func TestWorktreeCreateFilterNameBound(t *testing.T) {
 
 	for n, refusal := range map[int]bool{200: false, 201: true} {
 		name := strings.Repeat("n", n)
-		plan := planFilters(parseFilterListing([]byte("filter."+name+".smudge\nx\x00")), nil, "")
+		plan := planFilters(parseFilterListing([]byte("filter."+name+".smudge\nx\x00")), nil, "", false)
 		if (plan.refusal != "") != refusal || slices.Contains(plan.refused, name) == refusal {
 			t.Errorf("name of %d bytes: refusal %q, three pairs %v", n, plan.refusal, len(plan.refused) == 1)
 		}
 	}
-	plan := planFilters(parseFilterListing([]byte("filter."+long+".smudge\ncat\x00")), nil, "")
+	plan := planFilters(parseFilterListing([]byte("filter."+long+".smudge\ncat\x00")), nil, "", false)
 	if plan.refusal != "" || len(plan.refused) != 0 {
 		t.Errorf("name of 300 bytes with smudge = cat: refusal %q, three pairs %v, want neither", plan.refusal, plan.refused)
 	}
@@ -879,7 +879,7 @@ func TestPlanFilters(t *testing.T) {
 	off := func(name string) []string {
 		return []string{"-c", "filter." + name + ".process=", "-c", "filter." + name + ".required=true", "-c", "filter." + name + ".smudge=false"}
 	}
-	plan := planFilters(full, outside, "")
+	plan := planFilters(full, outside, "", false)
 	want := slices.Concat(
 		[]string{"-c", "filter.M.process=", "-c", "filter.M.required=false", "-c", "filter.M.smudge="},
 		[]string{"-c", "filter.both.required=false", "-c", "filter.both.smudge=out"},
@@ -917,7 +917,7 @@ func TestSplitScopedListing(t *testing.T) {
 	if string(full) != wantFull || string(outside) != wantOutside {
 		t.Errorf("full = %q\noutside = %q\nwant %q\nand %q", full, outside, wantFull, wantOutside)
 	}
-	plan := planFromListings(full, outside)
+	plan := planFromListings(full, outside, false)
 	if !slices.Equal(plan.refused, []string{"m", "w"}) {
 		t.Errorf("refused = %q, want [m w]", plan.refused)
 	}

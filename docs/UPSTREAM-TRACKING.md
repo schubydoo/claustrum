@@ -427,15 +427,18 @@ traps that matter for telling drift from expected:
 - The git filters of the `git.worktree_create` checkout split the builds too,
   not drift. `scripts/UPSTREAM_SHA` names `89cb6289`, and claustrum follows
   `5fd08069`. Against `89cb6289` these answers differ:
-  - A checkout that needs a filter which only the git config of the repository
-    defines answers `errorCode:"repository_only_filter"`, and nothing is left.
+  - A checkout that needs a filter which only the repository config defines
+    answers `errorCode:"repository_only_filter"`, and nothing is left.
     `89cb6289` runs the filter (Linux and Windows VMs).
-  - With a filter in the config of the repository and in a config outside it,
-    the outside filter runs. `89cb6289` runs the one of the repository
+  - With a filter in the repository config and in a config outside it, the
+    outside filter runs. `89cb6289` runs the one of the repository
     (Linux VM).
   - A filter that only the repository defines, with a name of 300 bytes,
     answers `worktree_add_failed` with the text about a name longer than 200
     bytes (Linux and Windows VMs).
+  - In the state `shadow`, more than 64 filter names, and a last config listing
+    before the checkout that fails or runs 30 s, fail the create (claustrum's code,
+    `89cb6289` not run).
 
   Against `5fd08069` these differences are not drift:
   - With `smudge` from outside and a `process` key in the repository,
@@ -464,13 +467,10 @@ traps that matter for telling drift from expected:
     that names the key. On `5fd08069` such a create fails inside git-lfs with
     the text of git-lfs, and the agent does not run (cells L1 to L4, Windows
     VM). The `lfs.extension.` keys of that rule ran on no VM.
-  - A wait on a listing before the checkout, with a `timeoutMs` that expires,
-    gives the timeout frame only on the build that makes that listing. The
-    two make other listings there (cells S2, Linux VM).
-  - In the call log, the `-c` pairs with a `filter.` key differ in some cells,
-    and the listings before the checkout differ.
-
-  macOS is not measured on any build.
+  - A `timeoutMs` that expires during a listing before the checkout gives the
+    timeout frame only where the build makes that listing (cells S2, Linux VM).
+  - In the call log, some `filter.` pairs and the listings before the checkout
+    differ.
 - The refusals of a repository config split the builds too, not drift.
   Against `89cb6289` a config that the daemon does not accept gets a text that
   starts with `this repository's git config cannot be used: `. A refused file of

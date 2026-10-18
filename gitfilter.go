@@ -47,6 +47,12 @@ const (
 	lfsFilterName = "lfs"
 	lfsSmudge     = "git-lfs smudge -- %f"
 	lfsProcess    = "git-lfs filter-process"
+	// filterNameMaxCount is the most filter names that the repository's own
+	// config can have. 64 names pass and 65 are refused with tooManyFiltersText.
+	// Cells C1 and C2 of round task008-01 show it on Linux, macOS and Windows VMs.
+	filterNameMaxCount = 64
+	// tooManyFiltersText is the refusal of more than filterNameMaxCount names.
+	tooManyFiltersText = "this repository's git config cannot be used: it defines more than 64 filters"
 )
 
 // jsonTrueSwitch is a request member that is on for the JSON value true and off for
@@ -143,6 +149,15 @@ type filterPlan struct {
 	lfsKey string
 	// listing is the config precursor of the checkout, when the rule ran it.
 	listing *listingRun
+	// tooManyFilters is true when the repository's own config has more than
+	// filterNameMaxCount filter names (repositoryFilterCount).
+	tooManyFilters bool
+	// userLfsStorage is true when the config outside the repository sets
+	// lfs.storage. The read-tree call then gets no lfs.storage item (round
+	// task008-01, cell C12, Linux, macOS and Windows VMs, with the user config).
+	// The system config and the config of the daemon count too: that is
+	// claustrum's own choice.
+	userLfsStorage bool
 }
 
 // pairs appends one -c pair for each key of keys, with the values by key.
@@ -189,7 +204,8 @@ func (f *filterPlan) pairs(name string, values [len(filterKeys)]string, keys ...
 // Every other filter that outside defines runs with the outside values, as on
 // 5fd08069 in cells A7, O6 and Q6 (the `smudge` key). If full differs from outside in one of the three keys,
 // the filter gets pairs with the outside values. Those pairs are claustrum's own:
-// 5fd08069 passes none there. Two states get claustrum's own refusal there,
+// 5fd08069 passes none there. One state gets only the `required` pair of the
+// repository (repositoryRequiresUserSmudge). Two states get claustrum's own refusal there,
 // because no -c pair gives the result (unreplaceableFilterText). The first is a
 // `process` key in full and none in outside: a pair cannot remove a key, and an
 // empty `process` value stops the outside `smudge` filter too. 5fd08069 runs the
@@ -202,7 +218,10 @@ func (f *filterPlan) pairs(name string, values [len(filterKeys)]string, keys ...
 // claustrum's own. 5fd08069 passes its three pairs: on a Linux VM its checkout
 // fails, and on a Windows VM it answers success and no filter runs (cells S3
 // and X1). That difference stays.
-func planFilters(full, outside map[string]filterValues, lfsKey string) filterPlan {
+//
+// shadow is true in the state shadow. It decides the pair of
+// repositoryRequiresUserSmudge.
+func planFilters(full, outside map[string]filterValues, lfsKey string, shadow bool) filterPlan {
 	var f filterPlan
 	for _, name := range slices.Sorted(maps.Keys(full)) {
 		v, o := full[name], outside[name]
@@ -220,6 +239,12 @@ func planFilters(full, outside map[string]filterValues, lfsKey string) filterPla
 			if (v.has[filterProcess] && !o.has[filterProcess]) || strings.Contains(name, "=") || !utf8.ValidString(name) {
 				f.refusal = unreplaceableFilterText(name)
 				return f
+			}
+			if repositoryRequiresUserSmudge(v, o) {
+				if shadow {
+					f.pairs(name, [...]string{"", "true", ""}, filterRequired)
+				}
+				continue
 			}
 			if !o.has[filterRequired] {
 				o.last[filterRequired] = "false"
@@ -260,6 +285,31 @@ func planFilters(full, outside map[string]filterValues, lfsKey string) filterPla
 	return f
 }
 
+// repositoryRequiresUserSmudge reports one state of a filter that both configs
+// define. Outside the repository it has a `smudge` command other than `cat`
+// and no other key that the checkout reads. The repository adds only
+// `required = true`. In the state shadow the filter then gets the one pair
+// `filter.<name>.required=true`, and the smudge command of the user config
+// runs. So a failure of that command fails the checkout with git's text (round
+// task008-01, cell C6, Linux and macOS VMs). `required = yes` and `required =
+// 1` get the same pair (round task008-03, cells R1 and R2, Linux VM). `on`,
+// other letter case and a bare key are claustrum's own. In the state
+// fallback-git the filter gets no pair, and the checkout fails the same way
+// (round task008-03, cell R7, Linux VM). Every other state of
+// a shared name keeps the pairs of planFilters (not measured).
+func repositoryRequiresUserSmudge(v, o filterValues) bool {
+	onlySmudge := [len(filterKeys)]bool{filterSmudge: true}
+	return o.has == onlySmudge && o.last[filterSmudge] != passSmudge &&
+		v.has == [len(filterKeys)]bool{filterRequired: true, filterSmudge: true} &&
+		v.last[filterSmudge] == o.last[filterSmudge] && gitTrue(v.last[filterRequired])
+}
+
+// gitTrue reports whether value is `true`, `yes`, `on` or `1`, in any letter
+// case.
+func gitTrue(value string) bool {
+	return slices.Contains([]string{"true", "yes", "on", "1"}, strings.ToLower(value))
+}
+
 // repositoryLfsProgramKey is the first key, in sorted order, of the repository's
 // own config that names a program for git-lfs, or "". Such a key starts with
 // `lfs.customtransfer.` or with `lfs.extension.`, or it starts with `lfs.` and
@@ -296,8 +346,44 @@ func repositoryLfsProgramKey(full, outside []byte) string {
 
 // planFromListings is planFilters for two plain listings: the one that
 // the checkout reads, and the part of it from outside the repository.
-func planFromListings(full, outside []byte) filterPlan {
-	return planFilters(parseFilterListing(full), parseFilterListing(outside), repositoryLfsProgramKey(full, outside))
+func planFromListings(full, outside []byte, shadow bool) filterPlan {
+	f := planFilters(parseFilterListing(full), parseFilterListing(outside), repositoryLfsProgramKey(full, outside), shadow)
+	f.tooManyFilters = repositoryFilterCount(full, outside) > filterNameMaxCount
+	f.userLfsStorage = slices.ContainsFunc(bytes.Split(outside, []byte{0}), func(rec []byte) bool {
+		key, _, _ := bytes.Cut(rec, []byte{'\n'})
+		return string(key) == "lfs.storage"
+	})
+	return f
+}
+
+// repositoryFilterCount is the number of filter names in the repository's own
+// config. Those are the records of full that outside does not hold, with each
+// record of outside taken once. A name counts once, whatever keys it has. A
+// name with a `smudge` key counts (cell C2 of round task008-01, Linux, macOS
+// and Windows VMs). So does one with only a `clean` key (cell C3, Linux and
+// macOS VMs). A name counts also when the user config defines it with `smudge
+// = cat` (cell C4). Other user values are claustrum's own. More keys on one
+// name do not add to the count (cell C5a). A name with only other keys counts
+// too, and the config of the daemon and of the system counts as outside. Both
+// are claustrum's own choices.
+func repositoryFilterCount(full, outside []byte) int {
+	other := map[string]int{}
+	for rec := range bytes.SplitSeq(outside, []byte{0}) {
+		other[string(rec)]++
+	}
+	names := map[string]bool{}
+	for rec := range bytes.SplitSeq(full, []byte{0}) {
+		if other[string(rec)] > 0 {
+			other[string(rec)]--
+			continue
+		}
+		key, _, _ := strings.Cut(string(rec), "\n")
+		rest, ok := strings.CutPrefix(key, "filter.")
+		if last := strings.LastIndexByte(rest, '.'); ok && last >= 0 {
+			names[rest[:last]] = true
+		}
+	}
+	return len(names)
 }
 
 // lfsProgramText is the refusal text when the checkout fails at the filter lfs
@@ -410,7 +496,8 @@ func listFilterPlan(ctx context.Context, u gitUse, leaf, gitDir string, pin []st
 	var ee *exec.ExitError
 	switch {
 	case err == nil:
-		return planFromListings(splitScopedListing(out))
+		full, outside := splitScopedListing(out)
+		return planFromListings(full, outside, u.shadow())
 	case !errors.As(err, &ee) || ee.ExitCode() != gitUsageExit:
 		return failed(listingRun{stderr: errBuf.String(), err: err})
 	}
@@ -421,7 +508,7 @@ func listFilterPlan(ctx context.Context, u gitUse, leaf, gitDir string, pin []st
 			return failed(r)
 		}
 	}
-	f := planFromListings(full.out, outside.out)
+	f := planFromListings(full.out, outside.out, u.shadow())
 	if !u.shadow() {
 		f.listing = &full
 	}
