@@ -603,7 +603,7 @@ func gitStatus(req *request) response {
 			sp.spellings = append(sp.spellings, s)
 		}
 	}
-	entry, ok := statusEntryOf(common, sp, req.use.shadow() || bool(p.ShadowDirOff))
+	entry, ok := statusEntryOf(req.stop, common, sp, req.use.shadow() || bool(p.ShadowDirOff))
 	if !ok {
 		return notRepo
 	}
@@ -831,7 +831,13 @@ func gitWorktreeCreateLocked(req *request, p *gitParams, repo string) response {
 	//
 	// A baseRepo with no work tree gets that answer too, also when the call
 	// prints `true` (gitUse.noWorkTree).
+	//
+	// A repository test that its time limit stopped answers the stop text as it
+	// is, and nothing is made (cell TI of round task010-04, Linux VM).
 	if c.noRepo || !isRepo(req.use, repo, c.listing) || req.use.noWorkTree(repo) {
+		if err := req.stop.halted(); err != nil {
+			return okResult(req.ID, worktreeResult{Success: false, Error: err.Error(), ErrorCode: "worktree_add_failed"})
+		}
 		return okResult(req.ID, worktreeResult{
 			Success:   false,
 			Error:     "not a git repository",

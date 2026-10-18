@@ -347,7 +347,7 @@ func runGitSlow(args []string) int {
 	}
 	slow := false
 	if m := os.Getenv("CLAUSTRUM_GITSTUB_MATCH"); m != "" {
-		slow = stubMatches(args, m) && stubNarrowed(args)
+		slow = stubMatches(args, m) && stubNarrowed(args) && stubNth()
 	}
 	mode := os.Getenv("CLAUSTRUM_GITSTUB_MODE")
 	pause := func() {
@@ -462,6 +462,20 @@ func stubNarrowed(args []string) bool {
 
 // stubMatches reports whether every word of the comma-separated match is an exact
 // argument in args.
+// stubNth counts the calls that the first rule matches in the file
+// CLAUSTRUM_GITSTUB_NTHFILE, and reports whether this call is call number
+// CLAUSTRUM_GITSTUB_NTH. With no such file every matched call counts.
+func stubNth() bool {
+	f := os.Getenv("CLAUSTRUM_GITSTUB_NTHFILE")
+	if f == "" {
+		return true
+	}
+	b, _ := os.ReadFile(f)
+	n := len(b) + 1
+	_ = os.WriteFile(f, append(b, 'x'), 0o644)
+	return strconv.Itoa(n) == os.Getenv("CLAUSTRUM_GITSTUB_NTH")
+}
+
 func stubMatches(args []string, match string) bool {
 	for _, w := range strings.Split(match, ",") {
 		if !slices.Contains(args, w) {

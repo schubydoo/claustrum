@@ -88,12 +88,44 @@ var repoCountedSections = map[string]bool{
 // its standard input, and returns the listing. git follows no include in this
 // call. dir and env are the working directory and the environment of the call:
 // "" and nil keep those of the daemon.
+//
+// In a request with time limits the call ends at repoReadBound, with
+// errReadBound (configReadCtx).
 func listConfigText(ctx context.Context, text []byte, dir string, env []string) ([]byte, error) {
+	ctx, cancel := configReadCtx(ctx)
+	defer cancel()
 	cmd := exec.CommandContext(ctx, "git", "config", "--no-includes", "--file", "-", "--list", "-z")
 	cmd.Stdin = bytes.NewReader(text)
 	cmd.Dir = dir
 	cmd.Env = env
-	return cmd.Output()
+	out, err := cmd.Output()
+	return out, readBoundErr(ctx, err)
+}
+
+// errReadBound is the error of a listing of one config file that repoReadBound
+// ended. A create quotes it after repoConfigPrefix (cell TW of round
+// task010-04, Linux VM).
+var errReadBound = errors.New("git did not finish reading it within 30 seconds; try again")
+
+// configReadCtx is ctx with repoReadBound for a request with time limits
+// (gitStop), or ctx itself. At the bound the process gets SIGKILL with no
+// SIGTERM before it (cells T18, TW and TS).
+func configReadCtx(ctx context.Context) (context.Context, context.CancelFunc) {
+	if s, _ := gitStopOf(ctx); s == nil {
+		return ctx, func() {}
+	}
+	return context.WithTimeout(ctx, repoReadBound)
+}
+
+// readBoundErr is errReadBound for a failed call whose bound in ctx expired, or
+// err.
+func readBoundErr(ctx context.Context, err error) error {
+	if err != nil && errors.Is(ctx.Err(), context.DeadlineExceeded) {
+		if s, _ := gitStopOf(ctx); s != nil {
+			return errReadBound
+		}
+	}
+	return err
 }
 
 // repoListingMaxBytes bounds the listing that the read of the repository config
@@ -105,13 +137,15 @@ func listConfigText(ctx context.Context, text []byte, dir string, env []string) 
 // variable, so that a test can lower it.
 var repoListingMaxBytes = 8 * repoConfigMaxBytes
 
-// repoReadBound ends the listing of one config file of the read of the
-// repository config, in a request with time limits (gitStop). The process gets
-// SIGKILL with no SIGTERM before it, and the request answers readStopText after
-// repoConfigPrefix. On 5fd08069 a git.status whose listing of `.git/config` was
-// held 35 s answered at 30.3 s so (cell T18 of round task010-01, Linux VM). macOS,
-// Windows, an included file and the other methods are not measured: they get
-// the same (claustrum's own). A variable, so that a test can lower it.
+// repoReadBound ends each listing of one config file on standard input, in a
+// request with time limits (gitStop, configReadCtx). The process gets SIGKILL
+// with no SIGTERM before it. The read of the repository config then answers
+// readStopText after repoConfigPrefix. On 5fd08069 a git.status whose listing
+// of `.git/config` was held 35 s answered at 30.3 s so (cell T18 of round
+// task010-01, Linux VM). The listings of a `config.worktree` file end so too
+// (cells TW and TS of round task010-04, Linux VM). macOS, Windows, an included
+// file and git.info are not measured: they get the same (claustrum's own). A
+// variable, so that a test can lower it.
 var repoReadBound = 30 * time.Second
 
 // errListingTooLarge ends a listing that passes repoListingMaxBytes.
@@ -141,6 +175,8 @@ func (b *boundedListing) Write(p []byte) (int, error) {
 // errListingTooLarge and the whole settings of its first repoListingMaxBytes
 // bytes.
 func listRepoConfigText(ctx context.Context, text []byte, dir string, env []string) (out, stderr []byte, err error) {
+	ctx, cancel := configReadCtx(ctx)
+	defer cancel()
 	cmd := exec.CommandContext(ctx, "git", "config", "--no-includes", "--file", "-", "--list", "-z")
 	cmd.Stdin = bytes.NewReader(text)
 	cmd.Dir = dir
@@ -154,7 +190,7 @@ func listRepoConfigText(ctx context.Context, text []byte, dir string, env []stri
 	if listing.over {
 		return out[:bytes.LastIndexByte(out, 0)+1], nil, errListingTooLarge
 	}
-	return out, errText.buf, err
+	return out, errText.buf, readBoundErr(ctx, err)
 }
 
 // repoConfigListEnv is the environment of the listing of one config file: that of
@@ -432,14 +468,8 @@ func (r *repoConfigRead) file(path string, depth int) string {
 		r.unlisted = detail == ""
 		return detail
 	}
-	ctx := r.ctx
-	if s, _ := gitStopOf(ctx); s != nil {
-		var cancel context.CancelFunc
-		ctx, cancel = context.WithTimeout(ctx, repoReadBound)
-		defer cancel()
-	}
-	out, errOut, err := listRepoConfigText(ctx, text, gitVersionDir, repoConfigListEnv())
-	if err != nil && ctx.Err() != nil {
+	out, errOut, err := listRepoConfigText(r.ctx, text, gitVersionDir, repoConfigListEnv())
+	if errors.Is(err, errReadBound) {
 		return readStopText(path)
 	}
 	// A listing over its bound still gets the name bound and the count of the

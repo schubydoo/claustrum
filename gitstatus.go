@@ -596,7 +596,7 @@ func statusDirNames(root *os.Root, dir string) ([]string, error) {
 // gitChildEnv (claustrum's own).
 //
 // text is the text of the file as this test read it, for a file that passed.
-func statusEntryConfig(root *os.Root, fileForm bool) (text []byte, present, ok bool) {
+func statusEntryConfig(s *gitStop, root *os.Root, fileForm bool) (text []byte, present, ok bool) {
 	if _, err := root.Lstat("config.worktree"); errors.Is(err, fs.ErrNotExist) {
 		return nil, false, true
 	}
@@ -604,7 +604,7 @@ func statusEntryConfig(root *os.Root, fileForm bool) (text []byte, present, ok b
 	if err != nil {
 		return nil, true, false
 	}
-	ctx := context.Background()
+	ctx := s.context()
 	dir, env := "", gitChildEnv()
 	if fileForm {
 		dir, env = gitVersionDir, repoConfigListEnv()
@@ -641,7 +641,7 @@ type statusEntry struct {
 //
 // The entry comes back with its root open when ok is true. The caller closes it.
 // fileForm is the fileForm of statusEntryConfig.
-func statusEntryOf(common string, sp statusPath, fileForm bool) (e statusEntry, ok bool) {
+func statusEntryOf(s *gitStop, common string, sp statusPath, fileForm bool) (e statusEntry, ok bool) {
 	dir, root, ok := statusMatchEntry(common, sp.spellings)
 	if !ok {
 		return statusEntry{}, false
@@ -663,7 +663,7 @@ func statusEntryOf(common string, sp statusPath, fileForm bool) (e statusEntry, 
 	if !ok {
 		return statusEntry{}, false
 	}
-	config, hasConfig, ok := statusEntryConfig(root, fileForm)
+	config, hasConfig, ok := statusEntryConfig(s, root, fileForm)
 	if !ok {
 		return statusEntry{}, false
 	}

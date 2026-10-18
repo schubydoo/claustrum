@@ -613,11 +613,11 @@ The JSON-RPC surface is identical on every OS. Full internals →
   `git.worktree_create` have the time limits of `5fd08069` (`gitstop.go`). Most
   calls end at 2 minutes. While a `"shadowDirOff":true` request runs, no call of
   the daemon stops at 2 minutes. claustrum then uses 30 minutes (claustrum's own). The exceptions are in [PROTOCOL.md → Time limits of git
-  calls](docs/PROTOCOL.md#time-limits-of-git-calls): config listings (not claustrum's own `--show-scope` listing) and the
-  repository config read at 30 s, the include scan at 10 minutes, no limit on the
+  calls](docs/PROTOCOL.md#time-limits-of-git-calls): config listings (not claustrum's own `--show-scope` listing), `config.worktree`
+  listings and the repository config read at 30 s, the include scan at 10 minutes, no limit on the
   read-tree checkout, and the own bounds of the branch step. The limits are always
   on, no limiter of a divergence. On Linux and macOS the stop is SIGTERM,
-  then SIGKILL 2 s later. The repository config read gets SIGKILL alone. On Windows
+  then SIGKILL 2 s later. The config-file listings get SIGKILL alone. On Windows
   the process ends at once. A stopped `worktree add` runs the rollback of a failed
   add, and no git call follows. `git.worktree_remove` gets none of these limits.
   `-git-timeout` is a no-op that logs one warning.

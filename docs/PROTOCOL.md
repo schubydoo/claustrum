@@ -834,9 +834,10 @@ cell C-… is of round `tier0-20` against `5fd08069` on a Linux VM.
 | files.extract_tar | `mkdir <entry>: mkdirat <place>: file exists` | in `error` field. A file is at the place of a directory entry |
 | git.status | `baseRepo is required` | -32602. `baseRepo` is now required, since `7d193f89` |
 | git.status / git.list_branches | `<go error>`, for example `exit status 128` | -32603 (git failed, stdout parse) |
-| git.list_branches / git.info / git.status / git.worktree_create | `git took too long: Claude stopped git <subcommand> after 2 minutes; try again` | -32603. Create: after the text of the stopped step, as `git worktree add failed: ` or the `mkdir_failed` text of the parent step |
+| git.list_branches / git.info / git.status / git.worktree_create | `git took too long: Claude stopped git <subcommand> after 2 minutes; try again` | -32603. Create: after the text of the stopped step, as `git worktree add failed: ` or the `mkdir_failed` text of the parent step. Alone, with `worktree_add_failed`, for a stopped repository test |
 | the four methods | `config-defined hooks could not be pinned off; git not run: listing the configuration in force: git took too long: Claude stopped git config after 30 seconds; try again` | -32603. Create: `worktree_add_failed`, after `git worktree add failed (checkout): ` for the checkout listing |
 | the four methods | `this repository's git config cannot be used: git did not finish reading "<path>" within 30 seconds; try again` | -32603. Create: `worktree_add_failed` |
+| git.worktree_create | `git worktree add failed (completing the new worktree's git files): this repository's git config cannot be used: git did not finish reading it within 30 seconds; try again` | in `error`, `worktree_add_failed`. The listing of `config.worktree` after the add ran 30 s, and the rollback of a failed checkout runs (cell TW) |
 | git.status | `<file>: not a regular file` | -32603. claustrum's own text, from the copy into the temporary git folder after the gate passed. `<file>` is `info/sparse-checkout` when that entry is a folder or a FIFO. The reference is not measured there |
 | git.status | `<file> is larger than <n> bytes` | -32603. claustrum's own text, for a copied file over its bound, also one that grew after the gate. `<n>` is 1073741824 for `index`, `sharedindex.*`, `info/sparse-checkout` and a reftable file, and 1048576 for `HEAD` and `config.worktree`. The reference is not measured there |
 | git.status | `<os error>` of the copy or of the temporary folder, for example `openat index: permission denied` or `stat <dir>: no such file or directory` | -32603. The raw Go error when a file of the entry cannot be copied, as an `index` of mode 000, or when a file of the temporary git folder cannot be made. With `"shadowDirOff":true`, and on a server with no run folder, a temporary folder that cannot be made answers the raw Go error too. The reference is not measured there. In the states `shadow` and `fallback-git` a `.gitdir-<n>` that cannot be made answers `{"isRepo":false,"clean":false}`. `5fd08069` answers so in the state `shadow` for a folder of the daemon of mode 0500 (cell F1 of round `val-s3p2b2-7`, Linux VM, one run). The state `fallback-git` and another cause are from the code |
@@ -2763,18 +2764,20 @@ check (Windows VM).
 
 On `git.list_branches`, `git.info`, `git.status` and `git.worktree_create` most git
 calls end at 2 minutes (`5fd08069`, round `task010-01`, Linux, macOS and Windows
-VMs). Each config listing before a git call ends at 30 seconds (cells T10 and TA),
-except claustrum's own `--show-scope` listing: it has the 2 minute limit and the
-`timeoutMs`.
-So does the read of the repository config (`git.status`, Linux VM). The scan of
+VMs). Each config listing before a git call ends at 30 seconds (cells T10 and TA).
+So do the read of the repository config (`git.status`, Linux VM) and each listing
+of a `config.worktree` file (cells TW and TS of round `task010-04`, Linux VM).
+claustrum's own `--show-scope` listing has the 2 minute limit and the `timeoutMs`.
+The scan of
 ignored files ends at 10 minutes (Linux and macOS VMs). The read-tree checkout has
 no such limit.
 
 - The stop is SIGTERM, then SIGKILL 2 s later. On Windows the process ends at
-  once. The read of the repository config gets SIGKILL alone (Linux VM).
+  once. The listings of config files get SIGKILL alone (Linux VM).
 - Before a good add no git call follows a stopped call. A stopped add removes an
-  empty leaf. After a good add the rollback runs its own calls (cell TA). A
-  stopped scan copies nothing, and the create succeeds.
+  empty leaf. A stopped repository test of a create answers the stop text alone,
+  with `worktree_add_failed` (cell TI). After a good add the rollback runs its own
+  calls (cells TA and TW). A stopped scan copies nothing, and the create succeeds.
 - While a `"shadowDirOff":true` request runs, no call of the daemon stops at 2
   minutes (cells T8 and T9). claustrum then uses 30 minutes (claustrum's own).
 - `timeoutMs` does not end the add (cell T6), nor, with `"shadowDirOff":true`,

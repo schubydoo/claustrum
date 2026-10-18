@@ -457,3 +457,86 @@ func TestOffSwitchSet(t *testing.T) {
 		}
 	}
 }
+
+// A create whose repository test its time limit stopped answers the stop text as
+// it is, with worktree_add_failed, and nothing is made (cell TI of round
+// task010-04, Linux VM).
+func TestWorktreeCreateRepositoryTestStops(t *testing.T) {
+	f, log := limitFixture(t, "rev-parse,--is-inside-work-tree")
+	raw, _ := f.create(t, newTestServer(t), "w1", "", 0)
+	wantError(t, raw, stopText("rev-parse"), "worktree_add_failed")
+	if got := f.leafEntries(t); got != nil {
+		t.Errorf("the leaf holds %q, want none", got)
+	}
+	if f.hasRef(t, "w1") {
+		t.Error("the branch w1 exists, want none")
+	}
+	wantLastCall(t, log, "rev-parse", "--is-inside-work-tree")
+}
+
+// worktreeConfigFixture is a repository with extensions.worktreeConfig and a
+// config.worktree file, as in round task010-04, and a server with a run folder.
+// The stub holds the nth listing of a config file for testHold. The listings
+// before it are those of the start test and of the read of the repository
+// config.
+func worktreeConfigFixture(t *testing.T, nth int) (wtFixture, *server) {
+	t.Helper()
+	f := newWTFixture(t, false)
+	runGit(t, f.top, "config", "extensions.worktreeConfig", "true")
+	writeFile(t, filepath.Join(f.top, ".git", "config.worktree"), "[core]\n\tfilemode = false\n", 0o644)
+	s, _ := newShadowServer(t)
+	installGitSlowStub(t, f.realGit)
+	slowGit(t, "config,--no-includes,--file,--list", "pre", testHold, "", "")
+	t.Setenv("CLAUSTRUM_GITSTUB_NTHFILE", filepath.Join(t.TempDir(), "nth"))
+	t.Setenv("CLAUSTRUM_GITSTUB_NTH", strconv.Itoa(nth))
+	setDuration(t, &repoReadBound, testCallLimit)
+	return f, s
+}
+
+// The listing of the config.worktree file after a good add ends at 30 s. The
+// create answers the text of 5fd08069 and rolls back: leaf, registration and
+// branch go (cells TW35 and TW130 of round task010-04, Linux VM).
+func TestWorktreeCreateConfigWorktreeListingStops(t *testing.T) {
+	f, s := worktreeConfigFixture(t, 5)
+	raw, took := f.create(t, s, "w1", "", 0)
+	wantError(t, raw, "git worktree add failed (completing the new worktree's git files): this repository's git config "+
+		"cannot be used: git did not finish reading it within 30 seconds; try again", "worktree_add_failed")
+	if took > testFastCeiling {
+		t.Errorf("the create took %v: the bound did not end the listing", took)
+	}
+	f.assertRolledBack(t, []string{}, false)
+}
+
+// The listing of the config.worktree file of a linked worktree ends at 30 s in
+// git.status. The frame stays {"isRepo":false,"clean":false} (cell TS of round
+// task010-04, Linux VM).
+func TestGitStatusConfigWorktreeListingStops(t *testing.T) {
+	f, s := worktreeConfigFixture(t, 5)
+	lw := filepath.Join(filepath.Dir(f.top), "LW")
+	runGit(t, f.top, "worktree", "add", "-q", "-b", "lw", lw)
+	writeFile(t, filepath.Join(f.top, ".git", "worktrees", "LW", "config.worktree"), "[core]\n\tfilemode = false\n", 0o644)
+	raw, took := dispatchTimed(t, s, "git.status", map[string]any{"path": lw, "baseRepo": f.top})
+	if want := `{"jsonrpc":"2.0","id":1,"result":{"isRepo":false,"clean":false}}`; raw != want {
+		t.Fatalf("git.status = %s\nwant %s", raw, want)
+	}
+	if took > testFastCeiling {
+		t.Errorf("git.status took %v: the bound did not end the listing", took)
+	}
+}
+
+// The listing of the config.worktree file of a linked worktree in git.info has
+// the same bound. The request then goes on with no items of that file
+// (claustrum's own, not measured).
+func TestGitInfoConfigWorktreeListingStops(t *testing.T) {
+	f, s := worktreeConfigFixture(t, 5)
+	lw := filepath.Join(filepath.Dir(f.top), "LW")
+	runGit(t, f.top, "worktree", "add", "-q", "-b", "lw", lw)
+	writeFile(t, filepath.Join(f.top, ".git", "worktrees", "LW", "config.worktree"), "[core]\n\tfilemode = false\n", 0o644)
+	raw, took := dispatchTimed(t, s, "git.info", map[string]any{"path": lw})
+	if !strings.Contains(raw, `"isRepo":true`) {
+		t.Fatalf("git.info = %s, want a repository", raw)
+	}
+	if took > testFastCeiling {
+		t.Errorf("git.info took %v: the bound did not end the listing", took)
+	}
+}

@@ -1,7 +1,6 @@
 package main
 
 import (
-	"context"
 	"crypto/rand"
 	"crypto/sha256"
 	"encoding/binary"
@@ -454,6 +453,6 @@ func (req *request) listEntryConfig(t gitDirTrust) {
 	if req.repoRead == nil || !req.repoRead.worktreeConfig || t.worktreeEntry == "" {
 		return
 	}
-	settings, _ := listConfigFile(context.Background(), filepath.Join(t.worktreeEntry, worktreeConfigName))
+	settings, _ := listConfigFile(req.stop.context(), filepath.Join(t.worktreeEntry, worktreeConfigName))
 	req.use.entryItems = worktreeConfigItems(settings)
 }
