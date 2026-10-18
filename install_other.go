@@ -10,3 +10,6 @@ var cliExeSuffix = ""
 // probeCLIPathMissing is the Windows-only file test of -probe-cli. Off Windows
 // the process start decides, as before.
 func probeCLIPathMissing(string) bool { return false }
+
+// renameDenied is false off Windows: the rename of the new CLI runs once.
+func renameDenied(error) bool { return false }

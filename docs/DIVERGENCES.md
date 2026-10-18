@@ -80,12 +80,12 @@ unrecoverable data loss, and no honest caller has a legitimate *use* for deletin
 home. A caller can still reach that path by accident, which is exactly what the
 guard is for.
 
-Clause (b): the trigger is unreachable on an honest path. Five always-on
-entries use this form (D6, D8, D9, D18, D19). Each entry has its own trigger,
-and the glosses are not interchangeable. Three of the five are asserted rather than
+Clause (b): the trigger is unreachable on an honest path. Four always-on
+entries use this form (D6, D8, D9, D19). Each entry has its own trigger,
+and the glosses are not interchangeable. Two of the four are asserted rather than
 enumerated: nobody ever enumerated Desktop's per-method param set against D9's
-binding, and D6 and D18 rest on an observed value plus a measured accepted-set. Read
-those three as unenumerated, not established (rule 2 puts the burden on the
+binding, and D6 rests on an observed value plus a measured accepted-set. Read
+those two as unenumerated, not established (rule 2 puts the burden on the
 divergence). D19 holds for worktrees that either daemon creates, because both
 creates refuse the junction. A worktree made outside the daemon can still sit behind
 it.
@@ -94,14 +94,11 @@ it.
 cli-dir is not something any correct client emits.
 
 Clause (c): both binaries fail, and the only delta is diagnostic text.
-This clause is deliberately narrow, and we wrote it for D13. D13 did not meet it
-when measured, so the clause justifies no entry in this file today. A reader must
-not take two things on trust. First, an `error.code` is not diagnostic text,
-because a client branches on it. Second, on-disk state that a caller can
-`files.stat` is not diagnostic text either. D13's honest-path rows differed in
-on-disk state when they were measured. The clause keeps its literal wording and
-D13 sits [unresolved](#d13). We did not widen the clause to fit its one
-candidate.
+This clause is deliberately narrow, and we wrote it for the retired
+[D13](#d13), which did not meet it. The clause justifies no entry in this file
+today. A reader must not take two things on trust. First, an `error.code` is not
+diagnostic text, because a client branches on it. Second, on-disk state that a
+caller can `files.stat` is not diagnostic text either.
 
 *Canonical example:* none currently qualifies.
 
@@ -157,7 +154,7 @@ rather than repeating them in each entry:
 
 | ID | What it does | Default | How to activate | Why (rule / clause) | Reopen trigger |
 |----|--------------|---------|-----------------|---------------------|----------------|
-| [D2](#d2) | Refuse a destructive path that is or contains `$HOME`, on three methods and on `-install` | always-on | always-on | rule 3 clause (a). The sweep and prune part: maintainer decision of 2026-10-07. The `files.extract_tar` wipe through the parent handle and its two tests: maintainer decision of 2026-10-10 | an honest caller legitimately targeting a path that is/contains home, or a Windows `destDir` with the `\\?\` prefix and a dot or a space after its last name |
+| [D2](#d2) | Refuse a destructive path that is or contains `$HOME`, on three methods and on `-install` | always-on | always-on | rule 3 clause (a). The `files.extract_tar` wipe through the parent handle and its two tests: maintainer decision of 2026-10-10 | an honest caller legitimately targeting a path that is/contains home, or a Windows `destDir` with the `\\?\` prefix and a dot or a space after its last name |
 | [D3](#d3) | Cap `files.extract_tar` output size | off (`0` = unlimited) | `-max-extract-bytes` / `max-extract-bytes` | rule 4 (who-pays) | operator's cap refuses a legit extraction, or default lets a bomb through |
 | [D5](#d5) | Deadline on every `git` invocation | off (`0`) | `-git-timeout` / key | rule 4 | opt-in kills an honest slow git |
 | [D6](#d6) | `-cli-version` must be a single path component | always-on | always-on | rule 3 clause (b) | Desktop passing a multi-component `-cli-version` |
@@ -165,11 +162,9 @@ rather than repeating them in each entry:
 | [D9](#d9) | Namespace-wide params binding (type error in an unread field → `-32602`) | always-on | always-on | rule 3 clause (b) | a real client sending a type-mismatched unread namespace field |
 | [D10](#d10) | Cap `-install` CLI size (decompressed + download body) | off (`0`) | `-max-cli-bytes` / key | rule 4 (who-pays) | Desktop ceasing to treat a disk-full message as terminal |
 | [D12](#d12) | Bound on the `-install` download exchange | off (`0`) | `-cli-download-timeout` / key | rule 4 | operator with the bound set reporting an honest slow download failed |
-| [D13](#d13) | Verify checksum before decompressing (`-cli-url`, and `-cli-zst` with a checksum) | always-on | always-on | **UNRESOLVED**: clause (c) written for it, measured not met | any change to how Desktop classifies `cliError` |
 | [D15](#d15) | Verify a run-dir lock holder is our serve process before signalling it, in the serve eviction and in `-stop` (macOS) | always-on | always-on | rule 3 clause (a) | the reference adding the same macOS check, or a macOS holder legitimately un-inspectable via `KERN_PROCARGS2` |
 | [D16](#d16) | `git.status` of a linked worktree returns the status on Windows, where the reference errors `exit status 128` (cause: `core.excludesFile=NUL` in its status call, when the user has no global excludes file) | always-on (Windows) | always-on | claustrum-more-correct (D2/D8 pattern). **REACHABLE** | the reference fixing its Windows git.status, a Git for Windows release that accepts `NUL` there, or a decision to reproduce its failure for strict 1:1 |
 | [D17](#d17) | An abandoned `lsof` run reads as busy, not idle (macOS) | always-on (macOS) | always-on | rule 3 clause (a) | a measurement of the reference with an `lsof` run that cannot be killed, or an operator reporting a run dir the cleaner will not tidy on such a host |
-| [D18](#d18) | `-cli-version` must not start with `.blob-`. The `-cli-keep` prune does not count or remove a `.blob-` name, where `89cb6289` counts a planted one (cell C-12, Windows VM) and removes it (cells B1, Linux, macOS and Windows VMs) | always-on | always-on | rule 3 clause (b). The prune part: maintainer decision of 2026-10-07 | Desktop passing a `-cli-version` that starts with `.blob-` |
 | [D19](#d19) | `git.worktree_remove` refuses a junction at any directory between `baseRepo` and the leaf. At `.claude` or `.claude\worktrees`, `f6010b97` answers success and deletes only the branch, and `89cb6289` does the same for a branch that another ref reaches. At a level above `.claude`, `89cb6289` answers success with no leaf and no branch there (Windows) | always-on (Windows) | always-on | rule 3 clause (b): the create of both daemons refuses that junction. Maintainer decisions of 2026-09-27 and, for the levels above `.claude`, of 2026-10-07 | the reference refusing the junction or deleting through it, or a Windows client that depends on the success reply |
 | [D20](#d20) | Wait 50 ms and read again before the group `SIGKILL` of a child-group leader that reads as gone, at the reap of a `-serve` start (Linux and macOS) | always-on (Linux and macOS) | always-on | rule 3 clause (a) | a measurement that shows the reference waiting before that `SIGKILL`, or a report of a child that outlived a restart because it replaced its program |
 | [D21](#d21) | A second daemon on a live socket appends to `remote-server.log`, where `89cb6289` truncates it and loses the earlier lines of the first daemon (Windows) | always-on (Windows) | always-on | Maintainer decision of 2026-10-02. No frame, reply or exit status differs. A reader of the log file sees the kept lines | a measurement that shows the reference keeping those lines, or a reader of the log that needs the file to start with the lines of the second daemon |
@@ -288,18 +283,11 @@ operator-declinable. Only CT-2 and CT-5 carry a flag and a key.
   home folder that does not exist, a hard link, or Unicode normalization forms.
   No cell covers a case-sensitive volume on macOS or a UNC path. Not measured:
   `-cli-url`.
-  The sweep and the `-cli-keep` prune of `-install` have the same guard
-  (`cliEntryHoldsHome`). Each removes with one plain remove, so a home folder
-  with content cannot go there. An entry of the cli-dir that is the home folder
-  or holds it is not removed. A folder gets the two tests above, and every
-  other kind of entry gets the lexical test alone. In the prune that entry
-  still takes its place in the order. That is claustrum's own choice.
-  `89cb6289` removes an empty home folder that is an entry of the cli-dir. In
-  the prune it is the oldest entry, past the keep value (cells H1, Linux, macOS
-  and Windows VMs). In the sweep it has the name `h.zst` and is 20 minutes old
-  (cells H3, the same three systems). claustrum keeps it in each of those cells.
-  A home folder with content stays on both (cells H2, the same three systems).
-  The difference stays by the maintainer's decision of 2026-10-07.
+  The sweeps and the `-cli-keep` prune of `-install` keep the same guard
+  (`cliEntryHoldsHome`) as defense in depth. On `5fd08069` they remove regular
+  files only (cells L4, L8, M1, M3a, W3 and W5), so a home folder stays there
+  on both binaries (from those cells, no home cell on `5fd08069`). `89cb6289` removed an empty home folder there (cells H1 and
+  H3).
   This guard and `wipesHomeDir` take the home folder from `os.UserHomeDir`. That
   is the `HOME` variable, or `USERPROFILE` on Windows. With that variable unset
   or empty they refuse nothing. This follows from the code and is not measured.
@@ -363,10 +351,7 @@ operator-declinable. Only CT-2 and CT-5 carry a flag and a key.
   caller has a legitimate *use* for deleting home. A caller can still reach that path
   by accident, which is the point. The same holds for `-install`: no honest
   install replaces the home folder with the CLI file, and the delete is not
-  recoverable. The sweep and prune part of `-install` is not under that clause.
-  From the code: without the guard its plain remove takes at most an empty home
-  folder or a link at the home path. That part stays by the maintainer's
-  decision of 2026-10-07.
+  recoverable.
 - **Not a security boundary.** The socket + token already grant `process.spawn`
   ([SECURITY.md](https://github.com/schubydoo/claustrum/blob/main/SECURITY.md)).
   This guard stops the accidental, generated, or mistyped path. On the RPC
@@ -518,11 +503,8 @@ operator-declinable. Only CT-2 and CT-5 carry a flag and a key.
   must be a single path component`. It answers before
   the install writes or removes anything at a path built from the version. The
   two sweeps of the cli-dir name only the cli-dir, and they are not behind this
-  rule. From the code: the `*.zst.part` sweep runs before the rule answers, and
-  the 10 minute sweep runs after the refusal. Cell P5 (Linux VM) has `-cli-version ../x`, a
-  `p.zst.part` file that is 8 days old and a `.fetch-d` file that is 20 minutes
-  old. claustrum and `89cb6289` both remove the two files and exit `0`.
-  claustrum answers the refusal, writes nothing and keeps the blob. `89cb6289`
+  rule. From the code: the `<version>.zst.part` sweep runs before the rule
+  answers, and the 10 minute sweep runs after the refusal. claustrum answers the refusal, writes nothing and keeps the blob. `89cb6289`
   installs a file at `<parent>/x`. That rule runs on the install path. A regular file that
   is already at the joined path is first run with `--version`, as the cache-hit
   check. A run that passes answers `"cliWasPresent":true` with that path, as
@@ -612,15 +594,11 @@ operator-declinable. Only CT-2 and CT-5 carry a flag and a key.
   (`download failed: response exceeds <n> bytes`).
 - **Default.** `0` = unlimited (byte-identical). **Activate:** `-max-cli-bytes <n>`
   or the key. When disabled, both call sites bypass their `LimitReader`.
-- **claustrum streams the blob and never buffers it.** It writes a `.blob-<random>`
-  temp in the cli-dir (or `$TMPDIR/claustrum-fetch-<random>` if the cli-dir is
-  unwritable) and hashes it in one pass. Therefore "cap off" does not mean unbounded
-  memory (measured 886 MB → 10 MB on a 400 MiB payload). The prefix `.blob-`, not
-  `.fetch-`, is the one that matters. `.fetch-*` is the swept namespace. If the
-  staging blob used the `.fetch-` prefix, the sweep of a concurrent install deletes
-  it, and that defeats the staging retry
-  (`errStagingVanished`). The creator, both housekeeping passes, and
-  `validateCLIVersion` all read `blobTempPrefix`.
+- **claustrum streams the body and never buffers it.** It decompresses the
+  download into the staging file and hashes it in the same pass.
+  Therefore "cap off" does not mean unbounded memory. The figure of 886 MB → 10 MB
+  on a 400 MiB payload was the old two-step path. The streamed decode is not
+  measured.
 - **Who pays for opting in.** A cap set below free space replaces a disk-full report
   with the cap's own message, which costs the user the free-space hint. But that
   cost turns on the `cliError` driver claim
@@ -631,10 +609,8 @@ operator-declinable. Only CT-2 and CT-5 carry a flag and a key.
   wait, so a non-zero default fails an install the reference completes, and Desktop
   owns the argv (rule 4).
 - **Reopen trigger.** Desktop ceasing to treat a disk-full message as terminal
-  (which removes the cost). One plausible Desktop change fires this trigger and
-  D13's at once: Desktop broadening its terminal match to any `decompressing:`
-  error.
-- **Pointers.** [PROTOCOL.md](PROTOCOL.md) and `install.go` (`fetchToFile`,
+  (which removes the cost).
+- **Pointers.** [PROTOCOL.md](PROTOCOL.md) and `install.go` (`fetchCLI`,
   `zstdDecompress`). RSS and cap-below-free-space tables: forensics.
 
 ### D12 · Make the `-install` CLI download bound opt-in { #d12 }
@@ -646,7 +622,7 @@ operator-declinable. Only CT-2 and CT-5 carry a flag and a key.
 - **Default.** `0` = no bound (byte-identical). `http.Client{Timeout: 0}` is the
   stdlib's own "no timeout" sentinel. **Activate:** `-cli-download-timeout <dur>` or
   the key.
-- **Zero frees the body read, not every clock.** `fetchToFile` uses a clone of
+- **Zero frees the body read, not every clock.** `fetchCLI` uses a clone of
   `http.DefaultTransport`, which still applies `net.Dialer{Timeout: 30s}` and
   `TLSHandshakeTimeout: 10s` on `-cli-url`. A SYN-black-holed host therefore fails
   at 30 s with the bound off. Both clocks are always-on stdlib defaults, unnumbered
@@ -670,67 +646,8 @@ operator-declinable. Only CT-2 and CT-5 carry a flag and a key.
   that same never-sent body aborts at 60 s via the read-idle path, not this deadline.
 - **Reopen trigger.** An operator with the bound set reporting an honest slow
   download failed by it.
-- **Pointers.** [PROTOCOL.md](PROTOCOL.md) and `install.go` (`fetchToFile`). Straddle
+- **Pointers.** [PROTOCOL.md](PROTOCOL.md) and `install.go` (`fetchCLI`). Straddle
   and stall tables, confounders: forensics.
-
-### D13 · `-install` verifies the checksum before decompressing (always-on, UNRESOLVED) { #d13 }
-
-!!! warning "This is the one entry that does not currently clear rule 3."
-    We record it rather than explain it away. It stays in the code, labelled,
-    rather than justified by a rule bent around it.
-
-- **Behavior.** On the `-cli-url` path the reference decompresses first and aborts
-  on the first invalid bytes. claustrum hashes the response as it streams to disk,
-  verifies the checksum, and then decompresses. On a blob that is both
-  undecompressable and wrong-checksummed the reference says
-  `decompressing: unexpected EOF` where claustrum says `checksum mismatch`. A
-  connection reset in the body is not a D13 row. It answers
-  `download interrupted after <got>/<total> bytes: <err>` on both
-  binaries. Measured on a Linux VM against `f6010b97` and `89cb6289`. A body that
-  ends before its length is not measured.
-- **One more measured effect.** The order also shows without a text delta. The
-  body was 4096 bytes that are not a zstd archive, with the right checksum for
-  those bytes. Both binaries answer
-  `decompressing: invalid input: magic number mismatch`. The reference reports
-  `"fetch":{"bytes":4,…}` and prints one progress line. claustrum reports
-  `"bytes":4096` and prints two progress lines, because it reads and verifies the
-  whole body before it decompresses. Measured on a Linux VM against `f6010b97`
-  and `89cb6289`.
-- **Why it is unresolved.** We wrote clause (c) for this entry and, measured, it
-  did not meet it. On both honest-path rows the reference created an empty
-  cli-dir where claustrum created nothing (when the cli-dir did not already
-  exist). The delta was therefore not confined to diagnostic text: an empty
-  directory is state a caller keeps, and a caller can distinguish it with a
-  `files.stat`. The reopen fixture run 2026-08-08 did not meet its condition.
-- **That on-disk delta is gone.** claustrum now creates the cli-dir before any
-  network access, as the reference does (measured on `f6010b97`). The `-cli-url`
-  row was measured again on `89cb6289`, on Linux, macOS and Windows. The body was
-  the first half of the blob, with the checksum of the full blob. The texts
-  differ as above, and both binaries leave an empty cli-dir. The `-cli-zst` row
-  was not run again. Whether D13 now meets clause (c) is open, and D13 stays
-  unresolved.
-- **The trigger is reachable** (not "an input no honest caller produces", which was
-  measured wrong): a bad mirror, a partial upload, or a stale short proxy object is
-  undecompressable *and* checksum-mismatched with no adversary. This is *not* the
-  generic "flaky network" case: a connection reset answers the same text on
-  both binaries, as above.
-- **Why still always-on despite being unresolved.** The delta stays cheap because
-  neither string is disk-full-shaped. Therefore Desktop (per the `cliError` driver
-  claim) classifies both the same way and retries rather than fails terminally. That
-  is a claim about a third binary, and the parity harness cannot settle it
-  ([ARCHITECTURE.md](ARCHITECTURE.md#driver-claims-and-their-provenance)). If it is
-  ever falsified, the cheapness argument fails and this entry owes an opt-in flip.
-- **Reopen trigger.** Any change to how Desktop classifies `cliError`. For example,
-  distinguishing `checksum mismatch` from a decompression error, or matching either
-  as terminal.
-- **The `-cli-zst` path too.** If the caller supplies a `-cli-checksum`, claustrum
-  hashes the `-cli-zst` blob before it decompresses it. The reference reports a
-  decompress failure before a checksum mismatch. So a corrupt blob with a wrong checksum answers
-  `checksum mismatch` on claustrum and `decompressing: unexpected EOF` on the
-  reference. Both binaries leave an empty cli-dir there. The reference half is
-  measured on a Linux VM against `7d193f89` through `f6010b97`.
-- **Pointers.** [PROTOCOL.md](PROTOCOL.md) → Staging and cleanup, and `install.go`.
-  Ordering, clause-(c), and reopen-fixture tables: forensics.
 
 ### D15 · Verify a run-dir lock holder is our serve process before signalling it (macOS) { #d15 }
 
@@ -864,40 +781,6 @@ operator-declinable. Only CT-2 and CT-5 carry a flag and a key.
   on such a host.
 - **Pointers.** [PROTOCOL.md](PROTOCOL.md) → Host cleaner. Also `hostclean_darwin.go`
   (`runLsof`, `hcBusy`), `hostclean.go` (`hcSettledBusy`, `retireAbandoned`).
-
-### D18 · `-cli-version` must not start with `.blob-` (always-on) { #d18 }
-
-- **Behavior.** claustrum downloads a `-cli-url` blob to `<cli-dir>/.blob-<random>`.
-  The sweep and the `-cli-keep` prune both skip that prefix, so an in-flight blob
-  is never deleted or counted. A CLI installed under such a name is never pruned
-  or swept either. claustrum therefore answers `cli version "…" collides with the
-  install download blob` and installs nothing.
-- **Reference side.** The prefix is claustrum's own name. Whether the reference
-  installs such a version is not measured. One difference in the prune is
-  measured. `89cb6289` counts a planted `.blob-planted` file (cell C-12, Windows
-  VM). With `-cli-keep 2` and two older files beside it, `89cb6289` removes both
-  older files. claustrum does not count the planted file, so it removes the
-  oldest file only. `89cb6289` also removes the planted file when it is past
-  the keep value (cells B1, Linux, macOS and Windows VMs). There it is older
-  than two other files and `-cli-keep` is 1. claustrum keeps it.
-- **Why always-on.** Rule 3 clause (b). The real client passes bare versions
-  (`1.0.86`, a commit sha, `latest`). It is on the same evidence as [D6](#d6).
-  The prune difference stays by the maintainer's decision of 2026-10-07, not by
-  a rule 3 clause. The name is claustrum's own temporary name of a download in
-  progress, and a download of a second install must not use a keep place.
-- **Remark: the stderr text of a negative `-cli-keep`.** This remark is not
-  part of D18, and the text has no entry of its own. A good install with a
-  negative `-cli-keep` exits `2` with no result line on `89cb6289` and on
-  claustrum (cells Kneg and Kn-2, Linux, macOS and Windows VMs). `89cb6289`
-  writes a Go runtime error to stderr there. claustrum writes one line of its
-  own: `claustrum: -cli-keep -1 is not a valid keep count`. That is the
-  maintainer's decision of 2026-10-07.
-- **Why not part of D6.** D6 guards a destructive path that leaves the cli-dir.
-  D18 guards a name that claustrum itself reserves. The reasons and the reopen
-  triggers differ. The number D7 is retired and is not reused.
-- **Reopen trigger.** Desktop passing a `-cli-version` that starts with `.blob-`.
-- **Pointers.** [PROTOCOL.md](PROTOCOL.md) → `-install`, and `install.go`
-  (`isDownloadBlobName`, `validateCLIVersion`).
 
 ### D19 · Refuse a junction between `baseRepo` and the leaf on remove (Windows, always-on) { #d19 }
 
@@ -1397,8 +1280,7 @@ link points here.
   now does all of this, unit-tested.
 - The `-cli-url` path follows the same rules on `f6010b97`. The compare is
   case-sensitive, and the cli-dir comes before any network access.
-- One delta stays, and [D13](#d13) owns it: claustrum hashes before it
-  decompresses.
+- The order delta of [D13](#d13) is gone: claustrum decompresses first.
 - Desktop's one captured `-cli-zst` call (2026-08-10) supplied no
   `-cli-checksum`, so no check ran on that path. It is one instance of one
   failure shape.
@@ -1427,14 +1309,15 @@ link points here.
 
 ### D7 · `-cli-version` must not collide with the install temp sweep (retired) { #d7 }
 
-- D7 refused a `-cli-version` such as `.fetch-x` or `1.0.zst`. Its premise was
+- D7 refused a `-cli-version` such as `.fetch-1` or `1.0.0.zst`. Its premise was
   that the sweep deletes such a version in the run that installed it. That held
   up to `7d193f89`.
 - Since `4534d86` the sweep removes an entry only when its mtime is about 10
   minutes old or more. The reference installs such a version and keeps it. A later
   install removes it once it is that old. A cache hit does not.
-- claustrum now does the same. Measured on a Linux VM against `4534d86` through
-  `f6010b97`. [D6](#d6) still applies to every version.
+- claustrum installs such a version too. Its sweep now claims only
+  `.fetch-<digits>` and `<version>.zst`. Measured on a Linux VM against
+  `4534d86` through `f6010b97`. [D6](#d6) still applies to every version.
 
 ### D11 · Deadline on the `<cli> --version` run of `-install` (retired) { #d11 }
 
@@ -1464,6 +1347,18 @@ link points here.
 - No knob stays to change the bounds. A different bound is a new divergence, and
   rule 2 puts the burden of proof on it.
 
+### D13 · `-install` verified the checksum before decompressing (retired) { #d13 }
+
+- claustrum hashed and verified a source before it decompressed it. A body that
+  is no zstd archive with a wrong checksum then answered `checksum mismatch`,
+  and `fetch.bytes` counted the whole body.
+- `5fd08069` answers the decoder text with a right and with a wrong checksum.
+  `fetch.bytes` is the count that the decoder read: 4 for a body of 4096 bytes
+  (cells L15a and L15b, Linux VM). `7d193f89` through `f6010b97` answered
+  the decoder text on `-cli-zst` too (Linux VM).
+- claustrum now decompresses into the staging file first and verifies before
+  the chmod, the clear and the rename.
+
 ### D14 · Deadline on the `ldd --version` libc probe (retired) { #d14 }
 
 - Since `19f30c46` the reference bounds the `ldd` process at 5 s. If `ldd` still
@@ -1478,6 +1373,14 @@ link points here.
   `-install`.
 - No knob stays to change the bound. A different bound is a new divergence, and
   rule 2 puts the burden of proof on it. No measurement gives that proof today.
+
+### D18 · `-cli-version` must not start with `.blob-` (retired) { #d18 }
+
+- claustrum refused a version with its own download prefix `.blob-`, and its
+  prune did not count a `.blob-` name.
+- `5fd08069` counts and removes no `.blob-planted` file (cells L4, M1 and W3,
+  Linux, macOS and Windows VMs). The prune counts version files only.
+- claustrum writes no `.blob-` file now, and it accepts such a version.
 
 ## Candidates considered but not taken
 

@@ -230,7 +230,7 @@ func TestInstallGateWithoutPolicyUsesTheDirectBounds(t *testing.T) {
 	if line := mustLogLine(t, g.stubFixture, "START "); !strings.HasSuffix(line, " gate=1") {
 		t.Errorf("L02: stub START %q, want the gate variable with the value 1", line)
 	}
-	g.wantNames(t, "L02", append(oldVersionFiles(), ".fetch-new", "new.zst", "9.9.9")...)
+	g.wantNames(t, "L02", append(oldVersionFiles(), ".fetch-12", "1.0.8.zst", "9.9.9")...)
 
 	// L07: a new CLI that does not answer, stopped at the first-run bound.
 	g2 := newGateFixture(t)
@@ -241,7 +241,7 @@ func TestInstallGateWithoutPolicyUsesTheDirectBounds(t *testing.T) {
 	if want := factsHead(t, g2.cli) + stoppedTail + `,"launcherStatus":"none"}` + "\n"; out != want {
 		t.Errorf("L07: stdout\n got %q\nwant %q", out, want)
 	}
-	g2.wantNames(t, "L07", append(oldVersionFiles(), ".fetch-new", "new.zst", "9.9.9")...)
+	g2.wantNames(t, "L07", append(oldVersionFiles(), ".fetch-12", "1.0.8.zst", "9.9.9")...)
 }
 
 // With the gate set and a cli folder that cannot be made, the facts line holds
@@ -304,7 +304,7 @@ func TestInstallStoppedLauncherRunOnACacheHitSweeps(t *testing.T) {
 	if !strings.Contains(out, `"cliUnresponsive":true,"launcherStatus":"unresponsive",`) {
 		t.Fatalf("L03: stdout %q, want a stopped launcher run", out)
 	}
-	g.wantNames(t, "L03", append(oldVersionFiles(), ".fetch-new", "new.zst", "9.9.9")...)
+	g.wantNames(t, "L03", append(oldVersionFiles(), ".fetch-12", "1.0.8.zst", "9.9.9")...)
 }
 
 // Row L09 for the order of the keys, row L10 for the none status. With the

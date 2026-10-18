@@ -2,4 +2,4 @@
 default: patch
 ---
 
-The `-cli-keep` prune of `-install` counts folders too, as `89cb6289` does. `-cli-keep 0` prunes, a negative value exits 2 after a good install, and old `*.zst.part` entries go.
+`-install` now removes a `<version>.zst.part` file of the cli-dir that is more than 7 days old, and `-cli-keep 0` prunes every older version file.

@@ -6,22 +6,18 @@ import (
 	"path/filepath"
 	"runtime"
 	"sort"
-	"strconv"
 	"strings"
 	"testing"
 	"time"
 )
 
-// The kinds of a fixture entry in the cli-dir of a prune row.
+// The kinds of a fixture entry in the cli-dir of a prune or sweep row.
 const (
-	pruneFile        = iota // a regular file
-	pruneEmptyDir           // an empty folder
-	pruneFullDir            // a folder that holds one file
-	pruneReadOnly           // a regular file with no write permission
-	pruneReadOnlyDir        // an empty folder with no write permission
-	pruneDirLink            // a symlink to a folder outside the cli-dir, made at real time
-	pruneDeadLink           // a symlink to a path that does not exist, made at real time
-	pruneFileLink           // a symlink to a file outside the cli-dir that is 6 h old, made at real time
+	pruneFile     = iota // a regular file with mode 0755
+	pruneNoExec          // a regular file with mode 0644
+	pruneEmptyDir        // an empty folder
+	pruneFullDir         // a folder that holds one file
+	pruneFileLink        // a symlink to a file outside the cli-dir, made at real time
 )
 
 // pruneFixture is one entry of the cli-dir before the install. age is how long
@@ -49,323 +45,107 @@ const (
 	pruneDay  = 24 * time.Hour
 )
 
-// e4321 is the fixture of rows C-1, C-3, C-4, C-13, C-14 and C-15: four empty
-// folders, 4 h to 1 h old.
-func e4321(kind int) []pruneFixture {
-	return []pruneFixture{
-		{"e1", kind, 4 * pruneHour}, {"e2", kind, 3 * pruneHour},
-		{"e3", kind, 2 * pruneHour}, {"e4", kind, 1 * pruneHour},
-	}
-}
+// vf is the file name of the CLI of version v on this system.
+func vf(v string) string { return v + cliExeSuffix }
 
-// TestPruneRows runs one -install for each cell of 89cb6289 in its table and
-// compares the names that are left in the cli-dir. "LM" rows ran on a Linux VM
-// and a macOS VM: rows C-0 to C-15. "W" rows ran on a Windows VM: cells C-00
-// to C-05, C-07 and C-11dir to C-18. The rule has no part that depends on the
-// system, so each row runs on every system. The one exception is the read-only
-// folder of cell C-05.
-//
-// The cells of the later rounds follow them. "LMW" cells ran on Linux, macOS
-// and Windows VMs: K0a, K0b, F1, F2, Z1 to Z5, Z8, B1 and T1. "MW" cells ran
-// on macOS and Windows VMs: T1d. "L" cells ran on a Linux VM: T1b, P1 and P2.
-// The Windows cells have ".exe" names, which changes no result here.
-//
-// Not covered here, because the fixture needs a second process or a system
-// program: the Windows cells C-06 (a junction), C-08 to C-10 and C-11b (a file
-// that is open or runs). claustrum and 89cb6289 are equal in those cells.
+// TestPruneRows runs one -install for each prune cell of 5fd08069 and compares
+// the names that are left in the cli-dir. Cells L4 to L6 ran on a Linux VM, M1
+// to M2b on a macOS VM and W3 to W4b on a Windows VM. The names of a version file
+// carry ".exe" on Windows, as in the W cells. The CLI is this test binary in the
+// "cli-stub" helper mode.
 //
 // SAFETY: every path is under t.TempDir, and the home variable names a folder
 // there.
 func TestPruneRows(t *testing.T) {
 	for _, row := range []struct {
-		id      string
-		keep    int
-		before  []pruneFixture
-		run     int
-		tmpInE1 bool // TMPDIR is <cli-dir>/e1 during the run
-		windows bool // the fixture exists on Windows only
-		want    []string
+		id     string
+		keep   int
+		before []pruneFixture
+		run    int
+		want   []string
 	}{
-		{id: "LM/C-0", keep: 3, want: []string{pruneCLIName}},
-		{id: "LM/C-1", keep: 3, before: e4321(pruneEmptyDir), want: []string{pruneCLIName, "e3", "e4"}},
-		{id: "LM/C-2", keep: 3, before: e4321(pruneFullDir), want: []string{pruneCLIName, "e1", "e2", "e3", "e4"}},
-		{id: "LM/C-3", keep: 5, before: e4321(pruneEmptyDir), want: []string{pruneCLIName, "e1", "e2", "e3", "e4"}},
-		{id: "LM/C-4", keep: 4, before: e4321(pruneEmptyDir), want: []string{pruneCLIName, "e2", "e3", "e4"}},
-		{id: "LM/C-5", keep: 3, before: []pruneFixture{
-			{"v1", pruneFile, 4 * pruneHour}, {"v2", pruneFile, 3 * pruneHour},
-			{"e3", pruneEmptyDir, 2 * pruneHour}, {"e4", pruneEmptyDir, 1 * pruneHour},
-		}, want: []string{pruneCLIName, "e3", "e4"}},
-		{id: "LM/C-6", keep: 2, before: []pruneFixture{
-			{"e1", pruneEmptyDir, 4 * pruneHour}, {"f2", pruneFullDir, 3 * pruneHour},
-			{"v3", pruneFile, 2 * pruneHour}, {"v4", pruneFile, 1 * pruneHour},
-		}, want: []string{pruneCLIName, "f2", "v4"}},
-		// Row C-7 has links that are 4 h and 3 h old, two files that are 2 h and
-		// 1 h old, and keep 2. Go has no portable lchtimes, so the links here
-		// are fresh. The two files carry a future mtime and keep is 3, so both
-		// links are past the keep value as in the row.
-		{id: "LM/C-7", keep: 3, before: []pruneFixture{
-			{"ln", pruneDirLink, 0}, {"dl", pruneDeadLink, 0},
-			{"v3", pruneFile, -2 * pruneHour}, {"v4", pruneFile, -3 * pruneHour},
-		}, want: []string{pruneCLIName, "v3", "v4"}},
-		{id: "LM/C-8", keep: 3, before: []pruneFixture{
-			{"x.zst", pruneEmptyDir, 20 * pruneMin}, {".fetch-d", pruneEmptyDir, 20 * pruneMin},
-			{"e1", pruneEmptyDir, 4 * pruneHour}, {"v2", pruneFile, 3 * pruneHour},
-			{"v3", pruneFile, 2 * pruneHour}, {"v4", pruneFile, 1 * pruneHour},
-		}, want: []string{pruneCLIName, "v3", "v4"}},
-		{id: "LM/C-9", keep: 3, before: []pruneFixture{
-			{"x.zst", pruneEmptyDir, 0}, {".fetch-d", pruneEmptyDir, 0},
-			{"e1", pruneEmptyDir, 4 * pruneHour}, {"v2", pruneFile, 3 * pruneHour},
-			{"v3", pruneFile, 2 * pruneHour}, {"v4", pruneFile, 1 * pruneHour},
-		}, want: []string{".fetch-d", pruneCLIName, "v3", "v4", "x.zst"}},
-		{id: "LM/C-10", keep: 3, before: []pruneFixture{
-			{"p.zst.part", pruneEmptyDir, 8 * pruneDay}, {"q.zst.part", pruneEmptyDir, 6 * pruneDay},
-		}, want: []string{pruneCLIName, "q.zst.part"}},
-		{id: "LM/C-11", keep: 2, before: []pruneFixture{
-			{"e1", pruneEmptyDir, -1 * pruneHour}, {"e2", pruneEmptyDir, -1 * pruneHour},
-			{"v3", pruneFile, 2 * pruneHour}, {"v4", pruneFile, 1 * pruneHour},
-		}, want: []string{"e1", "e2"}},
-		// The Linux rows C-12 and C-12b differ in the order of creation only.
-		{id: "LM/C-12 Linux", keep: 3, before: []pruneFixture{
-			{"ea", pruneEmptyDir, 2 * pruneHour}, {"eb", pruneEmptyDir, 2 * pruneHour},
-			{"v4", pruneFile, 1 * pruneHour},
-		}, want: []string{pruneCLIName, "ea", "v4"}},
-		{id: "LM/C-12b Linux", keep: 3, before: []pruneFixture{
-			{"eb", pruneEmptyDir, 2 * pruneHour}, {"ea", pruneEmptyDir, 2 * pruneHour},
-			{"v4", pruneFile, 1 * pruneHour},
-		}, want: []string{pruneCLIName, "ea", "v4"}},
-		{id: "LM/C-12 macOS", keep: 3, before: []pruneFixture{
-			{"e4", pruneEmptyDir, 1 * pruneHour}, {"ta", pruneEmptyDir, 2 * pruneHour},
-			{"tb", pruneEmptyDir, 2 * pruneHour},
-		}, want: []string{pruneCLIName, "e4", "ta"}},
-		{id: "LM/C-12b macOS", keep: 2, before: []pruneFixture{
-			{"ta", pruneEmptyDir, 2 * pruneHour}, {"tb", pruneEmptyDir, 2 * pruneHour},
-			{"tc", pruneEmptyDir, 2 * pruneHour},
-		}, want: []string{pruneCLIName, "ta"}},
-		{id: "LM/C-13", keep: 3, before: e4321(pruneEmptyDir), tmpInE1: true, want: []string{pruneCLIName, "e3", "e4"}},
-		{id: "LM/C-14", keep: 3, before: e4321(pruneEmptyDir), run: pruneFailedInstall, want: []string{"e1", "e2", "e3", "e4"}},
-		{id: "LM/C-15", keep: 3, before: e4321(pruneEmptyDir), run: pruneCacheHit, want: []string{pruneCLIName, "e1", "e2", "e3", "e4"}},
-
-		{id: "W/C-00", keep: 3, want: []string{pruneCLIName}},
-		{id: "W/C-01", keep: 3, before: e4321(pruneEmptyDir), want: []string{pruneCLIName, "e3", "e4"}},
-		{id: "W/C-02", keep: 3, before: e4321(pruneFullDir), want: []string{pruneCLIName, "e1", "e2", "e3", "e4"}},
-		{id: "W/C-03k5", keep: 5, before: e4321(pruneEmptyDir), want: []string{pruneCLIName, "e1", "e2", "e3", "e4"}},
-		{id: "W/C-03k4", keep: 4, before: e4321(pruneEmptyDir), want: []string{pruneCLIName, "e2", "e3", "e4"}},
-		{id: "W/C-04", keep: 3, before: []pruneFixture{
-			{"v1.exe", pruneFile, 4 * pruneHour}, {"v2.exe", pruneFile, 3 * pruneHour},
-			{"e3", pruneEmptyDir, 2 * pruneHour}, {"e4", pruneEmptyDir, 1 * pruneHour},
-		}, want: []string{pruneCLIName, "e3", "e4"}},
-		{id: "W/C-05", keep: 3, windows: true, before: []pruneFixture{
-			{"e1", pruneReadOnlyDir, 4 * pruneHour}, {"v2.exe", pruneFile, 3 * pruneHour},
-			{"v3.exe", pruneFile, 2 * pruneHour}, {"v4.exe", pruneFile, 1 * pruneHour},
-		}, want: []string{pruneCLIName, "e1", "v3.exe", "v4.exe"}},
-		{id: "W/C-07", keep: 3, before: []pruneFixture{
-			{"v1.exe", pruneReadOnly, 4 * pruneHour}, {"v2.exe", pruneFile, 3 * pruneHour},
-			{"v3.exe", pruneFile, 2 * pruneHour}, {"v4.exe", pruneFile, 1 * pruneHour},
-		}, want: []string{pruneCLIName, "v3.exe", "v4.exe"}},
-		{id: "W/C-11dir", keep: 3, before: []pruneFixture{
-			{"f1", pruneEmptyDir, -1 * pruneHour}, {"f2", pruneEmptyDir, -1 * pruneHour},
-			{"f3", pruneEmptyDir, -1 * pruneHour},
-		}, want: []string{"f1", "f2", "f3"}},
-		{id: "W/C-11file", keep: 3, before: []pruneFixture{
-			{"f1", pruneFile, -1 * pruneHour}, {"f2", pruneFile, -1 * pruneHour},
-			{"f3", pruneFile, -1 * pruneHour},
-		}, want: []string{"f1", "f2", "f3"}},
-		// Cell C-12 is the one row where claustrum differs (D18). 89cb6289
-		// counts the planted ".blob-planted" file, so it removes v1.exe and
-		// v2.exe (Windows VM). claustrum does not count that name, so v2.exe
-		// takes the second place and stays.
-		{id: "W/C-12", keep: 2, before: []pruneFixture{
-			{".blob-planted", pruneFile, 1 * pruneHour},
-			{"v1.exe", pruneFile, 4 * pruneHour}, {"v2.exe", pruneFile, 3 * pruneHour},
-		}, want: []string{".blob-planted", pruneCLIName, "v2.exe"}},
-		{id: "W/C-13", keep: 0, before: []pruneFixture{
-			{"v1.exe", pruneFile, 4 * pruneHour}, {"v2.exe", pruneFile, 3 * pruneHour},
-		}, want: nil},
-		{id: "W/C-14k1", keep: 1, before: []pruneFixture{
-			{"1.0.0", pruneFile, 4 * pruneHour}, {"1.0.0.exe", pruneFile, 3 * pruneHour},
+		// Only a version file counts and goes. The file 1.1.0 has mode 0644,
+		// and on Windows it has no ".exe".
+		{id: "L4/M1/W3", keep: 1, before: []pruneFixture{
+			{vf("1.0.0"), pruneFile, 3 * pruneHour}, {"1.1.0", pruneNoExec, 2 * pruneHour},
+			{vf("0.9.0"), pruneEmptyDir, 4 * pruneHour}, {vf("0.7.0"), pruneFullDir, 4 * pruneHour},
+			{"README", pruneFile, 5 * pruneHour}, {"README.exe", pruneFile, 5 * pruneHour},
+			{".blob-planted", pruneFile, 1 * pruneHour}, {vf("0.8.0"), pruneFileLink, 0},
+		}, want: []string{pruneCLIName, "1.1.0", vf("0.9.0"), vf("0.7.0"), "README", "README.exe", ".blob-planted", vf("0.8.0")}},
+		{id: "L5/M2a/W4a", keep: 0, before: []pruneFixture{
+			{vf("1.0.0"), pruneFile, 2 * pruneHour}, {vf("1.1.0"), pruneFile, 1 * pruneHour},
 		}, want: []string{pruneCLIName}},
-		{id: "W/C-14k2", keep: 2, before: []pruneFixture{
-			{"1.0.0", pruneFile, 4 * pruneHour}, {"1.0.0.exe", pruneFile, 3 * pruneHour},
-		}, want: []string{"1.0.0.exe", pruneCLIName}},
-		{id: "W/C-15", keep: 3, before: []pruneFixture{
-			{"e4", pruneEmptyDir, 1 * pruneHour}, {"ta", pruneEmptyDir, 2 * pruneHour},
-			{"tb", pruneEmptyDir, 2 * pruneHour},
-		}, want: []string{pruneCLIName, "e4", "ta"}},
-		{id: "W/C-16", keep: 3, before: e4321(pruneEmptyDir), run: pruneFailedInstall, want: []string{"e1", "e2", "e3", "e4"}},
-		{id: "W/C-17", keep: 3, before: e4321(pruneEmptyDir), run: pruneCacheHit, want: []string{pruneCLIName, "e1", "e2", "e3", "e4"}},
-		{id: "W/C-18", keep: 3, before: []pruneFixture{
-			{".fetch-d", pruneEmptyDir, 20 * pruneMin}, {"x.zst", pruneEmptyDir, 20 * pruneMin},
-			{".fetch-e", pruneEmptyDir, 1 * pruneMin}, {"y.zst", pruneEmptyDir, 1 * pruneMin},
-			{"p.zst.part", pruneFile, 8 * pruneDay}, {"q.zst.part", pruneFile, 6 * pruneDay},
-			{"e1", pruneEmptyDir, 4 * pruneHour}, {"v2.exe", pruneFile, 3 * pruneHour},
-			{"v3.exe", pruneFile, 2 * pruneHour}, {"v4.exe", pruneFile, 1 * pruneHour},
-		}, want: []string{".fetch-e", pruneCLIName, "q.zst.part", "v3.exe", "v4.exe", "y.zst"}},
-
-		{id: "LMW/K0a", keep: 0, before: []pruneFixture{
-			{"e1", pruneEmptyDir, 2 * pruneHour}, {"e2", pruneEmptyDir, 1 * pruneHour},
-			{"v1", pruneFile, 4 * pruneHour}, {"v2", pruneFile, 3 * pruneHour},
-		}, want: nil},
-		{id: "LMW/K0b", keep: 0, before: []pruneFixture{
-			{"f1", pruneFullDir, 4 * pruneHour}, {"v2", pruneFile, 3 * pruneHour},
-			{"v3", pruneFile, 2 * pruneHour},
-		}, want: []string{"f1"}},
-		{id: "LMW/F1", keep: 3, before: []pruneFixture{
-			{"f0", pruneFullDir, 5 * pruneHour}, {"v1", pruneFile, 4 * pruneHour},
-			{"v2", pruneFile, 3 * pruneHour}, {"v3", pruneFile, 2 * pruneHour},
-			{"v4", pruneFile, 1 * pruneHour},
-		}, want: []string{pruneCLIName, "f0", "v3", "v4"}},
-		// Cells F2 show that a folder with content takes a keep place. The
-		// folder is newer than the three files, so with keep 2 the new CLI and
-		// the folder hold both places and all three files go. Without a place
-		// for the folder, v3 stays.
-		{id: "LMW/F2", keep: 2, before: []pruneFixture{
-			{"fd", pruneFullDir, 30 * pruneMin}, {"v1", pruneFile, 4 * pruneHour},
-			{"v2", pruneFile, 3 * pruneHour}, {"v3", pruneFile, 2 * pruneHour},
-		}, want: []string{pruneCLIName, "fd"}},
-		{id: "LMW/Z1", keep: 3, before: []pruneFixture{
-			{"a.zst.part", pruneFile, 6 * pruneDay}, {"b.zst.part", pruneFile, 7*pruneDay - pruneHour},
-			{"c.zst.part", pruneFile, 7*pruneDay + pruneHour}, {"d.zst.part", pruneFile, 8 * pruneDay},
-		}, want: []string{pruneCLIName, "a.zst.part", "b.zst.part"}},
-		{id: "LMW/Z2", keep: 3, before: []pruneFixture{
-			{".fetch-a.zst.part", pruneFile, 20 * pruneMin}, {".fetch-b.zst.part", pruneFile, 1 * pruneMin},
-		}, want: []string{".fetch-a.zst.part", ".fetch-b.zst.part", pruneCLIName}},
-		{id: "LMW/Z3", keep: 3, before: []pruneFixture{
-			{"X.ZST.PART", pruneFile, 9 * pruneDay}, {"x.ZST", pruneFile, 9 * pruneDay},
-		}, want: []string{pruneCLIName, "X.ZST.PART", "x.ZST"}},
-		{id: "LMW/Z4a", keep: 3, before: []pruneFixture{
-			{"p.zst.part", pruneFile, 8 * pruneDay},
-		}, run: pruneFailedInstall, want: nil},
-		{id: "LMW/Z4b", keep: 3, before: []pruneFixture{
-			{"p.zst.part", pruneFile, 8 * pruneDay},
-		}, run: pruneCacheHit, want: []string{pruneCLIName}},
-		{id: "LMW/Z5", keep: 3, before: []pruneFixture{
-			{".fetch-old.zst.part", pruneFile, 8 * pruneDay},
-		}, want: []string{pruneCLIName}},
-		// Cells Z8: a cache hit with a good run does not run the 10 minute
-		// sweep.
-		{id: "LMW/Z8", keep: 3, before: []pruneFixture{
-			{"x.zst", pruneFile, 20 * pruneMin}, {".fetch-d", pruneFile, 20 * pruneMin},
-		}, run: pruneCacheHit, want: []string{".fetch-d", pruneCLIName, "x.zst"}},
-		// Cell P1: a "*.zst.part" name takes no keep place. With a place for
-		// each, "b.zst.part" and "v1" are past the keep value.
-		{id: "L/P1", keep: 2, before: []pruneFixture{
-			{"a.zst.part", pruneFile, 1 * pruneMin}, {"b.zst.part", pruneFile, 1 * pruneMin},
-			{"v1", pruneFile, 4 * pruneHour},
-		}, want: []string{pruneCLIName, "a.zst.part", "b.zst.part", "v1"}},
-		// Cell P2: a link takes a keep place, at its own mtime. The link is
-		// new and its target is 6 h old. At the mtime of the target the link
-		// and "v3" are past the keep value, and "v2" stays.
-		{id: "L/P2", keep: 2, before: []pruneFixture{
-			{"ln", pruneFileLink, 0},
-			{"v2", pruneFile, 2 * pruneHour}, {"v3", pruneFile, 3 * pruneHour},
-		}, want: []string{pruneCLIName, "ln"}},
-		// Cells B1 are the second row where claustrum differs (D18). 89cb6289
-		// removes the planted ".blob-planted" file too.
-		{id: "LMW/B1", keep: 1, before: []pruneFixture{
-			{".blob-planted", pruneFile, 5 * pruneHour},
-			{"v1", pruneFile, 4 * pruneHour}, {"v2", pruneFile, 3 * pruneHour},
-		}, want: []string{".blob-planted", pruneCLIName}},
-		{id: "LMW/T1", keep: 2, before: []pruneFixture{
-			{"B", pruneFile, 2 * pruneHour}, {"a", pruneFile, 2 * pruneHour},
-			{"c", pruneFile, 2 * pruneHour},
-		}, want: []string{pruneCLIName, "B"}},
-		{id: "L/T1b", keep: 3, before: []pruneFixture{
-			{"B", pruneFile, 2 * pruneHour}, {"a", pruneFile, 2 * pruneHour},
-			{"c", pruneFile, 2 * pruneHour},
-		}, want: []string{pruneCLIName, "B", "a"}},
-		{id: "MW/T1d", keep: 2, before: []pruneFixture{
-			{"B", pruneEmptyDir, 2 * pruneHour}, {"a", pruneEmptyDir, 2 * pruneHour},
-			{"c", pruneEmptyDir, 2 * pruneHour},
-		}, want: []string{pruneCLIName, "B"}},
+		// The new CLI always stays, also past the keep value (claustrum's own:
+		// no cell has a version file newer than the new CLI).
+		{id: "new CLI past the keep value", keep: 1, before: []pruneFixture{
+			{vf("1.0.0"), pruneFile, -1 * pruneHour}, {vf("1.1.0"), pruneFile, 1 * pruneHour},
+		}, want: []string{pruneCLIName, vf("1.0.0")}},
+		{id: "keep 2", keep: 2, before: []pruneFixture{
+			{vf("1.0.0"), pruneFile, 3 * pruneHour}, {vf("1.1.0"), pruneFile, 2 * pruneHour},
+			{vf("1.2.0"), pruneFile, 1 * pruneHour},
+		}, want: []string{pruneCLIName, vf("1.2.0")}},
+		{id: "tie keeps name order", keep: 2, before: []pruneFixture{
+			{vf("1.0.3"), pruneFile, 2 * pruneHour}, {vf("1.0.1"), pruneFile, 2 * pruneHour},
+			{vf("1.0.2"), pruneFile, 2 * pruneHour},
+		}, want: []string{pruneCLIName, vf("1.0.1")}},
+		{id: "failed install", keep: 0, run: pruneFailedInstall, before: []pruneFixture{
+			{vf("1.0.0"), pruneFile, 2 * pruneHour},
+		}, want: []string{vf("1.0.0")}},
+		{id: "cache hit", keep: 0, run: pruneCacheHit, before: []pruneFixture{
+			{vf("1.0.0"), pruneFile, 2 * pruneHour},
+		}, want: []string{pruneCLIName, vf("1.0.0")}},
 	} {
 		t.Run(row.id, func(t *testing.T) {
-			if row.windows && runtime.GOOS != "windows" {
-				t.Skip("the read-only attribute of a folder exists on Windows only")
+			f := newStubFixture(t)
+			t.Setenv(homeEnvVar(), f.root)
+			outside := filepath.Join(f.root, "outside")
+			if err := os.Mkdir(outside, 0o700); err != nil {
+				t.Fatal(err)
 			}
-			root := t.TempDir()
-			home := filepath.Join(root, "home")
-			dir := filepath.Join(root, "cli")
-			outside := filepath.Join(root, "outside")
-			for _, d := range []string{home, dir, outside} {
-				if err := os.Mkdir(d, 0o700); err != nil {
-					t.Fatal(err)
-				}
-			}
-			t.Setenv(homeEnvVar(), home)
 			if err := os.WriteFile(filepath.Join(outside, "keep.txt"), []byte("keep"), 0o600); err != nil {
 				t.Fatal(err)
 			}
 			start := time.Now()
-			var full []string
+			skipped := map[string]bool{}
 			for _, e := range row.before {
-				if !makePruneFixture(t, dir, outside, e, start) {
-					t.Skipf("no privilege to make the symlink %s", e.name)
-				}
-				if e.kind == pruneFullDir {
-					full = append(full, e.name)
+				if !makePruneFixture(t, f.cliDir, outside, e, start) {
+					t.Logf("no privilege to make the symlink %s: the link part does not run", e.name)
+					skipped[e.name] = true
 				}
 			}
-
-			const version = "9.9.9"
-			cli := installCLIPath(dir, version)
-			o := installOpts{cliDir: dir, cliVersion: version, cliKeep: row.keep}
+			o := installOpts{cliDir: f.cliDir, cliVersion: "9.9.9", cliKeep: row.keep}
 			if row.keep == 0 {
 				o.cliKeep = keepZero
 			}
 			switch row.run {
 			case pruneCacheHit:
-				if err := os.WriteFile(cli, fakeCLI(t, 0), 0o755); err != nil {
-					t.Fatal(err)
-				}
-				at := start.Add(-5 * pruneHour)
-				if err := os.Chtimes(cli, at, at); err != nil {
-					t.Fatal(err)
-				}
+				placeStub(t, f.cli)
+			case pruneFailedInstall:
+				t.Setenv("CLAUSTRUM_TEST_STUB_EXIT", "1")
+				o.cliZst = f.stubBlob(t)
 			default:
-				exit := 0
-				if row.run == pruneFailedInstall {
-					exit = 1
-				}
-				o.cliZst = filepath.Join(root, "blob.zst")
-				if err := os.WriteFile(o.cliZst, fakeCLIZst(t, exit), 0o600); err != nil {
-					t.Fatal(err)
-				}
-			}
-			if row.tmpInE1 {
-				t.Setenv("TMPDIR", filepath.Join(dir, "e1"))
+				o.cliZst = f.stubBlob(t)
 			}
 
-			f := captureInstallFacts(t, o)
+			got := captureInstallFacts(t, o)
 
-			if f.CliPath != cli {
-				t.Errorf("cliPath = %q, want %q", f.CliPath, cli)
-			}
 			wantErr := ""
 			if row.run == pruneFailedInstall {
-				wantErr = fmt.Sprintf("installed cli at %s is not runnable", cli)
+				wantErr = fmt.Sprintf("installed cli at %s is not runnable", f.cli)
 			}
-			if f.CliError != wantErr {
-				t.Errorf("cliError = %q, want %q", f.CliError, wantErr)
-			}
-			if f.CliWasPresent != (row.run == pruneCacheHit) {
-				t.Errorf("cliWasPresent = %v", f.CliWasPresent)
+			if got.CliError != wantErr {
+				t.Errorf("cliError = %q, want %q", got.CliError, wantErr)
 			}
 			want := make([]string, 0, len(row.want))
 			for _, n := range row.want {
 				if n == pruneCLIName {
-					n = filepath.Base(cli)
+					n = filepath.Base(f.cli)
 				}
-				want = append(want, n)
-			}
-			sort.Strings(want)
-			if got := pruneNames(t, dir); strings.Join(got, " ") != strings.Join(want, " ") {
-				t.Errorf("the cli-dir holds %q, want %q", got, want)
-			}
-			for _, n := range full {
-				if !isRegularFile(filepath.Join(dir, n, "inner.txt")) {
-					t.Errorf("the file in the folder %s is gone", n)
+				if !skipped[n] {
+					want = append(want, n)
 				}
 			}
+			f.wantNames(t, row.id, want...)
 			if !isRegularFile(filepath.Join(outside, "keep.txt")) {
 				t.Error("the file in the folder outside the cli-dir is gone")
 			}
@@ -373,17 +153,121 @@ func TestPruneRows(t *testing.T) {
 	}
 }
 
-// fakeCLIZst is fakeCLI as a zstd blob. On Windows the fake CLI is a copy of
-// this test binary, and its exit code comes from CLAUSTRUM_TEST_HELPER, not
-// from its bytes. So the blob there is stubZst, which is compressed once per
-// test run. The caveat of fakeCLI holds: call it right before the step it backs.
-func fakeCLIZst(t *testing.T, exitCode int) []byte {
-	t.Helper()
-	if runtime.GOOS != "windows" {
-		return zstdOf(t, fakeCLI(t, exitCode))
+// A negative -cli-keep after a good install counts as 0. On 5fd08069 the run
+// exits 0 with the result line and an empty stderr. The older version file
+// goes and the new CLI stays (cells L6, M2b and W4b, Linux, macOS and Windows
+// VMs).
+func TestInstallNegativeKeep(t *testing.T) {
+	f := newStubFixture(t)
+	t.Setenv(homeEnvVar(), f.root)
+	makePruneFixture(t, f.cliDir, f.root, pruneFixture{vf("1.0.0"), pruneFile, pruneHour}, time.Now())
+	blob := f.stubBlob(t)
+	stubOsExit(t)
+	errPath := filepath.Join(t.TempDir(), "stderr")
+	errFile, err := os.Create(errPath)
+	if err != nil {
+		t.Fatal(err)
 	}
-	t.Setenv("CLAUSTRUM_TEST_HELPER", "exit:"+strconv.Itoa(exitCode))
-	return stubZst(t)
+	oldErr := os.Stderr
+	os.Stderr = errFile
+	var out string
+	code, exited := catchExit(func() {
+		out = captureInstallOutput(t, installOpts{cliDir: f.cliDir, cliVersion: "9.9.9", cliZst: blob, cliKeep: -1})
+	})
+	os.Stderr = oldErr
+	_ = errFile.Close()
+
+	if exited {
+		t.Errorf("the run exited with code %d, want no exit", code)
+	}
+	if want := factsHead(t, f.cli) + "false}\n"; out != want {
+		t.Errorf("stdout\n got %q\nwant %q", out, want)
+	}
+	if got, _ := os.ReadFile(errPath); len(got) != 0 {
+		t.Errorf("stderr = %q, want empty", got)
+	}
+	f.wantNames(t, "L6", filepath.Base(f.cli))
+}
+
+// Entries with the same mtime stay in name order. This test has forty version
+// files in three groups of one mtime each, because a sort that is not stable
+// keeps the order of a short list by accident. With keep 20 the 14 files of the
+// newest group stay, and the first 6 names of the next group.
+func TestPruneTieKeepsNameOrder(t *testing.T) {
+	dir := t.TempDir()
+	start := time.Now()
+	var names []string
+	for i := 0; i < 40; i++ {
+		names = append(names, vf(fmt.Sprintf("1.0.%02d", i)))
+	}
+	var want []string
+	for i, name := range names {
+		makePruneFixture(t, dir, dir, pruneFixture{name, pruneFile, time.Duration(1+i%3) * time.Hour}, start)
+		if i%3 == 0 || (i%3 == 1 && i <= 16) {
+			want = append(want, name)
+		}
+	}
+	pruneCLI(dir, 20, "")
+	if got := pruneNames(t, dir); strings.Join(got, " ") != strings.Join(want, " ") {
+		t.Errorf("the cli-dir holds %q, want %q", got, want)
+	}
+}
+
+// The prune removes only regular version files, each with one plain remove. A
+// keep of 0 puts every entry past the keep value. A folder with content, an
+// empty folder and a link with a version name stay, and so does what the link
+// points to. Nothing outside the cli-dir changes.
+//
+// SAFETY: every path is under t.TempDir. With a prune that removes a tree or
+// follows a link, the test deletes only that fixture.
+func TestPruneNeverRemovesContentOrLeavesTheCLIDir(t *testing.T) {
+	root := t.TempDir()
+	home := filepath.Join(root, "home")
+	dir := filepath.Join(root, "cli")
+	outDir := filepath.Join(root, "outside-dir")
+	outFile := filepath.Join(root, "outside-file")
+	deep := filepath.Join(dir, vf("2.0.0"), "sub", "deeper")
+	for _, d := range []string{home, deep, outDir, filepath.Join(dir, vf("2.0.1"))} {
+		if err := os.MkdirAll(d, 0o700); err != nil {
+			t.Fatal(err)
+		}
+	}
+	t.Setenv(homeEnvVar(), home)
+	keeps := []string{filepath.Join(deep, "keep.txt"), filepath.Join(outDir, "keep.txt"), outFile}
+	for _, k := range keeps {
+		if err := os.WriteFile(k, []byte("keep"), 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := os.WriteFile(filepath.Join(dir, vf("1.0.0")), []byte("old cli"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	want := []string{vf("2.0.0"), vf("2.0.1")}
+	for name, target := range map[string]string{vf("3.0.0"): outDir, vf("3.0.1"): outFile, vf("3.0.2"): root} {
+		if err := os.Symlink(target, filepath.Join(dir, name)); err != nil {
+			if runtime.GOOS != "windows" {
+				t.Fatal(err)
+			}
+			t.Logf("no privilege to make the symlink %s: the link part does not run", name)
+			continue
+		}
+		want = append(want, name)
+	}
+	sort.Strings(want)
+
+	pruneCLI(dir, 0, "")
+
+	if got := pruneNames(t, dir); strings.Join(got, " ") != strings.Join(want, " ") {
+		t.Errorf("the cli-dir holds %q, want %q", got, want)
+	}
+	for _, k := range keeps {
+		if !isRegularFile(k) {
+			t.Errorf("%s is gone", k)
+		}
+	}
+	if got := pruneNames(t, root); strings.Join(got, " ") != "cli home outside-dir outside-file" {
+		t.Errorf("the folder above the cli-dir holds %q", got)
+	}
 }
 
 // makePruneFixture makes one fixture entry. It answers false when a symlink
@@ -393,28 +277,24 @@ func makePruneFixture(t *testing.T, dir, outside string, e pruneFixture, start t
 	p := filepath.Join(dir, e.name)
 	var err error
 	switch e.kind {
-	case pruneFile, pruneReadOnly:
+	case pruneFile:
 		err = os.WriteFile(p, []byte("old cli"), 0o755)
-	case pruneEmptyDir, pruneReadOnlyDir:
+	case pruneNoExec:
+		err = os.WriteFile(p, []byte("old cli"), 0o644)
+	case pruneEmptyDir:
 		err = os.Mkdir(p, 0o755)
 	case pruneFullDir:
 		if err = os.Mkdir(p, 0o755); err == nil {
 			err = os.WriteFile(filepath.Join(p, "inner.txt"), []byte("keep"), 0o644)
 		}
-	case pruneDirLink, pruneDeadLink, pruneFileLink:
+	case pruneFileLink:
 		if e.age != 0 {
 			t.Fatalf("a link fixture cannot carry an age: %s", e.name)
 		}
-		target := outside
-		switch e.kind {
-		case pruneDeadLink:
-			target = filepath.Join(outside, "nothing-here")
-		case pruneFileLink:
-			target = filepath.Join(outside, "keep.txt")
-			at := start.Add(-6 * pruneHour)
-			if err := os.Chtimes(target, at, at); err != nil {
-				t.Fatal(err)
-			}
+		target := filepath.Join(outside, "keep.txt")
+		at := start.Add(-6 * pruneHour)
+		if err := os.Chtimes(target, at, at); err != nil {
+			t.Fatal(err)
 		}
 		if err := os.Symlink(target, p); err != nil {
 			if runtime.GOOS == "windows" {
@@ -431,17 +311,6 @@ func makePruneFixture(t *testing.T, dir, outside string, e pruneFixture, start t
 	// mtime of its folder.
 	at := start.Add(-e.age)
 	if err := os.Chtimes(p, at, at); err != nil {
-		t.Fatal(err)
-	}
-	// The permission goes last, after the mtime is set.
-	switch e.kind {
-	case pruneReadOnly:
-		err = os.Chmod(p, 0o444)
-	case pruneReadOnlyDir:
-		err = os.Chmod(p, 0o555)
-		t.Cleanup(func() { _ = os.Chmod(p, 0o755) })
-	}
-	if err != nil {
 		t.Fatal(err)
 	}
 	return true
@@ -462,95 +331,10 @@ func pruneNames(t *testing.T, dir string) []string {
 	return names
 }
 
-// Entries with the same mtime stay in name order. The rows have two and three
-// such entries (rows C-12 and C-12b, cell C-15). This test has forty folders in
-// three groups of one mtime each, because a sort that is not stable keeps the
-// order of a short list by accident. With keep 20 the 14 folders of the newest
-// group stay, and the first 6 names of the next group.
-func TestPruneTieKeepsNameOrder(t *testing.T) {
-	dir := t.TempDir()
-	start := time.Now()
-	var want []string
-	for i := 0; i < 40; i++ {
-		name := fmt.Sprintf("t%02d", i)
-		p := filepath.Join(dir, name)
-		if err := os.Mkdir(p, 0o755); err != nil {
-			t.Fatal(err)
-		}
-		at := start.Add(-time.Duration(1+i%3) * time.Hour)
-		if err := os.Chtimes(p, at, at); err != nil {
-			t.Fatal(err)
-		}
-		if i%3 == 0 || (i%3 == 1 && i <= 16) {
-			want = append(want, name)
-		}
-	}
-	pruneCLI(dir, 20)
-	if got := pruneNames(t, dir); strings.Join(got, " ") != strings.Join(want, " ") {
-		t.Errorf("the cli-dir holds %q, want %q", got, want)
-	}
-}
-
-// The prune removes with one plain remove for each entry. This test gives it a
-// keep of 0, so every entry is past the keep value, and shows three things. A
-// folder with content stays, at every depth. A symlink goes as a link, and what
-// it points to outside the cli-dir stays. Nothing outside the cli-dir changes.
-//
-// SAFETY: every path is under t.TempDir. With a prune that removes a tree or
-// follows a link, the test deletes only that fixture.
-func TestPruneNeverRemovesContentOrLeavesTheCLIDir(t *testing.T) {
-	root := t.TempDir()
-	home := filepath.Join(root, "home")
-	dir := filepath.Join(root, "cli")
-	outDir := filepath.Join(root, "outside-dir")
-	outFile := filepath.Join(root, "outside-file")
-	deep := filepath.Join(dir, "full", "sub", "deeper")
-	for _, d := range []string{home, deep, outDir, filepath.Join(dir, "empty")} {
-		if err := os.MkdirAll(d, 0o700); err != nil {
-			t.Fatal(err)
-		}
-	}
-	t.Setenv(homeEnvVar(), home)
-	keeps := []string{
-		filepath.Join(deep, "keep.txt"),
-		filepath.Join(dir, "full", "keep.txt"),
-		filepath.Join(outDir, "keep.txt"),
-		outFile,
-	}
-	for _, k := range append(keeps, filepath.Join(dir, "v1")) {
-		if err := os.WriteFile(k, []byte("keep"), 0o600); err != nil {
-			t.Fatal(err)
-		}
-	}
-	links := map[string]string{"lnk-dir": outDir, "lnk-file": outFile, "lnk-up": root}
-	for name, target := range links {
-		if err := os.Symlink(target, filepath.Join(dir, name)); err != nil {
-			if runtime.GOOS != "windows" {
-				t.Fatal(err)
-			}
-			t.Logf("no privilege to make the symlink %s: the link part does not run", name)
-		}
-	}
-
-	pruneCLI(dir, 0)
-
-	if got := pruneNames(t, dir); strings.Join(got, " ") != "full" {
-		t.Errorf("the cli-dir holds %q, want only the folder with content", got)
-	}
-	for _, k := range keeps {
-		if !isRegularFile(k) {
-			t.Errorf("%s is gone", k)
-		}
-	}
-	if got := pruneNames(t, root); strings.Join(got, " ") != "cli home outside-dir outside-file" {
-		t.Errorf("the folder above the cli-dir holds %q", got)
-	}
-}
-
 // The home guard of the tree delete refuses before the prune can run. The
 // cli-dir is the parent of the home folder and the version is its leaf name, so
 // the CLI path is the home folder. The install fails, and a failed install does
-// not prune. So nothing in the cli-dir goes, with a keep of 0.
+// not prune. So no version file in the cli-dir goes, with a keep of 0.
 //
 // SAFETY: every path is under t.TempDir, and the home variable names a fixture
 // folder there. Without the guard the test deletes only that fixture.
@@ -568,12 +352,12 @@ func TestPruneDoesNotRunAfterTheHomeGuardRefusal(t *testing.T) {
 	}
 	t.Setenv(homeEnvVar(), home)
 	start := time.Now()
-	for _, e := range append(e4321(pruneEmptyDir), pruneFixture{"v0", pruneFile, 5 * pruneHour}) {
-		makePruneFixture(t, dir, root, e, start)
+	for i, v := range []string{"1.0.0", "1.1.0", "1.2.0"} {
+		makePruneFixture(t, dir, root, pruneFixture{vf(v), pruneFile, time.Duration(3-i) * pruneHour}, start)
 	}
 	before := pruneNames(t, dir)
 	blob := filepath.Join(root, "blob.zst")
-	if err := os.WriteFile(blob, fakeCLIZst(t, 0), 0o600); err != nil {
+	if err := os.WriteFile(blob, zstdOf(t, []byte("#\n")), 0o600); err != nil {
 		t.Fatal(err)
 	}
 
@@ -593,165 +377,121 @@ func TestPruneDoesNotRunAfterTheHomeGuardRefusal(t *testing.T) {
 	}
 }
 
-// The prune and the sweep skip an entry that is the home folder (D2). The
-// cli-dir is the parent of the home folder, so the home folder is an entry of
-// it. The home folder is empty, so one plain remove takes it without the guard.
-// In each case a second entry goes, which shows that the pass ran.
+// cliEntryHoldsHome is the home guard of the prune and the sweeps (D2). It
+// refuses the home folder and a folder that holds it, also by identity through
+// a link above the home folder. Another folder and a file pass.
 //
-// The case "prune, home newest" shows the place of a skipped entry. The home
-// folder is counted, so with keep 1 it takes the one place and the file goes.
-//
-// SAFETY: every path is under t.TempDir, and the home variable names an EMPTY
-// fixture folder there. Without the guard the test removes only that folder.
-func TestHousekeepingSkipsTheHomeFolder(t *testing.T) {
-	for _, c := range []struct {
-		id      string
-		home    string
-		homeAge time.Duration
-		others  []pruneFixture
-		run     func(dir string, now time.Time)
-		want    []string
+// SAFETY: the guard only answers. The test removes nothing.
+func TestCLIEntryHoldsHome(t *testing.T) {
+	root := t.TempDir()
+	home := filepath.Join(root, "users", "alice")
+	other := filepath.Join(root, "users", "bob")
+	for _, d := range []string{home, other} {
+		if err := os.MkdirAll(d, 0o700); err != nil {
+			t.Fatal(err)
+		}
+	}
+	file := filepath.Join(home, "1.0.0")
+	if err := os.WriteFile(file, []byte("x"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv(homeEnvVar(), home)
+	cases := []struct {
+		p    string
+		want bool
+	}{{home, true}, {filepath.Dir(home), true}, {other, false}, {file, false}}
+	// The home folder through a link above it: a lexical test does not see it.
+	link := filepath.Join(root, "link")
+	if err := os.Symlink(filepath.Join(root, "users"), link); err == nil {
+		cases = append(cases, struct {
+			p    string
+			want bool
+		}{filepath.Join(link, "alice"), true})
+	} else if runtime.GOOS != "windows" {
+		t.Fatal(err)
+	}
+	for _, c := range cases {
+		fi, err := os.Lstat(c.p)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if got := cliEntryHoldsHome(c.p, fi); got != c.want {
+			t.Errorf("cliEntryHoldsHome(%s) = %v, want %v", c.p, got, c.want)
+		}
+	}
+}
+
+// TestSweepRows runs the sweep cells of 5fd08069 (L8, L9, M3a and W5, Linux,
+// macOS and Windows VMs). The keep value is 20, so the prune removes nothing,
+// as in the cells. Only a regular file with a sweep name goes.
+func TestSweepRows(t *testing.T) {
+	cells := []pruneFixture{
+		{"p.zst.part", pruneFile, 8 * pruneDay}, {"1.0.0.zst.part", pruneFile, 8 * pruneDay},
+		{"1.0.1.zst.part", pruneFile, 7*pruneDay - pruneHour}, {".fetch-d", pruneFile, 20 * pruneMin},
+		{".fetch-123", pruneFile, 20 * pruneMin}, {"x.zst", pruneFile, 20 * pruneMin},
+		{"1.0.0.zst", pruneFile, 20 * pruneMin}, {".fetch-9", pruneEmptyDir, 20 * pruneMin},
+		{".fetch-e", pruneFullDir, 20 * pruneMin},
+	}
+	stays := []string{".fetch-9", ".fetch-d", ".fetch-e", "1.0.1.zst.part", "p.zst.part", "x.zst"}
+	// A link with a sweep name.
+	links := []pruneFixture{{"2.0.0.zst", pruneFileLink, 0}}
+	for _, row := range []struct {
+		id     string
+		before []pruneFixture
+		hit    bool
+		want   []string
 	}{
-		{id: "prune, home oldest", home: "alice", homeAge: 5 * pruneHour,
-			others: []pruneFixture{
-				{"v0", pruneFile, 4 * pruneHour}, {"v1", pruneFile, 2 * pruneHour},
-				{"v2", pruneFile, 1 * pruneHour},
-			},
-			run:  func(dir string, _ time.Time) { pruneCLI(dir, 2) },
-			want: []string{"alice", "v1", "v2"}},
-		{id: "prune, home newest", home: "alice", homeAge: 1 * pruneHour,
-			others: []pruneFixture{{"v1", pruneFile, 2 * pruneHour}},
-			run:    func(dir string, _ time.Time) { pruneCLI(dir, 1) },
-			want:   []string{"alice"}},
-		{id: "sweep, h.zst", home: "h.zst", homeAge: 20 * pruneMin,
-			others: []pruneFixture{{"x.zst", pruneEmptyDir, 20 * pruneMin}},
-			run:    sweepFetchTemps,
-			want:   []string{"h.zst"}},
-		{id: "sweep, h.zst.part", home: "h.zst.part", homeAge: 8 * pruneDay,
-			others: []pruneFixture{{"p.zst.part", pruneEmptyDir, 8 * pruneDay}},
-			run:    sweepZstParts,
-			want:   []string{"h.zst.part"}},
+		{id: "L8/M3a/W5", before: cells, want: append([]string{pruneCLIName}, stays...)},
+		{id: "L9 cache hit", before: cells, hit: true,
+			want: append([]string{pruneCLIName, ".fetch-123", "1.0.0.zst"}, stays...)},
+		{id: "link", before: links, want: []string{pruneCLIName, "2.0.0.zst"}},
 	} {
-		t.Run(c.id, func(t *testing.T) {
-			root := t.TempDir()
-			dir := filepath.Join(root, "users")
-			if err := os.Mkdir(dir, 0o700); err != nil {
+		t.Run(row.id, func(t *testing.T) {
+			f := newStubFixture(t)
+			t.Setenv(homeEnvVar(), f.root)
+			if err := os.WriteFile(filepath.Join(f.root, "keep.txt"), []byte("keep"), 0o600); err != nil {
 				t.Fatal(err)
 			}
-			t.Setenv(homeEnvVar(), filepath.Join(dir, c.home))
-			now := time.Now()
-			for _, e := range append(c.others, pruneFixture{c.home, pruneEmptyDir, c.homeAge}) {
-				makePruneFixture(t, dir, root, e, now)
+			start := time.Now()
+			skipped := map[string]bool{}
+			for _, e := range row.before {
+				if !makePruneFixture(t, f.cliDir, f.root, e, start) {
+					t.Logf("no privilege to make the symlink %s: the link part does not run", e.name)
+					skipped[e.name] = true
+				}
 			}
-
-			c.run(dir, now)
-
-			if got := pruneNames(t, dir); strings.Join(got, " ") != strings.Join(c.want, " ") {
-				t.Errorf("the cli-dir holds %q, want %q", got, c.want)
+			o := installOpts{cliDir: f.cliDir, cliVersion: "9.9.9", cliKeep: 20}
+			if row.hit {
+				placeStub(t, f.cli)
+			} else {
+				o.cliZst = f.stubBlob(t)
 			}
+			if got := captureInstallFacts(t, o); got.CliError != "" || got.CliWasPresent != row.hit {
+				t.Fatalf("cliError = %q, cliWasPresent = %v", got.CliError, got.CliWasPresent)
+			}
+			want := make([]string, 0, len(row.want))
+			for _, n := range row.want {
+				if n == pruneCLIName {
+					n = filepath.Base(f.cli)
+				}
+				if !skipped[n] {
+					want = append(want, n)
+				}
+			}
+			f.wantNames(t, row.id, want...)
 		})
 	}
 }
 
-// Cells Kneg of 89cb6289 (Linux, macOS and Windows VMs): -cli-keep -1 with four
-// old files and a -cli-zst blob. The new CLI is installed, the blob is gone and
-// the four files stay. The exit code is 2 and stdout is empty. The one stderr
-// line is claustrum's own.
-//
-// Cells Kn-fail and Kn-hit (the same three systems): after a failed install and
-// on a cache hit, 89cb6289 prints the result line and exits 0, and the four
-// files stay. No prune runs there, so claustrum does the same.
-func TestInstallNegativeKeep(t *testing.T) {
-	const version = "9.9.9"
-	setup := func(t *testing.T) (dir, blob string) {
-		t.Helper()
-		root := t.TempDir()
-		home := filepath.Join(root, "home")
-		dir = filepath.Join(root, "cli")
-		for _, d := range []string{home, dir} {
-			if err := os.Mkdir(d, 0o700); err != nil {
-				t.Fatal(err)
-			}
-		}
-		t.Setenv(homeEnvVar(), home)
-		start := time.Now()
-		for i, name := range []string{"v1", "v2", "v3", "v4"} {
-			makePruneFixture(t, dir, root, pruneFixture{name, pruneFile, time.Duration(4-i) * pruneHour}, start)
-		}
-		stubOsExit(t)
-		return dir, filepath.Join(root, "blob.zst")
+// The bound of the sweep of 7 days. 7 days and 5 s go, and 7 days less 5 s
+// stay (cells L10 and M3b of 5fd08069, Linux and macOS VMs).
+func TestSweepZstPartsBound(t *testing.T) {
+	dir := t.TempDir()
+	now := time.Now()
+	makePruneFixture(t, dir, dir, pruneFixture{"1.0.0.zst.part", pruneFile, 7*pruneDay - 5*time.Second}, now)
+	makePruneFixture(t, dir, dir, pruneFixture{"1.0.1.zst.part", pruneFile, 7*pruneDay + 5*time.Second}, now)
+	sweepZstParts(dir, now)
+	if got := pruneNames(t, dir); strings.Join(got, " ") != "1.0.0.zst.part" {
+		t.Errorf("the cli-dir holds %q, want 1.0.0.zst.part only", got)
 	}
-
-	t.Run("good install", func(t *testing.T) {
-		dir, blob := setup(t)
-		if err := os.WriteFile(blob, fakeCLIZst(t, 0), 0o600); err != nil {
-			t.Fatal(err)
-		}
-		outPath := filepath.Join(t.TempDir(), "stdout")
-		errPath := filepath.Join(t.TempDir(), "stderr")
-		outFile, err := os.Create(outPath)
-		if err != nil {
-			t.Fatal(err)
-		}
-		errFile, err := os.Create(errPath)
-		if err != nil {
-			t.Fatal(err)
-		}
-		oldOut, oldErr := os.Stdout, os.Stderr
-		os.Stdout, os.Stderr = outFile, errFile
-		code, exited := catchExit(func() {
-			runInstall(installOpts{cliDir: dir, cliVersion: version, cliZst: blob, cliKeep: -1})
-		})
-		os.Stdout, os.Stderr = oldOut, oldErr
-		_ = outFile.Close()
-		_ = errFile.Close()
-
-		if !exited || code != 2 {
-			t.Errorf("exited = %v with code %d, want exit code 2", exited, code)
-		}
-		if out, _ := os.ReadFile(outPath); len(out) != 0 {
-			t.Errorf("stdout = %q, want no result line", out)
-		}
-		const wantErr = "claustrum: -cli-keep -1 is not a valid keep count\n"
-		if got, _ := os.ReadFile(errPath); string(got) != wantErr {
-			t.Errorf("stderr = %q, want %q", got, wantErr)
-		}
-		want := []string{filepath.Base(installCLIPath(dir, version)), "v1", "v2", "v3", "v4"}
-		if got := pruneNames(t, dir); strings.Join(got, " ") != strings.Join(want, " ") {
-			t.Errorf("the cli-dir holds %q, want %q", got, want)
-		}
-		if _, err := os.Lstat(blob); !os.IsNotExist(err) {
-			t.Errorf("the blob is still there: %v", err)
-		}
-	})
-
-	t.Run("failed install, cells Kn-fail", func(t *testing.T) {
-		dir, blob := setup(t)
-		if err := os.WriteFile(blob, fakeCLIZst(t, 1), 0o600); err != nil {
-			t.Fatal(err)
-		}
-		f := captureInstallFacts(t, installOpts{cliDir: dir, cliVersion: version, cliZst: blob, cliKeep: -1})
-		if want := fmt.Sprintf("installed cli at %s is not runnable", installCLIPath(dir, version)); f.CliError != want {
-			t.Errorf("cliError = %q, want %q", f.CliError, want)
-		}
-		if got := pruneNames(t, dir); strings.Join(got, " ") != "v1 v2 v3 v4" {
-			t.Errorf("the cli-dir holds %q", got)
-		}
-	})
-
-	t.Run("cache hit, cells Kn-hit", func(t *testing.T) {
-		dir, _ := setup(t)
-		cli := installCLIPath(dir, version)
-		if err := os.WriteFile(cli, fakeCLI(t, 0), 0o755); err != nil {
-			t.Fatal(err)
-		}
-		f := captureInstallFacts(t, installOpts{cliDir: dir, cliVersion: version, cliKeep: -1})
-		if !f.CliWasPresent {
-			t.Error("cliWasPresent = false, want a cache hit")
-		}
-		want := []string{filepath.Base(cli), "v1", "v2", "v3", "v4"}
-		if got := pruneNames(t, dir); strings.Join(got, " ") != strings.Join(want, " ") {
-			t.Errorf("the cli-dir holds %q, want %q", got, want)
-		}
-	})
 }

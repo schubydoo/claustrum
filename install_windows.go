@@ -6,6 +6,7 @@ import (
 	"errors"
 	"io/fs"
 	"os"
+	"syscall"
 )
 
 // cliExeSuffix is the suffix that installCLIPath adds to the version. On Windows
@@ -27,3 +28,8 @@ func probeCLIPathMissing(path string) bool {
 	_, err := os.Stat(path)
 	return errors.Is(err, fs.ErrNotExist)
 }
+
+// renameDenied reports a rename of the new CLI that access denied stopped. On
+// 5fd08069 a running old CLI gives "Access is denied." (cells W1 and W2,
+// Windows VM). placeStagedCLI tries such a rename again.
+func renameDenied(err error) bool { return errors.Is(err, syscall.ERROR_ACCESS_DENIED) }

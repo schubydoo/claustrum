@@ -37,14 +37,14 @@ var installHeaderTimeout = 60 * time.Second
 // lastInstallFetch holds the -cli-url download's fetch stats for the current
 // -install run. -install is a one-shot, single-threaded process (the -serve daemon
 // never installs), so a package var is the simplest way to carry the stats from
-// fetchToFile up to runInstall without threading a param through ensureCLI's many
+// fetchCLI up to runInstall without threading a param through ensureCLI's many
 // callers. runInstall resets it to nil and reads it after ensureCLI. It is set only
-// on the -cli-url path (fetchToFile), so it stays nil for -cli-zst and cache-hit
+// on the -cli-url path (fetchCLI), so it stays nil for -cli-zst and cache-hit
 // runs, where the reference emits no `fetch` object.
 var lastInstallFetch *fetchStats
 
 // lastInstallFinal is the final __INSTALL_PROGRESS__ line of a complete -cli-url
-// download. fetchToFile sets it, and ensureCLI prints it only after the checksum
+// download. fetchCLI sets it, and ensureCLI prints it only after the checksum
 // passes (emitFinalProgress). runInstall resets it with lastInstallFetch.
 var lastInstallFinal *progressLine
 
@@ -83,6 +83,7 @@ type watchedBody struct {
 	lastAt  time.Time
 	hadRead bool
 	stalled bool
+	failed  error // the first read error that is not io.EOF
 
 	start      time.Time
 	idle       *time.Timer
@@ -148,14 +149,30 @@ func (w *watchedBody) Read(p []byte) (int, error) {
 			}
 		}
 		w.mu.Unlock()
-		if stalled {
-			return n, &stalledError{secs: int(installIdleTimeout / time.Second), got: got, total: total}
+		switch {
+		case stalled:
+			err = &stalledError{secs: int(installIdleTimeout / time.Second), got: got, total: total}
+		case interrupted:
+			err = &interruptedError{got: got, total: total, err: err}
 		}
-		if interrupted {
-			return n, &interruptedError{got: got, total: total, err: err}
+		if err != io.EOF {
+			w.mu.Lock()
+			if w.failed == nil {
+				w.failed = err
+			}
+			w.mu.Unlock()
 		}
 	}
 	return n, err
+}
+
+// failure is the first read error of the body that is not io.EOF. fetchCLI
+// reports it over the answer of the decoder, which then saw only a short
+// stream.
+func (w *watchedBody) failure() error {
+	w.mu.Lock()
+	defer w.mu.Unlock()
+	return w.failed
 }
 
 // interruptedError is a body read that ended with a transport error. Measured on

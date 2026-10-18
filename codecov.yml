@@ -327,6 +327,9 @@ component_management:
         - install_windows.go
         # 4534d86 -install download: __INSTALL_PROGRESS__ ticker + 60 s read-idle abort.
         - installfetch.go
+        # 5fd08069 file test of a cache hit with the launcher gate (Linux).
+        - installgate_linux.go
+        - installgate_other.go
         # 89cb6289 launcher runs of -install and -probe-cli behind the gate.
         - managedlauncher_run.go
         - libc_linux.go

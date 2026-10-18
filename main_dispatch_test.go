@@ -74,7 +74,7 @@ func runMain(t *testing.T, args ...string) (code int, exited bool) {
 }
 
 // The -install arm's flag-to-global wiring, which nothing else covers. Setting
-// the deadline directly (as the fetchToFile tests do) exercises the READ.
+// the deadline directly (as the fetchCLI tests do) exercises the READ.
 // Asserting flag.DefValue covers the DECLARED default. The line that joins them
 // was unasserted: main() resolves each flag into its own global.
 //

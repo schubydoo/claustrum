@@ -86,8 +86,8 @@ func fakeCLI(t *testing.T, exitCode int) []byte {
 // than ten minutes old (sweepMinAge), and a leaked staging file is fresh.
 //
 // Prefix-matched rather than counting entries: a caller may legitimately have
-// other files in the cli-dir (installed versions, an in-flight blobTempPrefix
-// download), and only the staging leftover is under test here.
+// other files in the cli-dir (installed versions), and only the staging
+// leftover is under test here.
 func assertNoStagingLeftover(t *testing.T, cliPath string) {
 	t.Helper()
 	ents, err := os.ReadDir(filepath.Dir(cliPath))
@@ -165,12 +165,11 @@ func TestZstdDecompress(t *testing.T) {
 	}
 }
 
-// fetchBytes runs the production download path and returns the bytes it landed,
-// so the assertions below keep testing what they always did now that
-// fetchToFile streams to a file instead of returning a buffer.
+// fetchBytes runs the production download path and returns the bytes it landed:
+// the decompressed body.
 func fetchBytes(t *testing.T, url string) ([]byte, error) {
 	t.Helper()
-	path, _, err := fetchToFile(url, t.TempDir())
+	path, _, err := fetchCLI(url, t.TempDir())
 	if err != nil {
 		return nil, err
 	}
@@ -189,27 +188,28 @@ func zstdDecompressBytes(t *testing.T, blob []byte, dest string) error {
 	return zstdDecompress(src, dest)
 }
 
-// fetchToFile must land the body on disk and return the sha256 it computed
-// WHILE streaming — the point of the change is that no caller ever holds the
-// blob, so the hash cannot come from a second pass over a buffer.
-func TestFetchToFileStreamsAndHashes(t *testing.T) {
+// fetchCLI must land the decompressed body in a staging file of the cli-dir. It
+// returns the sha256 of the body that it computed WHILE streaming. No caller
+// holds the body, so the hash cannot come from a second pass over a buffer.
+func TestFetchCLIStreamsAndHashes(t *testing.T) {
 	body := bytes.Repeat([]byte("z"), 128*1024)
+	blob := zstdOf(t, body)
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
-		_, _ = w.Write(body)
+		_, _ = w.Write(blob)
 	}))
 	defer srv.Close()
 
 	dir := t.TempDir()
-	path, sum, err := fetchToFile(srv.URL, dir)
+	path, sum, err := fetchCLI(srv.URL, dir)
 	if err != nil {
-		t.Fatalf("fetchToFile: %v", err)
+		t.Fatalf("fetchCLI: %v", err)
 	}
 	defer func() { _ = os.Remove(path) }()
 
-	if got := filepath.Dir(path); got != dir {
-		t.Errorf("temp landed in %s, want %s (beside the install destination)", got, dir)
+	if got := filepath.Dir(path); got != dir || !isSweptName(filepath.Base(path)) {
+		t.Errorf("staging file is %s, want a .fetch-<digits> name in %s", path, dir)
 	}
-	want := sha256.Sum256(body)
+	want := sha256.Sum256(blob)
 	if sum != hex.EncodeToString(want[:]) {
 		t.Errorf("streamed sum = %s, want %s", sum, hex.EncodeToString(want[:]))
 	}
@@ -218,50 +218,28 @@ func TestFetchToFileStreamsAndHashes(t *testing.T) {
 		t.Fatalf("read temp: %v", err)
 	}
 	if !bytes.Equal(onDisk, body) {
-		t.Errorf("temp holds %d bytes, want %d", len(onDisk), len(body))
+		t.Errorf("staging file holds %d bytes, want %d", len(onDisk), len(body))
+	}
+	if lastInstallFetch == nil || lastInstallFetch.Bytes != int64(len(blob)) {
+		t.Errorf("fetch = %+v, want bytes %d", lastInstallFetch, len(blob))
 	}
 }
 
-// An unusable target directory must NOT turn into a download failure. ensureCLI
-// creates the cli-dir before the download, but the dir can still refuse a create,
-// for example when it is unwritable. fetchToFile then falls back to the OS temp
-// dir, so the download itself still runs.
-func TestFetchToFileFallsBackWhenDirUnusable(t *testing.T) {
-	body := []byte("payload")
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
-		_, _ = w.Write(body)
-	}))
-	defer srv.Close()
-
-	missing := filepath.Join(t.TempDir(), "does-not-exist")
-	path, _, err := fetchToFile(srv.URL, missing)
-	if err != nil {
-		t.Fatalf("fetchToFile with an unusable dir must fall back, got: %v", err)
-	}
-	defer func() { _ = os.Remove(path) }()
-	if filepath.Dir(path) == missing {
-		t.Errorf("temp claims to be in the missing dir %s", missing)
-	}
-	if got, err := os.ReadFile(path); err != nil || !bytes.Equal(got, body) {
-		t.Errorf("fallback temp = %q (err %v), want %q", got, err, body)
-	}
-}
-
-// A body over the cap must leave nothing behind: the temp is partially written
-// by the time the limit is detected.
-func TestFetchToFileRemovesTempWhenOverCap(t *testing.T) {
+// A body over the cap must leave nothing behind: the staging file is partially
+// written by the time the limit is detected.
+func TestFetchCLIRemovesTempWhenOverCap(t *testing.T) {
 	old := maxCLIBytes
 	maxCLIBytes = 5
 	defer func() { maxCLIBytes = old }()
 
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
-		_, _ = w.Write(bytes.Repeat([]byte("x"), 64))
+		_, _ = w.Write(zstdOf(t, bytes.Repeat([]byte("x"), 64)))
 	}))
 	defer srv.Close()
 
 	dir := t.TempDir()
-	if _, _, err := fetchToFile(srv.URL, dir); err == nil {
-		t.Fatal("over-cap body succeeded, want an error")
+	if _, _, err := fetchCLI(srv.URL, dir); err == nil || err.Error() != "response exceeds 5 bytes" {
+		t.Fatalf("over-cap body = %v, want the cap error", err)
 	}
 	left, err := os.ReadDir(dir)
 	if err != nil {
@@ -308,8 +286,9 @@ func TestCLISizeCapDefaultsOff(t *testing.T) {
 
 	t.Run("download_whole", func(t *testing.T) {
 		body := bytes.Repeat([]byte("y"), 4096)
+		blob := zstdOf(t, body)
 		srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
-			_, _ = w.Write(body)
+			_, _ = w.Write(blob)
 		}))
 		defer srv.Close()
 		got, err := fetchBytes(t, srv.URL)
@@ -403,7 +382,7 @@ func TestRunCLIVersion(t *testing.T) {
 
 // setCLIDownloadTimeout sets the package-level download bound for one test and
 // restores it afterwards, so a failure cannot leak a bound into the rest of the
-// suite (every other fetchToFile caller here expects the default: none).
+// suite (every other fetchCLI caller here expects the default: none).
 func setCLIDownloadTimeout(t *testing.T, d time.Duration) {
 	t.Helper()
 	old := cliDownloadTimeout
@@ -420,32 +399,33 @@ func setCLIDownloadTimeout(t *testing.T, d time.Duration) {
 // applied. Arm 3 fails if the bound is applied with the wrong sign or unit. An
 // assertion of only "rejected" cannot tell an applied deadline from one that
 // always expires.
-func TestFetchToFile_DownloadTimeoutOptIn(t *testing.T) {
+func TestFetchCLI_DownloadTimeoutOptIn(t *testing.T) {
 	// Sends headers immediately, then stalls before the body. http.Client.Timeout
 	// covers the whole exchange, so this is what an honest-but-slow link looks
 	// like to it.
+	blob := zstdOf(t, []byte("payload-bytes"))
 	slow := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusOK)
 		if f, ok := w.(http.Flusher); ok {
 			f.Flush()
 		}
 		time.Sleep(600 * time.Millisecond)
-		_, _ = w.Write([]byte("payload-bytes"))
+		_, _ = w.Write(blob)
 	}))
 	defer slow.Close()
 
 	setCLIDownloadTimeout(t, 0)
-	if _, _, err := fetchToFile(slow.URL, t.TempDir()); err != nil {
+	if _, _, err := fetchCLI(slow.URL, t.TempDir()); err != nil {
 		t.Errorf("with the bound disabled (the default), a slow-but-honest download must succeed, got: %v", err)
 	}
 
 	setCLIDownloadTimeout(t, 100*time.Millisecond)
-	if _, _, err := fetchToFile(slow.URL, t.TempDir()); err == nil {
+	if _, _, err := fetchCLI(slow.URL, t.TempDir()); err == nil {
 		t.Error("with a 100ms bound opted in, a 600ms download must fail")
 	}
 
 	setCLIDownloadTimeout(t, 10*time.Second)
-	if _, _, err := fetchToFile(slow.URL, t.TempDir()); err != nil {
+	if _, _, err := fetchCLI(slow.URL, t.TempDir()); err != nil {
 		t.Errorf("a 600ms download must still succeed under a 10s opted-in bound, got: %v", err)
 	}
 }
@@ -476,9 +456,10 @@ func TestCLIDownloadTimeoutDefaultsOff(t *testing.T) {
 }
 
 func TestHTTPGet(t *testing.T) {
+	blob := zstdOf(t, []byte("body-bytes"))
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path == "/ok" {
-			_, _ = w.Write([]byte("body-bytes"))
+			_, _ = w.Write(blob)
 			return
 		}
 		http.Error(w, "nope", http.StatusNotFound)
@@ -493,37 +474,33 @@ func TestHTTPGet(t *testing.T) {
 		t.Error("a non-200 response should error")
 	}
 
+	// The cap applies to the body and to the decompressed CLI. A body of one
+	// byte decompresses to fewer bytes than the body has.
+	small := zstdOf(t, []byte("x"))
+	exact := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		_, _ = w.Write(small)
+	}))
+	defer exact.Close()
+
 	t.Run("size_limit_exceeded", func(t *testing.T) {
 		old := maxCLIBytes
-		maxCLIBytes = 5
+		maxCLIBytes = int64(len(small)) - 1
 		defer func() { maxCLIBytes = old }()
-
-		large := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
-			_, _ = w.Write(bytes.Repeat([]byte("x"), 7)) // 7 > maxCLIBytes(5)
-		}))
-		defer large.Close()
-
-		if _, err := fetchBytes(t, large.URL); err == nil {
+		if _, err := fetchBytes(t, exact.URL); err == nil {
 			t.Error("expected error when response exceeds maxCLIBytes")
 		}
 	})
 
 	t.Run("size_at_exact_limit_ok", func(t *testing.T) {
 		old := maxCLIBytes
-		maxCLIBytes = 5
+		maxCLIBytes = int64(len(small))
 		defer func() { maxCLIBytes = old }()
-
-		exact := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
-			_, _ = w.Write(bytes.Repeat([]byte("x"), 5)) // exactly maxCLIBytes(5)
-		}))
-		defer exact.Close()
-
 		b, err := fetchBytes(t, exact.URL)
 		if err != nil {
 			t.Fatalf("a response of exactly maxCLIBytes must succeed, got: %v", err)
 		}
-		if int64(len(b)) != maxCLIBytes {
-			t.Errorf("body len = %d, want %d", len(b), maxCLIBytes)
+		if string(b) != "x" {
+			t.Errorf("body = %q, want %q", b, "x")
 		}
 	})
 }
@@ -690,11 +667,11 @@ func TestDetectLibcOrderingLddFirst(t *testing.T) {
 
 func TestPruneCLI(t *testing.T) {
 	dir := t.TempDir()
-	// Four "version" files with strictly increasing mtimes.
-	names := []string{"v1", "v2", "v3", "v4"}
+	// Four version files with strictly increasing mtimes.
+	names := []string{vf("1.0.1"), vf("1.0.2"), vf("1.0.3"), vf("1.0.4")}
 	for i, n := range names {
 		p := filepath.Join(dir, n)
-		if err := os.WriteFile(p, []byte(n), 0o644); err != nil {
+		if err := os.WriteFile(p, []byte(n), 0o755); err != nil {
 			t.Fatal(err)
 		}
 		mt := time.Unix(int64(1000+i*100), 0)
@@ -702,13 +679,13 @@ func TestPruneCLI(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	pruneCLI(dir, 2) // keep the 2 newest (v3, v4)
-	for _, n := range []string{"v1", "v2"} {
+	pruneCLI(dir, 2, "") // keep the 2 newest
+	for _, n := range names[:2] {
 		if isRegularFile(filepath.Join(dir, n)) {
 			t.Errorf("%s should have been pruned", n)
 		}
 	}
-	for _, n := range []string{"v3", "v4"} {
+	for _, n := range names[2:] {
 		if !isRegularFile(filepath.Join(dir, n)) {
 			t.Errorf("%s should have been kept", n)
 		}
@@ -718,8 +695,8 @@ func TestPruneCLI(t *testing.T) {
 // runInstall's prune step is gated on an install having actually succeeded.
 // A cache-hit run neither sweeps orphans nor prunes, and a FAILED
 // install sweeps but does not prune (probe-measured at 5db5e4a). A keep of 0
-// prunes every entry (cells K0a and K0b, 89cb6289). A negative keep ends the
-// run with exit code 2 (TestInstallNegativeKeep).
+// prunes every older version file, and the new CLI stays (cells L5, M2a and
+// W4a, 5fd08069).
 //
 // This test previously drove runInstall with an already-present CLI and asserted
 // that it pruned — encoding claustrum's divergence. It now exercises the guard on
@@ -727,7 +704,7 @@ func TestPruneCLI(t *testing.T) {
 func TestRunInstallHonorsCliKeepGuard(t *testing.T) {
 	mk := func(t *testing.T, dir, name string, ageSec int) {
 		t.Helper()
-		p := filepath.Join(dir, name)
+		p := filepath.Join(dir, vf(name))
 		if err := os.WriteFile(p, fakeCLI(t, 0), 0o755); err != nil {
 			t.Fatal(err)
 		}
@@ -757,15 +734,15 @@ func TestRunInstallHonorsCliKeepGuard(t *testing.T) {
 	// Version-style names (with a dot) so a present CLI is actually runnable on
 	// Windows too — exec there only resolves paths carrying an extension, and an
 	// extensionless name would silently take the not-present branch.
-	t.Run("keep0_prunes_everything", func(t *testing.T) {
+	t.Run("keep0_prunes_every_older_version", func(t *testing.T) {
 		dir := t.TempDir()
 		mk(t, dir, "3.0.0", 30)
 		mk(t, dir, "2.0.0", 20)
 		mk(t, dir, "1.0.0", 10)
 		f := captureInstallFacts(t, installOpts{
 			cliDir: dir, cliVersion: "9.0.0", cliZst: blob(t), cliKeep: keepZero})
-		if n := count(t, dir); n != 0 {
-			t.Errorf("keep=0 left %d files, want 0 (cell C-13)", n)
+		if n := count(t, dir); n != 1 || !isRegularFile(installCLIPath(dir, "9.0.0")) {
+			t.Errorf("keep=0 left %d files, want the new CLI only (cell L5)", n)
 		}
 		if f.CliError != "" || f.CliPath != installCLIPath(dir, "9.0.0") {
 			t.Errorf("cliError %q, cliPath %q: want the result line of a good install", f.CliError, f.CliPath)
@@ -792,10 +769,6 @@ func TestRunInstallHonorsCliKeepGuard(t *testing.T) {
 		mk(t, dir, "3.0.0", 30)
 		mk(t, dir, "2.0.0", 20)
 		mk(t, dir, "1.0.0", 10)
-		// The present CLI carries the file name of this system (4.0.0.exe on Windows).
-		if err := os.Rename(filepath.Join(dir, "4.0.0"), installCLIPath(dir, "4.0.0")); err != nil {
-			t.Fatal(err)
-		}
 		f := captureInstallFacts(t, installOpts{cliDir: dir, cliVersion: "4.0.0", cliKeep: 2})
 		if !f.CliWasPresent {
 			t.Fatal("fixture did not take the cache-hit branch")
@@ -807,13 +780,13 @@ func TestRunInstallHonorsCliKeepGuard(t *testing.T) {
 }
 
 // TestSweepFetchTemps pins the orphan sweep against a fixed "now", so the ages
-// are exact and no test sleeps. The rules, measured on a Linux VM against
-// 4534d86 through f6010b97:
+// are exact and no test sleeps. The rules:
 //   - A swept name goes only when its mtime is more than 600 s old. 599 s stays,
-//     601 s goes, and a future mtime stays.
-//   - Files and EMPTY directories follow the same rule. A POPULATED
-//     ".fetch-dir/" stays at every age, because os.Remove never recurses.
-//   - The names are ".fetch-*" and "*.zst", case-sensitive, bare forms included.
+//     601 s goes, and a future mtime stays (Linux VM, 4534d86 through f6010b97).
+//   - Only a regular file goes. An empty folder ".fetch-9" and a folder
+//     ".fetch-e" with content stay (5fd08069, cells L8, M3a and W5).
+//   - The names are ".fetch-<digits>" and "<version>.zst", case-sensitive
+//     (5fd08069, the same cells).
 func TestSweepFetchTemps(t *testing.T) {
 	dir := t.TempDir()
 	now := time.Now()
@@ -840,22 +813,28 @@ func TestSweepFetchTemps(t *testing.T) {
 		}
 		age(name, at)
 	}
-	write(".fetch-old", old)
-	write(".fetch-young", young)
-	write(".fetch-future", future)
-	write("old.zst", old)
-	write("young.zst", young)
-	write(".fetch-", old) // the bare prefix
-	write(".zst", old)    // the bare suffix
-	mkdir(".fetch-empty", old)
-	mkdir("empty.zst", young)
-	if err := os.Mkdir(filepath.Join(dir, ".fetch-full"), 0o755); err != nil {
+	write(".fetch-1", old)
+	write(".fetch-2", young)
+	write(".fetch-3", future)
+	write("1.0.0.zst", old)
+	write("1.0.1.zst", young)
+	mkdir(".fetch-4", old)
+	mkdir("1.0.2.zst", old)
+	if err := os.Mkdir(filepath.Join(dir, ".fetch-5"), 0o755); err != nil {
 		t.Fatal(err)
 	}
-	write(filepath.Join(".fetch-full", "inner"), old)
-	age(".fetch-full", old) // after the inner write, which moved the dir's mtime
+	write(filepath.Join(".fetch-5", "inner"), old)
+	age(".fetch-5", old) // after the inner write, which moved the dir's mtime
 	// Names the sweep never claims, all old enough to go if it did.
-	controls := []string{"1.0.0", ".FETCH-u", "a.ZST", "x.fetch-y", "fetch-z", ".fetchq", "a.zst.bak", "zst"}
+	controls := []string{"1.0.0", ".fetch-", ".zst", ".fetch-old", "old.zst",
+		"x.fetch-1", "fetch-1", ".fetch1", "1.0.0.zst.bak", "zst"}
+	// On a folder that ignores letter case, ".FETCH-1" names the file
+	// ".fetch-1". The letter-case controls run only where the case counts.
+	if folderIsCaseSensitive(t) {
+		controls = append(controls, ".FETCH-1", "1.0.0.ZST")
+	} else {
+		t.Log("the temp folder ignores letter case: the letter-case controls do not run")
+	}
 	for _, c := range controls {
 		write(c, old)
 	}
@@ -870,21 +849,26 @@ func TestSweepFetchTemps(t *testing.T) {
 	for _, e := range ents {
 		got[e.Name()] = true
 	}
-	for _, gone := range []string{".fetch-old", "old.zst", ".fetch-", ".zst", ".fetch-empty"} {
+	for _, gone := range []string{".fetch-1", "1.0.0.zst"} {
 		if got[gone] {
 			t.Errorf("%s (601 s old) survived the sweep", gone)
 		}
 	}
-	for _, kept := range []string{".fetch-young", "young.zst", "empty.zst"} {
+	for _, kept := range []string{".fetch-2", "1.0.1.zst"} {
 		if !got[kept] {
 			t.Errorf("%s (599 s old) was swept; only entries more than 600 s old go", kept)
 		}
 	}
-	if !got[".fetch-future"] {
-		t.Error(".fetch-future (mtime in the future) was swept; a future mtime is not old")
+	if !got[".fetch-3"] {
+		t.Error(".fetch-3 (mtime in the future) was swept; a future mtime is not old")
 	}
-	if !got[".fetch-full"] || !isRegularFile(filepath.Join(dir, ".fetch-full", "inner")) {
-		t.Error(".fetch-full or its file was removed; a populated directory must survive at every age")
+	for _, kept := range []string{".fetch-4", "1.0.2.zst", ".fetch-5"} {
+		if !got[kept] {
+			t.Errorf("the folder %s was swept; only a regular file goes", kept)
+		}
+	}
+	if !isRegularFile(filepath.Join(dir, ".fetch-5", "inner")) {
+		t.Error("the file in .fetch-5 was removed")
 	}
 	for _, c := range controls {
 		if !got[c] {
@@ -900,7 +884,7 @@ func TestSweepFetchTemps(t *testing.T) {
 func TestPruneBudgetIgnoresOrphans(t *testing.T) {
 	dir := t.TempDir()
 	for i, name := range []string{"1.0.0", "2.0.0", "3.0.0", "4.0.0"} {
-		p := filepath.Join(dir, name)
+		p := filepath.Join(dir, vf(name))
 		if err := os.WriteFile(p, fakeCLI(t, 0), 0o755); err != nil {
 			t.Fatal(err)
 		}
@@ -937,7 +921,7 @@ func TestPruneBudgetIgnoresOrphans(t *testing.T) {
 		left = append(left, e.Name())
 	}
 	sort.Strings(left)
-	want := []string{"3.0.0", "4.0.0", "5.0.0" + cliExeSuffix}
+	want := []string{".fetch-a", ".fetch-b", ".fetch-c", vf("3.0.0"), vf("4.0.0"), vf("5.0.0")}
 	if len(left) != len(want) {
 		t.Fatalf("cli-dir = %v, want %v (orphans must not consume the keep budget); install result: %+v", left, want, facts)
 	}
@@ -1123,11 +1107,26 @@ func TestEnsureCLIURLVerifiesUnconditionally(t *testing.T) {
 		{"empty checksum", ""},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
+			// A folder with content at the CLI path. The body decompresses into
+			// the staging file. The checksum comes before the clear and the
+			// rename, so the folder and its file stay (claustrum's own reading).
+			cliPath := filepath.Join(t.TempDir(), "1.0.0")
+			inner := filepath.Join(cliPath, "inner.txt")
+			if err := os.Mkdir(cliPath, 0o700); err != nil {
+				t.Fatal(err)
+			}
+			if err := os.WriteFile(inner, []byte("keep"), 0o600); err != nil {
+				t.Fatal(err)
+			}
 			o := installOpts{cliURL: srv.URL + "/claude.zst", cliChecksum: tc.checksum}
-			err := ensureCLI(o, filepath.Join(t.TempDir(), "1.0.0"))
-			if err == nil || !strings.Contains(err.Error(), "checksum mismatch") {
+			err := ensureCLI(o, cliPath)
+			if err == nil || !strings.HasPrefix(err.Error(), "checksum mismatch: ") {
 				t.Errorf("download with %s = %v, want a checksum-mismatch error", tc.name, err)
 			}
+			if !isRegularFile(inner) {
+				t.Error("the folder at the CLI path was cleared before the checksum passed")
+			}
+			assertNoStagingLeftover(t, cliPath)
 		})
 	}
 }
@@ -1155,25 +1154,20 @@ func TestEnsureCLIErrorWrapping(t *testing.T) {
 	if !isRegularFile(badZst) {
 		t.Error("a blob that failed to decompress was consumed; it must be kept")
 	}
-	// A DIRECTORY at -cli-zst must still report "opening input:", and this is the
-	// case an os.Open alone does not catch: open succeeds on a directory on both
-	// Unix and Windows, EISDIR arriving only on the first Read. Asserted WITHOUT a
-	// -cli-checksum because that is the default -cli-zst shape (the reference never
-	// verifies that blob); with a checksum, sha256File's read would have caught it
-	// anyway, which is why the gap survived.
+	// A DIRECTORY at -cli-zst opens, and its read error comes from the decoder.
+	// On 5fd08069 the text is "decompressing: read <p>: is a directory" (cell
+	// L13, Linux VM). Other systems get a prefix check only.
 	asDir := filepath.Join(dir, "adir.zst")
 	if err := os.Mkdir(asDir, 0o755); err != nil {
 		t.Fatal(err)
 	}
+	want := "decompressing: read " + asDir + ": is a directory"
 	if err := ensureCLI(installOpts{cliZst: asDir}, filepath.Join(dir, "out3")); err == nil ||
-		!strings.HasPrefix(err.Error(), "opening input:") {
-		t.Errorf("directory as zst = %v, want an 'opening input:' error", err)
+		!strings.HasPrefix(err.Error(), "decompressing: ") || (runtime.GOOS == "linux" && err.Error() != want) {
+		t.Errorf("directory as zst = %v, want %q", err, want)
 	}
-	// An EMPTY blob must NOT be rejected by that one-byte read: os.ReadFile
-	// succeeded on one, so io.EOF has to stay a non-failure. Measured, it gets all
-	// the way past decompress (an empty zstd stream yields no bytes) and fails at
-	// the runnability check — so the assertion is that it is NOT "opening input:",
-	// which is exactly the regression treating io.EOF as an error would cause.
+	// An EMPTY blob gets past the open. An empty zstd stream yields no bytes, so
+	// it fails at the runnability check, not with "opening input:".
 	emptyZst := filepath.Join(dir, "empty.zst")
 	if err := os.WriteFile(emptyZst, nil, 0o644); err != nil {
 		t.Fatal(err)
@@ -1181,62 +1175,6 @@ func TestEnsureCLIErrorWrapping(t *testing.T) {
 	if err := ensureCLI(installOpts{cliZst: emptyZst}, filepath.Join(dir, "out4")); err == nil ||
 		strings.HasPrefix(err.Error(), "opening input:") {
 		t.Errorf("empty zst = %v, want a later failure, not 'opening input:'", err)
-	}
-}
-
-// The download blob must be invisible to BOTH cli-dir housekeeping passes, and
-// they fail differently. If the sweep claims it, a concurrent install removes the
-// blob the errStagingVanished retry re-reads — and can fail the first attempt
-// outright by landing between fetchToFile and zstdDecompress. If the prune
-// censuses it, the blob sorts newest, takes a -cli-keep slot and evicts a real
-// version. Escaping only the sweep converts the first failure into the second,
-// which is why this asserts both.
-func TestDownloadBlobSurvivesHousekeeping(t *testing.T) {
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		_, _ = w.Write([]byte("payload"))
-	}))
-	defer srv.Close()
-
-	dir := t.TempDir()
-	blobPath, _, err := fetchToFile(srv.URL, dir)
-	if err != nil {
-		t.Fatalf("fetchToFile: %v", err)
-	}
-	defer func() { _ = os.Remove(blobPath) }()
-
-	if isSweptName(filepath.Base(blobPath)) {
-		t.Fatalf("download blob %q matches isSweptName; the sweep would delete it", filepath.Base(blobPath))
-	}
-	// Belt and braces: run the real sweep and confirm the blob survives it, aged
-	// well past the sweep's gate so the name alone is what spares it.
-	hourAgo := time.Now().Add(-time.Hour)
-	if err := os.Chtimes(blobPath, hourAgo, hourAgo); err != nil {
-		t.Fatal(err)
-	}
-	sweepFetchTemps(dir, time.Now())
-	if !isRegularFile(blobPath) {
-		t.Errorf("sweepFetchTemps removed the download blob %q", blobPath)
-	}
-
-	// Surviving the sweep is only half of it. pruneCLI skips the sweep's names
-	// and the blob prefix, and counts every other entry.
-	// A blob it counted sorts to the front as newest, takes a -cli-keep slot and
-	// evicts a real version instead.
-	realVersion := filepath.Join(dir, "1.0.0")
-	if err := os.WriteFile(realVersion, []byte("cli"), 0o755); err != nil {
-		t.Fatal(err)
-	}
-	// Make the blob the NEWEST entry, which is the in-flight-download case.
-	now := time.Now()
-	if err := os.Chtimes(realVersion, now.Add(-time.Hour), now.Add(-time.Hour)); err != nil {
-		t.Fatal(err)
-	}
-	pruneCLI(dir, 1)
-	if !isRegularFile(realVersion) {
-		t.Error("pruneCLI evicted the real version; the download blob took its -cli-keep slot")
-	}
-	if !isRegularFile(blobPath) {
-		t.Errorf("pruneCLI removed the download blob %q, which a retry would re-read", blobPath)
 	}
 }
 
@@ -1294,10 +1232,9 @@ func TestRunInstallFacts(t *testing.T) {
 }
 
 // keepZero is a -cli-keep of 0 for the two capture helpers. A keep of 0 prunes
-// every entry (cells K0a and K0b). A test that leaves cliKeep unset wants no
-// prune, so testKeep turns the unset value into the largest count, with which
-// the prune removes nothing. A negative value is not an option for that: it
-// ends the run with exit code 2 (cells Kneg).
+// every older version file (cells L5, M2a and W4a). A test that leaves cliKeep
+// unset wants no prune, so testKeep turns the unset value into the largest
+// count, with which the prune removes nothing. A negative value counts as 0.
 const keepZero = math.MinInt
 
 func testKeep(o installOpts) installOpts {
@@ -1410,7 +1347,7 @@ func TestDownloadStallErrorWording(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		w.Header().Set("Content-Length", "1000000")
 		w.WriteHeader(http.StatusOK)
-		_, _ = w.Write([]byte("abcd")) // 4 bytes, then go silent
+		_, _ = w.Write(zstdOf(t, []byte("payload"))[:4]) // 4 bytes, then go silent
 		if f, ok := w.(http.Flusher); ok {
 			f.Flush()
 		}
@@ -1478,19 +1415,12 @@ func TestDetectLibcRunsLddWhenLoaderGlobDoesNotMatch(t *testing.T) {
 	}
 }
 
-// The CONSUME side of the boundary: once decompression has produced a staged
-// file, the uploaded blob is consumed even though the install then fails.
+// The CONSUME side of the boundary: once the new CLI is in place, the uploaded
+// blob is consumed even though the install then fails.
 //
 // Measured 2026-08-02 against 5db5e4a across four fixtures — a runnable CLI
 // (consumed, the control), one that exits 1 (consumed), a blob that is not valid
 // zstd (kept), and an absent blob. claustrum kept the blob on row two.
-//
-// This is the only cell that discriminates. Every other -cli-zst test either
-// fails before decompression (where consume-on-success and consume-on-decompress
-// agree) or succeeds outright (where they also agree), which is why the fix
-// shipped uncovered until a mutant run went looking. Exit code 1 is the load
-// bearing choice: it is the one post-decompress failure provokable without
-// permission games that break the Windows leg.
 func TestEnsureCLIConsumesBlobWhenExtractedCLIIsNotRunnable(t *testing.T) {
 	dir := t.TempDir()
 	zstFile := filepath.Join(dir, "cli.zst")
@@ -1504,31 +1434,24 @@ func TestEnsureCLIConsumesBlobWhenExtractedCLIIsNotRunnable(t *testing.T) {
 		t.Fatalf("want a not-runnable error, got %v", err)
 	}
 	if isRegularFile(zstFile) {
-		t.Error("the blob must be consumed once decompression succeeded — " +
+		t.Error("the blob must be consumed once the new CLI is in place — " +
 			"the reference consumes it even when the extracted CLI does not run")
 	}
 }
 
-// The OTHER post-decompress failure: chmod fails after the staged file exists.
-//
-// docs/PROTOCOL.md records the window between decompress and rename as sitting
-// on the consumed side "by construction, not by observation" — because no
-// fixture provokes it. A permission game would provoke it on unix and be a no-op
-// on the Windows leg (os.Chmod there only toggles a read-only attribute), which
-// is the fixture trap this repo has hit three times, so the failure is injected
-// through the chmodStaged seam instead. That keeps the test identical on every
-// OS and turns the one unobserved cell of the boundary into an observed one.
-func TestEnsureCLIConsumesBlobWhenChmodFails(t *testing.T) {
+// A failed chmod of the staging file keeps the -cli-zst blob. On 5fd08069 every
+// failure before the new CLI is in place keeps it (cells L3, L12, M5, W1 and
+// W6). The chmod failure itself is claustrum's own (not measured). The failure
+// is injected through the chmodStaged seam, so the test is identical on every
+// OS.
+func TestEnsureCLIKeepsBlobWhenChmodFails(t *testing.T) {
 	old := chmodStaged
 	chmodStaged = func(string, os.FileMode) error { return errors.New("chmod refused") }
 	t.Cleanup(func() { chmodStaged = old })
 
 	dir := t.TempDir()
 	zstFile := filepath.Join(dir, "cli.zst")
-	// A CLI that WOULD run: the failure must come from chmod, not runnability,
-	// or this test would duplicate the sibling above instead of covering a new
-	// branch.
-	if err := os.WriteFile(zstFile, zstdOf(t, fakeCLI(t, 0)), 0o644); err != nil {
+	if err := os.WriteFile(zstFile, zstdOf(t, []byte("#\n")), 0o644); err != nil {
 		t.Fatal(err)
 	}
 
@@ -1536,12 +1459,9 @@ func TestEnsureCLIConsumesBlobWhenChmodFails(t *testing.T) {
 	if err == nil || !strings.Contains(err.Error(), "chmod refused") {
 		t.Fatalf("want the injected chmod error, got %v", err)
 	}
-	if isRegularFile(zstFile) {
-		t.Error("the blob must be consumed: decompression had already produced a " +
-			"staged file, which is the side of the boundary this branch is on")
+	if !isRegularFile(zstFile) {
+		t.Error("the blob was consumed by an install that failed before the rename")
 	}
-	// And the staging file must not survive the failure — the same cleanup the
-	// not-runnable branch does.
 	assertNoStagingLeftover(t, filepath.Join(dir, "out.exe"))
 }
 
@@ -1570,15 +1490,16 @@ func captureInstallOutput(t *testing.T, o installOpts) string {
 // VM against f6010b97 with three real CLIs (72 h, 48 h, 24 h old), a ".fetch-o"
 // and an "x.zst", and one install of 2.0.0 with -cli-keep 3. With the litter
 // fresh, the reference keeps 1.1.0, 1.2.0, 2.0.0 and the litter. With the litter
-// 601 s old (the control), the sweep takes it and the same three CLIs stay.
+// 601 s old (the control), the sweep takes it and the same three CLIs stay. The
+// litter names here are those that the sweep of 5fd08069 claims.
 func TestPruneIgnoresFreshSweepLitter(t *testing.T) {
 	for _, tc := range []struct {
 		name string
 		age  time.Duration
 		want []string
 	}{
-		{"fresh litter", 0, []string{".fetch-o", "1.1.0", "1.2.0", "2.0.0" + cliExeSuffix, "x.zst"}},
-		{"601 s litter (control)", 601 * time.Second, []string{"1.1.0", "1.2.0", "2.0.0" + cliExeSuffix}},
+		{"fresh litter", 0, []string{".fetch-1", vf("1.1.0"), vf("1.2.0"), "1.9.0.zst", vf("2.0.0")}},
+		{"601 s litter (control)", 601 * time.Second, []string{vf("1.1.0"), vf("1.2.0"), vf("2.0.0")}},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			dir := filepath.Join(t.TempDir(), "cli")
@@ -1597,11 +1518,11 @@ func TestPruneIgnoresFreshSweepLitter(t *testing.T) {
 					t.Fatal(err)
 				}
 			}
-			put("1.0.0", fakeCLI(t, 0), 72*time.Hour)
-			put("1.1.0", fakeCLI(t, 0), 48*time.Hour)
-			put("1.2.0", fakeCLI(t, 0), 24*time.Hour)
-			put(".fetch-o", nil, tc.age)
-			put("x.zst", nil, tc.age)
+			put(vf("1.0.0"), fakeCLI(t, 0), 72*time.Hour)
+			put(vf("1.1.0"), fakeCLI(t, 0), 48*time.Hour)
+			put(vf("1.2.0"), fakeCLI(t, 0), 24*time.Hour)
+			put(".fetch-1", nil, tc.age)
+			put("1.9.0.zst", nil, tc.age)
 			blob := filepath.Join(t.TempDir(), "cli.zst")
 			if err := os.WriteFile(blob, zstdOf(t, fakeCLI(t, 0)), 0o600); err != nil {
 				t.Fatal(err)
@@ -1789,4 +1710,15 @@ func TestDetectLibcZeroTimeoutIsUnbounded(t *testing.T) {
 			t.Errorf("detectLibcWith(%v) = %q, want musl (no deadline armed)", d, got)
 		}
 	}
+}
+
+// folderIsCaseSensitive reports whether a new temp folder tells "a" from "A".
+func folderIsCaseSensitive(t *testing.T) bool {
+	t.Helper()
+	dir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(dir, "a"), nil, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	_, err := os.Stat(filepath.Join(dir, "A"))
+	return os.IsNotExist(err)
 }

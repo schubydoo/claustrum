@@ -60,7 +60,7 @@ There is one binary. A flag selects the mode (`main.go`): `-serve`, `-bridge`,
 | `metrics.go` | opt-in Prometheus counters at `/metrics`. The `-metrics-addr` flag creates the listener. Without that flag there is no listener. Counting is always-on atomics |
 | `wirelog.go` | opt-in `-wire-log` JSON-RPC frame capture. It is a pure side channel over already-marshaled bytes, and it is off by default. It redacts credentials by key only, not by payload contents. It forces `0600` on every open |
 | `gitshadow*.go` · `worktreestaging.go` · `gitworktreeconfig.go` | the settings copy of the git methods, as on `5fd08069`. `gitshadow.go` has the state, the member `settingsControl` of `git.info`, the folder of one daemon under `<socket folder>/git-shadow` and the start test. The lock of that folder is in `gitshadow_unix.go` and `gitshadow_windows.go`. `gitshadowprobe.go` has the call that asks git about a repository. `gitshadowrepo.go` has the folder of one repository, and `gitshadowconfig.go` the text of the copied settings file. `gitshadowuse.go` has the folder variables of the git calls and the `worktree add` steps on Linux and macOS. `worktreestaging.go` has the Windows create: the folder `.s<n>`, the staging folder with its rename, and the cleanup of old staging entries. `gitworktreeconfig.go` has the `config.worktree` items and the file of a new worktree |
-| `install.go` | `-install`: CLI download / verify (SHA-256) / extract (zstd) / prune. A `-cli-url` download is verified unconditionally. If a `-cli-checksum` is supplied, claustrum also verifies the local `-cli-zst` blob, as the reference does. The compare is case-sensitive |
+| `install.go` | `-install`: CLI download / extract (zstd) / verify (SHA-256) / prune. A `-cli-url` download is verified unconditionally. If a `-cli-checksum` is supplied, claustrum also verifies the local `-cli-zst` blob, as the reference does. The compare is case-sensitive |
 | `*_unix.go` / `*_windows.go` · `pipetransport*.go` | OS specifics (daemonize, process groups on Unix, login-shell PATH) and the opt-in, default-off, Windows-only `-listen-pipe` named-pipe transport (CT-5). On Windows a kill ends the direct child only, and no child is in a job of the daemon. The daemon starts outside the job of its launcher. If that job refuses, the daemon starts inside it and the launcher logs one line. `-keep-children` works on Windows as claustrum's own flag: `89cb6289` exits 2 on it |
 
 The JSON-RPC surface is identical on every OS. Full internals →
@@ -369,55 +369,35 @@ The JSON-RPC surface is identical on every OS. Full internals →
       removed. The reference does both (Linux, macOS and Windows VMs). Do not
       widen either delete, and do not build either path from anything but the
       cli-dir.
-      `-install` also sweeps the cli-dir. The sweep is one plain `os.Remove`
-      for each entry named `.fetch-*` or `*.zst` that is more than 10 minutes
-      old, never as a tree. It runs before the run of a new CLI and after a
-      failed attempt. On a cache hit it runs only after a `--version` run that
-      its bound stopped. A cache hit with a good run does not sweep (cells Z8
-      of `89cb6289`, Linux, macOS and Windows VMs). The sweep after a stopped
-      run is outside `ensureCLI`, so no D6 test comes before it. Cell P6
-      (Linux VM) shows that sweep. The sweep also runs after a D6 refusal. In cell P5 (Linux VM,
-      `-cli-version ../x`) a `.fetch-d` file that is 20 minutes old goes on
-      claustrum and on `89cb6289`. The sweep names only
-      the cli-dir, never the version. A second sweep removes an entry named
-      `*.zst.part` that is more than 7 days old, with the same plain
-      `os.Remove`. It runs once, before any CLI runs, also on a cache hit
-      (cells Z1 and Z4b on Linux, macOS and Windows VMs). So
-      no D6 test comes before it either, and it names only the cli-dir. In
-      cell P5 an 8 day old `p.zst.part` file goes too. A CLI file whose name
-      ends in `.zst.part` goes in that sweep at more than 7 days, and the run
-      installs the version again (cells P4 and P4c, Linux VM). A
-      name that ends in `.zst.part` follows this rule alone, also with the
-      `.fetch-` prefix (cells Z2 and Z5, the same three systems).
+      `-install` also sweeps the cli-dir. Each sweep is one plain `os.Remove`
+      for each regular file with its name, never as a tree. A folder and a
+      link (from the code) stay. The 10 minute sweep takes `.fetch-<digits>` and
+      `<version>.zst`. It runs before the run of a new CLI, after a failed
+      attempt and after a D6 refusal. On a cache hit it runs only after a
+      `--version` run that its bound stopped (cell P6 of `89cb6289`). The 7
+      day sweep takes `<version>.zst.part`. It runs once, before any CLI runs,
+      also on a cache hit (cell L9 of `5fd08069`). They name only the cli-dir,
+      never the version. Neither
+      sweep removes the `-cli-zst` blob. The names are measured on `5fd08069`
+      (cells L8, M3a and W5, Linux, macOS and Windows VMs).
       The `-cli-keep` prune runs after a good install only, so after D6. It
-      is one plain `os.Remove` for each entry of the cli-dir past the keep
-      count, in the order of the mtime, never as a tree. A file, a link and
-      an empty folder go. A folder with content stays and takes its place in
-      the order, and a link goes as a
-      link. The new CLI has no protection in the prune. It goes when enough
-      entries are newer, and with `-cli-keep 0` every counted entry goes.
-      `89cb6289` does the same (rows C-1, C-2, C-7 and C-11 on Linux and
-      macOS VMs, cell C-11dir on a Windows VM, cells K0a, K0b and F2 on all
-      three). With a negative `-cli-keep` no prune runs. A good install then
-      prints no result line and exits 2, as on `89cb6289` (cells Kneg and
-      Kn-2, all three systems). The stderr text there is claustrum's own
-      line, by the maintainer's decision of 2026-10-07. The prune does not
-      count the sweep's names, a `*.zst.part` name or a `.blob-` name, and it
-      removes none of them. `89cb6289` counts a planted `.blob-` file (cell
-      C-12, Windows VM) and removes it (cells B1, all three systems). That
-      difference is D18. Do not turn a remove of the
-      prune into a tree delete.
+      is one plain `os.Remove` for each version file past the keep count, in
+      the order of the mtime, never as a tree. A version file is a regular
+      file with a version name and an exec bit, or `<version>.exe` on
+      Windows. Every other entry stays and takes no place. The new CLI always
+      stays, and a negative keep counts as 0. `5fd08069` does the same (cells
+      L4 to L6, M1, M2a, M2b, W3, W4a and W4b). Do not turn a remove of the
+      prune or the sweeps into a tree delete.
       The prune and the sweeps never remove the home folder. Each skips an
       entry of the cli-dir that is the home folder or holds it
       (`cliEntryHoldsHome`). A folder gets the tests of `folderHoldsHome`,
-      and every other kind gets `wipesHomeDir`. In the prune the skipped entry
-      still takes its place in the order. That guard is claustrum's own (D2).
-      `89cb6289` removes an empty home folder there (cells H1 and H3 on Linux,
-      macOS and Windows VMs).
+      and every other kind gets `wipesHomeDir`. That guard is claustrum's own
+      (D2).
       `-install` removes the `-cli-zst` blob, an operator-named path, with one
-      plain `os.Remove` once decompression succeeded. The home guard refusal
-      is the one exception: it keeps the blob. No guard runs before the remove
-      beyond that: the path was read as a zstd archive first.
+      plain `os.Remove` once the new CLI is in place, before it runs. Every
+      earlier failure keeps the blob, as on `5fd08069` (cells L3, L12, M5, W1
+      and W6). The chmod case is claustrum's own. No guard runs before the remove beyond that: the path was read
+      as a zstd archive first.
 
   `wipesHomeDir` refuses a target that is home or contains home. It resolves a
   relative path with `filepath.Abs` first. It still permits a path under home,
@@ -611,8 +591,8 @@ The JSON-RPC surface is identical on every OS. Full internals →
   Do not treat it as a wire contract. The tests provoke it through the
   `dispatchRequest` seam.
 - `-serve` makes no outbound network connections. `-install` reaches the network
-  only with `-cli-url`. That download path verifies its SHA-256 before it
-  extracts, unconditionally. Every dial `-serve` makes is to a local `AF_UNIX`
+  only with `-cli-url`. That download path verifies its SHA-256 before the new
+  CLI is put in place, unconditionally. Every dial `-serve` makes is to a local `AF_UNIX`
   socket, never network egress.
 - The `ldd` libc probe bounds ldd itself at 5 s (`lddProbeTimeout`), as on the
   reference since `19f30c46`. The direct `<cli> --version` run of `-install` is
@@ -656,9 +636,6 @@ Opting D5 in is wire-visible. From the code: the deadline also bounds the calls
 of the settings copy, which have a bound of 30 seconds of their own. A kill of
 a test call or of the call about the repository refuses the request. The Windows cleanup of old
 staging entries runs after a good add only.
-
-D13 is a non-flag divergence: verify-before-decompress ordering, on `-cli-url` and on a `-cli-zst` blob with a checksum. D13 is
-always-on, but it is unresolved, not justified.
 
 D17 is off-wire and macOS-only. The host cleaner reads an `lsof` run it gave
 up on at 17 s as busy (claustrum's own, not measured). It

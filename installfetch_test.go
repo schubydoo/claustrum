@@ -96,10 +96,12 @@ func TestInstallFetchMarshaling(t *testing.T) {
 	}
 }
 
-// fetchToFile aborts a stalled -cli-url download at the always-on read-idle
+// fetchCLI aborts a stalled -cli-url download at the always-on read-idle
 // timeout (4534d86 parity) and records the fetch stats. A 1s timeout keeps the
-// message ("no data for 1s after 4/...") realistic while staying fast.
-func TestFetchToFileAbortsOnReadIdleStall(t *testing.T) {
+// message ("no data for 1s after 4/...") realistic while staying fast. The 4
+// bytes are the start of a zstd archive, so the decoder waits for more. The
+// stall text wins over the answer of the decoder.
+func TestFetchCLIAbortsOnReadIdleStall(t *testing.T) {
 	oldIdle := installIdleTimeout
 	installIdleTimeout = time.Second
 	oldProg := installProgressInterval
@@ -110,7 +112,7 @@ func TestFetchToFileAbortsOnReadIdleStall(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		w.Header().Set("Content-Length", "1000000")
 		w.WriteHeader(http.StatusOK)
-		_, _ = w.Write([]byte("abcd")) // 4 bytes, then go silent
+		_, _ = w.Write(zstdOf(t, []byte("payload"))[:4]) // 4 bytes, then go silent
 		if f, ok := w.(http.Flusher); ok {
 			f.Flush()
 		}
@@ -122,9 +124,9 @@ func TestFetchToFileAbortsOnReadIdleStall(t *testing.T) {
 	defer close(block)
 
 	lastInstallFetch = nil
-	_, _, err := fetchToFile(srv.URL, t.TempDir())
-	if err == nil || !strings.Contains(err.Error(), "download stalled: no data for 1s after 4/") {
-		t.Fatalf("fetchToFile on a stall = %v, want a 'download stalled: no data for 1s after 4/...' error", err)
+	_, _, err := fetchCLI(srv.URL, t.TempDir())
+	if err == nil || !strings.HasPrefix(err.Error(), "download stalled: no data for 1s after 4/") {
+		t.Fatalf("fetchCLI on a stall = %v, want a 'download stalled: no data for 1s after 4/...' error", err)
 	}
 	if lastInstallFetch == nil || lastInstallFetch.Bytes != 4 {
 		t.Fatalf("fetch stats = %+v, want bytes=4", lastInstallFetch)
@@ -137,7 +139,7 @@ func TestFetchToFileAbortsOnReadIdleStall(t *testing.T) {
 // A completed -cli-url download records fetch stats (bytes = body length,
 // longestPauseMs 0 for a single fast read), and a slow-but-progressing body is
 // NOT aborted by the read-idle timeout (it is read-idle, not a total deadline).
-func TestFetchToFileRecordsStatsAndSurvivesSlowProgress(t *testing.T) {
+func TestFetchCLIRecordsStatsAndSurvivesSlowProgress(t *testing.T) {
 	oldIdle := installIdleTimeout
 	installIdleTimeout = time.Second
 	oldProg := installProgressInterval
@@ -148,9 +150,11 @@ func TestFetchToFileRecordsStatsAndSurvivesSlowProgress(t *testing.T) {
 	// under idle (4:1 margin, robust on a loaded CI runner), so every read resets the
 	// clock and the download completes — proving the abort is read-idle, not a total
 	// deadline.
+	blob := zstdOf(t, []byte("a body in five parts"))
+	part := (len(blob) + 4) / 5
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		for i := 0; i < 5; i++ {
-			_, _ = w.Write([]byte("xx"))
+			_, _ = w.Write(blob[min(i*part, len(blob)):min((i+1)*part, len(blob))])
 			if f, ok := w.(http.Flusher); ok {
 				f.Flush()
 			}
@@ -160,12 +164,12 @@ func TestFetchToFileRecordsStatsAndSurvivesSlowProgress(t *testing.T) {
 	defer srv.Close()
 
 	lastInstallFetch = nil
-	_, _, err := fetchToFile(srv.URL, t.TempDir())
+	_, _, err := fetchCLI(srv.URL, t.TempDir())
 	if err != nil {
 		t.Fatalf("slow-but-progressing download must not abort, got: %v", err)
 	}
-	if lastInstallFetch == nil || lastInstallFetch.Bytes != 10 {
-		t.Fatalf("fetch stats = %+v, want bytes=10", lastInstallFetch)
+	if lastInstallFetch == nil || lastInstallFetch.Bytes != int64(len(blob)) {
+		t.Fatalf("fetch stats = %+v, want bytes=%d", lastInstallFetch, len(blob))
 	}
 }
 
@@ -287,6 +291,9 @@ func TestInstallProgressPrintsOnlyChangedCounts(t *testing.T) {
 			if n := len(counts); n >= 2 && counts[n-1] == counts[n-2] {
 				counts = counts[:n-1]
 			}
+			// The decoder reads the 4 byte checksum at the end of the archive
+			// in a read of its own. A tick can fall right before it.
+			counts = slices.DeleteFunc(counts, func(c int64) bool { return c == int64(len(body))-4 })
 			want := []int64{0, int64(half), int64(len(body))}
 			if !slices.Equal(counts, want) {
 				t.Errorf("progress byte counts = %v, want %v (one line per changed count, not one per tick)", counts, want)
@@ -436,7 +443,7 @@ func TestInstallDownloadDeadlineKeepsItsText(t *testing.T) {
 	release := make(chan struct{})
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		w.Header().Set("Content-Length", "1000")
-		_, _ = w.Write([]byte("abcd"))
+		_, _ = w.Write(zstdOf(t, []byte("payload"))[:4])
 		w.(http.Flusher).Flush()
 		select {
 		case <-release:

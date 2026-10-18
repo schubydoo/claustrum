@@ -81,11 +81,12 @@ type installFacts struct {
 }
 
 func runInstall(o installOpts) {
-	// Reset the -cli-url download sink; fetchToFile fills it when a download is
+	// Reset the -cli-url download sink; fetchCLI fills it when a download is
 	// attempted, and it is read back into f.Fetch below (4534d86).
 	lastInstallFetch = nil
 	lastInstallFinal = nil
 	installSwept = false
+	installBlob = o.cliZst
 	// installManaged lives for this run only, so a later direct ensureCLI call
 	// (tests) never sees a stale launcher.
 	installManaged = nil
@@ -116,17 +117,19 @@ func runInstall(o installOpts) {
 			installManaged = &installManagedState{res: resolveManagedLauncher(f.CliPath)}
 		}
 
-		// An old "*.zst.part" entry goes before the CLI runs, on every path. On
-		// 89cb6289 it goes on a cache hit too (cells Z4b, Linux, macOS and
-		// Windows VMs).
+		// An old "<version>.zst.part" file goes before the CLI runs, on every
+		// path. On a good cache hit only this sweep runs (cell L9 of 5fd08069).
 		sweepZstParts(o.cliDir, time.Now())
 
 		// "present" requires the file to exist AND be runnable (real binary checks
 		// `<cli> --version`). A freshly downloaded CLI leaves cliWasPresent false.
 		// On Windows only <version>.exe counts. A file with the bare name counts
 		// for nothing (rows W02 to W05).
+		//
+		// With the launcher gate on, a file that is no program of this machine
+		// does not run, and the install runs over it (cliFileLooksRunnable).
 		checkErr := errCLINotRunnable
-		if isRegularFile(f.CliPath) {
+		if isRegularFile(f.CliPath) && (installManaged == nil || cliFileLooksRunnable(f.CliPath)) {
 			checkErr = installCLICheck(f.CliPath, false)
 		}
 		var stopped *cliStoppedError
@@ -142,18 +145,9 @@ func runInstall(o installOpts) {
 		} else if checkErr == nil {
 			// Cache hit with a good run: neither the orphan sweep nor the prune
 			// runs here, as on the reference. A stopped run is the branch above,
-			// and it sweeps. The "*.zst.part" sweep ran above.
-			//
-			// Cells Z8 of 89cb6289 (Linux, macOS and Windows VMs): on a cache hit
-			// with a good run, a file "x.zst" and a file ".fetch-d" that are 20
-			// minutes old both stay.
-			//
-			// The citation used to be "a cache-hit run with 4 versions and
-			// -cli-keep 3 left all four in place". That fixture supports the
-			// PRUNE half only — it contained no orphan litter, so it could not
-			// have observed a sweep either way. Re-probed with a `.fetch-orphan`
-			// and a `leftover.zst` present: both survive a cache hit, so the
-			// sweep half is now supported too. Value was right, citation was not.
+			// and it sweeps. The "<version>.zst.part" sweep ran above. On
+			// 5fd08069 a good cache hit removes only an old 1.0.0.zst.part, and
+			// .fetch-123 and 1.0.0.zst stay (cell L9, Linux VM).
 			f.CliWasPresent = true
 		} else {
 			err := ensureCLI(o, f.CliPath)
@@ -182,44 +176,22 @@ func runInstall(o installOpts) {
 			//	install, new CLI does not run  before the run   no
 			//
 			// stageAndInstall sweeps before the run of a new CLI and sets
-			// installSwept. Every other path sweeps here. The "*.zst.part"
+			// installSwept. Every other path sweeps here. The "<version>.zst.part"
 			// sweep is not in this table: it ran above, on every path.
 			if !installSwept {
 				sweepFetchTemps(o.cliDir, time.Now())
 			}
 			if err == nil {
-				// A negative keep value ends a good install after the new CLI is
-				// in place and before any entry goes (cells Kneg, -cli-keep -1,
-				// Linux, macOS and Windows VMs). On
-				// 89cb6289 the new CLI is in place, the -cli-zst blob is gone
-				// and nothing is pruned. The exit code is 2, stdout has no
-				// result line, and stderr has a Go runtime error. claustrum
-				// matches the exit code and the missing result line. The one
-				// stderr line is claustrum's own (the maintainer's decision of
-				// 2026-10-07). Cells Kn-2 (-cli-keep -2, the same three systems)
-				// give the same exit code and no result line.
-				//
-				// This branch is not reached on a cache hit or after a failed
-				// install. There 89cb6289 prints the result line and exits 0 with
-				// an empty stderr, and so does claustrum (cells Kn-hit and
-				// Kn-fail, -cli-keep -1, Linux, macOS and Windows VMs).
-				//
-				// Not measured: a negative keep after a stopped run. claustrum
-				// prints the result line and exits 0 there.
-				if o.cliKeep < 0 {
-					fmt.Fprintf(os.Stderr, "claustrum: -cli-keep %d is not a valid keep count\n", o.cliKeep)
-					osExit(2)
-					return
-				}
-				// A keep of 0 prunes too (cells K0a and K0b, Linux, macOS and
-				// Windows VMs, 89cb6289).
-				pruneCLI(o.cliDir, o.cliKeep)
+				// A negative keep counts as 0. On 5fd08069 the result line
+				// follows with exit 0 and an empty stderr. The older version
+				// files go (cells L6, M2b and W4b, Linux, macOS and Windows).
+				pruneCLI(o.cliDir, o.cliKeep, filepath.Base(f.CliPath))
 			}
 		}
 	}
 
 	// The reference appends the fetch object whenever a -cli-url download ran (set by
-	// fetchToFile), including a cache hit that still downloaded is impossible — a
+	// fetchCLI), including a cache hit that still downloaded is impossible — a
 	// cache hit skips ensureCLI entirely, so lastInstallFetch stays nil there.
 	f.Fetch = lastInstallFetch
 	if installManaged != nil {
@@ -234,6 +206,12 @@ func runInstall(o installOpts) {
 // sweeps only when it is false, so one run sweeps once. A second sweep after a
 // long --version run removes an entry that passed the age gate during the run.
 var installSwept bool
+
+// installBlob is the -cli-zst blob of this -install run. runInstall sets it.
+// The sweeps skip the entry that is this file, so a failed install keeps its
+// blob. On 5fd08069 a blob C/1.0.0.zst that is 20 minutes old and no zstd
+// archive stays (cell L3, Linux VM).
+var installBlob string
 
 // cliDirError is a cli folder that cannot be made. Its text lands in cliError,
 // and runInstall answers an empty cliPath for it.
@@ -256,12 +234,9 @@ func ensureCLI(o installOpts, cliPath string) error {
 	// validateCLIVersion. Both are claustrum-only hardening.
 	//
 	// The two sweeps of the cli-dir are not behind this test. They name only the
-	// cli-dir, never the version. runInstall runs the "*.zst.part" sweep before
-	// this call, and the 10 minute sweep after this call answered the refusal.
-	// Cell P5 (Linux VM, -cli-version ../x): an 8 day old "p.zst.part" file and
-	// a 20 minute old ".fetch-d" file are gone on claustrum and on 89cb6289.
-	// claustrum answers the refusal, writes nothing and keeps the blob.
-	// 89cb6289 has no such rule and installs a file at <cli-dir>/../x.
+	// cli-dir, never the version. runInstall runs the "<version>.zst.part" sweep
+	// before this call, and the 10 minute sweep after this call answered the
+	// refusal.
 	//
 	// Guarding here rather than at the individual hazards gates every write and
 	// remove at such a path, not just the destructive one, and reports through
@@ -273,22 +248,23 @@ func ensureCLI(o installOpts, cliPath string) error {
 			return err
 		}
 	}
-	// blobPath is the .zst on disk. Nothing HERE reads it into memory: the local
-	// path uses the caller's file as-is, the download streams to a temp file, and
-	// both are hashed and decompressed in bounded passes. The download's temp is
-	// removed by a defer on that branch, so it cannot outlive the call.
+	// The source is decompressed straight into the staging file. Nothing reads
+	// the blob or the body into memory, and the checksum comes after the
+	// decompress, before the chmod, the clear and the rename (stageAndInstall).
+	// On 5fd08069 a -cli-url body that is no zstd archive answers the decoder
+	// text with a right and with a wrong checksum. fetch.bytes is the count
+	// that the decoder read (cells L15a and L15b, Linux VM). The -cli-zst blob
+	// with a checksum follows the same order. 7d193f89 through f6010b97 answer
+	// the decoder text there (Linux VM). It is not measured on 5fd08069.
 	//
-	// Measured with a 400 MiB incompressible blob (peak RSS from /proc VmHWM):
+	// Measured with a 400 MiB incompressible blob (peak RSS from /proc VmHWM),
+	// on the earlier path that wrote the download to a file first:
 	//
 	//	-cli-zst   410 MB -> 9 MB
 	//	-cli-url   886 MB -> 10 MB   (ReadAll peaked at ~2x the body while growing)
 	//
-	// After this, peak memory is flat in the blob size. Control: the same 400 MiB
-	// as zeros, a 14 KB blob, is 9 MB on both binaries — so the post-change number
-	// is baseline, not workload.
-	var blobPath, blobSum string
-	var blobIsTemp bool
-	var err error
+	// The streamed decode of -cli-url is not measured.
+	//
 	// On every cache miss the cli-dir is created FIRST, before the source check,
 	// before the blob is opened and before any network access. The reference
 	// creates the cli-dir (0700, with its parents) there. A Linux VM measured it
@@ -311,143 +287,123 @@ func ensureCLI(o installOpts, cliPath string) error {
 	if err := os.MkdirAll(filepath.Dir(cliPath), 0o700); err != nil {
 		return &cliDirError{err: err}
 	}
+	var stage func(dir string) (string, error)
 	switch {
 	case o.cliZst != "":
 		// SFTP fallback. If the caller supplies a -cli-checksum, the reference checks the blob
 		// against it since 7d193f89. 5db5e4a ignored it. A mismatch answers
 		// "checksum mismatch" and keeps the blob. An absent or empty checksum
-		// verifies nothing. claustrum hashes before it decompresses, which is
-		// the D13 ordering, so a corrupt blob with a wrong checksum answers
-		// "checksum mismatch" here where the reference answers "decompressing: ".
+		// verifies nothing.
 		//
-		// Opened and read one byte, purely to keep `opening input: ` attached to
-		// the same conditions os.ReadFile reported it for (missing, permission,
-		// is-a-directory). The read is not optional: os.Open SUCCEEDS on a
-		// directory on both Unix and Windows — EISDIR surfaces on the first Read —
-		// and os.ReadFile opened AND read, so an open alone would move
-		// `-cli-zst <dir>` to `decompressing: `. That is the DEFAULT -cli-zst
-		// shape (no -cli-checksum, which is what the reference does), and it is
-		// provokable with mkdir. One byte reproduces the condition in the same
-		// place with the OS's own wording. io.EOF is not a failure: os.ReadFile
-		// succeeds on an empty file.
-		//
-		// A mid-read I/O error still surfaces later, at decompress, as
-		// `decompressing: ` — an unprovoked path, recorded rather than claimed
-		// identical.
+		// A blob that cannot be opened answers "opening input: ". A folder opens,
+		// so its read error comes from the decoder: "decompressing: read <p>: is
+		// a directory" on 5fd08069 (cell L13, Linux VM).
 		f, oerr := os.Open(o.cliZst)
 		if oerr != nil {
 			return fmt.Errorf("opening input: %v", oerr)
 		}
-		_, rerr := f.Read(make([]byte, 1))
 		_ = f.Close()
-		if rerr != nil && !errors.Is(rerr, io.EOF) {
-			return fmt.Errorf("opening input: %v", rerr)
-		}
-		blobPath = o.cliZst
-		if o.cliChecksum != "" {
-			if blobSum, err = hashBlobFile(blobPath); err != nil {
-				return fmt.Errorf("opening input: %v", err)
-			}
-			if err := verifyChecksum(blobSum, o.cliChecksum); err != nil {
-				return err
-			}
-		}
+		stage = func(dir string) (string, error) { return stageBlob(o.cliZst, o.cliChecksum, dir) }
 	case o.cliURL != "":
-		// The temp lands in the cli-dir, created above, when it can. See
-		// fetchToFile for why a failure there falls back rather than erroring.
-		blobPath, blobSum, err = fetchToFile(o.cliURL, filepath.Dir(cliPath))
-		if err != nil {
-			// A status failure and a read-idle stall are already fully worded and go
-			// out bare; every other download error (a transport failure, the D10 cap,
-			// the D12 deadline, a disk error) takes the "download failed: " prefix. The
-			// reference's cliError is "download failed with status N" for a non-200 and
-			// the bare "download stalled: …" for a stall — prefixing the stall would
-			// emit "download failed: download stalled: …", a wire divergence on
-			// __INSTALL_RESULT__ (see httpStatusError, stalledError).
-			var se *httpStatusError
-			if errors.As(err, &se) {
-				return se
-			}
-			var st *stalledError
-			if errors.As(err, &st) {
-				return err
-			}
-			// A body read that ended with a transport error is fully worded too
-			// (row E07, see interruptedError).
-			var it *interruptedError
-			if errors.As(err, &it) {
-				return err
-			}
-			return fmt.Errorf("download failed: %v", err)
-		}
-		// The download blob is claustrum's own temp file. stageAndInstall removes
-		// it before the --version run of a new CLI. This defer covers every
-		// other path.
-		blobIsTemp = true
-		defer func() { _ = os.Remove(blobPath) }()
-		// Downloads are verified UNCONDITIONALLY — an empty -cli-checksum still
-		// fails ("checksum mismatch: expected=, actual=<sha>") — matching the
-		// reference. That string is verifyChecksum's own output, captured; the
-		// quote here used to read "expected= , actual=<sha>", which neither binary
-		// emits — it had a space that is not there and dropped the prefix.
-		//
-		// blobSum came from the download stream, so verifying costs no second read.
-		if err := verifyChecksum(blobSum, o.cliChecksum); err != nil {
-			return err
-		}
-		// The final progress line comes only after the checksum passes. Measured
-		// on a Linux VM against f6010b97, 5 of 5 runs per row: a good download
-		// prints bytes:0 then bytes:57, and a mismatch prints bytes:0 only.
-		emitFinalProgress()
+		stage = func(dir string) (string, error) { return stageDownload(o.cliURL, o.cliChecksum, dir) }
 	default:
 		return fmt.Errorf("cli %s missing and no --cli-url or --cli-zst provided", o.cliVersion)
 	}
 	// Stage, verify and install, retried ONCE if a concurrent install's sweep
 	// reclaimed our staging file. See stageAndInstall for when that can happen.
-	consumeBlob, err := stageAndInstall(blobPath, cliPath, blobIsTemp)
-	if err != nil && errors.Is(err, errStagingVanished) {
-		// Accumulate rather than overwrite. The answer is about the blob, not
-		// about an attempt: once one attempt says that the blob is consumed, the
-		// consume rule below holds for good. With a plain assignment, a retry
-		// that fails BEFORE its own decompress (a CreateTemp or write error)
-		// answers false and keeps a blob that the first attempt had already
-		// decompressed. That contradicts the rule stated right below.
-		//
-		// Not shown to be reachable: the sweep that triggers the retry removes
-		// `.fetch-*`, not the cli-dir, so a second-pass CreateTemp failure needs
-		// state the retry path does not itself produce. This is invariant
-		// hygiene, and it costs one variable.
-		retryConsume, retryErr := stageAndInstall(blobPath, cliPath, blobIsTemp)
-		consumeBlob = consumeBlob || retryConsume
-		err = retryErr
-	}
-	// The uploaded .zst blob is consumed once DECOMPRESSION SUCCEEDED — not only
-	// on a fully successful install.
-	//
-	// Measured against 5db5e4a with four fixtures, which bracket the boundary
-	// tightly around the decompress step. The "claustrum" column below is the
-	// PRE-FIX state that motivated this rule — it is what claustrum did before the
-	// consume condition was changed to key on decompression, NOT what it does now:
-	//
-	//	extracted CLI runs           reference consumed   claustrum consumed
-	//	extracted CLI exits 1        reference CONSUMED   claustrum kept  <- fixed
-	//	blob is not valid zstd       reference kept       claustrum kept
-	//	blob does not exist          nothing to consume on either
-	//
-	// Today claustrum consumes wherever decompression succeeded, so row two now
-	// matches the reference — which is the whole point of the change.
-	//
-	// So a failure BEFORE decompression succeeds leaves the blob alone, and a
-	// failure after it does not, with one exception: the home guard refusal
-	// (D2) keeps the blob. (Not "before the staged file exists": os.CreateTemp
-	// makes that file before zstdDecompress runs, so the bad-zstd row has a
-	// staged file and still keeps the blob.) The cliError strings are
-	// byte-identical on all four. The chmod failure and a failed clear sit on
-	// the consumed side by construction, not by observation.
-	if o.cliZst != "" && consumeBlob {
-		_ = os.Remove(o.cliZst)
+	// A download is not fetched again. Its staging file is new at the rename,
+	// so the age gate of the sweep keeps it (claustrum's own, not measured: a
+	// concurrent install can take a .fetch- file during a download with no
+	// output for 10 minutes).
+	err := stageAndInstall(cliPath, stage, o.cliZst)
+	if err != nil && errors.Is(err, errStagingVanished) && o.cliZst != "" {
+		err = stageAndInstall(cliPath, stage, o.cliZst)
 	}
 	return err
+}
+
+// stagingError is a staging file that cannot be made in the cli folder.
+type stagingError struct{ err error }
+
+func (e *stagingError) Error() string { return fmt.Sprintf("staging cli: %v", e.err) }
+
+// newStagingFile makes the empty staging file ".fetch-<random>" in dir.
+func newStagingFile(dir string) (string, error) {
+	f, err := os.CreateTemp(dir, ".fetch-*")
+	if err != nil {
+		return "", &stagingError{err: err}
+	}
+	_ = f.Close()
+	return f.Name(), nil
+}
+
+// stageBlob decompresses the -cli-zst blob into a new staging file in dir and
+// returns its path. With a checksum, the blob is verified after the
+// decompress. A failure removes the staging file.
+func stageBlob(blob, checksum, dir string) (string, error) {
+	tmp, err := newStagingFile(dir)
+	if err != nil {
+		return "", err
+	}
+	if err := zstdDecompress(blob, tmp); err != nil {
+		_ = os.Remove(tmp)
+		return "", fmt.Errorf("decompressing: %v", err)
+	}
+	if checksum != "" {
+		sum, err := hashBlobFile(blob)
+		if err != nil {
+			err = fmt.Errorf("opening input: %v", err)
+		} else {
+			err = verifyChecksum(sum, checksum)
+		}
+		if err != nil {
+			_ = os.Remove(tmp)
+			return "", err
+		}
+	}
+	return tmp, nil
+}
+
+// stageDownload downloads the -cli-url body into a new staging file in dir,
+// decompressed as it arrives, and returns its path. The body is verified
+// UNCONDITIONALLY after that. An empty -cli-checksum still fails
+// ("checksum mismatch: expected=, actual=<sha>"), as on the reference.
+func stageDownload(url, checksum, dir string) (string, error) {
+	tmp, sum, err := fetchCLI(url, dir)
+	if err != nil {
+		return "", downloadError(err)
+	}
+	if err := verifyChecksum(sum, checksum); err != nil {
+		_ = os.Remove(tmp)
+		return "", err
+	}
+	// The final progress line comes only after the checksum passes. Measured
+	// on a Linux VM against f6010b97, 5 of 5 runs per row: a good download
+	// prints bytes:0 then bytes:57, and a mismatch prints bytes:0 only.
+	emitFinalProgress()
+	return tmp, nil
+}
+
+// downloadError gives an error of fetchCLI its cliError form. Five kinds are
+// fully worded and go out bare. They are a status failure, a read-idle stall, a
+// broken body read, a refused archive and a staging failure. Every other
+// download error (a transport failure, the D10 cap, the D12 deadline) takes the
+// "download failed: " prefix. The reference's cliError is "download failed with
+// status N" for a non-200 and the bare "download stalled: …" for a stall (see
+// httpStatusError, stalledError). A body read that ended with a transport error
+// is row E07 (see interruptedError).
+func downloadError(err error) error {
+	var (
+		se *httpStatusError
+		st *stalledError
+		it *interruptedError
+		de *decompressError
+		sg *stagingError
+	)
+	if errors.As(err, &se) || errors.As(err, &st) || errors.As(err, &it) || errors.As(err, &de) || errors.As(err, &sg) {
+		return err
+	}
+	return fmt.Errorf("download failed: %v", err)
 }
 
 // cliVersionMarker is the name of the one file beside the cli-dir that
@@ -507,21 +463,26 @@ func clearNonFolderCLIDir(dir string) {
 // was removed by another process between its creation and the rename.
 var errStagingVanished = errors.New("staging file vanished")
 
-// stageAndInstall decompresses the blob to a staging file beside cliPath, puts
-// it at cliPath and then runs it. It follows the order of the reference,
-// measured on 89cb6289:
+// stageAndInstall makes the staging file with stage, puts it at cliPath and
+// then runs it. It follows the order of the reference, measured on 89cb6289:
 //
 //  1. What is at cliPath goes before the new CLI runs. A folder there is removed
 //     as a tree, with the file in it (row E11 on Linux and macOS, row E11b on
 //     Windows). A file there is replaced (row F14, Linux).
-//  2. The new CLI is at cliPath. The sweep has run, and the download blob is
+//  2. The new CLI is at cliPath. The sweep has run, and the -cli-zst blob is
 //     gone. The cli folder holds no `.fetch-` temp of this install (rows F01, F02
-//     and W01, on Linux, macOS and Windows).
+//     and W01, on Linux, macOS and Windows). On 5fd08069 the blob is gone when
+//     the new CLI runs (cells L11, M4 and W7, Linux, macOS and Windows VMs).
 //  3. `<cliPath> --version` runs. The CLI and a managed launcher get the final
 //     path (rows L06, L08 to L10).
 //  4. A stopped run keeps the new CLI (rows F05 to F11, F14, F15, L07, L09). A
 //     run that exits non-zero removes it and answers the "not runnable" text with
 //     the final path (rows F12 and G05).
+//
+// Every failure before step 2 keeps the -cli-zst blob. On 5fd08069 it stays
+// after an archive that is no zstd (cell L3) and a folder that cannot be
+// cleared (cells L12 and M5). It stays after a failed rename (cells W1 and W6).
+// claustrum keeps it after a failed chmod too (claustrum's own, not measured).
 //
 // The delete of step 1 is an os.RemoveAll of cliPath. The delete of step 4 is
 // an os.Remove of the file that this call put there. ensureCLI runs
@@ -547,67 +508,99 @@ var errStagingVanished = errors.New("staging file vanished")
 //
 // A concurrent install's sweep can remove the staging file once it is more than
 // ten minutes old (sweepMinAge). The loss shows at the rename, and the caller
-// retries once on errStagingVanished. The exposed window is decompress and
-// chmod. The download blob is outside isSweptName, so no sweep claims it.
+// retries a -cli-zst install once on errStagingVanished.
 //
 // chmodStaged is os.Chmod behind a seam, so the one branch between decompress
 // and rename that no fixture can otherwise provoke is reachable from a test.
-// That branch matters more than its size: it is on the CONSUMED side of the
-// blob rule, and until it was exercised the PR could only claim so by
-// construction. Production never reassigns it.
+// Production never reassigns it.
 var chmodStaged = os.Chmod
 
-func stageAndInstall(blobPath, cliPath string, blobIsTemp bool) (consumeBlob bool, err error) {
-	tmpFile, err := os.CreateTemp(filepath.Dir(cliPath), ".fetch-*")
+func stageAndInstall(cliPath string, stage func(dir string) (string, error), blob string) error {
+	tmp, err := stage(filepath.Dir(cliPath))
 	if err != nil {
-		return false, fmt.Errorf("staging cli: %v", err)
-	}
-	tmp := tmpFile.Name()
-	_ = tmpFile.Close()
-	if err := zstdDecompress(blobPath, tmp); err != nil {
-		_ = os.Remove(tmp)
-		return false, fmt.Errorf("decompressing: %v", err)
+		return err
 	}
 	if err := chmodStaged(tmp, 0o755); err != nil {
 		_ = os.Remove(tmp)
-		return true, err
+		return err
 	}
 	if fi, err := os.Lstat(cliPath); err == nil && fi.IsDir() {
 		// The home guard (D2). A folder at cliPath that is the home folder, or
 		// that contains it, is not removed. The reference removes it as a tree
 		// (measured on Linux, macOS and Windows, see docs/DIVERGENCES.md D2). See
-		// folderHoldsHome. The folder is not removed here, and the blob is not
-		// consumed: the answer is false, so ensureCLI keeps the -cli-zst blob.
+		// folderHoldsHome. The folder is not removed here, and the -cli-zst
+		// blob stays.
 		if folderHoldsHome(cliPath, fi) {
 			_ = os.Remove(tmp)
-			return false, fmt.Errorf("cli path must not be or contain the home directory: %q", cliPath)
+			return fmt.Errorf("cli path must not be or contain the home directory: %q", cliPath)
 		}
 		if rmErr := os.RemoveAll(cliPath); rmErr != nil {
 			_ = os.Remove(tmp)
-			return true, fmt.Errorf("clearing stale dir at %s: %v", cliPath, rmErr)
+			return fmt.Errorf("clearing stale dir at %s: %v", cliPath, rmErr)
 		}
 	}
-	if err := os.Rename(tmp, cliPath); err != nil {
-		if _, statErr := os.Lstat(tmp); statErr != nil {
-			// Our staging file is gone — a concurrent install's sweep took it.
-			// A file at cliPath is deliberately left alone.
-			return true, fmt.Errorf("%w before install: %v", errStagingVanished, err)
-		}
-		_ = os.Remove(tmp)
-		return true, err
+	if err := placeStagedCLI(tmp, cliPath); err != nil {
+		return err
 	}
-	if blobIsTemp {
-		_ = os.Remove(blobPath)
+	if blob != "" {
+		_ = os.Remove(blob)
 	}
 	sweepFetchTemps(filepath.Dir(cliPath), time.Now())
 	installSwept = true
 	err = installCLICheck(cliPath, true)
 	var stopped *cliStoppedError
 	if err == nil || errors.As(err, &stopped) {
-		return true, err
+		return err
 	}
 	_ = os.Remove(cliPath)
-	return true, fmt.Errorf("installed cli at %s is not runnable", cliPath)
+	return fmt.Errorf("installed cli at %s is not runnable", cliPath)
+}
+
+// cliRenameBound is the time from the first try in which a denied rename of
+// the new CLI is tried again (Windows). On 5fd08069 a running old CLI with
+// other bytes keeps the staging file 0.26 to 0.53 s (cells W1, Windows VM).
+// With this bound the staging file of claustrum lived 0.35 to 0.48 s in cell
+// W1 of round task090-02, inside that range. The pauses of retryWhile are
+// claustrum's own. A test replaces the bound.
+var cliRenameBound = 200 * time.Millisecond
+
+// placeStagedCLI renames the staging file tmp to cliPath. Each error has the
+// prefix "rename: ". On 5fd08069 the text is "rename: rename <tmp> <cli>:
+// Access is denied." (cells W1 and W6, Windows VM). The prefix on Linux and
+// macOS is claustrum's own.
+//
+// On Windows a rename that access denied stops is tried again for
+// cliRenameBound (renameDenied). If it still fails and cliPath holds the bytes
+// of tmp, the install counts as done and tmp goes with a plain remove. On
+// 5fd08069 a running old CLI with the same bytes gives no cliError, and the
+// blob goes (cells W2, Windows VM).
+func placeStagedCLI(tmp, cliPath string) error {
+	err := retryWhile(cliRenameBound, renameDenied, func() error { return os.Rename(tmp, cliPath) })
+	if err == nil {
+		return nil
+	}
+	if _, statErr := os.Lstat(tmp); statErr != nil {
+		// Our staging file is gone. A concurrent install's sweep took it.
+		// A file at cliPath is deliberately left alone.
+		return fmt.Errorf("rename: %w before install: %v", errStagingVanished, err)
+	}
+	if renameDenied(err) && sameFileBytes(tmp, cliPath) {
+		_ = os.Remove(tmp)
+		return nil
+	}
+	_ = os.Remove(tmp)
+	return fmt.Errorf("rename: %v", err)
+}
+
+// sameFileBytes reports whether the files a and b have one SHA-256. A file
+// that cannot be read is not the same.
+func sameFileBytes(a, b string) bool {
+	sa, err := sha256File(a)
+	if err != nil {
+		return false
+	}
+	sb, err := sha256File(b)
+	return err == nil && sa == sb
 }
 
 // folderHoldsHome is the home guard of the tree delete in stageAndInstall.
@@ -658,43 +651,33 @@ func folderIsAtOrAbove(fi os.FileInfo, p string) bool {
 }
 
 // validateCLIVersion rejects a -cli-version the install cannot honestly carry
-// out. Two rules, both claustrum-only.
+// out. The rule is claustrum-only: a SINGLE PATH COMPONENT (D6). cliPath is
+// installCLIPath(cliDir, cliVersion) and ensureCLI's os.RemoveAll deletes
+// cliPath recursively, so a version that reaches outside cliDir destroys
+// unrelated data. Measured, the reference destroys the target on "../victim".
+// "../victim" escapes because Join CLEANS. "link/1.0.0" escapes through a
+// symlink under cliDir, which a lexical containment check accepts because it is
+// lexically inside.
 //
-//  1. A SINGLE PATH COMPONENT (D6). cliPath is installCLIPath(cliDir, cliVersion)
-//     and ensureCLI's os.RemoveAll deletes cliPath recursively, so a version that
-//     reaches outside cliDir destroys unrelated data. Measured, the reference
-//     destroys the target on "../victim". "../victim" escapes because Join
-//     CLEANS; "link/1.0.0" escapes through a symlink under cliDir, which a
-//     lexical containment check accepts because it is lexically inside.
-//
-//  2. NOT THE DOWNLOAD BLOB PREFIX. See isDownloadBlobName below.
-//
-// A version that the sweep claims (".fetch-x", "1.0.zst") is ACCEPTED, as the
+// A version that the sweep claims (".fetch-1", "1.0.0.zst") is ACCEPTED, as the
 // reference accepts it. Since 4534d86 the sweep removes only entries more than
 // ten minutes old, so such a version installs and stays until a later install
 // finds it that old. Measured on a Linux VM against 4534d86 through f6010b97.
 // claustrum refused these versions until then (the retired D7).
 //
-// "." and ".." are rejected explicitly by rule 1: "." resolves cliPath to the
-// cli-dir ITSELF, which would hand the whole cli-dir to os.RemoveAll.
+// "." and ".." are rejected explicitly: "." resolves cliPath to the cli-dir
+// ITSELF, which hands the whole cli-dir to os.RemoveAll.
 //
 // BOTH separators are rejected on every OS, not just the local one. A backslash
 // is a legal filename byte on Unix, so this is stricter than the platform
 // requires — deliberately, so a Unix daemon cannot be handed a path that a
 // Windows client built, and so the accepted set does not change with GOOS.
 //
-// No real version string trips either rule: 1.0.86, 2.0.0-beta.1, a commit sha,
+// No real version string trips the rule: 1.0.86, 2.0.0-beta.1, a commit sha,
 // "latest" and 1.0.86+build.5 are all measured as accepted.
 func validateCLIVersion(v string) error {
 	if !isSingleComponent(v) {
 		return fmt.Errorf("cli version %q must be a single path component", v)
-	}
-	if isDownloadBlobName(v) {
-		// A version with claustrum's own blob prefix installs fine and is then
-		// exempt from pruneCLI's census FOREVER. It is never counted against
-		// -cli-keep, never evicted, and never swept, because neither pass claims
-		// that prefix. This is D18.
-		return fmt.Errorf("cli version %q collides with the install download blob", v)
 	}
 	return nil
 }
@@ -949,7 +932,7 @@ func writeProbeCLIResult(w io.Writer, v probeCLIVerdict) {
 }
 
 // maxCLIBytes caps two install-path reads: the decompressed size written by
-// zstdDecompress, and the downloaded body in fetchToFile. A crafted .zst can be
+// zstdDecompress, and the downloaded body in fetchCLI. A crafted .zst can be
 // tiny compressed and expand to fill the remote disk; the cap bounds that.
 //
 // ZERO (the default) DISABLES IT, which is what the reference does at every size
@@ -985,7 +968,13 @@ func zstdDecompress(src, dest string) error {
 		return err
 	}
 	defer in.Close()
-	dec, err := zstd.NewReader(in)
+	return decodeZstdTo(in, dest)
+}
+
+// decodeZstdTo decompresses the zstd stream r into the file dest, which it
+// creates or truncates. A failed close of dest is an error too.
+func decodeZstdTo(r io.Reader, dest string) (err error) {
+	dec, err := zstd.NewReader(r)
 	if err != nil {
 		return err
 	}
@@ -994,7 +983,11 @@ func zstdDecompress(src, dest string) error {
 	if err != nil {
 		return err
 	}
-	defer out.Close()
+	defer func() {
+		if cerr := closeFetchTemp(out); err == nil {
+			err = cerr
+		}
+	}()
 	// Cap disabled (the default): copy straight through, as the reference does.
 	// Deliberately NOT a LimitReader with a huge bound — the cap+1 arithmetic is
 	// what defines the boundary, and routing the unlimited case through it would
@@ -1014,6 +1007,14 @@ func zstdDecompress(src, dest string) error {
 	return nil
 }
 
+// decompressError is a -cli-url body that the zstd decoder refused. Its text
+// is the cliError, with the "decompressing: " prefix.
+type decompressError struct{ err error }
+
+func (e *decompressError) Error() string { return fmt.Sprintf("decompressing: %v", e.err) }
+
+func (e *decompressError) Unwrap() error { return e.err }
+
 // httpStatusError is a non-200 response from the CLI download. It exists so the
 // caller can tell a STATUS failure from a TRANSPORT failure: the reference words
 // them differently — the status form is bare, while a transport failure takes the
@@ -1027,7 +1028,7 @@ func (e *httpStatusError) Error() string {
 	return fmt.Sprintf("download failed with status %d", e.code)
 }
 
-// cliDownloadTimeout bounds the whole `-cli-url` exchange in fetchToFile.
+// cliDownloadTimeout bounds the whole `-cli-url` exchange in fetchCLI.
 //
 // ZERO (the default) DISABLES IT, which is the parity position for the TOTAL-exchange
 // deadline: no total cap was observed on the reference within the window measured. A
@@ -1055,7 +1056,7 @@ func (e *httpStatusError) Error() string {
 // property D3 and D10 get by skipping their `io.LimitReader`s.
 //
 // ⚠️ That disables the bound on the BODY READ, not every clock on the path.
-// fetchToFile uses a clone of http.DefaultTransport, which carries
+// fetchCLI uses a clone of http.DefaultTransport, which carries
 // net.Dialer{Timeout: 30s} and TLSHandshakeTimeout: 10s. A host that
 // black-holes SYN still fails at 30 s with the bound "off". Those are stdlib
 // defaults, always-on, and unnumbered — neither has been probed on the reference.
@@ -1066,25 +1067,27 @@ func (e *httpStatusError) Error() string {
 // set directly by tests. Divergence D12.
 var cliDownloadTimeout time.Duration
 
-// closeFetchTemp is (*os.File).Close behind a seam over the one close whose error
-// fetchToFile checks (the temp file's; the response body and the watched body are
-// closed unchecked). That close fails only on a deferred write-back error (a full or
-// failing filesystem surfacing at close after every Write returned nil), which no
-// fixture can provoke portably — so without the seam fetchToFile's closeErr arm,
-// which must still remove the half-written temp, is unreachable. Production never
-// reassigns it.
+// closeFetchTemp is (*os.File).Close behind a seam over the close of the
+// staging file in decodeZstdTo, the one close whose error counts. That close
+// fails only on a deferred write-back error, for example a full filesystem. No
+// fixture can provoke that portably. Without the seam the arm that removes the
+// half-written staging file is unreachable. Production never reassigns it.
 var closeFetchTemp = (*os.File).Close
 
-// fetchToFile downloads url to a temporary file and returns that file's path
-// together with the sha256 computed WHILE streaming, so the blob is never held in
-// memory and is never hashed in a second pass. The caller owns the temp file and
-// must remove it.
+// fetchCLI downloads url and decompresses the body as it arrives into a new
+// staging file in dir, the cli-dir. It returns that file's path and the sha256
+// of the whole body, computed WHILE streaming. So the body is never held in
+// memory and never hashed in a second pass. The caller owns the staging file.
 //
-// The temp is preferentially created in dir, the cli-dir, which puts it on the
-// filesystem the install writes to. ensureCLI creates the cli-dir before it calls
-// this. If the create still fails, for example in an unwritable cli-dir, the temp
-// falls back to the OS temp dir rather than reporting a download failure.
-func fetchToFile(url, dir string) (path, sum string, err error) {
+// A decoder that refuses the body stops the read. fetch.bytes is then the count
+// that the decoder read. On 5fd08069 a body of 4096 bytes that is no zstd archive
+// gives "fetch":{"bytes":4,…} and one progress line (cells L15a and L15b, Linux
+// VM). After a good archive the rest of the body is read for the checksum.
+//
+// The staging file is made after the response headers. So a cli-dir where no
+// file can be made answers "staging cli: " with a fetch object. That is
+// claustrum's own (not measured).
+func fetchCLI(url, dir string) (path, sum string, err error) {
 	// start times the whole exchange so fetch.ms matches the reference (a 404 reports
 	// ms of the request round-trip). A pre-body failure records ms with zero bytes;
 	// the watched body overwrites lastInstallFetch with real stats once the download
@@ -1115,27 +1118,11 @@ func fetchToFile(url, dir string) (path, sum string, err error) {
 		// line, and a signed URL would land in whatever captures that output.
 		return "", "", &httpStatusError{code: resp.StatusCode}
 	}
-	// ⚠️ The prefix must be one isSweptName does NOT claim. sweepFetchTemps runs
-	// once in every attempted install and takes old ".fetch-*" and "*.zst" from the
-	// cli-dir, so naming the blob ".fetch-*" would let a concurrent install's
-	// sweep delete the staging file AND the blob the retry re-reads — defeating
-	// errStagingVanished in exactly the case it exists for, and able to fail the
-	// first attempt too if the sweep lands between here and zstdDecompress. That
-	// invariant is what the retry's correctness now rests on.
-	//
-	// Kept beside the destination rather than moved to the OS temp dir: /tmp is a
-	// tmpfs on many hosts, so downloading a 600 MiB blob there would put it back
-	// in RAM and undo the streaming this change exists for. The cost is that the
-	// sweep can no longer reclaim a blob left by a SIGKILLed install; the caller's
-	// own defer removes it on every other path.
-	f, err := os.CreateTemp(dir, blobTempPrefix+"*")
+	tmp, err := newStagingFile(dir)
 	if err != nil {
-		if f, err = os.CreateTemp("", "claustrum-fetch-*"); err != nil {
-			lastInstallFetch = &fetchStats{Ms: time.Since(start).Milliseconds()}
-			return "", "", err
-		}
+		lastInstallFetch = &fetchStats{Ms: time.Since(start).Milliseconds()}
+		return "", "", err
 	}
-	tmp := f.Name()
 	h := sha256.New()
 	// Wrap the body so the download emits __INSTALL_PROGRESS__ ticks, aborts on a
 	// read-idle stall, and records the fetch stats — the 4534d86 instrumentation.
@@ -1146,33 +1133,38 @@ func fetchToFile(url, dir string) (path, sum string, err error) {
 		total = 0
 	}
 	wb := newWatchedBody(resp.Body, total, start)
-	// Same bypass as zstdDecompress: with the cap off the body streams straight
+	// Same bypass as decodeZstdTo: with the cap off the body streams straight
 	// through, hashed on the way past.
-	var n int64
-	var copyErr error
-	if maxCLIBytes <= 0 {
-		n, copyErr = io.Copy(io.MultiWriter(f, h), wb)
-	} else {
-		n, copyErr = io.Copy(io.MultiWriter(f, h), io.LimitReader(wb, maxCLIBytes+1))
+	var body io.Reader = wb
+	if maxCLIBytes > 0 {
+		body = io.LimitReader(wb, maxCLIBytes+1)
 	}
-	// Record fetch stats even on copyErr: the reference emits the fetch object on a
-	// stall, not only on success.
+	body = io.TeeReader(body, h)
+	decErr := decodeZstdTo(body, tmp)
+	if decErr == nil {
+		_, _ = io.Copy(io.Discard, body)
+	}
+	// Record fetch stats even on a failure: the reference emits the fetch object on
+	// a stall, not only on success.
 	s := wb.stats()
 	lastInstallFetch = &s
 	_ = wb.Close() // stop the progress ticker
-	closeErr := closeFetchTemp(f)
+	// A failed body read wins over the decoder's answer, which only saw the
+	// stream end.
+	var fail error
 	switch {
-	case copyErr != nil:
-		_ = os.Remove(tmp)
-		return "", "", copyErr
-	case closeErr != nil:
-		_ = os.Remove(tmp)
-		return "", "", closeErr
-	case maxCLIBytes > 0 && n > maxCLIBytes:
-		_ = os.Remove(tmp)
-		return "", "", fmt.Errorf("response exceeds %d bytes", maxCLIBytes)
+	case wb.failure() != nil:
+		fail = wb.failure()
+	case maxCLIBytes > 0 && s.Bytes > maxCLIBytes:
+		fail = fmt.Errorf("response exceeds %d bytes", maxCLIBytes)
+	case decErr != nil:
+		fail = &decompressError{err: decErr}
 	}
-	lastInstallFinal = &progressLine{Phase: "download", Bytes: n, Total: total}
+	if fail != nil {
+		_ = os.Remove(tmp)
+		return "", "", fail
+	}
+	lastInstallFinal = &progressLine{Phase: "download", Bytes: s.Bytes, Total: total}
 	return tmp, hex.EncodeToString(h.Sum(nil)), nil
 }
 
@@ -1183,40 +1175,75 @@ func fetchToFile(url, dir string) (path, sum string, err error) {
 // exact 600 s point is not measured, and claustrum treats it as not old.
 const sweepMinAge = 10 * time.Minute
 
-// zstPartMinAge is how old a "*.zst.part" entry must be before sweepZstParts
-// removes it. Cells Z1 of 89cb6289 straddle it on Linux, macOS and Windows VMs:
-// a file that is 6 days and 23 h old stays, and a file that is 7 days and 1 h
-// old goes. Two more cells narrow the bracket. Cells Z6: a file that is 7 days
-// and 1 s old goes (Windows VM), and so does a file that is 7 days and a
-// fraction of a second old (Linux and macOS VMs). On the macOS VM the two runs
-// of 89cb6289 are 0.13 to 0.67 s at the start of the process.
-// Cell Z6m (macOS VM): a file that is 7 days minus 5 s old stays. A file that
-// is exactly 7 days old at the instant of the read is not measured, and
-// claustrum treats it as not old.
+// zstPartMinAge is how old a "<version>.zst.part" file must be before
+// sweepZstParts removes it. Cells Z1 of 89cb6289 straddle it on Linux, macOS
+// and Windows VMs: a file that is 6 days and 23 h old stays, and a file that
+// is 7 days and 1 h old goes. Cells L10 and M3b of 5fd08069 (Linux and macOS
+// VMs): a file that is 7 days and 5 s old goes. One that is 7 days less 5 s
+// old stays. A file that is exactly 7 days old at the instant of the read
+// is not measured, and claustrum treats it as not old.
 const zstPartMinAge = 7 * 24 * time.Hour
 
-// isZstPartName reports whether a cli-dir entry has the "*.zst.part" name.
-// sweepZstParts removes such an entry by zstPartMinAge, and the prune does not
-// count it. The match is case-sensitive: "X.ZST.PART" stays at 9 days (cells
-// Z3, Linux, macOS and Windows VMs, 89cb6289).
+// The names of the sweeps and of the prune, measured on 5fd08069 (cells L4, L8,
+// M1, M3a, W3 and W5, Linux, macOS and Windows VMs). claustrum counts a name of
+// three runs of digits with dots between them, such as 1.0.0. Other names are
+// not measured.
 //
-// The name wins over the ".fetch-" prefix. Cells Z2 on the same three systems:
-// the file ".fetch-a.zst.part" is 20 minutes old and stays. Cells Z5 on the
-// same three systems: the file ".fetch-old.zst.part" is 8 days old and goes, as
-// every other "*.zst.part" name.
-func isZstPartName(name string) bool { return strings.HasSuffix(name, ".zst.part") }
+//	sweep of 10 minutes   .fetch-<digits>, <version>.zst      .fetch-123, 1.0.0.zst go
+//	                                                          .fetch-d, x.zst stay
+//	sweep of 7 days       <version>.zst.part                  1.0.0.zst.part goes
+//	                                                          p.zst.part stays
+//
+// Every match is case-sensitive.
+func isVersionName(name string) bool {
+	parts := strings.Split(name, ".")
+	if len(parts) != 3 {
+		return false
+	}
+	for _, p := range parts {
+		if !isDigits(p) {
+			return false
+		}
+	}
+	return true
+}
 
-// sweepZstParts removes each "*.zst.part" entry of the cli-dir that is more
-// than zstPartMinAge old, with one os.Remove. runInstall calls it once, before
-// the run of the CLI that is present. Cells Z4b of 89cb6289 (Linux, macOS and
-// Windows VMs): on a cache hit an 8 day old "p.zst.part" file is gone after the
-// run. Cells Z4a (the same three systems): it is gone too when the new CLI
-// exits 1. Rows C-10 (Linux and macOS VMs) and cell C-18 (Windows VM): it is
-// gone after a good install. Cell Z7 (Linux VM): with no CLI of the version and
-// no source flag, the answer is the "missing" cliError and the file is gone.
-//
-// Not measured: the run of cell Z7 on macOS and Windows. claustrum sweeps there
-// as in cell Z7.
+func isDigits(s string) bool {
+	if s == "" {
+		return false
+	}
+	for i := 0; i < len(s); i++ {
+		if s[i] < '0' || s[i] > '9' {
+			return false
+		}
+	}
+	return true
+}
+
+// isVersionArchiveName reports whether name is "<version><suffix>".
+func isVersionArchiveName(name, suffix string) bool {
+	base, ok := strings.CutSuffix(name, suffix)
+	return ok && isVersionName(base)
+}
+
+// isZstPartName reports whether a cli-dir entry has a name of the sweep of
+// 7 days.
+func isZstPartName(name string) bool { return isVersionArchiveName(name, ".zst.part") }
+
+// isSweptName reports whether a cli-dir entry has a name of the sweep of
+// 10 minutes. The staging files of claustrum are ".fetch-<digits>"
+// (os.CreateTemp), so the sweep claims them.
+func isSweptName(name string) bool {
+	if rest, ok := strings.CutPrefix(name, ".fetch-"); ok {
+		return isDigits(rest)
+	}
+	return isVersionArchiveName(name, ".zst")
+}
+
+// sweepZstParts removes each regular file of the cli-dir with a name of
+// isZstPartName that is more than zstPartMinAge old, with one os.Remove.
+// runInstall calls it once, before the run of the CLI that is present. On a
+// good cache hit only this sweep runs (cell L9 of 5fd08069, Linux VM).
 //
 // An entry that is the home folder or holds it stays at every age. See
 // cliEntryHoldsHome.
@@ -1224,43 +1251,39 @@ func sweepZstParts(cliDir string, now time.Time) {
 	sweepOld(cliDir, now, zstPartMinAge, isZstPartName)
 }
 
-// sweepFetchTemps removes install litter from the cli-dir: an entry whose name
-// isSweptName claims AND whose mtime is more than sweepMinAge before now. The
-// litter is an interrupted install's ".fetch-<something>" or a stray "*.zst".
-// A "*.zst.part" name is not litter of this pass, also with the ".fetch-"
-// prefix (see isZstPartName).
-// claustrum's pruneCLI used to count such litter as CLI *versions*, so it
-// consumed the -cli-keep budget and evicted real binaries.
+// sweepFetchTemps removes install litter from the cli-dir: a regular file whose
+// name isSweptName claims AND whose mtime is more than sweepMinAge before now.
 //
 // The rules, measured on the reference from 4534d86 on (the future-mtime row on
 // 19f30c46 through f6010b97):
-//   - The age is the entry's own mtime, for a symlink the link's own mtime.
-//     atime and ctime are not read. Only the link is removed. A target outside
-//     the cli-dir stays (the only case measured). os.Lstat, not DirEntry.Info:
-//     on Windows Info comes from the directory listing, which can hold a stale
-//     time for a directory.
+//   - The age is the entry's own mtime. atime and ctime are not read.
+//     os.Lstat, not DirEntry.Info: on Windows Info comes from the directory
+//     listing, which can hold a stale time for a directory.
 //   - A future mtime is not old, so it stays.
-//   - os.Remove per entry. It removes files and EMPTY directories and never
-//     recurses, so a non-empty ".fetch-dir/" stays at every age.
 //
-// A concurrent install's staging file is fresh, so the age gate now keeps it.
+// Only a regular file goes. An empty folder ".fetch-9" stays, and so does a
+// folder ".fetch-e" with a file in it (cells L8, M3a and W5 of 5fd08069).
+//
+// A concurrent install's staging file is fresh, so the age gate keeps it.
 // stageAndInstall's retry still covers a staging file that outlives the gate.
 //
 // An entry that is the home folder or holds it stays at every age. See
 // cliEntryHoldsHome.
 func sweepFetchTemps(cliDir string, now time.Time) {
-	sweepOld(cliDir, now, sweepMinAge, func(name string) bool {
-		return isSweptName(name) && !isZstPartName(name)
-	})
+	sweepOld(cliDir, now, sweepMinAge, isSweptName)
 }
 
-// sweepOld is the loop of both sweeps. It removes each entry of the cli-dir
-// that claims names and whose own mtime is more than minAge before now, with
-// one os.Remove.
+// sweepOld is the loop of both sweeps. It removes each regular file of the
+// cli-dir that claims names and whose own mtime is more than minAge before now,
+// with one os.Remove. The -cli-zst blob of the run stays (installBlob).
 func sweepOld(cliDir string, now time.Time, minAge time.Duration, claims func(name string) bool) {
 	ents, err := os.ReadDir(cliDir)
 	if err != nil {
 		return
+	}
+	var blob os.FileInfo
+	if installBlob != "" {
+		blob, _ = os.Stat(installBlob)
 	}
 	for _, e := range ents {
 		if !claims(e.Name()) {
@@ -1268,7 +1291,10 @@ func sweepOld(cliDir string, now time.Time, minAge time.Duration, claims func(na
 		}
 		p := filepath.Join(cliDir, e.Name())
 		fi, err := os.Lstat(p)
-		if err != nil || now.Sub(fi.ModTime()) <= minAge {
+		if err != nil || !fi.Mode().IsRegular() || now.Sub(fi.ModTime()) <= minAge {
+			continue
+		}
+		if blob != nil && os.SameFile(fi, blob) {
 			continue
 		}
 		// The home guard (D2).
@@ -1283,13 +1309,8 @@ func sweepOld(cliDir string, now time.Time, minAge time.Duration, claims func(na
 // an entry of the cli-dir and fi is its Lstat answer. A folder gets both tests
 // of folderHoldsHome. Every other kind gets wipesHomeDir alone.
 //
-// Each of those removes is one os.Remove, so a home folder with content cannot
-// go there. A cli-dir that is the parent of the home folder makes the home folder
-// an entry. 89cb6289 removes an empty home folder there: in the prune (cells
-// H1, Linux, macOS and Windows VMs) and as "h.zst" in the sweep (cells H3, the
-// same three systems). claustrum keeps it. A home folder with content stays on
-// both (cells H2, the same three systems). That difference stays by the
-// maintainer's decision of 2026-10-07.
+// The prune and the sweeps remove regular files only, so the guard is defense
+// in depth (D2).
 func cliEntryHoldsHome(p string, fi os.FileInfo) bool {
 	if fi.IsDir() {
 		return folderHoldsHome(p, fi)
@@ -1297,148 +1318,54 @@ func cliEntryHoldsHome(p string, fi os.FileInfo) bool {
 	return wipesHomeDir(p)
 }
 
-// blobTempPrefix names the -cli-url download blob. It must be a prefix that
-// NONE of the three cli-dir housekeeping passes acts on — isSweptName and
-// isZstPartName must not claim it, and pruneCLI must not count it as a version. Both halves matter and they failed one
-// at a time: ".fetch-" let the sweep delete the blob out from under the
-// errStagingVanished retry, and a name merely absent from isSweptName still let
-// pruneCLI census it, where an in-flight blob sorts newest, burns a -cli-keep
-// slot and evicts a real version instead.
+// pruneCLI is the -cli-keep prune. It runs after a good install only. newCLI is
+// the file name of the CLI that this run put in place. The rules are those of
+// 5fd08069 (cells L4 to L6, M1, M2a, M2b, W3, W4a and W4b, Linux, macOS and
+// Windows VMs):
 //
-// This is claustrum's problem to state because claustrum is what creates the
-// file. What the reference does mid-download was measured 2026-08-08 and is
-// recorded in PROTOCOL (Staging and cleanup): its cli-dir holds a
-// ".fetch-<random>" whose first bytes are the DECOMPRESSED CLI's, where
-// claustrum's staging file at that moment holds the compressed body. Different
-// artifacts, so the naming rule below is claustrum's own either way. Defined
-// once here so the creator, the housekeeping passes and validateCLIVersion read
-// the same rule. A rule the validator does not consult is one an operator can
-// walk into with -cli-version.
-const blobTempPrefix = ".blob-"
-
-// isDownloadBlobName reports whether a cli-dir entry is an in-flight download
-// blob, which is neither litter to sweep nor a CLI version to prune.
-func isDownloadBlobName(name string) bool { return strings.HasPrefix(name, blobTempPrefix) }
-
-// isSweptName reports whether the sweep above claims a cli-dir entry.
-//
-// ".fetch-*" AND "*.zst": the reference sweeps both. Measured at 5db5e4a with a
-// stray "leftover.zst" in the cli-dir — the reference removed it, claustrum kept
-// it, and pruneCLI then counted it as a version and burned a -cli-keep slot on
-// it. An unrelated file ("README") survives on both.
-//
-// The match is case-sensitive, and the bare names ".fetch-" and ".zst" count.
-// ".FETCH-u" and "a.ZST" stay. Measured on every reference build from 5db5e4a
-// to f6010b97.
-func isSweptName(name string) bool {
-	return strings.HasPrefix(name, ".fetch-") || strings.HasSuffix(name, ".zst")
-}
-
-// pruneCLI is the -cli-keep prune. It runs after a good install only. The rows
-// are the C rows of 89cb6289: C-0 to C-15 on Linux and macOS VMs, and the cells
-// C-00 to C-18 on a Windows VM. A cell id has two digits.
-//
-//   - Every entry of the cli-dir counts, whatever its kind: a file, a folder
-//     and a link. Rows C-1 (four empty folders, keep 3, the two oldest go) and
-//     C-5 (two files and two newer empty folders, keep 3, both files go). On
-//     Windows the cells C-01 and C-04. A link takes a keep place in cell P2
-//     (Linux VM): a new link to a file, two files that are 2 h and 3 h old and
-//     keep 2. Both files go, and the link and its target stay. The control
-//     cell P2c has a new file in place of the link and gives the same.
+//   - Only a version file counts, and only a version file goes. On Linux and
+//     macOS that is a regular file (by Lstat) whose name is a version (see
+//     isVersionName) and that has an exec bit. On Windows it is a regular file
+//     "<version>.exe" (isCLIVersionFile). A folder, a link, README, "1.1.0"
+//     with mode 0644, "1.1.0" on Windows and README.exe stay, and none of them
+//     takes a keep place.
 //   - The order is the mtime, newest first. The keep value is how many stay.
-//     Rows C-3 (keep 5 for five entries, all stay) and C-4 (keep 4, the oldest
-//     goes) straddle it.
+//     The new CLI takes its place in the order, and it always stays. With
+//     -cli-keep 0 the older version files go.
+//   - A negative keep counts as 0.
 //   - Entries with the same mtime stay in name order, so the later name goes.
-//     Rows C-12 and C-12b on Linux (the order of creation does not matter),
-//     C-12 and C-12b on macOS, cell C-15 on Windows.
-//   - The new CLI has no place of its own. It stands where its mtime puts it.
-//     Rows C-11 (two folders with an mtime 1 h in the future, keep 2: the new
-//     CLI goes, and the result line names its path with no cliError) against
-//     C-6 (no future mtime, the new CLI stays). On Windows the cells C-11dir
-//     and C-11file.
-//   - Each remove is one os.Remove of a direct child of the cli-dir. It removes
-//     a file, an EMPTY folder and a link. A folder with content stays, and a
-//     link goes as a link. Rows C-1 against C-2 (the same folders, one file in
-//     each, all stay), C-6 and C-7. On Windows a folder with the read-only
-//     attribute stays (cell C-05) and a read-only file goes (cell C-07).
-//   - A name that the sweep claims is not counted and not removed here, at any
-//     age. Rows C-9 (a fresh ".fetch-d" and "x.zst" stay and three other
-//     entries stay with keep 3) and C-8 (20 minutes old, the sweep took both
-//     before the new CLI ran).
-//   - A "*.zst.part" name is not counted and not removed here either. Cell
-//     C-18 on a Windows VM: the file "q.zst.part" is 6 days old and older than
-//     every other entry, keep is 3 and five other entries count, and it stays.
-//     Cell P1 (Linux VM): two files "a.zst.part" and "b.zst.part" are 1 minute
-//     old, a file "v1" is 4 h old and keep is 2. All three stay beside the new
-//     CLI. The control cell P1c has the names "a.part" and "b.part": "b.part"
-//     and "v1" go.
-//     sweepZstParts removes such a name by its own age rule (zstPartMinAge).
-//   - Keep 0 removes every entry that counts, the new CLI too, and a folder
-//     with content stays. The result line still names the CLI path, with exit
-//     code 0 (cells K0a and K0b, Linux, macOS and Windows VMs, and cell C-13).
-//   - The name order of a tie is the order of the bytes, so "B" comes before
-//     "a". Cells T1 (files) and T1d (folders): "B", "a" and "c" have one mtime,
-//     keep is 2, and "B" stays beside the new CLI. Files ran on Linux, macOS
-//     and Windows VMs, folders on macOS and Windows VMs. Cell T1b (Linux VM):
-//     with keep 3, "c" goes. Cell T1c (Linux VM): the files are made in the
-//     reverse order, and the result is that of cell T1.
-//   - A link to a folder with content outside the cli-dir goes, and the target
-//     stays with its content (cells S1, Linux and macOS VMs). On a Windows VM a
-//     junction (cell S1j) and a directory symlink (cell S1s) go the same way.
-//   - A folder with content takes a place in the order, as every other entry.
-//     Cells F2 (Linux, macOS and Windows VMs): a folder with content is newer
-//     than three files and keep is 2. The new CLI and the folder stay, and all
-//     three files go. Cells F1 do not show it: there the folder is the oldest
-//     entry, and the result is the same with and without a place for it.
+//     The name order is the order of the bytes. That order is measured on
+//     89cb6289 (cells T1, Linux, macOS and Windows VMs). On 5fd08069 it is
+//     claustrum's own.
+//   - Each remove is one os.Remove of a direct child of the cli-dir.
 //
-// runInstall does not call the prune for a negative keep value. See there.
-//
-// The mtime comes from os.Lstat, as in the sweep, so a link has its own mtime.
-// Cell P2 (Linux VM) has a link target that is 6 h old, and the new link stays.
-//
-// Not measured: a swept name that the sweep failed to remove, for example an
-// old ".fetch-d" folder with content. claustrum does not count it, as before.
-//
-// One difference from 89cb6289 (D18): a ".blob-" name is not counted and not
-// removed here. Cell C-12 on a Windows VM: a planted ".blob-planted" file is
-// 1 h old beside two files that are 4 h and 3 h old, keep is 2, and 89cb6289
-// removes both older files. claustrum removes the oldest only. Cells B1
-// (Linux, macOS and Windows VMs): the planted file is the oldest entry, keep is
-// 1, and 89cb6289 removes it. claustrum keeps it. The name is
-// claustrum's own temporary name of a download in progress, and a download of
-// a second install must not use a keep place. That is the maintainer's decision
-// of 2026-10-07.
+// The mtime comes from os.Lstat, as in the sweep.
 //
 // An entry that is the home folder or holds it is counted and never removed.
 // See cliEntryHoldsHome.
-func pruneCLI(cliDir string, keep int) {
+func pruneCLI(cliDir string, keep int, newCLI string) {
 	ents, err := os.ReadDir(cliDir)
 	if err != nil {
 		return
 	}
+	keep = max(keep, 0)
 	type ver struct {
 		name string
 		mod  int64
 	}
 	var vs []ver
 	for _, e := range ents {
-		if isSweptName(e.Name()) || isZstPartName(e.Name()) {
-			continue
-		}
-		// A concurrent install's in-flight download blob is not a CLI version.
-		// Counted, it sorts NEWEST, takes a -cli-keep slot and evicts a real
-		// binary. 89cb6289 counts a planted file with this name (cell C-12,
-		// Windows VM). This is D18.
-		if isDownloadBlobName(e.Name()) {
-			continue
-		}
-		if fi, err := os.Lstat(filepath.Join(cliDir, e.Name())); err == nil {
+		fi, err := os.Lstat(filepath.Join(cliDir, e.Name()))
+		if err == nil && fi.Mode().IsRegular() && isCLIVersionFile(e.Name(), fi.Mode()) {
 			vs = append(vs, ver{e.Name(), fi.ModTime().UnixNano()})
 		}
 	}
 	// os.ReadDir gives the entries in name order, and the sort is stable.
 	sort.SliceStable(vs, func(i, j int) bool { return vs[i].mod > vs[j].mod })
 	for i := keep; i < len(vs); i++ {
+		if vs[i].name == newCLI {
+			continue
+		}
 		p := filepath.Join(cliDir, vs[i].name)
 		// The home guard (D2). The entry is skipped here and not in the loop
 		// above, so it still takes its place in the order and the other entries
@@ -1448,6 +1375,19 @@ func pruneCLI(cliDir string, keep int) {
 		}
 		_ = os.Remove(p)
 	}
+}
+
+// isCLIVersionFile reports whether a regular file of the cli-dir counts in the
+// prune. On Linux and macOS it is a version name with an exec bit. On
+// 5fd08069 "1.1.0" with mode 0644 does not count (cells L4 and M1). On Windows it is
+// "<version>.exe" at any mode: a bare "1.1.0" and "README.exe" do not count
+// (cell W3).
+func isCLIVersionFile(name string, mode os.FileMode) bool {
+	if cliExeSuffix != "" {
+		v, ok := strings.CutSuffix(name, cliExeSuffix)
+		return ok && isVersionName(v)
+	}
+	return isVersionName(name) && mode&0o111 != 0
 }
 
 func isRegularFile(p string) bool {
