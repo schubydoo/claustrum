@@ -175,7 +175,7 @@ rather than repeating them in each entry:
 | [D21](#d21) | A second daemon on a live socket appends to `remote-server.log`, where `89cb6289` truncates it and loses the earlier lines of the first daemon (Windows) | always-on (Windows) | always-on | Maintainer decision of 2026-10-02. No frame, reply or exit status differs. A reader of the log file sees the kept lines | a measurement that shows the reference keeping those lines, or a reader of the log that needs the file to start with the lines of the second daemon |
 | [D22](#d22) | `git.worktree_remove` refuses a worktree locked in the `.git` folder of `baseRepo`, in four states where `89cb6289` answers success. Two have a daemon `GIT_DIR` and `GIT_COMMON_DIR` of another repository, with the folder present or gone. One has a daemon `GIT_DIR` alone. One has a `baseRepo` that does not exist as sent. With `worktreeRoot`, rows q2 to q4 (Linux VM) differ in the frame too | always-on | always-on | Maintainer decision of 2026-10-03. The frame differs from `89cb6289` in those four states and in rows q2 to q4 | a caller that needs the removal of a locked worktree there, or a measurement that shows the reference refusing there |
 | [D23](#d23) | The environment block of a child is in name order (Windows). The reference does not sort it | always-on (Windows) | always-on | Maintainer decision of 2026-10-13: claustrum stays on Go 1.26, which sorts the block | the reference moves to Go 1.26 or newer |
-| [D24](#d24) | The rollback of `git.worktree_create` keeps a folder that replaced the new registration. `89cb6289` removes it in cells B6 and B6b (Linux and macOS VMs), and in B6b it holds the registration of a live sibling worktree | always-on (Linux and macOS) | always-on | Maintainer decision of 2026-10-07. The frames are equal in the measured cells (Linux and macOS VMs). The disk differs | a measurement that shows the reference keeping such a folder, or a decision to match the disk of cells B6 and B6b |
+| [D24](#d24) | The rollback of `git.worktree_create` keeps a folder that replaced the new registration. `89cb6289` removes it in cells B6 and B6b (Linux and macOS VMs), and in B6b it holds the registration of a live sibling worktree | always-on | always-on | Maintainer decision of 2026-10-07. The frames are equal in the measured cells (Linux and macOS VMs, and B6w of round `task087-03` on a Windows VM). The disk differs. The Windows placement is not measured | a measurement that shows the reference keeping such a folder, or a decision to match the disk of cells B6 and B6b |
 | [D25](#d25) | With `CLAUDE_SSH_PEER_CHECK=1`, `server.capabilities` answers `"peerCheck":"unavailable"` and the daemon serves every caller. `5fd08069` answers `"peerCheck":"on","peerCheckBy":["network","pidfd"]` there (Linux VM) | always-on (Linux) | always-on | Maintainer decision of 2026-10-10. The frame differs from `5fd08069` in one of the listed values: `1` on Linux | a client that needs the `"on"` answer on Linux, or a decision to answer as `5fd08069` does there |
 | [CT-1](#ct-1) | Opt-in `wantPid` → `pid` + `startTime` on spawn/reattach | off (fields omitted) | caller sends `"wantPid":true` | sanctioned optional-param extension | — (additive, degrades both ways) |
 | [CT-2](#ct-2) | `-keep-children` leaves the child tree running on shutdown | off | `-keep-children` / `keep-children` key | off-wire opt-in extension | — |
@@ -310,7 +310,7 @@ operator-declinable. Only CT-2 and CT-5 carry a flag and a key.
   worktree, it deletes `worktreePath`. A rollback follows a caller `timeoutMs`
   that expired during a successful add, the checkout or the copy step. It also
   follows a post-checkout drain that exceeded the caller `timeoutMs`, and a failed
-  read-tree checkout. On Linux and macOS it also follows a failed placement of the
+  read-tree checkout. It also follows a failed placement of the
   index of the new worktree. That rollback deletes the leaf's entries, then the empty
   leaf. After a failed `git worktree add`, create only removes an empty leaf, with
   an rmdir. On every rollback arm the guard is defense-in-depth behind create's
@@ -321,7 +321,9 @@ operator-declinable. Only CT-2 and CT-5 carry a flag and a key.
   directory of `baseRepo`. `5fd08069` does so in cell 48 of round `s3p2b-edges3`
   (Windows VM). `wipesHomeDir` runs on each such entry before its removal, and a
   refused entry stays. That guard is claustrum's own there: no cell of `5fd08069`
-  has such an entry that holds the home folder. The deletes inside the folder
+  has such an entry that holds the home folder. The two staging removes of a
+  create, of its staging folder and of a moved registration, run the guard too.
+  The deletes inside the folder
   `git-shadow` of the daemon run the same guard on the full path.
 - **Containment is the test, and the predicate resolves relative paths**
   (`filepath.Abs`) before it compares them. This is why `wipesHomeDir` resolves
@@ -1137,9 +1139,9 @@ Windows file guards (GO-2026-6604).
 
 Reopen trigger: the reference moves to Go 1.26 or newer.
 
-### D24 · Keep a folder that replaced the new registration in the create rollback (Linux and macOS) { #d24 }
+### D24 · Keep a folder that replaced the new registration in the create rollback { #d24 }
 
-- **Behavior.** On Linux and macOS `git.worktree_create` tests the registration
+- **Behavior.** `git.worktree_create` tests the registration
   of the new worktree right after the add. When the tests accept it, claustrum
   takes the identity of the registration folder. A rollback deletes the folder at
   that path only if it still has that identity. After a failed `rev-parse
@@ -1159,6 +1161,12 @@ Reopen trigger: the reference moves to Go 1.26 or newer.
   test. It then answers a
   failed checkout with its own text, `the registration <entry> is not the folder
   that was tested after the add`.
+  On Windows the same tests guard the registration that the staging step moved,
+  with the identity of the staging folder held open from its mkdir to the
+  return of the move. The text there is `the registration <entry> is not the
+  folder that was moved into place`. In cell B6w of round `task087-03`
+  (Windows VM) `5fd08069` deletes the folder that took the name, claustrum
+  keeps it, and the frames are equal. The placement there is not measured.
 - **Reference side, measured.** A Linux VM with git 2.43 ran `89cb6289` on
   2026-10-07, 2 runs per cell. A macOS VM with git 2.50 ran it too, 2 runs per
   cell, with the same disk. A git wrapper changes the registrations folder of
@@ -1170,15 +1178,11 @@ Reopen trigger: the reference moves to Go 1.26 or newer.
     of the sibling, and keeps `w1x`.
 - **claustrum side, measured.** claustrum removes no folder of the
   registrations directory in both cells (Linux and macOS VMs, 2 runs per cell).
-  A Linux VM round also ran main `8af9c03`, an earlier build without this guard. It kept
-  both folders in both cells too, because its rollback then verified the
-  registration through the `.git` file of the leaf.
 - **Equal in those cells (Linux and macOS VMs).** The frame is the plain failed checkout on both
   sides. The leaf and branch `w1` are gone on both sides. In cell B6b the folder
   of the sibling worktree and its branch stay on both sides.
-- **Default.** Always-on, Linux and macOS. **Activate:** always-on. There is no
-  flag and no key. On Windows no registration test runs after the add, so this
-  guard does not run there. Windows is not measured.
+- **Default.** Always-on. **Activate:** always-on. There is no
+  flag and no key.
 - **Why always-on.** The maintainer's decision of 2026-10-07: the guard stays.
   The harm that it refuses is the loss of the registration of another worktree,
   as in cell B6b. No clause of rule 3 covers this entry. It stands on that

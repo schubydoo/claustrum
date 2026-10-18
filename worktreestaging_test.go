@@ -2,12 +2,14 @@ package main
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"io/fs"
 	"os"
 	"path/filepath"
 	"regexp"
 	"slices"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -741,34 +743,76 @@ func TestWorktreeAddStagedFailedAdd(t *testing.T) {
 	}
 }
 
-// TestWorktreeAddStagedKeepsAnEntryInItsWay pins that the move replaces
-// nothing: with a plain file at the place of the registration, the file stays,
-// one line is logged, and `.s<n>` is gone. That case is not measured.
-func TestWorktreeAddStagedKeepsAnEntryInItsWay(t *testing.T) {
+// TestWorktreeAddStagedTakesTheNextName pins rule 4 of the move. With a plain
+// file at the place of the registration, the move goes to w11. The file
+// stays, and the .git file of the leaf names w11. On 5fd08069 a folder w1 that
+// was made after the add sends the move to w11 (cell S5 of round task087-01,
+// Windows VM). Without registrationTarget the move keeps the old refusal and
+// logs a line.
+func TestWorktreeAddStagedTakesTheNextName(t *testing.T) {
 	f := newRepoFolderFixture(t)
 	clearFolderEnv(t)
 	u := f.useOf(t, f.repo)
 	inWay := filepath.Join(f.gitDir, "worktrees", "w1")
 	mustWrite(t, inWay, "not a registration\n")
-	logs := captureLogBuf(t)
-	if _, stderr, err := stagedAdd(t, f, u); err != nil {
+	leaf, stderr, err := stagedAdd(t, f, u)
+	if err != nil {
 		t.Fatalf("the add failed: %v, %s", err, stderr)
 	}
 	if got := mustRead(t, inWay); got != "not a registration\n" {
 		t.Errorf("the file at the place of the registration = %q", got)
 	}
-	if !strings.Contains(logs.String(), "the registration of the new worktree did not move") {
-		t.Errorf("no log line for the move: %q", logs.String())
+	if _, err := os.Lstat(filepath.Join(f.gitDir, "worktrees", "w11", "HEAD")); err != nil {
+		t.Errorf("the registration w11: %v", err)
+	}
+	if got, want := mustRead(t, filepath.Join(leaf, ".git")), worktreeGitFileText(f.gitDir, "w11"); got != want {
+		t.Errorf("the .git file of the new worktree = %q, want %q", got, want)
 	}
 	if got := addFolders(t, u.folder); len(got) != 0 {
 		t.Errorf("the folder of the daemon still holds %q", got)
 	}
 }
 
-// TestWorktreeAddStagedWithNoCheckpoint pins that the `.git` file of the new
-// worktree is written only into the folder that the create made and holds: with
-// no checkpoint of that folder the file keeps the text of git, and one line is
-// logged. That case is not measured.
+// TestRegistrationTarget pins the names of rule 4. The name is the first free
+// one of w1 and w11 to w199. There is none when all 100 are there (cells S5
+// and S6v of round task087-01, Windows VM).
+func TestRegistrationTarget(t *testing.T) {
+	dir := t.TempDir()
+	if err := os.Mkdir(filepath.Join(dir, "worktrees"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	root, err := os.OpenRoot(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = root.Close() }()
+	if got, ok := registrationTarget(root, "w1"); got != "w1" || !ok {
+		t.Errorf("registrationTarget in an empty folder = %q, %v, want w1", got, ok)
+	}
+	for _, n := range []string{"w1", "w11", "w12"} {
+		mustWrite(t, filepath.Join(dir, "worktrees", n), "x\n")
+	}
+	if got, ok := registrationTarget(root, "w1"); got != "w13" || !ok {
+		t.Errorf("registrationTarget = %q, %v, want w13", got, ok)
+	}
+	for i := 3; i < 100; i++ {
+		mustWrite(t, filepath.Join(dir, "worktrees", "w1"+strconv.Itoa(i)), "x\n")
+	}
+	if got, ok := registrationTarget(root, "w1"); ok {
+		t.Errorf("registrationTarget with 100 names = %q, want none", got)
+	}
+	if err := os.Remove(filepath.Join(dir, "worktrees", "w199")); err != nil {
+		t.Fatal(err)
+	}
+	if got, ok := registrationTarget(root, "w1"); got != "w199" || !ok {
+		t.Errorf("registrationTarget = %q, %v, want w199", got, ok)
+	}
+}
+
+// TestWorktreeAddStagedWithNoCheckpoint: with no checkpoint of the leaf the
+// .git file of the leaf cannot be tested. So the add is refused before it
+// makes anything in the git directory (rule 2 of the move). That case is not
+// measured. Without the test the add succeeds.
 func TestWorktreeAddStagedWithNoCheckpoint(t *testing.T) {
 	f := newRepoFolderFixture(t)
 	clearFolderEnv(t)
@@ -778,15 +822,58 @@ func TestWorktreeAddStagedWithNoCheckpoint(t *testing.T) {
 	if err := os.MkdirAll(leaf, 0o755); err != nil {
 		t.Fatal(err)
 	}
-	logs := captureLogBuf(t)
-	if stderr, err := worktreeAddStaged(context.Background(), u, f.repo, leaf, worktreeCheckpoint{},
-		"worktree", "add", "--no-track", "--no-checkout", "-b", "w1", leaf); err != nil {
-		t.Fatalf("the add failed: %v, %s", err, stderr)
+	_, err := worktreeAddStaged(context.Background(), u, f.repo, leaf, worktreeCheckpoint{},
+		"worktree", "add", "--no-track", "--no-checkout", "-b", "w1", leaf)
+	var refused *addRefused
+	if !errors.As(err, &refused) || refused.text != otherEntryRefusal(leaf) {
+		t.Fatalf("the add = %v, want the refusal %s", err, otherEntryRefusal(leaf))
 	}
 	if got := mustRead(t, filepath.Join(leaf, ".git")); got == worktreeGitFileText(f.gitDir, "w1") {
 		t.Errorf("the .git file was written with no checkpoint: %q", got)
 	}
-	if !strings.Contains(logs.String(), "the .git file of the new worktree was not written") {
-		t.Errorf("no log line for the .git file: %q", logs.String())
+	if _, err := os.Lstat(filepath.Join(f.gitDir, "worktrees", "w1")); !os.IsNotExist(err) {
+		t.Errorf("the registration w1: %v, want none", err)
+	}
+	if got := stagingEntries(t, f.gitDir); len(got) != 0 {
+		t.Errorf("the staging entries of the git directory = %q, want none", got)
+	}
+}
+
+// TestWorktreeAddStagedFailedMove: the rename of the staging folder fails, so
+// the staged add returns addIncomplete with the text of the rename. The staging
+// folder of the call is gone, no registration and no `.s<n>` are left, and no
+// line is logged. On 5fd08069 the create then answers `git worktree add failed
+// (completing the new worktree's git files): renameat
+// .claude-new-worktree-<hex> worktrees\<name>: Access is denied.` (cells W3b
+// and W3c of round task009-01, Windows VM). Without the failure of the create
+// the add succeeds and logs a line. Without the remove the staging folder
+// stays.
+func TestWorktreeAddStagedFailedMove(t *testing.T) {
+	f := newRepoFolderFixture(t)
+	clearFolderEnv(t)
+	u := f.useOf(t, f.repo)
+	old := stagingRename
+	stagingRename = func(_ *os.Root, oldName, newName string) error {
+		return &os.LinkError{Op: "renameat", Old: oldName, New: newName, Err: errors.New("held")}
+	}
+	t.Cleanup(func() { stagingRename = old })
+	logs := captureLogBuf(t)
+	_, stderr, err := stagedAdd(t, f, u)
+	var incomplete *addIncomplete
+	want := regexp.MustCompile(`^renameat \.claude-new-worktree-[0-9a-f]{16} ` + regexp.QuoteMeta(filepath.Join("worktrees", "w1")) + `: held$`)
+	if !errors.As(err, &incomplete) || !want.MatchString(incomplete.text) {
+		t.Fatalf("the add = %v, %q, want addIncomplete that matches %s", err, stderr, want)
+	}
+	if got := stagingEntries(t, f.gitDir); len(got) != 0 {
+		t.Errorf("the staging entries of the git directory = %q, want none", got)
+	}
+	if _, err := os.Lstat(filepath.Join(f.gitDir, "worktrees", "w1")); !os.IsNotExist(err) {
+		t.Errorf("the registration w1: %v, want none", err)
+	}
+	if got := addFolders(t, u.folder); len(got) != 0 {
+		t.Errorf("the folder of the daemon still holds %q", got)
+	}
+	if got := logs.String(); strings.Contains(got, "registration of the new worktree") || strings.Contains(got, "staging folder") {
+		t.Errorf("the failed move logged %q, want no line about it", got)
 	}
 }

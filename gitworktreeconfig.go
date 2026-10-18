@@ -10,6 +10,7 @@ import (
 	"path/filepath"
 	"slices"
 	"strings"
+	"time"
 )
 
 // The `config.worktree` file of a repository with the worktreeConfig switch, in
@@ -190,11 +191,13 @@ var worktreeConfigDropKeys = []string{"core.bare", "core.worktree"}
 // read refuses, an `--unset-all` call that fails or is ended, and a step of
 // the folder of the daemon that fails (that last one is claustrum's own). A
 // request that names no copy comes here for the listing only: the file of
-// its new worktree is left to git.
-func (req *request) newWorktreeConfig(repo string, t gitDirTrust) (text []byte, ok bool, drop func(), cause string) {
+// its new worktree is left to git. written is the write time of the file in
+// `.config-<n>` after the `--unset-all` calls. On Windows the new file gets it
+// (writeConfigFileIn).
+func (req *request) newWorktreeConfig(repo string, t gitDirTrust) (text []byte, ok bool, drop func(), cause string, written time.Time) {
 	drop = func() {}
 	if req.repoRead == nil || !req.repoRead.worktreeConfig {
-		return nil, false, drop, ""
+		return nil, false, drop, "", written
 	}
 	ctx, cancel := gitCtx()
 	defer cancel()
@@ -205,14 +208,14 @@ func (req *request) newWorktreeConfig(repo string, t gitDirTrust) (text []byte, 
 	source, settings, cause, present := worktreeConfigSource(ctx, t.pinCommonDir, path)
 	u := req.use
 	if _, named := u.names(repo); !named || (!present && cause == "") {
-		return nil, false, drop, ""
+		return nil, false, drop, "", written
 	}
 	if cause != "" {
-		return nil, false, drop, cause
+		return nil, false, drop, cause, written
 	}
 	dir, remove, err := u.requestDir(shadowConfigDirPrefix, "")
 	if err != nil {
-		return nil, false, drop, err.Error()
+		return nil, false, drop, err.Error(), written
 	}
 	gone := false
 	drop = func() {
@@ -223,11 +226,11 @@ func (req *request) newWorktreeConfig(repo string, t gitDirTrust) (text []byte, 
 	}
 	root, err := os.OpenRoot(dir)
 	if err != nil {
-		return nil, false, drop, err.Error()
+		return nil, false, drop, err.Error(), written
 	}
 	defer func() { _ = root.Close() }()
 	if err := writeRootFile(root, worktreeConfigName, source, 0o600); err != nil {
-		return nil, false, drop, err.Error()
+		return nil, false, drop, err.Error(), written
 	}
 	file := filepath.Join(dir, worktreeConfigName)
 	// The calls get the cleaning of gitChildEnv, as on 5fd08069 (cell V2 of round
@@ -243,18 +246,18 @@ func (req *request) newWorktreeConfig(repo string, t gitDirTrust) (text []byte, 
 		r := boundedGit(shadowCallBound, "", append(gitChildEnv(), "GIT_DIR="+os.DevNull),
 			"config", "--file", file, "--unset-all", key)
 		if r.err != nil {
-			return nil, false, drop, "removing " + key + " from the new worktree's config.worktree: " + r.err.Error()
+			return nil, false, drop, "removing " + key + " from the new worktree's config.worktree: " + r.err.Error(), written
 		}
 	}
 	fi, err := root.Lstat(worktreeConfigName)
 	if err != nil || !fi.Mode().IsRegular() || fi.Size() > repoConfigMaxBytes {
-		return nil, false, drop, "the config.worktree file of the new worktree cannot be read"
+		return nil, false, drop, "the config.worktree file of the new worktree cannot be read", written
 	}
 	text, err = root.ReadFile(worktreeConfigName)
 	if err != nil {
-		return nil, false, drop, err.Error()
+		return nil, false, drop, err.Error(), written
 	}
-	return text, true, drop, ""
+	return text, true, drop, "", fi.ModTime()
 }
 
 // sourceLinkTail ends the cause of a source file that is a link the step does
@@ -373,24 +376,19 @@ func writeRootFile(root *os.Root, name string, data []byte, perm os.FileMode) er
 //   - registration must be the direct entry `<git directory>/worktrees/<name>`,
 //     and a real folder, not a link.
 //   - With tested set, the folder that the root opened must be the folder that
-//     the tests after the add accepted. With tested not set (no answer of git,
-//     and Windows), the gitdir record of the registration must name leaf where
-//     that record is compared (adminRecordChecked).
-//   - An entry at `config.worktree` goes first, with one plain remove through
-//     the root at the registration, never as a tree. 5fd08069 replaces a file
-//     there and an empty folder there with the copy (cells C4 and C5 of round
-//     task007-01, Linux and macOS VMs, and C4 on a Windows VM). A folder with
-//     content fails the remove, with the cause `removeat config.worktree:
-//     directory not empty` (cell C6, Linux and macOS VMs). A link there goes
-//     as a link (claustrum's own). Then the file is made with O_EXCL.
+//     the tests after the add accepted. With tested not set (no answer of git),
+//     the gitdir record of the registration must name leaf where that record is
+//     compared (adminRecordChecked).
+//   - The file is made by writeConfigFileIn, which has the rule of each
+//     system for an entry that is there.
 //
-// cause is the error of that remove or of the write, and the create fails
+// cause is the error of writeConfigFileIn, and the create fails
 // with it. A read-only registration gives `openat config.worktree: permission
 // denied` (cell C7, Linux and macOS VMs). A guard above that refuses writes
 // nothing, logs one line and gives no cause: the create goes on, as before
 // (claustrum's own).
-func placeWorktreeConfig(u gitUse, registration, leaf string, tested testedRegistration, text []byte) (cause string) {
-	err := writeWorktreeConfig(u, registration, leaf, tested, text)
+func placeWorktreeConfig(u gitUse, registration, leaf string, tested testedRegistration, text []byte, written time.Time) (cause string) {
+	err := writeWorktreeConfigAt(u, registration, leaf, tested, text, written)
 	var refused registrationRefusal
 	if errors.As(err, &refused) {
 		logWarnf("[GitHandler] the config.worktree file of the new worktree was not written: %v", err)
@@ -407,6 +405,12 @@ func placeWorktreeConfig(u gitUse, registration, leaf string, tested testedRegis
 type registrationRefusal struct{ error }
 
 func writeWorktreeConfig(u gitUse, registration, leaf string, tested testedRegistration, text []byte) error {
+	return writeWorktreeConfigAt(u, registration, leaf, tested, text, time.Time{})
+}
+
+// writeWorktreeConfigAt is writeWorktreeConfig with the write time of the
+// file of the daemon (newWorktreeConfig).
+func writeWorktreeConfigAt(u gitUse, registration, leaf string, tested testedRegistration, text []byte, written time.Time) error {
 	refuse := func(text string) error { return registrationRefusal{errors.New(text)} }
 	reg := filepath.Clean(registration)
 	name := filepath.Base(reg)
@@ -444,12 +448,7 @@ func writeWorktreeConfig(u gitUse, registration, leaf string, tested testedRegis
 			return refuse("the registration is not the folder that the tests after the add accepted")
 		}
 	}
-	if _, err := entry.Lstat(worktreeConfigName); err == nil {
-		if err := entry.Remove(worktreeConfigName); err != nil {
-			return err
-		}
-	}
-	return writeRootFile(entry, worktreeConfigName, text, 0o666)
+	return writeConfigFileIn(entry, text, written)
 }
 
 // listConfigFileText is listConfigFile with the text of the file beside its

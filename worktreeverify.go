@@ -149,12 +149,14 @@ func undoFailedAdd(worktreePath string, cp worktreeCheckpoint) {
 //     no text of its own (cell X11, Linux VM). A failed read-tree checkout and a
 //     timeout during the checkout give the same clause (cells Z5 and Z6, macOS VM).
 //     The same texts after the two other timeout frames are claustrum's choice (not
-//     measured). On Windows a registration that cannot be deleted adds no text, and
-//     the branch step runs (removeCreatedRegistration): Windows is not measured.
+//     measured). On Windows, for a create with no moved registration, a
+//     registration that cannot be deleted adds no text, and the branch step runs
+//     (removeCreatedRegistration): Windows is not measured.
 //
 //     Which registration goes depends on tested. With tested set (Linux and macOS,
-//     after the tests of createdRegistrationRefusal), it is the entry that those
-//     tests accepted (removeTestedRegistration). Neither the .git file of the leaf
+//     after the tests of createdRegistrationRefusal, and on Windows the moved
+//     registration), it is the entry that those tests accepted
+//     (removeTestedRegistration). With noRegistration set, none goes. Neither the .git file of the leaf
 //     nor the gitdir record is read again. After a failed spelling call the
 //     caller gives the one new entry of the registrations folder in its place. With tested not set, it is the entry that
 //     the .git file of the leaf names now, and only if its record names the leaf
@@ -225,6 +227,7 @@ func undoFailedCheckout(u gitUse, repo, worktreePath, branch string, cp worktree
 	}
 	testHeld("undo")
 	switch {
+	case tested.noRegistration:
 	case held:
 	case tested.path != "":
 	case u.accepted != nil:
@@ -253,6 +256,7 @@ func undoFailedCheckout(u gitUse, repo, worktreePath, branch string, cp worktree
 	var res branchStepResult
 	var regErr error
 	switch {
+	case tested.noRegistration:
 	case held:
 		regErr = heldErr
 	case tested.path != "":
@@ -376,7 +380,7 @@ func worktreeRegistryDir(repo string) string {
 var openRegistrationsRoot = os.OpenRoot
 
 // testedRegistration is the registration that the tests after the add accepted
-// (createdRegistrationRefusal, Linux and macOS). The zero value means that the tests
+// (createdRegistrationRefusal), or on Windows the moved one. The zero value means that the tests
 // did not run. The index of the new worktree goes into it, and a rollback removes it.
 // After a failed spelling call the rollback gets the one new entry of the listing
 // instead, with its identity from right after that listing (gitWorktreeCreateLocked).
@@ -392,6 +396,9 @@ type testedRegistration struct {
 	// and the placement of the index open the registrations folder through it
 	// (acceptedGitDir.registrationsRoot).
 	git *acceptedGitDir
+	// noRegistration tells a rollback to delete no registration: the create
+	// was refused before it made one (addRefused).
+	noRegistration bool
 }
 
 // acceptRegistration records the registration that createdRegistrationRefusal
@@ -449,7 +456,7 @@ func (r testedRegistration) replacedIn(root *os.Root, name string) bool {
 }
 
 // removeTestedRegistration deletes the registration that the tests after the add
-// accepted. It is step B of undoFailedCheckout on Linux and macOS. 89cb6289 removes
+// accepted. It is step B of undoFailedCheckout. 89cb6289 removes
 // that entry in each of these states of a rollback, where the .git file of the leaf
 // or the record no longer leads to it:
 //

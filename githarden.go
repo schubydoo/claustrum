@@ -630,7 +630,8 @@ var (
 // the filter rule (listFilterPlan), or the zero value.
 //
 // installErr is the error of a placement that failed. The caller answers it as a
-// failed checkout. On Windows it is always nil.
+// failed checkout. On Windows it is nil unless the staging step moved the
+// registration (installTestedWorktreeIndex).
 func runWorktreeCheckout(ctx context.Context, u gitUse, leaf, workTree, gitDir, adminDir string, tested testedRegistration, rev string, pin []string, filters filterPlan) (stderr string, drained bool, err, installErr error) {
 	idxDir, removeIdxDir, err := u.requestDir(shadowIndexDirPrefix, checkoutIndexTempPrefix)
 	if err != nil {
@@ -669,7 +670,8 @@ func runWorktreeCheckout(ctx context.Context, u gitUse, leaf, workTree, gitDir, 
 // two forms.
 //
 // With tested set, the tests after the add accepted the registration (Linux and
-// macOS, when git answered `rev-parse --absolute-git-dir`). The index then goes
+// macOS, when git answered `rev-parse --absolute-git-dir`), or the staging step
+// moved it (Windows). The index then goes
 // into that registration with no read of its gitdir record. 89cb6289 places the
 // index too when the record is gone: in
 // cell B4 (Linux and macOS VMs) the record is removed after the read-tree: 89cb6289 answers

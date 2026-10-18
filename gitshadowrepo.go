@@ -351,6 +351,11 @@ func shadowLink(root *os.Root, target, name string) error {
 // content data, when the copy that is there has another content or there is
 // none. The copy is a new file each time (writeNewFile). A temporary file that
 // is left after an error goes through removeEntry.
+//
+// On Windows a held copy gets the retry of retryRename, and a failed rename
+// names both full paths (copyRenameError). On 5fd08069 a copy held 1 s gets
+// the new bytes. One held 3 s fails at about 2.1 s, and the old copy stays
+// (cells F1a to F1c of round task009-01, Windows VM).
 func (h *shadowHost) writeCopy(st *shadowRepo, root *os.Root, rel, file string, data []byte) error {
 	sum := sha256.Sum256(data)
 	if have, ok := st.copies[file]; ok && have == sum {
@@ -362,7 +367,10 @@ func (h *shadowHost) writeCopy(st *shadowRepo, root *os.Root, rel, file string, 
 			return err
 		}
 	}
-	if left, err := writeNewFile(root, path, data); err != nil {
+	rename := func(oldName, newName string) error {
+		return copyRenameError(root, retryRename(func() error { return root.Rename(oldName, newName) }))
+	}
+	if left, err := writeNewFileBy(root, path, data, rename); err != nil {
 		if left != "" {
 			_ = h.removeEntry(filepath.Join(rel, left))
 		}
@@ -385,6 +393,12 @@ func (h *shadowHost) writeCopy(st *shadowRepo, root *os.Root, rel, file string, 
 // After an error, left is the name of a temporary file that is still there, or
 // "".
 func writeNewFile(root *os.Root, path string, data []byte) (left string, err error) {
+	return writeNewFileBy(root, path, data, root.Rename)
+}
+
+// writeNewFileBy is writeNewFile with the rename of the temporary file onto
+// path.
+func writeNewFileBy(root *os.Root, path string, data []byte, rename func(oldName, newName string) error) (left string, err error) {
 	var n [4]byte
 	if _, err := rand.Read(n[:]); err != nil {
 		return "", err
@@ -399,7 +413,7 @@ func writeNewFile(root *os.Root, path string, data []byte) (left string, err err
 		err = cerr
 	}
 	if err == nil {
-		err = root.Rename(tmp, path)
+		err = rename(tmp, path)
 	}
 	if err != nil {
 		return tmp, err

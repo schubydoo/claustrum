@@ -102,7 +102,7 @@ on Windows:
   add, the checkout or the copy step. It also happens after the post-checkout
   drain exceeds the caller `timeoutMs`, after a failed read-tree checkout, and
   after a failed copy of `config.worktree`.
-  On Linux and macOS it also happens when the daemon cannot place the index of
+  It also happens when the daemon cannot place the index of
   the new worktree.
   On Linux and macOS the refusals after the add delete nothing, except an
   empty worktree path and the rollback below. If git
@@ -112,7 +112,7 @@ on Windows:
   deletes that registration, or after a failed `rev-parse --show-toplevel` the
   one new entry of the listing after the add. That delete goes through an
   `os.Root` at the registrations directory. Both act only while the folder at
-  that path is still the folder that the refusals or a stat right after that listing saw (D24). On Windows no such guard runs.
+  that path is still the folder that the refusals or a stat right after that listing saw (D24). On Windows the same guard covers the registration that the staging step moved (the rollback in cell B6w of round `task087-03`, the index not measured).
   Before the add, on Linux and macOS, the daemon removes a stale registration
   whose record names the new worktree, if it is the only such registration. That delete goes through an `os.Root` at
   the registrations directory too, after the home guard. A registration that

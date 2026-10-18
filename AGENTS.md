@@ -133,7 +133,8 @@ The JSON-RPC surface is identical on every OS. Full internals →
   are RPC paths. The fourth RPC path is Windows only: a create removes old
   staging entries below the git directory of `baseRepo`. The deletes inside the
   folder `git-shadow` are not among the five: their root comes from the socket,
-  as in `plugins.prune` (see below). The daemon
+  as in `plugins.prune` (see below). The two staging removes of a Windows
+  create are part of the third path. The daemon
   `~`-expands the RPC
   paths first, so `"~"` once meant `os.RemoveAll($HOME)`. That destroyed
   the maintainer's home directory on 2026-08-02:
@@ -241,7 +242,7 @@ The JSON-RPC surface is identical on every OS. Full internals →
       `timeoutMs` of the caller expired during the add, the checkout or the copy
       step. It also runs after a post-checkout drain that exceeded that
       `timeoutMs`, a failed read-tree checkout and a failed `config.worktree`
-      copy. On Linux and macOS it
+      copy. It
       also runs after a failed placement of the index of the new worktree. The
       filter rule of the checkout (`gitfilter.go`) leads to it after a read-tree
       call that fails at a filter of the repository. So does a refusal before
@@ -253,8 +254,8 @@ The JSON-RPC surface is identical on every OS. Full internals →
       of the leaf in the order that the directory read returns them, and it
       stops at the first failure. Then it deletes the registration, runs the
       branch step on the created branch, and then removes the empty leaf. On
-      Linux and macOS a registration that cannot be deleted skips the branch
-      step. On Linux and macOS, if git answered `rev-parse
+      Linux and macOS, and on Windows for a moved registration, a registration
+      that cannot be deleted skips the branch step. On Linux and macOS, if git answered `rev-parse
       --absolute-git-dir`, the registration of the rollback is the entry that
       the tests after the add accepted. That is the entry of the registrations
       directory of `baseRepo` with the last name of the `gitdir:` path, read
@@ -274,7 +275,9 @@ The JSON-RPC surface is identical on every OS. Full internals →
       `rev-parse --absolute-git-dir` stops the create. So "no answer of git"
       below is a create outside that state, or an empty answer. A create
       that holds its git directory deletes the registration by its name
-      through the held folder. If `.git` is no longer that folder, the
+      through the held folder. On Windows it is the moved entry (cell S14a of
+      round `task087-01`, cell B6w of round `task087-03`). If `.git` is
+      no longer that folder, the
       rollback deletes no registration. A create that holds none, and has no
       answer of git or runs on Windows, takes the folder that the `.git` file
       of the leaf names. If its `gitdir` record does not name the leaf, the
@@ -321,10 +324,7 @@ The JSON-RPC surface is identical on every OS. Full internals →
       the cleanup and the move act through that held folder (see "holds the
       git directory" below). Before the cleanup the path must still name
       that folder. If not, the create is refused, and nothing is removed or
-      made in the git directory or in the folder at its path. Round
-      `val-s3p2b2-12` put a junction at `.git` at each of the 12 calls of a
-      create on a claustrum build. The folder behind it was unchanged in 72
-      runs, 6 of them at this step (Windows VM). The entries are
+      made in the git directory or in the folder at its path. The entries are
       listed through that root, so each name is a direct entry of the git
       directory. The name must start with the fixed prefix, with the dash. The
       entry is read with `Lstat` through the root, so no link and no junction
@@ -332,9 +332,8 @@ The JSON-RPC surface is identical on every OS. Full internals →
       `wipesHomeDir` then refuses an entry that is home or holds it. Only a
       real folder goes as a tree, with one `os.Root.RemoveAll` of that name. A
       file, a link and a junction go with one plain `os.Root.Remove`, so the
-      target of a junction stays. Round `val-s3p2b2-5` ran a claustrum build
-      beside `5fd08069` in that cell (Windows VM). No row differs, and the
-      target of each junction stayed. An entry that cannot be removed logs one line, and
+      target of a junction stays, as on `5fd08069` (round `val-s3p2b2-5`,
+      Windows VM). An entry that cannot be removed logs one line, and
       the create goes on (not measured). `git.info` and `git.status` remove no
       entry (`5fd08069`, the same cell). From the code: a create whose
       `worktree add` fails, a
@@ -504,17 +503,18 @@ The JSON-RPC surface is identical on every OS. Full internals →
   [git.worktree_create](docs/protocol/git-worktree-create.md#the-held-git-directory)
   has the rules for a reader.
 - In the state `shadow` `git.worktree_create` writes into the git directory of
-  `baseRepo` and into the new worktree. None of these steps is a tree delete.
-  Each goes through an `os.Root`, with a fixed name or a name that the daemon
-  read through that root. The steps are these:
+  `baseRepo` and into the new worktree. Only the two removes of the staging
+  step below are tree deletes.
+  Each goes through an `os.Root`, with a fixed name, a name that the daemon
+  read through that root, or a name that it made. The steps are these:
     - The folder `<git dir>/worktrees` (0777 less the umask), made before the
       add through the held folder. It stays after a failed
       add, as on `5fd08069` (cells N2 of round `val-s3p2b2-3`, Linux and macOS
       VMs). On Linux and macOS, a last `core.sharedrepository` copy line other
       than `umask` sets its mode by one `os.Root.Chmod`, with the set-group-ID
-      bit, only on a folder that this call made. Measured on `5fd08069` in
-      group P5 of `val-s3p2b2-6` and cells H1, S1, S2 and C2 of `tier0-14` to
-      `tier0-16` (Linux VM). macOS is not measured.
+      bit, only on a folder that this call made. Measured on `5fd08069`
+      (`val-s3p2b2-6` and `tier0-14` to `tier0-16`, Linux VM). macOS is not
+      measured.
     - On Linux and macOS, the `.git` file of the new worktree
       (`replaceWorktreeGitFile`). It is one `os.Root.Remove` of the fixed name
       `.git` and one exclusive create with mode 0666, through a root at the
@@ -522,39 +522,38 @@ The JSON-RPC surface is identical on every OS. Full internals →
       checkpoint, by identity with the held handle. `.git` must be a regular
       file of at most 8192 bytes. Its text must be `gitdir: `, the folder of
       the copy, `/worktrees/`, one name with no separator, and a newline. Each
-      other text stays as it is. On `5fd08069` that file is a new file 4 to 25
-      ms after the add. That is cell N1 of round `val-s3p2b2-3` (Linux VM, 6
-      of 6 runs).
+      other text stays as it is. On `5fd08069` that file is new 4 to 25 ms
+      after the add (cell N1 of round `val-s3p2b2-3`, Linux VM).
     - The new file `<git dir>/worktrees/<name>/config.worktree` (0666 less
-      the umask), made
-      with an exclusive create (`writeWorktreeConfig`). It goes through the
+      the umask) (`writeWorktreeConfig`). It goes through the
       held folder and then a root at the registration. The
       registration must be a direct entry of `<git dir>/worktrees` and a real
-      folder. On Linux and macOS it must be the folder that the tests after
-      the add accepted, by identity. After an empty answer of git, its
-      `gitdir` record must name the leaf. On Windows neither test runs.
-      An entry there goes first, by one plain `os.Root.Remove` through that
-      root. On Linux and macOS a folder with content fails that remove (round `task007-01`,
-      Linux and macOS VMs).
+      folder. It must be the folder that the tests after the add accepted, or
+      the moved one on Windows, by identity. After an empty answer of git, its
+      `gitdir` record must name the leaf. On Linux and macOS an entry there
+      goes first, by one plain `os.Root.Remove` through that root, and the
+      create is exclusive (round `task007-01`). On Windows a folder there
+      fails (cells S9 and S9b of round `task087-01`). A file there gets the
+      new text (cell C4 of round `task007-01`). The remove before the create
+      is claustrum's own.
       Before that step the daemon runs `git config --file <its own file>
       --unset-all` on a file in `.config-<n>` of its own folder.
     - On Windows, the staging folder `<git dir>\.claude-new-worktree-<16 hex>`
-      and one `os.Root.Rename` of it to `worktrees\<name>` (`addStage.move`).
-      The folder and its files are new, made with exclusive creates through
-      the held root. The target must not exist, so nothing is replaced. Then
-      the `.git` file of the leaf gets the three tests above. Its old text must
-      start with `gitdir: ` and end with `/.s<n>/worktrees/<name>` and a
-      newline. A staging folder that an error leaves is not removed there.
-      `5fd08069` renames that folder in 9 of 9 runs. No delete inside the git
-      directory was seen for the step (cell 47 of round `s3p2b-edges3`, Windows
-      VM).
-    - On Windows the index of the new worktree is copied into the
-      registration and not moved (`5fd08069`, cell V5i of round
-      `val-s3p2b2-5`, Windows VM). That is a temp file `index.tmp-<16 hex>`
-      in the registration, one `os.Root.Rename` onto `index`, and a plain
-      `os.Root.Remove` of the temp file after a failure, all through the
-      held folder. A create outside the state `shadow` makes those three
-      steps as path calls.
+      with a copy of the whole staged registration, and one `os.Root.Rename`
+      of it to the first free name of `<name>`, `<name>1` to `<name>99` in
+      `worktrees` (`addStage.move`). The folder and its files are new, made
+      with exclusive creates through the held root. Before that the `.git`
+      file of the leaf must name the staged entry, and then it is replaced as
+      above. A failed step after its mkdir removes it as a tree through the
+      held root, by the name that this call made, after `wipesHomeDir`. If
+      the `.git` file cannot be replaced, the moved registration goes too, by
+      its name. `5fd08069` does so (cell 47 of round `s3p2b-edges3`, rounds
+      `task009-01` and `task087-01`, cell S8v). Its identity test
+      against the held staging folder is claustrum's own.
+    - On Windows the index is a new file of the moved registration, through
+      the held folder, made as `config.worktree` is (`5fd08069`, round
+      `task087-01`). A create with no moved registration uses `index.tmp-<n>`
+      and a rename, through the held folder when it holds one.
 - The marker step of `files.extract_tar` is a further recursive delete, and it
   is safe by construction. After the entries it removes the fixed name `.synced`
   at the top of `destDir` as a tree (`writeSyncedMarker`). Then it creates the
@@ -690,13 +689,14 @@ L1 is the one exception (Part A). See the entry.
 D23, Windows only: a child gets its environment block in name order, because
 Go 1.26 sorts it and the reference builds use go1.25.14. The entry retires when the reference moves to Go 1.26 or newer.
 
-D24 is on Linux and macOS, and the frames are equal in its two cells (Linux and macOS VMs).
+D24 is always-on, and the frames are equal in its two cells (Linux and macOS VMs).
 If git answered `rev-parse --absolute-git-dir`, a rollback of
 `git.worktree_create` deletes the registration only if the
 folder at its path is still the folder that the create accepted after the add.
 `89cb6289` deletes the folder at that path in cells B6 and B6b (Linux and macOS VMs, 2 runs
-each). In cell B6b that folder holds the registration of a live sibling worktree.
-The placement of the index has the same test (not measured). The guard stays by
+each). The placement of the index has the same test (not measured). On Windows
+the rollback guards the moved registration too, with equal frames (cell B6w of
+round `task087-03`), and the placement is not measured. The guard stays by
 the maintainer's decision of 2026-10-07, not by a rule 3 clause. See the entry.
 
 D25 is on-wire, Linux only, and only with `CLAUDE_SSH_PEER_CHECK=1` in the daemon

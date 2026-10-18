@@ -25,7 +25,7 @@ Where the worktree can go:
 
 - Without `worktreeRoot`, `worktreePath` must be an absolute path inside `baseRepo`. The usual place is `<baseRepo>/.claude/worktrees/<name>`.
 - With `worktreeRoot`, `worktreePath` must be `<worktreeRoot>/<directory>/<name>`. A root that exists must belong to the user of the daemon. Its mode must have no write bit for others, or for a group other than the private group of that user.
-- Neither a component of the location nor the `<directory>` can be `.git` or `.claude-managed-worktrees`, in any letter case. The location must not resolve to `/`. It must not lie in a folder with a `.git` entry, the git directory of the repository, or a session folder. The `<directory>` level must not hold the repository or be writable by every user. `5fd08069` refuses so in cells C-W3 to C-W20 of round `tier0-20` and X1 and X2 of round `tier0-22` (Linux VM). Not measured: `.claude-managed-worktrees` in the location, a reserved `<name>`, and the owner and group tests of the `<directory>` level. claustrum refuses all of them.
+- Neither a component of the location nor the `<directory>` can be `.git` or `.claude-managed-worktrees`, in any letter case. The location must not resolve to `/`. It must not lie in a folder with a `.git` entry, the git directory of the repository, or a session folder. The `<directory>` level must not hold the repository or be writable by every user. `5fd08069` refuses so (rounds `tier0-20` and `tier0-22`, Linux VM). Not measured: `.claude-managed-worktrees` in the location, a reserved `<name>`, and the owner and group tests of the `<directory>` level. claustrum refuses all of them.
 
 ## Response
 
@@ -79,8 +79,6 @@ A request can create four things outside the worktree, and no failure removes th
 - with `worktreeRoot`, the marker file `.claude-managed-worktrees` at the `<directory>` level
 - with `worktreeRoot`, the folder of a gone worktree that holds the root (`5fd08069`, cell C-W8 of round `tier0-20`, Linux VM)
 
-On Windows a folder `.claude-new-worktree-<16 hex>` can stay in the git directory when a step after the add fails.
-
 A request can also remove a stale registration of this worktree path before the add. On Linux and macOS that covers the main repository of a linked `baseRepo`. Two creates through a repository and its linked worktree add in turn (`5fd08069`, cell T1 of round `tier0-11`, Linux VM).
 
 | Failure | What stays of the worktree |
@@ -89,15 +87,15 @@ A request can also remove a stale registration of this worktree path before the 
 | The daemon refuses before it runs `git worktree add` (`worktree_add_failed`) | Nothing. |
 | The daemon cannot create a directory (`mkdir_failed`) | Nothing. |
 | `git worktree add` runs and fails (`worktree_add_failed`) | If the worktree directory is empty, the daemon removes it. Files that the failed add wrote stay. A registration and a branch that the add made stay too. |
-| A test of the new worktree fails after the add. On Linux and macOS the tests come before the checkout and give `unsafe_path`. A worktree directory replaced during the checkout, or on Windows, gives `worktree_add_failed`. | Everything, except an empty worktree directory. |
+| A test of the new worktree fails after the add. The tests come before the checkout and give `unsafe_path`. A worktree directory replaced during the checkout, or on Windows, gives `worktree_add_failed`. | Everything, except an empty worktree directory. In cell S2 on Windows nothing stays. |
 | The checkout or the `config.worktree` step fails, the filter rule refuses, or the deadline expires (`worktree_add_failed`, `repository_only_filter`, `timeout`). Or the text ends with `; retry`. | The daemon removes the worktree directory and its registration. If this request created the branch, the daemon removes the branch too. The cases below the table are exceptions. |
 
 A rollback leaves something in these cases:
 
 - If the branch holds commits that no other ref reaches, the daemon keeps the branch. The response then has `"branchKept": true`.
 - After a failed `config.worktree` step, a refused second config read keeps the branch without `branchKept` (round `task007-01`, Linux and macOS VMs).
-- If a delete fails, the error text ends with a clause that says what remains. On Windows a registration that stays adds no clause.
-- If something replaced the worktree directory, the rollback keeps the replacement and adds no clause. On Linux and macOS it also keeps a replaced registration directory ([D24](../DIVERGENCES.md#d24)).
+- If a delete fails, the error text ends with a clause that says what remains. On Windows a registration that stays adds no clause, unless the create moved it.
+- If something replaced the worktree directory, the rollback keeps the replacement and adds no clause. It also keeps a replaced registration directory ([D24](../DIVERGENCES.md#d24)).
 
 ## Git filters
 
@@ -115,14 +113,13 @@ Three values of the repository pass: `smudge = cat` under each name, and `git-lf
 
 The daemon keeps its own copy of the git settings of the repository, and its git calls read that copy. [The settings copy](../PROTOCOL.md#the-settings-copy) in the protocol reference has the states, the texts and the folder. These rules are for this method:
 
-- If the directory `<git dir>/worktrees` is missing, the daemon makes it before the add, with mode 0777 less its umask. It stays after a failed add. On Linux and macOS, the last `core.sharedrepository` line of the copy then sets its mode, unless that line is `umask`. Cells H1, S1, S2 and C2 of rounds `tier0-14` to `tier0-16` show this (Linux VM). macOS is not measured.
+- If the directory `<git dir>/worktrees` is missing, the daemon makes it before the add, with mode 0777 less its umask. It stays after a failed add. On Linux and macOS, the last `core.sharedrepository` line of the copy then sets its mode, unless that line is `umask` (rounds `tier0-14` to `tier0-16`, Linux VM). macOS is not measured.
 - With `extensions.worktreeConfig` the new worktree gets the `config.worktree` file of `<git dir>`, or of a linked `baseRepo`, less `core.bare` and `core.worktree`.
 - A bare `baseRepo` gets `not_a_repo`.
-- On Windows the add writes the registration of the new worktree into a short-lived folder of the daemon. The daemon then copies it into `<git dir>\.claude-new-worktree-<16 hex>` and renames that folder to `<git dir>\worktrees\<name>`.
-- On Windows, before that step, a create removes old entries of the git directory. Such an entry has a name that starts with `.claude-new-worktree-` and a write time of 1 hour or more. The request did not make those entries. A junction goes as a junction, and its target stays.
-- A create holds the git directory open from its gate to its reply. [The held git directory](#the-held-git-directory) has the rules.
+- On Windows git writes the registration into a short-lived folder of the daemon, which copies it into `<git dir>\.claude-new-worktree-<16 hex>` and renames that folder to `<git dir>\worktrees\<name>`. A held folder gets 2 s of retries, also past `timeoutMs`. A rename that still fails gets `worktree_add_failed`, and the rollback removes the folder too (`5fd08069`, round `task009-01`). The name is the first free one of `<name>`, `<name>1` to `<name>99`. A failed `.git` write (cell S8v) and a rollback (cells S14a and, in round `task087-03`, B6w) remove the moved registration by its name, and `config.worktree` and the index are new files there (`5fd08069`, round `task087-01`).
+- On Windows, before that step, a create removes old entries of the git directory. Such an entry has a name that starts with `.claude-new-worktree-` and a write time of 1 hour or more. A junction goes as a junction, and its target stays.
 - In the state `shadow`, a failed `rev-parse --absolute-git-dir` stops the create with `git worktree add failed: cannot locate the repository's git directory: exit status 128` (`5fd08069`, cell V12 of round `tier0-10`, Linux VM). The text after the last colon is the error of the call. macOS is not measured.
-- On Windows, a step before the add that fails gives `git worktree add failed: cannot prepare the repository's worktrees directory: <cause>`, and the `worktree add` call does not run. On Linux and macOS a symbolic link, a file or a folder that cannot be opened at `worktrees` does the same. `5fd08069` answers so in cell V1 of round `tier0-10`, cells C1, C4 and C5 of round `tier0-24` (Linux VM) and C5 of round `tier0-25m` (macOS VM).
+- On Windows, a step before the add that fails gives `git worktree add failed: cannot prepare the repository's worktrees directory: <cause>`, and the `worktree add` call does not run. On Linux and macOS a symbolic link, a file or a folder that cannot be opened at `worktrees` does the same. `5fd08069` answers so (rounds `tier0-10`, `tier0-24` and `tier0-25m`, Linux and macOS VMs).
 - On Linux and macOS a linked `baseRepo` whose entry in `<git dir>/worktrees` is a symbolic link gets the trust refusal as a failed add. Without `worktreeRoot` its `.claude/worktrees` is made (`5fd08069`, cell C7 of round `tier0-24`, Linux VM, with `extensions.worktreeConfig` and a `config.worktree` file). Other forms are not measured.
 
 `"shadowDirOff": true` turns the copy off for one request, and none of these steps runs. The same holds on a host whose git does not work on such a copy. With that member a link at `worktrees` refuses the create before the add (`5fd08069`, cell C2 of rounds `tier0-24` and `tier0-25m`, Linux and macOS VMs).
@@ -163,8 +160,8 @@ A copy that fails does not fail the request. If the deadline of `timeoutMs` expi
 
 ## Differences from the reference
 
-The pinned build `89cb6289` runs a git filter that only the repository defines. claustrum follows `5fd08069` there, in the refusal of a repository config and in the settings copy, with some differences: see [Git filters](#git-filters) and [Repository config refusals](../PROTOCOL.md#repository-config-refusals). These entries of the divergence catalog apply to this method:
+The pinned build `89cb6289` runs a git filter that only the repository defines. claustrum follows `5fd08069` there, in the refusal of a repository config and in the settings copy. See [Git filters](#git-filters) and [Repository config refusals](../PROTOCOL.md#repository-config-refusals). These entries of the divergence catalog apply to this method:
 
-- [D2](../DIVERGENCES.md#d2): a delete refuses a path that is the home directory or holds it. That covers the Windows removal of old `.claude-new-worktree-*` entries.
+- [D2](../DIVERGENCES.md#d2): a delete refuses a path that is the home directory or holds it. That covers the Windows removal of old `.claude-new-worktree-*` entries and both staging removes.
 - [D5](../DIVERGENCES.md#d5): an optional deadline on the git calls. It is off by default.
-- [D24](../DIVERGENCES.md#d24): on Linux and macOS, a rollback keeps a registration directory that something replaced after the add.
+- [D24](../DIVERGENCES.md#d24): a rollback and the index placement leave a registration directory that something replaced after the add (the Windows placement is not measured).
