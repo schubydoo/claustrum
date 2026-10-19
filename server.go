@@ -906,7 +906,7 @@ func (s *server) enablePipe(socket string, listenPipe bool) {
 	s.pipeLn = pln
 	// Record rpc.pipe's identity so teardown removes it only if it is still ours
 	// (removePipeNameFileIfOwned), like the socket and daemon.token.
-	s.pipeInfo, _ = os.Stat(pipeNameFilePath(socket))
+	s.pipeInfo = pipeNameFileIdentity(socket)
 	logInfof("[Server] also listening on named pipe %s", pln.Addr())
 }
 
@@ -930,8 +930,8 @@ func (s *server) run(socket string) {
 	go s.exitWhenOrphaned(socket)
 
 	// Block here until shutdown, then tear down synchronously on the main
-	// goroutine. teardown closes the listener (unblocking acceptLoop's Accept), drops
-	// clients, then stops children and removes files. Running it inline — not
+	// goroutine. teardown closes the listener (unblocking acceptLoop's Accept), and
+	// closeAll has the order of the steps after that. Running it inline — not
 	// in a goroutine racing the accept loop's return out of run()/main — guarantees
 	// the kill-or-keep decision (and its log line) actually completes: previously
 	// the accept loop returned the moment the listener closed and main exited the
@@ -1271,8 +1271,9 @@ func isChanClosed(ch chan struct{}) bool {
 	}
 }
 
-// teardown closes the listener, then drops clients, then stops child processes
-// (per -keep-children) and removes the daemon's files, then exits.
+// teardown closes the listener and removes the socket, then drops clients, then
+// stops child processes (per -keep-children) and removes the other files of the
+// daemon, then exits.
 func (s *server) teardown(socket string) {
 	s.closeAll(socket)
 	osExit(0)
@@ -1290,7 +1291,13 @@ func (s *server) teardown(socket string) {
 // Not measured: the counts for a child that ended by itself just before the shutdown.
 func (s *server) closeAll(socket string) {
 	s.ln.Close()
-	// Drop every client first, before the slower cleanup below. The server.shutdown
+	// Unlink the socket only if it still has the file identity that we bound. The
+	// test comes right after the listener close and before the connections close,
+	// as on 5fd08069 (cells L1 to L3 of round task091-01, Linux VM). On Windows the
+	// listener close already removed the path, so this guard does not apply there
+	// (cell W3, Windows VM).
+	removeSocketIfOwned(socket, s.sockInfo)
+	// Then drop every client, before the slower cleanup below. The server.shutdown
 	// handler waits until dropConns starts, and only then returns its reply for
 	// writing. The reply write then races this close.
 	closed := s.dropConns()
@@ -1305,8 +1312,10 @@ func (s *server) closeAll(socket string) {
 	// below and the record removals of -keep-children see every child whose start
 	// returned before the shutdown began, and no record write is open at the exit.
 	s.procs.stopStarts()
-	// Unlink the socket only if it still has the file identity that we bound.
-	removeSocketIfOwned(socket, s.sockInfo)
+	// The children get the kill before the token removal and the lock release, as on
+	// 5fd08069 (cell L1k of round task091-01, Linux VM, 3 of 3 runs). macOS runs this
+	// code too, and that order is not measured there.
+	killed := s.stopChildren()
 	removePersistedToken(socket, s.tokenInfo)
 	// Remove rpc.pipe on the same graceful path as rpc.sock/daemon.token, and with the
 	// same ownership guard: only if it is still the inode we published, so a successor's
@@ -1327,7 +1336,6 @@ func (s *server) closeAll(socket string) {
 	if s.releaseRunDir != nil {
 		s.releaseRunDir()
 	}
-	killed := s.stopChildren()
 	s.procs.close() // end the prune sweep; idempotent
 	logInfof("[Server] cleanup: closed %d connection(s), killed %d child process group(s)", closed, killed)
 	// Closed last, after every connection is down. Unlike the socket and

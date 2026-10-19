@@ -4,28 +4,29 @@ import (
 	"encoding/hex"
 	"os"
 	"path/filepath"
-	"runtime"
 	"strings"
 	"testing"
 )
 
 // removePipeNameFileIfOwned removes rpc.pipe only when it is still the inode this
 // daemon published (os.SameFile) — so a restart's successor that republished it keeps
-// its own pointer. Mirrors removePersistedToken / removeSocketIfOwned. POSIX-only:
-// os.SameFile cannot distinguish two files on Windows.
+// its own pointer. Mirrors removePersistedToken / removeSocketIfOwned. The identity
+// is the one that the daemon records (pipeNameFileIdentity). On Windows an os.Stat
+// identity reads the file id by the path at the compare, so it named the successor's
+// file there.
 func TestRemovePipeNameFileIfOwned(t *testing.T) {
-	if runtime.GOOS == "windows" {
-		t.Skip("os.SameFile cannot distinguish two files on Windows")
-	}
 	dir := t.TempDir()
 	sock := filepath.Join(dir, "rpc.sock")
 	if err := writePipeNameFile(sock, `\\.\pipe\x`); err != nil {
 		t.Fatal(err)
 	}
 	path := pipeNameFilePath(sock)
-	owned, err := os.Stat(path)
-	if err != nil {
-		t.Fatal(err)
+	owned := pipeNameFileIdentity(sock)
+	if owned == nil {
+		t.Fatal("no identity of the written rpc.pipe")
+	}
+	if pipeNameFileIdentity(filepath.Join(dir, "absent", "rpc.sock")) != nil {
+		t.Error("an absent rpc.pipe has an identity")
 	}
 	removePipeNameFileIfOwned(sock, nil) // nil owned → no-op
 	if _, err := os.Stat(path); err != nil {

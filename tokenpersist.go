@@ -101,10 +101,23 @@ func persistToken(socket, token string) os.FileInfo {
 	return fi
 }
 
-// statPersistedToken is os.Stat behind a seam over the identity read above: the
-// rename immediately before it has just put dest in place, so that stat does not
-// fail in practice and the "nothing to own" (nil) arm is otherwise unreachable.
-var statPersistedToken = os.Stat
+// statPersistedToken reads the identity of the written token file through an open
+// handle. On Windows an os.Stat result reads the file id only when os.SameFile
+// first runs, by the path. At the stop that path can name the file of a successor.
+// A stat of the handle holds the id of this file from the start. It is a seam,
+// because the rename right before it put dest in place, so the nil arm is
+// otherwise unreachable.
+var statPersistedToken = statOpenFile
+
+// statOpenFile opens path and returns the stat of the open handle.
+func statOpenFile(path string) (os.FileInfo, error) {
+	f, err := os.Open(path)
+	if err != nil {
+		return nil, err
+	}
+	defer f.Close()
+	return f.Stat()
+}
 
 // removePersistedToken unlinks the persisted token file on graceful shutdown ONLY
 // when the file on disk is still the inode this daemon wrote (os.SameFile against

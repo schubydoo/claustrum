@@ -111,11 +111,10 @@ func TestPersistTokenRoundTrip(t *testing.T) {
 // out from under the new daemon. Extends claustrum's socket-ownership guard
 // (removeSocketIfOwned) to daemon.token. The successor's inode is forced distinct by creating
 // it ALONGSIDE the original, then renaming into place (a delete-recreate could reuse
-// the freed inode; POSIX-only, Windows os.SameFile cannot distinguish two files).
+// the freed inode). On Windows this is cell W3 of round task091-01: 5fd08069 keeps
+// the token of the successor. An identity from os.Stat there reads the file id by
+// the path at the compare, so it named the successor's file and the token went.
 func TestRemovePersistedTokenLeavesSuccessor(t *testing.T) {
-	if runtime.GOOS == "windows" {
-		t.Skip("os.SameFile cannot distinguish two files on Windows")
-	}
 	dir := t.TempDir()
 	socket := filepath.Join(dir, "rpc.sock")
 	path := filepath.Join(dir, "daemon.token")
@@ -164,6 +163,14 @@ func TestRemovePersistedTokenAbsent(t *testing.T) {
 	owned := persistToken(socket, "tok")
 	_ = os.Remove(filepath.Join(filepath.Dir(socket), "daemon.token"))
 	removePersistedToken(socket, owned) // file gone; must not panic
+}
+
+// statOpenFile fails when the path does not open, and then returns no identity.
+func TestStatOpenFileMissingPath(t *testing.T) {
+	fi, err := statOpenFile(filepath.Join(t.TempDir(), "absent"))
+	if err == nil || fi != nil {
+		t.Errorf("statOpenFile of an absent path = %v, %v, want nil and an error", fi, err)
+	}
 }
 
 // persistToken is best-effort: if the socket's directory does not exist (so the
