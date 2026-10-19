@@ -138,6 +138,7 @@ component_management:
         - peercheck_other.go
         - methods_files.go
         - methods_git.go
+        - gitparams.go
         - methods_process.go
         # 89cb6289 managed launcher: launcher.resolve, the settings reader, the
         # process.spawn launcher checks and the child env strip, with its OS split.

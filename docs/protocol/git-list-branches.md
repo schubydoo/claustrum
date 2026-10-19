@@ -36,7 +36,7 @@ If the daemon finds no repository, the response is not an error:
 
 - `path` is not inside a git repository.
 - `path` does not resolve. For example, it does not exist. That is not an error.
-- `path` is inside a directory of managed worktrees. That is a path under `.claude/worktrees`, or under a directory that holds the marker file `.claude-managed-worktrees`. So the worktree of a session gives `"isRepo": false`. Send the path of the base repository to list its branches. A `baseRepo` member inside such a directory gives the same response. With no `baseRepo`, the daemon makes that test on its own working directory too.
+- `path` is inside a directory of managed worktrees. That is a path under `.claude/worktrees`, or under a directory that holds the marker file `.claude-managed-worktrees`. So the worktree of a session gives `"isRepo": false`. Send the path of the base repository to list its branches. `git.list_branches` ignores a `baseRepo` member (cells LB1 and LB2 of round `task015-02`, Linux VM). The daemon makes that test on its own working directory too.
 - The daemon cannot find git on its `PATH`.
 - git itself does not accept the repository. For example, the repository belongs to another user and git has no `safe.directory` line for it.
 
@@ -46,7 +46,7 @@ This method has no `errorCode` member. A failure is a JSON-RPC error.
 
 | Code | Text | Cause |
 |---|---|---|
-| `-32602` | `Invalid params` | The request has no `params` member, or `params` or a member of it has the wrong type. See [the rules for `params`](../PROTOCOL.md#params-presence-and-typing). |
+| `-32602` | `Invalid params` | The request has no `params` member, or `params` or a member that it reads has the wrong type. See [the rules for `params`](../PROTOCOL.md#params-presence-and-typing). |
 | `-32603` | A refusal text | The daemon refuses to run git for `path`. Three examples follow. It does not trust the git directory or the git configuration. It refuses its own git environment. git is on the `PATH`, and `git version` fails. The texts are in [Git-directory trust check](../PROTOCOL.md#git-directory-trust-check), [Hardened git calls](../PROTOCOL.md#hardened-git-calls) and [The daemon's own git environment](../PROTOCOL.md#the-daemons-own-git-environment). |
 | `-32603` | `this repository's git config cannot be used: …` or `a file in this repository's .git directory cannot be used: …` | The daemon read the git configuration of the repository itself and does not accept it. For example, the format version of the repository is not `0` or `1`. The second text is for a file of the git directory. `"shadowDirOff": true` in the request turns that read off. The protocol reference has [the texts](../PROTOCOL.md#repository-config-refusals). |
 | `-32603` | `Claude could not test git on the remote machine (…). Check free disk space and quota there, then try again.` | The daemon tests once whether the git of the host works on its settings copy. That test failed. If its call 7 failed and `git version` fails too, the text is `git cannot run on this host; git not run: …` instead. The daemon keeps the failure for 10 seconds. See [The settings copy](../PROTOCOL.md#the-settings-copy). |
@@ -63,6 +63,4 @@ On Windows, a `path` with a junction before its last component does not resolve,
 
 ## Differences from the reference
 
-claustrum is built to answer as the reference daemon does. The pinned build `89cb6289` has no settings copy, and it answers a request with a failed test normally. claustrum follows `5fd08069` there. These entries of the divergence catalog apply to this method:
-
-- [D9](../DIVERGENCES.md#d9): a member of another `git.*` method with the wrong type gets `-32602`, although this method does not use it.
+claustrum is built to answer as the reference daemon does. The pinned build `89cb6289` has no settings copy, and it answers a request with a failed test normally. claustrum follows `5fd08069` there. No entry of the divergence catalog applies to this method.

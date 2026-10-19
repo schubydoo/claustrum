@@ -60,7 +60,7 @@ This method has no `errorCode` member. A failure is a JSON-RPC error.
 
 | Code | Text | Cause |
 |---|---|---|
-| `-32602` | `Invalid params` | The request has no `params` member, or `params` or a member of it has the wrong type. See [the rules for `params`](../PROTOCOL.md#params-presence-and-typing). |
+| `-32602` | `Invalid params` | The request has no `params` member, or `params` or a member that it reads has the wrong type. See [the rules for `params`](../PROTOCOL.md#params-presence-and-typing). |
 | `-32603` | `open <path>: <reason>`, for example `open <path>: permission denied` | The daemon cannot open the path, and the reason is not a missing file. See [Stat failures](../PROTOCOL.md#stat-failures-other-than-does-not-exist). |
 | `-32603` | The text of the operating system | The daemon cannot get the kind of the open file. |
 | `-32602` | `files.read: path is a directory` | The path is a directory. |

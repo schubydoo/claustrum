@@ -63,24 +63,23 @@ func startDetached(cmd *exec.Cmd) error {
 	return nil
 }
 
-// openHeldDaemonLog opens the existing remote-server.log for append. openDaemonLog calls it
-// after the rotate and the fresh create failed. On Windows that is the case of a
-// second daemon on a live socket: the first daemon holds the log open, so the rename
-// fails. The second daemon then logs to the same file. Every write of both daemons goes
-// to the end of the file, so no line of either one is lost.
-//
-// Measured on a Windows VM (rows WN04 and WJ04): 89cb6289 logs to the file there, and its
-// launcher returns at once. It truncates the file, and the earlier lines of the first
-// daemon are lost. claustrum does not copy that loss (DIVERGENCES.md D21). In the same
-// rows the file of claustrum kept every line of both daemons. A first daemon of an
-// earlier claustrum build does not write in append mode. That mix is not measured. A
-// path that is not a regular file is refused.
+// daemonLogAppend is 0 on Windows: each daemon writes at the offset of its own handle.
+// 5fd08069 does so (cell W1 of round task015-01, Windows VM). A first daemon that writes
+// on after a second one truncated the file leaves a block of NUL bytes, as there.
+const daemonLogAppend = 0
+
+// openHeldDaemonLog opens the existing remote-server.log for write and truncates it.
+// openDaemonLog calls it after the rotate and the fresh create failed. On Windows that is
+// the case of a second daemon on a live socket, or of another process that holds the log
+// open with no delete share: the rename fails. 5fd08069 truncates the file in both cases,
+// and the earlier lines are lost. .old stays as it was (cells W1 and W3 of round
+// task015-01, Windows VM). A path that is not a regular file is refused.
 func openHeldDaemonLog(path string) *os.File {
 	fi, err := os.Lstat(path)
 	if err != nil || !fi.Mode().IsRegular() {
 		return nil
 	}
-	f, err := os.OpenFile(path, os.O_WRONLY|os.O_APPEND, 0)
+	f, err := os.OpenFile(path, os.O_WRONLY|os.O_TRUNC, 0)
 	if err != nil {
 		return nil
 	}

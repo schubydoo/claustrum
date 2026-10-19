@@ -51,7 +51,7 @@ This method has no `errorCode` member. A failure is a JSON-RPC error. The daemon
 
 | Code | Text | Cause |
 |---|---|---|
-| `-32602` | `Invalid params` | The request has no `params` member, or `params` or a member of it has the wrong type. A negative `offset` gets this error too. See [the rules for `params`](../PROTOCOL.md#params-presence-and-typing). |
+| `-32602` | `Invalid params` | The request has no `params` member, or `params` or a member that it reads has the wrong type. A negative `offset` gets this error too. See [the rules for `params`](../PROTOCOL.md#params-presence-and-typing). |
 | `-32602` | `Invalid base64 data` | `data` is not valid base64. This test comes before the test of `id`. |
 | `-32602` | `Process not found` | The daemon has no process with this `id`. |
 | `-32003` | `stdin offset gap: offset ahead of applied bytes` | `offset` is above `applied`. |

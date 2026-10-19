@@ -636,8 +636,8 @@ self-probe below.
 
 The launcher creates `remote-server.log` in the socket's directory with mode
 `0600`. The launcher rotates any existing log to
-`remote-server.log.old` and creates a fresh one. One Windows case gets no fresh
-file: a second daemon on a live socket (see below). This matches `4534d86`, which
+`remote-server.log.old` and creates a fresh one. On Windows a log that another
+process holds open gets no fresh file (see below). This matches `4534d86`, which
 keeps the previous session's log as `.old` on every restart. The launcher
 redirects the daemonized child's stdout and stderr into that file, so the
 launcher's own streams stay empty. On Linux and macOS, when the limit raise
@@ -692,7 +692,7 @@ sticky directory that holds another user's file or symlink. On Linux and macOS
 claustrum then declines the
 log entirely and falls back to inherited stdio. In both cases, on Linux and macOS,
 claustrum never follows the link and never writes into a file another user owns.
-On Windows the launcher then opens an existing regular file for append (see
+On Windows the launcher then opens an existing regular file and truncates it (see
 below). That open tests the file type first and has no owner test. A swap between
 the test and the open is not measured. This follows from the code. This is
 intentional divergence D8, and it is always-on. `4534d86` no longer
@@ -703,18 +703,13 @@ trigger is not reachable on the deployed path, because the socket directory
 (`~/.claude/remote/`) is per-user and not world-writable. That is why D8 is
 always-on and not opt-in. See [`DIVERGENCES.md`](DIVERGENCES.md) → D8.
 
-On Windows a second daemon can start on a live socket (rows WN04 and WJ04). The
-first daemon holds `remote-server.log` open, so the launcher cannot rotate it. The
-launcher then opens the same file for append, and the second daemon logs there.
-Each daemon writes to the end of the file. On a Windows VM the file of claustrum
-kept the 16 earlier lines of the first daemon. The later lines of both followed in
-time order. `89cb6289` logs to the file too, and both launchers return at once. It
-truncates the file at that start. The 16 earlier lines of its first daemon were
-lost, and the later lines of that daemon sat behind a block of NUL bytes. This is
-divergence D21, a maintainer decision of 2026-10-02: claustrum keeps the lines.
-See [`DIVERGENCES.md`](DIVERGENCES.md) → D21. A first daemon of an earlier
-claustrum build does not write in append mode. It writes at its own offset. That
-mix follows from the code and is not measured.
+On Windows a second daemon can start on a live socket. The first daemon holds
+`remote-server.log` open, so the launcher cannot rotate it. The launcher then
+truncates that file, and the second daemon logs there. Each daemon writes at the
+offset of its own handle. So the earlier lines of the first daemon are lost, and
+its later lines sit behind a block of NUL bytes. A log that another process holds
+with no delete share is truncated too, and `.old` stays. `5fd08069` does both
+(cells W1 and W3 of round `task015-01`, Windows VM).
 
 claustrum does not remove the log on graceful shutdown. This differs from the
 socket and from `daemon.token`. The log outlives the daemon, so a post-mortem
@@ -1011,19 +1006,14 @@ Every `files.*` / `git.*` / `process.*` method requires a `params` object.
 - Absent `params` gives `-32602 Invalid params`. The daemon tests this *after*
   method existence, so an unknown method is `-32601` in every case.
 - The daemon accepts an empty `{}` and then runs the method's own validation.
-- Mistyped `params` gives `-32602 Invalid params`. This covers a wrong field type
-  (`"maxBytes":"4"`, `"path":123`) and a non-object value (`"params":"x"` or
+- Mistyped `params` gives `-32602 Invalid params`. This covers a wrong type in a
+  member that the method reads (`"maxBytes":"4"`, `"path":123`) and a non-object value (`"params":"x"` or
   `[…]`). The daemon does not coerce the value, and it does not ignore the decode
   error.
-- The daemon ignores unknown extra fields. It diverges from the reference in *how
-  strictly* it does so (D9). claustrum binds `params` into one struct per
-  namespace (`pathParams`, `gitParams`). A field that is valid for the *namespace*
-  but unused by *this* method therefore still takes part in the decode. A
-  type-mismatched value there gives `-32602`, for example
-  `files.stat {"maxBytes":"{"}`. The reference answers that request with defaults,
-  as measured on `f6010b97`. Both daemons ignore a
-  genuinely unknown key, which is a key in neither struct. This is accepted
-  divergence D9. See [`DIVERGENCES.md`](DIVERGENCES.md).
+- The daemon ignores a member that another method of the namespace reads,
+  whatever its type.
+  So `files.stat {"maxBytes":"{"}` answers as `files.stat` with no `maxBytes`.
+  `5fd08069` does the same (round `task015-01`, Linux, macOS and Windows VMs).
 
 ## Path handling
 
@@ -4397,9 +4387,9 @@ as id-less stream notifications, and it buffers them for a later replay.
   persisted daemon value against a later daemon value for the same id. Do not
   equality-compare it against an OS-read process start time
   (`psutil create_time`), because the two derivations differ. When `wantPid` is
-  absent or `false`, the daemon omits both fields through `omitempty`, and the
-  frame is byte-identical to `{"success":true}`. An older daemon ignores the
-  unknown param through its tolerant decode. See
+  absent or not `true` (claustrum's own), the daemon omits both fields through
+  `omitempty`, and the frame is byte-identical to `{"success":true}`. `5fd08069`
+  ignores the member (cells P1 and P2 of round `task015-01`, Linux VM). See
   [`DIVERGENCES.md`](DIVERGENCES.md) → CT-1.
 - The exec-child trampoline is `19f30c46` parity on linux and darwin. On every
   socket shape, a spawned child is launched

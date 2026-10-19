@@ -13,7 +13,7 @@
 | `minAgeDays` | no | The number of days that a directory stays after its last use. The daemon limits the value to the range 7 to 3650. Without a value, or with a value below 7, the daemon uses 7. |
 | `keep` | no | A list of strings. The daemon accepts it and does not use it. A directory whose name is in `keep` is deleted as any other. |
 
-The daemon also accepts a request with no `params` member, and one with `"params": null`. Both use the defaults.
+No `params` member gets `-32602 Invalid params: unexpected end of JSON input`, as on `5fd08069` (cell P0, round `task015-01`, Linux VM). `"params": null` gets the defaults.
 
 ## Which directories the daemon deletes
 
@@ -87,4 +87,4 @@ The paths and the `<error>` texts in `legacy` and `errors` are those of the oper
 
 ## Differences from the reference
 
-claustrum is built to answer as the reference daemon does, and no entry of the divergence catalog applies to this method. `kept` and `staleArchives` are in the response because the reference has them. No measurement against the reference build `19f30c46` made either one differ from `0`. The `errors` member and the request with no `params` are from the code of claustrum. No measurement against the reference covers them.
+claustrum is built to answer as the reference daemon does, and no entry of the divergence catalog applies to this method. `kept` and `staleArchives` are in the response because the reference has them. No measurement against the reference build `19f30c46` made either one differ from `0`. The `errors` member and `"params": null` are from the code of claustrum, not measured.

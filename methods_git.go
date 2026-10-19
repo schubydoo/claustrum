@@ -46,6 +46,8 @@ func (s *server) handleGit(req *request) response {
 	return req.stop.reply(req, fn(req))
 }
 
+// gitParams holds the members of the five git methods. Each method decodes
+// only its own members (gitparams.go).
 type gitParams struct {
 	Path         string `json:"path"`
 	BaseRepo     string `json:"baseRepo"`
@@ -57,16 +59,16 @@ type gitParams struct {
 	// the git.worktree_create.existingBranch feature. When it names a branch that
 	// show-ref --verify resolves, the add uses that branch as the commit-ish (no -b);
 	// when it is absent or names no branch, the -b <branchName> new-branch path runs.
-	// Caller-activated (like timeoutMs), not an operator divergence. Bound
-	// namespace-wide like every gitParams field (D9); only git.worktree_create reads it.
+	// Caller-activated (like timeoutMs), not an operator divergence. Only
+	// git.worktree_create reads it (createViewParams).
 	ExistingBranch string `json:"existingBranch,omitempty"`
 	WorktreeRoot   string `json:"worktreeRoot,omitempty"`
 	// TimeoutMs is a caller-supplied per-request deadline (milliseconds) on the
 	// git.worktree_create add + checkout, added by the reference in 4534d86 and
 	// advertised as the git.worktree_create.timeoutMs feature. Absent or 0 arms no
 	// deadline, so the default path is byte-identical. This is caller-activated
-	// (like CT-1's wantPid), not an operator divergence. Bound namespace-wide like
-	// every gitParams field (D9); only git.worktree_create reads it.
+	// (like CT-1's wantPid), not an operator divergence. Only git.worktree_create
+	// reads it (createViewParams).
 	TimeoutMs int `json:"timeoutMs,omitempty"`
 	// ShadowDirOff turns off the filter rule of the git.worktree_create checkout
 	// (gitfilter.go) for this request. With it, 5fd08069 passes no filter pairs, runs
@@ -164,8 +166,8 @@ func isRepo(u gitUse, dir string, l configListing) bool {
 }
 
 func gitInfo(req *request) response {
-	var p gitParams
-	if bad := bindParams(req, &p); bad != nil {
+	p, bad := bindGitParams(req, &infoViewParams{})
+	if bad != nil {
 		return *bad
 	}
 	// The excludesFile the reference reads at git.info is now resolved once (cached)
@@ -518,8 +520,8 @@ func gitDefaultBranch(u gitUse, dir string) string {
 }
 
 func gitStatus(req *request) response {
-	var p gitParams
-	if bad := bindParams(req, &p); bad != nil {
+	p, bad := bindGitParams(req, &statusViewParams{})
+	if bad != nil {
 		return *bad
 	}
 	// 7d193f89 rebuilt git.status around session worktrees. baseRepo is now
@@ -654,15 +656,16 @@ func samePath(a, b string) bool {
 }
 
 func gitListBranches(req *request) response {
-	var p gitParams
-	if bad := bindParams(req, &p); bad != nil {
+	p, bad := bindGitParams(req, &infoViewParams{})
+	if bad != nil {
 		return *bad
 	}
 	// A path inside a managed worktrees tree, and a non-empty path that does not
 	// resolve, answer the bare isRepo:false shape (branches:[]) before any git call
 	// and before the check of the daemon's own GIT_CONFIG_COUNT.
-	// The managed-worktrees test also runs on
-	// baseRepo.
+	// git.list_branches ignores a baseRepo member, as 5fd08069 does (cells LB1 and
+	// LB2 of round task015-02, Linux VM). The managed-worktrees test also runs on
+	// the daemon's working directory.
 	if baseRepoUnderManagedWorktrees(p.Path) || baseRepoUnderManagedWorktrees(p.repoDir()) ||
 		(p.Path != "" && unresolvable(p.Path)) {
 		return okResult(req.ID, branchesResult{Branches: []string{}})
@@ -767,8 +770,8 @@ func pairBeforeAdd(req *request, gitDir, repo string) {
 }
 
 func gitWorktreeCreate(req *request) response {
-	var p gitParams
-	if bad := bindParams(req, &p); bad != nil {
+	p, bad := bindGitParams(req, &createViewParams{})
+	if bad != nil {
 		return *bad
 	}
 	if p.BranchName == "" {
@@ -1931,8 +1934,8 @@ func (req *request) removeGate(t gitDirTrust, off jsonTrueSwitch, repo string) (
 }
 
 func gitWorktreeRemove(req *request) response {
-	var p gitParams
-	if bad := bindParams(req, &p); bad != nil {
+	p, bad := bindGitParams(req, &removeViewParams{})
+	if bad != nil {
 		return *bad
 	}
 	repo := p.repoDir()

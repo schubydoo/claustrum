@@ -17,6 +17,10 @@ func detachSysProcAttr() *syscall.SysProcAttr {
 // startDetached starts the daemonized child. On unix it is cmd.Start. Windows has its own.
 func startDetached(cmd *exec.Cmd) error { return cmd.Start() }
 
+// daemonLogAppend is the append flag of the log open. On unix every write goes to the end
+// of the file. Windows has its own.
+const daemonLogAppend = os.O_APPEND
+
 // openHeldDaemonLog is nil on unix. A log that cannot be rotated there is the foreign file
 // or symlink of D8, and the launcher falls back to its inherited stdio. Windows has its own.
 func openHeldDaemonLog(path string) *os.File { return nil }

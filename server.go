@@ -688,8 +688,8 @@ const daemonLogName = "remote-server.log"
 // directory is not sticky, so no honest caller reaches this branch.
 //
 // On Windows a log that a live daemon holds open cannot be renamed. The launcher of a
-// second daemon then opens that same file for append (openHeldDaemonLog), so the second
-// daemon runs detached and logs to the file. On unix that fallback does not exist.
+// second daemon then opens that same file and truncates it (openHeldDaemonLog), so the
+// second daemon runs detached and logs to the file. On unix that fallback does not exist.
 //
 // The log is NOT removed on shutdown; unlike the socket and daemon.token it
 // outlives the daemon, so a post-mortem is still readable.
@@ -699,10 +699,8 @@ func openDaemonLog(socket string) *os.File {
 	}
 	path := filepath.Join(filepath.Dir(socket), daemonLogName)
 	_ = os.Rename(path, path+".old") // rotate prior log to .old (parity); O_EXCL guarantees freshness
-	// O_APPEND: every write goes to the end of the file. A second daemon on a live
-	// socket on Windows shares this file (openHeldDaemonLog), and neither one then
-	// writes over a line of the other.
-	f, err := os.OpenFile(path, os.O_CREATE|os.O_WRONLY|os.O_EXCL|os.O_APPEND, 0o600)
+	// daemonLogAppend is O_APPEND on unix and 0 on Windows (detach_*.go).
+	f, err := os.OpenFile(path, os.O_CREATE|os.O_WRONLY|os.O_EXCL|daemonLogAppend, 0o600)
 	if err != nil {
 		return openHeldDaemonLog(path)
 	}

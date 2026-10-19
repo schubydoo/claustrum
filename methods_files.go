@@ -38,7 +38,17 @@ func (s *server) handleFiles(req *request) response {
 	return fn(req)
 }
 
+// pathParams holds the one member that files.stat, files.list and
+// files.validate read. A maxBytes member of any type is ignored there, as on
+// 5fd08069 (cells F1 to F3 of round task015-01, Linux VM, and F1 on macOS and
+// Windows VMs).
 type pathParams struct {
+	Path string `json:"path"`
+}
+
+// fileReadParams holds the members that files.read reads. A wrong type there is
+// -32602 "Invalid params" (cell F4).
+type fileReadParams struct {
 	Path     string `json:"path"`
 	MaxBytes int64  `json:"maxBytes"`
 }
@@ -148,7 +158,7 @@ func filesList(req *request) response {
 // device itself reads as empty content (isNullDevice). The open does not wait
 // for a FIFO writer (readOpenFlag).
 func filesRead(req *request) response {
-	var p pathParams
+	var p fileReadParams
 	if bad := bindParams(req, &p); bad != nil {
 		return *bad
 	}

@@ -275,7 +275,7 @@ func TestDecodeAndNeedParams(t *testing.T) {
 	}
 
 	// decodeParams treats absent params as a no-op (leaves zero value).
-	var p pathParams
+	var p fileReadParams
 	if err := decodeParams(&request{}, &p); err != nil {
 		t.Fatalf("decodeParams empty: %v", err)
 	}

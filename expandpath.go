@@ -110,7 +110,8 @@ type pathExpander interface {
 	expandPaths()
 }
 
-func (p *pathParams) expandPaths() { p.Path = expandPath(p.Path) }
+func (p *pathParams) expandPaths()     { p.Path = expandPath(p.Path) }
+func (p *fileReadParams) expandPaths() { p.Path = expandPath(p.Path) }
 func (p *extractTarParams) expandPaths() {
 	p.ArchivePath = expandPath(p.ArchivePath)
 	p.DestDir = expandPath(p.DestDir)
