@@ -426,22 +426,21 @@ traps that matter for telling drift from expected:
     `89cb6289` runs the filter (Linux and Windows VMs).
   - With a filter in the repository config and in a config outside it, the
     outside filter runs. `89cb6289` runs the one of the repository
-    (Linux VM).
+    (Linux VM). A user `process = cat` with a repository `smudge` command
+    answers `repository_only_filter`, as on `5fd08069`.
   - A filter that only the repository defines, with a name of 300 bytes,
     answers `worktree_add_failed` with the text about a name longer than 200
     bytes (Linux and Windows VMs).
+  - With a settings copy, a filter that only the repository defines, with a
+    name that is not valid UTF-8 and a value that does not pass, answers git's
+    checkout text on Linux and success with no filter run on Windows, and
+    `89cb6289` runs the filter (Windows VM). With no copy it answers the text
+    about values that no option of git can replace (claustrum's own).
   - In the state `shadow`, more than 64 filter names, and a last config listing
     before the checkout that fails or runs 30 s, fail the create (claustrum's code,
     `89cb6289` not run).
 
   Against `5fd08069` these differences are not drift:
-  - With `smudge` from outside and a `process` key in the repository,
-    `5fd08069` runs the outside filter and succeeds. claustrum answers its own
-    `worktree_add_failed` text about values that no option of git can replace
-    (Linux VM).
-  - With a `smudge` key that has no value, `5fd08069` answers the filter
-    refusal. claustrum answers `worktree_add_failed` with git's own text
-    (Linux VM).
   - With a `GIT_DIR` and a `GIT_WORK_TREE` of another repository in the daemon
     environment, `5fd08069` answers the filter refusal. claustrum answers
     `not_a_repo`, as `89cb6289` does (Linux VM).
@@ -450,9 +449,6 @@ traps that matter for telling drift from expected:
   - With a temporary directory that cannot be used, `5fd08069` answers the
     filter refusal. claustrum fails as `89cb6289` does (Linux and Windows
     VMs).
-  - A filter name that is not valid UTF-8 gets claustrum's own refusal.
-    `5fd08069` answers a checkout failure on a Linux VM and success on a
-    Windows VM.
   - With a program key of git-lfs in the config of the repository, the filter
     `lfs` does not run on claustrum. A create with a file under it answers the
     filter refusal for `lfs`, or claustrum's own `worktree_add_failed` text

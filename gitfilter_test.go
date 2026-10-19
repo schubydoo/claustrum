@@ -207,9 +207,10 @@ func TestWorktreeCreateRefusesFilterNameWithEquals(t *testing.T) {
 	f.assertRolledBack(t, []string{}, false)
 }
 
-// A process key of the repository beside an outside smudge key gets claustrum's
-// own refusal, and no filter runs. 5fd08069 runs the outside filter and succeeds
-// there (cell Q1). That difference stays.
+// A process key of the repository beside an outside smudge key, with no
+// settings copy, gets claustrum's own refusal, and no filter runs. That state
+// is claustrum's own, not measured. With a copy the create succeeds, as on
+// 5fd08069 (cell F1 of round task073-02, TestShadowFilterRulesOfRoundTask073).
 func TestWorktreeCreateRefusesFilterThatNoPairReplaces(t *testing.T) {
 	f := newFilterFixture(t, "t.txt filter=m\n")
 	f.own(t, "filter.m.process", f.marker(t, "local"))
@@ -258,7 +259,7 @@ func TestWorktreeCreateSmudgeCatStartsNoProgram(t *testing.T) {
 	// The control. With the rule off, git runs the cat of PATH, so the stand-in
 	// can be reached.
 	f.assertRetryWithRuleOffRunsCat(t)
-	plan := planFilters(parseFilterListing([]byte("filter.m.smudge\ncat\x00filter.m.required\ntrue\x00")), nil, "", false)
+	plan := planFilters(parseFilterListing([]byte("filter.m.smudge\ncat\x00filter.m.required\ntrue\x00")), nil, nil, "", false)
 	if want := []string{"-c", "filter.m.process=", "-c", "filter.m.required=false", "-c", "filter.m.smudge="}; !slices.Equal(plan.args, want) {
 		t.Errorf("pairs for smudge = cat: %q, want %q", plan.args, want)
 	}
@@ -284,10 +285,10 @@ func (f filterFixture) assertRetryWithRuleOffRunsCat(t *testing.T) {
 }
 
 // A filter name that is not valid UTF-8 cannot go through a Windows command line
-// as it is. A filter with such a name that only the repository defines is
-// refused before the checkout, on every system, with claustrum's own text.
-// 5fd08069 answers another text on Linux and success on Windows (cells S3 and
-// X1). The test writes the config bytes itself.
+// as it is. With no settings copy a filter with such a name that only the
+// repository defines is refused before the checkout, on every system, with
+// claustrum's own text. That state is not measured. With a copy see
+// TestShadowFilterNameThatIsNotUTF8. The test writes the config bytes itself.
 func TestWorktreeCreateRefusesFilterNameThatIsNotUTF8(t *testing.T) {
 	f := newFilterFixture(t, "t.txt filter=n\xffn\n")
 	cfg := filepath.Join(f.top, ".git", "config")
@@ -297,9 +298,7 @@ func TestWorktreeCreateRefusesFilterNameThatIsNotUTF8(t *testing.T) {
 	}
 	writeFile(t, cfg, string(old)+"[filter \"n\xffn\"]\n\tsmudge = "+f.marker(t, "local")+"\n", 0o644)
 	raw, _ := f.create(t, newTestServer(t), "w1", "", 0)
-	wantError(t, raw, "git worktree add failed (checkout): this repository's git config cannot be used: the filter "+
-		`"n\xffn" is defined only there, and its name is not valid UTF-8; define it in ~/.gitconfig on the remote machine, or rename it`,
-		"worktree_add_failed")
+	wantError(t, raw, "git worktree add failed (checkout): "+unreplaceableFilterText("n\xffn"), "worktree_add_failed")
 	if f.ran("local") {
 		t.Error("the filter of the repository ran")
 	}
@@ -308,7 +307,7 @@ func TestWorktreeCreateRefusesFilterNameThatIsNotUTF8(t *testing.T) {
 	// With a definition outside the repository too, the pairs with the outside
 	// values cannot name the filter either.
 	both := planFilters(parseFilterListing([]byte("filter.n\xffn.smudge\nout\x00filter.n\xffn.smudge\nown\x00")),
-		parseFilterListing([]byte("filter.n\xffn.smudge\nout\x00")), "", false)
+		parseFilterListing([]byte("filter.n\xffn.smudge\nout\x00")), nil, "", false)
 	if both.refusal != unreplaceableFilterText("n\xffn") || len(both.args) != 0 {
 		t.Errorf("a name that is not UTF-8 on both sides: refusal %q, pairs %q", both.refusal, both.args)
 	}
@@ -467,7 +466,7 @@ func TestWorktreeCreatePassesLfsFilterOn(t *testing.T) {
 	wantFirstPairs(t, argv, "filter.lfs.smudge=git-lfs smudge -- %f")
 	f.wantCreatedLeaf(t, raw)
 
-	plan := planFilters(parseFilterListing([]byte("filter.lfs.process\ngit-lfs filter-process\x00")), nil, "", false)
+	plan := planFilters(parseFilterListing([]byte("filter.lfs.process\ngit-lfs filter-process\x00")), nil, nil, "", false)
 	if want := []string{"-c", "filter.lfs.process=git-lfs filter-process"}; !slices.Equal(plan.args, want) || len(plan.refused) != 0 {
 		t.Fatalf("plan of the lfs process value = %q refused %q, want %q and none", plan.args, plan.refused, want)
 	}
@@ -622,12 +621,12 @@ func TestWorktreeCreateFilterNameBound(t *testing.T) {
 
 	for n, refusal := range map[int]bool{200: false, 201: true} {
 		name := strings.Repeat("n", n)
-		plan := planFilters(parseFilterListing([]byte("filter."+name+".smudge\nx\x00")), nil, "", false)
+		plan := planFilters(parseFilterListing([]byte("filter."+name+".smudge\nx\x00")), nil, nil, "", false)
 		if (plan.refusal != "") != refusal || slices.Contains(plan.refused, name) == refusal {
 			t.Errorf("name of %d bytes: refusal %q, three pairs %v", n, plan.refusal, len(plan.refused) == 1)
 		}
 	}
-	plan := planFilters(parseFilterListing([]byte("filter."+long+".smudge\ncat\x00")), nil, "", false)
+	plan := planFilters(parseFilterListing([]byte("filter."+long+".smudge\ncat\x00")), nil, nil, "", false)
 	if plan.refusal != "" || len(plan.refused) != 0 {
 		t.Errorf("name of 300 bytes with smudge = cat: refusal %q, three pairs %v, want neither", plan.refusal, plan.refused)
 	}
@@ -742,7 +741,7 @@ func TestPlanFilters(t *testing.T) {
 	off := func(name string) []string {
 		return []string{"-c", "filter." + name + ".process=", "-c", "filter." + name + ".required=true", "-c", "filter." + name + ".smudge=false"}
 	}
-	plan := planFilters(full, outside, "", false)
+	plan := planFilters(full, outside, nil, "", false)
 	want := slices.Concat(
 		[]string{"-c", "filter.M.process=", "-c", "filter.M.required=false", "-c", "filter.M.smudge="},
 		[]string{"-c", "filter.both.required=false", "-c", "filter.both.smudge=out"},

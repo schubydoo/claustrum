@@ -380,8 +380,8 @@ type repoConfigRead struct {
 	// (claustrum's own, not measured).
 	conditional []repoSetting
 	// ruleSkip holds the indices of settings that the filter rule passes
-	// over: each `smudge` value of a filter that a later one of the same file
-	// replaces (lastSmudgePerFile).
+	// over: each `smudge` or `process` line of a filter that a later one of the
+	// same file replaces (lastLinePerFile).
 	ruleSkip map[int]bool
 	// version is the last value of core.repositoryformatversion in the config
 	// itself, when hasVersion.
@@ -542,21 +542,21 @@ func (r *repoConfigRead) file(path string, depth int) string {
 		r.unlisted = true
 		return ""
 	}
-	smudgeAt := map[string]int{}
+	lineAt := map[string]int{}
 	for rec := range bytes.SplitSeq(out, []byte{0}) {
 		if len(rec) == 0 {
 			continue
 		}
 		key, value, hasValue := strings.Cut(string(rec), "\n")
 		r.settings = append(r.settings, repoSetting{key: key, value: value, hasValue: hasValue, included: depth > 0})
-		if isSmudgeKey(key) {
-			if at, ok := smudgeAt[key]; ok {
+		if isLastLineKey(key) {
+			if at, ok := lineAt[key]; ok {
 				if r.ruleSkip == nil {
 					r.ruleSkip = map[int]bool{}
 				}
 				r.ruleSkip[at] = true
 			}
-			smudgeAt[key] = len(r.settings) - 1
+			lineAt[key] = len(r.settings) - 1
 		}
 		if value == "" {
 			continue
@@ -582,32 +582,34 @@ func (r *repoConfigRead) file(path string, depth int) string {
 				return d
 			}
 			if settings, ok := listConfigFile(r.ctx, target); ok {
-				r.conditional = append(r.conditional, lastSmudgePerFile(settings)...)
+				r.conditional = append(r.conditional, lastLinePerFile(settings)...)
 			}
 		}
 	}
 	return ""
 }
 
-// isSmudgeKey reports whether key is a `smudge` key of a filter, as git lists
-// it: `filter.<name>.smudge`.
-func isSmudgeKey(key string) bool {
-	return len(key) > len("filter..smudge") && strings.HasPrefix(key, "filter.") && strings.HasSuffix(key, ".smudge")
+// isLastLineKey reports whether key is a `smudge` or a `process` key of a
+// filter, as git lists it: `filter.<name>.smudge` or `filter.<name>.process`.
+func isLastLineKey(key string) bool {
+	return strings.HasPrefix(key, "filter.") && (len(key) > len("filter..smudge") && strings.HasSuffix(key, ".smudge") ||
+		len(key) > len("filter..process") && strings.HasSuffix(key, ".process"))
 }
 
-// lastSmudgePerFile is settings, the settings of one file, with only the last
-// `smudge` value of each filter. The filter rule judges the last value of each
+// lastLinePerFile is settings, the settings of one file, with only the last
+// `smudge` and the last `process` line of each filter. The filter rule judges the last value of each
 // file. 5fd08069 passes `smudge = cat` after another value in .git/config,
 // and refuses the reverse order (cells Q8a and Q8b of round task084-07, Linux
 // VM). It refuses a value that does not pass in .git/config and `cat` in an
 // includeIf file, in either order (cells F1e and F1f of round task084-05, F1g
 // and F1h of round task084-06, Linux VM). The last value of an includeIf file,
 // of a plain include file and of config.worktree is claustrum's own, not
-// measured.
-func lastSmudgePerFile(settings []repoSetting) []repoSetting {
+// measured. For a `process` line it follows cells F6, F10 and F10b of round
+// task073-02 (not measured).
+func lastLinePerFile(settings []repoSetting) []repoSetting {
 	last := map[string]int{}
 	for i, s := range settings {
-		if isSmudgeKey(s.key) {
+		if isLastLineKey(s.key) {
 			last[s.key] = i
 		}
 	}
@@ -1166,7 +1168,7 @@ func repoReadVerdict(t gitDirTrust, s *gitStop) *repoVerdict {
 				own = append(own, s)
 			}
 		}
-		v.ownConfig = settingRecords(own, r.conditional, lastSmudgePerFile(r.worktree))
+		v.ownConfig = settingRecords(own, r.conditional, lastLinePerFile(r.worktree))
 		for _, s := range r.settings {
 			if line, ok := shadowValue(s); ok && s.key == "core.sharedrepository" {
 				v.shared = sharedRepositoryOf(line)

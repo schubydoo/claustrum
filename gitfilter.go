@@ -72,9 +72,13 @@ func (b *jsonTrueSwitch) UnmarshalJSON(data []byte) error {
 // not empty, not `cat` and not the git-lfs value. lfsSmudgeSeen reports the
 // git-lfs value. With them the rule for a filter that only the repository
 // defines does not depend on the order of its files (planFilters).
+//
+// bare reports a record of the key with no value, at any place: a line with
+// no "=" (hasBare).
 type filterValues struct {
 	has           [len(filterKeys)]bool
 	last          [len(filterKeys)]string
+	bare          [len(filterKeys)]bool
 	otherSmudge   bool
 	lfsSmudgeSeen bool
 }
@@ -87,6 +91,20 @@ func (v filterValues) defined() bool {
 	return v.last[filterSmudge] != "" || v.last[filterProcess] != ""
 }
 
+// hasBare reports a `smudge` or a `process` line with no "=" in v, the
+// repository's own records (planFilters). Such a filter is refused as a value
+// that does not pass (cells F5 and F6 of round task073-02, cell C3 of round
+// task073-01, Linux VM). With a settings copy own holds the last `smudge`
+// and the last `process` line of each file (lastLinePerFile). So a bare line
+// that ends one file refuses, whatever another file of the repository says, in
+// either order (cells G5a and G5b of round task073-07, macOS VM). This build
+// gives the same in cells F5, F6, G5a and G5b of round task073-09 (Linux VM).
+// The same line outside the repository
+// makes no definition, and git fails with its own text (cell F11).
+func (v filterValues) hasBare() bool {
+	return v.bare[filterSmudge] || v.bare[filterProcess]
+}
+
 // parseFilterListing reads the filter keys of a `git config -z --list` output
 // (parseConfigListing gives the record form). The name of a filter is the text
 // between the first and the last dot of the key, as git lists it: git keeps the
@@ -96,10 +114,8 @@ func (v filterValues) defined() bool {
 // D3).
 //
 // A `required` key with no value counts as true, as git reads it (not measured).
-// A `smudge` or a `process` key with no value counts as empty. So a repository
-// with such a `smudge` key gets no pair, and git fails the checkout with its own
-// text. 5fd08069 answers the filter refusal there (cell Q10). That difference
-// stays.
+// A `smudge` or a `process` key with no value counts as empty, and bare marks
+// it.
 func parseFilterListing(out []byte) map[string]filterValues {
 	defs := map[string]filterValues{}
 	for rec := range bytes.SplitSeq(out, []byte{0}) {
@@ -118,6 +134,7 @@ func parseFilterListing(out []byte) map[string]filterValues {
 		}
 		v := defs[rest[:last]]
 		v.has[k], v.last[k] = true, value
+		v.bare[k] = v.bare[k] || !hasValue
 		if k == filterSmudge {
 			v.otherSmudge = v.otherSmudge || (value != "" && value != passSmudge && value != lfsSmudge)
 			v.lfsSmudgeSeen = v.lfsSmudgeSeen || value == lfsSmudge
@@ -136,7 +153,7 @@ func parseFilterListing(out []byte) map[string]filterValues {
 //
 // With a settings copy (shadow) every `smudge` value of the listing counts,
 // not only the last one. That listing holds the last value of each file of
-// the repository (lastSmudgePerFile). 5fd08069 refuses a filter when a value
+// the repository (lastLinePerFile). 5fd08069 refuses a filter when a value
 // in .git/config or in an includeIf file does not pass, whatever the order of
 // the two files (cells F1e and F1f of round task084-05, F1g and F1h of round
 // task084-06, Linux VM). In .git/config the last value counts (cells Q8a and
@@ -219,30 +236,54 @@ func (f *filterPlan) pairs(name string, values [len(filterKeys)]string, keys ...
 // the filter the checkout succeeds. A Windows VM ran this rule for the
 // lfs.customtransfer keys and the standalone keys (cells L1 to L8).
 //
+// With a settings copy an outside `process = cat` makes no definition outside.
+// The filter is then judged by own alone, the repository's own records, as a
+// filter that only the repository defines. A repository `smudge` command is
+// refused with the three pairs (cell F4 of round task073-02, Linux VM), also
+// one that repeats the user value (cell G4 of round task073-07, macOS VM).
+// `smudge = cat` or `required = true` alone succeeds (cells F20 and F21 of
+// round task073-06, Linux VM). Another outside `process` value, and the state
+// with no copy, are not measured: there the filter keeps the outside values.
+//
 // Every other filter that outside defines runs with the outside values, as on
-// 5fd08069 in cells A7, O6 and Q6 (the `smudge` key). If full differs from outside in one of the three keys,
-// the filter gets pairs with the outside values. Those pairs are claustrum's own:
-// 5fd08069 passes none there. One state gets only the `required` pair of the
-// repository (repositoryRequiresUserSmudge). Two states get claustrum's own refusal there,
+// 5fd08069 in cells A7, O6 and Q6 (the `smudge` key). With a settings copy git
+// does not see the values of the repository, so the filter gets no pair. That
+// holds for a `process` key of the repository too, whose program does not run
+// (cell F1 of round task073-02, Linux VM). It also holds for a `required` key
+// of the repository beside one of the user config (cell F19). One state gets
+// the `required` pair of the repository (repositoryRequiresUserSmudge).
+//
+// With no settings copy git reads the values of the repository, so the filter
+// gets pairs with the outside values. One state gets no pair there
+// (repositoryRequiresUserSmudge, claustrum's own, not measured). Two states get claustrum's own refusal,
 // because no -c pair gives the result (unreplaceableFilterText). The first is a
 // `process` key in full and none in outside: a pair cannot remove a key, and an
-// empty `process` value stops the outside `smudge` filter too. 5fd08069 runs the
-// outside filter and succeeds there (cell Q1). That difference stays. The second
-// is a name with "=" or a name that is not valid UTF-8 (not measured).
+// empty `process` value stops the outside `smudge` filter too. The second is a
+// name with "=" or a name that is not valid UTF-8. Such a name in the state of
+// repositoryRequiresUserSmudge gets that refusal with a settings copy too.
+// These states are claustrum's own, not measured.
 //
 // A name that is not valid UTF-8 cannot go through a Windows command line as it
-// is, so a pair with it names another filter there. A filter that only the
-// repository defines is refused with such a name, on every system. The text is
-// claustrum's own. 5fd08069 passes its three pairs: on a Linux VM its checkout
-// fails, and on a Windows VM it answers success and no filter runs (cells S3
-// and X1). That difference stays.
+// is, so a pair with it names another filter there. With a settings copy such
+// a filter that only the repository defines, with a value that does not pass,
+// gets its three pairs with the raw name. Its name is not in refused, so a failure at it answers git's text with
+// the bytes that are not valid UTF-8 dropped (cells F12 and F13 of round
+// task073-02, cells C4a and C4b of round task073-01, Linux VM). On Windows the
+// create succeeds and no filter runs, as 5fd08069 does in cell X1 of round
+// val20-windows (cells F12 and F13 of round task073-06, Windows VM). With no
+// settings copy such a filter gets unreplaceableFilterText (claustrum's own, not
+// measured).
 //
-// shadow is true in the state shadow. It decides the pair of
-// repositoryRequiresUserSmudge.
-func planFilters(full, outside map[string]filterValues, lfsKey string, shadow bool) filterPlan {
+// own holds the repository's own records. shadow is true in the state shadow
+// with a settings copy.
+func planFilters(full, outside, own map[string]filterValues, lfsKey string, shadow bool) filterPlan {
 	var f filterPlan
 	for _, name := range slices.Sorted(maps.Keys(full)) {
 		v, o := full[name], outside[name]
+		if shadow && o.defined() && o.last[filterProcess] == passSmudge {
+			v, o = own[name], filterValues{}
+		}
+		bare := own[name].hasBare()
 		switch {
 		case o.defined() && name == lfsFilterName && lfsKey != "":
 			// The repository names a program for git-lfs. The filter lfs of
@@ -254,11 +295,15 @@ func planFilters(full, outside map[string]filterValues, lfsKey string, shadow bo
 			if v.has == o.has && v.last == o.last {
 				continue
 			}
+			userSmudge := repositoryRequiresUserSmudge(v, o)
+			if shadow && !userSmudge {
+				continue
+			}
 			if (v.has[filterProcess] && !o.has[filterProcess]) || strings.Contains(name, "=") || !utf8.ValidString(name) {
 				f.refusal = unreplaceableFilterText(name)
 				return f
 			}
-			if repositoryRequiresUserSmudge(v, o) {
+			if userSmudge {
 				if shadow {
 					f.pairs(name, [...]string{"", "true", ""}, filterRequired)
 				}
@@ -271,16 +316,15 @@ func planFilters(full, outside map[string]filterValues, lfsKey string, shadow bo
 				f.pairs(name, o.last, filterProcess)
 			}
 			f.pairs(name, o.last, filterRequired, filterSmudge)
-		case !v.defined():
+		case !v.defined() && !bare:
 		case strings.Contains(name, "="):
 			f.refusal = "this repository's git config cannot be used: the filter " + strconv.Quote(name) +
 				" is defined only there, and Claude cannot handle \"=\" in a filter's name; define it in ~/.gitconfig on the remote machine, or rename it"
 			return f
-		case !utf8.ValidString(name):
-			f.refusal = "this repository's git config cannot be used: the filter " + strconv.Quote(name) +
-				" is defined only there, and its name is not valid UTF-8; define it in ~/.gitconfig on the remote machine, or rename it"
+		case !shadow && !utf8.ValidString(name):
+			f.refusal = unreplaceableFilterText(name)
 			return f
-		case !repositoryValuesPass(name, v, lfsKey != "", shadow):
+		case bare || !repositoryValuesPass(name, v, lfsKey != "", shadow):
 			if len(name) > filterNameMaxBytes {
 				f.refusal = "this repository's git config cannot be used: a filter defined only there has a name longer than " +
 					strconv.Itoa(filterNameMaxBytes) + " bytes (it starts " + strconv.Quote(name[:filterNameStartBytes]) +
@@ -288,7 +332,9 @@ func planFilters(full, outside map[string]filterValues, lfsKey string, shadow bo
 				return f
 			}
 			f.pairs(name, [...]string{"", "true", "false"}, filterProcess, filterRequired, filterSmudge)
-			f.refused = append(f.refused, name)
+			if utf8.ValidString(name) {
+				f.refused = append(f.refused, name)
+			}
 		case v.last[filterProcess] != "":
 			f.pairs(name, v.last, filterProcess)
 			if v.last[filterSmudge] == lfsSmudge {
@@ -370,7 +416,8 @@ func repositoryLfsProgramKey(full, outside []byte) string {
 // planFromListings is planFilters for two plain listings: the one that
 // the checkout reads, and the part of it from outside the repository.
 func planFromListings(full, outside []byte, shadow bool) filterPlan {
-	f := planFilters(parseFilterListing(full), parseFilterListing(outside), repositoryLfsProgramKey(full, outside), shadow)
+	f := planFilters(parseFilterListing(full), parseFilterListing(outside), parseFilterListing(ownRecords(full, outside)),
+		repositoryLfsProgramKey(full, outside), shadow)
 	f.tooManyFilters = repositoryFilterCount(full, outside) > filterNameMaxCount
 	f.userLfsStorage = slices.ContainsFunc(bytes.Split(outside, []byte{0}), func(rec []byte) bool {
 		key, _, _ := bytes.Cut(rec, []byte{'\n'})
@@ -390,16 +437,8 @@ func planFromListings(full, outside []byte, shadow bool) filterPlan {
 // too, and the config of the daemon and of the system counts as outside. Both
 // are claustrum's own choices.
 func repositoryFilterCount(full, outside []byte) int {
-	other := map[string]int{}
-	for rec := range bytes.SplitSeq(outside, []byte{0}) {
-		other[string(rec)]++
-	}
 	names := map[string]bool{}
-	for rec := range bytes.SplitSeq(full, []byte{0}) {
-		if other[string(rec)] > 0 {
-			other[string(rec)]--
-			continue
-		}
+	for rec := range bytes.SplitSeq(ownRecords(full, outside), []byte{0}) {
 		key, _, _ := strings.Cut(string(rec), "\n")
 		rest, ok := strings.CutPrefix(key, "filter.")
 		if last := strings.LastIndexByte(rest, '.'); ok && last >= 0 {
@@ -407,6 +446,24 @@ func repositoryFilterCount(full, outside []byte) int {
 		}
 	}
 	return len(names)
+}
+
+// ownRecords is the listing of the records of full that outside does not
+// hold, with each record of outside taken once: the repository's own records.
+func ownRecords(full, outside []byte) []byte {
+	other := map[string]int{}
+	for rec := range bytes.SplitSeq(outside, []byte{0}) {
+		other[string(rec)]++
+	}
+	var own []byte
+	for rec := range bytes.SplitSeq(full, []byte{0}) {
+		if other[string(rec)] > 0 {
+			other[string(rec)]--
+			continue
+		}
+		own = append(append(own, rec...), 0)
+	}
+	return own
 }
 
 // lfsProgramText is the refusal text when the checkout fails at the filter lfs
