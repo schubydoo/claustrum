@@ -45,6 +45,12 @@ var (
 	runDirPollInterval = 50 * time.Millisecond
 )
 
+// runDirStopGrace is how long a new daemon tries the lock again when the record of the
+// holder has role "stop", before it goes on without the lock. 5fd08069 tries it every
+// 50 ms for about 2 s, 41 or 42 tries on Linux (cells L2 and L3 of round task091-01,
+// Linux and macOS VMs). A package var so a test can shrink it.
+var runDirStopGrace = 2 * time.Second
+
 // isServeCmdline reports whether pid is one of our own -serve daemons bound to socket.
 // Its real implementation is OS-specific (realIsServeCmdline: /proc on Linux,
 // KERN_PROCARGS2 on macOS). A package var so the eviction test can drive the
@@ -251,8 +257,14 @@ func evictRunDirHolder(fd int, path, socket string) (gone, locked bool) {
 		logWarnf("[daemon] serve: %s is locked but its owner record is unusable; proceeding without run-dir ownership", path)
 		return false, false
 	}
-	// A --stop that still holds the lock is left in place (measured 4534d86).
+	// A --stop that still holds the lock is left in place (measured 4534d86). Before
+	// that the daemon tries the lock again for runDirStopGrace, as 5fd08069 does (cells
+	// L2 and L3 of round task091-01, Linux and macOS VMs). A lock that comes in that
+	// wait is taken with no line. That arm is claustrum's own and not measured.
 	if holder.Role == "stop" {
+		if waitHolderLock(fd, runDirStopGrace) {
+			return true, true
+		}
 		logWarnf("[daemon] serve: %s is held by a --stop (pid %d) that has not let go; leaving it", path, holder.Pid)
 		summary("survivor")
 		return false, false

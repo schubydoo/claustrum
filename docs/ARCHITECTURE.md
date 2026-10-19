@@ -85,7 +85,8 @@ children it spawns.
 - Once listening, the daemon persists the token to `daemon.token` (`0600`)
   beside the socket. It writes a temp file and renames it, so the write is
   atomic. A client that reconnects can then authenticate again after that source
-  is gone. The daemon unlinks `daemon.token` on graceful shutdown. This is
+  is gone. The daemon unlinks `daemon.token` on graceful shutdown while it is still its
+  own file. This is
   behavioral parity with reference `5db5e4a` (`tokenpersist.go`). See
   [PROTOCOL.md → Token persistence](PROTOCOL.md#token-persistence-daemontoken).
 - An internal sentinel, `CLAUSTRUM_DAEMON_CHILD`, gates the self-daemonize

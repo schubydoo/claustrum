@@ -702,8 +702,6 @@ traps that matter for telling drift from expected:
     - At the reap of a start, `89cb6289` probes a group right after its `SIGTERM`.
       If the group still answers, it sends `SIGKILL` (rows K5, P8k, P8b and C1).
       claustrum probes after 50 ms. That is [DIVERGENCES.md](DIVERGENCES.md) D20.
-    - At a `-stop` with a live child, `89cb6289` sent the group `SIGKILL` and then
-      removed `daemon.token`. claustrum removed the token first (row P1).
     - claustrum logs an exit line for a child that a shutdown kills:
       `Process <id> exited with code -1, terminated by SIGKILL, signalled at shutdown request`.
       `89cb6289` logs none (Linux row E3, macOS row A3). `5fd08069` wrote it on

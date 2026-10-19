@@ -98,7 +98,7 @@ One such client is Python `asyncio`, whose Unix transports are Unix-loop-only.
   claustrum writes the file atomically before the pipe accepts and before the ready
   banner. On graceful shutdown claustrum removes the file only when the file is
   still the inode this daemon published. It uses `os.SameFile`, the same handoff
-  guard that the socket and `daemon.token` carry. See
+  guard that `daemon.token` carries. See
   [Token persistence](#token-persistence-daemontoken). A restart's successor
   therefore keeps its own pointer. The client reads that file to learn the opaque
   name.
@@ -176,18 +176,23 @@ cross-machine lock holder, and for a holder that survives `SIGKILL`.
 
 The unlink carries an inode-ownership qualifier. On graceful shutdown the
 daemon unlinks `daemon.token` only when the file on disk is still the inode this
-daemon wrote. The daemon stats the file and
-compares its identity (`os.SameFile`) to the one it recorded at startup. A
+daemon wrote. At startup the daemon reads that identity through an open handle
+of the file. At the stop it compares the file at the path to it (`os.SameFile`). A
 restart's successor can republish `daemon.token`
 before the predecessor leaves. The
 departing predecessor then leaves the file alone. It does not delete the
-successor's token and break the new daemon's reconnect auth. On Linux and macOS the socket file
+successor's token and break the new daemon's reconnect auth. `5fd08069` keeps that
+token on Windows too (cell W3 of round `task091-01`, Windows VM). On Linux and macOS the socket file
 carries the same identity guard on the same graceful path. On Windows the
 `rpc.pipe` pointer carries it too (`removeSocketIfOwned` /
 `removePersistedToken` / `removePipeNameFileIfOwned`). Each removes its file only
 when the recorded identity still matches. They differ only in the no-identity
 fallback. A socket the daemon never recorded is removed with a plain unlink. A
 token or pipe pointer with no recorded identity is left in place, not unlinked.
+Two states remove the new `rpc.sock` on `5fd08069` and on claustrum `080c94a`
+(round `task091-01`). On Linux ext4 the new socket can get the inode of the old
+one. The old daemon then tests it after the bind (cell L3t, Linux VM). On Windows
+the old daemon stops after a take-over (cell W3, Windows VM).
 This is the departing-daemon half of the daemon-to-daemon handoff. The launcher
 half is under [Daemon startup](#daemon-startup-serve). It is off the JSON-RPC
 wire.
@@ -207,6 +212,10 @@ Linux VM measured the same end state against `89cb6289` in the stop rows:
 `daemon.token` and `rpc.sock` removed, `daemon.lock` left empty. On a Linux VM the
 `instanceId` of the record, of the listening line and of `server.capabilities` held
 one value in 36 of 36 daemons of `89cb6289`.
+
+On Linux and macOS the stop closes the listener, tests `rpc.sock` and removes it
+if it is its own, closes the connections and kills the child groups. Then it removes `daemon.token` and releases the lock.
+`5fd08069` stops in that order (round `task091-01`, cells L1 to L3 and L1k, Linux VM).
 
 Linux and macOS VMs measured the two forms of the record against `89cb6289`. In
 row D1 a dead daemon left one recorded child that ignores `SIGTERM`. The lock of
@@ -238,6 +247,15 @@ sends the `SIGKILL`, and tries for 1 s more. That 1 s is claustrum's own value
 and is not measured. Before the `SIGKILL` claustrum tests the identity of the
 holder again. The eviction fires only against a holder that is verifiably one of
 our own `-serve` daemons for this socket, on this machine (`daemon_runlock_unix.go`).
+
+A holder whose record has role `stop` gets no signal. The newcomer tries the lock
+every 50 ms for 2 s. Then it logs this line and serves without the lock:
+
+```
+serve: <dir>/daemon.lock is held by a --stop (pid <n>) that has not let go; leaving it
+```
+
+`5fd08069` does so in cells L2 and L3 of round `task091-01` (Linux and macOS VMs).
 
 If the record of the holder has no instance, the eviction lines name its pid
 alone. On a Linux VM and on a macOS VM, `89cb6289` logged these two lines for a
@@ -1190,8 +1208,8 @@ Windows VMs saw it at that place.
   These counts are measured against `f6010b97` and `90fca6e6` on a Linux VM. In
   claustrum, the handler signals the teardown and waits until the teardown starts
   to close connections. Then it returns the reply for writing, so the reply write
-  races the close. The teardown closes the listener first, then every connection,
-  before its other cleanup.
+  races the close. The teardown closes the listener and tests the socket first.
+  Then it closes every connection, before its other cleanup.
   When the frame arrives, it is `{"jsonrpc":"2.0","id":<id>,"result":{"ok":true}}`
   followed by EOF. An idle connection gets a clean EOF with no bytes. On a macOS VM
   under spawn load `5fd08069` sent it in 4 of 10 runs (round `task003-01`).

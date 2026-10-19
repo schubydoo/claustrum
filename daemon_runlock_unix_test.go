@@ -614,6 +614,11 @@ func TestEvictionWaitsOnTheLockOfAHolderThatNobodyCollects(t *testing.T) {
 // holder whose record role is "stop" is left in place with the "--stop ... has not
 // let go; leaving it" line and a "previous owner of <rundir>: survivor" summary.
 func TestEvictRunDirHolderStopRoleLogs(t *testing.T) {
+	// The tries of the stop arm fail on the descriptor -1, so a short grace keeps
+	// the test fast.
+	old := runDirStopGrace
+	runDirStopGrace = 50 * time.Millisecond
+	t.Cleanup(func() { runDirStopGrace = old })
 	dir := shortTempDir(t)
 	sock := filepath.Join(dir, "s.sock")
 	lockPath := filepath.Join(dir, runDirLockName)

@@ -59,6 +59,17 @@ func removePipeNameFile(socket string) {
 	}
 }
 
+// pipeNameFileIdentity is the identity of rpc.pipe that removePipeNameFileIfOwned
+// compares with. It is the stat of an open handle, which holds the file id on Windows
+// (see statPersistedToken). It is nil when the stat fails.
+func pipeNameFileIdentity(socket string) os.FileInfo {
+	fi, err := statOpenFile(pipeNameFilePath(socket))
+	if err != nil {
+		return nil
+	}
+	return fi
+}
+
 // removePipeNameFileIfOwned unlinks rpc.pipe on graceful shutdown ONLY when the file
 // on disk is still the inode this daemon published (os.SameFile against owned) — the
 // same handoff protection removePersistedToken/removeSocketIfOwned apply to the token

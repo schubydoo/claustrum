@@ -11,14 +11,13 @@ import (
 // but MUST remove one this daemon still owns. Exercised with regular files, since
 // os.SameFile keys on inode identity regardless of file type.
 //
-// Unix only: the successor-rebind arm relies on a delete-and-recreate at the same
-// path yielding a DIFFERENT identity, which holds for a POSIX inode but not on
-// Windows, where NTFS reuses the file index so os.SameFile reports the recreated
-// file as the same. The production guard keys on inode identity (os.SameFile), so
-// this test cannot assert the rebind distinction there.
+// Unix only. On Windows Go removes the socket path at the close of the listener, and
+// the daemon records the socket with os.Stat. That identity reads the file id by the
+// path at the compare, so it matches a successor's file. Both binaries remove the new
+// rpc.sock at that stop (cell W3 of round task091-01, Windows VM).
 func TestRemoveSocketIfOwned(t *testing.T) {
 	if runtime.GOOS == "windows" {
-		t.Skip("os.SameFile cannot distinguish a same-path delete-recreate on Windows (NTFS file-index reuse)")
+		t.Skip("Windows: Go removes the socket path at the listener close, and an os.Stat identity reads the file id by the path at the compare")
 	}
 	sock := filepath.Join(t.TempDir(), "rpc.sock")
 	write := func() { _ = os.WriteFile(sock, nil, 0o600) }
@@ -31,8 +30,7 @@ func TestRemoveSocketIfOwned(t *testing.T) {
 	// A successor replaces the path with a NEW inode. A delete-then-recreate at the same
 	// path can reuse the freed inode (measured: flaky on the ubuntu CI runner), so create
 	// the replacement ALONGSIDE the original to force a distinct inode, then move it into
-	// place — deterministic on POSIX. (Windows is skipped above: os.SameFile cannot
-	// distinguish two files there regardless.)
+	// place — deterministic on POSIX. (Windows is skipped above.)
 	succ := filepath.Join(filepath.Dir(sock), "succ.sock")
 	if err := os.WriteFile(succ, nil, 0o600); err != nil {
 		t.Fatal(err)

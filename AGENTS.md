@@ -565,8 +565,10 @@ The JSON-RPC surface is identical on every OS. Full internals →
   daemon with no token in its environment, so `-stop` sends no
   `auth` member. Every other method rejects an unauthenticated request `-32001`.
 - The daemon persists its token to `daemon.token` (mode `0600`) beside the
-  socket. It writes the file atomically at startup and unlinks it on graceful
-  shutdown (`tokenpersist.go`). A client can thus reconnect after the daemon
+  socket. It writes the file atomically at startup. At a graceful shutdown, if
+  the file is still the file of this daemon by identity, the daemon unlinks it.
+  That holds on every OS (`tokenpersist.go`). `5fd08069` keeps the file of a successor on
+  Windows (cell W3 of round `task091-01`). A client can thus reconnect after the daemon
   unlinked the `-token-file`, or after the `-token-fd` pipe closed. The fixed
   name and the socket-dir location are the reconnect contract, so they are
   deliberately not configurable. One parity caveat remains: on Windows `0600`
