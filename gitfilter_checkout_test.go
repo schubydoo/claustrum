@@ -408,19 +408,21 @@ func TestCheckoutRefusalOrder(t *testing.T) {
 	}
 }
 
-// TestPlanForSharedFilter: the plan of a filter that both configs define. Only
-// the state of cell C6 (round task008-01) gets the one `required` pair, also
-// with `yes` and `1` (round task008-03, cells R1 and R2). The states next to
-// it keep the pairs with the outside values. In the state fallback-git the C6
-// state gets no pair (cell R7 of round task008-03). A shared name
-// with "=" is still refused.
+// TestPlanForSharedFilter: the plan of a filter that both configs define. With
+// a settings copy only the state of cell C6 (round task008-01) gets a pair, the
+// one `required` pair, also with `yes` and `1` (round task008-03, cells R1 and
+// R2). The states next to it get no pair (cells F1 and F19 of round
+// task073-02). With no copy they get the pairs with the outside values
+// (claustrum's own). With no copy the C6 state gets no pair (claustrum's own,
+// following cell R7 of round task008-03 in the state fallback-git). A shared name with "=" is still
+// refused.
 func TestPlanForSharedFilter(t *testing.T) {
 	recs := func(r ...string) []byte { return []byte(strings.Join(r, "\x00") + "\x00") }
 	for _, row := range []struct {
 		name          string
 		outside, repo []string
 		want          []string
-		fallback      bool
+		noCopy        bool
 		refusal       string
 	}{
 		{name: "C6", outside: []string{"filter.f.smudge\nrun-me"}, repo: []string{"filter.f.required\ntrue"},
@@ -433,25 +435,46 @@ func TestPlanForSharedFilter(t *testing.T) {
 			want: []string{"-c", "filter.f.required=true"}},
 		{name: "bare key", outside: []string{"filter.f.smudge\nrun-me"}, repo: []string{"filter.f.required"},
 			want: []string{"-c", "filter.f.required=true"}},
-		{name: "R7 fallback-git", outside: []string{"filter.f.smudge\nrun-me"}, repo: []string{"filter.f.required\ntrue"},
-			fallback: true},
+		{name: "R7 state, no copy", outside: []string{"filter.f.smudge\nrun-me"}, repo: []string{"filter.f.required\ntrue"},
+			noCopy: true},
 		{name: "a=b", outside: []string{"filter.a=b.smudge\nrun-me"}, repo: []string{"filter.a=b.required\ntrue"},
 			refusal: unreplaceableFilterText("a=b")},
-		{name: "user smudge cat", outside: []string{"filter.f.smudge\ncat"}, repo: []string{"filter.f.required\ntrue"},
-			want: []string{"-c", "filter.f.required=false", "-c", "filter.f.smudge=cat"}},
-		{name: "another required value", outside: []string{"filter.f.smudge\nrun-me"}, repo: []string{"filter.f.required\nfalse"},
-			want: []string{"-c", "filter.f.required=false", "-c", "filter.f.smudge=run-me"}},
-		{name: "user required too", outside: []string{"filter.f.smudge\nrun-me", "filter.f.required\nfalse"}, repo: []string{"filter.f.required\ntrue"},
-			want: []string{"-c", "filter.f.required=false", "-c", "filter.f.smudge=run-me"}},
-		{name: "repository smudge too", outside: []string{"filter.f.smudge\nrun-me"}, repo: []string{"filter.f.required\ntrue", "filter.f.smudge\nown"},
-			want: []string{"-c", "filter.f.required=false", "-c", "filter.f.smudge=run-me"}},
+		{name: "user smudge cat", outside: []string{"filter.f.smudge\ncat"}, repo: []string{"filter.f.required\ntrue"}},
+		{name: "another required value", outside: []string{"filter.f.smudge\nrun-me"}, repo: []string{"filter.f.required\nfalse"}},
+		{name: "user required too", outside: []string{"filter.f.smudge\nrun-me", "filter.f.required\nfalse"}, repo: []string{"filter.f.required\ntrue"}},
+		{name: "repository smudge too", outside: []string{"filter.f.smudge\nrun-me"}, repo: []string{"filter.f.required\ntrue", "filter.f.smudge\nown"}},
+		{name: "repository smudge too, no copy", outside: []string{"filter.f.smudge\nrun-me"}, repo: []string{"filter.f.required\ntrue", "filter.f.smudge\nown"},
+			want: []string{"-c", "filter.f.required=false", "-c", "filter.f.smudge=run-me"}, noCopy: true},
+		{name: "F1 repository process", outside: []string{"filter.f.smudge\nrun-me"}, repo: []string{"filter.f.process\nown"}},
+		{name: "F1 repository process, no copy", outside: []string{"filter.f.smudge\nrun-me"}, repo: []string{"filter.f.process\nown"},
+			noCopy: true, refusal: unreplaceableFilterText("f")},
+		{name: "F19", outside: []string{"filter.f.smudge\ngit-lfs smudge -- %f", "filter.f.required\ntrue"}, repo: []string{"filter.f.required\nfalse"}},
+		{name: "user process = cat, no copy", outside: []string{"filter.f.process\ncat", "filter.f.smudge\nrun-me"}, repo: []string{"filter.f.smudge\nown"},
+			want: []string{"-c", "filter.f.process=cat", "-c", "filter.f.required=false", "-c", "filter.f.smudge=run-me"}, noCopy: true},
+		{name: "user process = cat and no repository value", outside: []string{"filter.f.process\ncat", "filter.f.smudge\nrun-me"}},
 	} {
 		t.Run(row.name, func(t *testing.T) {
-			plan := planFromListings(recs(append(slices.Clone(row.outside), row.repo...)...), recs(row.outside...), !row.fallback)
+			plan := planFromListings(recs(append(slices.Clone(row.outside), row.repo...)...), recs(row.outside...), !row.noCopy)
 			if !slices.Equal(plan.args, row.want) || plan.refusal != row.refusal || len(plan.refused) != 0 {
 				t.Errorf("plan %q, refusal %q, refused %q\nwant %q", plan.args, plan.refusal, plan.refused, row.want)
 			}
 		})
+	}
+}
+
+// TestPlanUserBareSmudge: cell F11 of round task073-02 (Linux VM). A user
+// `smudge` line with no "=" makes no definition outside. A repository `smudge`
+// command then gets the three pairs, and git fails at the user config with its
+// own text.
+func TestPlanUserBareSmudge(t *testing.T) {
+	plan := planFromListings([]byte("filter.x.smudge\x00filter.x.smudge\nown\x00"), []byte("filter.x.smudge\x00"), true)
+	want := []string{"-c", "filter.x.process=", "-c", "filter.x.required=true", "-c", "filter.x.smudge=false"}
+	if !slices.Equal(plan.args, want) || !slices.Equal(plan.refused, []string{"x"}) || plan.refusal != "" {
+		t.Errorf("plan %q, refused %q, refusal %q\nwant %q and [x]", plan.args, plan.refused, plan.refusal, want)
+	}
+	// The same line in the user config alone is no line of the repository.
+	if plan := planFromListings([]byte("filter.x.smudge\x00"), []byte("filter.x.smudge\x00"), true); len(plan.args) != 0 || len(plan.refused) != 0 {
+		t.Errorf("a user line with no value alone: plan %q, refused %q, want none", plan.args, plan.refused)
 	}
 }
 
