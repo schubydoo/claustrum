@@ -100,6 +100,18 @@ func TestShadowFilterRuleFailsClosed(t *testing.T) {
 			setIncludeFile(t, f.gitDir, "f.cfg", f.section(t, "m", "smudge"))
 			f.addConfig(t, "[includeIf \"gitdir:"+filepath.ToSlash(top)+"/\"]\n\tpath = f.cfg\n")
 		}, "m", false},
+		// Cell F1e of round task084-05 (Linux VM, 3 of 3 runs): a later
+		// `smudge = cat` in the repository config after the includeIf line. Each
+		// value of the filter comes from a file of the repository, and 5fd08069
+		// answers repository_only_filter with the three items and the rollback.
+		{"F1e a later smudge = cat after an includeIf file", "a.txt filter=m\n", func(t *testing.T, f shadowFilterFixture) {
+			top, err := filepath.EvalSymlinks(f.repo)
+			if err != nil {
+				t.Fatal(err)
+			}
+			setIncludeFile(t, f.gitDir, "m.cfg", f.section(t, "m", "smudge"))
+			f.addConfig(t, "[includeIf \"gitdir:"+filepath.ToSlash(top)+"/\"]\n\tpath = m.cfg\n[filter \"m\"]\n\tsmudge = cat\n")
+		}, "m", false},
 		{"F2 a filter that the repository config gets after a git.info", "a.txt filter=m\n", func(t *testing.T, f shadowFilterFixture) {
 			if raw, _ := f.info(t, f.repo, nil); !strings.Contains(raw, `"settingsControl":"shadow"`) {
 				t.Fatalf("git.info = %s", raw)
