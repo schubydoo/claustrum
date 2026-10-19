@@ -83,7 +83,7 @@ type server struct {
 	lastCounted atomic.Int64
 
 	// offGitRequests counts the git requests with "shadowDirOff":true that have
-	// not answered yet (gitWideLimit).
+	// not answered yet (gitWideLimit and request.offHeld).
 	offGitRequests atomic.Int32
 
 	// managedLog holds the last [LauncherHandler] line, so a repeat of the same

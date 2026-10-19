@@ -860,12 +860,12 @@ cell C-… is of round `tier0-20` against `5fd08069` on a Linux VM.
 | git.* | `config-defined hooks could not be pinned off; git not run: inherited GIT_CONFIG pair <n> is incomplete` | in the frame of each method, when a pair below the daemon's `GIT_CONFIG_COUNT` is not set. See "The daemon's own git environment" |
 | git.* | `config-defined hooks could not be pinned off; git not run: listing the configuration in force: exit status 128: <git text>` | in the frame of each method, for a `GIT_CONFIG_KEY_<n>` of the daemon that git cannot read. A folder that holds no repository gets it too. `89cb6289` answers so in rows A-N1 to A-N6, A-N5b, A-S1 and A-X2 on Linux and macOS VMs, except row A-N5 on macOS. On a Windows VM the cells are P3-infoN, P3-infoX, P3-lbN, P3-statN, P3-crN, P3-rmN and Wf-P3-crNroot. See "The daemon's own git environment" |
 | git.* | `config-defined hooks could not be pinned off; git not run: listing the configuration in force: fork/exec <git.exe path>: The directory name is invalid.` | Windows only. In the frame of `git.info`, `git.list_branches`, `git.status` and `git.worktree_create`. The `path` of the first two, or the `baseRepo` of the last two, exists and git cannot start in it. That is a regular file, a file symlink (measured for `git.info` only) or a folder with a path of 296 characters (measured for `git.info` only). `89cb6289` answers so on a Windows VM: in cells A-01 to A-04, A-04b2 and A-06 for a regular file, in cell A-10 for the symlink and in cell A-13 for the folder. The path `NUL` and a file name with one more dot at its end get it too (measured for `git.info` only, cells Wc). See "Git-directory trust check" |
-| git.* | `git cannot run on this host; git not run: <exec error>: <git text>` | in the frame of each method (see the table in "Git-directory trust check" for `git.worktree_remove`), when the configuration listing fails and `git version` fails too. The exec error and the text are those of `git version`. Row A-T1 and cells C-d and C-g show that on Linux and macOS VMs, and cell C-h on a Linux VM. Cells P11-infoN, P11-infoT, A-14, Wa-infoF, Wa-lbN, Wa-statN and Wa-crN show it on a Windows VM. See "Git-directory trust check" (`89cb6289`). On `5fd08069` also after a failed call 7 of [the start test](#the-start-test) or a [call about the repository](#the-call-about-the-repository) that exits 128 with a broken config |
+| git.* | `git cannot run on this host; git not run: <exec error>: <git text>` | in the frame of each method (see the table in "Git-directory trust check" for `git.worktree_remove`), when the configuration listing fails and `git version` fails too. The exec error and the text are those of `git version`. Row A-T1 and cells C-d and C-g show that on Linux and macOS VMs, and cell C-h on a Linux VM. Cells P11-infoN, P11-infoT, A-14, Wa-infoF, Wa-lbN, Wa-statN and Wa-crN show it on a Windows VM. See "Git-directory trust check" (`89cb6289`). On `5fd08069` also after a failed call 7 of [the start test](#the-start-test) or a failed [call about the repository](#the-call-about-the-repository) that is not a "no repository" answer |
 | git.* | `this repository's git config cannot be used: <detail>` | -32603 on `git.info`, `git.status` and `git.list_branches`, and in the frame of `git.worktree_create` and `git.worktree_remove`. Since `5fd08069`. The details are in [Repository config refusals](#repository-config-refusals) |
 | git.* | `a file in this repository's .git directory cannot be used: <detail>` | The same frames. See [Repository config refusals](#repository-config-refusals) |
 | git.* | `Claude could not test git on the remote machine (<cause>). Check free disk space and quota there, then try again.` | -32603 on `git.info`, `git.status` and `git.list_branches`, and in the frame of `git.worktree_create` and `git.worktree_remove`. Since `5fd08069`. See [The settings copy](#the-settings-copy) |
 | git.* | `Claude could not prepare its own files on the remote machine: cannot write its copy of the repository's git config: <cause>` | The same frames. The daemon cannot make the folder of the copy |
-| git.* | `git could not check this repository on the remote machine: at "<root>": exit status <n>` | The same frames, for a failed call about the repository. After an exit 1 with a text, the text of git stands in the place of `exit status <n>` (one line in the cell) |
+| git.* | `git could not check this repository on the remote machine: at "<root>": exit status <n>` | The same frames, for a failed call about the repository. After a failure with a text, the text of git stands in the place of `exit status <n>` (one line in the cell) |
 | git.* | `git could not check this repository on the remote machine: it did not finish within 30 seconds in "<root>"; try again` | The same frames, for a call about the repository that the daemon ended |
 | git.* | `git and Claude disagree about which repository holds this folder: from "<root>" git finds "<path>", Claude finds "<git directory>"; try again` | The same frames, for a call about the repository that names another path |
 | git.* | `config-defined hooks could not be pinned off; git not run: listing the configuration in force: a configuration key is longer than the listing reads` | in the frame of each method (see the table in "Git-directory trust check" for `git.worktree_remove`), for a configuration key over 1048576 bytes. `89cb6289` measured `git.info`. See "Hardened git calls" |
@@ -1831,7 +1831,8 @@ a request through a junction keeps the spelling of the junction. A request in
 another letter case gets the real spelling (cells V11).
 
 **The switch.** `"shadowDirOff": true` in the request turns the read off for that
-request, on the five methods (cells X1 and V2). The request then gets the answer
+request, on the five methods (cells X1 and V2). A git request that starts while it
+runs has the switch too (cell C9 of round `task073-01`, Linux VM). The request then gets the answer
 that it had before this rule. A FIFO as the config then gets no answer in 10 s. The
 member name matches without regard to letter case: `"SHADOWDIROFF": true` is the
 switch too. The values `"true"`, `1`, `null` and `false` are as no member. Cells V3
@@ -2015,16 +2016,6 @@ VM. Rounds `val-s3p2b2-3` and `val-s3p2b2-5` ran a build with the settings copy.
   that ran with the refusal. Those two gits give the state `fallback-git`. From the
   code: claustrum makes no read in that state. No claustrum build with that state
   ran on those gits.
-- On a Windows VM, a config of 20 MiB at a config path of 262 characters and more
-  gets another answer (cells P6w, P6x, X12 and V12a). `5fd08069` answers the size
-  text up to 261 characters. From 262 to 266 characters it answers "not a
-  repository". From 268 characters on it answers `git could not check this
-  repository on the remote machine: at "<path>": <text>`. `<text>` is the error
-  text of git, or of its start: `fork/exec <git.exe path>: The directory name is
-  invalid.` A claustrum build before the call about the repository answers the
-  size text at each length that ran, also in the remove frame. No build with that
-  call ran these cells (not measured). Plain git answers "not a git repository"
-  from 259 to 266 characters. The lengths 267 and 269 did not run.
 - In some states git itself refuses a value of the config, and `5fd08069` gives
   the answer of a repository, because its copy leaves the value out. A claustrum
   build with the copy answers as `5fd08069` in cells C2c, X5b, X9-03 and X9-04
@@ -2051,10 +2042,6 @@ VM. Rounds `val-s3p2b2-3` and `val-s3p2b2-5` ran a build with the settings copy.
 - A config whose listing by git has more than 64 MiB. If the first 64 MiB show
   neither a name over its bound nor too many settings, claustrum gives no
   refusal (from the code, not measured on `5fd08069`).
-- In cell X1c (Linux VM) the config is a FIFO. Requests 3 and 4 have
-  `"shadowDirOff":true` and get no answer. After them, `5fd08069` gives no answer
-  to request 5, a `git.list_branches`, and to request 7, a `git.worktree_create`.
-  claustrum answers both with the "not a regular file" text.
 
 **claustrum's own choices** (from the code, not measured on `5fd08069`):
 
@@ -2124,7 +2111,7 @@ last member of the result. No other method sends it, and an error reply has none
 | no member | No start test of the daemon gave a state yet | Nothing. A folder with no repository, or a `HEAD` that is no ref, starts no test (cell E5 of round `s3p2`, Linux VM). The `.git` file below is the exception |
 | `"shadow"` | The start test passed | The git calls name the copy. Before them the daemon asks git about the repository |
 | `"fallback-git"` | The git of the host does not work on such a copy. `5fd08069` reports it on git 2.11.4 and 2.12.5 (round `s3p2-oldgit`, Linux VM) | The git calls name the git directory. The daemon reads no config of the repository and gives no config refusal. It makes no copy and does not ask git about the repository |
-| `"off-switch"` | The request has `"shadowDirOff":true` | For that request the git calls name the git directory. No test runs, no folder is made and no config is read |
+| `"off-switch"` | The request has `"shadowDirOff":true`, or it started while such a request ran | For that request the git calls name the git directory. No test runs, no folder is made and no config is read |
 
 - After the test, the "no repository" reply has the member too:
   `{"isRepo":false,"repoSlug":"","defaultBranch":"","settingsControl":"shadow"}`.
@@ -2152,6 +2139,26 @@ last member of the result. No other method sends it, and an error reply has none
   is the first request of a daemon. Or its reply is "no repository". Or a failed
   start test is kept. The cells are A1 and B1 of round `s3` and cell 32 of round
   `s3p2b-edges` (Linux VM).
+- A git request without the member that starts while a request with it runs is a
+  request with the member, to its own reply. A held request does not hold the
+  state for other requests (cell Q4 of round `task073-05`). On
+  `5fd08069` a `git.info` on another repository answers `"off-switch"`, and a
+  later one answers `"shadow"` (cells H1 and H2 of round `task073-02`, Linux VM).
+  A `git.worktree_create` then makes no copy (cell H4).
+- In that time `git.status`, `git.list_branches` and `git.worktree_remove` get no
+  config refusal, as with the member. On a repository of format version 3 they
+  answer `{"isRepo":false,"clean":false}`, `{"isRepo":false,"branches":[]}` and the
+  lock-check text that ends `(its registrations could not be examined); retry`.
+  The remove deletes nothing there because git itself fails (cells Q1 to Q3 of
+  round `task073-05`, Linux VM). On a config that only the daemon refuses, the
+  remove deletes, as on `5fd08069` (cells Q10 and Q11 of round `task073-08`, Linux
+  VM). macOS and Windows are not measured.
+- A held create whose holder answers first keeps the member to its reply. Its
+  `worktree add` of 130 s started while the holder ran, and no build stopped it at
+  2 minutes. A held call that starts after that answer has the 2 minute limit
+  (claustrum's own, not measured). In cell Q4 `5fd08069` ran its read-tree in the
+  copy that a later `git.info` had made, claustrum stayed on the git directory,
+  and the frames were equal (round `task073-05`, Linux VM).
 - Only the JSON value `true` counts for `shadowDirOff`. `"true"`, `1`, `null` and
   `false` are as no member (cell B3 of round `s3`, Linux VM, and cell S1-seq of
   round `val-s3p2b2-1`, macOS VM).
@@ -2294,10 +2301,10 @@ A change of the root folder or of its `.git` entry makes the daemon ask again.
 
 | Answer of git | Reply |
 |---|---|
-| exit 128 with `fatal: not a git repository`, `fatal: detected dubious ownership` | The "no repository" answer of each method. No config is read, and no copy is made. git 2.56's text for a `.git` file to nowhere gets the same answer (claustrum's own, not measured) |
-| exit 128 with `fatal: bad config line 3 in file <home>/.gitconfig` | One `git version` call follows. If it fails, the reply is `git cannot run on this host; git not run: <exec error>: <git text>` in the frame of each method. A remove makes two such calls and deletes nothing. `5fd08069` answers so on `git.info` in cell E8 of round `task083-01` (Linux VM). It answers so on the other four methods in cell E8m of round `task083-02`. A remove with `worktreeRoot` is not measured. Other texts get the same rule, and a working `git version` gives "no repository" (claustrum's own, not measured) |
-| exit 1, or exit 128 with no text | `git could not check this repository on the remote machine: at "<root>": exit status <n>` |
-| exit 1 or exit 2 with a text | the same text with the text of git in the place of `exit status 1`. Two lines stand there with one space between them (cells P3 of round `val-s3p2b2-7` and cell N-f of round `val-s3p2b2-8`, Linux VM). |
+| exit 128 with a text that starts with `fatal: not a git repository` in any letter case, or that holds `detected dubious ownership` or `cannot use bare repository` | The "no repository" answer of each method. No config is read, and no copy is made. `5fd08069` answers so in cells P5 to P7, P9 and P10 of round `task073-03` (Linux VM). git 2.56's text for a `.git` file to nowhere, `unsafe repository`, and the two phrases at other places of the text get the same answer (claustrum's own, not measured) |
+| exit 1, exit 128 with no text, a signal (`signal: terminated`, cell P13) or a git that cannot start (cell W2-280) | `git could not check this repository on the remote machine: at "<root>": exit status <n>` |
+| exit 1 or exit 2 with a text, or exit 128 with another text | the same text with the text of git in the place of `exit status 1`. Two lines stand there with one space between them (cells P3 of round `val-s3p2b2-7` and cell N-f of round `val-s3p2b2-8`, Linux VM). `warning: w` before `fatal: not a git repository` gets this reply (cell P8 of round `task073-03`). `5fd08069` answers so on all five methods (cells Q5 to Q7 of round `task073-05`). So does `fatal: error reading '<repo>/.git'` (cell W2-268 of round `task073-01`, Windows VM) |
+| either of the two rows above | One `git version` call follows. If it fails, the reply is `git cannot run on this host; git not run: <exec error>: <git text>` in the frame of each method. A remove makes two such calls and deletes nothing. `5fd08069` answers so after `fatal: bad config line 3 in file <home>/.gitconfig` on `git.info` (cell E8 of round `task083-01`, Linux VM). It answers so on the other four methods in cell E8m of round `task083-02`. It answers so after an exit 1 in cell P14x of round `task073-03`. On `git.status`, `git.list_branches` and `git.worktree_remove` it answers so after an exit 128 with no text and after a SIGTERM (cells Q8 and Q9 of round `task073-05`). Those two on `git.info` and `git.worktree_create`, a git that cannot start, and a remove with `worktreeRoot` are not measured |
 | another path than the git directory, in two calls | `git and Claude disagree about which repository holds this folder: from "<root>" git finds "<path>", Claude finds "<git directory>"; try again`. `<path>` is the path as git printed it: with forward slashes on Windows (table P2 of round `val-s3p2b2-7`, Windows VM) |
 | no answer in 30 seconds | `git could not check this repository on the remote machine: it did not finish within 30 seconds in "<root>"; try again` |
 
@@ -2308,7 +2315,7 @@ request asks again, and a remove asks two times. For a repository of another own
 with no `safe.directory`, `git.worktree_remove` answers the lock-check refusal that
 ends `(its registrations could not be examined); retry`.
 
-After a call that exits 1, or exits 128 with no text, one `git version` call follows. The same
+After each failed call that is not a "no repository" answer and that the 30 s bound did not stop, one `git version` call follows. The same
 call follows a config read that failed with a syntax error (cells 39 and
 `x9-syntax-own` of round `val-s3p2b2-5`, Linux VM).
 
