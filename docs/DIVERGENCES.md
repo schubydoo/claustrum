@@ -171,6 +171,7 @@ rather than repeating them in each entry:
 | [D23](#d23) | The environment block of a child is in name order (Windows). The reference does not sort it | always-on (Windows) | always-on | Maintainer decision of 2026-10-13: claustrum stays on Go 1.26, which sorts the block | the reference moves to Go 1.26 or newer |
 | [D24](#d24) | The rollback of `git.worktree_create` keeps a folder that replaced the new registration. `89cb6289` removes it in cells B6 and B6b (Linux and macOS VMs), and in B6b it holds the registration of a live sibling worktree | always-on | always-on | Maintainer decision of 2026-10-07. The frames are equal in the measured cells (Linux and macOS VMs, and B6w of round `task087-03` on a Windows VM). The disk differs. The Windows placement is not measured | a measurement that shows the reference keeping such a folder, or a decision to match the disk of cells B6 and B6b |
 | [D25](#d25) | With `CLAUDE_SSH_PEER_CHECK=1`, `server.capabilities` answers `"peerCheck":"unavailable"` and the daemon serves every caller. `5fd08069` answers `"peerCheck":"on","peerCheckBy":["network","pidfd"]` there (Linux VM) | always-on (Linux) | always-on | Maintainer decision of 2026-10-10. The frame differs from `5fd08069` in one of the listed values: `1` on Linux | a client that needs the `"on"` answer on Linux, or a decision to answer as `5fd08069` does there |
+| [D27](#d27) | On Windows the stale step of `git.worktree_create` keeps an entry whose `gitdir` record names a path that exists. `5fd08069` deletes the entry of a live worktree `W1` for a create of `w1` in a folder with case sensitivity on (cell W-CS of round `task084-02`, Windows VM) | always-on (Windows) | always-on | The maintainer's decision of 2026-10-18 | a measurement of `5fd08069` with the same test |
 | [CT-1](#ct-1) | Opt-in `wantPid` → `pid` + `startTime` on spawn/reattach | off (fields omitted) | caller sends `"wantPid":true` | sanctioned optional-param extension | — (additive, degrades both ways) |
 | [CT-2](#ct-2) | `-keep-children` leaves the child tree running on shutdown | off | `-keep-children` / `keep-children` key | off-wire opt-in extension | — |
 | [CT-3](#ct-3) | `claustrum.conf` config file | absent ⇒ stock | create the file | the opt-in mechanism itself | — |
@@ -1015,6 +1016,35 @@ Reopen trigger: the reference moves to Go 1.26 or newer.
 - **Reopen trigger.** A client that needs the `"on"` answer on Linux. Or a
   decision to answer as `5fd08069` does there.
 - **Pointers.** [PROTOCOL.md](PROTOCOL.md) → server.* and Daemon log.
+
+### D27 · Keep a stale entry whose record names a path that exists (Windows) { #d27 }
+
+- **Behavior.** On Windows the stale step of `git.worktree_create` compares the
+  `gitdir` record of each entry with the new leaf without regard to letter case.
+  Before it deletes an entry that matched, it tests the path that the record
+  names, as written, with `Lstat`. If that path exists, the entry stays. Both
+  forms of the step have the test: through the held git directory and by the
+  path. Linux and macOS have an exact compare, so the missing leaf already
+  proves that the entry is stale there.
+- **claustrum side, measured.** In cell W-CS of round `task084-03` (Windows VM,
+  3 of 3 runs, build `3fbc96a`) `.git\worktrees\W1` stays, and `W1` stays on
+  its branch. The create of `w1` answers
+  `{"success":false,"error":"git worktree add failed: Preparing worktree (new branch 'b1') fatal: '<repo>/.claude/worktrees/w1' is a missing but already registered worktree; use 'add -f' to override, or 'prune' or 'remove' to clear","errorCode":"worktree_add_failed"}`.
+  The branch `b1` stays, because git makes it before it refuses. `5fd08069`
+  answers success there.
+- **Reference side, measured.** In a folder `.claude\worktrees` with case
+  sensitivity on, a live worktree `W1` and a create of `w1`: `5fd08069`
+  deletes `.git\worktrees\W1` before the add. `W1` then reads the records of
+  `w1`, and its own branch is no longer checked out (cell W-CS of round
+  `task084-02`, Windows VM, 3 of 3 runs). claustrum `e7bb806` did the same.
+- **Default.** On-wire, always-on, Windows only. **Activate:** always-on.
+- **Why always-on.** The reference destroys the records of a live worktree in a
+  state that a client can reach. The maintainer's decision of 2026-10-18.
+- **Cost.** The frame of cell W-CS above. None where the folder of a stale
+  entry is gone (from the code). A `Lstat` that fails with another error than
+  "does not exist" keeps a stale entry too, and then the add fails.
+- **Reopen trigger.** A measurement that shows `5fd08069` with the same test.
+- **Pointers.** [git.worktree_create](protocol/git-worktree-create.md#differences-by-system).
 
 ### CT-1 · Opt-in `wantPid` (pid + startTime) on spawn/reattach { #ct-1 }
 

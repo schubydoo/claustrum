@@ -211,13 +211,10 @@ func TestDaemonGitDirAndCommonDir(t *testing.T) {
 					line = strings.ReplaceAll(line, old, "<x>")
 				}
 				common, _ := lookupExact(c.env, "GIT_COMMON_DIR")
-				// The `--show-scope` listing is claustrum's own and keeps its
-				// form. The pair of a remove carries the copy: on 5fd08069 the
+				// The pair of a remove carries the copy: on 5fd08069 the
 				// calls 3 to 6 of a second remove do (cell N-g of
 				// val-s3p2b2-8-linux2, Linux VM).
-				ownForm := slices.Contains(c.argv, "--show-scope")
 				switch {
-				case ownForm:
 				case common == copyOf:
 					line += " [copy]"
 				case strings.Contains(common, ".check-"), common == "" || c.configRead() || c.excludesRead():
@@ -248,11 +245,11 @@ func TestDaemonGitDirAndCommonDir(t *testing.T) {
 			t.Errorf("request %d: %d calls with GIT_DIR alone and %d with both variables\n%s\n---\n%s", i+1, len(alone[i]), len(both[i]), a, b)
 		}
 	}
-	// 5fd08069 makes 20, 2 and 4 calls in the first three requests of both
-	// cells. Its create makes 11: claustrum has one more, the listing with
-	// --show-scope.
-	if got := []int{len(both[0]), len(both[1]), len(both[2]), len(both[3])}; !slices.Equal(got, []int{20, 2, 4, 12}) {
-		t.Errorf("the first four requests made %v calls, want 20, 2, 4 and 12", got)
+	// 5fd08069 makes 20, 2, 4 and 11 calls in the first four requests of both
+	// cells. The git directory of the daemon has no registrations folder, so
+	// the create runs no pair before the add (pairBeforeAdd).
+	if got := []int{len(both[0]), len(both[1]), len(both[2]), len(both[3])}; !slices.Equal(got, []int{20, 2, 4, 11}) {
+		t.Errorf("the first four requests made %v calls, want 20, 2, 4 and 11", got)
 	}
 }
 

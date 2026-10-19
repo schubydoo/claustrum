@@ -922,14 +922,15 @@ cell C-… is of round `tier0-20` against `5fd08069` on a Linux VM.
 | git.worktree_create | `git worktree add failed (completing the new worktree's git files): <cause>` | in `error`, `errorCode:"worktree_add_failed"`, when the `config.worktree` step after the add fails. On Windows a failed staging step gives it, such as `git registered <n> worktrees where one was expected; try again` or `the repository already has a hundred worktrees called "<name>"; remove some (git worktree prune, git worktree remove)` (rounds `task009-01`, `task087-01`). No checkout runs, and the rollback is that of a failed checkout. It wins over an expired `timeoutMs` (cell R8 of round `task007-03`, Linux VM). `5fd08069`, rounds `task007-01` and `task007-03` (Linux and macOS VMs), and cell C1 on a Windows VM |
 | git.worktree_create | `git worktree add failed: <fallback text> (attaching to the existing branch <b> was refused first: <attach text>)` | in `error`, `errorCode:"worktree_add_failed"`, when the attach add for `existingBranch` fails and the fallback `-b <branchName>` add fails too. The text rule makes each text on its own, each with its own 512-byte cap. Measured against `f6010b97` and `90fca6e6` on a macOS VM |
 | git.worktree_create | `git worktree add failed (checkout): <text>` | in `error`, `errorCode:"worktree_add_failed"`, when the `read-tree` checkout fails. Same text rule, and the same rule for the `hint:` lines. The new directory is removed. The branch the call created goes only when another ref reaches its tip (see [The branch step](#the-branch-step)). In attach mode the attached branch is kept (measured against `f6010b97`). A failed placement of the index answers this frame too. The OS error is `openat <registration name>/index: permission denied` (`89cb6289`, rows A14, A14f and A14b, Linux and macOS VMs) or `open <temporary directory>/index: no such file or directory` (cell X1, the same VMs). On Windows it is `openat index: <cause>` (`5fd08069`, cells S11 and S12 of round `task087-01`), or claustrum's own `the registration <p> is not the folder that was moved into place` (D24, not measured) |
-| git.worktree_create | `Claude doesn't run the "<name>" git filter, because only this repository's own git config defines it. If you trust that filter, copy the [filter "<name>"] section from that config (usually .git/config) into ~/.gitconfig on the remote machine, then try again.` | in `error`, `errorCode:"repository_only_filter"`, when a path of the checkout uses a git filter that only the git config of the repository defines. The rollback is the one of a failed checkout. Measured against `5fd08069` on Linux and Windows VMs. A quote mark in `<name>` has a backslash before it (Linux VM). `89cb6289` runs the filter there. |
-| git.worktree_create | `git worktree add failed (checkout): this repository's git config cannot be used: a filter defined only there has a name longer than 200 bytes (it starts "<first 40 bytes>"); define it in ~/.gitconfig on the remote machine, or rename it` | in `error`, `errorCode:"worktree_add_failed"`, for such a filter with a name of 201 or 300 bytes. The rollback is the one of a failed checkout. Measured against `5fd08069` on Linux and Windows VMs |
+| git.worktree_create | `Claude doesn't run the "<name>" git filter, because only this repository's own git config defines it. If you trust that filter, copy the [filter "<name>"] section from that config (usually .git/config) into ~/.gitconfig on the remote machine, then try again.` | in `error`, `errorCode:"repository_only_filter"`, when, in the state `shadow`, a path of the checkout uses a git filter that only the git config of the repository defines. The rollback is the one of a failed checkout. Measured against `5fd08069` on Linux and Windows VMs. In the state `fallback-git` git runs the filter, as on `5fd08069` (cell R-Q4f of round `task084-01`, Linux VM). A quote mark in `<name>` has a backslash before it (Linux VM). `89cb6289` runs the filter there. |
+| git.worktree_create | `git worktree add failed (checkout): this repository's git config cannot be used: a filter defined only there has a name longer than 200 bytes (it starts "<first 40 bytes>"); define it in ~/.gitconfig on the remote machine, or rename it` | in `error`, `errorCode:"worktree_add_failed"`, in the state `shadow`, for such a filter with a name of 201 or 300 bytes. The rollback is the one of a failed checkout. Measured against `5fd08069` on Linux and Windows VMs |
 | git.worktree_create | `git worktree add failed (checkout): this repository's git config cannot be used: it defines more than 64 filters` | in `error`, `errorCode:"worktree_add_failed"`, in the state `shadow`, when the repository config has more than 64 filter names. A name with a `smudge` key counts (Linux, macOS and Windows VMs), and so does one with only a `clean` key (Linux and macOS VMs). A name with only other keys counts too (claustrum's own). No read-tree call runs, and the rollback is the one of a failed checkout. Measured against `5fd08069` in round `task008-01`. The text wins over the texts of a name with `=` and of a name over 200 bytes (`task008-03`, cells R3 and R4, Linux VM). A failed config listing wins over it (cell R5) |
 | git.worktree_create | `git worktree add failed (checkout): Claude could not read your own git config on the remote machine (<cause>). Run git config --list there to see the problem.` | in `error`, `errorCode:"worktree_add_failed"`, in the state `shadow`, when the config listing right before the checkout fails. No read-tree call runs, and the rollback is the one of a failed checkout. `<cause>` is `exit status 1` for a listing that exits 1 (Linux, macOS and Windows VMs). After 30 seconds the daemon ends the listing, and `<cause>` is `git took too long: Claude stopped git config after 30 seconds; try again` (Linux and macOS VMs). The `timeoutMs` of the caller does not end the listing (round `task008-05`, cells P1 and P2, Linux VM). Measured against `5fd08069` in round `task008-01` |
-| git.worktree_create | `git worktree add failed (checkout): this repository's git config cannot be used: the filter "<name>" is defined only there, and Claude cannot handle "=" in a filter's name; define it in ~/.gitconfig on the remote machine, or rename it` | in `error`, `errorCode:"worktree_add_failed"`, for such a filter with `=` in its name. The rollback is the one of a failed checkout. Measured against `5fd08069` on a Linux VM |
-| git.worktree_create | `git worktree add failed (checkout): this repository's git config cannot be used: the filter "<name>" is defined only there, and its name is not valid UTF-8; define it in ~/.gitconfig on the remote machine, or rename it` | in `error`, `errorCode:"worktree_add_failed"`, for such a filter with a name that is not valid UTF-8. The text is claustrum's own. `5fd08069` answers another text on a Linux VM and success on a Windows VM. |
-| git.worktree_create | `git worktree add failed (checkout): this repository's git config cannot be used: it names a program for git-lfs ("<key>"); remove that setting, or put it into ~/.gitconfig on the remote machine` | in `error`, `errorCode:"worktree_add_failed"`, when a path uses the filter `lfs` of the user or the system config and the config of the repository has the key `<key>`, a program key of git-lfs. The rollback is the one of a failed checkout. The text is claustrum's own. |
-| git.worktree_create | `git worktree add failed (checkout): the git filter "<name>" has values in this repository's git config that no option of git can replace for the checkout` | in `error`, `errorCode:"worktree_add_failed"`, when the repository adds a `process` key to a filter that has none outside it. The text is claustrum's own. `5fd08069` answers success in the measured state (Linux VM). |
+| git.worktree_create | `git worktree add failed (checkout): config-defined hooks could not be pinned off; git not run: listing the configuration in force: <detail>` | in `error`, `errorCode:"worktree_add_failed"`, in the state `shadow`, when the first config listing after the add fails. One `git version` call runs first, and the rollback follows. A failed `git version` there is not measured. `5fd08069` answers so (cell L6 of round `task084-02`, Linux VM, and cell Q4bp, macOS VM). |
+| git.worktree_create | `git worktree add failed (checkout): this repository's git config cannot be used: the filter "<name>" is defined only there, and Claude cannot handle "=" in a filter's name; define it in ~/.gitconfig on the remote machine, or rename it` | in `error`, `errorCode:"worktree_add_failed"`, in the state `shadow`, for such a filter with `=` in its name. The rollback is the one of a failed checkout. Measured against `5fd08069` on a Linux VM |
+| git.worktree_create | `git worktree add failed (checkout): this repository's git config cannot be used: the filter "<name>" is defined only there, and its name is not valid UTF-8; define it in ~/.gitconfig on the remote machine, or rename it` | in `error`, `errorCode:"worktree_add_failed"`, in the state `shadow`, for such a filter with a name that is not valid UTF-8. The text is claustrum's own. `5fd08069` answers another text on a Linux VM and success on a Windows VM. |
+| git.worktree_create | `git worktree add failed (checkout): this repository's git config cannot be used: it names a program for git-lfs ("<key>"); remove that setting, or put it into ~/.gitconfig on the remote machine` | in `error`, `errorCode:"worktree_add_failed"`, in the state `shadow`, when a path uses the filter `lfs` of the user or the system config and the config of the repository has the key `<key>`, a program key of git-lfs. The rollback is the one of a failed checkout. The text is claustrum's own. |
+| git.worktree_create | `git worktree add failed (checkout): the git filter "<name>" has values in this repository's git config that no option of git can replace for the checkout` | in `error`, `errorCode:"worktree_add_failed"`, in the state `shadow`, when the repository adds a `process` key to a filter that has none outside it. The text is claustrum's own. `5fd08069` answers success in the measured state (Linux VM). |
 | git.worktree_create | `git worktree add timed out after <n>ms (deadline expired {before the checkout started / during the checkout): <text> / after the checkout finished})` | in `error`, `errorCode:"timeout"`, from the caller-supplied `timeoutMs` (`4534d86`). An absent `timeoutMs`, or 0, arms no deadline. `<text>` comes from the stderr of the killed git, by the same text rule |
 | git.worktree_create | `<frame>; and the undo could not finish for <leaf>: {the worktree directory, its registration, and the branch all remain; remove them by hand before retrying (RemoveAll <entry>: <OS error>) / the worktree directory remains (re-populated while undoing?); remove it by hand before retrying (removeat <leaf base name>: <OS error>)}` | appended to the checkout-failure frame and to each `timeout` frame when a step of the rollback fails. The `errorCode` stays as it was. Measured against `f6010b97` and `90fca6e6` on a Windows VM. In attach mode the first text reads `the worktree directory and its registration both remain` instead, because the call made no branch (row C08b, `f6010b97` and `89cb6289`, Linux VM). On Linux and macOS a registration that cannot be deleted gives `the worktree registration and the branch remain; remove them by hand before retrying (RemoveAll <registration name>: <OS error>)` instead, with the leaf removed (`89cb6289`, rows A14 and A14f on a Linux VM, A14 and A14b on a macOS VM). The text in the parentheses can be claustrum's own, see step 2 of the rollback. In attach mode it reads `the worktree registration remains; remove it by hand before retrying (RemoveAll <registration name>: <OS error>)` (cell X5, Linux and macOS VMs). No rmdir text joins either one (cell X11, Linux VM) |
 | git.worktree_create | `<frame>; and the undo could not finish for <leaf>: <branch part>` | appended when the branch step of the rollback keeps the branch that the call made. See [The branch step](#the-branch-step) for each `<branch part>`. After a failed leaf rmdir, the branch part follows the rmdir text after `; ` (row C05). Some cases also add `"branchKept":true` after `errorCode`. The table there gives each case with its rows and VMs |
@@ -1937,7 +1938,8 @@ leaves the git directory, an absolute include and `~/x` with a home folder.
 
 Two kinds of file get the kind test and the size test, with their own path in the
 text. A format version `2` in such a file is not refused. No other content of it
-ran, and claustrum does not read it.
+ran. The filter settings of an `includeIf` file count for the filter rule (cell
+F1b of round `task084-02`).
 
 - The file of an `includeIf` section, whatever its condition is. The conditions
   that ran are `gitdir:` that matches, `gitdir:` that does not match, `gitdir/i:`,
@@ -2078,8 +2080,7 @@ VM. Rounds `val-s3p2b2-3` and `val-s3p2b2-5` ran a build with the settings copy.
   include of that file is followed. That order is fitted to two cells of 200000
   include lines of a missing file, which get the "more settings" text.
 - The two include limits come before the open of an included file.
-- The file of an `includeIf` section is not read. An open error there gives no
-  refusal.
+- An open error of the file of an `includeIf` section gives no refusal.
 - An open error other than the measured ones gets the same `open <file>: <reason>`
   form.
 - A `~/x` include is joined to the home folder and cleaned.
@@ -2427,7 +2428,7 @@ that measured it.
   option lists, in its cells A1 to A7 and B1 to B9. Rounds `val-s3p2b2-3` and
   `val-s3p2b2-5` ran a build with the settings copy, without the member. Not
   each cell ran on each system. The Windows log is sorted by name, so the order of
-  the variables has rows on Linux and macOS VMs only. The first three points say
+  the variables has rows on Linux and macOS VMs only. The first four points say
   what is equal. The points after them are the differences that stay. The reply
   lines are equal in each of those, except in the git-lfs cells.
     - Equal with the member. A call that both builds make is equal in list,
@@ -2450,13 +2451,13 @@ that measured it.
       cells have no call that differs.
     - Equal in the state `fallback-git`: the names of the short-lived entries and
       the variables (cell Q-S4c of round `val-s3p2b2-5`, Windows VM).
-    - Stays: the top folder pair. After `rev-parse --absolute-git-dir`,
-      a create of `5fd08069` that reaches git runs the heavy `--git-dir=<dir>
-      --work-tree=<dir> rev-parse --show-toplevel` call with its listing. claustrum
-      runs no such pair there. With the member a plain create has 12 calls on
-      `5fd08069` and 10 on claustrum. That is cell A3 of round `val-s3p2b1`
-      (Linux, macOS and Windows VMs). Without the member it has 13 and 12 (round
-      `val-s3p2b2-5`, the same three systems).
+    - Equal: the top folder pair. After `rev-parse --absolute-git-dir`, a
+      create runs the heavy `--git-dir=<dir> --work-tree=<repo> rev-parse
+      --show-toplevel` call with its listing, with and without the member. It
+      runs when `<git dir>/worktrees` exists and no entry there names the new
+      worktree (cell R-Q2b of round `task084-01`, Linux, macOS and Windows VMs,
+      and cell A3 of round `val-s3p2b1`). The state `fallback-git` runs none
+      (claustrum's own, not measured).
     - Stays, with `worktreeRoot`: `5fd08069` runs one round of six calls
       before the add, after the add and after the checkout. claustrum runs it
       before the add only. The round is `rev-parse --show-toplevel`, `rev-parse
@@ -2472,8 +2473,6 @@ that measured it.
       Windows VMs). After a failed attach add, `5fd08069` runs the `-b` add with no
       listing before it. claustrum runs one listing there (cell B2, Linux, macOS
       and Windows VMs). Both rounds show it.
-    - Stays, without the member: one listing with `--show-scope` in each create
-      of claustrum. `5fd08069` has no such call.
     - Stays: the read-tree of claustrum carries filter items before its list in
       some cells with a git filter or with git-lfs.
     - The names of the short-lived entries with the member are from the code and
@@ -2514,9 +2513,7 @@ that measured it.
   `LANGUAGE=C`, and no `LC_ALL`. `5fd08069` sends it so in cell A3 of round
   `val-s3p2b1` (Linux, macOS and Windows VMs). The listing before the checkout and the
   listing before the `git status` call start with `--git-dir=<dir>`. Linux, macOS
-  and Windows VMs. claustrum only: `git.worktree_create` runs one more listing
-  before the listing of the checkout, with `--show-scope`. It names the git
-  directory and not the copy, so it reads the config of the repository.
+  and Windows VMs.
 - Listing locale. The listing drops the daemon's own `LC_ALL` and `LANGUAGE` and
   ends with `LC_ALL=C` and `LANGUAGE=C`, after the `GIT_COMMON_DIR` pin. `LANG` and
   the rest keep their places. git then writes its listing errors in English (row
@@ -2783,7 +2780,10 @@ calls end at 2 minutes (`5fd08069`, round `task010-01`, Linux, macOS and Windows
 VMs). Each config listing before a git call ends at 30 seconds (cells T10 and TA).
 So do the read of the repository config (`git.status`, Linux VM) and each listing
 of a `config.worktree` file (cells TW and TS of round `task010-04`, Linux VM).
-claustrum's own `--show-scope` listing has the 2 minute limit and the `timeoutMs`.
+A create with the filter rule and no settings copy runs claustrum's own
+`--show-scope` listing, with the 2 minute limit and the `timeoutMs` (not
+measured). A call of the top folder pair that its limit stops stops the create
+with the stop text, as any other call (claustrum's own).
 The scan of
 ignored files ends at 10 minutes (Linux and macOS VMs). The read-tree checkout has
 no such limit.

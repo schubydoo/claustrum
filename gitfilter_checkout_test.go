@@ -317,6 +317,53 @@ func TestCheckoutRequiredUserSmudgeFallbackGit(t *testing.T) {
 	f.wantGone(t)
 }
 
+// TestFallbackGitRunsTheRepositoryFilter: in the state fallback-git the filter
+// rule does not run (the maintainer's decision of 2026-10-18). The read-tree call has no filter item and
+// no lfs.storage item. git runs a filter that only the repository defines, and
+// the create succeeds (cell R-Q4f of round task084-01, Linux VM). A name with
+// "=" that no path uses is no refusal there (cell R-Q4g).
+func TestFallbackGitRunsTheRepositoryFilter(t *testing.T) {
+	exe, err := os.Executable()
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, row := range []struct {
+		cell, name, attrs string
+		ran               bool
+	}{
+		{"R-Q4f", "f", "a.txt filter=f\n", true},
+		{"R-Q4g", "a=b", "", false},
+	} {
+		t.Run(row.cell, func(t *testing.T) {
+			f := newCheckoutRuleFixture(t)
+			h := f.s.gitShadow
+			h.mu.Lock()
+			h.state, h.tested = controlFallback, shadowClock()
+			h.mu.Unlock()
+			mark := filepath.Join(t.TempDir(), "mark")
+			mustWrite(t, filepath.Join(f.repo, ".gitattributes"), row.attrs)
+			mustWrite(t, filepath.Join(f.repo, "a.txt"), "a\n")
+			runGit(t, f.repo, "add", ".gitattributes", "a.txt")
+			runGit(t, f.repo, "commit", "-q", "-m", "filter")
+			f.addConfig(t, "[filter \""+row.name+"\"]\n\tsmudge = CLAUSTRUM_TEST_HELPER=filter-mark '"+
+				filepath.ToSlash(exe)+"' '"+filepath.ToSlash(mark)+"'\n")
+			raw, calls := f.create(t, nil)
+			if !strings.Contains(raw, `"success":true`) {
+				t.Fatalf("git.worktree_create = %s, want success", raw)
+			}
+			args := readTreeArgs(calls)
+			if args == nil || slices.ContainsFunc(args, func(a string) bool {
+				return strings.HasPrefix(a, "filter.") || strings.HasPrefix(a, "lfs.storage=")
+			}) {
+				t.Errorf("the read-tree call %q, want one with no filter item and no lfs.storage item", args)
+			}
+			if exists(mark) != row.ran {
+				t.Errorf("the filter of the repository ran = %v, want %v", exists(mark), row.ran)
+			}
+		})
+	}
+}
+
 // TestCheckoutRefusalOrder: in the state shadow the second listing runs first,
 // then the cap, then a refusal of one name. With 65 names the cap text wins
 // over a name with "=" (cell R3) and over a name of 201 bytes (cell R4). A

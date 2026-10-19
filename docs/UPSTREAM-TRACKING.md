@@ -201,6 +201,7 @@ opt-in?
 | D23 | Always-on, Windows only | Maybe. A Windows probe whose child prints its environment block shows it in the stream frames (expected) | the environment block of a child is in name order. `89cb6289` keeps the order of its launching block, then `CLAUDE_SSH_DAEMON_CHILD=1`, then the added entries (Windows VM rows V1 to V10). The set of entries and the response frames are equal in those rows. Cause: the Go version. The other order is not drift |
 | D24 | Always-on | No in the measured cells: the frames are equal and the disk differs (Linux and macOS VMs, and cell B6w on a Windows VM). A probe that lists the registrations folder shows it. At the placement the frame holds claustrum's own text `is not the folder that was tested after the add`, or `is not the folder that was moved into place` on Windows (not measured) | If git answered `rev-parse --absolute-git-dir`, the rollback of `git.worktree_create` deletes the registration only if the folder at its path is still the folder that the create accepted after the add. `89cb6289` removes the folder at that path in cells B6 and B6b (Linux and macOS VMs). The placement of the index has the same test (not measured). A maintainer decision of 2026-10-07. The kept folder is not drift |
 | D25 | Always-on, Linux only | Against `5fd08069`: yes on a Linux run with `CLAUDE_SSH_PEER_CHECK=1` in the daemon environment, and that member is equal with no variable. Against `89cb6289`: that build has no `peerCheck` member, see the `peerCheck` bullet below | `server.capabilities` answers `"peerCheck":"unavailable"`, where `5fd08069` answers `"peerCheck":"on","peerCheckBy":["network","pidfd"]` (Linux VM). claustrum has no peer check and serves every caller. Its log line there is its own text. A maintainer decision of 2026-10-10. The other answer is not drift |
+| D27 | Always-on, Windows only | Yes on a Windows run with a case-sensitive `.claude\worktrees` and a live worktree in another letter case. `5fd08069` deletes its entry and answers success (cell W-CS of round `task084-02`). claustrum keeps it and answers git's `worktree_add_failed` text (round `task084-03`) | the stale step keeps an entry whose record path exists. A maintainer decision of 2026-10-18. Not drift |
 | D8 | Always-on | No. It falls back to inherited stdio, not a frame | foreign/symlinked `remote-server.log` not followed (`.old` rotation matched, refuse-to-follow kept). Linux and macOS. On Windows see D21 |
 | D9 | Always-on | Maybe. A type-mismatched namespace field is rejected | namespace-param binding vs. the reference's ignore |
 | D16 | Always-on, Windows only | Yes on a Windows run. `git.status` of a linked worktree: the reference answers `exit status 128` when the user has no global excludes file, claustrum answers the status | the `core.excludesFile` of the `status`, `ls-files` and `diff-index` calls of `git.status` is `/dev/null`, not `NUL`. The reference stops at its `status` call there, so its value for the other two is not measured |
@@ -418,7 +419,10 @@ traps that matter for telling drift from expected:
   as a build split.
 - The git filters of the `git.worktree_create` checkout split the builds too,
   not drift. `scripts/UPSTREAM_SHA` names `89cb6289`, and claustrum follows
-  `5fd08069`. Against `89cb6289` these answers differ:
+  `5fd08069`. In the state `fallback-git` and with `"shadowDirOff":true`
+  claustrum has no filter rule, as `5fd08069` (cells R-Q4f and R-Q4g of round `task084-01`, Linux VM). With
+  `shadowDirOff` the rule is off, as before. Against
+  `89cb6289` these answers differ:
   - A checkout that needs a filter which only the repository config defines
     answers `errorCode:"repository_only_filter"`, and nothing is left.
     `89cb6289` runs the filter (Linux and Windows VMs).
@@ -451,18 +455,13 @@ traps that matter for telling drift from expected:
   - A filter name that is not valid UTF-8 gets claustrum's own refusal.
     `5fd08069` answers a checkout failure on a Linux VM and success on a
     Windows VM.
-  - With a git that refuses `--show-scope`, claustrum refuses the filter of a
-    conditional include of the user config. `5fd08069` runs it (Linux VM).
   - With a program key of git-lfs in the config of the repository, the filter
     `lfs` does not run on claustrum. A create with a file under it answers the
     filter refusal for `lfs`, or claustrum's own `worktree_add_failed` text
     that names the key. On `5fd08069` such a create fails inside git-lfs with
     the text of git-lfs, and the agent does not run (cells L1 to L4, Windows
     VM). The `lfs.extension.` keys of that rule ran on no VM.
-  - A `timeoutMs` that expires during a listing before the checkout gives the
-    timeout frame only where the build makes that listing (cells S2, Linux VM).
-  - In the call log, some `filter.` pairs and the listings before the checkout
-    differ.
+  - In the call log, some `filter.` pairs differ.
 - The refusals of a repository config split the builds too, not drift.
   Against `89cb6289` a config that the daemon does not accept gets a text that
   starts with `this repository's git config cannot be used: `. A refused file of
@@ -501,10 +500,8 @@ traps that matter for telling drift from expected:
   variables. The cells and the systems are in
   [Hardened git calls](PROTOCOL.md#hardened-git-calls).
 
-  Against `5fd08069` the call logs differ in `git.worktree_create`. claustrum
-  makes one listing with `--show-scope`. `5fd08069` makes a pair after
-  `rev-parse --absolute-git-dir`, more rounds with `worktreeRoot`, and other
-  listings with `existingBranch`. Those differences are not drift. See "Not equal
+  Against `5fd08069` the call logs differ in `git.worktree_create`. `5fd08069`
+  makes more rounds with `worktreeRoot`, and other listings with `existingBranch`. Those differences are not drift. See "Not equal
   to `5fd08069`" in [PROTOCOL.md](PROTOCOL.md#hardened-git-calls).
 - The `worktreeRoot` location rules follow `5fd08069` (rounds `tier0-20` to
   `tier0-22`), not drift. `89cb6289` is not measured in these cells.

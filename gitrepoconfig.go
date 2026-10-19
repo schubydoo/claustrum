@@ -372,6 +372,17 @@ type repoConfigRead struct {
 	gitDir string
 	// includes counts the included files that were read.
 	includes int
+	// conditional are the settings of the files of `includeIf` sections, for
+	// the filter rule only. The copy does not carry them. 5fd08069 refuses a
+	// filter of such a file in the state shadow, also when its condition does
+	// not hold (cell F1b of round task084-02, cells F1c and F1d of round
+	// task084-04, Linux VM). claustrum follows no include in that file
+	// (claustrum's own, not measured).
+	conditional []repoSetting
+	// ruleSkip holds the indices of settings that the filter rule passes
+	// over: each `smudge` value of a filter that a later one of the same file
+	// replaces (lastSmudgePerFile).
+	ruleSkip map[int]bool
 	// version is the last value of core.repositoryformatversion in the config
 	// itself, when hasVersion.
 	version    string
@@ -439,8 +450,9 @@ type repoConfigRead struct {
 // toward the 16 (cells N7, Linux, macOS and Windows VMs). 5fd08069 lists such a
 // file with one more git call, with or without a match, and carries no setting
 // of it (cells 11a to 11f of s3p2b-edges-linux, Linux VM, and cell 11 of that
-// round on a macOS VM). claustrum makes that call and does not use its answer:
-// a file there that git cannot list is not measured.
+// round on a macOS VM). claustrum makes that call. It keeps its answer only for
+// the filter rule (repoConfigRead.conditional). A file there that git cannot
+// list is not measured.
 func (r *repoConfigRead) file(path string, depth int) string {
 	r.log.note(path)
 	if d := configLinkDetail(path); d != "" {
@@ -530,12 +542,22 @@ func (r *repoConfigRead) file(path string, depth int) string {
 		r.unlisted = true
 		return ""
 	}
+	smudgeAt := map[string]int{}
 	for rec := range bytes.SplitSeq(out, []byte{0}) {
 		if len(rec) == 0 {
 			continue
 		}
 		key, value, hasValue := strings.Cut(string(rec), "\n")
 		r.settings = append(r.settings, repoSetting{key: key, value: value, hasValue: hasValue, included: depth > 0})
+		if isSmudgeKey(key) {
+			if at, ok := smudgeAt[key]; ok {
+				if r.ruleSkip == nil {
+					r.ruleSkip = map[int]bool{}
+				}
+				r.ruleSkip[at] = true
+			}
+			smudgeAt[key] = len(r.settings) - 1
+		}
 		if value == "" {
 			continue
 		}
@@ -559,10 +581,43 @@ func (r *repoConfigRead) file(path string, depth int) string {
 			if d := configFileTests(target, r.log); d != "" {
 				return d
 			}
-			listConfigFile(r.ctx, target)
+			if settings, ok := listConfigFile(r.ctx, target); ok {
+				r.conditional = append(r.conditional, lastSmudgePerFile(settings)...)
+			}
 		}
 	}
 	return ""
+}
+
+// isSmudgeKey reports whether key is a `smudge` key of a filter, as git lists
+// it: `filter.<name>.smudge`.
+func isSmudgeKey(key string) bool {
+	return len(key) > len("filter..smudge") && strings.HasPrefix(key, "filter.") && strings.HasSuffix(key, ".smudge")
+}
+
+// lastSmudgePerFile is settings, the settings of one file, with only the last
+// `smudge` value of each filter. The filter rule judges the last value of each
+// file. 5fd08069 passes `smudge = cat` after another value in .git/config,
+// and refuses the reverse order (cells Q8a and Q8b of round task084-07, Linux
+// VM). It refuses a value that does not pass in .git/config and `cat` in an
+// includeIf file, in either order (cells F1e and F1f of round task084-05, F1g
+// and F1h of round task084-06, Linux VM). The last value of an includeIf file,
+// of a plain include file and of config.worktree is claustrum's own, not
+// measured.
+func lastSmudgePerFile(settings []repoSetting) []repoSetting {
+	last := map[string]int{}
+	for i, s := range settings {
+		if isSmudgeKey(s.key) {
+			last[s.key] = i
+		}
+	}
+	var out []repoSetting
+	for i, s := range settings {
+		if at, ok := last[s.key]; !ok || at == i {
+			out = append(out, s)
+		}
+	}
+	return out
 }
 
 // listConfigFile lists the config file at path with one git call, as the read
@@ -1004,7 +1059,11 @@ type repoVerdict struct {
 	// shared is read from the last `core.sharedrepository` line of the copy
 	// (sharedRepositoryOf, makeWorktreesFolder).
 	shared sharedRepository
-	states []repoFileState
+	// ownConfig are the filterRecords of the settings, of the files of the
+	// `includeIf` sections and of the `config.worktree` settings
+	// (settingRecords), for the filter rule.
+	ownConfig []byte
+	states    []repoFileState
 }
 
 // repoVerdictsMax is the most git directories and linked worktrees whose verdict
@@ -1101,6 +1160,13 @@ func repoReadVerdict(t gitDirTrust, s *gitStop) *repoVerdict {
 		v.worktreeConfig = r.worktreeConfig
 		v.shadowText = shadowConfigText(r.settings, r.worktree)
 		v.worktreeItems = worktreeConfigItems(r.worktree)
+		var own []repoSetting
+		for i, s := range r.settings {
+			if !r.ruleSkip[i] {
+				own = append(own, s)
+			}
+		}
+		v.ownConfig = settingRecords(own, r.conditional, lastSmudgePerFile(r.worktree))
 		for _, s := range r.settings {
 			if line, ok := shadowValue(s); ok && s.key == "core.sharedrepository" {
 				v.shared = sharedRepositoryOf(line)

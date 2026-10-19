@@ -84,21 +84,25 @@ import (
 // folder `worktrees`, the root is opened through the held folder. A base that
 // is a symbolic link is not opened, and nothing is removed
 // (acceptedGitDir.deleteRoot).
-func dropStaleWorktreeRegistration(repo, worktreePath string, held *acceptedGitDir) {
+//
+// matched reports that an entry is stale, also one that stays (pairBeforeAdd).
+// With two stale entries 5fd08069 removes neither and runs no pair (cell S2X
+// of round task084-02, Linux and macOS VMs).
+func dropStaleWorktreeRegistration(repo, worktreePath string, held *acceptedGitDir) (matched bool) {
 	base := staleRegistryDir(repo)
 	root, err := held.deleteRoot(base)
 	if err != nil {
-		return
+		return false
 	}
 	defer func() { _ = root.Close() }()
 	dir, err := root.Open(".")
 	if err != nil {
-		return
+		return false
 	}
 	ents, err := dir.ReadDir(-1)
 	_ = dir.Close()
 	if err != nil {
-		return
+		return false
 	}
 	// The order of os.ReadDir, which this step had before it used a root.
 	slices.SortFunc(ents, func(a, b fs.DirEntry) int { return strings.Compare(a.Name(), b.Name()) })
@@ -128,6 +132,7 @@ func dropStaleWorktreeRegistration(repo, worktreePath string, held *acceptedGitD
 	if len(stale) == 1 {
 		removeStaleRegistration(root, stale[0], filepath.Join(base, stale[0]))
 	}
+	return len(stale) > 0
 }
 
 // staleRegistryDir is the folder that the step before the add works on.

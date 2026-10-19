@@ -83,3 +83,29 @@ func TestResolveAsFarAsExistsBareLeaf(t *testing.T) {
 		t.Errorf("resolveAsFarAsExists(%q) = %q, want it unchanged", leaf, got)
 	}
 }
+
+// staleRecordLive is the guard of D27: a record that names a path that exists
+// keeps its entry. The record is read as written, with blanks and a newline at
+// its ends cut.
+func TestStaleRecordLive(t *testing.T) {
+	dir := t.TempDir()
+	live := filepath.Join(dir, "W1", ".git")
+	if err := os.MkdirAll(filepath.Dir(live), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(live, []byte("gitdir: x\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	for _, tc := range []struct {
+		record string
+		want   bool
+	}{
+		{live + "\n", true},
+		{filepath.ToSlash(live), true},
+		{filepath.Join(dir, "gone", ".git") + "\n", false},
+	} {
+		if got := staleRecordLive([]byte(tc.record)); got != tc.want {
+			t.Errorf("staleRecordLive(%q) = %v, want %v", tc.record, got, tc.want)
+		}
+	}
+}
