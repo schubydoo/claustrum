@@ -344,16 +344,16 @@ func TestSecondDaemonLogTruncatesTheHeldFile(t *testing.T) {
 	sock := filepath.Join(dir, "rpc.sock")
 	logPath := filepath.Join(dir, daemonLogName)
 	writeFile(t, logPath+".old", "old\n", 0o600)
-	first := openDaemonLog(sock)
-	if first == nil {
+	first, err := openDaemonLog(sock)
+	if first == nil || err != nil {
 		t.Fatal("no log for the first daemon")
 	}
 	defer first.Close()
 	if _, err := io.WriteString(first, "A1-long\n"); err != nil {
 		t.Fatal(err)
 	}
-	second := openDaemonLog(sock)
-	if second == nil {
+	second, err := openDaemonLog(sock)
+	if second == nil || err != nil {
 		t.Fatal("no log file for the second daemon while the first holds the log open")
 	}
 	defer second.Close()
@@ -388,9 +388,9 @@ func TestDaemonLogTruncatesAFileThatAnotherProcessHolds(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer holder.Close()
-	f := openDaemonLog(sock)
-	if f == nil {
-		t.Fatal("no log file while another handle holds the log open")
+	f, err := openDaemonLog(sock)
+	if f == nil || err != nil {
+		t.Fatalf("openDaemonLog = %v, %v while another handle holds the log open, want a file", f, err)
 	}
 	defer f.Close()
 	if _, err := io.WriteString(f, "B1\n"); err != nil {
@@ -401,6 +401,35 @@ func TestDaemonLogTruncatesAFileThatAnotherProcessHolds(t *testing.T) {
 	}
 	if got := readLogFile(t, logPath+".old"); got != "old\n" {
 		t.Errorf(".old = %q, want it unchanged", got)
+	}
+}
+
+// TestDaemonLogRefusesALinkOnWindows: cell W2 of round task015-04 (Windows VM). A folder at
+// .old stops the rename of a file symbolic link at the log path. The open then fails with
+// "permission denied", and the target keeps its bytes. 5fd08069 writes through the link
+// (D8). The fix is the type test of openHeldDaemonLog.
+func TestDaemonLogRefusesALinkOnWindows(t *testing.T) {
+	dir := t.TempDir()
+	sock := filepath.Join(dir, "rpc.sock")
+	logPath := filepath.Join(dir, daemonLogName)
+	if err := os.Mkdir(logPath+".old", 0o700); err != nil {
+		t.Fatal(err)
+	}
+	writeFile(t, filepath.Join(logPath+".old", "inside.txt"), "inside\n", 0o600)
+	target := filepath.Join(dir, "V.txt")
+	writeFile(t, target, "V-original\n", 0o600)
+	if err := os.Symlink(target, logPath); err != nil {
+		t.Skipf("symlink needs a privilege here: %v", err)
+	}
+	f, err := openDaemonLog(sock)
+	if f != nil {
+		_ = f.Close()
+	}
+	if want := "open " + logPath + ": permission denied"; f != nil || err == nil || err.Error() != want {
+		t.Fatalf("openDaemonLog = %v, %v, want nil and the error %q", f, err, want)
+	}
+	if got := readLogFile(t, target); got != "V-original\n" {
+		t.Errorf("target = %q, want it unchanged", got)
 	}
 }
 

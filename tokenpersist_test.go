@@ -297,9 +297,9 @@ func TestOpenDaemonLog(t *testing.T) {
 	sock := filepath.Join(dir, "s.sock")
 	logPath := filepath.Join(dir, daemonLogName)
 
-	f := openDaemonLog(sock)
-	if f == nil {
-		t.Fatal("openDaemonLog returned nil for a writable socket directory")
+	f, err := openDaemonLog(sock)
+	if f == nil || err != nil {
+		t.Fatalf("openDaemonLog = %v, %v for a writable socket directory, want a file", f, err)
 	}
 	if _, err := f.WriteString("first run\n"); err != nil {
 		t.Fatal(err)
@@ -328,9 +328,9 @@ func TestOpenDaemonLog(t *testing.T) {
 		if err := os.Chmod(logPath, 0o666); err != nil {
 			t.Fatal(err)
 		}
-		f3 := openDaemonLog(sock)
-		if f3 == nil {
-			t.Fatal("openDaemonLog returned nil for an existing log")
+		f3, err := openDaemonLog(sock)
+		if f3 == nil || err != nil {
+			t.Fatalf("openDaemonLog = %v, %v for an existing log, want a file", f3, err)
 		}
 		_ = f3.Close()
 		fi, err := os.Stat(logPath)
@@ -343,9 +343,9 @@ func TestOpenDaemonLog(t *testing.T) {
 	}
 
 	// TRUNCATE, not append: the reference starts a fresh log every -serve.
-	f2 := openDaemonLog(sock)
-	if f2 == nil {
-		t.Fatal("second openDaemonLog returned nil")
+	f2, err := openDaemonLog(sock)
+	if f2 == nil || err != nil {
+		t.Fatalf("second openDaemonLog = %v, %v, want a file", f2, err)
 	}
 	if _, err := f2.WriteString("second\n"); err != nil {
 		t.Fatal(err)
@@ -360,59 +360,15 @@ func TestOpenDaemonLog(t *testing.T) {
 	}
 }
 
-// A socket path whose directory does not exist, or an empty one, must yield nil
-// so daemonize falls back to inherited stdio instead of refusing to start.
+// An empty socket path opens no log and returns no error. A socket folder that does not
+// exist returns the error of the create, which fails the start (cell E6 of round
+// task015-04 shows that rule for a folder that cannot be written).
 func TestOpenDaemonLogUnusablePath(t *testing.T) {
-	if f := openDaemonLog(""); f != nil {
-		_ = f.Close()
-		t.Error("empty socket path should not open a log")
+	if f, err := openDaemonLog(""); f != nil || err != nil {
+		t.Errorf("empty socket path: openDaemonLog = %v, %v, want nil, nil", f, err)
 	}
 	missing := filepath.Join(t.TempDir(), "no-such-dir", "s.sock")
-	if f := openDaemonLog(missing); f != nil {
-		_ = f.Close()
-		t.Error("missing socket directory should not open a log")
-	}
-}
-
-// TestOpenDaemonLogRefusesUnremovableFile is the security backstop. When the log
-// exists and CANNOT be removed — a sticky directory holding another user's file
-// — openDaemonLog must return nil so daemonizeWithToken falls back to inherited
-// stdio, rather than writing the daemon's stdout and stderr into a file someone
-// else owns and can read.
-//
-// A chmod-based fix could not cover this: chmod(2) on another user's file fails
-// with EPERM, and discarding that failure is precisely the disclosure. The
-// O_EXCL create is what makes the refusal structural.
-func TestOpenDaemonLogRefusesUnremovableFile(t *testing.T) {
-	if runtime.GOOS == "windows" {
-		t.Skip("sticky-directory semantics are POSIX")
-	}
-	if os.Geteuid() == 0 {
-		t.Skip("root can remove anything, so the refusal cannot be provoked")
-	}
-	dir := t.TempDir()
-	sock := filepath.Join(dir, "s.sock")
-	logPath := filepath.Join(dir, daemonLogName)
-	if err := os.WriteFile(logPath, []byte("planted\n"), 0o666); err != nil {
-		t.Fatal(err)
-	}
-	// Read-only directory: the entry cannot be unlinked, so the O_EXCL create
-	// must fail rather than the open silently reusing the planted file.
-	if err := os.Chmod(dir, 0o500); err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(func() { _ = os.Chmod(dir, 0o700) })
-
-	if f := openDaemonLog(sock); f != nil {
-		_ = f.Close()
-		t.Error("openDaemonLog returned a handle to a file it could not replace; " +
-			"the daemon would write its output into a file it does not control")
-	}
-	b, err := os.ReadFile(logPath)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if string(b) != "planted\n" {
-		t.Errorf("planted file was modified: %q", b)
+	if f, err := openDaemonLog(missing); f != nil || !errors.Is(err, os.ErrNotExist) {
+		t.Errorf("missing socket directory: openDaemonLog = %v, %v, want nil and a not-exist error", f, err)
 	}
 }

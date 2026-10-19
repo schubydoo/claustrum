@@ -636,8 +636,8 @@ self-probe below.
 
 The launcher creates `remote-server.log` in the socket's directory with mode
 `0600`. The launcher rotates any existing log to
-`remote-server.log.old` and creates a fresh one. On Windows a log that another
-process holds open gets no fresh file (see below). This matches `4534d86`, which
+`remote-server.log.old` and creates a fresh one. A log that cannot be renamed gets
+no fresh file (see below). This matches `4534d86`, which
 keeps the previous session's log as `.old` on every restart. The launcher
 redirects the daemonized child's stdout and stderr into that file, so the
 launcher's own streams stay empty. On Linux and macOS, when the limit raise
@@ -684,24 +684,23 @@ suffix (Linux, macOS and Windows VMs). The name `Claustrum` is claustrum's own.
 The reference prints `Claude` there. The banner beside the lines of
 `-listen-pipe` and `-metrics-addr` is not measured.
 
-For a planted symlink in a writable directory, claustrum renames the link, not its
-target, to `remote-server.log.old`. It then creates a fresh regular log with
-`O_EXCL`. On Linux and macOS the link is never followed, and the victim stays untouched. If claustrum
-cannot rename the existing entry, the exclusive create fails too. One such case is a
-sticky directory that holds another user's file or symlink. On Linux and macOS
-claustrum then declines the
-log entirely and falls back to inherited stdio. In both cases, on Linux and macOS,
-claustrum never follows the link and never writes into a file another user owns.
-On Windows the launcher then opens an existing regular file and truncates it (see
-below). That open tests the file type first and has no owner test. A swap between
-the test and the open is not measured. This follows from the code. This is
-intentional divergence D8, and it is always-on. `4534d86` no longer
-plain-truncates a foreign regular log, and claustrum matches the `.old` rotation. But in a root-owned sticky directory the
-reference still follows a planted `remote-server.log` symlink. It then writes its
-log into the victim, or it refuses to start. claustrum declines instead. The
-trigger is not reachable on the deployed path, because the socket directory
-(`~/.claude/remote/`) is per-user and not world-writable. That is why D8 is
-always-on and not opt-in. See [`DIVERGENCES.md`](DIVERGENCES.md) → D8.
+If the rename fails, claustrum's launcher judges the entry at the path by `Lstat`
+and opens no FIFO. An own regular file is truncated, keeps its mode and gets the
+lines. So does the own regular file behind an own link. A folder fails the start.
+The launcher then prints one line on stderr and exits 1, with no daemon, socket,
+`daemon.lock` or `daemon.token`:
+
+```
+claustrum: open log: open <path>: is a directory
+```
+
+A create that fails with nothing at the path fails the start the same way, with the
+error of the create. `5fd08069` does all four, with its own prefix. Rounds
+`task015-03` and `task015-04` show cells E1 and E3 on the Linux and macOS VMs, and E5
+and E6 on the Linux VM. Every other
+entry fails the start with `permission denied` and stays unchanged. That is
+[D8](DIVERGENCES.md#d8). On Windows the rename moves a folder onto a regular `.old`,
+as on `5fd08069` (cell W1 of round `task015-04`, Windows VM).
 
 On Windows a second daemon can start on a live socket. The first daemon holds
 `remote-server.log` open, so the launcher cannot rotate it. The launcher then

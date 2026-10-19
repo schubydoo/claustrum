@@ -156,7 +156,7 @@ rather than repeating them in each entry:
 | [D2](#d2) | Refuse a destructive path that is or contains `$HOME`, on three methods and on `-install` | always-on | always-on | rule 3 clause (a). The `files.extract_tar` wipe through the parent handle and its two tests: maintainer decision of 2026-10-10 | an honest caller legitimately targeting a path that is/contains home, or a Windows `destDir` with the `\\?\` prefix and a dot or a space after its last name |
 | [D3](#d3) | Cap `files.extract_tar` output size | off (`0` = unlimited) | `-max-extract-bytes` / `max-extract-bytes` | rule 4 (who-pays) | operator's cap refuses a legit extraction, or default lets a bomb through |
 | [D6](#d6) | `-cli-version` must be a single path component | always-on | always-on | rule 3 clause (b) | Desktop passing a multi-component `-cli-version` |
-| [D8](#d8) | Never follow or write a foreign or symlinked `remote-server.log`. Both halves hold on Linux and macOS only | always-on | always-on | rule 3 clause (b): unreachable on the deployed path | a shared socket dir that also needs the log file, or the reference adding the same refuse-to-follow |
+| [D8](#d8) | Refuse a link, a FIFO, and on Linux and macOS another user's `remote-server.log`, at the start. `5fd08069` writes through a link or another user's file and blocks on a FIFO, on macOS and on Linux with the `fs.protected` sysctls off. On Windows it writes through a link | always-on | always-on | rule 3 clause (b), and the maintainer's decision of 2026-10-19 | a shared socket folder that needs the log, or the reference refusing these entries on every host |
 | [D10](#d10) | Cap `-install` CLI size (decompressed + download body) | off (`0`) | `-max-cli-bytes` / key | rule 4 (who-pays) | Desktop ceasing to treat a disk-full message as terminal |
 | [D12](#d12) | Bound on the `-install` download exchange | off (`0`) | `-cli-download-timeout` / key | rule 4 | operator with the bound set reporting an honest slow download failed |
 | [D15](#d15) | Verify a run-dir lock holder is our serve process before signalling it, in the serve eviction and in `-stop` (macOS) | always-on | always-on | rule 3 clause (a) | the reference adding the same macOS check, or a macOS holder legitimately un-inspectable via `KERN_PROCARGS2` |
@@ -412,46 +412,36 @@ operator-declinable. Only CT-2 and CT-5 carry a flag and a key.
   component.
 - **Pointers.** [PROTOCOL.md](PROTOCOL.md) → `-install`, and `install.go`.
 
-### D8 · claustrum never follows or writes a foreign/symlinked `remote-server.log` (always-on) { #d8 }
+### D8 · claustrum refuses a link, a FIFO or another user's `remote-server.log` (always-on) { #d8 }
 
-- **Behavior.** claustrum rotates the prior log to `remote-server.log.old` and
-  creates a fresh own log (`os.Rename` then `O_EXCL` create). That matches
-  `4534d86`, which keeps the previous session's log as `.old` on every restart. That part is
-  parity, reachable on the ordinary per-restart path. The divergence is how
-  claustrum treats a log it does not own. For a planted symlink in a writable
-  directory, `os.Rename` moves the link itself (not its target) to
-  `remote-server.log.old`. `O_EXCL` then creates a fresh regular log. The link is
-  never followed, and the victim file stays untouched. On a sticky directory where
-  claustrum cannot rename the existing entry (another user's file or symlink), the
-  rename cannot proceed and the exclusive create fails. claustrum then declines the
-  log and falls back to inherited stdio. In both cases, on Linux and macOS,
-  claustrum never follows the link or writes into a file it does not own.
-- **Windows.** After a failed rename and a failed create, the Windows launcher
-  opens an existing regular `remote-server.log` and truncates it. A path that is
-  not a regular file is refused. The type test and the
-  open are two calls, and the open has no owner test. Both halves of this entry
-  therefore hold on Linux and macOS only. This follows from the code and is not
-  measured.
-- **The upstream state changed, and this entry was revised to match it.** Measured
-  2026-09-06: `4534d86` no longer plain-truncates a foreign *regular* file. `5db5e4a`
-  did, measured 2026-08-06. claustrum now matches the `.old` rotation on the common
-  path. But in a root-owned sticky directory the reference still FOLLOWS a
-  planted `remote-server.log` symlink. It writes its own log into the victim, or it
-  refuses to start. claustrum refuses to follow it. So a narrower hardening
-  survives, and it is a D2-style case: "the reference does it too" is not a reason
-  to call it safe.
-- **Hardening, not a defect claim.** To reach it you need a local user who can
-  already plant a file or symlink in that directory. The justification is a design
-  position: a daemon must not follow a link it did not plant or write into a file
-  it does not own. It does not depend on the reference being wrong.
-- **Why always-on.** Rule 3 clause (b). The trigger is unreachable on the
-  deployed path (`~/.claude/remote/` is per-user, not world-writable). If a flag
-  existed, it gates a branch that no honest deployment reaches.
-- **Reopen trigger.** A deployment that puts the socket directory somewhere shared
-  *and* needs the log file. Or the reference gaining the same refuse-to-follow (then
-  this becomes parity, not a divergence).
-- **Pointers.** [PROTOCOL.md](PROTOCOL.md) → Daemon log, and `server.go`
-  (`openDaemonLog`).
+- **Behavior.** If the rename to `remote-server.log.old` fails, claustrum's launcher
+  judges the entry at the log path by `Lstat`. It truncates an own regular file and the
+  own regular file behind an own link. A folder fails the start with `is a directory`,
+  and a failed create with nothing at the path fails it with the create error. These
+  follow `5fd08069` in rounds `task015-03` and `task015-04`: cells E1 and E3 on the
+  Linux and macOS VMs, E5 and E6 on the Linux VM.
+- **What differs.** Every other entry fails the start with `claustrum: open log: open
+  <path>: permission denied` and exit 1, and it stays unchanged. Round `task015-04`
+  measured that refusal in cells S1 to S4 (Linux VM) and S1, S3 and S4 (macOS VM).
+  `5fd08069` refuses the same in a sticky world-writable folder with the `fs.protected`
+  sysctls on. On macOS, and on Linux with those sysctls off, it writes through a link
+  or another user's file and blocks on a FIFO.
+- **Why.** The maintainer's decision of 2026-10-19. In round `task015-03` `5fd08069`
+  truncated a file of another user and the target of a planted link.
+- **Not measured.** The target of an own link must be an own regular file with one
+  link. An own file with a second hard link is refused. Both are claustrum's own. An
+  own file that the open cannot write fails the start with the error of that open.
+- **Windows.** The launcher truncates a regular file with no owner test, as `5fd08069`
+  does for a held log (cells W1 and W3 of round `task015-01`). It refuses a file
+  symbolic link, where `5fd08069` writes through it (cell W2 of round `task015-04`,
+  Windows VM). The rename moves a folder onto a regular `.old` on both (cell W1).
+- **Why always-on.** Rule 3 clause (b). The deployed socket folder
+  (`~/.claude/remote/`) is per-user and not world-writable, so no honest start
+  reaches the refusal.
+- **Reopen trigger.** A deployment that puts the socket folder somewhere shared, or
+  the reference refusing these entries on every host.
+- **Pointers.** [PROTOCOL.md](PROTOCOL.md) → Daemon log, `server.go`
+  (`openDaemonLog`) and `detach_unix.go` (`openHeldDaemonLog`).
 
 ### D10 · Make the `-install` CLI size cap opt-in { #d10 }
 
