@@ -203,6 +203,11 @@ func TestCreateWithAnotherGitDirAtThePath(t *testing.T) {
 	} {
 		t.Run(row.name, func(t *testing.T) {
 			f := newSeededShadowFixture(t)
+			// The rows do not show a registrations folder in the repository.
+			// Without one the create runs no pair before the add (pairBeforeAdd).
+			if err := os.RemoveAll(filepath.Join(f.gitDir, worktreesSubdir)); err != nil {
+				t.Fatal(err)
+			}
 			_, other := configRepo(t)
 			copied := filepath.Join(resolveTestRoot(t, t.TempDir()), "copy")
 			if err := os.CopyFS(copied, os.DirFS(f.gitDir)); err != nil {

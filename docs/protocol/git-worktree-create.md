@@ -18,7 +18,7 @@ A failed request can leave files on disk: see [After a failure](#after-a-failure
 | `sourceBranch` | no | The name that the new branch starts from. The daemon reads it as a local branch and as `origin/<name>`. The default is the current branch. An attach to `existingBranch` does not use it. A name that matches no branch is not an error: see [Response](#response). |
 | `existingBranch` | no | A local branch to attach to. If it names no local branch, the daemon creates `branchName` instead. If the attach fails, the daemon does the same. For example, git refuses an attach to a branch that is checked out in `baseRepo`. The request can then still succeed. `branch` in the response says which branch the worktree is on: see [Response](#response). |
 | `worktreeRoot` | no | A location outside the repository. Windows refuses it with `unsafe_path`. |
-| `timeoutMs` | no | A deadline that starts at the add. It stops the read-tree call and the filter listings. The daemon tests it after the add and the copy step. No value or `0` sets none. |
+| `timeoutMs` | no | A deadline that starts at the add. It stops the read-tree call. The daemon tests it after the add and the copy step. No value or `0` sets none. |
 | `shadowDirOff` | no | `true` turns off three things for this request: the filter rule of the checkout, the daemon's own read of the git config of the repository, and the settings copy. Any other value does nothing and is no error. See [Git filters](#git-filters), [Repository config refusals](../PROTOCOL.md#repository-config-refusals) and [The settings copy](#the-settings-copy). |
 
 Where the worktree can go:
@@ -37,11 +37,9 @@ Success:
 
 `path` is `worktreePath` as sent, after the `~` expansion. `branch` is the branch of the worktree. If the daemon attached to `existingBranch`, it is that branch. If not, it is `branchName`.
 
-If the daemon created a branch, `sourceBranch` is the name that the start commit came from. The daemon reads that name as two refs: the local branch `<name>` and the remote-tracking ref `origin/<name>`. It fetches nothing. If both exist, it selects `origin/<name>` in most states. For example, a local branch that is behind `origin/<name>` or equal to it gives `origin/<name>`. The response holds the name as sent in each case.
+If the daemon created a branch, `sourceBranch` is the name that the start commit came from. The daemon reads that name as two refs: the local branch `<name>` and the remote-tracking ref `origin/<name>`. It fetches nothing. If both exist, it selects `origin/<name>` in most states. The response holds the name as sent in each case.
 
-If the value as sent named neither a local branch nor a branch of `origin`, that is not an error. The new branch then starts at HEAD, and the response holds the current branch, not the value as sent. On a detached HEAD, the response then has no `sourceBranch`. That applies to a request with a `sourceBranch` and to a request without one.
-
-After an attach the response can have a `sourceBranch`, and it then says nothing about the worktree.
+If the value as sent named neither a local branch nor a branch of `origin`, that is not an error. The new branch then starts at HEAD, and the response holds the current branch, not the value as sent. On a detached HEAD, the response then has no `sourceBranch`.
 
 Failure:
 
@@ -99,15 +97,15 @@ A rollback leaves something in these cases:
 
 ## Git filters
 
-If a file of the checkout uses a git filter that only the repository config defines, the request fails:
+In the state `shadow`, if a file of the checkout uses a git filter that only the repository config defines, the request fails:
 
 ```json
 {"success": false, "error": "Claude doesn't run the \"<name>\" git filter, because only this repository's own git config defines it. If you trust that filter, copy the [filter \"<name>\"] section from that config (usually .git/config) into ~/.gitconfig on the remote machine, then try again.", "errorCode": "repository_only_filter"}
 ```
 
-A filter counts as defined where a `smudge` or a `process` key has a value. A filter that the user config, the system config or the daemon environment defines runs. If the repository defines that filter too, the outside values apply, except as below. With a user `lfs.storage` the checkout gets no `lfs.storage` item of the daemon (round `task008-01`, Linux, macOS and Windows VMs). A failing user `smudge` fails the request where the repository adds only `required = true`, `yes` or `1`. Linux and macOS VMs measured `true`, a Linux VM `yes` and `1`. If the repository adds a `process` key to a filter that has none outside it, the request fails with `worktree_add_failed`. With a git before 2.26, the daemon refuses a filter that a conditional include (`includeIf`) of the user config defines.
+In the state `fallback-git` no rule of this section applies, and git runs the filters (cells R-Q4f and R-Q4g of round `task084-01`, Linux VM). With `"shadowDirOff": true` the rule is off, as before. Files that the repository config includes count as that config, also through `includeIf`, whatever its condition. The cells are F1 and F1b of round `task084-02`, and F1c and F1d of round `task084-04`. A filter counts as defined where a `smudge` or a `process` key has a value. A filter that the user config, the system config or the daemon environment defines runs. If the repository defines that filter too, the outside values apply, except as below. With a user `lfs.storage` the checkout gets no `lfs.storage` item of the daemon (round `task008-01`, Linux, macOS and Windows VMs). A failing user `smudge` fails the request where the repository adds only `required = true`, `yes` or `1`. If the repository adds a `process` key to a filter that has none outside it, the request fails with `worktree_add_failed`.
 
-Three values of the repository pass: `smudge = cat` under each name, and `git-lfs smudge -- %f` and `git-lfs filter-process` under the name `lfs`. With `smudge = cat` the daemon starts no program. If the repository config names a program for git-lfs, the filter `lfs` does not run, wherever it is defined. A file under it then fails the request. A filter name with `=`, or one that is not valid UTF-8, fails the request with `worktree_add_failed`. So does a refused name of over 200 bytes. In the state `shadow`, over 64 filter names in the repository config fail first. So does the last config listing before the checkout that fails or runs 30 seconds.
+Three values of the repository pass: `smudge = cat` under each name, and `git-lfs smudge -- %f` and `git-lfs filter-process` under the name `lfs`. If the repository config names a program for git-lfs, the filter `lfs` does not run, wherever it is defined. A file under it then fails the request. A filter name with `=`, or one that is not valid UTF-8, fails the request with `worktree_add_failed`. So does a refused name of over 200 bytes. With a settings copy, over 64 filter names in the repository config fail first. So does the last config listing before the checkout that fails or runs 30 seconds.
 
 ## The settings copy
 
@@ -156,11 +154,11 @@ A copy that fails does not fail the request. If the deadline of `timeoutMs` expi
 | | Linux and macOS | Windows |
 |---|---|---|
 | A junction between `baseRepo` and the worktree | Does not apply. | Refused with `mkdir_failed`. |
-| A stale registration of the worktree path before the add | If it is the one stale entry and is not locked, the daemon removes it. | The daemon removes it, with no such test. |
+| A stale registration of the worktree path before the add | If it is the one stale entry and is not locked, the daemon removes it. | The daemon removes it with no such test, and ignores letter case (`5fd08069`, cells R-Q4i and R-Q4i2 of round `task084-01`). It keeps an entry whose record path exists (D27). Without a held git directory this is not measured. |
 
 ## Differences from the reference
 
-The pinned build `89cb6289` runs a git filter that only the repository defines. claustrum follows `5fd08069` there. See [Git filters](#git-filters) and [Repository config refusals](../PROTOCOL.md#repository-config-refusals). These entries of the divergence catalog apply to this method:
+These entries of the divergence catalog apply to this method:
 
 - [D2](../DIVERGENCES.md#d2): a delete refuses a path that is the home directory or holds it. That covers the Windows removal of old `.claude-new-worktree-*` entries and both staging removes.
 - [D24](../DIVERGENCES.md#d24): a rollback and the index placement leave a registration directory that something replaced after the add (the Windows placement is not measured).

@@ -273,27 +273,23 @@ func runGitSlow(args []string) int {
 	if code, staged := stagedGitAnswer(args); staged {
 		return code
 	}
-	// CLAUSTRUM_GITSTUB_FAIL_LISTING acts on the listings of the filter rule of
-	// git.worktree_create. It is a comma-separated list. "scoped" is the listing
-	// with --show-scope, "outside" is the one with GIT_DIR set to the null device,
-	// and "full" is the plain one with --git-dir. Each name fails its listing with
-	// exit code 128. "noscope" refuses --show-scope with exit code 129, as a git
-	// before 2.26 does. "hold-<name>" waits on that listing, so that a deadline of
-	// the caller expires during it. The wait is 60 s, or CLAUSTRUM_GITSTUB_HOLD_MS
+	// CLAUSTRUM_GITSTUB_FAIL_LISTING acts on listings. It is a comma-separated
+	// list. "scoped" is a listing with --show-scope, which the daemon does not
+	// make, and "full" is the plain one with --git-dir. Each name fails its
+	// listing with exit code 128. "hold-<name>" waits on that listing, so that a
+	// deadline of the caller expires during it. The wait is 60 s, or CLAUSTRUM_GITSTUB_HOLD_MS
 	// milliseconds when that is set. With CLAUSTRUM_GITSTUB_LOG set, a held listing
 	// appends the line "held" and its name, joined by a unit separator. After the
 	// wait it appends "held-end" and the name, so a killed stub leaves no such line.
 	//
-	// A call with --file is the read of one config file (listConfigText). It has
-	// GIT_DIR at the null device too, and it is no listing of the filter rule.
+	// A call with --file is the read of one config file (listConfigText). The
+	// stub does not act on it.
 	if which := strings.Split(os.Getenv("CLAUSTRUM_GITSTUB_FAIL_LISTING"), ","); which[0] != "" && slices.Contains(args, "--list") &&
 		!slices.Contains(args, "--file") {
 		kind := "other"
 		switch {
 		case slices.Contains(args, "--show-scope"):
 			kind = "scoped"
-		case os.Getenv("GIT_DIR") == os.DevNull:
-			kind = "outside"
 		case strings.HasPrefix(args[0], "--git-dir="):
 			kind = "full"
 		}
@@ -309,10 +305,6 @@ func runGitSlow(args []string) int {
 			if log := os.Getenv("CLAUSTRUM_GITSTUB_LOG"); log != "" {
 				appendLine(log, "held-end\x1f"+kind)
 			}
-		}
-		if kind == "scoped" && slices.Contains(which, "noscope") {
-			fmt.Fprintln(os.Stderr, "error: unknown option `show-scope'")
-			return 129
 		}
 		if slices.Contains(which, kind) {
 			fmt.Fprintln(os.Stderr, "fatal: stub refuses the "+kind+" listing")

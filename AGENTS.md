@@ -217,7 +217,11 @@ The JSON-RPC surface is identical on every OS. Full internals →
       and A9b, Linux and macOS VMs). On Windows that step has no `locked` test (not measured).
       It is one `os.Root.RemoveAll` through the held git directory, or one
       `os.RemoveAll` of the entry path for a create that holds none or holds
-      another folder than `<baseRepo>\.git`.
+      another folder than `<baseRepo>\.git`. Its compare ignores letter case,
+      as on `5fd08069` (cells R-Q4i and R-Q4i2 of round `task084-01`, Windows VM).
+      A create that holds no git directory is not measured there. An entry
+      whose record names a path that exists stays (D27, cell W-CS of round
+      `task084-03`, Windows VM).
       The second rollback follows a successful add. On Linux and
       macOS these refusals come before it and before the checkout. They delete
       nothing, except an empty leaf that has no `.git` file. They answer a
@@ -246,9 +250,13 @@ The JSON-RPC surface is identical on every OS. Full internals →
       also runs after a failed placement of the index of the new worktree. The
       filter rule of the checkout (`gitfilter.go`) leads to it after a read-tree
       call that fails at a filter of the repository. So does a refusal before
-      it, for an unusable filter or a failed rule listing. In the state
+      it, in the state `shadow`, for an unusable filter, or in a create with no
+      settings copy for a failed rule listing. In the state `fallback-git` the
+      rule does not run, and git runs the filter, as on `5fd08069` (cell R-Q4f
+      of round `task084-01`, Linux VM). In the state
       `shadow` over 64 filter names and a failed or slow last listing refuse
-      too, and so does a checkout listing that its 30 s limit stopped (cell TA). `5fd08069` rolls back in cells F1 and Q3 (Linux VM) and D5 (Linux
+      too, and so does a checkout listing that its 30 s limit stopped (cell TA), and
+      a failed first checkout listing (cell L6 of round `task084-02`, Linux VM). `5fd08069` rolls back in cells F1 and Q3 (Linux VM) and D5 (Linux
       and Windows VMs). It
       deletes the entries
       of the leaf in the order that the directory read returns them, and it
@@ -615,7 +623,7 @@ The JSON-RPC surface is identical on every OS. Full internals →
   `git.worktree_create` have the time limits of `5fd08069` (`gitstop.go`). Most
   calls end at 2 minutes. While a `"shadowDirOff":true` request runs, no call of
   the daemon stops at 2 minutes. claustrum then uses 30 minutes (claustrum's own). The exceptions are in [PROTOCOL.md → Time limits of git
-  calls](docs/PROTOCOL.md#time-limits-of-git-calls): config listings (not claustrum's own `--show-scope` listing), `config.worktree`
+  calls](docs/PROTOCOL.md#time-limits-of-git-calls): config listings, `config.worktree`
   listings and the repository config read at 30 s, the include scan at 10 minutes, no limit on the
   read-tree checkout, and the own bounds of the branch step. The limits are always
   on, no limiter of a divergence. On Linux and macOS the stop is SIGTERM,
@@ -684,6 +692,13 @@ environment. claustrum has no peer check. It answers `"peerCheck":"unavailable"`
 in `server.capabilities` and serves every caller. `5fd08069` answers
 `"peerCheck":"on"` with a `peerCheckBy` member there (Linux VM). That is the
 maintainer's decision of 2026-10-10, not a rule 3 clause. See the entry.
+
+D27 is on-wire, always-on and Windows-only. The stale step of
+`git.worktree_create` keeps an entry whose `gitdir` record names a path that
+exists. In cell W-CS (Windows VM) `5fd08069` deletes the entry of a live
+worktree and answers success (round `task084-02`). claustrum keeps it and
+answers git's `worktree_add_failed` text (round `task084-03`). That is the
+maintainer's decision of 2026-10-18. See the entry.
 
 The flag/key table, the governing rules (rule 1–4 + clauses (a)/(b)/(c)), each
 divergence's default / activation / cost / reopen trigger →

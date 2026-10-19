@@ -3,9 +3,7 @@ package main
 import (
 	"bytes"
 	"context"
-	"errors"
 	"maps"
-	"os"
 	"os/exec"
 	"slices"
 	"strconv"
@@ -147,8 +145,6 @@ type filterPlan struct {
 	// lfsKey is the git-lfs program key of the repository, when the filter lfs
 	// of the outside config got the three pairs for it. It is "" otherwise.
 	lfsKey string
-	// listing is the config precursor of the checkout, when the rule ran it.
-	listing *listingRun
 	// tooManyFilters is true when the repository's own config has more than
 	// filterNameMaxCount filter names (repositoryFilterCount).
 	tooManyFilters bool
@@ -401,25 +397,108 @@ func unreplaceableFilterText(name string) string {
 	return "the git filter " + strconv.Quote(name) + " has values in this repository's git config that no option of git can replace for the checkout"
 }
 
-// outsideListingEnv is the environment of the listing with no repository in
-// view, for a git that has no --show-scope. GIT_DIR names the null device, as in
-// the excludes read (resolveUserExcludesFile), so git reads no config of a
-// repository, whatever its working directory. The daemon's own GIT_DIR,
-// GIT_COMMON_DIR and GIT_WORK_TREE go. Every other entry is that of the light
-// config precursor (precursorEnv): HOME, XDG_CONFIG_HOME, GIT_CONFIG_GLOBAL,
-// GIT_CONFIG_SYSTEM and the GIT_CONFIG_COUNT set of the daemon stay as they are.
-func outsideListingEnv() []string {
-	env := slices.DeleteFunc(precursorEnv(false, nil), func(kv string) bool {
-		n := envName(kv)
-		return n == "GIT_DIR" || n == "GIT_COMMON_DIR" || n == "GIT_WORK_TREE"
-	})
-	return append(env, "GIT_DIR="+os.DevNull)
+// filterRecords is the part of a plain listing that the filter rule reads: the
+// records whose key starts with `filter.` or `lfs.`.
+func filterRecords(listing []byte) []byte {
+	var b []byte
+	for rec := range bytes.SplitSeq(listing, []byte{0}) {
+		if bytes.HasPrefix(rec, []byte("filter.")) || bytes.HasPrefix(rec, []byte("lfs.")) {
+			b = append(append(b, rec...), 0)
+		}
+	}
+	return b
 }
 
-// gitUsageExit is the exit code of a git that refuses an option of its command
-// line. A git before 2.26 answers --show-scope so. Cell Q14 has a stub with
-// that code.
-const gitUsageExit = 129
+// settingRecords is the plain listing of settings, in the form of `git config
+// -z --list`, cut to filterRecords.
+func settingRecords(settings ...[]repoSetting) []byte {
+	var b []byte
+	for _, list := range settings {
+		for _, s := range list {
+			b = append(b, s.key...)
+			if s.hasValue {
+				b = append(append(b, '\n'), s.value...)
+			}
+			b = append(b, 0)
+		}
+	}
+	return filterRecords(b)
+}
+
+// shadowListings gives the two listings of planFromListings for a create with
+// a settings copy, with no git call of its own. 5fd08069 makes no call with
+// --show-scope there (round task084-01, cells R-Q1a, R-Q2b, R-Q2c, R-Q4a,
+// R-Q4b and R-Q4h, Linux, macOS and Windows VMs). How claustrum tells the two
+// sides apart is its own.
+//
+// pin is the listing before the read-tree call (hardenedGitCheckout). It reads
+// the copy, which holds no key that the rule reads, and no `config.worktree`
+// file of the repository (extensions.worktreeconfig is never in the copy). So
+// every record of pin is from outside the repository, and outside is pin. own
+// is the filterRecords of the read of repoConfigGate that wrote the copy of
+// this request: the config, the files that it includes, the files of its
+// `includeIf` sections and its `config.worktree` file. 5fd08069 refuses a
+// filter of an included file (cell F1 of round task084-02, Linux VM) and of an
+// `includeIf` file (cell F1b). full is outside and then own, so the values of
+// the repository come after those of GIT_CONFIG_COUNT (claustrum's own, not
+// measured).
+//
+// A filter that the repository config gets before the create gets a new read
+// and is refused (cell F2). One that it gets after the read is in no copy, so
+// git does not run it (claustrum's own, not measured).
+func shadowListings(pin, own []byte) (full, outside []byte) {
+	outside = filterRecords(pin)
+	return append(slices.Clone(outside), own...), outside
+}
+
+// filterRule is the filter rule of one checkout. hardenedGitCheckout sets plan.
+// A create in the state fallback-git has no rule: 5fd08069 adds no filter item
+// there and refuses no filter (cells R-Q4f and R-Q4g of round task084-01, Linux
+// VM). A create with "shadowDirOff":true has none either, as before.
+//
+// shadow is true for a create with a settings copy (req.repoRead set), and own
+// then holds the records of its read (shadowListings). Every other create with
+// a rule takes the scoped listing (scopedPlan).
+type filterRule struct {
+	shadow bool
+	own    []byte
+	plan   filterPlan
+}
+
+// planFor sets the plan of a rule with a settings copy from pin, the output of
+// the listing before the read-tree call.
+func (r *filterRule) planFor(pin []byte) {
+	full, outside := shadowListings(pin, r.own)
+	r.plan = planFromListings(full, outside, true)
+}
+
+// scopedPlan sets the plan of a rule with no settings copy: a server with no
+// run folder, or a read of the repository config with no verdict. Such a
+// create reads the live config of the repository, so the rule needs both sides
+// at the moment of the checkout. It runs `--git-dir=<gitDir> config -z --list
+// --show-scope` in leaf, with the light precursorEnv and pin, under ctx
+// (splitScopedListing). That call and its rules are claustrum's own, not
+// measured: no cell of rounds task084-01 and task084-02 is in such a state. A
+// listing that fails refuses the create with git's text. So a git before 2.26,
+// which has no --show-scope, refuses every create there. With ctx done the plan
+// is empty, and the read-tree call cannot start under ctx.
+func (r *filterRule) scopedPlan(ctx context.Context, leaf, gitDir string, pin []string) {
+	cmd := exec.CommandContext(ctx, "git", "--git-dir="+gitDir, "config", "-z", "--list", "--show-scope")
+	cmd.Dir = leaf
+	cmd.Env = precursorEnv(false, pin)
+	var errBuf bytes.Buffer
+	cmd.Stderr = &errBuf
+	out, err := gitOutput(ctx, cmd)
+	switch {
+	case err == nil:
+		full, outside := splitScopedListing(out)
+		r.plan = planFromListings(full, outside, false)
+	case ctx.Err() != nil:
+		r.plan = filterPlan{}
+	default:
+		r.plan = filterPlan{refusal: worktreeGitText(errBuf.String(), err)}
+	}
+}
 
 // splitScopedListing reads the output of `git config -z --list --show-scope`.
 // Each entry is the scope, a NUL byte, and one record of the plain listing. It
@@ -439,83 +518,6 @@ func splitScopedListing(out []byte) (full, outside []byte) {
 		}
 	}
 	return full, outside
-}
-
-// listFilterPlan runs the listings of the filter rule and returns the plan
-// of planFilters. Each listing runs in leaf, the new worktree.
-//
-// The first call is `--git-dir=<gitDir> config -z --list --show-scope`, with the
-// light precursorEnv. It gives both sides in one listing (splitScopedListing).
-// The config precursor of the checkout follows it as before.
-//
-// A git that refuses the option (gitUsageExit) gets two plain listings in its
-// place. One has outsideListingEnv and lists the config outside the repository.
-// The other is the config precursor of the checkout, which then runs no listing
-// of its own. 5fd08069 makes no --show-scope call, so the stub of cell Q14
-// changes nothing for it. On
-// this path an `includeIf "gitdir:…"` section of the user config that matches
-// the repository is in the second listing only. So a filter of such a section
-// counts as one that only the repository defines, and it is refused. 5fd08069
-// and 89cb6289 run that filter (cell S1, Linux VM). That difference stays: it is
-// the accepted edge of an old git.
-//
-// The call log of 5fd08069 shows two plain listings before its read-tree, both
-// with --git-dir (cell F1). How that build tells the two sides apart is not
-// measured.
-//
-// pin is the GIT_COMMON_DIR pin of baseRepo with the git directory itself as
-// its value (commonDirPinEnv), in every state. So the listings of the rule read
-// the repository's own config also in the state shadow, where the checkout
-// reads the daemon's copy. A filter that only the repository's config names is
-// in no copy, so the rule needs that config to give the filter its pairs. The
-// scoped listing is claustrum's own call: 5fd08069 makes none (val-s3p2b1-linux
-// row N4, Linux VM). In the state shadow the second plain listing of an old git
-// is not the precursor of the checkout. The checkout runs its own listings
-// against the copy.
-//
-// A listing that fails for another reason refuses the create with git's text,
-// as a failed checkout. No filter runs then. That is claustrum's choice (not
-// measured). One state is apart: ctx is done, by the timeoutMs of the caller.
-// The plan is then empty, and the read-tree call cannot start under that ctx.
-// So the caller answers as it did before the rule: the timeout arm, or the
-// failed checkout with the text of the context. 5fd08069 makes no --show-scope
-// call. So with a timeoutMs that expires while that call
-// runs, it can answer the refusal of the rule where claustrum answers timeout
-// (cell TF of round task010-02, Linux VM).
-func listFilterPlan(ctx context.Context, u gitUse, leaf, gitDir string, pin []string) filterPlan {
-	failed := func(r listingRun) filterPlan {
-		if ctx.Err() != nil {
-			return filterPlan{}
-		}
-		return filterPlan{refusal: worktreeGitText(r.stderr, r.err)}
-	}
-	env := precursorEnv(false, pin)
-	cmd := exec.CommandContext(ctx, "git", "--git-dir="+gitDir, "config", "-z", "--list", "--show-scope")
-	cmd.Dir = leaf
-	cmd.Env = env
-	var errBuf bytes.Buffer
-	cmd.Stderr = &errBuf
-	out, err := gitOutput(ctx, cmd)
-	var ee *exec.ExitError
-	switch {
-	case err == nil:
-		full, outside := splitScopedListing(out)
-		return planFromListings(full, outside, u.shadow())
-	case !errors.As(err, &ee) || ee.ExitCode() != gitUsageExit:
-		return failed(listingRun{stderr: errBuf.String(), err: err})
-	}
-	outside := runListing(ctx, leaf, "", outsideListingEnv())
-	full := runListing(ctx, leaf, gitDir, env)
-	for _, r := range []listingRun{outside, full} {
-		if r.err != nil {
-			return failed(r)
-		}
-	}
-	f := planFromListings(full.out, outside.out, u.shadow())
-	if !u.shadow() {
-		f.listing = &full
-	}
-	return f
 }
 
 // refusedFilter is the name of the filter that failed the checkout, when it is

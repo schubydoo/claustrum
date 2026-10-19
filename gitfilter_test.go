@@ -327,129 +327,35 @@ func TestWorktreeCreateLastFilterValueCounts(t *testing.T) {
 	}
 }
 
-// Cell Q14. A git that refuses --show-scope with exit code 129 gets the two
-// plain listings, and the filter is still refused. The outside listing runs in
-// the new worktree, not in the temporary directory.
-func TestWorktreeCreateFilterRuleWithOldGit(t *testing.T) {
+// Cells R1 and R-Q4h of round task084-01 (Linux and macOS VMs). A filter
+// that the user config defines through includeIf "gitdir:…" is outside the
+// repository: it runs, and the create succeeds.
+func TestWorktreeCreateFilterOfConditionalInclude(t *testing.T) {
 	f := newFilterFixture(t, "t.txt filter=m\n")
-	f.own(t, "filter.m.smudge", f.marker(t, "local"))
-	installGitSlowStub(t, f.realGit)
-	ctxlog := filepath.Join(t.TempDir(), "ctx.log")
-	t.Setenv("CLAUSTRUM_GITSTUB_CTXLOG", ctxlog)
-	t.Setenv("CLAUSTRUM_GITSTUB_FAIL_LISTING", "noscope")
-	raw, _ := f.create(t, newTestServer(t), "w1", "", 0)
-	f.wantRefused(t, raw, "m")
-	if f.ran("local") {
-		t.Error("the filter of the repository ran")
+	top, err := filepath.EvalSymlinks(f.top)
+	if err != nil {
+		t.Fatal(err)
 	}
-	calls := readShapeCalls(t, ctxlog)
-	at := slices.IndexFunc(calls, func(c shapeCall) bool { return c.has("--show-scope") })
-	if at < 0 || at+3 >= len(calls) {
-		t.Fatalf("no scoped listing with three calls after it")
-	}
-	out, full, rt := calls[at+1], calls[at+2], calls[at+3]
-	if !slices.Equal(out.argv, []string{"config", "-z", "--list"}) || !slices.Contains(out.all, "GIT_DIR="+os.DevNull) || out.cwd != full.cwd {
-		t.Errorf("call after the scoped listing = %q in %s, want config -z --list with GIT_DIR at the null device in %s", out.argv, out.cwd, full.cwd)
-	}
-	if !full.listing() || !strings.HasPrefix(full.argv[0], "--git-dir=") || !rt.has("read-tree") {
-		t.Errorf("then %q and %q, want the listing of the checkout and the read-tree call", full.argv, rt.argv)
-	}
-}
-
-// With a git that refuses --show-scope, a filter that only the user config
-// defines still runs: the plain outside listing shows it. Cell A7 on that path,
-// which no VM ran.
-func TestWorktreeCreateOutsideFilterWithOldGit(t *testing.T) {
-	f := newFilterFixture(t, "t.txt filter=m\n")
-	f.own(t, "filter.m.clean", f.marker(t, "local"))
-	outside(t, "[filter \"m\"]\n\tsmudge = "+f.marker(t, "home")+"\n")
-	installGitSlowStub(t, f.realGit)
-	t.Setenv("CLAUSTRUM_GITSTUB_FAIL_LISTING", "noscope")
+	inc := filepath.Join(t.TempDir(), "included")
+	writeFile(t, inc, "[filter \"m\"]\n\tsmudge = "+f.marker(t, "home")+"\n", 0o644)
+	outside(t, "[includeIf \"gitdir/i:"+filepath.ToSlash(top)+"/\"]\n\tpath = "+filepath.ToSlash(inc)+"\n")
 	raw, _ := f.create(t, newTestServer(t), "w1", "", 0)
 	f.wantCreatedLeaf(t, raw)
 	if !f.ran("home") {
-		t.Error("the outside filter did not run")
+		t.Error("the filter of the included file did not run")
 	}
 }
 
-// Cell R1. A filter that the user config defines through includeIf "gitdir:…"
-// is outside the repository: it runs, and the create succeeds. With a git that
-// refuses --show-scope the same filter is refused, where 5fd08069 runs it (cell
-// S1). That second row is the accepted edge of an old git.
-func TestWorktreeCreateFilterOfConditionalInclude(t *testing.T) {
-	for _, tc := range []struct {
-		name    string
-		oldGit  bool
-		refused bool
-	}{{"scoped listing", false, false}, {"git refuses --show-scope", true, true}} {
-		t.Run(tc.name, func(t *testing.T) {
-			f := newFilterFixture(t, "t.txt filter=m\n")
-			top, err := filepath.EvalSymlinks(f.top)
-			if err != nil {
-				t.Fatal(err)
-			}
-			inc := filepath.Join(t.TempDir(), "included")
-			writeFile(t, inc, "[filter \"m\"]\n\tsmudge = "+f.marker(t, "home")+"\n", 0o644)
-			outside(t, "[includeIf \"gitdir/i:"+filepath.ToSlash(top)+"/\"]\n\tpath = "+filepath.ToSlash(inc)+"\n")
-			if tc.oldGit {
-				installGitSlowStub(t, f.realGit)
-				t.Setenv("CLAUSTRUM_GITSTUB_FAIL_LISTING", "noscope")
-			}
-			raw, _ := f.create(t, newTestServer(t), "w1", "", 0)
-			if tc.refused {
-				f.wantRefused(t, raw, "m")
-			} else {
-				f.wantCreatedLeaf(t, raw)
-			}
-			if f.ran("home") == tc.refused {
-				t.Errorf("the filter of the included file ran = %v, want %v", f.ran("home"), !tc.refused)
-			}
-		})
-	}
-}
-
-// A listing of the rule that fails refuses the create as a failed checkout, with
-// the text of git. No read-tree call runs and no filter runs. The scoped listing
-// fails here for another reason than its option. Not measured.
-func TestWorktreeCreateFilterListingFails(t *testing.T) {
-	for _, tc := range []struct{ seam, which string }{
-		{"scoped", "scoped"}, {"noscope,outside", "outside"}, {"noscope,full", "full"},
-	} {
-		t.Run(tc.seam, func(t *testing.T) {
-			f := newFilterFixture(t, "t.txt filter=m\n")
-			f.own(t, "filter.m.smudge", f.marker(t, "local"))
-			installGitSlowStub(t, f.realGit)
-			log := filepath.Join(t.TempDir(), "argv.log")
-			t.Setenv("CLAUSTRUM_GITSTUB_LOG", log)
-			t.Setenv("CLAUSTRUM_GITSTUB_FAIL_LISTING", tc.seam)
-			raw, _ := f.create(t, newTestServer(t), "w1", "", 0)
-			wantError(t, raw, "git worktree add failed (checkout): fatal: stub refuses the "+tc.which+" listing", "worktree_add_failed")
-			if calls := gitCalls(t, log, "read-tree"); len(calls) != 0 {
-				t.Errorf("read-tree calls = %q, want none", calls)
-			}
-			if f.ran("local") {
-				t.Error("the filter of the repository ran")
-			}
-			f.assertRolledBack(t, []string{}, false)
-		})
-	}
-}
-
-// A timeoutMs of the caller that expires during a listing before the read-tree
-// call answers the timeout frame, as before the filter rule. The repository has
-// no filter. The frame is the one of main at 81c8893 for a wait on the listing
-// of the checkout, and the one of cells S2 (Linux VM).
+// A timeoutMs of the caller that expires during the listing before the
+// read-tree call answers the timeout frame. The repository has no filter. The
+// frame is the one of cells S2 (Linux VM). The deadline does not end that
+// listing: it runs to its end, as on 5fd08069 (cell T12 of round task010-01,
+// Linux VM, and cells R-Q4ax and Q4ap of round task084-01, Linux and macOS
+// VMs).
 //
-// The deadline ends a listing of the filter rule. It does not end the listing of
-// the checkout, which is the "full" one: that one runs to its end, as on
-// 5fd08069 (cell T12 of round task010-01, Linux VM). With "noscope" the full
-// listing of the rule is held first, and then the one of the checkout.
-//
-// The stub holds the listing that the seam names and no other call: its log has
-// one "held" line with that name. The read of the config file is not held. A
-// held "full" listing sleeps 1 s past the deadline and ends. Another held
-// listing sleeps 30 s past it, and the kill at the deadline must end it. A killed
-// stub writes no "held-end" line, so that test does not depend on the time.
+// The stub holds that listing and no other call: its log has one "held" line.
+// The read of the config file is not held. The held listing sleeps 1 s past
+// the deadline and ends.
 func TestWorktreeCreateDeadlineDuringFilterListing(t *testing.T) {
 	requireGit(t)
 	realGit, err := exec.LookPath("git")
@@ -458,64 +364,21 @@ func TestWorktreeCreateDeadlineDuringFilterListing(t *testing.T) {
 	}
 	installGitSlowStub(t, realGit)
 	lateMs := int((2*calibrate(t, realGit) + 500*time.Millisecond).Milliseconds())
-	for _, seam := range []string{"hold-scoped", "noscope,hold-outside", "noscope,hold-full", "hold-full"} {
-		t.Run(seam, func(t *testing.T) {
-			f := newWTFixture(t, false)
-			log := filepath.Join(t.TempDir(), "argv.log")
-			t.Setenv("CLAUSTRUM_GITSTUB_LOG", log)
-			t.Setenv("CLAUSTRUM_GITSTUB_FAIL_LISTING", seam)
-			kind := seam[strings.LastIndex(seam, "hold-")+len("hold-"):]
-			full := kind == "full"
-			holdMs := lateMs + 30000
-			if full {
-				holdMs = lateMs + 1000
-			}
-			t.Setenv("CLAUSTRUM_GITSTUB_HOLD_MS", strconv.Itoa(holdMs))
-			raw, took := f.create(t, newTestServer(t), "w1", "", lateMs)
-			wantError(t, raw, "git worktree add timed out after "+strconv.Itoa(lateMs)+
-				"ms (deadline expired during the checkout): context deadline exceeded", "timeout")
-			f.assertRolledBack(t, []string{}, false)
-			want := 1
-			if seam == "noscope,hold-full" {
-				want = 2
-			}
-			if held := gitCalls(t, log, "held"); len(held) != want || held[0][1] != kind {
-				t.Errorf("held calls = %q, want %d of the %s listing", held, want, kind)
-			}
-			hold := time.Duration(holdMs) * time.Millisecond
-			if full && took < hold {
-				t.Errorf("the create answered after %s, want it after the held listing (%d ms)", took, holdMs)
-			}
-			if !full && took >= hold {
-				t.Errorf("the create answered after %s, want it at its deadline of %d ms", took, lateMs)
-			}
-			if ended := gitCalls(t, log, "held-end"); !full && len(ended) != 0 {
-				t.Errorf("held listings that ran to their end = %q, want the %s listing killed at the deadline", ended, kind)
-			}
-		})
+	f := newWTFixture(t, false)
+	log := filepath.Join(t.TempDir(), "argv.log")
+	t.Setenv("CLAUSTRUM_GITSTUB_LOG", log)
+	t.Setenv("CLAUSTRUM_GITSTUB_FAIL_LISTING", "hold-full")
+	holdMs := lateMs + 1000
+	t.Setenv("CLAUSTRUM_GITSTUB_HOLD_MS", strconv.Itoa(holdMs))
+	raw, took := f.create(t, newTestServer(t), "w1", "", lateMs)
+	wantError(t, raw, "git worktree add timed out after "+strconv.Itoa(lateMs)+
+		"ms (deadline expired during the checkout): context deadline exceeded", "timeout")
+	f.assertRolledBack(t, []string{}, false)
+	if held := gitCalls(t, log, "held"); len(held) != 1 || held[0][1] != "full" {
+		t.Errorf("held calls = %q, want one of the full listing", held)
 	}
-}
-
-// The listing with no repository in view has GIT_DIR at the null device, and it
-// has no GIT_COMMON_DIR and no GIT_WORK_TREE of the daemon. The config variables
-// of the daemon stay.
-func TestOutsideListingEnv(t *testing.T) {
-	t.Setenv("GIT_DIR", "/daemon/git")
-	t.Setenv("GIT_COMMON_DIR", "/daemon/common")
-	t.Setenv("GIT_WORK_TREE", "/daemon/tree")
-	t.Setenv("GIT_CONFIG_GLOBAL", "/daemon/gitconfig")
-	t.Setenv("GIT_CONFIG_COUNT", "1")
-	var got []string
-	for _, kv := range outsideListingEnv() {
-		if strings.HasPrefix(kv, "GIT_DIR=") || strings.HasPrefix(kv, "GIT_COMMON_DIR=") || strings.HasPrefix(kv, "GIT_WORK_TREE=") ||
-			strings.HasPrefix(kv, "GIT_CONFIG_GLOBAL=") || strings.HasPrefix(kv, "GIT_CONFIG_COUNT=") {
-			got = append(got, kv)
-		}
-	}
-	slices.Sort(got)
-	want := []string{"GIT_CONFIG_COUNT=1", "GIT_CONFIG_GLOBAL=/daemon/gitconfig", "GIT_DIR=" + os.DevNull}
-	if !slices.Equal(got, want) {
-		t.Fatalf("outside listing env = %q, want %q", got, want)
+	if hold := time.Duration(holdMs) * time.Millisecond; took < hold {
+		t.Errorf("the create answered after %s, want it after the held listing (%d ms)", took, holdMs)
 	}
 }
 
@@ -560,14 +423,7 @@ func TestWorktreeCreateRefusedFilterValues(t *testing.T) {
 // and the argv of its read-tree call.
 func (f filterFixture) readTreeArgv(t *testing.T, extra map[string]any) (string, []string) {
 	t.Helper()
-	return f.readTreeArgvWith(t, extra, "")
-}
-
-// readTreeArgvWith is readTreeArgv with a CLAUSTRUM_GITSTUB_FAIL_LISTING value.
-func (f filterFixture) readTreeArgvWith(t *testing.T, extra map[string]any, seam string) (string, []string) {
-	t.Helper()
 	installGitSlowStub(t, f.realGit)
-	t.Setenv("CLAUSTRUM_GITSTUB_FAIL_LISTING", seam)
 	log := filepath.Join(t.TempDir(), "argv.log")
 	t.Setenv("CLAUSTRUM_GITSTUB_LOG", log)
 	raw, _ := f.createWith(t, newTestServer(t), "w1", 0, extra)
@@ -628,16 +484,14 @@ func TestWorktreeCreateLfsWithTransferProgramOfRepository(t *testing.T) {
 		name    string
 		own     [][2]string
 		outside string
-		oldGit  bool
 		refused bool
 	}{
-		{"custom transfer path", [][2]string{{"lfs.customtransfer.x.path", "/no/such/agent"}}, "", false, true},
-		{"standalone transfer agent", [][2]string{{"lfs.standalonetransferagent", "x"}}, "", false, true},
-		{"extension command", [][2]string{{"lfs.extension.x.clean", "/no/such/command"}}, "", false, true},
-		{"both keys, git refuses --show-scope", [][2]string{{"lfs.standalonetransferagent", "x"}, {"lfs.customtransfer.x.path", "/no/such/agent"}}, "", true, true},
-		{"another lfs key", [][2]string{{"lfs.url", "https://example.invalid/lfs"}}, "", false, false},
-		{"the keys in the user config", nil, "[lfs]\n\tstandalonetransferagent = x\n[lfs \"customtransfer.x\"]\n\tpath = /no/such/agent\n", false, false},
-		{"the keys in the user config, git refuses --show-scope", nil, "[lfs]\n\tstandalonetransferagent = x\n[lfs \"customtransfer.x\"]\n\tpath = /no/such/agent\n", true, false},
+		{"custom transfer path", [][2]string{{"lfs.customtransfer.x.path", "/no/such/agent"}}, "", true},
+		{"standalone transfer agent", [][2]string{{"lfs.standalonetransferagent", "x"}}, "", true},
+		{"extension command", [][2]string{{"lfs.extension.x.clean", "/no/such/command"}}, "", true},
+		{"both keys", [][2]string{{"lfs.standalonetransferagent", "x"}, {"lfs.customtransfer.x.path", "/no/such/agent"}}, "", true},
+		{"another lfs key", [][2]string{{"lfs.url", "https://example.invalid/lfs"}}, "", false},
+		{"the keys in the user config", nil, "[lfs]\n\tstandalonetransferagent = x\n[lfs \"customtransfer.x\"]\n\tpath = /no/such/agent\n", false},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			f := newFilterFixture(t, "t.txt filter=lfs\n")
@@ -648,11 +502,7 @@ func TestWorktreeCreateLfsWithTransferProgramOfRepository(t *testing.T) {
 			if tc.outside != "" {
 				outside(t, tc.outside)
 			}
-			seam := ""
-			if tc.oldGit {
-				seam = "noscope"
-			}
-			raw, argv := f.readTreeArgvWith(t, nil, seam)
+			raw, argv := f.readTreeArgv(t, nil)
 			if tc.refused {
 				wantFirstPairs(t, argv, off...)
 				wantError(t, raw, repositoryOnlyFilterText("lfs"), "repository_only_filter")
@@ -683,20 +533,17 @@ func TestWorktreeCreateOutsideLfsWithTransferProgramOfRepository(t *testing.T) {
 		attrs   string
 		own     [][2]string
 		user    string
-		oldGit  bool
 		wantKey string // the key in the refusal, or "" for a create that succeeds
 		pairs   bool
 	}{
-		{"custom transfer path", "t.txt filter=lfs\n", [][2]string{{"lfs.customtransfer.x.path", "/no/such/agent"}}, "", false, "lfs.customtransfer.x.path", true},
-		{"standalone transfer agent", "t.txt filter=lfs\n", [][2]string{{"lfs.standalonetransferagent", "x"}}, "", false, "lfs.standalonetransferagent", true},
-		{"standalone transfer agent of a URL", "t.txt filter=lfs\n", [][2]string{{urlKey, "x"}}, "", false, urlKey, true},
-		{"extension command", "t.txt filter=lfs\n", [][2]string{{"lfs.extension.x.smudge", "/no/such/command"}}, "", false, "lfs.extension.x.smudge", true},
-		{"two keys, the first in sorted order is named", "t.txt filter=lfs\n", [][2]string{{"lfs.standalonetransferagent", "x"}, {"lfs.customtransfer.x.path", "/no/such/agent"}}, "", false, "lfs.customtransfer.x.path", true},
-		{"git refuses --show-scope", "t.txt filter=lfs\n", [][2]string{{"lfs.standalonetransferagent", "x"}}, "", true, "lfs.standalonetransferagent", true},
-		{"a path under another filter of the user config", "t.txt filter=m\n", [][2]string{{"lfs.standalonetransferagent", "x"}}, "", false, "", true},
-		{"no key", "t.txt filter=lfs\n", [][2]string{{"lfs.url", "https://example.invalid/lfs"}}, "", false, "", false},
-		{"the keys in the user config", "t.txt filter=lfs\n", nil, userKeys, false, "", false},
-		{"the keys in the user config, git refuses --show-scope", "t.txt filter=lfs\n", nil, userKeys, true, "", false},
+		{"custom transfer path", "t.txt filter=lfs\n", [][2]string{{"lfs.customtransfer.x.path", "/no/such/agent"}}, "", "lfs.customtransfer.x.path", true},
+		{"standalone transfer agent", "t.txt filter=lfs\n", [][2]string{{"lfs.standalonetransferagent", "x"}}, "", "lfs.standalonetransferagent", true},
+		{"standalone transfer agent of a URL", "t.txt filter=lfs\n", [][2]string{{urlKey, "x"}}, "", urlKey, true},
+		{"extension command", "t.txt filter=lfs\n", [][2]string{{"lfs.extension.x.smudge", "/no/such/command"}}, "", "lfs.extension.x.smudge", true},
+		{"two keys, the first in sorted order is named", "t.txt filter=lfs\n", [][2]string{{"lfs.standalonetransferagent", "x"}, {"lfs.customtransfer.x.path", "/no/such/agent"}}, "", "lfs.customtransfer.x.path", true},
+		{"a path under another filter of the user config", "t.txt filter=m\n", [][2]string{{"lfs.standalonetransferagent", "x"}}, "", "", true},
+		{"no key", "t.txt filter=lfs\n", [][2]string{{"lfs.url", "https://example.invalid/lfs"}}, "", "", false},
+		{"the keys in the user config", "t.txt filter=lfs\n", nil, userKeys, "", false},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			f := newFilterFixture(t, tc.attrs)
@@ -704,11 +551,7 @@ func TestWorktreeCreateOutsideLfsWithTransferProgramOfRepository(t *testing.T) {
 				f.own(t, kv[0], kv[1])
 			}
 			outside(t, "[filter \"lfs\"]\n\tsmudge = "+f.marker(t, "home")+"\n[filter \"m\"]\n\tsmudge = "+f.marker(t, "m")+"\n"+tc.user)
-			seam := ""
-			if tc.oldGit {
-				seam = "noscope"
-			}
-			raw, argv := f.readTreeArgvWith(t, nil, seam)
+			raw, argv := f.readTreeArgv(t, nil)
 			if tc.pairs {
 				wantFirstPairs(t, argv, off...)
 			} else {
@@ -940,5 +783,34 @@ func TestSplitScopedListing(t *testing.T) {
 	plan := planFromListings(full, outside, false)
 	if !slices.Equal(plan.refused, []string{"m", "w"}) {
 		t.Errorf("refused = %q, want [m w]", plan.refused)
+	}
+}
+
+// In the state shadow outside is the listing before the read-tree call as it
+// is, and full adds the records of the read. A record of the read that the
+// listing holds too stays outside. Records of other keys go.
+func TestShadowListings(t *testing.T) {
+	pin := strings.Join([]string{
+		"filter.s.smudge\nsys", "core.bare\nfalse", "filter.g.process\nglob", "lfs.storage\n/x",
+	}, "\x00") + "\x00"
+	own := settingRecords([]repoSetting{
+		{key: "filter.m.smudge", value: "own", hasValue: true},
+		{key: "filter.g.process", value: "glob", hasValue: true},
+		{key: "core.bare", value: "false", hasValue: true},
+	}, []repoSetting{{key: "filter.w.required"}})
+	if want := "filter.m.smudge\nown\x00filter.g.process\nglob\x00filter.w.required\x00"; string(own) != want {
+		t.Fatalf("own records = %q, want %q", own, want)
+	}
+	full, outside := shadowListings([]byte(pin), own)
+	wantOutside := "filter.s.smudge\nsys\x00filter.g.process\nglob\x00lfs.storage\n/x\x00"
+	if string(outside) != wantOutside || string(full) != wantOutside+string(own) {
+		t.Errorf("full = %q\noutside = %q\nwant %q\nand %q", full, outside, wantOutside+string(own), wantOutside)
+	}
+	plan := planFromListings(full, outside, true)
+	if !slices.Equal(plan.refused, []string{"m"}) || !plan.userLfsStorage {
+		t.Errorf("refused = %q, user lfs.storage %v, want [m] and true", plan.refused, plan.userLfsStorage)
+	}
+	if full, outside := shadowListings(nil, own); len(outside) != 0 || string(full) != string(own) {
+		t.Errorf("with no listing: full = %q, outside = %q, want own and nothing", full, outside)
 	}
 }

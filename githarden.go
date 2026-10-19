@@ -411,10 +411,12 @@ var worktreeCreateDrainCap = 5 * time.Second
 // with the leaf as its working directory, and the light precursorEnv.
 // pin is the GIT_COMMON_DIR pin of baseRepo (commonDirPinEnv), or nil. Both calls
 // carry it. args carries the -c pins and options after the hardening profile, and
-// the read-tree subcommand itself. filters is the plan of the filter rule
-// (gitfilter.go). Its -c pairs come before the profile, as on 5fd08069 (Linux
-// and Windows VMs). If the rule ran the config precursor, this call uses that
-// listing and runs none.
+// the read-tree subcommand itself. rule is the filter rule (gitfilter.go), or
+// nil. For a create with a settings copy its plan comes from the output of the
+// config precursor (filterRule.planFor). With no copy the scoped listing comes
+// first (filterRule.scopedPlan), and a refusal of the plan comes right after
+// the precursor (claustrum's own, not measured). The -c pairs come before the
+// profile, as on 5fd08069 (Linux and Windows VMs).
 //
 // In the state shadow (u) the call differs in three points, as on 5fd08069
 // without "shadowDirOff". The rows are N3 and N4 of val-s3p2b1-linux with its
@@ -462,25 +464,44 @@ var worktreeCreateDrainCap = 5 * time.Second
 // runs under the context of the request, not under ctx: the timeoutMs of the
 // caller does not end it. On 5fd08069 a listing held for 10 s with a timeoutMs of
 // 3000 runs to its end, and then the timeout frame comes (cell T12, Linux VM).
-func hardenedGitCheckout(ctx context.Context, u gitUse, leaf, gitDir, indexFile string, pin []string, filters filterPlan, args ...string) (stderr string, drained bool, err error) {
+func hardenedGitCheckout(ctx context.Context, u gitUse, leaf, gitDir, indexFile string, pin []string, rule *filterRule, args ...string) (stderr string, drained bool, err error) {
 	if err := u.stop.halted(); err != nil {
 		return "", false, err
 	}
-	pre := filters.listing
-	if pre == nil {
-		r := runListing(u.stop.context(), leaf, gitDir, precursorEnv(false, pin))
-		pre = &r
-		// A listing that its limit stopped fails the checkout with the hooks
-		// refusal, and the rollback of a failed checkout runs (cell TA of round
-		// task010-02, Linux VM).
-		if err := u.stop.halted(); err != nil {
-			return "", false, err
-		}
+	if rule != nil && !rule.shadow {
+		rule.scopedPlan(ctx, leaf, gitDir, pin)
+	}
+	pre := runListing(u.stop.context(), leaf, gitDir, precursorEnv(false, pin))
+	// A listing that its limit stopped fails the checkout with the hooks
+	// refusal, and the rollback of a failed checkout runs (cell TA of round
+	// task010-02, Linux VM).
+	if err := u.stop.halted(); err != nil {
+		return "", false, err
+	}
+	// With a settings copy a listing that fails refuses the checkout, after one
+	// `git version` (versionAfterFailure). No second listing
+	// and no read-tree call follow, and the rollback of a failed checkout runs.
+	// 5fd08069 answers so (cell L6 of round task084-02, Linux VM, and cell Q4bp,
+	// macOS VM). A `git version` that fails there is not measured: the text stays.
+	// Without a copy the checkout goes on as before (not measured).
+	if u.shadow() && pre.err != nil {
+		versionAfterFailure()
+		return "", false, checkoutRefusal(hooksRefusalPrefix + pre.detail())
 	}
 	// On Windows the path of the git directory must still name the held folder
 	// after the first listing (errGitDirChanged).
 	if shadowStagesAdd && u.swapped("listed") {
 		return "", false, errGitDirChanged
+	}
+	var filters filterPlan
+	if rule != nil {
+		if rule.shadow {
+			rule.planFor(pre.out)
+		}
+		filters = rule.plan
+		if !rule.shadow && filters.refusal != "" {
+			return "", false, checkoutRefusal(filters.refusal)
+		}
 	}
 	hooks := pre.hooks()
 	env := append(hardenedGitEnv(false, pin, hooks), "GIT_INDEX_FILE="+indexFile)
@@ -635,13 +656,13 @@ var (
 // drained and err are those of hardenedGitCheckout. The -c pins
 // core.splitIndex=false and core.commitGraph=false follow the profile, as in the
 // argv measured against f6010b97. workTree is the --work-tree value
-// (checkoutWorkTree). The working directory stays leaf. filters is the plan of
-// the filter rule (listFilterPlan), or the zero value.
+// (checkoutWorkTree). The working directory stays leaf. rule is the filter
+// rule, or nil (hardenedGitCheckout).
 //
 // installErr is the error of a placement that failed. The caller answers it as a
 // failed checkout. On Windows it is nil unless the staging step moved the
 // registration (installTestedWorktreeIndex).
-func runWorktreeCheckout(ctx context.Context, u gitUse, leaf, workTree, gitDir, adminDir string, tested testedRegistration, rev string, pin []string, filters filterPlan) (stderr string, drained bool, err, installErr error) {
+func runWorktreeCheckout(ctx context.Context, u gitUse, leaf, workTree, gitDir, adminDir string, tested testedRegistration, rev string, pin []string, rule *filterRule) (stderr string, drained bool, err, installErr error) {
 	idxDir, removeIdxDir, err := u.requestDir(shadowIndexDirPrefix, checkoutIndexTempPrefix)
 	if err != nil {
 		return "", false, err, nil
@@ -655,7 +676,7 @@ func runWorktreeCheckout(ctx context.Context, u gitUse, leaf, workTree, gitDir, 
 		defer removeIdxDir()
 	}
 	idx := filepath.Join(idxDir, "index")
-	stderr, drained, err = hardenedGitCheckout(ctx, u, leaf, gitDir, idx, pin, filters,
+	stderr, drained, err = hardenedGitCheckout(ctx, u, leaf, gitDir, idx, pin, rule,
 		"-c", "core.splitIndex=false", "-c", "core.commitGraph=false",
 		"--git-dir="+gitDir, "--work-tree="+workTree,
 		"read-tree", "-u", "--reset", "--no-recurse-submodules", rev)

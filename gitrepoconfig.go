@@ -372,6 +372,13 @@ type repoConfigRead struct {
 	gitDir string
 	// includes counts the included files that were read.
 	includes int
+	// conditional are the settings of the files of `includeIf` sections, for
+	// the filter rule only. The copy does not carry them. 5fd08069 refuses a
+	// filter of such a file in the state shadow, also when its condition does
+	// not hold (cell F1b of round task084-02, cells F1c and F1d of round
+	// task084-04, Linux VM). claustrum follows no include in that file
+	// (claustrum's own, not measured).
+	conditional []repoSetting
 	// version is the last value of core.repositoryformatversion in the config
 	// itself, when hasVersion.
 	version    string
@@ -439,8 +446,9 @@ type repoConfigRead struct {
 // toward the 16 (cells N7, Linux, macOS and Windows VMs). 5fd08069 lists such a
 // file with one more git call, with or without a match, and carries no setting
 // of it (cells 11a to 11f of s3p2b-edges-linux, Linux VM, and cell 11 of that
-// round on a macOS VM). claustrum makes that call and does not use its answer:
-// a file there that git cannot list is not measured.
+// round on a macOS VM). claustrum makes that call. It keeps its answer only for
+// the filter rule (repoConfigRead.conditional). A file there that git cannot
+// list is not measured.
 func (r *repoConfigRead) file(path string, depth int) string {
 	r.log.note(path)
 	if d := configLinkDetail(path); d != "" {
@@ -559,7 +567,9 @@ func (r *repoConfigRead) file(path string, depth int) string {
 			if d := configFileTests(target, r.log); d != "" {
 				return d
 			}
-			listConfigFile(r.ctx, target)
+			if settings, ok := listConfigFile(r.ctx, target); ok {
+				r.conditional = append(r.conditional, settings...)
+			}
 		}
 	}
 	return ""
@@ -1004,7 +1014,11 @@ type repoVerdict struct {
 	// shared is read from the last `core.sharedrepository` line of the copy
 	// (sharedRepositoryOf, makeWorktreesFolder).
 	shared sharedRepository
-	states []repoFileState
+	// ownConfig are the filterRecords of the settings, of the files of the
+	// `includeIf` sections and of the `config.worktree` settings
+	// (settingRecords), for the filter rule.
+	ownConfig []byte
+	states    []repoFileState
 }
 
 // repoVerdictsMax is the most git directories and linked worktrees whose verdict
@@ -1101,6 +1115,7 @@ func repoReadVerdict(t gitDirTrust, s *gitStop) *repoVerdict {
 		v.worktreeConfig = r.worktreeConfig
 		v.shadowText = shadowConfigText(r.settings, r.worktree)
 		v.worktreeItems = worktreeConfigItems(r.worktree)
+		v.ownConfig = settingRecords(r.settings, r.conditional, r.worktree)
 		for _, s := range r.settings {
 			if line, ok := shadowValue(s); ok && s.key == "core.sharedrepository" {
 				v.shared = sharedRepositoryOf(line)

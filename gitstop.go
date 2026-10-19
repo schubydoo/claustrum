@@ -30,9 +30,9 @@ var (
 	gitWideLimit = 1800 * time.Second
 	// configListingLimit ends each config listing before a hardened call: the
 	// first one of a request (cells T10 and T11) and the listing before the
-	// checkout (cell TA of round task010-02, Linux VM). claustrum's own
-	// --show-scope listing of the filter rule is no such listing: it has the 2
-	// minute limit and the timeoutMs.
+	// checkout (cell TA of round task010-02, Linux VM). The --show-scope
+	// listing of a create with the filter rule and no settings copy is no such
+	// listing: it has the 2 minute limit and the timeoutMs (claustrum's own).
 	configListingLimit = 30 * time.Second
 	// includeScanLimit ends the scan of ignored files of the include step of a
 	// create (cells T13 and T14).

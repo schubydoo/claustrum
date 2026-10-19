@@ -107,11 +107,13 @@ func (a *acceptedGitDir) removeRegistration(name string) {
 // is that of the Windows step (dropStaleWorktreeRegistration): the first match
 // in name order goes, with no test of a `locked` file. The listing, the read of
 // each record and the delete go through the held root. A registration is a
-// real folder: a link or a junction in `worktrees` is passed over.
-func (a *acceptedGitDir) dropStaleRegistration(worktreePath string) {
+// real folder: a link or a junction in `worktrees` is passed over. The
+// compare, the result and the guard of a live record (staleRecordLive, D27)
+// are those of the Windows step.
+func (a *acceptedGitDir) dropStaleRegistration(worktreePath string) (matched bool) {
 	names, err := rootDirNames(a.root, worktreesSubdir)
 	if err != nil {
-		return
+		return false
 	}
 	target := resolveAsFarAsExists(worktreePath)
 	for _, name := range names {
@@ -123,11 +125,14 @@ func (a *acceptedGitDir) dropStaleRegistration(worktreePath string) {
 		if err != nil {
 			continue
 		}
-		if resolveAsFarAsExists(filepath.Dir(strings.TrimSpace(string(record)))) == target {
-			a.removeRegistration(name)
-			return
+		if sameGitDirPath(resolveAsFarAsExists(filepath.Dir(strings.TrimSpace(string(record)))), target) {
+			if !staleRecordLive(record) {
+				a.removeRegistration(name)
+			}
+			return true
 		}
 	}
+	return false
 }
 
 // removeCreatedRegistration is step B of undoFailedCheckout for a create that

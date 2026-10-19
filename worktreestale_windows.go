@@ -36,15 +36,22 @@ import (
 // before the hold: a request with "shadowDirOff":true, the state fallback-git,
 // a server with no run folder, and a held folder that is not the `.git` of
 // repo, such as a daemon GIT_DIR of another repository (not measured).
-func dropStaleWorktreeRegistration(repo, worktreePath string, held *acceptedGitDir) {
+//
+// The compare ignores letter case (sameGitDirPath). 5fd08069 removes a stale
+// entry whose record differs from the leaf only in letter case, in one name or
+// in the whole path (cells R-Q4i and R-Q4i2 of round task084-01, Windows VM).
+// A create that holds no git directory is not measured there. An entry whose
+// record names a path that exists stays (staleRecordLive, D27).
+//
+// matched reports that an entry names the leaf (pairBeforeAdd).
+func dropStaleWorktreeRegistration(repo, worktreePath string, held *acceptedGitDir) (matched bool) {
 	if held.isAt(filepath.Join(repo, ".git")) {
-		held.dropStaleRegistration(worktreePath)
-		return
+		return held.dropStaleRegistration(worktreePath)
 	}
 	base := filepath.Join(repo, ".git", "worktrees")
 	ents, err := os.ReadDir(base)
 	if err != nil {
-		return
+		return false
 	}
 	target := resolveAsFarAsExists(worktreePath)
 	for _, e := range ents {
@@ -58,9 +65,12 @@ func dropStaleWorktreeRegistration(repo, worktreePath string, held *acceptedGitD
 			continue
 		}
 		// gitdir names the worktree's own ".git" file; its parent is the worktree.
-		if resolveAsFarAsExists(filepath.Dir(strings.TrimSpace(string(gitdir)))) == target {
-			_ = os.RemoveAll(filepath.Join(base, e.Name()))
-			return
+		if sameGitDirPath(resolveAsFarAsExists(filepath.Dir(strings.TrimSpace(string(gitdir)))), target) {
+			if !staleRecordLive(gitdir) {
+				_ = os.RemoveAll(filepath.Join(base, e.Name()))
+			}
+			return true
 		}
 	}
+	return false
 }

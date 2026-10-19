@@ -725,6 +725,33 @@ func gitListBranches(req *request) response {
 	return okResult(req.ID, branchesResult{IsRepo: true, Branches: branches})
 }
 
+// pairBeforeAdd runs the two calls of 5fd08069 before the add of a create in
+// the state shadow or with "shadowDirOff":true, when the step before the add
+// found no entry that names the new leaf. They run when the folder of the
+// registrations of gitDir exists (cell R-Q2b of round task084-01, Linux, macOS
+// and Windows VMs). With the member 5fd08069 runs them in a repository with a
+// linked worktree (cell 50a of s3p2b-edges-linux, cell A3-create-plain of
+// val-s3p2b1-linux). A missing folder and an entry that names the leaf give no
+// pair (cells R-Q2a, R-Q2c, R-Q2d and R-Q4i0). The state fallback-git gets no
+// pair (claustrum's own, not measured). For a linked baseRepo that folder is the one of the main
+// repository (gitDirRegistryDir, not measured). The calls come after
+// `rev-parse --absolute-git-dir` and before the listing of the add (R-Q2b,
+// macOS and Windows VMs).
+//
+// The calls are gitDirWorkTreeToplevel in gitDir, with repo as the work tree.
+// Their answers are not used, and a failure changes nothing (cell R-Q4e,
+// Linux VM). The timeoutMs of the caller does not end them. With the second
+// call held 10 s and a timeoutMs of 3000, 5fd08069 sends no signal, then runs
+// the add and answers the timeout before the checkout, with the rollback
+// (cell R-Q4d, Linux VM). The limits of the two calls are those of their kind
+// (gitstop.go). No cell measured a limit there: that is claustrum's own.
+func pairBeforeAdd(req *request, gitDir, repo string) {
+	if fi, err := os.Stat(gitDirRegistryDir(gitDir)); err != nil || !fi.IsDir() {
+		return
+	}
+	_, _ = gitDirWorkTreeToplevel(req.stop, gitDir, repo, req.use.gitDirPin(repo), req.use.gitDirFront())
+}
+
 func gitWorktreeCreate(req *request) response {
 	var p gitParams
 	if bad := bindParams(req, &p); bad != nil {
@@ -1012,8 +1039,8 @@ func gitWorktreeCreateLocked(req *request, p *gitParams, repo string) response {
 			return okResult(req.ID, worktreeResult{Success: false, Error: msg, ErrorCode: "mkdir_failed"})
 		}
 	}
-	// The target is confirmed missing above, so any worktree registration still
-	// naming it is stale (its session folder was deleted out from under git). Drop
+	// The target is confirmed missing above, so a worktree registration still
+	// naming it is stale (on Windows not always, D27). Drop
 	// such a registration if it is the only one and is not locked
 	// (dropStaleWorktreeRegistration). Windows keeps its earlier step, which has
 	// neither test.
@@ -1022,7 +1049,7 @@ func gitWorktreeCreateLocked(req *request, p *gitParams, repo string) response {
 	if createStepHook != nil && req.use.accepted != nil {
 		createStepHook("stale")
 	}
-	dropStaleWorktreeRegistration(repo, p.WorktreePath, req.use.accepted)
+	staleMatched := dropStaleWorktreeRegistration(repo, p.WorktreePath, req.use.accepted)
 	// `git worktree add` does not create leading directories, so the reference
 	// makes the parent before adding — this is what lets a nested session path
 	// such as <repo>/.claude/worktrees/<id> succeed on a fresh repo. The parent comes
@@ -1222,6 +1249,9 @@ func gitWorktreeCreateLocked(req *request, p *gitParams, repo string) response {
 	// contexts are the context of the request.
 	baseCtx, callerCtx, cancelCtx := worktreeCreateCtx(req.stop, p.TimeoutMs)
 	defer cancelCtx()
+	if (req.use.shadow() || bool(p.ShadowDirOff)) && !staleMatched {
+		pairBeforeAdd(req, gitDir, repo)
+	}
 	// The caller's deadline does not kill the add. The daemon waits until the 2
 	// minute limit.
 	// Measured against f6010b97 and 90fca6e6 on a macOS VM. Each failure frame quotes
@@ -1657,33 +1687,32 @@ func gitWorktreeCreateLocked(req *request, p *gitParams, repo string) response {
 	// 90fca6e6 on a Windows VM. A checkout that fails also fails the request. See the
 	// last arm of the switch.
 	if indexDir != "" {
-		// The filter rule comes first (gitfilter.go). 5fd08069 refuses after the add and
-		// after its read-tree call, and rolls back as after a failed checkout (cell F1,
+		// The filter rule runs in the checkout (gitfilter.go). 5fd08069 refuses after
+		// its read-tree call, and rolls back as after a failed checkout (cell F1,
 		// Linux VM). The refusal of a name over the bound has the same end state (cell
 		// D5), and 5fd08069 makes no read-tree call for it (Windows VM). The refusal
-		// of a name with "=" (cell Q3, Linux VM), claustrum's own refusal of a filter
-		// that no pair can replace, and a listing of the rule that fails come at that
-		// place too. In the state shadow those refusals come in the checkout, after
-		// its second listing and the cap (hardenedGitCheckout).
-		var filters filterPlan
-		if !p.ShadowDirOff {
-			filters = listFilterPlan(callerCtx, req.use, p.WorktreePath, gitDir, commonDirPinEnv(repo))
-		}
-		if filters.refusal != "" && !req.use.shadow() {
-			undo, kept := undoFailedCheckout(req.use, repo, p.WorktreePath, createdBranch, checkpoint, tested)
-			return okResult(req.ID, worktreeResult{
-				Success:    false,
-				Error:      "git worktree add failed (checkout): " + filters.refusal + undo,
-				ErrorCode:  "worktree_add_failed",
-				BranchKept: kept,
-			})
+		// of a name with "=" (cell Q3, Linux VM) and claustrum's own refusal of a
+		// filter that no pair can replace come before the read-tree call. In the
+		// state shadow they come after its second listing and the cap
+		// (hardenedGitCheckout). In the state fallback-git and with
+		// "shadowDirOff":true the rule does not run (filterRule).
+		var rule *filterRule
+		if !bool(p.ShadowDirOff) && req.shadow.readsRepoConfig() {
+			rule = &filterRule{}
+			if req.use.shadow() && req.repoRead != nil {
+				rule.shadow, rule.own = true, req.repoRead.ownConfig
+			}
 		}
 		if resp, ok := swappedCheckout("checkout"); ok {
 			return resp
 		}
 		rtStderr, rtDrained, rtErr, installErr := runWorktreeCheckout(callerCtx, req.use, p.WorktreePath,
 			checkoutWorkTree(p.WorktreePath, checkpoint.resolved), gitDir,
-			indexDir, tested, checkoutRev, req.use.gitDirPin(repo), filters)
+			indexDir, tested, checkoutRev, req.use.gitDirPin(repo), rule)
+		var filters filterPlan
+		if rule != nil {
+			filters = rule.plan
+		}
 		refusedName, filterRefused := filters.refusedFilter(rtStderr)
 		var refusal checkoutRefusal
 		switch {

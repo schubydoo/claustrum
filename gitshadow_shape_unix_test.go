@@ -333,13 +333,10 @@ func statusRowsFor(state shapeState) []shapeRow {
 // worktree. The rows of 5fd08069 are cell 50a of s3p2b-edges-linux and
 // val-s3p2b1-linux cell A3-create-plain.
 //
-// Two points differ from the 13 calls of 5fd08069 in the state shadow:
-//
-//   - 5fd08069 runs the --show-toplevel pair after `rev-parse
-//     --absolute-git-dir`, with and without the member. claustrum does not.
-//   - claustrum runs its own --show-scope listing before the two listings of
-//     the read-tree call. It reads the repository's own config, so it carries
-//     {G}. With the member the filter rule is off, and the listing does not run.
+// 5fd08069 runs the --show-toplevel pair after `rev-parse --absolute-git-dir`,
+// with and without the member, because the folder of the registrations exists
+// and no entry names the leaf (pairBeforeAdd, cell R-Q2b of round task084-01).
+// The state fallback-git gets no pair (claustrum's own, not measured).
 func createRows() []shapeRow {
 	const leaf = "<leaf>"
 	index := map[bool]string{true: " GIT_INDEX_FILE=<S>/.index-<n>/index", false: " GIT_INDEX_FILE=<tmp>/claude-ssh-index-<n>/index"}
@@ -354,10 +351,12 @@ func createRows() []shapeRow {
 		light("rev-parse --is-inside-work-tree"),
 		light("rev-parse --abbrev-ref HEAD"),
 		pair("P28", "rev-parse --absolute-git-dir", "<repo>", "{A} {D} {W}", "{A} {G}"),
+		[]shapeRow{
+			{list: "none", argv: "--git-dir=<repo>/.git config -z --list", cwd: "<repo>/.git", shadow: "{A} {D} {L}", off: "{A} {G} {L}"},
+			{list: "P28", argv: "--git-dir=<repo>/.git --work-tree=<repo> rev-parse --show-toplevel", cwd: "<repo>/.git", shadow: "{A} {D} {H}", off: "{A} {G} {H}"},
+		},
 		light("worktree add --no-track --no-checkout -b w1 <leaf>"),
 		[]shapeRow{
-			{list: "none", argv: "--git-dir=<repo>/.git config -z --list --show-scope", cwd: leaf,
-				shadow: "{C} {G} {L}", fallback: "{C} {G} {L}"},
 			same("none", "--git-dir=<repo>/.git config -z --list", leaf, "{C} {D} {L}", "{C} {G} {L}"),
 			{list: "none", argv: "--git-dir=<repo>/.git config -z --list", cwd: leaf,
 				shadow: "{C} {D} {H}" + index[true] + " LANGUAGE=C"},
@@ -479,37 +478,72 @@ func TestShadowVersionCallAfterAFailedListing(t *testing.T) {
 	}
 }
 
-// TestShadowFilterRuleWithAnOldGit pins the listings of the checkout in the
-// state shadow for a git that refuses --show-scope. The filter rule then runs
-// two plain listings, and the second reads the repository's own config ({G}).
-// It is not the listing of the checkout in that state: the two listings
-// against the copy follow it, as on 5fd08069 (val-s3p2b1-linux rows N3 and N4).
-// The three listings of the rule are claustrum's own calls.
-func TestShadowFilterRuleWithAnOldGit(t *testing.T) {
-	f := newShapeFixture(t, stateShadow)
-	if raw, _ := f.request(t, "git.info", map[string]any{"path": f.repo}); !strings.Contains(raw, `"isRepo":true`) {
-		t.Fatalf("git.info = %s", raw)
+// TestShadowPairBeforeAdd pins the pair of 5fd08069 before the add of a create
+// in the state shadow (pairBeforeAdd). The pair runs right after `rev-parse
+// --absolute-git-dir` when the folder of the registrations exists and no entry
+// names the leaf (cell R-Q2b of round task084-01). An entry that names the leaf
+// gives no pair, and it goes before the add (cell R-Q2c). With the member the
+// pair runs too (cell 50a of s3p2b-edges-linux), and a missing folder gives
+// none (cell R-Q2a).
+func TestShadowPairBeforeAdd(t *testing.T) {
+	vars := map[shapeState]string{stateShadow: "{A} {D}", stateOff: "{A} {G}"}
+	noFolder := func(t *testing.T, f shapeFixture) {
+		if err := os.RemoveAll(filepath.Join(f.gitDir, "worktrees")); err != nil {
+			t.Fatal(err)
+		}
 	}
-	t.Setenv("CLAUSTRUM_GITSTUB_FAIL_LISTING", "noscope")
-	raw, got := f.request(t, "git.worktree_create", map[string]any{"baseRepo": f.repo, "branchName": "w1", "worktreePath": f.leaf})
-	if !strings.Contains(raw, `"success":true`) {
-		t.Fatalf("git.worktree_create = %s", raw)
+	for _, row := range []struct {
+		cell  string
+		state shapeState
+		stage func(t *testing.T, f shapeFixture)
+		pair  bool
+	}{
+		{"R-Q2b an entry of another worktree", stateShadow, func(*testing.T, shapeFixture) {}, true},
+		{"R-Q2c a stale entry of the leaf", stateShadow, func(t *testing.T, f shapeFixture) {
+			old := filepath.Join(f.gitDir, "worktrees", "old")
+			if err := os.Mkdir(old, 0o755); err != nil {
+				t.Fatal(err)
+			}
+			writeFile(t, filepath.Join(old, "gitdir"), filepath.Join(f.leaf, ".git")+"\n", 0o644)
+		}, false},
+		{"no registrations folder", stateShadow, noFolder, false},
+		{"50a with the member and an entry of another worktree", stateOff, func(*testing.T, shapeFixture) {}, true},
+		{"R-Q2a with the member and no registrations folder", stateOff, noFolder, false},
+	} {
+		t.Run(row.cell, func(t *testing.T) {
+			f := newShapeFixture(t, row.state)
+			if raw, _ := f.request(t, "git.info", map[string]any{"path": f.repo}); !strings.Contains(raw, `"isRepo":true`) {
+				t.Fatalf("git.info = %s", raw)
+			}
+			row.stage(t, f)
+			raw, got := f.request(t, "git.worktree_create", map[string]any{"baseRepo": f.repo, "branchName": "w1", "worktreePath": f.leaf})
+			if !strings.Contains(raw, `"success":true`) {
+				t.Fatalf("git.worktree_create = %s", raw)
+			}
+			v := vars[row.state]
+			absolute := "P28 | rev-parse --absolute-git-dir | <repo> | {A} {D} {W} {H}"
+			if row.state == stateOff {
+				absolute = "P28 | rev-parse --absolute-git-dir | <repo> | {A} {G} {H}"
+			}
+			want := []string{
+				"none | --git-dir=<repo>/.git config -z --list | <repo>/.git | " + v + " {L}",
+				"P28 | --git-dir=<repo>/.git --work-tree=<repo> rev-parse --show-toplevel | <repo>/.git | " + v + " {H}",
+			}
+			at := slices.Index(got, absolute)
+			if at < 0 {
+				t.Fatalf("calls = %q, want %q", got, absolute)
+			}
+			if row.pair && (at+2 >= len(got) || !slices.Equal(got[at+1:at+3], want)) {
+				t.Errorf("calls = %q\nwant the pair %q right after %q", got, want, absolute)
+			}
+			if !row.pair && slices.Contains(got, want[1]) {
+				t.Errorf("calls = %q, want no pair", got)
+			}
+			if exists(filepath.Join(f.gitDir, "worktrees", "old")) {
+				t.Error("the stale entry old stays, want it gone")
+			}
+		})
 	}
-	at := slices.IndexFunc(got, func(l string) bool { return strings.Contains(l, "--show-scope") })
-	if at < 0 {
-		t.Fatalf("calls = %q, want the scoped listing", got)
-	}
-	const index = " GIT_INDEX_FILE=<S>/.index-<n>/index LANGUAGE=C"
-	f.check(t, "the checkout of git.worktree_create", got[at:], []shapeRow{
-		{list: "none", argv: "--git-dir=<repo>/.git config -z --list --show-scope", cwd: "<leaf>", shadow: "{C} {G} {L}"},
-		{list: "none", argv: "config -z --list", cwd: "<leaf>", shadow: "{C} {L} GIT_DIR=/dev/null"},
-		{list: "none", argv: "--git-dir=<repo>/.git config -z --list", cwd: "<leaf>", shadow: "{C} {G} {L}"},
-		{list: "none", argv: "--git-dir=<repo>/.git config -z --list", cwd: "<leaf>", shadow: "{C} {D} {L}"},
-		{list: "none", argv: "--git-dir=<repo>/.git config -z --list", cwd: "<leaf>", shadow: "{C} {D} {H}" + index},
-		{list: "lfs.storage=<repo>/.git/lfs+P22", cwd: "<leaf>",
-			argv:   "--git-dir=<repo>/.git --work-tree=<leaf> read-tree -u --reset --no-recurse-submodules refs/heads/w1",
-			shadow: "{C} {D} {H}" + index},
-	})
 }
 
 // TestShadowTopLevelPairOfARemove pins the variables of the --show-toplevel
