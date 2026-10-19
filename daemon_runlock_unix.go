@@ -381,9 +381,6 @@ var stopKillGrace = 1500 * time.Millisecond
 //   - If the holder is not that daemon, -stop does not signal it. The word is
 //     "survivor".
 //
-// claustrum's own rule: the word is also "survivor" when the holder check fails
-// again before SIGKILL.
-//
 // The holder check is holderSignalRefusal, the same check the serve eviction uses.
 // The exact rule the Linux reference applies was not isolated. On macOS the
 // reference signals any live holder whose record says role serve on this node.
@@ -393,12 +390,13 @@ var stopKillGrace = 1500 * time.Millisecond
 //
 // Five stderr lines copy the reference text: the SIGTERM line, the exit line, the
 // SIGKILL line, the "will not signal" line and the "survived SIGKILL" line. The
+// "changed hands" line is the one of 5fd08069 (cell S2b of round task034-02). The
 // line about the second holder check is claustrum's own. claustrum keeps its own
 // level tag, as the serve eviction lines do.
 //
-// -stop opens daemon.lock without O_CREAT, so it never creates the file. It never
-// writes an owner record into it. The references also never create or remove it,
-// and write no record into it.
+// -stop opens daemon.lock without O_CREAT, so it never creates the file. On this
+// path it writes no owner record into it. f6010b97 and 90fca6e6 also never create
+// or remove it, and write no record into it.
 //
 // The returned release func closes the lock fd. The caller removes the socket and
 // daemon.token first and calls release after, so a free lock stays held across
@@ -426,10 +424,17 @@ func stopRunDirHolderFD(socket string) (string, int) {
 		// not supported here. No live daemon can be named either way.
 		return stopWordNone, fd
 	}
+	return stopSignalHolder(fd, path, socket), fd
+}
+
+// stopSignalHolder is the signal ladder of -stop for a lock that another process
+// holds on fd. It returns the word. Both -stop paths use it: the one after a failed
+// connect and the one after the lock wait of stopAfterReply.
+func stopSignalHolder(fd int, path, socket string) string {
 	holder, err := readOwnerRecord(path)
 	if err != nil || holderSignalRefusal(holder, socket) != "" {
 		logWarnf("[daemon] stop: WARNING %s is held by a live process we will not signal (pid %d is not a %s --serve process for %s); leaving it alone", path, holder.Pid, selfBase(), socket)
-		return stopWordSurvivor, fd
+		return stopWordSurvivor
 	}
 	// The two lines below name the instance only when the record has one, as the serve
 	// eviction lines do. Measured on Linux against 89cb6289 (row N5): for the short
@@ -438,27 +443,122 @@ func stopRunDirHolderFD(socket string) (string, int) {
 	logInfof("[daemon] stop: run dir is held by a live daemon, %s; sending SIGTERM", who)
 	if !signalHolder(holder.Pid, syscall.SIGTERM) && !holderGone(holder.Pid) {
 		// The holder is present but SIGTERM did not reach it. -stop leaves it.
-		return stopWordSurvivor, fd
+		return stopWordSurvivor
 	}
 	if waitLockFree(fd, stopTermGrace) {
 		logInfof("[daemon] stop: previous daemon %s exited after SIGTERM", who)
-		return stopWordTerminated, fd
+		return stopWordTerminated
 	}
 	// Check the holder again before SIGKILL, as the serve eviction does. If its pid
 	// now names another process, a SIGKILL hits that process instead.
 	if reason := holderSignalRefusal(holder, socket); reason != "" {
+		// A record of another pid means that the lock changed hands. The line names the
+		// new holder from its record. 5fd08069 prints it in cell S2b of round task034-02
+		// (Linux VM). A record that names a holder with no instance is not measured.
+		if now, err := readOwnerRecord(path); err == nil && now.Pid != holder.Pid {
+			logWarnf("[daemon] stop: %s changed hands during eviction (now %s); leaving the new holder alone", path, holderText(now))
+			return stopWordSurvivor
+		}
 		logWarnf("[daemon] stop: pid %d is no longer our serve holder before SIGKILL (%s); leaving it alone", holder.Pid, reason)
-		return stopWordSurvivor, fd
+		return stopWordSurvivor
 	}
 	logWarnf("[daemon] stop: WARNING previous daemon pid %d (instance %q) ignored SIGTERM for %s; sending SIGKILL (its Claude Code children, if any, are ended next, before this daemon serves)", holder.Pid, holder.InstanceID, stopTermGrace)
 	if !signalHolder(holder.Pid, syscall.SIGKILL) && !holderGone(holder.Pid) {
-		return stopWordSurvivor, fd
+		return stopWordSurvivor
 	}
 	if !waitLockFree(fd, stopKillGrace) {
 		logWarnf("[daemon] stop: WARNING previous daemon pid %d (instance %q) survived SIGKILL (uninterruptible?); proceeding without run-dir ownership", holder.Pid, holder.InstanceID)
-		return stopWordSurvivor, fd
+		return stopWordSurvivor
 	}
-	return stopWordKilled, fd
+	return stopWordKilled
+}
+
+// stopLockWait is how long -stop tries daemon.lock after its shutdown request, before
+// it signals the holder. 5fd08069 tries every 50 ms for 3 s (cells S2 and S3 of round
+// task034-01, Linux and macOS VMs). A var so a test can shrink it.
+var stopLockWait = 3 * time.Second
+
+// stopForeignWait is how long -stop goes on with its lock tries after stopLockWait,
+// when the holder is not a daemon. 0.5 s, from cell S4 of round task034-02. A var so
+// a test can shrink it.
+var stopForeignWait = 500 * time.Millisecond
+
+// stopAfterReply is the step of -stop after the read of the shutdown reply, on Linux
+// and macOS. It returns the word and a release func. 5fd08069 does these steps in
+// cells S1 to S5 of round task034-01 (Linux and macOS VMs):
+//
+//   - It tries daemon.lock every 50 ms for up to stopLockWait. A lock that comes free
+//     gives "stopped" and no signal. -stop takes it, lets go and writes nothing into
+//     the file (cells S1 and S5 of round task034-02).
+//   - A lock still held by a daemon of this socket gets the ladder of stopSignalHolder.
+//     The words are "terminated" (cell S2) and "killed" (cell S3).
+//   - Only after that signal does it write its own record with role "stop" into the
+//     lock, and empty the file before the word (Linux cells S2 and S3, macOS cell S3).
+//   - A holder whose record names no daemon role gets no signal, and the word is
+//     "survivor" (cell S4). That word comes after stopForeignWait more of lock tries.
+//   - After "terminated" or "killed" it removes the socket and daemon.token.
+//
+// The record stays until release, which empties the file and closes it. The caller
+// calls release before it prints the word.
+//
+// claustrum's own, not measured: no usable daemon.lock gives "stopped" at once. That
+// is a failed open, or a flock error other than EWOULDBLOCK.
+func stopAfterReply(socket string) (string, func()) {
+	path := filepath.Join(filepath.Dir(socket), runDirLockName)
+	fd, err := syscall.Open(path, syscall.O_RDWR|syscall.O_CLOEXEC|syscall.O_NOFOLLOW, 0)
+	if err != nil {
+		return stopWordStopped, func() {}
+	}
+	closeLock := func() { _ = syscall.Close(fd) }
+	release := func() {
+		_ = syscall.Ftruncate(fd, 0)
+		closeLock()
+	}
+	locked, held := tryLockFor(fd, stopLockWait)
+	if locked || !held {
+		return stopWordStopped, closeLock
+	}
+	// The role test and its line are the ones of the serve eviction, with "stop:".
+	// The line is the one of 5fd08069 in cell S4 (Linux VM).
+	if holder, _ := readOwnerRecord(path); holder.Role != "serve" && holder.Role != "stop" {
+		// 5fd08069 tries the lock for about 0.5 s more before this word. In cell S4 of
+		// round task034-02 it made 72 tries and printed it at 3.54 to 3.65 s (Linux and
+		// macOS VMs). A lock that comes free in these tries gives "stopped". That arm is
+		// claustrum's own, not measured.
+		if locked, _ := tryLockFor(fd, stopForeignWait); locked {
+			return stopWordStopped, closeLock
+		}
+		logWarnf("[daemon] stop: WARNING %s is held by a live process we will not signal (its holder is not a daemon (role %q)); leaving it alone", path, holder.Role)
+		return stopWordSurvivor, closeLock
+	}
+	word := stopSignalHolder(fd, path, socket)
+	if word != stopWordTerminated && word != stopWordKilled {
+		return word, closeLock
+	}
+	writeOwnerRecord(fd, ownerRecord{Pid: os.Getpid(), Role: "stop", Node: nodeID()})
+	_ = os.Remove(socket)
+	_ = os.Remove(filepath.Join(persistTokenDir(socket), persistedTokenName))
+	return word, release
+}
+
+// tryLockFor tries the flock on fd every runDirPollInterval for up to grace. It
+// reports whether it took the lock, and whether another process held it at the last
+// try. A flock error other than EWOULDBLOCK ends the tries with both false.
+func tryLockFor(fd int, grace time.Duration) (locked, held bool) {
+	deadline := time.Now().Add(grace)
+	for {
+		err := syscall.Flock(fd, syscall.LOCK_EX|syscall.LOCK_NB)
+		if err == nil {
+			return true, false
+		}
+		if err != syscall.EWOULDBLOCK {
+			return false, false
+		}
+		if !time.Now().Before(deadline) {
+			return false, true
+		}
+		time.Sleep(runDirPollInterval)
+	}
 }
 
 // waitLockFree polls the flock on fd every runDirPollInterval until it is taken or

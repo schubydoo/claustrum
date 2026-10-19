@@ -41,14 +41,13 @@ func runBridge(socket string) error {
 // exits 0 in every state that these words name. Measured against f6010b97 and
 // 90fca6e6 on a Linux VM.
 const (
-	stopWordStopped    = "stopped"    // the connect succeeded
+	stopWordStopped    = "stopped"    // the connect succeeded. On Linux and macOS daemon.lock also came free within 3 s (5fd08069, round task034-01), or there is no usable one (claustrum's own)
 	stopWordNone       = "none"       // the connect failed and daemon.lock is free or missing. claustrum's own rule: also when the lock cannot be opened or locked
 	stopWordTerminated = "terminated" // the lock holder exited after SIGTERM
 	stopWordKilled     = "killed"     // the lock holder ignored SIGTERM and got SIGKILL
 	// stopWordSurvivor: the lock holder is a live process that -stop does not
-	// signal, or the lock is still held 1.5 s after SIGKILL. claustrum also prints
-	// it if the holder check fails again before SIGKILL. It prints it too when a
-	// signal cannot reach a holder that is still there.
+	// signal, or the lock is still held 1.5 s after SIGKILL. claustrum prints it
+	// too when a signal cannot reach a holder that is still there.
 	stopWordSurvivor = "survivor"
 )
 
@@ -79,10 +78,13 @@ func runStop(socket string, stdout io.Writer) {
 //
 // Measured against f6010b97 and 90fca6e6 on a Linux VM:
 //
-//   - If the connect succeeds, -stop sends the request, does one read with a 2 s
-//     deadline and prints "stopped". A reply, garbage, an EOF, a reset and the
-//     deadline all give "stopped". -stop does not unlink the socket path on this
-//     path. A live daemon removes its own socket when it stops.
+//   - If the connect succeeds, -stop sends the request and does one read with a 2 s
+//     deadline. A live daemon removes its own socket when it stops.
+//   - Then -stop waits for daemon.lock on Linux and macOS (stopAfterReply), and
+//     prints "stopped" at once on Windows (5fd08069, round task034-01). On 5fd08069
+//     -stop prints "stopped" with rc 0 both when the reply arrives and when it gets
+//     EOF (cell R4). claustrum sends
+//     garbage, a reset and the deadline to the same step (not measured on 5fd08069).
 //   - If the connect fails, -stop checks daemon.lock (stopRunDirHolder). Then it
 //     removes the socket path and daemon.token beside it, and prints the word
 //     from the lock check.
@@ -130,5 +132,7 @@ func stopDaemon(socket string) string {
 	// relayed to stdout: -stop is a control command, not a relay.
 	buf := make([]byte, 4096)
 	_, _ = nc.Read(buf)
-	return stopWordStopped
+	word, release := stopAfterReply(socket)
+	release()
+	return word
 }

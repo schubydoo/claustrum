@@ -72,12 +72,12 @@ func (s *server) handleServer(c *conn, req *request) *response {
 		}))
 	case methodShutdown:
 		// The reply is {"ok":true}, but it reaches the client only when its write
-		// wins a race with the teardown. signalShutdown fires here. The handler
-		// then waits until dropConns starts (awaitDropStart, bounded), and only
-		// then returns the reply for handleRequest to write. docs/PROTOCOL.md
-		// (server.shutdown) records the reference measurements. Under a handler
-		// panic no frame is emitted for shutdown (the recover in handleRequest
-		// skips the error frame).
+		// wins a race with the teardown. signalShutdown fires here, and the handler
+		// returns the reply at once for handleRequest to write. It does not wait
+		// for the close of the connections. 5fd08069 answers before the close in
+		// part of the runs (cells R1, R2 and R4 of round task034-01, see
+		// docs/PROTOCOL.md). Under a handler panic no frame is emitted for shutdown
+		// (the recover in handleRequest skips the error frame).
 		//
 		// The two log lines come before the teardown starts, so they precede
 		// every connection close. The reference logged them in this order before
@@ -85,7 +85,6 @@ func (s *server) handleServer(c *conn, req *request) *response {
 		logInfof("[ServerHandler] server.shutdown received over RPC")
 		logInfof("[Server] shutdown requested")
 		s.signalShutdown()
-		s.awaitDropStart()
 		return ptr(okResult(req.ID, shutdownResult{OK: true}))
 	default:
 		return ptr(unknownMethod(req))

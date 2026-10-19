@@ -1,7 +1,10 @@
 package main
 
 import (
+	"bufio"
 	"encoding/json"
+	"io"
+	"net"
 	"testing"
 	"time"
 )
@@ -43,8 +46,7 @@ func dispatchRaw(t *testing.T, s *server, line string) string {
 }
 
 // dropConnsOnShutdown stands in for the teardown of a server that has no run
-// loop. Once shutdown is signaled, it runs dropConns, which releases the waiting
-// server.shutdown handler.
+// loop. Once shutdown is signaled, it runs dropConns.
 func dropConnsOnShutdown(tb testing.TB, s *server) {
 	tb.Helper()
 	stop := make(chan struct{})
@@ -58,64 +60,51 @@ func dropConnsOnShutdown(tb testing.TB, s *server) {
 	}()
 }
 
-// The server.shutdown handler returns its reply only after dropConns starts. The
-// teardown must first wake the main goroutine and close the listener.
-func TestShutdownReplyWaitsForDropConns(t *testing.T) {
-	old := shutdownReplyWait
-	shutdownReplyWait = time.Minute
-	t.Cleanup(func() { shutdownReplyWait = old })
+// The server.shutdown handler returns its reply as soon as the stop has started. It
+// does not wait for the close of the connections. 5fd08069 answers before the close
+// in part of the runs (cells R1, R2 and R4 of round task034-01). The stand-in
+// teardown here waits for the reply for at most 5 s after the shutdown signal.
+// Then it drops the connections. The reply must reach the client before that drop.
+func TestShutdownReplyIsWrittenBeforeTheClose(t *testing.T) {
+	const want = `{"jsonrpc":"2.0","id":7,"result":{"ok":true}}` + "\n"
 	s := newTestServer(t)
-	// A failed run below still releases the handler goroutine.
-	t.Cleanup(func() { s.dropConns() })
-	done := make(chan *response, 1)
-	go func() {
-		done <- s.dispatch(nil, []byte(`{"jsonrpc":"2.0","id":1,"method":"server.shutdown"}`))
-	}()
-	select {
-	case <-s.shutdown:
-	case <-time.After(5 * time.Second):
-		t.Fatal("server.shutdown did not signal the shutdown channel")
-	}
-	select {
-	case <-done:
-		t.Fatal("the shutdown handler returned its reply before dropConns started")
-	case <-time.After(100 * time.Millisecond):
-	}
-	s.dropConns()
-	select {
-	case resp := <-done:
-		b, err := json.Marshal(*resp)
-		if err != nil {
-			t.Fatalf("marshal response: %v", err)
-		}
-		if got := string(b); got != `{"jsonrpc":"2.0","id":1,"result":{"ok":true}}` {
-			t.Errorf("shutdown reply = %s, want the ok frame", got)
-		}
-	case <-time.After(5 * time.Second):
-		t.Fatal("the shutdown handler did not return after dropConns started")
-	}
-}
+	srv, client := net.Pipe()
+	t.Cleanup(func() { _ = client.Close() })
+	c := &conn{nc: srv}
+	s.mu.Lock()
+	s.conns[c] = struct{}{}
+	s.mu.Unlock()
+	go s.serveConn(c)
 
-// With no teardown at all, the handler still returns once shutdownReplyWait
-// passes. A wedged teardown cannot hold it forever.
-func TestShutdownReplyWaitIsBounded(t *testing.T) {
-	old := shutdownReplyWait
-	shutdownReplyWait = 20 * time.Millisecond
-	t.Cleanup(func() { shutdownReplyWait = old })
-	s := newTestServer(t)
-	done := make(chan string, 1)
+	var line string
+	read := make(chan struct{})
 	go func() {
-		resp := s.dispatch(nil, []byte(`{"jsonrpc":"2.0","id":1,"method":"server.shutdown"}`))
-		b, _ := json.Marshal(*resp)
-		done <- string(b)
+		line, _ = bufio.NewReader(client).ReadString('\n')
+		close(read)
 	}()
-	select {
-	case got := <-done:
-		if got != `{"jsonrpc":"2.0","id":1,"result":{"ok":true}}` {
-			t.Errorf("shutdown reply = %s, want the ok frame", got)
+	dropped := make(chan struct{})
+	go func() {
+		<-s.shutdown
+		select {
+		case <-read:
+		case <-time.After(5 * time.Second):
 		}
-	case <-time.After(5 * time.Second):
-		t.Fatal("the shutdown handler waited past its bound with no teardown")
+		s.dropConns()
+		close(dropped)
+	}()
+
+	if _, err := io.WriteString(client, `{"jsonrpc":"2.0","id":7,"method":"server.shutdown"}`+"\n"); err != nil {
+		t.Fatal(err)
+	}
+	for _, ch := range []chan struct{}{dropped, read} {
+		select {
+		case <-ch:
+		case <-time.After(10 * time.Second):
+			t.Fatal("the shutdown did not finish")
+		}
+	}
+	if line != want {
+		t.Errorf("shutdown connection got %q before the close, want %q", line, want)
 	}
 }
 
