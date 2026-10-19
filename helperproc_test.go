@@ -199,6 +199,9 @@ func runGitLingering(args []string) int {
 //
 // CLAUSTRUM_GITSTUB_MODE decides:
 //   - "pre": sleep CLAUSTRUM_GITSTUB_MS milliseconds, then run the real git.
+//   - "gate": make the file CLAUSTRUM_GITSTUB_GATE with ".in" added, then wait
+//     until the file CLAUSTRUM_GITSTUB_GATE exists, at most CLAUSTRUM_GITSTUB_MS
+//     milliseconds. Then run the real git.
 //   - "post": run the real git, then sleep.
 //   - "fail": sleep, then exit without running git.
 //   - "postfail": run the real git, then print the stderr payload (not before) and
@@ -387,6 +390,15 @@ func runGitSlow(args []string) int {
 			return exitCode
 		case "pre":
 			pause()
+		case "gate":
+			gate := os.Getenv("CLAUSTRUM_GITSTUB_GATE")
+			_ = os.WriteFile(gate+".in", nil, 0o644)
+			ms, _ := strconv.Atoi(os.Getenv("CLAUSTRUM_GITSTUB_MS"))
+			for end := time.Now().Add(time.Duration(ms) * time.Millisecond); time.Now().Before(end); time.Sleep(10 * time.Millisecond) {
+				if _, err := os.Stat(gate); err == nil {
+					break
+				}
+			}
 		}
 	}
 	cmd := exec.Command(os.Getenv("CLAUSTRUM_GITSTUB_REAL"), args...)
