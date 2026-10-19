@@ -281,7 +281,8 @@ func runGitSlow(args []string) int {
 	// before 2.26 does. "hold-<name>" waits on that listing, so that a deadline of
 	// the caller expires during it. The wait is 60 s, or CLAUSTRUM_GITSTUB_HOLD_MS
 	// milliseconds when that is set. With CLAUSTRUM_GITSTUB_LOG set, a held listing
-	// appends the line "held" and its name, joined by a unit separator.
+	// appends the line "held" and its name, joined by a unit separator. After the
+	// wait it appends "held-end" and the name, so a killed stub leaves no such line.
 	//
 	// A call with --file is the read of one config file (listConfigText). It has
 	// GIT_DIR at the null device too, and it is no listing of the filter rule.
@@ -305,6 +306,9 @@ func runGitSlow(args []string) int {
 				hold = time.Duration(ms) * time.Millisecond
 			}
 			time.Sleep(hold)
+			if log := os.Getenv("CLAUSTRUM_GITSTUB_LOG"); log != "" {
+				appendLine(log, "held-end\x1f"+kind)
+			}
 		}
 		if kind == "scoped" && slices.Contains(which, "noscope") {
 			fmt.Fprintln(os.Stderr, "error: unknown option `show-scope'")

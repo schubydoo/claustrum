@@ -446,8 +446,10 @@ func TestWorktreeCreateFilterListingFails(t *testing.T) {
 // listing of the rule is held first, and then the one of the checkout.
 //
 // The stub holds the listing that the seam names and no other call: its log has
-// one "held" line with that name. The read of the config file is not held. The
-// stub sleeps holdMs in a held call.
+// one "held" line with that name. The read of the config file is not held. A
+// held "full" listing sleeps 1 s past the deadline and ends. Another held
+// listing sleeps 30 s past it, and the kill at the deadline must end it. A killed
+// stub writes no "held-end" line, so that test does not depend on the time.
 func TestWorktreeCreateDeadlineDuringFilterListing(t *testing.T) {
 	requireGit(t)
 	realGit, err := exec.LookPath("git")
@@ -456,20 +458,23 @@ func TestWorktreeCreateDeadlineDuringFilterListing(t *testing.T) {
 	}
 	installGitSlowStub(t, realGit)
 	lateMs := int((2*calibrate(t, realGit) + 500*time.Millisecond).Milliseconds())
-	holdMs := lateMs + 1000
 	for _, seam := range []string{"hold-scoped", "noscope,hold-outside", "noscope,hold-full", "hold-full"} {
 		t.Run(seam, func(t *testing.T) {
 			f := newWTFixture(t, false)
 			log := filepath.Join(t.TempDir(), "argv.log")
 			t.Setenv("CLAUSTRUM_GITSTUB_LOG", log)
 			t.Setenv("CLAUSTRUM_GITSTUB_FAIL_LISTING", seam)
+			kind := seam[strings.LastIndex(seam, "hold-")+len("hold-"):]
+			full := kind == "full"
+			holdMs := lateMs + 30000
+			if full {
+				holdMs = lateMs + 1000
+			}
 			t.Setenv("CLAUSTRUM_GITSTUB_HOLD_MS", strconv.Itoa(holdMs))
 			raw, took := f.create(t, newTestServer(t), "w1", "", lateMs)
 			wantError(t, raw, "git worktree add timed out after "+strconv.Itoa(lateMs)+
 				"ms (deadline expired during the checkout): context deadline exceeded", "timeout")
 			f.assertRolledBack(t, []string{}, false)
-			kind := seam[strings.LastIndex(seam, "hold-")+len("hold-"):]
-			full := kind == "full"
 			want := 1
 			if seam == "noscope,hold-full" {
 				want = 2
@@ -483,6 +488,9 @@ func TestWorktreeCreateDeadlineDuringFilterListing(t *testing.T) {
 			}
 			if !full && took >= hold {
 				t.Errorf("the create answered after %s, want it at its deadline of %d ms", took, lateMs)
+			}
+			if ended := gitCalls(t, log, "held-end"); !full && len(ended) != 0 {
+				t.Errorf("held listings that ran to their end = %q, want the %s listing killed at the deadline", ended, kind)
 			}
 		})
 	}
