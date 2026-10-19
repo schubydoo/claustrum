@@ -451,7 +451,7 @@ load-bearing:
   field to pick which CLI build to download.
 - "Desktop owns the argv". An operator has no way to influence the daemon's
   argv. A divergence reachable only through an argv flag is therefore unreachable
-  on Desktop-driven hosts. This premise lets D3, D5, D10 and D12 be
+  on Desktop-driven hosts. This premise lets D3, D10 and D12 be
   opt-in. It also defines the "(opt-in)" tagging convention: a flag and
   a configuration key, because the configuration key is the reachable knob.
 
@@ -476,7 +476,7 @@ fail, an SFTP upload was re-invoked as `-cli-zst`. Both records live in `scratch
 (gitignored).
 
 The `cliError` and `libc` claims remain design constraints. The argv claim is a
-driver result, not a parity one. Three argv dependents (D3, D5, D12) carry
+driver result, not a parity one. Two argv dependents (D3, D12) carry
 reopen triggers for their own behavior. The other one (D10) carries a rider about
 the `cliError` claim. All live in [DIVERGENCES.md](DIVERGENCES.md). If
 someone finds a route to influence the daemon's argv, the argv claim reopens. A
@@ -485,8 +485,9 @@ field, or a configuration file it turns into argv. A forwarded env var does not
 qualify, because nothing in `config.go` or `main.go` reads the
 environment for these knobs. The dependents list is maintained by hand, and it was
 incomplete every time somebody checked it. Treat it as best-known, not complete. The
-argv claim underpins D3, D5, D10 and D12. `cliError` underpins D10
-and clause (c)'s error-string rider. Both underpinned the retired D11. `cliError` also underpinned the retired D13. `libc`
+argv claim underpins D3, D10 and D12. `cliError` underpins D10
+and clause (c)'s error-string rider. Both underpinned the retired D11. `cliError` also underpinned the retired D13. The argv
+claim underpinned the retired D5. `libc`
 underpins no current entry. It underpinned the retired D14. One further driver claim is
 untracked and unprovenanced: D6's clause-(b) evidence, which rests on what Desktop
 emits as `-cli-version`.

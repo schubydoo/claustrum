@@ -30,9 +30,6 @@ func removeCallLog(t *testing.T, root string) func(method string, params map[str
 	if err != nil {
 		t.Fatal(err)
 	}
-	oldTimeout := gitTimeout
-	t.Cleanup(func() { gitTimeout = oldTimeout })
-	gitTimeout = 0
 	installGitSlowStub(t, realGit)
 	empty := t.TempDir()
 	t.Setenv("GIT_CONFIG_GLOBAL", os.DevNull)

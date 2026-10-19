@@ -210,16 +210,6 @@ func branchStdin(recs []branchRecord, target string) string {
 	return b.String()
 }
 
-// withGitTimeout adds the D5 deadline to ctx when gitTimeout is on. Each call of the
-// branch step, with its config listing, gets its own D5 deadline, as a hardenedGit
-// call does. With D5 off, ctx is returned as it is.
-func withGitTimeout(ctx context.Context) (context.Context, context.CancelFunc) {
-	if gitTimeout <= 0 {
-		return ctx, func() {}
-	}
-	return context.WithTimeout(ctx, gitTimeout)
-}
-
 // branchStepCmd builds one call of the branch step: the light -c set, the working
 // directory repo, and branchStepEnv with the hooks of the config listing that the
 // caller runs first.
@@ -232,13 +222,11 @@ func branchStepCmd(ctx context.Context, u gitUse, repo string, hooks []string, a
 
 // branchCheckGit runs the config listing and then one check call under the shared
 // bound ctx, and returns the stdout of the call. At the bound the running process
-// is killed. stopped is true when the bound or the D5 deadline had ended when the
-// call returned. On Windows the kill gives exit code 1, so exit 1 alone does not
-// tell a stop from git's answer. Only rev-list gets a stdin. The other calls get the
+// is killed. stopped is true when the bound had ended when the call returned. On
+// Windows the kill gives exit code 1, so exit 1 alone does not tell a stop from
+// git's answer. Only rev-list gets a stdin. The other calls get the
 // null device. 89cb6289 gives them a character device (macOS VM).
 func branchCheckGit(ctx context.Context, u gitUse, repo string, stdin io.Reader, args ...string) (out string, stopped bool, err error) {
-	ctx, cancel := withGitTimeout(ctx)
-	defer cancel()
 	// A listing that says "not a git repository" ends the step: the call does not run,
 	// and the listing's error stands for it. 89cb6289 runs no for-each-ref after such a
 	// listing (rows L14a, L14b, L14d, L14e and N01 to N04 on Linux and macOS VMs).
@@ -255,16 +243,14 @@ func branchCheckGit(ctx context.Context, u gitUse, repo string, stdin io.Reader,
 // deleteBranchRef runs the config listing and then `update-ref --no-deref -d <target>
 // <tip>`. The old value makes git refuse the delete when the branch moved after the
 // check. The stop at updateRefStop counts from the start of update-ref. Then the
-// call gets stopUpdateRef. On Linux and macOS a call still running
+// call gets stopGitProcess. On Linux and macOS a call still running
 // updateRefKillAfter later is killed.
 func deleteBranchRef(u gitUse, repo, target, tip string) error {
-	d5, cancelD5 := withGitTimeout(context.Background())
-	defer cancelD5()
-	hooks := hookPrecursor(d5, u, repo, false).hooks()
-	ctx, cancel := context.WithTimeout(d5, updateRefStop)
+	hooks := hookPrecursor(context.Background(), u, repo, false).hooks()
+	ctx, cancel := context.WithTimeout(context.Background(), updateRefStop)
 	defer cancel()
 	cmd := branchStepCmd(ctx, u, repo, hooks, "update-ref", "--no-deref", "-d", target, tip)
-	cmd.Cancel = func() error { return stopUpdateRef(cmd.Process) }
+	cmd.Cancel = func() error { return stopGitProcess(cmd.Process) }
 	cmd.WaitDelay = updateRefKillAfter
 	return cmd.Run()
 }

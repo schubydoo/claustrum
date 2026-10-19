@@ -50,7 +50,7 @@ func newRepoFolderFixture(t *testing.T) repoFolderFixture {
 func (f repoFolderFixture) sync(t *testing.T, dir string) string {
 	t.Helper()
 	trust := gitDirTrustFor(dir)
-	v := repoReadVerdict(trust)
+	v := repoReadVerdict(trust, nil)
 	if trust.verdict != gitDirTrusted || v == nil || v.refusal != "" || gitDirFilesRefusal(trust.pinCommonDir) != "" {
 		t.Fatalf("the fixture in %s is not accepted: %+v", dir, v)
 	}
@@ -486,7 +486,7 @@ func TestShadowRepoFilesWithNoCopy(t *testing.T) {
 func TestShadowRepoFolderComesBack(t *testing.T) {
 	f := newRepoFolderFixture(t)
 	dir := f.sync(t, f.repo)
-	kept := repoReadVerdict(gitDirTrustFor(f.repo))
+	kept := repoReadVerdict(gitDirTrustFor(f.repo), nil)
 	want := treeNames(entryTreeOf(t, dir))
 	if err := f.h.removeEntry(filepath.Join(filepath.Base(f.h.dir), filepath.Base(dir))); err != nil {
 		t.Fatal(err)
@@ -495,7 +495,7 @@ func TestShadowRepoFolderComesBack(t *testing.T) {
 	if got := treeNames(entryTreeOf(t, dir)); !slices.Equal(got, want) {
 		t.Errorf("the folder that came back holds %v, want %v", got, want)
 	}
-	if again := repoReadVerdict(gitDirTrustFor(f.repo)); again != kept {
+	if again := repoReadVerdict(gitDirTrustFor(f.repo), nil); again != kept {
 		t.Error("the config was read again for a folder that came back")
 	}
 

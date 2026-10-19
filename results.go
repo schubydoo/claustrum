@@ -142,25 +142,18 @@ type branchesResult struct {
 // branch that the branch step finds absent. A kept branch adds "branchKept":true.
 //
 // Every refusal and failure branch of gitWorktreeRemoveLocked populates `error`.
-// Three of those branches are:
+// Two of those branches are:
 //
 //	git refused AND the daemon's own cleanup also failed  (matches the reference)
-//	claustrum's gitTimeout fired  (claustrum-only, and OPT-IN since D5's flip:
-//	                              unreachable unless -git-timeout / the git-timeout
-//	                              config key is set)
 //	worktreePath is/contains the home directory           (claustrum-only)
 //
-// The last two are frames the reference cannot emit — it showed no deadline at or
-// below the 75 s probed outside the branch step, and at 5db5e4a it deleted a home
+// The last one is a frame the reference cannot emit: at 5db5e4a it deleted a home
 // directory.
 //
-// ⚠️ This comment used to add "all three are confined to pathological paths;
-// every reference-reachable reply is still the bare {"success":true}". Both
-// halves are wrong. Row one is reference-reachable BY ITS OWN DESCRIPTION and
-// populates error. And gitTimeout is a wall-clock bound, not a
-// pathological-input detector: an honest large repo on a loaded host or a cold
-// network filesystem can trip an opted-in value, which is why D5 was flipped to
-// off-by-default rather than given a bigger number. What the goldens
+// ⚠️ This comment used to add "all are confined to pathological paths;
+// every reference-reachable reply is still the bare {"success":true}". That is
+// wrong. Row one is reference-reachable BY ITS OWN DESCRIPTION and
+// populates error. What the goldens
 // pin is the bare {"success":true} on the inputs the battery exercises — not a
 // property of every reachable input.
 type worktreeRemoveResult struct {

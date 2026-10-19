@@ -84,6 +84,10 @@ type server struct {
 	// daemon. The idle exit reads it (orphanexit.go).
 	lastCounted atomic.Int64
 
+	// offGitRequests counts the git requests with "shadowDirOff":true that have
+	// not answered yet (gitWideLimit).
+	offGitRequests atomic.Int32
+
 	// managedLog holds the last [LauncherHandler] line, so a repeat of the same
 	// launcher.resolve answer writes no second line (see managedLauncherLog).
 	managedLog managedLauncherLog

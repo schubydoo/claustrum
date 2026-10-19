@@ -29,9 +29,17 @@ const worktreesSubdir = "worktrees"
 // failed request.
 // The manifest copy runs first, then the `.claude/` copy.
 //
+// A scan that its time limit stopped ends the step: no other call of the step
+// runs, and nothing is copied. On 5fd08069 the stopped scan is the last git call
+// of the create, and the create succeeds (cell T13 of round task010-01, Linux
+// and macOS VMs). The skip of the `.claude/` pass is claustrum's own, not
+// measured: the repository of T13 had no .claude folder.
+//
 // host is the settings control of the daemon, or nil (selectsIncludeScan).
 func populateWorktree(u gitUse, host *shadowHost, repo, worktree string) {
-	copyWorktreeIncludes(u, host, repo, worktree)
+	if copyWorktreeIncludes(u, host, repo, worktree) {
+		return
+	}
 	copyClaudeDir(u, repo, worktree)
 }
 
@@ -64,13 +72,11 @@ func populateWorktree(u gitUse, host *shadowHost, repo, worktree string) {
 // stdout ONLY, for the same reason as gitListBranches: this splits the result
 // into paths, so a warning on stderr becomes a bogus path.
 //
-// ⚠️ An OPTED-IN gitTimeout (D5) kills any of these calls, and the failure is
-// silent. The copy loses what that call gives it, and gitWorktreeCreate still
-// answers {"success":true}. D5 is off by default.
-func copyWorktreeIncludes(u gitUse, host *shadowHost, repo, worktree string) {
+// stopped reports a scan that includeScanLimit ended. Nothing is copied then.
+func copyWorktreeIncludes(u gitUse, host *shadowHost, repo, worktree string) (stopped bool) {
 	manifest, ok := readWorktreeInclude(repo)
 	if !ok {
-		return
+		return false
 	}
 	// The copy of the manifest is the file `patterns` in a new folder of this
 	// request (requestDir). 5fd08069 names
@@ -83,18 +89,21 @@ func copyWorktreeIncludes(u gitUse, host *shadowHost, repo, worktree string) {
 	// val-s3p2b2-6-linux (Linux VM). The folder goes at the end of this step.
 	dir, removeDir, err := u.requestDir(shadowIncludeDirPrefix, includeTempPrefix)
 	if err != nil {
-		return
+		return false
 	}
 	defer removeDir()
 	patterns := filepath.Join(dir, includePatternsName)
 	if err := os.WriteFile(patterns, manifest, 0o644); err != nil {
-		return
+		return false
 	}
 
 	var paths []string
 	fallback := true
 	if selectsIncludeScan(host) {
-		paths, fallback = scanWorktreeIncludes(u, repo, patterns, manifest)
+		paths, fallback, stopped = scanWorktreeIncludes(u, repo, patterns, manifest)
+		if stopped {
+			return true
+		}
 	}
 	if fallback {
 		paths = oldWorktreeIncludeScan(u, repo, patterns)
@@ -111,6 +120,7 @@ func copyWorktreeIncludes(u gitUse, host *shadowHost, repo, worktree string) {
 			copyFile(filepath.Join(repo, rel), dst)
 		}
 	}
+	return false
 }
 
 // readWorktreeInclude reads the manifest from the working tree. It does not

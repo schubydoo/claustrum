@@ -394,7 +394,7 @@ func TestTopLevelPairCarriesTheFrontItems(t *testing.T) {
 		t.Fatal(err)
 	}
 	front := []string{"-c", "core.filemode=true"}
-	if out, err := gitDirWorkTreeToplevel(f.gitDir, f.repo, nil, front); err != nil || out != f.repo {
+	if out, err := gitDirWorkTreeToplevel(nil, f.gitDir, f.repo, nil, front); err != nil || out != f.repo {
 		t.Fatalf("the pair = %q, %v, want %s", out, err, f.repo)
 	}
 	calls := slices.DeleteFunc(readEnvCalls(t, f.log), func(c envCall) bool { return c.excludesRead() })

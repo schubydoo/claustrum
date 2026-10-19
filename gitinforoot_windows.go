@@ -34,7 +34,7 @@ import (
 // row D5, Windows VM). front are the `-c` items before the list of the second
 // call (gitUse.gitDirFront): 5fd08069 has `core.filemode=true` first there, 29
 // items (cell N16c of that round).
-func gitInfoRoot(walkRoot, walkGitDir, copyOf string, pin, front []string) string {
+func gitInfoRoot(s *gitStop, walkRoot, walkGitDir, copyOf string, pin, front []string) string {
 	gitDir := walkGitDir
 	switch {
 	case copyOf != "":
@@ -42,7 +42,7 @@ func gitInfoRoot(walkRoot, walkGitDir, copyOf string, pin, front []string) strin
 	case len(pin) > 0:
 		gitDir = strings.TrimPrefix(pin[0], "GIT_COMMON_DIR=")
 	}
-	out, err := gitDirWorkTreeToplevel(gitDir, walkRoot, pin, front)
+	out, err := gitDirWorkTreeToplevel(s, gitDir, walkRoot, pin, front)
 	if err == nil && filepath.IsAbs(out) && sharesFileIdentity(out, walkRoot) {
 		return out
 	}

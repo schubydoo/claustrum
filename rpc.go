@@ -78,6 +78,9 @@ type request struct {
 	// the config of the repository or another file of its git directory
 	// (repoConfigGate).
 	configRefused bool
+	// stop holds the time limits of the git calls of the request (gitstop.go). It
+	// is nil for a method with no such limits.
+	stop *gitStop
 }
 
 // runAtReply removes the short-lived folders that stay until the reply. On

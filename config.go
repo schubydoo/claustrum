@@ -79,11 +79,10 @@ type config struct {
 	// file". Same reachability argument as maxCLIBytes: it applies on -install,
 	// whose argv Claude Desktop owns.
 	cliDownloadTimeout *time.Duration
-	// gitTimeout mirrors -git-timeout; nil means "not set in the file". This one
-	// applies to -serve rather than -install, but the reachability argument is the
-	// same: Claude Desktop owns that argv too, so the config key is how an operator
-	// actually opts in.
-	gitTimeout *time.Duration
+	// gitTimeoutSeen records that the file carries the deprecated git-timeout
+	// key. The value is ignored: the git calls always use their own time limits
+	// (gitstop.go). main logs one warning on -serve.
+	gitTimeoutSeen bool
 	// libcProbeTimeoutSeen records that the file carries the deprecated
 	// libc-probe-timeout key. The value is ignored: the ldd probe always uses
 	// its 5 s bound (lddProbeTimeout). main logs one warning on -install.
@@ -217,14 +216,8 @@ func applyConfigKey(cfg *config, key, val string) {
 		// Deprecated and ignored, whatever the value. See libcProbeTimeoutSeen.
 		cfg.libcProbeTimeoutSeen = true
 	case "git-timeout":
-		// A Go duration ("60s", "2m"); 0 disables the deadline (the default).
-		// Negative and unparseable values are rejected on the same reasoning as the
-		// -install duration above, including the zero-spelling edge cases: all
-		// of them reach d == 0, which IS the disabled value, so nothing accepted here
-		// can switch the deadline on by accident.
-		if d, err := time.ParseDuration(val); err == nil && d >= 0 {
-			cfg.gitTimeout = &d
-		}
+		// Deprecated and ignored, whatever the value. See gitTimeoutSeen.
+		cfg.gitTimeoutSeen = true
 	case "files-read-regular-only":
 		// Deprecated and ignored, whatever the value. See filesReadRegularOnlySeen.
 		cfg.filesReadRegularOnlySeen = true
@@ -338,15 +331,6 @@ func (cfg config) effectiveMaxCLIBytes(cliVal int64, cliSet bool) int64 {
 	// and effectiveMaxCLIBytes is reached only from the -install arm.
 	return effectiveNumeric(cliVal, cliSet, cfg.maxCLIBytes, func() {
 		logWarnf("[Install] -max-cli-bytes %d is negative; treating it as 0 (cap disabled)", cliVal)
-	})
-}
-
-// effectiveGitTimeout applies the same precedence for -git-timeout, and the same
-// negative handling. [Server], not [Install]: this bound governs the git.* methods,
-// which only the daemon serves.
-func (cfg config) effectiveGitTimeout(cliVal time.Duration, cliSet bool) time.Duration {
-	return effectiveNumeric(cliVal, cliSet, cfg.gitTimeout, func() {
-		logWarnf("[Server] -git-timeout %s is negative; treating it as 0 (no deadline)", cliVal)
 	})
 }
 

@@ -190,7 +190,6 @@ opt-in?
 | ID | Default | Battery-visible? | What it is |
 |----|---------|------------------|------------|
 | D3 | Off (`0` = unlimited) | No. Off the default path | `files.extract_tar` size cap |
-| D5 | Off (`0` = no deadline) | No. Off the default path | git-invocation deadline |
 | D10 | Off (`0` = unlimited) | No. Install path | `-install` CLI size cap |
 | D12 | Off (`0` = no bound) | No. Install path | `-install` download bound |
 | D2 | Always-on | Maybe. A probe that reaches the path shows it (expected) | destructive-path home-dir refusal. On `-install` it is the `cli path must not be or contain the home directory` text. That refusal is this guard, not drift. |
@@ -216,7 +215,8 @@ measurement corrected the premise, and claustrum now matches it. A difference on
 an entry in the table above covers it (for example D6, D10).
 D4 is retired too. Its paths follow `5fd08069`, so a difference against
 `89cb6289` there is expected. The paragraph on `files-read-regular-only` below
-names the differences. See
+names the differences. D5 is retired too. The git calls follow the time limits
+of `5fd08069`, so a stop of a slow git is expected. See
 [DIVERGENCES.md → Retired entries](DIVERGENCES.md#retired-entries).
 
 Check both indexes. The shipped ledger ([docs/IMPROVEMENTS.md](IMPROVEMENTS.md))
@@ -233,16 +233,15 @@ An opt-in key that is *present* is not a deadline that is *in force*. A mistyped
 inert value leaves the divergence off, and the parity behavior that results reads
 exactly like drift. When a symptom matches a D-shaped divergence on a stock
 claustrum, check for the key or flag first. Then make sure that the value parses to
-a positive duration. Two knobs take a duration: D5 (`git-timeout`) and D12
-(`cli-download-timeout`). D5 logs under `[Server]`, and D12 logs under
-`[Install]`. Both parse the same way. The deprecated `cli-probe-timeout` and
-`libc-probe-timeout` set nothing, whatever their value. A flag value that does
+a positive duration. One knob takes a duration: D12 (`cli-download-timeout`),
+which logs under `[Install]`. The deprecated `git-timeout`, `cli-probe-timeout`
+and `libc-probe-timeout` set nothing, whatever their value. A flag value that does
 not parse still exits 2, as in the table:
 
 | Value shape | Configuration key in `claustrum.conf` | `-…` flag on the argv |
 |-------------|--------------------------------|-----------------------|
 | Unparseable (`= 15`) | Dropped silently, with no log. The run proceeds with no deadline | `flag.Duration` rejects it before any mode runs: `invalid value "15" for flag …: parse error` + usage, exit 2, no facts line |
-| Negative (`= -1s`) | Dropped silently, with no log and no deadline | Normalized to 0 with a `[Server]`/`[Install]` stderr warning, then runs normally (exit 0, facts line printed) |
+| Negative (`= -1s`) | Dropped silently, with no log and no deadline | Normalized to 0 with an `[Install]` stderr warning, then runs normally (exit 0, facts line printed) |
 | Any zero (`0`, `+0`, `-0`, `0s`, `-0m`, `-0.4ns`) | Accepted. It reads as opted-in but the deadline stays off | Accepted, with the deadline off |
 
 The configuration path is silent, and that silence is the shape that looks like
@@ -290,23 +289,10 @@ case.
 [docs/DIVERGENCES.md](DIVERGENCES.md) holds the full measurements. These are the
 traps that matter for telling drift from expected:
 
-- D5 (surviving-child git): a probe run that records "no
-  reply from both binaries" does not discriminate. The off state blocks too.
-  A surviving child makes the general D5
-  git sites soft (`Output` and `CombinedOutput` wait on the output pipe, not on git's exit). The
-  one exception is `git.worktree_create`'s read-tree checkout. It caps the
-  post-exit drain at ~5 s and SIGKILLs the process group, which is parity with
-  `4534d86` (`scratch/probe/wt-success-lingering-4534d86.md`). It gates success
-  against `errorCode:"timeout"`+rollback on the caller `timeoutMs`. The off default
-  (no `timeoutMs`, D5 off) is unbounded on every path, matching the reference. The
-  one exception is the branch step, which both binaries bound since `89cb6289`
-  (PROTOCOL.md → The branch step).
-- D5 has a wire-invisible arm. When the deadline kills `git ls-files` or
-  `git check-ignore`, `git.worktree_create` still answers `{"success":true}`, and the seeded files are
-  absent. That covers both passes: the `.worktreeinclude` manifest copy and the
-  `.claude/` copy. Nothing on the wire says so, so a clean frame diff does not
-  cover it. A D5 kill of any `sourceBranch` step can change the start commit.
-  The frame changes only when both lookups are killed.
+- A git call that runs 2 minutes is stopped, and the reply carries `git took too
+  long`. That is parity with `5fd08069`, not drift. A scan of ignored files that
+  the limit of 10 minutes stopped answers `{"success":true}` with no copied file.
+  See [PROTOCOL.md → Time limits of git calls](PROTOCOL.md#time-limits-of-git-calls).
 - The failure frames of `git.worktree_create` differ between pins. In
   `f6010b97` the git text can start with git's graft-file deprecation `hint:` lines.
   In the add-failure frame the 512-byte cap can then cut the rest of the text.

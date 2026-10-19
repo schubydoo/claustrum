@@ -92,7 +92,7 @@ func TestParseConfig_FilesReadRegularOnlyKeyIsIgnored(t *testing.T) {
 			if !got.filesReadRegularOnlySeen {
 				t.Error("the deprecated files-read-regular-only key was not recognised, so no warning can fire")
 			}
-			if got.libcProbeTimeoutSeen || got.cliProbeTimeoutSeen || got.gitTimeout != nil || got.maxExtractBytes != nil {
+			if got.libcProbeTimeoutSeen || got.cliProbeTimeoutSeen || got.gitTimeoutSeen || got.maxExtractBytes != nil {
 				t.Errorf("the retired files-read-regular-only key set a value: %+v", got)
 			}
 		})
@@ -319,9 +319,9 @@ func TestParseConfig_CLIProbeTimeoutKeyIsIgnored(t *testing.T) {
 		if !got.cliProbeTimeoutSeen {
 			t.Errorf("%q: the deprecated key was not recognised, so no warning can fire", body)
 		}
-		if got.cliDownloadTimeout != nil || got.gitTimeout != nil || got.maxCLIBytes != nil || got.maxExtractBytes != nil {
+		if got.cliDownloadTimeout != nil || got.gitTimeoutSeen || got.maxCLIBytes != nil || got.maxExtractBytes != nil {
 			t.Errorf("%q: the retired key set a value: download=%v git=%v cli=%v extract=%v", body,
-				got.cliDownloadTimeout, got.gitTimeout, got.maxCLIBytes, got.maxExtractBytes)
+				got.cliDownloadTimeout, got.gitTimeoutSeen, got.maxCLIBytes, got.maxExtractBytes)
 		}
 	}
 	if parse(t, "cli-download-timeout = 30s").cliProbeTimeoutSeen {
@@ -376,8 +376,8 @@ func TestParseConfig_CLIDownloadTimeout(t *testing.T) {
 	}
 	// Against the OTHER duration key, which the int64 assertions above cannot
 	// cover: a fused switch case sets both, and it passes gofmt, vet and lint.
-	if got := parse(t, "cli-download-timeout = 10m"); got.gitTimeout != nil {
-		t.Errorf("cli-download-timeout also set gitTimeout = %s, want unset", *got.gitTimeout)
+	if got := parse(t, "cli-download-timeout = 10m"); got.gitTimeoutSeen {
+		t.Error("cli-download-timeout also set gitTimeoutSeen, want unset")
 	}
 }
 
@@ -556,101 +556,29 @@ func TestParseConfig_WireLog(t *testing.T) {
 	}
 }
 
-func TestParseConfig_GitTimeout(t *testing.T) {
-	cases := []struct {
-		name, body string
-		want       *time.Duration
-	}{
-		{"seconds", "git-timeout = 60s", durp(60 * time.Second)},
-		{"minutes", "git-timeout = 2m", durp(2 * time.Minute)},
-		{"zero disables the deadline explicitly", "git-timeout = 0s", durp(0)},
-		{"negative rejected", "git-timeout = -1s", nil},
-		{"bare number rejected", "git-timeout = 60", nil},
-		{"non-duration rejected", "git-timeout = soon", nil},
-		{"empty rejected", "git-timeout =", nil},
-		{"case-insensitive key", "GIT-TIMEOUT = 90s", durp(90 * time.Second)},
-		// Same zero-spelling edges as the two -install durations: all mean disabled,
-		// so none of them can switch the deadline on.
-		{"bare zero accepted", "git-timeout = 0", durp(0)},
-		{"negative zero accepted", "git-timeout = -0", durp(0)},
-		{"negative zero with a unit accepted", "git-timeout = -0m", durp(0)},
-		{"negative truncating to zero accepted", "git-timeout = -0.4ns", durp(0)},
-	}
-	for _, tc := range cases {
-		t.Run(tc.name, func(t *testing.T) {
-			got := parse(t, tc.body).gitTimeout
-			switch {
-			case tc.want == nil && got != nil:
-				t.Fatalf("gitTimeout = %s, want unset (value rejected)", *got)
-			case tc.want != nil && got == nil:
-				t.Fatalf("gitTimeout unset, want %s", *tc.want)
-			case tc.want != nil && *got != *tc.want:
-				t.Fatalf("gitTimeout = %s, want %s", *got, *tc.want)
+// The git-timeout key is deprecated: the git calls have the time limits of
+// 5fd08069 (gitstop.go), so D5 is retired. The key is recognised with each value,
+// so main can warn, and it sets nothing else.
+func TestParseConfig_GitTimeoutKeyIsIgnored(t *testing.T) {
+	for _, body := range []string{
+		"git-timeout = 60s",
+		"git-timeout = 0",
+		"git-timeout = soon",
+		"git-timeout =",
+		"GIT-TIMEOUT = 90s",
+	} {
+		t.Run(body, func(t *testing.T) {
+			got := parse(t, body)
+			if !got.gitTimeoutSeen {
+				t.Error("the deprecated git-timeout key was not recognised, so no warning can fire")
+			}
+			if got.cliDownloadTimeout != nil || got.libcProbeTimeoutSeen || got.cliProbeTimeoutSeen || got.filesReadRegularOnlySeen {
+				t.Errorf("the retired git-timeout key set a value: %+v", got)
 			}
 		})
 	}
-	// Non-aliasing against the other duration keys, which is the set that could
-	// plausibly be crossed: a fused switch case passes gofmt, vet, lint and the rest
-	// of this suite while making one key a dead no-op.
-	//
-	if got := parse(t, "git-timeout = 60s"); got.cliDownloadTimeout != nil {
-		t.Errorf("git-timeout leaked into the -install duration: download=%v", got.cliDownloadTimeout)
-	}
-}
-
-// -git-timeout follows the same CLI-over-config-over-default precedence as the
-// other three opt-in knobs, with the same 0-is-a-real-value wrinkle.
-func TestPrecedenceGitTimeout(t *testing.T) {
-	withFile := config{gitTimeout: durp(60 * time.Second)}
-	if got := withFile.effectiveGitTimeout(90*time.Second, true); got != 90*time.Second {
-		t.Errorf("explicit CLI should win, got %s", got)
-	}
-	if got := withFile.effectiveGitTimeout(0, false); got != 60*time.Second {
-		t.Errorf("config value should apply when CLI unset, got %s", got)
-	}
-	if got := withFile.effectiveGitTimeout(0, true); got != 0 {
-		t.Errorf("explicit CLI 0 should disable the deadline, got %s", got)
-	}
-	if got := (config{}).effectiveGitTimeout(0, false); got != 0 {
-		t.Errorf("empty config should leave the deadline OFF — that is the parity default, got %s", got)
-	}
-	if got := (config{}).effectiveGitTimeout(-1*time.Second, true); got != 0 {
-		t.Errorf("negative CLI should normalise to 0, got %s", got)
-	}
-}
-
-// The bypass, asserted directly. "Off" must mean context.WithTimeout is never
-// called — not a huge-but-finite deadline — so that exec.CommandContext has no
-// cancel path to fire and ctx.Err() stays nil by construction.
-//
-// This is the assertion a "simplify 0 into 100 years" refactor fails: such a
-// context still reports a deadline, and this test says it must not.
-func TestGitCtxArmsNoDeadlineWhenOff(t *testing.T) {
-	old := gitTimeout
-	t.Cleanup(func() { gitTimeout = old })
-
-	for _, off := range []time.Duration{0, -1 * time.Second} {
-		gitTimeout = off
-		ctx, cancel := gitCtx()
-		_, hasDeadline := ctx.Deadline()
-		cancel()
-		if hasDeadline {
-			t.Errorf("gitTimeout = %s: context carries a deadline, want none armed at all", off)
-		}
-		if ctx.Done() != nil {
-			t.Errorf("gitTimeout = %s: context is cancellable, want a plain Background context", off)
-		}
-	}
-
-	gitTimeout = 30 * time.Second
-	ctx, cancel := gitCtx()
-	defer cancel()
-	dl, hasDeadline := ctx.Deadline()
-	if !hasDeadline {
-		t.Fatal("gitTimeout = 30s: no deadline armed, want one")
-	}
-	if remaining := time.Until(dl); remaining <= 0 || remaining > 30*time.Second {
-		t.Errorf("deadline is %s away, want (0, 30s]", remaining)
+	if parse(t, "cli-download-timeout = 10m").gitTimeoutSeen {
+		t.Error("another key set gitTimeoutSeen")
 	}
 }
 
@@ -662,28 +590,9 @@ func TestParseConfig_LibcProbeTimeoutKeyIsIgnored(t *testing.T) {
 	if !got.libcProbeTimeoutSeen {
 		t.Error("the deprecated libc-probe-timeout key was not recognised, so no warning can fire")
 	}
-	if got.cliProbeTimeoutSeen || got.cliDownloadTimeout != nil || got.gitTimeout != nil {
+	if got.cliProbeTimeoutSeen || got.cliDownloadTimeout != nil || got.gitTimeoutSeen {
 		t.Errorf("the retired libc-probe-timeout key set a value: probeSeen=%v download=%v git=%v",
-			got.cliProbeTimeoutSeen, got.cliDownloadTimeout, got.gitTimeout)
-	}
-}
-
-// The SHIPPED default, pinned. Every other test in this package assigns
-// gitTimeout explicitly, and effectiveGitTimeout is only ever asked what to do
-// with a zero flag value — so without this, reinstating
-// `var gitTimeout = 60 * time.Second` would pass the entire suite and silently
-// resurrect every claustrum-only frame D5's flip removed.
-//
-// Order-safe: every test that changes gitTimeout restores it with t.Cleanup, and
-// none of them call t.Parallel.
-func TestGitTimeoutDefaultIsOff(t *testing.T) {
-	if gitTimeout != 0 {
-		t.Errorf("package default gitTimeout = %s, want 0 — the deadline must ship OFF (D5)", gitTimeout)
-	}
-	ctx, cancel := gitCtx()
-	defer cancel()
-	if _, hasDeadline := ctx.Deadline(); hasDeadline {
-		t.Error("the default context carries a deadline; at the shipped default none may be armed")
+			got.cliProbeTimeoutSeen, got.cliDownloadTimeout, got.gitTimeoutSeen)
 	}
 }
 

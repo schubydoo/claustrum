@@ -39,7 +39,6 @@ If the daemon finds no repository, the response is not an error:
 - `path` is inside a directory of managed worktrees. That is a path under `.claude/worktrees`, or under a directory that holds the marker file `.claude-managed-worktrees`. So the worktree of a session gives `"isRepo": false`. Send the path of the base repository to list its branches. A `baseRepo` member inside such a directory gives the same response. With no `baseRepo`, the daemon makes that test on its own working directory too.
 - The daemon cannot find git on its `PATH`.
 - git itself does not accept the repository. For example, the repository belongs to another user and git has no `safe.directory` line for it.
-- Only with `-git-timeout`: the deadline stopped the git call that tests for a repository.
 
 ## Errors
 
@@ -54,7 +53,7 @@ This method has no `errorCode` member. A failure is a JSON-RPC error.
 | `-32603` | `git could not check this repository on the remote machine: …`, or `git and Claude disagree about which repository holds this folder: …` | Before its other git calls the daemon asks git about the repository. That call failed, did not end in 30 seconds, or named another repository. |
 | `-32603` | `Claude could not prepare its own files on the remote machine: …` | The daemon cannot make the folder of its settings copy for this repository. |
 | `-32603` | The Go error of the git call, for example `exit status 128` | git cannot list the branches. For example, the file `packed-refs` is corrupt. |
-| `-32603` | `signal: killed` | Only with `-git-timeout`: the deadline stopped the git call that lists the branches. This is the text of Linux and macOS. If the deadline stops the first git call of the method, the text is a refusal text that ends in `signal: killed`. |
+| `-32603` | `git took too long: Claude stopped git <subcommand> after 2 minutes; try again` | A git call ran 2 minutes, and the daemon stopped it, as `5fd08069` does. See [Time limits of git calls](../PROTOCOL.md#time-limits-of-git-calls). |
 
 A warning of git does not become a branch name. If git warns about a broken ref and still lists the other branches, the response holds those branches.
 
@@ -66,5 +65,4 @@ On Windows, a `path` with a junction before its last component does not resolve,
 
 claustrum is built to answer as the reference daemon does. The pinned build `89cb6289` has no settings copy, and it answers a request with a failed test normally. claustrum follows `5fd08069` there. These entries of the divergence catalog apply to this method:
 
-- [D5](../DIVERGENCES.md#d5): an optional deadline on the git calls. It is off by default.
 - [D9](../DIVERGENCES.md#d9): a member of another `git.*` method with the wrong type gets `-32602`, although this method does not use it.

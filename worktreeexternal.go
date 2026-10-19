@@ -186,44 +186,32 @@ type listedWorktree struct {
 	bare bool
 }
 
-// d5Kill is err when the D5 deadline (gitTimeout) of ctx stopped the failed git call,
-// and nil otherwise. err is then the exec error, for example "signal: killed".
-func d5Kill(ctx context.Context, err error) error {
-	if err != nil && errors.Is(ctx.Err(), context.DeadlineExceeded) {
-		return err
+// worktreeListTwice runs worktreeListCall with -z. After a failure it runs the call
+// once more without -z. It answers the entries in list order and the error of the
+// last call. git lists the main checkout first. 5fd08069 makes the second call in a
+// create (cell C-W17 of round tier0-20, Linux VM) and 89cb6289 in a remove (row
+// DG2s-g, Linux VM). After a call that its time limit stopped the second call does
+// not start, and its error is the stop (gitRun).
+func worktreeListTwice(u gitUse, repo string) (listed []listedWorktree, err error) {
+	listed, err = worktreeListCall(u, repo, true)
+	if err == nil {
+		return listed, nil
 	}
-	return nil
-}
-
-// worktreeListTwice runs worktreeListCall with -z. After a failure that the D5
-// deadline did not cause, it runs the call once more without -z. It answers the
-// entries in list order, whether the D5 deadline stopped the first call, and the
-// error of the last call. git lists the main checkout first. 5fd08069 makes the
-// second call in a create (cell C-W17 of round tier0-20, Linux VM) and 89cb6289 in a
-// remove (row DG2s-g, Linux VM).
-func worktreeListTwice(u gitUse, repo string) (listed []listedWorktree, killed bool, err error) {
-	listed, killed, err = worktreeListCall(u, repo, true)
-	if err == nil || killed {
-		return listed, killed, err
-	}
-	listed, _, err = worktreeListCall(u, repo, false)
-	return listed, false, err
+	return worktreeListCall(u, repo, false)
 }
 
 // worktreeListCall runs a light `git worktree list --porcelain` in repo, with its
 // listing. With nul it adds -z, and a NUL byte ends each line of the output. Without
-// nul a LF ends each line. It returns the entries, whether the D5 deadline stopped the
-// call, and its exec error.
-func worktreeListCall(u gitUse, repo string, nul bool) (list []listedWorktree, killed bool, err error) {
-	ctx, cancel := gitCtx()
-	defer cancel()
+// nul a LF ends each line. It returns the entries and its exec error.
+func worktreeListCall(u gitUse, repo string, nul bool) (list []listedWorktree, err error) {
+	ctx := u.stop.context()
 	args, sep := []string{"worktree", "list", "--porcelain"}, "\n"
 	if nul {
 		args, sep = append(args, "-z"), "\x00"
 	}
-	b, err := hardenedGitCmd(ctx, u, repo, false, nil, args...).Output()
+	b, err := gitOutput(ctx, hardenedGitCmd(ctx, u, repo, false, nil, args...))
 	if err != nil {
-		return nil, d5Kill(ctx, err) != nil, err
+		return nil, err
 	}
 	out := strings.TrimRight(string(b), "\n")
 	for _, line := range strings.Split(out, sep) {
@@ -235,7 +223,7 @@ func worktreeListCall(u gitUse, repo string, nul bool) (list []listedWorktree, k
 			list[len(list)-1].bare = true
 		}
 	}
-	return list, false, nil
+	return list, nil
 }
 
 // parentStepPrefix starts every failure of the parent step of git.worktree_create.
@@ -253,11 +241,9 @@ const worktreeListRefusalPrefix = "failed to remove worktree: cannot list the re
 // exits 128 too, and the answer is worktreeListRefusalPrefix with that exec error. The
 // worktree and its entry stay. The repository of that row has a valid HEAD, and its
 // `.git/commondir` is a dangling relative symlink. claustrum takes the same steps
-// after every failure of the first call that is not a D5 stop.
+// after every failure of the first call.
 //
-// If the D5 deadline stops the first call, the answer is the work-tree refusal with
-// the exec error, as before. That is claustrum's choice (not measured). Not measured
-// either: a second call that succeeds. claustrum then reads its output line by line
+// Not measured: a second call that succeeds. claustrum then reads its output line by line
 // and goes on. A path with a newline in it is not measured in that form. A git older
 // than 2.36, which has no `worktree list -z`, takes that path.
 //
@@ -269,11 +255,8 @@ func worktreeListForRemove(u gitUse, repo string) (listed []listedWorktree, refu
 	if _, err := os.Stat(repo); errors.Is(err, fs.ErrNotExist) {
 		return nil, ""
 	}
-	listed, killed, err := worktreeListTwice(u, repo)
-	switch {
-	case killed:
-		return nil, workTreeUnknownPrefix + err.Error()
-	case err != nil:
+	listed, err := worktreeListTwice(u, repo)
+	if err != nil {
 		return nil, worktreeListRefusalPrefix + err.Error()
 	}
 	return listed, ""
@@ -481,25 +464,20 @@ func worktreeRootMissingRefusal(worktreeRoot string) string {
 
 // repoTopLevel is the answer of a light `rev-parse --show-toplevel` in repo, or ""
 // when the call fails. pre is nil when the call gets its own listing, else the
-// listing it pins (see hardenedGitCmd). The error is d5Kill of the call.
-func repoTopLevel(u gitUse, repo string, pre *configListing) (string, error) {
-	top, killed, err := repoTopLevelCall(u, repo, pre)
-	if killed {
-		return "", err
-	}
-	return top, nil
+// listing it pins (see hardenedGitCmd).
+func repoTopLevel(u gitUse, repo string, pre *configListing) string {
+	top, _ := repoTopLevelCall(u, repo, pre)
+	return top
 }
 
-// repoTopLevelCall is repoTopLevel with the exec error of a failed call, and
-// whether the D5 deadline stopped it.
-func repoTopLevelCall(u gitUse, repo string, pre *configListing) (top string, killed bool, err error) {
-	ctx, cancel := gitCtx()
-	defer cancel()
-	b, err := hardenedGitCmd(ctx, u, repo, false, pre, "rev-parse", "--show-toplevel").Output()
+// repoTopLevelCall is repoTopLevel with the exec error of a failed call.
+func repoTopLevelCall(u gitUse, repo string, pre *configListing) (top string, err error) {
+	ctx := u.stop.context()
+	b, err := gitOutput(ctx, hardenedGitCmd(ctx, u, repo, false, pre, "rev-parse", "--show-toplevel"))
 	if err != nil {
-		return "", d5Kill(ctx, err) != nil, err
+		return "", err
 	}
-	return strings.TrimRight(string(b), "\n"), false, nil
+	return strings.TrimRight(string(b), "\n"), nil
 }
 
 // sessionLocationRefusal is the refusal of a create whose worktreeRoot lies in a
@@ -728,7 +706,7 @@ func externalWorkTreeRefusal(req *request, repo string, off jsonTrueSwitch) (str
 				return workTreeUnknownPrefix + c.refusal, ""
 			}
 			if !c.refused() {
-				_, _ = repoTopLevel(u, repo, &c.listing)
+				_ = repoTopLevel(u, repo, &c.listing)
 			}
 			return workTreeUnknownPrefix + "exit status 128", ""
 		}
@@ -765,12 +743,8 @@ func externalWorkTreeRefusal(req *request, repo string, off jsonTrueSwitch) (str
 	// The call after that light listing is `rev-parse --show-toplevel` in baseRepo,
 	// on f6010b97 (Linux VM, rows WR00, WR07, WR09 and WR14). Its answer does not
 	// decide the reasons below. worktreeRootCheckoutRefusal compares the root with
-	// it. If the D5 deadline stops the call, the reason is the exec error. That is
-	// claustrum's choice (not measured).
-	topLevel, killed := repoTopLevel(u, repo, &c.listing)
-	if killed != nil {
-		return workTreeUnknownPrefix + killed.Error(), ""
-	}
+	// it.
+	topLevel := repoTopLevel(u, repo, &c.listing)
 	if baseIsGitDir(repo) {
 		return workTreeUnknownPrefix + "exit status 128", ""
 	}
@@ -823,11 +797,9 @@ func unenterableBaseListing(repo string) string {
 			return ""
 		}
 	}
-	ctx, cancel := gitCtx()
-	defer cancel()
 	// This listing does not use precursorEnv. Git never starts here, so its
 	// environment never reaches git, and only the Go start error reaches the frame.
-	r := runListing(ctx, repo, "", append(gitChildEnv(), "GIT_TERMINAL_PROMPT=0", "GIT_ALLOW_PROTOCOL=https:ssh"))
+	r := runListing(context.Background(), repo, "", append(gitChildEnv(), "GIT_TERMINAL_PROMPT=0", "GIT_ALLOW_PROTOCOL=https:ssh"))
 	var ee *exec.ExitError
 	if r.err != nil && !errors.As(r.err, &ee) {
 		if err != nil {

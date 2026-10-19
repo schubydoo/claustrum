@@ -81,11 +81,6 @@ func numbered(prefix string, n int) []string {
 const (
 	stubNever      = 30 * time.Second
 	stoppedCeiling = 15 * time.Second
-	// d5BranchDeadline is the D5 deadline of the case "D5 stops for-each-ref".
-	d5BranchDeadline = 10 * time.Second
-	// d5StoppedCeiling is above that deadline and under stubNever, so a call that no
-	// deadline stopped still fails the case.
-	d5StoppedCeiling = d5BranchDeadline + 15*time.Second
 )
 
 // shortBounds shrinks the three bounds of the branch step for one test.
@@ -334,9 +329,6 @@ func TestWorktreeRemoveBranchStep(t *testing.T) {
 // stub rule changes the one call under test.
 func TestWorktreeRemoveBranchStepFailures(t *testing.T) {
 	realGit := realGitPath(t)
-	oldTimeout := gitTimeout
-	t.Cleanup(func() { gitTimeout = oldTimeout })
-	gitTimeout = 0
 	for _, tc := range []struct {
 		name         string
 		branch       string
@@ -345,7 +337,6 @@ func TestWorktreeRemoveBranchStepFailures(t *testing.T) {
 		maxElapsed   time.Duration
 		checkBound   time.Duration
 		deleteBounds time.Duration
-		d5           time.Duration
 	}{
 		// B2-03: rev-list exits 128.
 		{name: "B2-03 rev-list fails", arm: func(t *testing.T) {
@@ -379,14 +370,6 @@ func TestWorktreeRemoveBranchStepFailures(t *testing.T) {
 		{name: "the stop counts from the start of update-ref", deleteBounds: time.Second, arm: func(t *testing.T) {
 			stubRule2(t, "config,-z,--list", "", 1500*time.Millisecond, "", "", "")
 		}},
-		// With -git-timeout (D5) opted in, a call of the branch step gets the D5
-		// deadline too, and a stopped call keeps the branch. Not measured. Each git
-		// call of the request gets this deadline, so it must be longer than the
-		// slowest call before the branch step: at 3 s a Windows CI runner stopped an
-		// earlier call (issue 463).
-		{name: "D5 stops for-each-ref", d5: d5BranchDeadline, arm: func(t *testing.T) {
-			stubRule2(t, "for-each-ref", "", stubNever, "", "", "")
-		}, kept: true, maxElapsed: d5StoppedCeiling},
 		{name: "R23a update-ref stopped", deleteBounds: 300 * time.Millisecond, arm: func(t *testing.T) {
 			stubRule2(t, "update-ref", "", stubNever, "", "", "")
 		}, kept: true, maxElapsed: stoppedCeiling},
@@ -402,7 +385,6 @@ func TestWorktreeRemoveBranchStepFailures(t *testing.T) {
 				del = tc.deleteBounds
 			}
 			shortBounds(t, check, del, del)
-			gitTimeout = tc.d5
 			installGitSlowStub(t, realGit)
 			tc.arm(t)
 			branch := tc.branch
@@ -421,11 +403,6 @@ func TestWorktreeRemoveBranchStepFailures(t *testing.T) {
 			}
 			if tc.maxElapsed != 0 && elapsed > tc.maxElapsed {
 				t.Errorf("reply after %v, want the bound to stop the call before %v", elapsed, tc.maxElapsed)
-			}
-			// The armed call sleeps for stubNever, so only the deadline ends it early.
-			// A reply before the deadline means that another call kept the branch.
-			if tc.d5 != 0 && elapsed < tc.d5 {
-				t.Errorf("reply after %v, before the D5 deadline %v", elapsed, tc.d5)
 			}
 			mustBeGone(t, f.wt)
 			got := refAt(t, realGit, f.repo, "wt1")
@@ -596,9 +573,6 @@ const (
 // that no other ref reaches, so w1 starts at main's tip or at c2.
 func TestWorktreeCreateRollbackBranchStep(t *testing.T) {
 	realGit := realGitPath(t)
-	oldTimeout := gitTimeout
-	t.Cleanup(func() { gitTimeout = oldTimeout })
-	gitTimeout = 0
 	commonGit := func(f wtFixture) string { return filepath.Join(f.top, ".git") }
 	for _, tc := range []struct {
 		name    string
@@ -709,9 +683,6 @@ func TestWorktreeCreateRollbackBranchStep(t *testing.T) {
 // check, keeps w1 at the commit that no other ref reaches, and adds the member.
 func TestWorktreeCreateTimeoutRollbackKeepsBranch(t *testing.T) {
 	realGit := realGitPath(t)
-	oldTimeout := gitTimeout
-	t.Cleanup(func() { gitTimeout = oldTimeout })
-	gitTimeout = 0
 	f := newWTFixture(t, false)
 	runGit(t, f.top, "checkout", "-q", "--detach")
 	runGit(t, f.top, "commit", "-q", "--allow-empty", "-m", "c2")

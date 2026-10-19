@@ -834,7 +834,10 @@ cell C-… is of round `tier0-20` against `5fd08069` on a Linux VM.
 | files.extract_tar | `mkdir <entry>: mkdirat <place>: file exists` | in `error` field. A file is at the place of a directory entry |
 | git.status | `baseRepo is required` | -32602. `baseRepo` is now required, since `7d193f89` |
 | git.status / git.list_branches | `<go error>`, for example `exit status 128` | -32603 (git failed, stdout parse) |
-| git.status / git.list_branches | `signal: killed` | -32603, D5 opt-in only |
+| git.list_branches / git.info / git.status / git.worktree_create | `git took too long: Claude stopped git <subcommand> after 2 minutes; try again` | -32603. Create: after the text of the stopped step, as `git worktree add failed: ` or the `mkdir_failed` text of the parent step. Alone, with `worktree_add_failed`, for a stopped repository test |
+| the four methods | `config-defined hooks could not be pinned off; git not run: listing the configuration in force: git took too long: Claude stopped git config after 30 seconds; try again` | -32603. Create: `worktree_add_failed`, after `git worktree add failed (checkout): ` for the checkout listing |
+| the four methods | `this repository's git config cannot be used: git did not finish reading "<path>" within 30 seconds; try again` | -32603. Create: `worktree_add_failed` |
+| git.worktree_create | `git worktree add failed (completing the new worktree's git files): this repository's git config cannot be used: git did not finish reading it within 30 seconds; try again` | in `error`, `worktree_add_failed`. The listing of `config.worktree` after the add ran 30 s, and the rollback of a failed checkout runs (cell TW) |
 | git.status | `<file>: not a regular file` | -32603. claustrum's own text, from the copy into the temporary git folder after the gate passed. `<file>` is `info/sparse-checkout` when that entry is a folder or a FIFO. The reference is not measured there |
 | git.status | `<file> is larger than <n> bytes` | -32603. claustrum's own text, for a copied file over its bound, also one that grew after the gate. `<n>` is 1073741824 for `index`, `sharedindex.*`, `info/sparse-checkout` and a reftable file, and 1048576 for `HEAD` and `config.worktree`. The reference is not measured there |
 | git.status | `<os error>` of the copy or of the temporary folder, for example `openat index: permission denied` or `stat <dir>: no such file or directory` | -32603. The raw Go error when a file of the entry cannot be copied, as an `index` of mode 000, or when a file of the temporary git folder cannot be made. With `"shadowDirOff":true`, and on a server with no run folder, a temporary folder that cannot be made answers the raw Go error too. The reference is not measured there. In the states `shadow` and `fallback-git` a `.gitdir-<n>` that cannot be made answers `{"isRepo":false,"clean":false}`. `5fd08069` answers so in the state `shadow` for a folder of the daemon of mode 0500 (cell F1 of round `val-s3p2b2-7`, Linux VM, one run). The state `fallback-git` and another cause are from the code |
@@ -871,7 +874,7 @@ cell C-… is of round `tier0-20` against `5fd08069` on a Linux VM.
 | git.worktree_create | `refusing to create worktree: <p> carries a .git file that does not name this repository's own worktree admin directory` | in `error`, `errorCode:"unsafe_path"`, Linux and macOS, after a successful add. In `<p>` the parent folder of the leaf has its symlinks resolved, the last name is kept, and the path is cleaned (`89cb6289` and claustrum, cells T1, T5, U2f and A12c g, Linux and macOS VMs). The `gitdir:` path in the `.git` file of the new worktree lies in a folder that is not named `worktrees`. Or `baseRepo` has a `worktrees` folder with no entry of that name (`89cb6289` in cell P-p, Linux and macOS VMs). Or that entry is a symbolic link (`5fd08069`, cell V7 of round `tier0-10`, Linux VM). Or the `commondir` file of the registration does not name the git directory. `5fd08069` answers it for an absolute path that reaches that directory through a symbolic link (cell V6 of round `tier0-10`, Linux VM). claustrum compares by text. Or the `commondir` file or the `gitdir` record of the registration cannot be read as a file (`89cb6289`, cells P-g to P-j, P-n, P-o and P-q, Linux and macOS VMs). No checkout runs and nothing is rolled back. |
 | git.worktree_create | `refusing to create worktree: <p> was not populated by git worktree add` | in `error`, `errorCode:"unsafe_path"`, Linux and macOS, after a successful add, when the git directory of `baseRepo` has no `worktrees` folder. Or, in the state `shadow`, `.git` no longer names the held git directory right after the add, and is no real directory that passes the gate (`5fd08069`, round `val-s3p2b2-10`, Linux and macOS VMs). No checkout runs and nothing is rolled back. `89cb6289` answers it with a daemon `GIT_COMMON_DIR` of another repository (rows B-E1 and B-E3 and cell D8e, Linux and macOS VMs). |
 | git.worktree_create | `refusing to create worktree: <p> carries a .git file naming an admin directory whose own record is of a different worktree` | in `error`, `errorCode:"unsafe_path"`, after a successful add. The `gitdir` record of the registration in the git directory of `baseRepo` was read and does not name `<p>/.git`. A record with a slash or a blank at its end, a `/./` part or a double slash names it (`5fd08069`, cell V4 of round `tier0-10`, cells R1 to R3 of round `tier0-11`, Linux VM). No checkout runs and nothing is rolled back. If `timeoutMs` expired during the add, the answer is the same (cell P-f). `89cb6289` answers it in cells P-c and P-k to P-m (Linux and macOS VMs), and `5fd08069` in cell V5c of round `tier0-10` (Linux VM). |
-| git.worktree_create | `git worktree add failed (verification): could not verify the worktree's registration: git did not report its spelling of the path (entry <name>); retry` | in `error`, `errorCode:"worktree_add_failed"`, Linux and macOS. The state of the row above, and git fails the `rev-parse --show-toplevel` call that follows. `<name>` is the entry that the `.git` file names. The leaf, the one new entry of the `worktrees` folder and the new branch go (`5fd08069`, cell V5 of round `tier0-10`, cell P1 of round `tier0-11`, Linux VM). claustrum's own, not measured: the folder has one new entry, and no deadline ended the call. |
+| git.worktree_create | `git worktree add failed (verification): could not verify the worktree's registration: git did not report its spelling of the path (entry <name>); retry` | in `error`, `errorCode:"worktree_add_failed"`, Linux and macOS. The state of the row above, and git fails the `rev-parse --show-toplevel` call that follows. `<name>` is the entry that the `.git` file names. The leaf, the one new entry of the `worktrees` folder and the new branch go (`5fd08069`, cell V5 of round `tier0-10`, cell P1 of round `tier0-11`, Linux VM). claustrum's own, not measured: the folder has one new entry, and no time limit stopped the call. |
 | git.worktree_create | `refusing to create worktree: <p> carries a .git file naming an admin entry other than the one just created for it` | in `error`, `errorCode:"unsafe_path"`, after a successful add. On Windows a leaf `.git` file of another staged entry gets it before the move, and only the leaf and branch go (cell S2, round `task087-01`). The registration is not the one new name of the `worktrees` folder since the listing before the add. With two new entries `5fd08069` answers it (cell V2 of round `tier0-10`, Linux VM). With no new entry `89cb6289` answers it (cells A9 g, A10 g and A13 g, Linux and macOS VMs). claustrum's own, not measured: a listing that fails gets it, and a refusal of the four rows above comes first. Otherwise no checkout runs and nothing is rolled back. |
 | git.worktree_create | `refusing to create worktree: <p> has no .git file` / `refusing to create worktree: <p>/.git is not a regular file` / `refusing to create worktree: <p>/.git does not name a git dir` | in `error`, `errorCode:"unsafe_path"`, Linux and macOS, after a successful add. The `.git` entry of the new worktree is gone, is no regular file, or does not start with `gitdir: `. The registration and the branch stay, and an empty leaf goes (`5fd08069`, cells V3a, V3b and V3c of round `tier0-10`, Linux VM). |
 | git.worktree_create | `refusing to create worktree: <p> is no longer the directory that was created for the worktree` | in `error`, `errorCode:"unsafe_path"`, Linux and macOS, before the checkout. Another folder is at the path of the leaf. Nothing is checked out or rolled back (`5fd08069`, cell V8 of round `tier0-10`, Linux VM). |
@@ -1746,16 +1749,9 @@ cell the frame and the files on disk of claustrum are equal to it.
 
 In row B-G1 `89cb6289` waits in its child `git worktree add`. A plain `git worktree
 add` on that fixture waits too. From the code and a unit test: claustrum passes over
-the FIFO record and starts the same call. claustrum adds no bound of its own there.
-With `timeoutMs` 3000 in the state of row B-G1, `89cb6289` and claustrum give no
-answer in 40 s (cell N7, Linux VM). From the code: the opt-in `git-timeout` (D5)
-ends that call.
-
-The two runs sent 52 requests on the Linux VM and 37 on the macOS VM. In every
-request the frame and the files on disk of claustrum are equal to `89cb6289`. The
-git call count differs in 17 requests on Linux and in 11 on macOS. There claustrum
-runs fewer calls, and no call that `89cb6289` does not run. No client can observe
-the count.
+the FIFO record and starts the same call. With `timeoutMs` 3000 in the state of row B-G1, `89cb6289` and claustrum give no
+answer in 40 s (cell N7, Linux VM). From the code: the limit of 2 minutes ends
+that call.
 
 Not measured:
 
@@ -2086,8 +2082,9 @@ VM. Rounds `val-s3p2b2-3` and `val-s3p2b2-5` ran a build with the settings copy.
   on the first 64 MiB of such a listing. If neither refuses, the read has no
   verdict, and the request gets no refusal.
 - If the read gives no verdict, the method goes on as before. A read gives none
-  if its git call fails with anything other than a syntax error text. Two cases
-  are a git that does not start and a call that the `git-timeout` ends. A config
+  if its git call fails with anything other than a syntax error text. One case
+  is a git that does not start, or the stop at 30 seconds
+  ([Time limits of git calls](#time-limits-of-git-calls)). A config
   file that the daemon opens and cannot read gives none too.
 - A verdict of a read with an open error or a read error is not kept.
 - With a daemon `GIT_COMMON_DIR`, `git.info` and `git.list_branches` read
@@ -2604,16 +2601,9 @@ that measured it.
   `baseRepo`. Each has its listing. With the excludes read and the repo test that
   is 9 calls. `f6010b97` makes the same 9 calls before it refuses a root in a
   checkout. `89cb6289` also makes 9 calls, in this order. claustrum does not use the
-  answer of `rev-parse --absolute-git-dir`. On a create that goes on, the references
-  make more calls than claustrum. Linux and macOS VMs. A failed or killed
-  `show-toplevel`, a killed `worktree list`, or two failed ones, stop the create with
-  `mkdir_failed` (cells C-W17b and C-W17).
-- Some calls of `f6010b97` have no claustrum counterpart. One example is a
-  `rev-parse --show-toplevel` with `--git-dir` and `--work-tree` in
-  `git.worktree_create`. claustrum runs that `rev-parse` pair in three places only.
-  One is `git.info` on Windows. One is `git.worktree_create`, after an admin record
-  that does not name `worktreePath` after symlink resolution. One is the gate of
-  `git.status`, whose calls follow `89cb6289` (see its section).
+  answer of `rev-parse --absolute-git-dir`. Linux and macOS VMs. A failed `show-toplevel`,
+  or two failed `worktree list` calls, stop the create with `mkdir_failed` (cells
+  C-W17b and C-W17).
 
 #### The daemon's own git environment
 
@@ -2769,6 +2759,33 @@ remove of a gone worktree.
 
 On Windows the `worktreeRoot` refusal of `git.worktree_remove` comes before the
 check (Windows VM).
+
+#### Time limits of git calls
+
+On `git.list_branches`, `git.info`, `git.status` and `git.worktree_create` most git
+calls end at 2 minutes (`5fd08069`, round `task010-01`, Linux, macOS and Windows
+VMs). Each config listing before a git call ends at 30 seconds (cells T10 and TA).
+So do the read of the repository config (`git.status`, Linux VM) and each listing
+of a `config.worktree` file (cells TW and TS of round `task010-04`, Linux VM).
+claustrum's own `--show-scope` listing has the 2 minute limit and the `timeoutMs`.
+The scan of
+ignored files ends at 10 minutes (Linux and macOS VMs). The read-tree checkout has
+no such limit.
+
+- The stop is SIGTERM, then SIGKILL 2 s later. On Windows the process ends at
+  once. The listings of config files get SIGKILL alone (Linux VM).
+- Before a good add no git call follows a stopped call. A stopped add removes an
+  empty leaf. A stopped repository test of a create answers the stop text alone,
+  with `worktree_add_failed` (cell TI). After a good add the rollback runs its own
+  calls (cells TA and TW). A stopped scan copies nothing, and the create succeeds.
+- While a `"shadowDirOff":true` request runs, no call of the daemon stops at 2
+  minutes (cells T8 and T9). claustrum then uses 30 minutes (claustrum's own).
+- `timeoutMs` does not end the add (cell T6), nor, with `"shadowDirOff":true`,
+  the listing before the checkout (cell T12).
+- With no `timeoutMs` a reply waits 2 s after the exit of git for a child that
+  holds its output. The child gets no signal.
+- `git.worktree_remove` gets none of these limits. Its first call has the bound of
+  30 s of the call about the repository (cell TR, round `task010-02`, Linux VM).
 
 #### git.info
 `{path[,shadowDirOff]}` → repo: `{"isRepo":true,"repo":"<dir>","branch":"<b>","root":"<abs>","repoSlug":"<owner/repo>","defaultBranch":"<b>"[,"settingsControl":"<state>"]}` · non-repo: `{"isRepo":false,"repoSlug":"","defaultBranch":""[,"settingsControl":"<state>"]}`
@@ -3207,8 +3224,7 @@ claustrum opens each file without blocking and reads a regular file only.
   such as `W/missing/..` passes the gate cleaned. git then does not start in the
   path as sent. The answer is `-32603` with the hooks refusal text and
   `chdir <path>: no such file or directory`. No `git version` follows the refusal
-  (row y1, Linux and macOS VMs). With opt-in D5 the same
-  `-32603` can carry `signal: killed`.
+  (row y1, Linux and macOS VMs).
 - claustrum's own `-32603` texts, from the copy into the temporary folder after the
   gate passed. The reference is not measured in any of them. `<file>: not a regular
   file` answers an `info/sparse-checkout` that is a folder or a FIFO.
@@ -3426,7 +3442,7 @@ Makes a linked git worktree for a session, on a new branch or on a branch that e
   measured). claustrum runs the `<directory>` symlink check before these tests (not
   measured). A root that holds the repository or a linked worktree passes (rows
   Q15s and Y7). So does a root in another repository beside it (rows Q20 and Q20b).
-  If `worktree list --porcelain -z` fails without a D5 kill, the daemon runs
+  If `worktree list --porcelain -z` fails, the daemon runs
   `worktree list --porcelain`. If that fails too, nothing is deleted (`89cb6289`,
   row DG2s-g, Linux VM). A `baseRepo`
   that does not exist runs neither call.
@@ -3784,17 +3800,6 @@ Makes a linked git worktree for a session, on a new branch or on a branch that e
   [`DIVERGENCES.md`](DIVERGENCES.md) → D2.
 - A relative `worktreePath` is refused upfront (`"…is a relative path…"`). Send an
   absolute path under the repository.
-- `gitTimeout` (D5) is off by default. On this method the deadline starts no delete.
-  A kill refuses or skips a step. One skipped step is the daemon's own read of the
-  repository config. After a kill of that call the remove goes on as it did before
-  that read. When a hit stops the config or repository
-  check, the request refuses, or it skips the registration of a gone worktree. With
-  `worktreeRoot` that hit answers the work-tree refusal, and so does a hit on
-  `rev-parse --show-toplevel` or the first `worktree list` call. A hit on the second
-  `worktree list` call answers the `cannot list the repository's worktrees` text. A
-  D5 stop of a call of the branch
-  step keeps the branch, and the reply adds `"branchKept":true`. Not measured. See
-  [`DIVERGENCES.md`](DIVERGENCES.md) → D5.
 
 #### The branch step
 
@@ -3887,9 +3892,6 @@ the Linux, macOS and Windows VMs of each row. `<b>` is `branchName` as sent.
   - Only the git process gets the SIGTERM or the kill, not its children. That is
     claustrum's choice (not measured).
   - The caller's `timeoutMs` does not stop the step (rows C04 and B2-10, L).
-  - With `-git-timeout` (D5) opted in, each call and its config listing also get
-    their own D5 deadline, as every hardened call does. On update-ref that stop is
-    the SIGTERM above.
 - Within one daemon, the check and the delete of a branch run one at a time for one
   repository, also through a linked worktree. Two removes of worktrees whose
   branches share a unique commit then leave one of the two branches. The reply that
@@ -4914,7 +4916,7 @@ never "a huge limit".
 | `-keep-children` | `keep-children` | off | survive restart (CT-2) | -serve |
 | `-listen-pipe` | `listen-pipe` | off | named-pipe transport, Windows-only (CT-5) | -serve |
 | `-max-extract-bytes <n>` | `max-extract-bytes` | `0` | cap `files.extract_tar` bytes (D3) | -serve |
-| `-git-timeout <dur>` | `git-timeout` | `0` | deadline on git invocations (D5) | -serve |
+| `-git-timeout <dur>` | `git-timeout` | none | deprecated. It sets nothing and logs one warning. The git calls keep their time limits (retired D5) | -serve |
 | `-files-read-regular-only` | `files-read-regular-only` | none | deprecated. It sets nothing and logs one warning. `files.read` refuses a file that is not regular with or without it (retired D4) | -serve |
 | `-max-cli-bytes <n>` | `max-cli-bytes` | `0` | cap CLI decompress + download (D10) | -install |
 | `-cli-probe-timeout <dur>` | `cli-probe-timeout` | none | deprecated. It sets nothing and logs one warning. The direct `<cli> --version` run always has its 30 s and 120 s bounds (retired D11) | -install |
@@ -4933,7 +4935,7 @@ flag value, or the default, stands.
 ```text
 claustrum -serve -socket <p> {-token-file <p> | -token-fd <n>} [-metrics-addr <a>] \
           [-keep-children] [-listen-pipe] [-wire-log <p> [-wire-log-max-string <n>]] \
-          [-max-extract-bytes <n>] [-git-timeout <dur>]
+          [-max-extract-bytes <n>]
 ```
 
 The binary self-daemonizes, which means it reparents to init and detaches. It then
@@ -5061,13 +5063,9 @@ and `-wire-log` have none, and this section holds their detail:
   transport](#named-pipe-transport-windows-opt-in). The daemon logs a setup failure
   (`[Server] named-pipe transport: …`), which is non-fatal. The socket still serves.
 
-The opt-in divergences on this mode are `-max-extract-bytes` (D3) and
-`-git-timeout` (D5). Off is parity. Their wire
-frames appear in the method sections above, under `git.status` and
-`git.worktree_remove`, and in two pages. The frame of D3 is in
-[files.extract_tar](protocol/files-extract-tar.md). The frame of D5 on `git.list_branches` is in
-[git.list_branches](protocol/git-list-branches.md). See the flags table and
-[`DIVERGENCES.md`](DIVERGENCES.md).
+The opt-in divergence on this mode is `-max-extract-bytes` (D3). Off is parity.
+Its frame is in [files.extract_tar](protocol/files-extract-tar.md). See the flags
+table and [`DIVERGENCES.md`](DIVERGENCES.md).
 
 ### -bridge — stdio↔socket relay
 

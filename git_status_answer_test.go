@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -309,9 +310,7 @@ func TestGitStatusTempListingFailureIsARefusal(t *testing.T) {
 	common := filepath.Join(f.T, ".git")
 	writeFile(t, filepath.Join(common, "config"), "[broken\n", 0o644)
 	tmp := t.TempDir()
-	ctx, cancel := gitCtx()
-	defer cancel()
-	r := &statusRun{ctx: ctx, path: f.W, common: common, tmp: tmp, pin: []string{"GIT_COMMON_DIR=" + common}}
+	r := &statusRun{ctx: context.Background(), path: f.W, common: common, tmp: tmp, pin: []string{"GIT_COMMON_DIR=" + common}}
 	_, err := r.git(true, statusExcludesFile(), "status", "--porcelain")
 	var refusal statusRefusal
 	if !errors.As(err, &refusal) || !strings.HasPrefix(err.Error(), hooksRefusalPrefix) {

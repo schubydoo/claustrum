@@ -158,7 +158,7 @@ func main() {
 
 		_ = flag.Bool("files-read-regular-only", false, "Deprecated and ignored. files.read refuses a file that is not regular with -32602 \"files.read: not a regular file\", with or without this flag, as 5fd08069 does. On Linux and macOS the null device still reads. Passing this flag, or setting the files-read-regular-only key in claustrum.conf, logs one warning on -serve and changes nothing.")
 
-		gitTimeoutFlag = flag.Duration("git-timeout", 0, "Bound every git invocation with this wall-clock `duration` (e.g. 60s). 0 (the default) means no deadline, which is what the reference does; a non-zero value is an opt-in divergence that kills any git slower than it, honest or not, and is wire-visible (e.g. -32603 \"signal: killed\"). -serve only. Claude Desktop owns the argv, so the git-timeout key in claustrum.conf is usually the reachable way to set this.")
+		_ = flag.Duration("git-timeout", 0, "Deprecated and ignored. The git calls of the daemon use their own time limits, as 5fd08069 does. Passing this flag, or setting the git-timeout key in claustrum.conf, logs one warning on -serve and changes nothing.")
 
 		_ = flag.Duration("libc-probe-timeout", 0, "Deprecated and ignored. The `ldd --version` libc probe always bounds ldd itself at 5s, as the reference does. Passing this flag, or setting the libc-probe-timeout key in claustrum.conf, logs one warning on -install and changes nothing.")
 
@@ -254,10 +254,9 @@ func main() {
 		// serves. Set before runServe because the value is read deep in the
 		// method, not carried through the server struct.
 		maxExtractBytes = cfg.effectiveMaxExtractBytes(*maxExtract, cliSet["max-extract-bytes"])
-		// Same reasoning for the git deadline: the three helpers in methods_git.go
-		// read the package var directly rather than taking it through the server
-		// struct, and only -serve reaches them.
-		gitTimeout = cfg.effectiveGitTimeout(*gitTimeoutFlag, cliSet["git-timeout"])
+		// -git-timeout and its config key are deprecated no-ops. They set nothing,
+		// so the git calls keep their time limits (gitstop.go).
+		warnDeprecatedGitTimeout(cliSet["git-timeout"], cfg.gitTimeoutSeen)
 		// -files-read-regular-only and its config key are deprecated no-ops. They
 		// set nothing: files.read has one rule, with or without them.
 		warnDeprecatedReadRegularOnly(cliSet["files-read-regular-only"], cfg.filesReadRegularOnlySeen)
@@ -298,6 +297,15 @@ func warnDeprecatedLibcProbe(flagSet, keySeen bool) {
 func warnDeprecatedReadRegularOnly(flagSet, keySeen bool) {
 	if flagSet || keySeen {
 		logWarnf("[Server] -files-read-regular-only is deprecated and ignored. files.read refuses a file that is not regular with or without it")
+	}
+}
+
+// warnDeprecatedGitTimeout logs one warning when the deprecated -git-timeout flag
+// or its claustrum.conf key is present. It sets nothing: the git calls have the
+// time limits of 5fd08069, so D5 is retired.
+func warnDeprecatedGitTimeout(flagSet, keySeen bool) {
+	if flagSet || keySeen {
+		logWarnf("[Server] -git-timeout is deprecated and ignored. The git calls always use their own time limits")
 	}
 }
 

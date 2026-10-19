@@ -42,15 +42,9 @@ func runMain(t *testing.T, args ...string) (code int, exited bool) {
 	// actually resolved. t.Cleanup still contains the leak to this one test.
 	oldDownload := cliDownloadTimeout
 	oldMaxCLI, oldMaxExtract := maxCLIBytes, maxExtractBytes
-	// gitTimeout joined this list with D5's flip: the -serve arm writes it too, so
-	// without the restore a -serve case here would leak a deadline into every later
-	// test — and the tests that assert the shipped default is 0 would fail under
-	// -shuffle depending on the seed, exactly as the cli-probe-timeout leak did.
-	oldGitTimeout := gitTimeout
 	t.Cleanup(func() {
 		cliDownloadTimeout = oldDownload
 		maxCLIBytes, maxExtractBytes = oldMaxCLI, oldMaxExtract
-		gitTimeout = oldGitTimeout
 	})
 	oldStdout := os.Stdout
 	devnull, err := os.OpenFile(os.DevNull, os.O_WRONLY, 0)
@@ -240,23 +234,18 @@ func TestRunMainRestoresInstallGlobals(t *testing.T) {
 	}
 }
 
-// The -serve half of the same contract, and it needs its own test rather than two
-// more rows above: the -install arm never writes gitTimeout, so seeding it there
-// and asserting it survives passes even with runMain's restore lines deleted. Only
-// an inner run that actually WRITES it can detect a missing restore.
-//
-// A leak here is not cosmetic: TestGitTimeoutDefaultIsOff reads the package var,
-// so a -serve case leaking its value turns it into a seed-dependent failure under
-// -shuffle.
+// The -serve half of the same contract, and it needs its own test rather than one
+// more row above: only an inner run that actually WRITES maxExtractBytes in the
+// -serve arm can detect a missing restore.
 func TestRunMainRestoresServeGlobals(t *testing.T) {
 	t.Setenv(daemonChildEnv, "1")
-	// Capture on entry rather than restoring the literals 0/0: writing the
-	// shipped defaults back by hand couples this cleanup to what those defaults
-	// happen to be, which is precisely the thing other tests exist to pin.
-	oldGit, oldExtract := gitTimeout, maxExtractBytes
-	gitTimeout, maxExtractBytes = 5*time.Second, 33
+	// Capture on entry rather than restoring the literal 0: writing the
+	// shipped default back by hand couples this cleanup to what that default
+	// happens to be, which is precisely the thing other tests exist to pin.
+	oldExtract := maxExtractBytes
+	maxExtractBytes = 33
 	t.Cleanup(func() {
-		gitTimeout, maxExtractBytes = oldGit, oldExtract
+		maxExtractBytes = oldExtract
 	})
 	t.Run("inner", func(t *testing.T) {
 		// Distinct from the seeds above on purpose: equal values would pass whether
@@ -272,7 +261,6 @@ func TestRunMainRestoresServeGlobals(t *testing.T) {
 		got  any
 		want any
 	}{
-		{"gitTimeout", gitTimeout, 5 * time.Second},
 		{"maxExtractBytes", maxExtractBytes, int64(33)},
 	} {
 		if c.got != c.want {
@@ -344,18 +332,15 @@ func TestStopYieldsToBridgeAndServe(t *testing.T) {
 // swapped for pipes.
 
 // The -serve arm's flag-to-global wiring, the mirror of
-// TestInstallArmWiresEachFlagToItsOwnGlobal above. Without it,
-// `_ = cfg.effectiveGitTimeout(...)` — the flag and config key fully disconnected
-// from the runtime var — builds, vets and passes the whole suite, because
-// effectiveGitTimeout is tested in isolation and gitTimeout is tested in
-// isolation and nothing joins them.
+// TestInstallArmWiresEachFlagToItsOwnGlobal above. -git-timeout is a deprecated
+// no-op since D5 retired: it logs its warning once and sets nothing.
 //
 // The daemon-child sentinel makes this safe to drive: runServe takes the child
 // path, finds no token source, and exits 1 within milliseconds — after main() has
 // already resolved both globals. No socket is bound and nothing daemonizes.
 //
 // Distinct values on purpose: equal ones would pass under a swap.
-func TestServeArmWiresGitTimeoutAndExtractCap(t *testing.T) {
+func TestServeArmWiresExtractCapAndDeprecatedFlags(t *testing.T) {
 	t.Setenv(daemonChildEnv, "1")
 	buf := captureLogBuf(t)
 	if _, exited := runMain(t, "-serve",
@@ -364,8 +349,8 @@ func TestServeArmWiresGitTimeoutAndExtractCap(t *testing.T) {
 		"-files-read-regular-only"); !exited {
 		t.Fatal("-serve with no token source should exit, not return")
 	}
-	if gitTimeout != 37*time.Second {
-		t.Errorf("gitTimeout = %s, want 37s — -git-timeout must reach the runtime var", gitTimeout)
+	if n := strings.Count(buf.String(), "-git-timeout is deprecated and ignored"); n != 1 {
+		t.Errorf("-git-timeout deprecation warnings = %d, want exactly 1; log:\n%s", n, buf.String())
 	}
 	if maxExtractBytes != 4096 {
 		t.Errorf("maxExtractBytes = %d, want 4096 — the two -serve knobs must not be crossed", maxExtractBytes)
@@ -375,18 +360,9 @@ func TestServeArmWiresGitTimeoutAndExtractCap(t *testing.T) {
 	if n := strings.Count(buf.String(), "-files-read-regular-only is deprecated and ignored"); n != 1 {
 		t.Errorf("-files-read-regular-only deprecation warnings = %d, want exactly 1; log:\n%s", n, buf.String())
 	}
-	// The DECLARED default, not the package var and not the resolver — the same
-	// assertion -cli-download-timeout carries. Moving a
-	// 60s into flag.Duration's default argument survives every other gitTimeout
-	// assertion in the suite while shipping a binary that deadlines every -serve
-	// git. Declared, not resolved: a real claustrum.conf beside the binary sets the
-	// resolved value legitimately.
-	f := lastMainFlagSet.Lookup("git-timeout")
-	if f == nil {
-		t.Fatal("main() did not register -git-timeout")
-	}
-	if f.DefValue != "0s" {
-		t.Fatalf("-git-timeout declared default = %q, want \"0s\" (no deadline = reference parity)", f.DefValue)
+	// The deprecated flag stays registered, so an old argv still parses.
+	if lastMainFlagSet.Lookup("git-timeout") == nil {
+		t.Fatal("main() did not register the deprecated -git-timeout")
 	}
 	if lastMainFlagSet.Lookup("files-read-regular-only") == nil {
 		t.Fatal("main() did not register the deprecated -files-read-regular-only")

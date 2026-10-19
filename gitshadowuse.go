@@ -55,6 +55,9 @@ type gitUse struct {
 	// branchGate is the refusal of the config of the repository before the
 	// branch step of a rollback, or nil for no such read (runBranchStep).
 	branchGate func() string
+	// stop holds the time limits of the git calls of the request (gitstop.go), or
+	// is nil.
+	stop *gitStop
 }
 
 // inFolder reports whether the request keeps its short-lived folders in the
@@ -149,7 +152,7 @@ func worktreeAdd(ctx context.Context, u gitUse, repo, leaf string, cp worktreeCh
 	}
 	var errBuf bytes.Buffer
 	cmd.Stderr = &errBuf
-	err := cmd.Run()
+	err := gitRun(ctx, cmd)
 	if err == nil && u.accepted != nil {
 		u.accepted.moved = true
 	}

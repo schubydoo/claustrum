@@ -274,7 +274,8 @@ func profileArgsWithExcludes(heavy bool, excludes string, args ...string) []stri
 // (gitUse): in the state shadow the listing reads the daemon's copy of the
 // settings, as the call after it does. The call after it pins off the hook names the listing shows
 // (configPinEnv). heavy is the profile of the call that follows. A failure of this
-// listing does not refuse the call. See listingRun.hooks.
+// listing does not refuse the call, unless its time limit stopped it. See
+// listingRun.hooks.
 //
 // The user's global excludes are resolved first. f6010b97 reads them before its
 // first listing, measured on Linux and Windows VMs.
@@ -314,7 +315,7 @@ func hardenedGitContext(ctx context.Context, u gitUse, dir string, heavy bool, a
 // With a loader line on stderr, 5fd08069 answers "branch":"main" in git.info and
 // creates the worktree (round task004-01, cells M1 and M4, Linux VM).
 func hardenedGitAnswer(ctx context.Context, u gitUse, dir string, heavy bool, pre *configListing, args ...string) (string, bool) {
-	out, err := hardenedGitCmd(ctx, u, dir, heavy, pre, args...).Output()
+	out, err := gitOutput(ctx, hardenedGitCmd(ctx, u, dir, heavy, pre, args...))
 	return strings.TrimRight(string(out), "\n"), err == nil
 }
 
@@ -322,9 +323,7 @@ func hardenedGitAnswer(ctx context.Context, u gitUse, dir string, heavy bool, pr
 // the same dir. It runs no config precursor, because that check was its precursor,
 // and it pins the hooks of that check's listing l.
 func hardenedGitFirst(u gitUse, dir string, heavy bool, l configListing, args ...string) (string, bool) {
-	ctx, cancel := gitCtx()
-	defer cancel()
-	return hardenedGitAnswer(ctx, u, dir, heavy, &l, args...)
+	return hardenedGitAnswer(u.stop.context(), u, dir, heavy, &l, args...)
 }
 
 // gitDirWorkTreeToplevel runs `git --git-dir=<gitDir> config -z --list`, then the heavy
@@ -343,15 +342,13 @@ func hardenedGitFirst(u gitUse, dir string, heavy bool, l configListing, args ..
 // 89cb6289 sends the light profile there.
 //
 // front are the `-c` items that come before the 28 items of the second call
-// (gitUse.gitDirFront), or nil.
-func gitDirWorkTreeToplevel(gitDir, workTree string, pin, front []string) (string, error) {
-	ctx, cancel := gitCtx()
-	defer cancel()
-	return gitDirWorkTreeToplevelIn(ctx, gitDir, workTree, pin, front)
+// (gitUse.gitDirFront), or nil. s holds the time limits of the request, or is nil.
+func gitDirWorkTreeToplevel(s *gitStop, gitDir, workTree string, pin, front []string) (string, error) {
+	return gitDirWorkTreeToplevelIn(s.context(), gitDir, workTree, pin, front)
 }
 
-// gitDirWorkTreeToplevelIn is gitDirWorkTreeToplevel under ctx, for a caller
-// that asks afterwards whether the deadline of ctx ended a call.
+// gitDirWorkTreeToplevelIn is gitDirWorkTreeToplevel under ctx, the context of
+// the request.
 func gitDirWorkTreeToplevelIn(ctx context.Context, gitDir, workTree string, pin, front []string) (string, error) {
 	userExcludesFile()
 	hooks := runListing(ctx, gitDir, gitDir, precursorEnv(true, pin)).hooks()
@@ -359,15 +356,13 @@ func gitDirWorkTreeToplevelIn(ctx context.Context, gitDir, workTree string, pin,
 		"--git-dir="+gitDir, "--work-tree="+workTree, "rev-parse", "--show-toplevel"))...)
 	cmd.Dir = gitDir
 	cmd.Env = hardenedGitEnv(true, pin, hooks)
-	out, err := cmd.Output()
+	out, err := gitOutput(ctx, cmd)
 	return strings.TrimRight(string(out), "\r\n"), err
 }
 
-// hardenedGit is hardenedGitContext with the standard git timeout context.
+// hardenedGit is hardenedGitContext under the time limits of the request.
 func hardenedGit(u gitUse, dir string, heavy bool, args ...string) (string, bool) {
-	ctx, cancel := gitCtx()
-	defer cancel()
-	return hardenedGitContext(ctx, u, dir, heavy, args...)
+	return hardenedGitContext(u.stop.context(), u, dir, heavy, args...)
 }
 
 // statusGitDirTempPrefix and checkoutIndexTempPrefix start the names of the
@@ -457,13 +452,30 @@ var worktreeCreateDrainCap = 5 * time.Second
 //     deadline killed a still-running git, exec.ErrWaitDelay on a drain overrun, or a
 //     non-zero *ExitError otherwise. nil when git exited 0.
 //
-// With no deadline armed (D5 off and timeoutMs off) WaitDelay is left unset, so the
-// drain is unbounded and byte-identical to the reference default, which applies no cap.
+// With no timeoutMs the drain ends gitDrainWait after git exited, and the
+// descendant gets no signal. On 5fd08069 the reply comes 2.0 s after the
+// read-tree call exited, and a child that holds its stderr runs on (cell T16 of
+// round task010-01, Linux VM). The read-tree call itself has no time limit
+// (cell T17, Linux and macOS VMs).
+//
+// No call runs after a stopped call of the request (gitRun). The first listing
+// runs under the context of the request, not under ctx: the timeoutMs of the
+// caller does not end it. On 5fd08069 a listing held for 10 s with a timeoutMs of
+// 3000 runs to its end, and then the timeout frame comes (cell T12, Linux VM).
 func hardenedGitCheckout(ctx context.Context, u gitUse, leaf, gitDir, indexFile string, pin []string, filters filterPlan, args ...string) (stderr string, drained bool, err error) {
+	if err := u.stop.halted(); err != nil {
+		return "", false, err
+	}
 	pre := filters.listing
 	if pre == nil {
-		r := runListing(ctx, leaf, gitDir, precursorEnv(false, pin))
+		r := runListing(u.stop.context(), leaf, gitDir, precursorEnv(false, pin))
 		pre = &r
+		// A listing that its limit stopped fails the checkout with the hooks
+		// refusal, and the rollback of a failed checkout runs (cell TA of round
+		// task010-02, Linux VM).
+		if err := u.stop.halted(); err != nil {
+			return "", false, err
+		}
 	}
 	// On Windows the path of the git directory must still name the held folder
 	// after the first listing (errGitDirChanged).
@@ -500,7 +512,10 @@ func hardenedGitCheckout(ctx context.Context, u gitUse, leaf, gitDir, indexFile 
 	// descendant the checkout left holding the pipe — reproducing 4534d86's observed
 	// descendant reap.
 	cmd.SysProcAttr = newSysProcAttr()
-	if _, deadlined := ctx.Deadline(); deadlined {
+	_, deadlined := ctx.Deadline()
+	if !deadlined {
+		cmd.WaitDelay = gitDrainWait
+	} else {
 		// Cap the drain from git's OWN exit (WaitDelay's pipe-drain timer starts at
 		// process exit), reproducing the reference's fixed post-exit cap.
 		cmd.WaitDelay = worktreeCreateDrainCap
@@ -522,7 +537,7 @@ func hardenedGitCheckout(ctx context.Context, u gitUse, leaf, gitDir, indexFile 
 	cmd.Stderr = &errBuf
 	err = cmd.Run()
 	drained = errors.Is(err, exec.ErrWaitDelay)
-	if drained {
+	if drained && deadlined {
 		// git exited 0 but a descendant held the pipe past the cap. WaitDelay closed
 		// the daemon's own pipe ends but killed nothing; SIGKILL the group to reap the
 		// descendant, matching the reference's observed descendant reap.
@@ -558,13 +573,9 @@ const ownConfigStopText = "git took too long: Claude stopped git config after 30
 // 2000 and a listing held 5 s, 5fd08069 sends no signal, the listing ends by
 // itself, and then the cap or the timeout arm answers (round task008-05, cells
 // P1 and P2, Linux VM). A listing that fails after the deadline of the caller
-// gives this text too (not measured). The deadline of D5 bounds the listing.
-// A D5 kill gives its exec error as the cause (claustrum's
-// own).
+// gives this text too (not measured).
 func ownConfigListing(leaf, gitDir string, env []string) string {
-	d5, cancelD5 := withGitTimeout(context.Background())
-	defer cancelD5()
-	bounded, cancel := context.WithTimeout(d5, ownConfigBound)
+	bounded, cancel := context.WithTimeout(context.Background(), ownConfigBound)
 	defer cancel()
 	cmd := exec.CommandContext(bounded, "git", "--git-dir="+gitDir, "config", "-z", "--list")
 	cmd.Dir = leaf
@@ -574,8 +585,6 @@ func ownConfigListing(leaf, gitDir string, env []string) string {
 	switch {
 	case err == nil:
 		return ""
-	case d5.Err() != nil:
-		cause = err.Error()
 	case bounded.Err() != nil:
 		cause = ownConfigStopText
 	default:
@@ -735,9 +744,8 @@ func indexInstallText(stderr string, installErr error) string {
 // repository has no .git entry. err is the exec error of a call that failed. The
 // answer is stdout only, as for hardenedGitAnswer (claustrum's own).
 func worktreeBaseGitDir(u gitUse, repo string) (gitDir string, answered bool, err error) {
-	ctx, cancel := gitCtx()
-	defer cancel()
-	out, err := hardenedGitCmd(ctx, u, repo, true, nil, "rev-parse", "--absolute-git-dir").Output()
+	ctx := u.stop.context()
+	out, err := gitOutput(ctx, hardenedGitCmd(ctx, u, repo, true, nil, "rev-parse", "--absolute-git-dir"))
 	if d := strings.TrimRight(string(out), "\n"); err == nil && d != "" {
 		return filepath.Clean(filepath.FromSlash(d)), true, nil
 	}
@@ -775,11 +783,15 @@ func hardenedGitRun(u gitUse, dir string, heavy bool, stdin io.Reader, args ...s
 
 // hardenedGitRunPre is hardenedGitRun with the precursor choice of hardenedGitCmd.
 func hardenedGitRunPre(u gitUse, dir string, heavy bool, pre *configListing, stdin io.Reader, args ...string) (string, error) {
-	ctx, cancel := gitCtx()
-	defer cancel()
+	return hardenedGitRunIn(u.stop.context(), u, dir, heavy, pre, stdin, args...)
+}
+
+// hardenedGitRunIn is hardenedGitRunPre under ctx, which gives the time limit of
+// the call (withGitLimit).
+func hardenedGitRunIn(ctx context.Context, u gitUse, dir string, heavy bool, pre *configListing, stdin io.Reader, args ...string) (string, error) {
 	cmd := hardenedGitCmd(ctx, u, dir, heavy, pre, args...)
 	cmd.Stdin = stdin
-	out, err := cmd.Output()
+	out, err := gitOutput(ctx, cmd)
 	return strings.TrimRight(string(out), "\n"), err
 }
 
@@ -863,15 +875,14 @@ func resolveUserExcludesFile() string {
 	// The configured value wins if absolute. `config --includes --path` follows
 	// includes and expands a leading ~, matching the reference. It runs WITHOUT the
 	// hardening profile so git reports the real global setting, not the pin.
-	ctx, cancel := gitCtx()
-	defer cancel()
+	// The read is kept for the daemon, so it has no time limit of a request.
 	// GIT_DIR=<null device> makes this read only the user's global/system config, never
 	// a repo's own core.excludesFile — a repo must not be able to inject excludes. This
 	// is the once-cached read that replaced the reference's per-call excludes probe.
 	// Its working directory is the temporary directory, and GIT_DIR is its only added
 	// variable. f6010b97 runs it so on Linux and Windows VMs, with GIT_DIR=NUL on
 	// Windows.
-	cmd := exec.CommandContext(ctx, "git", "config", "--includes", "--path", "core.excludesFile")
+	cmd := exec.Command("git", "config", "--includes", "--path", "core.excludesFile")
 	cmd.Dir = os.TempDir()
 	cmd.Env = append(os.Environ(), "GIT_DIR="+os.DevNull)
 	if out, err := cmd.Output(); err == nil {
@@ -952,6 +963,12 @@ func (c configCheck) refused() bool {
 // Linux, macOS and Windows VMs. When the next call is on the same dir, the caller
 // runs it with no precursor of its own (hardenedGitFirst).
 //
+// In a request with time limits the listing ends at configListingLimit. On
+// 5fd08069 a listing held for 35 s gets SIGTERM at 30 s, and the method refuses
+// with the hooks refusal and the stop text. One held for 25 s passes (cells T10
+// and T11 of round task010-01, Linux and macOS VMs, and cell T10w on a Windows
+// VM).
+//
 // The check of the daemon's own GIT_CONFIG_COUNT (daemonCountRefusal) comes
 // first. When it refuses, no listing runs, and a directory is refused with its text.
 // A dir that does not exist, or is not a directory, is not refused by that check. See
@@ -963,9 +980,7 @@ func hostileConfigRefusal(u gitUse, dir string, heavy bool) configCheck {
 		}
 		return configCheck{refusal: msg}
 	}
-	ctx, cancel := gitCtx()
-	defer cancel()
-	r := runListing(ctx, dir, "", u.precursorEnv(heavy, u.pin(dir)))
+	r := runListing(u.stop.context(), dir, "", u.precursorEnv(heavy, u.pin(dir)))
 	if r.err == nil {
 		l, reason := parseConfigListing(r.out)
 		switch reason {

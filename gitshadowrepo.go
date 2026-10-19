@@ -453,8 +453,6 @@ func (req *request) listEntryConfig(t gitDirTrust) {
 	if req.repoRead == nil || !req.repoRead.worktreeConfig || t.worktreeEntry == "" {
 		return
 	}
-	ctx, cancel := gitCtx()
-	defer cancel()
-	settings, _ := listConfigFile(ctx, filepath.Join(t.worktreeEntry, worktreeConfigName))
+	settings, _ := listConfigFile(req.stop.context(), filepath.Join(t.worktreeEntry, worktreeConfigName))
 	req.use.entryItems = worktreeConfigItems(settings)
 }

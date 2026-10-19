@@ -342,7 +342,7 @@ func (a *acceptedGitDir) takeOver(gitDir string, before os.FileInfo, repo string
 	if before == nil || t.verdict != gitDirTrusted || !sameGitDirPath(t.pinCommonDir, gitDir) {
 		return nil
 	}
-	if msg, _ := repoConfigGate(t, false); msg != "" {
+	if msg, _ := repoConfigGate(t, false, nil); msg != "" {
 		return nil
 	}
 	next := acceptGitDir(gitDir, before)
@@ -420,6 +420,6 @@ func (u gitUse) swapRefusal(step, dir string) string {
 	if u.host != nil && u.host.asksGit(t, false) && u.host.askGit(t, dir).bad() {
 		return ""
 	}
-	msg, _ := repoConfigGate(t, false)
+	msg, _ := repoConfigGate(t, false, u.stop)
 	return msg
 }

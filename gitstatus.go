@@ -128,20 +128,22 @@ func statusBaseInManagedTree(baseRepo string) bool {
 // not measured in that state. A listing that passes and exceeds a limit of
 // parseConfigListing is no refusal here: the answer stays isRepo:false. No row
 // measures that limit in such a folder.
-func statusNoRepoCalls(baseRepo string, noGit bool) string {
-	ctx, cancel := gitCtx()
-	defer cancel()
+//
+// s holds the time limits of the request. The listing is the first of the
+// request (configListingLimit).
+func statusNoRepoCalls(s *gitStop, baseRepo string, noGit bool) string {
+	ctx := s.context()
 	pin := []string{"GIT_DIR=" + os.DevNull}
 	r := runListing(ctx, baseRepo, "", precursorEnv(true, pin))
 	if r.err != nil && !noGit {
-		if c := failedListingCheck(gitUse{}, r, baseRepo, true); c.refusal != "" {
+		if c := failedListingCheck(gitUse{stop: s}, r, baseRepo, true); c.refusal != "" {
 			return c.refusal
 		}
 	}
-	cmd := exec.CommandContext(ctx, "git", hardenedProfileArgs(true, "rev-parse", "--absolute-git-dir")...)
+	cmd := exec.Command("git", hardenedProfileArgs(true, "rev-parse", "--absolute-git-dir")...)
 	cmd.Dir = baseRepo
 	cmd.Env = hardenedGitEnv(true, pin, r.hooks())
-	_ = cmd.Run()
+	_ = gitRun(ctx, cmd)
 	return ""
 }
 
@@ -154,11 +156,11 @@ func statusNoRepoCalls(baseRepo string, noGit bool) string {
 // and makes this listing (cell c10off of round task039-02, Linux VM). An older git
 // gives "" (cell c14). Without the member the listing is claustrum's own call.
 // 5fd08069 runs a `rev-parse --git-dir` there.
-func statusGitFileNowhere(t gitDirTrust, baseRepo string, off bool) string {
+func statusGitFileNowhere(t gitDirTrust, s *gitStop, baseRepo string, off bool) string {
 	if !t.noRepoPinned() || !goneNonEntryGitFile(baseRepo) {
 		return ""
 	}
-	c := hostileConfigRefusal(gitUse{}, baseRepo, true)
+	c := hostileConfigRefusal(gitUse{stop: s}, baseRepo, true)
 	if c.gitFileText == "" {
 		return ""
 	}
@@ -300,18 +302,17 @@ func linkBelow(base, p string) bool {
 //
 // front are the `-c` items that come before the 28 items of the `rev-parse`
 // call (gitUse.gitDirFront), or nil.
-func statusWorkTreeProbe(common, workTree string, pin, front []string) (top string, ok bool, err error) {
-	ctx, cancel := gitCtx()
-	defer cancel()
+func statusWorkTreeProbe(s *gitStop, common, workTree string, pin, front []string) (top string, ok bool, err error) {
+	ctx := s.context()
 	l := runListing(ctx, common, common, precursorEnv(true, pin))
 	if l.err != nil {
-		return "", false, statusRefusal(failedListingText(gitUse{}, l, true))
+		return "", false, statusRefusal(failedListingText(gitUse{stop: s}, l, true))
 	}
-	cmd := exec.CommandContext(ctx, "git", withFront(front, hardenedProfileArgs(true,
+	cmd := exec.Command("git", withFront(front, hardenedProfileArgs(true,
 		"--git-dir="+common, "--work-tree="+workTree, "rev-parse", "--show-toplevel"))...)
 	cmd.Dir = common
 	cmd.Env = hardenedGitEnv(true, pin, l.hooks())
-	out, runErr := cmd.Output()
+	out, runErr := gitOutput(ctx, cmd)
 	return strings.TrimRight(string(out), "\r\n"), runErr == nil, nil
 }
 
@@ -340,7 +341,7 @@ func (req *request) usePrintedGitDir(t gitDirTrust, common string) string {
 		return ""
 	}
 	t.pinCommonDir = common
-	msg, read := repoConfigGate(t, false)
+	msg, read := repoConfigGate(t, false, req.stop)
 	if msg != "" || read == nil {
 		return msg
 	}
@@ -595,7 +596,7 @@ func statusDirNames(root *os.Root, dir string) ([]string, error) {
 // gitChildEnv (claustrum's own).
 //
 // text is the text of the file as this test read it, for a file that passed.
-func statusEntryConfig(root *os.Root, fileForm bool) (text []byte, present, ok bool) {
+func statusEntryConfig(s *gitStop, root *os.Root, fileForm bool) (text []byte, present, ok bool) {
 	if _, err := root.Lstat("config.worktree"); errors.Is(err, fs.ErrNotExist) {
 		return nil, false, true
 	}
@@ -603,8 +604,7 @@ func statusEntryConfig(root *os.Root, fileForm bool) (text []byte, present, ok b
 	if err != nil {
 		return nil, true, false
 	}
-	ctx, cancel := gitCtx()
-	defer cancel()
+	ctx := s.context()
 	dir, env := "", gitChildEnv()
 	if fileForm {
 		dir, env = gitVersionDir, repoConfigListEnv()
@@ -641,7 +641,7 @@ type statusEntry struct {
 //
 // The entry comes back with its root open when ok is true. The caller closes it.
 // fileForm is the fileForm of statusEntryConfig.
-func statusEntryOf(common string, sp statusPath, fileForm bool) (e statusEntry, ok bool) {
+func statusEntryOf(s *gitStop, common string, sp statusPath, fileForm bool) (e statusEntry, ok bool) {
 	dir, root, ok := statusMatchEntry(common, sp.spellings)
 	if !ok {
 		return statusEntry{}, false
@@ -663,7 +663,7 @@ func statusEntryOf(common string, sp statusPath, fileForm bool) (e statusEntry, 
 	if !ok {
 		return statusEntry{}, false
 	}
-	config, hasConfig, ok := statusEntryConfig(root, fileForm)
+	config, hasConfig, ok := statusEntryConfig(s, root, fileForm)
 	if !ok {
 		return statusEntry{}, false
 	}
@@ -904,10 +904,10 @@ func statusCommonPin(u gitUse, common string) []string {
 // A listing that fails here is not measured. claustrum goes on with the two base pins.
 func (r *statusRun) emptyTree() string {
 	hooks := runListing(r.ctx, "", r.common, precursorEnv(true, r.commonPin)).hooks()
-	cmd := exec.CommandContext(r.ctx, "git", withFront(r.front, hardenedProfileArgs(true,
+	cmd := exec.Command("git", withFront(r.front, hardenedProfileArgs(true,
 		"--git-dir="+r.common, "hash-object", "-t", "tree", os.DevNull))...)
 	cmd.Env = hardenedGitEnv(true, r.commonPin, hooks)
-	out, err := cmd.Output()
+	out, err := gitOutput(r.ctx, cmd)
 	if id := strings.TrimSpace(string(out)); err == nil && isObjectID(id) {
 		return id
 	}
@@ -954,7 +954,10 @@ func (r *statusRun) git(noLocks bool, excludes string, args ...string) ([]byte, 
 	switch {
 	case l.err == nil:
 	case errors.As(l.err, &exit):
-		return nil, statusRefusal(failedListingText(gitUse{}, l, true))
+		s, _ := gitStopOf(r.ctx)
+		return nil, statusRefusal(failedListingText(gitUse{stop: s}, l, true))
+	case isGitStop(l.err):
+		return nil, l.err
 	default:
 		// git did not start, for example because `path` as sent does not open. The
 		// answer is the hooks refusal with the start error, and no `git version`
@@ -963,13 +966,13 @@ func (r *statusRun) git(noLocks bool, excludes string, args ...string) ([]byte, 
 	}
 	full := withFront(front, append(attr, profileArgsWithExcludes(true, excludes,
 		append([]string{"--git-dir=" + r.tmp, "--work-tree=" + r.path}, args...)...)...))
-	cmd := exec.CommandContext(r.ctx, "git", full...)
+	cmd := exec.Command("git", full...)
 	cmd.Dir = r.path
 	cmd.Env = hardenedGitEnv(true, r.pin, l.hooks())
 	if noLocks {
 		cmd.Env = append(cmd.Env, "GIT_OPTIONAL_LOCKS=0")
 	}
-	return cmd.Output()
+	return gitOutput(r.ctx, cmd)
 }
 
 // errStatusNoFolder is the error of statusChanges for a request whose folder
@@ -1021,9 +1024,7 @@ func statusChanges(u gitUse, path, common string, e statusEntry) ([]string, erro
 	if err := buildStatusGitDir(e, common, tmp); err != nil {
 		return nil, err
 	}
-	ctx, cancel := gitCtx()
-	defer cancel()
-	r := &statusRun{ctx: ctx, path: path, common: common, tmp: tmp,
+	r := &statusRun{ctx: u.stop.context(), path: path, common: common, tmp: tmp,
 		pin: []string{"GIT_COMMON_DIR=" + common}, commonPin: statusCommonPin(u, common), attrSource: attrSource,
 		front: u.gitDirFront()}
 	if u.shadow() && !daemonCommonDirStays() {

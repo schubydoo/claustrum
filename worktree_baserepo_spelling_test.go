@@ -184,9 +184,6 @@ func TestWorktreeRemoveCountRefusalUnresolvedBase(t *testing.T) {
 	runGit(t, f.top, "worktree", "add", "-q", "-b", "w1", f.leaf())
 	resetUserExcludesCache(t)
 	s := newTestServer(t)
-	oldTimeout := gitTimeout
-	t.Cleanup(func() { gitTimeout = oldTimeout })
-	gitTimeout = 0
 	sep := string(filepath.Separator)
 	params := map[string]any{"baseRepo": f.top + sep + "missing" + sep + "..", "worktreePath": f.leaf()}
 	trustRoot := runtime.GOOS == "windows"
@@ -231,9 +228,6 @@ func TestWorktreeRemoveCountRefusalUnresolvedBase(t *testing.T) {
 // on every OS. Each row has its own repository, so a row fails only on its own frame.
 // The last row, with the seam back, is the control.
 func TestBaseRepoWalkFailureGetsTrustRootRefusal(t *testing.T) {
-	oldTimeout := gitTimeout
-	t.Cleanup(func() { gitTimeout = oldTimeout })
-	gitTimeout = 0
 	old := evalSymlinks
 	t.Cleanup(func() { evalSymlinks = old })
 	setup := func(t *testing.T, walkFails bool) (wtFixture, *server) {

@@ -236,8 +236,8 @@ The JSON-RPC surface is identical on every OS. Full internals →
       path, the `rev-parse --show-toplevel` call fails by
       itself, and the folder has one new name. The create then runs
       the second rollback on that name, never on the name in the `.git` file (`5fd08069`, cell
-      V5 of round `tier0-10` and cell P1 of round `tier0-11`, Linux VM). A call that a deadline ended
-      starts no rollback (claustrum's own, not measured).
+      V5 of round `tier0-10` and cell P1 of round `tier0-11`, Linux VM). A show-toplevel call that a time
+      limit stopped starts no rollback (claustrum's own, not measured).
       The second rollback runs when the
       `timeoutMs` of the caller expired during the add, the checkout or the copy
       step. It also runs after a post-checkout drain that exceeded that
@@ -248,7 +248,7 @@ The JSON-RPC surface is identical on every OS. Full internals →
       call that fails at a filter of the repository. So does a refusal before
       it, for an unusable filter or a failed rule listing. In the state
       `shadow` over 64 filter names and a failed or slow last listing refuse
-      too. `5fd08069` rolls back in cells F1 and Q3 (Linux VM) and D5 (Linux
+      too, and so does a checkout listing that its 30 s limit stopped (cell TA). `5fd08069` rolls back in cells F1 and Q3 (Linux VM) and D5 (Linux
       and Windows VMs). It
       deletes the entries
       of the leaf in the order that the directory read returns them, and it
@@ -609,33 +609,34 @@ The JSON-RPC surface is identical on every OS. Full internals →
   unarmed cancel path makes the timeout `false` by construction. A huge constant
   is a different, observable behavior. This rule applies to every flag in
   Part B.
+- The git calls of `git.list_branches`, `git.info`, `git.status` and
+  `git.worktree_create` have the time limits of `5fd08069` (`gitstop.go`). Most
+  calls end at 2 minutes. While a `"shadowDirOff":true` request runs, no call of
+  the daemon stops at 2 minutes. claustrum then uses 30 minutes (claustrum's own). The exceptions are in [PROTOCOL.md → Time limits of git
+  calls](docs/PROTOCOL.md#time-limits-of-git-calls): config listings (not claustrum's own `--show-scope` listing), `config.worktree`
+  listings and the repository config read at 30 s, the include scan at 10 minutes, no limit on the
+  read-tree checkout, and the own bounds of the branch step. The limits are always
+  on, no limiter of a divergence. On Linux and macOS the stop is SIGTERM,
+  then SIGKILL 2 s later. The config-file listings get SIGKILL alone. On Windows
+  the process ends at once. A stopped `worktree add` runs the rollback of a failed
+  add, and no git call follows. `git.worktree_remove` gets none of these limits.
+  `-git-timeout` is a no-op that logs one warning.
 
 ## Gotchas — Part B: the opt-in wire divergences
 
-Four divergences are opt-in flags:
+Three divergences are opt-in flags:
 
 - D3 (`max-extract-bytes`)
-- D5 (`git-timeout`)
 - D10 (`max-cli-bytes`)
 - D12 (`cli-download-timeout`)
 
-All four default OFF. That is the parity position.
+All three default OFF. That is the parity position.
 The reference applies no such cap or deadline at any input that the
 probe can reach. A non-off default therefore fails an operation that the
 reference completes. Claude Desktop owns the `-serve` / `-install` argv, so the
 `claustrum.conf` key is the reachable knob, not the flag. Each disabled state
 bypasses its limiter entirely. That is the "never simplify" rule of Part A.
 
-On `git.worktree_remove` the deadline of D5 starts no delete. That method runs no
-`git worktree remove`. A kill refuses or skips a step. One skipped step is the
-daemon's own read of the repository config. After a kill of that call the remove
-goes on as it did before that read. `git.worktree_create` is the exception. Its
-rollback deletes after a failed or killed config listing before the checkout,
-read-tree checkout, `--unset-all` call or `config.worktree` listing, and it removes an empty leaf after a failed add. Never read a fired `git-timeout` as "git refused".
-Opting D5 in is wire-visible. From the code: the deadline also bounds the calls
-of the settings copy, which have a bound of 30 seconds of their own. A kill of
-a test call or of the call about the repository refuses the request. The Windows cleanup of old
-staging entries runs after a good add only.
 
 D17 is off-wire and macOS-only. The host cleaner reads an `lsof` run it gave
 up on at 17 s as busy (claustrum's own, not measured). It

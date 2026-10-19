@@ -15,8 +15,8 @@ const renameRetryMaxPause = 50 * time.Millisecond
 // retryRename runs rename. On Windows it runs it again while it fails because
 // another process holds the entry (renameHeld), for at most renameRetryBound
 // from the first try. Two renames have it: the copy write of the shadow folder
-// and the move of a staging folder. No request deadline and no git-timeout
-// ends it. The last error goes back unchanged. On Linux and macOS rename runs
+// and the move of a staging folder. No request deadline and no time limit of
+// a git call ends it. The last error goes back unchanged. On Linux and macOS rename runs
 // once.
 func retryRename(rename func() error) error {
 	return retryWhile(renameRetryBound, renameHeld, rename)

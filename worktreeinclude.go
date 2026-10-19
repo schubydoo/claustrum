@@ -99,9 +99,7 @@ func gitSelectsIncludeScan() bool {
 // includeScanAnswer is the answer of gitSelectsIncludeScan. ran is false when
 // the call did not exit 0.
 func includeScanAnswer() (selects, ran bool) {
-	ctx, cancel := gitCtx()
-	defer cancel()
-	out, err := gitVersionCmd(ctx).Output()
+	out, err := gitVersionCmd(context.Background()).Output()
 	if err != nil {
 		return false, false
 	}
@@ -722,18 +720,24 @@ func checkIgnoreInput(paths, skip []string) []string {
 //
 // excludeFile holds a copy of the manifest bytes.
 //
+// The listing ends at includeScanLimit. stopped reports that stop, and then no
+// other call runs. On 5fd08069 a listing held for 610 s got SIGTERM at 600 s
+// (cell T13 of round task010-01, Linux and macOS VMs). One held for 130 s ran to
+// its end (cell T14, Linux VM).
+//
 // The file candidates are copied as the file batches name them. Only the paths
 // from the directory batches go to check-ignore, and a path that is also a file
 // candidate does not go (see checkIgnoreInput). If check-ignore fails, those
 // paths are dropped and the file candidates are still copied.
-func scanWorktreeIncludes(u gitUse, repo, excludeFile string, manifest []byte) (paths []string, fallback bool) {
+func scanWorktreeIncludes(u gitUse, repo, excludeFile string, manifest []byte) (paths []string, fallback, stopped bool) {
 	// The listing of ignored entries. An ignored directory is listed once, as
 	// `dir/`. Parent directories that hold only ignored entries are listed too.
-	listing, err := hardenedGitStdout(u, repo, false, "--no-literal-pathspecs", "ls-files", "-z",
+	listing, err := hardenedGitRunIn(withGitLimit(u.stop.context(), includeScan), u, repo, false, nil, nil,
+		"--no-literal-pathspecs", "ls-files", "-z",
 		"--others", "--ignored", "--exclude-standard", "--directory",
 		"--", ":(exclude)"+claudeDirName+"/"+worktreesSubdir)
 	if err != nil {
-		return nil, false
+		return nil, false, isGitStop(err)
 	}
 	excludeArg := "--exclude-from=" + excludeFile
 	// The batch budget counts the argument without its last name, `patterns`.
@@ -741,13 +745,13 @@ func scanWorktreeIncludes(u gitUse, repo, excludeFile string, manifest []byte) (
 	// (planIncludeScan). Where 5fd08069 splits is not measured.
 	plan := planIncludeScan(manifest, listing, "--exclude-from="+filepath.Dir(excludeFile), claudeDirChildren(repo))
 	if plan.fallback {
-		return nil, true
+		return nil, true, false
 	}
 	paths = runIncludeBatches(u, repo, excludeArg, plan.fileBatches)
 	check := checkIgnoreInput(runIncludeBatches(u, repo, excludeArg, plan.dirBatches), paths)
 	if len(check) == 0 {
-		return paths, false
+		return paths, false, false
 	}
 	kept, _ := checkIgnored(u, repo, check)
-	return append(paths, kept...), false
+	return append(paths, kept...), false, false
 }

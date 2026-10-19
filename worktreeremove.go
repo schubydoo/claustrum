@@ -552,7 +552,7 @@ func (r registrationProbe) run() string {
 	case !daemonCommonDirSet():
 		pin = []string{"GIT_COMMON_DIR=" + r.gitDir}
 	}
-	out, err := gitDirWorkTreeToplevel(r.gitDir, r.workTree, pin, r.use.gitDirFront())
+	out, err := gitDirWorkTreeToplevel(nil, r.gitDir, r.workTree, pin, r.use.gitDirFront())
 	if err != nil {
 		return ""
 	}

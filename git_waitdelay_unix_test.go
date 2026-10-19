@@ -82,13 +82,10 @@ func TestWorktreeCreateLingeringDescendant(t *testing.T) {
 	const orphan = "30" // seconds; >> drainCap so an uncapped drain reads very differently
 
 	oldCap := worktreeCreateDrainCap
-	oldTimeout := gitTimeout
 	t.Cleanup(func() {
 		worktreeCreateDrainCap = oldCap
-		gitTimeout = oldTimeout
 	})
 	worktreeCreateDrainCap = drainCap
-	gitTimeout = 0 // D5 off: the caller timeoutMs is the only deadline
 
 	// Measure one hardenedGit call = two spawns (its `git config` precursor + the command).
 	// Warm the once-cached excludes probe first so it is not counted, then take the SLOWEST

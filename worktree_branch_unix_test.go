@@ -15,9 +15,6 @@ import (
 // reply therefore comes after both waits, not at the first one.
 func TestWorktreeRemoveUpdateRefKilledAfterTerm(t *testing.T) {
 	realGit := realGitPath(t)
-	oldTimeout := gitTimeout
-	t.Cleanup(func() { gitTimeout = oldTimeout })
-	gitTimeout = 0
 	f := newRmFixture(t)
 	before := refAt(t, realGit, f.repo, "wt1")
 	shortBounds(t, 60*time.Second, time.Second, time.Second)
@@ -66,9 +63,6 @@ func TestWorktreeRemoveEntryDropFailureKeepsBranch(t *testing.T) {
 func TestWorktreeCreateRollbackLeafAndBranchTexts(t *testing.T) {
 	skipIfRoot(t)
 	realGit := realGitPath(t)
-	oldTimeout := gitTimeout
-	t.Cleanup(func() { gitTimeout = oldTimeout })
-	gitTimeout = 0
 
 	t.Run("C05", func(t *testing.T) {
 		f := newWTFixture(t, false)
@@ -121,9 +115,6 @@ func TestWorktreeCreateRollbackLeafAndBranchTexts(t *testing.T) {
 // the call made. This path is claustrum's own guard (not measured).
 func TestWorktreeCreateRollbackKeptBranchWithGuardedLeaf(t *testing.T) {
 	realGit := realGitPath(t)
-	oldTimeout := gitTimeout
-	t.Cleanup(func() { gitTimeout = oldTimeout })
-	gitTimeout = 0
 	f := newWTFixture(t, false)
 	runGit(t, f.top, "checkout", "-q", "--detach")
 	runGit(t, f.top, "commit", "-q", "--allow-empty", "-m", "c2")

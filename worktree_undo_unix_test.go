@@ -39,9 +39,6 @@ func TestWorktreeCreateUndoCouldNotFinish(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	oldTimeout := gitTimeout
-	t.Cleanup(func() { gitTimeout = oldTimeout })
-	gitTimeout = 0
 	installGitSlowStub(t, realGit)
 	full := calibrate(t, realGit)
 	lateMs := int((2*full + 500*time.Millisecond).Milliseconds())
@@ -167,9 +164,6 @@ func TestWorktreeUndoRawReadDirOrder(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	oldTimeout := gitTimeout
-	t.Cleanup(func() { gitTimeout = oldTimeout })
-	gitTimeout = 0
 	installGitSlowStub(t, realGit)
 	const stepA = "; and the undo could not finish for %s: the worktree directory, its registration, and the branch all remain; remove them by hand before retrying (RemoveAll %s: permission denied)"
 	for attempt := range 10 {
@@ -228,9 +222,6 @@ func TestWorktreeCreatePathSpelling(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	oldTimeout := gitTimeout
-	t.Cleanup(func() { gitTimeout = oldTimeout })
-	gitTimeout = 0
 	installGitSlowStub(t, realGit)
 	const checkout = "git worktree add failed (checkout): fatal: synthetic checkout failure"
 	const stepA = "; and the undo could not finish for %s: the worktree directory, its registration, and the branch all remain; remove them by hand before retrying (RemoveAll hsub: permission denied)"

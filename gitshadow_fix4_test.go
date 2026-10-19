@@ -162,7 +162,7 @@ func TestShadowStateFilesNeedNoNewConfig(t *testing.T) {
 	f := newRepoFolderFixture(t)
 	dir := f.sync(t, f.repo)
 	config := pinnedInfo(t, filepath.Join(dir, "config"))
-	read := repoReadVerdict(gitDirTrustFor(f.repo))
+	read := repoReadVerdict(gitDirTrustFor(f.repo), nil)
 	for _, row := range []struct{ file, text string }{
 		{"shallow", strings.Repeat("a", 40) + "\n"},
 		{"info/attributes", "*.bin binary\n"},
@@ -182,7 +182,7 @@ func TestShadowStateFilesNeedNoNewConfig(t *testing.T) {
 				}
 			}
 			f.sync(t, f.repo)
-			if now := repoReadVerdict(gitDirTrustFor(f.repo)); now != read {
+			if now := repoReadVerdict(gitDirTrustFor(f.repo), nil); now != read {
 				t.Errorf("%s %s: the daemon read the config again", row.file, step)
 				read = now
 			}
@@ -198,7 +198,7 @@ func TestShadowStateFilesNeedNoNewConfig(t *testing.T) {
 	}
 	// A refused file is still refused in the request that meets it.
 	mustWrite(t, filepath.Join(f.gitDir, "shallow"), "not an id\n")
-	if msg, _ := repoConfigGate(gitDirTrustFor(f.repo), false); !strings.Contains(msg, "holds something other than object ids") {
+	if msg, _ := repoConfigGate(gitDirTrustFor(f.repo), false, nil); !strings.Contains(msg, "holds something other than object ids") {
 		t.Errorf("the gate with a bad shallow file = %q", msg)
 	}
 }

@@ -567,9 +567,7 @@ func boundedGitInput(bound time.Duration, dir string, env []string, stdin []byte
 // exits in time while a child keeps its output pipes past the bound. The row
 // of that second state is at call 7 in shadowTestCalls.
 func boundedGitDrain(bound, drain time.Duration, dir string, env []string, stdin []byte, argv ...string) shadowRun {
-	base, cancelBase := gitCtx()
-	defer cancelBase()
-	ctx, cancel := context.WithTimeout(base, bound)
+	ctx, cancel := context.WithTimeout(context.Background(), bound)
 	defer cancel()
 	cmd := exec.CommandContext(ctx, "git", argv...)
 	cmd.Dir = dir
@@ -815,7 +813,13 @@ func shadowTestCalls(dir, check string) (state, cause string) {
 // 30 seconds; try again). Check free disk space and quota there, then try
 // again.` (cell N-c of val-s3p2b2-8-linux2, Linux VM, 2 of 2 runs).
 func callSevenEnded(path string) string {
-	return repoConfigPrefix + "git did not finish reading " + quoteOperand(path) + " within 30 seconds; try again"
+	return repoConfigPrefix + readStopText(path)
+}
+
+// readStopText is the cause of a listing of the config file at path that its
+// bound of 30 s ended (callSevenEnded, repoReadBound).
+func readStopText(path string) string {
+	return "git did not finish reading " + quoteOperand(path) + " within 30 seconds; try again"
 }
 
 // shadowVersionNote is the end of the cause after a failed call of the calls
@@ -994,6 +998,7 @@ func (req *request) settingsGateRefusal(t gitDirTrust, off jsonTrueSwitch, dir s
 		if !off && t.verdict == gitDirTrusted {
 			req.use = req.shadow.folderUse()
 			req.use.atReply = &req.atReply
+			req.use.stop = req.stop
 		}
 		return "", false
 	}
@@ -1004,7 +1009,7 @@ func (req *request) settingsGateRefusal(t gitDirTrust, off jsonTrueSwitch, dir s
 			return a.text, a.noRepo
 		}
 	}
-	msg, read = repoConfigGate(t, off)
+	msg, read = repoConfigGate(t, off, req.stop)
 	req.configRefused = msg != ""
 	if msg != "" || read == nil || req.shadow.control(bool(off)) != controlShadow {
 		return msg, false
@@ -1020,6 +1025,7 @@ func (req *request) settingsGateRefusal(t gitDirTrust, off jsonTrueSwitch, dir s
 	}
 	req.use = use
 	req.use.atReply = &req.atReply
+	req.use.stop = req.stop
 	return "", false
 }
 

@@ -34,7 +34,7 @@ func TestUsePrintedGitDir(t *testing.T) {
 	clearFolderEnv(t)
 	link := linkedRepo(t, f.repo)
 	trust := gitDirTrustFor(f.repo)
-	read := repoReadVerdict(trust)
+	read := repoReadVerdict(trust, nil)
 	viaLink, err := f.h.syncRepo(filepath.Join(link, ".git"), read)
 	if err != nil {
 		t.Fatal(err)

@@ -385,9 +385,6 @@ func TestWorktreeCreateIndexIgnoresSharedRepository(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	oldTimeout := gitTimeout
-	t.Cleanup(func() { gitTimeout = oldTimeout })
-	gitTimeout = 0
 	installGitSlowStub(t, realGit)
 	modeLog := filepath.Join(t.TempDir(), "idxmode.txt")
 	t.Setenv("CLAUSTRUM_GITSTUB_IDXMODE", modeLog)
@@ -408,7 +405,7 @@ func TestWorktreeCreateIndexIgnoresSharedRepository(t *testing.T) {
 }
 
 // indexInstallFixture starts the git stub for a create whose index placement fails,
-// and returns the fixture, the server and the TMPDIR of the daemon. D5 is off.
+// and returns the fixture, the server and the TMPDIR of the daemon.
 func indexInstallFixture(t *testing.T) (wtFixture, *server, string) {
 	t.Helper()
 	if os.Geteuid() == 0 {
@@ -419,9 +416,6 @@ func indexInstallFixture(t *testing.T) (wtFixture, *server, string) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	oldTimeout := gitTimeout
-	t.Cleanup(func() { gitTimeout = oldTimeout })
-	gitTimeout = 0
 	installGitSlowStub(t, realGit)
 	f := newWTFixture(t, false)
 	s := newTestServer(t)
