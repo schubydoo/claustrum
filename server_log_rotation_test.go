@@ -19,9 +19,9 @@ func TestOpenDaemonLogRotatesToOld(t *testing.T) {
 	if err := os.WriteFile(logPath, []byte("PRIOR-SESSION"), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	f := openDaemonLog(sock)
-	if f == nil {
-		t.Fatal("openDaemonLog returned nil for a writable dir")
+	f, err := openDaemonLog(sock)
+	if f == nil || err != nil {
+		t.Fatalf("openDaemonLog = %v, %v for a writable dir, want a file", f, err)
 	}
 	_ = f.Close()
 	if b, _ := os.ReadFile(logPath); len(b) != 0 {

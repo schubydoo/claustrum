@@ -658,53 +658,53 @@ const runDirNotHolderLine = "[daemon] serve: not the run dir's lock holder; leav
 // deployment contract, the same as daemon.token, so neither is configurable.
 const daemonLogName = "remote-server.log"
 
-// openDaemonLog creates a FRESH remote-server.log beside the socket, mode 0600,
-// returning nil when it cannot get one that is exclusively ours.
+// openDaemonLog opens remote-server.log beside the socket for the daemon child.
+// An error fails the start (daemonizeWithToken). A nil file with a nil error, for an
+// empty socket path or a Windows open that fails, keeps the stdio of the launcher.
 //
-// Rotate-then-create-exclusively. The prior log is renamed to
-// remote-server.log.old rather than unlinked, matching 4534d86: the reference
-// keeps the previous session's log as .old on every restart (measured
-// 2026-09-06 on the ordinary per-restart path, so this is parity, not an edge). os.Rename overwrites any
-// existing .old and is a no-op when there is no prior log. It also acts on the
-// link itself, never following a symlinked path.
+// The prior log is renamed to remote-server.log.old first, and an error of that rename
+// is ignored, as on 4534d86 and 5fd08069. The rename acts on a link itself. Then an
+// exclusive create makes a fresh regular log, mode 0600 (round task015-03: cells E2 and
+// E4, Linux VM, and cell E0, macOS VM).
 //
-// O_EXCL is the backstop, and it carries the surviving D8 hardening. For a
-// planted symlink in a writable dir, the os.Rename above moves the link itself
-// (not its target) to .old and this O_EXCL create then makes a fresh regular
-// file, so it returns non-nil and the link is never followed — the victim is safe
-// on the success path, not by declining. The decline path is narrower: only when
-// the rename cannot move the existing entry — a sticky directory holding another
-// user's file or symlink — does the exclusive create fail too and this returns
-// nil, so the caller falls back to inherited stdio rather than following the link
-// or writing the daemon's output into a file someone else owns. The reference is
-// STILL unsafe here (measured 2026-09-06): in
-// a root-owned sticky directory it FOLLOWS a planted remote-server.log symlink and
-// writes its log into the victim, or refuses to start. So the plain foreign-file
-// truncation the older reference did (5db5e4a/pre-4534d86) is fixed upstream and
-// claustrum now matches the .old rotation, but the symlink/foreign-file
-// refuse-to-follow remains a deliberate divergence (D2-style "the reference does
-// it too is not a reason to call it safe"), filed as D8 in docs/DIVERGENCES.md. It
-// is unreachable on the deployed per-user path (rule 3 clause (b)): the session
-// directory is not sticky, so no honest caller reaches this branch.
+// If the create fails, claustrum judges the entry at the path by Lstat, so nothing is
+// opened first and a FIFO never blocks the launcher. Rounds task015-03 and task015-04
+// show this on the Linux and macOS VMs:
+//   - Nothing at the path fails the start with the error of the create, as on 5fd08069
+//     (cell E6, Linux VM).
+//   - A folder fails the start with "is a directory", as on 5fd08069 (cell E3).
+//   - openHeldDaemonLog opens an own regular file and an own link to an own file
+//     (cells E1 and E5).
+//   - A FIFO and any other kind fail the start with "permission denied" (cell S3, D8).
 //
-// On Windows a log that a live daemon holds open cannot be renamed. The launcher of a
-// second daemon then opens that same file and truncates it (openHeldDaemonLog), so the
-// second daemon runs detached and logs to the file. On unix that fallback does not exist.
+// On Windows the rename moves a folder onto a regular .old, as on 5fd08069 (cell W1 of
+// round task015-04, Windows VM).
 //
 // The log is NOT removed on shutdown; unlike the socket and daemon.token it
 // outlives the daemon, so a post-mortem is still readable.
-func openDaemonLog(socket string) *os.File {
+func openDaemonLog(socket string) (*os.File, error) {
 	if socket == "" {
-		return nil
+		return nil, nil
 	}
 	path := filepath.Join(filepath.Dir(socket), daemonLogName)
-	_ = os.Rename(path, path+".old") // rotate prior log to .old (parity); O_EXCL guarantees freshness
+	_ = os.Rename(path, path+".old") // rotate prior log to .old (parity)
 	// daemonLogAppend is O_APPEND on unix and 0 on Windows (detach_*.go).
 	f, err := os.OpenFile(path, os.O_CREATE|os.O_WRONLY|os.O_EXCL|daemonLogAppend, 0o600)
-	if err != nil {
-		return openHeldDaemonLog(path)
+	if err == nil {
+		return f, nil
 	}
-	return f
+	createErr := err
+	fi, err := os.Lstat(path)
+	if err != nil {
+		return nil, createErr
+	}
+	switch {
+	case fi.Mode().Type() == os.ModeDir:
+		return nil, &os.PathError{Op: "open", Path: path, Err: syscall.EISDIR}
+	case !fi.Mode().IsRegular() && fi.Mode().Type() != os.ModeSymlink:
+		return nil, &os.PathError{Op: "open", Path: path, Err: syscall.EACCES}
+	}
+	return openHeldDaemonLog(path, fi)
 }
 
 // daemonizeWithToken re-execs the binary detached from the terminal. If
@@ -737,8 +737,8 @@ func daemonizeWithToken(socket, forwardToken string) {
 	// leaves d sub(700) / rpc.sock(600) / daemon.token(600) / remote-server.log(600)
 	// behind, while claustrum refused to start at all.
 	//
-	// The error is deliberately not reported here: a failure surfaces immediately
-	// as the child's bind error.
+	// The error is not reported here: a failure surfaces at once as the error of the
+	// log create below.
 	if dir := filepath.Dir(socket); dir != "" && dir != "." {
 		_ = os.MkdirAll(dir, 0o700)
 	}
@@ -762,15 +762,20 @@ func daemonizeWithToken(socket, forwardToken string) {
 	// BOTH streams, not just stderr: claustrum splits its output, printing the
 	// "listening on …" banner to stdout and log lines to stderr. If only stderr
 	// went to the file, the banner stays on the terminal and the log misses it.
-	logFile := openDaemonLog(socket)
+	logFile, err := openDaemonLog(socket)
+	if err != nil {
+		// 5fd08069 prints "claude-ssh: open log: <err>" and exits 1 before any daemon
+		// starts (cells E3 and E6 of rounds task015-03 and task015-04).
+		fmt.Fprintf(os.Stderr, "claustrum: open log: %v\n", err)
+		osExit(1)
+	}
 	if logFile != nil {
 		cmd.Stdout = logFile
 		cmd.Stderr = logFile
 		defer logFile.Close()
 	} else {
-		// Could not open the log (missing or unwritable socket directory): fall
-		// back to inherited stdio rather than refusing to start. The daemon is
-		// about to fail on the socket anyway if the directory is really absent.
+		// No log for an empty socket path or a Windows open that fails: the child
+		// keeps the stdio of the launcher.
 		cmd.Stdout = os.Stdout
 		cmd.Stderr = os.Stderr
 	}

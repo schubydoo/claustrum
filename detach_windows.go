@@ -73,15 +73,16 @@ const daemonLogAppend = 0
 // the case of a second daemon on a live socket, or of another process that holds the log
 // open with no delete share: the rename fails. 5fd08069 truncates the file in both cases,
 // and the earlier lines are lost. .old stays as it was (cells W1 and W3 of round
-// task015-01, Windows VM). A path that is not a regular file is refused.
-func openHeldDaemonLog(path string) *os.File {
-	fi, err := os.Lstat(path)
-	if err != nil || !fi.Mode().IsRegular() {
-		return nil
+// task015-01, Windows VM). A link fails with "permission denied", because this code has
+// no owner test. 5fd08069 writes through it (D8, cell W2 of round task015-04, Windows
+// VM). An open that fails keeps the stdio of the launcher, as before.
+func openHeldDaemonLog(path string, fi os.FileInfo) (*os.File, error) {
+	if !fi.Mode().IsRegular() {
+		return nil, &os.PathError{Op: "open", Path: path, Err: syscall.EACCES}
 	}
 	f, err := os.OpenFile(path, os.O_WRONLY|os.O_TRUNC, 0)
 	if err != nil {
-		return nil
+		return nil, nil
 	}
-	return f
+	return f, nil
 }
