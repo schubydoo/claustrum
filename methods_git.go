@@ -211,6 +211,20 @@ func gitInfo(req *request) response {
 		}
 	}
 	if t.verdict == gitDirNoRepo {
+		// A `.git` file to a missing path runs the start test, and the reply has
+		// the member. 5fd08069 does so as the first git request of a daemon (cell V3
+		// of round task083-01, Linux, macOS and Windows VMs). A missing entry under
+		// `worktrees` of an existing git directory runs no test (cell V4). One in a
+		// missing repository runs it (cell V4g of round task083-02, Linux VM). Not
+		// measured: the other
+		// methods there, a failed test there, and a host with no git. claustrum
+		// runs no test in those methods or with no git. A failed test answers its
+		// text.
+		if t.goneGitFile && gitLookupError() == nil {
+			if msg := req.shadow.gate(bool(p.ShadowDirOff)); msg != "" {
+				return errResult(req.ID, codeInternal, msg)
+			}
+		}
 		// A listing that fails here refuses (rows A-N1 and A-X2 on Linux and macOS VMs,
 		// cells P3-infoN and P3-infoX on a Windows VM).
 		if msg := noRepoInfoCalls(t, req.stop, p.Path, bool(p.ShadowDirOff)); msg != "" {

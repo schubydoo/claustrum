@@ -198,7 +198,8 @@ func (h *shadowHost) folderUse() gitUse {
 }
 
 // gate runs before the first git call of a method in a repository that the trust
-// check accepted. It returns the text of a failed start test, or "".
+// check accepted, or for git.info on a `.git` file to a missing path (gitInfo).
+// It returns the text of a failed start test, or "".
 //
 // A request with the member runs no test and makes no folder (s3-linux cell B1,
 // Linux VM). Without it, the first such request of a daemon runs the test. A
@@ -231,8 +232,12 @@ func (h *shadowHost) gate(off bool) string {
 	defer h.mu.Unlock()
 	if cause != "" {
 		// The frame of every cause (s3p2b-edges-linux2 cells 26 and 30 to 32, Linux
-		// VM. Cell 33 of that round on macOS and Windows VMs).
-		h.failure = "Claude could not test git on the remote machine (" + cause + "). Check free disk space and quota there, then try again."
+		// VM. Cell 33 of that round on macOS and Windows VMs). A cause with
+		// gitCannotRunPrefix is the whole text (cannotRunText).
+		h.failure = cause
+		if !strings.HasPrefix(cause, gitCannotRunPrefix) {
+			h.failure = "Claude could not test git on the remote machine (" + cause + "). Check free disk space and quota there, then try again."
+		}
 		h.failed = end
 		return h.failure
 	}
@@ -729,15 +734,24 @@ func shadowTestCalls(dir, check string) (state, cause string) {
 	//     after call 7 started. The row does not tell a bound from the start
 	//     of the call from a bound after its end.
 	//
-	// From the code: a call 7 that fails on its own gives the exec error alone
-	// (not measured).
+	// A call 7 that fails on its own is followed by one `git version` call
+	// (cannotRunText). If that call fails too, its text is the whole failure.
+	// Else the cause is repoConfigPrefix and the error lines of call 7. A call 7
+	// with exit 128 under a broken ~/.gitconfig gives the first form, and one
+	// with exit 1 and `boom` gives `this repository's git config cannot be
+	// used: boom` (cells E1 to E5 and E9 of round task083-01, Linux VM). A call
+	// 7 with no error text gives its exec error there (claustrum's own, not
+	// measured).
 	listed := exitedInTime(boundedGitDrain(shadowCallBound, shadowCallBound+shadowCallDrain, gitVersionDir,
 		repoConfigListEnv(), text, "config", "--no-includes", "--file", "-", "--list", "-z"))
 	if listed.ended {
 		return "", callSevenEnded(filepath.Join(gitDir, "config"))
 	}
 	if listed.err != nil {
-		return failed("config", shadowRun{err: listed.err})
+		if whole := cannotRunText(); whole != "" {
+			return "", whole
+		}
+		return "", repoConfigPrefix + listed.allLines()
 	}
 	if err := fillShadowTestCopy(gitDir, shadowDir, []byte(listed.out)); err != nil {
 		return "", err.Error()
@@ -964,9 +978,10 @@ func writeShadowTestFiles(shadowDir string, head, config []byte) error {
 // request (repoConfigGate). A server with no run folder has no call of askGit,
 // and it reads the config the same way.
 //
-// The test runs for a trusted git directory only. A folder in which the daemon
+// The test runs for a trusted git directory. A folder in which the daemon
 // finds no usable git folder starts no test and makes no folder (s3p2-linux
-// cell E5 and s3-linux cell A1, Linux VM). Each method gives the text of a
+// cell E5 and s3-linux cell A1, Linux VM). git.info on a `.git` file to a
+// missing path is the exception (gitInfo). Each method gives the text of a
 // failed test the shape that it gives a refused config: the error object on
 // git.info, git.status and git.list_branches, and the result object on
 // git.worktree_create and git.worktree_remove (s3p2b-edges-linux2 cell 30, Linux
