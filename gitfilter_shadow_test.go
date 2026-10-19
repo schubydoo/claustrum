@@ -42,6 +42,17 @@ func (f shadowFilterFixture) section(t *testing.T, name, key string) string {
 		filepath.ToSlash(exe) + "' '" + filepath.ToSlash(f.mark) + "'\n"
 }
 
+// top is the repository folder with its links resolved, in the form of an
+// includeIf "gitdir:" condition.
+func (f shadowFilterFixture) top(t *testing.T) string {
+	t.Helper()
+	top, err := filepath.EvalSymlinks(f.repo)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return filepath.ToSlash(top)
+}
+
 func scopedCalls(calls []envCall) int {
 	n := 0
 	for _, c := range calls {
@@ -111,6 +122,22 @@ func TestShadowFilterRuleFailsClosed(t *testing.T) {
 			}
 			setIncludeFile(t, f.gitDir, "m.cfg", f.section(t, "m", "smudge"))
 			f.addConfig(t, "[includeIf \"gitdir:"+filepath.ToSlash(top)+"/\"]\n\tpath = m.cfg\n[filter \"m\"]\n\tsmudge = cat\n")
+		}, "m", false},
+		// Cells Q8: in one file the last value counts, so a command and then
+		// `smudge = cat` in .git/config pass (lastSmudgePerFile).
+		{"Q8 a command and then cat in the repository config", "a.txt filter=m\n", func(t *testing.T, f shadowFilterFixture) {
+			f.addConfig(t, f.section(t, "m", "smudge")+"[filter \"m\"]\n\tsmudge = cat\n")
+		}, "", false},
+		// Cells F1g and F1h of round task084-06 (Linux VM, 3 of 3 runs): an
+		// includeIf file with `smudge = cat` and a command in .git/config, in
+		// either order. 5fd08069 refuses, whatever the order.
+		{"F1g cat in an includeIf file, then a command", "a.txt filter=m\n", func(t *testing.T, f shadowFilterFixture) {
+			setIncludeFile(t, f.gitDir, "c.cfg", "[filter \"m\"]\n\tsmudge = cat\n")
+			f.addConfig(t, "[includeIf \"gitdir:"+f.top(t)+"/\"]\n\tpath = c.cfg\n"+f.section(t, "m", "smudge"))
+		}, "m", false},
+		{"F1h a command, then cat in an includeIf file", "a.txt filter=m\n", func(t *testing.T, f shadowFilterFixture) {
+			setIncludeFile(t, f.gitDir, "c.cfg", "[filter \"m\"]\n\tsmudge = cat\n")
+			f.addConfig(t, f.section(t, "m", "smudge")+"[includeIf \"gitdir:"+f.top(t)+"/\"]\n\tpath = c.cfg\n")
 		}, "m", false},
 		{"F2 a filter that the repository config gets after a git.info", "a.txt filter=m\n", func(t *testing.T, f shadowFilterFixture) {
 			if raw, _ := f.info(t, f.repo, nil); !strings.Contains(raw, `"settingsControl":"shadow"`) {
@@ -237,4 +264,20 @@ func sameDir(a, b string) bool {
 	fa, errA := os.Stat(a)
 	fb, errB := os.Stat(b)
 	return errA == nil && errB == nil && os.SameFile(fa, fb)
+}
+
+// Cell F1i of round task084-06 (Linux VM, 3 of 3 runs): the repository config
+// has only `smudge = cat` for the filter. With a settings copy the read-tree
+// call gets no item for it, as on 5fd08069, and the create succeeds.
+func TestShadowAllCatFilterGetsNoItem(t *testing.T) {
+	f := newShadowFilterFixture(t, "a.txt filter=m\n")
+	f.addConfig(t, "[filter \"m\"]\n\tsmudge = cat\n")
+	raw, calls := f.create(t, nil)
+	if !strings.Contains(raw, `"success":true`) {
+		t.Fatalf("git.worktree_create = %s, want success", raw)
+	}
+	args := readTreeArgs(calls)
+	if args == nil || slices.ContainsFunc(args, func(a string) bool { return strings.HasPrefix(a, "filter.m.") }) {
+		t.Errorf("the read-tree call %q, want one with no filter.m item", args)
+	}
 }

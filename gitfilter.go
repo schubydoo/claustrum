@@ -67,9 +67,16 @@ func (b *jsonTrueSwitch) UnmarshalJSON(data []byte) error {
 // filterValues holds what one listing gives a filter name, by key (filterKeys).
 // has reports that the listing holds the key. last is its last value: git uses
 // the last value of a key (cells Q8).
+//
+// otherSmudge reports a `smudge` value in the listing, at any place, that is
+// not empty, not `cat` and not the git-lfs value. lfsSmudgeSeen reports the
+// git-lfs value. With them the rule for a filter that only the repository
+// defines does not depend on the order of its files (planFilters).
 type filterValues struct {
-	has  [len(filterKeys)]bool
-	last [len(filterKeys)]string
+	has           [len(filterKeys)]bool
+	last          [len(filterKeys)]string
+	otherSmudge   bool
+	lfsSmudgeSeen bool
 }
 
 // defined reports whether the listing defines the filter: a `smudge` or a
@@ -111,6 +118,10 @@ func parseFilterListing(out []byte) map[string]filterValues {
 		}
 		v := defs[rest[:last]]
 		v.has[k], v.last[k] = true, value
+		if k == filterSmudge {
+			v.otherSmudge = v.otherSmudge || (value != "" && value != passSmudge && value != lfsSmudge)
+			v.lfsSmudgeSeen = v.lfsSmudgeSeen || value == lfsSmudge
+		}
 		defs[rest[:last]] = v
 	}
 	return defs
@@ -122,8 +133,19 @@ func parseFilterListing(out []byte) map[string]filterValues {
 // `process` value (cell V11), and an empty `process` beside a `smudge` value that
 // does not pass (cell Q9). With lfsProgram set, the two git-lfs values do not
 // pass (repositoryLfsProgramKey).
-func repositoryValuesPass(name string, v filterValues, lfsProgram bool) bool {
+//
+// With a settings copy (shadow) every `smudge` value of the listing counts,
+// not only the last one. That listing holds the last value of each file of
+// the repository (lastSmudgePerFile). 5fd08069 refuses a filter when a value
+// in .git/config or in an includeIf file does not pass, whatever the order of
+// the two files (cells F1e and F1f of round task084-05, F1g and F1h of round
+// task084-06, Linux VM). In .git/config the last value counts (cells Q8a and
+// Q8b of round task084-07).
+func repositoryValuesPass(name string, v filterValues, lfsProgram, shadow bool) bool {
 	lfs := name == lfsFilterName && !lfsProgram
+	if shadow && (v.otherSmudge || (v.lfsSmudgeSeen && !lfs)) {
+		return false
+	}
 	if s := v.last[filterSmudge]; s != "" && s != passSmudge && (!lfs || s != lfsSmudge) {
 		return false
 	}
@@ -229,7 +251,7 @@ func planFilters(full, outside map[string]filterValues, lfsKey string, shadow bo
 			f.refused = append(f.refused, name)
 			f.lfsKey = lfsKey
 		case o.defined():
-			if v == o {
+			if v.has == o.has && v.last == o.last {
 				continue
 			}
 			if (v.has[filterProcess] && !o.has[filterProcess]) || strings.Contains(name, "=") || !utf8.ValidString(name) {
@@ -258,7 +280,7 @@ func planFilters(full, outside map[string]filterValues, lfsKey string, shadow bo
 			f.refusal = "this repository's git config cannot be used: the filter " + strconv.Quote(name) +
 				" is defined only there, and its name is not valid UTF-8; define it in ~/.gitconfig on the remote machine, or rename it"
 			return f
-		case !repositoryValuesPass(name, v, lfsKey != ""):
+		case !repositoryValuesPass(name, v, lfsKey != "", shadow):
 			if len(name) > filterNameMaxBytes {
 				f.refusal = "this repository's git config cannot be used: a filter defined only there has a name longer than " +
 					strconv.Itoa(filterNameMaxBytes) + " bytes (it starts " + strconv.Quote(name[:filterNameStartBytes]) +
@@ -274,6 +296,11 @@ func planFilters(full, outside map[string]filterValues, lfsKey string, shadow bo
 			}
 		case v.last[filterSmudge] == lfsSmudge:
 			f.pairs(name, v.last, filterSmudge)
+		case shadow:
+			// Every `smudge` value is `cat`. With a settings copy the read-tree
+			// call gets no item for the filter, and git does not see it in the
+			// copy. 5fd08069 passes no item there and succeeds (cell F1i of
+			// round task084-06, Linux VM).
 		default:
 			f.pairs(name, [...]string{"", "false", ""}, filterProcess, filterRequired, filterSmudge)
 		}
