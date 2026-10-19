@@ -2275,7 +2275,8 @@ file gets one and stays. On Windows the age is read before, and such a folder of
 8 days goes (cell G7, Windows VM). On Windows the held lock keeps the folder of a
 live daemon from a remove by hand. So no later request sweeps again (cell G12 of
 round `task075-02`, both builds). A lock error other than a held lock keeps the
-entry (claustrum's own, not measured). A planted link, or a junction on Windows, goes
+entry (claustrum's own, not measured). A folder with no lock file that is less than 1
+minute old stays and gets none (claustrum's own, not measured). A planted link, or a junction on Windows, goes
 as a link, and claustrum makes no lock file in its target
 ([D8](DIVERGENCES.md#d8)).
 

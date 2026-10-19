@@ -3,6 +3,7 @@
 package main
 
 import (
+	"errors"
 	"os"
 	"syscall"
 )
@@ -63,6 +64,20 @@ func openShadowLockFile(path string) (*os.File, error) {
 
 func flockNoWait(f *os.File) error {
 	return syscall.Flock(int(f.Fd()), syscall.LOCK_EX|syscall.LOCK_NB)
+}
+
+// shadowLockBusy reports whether err of openShadowLockFile is a lock that
+// another holder has (newOwnFolder).
+func shadowLockBusy(err error) bool {
+	return errors.Is(err, syscall.EWOULDBLOCK)
+}
+
+// shadowLockAt reports whether the file at path is still the open lock. On
+// Linux and macOS another process can remove a lock file that is held
+// (newOwnFolder).
+func shadowLockAt(lock *os.File, path string) bool {
+	held, err := lock.Stat()
+	return err == nil && sameEntryAt(path, held)
 }
 
 // sweepClosesLockFirst is false on Linux and macOS. The sweep holds the lock

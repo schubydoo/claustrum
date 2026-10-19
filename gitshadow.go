@@ -336,28 +336,68 @@ var shadowHostname = os.Hostname
 // (sweepOldFolders). 5fd08069 sweeps at the request that makes its folder, and
 // not at the start of the daemon (cells G1 and G12 of round task075-01, Linux
 // VM).
+//
+// The sweep of another daemon can take the new folder before its lock is held.
+// Then the folder is made once more with a new name (newOwnFolder). That step
+// is claustrum's own (not measured).
 func (h *shadowHost) makeFolder() error {
 	root := filepath.Join(h.runDir, shadowRootName)
 	if err := os.MkdirAll(root, 0o700); err != nil {
 		return err
 	}
-	var salt [8]byte
-	if _, err := rand.Read(salt[:]); err != nil {
-		return err
+	name, lock, lost, err := h.newOwnFolder(root)
+	if lost {
+		name, lock, _, err = h.newOwnFolder(root)
 	}
-	name := hostForm() + "-" + strconv.Itoa(os.Getpid()) + "-" + hex.EncodeToString(salt[:])
-	dir := filepath.Join(root, name)
-	if err := os.Mkdir(dir, 0o700); err != nil {
-		return err
-	}
-	lock, err := openShadowLock(filepath.Join(dir, shadowLockName))
 	if err != nil {
-		_ = h.removeEntry(name)
 		return err
 	}
-	h.dir, h.lock = dir, lock
+	h.dir, h.lock = filepath.Join(root, name), lock
 	h.sweepOldFolders(name)
 	return nil
+}
+
+// errOwnFolderLost is the error of a folder of the daemon that another process
+// removed or replaced while the daemon made it. The text is claustrum's own.
+var errOwnFolderLost = errors.New("the folder of the daemon in git-shadow went while the daemon made it")
+
+// newOwnFolder makes one folder of this daemon in root and takes its lock.
+// lost is true when the folder was lost to another process: its lock was busy,
+// or the folder or the lock at the path is no longer the one made (by
+// identity). Nothing is removed then, because the folder is not this
+// daemon's any more. The test is claustrum's own (not measured). Another
+// failed lock step removes the folder, as on 5fd08069 (cell 32).
+func (h *shadowHost) newOwnFolder(root string) (name string, lock *os.File, lost bool, err error) {
+	var salt [8]byte
+	if _, err := rand.Read(salt[:]); err != nil {
+		return "", nil, false, err
+	}
+	name = hostForm() + "-" + strconv.Itoa(os.Getpid()) + "-" + hex.EncodeToString(salt[:])
+	dir := filepath.Join(root, name)
+	if err := os.Mkdir(dir, 0o700); err != nil {
+		return "", nil, false, err
+	}
+	made, _ := os.Lstat(dir)
+	path := filepath.Join(dir, shadowLockName)
+	lock, err = openShadowLock(path)
+	if err != nil {
+		if shadowLockBusy(err) || !sameEntryAt(dir, made) {
+			return "", nil, true, err
+		}
+		_ = h.removeEntry(name)
+		return "", nil, false, err
+	}
+	if !sameEntryAt(dir, made) || !shadowLockAt(lock, path) {
+		_ = lock.Close()
+		return "", nil, true, errOwnFolderLost
+	}
+	return name, lock, false, nil
+}
+
+// sameEntryAt reports whether the entry at path is made, by identity.
+func sameEntryAt(path string, made os.FileInfo) bool {
+	fi, err := os.Lstat(path)
+	return err == nil && made != nil && os.SameFile(fi, made)
 }
 
 // openShadowLock makes the lock file of the daemon and takes the hold on it

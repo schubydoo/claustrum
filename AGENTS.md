@@ -452,8 +452,9 @@ The JSON-RPC surface is identical on every OS. Full internals →
       `val-s3p2b2-6`, Linux and macOS VMs). It goes at the reply of a create
       that is refused before that step.
     - The sweep of `sweepOldFolders`. An entry goes only if its lock can be
-      taken, and only with this host form or when it is old. A link goes as a
-      link, and nothing is made in its target (D8).
+      taken, and only with this host form or when it is old. A folder with no
+      lock stays 1 minute (claustrum's own). A link goes as a link, and
+      nothing is made in its target (D8).
     - One repository folder at 128 (`evictOldRepoFolder`).
   On Linux and macOS the folder of a repository holds a link `worktrees` into
   the git directory. The root removes that link and not its target

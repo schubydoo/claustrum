@@ -26,6 +26,12 @@ import (
 // VM). The bound of 7 days is not measured.
 const shadowSweepAge = 7 * 24 * time.Hour
 
+// shadowSweepNewAge is the age below which a folder with no lock file stays,
+// and it gets no lock file. Another daemon can have made the folder and not yet
+// its lock (makeFolder). The bound is claustrum's own (not measured). The
+// measured folders with no lock file were 6 and 8 days old (cells G7 and G7c).
+const shadowSweepNewAge = time.Minute
+
 // errSweepLockKind is the refusal of a lock entry that is no regular file.
 var errSweepLockKind = errors.New("the lock entry is not a regular file")
 
@@ -42,7 +48,8 @@ var errSweepLockKind = errors.New("the lock entry is not a regular file")
 // folder of mode 000, a regular file and a lock that is a link (cells G5, G8
 // and G9). A remove that fails part way leaves the rest, and the request goes
 // on (cell G6). With git-shadow a link to a folder, the sweep works in that
-// folder (cell G11).
+// folder (cell G11). A folder with no lock file that is less than
+// shadowSweepNewAge old stays (claustrum's own, not measured).
 func (h *shadowHost) sweepOldFolders(own string) {
 	base := filepath.Join(h.runDir, shadowRootName)
 	root, err := os.OpenRoot(base)
@@ -80,7 +87,8 @@ func (h *shadowHost) sweepEntry(root *os.Root, base, name, prefix string) {
 		return
 	}
 	rel := filepath.Join(name, shadowLockName)
-	if err := sweepLockKind(root, rel); err != nil {
+	missing, err := sweepLockKind(root, rel)
+	if err != nil || missing && time.Since(fi.ModTime()) < shadowSweepNewAge {
 		return
 	}
 	lock, err := takeSweepLock(root, base, rel)
@@ -106,21 +114,21 @@ func (h *shadowHost) sweepEntry(root *os.Root, base, name, prefix string) {
 }
 
 // sweepLockKind refuses a lock entry at rel that is there and is no regular
-// file, or whose look fails. A missing entry passes: the lock step makes it.
-// On 5fd08069 the open of a lock that is a link fails with ELOOP, and the
-// folder stays (cell G9). Another kind of entry is not measured.
-func sweepLockKind(root *os.Root, rel string) error {
+// file, or whose look fails. A missing entry passes with missing true: the
+// lock step makes it. On 5fd08069 the open of a lock that is a link fails with
+// ELOOP, and the folder stays (cell G9). Another kind of entry is not measured.
+func sweepLockKind(root *os.Root, rel string) (missing bool, err error) {
 	fi, err := root.Lstat(rel)
 	if errors.Is(err, fs.ErrNotExist) {
-		return nil
+		return true, nil
 	}
 	if err != nil {
-		return err
+		return false, err
 	}
 	if !fi.Mode().IsRegular() {
-		return errSweepLockKind
+		return false, errSweepLockKind
 	}
-	return nil
+	return false, nil
 }
 
 // sweepLink is the step of sweepOldFolders on a symbolic link of git-shadow.

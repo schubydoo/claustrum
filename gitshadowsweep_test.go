@@ -277,3 +277,92 @@ func TestShadowSweepKeepsALiveDaemon(t *testing.T) {
 	sweptThere(t, filepath.Join(first, shadowLockName))
 	sweptThere(t, filepath.Join(first, shadowRepoName(filepath.Join(f.repo, ".git"))))
 }
+
+// A folder of this host with no lock file that is less than a minute old
+// stays, and it gets no lock file. Another daemon can be between its mkdir
+// and its lock. At 2 minutes it goes. Both are claustrum's own (not measured).
+func TestShadowSweepKeepsANewFolderWithNoLock(t *testing.T) {
+	f := newShadowFixture(t)
+	young := plantFolder(t, f.run, deadFolderName(), false)
+	old := plantFolder(t, f.run, hostForm()+"-2-0123456789abcdef", false)
+	ageEntry(t, old, 2*time.Minute)
+	f.info(t, f.repo, nil)
+	if got := entryNames(t, young); !slices.Equal(got, []string{"f1", "sub"}) {
+		t.Errorf("the new folder holds %v, want f1 and sub only", got)
+	}
+	sweptGone(t, old)
+}
+
+// lockSeam replaces openShadowLock for one test. first runs at the first call
+// in place of the open, and each later call opens as production does. The
+// count of calls is returned.
+func lockSeam(t *testing.T, first func(path string) (*os.File, error)) *int {
+	t.Helper()
+	old := openShadowLock
+	calls := 0
+	openShadowLock = func(path string) (*os.File, error) {
+		calls++
+		if calls == 1 {
+			return first(path)
+		}
+		return old(path)
+	}
+	t.Cleanup(func() { openShadowLock = old })
+	return &calls
+}
+
+// makeTestFolder runs makeFolder on a new host in a temp socket folder.
+func makeTestFolder(t *testing.T) (*shadowHost, error) {
+	t.Helper()
+	h := newShadowHost(t.TempDir())
+	t.Cleanup(h.close)
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	return h, h.makeFolder()
+}
+
+// The sweep of another daemon holds the lock of the new folder before this
+// daemon takes it. The folder is made again with a new name, and the first
+// folder is left to that sweep (claustrum's own, not measured).
+func TestShadowFolderAgainAfterABusyLock(t *testing.T) {
+	var first string
+	var held *os.File
+	calls := lockSeam(t, func(path string) (*os.File, error) {
+		first = filepath.Dir(path)
+		var err error
+		if held, err = openShadowLockFile(path); err != nil {
+			t.Fatal(err)
+		}
+		return openShadowLockFile(path)
+	})
+	h, err := makeTestFolder(t)
+	if held != nil {
+		t.Cleanup(func() { _ = held.Close() })
+	}
+	if err != nil {
+		t.Fatalf("makeFolder = %v, want nil", err)
+	}
+	if *calls != 2 || h.dir == first || h.lock == nil {
+		t.Errorf("calls %d, folder %s (first %s), want a second folder", *calls, h.dir, first)
+	}
+	sweptThere(t, filepath.Join(first, shadowLockName))
+}
+
+// The sweep of another daemon removed the new folder before its lock was
+// opened. The folder is made again (claustrum's own, not measured).
+func TestShadowFolderAgainAfterItWent(t *testing.T) {
+	calls := lockSeam(t, func(path string) (*os.File, error) {
+		if err := os.RemoveAll(filepath.Dir(path)); err != nil {
+			t.Fatal(err)
+		}
+		return openShadowLockFile(path)
+	})
+	h, err := makeTestFolder(t)
+	if err != nil {
+		t.Fatalf("makeFolder = %v, want nil", err)
+	}
+	if *calls != 2 {
+		t.Errorf("%d lock steps, want 2", *calls)
+	}
+	sweptThere(t, filepath.Join(h.dir, shadowLockName))
+}

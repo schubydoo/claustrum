@@ -3,9 +3,12 @@
 package main
 
 import (
+	"errors"
 	"os"
 	"path/filepath"
 	"syscall"
+
+	"golang.org/x/sys/windows"
 )
 
 // openHeldGitDir opens the git directory at path as the root that a create
@@ -91,6 +94,16 @@ func openShadowLockFile(path string) (*os.File, error) {
 	}
 	return os.NewFile(uintptr(h), path), nil
 }
+
+// shadowLockBusy reports whether err of openShadowLockFile is a lock that
+// another holder has open (newOwnFolder).
+func shadowLockBusy(err error) bool {
+	return errors.Is(err, windows.ERROR_SHARING_VIOLATION)
+}
+
+// shadowLockAt is true on Windows. A lock file that is open with no sharing
+// cannot be removed there (s3-windows cell B6).
+func shadowLockAt(*os.File, string) bool { return true }
 
 // sweepAgeBeforeLock is true on Windows. On a Windows VM 5fd08069 removes a
 // folder of another host form with no lock file at 8 days, so the age is read

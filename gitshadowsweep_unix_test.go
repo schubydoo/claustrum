@@ -46,8 +46,9 @@ func TestShadowSweepKeepsAClosedFolder(t *testing.T) {
 }
 
 // Cell G6: a remove that fails at a subfolder of mode 000 removes the rest, and
-// the folder and that subfolder stay. The next sweep makes a lock file there
-// again and removes it again. Each request answers.
+// the folder and that subfolder stay. Each request answers. 5fd08069 makes a
+// lock file there again at the next sweep and removes it again. claustrum
+// skips that folder while it is new and has no lock file (shadowSweepNewAge).
 func TestShadowSweepLeavesWhatItCannotRemove(t *testing.T) {
 	if os.Geteuid() == 0 {
 		t.Skip("root removes a folder of mode 000")
@@ -95,5 +96,55 @@ func TestShadowLockFollowsNoLink(t *testing.T) {
 	}
 	if b, err := os.ReadFile(v); err != nil || string(b) != "V content\n" {
 		t.Errorf("V: %q, %v", b, err)
+	}
+}
+
+// After the lock step the folder and the lock file at the path must be the
+// ones that were made and locked. A lock file that went and a folder that was
+// replaced each make the folder again (claustrum's own, not measured).
+func TestShadowFolderAgainAfterASwap(t *testing.T) {
+	for _, tc := range []struct {
+		name string
+		swap func(t *testing.T, path string)
+	}{
+		{"the lock file went", func(t *testing.T, path string) {
+			if err := os.Remove(path); err != nil {
+				t.Fatal(err)
+			}
+		}},
+		{"the folder was replaced", func(t *testing.T, path string) {
+			dir := filepath.Dir(path)
+			// The held lock file moves into the new folder, so that only the
+			// folder differs.
+			if err := os.Rename(dir, dir+".old"); err != nil {
+				t.Fatal(err)
+			}
+			if err := os.Mkdir(dir, 0o700); err != nil {
+				t.Fatal(err)
+			}
+			if err := os.Rename(filepath.Join(dir+".old", shadowLockName), path); err != nil {
+				t.Fatal(err)
+			}
+		}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			var first string
+			calls := lockSeam(t, func(path string) (*os.File, error) {
+				first = filepath.Dir(path)
+				lock, err := openShadowLockFile(path)
+				if err == nil {
+					tc.swap(t, path)
+				}
+				return lock, err
+			})
+			h, err := makeTestFolder(t)
+			if err != nil {
+				t.Fatalf("makeFolder = %v, want nil", err)
+			}
+			if *calls != 2 || h.dir == first {
+				t.Errorf("calls %d, folder %s (first %s), want a second folder", *calls, h.dir, first)
+			}
+			sweptThere(t, filepath.Join(h.dir, shadowLockName))
+		})
 	}
 }
