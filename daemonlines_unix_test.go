@@ -38,7 +38,7 @@ func TestClaimRunDirHeldByANonDaemon(t *testing.T) {
 	}
 	buf := captureLogBuf(t)
 
-	release := claimRunDir(sock, "serve").release
+	release := lockRunFolder(sock, "serve").release
 	release()
 
 	wantLinesInOrder(t, buf.String(),
@@ -62,7 +62,7 @@ func TestClaimRunDirHeldByANonDaemon(t *testing.T) {
 func TestClaimRunDirHolderGetsNoNotHolderLine(t *testing.T) {
 	dir := shortTempDir(t)
 	buf := captureLogBuf(t)
-	release := claimRunDir(filepath.Join(dir, "rpc.sock"), "serve").release
+	release := lockRunFolder(filepath.Join(dir, "rpc.sock"), "serve").release
 	release()
 	// Another test can leave a goroutine that logs into this buffer. Look for the line only.
 	if got := buf.String(); strings.Contains(got, runDirNotHolderLine) {

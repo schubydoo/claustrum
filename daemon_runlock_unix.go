@@ -88,7 +88,7 @@ type ownerRecord struct {
 	StartedAt  int64  `json:"startedAt,omitempty"`
 }
 
-// runDirClaim is what claimRunDir gives back to the daemon.
+// runDirClaim is what lockRunFolder gives back to the daemon.
 type runDirClaim struct {
 	// release truncates the owner record and drops the flock on graceful shutdown. The
 	// file itself stays in place (not unlinked).
@@ -104,7 +104,7 @@ type runDirClaim struct {
 	stopLate func()
 }
 
-// claimRunDir takes the run-dir lock and writes the short owner record of this daemon:
+// lockRunFolder takes the run-dir lock and writes the short owner record of this daemon:
 // pid, role and node only. It evicts a prior live sibling serve daemon if one holds the
 // lock. It runs BEFORE the reap of the start and before the socket is bound.
 //
@@ -124,7 +124,7 @@ type runDirClaim struct {
 // none". Such a daemon runs no reap and writes no child record, see newServerOnSocket.
 // claustrum does so on every arm. Cell H5 measures the arm of a held flock (`5fd08069`,
 // Linux VM).
-func claimRunDir(socket, role string) runDirClaim {
+func lockRunFolder(socket, role string) runDirClaim {
 	dir := filepath.Dir(socket)
 	path := filepath.Join(dir, runDirLockName)
 	// notHolder is the return of every arm that ends without the lock.
@@ -136,7 +136,7 @@ func claimRunDir(socket, role string) runDirClaim {
 	// O_NOFOLLOW: never follow a pre-existing daemon.lock symlink. If the socket dir is
 	// shared-writable, another local user could plant a symlink to a daemon-writable file
 	// and have startup truncate it; O_NOFOLLOW makes the open fail (ELOOP) instead. Since
-	// claimRunDir only ever creates daemon.lock as a regular file, the honest path is
+	// lockRunFolder only ever creates daemon.lock as a regular file, the honest path is
 	// unaffected. This matches the reference's observable behavior: measured on linux, the
 	// reference refuses a planted daemon.lock symlink and leaves the target untouched
 	// (scratch/probe/runlock-linux-refbehavior-4534d86.md M1), where pre-fix claustrum
@@ -537,7 +537,7 @@ func stopAfterReply(socket string) (string, func()) {
 	}
 	writeOwnerRecord(fd, ownerRecord{Pid: os.Getpid(), Role: "stop", Node: nodeID()})
 	_ = os.Remove(socket)
-	_ = os.Remove(filepath.Join(persistTokenDir(socket), persistedTokenName))
+	_ = os.Remove(filepath.Join(tokenFileDir(socket), persistedTokenName))
 	return word, release
 }
 
@@ -687,7 +687,7 @@ func matchesServeArgv(argv []string, socket, self string) bool {
 	if len(argv) == 0 || self == "" || filepath.Base(argv[0]) != self {
 		return false
 	}
-	// Compare socket paths by their cleaned form. claimRunDir derives the lock path with
+	// Compare socket paths by their cleaned form. lockRunFolder derives the lock path with
 	// filepath.Join (which cleans) and the kernel cleans the bind path, so "/d/./rpc.sock"
 	// and "/d/rpc.sock" share one daemon.lock and one endpoint. An exact string compare
 	// would fail to recognise the holder across those equivalent spellings, refuse to

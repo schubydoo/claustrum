@@ -40,7 +40,7 @@ func TestClaimRunDirWaitsForStopHolder(t *testing.T) {
 
 	buf := captureLogBuf(t)
 	start := time.Now()
-	claim := claimRunDir(filepath.Join(dir, "s.sock"), "serve")
+	claim := lockRunFolder(filepath.Join(dir, "s.sock"), "serve")
 	took := time.Since(start)
 	t.Cleanup(claim.release)
 
@@ -67,7 +67,7 @@ func TestClaimRunDirTakesLockAStopHolderReleases(t *testing.T) {
 	t.Cleanup(func() { timer.Stop() })
 
 	buf := captureLogBuf(t)
-	claim := claimRunDir(filepath.Join(dir, "s.sock"), "serve")
+	claim := lockRunFolder(filepath.Join(dir, "s.sock"), "serve")
 	t.Cleanup(claim.release)
 
 	if !claim.holder {

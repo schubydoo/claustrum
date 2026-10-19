@@ -221,7 +221,7 @@ func TestLateRunDirLockSilentWhileHeld(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	claim := claimRunDir(filepath.Join(dir, "s.sock"), "serve")
+	claim := lockRunFolder(filepath.Join(dir, "s.sock"), "serve")
 	t.Cleanup(claim.release)
 	const inst = "0123456789abcdef0123456789abcdef"
 	claim.complete(inst, 1790962940734)
@@ -289,9 +289,9 @@ func TestLateRunDirLockTwoSurvivorsOneWins(t *testing.T) {
 	letGo := startEmptyLockHolder(t, lockPath)
 
 	const instA, instB = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
-	a := claimRunDir(sock, "serve")
+	a := lockRunFolder(sock, "serve")
 	t.Cleanup(a.release)
-	b := claimRunDir(sock, "serve")
+	b := lockRunFolder(sock, "serve")
 	t.Cleanup(b.release)
 	a.complete(instA, 1)
 	b.complete(instB, 2)

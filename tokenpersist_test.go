@@ -9,7 +9,7 @@ import (
 	"testing"
 )
 
-// errInjected drives persistToken's write/close failure arms, which a real
+// errInjected drives saveTokenFile's write/close failure arms, which a real
 // os.CreateTemp file can't be made to hit on demand.
 var errInjected = errors.New("injected failure")
 
@@ -43,7 +43,7 @@ func injectTokenTemp(t *testing.T, dir string, writeErr, closeErr error) {
 }
 
 // assertNoPersistedArtifacts fails if daemon.token or a daemon.token-* temp
-// survives in dir — the invariant after any persistToken failure arm.
+// survives in dir — the invariant after any saveTokenFile failure arm.
 func assertNoPersistedArtifacts(t *testing.T, dir string) {
 	t.Helper()
 	if _, err := os.Stat(filepath.Join(dir, "daemon.token")); !os.IsNotExist(err) {
@@ -57,8 +57,8 @@ func assertNoPersistedArtifacts(t *testing.T, dir string) {
 	}
 }
 
-// persistToken must write <dir(socket)>/daemon.token containing the raw token
-// verbatim (no trailing newline) at mode 0600, and removePersistedToken must
+// saveTokenFile must write <dir(socket)>/daemon.token containing the raw token
+// verbatim (no trailing newline) at mode 0600, and dropOwnTokenFile must
 // unlink it — the reconnect contract added upstream in reference build 5db5e4a.
 // The file lives beside the SOCKET (not the -token-file); probe-verified against
 // the reference, which writes to the socket's dir even when the token-file is
@@ -68,9 +68,9 @@ func TestPersistTokenRoundTrip(t *testing.T) {
 	socket := filepath.Join(dir, "rpc.sock")
 	const token = "TKN-abc-123+/=" // includes base64 chars; must be byte-exact
 
-	owned := persistToken(socket, token)
+	owned := saveTokenFile(socket, token)
 	if owned == nil {
-		t.Fatal("persistToken returned nil FileInfo for a successful write")
+		t.Fatal("saveTokenFile returned nil FileInfo for a successful write")
 	}
 
 	path := filepath.Join(dir, "daemon.token")
@@ -99,17 +99,17 @@ func TestPersistTokenRoundTrip(t *testing.T) {
 		}
 	}
 
-	removePersistedToken(socket, owned)
+	dropOwnTokenFile(socket, owned)
 	if _, err := os.Stat(path); !os.IsNotExist(err) {
-		t.Fatalf("daemon.token still present after removePersistedToken (err=%v)", err)
+		t.Fatalf("daemon.token still present after dropOwnTokenFile (err=%v)", err)
 	}
 }
 
-// removePersistedToken must LEAVE the file when a restart's successor has already
+// dropOwnTokenFile must LEAVE the file when a restart's successor has already
 // republished daemon.token to a new inode — the departing predecessor's owned
 // FileInfo no longer os.SameFile-matches, so it must not delete the successor's token
 // out from under the new daemon. Extends claustrum's socket-ownership guard
-// (removeSocketIfOwned) to daemon.token. The successor's inode is forced distinct by creating
+// (unlinkOwnSocket) to daemon.token. The successor's inode is forced distinct by creating
 // it ALONGSIDE the original, then renaming into place (a delete-recreate could reuse
 // the freed inode). On Windows this is cell W3 of round task091-01: 5fd08069 keeps
 // the token of the successor. An identity from os.Stat there reads the file id by
@@ -119,9 +119,9 @@ func TestRemovePersistedTokenLeavesSuccessor(t *testing.T) {
 	socket := filepath.Join(dir, "rpc.sock")
 	path := filepath.Join(dir, "daemon.token")
 
-	owned := persistToken(socket, "PRED") // predecessor's token + identity
+	owned := saveTokenFile(socket, "PRED") // predecessor's token + identity
 	if owned == nil {
-		t.Fatal("persistToken returned nil")
+		t.Fatal("saveTokenFile returned nil")
 	}
 	// Successor republishes daemon.token with a DISTINCT inode (coexist then rename).
 	succ := filepath.Join(dir, "daemon.token.succ")
@@ -136,7 +136,7 @@ func TestRemovePersistedTokenLeavesSuccessor(t *testing.T) {
 	}
 
 	// The departing predecessor must NOT delete the successor's token.
-	removePersistedToken(socket, owned)
+	dropOwnTokenFile(socket, owned)
 	b, err := os.ReadFile(path)
 	if err != nil {
 		t.Fatalf("successor's daemon.token was deleted by the predecessor: %v", err)
@@ -146,23 +146,23 @@ func TestRemovePersistedTokenLeavesSuccessor(t *testing.T) {
 	}
 	// And the current owner (successor's identity) DOES remove it.
 	cur, _ := os.Stat(path)
-	removePersistedToken(socket, cur)
+	dropOwnTokenFile(socket, cur)
 	if _, err := os.Stat(path); !os.IsNotExist(err) {
-		t.Fatal("removePersistedToken did not remove its own token")
+		t.Fatal("dropOwnTokenFile did not remove its own token")
 	}
 }
 
-// removePersistedToken is a silent no-op when there is nothing this daemon owns to
+// dropOwnTokenFile is a silent no-op when there is nothing this daemon owns to
 // remove: a nil owned (persist failed → nothing was written), and a non-nil owned
 // whose file is now absent (teardown ran twice, or a successor removed it). Neither
 // must error or panic.
 func TestRemovePersistedTokenAbsent(t *testing.T) {
 	socket := filepath.Join(t.TempDir(), "rpc.sock")
-	removePersistedToken(socket, nil) // nothing persisted → no-op
+	dropOwnTokenFile(socket, nil) // nothing persisted → no-op
 	// A non-nil owned whose file no longer exists: stat fails → no-op.
-	owned := persistToken(socket, "tok")
+	owned := saveTokenFile(socket, "tok")
 	_ = os.Remove(filepath.Join(filepath.Dir(socket), "daemon.token"))
-	removePersistedToken(socket, owned) // file gone; must not panic
+	dropOwnTokenFile(socket, owned) // file gone; must not panic
 }
 
 // statOpenFile fails when the path does not open, and then returns no identity.
@@ -173,18 +173,18 @@ func TestStatOpenFileMissingPath(t *testing.T) {
 	}
 }
 
-// persistToken is best-effort: if the socket's directory does not exist (so the
+// saveTokenFile is best-effort: if the socket's directory does not exist (so the
 // temp-file create fails), it logs and returns without panicking, and the daemon
 // keeps serving — only file-based reconnect is unavailable.
 func TestPersistTokenCreateFailureIsNonFatal(t *testing.T) {
 	socket := filepath.Join(t.TempDir(), "no-such-subdir", "rpc.sock")
-	persistToken(socket, "tok") // dir missing → CreateTemp errors; must not panic
+	saveTokenFile(socket, "tok") // dir missing → CreateTemp errors; must not panic
 	if _, err := os.Stat(filepath.Dir(socket)); !os.IsNotExist(err) {
-		t.Fatalf("persistToken must not create the missing directory (err=%v)", err)
+		t.Fatalf("saveTokenFile must not create the missing directory (err=%v)", err)
 	}
 }
 
-// persistToken's rename-failure arm is best-effort: if the final path can't be
+// saveTokenFile's rename-failure arm is best-effort: if the final path can't be
 // replaced (here daemon.token pre-exists as a directory, so renaming a file onto
 // it fails on every platform), it logs, cleans up the temp file, and returns —
 // no panic, the existing entry is untouched, and no daemon.token-* temp leaks.
@@ -194,7 +194,7 @@ func TestPersistTokenRenameFailureIsNonFatal(t *testing.T) {
 	if err := os.Mkdir(filepath.Join(dir, "daemon.token"), 0o700); err != nil {
 		t.Fatal(err)
 	}
-	persistToken(socket, "tok") // temp create/write/close ok; rename onto a dir fails
+	saveTokenFile(socket, "tok") // temp create/write/close ok; rename onto a dir fails
 
 	ents, _ := os.ReadDir(dir)
 	for _, e := range ents {
@@ -207,7 +207,7 @@ func TestPersistTokenRenameFailureIsNonFatal(t *testing.T) {
 	}
 }
 
-// removePersistedToken's remove-failure arm is best-effort: when daemon.token
+// dropOwnTokenFile's remove-failure arm is best-effort: when daemon.token
 // exists but can't be unlinked (here it's a non-empty directory, so os.Remove
 // fails on every platform), it logs and returns without panicking, and the entry
 // survives. stat succeeds, so this exercises the remove-error path specifically.
@@ -227,34 +227,34 @@ func TestRemovePersistedTokenRemoveFailureIsNonFatal(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	removePersistedToken(socket, owned) // stat ok, SameFile matches; remove fails
+	dropOwnTokenFile(socket, owned) // stat ok, SameFile matches; remove fails
 	if _, err := os.Stat(tokDir); err != nil {
 		t.Fatalf("non-empty daemon.token dir should survive a failed remove: %v", err)
 	}
 }
 
-// persistToken's write-failure arm: WriteString errors, so the temp is closed +
+// saveTokenFile's write-failure arm: WriteString errors, so the temp is closed +
 // removed, the failure is logged, and no daemon.token appears. Best-effort — the
 // caller (runServe) keeps serving.
 func TestPersistTokenWriteFailureIsNonFatal(t *testing.T) {
 	dir := t.TempDir()
 	injectTokenTemp(t, dir, errInjected, nil)
-	persistToken(filepath.Join(dir, "rpc.sock"), "tok")
+	saveTokenFile(filepath.Join(dir, "rpc.sock"), "tok")
 	assertNoPersistedArtifacts(t, dir)
 }
 
-// persistToken's close-failure arm: WriteString succeeds but Close errors, so the
+// saveTokenFile's close-failure arm: WriteString succeeds but Close errors, so the
 // temp is removed, the failure is logged, and no daemon.token appears.
 func TestPersistTokenCloseFailureIsNonFatal(t *testing.T) {
 	dir := t.TempDir()
 	injectTokenTemp(t, dir, nil, errInjected)
-	persistToken(filepath.Join(dir, "rpc.sock"), "tok")
+	saveTokenFile(filepath.Join(dir, "rpc.sock"), "tok")
 	assertNoPersistedArtifacts(t, dir)
 }
 
-// removePersistedToken's stat-error arm: when the socket dir is actually a file,
+// dropOwnTokenFile's stat-error arm: when the socket dir is actually a file,
 // os.Stat(<file>/daemon.token) fails (ENOTDIR on POSIX). Any stat failure is a silent
-// no-op (removePersistedToken logs only a failed unlink of a file it still owns) — it
+// no-op (dropOwnTokenFile logs only a failed unlink of a file it still owns) — it
 // must not panic. A non-nil owned reaches the stat that then fails.
 func TestRemovePersistedTokenStatErrorIsNonFatal(t *testing.T) {
 	dir := t.TempDir()
@@ -266,10 +266,10 @@ func TestRemovePersistedTokenStatErrorIsNonFatal(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	removePersistedToken(filepath.Join(notDir, "rpc.sock"), owned) // stat under a non-dir; must not panic
+	dropOwnTokenFile(filepath.Join(notDir, "rpc.sock"), owned) // stat under a non-dir; must not panic
 }
 
-// persistToken overwrites any stale daemon.token from a prior daemon in the same
+// saveTokenFile overwrites any stale daemon.token from a prior daemon in the same
 // dir — the atomic rename replaces it, so a reconnecting client reads the live
 // token, never a dead one.
 func TestPersistTokenOverwritesStale(t *testing.T) {
@@ -279,7 +279,7 @@ func TestPersistTokenOverwritesStale(t *testing.T) {
 	if err := os.WriteFile(path, []byte("STALE"), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	persistToken(socket, "FRESH")
+	saveTokenFile(socket, "FRESH")
 	b, err := os.ReadFile(path)
 	if err != nil {
 		t.Fatal(err)

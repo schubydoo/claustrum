@@ -27,7 +27,7 @@ func livePredecessorPID(socket string) int {
 // Go removes the path of a unix listener that made it, whatever file is at the path
 // then. A new daemon can bind the path while this one still shuts down, and the close
 // then removed the socket of the new daemon. closeAll removes the path itself
-// (removeSocketIfOwned).
+// (unlinkOwnSocket).
 func keepSocketFileAtClose(ln net.Listener) {
 	if ul, ok := ln.(*net.UnixListener); ok {
 		ul.SetUnlinkOnClose(false)
@@ -39,9 +39,9 @@ func keepSocketFileAtClose(ln net.Listener) {
 // ends the start there with that text (cell H6, Linux VM). On macOS that is not
 // measured. The remove of the socket path is claustrum's own, not measured: cell H6
 // used an abstract socket, which has no path. The path goes only while it still is
-// the socket that this start bound (removeSocketIfOwned). Another entry there stays.
+// the socket that this start bound (unlinkOwnSocket). Another entry there stays.
 func socketChmodFailed(ln net.Listener, socket string, bound os.FileInfo, err error) error {
 	_ = ln.Close()
-	removeSocketIfOwned(socket, bound)
+	unlinkOwnSocket(socket, bound)
 	return fmt.Errorf("chmod socket: %v", err)
 }
