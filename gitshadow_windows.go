@@ -3,9 +3,12 @@
 package main
 
 import (
+	"errors"
 	"os"
 	"path/filepath"
 	"syscall"
+
+	"golang.org/x/sys/windows"
 )
 
 // openHeldGitDir opens the git directory at path as the root that a create
@@ -86,6 +89,82 @@ func openShadowLockFile(path string) (*os.File, error) {
 	}
 	h, err := syscall.CreateFile(name, syscall.GENERIC_READ|syscall.GENERIC_WRITE, 0, nil,
 		syscall.OPEN_ALWAYS, syscall.FILE_ATTRIBUTE_NORMAL, 0)
+	if err != nil {
+		return nil, &os.PathError{Op: "open", Path: path, Err: err}
+	}
+	return os.NewFile(uintptr(h), path), nil
+}
+
+// shadowLockBusy reports whether err of openShadowLockFile is a lock that
+// another holder has open (newOwnFolder).
+func shadowLockBusy(err error) bool {
+	return errors.Is(err, windows.ERROR_SHARING_VIOLATION)
+}
+
+// shadowLockAt is true on Windows. A lock file that is open with no sharing
+// cannot be removed there (s3-windows cell B6).
+func shadowLockAt(*os.File, string) bool { return true }
+
+// sweepAgeBeforeLock is true on Windows. On a Windows VM 5fd08069 removes a
+// folder of another host form with no lock file at 8 days, so the age is read
+// before the lock step makes that file (cell G7 of round task075-01).
+const sweepAgeBeforeLock = true
+
+// isSweepLink reports whether an entry of git-shadow is a link: a directory
+// symbolic link or a junction. Go reads a junction as an irregular entry, so
+// the reparse attribute of a folder counts too (cells G10 and G10j of round
+// task075-01, Windows VM).
+func isSweepLink(fi os.FileInfo) bool {
+	if fi.Mode()&os.ModeSymlink != 0 {
+		return true
+	}
+	d, ok := fi.Sys().(*syscall.Win32FileAttributeData)
+	const both = syscall.FILE_ATTRIBUTE_REPARSE_POINT | syscall.FILE_ATTRIBUTE_DIRECTORY
+	return ok && fi.Mode()&os.ModeIrregular != 0 && d.FileAttributes&both == both
+}
+
+// sweepClosesLockFirst is true on Windows. An open file cannot be removed
+// there, so the sweep closes the lock of a folder before it removes the folder
+// (not measured).
+const sweepClosesLockFirst = true
+
+// takeSweepLock makes the lock file rel of a folder in git-shadow through root
+// when it is not there. Then it opens the file at its path below base with no
+// sharing, and that open is the lock. A lock that another process holds open
+// with no sharing refuses both opens, and the folder then stays. A lock that
+// opens is the lock of a daemon that is gone (cells G1 and G3 of round
+// task075-01, Windows VM). The create goes through root, so it follows no link
+// out of git-shadow. The second open makes nothing and follows no link at the
+// last name.
+func takeSweepLock(root *os.Root, base, rel string) (*os.File, error) {
+	f, err := root.OpenFile(rel, os.O_CREATE|os.O_RDWR, 0o600)
+	if err != nil {
+		return nil, err
+	}
+	_ = f.Close()
+	return openNoShare(filepath.Join(base, rel), syscall.GENERIC_READ|syscall.GENERIC_WRITE)
+}
+
+// linkedLockOpen tests the lock file at path with an open with no sharing,
+// and closes it at once. The open makes nothing (claustrum's own, not
+// measured).
+func linkedLockOpen(path string) error {
+	f, err := openNoShare(path, syscall.GENERIC_READ)
+	if err != nil {
+		return err
+	}
+	return f.Close()
+}
+
+// openNoShare opens the file at path that is there, with access and no
+// sharing. It follows no link at the last name.
+func openNoShare(path string, access uint32) (*os.File, error) {
+	name, err := syscall.UTF16PtrFromString(path)
+	if err != nil {
+		return nil, &os.PathError{Op: "open", Path: path, Err: err}
+	}
+	h, err := syscall.CreateFile(name, access, 0, nil, syscall.OPEN_EXISTING,
+		syscall.FILE_ATTRIBUTE_NORMAL|syscall.FILE_FLAG_OPEN_REPARSE_POINT, 0)
 	if err != nil {
 		return nil, &os.PathError{Op: "open", Path: path, Err: err}
 	}

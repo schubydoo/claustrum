@@ -110,8 +110,12 @@ type shadowHost struct {
 	// time. repos has what the daemon knows of each folder that it made, by its
 	// name. A folder that is not there starts again with nothing known
 	// (syncRepo).
-	repoMu sync.Mutex
-	repos  map[string]*shadowRepo
+	// repoBusy counts the requests that run on each folder (syncRepo), and
+	// useCount numbers the good uses (shadowRepo.used).
+	repoMu   sync.Mutex
+	repos    map[string]*shadowRepo
+	repoBusy map[string]int
+	useCount uint64
 
 	// probeMu guards probes, the kept good answers of git about a repository, by
 	// the root of the work tree (askGit).
@@ -291,13 +295,20 @@ func (h *shadowHost) decided() (kept string, done bool) {
 	return "", false
 }
 
-// hostForm is the host name with each "-" written as "_". On 5fd08069 a host
-// name of the form aa-bb gives aa_bb, and a "." stays (s3-linux cell C6, Linux
-// VM, and the macOS and Windows rounds). A host name that the system does not
-// give is not measured: the form is then empty.
+// hostForm is the host name with each character outside A-Z, a-z, 0-9 and "."
+// written as "_". On 5fd08069 a host name of the form aa-bb gives aa_bb, and a
+// "." stays (s3-linux cell C6, Linux VM, and the macOS and Windows rounds).
+// On a macOS VM the ".local" end of the host name stays (round task075-01).
+// Other characters are claustrum's own (not measured). A host
+// name that the system does not give is not measured: the form is then empty.
 func hostForm() string {
 	name, _ := shadowHostname()
-	return strings.ReplaceAll(name, "-", "_")
+	return strings.Map(func(r rune) rune {
+		if r == '.' || r >= '0' && r <= '9' || r >= 'A' && r <= 'Z' || r >= 'a' && r <= 'z' {
+			return r
+		}
+		return '_'
+	}, name)
 }
 
 // shadowHostname is os.Hostname. A variable, so that a test can name the host.
@@ -320,27 +331,73 @@ var shadowHostname = os.Hostname
 // After a lock file that cannot be made, 5fd08069 leaves no folder of the daemon
 // (the tmpfs row with 2 inodes). So the folder that this call made goes again
 // here.
+//
+// After the lock, the sweep removes the folders of daemons that are gone
+// (sweepOldFolders). 5fd08069 sweeps at the request that makes its folder, and
+// not at the start of the daemon (cells G1 and G12 of round task075-01, Linux
+// VM).
+//
+// The sweep of another daemon can take the new folder before its lock is held.
+// Then the folder is made once more with a new name (newOwnFolder). That step
+// is claustrum's own (not measured).
 func (h *shadowHost) makeFolder() error {
 	root := filepath.Join(h.runDir, shadowRootName)
 	if err := os.MkdirAll(root, 0o700); err != nil {
 		return err
 	}
+	name, lock, lost, err := h.newOwnFolder(root)
+	if lost {
+		name, lock, _, err = h.newOwnFolder(root)
+	}
+	if err != nil {
+		return err
+	}
+	h.dir, h.lock = filepath.Join(root, name), lock
+	h.sweepOldFolders(name)
+	return nil
+}
+
+// errOwnFolderLost is the error of a folder of the daemon that another process
+// removed or replaced while the daemon made it. The text is claustrum's own.
+var errOwnFolderLost = errors.New("the folder of the daemon in git-shadow went while the daemon made it")
+
+// newOwnFolder makes one folder of this daemon in root and takes its lock.
+// lost is true when the folder was lost to another process: its lock was busy,
+// or the folder or the lock at the path is no longer the one made (by
+// identity). Nothing is removed then, because the folder is not this
+// daemon's any more. The test is claustrum's own (not measured). Another
+// failed lock step removes the folder, as on 5fd08069 (cell 32).
+func (h *shadowHost) newOwnFolder(root string) (name string, lock *os.File, lost bool, err error) {
 	var salt [8]byte
 	if _, err := rand.Read(salt[:]); err != nil {
-		return err
+		return "", nil, false, err
 	}
-	name := hostForm() + "-" + strconv.Itoa(os.Getpid()) + "-" + hex.EncodeToString(salt[:])
+	name = hostForm() + "-" + strconv.Itoa(os.Getpid()) + "-" + hex.EncodeToString(salt[:])
 	dir := filepath.Join(root, name)
 	if err := os.Mkdir(dir, 0o700); err != nil {
-		return err
+		return "", nil, false, err
 	}
-	lock, err := openShadowLock(filepath.Join(dir, shadowLockName))
+	made, _ := os.Lstat(dir)
+	path := filepath.Join(dir, shadowLockName)
+	lock, err = openShadowLock(path)
 	if err != nil {
+		if shadowLockBusy(err) || !sameEntryAt(dir, made) {
+			return "", nil, true, err
+		}
 		_ = h.removeEntry(name)
-		return err
+		return "", nil, false, err
 	}
-	h.dir, h.lock = dir, lock
-	return nil
+	if !sameEntryAt(dir, made) || !shadowLockAt(lock, path) {
+		_ = lock.Close()
+		return "", nil, true, errOwnFolderLost
+	}
+	return name, lock, false, nil
+}
+
+// sameEntryAt reports whether the entry at path is made, by identity.
+func sameEntryAt(path string, made os.FileInfo) bool {
+	fi, err := os.Lstat(path)
+	return err == nil && made != nil && os.SameFile(fi, made)
 }
 
 // openShadowLock makes the lock file of the daemon and takes the hold on it
@@ -372,11 +429,11 @@ func (h *shadowHost) dropLock() {
 	}
 }
 
-// removeEntry deletes rel, a path below the folder of all daemons. rel is always
-// a name that this daemon made: the folder of the daemon, or an entry in it. It
-// never comes from a request. The delete goes through a root at the folder of
-// all daemons, so it follows no link out of it. wipesHomeDir on the full path is
-// defense in depth.
+// removeEntry deletes rel, a path below the folder of all daemons. rel is a
+// name that this daemon made, or one that a directory read of git-shadow or of
+// the folder of the daemon returned. It never comes from a request. The delete
+// goes through a root at the folder of all daemons, so it follows no link out of
+// it. wipesHomeDir on the full path is defense in depth.
 func (h *shadowHost) removeEntry(rel string) error {
 	base := filepath.Join(h.runDir, shadowRootName)
 	if wipesHomeDir(filepath.Join(base, rel)) {
@@ -388,6 +445,23 @@ func (h *shadowHost) removeEntry(rel string) error {
 	}
 	defer func() { _ = root.Close() }()
 	return root.RemoveAll(rel)
+}
+
+// removeLink deletes name, a link that a directory read of the folder of all
+// daemons returned. It is one plain remove through a root at that folder, so
+// it deletes the link and never what the link names (sweepLink).
+// wipesHomeDir on the full path is defense in depth.
+func (h *shadowHost) removeLink(name string) error {
+	base := filepath.Join(h.runDir, shadowRootName)
+	if wipesHomeDir(filepath.Join(base, name)) {
+		return errors.New("refusing to delete a path that holds the home folder")
+	}
+	root, err := os.OpenRoot(base)
+	if err != nil {
+		return err
+	}
+	defer func() { _ = root.Close() }()
+	return root.Remove(name)
 }
 
 // close removes the folder of this daemon at a shutdown. 5fd08069 removes it at
@@ -1038,6 +1112,7 @@ func (req *request) settingsGateRefusal(t gitDirTrust, off jsonTrueSwitch, dir s
 	if err != nil {
 		return shadowRepoFailureText(err), false
 	}
+	req.heldRepos = append(req.heldRepos, filepath.Base(use.repoDir))
 	req.use = use
 	req.use.atReply = &req.atReply
 	req.use.stop = req.stop
@@ -1053,7 +1128,11 @@ func (req *request) settingsGateRefusal(t gitDirTrust, off jsonTrueSwitch, dir s
 // after the cause is gone is normal, with no new read of the config. Both
 // follow here from the kept read and the kept answer of git: nothing of the
 // failure is kept. Every other failure of the step gets the same frame with
-// its own error text (not measured).
+// its own error text (not measured). A repoLimitError is the whole text.
 func shadowRepoFailureText(err error) string {
+	var full repoLimitError
+	if errors.As(err, &full) {
+		return full.Error()
+	}
 	return "Claude could not prepare its own files on the remote machine: cannot write its copy of the repository's git config: " + err.Error()
 }

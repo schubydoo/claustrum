@@ -156,7 +156,7 @@ rather than repeating them in each entry:
 | [D2](#d2) | Refuse a destructive path that is or contains `$HOME`, on three methods and on `-install` | always-on | always-on | rule 3 clause (a). The `files.extract_tar` wipe through the parent handle and its two tests: maintainer decision of 2026-10-10 | an honest caller legitimately targeting a path that is/contains home, or a Windows `destDir` with the `\\?\` prefix and a dot or a space after its last name |
 | [D3](#d3) | Cap `files.extract_tar` output size | off (`0` = unlimited) | `-max-extract-bytes` / `max-extract-bytes` | rule 4 (who-pays) | operator's cap refuses a legit extraction, or default lets a bomb through |
 | [D6](#d6) | `-cli-version` must be a single path component | always-on | always-on | rule 3 clause (b) | Desktop passing a multi-component `-cli-version` |
-| [D8](#d8) | Refuse a link, a FIFO, and on Linux and macOS another user's `remote-server.log`, at the start. `5fd08069` writes through a link or another user's file and blocks on a FIFO, on macOS and on Linux with the `fs.protected` sysctls off. On Windows it writes through a link | always-on | always-on | rule 3 clause (b), and the maintainer's decision of 2026-10-19 | a shared socket folder that needs the log, or the reference refusing these entries on every host |
+| [D8](#d8) | Refuse a link, a FIFO, and on Linux and macOS another user's `remote-server.log`, at the start. `5fd08069` writes through a link or another user's file and blocks on a FIFO, on macOS and on Linux with the `fs.protected` sysctls off. On Windows it writes through a link. An own link to an own file passes on Linux and macOS. The `git-shadow` sweep makes no lock file in the target of a link | always-on | always-on | rule 3 clause (b), and the maintainer's decision of 2026-10-19 | a shared socket folder that needs the log, the reference refusing these entries on every host, or the reference making no lock file through a link |
 | [D10](#d10) | Cap `-install` CLI size (decompressed + download body) | off (`0`) | `-max-cli-bytes` / key | rule 4 (who-pays) | Desktop ceasing to treat a disk-full message as terminal |
 | [D12](#d12) | Bound on the `-install` download exchange | off (`0`) | `-cli-download-timeout` / key | rule 4 | operator with the bound set reporting an honest slow download failed |
 | [D15](#d15) | Verify a run-dir lock holder is our serve process before signalling it, in the serve eviction and in `-stop` (macOS) | always-on | always-on | rule 3 clause (a) | the reference adding the same macOS check, or a macOS holder legitimately un-inspectable via `KERN_PROCARGS2` |
@@ -412,7 +412,7 @@ operator-declinable. Only CT-2 and CT-5 carry a flag and a key.
   component.
 - **Pointers.** [PROTOCOL.md](PROTOCOL.md) → `-install`, and `install.go`.
 
-### D8 · claustrum refuses a link, a FIFO or another user's `remote-server.log` (always-on) { #d8 }
+### D8 · claustrum refuses a link, a FIFO or another user's `remote-server.log`, and the `git-shadow` sweep writes nothing through a link (always-on) { #d8 }
 
 - **Behavior.** If the rename to `remote-server.log.old` fails, claustrum's launcher
   judges the entry at the log path by `Lstat`. It truncates an own regular file and the
@@ -435,13 +435,20 @@ operator-declinable. Only CT-2 and CT-5 carry a flag and a key.
   does for a held log (cells W1 and W3 of round `task015-01`). It refuses a file
   symbolic link, where `5fd08069` writes through it (cell W2 of round `task015-04`,
   Windows VM). The rename moves a folder onto a regular `.old` on both (cell W1).
+- **git-shadow sweep.** A symbolic link in `git-shadow` with a folder name of this host
+  goes with one plain remove. On Windows a junction goes the same way. Nothing is
+  written in its target. `5fd08069` makes an empty lock file in the target. Cells G10
+  of rounds `task075-01` and `task075-02` show it on the Linux and macOS VMs. Cells
+  G10 and G10j of the same rounds show it on the Windows VM.
 - **Why always-on.** Rule 3 clause (b). The deployed socket folder
-  (`~/.claude/remote/`) is per-user and not world-writable, so no honest start
-  reaches the refusal.
-- **Reopen trigger.** A deployment that puts the socket folder somewhere shared, or
-  the reference refusing these entries on every host.
+  (`~/.claude/remote/`) is per-user and not world-writable. So no honest start
+  reaches the refusal, and no honest sweep meets a planted link.
+- **Reopen trigger.** A deployment that puts the socket folder somewhere shared, the
+  reference refusing these entries on every host, or the reference making no lock
+  file through a link.
 - **Pointers.** [PROTOCOL.md](PROTOCOL.md) → Daemon log, `server.go`
-  (`openDaemonLog`) and `detach_unix.go` (`openHeldDaemonLog`).
+  (`openDaemonLog`), `detach_unix.go` (`openHeldDaemonLog`) and `gitshadowsweep.go`
+  (`sweepLink`).
 
 ### D10 · Make the `-install` CLI size cap opt-in { #d10 }
 

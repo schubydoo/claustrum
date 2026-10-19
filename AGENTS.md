@@ -427,13 +427,14 @@ The JSON-RPC surface is identical on every OS. Full internals →
   leaf must match `^[0-9a-f]{16}$` (`pluginHashRE`). The path is never
   caller-supplied and never `~`-expanded, so it needs no `wipesHomeDir` guard.
 - The folder `git-shadow` of the settings copy is a further recursive delete
-  site, and it is socket-derived like `plugins.prune`. Each delete there goes
-  through `shadowHost.removeEntry` (`gitshadow.go`). That is `wipesHomeDir` on
-  the full path, as defense in depth, and then one `os.Root.RemoveAll` through a
-  root at `<socket folder>/git-shadow`. The name below that root is one that
-  this daemon made: its own folder `<host form>-<pid>-<16 hex>`, or an entry in
-  it. No part of the path comes from an RPC value or from an operator. The
-  deletes are these:
+  site, and it is socket-derived like `plugins.prune`. Each delete there is
+  `wipesHomeDir` on the full path, as defense in depth, and then one call through
+  a root at `<socket folder>/git-shadow` (`gitshadow.go`). That is
+  `os.Root.RemoveAll` (`removeEntry`), or a plain `os.Root.Remove` for a link
+  that the sweep found (`removeLink`). The name below that root is one that this
+  daemon made, or one that a directory read of `git-shadow` or of the folder of
+  the daemon returned. No part of the path comes from an RPC value or from an
+  operator. The deletes are these:
     - The test folder `.check-<n>`, after each start test, also a failed one.
     - The folder of the daemon, with each folder of a repository in it. It goes
       at shutdown (`closeAll`), after the lock file is closed. It also goes
@@ -450,11 +451,15 @@ The JSON-RPC surface is identical on every OS. Full internals →
       the file of the registration is written, as on `5fd08069` (round
       `val-s3p2b2-6`, Linux and macOS VMs). It goes at the reply of a create
       that is refused before that step.
+    - The sweep of `sweepOldFolders`. An entry goes only if its lock can be
+      taken, and only with this host form or when it is old. A folder with no
+      lock stays 1 minute (claustrum's own). A link goes as a link, and
+      nothing is made in its target (D8).
+    - One repository folder at 128 (`evictOldRepoFolder`).
   On Linux and macOS the folder of a repository holds a link `worktrees` into
   the git directory. The root removes that link and not its target
   (`TestShadowFolderRemovalLeavesLinkTargets`). A new copy is a temp file plus
-  one `os.Root.Rename` inside the folder of the repository. claustrum does not
-  remove the folder of another daemon. With `"shadowDirOff":true` the
+  one `os.Root.Rename` inside the folder of the repository. With `"shadowDirOff":true` the
   short-lived folders are `os.MkdirTemp` folders in the temporary directory, and
   each goes with `os.RemoveAll`, as before. Do not build a name below
   `git-shadow` from a request value.

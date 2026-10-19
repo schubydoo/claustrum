@@ -55,6 +55,130 @@ type shadowRepo struct {
 	read *repoVerdict
 	// copies has the sha256 of the content of each copy that is there.
 	copies map[string][sha256.Size]byte
+	// used is the number of the last good syncRepo of the folder. A larger
+	// number is a later use (evictOldRepoFolder).
+	used uint64
+}
+
+// shadowRepoLimit is the count of repository folders in the folder of the
+// daemon. 5fd08069 keeps 128, and the request of a new repository removes one
+// (cell G13 of round task075-01, Linux VM). A variable, so that a test can
+// lower it.
+var shadowRepoLimit = 128
+
+// repoLimitError is the refusal of a new repository folder when each of the
+// shadowRepoLimit folders is in use by a request that runs. The text is
+// claustrum's own (not measured).
+type repoLimitError struct{ limit int }
+
+func (e repoLimitError) Error() string {
+	return "Claude could not prepare its own files on the remote machine: git is running in " +
+		strconv.Itoa(e.limit) + " repositories at once; try again"
+}
+
+// isShadowRepoName reports whether name has the form of shadowRepoName: 32
+// lowercase hex digits. The short-lived dot folders of a request do not.
+func isShadowRepoName(name string) bool {
+	if len(name) != 32 {
+		return false
+	}
+	for _, c := range name {
+		if (c < '0' || c > '9') && (c < 'a' || c > 'f') {
+			return false
+		}
+	}
+	return true
+}
+
+// evictOldRepoFolder removes one repository folder of the folder own of the
+// daemon when shadowRepoLimit of them are there and the folder name is to be
+// made. base is a root at own. The caller holds repoMu.
+//
+// The folder that goes is the one with the oldest good use. On 5fd08069 the
+// 129th repository removed the folder of the first, and a later request on the
+// first removed the folder of the second (cell G13 of round task075-01, Linux
+// VM). That cell does not tell the order by use from the order of creation, so
+// the order by use is claustrum's own (not measured). A folder in use by a
+// request that runs stays (not measured, claustrum's own). With none free, the
+// error is repoLimitError. Two folders with the same use go by name order, and a
+// failed remove lets the request go on (both not measured). After a failed
+// remove the daemon still knows the copies that stay (forgetGoneCopies). A failed open or
+// read of own lets the request go on to its mkdir (not measured, claustrum's
+// own).
+func (h *shadowHost) evictOldRepoFolder(base *os.Root, own, name string) error {
+	f, err := base.Open(".")
+	if err != nil {
+		return nil
+	}
+	names, err := f.Readdirnames(-1)
+	_ = f.Close()
+	if err != nil {
+		return nil
+	}
+	var folders []string
+	for _, n := range names {
+		if n != name && isShadowRepoName(n) {
+			folders = append(folders, n)
+		}
+	}
+	if len(folders) < shadowRepoLimit {
+		return nil
+	}
+	used := func(n string) uint64 {
+		if st := h.repos[n]; st != nil {
+			return st.used
+		}
+		return 0
+	}
+	victim := ""
+	for _, n := range folders {
+		if h.repoBusy[n] > 0 {
+			continue
+		}
+		if victim == "" || used(n) < used(victim) || used(n) == used(victim) && n < victim {
+			victim = n
+		}
+	}
+	if victim == "" {
+		return repoLimitError{limit: shadowRepoLimit}
+	}
+	if err := h.removeEntry(filepath.Join(own, victim)); err == nil {
+		delete(h.repos, victim)
+	} else if st := h.repos[victim]; st != nil {
+		st.forgetGoneCopies(base, victim)
+	}
+	return nil
+}
+
+// forgetGoneCopies keeps what the daemon knows of the folder name in base
+// after a remove of it that failed part way. A copy that is still there stays
+// known, so that dropCopy removes it when its file goes. A copy that went is
+// forgotten, so that writeCopy makes it again. A config copy that went makes
+// the next sync write it again. Both are claustrum's own (not measured).
+func (st *shadowRepo) forgetGoneCopies(base *os.Root, name string) {
+	for file := range st.copies {
+		if _, err := base.Lstat(filepath.Join(name, filepath.FromSlash(file))); err != nil {
+			delete(st.copies, file)
+			if file == "config" {
+				st.read = nil
+			}
+		}
+	}
+}
+
+// releaseRepos ends the use of the repository folders names by a request that
+// answered (handleGit). Each name is one good syncRepo.
+func (h *shadowHost) releaseRepos(names []string) {
+	if h == nil || len(names) == 0 {
+		return
+	}
+	h.repoMu.Lock()
+	defer h.repoMu.Unlock()
+	for _, n := range names {
+		if h.repoBusy[n]--; h.repoBusy[n] <= 0 {
+			delete(h.repoBusy, n)
+		}
+	}
 }
 
 // shadowRepoName is the name of the folder of the repository with the git
@@ -191,6 +315,9 @@ func readShadowHead(gitDir string) ([]byte, bool) {
 // cannot be read makes no folder. A daemon in its shutdown, and a folder of
 // the daemon that is gone and cannot be made again, give an error too. None of
 // the three is measured.
+//
+// A good call counts as a use of the folder until the request answers: the
+// caller passes its name to releaseRepos then (evictOldRepoFolder).
 func (h *shadowHost) syncRepo(gitDir string, read *repoVerdict) (gitUse, error) {
 	h.repoMu.Lock()
 	defer h.repoMu.Unlock()
@@ -210,7 +337,16 @@ func (h *shadowHost) syncRepo(gitDir string, read *repoVerdict) (gitUse, error) 
 	name := shadowRepoName(gitDir)
 	use := gitUse{host: h, folder: dir, gitDir: gitDir, repoDir: filepath.Join(dir, name),
 		items: read.worktreeItems, shared: read.shared}
-	return use, h.syncRepoFolder(dir, name, gitDir, read)
+	if err := h.syncRepoFolder(dir, name, gitDir, read); err != nil {
+		return use, err
+	}
+	h.useCount++
+	h.repos[name].used = h.useCount
+	if h.repoBusy == nil {
+		h.repoBusy = map[string]int{}
+	}
+	h.repoBusy[name]++
+	return use, nil
 }
 
 // syncRepoFolder is the work of syncRepo on the folder name in dir, the folder
@@ -248,6 +384,9 @@ func (h *shadowHost) syncRepoFolder(dir, name, gitDir string, read *repoVerdict)
 	path := filepath.Join(dir, name)
 	if _, err := os.Lstat(path); errors.Is(err, fs.ErrNotExist) {
 		st = nil
+		if err := h.evictOldRepoFolder(base, filepath.Base(dir), name); err != nil {
+			return err
+		}
 	}
 	shadowRepoBeforeMkdir()
 	if err := mkdirShadowRepo(base, name, path); err != nil {

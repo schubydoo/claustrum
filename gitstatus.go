@@ -349,6 +349,7 @@ func (req *request) usePrintedGitDir(t gitDirTrust, common string) string {
 	if err != nil {
 		return shadowRepoFailureText(err)
 	}
+	req.heldRepos = append(req.heldRepos, filepath.Base(use.repoDir))
 	use.atReply = u.atReply
 	req.use, req.repoRead = use, read
 	return ""

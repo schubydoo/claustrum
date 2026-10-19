@@ -203,6 +203,7 @@ component_management:
         - gitshadowprobe.go
         - gitshadowrepo.go
         - gitshadowuse.go
+        - gitshadowsweep.go
         - gitshadow_unix.go
         - gitshadow_windows.go
         # the folder of one `worktree add` and the staging step of a create on Windows (5fd08069).
