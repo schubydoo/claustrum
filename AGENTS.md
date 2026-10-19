@@ -662,12 +662,6 @@ D20 is off-wire, on Linux and macOS. Before the group `SIGKILL` of a child-group
 leader that reads as gone, the reap of a `-serve` start waits 50 ms and reads the
 leader again. See the entry.
 
-D21 is off-wire and Windows-only. A second daemon that starts on a live socket
-writes to the same `remote-server.log`. claustrum appends. If both daemons are
-this build, no line is lost. `89cb6289` truncates the file at that start, so the
-earlier lines of the first daemon are lost. Keeping the lines is the maintainer's
-decision of 2026-10-02, not a rule 3 clause. See the entry.
-
 D22 is on-wire and always-on. `git.worktree_remove` refuses a worktree that is
 locked in the `.git` folder of `baseRepo`. `89cb6289` answers success in
 four states (rows p6, p6d, p6e and p6f), and with `worktreeRoot` rows q2 to q4

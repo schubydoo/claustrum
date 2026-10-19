@@ -93,6 +93,7 @@ func FuzzBindParams(f *testing.F) {
 	// through the same type keeps this exercising the real signature.
 	makers := []func() pathExpander{
 		func() pathExpander { return &pathParams{} },
+		func() pathExpander { return &fileReadParams{} },
 		func() pathExpander { return &gitParams{} },
 		func() pathExpander { return &spawnParams{} },
 		func() pathExpander { return &extractTarParams{} },

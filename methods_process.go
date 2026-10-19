@@ -36,10 +36,10 @@ type spawnParams struct {
 	Cwd     string            `json:"cwd"`
 	Env     map[string]string `json:"env"`
 	// WantPid is the CT-1 opt-in: when true the reply carries pid + startTime.
-	// Absent/false leaves the reply byte-identical to {"success":true}. An older
-	// daemon ignores the unknown field (bindParams tolerates it), so the param is
-	// safe to send unconditionally.
-	WantPid bool `json:"wantPid"`
+	// Absent/false leaves the reply byte-identical to {"success":true}. Any other
+	// value counts as absent (claustrum's own). 5fd08069 has no such member and
+	// starts the process (cell P1 of round task015-01, Linux VM).
+	WantPid jsonTrueSwitch `json:"wantPid"`
 	// DisableShellAgentSocket turns off the login-shell SSH_AUTH_SOCK hand-off for
 	// this spawn (see shellagent.go). A non-bool value fails the decode, so it
 	// answers -32602 like any other mistyped param; null is accepted as false.
@@ -186,8 +186,9 @@ type reattachParams struct {
 	ID      string `json:"id"`
 	FromSeq uint64 `json:"fromSeq"`
 	// WantPid mirrors spawnParams.WantPid — see there. When true and the process
-	// is found, the reply carries pid + startTime.
-	WantPid bool `json:"wantPid"`
+	// is found, the reply carries pid + startTime. 5fd08069 gives the reattach
+	// result with a wrong-typed wantPid (cell P2 of round task015-01, Linux VM).
+	WantPid jsonTrueSwitch `json:"wantPid"`
 }
 
 func (s *server) processReattach(c *conn, req *request) response {

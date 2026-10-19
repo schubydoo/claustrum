@@ -155,6 +155,12 @@ func TestExpandPathsCoversEveryPathField(t *testing.T) {
 		t.Errorf("pathParams.Path = %q", pp.Path)
 	}
 
+	rp := &fileReadParams{Path: "~/r"}
+	rp.expandPaths()
+	if rp.Path != under("r") {
+		t.Errorf("fileReadParams.Path = %q", rp.Path)
+	}
+
 	et := &extractTarParams{ArchivePath: "~/a.tgz", DestDir: "~/d"}
 	et.expandPaths()
 	if et.ArchivePath != under("a.tgz") || et.DestDir != under("d") {

@@ -332,20 +332,24 @@ func TestKillWithKidsHoldingThePipes(t *testing.T) {
 	})
 }
 
-// TestSecondDaemonLogSharesTheHeldFile: a live daemon holds remote-server.log open, so the
-// launcher of a second daemon cannot rotate it. The launcher then opens that same file for
-// append. Both daemons write to the end of it, and no line of either one is lost. Without
-// that file the second daemon keeps the stdout and stderr of its launcher. An ssh command
-// that started it then does not return (rows WN04 and WJ04 on a Windows VM).
-func TestSecondDaemonLogSharesTheHeldFile(t *testing.T) {
+// TestSecondDaemonLogTruncatesTheHeldFile: a live daemon holds remote-server.log open, so
+// the launcher of a second daemon cannot rotate it. The launcher then opens that same file
+// and truncates it. Each daemon writes at the offset of its own handle, so a later line of
+// the first one leaves a block of NUL bytes. .old stays as it was. 5fd08069 does so (cell
+// W1 of round task015-01, Windows VM). Without that file the second daemon keeps the stdout
+// and stderr of its launcher. An ssh command that started it then does not return (rows
+// WN04 and WJ04 on a Windows VM).
+func TestSecondDaemonLogTruncatesTheHeldFile(t *testing.T) {
 	dir := t.TempDir()
 	sock := filepath.Join(dir, "rpc.sock")
+	logPath := filepath.Join(dir, daemonLogName)
+	writeFile(t, logPath+".old", "old\n", 0o600)
 	first := openDaemonLog(sock)
 	if first == nil {
 		t.Fatal("no log for the first daemon")
 	}
 	defer first.Close()
-	if _, err := io.WriteString(first, "A1\n"); err != nil {
+	if _, err := io.WriteString(first, "A1-long\n"); err != nil {
 		t.Fatal(err)
 	}
 	second := openDaemonLog(sock)
@@ -356,18 +360,58 @@ func TestSecondDaemonLogSharesTheHeldFile(t *testing.T) {
 	for _, w := range []struct {
 		f    *os.File
 		line string
-	}{{second, "B1\n"}, {first, "A2\n"}, {second, "B2\n"}} {
+	}{{second, "B1\n"}, {first, "A2\n"}} {
 		if _, err := io.WriteString(w.f, w.line); err != nil {
 			t.Fatal(err)
 		}
 	}
-	got, err := os.ReadFile(filepath.Join(dir, daemonLogName))
+	if got, want := readLogFile(t, logPath), "B1\n\x00\x00\x00\x00\x00A2\n"; got != want {
+		t.Errorf("log = %q, want %q", got, want)
+	}
+	if got := readLogFile(t, logPath+".old"); got != "old\n" {
+		t.Errorf(".old = %q, want it unchanged", got)
+	}
+}
+
+// TestDaemonLogTruncatesAFileThatAnotherProcessHolds: another handle holds the log open with
+// read and write share and no delete share. A new daemon truncates the log and writes only
+// its own lines. .old stays as it was. 5fd08069 does so (cell W3 of round task015-01, Windows
+// VM).
+func TestDaemonLogTruncatesAFileThatAnotherProcessHolds(t *testing.T) {
+	dir := t.TempDir()
+	sock := filepath.Join(dir, "rpc.sock")
+	logPath := filepath.Join(dir, daemonLogName)
+	writeFile(t, logPath, "earlier daemon\n", 0o600)
+	writeFile(t, logPath+".old", "old\n", 0o600)
+	holder, err := os.OpenFile(logPath, os.O_RDWR, 0)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if string(got) != "A1\nB1\nA2\nB2\n" {
-		t.Errorf("log = %q, want every line of both daemons in write order", got)
+	defer holder.Close()
+	f := openDaemonLog(sock)
+	if f == nil {
+		t.Fatal("no log file while another handle holds the log open")
 	}
+	defer f.Close()
+	if _, err := io.WriteString(f, "B1\n"); err != nil {
+		t.Fatal(err)
+	}
+	if got := readLogFile(t, logPath); got != "B1\n" {
+		t.Errorf("log = %q, want only the line of the new daemon", got)
+	}
+	if got := readLogFile(t, logPath+".old"); got != "old\n" {
+		t.Errorf(".old = %q, want it unchanged", got)
+	}
+}
+
+// readLogFile returns the bytes of path as a string.
+func readLogFile(t *testing.T, path string) string {
+	t.Helper()
+	b, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return string(b)
 }
 
 // TestChildSurvivesAKilledDaemon: a process that owns one spawned child ends hard, as a

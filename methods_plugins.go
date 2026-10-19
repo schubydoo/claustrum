@@ -77,11 +77,11 @@ func (s *server) pluginsPrune(req *request) response {
 	// which is why PruneParams lives in package handlers (the type name reaches the
 	// wire). This differs from the shared bindParams path, whose bare "Invalid params"
 	// the other methods use.
+	// No params member is "Invalid params: unexpected end of JSON input", as on
+	// 5fd08069 (cell P0 of round task015-01, Linux VM).
 	var p handlers.PruneParams
-	if len(req.Params) > 0 {
-		if err := json.Unmarshal(req.Params, &p); err != nil {
-			return errResult(req.ID, codeInvalidParam, "Invalid params: "+err.Error())
-		}
+	if err := json.Unmarshal(req.Params, &p); err != nil {
+		return errResult(req.ID, codeInvalidParam, "Invalid params: "+err.Error())
 	}
 
 	res := pruneResult{Pruned: []string{}, PrunedLegacy: []string{}}

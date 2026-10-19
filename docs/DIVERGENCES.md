@@ -80,12 +80,11 @@ unrecoverable data loss, and no honest caller has a legitimate *use* for deletin
 home. A caller can still reach that path by accident, which is exactly what the
 guard is for.
 
-Clause (b): the trigger is unreachable on an honest path. Four always-on
-entries use this form (D6, D8, D9, D19). Each entry has its own trigger,
-and the glosses are not interchangeable. Two of the four are asserted rather than
-enumerated: nobody ever enumerated Desktop's per-method param set against D9's
-binding, and D6 rests on an observed value plus a measured accepted-set. Read
-those two as unenumerated, not established (rule 2 puts the burden on the
+Clause (b): the trigger is unreachable on an honest path. Three always-on
+entries use this form (D6, D8, D19). Each entry has its own trigger,
+and the glosses are not interchangeable. D6 is asserted rather than
+enumerated: it rests on an observed value plus a measured accepted-set. Read
+it as unenumerated, not established (rule 2 puts the burden on the
 divergence). D19 holds for worktrees that either daemon creates, because both
 creates refuse the junction. A worktree made outside the daemon can still sit behind
 it.
@@ -158,7 +157,6 @@ rather than repeating them in each entry:
 | [D3](#d3) | Cap `files.extract_tar` output size | off (`0` = unlimited) | `-max-extract-bytes` / `max-extract-bytes` | rule 4 (who-pays) | operator's cap refuses a legit extraction, or default lets a bomb through |
 | [D6](#d6) | `-cli-version` must be a single path component | always-on | always-on | rule 3 clause (b) | Desktop passing a multi-component `-cli-version` |
 | [D8](#d8) | Never follow or write a foreign or symlinked `remote-server.log`. Both halves hold on Linux and macOS only | always-on | always-on | rule 3 clause (b): unreachable on the deployed path | a shared socket dir that also needs the log file, or the reference adding the same refuse-to-follow |
-| [D9](#d9) | Namespace-wide params binding (type error in an unread field → `-32602`) | always-on | always-on | rule 3 clause (b) | a real client sending a type-mismatched unread namespace field |
 | [D10](#d10) | Cap `-install` CLI size (decompressed + download body) | off (`0`) | `-max-cli-bytes` / key | rule 4 (who-pays) | Desktop ceasing to treat a disk-full message as terminal |
 | [D12](#d12) | Bound on the `-install` download exchange | off (`0`) | `-cli-download-timeout` / key | rule 4 | operator with the bound set reporting an honest slow download failed |
 | [D15](#d15) | Verify a run-dir lock holder is our serve process before signalling it, in the serve eviction and in `-stop` (macOS) | always-on | always-on | rule 3 clause (a) | the reference adding the same macOS check, or a macOS holder legitimately un-inspectable via `KERN_PROCARGS2` |
@@ -166,7 +164,6 @@ rather than repeating them in each entry:
 | [D17](#d17) | An abandoned `lsof` run reads as busy, not idle (macOS) | always-on (macOS) | always-on | rule 3 clause (a) | a measurement of the reference with an `lsof` run that cannot be killed, or an operator reporting a run dir the cleaner will not tidy on such a host |
 | [D19](#d19) | `git.worktree_remove` refuses a junction at any directory between `baseRepo` and the leaf. At `.claude` or `.claude\worktrees`, `f6010b97` answers success and deletes only the branch, and `89cb6289` does the same for a branch that another ref reaches. At a level above `.claude`, `89cb6289` answers success with no leaf and no branch there (Windows) | always-on (Windows) | always-on | rule 3 clause (b): the create of both daemons refuses that junction. Maintainer decisions of 2026-09-27 and, for the levels above `.claude`, of 2026-10-07 | the reference refusing the junction or deleting through it, or a Windows client that depends on the success reply |
 | [D20](#d20) | Wait 50 ms and read again before the group `SIGKILL` of a child-group leader that reads as gone, at the reap of a `-serve` start (Linux and macOS) | always-on (Linux and macOS) | always-on | rule 3 clause (a) | a measurement that shows the reference waiting before that `SIGKILL`, or a report of a child that outlived a restart because it replaced its program |
-| [D21](#d21) | A second daemon on a live socket appends to `remote-server.log`, where `89cb6289` truncates it and loses the earlier lines of the first daemon (Windows) | always-on (Windows) | always-on | Maintainer decision of 2026-10-02. No frame, reply or exit status differs. A reader of the log file sees the kept lines | a measurement that shows the reference keeping those lines, or a reader of the log that needs the file to start with the lines of the second daemon |
 | [D22](#d22) | `git.worktree_remove` refuses a worktree locked in the `.git` folder of `baseRepo`, in four states where `89cb6289` answers success. Two have a daemon `GIT_DIR` and `GIT_COMMON_DIR` of another repository, with the folder present or gone. One has a daemon `GIT_DIR` alone. One has a `baseRepo` that does not exist as sent. With `worktreeRoot`, rows q2 to q4 (Linux VM) differ in the frame too | always-on | always-on | Maintainer decision of 2026-10-03. The frame differs from `89cb6289` in those four states and in rows q2 to q4 | a caller that needs the removal of a locked worktree there, or a measurement that shows the reference refusing there |
 | [D23](#d23) | The environment block of a child is in name order (Windows). The reference does not sort it | always-on (Windows) | always-on | Maintainer decision of 2026-10-13: claustrum stays on Go 1.26, which sorts the block | the reference moves to Go 1.26 or newer |
 | [D24](#d24) | The rollback of `git.worktree_create` keeps a folder that replaced the new registration. `89cb6289` removes it in cells B6 and B6b (Linux and macOS VMs), and in B6b it holds the registration of a live sibling worktree | always-on | always-on | Maintainer decision of 2026-10-07. The frames are equal in the measured cells (Linux and macOS VMs, and B6w of round `task087-03` on a Windows VM). The disk differs. The Windows placement is not measured | a measurement that shows the reference keeping such a folder, or a decision to match the disk of cells B6 and B6b |
@@ -430,8 +427,8 @@ operator-declinable. Only CT-2 and CT-5 carry a flag and a key.
   log and falls back to inherited stdio. In both cases, on Linux and macOS,
   claustrum never follows the link or writes into a file it does not own.
 - **Windows.** After a failed rename and a failed create, the Windows launcher
-  opens an existing regular `remote-server.log` for append. That is the path of
-  [D21](#d21). A path that is not a regular file is refused. The type test and the
+  opens an existing regular `remote-server.log` and truncates it. A path that is
+  not a regular file is refused. The type test and the
   open are two calls, and the open has no owner test. Both halves of this entry
   therefore hold on Linux and macOS only. This follows from the code and is not
   measured.
@@ -455,23 +452,6 @@ operator-declinable. Only CT-2 and CT-5 carry a flag and a key.
   this becomes parity, not a divergence).
 - **Pointers.** [PROTOCOL.md](PROTOCOL.md) → Daemon log, and `server.go`
   (`openDaemonLog`).
-
-### D9 · Namespace-wide params binding is stricter than the reference's (always-on) { #d9 }
-
-- **Behavior.** claustrum binds `params` into one struct per namespace
-  (`pathParams`, `gitParams`), so a field that is valid for the *namespace* but
-  unused by *this* method still participates in decoding. A type-mismatched value
-  there answers `-32602`, for example `files.stat {"maxBytes":"{"}`. The reference
-  answers that request with defaults, as measured on `f6010b97`. Both binaries
-  ignore a genuinely unknown key.
-- **Why always-on.** Rule 3 clause (b): the trigger is a type error in a field the
-  method does not read (a client bug). Stated honestly, this is narrower than "a
-  real client never sends them". Nobody ever enumerated Desktop's per-method param
-  set against this binding, so it is unenumerated, not established.
-- **Reopen trigger.** Any real client sending a type-mismatched value in a
-  namespace field the target method does not read. That observation is also the
-  measurement this entry owes and does not have.
-- **Pointers.** [PROTOCOL.md](PROTOCOL.md) → Params presence and typing.
 
 ### D10 · Make the `-install` CLI size cap opt-in { #d10 }
 
@@ -773,47 +753,6 @@ operator-declinable. Only CT-2 and CT-5 carry a flag and a key.
   `scratch/89cb6289/e-linux/REPORT.md` and `REPORT-val1.md` to `REPORT-val5.md`
   there, and in `scratch/89cb6289/e-macos/REPORT-val1.md` to `REPORT-val3.md`.
 
-### D21 · A second daemon on a live socket appends to `remote-server.log` (Windows) { #d21 }
-
-- **Behavior.** On Windows a second `-serve` can start on a live socket, and the
-  first daemon stays alive. The first daemon holds `remote-server.log` open, so the
-  launcher of the second one cannot rotate it. claustrum then opens that file for
-  append. If both daemons are this build, each one writes to the end of the file,
-  and no line of either one is lost. A first daemon of an earlier build writes at
-  its own offset. That follows from the code and is not measured. This is
-  off-wire. No frame changes.
-- **Reference side, measured.** On a Windows VM (rows WN04 and WJ04), `89cb6289`
-  writes to the same file and truncates it at the second start.
-  - The 16 lines that its first daemon wrote before that start were lost.
-  - The later lines of the first daemon were kept, behind a block of NUL bytes.
-  - After both daemons ended, the file held 12 lines.
-- **claustrum side, measured.** In the same rows the file kept the 16 lines of the
-  first daemon. The later lines of both daemons followed in time order. After both
-  daemons ended, the file held 28 lines.
-- **Equal in those rows.** The launcher of the second daemon returned at once with
-  empty stdout and stderr. Both daemons and the three children stayed alive.
-  `-stop` ended the second daemon only.
-- **Default.** Always-on, Windows only. **Activate:** always-on. There is no flag
-  and no key. On Linux a second daemon evicts the first, and the log rotates to
-  `.old` on both sides (rows LOCK-0, LOCK-2, ST03).
-- **Why always-on.** The maintainer's decision of 2026-10-02: claustrum keeps the
-  lines. No frame, no reply and no exit status differs from `89cb6289` in the
-  measured rows. The difference is in the log file only. No clause of rule 3
-  covers this entry. It stands on that decision, and the reopen trigger below
-  takes it back.
-- **Cost.** A reader of the log file sees the difference: it gets the kept lines
-  from claustrum. The file holds the lines of two daemons with no mark of which
-  daemon wrote a line. It does not start with the start lines of the second
-  daemon, as the file of `89cb6289` does.
-- **Not measured.** A first daemon of another build beside a second daemon of this
-  one. An earlier claustrum build does not write in append mode.
-- **Reopen trigger.** A measurement that shows the reference keeping the earlier
-  lines of the first daemon (then this becomes parity). Or a reader of the log
-  that needs the file to start with the lines of the second daemon.
-- **Pointers.** [PROTOCOL.md](PROTOCOL.md) → Daemon log. Also `server.go`
-  (`openDaemonLog`) and `detach_windows.go` (`openHeldDaemonLog`). Evidence in
-  `scratch/89cb6289/e-windows/REPORT-val4.md`, section 3.3.
-
 ### D22 · Refuse a worktree locked in the `.git` folder of `baseRepo` on remove (always-on) { #d22 }
 
 - **Behavior.** `git.worktree_remove` refuses a worktree that is locked in the
@@ -1051,7 +990,7 @@ Reopen trigger: the reference moves to Go 1.26 or newer.
 - `process.spawn` / `process.reattach` accept an optional `"wantPid":true`. The
   reply then gains `pid` (the child's OS pid) and `startTime`. This is the first
   wire-surface *extension*.
-- The default path is byte-identical. When `wantPid` is absent or false,
+- The default path is byte-identical. When `wantPid` is absent or not `true`,
   `omitempty` omits both fields, and the frame is exactly the old
   `{"success":true}` / `{found,running,firstSeq,lastSeq,stdinApplied}`. The fields live on a
   dedicated `spawnResult` struct, so they can never leak into the `successResult`
@@ -1179,7 +1118,8 @@ Reopen trigger: the reference moves to Go 1.26 or newer.
 ## Retired entries
 
 A retired entry is a divergence that a later reference build, or a later
-measurement of the reference, made moot. Its number is not reused, and its old
+measurement of the reference, made moot. The maintainer also retires an entry to
+follow the reference. Its number is not reused, and its old
 link points here.
 
 ### D1 · Verify the `-cli-zst` blob against a supplied checksum (retired) { #d1 }
@@ -1247,6 +1187,10 @@ link points here.
   `.fetch-<digits>` and `<version>.zst`. Measured on a Linux VM against
   `4534d86` through `f6010b97`. [D6](#d6) still applies to every version.
 
+### D9 · Namespace-wide params binding (retired) { #d9 }
+
+- A method now ignores a member that another method of its namespace reads, as `5fd08069` does (round `task015-01`, Linux, macOS and Windows VMs).
+
 ### D11 · Deadline on the `<cli> --version` run of `-install` (retired) { #d11 }
 
 - D11 made the deadline on the direct `<cli> --version` run opt-in and off by
@@ -1309,6 +1253,10 @@ link points here.
 - `5fd08069` counts and removes no `.blob-planted` file (cells L4, M1 and W3,
   Linux, macOS and Windows VMs). The prune counts version files only.
 - claustrum writes no `.blob-` file now, and it accepts such a version.
+
+### D21 · A second daemon on a live socket appends to `remote-server.log` (retired) { #d21 }
+
+- On Windows the launcher now truncates a held log, and each daemon writes at its own offset, as `5fd08069` does (round `task015-01`, Windows VM).
 
 ## Candidates considered but not taken
 

@@ -43,7 +43,7 @@ This method has no `errorCode` member. A failure is a JSON-RPC error.
 
 | Code | Text | Cause |
 |---|---|---|
-| `-32602` | `Invalid params` | The request has no `params` member, or `params` or a member of it has the wrong type. See [the rules for `params`](../PROTOCOL.md#params-presence-and-typing). |
+| `-32602` | `Invalid params` | The request has no `params` member, or `params` or a member that it reads has the wrong type. See [the rules for `params`](../PROTOCOL.md#params-presence-and-typing). |
 | `-32603` | `open <path>: no such file or directory` | The path does not exist. |
 | `-32603` | `open <path>: not a directory` | The path is not a directory. |
 | `-32603` | `open <path>: permission denied` | The daemon has no permission for the directory, or for a directory above it. |
@@ -52,6 +52,4 @@ The `-32603` texts come from the operating system, and the table gives those of 
 
 ## Differences from the reference
 
-claustrum is built to answer as the reference daemon does. One entry of the divergence catalog applies to this method:
-
-- [D9](../DIVERGENCES.md#d9): a `maxBytes` member of the wrong type gets `-32602`, although this method does not use `maxBytes`. The entry has the measured case, on `files.stat`.
+claustrum is built to answer as the reference daemon does, and no entry of the divergence catalog applies to this method.
