@@ -101,7 +101,8 @@ func isShadowRepoName(name string) bool {
 // the order by use is claustrum's own (not measured). A folder in use by a
 // request that runs stays (not measured, claustrum's own). With none free, the
 // error is repoLimitError. Two folders with the same use go by name order, and a
-// failed remove lets the request go on (both not measured). A failed open or
+// failed remove lets the request go on (both not measured). After a failed
+// remove the daemon still knows the copies that stay (forgetGoneCopies). A failed open or
 // read of own lets the request go on to its mkdir (not measured, claustrum's
 // own).
 func (h *shadowHost) evictOldRepoFolder(base *os.Root, own, name string) error {
@@ -141,9 +142,28 @@ func (h *shadowHost) evictOldRepoFolder(base *os.Root, own, name string) error {
 	if victim == "" {
 		return repoLimitError{limit: shadowRepoLimit}
 	}
-	_ = h.removeEntry(filepath.Join(own, victim))
-	delete(h.repos, victim)
+	if err := h.removeEntry(filepath.Join(own, victim)); err == nil {
+		delete(h.repos, victim)
+	} else if st := h.repos[victim]; st != nil {
+		st.forgetGoneCopies(base, victim)
+	}
 	return nil
+}
+
+// forgetGoneCopies keeps what the daemon knows of the folder name in base
+// after a remove of it that failed part way. A copy that is still there stays
+// known, so that dropCopy removes it when its file goes. A copy that went is
+// forgotten, so that writeCopy makes it again. A config copy that went makes
+// the next sync write it again. Both are claustrum's own (not measured).
+func (st *shadowRepo) forgetGoneCopies(base *os.Root, name string) {
+	for file := range st.copies {
+		if _, err := base.Lstat(filepath.Join(name, filepath.FromSlash(file))); err != nil {
+			delete(st.copies, file)
+			if file == "config" {
+				st.read = nil
+			}
+		}
+	}
 }
 
 // releaseRepos ends the use of the repository folders names by a request that
