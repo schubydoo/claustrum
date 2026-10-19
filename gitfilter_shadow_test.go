@@ -259,6 +259,22 @@ func TestShadowFailedListingBeforeTheCheckout(t *testing.T) {
 	}
 }
 
+// Cell E13 of round task083-01 (Linux VM). The first checkout listing fails, and
+// the `git version` after it fails too. 5fd08069 answers the text of that call
+// in the frame of a failed checkout and rolls back. Mutation: drop the
+// cannotRunText branch in hardenedGitCheckout.
+func TestShadowFailedListingAndVersionBeforeTheCheckout(t *testing.T) {
+	f := newShadowFilterFixture(t, "a.txt filter=m\n")
+	t.Setenv("CLAUSTRUM_GITSTUB_FAIL_LISTING", "full")
+	failVersion(t, "1", "boom-version\n")
+	raw, _ := f.create(t, nil)
+	want := failedFrame(t, "git worktree add failed (checkout): git cannot run on this host; git not run: exit status 1: boom-version")
+	if raw != want {
+		t.Fatalf("git.worktree_create = %s\nwant %s", raw, want)
+	}
+	f.wantGone(t)
+}
+
 // sameDir reports whether a and b name one folder.
 func sameDir(a, b string) bool {
 	fa, errA := os.Stat(a)
