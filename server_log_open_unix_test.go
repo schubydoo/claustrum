@@ -292,6 +292,36 @@ func TestDaemonLogRefusesAHardLink(t *testing.T) {
 	wantFileText(t, other, "other\n")
 }
 
+// A file that replaces the judged log between the Lstat and the open (not measured,
+// claustrum's own) is refused, and the new file keeps its bytes. The fix is the identity
+// test after the open in openHeldDaemonLog.
+func TestDaemonLogRefusesAFileThatReplacedTheJudgedOne(t *testing.T) {
+	dir, _, logPath := logOpenFixture(t, true)
+	if err := os.WriteFile(logPath, []byte("judged\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	judged, err := os.Lstat(logPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	// The replacement exists before the judged file goes, so it cannot reuse its inode.
+	next := filepath.Join(dir, "next")
+	if err := os.WriteFile(next, []byte("replacement\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Rename(next, logPath); err != nil {
+		t.Fatal(err)
+	}
+	f, err := openHeldDaemonLog(logPath, judged)
+	if f != nil {
+		_ = f.Close()
+	}
+	if want := "open " + logPath + ": permission denied"; f != nil || err == nil || err.Error() != want {
+		t.Fatalf("openHeldDaemonLog = %v, %v, want nil and the error %q", f, err, want)
+	}
+	wantFileText(t, logPath, "replacement\n")
+}
+
 // An own file that the user cannot write (not measured, claustrum's own): the error of
 // the open fails the start, and the file keeps its bytes. The fix is the error return
 // after syscall.Open in openHeldDaemonLog.
