@@ -1061,7 +1061,7 @@ type repoVerdict struct {
 	// shared is read from the last `core.sharedrepository` line of the copy
 	// (sharedRepositoryOf, makeWorktreesFolder).
 	shared sharedRepository
-	// ownConfig are the filterRecords of the settings, of the files of the
+	// ownConfig are the `filter.` records of the settings, of the files of the
 	// `includeIf` sections and of the `config.worktree` settings
 	// (settingRecords), for the filter rule.
 	ownConfig []byte

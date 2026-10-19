@@ -15,8 +15,8 @@ A failed request can leave files on disk: see [After a failure](#after-a-failure
 | `baseRepo` | yes | The repository. |
 | `branchName` | yes | The branch to create. It is required with `existingBranch` too. An attach that succeeds does not use it. |
 | `worktreePath` | yes | The directory of the new worktree. It must not exist. |
-| `sourceBranch` | no | The name that the new branch starts from. The daemon reads it as a local branch and as `origin/<name>`. The default is the current branch. An attach to `existingBranch` does not use it. A name that matches no branch is not an error: see [Response](#response). |
-| `existingBranch` | no | A local branch to attach to. If it names no local branch, the daemon creates `branchName` instead. If the attach fails, the daemon does the same. For example, git refuses an attach to a branch that is checked out in `baseRepo`. The request can then still succeed. `branch` in the response says which branch the worktree is on: see [Response](#response). |
+| `sourceBranch` | no | The name that the new branch starts from. The default is the current branch. An attach to `existingBranch` does not use it. |
+| `existingBranch` | no | A local branch to attach to. If it names no local branch, the daemon creates `branchName` instead. If the attach fails, the daemon does the same. For example, git refuses an attach to a branch that is checked out in `baseRepo`. |
 | `worktreeRoot` | no | A location outside the repository. Windows refuses it with `unsafe_path`. |
 | `timeoutMs` | no | A deadline that starts at the add. It stops the read-tree call. The daemon tests it after the add and the copy step. No value or `0` sets none. |
 | `shadowDirOff` | no | `true` turns off, for this request, the filter rule of the checkout, the daemon's own read of the git config of the repository, and the settings copy. Git requests that start meanwhile get the same (Linux VM). Other values do nothing. See [Git filters](#git-filters), [Repository config refusals](../PROTOCOL.md#repository-config-refusals) and [The settings copy](#the-settings-copy). |
@@ -86,7 +86,7 @@ A request can also remove a stale registration of this worktree path before the 
 | The daemon cannot create a directory (`mkdir_failed`) | Nothing. |
 | `git worktree add` runs and fails (`worktree_add_failed`) | If the worktree directory is empty, the daemon removes it. Files that the failed add wrote stay. A registration and a branch that the add made stay too. |
 | A test of the new worktree fails after the add. The tests come before the checkout and give `unsafe_path`. A worktree directory replaced during the checkout, or on Windows, gives `worktree_add_failed`. | Everything, except an empty worktree directory. In cell S2 on Windows nothing stays. |
-| The checkout or the `config.worktree` step fails, the filter rule refuses, or the deadline expires (`worktree_add_failed`, `repository_only_filter`, `timeout`). Or the text ends with `; retry`. | The daemon removes the worktree directory and its registration. If this request created the branch, the daemon removes the branch too. The cases below the table are exceptions. |
+| The checkout or the `config.worktree` step fails, the filter rule refuses, or the deadline expires (`worktree_add_failed`, `repository_only_filter`, `timeout`). Or the text ends with `; retry`. | The daemon removes the worktree directory and its registration. If this request created the branch, the daemon removes the branch too. |
 
 A rollback leaves something in these cases:
 
@@ -105,7 +105,9 @@ In the state `shadow`, if a file of the checkout uses a filter that only the rep
 
 In the state `fallback-git` git runs the filters, with no rule of this section (cells R-Q4f and R-Q4g of round `task084-01`, Linux VM). Files that the repository config includes count as it, also through `includeIf`, whatever its condition (cells F1 and F1b of round `task084-02`, F1c and F1d of `task084-04`). A filter counts as defined where its `smudge` or `process` key has a value. With a settings copy a last `smudge` or `process` line with no `=` in .git/config counts too, whatever an includeIf file says (cells F5 and F6 of round `task073-02`, Linux VM, G5a and G5b of `task073-07`, macOS VM). There a user `process = cat` is no outside definition, so a repository `smudge` command is refused (cell F4 of round `task073-02`, Linux VM). A filter of the user or system config or the daemon environment runs with its values, also if the repository defines it, except in that `process = cat` case. With a user `lfs.storage` the checkout gets no `lfs.storage` item of the daemon (round `task008-01`, Linux, macOS and Windows VMs). A failing user `smudge` fails the request where the repository adds only `required = true`, `yes` or `1`.
 
-Three values of the repository pass: `smudge = cat` under each name, and `git-lfs smudge -- %f` and `git-lfs filter-process` under the name `lfs`, unless the repository config names a program for git-lfs. With a settings copy a `smudge` value that does not pass refuses the filter, in .git/config or in an `includeIf` file, in either order. In .git/config only the last value counts. A filter whose values are all `cat` gets no item. The cells are F1e to F1i of rounds `task084-05` and `task084-06`, and Q8a and Q8b of `task084-07` (Linux VM). A plain include file and `config.worktree` count the same way (not measured). With a settings copy a refused name that is not valid UTF-8 gets git's checkout text less those bytes on Linux, and success on Windows (cells F12 and F13 of rounds `task073-02` and `task073-06`, Linux and Windows VMs). The [error-string catalog](../PROTOCOL.md#error-string-catalogue) has the other refusals of the rule.
+Three values of the repository pass: `smudge = cat` under each name, and `git-lfs smudge -- %f` and `git-lfs filter-process` under the name `lfs`. With a settings copy a `smudge` value that does not pass refuses the filter, in .git/config or in an `includeIf` file, in either order. In .git/config only the last value counts. A filter whose values are all `cat` gets no item. The cells are F1e to F1i and Q8a and Q8b of rounds `task084-05` to `task084-07` (Linux VM). A plain include file and `config.worktree` count the same way (not measured). With a settings copy a refused name that is not valid UTF-8 gets git's checkout text less those bytes on Linux, and success on Windows (cells F12 and F13 of rounds `task073-02` and `task073-06`, Linux and Windows VMs). The [error-string catalog](../PROTOCOL.md#error-string-catalogue) has the other refusals of the rule.
+
+With a settings copy `git-lfs smudge --skip %f` passes under `lfs` too. A repository-only `lfs` filter with the `git lfs install` lines gets those lines as items. A git-lfs program key of the repository refuses nothing, and its program does not run. A failed checkout text with `smudge filter lfs failed` gets a note about ssh, credential and proxy settings after it. The cells are K1 to K8 and L1 to L4 of round `task081-01` (Linux VM). With no settings copy such a key turns the filter `lfs` off (claustrum's own).
 
 ## The settings copy
 
@@ -127,7 +129,7 @@ The daemon keeps its own copy of the git settings of the repository, and its git
 In the state `shadow` a create holds the git directory of `baseRepo` open from its gate to its reply.
 
 - The git directory must be a real directory at the gate. On Windows a junction or a directory symbolic link there is refused, on every git method without `"shadowDirOff": true`. With that member both link kinds pass, and git works in the folder behind the link, as on `5fd08069` (Windows VM). On Linux and macOS a `.git` that is a symbolic link before the request is resolved first, and the daemon holds its target. A change of that link is a change of the path too.
-- The daemon's own deletes, renames, new folders and file writes inside the git directory go through the held folder. A folder that is put at the path while the create runs gets none of them, except the directory that the hold moves to (the rule for Linux and macOS below).
+- The daemon's own deletes, renames, new folders and file writes inside the git directory go through the held folder. A folder that is put at the path while the create runs gets none of them, except the directory that the hold moves to.
 - The hold stops no rename of the git directory by another process.
 - The steps of the create test that the path still names the held folder. A swap after `rev-parse --absolute-git-dir` and before the add is refused before the add. Git itself goes by the path.
 - A swap after the read-tree call fails the create, and the registration gets no index. On Windows a swap after the first listing of the checkout fails it too. The text starts with `git worktree add failed (checkout): `. The registration and the branch then stay, and the text says so.
@@ -143,7 +145,7 @@ After the checkout, the daemon copies two sets of files from `baseRepo` into the
 - The ignored files that the root file `.worktreeinclude` names. That file uses the syntax of `.gitignore`.
 - The ignored files under `.claude/`.
 
-Neither set includes `.claude/worktrees` or the session state of Claude under `.claude/`, for example `checkpoints`, `mailbox` and `scheduled_tasks.json`. A new worktree does not inherit the session state of the repository.
+Neither set includes `.claude/worktrees` or the session state of Claude under `.claude/`, for example `checkpoints`, `mailbox` and `scheduled_tasks.json`.
 
 A copy does not keep the mode of its source. The daemon creates each file with mode `0666` less its umask. So an executable file loses its execute bit, and a `0400` file gets a wider mode. The daemon also skips symbolic links. A copy does not replace a file or a link that the checkout made.
 
@@ -160,5 +162,5 @@ A copy that fails does not fail the request. If the deadline of `timeoutMs` expi
 
 These entries of the divergence catalog apply to this method:
 
-- [D2](../DIVERGENCES.md#d2): a delete refuses a path that is the home directory or holds it. That covers the Windows removal of old `.claude-new-worktree-*` entries and both staging removes.
+- [D2](../DIVERGENCES.md#d2): a delete refuses a path that is the home directory or holds it.
 - [D24](../DIVERGENCES.md#d24): a rollback and the index placement leave a registration directory that something replaced after the add (the Windows placement is not measured).

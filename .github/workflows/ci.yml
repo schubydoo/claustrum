@@ -92,24 +92,26 @@ jobs:
       # pattern and the third skips both, so together they run every test once.
       # macOS runs two shards. One macOS run took 461 s for the whole suite,
       # against the same 600 s default. Each leg now runs with the 12 minute limit
-      # of the go test step. The git shard runs the worktree and the
-      # git.status tests, and the rest shard skips both.
+      # of the go test step. The git shard runs the worktree, the git.status,
+      # the TestShadow and the TestProbe tests, and the rest shard skips them.
+      # The macOS rest shard ran 11 to 12 minutes on main with TestShadow and
+      # TestProbe in it, and one added test passed the limit.
       # Linux runs the same two shards as macOS, so that the Linux legs end sooner.
       # The coverage job below still runs the whole suite in one leg.
       matrix:
         include:
           - os: ubuntu-latest
             shard: git
-            select: -run=^(TestWorktree|TestGitStatus)
+            select: -run=^(TestWorktree|TestGitStatus|TestShadow|TestProbe)
           - os: ubuntu-latest
             shard: rest
-            select: -skip=^(TestWorktree|TestGitStatus)
+            select: -skip=^(TestWorktree|TestGitStatus|TestShadow|TestProbe)
           - os: macos-latest
             shard: git
-            select: -run=^(TestWorktree|TestGitStatus)
+            select: -run=^(TestWorktree|TestGitStatus|TestShadow|TestProbe)
           - os: macos-latest
             shard: rest
-            select: -skip=^(TestWorktree|TestGitStatus)
+            select: -skip=^(TestWorktree|TestGitStatus|TestShadow|TestProbe)
           - os: windows-latest
             shard: worktree
             select: -run=^TestWorktree

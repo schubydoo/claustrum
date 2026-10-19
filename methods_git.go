@@ -1790,8 +1790,9 @@ func gitWorktreeCreateLocked(req *request, p *gitParams, repo string) response {
 			// and N2, Windows VM). The deadline arm above comes first. A deadline that
 			// expires before git answers gives the timeout frame (cells Q13). The order
 			// of the two arms after a filter failure is not measured.
-			// One name has another answer: the filter lfs of the outside config, when
-			// the repository names a program for git-lfs (claustrum's own).
+			// One name has another answer with no settings copy: the filter lfs of
+			// the outside config, when the repository names a program for git-lfs
+			// (claustrum's own).
 			undo, kept := undoFailedCheckout(req.use, repo, p.WorktreePath, createdBranch, checkpoint, tested)
 			if refusedName == lfsFilterName && filters.lfsKey != "" {
 				return okResult(req.ID, worktreeResult{
@@ -1816,8 +1817,14 @@ func gitWorktreeCreateLocked(req *request, p *gitParams, repo string) response {
 			// git's graft-file hint: lines do not start the text. On f6010b97 the text
 			// starts with the hint where git prints it. In attach mode
 			// createdBranch is "", so the attached branch is kept, as measured against
-			// f6010b97.
+			// f6010b97. With a settings copy a text that holds lfsFailedWords gets
+			// lfsDownloadNote after it, as on 5fd08069 (round task081-01, Linux VM).
+			// The note goes only in this reply, before any undo text (claustrum's
+			// own, not measured beside a failed undo).
 			msg := "git worktree add failed (checkout): " + worktreeGitText(rtStderr, rtErr)
+			if rule != nil && rule.shadow && strings.Contains(msg, lfsFailedWords) {
+				msg += lfsDownloadNote
+			}
 			undo, kept := undoFailedCheckout(req.use, repo, p.WorktreePath, createdBranch, checkpoint, tested)
 			return okResult(req.ID, worktreeResult{
 				Success:    false,

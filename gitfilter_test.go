@@ -522,7 +522,7 @@ func TestWorktreeCreateLfsWithTransferProgramOfRepository(t *testing.T) {
 // the user config only, the outside filter runs and the call has no pair. The
 // outside filter is a marker, so no git-lfs program is needed. A Windows VM ran
 // the rule with a working git-lfs (cells L2 to L5 and L7). The lfs.extension row
-// is from the help text of git-lfs 3.7.1, and no VM ran it.
+// is from the help text of git-lfs 3.7.1.
 func TestWorktreeCreateOutsideLfsWithTransferProgramOfRepository(t *testing.T) {
 	const urlKey = "lfs.https://example.invalid/r.standalonetransferagent"
 	userKeys := "[lfs]\n\tstandalonetransferagent = x\n[lfs \"customtransfer.x\"]\n\tpath = /no/such/agent\n"
