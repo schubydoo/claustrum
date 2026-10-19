@@ -33,6 +33,7 @@ func (s *server) handleGit(req *request) response {
 		return *bad
 	}
 	req.shadow = s.gitShadow
+	defer func() { req.shadow.releaseRepos(req.heldRepos) }()
 	// The daemon-wide window of gitWideLimit counts this request while it runs.
 	if offSwitchSet(req.Params) {
 		s.offGitRequests.Add(1)

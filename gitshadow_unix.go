@@ -47,15 +47,66 @@ const statusFollowsPrintedGitDir = false
 // the file. On a Linux VM /proc/locks shows `FLOCK  ADVISORY  WRITE <daemon
 // pid>` for that file of 5fd08069 (s3p2b-edges-linux2 cell 44). macOS has no
 // such record. A lock that the system refuses is not measured: its text is
-// claustrum's own.
+// claustrum's own. The open follows no link at the last name, as on 5fd08069
+// (`O_NOFOLLOW` in round task075-01, Linux VM).
 func openShadowLockFile(path string) (*os.File, error) {
-	f, err := os.OpenFile(path, os.O_CREATE|os.O_RDWR, 0o600)
+	f, err := os.OpenFile(path, os.O_CREATE|os.O_RDWR|syscall.O_NOFOLLOW, 0o600)
 	if err != nil {
 		return nil, err
 	}
-	if err := syscall.Flock(int(f.Fd()), syscall.LOCK_EX|syscall.LOCK_NB); err != nil {
+	if err := flockNoWait(f); err != nil {
 		_ = f.Close()
 		return nil, &os.PathError{Op: "flock", Path: path, Err: err}
 	}
 	return f, nil
+}
+
+func flockNoWait(f *os.File) error {
+	return syscall.Flock(int(f.Fd()), syscall.LOCK_EX|syscall.LOCK_NB)
+}
+
+// sweepClosesLockFirst is false on Linux and macOS. The sweep holds the lock
+// of a folder while it removes the folder (not measured). In cell G1 of round
+// task075-01 (Linux VM) 5fd08069 takes the lock and then removes the folder.
+const sweepClosesLockFirst = false
+
+// sweepAgeBeforeLock is false on Linux and macOS. The age of a folder with
+// another host form is read after the lock step there (cells G7 and G7c of
+// round task075-01, Linux and macOS VMs).
+const sweepAgeBeforeLock = false
+
+// isSweepLink reports whether an entry of git-shadow is a link. The sweep
+// removes a link as a link (sweepLink).
+func isSweepLink(fi os.FileInfo) bool {
+	return fi.Mode()&os.ModeSymlink != 0
+}
+
+// takeSweepLock opens the lock file rel of a folder in git-shadow, through
+// root, with create and mode 0600, and takes a lock with no wait on it. The
+// open fails at a lock in use by another daemon or by another process with
+// flock, and the folder then stays (cells G2 and G3 of round task075-01, Linux
+// VM). A file that is open with no flock does not stop it (cell G4). Any
+// other error of the lock keeps the folder too (claustrum's own, not measured).
+func takeSweepLock(root *os.Root, _, rel string) (*os.File, error) {
+	f, err := root.OpenFile(rel, os.O_CREATE|os.O_RDWR, 0o600)
+	if err != nil {
+		return nil, err
+	}
+	if err := flockNoWait(f); err != nil {
+		_ = f.Close()
+		return nil, err
+	}
+	return f, nil
+}
+
+// linkedLockOpen tests the lock file at path with a read open and a lock with
+// no wait, and gives both back at once. The open follows no link at the last
+// name and does not wait for a FIFO.
+func linkedLockOpen(path string) error {
+	f, err := os.OpenFile(path, os.O_RDONLY|syscall.O_NOFOLLOW|syscall.O_NONBLOCK, 0)
+	if err != nil {
+		return err
+	}
+	defer func() { _ = f.Close() }()
+	return flockNoWait(f)
 }

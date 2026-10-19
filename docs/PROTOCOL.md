@@ -2218,7 +2218,10 @@ VM).
 ##### The folders
 
 The folder of one daemon is `<socket folder>/git-shadow/<host form>-<pid>-<16 hex>`.
-`<host form>` is the host name with each `-` written as `_`. On Linux and macOS
+`<host form>` is the host name with each character outside `A-Z`, `a-z`, `0-9` and `.`
+written as `_`. A `-` becoming `_` and a kept `.` are measured (cell C6 of round `s3`,
+and `.local` on a macOS VM in round `task075-01`). The other characters are not
+measured. On Linux and macOS
 that folder and each folder of a copy have mode `0700`, and the files of a copy
 have `0600`. The daemon makes the folder at
 the first request that runs the test. It holds an exclusive lock on the file `lock`
@@ -2258,8 +2261,32 @@ The same request again gets the same line with no git call.
 On Windows a held copy gets 2 s of retries, then
 `rename <temp file> <copy>: Access is denied.` with full paths (`5fd08069`, round `task009-01`).
 
-claustrum does not remove the folder of another daemon, and it has no limit on the
-count of repositories.
+The request that makes the folder of the daemon also sweeps `git-shadow`. An
+entry goes if its lock file can be taken and its name has the host form of this
+host. An entry with another name goes only when it is old: 8 days goes and 6 days
+stays (cells G7b and G7c). The bound of 7 days is not measured. A held
+lock keeps the folder of a live daemon. `5fd08069` does the same in cells G1 to G12 of
+round `task075-01` (Linux VM). Cells G1, G3 to G10 and G12 give the same outcomes on a macOS VM.
+In round `task075-02` claustrum gives the outcomes of `5fd08069` in each cell that
+ran, except at a link. Those are every cell on the Linux VM and the cells above on
+the macOS VM. On the Windows VM they are G1, G3, G7, G7b, G7c, G8 and G12.
+On Linux and macOS the age is read after the lock step, so a folder with no lock
+file gets one and stays. On Windows the age is read before, and such a folder of
+8 days goes (cell G7, Windows VM). On Windows the held lock keeps the folder of a
+live daemon from a remove by hand. So no later request sweeps again (cell G12 of
+round `task075-02`, both builds). A lock error other than a held lock keeps the
+entry (claustrum's own, not measured). A planted link, or a junction on Windows, goes
+as a link, and claustrum makes no lock file in its target
+([D8](DIVERGENCES.md#d8)).
+
+The folder of the daemon keeps 128 repository folders. A new repository removes
+one folder. In cell G13 (Linux VM) the 129th removes the folder of the first, and
+a new use of the first removes the folder of the second. The order by last use,
+not by creation, and a failed remove are not measured. If all 128
+are in use by running requests, the request gets this text (claustrum's own, not
+measured):
+
+`Claude could not prepare its own files on the remote machine: git is running in 128 repositories at once; try again`
 
 ##### The copied settings file
 
