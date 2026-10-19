@@ -7,7 +7,7 @@ import (
 	"testing"
 )
 
-// removeSocketIfOwned must NOT delete a socket a successor rebound (different inode)
+// unlinkOwnSocket must NOT delete a socket a successor rebound (different inode)
 // but MUST remove one this daemon still owns. Exercised with regular files, since
 // os.SameFile keys on inode identity regardless of file type.
 //
@@ -43,20 +43,20 @@ func TestRemoveSocketIfOwned(t *testing.T) {
 	}
 
 	// The old owner must leave the successor's inode alone.
-	removeSocketIfOwned(sock, owned)
+	unlinkOwnSocket(sock, owned)
 	if _, err := os.Stat(sock); err != nil {
-		t.Errorf("removeSocketIfOwned deleted a successor's socket: %v", err)
+		t.Errorf("unlinkOwnSocket deleted a successor's socket: %v", err)
 	}
 	// The current owner removes its own inode.
 	cur, _ := os.Stat(sock)
-	removeSocketIfOwned(sock, cur)
+	unlinkOwnSocket(sock, cur)
 	if _, err := os.Stat(sock); err == nil {
-		t.Error("removeSocketIfOwned did not remove its own socket")
+		t.Error("unlinkOwnSocket did not remove its own socket")
 	}
 	// A nil record falls back to an unconditional remove.
 	write()
-	removeSocketIfOwned(sock, nil)
+	unlinkOwnSocket(sock, nil)
 	if _, err := os.Stat(sock); err == nil {
-		t.Error("removeSocketIfOwned(nil) should unlink unconditionally")
+		t.Error("unlinkOwnSocket(nil) should unlink unconditionally")
 	}
 }

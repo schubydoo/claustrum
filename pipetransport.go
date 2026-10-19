@@ -43,7 +43,7 @@ func writePipeNameFile(socket, name string) error {
 }
 
 // removePipeNameFile unlinks rpc.pipe on graceful shutdown, mirroring
-// removePersistedToken: an absent file is silent (the pipe was never started, or
+// dropOwnTokenFile: an absent file is silent (the pipe was never started, or
 // shutdown ran twice); any other stat error or a failed unlink is logged.
 // Best-effort — the process is exiting regardless. Safe to call unconditionally.
 func removePipeNameFile(socket string) {
@@ -72,7 +72,7 @@ func pipeNameFileIdentity(socket string) os.FileInfo {
 
 // removePipeNameFileIfOwned unlinks rpc.pipe on graceful shutdown ONLY when the file
 // on disk is still the inode this daemon published (os.SameFile against owned) — the
-// same handoff protection removePersistedToken/removeSocketIfOwned apply to the token
+// same handoff protection dropOwnTokenFile/unlinkOwnSocket apply to the token
 // and socket. rpc.pipe is claustrum's own CT-5 artifact, but a restart's successor can
 // republish it before this predecessor tears down, so it earns the same guard so the
 // departing daemon cannot delete the successor's pipe pointer. A nil owned (no pipe

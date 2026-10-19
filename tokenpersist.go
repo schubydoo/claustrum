@@ -26,11 +26,11 @@ import (
 // provides the confinement instead.
 const persistedTokenName = "daemon.token"
 
-// persistTokenDir returns the directory the persisted token lives in — the
+// tokenFileDir returns the directory the persisted token lives in — the
 // socket's directory, which is the per-session dir the client already knows.
-func persistTokenDir(socket string) string { return filepath.Dir(socket) }
+func tokenFileDir(socket string) string { return filepath.Dir(socket) }
 
-// tokenTempFile is the subset of *os.File that persistToken needs. It exists as
+// tokenTempFile is the subset of *os.File that saveTokenFile needs. It exists as
 // an interface only so the constructor below can be a package var: a real
 // os.CreateTemp file can't be coerced into failing WriteString/Close on demand,
 // so the best-effort error arms would otherwise be untestable.
@@ -40,7 +40,7 @@ type tokenTempFile interface {
 	Close() error
 }
 
-// createTokenTemp opens the O_EXCL 0600 temp file persistToken renames into
+// createTokenTemp opens the O_EXCL 0600 temp file saveTokenFile renames into
 // place. A package var so tests can inject a writer that fails at a chosen step.
 // Production always uses os.CreateTemp with the "daemon.token-*" pattern.
 var createTokenTemp = func(dir string) (tokenTempFile, error) {
@@ -51,7 +51,7 @@ var createTokenTemp = func(dir string) (tokenTempFile, error) {
 // dir (from create) + rename, removing the temp on any failure so a partial file
 // is never left behind. Shared by the daemon.token and rpc.pipe writers, which
 // differ only in the temp pattern, the destination, and how they report the error
-// (persistToken logs it; writePipeNameFile returns it).
+// (saveTokenFile logs it; writePipeNameFile returns it).
 func writeFileViaTemp(create func(string) (tokenTempFile, error), dir, dest, content string) error {
 	f, err := create(dir)
 	if err != nil {
@@ -74,7 +74,7 @@ func writeFileViaTemp(create func(string) (tokenTempFile, error), dir, dest, con
 	return nil
 }
 
-// persistToken atomically writes the auth token to <dir(socket)>/daemon.token
+// saveTokenFile atomically writes the auth token to <dir(socket)>/daemon.token
 // (0600) via a temp file + rename. os.CreateTemp with the "daemon.token-*"
 // pattern yields an O_EXCL 0600 temp. The rename makes the swap atomic, so a
 // reconnecting reader never sees a partial token.
@@ -86,8 +86,8 @@ func writeFileViaTemp(create func(string) (tokenTempFile, error), dir, dest, con
 // republished daemon.token to a new inode before this predecessor shuts down, and
 // deleting it would break the successor's reconnect auth. Returns nil on failure
 // (nothing was persisted to own). This mirrors the socket's sockInfo handoff.
-func persistToken(socket, token string) os.FileInfo {
-	dir := persistTokenDir(socket)
+func saveTokenFile(socket, token string) os.FileInfo {
+	dir := tokenFileDir(socket)
 	dest := filepath.Join(dir, persistedTokenName)
 	if err := writeFileViaTemp(createTokenTemp, dir, dest, token); err != nil {
 		logErrorf("[daemon] failed to persist token: %v", err)
@@ -119,20 +119,20 @@ func statOpenFile(path string) (os.FileInfo, error) {
 	return f.Stat()
 }
 
-// removePersistedToken unlinks the persisted token file on graceful shutdown ONLY
+// dropOwnTokenFile unlinks the persisted token file on graceful shutdown ONLY
 // when the file on disk is still the inode this daemon wrote (os.SameFile against
-// owned) — the same inode-ownership protection removeSocketIfOwned already gives the
+// owned) — the same inode-ownership protection unlinkOwnSocket already gives the
 // socket in the handoff. daemon.token is the socket's companion reconnect artifact, so
 // a restart's successor that already republished it keeps its own inode, and this
 // departing predecessor cannot delete it out from under the new daemon (which would
 // break the successor's reconnect auth — the whole point of the handoff). A nil owned
 // (persist failed → nothing to own) is a no-op, and a stat error (absent, or
 // unreadable) is silent; only a failed unlink of a file we DO own is logged.
-func removePersistedToken(socket string, owned os.FileInfo) {
+func dropOwnTokenFile(socket string, owned os.FileInfo) {
 	if owned == nil {
 		return
 	}
-	path := filepath.Join(persistTokenDir(socket), persistedTokenName)
+	path := filepath.Join(tokenFileDir(socket), persistedTokenName)
 	cur, err := os.Stat(path)
 	if err != nil {
 		return

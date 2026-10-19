@@ -1071,7 +1071,7 @@ func runHelper(mode string, args []string) int {
 	case "runlock-hold":
 		// Run-dir eviction fixture (Unix): open the lock file, take the flock, write
 		// an owner record naming this process as a serve daemon, announce readiness by
-		// creating a ready-file, then linger so claimRunDir must evict it. args[0] =
+		// creating a ready-file, then linger so lockRunFolder must evict it. args[0] =
 		// lock path, args[1] = "term-ignore" to swallow SIGTERM (escalation case),
 		// args[2] = ready-file path.
 		return runlockHoldFixture(args)

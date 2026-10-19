@@ -103,7 +103,7 @@ func stopDaemon(socket string) string {
 		word, release := stopRunDirHolder(socket)
 		if word != stopWordSurvivor {
 			_ = os.Remove(socket)
-			_ = os.Remove(filepath.Join(persistTokenDir(socket), persistedTokenName))
+			_ = os.Remove(filepath.Join(tokenFileDir(socket), persistedTokenName))
 		}
 		release()
 		return word

@@ -8,12 +8,12 @@ import "os"
 // macOS the launcher half tells the two daemons apart by the peer pid of a connect
 // (waitForDaemonAccept).
 
-// removeSocketIfOwned unlinks the socket on graceful shutdown ONLY when the socket
+// unlinkOwnSocket unlinks the socket on graceful shutdown ONLY when the socket
 // on disk is still the same inode this daemon bound (owned). If a successor has
 // already rebound the path to a new inode, the departing daemon leaves it alone.
 // A nil owned
 // (never recorded) falls back to the unconditional unlink.
-func removeSocketIfOwned(socket string, owned os.FileInfo) {
+func unlinkOwnSocket(socket string, owned os.FileInfo) {
 	if owned == nil {
 		_ = os.Remove(socket)
 		return

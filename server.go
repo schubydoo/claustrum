@@ -98,7 +98,7 @@ type server struct {
 
 	// sockInfo / tokenInfo / pipeInfo are the identities of the socket, daemon.token
 	// and rpc.pipe files this daemon published, so teardown unlinks each only if it is
-	// still the inode this daemon wrote (removeSocketIfOwned / removePersistedToken /
+	// still the inode this daemon wrote (unlinkOwnSocket / dropOwnTokenFile /
 	// removePipeNameFileIfOwned) — a restart's successor may have republished any of
 	// them to a new inode, and deleting a successor's file would break its handoff.
 	// tokenInfo/pipeInfo are nil when nothing was published (persist failed / no pipe).
@@ -501,11 +501,11 @@ func newServerOnSocket(socket, token, metricsAddr string, wlopt wireLogOptions, 
 	// place of the last step comes from the startedAt of the full record (see below).
 	//
 	// The claim evicts a prior live sibling serve daemon, so a restart
-	// deterministically replaces it. Best-effort: claimRunDir never fails the boot,
+	// deterministically replaces it. Best-effort: lockRunFolder never fails the boot,
 	// only logs and serves without ownership. It writes the short owner record. On
 	// Windows it takes no lock and prints one line (see daemon_runlock_windows.go).
 	instanceID := newDaemonInstanceID()
-	claim := claimRunDir(socket, "serve")
+	claim := lockRunFolder(socket, "serve")
 	procs := newProcManager()
 	defer func() {
 		if !ok {
@@ -548,7 +548,7 @@ func newServerOnSocket(socket, token, metricsAddr string, wlopt wireLogOptions, 
 	}
 	keepSocketFileAtClose(ln)
 	// The identity of the socket that this start bound. It is nil only when the stat
-	// itself failed, and removeSocketIfOwned then removes the path with no test.
+	// itself failed, and unlinkOwnSocket then removes the path with no test.
 	bound, _ := os.Stat(socket)
 	if err := chmodSocket(socket, 0o600); err != nil {
 		// On Linux and macOS a failed chmod ends the start. On Windows the start
@@ -571,7 +571,7 @@ func newServerOnSocket(socket, token, metricsAddr string, wlopt wireLogOptions, 
 	// was unlinked / the -token-fd pipe closed. Removed again in teardown, but only if
 	// still our inode (tokenInfo). Matches the reference daemon (upstream 5db5e4a);
 	// best-effort and non-fatal.
-	tokenFI := persistToken(socket, token)
+	tokenFI := saveTokenFile(socket, token)
 
 	// -listen-pipe is Windows-only. honorListenPipe returns the flag unchanged on
 	// Windows and false-with-a-warning elsewhere (the named-pipe transport has no
@@ -579,7 +579,7 @@ func newServerOnSocket(socket, token, metricsAddr string, wlopt wireLogOptions, 
 	// in the daemonized child so any warning logs once from the running daemon.
 	listenPipe = honorListenPipe(listenPipe)
 
-	sockFI, _ := os.Stat(socket) // identity of the inode we just bound (for removeSocketIfOwned)
+	sockFI, _ := os.Stat(socket) // identity of the inode we just bound (for unlinkOwnSocket)
 	// The one line of a start with CLAUDE_SSH_PEER_CHECK=1 comes here, before the
 	// listening line. The daemon also removes the variable from its own environment
 	// here, before it serves a request (see startPeerCheck).
@@ -650,7 +650,7 @@ func readTokenFD(fd int) (string, error) {
 // runDirNotHolderLine is the line of a daemon that does not hold the run-dir lock. The text
 // is the reference's (f6010b97 and 89cb6289). On Windows no daemon holds such a lock, and
 // the line is the first line of every start (row K11). On Linux the reference printed it
-// for a lock that another process holds (row ST02). See claimRunDir.
+// for a lock that another process holds (row ST02). See lockRunFolder.
 const runDirNotHolderLine = "[daemon] serve: not the run dir's lock holder; leaving any predecessor's children alone and recording none"
 
 // daemonLogName is the file the daemonized child's stdout and stderr are
@@ -1257,7 +1257,7 @@ func (s *server) closeAll(socket string) {
 	// as on 5fd08069 (cells L1 to L3 of round task091-01, Linux VM). On Windows the
 	// listener close already removed the path, so this guard does not apply there
 	// (cell W3, Windows VM).
-	removeSocketIfOwned(socket, s.sockInfo)
+	unlinkOwnSocket(socket, s.sockInfo)
 	// Then drop every client, before the slower cleanup below. The server.shutdown
 	// handler returns its reply as soon as the stop has started, so the reply write
 	// races this close.
@@ -1277,7 +1277,7 @@ func (s *server) closeAll(socket string) {
 	// 5fd08069 (cell L1k of round task091-01, Linux VM, 3 of 3 runs). macOS runs this
 	// code too, and that order is not measured there.
 	killed := s.stopChildren()
-	removePersistedToken(socket, s.tokenInfo)
+	dropOwnTokenFile(socket, s.tokenInfo)
 	// Remove rpc.pipe on the same graceful path as rpc.sock/daemon.token, and with the
 	// same ownership guard: only if it is still the inode we published, so a successor's
 	// pipe survives. No-op if the pipe was never started this boot (pipeInfo nil).

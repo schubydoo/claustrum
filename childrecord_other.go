@@ -7,7 +7,7 @@ package main
 // write a <runDir>/children/<pid>.json record. Measured on a windows VM: the 19f30c46
 // reference daemon reports it is not the run-dir lock holder on windows and records no
 // children (a child spawned under a run-shaped socket leaves children/ empty). Claustrum
-// holds no run-dir lock on windows either (its claimRunDir is a no-op
+// holds no run-dir lock on windows either (its lockRunFolder is a no-op
 // there), so this stays a no-op. m.runDir is non-empty on windows too (execChildRunDir
 // gives the folder of the socket on every OS), but its only windows consumers are no-ops, so
 // it has no effect.

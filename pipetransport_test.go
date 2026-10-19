@@ -10,7 +10,7 @@ import (
 
 // removePipeNameFileIfOwned removes rpc.pipe only when it is still the inode this
 // daemon published (os.SameFile) — so a restart's successor that republished it keeps
-// its own pointer. Mirrors removePersistedToken / removeSocketIfOwned. The identity
+// its own pointer. Mirrors dropOwnTokenFile / unlinkOwnSocket. The identity
 // is the one that the daemon records (pipeNameFileIdentity). On Windows an os.Stat
 // identity reads the file id by the path at the compare, so it named the successor's
 // file there.

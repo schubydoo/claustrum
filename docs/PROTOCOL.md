@@ -184,8 +184,8 @@ departing predecessor then leaves the file alone. It does not delete the
 successor's token and break the new daemon's reconnect auth. `5fd08069` keeps that
 token on Windows too (cell W3 of round `task091-01`, Windows VM). On Linux and macOS the socket file
 carries the same identity guard on the same graceful path. On Windows the
-`rpc.pipe` pointer carries it too (`removeSocketIfOwned` /
-`removePersistedToken` / `removePipeNameFileIfOwned`). Each removes its file only
+`rpc.pipe` pointer carries it too (`unlinkOwnSocket` /
+`dropOwnTokenFile` / `removePipeNameFileIfOwned`). Each removes its file only
 when the recorded identity still matches. They differ only in the no-identity
 fallback. A socket the daemon never recorded is removed with a plain unlink. A
 token or pipe pointer with no recorded identity is left in place, not unlinked.

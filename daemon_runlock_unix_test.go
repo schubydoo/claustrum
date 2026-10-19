@@ -16,7 +16,7 @@ import (
 )
 
 // runlockHoldFixture is the "runlock-hold" helper mode: take the flock on args[0],
-// write an owner record naming this process a serve daemon, then linger so claimRunDir
+// write an owner record naming this process a serve daemon, then linger so lockRunFolder
 // must evict it. args[1] == "term-ignore" swallows SIGTERM (the escalation case);
 // args[2] is a ready-file the parent waits on; an optional args[3] overrides the node
 // so the parent can exercise the machine-identity refusal guard.
@@ -191,7 +191,7 @@ func TestHolderSignalRefusal(t *testing.T) {
 }
 
 // writeRecordFile stages an owner record into path via the production writer, so the
-// eviction tests read exactly the on-disk shape claimRunDir writes.
+// eviction tests read exactly the on-disk shape lockRunFolder writes.
 func writeRecordFile(t *testing.T, path string, rec ownerRecord) {
 	t.Helper()
 	fd, err := syscall.Open(path, syscall.O_RDWR|syscall.O_CREAT|syscall.O_CLOEXEC, 0o600)
@@ -294,7 +294,7 @@ func TestReadOwnerRecordMissingFile(t *testing.T) {
 func TestClaimRunDirHappyPath(t *testing.T) {
 	dir := shortTempDir(t)
 	sock := filepath.Join(dir, "s.sock")
-	claim := claimRunDir(sock, "serve")
+	claim := lockRunFolder(sock, "serve")
 	t.Cleanup(claim.release)
 
 	lockPath := filepath.Join(dir, runDirLockName)
@@ -338,7 +338,7 @@ func TestClaimRunDirHappyPath(t *testing.T) {
 // smaller file.
 func TestCompleteDoesNotTruncateTheLock(t *testing.T) {
 	dir := shortTempDir(t)
-	claim := claimRunDir(filepath.Join(dir, "s.sock"), "serve")
+	claim := lockRunFolder(filepath.Join(dir, "s.sock"), "serve")
 	t.Cleanup(claim.release)
 
 	lockPath := filepath.Join(dir, runDirLockName)
@@ -442,7 +442,7 @@ func TestClaimRunDirEvictsPredecessor(t *testing.T) {
 	isServeCmdline = func(int, string) bool { return true }
 	t.Cleanup(func() { isServeCmdline = oldCmd })
 
-	release := claimRunDir(sock, "serve").release
+	release := lockRunFolder(sock, "serve").release
 	t.Cleanup(release)
 
 	if !waitForExit(holder.Process.Pid, 3*time.Second) {
@@ -477,7 +477,7 @@ func TestClaimRunDirEvictionLogsMatchReference(t *testing.T) {
 	t.Cleanup(func() { isServeCmdline = oldCmd })
 
 	buf := captureLogBuf(t)
-	release := claimRunDir(sock, "serve").release // evicts synchronously, logging the ladder
+	release := lockRunFolder(sock, "serve").release // evicts synchronously, logging the ladder
 	t.Cleanup(release)
 	_ = waitForExit(holder.Process.Pid, 3*time.Second)
 
@@ -589,7 +589,7 @@ func TestEvictionWaitsOnTheLockOfAHolderThatNobodyCollects(t *testing.T) {
 
 			buf := captureLogBuf(t)
 			start := time.Now()
-			claim := claimRunDir(filepath.Join(dir, "s.sock"), "serve")
+			claim := lockRunFolder(filepath.Join(dir, "s.sock"), "serve")
 			took := time.Since(start)
 			t.Cleanup(claim.release)
 
@@ -657,7 +657,7 @@ func TestClaimRunDirEscalatesToSIGKILL(t *testing.T) {
 	isServeCmdline = func(int, string) bool { return true }
 	t.Cleanup(func() { isServeCmdline = oldCmd })
 
-	release := claimRunDir(sock, "serve").release
+	release := lockRunFolder(sock, "serve").release
 	t.Cleanup(release)
 
 	if !waitForExit(holder.Process.Pid, 3*time.Second) {
@@ -804,7 +804,7 @@ func TestClaimRunDirRefusesSymlinkLock(t *testing.T) {
 	}
 
 	buf := captureLogBuf(t)
-	release := claimRunDir(sock, "serve").release
+	release := lockRunFolder(sock, "serve").release
 	t.Cleanup(release)
 	// The daemon serves without the lock, and says so.
 	if !strings.Contains(buf.String(), runDirNotHolderLine+"\n") {
@@ -844,7 +844,7 @@ func TestClaimRunDirDoesNotSIGKILLAReusedPid(t *testing.T) {
 	}
 	t.Cleanup(func() { isServeCmdline = oldCmd })
 
-	release := claimRunDir(sock, "serve").release
+	release := lockRunFolder(sock, "serve").release
 	t.Cleanup(release)
 
 	if calls < 2 {
@@ -871,7 +871,7 @@ func TestClaimRunDirRefusesForeignHolder(t *testing.T) {
 	isServeCmdline = func(int, string) bool { return true }
 	t.Cleanup(func() { isServeCmdline = oldCmd })
 
-	release := claimRunDir(sock, "serve").release
+	release := lockRunFolder(sock, "serve").release
 	t.Cleanup(release)
 
 	// The holder must be left alive, and it must still hold the lock (our claim gave
