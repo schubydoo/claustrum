@@ -94,6 +94,11 @@ func TestGitFileNowhereFourMethodsStub(t *testing.T) {
 			defer func() { f.s = kept }()
 			stubListing(t, 128, "")
 			stubStderr(t, tc.stderr, false)
+			if tc.first {
+				// git.info runs the start test here. Its call 7 lists the test config
+				// from standard input, and a real git answers that call.
+				t.Setenv("CLAUSTRUM_GITSTUB_ENVEND", "GIT_COMMON_DIR="+filepath.Join("nowhere", "gitdir"))
+			}
 			rows := gitFileNowhereFrames(t, g, tc.want, tc.off)
 			subRow := rows[0]
 			subRow.params = map[string]any{"path": sub}

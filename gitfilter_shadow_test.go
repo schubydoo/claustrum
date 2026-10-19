@@ -259,6 +259,43 @@ func TestShadowFailedListingBeforeTheCheckout(t *testing.T) {
 	}
 }
 
+// Cell E13 of round task083-01 (Linux VM). The first checkout listing fails, and
+// the `git version` after it fails too. 5fd08069 answers the text of that call
+// in the frame of a failed checkout and rolls back. Mutation: drop the
+// cannotRunText branch in hardenedGitCheckout.
+func TestShadowFailedListingAndVersionBeforeTheCheckout(t *testing.T) {
+	f := newShadowFilterFixture(t, "a.txt filter=m\n")
+	t.Setenv("CLAUSTRUM_GITSTUB_FAIL_LISTING", "full")
+	failVersion(t, "1", "boom-version\n")
+	raw, _ := f.create(t, nil)
+	want := failedFrame(t, "git worktree add failed (checkout): git cannot run on this host; git not run: exit status 1: boom-version")
+	if raw != want {
+		t.Fatalf("git.worktree_create = %s\nwant %s", raw, want)
+	}
+	f.wantGone(t)
+}
+
+// The listing before the checkout fails, and the `git version` after it exits 0
+// while a child holds its output pipes past the wait for them. That call works, so
+// the create answers the hooks refusal of cell L6 of round task084-02, not the
+// cannot-run text (claustrum's own, not measured). Mutation: drop exitedInTime in
+// cannotRunText.
+func TestShadowFailedListingWithAHeldVersion(t *testing.T) {
+	f := newShadowFilterFixture(t, "a.txt filter=m\n")
+	t.Setenv("CLAUSTRUM_GITSTUB_FAIL_LISTING", "full")
+	slowGit(t, "version", "hold", 2*time.Second, "", "")
+	oldDrain := shadowCallDrain
+	shadowCallDrain = 200 * time.Millisecond
+	t.Cleanup(func() { shadowCallDrain = oldDrain })
+	raw, _ := f.create(t, nil)
+	want := failedFrame(t, "git worktree add failed (checkout): config-defined hooks could not be pinned off; git not run: "+
+		"listing the configuration in force: exit status 128: fatal: stub refuses the full listing")
+	if raw != want {
+		t.Fatalf("git.worktree_create = %s\nwant %s", raw, want)
+	}
+	f.wantGone(t)
+}
+
 // sameDir reports whether a and b name one folder.
 func sameDir(a, b string) bool {
 	fa, errA := os.Stat(a)

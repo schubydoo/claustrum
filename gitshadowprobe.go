@@ -278,7 +278,8 @@ func probeArgs() []string {
 //   - Exit 0 and the git directory of the repository: good. Git prints `.git`,
 //     and the full path is good too. A path that is not absolute is taken from
 //     the root.
-//   - Exit 128 with a text on the error output: "no repository". The cells have
+//   - Exit 128 with a no-repository text (probeSaysNoRepo): "no repository".
+//     Another text: see probeSaysNoRepo. The cells have
 //     the "dubious ownership" text of git for a repository of another owner
 //     and `fatal: not a git repository (or any of the parent directories):
 //     .git` (cells D1 and D3 of s3p2-linux2, s3p2-macos and s3p2-windows).
@@ -345,6 +346,11 @@ func (h *shadowHost) askGit(t gitDirTrust, dir string) repoAnswer {
 		if r.err != nil {
 			var exit *exec.ExitError
 			if errors.As(r.err, &exit) && exit.ExitCode() == 128 && strings.TrimSpace(r.stderr) != "" {
+				if !probeSaysNoRepo(r) {
+					if whole := cannotRunText(); whole != "" {
+						return repoAnswer{text: whole}
+					}
+				}
 				return repoAnswer{noRepo: true}
 			}
 			versionAfterFailure()
@@ -362,6 +368,24 @@ func (h *shadowHost) askGit(t gitDirTrust, dir string) repoAnswer {
 		}
 	}
 	return repoAnswer{text: fmt.Sprintf("git and Claude disagree about which repository holds this folder: from %q git finds %q, Claude finds %q; try again", root, shown, want)}
+}
+
+// probeSaysNoRepo reports whether a call about the repository that exits 128
+// with a text names no repository by that text, so that no `git version` call
+// follows. The "no repository" answers of `fatal: not a git repository` and
+// `fatal: detected dubious ownership` have no such call (cell 39 of round
+// s3p2b-edges, Linux VM). The text of git 2.56 for a `.git` file to nowhere
+// counts too (claustrum's own, not measured).
+//
+// After `fatal: bad config line 3 in file <home>/.gitconfig` one `git version`
+// call follows. If it fails, its text is the answer of each of the five methods
+// (cell E8 of round task083-01 and cells E8s, E8l, E8c and E8r of round
+// task083-02, Linux VM). Other texts get the same rule (claustrum's own, not
+// measured). If the call works, the answer stays "no repository" (claustrum's
+// own, not measured).
+func probeSaysNoRepo(r shadowRun) bool {
+	l := listingRun{stderr: r.stderr, err: r.err}
+	return l.saysNoRepository() || l.saysGitFileNowhere() || l.exit128Says("fatal: detected dubious ownership")
 }
 
 // repoCheckFailedText is the error of a failed call about the repository in root.
@@ -402,9 +426,11 @@ func printedProbePath(out, found, sep string) string {
 	return found
 }
 
-// versionAfterFailure runs one `git version` call, with the root folder as its
-// working directory (gitVersionDir), no option and no added variable. The
-// daemon does not read its answer. 5fd08069 makes that call in two places:
+// versionAfterFailure runs one `git version` call, with no option and no added
+// variable. Its working directory is gitVersionDir: `/` on Linux and macOS, the
+// working folder of the daemon on Windows. cannotRunText reads its answer, and
+// the other callers do not. Among the measured places of that call on 5fd08069
+// are these two:
 //
 //   - after a call about the repository that exits 1, or exits 128 with no
 //     text. The requests have 13, 2, 2, 2 and 4 calls there. The build
@@ -421,8 +447,26 @@ func printedProbePath(out, found, sep string) string {
 // The call has the bound of a call of the start test. A daemon with git
 // variables of its own is not measured: the call gets the environment of the
 // first `git version` call of shadowVersionNote.
-func versionAfterFailure() {
-	boundedGit(shadowCallBound, gitVersionDir, shadowDaemonEnv(), "version")
+func versionAfterFailure() shadowRun {
+	return boundedGit(shadowCallBound, gitVersionDir, shadowDaemonEnv(), "version")
+}
+
+// cannotRunText runs versionAfterFailure and returns the text of a git that
+// cannot run, or "" when that call works. The text is gitCannotRunPrefix and
+// the detail of the failed call, as in failedListingText. After a failed call 7
+// of the start test, 5fd08069 answers `git cannot run on this host; git not
+// run: exit status 128: fatal: bad config line 3 in file <home>/.gitconfig`
+// (cells E1 to E5 of round task083-01 on a Linux VM, E1 and E2 on macOS and
+// Windows VMs). askGit uses it too (probeSaysNoRepo), and so does a create
+// after a failed first checkout listing (hardenedGitCheckout). A call that
+// exited 0 while a child kept its output pipes past shadowCallDrain works, as a
+// test call does (exitedInTime).
+func cannotRunText() string {
+	v := exitedInTime(versionAfterFailure())
+	if v.err == nil {
+		return ""
+	}
+	return gitCannotRunPrefix + listingRun{stderr: v.stderr, err: v.err}.detail()
 }
 
 // keepProbe keeps a good answer for root, whose call ended now. Answers that

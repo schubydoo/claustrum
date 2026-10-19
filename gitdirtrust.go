@@ -79,6 +79,11 @@ type gitDirTrust struct {
 	// file. 89cb6289 answers {"success":true,"branchKept":true} there with no git call
 	// (row N05a on Linux and macOS VMs).
 	noGit bool
+	// goneGitFile is true when verdict is gitDirNoRepo for a `.git` file that the
+	// walk found and that names a missing path, which is not an entry under
+	// `worktrees` of an existing git directory (isWorktreeEntry). git.info runs the
+	// start test there (gitInfo).
+	goneGitFile bool
 }
 
 // noRepoPin is the environment entry of a git call in a folder where the trust check
@@ -409,7 +414,11 @@ func judgeGitDir(g string, fromEnv bool) gitDirTrust {
 		// A `.git` file that names a git dir which is gone. The calls of a removal
 		// carry GIT_COMMON_DIR=<that git dir> on 89cb6289 (row N04 on Linux and macOS
 		// VMs, with and without worktreeRoot).
-		return gitDirTrust{verdict: gitDirNoRepo, noRepoEnv: []string{"GIT_COMMON_DIR=" + g}}
+		// goneGitFile follows cells V3, V4 and V4g of rounds task083-01 and
+		// task083-02. Another stat error than a missing path is claustrum's own,
+		// not measured: it runs no test.
+		return gitDirTrust{verdict: gitDirNoRepo, noRepoEnv: []string{"GIT_COMMON_DIR=" + g},
+			goneGitFile: errors.Is(err, fs.ErrNotExist) && !isWorktreeEntry(g)}
 	}
 	if !fi.IsDir() && nonDirGitDirIsNoRepo {
 		return gitDirTrust{verdict: gitDirNoRepo, noGit: fromEnv}

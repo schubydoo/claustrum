@@ -479,13 +479,16 @@ func hardenedGitCheckout(ctx context.Context, u gitUse, leaf, gitDir, indexFile 
 		return "", false, err
 	}
 	// With a settings copy a listing that fails refuses the checkout, after one
-	// `git version` (versionAfterFailure). No second listing
+	// `git version` (cannotRunText). No second listing
 	// and no read-tree call follow, and the rollback of a failed checkout runs.
 	// 5fd08069 answers so (cell L6 of round task084-02, Linux VM, and cell Q4bp,
-	// macOS VM). A `git version` that fails there is not measured: the text stays.
-	// Without a copy the checkout goes on as before (not measured).
+	// macOS VM). If that `git version` fails too, its text replaces the hooks
+	// refusal (cell E13 of round task083-01, Linux VM). Without a copy the
+	// checkout goes on as before (not measured).
 	if u.shadow() && pre.err != nil {
-		versionAfterFailure()
+		if whole := cannotRunText(); whole != "" {
+			return "", false, checkoutRefusal(whole)
+		}
 		return "", false, checkoutRefusal(hooksRefusalPrefix + pre.detail())
 	}
 	// On Windows the path of the git directory must still name the held folder
