@@ -71,11 +71,9 @@ type server struct {
 	conns        map[*conn]struct{}
 	shutdown     chan struct{}
 	once         sync.Once
-	dropOnce     sync.Once     // makes dropping, on first use
-	dropping     chan struct{} // closed when dropConns starts (see dropStarted)
-	metricsLn    net.Listener  // optional Prometheus listener; nil unless -metrics-addr set
-	pipeLn       net.Listener  // optional Windows named-pipe listener; nil unless -listen-pipe set (Windows-only)
-	keepChildren bool          // -keep-children: leave child processes running on graceful shutdown
+	metricsLn    net.Listener // optional Prometheus listener; nil unless -metrics-addr set
+	pipeLn       net.Listener // optional Windows named-pipe listener; nil unless -listen-pipe set (Windows-only)
+	keepChildren bool         // -keep-children: leave child processes running on graceful shutdown
 
 	wlog    *wireLog      // optional JSON-RPC frame recorder; nil unless -wire-log set
 	connSeq atomic.Uint64 // per-daemon connection counter, only to correlate wire-log records
@@ -1236,41 +1234,6 @@ func (s *server) requestShutdown() {
 	s.signalShutdown()
 }
 
-// shutdownReplyWait bounds how long the server.shutdown handler waits for the
-// teardown to start dropping connections. The bound is claustrum's own. It keeps a
-// wedged teardown from holding the handler forever. It is a var so a test can
-// change it.
-var shutdownReplyWait = 500 * time.Millisecond
-
-// dropStarted returns the channel that dropConns closes when it starts.
-func (s *server) dropStarted() chan struct{} {
-	s.dropOnce.Do(func() { s.dropping = make(chan struct{}) })
-	return s.dropping
-}
-
-// awaitDropStart blocks until dropConns starts, or until shutdownReplyWait passes.
-// The server.shutdown handler calls it after signalShutdown. The teardown must
-// first wake the main goroutine and close the listener.
-func (s *server) awaitDropStart() {
-	t := time.NewTimer(shutdownReplyWait)
-	defer t.Stop()
-	select {
-	case <-s.dropStarted():
-	case <-t.C:
-	}
-}
-
-// isChanClosed reports whether ch is closed. The caller holds the lock that
-// guards the close.
-func isChanClosed(ch chan struct{}) bool {
-	select {
-	case <-ch:
-		return true
-	default:
-		return false
-	}
-}
-
 // teardown closes the listener and removes the socket, then drops clients, then
 // stops child processes (per -keep-children) and removes the other files of the
 // daemon, then exits.
@@ -1298,8 +1261,8 @@ func (s *server) closeAll(socket string) {
 	// (cell W3, Windows VM).
 	removeSocketIfOwned(socket, s.sockInfo)
 	// Then drop every client, before the slower cleanup below. The server.shutdown
-	// handler waits until dropConns starts, and only then returns its reply for
-	// writing. The reply write then races this close.
+	// handler returns its reply as soon as the stop has started, so the reply write
+	// races this close.
 	closed := s.dropConns()
 	if s.metricsLn != nil {
 		_ = s.metricsLn.Close()
@@ -1346,20 +1309,14 @@ func (s *server) closeAll(socket string) {
 
 // dropConns closes every client connection. Each conn whose writer is idle is marked
 // closed first. Then a reply that has not started yet makes no write attempt and
-// logs no write error. TryLock
-// keeps a writer that is stuck on a full socket buffer from blocking the teardown.
-// That writer then fails when the close lands.
-//
-// Before the loop, dropConns closes the dropStarted channel. That releases a
-// server.shutdown handler that waits in awaitDropStart.
+// logs no write error. A writer that holds the lock is not marked closed.
+// TryLock keeps a writer that is stuck on a full socket buffer from blocking the
+// teardown. That writer then fails when the close lands.
 //
 // It returns the number of connections it closed, for the "cleanup:" line.
 func (s *server) dropConns() int {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	if ch := s.dropStarted(); !isChanClosed(ch) {
-		close(ch)
-	}
 	for c := range s.conns {
 		if c.wmu.TryLock() {
 			c.closed = true

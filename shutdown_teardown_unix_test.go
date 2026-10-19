@@ -14,8 +14,8 @@ import (
 )
 
 // server.shutdown signals the teardown, and the teardown closes every connection
-// before its slower cleanup. The handler returns its {"ok":true} reply only after
-// dropConns starts, so the reply write races the close. The reply reaches the
+// before its slower cleanup. The handler returns its {"ok":true} reply at once, so
+// the reply write races the close. The reply reaches the
 // client only when its write wins. An idle connection gets a clean EOF.
 //
 // These tests run the production closeAll on a daemon booted in-process

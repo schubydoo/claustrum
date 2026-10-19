@@ -623,7 +623,9 @@ connection. A per-connection watcher polls for silence, at a quarter of the
 timeout, bounded to at most 30 s. Once the idle span reaches the timeout, the
 watcher closes the socket and logs
 `[Server] closing connection idle <d> in both directions: <addr>`. On a Linux VM
-(rows HC12a and HC12b), `89cb6289` logged that text with `5m0s` and `@`. The watcher stops as
+(rows HC12a and HC12b), `89cb6289` logged that text with `5m0s` and `@`. `5fd08069`
+closes at the same times as claustrum (cells I1 to I4 of round `task034-01`, Linux
+and macOS VMs). The watcher stops as
 soon as the connection closes for any other reason, and as soon as the daemon
 shuts down. It therefore never outlives its connection. This is off the JSON-RPC wire, because it is connection lifecycle and
 sends no frame. It closes only an idle *connection*, never the daemon. On Linux
@@ -1133,7 +1135,7 @@ Windows VMs saw it at that place.
 |---|---|---|
 | `server.ping` | none | `{"pong":true}` |
 | `server.capabilities` | none | `{"version":"<id>","methods":[…20…],"instanceId":"<32-hex>","startedAt":<unix-ms>,"features":["process.stdin.offset","files.extract_tar.execBit","git.status.baseRepo","git.info.discovered_root","git.worktree_create.timeoutMs","git.worktree_create.existingBranch","git.worktree_remove.unpushedGuard","process.spawn.shellAgentSocket","launcher.managed","server.peer_check","git.worktree.external_root","server.instance_id"],"peerCheck":"off"}`. `plugins.prune` is the last method on every OS. `git.worktree.external_root` is omitted on Windows. `files.extract_tar.execBit`, `git.worktree_create.timeoutMs`, `git.worktree_create.existingBranch`, `git.worktree_remove.unpushedGuard`, `process.spawn.shellAgentSocket`, `launcher.managed`, `server.peer_check`, `instanceId`, `startedAt` and `peerCheck` are present on every OS |
-| `server.shutdown` | none | `{"ok":true}`, when the reply gets out. The handler waits until the teardown starts to close connections, and then returns the reply. The frame arrives only when its write wins the race with the close. See below |
+| `server.shutdown` | none | `{"ok":true}`, when the reply gets out. The handler returns the reply as soon as the stop has started. The frame arrives only when its write wins the race with the close. See below |
 
 - `server.version` was removed in `7d193f89`. It now answers
   `-32601 "Unknown method: server.version"` like any other unknown method.
@@ -1201,18 +1203,18 @@ Windows VMs saw it at that place.
   all callers. That is [D25](DIVERGENCES.md#d25). The log line of that start is
   in [Daemon log](#daemon-log-remote-serverlog).
 - `server.shutdown` is not authenticated. See [Authentication](#authentication).
-- On the reference, `server.shutdown` usually closes the connection with no
-  reply. Its `{"ok":true}` frame arrived in 24 of 800 single-connection runs
-  with an earlier ping. It arrived in 0 of 200 runs with no earlier request on
-  the connection. With a second idle connection open it arrived in 67 of 200 runs.
-  These counts are measured against `f6010b97` and `90fca6e6` on a Linux VM. In
-  claustrum, the handler signals the teardown and waits until the teardown starts
-  to close connections. Then it returns the reply for writing, so the reply write
-  races the close. The teardown closes the listener and tests the socket first.
-  Then it closes every connection, before its other cleanup.
+- On the reference, `server.shutdown` often closes the connection with no reply.
+  In round `task034-01` the `{"ok":true}` frame of `5fd08069` came before the close
+  in 21 of 30 runs on macOS and in 4 to 9 of 30 on Windows (cell R1). On Linux it
+  came in 0 of 30 (R1), and in 6 of 30 with a second idle connection (R2). Under
+  `-stop` the daemon wrote it in 5 of 30 runs on macOS and 1 of 30 on Linux (R4).
+  In claustrum the handler signals the teardown and returns the reply at once. It
+  does not wait for the close of the connections, so the reply write races that
+  close. The teardown closes the listener and tests the socket first. Then it
+  closes every connection, before its other cleanup. A connection whose writer is
+  busy is not marked closed.
   When the frame arrives, it is `{"jsonrpc":"2.0","id":<id>,"result":{"ok":true}}`
-  followed by EOF. An idle connection gets a clean EOF with no bytes. On a macOS VM
-  under spawn load `5fd08069` sent it in 4 of 10 runs (round `task003-01`).
+  followed by EOF. An idle connection gets a clean EOF with no bytes.
 - Log order on `server.shutdown`. The daemon logs
   `[ServerHandler] server.shutdown received over RPC`, then
   `[Server] shutdown requested`, before the teardown closes any connection.
@@ -1235,15 +1237,11 @@ Windows VMs saw it at that place.
   The line for `SIGINT` names that signal (`5fd08069`, round `task003-01`, Linux and macOS). With
   `-keep-children` claustrum writes `kept` in place of `killed` in the first line.
   The `cleanup:` line then says `killed 0 child process group(s)`.
-- Reply delivery is a measured timing difference, not parity. The claustrum
-  reply arrives at a different rate. Each count below is from 50 runs with a ping before the shutdown. The
-  runs were measured in one session against `f6010b97`, on one Linux VM and one
-  Windows VM. On one connection, the claustrum reply arrived in 0 of 50 runs on
-  Linux and in 0 of 50 on Windows. The reference reply arrived in 5 of 50 on Linux
-  and in 21 of 50 on Windows. With a second idle connection open, the claustrum
-  reply arrived in 2 of 50 runs on Linux, where the reference reply arrived in 20
-  of 50. On Windows the counts were 39 of 50 for claustrum and 36 of 50 for the
-  reference. All of these rates depend on timing.
+- On `5fd08069` reply delivery is a timing race. In round `task034-02` claustrum answered
+  in 30 of 30 runs of cell R1 on Linux, macOS and Windows. `5fd08069` answered in 1
+  of 30 on Linux, 22 of 30 on macOS, and 8 and 6 of 30 in two Windows passes. In
+  cell R3, a take-over on macOS, `5fd08069` answered in 5 of 30 and claustrum in 30
+  of 30. The frame bytes are equal.
 
 ### files.* (param: `path`)
 
@@ -5118,26 +5116,43 @@ claustrum -stop -socket <p>          # no token needed, and none is read
 not authenticated. See [Authentication](#authentication). The request is
 `{"jsonrpc":"2.0","id":1,"method":"server.shutdown"}` and a newline. `-stop` then
 reads once, with a 2 s deadline, and discards what it reads. It never relays a
-frame to stdout. A live daemon's reply does not always arrive. On one connection
-the claustrum reply arrived in 0 of 50 runs on Linux and on Windows, where the
-`f6010b97` reply arrived in 5 of 50 on Linux and in 21 of 50 on Windows. This is
-a measured timing difference, not parity. See `server.*` above for the
-counts with a second idle connection. `-stop` prints `stopped` whether the
-reply arrives or not.
+frame to stdout. A live daemon's reply does not always arrive (see `server.*`
+above). On `5fd08069` -stop prints `stopped` with rc 0 both when the reply arrives
+and when it gets EOF (cell R4 of round `task034-01`).
+
+After the read, on Linux and macOS, `-stop` tries `daemon.lock` every 50 ms for up
+to 3 s. A lock that comes free gives `stopped` and no signal. A lock still held
+after 3 s gets the signal steps of a failed connect, below. `5fd08069` does this
+in cells S1 to S5 of round `task034-01` (Linux and macOS VMs). There `terminated`
+came at about 3.1 s and `killed` at about 7.1 s. A holder whose record names no
+daemon role got no signal and the word `survivor`, at about 3.6 s. In cell S4 of
+round `task034-02` it came at 3.54 to 3.65 s, after 72 lock tries (Linux and macOS
+VMs). So claustrum tries the lock for 0.5 s more for that holder. A lock that comes free then gives `stopped` (claustrum's
+own, not measured). A lock that a new holder took during the `SIGTERM` wait gives
+`survivor` and no signal to it (cell S2b, Linux VM). Its line is below.
+On Windows `-stop` prints `stopped` at once, as
+`5fd08069` does (cell W-S1, Windows VM).
+
+A lock that comes free gets no write (cells S1 and S5 of round `task034-02`, Linux
+and macOS VMs). Only after `terminated` or
+`killed` does `-stop` write `{"pid":<pid>,"role":"stop","node":"<node>"}` into
+`daemon.lock`, and empties the file before it prints the word (Linux cells S2 and
+S3, macOS cell S3). After `terminated` or `killed`, `-stop` also removes the
+socket and `daemon.token`. In those cells the daemon had already removed both.
 
 `-stop` prints one word on stdout, then a newline, and exits `0` in every state
 in the table below. The words and the rules below are measured against
 `f6010b97` and `90fca6e6` on a Linux VM, except the rules marked as claustrum's
-own. After `SIGKILL`, `-stop` polls the lock for 1.5 s. The word `killed` needs
+own. The 3 s wait is measured on `5fd08069` (round `task034-01`). After `SIGKILL`, `-stop` polls the lock for 1.5 s. The word `killed` needs
 the lock to become free in that wait. The macOS results are below.
 
 | word | state |
 |---|---|
-| `stopped` | The connect succeeded. A reply, garbage, an EOF, a reset and the read deadline all give this word. |
+| `stopped` | The connect succeeded. On Linux and macOS the lock also came free within 3 s, or there is no usable `daemon.lock` (claustrum's own). |
 | `none` | The connect failed, and `daemon.lock` is free or missing. claustrum also prints `none` when the lock cannot be opened or locked. |
-| `terminated` | The connect failed, and a live serve daemon of this binary for this socket holds `daemon.lock`. `-stop` sent `SIGTERM`, and the lock became free. |
+| `terminated` | The connect failed, or the lock was still held 3 s after it, and a live serve daemon of this binary for this socket holds `daemon.lock`. `-stop` sent `SIGTERM`, and the lock became free. |
 | `killed` | As `terminated`, but the lock was still held 4 s after `SIGTERM`. `-stop` sent `SIGKILL`. |
-| `survivor` | The connect failed, and a live process that is not that daemon holds `daemon.lock`. `-stop` does not signal it. The word is also `survivor` if the lock is still held 1.5 s after `SIGKILL`. `-stop` does not wait longer. claustrum also prints `survivor` if the holder check fails again before `SIGKILL`. It prints it too when a signal cannot reach a holder that is still there. |
+| `survivor` | As `terminated`, but a live process that is not that daemon holds `daemon.lock`. `-stop` does not signal it. The word is also `survivor` if the lock is still held 1.5 s after `SIGKILL`. `-stop` does not wait longer. claustrum prints it too when a signal cannot reach a holder that is still there. |
 
 The lock check uses the holder test of the serve eviction. See [Run-dir
 lock](#run-dir-lock-daemonlock). The exact rule of the Linux reference was not
@@ -5171,20 +5186,36 @@ and `[daemon] stop: previous daemon pid <N> exited after SIGTERM`. claustrum is
 built to that row. The other lines are not measured for a short record, and
 claustrum writes them with `(instance "")`.
 
+After a successful connect, a holder whose record names no daemon role gives this
+line. It is the text of `5fd08069` in cell S4 (Linux VM):
+
+```text
+<ts> WARN  [daemon] stop: WARNING <dir>/daemon.lock is held by a live process we will not signal (its holder is not a daemon (role "")); leaving it alone
+```
+
+A lock that another daemon took during the `SIGTERM` wait gives this line, with
+the pid and instance of the new holder. It is the text of
+`5fd08069` in cell S2b of round `task034-02` (Linux VM):
+
+```text
+<ts> WARN  [daemon] stop: <dir>/daemon.lock changed hands during eviction (now pid <N> (instance "<id>")); leaving the new holder alone
+```
+
 This line is claustrum's own. It comes from the second holder check:
 
 ```text
 <ts> WARN  [daemon] stop: pid <N> is no longer our serve holder before SIGKILL (<reason>); leaving it alone
 ```
 
-After a successful connect, `-stop` removes nothing. A live daemon removes its own
+After a successful connect, `-stop` removes nothing, except after `terminated` or
+`killed`. A live daemon removes its own
 socket and `daemon.token` when it stops. After a failed connect, `-stop` removes
 the socket path and the `daemon.token` beside it, stale or not. It does this after
 the lock check. If the word is `survivor`, `-stop` removes neither file. This is
 measured for a holder that `-stop` does not signal and for a lock that outlives
 `SIGKILL`. The other `survivor` cases follow the same rule. `-stop` never creates
-or removes `daemon.lock`, and it writes no record into it. The references also
-never create or remove it, and write no record into it. The socket unlink removes
+or removes `daemon.lock`. After a failed connect it writes no record into it, as
+on `f6010b97` and `90fca6e6`. The socket unlink removes
 a stale socket, a regular file and an empty directory. It keeps a non-empty
 directory, and a path in a directory that the user cannot write. The references do
 the same.

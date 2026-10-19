@@ -26,3 +26,8 @@ type runDirClaim struct {
 // stopRunDirHolder is the -stop fallback after a failed connect. Windows has no
 // run-dir lock, so no daemon.lock can name a holder, and the word is always "none".
 func stopRunDirHolder(socket string) (string, func()) { return stopWordNone, func() {} }
+
+// stopAfterReply is the step of -stop after the read of the shutdown reply. Windows
+// has no run-dir lock to wait for, so the word is "stopped" at once. 5fd08069 prints
+// it at once too (cell W-S1 of round task034-01, Windows VM).
+func stopAfterReply(socket string) (string, func()) { return stopWordStopped, func() {} }

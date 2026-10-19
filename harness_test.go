@@ -84,8 +84,7 @@ func newRunningServerAt(t *testing.T, sock string) (*server, string) {
 	// os.Exit) so a client that waits for EOF after sending server.shutdown
 	// (e.g. runStop) actually unblocks. Without this the harness leaves the
 	// connection open and such a client hangs forever. It runs the production
-	// dropConns, in the production order after the listener close. dropConns also
-	// releases the server.shutdown handler that waits for it.
+	// dropConns, in the production order after the listener close.
 	stop := make(chan struct{})
 	go func() {
 		select {
