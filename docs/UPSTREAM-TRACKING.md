@@ -449,12 +449,11 @@ traps that matter for telling drift from expected:
   - With a temporary directory that cannot be used, `5fd08069` answers the
     filter refusal. claustrum fails as `89cb6289` does (Linux and Windows
     VMs).
-  - With a program key of git-lfs in the config of the repository, the filter
-    `lfs` does not run on claustrum. A create with a file under it answers the
-    filter refusal for `lfs`, or claustrum's own `worktree_add_failed` text
-    that names the key. On `5fd08069` such a create fails inside git-lfs with
-    the text of git-lfs, and the agent does not run (cells L1 to L4, Windows
-    VM). The `lfs.extension.` keys of that rule ran on no VM.
+  - With a program key of git-lfs in the config of the repository and no
+    settings copy, the filter `lfs` does not run on claustrum. A create with a
+    file under it answers the filter refusal for `lfs`, or claustrum's own
+    `worktree_add_failed` text that names the key. `5fd08069` is not measured
+    in that state.
   - In the call log, some `filter.` pairs differ.
 - The refusals of a repository config split the builds too, not drift.
   Against `89cb6289` a config that the daemon does not accept gets a text that
@@ -522,8 +521,6 @@ traps that matter for telling drift from expected:
     directory. See [git.worktree_create](protocol/git-worktree-create.md#the-settings-copy).
 
   Against `5fd08069` these differences are not drift:
-  - The git-lfs cells of a create: other reply texts, other read-tree items and
-    no git-lfs log file.
   - The config reads on a config that changes many times each second, and the
     config reads that `5fd08069` ends early.
   - claustrum leaves the `git-shadow` folder of a daemon that ended with

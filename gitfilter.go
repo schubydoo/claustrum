@@ -45,6 +45,21 @@ const (
 	lfsFilterName = "lfs"
 	lfsSmudge     = "git-lfs smudge -- %f"
 	lfsProcess    = "git-lfs filter-process"
+	// lfsSkipSmudge passes under the name lfs with a settings copy, and the file
+	// stays the pointer text (cell K3 of round task081-01, Linux VM). The other
+	// --skip forms are not measured and do not pass.
+	lfsSkipSmudge = "git-lfs smudge --skip %f"
+	// lfsClean is the `clean` value of `git lfs install`. With a settings copy
+	// the filter lfs gets it as an item (cell K1 of round task081-01). Another
+	// `clean` value gets no item (not measured).
+	lfsClean = "git-lfs clean -- %f"
+	// lfsFailedWords and lfsDownloadNote: with a settings copy, a failed
+	// checkout whose text holds the words after the cut gets the note after the
+	// text (cells K6, K8, L1 to L3, L5, L9 and L11 of round task081-01, Linux VM).
+	// A text that the cut ends before the words gets no note (cells K5 and K7).
+	lfsFailedWords  = "smudge filter lfs failed"
+	lfsDownloadNote = ". Claude doesn't use ssh, credential, or proxy settings from this repository's own git config." +
+		" If the download needs one and you trust that setting, copy it into ~/.gitconfig on the remote machine, then try again."
 	// filterNameMaxCount is the most filter names that the repository's own
 	// config can have. 64 names pass and 65 are refused with tooManyFiltersText.
 	// Cells C1 and C2 of round task008-01 show it on Linux, macOS and Windows VMs.
@@ -69,18 +84,23 @@ func (b *jsonTrueSwitch) UnmarshalJSON(data []byte) error {
 // the last value of a key (cells Q8).
 //
 // otherSmudge reports a `smudge` value in the listing, at any place, that is
-// not empty, not `cat` and not the git-lfs value. lfsSmudgeSeen reports the
-// git-lfs value. With them the rule for a filter that only the repository
-// defines does not depend on the order of its files (planFilters).
+// not empty, not `cat` and not a git-lfs value (lfsSmudge, lfsSkipSmudge).
+// lfsSmudgeSeen reports a git-lfs value. With them the rule for a filter that
+// only the repository defines does not depend on the order of its files
+// (planFilters).
 //
 // bare reports a record of the key with no value, at any place: a line with
 // no "=" (hasBare).
+//
+// clean is the last `clean` value. Only the filter lfs with a settings copy
+// reads it (planFilters).
 type filterValues struct {
 	has           [len(filterKeys)]bool
 	last          [len(filterKeys)]string
 	bare          [len(filterKeys)]bool
 	otherSmudge   bool
 	lfsSmudgeSeen bool
+	clean         string
 }
 
 // defined reports whether the listing defines the filter: a `smudge` or a
@@ -125,6 +145,12 @@ func parseFilterListing(out []byte) map[string]filterValues {
 		if !ok || last < 0 {
 			continue
 		}
+		if rest[last+1:] == "clean" {
+			v := defs[rest[:last]]
+			v.clean = value
+			defs[rest[:last]] = v
+			continue
+		}
 		k := slices.Index(filterKeys[:], rest[last+1:])
 		if k < 0 {
 			continue
@@ -136,8 +162,9 @@ func parseFilterListing(out []byte) map[string]filterValues {
 		v.has[k], v.last[k] = true, value
 		v.bare[k] = v.bare[k] || !hasValue
 		if k == filterSmudge {
-			v.otherSmudge = v.otherSmudge || (value != "" && value != passSmudge && value != lfsSmudge)
-			v.lfsSmudgeSeen = v.lfsSmudgeSeen || value == lfsSmudge
+			lfs := value == lfsSmudge || value == lfsSkipSmudge
+			v.otherSmudge = v.otherSmudge || (value != "" && value != passSmudge && !lfs)
+			v.lfsSmudgeSeen = v.lfsSmudgeSeen || lfs
 		}
 		defs[rest[:last]] = v
 	}
@@ -149,7 +176,8 @@ func parseFilterListing(out []byte) map[string]filterValues {
 // passes. With mixed values the filter is refused: `smudge = cat` beside a
 // `process` value (cell V11), and an empty `process` beside a `smudge` value that
 // does not pass (cell Q9). With lfsProgram set, the two git-lfs values do not
-// pass (repositoryLfsProgramKey).
+// pass (repositoryLfsProgramKey). With a settings copy lfsSkipSmudge passes
+// under the name lfs too.
 //
 // With a settings copy (shadow) every `smudge` value of the listing counts,
 // not only the last one. That listing holds the last value of each file of
@@ -163,7 +191,7 @@ func repositoryValuesPass(name string, v filterValues, lfsProgram, shadow bool) 
 	if shadow && (v.otherSmudge || (v.lfsSmudgeSeen && !lfs)) {
 		return false
 	}
-	if s := v.last[filterSmudge]; s != "" && s != passSmudge && (!lfs || s != lfsSmudge) {
+	if s := v.last[filterSmudge]; s != "" && s != passSmudge && (!lfs || (s != lfsSmudge && (!shadow || s != lfsSkipSmudge))) {
 		return false
 	}
 	if p := v.last[filterProcess]; p != "" && (!lfs || p != lfsProcess) {
@@ -225,13 +253,16 @@ func (f *filterPlan) pairs(name string, values [len(filterKeys)]string, keys ...
 //     in the repository. A long name passes here (cell Q5).
 //   - The filter lfs with values that pass gets its own value again as a pair
 //     (cells V7 and V13). With lfsKey set those values do not pass
-//     (repositoryLfsProgramKey).
+//     (repositoryLfsProgramKey). With a settings copy and a git-lfs value it
+//     gets an item for its `clean`, `process`, `required` and git-lfs `smudge`
+//     values, in that order. The cells are K1 and K3 of round task081-01 (Linux
+//     VM). The `clean` item needs lfsClean.
 //   - A name with "=" is refused with no checkout (cell Q3). git ends the key of
 //     a -c pair at the first "=". Cell Q3 has a value that does not pass. Such a
 //     name with a value that passes is not measured.
 //
 // One filter that outside defines does not run: the filter lfs, when lfsKey is
-// set. It gets the three pairs too. A failure at it answers lfsProgramText, not
+// set. That needs a rule with no settings copy. It gets the three pairs too. A failure at it answers lfsProgramText, not
 // the refusal of a filter that only the repository defines. With no path under
 // the filter the checkout succeeds. A Windows VM ran this rule for the
 // lfs.customtransfer keys and the standalone keys (cells L1 to L8).
@@ -335,6 +366,24 @@ func planFilters(full, outside, own map[string]filterValues, lfsKey string, shad
 			if utf8.ValidString(name) {
 				f.refused = append(f.refused, name)
 			}
+		case shadow && name == lfsFilterName && (v.last[filterProcess] != "" ||
+			v.last[filterSmudge] == lfsSmudge || v.last[filterSmudge] == lfsSkipSmudge):
+			// Three states of this arm are claustrum's own, not measured. A
+			// `required` value other than true goes as it is. A `clean` value of
+			// the user config gives the `clean` item. A --skip smudge in one
+			// repository file beside another git-lfs smudge in another file passes.
+			if v.clean == lfsClean {
+				f.args = append(f.args, "-c", "filter."+name+".clean="+lfsClean)
+			}
+			if v.last[filterProcess] != "" {
+				f.pairs(name, v.last, filterProcess)
+			}
+			if v.has[filterRequired] {
+				f.pairs(name, v.last, filterRequired)
+			}
+			if s := v.last[filterSmudge]; s == lfsSmudge || s == lfsSkipSmudge {
+				f.pairs(name, v.last, filterSmudge)
+			}
 		case v.last[filterProcess] != "":
 			f.pairs(name, v.last, filterProcess)
 			if v.last[filterSmudge] == lfsSmudge {
@@ -385,17 +434,21 @@ func gitTrue(value string) bool {
 // ends with `.standalonetransferagent`. The last form covers
 // lfs.standalonetransferagent and lfs.<url>.standalonetransferagent. The
 // `lfs.extension.` keys are from the help text of git-lfs 3.7.1, which gives
-// them a command. No VM ran a cell with such a key. full and outside are the two plain
+// them a command. full and outside are the two plain
 // listings. A record that outside has too is not the repository's own, so the
 // same keys in the user or the system config do not count.
 //
 // A working git-lfs 3.7.1 runs the program of lfs.customtransfer.<x>.path on
 // 89cb6289 and on build C of this change, and it does not run on
-// 5fd08069 (cell X4, Windows VM). So with one of these keys the filter lfs does
-// not run for the checkout, wherever it is defined (planFilters). That
-// rule is claustrum's own: on 5fd08069 git-lfs runs and fails by itself. With
-// build D the agent ran in the same cells as on 5fd08069: with the keys
-// in the user config only, and with shadowDirOff (cells L1 to L8, Windows VM).
+// 5fd08069 (cell X4, Windows VM). So with one of these keys and no settings
+// copy the filter lfs does not run for the checkout, wherever it is defined
+// (planFilters). That rule is claustrum's own, not measured. With build D the
+// agent ran in the same cells as on 5fd08069: with the keys in the user config
+// only, and with shadowDirOff (cells L1 to L8, Windows VM).
+//
+// With a settings copy the keys refuse nothing (settingRecords). git-lfs runs,
+// and the program of the key does not run, as on 5fd08069. The cells are K5,
+// K6, L2 to L4 and L11 of round task081-01 (Linux VM).
 func repositoryLfsProgramKey(full, outside []byte) string {
 	other := map[string]bool{}
 	for rec := range bytes.SplitSeq(outside, []byte{0}) {
@@ -414,7 +467,9 @@ func repositoryLfsProgramKey(full, outside []byte) string {
 }
 
 // planFromListings is planFilters for two plain listings: the one that
-// the checkout reads, and the part of it from outside the repository.
+// the checkout reads, and the part of it from outside the repository. With a
+// settings copy the repository part holds no `lfs.` key (settingRecords), so
+// the git-lfs program key is "".
 func planFromListings(full, outside []byte, shadow bool) filterPlan {
 	f := planFilters(parseFilterListing(full), parseFilterListing(outside), parseFilterListing(ownRecords(full, outside)),
 		repositoryLfsProgramKey(full, outside), shadow)
@@ -468,7 +523,8 @@ func ownRecords(full, outside []byte) []byte {
 
 // lfsProgramText is the refusal text when the checkout fails at the filter lfs
 // that the outside config defines, and key is the program key of the
-// repository. The text is claustrum's own.
+// repository. Only a rule with no settings copy gives it. The text is
+// claustrum's own.
 func lfsProgramText(key string) string {
 	return "this repository's git config cannot be used: it names a program for git-lfs (" + strconv.Quote(key) +
 		"); remove that setting, or put it into ~/.gitconfig on the remote machine"
@@ -494,11 +550,15 @@ func filterRecords(listing []byte) []byte {
 }
 
 // settingRecords is the plain listing of settings, in the form of `git config
-// -z --list`, cut to filterRecords.
+// -z --list`, cut to the records whose key starts with `filter.`. The rule with
+// a settings copy reads no `lfs.` key of the repository.
 func settingRecords(settings ...[]repoSetting) []byte {
 	var b []byte
 	for _, list := range settings {
 		for _, s := range list {
+			if !strings.HasPrefix(s.key, "filter.") {
+				continue
+			}
 			b = append(b, s.key...)
 			if s.hasValue {
 				b = append(append(b, '\n'), s.value...)
@@ -506,7 +566,7 @@ func settingRecords(settings ...[]repoSetting) []byte {
 			b = append(b, 0)
 		}
 	}
-	return filterRecords(b)
+	return b
 }
 
 // shadowListings gives the two listings of planFromListings for a create with
@@ -519,7 +579,7 @@ func settingRecords(settings ...[]repoSetting) []byte {
 // the copy, which holds no key that the rule reads, and no `config.worktree`
 // file of the repository (extensions.worktreeconfig is never in the copy). So
 // every record of pin is from outside the repository, and outside is pin. own
-// is the filterRecords of the read of repoConfigGate that wrote the copy of
+// is the settingRecords of the read of repoConfigGate that wrote the copy of
 // this request: the config, the files that it includes, the files of its
 // `includeIf` sections and its `config.worktree` file. 5fd08069 refuses a
 // filter of an included file (cell F1 of round task084-02, Linux VM) and of an
