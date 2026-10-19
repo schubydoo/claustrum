@@ -81,6 +81,9 @@ type request struct {
 	// stop holds the time limits of the git calls of the request (gitstop.go). It
 	// is nil for a method with no such limits.
 	stop *gitStop
+	// offHeld is true when a git request with "shadowDirOff":true ran in the
+	// daemon at the start of this one (handleGit).
+	offHeld bool
 }
 
 // runAtReply removes the short-lived folders that stay until the reply. On

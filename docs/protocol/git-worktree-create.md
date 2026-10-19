@@ -19,7 +19,7 @@ A failed request can leave files on disk: see [After a failure](#after-a-failure
 | `existingBranch` | no | A local branch to attach to. If it names no local branch, the daemon creates `branchName` instead. If the attach fails, the daemon does the same. For example, git refuses an attach to a branch that is checked out in `baseRepo`. The request can then still succeed. `branch` in the response says which branch the worktree is on: see [Response](#response). |
 | `worktreeRoot` | no | A location outside the repository. Windows refuses it with `unsafe_path`. |
 | `timeoutMs` | no | A deadline that starts at the add. It stops the read-tree call. The daemon tests it after the add and the copy step. No value or `0` sets none. |
-| `shadowDirOff` | no | `true` turns off three things for this request: the filter rule of the checkout, the daemon's own read of the git config of the repository, and the settings copy. Any other value does nothing and is no error. See [Git filters](#git-filters), [Repository config refusals](../PROTOCOL.md#repository-config-refusals) and [The settings copy](#the-settings-copy). |
+| `shadowDirOff` | no | `true` turns off, for this request, the filter rule of the checkout, the daemon's own read of the git config of the repository, and the settings copy. Git requests that start meanwhile get the same (Linux VM). Other values do nothing. See [Git filters](#git-filters), [Repository config refusals](../PROTOCOL.md#repository-config-refusals) and [The settings copy](#the-settings-copy). |
 
 Where the worktree can go:
 
@@ -120,7 +120,7 @@ The daemon keeps its own copy of the git settings of the repository, and its git
 - On Windows, a step before the add that fails gives `git worktree add failed: cannot prepare the repository's worktrees directory: <cause>`, and the `worktree add` call does not run. On Linux and macOS a symbolic link, a file or a folder that cannot be opened at `worktrees` does the same. `5fd08069` answers so (rounds `tier0-10`, `tier0-24` and `tier0-25m`, Linux and macOS VMs).
 - On Linux and macOS a linked `baseRepo` whose entry in `<git dir>/worktrees` is a symbolic link gets the trust refusal as a failed add. Without `worktreeRoot` its `.claude/worktrees` is made (`5fd08069`, cell C7 of round `tier0-24`, Linux VM, with `extensions.worktreeConfig` and a `config.worktree` file). Other forms are not measured.
 
-`"shadowDirOff": true` turns the copy off for one request, and none of these steps runs. The same holds on a host whose git does not work on such a copy. With that member a link at `worktrees` refuses the create before the add (`5fd08069`, cell C2 of rounds `tier0-24` and `tier0-25m`, Linux and macOS VMs).
+`"shadowDirOff": true` turns the copy off, and none of these steps runs. The same holds on a host whose git does not work on such a copy. With that member a link at `worktrees` refuses the create before the add (`5fd08069`, cell C2 of rounds `tier0-24` and `tier0-25m`, Linux and macOS VMs).
 
 ## The held git directory
 

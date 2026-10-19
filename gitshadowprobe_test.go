@@ -402,6 +402,19 @@ func TestProbeAnswers(t *testing.T) {
 			stderr: "fatal: not a git repository (or any of the parent directories): .git\n"},
 		{name: "exit 128, another owner", exit: 128, calls: 1,
 			stderr: "fatal: detected dubious ownership in repository at '/x/repo'\n"},
+		// The wrapper rows of round task073-03 (Linux VM). P7, P9 and P10 answer
+		// "no repository" with no `git version` call. P8 and W2-268 (round
+		// task073-01, Windows VM) answer the error after one such call.
+		{name: "P7: exit 128, upper case", exit: 128, calls: 1, stderr: "FATAL: NOT A GIT REPOSITORY (x)\n"},
+		{name: "P9: exit 128, dubious ownership after a first line", exit: 128, calls: 1,
+			stderr: "x\ndetected dubious ownership in y\n"},
+		{name: "P10: exit 128, bare repository", exit: 128, calls: 1, stderr: "fatal: cannot use bare repository 'x'\n"},
+		{name: "P8: exit 128, not a git repository after a first line", exit: 128, calls: 1, version: true,
+			stderr: "warning: w\nfatal: not a git repository\n",
+			text:   "git could not check this repository on the remote machine: at %[1]q: warning: w fatal: not a git repository"},
+		{name: "W2-268: exit 128, error reading", exit: 128, calls: 1, version: true,
+			stderr: "fatal: error reading '/x/repo/.git'\n",
+			text:   "git could not check this repository on the remote machine: at %[1]q: fatal: error reading '/x/repo/.git'"},
 		{name: "another path", stdout: elsewhere + "\n", calls: 2,
 			text: "git and Claude disagree about which repository holds this folder: from %[1]q git finds " +
 				strings.ReplaceAll(strconv.Quote(elsewhere), "%", "%%") + ", Claude finds %[2]q; try again"},

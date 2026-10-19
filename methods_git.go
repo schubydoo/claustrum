@@ -38,6 +38,10 @@ func (s *server) handleGit(req *request) response {
 		s.offGitRequests.Add(1)
 		defer s.offGitRequests.Add(-1)
 	}
+	// While a request with "shadowDirOff":true runs, every git request that starts
+	// runs as one with the member (cells H1 and H4 of round
+	// task073-02, Linux VM). The state is read once, here (not measured).
+	req.offHeld = s.offGitRequests.Load() > 0
 	if !limitedGitMethod(req.Method) {
 		return fn(req)
 	}
@@ -77,7 +81,8 @@ type gitParams struct {
 	// (repoConfigGate). Cells X1 measured that on git.info and git.status, and
 	// cells V2 on the three other methods. It turns off the settings copy for the
 	// request too (shadowHost.control). Only the JSON value true sets it
-	// (jsonTrueSwitch).
+	// (jsonTrueSwitch). A request that starts while another one with it runs
+	// gets it too (request.offHeld).
 	ShadowDirOff jsonTrueSwitch `json:"shadowDirOff,omitempty"`
 }
 

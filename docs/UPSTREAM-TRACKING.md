@@ -466,23 +466,20 @@ traps that matter for telling drift from expected:
   for each config file of a first read. Each state but the three Windows texts
   ran on a Linux VM, and part of them on macOS and Windows VMs. Most cells ran
   `git.info` and `git.status`.
-  With `"shadowDirOff":true` in the request, the read does not run. A
+  With `"shadowDirOff":true` in the request, or while such a request runs (Linux
+  VM), the read does not run. A
   `git.worktree_remove` of a worktree folder that does not exist is refused
   too. With a config of 20 MiB, `89cb6289` deletes the branch there (Linux,
   macOS and Windows VMs). With `worktreeRoot` the refused remove has the text
   `cannot determine the repository's work tree: ` before the refusal (Linux
   and macOS VMs).
 
-  Against `5fd08069` these differences are not drift. On Windows a long config
-  path with a config of 20 MiB got another answer on a build before the settings
-  copy (Windows VM). On a config that changes many
+  Against `5fd08069` these differences are not drift. On a config that changes many
   times each second, `5fd08069` makes more config reads than claustrum (Linux
   VM). For a config with a very long key, `5fd08069` ends config read calls
   early, and claustrum lets them end (Windows VM). A config whose listing by git
   passes 64 MiB can get no refusal on claustrum (from the code, not measured on
-  `5fd08069`). On a FIFO config, two
-  `shadowDirOff` requests get no answer. `5fd08069` then gives no answer to two
-  later requests, and claustrum answers them (Linux VM).
+  `5fd08069`).
 
   The states, the bounds and the cells are in
   [PROTOCOL.md](PROTOCOL.md#repository-config-refusals).

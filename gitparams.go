@@ -72,12 +72,16 @@ type gitMethodParams interface {
 
 // bindGitParams decodes the params of req into view and returns them as
 // gitParams, with each path `~`-expanded. A decode error is the reply of
-// bindParams: -32602 "Invalid params".
+// bindParams: -32602 "Invalid params". A request that came while another one
+// with "shadowDirOff":true ran gets the member (request.offHeld).
 func bindGitParams(req *request, view gitMethodParams) (gitParams, *response) {
 	if err := decodeParams(req, view); err != nil {
 		return gitParams{}, ptr(errResult(req.ID, codeInvalidParam, "Invalid params"))
 	}
 	p := view.params()
+	if req.offHeld {
+		p.ShadowDirOff = true
+	}
 	p.expandPaths()
 	return p, nil
 }

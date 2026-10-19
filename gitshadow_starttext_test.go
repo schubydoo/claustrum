@@ -4,6 +4,7 @@ import (
 	"os"
 	"path/filepath"
 	"slices"
+	"strconv"
 	"strings"
 	"testing"
 )
@@ -121,9 +122,10 @@ func TestStartTestCallSevenWithAWorkingVersion(t *testing.T) {
 // git.status and git.list_branches, worktree_add_failed on git.worktree_create,
 // and the lock-check text on git.worktree_remove, with two such calls and no
 // delete (cell E8 of round task083-01 and cells E8s, E8l, E8c and E8r of round
-// task083-02, Linux VM). If it works, git.info answers "no repository"
-// (claustrum's own, not measured). Mutation: drop the cannotRunText branch in
-// askGit, or treat every text as no repository in probeSaysNoRepo.
+// task083-02, Linux VM). If it works, git.info answers the error of the call, as
+// 5fd08069 does for another text with exit 128 (cell P8 of round task073-03,
+// Linux VM). Mutation: drop the cannotRunText branch in askGit, or treat every
+// text as no repository in probeSaysNoRepo.
 func TestProbeExit128WithABrokenConfig(t *testing.T) {
 	line := "fatal: bad config line 3 in file /h/.gitconfig"
 	text := "git cannot run on this host; git not run: exit status 128: " + line
@@ -171,13 +173,34 @@ func TestProbeExit128WithABrokenConfig(t *testing.T) {
 		f := newSeededShadowFixture(t)
 		answerProbe(t, 128, "", line+"\n")
 		raw, calls := f.info(t, f.repo, nil)
-		if raw != noRepoShadow {
-			t.Errorf("git.info = %s\n  want %s", raw, noRepoShadow)
+		if want := probeErrorShapes(t, f, repoCheckFailedText(f.repo, line))[0]; raw != want {
+			t.Errorf("git.info = %s\n  want %s", raw, want)
 		}
 		if probes, versions := countAfterProbe(t, calls); probes != 1 || versions != 1 {
 			t.Errorf("%d calls about the repository and %d plain version calls after it, want 1 and 1", probes, versions)
 		}
 	})
+}
+
+// TestProbeFailureWithAFailedVersion pins cell P14x of round task073-03 (Linux
+// VM). The call about the repository exits 1 with `fatal: not a git repository`,
+// and the `git version` call after it exits 1 with `boom`. 5fd08069 answers the
+// text of that version call on git.info and on git.worktree_create. Mutation:
+// return repoCheckFailedText in askGit without the cannotRunText branch.
+func TestProbeFailureWithAFailedVersion(t *testing.T) {
+	text := gitCannotRunPrefix + "exit status 1: boom"
+	// The index of git.info and of git.worktree_create in fiveRequests.
+	for _, i := range []int{0, 3} {
+		t.Run(strconv.Itoa(i), func(t *testing.T) {
+			f := newSeededShadowFixture(t)
+			answerProbe(t, 1, "", "fatal: not a git repository\n")
+			failVersion(t, "1", "boom\n")
+			m := f.fiveRequests(nil)[i]
+			if raw, _ := f.call(t, m.method, m.params); raw != probeErrorShapes(t, f, text)[i] {
+				t.Errorf("%s = %s\n  want %s", m.method, raw, probeErrorShapes(t, f, text)[i])
+			}
+		})
+	}
 }
 
 // TestGitInfoGoneGitFileRunsTheStartTest pins git.info as the first git request of

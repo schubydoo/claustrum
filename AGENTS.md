@@ -183,6 +183,10 @@ The JSON-RPC surface is identical on every OS. Full internals →
       A repository config, or one of three files of the git directory, that the
       daemon does not accept refuses the remove before any delete, as on
       `5fd08069`. `"shadowDirOff":true` in the request turns that refusal off.
+      A remove that starts while a `"shadowDirOff":true` request runs gets no
+      such refusal, as one with the member, and deletes on a config that only
+      the daemon refuses, as `5fd08069` does (cells Q10 and Q11 of round
+      `task073-08`, Linux VM).
       A failed start test of the settings copy refuses the remove before any
       delete too. So does a bad answer of git about the repository, and a copy
       folder that cannot be made. `5fd08069` refuses so in cells 30, 38 and 39
@@ -345,7 +349,8 @@ The JSON-RPC surface is identical on every OS. Full internals →
       the create goes on (not measured). `git.info` and `git.status` remove no
       entry (`5fd08069`, the same cell). From the code: a create whose
       `worktree add` fails, a
-      request with `"shadowDirOff":true` and the state `fallback-git` run no
+      request with `"shadowDirOff":true` (or one that starts while such a
+      request runs) and the state `fallback-git` run no
       cleanup. Those three are not measured on `5fd08069`. Linux and macOS run
       no such step (`5fd08069`, cell H2 of round `s3p2`, Linux VM). Do not
       widen the prefix, the kinds or the folder of this delete.
@@ -461,7 +466,8 @@ The JSON-RPC surface is identical on every OS. Full internals →
       through the path. The comment at the top of `gitdirheld.go` has the
       list of the steps.
     - By the path stay: git itself, a request that holds no git directory
-      (`"shadowDirOff":true`, the state `fallback-git`, no run folder), and
+      (`"shadowDirOff":true` or a start while such a request runs, the state
+      `fallback-git`, no run folder), and
       on Linux and macOS the index in a `worktrees` entry that is a symbolic
       link, with the identity test of D24. So does the stale step for a
       folder `worktrees` outside the held folder (from the code).
@@ -485,7 +491,8 @@ The JSON-RPC surface is identical on every OS. Full internals →
       is, on every git method without `"shadowDirOff":true`, before any write
       or remove (`gitDirIsSymlink`). `5fd08069` refuses it with equal replies,
       and the folder behind the link is unchanged on both (Windows VM).
-      With `"shadowDirOff":true` nothing is refused, and git makes and
+      With `"shadowDirOff":true`, or for a request that starts while such a
+      request runs (from the code, not measured), nothing is refused, and git makes and
       removes the worktree in the folder behind the link. `5fd08069` does the
       same for a junction and for a directory symbolic link (Windows VM).
   [git.worktree_create](docs/protocol/git-worktree-create.md#the-held-git-directory)
