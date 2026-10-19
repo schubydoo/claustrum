@@ -193,8 +193,10 @@ func TestProbeExit128WithABrokenConfig(t *testing.T) {
 // Mutation: set goneGitFile to false or true in judgeGitDir, test any stat error
 // in place of a missing path, or drop the gate call in gitInfo.
 func TestGitInfoGoneGitFileRunsTheStartTest(t *testing.T) {
-	nowhere := filepath.Join("nowhere", "gitdir")
-	entry := filepath.Join("worktrees", "n1")
+	// The daemon passes GIT_COMMON_DIR as the `.git` file spells it, and the file
+	// has forward slashes on every system. So the suffixes have them too.
+	nowhere := "nowhere/gitdir"
+	entry := "worktrees/n1"
 	for _, row := range []struct {
 		name, text, end string
 		off             bool
