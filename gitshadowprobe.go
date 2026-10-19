@@ -458,9 +458,11 @@ func versionAfterFailure() shadowRun {
 // run: exit status 128: fatal: bad config line 3 in file <home>/.gitconfig`
 // (cells E1 to E5 of round task083-01 on a Linux VM, E1 and E2 on macOS and
 // Windows VMs). askGit uses it too (probeSaysNoRepo), and so does a create
-// after a failed first checkout listing (hardenedGitCheckout).
+// after a failed first checkout listing (hardenedGitCheckout). A call that
+// exited 0 while a child kept its output pipes past shadowCallDrain works, as a
+// test call does (exitedInTime).
 func cannotRunText() string {
-	v := versionAfterFailure()
+	v := exitedInTime(versionAfterFailure())
 	if v.err == nil {
 		return ""
 	}

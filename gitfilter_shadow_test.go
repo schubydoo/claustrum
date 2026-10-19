@@ -275,6 +275,27 @@ func TestShadowFailedListingAndVersionBeforeTheCheckout(t *testing.T) {
 	f.wantGone(t)
 }
 
+// The listing before the checkout fails, and the `git version` after it exits 0
+// while a child holds its output pipes past the wait for them. That call works, so
+// the create answers the hooks refusal of cell L6 of round task084-02, not the
+// cannot-run text (claustrum's own, not measured). Mutation: drop exitedInTime in
+// cannotRunText.
+func TestShadowFailedListingWithAHeldVersion(t *testing.T) {
+	f := newShadowFilterFixture(t, "a.txt filter=m\n")
+	t.Setenv("CLAUSTRUM_GITSTUB_FAIL_LISTING", "full")
+	slowGit(t, "version", "hold", 2*time.Second, "", "")
+	oldDrain := shadowCallDrain
+	shadowCallDrain = 200 * time.Millisecond
+	t.Cleanup(func() { shadowCallDrain = oldDrain })
+	raw, _ := f.create(t, nil)
+	want := failedFrame(t, "git worktree add failed (checkout): config-defined hooks could not be pinned off; git not run: "+
+		"listing the configuration in force: exit status 128: fatal: stub refuses the full listing")
+	if raw != want {
+		t.Fatalf("git.worktree_create = %s\nwant %s", raw, want)
+	}
+	f.wantGone(t)
+}
+
 // sameDir reports whether a and b name one folder.
 func sameDir(a, b string) bool {
 	fa, errA := os.Stat(a)
