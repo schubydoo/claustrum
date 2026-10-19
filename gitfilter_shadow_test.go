@@ -3,7 +3,9 @@ package main
 import (
 	"os"
 	"path/filepath"
+	"runtime"
 	"slices"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -34,12 +36,19 @@ func newShadowFilterFixture(t *testing.T, attrs string) shadowFilterFixture {
 // section is a [filter "<name>"] section whose smudge command leaves the marker.
 func (f shadowFilterFixture) section(t *testing.T, name, key string) string {
 	t.Helper()
+	return sectionTo(t, name, key, f.mark)
+}
+
+// sectionTo is a [filter "<name>"] section whose command leaves the marker
+// file mark.
+func sectionTo(t *testing.T, name, key, mark string) string {
+	t.Helper()
 	exe, err := os.Executable()
 	if err != nil {
 		t.Fatal(err)
 	}
 	return "[filter \"" + name + "\"]\n\t" + key + " = CLAUSTRUM_TEST_HELPER=filter-mark '" +
-		filepath.ToSlash(exe) + "' '" + filepath.ToSlash(f.mark) + "'\n"
+		filepath.ToSlash(exe) + "' '" + filepath.ToSlash(mark) + "'\n"
 }
 
 // top is the repository folder with its links resolved, in the form of an
@@ -124,7 +133,7 @@ func TestShadowFilterRuleFailsClosed(t *testing.T) {
 			f.addConfig(t, "[includeIf \"gitdir:"+filepath.ToSlash(top)+"/\"]\n\tpath = m.cfg\n[filter \"m\"]\n\tsmudge = cat\n")
 		}, "m", false},
 		// Cells Q8: in one file the last value counts, so a command and then
-		// `smudge = cat` in .git/config pass (lastSmudgePerFile).
+		// `smudge = cat` in .git/config pass (lastLinePerFile).
 		{"Q8 a command and then cat in the repository config", "a.txt filter=m\n", func(t *testing.T, f shadowFilterFixture) {
 			f.addConfig(t, f.section(t, "m", "smudge")+"[filter \"m\"]\n\tsmudge = cat\n")
 		}, "", false},
@@ -316,5 +325,155 @@ func TestShadowAllCatFilterGetsNoItem(t *testing.T) {
 	args := readTreeArgs(calls)
 	if args == nil || slices.ContainsFunc(args, func(a string) bool { return strings.HasPrefix(a, "filter.m.") }) {
 		t.Errorf("the read-tree call %q, want one with no filter.m item", args)
+	}
+}
+
+// filterItems is the filter items of the read-tree call, in their order.
+func filterItems(calls []envCall) []string {
+	var items []string
+	for _, a := range readTreeArgs(calls) {
+		if strings.HasPrefix(a, "filter.") {
+			items = append(items, a)
+		}
+	}
+	return items
+}
+
+// TestShadowFilterRulesOfRoundTask073: the cells of rounds task073-01 and
+// task073-02 (Linux VM) and G5a and G5b of round task073-07 (macOS VM) in the
+// state shadow, and rows that are not measured. "user" is the marker of the user
+// config and "repository" the one of .git/config.
+func TestShadowFilterRulesOfRoundTask073(t *testing.T) {
+	off := []string{"filter.x.process=", "filter.x.required=true", "filter.x.smudge=false"}
+	for _, row := range []struct {
+		name string
+		// stage writes the configs of the row. user and repo are marker files.
+		stage   func(t *testing.T, f shadowFilterFixture, user, repo string)
+		refused bool
+		items   []string
+		userRan bool
+	}{
+		// Cell F1 (and C2a of round task073-01): the repository process program
+		// does not run, and the read-tree call gets no filter item.
+		{"F1 a user smudge and a repository process", func(t *testing.T, f shadowFilterFixture, user, repo string) {
+			outside(t, sectionTo(t, "x", "smudge", user))
+			f.addConfig(t, sectionTo(t, "x", "process", repo))
+		}, false, nil, true},
+		// Cell F4: a user process = cat makes no definition outside.
+		{"F4 a user process = cat beside a user smudge", func(t *testing.T, f shadowFilterFixture, user, repo string) {
+			outside(t, sectionTo(t, "x", "smudge", user)+"\tprocess = cat\n")
+			f.addConfig(t, sectionTo(t, "x", "smudge", repo))
+		}, true, off, false},
+		// Close to cells F20 and F21 of round task073-06 (Linux VM), which have
+		// no user smudge. This fixture with a user smudge is not measured.
+		// Beside a user process = cat the repository values are judged alone,
+		// and values that pass give no refusal.
+		{"a user process = cat and a repository smudge = cat", func(t *testing.T, f shadowFilterFixture, user, _ string) {
+			outside(t, sectionTo(t, "x", "smudge", user)+"\tprocess = cat\n")
+			f.addConfig(t, "[filter \"x\"]\n\tsmudge = cat\n")
+		}, false, nil, false},
+		{"a user process = cat and a repository required = true alone", func(t *testing.T, f shadowFilterFixture, user, _ string) {
+			outside(t, sectionTo(t, "x", "smudge", user)+"\tprocess = cat\n")
+			f.addConfig(t, "[filter \"x\"]\n\trequired = true\n")
+		}, false, nil, false},
+		// Cells G5a and G5b of round task073-07 (macOS VM): a bare smudge line
+		// in .git/config refuses beside smudge = cat in an includeIf file of
+		// the repository, in either order.
+		{"G5a an includeIf file with smudge = cat, then a bare smudge line", func(t *testing.T, f shadowFilterFixture, _, _ string) {
+			setIncludeFile(t, f.gitDir, "inc.cfg", "[filter \"x\"]\n\tsmudge = cat\n")
+			f.addConfig(t, "[includeIf \"gitdir:"+f.top(t)+"/\"]\n\tpath = inc.cfg\n[filter \"x\"]\n\tsmudge\n")
+		}, true, off, false},
+		{"G5b a bare smudge line, then an includeIf file with smudge = cat", func(t *testing.T, f shadowFilterFixture, _, _ string) {
+			setIncludeFile(t, f.gitDir, "inc.cfg", "[filter \"x\"]\n\tsmudge = cat\n")
+			f.addConfig(t, "[filter \"x\"]\n\tsmudge\n[includeIf \"gitdir:"+f.top(t)+"/\"]\n\tpath = inc.cfg\n")
+		}, true, off, false},
+		// Not measured, follows cells F6, F10 and F10b of round task073-02
+		// (Linux VM): in one file the last process line
+		// counts. The other line is an empty `process =`, a value that passes.
+		// A repository `process = cat` does not pass by itself.
+		{"a bare process line, then an empty process line in the same file", func(t *testing.T, f shadowFilterFixture, _, _ string) {
+			f.addConfig(t, "[filter \"x\"]\n\tprocess\n\tprocess =\n")
+		}, false, nil, false},
+		{"an empty process line, then a bare process line in the same file", func(t *testing.T, f shadowFilterFixture, _, _ string) {
+			f.addConfig(t, "[filter \"x\"]\n\tprocess =\n\tprocess\n")
+		}, true, off, false},
+		// Cells F5 (and C3 of round task073-01) and F6: a line with no "=".
+		{"F5 a bare smudge line", func(t *testing.T, f shadowFilterFixture, _, _ string) {
+			f.addConfig(t, "[filter \"x\"]\n\tsmudge\n")
+		}, true, off, false},
+		{"F6 a bare process line", func(t *testing.T, f shadowFilterFixture, _, _ string) {
+			f.addConfig(t, "[filter \"x\"]\n\tprocess\n")
+		}, true, off, false},
+	} {
+		t.Run(row.name, func(t *testing.T) {
+			f := newShadowFilterFixture(t, "* filter=x\n")
+			user, repo := filepath.Join(t.TempDir(), "user"), filepath.Join(t.TempDir(), "repository")
+			row.stage(t, f, user, repo)
+			raw, calls := f.create(t, nil)
+			if row.refused {
+				wantError(t, raw, repositoryOnlyFilterText("x"), "repository_only_filter")
+				f.wantGone(t)
+			} else if !strings.Contains(raw, `"success":true`) {
+				t.Fatalf("git.worktree_create = %s, want success", raw)
+			}
+			if items := filterItems(calls); !slices.Equal(items, row.items) {
+				t.Errorf("filter items of read-tree = %q, want %q", items, row.items)
+			}
+			if exists(user) != row.userRan || exists(repo) {
+				t.Errorf("markers: user ran = %v, repository ran = %v, want %v and false", exists(user), exists(repo), row.userRan)
+			}
+		})
+	}
+}
+
+// Cells F12 and F13 of round task073-02, and C4a and C4b of round task073-01
+// (Linux VM). A filter name that is not valid UTF-8, which only the
+// repository defines, is no refusal before the checkout. The read-tree call
+// gets the three items with the raw name. git fails, and the reply is git's
+// text with the bytes that are not valid UTF-8 dropped. On Windows a command
+// line cannot carry the raw name, so the items name another filter. git does
+// not see the filter in the copy, and the create succeeds with no filter run,
+// as 5fd08069 does in cell X1 of round val20-windows (cells F12 and F13 of round
+// task073-06, Windows VM).
+func TestShadowFilterNameThatIsNotUTF8(t *testing.T) {
+	for _, row := range []struct{ name, windowsName, text string }{
+		// windowsName is the name as git gets it on Windows: one U+FFFD for each
+		// byte that is not valid UTF-8.
+		{"\xff\xfe", "\uFFFD\uFFFD", "fatal: a.txt: smudge filter  failed"},
+		{"\xffx", "\uFFFDx", "fatal: a.txt: smudge filter x failed"},
+	} {
+		t.Run(strconv.Quote(row.name), func(t *testing.T) {
+			f := newShadowFilterFixture(t, "a.txt filter="+row.name+"\n")
+			f.addConfig(t, f.section(t, row.name, "smudge"))
+			raw, calls := f.create(t, nil)
+			if exists(f.mark) {
+				t.Error("the filter of the repository ran")
+			}
+			if !ranReadTree(calls) {
+				t.Fatal("no read-tree call ran, want one")
+			}
+			name := row.name
+			if runtime.GOOS == "windows" {
+				name = row.windowsName
+			}
+			want := []string{"filter." + name + ".process=", "filter." + name + ".required=true", "filter." + name + ".smudge=false"}
+			if runtime.GOOS == "windows" {
+				if items := filterItems(calls); !slices.Equal(items, want) {
+					t.Errorf("filter items of read-tree = %q, want %q", items, want)
+				}
+				if !strings.Contains(raw, `"success":true`) {
+					t.Fatalf("git.worktree_create = %s, want success", raw)
+				}
+				return
+			}
+			if items := filterItems(calls); !slices.Equal(items, want) {
+				t.Errorf("filter items of read-tree = %q, want %q", items, want)
+			}
+			const prefix = `"error":"git worktree add failed (checkout): `
+			if !strings.Contains(raw, prefix) || !strings.HasSuffix(raw, row.text+`","errorCode":"worktree_add_failed"}}`) {
+				t.Fatalf("git.worktree_create = %s\nwant the failed checkout with %q", raw, row.text)
+			}
+			f.wantGone(t)
+		})
 	}
 }
