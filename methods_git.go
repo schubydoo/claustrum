@@ -149,12 +149,18 @@ func gitStdoutErr(dir string, args ...string) (string, error) {
 // (callerTimeoutFired).
 var errCallerTimeoutMs = errors.New("git.worktree_create caller timeoutMs deadline")
 
+// callerDeadline arms the caller's deadline on base. It is a variable so that a
+// test can also fire the deadline at a marker of its git stub.
+var callerDeadline = func(base context.Context, d time.Duration) (context.Context, context.CancelFunc) {
+	return context.WithTimeoutCause(base, d, errCallerTimeoutMs)
+}
+
 func worktreeCreateCtx(s *gitStop, timeoutMs int) (base, caller context.Context, cancel context.CancelFunc) {
 	base = s.context()
 	if timeoutMs <= 0 {
 		return base, base, func() {}
 	}
-	ctx, c := context.WithTimeoutCause(base, time.Duration(timeoutMs)*time.Millisecond, errCallerTimeoutMs)
+	ctx, c := callerDeadline(base, time.Duration(timeoutMs)*time.Millisecond)
 	return base, ctx, c
 }
 
