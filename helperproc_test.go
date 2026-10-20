@@ -201,14 +201,16 @@ func runGitLingering(args []string) int {
 //   - "pre": sleep CLAUSTRUM_GITSTUB_MS milliseconds, then run the real git.
 //   - "gate": make the file CLAUSTRUM_GITSTUB_GATE with ".in" added, then wait
 //     until the file CLAUSTRUM_GITSTUB_GATE exists, at most CLAUSTRUM_GITSTUB_MS
-//     milliseconds. Then run the real git.
-//   - "post": run the real git, then sleep.
+//     milliseconds. Then make the file with ".out" added, and run the real git.
+//   - "post": run the real git, then sleep. With CLAUSTRUM_GITSTUB_GATE set, make
+//     that file with ".in" added before the sleep.
 //   - "fail": sleep, then exit without running git.
 //   - "postfail": run the real git, then print the stderr payload (not before) and
 //     exit, whatever git answered.
 //   - "hold": run the real git, start a descendant that holds this call's stdout
 //     and stderr for CLAUSTRUM_GITSTUB_MS milliseconds, and exit at once. When
 //     CLAUSTRUM_GITSTUB_HOLDPID names a file, the pid of the descendant goes in it.
+//     When CLAUSTRUM_GITSTUB_HOLDSELF names a file, the pid of the call goes in it.
 //
 // "fail" and "postfail" exit with CLAUSTRUM_GITSTUB_EXIT, 1 when it is not set.
 //
@@ -242,7 +244,8 @@ func runGitLingering(args []string) int {
 // "ignoreterm" it then ignores SIGTERM. It sleeps CLAUSTRUM_GITSTUB_MS2
 // milliseconds. Then it exits with CLAUSTRUM_GITSTUB_EXIT2 when that is set, after
 // it wrote CLAUSTRUM_GITSTUB_STDERR2 to stderr as it is (no escape is expanded there, unlike the first rule), or else
-// goes on as a call that the first rule does not match.
+// goes on as a call that the first rule does not match. With CLAUSTRUM_GITSTUB_AFTER2
+// set, the second rule matches only once the file that it names exists.
 func runGitSlow(args []string) int {
 	if log := os.Getenv("CLAUSTRUM_GITSTUB_LOG"); log != "" {
 		appendLine(log, strings.Join(args, "\x1f"))
@@ -314,7 +317,7 @@ func runGitSlow(args []string) int {
 			return 128
 		}
 	}
-	if m := os.Getenv("CLAUSTRUM_GITSTUB_MATCH2"); m != "" && stubMatches(args, m) {
+	if m := os.Getenv("CLAUSTRUM_GITSTUB_MATCH2"); m != "" && stubMatches(args, m) && stubAfter2() {
 		leaf := os.Getenv("CLAUSTRUM_GITSTUB_LEAF2")
 		var err error
 		switch os.Getenv("CLAUSTRUM_GITSTUB_ACTION2") {
@@ -399,6 +402,7 @@ func runGitSlow(args []string) int {
 					break
 				}
 			}
+			_ = os.WriteFile(gate+".out", nil, 0o644)
 		}
 	}
 	cmd := exec.Command(os.Getenv("CLAUSTRUM_GITSTUB_REAL"), args...)
@@ -424,6 +428,9 @@ func runGitSlow(args []string) int {
 		}
 	}
 	if slow && mode == "post" {
+		if gate := os.Getenv("CLAUSTRUM_GITSTUB_GATE"); gate != "" {
+			_ = os.WriteFile(gate+".in", nil, 0o644)
+		}
 		pause()
 	}
 	if slow && mode == "postfail" {
@@ -447,8 +454,22 @@ func runGitSlow(args []string) int {
 		if f := os.Getenv("CLAUSTRUM_GITSTUB_HOLDPID"); f != "" {
 			appendLine(f, strconv.Itoa(child.Process.Pid))
 		}
+		if f := os.Getenv("CLAUSTRUM_GITSTUB_HOLDSELF"); f != "" {
+			appendLine(f, strconv.Itoa(os.Getpid()))
+		}
 	}
 	return code
+}
+
+// stubAfter2 reports whether the second rule is on. With CLAUSTRUM_GITSTUB_AFTER2
+// set, it is on only once the file that it names exists.
+func stubAfter2() bool {
+	f := os.Getenv("CLAUSTRUM_GITSTUB_AFTER2")
+	if f == "" {
+		return true
+	}
+	_, err := os.Stat(f)
+	return err == nil
 }
 
 // stubNarrowed reports whether a call passes the two narrowing options of the first

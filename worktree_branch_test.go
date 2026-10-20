@@ -335,6 +335,7 @@ func TestWorktreeRemoveBranchStepFailures(t *testing.T) {
 		arm          func(t *testing.T)
 		kept         bool
 		maxElapsed   time.Duration
+		minElapsed   time.Duration
 		checkBound   time.Duration
 		deleteBounds time.Duration
 	}{
@@ -366,10 +367,17 @@ func TestWorktreeRemoveBranchStepFailures(t *testing.T) {
 		// listing (row B2-09e: SIGTERM 5 s after update-ref started). A slow listing
 		// therefore does not use up the stop, and the delete goes through. The stop
 		// is 1 s, because update-ref itself must finish inside it: at 200 ms a
-		// Windows host stopped a real update-ref in some runs (issue 463).
+		// Windows host stopped a real update-ref in some runs (issue 463). Only the
+		// listings after rev-list are slow, so the listing of update-ref is slow and
+		// the listings of the check are not.
 		{name: "the stop counts from the start of update-ref", deleteBounds: time.Second, arm: func(t *testing.T) {
+			marker := filepath.Join(t.TempDir(), "rev-list ran")
+			slowGit(t, "rev-list", "pre", 0, "", "")
+			t.Setenv("CLAUSTRUM_GITSTUB_ACTION", "steps")
+			t.Setenv("CLAUSTRUM_GITSTUB_VALUE", "write\x1f"+marker+"\x1f")
 			stubRule2(t, "config,-z,--list", "", 1500*time.Millisecond, "", "", "")
-		}},
+			t.Setenv("CLAUSTRUM_GITSTUB_AFTER2", marker)
+		}, minElapsed: 1500 * time.Millisecond},
 		{name: "R23a update-ref stopped", deleteBounds: 300 * time.Millisecond, arm: func(t *testing.T) {
 			stubRule2(t, "update-ref", "", stubNever, "", "", "")
 		}, kept: true, maxElapsed: stoppedCeiling},
@@ -403,6 +411,9 @@ func TestWorktreeRemoveBranchStepFailures(t *testing.T) {
 			}
 			if tc.maxElapsed != 0 && elapsed > tc.maxElapsed {
 				t.Errorf("reply after %v, want the bound to stop the call before %v", elapsed, tc.maxElapsed)
+			}
+			if elapsed < tc.minElapsed {
+				t.Errorf("reply after %v, want the slow call of the row to take %v", elapsed, tc.minElapsed)
 			}
 			mustBeGone(t, f.wt)
 			got := refAt(t, realGit, f.repo, "wt1")
