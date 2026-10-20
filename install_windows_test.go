@@ -45,7 +45,7 @@ func TestInstallWindowsErrorTextsNameTheExePath(t *testing.T) {
 	if out != want {
 		t.Errorf("F12: stdout\n got %q\nwant %q", out, want)
 	}
-	f.wantNames(t, "F12")
+	f.wantNamesAfterFailedRun(t, "F12")
 
 	out = captureInstallOutput(t, installOpts{cliDir: f.cliDir, cliVersion: "9.9.9"})
 	want = factsHead(t, f.cli) + `false,"cliError":"cli 9.9.9 missing and no --cli-url or --cli-zst provided"}` + "\n"

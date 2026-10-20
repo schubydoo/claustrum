@@ -495,7 +495,7 @@ var errStagingVanished = errors.New("staging file vanished")
 // sweep against that write. claustrum writes a staging file and renames it, so
 // cliPath only ever holds a complete 0755 binary, and it sweeps after the rename.
 // Not measured either: a new CLI that exits non-zero over a file or a folder at
-// cliPath. claustrum then leaves nothing at cliPath, as for an empty one.
+// cliPath. claustrum then removes the new CLI as for an empty one.
 //
 // Only a folder is removed in step 1. rename(2) replaces a file atomically, so a
 // staging file that vanished costs an installed CLI nothing: the rename fails and

@@ -145,7 +145,11 @@ func TestPruneRows(t *testing.T) {
 					want = append(want, n)
 				}
 			}
-			f.wantNames(t, row.id, want...)
+			if row.run == pruneFailedInstall {
+				f.wantNamesAfterFailedRun(t, row.id, want...)
+			} else {
+				f.wantNames(t, row.id, want...)
+			}
 			if !isRegularFile(filepath.Join(outside, "keep.txt")) {
 				t.Error("the file in the folder outside the cli-dir is gone")
 			}
