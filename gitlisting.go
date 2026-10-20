@@ -127,9 +127,10 @@ type listingRun struct {
 
 // runListing runs `git [--git-dir=<gitDir>] config -z --list` in dir with env. gitDir
 // is "" for the plain form. In a request with time limits the listing ends at
-// configListingLimit (gitRun).
+// configListingLimit (gitRun). The daemon reads its output to the end
+// (untilPipeEOF).
 func runListing(ctx context.Context, dir, gitDir string, env []string) listingRun {
-	ctx = withGitLimit(ctx, listingLimit)
+	ctx = untilPipeEOF(withGitLimit(ctx, listingLimit))
 	args := []string{"config", "-z", "--list"}
 	if gitDir != "" {
 		args = append([]string{"--git-dir=" + gitDir}, args...)

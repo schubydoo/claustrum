@@ -216,8 +216,14 @@ func runGitLingering(args []string) int {
 //   - "holdonly": as "hold", but no real git and no action run. The call prints
 //     the two texts of the rule and exits 0, or 1 when the descendant does not
 //     start.
+//   - "holdwait": as "holdonly", but the call sleeps CLAUSTRUM_GITSTUB_MS
+//     milliseconds after the start of the descendant, and then exits 0.
+//   - "holdfail": as "holdonly", but the call exits with CLAUSTRUM_GITSTUB_EXIT.
 //
-// "fail" and "postfail" exit with CLAUSTRUM_GITSTUB_EXIT, 1 when it is not set.
+// "fail", "postfail" and "holdfail" exit with CLAUSTRUM_GITSTUB_EXIT, 1 when it is not set.
+//
+// When CLAUSTRUM_GITSTUB_STARTED names a file, a slowed call first writes the
+// time of its start into it, in nanoseconds since the Unix epoch.
 //
 // When CLAUSTRUM_GITSTUB_LOG names a file, every call appends its argv to it as
 // one line, with the words joined by a unit separator (0x1f). When
@@ -381,6 +387,9 @@ func runGitSlow(args []string) int {
 		return []byte(b)
 	}
 	if slow {
+		if started := os.Getenv("CLAUSTRUM_GITSTUB_STARTED"); started != "" {
+			_ = os.WriteFile(started, []byte(strconv.FormatInt(time.Now().UnixNano(), 10)), 0o644)
+		}
 		if mode != "postfail" {
 			_, _ = os.Stderr.Write(payload())
 		}
@@ -413,6 +422,17 @@ func runGitSlow(args []string) int {
 			_ = os.WriteFile(gate+".out", nil, 0o644)
 		case "holdonly":
 			return holdStubOutput()
+		case "holdwait":
+			if c := holdStubOutput(); c != 0 {
+				return c
+			}
+			pause()
+			return 0
+		case "holdfail":
+			if c := holdStubOutput(); c != 0 {
+				return c
+			}
+			return exitCode
 		}
 	}
 	cmd := exec.Command(os.Getenv("CLAUSTRUM_GITSTUB_REAL"), args...)
@@ -492,11 +512,15 @@ func stubAfter2() bool {
 	return err == nil
 }
 
-// stubNarrowed reports whether a call passes the two narrowing options of the first
+// stubNarrowed reports whether a call passes the narrowing options of the first
 // rule. CLAUSTRUM_GITSTUB_ARGEND keeps only a call with an argument that ends with
 // that text. CLAUSTRUM_GITSTUB_ENVEND has the form NAME=text and keeps only a call
 // whose variable NAME ends with text. A call with no such variable does not pass.
+// CLAUSTRUM_GITSTUB_ARGLAST keeps only a call whose last argument is that word.
 func stubNarrowed(args []string) bool {
+	if last := os.Getenv("CLAUSTRUM_GITSTUB_ARGLAST"); last != "" && (len(args) == 0 || args[len(args)-1] != last) {
+		return false
+	}
 	if end := os.Getenv("CLAUSTRUM_GITSTUB_ARGEND"); end != "" &&
 		!slices.ContainsFunc(args, func(a string) bool { return strings.HasSuffix(a, end) }) {
 		return false

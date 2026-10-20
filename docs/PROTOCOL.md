@@ -2076,10 +2076,9 @@ VM. Rounds `val-s3p2b2-3` and `val-s3p2b2-5` ran a build with the settings copy.
   on the first 64 MiB of such a listing. If neither refuses, the read has no
   verdict, and the request gets no refusal.
 - If the read gives no verdict, the method goes on as before. A read gives none
-  if its git call fails with anything other than a syntax error text. One case
-  is a git that does not start, or the stop at 30 seconds
-  ([Time limits of git calls](#time-limits-of-git-calls)). A config
-  file that the daemon opens and cannot read gives none too.
+  if its git call fails with anything other than a syntax error text or the stop
+  at 30 seconds ([Time limits of git calls](#time-limits-of-git-calls)), such as
+  a git that does not start. So does a config file that the daemon opens and cannot read.
 - A verdict of a read with an open error or a read error is not kept.
 - With a daemon `GIT_COMMON_DIR`, `git.info` and `git.list_branches` read
   nothing: the trust check pins no git directory there.
@@ -2211,9 +2210,8 @@ VM).
   `"shadowDirOff":true` works in that time.
 - A test call that a wrapper holds 29 s passes. One held 32 s gives the error at
   about 31 s (cell 31 of round `s3p2b-edges`, Linux VM).
-- From the code: call 7, the listing of the test config, waits for its pipes until
-  one bound and 1 second after the call ended. A call 7 that the bound ended, or whose pipes a
-  child still holds then, gives the cause `this repository's git config cannot be
+- Call 7 with pipes held past 30 s ends near 31 s (cell B2 of
+  rounds `task101-01` and `task101-02`, Linux VM). The cause is `this repository's git config cannot be
   used: git did not finish reading "<config of the test repository>" within 30
   seconds; try again`.
 
@@ -2297,13 +2295,13 @@ and nothing goes (E2L cells 37 and 36, Linux VM):
 `Claude could not prepare its own files on the remote machine: git is running in 128 repositories at once; try again`
 
 On `5fd08069` a folder goes between git calls of a request, never during one.
-It comes back without a new config read (E3L cell 54, Linux VM). From the
-code: a call holds its folder until its exit plus up to 2 s of open pipes. A
+It comes back without a new config read (E3L cell 54, Linux VM).
+claustrum holds a call's folder until its pipe wait ends (not measured). A
 call remakes a gone or partial folder, except right after its listing. Only the call fails
 if its folder went, or its daemon shut down or replaced it. A failed remake
-answers its own text. In cell V8W2 of round `task013-01` (Linux VM), `5fd08069`
-goes on only once a config listing's pipes close. Until then a new
-repository gets the text above, and no folder goes. A listing puts `listing the configuration in force: ` before it
+answers its own text. On `5fd08069` (cell V8W2 of round `task013-01`, Linux VM)
+a new repository gets the text above while a config listing waits for
+its pipes, and no folder goes. A listing puts `listing the configuration in force: ` before it
 (E3L cell 54 and EL2 cell 47, Linux VM, EW cell 46, Windows VM):
 
 `Claude could not prepare its own files on the remote machine: its copy of this repository's settings was cleared away before git started; try again`
@@ -2837,33 +2835,36 @@ check (Windows VM).
 
 #### Time limits of git calls
 
-On `git.list_branches`, `git.info`, `git.status` and `git.worktree_create` most git
+On `git.list_branches`, `git.info`, `git.status` and `git.worktree_create` most
 calls end at 2 minutes (`5fd08069`, round `task010-01`, Linux, macOS and Windows
-VMs). Each config listing before a git call ends at 30 seconds (cells T10 and TA).
-So do the read of the repository config (`git.status`, Linux VM) and each listing
-of a `config.worktree` file (cells TW and TS of round `task010-04`, Linux VM).
+VMs). Config listings before a git call have a 30 second limit (cells T10 and TA).
+So do the repository config read (`git.status`, Linux VM) and each
+`config.worktree` listing (cells TW and TS of round `task010-04`, Linux VM).
 A create with the filter rule and no settings copy runs claustrum's own
-`--show-scope` listing, with the 2 minute limit and the `timeoutMs` (not
-measured). A call of the top folder pair that its limit stops stops the create
-with the stop text, as any other call (claustrum's own).
+`--show-scope` listing, with the 2 minute limit and the `timeoutMs` (not measured). A stopped call of the top folder pair stops the create with the stop
+text (claustrum's own).
 The scan of
-ignored files ends at 10 minutes (Linux and macOS VMs). The read-tree checkout has
+ignored files ends at 10 minutes (Linux and macOS VMs). Read-tree checkouts have
 no such limit.
 
 - The stop is SIGTERM, then SIGKILL 2 s later. On Windows the process ends at
-  once. The listings of config files get SIGKILL alone (Linux VM).
-- Before a good add no git call follows a stopped call. A stopped add removes an
+  once. Config file listings get SIGKILL alone (Linux VM).
+- Before a good add no call follows a stopped call. A stopped add removes an
   empty leaf. A stopped repository test of a create answers the stop text alone,
   with `worktree_add_failed` (cell TI). After a good add the rollback runs its own
   calls (cells TA and TW). A stopped scan copies nothing, and the create succeeds.
-- While a `"shadowDirOff":true` request runs, no call of the daemon stops at 2
-  minutes (cells T8 and T9). claustrum then uses 30 minutes (claustrum's own).
+- While a `"shadowDirOff":true` request runs, no daemon call stops at 2
+  minutes (cells T8 and T9). Then claustrum's own limit is 30 minutes.
 - `timeoutMs` does not end the add (cell T6), nor, with `"shadowDirOff":true`,
   the listing before the checkout (cell T12).
-- With no `timeoutMs` a reply waits 2 s after the exit of git for a child that
-  holds its output. The child gets no signal.
-- `git.worktree_remove` gets none of these limits. Its first call has the bound of
-  30 s of the call about the repository (cell TR, round `task010-02`, Linux VM).
+- With no `timeoutMs` a reply waits 2 s after git exits for a child that holds
+  its output and gets no signal. Listings before a call wait until the pipes
+  close, also past the limit (cells A1, A2 and A4 of round `task101-01`, Linux
+  VM). So does the `status` scan of `git.status` (A3). Held past 30 s, its repository config read
+  ends near 31 s (B1). The other scans and `config.worktree` reads do
+  so (claustrum's own, not measured).
+- `git.worktree_remove` gets none of these limits. Its first call has the 30 s bound
+  of the call about the repository (cell TR, round `task010-02`, Linux VM).
 
 #### git.info
 `{path[,shadowDirOff]}` → repo: `{"isRepo":true,"repo":"<dir>","branch":"<b>","root":"<abs>","repoSlug":"<owner/repo>","defaultBranch":"<b>"[,"settingsControl":"<state>"]}` · non-repo: `{"isRepo":false,"repoSlug":"","defaultBranch":""[,"settingsControl":"<state>"]}`
