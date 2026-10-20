@@ -2299,10 +2299,10 @@ and nothing goes (E2L cells 37 and 36, Linux VM):
 On `5fd08069` a folder goes between git calls of a request, never during one.
 It comes back without a new config read (E3L cell 54, Linux VM). From the
 code: a call holds its folder until its exit plus up to 2 s of open pipes. A
-call remakes a gone folder, except right after its listing. Only the call fails
+call remakes a gone or partial folder, except right after its listing. Only the call fails
 if its folder went, or its daemon shut down or replaced it. A failed remake
 answers its own text. In cell V8W2 of round `task013-01` (Linux VM), `5fd08069`
-goes on only after the pipes of a config listing close. Until then a new
+goes on only once a config listing's pipes close. Until then a new
 repository gets the text above, and no folder goes. A listing puts `listing the configuration in force: ` before it
 (E3L cell 54 and EL2 cell 47, Linux VM, EW cell 46, Windows VM):
 

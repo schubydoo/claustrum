@@ -147,32 +147,45 @@ func TestRepoHoldBuildFailureRefusesThatCall(t *testing.T) {
 	}
 }
 
-// blockHeadCopy makes the next mkdir of a repository folder find the folder
-// with a folder HEAD in it, so the copy of HEAD fails after the record is
-// made. path gives the folder of the repository at that moment.
-func blockHeadCopy(t *testing.T, path func() string) {
+// blockCopy makes the next mkdir of a repository folder find the folder with
+// a folder file in it, so the copy of file fails after the record is there.
+// path gives the folder of the repository at that moment.
+func blockCopy(t *testing.T, path func() string, file string) {
 	t.Helper()
 	old := shadowRepoBeforeMkdir
 	t.Cleanup(func() { shadowRepoBeforeMkdir = old })
 	shadowRepoBeforeMkdir = func() {
 		shadowRepoBeforeMkdir = old
-		if err := os.MkdirAll(filepath.Join(path(), "HEAD", "x"), 0o700); err != nil {
+		if err := os.MkdirAll(filepath.Join(path(), file, "x"), 0o700); err != nil {
 			t.Error(err)
 		}
 	}
 }
 
-// hasRecord reports whether h has a record of the repository folder dir.
-func hasRecord(h *shadowHost, dir string) bool {
-	h.repoMu.Lock()
-	defer h.repoMu.Unlock()
-	return h.repos[filepath.Base(dir)] != nil
+// blockHeadCopy is blockCopy for the copy of HEAD.
+func blockHeadCopy(t *testing.T, path func() string) {
+	t.Helper()
+	blockCopy(t, path, "HEAD")
 }
 
-// A build that fails after it made the record keeps no record. That call is
-// refused with the text of the failure and starts no child. The next call
-// makes the folder again and runs.
-func TestRepoHoldFailedRenewKeepsNoRecord(t *testing.T) {
+// recordIncomplete reports whether h has a record of the repository folder dir
+// that a failed build marked incomplete. A folder with no record fails t.
+func recordIncomplete(t *testing.T, h *shadowHost, dir string) bool {
+	t.Helper()
+	h.repoMu.Lock()
+	defer h.repoMu.Unlock()
+	st := h.repos[filepath.Base(dir)]
+	if st == nil {
+		t.Errorf("no record of %s", dir)
+		return false
+	}
+	return st.incomplete
+}
+
+// A build that fails after it made the record marks it incomplete. That call
+// is refused with the text of the failure and starts no child. The next call
+// makes the folder whole and runs.
+func TestRepoHoldFailedRenewMarksTheRecord(t *testing.T) {
 	lowerRepoLimit(t, 1)
 	f := newRepoFolderFixture(t)
 	gitA, readA := acceptedRepo(t, f.repo)
@@ -188,8 +201,8 @@ func TestRepoHoldFailedRenewKeepsNoRecord(t *testing.T) {
 	sweptGone(t, u.repoDir)
 	blockHeadCopy(t, func() string { return u.repoDir })
 	cmd := copyCmd(u, "status")
-	if hasRecord(f.h, u.repoDir) {
-		t.Error("the failed build kept the record of the folder")
+	if !recordIncomplete(t, f.h, u.repoDir) {
+		t.Error("the failed build left a record that is not marked incomplete")
 	}
 	const prefix = "Claude could not prepare its own files on the remote machine: cannot write its copy of the repository's git config: "
 	ran := false
@@ -203,12 +216,15 @@ func TestRepoHoldFailedRenewKeepsNoRecord(t *testing.T) {
 		t.Errorf("the next call: ran %v, error %v", ran, err)
 	}
 	sweptThere(t, filepath.Join(u.repoDir, "config"))
+	if recordIncomplete(t, f.h, u.repoDir) {
+		t.Error("the good build left the mark")
+	}
 }
 
-// A first build at the gate that fails after it made the record keeps no
-// record either. A git call of that use starts no child, and the next request
-// makes the folder.
-func TestRepoHoldFailedFirstBuildKeepsNoRecord(t *testing.T) {
+// A first build at the gate that fails after it made the record marks it
+// incomplete too. A git call of that use starts no child, and the next request
+// makes the folder whole.
+func TestRepoHoldFailedFirstBuildMarksTheRecord(t *testing.T) {
 	f := newRepoFolderFixture(t)
 	gitA, readA := acceptedRepo(t, f.repo)
 	path := func() string {
@@ -221,8 +237,8 @@ func TestRepoHoldFailedFirstBuildKeepsNoRecord(t *testing.T) {
 	if err == nil {
 		t.Fatal("the first build passed with a folder HEAD in the way")
 	}
-	if hasRecord(f.h, u.repoDir) {
-		t.Error("the failed first build kept the record of the folder")
+	if !recordIncomplete(t, f.h, u.repoDir) {
+		t.Error("the failed first build left a record that is not marked incomplete")
 	}
 	ran := false
 	if err := runHeld(copyCmd(u, "status"), func() error { ran = true; return nil }); !copyGone(err) || ran {
@@ -236,6 +252,85 @@ func TestRepoHoldFailedFirstBuildKeepsNoRecord(t *testing.T) {
 	}
 	if err := runHeld(copyCmd(u, "status"), func() error { ran = true; return nil }); err != nil || !ran {
 		t.Errorf("a call of the next request: ran %v, error %v", ran, err)
+	}
+}
+
+// A failed build keeps the copies that it wrote. The build copies info/exclude,
+// and the copy of BISECT_START fails. The user then removes info/exclude, and
+// the next build removes its copy (dropCopy).
+func TestRepoHoldRetryDropsACopyOfTheFailedBuild(t *testing.T) {
+	f := newRepoFolderFixture(t)
+	gitA, readA := acceptedRepo(t, f.repo)
+	exclude := filepath.Join(gitA, "info", "exclude")
+	if err := os.MkdirAll(filepath.Dir(exclude), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(exclude, []byte("hidden\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(gitA, "BISECT_START"), []byte("main\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	path := func() string {
+		f.h.mu.Lock()
+		defer f.h.mu.Unlock()
+		return filepath.Join(f.h.dir, shadowRepoName(gitA))
+	}
+	blockCopy(t, path, "BISECT_START")
+	u, err := f.h.syncRepo(gitA, readA)
+	if err == nil {
+		t.Fatal("the build passed with a folder BISECT_START in the way")
+	}
+	copied := filepath.Join(u.repoDir, "info", "exclude")
+	sweptThere(t, copied)
+	if err := os.Remove(exclude); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.RemoveAll(filepath.Join(u.repoDir, "BISECT_START")); err != nil {
+		t.Fatal(err)
+	}
+	ran := false
+	if err := runHeld(copyCmd(u, "status"), func() error { ran = true; return nil }); err != nil || !ran {
+		t.Fatalf("the retry: ran %v, error %v", ran, err)
+	}
+	sweptGone(t, copied)
+}
+
+// A child whose record is incomplete starts no process. It gets the text of
+// the last build of renewRepo that failed, with no listing prefix, and its
+// own build is not part of the test: the child carries the variables only.
+func TestRepoHoldRefusesAChildOfAnIncompleteRecord(t *testing.T) {
+	f := newRepoFolderFixture(t)
+	gitA, readA := acceptedRepo(t, f.repo)
+	u, err := f.h.syncRepo(gitA, readA)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(gitA, "BISECT_START"), []byte("main\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.MkdirAll(filepath.Join(u.repoDir, "BISECT_START", "x"), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := f.h.syncRepo(gitA, readA); err == nil {
+		t.Fatal("the build passed with a folder BISECT_START in the way")
+	}
+	renewErr := f.h.renewRepo(u.folder, gitA, readA)
+	if renewErr == nil {
+		t.Fatal("the renew passed with a folder BISECT_START in the way")
+	}
+	want := shadowRepoFailureText(renewErr)
+	for _, listing := range []bool{false, true} {
+		args := []string{"status"}
+		if listing {
+			args = []string{"config", "--list"}
+		}
+		cmd := exec.Command("git", args...)
+		cmd.Env = []string{"GIT_COMMON_DIR=" + u.repoDir}
+		ran := false
+		if err := runHeld(cmd, func() error { ran = true; return nil }); err == nil || err.Error() != want || ran {
+			t.Errorf("listing %v: the child = %v, ran %v, want %q and no start", listing, err, ran, want)
+		}
 	}
 }
 

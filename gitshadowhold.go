@@ -18,9 +18,10 @@ import (
 // repository folder of this daemon holds that folder from just before its
 // start until the wait for it ends. That is its exit, plus up to 2 s for most
 // calls while its output pipes stay open. The build of a git call makes a
-// folder that went again (gitUse.renewCopy), except for a call right after its
-// own config listing. A refusal is the error of that one call. The request
-// keeps no refusal, and its next call is built and runs as any call.
+// folder that went or that a failed build left incomplete whole again
+// (gitUse.renewCopy), except for a call right after its own config listing. A
+// refusal is the error of that one call. The request keeps no refusal, and its
+// next call is built and runs as any call.
 
 // repoCopyGoneText is the refusal of a git child whose repository folder this
 // daemon no longer has a record of. 5fd08069 answers it in E3L cell 54 and EL2
@@ -99,10 +100,11 @@ func holdRepoCopy(cmd *exec.Cmd) (drop func(), err error) {
 // holdRepo takes the hold of the folder name in folder. folder must still be
 // the folder of the daemon, and the daemon must have a record of name. The
 // test reads the records in memory, not the disk. Three states refuse. The
-// record went while folder is still the folder of the daemon. The settings
-// control was shut down. Or folder is an old folder of the daemon, which made
-// a new one. In the first state, after a build that failed to make the folder
-// again, the error of that build stands in place of `repoCopyGoneText`.
+// record went or is incomplete while folder is still the folder of the
+// daemon. The settings control was shut down. Or folder is an old folder of
+// the daemon, which made a new one. In the first state, after a build of
+// renewRepo that failed, the error of that build stands in place of
+// `repoCopyGoneText`.
 func (h *shadowHost) holdRepo(folder, name string, listing bool) (func(), error) {
 	h.repoMu.Lock()
 	defer h.repoMu.Unlock()
@@ -112,7 +114,7 @@ func (h *shadowHost) holdRepo(folder, name string, listing bool) (func(), error)
 	if !ours {
 		return nil, repoCopyGone{listing: listing}
 	}
-	if h.repos[name] == nil {
+	if st := h.repos[name]; st == nil || st.incomplete {
 		if err := h.renewFailed[name]; err != nil {
 			return nil, err
 		}
@@ -148,17 +150,17 @@ func runHeld(cmd *exec.Cmd, run func() error) error {
 }
 
 // renewRepo makes the folder of the repository with the git directory gitDir
-// again in dir when the daemon has no record of it. read is the read of the
-// config that the request accepted, so the config is not read again. The
-// limit test of the folders runs as in syncRepo. A folder of the daemon that
-// is no longer dir makes nothing: the start of the child refuses then. A
-// failure is kept in renewFailed until the daemon has a record of the folder
-// again, so the start of the child answers it (holdRepo).
+// again in dir when the daemon has no record of it, or an incomplete one.
+// read is the read of the config that the request accepted, so the config is
+// not read again. The limit test of the folders runs as in syncRepo. A folder
+// of the daemon that is no longer dir makes nothing: the start of the child
+// refuses then. A failure is kept in renewFailed until the next build of the
+// folder, so the start of the child answers it (holdRepo).
 func (h *shadowHost) renewRepo(dir, gitDir string, read *repoVerdict) error {
 	h.repoMu.Lock()
 	defer h.repoMu.Unlock()
 	name := shadowRepoName(gitDir)
-	if h.repos[name] != nil {
+	if st := h.repos[name]; st != nil && !st.incomplete {
 		return nil
 	}
 	h.mu.Lock()
