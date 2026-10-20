@@ -202,6 +202,7 @@ component_management:
         - gitshadowconfig.go
         - gitshadowprobe.go
         - gitshadowrepo.go
+        - gitshadowhold.go
         - gitshadowuse.go
         - gitshadowsweep.go
         - gitshadow_unix.go

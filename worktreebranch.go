@@ -216,6 +216,9 @@ func branchStdin(recs []branchRecord, target string) string {
 func branchStepCmd(ctx context.Context, u gitUse, repo string, hooks []string, args ...string) *exec.Cmd {
 	cmd := exec.CommandContext(ctx, "git", withFront(u.front(repo), hardenedProfileArgs(false, args...))...)
 	cmd.Dir = repo
+	// As in hardenedGitCmd, the listing before the call was its build: a folder
+	// of the copy that went since then is not made again (from the code).
+	u.noRenew = true
 	cmd.Env = branchStepEnv(u.pin(repo), hooks)
 	return cmd
 }
@@ -236,7 +239,12 @@ func branchCheckGit(ctx context.Context, u gitUse, repo string, stdin io.Reader,
 	}
 	cmd := branchStepCmd(ctx, u, repo, pre.hooks(), args...)
 	cmd.Stdin = stdin
-	b, err := cmd.Output()
+	var b []byte
+	err = runHeld(cmd, func() error {
+		var err error
+		b, err = cmd.Output()
+		return err
+	})
 	return string(b), ctx.Err() != nil, err
 }
 
@@ -252,7 +260,7 @@ func deleteBranchRef(u gitUse, repo, target, tip string) error {
 	cmd := branchStepCmd(ctx, u, repo, hooks, "update-ref", "--no-deref", "-d", target, tip)
 	cmd.Cancel = func() error { return stopGitProcess(cmd.Process) }
 	cmd.WaitDelay = updateRefKillAfter
-	return cmd.Run()
+	return runHeld(cmd, cmd.Run)
 }
 
 // branchLockPresent reports whether refs/heads/<branch>.lock exists in the common git

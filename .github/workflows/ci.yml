@@ -97,35 +97,38 @@ jobs:
       # The macOS rest shard ran 11 to 12 minutes on main with TestShadow and
       # TestProbe in it, and one added test passed the limit.
       # Linux runs the same two shards as macOS, so that the Linux legs end sooner.
+      # The tests named TestRepoHold are tests of the settings copy too, so they
+      # go with TestShadow in every shard set. The Windows rest shard passed its
+      # 12 minutes with them in it.
       # The coverage job below still runs the whole suite in one leg.
       matrix:
         include:
           - os: ubuntu-latest
             shard: git
-            select: -run=^(TestWorktree|TestGitStatus|TestShadow|TestProbe)
+            select: -run=^(TestWorktree|TestGitStatus|TestShadow|TestProbe|TestRepoHold)
           - os: ubuntu-latest
             shard: rest
-            select: -skip=^(TestWorktree|TestGitStatus|TestShadow|TestProbe)
+            select: -skip=^(TestWorktree|TestGitStatus|TestShadow|TestProbe|TestRepoHold)
           - os: macos-latest
             shard: git
-            select: -run=^(TestWorktree|TestGitStatus|TestShadow|TestProbe)
+            select: -run=^(TestWorktree|TestGitStatus|TestShadow|TestProbe|TestRepoHold)
           - os: macos-latest
             shard: rest
-            select: -skip=^(TestWorktree|TestGitStatus|TestShadow|TestProbe)
+            select: -skip=^(TestWorktree|TestGitStatus|TestShadow|TestProbe|TestRepoHold)
           - os: windows-latest
             shard: worktree
             select: -run=^TestWorktree
           # The Windows status shard is the short one, so it also takes the
-          # tests named TestShadow and TestProbe. Most of them are tests of the
-          # settings copy. It takes the tests named TestInstall and TestEnsure
-          # too. Most of them are tests of -install. With them the rest shard
-          # ran its tests for 508 s on main, and each leg stops at 12 minutes.
+          # tests named TestShadow, TestProbe and TestRepoHold. Most of them are
+          # tests of the settings copy. It takes the tests named TestInstall and
+          # TestEnsure too. Most of them are tests of -install. With them the rest
+          # shard ran its tests for 508 s on main, and each leg stops at 12 minutes.
           - os: windows-latest
             shard: status
-            select: -run=^(TestGitStatus|TestShadow|TestProbe|TestInstall|TestEnsure)
+            select: -run=^(TestGitStatus|TestShadow|TestProbe|TestRepoHold|TestInstall|TestEnsure)
           - os: windows-latest
             shard: rest
-            select: -skip=^(TestWorktree|TestGitStatus|TestShadow|TestProbe|TestInstall|TestEnsure)
+            select: -skip=^(TestWorktree|TestGitStatus|TestShadow|TestProbe|TestRepoHold|TestInstall|TestEnsure)
     env:
       # Renovate bumps this via a customManagers entry in the shared
       # schubydoo/renovate-config:claustrum preset — the same shape as

@@ -27,7 +27,8 @@ func TestShadowRepoLimitIs128(t *testing.T) {
 
 // Cell G13, with the limit at 2: a third repository removes the folder of the
 // one with the oldest use, and a later use of that one removes the next. A
-// short-lived dot folder does not count. The order by use is claustrum's own.
+// short-lived dot folder does not count. The order by use is that of 5fd08069
+// (EL2 cell 45, Linux VM).
 func TestShadowRepoLimitEvictsOldestUse(t *testing.T) {
 	lowerRepoLimit(t, 2)
 	f := newRepoFolderFixture(t)
@@ -38,9 +39,7 @@ func TestShadowRepoLimitEvictsOldestUse(t *testing.T) {
 	writeFile(t, filepath.Join(f.h.dir, ".gitdir-1", "x"), "", 0o600)
 	use := func(dir string) string {
 		t.Helper()
-		p := f.sync(t, dir)
-		f.h.releaseRepos([]string{filepath.Base(p)})
-		return p
+		return f.sync(t, dir)
 	}
 	a := use(f.repo)
 	b := use(repoB)
@@ -68,9 +67,9 @@ func TestShadowRepoLimitEvictsOldestUse(t *testing.T) {
 	sweptThere(t, c)
 }
 
-// A folder in use by a request that runs stays (claustrum's own, not measured).
-// With each folder in use the request gets the text of the limit (claustrum's
-// own, not measured).
+// A folder that a git child holds stays (E2L cell 37, Linux VM). With each
+// folder held the request gets the text of `repoLimitError`, and nothing goes
+// (E2L cell 36).
 func TestShadowRepoLimitKeepsBusyFolders(t *testing.T) {
 	lowerRepoLimit(t, 2)
 	f := newRepoFolderFixture(t)
@@ -78,6 +77,8 @@ func TestShadowRepoLimitKeepsBusyFolders(t *testing.T) {
 	_, gitC := configRepo(t)
 	a := f.sync(t, f.repo)
 	b := f.sync(t, filepath.Dir(gitB))
+	dropA := holdFolder(t, f.h, a)
+	defer holdFolder(t, f.h, b)()
 	trust := gitDirTrustFor(filepath.Dir(gitC))
 	_, err := f.h.syncRepo(trust.pinCommonDir, repoReadVerdict(trust, nil))
 	const want = "Claude could not prepare its own files on the remote machine: git is running in 2 repositories at once; try again"
@@ -88,7 +89,7 @@ func TestShadowRepoLimitKeepsBusyFolders(t *testing.T) {
 	sweptThere(t, b)
 	sweptGone(t, filepath.Join(f.h.dir, shadowRepoName(trust.pinCommonDir)))
 	// b is busy, a is free: a goes.
-	f.h.releaseRepos([]string{filepath.Base(a)})
+	dropA()
 	if _, err := f.h.syncRepo(trust.pinCommonDir, repoReadVerdict(trust, nil)); err != nil {
 		t.Fatal(err)
 	}
@@ -96,8 +97,8 @@ func TestShadowRepoLimitKeepsBusyFolders(t *testing.T) {
 	sweptThere(t, b)
 }
 
-// Through the methods: a request ends its use of the folder at its reply,
-// so a third repository finds a free folder.
+// Through the methods: no folder is held after the replies, so a third
+// repository finds a free folder.
 func TestShadowRepoLimitAfterReplies(t *testing.T) {
 	lowerRepoLimit(t, 2)
 	f := newShadowFixture(t)
@@ -115,6 +116,17 @@ func TestShadowRepoLimitAfterReplies(t *testing.T) {
 	if busy != 0 {
 		t.Errorf("%d folders in use after the replies, want 0", busy)
 	}
+}
+
+// holdFolder takes the hold of the repository folder dir of h, as a git child
+// does, and returns its drop.
+func holdFolder(t *testing.T, h *shadowHost, dir string) func() {
+	t.Helper()
+	drop, err := h.holdRepo(filepath.Dir(dir), filepath.Base(dir), false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return drop
 }
 
 // A failed open of the folder of the daemon lets the request go on to its

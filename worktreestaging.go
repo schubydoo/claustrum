@@ -465,6 +465,13 @@ func (e *addNotPrepared) Error() string { return e.text }
 // 5fd08069 makes it and then stops (table W3).
 func worktreeAddStaged(ctx context.Context, u gitUse, repo, leaf string, cp worktreeCheckpoint, args ...string) (string, error) {
 	cmd := hardenedGitCmd(ctx, u, repo, false, nil, args...)
+	// The staging folder is filled from the copy, so it holds the folder of
+	// the copy until it goes (from the code).
+	drop, err := u.holdCopy(cmd.Args)
+	if err != nil {
+		return "", err
+	}
+	defer drop()
 	st, err := openAddStage(u)
 	if err != nil {
 		return "", &addNotPrepared{text: prepareWorktreesPrefix + err.Error()}

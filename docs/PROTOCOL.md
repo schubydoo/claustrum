@@ -864,6 +864,8 @@ cell C-… is of round `tier0-20` against `5fd08069` on a Linux VM.
 | git.* | `a file in this repository's .git directory cannot be used: <detail>` | The same frames. See [Repository config refusals](#repository-config-refusals) |
 | git.* | `Claude could not test git on the remote machine (<cause>). Check free disk space and quota there, then try again.` | -32603 on `git.info`, `git.status` and `git.list_branches`, and in the frame of `git.worktree_create` and `git.worktree_remove`. Since `5fd08069`. See [The settings copy](#the-settings-copy) |
 | git.* | `Claude could not prepare its own files on the remote machine: cannot write its copy of the repository's git config: <cause>` | The same frames. The daemon cannot make the folder of the copy |
+| git.* | `Claude could not prepare its own files on the remote machine: git is running in 128 repositories at once; try again` | The same frames. See [The settings copy](#the-settings-copy) |
+| git.* | `Claude could not prepare its own files on the remote machine: its copy of this repository's settings was cleared away before git started; try again` | The same frames. Measured on `git.status` only. From the code: a checkout puts it after `git worktree add failed (checkout): `. See [The settings copy](#the-settings-copy) |
 | git.* | `git could not check this repository on the remote machine: at "<root>": exit status <n>` | The same frames, for a failed call about the repository. After a failure with a text, the text of git stands in the place of `exit status <n>` (one line in the cell) |
 | git.* | `git could not check this repository on the remote machine: it did not finish within 30 seconds in "<root>"; try again` | The same frames, for a call about the repository that the daemon ended |
 | git.* | `git and Claude disagree about which repository holds this folder: from "<root>" git finds "<path>", Claude finds "<git directory>"; try again` | The same frames, for a call about the repository that names another path |
@@ -2288,13 +2290,23 @@ as a link, and claustrum makes no lock file in its target
 ([D8](DIVERGENCES.md#d8)).
 
 The folder of the daemon keeps 128 repository folders. A new repository removes
-one folder. In cell G13 (Linux VM) the 129th removes the folder of the first, and
-a new use of the first removes the folder of the second. The order by last use,
-not by creation, and a failed remove are not measured. If all 128
-are in use by running requests, the request gets this text (claustrum's own, not
-measured):
+the folder with the oldest use that no git call holds (EL2 cell 45, Linux VM). On
+`5fd08069` a held folder stays. With all 128 held, a request gets this text
+and nothing goes (E2L cells 37 and 36, Linux VM):
 
 `Claude could not prepare its own files on the remote machine: git is running in 128 repositories at once; try again`
+
+On `5fd08069` a folder goes between git calls of a request, never during one.
+It comes back without a new config read (E3L cell 54, Linux VM). From the
+code: a call holds its folder until its exit plus up to 2 s of open pipes. A
+call remakes a gone or partial folder, except right after its listing. Only the call fails
+if its folder went, or its daemon shut down or replaced it. A failed remake
+answers its own text. In cell V8W2 of round `task013-01` (Linux VM), `5fd08069`
+goes on only once a config listing's pipes close. Until then a new
+repository gets the text above, and no folder goes. A listing puts `listing the configuration in force: ` before it
+(E3L cell 54 and EL2 cell 47, Linux VM, EW cell 46, Windows VM):
+
+`Claude could not prepare its own files on the remote machine: its copy of this repository's settings was cleared away before git started; try again`
 
 ##### The copied settings file
 

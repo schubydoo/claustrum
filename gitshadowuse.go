@@ -35,6 +35,11 @@ type gitUse struct {
 	// brought up to date. repoDir is the folder of that copy, <S>/<32 hex>.
 	gitDir  string
 	repoDir string
+	// read is the read of the config whose text is in the copy. The build of a
+	// git call makes a folder that went again from it (renewCopy). noRenew
+	// skips that step for the env of a call whose listing was its build.
+	read    *repoVerdict
+	noRenew bool
 	// atReply takes the removal of a short-lived folder that stays until the
 	// reply of the request (request.runAtReply), or it is nil.
 	atReply *[]func()
@@ -490,7 +495,11 @@ func (u gitUse) noWorkTree(dir string) bool {
 // on a macOS VM (s3p2-macos cell B3b) and on a Windows VM (s3p2-windows cell
 // B3a) too. A bare
 // repository has GIT_OBJECT_DIRECTORY=<repo>/objects (s3p2-linux cell B3c).
+//
+// They are the build of a git call: a folder of the copy that went is made
+// again first (renewCopy).
 func (u gitUse) commonVars() []string {
+	u.renewCopy()
 	return []string{"GIT_COMMON_DIR=" + u.repoDir, "GIT_OBJECT_DIRECTORY=" + filepath.Join(u.gitDir, "objects")}
 }
 
@@ -545,6 +554,7 @@ func (u gitUse) gitDirPin(dir string) []string {
 	}
 	// After a create moved its hold, a call with --git-dir= names the objects
 	// of that folder (cell swb-first of val-s3p2b2-10-linux2, Linux VM).
+	u.renewCopy()
 	return []string{"GIT_COMMON_DIR=" + u.repoDir, "GIT_OBJECT_DIRECTORY=" + filepath.Join(u.heldGitDir(), "objects")}
 }
 

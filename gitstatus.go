@@ -313,6 +313,9 @@ func statusWorkTreeProbe(s *gitStop, common, workTree string, pin, front []strin
 	cmd.Dir = common
 	cmd.Env = hardenedGitEnv(true, pin, l.hooks())
 	out, runErr := gitOutput(ctx, cmd)
+	if copyGone(runErr) {
+		return "", false, runErr
+	}
 	return strings.TrimRight(string(out), "\r\n"), runErr == nil, nil
 }
 
@@ -349,7 +352,6 @@ func (req *request) usePrintedGitDir(t gitDirTrust, common string) string {
 	if err != nil {
 		return shadowRepoFailureText(err)
 	}
-	req.heldRepos = append(req.heldRepos, filepath.Base(use.repoDir))
 	use.atReply = u.atReply
 	req.use, req.repoRead = use, read
 	return ""
@@ -836,6 +838,9 @@ type statusRun struct {
 	entryConfig []byte
 	tempFront   []string
 	entryRead   bool
+	// use is the form of the request. The pins above are kept, so each call
+	// makes a folder of the copy that went again itself (gitUse.renewCopy).
+	use gitUse
 }
 
 // entryItems lists the `config.worktree` file of the entry one more time and
@@ -904,6 +909,7 @@ func statusCommonPin(u gitUse, common string) []string {
 // `hash-object` that fails changes no answer (row n17f): the id is then gitEmptyTree.
 // A listing that fails here is not measured. claustrum goes on with the two base pins.
 func (r *statusRun) emptyTree() string {
+	r.use.renewCopy()
 	hooks := runListing(r.ctx, "", r.common, precursorEnv(true, r.commonPin)).hooks()
 	cmd := exec.Command("git", withFront(r.front, hardenedProfileArgs(true,
 		"--git-dir="+r.common, "hash-object", "-t", "tree", os.DevNull))...)
@@ -950,6 +956,7 @@ func (r *statusRun) git(noLocks bool, excludes string, args ...string) ([]byte, 
 	if r.attrSource {
 		attr = []string{"--attr-source=" + id}
 	}
+	r.use.renewCopy()
 	l := runListing(r.ctx, r.path, r.tmp, precursorEnv(true, r.pin))
 	var exit *exec.ExitError
 	switch {
@@ -957,7 +964,7 @@ func (r *statusRun) git(noLocks bool, excludes string, args ...string) ([]byte, 
 	case errors.As(l.err, &exit):
 		s, _ := gitStopOf(r.ctx)
 		return nil, statusRefusal(failedListingText(gitUse{stop: s}, l, true))
-	case isGitStop(l.err):
+	case isGitStop(l.err), copyGone(l.err):
 		return nil, l.err
 	default:
 		// git did not start, for example because `path` as sent does not open. The
@@ -1027,7 +1034,7 @@ func statusChanges(u gitUse, path, common string, e statusEntry) ([]string, erro
 	}
 	r := &statusRun{ctx: u.stop.context(), path: path, common: common, tmp: tmp,
 		pin: []string{"GIT_COMMON_DIR=" + common}, commonPin: statusCommonPin(u, common), attrSource: attrSource,
-		front: u.gitDirFront()}
+		front: u.gitDirFront(), use: u}
 	if u.shadow() && !daemonCommonDirStays() {
 		r.pin = r.commonPin
 		r.entryConfig = e.config
@@ -1045,8 +1052,10 @@ func statusChanges(u gitUse, path, common string, e statusEntry) ([]string, erro
 	}
 	base := "HEAD"
 	if _, err := r.git(false, userExcludesFile(), "rev-parse", "--verify", "-q", "HEAD^{commit}"); err != nil {
+		// A call whose repository folder went answers its text, and no call
+		// follows (from the code, not measured).
 		var refusal statusRefusal
-		if errors.As(err, &refusal) {
+		if errors.As(err, &refusal) || copyGone(err) {
 			return nil, err
 		}
 		base = r.emptyTree()

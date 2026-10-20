@@ -175,14 +175,21 @@ func (s *gitStop) limit(kind gitLimit) (time.Duration, string) {
 //
 // The wait for the output pipes after git exited ends at gitDrainWait. A call
 // that exited 0 then counts as a call that exited 0 (cells T15 and T16).
+//
+// Each call runs under the hold of its repository folder (runHeld).
 func gitRun(ctx context.Context, cmd *exec.Cmd) error {
 	s, kind := gitStopOf(ctx)
 	if s == nil {
-		return cmd.Run()
+		return runHeld(cmd, cmd.Run)
 	}
 	if err := s.halted(); err != nil {
 		return err
 	}
+	return runHeld(cmd, func() error { return gitRunLimited(s, kind, cmd) })
+}
+
+// gitRunLimited is the start and the wait of cmd under the limit kind of s.
+func gitRunLimited(s *gitStop, kind gitLimit, cmd *exec.Cmd) error {
 	limit, after := s.limit(kind)
 	cmd.WaitDelay = gitDrainWait
 	if err := cmd.Start(); err != nil {
@@ -235,7 +242,13 @@ func gitRun(ctx context.Context, cmd *exec.Cmd) error {
 // not in the error: no caller reads it there.
 func gitOutput(ctx context.Context, cmd *exec.Cmd) ([]byte, error) {
 	if s, _ := gitStopOf(ctx); s == nil {
-		return cmd.Output()
+		var out []byte
+		err := runHeld(cmd, func() error {
+			var err error
+			out, err = cmd.Output()
+			return err
+		})
+		return out, err
 	}
 	var out bytes.Buffer
 	cmd.Stdout = &out
