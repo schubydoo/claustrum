@@ -40,8 +40,9 @@ func TestWorktreeCreateUndoCouldNotFinish(t *testing.T) {
 		t.Fatal(err)
 	}
 	installGitSlowStub(t, realGit)
-	full := calibrate(t, realGit)
-	lateMs := int((2*full + 500*time.Millisecond).Milliseconds())
+	// The killed checkout and the drain rows fire the deadline at a marker of the
+	// stub (deadlineAt), with timeoutMs markerTimeoutMs.
+	lateMs := markerTimeoutMs
 
 	const stepA = "; and the undo could not finish for %s: the worktree directory, its registration, and the branch all remain; remove them by hand before retrying (RemoveAll hsub: permission denied)"
 	const stepC = "; and the undo could not finish for %s: the worktree directory remains (re-populated while undoing?); remove it by hand before retrying (removeat w1: permission denied)"
@@ -53,10 +54,10 @@ func TestWorktreeCreateUndoCouldNotFinish(t *testing.T) {
 	}{
 		{"A checkout failure", "read-tree", "fail", "lock", 0, 0,
 			"git worktree add failed (checkout): fatal: synthetic checkout failure", "worktree_add_failed", stepA},
-		{"A add timeout", "worktree,add", "post", "lock", 1500 * time.Millisecond, 100,
+		{"A add timeout", "worktree,add", "post", "lock", 500 * time.Millisecond, 100,
 			"git worktree add timed out after 100ms (deadline expired before the checkout started)", "timeout", stepA},
-		// timeoutMs -1 stands for the late deadline, and "during the checkout" for
-		// the killed checkout's frame.
+		// timeoutMs -1 stands for the deadline at a marker, and "during the
+		// checkout" for the killed checkout's frame.
 		{"A killed checkout", "read-tree", "pre", "lock", 60 * time.Second, -1,
 			"during the checkout", "timeout", stepA},
 		// The checkout filled the leaf, so the leaf holds more entries before and
@@ -65,7 +66,7 @@ func TestWorktreeCreateUndoCouldNotFinish(t *testing.T) {
 			"after the checkout finished", "timeout", stepA},
 		{"C checkout failure", "read-tree", "fail", "lockparent", 0, 0,
 			"git worktree add failed (checkout): fatal: synthetic checkout failure", "worktree_add_failed", stepC},
-		{"C add timeout", "worktree,add", "post", "lockparent", 1500 * time.Millisecond, 100,
+		{"C add timeout", "worktree,add", "post", "lockparent", 500 * time.Millisecond, 100,
 			"git worktree add timed out after 100ms (deadline expired before the checkout started)", "timeout", stepC},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
@@ -90,12 +91,20 @@ func TestWorktreeCreateUndoCouldNotFinish(t *testing.T) {
 				head := "git worktree add timed out after " + strconv.Itoa(lateMs) + "ms (deadline expired "
 				if tc.mode == "hold" {
 					// The checkout exits 0 and a descendant holds its pipes past the
-					// drain cap, which ends after the deadline.
+					// drain cap. The deadline fires 300 ms after the checkout was
+					// reaped, during the drain.
 					oldCap := worktreeCreateDrainCap
 					t.Cleanup(func() { worktreeCreateDrainCap = oldCap })
-					worktreeCreateDrainCap = time.Duration(lateMs)*time.Millisecond + time.Second
+					worktreeCreateDrainCap = 1500 * time.Millisecond
+					self := filepath.Join(t.TempDir(), "self")
+					t.Setenv("CLAUSTRUM_GITSTUB_HOLDSELF", self)
+					deadlineAt(t, reapedFor(self, 300*time.Millisecond), nil)
 					frame = head + tc.frame + ")"
 				} else {
+					// The stub made hsub and then its marker, and sleeps.
+					gate := filepath.Join(t.TempDir(), "gate")
+					t.Setenv("CLAUSTRUM_GITSTUB_GATE", gate)
+					deadlineAt(t, func() bool { return exists(gate + ".in") }, nil)
 					frame = head + tc.frame + "): signal: killed"
 				}
 			}

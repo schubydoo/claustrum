@@ -199,6 +199,8 @@ func runGitLingering(args []string) int {
 //
 // CLAUSTRUM_GITSTUB_MODE decides:
 //   - "pre": sleep CLAUSTRUM_GITSTUB_MS milliseconds, then run the real git.
+//     With CLAUSTRUM_GITSTUB_GATE set, make that file with ".in" added after the
+//     action and before the sleep.
 //   - "gate": make the file CLAUSTRUM_GITSTUB_GATE with ".in" added, then wait
 //     until the file CLAUSTRUM_GITSTUB_GATE exists, at most CLAUSTRUM_GITSTUB_MS
 //     milliseconds. Then make the file with ".out" added, and run the real git.
@@ -392,6 +394,9 @@ func runGitSlow(args []string) int {
 			pause()
 			return exitCode
 		case "pre":
+			if gate := os.Getenv("CLAUSTRUM_GITSTUB_GATE"); gate != "" {
+				_ = os.WriteFile(gate+".in", nil, 0o644)
+			}
 			pause()
 		case "gate":
 			gate := os.Getenv("CLAUSTRUM_GITSTUB_GATE")

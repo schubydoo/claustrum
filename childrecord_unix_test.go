@@ -157,7 +157,7 @@ func TestSameIDKeepsTheOldProcessAndItsRecord(t *testing.T) {
 // the pipe-drain line and its place before the read-error line.
 func TestChildEndRemovesRecordBeforeDrain(t *testing.T) {
 	old := exitDrainGrace
-	exitDrainGrace = 8 * time.Second
+	exitDrainGrace = 4 * time.Second
 	t.Cleanup(func() { exitDrainGrace = old })
 	logs := captureLogBuf(t)
 	_, cl, runDir := runShapedServer(t)
@@ -202,7 +202,7 @@ func TestChildEndRemovesRecordBeforeDrain(t *testing.T) {
 	}
 	// Half of the grace is the limit. A removal that waits for the drain comes later.
 	gone := false
-	for deadline := time.Now().Add(4 * time.Second); time.Now().Before(deadline); time.Sleep(5 * time.Millisecond) {
+	for deadline := time.Now().Add(2 * time.Second); time.Now().Before(deadline); time.Sleep(5 * time.Millisecond) {
 		if _, err := os.Stat(rec); os.IsNotExist(err) {
 			gone = true
 			break
@@ -215,12 +215,13 @@ func TestChildEndRemovesRecordBeforeDrain(t *testing.T) {
 	}
 	cl.mu.Unlock()
 	if !gone {
-		t.Error("the record was still there 4 s after the end of the child, inside an 8 s drain")
+		t.Error("the record was still there 2 s after the end of the child, inside a 4 s drain")
 	}
 	if exited {
 		t.Error("the exit frame came before the check, so the row does not show the order")
 	}
-	// The exit frame comes at the end of the 8 s drain, later than the wait of waitExit.
+	// The exit frame comes at the end of the 4 s drain. This loop waits longer than
+	// waitExit does, for a loaded host.
 	for deadline := time.Now().Add(30 * time.Second); !exited; time.Sleep(20 * time.Millisecond) {
 		cl.mu.Lock()
 		for _, f := range cl.fr {
@@ -233,8 +234,13 @@ func TestChildEndRemovesRecordBeforeDrain(t *testing.T) {
 	}
 	out := logs.String()
 	drain := strings.Index(out, "[process.Manager] Process c1: pipe drain grace expired (grandchild holding stdio?); force-closing\n")
-	readErr := strings.Index(out, "[process.Manager] stdout read error for process c1")
-	if drain < 0 || readErr < 0 || drain > readErr {
+	// The read-error line is searched only after the drain line, so a late line
+	// of another test that also used the id c1 cannot match before it.
+	readErr := -1
+	if drain >= 0 {
+		readErr = strings.Index(out[drain:], "[process.Manager] stdout read error for process c1")
+	}
+	if drain < 0 || readErr < 0 {
 		t.Errorf("want the pipe-drain line and then the stdout read-error line, got:\n%s", out)
 	}
 }
