@@ -147,6 +147,98 @@ func TestRepoHoldBuildFailureRefusesThatCall(t *testing.T) {
 	}
 }
 
+// blockHeadCopy makes the next mkdir of a repository folder find the folder
+// with a folder HEAD in it, so the copy of HEAD fails after the record is
+// made. path gives the folder of the repository at that moment.
+func blockHeadCopy(t *testing.T, path func() string) {
+	t.Helper()
+	old := shadowRepoBeforeMkdir
+	t.Cleanup(func() { shadowRepoBeforeMkdir = old })
+	shadowRepoBeforeMkdir = func() {
+		shadowRepoBeforeMkdir = old
+		if err := os.MkdirAll(filepath.Join(path(), "HEAD", "x"), 0o700); err != nil {
+			t.Error(err)
+		}
+	}
+}
+
+// hasRecord reports whether h has a record of the repository folder dir.
+func hasRecord(h *shadowHost, dir string) bool {
+	h.repoMu.Lock()
+	defer h.repoMu.Unlock()
+	return h.repos[filepath.Base(dir)] != nil
+}
+
+// A build that fails after it made the record keeps no record. That call is
+// refused with the text of the failure and starts no child. The next call
+// makes the folder again and runs.
+func TestRepoHoldFailedRenewKeepsNoRecord(t *testing.T) {
+	lowerRepoLimit(t, 1)
+	f := newRepoFolderFixture(t)
+	gitA, readA := acceptedRepo(t, f.repo)
+	_, gitB := configRepo(t)
+	gitB, readB := acceptedRepo(t, filepath.Dir(gitB))
+	u, err := f.h.syncRepo(gitA, readA)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := f.h.syncRepo(gitB, readB); err != nil {
+		t.Fatal(err)
+	}
+	sweptGone(t, u.repoDir)
+	blockHeadCopy(t, func() string { return u.repoDir })
+	cmd := copyCmd(u, "status")
+	if hasRecord(f.h, u.repoDir) {
+		t.Error("the failed build kept the record of the folder")
+	}
+	const prefix = "Claude could not prepare its own files on the remote machine: cannot write its copy of the repository's git config: "
+	ran := false
+	if err := runHeld(cmd, func() error { ran = true; return nil }); err == nil || !strings.HasPrefix(err.Error(), prefix) || ran {
+		t.Errorf("the call = %v, ran %v, want the write failure and no start", err, ran)
+	}
+	if err := os.RemoveAll(filepath.Join(u.repoDir, "HEAD")); err != nil {
+		t.Fatal(err)
+	}
+	if err := runHeld(copyCmd(u, "status"), func() error { ran = true; return nil }); err != nil || !ran {
+		t.Errorf("the next call: ran %v, error %v", ran, err)
+	}
+	sweptThere(t, filepath.Join(u.repoDir, "config"))
+}
+
+// A first build at the gate that fails after it made the record keeps no
+// record either. A git call of that use starts no child, and the next request
+// makes the folder.
+func TestRepoHoldFailedFirstBuildKeepsNoRecord(t *testing.T) {
+	f := newRepoFolderFixture(t)
+	gitA, readA := acceptedRepo(t, f.repo)
+	path := func() string {
+		f.h.mu.Lock()
+		defer f.h.mu.Unlock()
+		return filepath.Join(f.h.dir, shadowRepoName(gitA))
+	}
+	blockHeadCopy(t, path)
+	u, err := f.h.syncRepo(gitA, readA)
+	if err == nil {
+		t.Fatal("the first build passed with a folder HEAD in the way")
+	}
+	if hasRecord(f.h, u.repoDir) {
+		t.Error("the failed first build kept the record of the folder")
+	}
+	ran := false
+	if err := runHeld(copyCmd(u, "status"), func() error { ran = true; return nil }); !copyGone(err) || ran {
+		t.Errorf("a call of the failed use = %v, ran %v, want a refusal and no start", err, ran)
+	}
+	if err := os.RemoveAll(filepath.Join(u.repoDir, "HEAD")); err != nil {
+		t.Fatal(err)
+	}
+	if u, err = f.h.syncRepo(gitA, readA); err != nil {
+		t.Fatal(err)
+	}
+	if err := runHeld(copyCmd(u, "status"), func() error { ran = true; return nil }); err != nil || !ran {
+		t.Errorf("a call of the next request: ran %v, error %v", ran, err)
+	}
+}
+
 // A child whose folder has no record starts no process. A listing child gets
 // the listing form (`listingInForcePrefix` + `repoCopyGoneText`), any other
 // child `repoCopyGoneText`.

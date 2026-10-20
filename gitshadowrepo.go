@@ -332,8 +332,12 @@ func (h *shadowHost) syncRepo(gitDir string, read *repoVerdict) (gitUse, error) 
 }
 
 // syncRepoFolder is the work of syncRepo on the folder name in dir, the folder
-// of the daemon. The caller holds repoMu.
-func (h *shadowHost) syncRepoFolder(dir, name, gitDir string, read *repoVerdict) error {
+// of the daemon. The caller holds repoMu. A record that this call made goes
+// again after a failure, so no git child starts on a part of a folder and a
+// later call makes it again. A good build of a new record ends a failure in
+// renewFailed. Both are from the code, not measured. The folder stays on the
+// disk as far as it got.
+func (h *shadowHost) syncRepoFolder(dir, name, gitDir string, read *repoVerdict) (err error) {
 	if h.repos == nil {
 		h.repos = map[string]*shadowRepo{}
 	}
@@ -382,7 +386,13 @@ func (h *shadowHost) syncRepoFolder(dir, name, gitDir string, read *repoVerdict)
 	if st == nil {
 		st = &shadowRepo{copies: map[string][sha256.Size]byte{}}
 		h.repos[name] = st
-		delete(h.renewFailed, name)
+		defer func() {
+			if err != nil {
+				delete(h.repos, name)
+				return
+			}
+			delete(h.renewFailed, name)
+		}()
 	}
 	rel := filepath.Join(filepath.Base(dir), name)
 
