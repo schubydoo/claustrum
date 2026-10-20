@@ -166,7 +166,7 @@ rather than repeating them in each entry:
 | [D20](#d20) | Wait 50 ms and read again before the group `SIGKILL` of a child-group leader that reads as gone, at the reap of a `-serve` start (Linux and macOS) | always-on (Linux and macOS) | always-on | rule 3 clause (a) | a measurement that shows the reference waiting before that `SIGKILL`, or a report of a child that outlived a restart because it replaced its program |
 | [D22](#d22) | `git.worktree_remove` refuses a worktree locked in the `.git` folder of `baseRepo`, in four states where `89cb6289` answers success. Two have a daemon `GIT_DIR` and `GIT_COMMON_DIR` of another repository, with the folder present or gone. One has a daemon `GIT_DIR` alone. One has a `baseRepo` that does not exist as sent. With `worktreeRoot`, rows q2 to q4 (Linux VM) differ in the frame too | always-on | always-on | Maintainer decision of 2026-10-03. The frame differs from `89cb6289` in those four states and in rows q2 to q4 | a caller that needs the removal of a locked worktree there, or a measurement that shows the reference refusing there |
 | [D23](#d23) | The environment block of a child is in name order (Windows). The reference does not sort it | always-on (Windows) | always-on | Maintainer decision of 2026-10-13: claustrum stays on Go 1.26, which sorts the block | the reference moves to Go 1.26 or newer |
-| [D24](#d24) | The rollback of `git.worktree_create` keeps a folder that replaced the new registration. `89cb6289` removes it in cells B6 and B6b (Linux and macOS VMs), and in B6b it holds the registration of a live sibling worktree | always-on | always-on | Maintainer decision of 2026-10-07. The frames are equal in the measured cells (Linux and macOS VMs, and B6w of round `task087-03` on a Windows VM). The disk differs. The Windows placement is not measured | a measurement that shows the reference keeping such a folder, or a decision to match the disk of cells B6 and B6b |
+| [D24](#d24) | The rollback of `git.worktree_create` keeps a folder that replaced the new registration. `89cb6289` removes it in cells B6 and B6b (Linux and macOS VMs), and in B6b it holds the registration of a live sibling worktree. On Windows a rollback after `.git` became a file runs no git call (cells X1, X1b and X1c of round `task077-03`, X1 and X1b of round `task077-04`) | always-on | always-on | Maintainer decisions of 2026-10-07 and, for cells X1, X1b and X1c, of 2026-10-19. The frames are equal in cells B6 and B6b (Linux and macOS VMs) and B6w of round `task087-03` (Windows VM), and the disk differs. They differ in cells X1, X1b and X1c. The Windows placement is not measured | a measurement that shows the reference keeping such a folder, a decision to match the disk of cells B6 and B6b, or a decision to run the branch step in the repository that the `.git` file names (cells X1, X1b and X1c) |
 | [D25](#d25) | With `CLAUDE_SSH_PEER_CHECK=1`, `server.capabilities` answers `"peerCheck":"unavailable"` and the daemon serves every caller. `5fd08069` answers `"peerCheck":"on","peerCheckBy":["network","pidfd"]` there (Linux VM) | always-on (Linux) | always-on | Maintainer decision of 2026-10-10. The frame differs from `5fd08069` in one of the listed values: `1` on Linux | a client that needs the `"on"` answer on Linux, or a decision to answer as `5fd08069` does there |
 | [D27](#d27) | On Windows the stale step of `git.worktree_create` keeps an entry whose `gitdir` record names a path that exists. `5fd08069` deletes the entry of a live worktree `W1` for a create of `w1` in a folder with case sensitivity on (cell W-CS of round `task084-02`, Windows VM) | always-on (Windows) | always-on | The maintainer's decision of 2026-10-18 | a measurement of `5fd08069` with the same test |
 | [CT-1](#ct-1) | Opt-in `wantPid` → `pid` + `startTime` on spawn/reattach | off (fields omitted) | caller sends `"wantPid":true` | sanctioned optional-param extension | — (additive, degrades both ways) |
@@ -844,7 +844,7 @@ Windows file guards (GO-2026-6604).
 
 Reopen trigger: the reference moves to Go 1.26 or newer.
 
-### D24 · Keep a folder that replaced the new registration in the create rollback { #d24 }
+### D24 · In the create rollback, keep a folder that replaced the new registration and run no git call after a `.git` file swap { #d24 }
 
 - **Behavior.** `git.worktree_create` tests the registration
   of the new worktree right after the add. When the tests accept it, claustrum
@@ -886,16 +886,31 @@ Reopen trigger: the reference moves to Go 1.26 or newer.
 - **Equal in those cells (Linux and macOS VMs).** The frame is the plain failed checkout on both
   sides. The leaf and branch `w1` are gone on both sides. In cell B6b the folder
   of the sibling worktree and its branch stay on both sides.
+- **A `.git` file after the add (Windows), measured.** Cells X1, X1b and X1c
+  of round `task077-03` ran on a Windows VM, 2 runs each. Round `task077-04`
+  ran X1 and X1b again with the same bytes. There `.git` becomes a file
+  `gitdir: <the git directory of a second repository>` right after the add.
+  `5fd08069` runs the branch step in that repository. In X1 that repository has
+  no branch `w1`, and `5fd08069` answers with no undo text. In X1b it
+  deletes its branch `w1`, which `main` reaches. In X1c it keeps it with
+  `branchKept`. claustrum runs no git call after the swap and changes nothing
+  in that repository. Its undo text says that branch `w1` still exists. The
+  frames differ in all three cells. The maintainer decided on 2026-10-19 to
+  keep this.
 - **Default.** Always-on. **Activate:** always-on. There is no
   flag and no key.
 - **Why always-on.** The maintainer's decision of 2026-10-07: the guard stays.
   The harm that it refuses is the loss of the registration of another worktree,
-  as in cell B6b. No clause of rule 3 covers this entry. It stands on that
+  as in cell B6b. The decision of 2026-10-19 adds cells X1, X1b and X1c. There
+  the harm is a branch deleted in the repository that a `.git` file names, as
+  in cell X1b. No clause of rule 3 covers this entry. It stands on that
   decision, and the reopen trigger below takes it back.
-- **Cost.** In the measured cells a folder stays that `89cb6289` removes: the
+- **Cost.** In cells B6 and B6b a folder stays that `89cb6289` removes: the
   empty `w1` of cell B6, and the files of the sibling under the name `w1` in
-  cell B6b. No frame differs there. A create reaches the guard only if the
-  registrations folder changes between the add and the rollback.
+  cell B6b. No frame differs there. In cells B6 and B6b a create reaches the
+  guard only if the registrations folder changes between the add and the
+  rollback. In cells X1, X1b and X1c the frame differs, and in X1b a branch
+  stays that `5fd08069` deletes.
 - **Not measured.** The guard at the placement of the index: no cell has a
   replaced folder with a read-tree that exits 0. A replaced folder with a
   daemon `GIT_DIR` of another repository is not measured either. Cells B9 and
@@ -904,13 +919,16 @@ Reopen trigger: the reference moves to Go 1.26 or newer.
   macOS VMs). If git gave no answer
   to `rev-parse --absolute-git-dir`, the guard does not run.
 - **Reopen trigger.** A measurement that shows the reference keeping such a
-  folder. Or a decision to match the disk of cells B6 and B6b.
+  folder. Or a decision to match the disk of cells B6 and B6b. Or a decision
+  to run the branch step in the repository that the `.git` file names (cells
+  X1, X1b and X1c).
 - **Pointers.** Evidence in
   `scratch/i429/s37-linux-rollback-probe/REPORT.md` and in `raw/cells/B6.md` and
   `raw/cells/B6b.md` beside it. The macOS round is in
   `scratch/i429/s40-macos-rollback-val/REPORT.md`. The rounds of the final build are in
   `scratch/i429/s44-linux-rollback-last/REPORT.md` and
-  `scratch/i429/s45-macos-rollback-last/REPORT.md`.
+  `scratch/i429/s45-macos-rollback-last/REPORT.md`. Cells X1, X1b and X1c are in
+  `scratch/tier1/task077/round03-windows/REPORT.txt`.
 
 ### D25 · Answer `"unavailable"` for the peer check and serve every caller (Linux) { #d25 }
 

@@ -683,15 +683,16 @@ L1 is the one exception (Part A). See the entry.
 D23, Windows only: a child gets its environment block in name order, because
 Go 1.26 sorts it and the reference builds use go1.25.14. The entry retires when the reference moves to Go 1.26 or newer.
 
-D24 is always-on, and the frames are equal in its two cells (Linux and macOS VMs).
-If git answered `rev-parse --absolute-git-dir`, a rollback of
+D24 is always-on. If git answered `rev-parse --absolute-git-dir`, a rollback of
 `git.worktree_create` deletes the registration only if the
-folder at its path is still the folder that the create accepted after the add.
-`89cb6289` deletes the folder at that path in cells B6 and B6b (Linux and macOS VMs, 2 runs
-each). The placement of the index has the same test (not measured). On Windows
-the rollback guards the moved registration too, with equal frames (cell B6w of
-round `task087-03`), and the placement is not measured. The guard stays by
-the maintainer's decision of 2026-10-07, not by a rule 3 clause. See the entry.
+folder at its path is still the one the create accepted after the add.
+`89cb6289` deletes that folder in cells B6 and B6b, with equal frames (Linux and
+macOS VMs). The placement of the index has the same test (not measured). On
+Windows the rollback guards the moved registration too, with equal frames (cell
+B6w). On Windows, after `.git` became a file right after the add, the rollback
+runs no git call, with other frames (cells X1, X1b and X1c). The guard stays by
+the maintainer's decisions of 2026-10-07 and 2026-10-19, not a rule 3 clause.
+See the entry.
 
 D25 is on-wire, Linux only, and only with `CLAUDE_SSH_PEER_CHECK=1` in the daemon
 environment. claustrum has no peer check. It answers `"peerCheck":"unavailable"`

@@ -492,9 +492,14 @@ func hardenedGitCheckout(ctx context.Context, u gitUse, leaf, gitDir, indexFile 
 		return "", false, checkoutRefusal(hooksRefusalPrefix + pre.detail())
 	}
 	// On Windows the path of the git directory must still name the held folder
-	// after the first listing (errGitDirChanged).
+	// after the first listing (errGitDirChanged). A regular file at the path
+	// goes on to the second listing (fileAtGitDir).
+	fileSwap := false
 	if shadowStagesAdd && u.swapped("listed") {
-		return "", false, errGitDirChanged
+		if !fileAtGitDir(u.gitDir) {
+			return "", false, errGitDirChanged
+		}
+		fileSwap = true
 	}
 	var filters filterPlan
 	if rule != nil {
@@ -515,6 +520,9 @@ func hardenedGitCheckout(ctx context.Context, u gitUse, leaf, gitDir, indexFile 
 		env = append(env, "LANGUAGE=C")
 		if text := ownConfigListing(leaf, gitDir, env); text != "" {
 			return "", false, checkoutRefusal(text)
+		}
+		if fileSwap {
+			return "", false, errGitDirChanged
 		}
 		if filters.tooManyFilters {
 			return "", false, checkoutRefusal(tooManyFiltersText)
@@ -640,6 +648,13 @@ func ownConfigListing(leaf, gitDir string, env []string) string {
 //     swp-marker of val-s3p2b2-13-linux2, Linux VM, 6 of 6 runs. Cells p-copy
 //     and p-marker of val-s3p2b2-13-macos, macOS VM, 11 of 11 runs).
 //
+// A regular file at `repo\.git` while the first listing runs does not give
+// errGitDirChanged there. 5fd08069 then runs the second listing, which fails
+// with exit 128. It answers the text of ownConfigListing with the undo text
+// above (cell X2 of round task077-03, Windows VM, 2 of 2 runs). A second
+// listing that passes there gives errGitDirChanged, so no read-tree call runs
+// (claustrum's own, not measured).
+//
 // A junction that is put there while the second listing runs gets no test:
 // the read-tree call then runs and fails by itself (points 11 and 12). A
 // second listing that fails there now gives the text of ownConfigListing (not
@@ -649,6 +664,13 @@ var (
 	errGitDirChanged = errors.New("the git directory changed after the first listing of the checkout")
 	errGitDirNotReal = errors.New("the git directory changed after the read-tree call")
 )
+
+// fileAtGitDir reports whether the entry at gitDir is a regular file, not a
+// junction, a symbolic link or a folder.
+func fileAtGitDir(gitDir string) bool {
+	fi, err := os.Lstat(gitDir)
+	return err == nil && fi.Mode().IsRegular()
+}
 
 // runWorktreeCheckout is the read-tree checkout of git.worktree_create. It reads rev
 // into a new index in a fresh temporary directory, fills leaf from it, and, when

@@ -43,6 +43,11 @@ func openHeldGitDir(path string) (*os.Root, error) {
 // one folder (s3p2-macos cells B1 and B2, macOS VM).
 const statusFollowsPrintedGitDir = false
 
+// requestDirByPath is false on Linux and macOS. The short-lived folders of a
+// request are made through a root at the folder of the daemon (requestDir).
+// No row has a deny entry with enabled privileges on Linux or macOS (not measured).
+const requestDirByPath = false
+
 // openShadowLockFile makes the lock file of the daemon (0600, 0 bytes) and
 // takes the lock of the daemon on it. The daemon holds the lock until it closes
 // the file. On a Linux VM /proc/locks shows `FLOCK  ADVISORY  WRITE <daemon

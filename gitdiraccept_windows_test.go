@@ -494,3 +494,113 @@ func TestKeptProbeWithAJunctionAtTheGitDirOnWindows(t *testing.T) {
 		})
 	}
 }
+
+// TestCreateWithAFileAtTheGitDirOnWindows must match cells X1b, X1c and X2 of
+// round task077-03 (Windows VM, 2 of 2 runs each). At one step of the create,
+// `repo\.git` goes to `repo\.git-real`, and a regular file `gitdir: <path>`
+// takes its place.
+//
+//   - X1b and X1c: the file comes right after the add and names the git
+//     directory of a second repository with a branch w1. claustrum answers the
+//     link text in the undo, runs no git call after the swap and keeps w1 of
+//     the second repository. 5fd08069 deletes that branch in X1b. That is an
+//     intentional difference (decision of 2026-10-19).
+//   - X2: the file comes while the first listing of the checkout runs.
+//     5fd08069 runs the second listing, which fails with exit 128, and answers
+//     the text of ownConfigListing. Without the rule of fileAtGitDir the reply
+//     has the link text. The file here names a folder that does not exist, so
+//     that git fails on every host. In the cell it names the git directory of
+//     a second repository.
+func TestCreateWithAFileAtTheGitDirOnWindows(t *testing.T) {
+	const realDir = `".git" is a link or a file where Claude needs a real directory; put the directory itself in its place`
+	for _, row := range []struct {
+		cell, step string
+		ahead      bool
+		// after is the number of git calls after the swap.
+		after int
+		want  func(link, leaf string) string
+	}{
+		{"X1b", "added", false, 0, func(link, leaf string) string {
+			return "git worktree add failed (completing the new worktree's git files): " + realDir +
+				"; and the undo could not finish for " + leaf + ": branch w1 still exists; delete it by hand " +
+				"(for example: git branch -d w1, which git refuses if that would lose commits) before retrying " +
+				"this branch name: could not check whether another branch or remote-tracking ref reaches its commits (" + link + ")"
+		}},
+		{"X1c", "added", true, 0, func(link, leaf string) string {
+			return "git worktree add failed (completing the new worktree's git files): " + realDir +
+				"; and the undo could not finish for " + leaf + ": branch w1 still exists; delete it by hand " +
+				"(for example: git branch -d w1, which git refuses if that would lose commits) before retrying " +
+				"this branch name: could not check whether another branch or remote-tracking ref reaches its commits (" + link + ")"
+		}},
+		{"X2", "listed", false, 1, func(_, leaf string) string {
+			return "git worktree add failed (checkout): Claude could not read your own git config on the remote machine " +
+				"(exit status 128). Run git config --list there to see the problem.; and the undo could not finish for " +
+				leaf + ": the worktree registration and the branch remain; remove them by hand before retrying (" + realDir + ")"
+		}},
+	} {
+		t.Run(row.cell, func(t *testing.T) {
+			f := newSeededShadowFixture(t)
+			otherRepo, other := configRepo(t)
+			runGit(t, otherRepo, "branch", "w1")
+			if row.ahead {
+				runGit(t, otherRepo, "checkout", "-q", "w1")
+				runGit(t, otherRepo, "commit", "-q", "--allow-empty", "-m", "ahead")
+				runGit(t, otherRepo, "checkout", "-q", "main")
+			}
+			w1 := filepath.Join(other, "refs", "heads", "w1")
+			before := mustRead(t, w1)
+			named := other
+			if row.step == "listed" {
+				named = filepath.Join(resolveTestRoot(t, t.TempDir()), "none", ".git")
+			}
+			if raw, _ := f.info(t, f.repo, nil); !strings.Contains(raw, `"settingsControl":"shadow"`) {
+				t.Fatalf("git.info = %s", raw)
+			}
+			swappedAt := -1
+			atStep(t, row.step, func() {
+				swappedAt = len(readEnvCalls(t, f.log))
+				if err := os.Rename(f.gitDir, f.gitDir+"-real"); err != nil {
+					t.Errorf("the rename of the git directory: %v", err)
+					return
+				}
+				mustWrite(t, f.gitDir, "gitdir: "+filepath.ToSlash(named)+"\n")
+			})
+			leaf := filepath.Join(f.repo, ".claude", "worktrees", "w1")
+			raw, calls := f.call(t, "git.worktree_create", map[string]any{"baseRepo": f.repo, "branchName": "w1", "worktreePath": leaf})
+			var reply struct {
+				Result struct {
+					Success   bool
+					Error     string
+					ErrorCode string
+				}
+			}
+			if err := json.Unmarshal([]byte(raw), &reply); err != nil {
+				t.Fatalf("the reply %s: %v", raw, err)
+			}
+			link := "this repository's git config cannot be used: " + quoteOperand(filepath.Join(f.gitDir, "config")) +
+				": is, or is reached through, a link that Claude does not follow here; replace the link with what it points to"
+			if want := row.want(link, leaf); reply.Result.Success || reply.Result.Error != want || reply.Result.ErrorCode != "worktree_add_failed" {
+				t.Errorf("git.worktree_create = %s\nwant the error %s", raw, want)
+			}
+			if swappedAt < 0 {
+				t.Fatalf("the create did not reach the step %s", row.step)
+			}
+			if got := len(calls) - swappedAt; got != row.after {
+				t.Errorf("%d git calls after the swap, want %d: %q", got, row.after, calls[swappedAt:])
+			}
+			if row.after == 1 && len(calls) > swappedAt && !calls[swappedAt].listing() {
+				t.Errorf("the call after the swap = %q, want the second listing", calls[swappedAt].argv)
+			}
+			if got := mustRead(t, w1); got != before {
+				t.Errorf("w1 of the second repository = %q, want %q", got, before)
+			}
+			kept := f.gitDir + "-real"
+			if _, err := os.Lstat(filepath.Join(kept, "refs", "heads", "w1")); err != nil {
+				t.Errorf("the branch w1 in the real git directory: %v, want it kept", err)
+			}
+			if _, err := os.Lstat(leaf); !os.IsNotExist(err) {
+				t.Errorf("the leaf: %v, want it gone", err)
+			}
+		})
+	}
+}

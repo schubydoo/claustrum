@@ -75,6 +75,17 @@ var gitDirMustBeReal = true
 // of val-s3p2b2-3-windows).
 const statusFollowsPrintedGitDir = true
 
+// requestDirByPath is true on Windows. Each short-lived folder of a request in
+// the folder of the daemon is made by its full path with a plain mkdir
+// (requestDir). With a deny entry for new folders on that folder and the backup
+// and restore privileges enabled, the create of 5fd08069 succeeds, and the root
+// mkdir of claustrum fails (cells X3 of rounds task077-03 and task077-05,
+// Windows VM). By path the create of claustrum succeeds there (round task077-06). With
+// both privileges disabled both builds fail alike (cells X3c). Those cells
+// reach .s<n> and .index-<n>. The folders .config-<n>, .worktreeinclude-<n>
+// and the .gitdir-<n> of git.status are not measured (claustrum's own).
+const requestDirByPath = true
+
 // openShadowLockFile makes the lock file of the daemon (0 bytes) and opens it
 // with no sharing. The open handle is the hold. A Windows VM measured the lock
 // file of a live 5fd08069 daemon. Every open with data access fails there, with

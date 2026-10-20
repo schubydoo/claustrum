@@ -392,10 +392,11 @@ func (u gitUse) swapped(step string) bool {
 //     file at point 6, Windows VM, 2 of 2 runs). That refusal is in
 //     openAddStage. Each other step refuses with the text of a git directory
 //     behind a link, and no call runs in X. The text is the one of the
-//     junction rows. For a file, 5fd08069 has another text at two of those
-//     steps: at the `worktree add` and at the first listing of the checkout
-//     (table C of val-s3p2b2-13-windows, Windows VM, 2 runs each). At the
-//     second listing and at the read-tree call the texts are equal. The
+//     junction rows. For a file, 5fd08069 has another text at the `worktree
+//     add` (table C of val-s3p2b2-13-windows, Windows VM, 2 runs each). At
+//     the first listing of the checkout claustrum now runs the second listing
+//     for a file, as 5fd08069 does (fileAtGitDir, cell X2 of round
+//     task077-03). At the second listing and at the read-tree call the texts are equal. The
 //     step `branch` refuses so too, so no branch call runs with a `.git` file
 //     that names another repository.
 //   - On Linux and macOS the gate runs on that git directory, and a gate that

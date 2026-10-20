@@ -1,6 +1,7 @@
 package main
 
 import (
+	"errors"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -215,6 +216,62 @@ func TestRequestDir(t *testing.T) {
 	remove()
 	if _, err := os.Lstat(dir); !os.IsNotExist(err) {
 		t.Errorf("the temporary folder after its remove: %v, want it gone", err)
+	}
+}
+
+// TestRequestDirMakesTheAddCopyByPath pins how each short-lived folder of a
+// request is made in the folder of the daemon. On Windows it is a plain mkdir
+// by its full path. With the privileges on, the create of 5fd08069 succeeds
+// (cell X3 of rounds task077-03 and task077-05, Windows VM). On Linux and
+// macOS it goes through the root.
+func TestRequestDirMakesTheAddCopyByPath(t *testing.T) {
+	clearFolderEnv(t)
+	f := newRepoFolderFixture(t)
+	u := f.useOf(t, f.repo)
+	var paths []string
+	old := requestDirMkdir
+	t.Cleanup(func() { requestDirMkdir = old })
+
+	for _, prefix := range []string{addCopyPrefix, shadowIndexDirPrefix, shadowStatusDirPrefix,
+		shadowIncludeDirPrefix, shadowConfigDirPrefix} {
+		requestDirMkdir = func(path string, perm os.FileMode) error {
+			paths = append(paths, path)
+			return os.Mkdir(path, perm)
+		}
+		paths = nil
+		dir, remove, err := u.requestDir(prefix, "claude-ssh-unused-")
+		if err != nil {
+			t.Fatalf("%s: %v", prefix, err)
+		}
+		if filepath.Dir(dir) != f.h.dir ||
+			!regexp.MustCompile(`^`+regexp.QuoteMeta(prefix)+`[0-9]+$`).MatchString(filepath.Base(dir)) {
+			t.Errorf("%s: the folder %s, want %s/%s<n>", prefix, dir, f.h.dir, prefix)
+		}
+		if fi, err := os.Lstat(dir); err != nil || !fi.IsDir() {
+			t.Errorf("%s: the folder: %v, %v", prefix, fi, err)
+		}
+		var want []string
+		if runtime.GOOS == "windows" {
+			want = []string{dir}
+		}
+		if !slices.Equal(paths, want) {
+			t.Errorf("%s: mkdir by path = %q, want %q", prefix, paths, want)
+		}
+		remove()
+
+		if runtime.GOOS != "windows" {
+			continue
+		}
+		// The error of the plain mkdir keeps the measured form.
+		denied := errors.New("Access is denied.")
+		requestDirMkdir = func(path string, _ os.FileMode) error {
+			return &os.PathError{Op: "mkdir", Path: path, Err: denied}
+		}
+		_, _, err = u.requestDir(prefix, "claude-ssh-unused-")
+		re := regexp.MustCompile(`^mkdir ` + regexp.QuoteMeta(filepath.Join(f.h.dir, prefix)) + `[0-9]+: Access is denied\.$`)
+		if err == nil || !re.MatchString(err.Error()) {
+			t.Errorf("%s: a denied mkdir = %v, want %s", prefix, err, re)
+		}
 	}
 }
 
