@@ -183,17 +183,21 @@ func TestGitStatusRepoConfigReadBoundFromStart(t *testing.T) {
 // call, not from its exit, and the test fails with the read text (cell B2 of
 // rounds task101-01 and task101-02, Linux VM: the reply about 31 s after the
 // call started).
-// The wait for the pipes of the other test calls is long here, so a bound
-// after the exit reads differently. The time counts from the start of call 7,
-// which the stub writes. 5fd08069 answers about 1 s after the bound, and so
-// does the drain of runStartBound. Mutation: give call 7 a WaitDelay of
-// shadowCallBound+shadowCallDrain, run it through boundedGitInput, or close
-// the pipes at the bound with no drain.
+// Call 7 exits only shortly before the bound, so a bound counted from its exit
+// ends at least callSevenExit later. The wait for the pipes of the other test
+// calls is long here, so a bound after the exit reads differently there too.
+// The time counts from the start of call 7, which the stub writes. 5fd08069
+// answers about 1 s after the bound, and so does the drain of runStartBound.
+// Mutation: give call 7 a WaitDelay of shadowCallBound+shadowCallDrain, run it
+// through boundedGitInput, start the bound at the exit of git, or close the
+// pipes at the bound with no drain.
 func TestShadowCallSevenBoundFromStart(t *testing.T) {
+	const callSevenExit = 2500 * time.Millisecond
 	f := newShadowFixture(t)
-	setDuration(t, &shadowCallBound, 2*time.Second)
+	setDuration(t, &shadowCallBound, 3*time.Second)
 	setDuration(t, &shadowCallDrain, 2*heldPipe)
-	holdNthCall(t, "--no-includes", "hold", "", 1, 4*heldPipe)
+	holdNthCall(t, "--no-includes", "holdwait", "", 1, 4*heldPipe)
+	t.Setenv("CLAUSTRUM_GITSTUB_WAITMS", strconv.Itoa(int(callSevenExit/time.Millisecond)))
 	started := filepath.Join(t.TempDir(), "started")
 	t.Setenv("CLAUSTRUM_GITSTUB_STARTED", started)
 	msg := f.s.gitShadow.gate(false)
@@ -213,7 +217,7 @@ func TestShadowCallSevenBoundFromStart(t *testing.T) {
 		t.Fatalf("the start time of call 7 = %q: %v", text, err)
 	}
 	took := end.Sub(time.Unix(0, ns))
-	if took > shadowCallBound+startBoundDrain+2*time.Second {
+	if took > shadowCallBound+startBoundDrain+time.Second {
 		t.Errorf("the start test ended %v after call 7 started, want it at the bound from that start", took)
 	}
 	if took < shadowCallBound+startBoundDrain/2 {

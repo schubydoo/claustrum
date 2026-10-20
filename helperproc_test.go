@@ -217,7 +217,9 @@ func runGitLingering(args []string) int {
 //     the two texts of the rule and exits 0, or 1 when the descendant does not
 //     start.
 //   - "holdwait": as "holdonly", but the call sleeps CLAUSTRUM_GITSTUB_MS
-//     milliseconds after the start of the descendant, and then exits 0.
+//     milliseconds after the start of the descendant, and then exits 0. With
+//     CLAUSTRUM_GITSTUB_WAITMS set, the call sleeps that many milliseconds
+//     instead, and the descendant keeps CLAUSTRUM_GITSTUB_MS.
 //   - "holdfail": as "holdonly", but the call exits with CLAUSTRUM_GITSTUB_EXIT.
 //
 // "fail", "postfail" and "holdfail" exit with CLAUSTRUM_GITSTUB_EXIT, 1 when it is not set.
@@ -425,6 +427,10 @@ func runGitSlow(args []string) int {
 		case "holdwait":
 			if c := holdStubOutput(); c != 0 {
 				return c
+			}
+			if ms, err := strconv.Atoi(os.Getenv("CLAUSTRUM_GITSTUB_WAITMS")); err == nil {
+				time.Sleep(time.Duration(ms) * time.Millisecond)
+				return 0
 			}
 			pause()
 			return 0
