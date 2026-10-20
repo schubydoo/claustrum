@@ -2000,7 +2000,7 @@ another owner is `detected dubious ownership in repository`. In cells X9 of roun
 error. Each request of `5fd08069` there is that one call, and a remove makes it two
 times (Linux and macOS VMs). An answer of git that names a problem is not kept. So
 a new `safe.directory` line counts at the next request, as on `5fd08069` (cell
-N15-a, Linux and macOS VMs). A good answer is kept 5 seconds.
+N15-a, Linux and macOS VMs).
 [The settings copy](#the-settings-copy) has that call.
 
 claustrum asks git no question about the owner beyond that call. With
@@ -2337,10 +2337,10 @@ of the repository. The last `core.bare` of `config.worktree` follows, then the
 
 ##### The call about the repository
 
-In the state `shadow` the daemon asks git itself about the repository, before the
+In the state `shadow` the daemon asks git about the repository, before the
 config read and the calls of the method. The call is `rev-parse --git-dir` with two
-`-c` items, in the root of the work tree. It names a folder `.probe` of the daemon
-and not the repository. The daemon writes an emptied
+`-c` items, in the root of the work tree. It names a folder `.probe` of the daemon.
+The daemon writes an emptied
 `.probe/config` again (`5fd08069`, cell C10 of round `tier0-5`, Linux VM). A good answer is kept 5 seconds from the end of the call.
 A change of the root folder or of its `.git` entry makes the daemon ask again.
 
@@ -2355,13 +2355,15 @@ A change of the root folder or of its `.git` entry makes the daemon ask again.
 
 The three texts have the shapes of the start test. The cells are 37 to 39 of round
 `s3p2b-edges` (Linux VM), where a wrapper answers the call. Cell 40 of that round
-has the 30 seconds on macOS and Windows VMs. A bad answer is not kept, so each
-request asks again, and a remove asks two times. For a repository of another owner
+has the 30 seconds on macOS and Windows VMs. A bad answer is not kept, and a
+remove asks two times. For a repository of another owner
 with no `safe.directory`, `git.worktree_remove` answers the lock-check refusal that
 ends `(its registrations could not be examined); retry`.
+With a child that holds the pipes, an exit 0 counts by its output so far (`git.status`,
+cells P1 to P3 of round `task100-01`, Linux VM). The other four methods and macOS and
+Windows are not measured.
 
-After each failed call that is not a "no repository" answer and that the 30 s bound did not stop, one `git version` call follows. The same
-call follows a config read that failed with a syntax error (cells 39 and
+One `git version` call also follows a config read that failed with a syntax error (cells 39 and
 `x9-syntax-own` of round `val-s3p2b2-5`, Linux VM).
 
 ##### The git calls
