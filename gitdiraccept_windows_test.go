@@ -507,7 +507,7 @@ func TestKeptProbeWithAJunctionAtTheGitDirOnWindows(t *testing.T) {
 //     intentional difference (decision of 2026-10-19).
 //   - X2: the file comes while the first listing of the checkout runs.
 //     5fd08069 runs the second listing, which fails with exit 128, and answers
-//     the text of ownConfigListing. Without the rule of fileAtGitDir the reply
+//     the text of ownConfigListing. Without the file rule of gitUse.listedSwap the reply
 //     has the link text. The file here names a folder that does not exist, so
 //     that git fails on every host. In the cell it names the git directory of
 //     a second repository.

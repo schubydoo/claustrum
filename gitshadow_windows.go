@@ -75,16 +75,42 @@ var gitDirMustBeReal = true
 // of val-s3p2b2-3-windows).
 const statusFollowsPrintedGitDir = true
 
-// requestDirByPath is true on Windows. Each short-lived folder of a request in
-// the folder of the daemon is made by its full path with a plain mkdir
-// (requestDir). With a deny entry for new folders on that folder and the backup
-// and restore privileges enabled, the create of 5fd08069 succeeds, and the root
+// makeRequestDir makes the short-lived folder name of a request (mode 0700) in
+// folder, the folder of the daemon (requestDir). On Windows it is a plain
+// mkdir by its full path through requestDirMkdir, not through root. With a
+// deny entry for new folders on that folder and the backup and restore
+// privileges enabled, the create of 5fd08069 succeeds, and the root
 // mkdir of claustrum fails (cells X3 of rounds task077-03 and task077-05,
 // Windows VM). By path the create of claustrum succeeds there (round task077-06). With
 // both privileges disabled both builds fail alike (cells X3c). Those cells
 // reach .s<n> and .index-<n>. The folders .config-<n>, .worktreeinclude-<n>
 // and the .gitdir-<n> of git.status are not measured (claustrum's own).
-const requestDirByPath = true
+func makeRequestDir(_ *os.Root, folder, name string) error {
+	return requestDirMkdir(filepath.Join(folder, name), 0o700)
+}
+
+// listedSwap is the test of a create after the first listing of the
+// checkout. The path of the git directory must still name the held folder
+// there. If not, changed is true and the create answers errGitDirChanged. A
+// regular file at the path gives fileSwap instead. The create then runs the
+// second listing before it answers errGitDirChanged, as 5fd08069 does (cell X2
+// of round task077-03, Windows VM).
+func (u gitUse) listedSwap() (fileSwap, changed bool) {
+	if !u.swapped("listed") {
+		return false, false
+	}
+	if fileAtGitDir(u.gitDir) {
+		return true, false
+	}
+	return false, true
+}
+
+// fileAtGitDir reports whether the entry at gitDir is a regular file, not a
+// junction, a symbolic link or a folder.
+func fileAtGitDir(gitDir string) bool {
+	fi, err := os.Lstat(gitDir)
+	return err == nil && fi.Mode().IsRegular()
+}
 
 // openShadowLockFile makes the lock file of the daemon (0 bytes) and opens it
 // with no sharing. The open handle is the hold. A Windows VM measured the lock

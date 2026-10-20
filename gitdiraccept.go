@@ -395,7 +395,7 @@ func (u gitUse) swapped(step string) bool {
 //     junction rows. For a file, 5fd08069 has another text at the `worktree
 //     add` (table C of val-s3p2b2-13-windows, Windows VM, 2 runs each). At
 //     the first listing of the checkout claustrum now runs the second listing
-//     for a file, as 5fd08069 does (fileAtGitDir, cell X2 of round
+//     for a file, as 5fd08069 does (gitUse.listedSwap, cell X2 of round
 //     task077-03). At the second listing and at the read-tree call the texts are equal. The
 //     step `branch` refuses so too, so no branch call runs with a `.git` file
 //     that names another repository.

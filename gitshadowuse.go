@@ -609,7 +609,7 @@ const (
 )
 
 // requestDirMkdir makes a short-lived folder of a request by its path on
-// Windows (requestDir). It is a variable so that a test can see the call.
+// Windows (makeRequestDir). It is a variable so that a test can see the call.
 var requestDirMkdir = os.Mkdir
 
 // requestDir makes a new folder for one request and returns its path and the
@@ -633,7 +633,7 @@ var requestDirMkdir = os.Mkdir
 // cannot be opened is not measured: it gives the error of that open.
 //
 // On Windows each such folder is made by its full path with a plain mkdir,
-// not through the root (requestDirByPath). On a Windows VM with a deny entry
+// not through the root (makeRequestDir). On a Windows VM with a deny entry
 // for new folders on <S> and the backup and restore privileges enabled, the
 // create of 5fd08069 succeeds. The root mkdir of claustrum failed there at
 // `.s<n>` (cell X3 of
@@ -661,11 +661,7 @@ func (u gitUse) requestDir(shadowPrefix, tempPrefix string) (dir string, remove 
 			return "", func() {}, err
 		}
 		name := shadowPrefix + strconv.FormatUint(uint64(binary.LittleEndian.Uint32(n[:])), 10)
-		if requestDirByPath {
-			err = requestDirMkdir(filepath.Join(u.folder, name), 0o700)
-		} else {
-			err = root.Mkdir(name, 0o700)
-		}
+		err = makeRequestDir(root, u.folder, name)
 		if errors.Is(err, os.ErrExist) {
 			continue
 		}

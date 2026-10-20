@@ -493,13 +493,10 @@ func hardenedGitCheckout(ctx context.Context, u gitUse, leaf, gitDir, indexFile 
 	}
 	// On Windows the path of the git directory must still name the held folder
 	// after the first listing (errGitDirChanged). A regular file at the path
-	// goes on to the second listing (fileAtGitDir).
-	fileSwap := false
-	if shadowStagesAdd && u.swapped("listed") {
-		if !fileAtGitDir(u.gitDir) {
-			return "", false, errGitDirChanged
-		}
-		fileSwap = true
+	// goes on to the second listing (gitUse.listedSwap).
+	fileSwap, changed := u.listedSwap()
+	if changed {
+		return "", false, errGitDirChanged
 	}
 	var filters filterPlan
 	if rule != nil {
@@ -664,13 +661,6 @@ var (
 	errGitDirChanged = errors.New("the git directory changed after the first listing of the checkout")
 	errGitDirNotReal = errors.New("the git directory changed after the read-tree call")
 )
-
-// fileAtGitDir reports whether the entry at gitDir is a regular file, not a
-// junction, a symbolic link or a folder.
-func fileAtGitDir(gitDir string) bool {
-	fi, err := os.Lstat(gitDir)
-	return err == nil && fi.Mode().IsRegular()
-}
 
 // runWorktreeCheckout is the read-tree checkout of git.worktree_create. It reads rev
 // into a new index in a fresh temporary directory, fills leaf from it, and, when
