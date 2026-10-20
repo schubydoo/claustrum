@@ -213,6 +213,9 @@ func runGitLingering(args []string) int {
 //     and stderr for CLAUSTRUM_GITSTUB_MS milliseconds, and exit at once. When
 //     CLAUSTRUM_GITSTUB_HOLDPID names a file, the pid of the descendant goes in it.
 //     When CLAUSTRUM_GITSTUB_HOLDSELF names a file, the pid of the call goes in it.
+//   - "holdonly": as "hold", but no real git and no action run. The call prints
+//     the two texts of the rule and exits 0, or 1 when the descendant does not
+//     start.
 //
 // "fail" and "postfail" exit with CLAUSTRUM_GITSTUB_EXIT, 1 when it is not set.
 //
@@ -408,6 +411,8 @@ func runGitSlow(args []string) int {
 				}
 			}
 			_ = os.WriteFile(gate+".out", nil, 0o644)
+		case "holdonly":
+			return holdStubOutput()
 		}
 	}
 	cmd := exec.Command(os.Getenv("CLAUSTRUM_GITSTUB_REAL"), args...)
@@ -443,27 +448,37 @@ func runGitSlow(args []string) int {
 		return exitCode
 	}
 	if slow && mode == "hold" {
-		exe, err := os.Executable()
-		if err != nil {
-			fmt.Fprintln(os.Stderr, err)
-			return 1
-		}
-		ms, _ := strconv.Atoi(os.Getenv("CLAUSTRUM_GITSTUB_MS"))
-		child := exec.Command(exe, strconv.Itoa((ms+999)/1000))
-		child.Env = buildEnv(map[string]string{"CLAUSTRUM_TEST_HELPER": "sleep"})
-		child.Stdout, child.Stderr = os.Stdout, os.Stderr
-		if err := child.Start(); err != nil {
-			fmt.Fprintln(os.Stderr, err)
-			return 1
-		}
-		if f := os.Getenv("CLAUSTRUM_GITSTUB_HOLDPID"); f != "" {
-			appendLine(f, strconv.Itoa(child.Process.Pid))
-		}
-		if f := os.Getenv("CLAUSTRUM_GITSTUB_HOLDSELF"); f != "" {
-			appendLine(f, strconv.Itoa(os.Getpid()))
+		if c := holdStubOutput(); c != 0 {
+			return c
 		}
 	}
 	return code
+}
+
+// holdStubOutput starts the descendant of the modes "hold" and "holdonly". It
+// holds the stdout and stderr of this call for CLAUSTRUM_GITSTUB_MS
+// milliseconds. It returns 1 when the descendant does not start.
+func holdStubOutput() int {
+	exe, err := os.Executable()
+	if err != nil {
+		fmt.Fprintln(os.Stderr, err)
+		return 1
+	}
+	ms, _ := strconv.Atoi(os.Getenv("CLAUSTRUM_GITSTUB_MS"))
+	child := exec.Command(exe, strconv.Itoa((ms+999)/1000))
+	child.Env = buildEnv(map[string]string{"CLAUSTRUM_TEST_HELPER": "sleep"})
+	child.Stdout, child.Stderr = os.Stdout, os.Stderr
+	if err := child.Start(); err != nil {
+		fmt.Fprintln(os.Stderr, err)
+		return 1
+	}
+	if f := os.Getenv("CLAUSTRUM_GITSTUB_HOLDPID"); f != "" {
+		appendLine(f, strconv.Itoa(child.Process.Pid))
+	}
+	if f := os.Getenv("CLAUSTRUM_GITSTUB_HOLDSELF"); f != "" {
+		appendLine(f, strconv.Itoa(os.Getpid()))
+	}
+	return 0
 }
 
 // stubAfter2 reports whether the second rule is on. With CLAUSTRUM_GITSTUB_AFTER2

@@ -780,3 +780,85 @@ func TestProbeKeepCountsFromTheEnd(t *testing.T) {
 		}
 	}
 }
+
+// holdProbeOutput makes the stub of the call about the repository start a
+// child that holds its stdout and stderr for hold, and exit 0. With git true
+// the real git answers first, else the call prints nothing. The wait for the
+// pipes keeps its production value of 1 s, so a loaded runner has 1 s to read
+// what the real git printed, and the child outlives the wait.
+func holdProbeOutput(t *testing.T, git bool, hold time.Duration) {
+	t.Helper()
+	mode := "holdonly"
+	if git {
+		mode = "hold"
+	}
+	endHeldDescendant(t)
+	slowGit(t, "rev-parse,--git-dir", mode, hold, "", "")
+	t.Setenv("CLAUSTRUM_GITSTUB_ENVEND", "GIT_COMMON_DIR="+string(os.PathSeparator)+shadowProbeName)
+}
+
+// TestProbeExitWithHeldPipes: the call about the repository exits 0 while a
+// child holds its pipes past the wait for them. The output read so far is the
+// answer, and no `git version` call follows. With the git directory there,
+// git.status answers as with no child (cells P1 and P2 of round task100-01,
+// Linux VM, 34 calls on 5fd08069 in both). With no output, the daemon asks a
+// second time and answers the "disagree" text (cell P3, 13 calls).
+func TestProbeExitWithHeldPipes(t *testing.T) {
+	const hold = 5 * time.Second
+	status := func(t *testing.T, f shadowFixture) (string, []envCall) {
+		t.Helper()
+		m := f.fiveRequests(nil)[1]
+		return f.call(t, m.method, m.params)
+	}
+	noVersion := func(t *testing.T, calls []envCall) {
+		t.Helper()
+		for _, c := range calls {
+			if c.plainVersion(t) {
+				t.Errorf("a plain `git version` call ran: %q", c.argv)
+			}
+		}
+	}
+	// count is the number of calls without the `--attr-source` test, which
+	// runs once per process (attrSourceArgs).
+	count := func(calls []envCall) int {
+		return len(slices.DeleteFunc(slices.Clone(calls), func(c envCall) bool {
+			return len(c.argv) == 2 && c.argv[1] == "version"
+		}))
+	}
+	// The control has its own fixture in its own subtest: a second stub on
+	// PATH would take the first one for the real git.
+	var wantRaw string
+	var wantCalls []envCall
+	t.Run("P0: no child", func(t *testing.T) {
+		wantRaw, wantCalls = status(t, newSeededShadowFixture(t))
+	})
+	t.Run("P1: the git directory", func(t *testing.T) {
+		if wantCalls == nil {
+			t.Skip("needs the control P0")
+		}
+		f := newSeededShadowFixture(t)
+		holdProbeOutput(t, true, hold)
+		raw, calls := status(t, f)
+		if raw != wantRaw {
+			t.Errorf("git.status = %s\n  want %s", raw, wantRaw)
+		}
+		if got := len(probeCalls(calls)); got != 1 || count(calls) != count(wantCalls) {
+			t.Errorf("%d calls about the repository of %d calls, want 1 of %d", got, count(calls), count(wantCalls))
+		}
+		noVersion(t, calls)
+	})
+	t.Run("P3: no output", func(t *testing.T) {
+		f := newSeededShadowFixture(t)
+		holdProbeOutput(t, false, hold)
+		raw, calls := status(t, f)
+		text := fmt.Sprintf("git and Claude disagree about which repository holds this folder: from %q git finds %q, Claude finds %q; try again",
+			f.repo, f.repo, f.gitDir)
+		if want := probeErrorShapes(t, f, text)[1]; raw != want {
+			t.Errorf("git.status = %s\n  want %s", raw, want)
+		}
+		if got := len(probeCalls(calls)); got != 2 {
+			t.Errorf("%d calls about the repository, want 2", got)
+		}
+		noVersion(t, calls)
+	})
+}
