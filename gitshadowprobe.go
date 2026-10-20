@@ -307,6 +307,10 @@ func probeArgs() []string {
 //   - A call that probeCallBound ended: the error `… it did not finish within
 //     30 seconds in "<root>"; try again` (cell 37 of that round, and cell 40 on
 //     macOS and Windows VMs).
+//   - Exit 0 while a child keeps the output pipes past shadowCallDrain: the
+//     output read so far is the answer, as above, with no `git version` call.
+//     5fd08069 goes on about 1 s after the exit (cells P1 to P3 of round
+//     task100-01, Linux VM, git.status). The rest is not measured.
 //
 // Only a good answer is kept (keptProbe). After a bad answer each request asks
 // again (cells 37 and 39). On Windows git prints the path with forward slashes.
@@ -346,7 +350,7 @@ func (h *shadowHost) askGit(t gitDirTrust, dir string) repoAnswer {
 	env := probeEnv(folder, root)
 	found, shown := "", ""
 	for try := 0; try < 2; try++ {
-		r := boundedGit(probeCallBound, root, env, probeArgs()...)
+		r := exitedInTime(boundedGit(probeCallBound, root, env, probeArgs()...))
 		if r.ended {
 			return repoAnswer{text: fmt.Sprintf("git could not check this repository on the remote machine: it did not finish within 30 seconds in %q; try again", root)}
 		}
