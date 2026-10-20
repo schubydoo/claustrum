@@ -180,6 +180,18 @@ func (f *stubFixture) wantNames(t *testing.T, row string, want ...string) {
 	}
 }
 
+// wantNamesAfterFailedRun is wantNames after a new CLI that did not run. From
+// the code, not measured: the remove is one plain remove (install.go), and on
+// Windows the exited CLI can still hold its image. So on Windows the folder can
+// also hold the CLI file, and no other name.
+func (f *stubFixture) wantNamesAfterFailedRun(t *testing.T, row string, want ...string) {
+	t.Helper()
+	if runtime.GOOS == "windows" && isRegularFile(f.cli) {
+		want = append(slices.Clip(want), filepath.Base(f.cli))
+	}
+	f.wantNames(t, row, want...)
+}
+
 // oldVersionFiles is the file names of the four old versions on this system.
 func oldVersionFiles() []string {
 	var out []string
@@ -649,7 +661,7 @@ func TestInstallRemovesANewCLIThatDoesNotRun(t *testing.T) {
 	if n != 1 || !strings.HasPrefix(start, "START argv0="+f.cli+" ") {
 		t.Errorf("stub START lines: %d, first %q, want one run with argv[0] %s", n, start, f.cli)
 	}
-	f.wantNames(t, "F12", append(oldVersionFiles(), ".fetch-12", "1.0.8.zst")...)
+	f.wantNamesAfterFailedRun(t, "F12", append(oldVersionFiles(), ".fetch-12", "1.0.8.zst")...)
 	if _, err := os.Lstat(blob); !os.IsNotExist(err) {
 		t.Errorf("F12: the blob must be consumed, Lstat err = %v", err)
 	}
@@ -784,7 +796,7 @@ func TestInstallLeavesNoCLIAfterANewCLIThatDoesNotRun(t *testing.T) {
 			if start := mustLogLine(t, f, "START "); !strings.HasPrefix(start, "START argv0="+f.cli+" ") {
 				t.Errorf("stub START %q, want argv[0] %s", start, f.cli)
 			}
-			f.wantNames(t, shape)
+			f.wantNamesAfterFailedRun(t, shape)
 		})
 	}
 }

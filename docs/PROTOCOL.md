@@ -5703,10 +5703,10 @@ Staging and cleanup:
   cli-dir holds no `.fetch-` temp of this install and no swept
   file more than 10 minutes old. On `5fd08069` the blob is gone at that run
   (cells L11, M4 and W7). The prune follows a good run only. A run that
-  exits non-zero removes the new CLI again, so nothing is left at the final
-  path. A stopped run keeps the new CLI. Measured on `89cb6289` on Linux, macOS
-  and Windows. claustrum ran its staged `.fetch-<random>` file before, and it
-  swept after the run.
+  exits non-zero removes the new CLI again with one plain remove. A stopped run
+  keeps the new CLI. Measured on `89cb6289` on Linux, macOS and Windows. On
+  Windows claustrum can leave that file when the exited CLI holds it
+  (claustrum's own code, not measured).
 - What is at the final path goes before the new CLI runs. A folder there is
   removed with the file in it, and at the run the cli-dir holds the CLI file
   only. Measured on Linux, macOS and Windows. A file there that does not run is
@@ -5737,8 +5737,7 @@ Staging and cleanup:
   folder, `89cb6289` removes the folder and names the new file `USERS`.
   claustrum refuses, and the folder keeps its name (cell HXK5).
 - Not measured: a new CLI that exits non-zero over a file or a folder at the
-  final path. claustrum then leaves nothing at the final path, as for an empty
-  one.
+  final path. claustrum then removes the new CLI as for an empty one.
 - Not measured: how the reference writes the final file, and the order of its
   sweep against that write.
   claustrum decompresses to `<cli-dir>/.fetch-<random>`, renames that file to the

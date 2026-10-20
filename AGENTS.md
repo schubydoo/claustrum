@@ -356,12 +356,14 @@ The JSON-RPC surface is identical on every OS. Full internals →
       widen the prefix, the kinds or the folder of this delete.
     - `-install` deletes the CLI path, which is operator input:
       `<cli-dir>/<cli-version>`, and `<cli-version>.exe` on Windows. The cli-dir
-      is `-cli-dir`, or `<home>/.claude/remote/ccd-cli` without it. A folder at
-      that path goes as a tree BEFORE the new CLI runs, as on the reference. A
-      file there is replaced by the new CLI. A new CLI that does not run goes
-      with a plain remove, so nothing is left at that path.
-      Two guards run before that tree delete. The single-path-component rule
-      of D6 runs first: `ensureCLI` runs it before it writes or removes
+      is `-cli-dir`, or `<home>/.claude/remote/ccd-cli` without it. A folder
+      at the CLI path goes as a tree BEFORE the new CLI runs, as on the
+      reference. The new CLI replaces a file there. A new CLI whose
+      `--version` run does not start or exits non-zero gets one plain remove.
+      A stopped run keeps it. On Windows claustrum can leave that file when
+      the exited CLI holds it (claustrum's own code, not measured).
+      Two guards run before that tree delete. D6 runs first: `ensureCLI` runs
+      it before it writes or removes
       anything at a path built from the version. D6
       makes the version one path component, so the CLI path is a direct child
       of the cli-dir. D6 does not test which folder that child is. With a
@@ -370,17 +372,17 @@ The JSON-RPC surface is identical on every OS. Full internals →
       runs right before the tree delete and refuses a CLI path that is home or
       contains it. It runs `wipesHomeDir` first. Then it compares the folder at
       the CLI path with home and with each parent folder of home by identity
-      (`os.SameFile`). It does that for the home path as given and for its
-      resolved path. The reference deletes home there (measured on Linux, macOS
+      (`os.SameFile`). It does that for the given and the resolved home
+      path. The reference deletes home there (measured on Linux, macOS
       and Windows).
       `-install` also removes two operator-named paths with a plain
       `os.Remove`, never as a tree (`clearNonFolderCLIDir`). The first is the
-      cli-dir entry itself, only when it is a regular file, a symlink to a
+      cli-dir entry, only when it is a regular file, a symlink to a
       regular file or a FIFO. A symlink goes as a link, and its target stays.
       The second is the regular file named exactly `ccd-cli-version` in the
       parent folder of the cli-dir. No other name and no other file kind is
       removed. The reference does both (Linux, macOS and Windows VMs). Do not
-      widen either delete, and do not build either path from anything but the
+      widen either delete or build either path from anything but the
       cli-dir.
       `-install` also sweeps the cli-dir. Each sweep is one plain `os.Remove`
       for each regular file with its name, never as a tree. A folder and a
@@ -395,13 +397,13 @@ The JSON-RPC surface is identical on every OS. Full internals →
       (cells L8, M3a and W5, Linux, macOS and Windows VMs).
       The `-cli-keep` prune runs after a good install only, so after D6. It
       is one plain `os.Remove` for each version file past the keep count, in
-      the order of the mtime, never as a tree. A version file is a regular
+      mtime order, never as a tree. A version file is a regular
       file with a version name and an exec bit, or `<version>.exe` on
       Windows. Every other entry stays and takes no place. The new CLI always
       stays, and a negative keep counts as 0. `5fd08069` does the same (cells
       L4 to L6, M1, M2a, M2b, W3, W4a and W4b). Do not turn a remove of the
       prune or the sweeps into a tree delete.
-      The prune and the sweeps never remove the home folder. Each skips an
+      The prune and the sweeps skip an
       entry of the cli-dir that is the home folder or holds it
       (`cliEntryHoldsHome`). A folder gets the tests of `folderHoldsHome`,
       and every other kind gets `wipesHomeDir`. That guard is claustrum's own
