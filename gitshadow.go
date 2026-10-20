@@ -110,12 +110,15 @@ type shadowHost struct {
 	// time. repos has what the daemon knows of each folder that it made, by its
 	// name. A folder that is not there starts again with nothing known
 	// (syncRepo).
-	// repoBusy counts the requests that run on each folder (syncRepo), and
-	// useCount numbers the good uses (shadowRepo.used).
-	repoMu   sync.Mutex
-	repos    map[string]*shadowRepo
-	repoBusy map[string]int
-	useCount uint64
+	// repoBusy counts the holds of each folder: a git child, or the staging
+	// folder of a Windows create (holdRepo, holdCopy).
+	// useCount numbers the uses (shadowRepo.used). renewFailed has the error of
+	// the last build that failed to make a folder again (renewRepo), by name.
+	repoMu      sync.Mutex
+	repos       map[string]*shadowRepo
+	repoBusy    map[string]int
+	renewFailed map[string]error
+	useCount    uint64
 
 	// probeMu guards probes, the kept good answers of git about a repository, by
 	// the root of the work tree (askGit).
@@ -353,6 +356,7 @@ func (h *shadowHost) makeFolder() error {
 		return err
 	}
 	h.dir, h.lock = filepath.Join(root, name), lock
+	shadowHosts.Store(h.dir, h)
 	h.sweepOldFolders(name)
 	return nil
 }
@@ -1112,7 +1116,6 @@ func (req *request) settingsGateRefusal(t gitDirTrust, off jsonTrueSwitch, dir s
 	if err != nil {
 		return shadowRepoFailureText(err), false
 	}
-	req.heldRepos = append(req.heldRepos, filepath.Base(use.repoDir))
 	req.use = use
 	req.use.atReply = &req.atReply
 	req.use.stop = req.stop

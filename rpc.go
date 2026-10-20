@@ -84,9 +84,6 @@ type request struct {
 	// offHeld is true when a git request with "shadowDirOff":true ran in the
 	// daemon at the start of this one (handleGit).
 	offHeld bool
-	// heldRepos are the repository folders that this request uses until it
-	// answers (shadowHost.releaseRepos).
-	heldRepos []string
 }
 
 // runAtReply removes the short-lived folders that stay until the reply. On

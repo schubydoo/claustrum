@@ -55,7 +55,8 @@ type shadowRepo struct {
 	read *repoVerdict
 	// copies has the sha256 of the content of each copy that is there.
 	copies map[string][sha256.Size]byte
-	// used is the number of the last good syncRepo of the folder. A larger
+	// used is the number of the last use of the folder: a good syncRepo or
+	// renewRepo, or the end of a git child that held it (holdRepo). A larger
 	// number is a later use (evictOldRepoFolder).
 	used uint64
 }
@@ -66,9 +67,9 @@ type shadowRepo struct {
 // lower it.
 var shadowRepoLimit = 128
 
-// repoLimitError is the refusal of a new repository folder when each of the
-// shadowRepoLimit folders is in use by a request that runs. The text is
-// claustrum's own (not measured).
+// repoLimitError is the refusal of a new repository folder when a git child
+// holds each of the shadowRepoLimit folders. 5fd08069 answers this text with
+// 128 (E2L cell 36 and E3L cell 55, Linux VM).
 type repoLimitError struct{ limit int }
 
 func (e repoLimitError) Error() string {
@@ -94,12 +95,11 @@ func isShadowRepoName(name string) bool {
 // daemon when shadowRepoLimit of them are there and the folder name is to be
 // made. base is a root at own. The caller holds repoMu.
 //
-// The folder that goes is the one with the oldest good use. On 5fd08069 the
+// The folder that goes is the one with the oldest use. On 5fd08069 the
 // 129th repository removed the folder of the first, and a later request on the
 // first removed the folder of the second (cell G13 of round task075-01, Linux
-// VM). That cell does not tell the order by use from the order of creation, so
-// the order by use is claustrum's own (not measured). A folder in use by a
-// request that runs stays (not measured, claustrum's own). With none free, the
+// VM). A folder that a git child holds stays (holdRepo, E2L cell 37, Linux VM).
+// With none free, the
 // error is repoLimitError. Two folders with the same use go by name order, and a
 // failed remove lets the request go on (both not measured). After a failed
 // remove the daemon still knows the copies that stay (forgetGoneCopies). A failed open or
@@ -162,21 +162,6 @@ func (st *shadowRepo) forgetGoneCopies(base *os.Root, name string) {
 			if file == "config" {
 				st.read = nil
 			}
-		}
-	}
-}
-
-// releaseRepos ends the use of the repository folders names by a request that
-// answered (handleGit). Each name is one good syncRepo.
-func (h *shadowHost) releaseRepos(names []string) {
-	if h == nil || len(names) == 0 {
-		return
-	}
-	h.repoMu.Lock()
-	defer h.repoMu.Unlock()
-	for _, n := range names {
-		if h.repoBusy[n]--; h.repoBusy[n] <= 0 {
-			delete(h.repoBusy, n)
 		}
 	}
 }
@@ -316,8 +301,9 @@ func readShadowHead(gitDir string) ([]byte, bool) {
 // the daemon that is gone and cannot be made again, give an error too. None of
 // the three is measured.
 //
-// A good call counts as a use of the folder until the request answers: the
-// caller passes its name to releaseRepos then (evictOldRepoFolder).
+// A good call counts as a use of the folder. The folder is free again at once:
+// only a git child, or the staging folder of a Windows create, holds it
+// (holdRepo, holdCopy).
 func (h *shadowHost) syncRepo(gitDir string, read *repoVerdict) (gitUse, error) {
 	h.repoMu.Lock()
 	defer h.repoMu.Unlock()
@@ -336,16 +322,12 @@ func (h *shadowHost) syncRepo(gitDir string, read *repoVerdict) (gitUse, error) 
 	h.mu.Unlock()
 	name := shadowRepoName(gitDir)
 	use := gitUse{host: h, folder: dir, gitDir: gitDir, repoDir: filepath.Join(dir, name),
-		items: read.worktreeItems, shared: read.shared}
+		items: read.worktreeItems, shared: read.shared, read: read}
 	if err := h.syncRepoFolder(dir, name, gitDir, read); err != nil {
 		return use, err
 	}
 	h.useCount++
 	h.repos[name].used = h.useCount
-	if h.repoBusy == nil {
-		h.repoBusy = map[string]int{}
-	}
-	h.repoBusy[name]++
 	return use, nil
 }
 
@@ -400,6 +382,7 @@ func (h *shadowHost) syncRepoFolder(dir, name, gitDir string, read *repoVerdict)
 	if st == nil {
 		st = &shadowRepo{copies: map[string][sha256.Size]byte{}}
 		h.repos[name] = st
+		delete(h.renewFailed, name)
 	}
 	rel := filepath.Join(filepath.Base(dir), name)
 

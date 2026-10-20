@@ -180,7 +180,7 @@ func TestHardenedAnswerIsStdoutOnly(t *testing.T) {
 	}
 
 	slowGit(t, "rev-parse,--is-inside-work-tree", "pre", 0, line, "")
-	if !isRepo(gitUse{}, repo, configListing{}) {
+	if ok, _ := isRepo(gitUse{}, repo, configListing{}); !ok {
 		t.Error("isRepo read stderr into the answer of rev-parse --is-inside-work-tree")
 	}
 

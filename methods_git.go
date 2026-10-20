@@ -33,7 +33,6 @@ func (s *server) handleGit(req *request) response {
 		return *bad
 	}
 	req.shadow = s.gitShadow
-	defer func() { req.shadow.releaseRepos(req.heldRepos) }()
 	// The daemon-wide window of gitWideLimit counts this request while it runs.
 	if offSwitchSet(req.Params) {
 		s.offGitRequests.Add(1)
@@ -171,10 +170,19 @@ func callerTimeoutFired(ctx context.Context) bool {
 }
 
 // isRepo runs right after hostileConfigRefusal on dir, so it runs no precursor
-// (hardenedGitFirst) and pins the hooks of that check's listing l.
-func isRepo(u gitUse, dir string, l configListing) bool {
-	out, ok := hardenedGitFirst(u, dir, false, l, "rev-parse", "--is-inside-work-tree")
-	return ok && out == "true"
+// (hardenedGitFirst) and pins the hooks of that check's listing l. err is the
+// error of the call.
+func isRepo(u gitUse, dir string, l configListing) (bool, error) {
+	out, err := hardenedGitRunPre(u, dir, false, &l, nil, "rev-parse", "--is-inside-work-tree")
+	return err == nil && out == "true", err
+}
+
+// copyGoneResult is the frame of git.worktree_create for a git call whose
+// repository folder went: the text of that call alone, as for the text of
+// `repoLimitError` (from the code, not measured for `repoCopyGoneText` and its
+// listing form).
+func copyGoneResult(req *request, err error) response {
+	return okResult(req.ID, worktreeResult{Success: false, Error: err.Error(), ErrorCode: "worktree_add_failed"})
 }
 
 func gitInfo(req *request) response {
@@ -312,7 +320,11 @@ func gitInfo(req *request) response {
 	if c.noRepo {
 		return notRepo()
 	}
-	if _, ok := hardenedGitFirst(req.use, p.Path, true, c.listing, "rev-parse", "--git-dir"); !ok {
+	// A call whose repository folder went answers its text (from the code, not
+	// measured). The later calls of git.info keep their answers on a failure.
+	if _, err := hardenedGitRunPre(req.use, p.Path, true, &c.listing, nil, "rev-parse", "--git-dir"); copyGone(err) {
+		return errResult(req.ID, codeInternal, err.Error())
+	} else if err != nil {
 		return notRepo()
 	}
 	// The root is the folder where the walk of the trust check found the repository
@@ -600,6 +612,9 @@ func gitStatus(req *request) response {
 	// K1 call 3. Its answer is the common directory, in the spelling that git gives
 	// it. A failure answers isRepo:false (row n17b).
 	out, err := hardenedGitRunPre(req.use, p.BaseRepo, true, &c.listing, nil, "rev-parse", "--absolute-git-dir")
+	if copyGone(err) {
+		return errResult(req.ID, codeInternal, err.Error())
+	}
 	if err != nil || out == "" {
 		return notRepo
 	}
@@ -722,7 +737,9 @@ func gitListBranches(req *request) response {
 	// from inside a `.git` directory, unlike git.info's --is-inside-work-tree). The
 	// reference returns the full branches shape (branches:[]) on a non-repo, not
 	// git.info's bare notRepoResult. The refusal check above was its precursor.
-	if _, ok := hardenedGitFirst(req.use, p.Path, true, c.listing, "rev-parse", "--git-dir"); !ok {
+	if _, err := hardenedGitRunPre(req.use, p.Path, true, &c.listing, nil, "rev-parse", "--git-dir"); copyGone(err) {
+		return errResult(req.ID, codeInternal, err.Error())
+	} else if err != nil {
 		return okResult(req.ID, branchesResult{Branches: []string{}})
 	}
 	// stdout only, AND propagate a failure — the same two rules git.status
@@ -890,7 +907,14 @@ func gitWorktreeCreateLocked(req *request, p *gitParams, repo string) response {
 	//
 	// A repository test that its time limit stopped answers the stop text as it
 	// is, and nothing is made (cell TI of round task010-04, Linux VM).
-	if c.noRepo || !isRepo(req.use, repo, c.listing) || req.use.noWorkTree(repo) {
+	inRepo := false
+	if !c.noRepo {
+		var err error
+		if inRepo, err = isRepo(req.use, repo, c.listing); copyGone(err) {
+			return copyGoneResult(req, err)
+		}
+	}
+	if !inRepo || req.use.noWorkTree(repo) {
 		if err := req.stop.halted(); err != nil {
 			return okResult(req.ID, worktreeResult{Success: false, Error: err.Error(), ErrorCode: "worktree_add_failed"})
 		}
@@ -946,12 +970,18 @@ func gitWorktreeCreateLocked(req *request, p *gitParams, repo string) response {
 		// stopped gets the same frame, with the stop text (cell TB of round
 		// task010-02, Linux VM).
 		topLevel, err := repoTopLevelCall(req.use, repo, nil)
+		if copyGone(err) {
+			return copyGoneResult(req, err)
+		}
 		if err != nil {
 			return okResult(req.ID, worktreeResult{Success: false, ErrorCode: "mkdir_failed",
 				Error: parentStepPrefix + "cannot determine the repository's work tree: " + err.Error()})
 		}
 		_ = repositoryCheckError(req.use, repo, nil)
 		listed, err := worktreeListTwice(req.use, repo)
+		if copyGone(err) {
+			return copyGoneResult(req, err)
+		}
 		if err != nil {
 			return okResult(req.ID, worktreeResult{Success: false, ErrorCode: "mkdir_failed",
 				Error: parentStepPrefix + "cannot list the repository's worktrees: " + err.Error()})
@@ -1232,6 +1262,9 @@ func gitWorktreeCreateLocked(req *request, p *gitParams, repo string) response {
 	// (cell V12 of round tier0-10). macOS is not measured: it gets the same
 	// stop. A call that a signal ended is not measured either. In the
 	// other states the create goes on with the directory of repoGitDir.
+	if gitDirMustBeReal && req.use.shadow() && copyGone(gitDirErr) {
+		return refuseAdd(gitDirErr.Error())
+	}
 	if gitDirMustBeReal && req.use.shadow() && gitDirErr != nil {
 		return refuseAdd(gitDirAddWrap + gitDirErr.Error())
 	}
@@ -1353,6 +1386,11 @@ func gitWorktreeCreateLocked(req *request, p *gitParams, repo string) response {
 	addStderr, addErr := worktreeAdd(baseCtx, req.use, repo, p.WorktreePath, checkpoint, addArgs...)
 	if resp, ok := incompleteAdd(addErr, createdBranch); ok {
 		return resp
+	}
+	// An add whose repository folder went gets the rollback of a failed add,
+	// with the text alone and no fallback add (from the code, not measured).
+	if copyGone(addErr) {
+		return refuseAdd(addErr.Error())
 	}
 	// A stopped attach add gets no fallback, so one add runs, as on 5fd08069
 	// (cell T7 of round task010-01, Linux VM).
@@ -1593,6 +1631,16 @@ func gitWorktreeCreateLocked(req *request, p *gitParams, repo string) response {
 	// rev-parse --absolute-git-dir the record compare is as before (not measured).
 	if adminRecordMismatch(indexDir, p.WorktreePath, gitAnswered) {
 		_, err := gitDirWorkTreeToplevelIn(req.stop.context(), gitDir, repo, req.use.gitDirPin(repo), req.use.gitDirFront())
+		// A call whose repository folder went answers its text, with the same
+		// rollback (from the code, not measured).
+		if copyGone(err) {
+			undo, kept := "", false
+			if newEntry != "" {
+				undo, kept = undoFailedCheckout(req.use, repo, p.WorktreePath, createdBranch, checkpoint, created)
+			}
+			return okResult(req.ID, worktreeResult{Success: false, Error: err.Error() + undo,
+				ErrorCode: "worktree_add_failed", BranchKept: kept})
+		}
 		if err != nil && !isGitStop(err) && newEntry != "" {
 			undo, kept := undoFailedCheckout(req.use, repo, p.WorktreePath, createdBranch, checkpoint, created)
 			return okResult(req.ID, worktreeResult{
@@ -2239,6 +2287,15 @@ func gitWorktreeRemoveLocked(req *request, p *gitParams, repo string) response {
 			var checkErr error
 			if !c.refused() {
 				answered, checkErr = repositoryGitDir(req.use, repo, &c.listing)
+			}
+			// A call whose repository folder went answers its text after the words
+			// of the lock check, as the text of `repoLimitError` does, with no
+			// repeat (from the code, not measured).
+			if c.gone {
+				return refuse("failed to remove worktree: could not check whether " + p.WorktreePath + " is locked: " + c.refusal)
+			}
+			if copyGone(checkErr) {
+				return refuse("failed to remove worktree: could not check whether " + p.WorktreePath + " is locked: " + checkErr.Error())
 			}
 			if c.refused() || checkErr != nil {
 				repeatRepositoryCheck(req.use, repo)

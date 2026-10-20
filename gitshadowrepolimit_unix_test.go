@@ -25,9 +25,7 @@ func TestShadowRepoLimitKeepsCopiesAfterAFailedRemove(t *testing.T) {
 	_, gitC := configRepo(t)
 	use := func(dir string) string {
 		t.Helper()
-		p := f.sync(t, dir)
-		f.h.releaseRepos([]string{filepath.Base(p)})
-		return p
+		return f.sync(t, dir)
 	}
 	a := use(f.repo)
 	sweptThere(t, filepath.Join(a, "info", "exclude"))

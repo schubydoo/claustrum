@@ -299,6 +299,11 @@ func hardenedGitCmd(ctx context.Context, u gitUse, dir string, heavy bool, pre *
 	}
 	cmd := exec.CommandContext(ctx, "git", withFront(u.front(dir), hardenedProfileArgs(heavy, args...))...)
 	cmd.Dir = dir
+	// The listing before the call was its build, so a folder of the copy that
+	// went since then is not made again here: the start refuses (holdRepoCopy).
+	// On 5fd08069 no folder of a request with a normal reply went between a
+	// listing and the call after it (E3L cell 54, Linux VM).
+	u.noRenew = true
 	cmd.Env = u.hardenedGitEnv(heavy, u.pin(dir), hooks)
 	return cmd
 }
@@ -489,6 +494,12 @@ func hardenedGitCheckout(ctx context.Context, u gitUse, leaf, gitDir, indexFile 
 	// macOS VM). If that `git version` fails too, its text replaces the hooks
 	// refusal (cell E13 of round task083-01, Linux VM). Without a copy the
 	// checkout goes on as before (not measured).
+	//
+	// A listing whose repository folder went refuses with its own text, and
+	// no `git version` runs (from the code, not measured).
+	if u.shadow() && copyGone(pre.err) {
+		return "", false, checkoutRefusal(pre.err.Error())
+	}
 	if u.shadow() && pre.err != nil {
 		if whole := cannotRunText(); whole != "" {
 			return "", false, checkoutRefusal(whole)
@@ -568,7 +579,7 @@ func hardenedGitCheckout(ctx context.Context, u gitUse, leaf, gitDir, indexFile 
 	var outBuf, errBuf bytes.Buffer
 	cmd.Stdout = &outBuf
 	cmd.Stderr = &errBuf
-	err = cmd.Run()
+	err = runHeld(cmd, cmd.Run)
 	drained = errors.Is(err, exec.ErrWaitDelay)
 	if drained && deadlined {
 		// git exited 0 but a descendant held the pipe past the cap. WaitDelay closed
@@ -607,17 +618,22 @@ const ownConfigStopText = "git took too long: Claude stopped git config after 30
 // itself, and then the cap or the timeout arm answers (round task008-05, cells
 // P1 and P2, Linux VM). A listing that fails after the deadline of the caller
 // gives this text too (not measured).
+//
+// The listing holds the repository folder of the copy (runHeld). A listing
+// whose folder went gives its own text alone (from the code, not measured).
 func ownConfigListing(leaf, gitDir string, env []string) string {
 	bounded, cancel := context.WithTimeout(context.Background(), ownConfigBound)
 	defer cancel()
 	cmd := exec.CommandContext(bounded, "git", "--git-dir="+gitDir, "config", "-z", "--list")
 	cmd.Dir = leaf
 	cmd.Env = env
-	err := cmd.Run()
+	err := runHeld(cmd, cmd.Run)
 	cause := ""
 	switch {
 	case err == nil:
 		return ""
+	case copyGone(err):
+		return err.Error()
 	case bounded.Err() != nil:
 		cause = ownConfigStopText
 	default:
@@ -969,6 +985,9 @@ type configCheck struct {
 	// listing is the listing of a check that passed. The first hardened call after the
 	// check pins its hooks (hardenedGitFirst).
 	listing configListing
+	// gone marks a refusal of a listing whose repository folder went (copyGone).
+	// refusal then has its text alone.
+	gone bool
 }
 
 // refused reports whether the method stops on this check, with a refusal or with the
@@ -1038,6 +1057,9 @@ func hostileConfigRefusal(u gitUse, dir string, heavy bool) configCheck {
 // failedListingCheck sorts the failed listing r of dir into its class: outcomes 1 to
 // 3 of hostileConfigRefusal. heavy is the profile of the listing.
 func failedListingCheck(u gitUse, r listingRun, dir string, heavy bool) configCheck {
+	if copyGone(r.err) {
+		return configCheck{refusal: r.err.Error(), gone: true}
+	}
 	if r.gitNotOnPath() {
 		return configCheck{noRepo: true}
 	}

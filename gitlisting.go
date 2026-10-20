@@ -402,7 +402,12 @@ func failedListingText(u gitUse, r listingRun, heavy bool) string {
 	// A listing that its time limit stopped refuses with the hooks refusal and the
 	// stop text (gitStopped), and no `git version` follows (cell T10 of round
 	// task010-01, Linux and macOS VMs, and cell T10w on a Windows VM).
-	if isGitStop(r.err) {
+	//
+	// A listing whose repository folder went refuses with its own text: the
+	// listing form (`listingInForcePrefix` + `repoCopyGoneText`), or the text of
+	// a failed remake (copyGone). No `git version` follows (from the code, not
+	// measured).
+	if isGitStop(r.err) || copyGone(r.err) {
 		return r.err.Error()
 	}
 	if v := gitVersionRun(u, heavy); v.err != nil {
