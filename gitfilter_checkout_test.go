@@ -5,6 +5,7 @@ import (
 	"os"
 	"path/filepath"
 	"slices"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -231,29 +232,32 @@ func TestCheckoutOwnConfigListingStops(t *testing.T) {
 }
 
 // TestCheckoutOwnConfigListingOutlivesDeadline: the `timeoutMs` of the caller
-// does not end the second listing. The stub holds it 3.5 s past a deadline of
-// 2000 ms and then runs git. After it, 65 names get the cap text (cell P1)
-// and 64 names get the timeout frame (cell P2). Round task008-05 shows both
-// frames on a Linux VM.
+// does not end the second listing. The stub holds it at a gate, and the
+// deadline fires there (deadlineAt). The gate opens 1 s later, and the stub
+// then runs git. After it, 65 names get the cap text (cell P1) and 64 names
+// get the timeout frame (cell P2). Round task008-05 shows both frames on a
+// Linux VM, with a timeoutMs of 2000.
 func TestCheckoutOwnConfigListingOutlivesDeadline(t *testing.T) {
-	const hold = 3500 * time.Millisecond
 	for _, row := range []struct {
 		cell  string
 		names int
 		want  string
 	}{
 		{"P1 65 names", 65, `{"jsonrpc":"2.0","id":1,"result":{"success":false,"error":"git worktree add failed (checkout): this repository's git config cannot be used: it defines more than 64 filters","errorCode":"worktree_add_failed"}}`},
-		{"P2 64 names", 64, `{"jsonrpc":"2.0","id":1,"result":{"success":false,"error":"git worktree add timed out after 2000ms (deadline expired during the checkout): context deadline exceeded","errorCode":"timeout"}}`},
+		{"P2 64 names", 64, `{"jsonrpc":"2.0","id":1,"result":{"success":false,"error":"git worktree add timed out after ` + strconv.Itoa(markerTimeoutMs) + `ms (deadline expired during the checkout): context deadline exceeded","errorCode":"timeout"}}`},
 	} {
 		t.Run(row.cell, func(t *testing.T) {
 			f := newCheckoutRuleFixture(t)
 			f.addConfig(t, filterSections(row.names, "\tsmudge = false\n"))
-			slowGit(t, "config,-z,--list", "pre", hold, "", "")
+			gate := gateStub(t, "config,-z,--list", 30*time.Second, "", "")
 			t.Setenv("CLAUSTRUM_GITSTUB_ENVEND", "GIT_INDEX_FILE=index")
-			start := time.Now()
-			raw, calls := f.create(t, map[string]any{"timeoutMs": 2000})
-			if took := time.Since(start); took < hold {
-				t.Errorf("the reply came after %v, want it after the held listing (%v)", took, hold)
+			deadlineAt(t, func() bool { return exists(gate + ".in") }, func() {
+				time.Sleep(time.Second)
+				_ = os.WriteFile(gate, nil, 0o644)
+			})
+			raw, calls := f.create(t, map[string]any{"timeoutMs": markerTimeoutMs})
+			if !exists(gate + ".out") {
+				t.Errorf("the reply came before the held listing passed its gate")
 			}
 			if raw != row.want {
 				t.Fatalf("git.worktree_create = %s\nwant %s", raw, row.want)

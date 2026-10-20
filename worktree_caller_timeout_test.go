@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"os"
@@ -243,12 +244,10 @@ const markerTimeoutMs = 60000
 // the git stub, not at a time that depends on the speed of the host. The
 // timer of timeoutMs stays armed behind it. Once the deadline fired, then runs,
 // if it is not nil. fired reports when the deadline fired, or the zero time.
-// Unlike the timer, the fired context reports context.Canceled from Err. The
-// create tests its cause and whether it is done, and the checkout reads its
-// Deadline, which the wrapper keeps from the timer (from the code). A git child
-// that exits 0 after the cancel can give "context canceled" here where the
-// timer gives "context deadline exceeded". The tests assert the stub's stderr
-// or the killed text, so that case fails a test and passes no wrong text.
+// As the timer does, the fired context reports context.DeadlineExceeded from
+// Err (markerCtx). The create tests its cause and whether it is done, and the
+// checkout reads its Deadline, which the wrapper keeps from the timer (from the
+// code). A context derived from it reports context.Canceled.
 func deadlineAt(t *testing.T, ready func() bool, then func()) (fired func() time.Time) {
 	t.Helper()
 	old := callerDeadline
@@ -277,12 +276,38 @@ func deadlineAt(t *testing.T, ready func() bool, then func()) (fired func() time
 				}
 			}
 		}()
-		return ctx, func() { cancel(context.Canceled); stop() }
+		return markerCtx{ctx}, func() { cancel(context.Canceled); stop() }
 	}
 	return func() time.Time {
 		mu.Lock()
 		defer mu.Unlock()
 		return at
+	}
+}
+
+// markerCtx is the context of deadlineAt. A cancel with the cause of the
+// caller's deadline reads as an expired deadline, as from the timer. So
+// exec.Cmd answers "context deadline exceeded" for a git call that cannot
+// start after the deadline.
+type markerCtx struct{ context.Context }
+
+func (c markerCtx) Err() error {
+	if err := c.Context.Err(); err == nil || !errors.Is(context.Cause(c.Context), errCallerTimeoutMs) {
+		return err
+	}
+	return context.DeadlineExceeded
+}
+
+// reapedFor reports true once the stub call whose pid is in pidFile was reaped
+// and d has passed since. Right at the reap exec.Cmd can still watch the
+// context. A deadline there gave the frame "during the checkout" in one run.
+func reapedFor(pidFile string, d time.Duration) func() bool {
+	var reaped time.Time
+	return func() bool {
+		if reaped.IsZero() && stubReaped(pidFile) {
+			reaped = time.Now()
+		}
+		return !reaped.IsZero() && time.Since(reaped) >= d
 	}
 }
 
@@ -409,28 +434,6 @@ func killedSuffix() string {
 		return "exit status 1"
 	}
 	return "signal: killed"
-}
-
-// calibrate returns the slowest of four full creates through the stub, with
-// nothing slowed: two in a plain repository and two in a linked one. A deadline
-// placed at twice this, plus a margin, falls after the add and the checkout on the
-// same host under the same load. Four samples over both layouts, because the time
-// of one create varies from run to run: on a macOS VM it went from 284 ms to
-// 1180 ms across 40 runs. A deadline from two plain creates fired before the
-// checkout of a linked case one time on a macOS CI runner (issue 463).
-func calibrate(t *testing.T, realGit string) time.Duration {
-	t.Helper()
-	var worst time.Duration
-	for i := 0; i < 4; i++ {
-		f := newWTFixture(t, i%2 == 1)
-		s := newTestServer(t)
-		raw, d := f.create(t, s, "w1", "", 0)
-		if !strings.Contains(raw, `"success":true`) {
-			t.Fatalf("calibration create = %s, want success", raw)
-		}
-		worst = max(worst, d)
-	}
-	return worst
 }
 
 func TestWorktreeCreateCallerTimeout(t *testing.T) {
@@ -762,18 +765,9 @@ func TestWorktreeCreateCallerTimeout(t *testing.T) {
 				slowGit(t, "read-tree", "hold", drainCap+30*time.Second, "", "")
 				self := filepath.Join(t.TempDir(), "self")
 				t.Setenv("CLAUSTRUM_GITSTUB_HOLDSELF", self)
-				// The deadline fires 300 ms after the stub was reaped. Right at the reap
-				// exec.Cmd can still watch the context. A deadline there gave the frame
-				// "during the checkout" in one run of this test.
-				var reaped time.Time
-				ready := func() bool {
-					if reaped.IsZero() && stubReaped(self) {
-						reaped = time.Now()
-					}
-					return !reaped.IsZero() && time.Since(reaped) >= 300*time.Millisecond
-				}
+				// The deadline fires 300 ms after the stub was reaped.
 				var copyBefore atomic.Bool
-				fired := deadlineAt(t, ready, func() {
+				fired := deadlineAt(t, reapedFor(self, 300*time.Millisecond), func() {
 					b, _ := os.ReadFile(log)
 					copyBefore.Store(strings.Contains(string(b), "\x1fls-files\x1f"))
 				})

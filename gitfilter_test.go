@@ -8,6 +8,7 @@ import (
 	"slices"
 	"strconv"
 	"strings"
+	"sync/atomic"
 	"testing"
 	"time"
 )
@@ -353,8 +354,9 @@ func TestWorktreeCreateFilterOfConditionalInclude(t *testing.T) {
 // VMs).
 //
 // The stub holds that listing and no other call: its log has one "held" line.
-// The read of the config file is not held. The held listing sleeps 1 s past
-// the deadline and ends.
+// The read of the config file is not held. The deadline fires when the held
+// line is in the log (deadlineAt). The listing then sleeps 1 s and ends: its
+// "held-end" line is in the log at the reply.
 func TestWorktreeCreateDeadlineDuringFilterListing(t *testing.T) {
 	requireGit(t)
 	realGit, err := exec.LookPath("git")
@@ -362,19 +364,31 @@ func TestWorktreeCreateDeadlineDuringFilterListing(t *testing.T) {
 		t.Fatal(err)
 	}
 	installGitSlowStub(t, realGit)
-	lateMs := int((2*calibrate(t, realGit) + 500*time.Millisecond).Milliseconds())
 	f := newWTFixture(t, false)
 	log := filepath.Join(t.TempDir(), "argv.log")
 	t.Setenv("CLAUSTRUM_GITSTUB_LOG", log)
 	t.Setenv("CLAUSTRUM_GITSTUB_FAIL_LISTING", "hold-full")
-	holdMs := lateMs + 1000
+	// 3 s, so a poll of deadlineAt that a loaded runner starves still sees
+	// the held listing before it ends.
+	const holdMs = 3000
 	t.Setenv("CLAUSTRUM_GITSTUB_HOLD_MS", strconv.Itoa(holdMs))
-	raw, took := f.create(t, newTestServer(t), "w1", "", lateMs)
-	wantError(t, raw, "git worktree add timed out after "+strconv.Itoa(lateMs)+
+	logHas := func(line string) bool {
+		b, _ := os.ReadFile(log)
+		return slices.Contains(strings.Split(string(b), "\n"), line)
+	}
+	var endBefore atomic.Bool
+	deadlineAt(t, func() bool { return logHas("held\x1ffull") }, func() {
+		endBefore.Store(logHas("held-end\x1ffull"))
+	})
+	raw, took := f.create(t, newTestServer(t), "w1", "", markerTimeoutMs)
+	wantError(t, raw, "git worktree add timed out after "+strconv.Itoa(markerTimeoutMs)+
 		"ms (deadline expired during the checkout): context deadline exceeded", "timeout")
 	f.assertRolledBack(t, []string{}, false)
 	if held := gitCalls(t, log, "held"); len(held) != 1 || held[0][1] != "full" {
 		t.Errorf("held calls = %q, want one of the full listing", held)
+	}
+	if endBefore.Load() || !logHas("held-end\x1ffull") {
+		t.Errorf("held listing ended before the deadline (%v) or not at all before the reply, want it to run on past the deadline", endBefore.Load())
 	}
 	if hold := time.Duration(holdMs) * time.Millisecond; took < hold {
 		t.Errorf("the create answered after %s, want it after the held listing (%d ms)", took, holdMs)

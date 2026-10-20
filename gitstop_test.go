@@ -239,12 +239,12 @@ func TestWorktreeCreateAddStopsAtTheCallLimit(t *testing.T) {
 // The wide limit holds while any request of the daemon with "shadowDirOff":true
 // runs, also for a request without it on another repository. When the last such
 // request answered, the limit of a call is back (round task010-01: cell T8 on
-// Linux, macOS and Windows VMs, T9 on a Linux VM). The hold is 3 s and
+// Linux, macOS and Windows VMs, T9 on a Linux VM). The hold is 2 s and
 // the limit of a call 1 s.
 func TestGitWideLimitWhileAnOffRequestRuns(t *testing.T) {
 	f := newWTFixture(t, false)
 	installGitSlowStub(t, f.realGit)
-	slowGit(t, "for-each-ref", "pre", 3*time.Second, "", "")
+	slowGit(t, "for-each-ref", "pre", 2*time.Second, "", "")
 	shortGitLimit(t, testCallLimit)
 	s := newTestServer(t)
 	ok := `{"jsonrpc":"2.0","id":1,"result":{"isRepo":true,"branches":["ex","main"]}}`
