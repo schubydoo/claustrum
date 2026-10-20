@@ -158,6 +158,54 @@ func TestCheckoutOwnConfigListingFails(t *testing.T) {
 	f.wantGone(t)
 }
 
+// TestCheckoutListedSwapAnswers drives the two answers of the Windows test
+// after the first listing of the checkout (gitUse.listedSwap) on every
+// system, through the seam checkoutListedSwap. A changed git directory stops
+// the checkout before the second listing. A file at the path runs the second
+// listing first: its failure gives the text of ownConfigListing (cell X2 of
+// round task077-03, Windows VM). A second listing that passes gives the link
+// text and no read-tree call (claustrum's own, not measured). Mutations: drop
+// the return of `if changed` in hardenedGitCheckout (row changed), or the
+// return of `if fileSwap` (row file, listing passes).
+func TestCheckoutListedSwapAnswers(t *testing.T) {
+	for _, row := range []struct {
+		name              string
+		fileSwap, changed bool
+		failListing       bool
+		wantSecond        bool
+	}{
+		{name: "changed", changed: true},
+		{name: "file, listing fails", fileSwap: true, failListing: true, wantSecond: true},
+		{name: "file, listing passes", fileSwap: true, wantSecond: true},
+	} {
+		t.Run(row.name, func(t *testing.T) {
+			f := newCheckoutRuleFixture(t)
+			old := checkoutListedSwap
+			t.Cleanup(func() { checkoutListedSwap = old })
+			checkoutListedSwap = func(gitUse) (bool, bool) { return row.fileSwap, row.changed }
+			want := failedFrame(t, "git worktree add failed (checkout): "+repoConfigPrefix+gitDirLinkText(f.gitDir))
+			if row.failListing {
+				stubSecondListing(t, 0)
+				want = failedFrame(t, ownConfigText("exit status 1"))
+			}
+			raw, calls := f.create(t, nil)
+			if raw != want {
+				t.Fatalf("git.worktree_create = %s\nwant %s", raw, want)
+			}
+			second := slices.ContainsFunc(calls, func(c envCall) bool {
+				return c.listing() && slices.ContainsFunc(c.env, func(kv string) bool { return strings.HasPrefix(kv, "GIT_INDEX_FILE=") })
+			})
+			if second != row.wantSecond {
+				t.Errorf("the second listing ran = %v, want %v", second, row.wantSecond)
+			}
+			if ranReadTree(calls) {
+				t.Error("a read-tree call ran, want none")
+			}
+			f.wantGone(t)
+		})
+	}
+}
+
 // TestCheckoutOwnConfigListingStops: the bound ends a second listing that does
 // not end, and the create is refused with the stop text. Cell C11 of round
 // task008-01 shows it on Linux and macOS VMs. The seam shrinks the bound of 30

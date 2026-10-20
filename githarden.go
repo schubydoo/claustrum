@@ -464,6 +464,10 @@ var worktreeCreateDrainCap = 5 * time.Second
 // runs under the context of the request, not under ctx: the timeoutMs of the
 // caller does not end it. On 5fd08069 a listing held for 10 s with a timeoutMs of
 // 3000 runs to its end, and then the timeout frame comes (cell T12, Linux VM).
+// checkoutListedSwap is gitUse.listedSwap. It is a variable so that a test on
+// every system can drive the two answers of the Windows test.
+var checkoutListedSwap = gitUse.listedSwap
+
 func hardenedGitCheckout(ctx context.Context, u gitUse, leaf, gitDir, indexFile string, pin []string, rule *filterRule, args ...string) (stderr string, drained bool, err error) {
 	if err := u.stop.halted(); err != nil {
 		return "", false, err
@@ -494,7 +498,7 @@ func hardenedGitCheckout(ctx context.Context, u gitUse, leaf, gitDir, indexFile 
 	// On Windows the path of the git directory must still name the held folder
 	// after the first listing (errGitDirChanged). A regular file at the path
 	// goes on to the second listing (gitUse.listedSwap).
-	fileSwap, changed := u.listedSwap()
+	fileSwap, changed := checkoutListedSwap(u)
 	if changed {
 		return "", false, errGitDirChanged
 	}
