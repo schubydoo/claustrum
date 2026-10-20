@@ -43,6 +43,20 @@ func openHeldGitDir(path string) (*os.Root, error) {
 // one folder (s3p2-macos cells B1 and B2, macOS VM).
 const statusFollowsPrintedGitDir = false
 
+// makeRequestDir makes the short-lived folder name of a request (mode 0700) in
+// the folder of the daemon. On Linux and macOS it goes through root, the root
+// at folder (requestDir). No row has a deny entry with enabled privileges on
+// Linux or macOS (not measured).
+func makeRequestDir(root *os.Root, _, name string) error {
+	return root.Mkdir(name, 0o700)
+}
+
+// listedSwap is the test of a create after the first listing of the checkout.
+// On Linux and macOS no test runs there, so it reports no swap.
+func (gitUse) listedSwap() (fileSwap, changed bool) {
+	return false, false
+}
+
 // openShadowLockFile makes the lock file of the daemon (0600, 0 bytes) and
 // takes the lock of the daemon on it. The daemon holds the lock until it closes
 // the file. On a Linux VM /proc/locks shows `FLOCK  ADVISORY  WRITE <daemon

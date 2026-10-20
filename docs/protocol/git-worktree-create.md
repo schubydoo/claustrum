@@ -131,7 +131,7 @@ In the state `shadow` a create holds the git directory of `baseRepo` open from i
 - The git directory must be a real directory at the gate. On Windows a junction or a directory symbolic link there is refused, on every git method without `"shadowDirOff": true`. With that member both link kinds pass, and git works in the folder behind the link, as on `5fd08069` (Windows VM). On Linux and macOS a `.git` that is a symbolic link before the request is resolved first, and the daemon holds its target. A change of that link is a change of the path too.
 - The daemon's own deletes, renames, new folders and file writes inside the git directory go through the held folder. A folder that is put at the path while the create runs gets none of them, except the directory that the hold moves to.
 - The hold stops no rename of the git directory by another process.
-- The steps of the create test that the path still names the held folder. A swap after `rev-parse --absolute-git-dir` and before the add is refused before the add. Git itself goes by the path.
+- The steps of the create test that the path still names the held folder. A swap after `rev-parse --absolute-git-dir` and before the add is refused before the add.
 - A swap after the read-tree call fails the create, and the registration gets no index. On Windows a swap after the first listing of the checkout fails it too. The text starts with `git worktree add failed (checkout): `. The registration and the branch then stay, and the text says so.
 - On Linux and macOS two steps move the hold to a copy of the git directory, and `5fd08069` goes on in it. A link to the copy is put there after the first call or after `rev-parse --abbrev-ref HEAD` (Linux and macOS VMs). Or a real copy is put there while `git worktree add` runs (cell C6 of rounds `tier0-24` and `tier0-25m`, Linux and macOS VMs).
 - On Linux and macOS, a `.git` that became a file with `gitdir: <another git directory>` after `rev-parse --absolute-git-dir` gives `git worktree add failed: cannot locate the repository's git directory: lstat <baseRepo>/.git/commondir: not a directory`.
@@ -163,4 +163,4 @@ A copy that fails does not fail the request. If the deadline of `timeoutMs` expi
 These entries of the divergence catalog apply to this method:
 
 - [D2](../DIVERGENCES.md#d2): a delete refuses a path that is the home directory or holds it.
-- [D24](../DIVERGENCES.md#d24): a rollback and the index placement leave a registration directory that something replaced after the add (the Windows placement is not measured).
+- [D24](../DIVERGENCES.md#d24): a rollback and the index placement leave a registration directory that something replaced. A Windows rollback runs no git call after a `.git` file swap (X1, X1b and X1c).

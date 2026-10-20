@@ -608,11 +608,16 @@ const (
 	includePatternsName    = "patterns"
 )
 
+// requestDirMkdir makes a short-lived folder of a request by its path on
+// Windows (makeRequestDir). It is a variable so that a test can see the call.
+var requestDirMkdir = os.Mkdir
+
 // requestDir makes a new folder for one request and returns its path and the
 // function that removes it. In the state shadow the folder is
 // <S>/<shadowPrefix><n>, made with mode 0700 through a root at the folder of
-// the daemon, and removed through removeEntry. In every other state it is a
-// new folder with tempPrefix in the temporary folder, as before.
+// the daemon (by its path on Windows, see below), and removed through
+// removeEntry. In every other state it is a new folder with tempPrefix in the
+// temporary folder, as before.
 //
 // The shutdown of the daemon removes its folder with every such entry in it,
 // also while the request runs (close). 5fd08069 does so with a `.gitdir-<n>`
@@ -626,6 +631,17 @@ const (
 // create gives `mkdir C:\o\w\run\git-shadow\<S>\.s<n>: Access is denied.`
 // (tables W3 and F1 of val-s3p2b2-7-windows). A folder of the daemon that
 // cannot be opened is not measured: it gives the error of that open.
+//
+// On Windows each such folder is made by its full path with a plain mkdir,
+// not through the root (makeRequestDir). On a Windows VM with a deny entry
+// for new folders on <S> and the backup and restore privileges enabled, the
+// create of 5fd08069 succeeds. The root mkdir of claustrum failed there at
+// `.s<n>` (cell X3 of
+// round task077-03) and at `.index-<n>` (cell X3 of round task077-05). With
+// both privileges disabled both builds fail with the text above (cell X3c).
+// By path the create of claustrum succeeds in cell X3 (round task077-06). The
+// prefixes .config-, .worktreeinclude- and the .gitdir- of git.status are not
+// measured there (claustrum's own). Linux and macOS keep the root.
 func (u gitUse) requestDir(shadowPrefix, tempPrefix string) (dir string, remove func(), err error) {
 	if !u.inFolder() {
 		dir, err = os.MkdirTemp("", tempPrefix)
@@ -645,7 +661,7 @@ func (u gitUse) requestDir(shadowPrefix, tempPrefix string) (dir string, remove 
 			return "", func() {}, err
 		}
 		name := shadowPrefix + strconv.FormatUint(uint64(binary.LittleEndian.Uint32(n[:])), 10)
-		err = root.Mkdir(name, 0o700)
+		err = makeRequestDir(root, u.folder, name)
 		if errors.Is(err, os.ErrExist) {
 			continue
 		}

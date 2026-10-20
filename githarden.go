@@ -464,6 +464,10 @@ var worktreeCreateDrainCap = 5 * time.Second
 // runs under the context of the request, not under ctx: the timeoutMs of the
 // caller does not end it. On 5fd08069 a listing held for 10 s with a timeoutMs of
 // 3000 runs to its end, and then the timeout frame comes (cell T12, Linux VM).
+// checkoutListedSwap is gitUse.listedSwap. It is a variable so that a test on
+// every system can drive the two answers of the Windows test.
+var checkoutListedSwap = gitUse.listedSwap
+
 func hardenedGitCheckout(ctx context.Context, u gitUse, leaf, gitDir, indexFile string, pin []string, rule *filterRule, args ...string) (stderr string, drained bool, err error) {
 	if err := u.stop.halted(); err != nil {
 		return "", false, err
@@ -492,8 +496,10 @@ func hardenedGitCheckout(ctx context.Context, u gitUse, leaf, gitDir, indexFile 
 		return "", false, checkoutRefusal(hooksRefusalPrefix + pre.detail())
 	}
 	// On Windows the path of the git directory must still name the held folder
-	// after the first listing (errGitDirChanged).
-	if shadowStagesAdd && u.swapped("listed") {
+	// after the first listing (errGitDirChanged). A regular file at the path
+	// goes on to the second listing (gitUse.listedSwap).
+	fileSwap, changed := checkoutListedSwap(u)
+	if changed {
 		return "", false, errGitDirChanged
 	}
 	var filters filterPlan
@@ -515,6 +521,9 @@ func hardenedGitCheckout(ctx context.Context, u gitUse, leaf, gitDir, indexFile 
 		env = append(env, "LANGUAGE=C")
 		if text := ownConfigListing(leaf, gitDir, env); text != "" {
 			return "", false, checkoutRefusal(text)
+		}
+		if fileSwap {
+			return "", false, errGitDirChanged
 		}
 		if filters.tooManyFilters {
 			return "", false, checkoutRefusal(tooManyFiltersText)
@@ -639,6 +648,13 @@ func ownConfigListing(leaf, gitDir string, env []string) string {
 //     state and makes no git call after the read-tree call (cells swp-copy and
 //     swp-marker of val-s3p2b2-13-linux2, Linux VM, 6 of 6 runs. Cells p-copy
 //     and p-marker of val-s3p2b2-13-macos, macOS VM, 11 of 11 runs).
+//
+// A regular file at `repo\.git` while the first listing runs does not give
+// errGitDirChanged there. 5fd08069 then runs the second listing, which fails
+// with exit 128. It answers the text of ownConfigListing with the undo text
+// above (cell X2 of round task077-03, Windows VM, 2 of 2 runs). A second
+// listing that passes there gives errGitDirChanged, so no read-tree call runs
+// (claustrum's own, not measured).
 //
 // A junction that is put there while the second listing runs gets no test:
 // the read-tree call then runs and fails by itself (points 11 and 12). A
