@@ -86,10 +86,8 @@ jobs:
     strategy:
       fail-fast: false
       # Windows runs the suite in three shards, because the top-level tests run
-      # one at a time and are slowest there. On one Windows run the worktree
-      # tests took 204 s and the rest 184 s. With the git.status tests the rest
-      # took 467 s, against the 600 s default limit of go test. Two shards run a -run
-      # pattern and the third skips both, so together they run every test once.
+      # one at a time and are slowest there. Two shards run a -run pattern and
+      # the third skips both, so together they run every test once.
       # macOS runs two shards. One macOS run took 461 s for the whole suite,
       # against the same 600 s default. Each leg now runs with the 12 minute limit
       # of the go test step. The git shard runs the worktree, the git.status,
@@ -115,9 +113,12 @@ jobs:
           - os: macos-latest
             shard: rest
             select: -skip=^(TestWorktree|TestGitStatus|TestShadow|TestProbe|TestRepoHold)
+          # The Windows worktree shard also takes the tests named TestCreate and
+          # TestCheckout. On main the go test step took 11.0 min in the rest
+          # shard, 7.8 min in the status shard and 5.4 min in this one.
           - os: windows-latest
             shard: worktree
-            select: -run=^TestWorktree
+            select: -run=^(TestWorktree|TestCreate|TestCheckout)
           # The Windows status shard is the short one, so it also takes the
           # tests named TestShadow, TestProbe and TestRepoHold. Most of them are
           # tests of the settings copy. It takes the tests named TestInstall and
@@ -128,7 +129,7 @@ jobs:
             select: -run=^(TestGitStatus|TestShadow|TestProbe|TestRepoHold|TestInstall|TestEnsure)
           - os: windows-latest
             shard: rest
-            select: -skip=^(TestWorktree|TestGitStatus|TestShadow|TestProbe|TestRepoHold|TestInstall|TestEnsure)
+            select: -skip=^(TestWorktree|TestCreate|TestCheckout|TestGitStatus|TestShadow|TestProbe|TestRepoHold|TestInstall|TestEnsure)
     env:
       # Renovate bumps this via a customManagers entry in the shared
       # schubydoo/renovate-config:claustrum preset — the same shape as
