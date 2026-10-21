@@ -2517,12 +2517,12 @@ that measured it.
     - Equal in the state `fallback-git`: the names of the short-lived entries and
       the variables (cell Q-S4c of round `val-s3p2b2-5`, Windows VM).
     - Equal: the top folder pair. After `rev-parse --absolute-git-dir`, a
-      create runs the heavy `--git-dir=<dir> --work-tree=<repo> rev-parse
-      --show-toplevel` call with its listing, with and without the member. It
-      runs when `<git dir>/worktrees` exists and no entry there names the new
-      worktree (cell R-Q2b of round `task084-01`, Linux, macOS and Windows VMs,
-      and cell A3 of round `val-s3p2b1`). The state `fallback-git` runs none
-      (claustrum's own, not measured).
+      create runs the `--git-dir=<dir> --work-tree=<repo> rev-parse
+      --show-toplevel` call with its listing, also with the member. It runs
+      when `<git dir>/worktrees` is a real folder and no entry
+      names the leaf. Cells: R-Q2b of `task084-01` (Linux, macOS, Windows
+      VMs), A3 of `val-s3p2b1`, and the C6 and E cells of `task109-01/-02` (Linux
+      VM). `fallback-git` runs none (not measured).
     - Stays, with `worktreeRoot`: `5fd08069` runs one round of six calls
       before the add, after the add and after the checkout. claustrum runs it
       before the add only. The round is `rev-parse --show-toplevel`, `rev-parse
