@@ -61,7 +61,7 @@ func TestEnsureCLIMkdirDenied(t *testing.T) {
 		t.Fatal(err)
 	}
 	zstPath := filepath.Join(dir, "cli.zst")
-	if err := os.WriteFile(zstPath, zstdOf(t, fakeCLI(t, 0)), 0o600); err != nil {
+	if err := os.WriteFile(zstPath, fakeCLIZst(t, 0), 0o600); err != nil {
 		t.Fatal(err)
 	}
 	if err := ensureCLI(installOpts{cliZst: zstPath}, filepath.Join(blocker, "sub", "v1")); err == nil {
@@ -93,7 +93,7 @@ func TestEnsureCLIClearsOccupiedPath(t *testing.T) {
 		t.Fatal(err)
 	}
 	zstPath := filepath.Join(dir, "cli.zst")
-	if err := os.WriteFile(zstPath, zstdOf(t, fakeCLI(t, 0)), 0o600); err != nil {
+	if err := os.WriteFile(zstPath, fakeCLIZst(t, 0), 0o600); err != nil {
 		t.Fatal(err)
 	}
 	if err := ensureCLI(installOpts{cliZst: zstPath}, cliPath); err != nil {
@@ -139,7 +139,7 @@ func TestEnsureCLIRefusesVersionEscapingCliDir(t *testing.T) {
 		t.Fatal(err)
 	}
 	zstPath := filepath.Join(root, "cli.zst")
-	if err := os.WriteFile(zstPath, zstdOf(t, fakeCLI(t, 0)), 0o600); err != nil {
+	if err := os.WriteFile(zstPath, fakeCLIZst(t, 0), 0o600); err != nil {
 		t.Fatal(err)
 	}
 
@@ -190,7 +190,7 @@ func TestEnsureCLIRefusesSymlinkTraversal(t *testing.T) {
 		t.Fatal(err)
 	}
 	zstPath := filepath.Join(root, "cli.zst")
-	if err := os.WriteFile(zstPath, zstdOf(t, fakeCLI(t, 0)), 0o600); err != nil {
+	if err := os.WriteFile(zstPath, fakeCLIZst(t, 0), 0o600); err != nil {
 		t.Fatal(err)
 	}
 
@@ -232,7 +232,7 @@ func TestEnsureCLIFinalComponentSymlinkIsSafe(t *testing.T) {
 		t.Fatal(err)
 	}
 	zstPath := filepath.Join(root, "cli.zst")
-	if err := os.WriteFile(zstPath, zstdOf(t, fakeCLI(t, 0)), 0o600); err != nil {
+	if err := os.WriteFile(zstPath, fakeCLIZst(t, 0), 0o600); err != nil {
 		t.Fatal(err)
 	}
 
@@ -263,7 +263,7 @@ func TestEnsureCLIInstallsSweptVersionNames(t *testing.T) {
 			blob := func() string {
 				t.Helper()
 				p := filepath.Join(root, "cli.zst")
-				if err := os.WriteFile(p, zstdOf(t, fakeCLI(t, 0)), 0o600); err != nil {
+				if err := os.WriteFile(p, fakeCLIZst(t, 0), 0o600); err != nil {
 					t.Fatal(err)
 				}
 				return p
@@ -453,7 +453,7 @@ func TestEnsureCLIRenameFailureCleansUpStaging(t *testing.T) {
 		t.Fatal(err)
 	}
 	zstPath := filepath.Join(root, "cli.zst")
-	if err := os.WriteFile(zstPath, zstdOf(t, fakeCLI(t, 0)), 0o600); err != nil {
+	if err := os.WriteFile(zstPath, fakeCLIZst(t, 0), 0o600); err != nil {
 		t.Fatal(err)
 	}
 	tooLong := strings.Repeat("v", 300) // > NAME_MAX on every supported filesystem
@@ -559,7 +559,7 @@ func TestEnsureCLIKeepsDestinationWhenStagingVanishes(t *testing.T) {
 		t.Fatal(err)
 	}
 	zstPath := filepath.Join(root, "cli.zst")
-	if err := os.WriteFile(zstPath, zstdOf(t, fakeCLI(t, 0)), 0o600); err != nil {
+	if err := os.WriteFile(zstPath, fakeCLIZst(t, 0), 0o600); err != nil {
 		t.Fatal(err)
 	}
 
@@ -602,7 +602,7 @@ func TestEnsureCLIRetriesWhenStagingIsSweptOnce(t *testing.T) {
 		t.Fatal(err)
 	}
 	zstPath := filepath.Join(root, "cli.zst")
-	if err := os.WriteFile(zstPath, zstdOf(t, fakeCLI(t, 0)), 0o600); err != nil {
+	if err := os.WriteFile(zstPath, fakeCLIZst(t, 0), 0o600); err != nil {
 		t.Fatal(err)
 	}
 
