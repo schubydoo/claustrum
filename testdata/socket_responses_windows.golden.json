@@ -62,6 +62,7 @@
         "process.spawn.shellAgentSocket",
         "launcher.managed",
         "server.peer_check",
+        "git.shadow_dir",
         "server.instance_id"
       ],
       "peerCheck": "off"

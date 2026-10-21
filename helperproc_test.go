@@ -1151,6 +1151,25 @@ func runHelper(mode string, args []string) int {
 		// that is not a daemon does. args[0] = lock path, args[1] = ready-file path,
 		// args[2] = a file whose creation makes the fixture let go and exit 0.
 		return runlockHoldEmptyFixture(args)
+	case "peer-netns":
+		// Peer check fixture (Linux): a daemon whose caller has another network
+		// namespace. See peerNetnsFixture.
+		return peerNetnsFixture()
+	case "peer-dial":
+		// Peer check fixture: dial the unix socket args[0]. With args[1] = "exit" it
+		// exits at once, with the connection open. Otherwise it writes args[1] and a
+		// newline, and copies what it reads to stdout until EOF or an error.
+		nc, err := net.Dial("unix", args[0])
+		if err != nil {
+			fmt.Fprintln(os.Stderr, err)
+			return 1
+		}
+		if args[1] == "exit" {
+			return 0
+		}
+		_, _ = nc.Write([]byte(args[1] + "\n"))
+		_ = nc.SetReadDeadline(time.Now().Add(10 * time.Second))
+		_, _ = io.Copy(os.Stdout, nc)
 	default:
 		// "slow:N": sleep N seconds, then exit 0. This is the honest-but-slow CLI
 		// shape: correct output, correct exit code, just not fast. It is the

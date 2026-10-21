@@ -31,6 +31,9 @@ const (
 	// and Windows, and -32005 on Linux and macOS.
 	codeLauncherUnusable = -32004
 	codeLauncherStart    = -32005
+	// codePeerRefused is the code of the frame of a caller that the peer check
+	// refuses (peercheck.go). 5fd08069 sends it on Linux (round task011-01).
+	codePeerRefused = -32006
 )
 
 // request is one inbound JSON-RPC line.

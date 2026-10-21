@@ -63,7 +63,7 @@ There is one binary. A flag selects the mode (`main.go`): `-serve`, `-bridge`,
 | `install.go` | `-install`: CLI download / extract (zstd) / verify (SHA-256) / prune. A `-cli-url` download is verified unconditionally. If a `-cli-checksum` is supplied, claustrum also verifies the local `-cli-zst` blob, as the reference does. The compare is case-sensitive |
 | `*_unix.go` / `*_windows.go` · `pipetransport*.go` | OS specifics (daemonize, process groups on Unix, login-shell PATH) and the opt-in, default-off, Windows-only `-listen-pipe` named-pipe transport (CT-5). On Windows a kill ends the direct child only, and no child is in a job of the daemon. The daemon starts outside the job of its launcher. If that job refuses, the daemon starts inside it and the launcher logs one line. `-keep-children` works on Windows as claustrum's own flag: `89cb6289` exits 2 on it |
 
-The JSON-RPC surface is identical on every OS. Full internals →
+Every OS serves the same JSON-RPC methods. Full internals →
 [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md).
 
 ## Conventions
@@ -695,12 +695,6 @@ B6w). On Windows, after `.git` became a file right after the add, the rollback
 runs no git call, with other frames (cells X1, X1b and X1c). The guard stays by
 the maintainer's decisions of 2026-10-07 and 2026-10-19, not a rule 3 clause.
 See the entry.
-
-D25 is on-wire, Linux only, and only with `CLAUDE_SSH_PEER_CHECK=1` in the daemon
-environment. claustrum has no peer check. It answers `"peerCheck":"unavailable"`
-in `server.capabilities` and serves every caller. `5fd08069` answers
-`"peerCheck":"on"` with a `peerCheckBy` member there (Linux VM). That is the
-maintainer's decision of 2026-10-10, not a rule 3 clause. See the entry.
 
 D27 is on-wire, always-on and Windows-only. The stale step of
 `git.worktree_create` keeps an entry whose `gitdir` record names a path that

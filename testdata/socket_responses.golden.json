@@ -62,6 +62,7 @@
         "process.spawn.shellAgentSocket",
         "launcher.managed",
         "server.peer_check",
+        "git.shadow_dir",
         "git.worktree.external_root",
         "server.instance_id"
       ],

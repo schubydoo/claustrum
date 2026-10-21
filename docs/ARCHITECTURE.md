@@ -30,8 +30,8 @@ Claustrum is one Go binary. A flag selects the mode. The build is static
 | `shellenv_unix.go` / `shellenv_windows.go` | login-shell PATH extraction (Unix) / the daemon's own PATH for `process.spawn` children (Windows) |
 | `shellagent.go` / `shellagent_unix.go` / `shellagent_windows.go` | `process.spawn` SSH agent hand-off: the login shell's `SSH_AUTH_SOCK`, checked and cached (Unix) / no-op (Windows) |
 
-The JSON-RPC surface is the same on every OS. Only the `*_unix.go` /
-`*_windows.go` files are different.
+Every OS serves the same JSON-RPC methods. Only the OS-split files
+(`*_unix.go`, `*_linux.go`, `*_windows.go` and their kin) are different.
 
 ## The three runtime roles
 

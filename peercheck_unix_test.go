@@ -14,8 +14,9 @@ import (
 
 // TestPeerCheckReachesTheDaemonizedChild: the launcher hands CLAUDE_SSH_PEER_CHECK=1
 // to the daemon that it starts. The daemon writes its one line directly before the
-// listening line and answers "unavailable". On macOS that place is the one of
-// 5fd08069 (macOS VM). The daemon is the one that this test started, on a socket
+// listening line and answers the state of its own text: "unavailable" on macOS and
+// "on" on Linux with all parts. On macOS that place is the one of 5fd08069 (macOS
+// VM). The test process is a caller in the same namespaces, so it is served. The daemon is the one that this test started, on a socket
 // in the test's own temp folder, and the test stops it over that socket.
 func TestPeerCheckReachesTheDaemonizedChild(t *testing.T) {
 	if testing.Short() {
@@ -70,8 +71,8 @@ func TestPeerCheckReachesTheDaemonizedChild(t *testing.T) {
 	reply := roundTrip(t, nc, `{"jsonrpc":"2.0","id":1,"method":"server.capabilities","auth":"`+token+`"}`)
 	_ = nc.Close()
 	result, _ := reply["result"].(map[string]any)
-	if got, _ := result["peerCheck"].(string); got != "unavailable" {
-		t.Errorf("peerCheck = %q, want \"unavailable\": %s", got, mustJSON(reply))
+	if got, want := result["peerCheck"], daemonNSText().state(); got != want {
+		t.Errorf("peerCheck = %v, want %q: %s", got, want, mustJSON(reply))
 	}
 
 	b, err := os.ReadFile(filepath.Join(dir, daemonLogName))
@@ -119,7 +120,7 @@ func TestGitChildDoesNotInheritPeerCheck(t *testing.T) {
 	t.Setenv(peerCheckEnv, "0")
 
 	s := newTestServer(t)
-	s.peerCheckAsked = startPeerCheck()
+	s.peerCheck = startPeerCheck()
 	dispatchRaw(t, s, rpcLine(t, "git.info", map[string]any{"path": t.TempDir()}))
 
 	b, err := os.ReadFile(envLog)
