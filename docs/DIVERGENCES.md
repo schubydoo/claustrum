@@ -167,7 +167,6 @@ rather than repeating them in each entry:
 | [D22](#d22) | `git.worktree_remove` refuses a worktree locked in the `.git` folder of `baseRepo`, in four states where `89cb6289` answers success. Two have a daemon `GIT_DIR` and `GIT_COMMON_DIR` of another repository, with the folder present or gone. One has a daemon `GIT_DIR` alone. One has a `baseRepo` that does not exist as sent. With `worktreeRoot`, rows q2 to q4 (Linux VM) differ in the frame too | always-on | always-on | Maintainer decision of 2026-10-03. The frame differs from `89cb6289` in those four states and in rows q2 to q4 | a caller that needs the removal of a locked worktree there, or a measurement that shows the reference refusing there |
 | [D23](#d23) | The environment block of a child is in name order (Windows). The reference does not sort it | always-on (Windows) | always-on | Maintainer decision of 2026-10-13: claustrum stays on Go 1.26, which sorts the block | the reference moves to Go 1.26 or newer |
 | [D24](#d24) | The rollback of `git.worktree_create` keeps a folder that replaced the new registration. `89cb6289` removes it in cells B6 and B6b (Linux and macOS VMs), and in B6b it holds the registration of a live sibling worktree. On Windows a rollback after `.git` became a file runs no git call (cells X1, X1b and X1c of round `task077-03`, X1 and X1b of round `task077-04`) | always-on | always-on | Maintainer decisions of 2026-10-07 and, for cells X1, X1b and X1c, of 2026-10-19. The frames are equal in cells B6 and B6b (Linux and macOS VMs) and B6w of round `task087-03` (Windows VM), and the disk differs. They differ in cells X1, X1b and X1c. The Windows placement is not measured | a measurement that shows the reference keeping such a folder, a decision to match the disk of cells B6 and B6b, or a decision to run the branch step in the repository that the `.git` file names (cells X1, X1b and X1c) |
-| [D25](#d25) | With `CLAUDE_SSH_PEER_CHECK=1`, `server.capabilities` answers `"peerCheck":"unavailable"` and the daemon serves every caller. `5fd08069` answers `"peerCheck":"on","peerCheckBy":["network","pidfd"]` there (Linux VM) | always-on (Linux) | always-on | Maintainer decision of 2026-10-10. The frame differs from `5fd08069` in one of the listed values: `1` on Linux | a client that needs the `"on"` answer on Linux, or a decision to answer as `5fd08069` does there |
 | [D27](#d27) | On Windows the stale step of `git.worktree_create` keeps an entry whose `gitdir` record names a path that exists. `5fd08069` deletes the entry of a live worktree `W1` for a create of `w1` in a folder with case sensitivity on (cell W-CS of round `task084-02`, Windows VM) | always-on (Windows) | always-on | The maintainer's decision of 2026-10-18 | a measurement of `5fd08069` with the same test |
 | [CT-1](#ct-1) | Opt-in `wantPid` → `pid` + `startTime` on spawn/reattach | off (fields omitted) | caller sends `"wantPid":true` | sanctioned optional-param extension | — (additive, degrades both ways) |
 | [CT-2](#ct-2) | `-keep-children` leaves the child tree running on shutdown | off | `-keep-children` / `keep-children` key | off-wire opt-in extension | — |
@@ -930,47 +929,6 @@ Reopen trigger: the reference moves to Go 1.26 or newer.
   `scratch/i429/s45-macos-rollback-last/REPORT.md`. Cells X1, X1b and X1c are in
   `scratch/tier1/task077/round03-windows/REPORT.txt`.
 
-### D25 · Answer `"unavailable"` for the peer check and serve every caller (Linux) { #d25 }
-
-- **Behavior.** claustrum has no peer check. A daemon that starts with
-  `CLAUDE_SSH_PEER_CHECK=1` in its environment answers `"peerCheck":"unavailable"`
-  in `server.capabilities`, with no `peerCheckBy` member. It writes one line
-  before the listening line, at WARN level, and it serves every caller. That
-  holds on Linux, macOS and Windows. The divergence is on Linux only.
-- **Reference side, measured.** A Linux VM ran `5fd08069` with
-  `CLAUDE_SSH_PEER_CHECK=1` in the daemon environment. `server.capabilities`
-  answers `"peerCheck":"on","peerCheckBy":["network","pidfd"]`. Before the
-  listening line the log holds one more line:
-  `[Server] serving only callers in "user:[4026531837] net:1 pidfd"` (the number
-  is the one of that VM). A client of the same user on that VM got its answers.
-- **claustrum side, measured.** On the Linux VM the frame ends with
-  `"peerCheck":"unavailable"`, and the log holds the line
-  `[Server] CLAUDE_SSH_PEER_CHECK is set: this build has no peer check on Linux, serving all callers`
-  after the level tag.
-- **Equal.** With no variable and with the value `0`, `5fd08069` answers
-  `"peerCheck":"off"` (Linux, macOS and Windows VMs). claustrum answers the same
-  on those VMs. With the value `1`, `5fd08069` answers
-  `"peerCheck":"unavailable"` on the macOS VM and on the Windows VM, and
-  claustrum answers the same there. The text of its log line after the level
-  tag equals the line of `5fd08069` there. `89cb6289` has no `peerCheck` member.
-  The other measured values are in [PROTOCOL.md](PROTOCOL.md) → server.*.
-- **Default.** Always-on, Linux only, and only with `CLAUDE_SSH_PEER_CHECK=1` in
-  the daemon environment. **Activate:** always-on. There is no flag and no key.
-- **Why always-on.** The maintainer's decision of 2026-10-10: the difference
-  stays. No clause of rule 3 covers this entry. Rule 4 says that a change to a
-  frame on an honest path is opt-in or does not ship. The maintainer decided on
-  2026-10-10 to accept this frame difference. The entry stands on that decision,
-  and the reopen trigger below takes it back.
-- **Cost.** A client that reads `"unavailable"` on Linux learns that no check
-  runs. An operator who sets the variable on Linux gets a daemon that serves
-  every caller, where `5fd08069` answers `"on"`.
-- **Not measured.** Whether `5fd08069` serves each caller on Linux with the
-  value `1`. Each measured caller ran as the same user on the same VM. Which
-  client sets the variable is not measured either.
-- **Reopen trigger.** A client that needs the `"on"` answer on Linux. Or a
-  decision to answer as `5fd08069` does there.
-- **Pointers.** [PROTOCOL.md](PROTOCOL.md) → server.* and Daemon log.
-
 ### D27 · Keep a stale entry whose record names a path that exists (Windows) { #d27 }
 
 - **Behavior.** On Windows the stale step of `git.worktree_create` compares the
@@ -1272,6 +1230,10 @@ link points here.
 ### D21 · A second daemon on a live socket appends to `remote-server.log` (retired) { #d21 }
 
 - On Windows the launcher now truncates a held log, and each daemon writes at its own offset, as `5fd08069` does (round `task015-01`, Windows VM).
+
+### D25 · Answer `"unavailable"` for the peer check and serve every caller (retired) { #d25 }
+
+- On Linux claustrum now checks the namespaces of each caller, as `5fd08069` does in round `task011-01` (Linux VM). Its frames equal those of `5fd08069` in round `task011-02` (Linux VM).
 
 ## Candidates considered but not taken
 

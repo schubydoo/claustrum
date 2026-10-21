@@ -121,9 +121,10 @@ type server struct {
 	// (gitshadow.go). It is nil for a server with no run folder.
 	gitShadow *shadowHost
 
-	// peerCheckAsked is true when the daemon started with CLAUDE_SSH_PEER_CHECK=1.
-	// It sets the peerCheck member of server.capabilities (see peercheck.go).
-	peerCheckAsked bool
+	// peerCheck is the peer check of a daemon that started with
+	// CLAUDE_SSH_PEER_CHECK=1, and nil otherwise. It sets the peerCheck members of
+	// server.capabilities and checks each accepted connection (see peercheck.go).
+	peerCheck *peerGate
 }
 
 // conn is one connected client. The write mutex serializes the interleaving of
@@ -583,7 +584,7 @@ func newServerOnSocket(socket, token, metricsAddr string, wlopt wireLogOptions, 
 	// The one line of a start with CLAUDE_SSH_PEER_CHECK=1 comes here, before the
 	// listening line. The daemon also removes the variable from its own environment
 	// here, before it serves a request (see startPeerCheck).
-	peerAsked := startPeerCheck()
+	gate := startPeerCheck()
 	s := &server{
 		token:         token,
 		ln:            ln,
@@ -601,7 +602,7 @@ func newServerOnSocket(socket, token, metricsAddr string, wlopt wireLogOptions, 
 		startedAt:     startedAt,
 		gitShadow:     newShadowHost(execChildRunDir(socket)),
 
-		peerCheckAsked: peerAsked,
+		peerCheck: gate,
 	}
 	s.noteCountedRequest()
 	// Optional Prometheus metrics endpoint (opt-in via -metrics-addr). A bind
@@ -972,6 +973,11 @@ func (s *server) acceptLoop(ln net.Listener) {
 			continue
 		}
 		tempDelay = 0
+		// The peer check runs before any read, log line, count or tracking of the
+		// connection (round task011-01, cells P2 and P8, Linux VM).
+		if !s.peerCheck.admit(nc) {
+			continue
+		}
 		// Wrap in an activity-stamping conn so the idle watcher can see the last
 		// read/write. The reference closes a connection idle for 5 minutes (f6010b97).
 		ac := newActivityConn(nc)

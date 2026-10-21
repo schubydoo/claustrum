@@ -41,9 +41,9 @@ var capabilityMethods = []string{
 // server.peer_check after launcher.managed (the peerCheck member of this result).
 // Linux, macOS and Windows VMs show it there. 5fd08069 also inserted
 // files.extract_tar.execBit after process.stdin.offset (files.extract_tar keeps the
-// execute bit of the owner as mode 0700). The same three VMs show it at that place. On those VMs
-// 5fd08069 lists one more feature, which claustrum does not list. The array is
-// always emitted.
+// execute bit of the owner as mode 0700). The same three VMs show it at that place. 5fd08069
+// also lists git.shadow_dir after server.peer_check (round task011-01, cell P1,
+// Linux VM, and round s12, macOS and Windows VMs). The array is always emitted.
 var capabilityFeatures = append(append([]string{
 	"process.stdin.offset",
 	"files.extract_tar.execBit",
@@ -55,6 +55,7 @@ var capabilityFeatures = append(append([]string{
 	"process.spawn.shellAgentSocket",
 	"launcher.managed",
 	"server.peer_check",
+	"git.shadow_dir",
 }, externalRootCapabilityFeatures...), "server.instance_id")
 
 func (s *server) handleServer(c *conn, req *request) *response {
@@ -63,12 +64,13 @@ func (s *server) handleServer(c *conn, req *request) *response {
 		return ptr(okResult(req.ID, pongResult{Pong: true}))
 	case "server.capabilities":
 		return ptr(okResult(req.ID, capabilitiesResult{
-			Version:    Version,
-			Methods:    capabilityMethods,
-			InstanceID: s.instanceID,
-			StartedAt:  s.startedAt,
-			Features:   capabilityFeatures,
-			PeerCheck:  s.peerCheckAnswer(),
+			Version:     Version,
+			Methods:     capabilityMethods,
+			InstanceID:  s.instanceID,
+			StartedAt:   s.startedAt,
+			Features:    capabilityFeatures,
+			PeerCheck:   s.peerCheckAnswer(),
+			PeerCheckBy: s.peerCheckByAnswer(),
 		}))
 	case methodShutdown:
 		// The reply is {"ok":true}, but it reaches the client only when its write
