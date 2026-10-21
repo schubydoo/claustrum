@@ -214,9 +214,12 @@ func gitInfo(req *request) response {
 	if msg, bad := daemonCountRefusal(); bad {
 		return errResult(req.ID, codeInternal, msg)
 	}
-	// A path that does not exist gets the "no repository" answer here, with no
-	// start test and no git call beyond the excludes read of a first request.
-	// The place of this test after the count refusal is not measured.
+	// A path that does not exist gets the "no repository" answer, with no start
+	// test and no git call beyond the excludes read of a first request. It first
+	// takes the steps of a folder with no repository up to the start of the config
+	// listing (missingPathListing). That start fails on the missing folder. These
+	// steps are claustrum's own and are not measured. The place of this test after the count refusal is not
+	// measured.
 	// On 5fd08069 such a git.info as the first git
 	// request of a daemon makes 1 call, the excludes read, and its reply has no
 	// settingsControl member. The next request on a repository runs the start
@@ -231,6 +234,7 @@ func gitInfo(req *request) response {
 	// refusal (cell F1).
 	if p.Path != "" {
 		if _, err := os.Stat(p.Path); errors.Is(err, fs.ErrNotExist) {
+			_ = missingPathListing(p.Path)
 			return notRepo()
 		}
 	}

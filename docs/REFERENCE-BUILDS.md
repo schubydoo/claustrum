@@ -77,15 +77,21 @@ battery on the Linux VM. On the macOS and Windows VMs it ran the changed areas
 closed it, and the off switch during a `git.info` with it (rounds `task103-01`
 to `task103-06`). D4, D5, D9, D13, D18, D21 and D25 are retired. D27 is new (PR 563).
 
-Four items stay open:
+One Windows claustrum run where both requests got `-32001` was the test
+kit, not claustrum (round `task104-01`). Three items stay open:
 
-- In one of 40 Windows claustrum runs, both requests got `-32001`. The 35 runs
-  after it did not, and `5fd08069` never did in 40 runs. The cause is not known.
 - The off switch during `git.status` and the worktree methods: Linux ran every
-  cell, macOS only C2, S1 and C0 (`task105-03`), Windows C0 to C2, C4 and C5.
+  cell. macOS ran every cell but C6, C6b, C6n and S3 (`task105-03`,
+  `task105-10`). Windows ran only C0 to C2, C4 and C5.
 - A `git.info` on a missing path, sent with the first git request, waits for
-  the start test less often on claustrum (round `task103-04`, Linux VM). Sent after the start test began, it
-  waits on both builds (round `task103-06`, Linux VM).
+  the start test less often on claustrum (round `task103-04`, Linux VM). Sent
+  after the start test began, it waits on both builds (round `task103-06`, Linux
+  VM). claustrum now takes the steps of a folder with no repository (claustrum's
+  own, not measured). No process starts for it on either build (cell
+  T7s of round `task107-01`, Linux VM). In round `task107-02` claustrum waited
+  in 31 of 60 runs and `5fd08069` in 37 of 60, within noise. `5fd08069` waited
+  in 44 of 60 in round `task107-01`, so the race is noisy and the rounds show no
+  measurable effect of the change.
 - Off the wire, `5fd08069` keeps an exited git wrapper as a zombie until the
   process that holds its pipe ends, or until the reply. claustrum reaps it at
   once (round `task082-02` on macOS, round `task101-03` on Linux). A client
