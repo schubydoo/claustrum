@@ -85,9 +85,9 @@ jobs:
     timeout-minutes: 15 # the windows legs are markedly slower than ubuntu/macos
     strategy:
       fail-fast: false
-      # Windows runs the suite in three shards, because the top-level tests run
-      # one at a time and are slowest there. Two shards run a -run pattern and
-      # the third skips both, so together they run every test once.
+      # Windows runs the suite in four shards, because the top-level tests run
+      # one at a time and are slowest there. Three shards run a -run pattern and
+      # the fourth skips all three, so together they run every test once.
       # macOS runs two shards. One macOS run took 461 s for the whole suite,
       # against the same 600 s default. Each leg now runs with the 12 minute limit
       # of the go test step. The git shard runs the worktree, the git.status,
@@ -119,14 +119,17 @@ jobs:
           - os: windows-latest
             shard: worktree
             select: -run=^(TestWorktree|TestCreate|TestCheckout)
-          # The Windows status shard is the short one, so it also takes the
-          # tests named TestShadow, TestProbe and TestRepoHold. Most of them are
-          # tests of the settings copy. It takes the tests named TestInstall and
-          # TestEnsure too. Most of them are tests of -install. With them the rest
-          # shard ran its tests for 508 s on main, and each leg stops at 12 minutes.
+          # The status and install shards were one shard. It ran 7.8 to 11.9
+          # minutes of the 12, so it is now two. On 0997cf1 the Windows tests of
+          # the status half ran 201 s in sum, and those of the install half 247 s.
           - os: windows-latest
             shard: status
-            select: -run=^(TestGitStatus|TestShadow|TestProbe|TestRepoHold|TestInstall|TestEnsure)
+            select: -run=^(TestGitStatus|TestShadow)
+          # Most tests named TestProbe and TestRepoHold are tests of the settings
+          # copy. Most tests named TestInstall and TestEnsure are tests of -install.
+          - os: windows-latest
+            shard: install
+            select: -run=^(TestProbe|TestRepoHold|TestInstall|TestEnsure)
           - os: windows-latest
             shard: rest
             select: -skip=^(TestWorktree|TestCreate|TestCheckout|TestGitStatus|TestShadow|TestProbe|TestRepoHold|TestInstall|TestEnsure)
