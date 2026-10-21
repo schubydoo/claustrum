@@ -890,7 +890,7 @@ func gitListBranches(req *request) response {
 // pairBeforeAdd runs the two calls of 5fd08069 before the add of a create in
 // the state shadow or with "shadowDirOff":true, when the step before the add
 // found no entry that names the new leaf. They run when the folder of the
-// registrations of gitDir exists (cell R-Q2b of round task084-01, Linux, macOS
+// registrations of gitDir is a real folder, empty or not (cell R-Q2b of round task084-01, Linux, macOS
 // and Windows VMs). With the member 5fd08069 runs them in a repository with a
 // linked worktree (cell 50a of s3p2b-edges-linux, cell A3-create-plain of
 // val-s3p2b1-linux). A missing folder and an entry that names the leaf give no
@@ -900,6 +900,11 @@ func gitListBranches(req *request) response {
 // `rev-parse --absolute-git-dir` and before the listing of the add (R-Q2b,
 // macOS and Windows VMs).
 //
+// The test does not follow a link. A symbolic link to a real folder there
+// gives no pair, also when that folder holds a registration (cells C6, C6n and
+// C6b of round task109-01, cells E1 and E2 of round task109-02, Linux VM). A
+// broken link, a file and a Windows junction give none either (not measured).
+//
 // The calls are gitDirWorkTreeToplevel in gitDir, with repo as the work tree.
 // Their answers are not used, and a failure changes nothing (cell R-Q4e,
 // Linux VM). The timeoutMs of the caller does not end them. With the second
@@ -908,7 +913,7 @@ func gitListBranches(req *request) response {
 // (cell R-Q4d, Linux VM). The limits of the two calls are those of their kind
 // (gitstop.go). No cell measured a limit there: that is claustrum's own.
 func pairBeforeAdd(req *request, gitDir, repo string) {
-	if fi, err := os.Stat(gitDirRegistryDir(gitDir)); err != nil || !fi.IsDir() {
+	if fi, err := os.Lstat(gitDirRegistryDir(gitDir)); err != nil || !fi.IsDir() {
 		return
 	}
 	u := req.use.atGitDirCommand()
