@@ -38,6 +38,19 @@ func holdHookListing(t *testing.T, mode string, hold time.Duration) {
 	holdNthCall(t, "config,-z,--list", mode, "--list", 1, hold)
 }
 
+// callSevenEndedText matches the start-test text of a call 7 that its bound
+// ended. The path in it is Go-quoted, so a Windows backslash shows doubled.
+func callSevenEndedText(t *testing.T, f shadowFixture) *regexp.Regexp {
+	t.Helper()
+	inner := func(s string) string {
+		q := strconv.Quote(s)
+		return q[1 : len(q)-1]
+	}
+	return regexp.MustCompile("^" + regexp.QuoteMeta("Claude could not test git on the remote machine (this repository's git config cannot be used: git did not finish reading \""+
+		inner(filepath.Join(daemonFolder(t, f.run), ".check-"))) + `[0-9]+` + regexp.QuoteMeta(inner(filepath.FromSlash("/real/.git/config"))+
+		"\" within 30 seconds; try again). Check free disk space and quota there, then try again.") + "$")
+}
+
 // timedCall is f.call with the time of the reply.
 func timedCall(t *testing.T, f shadowFixture, method string, params map[string]any) (string, []envCall, time.Duration) {
 	t.Helper()
@@ -202,9 +215,7 @@ func TestShadowCallSevenBoundFromStart(t *testing.T) {
 	t.Setenv("CLAUSTRUM_GITSTUB_STARTED", started)
 	msg := f.s.gitShadow.gate(false)
 	end := time.Now()
-	want := regexp.MustCompile("^" + regexp.QuoteMeta("Claude could not test git on the remote machine (this repository's git config cannot be used: git did not finish reading \""+
-		filepath.Join(daemonFolder(t, f.run), ".check-")) + `[0-9]+` + regexp.QuoteMeta(filepath.FromSlash("/real/.git/config")+
-		"\" within 30 seconds; try again). Check free disk space and quota there, then try again.") + "$")
+	want := callSevenEndedText(t, f)
 	if !want.MatchString(msg) {
 		t.Errorf("the start test = %q\nwant %s", msg, want)
 	}
@@ -299,9 +310,7 @@ func TestStartTestCallsAndTheirPipes(t *testing.T) {
 		setDuration(t, &shadowCallDrain, 200*time.Millisecond)
 		slowGit(t, "--no-includes", "pre", 20*time.Second, "", "")
 		msg := f.s.gitShadow.gate(false)
-		want := regexp.MustCompile("^" + regexp.QuoteMeta("Claude could not test git on the remote machine (this repository's git config cannot be used: git did not finish reading \""+
-			filepath.Join(daemonFolder(t, f.run), ".check-")) + `[0-9]+` + regexp.QuoteMeta(filepath.FromSlash("/real/.git/config")+
-			"\" within 30 seconds; try again). Check free disk space and quota there, then try again.") + "$")
+		want := callSevenEndedText(t, f)
 		if !want.MatchString(msg) {
 			t.Errorf("the start test = %q\nwant %s", msg, want)
 		}
