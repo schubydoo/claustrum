@@ -90,16 +90,22 @@ var repoCountedSections = map[string]bool{
 // "" and nil keep those of the daemon.
 //
 // In a request with time limits the call ends at repoReadBound, with
-// errReadBound (configReadCtx).
+// errReadBound (runConfigText).
 func listConfigText(ctx context.Context, text []byte, dir string, env []string) ([]byte, error) {
-	ctx, cancel := configReadCtx(ctx)
-	defer cancel()
+	cmd := configTextCmd(ctx, dir, env)
+	var out bytes.Buffer
+	cmd.Stdout = &out
+	err := runConfigText(ctx, cmd, text)
+	return out.Bytes(), err
+}
+
+// configTextCmd is the listing of one config file on standard input, in dir
+// with env. The end of ctx ends it.
+func configTextCmd(ctx context.Context, dir string, env []string) *exec.Cmd {
 	cmd := exec.CommandContext(ctx, "git", "config", "--no-includes", "--file", "-", "--list", "-z")
-	cmd.Stdin = bytes.NewReader(text)
 	cmd.Dir = dir
 	cmd.Env = env
-	out, err := cmd.Output()
-	return out, readBoundErr(ctx, err)
+	return cmd
 }
 
 // errReadBound is the error of a listing of one config file that repoReadBound
@@ -107,25 +113,99 @@ func listConfigText(ctx context.Context, text []byte, dir string, env []string) 
 // task010-04, Linux VM).
 var errReadBound = errors.New("git did not finish reading it within 30 seconds; try again")
 
-// configReadCtx is ctx with repoReadBound for a request with time limits
-// (gitStop), or ctx itself. At the bound the process gets SIGKILL with no
-// SIGTERM before it (cells T18, TW and TS).
-func configReadCtx(ctx context.Context) (context.Context, context.CancelFunc) {
+// runConfigText runs cmd with text as its standard input. In a request with
+// time limits (gitStop) the call ends at repoReadBound, counted from its start,
+// and startBoundDrain after it, with errReadBound (runStartBound).
+func runConfigText(ctx context.Context, cmd *exec.Cmd, text []byte) error {
 	if s, _ := gitStopOf(ctx); s == nil {
-		return ctx, func() {}
+		cmd.Stdin = bytes.NewReader(text)
+		return cmd.Run()
 	}
-	return context.WithTimeout(ctx, repoReadBound)
-}
-
-// readBoundErr is errReadBound for a failed call whose bound in ctx expired, or
-// err.
-func readBoundErr(ctx context.Context, err error) error {
-	if err != nil && errors.Is(ctx.Err(), context.DeadlineExceeded) {
-		if s, _ := gitStopOf(ctx); s != nil {
-			return errReadBound
-		}
+	ended, err := runStartBound(cmd, text, repoReadBound)
+	if ended {
+		return errReadBound
 	}
 	return err
+}
+
+// runStartBound runs cmd with stdin as its standard input. cmd.Stdout and
+// cmd.Stderr are writers or nil. One bound, counted from the start of the call,
+// ends it: git gets SIGKILL with no SIGTERM. The daemon reads the pipes for up
+// to startBoundDrain more, and then closes its ends of them. A child that still
+// holds them gets no signal. ended reports that the bound ended the call.
+//
+// 5fd08069 answers about 31 s after the start also when git exited 0 earlier
+// and only a child holds its pipes past the bound. It reaps git while the child lives on, and
+// the child gets no signal. The repository config read of git.status and call
+// 7 of the start test then answer their refusal texts (cells B1 and B2 of
+// rounds task101-01 and task101-02, Linux VM). A call that the bound ended
+// stays refused when the pipes close inside the drain (claustrum's own, not
+// measured).
+func runStartBound(cmd *exec.Cmd, stdin []byte, bound time.Duration) (bool, error) {
+	var files []*os.File
+	closeAll := func(fs ...*os.File) {
+		for _, f := range fs {
+			_ = f.Close()
+		}
+	}
+	for range 3 {
+		r, w, err := os.Pipe()
+		if err != nil {
+			closeAll(files...)
+			return false, err
+		}
+		files = append(files, r, w)
+	}
+	inR, inW, outR, outW, errR, errW := files[0], files[1], files[2], files[3], files[4], files[5]
+	sinks := []io.Writer{cmd.Stdout, cmd.Stderr}
+	cmd.Stdin, cmd.Stdout, cmd.Stderr = inR, outW, errW
+	err := cmd.Start()
+	closeAll(inR, outW, errW)
+	if err != nil {
+		closeAll(inW, outR, errR)
+		return false, err
+	}
+	var mu sync.Mutex
+	done, ended := false, false
+	var drain *time.Timer
+	timer := time.AfterFunc(bound, func() {
+		mu.Lock()
+		defer mu.Unlock()
+		if done {
+			return
+		}
+		ended = true
+		_ = cmd.Process.Kill()
+		_ = inW.Close()
+		drain = time.AfterFunc(startBoundDrain, func() { closeAll(outR, errR) })
+	})
+	go func() {
+		_, _ = inW.Write(stdin)
+		_ = inW.Close()
+	}()
+	var copies sync.WaitGroup
+	for i, r := range []*os.File{outR, errR} {
+		w := sinks[i]
+		if w == nil {
+			w = io.Discard
+		}
+		copies.Go(func() {
+			_, _ = io.Copy(w, r)
+			_ = r.Close()
+		})
+	}
+	err = cmd.Wait()
+	copies.Wait()
+	mu.Lock()
+	done = true
+	stopped := ended
+	if drain != nil {
+		drain.Stop()
+	}
+	mu.Unlock()
+	timer.Stop()
+	_ = inW.Close()
+	return stopped, err
 }
 
 // repoListingMaxBytes bounds the listing that the read of the repository config
@@ -138,15 +218,26 @@ func readBoundErr(ctx context.Context, err error) error {
 var repoListingMaxBytes = 8 * repoConfigMaxBytes
 
 // repoReadBound ends each listing of one config file on standard input, in a
-// request with time limits (gitStop, configReadCtx). The process gets SIGKILL
+// request with time limits (gitStop, runConfigText). The bound counts from the
+// start of the call. The process gets SIGKILL
 // with no SIGTERM before it. The read of the repository config then answers
 // readStopText after repoConfigPrefix. On 5fd08069 a git.status whose listing
 // of `.git/config` was held 35 s answered at 30.3 s so (cell T18 of round
 // task010-01, Linux VM). The listings of a `config.worktree` file end so too
-// (cells TW and TS of round task010-04, Linux VM). macOS, Windows, an included
+// (cells TW and TS of round task010-04, Linux VM). A git that exited 0 while a
+// child holds its pipes past the bound gets the same in the read of the
+// repository config, about 31 s after the start (cell B1 of rounds task101-01
+// and task101-02, Linux VM). In the
+// `config.worktree` listings and the entry test of git.status that is
+// claustrum's own, not measured. macOS, Windows, an included
 // file and git.info are not measured: they get the same (claustrum's own). A
 // variable, so that a test can lower it.
 var repoReadBound = 30 * time.Second
+
+// startBoundDrain is the time that runStartBound reads the pipes after its
+// bound. 5fd08069 answers B1 and B2 about 1 s after the 30 s bound (rounds
+// task101-01 and task101-02, Linux VM).
+var startBoundDrain = time.Second
 
 // errListingTooLarge ends a listing that passes repoListingMaxBytes.
 var errListingTooLarge = errors.New("the listing of a config file is over its bound")
@@ -175,22 +266,17 @@ func (b *boundedListing) Write(p []byte) (int, error) {
 // errListingTooLarge and the whole settings of its first repoListingMaxBytes
 // bytes.
 func listRepoConfigText(ctx context.Context, text []byte, dir string, env []string) (out, stderr []byte, err error) {
-	ctx, cancel := configReadCtx(ctx)
-	defer cancel()
-	cmd := exec.CommandContext(ctx, "git", "config", "--no-includes", "--file", "-", "--list", "-z")
-	cmd.Stdin = bytes.NewReader(text)
-	cmd.Dir = dir
-	cmd.Env = env
+	cmd := configTextCmd(ctx, dir, env)
 	listing := &boundedListing{max: repoListingMaxBytes}
 	errText := &cappedText{max: 1 << 16}
 	cmd.Stdout = listing
 	cmd.Stderr = errText
-	err = cmd.Run()
+	err = runConfigText(ctx, cmd, text)
 	out = listing.buf.Bytes()
 	if listing.over {
 		return out[:bytes.LastIndexByte(out, 0)+1], nil, errListingTooLarge
 	}
-	return out, errText.buf, readBoundErr(ctx, err)
+	return out, errText.buf, err
 }
 
 // repoConfigListEnv is the environment of the listing of one config file: that of

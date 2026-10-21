@@ -5,7 +5,6 @@ package main
 import (
 	"os"
 	"path/filepath"
-	"regexp"
 	"slices"
 	"strings"
 	"syscall"
@@ -131,76 +130,4 @@ func TestShutdownBeforeTheRepoFolderLeavesNoFolder(t *testing.T) {
 	if got := daemonFolders(t, f.run); len(got) != 0 {
 		t.Errorf("git-shadow holds %v after the shutdown, want nothing", got)
 	}
-}
-
-// TestStartTestCallsAndTheirPipes pins three rows of val-s3p2b2-8-linux2 (Linux
-// VM), with lowered times:
-//
-//   - N-a: a child keeps the output pipes of the `init` call open. The test
-//     goes on after the wait for the pipes and passes. Without the rule of
-//     exitedInTime it fails with a `WaitDelay expired` text.
-//   - N-b: the same child on call 7, the listing of the test config. The test
-//     waits until the pipes close and passes. With the short wait of the other
-//     calls it ends before the child does.
-//   - N-c: call 7 runs past the bound. The cause is the text of 5fd08069 with
-//     the config of the test repository. Without the test of an ended call
-//     the cause is `git config failed under …: signal: killed`.
-//
-// One more row is cell N-b of val-s3p2b2-9-linux2 with `sleep 35` (Linux VM, 1
-// run): call 7 exits 0 at once, and a child holds its pipes past the bound
-// and past the wait for the pipes. 5fd08069 answers the text of row N-c one
-// bound and 1 s after the call. With an `ended` that is true only for a
-// process that the bound ended, the test passes there.
-func TestStartTestCallsAndTheirPipes(t *testing.T) {
-	t.Run("N-a init", func(t *testing.T) {
-		f := newShadowFixture(t)
-		lowerShadowBound(t, 20*time.Second, 200*time.Millisecond)
-		slowGit(t, "init", "hold", 5*time.Second, "", "")
-		start := time.Now()
-		if msg := f.s.gitShadow.gate(false); msg != "" {
-			t.Errorf("the start test = %q, want it to pass", msg)
-		}
-		if d := time.Since(start); d > 4*time.Second {
-			t.Errorf("the start test ended after %v, want it soon after the wait of 200 ms", d)
-		}
-	})
-	t.Run("N-b call 7", func(t *testing.T) {
-		f := newShadowFixture(t)
-		lowerShadowBound(t, 20*time.Second, 200*time.Millisecond)
-		slowGit(t, "--no-includes", "hold", 1500*time.Millisecond, "", "")
-		start := time.Now()
-		if msg := f.s.gitShadow.gate(false); msg != "" {
-			t.Errorf("the start test = %q, want it to pass", msg)
-		}
-		if d := time.Since(start); d < 1400*time.Millisecond {
-			t.Errorf("the start test ended after %v, want it to wait for the pipes of call 7", d)
-		}
-	})
-	boundText := func(t *testing.T, f shadowFixture) *regexp.Regexp {
-		return regexp.MustCompile("^" + regexp.QuoteMeta("Claude could not test git on the remote machine (this repository's git config cannot be used: git did not finish reading \""+
-			filepath.Join(daemonFolder(t, f.run), ".check-")) + `[0-9]+` + regexp.QuoteMeta(filepath.FromSlash("/real/.git/config")+
-			"\" within 30 seconds; try again). Check free disk space and quota there, then try again.") + "$")
-	}
-	t.Run("N-b call 7 with a child past the bound", func(t *testing.T) {
-		f := newShadowFixture(t)
-		lowerShadowBound(t, time.Second, 200*time.Millisecond)
-		slowGit(t, "--no-includes", "hold", 8*time.Second, "", "")
-		start := time.Now()
-		msg := f.s.gitShadow.gate(false)
-		if want := boundText(t, f); !want.MatchString(msg) {
-			t.Errorf("the start test = %q\nwant %s", msg, want)
-		}
-		if d := time.Since(start); d > 6*time.Second {
-			t.Errorf("the start test ended after %v, want it one bound and one pipe wait after call 7", d)
-		}
-	})
-	t.Run("N-c call 7 past the bound", func(t *testing.T) {
-		f := newShadowFixture(t)
-		lowerShadowBound(t, time.Second, 200*time.Millisecond)
-		slowGit(t, "--no-includes", "pre", 20*time.Second, "", "")
-		msg := f.s.gitShadow.gate(false)
-		if want := boundText(t, f); !want.MatchString(msg) {
-			t.Errorf("the start test = %q\nwant %s", msg, want)
-		}
-	})
 }

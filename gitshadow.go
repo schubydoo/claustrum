@@ -638,18 +638,12 @@ func boundedGit(bound time.Duration, dir string, env []string, argv ...string) s
 
 // boundedGitInput is boundedGit with stdin as the standard input of the call,
 // or with none for nil.
-func boundedGitInput(bound time.Duration, dir string, env []string, stdin []byte, argv ...string) shadowRun {
-	return boundedGitDrain(bound, shadowCallDrain, dir, env, stdin, argv...)
-}
-
-// boundedGitDrain is boundedGitInput with drain as the wait for the output
-// pipes.
 //
 // ended is true when the call failed and the bound has passed at its return.
 // That holds for a process that the bound ended. It holds too for a call that
-// exits in time while a child keeps its output pipes past the bound. The row
-// of that second state is at call 7 in shadowTestCalls.
-func boundedGitDrain(bound, drain time.Duration, dir string, env []string, stdin []byte, argv ...string) shadowRun {
+// exits less than shadowCallDrain before the bound while a child keeps its
+// pipes past it.
+func boundedGitInput(bound time.Duration, dir string, env []string, stdin []byte, argv ...string) shadowRun {
 	ctx, cancel := context.WithTimeout(context.Background(), bound)
 	defer cancel()
 	cmd := exec.CommandContext(ctx, "git", argv...)
@@ -660,7 +654,7 @@ func boundedGitDrain(bound, drain time.Duration, dir string, env []string, stdin
 	}
 	var out, errOut bytes.Buffer
 	cmd.Stdout, cmd.Stderr = &out, &errOut
-	cmd.WaitDelay = drain
+	cmd.WaitDelay = shadowCallDrain
 	err := cmd.Run()
 	return shadowRun{
 		out:    strings.TrimRight(out.String(), "\r\n"),
@@ -797,9 +791,9 @@ func shadowTestCalls(dir, check string) (state, cause string) {
 	if err != nil {
 		return "", err.Error()
 	}
-	// Call 7 ends at the bound of a test call, and it has no short wait for its
-	// output pipes. The rows are cells N-b and N-c of val-s3p2b2-8-linux2 (Linux
-	// VM, 2 of 2 runs each):
+	// Call 7 ends at the bound of a test call, counted from its start, and then
+	// reads its pipes for up to startBoundDrain (runStartBound). The rows are cells
+	// N-b and N-c of val-s3p2b2-8-linux2 (Linux VM, 2 of 2 runs each):
 	//
 	//   - A child holds the pipes for 5 s after the call ended: 5fd08069 starts
 	//     the next call at 5.345 s and 5.189 s, and the test passes.
@@ -808,9 +802,11 @@ func shadowTestCalls(dir, check string) (state, cause string) {
 	//
 	//   - The call exits 0 at 0.2 s and a child holds the pipes for 35 s: 5fd08069
 	//     answers the text of callSevenEnded at 31.2 s (cell N-b of
-	//     val-s3p2b2-9-linux2, Linux VM, 1 run). The reply comes about 31 s
-	//     after call 7 started. The row does not tell a bound from the start
-	//     of the call from a bound after its end.
+	//     val-s3p2b2-9-linux2, Linux VM, 1 run).
+	//   - The call sleeps 20 s, exits 0, and a child holds the pipes for 20 s:
+	//     5fd08069 answers that text about 31 s after call 7 started, 11 s
+	//     after its exit (cell B2 of rounds task101-01 and task101-02, Linux
+	//     VM). So the bound counts from the start.
 	//
 	// A call 7 that fails on its own is followed by one `git version` call
 	// (cannotRunText). If that call fails too, its text is the whole failure.
@@ -820,11 +816,14 @@ func shadowTestCalls(dir, check string) (state, cause string) {
 	// used: boom` (cells E1 to E5 and E9 of round task083-01, Linux VM). A call
 	// 7 with no error text gives its exec error there (claustrum's own, not
 	// measured).
-	listed := exitedInTime(boundedGitDrain(shadowCallBound, shadowCallBound+shadowCallDrain, gitVersionDir,
-		repoConfigListEnv(), text, "config", "--no-includes", "--file", "-", "--list", "-z"))
-	if listed.ended {
+	cmd := configTextCmd(context.Background(), gitVersionDir, repoConfigListEnv())
+	var out, errOut bytes.Buffer
+	cmd.Stdout, cmd.Stderr = &out, &errOut
+	ended, err := runStartBound(cmd, text, shadowCallBound)
+	if ended {
 		return "", callSevenEnded(filepath.Join(gitDir, "config"))
 	}
+	listed := shadowRun{out: strings.TrimRight(out.String(), "\r\n"), stderr: errOut.String(), err: err}
 	if listed.err != nil {
 		if whole := cannotRunText(); whole != "" {
 			return "", whole

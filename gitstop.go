@@ -42,7 +42,7 @@ var (
 	gitStopGrace = 2 * time.Second
 	// gitDrainWait is the time that a call waits for its output pipes after git
 	// exited (cells T15 and T16: 2.0 s). The child that holds them gets no
-	// signal.
+	// signal. A call under untilPipeEOF has no such wait.
 	gitDrainWait = 2 * time.Second
 )
 
@@ -116,6 +116,7 @@ func offSwitchSet(params json.RawMessage) bool {
 
 type gitStopKey struct{}
 type gitLimitKey struct{}
+type pipeEOFKey struct{}
 
 // context is the context of the git calls of the request. gitRun and gitOutput
 // read the limits from it.
@@ -129,6 +130,16 @@ func (s *gitStop) context() context.Context {
 // withGitLimit is ctx with the limit kind for the calls that run under it.
 func withGitLimit(ctx context.Context, kind gitLimit) context.Context {
 	return context.WithValue(ctx, gitLimitKey{}, kind)
+}
+
+// untilPipeEOF is ctx for the calls whose output the daemon reads to its end.
+// Such a call goes on only when its output pipes close, also after git exited.
+// The child that holds them gets no signal. 5fd08069 does so for the config
+// listing before a hardened call (cells A1 and A2) and for the `status` scan of
+// git.status (cell A3 of round task101-01, Linux VM). The `ls-files` and
+// `diff-index` scans do the same (claustrum's own, not measured).
+func untilPipeEOF(ctx context.Context) context.Context {
+	return context.WithValue(ctx, pipeEOFKey{}, true)
 }
 
 func gitStopOf(ctx context.Context) (*gitStop, gitLimit) {
@@ -174,7 +185,10 @@ func (s *gitStop) limit(kind gitLimit) (time.Duration, string) {
 // ended at once (cells T1, T3h and T5).
 //
 // The wait for the output pipes after git exited ends at gitDrainWait. A call
-// that exited 0 then counts as a call that exited 0 (cells T15 and T16).
+// that exited 0 then counts as a call that exited 0 (cells T15 and T16). Under
+// untilPipeEOF the wait has no end. A call that exited 0 gives its result when
+// the pipes close, also past its limit. A call that the limit stopped gives the
+// stop text then (cells A1 and A2 of round task101-01, Linux VM).
 //
 // Each call runs under the hold of its repository folder (runHeld).
 func gitRun(ctx context.Context, cmd *exec.Cmd) error {
@@ -185,13 +199,17 @@ func gitRun(ctx context.Context, cmd *exec.Cmd) error {
 	if err := s.halted(); err != nil {
 		return err
 	}
-	return runHeld(cmd, func() error { return gitRunLimited(s, kind, cmd) })
+	toEOF, _ := ctx.Value(pipeEOFKey{}).(bool)
+	return runHeld(cmd, func() error { return gitRunLimited(s, kind, toEOF, cmd) })
 }
 
 // gitRunLimited is the start and the wait of cmd under the limit kind of s.
-func gitRunLimited(s *gitStop, kind gitLimit, cmd *exec.Cmd) error {
+// With toEOF the wait for the output pipes has no end (untilPipeEOF).
+func gitRunLimited(s *gitStop, kind gitLimit, toEOF bool, cmd *exec.Cmd) error {
 	limit, after := s.limit(kind)
-	cmd.WaitDelay = gitDrainWait
+	if !toEOF {
+		cmd.WaitDelay = gitDrainWait
+	}
 	if err := cmd.Start(); err != nil {
 		return err
 	}
@@ -204,6 +222,11 @@ func gitRunLimited(s *gitStop, kind gitLimit, cmd *exec.Cmd) error {
 		if done {
 			return
 		}
+		// The call counts as stopped also when git exited before the limit
+		// and only a child holds its pipes (under untilPipeEOF, or within
+		// gitDrainWait of the limit). A failed call then
+		// gives the stop text, and a call that exited 0 stays a success, on
+		// every system (claustrum's own, not measured).
 		fired = true
 		_ = stopGitProcess(cmd.Process)
 		kill = time.AfterFunc(gitStopGrace, func() {
