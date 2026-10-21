@@ -172,6 +172,13 @@ func TestDaemonChildStartsInAJobWithoutBreakaway(t *testing.T) {
 // pids, also after a failed assertion: with no job, nothing else ends a grandchild.
 func spawnTree(t *testing.T, m *procManager, id, mode string) (*managedProc, int) {
 	t.Helper()
+	return spawnTreeFor(t, t, m, id, mode)
+}
+
+// spawnTreeFor is spawnTree, but the cleanup that ends the grandchild belongs to owner.
+// A row of a test can so leave its grandchild alive for a check of the parent test.
+func spawnTreeFor(t *testing.T, owner testing.TB, m *procManager, id, mode string) (*managedProc, int) {
+	t.Helper()
 	c, _ := pipeConn(t)
 	exe, env := helperCommand(t, mode)
 	pidFile := filepath.Join(t.TempDir(), "gpid")
@@ -186,7 +193,7 @@ func spawnTree(t *testing.T, m *procManager, id, mode string) (*managedProc, int
 		}
 	}
 	gpid := readPIDFile(t, pidFile)
-	t.Cleanup(func() { killOwnPid(gpid) })
+	owner.Cleanup(func() { killOwnPid(gpid) })
 	if !processAlive(t, gpid) {
 		t.Fatalf("grandchild %d not alive before the action", gpid)
 	}
@@ -195,7 +202,8 @@ func spawnTree(t *testing.T, m *procManager, id, mode string) (*managedProc, int
 
 // TestKillEndsOnlyTheDirectChild: process.kill, process.killAndWait and the kill of a
 // clean stop end the direct child, with exit code 1 and the "signalled at client request"
-// exit line. The grandchild is alive 1 s later. Measured on a Windows VM against
+// exit line. The grandchild is alive 1 s later. All rows run their kills first, and then
+// one wait of 1 s serves the check of every grandchild. Measured on a Windows VM against
 // 89cb6289: only the direct child ends, and the grandchild is alive at 1 s, 5 s and 15 s.
 // The rows are seven signal forms of process.kill, three forms of process.killAndWait,
 // -stop and server.shutdown. claustrum gave the same states in those rows. A Job Object
@@ -227,10 +235,15 @@ func TestKillEndsOnlyTheDirectChild(t *testing.T) {
 		// the empty wantLog checks the code alone.
 		{"kd-clean-stop", func(m *procManager, _ string) result { m.killAll(); return result{} }, ""},
 	}
+	// The grandchild of each row, by its child id. The parent test ends each one at its
+	// end, so a grandchild lives past its row until the check below.
+	parent := t
+	gpids := map[string]int{}
 	for _, tc := range actions {
 		t.Run(tc.id, func(t *testing.T) {
 			m := newTestProcManager(t)
-			p, gpid := spawnTree(t, m, tc.id, "tree")
+			p, gpid := spawnTreeFor(t, parent, m, tc.id, "tree")
+			gpids[tc.id] = gpid
 			buf := captureLogBuf(t)
 
 			got := tc.act(m, tc.id)
@@ -252,11 +265,19 @@ func TestKillEndsOnlyTheDirectChild(t *testing.T) {
 			if strings.Contains(buf.String(), "KillAndWait "+tc.id+": group kill failed") {
 				t.Errorf("log = %q, want no group kill line", buf.String())
 			}
-			time.Sleep(time.Second)
-			if !processAlive(t, gpid) {
-				t.Errorf("grandchild %d ended with the direct child", gpid)
-			}
 		})
+	}
+	// One wait of 1 s for all rows. The last row ended its child last, so each
+	// grandchild is checked at least 1 s after the end of its direct child.
+	time.Sleep(time.Second)
+	for _, tc := range actions {
+		gpid, ok := gpids[tc.id]
+		if !ok {
+			continue // The row failed before its grandchild started, and said so.
+		}
+		if !processAlive(t, gpid) {
+			t.Errorf("%s: grandchild %d ended with the direct child", tc.id, gpid)
+		}
 	}
 }
 
