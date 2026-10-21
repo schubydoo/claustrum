@@ -79,10 +79,29 @@ func realTempDir(t *testing.T) string {
 	return d
 }
 
+// newTrustRepo copies a template of the whole fixture. The copy points the
+// paths of the four worktrees at itself.
 func newTrustRepo(t *testing.T) trustRepo {
 	t.Helper()
 	requireGit(t)
-	base := realTempDir(t)
+	r := trustRepoAt(realTempDir(t))
+	copyWorktreeTemplate(t, "trust-repo", r.base, func(t *testing.T, dir string) {
+		b := trustRepoAt(dir)
+		if err := os.Mkdir(b.T, 0o755); err != nil {
+			t.Fatal(err)
+		}
+		buildTrustMain(t, b.T)
+		buildGit(t, b.T, "worktree", "add", "-q", "-b", "lw", b.TW)
+		buildGit(t, b.T, "worktree", "add", "-q", "-b", "s0", b.SW)
+		buildGit(t, b.T, "worktree", "add", "-q", "-b", "d0", b.D)
+		buildGit(t, b.TW, "worktree", "add", "-q", "-b", "s1", b.SWW)
+	}, "T_wt", filepath.Join("T", ".claude", "worktrees", "s0"), filepath.Join("T", ".claude", "worktrees", "d0"),
+		filepath.Join("T_wt", ".claude", "worktrees", "s1"))
+	return r
+}
+
+// trustRepoAt names the paths of the fixture below base.
+func trustRepoAt(base string) trustRepo {
 	r := trustRepo{
 		base: base,
 		T:    filepath.Join(base, "T"),
@@ -91,11 +110,6 @@ func newTrustRepo(t *testing.T) trustRepo {
 	r.SW = filepath.Join(r.T, ".claude", "worktrees", "s0")
 	r.D = filepath.Join(r.T, ".claude", "worktrees", "d0")
 	r.SWW = filepath.Join(r.TW, ".claude", "worktrees", "s1")
-	initTrustMain(t, r.T)
-	runGit(t, r.T, "worktree", "add", "-q", "-b", "lw", r.TW)
-	runGit(t, r.T, "worktree", "add", "-q", "-b", "s0", r.SW)
-	runGit(t, r.T, "worktree", "add", "-q", "-b", "d0", r.D)
-	runGit(t, r.TW, "worktree", "add", "-q", "-b", "s1", r.SWW)
 	return r
 }
 
@@ -103,12 +117,16 @@ func newTrustRepo(t *testing.T) trustRepo {
 // copies a template, which holds no absolute path.
 func initTrustMain(t *testing.T, dir string) {
 	t.Helper()
-	copyFixtureTemplate(t, "trust-main", dir, func(t *testing.T, dir string) {
-		runGit(t, dir, "init", "-q", "-b", "main")
-		writeFile(t, filepath.Join(dir, ".gitignore"), ".claude/worktrees/\n", 0o644)
-		runGit(t, dir, "add", ".gitignore")
-		runGit(t, dir, "commit", "-q", "-m", "init")
-	})
+	copyFixtureTemplate(t, "trust-main", dir, buildTrustMain)
+}
+
+// buildTrustMain makes the repository of initTrustMain in dir.
+func buildTrustMain(t *testing.T, dir string) {
+	t.Helper()
+	buildGit(t, dir, "init", "-q", "-b", "main")
+	writeFile(t, filepath.Join(dir, ".gitignore"), ".claude/worktrees/\n", 0o644)
+	buildGit(t, dir, "add", ".gitignore")
+	buildGit(t, dir, "commit", "-q", "-m", "init")
 }
 
 // entry is the linked-worktree entry of TW.

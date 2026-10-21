@@ -194,6 +194,14 @@ func TestStartTestWithoutTheDaemonHashDefault(t *testing.T) {
 		t.Run(kv[0], func(t *testing.T) {
 			t.Setenv(kv[0], kv[1])
 			f := newShadowFixture(t)
+			// The fixture repository is made with the variable too.
+			want := "sha1"
+			if kv[0] == "GIT_DEFAULT_HASH" {
+				want = kv[1]
+			}
+			if got := gitOut(t, f.repo, "rev-parse", "--show-object-format"); got != want {
+				t.Fatalf("the object format of the fixture is %s, want %s", got, want)
+			}
 			raw, calls := f.info(t, f.repo, nil)
 			if !strings.Contains(raw, `"isRepo":true`) || !strings.Contains(raw, `"settingsControl":"shadow"`) {
 				t.Fatalf("git.info = %s", raw)

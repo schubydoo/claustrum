@@ -19,8 +19,8 @@ func createModesRepo(t *testing.T) (base, repo string) {
 	base = resolveTestRoot(t, t.TempDir())
 	repo = filepath.Join(base, "repo")
 	copyFixtureTemplate(t, "worktree-create-modes", repo, func(t *testing.T, dir string) {
-		runGit(t, dir, "init", "-q", "-b", "main")
-		runGit(t, dir, "commit", "-q", "--allow-empty", "-m", "init")
+		buildGit(t, dir, "init", "-q", "-b", "main")
+		buildGit(t, dir, "commit", "-q", "--allow-empty", "-m", "init")
 	})
 	return base, repo
 }

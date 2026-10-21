@@ -50,11 +50,11 @@ func newStatusFixtureInit(t *testing.T, key string, initArgs ...string) statusFi
 	}
 	f := statusFixture{root: root, T: filepath.Join(root, "T"), W: filepath.Join(root, "W")}
 	copyFixtureTemplate(t, key, f.T, func(t *testing.T, top string) {
-		runGit(t, top, append([]string{"init", "-q", "-b", "main"}, initArgs...)...)
+		buildGit(t, top, append([]string{"init", "-q", "-b", "main"}, initArgs...)...)
 		writeFile(t, filepath.Join(top, "t.txt"), "t\n", 0o644)
 		writeFile(t, filepath.Join(top, ".gitignore"), ".claude/worktrees/\n", 0o644)
-		runGit(t, top, "add", ".")
-		runGit(t, top, "commit", "-q", "-m", "c0")
+		buildGit(t, top, "add", ".")
+		buildGit(t, top, "commit", "-q", "-m", "c0")
 	})
 	runGit(t, f.T, "worktree", "add", "-q", "-b", "w", f.W)
 	f.entry = filepath.Join(f.T, ".git", "worktrees", "W")

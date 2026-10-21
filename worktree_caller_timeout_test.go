@@ -58,13 +58,13 @@ func newWTFixture(t *testing.T, linked bool) wtFixture {
 	// The template holds no absolute path. The linked worktree does, so each
 	// test adds its own.
 	copyFixtureTemplate(t, "worktree-create", top, func(t *testing.T, top string) {
-		runGit(t, top, "init", "-q", "-b", "main")
+		buildGit(t, top, "init", "-q", "-b", "main")
 		writeFile(t, filepath.Join(top, "t.txt"), "t\n", 0o644)
 		writeFile(t, filepath.Join(top, ".claude", "settings.json"), "{}\n", 0o644)
 		writeFile(t, filepath.Join(top, ".gitignore"), ".claude/worktrees/\n.claude/settings.local.json\n", 0o644)
-		runGit(t, top, "add", ".")
-		runGit(t, top, "commit", "-q", "-m", "c0")
-		runGit(t, top, "branch", "ex")
+		buildGit(t, top, "add", ".")
+		buildGit(t, top, "commit", "-q", "-m", "c0")
+		buildGit(t, top, "branch", "ex")
 	})
 	f := wtFixture{realGit: realGit, top: top, base: top, regDir: filepath.Join(top, ".git", "worktrees")}
 	if linked {

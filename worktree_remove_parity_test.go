@@ -31,8 +31,8 @@ func newRmFixture(t *testing.T) rmFixture {
 	requireGit(t)
 	repo := filepath.Join(resolveTestRoot(t, t.TempDir()), "repo")
 	copyFixtureTemplate(t, "worktree-remove", repo, func(t *testing.T, dir string) {
-		runGit(t, dir, "init", "-q", "-b", "main")
-		runGit(t, dir, "commit", "-q", "--allow-empty", "-m", "init")
+		buildGit(t, dir, "init", "-q", "-b", "main")
+		buildGit(t, dir, "commit", "-q", "--allow-empty", "-m", "init")
 	})
 	wt := filepath.Join(repo, ".claude", "worktrees", "wt1")
 	runGit(t, repo, "worktree", "add", "-q", "-b", "wt1", wt)

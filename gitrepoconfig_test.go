@@ -26,17 +26,21 @@ import (
 const baseRepoConfig = "\tfilemode = true\n\tbare = false\n\tlogallrefupdates = true\n"
 
 // configRepo makes a repository with one commit and returns its folder and its
-// git directory, both with symlinks resolved.
+// git directory, both with symlinks resolved. It copies a template, which holds
+// no absolute path.
 func configRepo(t *testing.T) (repo, gitDir string) {
 	t.Helper()
 	requireGit(t)
 	repo = filepath.Join(resolveTestRoot(t, t.TempDir()), "repo")
-	if err := os.MkdirAll(repo, 0o755); err != nil {
-		t.Fatal(err)
-	}
-	runGit(t, repo, "init", "-q", "-b", "main")
-	runGit(t, repo, "commit", "-q", "--allow-empty", "-m", "init")
+	copyFixtureTemplate(t, "config-repo", repo, buildConfigRepo)
 	return repo, filepath.Join(repo, ".git")
+}
+
+// buildConfigRepo makes the repository of configRepo in dir.
+func buildConfigRepo(t *testing.T, dir string) {
+	t.Helper()
+	buildGit(t, dir, "init", "-q", "-b", "main")
+	buildGit(t, dir, "commit", "-q", "--allow-empty", "-m", "init")
 }
 
 // setRepoConfig writes text as the config of gitDir.
@@ -762,12 +766,18 @@ type refusalFixture struct {
 	repo, gitDir, wt string
 }
 
+// newRefusalFixture copies a template of the repository of configRepo with the
+// worktree wr. The copy points the two worktree paths at itself.
 func newRefusalFixture(t *testing.T) refusalFixture {
 	t.Helper()
-	repo, gitDir := configRepo(t)
-	wt := filepath.Join(repo, ".claude", "worktrees", "wr")
-	runGit(t, repo, "worktree", "add", "-q", wt, "-b", "wr")
-	return refusalFixture{repo: repo, gitDir: gitDir, wt: wt}
+	requireGit(t)
+	wtRel := filepath.Join(".claude", "worktrees", "wr")
+	repo := filepath.Join(resolveTestRoot(t, t.TempDir()), "repo")
+	copyWorktreeTemplate(t, "refusal-repo", repo, func(t *testing.T, dir string) {
+		buildConfigRepo(t, dir)
+		buildGit(t, dir, "worktree", "add", "-q", filepath.Join(dir, wtRel), "-b", "wr")
+	}, wtRel)
+	return refusalFixture{repo: repo, gitDir: filepath.Join(repo, ".git"), wt: filepath.Join(repo, wtRel)}
 }
 
 // fiveRequests are one request of each git method on the fixture, with extra

@@ -65,13 +65,13 @@ func newFifoRepo(t *testing.T, dir string) {
 	t.Helper()
 	requireGit(t)
 	copyFixtureTemplate(t, "fifo-main", dir, func(t *testing.T, dir string) {
-		runGit(t, dir, "init", "-q", "-b", "main")
+		buildGit(t, dir, "init", "-q", "-b", "main")
 		writeFile(t, filepath.Join(dir, ".gitignore"), ".claude/worktrees/\n", 0o644)
 		writeFile(t, filepath.Join(dir, "t.txt"), "t\n", 0o644)
 		writeFile(t, filepath.Join(dir, "a", "f.txt"), "f\n", 0o644)
 		writeFile(t, filepath.Join(dir, "T", "t.txt"), "inner\n", 0o644)
-		runGit(t, dir, "add", ".")
-		runGit(t, dir, "commit", "-q", "-m", "init")
+		buildGit(t, dir, "add", ".")
+		buildGit(t, dir, "commit", "-q", "-m", "init")
 	})
 }
 
