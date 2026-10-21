@@ -228,6 +228,12 @@ func runGitLingering(args []string) int {
 // When CLAUSTRUM_GITSTUB_STARTED names a file, a slowed call first writes the
 // time of its start into it, in nanoseconds since the Unix epoch.
 //
+// When CLAUSTRUM_GITSTUB_TIMELOG names a file, every call appends two lines to
+// it (runGitSlowTimed). The first one comes before any other step of the call:
+// "start", the time, the pid and the argv. The second one comes right before the
+// call returns its exit code: "end", the time and the pid. The words are joined
+// by a unit separator (0x1f), and a time is in nanoseconds since the Unix epoch.
+//
 // When CLAUSTRUM_GITSTUB_LOG names a file, every call appends its argv to it as
 // one line, with the words joined by a unit separator (0x1f). When
 // CLAUSTRUM_GITSTUB_CTXLOG names a file, every call appends its working directory,
@@ -806,6 +812,21 @@ func runCLIStub() int {
 	return code
 }
 
+// runGitSlowTimed runs runGitSlow. With CLAUSTRUM_GITSTUB_TIMELOG set, it logs
+// the start and the end of the call there. See runGitSlow.
+func runGitSlowTimed(args []string) int {
+	log := os.Getenv("CLAUSTRUM_GITSTUB_TIMELOG")
+	pid := strconv.Itoa(os.Getpid())
+	if log != "" {
+		appendLine(log, "start\x1f"+strconv.FormatInt(time.Now().UnixNano(), 10)+"\x1f"+pid+"\x1f"+strings.Join(args, "\x1f"))
+	}
+	code := runGitSlow(args)
+	if log != "" {
+		appendLine(log, "end\x1f"+strconv.FormatInt(time.Now().UnixNano(), 10)+"\x1f"+pid)
+	}
+	return code
+}
+
 // appendLine appends line and a newline to the file at path.
 func appendLine(path, line string) {
 	if f, err := os.OpenFile(path, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0o644); err == nil {
@@ -1033,7 +1054,7 @@ func runHelper(mode string, args []string) int {
 	case "git-slow":
 		// Stand-in `git` for the git.worktree_create caller-timeout tests. It passes
 		// every call through to the real git and slows one chosen call. See runGitSlow.
-		return runGitSlow(args)
+		return runGitSlowTimed(args)
 	case "open-repo-file":
 		// Opens args[0] as the config read does (openRepoFile). Then it prints
 		// "terminal" if this process has a controlling terminal, and "no terminal"

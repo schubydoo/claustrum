@@ -14,7 +14,6 @@ import (
 	"strconv"
 	"strings"
 	"sync"
-	"sync/atomic"
 	"syscall"
 	"testing"
 	"time"
@@ -161,7 +160,7 @@ func installGitSlowStub(t *testing.T, realGit string) {
 	t.Setenv("PATH", bin+string(os.PathListSeparator)+os.Getenv("PATH"))
 	t.Setenv("CLAUSTRUM_TEST_HELPER", "git-slow")
 	t.Setenv("CLAUSTRUM_GITSTUB_REAL", realGit)
-	for _, k := range []string{"LOG", "CTXLOG", "ENVLOG", "IDXMODE", "EXPAND", "STDERR_FILE", "STDERR2_FILE", "EXIT", "ACTION", "LEAF", "SNAP", "VALUE", "FAIL_LISTING", "HOLD_MS", "ARGEND", "ARGLAST", "ENVEND", "STAGE", "HOLDPID", "HOLDSELF", "GATE", "STARTED", "WAITMS", "NTH", "NTHFILE",
+	for _, k := range []string{"LOG", "CTXLOG", "ENVLOG", "IDXMODE", "EXPAND", "STDERR_FILE", "STDERR2_FILE", "EXIT", "ACTION", "LEAF", "SNAP", "VALUE", "FAIL_LISTING", "HOLD_MS", "ARGEND", "ARGLAST", "ENVEND", "STAGE", "HOLDPID", "HOLDSELF", "GATE", "STARTED", "TIMELOG", "WAITMS", "NTH", "NTHFILE",
 		"MATCH2", "MODE2", "MS2", "EXIT2", "STDERR2", "ACTION2", "LEAF2", "VALUE2", "AFTER2"} {
 		t.Setenv("CLAUSTRUM_GITSTUB_"+k, "")
 	}
@@ -797,69 +796,31 @@ func TestWorktreeCreateCallerTimeout(t *testing.T) {
 				slowGit(t, "read-tree", "hold", drainCap+30*time.Second, "", "")
 				self := filepath.Join(t.TempDir(), "self")
 				t.Setenv("CLAUSTRUM_GITSTUB_HOLDSELF", self)
-				// The deadline fires 300 ms after the stub was reaped. The drain cap
-				// starts at that reap, so reapedAt is its start. On an idle host it is
-				// seen at most one poll late.
-				var mu sync.Mutex
-				var reapedAt time.Time
-				ready := reapedFor(self, 300*time.Millisecond)
-				var copyBefore atomic.Bool
-				fired := deadlineAt(t, func() bool {
-					mu.Lock()
-					defer mu.Unlock()
-					if reapedAt.IsZero() && stubReaped(self) {
-						reapedAt = time.Now()
-					}
-					return ready()
-				}, func() {
-					b, _ := os.ReadFile(log)
-					copyBefore.Store(strings.Contains(string(b), "\x1fls-files\x1f"))
-				})
-				// copyAt is the first poll that sees the copy step's ls-files after
-				// the checkout in the log. The goroutine ends at its find or at stop.
-				stop := make(chan struct{})
-				seen := make(chan time.Time, 1)
-				go func() {
-					for {
-						select {
-						case <-stop:
-							return
-						case <-time.After(5 * time.Millisecond):
-						}
-						if copyStarted(log) {
-							seen <- time.Now()
-							return
-						}
-					}
-				}()
-				var stopOnce sync.Once
-				halt := func() { stopOnce.Do(func() { close(stop) }) }
-				t.Cleanup(halt)
+				timeLog := filepath.Join(t.TempDir(), "git.times")
+				t.Setenv("CLAUSTRUM_GITSTUB_TIMELOG", timeLog)
+				// The deadline fires 300 ms after a poll saw the reap of the stub.
+				// No check below uses a poll time.
+				fired := deadlineAt(t, reapedFor(self, 300*time.Millisecond), nil)
 				raw, elapsed := f.create(t, s, "w1", tc.existing, lateMs)
 				want := `"error":"git worktree add timed out after ` + strconv.Itoa(lateMs) +
 					`ms (deadline expired after the checkout finished)","errorCode":"timeout"`
 				if !strings.Contains(raw, want) {
 					t.Fatalf("reply = %s, want %s", raw, want)
 				}
-				if copyBefore.Load() {
-					t.Errorf("the deadline fired after the copy step started, want it during the drain")
+				// The stub logs its own times. The drain cap starts when the daemon
+				// reaps the checkout, and that comes after the end time of the stub.
+				// The copy step starts after its start time. So a full drain gives a
+				// gap of at least the cap. On Linux a full drain gave 1.008 s to
+				// 1.059 s in 60 rows, and a drain that the deadline cut gave 309 to
+				// 316 ms. The margin of 100 ms covers a jump of the clock.
+				checkoutEnd, copyStart := drainTimes(t, timeLog)
+				gap := copyStart.Sub(checkoutEnd)
+				t.Logf("copy step %s after the end of the checkout, deadline %s after it", gap, fired().Sub(checkoutEnd))
+				if !fired().After(checkoutEnd) || !fired().Before(copyStart) {
+					t.Errorf("deadline at %s, checkout end at %s, copy start at %s: want the deadline during the drain", fired(), checkoutEnd, copyStart)
 				}
-				var copyAt time.Time
-				select {
-				case copyAt = <-seen:
-				case <-time.After(5 * time.Second):
-				}
-				halt()
-				// The deadline must not cut the drain short. A cut drain starts the
-				// copy step a little more than 300 ms after the reap. The margin of
-				// 250 ms covers a late poll.
-				mu.Lock()
-				reaped := reapedAt
-				mu.Unlock()
-				t.Logf("deadline %s and copy step %s after the reap", fired().Sub(reaped), copyAt.Sub(reaped))
-				if fired().IsZero() || reaped.IsZero() || copyAt.IsZero() ||
-					copyAt.Sub(reaped) < drainCap-250*time.Millisecond || elapsed >= drainCap+20*time.Second {
-					t.Errorf("copy step %s after the reap of the checkout, reply %s after the start, want the drain cap of %s to run on and the holder not waited for", copyAt.Sub(reaped), elapsed, drainCap)
+				if gap < drainCap-100*time.Millisecond || elapsed >= drainCap+20*time.Second {
+					t.Errorf("copy step %s after the end of the checkout, reply %s after the start, want the drain cap of %s to run on and the holder not waited for", gap, elapsed, drainCap)
 				}
 				f.assertRolledBack(t, tc.wantRegs, tc.existing != "")
 				var after []string
@@ -908,19 +869,53 @@ func TestWorktreeCreateCallerTimeout(t *testing.T) {
 	})
 }
 
-// copyStarted reports whether the stub log at path has an ls-files call after
-// a read-tree call.
-func copyStarted(path string) bool {
-	b, _ := os.ReadFile(path)
-	checkout := false
-	for _, line := range strings.Split(string(b), "\n") {
-		words := strings.Split(line, "\x1f")
-		if checkout && slices.Contains(words, "ls-files") {
-			return true
-		}
-		checkout = checkout || slices.Contains(words, "read-tree")
+// drainTimes reads the time log of the stub (CLAUSTRUM_GITSTUB_TIMELOG). It
+// returns the end time of the read-tree call before the first ls-files call
+// after a read-tree call, and the start time of that ls-files call.
+func drainTimes(t *testing.T, path string) (checkoutEnd, copyStart time.Time) {
+	t.Helper()
+	b, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("git stub time log: %v", err)
 	}
-	return false
+	ends := map[string]time.Time{}
+	type call struct {
+		pid   string
+		start time.Time
+		argv  []string
+	}
+	var calls []call
+	for _, line := range strings.Split(strings.TrimSuffix(string(b), "\n"), "\n") {
+		words := strings.Split(line, "\x1f")
+		if len(words) < 3 {
+			t.Fatalf("git stub time log line %q", line)
+		}
+		ns, err := strconv.ParseInt(words[1], 10, 64)
+		if err != nil {
+			t.Fatalf("git stub time log line %q: %v", line, err)
+		}
+		switch words[0] {
+		case "start":
+			calls = append(calls, call{words[2], time.Unix(0, ns), words[3:]})
+		case "end":
+			ends[words[2]] = time.Unix(0, ns)
+		}
+	}
+	checkout := ""
+	for _, c := range calls {
+		switch {
+		case slices.Contains(c.argv, "read-tree"):
+			checkout = c.pid
+		case checkout != "" && slices.Contains(c.argv, "ls-files"):
+			end, ok := ends[checkout]
+			if !ok {
+				t.Fatalf("git stub time log: the read-tree call %s has no end", checkout)
+			}
+			return end, c.start
+		}
+	}
+	t.Fatalf("git stub time log has no ls-files call after a read-tree call:\n%s", b)
+	return time.Time{}, time.Time{}
 }
 
 // gitCalls reads the stub's argv log and returns the calls that hold every word
