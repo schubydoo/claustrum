@@ -204,6 +204,7 @@ func runGitLingering(args []string) int {
 //   - "gate": make the file CLAUSTRUM_GITSTUB_GATE with ".in" added, then wait
 //     until the file CLAUSTRUM_GITSTUB_GATE exists, at most CLAUSTRUM_GITSTUB_MS
 //     milliseconds. Then make the file with ".out" added, and run the real git.
+//   - "gatefail": as "gate", but exit after the ".out" file without running git.
 //   - "post": run the real git, then sleep. With CLAUSTRUM_GITSTUB_GATE set, make
 //     that file with ".in" added before the sleep.
 //   - "fail": sleep, then exit without running git.
@@ -222,7 +223,7 @@ func runGitLingering(args []string) int {
 //     instead, and the descendant keeps CLAUSTRUM_GITSTUB_MS.
 //   - "holdfail": as "holdonly", but the call exits with CLAUSTRUM_GITSTUB_EXIT.
 //
-// "fail", "postfail" and "holdfail" exit with CLAUSTRUM_GITSTUB_EXIT, 1 when it is not set.
+// "fail", "gatefail", "postfail" and "holdfail" exit with CLAUSTRUM_GITSTUB_EXIT, 1 when it is not set.
 //
 // When CLAUSTRUM_GITSTUB_STARTED names a file, a slowed call first writes the
 // time of its start into it, in nanoseconds since the Unix epoch.
@@ -412,7 +413,7 @@ func runGitSlow(args []string) int {
 				_ = os.WriteFile(gate+".in", nil, 0o644)
 			}
 			pause()
-		case "gate":
+		case "gate", "gatefail":
 			gate := os.Getenv("CLAUSTRUM_GITSTUB_GATE")
 			_ = os.WriteFile(gate+".in", nil, 0o644)
 			ms, _ := strconv.Atoi(os.Getenv("CLAUSTRUM_GITSTUB_MS"))
@@ -422,6 +423,9 @@ func runGitSlow(args []string) int {
 				}
 			}
 			_ = os.WriteFile(gate+".out", nil, 0o644)
+			if mode == "gatefail" {
+				return exitCode
+			}
 		case "holdonly":
 			return holdStubOutput()
 		case "holdwait":
