@@ -208,20 +208,21 @@ func TestKillEndsOnlyTheDirectChild(t *testing.T) {
 		wantLog string
 	}{
 		{"kill default", func(m *procManager) result { m.kill("c1", ""); return result{} },
-			"[process.Manager] Process c1 exited with code 1, signalled at client request\n"},
+			"[process.Manager] Process c1 exited with code 1, signalled at client request"},
 		{"kill TERM", func(m *procManager) result { m.kill("c1", "TERM"); return result{} },
-			"[process.Manager] Process c1 exited with code 1, signalled at client request\n"},
+			"[process.Manager] Process c1 exited with code 1, signalled at client request"},
 		{"kill KILL", func(m *procManager) result { m.kill("c1", "KILL"); return result{} },
-			"[process.Manager] Process c1 exited with code 1, signalled at client request\n"},
+			"[process.Manager] Process c1 exited with code 1, signalled at client request"},
 		{"killAndWait default", func(m *procManager) result {
 			f, d, a, e := m.killAndWait("c1", "", 3*time.Second, true)
 			return result{f, d, a, e}
-		}, "[process.Manager] Process c1 exited with code 1, signalled at client request\n"},
+		}, "[process.Manager] Process c1 exited with code 1, signalled at client request"},
 		{"killAndWait no escalate", func(m *procManager) result {
 			f, d, a, e := m.killAndWait("c1", "", 3*time.Second, false)
 			return result{f, d, a, e}
-		}, "[process.Manager] Process c1 exited with code 1, signalled at client request\n"},
-		// The exit line of a clean stop is not measured on Windows. Only the code is.
+		}, "[process.Manager] Process c1 exited with code 1, signalled at client request"},
+		// The exit line of a clean stop is not measured on Windows. Only the code is, so
+		// the empty wantLog checks the code alone.
 		{"clean stop", func(m *procManager) result { m.killAll(); return result{} }, ""},
 	}
 	for _, tc := range actions {
@@ -239,8 +240,12 @@ func TestKillEndsOnlyTheDirectChild(t *testing.T) {
 			if strings.HasPrefix(tc.name, "killAndWait") && got != (result{found: true, died: true}) {
 				t.Errorf("killAndWait = %+v, want found and died only", got)
 			}
-			if log := buf.String(); !strings.HasSuffix(log, tc.wantLog) || !strings.Contains(log, "Process c1 exited with code 1") {
-				t.Errorf("log = %q, want exit code 1 and the end %q", log, tc.wantLog)
+			// A child left alive by another test can add its own exit line after this one,
+			// so the check takes the exit lines of c1 and not the end of the log.
+			if lines := exitLinesOfC1(buf.String()); len(lines) != 1 {
+				t.Errorf("log = %q, want exactly one exit line of c1 with code 1, got %d", buf.String(), len(lines))
+			} else if tc.wantLog != "" && lines[0] != tc.wantLog {
+				t.Errorf("exit line = %q, want %q", lines[0], tc.wantLog)
 			}
 			if strings.Contains(buf.String(), "group kill failed") {
 				t.Errorf("log = %q, want no group kill line", buf.String())
@@ -251,6 +256,19 @@ func TestKillEndsOnlyTheDirectChild(t *testing.T) {
 			}
 		})
 	}
+}
+
+// exitLinesOfC1 returns each log line that holds the exit line of c1 with code 1, from
+// the [process.Manager] tag on. The level tag before it is dropped.
+func exitLinesOfC1(log string) []string {
+	const marker = "[process.Manager] Process c1 exited with code 1"
+	var lines []string
+	for _, ln := range strings.Split(log, "\n") {
+		if i := strings.Index(ln, marker); i >= 0 {
+			lines = append(lines, ln[i:])
+		}
+	}
+	return lines
 }
 
 // TestKillWithKidsHoldingThePipes: a grandchild holds the stdout and stderr of the child.

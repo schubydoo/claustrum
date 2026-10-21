@@ -238,8 +238,9 @@ func (u gitUse) shadow() bool {
 // task105-04). Such a create holds its git directory from that later gate on
 // (keepLiveCreate), so a copy add acts through the held folder. An add with no
 // copy in a create that holds its git directory gets the test of
-// offWorktreesRefusal first. 5fd08069 refuses there with that text (cell C6b
-// of round task105-04, Linux VM).
+// offWorktreesRefusal after the listing of the add. 5fd08069 refuses there
+// with that text, and the listing in the repository is its last call (cell
+// C6b of rounds task105-04 and task105-06, Linux VM).
 func worktreeAdd(ctx context.Context, u gitUse, repo, leaf string, cp worktreeCheckpoint, args ...string) (string, error) {
 	f, off := u.fixedForm(true)
 	_, named := f.names(repo)
@@ -250,13 +251,13 @@ func worktreeAdd(ctx context.Context, u gitUse, repo, leaf string, cp worktreeCh
 		}
 		return stderr, err
 	}
+	named = named && shadowLinksWorktrees
+	cmd := hardenedGitCmd(ctx, f, repo, false, nil, args...)
 	if off && f.accepted != nil {
 		if text := offWorktreesRefusal(repo); text != "" {
 			return "", &addNotPrepared{text: text}
 		}
 	}
-	named = named && shadowLinksWorktrees
-	cmd := hardenedGitCmd(ctx, f, repo, false, nil, args...)
 	// A create that holds its git directory runs no `worktree add` when the
 	// path no longer names the held folder. The test comes after the listing.
 	if f.swapped("plain add") {
