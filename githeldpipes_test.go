@@ -278,15 +278,18 @@ func TestStartTestCallsAndTheirPipes(t *testing.T) {
 	t.Run("N-a init", func(t *testing.T) {
 		f := newShadowFixture(t)
 		endHeldDescendant(t)
+		// The child holds the pipes for three times the bound. A start test that
+		// waits for the pipes ends at the bound or later. One that does not ends
+		// about 20 s before the bound, so a slow host does not fail the check.
 		setDuration(t, &shadowCallBound, 20*time.Second)
 		setDuration(t, &shadowCallDrain, 200*time.Millisecond)
-		slowGit(t, "init", "hold", 5*time.Second, "", "")
+		slowGit(t, "init", "hold", 3*shadowCallBound, "", "")
 		start := time.Now()
 		if msg := f.s.gitShadow.gate(false); msg != "" {
 			t.Errorf("the start test = %q, want it to pass", msg)
 		}
-		if d := time.Since(start); d > 4*time.Second {
-			t.Errorf("the start test ended after %v, want it soon after the wait of 200 ms", d)
+		if d := time.Since(start); d >= shadowCallBound {
+			t.Errorf("the start test ended after %v, want it before the bound of %v", d, shadowCallBound)
 		}
 	})
 	t.Run("N-b call 7", func(t *testing.T) {
