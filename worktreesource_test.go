@@ -53,12 +53,17 @@ func buildSourceFixture(t *testing.T) *sourceFixture {
 			repo:   filepath.Join(dir, "T"),
 		}
 		b.base = b.repo
-		runGit(t, dir, "init", "-q", "--bare", "-b", "main", "O.git")
-		runGit(t, dir, "init", "-q", "-b", "main", "W")
-		runGit(t, b.helper, "remote", "add", "origin", b.origin)
-		b.commit(b.helper, map[string]string{".gitignore": ".claude/worktrees/\n", "t.txt": "t\n"})
-		runGit(t, b.helper, "push", "-q", "origin", "main")
-		runGit(t, dir, "clone", "-q", b.origin, "T")
+		buildGit(t, dir, "init", "-q", "--bare", "-b", "main", "O.git")
+		buildGit(t, dir, "init", "-q", "-b", "main", "W")
+		buildGit(t, b.helper, "remote", "add", "origin", b.origin)
+		// The first commit of commit, with buildGit.
+		for name, body := range map[string]string{".gitignore": ".claude/worktrees/\n", "t.txt": "t\n", "n.txt": "n\n"} {
+			writeFile(t, filepath.Join(b.helper, name), body, 0o644)
+		}
+		buildGit(t, b.helper, "add", "-A")
+		buildGit(t, b.helper, "commit", "-q", "-m", "c")
+		buildGit(t, b.helper, "push", "-q", "origin", "main")
+		buildGit(t, dir, "clone", "-q", b.origin, "T")
 	})
 	// commit keeps its count in n.txt, so the copy carries the template's count.
 	n, err := os.ReadFile(filepath.Join(fx.helper, "n.txt"))

@@ -37,8 +37,8 @@ func TestWorktreeCreateRefusesJunctionParent(t *testing.T) {
 			base := resolveTestRoot(t, t.TempDir())
 			repo := filepath.Join(base, "repo")
 			copyFixtureTemplate(t, "worktree-remove", repo, func(t *testing.T, dir string) {
-				runGit(t, dir, "init", "-q", "-b", "main")
-				runGit(t, dir, "commit", "-q", "--allow-empty", "-m", "init")
+				buildGit(t, dir, "init", "-q", "-b", "main")
+				buildGit(t, dir, "commit", "-q", "--allow-empty", "-m", "init")
 			})
 			if err := os.MkdirAll(filepath.Join(repo, ".claude"), 0o755); err != nil {
 				t.Fatal(err)
@@ -96,8 +96,8 @@ func TestWorktreeRemoveGoneLockedShortBase(t *testing.T) {
 	requireGit(t)
 	repo := filepath.Join(resolveTestRoot(t, t.TempDir()), "longrepository1")
 	copyFixtureTemplate(t, "worktree-remove", repo, func(t *testing.T, dir string) {
-		runGit(t, dir, "init", "-q", "-b", "main")
-		runGit(t, dir, "commit", "-q", "--allow-empty", "-m", "init")
+		buildGit(t, dir, "init", "-q", "-b", "main")
+		buildGit(t, dir, "commit", "-q", "--allow-empty", "-m", "init")
 	})
 	holder := filepath.Join(repo, ".claude", "worktrees")
 	runGit(t, repo, "worktree", "add", "-q", "-b", "wt1", filepath.Join(holder, "wt1"))
