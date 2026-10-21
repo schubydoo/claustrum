@@ -1151,6 +1151,10 @@ func runHelper(mode string, args []string) int {
 		// that is not a daemon does. args[0] = lock path, args[1] = ready-file path,
 		// args[2] = a file whose creation makes the fixture let go and exit 0.
 		return runlockHoldEmptyFixture(args)
+	case "peer-netns":
+		// Peer check fixture (Linux): a daemon whose caller has another network
+		// namespace. See peerNetnsFixture.
+		return peerNetnsFixture()
 	case "peer-dial":
 		// Peer check fixture: dial the unix socket args[0]. With args[1] = "exit" it
 		// exits at once, with the connection open. Otherwise it writes args[1] and a
