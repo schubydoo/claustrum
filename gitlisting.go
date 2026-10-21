@@ -128,7 +128,9 @@ type listingRun struct {
 // runListing runs `git [--git-dir=<gitDir>] config -z --list` in dir with env. gitDir
 // is "" for the plain form. In a request with time limits the listing ends at
 // configListingLimit (gitRun). The daemon reads its output to the end
-// (untilPipeEOF).
+// (untilPipeEOF). The command has no SysProcAttr, so a dir that does not exist
+// fails the start in os.StartProcess before any process starts
+// (missingPathListing).
 func runListing(ctx context.Context, dir, gitDir string, env []string) listingRun {
 	ctx = untilPipeEOF(withGitLimit(ctx, listingLimit))
 	args := []string{"config", "-z", "--list"}
@@ -331,6 +333,22 @@ func noRepoCalls(t gitDirTrust, u gitUse, dir string, heavy, off bool, args ...s
 // is not measured for git.list_branches: it gets the call too.
 func noRepoInfoCalls(t gitDirTrust, s *gitStop, dir string, off bool) string {
 	return noRepoCalls(t, gitUse{stop: s}, dir, true, off, "rev-parse", "--git-dir")
+}
+
+// missingPathListing is the listing of noRepoInfoCalls for a git.info on dir, a
+// path that does not exist. It takes the steps of that listing, with its pin and
+// its walk, and returns the error of the start. os.StartProcess, which
+// exec.Cmd.Start calls, tests the folder of a command with no SysProcAttr before
+// it starts a process, on Linux, macOS and Windows (from the code of Go). So the
+// start fails on the missing folder, and no process starts. 5fd08069 starts none
+// there either: no clone, fork, execve or chdir follows the request (cell T7s of
+// round task107-01, Linux VM). A folder that appears before the start gets the
+// listing, and git.info does not read it (claustrum's own, not measured). The
+// listing has its own stop state, so a listing that its time limit stops there
+// does not change the reply.
+func missingPathListing(dir string) error {
+	u := gitUse{stop: &gitStop{}}
+	return runListing(u.stop.context(), dir, "", u.precursorEnv(true, u.pin(dir))).err
 }
 
 // noRepoCreateCalls is noRepoCalls for git.worktree_create. On 5fd08069 a create on a repository whose HEAD has mode 000 makes
