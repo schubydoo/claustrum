@@ -117,8 +117,8 @@ See [`DIVERGENCES.md`](DIVERGENCES.md) → CT-5 for the full contract.
 ## Authentication
 
 Every request carries a top-level `"auth":"<token>"`. `server.shutdown` is the one
-exception, and it is not authenticated at all. A shutdown frame stops the daemon
-whether its `auth` member is absent, empty, wrong, or valid. `-stop` sends no
+exception, and it is not authenticated at all. A shutdown frame that the daemon
+reads stops it, with any `auth` member or none. `-stop` sends no
 `auth` member. This matches the reference, and the Desktop client depends on it.
 Desktop stops the daemon with `server --stop --socket <sock>` from a bare SSH
 command line, with no `CLAUDE_RPC_TOKEN` in its environment. The exemption covers
@@ -658,25 +658,23 @@ measured this, with the value 65536. On the Windows VM the reference log has no
 such line, and claustrum writes none there. A failed raise was not measured.
 Claustrum writes no line then.
 
-A start with `CLAUDE_SSH_PEER_CHECK=1` writes one more line before the banner,
-at WARN level. `CLAUSTRUM_LOG_LEVEL=error` drops it. On macOS and Windows the
-text is:
+A start with `CLAUDE_SSH_PEER_CHECK=1` writes one more line before the banner.
+On Linux it is at INFO level and names the namespaces of the daemon:
+
+```
+[Server] serving only callers in "user:[4026531837] net:1 pidfd"
+```
+
+`5fd08069` writes it after its open-files line (round `task011-01`, Linux VM).
+On macOS and Windows the line is at WARN level, and `5fd08069` writes this text
+last before its banner (macOS and Windows VMs):
 
 ```
 [Server] this system names no namespaces: cannot tell callers in a sandbox from others, serving all
 ```
 
-`5fd08069` writes that text there, with no level tag, as the last line before its
-banner (macOS and Windows VMs). On Linux the text is claustrum's own:
-
-```
-[Server] CLAUDE_SSH_PEER_CHECK is set: this build has no peer check on Linux, serving all callers
-```
-
-On the Linux VM `5fd08069` writes a different line at that place
-([D25](DIVERGENCES.md#d25)). The place of the line beside the lines of a reap is
-not measured. The `peerCheck` member of `server.capabilities` tells the same
-state.
+A Linux kernel that names no namespace gets that line too (claustrum's own, not
+measured). The place of the line beside the lines of a reap is not measured.
 
 The banner ends with the pid of the daemon and its instance. The instance is the
 `instanceId` of `server.capabilities`. `f6010b97` and `89cb6289` print the same
@@ -800,6 +798,7 @@ contract.
 | `-32002` | `stdin backpressure: queue full`, from `process.stdin` when the per-process async stdin queue is already full (16 MiB). The write is rejected, not blocked. |
 | `-32004` | `the managed launcher cannot be used: <reason>`, from `process.spawn` when the checks refuse its `launcher` param, and for any `launcher` on Windows (added in `89cb6289`) |
 | `-32005` | `the managed launcher <path> could not be started: <reason>`, from `process.spawn` when the launcher passes the checks but does not start (added in `89cb6289`) |
+| `-32006` | `Refused: this server could not confirm that the caller is in its own namespaces`, on Linux (see server.*) |
 | `-32001` | `Unauthorized: invalid or missing auth token` |
 
 ### Error-string catalogue
@@ -1125,7 +1124,7 @@ Windows VMs saw it at that place.
 | method | params | result |
 |---|---|---|
 | `server.ping` | none | `{"pong":true}` |
-| `server.capabilities` | none | `{"version":"<id>","methods":[…20…],"instanceId":"<32-hex>","startedAt":<unix-ms>,"features":["process.stdin.offset","files.extract_tar.execBit","git.status.baseRepo","git.info.discovered_root","git.worktree_create.timeoutMs","git.worktree_create.existingBranch","git.worktree_remove.unpushedGuard","process.spawn.shellAgentSocket","launcher.managed","server.peer_check","git.worktree.external_root","server.instance_id"],"peerCheck":"off"}`. `plugins.prune` is the last method on every OS. `git.worktree.external_root` is omitted on Windows. `files.extract_tar.execBit`, `git.worktree_create.timeoutMs`, `git.worktree_create.existingBranch`, `git.worktree_remove.unpushedGuard`, `process.spawn.shellAgentSocket`, `launcher.managed`, `server.peer_check`, `instanceId`, `startedAt` and `peerCheck` are present on every OS |
+| `server.capabilities` | none | `{"version":"<id>","methods":[…20…],"instanceId":"<32-hex>","startedAt":<unix-ms>,"features":["process.stdin.offset","files.extract_tar.execBit","git.status.baseRepo","git.info.discovered_root","git.worktree_create.timeoutMs","git.worktree_create.existingBranch","git.worktree_remove.unpushedGuard","process.spawn.shellAgentSocket","launcher.managed","server.peer_check","git.shadow_dir","git.worktree.external_root","server.instance_id"],"peerCheck":"off"}`. `plugins.prune` is the last method on every OS. `git.worktree.external_root` is omitted on Windows. `files.extract_tar.execBit`, `git.worktree_create.timeoutMs`, `git.worktree_create.existingBranch`, `git.worktree_remove.unpushedGuard`, `process.spawn.shellAgentSocket`, `launcher.managed`, `server.peer_check`, `git.shadow_dir`, `instanceId`, `startedAt` and `peerCheck` are present on every OS |
 | `server.shutdown` | none | `{"ok":true}`, when the reply gets out. The handler returns the reply as soon as the stop has started. The frame arrives only when its write wins the race with the close. See below |
 
 - `server.version` was removed in `7d193f89`. It now answers
@@ -1142,57 +1141,61 @@ Windows VMs saw it at that place.
 - The `features` array was added by `7c2f88d`. It follows `instanceId` and
   `startedAt`, and it advertises optional extensions. `process.stdin.offset`, the
   resumable and idempotent stdin contract, landed first. `7d193f89` added
-  `git.status.baseRepo` and `git.worktree.external_root`. `4534d86` inserted
+  `git.status.baseRepo` and `git.worktree.external_root`. That build drops the
+  latter on Windows, and claustrum matches. `4534d86` inserted
   `git.worktree_create.timeoutMs` before `git.worktree.external_root` and appended
-  `server.instance_id`, which is always last on every OS. `19f30c46` inserted
-  `git.worktree_create.existingBranch` after `git.worktree_create.timeoutMs`,
-  because `worktree_create` can attach an already-existing branch. On unix
-  `git.worktree.external_root` is present. On Windows it is omitted. The reference
-  gates the external-worktree capability off on Windows, measured against
-  `7d193f89`, and drops the feature from its Windows capabilities frame, so
-  claustrum matches. `f6010b97` inserted `process.spawn.shellAgentSocket` after
-  `git.worktree_create.existingBranch`, because `process.spawn` can hand a child
-  the login shell's SSH agent socket. `89cb6289` inserted
-  `git.worktree_remove.unpushedGuard` after `git.worktree_create.existingBranch`,
-  because `git.worktree_remove` keeps a branch that no other ref reaches. The Linux,
-  macOS and Windows VMs saw it at that place. `89cb6289` also inserted
-  `git.info.discovered_root` after `git.status.baseRepo`. In that build `git.info`
-  runs no `rev-parse --show-toplevel` on Linux and macOS (row L01). The Linux, macOS
-  and Windows VMs saw the feature at that place. `git.info.discovered_root`, `git.worktree_create.timeoutMs`,
-  `git.worktree_create.existingBranch`, `git.worktree_remove.unpushedGuard` and
-  `process.spawn.shellAgentSocket` are present on every OS. `89cb6289` also
-  inserted `launcher.managed` after `process.spawn.shellAgentSocket`, for
-  `launcher.resolve` and the `process.spawn` `launcher` param. Windows lists it
-  too, although a Windows spawn refuses every managed launcher. The VMs of all
-  three OSes saw it at that place. The `CLAUDE_SSH_MANAGED_LAUNCHER` gate does not
+  `server.instance_id`, which is always last. `19f30c46` inserted
+  `git.worktree_create.existingBranch` after `git.worktree_create.timeoutMs`.
+  `f6010b97` inserted `process.spawn.shellAgentSocket` after it. `89cb6289`
+  inserted `git.worktree_remove.unpushedGuard` after
+  `git.worktree_create.existingBranch`, `git.info.discovered_root` after
+  `git.status.baseRepo` and `launcher.managed` after
+  `process.spawn.shellAgentSocket`. The `CLAUDE_SSH_MANAGED_LAUNCHER` gate does not
   change the capabilities frame (measured on macOS). `5fd08069` inserted
-  `server.peer_check` after `launcher.managed`, for the `peerCheck` member. The
-  Linux, macOS and Windows VMs saw it at that place. `5fd08069` also inserted
-  `files.extract_tar.execBit` after `process.stdin.offset`. The Linux, macOS and
-  Windows VMs saw it at that place. On those VMs `5fd08069` also lists one
-  feature that claustrum does not list.
-- In claustrum's answer `peerCheck` is the last member, directly after
-  `features`. It is in every answer. claustrum answers one of two values:
-  `"off"` or `"unavailable"`. The daemon reads the variable
-  `CLAUDE_SSH_PEER_CHECK` of its own environment one time, at its start. Then it
-  removes the variable from that environment. Only the exact value `1` changes
-  the member. claustrum has no peer check. With `1` it
-  answers `"unavailable"` on Linux, macOS and Windows, and it serves every caller.
-  With each other value, and with no variable, it answers `"off"`.
-  On `5fd08069` each of these gave `"off"`:
+  `server.peer_check` after `launcher.managed` and `files.extract_tar.execBit`
+  after `process.stdin.offset`. The Linux, macOS and Windows VMs saw the features of
+  `89cb6289` and `5fd08069` at their places. `git.shadow_dir` follows
+  `server.peer_check` (rounds `task011-01` and `s12`).
+- `peerCheck` comes directly after `features`, in every answer. The daemon reads
+  `CLAUDE_SSH_PEER_CHECK` once, at its start, and then removes it from its
+  environment. Only the exact value `1` turns the check on. Each other value, and
+  no variable, answer `"off"`. On `5fd08069` each of these gave `"off"`:
     - Linux VM: no variable, `0`, `off`, the empty value, `true`, `yes`, `on`,
       `2`, `01` and ` 1` (a space before the digit).
     - macOS VM: no variable, `0`, `off`, the empty value and `true`.
     - Windows VM: no variable, `0` and `off`.
 
-  With `1`, `5fd08069` answers `"unavailable"` on the macOS VM and on the Windows
-  VM. A `server.ping` after it got its answer (macOS VM). For this member,
-  `5fd08069` and claustrum differ in one of the listed values: `1` on
-  Linux. On the Linux VM `5fd08069` answers
-  `"peerCheck":"on","peerCheckBy":["network","pidfd"]`. claustrum answers
-  `"peerCheck":"unavailable"` there, with no `peerCheckBy` member, and it serves
-  all callers. That is [D25](DIVERGENCES.md#d25). The log line of that start is
-  in [Daemon log](#daemon-log-remote-serverlog).
+  With `1`, macOS and Windows answer `"unavailable"`, as `5fd08069` does (macOS
+  and Windows VMs), and serve every caller. Linux answers
+  `"peerCheck":"on","peerCheckBy":["network","pidfd"]` (round `task011-01`, cell
+  P1, Linux VM). A kernel that lacks a part gets another state from claustrum
+  (not measured). The start line is in
+  [Daemon log](#daemon-log-remote-serverlog).
+- On Linux with `1` the daemon checks each new connection before it reads from
+  it. It refuses a caller whose text, in the form of the start line, differs
+  from its own (cell P2). How claustrum reads each part is its own (not
+  measured). A refused caller gets one frame, then the connection closes:
+
+  ```
+  {"jsonrpc":"2.0","id":null,"error":{"code":-32006,"message":"Refused: this server could not confirm that the caller is in its own namespaces","data":{"reason":"other_namespace"}}}
+  ```
+
+  The reason is `other_namespace` for other namespaces (cell P2) and
+  `unreadable` for a link that the daemon cannot read (cell P3, a root caller).
+  An exited caller gets `lookup_failed` (cell P7). claustrum gives every other
+  failure `lookup_failed` (not measured).
+  The daemon reads no request, so an unauthenticated `server.shutdown` does
+  nothing (cell P4). A caller that wrote first reads the frame and then a reset
+  (cell P5). A refused connection has no `New connection` line. Refusals 1 to 10
+  each log one WARN line, and refusals 11 and 12 log none (cell P6):
+
+  ```
+  [Server] refused caller number 1 (other_namespace): "user:[4026532385] net:1 pidfd"; this server's namespaces are "user:[4026531837] net:1 pidfd"
+  ```
+
+  A caller that exited gets no line (cell P7). claustrum gives the frames and
+  check lines of `5fd08069` in cells P0 to P8, but for a level tag (round
+  `task011-02`, Linux VM).
 - `server.shutdown` is not authenticated. See [Authentication](#authentication).
 - On the reference, `server.shutdown` often closes the connection with no reply.
   In round `task034-01` the `{"ok":true}` frame of `5fd08069` came before the close

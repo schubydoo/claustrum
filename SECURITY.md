@@ -65,9 +65,9 @@ token did not already give. See
   therefore comes from the session directory's ACL.
 - `server.shutdown` is the one method the token does not gate. It is not
   authenticated. That is behavioral parity with the reference. Desktop stops the
-  daemon with no token in its environment. Reaching the socket is
-  therefore enough on its own to stop the daemon and drop every session, and
-  `-stop` sends no token. The socket's owner-only mode is what confines this. An
+  daemon with no token in its environment. Reaching the socket stops the
+  daemon and drops every session, unless the Linux peer check refuses the
+  caller. `-stop` sends no token. The socket's owner-only mode is what confines this. An
   actor who already shares the uid can do strictly more through `process.spawn`.
   The optional Windows named-pipe transport shares this dispatch, so the same
   exception applies. The claim that the Desktop client relies on this teardown

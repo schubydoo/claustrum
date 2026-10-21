@@ -195,7 +195,7 @@ six targets. It is a static `CGO_ENABLED=0` Go binary. OS-specific behavior is i
 - Login-shell PATH extraction.
 - The Windows-only `-listen-pipe` transport.
 
-The JSON-RPC surface is identical everywhere.
+Every OS serves the same JSON-RPC methods.
 
 ## Validation
 

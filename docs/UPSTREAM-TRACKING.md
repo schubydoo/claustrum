@@ -199,7 +199,6 @@ opt-in?
 | D22 | Always-on | Maybe. A probe that reaches the path shows it (expected) | `git.worktree_remove` refuses a worktree that is locked in the `.git` folder of `baseRepo`. `89cb6289` answers success in four states (rows p6, p6d, p6e and p6f), and with `worktreeRoot` rows q2 to q4 differ in the frame too (see the entry). A maintainer decision of 2026-10-03. The refusal is not drift. On Linux and macOS a gone worktree whose locked entry sits behind a linked `<git dir>/worktrees` gets success, and its branch goes. That follows `5fd08069` (cell L1 of round `tier0-26`, Linux VM), by the maintainer's decision of 2026-10-14. |
 | D23 | Always-on, Windows only | Maybe. A Windows probe whose child prints its environment block shows it in the stream frames (expected) | the environment block of a child is in name order. `89cb6289` keeps the order of its launching block, then `CLAUDE_SSH_DAEMON_CHILD=1`, then the added entries (Windows VM rows V1 to V10). The set of entries and the response frames are equal in those rows. Cause: the Go version. The other order is not drift |
 | D24 | Always-on | No in cells B6, B6b and B6w: the frames are equal and the disk differs (Linux and macOS VMs, and cell B6w on a Windows VM). A probe that lists the registrations folder shows it. Yes in cells X1, X1b and X1c of round `task077-03`, X1 and X1b of round `task077-04` (Windows VM). At the placement the frame holds claustrum's own text `is not the folder that was tested after the add`, or `is not the folder that was moved into place` on Windows (not measured) | If git answered `rev-parse --absolute-git-dir`, the rollback of `git.worktree_create` deletes the registration only if the folder at its path is still the folder that the create accepted after the add. `89cb6289` removes the folder at that path in cells B6 and B6b (Linux and macOS VMs). The placement of the index has the same test (not measured). On Windows a rollback after `.git` became a file runs no git call (cells X1, X1b and X1c). Maintainer decisions of 2026-10-07 and 2026-10-19. The kept folder and that frame are not drift |
-| D25 | Always-on, Linux only | Against `5fd08069`: yes on a Linux run with `CLAUDE_SSH_PEER_CHECK=1` in the daemon environment, and that member is equal with no variable. Against `89cb6289`: that build has no `peerCheck` member, see the `peerCheck` bullet below | `server.capabilities` answers `"peerCheck":"unavailable"`, where `5fd08069` answers `"peerCheck":"on","peerCheckBy":["network","pidfd"]` (Linux VM). claustrum has no peer check and serves every caller. Its log line there is its own text. A maintainer decision of 2026-10-10. The other answer is not drift |
 | D27 | Always-on, Windows only | Yes on a Windows run with a case-sensitive `.claude\worktrees` and a live worktree in another letter case. `5fd08069` deletes its entry and answers success (cell W-CS of round `task084-02`). claustrum keeps it and answers git's `worktree_add_failed` text (round `task084-03`) | the stale step keeps an entry whose record path exists. A maintainer decision of 2026-10-18. Not drift |
 | D8 | Always-on | No. It is a start failure of the launcher or a file on disk, not a frame | a link, a FIFO, and on Linux and macOS another user's file, at `remote-server.log` fails the start with `permission denied`. `5fd08069` writes through a link or another user's file and blocks on a FIFO, on macOS and on Linux with the `fs.protected` sysctls off. On Windows it writes through a link (round `task015-04`). The `git-shadow` sweep makes no lock file in the target of a link |
 | D16 | Always-on, Windows only | Yes on a Windows run. `git.status` of a linked worktree: the reference answers `exit status 128` when the user has no global excludes file, claustrum answers the status | the `core.excludesFile` of the `status`, `ls-files` and `diff-index` calls of `git.status` is `/dev/null`, not `NUL`. The reference stops at its `status` call there, so its value for the other two is not measured |
@@ -209,7 +208,7 @@ opt-in?
 | CT-4 | Not built. A deferred idea, recorded in DIVERGENCES.md only | No. There is no code | opt-in hardened token persistence (a `persist-token` key, or a Windows owner-only DACL) |
 | CT-5 | Opt-in (`-listen-pipe`, Windows) | No | additional named-pipe transport |
 
-D1, D7, D9, D11, D13, D14, D18 and D21 are retired. The reference changed on the path, or a later
+D1, D7, D9, D11, D13, D14, D18, D21 and D25 are retired. The reference changed on the path, or a later
 measurement corrected the premise, or the maintainer chose to follow the reference. claustrum now matches it. A difference on those paths is drift, not a divergence, unless
 an entry in the table above covers it (for example D6, D10).
 D4 is retired too. Its paths follow `5fd08069`, so a difference against
@@ -341,26 +340,18 @@ traps that matter for telling drift from expected:
   `89cb6289`: `launcher.resolve`, the `process.spawn` `launcher` param, the child
   env strip, and the gated launcher runs of `-install` and `-probe-cli`.
   `f6010b97` has none of these. See [PROTOCOL.md](PROTOCOL.md) → launcher.*.
-- The `peerCheck` member splits the builds, not drift. `scripts/UPSTREAM_SHA` names
-  `89cb6289`, and for this member claustrum follows `5fd08069` in two places of the frame.
-  `server.capabilities` carries the `peerCheck` member and the
-  `server.peer_check` feature. The frames of `89cb6289` have no
-  such member and no such feature (Linux, macOS and Windows VMs). The daemon
+- The peer check splits the builds, not drift. `scripts/UPSTREAM_SHA` names
+  `89cb6289`, and here claustrum follows `5fd08069`. `server.capabilities`
+  carries the `peerCheck` and `peerCheckBy` members and the `server.peer_check`
+  and `git.shadow_dir` features. On Linux the daemon refuses a caller in other
+  namespaces with `-32006`. The frames of `89cb6289` have no such member and no
+  such feature (Linux, macOS and Windows VMs). The daemon
   removes `CLAUDE_SSH_PEER_CHECK` from its own environment after the read, so
   its children do not inherit it. A `process.spawn` child of `5fd08069` has no
   such entry for the values `1` and `0` (Linux, macOS and Windows VMs). Its git
   calls have none for `0` (Linux VM). A child of `89cb6289` is not measured.
-  Against `5fd08069` these differences are not drift:
-  - With `CLAUDE_SSH_PEER_CHECK=1` on Linux, `5fd08069` answers
-    `"peerCheck":"on"` with a `peerCheckBy` member (Linux VM). claustrum answers
-    `"peerCheck":"unavailable"`, has no peer check and serves every caller. That
-    is [D25](DIVERGENCES.md#d25).
-  - The log line of that start has claustrum's own text on Linux, and a level
-    tag on every system. See [PROTOCOL.md](PROTOCOL.md) → Daemon log.
-  - `5fd08069` lists one feature that claustrum does not list (Linux, macOS and
-    Windows VMs).
-
-  See [PROTOCOL.md](PROTOCOL.md) → server.*.
+  Against `5fd08069` the measured peer check log lines differ by a level tag only
+  (round `task011-02`, Linux VM). See [PROTOCOL.md](PROTOCOL.md) → server.*.
 - `files.extract_tar` splits the builds too, not drift. `scripts/UPSTREAM_SHA`
   names `89cb6289`, and claustrum follows `5fd08069` in these places. Against
   `89cb6289` each of them differs in the measured rows:
