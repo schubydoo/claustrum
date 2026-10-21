@@ -14,6 +14,10 @@ import (
 // The Windows rows of the 89cb6289 VM captures (win SW, RW, IW, X1-X5 and
 // the Windows recheck C2 row).
 
+// noManagedPolicy is a no-op on Windows: there is no settings folder, so no
+// policy applies (managedlauncher_windows.go).
+func noManagedPolicy(t *testing.T) { t.Helper() }
+
 // TestSpawnLauncherRefusedOnWindows pins SW: any non-null launcher, an empty one
 // too, is -32004 with the Windows text, before the cwd check, and the command does
 // not run. A null launcher spawns the command.
