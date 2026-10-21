@@ -112,7 +112,7 @@ func gitSlowStubDir(t *testing.T) string {
 			fail("find go", stubGoToolE)
 			return
 		}
-		env := envWithoutRaceFlag(stubBuildEnv)
+		env := stubBuildEnv
 		ver := exec.Command(goTool, "env", "GOVERSION")
 		ver.Dir, ver.Env = stubBuildDir, env
 		out, err := ver.Output()
@@ -134,9 +134,11 @@ func gitSlowStubDir(t *testing.T) string {
 			name = "git.exe"
 		}
 		start := time.Now()
-		// -vet=off: the lint job vets the package, and the race build of this
-		// binary already did, so a vet of the stub build only costs time.
-		build := exec.Command(goTool, "test", "-c", "-vet=off", "-o", filepath.Join(bin, name), ".")
+		// -race=false: a flag on the command line wins over GOFLAGS, also over a
+		// GOFLAGS that `go env -w` saved. -vet=off: the lint job vets the
+		// package, and the race build of this binary already did, so a vet of
+		// the stub build only costs time.
+		build := exec.Command(goTool, "test", "-c", "-race=false", "-vet=off", "-o", filepath.Join(bin, name), ".")
 		build.Dir, build.Env = stubBuildDir, env
 		if out, err := build.CombinedOutput(); err != nil {
 			fail("go test -c", fmt.Errorf("%v\n%s", err, out))
@@ -149,26 +151,6 @@ func gitSlowStubDir(t *testing.T) string {
 		t.Fatal(gitStubDirFail)
 	}
 	return gitStubDirPath
-}
-
-// envWithoutRaceFlag returns env with each -race flag taken out of GOFLAGS. The
-// other flags of GOFLAGS stay, for example the -run flag of a CI shard.
-func envWithoutRaceFlag(env []string) []string {
-	out := make([]string, 0, len(env))
-	for _, kv := range env {
-		if v, ok := strings.CutPrefix(kv, "GOFLAGS="); ok {
-			var keep []string
-			for _, f := range strings.Fields(v) {
-				if n := strings.TrimLeft(f, "-"); n == "race" || strings.HasPrefix(n, "race=") {
-					continue
-				}
-				keep = append(keep, f)
-			}
-			kv = "GOFLAGS=" + strings.Join(keep, " ")
-		}
-		out = append(out, kv)
-	}
-	return out
 }
 
 // installGitSlowStub puts the git stub of gitSlowStubDir first on PATH as `git`,
