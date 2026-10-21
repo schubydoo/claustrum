@@ -12,6 +12,7 @@ import (
 	"regexp"
 	"strconv"
 	"strings"
+	"sync/atomic"
 	"syscall"
 	"testing"
 	"time"
@@ -41,6 +42,44 @@ func waitStubChild(t *testing.T, f *stubFixture) int {
 	pid := readGrandchildPID(t, f.childPID)
 	t.Cleanup(func() { _ = syscall.Kill(pid, syscall.SIGKILL) })
 	return pid
+}
+
+// holdStopUntil holds the stop step of runCLIVersion at its start until ready
+// is true, for at most 10 s. So a short bound stops the stub only after the stub
+// wrote what the test reads, also on a slow first start. The result is true
+// only if ready was true when the stop step went on.
+func holdStopUntil(t *testing.T, ready func() bool) *atomic.Bool {
+	t.Helper()
+	wasReady := new(atomic.Bool)
+	old := afterCLIBound
+	afterCLIBound = func(d time.Duration, stop func()) *time.Timer {
+		return old(d, func() {
+			deadline := time.Now().Add(10 * time.Second)
+			for !ready() && time.Now().Before(deadline) {
+				time.Sleep(10 * time.Millisecond)
+			}
+			wasReady.Store(ready())
+			stop()
+		})
+	}
+	t.Cleanup(func() { afterCLIBound = old })
+	return wasReady
+}
+
+// stubStarted reports whether the stub log holds a START line.
+func (f *stubFixture) stubStarted() bool {
+	b, err := os.ReadFile(f.log)
+	return err == nil && strings.Contains(string(b), "START ")
+}
+
+// stubChildRecorded reports whether the stub wrote the pid of its child.
+func (f *stubFixture) stubChildRecorded() bool {
+	b, err := os.ReadFile(f.childPID)
+	if err != nil {
+		return false
+	}
+	pid, err := strconv.Atoi(strings.TrimSpace(string(b)))
+	return err == nil && pid > 1
 }
 
 // goneWithin reports whether pid stops existing within d.
@@ -170,11 +209,15 @@ func TestInstallDirectRunStopLeavesANewSessionChild(t *testing.T) {
 	placeStub(t, f.cli)
 	stubDelay(t, 20*time.Second)
 	t.Setenv("CLAUSTRUM_TEST_STUB_CHILD", "session")
-	setCLIRunBounds(t, 5*time.Second, time.Minute)
+	setCLIRunBounds(t, time.Second, time.Minute)
+	ready := holdStopUntil(t, f.stubChildRecorded)
 
 	out := captureInstallOutput(t, installOpts{cliDir: f.cliDir, cliVersion: "9.9.9"})
 	if want := factsHead(t, f.cli) + stoppedTail + "}\n"; out != want {
 		t.Errorf("stdout\n got %q\nwant %q", out, want)
+	}
+	if !ready.Load() {
+		t.Fatal("B09: the stub never became ready: it recorded no child pid before the stop step, or no stop step ran")
 	}
 	child := waitStubChild(t, f)
 	time.Sleep(500 * time.Millisecond)
@@ -221,11 +264,15 @@ func TestInstallGateWithoutPolicyUsesTheDirectBounds(t *testing.T) {
 	g.litter(t)
 	placeStub(t, g.cli)
 	stubDelay(t, 20*time.Second)
-	setCLIRunBounds(t, 5*time.Second, time.Minute)
+	setCLIRunBounds(t, time.Second, time.Minute)
+	ready := holdStopUntil(t, g.stubStarted)
 
 	out := captureInstallOutput(t, installOpts{cliDir: g.cliDir, cliVersion: "9.9.9", cliKeep: 2})
 	if want := factsHead(t, g.cli) + stoppedTail + `,"launcherStatus":"none"}` + "\n"; out != want {
 		t.Errorf("L02: stdout\n got %q\nwant %q", out, want)
+	}
+	if !ready.Load() {
+		t.Fatal("L02: the stub never became ready: it wrote no START line before the stop step, or no stop step ran")
 	}
 	if line := mustLogLine(t, g.stubFixture, "START "); !strings.HasSuffix(line, " gate=1") {
 		t.Errorf("L02: stub START %q, want the gate variable with the value 1", line)

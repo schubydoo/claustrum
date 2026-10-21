@@ -532,11 +532,19 @@ func TestInstallRefusesToReplaceTheHomeFolder(t *testing.T) {
 
 // Row F13. A download before the run is outside the bound, so a download
 // that takes longer than the bound does not use it up. The bound leaves the
-// first start of the new stub 9.5 s: a Windows runner took more than 4.5 s.
+// first start of the new stub 2.5 s on Linux. macOS gets 5.5 s, because a first
+// start is slow on a loaded macOS runner. Windows gets 9.5 s: a Windows runner
+// took more than 4.5 s.
 func TestInstallDownloadTimeIsOutsideTheBound(t *testing.T) {
 	f := newStubFixture(t)
 	stubDelay(t, 100*time.Millisecond)
-	const serverDelay = 10 * time.Second
+	serverDelay := 10 * time.Second
+	switch runtime.GOOS {
+	case "linux":
+		serverDelay = 3 * time.Second
+	case "darwin":
+		serverDelay = 6 * time.Second
+	}
 	setCLIRunBounds(t, time.Minute, serverDelay-500*time.Millisecond)
 	zst := stubZst(t)
 	sum := sha256.Sum256(zst)
@@ -671,35 +679,73 @@ func TestInstallRemovesANewCLIThatDoesNotRun(t *testing.T) {
 // the age gate during the --version run stays, because no second sweep follows
 // the run.
 //
-// The margins: the file is 5 s under the age gate when the install starts, so
-// the first sweep keeps it unless the steps before that sweep take over 5 s. The
-// stub runs for 7 s, so the file is over the gate by 2 s or more after the run,
-// and a second sweep there removes it. A run that took 5 s or more before the
-// stub started cannot tell the two apart, so the test skips there.
+// The file is fresh when the install starts, so the first sweep keeps it. When
+// the stub writes its START line, the test moves the mtime of the file past the
+// age gate. A second sweep after the run then removes it. The stub sleeps 2 s
+// after that line. The test proves that the mtime moved before the stub ended,
+// and it skips if it did not.
 func TestInstallSweepsOnceBeforeTheRun(t *testing.T) {
 	f := newStubFixture(t)
 	blob := f.stubBlob(t)
-	stubDelay(t, 7*time.Second)
+	const delay = 2 * time.Second
+	stubDelay(t, delay)
 	edge := filepath.Join(f.cliDir, ".fetch-13")
 	if err := os.WriteFile(edge, []byte("x"), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	at := time.Now().Add(-sweepMinAge + 5*time.Second)
-	if err := os.Chtimes(edge, at, at); err != nil {
-		t.Fatal(err)
+	// took is the time from the last miss to the aging, or -1 if the stub never
+	// wrote its START line. err is the error of the aging.
+	type aging struct {
+		took time.Duration
+		err  error
 	}
-	t0 := time.Now()
+	aged := make(chan aging, 1)
+	stopAging := make(chan struct{})
+	started := func() bool {
+		b, _ := os.ReadFile(f.log)
+		return strings.Contains(string(b), "START ")
+	}
+	go func() {
+		// lastMiss is the time of the last read that found no START line. The
+		// stub wrote that line later, and it ends no earlier than delay after it.
+		lastMiss := time.Now()
+		for {
+			select {
+			case <-stopAging:
+				if started() {
+					// The line came after the last read: the stub can have ended.
+					aged <- aging{took: delay}
+				} else {
+					aged <- aging{took: -1}
+				}
+				return
+			default:
+			}
+			probe := time.Now()
+			if started() {
+				break
+			}
+			lastMiss = probe
+			time.Sleep(10 * time.Millisecond)
+		}
+		at := time.Now().Add(-sweepMinAge - time.Minute)
+		if err := os.Chtimes(edge, at, at); err != nil {
+			aged <- aging{took: -1, err: err}
+			return
+		}
+		aged <- aging{took: time.Since(lastMiss)}
+	}()
 	out := captureInstallOutput(t, installOpts{cliDir: f.cliDir, cliVersion: "9.9.9", cliZst: blob})
-	total := time.Since(t0)
+	close(stopAging)
 	if want := factsHead(t, f.cli) + "false}\n"; out != want {
 		t.Errorf("stdout\n got %q\nwant %q", out, want)
 	}
-	if age := time.Since(at); age <= sweepMinAge {
-		t.Fatalf("the fixture is %v old after the run, not over the %v age gate", age, sweepMinAge)
-	}
-	// The time before the first sweep is at most the total minus the stub delay.
-	if before := total - 7*time.Second; before >= 5*time.Second {
-		t.Skipf("the install took %v outside the stub run: the first sweep was possibly past the 5s margin", before)
+	a := <-aged
+	switch took := a.took; {
+	case took < 0:
+		t.Fatalf("the fixture did not age the file during the run (err %v)", a.err)
+	case took >= delay:
+		t.Skipf("the file aged %v after the stub started, possibly after the stub ended", took)
 	}
 	f.wantNames(t, "one sweep", ".fetch-13", filepath.Base(f.cli))
 }

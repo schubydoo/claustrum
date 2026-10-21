@@ -66,6 +66,19 @@ func fakeCLI(t *testing.T, exitCode int) []byte {
 	return b
 }
 
+// fakeCLIZst is zstdOf(fakeCLI(t, exitCode)), with the same caveat as fakeCLI.
+// On Windows fakeCLI is this whole test binary for every exit code, and the
+// helper mode picks the code. So the blob is stubZst, compressed once per test
+// run. Each caller gets its own copy of the bytes.
+func fakeCLIZst(t *testing.T, exitCode int) []byte {
+	t.Helper()
+	if runtime.GOOS != "windows" {
+		return zstdOf(t, fakeCLI(t, exitCode))
+	}
+	t.Setenv("CLAUSTRUM_TEST_HELPER", "exit:"+strconv.Itoa(exitCode))
+	return bytes.Clone(stubZst(t))
+}
+
 // assertNoStagingLeftover fails if stageAndInstall's staging file survived in
 // the cli-dir — the directory holding cliPath, which is where the staging file
 // is created: os.CreateTemp(filepath.Dir(cliPath), ".fetch-*").
@@ -725,7 +738,7 @@ func TestRunInstallHonorsCliKeepGuard(t *testing.T) {
 	blob := func(t *testing.T) string {
 		t.Helper()
 		f := filepath.Join(t.TempDir(), "cli.zst")
-		if err := os.WriteFile(f, zstdOf(t, fakeCLI(t, 0)), 0o644); err != nil {
+		if err := os.WriteFile(f, fakeCLIZst(t, 0), 0o644); err != nil {
 			t.Fatal(err)
 		}
 		return f
@@ -906,7 +919,7 @@ func TestPruneBudgetIgnoresOrphans(t *testing.T) {
 		}
 	}
 	zstFile := filepath.Join(t.TempDir(), "cli.zst")
-	if err := os.WriteFile(zstFile, zstdOf(t, fakeCLI(t, 0)), 0o644); err != nil {
+	if err := os.WriteFile(zstFile, fakeCLIZst(t, 0), 0o644); err != nil {
 		t.Fatal(err)
 	}
 	facts := captureInstallFacts(t, installOpts{
@@ -934,7 +947,7 @@ func TestPruneBudgetIgnoresOrphans(t *testing.T) {
 
 func TestEnsureCLIFromZst(t *testing.T) {
 	dir := t.TempDir()
-	zst := zstdOf(t, fakeCLI(t, 0))
+	zst := fakeCLIZst(t, 0)
 	zstFile := filepath.Join(dir, "cli.zst")
 	if err := os.WriteFile(zstFile, zst, 0o644); err != nil {
 		t.Fatal(err)
@@ -958,7 +971,7 @@ func TestEnsureCLIFromZst(t *testing.T) {
 }
 
 func TestEnsureCLIFromURL(t *testing.T) {
-	zst := zstdOf(t, fakeCLI(t, 0))
+	zst := fakeCLIZst(t, 0)
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		_, _ = w.Write(zst)
 	}))
@@ -983,7 +996,7 @@ func TestEnsureCLIZstVerifiesChecksumWhenSupplied(t *testing.T) {
 	mkZst := func(t *testing.T) (dir, zstFile string) {
 		dir = t.TempDir()
 		zstFile = filepath.Join(dir, "cli.zst")
-		if err := os.WriteFile(zstFile, zstdOf(t, fakeCLI(t, 0)), 0o644); err != nil {
+		if err := os.WriteFile(zstFile, fakeCLIZst(t, 0), 0o644); err != nil {
 			t.Fatal(err)
 		}
 		return dir, zstFile
@@ -1064,7 +1077,7 @@ func TestEnsureCLIZstCreatesTheCliDirFirst(t *testing.T) {
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			root := t.TempDir()
-			if err := os.WriteFile(filepath.Join(root, "cli.zst"), zstdOf(t, fakeCLI(t, 0)), 0o600); err != nil {
+			if err := os.WriteFile(filepath.Join(root, "cli.zst"), fakeCLIZst(t, 0), 0o600); err != nil {
 				t.Fatal(err)
 			}
 			cliDir := filepath.Join(root, "p1", "p2", "cli")
@@ -1096,7 +1109,7 @@ func TestEnsureCLIZstCreatesTheCliDirFirst(t *testing.T) {
 // The -cli-url (download) path verifies UNCONDITIONALLY: a wrong checksum and an
 // empty checksum both fail (the reference checks even when -cli-checksum is "").
 func TestEnsureCLIURLVerifiesUnconditionally(t *testing.T) {
-	zst := zstdOf(t, fakeCLI(t, 0))
+	zst := fakeCLIZst(t, 0)
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		_, _ = w.Write(zst)
 	}))
@@ -1187,7 +1200,7 @@ func TestEnsureCLINoSource(t *testing.T) {
 
 func TestRunInstallFacts(t *testing.T) {
 	dir := t.TempDir()
-	zst := zstdOf(t, fakeCLI(t, 0))
+	zst := fakeCLIZst(t, 0)
 	zstFile := filepath.Join(dir, "cli.zst")
 	if err := os.WriteFile(zstFile, zst, 0o644); err != nil {
 		t.Fatal(err)
@@ -1424,7 +1437,7 @@ func TestDetectLibcRunsLddWhenLoaderGlobDoesNotMatch(t *testing.T) {
 func TestEnsureCLIConsumesBlobWhenExtractedCLIIsNotRunnable(t *testing.T) {
 	dir := t.TempDir()
 	zstFile := filepath.Join(dir, "cli.zst")
-	if err := os.WriteFile(zstFile, zstdOf(t, fakeCLI(t, 1)), 0o644); err != nil {
+	if err := os.WriteFile(zstFile, fakeCLIZst(t, 1), 0o644); err != nil {
 		t.Fatal(err)
 	}
 
@@ -1524,7 +1537,7 @@ func TestPruneIgnoresFreshSweepLitter(t *testing.T) {
 			put(".fetch-1", nil, tc.age)
 			put("1.9.0.zst", nil, tc.age)
 			blob := filepath.Join(t.TempDir(), "cli.zst")
-			if err := os.WriteFile(blob, zstdOf(t, fakeCLI(t, 0)), 0o600); err != nil {
+			if err := os.WriteFile(blob, fakeCLIZst(t, 0), 0o600); err != nil {
 				t.Fatal(err)
 			}
 			f := captureInstallFacts(t, installOpts{cliDir: dir, cliVersion: "2.0.0", cliZst: blob, cliKeep: 3})
@@ -1552,7 +1565,7 @@ func TestPruneIgnoresFreshSweepLitter(t *testing.T) {
 // f6010b97: a checksum mismatch, a 404 and a refused connection each leave an
 // empty 0700 cli-dir, and the cli-dir exists before the server sends headers.
 func TestEnsureCLIURLCreatesTheCliDirFirst(t *testing.T) {
-	zst := zstdOf(t, fakeCLI(t, 0))
+	zst := fakeCLIZst(t, 0)
 	sum := sha256.Sum256(zst)
 	right := hex.EncodeToString(sum[:])
 
@@ -1625,7 +1638,7 @@ func TestEnsureCLIURLCreatesTheCliDirFirst(t *testing.T) {
 // f6010b97, 5 of 5 runs per row: a good 57-byte download prints bytes:0 then
 // bytes:57, and a mismatch or an empty checksum prints bytes:0 only.
 func TestInstallProgressLinesFollowTheChecksum(t *testing.T) {
-	zst := zstdOf(t, fakeCLI(t, 0))
+	zst := fakeCLIZst(t, 0)
 	sum := sha256.Sum256(zst)
 	// Content-Length is set explicitly. Without it a large body (the Windows fake
 	// CLI is about 9 MB) goes out chunked, and the lines carry no "total".
