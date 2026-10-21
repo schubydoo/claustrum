@@ -9,6 +9,8 @@ the exact problem list. Run with ``python3 -m unittest discover -s scripts -p 't
 
 from __future__ import annotations
 
+import contextlib
+import io
 import os
 import tempfile
 import unittest
@@ -108,11 +110,24 @@ class LintCodecovComponentsTest(unittest.TestCase):
         self.assertEqual(len(problems), 1)
         self.assertIn("could not read codecov.yml", problems[0])
 
+    def _main(self) -> tuple[int, str]:
+        # Capture the output, so the fixture's FAILED text stays out of the CI log,
+        # where GitHub would show it as an error annotation on a green job.
+        out = io.StringIO()
+        with contextlib.redirect_stdout(out):
+            code = lint.main(["lint", self.root])
+        return code, out.getvalue()
+
     def test_main_exit_codes(self) -> None:
         self._write_repo(["a.go"], _HEADER + _entries("a.go") + _TRAILER)
-        self.assertEqual(lint.main(["lint", self.root]), 0)
+        code, out = self._main()
+        self.assertEqual(code, 0)
+        self.assertIn("1 production file(s) all mapped once", out)
         self._write_repo(["a.go", "b.go"], _HEADER + _entries("a.go") + _TRAILER)
-        self.assertEqual(lint.main(["lint", self.root]), 1)
+        code, out = self._main()
+        self.assertEqual(code, 1)
+        self.assertIn("codecov components lint FAILED", out)
+        self.assertIn("b.go: production file missing", out)
 
 
 if __name__ == "__main__":
