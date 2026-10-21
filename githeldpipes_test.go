@@ -264,7 +264,9 @@ func TestProbeAgainAfterALongHookListing(t *testing.T) {
 //
 //   - N-a: a child keeps the output pipes of the `init` call open. The test
 //     goes on after the wait for the pipes and passes. Without the rule of
-//     exitedInTime it fails with a `WaitDelay expired` text.
+//     exitedInTime it fails with a `WaitDelay expired` text. The test holds the
+//     pipes past the bound on purpose. The short wait of the call ends first,
+//     so the daemon sees the same as with the shorter hold of the cell.
 //   - N-b: the same child on call 7, the listing of the test config. The test
 //     waits until the pipes close and passes. With the short wait of the other
 //     calls it ends before the child does.
@@ -278,15 +280,18 @@ func TestStartTestCallsAndTheirPipes(t *testing.T) {
 	t.Run("N-a init", func(t *testing.T) {
 		f := newShadowFixture(t)
 		endHeldDescendant(t)
+		// The child holds the pipes for three times the bound. A start test that
+		// waits for the pipes ends at the bound or later. One that does not ends
+		// about 20 s before the bound, so a slow host does not fail the check.
 		setDuration(t, &shadowCallBound, 20*time.Second)
 		setDuration(t, &shadowCallDrain, 200*time.Millisecond)
-		slowGit(t, "init", "hold", 5*time.Second, "", "")
+		slowGit(t, "init", "hold", 3*shadowCallBound, "", "")
 		start := time.Now()
 		if msg := f.s.gitShadow.gate(false); msg != "" {
 			t.Errorf("the start test = %q, want it to pass", msg)
 		}
-		if d := time.Since(start); d > 4*time.Second {
-			t.Errorf("the start test ended after %v, want it soon after the wait of 200 ms", d)
+		if d := time.Since(start); d >= shadowCallBound {
+			t.Errorf("the start test ended after %v, want it before the bound of %v", d, shadowCallBound)
 		}
 	})
 	t.Run("N-b call 7", func(t *testing.T) {
