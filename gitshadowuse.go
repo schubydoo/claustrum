@@ -63,8 +63,8 @@ type gitUse struct {
 	// stop holds the time limits of the git calls of the request (gitstop.go), or
 	// is nil.
 	stop *gitStop
-	// live is the off switch of a git.info or a git.list_branches after its
-	// gate (atCommand), or nil.
+	// live is the off switch of a git request after its gate (atCommand), or
+	// nil.
 	live *liveSwitch
 }
 
@@ -82,45 +82,89 @@ type gitUse struct {
 // gate, and so does listEntryConfig. The Windows root pair of gitInfoRoot takes
 // the form of its moment (cell O2 of round task103-04, Windows VM).
 // git.list_branches follows the switch too (cells L1, L2 and L0 of round
-// task103-04, Linux VM). The commands of git.status, git.worktree_create and
-// git.worktree_remove keep the form of their gate (not measured, claustrum's
-// own).
+// task103-04, Linux VM).
+//
+// git.status, git.worktree_create and git.worktree_remove follow it in the same
+// way (cells S1, S2, C1 to C5, R1 and R2 of rounds task105-01 and task105-04,
+// Linux VM). Their later gate asks git about the repository before its read of
+// the config when the command that runs it is a call in the repository with no
+// --git-dir= (cells R2, C4 and C5). After a later gate at a call with --git-dir=
+// no such call follows (cells S2 and C3). claustrum tells the two by the kind
+// of the call (formNow): the cells measure the outcome, not the cause.
+//
+// A create adopts its later gate until its first good `worktree add`
+// (keepLiveCreate). It then takes the held git directory as a create whose
+// first gate had the copy does, and every later step acts through it. A
+// later gate after that add changes only the form of the git commands, and so
+// does each later gate of a status and a remove (keepLiveForm).
 type liveSwitch struct {
 	// off reports whether the off switch holds the daemon now.
 	off func() bool
 	// gate runs the gate of the request again and returns the form that it
-	// gives. ok is false after a refusal. pending is true while the gate of the
+	// gives. ok is false after a refusal. ask is true for a command in the
+	// repository with no --git-dir=. pending is true while the gate of the
 	// request ran under the hold and gate has not run since.
-	gate    func() (use gitUse, ok bool)
+	gate    func(ask bool) (use gitUse, ok bool)
 	pending bool
 	// regated is the form that gate gave, or nil before a gate that passed. A
-	// helper that has its use by value gets it at its next command.
+	// helper that has its use by value gets it at its next command. adopted is
+	// true when the request took that form as its own use (keepLiveCreate):
+	// a use with a copy is then the current one.
 	regated *gitUse
+	adopted bool
 	// stop holds the time limits of the git calls of the request.
 	stop *gitStop
 }
 
-// atCommand is the form of a git command that starts now (liveSwitch). A gate
-// that a later command runs and that refuses leaves the form with no copy (not
-// measured, claustrum's own).
+// atCommand is the form of a git command in the repository that starts now
+// (liveSwitch). A gate that a later command runs and that refuses leaves the
+// form with no copy (not measured, claustrum's own).
 func (u gitUse) atCommand() gitUse {
+	f, _ := u.formNow(true)
+	return f
+}
+
+// atGitDirCommand is atCommand for a call with --git-dir= in its argv.
+func (u gitUse) atGitDirCommand() gitUse {
+	f, _ := u.formNow(false)
+	return f
+}
+
+// formNow is atCommand, and off reports that the off switch held the daemon
+// when the form was taken. off is false for a request with no switch. ask is
+// the ask of liveSwitch.gate.
+func (u gitUse) formNow(ask bool) (f gitUse, off bool) {
 	l := u.live
 	if l == nil {
-		return u
+		return u, false
 	}
 	if l.off() {
-		return gitUse{stop: l.stop, live: l}
+		return gitUse{stop: l.stop, live: l}, true
 	}
 	if l.pending {
 		l.pending = false
-		if use, ok := l.gate(); ok {
+		if use, ok := l.gate(ask); ok {
 			l.regated = &use
 		}
 	}
-	if l.regated != nil {
-		return *l.regated
+	if l.regated != nil && (!l.adopted || !u.shadow()) {
+		return *l.regated, false
 	}
-	return u
+	return u, false
+}
+
+// fixedForm is the form of a step of a create that starts now and keeps that
+// form to its end: the `worktree add` (cells C1 to C5 of rounds task105-01 and
+// task105-04, Linux VM) and the checkout. f reads the switch no more. It keeps
+// the held git directory of u, so the tests of that folder and the acts
+// through it stay as they are. ask is the ask of liveSwitch.gate.
+func (u gitUse) fixedForm(ask bool) (f gitUse, off bool) {
+	f, off = u.formNow(ask)
+	f.live = nil
+	if f.accepted == nil && u.accepted != nil {
+		f.accepted, f.gitDir = u.accepted, u.gitDir
+	}
+	return f, off
 }
 
 // inFolder reports whether the request keeps its short-lived folders in the
@@ -183,41 +227,60 @@ func (u gitUse) shadow() bool {
 // every system: on a Windows VM the add of 5fd08069 carries
 // GIT_COMMON_DIR=<git directory> in the state fallback-git, and it names no
 // `.s<n>` folder (val-s3p2b2-3-windows cell Q-S4c).
+//
+// The call takes the form of the off switch at its start and keeps it to its
+// end (fixedForm). On 5fd08069 an add that starts while the hold is live
+// carries GIT_COMMON_DIR=<repo>/.git, and an add that started before the hold
+// keeps the copy (cells C1 and C2 of round task105-01, Linux VM). An add that
+// starts under the hold keeps that form when the hold ends while it runs (cell
+// C3). After a hold that ended before the add, the add names the copy, also
+// in a create whose gate ran under the hold (cells C4 and C5 of round
+// task105-04). Such a create holds its git directory from that later gate on
+// (keepLiveCreate), so a copy add acts through the held folder. An add with no
+// copy in a create that holds its git directory gets the test of
+// offWorktreesRefusal first. 5fd08069 refuses there with that text (cell C6b
+// of round task105-04, Linux VM).
 func worktreeAdd(ctx context.Context, u gitUse, repo, leaf string, cp worktreeCheckpoint, args ...string) (string, error) {
-	_, named := u.names(repo)
+	f, off := u.fixedForm(true)
+	_, named := f.names(repo)
 	if named && shadowStagesAdd {
-		stderr, err := worktreeAddStaged(ctx, u, repo, leaf, cp, args...)
-		if err == nil && u.accepted != nil {
-			u.accepted.moved = true
+		stderr, err := worktreeAddStaged(ctx, f, repo, leaf, cp, args...)
+		if err == nil && f.accepted != nil {
+			f.accepted.moved = true
 		}
 		return stderr, err
 	}
+	if off && f.accepted != nil {
+		if text := offWorktreesRefusal(repo); text != "" {
+			return "", &addNotPrepared{text: text}
+		}
+	}
 	named = named && shadowLinksWorktrees
-	cmd := hardenedGitCmd(ctx, u, repo, false, nil, args...)
+	cmd := hardenedGitCmd(ctx, f, repo, false, nil, args...)
 	// A create that holds its git directory runs no `worktree add` when the
 	// path no longer names the held folder. The test comes after the listing.
-	if u.swapped("plain add") {
+	if f.swapped("plain add") {
 		// The text has the name of the git directory as the request spells it.
-		gitDir := u.gitDir
-		if u.accepted != nil && u.accepted.sent != "" {
-			gitDir = u.accepted.sent
+		gitDir := f.gitDir
+		if f.accepted.sent != "" {
+			gitDir = f.accepted.sent
 		}
 		return "", errors.New(plainAddRefusal(gitDir, named))
 	}
 	if named {
-		if text := u.worktreesFolderRefusal(); text != "" {
+		if text := f.worktreesFolderRefusal(); text != "" {
 			return "", &addNotPrepared{text: text}
 		}
-		u.makeWorktreesFolder()
-		if text := u.worktreesOpenRefusal(); text != "" {
+		f.makeWorktreesFolder()
+		if text := f.worktreesOpenRefusal(); text != "" {
 			return "", &addNotPrepared{text: text}
 		}
 	}
 	var errBuf bytes.Buffer
 	cmd.Stderr = &errBuf
 	err := gitRun(ctx, cmd)
-	if err == nil && u.accepted != nil {
-		u.accepted.moved = true
+	if err == nil && f.accepted != nil {
+		f.accepted.moved = true
 	}
 	return errBuf.String(), err
 }
@@ -323,7 +386,9 @@ func (u gitUse) worktreesOpenRefusal() string {
 // file where Claude needs a real directory; put the directory itself in its
 // place`. It runs no `worktree add`, makes nothing behind the link and leaves
 // no branch, and R/.claude/worktrees stays (cell C2 of round tier0-24, Linux
-// VM, and of round tier0-25m, macOS VM). The folder is that of the git
+// VM, and of round tier0-25m, macOS VM). An add that starts under a hold gets
+// the same text, with equal replies (cell C6b of round task105-04, Linux VM).
+// The folder is that of the git
 // directory that the trust check pins. claustrum's own, not measured: a file
 // at the name, and a daemon GIT_COMMON_DIR, with which git writes elsewhere.
 // Windows has no such test.

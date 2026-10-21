@@ -75,15 +75,14 @@ battery on the Linux VM. On the macOS and Windows VMs it ran the changed areas
 (rounds `task082-01` to `task082-03`). Its one frame difference was a
 `git.info` on a folder with no repository during the first start test. PR 596
 closed it, and the off switch during a `git.info` with it (rounds `task103-01`
-to `task103-06`). D4, D5, D9, D13, D18, D21 and D25 are retired. D27 is new
-(PR 563).
+to `task103-06`). D4, D5, D9, D13, D18, D21 and D25 are retired. D27 is new (PR 563).
 
 Four items stay open:
 
 - In one of 40 Windows claustrum runs, both requests got `-32001`. The 35 runs
   after it did not, and `5fd08069` never did in 40 runs. The cause is not known.
-- In claustrum, `git.status` and the two worktree methods read the off switch
-  once for each request. No VM row covers a switch while they run.
+- The off switch during `git.status` and the worktree methods: Linux ran every
+  cell, macOS only C2, S1 and C0 (`task105-03`), Windows C0 to C2, C4 and C5.
 - A `git.info` on a missing path, sent with the first git request, waits for
   the start test less often on claustrum (round `task103-04`, Linux VM). Sent after the start test began, it
   waits on both builds (round `task103-06`, Linux VM).

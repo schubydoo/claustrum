@@ -39,9 +39,9 @@ func (s *server) handleGit(req *request) response {
 		defer s.offGitRequests.Add(-1)
 	}
 	// While a request with "shadowDirOff":true runs, every git request that
-	// starts, and the later commands of a git.info or a git.list_branches, run
-	// as with the member (cells H1 and H4 of round task073-02, Linux VM). The
-	// count is read live (request.offLive).
+	// starts, and each later git command of a request, run as with the member
+	// (cells H1 and H4 of round task073-02, Linux VM). The count is read live
+	// (request.offLive).
 	req.offHold = &s.offGitRequests
 	if !limitedGitMethod(req.Method) {
 		return fn(req)
@@ -83,8 +83,8 @@ type gitParams struct {
 	// cells V2 on the three other methods. It turns off the settings copy for the
 	// request too (shadowHost.control). Only the JSON value true sets it
 	// (jsonTrueSwitch). A request whose first git command starts while another
-	// one with it runs gets it too (bindGitParams). git.info and
-	// git.list_branches read the switch again at later commands (gitUse.atCommand).
+	// one with it runs gets it too (bindGitParams). The five methods read the
+	// switch again at later commands (gitUse.atCommand).
 	ShadowDirOff jsonTrueSwitch `json:"shadowDirOff,omitempty"`
 }
 
@@ -391,11 +391,7 @@ func gitInfo(req *request) response {
 // off switch of the moment (liveSwitch). off is the hold at the gate of the
 // request, and t and dir are the trust verdict and the folder of that gate.
 func (req *request) keepLive(off bool, t gitDirTrust, dir string) {
-	if !req.shadow.active() {
-		return
-	}
-	l := &liveSwitch{off: req.offLive, pending: off && !req.offOwn, stop: req.stop}
-	l.gate = func() (gitUse, bool) {
+	req.followSwitch(off, func(l *liveSwitch, _ bool) (gitUse, bool) {
 		msg, noRepo := req.settingsGateRefusal(t, false, dir)
 		if msg != "" || noRepo {
 			return gitUse{}, false
@@ -403,7 +399,89 @@ func (req *request) keepLive(off bool, t gitDirTrust, dir string) {
 		req.listEntryConfig(t)
 		req.use.live = l
 		return req.use, true
+	})
+}
+
+// keepLiveForm is keepLive for git.status and git.worktree_remove. The later
+// gate asks git about the repository only with ask (liveSwitch). It changes
+// only the form of the git commands. The request keeps the use of its first
+// gate, with its read of the config and its short-lived folders, for every
+// step that is no git command.
+func (req *request) keepLiveForm(off bool, t gitDirTrust, dir string) {
+	req.followSwitch(off, func(l *liveSwitch, ask bool) (gitUse, bool) {
+		use, read, gitRefused, configRefused := req.use, req.repoRead, req.gitRefused, req.configRefused
+		defer func() {
+			req.use, req.repoRead, req.gitRefused, req.configRefused = use, read, gitRefused, configRefused
+		}()
+		msg, noRepo := req.settingsGate(t, false, dir, ask)
+		if msg != "" || noRepo {
+			return gitUse{}, false
+		}
+		u := req.use
+		u.live = l
+		return u, true
+	})
+}
+
+// keepLiveCreate is keepLiveForm for git.worktree_create in repo. Before the
+// first good `worktree add` (added false) the create adopts its later gate.
+// On 5fd08069 the add and every later command of such a create name the copy
+// (cells C4 and C5 of round task105-04, Linux VM). The create then holds its
+// git directory as a create whose first gate had the copy does: the folder is
+// read before the gate and held after it (acceptGitDir), and held takes it for
+// the release at the reply. The request takes the copy, the read of the config
+// and that hold as its own use, so every later step acts through the held
+// folder. A git directory that is no longer that real directory refuses the
+// later gate, and the form stays without a copy (claustrum's own, not
+// measured). After the add the later gate changes only the form, as in
+// keepLiveForm (cell C3 of round task105-01).
+func (req *request) keepLiveCreate(off bool, t gitDirTrust, repo string, added *bool, held **acceptedGitDir) {
+	req.followSwitch(off, func(l *liveSwitch, ask bool) (gitUse, bool) {
+		use, read, gitRefused, configRefused := req.use, req.repoRead, req.gitRefused, req.configRefused
+		keep := false
+		defer func() {
+			req.gitRefused, req.configRefused = gitRefused, configRefused
+			if !keep {
+				req.use, req.repoRead = use, read
+			}
+		}()
+		var before os.FileInfo
+		if gitDirMustBeReal && !*added && t.verdict == gitDirTrusted && t.pinCommonDir != "" {
+			before = gitDirIdentity(t.pinCommonDir)
+		}
+		msg, noRepo := req.settingsGate(t, false, repo, ask)
+		if msg != "" || noRepo {
+			return gitUse{}, false
+		}
+		req.listEntryConfig(t)
+		if *added || !req.use.shadow() {
+			u := req.use
+			u.live = l
+			return u, true
+		}
+		if gitDirMustBeReal {
+			h := acceptGitDir(req.use.gitDir, before)
+			if h == nil {
+				return gitUse{}, false
+			}
+			h.holdFor(repo, t)
+			*held = h
+			req.use.accepted = h
+		}
+		keep, l.adopted = true, true
+		req.use.live = l
+		return req.use, true
+	})
+}
+
+// followSwitch gives req.use the off switch of the request, with gate as its
+// later gate. off is the hold at the gate of the request.
+func (req *request) followSwitch(off bool, gate func(l *liveSwitch, ask bool) (gitUse, bool)) {
+	if !req.shadow.active() {
+		return
 	}
+	l := &liveSwitch{off: req.offLive, pending: off && !req.offOwn, stop: req.stop}
+	l.gate = func(ask bool) (gitUse, bool) { return gate(l, ask) }
 	req.use.live = l
 }
 
@@ -630,6 +708,9 @@ func gitStatus(req *request) response {
 	} else if noRepo {
 		return notRepo
 	}
+	// The later git commands follow the off switch (cells S1 and S2 of round
+	// task105-01, Linux VM).
+	req.keepLiveForm(bool(p.ShadowDirOff), t, p.BaseRepo)
 	// A repo whose config cannot be enumerated is refused with -32603 (row o22b). The
 	// listing runs in baseRepo as sent and carries the heavy profile (K1 call 2).
 	c := hostileConfigRefusal(req.use, p.BaseRepo, true)
@@ -664,7 +745,8 @@ func gitStatus(req *request) response {
 	if !ok {
 		return notRepo
 	}
-	top, ok, err := statusWorkTreeProbe(req.stop, common, sp.probeTree, statusCommonPin(req.use, common), req.use.gitDirFront())
+	probeUse := req.use.atGitDirCommand()
+	top, ok, err := statusWorkTreeProbe(req.stop, common, sp.probeTree, statusCommonPin(probeUse, common), probeUse.gitDirFront())
 	if err != nil {
 		return errResult(req.ID, codeInternal, err.Error())
 	} else if !ok {
@@ -825,7 +907,8 @@ func pairBeforeAdd(req *request, gitDir, repo string) {
 	if fi, err := os.Stat(gitDirRegistryDir(gitDir)); err != nil || !fi.IsDir() {
 		return
 	}
-	_, _ = gitDirWorkTreeToplevel(req.stop, gitDir, repo, req.use.gitDirPin(repo), req.use.gitDirFront())
+	u := req.use.atGitDirCommand()
+	_, _ = gitDirWorkTreeToplevel(req.stop, gitDir, repo, u.gitDirPin(repo), u.gitDirFront())
 }
 
 func gitWorktreeCreate(req *request) response {
@@ -917,6 +1000,12 @@ func gitWorktreeCreateLocked(req *request, p *gitParams, repo string) response {
 	// file on the rev-parse calls and on the `worktree add` (cell C12 of round
 	// task007-02, macOS VM).
 	req.listEntryConfig(t)
+	// The later git commands follow the off switch (cells C1 to C5 of rounds
+	// task105-01 and task105-04, Linux VM). added is true after a good add.
+	added := false
+	var laterHeld *acceptedGitDir
+	defer func() { laterHeld.release() }()
+	req.keepLiveCreate(bool(p.ShadowDirOff), t, repo, &added, &laterHeld)
 	// A repo whose config cannot be enumerated is refused before git runs — the
 	// reference surfaces the same "config-defined hooks could not be pinned off"
 	// detail under errorCode worktree_add_failed. Measured on an ephemeral VM.
@@ -1355,8 +1444,9 @@ func gitWorktreeCreateLocked(req *request, p *gitParams, repo string) response {
 		return refuseAdd("git worktree add failed: " + msg)
 	}
 	// With "shadowDirOff":true, a registrations folder that is a link or a file
-	// refuses the create before the add (offWorktreesRefusal).
-	if p.ShadowDirOff {
+	// refuses the create before the add (offWorktreesRefusal). A create that
+	// took the copy at a later gate has the test of worktreeAdd instead.
+	if bool(p.ShadowDirOff) && !req.use.shadow() {
 		if msg := offWorktreesRefusal(repo); msg != "" {
 			return refuseAdd("git worktree add failed: " + msg)
 		}
@@ -1414,6 +1504,7 @@ func gitWorktreeCreateLocked(req *request, p *gitParams, repo string) response {
 	}
 	listEntriesBefore()
 	addStderr, addErr := worktreeAdd(baseCtx, req.use, repo, p.WorktreePath, checkpoint, addArgs...)
+	added = addErr == nil
 	if resp, ok := incompleteAdd(addErr, createdBranch); ok {
 		return resp
 	}
@@ -1455,6 +1546,7 @@ func gitWorktreeCreateLocked(req *request, p *gitParams, repo string) response {
 		}
 		listEntriesBefore()
 		addStderr, addErr = worktreeAdd(baseCtx, req.use, repo, p.WorktreePath, checkpoint, fallbackArgs...)
+		added = addErr == nil
 		if resp, ok := incompleteAdd(addErr, p.BranchName); ok {
 			return resp
 		}
@@ -1660,7 +1752,8 @@ func gitWorktreeCreateLocked(req *request, p *gitParams, repo string) response {
 	// call is not measured: claustrum does not use it. With no answer of git to
 	// rev-parse --absolute-git-dir the record compare is as before (not measured).
 	if adminRecordMismatch(indexDir, p.WorktreePath, gitAnswered) {
-		_, err := gitDirWorkTreeToplevelIn(req.stop.context(), gitDir, repo, req.use.gitDirPin(repo), req.use.gitDirFront())
+		pairUse := req.use.atGitDirCommand()
+		_, err := gitDirWorkTreeToplevelIn(req.stop.context(), gitDir, repo, pairUse.gitDirPin(repo), pairUse.gitDirFront())
 		// A call whose repository folder went answers its text, with the same
 		// rollback (from the code, not measured).
 		if copyGone(err) {
@@ -1803,19 +1896,30 @@ func gitWorktreeCreateLocked(req *request, p *gitParams, repo string) response {
 		// state shadow they come after its second listing and the cap
 		// (hardenedGitCheckout). In the state fallback-git and with
 		// "shadowDirOff":true the rule does not run (filterRule).
-		var rule *filterRule
-		if !bool(p.ShadowDirOff) && req.shadow.readsRepoConfig() {
-			rule = &filterRule{}
-			if req.use.shadow() && req.repoRead != nil {
-				rule.shadow, rule.own = true, req.repoRead.ownConfig
-			}
-		}
 		if resp, ok := swappedCheckout("checkout"); ok {
 			return resp
 		}
-		rtStderr, rtDrained, rtErr, installErr := runWorktreeCheckout(callerCtx, req.use, p.WorktreePath,
+		// The checkout takes the form of the off switch at its first listing and
+		// keeps it to its end (fixedForm, claustrum's own, not measured: no cell
+		// changes the hold inside the checkout). Under a live hold 5fd08069 puts
+		// the index in a new folder `claude-ssh-index-<n>` of the temporary
+		// folder and runs one listing before the read-tree call. With no hold it
+		// puts the index in `.index-<n>` of the folder of the daemon and runs two
+		// (cells C1 to C3 and C0 of round task105-01, Linux VM). The filter rule
+		// follows that form too (claustrum's own, not measured). The index goes
+		// into the registration through the held git directory, as before.
+		cu, offNow := req.use.fixedForm(false)
+		offNow = offNow || (!cu.shadow() && bool(p.ShadowDirOff))
+		var rule *filterRule
+		if !offNow && req.shadow.readsRepoConfig() {
+			rule = &filterRule{}
+			if cu.shadow() && cu.read != nil {
+				rule.shadow, rule.own = true, cu.read.ownConfig
+			}
+		}
+		rtStderr, rtDrained, rtErr, installErr := runWorktreeCheckout(callerCtx, cu, p.WorktreePath,
 			checkoutWorkTree(p.WorktreePath, checkpoint.resolved), gitDir,
-			indexDir, tested, checkoutRev, req.use.gitDirPin(repo), rule)
+			indexDir, tested, checkoutRev, cu.gitDirPin(repo), rule)
 		var filters filterPlan
 		if rule != nil {
 			filters = rule.plan
@@ -2022,10 +2126,17 @@ func makeRefusedLeafParents(p *gitParams, repo string) {
 // val-s3p2b2-5-linux2, Linux VM, 3 of 3 runs. Rows E1 and E1b of
 // val-s3p2b2-5-macos, macOS VM). A refusal of another file of the git directory
 // takes the same way: it makes no git call (not measured).
+//
+// After a gate that passed, the later git commands follow the off switch
+// (cells R1 and R2 of round task105-01, Linux VM). A later gate runs one time
+// (claustrum's own, not measured).
 func (req *request) removeGate(t gitDirTrust, off jsonTrueSwitch, repo string) (msg string, noRepo bool) {
 	msg, noRepo = req.settingsGateRefusal(t, off, repo)
 	if req.gitRefused || req.configRefused {
 		msg, noRepo = req.settingsGateRefusal(t, off, repo)
+	}
+	if msg == "" && !noRepo {
+		req.keepLiveForm(bool(off), t, repo)
 	}
 	return msg, noRepo
 }

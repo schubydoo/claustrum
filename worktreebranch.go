@@ -230,6 +230,10 @@ func branchStepCmd(ctx context.Context, u gitUse, repo string, hooks []string, a
 // git's answer. Only rev-list gets a stdin. The other calls get the
 // null device. 89cb6289 gives them a character device (macOS VM).
 func branchCheckGit(ctx context.Context, u gitUse, repo string, stdin io.Reader, args ...string) (out string, stopped bool, err error) {
+	// The listing and the call take the form of the off switch at the listing
+	// (gitUse.atCommand). On 5fd08069 for-each-ref, rev-list and update-ref of
+	// a remove follow the hold (cells R1 and R2 of round task105-01, Linux VM).
+	u = u.atCommand()
 	// A listing that says "not a git repository" ends the step: the call does not run,
 	// and the listing's error stands for it. 89cb6289 runs no for-each-ref after such a
 	// listing (rows L14a, L14b, L14d, L14e and N01 to N04 on Linux and macOS VMs).
@@ -254,6 +258,7 @@ func branchCheckGit(ctx context.Context, u gitUse, repo string, stdin io.Reader,
 // call gets stopGitProcess. On Linux and macOS a call still running
 // updateRefKillAfter later is killed.
 func deleteBranchRef(u gitUse, repo, target, tip string) error {
+	u = u.atCommand()
 	hooks := hookPrecursor(context.Background(), u, repo, false).hooks()
 	ctx, cancel := context.WithTimeout(context.Background(), updateRefStop)
 	defer cancel()

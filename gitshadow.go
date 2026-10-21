@@ -1097,6 +1097,13 @@ func writeShadowTestFiles(shadowDir string, head, config []byte) error {
 // (readsRepoConfig), and the daemon keeps no folder of a repository: its own
 // folder holds the lock file only there (s3p2-oldgit section 5, Linux VM).
 func (req *request) settingsGateRefusal(t gitDirTrust, off jsonTrueSwitch, dir string) (msg string, noRepo bool) {
+	return req.settingsGate(t, off, dir, true)
+}
+
+// settingsGate is settingsGateRefusal. With ask false the gate makes no call
+// that asks git about the repository (askGit). keepLiveForm and keepLiveCreate
+// pass ask false only for a later gate at a call with --git-dir=.
+func (req *request) settingsGate(t gitDirTrust, off jsonTrueSwitch, dir string, ask bool) (msg string, noRepo bool) {
 	req.gitRefused, req.configRefused = false, false
 	// git.info and git.list_branches skip the trust check with a GIT_COMMON_DIR
 	// in the daemon environment (requestGitDirTrust). With a GIT_DIR there too,
@@ -1123,7 +1130,7 @@ func (req *request) settingsGateRefusal(t gitDirTrust, off jsonTrueSwitch, dir s
 		return "", false
 	}
 	var read *repoVerdict
-	if req.shadow.asksGit(t, bool(off)) {
+	if ask && req.shadow.asksGit(t, bool(off)) {
 		if a := req.shadow.askGit(t, dir); a.bad() {
 			req.gitRefused = true
 			return a.text, a.noRepo

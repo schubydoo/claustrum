@@ -163,9 +163,9 @@ func TestOffSwitchHoldsTheDaemonWhileARequestRuns(t *testing.T) {
 // While a git.status with "shadowDirOff":true runs, a git.worktree_create on
 // another repository without the member runs as one with it. 5fd08069 answers
 // success on both, and no call of the create names a copy (cell H4 of round
-// task073-02, Linux VM). A create keeps the hold of its first command (cells
-// O1 and O2 of round task103-02 cover git.info only). Mutation: set
-// p.ShadowDirOff from req.offOwn alone in bindGitParams.
+// task073-02, Linux VM). The hold stays live for the whole create here, so each
+// command of it has no copy (gitoffform_test.go has the changes of the hold).
+// Mutation: set p.ShadowDirOff from req.offOwn alone in bindGitParams.
 func TestOffSwitchHoldCoversACreate(t *testing.T) {
 	h := newOffHoldFixture(t, "status,--porcelain")
 	h.send(t, 1, "git.status", map[string]any{"path": h.wt, "baseRepo": h.repo, "shadowDirOff": true})

@@ -380,7 +380,7 @@ func TestShadowLiveSwitchKeepsTheNewGateForALaterCommand(t *testing.T) {
 	held := true
 	gates := 0
 	l := &liveSwitch{off: func() bool { return held }, pending: true}
-	l.gate = func() (gitUse, bool) {
+	l.gate = func(bool) (gitUse, bool) {
 		gates++
 		return gitUse{gitDir: "copy", live: l}, true
 	}

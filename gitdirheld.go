@@ -42,8 +42,9 @@ import (
 // By the path stay:
 //
 //   - Git itself, which takes the git directory as a path.
-//   - A request that holds no git directory: "shadowDirOff":true, the state
-//     fallback-git and a server with no run folder.
+//   - A request that holds no git directory: "shadowDirOff":true, a hold of
+//     the off switch at its gate, the state fallback-git and a server with no
+//     run folder.
 //   - On Linux and macOS, the index in a `worktrees` entry that is a
 //     symbolic link (registrationsRoot). The deletes refuse such a link
 //     (deleteRoot): no delete goes behind it.
@@ -51,6 +52,11 @@ import (
 //     folder `worktrees` is not in the held folder, such as a daemon GIT_DIR
 //     of another repository (from the code, not measured).
 //   - The reads of the create that decide a refusal.
+//
+// A create whose gate ran under the hold of the off switch takes the hold at a
+// later gate before its first good `worktree add` (keepLiveCreate). From then
+// on it acts as above. A create keeps its folder to its reply, also when a
+// later call has no copy: the off switch changes only the form of the calls.
 //
 // Two steps take a new folder from the path, on Linux and macOS. The first is
 // right after `rev-parse --absolute-git-dir`, when git answered another real

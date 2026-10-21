@@ -352,7 +352,7 @@ func (req *request) usePrintedGitDir(t gitDirTrust, common string) string {
 	if err != nil {
 		return shadowRepoFailureText(err)
 	}
-	use.atReply = u.atReply
+	use.atReply, use.live = u.atReply, u.live
 	req.use, req.repoRead = use, read
 	return ""
 }
@@ -838,9 +838,30 @@ type statusRun struct {
 	entryConfig []byte
 	tempFront   []string
 	entryRead   bool
-	// use is the form of the request. The pins above are kept, so each call
-	// makes a folder of the copy that went again itself (gitUse.renewCopy).
-	use gitUse
+	// use is the form of the request, and form is the form of the command that
+	// runs now (at). Each call makes a folder of the copy that went again
+	// itself (gitUse.renewCopy).
+	use  gitUse
+	form gitUse
+}
+
+// at takes the form of a git command of the answer that starts now
+// (gitUse.atCommand), and the pins and items of that form. On 5fd08069 the
+// hold changes the form of the later commands of a git.status. In cell S1 of
+// round task105-01 the commands after a held `ls-files` carry
+// GIT_COMMON_DIR=<repo>/.git. In cell S2 the command after a held `status`
+// runs the start test, and the commands after it name the copy (Linux VM).
+// The temporary git folder stays where the request made it (claustrum's own,
+// not measured).
+func (r *statusRun) at() {
+	u := r.use.atGitDirCommand()
+	r.form = u
+	r.commonPin = statusCommonPin(u, r.common)
+	r.front = u.gitDirFront()
+	r.pin = []string{"GIT_COMMON_DIR=" + r.common}
+	if u.shadow() && !daemonCommonDirStays() {
+		r.pin = r.commonPin
+	}
 }
 
 // entryItems lists the `config.worktree` file of the entry one more time and
@@ -909,7 +930,8 @@ func statusCommonPin(u gitUse, common string) []string {
 // `hash-object` that fails changes no answer (row n17f): the id is then gitEmptyTree.
 // A listing that fails here is not measured. claustrum goes on with the two base pins.
 func (r *statusRun) emptyTree() string {
-	r.use.renewCopy()
+	r.at()
+	r.form.renewCopy()
 	hooks := runListing(r.ctx, "", r.common, precursorEnv(true, r.commonPin)).hooks()
 	cmd := exec.Command("git", withFront(r.front, hardenedProfileArgs(true,
 		"--git-dir="+r.common, "hash-object", "-t", "tree", os.DevNull))...)
@@ -951,12 +973,21 @@ func isObjectID(s string) bool {
 func (r *statusRun) git(noLocks bool, excludes string, args ...string) ([]byte, error) {
 	// Calls 7 and 8 run before every command, whatever attrSource says.
 	id := r.emptyTree()
-	front := r.entryItems()
+	r.at()
+	// A command with no copy gets no items of the entry, as a request with
+	// the member gets none. A command that a later gate gave the copy gets none
+	// either. Cells S3 and S3n do not reach that state: a worktree with a
+	// `config.worktree` file answers isRepo:false before its status call (round
+	// task105-04, Linux VM).
+	var front []string
+	if r.form.shadow() {
+		front = r.entryItems()
+	}
 	var attr []string
 	if r.attrSource {
 		attr = []string{"--attr-source=" + id}
 	}
-	r.use.renewCopy()
+	r.form.renewCopy()
 	l := runListing(r.ctx, r.path, r.tmp, precursorEnv(true, r.pin))
 	var exit *exec.ExitError
 	switch {
@@ -1040,11 +1071,8 @@ func statusChanges(u gitUse, path, common string, e statusEntry) ([]string, erro
 	if err := buildStatusGitDir(e, common, tmp); err != nil {
 		return nil, err
 	}
-	r := &statusRun{ctx: u.stop.context(), path: path, common: common, tmp: tmp,
-		pin: []string{"GIT_COMMON_DIR=" + common}, commonPin: statusCommonPin(u, common), attrSource: attrSource,
-		front: u.gitDirFront(), use: u}
+	r := &statusRun{ctx: u.stop.context(), path: path, common: common, tmp: tmp, attrSource: attrSource, use: u}
 	if u.shadow() && !daemonCommonDirStays() {
-		r.pin = r.commonPin
 		r.entryConfig = e.config
 	}
 	excludes := statusExcludesFile()
