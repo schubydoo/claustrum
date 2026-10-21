@@ -21,6 +21,7 @@ release.
 
 | Reference SHA | Built (UTC) | Wire changes | Reconciled in |
 |---|---|---|---|
+| `5fd08069…` | 2026-10-05 (built) | the `settingsControl` member, new `server.capabilities` members and features, the `-32006` refusal, and new `git.*` and `files.*` texts. See below | [PRs 502–596](https://github.com/schubydoo/claustrum/pull/596) |
 | `89cb6289…` | 2026-09-28 (built) | one new method, one new `process.spawn` param, two new error codes, new `-install` and `-probe-cli` output, three new `server.capabilities` features, the `branchKept` member and new `git.*` texts. See below | [PRs 445–455](https://github.com/schubydoo/claustrum/pull/455) |
 | `f6010b97…` | 2026-09-24 (observed) | several frame changes in `git.*`, one new `process.spawn` param and one new `server.capabilities` feature. See below | [PRs 410–427](https://github.com/schubydoo/claustrum/pull/427) |
 | `90fca6e6…` | 2026-09-14 (built) | no surface change. claustrum made 7 changes, 3 of them client-visible and 1 of those on a frame. See below | [PRs 387–392](https://github.com/schubydoo/claustrum/pull/392) |
@@ -37,7 +38,59 @@ release.
 Each per-build section has three parts. The **wire delta** is what claustrum
 must match byte-for-byte. **Off-wire churn** is any source that moved but never
 reaches the JSON-RPC surface. **How it was bounded** gives the measurement that
-showed that nothing else changed.
+showed that nothing else changed. The forensics stay outside the committed tree.
+
+### `5fd08069bd5f33e9b8a2b104c631bbbfbd4e2536` — 2026-10-05 (built)
+
+Its `-version` prints
+`claude-ssh 5fd08069bd5f33e9b8a2b104c631bbbfbd4e2536 (built 2026-10-05T19:28:39Z)`.
+Issue 469 reported the build. It carries a `go1.25.14` stamp (`go version` on
+the binary), the same as `89cb6289`. The rules are on the pages of the methods
+and in [PROTOCOL.md](PROTOCOL.md).
+
+**Wire delta.**
+
+- The git methods run git on a copy of the git settings in a folder
+  `git-shadow`. `git.info` gains the last member `settingsControl`, and
+  `"shadowDirOff":true` turns the copy off (PRs 518, 570, 575, 582 and 596).
+- The git methods refuse a repository config that the daemon does not accept.
+  The git calls get new option lists and time limits (PRs 512, 513 and 559).
+- `git.worktree_create` refuses a filter that only the repository defines. On
+  Windows it stages the new registration (PRs 508, 556, 557 and 569).
+- `server.capabilities` gains the `peerCheck` and `peerCheckBy` members and three
+  features. With
+  `CLAUDE_SSH_PEER_CHECK=1` a Linux daemon refuses a caller in other namespaces
+  with `-32006` (PRs 502, 504 and 590).
+- `files.read` refuses a file that is not regular, and `files.extract_tar` has
+  new modes and texts (PRs 503, 504 and 507). Each method decodes only its own
+  params (PR 568).
+
+**Off-wire churn.** The `-install` prune and sweeps (PR 558). The stop and
+take-over steps (PRs 552, 553, 560 and 562). The daemon log open (PRs 568 and
+574). The pipe waits of git calls (PRs 583 and 586).
+
+**How it was bounded.** The slices were measured side by side on Linux, macOS
+and Windows VMs. The final check of the whole build ran the full comparison
+battery on the Linux VM. On the macOS and Windows VMs it ran the changed areas
+(rounds `task082-01` to `task082-03`). Its one frame difference was a
+`git.info` on a folder with no repository during the first start test. PR 596
+closed it, and the off switch during a `git.info` with it (rounds `task103-01`
+to `task103-06`). D4, D5, D9, D13, D18, D21 and D25 are retired. D27 is new
+(PR 563).
+
+Four items stay open:
+
+- In one of 40 Windows claustrum runs, both requests got `-32001`. The 35 runs
+  after it did not, and `5fd08069` never did in 40 runs. The cause is not known.
+- In claustrum, `git.status` and the two worktree methods read the off switch
+  once for each request. No VM row covers a switch while they run.
+- A `git.info` on a missing path, sent with the first git request, waits for
+  the start test less often on claustrum (round `task103-04`, Linux VM). Sent after the start test began, it
+  waits on both builds (round `task103-06`, Linux VM).
+- Off the wire, `5fd08069` keeps an exited git wrapper as a zombie until the
+  process that holds its pipe ends, or until the reply. claustrum reaps it at
+  once (round `task082-02` on macOS, round `task101-03` on Linux). A client
+  cannot see it.
 
 ### `89cb6289d0e434f573cfc7267dd0cbb8c56ca298` — 2026-09-28 (built)
 
@@ -151,9 +204,7 @@ worktree, which is precisely what a frame diff cannot catch.
    the connection it took the process from. Before, that
    connection stayed open and never carried another frame for that process, while
    still answering `server.ping`. That was measured on `19f30c46`. This is the build's
-   most client-visible change. It is consistent with the Claude Desktop changelog
-   note about messages around a disconnect, which is a correlation, not something
-   this reconciliation established.
+   most client-visible change.
 2. claustrum's idle close shares the deliberate-close flag with the supersede, so
    a superseded connection is not closed and logged a second time. Not
    probe-measured.
@@ -178,9 +229,6 @@ callers sit behind a 5-minute process age and a 30-day idle age, which makes
 staging them expensive. The code for each states that its values are claustrum's
 own.
 
-Item 7 escaped the first pass. A second, full re-check after the first four
-PRs had merged is what found it.
-
 **Reconciled in.** PRs 387 through 390 are the four implementation slices. PR 391
 corrects claims those four left wrong. PR 392 adds item 7, puts the host cleaner's
 listener check first, and carries the one deliberate exception in this build's
@@ -192,9 +240,7 @@ This bump follows all six.
 
 Pinned by Claude Desktop for Linux `1.52386.0`. The upstream build date is not
 published. The date above is the date of capture and pinning. A large
-build on top of `3ef9370`. This build has two wire changes, both matched
-byte-for-byte, plus four off-wire subsystems, one new off-wire CLI mode, and a
-startup file-limit raise.
+build on top of `3ef9370`.
 
 **Missed at first.** This build also bounds the `ldd` libc probe at 5 s. That
 change was reconciled later, under issue 408.
@@ -211,8 +257,7 @@ change was reconciled later, under issue 408.
    gains the matching feature. An absent or empty value keeps the create-a-branch
    behavior, which is parity.
 
-**Off-wire.** These source changes move no client-visible frame. Four are subsystems.
-One is a CLI mode. One raises the inherited file limit. A closing note covers windows.
+**Off-wire.** These source changes move no client-visible frame.
 
 - `-probe-cli` CLI mode. A one-shot flag runs a bounded `<cli> --version` probe
   and exits 0. For a CLI that runs it prints nothing. For one that times out it
@@ -246,8 +291,7 @@ One is a CLI mode. One raises the inherited file limit. A closing note covers wi
 the CLI flags, the `-version` format, and the tracked strings all match. The new
 `-probe-cli` flag appears in both binaries. The two wire changes went through the
 frame battery. Claustrum reconciled each off-wire subsystem 1:1. A throwaway VM
-checked the destructive paths on linux, darwin, and windows. The forensics stay
-outside the committed tree.
+checked the destructive paths on linux, darwin, and windows.
 
 **Reconciled in.** PRs 356 through 371, with later follow-up parity fixes (the
 plugins.prune sibling-daemon classification and the inherited file-limit raise).
@@ -255,8 +299,7 @@ plugins.prune sibling-daemon classification and the inherited file-limit raise).
 ### `3ef9370ec5b07a0e728ca5de4137d450e95eb2b6` — 2026-09-03
 
 Observed in Claude Desktop for Linux `1.49585.0`. A near-identical rebuild on top
-of `4534d86`. No wire change: the JSON-RPC surface, the 18 methods, the CLI flags
-and the `-version` format are byte-identical. One off-wire change, linux only.
+of `4534d86`.
 
 **Wire delta.** None.
 
@@ -276,16 +319,13 @@ probe. The recovered function inventory of darwin and windows is unchanged. Thei
 binaries differ only by ordinary rebuild churn. String constants, `-help`,
 `-install -help` and the `-version` format are unchanged. The reorder was measured
 on both reference binaries on a mixed host (glibc `ldd` plus a musl marker):
-4534d86 reports `musl`, 3ef9370 reports `glibc`. The forensics stay outside the
-committed tree.
+4534d86 reports `musl`, 3ef9370 reports `glibc`.
 
 ### `4534d8648b686881955c6f13baf46ae72ee72f4c` — 2026-09-04 (observed)
 
 Observed in Claude Desktop for Linux `1.46388.2`. The upstream build date is not
 published. The date above is the date of capture and pinning. A
-lifecycle-focused build on top of `7d193f89`. Three wire changes, all matched
-byte-for-byte, plus a large off-wire daemon-lifecycle layer and one new documented
-divergence (D16). The RPC method set is unchanged at 18.
+lifecycle-focused build on top of `7d193f89`. The RPC method set is unchanged at 18.
 
 **Missed at first.** This build also added the 10-minute age gate to the install
 temp sweep. That change was reconciled later, under issue 408.
@@ -309,15 +349,12 @@ temp sweep. That change was reconciled later, under issue 408.
 
 `git.status` also gained `--attr-source=<empty-tree>` in this cycle, so the repo's
 in-repo `.gitattributes` no longer runs a clean filter during status. The first
-change line's leading space was reconciled here too. `5db5e4a` dropped that space,
-and `7d193f89` and `4534d86` keep it. Claustrum had carried the stale `5db5e4a` trim.
+change line's leading space was reconciled here too (see `7d193f89` below).
 
 New divergence D16. On Windows the reference's own `git.status` of a linked worktree
 errors `-32603 "exit status 128"` (measured). Claustrum reproduces the same
-temp-gitdir assembly and returns the status. The Windows failure mechanism was not
-pinned in this cycle. A later measurement pinned it. See D16. The behavior is byte-identical on Linux and macOS. On
-Windows it is a reachable divergence, with claustrum more correct. See
-[DIVERGENCES.md](DIVERGENCES.md) D16.
+temp-gitdir assembly and returns the status. The behavior is byte-identical on
+Linux and macOS. See [DIVERGENCES.md](DIVERGENCES.md) D16.
 
 **Off-wire.** A daemon-lifecycle layer that does not move a client-visible frame. It
 holds `-install` download progress plus a 60-second read-idle abort. It also holds a
@@ -332,15 +369,11 @@ byte-identical between claustrum and the reference. Windows is byte-identical ap
 the documented D16 divergence (git.status of a linked worktree). The other is the
 shared Windows worktree-timeout timing race, which the reference exhibits too.
 
-**Reconciled in.** PRs 314–333.
-
 ### `7d193f89fc02cf1035a391245312e34ad419f63e` — 2026-08-25
 
 Pinned by Claude Desktop for Linux `1.37937.1`. A large build that rebuilt the
 session-worktree surface. Seven wire changes, all matched byte-for-byte. Four are
-listed below. The other three are the `git.status` untracked handling, the
-`worktree_remove` registration prune, and the `worktree_remove` locked-worktree
-refusal. The off-wire git rewrite and VM probes surfaced those three.
+listed first, and three more after them.
 
 **Missed at first.** This build also checks a supplied `-cli-checksum` against
 the `-cli-zst` blob. That change was reconciled later, under issue 408.
@@ -387,11 +420,7 @@ The empty `worktreePath` messages ("failed to create parent directory: \"\" does
 name a directory" on create, "failed to remove worktree: \"\" does not name a directory"
 on remove) are matched too.
 
-Three of these were found by matching the OFF-wire git-invocation rewrite (below)
-and by VM probes, rather than by the frame battery. Those three are the `git.status`
-untracked handling, the `worktree_remove` registration prune, and the
-`worktree_remove` locked-worktree refusal. The frame battery's top-level-untracked
-and non-locked-worktree fixtures did not exercise them.
+The frame battery did not reach the other three:
 
 - `git.status` untracked files. `--untracked-files=all` lists an untracked file
   inside an untracked directory individually (`?? sub/u.txt`) rather than as the
@@ -401,7 +430,7 @@ and non-locked-worktree fixtures did not exercise them.
   lock); unlock it to remove it"}` and the directory survives. Pre-`7d193f89` the
   reference DELETED it and answered `{"success":true}`. An unlocked ordinary
   directory is still deleted. The reference runs no `git worktree remove` for either
-  case. Measured on an ephemeral VM against `7d193f89`. The frame battery never removes a locked worktree.
+  case. Measured on an ephemeral VM against `7d193f89`.
 - `git.worktree_remove` registration prune. A completed removal drops
   `$GIT_DIR/worktrees/<name>`, so a re-create at the same path succeeds where it
   previously failed `already registered`.
@@ -423,21 +452,14 @@ the read-tree worktree checkout are process-shape that produces identical output
 are matched for the observable and security behavior, but not reproduced
 command-for-command.
 
-`git.worktree_remove` is an off-wire exception. The reference implements it as a
-hardened `rev-parse --absolute-git-dir`. It also deletes the worktree and its
-`$GIT_DIR/worktrees/<name>` registration directly from the filesystem. It also deletes
-the branch with a hardened `update-ref`. It runs no `git worktree remove` at all. Claustrum then ran an unhardened
-`git worktree remove --force` with an `os.RemoveAll` fallback for the worktree itself.
-Since the `f6010b97` reconciliation, claustrum deletes the tree and the entry itself, as
-the reference does. See [PROTOCOL.md](PROTOCOL.md) → `git.worktree_remove`.
-Its branch delete now matches the reference: a raw `update-ref --no-deref -d`. It was
-`git branch -D`, which also dropped the branch's `[branch "<name>"]` config section, where
-the reference leaves it. Both now spare it, measured against 4534d86. Both yield
-byte-identical frames on every probed case (locked refusal, non-worktree delete, stale
-re-create, normal removal). The residual difference was the worktree-removal
-mechanism, and that difference was off-wire on those cases. On other rows the old
-mechanism was wire-visible, for example a partial delete failure and a symbolic-link
-leaf. See [PROTOCOL.md](PROTOCOL.md) → `git.worktree_remove`.
+`git.worktree_remove` is an off-wire exception. The reference runs a hardened
+`rev-parse --absolute-git-dir`. It deletes the worktree and its
+`$GIT_DIR/worktrees/<name>` registration from the filesystem, and the branch with a
+hardened `update-ref`. It runs no `git worktree remove` at all. Since PR 331
+claustrum deletes the branch with `update-ref --no-deref -d`, and both keep the
+`[branch "<name>"]` config section (measured against 4534d86). Since the
+`f6010b97` reconciliation claustrum deletes the tree and the entry itself. See
+[PROTOCOL.md](PROTOCOL.md) → `git.worktree_remove`.
 
 Beyond git, the build adds a daemon-to-daemon reconnect handoff
 and idle-connection management (the SSH-reliability items in the Desktop changelog).
@@ -451,9 +473,8 @@ exactly two levels under the root. An ownership and writability check runs on th
 root. The `<directory>` level must start out empty. A 285-byte
 `.claude-managed-worktrees` marker is written at that `<directory>` level. A separate
 check refuses a `baseRepo` that itself sits under a managed-worktrees marker
-(`errorCode:"nested_base_repo"`). Both are reproduced and measured byte-for-byte
-against `7d193f89` on an ephemeral VM. That VM covered the external-worktree refusals,
-the marker body, and the nested-base-repo refusal through a planted marker.
+(`errorCode:"nested_base_repo"`). Both, with their refusals, are reproduced and measured byte-for-byte
+against `7d193f89` on an ephemeral VM.
 
 **How it was bounded.** The cross-binary frame battery reports claustrum ≡
 `7d193f89` byte-identical across the method suite. Every worktree, status and list edge
@@ -478,7 +499,7 @@ holds the wire contract.
 
 **How it was bounded.** The frame battery and differential binary analysis
 against `7c2f88d` both point to token persistence and to nothing else. No other
-method or phase changed. The forensics stay outside the committed tree.
+method or phase changed.
 
 ### `7c2f88d13e5f269762dd4d463aa4eb3102214110` — 2026-07-02
 
@@ -515,18 +536,15 @@ not wire methods. `server.capabilities` is authoritative on the method set.
 
 **How it was bounded.** The frame battery gates all five changes. Differential
 binary analysis showed that the off-wire deltas are real source, and not
-compiler noise. The forensics stay outside the committed tree. Provenance: Claude
+compiler noise. Provenance: Claude
 Desktop for Linux 1.18286.0 (2026-07-02) embeds a manifest that pins this SHA,
 and it calls 15 of the 19 methods. The uncalled four include
 `process.killAndWait`, `server.version` and `server.shutdown`. The `--stop`
 CLI drives shutdown, and the client reads the version from `--version` CLI
 stdout, not over RPC. A
 capture of a real session will therefore not exercise the new method, and the
-synthetic battery stays the gate for it. That client also bears on the
-`-cli-zst` checksum path (retired D1): `--install` carries `--cli-checksum` on the `--cli-url` download. A
-later argv capture (2026-08-10, two cold starts on one host) shows this
-independently. The retired [D1](DIVERGENCES.md#d1) entry records what Desktop
-supplies on the `--cli-zst` SFTP fallback, and the limits of that record.
+synthetic battery stays the gate for it. The retired [D1](DIVERGENCES.md#d1)
+entry records what Desktop supplies on the `-cli-zst` path.
 
 ### `d20a77da22b7d4822f758654b226299ad7021c22` — 2026-06-09
 
@@ -565,11 +583,6 @@ authoritative gate, not the static check. A differential probe on 2026-07-02 ran
 the spawn refactor across three failure modes and found it byte-identical. The
 refactor kept the synchronous `-32603` and Go-exec-error-string contract that
 claustrum already emits (`methods_process.go` `processSpawn` → `codeInternal`).
-Generalized lesson: a one-line ledger entry can under-record a build, because an
-off-wire change or a failure-path change never surfaces in the frame battery. The
-bump procedure therefore compares more than the wire (see
-[Upstream tracking](UPSTREAM-TRACKING.md)). The forensics stay outside the
-committed tree.
 
 ### `8de85faaa11694321e937499a18c7ab88f37c76c` — 2026-05-21
 
