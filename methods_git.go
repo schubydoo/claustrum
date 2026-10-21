@@ -38,10 +38,11 @@ func (s *server) handleGit(req *request) response {
 		s.offGitRequests.Add(1)
 		defer s.offGitRequests.Add(-1)
 	}
-	// While a request with "shadowDirOff":true runs, every git request that starts
-	// runs as one with the member (cells H1 and H4 of round
-	// task073-02, Linux VM). The state is read once, here (not measured).
-	req.offHeld = s.offGitRequests.Load() > 0
+	// While a request with "shadowDirOff":true runs, every git request that
+	// starts, and the later commands of a git.info or a git.list_branches, run
+	// as with the member (cells H1 and H4 of round task073-02, Linux VM). The
+	// count is read live (request.offLive).
+	req.offHold = &s.offGitRequests
 	if !limitedGitMethod(req.Method) {
 		return fn(req)
 	}
@@ -81,8 +82,9 @@ type gitParams struct {
 	// (repoConfigGate). Cells X1 measured that on git.info and git.status, and
 	// cells V2 on the three other methods. It turns off the settings copy for the
 	// request too (shadowHost.control). Only the JSON value true sets it
-	// (jsonTrueSwitch). A request that starts while another one with it runs
-	// gets it too (request.offHeld).
+	// (jsonTrueSwitch). A request whose first git command starts while another
+	// one with it runs gets it too (bindGitParams). git.info and
+	// git.list_branches read the switch again at later commands (gitUse.atCommand).
 	ShadowDirOff jsonTrueSwitch `json:"shadowDirOff,omitempty"`
 }
 
@@ -190,17 +192,17 @@ func gitInfo(req *request) response {
 	if bad != nil {
 		return *bad
 	}
-	// The excludesFile the reference reads at git.info is now resolved once (cached)
+	// The excludesFile the reference reads at git.info is now cached
 	// and applied to every git op via hardenedProfileArgs/userExcludesFile, rather than
 	// probed here and discarded. The read comes first, so it also runs before a trust
 	// refusal, as on f6010b97 and 89cb6289 (every trust refusal row).
 	userExcludesFile()
 	// notRepo is the "no repository" answer. It carries the settingsControl member
-	// that the request has at that moment (shadowHost.control): none in a daemon
+	// that the request has at that moment (shadowHost.replyControl): none in a daemon
 	// that has not passed its start test, as for a HEAD that is no ref as the first
 	// request (s3p2-linux cell E5, Linux VM).
 	notRepo := func() response {
-		return okResult(req.ID, notRepoResult{SettingsControl: req.shadow.control(bool(p.ShadowDirOff))})
+		return okResult(req.ID, notRepoResult{SettingsControl: req.shadow.replyControl(req.offLive)})
 	}
 	// The git-directory trust check runs on path (gitdirtrust.go). The check of the
 	// daemon's own GIT_CONFIG_COUNT comes after a trust refusal and before the "no
@@ -308,6 +310,8 @@ func gitInfo(req *request) response {
 	}
 	if inFile {
 		req.use = gitUse{stop: req.stop}
+	} else if gate {
+		req.keepLive(bool(p.ShadowDirOff), gateTrust, gateDir)
 	}
 	req.listEntryConfig(t)
 	// If the repo's config cannot be enumerated (e.g. an `include.path` with no value), the
@@ -336,13 +340,18 @@ func gitInfo(req *request) response {
 	if walkRoot == "" {
 		return notRepo()
 	}
+	// The Windows root pair takes the form of the off switch at this moment, as
+	// each later command does (cell O2 of round task103-04, Windows VM). On Linux
+	// and macOS the pair runs no git call, so a pending gate runs here, right
+	// before the first command of gitRepoSlug.
+	u := req.use.atCommand()
 	copyOf := ""
 	var front []string
-	if _, ok := req.use.names(p.Path); ok {
-		copyOf = req.use.gitDir
-		front = req.use.gitDirFront()
+	if _, ok := u.names(p.Path); ok {
+		copyOf = u.gitDir
+		front = u.gitDirFront()
 	}
-	top := gitInfoRoot(req.stop, walkRoot, walkGitDir, copyOf, req.use.gitDirPin(p.Path), front)
+	top := gitInfoRoot(req.stop, walkRoot, walkGitDir, copyOf, u.gitDirPin(p.Path), front)
 	// slug and defaultBranch come before the branch, matching the reference order.
 	slug := gitRepoSlug(req.use, p.Path)
 	defBranch := gitDefaultBranch(req.use, p.Path)
@@ -374,8 +383,28 @@ func gitInfo(req *request) response {
 		RepoSlug:      slug,
 		DefaultBranch: defBranch,
 
-		SettingsControl: req.shadow.control(bool(p.ShadowDirOff)),
+		SettingsControl: req.shadow.replyControl(req.offLive),
 	})
+}
+
+// keepLive gives the later git commands of a git.info or a git.list_branches the
+// off switch of the moment (liveSwitch). off is the hold at the gate of the
+// request, and t and dir are the trust verdict and the folder of that gate.
+func (req *request) keepLive(off bool, t gitDirTrust, dir string) {
+	if !req.shadow.active() {
+		return
+	}
+	l := &liveSwitch{off: req.offLive, pending: off && !req.offOwn, stop: req.stop}
+	l.gate = func() (gitUse, bool) {
+		msg, noRepo := req.settingsGateRefusal(t, false, dir)
+		if msg != "" || noRepo {
+			return gitUse{}, false
+		}
+		req.listEntryConfig(t)
+		req.use.live = l
+		return req.use, true
+	}
+	req.use.live = l
 }
 
 // infoRepoName is the `repo` member of git.info: the base name of the root. A name that
@@ -723,6 +752,7 @@ func gitListBranches(req *request) response {
 	} else if noRepo {
 		return okResult(req.ID, branchesResult{Branches: []string{}})
 	}
+	req.keepLive(bool(p.ShadowDirOff), t, p.Path)
 	// A repo whose config cannot be enumerated is refused with -32603 (7d193f89),
 	// measured on an ephemeral VM.
 	c := hostileConfigRefusal(req.use, p.Path, true)

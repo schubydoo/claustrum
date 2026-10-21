@@ -11,7 +11,8 @@ import "testing"
 // HOME or XDG_CONFIG_HOME gets no effect at all.
 //
 // The write goes through the same mutex the reader takes, so it cannot race an
-// in-flight request goroutine that is running a git op.
+// in-flight request goroutine that is running a git op. Each reset counts in
+// userExcludesGen, so a read that began before it stores nothing.
 //
 // A test that cares about ignore state calls isolateGitConfig, which calls this.
 func resetUserExcludesCache(t *testing.T) {
@@ -19,10 +20,12 @@ func resetUserExcludesCache(t *testing.T) {
 	userExcludesMu.Lock()
 	prevDone, prevValue := userExcludesDone, userExcludesCached
 	userExcludesDone, userExcludesCached = false, ""
+	userExcludesGen++
 	userExcludesMu.Unlock()
 	t.Cleanup(func() {
 		userExcludesMu.Lock()
 		userExcludesDone, userExcludesCached = prevDone, prevValue
+		userExcludesGen++
 		userExcludesMu.Unlock()
 	})
 }

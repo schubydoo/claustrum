@@ -63,6 +63,64 @@ type gitUse struct {
 	// stop holds the time limits of the git calls of the request (gitstop.go), or
 	// is nil.
 	stop *gitStop
+	// live is the off switch of a git.info or a git.list_branches after its
+	// gate (atCommand), or nil.
+	live *liveSwitch
+}
+
+// liveSwitch lets the later git commands of a request follow the off switch.
+// On 5fd08069 the hold changes the form of the git commands of a git.info
+// while it runs (cells O1 and O2 of round task103-02, Linux VM):
+//
+//   - In cell O2 the first two repository commands after the start test still
+//     name the copy, and the later commands name <repo>/.git.
+//   - In cell O1 the hold ends while the request runs. A later command runs
+//     the start test, and the commands after it name the copy.
+//
+// claustrum takes the form at each command that runs its own config listing
+// (hardenedGitCmd). The config check and the call after it keep the form of the
+// gate, and so does listEntryConfig. The Windows root pair of gitInfoRoot takes
+// the form of its moment (cell O2 of round task103-04, Windows VM).
+// git.list_branches follows the switch too (cells L1, L2 and L0 of round
+// task103-04, Linux VM). The commands of git.status, git.worktree_create and
+// git.worktree_remove keep the form of their gate (not measured, claustrum's
+// own).
+type liveSwitch struct {
+	// off reports whether the off switch holds the daemon now.
+	off func() bool
+	// gate runs the gate of the request again and returns the form that it
+	// gives. ok is false after a refusal. pending is true while the gate of the
+	// request ran under the hold and gate has not run since.
+	gate    func() (use gitUse, ok bool)
+	pending bool
+	// regated is the form that gate gave, or nil before a gate that passed. A
+	// helper that has its use by value gets it at its next command.
+	regated *gitUse
+	// stop holds the time limits of the git calls of the request.
+	stop *gitStop
+}
+
+// atCommand is the form of a git command that starts now (liveSwitch). A gate
+// that a later command runs and that refuses leaves the form with no copy (not
+// measured, claustrum's own).
+func (u gitUse) atCommand() gitUse {
+	l := u.live
+	if l == nil {
+		return u
+	}
+	if l.off() {
+		return gitUse{stop: l.stop, live: l}
+	}
+	if l.pending {
+		l.pending = false
+		if use, ok := l.gate(); ok {
+			l.regated = &use
+		}
+	}
+	if l.regated != nil {
+		return *l.regated
+	}
+	return u
 }
 
 // inFolder reports whether the request keeps its short-lived folders in the

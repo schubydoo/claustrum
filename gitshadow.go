@@ -14,6 +14,7 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 )
 
@@ -182,6 +183,33 @@ func (h *shadowHost) control(off bool) string {
 	h.mu.Lock()
 	defer h.mu.Unlock()
 	return h.state
+}
+
+// replyWaits counts the git.info replies that reached the wait of replyControl.
+// A test reads it to know that a reply waits.
+var replyWaits atomic.Int64
+
+// replyControl is the settingsControl value of a git.info reply, read when the
+// reply is made. off reports the hold of the off switch (request.offLive). It is
+// read again after the wait, so a hold that starts during the wait counts (R4,
+// claustrum's own for this order, not measured).
+// Without a hold the reply waits for a start test that runs, and then has the state
+// that the test gave. 5fd08069 holds a git.info on a folder with no repository
+// until the test ends. It answers "shadow" after a good test, and no member
+// after a failed one or one that hit the 30 s bound of a call (cells T1 to T3
+// and T8 of round task103-01, Linux VM). It holds one on a missing path too
+// (cell T7, 4 of 5 runs, and 5 of 5 in round task103-03). In the fifth run of
+// round task103-01 it answered before the test started, with no member. On a
+// folder with no repository the other methods answer at once (cells T5 to
+// T6b).
+func (h *shadowHost) replyControl(off func() bool) string {
+	if !h.active() || off() {
+		return h.control(true)
+	}
+	replyWaits.Add(1)
+	h.testMu.Lock()
+	h.testMu.Unlock() //nolint:staticcheck // the lock only waits for a running test
+	return h.control(off())
 }
 
 // readsRepoConfig reports whether a request makes the daemon's own read of the

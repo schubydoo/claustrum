@@ -2042,9 +2042,6 @@ VM. Rounds `val-s3p2b2-3` and `val-s3p2b2-5` ran a build with the settings copy.
   read calls of `5fd08069` have no end record in cells E1a, E2a and E2b. The same
   calls of claustrum end with exit 0 (rounds `val-s3p2b2-3` and `val-s3p2b2-5`).
   The reply lines are equal.
-- A config whose listing by git has more than 64 MiB. If the first 64 MiB show
-  neither a name over its bound nor too many settings, claustrum gives no
-  refusal (from the code, not measured on `5fd08069`).
 
 **claustrum's own choices** (from the code, not measured on `5fd08069`):
 
@@ -2104,29 +2101,33 @@ methods are `git.info`, `git.status`, `git.list_branches`, `git.worktree_create`
 
 ##### The states and `settingsControl`
 
-`git.info` reports the state of a request in the member `settingsControl`. It is the
-last member of the result. No other method sends it, and an error reply has none
+`git.info` reports the state in its last member, `settingsControl`.
+No other method sends it, and an error reply has none
 (cell A1 of round `s3`, Linux, macOS and Windows VMs).
 
 | `settingsControl` | When | What it changes |
 |---|---|---|
 | no member | No start test of the daemon gave a state yet | Nothing. A folder with no repository, or a `HEAD` that is no ref, starts no test (cell E5 of round `s3p2`, Linux VM). The `.git` file below is the exception |
 | `"shadow"` | The start test passed | The git calls name the copy. Before them the daemon asks git about the repository |
-| `"fallback-git"` | The git of the host does not work on such a copy. `5fd08069` reports it on git 2.11.4 and 2.12.5 (round `s3p2-oldgit`, Linux VM) | The git calls name the git directory. The daemon reads no config of the repository and gives no config refusal. It makes no copy and does not ask git about the repository |
-| `"off-switch"` | The request has `"shadowDirOff":true`, or it started while such a request ran | For that request the git calls name the git directory. No test runs, no folder is made and no config is read |
+| `"fallback-git"` | The git of the host does not work on such a copy. `5fd08069` reports it on git 2.11.4 and 2.12.5 (round `s3p2-oldgit`, Linux VM) | The git calls name the git directory. The daemon reads no repository config, gives no config refusal, makes no copy and does not ask git about it |
+| `"off-switch"` | A request with `"shadowDirOff":true` runs (the hold) when the reply is made | A request that starts then names the git directory, with no test, folder or config read |
 
-- After the test, the "no repository" reply has the member too:
+- After the test the "no repository" reply has it too:
   `{"isRepo":false,"repoSlug":"","defaultBranch":"","settingsControl":"shadow"}`.
+  That reply waits for a running test and has its state, or no member after
+  a failed test (cells T2, T3 and T8 of round `task103-01`, Linux VM). So does
+  a missing path (cell T7d of round `task103-06`). On a folder with no repository
+  the other methods answer at once (cells T5 to T6b).
 - As the first git request of a daemon, a `git.info` on a folder whose `.git`
-  file names a missing path runs the test. Its reply is that "no repository" reply.
+  file names a missing path runs the test and gives that reply.
   A missing entry under `worktrees` of an existing git directory runs no test, and
-  the reply has no member. `5fd08069` answers so in cells V3 and V4 of round
-  `task083-01` (Linux, macOS and Windows VMs). A missing entry in a missing
+  the reply has no member (`5fd08069`, cells V3 and V4 of round `task083-01`,
+  Linux, macOS and Windows VMs). A missing entry in a missing
   repository runs the test (cell V4g of round `task083-02`, Linux VM). After the
-  test on such a file `5fd08069` runs a `rev-parse` against a folder `.probe` of its
-  run folder, and has that folder at the reply. claustrum runs a config listing in
-  its place and makes no `.probe`. The frames are equal (cell V3 of round
-  `task083-03`, macOS and Windows VMs).
+  test on such a file `5fd08069` runs a `rev-parse` against `.probe` in its run
+  folder, and has it at the reply. claustrum runs a config listing in its place
+  and makes no `.probe`, with equal frames (cell V3 of round `task083-03`, macOS
+  and Windows VMs).
 - A `git.info` on a path that does not exist starts no test. As the first git
   request of a daemon it makes one call, the excludes read, and its reply has no
   member. A later one makes none.
@@ -2135,18 +2136,20 @@ last member of the result. No other method sends it, and an error reply has none
   member follows the daemon's state (not measured).
 - A `git.info` on a regular file gets the gate of the repository of its folder.
   Outside any repository it starts no test. As the first git request of a daemon
-  its reply has no member. That is the reply on Linux and macOS. On Windows the reply is the hooks refusal, with
-  `fork/exec <git.exe>: The directory name is invalid.`
-- A request with `"shadowDirOff":true` gets `"off-switch"` in three more cases. It
-  is the first request of a daemon. Or its reply is "no repository". Or a failed
-  start test is kept. The cells are A1 and B1 of round `s3` and cell 32 of round
-  `s3p2b-edges` (Linux VM).
-- A git request without the member that starts while a request with it runs is a
-  request with the member, to its own reply. A held request does not hold the
-  state for other requests (cell Q4 of round `task073-05`). On
-  `5fd08069` a `git.info` on another repository answers `"off-switch"`, and a
-  later one answers `"shadow"` (cells H1 and H2 of round `task073-02`, Linux VM).
-  A `git.worktree_create` then makes no copy (cell H4).
+  its reply has no member on Linux and macOS. On Windows it is the hooks
+  refusal, with `fork/exec <git.exe>: The directory name is invalid.`
+- A request with the member gets `"off-switch"` also as the first request of a
+  daemon, in a "no repository" reply and while a failed test is kept (cells A1
+  and B1 of round `s3`, cell 32 of round `s3p2b-edges`, Linux VM).
+- A hold that starts during a `git.info` moves to the git directory each
+  command after its first config listing and the next call, the Windows root
+  pair too (cells O2 of `task103-02` and `task103-04`, Linux, macOS and Windows VMs).
+  After a hold a later command runs the test and takes the copy (cell O1).
+  `git.list_branches` does the same (cells L0 to L2, Linux VM). Other git
+  methods read it once (claustrum's own, not measured). A held request does
+  not keep the hold for later requests (cell Q4 of round `task073-05`). A
+  create in a hold makes no copy, and
+  `git.info` answers `"off-switch"` (cells H4 and H1 of round `task073-02`).
 - In that time `git.status`, `git.list_branches` and `git.worktree_remove` get no
   config refusal, as with the member. On a repository of format version 3 they
   answer `{"isRepo":false,"clean":false}`, `{"isRepo":false,"branches":[]}` and the
@@ -2158,9 +2161,9 @@ last member of the result. No other method sends it, and an error reply has none
 - A held create whose holder answers first keeps the member to its reply. Its
   `worktree add` of 130 s started while the holder ran, and no build stopped it at
   2 minutes. A held call that starts after that answer has the 2 minute limit
-  (claustrum's own, not measured). In cell Q4 `5fd08069` ran its read-tree in the
-  copy that a later `git.info` had made, claustrum stayed on the git directory,
-  and the frames were equal (round `task073-05`, Linux VM).
+  (claustrum's own, not measured). In cell Q4 (Linux VM) `5fd08069` ran its
+  read-tree in the copy of a later `git.info`, claustrum stayed on the git
+  directory, with equal frames.
 - Only the JSON value `true` counts for `shadowDirOff`. `"true"`, `1`, `null` and
   `false` are as no member (cell B3 of round `s3`, Linux VM, and cell S1-seq of
   round `val-s3p2b2-1`, macOS VM).
@@ -2626,10 +2629,10 @@ that measured it.
   With the member, cell B1 of round `s3-windows` shows the same for the four
   methods (Windows VM). With `worktreeRoot`, `git.worktree_remove` runs a light check.
   Later a heavy listing and `rev-parse --absolute-git-dir` follow. Linux VM.
-- Excludes read. Before its first listing, the daemon reads the user's
-  `core.excludesFile` once, with `git config --includes --path core.excludesFile`.
-  This call runs in the temporary directory. `GIT_DIR=<null>` is the only variable
-  that it adds. Linux, macOS and Windows VMs.
+- Excludes read. Before its first listing, an uncached request runs `git config
+  --includes --path core.excludesFile`. Two concurrent requests run two (rounds
+  `task103-01`, `task103-03`, Linux VM). It adds only `GIT_DIR=<null>`, in the
+  temporary directory. Linux, macOS and Windows VMs.
 - The probe `git --attr-source=<empty tree> version` adds no variable. Linux, macOS
   and Windows VMs.
 - The `git status` call starts with `--attr-source=<empty tree>`. The heavy `-c`
