@@ -430,8 +430,8 @@ var worktreeCreateDrainCap = 5 * time.Second
 //
 //   - A second listing runs right before the read-tree call. It has the argv of
 //     the first one, and the variables of the read-tree call: the hook pins,
-//     GIT_INDEX_FILE and LANGUAGE=C, and no added LC_ALL. claustrum does not read
-//     its output. A failure of it refuses the create (ownConfigListing). Then
+//     GIT_INDEX_FILE and LANGUAGE=C, and no added LC_ALL. claustrum reads its
+//     output to the end and keeps none of it. A failure of it refuses the create (ownConfigListing). Then
 //     come the cap of the filter rule (tooManyFiltersText) and the other
 //     refusals of the plan. 5fd08069 has that order (round task008-03, cells R3
 //     to R5, Linux VM).
@@ -621,12 +621,19 @@ const ownConfigStopText = "git took too long: Claude stopped git config after 30
 //
 // The listing holds the repository folder of the copy (runHeld). A listing
 // whose folder went gives its own text alone (from the code, not measured).
+//
+// The daemon reads the output of the listing to its end, so the read-tree call
+// starts only when the pipe closes. A child that holds it gets no signal
+// (cell A4 of round task101-01, Linux VM). A listing that fails while a child
+// holds the pipe past ownConfigBound gives ownConfigStopText (claustrum's own,
+// not measured).
 func ownConfigListing(leaf, gitDir string, env []string) string {
 	bounded, cancel := context.WithTimeout(context.Background(), ownConfigBound)
 	defer cancel()
 	cmd := exec.CommandContext(bounded, "git", "--git-dir="+gitDir, "config", "-z", "--list")
 	cmd.Dir = leaf
 	cmd.Env = env
+	cmd.Stdout = io.Discard
 	err := runHeld(cmd, cmd.Run)
 	cause := ""
 	switch {

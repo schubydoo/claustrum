@@ -980,7 +980,15 @@ func (r *statusRun) git(noLocks bool, excludes string, args ...string) ([]byte, 
 	if noLocks {
 		cmd.Env = append(cmd.Env, "GIT_OPTIONAL_LOCKS=0")
 	}
-	return gitOutput(r.ctx, cmd)
+	ctx := r.ctx
+	switch args[0] {
+	case "status", "ls-files", "diff-index":
+		// The three scans read their output to the end. 5fd08069 does so for
+		// `status` (cell A3 of round task101-01, Linux VM). The other two are
+		// not measured.
+		ctx = untilPipeEOF(ctx)
+	}
+	return gitOutput(ctx, cmd)
 }
 
 // errStatusNoFolder is the error of statusChanges for a request whose folder
