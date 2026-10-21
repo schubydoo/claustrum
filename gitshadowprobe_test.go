@@ -499,9 +499,11 @@ func TestPrintedProbePath(t *testing.T) {
 // directory is good, and it is kept for the next methods (cell 39 of
 // s3p2b-edges-linux2, last wrapper row: 1, 0, 0, 0, 0 calls). After a bad
 // answer every request asks again, and a good answer then gives a normal reply
-// at once (cells 37 and 39).
+// at once (cells 37 and 39). The clock of the kept answer stands still, so a
+// slow host cannot run past the kept time between the requests.
 func TestProbeGoodAnswerWithTheFullPath(t *testing.T) {
 	f := newSeededShadowFixture(t)
+	setProbeClock(t)
 	answerProbe(t, 128, "", "fatal: not a git repository (or any of the parent directories): .git\n")
 	for range 2 {
 		raw, calls := f.info(t, f.repo, nil)
