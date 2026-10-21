@@ -107,6 +107,97 @@ func TestWorktreeCreateWorktreesIsLink(t *testing.T) {
 	}
 }
 
+// TestWorktreeCreateNoPairAtALinkedWorktrees pins cells C6, C6n and C6b of
+// round task105-06 (Linux VM): `<git dir>/worktrees` is a symbolic link to an
+// empty real folder. The create is refused with the text of cell V1, and no
+// call of the pair before the add runs. A broken link and a file at that name
+// give no pair either (claustrum's own, not measured). The control is a real
+// folder with the entry of another worktree: the pair runs (cell R-Q2b).
+func TestWorktreeCreateNoPairAtALinkedWorktrees(t *testing.T) {
+	for _, row := range []struct {
+		name  string
+		stage func(t *testing.T, at string)
+		pair  bool
+	}{
+		{"C6 link to an empty folder", func(t *testing.T, at string) {
+			target := filepath.Join(resolveTestRoot(t, t.TempDir()), "wtreal")
+			if err := os.Mkdir(target, 0o755); err != nil {
+				t.Fatal(err)
+			}
+			linkAt(t, at, target)
+		}, false},
+		{"broken link", func(t *testing.T, at string) {
+			linkAt(t, at, filepath.Join(resolveTestRoot(t, t.TempDir()), "gone"))
+		}, false},
+		{"file", func(t *testing.T, at string) { mustWrite(t, at, "") }, false},
+		{"R-Q2b real folder", nil, true},
+	} {
+		t.Run(row.name, func(t *testing.T) {
+			f := newCheckoutRuleFixture(t)
+			at := filepath.Join(f.gitDir, worktreesSubdir)
+			if row.stage != nil {
+				if err := os.RemoveAll(at); err != nil {
+					t.Fatal(err)
+				}
+				row.stage(t, at)
+			}
+			raw, calls := f.create(t, nil)
+			if row.pair {
+				if !strings.Contains(raw, `"success":true`) {
+					t.Fatalf("git.worktree_create = %s, want success", raw)
+				}
+			} else {
+				wantError(t, raw, `git worktree add failed: cannot prepare the repository's worktrees directory: "`+at+`" is not a directory`, "worktree_add_failed")
+			}
+			if got := ranPair(calls, f.repo); got != row.pair {
+				t.Errorf("the pair ran = %v, want %v", got, row.pair)
+			}
+		})
+	}
+}
+
+// TestWorktreeCreateLinkedWorktreesUnderAHold pins cell C6b of rounds
+// task105-04 and task105-06 (Linux VM). `<git dir>/worktrees` is a symbolic
+// link to an empty real folder, and a hold starts while `rev-parse
+// --absolute-git-dir` of the create runs. The add is refused with the text of
+// offWorktreesRefusal. Its listing in the repository, in the form of the git
+// directory, is the last call, with no pair and no add. Mutation: in
+// worktreeAdd, test offWorktreesRefusal before hardenedGitCmd. The listing then
+// does not run.
+func TestWorktreeCreateLinkedWorktreesUnderAHold(t *testing.T) {
+	h := newLiveFixture(t)
+	h.warm(t)
+	at := filepath.Join(h.gitDir, worktreesSubdir)
+	if err := os.RemoveAll(at); err != nil {
+		t.Fatal(err)
+	}
+	target := filepath.Join(resolveTestRoot(t, t.TempDir()), "wtreal")
+	if err := os.Mkdir(target, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	linkAt(t, at, target)
+	holdA(t, "rev-parse,--absolute-git-dir")
+	params, _ := h.createParams()
+	want := `{"success":false,"error":"git worktree add failed: cannot list the repository's worktree entries: \"worktrees\" is a link or a file where Claude needs a real directory; put the directory itself in its place","errorCode":"worktree_add_failed"}`
+	if got := h.startsInA(t, "git.worktree_create", params); got != want {
+		t.Fatalf("C6b: create = %s\n  want %s", got, want)
+	}
+	calls := readEnvCalls(t, h.log)
+	i := h.wantForm(t, calls, 0, "rev-parse,--absolute-git-dir", true)
+	var after []envCall
+	for _, c := range calls[i+1:] {
+		if !sameDir(c.cwd, h.repoB) {
+			after = append(after, c)
+		}
+	}
+	if len(after) != 1 || !after[0].listing() || !sameDir(after[0].cwd, h.repo) {
+		t.Fatalf("C6b: the calls after absolute-git-dir are %v, want one listing in %s", after, h.repo)
+	}
+	if v := callCommonDir(after[0]); !sameDir(v, h.gitDir) {
+		t.Errorf("C6b: the listing has GIT_COMMON_DIR=%q, want the git directory %s", v, h.gitDir)
+	}
+}
+
 // TestWorktreeCreateTwoNewEntries pins cell V2 of round tier0-10: a
 // second add puts one more entry into the registrations folder before the first
 // add ends. The create is refused. Both entries and both branches stay, and the
