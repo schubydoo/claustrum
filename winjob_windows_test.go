@@ -259,12 +259,17 @@ func TestKillEndsOnlyTheDirectChild(t *testing.T) {
 }
 
 // exitLinesOfC1 returns each log line that holds the exit line of c1 with code 1, from
-// the [process.Manager] tag on. The level tag before it is dropped.
+// the [process.Manager] tag on. The level tag before it is dropped. The text after the
+// code must be empty or start with ",", so a line with code 10 or code 123 does not count.
 func exitLinesOfC1(log string) []string {
 	const marker = "[process.Manager] Process c1 exited with code 1"
 	var lines []string
 	for _, ln := range strings.Split(log, "\n") {
-		if i := strings.Index(ln, marker); i >= 0 {
+		i := strings.Index(ln, marker)
+		if i < 0 {
+			continue
+		}
+		if rest := ln[i+len(marker):]; rest == "" || strings.HasPrefix(rest, ",") {
 			lines = append(lines, ln[i:])
 		}
 	}
@@ -300,7 +305,8 @@ func TestKillWithKidsHoldingThePipes(t *testing.T) {
 		log := buf.String()
 		wantLinesInOrder(t, log,
 			"[process.Manager] KillAndWait c1: group kill failed: TerminateProcess: Access is denied.",
-			"[process.Manager] Process c1: pipe drain grace expired (grandchild holding stdio?); force-closing")
+			"[process.Manager] Process c1: pipe drain grace expired (grandchild holding stdio?); force-closing",
+			"[process.Manager] Process c1 exited with code 1, signalled at client request")
 		for _, w := range []string{
 			"[process.Manager] stdout read error for process c1: read |0: file already closed\n",
 			"[process.Manager] stderr read error for process c1: read |0: file already closed\n",
@@ -309,8 +315,10 @@ func TestKillWithKidsHoldingThePipes(t *testing.T) {
 				t.Errorf("log lacks %q\nlog:\n%s", w, log)
 			}
 		}
-		if w := "[process.Manager] Process c1 exited with code 1, signalled at client request\n"; !strings.HasSuffix(log, w) {
-			t.Errorf("log does not end with %q\nlog:\n%s", w, log)
+		// A child left alive by another test can add its own exit line after this one,
+		// so the check takes the exit lines of c1 and not the end of the log.
+		if w, lines := "[process.Manager] Process c1 exited with code 1, signalled at client request", exitLinesOfC1(log); len(lines) != 1 || lines[0] != w {
+			t.Errorf("exit lines of c1 = %q, want only %q\nlog:\n%s", lines, w, log)
 		}
 		if !processAlive(t, gpid) {
 			t.Errorf("grandchild %d ended", gpid)
@@ -340,9 +348,12 @@ func TestKillWithKidsHoldingThePipes(t *testing.T) {
 			t.Errorf("log = %q, want no group kill line for process.kill", log)
 		}
 		wantLinesInOrder(t, log,
-			"[process.Manager] Process c1: pipe drain grace expired (grandchild holding stdio?); force-closing")
-		if w := "[process.Manager] Process c1 exited with code 1, signalled at client request\n"; !strings.HasSuffix(log, w) {
-			t.Errorf("log does not end with %q\nlog:\n%s", w, log)
+			"[process.Manager] Process c1: pipe drain grace expired (grandchild holding stdio?); force-closing",
+			"[process.Manager] Process c1 exited with code 1, signalled at client request")
+		// A child left alive by another test can add its own exit line after this one,
+		// so the check takes the exit lines of c1 and not the end of the log.
+		if w, lines := "[process.Manager] Process c1 exited with code 1, signalled at client request", exitLinesOfC1(log); len(lines) != 1 || lines[0] != w {
+			t.Errorf("exit lines of c1 = %q, want only %q\nlog:\n%s", lines, w, log)
 		}
 		if !processAlive(t, gpid) {
 			t.Errorf("grandchild %d ended", gpid)

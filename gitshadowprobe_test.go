@@ -499,7 +499,10 @@ func TestPrintedProbePath(t *testing.T) {
 // directory is good, and it is kept for the next methods (cell 39 of
 // s3p2b-edges-linux2, last wrapper row: 1, 0, 0, 0, 0 calls). After a bad
 // answer every request asks again, and a good answer then gives a normal reply
-// at once (cells 37 and 39). The clock of the kept answer stands still, so a
+// at once (cells 37 and 39). The test takes the first three methods: the loop
+// checks "isRepo":true, which the results of git.worktree_create and
+// git.worktree_remove do not have, and those two would change the fixture that
+// the later rows read. The clock of the kept answer stands still, so a
 // slow host cannot run past the kept time between the requests.
 func TestProbeGoodAnswerWithTheFullPath(t *testing.T) {
 	f := newSeededShadowFixture(t)
