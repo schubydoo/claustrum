@@ -202,52 +202,54 @@ func spawnTree(t *testing.T, m *procManager, id, mode string) (*managedProc, int
 // around the child ends the grandchild here.
 func TestKillEndsOnlyTheDirectChild(t *testing.T) {
 	type result struct{ found, died, already, escalated bool }
+	// Each row has its own child id, so a child that another test or row left alive cannot
+	// add a matching exit line. The row id is the child id.
 	actions := []struct {
-		name    string
-		act     func(m *procManager) result
+		id      string
+		act     func(m *procManager, id string) result
 		wantLog string
 	}{
-		{"kill default", func(m *procManager) result { m.kill("c1", ""); return result{} },
-			"[process.Manager] Process c1 exited with code 1, signalled at client request"},
-		{"kill TERM", func(m *procManager) result { m.kill("c1", "TERM"); return result{} },
-			"[process.Manager] Process c1 exited with code 1, signalled at client request"},
-		{"kill KILL", func(m *procManager) result { m.kill("c1", "KILL"); return result{} },
-			"[process.Manager] Process c1 exited with code 1, signalled at client request"},
-		{"killAndWait default", func(m *procManager) result {
-			f, d, a, e := m.killAndWait("c1", "", 3*time.Second, true)
+		{"kd-kill-default", func(m *procManager, id string) result { m.kill(id, ""); return result{} },
+			", signalled at client request"},
+		{"kd-kill-term", func(m *procManager, id string) result { m.kill(id, "TERM"); return result{} },
+			", signalled at client request"},
+		{"kd-kill-kill", func(m *procManager, id string) result { m.kill(id, "KILL"); return result{} },
+			", signalled at client request"},
+		{"kd-killAndWait-default", func(m *procManager, id string) result {
+			f, d, a, e := m.killAndWait(id, "", 3*time.Second, true)
 			return result{f, d, a, e}
-		}, "[process.Manager] Process c1 exited with code 1, signalled at client request"},
-		{"killAndWait no escalate", func(m *procManager) result {
-			f, d, a, e := m.killAndWait("c1", "", 3*time.Second, false)
+		}, ", signalled at client request"},
+		{"kd-killAndWait-no-escalate", func(m *procManager, id string) result {
+			f, d, a, e := m.killAndWait(id, "", 3*time.Second, false)
 			return result{f, d, a, e}
-		}, "[process.Manager] Process c1 exited with code 1, signalled at client request"},
+		}, ", signalled at client request"},
 		// The exit line of a clean stop is not measured on Windows. Only the code is, so
 		// the empty wantLog checks the code alone.
-		{"clean stop", func(m *procManager) result { m.killAll(); return result{} }, ""},
+		{"kd-clean-stop", func(m *procManager, _ string) result { m.killAll(); return result{} }, ""},
 	}
 	for _, tc := range actions {
-		t.Run(tc.name, func(t *testing.T) {
+		t.Run(tc.id, func(t *testing.T) {
 			m := newTestProcManager(t)
-			p, gpid := spawnTree(t, m, "c1", "tree")
+			p, gpid := spawnTree(t, m, tc.id, "tree")
 			buf := captureLogBuf(t)
 
-			got := tc.act(m)
+			got := tc.act(m, tc.id)
 			select {
 			case <-p.done:
 			case <-time.After(10 * time.Second):
 				t.Fatal("the direct child did not end")
 			}
-			if strings.HasPrefix(tc.name, "killAndWait") && got != (result{found: true, died: true}) {
+			if strings.HasPrefix(tc.id, "kd-killAndWait") && got != (result{found: true, died: true}) {
 				t.Errorf("killAndWait = %+v, want found and died only", got)
 			}
 			// A child left alive by another test can add its own exit line after this one,
-			// so the check takes the exit lines of c1 and not the end of the log.
-			if lines := exitLinesOfC1(buf.String()); len(lines) != 1 {
-				t.Errorf("log = %q, want exactly one exit line of c1 with code 1, got %d", buf.String(), len(lines))
-			} else if tc.wantLog != "" && lines[0] != tc.wantLog {
-				t.Errorf("exit line = %q, want %q", lines[0], tc.wantLog)
+			// so the check takes the exit lines of this row's id and not the end of the log.
+			if lines := exitLinesOf(buf.String(), tc.id); len(lines) != 1 {
+				t.Errorf("log = %q, want exactly one exit line of %s with code 1, got %d", buf.String(), tc.id, len(lines))
+			} else if w := exitLineOf(tc.id) + tc.wantLog; tc.wantLog != "" && lines[0] != w {
+				t.Errorf("exit line = %q, want %q", lines[0], w)
 			}
-			if strings.Contains(buf.String(), "group kill failed") {
+			if strings.Contains(buf.String(), "KillAndWait "+tc.id+": group kill failed") {
 				t.Errorf("log = %q, want no group kill line", buf.String())
 			}
 			time.Sleep(time.Second)
@@ -258,11 +260,16 @@ func TestKillEndsOnlyTheDirectChild(t *testing.T) {
 	}
 }
 
-// exitLinesOfC1 returns each log line that holds the exit line of c1 with code 1, from
-// the [process.Manager] tag on. The level tag before it is dropped. The text after the
+// exitLineOf is the start of the exit line of the child id with code 1.
+func exitLineOf(id string) string {
+	return "[process.Manager] Process " + id + " exited with code 1"
+}
+
+// exitLinesOf returns each log line that holds the exit line of the child id with code 1,
+// from the [process.Manager] tag on. The level tag before it is dropped. The text after the
 // code must be empty or start with ",", so a line with code 10 or code 123 does not count.
-func exitLinesOfC1(log string) []string {
-	const marker = "[process.Manager] Process c1 exited with code 1"
+func exitLinesOf(log, id string) []string {
+	marker := exitLineOf(id)
 	var lines []string
 	for _, ln := range strings.Split(log, "\n") {
 		i := strings.Index(ln, marker)
@@ -288,12 +295,13 @@ func TestKillWithKidsHoldingThePipes(t *testing.T) {
 	t.Cleanup(func() { exitDrainGrace = oldDrain })
 
 	t.Run("killAndWait", func(t *testing.T) {
+		const id = "kp-killAndWait"
 		m := newTestProcManager(t)
-		_, gpid := spawnTree(t, m, "c1", "tree-stdio")
+		_, gpid := spawnTree(t, m, id, "tree-stdio")
 		buf := captureLogBuf(t)
 
 		start := time.Now()
-		found, died, already, escalated := m.killAndWait("c1", "", 300*time.Millisecond, true)
+		found, died, already, escalated := m.killAndWait(id, "", 300*time.Millisecond, true)
 		took := time.Since(start)
 
 		if !found || !died || already || !escalated {
@@ -304,21 +312,21 @@ func TestKillWithKidsHoldingThePipes(t *testing.T) {
 		}
 		log := buf.String()
 		wantLinesInOrder(t, log,
-			"[process.Manager] KillAndWait c1: group kill failed: TerminateProcess: Access is denied.",
-			"[process.Manager] Process c1: pipe drain grace expired (grandchild holding stdio?); force-closing",
-			"[process.Manager] Process c1 exited with code 1, signalled at client request")
+			"[process.Manager] KillAndWait "+id+": group kill failed: TerminateProcess: Access is denied.",
+			"[process.Manager] Process "+id+": pipe drain grace expired (grandchild holding stdio?); force-closing",
+			exitLineOf(id)+", signalled at client request")
 		for _, w := range []string{
-			"[process.Manager] stdout read error for process c1: read |0: file already closed\n",
-			"[process.Manager] stderr read error for process c1: read |0: file already closed\n",
+			"[process.Manager] stdout read error for process " + id + ": read |0: file already closed\n",
+			"[process.Manager] stderr read error for process " + id + ": read |0: file already closed\n",
 		} {
 			if !strings.Contains(log, w) {
 				t.Errorf("log lacks %q\nlog:\n%s", w, log)
 			}
 		}
 		// A child left alive by another test can add its own exit line after this one,
-		// so the check takes the exit lines of c1 and not the end of the log.
-		if w, lines := "[process.Manager] Process c1 exited with code 1, signalled at client request", exitLinesOfC1(log); len(lines) != 1 || lines[0] != w {
-			t.Errorf("exit lines of c1 = %q, want only %q\nlog:\n%s", lines, w, log)
+		// so the check takes the exit lines of id and not the end of the log.
+		if w, lines := exitLineOf(id)+", signalled at client request", exitLinesOf(log, id); len(lines) != 1 || lines[0] != w {
+			t.Errorf("exit lines of %s = %q, want only %q\nlog:\n%s", id, lines, w, log)
 		}
 		if !processAlive(t, gpid) {
 			t.Errorf("grandchild %d ended", gpid)
@@ -326,12 +334,13 @@ func TestKillWithKidsHoldingThePipes(t *testing.T) {
 	})
 
 	t.Run("kill", func(t *testing.T) {
+		const id = "kp-kill"
 		m := newTestProcManager(t)
-		p, gpid := spawnTree(t, m, "c1", "tree-stdio")
+		p, gpid := spawnTree(t, m, id, "tree-stdio")
 		buf := captureLogBuf(t)
 
 		start := time.Now()
-		m.kill("c1", "")
+		m.kill(id, "")
 		if replied := time.Since(start); replied > 500*time.Millisecond {
 			t.Errorf("kill returned after %s, want at once", replied)
 		}
@@ -348,12 +357,12 @@ func TestKillWithKidsHoldingThePipes(t *testing.T) {
 			t.Errorf("log = %q, want no group kill line for process.kill", log)
 		}
 		wantLinesInOrder(t, log,
-			"[process.Manager] Process c1: pipe drain grace expired (grandchild holding stdio?); force-closing",
-			"[process.Manager] Process c1 exited with code 1, signalled at client request")
+			"[process.Manager] Process "+id+": pipe drain grace expired (grandchild holding stdio?); force-closing",
+			exitLineOf(id)+", signalled at client request")
 		// A child left alive by another test can add its own exit line after this one,
-		// so the check takes the exit lines of c1 and not the end of the log.
-		if w, lines := "[process.Manager] Process c1 exited with code 1, signalled at client request", exitLinesOfC1(log); len(lines) != 1 || lines[0] != w {
-			t.Errorf("exit lines of c1 = %q, want only %q\nlog:\n%s", lines, w, log)
+		// so the check takes the exit lines of id and not the end of the log.
+		if w, lines := exitLineOf(id)+", signalled at client request", exitLinesOf(log, id); len(lines) != 1 || lines[0] != w {
+			t.Errorf("exit lines of %s = %q, want only %q\nlog:\n%s", id, lines, w, log)
 		}
 		if !processAlive(t, gpid) {
 			t.Errorf("grandchild %d ended", gpid)
