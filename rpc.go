@@ -4,6 +4,7 @@ import (
 	"crypto/subtle"
 	"encoding/json"
 	"strings"
+	"sync/atomic"
 )
 
 // JSON-RPC error codes (probe-verified against the real binary).
@@ -84,9 +85,19 @@ type request struct {
 	// stop holds the time limits of the git calls of the request (gitstop.go). It
 	// is nil for a method with no such limits.
 	stop *gitStop
-	// offHeld is true when a git request with "shadowDirOff":true ran in the
-	// daemon at the start of this one (handleGit).
-	offHeld bool
+	// offHold counts the git requests of the daemon with "shadowDirOff":true
+	// that run now (handleGit), or is nil. offOwn is the member of this
+	// request (bindGitParams).
+	offHold *atomic.Int32
+	offOwn  bool
+}
+
+// offLive reports whether the off switch holds the daemon now: this request
+// or another git request with "shadowDirOff":true runs. On 5fd08069 the hold
+// changes the form of the git commands while a request runs (cells O1 and O2
+// of round task103-02, Linux VM).
+func (req *request) offLive() bool {
+	return req.offOwn || req.offHold != nil && req.offHold.Load() > 0
 }
 
 // runAtReply removes the short-lived folders that stay until the reply. On

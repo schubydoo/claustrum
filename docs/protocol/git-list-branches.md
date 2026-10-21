@@ -11,7 +11,7 @@
 | Parameter | Required | Meaning |
 |---|---|---|
 | `path` | no | A directory of the repository. A bare repository is accepted. Without `path`, the daemon answers for its own working directory. [Path handling](../PROTOCOL.md#path-handling) has the rules for a leading `~`. |
-| `shadowDirOff` | no | `true` turns off the daemon's own read of the git config of the repository for this request, and its settings copy. Git requests that start meanwhile count as requests with the member (Linux VM). Any other value does nothing and is no error. See [Repository config refusals](../PROTOCOL.md#repository-config-refusals) and [The settings copy](../PROTOCOL.md#the-settings-copy). |
+| `shadowDirOff` | no | `true` turns off the daemon's own read of the git config of the repository for this request, and its settings copy. A request that starts meanwhile runs as one with the member (Linux VM). Its later commands follow the hold, as on `git.info` (cells L0 to L2 of round `task103-04`, Linux VM). Any other value does nothing and is no error. See [Repository config refusals](../PROTOCOL.md#repository-config-refusals) and [The settings copy](../PROTOCOL.md#the-settings-copy). |
 
 ## Response
 

@@ -290,9 +290,13 @@ func hookPrecursor(ctx context.Context, u gitUse, dir string, heavy bool) listin
 // listing of hostileConfigRefusal for the first call after it: that check is the
 // listing f6010b97 runs before that call, so the call gets no second one. Measured on
 // Linux, macOS and Windows VMs.
+//
+// A call whose own listing runs here starts a git command, so it takes the form
+// of the off switch at this moment (gitUse.atCommand).
 func hardenedGitCmd(ctx context.Context, u gitUse, dir string, heavy bool, pre *configListing, args ...string) *exec.Cmd {
 	var hooks []string
 	if pre == nil {
+		u = u.atCommand()
 		hooks = hookPrecursor(ctx, u, dir, heavy).hooks()
 	} else {
 		hooks = pre.hooks
@@ -913,25 +917,43 @@ var (
 	// XDG_CONFIG_HOME has to force a re-resolve, and clearing a Once means either
 	// copying a lock (go vet copylocks) or writing the pair with no
 	// synchronisation at all, which races any in-flight request goroutine.
+	// The read itself runs outside the mutex. userExcludesGen counts the resets of
+	// the test seam, so a read that began before a reset stores nothing.
 	userExcludesMu     sync.Mutex
 	userExcludesDone   bool
 	userExcludesCached string
+	userExcludesGen    int
 )
 
-// userExcludesFile resolves the user's global git excludes file once: the configured
+// userExcludesFile resolves the user's global git excludes file: the configured
 // core.excludesFile if it is an absolute path, else $XDG_CONFIG_HOME/git/ignore or
 // $HOME/.config/git/ignore when that file exists, else the null device (os.DevNull:
 // /dev/null, and NUL on Windows, as f6010b97 passes on a Windows VM). This is the
 // excludes path 7d193f89 passes as core.excludesFile on every git invocation (observed
 // via a git-argv trace). hardenedProfileArgs substitutes it for every git op.
+//
+// A call that finds a stored result uses it. A call that finds none runs its own
+// read, also while the read of another request runs, and stores its result when
+// the read ends. 5fd08069 runs two reads for two git requests sent together, and
+// one read for requests 200 to 500 ms apart (rounds task103-01 to task103-03,
+// Linux VM). Each call uses the result of its own read. A later result replaces
+// an earlier one (claustrum's own, not measured).
 func userExcludesFile() string {
 	userExcludesMu.Lock()
-	defer userExcludesMu.Unlock()
-	if !userExcludesDone {
-		userExcludesCached = resolveUserExcludesFile()
-		userExcludesDone = true
+	if userExcludesDone {
+		v := userExcludesCached
+		userExcludesMu.Unlock()
+		return v
 	}
-	return userExcludesCached
+	gen := userExcludesGen
+	userExcludesMu.Unlock()
+	v := resolveUserExcludesFile()
+	userExcludesMu.Lock()
+	if gen == userExcludesGen {
+		userExcludesDone, userExcludesCached = true, v
+	}
+	userExcludesMu.Unlock()
+	return v
 }
 
 func resolveUserExcludesFile() string {
@@ -941,7 +963,7 @@ func resolveUserExcludesFile() string {
 	// The read is kept for the daemon, so it has no time limit of a request.
 	// GIT_DIR=<null device> makes this read only the user's global/system config, never
 	// a repo's own core.excludesFile — a repo must not be able to inject excludes. This
-	// is the once-cached read that replaced the reference's per-call excludes probe.
+	// is the cached read that replaced the reference's per-call excludes probe.
 	// Its working directory is the temporary directory, and GIT_DIR is its only added
 	// variable. f6010b97 runs it so on Linux and Windows VMs, with GIT_DIR=NUL on
 	// Windows.

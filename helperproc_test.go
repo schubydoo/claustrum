@@ -9,6 +9,7 @@ import (
 	"os/exec"
 	"os/signal"
 	"path/filepath"
+	"runtime"
 	"slices"
 	"strconv"
 	"strings"
@@ -265,7 +266,11 @@ func runGitLingering(args []string) int {
 // milliseconds. Then it exits with CLAUSTRUM_GITSTUB_EXIT2 when that is set, after
 // it wrote CLAUSTRUM_GITSTUB_STDERR2 to stderr as it is (no escape is expanded there, unlike the first rule), or else
 // goes on as a call that the first rule does not match. With CLAUSTRUM_GITSTUB_AFTER2
-// set, the second rule matches only once the file that it names exists.
+// set, the second rule matches only once the file that it names exists. With
+// CLAUSTRUM_GITSTUB_DIR2 set, it matches only a call in that folder. With
+// CLAUSTRUM_GITSTUB_GATE2 set, it makes that file with ".in" added and waits
+// until the file exists, at most CLAUSTRUM_GITSTUB_MS2 milliseconds, instead of
+// the sleep.
 func runGitSlow(args []string) int {
 	if log := os.Getenv("CLAUSTRUM_GITSTUB_LOG"); log != "" {
 		appendLine(log, strings.Join(args, "\x1f"))
@@ -337,7 +342,7 @@ func runGitSlow(args []string) int {
 			return 128
 		}
 	}
-	if m := os.Getenv("CLAUSTRUM_GITSTUB_MATCH2"); m != "" && stubMatches(args, m) && stubAfter2() {
+	if m := os.Getenv("CLAUSTRUM_GITSTUB_MATCH2"); m != "" && stubMatches(args, m) && stubAfter2() && stubDir2() {
 		leaf := os.Getenv("CLAUSTRUM_GITSTUB_LEAF2")
 		var err error
 		switch os.Getenv("CLAUSTRUM_GITSTUB_ACTION2") {
@@ -360,7 +365,16 @@ func runGitSlow(args []string) int {
 			signal.Ignore(syscall.SIGTERM)
 		}
 		ms, _ := strconv.Atoi(os.Getenv("CLAUSTRUM_GITSTUB_MS2"))
-		time.Sleep(time.Duration(ms) * time.Millisecond)
+		if gate := os.Getenv("CLAUSTRUM_GITSTUB_GATE2"); gate != "" {
+			_ = os.WriteFile(gate+".in", nil, 0o644)
+			for end := time.Now().Add(time.Duration(ms) * time.Millisecond); time.Now().Before(end); time.Sleep(10 * time.Millisecond) {
+				if _, err := os.Stat(gate); err == nil {
+					break
+				}
+			}
+		} else {
+			time.Sleep(time.Duration(ms) * time.Millisecond)
+		}
 		if c, err := strconv.Atoi(os.Getenv("CLAUSTRUM_GITSTUB_EXIT2")); err == nil {
 			_, _ = os.Stderr.WriteString(os.Getenv("CLAUSTRUM_GITSTUB_STDERR2"))
 			return c
@@ -515,6 +529,23 @@ func holdStubOutput() int {
 		appendLine(f, strconv.Itoa(os.Getpid()))
 	}
 	return 0
+}
+
+// stubDir2 reports whether the working directory of the call passes the second
+// rule. With CLAUSTRUM_GITSTUB_DIR2 set, only a call in that folder does.
+func stubDir2() bool {
+	dir := os.Getenv("CLAUSTRUM_GITSTUB_DIR2")
+	if dir == "" {
+		return true
+	}
+	wd, err := os.Getwd()
+	if err != nil {
+		return false
+	}
+	if runtime.GOOS == "windows" {
+		return strings.EqualFold(filepath.Clean(wd), filepath.Clean(dir))
+	}
+	return wd == dir
 }
 
 // stubAfter2 reports whether the second rule is on. With CLAUSTRUM_GITSTUB_AFTER2
