@@ -350,11 +350,15 @@ func TestShadowHoldThatStartsDuringTheWaitCountsAtTheReply(t *testing.T) {
 	holdSecond(t, "init,-q,--template=", "", false)
 	h.send(t, 1, "git.info", map[string]any{"path": h.repo})
 	h.waitIn(t, h.gate2)
+	waits := replyWaits.Load()
 	h.send(t, 2, "git.info", map[string]any{"path": filepath.Join(h.none, "nope")})
-	// As in the missing-path test: a reply sent after id 2 marks a time at
-	// which id 2 waits, before the hold starts.
-	h.send(t, 3, "git.list_branches", map[string]any{"path": h.none})
-	h.reply(t, 3)
+	// id 2 must read the hold before the hold starts, so wait until it is in the
+	// wait of replyControl.
+	for end := time.Now().Add(time.Minute); replyWaits.Load() == waits; time.Sleep(5 * time.Millisecond) {
+		if time.Now().After(end) {
+			t.Fatal("id 2 reached no wait within 60 s")
+		}
+	}
 	if r := h.raw(2); r != "" {
 		t.Fatalf("git.info answered %s while the start test ran, want a wait", r)
 	}

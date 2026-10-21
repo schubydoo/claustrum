@@ -14,6 +14,7 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 )
 
@@ -184,6 +185,10 @@ func (h *shadowHost) control(off bool) string {
 	return h.state
 }
 
+// replyWaits counts the git.info replies that reached the wait of replyControl.
+// A test reads it to know that a reply waits.
+var replyWaits atomic.Int64
+
 // replyControl is the settingsControl value of a git.info reply, read when the
 // reply is made. off reports the hold of the off switch (request.offLive). It is
 // read again after the wait, so a hold that starts during the wait counts (R4,
@@ -201,6 +206,7 @@ func (h *shadowHost) replyControl(off func() bool) string {
 	if !h.active() || off() {
 		return h.control(true)
 	}
+	replyWaits.Add(1)
 	h.testMu.Lock()
 	h.testMu.Unlock() //nolint:staticcheck // the lock only waits for a running test
 	return h.control(off())
