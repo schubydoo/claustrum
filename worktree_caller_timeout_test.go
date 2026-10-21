@@ -14,7 +14,6 @@ import (
 	"strconv"
 	"strings"
 	"sync"
-	"sync/atomic"
 	"syscall"
 	"testing"
 	"time"
@@ -161,8 +160,8 @@ func installGitSlowStub(t *testing.T, realGit string) {
 	t.Setenv("PATH", bin+string(os.PathListSeparator)+os.Getenv("PATH"))
 	t.Setenv("CLAUSTRUM_TEST_HELPER", "git-slow")
 	t.Setenv("CLAUSTRUM_GITSTUB_REAL", realGit)
-	for _, k := range []string{"LOG", "CTXLOG", "ENVLOG", "IDXMODE", "EXPAND", "STDERR_FILE", "STDERR2_FILE", "EXIT", "ACTION", "LEAF", "SNAP", "VALUE", "FAIL_LISTING", "HOLD_MS", "ARGEND", "ARGLAST", "ENVEND", "STAGE", "HOLDPID", "HOLDSELF", "GATE", "STARTED", "WAITMS", "NTH", "NTHFILE",
-		"MATCH2", "MODE2", "MS2", "EXIT2", "ACTION2", "LEAF2", "VALUE2", "AFTER2"} {
+	for _, k := range []string{"LOG", "CTXLOG", "ENVLOG", "IDXMODE", "EXPAND", "STDERR_FILE", "STDERR2_FILE", "EXIT", "ACTION", "LEAF", "SNAP", "VALUE", "FAIL_LISTING", "HOLD_MS", "ARGEND", "ARGLAST", "ENVEND", "STAGE", "HOLDPID", "HOLDSELF", "GATE", "STARTED", "TIMELOG", "WAITMS", "NTH", "NTHFILE",
+		"MATCH2", "MODE2", "MS2", "EXIT2", "STDERR2", "ACTION2", "LEAF2", "VALUE2", "AFTER2"} {
 		t.Setenv("CLAUSTRUM_GITSTUB_"+k, "")
 	}
 	slowGit(t, "", "", 0, "", "")
@@ -456,11 +455,31 @@ func TestWorktreeCreateCallerTimeout(t *testing.T) {
 	// (deadlineAt), with timeoutMs markerTimeoutMs.
 	lateMs := markerTimeoutMs
 	gateIn := func(gate string) func() bool { return func() bool { return exists(gate + ".in") } }
+	// openAfter opens the gate d after the deadline fired.
+	openAfter := func(gate string, d time.Duration) func() {
+		return func() {
+			time.Sleep(d)
+			_ = os.WriteFile(gate, nil, 0o644)
+		}
+	}
+	// addGate holds each add that match names at a gate, in the stub mode "gate"
+	// (then the real git runs) or "gatefail" (then the stub fails with stderr).
+	// The deadline fires while the first add waits, and the gate opens 200 ms
+	// later. A kill of the add at the deadline lands well before that, so a
+	// killed add never makes the ".out" file of the gate.
+	addGate := func(t *testing.T, match, mode, stderr string) string {
+		t.Helper()
+		gate := gateStub(t, match, 30*time.Second, stderr, "")
+		t.Setenv("CLAUSTRUM_GITSTUB_MODE", mode)
+		deadlineAt(t, gateIn(gate), openAfter(gate, 200*time.Millisecond))
+		return gate
+	}
+	wantBeforeCheckout := `"error":"git worktree add timed out after ` + strconv.Itoa(lateMs) +
+		`ms (deadline expired before the checkout started)","errorCode":"timeout"`
 
-	// T1: the add is slow. The deadline fires during the add. The add is not
-	// killed, so the reply comes only after the add's sleep.
+	// T1: the deadline fires during the add. The add is not killed, so it passes
+	// its gate and runs the real git. In attach mode only the attach add waits.
 	t.Run("T1 add outlives the deadline", func(t *testing.T) {
-		const addSleep = 500 * time.Millisecond
 		for _, tc := range []struct {
 			name     string
 			linked   bool
@@ -475,14 +494,17 @@ func TestWorktreeCreateCallerTimeout(t *testing.T) {
 			t.Run(tc.name, func(t *testing.T) {
 				f := newWTFixture(t, tc.linked)
 				s := newTestServer(t)
-				slowGit(t, "worktree,add", "pre", addSleep, "", "")
-				raw, elapsed := f.create(t, s, "w1", tc.existing, 100)
-				want := `"error":"git worktree add timed out after 100ms (deadline expired before the checkout started)","errorCode":"timeout"`
-				if !strings.Contains(raw, want) {
-					t.Fatalf("reply = %s, want %s", raw, want)
+				match := "worktree,add"
+				if tc.existing != "" {
+					match += "," + tc.existing
 				}
-				if elapsed < addSleep {
-					t.Errorf("reply after %s, before the add's %s sleep ended: the deadline killed the add", elapsed, addSleep)
+				gate := addGate(t, match, "gate", "")
+				raw, _ := f.create(t, s, "w1", tc.existing, lateMs)
+				if !strings.Contains(raw, wantBeforeCheckout) {
+					t.Fatalf("reply = %s, want %s", raw, wantBeforeCheckout)
+				}
+				if !exists(gate + ".out") {
+					t.Errorf("the add did not pass its gate: the deadline killed the add")
 				}
 				f.assertRolledBack(t, tc.wantRegs, tc.existing != "")
 				f.assertRetrySucceeds(t, s, "w1", tc.existing, tc.retryBr)
@@ -494,27 +516,26 @@ func TestWorktreeCreateCallerTimeout(t *testing.T) {
 	// add-failure frame, not timeout. The reply still waits for the add. A branch
 	// that existed before the call survives.
 	t.Run("T1 failed add keeps a branch it did not create", func(t *testing.T) {
-		const addSleep = 500 * time.Millisecond
 		for _, tc := range []struct {
 			name, mode, stderr string
 			want               string // the whole error member, or a part of it
 		}{
-			{"synthetic", "fail", `fatal: synthetic add failure\n`,
+			{"synthetic", "gatefail", `fatal: synthetic add failure\n`,
 				`"error":"git worktree add failed: fatal: synthetic add failure","errorCode":"worktree_add_failed"`},
 			// The real git refuses, because w1 exists. Its wording depends on the git version.
-			{"real", "pre", "", "a branch named 'w1' already exists"},
+			{"real", "gate", "", "a branch named 'w1' already exists"},
 		} {
 			t.Run(tc.name, func(t *testing.T) {
 				f := newWTFixture(t, false)
 				s := newTestServer(t)
 				runGit(t, f.top, "branch", "w1")
-				slowGit(t, "worktree,add", tc.mode, addSleep, tc.stderr, "")
-				raw, elapsed := f.create(t, s, "w1", "", 100)
+				gate := addGate(t, "worktree,add", tc.mode, tc.stderr)
+				raw, _ := f.create(t, s, "w1", "", lateMs)
 				if !strings.Contains(raw, tc.want) || !strings.Contains(raw, `"errorCode":"worktree_add_failed"`) {
 					t.Fatalf("reply = %s, want worktree_add_failed with %s", raw, tc.want)
 				}
-				if elapsed < addSleep {
-					t.Errorf("reply after %s, before the add's %s sleep ended", elapsed, addSleep)
+				if !exists(gate + ".out") {
+					t.Errorf("the add did not pass its gate: the deadline killed the add")
 				}
 				if !f.hasRef(t, "w1") {
 					t.Errorf("the pre-existing branch w1 was deleted by the rollback")
@@ -594,19 +615,23 @@ func TestWorktreeCreateCallerTimeout(t *testing.T) {
 	})
 
 	// Both adds fail after the deadline. The frame is the two-output add failure,
-	// not timeout, and the reply waits for both adds.
+	// not timeout, and the reply waits for both adds. The deadline fires while the
+	// attach add waits at its gate. The fallback add starts after the deadline,
+	// and the second rule of the stub fails it at once.
 	t.Run("attach fallback fails past the deadline", func(t *testing.T) {
-		const addSleep = 500 * time.Millisecond
 		f := newWTFixture(t, false)
 		s := newTestServer(t)
-		slowGit(t, "worktree,add", "fail", addSleep, `fatal: synthetic add failure\n`, "")
-		raw, elapsed := f.create(t, s, "w1", "ex", 100)
+		gate := addGate(t, "worktree,add,ex", "gatefail", `fatal: synthetic add failure\n`)
+		t.Setenv("CLAUSTRUM_GITSTUB_MATCH2", "worktree,add,--no-track")
+		t.Setenv("CLAUSTRUM_GITSTUB_EXIT2", "1")
+		t.Setenv("CLAUSTRUM_GITSTUB_STDERR2", "fatal: synthetic add failure\n")
+		raw, _ := f.create(t, s, "w1", "ex", lateMs)
 		want := `"error":"git worktree add failed: fatal: synthetic add failure (attaching to the existing branch ex was refused first: fatal: synthetic add failure)","errorCode":"worktree_add_failed"`
 		if !strings.Contains(raw, want) {
 			t.Fatalf("reply = %s, want %s", raw, want)
 		}
-		if elapsed < 2*addSleep {
-			t.Errorf("reply after %s, before both adds' sleeps (%s) ended", elapsed, 2*addSleep)
+		if !exists(gate + ".out") {
+			t.Errorf("the attach add did not pass its gate: the deadline killed the add")
 		}
 		if !f.hasRef(t, "ex") || f.hasRef(t, "w1") {
 			t.Errorf("want ex kept and no w1")
@@ -618,19 +643,18 @@ func TestWorktreeCreateCallerTimeout(t *testing.T) {
 
 	// The attach is refused, the fallback add succeeds, and the deadline expired
 	// during the adds. The frame is timeout "before the checkout started". The
-	// rollback deletes w1, which the fallback created, and keeps main.
+	// rollback deletes w1, which the fallback created, and keeps main. The
+	// deadline fires while the attach add waits at its gate.
 	t.Run("attach fallback outlives the deadline", func(t *testing.T) {
-		const addSleep = 500 * time.Millisecond
 		f := newWTFixture(t, false)
 		s := newTestServer(t)
-		slowGit(t, "worktree,add", "pre", addSleep, "", "")
-		raw, elapsed := f.create(t, s, "w1", "main", 100)
-		want := `"error":"git worktree add timed out after 100ms (deadline expired before the checkout started)","errorCode":"timeout"`
-		if !strings.Contains(raw, want) {
-			t.Fatalf("reply = %s, want %s", raw, want)
+		gate := addGate(t, "worktree,add,main", "gate", "")
+		raw, _ := f.create(t, s, "w1", "main", lateMs)
+		if !strings.Contains(raw, wantBeforeCheckout) {
+			t.Fatalf("reply = %s, want %s", raw, wantBeforeCheckout)
 		}
-		if elapsed < 2*addSleep {
-			t.Errorf("reply after %s, before both adds' sleeps (%s) ended", elapsed, 2*addSleep)
+		if !exists(gate + ".out") {
+			t.Errorf("the attach add did not pass its gate: the deadline killed the add")
 		}
 		f.assertRolledBack(t, []string{}, false)
 		if !f.hasRef(t, "main") {
@@ -703,10 +727,11 @@ func TestWorktreeCreateCallerTimeout(t *testing.T) {
 	})
 
 	// T4: the copy step (ls-files) outlives the deadline. It is not killed. The
-	// deadline fires while the stub waits at its gate, and the gate opens 1 s
+	// deadline fires while the stub waits at its gate, and the gate opens 500 ms
 	// later. The stub makes its ".out" marker only after the gate. A reply that
 	// does not wait for the copy step comes before that, unless its rollback
-	// takes more than 1 s.
+	// takes more than 500 ms. In runs on Linux such a reply came 30 ms or less
+	// after the deadline.
 	t.Run("T4 copy step outlives the deadline", func(t *testing.T) {
 		for _, tc := range []struct {
 			name     string
@@ -723,10 +748,7 @@ func TestWorktreeCreateCallerTimeout(t *testing.T) {
 				f := newWTFixture(t, tc.linked)
 				s := newTestServer(t)
 				gate := gateStub(t, "ls-files", 30*time.Second, "", "")
-				deadlineAt(t, gateIn(gate), func() {
-					time.Sleep(time.Second)
-					_ = os.WriteFile(gate, nil, 0o644)
-				})
+				deadlineAt(t, gateIn(gate), openAfter(gate, 500*time.Millisecond))
 				raw, _ := f.create(t, s, "w1", tc.existing, lateMs)
 				want := `"error":"git worktree add timed out after ` + strconv.Itoa(lateMs) +
 					`ms (deadline expired after the checkout finished)","errorCode":"timeout"`
@@ -752,7 +774,7 @@ func TestWorktreeCreateCallerTimeout(t *testing.T) {
 		}
 		// The drain cap starts when git exits, before the deadline. It ends after
 		// it: the deadline fires during the drain (below).
-		const drainCap = 1500 * time.Millisecond
+		const drainCap = 1 * time.Second
 		oldCap := worktreeCreateDrainCap
 		t.Cleanup(func() { worktreeCreateDrainCap = oldCap })
 		worktreeCreateDrainCap = drainCap
@@ -774,26 +796,31 @@ func TestWorktreeCreateCallerTimeout(t *testing.T) {
 				slowGit(t, "read-tree", "hold", drainCap+30*time.Second, "", "")
 				self := filepath.Join(t.TempDir(), "self")
 				t.Setenv("CLAUSTRUM_GITSTUB_HOLDSELF", self)
-				// The deadline fires 300 ms after the stub was reaped.
-				var copyBefore atomic.Bool
-				fired := deadlineAt(t, reapedFor(self, 300*time.Millisecond), func() {
-					b, _ := os.ReadFile(log)
-					copyBefore.Store(strings.Contains(string(b), "\x1fls-files\x1f"))
-				})
+				timeLog := filepath.Join(t.TempDir(), "git.times")
+				t.Setenv("CLAUSTRUM_GITSTUB_TIMELOG", timeLog)
+				// The deadline fires 300 ms after a poll saw the reap of the stub.
+				// No check below uses a poll time.
+				fired := deadlineAt(t, reapedFor(self, 300*time.Millisecond), nil)
 				raw, elapsed := f.create(t, s, "w1", tc.existing, lateMs)
-				replied := time.Now()
 				want := `"error":"git worktree add timed out after ` + strconv.Itoa(lateMs) +
 					`ms (deadline expired after the checkout finished)","errorCode":"timeout"`
 				if !strings.Contains(raw, want) {
 					t.Fatalf("reply = %s, want %s", raw, want)
 				}
-				if copyBefore.Load() {
-					t.Errorf("the deadline fired after the copy step started, want it during the drain")
+				// The stub logs its own times. The drain cap starts when the daemon
+				// reaps the checkout, and that comes after the end time of the stub.
+				// The copy step starts after its start time. So a full drain gives a
+				// gap of at least the cap. On Linux a full drain gave 1.008 s to
+				// 1.059 s in 60 rows, and a drain that the deadline cut gave 309 to
+				// 316 ms. The margin of 100 ms covers a jump of the clock.
+				checkoutEnd, copyStart := drainTimes(t, timeLog)
+				gap := copyStart.Sub(checkoutEnd)
+				t.Logf("copy step %s after the end of the checkout, deadline %s after it", gap, fired().Sub(checkoutEnd))
+				if !fired().After(checkoutEnd) || !fired().Before(copyStart) {
+					t.Errorf("deadline at %s, checkout end at %s, copy start at %s: want the deadline during the drain", fired(), checkoutEnd, copyStart)
 				}
-				// The deadline must not cut the drain short. The margin of 1 s covers a
-				// late poll of deadlineAt.
-				if d := replied.Sub(fired()); fired().IsZero() || d < drainCap-time.Second || elapsed >= drainCap+20*time.Second {
-					t.Errorf("reply %s after the deadline and %s after the start, want the drain cap of %s to run on and the holder not waited for", d, elapsed, drainCap)
+				if gap < drainCap-100*time.Millisecond || elapsed >= drainCap+20*time.Second {
+					t.Errorf("copy step %s after the end of the checkout, reply %s after the start, want the drain cap of %s to run on and the holder not waited for", gap, elapsed, drainCap)
 				}
 				f.assertRolledBack(t, tc.wantRegs, tc.existing != "")
 				var after []string
@@ -840,6 +867,55 @@ func TestWorktreeCreateCallerTimeout(t *testing.T) {
 			})
 		}
 	})
+}
+
+// drainTimes reads the time log of the stub (CLAUSTRUM_GITSTUB_TIMELOG). It
+// returns the end time of the read-tree call before the first ls-files call
+// after a read-tree call, and the start time of that ls-files call.
+func drainTimes(t *testing.T, path string) (checkoutEnd, copyStart time.Time) {
+	t.Helper()
+	b, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("git stub time log: %v", err)
+	}
+	ends := map[string]time.Time{}
+	type call struct {
+		pid   string
+		start time.Time
+		argv  []string
+	}
+	var calls []call
+	for _, line := range strings.Split(strings.TrimSuffix(string(b), "\n"), "\n") {
+		words := strings.Split(line, "\x1f")
+		if len(words) < 3 {
+			t.Fatalf("git stub time log line %q", line)
+		}
+		ns, err := strconv.ParseInt(words[1], 10, 64)
+		if err != nil {
+			t.Fatalf("git stub time log line %q: %v", line, err)
+		}
+		switch words[0] {
+		case "start":
+			calls = append(calls, call{words[2], time.Unix(0, ns), words[3:]})
+		case "end":
+			ends[words[2]] = time.Unix(0, ns)
+		}
+	}
+	checkout := ""
+	for _, c := range calls {
+		switch {
+		case slices.Contains(c.argv, "read-tree"):
+			checkout = c.pid
+		case checkout != "" && slices.Contains(c.argv, "ls-files"):
+			end, ok := ends[checkout]
+			if !ok {
+				t.Fatalf("git stub time log: the read-tree call %s has no end", checkout)
+			}
+			return end, c.start
+		}
+	}
+	t.Fatalf("git stub time log has no ls-files call after a read-tree call:\n%s", b)
+	return time.Time{}, time.Time{}
 }
 
 // gitCalls reads the stub's argv log and returns the calls that hold every word

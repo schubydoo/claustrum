@@ -204,6 +204,7 @@ func runGitLingering(args []string) int {
 //   - "gate": make the file CLAUSTRUM_GITSTUB_GATE with ".in" added, then wait
 //     until the file CLAUSTRUM_GITSTUB_GATE exists, at most CLAUSTRUM_GITSTUB_MS
 //     milliseconds. Then make the file with ".out" added, and run the real git.
+//   - "gatefail": as "gate", but exit after the ".out" file without running git.
 //   - "post": run the real git, then sleep. With CLAUSTRUM_GITSTUB_GATE set, make
 //     that file with ".in" added before the sleep.
 //   - "fail": sleep, then exit without running git.
@@ -222,10 +223,16 @@ func runGitLingering(args []string) int {
 //     instead, and the descendant keeps CLAUSTRUM_GITSTUB_MS.
 //   - "holdfail": as "holdonly", but the call exits with CLAUSTRUM_GITSTUB_EXIT.
 //
-// "fail", "postfail" and "holdfail" exit with CLAUSTRUM_GITSTUB_EXIT, 1 when it is not set.
+// "fail", "gatefail", "postfail" and "holdfail" exit with CLAUSTRUM_GITSTUB_EXIT, 1 when it is not set.
 //
 // When CLAUSTRUM_GITSTUB_STARTED names a file, a slowed call first writes the
 // time of its start into it, in nanoseconds since the Unix epoch.
+//
+// When CLAUSTRUM_GITSTUB_TIMELOG names a file, every call appends two lines to
+// it (runGitSlowTimed). The first one comes before any other step of the call:
+// "start", the time, the pid and the argv. The second one comes right before the
+// call returns its exit code: "end", the time and the pid. The words are joined
+// by a unit separator (0x1f), and a time is in nanoseconds since the Unix epoch.
 //
 // When CLAUSTRUM_GITSTUB_LOG names a file, every call appends its argv to it as
 // one line, with the words joined by a unit separator (0x1f). When
@@ -412,7 +419,7 @@ func runGitSlow(args []string) int {
 				_ = os.WriteFile(gate+".in", nil, 0o644)
 			}
 			pause()
-		case "gate":
+		case "gate", "gatefail":
 			gate := os.Getenv("CLAUSTRUM_GITSTUB_GATE")
 			_ = os.WriteFile(gate+".in", nil, 0o644)
 			ms, _ := strconv.Atoi(os.Getenv("CLAUSTRUM_GITSTUB_MS"))
@@ -422,6 +429,9 @@ func runGitSlow(args []string) int {
 				}
 			}
 			_ = os.WriteFile(gate+".out", nil, 0o644)
+			if mode == "gatefail" {
+				return exitCode
+			}
 		case "holdonly":
 			return holdStubOutput()
 		case "holdwait":
@@ -802,6 +812,21 @@ func runCLIStub() int {
 	return code
 }
 
+// runGitSlowTimed runs runGitSlow. With CLAUSTRUM_GITSTUB_TIMELOG set, it logs
+// the start and the end of the call there. See runGitSlow.
+func runGitSlowTimed(args []string) int {
+	log := os.Getenv("CLAUSTRUM_GITSTUB_TIMELOG")
+	pid := strconv.Itoa(os.Getpid())
+	if log != "" {
+		appendLine(log, "start\x1f"+strconv.FormatInt(time.Now().UnixNano(), 10)+"\x1f"+pid+"\x1f"+strings.Join(args, "\x1f"))
+	}
+	code := runGitSlow(args)
+	if log != "" {
+		appendLine(log, "end\x1f"+strconv.FormatInt(time.Now().UnixNano(), 10)+"\x1f"+pid)
+	}
+	return code
+}
+
 // appendLine appends line and a newline to the file at path.
 func appendLine(path, line string) {
 	if f, err := os.OpenFile(path, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0o644); err == nil {
@@ -1029,7 +1054,7 @@ func runHelper(mode string, args []string) int {
 	case "git-slow":
 		// Stand-in `git` for the git.worktree_create caller-timeout tests. It passes
 		// every call through to the real git and slows one chosen call. See runGitSlow.
-		return runGitSlow(args)
+		return runGitSlowTimed(args)
 	case "open-repo-file":
 		// Opens args[0] as the config read does (openRepoFile). Then it prints
 		// "terminal" if this process has a controlling terminal, and "no terminal"
