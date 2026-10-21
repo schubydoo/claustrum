@@ -293,7 +293,7 @@ func TestRunServeParentDaemonizes(t *testing.T) {
 	t.Setenv(daemonChildEnv, "")
 	t.Setenv("CLAUSTRUM_TEST_HELPER", "exit:0")
 
-	dir := t.TempDir()
+	dir := shortTempDir(t)
 	tf := filepath.Join(dir, "token")
 	if err := os.WriteFile(tf, []byte("fd-token\n"), 0o600); err != nil {
 		t.Fatal(err)
