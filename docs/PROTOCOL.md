@@ -2145,11 +2145,12 @@ No other method sends it, and an error reply has none
   command after its first config listing and the next call, the Windows root
   pair too (cells O2 of `task103-02` and `task103-04`, Linux, macOS and Windows VMs).
   After a hold a later command runs the test and takes the copy (cell O1).
-  `git.list_branches` does the same (cells L0 to L2, Linux VM). Other git
-  methods read it once (claustrum's own, not measured). A held request does
-  not keep the hold for later requests (cell Q4 of round `task073-05`). A
-  create in a hold makes no copy, and
-  `git.info` answers `"off-switch"` (cells H4 and H1 of round `task073-02`).
+  `git.list_branches` (cells L0 to L2, Linux VM), `git.status` and the
+  worktree methods (`task105-01` to `task105-06`, Linux VM) do the same.
+  macOS ran only C2, S1 and C0, no hold ending (`task105-03`).
+  Windows ran C1, C2, C0, C4 and C5 (`task105-05`, `task105-07`). A
+  call about the repository follows a later test (R2, C4, C5), except before a
+  `--git-dir=` call (S2, C3). A create in a hold makes no copy, and `git.info` answers `"off-switch"` (cells H4 and H1 of round `task073-02`).
 - In that time `git.status`, `git.list_branches` and `git.worktree_remove` get no
   config refusal, as with the member. On a repository of format version 3 they
   answer `{"isRepo":false,"clean":false}`, `{"isRepo":false,"branches":[]}` and the
@@ -2158,12 +2159,10 @@ No other method sends it, and an error reply has none
   round `task073-05`, Linux VM). On a config that only the daemon refuses, the
   remove deletes, as on `5fd08069` (cells Q10 and Q11 of round `task073-08`, Linux
   VM). macOS and Windows are not measured.
-- A held create whose holder answers first keeps the member to its reply. Its
-  `worktree add` of 130 s started while the holder ran, and no build stopped it at
-  2 minutes. A held call that starts after that answer has the 2 minute limit
-  (claustrum's own, not measured). In cell Q4 (Linux VM) `5fd08069` ran its
-  read-tree in the copy of a later `git.info`, claustrum stayed on the git
-  directory, with equal frames.
+- A held request keeps no hold for later requests. No build stopped at 2
+  minutes its `worktree add` of 130 s whose holder answered first (cell Q4 of
+  round `task073-05`, Linux VM). A held call that starts after that answer has the
+  2 minute limit (claustrum's own, not measured).
 - Only the JSON value `true` counts for `shadowDirOff`. `"true"`, `1`, `null` and
   `false` are as no member (cell B3 of round `s3`, Linux VM, and cell S1-seq of
   round `val-s3p2b2-1`, macOS VM).

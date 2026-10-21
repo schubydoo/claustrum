@@ -332,10 +332,8 @@ Every OS serves the same JSON-RPC methods. Full internals →
       maintainer decided on 2026-10-11 to build that step as measured. It runs
       in the state `shadow` only, after a good `git worktree add` and before
       the daemon makes its own staging folder. The guards run in this order.
-      The create holds the git directory open from its gate to its reply, and
-      the cleanup and the move act through that held folder (see "holds the
-      git directory" below). Before the cleanup the path must still name
-      that folder. If not, the create is refused, and nothing is removed or
+      The cleanup and the move act through the held git directory (see
+      below). Before the cleanup the path must still name that folder. If not, the create is refused, and nothing is removed or
       made in the git directory or in the folder at its path. The entries are
       listed through that root, so each name is a direct entry of the git
       directory. The name must start with the fixed prefix, with the dash. The
@@ -350,8 +348,9 @@ Every OS serves the same JSON-RPC methods. Full internals →
       entry (`5fd08069`, the same cell). From the code: a create whose
       `worktree add` fails, a
       request with `"shadowDirOff":true` (or one that starts while such a
-      request runs) and the state `fallback-git` run no
-      cleanup. Those three are not measured on `5fd08069`. Linux and macOS run
+      request runs and takes no later gate) and the state `fallback-git` run no
+      cleanup. Those three are not measured on `5fd08069`. One with a later
+      gate runs it (cells W6 and W6n of round `task105-07`, Windows VM). Linux and macOS run
       no such step (`5fd08069`, cell H2 of round `s3p2`, Linux VM). Do not
       widen the prefix, the kinds or the folder of this delete.
     - `-install` deletes the CLI path, which is operator input:
@@ -466,14 +465,17 @@ Every OS serves the same JSON-RPC methods. Full internals →
   each goes with `os.RemoveAll`, as before. Do not build a name below
   `git-shadow` from a request value.
 - In the state `shadow` `git.worktree_create` holds the git directory of
-  `baseRepo` open from its gate to its reply (`acceptedGitDir`). Hold these
-  rules:
+  `baseRepo` open from its gate to its reply (`acceptedGitDir`). After a gate
+  under the off switch, claustrum takes the hold at a later gate before the
+  first good add (claustrum's own, cells C4 and C5 of `task105-04`). A stale
+  step before that gate goes by the path. Hold these rules:
     - Each delete, rename, new folder and file write of the create and of its
       rollback inside the git directory goes through the held folder, never
       through the path. The comment at the top of `gitdirheld.go` has the
       list of the steps.
     - By the path stay: git itself, a request that holds no git directory
-      (`"shadowDirOff":true` or a start while such a request runs, the state
+      (`"shadowDirOff":true` or a start while such a request runs, until a
+      later gate before its first good add, the state
       `fallback-git`, no run folder), and
       on Linux and macOS the index in a `worktrees` entry that is a symbolic
       link, with the identity test of D24. So does the stale step for a

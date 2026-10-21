@@ -1,8 +1,6 @@
 # git.worktree_create
 
-`git.worktree_create` makes a linked git worktree for a session. It creates a new branch for the worktree, or it attaches the worktree to a branch that exists. Then it checks out the tracked files and copies some ignored files into the new worktree.
-
-A failed request can leave files on disk: see [After a failure](#after-a-failure).
+`git.worktree_create` makes a linked git worktree for a session. It creates a new branch, or attaches the worktree to one that exists. Then it checks out the tracked files and copies some ignored files into it.
 
 ## Request
 
@@ -16,10 +14,10 @@ A failed request can leave files on disk: see [After a failure](#after-a-failure
 | `branchName` | yes | The branch to create. It is required with `existingBranch` too. An attach that succeeds does not use it. |
 | `worktreePath` | yes | The directory of the new worktree. It must not exist. |
 | `sourceBranch` | no | The name that the new branch starts from. The default is the current branch. An attach to `existingBranch` does not use it. |
-| `existingBranch` | no | A local branch to attach to. If it names no local branch, the daemon creates `branchName` instead. If the attach fails, the daemon does the same. For example, git refuses an attach to a branch that is checked out in `baseRepo`. |
+| `existingBranch` | no | A local branch to attach to. If it names no local branch, the daemon creates `branchName` instead. If the attach fails, the daemon does the same. |
 | `worktreeRoot` | no | A location outside the repository. Windows refuses it with `unsafe_path`. |
 | `timeoutMs` | no | A deadline that starts at the add. It stops the read-tree call. The daemon tests it after the add and the copy step. No value or `0` sets none. |
-| `shadowDirOff` | no | `true` turns off, for this request, the filter rule of the checkout, the daemon's own read of the git config of the repository, and the settings copy. Git requests that start meanwhile get the same (Linux VM). Other values do nothing. See [Git filters](#git-filters), [Repository config refusals](../PROTOCOL.md#repository-config-refusals) and [The settings copy](#the-settings-copy). |
+| `shadowDirOff` | no | `true` turns off, for this request, the filter rule of the checkout, the daemon's own read of the repository's git config, and the settings copy. Git requests that start meanwhile get the same. A command that starts meanwhile gets no copy (Linux VM). Other values do nothing. See [Repository config refusals](../PROTOCOL.md#repository-config-refusals). |
 
 Where the worktree can go:
 
@@ -52,7 +50,7 @@ Decide by `errorCode` first.
 | `errorCode` | Meaning |
 |---|---|
 | `unsafe_path` | The daemon refuses a path. For example, `worktreePath` is relative, has a `..` component, is outside `baseRepo`, or exists. A `worktreeRoot` that is not safe gives this code too. So does a worktree that git registered in an unexpected place. |
-| `symlinked_component` | A directory between `baseRepo` and the worktree is a symbolic link, for example a symlinked `.claude` or `.claude/worktrees`. |
+| `symlinked_component` | A directory between `baseRepo` and the worktree is a symbolic link. |
 | `not_a_repo` | `baseRepo` is not a git repository, or git itself does not accept it. A bare `baseRepo` gets this code too while the daemon works on its settings copy. |
 | `nested_base_repo` | `baseRepo` is inside a directory of managed worktrees, or the daemon does not accept it as a trust root. |
 | `mkdir_failed` | The daemon cannot create a directory for the worktree. Or, with `worktreeRoot`, a git call or a `.git` test failed first. |
@@ -62,7 +60,7 @@ Decide by `errorCode` first.
 
 If the daemon does not accept the git config of the repository, the code is `worktree_add_failed` and nothing is made. The texts are in [Repository config refusals](../PROTOCOL.md#repository-config-refusals).
 
-Three failures of the settings copy give `worktree_add_failed` too, and nothing is made: a failed test of the host git, a failed call about the repository, or no folder for the copy. See [The settings copy](#the-settings-copy).
+Three failures of the settings copy give `worktree_add_failed` too, and nothing is made: a failed test of the host git, a failed call about the repository, or no folder for the copy.
 
 A request with no `branchName` gets the JSON-RPC error `-32602`.
 
@@ -111,32 +109,33 @@ With a settings copy `git-lfs smudge --skip %f` passes under `lfs` too. A reposi
 
 ## The settings copy
 
-The daemon keeps its own copy of the git settings of the repository, and its git calls read that copy. [The settings copy](../PROTOCOL.md#the-settings-copy) in the protocol reference has the states, the texts and the folder. These rules are for this method:
+The daemon keeps its own copy of the repository's git settings, and its git calls read it. [The settings copy](../PROTOCOL.md#the-settings-copy) in the protocol reference has the states, the texts and the folder. These rules are for this method:
 
 - If the directory `<git dir>/worktrees` is missing, the daemon makes it before the add, with mode 0777 less its umask. It stays after a failed add. On Linux and macOS, the last `core.sharedrepository` line of the copy then sets its mode, unless that line is `umask` (rounds `tier0-14` to `tier0-16`, Linux VM). macOS is not measured.
 - With `extensions.worktreeConfig` the new worktree gets the `config.worktree` file of `<git dir>`, or of a linked `baseRepo`, less `core.bare` and `core.worktree`.
 - A bare `baseRepo` gets `not_a_repo`.
+- Under an off-switch hold the checkout has its index in `claude-ssh-index-<n>` of the temporary folder, after one listing (Linux VM, Windows C1 and C2, macOS C2 only, `task105-01` to `task105-07`).
 - On Windows git writes the registration into a short-lived folder of the daemon, which copies it into `<git dir>\.claude-new-worktree-<16 hex>` and renames that folder to `<git dir>\worktrees\<name>`. A held folder gets 2 s of retries, also past `timeoutMs`. A rename that still fails gets `worktree_add_failed`, and the rollback removes the folder too (`5fd08069`, round `task009-01`). The name is the first free one of `<name>`, `<name>1` to `<name>99`. A failed `.git` write (cell S8v) and a rollback (cells S14a and, in round `task087-03`, B6w) remove the moved registration by its name, and `config.worktree` and the index are new files there (`5fd08069`, round `task087-01`).
 - On Windows, before that step, a create removes old entries of the git directory. Such an entry has a name that starts with `.claude-new-worktree-` and a write time of 1 hour or more. A junction goes as a junction, and its target stays.
-- In the state `shadow`, a failed `rev-parse --absolute-git-dir` stops the create with `git worktree add failed: cannot locate the repository's git directory: exit status 128` (`5fd08069`, cell V12 of round `tier0-10`, Linux VM). The text after the last colon is the error of the call. macOS is not measured.
+- In the state `shadow`, a failed `rev-parse --absolute-git-dir` stops the create with `git worktree add failed: cannot locate the repository's git directory: exit status 128` (`5fd08069`, cell V12 of round `tier0-10`, Linux VM). macOS is not measured.
 - On Windows, a step before the add that fails gives `git worktree add failed: cannot prepare the repository's worktrees directory: <cause>`, and the `worktree add` call does not run. On Linux and macOS a symbolic link, a file or a folder that cannot be opened at `worktrees` does the same. `5fd08069` answers so (rounds `tier0-10`, `tier0-24` and `tier0-25m`, Linux and macOS VMs).
 - On Linux and macOS a linked `baseRepo` whose entry in `<git dir>/worktrees` is a symbolic link gets the trust refusal as a failed add. Without `worktreeRoot` its `.claude/worktrees` is made (`5fd08069`, cell C7 of round `tier0-24`, Linux VM, with `extensions.worktreeConfig` and a `config.worktree` file). Other forms are not measured.
 
-`"shadowDirOff": true` turns the copy off, and none of these steps runs. The same holds on a host whose git does not work on such a copy. With that member a link at `worktrees` refuses the create before the add (`5fd08069`, cell C2 of rounds `tier0-24` and `tier0-25m`, Linux and macOS VMs).
+`"shadowDirOff": true` turns the copy off, and none of these steps runs. With that member a link at `worktrees` refuses the create before the add (`5fd08069`, cell C2 of rounds `tier0-24` and `tier0-25m`, Linux and macOS VMs).
 
 ## The held git directory
 
 In the state `shadow` a create holds the git directory of `baseRepo` open from its gate to its reply.
 
 - The git directory must be a real directory at the gate. On Windows a junction or a directory symbolic link there is refused, on every git method without `"shadowDirOff": true`. With that member both link kinds pass, and git works in the folder behind the link, as on `5fd08069` (Windows VM). On Linux and macOS a `.git` that is a symbolic link before the request is resolved first, and the daemon holds its target. A change of that link is a change of the path too.
-- The daemon's own deletes, renames, new folders and file writes inside the git directory go through the held folder. A folder that is put at the path while the create runs gets none of them, except the directory that the hold moves to.
+- The daemon's own deletes, renames, new folders and file writes inside the git directory go through the held folder. A create whose gate ran under a hold takes the folder at a later gate before its add. That is claustrum's own: in cells C4 and C5 of round `task105-04` (Linux VM) `5fd08069` names the copy after it. A folder that is put at the path while the create runs gets none of them, except the directory that the hold moves to.
 - The hold stops no rename of the git directory by another process.
 - The steps of the create test that the path still names the held folder. A swap after `rev-parse --absolute-git-dir` and before the add is refused before the add.
 - A swap after the read-tree call fails the create, and the registration gets no index. On Windows a swap after the first listing of the checkout fails it too. The text starts with `git worktree add failed (checkout): `. The registration and the branch then stay, and the text says so.
 - On Linux and macOS two steps move the hold to a copy of the git directory, and `5fd08069` goes on in it. A link to the copy is put there after the first call or after `rev-parse --abbrev-ref HEAD` (Linux and macOS VMs). Or a real copy is put there while `git worktree add` runs (cell C6 of rounds `tier0-24` and `tier0-25m`, Linux and macOS VMs).
 - On Linux and macOS, a `.git` that became a file with `gitdir: <another git directory>` after `rev-parse --absolute-git-dir` gives `git worktree add failed: cannot locate the repository's git directory: lstat <baseRepo>/.git/commondir: not a directory`.
 - On Linux and macOS, a `.git` that is a symbolic link to a copy of the git directory right after a good `worktree add` gives `refusing to create worktree: <leaf> was not populated by git worktree add` with `unsafe_path`. Nothing is rolled back, and the `.git` file of the new worktree keeps the text that git wrote.
-- By the path stay: git itself, a request with `"shadowDirOff": true`, and a host in the state `fallback-git` or with no run folder. So does the step for an old registration when its `worktrees` folder is not in the held folder.
+- By the path stay: git itself, a request with `"shadowDirOff": true` or one that starts while such a request runs, until a later gate before its first good add, and a host in the state `fallback-git` or with no run folder. So does the step for an old registration when its `worktrees` folder is not in the held folder, or before that gate.
 
 ## The copy of ignored files
 
@@ -147,7 +146,7 @@ After the checkout, the daemon copies two sets of files from `baseRepo` into the
 
 Neither set includes `.claude/worktrees` or the session state of Claude under `.claude/`, for example `checkpoints`, `mailbox` and `scheduled_tasks.json`.
 
-A copy does not keep the mode of its source. The daemon creates each file with mode `0666` less its umask. So an executable file loses its execute bit, and a `0400` file gets a wider mode. The daemon also skips symbolic links. A copy does not replace a file or a link that the checkout made.
+A copy does not keep the mode of its source. The daemon creates each file with mode `0666` less its umask. The daemon also skips symbolic links. A copy does not replace a file or a link that the checkout made.
 
 A copy that fails does not fail the request. If the deadline of `timeoutMs` expires during the copy, the request fails with `timeout`. A scan of ignored files stops at 10 minutes, and nothing is copied ([Time limits of git calls](../PROTOCOL.md#time-limits-of-git-calls)).
 

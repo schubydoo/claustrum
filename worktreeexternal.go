@@ -723,6 +723,9 @@ func externalWorkTreeRefusal(req *request, repo string, off jsonTrueSwitch) (str
 	} else if noRepo {
 		return workTreeUnknownPrefix + "exit status 128", ""
 	}
+	// The later git commands follow the off switch, as without worktreeRoot
+	// (removeGate). With worktreeRoot that is not measured.
+	req.keepLiveForm(bool(off), t, repo)
 	u = req.use
 	// This listing is light, and the rev-parse below runs its own heavy one. That is
 	// the order of the listings of f6010b97 here (Linux VM, rows WR00 to WR15).

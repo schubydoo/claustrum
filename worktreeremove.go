@@ -545,14 +545,16 @@ func (r registrationProbe) run() string {
 	if r.gitDir == "" {
 		return ""
 	}
+	// The pair takes the form of the off switch at its listing (not measured).
+	u := r.use.atGitDirCommand()
 	var pin []string
 	switch {
-	case r.use.shadow() && !daemonCommonDirStays():
-		pin = r.use.commonVars()
+	case u.shadow() && !daemonCommonDirStays():
+		pin = u.commonVars()
 	case !daemonCommonDirSet():
 		pin = []string{"GIT_COMMON_DIR=" + r.gitDir}
 	}
-	out, err := gitDirWorkTreeToplevel(nil, r.gitDir, r.workTree, pin, r.use.gitDirFront())
+	out, err := gitDirWorkTreeToplevel(nil, r.gitDir, r.workTree, pin, u.gitDirFront())
 	if err != nil {
 		return ""
 	}
