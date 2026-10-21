@@ -268,12 +268,14 @@ func TestKillEndsOnlyTheDirectChild(t *testing.T) {
 		})
 	}
 	// One wait of 1 s for all rows. The last row ended its child last, so each
-	// grandchild is checked at least 1 s after the end of its direct child.
+	// grandchild is checked at least 1 s after the end of its direct child. A
+	// grandchild of the "tree" helper ends by itself after 60 s, so all rows
+	// and this wait must end well inside 60 s.
 	time.Sleep(time.Second)
 	for _, tc := range actions {
 		gpid, ok := gpids[tc.id]
 		if !ok {
-			continue // The row failed before its grandchild started, and said so.
+			continue // The row did not run, or it failed before its grandchild started and said so.
 		}
 		if !processAlive(t, gpid) {
 			t.Errorf("%s: grandchild %d ended with the direct child", tc.id, gpid)
