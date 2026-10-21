@@ -2130,7 +2130,8 @@ No other method sends it, and an error reply has none
   and Windows VMs).
 - A `git.info` on a path that does not exist starts no test. As the first git
   request of a daemon it makes one call, the excludes read, and its reply has no
-  member. A later one makes none.
+  member. A later one makes none. No process starts for it (cell T7s of round
+  `task107-01`, Linux VM).
 - With no git in the daemon's `PATH`, a `git.info` on a repository answers "no
   repository" with no test (`5fd08069`, cell C7 of round `tier0-5`, Linux VM). Its
   member follows the daemon's state (not measured).
@@ -2146,8 +2147,7 @@ No other method sends it, and an error reply has none
   pair too (cells O2 of `task103-02` and `task103-04`, Linux, macOS and Windows VMs).
   After a hold a later command runs the test and takes the copy (cell O1).
   `git.list_branches` (cells L0 to L2, Linux VM), `git.status` and the
-  worktree methods (`task105-01` to `task105-06`, Linux VM) do the same.
-  macOS ran only C2, S1 and C0, no hold ending (`task105-03`).
+  worktree methods (`task105-01` to `task105-10`, Linux and macOS) do the same.
   Windows ran C1, C2, C0, C4 and C5 (`task105-05`, `task105-07`). A
   call about the repository follows a later test (R2, C4, C5), except before a
   `--git-dir=` call (S2, C3). A create in a hold makes no copy, and `git.info` answers `"off-switch"` (cells H4 and H1 of round `task073-02`).
