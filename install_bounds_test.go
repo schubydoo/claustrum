@@ -229,6 +229,34 @@ func setCLIRunBounds(t *testing.T, hit, first time.Duration) {
 	t.Cleanup(func() { cliRunBound, cliFirstRunBound = oldHit, oldFirst })
 }
 
+// holdStopUntil holds the stop step of runCLIVersion at its start until ready
+// is true, for at most 10 s. So a short bound stops the stub only after the stub
+// wrote what the test reads, also on a slow first start. The result is true
+// only if ready was true when the stop step went on.
+func holdStopUntil(t *testing.T, ready func() bool) *atomic.Bool {
+	t.Helper()
+	wasReady := new(atomic.Bool)
+	old := afterCLIBound
+	afterCLIBound = func(d time.Duration, stop func()) *time.Timer {
+		return old(d, func() {
+			deadline := time.Now().Add(10 * time.Second)
+			for !ready() && time.Now().Before(deadline) {
+				time.Sleep(10 * time.Millisecond)
+			}
+			wasReady.Store(ready())
+			stop()
+		})
+	}
+	t.Cleanup(func() { afterCLIBound = old })
+	return wasReady
+}
+
+// stubStarted reports whether the stub log holds a START line.
+func (f *stubFixture) stubStarted() bool {
+	b, err := os.ReadFile(f.log)
+	return err == nil && strings.Contains(string(b), "START ")
+}
+
 // factsHead is the facts line up to and with `"cliWasPresent":`.
 func factsHead(t *testing.T, cliPath string) string {
 	t.Helper()
@@ -356,6 +384,52 @@ func TestInstallStopsANewCLIAtTheFirstRunBound(t *testing.T) {
 	if _, err := os.Lstat(blob); !os.IsNotExist(err) {
 		t.Errorf("F05: the blob must be consumed, Lstat err = %v", err)
 	}
+}
+
+// newNoPolicyGateFixture is a stubFixture with the launcher gate on and no
+// managed policy. On Linux and macOS the settings folders are empty fixture
+// folders. Windows has no settings folder (managedlauncher_windows.go).
+func newNoPolicyGateFixture(t *testing.T) *stubFixture {
+	t.Helper()
+	f := newStubFixture(t)
+	noManagedPolicy(t)
+	t.Setenv(managedLauncherGateEnv, "1")
+	return f
+}
+
+// Rows L02, L07. With the gate set and no policy the CLI runs directly,
+// under the direct bounds and with the direct text. launcherStatus none is the
+// last key, and the CLI keeps the gate variable.
+func TestInstallGateWithoutPolicyUsesTheDirectBounds(t *testing.T) {
+	g := newNoPolicyGateFixture(t)
+	g.litter(t)
+	placeStub(t, g.cli)
+	stubDelay(t, 20*time.Second)
+	setCLIRunBounds(t, time.Second, time.Minute)
+	ready := holdStopUntil(t, g.stubStarted)
+
+	out := captureInstallOutput(t, installOpts{cliDir: g.cliDir, cliVersion: "9.9.9", cliKeep: 2})
+	if want := factsHead(t, g.cli) + stoppedTail + `,"launcherStatus":"none"}` + "\n"; out != want {
+		t.Errorf("L02: stdout\n got %q\nwant %q", out, want)
+	}
+	if !ready.Load() {
+		t.Fatal("L02: the stub never became ready: it wrote no START line before the stop step, or no stop step ran")
+	}
+	if line := mustLogLine(t, g, "START "); !strings.HasSuffix(line, " gate=1") {
+		t.Errorf("L02: stub START %q, want the gate variable with the value 1", line)
+	}
+	g.wantNames(t, "L02", append(oldVersionFiles(), ".fetch-12", "1.0.8.zst", filepath.Base(g.cli))...)
+
+	// L07: a new CLI that does not answer, stopped at the first-run bound.
+	g2 := newNoPolicyGateFixture(t)
+	g2.litter(t)
+	stubDelay(t, 20*time.Second)
+	setCLIRunBounds(t, time.Minute, 500*time.Millisecond)
+	out = captureInstallOutput(t, installOpts{cliDir: g2.cliDir, cliVersion: "9.9.9", cliZst: g2.stubBlob(t), cliKeep: 2})
+	if want := factsHead(t, g2.cli) + stoppedTail + `,"launcherStatus":"none"}` + "\n"; out != want {
+		t.Errorf("L07: stdout\n got %q\nwant %q", out, want)
+	}
+	g2.wantNames(t, "L07", append(oldVersionFiles(), ".fetch-12", "1.0.8.zst", filepath.Base(g2.cli))...)
 }
 
 // Row F14. A file that does not run sits at the final name, and the blob

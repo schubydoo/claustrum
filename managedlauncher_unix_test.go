@@ -66,6 +66,13 @@ func tempManagedSettingsDir(t *testing.T) string {
 	return d
 }
 
+// noManagedPolicy makes sure that no managed policy applies for one test: both
+// settings folders are empty fixture folders.
+func noManagedPolicy(t *testing.T) {
+	t.Helper()
+	_ = tempManagedSettingsDir(t)
+}
+
 // writeFileMode writes b to p with exactly mode, creating the parent folders.
 func writeFileMode(t *testing.T, p string, b []byte, mode os.FileMode) {
 	t.Helper()
