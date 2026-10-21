@@ -708,7 +708,10 @@ func TestInstallSweepsOnceBeforeTheRun(t *testing.T) {
 	go func() {
 		// lastMiss is the time of the last read that found no START line. The
 		// stub wrote that line later, and it ends no earlier than delay after it.
-		lastMiss := time.Now()
+		// missed is false until one read found no START line. Without such a
+		// read the stub can have ended before the aging, so the test skips.
+		var lastMiss time.Time
+		missed := false
 		for {
 			select {
 			case <-stopAging:
@@ -725,8 +728,12 @@ func TestInstallSweepsOnceBeforeTheRun(t *testing.T) {
 			if started() {
 				break
 			}
-			lastMiss = probe
+			lastMiss, missed = probe, true
 			time.Sleep(10 * time.Millisecond)
+		}
+		if !missed {
+			aged <- aging{took: delay}
+			return
 		}
 		at := time.Now().Add(-sweepMinAge - time.Minute)
 		if err := os.Chtimes(edge, at, at); err != nil {

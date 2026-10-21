@@ -211,6 +211,9 @@ func TestInstallDirectRunStopLeavesANewSessionChild(t *testing.T) {
 	t.Setenv("CLAUSTRUM_TEST_STUB_CHILD", "session")
 	setCLIRunBounds(t, time.Second, time.Minute)
 	ready := holdStopUntil(t, f.stubChildRecorded)
+	// This cleanup ends the child on every failure path. With no pid file it
+	// does nothing.
+	t.Cleanup(func() { killStubChild(f.childPID) })
 
 	out := captureInstallOutput(t, installOpts{cliDir: f.cliDir, cliVersion: "9.9.9"})
 	if want := factsHead(t, f.cli) + stoppedTail + "}\n"; out != want {
