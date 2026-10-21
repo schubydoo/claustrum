@@ -264,7 +264,9 @@ func TestProbeAgainAfterALongHookListing(t *testing.T) {
 //
 //   - N-a: a child keeps the output pipes of the `init` call open. The test
 //     goes on after the wait for the pipes and passes. Without the rule of
-//     exitedInTime it fails with a `WaitDelay expired` text.
+//     exitedInTime it fails with a `WaitDelay expired` text. The test holds the
+//     pipes past the bound on purpose. The short wait of the call ends first,
+//     so the daemon sees the same as with the shorter hold of the cell.
 //   - N-b: the same child on call 7, the listing of the test config. The test
 //     waits until the pipes close and passes. With the short wait of the other
 //     calls it ends before the child does.
