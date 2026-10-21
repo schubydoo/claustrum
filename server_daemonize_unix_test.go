@@ -4,6 +4,7 @@ package main
 
 import (
 	"bufio"
+	"context"
 	"encoding/json"
 	"fmt"
 	"net"
@@ -106,37 +107,67 @@ var (
 	claustrumBinFail string
 )
 
+// TestMain starts the build of buildClaustrum before the tests run, so the
+// build overlaps the first tests and does not block the first test that needs
+// the binary.
+func init() { startEarlyBuild = startClaustrumBuild }
+
+// startClaustrumBuild builds the claustrum binary in the background. The first
+// call of buildClaustrum then waits for that build. The returned function ends
+// a build that still runs, for a run of tests that never needed it, and waits
+// for it. TestMain calls it after the tests, before the fixture root goes.
+func startClaustrumBuild() (stop func()) {
+	ctx, cancel := context.WithCancel(context.Background())
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		claustrumBinOnce.Do(func() { compileClaustrum(ctx) })
+	}()
+	return func() {
+		cancel()
+		<-done
+	}
+}
+
 // buildClaustrum compiles the package under test into a binary, matching the
 // production build's CGO_ENABLED=0. The first call builds it, into its own
 // folder under the fixture template root, and every call returns that one
-// path. No file is beside it, so the daemon finds no claustrum.conf there. A
-// caller must not change or remove the binary: a test that needs to do so
-// copies it first. A failed build fails each caller with the build output.
+// path. TestMain usually started that build already. No file is beside it, so
+// the daemon finds no claustrum.conf there. A caller must not change or remove
+// the binary: a test that needs to do so copies it first. A failed build fails
+// each caller with the build output.
 func buildClaustrum(t *testing.T) string {
 	t.Helper()
-	claustrumBinOnce.Do(func() {
-		if fixtureTplRoot == "" {
-			claustrumBinFail = "no fixture template root: TestMain did not call makeFixtureTemplateRoot"
-			return
-		}
-		dir, err := os.MkdirTemp(fixtureTplRoot, "claustrum-bin-")
-		if err != nil {
-			claustrumBinFail = fmt.Sprintf("folder for the claustrum binary: %v", err)
-			return
-		}
-		bin := filepath.Join(dir, "claustrum")
-		build := exec.Command("go", "build", "-o", bin, ".")
-		build.Env = append(os.Environ(), "CGO_ENABLED=0")
-		if out, err := build.CombinedOutput(); err != nil {
-			claustrumBinFail = fmt.Sprintf("go build: %v\n%s", err, out)
-			return
-		}
-		claustrumBinPath = bin
-	})
+	claustrumBinOnce.Do(func() { compileClaustrum(context.Background()) })
 	if claustrumBinFail != "" {
 		t.Fatal(claustrumBinFail)
 	}
 	return claustrumBinPath
+}
+
+// compileClaustrum runs the build of buildClaustrum. It sets claustrumBinPath,
+// or claustrumBinFail on a failure. A cancel of ctx interrupts go build.
+func compileClaustrum(ctx context.Context) {
+	if fixtureTplRoot == "" {
+		claustrumBinFail = "no fixture template root: TestMain did not call makeFixtureTemplateRoot"
+		return
+	}
+	dir, err := os.MkdirTemp(fixtureTplRoot, "claustrum-bin-")
+	if err != nil {
+		claustrumBinFail = fmt.Sprintf("folder for the claustrum binary: %v", err)
+		return
+	}
+	bin := filepath.Join(dir, "claustrum")
+	build := exec.CommandContext(ctx, "go", "build", "-o", bin, ".")
+	build.Env = append(os.Environ(), "CGO_ENABLED=0")
+	// go build ends its compile steps on an interrupt. A kill would leave them.
+	build.Cancel = func() error { return build.Process.Signal(os.Interrupt) }
+	build.WaitDelay = 10 * time.Second
+	if out, err := build.CombinedOutput(); err != nil {
+		claustrumBinFail = fmt.Sprintf("go build: %v\n%s", err, out)
+		return
+	}
+	claustrumBinPath = bin
 }
 
 // dialWithRetry polls the socket until it accepts a connection or the deadline

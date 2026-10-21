@@ -2,6 +2,7 @@ package main
 
 import (
 	"errors"
+	"flag"
 	"fmt"
 	"io"
 	"net"
@@ -17,6 +18,11 @@ import (
 	"testing"
 	"time"
 )
+
+// startEarlyBuild, when set, starts a build in the background before the tests
+// run and returns a function that ends it and waits for it. It is set on Linux
+// and macOS only (server_daemonize_unix_test.go).
+var startEarlyBuild func() (stop func())
 
 // TestMain doubles the test binary as a tiny cross-platform fixture command
 // (the stdlib helper-process pattern): when CLAUSTRUM_TEST_HELPER is set, the
@@ -75,7 +81,14 @@ func TestMain(m *testing.M) {
 			fmt.Fprintln(os.Stderr, "fixture template root:", err)
 			os.Exit(1)
 		}
+		// The suite is long, so a build that only some tests need starts now and
+		// runs beside the first tests. A short run skips every such test.
+		stopEarlyBuild := func() {}
+		if flag.Parse(); startEarlyBuild != nil && !testing.Short() {
+			stopEarlyBuild = startEarlyBuild()
+		}
 		code := m.Run()
+		stopEarlyBuild()
 		removeFixtureTemplates()
 		os.Exit(code)
 	}
