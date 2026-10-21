@@ -144,7 +144,7 @@ the traffic of the real desktop client. This is the method:
   commit them.
 
 We last ran this capture against a then-pinned reference, `8de85faa`. That build is
-now well behind the current baseline, `89cb6289`. It used a real Desktop session and
+now well behind the current baseline, `5fd08069`. It used a real Desktop session and
 covered the full `process.*` lifecycle. That lifecycle included a >32 KiB output
 stream and a mid-stream disconnect and reconnect that drove `process.reattach`. The
 result was byte-identical for the methods that build exposed. The `server.capabilities`
@@ -312,8 +312,8 @@ traps that matter for telling drift from expected:
   equal. A kept
   folder there is D24, not drift.
 - The branch step of `git.worktree_remove` and of the create rollbacks splits the
-  pins. claustrum follows `89cb6289`, the build that `scripts/UPSTREAM_SHA`
-  names. Against `f6010b97`, `server.capabilities` differs by the
+  pins. claustrum follows `89cb6289`, the pin before `5fd08069`. `5fd08069` is
+  not measured in these rows. Against `f6010b97`, `server.capabilities` differs by the
   `git.worktree_remove.unpushedGuard` and `launcher.managed` features and by the
   `launcher.resolve` method. On remove, every kept case of the
   branch step differs. claustrum keeps the branch and adds `"branchKept":true`, where
@@ -338,10 +338,12 @@ traps that matter for telling drift from expected:
   step.
 - The managed launcher splits the pins the same way, not drift. claustrum follows
   `89cb6289`: `launcher.resolve`, the `process.spawn` `launcher` param, the child
-  env strip, and the gated launcher runs of `-install` and `-probe-cli`.
-  `f6010b97` has none of these. See [PROTOCOL.md](PROTOCOL.md) → launcher.*.
-- The peer check splits the builds, not drift. `scripts/UPSTREAM_SHA` names
-  `89cb6289`, and here claustrum follows `5fd08069`. `server.capabilities`
+  env strip, and the gated launcher runs of `-install` and `-probe-cli`. The one
+  exception is the Linux file test on a cache hit before a launcher run. It
+  follows `5fd08069` (see the `-install` prune and sweeps below). Other launcher
+  runs of `5fd08069` are not measured. `f6010b97` has none of these. See [PROTOCOL.md](PROTOCOL.md) → launcher.*.
+- The peer check splits the builds, not drift. claustrum follows `5fd08069`, the
+  build that `scripts/UPSTREAM_SHA` names. `server.capabilities`
   carries the `peerCheck` and `peerCheckBy` members and the `server.peer_check`
   and `git.shadow_dir` features. On Linux the daemon refuses a caller in other
   namespaces with `-32006`. The frames of `89cb6289` have no such member and no
@@ -352,8 +354,8 @@ traps that matter for telling drift from expected:
   calls have none for `0` (Linux VM). A child of `89cb6289` is not measured.
   Against `5fd08069` the measured peer check log lines differ by a level tag only
   (round `task011-02`, Linux VM). See [PROTOCOL.md](PROTOCOL.md) → server.*.
-- `files.extract_tar` splits the builds too, not drift. `scripts/UPSTREAM_SHA`
-  names `89cb6289`, and claustrum follows `5fd08069` in these places. Against
+- `files.extract_tar` splits the builds too, not drift. claustrum follows the pin
+  `5fd08069` in these places. Against
   `89cb6289` each of them differs in the measured rows:
   - `server.capabilities` lists `files.extract_tar.execBit` directly after
     `process.stdin.offset` (Linux, macOS and Windows VMs).
@@ -398,17 +400,17 @@ traps that matter for telling drift from expected:
   a folder with the exact name, and `5fd08069` into the folder with no dot or
   space (Windows VM). A `destDir` whose last name is the home folder by
   identity gets the home refusal. See [D2](DIVERGENCES.md#d2).
-- The `-install` prune and sweeps split the builds too, not drift. Against the
-  pin `89cb6289` they now follow `5fd08069`. Folders and links stay and take no
+- The `-install` prune and sweeps split the builds too, not drift. They follow
+  the pin `5fd08069`, not `89cb6289`. Folders and links stay and take no
   keep place. `x.zst`, `.fetch-d`, `p.zst.part` and empty folders stay in the
   sweeps. A `.blob-` file is not counted, a negative `-cli-keep` exits `0`, and
   the new CLI stays with `-cli-keep 0`. The blob timing, the `rename: ` prefix,
-  the Windows rename retry and the Linux launcher gate follow `5fd08069` too
-  ([PROTOCOL.md](PROTOCOL.md) → `-install`). A probe against the pin shows these
+  the Windows rename retry and the Linux file test of a cache hit follow `5fd08069` too
+  ([PROTOCOL.md](PROTOCOL.md) → `-install`). A probe against `89cb6289` shows these
   as a build split.
 - The git filters of the `git.worktree_create` checkout split the builds too,
-  not drift. `scripts/UPSTREAM_SHA` names `89cb6289`, and claustrum follows
-  `5fd08069`. In the state `fallback-git` and with `"shadowDirOff":true`
+  not drift. claustrum follows the pin `5fd08069`. In the state `fallback-git`
+  and with `"shadowDirOff":true`
   claustrum has no filter rule, as `5fd08069` (cells R-Q4f and R-Q4g of round `task084-01`, Linux VM). With
   `shadowDirOff` the rule is off, as before. Against
   `89cb6289` these answers differ:
@@ -517,14 +519,17 @@ traps that matter for telling drift from expected:
   - On Windows, two reply texts of a create whose `.git` becomes a file
     `gitdir: <X>` while the create runs (Windows VM).
 - The reap of a child record with a `program` key splits the pins too, off the
-  wire. claustrum follows `89cb6289`. On Linux, if the process runs `program` or
+  wire. claustrum follows `89cb6289`. `5fd08069` is not measured in these rows.
+  On Linux, if the process runs `program` or
   holds it as one whole argument, `89cb6289` accepts the record. Linux rows PG02a, PG02b,
   ED03a, ED03b, ED04a and ED04e show that. `f6010b97` sends no signal in rows ED03a
   to ED04e. That difference is not drift. See
   [PROTOCOL.md](PROTOCOL.md) → process.spawn.
 - The configuration listing, the stray `commondir` rules and the `git.info` root
-  split the pins too. claustrum follows `89cb6289` there. Against `f6010b97` these
-  differences are not drift:
+  split the pins too. claustrum follows `89cb6289` there. `5fd08069` is not
+  measured in these rows. In the state `shadow` the answers of
+  [The settings copy](PROTOCOL.md#the-settings-copy) come first. Against
+  `f6010b97` these differences are not drift:
   - `server.capabilities` carries `git.info.discovered_root`.
   - A stray `commondir` that reads `.` or `./` is served when its git directory is
     valid (rows T01, T02 and T11). With a bad `HEAD` it gets S3 (row T10a). A
@@ -728,8 +733,8 @@ Go 1.27 does exactly that. It enables the `jsonv2` GOEXPERIMENT by default
 UTF-8 byte as the literal U+FFFD character (bytes `EF BF BD`). Go 1.26
 and earlier emit the six-ASCII
 `\ufffd` escape, and so did the reference daemon at `5db5e4a`. The build pinned
-today, `89cb6289`, carries a go1.25.14 stamp (`go version` on the binary), so it
-emits the same escape. `files.read`
+today, `5fd08069`, carries a go1.25.14 stamp (`go version` on the binary), as
+`89cb6289` does. So it emits the same escape. `files.read`
 puts raw file bytes into the `content` string. Under Go 1.27, every read of a file
 holding a non-UTF-8 byte therefore diverges from the
 reference. `TestInheritedInvalidUTF8BecomesReplacementChar` and

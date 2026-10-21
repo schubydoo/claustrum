@@ -63,4 +63,4 @@ On Windows, a `path` with a junction before its last component does not resolve,
 
 ## Differences from the reference
 
-claustrum is built to answer as the reference daemon does. The pinned build `89cb6289` has no settings copy, and it answers a request with a failed test normally. claustrum follows `5fd08069` there. No entry of the divergence catalog applies to this method.
+claustrum is built to answer as the reference daemon does. The older build `89cb6289` has no settings copy, and it answers a request with a failed test normally. claustrum follows the pinned build `5fd08069` there. No entry of the divergence catalog applies to this method.
