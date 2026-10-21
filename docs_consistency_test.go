@@ -598,7 +598,6 @@ var docWordLimits = map[string]int{
 	"docs/GLOSSARY.md":                     1300,
 	"docs/IMPROVEMENTS.md":                 2300,
 	"docs/PROTOCOL.md":                     76300,
-	"docs/REFERENCE-BUILDS.md":             5200,
 	"docs/UPSTREAM-TRACKING.md":            9700,
 	"docs/index.md":                        800,
 	"docs/protocol/files-extract-tar.md":   2200,
@@ -620,8 +619,11 @@ const (
 	docNewPageWords         = 1500
 )
 
-// TestDocsWordLimits: each Markdown file under docs/ and AGENTS.md has at most the
-// words of its limit. A word is a run of characters between white space.
+// docNoWordLimit has no word limit: the ledger is append-only by the maintainer's decision of 2026-10-21.
+const docNoWordLimit = "docs/REFERENCE-BUILDS.md"
+
+// TestDocsWordLimits: each Markdown file under docs/ and AGENTS.md, except
+// docNoWordLimit, has at most the words of its limit. A word is a run of characters between white space.
 func TestDocsWordLimits(t *testing.T) {
 	files := []string{"AGENTS.md"}
 	err := filepath.WalkDir("docs", func(p string, d os.DirEntry, err error) error {
@@ -636,6 +638,9 @@ func TestDocsWordLimits(t *testing.T) {
 	seen := map[string]bool{}
 	for _, f := range files {
 		seen[f] = true
+		if f == docNoWordLimit {
+			continue
+		}
 		limit, ok := docWordLimits[f]
 		if !ok {
 			limit = docNewPageWords
