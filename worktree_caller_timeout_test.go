@@ -5,7 +5,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"io"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -83,13 +82,23 @@ var (
 	gitStubDirFail string
 )
 
-// gitSlowStubDir returns the one folder that holds this test binary under the
-// name `git`. The first call makes it under the fixture template root. The
-// file is a symlink, or a copy on Windows, where a symlink needs a privilege.
-// The stub takes all its behavior from its environment and its arguments
-// (runHelper and runGitSlow in helperproc_test.go), so one file serves every
-// test. A copy per call cost each Windows test a write and a first start of the
-// whole test binary.
+// The folder, the environment and the go tool of the test binary at its start.
+// A test can change its folder, its environment or PATH before the first call
+// of gitSlowStubDir, so the build uses these.
+var (
+	stubBuildDir, _         = os.Getwd()
+	stubBuildEnv            = os.Environ()
+	stubGoTool, stubGoToolE = exec.LookPath("go")
+)
+
+// gitSlowStubDir returns the one folder that holds the git stub under the name
+// `git`. The first call makes it under the fixture template root. The stub is
+// this test package, built a second time by `go test -c` without the race
+// detector. It runs the same code as this binary, but one start costs about a
+// third of the time. The stub takes all its behavior from its environment and
+// its arguments (runHelper and runGitSlow in helperproc_test.go), so one file
+// serves every test. A failed build fails every test that needs the stub: no
+// test falls back to this binary.
 func gitSlowStubDir(t *testing.T) string {
 	t.Helper()
 	gitStubDirOnce.Do(func() {
@@ -98,9 +107,21 @@ func gitSlowStubDir(t *testing.T) string {
 			gitStubDirFail = "no fixture template root: TestMain did not call makeFixtureTemplateRoot"
 			return
 		}
-		exe, err := os.Executable()
+		goTool := stubGoTool
+		if stubGoToolE != nil {
+			fail("find go", stubGoToolE)
+			return
+		}
+		env := envWithoutRaceFlag(stubBuildEnv)
+		ver := exec.Command(goTool, "env", "GOVERSION")
+		ver.Dir, ver.Env = stubBuildDir, env
+		out, err := ver.Output()
 		if err != nil {
-			fail("os.Executable", err)
+			fail("go env GOVERSION", err)
+			return
+		}
+		if got := strings.TrimSpace(string(out)); got != runtime.Version() {
+			fail("go on PATH", fmt.Errorf("it is %s, but this test binary is %s", got, runtime.Version()))
 			return
 		}
 		bin, err := os.MkdirTemp(fixtureTplRoot, "git-stub-")
@@ -108,34 +129,20 @@ func gitSlowStubDir(t *testing.T) string {
 			fail("mkdir", err)
 			return
 		}
-		if runtime.GOOS != "windows" {
-			if err := os.Symlink(exe, filepath.Join(bin, "git")); err != nil {
-				fail("symlink git", err)
-				return
-			}
-			gitStubDirPath = bin
+		name := "git"
+		if runtime.GOOS == "windows" {
+			name = "git.exe"
+		}
+		start := time.Now()
+		// -vet=off: the lint job vets the package, and the race build of this
+		// binary already did, so a vet of the stub build only costs time.
+		build := exec.Command(goTool, "test", "-c", "-vet=off", "-o", filepath.Join(bin, name), ".")
+		build.Dir, build.Env = stubBuildDir, env
+		if out, err := build.CombinedOutput(); err != nil {
+			fail("go test -c", fmt.Errorf("%v\n%s", err, out))
 			return
 		}
-		src, err := os.Open(exe)
-		if err != nil {
-			fail("open", err)
-			return
-		}
-		defer func() { _ = src.Close() }()
-		dst, err := os.OpenFile(filepath.Join(bin, "git.exe"), os.O_CREATE|os.O_WRONLY, 0o755)
-		if err != nil {
-			fail("create git.exe", err)
-			return
-		}
-		if _, err := io.Copy(dst, src); err != nil {
-			_ = dst.Close()
-			fail("copy", err)
-			return
-		}
-		if err := dst.Close(); err != nil {
-			fail("close git.exe", err)
-			return
-		}
+		t.Logf("built the git stub without the race detector in %s", time.Since(start).Round(time.Millisecond))
 		gitStubDirPath = bin
 	})
 	if gitStubDirFail != "" {
@@ -144,8 +151,28 @@ func gitSlowStubDir(t *testing.T) string {
 	return gitStubDirPath
 }
 
-// installGitSlowStub puts this test binary first on PATH as `git`, in the
-// "git-slow" helper mode, with realGit as the git it passes calls through to.
+// envWithoutRaceFlag returns env with each -race flag taken out of GOFLAGS. The
+// other flags of GOFLAGS stay, for example the -run flag of a CI shard.
+func envWithoutRaceFlag(env []string) []string {
+	out := make([]string, 0, len(env))
+	for _, kv := range env {
+		if v, ok := strings.CutPrefix(kv, "GOFLAGS="); ok {
+			var keep []string
+			for _, f := range strings.Fields(v) {
+				if n := strings.TrimLeft(f, "-"); n == "race" || strings.HasPrefix(n, "race=") {
+					continue
+				}
+				keep = append(keep, f)
+			}
+			kv = "GOFLAGS=" + strings.Join(keep, " ")
+		}
+		out = append(out, kv)
+	}
+	return out
+}
+
+// installGitSlowStub puts the git stub of gitSlowStubDir first on PATH as `git`,
+// in the "git-slow" helper mode, with realGit as the git it passes calls through to.
 func installGitSlowStub(t *testing.T, realGit string) {
 	t.Helper()
 	bin := gitSlowStubDir(t)
