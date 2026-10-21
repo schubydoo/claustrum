@@ -50,7 +50,7 @@ A change that breaks one of these is wrong. Passing tests do not make it right:
    is a finding only with the observation attached. Beware evidence that proves a
    weaker claim than the one being made. This repo shipped that mistake before.
 4. No new dependencies. The permitted set is stdlib + `klauspost/compress`, plus
-   `golang.org/x/sys` and `Microsoft/go-winio`, which are Windows-only.
+   `golang.org/x/sys` (all OSes) and `Microsoft/go-winio` (Windows-only).
    `CGO_ENABLED=0`.
 5. Never add telemetry.
 6. Cross-platform parity. OS specifics live in `*_unix.go` / `*_windows.go`, and

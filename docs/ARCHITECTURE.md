@@ -1,10 +1,10 @@
 # claustrum architecture
 
 Claustrum is one Go binary. A flag selects the mode. The build is static
-(`CGO_ENABLED=0`). It has one cross-platform dependency, `klauspost/compress`
-(zstd). Two more dependencies go into Windows builds only. They are
-`golang.org/x/sys` (Windows system calls) and `github.com/Microsoft/go-winio`
-(the opt-in `-listen-pipe` named-pipe transport).
+(`CGO_ENABLED=0`). It has two cross-platform dependencies, `klauspost/compress`
+(zstd) and `golang.org/x/sys` (system calls on Linux, macOS and Windows). One
+more dependency goes into Windows builds only. It is
+`github.com/Microsoft/go-winio` (the opt-in `-listen-pipe` named-pipe transport).
 
 ## Source layout (flat `package main`)
 

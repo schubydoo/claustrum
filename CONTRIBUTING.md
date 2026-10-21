@@ -12,7 +12,7 @@ battery green. The battery is described below.
 ```sh
 git clone https://github.com/schubydoo/claustrum
 cd claustrum
-go build ./...            # Go 1.26, held below 1.27 (see docs/UPSTREAM-TRACKING.md); deps: klauspost/compress, golang.org/x/sys + Microsoft/go-winio (both Windows-only)
+go build ./...            # Go 1.26, held below 1.27 (see docs/UPSTREAM-TRACKING.md); deps: klauspost/compress, golang.org/x/sys (all OSes) + Microsoft/go-winio (Windows-only)
 make build               # -> ./claustrum
 make hooks               # one-time: install the pre-commit hook (see below)
 ```
@@ -135,7 +135,7 @@ time. See `buildstamp.go` for the full rationale.
 
 - Add no new dependency without discussion. The binary is deliberately stdlib,
   plus zstd (`klauspost/compress`), plus `golang.org/x/sys` and
-  `github.com/Microsoft/go-winio`. Those last two are Windows-only. The build
+  `github.com/Microsoft/go-winio`. Only go-winio is Windows-only. The build
   uses `CGO_ENABLED=0`.
 - No telemetry, ever.
 - Keep host-specific working notes and reverse-engineering working notes out of
