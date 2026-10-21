@@ -340,6 +340,32 @@ func TestShadowMissingPathInfoWaitsForARunningStartTest(t *testing.T) {
 	}
 }
 
+// A hold that starts while a git.info waits for the start test counts at the
+// reply: the git.info answers "off-switch" (R4 read at the reply, claustrum's own
+// for this order, not measured). Mutation: in replyControl, return
+// h.control(false) after the wait. The reply then has "shadow".
+func TestShadowHoldThatStartsDuringTheWaitCountsAtTheReply(t *testing.T) {
+	h := newLiveFixture(t)
+	slowGit(t, "remote,get-url", "gate", 10*time.Minute, "", "")
+	holdSecond(t, "init,-q,--template=", "", false)
+	h.send(t, 1, "git.info", map[string]any{"path": h.repo})
+	h.waitIn(t, h.gate2)
+	h.send(t, 2, "git.info", map[string]any{"path": filepath.Join(h.none, "nope")})
+	// As in the missing-path test: a reply sent after id 2 marks a time at
+	// which id 2 waits, before the hold starts.
+	h.send(t, 3, "git.list_branches", map[string]any{"path": h.none})
+	h.reply(t, 3)
+	if r := h.raw(2); r != "" {
+		t.Fatalf("git.info answered %s while the start test ran, want a wait", r)
+	}
+	h.send(t, 4, "git.info", map[string]any{"path": h.repoB, "shadowDirOff": true})
+	h.waitIn(t, h.gate1)
+	h.open(h.gate2)
+	if got := settingsControlOf(t, json.RawMessage(liveResult(t, h.reply(t, 2)))); got != controlOff {
+		t.Errorf("settingsControl after the wait = %q, want %q", got, controlOff)
+	}
+}
+
 // A hold that ends right before the first command of gitDefaultBranch. That
 // command runs the gate again and takes the copy. The second command of that
 // helper has the use of its caller by value, and it takes the copy too

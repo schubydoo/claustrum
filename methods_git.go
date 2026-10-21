@@ -202,7 +202,7 @@ func gitInfo(req *request) response {
 	// that has not passed its start test, as for a HEAD that is no ref as the first
 	// request (s3p2-linux cell E5, Linux VM).
 	notRepo := func() response {
-		return okResult(req.ID, notRepoResult{SettingsControl: req.shadow.replyControl(req.offLive())})
+		return okResult(req.ID, notRepoResult{SettingsControl: req.shadow.replyControl(req.offLive)})
 	}
 	// The git-directory trust check runs on path (gitdirtrust.go). The check of the
 	// daemon's own GIT_CONFIG_COUNT comes after a trust refusal and before the "no
@@ -383,7 +383,7 @@ func gitInfo(req *request) response {
 		RepoSlug:      slug,
 		DefaultBranch: defBranch,
 
-		SettingsControl: req.shadow.replyControl(req.offLive()),
+		SettingsControl: req.shadow.replyControl(req.offLive),
 	})
 }
 
