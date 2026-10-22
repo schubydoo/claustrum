@@ -430,8 +430,9 @@ traps that matter for telling drift from expected:
     `89cb6289` runs the filter (Windows VM). With no copy it answers the text
     about values that no option of git can replace (claustrum's own).
   - In the state `shadow`, more than 64 filter names, and a last config listing
-    before the checkout that fails or runs 30 s, fail the create (claustrum's code,
-    `89cb6289` not run).
+    before the checkout that fails, or whose git still runs at 30 s and does not
+    exit 0 after the SIGTERM, fail the create (claustrum's code, `89cb6289` not
+    run).
 
   Against `5fd08069` these differences are not drift:
   - With a `GIT_DIR` and a `GIT_WORK_TREE` of another repository in the daemon

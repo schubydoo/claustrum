@@ -1,7 +1,9 @@
 package main
 
 import (
+	"bytes"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"regexp"
 	"slices"
@@ -167,6 +169,43 @@ func TestWorktreeCreateFilterListingWaitsForHeldPipes(t *testing.T) {
 	}
 }
 
+// TestWorktreeCreateFilterListingHeldPastBound: the listing right before the
+// read-tree call exits 0 at once, and a child holds its pipes past the bound
+// of the listing. The bound ends only a git that still runs, so the create
+// succeeds (cell A4-35 of round task111-03, Linux VM). A listing that exits 1
+// at once counts by that exit status (claustrum's own, not measured). The seam
+// shrinks the bound of 30 s to heldPipe, and the child holds the pipes 2*heldPipe. Mutation: in ownConfigListing, end the
+// listing by exec.CommandContext again (both rows), or count it as stopped
+// whenever the bound fired (the row "holdfail").
+func TestWorktreeCreateFilterListingHeldPastBound(t *testing.T) {
+	for _, mode := range []string{"hold", "holdfail"} {
+		t.Run(mode, func(t *testing.T) {
+			f := newCheckoutRuleFixture(t)
+			setDuration(t, &ownConfigBound, heldPipe)
+			slowGit(t, "config,-z,--list", mode, 2*heldPipe, "", "")
+			t.Setenv("CLAUSTRUM_GITSTUB_ENVEND", "GIT_INDEX_FILE=index")
+			t.Setenv("CLAUSTRUM_GITSTUB_EXIT", "1")
+			endHeldDescendant(t)
+			start := time.Now()
+			raw, calls := f.create(t, nil)
+			took := time.Since(start)
+			want := `{"jsonrpc":"2.0","id":1,"result":{"success":true,"path":` + jsonString(t, f.leaf) + `,"sourceBranch":"main","branch":"w1"}}`
+			if mode == "holdfail" {
+				want = failedFrame(t, ownConfigText("exit status 1"))
+			}
+			if raw != want {
+				t.Fatalf("git.worktree_create = %s\nwant %s", raw, want)
+			}
+			if ranReadTree(calls) != (mode == "hold") {
+				t.Errorf("a read-tree call ran = %v, want %v", ranReadTree(calls), mode == "hold")
+			}
+			if took < 2*heldPipe {
+				t.Errorf("the create took %v, want the reply after the child closed the pipes (%v)", took, 2*heldPipe)
+			}
+		})
+	}
+}
+
 // TestGitStatusRepoConfigReadBoundFromStart: the listing of the repository
 // config on standard input exits 0, and a child holds its pipes past the bound.
 // The bound counts from the start of the call, so git.status answers the read
@@ -320,4 +359,89 @@ func TestStartTestCallsAndTheirPipes(t *testing.T) {
 			t.Errorf("the start test = %q\nwant %s", msg, want)
 		}
 	})
+}
+
+// TestShadowHookListingStderrHolder: the config listing before a hardened call
+// exits 0, and a child holds its stderr alone. The call goes on gitDrainWait
+// after the exit of git, and the reply is the normal one. 5fd08069 goes on about
+// 2 s after the exit (cells A1-e of rounds task111-01 and task111-02, Linux and
+// macOS VMs). Mutation: in runToEOF, wait for the copy of stderr with no grace.
+func TestShadowHookListingStderrHolder(t *testing.T) {
+	f := newSeededShadowFixture(t)
+	want, _ := f.info(t, f.repo, nil)
+	holdHookListing(t, "hold", 6*heldPipe)
+	t.Setenv("CLAUSTRUM_GITSTUB_HOLDSTDERR", "1")
+	raw, _, took := timedCall(t, f, "git.info", map[string]any{"path": f.repo})
+	if raw != want {
+		t.Errorf("git.info = %s\nwant %s", raw, want)
+	}
+	if took > 4*heldPipe {
+		t.Errorf("the reply came after %v, want it about %v after the exit of git, before the child ended (%v)", took, gitDrainWait, 6*heldPipe)
+	}
+}
+
+// TestGitStatusRepoConfigReadStderrHolder: the listing of the repository config
+// on standard input exits 0, and a child holds its stderr alone past the bound.
+// The read goes on startBoundDrain after the exit of git, and git.status gives
+// its normal reply. 5fd08069 goes on about 1.1 to 1.4 s after the exit and
+// answers the change list (cells B1-e of rounds task111-01 and task111-02,
+// Linux and macOS VMs). Mutation: in runStartBound, drop the cut of the stderr
+// copy after the reap.
+func TestGitStatusRepoConfigReadStderrHolder(t *testing.T) {
+	// Only the first request of a fixture reads the repository config, so the
+	// normal reply is written out here: the fixture repository is clean.
+	f := newSeededShadowFixture(t)
+	m := f.fiveRequests(nil)[1]
+	want := `{"jsonrpc":"2.0","id":1,"result":{"isRepo":true,"clean":true}}`
+	setDuration(t, &repoReadBound, 4*heldPipe)
+	holdNthCall(t, "config,--no-includes,--file,--list", "hold", "", 1, 6*heldPipe)
+	t.Setenv("CLAUSTRUM_GITSTUB_HOLDSTDERR", "1")
+	raw, _, took := timedCall(t, f, m.method, m.params)
+	if raw != want {
+		t.Errorf("git.status = %s\nwant %s", raw, want)
+	}
+	if took > repoReadBound {
+		t.Errorf("the reply came after %v, want it about %v after the exit of git, before the bound (%v)", took, startBoundDrain, repoReadBound)
+	}
+}
+
+// TestRunToEOFOneWriterForBoth: a call whose stdout and stderr are one writer
+// gives the text of both streams in that writer, with one pipe for both, as
+// os/exec does. Mutation: drop the sameWriter test in runToEOF. Then two
+// copies write to the buffer at once, and the race detector reports it.
+func TestRunToEOFOneWriterForBoth(t *testing.T) {
+	exe, env := helperCommand(t, "both-streams")
+	cmd := exec.Command(exe)
+	cmd.Env = buildEnv(env)
+	var out bytes.Buffer
+	cmd.Stdout, cmd.Stderr = &out, &out
+	if err := runToEOF(cmd, gitDrainWait, func() {}); err != nil {
+		t.Fatalf("runToEOF = %v, want nil", err)
+	}
+	if got := out.String(); got != "out\nerr\n" {
+		t.Errorf("the writer holds %q, want %q", got, "out\nerr\n")
+	}
+}
+
+// TestGitStatusRepoConfigReadFailsWithStderrHolder: the listing of the
+// repository config on standard input writes a line to stderr and exits 1, and
+// a child holds its stderr alone. git.status answers the refusal with that line.
+// 5fd08069 does so about 1.1 s after the exit on Linux (cell B1e-x1 of round
+// task111-09), and round task111-10 has equal replies on macOS. Mutation: in
+// runStartBound, return the exec error with no heldStderrExit around it.
+func TestGitStatusRepoConfigReadFailsWithStderrHolder(t *testing.T) {
+	f := newSeededShadowFixture(t)
+	m := f.fiveRequests(nil)[1]
+	setDuration(t, &repoReadBound, 4*heldPipe)
+	holdNthCall(t, "config,--no-includes,--file,--list", "holdfail", "", 1, 6*heldPipe)
+	t.Setenv("CLAUSTRUM_GITSTUB_HOLDSTDERR", "1")
+	t.Setenv("CLAUSTRUM_GITSTUB_STDERR", `WRAP-ERR-EARLY\n`)
+	t.Setenv("CLAUSTRUM_GITSTUB_EXIT", "1")
+	raw, _, took := timedCall(t, f, m.method, m.params)
+	if want := errorFrame(t, repoConfigPrefix+"WRAP-ERR-EARLY"); raw != want {
+		t.Errorf("git.status = %s\nwant %s", raw, want)
+	}
+	if took > repoReadBound {
+		t.Errorf("the reply came after %v, want it about %v after the exit of git, before the bound (%v)", took, startBoundDrain, repoReadBound)
+	}
 }

@@ -279,7 +279,9 @@ const sourceLinkTail = ": it is a link that is absolute, or does not lead to a r
 //   - A syntax error: the text of git with the path in quotes (cell C11).
 //
 // The size text, an open error and a listing that fails for another reason
-// are claustrum's own causes.
+// are claustrum's own causes. With a child that holds stderr alone, a listing
+// that exits 0 goes on after startBoundDrain, and one that exits 1 answers
+// `exit status 1` (claustrum's own, not measured).
 func worktreeConfigSource(ctx context.Context, gitDir, path string) (text []byte, settings []repoSetting, cause string, present bool) {
 	refuse := func(detail string) ([]byte, []repoSetting, string, bool) {
 		return nil, nil, repoConfigPrefix + detail, true
@@ -453,6 +455,10 @@ func writeWorktreeConfigAt(u gitUse, registration, leaf string, tested testedReg
 // listConfigFileText is listConfigFile with the text of the file beside its
 // settings. badLine is the syntax error text of git for the file
 // (badLineDetail), or "".
+//
+// With a child that holds stderr alone, for example in a `config.worktree`
+// read of git.status, a listing that exits 0 goes on after startBoundDrain,
+// and one that exits 1 gives ok false (claustrum's own, not measured).
 func listConfigFileText(ctx context.Context, path string) (text []byte, settings []repoSetting, badLine string, ok bool) {
 	f, err := openRepoFile(path)
 	if err != nil || f == nil {

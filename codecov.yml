@@ -186,6 +186,10 @@ component_management:
         - githarden.go
         # the time limits of the git calls (5fd08069).
         - gitstop.go
+        # the test that a git call still runs, at the bound of the second checkout listing.
+        - gitlive_darwin.go
+        - gitlive_linux.go
+        - gitlive_other.go
         # the index file of a new worktree and the registration step of the create rollback (89cb6289).
         - githarden_index_unix.go
         - githarden_index_windows.go

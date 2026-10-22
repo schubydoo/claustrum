@@ -5,6 +5,8 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"io"
+	"os"
 	"os/exec"
 	"strings"
 	"sync"
@@ -42,7 +44,10 @@ var (
 	gitStopGrace = 2 * time.Second
 	// gitDrainWait is the time that a call waits for its output pipes after git
 	// exited (cells T15 and T16: 2.0 s). The child that holds them gets no
-	// signal. A call under untilPipeEOF has no such wait.
+	// signal. A call under untilPipeEOF waits so for stderr alone (runToEOF).
+	// There 5fd08069 goes on about 2.0 to 2.1 s after the exit (cells A1-e of
+	// rounds task111-01 and task111-02, Linux and macOS VMs). For that wait of
+	// stderr alone the exact value of 2 s is claustrum's own.
 	gitDrainWait = 2 * time.Second
 )
 
@@ -133,8 +138,8 @@ func withGitLimit(ctx context.Context, kind gitLimit) context.Context {
 }
 
 // untilPipeEOF is ctx for the calls whose output the daemon reads to its end.
-// Such a call goes on only when its output pipes close, also after git exited.
-// The child that holds them gets no signal. 5fd08069 does so for the config
+// Such a call goes on only when its stdout closes, also after git exited.
+// The child that holds it gets no signal. 5fd08069 does so for the config
 // listing before a hardened call (cells A1 and A2) and for the `status` scan of
 // git.status (cell A3 of round task101-01, Linux VM). The `ls-files` and
 // `diff-index` scans do the same (claustrum's own, not measured).
@@ -186,9 +191,10 @@ func (s *gitStop) limit(kind gitLimit) (time.Duration, string) {
 //
 // The wait for the output pipes after git exited ends at gitDrainWait. A call
 // that exited 0 then counts as a call that exited 0 (cells T15 and T16). Under
-// untilPipeEOF the wait has no end. A call that exited 0 gives its result when
-// the pipes close, also past its limit. A call that the limit stopped gives the
-// stop text then (cells A1 and A2 of round task101-01, Linux VM).
+// untilPipeEOF the wait for stdout has no end (runToEOF). A call that exited 0
+// gives its result when stdout closes, also past its limit. A call that the
+// limit stopped gives the stop text then (cells A1 and A2 of round task101-01,
+// Linux VM).
 //
 // Each call runs under the hold of its repository folder (runHeld).
 func gitRun(ctx context.Context, cmd *exec.Cmd) error {
@@ -204,40 +210,44 @@ func gitRun(ctx context.Context, cmd *exec.Cmd) error {
 }
 
 // gitRunLimited is the start and the wait of cmd under the limit kind of s.
-// With toEOF the wait for the output pipes has no end (untilPipeEOF).
+// With toEOF the wait for the output pipes has no end (untilPipeEOF), and the
+// call runs through runToEOF.
 func gitRunLimited(s *gitStop, kind gitLimit, toEOF bool, cmd *exec.Cmd) error {
 	limit, after := s.limit(kind)
-	if !toEOF {
-		cmd.WaitDelay = gitDrainWait
-	}
-	if err := cmd.Start(); err != nil {
-		return err
-	}
 	var mu sync.Mutex
 	done, fired := false, false
-	var kill *time.Timer
-	timer := time.AfterFunc(limit, func() {
-		mu.Lock()
-		defer mu.Unlock()
-		if done {
-			return
-		}
-		// The call counts as stopped also when git exited before the limit
-		// and only a child holds its pipes (under untilPipeEOF, or within
-		// gitDrainWait of the limit). A failed call then
-		// gives the stop text, and a call that exited 0 stays a success, on
-		// every system (claustrum's own, not measured).
-		fired = true
-		_ = stopGitProcess(cmd.Process)
-		kill = time.AfterFunc(gitStopGrace, func() {
+	var kill, timer *time.Timer
+	arm := func() {
+		timer = time.AfterFunc(limit, func() {
 			mu.Lock()
 			defer mu.Unlock()
-			if !done {
-				_ = cmd.Process.Kill()
+			if done {
+				return
 			}
+			// The call counts as stopped also when git exited before the limit
+			// and only a child holds its pipes (under untilPipeEOF, or within
+			// gitDrainWait of the limit). A failed call then
+			// gives the stop text, and a call that exited 0 stays a success, on
+			// every system (claustrum's own, not measured).
+			fired = true
+			kill, _ = stopThenKill(cmd.Process, &mu, &done)
 		})
-	})
-	err := cmd.Wait()
+	}
+	var err error
+	if toEOF {
+		started := false
+		err = runToEOF(cmd, gitDrainWait, func() { started = true; arm() })
+		if !started {
+			return err
+		}
+	} else {
+		cmd.WaitDelay = gitDrainWait
+		if err := cmd.Start(); err != nil {
+			return err
+		}
+		arm()
+		err = cmd.Wait()
+	}
 	mu.Lock()
 	done = true
 	timer.Stop()
@@ -261,10 +271,130 @@ func gitRunLimited(s *gitStop, kind gitLimit, toEOF bool, cmd *exec.Cmd) error {
 	return err
 }
 
+// stopThenKill is the stop of a git call at its limit: stopGitProcess, and a
+// Kill gitStopGrace later while *done is false. The caller holds mu, and the
+// later Kill takes it. err is the error of stopGitProcess.
+func stopThenKill(p *os.Process, mu *sync.Mutex, done *bool) (kill *time.Timer, err error) {
+	err = stopGitProcess(p)
+	kill = time.AfterFunc(gitStopGrace, func() {
+		mu.Lock()
+		defer mu.Unlock()
+		if !*done {
+			_ = p.Kill()
+		}
+	})
+	return kill, err
+}
+
+// runToEOF starts cmd, calls started after a good start, and waits for it.
+// It is for a call whose stdout the daemon reads to its end. It sets no time
+// limit of its own.
+//
+// When cmd.Stdout is a writer that is not a file, the daemon reads stdout
+// itself, through its own pipe, and reaps git only at the end of that pipe. exec.Cmd.Wait reaps first, and only then waits for the
+// copies of its pipes (from the code of Go). So git stays a zombie while a
+// child holds its stdout. 5fd08069 does so in cells A1 and A3 of rounds
+// task101-03 (Linux VM) and task082-02 (macOS VM).
+//
+// After the reap the copy of stderr gets at most grace. Then the call goes on
+// with what it read, and an exit 0 counts as a success. With a child that holds
+// stderr alone, 5fd08069 goes on about 2 s after the exit of git (cells A1-e
+// of rounds task111-01 and task111-02, Linux and macOS VMs). Windows is not
+// measured.
+func runToEOF(cmd *exec.Cmd, grace time.Duration, started func()) error {
+	closeAll := func(fs ...*os.File) {
+		for _, f := range fs {
+			if f != nil {
+				_ = f.Close()
+			}
+		}
+	}
+	// own takes a writer of cmd that os/exec copies in a goroutine.
+	own := func(w *io.Writer) (io.Writer, *os.File, *os.File, error) {
+		if _, isFile := (*w).(*os.File); *w == nil || isFile {
+			return nil, nil, nil, nil
+		}
+		r, pw, err := os.Pipe()
+		if err != nil {
+			return nil, nil, nil, err
+		}
+		sink := *w
+		*w = pw
+		return sink, r, pw, nil
+	}
+	same := sameWriter(cmd.Stdout, cmd.Stderr)
+	sink, outR, outW, err := own(&cmd.Stdout)
+	if err != nil {
+		return err
+	}
+	var errSink io.Writer
+	var errR, errW *os.File
+	if same && outW != nil {
+		// One writer for both takes one pipe, as in os/exec. So stderr is read
+		// to its end with stdout, and no two copies write to the writer.
+		cmd.Stderr = outW
+	} else if errSink, errR, errW, err = own(&cmd.Stderr); err != nil {
+		closeAll(outR, outW)
+		return err
+	}
+	err = cmd.Start()
+	closeAll(outW, errW)
+	if err != nil {
+		closeAll(outR, errR)
+		return err
+	}
+	started()
+	errDone := make(chan error, 1)
+	if errR != nil {
+		go func() {
+			_, e := io.Copy(errSink, errR)
+			_ = errR.Close()
+			errDone <- e
+		}()
+	}
+	var copyErr error
+	if outR != nil {
+		_, copyErr = io.Copy(sink, outR)
+		_ = outR.Close()
+	}
+	err = cmd.Wait()
+	if errR != nil {
+		cut := time.AfterFunc(grace, func() { _ = errR.Close() })
+		if e := <-errDone; cut.Stop() && copyErr == nil {
+			copyErr = e
+		}
+	}
+	if err == nil {
+		err = copyErr
+	}
+	return err
+}
+
+// sameWriter reports that a and b are one writer. A writer of a type that
+// cannot be compared is never the same.
+func sameWriter(a, b io.Writer) (same bool) {
+	defer func() {
+		if recover() != nil {
+			same = false
+		}
+	}()
+	return a != nil && a == b
+}
+
 // gitOutput is cmd.Output under the limits of ctx (gitRun). The stderr of git is
 // not in the error: no caller reads it there.
 func gitOutput(ctx context.Context, cmd *exec.Cmd) ([]byte, error) {
 	if s, _ := gitStopOf(ctx); s == nil {
+		if toEOF, _ := ctx.Value(pipeEOFKey{}).(bool); toEOF {
+			var out bytes.Buffer
+			cmd.Stdout = &out
+			// A call with no limits, as in git.worktree_remove, gets the same
+			// grace of stderr. 5fd08069 goes on about 2 s after the exit of a
+			// remove listing whose stderr a child holds (cell RMe of round
+			// task111-09 and cell RMex1 of round task111-11, Linux VM).
+			err := runHeld(cmd, func() error { return runToEOF(cmd, gitDrainWait, func() {}) })
+			return out.Bytes(), err
+		}
 		var out []byte
 		err := runHeld(cmd, func() error {
 			var err error

@@ -421,16 +421,10 @@ func repoCheckFailedText(root, detail string) string {
 // between two lines, and a line with spaces at its ends, are not measured:
 // claustrum drops the empty line and those spaces.
 func (r shadowRun) allLines() string {
-	var lines []string
-	for _, line := range strings.Split(r.stderr, "\n") {
-		if line = strings.TrimSpace(line); line != "" {
-			lines = append(lines, line)
-		}
+	if lines := stderrLines([]byte(r.stderr)); lines != "" {
+		return lines
 	}
-	if len(lines) == 0 {
-		return r.detail()
-	}
-	return strings.Join(lines, " ")
+	return r.detail()
 }
 
 // printedProbePath is the path of git in the "disagree" text: out, the answer
