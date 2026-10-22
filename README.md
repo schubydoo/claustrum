@@ -56,8 +56,10 @@ Claustrum requires Go 1.26. The toolchain is held below 1.27, because the defaul
 [docs/UPSTREAM-TRACKING.md](docs/UPSTREAM-TRACKING.md). Build with the `go.mod` toolchain.
 
 Two dependencies are cross-platform. `github.com/klauspost/compress` is for zstd. `golang.org/x/sys`
-provides system calls on Linux, macOS and Windows, such as the kill of a child on Windows.
-One more module is compiled into Windows builds only. `github.com/Microsoft/go-winio` provides the opt-in `-listen-pipe` named-pipe transport
+provides system calls on all three OSes: the peer credentials of the socket on Linux, the holder
+check of the run-dir lock on macOS, and the kill of a child on Windows.
+One more module is compiled into Windows builds only.
+`github.com/Microsoft/go-winio` provides the opt-in `-listen-pipe` named-pipe transport
 (CT-5).
 
 ```sh

@@ -134,8 +134,8 @@ time. See `buildstamp.go` for the full rationale.
 ## Scope notes
 
 - Add no new dependency without discussion. The binary is deliberately stdlib,
-  plus zstd (`klauspost/compress`), plus `golang.org/x/sys` and
-  `github.com/Microsoft/go-winio`. Only go-winio is Windows-only. The build
+  plus zstd (`klauspost/compress`), plus `golang.org/x/sys` (all OSes) and
+  `github.com/Microsoft/go-winio` (Windows-only). The build
   uses `CGO_ENABLED=0`.
 - No telemetry, ever.
 - Keep host-specific working notes and reverse-engineering working notes out of
