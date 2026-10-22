@@ -542,6 +542,9 @@ own line. On Linux the pass logs no `left alone this pass` line.
 
 ### Daemon startup (`-serve`)
 
+On Linux a launcher with no readable `/proc/self/exe` exits `1` with `claustrum: locate self:
+<error>` before any write, as on `5fd08069` (round `tier3-02`, Linux VM).
+
 If the socket's parent directory is missing, the `-serve` launcher creates it
 (mode `0700`). The launcher connects every 50 ms (`task006-01`, C4). On Linux and macOS
 it exits `0` once a socket answers that is not the predecessor's (C3, C7b: Linux VM). At 12 s a
@@ -555,8 +558,7 @@ The launcher bound of claustrum is 12 s. On a Linux VM (row P7), a daemon child 
 row holds three forms: a stale socket file, no socket file, and an empty run
 folder. A macOS VM measured 12.08 to 12.16 s in the same three forms (row P7). A
 Windows VM measured 12.058 s with a stale socket file and with none. The bound is
-shared code, and claustrum took 12.01 to 12.13 s in those rows. The bound of
-`5db5e4a` was about 10 s, and claustrum used 10 s until that row.
+shared code, and claustrum took 12.01 to 12.13 s in those rows.
 
 On Linux and macOS the daemon binds the socket only after the reap of its start.
 The order is: claim `daemon.lock`, reap the recorded children of a dead daemon,
@@ -5072,7 +5074,7 @@ A token source is required. The detached child tests for it, not the launcher:
   `claustrum: timeout waiting for daemon to accept on <socket>`, exit `1`. The
   specific reason (`claustrum: daemonized child requires --token-file or
   --token-fd`) reaches only the child's detached stderr. This is deliberate
-  parity. `5db5e4a` exited 1 after 10.07 s in that case. A zero-byte
+  parity. A zero-byte
   `-token-file` behaves identically. On a Linux VM (row P7), the launcher of
   `89cb6289` exited 1 after 12.06 s with a zero-byte `-token-file`, in three
   forms: a stale socket file, no socket file, and an empty run folder. The
