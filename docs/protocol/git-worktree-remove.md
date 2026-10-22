@@ -1,5 +1,26 @@
 # git.worktree_remove
-`{baseRepo,worktreePath[,branchName][,worktreeRoot]}` → `{"success":true}` (lenient), or `{"success":true,"branchKept":true}` when the branch step keeps the branch
+
+`git.worktree_remove` deletes a linked git worktree and, in most states, its registration. Then it runs the branch step.
+
+## Request
+
+```json
+{"baseRepo": "/repo", "worktreePath": "/repo/.claude/worktrees/w1", "branchName": "w1"}
+```
+
+| Parameter | Required | Meaning |
+|---|---|---|
+| `baseRepo` | yes | The repository. |
+| `worktreePath` | yes | The worktree to delete. See [Where the paths can be](#where-the-paths-can-be). |
+| `branchName` | no | The branch that the branch step deletes. |
+| `worktreeRoot` | no | A location outside the repository. Windows refuses it, with no `errorCode`. |
+| `shadowDirOff` | no | `true` turns off, for this request, the daemon's own read of the repository's git config and the settings copy. |
+
+## Response
+
+Success is `{"success":true}`. If the branch step keeps the branch, it is `{"success":true,"branchKept":true}`. A refusal is `{"success":false,"error":<text>}`. If the branch step ran and kept the branch, `"branchKept":true` follows `error`. The request is lenient: see [The delete steps](#the-delete-steps).
+
+## The repository checks
 
 - Since `f6010b97` the git-directory trust check runs on `baseRepo` only, before
   git runs. Without `worktreeRoot` it runs after the containment tests, the
@@ -126,6 +147,9 @@
   A `baseRepo` that is not a directory gets reason 1. Each of the six reasons and
   the order around this step were measured side by side against `f6010b97` on a
   Linux VM.
+
+## Where the paths can be
+
 - By default, with no `worktreeRoot`, `7d193f89` confines the removal to inside the
   repository. `worktreePath` must be absolute, carry no `..` component, and sit
   strictly under `baseRepo`. Otherwise the reply is `{"success":false,"error":"refusing
@@ -177,6 +201,9 @@
   checks, the `worktreeRoot` refusal of Windows and the check of the daemon's
   `GIT_CONFIG_COUNT`. Only the Windows VM measured that order (round 1 rows O1 to O4,
   WR1 and A1 P1).
+
+## Which entry goes
+
 - The daemon runs no `git worktree remove` and no `git worktree prune`. It deletes the
   worktree directory itself, then the entry of the worktree under `<git dir>/worktrees`.
   Without `worktreeRoot`, the entry stays for a `baseRepo` that does not exist.
@@ -240,6 +267,9 @@
     J2, Q1 and Q2). The claustrum test of the junction row runs on Windows only.
   - The request is in 8.3 short names on Windows, or in another letter case on
     macOS. The folder and the branch go, and the entry stays (rows D-83 and D-case).
+
+## The git calls
+
 - The git calls of a removal without `worktreeRoot`, as the call logs of `89cb6289`
   show them. Each row below ran on Linux, macOS and Windows VMs unless its system
   is named. "The check" is a heavy `config -z --list` and
@@ -295,6 +325,9 @@
   file that names no verified entry, the calls follow the rules above (rows Q20,
   Q20b and Y8w on a Linux VM). The pair carries `--work-tree=<worktreePath>` there
   (rows Q20b and Y8w). Nothing is deleted in those rows.
+
+## Junctions and links on the path
+
 - On Windows, a junction at a directory between `baseRepo` and the leaf is refused.
   Nothing is deleted, and the branch stays. The reply is
   `{"success":false,"error":"failed to remove worktree: openat <path from
@@ -314,7 +347,7 @@
   call. In both cells the leaf did not exist and no branch existed. Nothing
   changed on disk on either side (Windows VM, cells J-b-wt-pj and J-b-wt-pJ). Not
   measured: a live worktree behind such a junction, and the branch step there. See
-  [`DIVERGENCES.md`](../DIVERGENCES.md) → D19.
+  [D19](../DIVERGENCES.md#d19).
 - The last component of `<p>` is checked first. In the repository no git runs before
   this check. A symbolic link answers `{"success":false,"error":"refusing to remove
   worktree: <t> is a symbolic link, not a worktree directory"}`. A file that is not a
@@ -323,6 +356,9 @@
   `worktreeRoot`, the links of the root are resolved instead. Under
   macOS `/tmp`, `<t>` therefore reads `/private/tmp/…`. Before, a link to a sibling
   worktree made claustrum delete that sibling, its entry and its branch.
+
+## The entry and the lock
+
 - The entry comes from the `.git` file of `<p>`. The file must hold `gitdir: ` and a
   path of the form `<something>/worktrees/<name>`. The entry `<git dir>/worktrees/<name>`
   must be a directory. Its `commondir` must lead back to `<git dir>`, or without
@@ -359,7 +395,10 @@
   there, as the reference does in row p6. A lock on an entry of X that names the
   worktree is refused on both sides (row p6b). So is a lock with no daemon
   environment (row p6c on Linux, macOS and Windows VMs, row p6g on a Linux VM).
-  See [`DIVERGENCES.md`](../DIVERGENCES.md) → D22.
+  See [D22](../DIVERGENCES.md#d22).
+
+## The delete steps
+
 - The delete first removes each entry of `<p>` except `.git`, in the order of the
   directory read. It stops at the first failure. Then it removes the rest, `.git`
   included, and `<p>` itself. Every delete goes through an `os.Root`, so no delete
@@ -439,6 +478,9 @@
   `branchName` that is empty or starts with `-` or `+` is skipped. A request whose
   branch the listing and rev-parse show absent answers a bare `{"success":true}`.
   That is what "lenient" means here.
+
+## Folders the daemon cannot read
+
 - Without `worktreeRoot`, a `baseRepo` that the daemon can open but not search
   (mode 0600) answers `{"success":false,"error":"failed to remove worktree: statat
   .claude: permission denied"}`. One that it cannot open at all (mode 0000) answers
@@ -502,6 +544,9 @@
   A daemon that runs as root removes the worktree under a `worktreeRoot` of mode
   0300, as `89cb6289` does (cell U22, Linux VM only). Windows is not measured. On
   Windows claustrum opens `.claude\worktrees` in one step, as before.
+
+## Home and relative paths
+
 - A home-directory `worktreePath` is refused. The `7d193f89` containment now does
   it, as parity. A `~`-expanded home path is not strictly under `baseRepo`, so it is
   refused with the reference's `"…is not inside the repository…"` wording before any
@@ -511,6 +556,6 @@
   ancestor of home. On the `worktreeRoot` / `external_root` branch the in-repo
   containment does not apply, so there D2 is the active home guard. D2
   remains the primary guard for `files.extract_tar`, which gained no containment. See
-  [`DIVERGENCES.md`](../DIVERGENCES.md) → D2.
+  [D2](../DIVERGENCES.md#d2).
 - A relative `worktreePath` is refused upfront (`"…is a relative path…"`). Send an
   absolute path under the repository.
