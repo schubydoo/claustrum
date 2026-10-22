@@ -1,8 +1,0 @@
-{
-  "name": "claustrum-claude-review",
-  "private": true,
-  "description": "The pinned Claude Code CLI of the @claude review workflow (.github/workflows/claude-review.yml).",
-  "dependencies": {
-    "@anthropic-ai/claude-code": "2.1.306"
-  }
-}
