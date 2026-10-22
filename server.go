@@ -269,6 +269,26 @@ func (c *conn) writeJSON(v interface{}) error {
 func (c *conn) writeLine(b []byte) error {
 	c.wmu.Lock()
 	defer c.wmu.Unlock()
+	return c.writeLineLocked(b)
+}
+
+// writeReplayLocked writes the replay frames of a reattach with c.wmu already
+// held, each as writeJSON marshals it. It stops at the first error.
+func (c *conn) writeReplayLocked(frames []streamFrame) error {
+	for _, f := range frames {
+		b, err := json.Marshal(f)
+		if err != nil {
+			return err
+		}
+		if err := c.writeLineLocked(append(b, '\n')); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// writeLineLocked is writeLine with c.wmu already held.
+func (c *conn) writeLineLocked(b []byte) error {
 	if c.closed {
 		return net.ErrClosed
 	}

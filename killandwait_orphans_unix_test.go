@@ -165,8 +165,8 @@ func TestSupersedeSendsNoGroupKillAfterACleanExit(t *testing.T) {
 	wantCleanExitLeavesTheKid(t, sent(), kid)
 }
 
-// killGroupAfterExit deliberately skips the reaped guard, so it is the one
-// signal path with no liveness check in front of it. Its only remaining guard is
+// killGroupAfterExit deliberately skips the reaped guard. With killGroupInDrain it
+// is one of two signal paths that signal a reaped process. Its only remaining guard is
 // against a process that was never started — reachable when a spawn failed
 // before exec. It must be a silent no-op, not a nil dereference.
 func TestKillGroupAfterExitIgnoresUnstartedProcess(t *testing.T) {

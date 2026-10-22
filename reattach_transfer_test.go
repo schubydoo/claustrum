@@ -81,6 +81,10 @@ func drain(ch <-chan streamFrame) {
 //	                        p.buffer, so the new connection gets it in the replay
 //	emit locks second    -> subs is ALREADY {new}, so the old connection is gone
 //
+// For a new connection reattach also takes its write lock before p.mu goes, so
+// an emit that locks second writes to it after the replay. This test checks
+// the old connection only, so it leaves that lock out.
+//
 // The assertion is therefore the seq-precise one — the old connection never sees
 // a seq ABOVE the transfer point — not "the old connection sees nothing more",
 // which would be wrong for a frame that legitimately predates the cut.
@@ -155,7 +159,7 @@ func TestReattachTransferHoldsUnderConcurrentEmit(t *testing.T) {
 		}()
 		time.Sleep(200 * time.Microsecond) // let the emitter get going
 
-		// The transfer, exactly as reattach performs it.
+		// The swap of p.subs, as reattach performs it, without the write lock.
 		p.mu.Lock()
 		lastSeq := p.seq
 		p.subs = map[*conn]struct{}{fresh: {}}

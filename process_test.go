@@ -433,12 +433,13 @@ func TestWriteStdinRejectsWhenFull(t *testing.T) {
 	defer func() { stdinQueueCap = old }()
 
 	pr, pw := io.Pipe()
-	defer pr.Close() // unblocks the parked writer so its goroutine exits
+	defer pr.Close() // fails the parked pipe Write, and the writer then waits for stdinDone
 	m := newTestProcManager(t)
 	p := &managedProc{id: "wf", subs: map[*conn]struct{}{}, stdin: pw}
 	p.stdinCond = sync.NewCond(&p.stdinMu)
 	m.procs["wf"] = p
 	go p.stdinWriter()
+	stopStdinWriter(t, p)
 
 	// First chunk: the writer dequeues it and parks inside pw.Write (pr is never
 	// read), leaving the queue empty but the writer busy so later writes accumulate.
@@ -470,10 +471,11 @@ func TestWriteStdinRejectsWhenFull(t *testing.T) {
 // write; enqueuing many more must still return promptly.
 func TestStdinIsAsync(t *testing.T) {
 	pr, pw := io.Pipe()
-	defer pr.Close() // unblocks the writer's pipe Write so its goroutine exits
+	defer pr.Close() // fails the writer's pipe Write, and the writer then waits for stdinDone
 	p := &managedProc{id: "async", subs: map[*conn]struct{}{}, stdin: pw}
 	p.stdinCond = sync.NewCond(&p.stdinMu)
 	go p.stdinWriter()
+	stopStdinWriter(t, p)
 
 	done := make(chan struct{})
 	go func() {
@@ -504,6 +506,7 @@ func TestStdinBackpressure(t *testing.T) {
 	p := &managedProc{id: "bp", subs: map[*conn]struct{}{}, stdin: pw}
 	p.stdinCond = sync.NewCond(&p.stdinMu)
 	go p.stdinWriter()
+	stopStdinWriter(t, p)
 
 	// The writer pulls the first chunk and parks inside pw.Write (pr is never
 	// read), so every later write accumulates in the queue.
@@ -545,6 +548,7 @@ func TestStdinSoleOverCapWriteAccepted(t *testing.T) {
 	p := &managedProc{id: "oc", subs: map[*conn]struct{}{}, stdin: pw}
 	p.stdinCond = sync.NewCond(&p.stdinMu)
 	go p.stdinWriter()
+	stopStdinWriter(t, p)
 
 	if p.enqueueStdin([]byte(strings.Repeat("x", 25))) { // 25 > cap 8, empty queue
 		t.Fatal("a sole over-cap write on an empty queue was rejected — the qBytes>0 exemption regressed")
@@ -564,6 +568,7 @@ func TestStdinExactCapFitAccepted(t *testing.T) {
 	p := &managedProc{id: "xf", subs: map[*conn]struct{}{}, stdin: pw}
 	p.stdinCond = sync.NewCond(&p.stdinMu)
 	go p.stdinWriter()
+	stopStdinWriter(t, p)
 
 	// First chunk: the writer dequeues it and parks inside pw.Write (pr is
 	// never read), leaving the queue empty but the writer busy.
@@ -576,8 +581,8 @@ func TestStdinExactCapFitAccepted(t *testing.T) {
 	}
 }
 
-// A write that lands after the writer finished (stdinDone — the child exited or
-// the pipe closed) is DROPPED, not reported as full: full=true would surface
+// A write that lands after the writer finished (stdinDone, set by the exit
+// goroutine) is DROPPED, not reported as full. full=true surfaces
 // -32002 instead. Before 90fca6e6 this arm also carried the exit-drain wart,
 // where stdin acked during the drain was dropped and the high-water mark still
 // advanced. 90fca6e6 refuses stdin inside the drain, so what is left here is the
@@ -604,6 +609,18 @@ func TestStdinAfterDoneIsDroppedNotFull(t *testing.T) {
 	if len(p.stdinQ) != 0 || p.stdinQBytes != stdinQueueCap {
 		t.Errorf("queue = %d chunks / %d bytes, want the write dropped and nothing counted", len(p.stdinQ), p.stdinQBytes)
 	}
+}
+
+// stopStdinWriter ends the writer goroutine at the end of the test. After a failed
+// write the writer waits for stdinDone, which the exit goroutine sets in production.
+func stopStdinWriter(t *testing.T, p *managedProc) {
+	t.Helper()
+	t.Cleanup(func() {
+		p.stdinMu.Lock()
+		p.stdinDone = true
+		p.stdinCond.Broadcast()
+		p.stdinMu.Unlock()
+	})
 }
 
 // waitStdinQueueEmpty polls until the writer has dequeued everything (it then
