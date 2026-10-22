@@ -241,7 +241,13 @@ func (u gitUse) shadow() bool {
 // offWorktreesRefusal after the listing of the add. 5fd08069 refuses there
 // with that text, and the listing in the repository is its last call (cell
 // C6b of rounds task105-04 and task105-06, Linux VM).
-func worktreeAdd(ctx context.Context, u gitUse, repo, leaf string, cp worktreeCheckpoint, args ...string) (string, error) {
+//
+// offMember is true for a create with "shadowDirOff":true and no copy. Its add
+// gets the same test after the listing. On 5fd08069 that listing comes after
+// `rev-parse --absolute-git-dir` and is the last call (cell C2off of round
+// tier3-02 on Linux, macOS and Windows VMs, and cell C2offJ on a Windows VM).
+// C2offK, a real folder, is the control.
+func worktreeAdd(ctx context.Context, u gitUse, repo, leaf string, cp worktreeCheckpoint, offMember bool, args ...string) (string, error) {
 	f, off := u.fixedForm(true)
 	_, named := f.names(repo)
 	if named && shadowStagesAdd {
@@ -253,9 +259,9 @@ func worktreeAdd(ctx context.Context, u gitUse, repo, leaf string, cp worktreeCh
 	}
 	named = named && shadowLinksWorktrees
 	cmd := hardenedGitCmd(ctx, f, repo, false, nil, args...)
-	if off && f.accepted != nil {
+	if offMember || (off && f.accepted != nil) {
 		if text := offWorktreesRefusal(repo); text != "" {
-			return "", &addNotPrepared{text: text}
+			return "", &addNotPrepared{text: text, offLink: true}
 		}
 	}
 	// A create that holds its git directory runs no `worktree add` when the
@@ -284,6 +290,17 @@ func worktreeAdd(ctx context.Context, u gitUse, repo, leaf string, cp worktreeCh
 		f.accepted.moved = true
 	}
 	return errBuf.String(), err
+}
+
+// offLinkListing runs one listing in repo in the form of an add (worktreeAdd),
+// with no add after it. A create in attach mode runs it after the refusal of
+// offWorktreesRefusal. In attach mode 5fd08069 runs two listings after
+// `rev-parse --absolute-git-dir` and then answers (cell C2offA of round
+// tier3-02, Linux and macOS VMs). The environment of the second listing is not
+// compared.
+func offLinkListing(ctx context.Context, u gitUse, repo string) {
+	f, _ := u.fixedForm(true)
+	hookPrecursor(ctx, f, repo, false)
 }
 
 // plainAddRefusal is the error of a `worktree add` that does not run, because
@@ -389,14 +406,14 @@ func (u gitUse) worktreesOpenRefusal() string {
 // no branch, and R/.claude/worktrees stays (cell C2 of round tier0-24, Linux
 // VM, and of round tier0-25m, macOS VM). An add that starts under a hold gets
 // the same text, with equal replies (cell C6b of round task105-04, Linux VM).
-// The folder is that of the git
-// directory that the trust check pins. claustrum's own, not measured: a file
-// at the name, and a daemon GIT_COMMON_DIR, with which git writes elsewhere.
-// Windows has no such test.
+// On Windows that path is not measured. A file at the name gets the same text
+// (cell C2offF of round tier3-02, Linux VM). On Windows a junction and a
+// directory symbolic link there get it too, and 5fd08069 removes the leaf it
+// made (cells C2off and C2offJ of round tier3-02, Windows VM). The folder is
+// that of the git directory that the trust check pins. claustrum's own, not
+// measured: a daemon GIT_COMMON_DIR, with which git writes elsewhere, and a
+// file there on Windows.
 func offWorktreesRefusal(repo string) string {
-	if !shadowLinksWorktrees {
-		return ""
-	}
 	t := gitDirTrustFor(repo)
 	if t.verdict != gitDirTrusted || t.pinCommonDir == "" {
 		return ""
