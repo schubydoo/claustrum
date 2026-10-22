@@ -75,7 +75,7 @@ A request can create four things outside the worktree, and no failure removes th
 - with `worktreeRoot`, the marker file `.claude-managed-worktrees` at the `<directory>` level
 - with `worktreeRoot`, the folder of a gone worktree that holds the root (`5fd08069`, cell C-W8 of round `tier0-20`, Linux VM)
 
-A request can also remove a stale registration of this worktree path before the add. On Linux and macOS that covers the main repository of a linked `baseRepo`. Two creates through a repository and its linked worktree add in turn (`5fd08069`, cell T1 of round `tier0-11`, Linux VM).
+A request can also remove a stale registration of this worktree path before the add. It looks in the common git directory of `baseRepo` (`5fd08069`, round `tier3-02`). Two creates through a repository and its linked worktree add in turn (`5fd08069`, cell T1 of round `tier0-11`, Linux VM).
 
 | Failure | What stays of the worktree |
 |---|---|
@@ -155,7 +155,7 @@ A copy that fails does not fail the request. If the deadline of `timeoutMs` expi
 | | Linux and macOS | Windows |
 |---|---|---|
 | A junction between `baseRepo` and the worktree | Does not apply. | Refused with `mkdir_failed`. |
-| A stale registration of the worktree path before the add | If it is the one stale entry and is not locked, the daemon removes it. | The daemon removes it with no such test, and ignores letter case (`5fd08069`, cells R-Q4i and R-Q4i2 of round `task084-01`). It keeps an entry whose record path exists (D27). Without a held git directory this is not measured. |
+| A stale registration of the worktree path before the add | If it is the one stale entry and is not locked, the daemon removes it. | The same rule (`5fd08069`, cells S1L and S1T of round `tier3-05`), after `rev-parse --absolute-git-dir`. The compare ignores letter case (cells R-Q4i and R-Q4i2 of `task084-01`, held git directory only). It keeps an entry whose record path exists (D27). |
 
 ## Differences from the reference
 

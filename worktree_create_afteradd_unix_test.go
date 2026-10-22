@@ -507,24 +507,22 @@ func TestWorktreeCreateStaleEntryOfMainRepository(t *testing.T) {
 	}
 }
 
-// TestStaleRegistryDir pins the folder of the stale entry step. Only a baseRepo
-// that is a linked worktree gets the folder of the main repository (cell V9 of
-// round tier0-10). A .git file of another kind keeps <baseRepo>/.git/worktrees,
-// which does not open, so a stale entry in the git directory that the file names
-// stays (not measured). The control is the same entry in the main repository of a
-// linked worktree, which goes.
+// TestStaleRegistryDir pins the folder of the stale entry step: `worktrees` of
+// the common git directory of baseRepo. A linked worktree gets the folder of the
+// main repository (cell V9 of round tier0-10). A separate git directory gets its
+// own folder (cell S1 of round tier3-02, Linux, macOS and Windows VMs). The
+// last two rows are not measured: they follow the commondir rule of git.
 func TestStaleRegistryDir(t *testing.T) {
 	for _, tc := range []struct {
 		name      string
 		admin     string // the folder that the .git file of baseRepo names, below the root
 		commondir string // the text of its commondir file, or "" for none
 		registry  string // the folder that holds the stale entry, below the root
-		goes      bool
 	}{
-		{"a linked worktree (cell V9)", "main/.git/worktrees/B", "../..\n", "main/.git/worktrees", true},
-		{"a separate git directory with no commondir", "sep", "", "sep/worktrees", false},
-		{"a git directory with a commondir whose parent is not worktrees", "mods/sub", ".\n", "mods/sub/worktrees", false},
-		{"a folder below worktrees with no commondir", "x/worktrees/sub", "", "x/worktrees/sub/worktrees", false},
+		{"a linked worktree (cell V9)", "main/.git/worktrees/B", "../..\n", "main/.git/worktrees"},
+		{"a separate git directory with no commondir (cell S1)", "sep", "", "sep/worktrees"},
+		{"a git directory with a commondir whose parent is not worktrees", "mods/sub", ".\n", "mods/sub/worktrees"},
+		{"a folder below worktrees with no commondir", "x/worktrees/sub", "", "x/worktrees/sub/worktrees"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			root := realTempDir(t)
@@ -539,12 +537,8 @@ func TestStaleRegistryDir(t *testing.T) {
 			entry := filepath.Join(root, filepath.FromSlash(tc.registry), "old")
 			writeFile(t, filepath.Join(entry, "gitdir"), leaf+"/.git\n", 0o644)
 			dropStaleWorktreeRegistration(repo, leaf, nil)
-			_, err := os.Lstat(entry)
-			if tc.goes && !os.IsNotExist(err) {
+			if _, err := os.Lstat(entry); !os.IsNotExist(err) {
 				t.Errorf("the stale entry stays (Lstat err %v), want it removed", err)
-			}
-			if !tc.goes && err != nil {
-				t.Errorf("the stale entry is gone: %v, want it kept", err)
 			}
 		})
 	}

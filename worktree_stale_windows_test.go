@@ -105,3 +105,168 @@ func TestStaleStepKeepsALiveRecord(t *testing.T) {
 		}
 	})
 }
+
+// The Windows step works on `worktrees` of the separate git directory that the
+// .git file of repo names. 5fd08069 removes the stale entry gd\worktrees\old
+// there, and the create succeeds (cell S1 of round tier3-02, Windows VM, 3
+// runs). Both forms of the step run: by the path, and through the held git
+// directory.
+func TestStaleStepOfSeparateGitDir(t *testing.T) {
+	setup := func(t *testing.T) (repo, gd, leaf, old string) {
+		root := t.TempDir()
+		repo, gd = filepath.Join(root, "repo"), filepath.Join(root, "gd")
+		mustWrite(t, filepath.Join(repo, ".git"), "gitdir: "+gd+"\n")
+		leaf = filepath.Join(repo, ".claude", "worktrees", "w1")
+		old = filepath.Join(gd, "worktrees", "old")
+		mustWrite(t, filepath.Join(old, "gitdir"), filepath.ToSlash(leaf)+"/.git\n")
+		return repo, gd, leaf, old
+	}
+	t.Run("by the path", func(t *testing.T) {
+		repo, _, leaf, old := setup(t)
+		if !dropStaleWorktreeRegistration(repo, leaf, nil) {
+			t.Error("the step reports no match, want one")
+		}
+		if exists(old) {
+			t.Error("the stale entry of the separate git directory stays, want it gone")
+		}
+	})
+	t.Run("through the held git directory", func(t *testing.T) {
+		repo, gd, leaf, _ := setup(t)
+		held := acceptGitDir(gd, gitDirIdentity(gd))
+		if held == nil {
+			t.Fatal("the separate git directory is not accepted")
+		}
+		t.Cleanup(held.release)
+		removals := recordHeldRemovals(t, held.info)
+		if !dropStaleWorktreeRegistration(repo, leaf, held) {
+			t.Error("the step reports no match, want one")
+		}
+		if got := strings.Join(*removals, ","); got != "worktrees/old held" {
+			t.Errorf("the step asked to remove %q, want the old registration of the held folder", got)
+		}
+	})
+}
+
+// The step by the path keeps a stale entry with a `locked` file, and both of
+// two stale entries. 5fd08069 does so in the separate git directory gd, and
+// the add then fails with the text of git (cells S1L and S1T of round
+// tier3-05, Windows VM, 3 runs each).
+func TestStaleStepByPathKeepsLockedAndTwinEntries(t *testing.T) {
+	setup := func(t *testing.T) (repo, gd, leaf string) {
+		root := t.TempDir()
+		repo, gd = filepath.Join(root, "repo"), filepath.Join(root, "gd")
+		mustWrite(t, filepath.Join(repo, ".git"), "gitdir: "+gd+"\n")
+		return repo, gd, filepath.Join(repo, ".claude", "worktrees", "w1")
+	}
+	t.Run("S1L", func(t *testing.T) {
+		repo, gd, leaf := setup(t)
+		old := filepath.Join(gd, "worktrees", "old")
+		mustWrite(t, filepath.Join(old, "gitdir"), filepath.ToSlash(leaf)+"/.git\n")
+		mustWrite(t, filepath.Join(old, "locked"), "t lock\n")
+		if !dropStaleWorktreeRegistration(repo, leaf, nil) {
+			t.Error("the step reports no match, want one")
+		}
+		if !exists(filepath.Join(old, "locked")) {
+			t.Error("the locked entry is gone, want it kept")
+		}
+	})
+	t.Run("S1T", func(t *testing.T) {
+		repo, gd, leaf := setup(t)
+		for _, name := range []string{"old", "old2"} {
+			mustWrite(t, filepath.Join(gd, "worktrees", name, "gitdir"), filepath.ToSlash(leaf)+"/.git\n")
+		}
+		if !dropStaleWorktreeRegistration(repo, leaf, nil) {
+			t.Error("the step reports no match, want one")
+		}
+		for _, name := range []string{"old", "old2"} {
+			if !exists(filepath.Join(gd, "worktrees", name, "gitdir")) {
+				t.Errorf("the entry %s is gone, want both kept", name)
+			}
+		}
+	})
+}
+
+// With a junction or a directory symbolic link at `.git\worktrees` to a folder
+// T with a stale entry `old` and a file MARK, 5fd08069 changes nothing in T
+// with "shadowDirOff":true (cells D1J and D1S of round tier3-05, Windows VM, 3
+// runs each). The step by the path lists nothing behind the link. The step
+// through the held git directory, with T inside it, does the same. That case
+// is claustrum's own, not measured.
+func TestStaleStepActsNothingBehindALink(t *testing.T) {
+	for _, kind := range []struct {
+		cell string
+		link func(*testing.T, string, string)
+	}{{"D1J", makeJunction}, {"D1S", makeDirSymlink}} {
+		t.Run(kind.cell+" by the path", func(t *testing.T) {
+			root := t.TempDir()
+			repo := filepath.Join(root, "repo")
+			leaf := filepath.Join(repo, ".claude", "worktrees", "w1")
+			target := filepath.Join(root, "wt")
+			mustWrite(t, filepath.Join(target, "old", "gitdir"), filepath.ToSlash(leaf)+"/.git\n")
+			mustWrite(t, filepath.Join(target, "MARK"), "mark\n")
+			if err := os.MkdirAll(filepath.Join(repo, ".git"), 0o755); err != nil {
+				t.Fatal(err)
+			}
+			kind.link(t, filepath.Join(repo, ".git", "worktrees"), target)
+			dropStaleWorktreeRegistration(repo, leaf, nil)
+			for _, p := range []string{filepath.Join(target, "old", "gitdir"), filepath.Join(target, "MARK")} {
+				if !exists(p) {
+					t.Errorf("%s behind the link is gone, want it kept", p)
+				}
+			}
+		})
+		t.Run(kind.cell+" through the held git directory", func(t *testing.T) {
+			f := newHeldFixture(t)
+			leaf := filepath.Join(f.repo, ".claude", "worktrees", "gone")
+			target := filepath.Join(f.gitDir, "T")
+			if err := os.Rename(filepath.Join(f.gitDir, "worktrees"), target); err != nil {
+				t.Fatal(err)
+			}
+			mustWrite(t, filepath.Join(target, "old", "gitdir"), filepath.ToSlash(leaf)+"/.git\n")
+			kind.link(t, filepath.Join(f.gitDir, "worktrees"), target)
+			if f.u.accepted.dropStaleRegistration(leaf) {
+				t.Error("the step reports a match behind the link, want none")
+			}
+			if len(*f.removals) != 0 {
+				t.Errorf("the step asked to remove %q behind the link, want nothing", *f.removals)
+			}
+		})
+	}
+}
+
+// On Windows the create runs the stale step after `rev-parse
+// --absolute-git-dir`, when the leaf folder is made. 5fd08069 removes the entry
+// there (cell S1 of round tier3-02 and cell D1K of round tier3-05, Windows VM).
+// The test reads the leaf when the step starts.
+func TestStaleStepRunsAfterTheLeafIsMade(t *testing.T) {
+	f := newWTFixture(t, false)
+	gone := filepath.Join(t.TempDir(), "old")
+	runGit(t, f.top, "worktree", "add", "-q", "-b", "oldb", gone)
+	if err := os.RemoveAll(gone); err != nil {
+		t.Fatal(err)
+	}
+	old := filepath.Join(f.regDir, "old")
+	mustWrite(t, filepath.Join(old, "gitdir"), filepath.ToSlash(f.leaf())+"/.git\n")
+	srv, _ := newSeededShadowServer(t)
+	prev := createStepHook
+	t.Cleanup(func() { createStepHook = prev })
+	ran, leafThere := false, false
+	createStepHook = func(at string) {
+		if at == "stale" {
+			ran, leafThere = true, exists(f.leaf())
+		}
+	}
+	raw, _ := f.create(t, srv, "w1", "", 0)
+	if !ran {
+		t.Fatalf("the step did not run with a held git directory, reply = %s", raw)
+	}
+	if !leafThere {
+		t.Error("the leaf folder is not there when the step starts, want it made first")
+	}
+	if !strings.Contains(raw, `"success":true`) {
+		t.Errorf("reply = %s\nwant success", raw)
+	}
+	if exists(old) {
+		t.Error("the stale entry stays, want it removed")
+	}
+}

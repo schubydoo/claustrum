@@ -209,19 +209,20 @@ Every OS serves the same JSON-RPC methods. Full internals →
     - When `git.worktree_create` rolls back a worktree, it deletes
       `worktreePath`. There are two rollbacks. After a failed `git worktree add`,
       it runs no git call and removes the leaf only if the leaf is an empty
-      directory. Before the add, on Linux and macOS, create removes one stale
-      entry of `<baseRepo>/.git/worktrees`. For a `baseRepo` that is a linked
-      worktree it is `worktrees` of the main repository
-      (`5fd08069`, cell V9 of round `tier0-10`, Linux VM). A stale
-      entry is one whose `gitdir` record names the `.git` of the new leaf. It removes that entry only if it is the
-      only stale entry of the folder (`89cb6289`, cells A13, A13b and S1 to S7c,
-      Linux and macOS VMs). The delete is one `os.Root.RemoveAll`
-      of the entry name through a root at that folder, after `wipesHomeDir` on
-      the entry path. An entry with a `locked` file stays (`89cb6289`, cells A9
-      and A9b, Linux and macOS VMs). On Windows that step has no `locked` test (not measured).
-      It is one `os.Root.RemoveAll` through the held git directory, or one
-      `os.RemoveAll` of the entry path for a create that holds none or holds
-      another folder than `<baseRepo>\.git`. Its compare ignores letter case,
+      directory. Before the add, create removes one stale entry of `worktrees`
+      in the common git directory of `baseRepo`. `5fd08069` does so in cell V9
+      of `tier0-10`, and in cells S1 (each system) and S1M (Linux) of
+      `tier3-02`.
+      A stale entry is one whose `gitdir` record names the `.git` of the new
+      leaf. It removes that entry only if it is the one stale entry with
+      no `locked` file. `89cb6289` does so in cells A9, A9b,
+      A13, A13b and S1 to S7c (Linux and macOS VMs), and `5fd08069` in cells
+      S1L and S1T of `tier3-05` (Windows VM). The delete is one
+      `os.Root.RemoveAll`, after `wipesHomeDir` on the entry path. It goes through a root at that folder, or the held git directory
+      when a Windows create holds it. On Windows the step runs after `rev-parse
+      --absolute-git-dir` (cell D1K). It deletes nothing behind a junction or
+      directory symbolic link at that folder (cells D1J and D1S, with
+      `"shadowDirOff":true`). Its compare ignores letter case,
       as on `5fd08069` (cells R-Q4i and R-Q4i2 of round `task084-01`, Windows VM).
       A create that holds no git directory is not measured there. An entry
       whose record names a path that exists stays (D27, cell W-CS of round
