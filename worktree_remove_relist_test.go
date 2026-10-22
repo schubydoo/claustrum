@@ -147,29 +147,46 @@ func TestRemoveSecondFailedListingRefuses(t *testing.T) {
 // first one fails, `git version` follows, and its text comes after the words of
 // the lock check. Nothing is removed. 5fd08069 shows it for a plain folder (cell
 // CaP3 of round tier3-17, Linux VM, an empty daemon GIT_CONFIG_KEY_0). The other
-// no-repository states are claustrum's own. Mutation: pass false for noRepo to removeListingCheck
-// in methods_git.go.
+// no-repository states are claustrum's own. The text of git 2.56 for a `.git`
+// file that names no valid repository gets one more listing and the lock-check
+// refusal (not measured, claustrum's own). Mutations: pass
+// false for noRepo to removeListingCheck in methods_git.go, or report final for
+// every noRepo listing in removeListingCheck.
 func TestRemoveListsOnceInPlainFolder(t *testing.T) {
-	f := newListingFixture(t)
-	base := t.TempDir()
-	requireTempOutsideCheckout(t, base)
-	wp := filepath.Join(base, ".claude", "worktrees", "w1")
-	if err := os.MkdirAll(wp, 0o755); err != nil {
-		t.Fatal(err)
-	}
-	keep := filepath.Join(wp, "keep.txt")
-	writeFile(t, keep, "k\n", 0o644)
-	failPlainListings(t, "128", "fatal: unable to parse command-line config", false)
-	raw, calls := f.call(t, "git.worktree_remove", map[string]any{"baseRepo": base, "worktreePath": wp})
-	want := `{"success":false,"error":` + jsonString(t, "failed to remove worktree: could not check whether "+wp+
-		" is locked: "+hooksRefusalPrefix+"exit status 128: fatal: unable to parse command-line config") + `}`
-	if got := replyPart(t, raw); got != want {
-		t.Errorf("remove = %s\nwant %s", got, want)
-	}
-	if got, w := relistCalls(calls), []string{"list", "version"}; !slices.Equal(got, w) {
-		t.Errorf("calls = %q\nwant %q", got, w)
-	}
-	if !exists(keep) {
-		t.Error("keep.txt went")
+	for _, tc := range []struct {
+		name, stderr string
+		want         func(wp string) string
+		calls        []string
+	}{
+		{"CaP3", "fatal: unable to parse command-line config", func(wp string) string {
+			return "failed to remove worktree: could not check whether " + wp + " is locked: " +
+				hooksRefusalPrefix + "exit status 128: fatal: unable to parse command-line config"
+		}, []string{"list", "version"}},
+		{"gitfile-nowhere", "fatal: gitfile does not point to a valid repository: /x/.git", lockCheckRefusal,
+			[]string{"list", "version", "list", "version"}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			f := newListingFixture(t)
+			base := t.TempDir()
+			requireTempOutsideCheckout(t, base)
+			wp := filepath.Join(base, ".claude", "worktrees", "w1")
+			if err := os.MkdirAll(wp, 0o755); err != nil {
+				t.Fatal(err)
+			}
+			keep := filepath.Join(wp, "keep.txt")
+			writeFile(t, keep, "k\n", 0o644)
+			failPlainListings(t, "128", tc.stderr, false)
+			raw, calls := f.call(t, "git.worktree_remove", map[string]any{"baseRepo": base, "worktreePath": wp})
+			want := `{"success":false,"error":` + jsonString(t, tc.want(wp)) + `}`
+			if got := replyPart(t, raw); got != want {
+				t.Errorf("remove = %s\nwant %s", got, want)
+			}
+			if got := relistCalls(calls); tc.calls != nil && !slices.Equal(got, tc.calls) {
+				t.Errorf("calls = %q\nwant %q", got, tc.calls)
+			}
+			if !exists(keep) {
+				t.Error("keep.txt went")
+			}
+		})
 	}
 }

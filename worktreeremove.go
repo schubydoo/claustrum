@@ -611,7 +611,10 @@ func repeatRepositoryCheck(u gitUse, repo string) {
 // noRepo is true when the trust check found no repository. Then no second
 // listing runs. 5fd08069 shows it for a plain folder (cell CaP3 of round
 // tier3-17, Linux VM, an empty daemon GIT_CONFIG_KEY_0). The other no-repository
-// states are claustrum's own.
+// states are claustrum's own. The text of git 2.56 for a `.git` file that names
+// no valid repository is not final: one more listing runs, and the answer is the
+// lock-check refusal, the answer before this step was built (not measured,
+// claustrum's own).
 //
 // The text of git 2.56 for a `.git` file that names no valid repository gets
 // `git version` first (not measured). Not measured, claustrum's own: a listing
@@ -625,7 +628,7 @@ func removeListingCheck(u gitUse, repo string, noRepo bool) (c configCheck, reli
 		return listingCheck(u, r, repo, true), false, false
 	}
 	if noRepo {
-		return listingCheck(u, r, repo, true), false, true
+		return listingCheck(u, r, repo, true), false, !r.saysGitFileNowhere()
 	}
 	if !r.saysNoRepository() {
 		if v := gitVersionRun(u, true); v.err != nil {

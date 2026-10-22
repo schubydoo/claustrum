@@ -21,7 +21,10 @@
   answers `could not check whether <p> is locked: <text of the failed listing>`,
   with equal texts in every cell. A second listing that says git finds no repository
   gets the lock-check refusal (claustrum's own, not measured). With no repository no
-  second listing runs (CaP3, a plain folder, else claustrum's own). Cells of
+  second listing runs (CaP3, a plain folder, else claustrum's own). The text of git
+  2.56 for a `.git` file that names no valid repository is the exception: one more
+  listing runs, and the answer is the lock-check refusal (claustrum's own, not
+  measured). Cells of
   `5fd08069`: F1, F1n, F2 and F3 on macOS and Linux, F1 and F2 on Windows. G08b and
   CaP3 on Linux (`tier3-17`), RMe-x1 of `task111-09` (Linux VM). Any other failed
   check runs once more, as on `f6010b97` (Linux and macOS VMs) and in row A5 of
