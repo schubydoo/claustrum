@@ -110,6 +110,12 @@ on that listing. Cells A1-e and B1-e of rounds `task111-01` and `task111-02`
 show it (Linux and macOS VMs). claustrum follows both (rounds `task111-03` and
 `task111-04`, Linux and macOS VMs).
 
+In `git.worktree_remove` a failed first listing in a repository is listed again,
+and the remove can go on (rounds `tier3-13`, `tier3-17` and `tier3-19`). Row G08
+of `f6010b97` answered the lock-check text there. In a plain folder `5fd08069`
+checks once (cell CaP0 of round `tier3-17`, Linux VM), where row A5 of `89cb6289`
+checked twice.
+
 ### `89cb6289d0e434f573cfc7267dd0cbb8c56ca298` — 2026-09-28 (built)
 
 Pinned by Claude Desktop 2.16120.0 for Windows and macOS. Its `-version` prints
@@ -157,6 +163,11 @@ rows are not part of the battery. The check
 found no new frame difference that a slice had not taken. Issue 429 lists its
 other differences. D20, D21, D22, D23 and D24 are new in this work, and D11 is
 retired. D2 gained its `-install` refusal of a home folder (PR 451).
+
+With nothing set and with an empty daemon `GIT_CONFIG_KEY_0`, `89cb6289` answered
+`could not check whether <worktreePath> is locked (its registrations could not be
+examined); retry`, and the folder and the file stayed (cells CaP0 and CaP3 on Linux
+and macOS VMs, CabP0 and CabP3 with a `branchName` on the Linux VM).
 
 ### `f6010b978a0b0f4ca0dcb7dadda9cc4271a608a1` — 2026-09-24 (observed)
 

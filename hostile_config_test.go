@@ -11,7 +11,8 @@ import (
 // value. The
 // frame is method-specific: -32603 for the read methods, a worktreeResult under
 // errorCode worktree_add_failed for create, and a "could not check whether … is
-// locked" message for remove. Measured byte-for-byte against 7d193f89 on a VM.
+// locked" message for remove. The read methods and create were measured
+// byte-for-byte against 7d193f89 on a VM. The remove follows 5fd08069 (see below).
 func TestHostileConfigRefusal(t *testing.T) {
 	requireGit(t)
 	repo := t.TempDir()
@@ -48,9 +49,14 @@ func TestHostileConfigRefusal(t *testing.T) {
 		t.Errorf("worktree_create on corrupt config = %s, want worktree_add_failed hostile", wc)
 	}
 
+	// The listing of this server reads the config of the repository, so the
+	// remove lists again and answers the refusal of the second listing. 5fd08069
+	// does so with "shadowDirOff":true (cell G08b of round tier3-17, Linux VM).
+	// Without the member it lists its settings copy and removes (cell G08a). This
+	// replaces the generic lock-check text of 7d193f89 and row G08 of f6010b97.
 	wr := dispatchRaw(t, s, rpcLine(t, "git.worktree_remove", map[string]any{"baseRepo": repo, "worktreePath": wt}))
-	if !strings.Contains(wr, "is locked (its registrations could not be examined); retry") {
-		t.Errorf("worktree_remove on corrupt config = %s, want the registrations message", wr)
+	if !strings.Contains(wr, "is locked: "+hostile) {
+		t.Errorf("worktree_remove on corrupt config = %s, want the hostile refusal of the second listing", wr)
 	}
 }
 

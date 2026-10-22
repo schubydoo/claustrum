@@ -4,8 +4,9 @@
 - Since `f6010b97` the git-directory trust check runs on `baseRepo` only, before
   git runs. Without `worktreeRoot` it runs after the containment tests, the
   look into `baseRepo` and the leaf check below. When the worktree directory exists, a
-  refused git directory and "no repository" both answer the lock-check refusal of
-  the [error-string catalog](../PROTOCOL.md#error-string-catalogue).
+  refused git directory answers the lock-check refusal of the
+  [error-string catalog](../PROTOCOL.md#error-string-catalogue), and so does "no
+  repository" unless its listing fails (cell CaP3).
   After a refusal the daemon deletes nothing. The worktree directory, its entry and
   its branch all stay. Damage to the entry of the worktree being removed does not
   stop the removal. See [Git-directory trust check](../PROTOCOL.md#git-directory-trust-check).
@@ -14,6 +15,21 @@
   <text>`, with no `; retry`. With `worktreeRoot` the text is the work-tree
   refusal below with `<text>` as the reason. See
   [Repository config refusals](../PROTOCOL.md#repository-config-refusals).
+- Without `worktreeRoot`, for a worktree directory that exists, a failed first
+  listing runs again, after `git version` unless it said `fatal: not a git
+  repository` with exit 128. Then the pair follows `rev-parse`. A second failure
+  answers `could not check whether <p> is locked: <text of the failed listing>`,
+  with equal texts in every cell. A second listing that says git finds no repository
+  gets the lock-check refusal (claustrum's own, not measured). With no repository no
+  second listing runs (CaP3, a plain folder, else claustrum's own). Cells of
+  `5fd08069`: F1, F1n, F2 and F3 on macOS and Linux, F1 and F2 on Windows. G08b and
+  CaP3 on Linux (`tier3-17`), RMe-x1 of `task111-09` (Linux VM). Any other failed
+  check runs once more, as on `f6010b97` (Linux and macOS VMs) and in row A5 of
+  `89cb6289`. `5fd08069` repeats in cell Q1 and not in FR and CaP0 (`tier3-17`,
+  Linux VM).
+- Row A-N4, a worktree directory that holds a file, with an empty key: `5fd08069`
+  answers the colon form (cell CaP3 of round `tier3-17`, Linux VM). claustrum
+  answers the same (from the code). Nothing is deleted. Windows is not measured.
 - A failed start test, a bad answer of the call about the repository, and a copy
   folder that cannot be made refuse the removal too. Nothing is deleted, and the
   text ends with `is locked: <text>`. If git names no repository in that call, the

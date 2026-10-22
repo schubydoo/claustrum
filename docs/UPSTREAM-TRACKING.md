@@ -519,6 +519,12 @@ traps that matter for telling drift from expected:
     config reads that `5fd08069` ends early.
   - On Windows, two reply texts of a create whose `.git` becomes a file
     `gitdir: <X>` while the create runs (Windows VM).
+- A remove with a worktree folder that exists lists again after a failed listing.
+  It answers the text of the failed listing or goes on (`5fd08069`, rounds
+  `tier3-13`, `tier3-17` and `tier3-19`). `f6010b97` answers the lock-check text
+  (row G08). In round `tier3-17` (Linux VM) claustrum makes one more listing and
+  `rev-parse` in cells CaP0 and FR with equal replies, and in cell CaP3 both answer
+  the colon form where `89cb6289` answered the lock-check text.
 - The reap of a child record with a `program` key splits the pins too, off the
   wire. claustrum follows `89cb6289`. `5fd08069` is not measured in these rows.
   On Linux, if the process runs `program` or
