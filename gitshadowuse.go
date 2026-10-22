@@ -241,8 +241,13 @@ func (u gitUse) shadow() bool {
 // offWorktreesRefusal after the listing of the add. 5fd08069 refuses there
 // with that text, and the listing in the repository is its last call (cell
 // C6b of rounds task105-04 and task105-06, Linux VM).
+//
+// The call holds the lock of the add step (lockWorktreeAddStep), so a remove in
+// the same git directory deletes no registration while it runs. On Windows the
+// lock also covers the staging steps (not measured).
 func worktreeAdd(ctx context.Context, u gitUse, repo, leaf string, cp worktreeCheckpoint, args ...string) (string, error) {
 	f, off := u.fixedForm(true)
+	defer lockWorktreeAddStep(repo)()
 	_, named := f.names(repo)
 	if named && shadowStagesAdd {
 		stderr, err := worktreeAddStaged(ctx, f, repo, leaf, cp, args...)

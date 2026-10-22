@@ -3974,13 +3974,13 @@ the Linux, macOS and Windows VMs of each row. `<b>` is `branchName` as sent.
   branches share a unique commit then leave one of the two branches. The reply that
   comes second carries the member. This holds for one `baseRepo` (rows R21, L, and
   B2-12, M) and through a linked worktree (row R21b, L).
-  The branch steps of different repositories run at the same time (row B2-08, L). The
-  rows do not tell a lock on the common dir from one on the main worktree. claustrum
-  keys the lock by the git dir of the entries, the common dir. That is claustrum's
-  choice (not measured). A create rollback takes the same lock (not measured).
-- claustrum still runs two requests with the same `baseRepo` one after the other,
-  as before. `89cb6289` deletes both worktree directories first (row R21, L). No frame
-  shows that difference.
+  The branch steps of different repositories run at the same time (row B2-08, L).
+  claustrum keys the lock by the common dir, also in a rollback (not measured).
+- claustrum runs two removes of one `baseRepo` one after the other.
+  `89cb6289` deletes both worktree directories first (row R21, L).
+- A remove deletes its leaf during the `worktree add` of a create in its git
+  directory. Its entry, branch and reply wait for the add, not the checkout
+  (`5fd08069`, round `tier3-02`, cell T3, L M, T3M and T3C, L).
 
 The remove frame never gains text from this step. A kept branch adds only
 `"branchKept":true`. Every kept case of steps 1 to 6 sets it on remove (rows R02,
