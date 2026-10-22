@@ -157,11 +157,17 @@ jobs:
           persist-credentials: false
 
       - name: Install Claude Code
-        # Pinned to an exact version so a new release cannot change a review run under us.
+        # Pinned by .github/claude-review/package-lock.json, with its integrity hashes, so
+        # a new release or a swapped package cannot change a review run under us. The
+        # lockfile comes from the base checkout, not the PR.
         run: |
           set -euo pipefail
-          npm install --global --no-fund --no-audit @anthropic-ai/claude-code@2.1.306
-          claude --version
+          # No install scripts run, except the one of Claude Code itself: it only copies
+          # the native binary out of the platform package that the lockfile pinned.
+          npm ci --prefix .github/claude-review --no-fund --no-audit --ignore-scripts
+          node .github/claude-review/node_modules/@anthropic-ai/claude-code/install.cjs
+          echo "${GITHUB_WORKSPACE}/.github/claude-review/node_modules/.bin" >> "$GITHUB_PATH"
+          .github/claude-review/node_modules/.bin/claude --version
 
       - name: Review
         id: review
