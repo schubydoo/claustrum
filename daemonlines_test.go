@@ -198,6 +198,44 @@ func TestShutdownByRPCLines(t *testing.T) {
 	}
 }
 
+// waitConnsExactly polls until s tracks n connections, with a 5 s limit.
+func waitConnsExactly(t *testing.T, s *server, n int) {
+	t.Helper()
+	deadline := time.Now().Add(5 * time.Second)
+	for {
+		got := s.connCount()
+		if got == n {
+			return
+		}
+		if time.Now().After(deadline) {
+			t.Fatalf("the daemon tracks %d connection(s), want %d", got, n)
+		}
+		time.Sleep(2 * time.Millisecond)
+	}
+}
+
+// TestShutdownCountKeepsAClosedStopConnection: one idle client, and a client that sends
+// server.shutdown and closes after the reply, before the cleanup. The cleanup line still
+// counts both connections, as 5fd08069 does (cell W-S2 of round tier3-01, Windows VM).
+func TestShutdownCountKeepsAClosedStopConnection(t *testing.T) {
+	s, sock := bootLineServer(t, false)
+	dial(t, sock) // the idle client
+	waitConnsExactly(t, s, 1)
+	buf := captureLogBuf(t)
+
+	stop := dial(t, sock)
+	reply := string(stop.call(`{"jsonrpc":"2.0","id":1,"method":"server.shutdown"}`))
+	if reply != `{"jsonrpc":"2.0","id":1,"result":{"ok":true}}` {
+		t.Fatalf("server.shutdown reply = %s", reply)
+	}
+	_ = stop.nc.Close()
+	waitConnsExactly(t, s, 1) // the stop connection left before the cleanup
+	s.closeAll(sock)
+
+	wantLinesInOrder(t, buf.String(),
+		"[Server] cleanup: closed 2 connection(s), killed 0 child process group(s)")
+}
+
 // TestShutdownLinesWithNoClient: no connection and no child give zeros (row ST03).
 func TestShutdownLinesWithNoClient(t *testing.T) {
 	s, sock := bootLineServer(t, false)
