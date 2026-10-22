@@ -1482,8 +1482,8 @@ func (m *procManager) reattach(c *conn, id string, fromSeq uint64) (p *managedPr
 	}
 	met.reattaches.Add(1)
 	// The write lock of c comes first, so no wait on a socket write holds p.mu.
-	// The lock order is c.wmu, then p.stdinMu, then p.mu. No path holds p.mu or
-	// p.stdinMu and then takes a wmu.
+	// It also comes first because applyStdin nests p.stdinMu over p.mu. No path
+	// holds p.mu or p.stdinMu and then takes a wmu.
 	if c != nil {
 		c.wmu.Lock()
 	}

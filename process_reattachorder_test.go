@@ -237,9 +237,12 @@ func TestReattachWaitingForAStuckWriterHoldsNoProcessLock(t *testing.T) {
 }
 
 // The cycle of a write lock, the stdin lock and the process lock. Reattach R of
-// a new connection is in its replay. Reattach D from another connection runs to
-// the end, so a second reattach R2 on the first connection is a new one again.
-// A process.stdin S comes next. R, R2 and S all return.
+// a new connection is in its replay. Reattach D from another connection runs on
+// its own goroutine, as in production. Once D has swapped the receivers, a second
+// reattach R2 on the first connection is a new one again. A process.stdin S comes
+// next. R, R2, S and D all return. The first connection has an activity wrapper,
+// so the supersede of D takes its write lock: the test does not depend on the
+// early return of supersede for a connection with no wrapper.
 func TestReattachPipelinedOnTheSameConnDoesNotDeadlock(t *testing.T) {
 	m := newTestProcManager(t)
 	p := &managedProc{id: "w2", subs: map[*conn]struct{}{}, running: true}
@@ -248,22 +251,36 @@ func TestReattachPipelinedOnTheSameConnDoesNotDeadlock(t *testing.T) {
 	m.procs["w2"] = p
 
 	c, _ := pipeConn(t)
+	c.ac = newActivityConn(c.nc)
 	d, _ := pipeConn(t)
+	dDone := make(chan struct{})
 	r2Done := make(chan struct{})
 	sDone := make(chan struct{})
 	old := afterReplaySnapshot
 	t.Cleanup(func() { afterReplaySnapshot = old })
 	afterReplaySnapshot = func(string) {
 		afterReplaySnapshot = old
-		m.reattach(d, "w2", 0) // D, to the end
+		go func() { m.reattach(d, "w2", 0); close(dDone) }() // D
+		// Wait until D has swapped the receivers to {d}.
+		deadline := time.Now().Add(3 * time.Second)
+		for {
+			p.mu.Lock()
+			_, swapped := p.subs[d]
+			p.mu.Unlock()
+			if swapped || time.Now().After(deadline) {
+				break
+			}
+			time.Sleep(time.Millisecond)
+		}
 		go func() { m.reattach(c, "w2", 0); close(r2Done) }()
 		waitHeld(&p.mu)
 		go func() { p.applyStdin([]byte("x"), nil, p.isLive); close(sDone) }()
 		waitHeld(&p.stdinMu)
 	}
-	within(t, "reattach R, reattach R2 and process.stdin S",
+	within(t, "reattach R, reattach R2, process.stdin S and reattach D",
 		func() { m.reattach(c, "w2", 0) },
 		func() { <-r2Done },
 		func() { <-sDone },
+		func() { <-dDone },
 	)
 }
