@@ -5,12 +5,12 @@ import (
 	"sync"
 )
 
-// worktreeRepoLocks serialises worktree operations per repository within this
-// daemon. A connection's requests dispatch concurrently, so two
-// git.worktree_create/_remove calls on the SAME repo could run at once and race on the
-// shared worktree state — `git worktree add`/`remove` and the bookkeeping under
-// .git/worktrees, including dropStaleWorktreeRegistration's non-atomic
-// readdir-then-remove. Different repositories keep running in parallel.
+// worktreeRepoLocks serialises git.worktree_remove per repository within this
+// daemon. A connection's requests dispatch concurrently, so two removes on the
+// SAME repo could run at once and race on the bookkeeping under .git/worktrees.
+// Different repositories keep running in parallel. A create does not take this
+// lock: a remove through the main repository deletes its leaf while the add of a
+// create runs (cell T3M of round tier3-02, Linux VM).
 //
 // This is an in-process sync.Mutex, not a filesystem lock: it serialises within one
 // daemon, not across daemons that share a repo. A single operation is byte-identical
@@ -26,34 +26,49 @@ func withWorktreeRepoLock(repo string, fn func() response) response {
 	return fn()
 }
 
-// worktreeCreateLocks serialises git.worktree_create per git directory. The lock
-// of withWorktreeRepoLock is keyed by baseRepo, so the main repository and a
-// linked worktree of it get two locks there. 5fd08069 runs a create through the
-// main repository and a create through a linked worktree of it one after the
-// other. With the first `worktree add` held for 2 s, the second add starts after
-// the first one ended, and both creates succeed (cell T1 of round tier0-11,
-// Linux VM, 3 of 3 runs). The key is that of the branch lock
+// worktreeCreateLocks serialises git.worktree_create per git directory. The main
+// repository and a linked worktree of it get one lock. 5fd08069 runs a create
+// through the main repository and a create through a linked worktree of it one
+// after the other. With the first `worktree add` held for 2 s, the second add
+// starts after the first one ended, and both creates succeed (cell T1 of round
+// tier0-11, Linux VM, 3 of 3 runs). The key is that of the branch lock
 // (worktreeGitDirKey). With a GIT_COMMON_DIR in the environment of the daemon
 // that key is <baseRepo>/.git, so the two creates get two locks (not measured).
 //
 // Two different repositories run at the same time, as on 5fd08069 (cell T2 of
-// round tier0-12, Linux VM). A remove does not take this lock. 5fd08069 answers a
-// remove through a linked worktree after the held add of a create, and claustrum
-// answers it during that add (cell T3 of the same round).
+// round tier0-12, Linux VM). A remove does not take this lock. It takes the
+// lock of the add step (lockWorktreeAddStep).
 var worktreeCreateLocks sync.Map // canonical git dir -> *sync.Mutex
 
 // withWorktreeCreateLock runs fn, a git.worktree_create, while it holds the
-// per-repo lock of repo and then the create lock of its git directory. The order
-// is always the per-repo lock, the create lock, the branch lock, so the three do
-// not deadlock.
+// create lock of the git directory of repo. The order is always the per-repo
+// lock of a remove, the create lock, the lock of the add step, the branch lock,
+// so they do not deadlock.
 func withWorktreeCreateLock(repo string, fn func() response) response {
-	return withWorktreeRepoLock(repo, func() response {
-		m, _ := worktreeCreateLocks.LoadOrStore(worktreeGitDirKey(repo), &sync.Mutex{})
-		mu := m.(*sync.Mutex)
-		mu.Lock()
-		defer mu.Unlock()
-		return fn()
-	})
+	m, _ := worktreeCreateLocks.LoadOrStore(worktreeGitDirKey(repo), &sync.Mutex{})
+	mu := m.(*sync.Mutex)
+	mu.Lock()
+	defer mu.Unlock()
+	return fn()
+}
+
+// worktreeAddLocks is the lock of the add step per git directory. A create holds
+// it while its `worktree add` runs (worktreeAdd). A remove holds it from the
+// delete of the registration to its reply, and not for the delete of the leaf.
+// 5fd08069 shows this order in round tier3-02 (cell T3 on Linux and macOS VMs,
+// cell T3M on a Linux VM): the leaf goes during a held add, and the
+// registration and the branch go after it, then the reply. A create held at its
+// read-tree checkout, after the add, does not delay a remove (cell T3C, Linux
+// VM). The key is that of the create lock (worktreeGitDirKey). A create takes no
+// branch lock while it holds this one.
+var worktreeAddLocks sync.Map // canonical git dir -> *sync.Mutex
+
+// lockWorktreeAddStep takes the lock of the add step of repo and returns its unlock.
+func lockWorktreeAddStep(repo string) func() {
+	m, _ := worktreeAddLocks.LoadOrStore(worktreeGitDirKey(repo), &sync.Mutex{})
+	mu := m.(*sync.Mutex)
+	mu.Lock()
+	return mu.Unlock
 }
 
 // worktreeGitDirKey is the key of the create lock and of the branch lock of repo:

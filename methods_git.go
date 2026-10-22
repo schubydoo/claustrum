@@ -2610,6 +2610,10 @@ func gitWorktreeRemoveLocked(req *request, p *gitParams, repo string) response {
 	// (probe rows K1 and K1b, battery row E13, row D-83 on a Windows VM). With one
 	// entry or two it does not (rows 12 and 11). claustrum runs that pair after the
 	// delete of the tree.
+	//
+	// The entry, the branch step and the reply wait for the `worktree add` of a
+	// create in the same git directory, and the tree does not (lockWorktreeAddStep).
+	defer lockWorktreeAddStep(repo)()
 	pending := ""
 	switch {
 	case !dropEntry:
@@ -2729,6 +2733,10 @@ func removeGoneWorktree(req *request, p *gitParams, repo, path string) response 
 	} else if msg, bad := daemonCountRefusal(); bad {
 		return lockCheck(msg)
 	}
+	// The registration, the branch step and the reply wait for the `worktree add`
+	// of a create in the same git directory (lockWorktreeAddStep). With no
+	// worktree folder that is not measured.
+	defer lockWorktreeAddStep(repo)()
 	if checkRegistration {
 		// Without worktreeRoot the registrations are those of registrationGitDir. If
 		// <git dir>/worktrees exists, the call log of 89cb6289 shows the pair of
