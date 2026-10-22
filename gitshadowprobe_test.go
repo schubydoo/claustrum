@@ -328,6 +328,48 @@ func TestProbeCeilingReplacesTheDaemonValue(t *testing.T) {
 	}
 }
 
+// TestProbeDropsFourNamesAndKeepsTheConfigCount: the call has none of the four
+// names of probeDropNames and keeps the daemon's GIT_CONFIG_COUNT and its pair.
+// The listing of the same request keeps all of them (cells C8, C8b, C8c and C8K
+// of round tier3-02, Linux, macOS and Windows VMs).
+func TestProbeDropsFourNamesAndKeepsTheConfigCount(t *testing.T) {
+	f := newSeededShadowFixture(t)
+	alt := t.TempDir()
+	set := []string{
+		"GIT_NAMESPACE=ns", "GIT_INDEX_FILE=" + filepath.Join(t.TempDir(), "index"),
+		"GIT_DISCOVERY_ACROSS_FILESYSTEM=1", "GIT_ALTERNATE_OBJECT_DIRECTORIES=" + alt,
+	}
+	count := []string{"GIT_CONFIG_COUNT=1", "GIT_CONFIG_KEY_0=claustrum.probetest", "GIT_CONFIG_VALUE_0=1"}
+	for _, kv := range append(slices.Clone(set), count...) {
+		k, v, _ := strings.Cut(kv, "=")
+		t.Setenv(k, v)
+	}
+	_, calls := f.info(t, f.repo, nil)
+	probes := probeCalls(calls)
+	if len(probes) != 1 {
+		t.Fatalf("%d calls about the repository, want 1", len(probes))
+	}
+	for _, kv := range set {
+		if v, ok := lookupExact(probes[0].env, envName(kv)); ok {
+			t.Errorf("the call keeps %s=%q", envName(kv), v)
+		}
+	}
+	for _, kv := range count {
+		if !slices.Contains(probes[0].env, kv) {
+			t.Errorf("the call lost %s", kv)
+		}
+	}
+	i := slices.IndexFunc(calls, envCall.listing)
+	if i < 0 {
+		t.Fatal("no listing")
+	}
+	for _, kv := range append(slices.Clone(set), count...) {
+		if !slices.Contains(calls[i].env, kv) {
+			t.Errorf("the listing lost %s", kv)
+		}
+	}
+}
+
 // probeErrorShapes are the reply of each method of fiveRequests to the error
 // text of the call, in that order (cells 38 and 39 of s3p2b-edges-linux2, Linux
 // VM): the error object on git.info, git.status and git.list_branches, the
