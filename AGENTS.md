@@ -28,9 +28,9 @@ daemon. The wire surface is the product.
   below 1.27. The default `jsonv2` in 1.27 moves inherited wire bytes, so build
   and CI resolve Go from `go.mod`, never from `go-version: stable`. See
   [`docs/UPSTREAM-TRACKING.md`](docs/UPSTREAM-TRACKING.md) → toolchain-induced
-  drift. One dependency is cross-platform:
-  `github.com/klauspost/compress` (zstd). Two more go into Windows builds only:
-  `golang.org/x/sys` and `github.com/Microsoft/go-winio`.
+  drift. Every build has `github.com/klauspost/compress` (zstd) and
+  `golang.org/x/sys` (its `unix` or `windows` package).
+  `github.com/Microsoft/go-winio` is Windows-only.
 - In-repo tests cover the wire surface two ways: fast unit tests, and a
   socket-integration suite (`harness_test.go` + `integration*_test.go`). The
   suite boots the daemon on a temp `AF_UNIX` socket. It asserts the frames of
@@ -76,8 +76,8 @@ Every OS serves the same JSON-RPC methods. Full internals →
   [`docs/PROTOCOL.md`](docs/PROTOCOL.md), or in the page of its method under
   `docs/protocol/`. Call it out in the PR.
 - Do not add a new dependency without discussion. The permitted set is
-  stdlib + zstd (`klauspost/compress`) + `golang.org/x/sys` and
-  `github.com/Microsoft/go-winio` (both Windows-only), with `CGO_ENABLED=0`.
+  stdlib + zstd (`klauspost/compress`) + `golang.org/x/sys` (all OSes) and
+  `github.com/Microsoft/go-winio` (Windows-only), with `CGO_ENABLED=0`.
 - Never add telemetry.
 - Cross-platform parity is a rule. Keep OS specifics in `*_unix.go` /
   `*_windows.go`. `make all` must cross-compile cleanly for all six targets.

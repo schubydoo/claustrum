@@ -17,10 +17,9 @@ import (
 // parent, the 7d193f89 failure reads `mkdirat <leaf>: <errno>`. The leaf is the
 // basename with no directory. A plain os.Mkdir renders `mkdir <full path>`. That string is wire-visible in
 // the mkdir_failed frame, so reproduce the `mkdirat <leaf>` wording by re-wrapping
-// the underlying errno with the leaf name. (stdlib syscall.Mkdirat is linux-only
-// and golang.org/x/sys is a Windows-only dependency here, so this rewraps rather
-// than issuing the mkdirat syscall; the created directory and the errno are
-// identical.) The leaf asks for mode 0777, and the umask applies. f6010b97 makes
+// the underlying errno with the leaf name. (This file is `//go:build unix`, and
+// stdlib syscall.Mkdirat is linux-only, so this rewraps rather than issuing the
+// mkdirat syscall. The created directory and the errno are identical.) The leaf asks for mode 0777, and the umask applies. f6010b97 makes
 // its leaf with this mode on Linux and macOS VMs, both run at umask 0000.
 func mkdirWorktreeLeaf(worktreePath string) error {
 	if err := os.Mkdir(worktreePath, 0o777); err != nil {
