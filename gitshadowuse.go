@@ -405,8 +405,8 @@ func (u gitUse) worktreesOpenRefusal() string {
 // place`. It runs no `worktree add`, makes nothing behind the link and leaves
 // no branch, and R/.claude/worktrees stays (cell C2 of round tier0-24, Linux
 // VM, and of round tier0-25m, macOS VM). An add that starts under a hold gets
-// the same text, with equal replies (cell C6b of round task105-04, Linux VM).
-// On Windows that path is not measured. A file at the name gets the same text
+// the same text, with equal replies (cell C6b of round task105-04, Linux VM;
+// the same path on Windows is not measured). A file at the name gets the same text
 // (cell C2offF of round tier3-02, Linux VM). On Windows a junction and a
 // directory symbolic link there get it too, and 5fd08069 removes the leaf it
 // made (cells C2off and C2offJ of round tier3-02, Windows VM). The folder is
