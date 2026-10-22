@@ -231,10 +231,11 @@ func TestGitStatusMissingIndex(t *testing.T) {
 // Rows K1, n12, o17 and o16b1: the files of the temporary git folder.
 func TestStatusGitDirContents(t *testing.T) {
 	entry, common := t.TempDir(), t.TempDir()
+	shared := "sharedindex." + strings.Repeat("a", 40)
 	for name, body := range map[string]string{
 		"HEAD": "ref: refs/heads/w\n", "index": "idx", "commondir": "../..\n", "gitdir": "x\n",
 		"ORIG_HEAD": "o\n", "logs/HEAD": "l\n", "config.worktree": "[core]\n\tsparseCheckout = true\n",
-		"info/sparse-checkout": "/*\n", "info/exclude": "e\n", "sharedindex.abc": "shared",
+		"info/sparse-checkout": "/*\n", "info/exclude": "e\n", shared: "shared",
 	} {
 		writeFile(t, filepath.Join(entry, filepath.FromSlash(name)), body, 0o644)
 	}
@@ -264,14 +265,14 @@ func TestStatusGitDirContents(t *testing.T) {
 		return names
 	}
 	// Row o17, with the sharedindex file of row o16b1.
-	want := []string{"HEAD", "commondir", "config.worktree", "index", "info/sparse-checkout", "sharedindex.abc"}
+	want := []string{"HEAD", "commondir", "config.worktree", "index", "info/sparse-checkout", shared}
 	full := statusEntryAt(t, entry)
-	full.shared, full.hasConfig = []string{"sharedindex.abc"}, true
+	full.shared, full.hasConfig = []string{shared}, true
 	if got := list(full); !slices.Equal(got, want) {
 		t.Errorf("temporary folder holds %q\nwant %q", got, want)
 	}
 	// Row K1: an entry with none of the three holds HEAD, commondir and index.
-	for _, name := range []string{"config.worktree", "info/sparse-checkout", "sharedindex.abc"} {
+	for _, name := range []string{"config.worktree", "info/sparse-checkout", shared} {
 		if err := os.Remove(filepath.Join(entry, filepath.FromSlash(name))); err != nil {
 			t.Fatal(err)
 		}
