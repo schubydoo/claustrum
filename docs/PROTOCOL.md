@@ -3209,13 +3209,16 @@ the read of the user's excludes.
    refuses it. A FIFO
    answers `isRepo:false` with no wait (row o15b). An `index` of 1 GiB + 1 answers
    `isRepo:false`, and exactly 1 GiB passes (rows o15c and o15e). A missing
-   `index` passes (row o15d). On `5fd08069` a sum of all `sharedindex.*` files over
-   2 GiB answers `isRepo:false`. A name with 40 hex digits is bound at 1 GiB and
-   copied. The names `x` and `ab` get neither step (cells R3a to R3d, R3f to
-   R3h and R3K, rounds `tier3-02` and `tier3-04`, Linux VM). On `89cb6289` an
+   `index` passes (row o15d). On `5fd08069` a sum of the `index` and all
+   `sharedindex.*` files over 2 GiB answers `isRepo:false`, and exactly 2 GiB passes.
+   A name with 40 hex digits is bound at 1 GiB and copied. A symlink there passes and
+   is not copied (cells F and G, rounds `tier3-20` and `tier3-23`, Linux VM). The
+   names `x` and `ab` get neither step, and `x` counts in the sum (cells R3a to R3d,
+   R3f to R3h and R3K, rounds `tier3-02` and `tier3-04`, and cells A to D and C1 of
+   round `tier3-20`, Linux VM). On `89cb6289` an
    `index` of 1 GiB beside a `sharedindex.x` of 1 GiB + 1 answers `isRepo:false`
    (row o16, Linux VM). claustrum's own, not measured on `5fd08069`: the two steps
-   for 64 hex digits, `index` in the sum and a sum of exactly 2 GiB.
+   for 64 hex digits, and the skip of a hex FIFO.
 10. The `config.worktree` file of the entry. A missing file passes. A folder, a FIFO
     and a syntax error answer `isRepo:false`, with no wait on the FIFO (rows n14,
     n14b and n14c).

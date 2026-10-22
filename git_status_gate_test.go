@@ -391,8 +391,8 @@ func TestGitStatusIndexSizeBound(t *testing.T) {
 		t.Errorf("o15e index at the bound = %s\nwant %s", got, statusClean)
 	}
 	// Row o16 (89cb6289, Linux VM): an index at the bound beside a sharedindex.x over it
-	// refuses. On 5fd08069 whether the index counts in the sum is not measured.
-	// claustrum counts it.
+	// refuses. On 5fd08069 the index counts in the sum (cells C1 and D of round tier3-20,
+	// Linux VM).
 	f.write(t, "sharedindex.x", string(bytes.Repeat([]byte{0}, len(index)+1)))
 	if got := f.status(t); got != statusNotRepo {
 		t.Errorf("o16 sharedindex.x beside the index = %s\nwant %s", got, statusNotRepo)
@@ -406,7 +406,8 @@ func TestGitStatusIndexSizeBound(t *testing.T) {
 	}
 }
 
-// Cells R3a, R3b, R3d and R3K of rounds tier3-02 and tier3-04 (Linux VM), with the
+// Cells R3a, R3b, R3d and R3K of rounds tier3-02 and tier3-04 and cell C of round
+// tier3-20 (Linux VM), with the
 // bounds shrunk to a unit far above the size of the index: other sharedindex names
 // over the bound of one file, a sum of 40-hex files over the bound of the sum, and one
 // 40-hex file at the bound of one file.
@@ -457,6 +458,13 @@ func TestGitStatusSharedIndexBudget(t *testing.T) {
 		t.Errorf("R3b sum over the bound = %s\nwant %s", got, statusNotRepo)
 	}
 	remove(hexB, hexC)
+
+	// Cell C of round tier3-20 (Linux VM): a sum of exactly the bound passes.
+	f.write(t, hexB, zeros(unit-len(index)))
+	if got := f.status(t); got != statusClean {
+		t.Errorf("sum at the bound = %s\nwant %s", got, statusClean)
+	}
+	remove(hexB)
 
 	copied = nil
 	if got := f.status(t); got != statusClean {

@@ -58,10 +58,10 @@ const (
 // statusIndexMaxBytes bounds the `index` of an entry. Exactly 1 GiB is copied (row
 // o15e), and one byte more answers isRepo:false with no temporary folder (row o15c,
 // Linux VM).
-// The same bound holds for a `sharedindex.` name with 40 hex digits (cells R3K and R3f
-// of rounds tier3-02 and tier3-04, Linux VM). For 64 hex digits, `info/sparse-checkout`
-// and each reftable file it is claustrum's own, not measured. (var, not const, so
-// tests can shrink it.)
+// The same bound holds for a regular file with a `sharedindex.` name of 40 hex digits
+// (cells R3K and R3f of rounds tier3-02 and tier3-04, Linux VM). For 64 hex digits,
+// `info/sparse-checkout` and each reftable file it is claustrum's own, not measured.
+// (var, not const, so tests can shrink it.)
 var statusIndexMaxBytes int64 = 1 << 30
 
 // statusConfigKeys are the keys a `config.worktree` of an entry can hold. A file with
@@ -541,31 +541,40 @@ func statusHeadValid(b []byte) bool {
 	return isObjectID(s)
 }
 
-// statusIndexSumMaxBytes bounds the sum of the sizes of the `sharedindex.*` files of
-// an entry, whatever their names. Over 2 GiB answers isRepo:false on 5fd08069 (cells
-// R3b, R3c, R3g and R3h of rounds tier3-02 and tier3-04, Linux VM). On 89cb6289 an
-// `index` of 1 GiB beside a `sharedindex.x` of 1 GiB + 1 answers isRepo:false (row
-// o16, Linux VM). On 5fd08069 whether the `index` counts in the sum is not measured.
-// claustrum counts it. A sum of exactly 2 GiB passes, and the reftable files do not
-// count (claustrum's own, not measured). (var, not const, so tests can shrink it.)
+// statusIndexSumMaxBytes bounds the sum of the sizes of the `index` and the
+// `sharedindex.*` files of an entry, whatever their names. On 5fd08069 a sum of
+// exactly 2 GiB passes, and 2 GiB + 1 answers isRepo:false. The `index` and
+// `sharedindex.x` count (cells B, C, C1 and D of round tier3-20, Linux VM). The sum rule
+// also holds in cells R3b, R3c, R3g and R3h of rounds tier3-02 and tier3-04 (Linux VM).
+// On 89cb6289
+// an `index` of 1 GiB beside a `sharedindex.x` of 1 GiB + 1 answers isRepo:false (row
+// o16, Linux VM). The reftable files do not count (claustrum's own, not measured).
+// (var, not const, so tests can shrink it.)
 var statusIndexSumMaxBytes int64 = 2 << 30
 
 // statusIndexFiles tests the `index` and each `sharedindex.*` file of the entry
 // before the temporary folder exists, and returns the names to copy. A file that is
-// missing passes (row o15d). A symlink to a regular file inside the entry passes (row
-// o15a). The sum of the sizes over statusIndexSumMaxBytes fails.
+// missing passes (row o15d). An `index` that is a symlink to a regular file inside the
+// entry passes (row o15a). The sum of the sizes over statusIndexSumMaxBytes fails.
 //
 // The `index` and a `sharedindex.` name with 40 or 64 hex digits of either case get
-// the bound of one file. One that is not a regular file fails with no wait (row o15b,
-// a FIFO), and so does one over statusIndexMaxBytes (row o15c, and cell R3f of round
-// tier3-04, Linux VM, 40 digits). Only those names are copied (cells R3K and R3d).
-// For 64 digits both steps are claustrum's own, not measured.
+// the bound of one file. An `index` that is not a regular file fails with no wait (row
+// o15b, a FIFO). One over statusIndexMaxBytes fails (row o15c, and cell R3f of round
+// tier3-04, Linux VM, 40 digits). Only the hex names are copied (cells R3K and R3d,
+// and cell A of round tier3-20, Linux VM). For 64 digits both steps are claustrum's
+// own, not measured.
+//
+// A hex name that Lstat does not read as a regular file is skipped in the copy and in
+// the sum. On 5fd08069 a 40-hex name that is a symlink passes and is not copied (cells F
+// and G, rounds tier3-20 and tier3-23, Linux VM). A hex FIFO is skipped too, and so is
+// a 64-hex symlink (claustrum's own, not measured).
 //
 // Any other `sharedindex.` name, as `sharedindex.x` or `sharedindex.ab`, of 1 GiB + 1
 // passes on 5fd08069 and is not copied (cells R3a and R3d of rounds tier3-02 and
 // tier3-04, Linux VM). It counts in the sum only. The case of the hex digits is
-// claustrum's own, not measured. So is the skip of such a name that is not a regular
-// file.
+// claustrum's own, not measured. Such a name that Stat cannot read as a regular file,
+// for example a dangling or escaping symbolic link, adds nothing to the sum
+// (claustrum's own, not measured).
 func statusIndexFiles(root *os.Root) ([]string, bool) {
 	names, err := statusDirNames(root, ".")
 	if err != nil {
@@ -579,7 +588,9 @@ func statusIndexFiles(root *os.Root) ([]string, bool) {
 			continue
 		}
 		if isObjectID(rest) {
-			shared = append(shared, name)
+			if fi, err := root.Lstat(name); err == nil && fi.Mode().IsRegular() {
+				shared = append(shared, name)
+			}
 			continue
 		}
 		if fi, err := root.Stat(name); err == nil && fi.Mode().IsRegular() {
