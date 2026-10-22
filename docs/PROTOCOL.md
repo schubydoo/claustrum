@@ -5630,11 +5630,11 @@ Checksum and verify ordering:
   refused connection and a missing source all leave it. That matches the
   reference: on every measured build from `5db5e4a` for `-cli-zst`, and on
   `f6010b97` for `-cli-url` and a missing source. Measured on a Linux VM.
-- The folder that claustrum creates is the cleaned cli-dir path. For
-  `-cli-dir <dir>/sub/..` that is `<dir>`, so it makes no folder `sub`. That is
-  a code fact. `89cb6289` creates `<dir>/sub` (mode `0700`), when no folder
-  `sub` exists before the run (Linux cell HS10b, three runs). In that cell
-  claustrum refuses at the home guard, and no folder `sub` exists after the run.
+- On Linux and macOS the `-cli-dir` text is used as given for the folder step,
+  also on a cache hit (measured on Linux only). So `-cli-dir <dir>/sub/..` makes
+  `<dir>/sub` (mode `0700`). Windows makes nothing there. `5fd08069` does the
+  same (round `tier3-01`, cells L-HS10b, L-V1, L-V2, L-V3, M-HS10b, W-HS10b and
+  W-V1).
 
 One opt-in wall-clock bound exists, and it is off by default, so a stock
 claustrum does not apply it. The other `-install` clocks in this paragraph are
@@ -5810,7 +5810,8 @@ Staging and cleanup:
     - The 7 day sweep runs once before any CLI runs. On a good cache hit only
       that sweep runs (cell L9). The 10 minute sweep runs before the run of a
       new CLI and after a failed attempt. It also runs after a cache hit whose
-      run was stopped (cell P6 of `89cb6289`).
+      run was stopped (cell P6 of `89cb6289`), and after a failed raw folder
+      step (claustrum's own, not measured).
     - The names match the letter case, and a future mtime is not old
       (claustrum's own, not measured on `5fd08069`).
     - A concurrent install can reclaim a staging file only once it is more

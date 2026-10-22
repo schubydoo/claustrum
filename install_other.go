@@ -13,3 +13,7 @@ func probeCLIPathMissing(string) bool { return false }
 
 // renameDenied is false off Windows: the rename of the new CLI runs once.
 func renameDenied(error) bool { return false }
+
+// rawCLIDirStep turns on the folder step of makeCLIDir. Linux and macOS make the
+// folders of the raw -cli-dir text (cells L-HS10b, L-V1, L-V2, L-V3 and M-HS10b of round tier3-01).
+const rawCLIDirStep = true
