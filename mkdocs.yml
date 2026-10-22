@@ -93,6 +93,7 @@ nav:
       - files.extract_tar: protocol/files-extract-tar.md
       - git.list_branches: protocol/git-list-branches.md
       - git.worktree_create: protocol/git-worktree-create.md
+      - git.worktree_remove: protocol/git-worktree-remove.md
       - process.stdin: protocol/process-stdin.md
       - process.killAndWait: protocol/process-killandwait.md
       - process.reattach: protocol/process-reattach.md

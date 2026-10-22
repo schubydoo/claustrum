@@ -32,7 +32,7 @@ layout. See
 
 Noun. Containment is the rule that a path must be inside a given directory.
 For example, `worktreePath` must be inside `baseRepo` and not equal to it. See
-[`git.worktree_remove`](PROTOCOL.md#gitworktree_remove).
+[`git.worktree_remove`](protocol/git-worktree-remove.md).
 
 ## daemon folder
 
