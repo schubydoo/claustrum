@@ -858,14 +858,14 @@ cell C-… is of round `tier0-20` against `5fd08069` on a Linux VM.
 | git.* | `config-defined hooks could not be pinned off; git not run: inherited GIT_CONFIG pair <n> is incomplete` | in the frame of each method, when a pair below the daemon's `GIT_CONFIG_COUNT` is not set. See "The daemon's own git environment" |
 | git.* | `config-defined hooks could not be pinned off; git not run: listing the configuration in force: exit status 128: <git text>` | in the frame of each method, for a `GIT_CONFIG_KEY_<n>` of the daemon that git cannot read. A folder that holds no repository gets it too. `89cb6289` answers so in rows A-N1 to A-N6, A-N5b, A-S1 and A-X2 on Linux and macOS VMs, except row A-N5 on macOS. On a Windows VM the cells are P3-infoN, P3-infoX, P3-lbN, P3-statN, P3-crN, P3-rmN and Wf-P3-crNroot. See "The daemon's own git environment" |
 | git.* | `config-defined hooks could not be pinned off; git not run: listing the configuration in force: fork/exec <git.exe path>: The directory name is invalid.` | Windows only. In the frame of `git.info`, `git.list_branches`, `git.status` and `git.worktree_create`. The `path` of the first two, or the `baseRepo` of the last two, exists and git cannot start in it. That is a regular file, a file symlink (measured for `git.info` only) or a folder with a path of 296 characters (measured for `git.info` only). `89cb6289` answers so on a Windows VM: in cells A-01 to A-04, A-04b2 and A-06 for a regular file, in cell A-10 for the symlink and in cell A-13 for the folder. The path `NUL` and a file name with one more dot at its end get it too (measured for `git.info` only, cells Wc). See "Git-directory trust check" |
-| git.* | `git cannot run on this host; git not run: <exec error>: <git text>` | in the frame of each method (see the table in "Git-directory trust check" for `git.worktree_remove`), when the configuration listing fails and `git version` fails too. The exec error and the text are those of `git version`. Row A-T1 and cells C-d and C-g show that on Linux and macOS VMs, and cell C-h on a Linux VM. Cells P11-infoN, P11-infoT, A-14, Wa-infoF, Wa-lbN, Wa-statN and Wa-crN show it on a Windows VM. See "Git-directory trust check" (`89cb6289`). On `5fd08069` also after a failed call 7 of [the start test](#the-start-test) or a failed [call about the repository](#the-call-about-the-repository) that is not a "no repository" answer |
+| git.* | `git cannot run on this host; git not run: <exec error>: <git text>` | in the frame of each method (see the table in "Git-directory trust check" for `git.worktree_remove`), when the configuration listing fails and `git version` fails too. The exec error and the text are those of `git version`. Row A-T1 and cells C-d and C-g show that on Linux and macOS VMs, and cell C-h on a Linux VM. Cells P11-infoN, P11-infoT, A-14, Wa-infoF, Wa-lbN, Wa-statN and Wa-crN show it on a Windows VM. See "Git-directory trust check" (`89cb6289`). On `5fd08069` also after a failed call 7 of [the start test](#the-start-test) and see [the call about the repository](#the-call-about-the-repository) |
 | git.* | `this repository's git config cannot be used: <detail>` | -32603 on `git.info`, `git.status` and `git.list_branches`, and in the frame of `git.worktree_create` and `git.worktree_remove`. Since `5fd08069`. The details are in [Repository config refusals](#repository-config-refusals) |
 | git.* | `a file in this repository's .git directory cannot be used: <detail>` | The same frames. See [Repository config refusals](#repository-config-refusals) |
 | git.* | `Claude could not test git on the remote machine (<cause>). Check free disk space and quota there, then try again.` | -32603 on `git.info`, `git.status` and `git.list_branches`, and in the frame of `git.worktree_create` and `git.worktree_remove`. Since `5fd08069`. See [The settings copy](#the-settings-copy) |
 | git.* | `Claude could not prepare its own files on the remote machine: cannot write its copy of the repository's git config: <cause>` | The same frames. The daemon cannot make the folder of the copy |
 | git.* | `Claude could not prepare its own files on the remote machine: git is running in 128 repositories at once; try again` | The same frames. See [The settings copy](#the-settings-copy) |
 | git.* | `Claude could not prepare its own files on the remote machine: its copy of this repository's settings was cleared away before git started; try again` | The same frames. Measured on `git.status` only. From the code: a checkout puts it after `git worktree add failed (checkout): `. See [The settings copy](#the-settings-copy) |
-| git.* | `git could not check this repository on the remote machine: at "<root>": exit status <n>` | The same frames, for a failed call about the repository. After a failure with a text, the text of git stands in the place of `exit status <n>` (one line in the cell) |
+| git.* | `git could not check this repository on the remote machine: at "<root>": exit status <n>` | The same frames, for a failed call about the repository. See [The call about the repository](#the-call-about-the-repository) |
 | git.* | `git could not check this repository on the remote machine: it did not finish within 30 seconds in "<root>"; try again` | The same frames, for a call about the repository that the daemon ended |
 | git.* | `git and Claude disagree about which repository holds this folder: from "<root>" git finds "<path>", Claude finds "<git directory>"; try again` | The same frames, for a call about the repository that names another path |
 | git.* | `config-defined hooks could not be pinned off; git not run: listing the configuration in force: a configuration key is longer than the listing reads` | in the frame of each method (see the table in "Git-directory trust check" for `git.worktree_remove`), for a configuration key over 1048576 bytes. `89cb6289` measured `git.info`. See "Hardened git calls" |
@@ -2340,7 +2340,8 @@ config read and the calls of the method. The call is `rev-parse --git-dir` with 
 `-c` items, in the root of the work tree. It names a folder `.probe` of the daemon.
 It drops the daemon's `GIT_NAMESPACE`, `GIT_INDEX_FILE`, `GIT_DISCOVERY_ACROSS_FILESYSTEM`
 and `GIT_ALTERNATE_OBJECT_DIRECTORIES`, and keeps its `GIT_CONFIG_COUNT` pairs (round
-`tier3-02`, the three systems).
+`tier3-02`, the three systems). So a pair that git reads to find the repository, such as
+`safe.directory`, changes these answers (from the code, not measured).
 The daemon writes an emptied
 `.probe/config` again (`5fd08069`, cell C10, round `tier0-5`, Linux VM). A good answer is kept 5 seconds from the end of the call.
 A change of the root folder or of its `.git` entry makes the daemon ask again.
@@ -2361,8 +2362,8 @@ remove asks twice. For a repository of another owner
 with no `safe.directory`, `git.worktree_remove` answers the lock-check refusal that
 ends `(its registrations could not be examined); retry`.
 With a child that holds the pipes, an exit 0 counts by its output so far (`git.status`,
-cells P1 to P3 of round `task100-01`, Linux VM). Other methods and systems are not
-measured.
+cells P1 to P3 of round `task100-01`, Linux VM). The other four methods and macOS and
+Windows are not measured.
 
 One `git version` call also follows a config read that failed with a syntax error (cells 39 and
 `x9-syntax-own` of round `val-s3p2b2-5`, Linux VM).

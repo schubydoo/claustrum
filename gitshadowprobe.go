@@ -232,7 +232,11 @@ var probeNames = []string{
 // probeDropNames are the daemon's variables that the call does not get. The
 // call keeps the daemon's GIT_CONFIG_COUNT and its pairs. 5fd08069 does both on
 // Linux, macOS and Windows VMs (cells C8, C8b, C8c and C8K of round tier3-02).
-// The later calls of a request get these four names.
+// The later calls of a request get these four names. Every GIT_CONFIG_KEY_<n>
+// and GIT_CONFIG_VALUE_<n> of the daemon passes, also one outside the count.
+// The hardened calls rebuild only the counted pairs (configPinEnv). Cell C8c
+// set a count of 1 with pair 0 only, so a name outside the count is not
+// measured.
 var probeDropNames = []string{
 	"GIT_NAMESPACE", "GIT_INDEX_FILE", "GIT_DISCOVERY_ACROSS_FILESYSTEM", "GIT_ALTERNATE_OBJECT_DIRECTORIES",
 }
