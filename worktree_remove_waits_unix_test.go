@@ -101,6 +101,9 @@ func TestWorktreeRemoveWaitsForAddOfCreate(t *testing.T) {
 			waitFor(t, "the add of the create reached the gate", func() bool { return exists(gate + ".in") })
 			removed := dispatchAsync(s, removeLine(t, base, r1, "rb"))
 			waitFor(t, "the remove deleted the leaf r1 during the held add", func() bool { return !exists(r1) })
+			if exists(gate + ".out") {
+				t.Fatal("the gate gave up before the remove deleted the leaf r1")
+			}
 			// The remove must not answer while the add is held. A remove that
 			// does not wait answers within a few calls of the stub.
 			select {

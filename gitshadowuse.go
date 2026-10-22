@@ -244,10 +244,12 @@ func (u gitUse) shadow() bool {
 //
 // The call holds the lock of the add step (lockWorktreeAddStep), so a remove in
 // the same git directory deletes no registration while it runs. On Windows the
-// lock also covers the staging steps (not measured).
+// lock also covers the staging steps (not measured). The lock comes before
+// fixedForm, so an add that waits for a remove takes the form of the off switch
+// at its start, and the gate of fixedForm runs under the lock.
 func worktreeAdd(ctx context.Context, u gitUse, repo, leaf string, cp worktreeCheckpoint, args ...string) (string, error) {
-	f, off := u.fixedForm(true)
 	defer lockWorktreeAddStep(repo)()
+	f, off := u.fixedForm(true)
 	_, named := f.names(repo)
 	if named && shadowStagesAdd {
 		stderr, err := worktreeAddStaged(ctx, f, repo, leaf, cp, args...)
