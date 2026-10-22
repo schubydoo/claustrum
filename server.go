@@ -1330,9 +1330,12 @@ func (s *server) closeAll(socket string) {
 // teardown. That writer then fails when the close lands.
 //
 // It returns the number of connections it closed, for the "cleanup:" line. A
-// connection that sent server.shutdown counts also when its client closed it
-// first. 5fd08069 logs "closed 2" for one idle client and the -stop client (cell
-// W-S2 of round tier3-01, Windows VM, 3 of 3 runs).
+// connection that sent server.shutdown counts, also after its read loop ended.
+// 5fd08069 logs "closed 2" for one idle client and the -stop client (cell W-S2
+// of round tier3-01, Windows VM, 3 of 3 runs). Linux and macOS are measured with
+// the -stop client alone only, so the count with another client open there is
+// claustrum's own. A client that closes before it reads the reply can still end
+// its read loop before the mark (claustrum's own, not measured).
 func (s *server) dropConns() int {
 	s.mu.Lock()
 	defer s.mu.Unlock()
