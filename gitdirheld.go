@@ -107,38 +107,27 @@ func (a *acceptedGitDir) removeRegistration(name string) {
 	_ = removeHeldEntry(a.root, filepath.Join(worktreesSubdir, name))
 }
 
-// dropStaleRegistration is the Windows step of a create before the leaf is
-// made, for a create that holds its git directory. It removes the registration whose
+// dropStaleRegistration is the Windows step of a create before the add, for a
+// create that holds its git directory. It removes the registration whose
 // `gitdir` record names worktreePath, which the caller found missing. The rule
-// is that of the Windows step (dropStaleWorktreeRegistration): the first match
-// in name order goes, with no test of a `locked` file. The listing, the read of
-// each record and the delete go through the held root. A registration is a
-// real folder: a link or a junction in `worktrees` is passed over. The
+// is that of the Windows step (dropStaleWorktreeRegistration): the one entry
+// that names the leaf goes, if it holds no `locked` file. The listing, the
+// read of each record and the delete go through the held root. The folder
+// `worktrees` must be a real folder by its Lstat through the held root. A link
+// or a junction there gets no listing and no delete, and neither does one in
+// `worktrees`. Such a link in the state shadow is not measured, and neither is
+// a swap of `worktrees` after that Lstat (claustrum's own). The
 // compare, the result and the guard of a live record (staleRecordLive, D27)
 // are those of the Windows step.
 func (a *acceptedGitDir) dropStaleRegistration(worktreePath string) (matched bool) {
-	names, err := rootDirNames(a.root, worktreesSubdir)
-	if err != nil {
+	if fi, err := a.root.Lstat(worktreesSubdir); err != nil || !goesAsTree(fi.Mode()) {
 		return false
 	}
-	target := resolveAsFarAsExists(worktreePath)
-	for _, name := range names {
-		rel := filepath.Join(worktreesSubdir, name)
-		if fi, err := a.root.Lstat(rel); err != nil || !goesAsTree(fi.Mode()) {
-			continue
-		}
-		record, err := readGitPlainFileIn(a.root, filepath.Join(rel, "gitdir"))
-		if err != nil {
-			continue
-		}
-		if sameGitDirPath(resolveAsFarAsExists(filepath.Dir(strings.TrimSpace(string(record)))), target) {
-			if !staleRecordLive(record) {
-				a.removeRegistration(name)
-			}
-			return true
-		}
+	names, records := windowsStaleEntries(a.root, worktreesSubdir, worktreePath)
+	if windowsStaleEntryGoes(a.root, worktreesSubdir, names, records) {
+		a.removeRegistration(names[0])
 	}
-	return false
+	return len(names) > 0
 }
 
 // removeCreatedRegistration is step B of undoFailedCheckout for a create that

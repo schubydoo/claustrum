@@ -1229,14 +1229,20 @@ func gitWorktreeCreateLocked(req *request, p *gitParams, repo string) response {
 	// The target is confirmed missing above, so a worktree registration still
 	// naming it is stale (on Windows not always, D27). Drop
 	// such a registration if it is the only one and is not locked
-	// (dropStaleWorktreeRegistration). Windows keeps its earlier step, which has
-	// neither test.
+	// (dropStaleWorktreeRegistration). Windows runs the step later, after
+	// `rev-parse --absolute-git-dir` (staleStepAfterGitDir).
 	// A create that holds its git directory runs the step through the held
 	// folder (gitdirheld.go).
-	if createStepHook != nil && req.use.accepted != nil {
-		createStepHook("stale")
+	staleStep := func() bool {
+		if createStepHook != nil && req.use.accepted != nil {
+			createStepHook("stale")
+		}
+		return dropStaleWorktreeRegistration(repo, p.WorktreePath, req.use.accepted)
 	}
-	staleMatched := dropStaleWorktreeRegistration(repo, p.WorktreePath, req.use.accepted)
+	staleMatched := false
+	if !staleStepAfterGitDir {
+		staleMatched = staleStep()
+	}
 	// `git worktree add` does not create leading directories, so the reference
 	// makes the parent before adding — this is what lets a nested session path
 	// such as <repo>/.claude/worktrees/<id> succeed on a fresh repo. The parent comes
@@ -1433,6 +1439,10 @@ func gitWorktreeCreateLocked(req *request, p *gitParams, repo string) response {
 				req.use.accepted = next
 			}
 		}
+	}
+	// On Windows the stale step runs here, before the listing of the add.
+	if staleStepAfterGitDir {
+		staleMatched = staleStep()
 	}
 	// A caller-supplied timeoutMs (4534d86) bounds the checkout, and the daemon
 	// tests it after the add and after the copy step. At timeoutMs 0 both

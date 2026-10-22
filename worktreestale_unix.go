@@ -11,10 +11,13 @@ import (
 	"strings"
 )
 
+// staleStepAfterGitDir is false on Linux and macOS. There the create runs the
+// stale step before it makes the parent folders and the leaf.
+const staleStepAfterGitDir = false
+
 // dropStaleWorktreeRegistration is the step of git.worktree_create before `git
-// worktree add`, on Linux and macOS. It works on <repo>/.git/worktrees, or for a
-// repo that is a linked worktree on the folder `worktrees` of the main repository
-// (staleRegistryDir). An entry of that folder is stale for
+// worktree add`, on Linux and macOS. It works on the folder `worktrees` of the
+// common git directory of repo (staleRegistryDir). An entry of that folder is stale for
 // this request if its gitdir record names the .git of the new leaf. The caller runs
 // the step only after it confirmed that the leaf does not exist. The step removes
 // a stale entry only if it is the only stale entry of the folder and holds no
@@ -133,42 +136,6 @@ func dropStaleWorktreeRegistration(repo, worktreePath string, held *acceptedGitD
 		removeStaleRegistration(root, stale[0], filepath.Join(base, stale[0]))
 	}
 	return len(stale) > 0
-}
-
-// staleRegistryDir is the folder that the step before the add works on.
-//
-// With a repo that is a linked worktree, 5fd08069 removes the stale entry `old`
-// of the main repository and creates the worktree (cell V9 of round tier0-10,
-// Linux VM, and cell V9c for a main repository). claustrum takes repo as a linked
-// worktree when its .git file names a folder whose parent is named `worktrees`
-// and that folder holds a commondir file that can be read. The folder of the
-// step is then `worktrees` of the common git directory that the file names.
-//
-// Every other repo keeps <repo>/.git/worktrees. With a .git file of another
-// kind, such as that of a submodule or of a separate git directory, that path
-// does not open and the step does nothing (not measured).
-func staleRegistryDir(repo string) string {
-	base := filepath.Join(repo, ".git", worktreesSubdir)
-	admin := worktreeAdminDir(repo)
-	if admin == "" {
-		return base
-	}
-	if !filepath.IsAbs(admin) {
-		admin = filepath.Join(repo, admin)
-	}
-	admin = filepath.Clean(admin)
-	if filepath.Base(filepath.Dir(admin)) != worktreesSubdir {
-		return base
-	}
-	b, err := readGitPlainFile(filepath.Join(admin, "commondir"))
-	if err != nil {
-		return base
-	}
-	common := strings.TrimSpace(string(b))
-	if !filepath.IsAbs(common) {
-		common = filepath.Join(admin, common)
-	}
-	return filepath.Join(common, worktreesSubdir)
 }
 
 // removeStaleRegistration removes the entry name of root, the opened registrations

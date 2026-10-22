@@ -113,10 +113,10 @@ on Windows:
   one new entry of the listing after the add. That delete goes through an
   `os.Root` at the registrations directory. Both act only while the folder at
   that path is still the folder that the refusals or a stat right after that listing saw (D24). On Windows the same guard covers the registration that the staging step moved (the rollback in cell B6w of round `task087-03`, the index not measured).
-  Before the add, on Linux and macOS, the daemon removes a stale registration
-  whose record names the new worktree, if it is the only such registration. That delete goes through an `os.Root` at
-  the registrations directory too, after the home guard. A registration that
-  holds a `locked` file stays.
+  Before the add, if only one stale registration names the new worktree in
+  its record, the daemon removes it. That delete goes through an `os.Root`
+  too, after the home guard. A registration that holds a `locked` file stays.
+  Windows has both tests, as on `5fd08069` (round `tier3-05`, Windows VM).
   After a failed `git worktree add`, the daemon only removes the worktree path
   if it is an empty directory. That removal cannot delete content.
 

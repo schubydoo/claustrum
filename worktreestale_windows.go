@@ -5,8 +5,13 @@ package main
 import (
 	"os"
 	"path/filepath"
-	"strings"
 )
+
+// staleStepAfterGitDir is true on Windows. There the create runs the stale
+// step after `rev-parse --absolute-git-dir`, when the leaf folder already exists.
+// 5fd08069 removes the entry at that point (cell S1 of round tier3-02 and cell
+// D1K of round tier3-05, Windows VM, 3 runs each).
+const staleStepAfterGitDir = true
 
 // dropStaleWorktreeRegistration removes the repo's worktree registration for
 // worktreePath when that path is registered but missing on disk — a "prunable"
@@ -17,25 +22,38 @@ import (
 //
 // Only the registration for THIS path is dropped; other prunable registrations are
 // left in place (measured against 7d193f89, not a Windows measurement — a global `git worktree prune` would
-// clear those too and diverge). The caller invokes this only after confirming the
-// target does not exist, so a matching registration is necessarily stale.
+// clear those too and diverge). The leaf already exists when this step
+// runs (staleStepAfterGitDir). The caller confirmed before that
+// the path did not exist, so a matching registration is stale.
 //
-// A registration lives at <repo>/.git/worktrees/<name>/gitdir and points at
-// "<worktree>/.git". Both paths are compared through resolveAsFarAsExists, so a
-// symlinked ancestor matches. Best-effort: any failure leaves git
-// to report its own error.
+// A registration lives at <common git dir>/worktrees/<name>/gitdir and points at
+// "<worktree>/.git" (staleRegistryDir). Both paths are compared through
+// resolveAsFarAsExists, so a symlinked ancestor matches. Best-effort: any failure
+// leaves git to report its own error. 5fd08069 removes the entry of a separate
+// git directory in cell S1 of round tier3-02 (Windows VM). A linked worktree as
+// repo is not measured on Windows, and neither is a relative record.
 //
-// This is the Windows step. Linux and macOS have their own compare and their own
-// delete (worktreestale_unix.go). No Windows row of 89cb6289 measures this step, so
-// Windows keeps the compare and the delete that it had.
+// The entry goes only when it is the one entry that names the leaf and holds no
+// `locked` file (windowsStaleEntryGoes, cells S1L and S1T of round tier3-05).
+// The folder of the step must be a real folder by its Lstat: a junction or a
+// directory symbolic link there gets no listing and no delete. With such a link
+// at `.git\worktrees`, a stale entry behind it and "shadowDirOff":true,
+// 5fd08069 changes nothing behind the link (cells D1J and D1S of round
+// tier3-05, Windows VM, 3 runs each). It then refuses the create with the text
+// of offWorktreesRefusal. The same Lstat test runs in the state shadow, where
+// such a link is not measured (claustrum's own).
 //
-// held is the git directory that the create holds, or nil. When the `.git` of
-// repo is the held folder (acceptedGitDir.isAt), the step goes through it
-// (acceptedGitDir.dropStaleRegistration) and lists, reads and removes nothing
-// by the path. Every other request gets the step by the path that it had
-// before the hold: a request with "shadowDirOff":true, the state fallback-git,
-// a server with no run folder, and a held folder that is not the `.git` of
-// repo, such as a daemon GIT_DIR of another repository (not measured).
+// held is the git directory that the create holds, or nil. When the common git
+// directory of repo is the held folder (acceptedGitDir.isAt), the step goes
+// through it (acceptedGitDir.dropStaleRegistration) and lists, reads and
+// removes nothing by the path. Every other request gets the step by the path:
+// a request with "shadowDirOff":true, the state fallback-git, a server with no
+// run folder, and a held folder that is not that directory, such as a daemon
+// GIT_DIR of another repository (not measured). By the path the step opens one
+// os.Root at the folder and tests that it is the folder of the Lstat. The list,
+// the reads, the `locked` test and the remove go through that root. The remove
+// runs wipesHomeDir on the entry first (D2). The root is claustrum's own, not
+// measured.
 //
 // The compare ignores letter case (sameGitDirPath). 5fd08069 removes a stale
 // entry whose record differs from the leaf only in letter case, in one name or
@@ -43,34 +61,28 @@ import (
 // A create that holds no git directory is not measured there. An entry whose
 // record names a path that exists stays (staleRecordLive, D27).
 //
-// matched reports that an entry names the leaf (pairBeforeAdd).
+// matched reports that an entry names the leaf, also one that stays
+// (pairBeforeAdd).
 func dropStaleWorktreeRegistration(repo, worktreePath string, held *acceptedGitDir) (matched bool) {
-	if held.isAt(filepath.Join(repo, ".git")) {
+	base := staleRegistryDir(repo)
+	if held.isAt(filepath.Dir(base)) {
 		return held.dropStaleRegistration(worktreePath)
 	}
-	base := filepath.Join(repo, ".git", "worktrees")
-	ents, err := os.ReadDir(base)
+	fi, err := os.Lstat(base)
+	if err != nil || !goesAsTree(fi.Mode()) {
+		return false
+	}
+	root, err := os.OpenRoot(base)
 	if err != nil {
 		return false
 	}
-	target := resolveAsFarAsExists(worktreePath)
-	for _, e := range ents {
-		if !e.IsDir() {
-			continue
-		}
-		// A record that is not a regular file is passed over at once. With a FIFO
-		// there, 89cb6289 goes on to `git worktree add` (row B-G1, Linux and macOS VMs).
-		gitdir, err := readGitPlainFile(filepath.Join(base, e.Name(), "gitdir"))
-		if err != nil {
-			continue
-		}
-		// gitdir names the worktree's own ".git" file; its parent is the worktree.
-		if sameGitDirPath(resolveAsFarAsExists(filepath.Dir(strings.TrimSpace(string(gitdir)))), target) {
-			if !staleRecordLive(gitdir) {
-				_ = os.RemoveAll(filepath.Join(base, e.Name()))
-			}
-			return true
-		}
+	defer func() { _ = root.Close() }()
+	if !sameOpenedFolder(root, fi) {
+		return false
 	}
-	return false
+	names, records := windowsStaleEntries(root, ".", worktreePath)
+	if windowsStaleEntryGoes(root, ".", names, records) && !wipesHomeDir(filepath.Join(base, names[0])) {
+		_ = removeHeldEntry(root, names[0])
+	}
+	return len(names) > 0
 }
