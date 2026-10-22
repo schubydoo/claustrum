@@ -852,7 +852,7 @@ cell C-… is of round `tier0-20` against `5fd08069` on a Linux VM.
 | the four methods | `this repository's git config cannot be used: git did not finish reading "<path>" within 30 seconds; try again` | -32603. Create: `worktree_add_failed` |
 | git.worktree_create | `git worktree add failed (completing the new worktree's git files): this repository's git config cannot be used: git did not finish reading it within 30 seconds; try again` | in `error`, `worktree_add_failed`. The listing of `config.worktree` after the add ran 30 s, and the rollback of a failed checkout runs (cell TW) |
 | git.status | `<file>: not a regular file` | -32603. claustrum's own text, from the copy into the temporary git folder after the gate passed. `<file>` is `info/sparse-checkout` when that entry is a folder or a FIFO. The reference is not measured there |
-| git.status | `<file> is larger than <n> bytes` | -32603. claustrum's own text, for a copied file over its bound, also one that grew after the gate. `<n>` is 1073741824 for `index`, `sharedindex.*`, `info/sparse-checkout` and a reftable file, and 1048576 for `HEAD` and `config.worktree`. The reference is not measured there |
+| git.status | `<file> is larger than <n> bytes` | -32603. claustrum's own text, for a copied file over its bound, also one that grew after the gate. `<n>` is 1073741824 for `index`, a `sharedindex.<40 or 64 hex>` file, `info/sparse-checkout` and a reftable file, and 1048576 for `HEAD` and `config.worktree`. The reference is not measured there |
 | git.status | `<os error>` of the copy or of the temporary folder, for example `openat index: permission denied` or `stat <dir>: no such file or directory` | -32603. The raw Go error when a file of the entry cannot be copied, as an `index` of mode 000, or when a file of the temporary git folder cannot be made. With `"shadowDirOff":true`, and on a server with no run folder, a temporary folder that cannot be made answers the raw Go error too. The reference is not measured there. In the states `shadow` and `fallback-git` a `.gitdir-<n>` that cannot be made answers `{"isRepo":false,"clean":false}`. `5fd08069` answers so in the state `shadow` for a folder of the daemon of mode 0500 (cell F1 of round `val-s3p2b2-7`, Linux VM, one run). The state `fallback-git` and another cause are from the code |
 | git.* | `config-defined hooks could not be pinned off; git not run: inherited GIT_CONFIG_COUNT "<value>" is not a count` | in the frame of each method, when the daemon's own `GIT_CONFIG_COUNT` does not parse. See "The daemon's own git environment" |
 | git.* | `config-defined hooks could not be pinned off; git not run: inherited GIT_CONFIG pair <n> is incomplete` | in the frame of each method, when a pair below the daemon's `GIT_CONFIG_COUNT` is not set. See "The daemon's own git environment" |
@@ -3103,7 +3103,7 @@ the read of the user's excludes.
      "Git-directory trust check".
    - From the code: where the trust check finds no repository, a listing that
      passes and exceeds a limit of "Hook pins" answers `isRepo:false`. Only a
-     listing that fails refuses there. No row measures that limit.
+     listing that fails refuses there.
    - On Linux and macOS a `baseRepo` that git cannot start in answers
      `isRepo:false` (cells CeP0 and CeP3 for a regular file, Linux and macOS VMs).
      If `git version` fails too, the answer is the "cannot run" text. Cell C-g shows that
@@ -3201,11 +3201,14 @@ the read of the user's excludes.
    (row o15a). Not measured: a symlink that leaves the entry folder. claustrum
    refuses it. A FIFO
    answers `isRepo:false` with no wait (row o15b). An `index` of 1 GiB + 1 answers
-   `isRepo:false`, and exactly 1 GiB passes (rows o15c and o15e). An `index` of 1 GiB
-   beside a `sharedindex.x` of 1 GiB + 1 answers `isRepo:false` (row o16). A missing
-   `index` passes (row o15d). All Linux VM. Not measured: whether the bound is for
-   each file or for their sum, and a bound on the count of `sharedindex.*` files.
-   claustrum bounds each file and not the count.
+   `isRepo:false`, and exactly 1 GiB passes (rows o15c and o15e). A missing
+   `index` passes (row o15d). On `5fd08069` a sum of all `sharedindex.*` files over
+   2 GiB answers `isRepo:false`. A name with 40 hex digits is bound at 1 GiB and
+   copied. The names `x` and `ab` get neither step (cells R3a to R3d, R3f to
+   R3h and R3K, rounds `tier3-02` and `tier3-04`, Linux VM). On `89cb6289` an
+   `index` of 1 GiB beside a `sharedindex.x` of 1 GiB + 1 answers `isRepo:false`
+   (row o16, Linux VM). claustrum's own, not measured on `5fd08069`: the two steps
+   for 64 hex digits, `index` in the sum and a sum of exactly 2 GiB.
 10. The `config.worktree` file of the entry. A missing file passes. A folder, a FIFO
     and a syntax error answer `isRepo:false`, with no wait on the FIFO (rows n14,
     n14b and n14c).
@@ -3252,7 +3255,7 @@ claustrum opens each file without blocking and reads a regular file only.
 - The temporary git folder holds copies of `HEAD` and `index` of the entry and a
   `commondir` file (row K1). It also holds `config.worktree` when the entry has one
   (rows n12 and o17), `info/sparse-checkout` (row o17, Linux VM) and each
-  `sharedindex.*` file (rows o16b1 and o16b2). In a reftable repository it
+  copied `sharedindex.*` file (rows o16b1 and o16b2). In a reftable repository it
   holds the regular files of the entry's `reftable` folder (rows o19a and r1, macOS
   VM). Not measured: an `info/sparse-checkout` that is not a regular file, such as
   a FIFO. From the code: claustrum does not wait and answers `-32603` (see the
@@ -3302,14 +3305,8 @@ claustrum opens each file without blocking and reads a regular file only.
   path as sent. The answer is `-32603` with the hooks refusal text and
   `chdir <path>: no such file or directory`. No `git version` follows the refusal
   (row y1, Linux and macOS VMs).
-- claustrum's own `-32603` texts, from the copy into the temporary folder after the
-  gate passed. The reference is not measured in any of them. `<file>: not a regular
-  file` answers an `info/sparse-checkout` that is a folder or a FIFO.
-  `<file> is larger than <n> bytes` answers a copied file over its bound, also one
-  that grew after the gate. A file that cannot be copied answers the raw Go
-  error, for example `openat index: permission denied`. With
-  `"shadowDirOff":true`, and on a server with no run folder, a temporary folder
-  that cannot be made answers the raw Go error.
+- claustrum's own `-32603` texts of the copy into the temporary folder are in the
+  [error-string catalog](#error-string-catalogue). The reference is not measured there.
 - In the states `shadow` and `fallback-git` a `.gitdir-<n>` that cannot be made
   answers `{"isRepo":false,"clean":false}`. `5fd08069` answers so in the state
   `shadow` for a folder of the daemon of mode 0500, for a deny entry on Windows
@@ -3328,7 +3325,7 @@ claustrum opens each file without blocking and reads a regular file only.
   measured: a cut in the middle of a multi-byte character. Row o1 used an ASCII path.
   claustrum's own behavior there: the cut can split a character, which is possible
   with `core.quotePath=false`, and no profile pins that key. The JSON encoding then
-  sends U+FFFD for each leftover byte. The reference is not measured there.
+  sends U+FFFD for each leftover byte.
 - Submodule entries follow the `status` lines. Each is ` S `, the quoted name and one
   of three texts. All rows below are from a Linux VM. Rows n20 to n20e ran on macOS
   and Windows VMs too.
@@ -3353,8 +3350,7 @@ claustrum opens each file without blocking and reads a regular file only.
     not valid UTF-8. A printable character outside ASCII stays (row o11). Not
     measured: a cut in the middle of a character, and a name with `<`, `&`, `>` or
     U+2028. claustrum's own behavior for the cut: it can split a character, and the
-    quoting then writes each leftover byte as `\xNN` text. The reference is not
-    measured there.
+    quoting then writes each leftover byte as `\xNN` text.
   - At most 100 submodule entries pass. Then one entry gives the count of the rest:
     ` S … (+20 more submodule entries)` (row o10, and row n20d with 1).
 - `clean` is true only for an empty `changes`.

@@ -375,24 +375,27 @@ func TestGitStatusMarkerAboveBaseRepo(t *testing.T) {
 	}
 }
 
-// Rows o15c, o15e and o16: the size bound of index and of each sharedindex file.
-// The bound is shrunk, so no test writes a file of 1 GiB.
+// Rows o15c, o15e and o16: the size bound of the index, and the bound of the sum.
+// The bounds are shrunk, so no test writes a file of 1 GiB.
 func TestGitStatusIndexSizeBound(t *testing.T) {
 	f := newStatusFixture(t)
 	index, err := os.ReadFile(filepath.Join(f.entry, "index"))
 	if err != nil {
 		t.Fatal(err)
 	}
-	old := statusIndexMaxBytes
-	t.Cleanup(func() { statusIndexMaxBytes = old })
+	oldOne, oldSum := statusIndexMaxBytes, statusIndexSumMaxBytes
+	t.Cleanup(func() { statusIndexMaxBytes, statusIndexSumMaxBytes = oldOne, oldSum })
 
-	statusIndexMaxBytes = int64(len(index))
+	statusIndexMaxBytes, statusIndexSumMaxBytes = int64(len(index)), 2*int64(len(index))
 	if got := f.status(t); got != statusClean {
 		t.Errorf("o15e index at the bound = %s\nwant %s", got, statusClean)
 	}
+	// Row o16 (89cb6289, Linux VM): an index at the bound beside a sharedindex.x over it
+	// refuses. On 5fd08069 whether the index counts in the sum is not measured.
+	// claustrum counts it.
 	f.write(t, "sharedindex.x", string(bytes.Repeat([]byte{0}, len(index)+1)))
 	if got := f.status(t); got != statusNotRepo {
-		t.Errorf("o16 sharedindex.x over the bound = %s\nwant %s", got, statusNotRepo)
+		t.Errorf("o16 sharedindex.x beside the index = %s\nwant %s", got, statusNotRepo)
 	}
 	if err := os.Remove(filepath.Join(f.entry, "sharedindex.x")); err != nil {
 		t.Fatal(err)
@@ -400,6 +403,112 @@ func TestGitStatusIndexSizeBound(t *testing.T) {
 	statusIndexMaxBytes = int64(len(index)) - 1
 	if got := f.status(t); got != statusNotRepo {
 		t.Errorf("o15c index over the bound = %s\nwant %s", got, statusNotRepo)
+	}
+}
+
+// Cells R3a, R3b, R3d and R3K of rounds tier3-02 and tier3-04 (Linux VM), with the
+// bounds shrunk to a unit far above the size of the index: other sharedindex names
+// over the bound of one file, a sum of 40-hex files over the bound of the sum, and one
+// 40-hex file at the bound of one file.
+func TestGitStatusSharedIndexBudget(t *testing.T) {
+	f := newStatusFixture(t)
+	index, err := os.ReadFile(filepath.Join(f.entry, "index"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	const unit = 1 << 16
+	if len(index) > unit/4 {
+		t.Fatalf("index of %d bytes, want at most %d", len(index), unit/4)
+	}
+	oldOne, oldSum, oldCopy := statusIndexMaxBytes, statusIndexSumMaxBytes, copyStatusFile
+	t.Cleanup(func() { statusIndexMaxBytes, statusIndexSumMaxBytes, copyStatusFile = oldOne, oldSum, oldCopy })
+	statusIndexMaxBytes, statusIndexSumMaxBytes = unit, 2*unit
+	var copied []string
+	copyStatusFile = func(root *os.Root, name, dst string, max int64) error {
+		copied = append(copied, name)
+		return oldCopy(root, name, dst, max)
+	}
+	zeros := func(n int) string { return string(bytes.Repeat([]byte{0}, n)) }
+	remove := func(names ...string) {
+		for _, name := range names {
+			if err := os.Remove(filepath.Join(f.entry, name)); err != nil {
+				t.Fatal(err)
+			}
+		}
+	}
+	hexA, hexB, hexC := "sharedindex."+strings.Repeat("a", 40), "sharedindex."+strings.Repeat("b", 40), "sharedindex."+strings.Repeat("c", 40)
+
+	for _, c := range []struct{ cell, name string }{{"R3a", "sharedindex.x"}, {"R3d", "sharedindex.ab"}} {
+		copied = nil
+		f.write(t, c.name, zeros(unit+1))
+		if got := f.status(t); got != statusClean {
+			t.Errorf("%s %s over the bound of one file = %s\nwant %s", c.cell, c.name, got, statusClean)
+		}
+		if slices.Contains(copied, c.name) {
+			t.Errorf("%s copied %v, want no %s", c.cell, copied, c.name)
+		}
+		remove(c.name)
+	}
+
+	f.write(t, hexA, zeros(unit))
+	f.write(t, hexB, zeros(unit))
+	f.write(t, hexC, zeros(1))
+	if got := f.status(t); got != statusNotRepo {
+		t.Errorf("R3b sum over the bound = %s\nwant %s", got, statusNotRepo)
+	}
+	remove(hexB, hexC)
+
+	copied = nil
+	if got := f.status(t); got != statusClean {
+		t.Errorf("R3K one hex file at the bound = %s\nwant %s", got, statusClean)
+	}
+	if !slices.Contains(copied, hexA) {
+		t.Errorf("R3K copied %v, want %s", copied, hexA)
+	}
+}
+
+// Cells R3a to R3d, R3f to R3h and R3K of rounds tier3-02 and tier3-04 (Linux VM) at their real
+// sizes, on the gate alone. The files are sparse, so no test writes 1 GiB. Windows
+// does not promise a sparse file after a truncate, so the test runs on Linux and macOS.
+func TestStatusIndexFilesRealSizes(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("a truncated file is not sure to be sparse on Windows")
+	}
+	const gib = int64(1) << 30
+	hexA, hexB, hexC := "sharedindex."+strings.Repeat("a", 40), "sharedindex."+strings.Repeat("b", 40), "sharedindex."+strings.Repeat("c", 40)
+	long1, long2 := "sharedindex."+strings.Repeat("d", 64), "sharedindex."+strings.Repeat("e", 64)
+	for _, c := range []struct {
+		cell  string
+		files map[string]int64
+		ok    bool
+		copy  []string
+	}{
+		{"R3a", map[string]int64{"sharedindex.x": gib + 1}, true, nil},
+		{"R3b", map[string]int64{hexA: gib, hexB: gib, hexC: 1}, false, nil},
+		{"R3c", map[string]int64{"sharedindex.x": gib + 1, "sharedindex.y": gib}, false, nil},
+		{"R3d", map[string]int64{"sharedindex.ab": gib + 1}, true, nil},
+		{"R3f", map[string]int64{hexA: gib + 1}, false, nil},
+		{"R3g", map[string]int64{"sharedindex.x": gib + 1, hexA: gib}, false, nil},
+		{"R3h", map[string]int64{long1: gib, long2: gib, hexC: 1}, false, nil},
+		{"R3K", map[string]int64{hexA: gib}, true, []string{hexA}},
+	} {
+		dir := t.TempDir()
+		writeFile(t, filepath.Join(dir, "index"), "index", 0o644)
+		for name, size := range c.files {
+			writeFile(t, filepath.Join(dir, name), "", 0o644)
+			if err := os.Truncate(filepath.Join(dir, name), size); err != nil {
+				t.Fatal(err)
+			}
+		}
+		root, err := os.OpenRoot(dir)
+		if err != nil {
+			t.Fatal(err)
+		}
+		shared, ok := statusIndexFiles(root)
+		_ = root.Close()
+		if ok != c.ok || !slices.Equal(shared, c.copy) {
+			t.Errorf("%s: statusIndexFiles = %q, %v\nwant %q, %v", c.cell, shared, ok, c.copy, c.ok)
+		}
 	}
 }
 
