@@ -2338,6 +2338,9 @@ of the repository. The last `core.bare` of `config.worktree` follows, then the
 In the state `shadow` the daemon asks git about the repository, before the
 config read and the calls of the method. The call is `rev-parse --git-dir` with two
 `-c` items, in the root of the work tree. It names a folder `.probe` of the daemon.
+It drops the daemon's `GIT_NAMESPACE`, `GIT_INDEX_FILE`, `GIT_DISCOVERY_ACROSS_FILESYSTEM`
+and `GIT_ALTERNATE_OBJECT_DIRECTORIES`, and keeps its `GIT_CONFIG_COUNT` pairs (round
+`tier3-02`, the three systems).
 The daemon writes an emptied
 `.probe/config` again (`5fd08069`, cell C10, round `tier0-5`, Linux VM). A good answer is kept 5 seconds from the end of the call.
 A change of the root folder or of its `.git` entry makes the daemon ask again.
@@ -2346,20 +2349,20 @@ A change of the root folder or of its `.git` entry makes the daemon ask again.
 |---|---|
 | exit 128 with a text that starts with `fatal: not a git repository` in any letter case, or that holds `detected dubious ownership` or `cannot use bare repository` | The "no repository" answer of each method. No config is read, and no copy is made. `5fd08069` answers so in cells P5 to P7, P9 and P10 of round `task073-03` (Linux VM). git 2.56's text for a `.git` file to nowhere, `unsafe repository`, and the two phrases at other places of the text get the same answer (claustrum's own, not measured) |
 | exit 1, exit 128 with no text, a signal (`signal: terminated`, cell P13) or a git that cannot start (cell W2-280) | `git could not check this repository on the remote machine: at "<root>": exit status <n>` |
-| exit 1 or exit 2 with a text, or exit 128 with another text | the same text with the text of git in the place of `exit status 1`. Two lines stand there with one space between them (cells P3, round `val-s3p2b2-7` and cell N-f of round `val-s3p2b2-8`, Linux VM). `warning: w` before `fatal: not a git repository` gets this reply (cell P8, round `task073-03`). `5fd08069` answers so on all five methods (cells Q5 to Q7, round `task073-05`). So does `fatal: error reading '<repo>/.git'` (cell W2-268, round `task073-01`, Windows VM) |
-| either of the two rows above | One `git version` call follows. If it fails, the reply is `git cannot run on this host; git not run: <exec error>: <git text>` in the frame of each method. A remove makes two such calls and deletes nothing. `5fd08069` answers so after `fatal: bad config line 3 in file <home>/.gitconfig` on `git.info` (cell E8, round `task083-01`, Linux VM). It answers so on the other four methods in cell E8m of round `task083-02`. It answers so after an exit 1 in cell P14x of round `task073-03`. On `git.status`, `git.list_branches` and `git.worktree_remove` it answers so after an exit 128 with no text and after a SIGTERM (cells Q8 and Q9, round `task073-05`). Those two on `git.info` and `git.worktree_create`, a git that cannot start, and a remove with `worktreeRoot` are not measured |
+| exit 1 or exit 2 with a text, or exit 128 with another text | the same text with git's text in place of `exit status 1`. Two lines stand there with one space between them (cell P3, round `val-s3p2b2-7`, and cell N-f, round `val-s3p2b2-8`, Linux VM). `warning: w` before `fatal: not a git repository` gets this reply (cell P8, round `task073-03`). `5fd08069` answers so on all five methods (cells Q5 to Q7, round `task073-05`). So does `fatal: error reading '<repo>/.git'` (cell W2-268, round `task073-01`, Windows VM) |
+| either of the two rows above | One `git version` call follows. If it fails, the reply is `git cannot run on this host; git not run: <exec error>: <git text>` in the frame of each method. A remove makes two such calls and deletes nothing. `5fd08069` answers so after `fatal: bad config line 3 in file <home>/.gitconfig` on `git.info` (cell E8, round `task083-01`, Linux VM). It answers so on the other four methods (cell E8m, round `task083-02`) and after an exit 1 (cell P14x, round `task073-03`). On `git.status`, `git.list_branches` and `git.worktree_remove` it answers so after an exit 128 with no text and after a SIGTERM (cells Q8 and Q9, round `task073-05`). Those two on `git.info` and `git.worktree_create`, a git that cannot start, and a remove with `worktreeRoot` are not measured |
 | another path than the git directory, in two calls | `git and Claude disagree about which repository holds this folder: from "<root>" git finds "<path>", Claude finds "<git directory>"; try again`. `<path>` is the path as git printed it: with forward slashes on Windows (table P2 of round `val-s3p2b2-7`, Windows VM) |
 | no answer in 30 seconds | `git could not check this repository on the remote machine: it did not finish within 30 seconds in "<root>"; try again` |
 
-The three texts have the shapes of the start test. The cells are 37 to 39 of round
-`s3p2b-edges` (Linux VM), where a wrapper answers the call. Cell 40 of that round
-has the 30 seconds on macOS and Windows VMs. A bad answer is not kept, and a
-remove asks two times. For a repository of another owner
+The three texts have the shapes of the start test. A wrapper answers the call in
+cells 37 to 39 of round `s3p2b-edges` (Linux VM). Cell 40 has the 30 seconds on
+macOS and Windows VMs. A bad answer is not kept, and a
+remove asks twice. For a repository of another owner
 with no `safe.directory`, `git.worktree_remove` answers the lock-check refusal that
 ends `(its registrations could not be examined); retry`.
 With a child that holds the pipes, an exit 0 counts by its output so far (`git.status`,
-cells P1 to P3 of round `task100-01`, Linux VM). The other four methods and macOS and
-Windows are not measured.
+cells P1 to P3 of round `task100-01`, Linux VM). Other methods and systems are not
+measured.
 
 One `git version` call also follows a config read that failed with a syntax error (cells 39 and
 `x9-syntax-own` of round `val-s3p2b2-5`, Linux VM).

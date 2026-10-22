@@ -229,6 +229,14 @@ var probeNames = []string{
 	"GIT_ALLOW_PROTOCOL", "GIT_NO_LAZY_FETCH", "GIT_TERMINAL_PROMPT", "LC_ALL", "LANGUAGE",
 }
 
+// probeDropNames are the daemon's variables that the call does not get. The
+// call keeps the daemon's GIT_CONFIG_COUNT and its pairs. 5fd08069 does both on
+// Linux, macOS and Windows VMs (cells C8, C8b, C8c and C8K of round tier3-02).
+// The later calls of a request get these four names.
+var probeDropNames = []string{
+	"GIT_NAMESPACE", "GIT_INDEX_FILE", "GIT_DISCOVERY_ACROSS_FILESYSTEM", "GIT_ALTERNATE_OBJECT_DIRECTORIES",
+}
+
 // probeEnv is the environment of the call for the work tree root in the folder
 // dir of the daemon. The eight variables and their order are those of the call
 // log of 5fd08069 on a Linux VM (s3p2-linux cell B3a and val-s3p2b1-linux cell
@@ -238,8 +246,8 @@ var probeNames = []string{
 // and a macOS VM `/private/tmp/o` (cell 40 of s3p2b-edges-windows, cell 50 of
 // s3p2b-edges-macos). A root with no parent folder is not measured.
 func probeEnv(dir, root string) []string {
-	env := slices.DeleteFunc(withoutConfigCountSet(listingEnvBase()), func(kv string) bool {
-		return slices.Contains(probeNames, envName(kv))
+	env := slices.DeleteFunc(listingEnvBase(), func(kv string) bool {
+		return slices.Contains(probeNames, envName(kv)) || slices.Contains(probeDropNames, envName(kv))
 	})
 	probe := filepath.Join(dir, shadowProbeName)
 	return append(env,
