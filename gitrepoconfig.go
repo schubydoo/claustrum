@@ -341,7 +341,7 @@ func badLineDetail(errOut []byte, path string) string {
 }
 
 // stderrLines is each line of errOut that is not empty, with its spaces at its
-// ends cut, joined by one space, as allLines does.
+// ends cut, joined by one space. It is the join of allLines too.
 func stderrLines(errOut []byte) string {
 	var lines []string
 	for line := range strings.SplitSeq(string(errOut), "\n") {

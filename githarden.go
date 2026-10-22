@@ -681,6 +681,7 @@ func ownConfigListing(leaf, gitDir string, env []string) string {
 	if kill != nil {
 		kill.Stop()
 	}
+	wasStopped := stopped
 	mu.Unlock()
 	cause := ""
 	switch {
@@ -688,7 +689,7 @@ func ownConfigListing(leaf, gitDir string, env []string) string {
 		return ""
 	case copyGone(err):
 		return err.Error()
-	case stopped:
+	case wasStopped:
 		cause = ownConfigStopText
 	default:
 		cause = err.Error()
