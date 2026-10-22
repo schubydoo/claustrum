@@ -603,8 +603,9 @@ func (r checkoutRefusal) Error() string { return string(r) }
 
 // ownConfigBound ends the second listing of the checkout. On 5fd08069 a listing
 // held for 31 s ended at about 30 s, and one held for 29 s passed. Those are
-// cells C11 and C11b of round task008-01 (Linux and macOS VMs). Windows is not
-// measured. It is a variable so that a test can shrink it.
+// cells C11 and C11b of round task008-01 (Linux and macOS VMs). On Windows
+// cells A4, A4h35 and A4x of round task111-08 are equal on both builds. It is
+// a variable so that a test can shrink it.
 var ownConfigBound = 30 * time.Second
 
 // ownConfigStopText is the cause of a second listing that ownConfigBound ended
@@ -628,24 +629,66 @@ const ownConfigStopText = "git took too long: Claude stopped git config after 30
 //
 // The daemon reads the output of the listing to its end, so the read-tree call
 // starts only when the pipe closes. A child that holds it gets no signal
-// (cell A4 of round task101-01, Linux VM). A listing that fails while a child
-// holds the pipe past ownConfigBound gives ownConfigStopText (claustrum's own,
-// not measured).
+// (cell A4 of round task101-01, Linux VM). git is reaped at the end of that
+// pipe (runToEOF). Both builds match in cell A4 of round task111-03 (Linux VM).
+//
+// ownConfigBound ends only a git that still runs. A git that exited before it
+// counts by its exit status, however long a child holds stdout after it.
+// 5fd08069 then runs the read-tree call and answers success (cell A4-35 of
+// round task111-03, Linux VM, 3 of 3 runs). A git that exits non-zero there
+// gives its exit status, for example `exit status 1` (claustrum's own, not
+// measured).
+//
+// A git that still runs at the bound gets the stop of stopThenKill: SIGTERM to
+// its pid, and SIGKILL gitStopGrace later. 5fd08069 does so in cell A4x of
+// round task111-05 (Linux VM, 3 of 3 runs) and of round task111-07 (macOS
+// VM), with the end about 2 s after the SIGTERM. An strace of round
+// task111-06 shows the SIGKILL 2.002 s after the SIGTERM (Linux VM). On Windows git ends at once
+// (cell A4x of round task111-08, Windows VM).
+//
+// The bound decides only the signals. The answer comes from how git ended. An
+// exit 0 is a success, also after the SIGTERM (cell A4x-t of rounds task111-06
+// and task111-10, Linux and macOS VMs). A git that the signal ended gives
+// ownConfigStopText. So does a git that exits 1 at the SIGTERM, on both builds
+// (cell A4x-x1 of round task111-09, Linux VM).
 func ownConfigListing(leaf, gitDir string, env []string) string {
-	bounded, cancel := context.WithTimeout(context.Background(), ownConfigBound)
-	defer cancel()
-	cmd := exec.CommandContext(bounded, "git", "--git-dir="+gitDir, "config", "-z", "--list")
+	cmd := exec.Command("git", "--git-dir="+gitDir, "config", "-z", "--list")
 	cmd.Dir = leaf
 	cmd.Env = env
 	cmd.Stdout = io.Discard
-	err := runHeld(cmd, cmd.Run)
+	var mu sync.Mutex
+	done, stopped := false, false
+	var bound, kill *time.Timer
+	err := runHeld(cmd, func() error {
+		return runToEOF(cmd, gitDrainWait, func() {
+			bound = time.AfterFunc(ownConfigBound, func() {
+				mu.Lock()
+				defer mu.Unlock()
+				if done || !gitStillRuns(cmd.Process) {
+					return
+				}
+				var stopErr error
+				kill, stopErr = stopThenKill(cmd.Process, &mu, &done)
+				stopped = stopErr == nil
+			})
+		})
+	})
+	mu.Lock()
+	done = true
+	if bound != nil {
+		bound.Stop()
+	}
+	if kill != nil {
+		kill.Stop()
+	}
+	mu.Unlock()
 	cause := ""
 	switch {
 	case err == nil:
 		return ""
 	case copyGone(err):
 		return err.Error()
-	case bounded.Err() != nil:
+	case stopped:
 		cause = ownConfigStopText
 	default:
 		cause = err.Error()

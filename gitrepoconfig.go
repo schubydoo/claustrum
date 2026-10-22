@@ -135,12 +135,23 @@ func runConfigText(ctx context.Context, cmd *exec.Cmd, text []byte) error {
 // holds them gets no signal. ended reports that the bound ended the call.
 //
 // 5fd08069 answers about 31 s after the start also when git exited 0 earlier
-// and only a child holds its pipes past the bound. It reaps git while the child lives on, and
-// the child gets no signal. The repository config read of git.status and call
+// and only a child holds its stdout past the bound. The child gets no signal.
+// The repository config read of git.status and call
 // 7 of the start test then answer their refusal texts (cells B1 and B2 of
 // rounds task101-01 and task101-02, Linux VM). A call that the bound ended
 // stays refused when the pipes close inside the drain (claustrum's own, not
 // measured).
+//
+// git is reaped at the end of its stdout or at the bound, whichever comes
+// first. Until then a git that exited stays a zombie. 5fd08069 reaps it at
+// about 30 s in cells B1 and B2 (round task101-03, Linux VM, and round
+// task082-02, macOS VM). After the reap the copy of stderr gets at most
+// startBoundDrain. With a child that holds stderr alone, 5fd08069 goes on about
+// 1.1 to 1.4 s after the exit of git and uses the listing (cells B1-e of rounds
+// task111-01 and task111-02, Linux and macOS VMs, and round task111-14, Windows
+// VM, about 1.0 to 1.2 s there).
+// A call that exits non-zero while a child still holds stderr at that cut
+// gives heldStderrExit.
 func runStartBound(cmd *exec.Cmd, stdin []byte, bound time.Duration) (bool, error) {
 	var files []*os.File
 	closeAll := func(fs ...*os.File) {
@@ -168,9 +179,12 @@ func runStartBound(cmd *exec.Cmd, stdin []byte, bound time.Duration) (bool, erro
 	var mu sync.Mutex
 	done, ended := false, false
 	var drain *time.Timer
+	atBound := make(chan struct{})
 	timer := time.AfterFunc(bound, func() {
 		mu.Lock()
 		defer mu.Unlock()
+		// The close comes after the kill, so Wait cannot reap git before it.
+		defer close(atBound)
 		if done {
 			return
 		}
@@ -184,6 +198,7 @@ func runStartBound(cmd *exec.Cmd, stdin []byte, bound time.Duration) (bool, erro
 		_ = inW.Close()
 	}()
 	var copies sync.WaitGroup
+	outEOF := make(chan struct{})
 	for i, r := range []*os.File{outR, errR} {
 		w := sinks[i]
 		if w == nil {
@@ -192,10 +207,22 @@ func runStartBound(cmd *exec.Cmd, stdin []byte, bound time.Duration) (bool, erro
 		copies.Go(func() {
 			_, _ = io.Copy(w, r)
 			_ = r.Close()
+			if r == outR {
+				close(outEOF)
+			}
 		})
 	}
+	select {
+	case <-outEOF:
+	case <-atBound:
+	}
 	err = cmd.Wait()
+	cut := time.AfterFunc(startBoundDrain, func() { _ = errR.Close() })
 	copies.Wait()
+	var ee *exec.ExitError
+	if !cut.Stop() && errors.As(err, &ee) {
+		err = heldStderrExit{err}
+	}
 	mu.Lock()
 	done = true
 	stopped := ended
@@ -207,6 +234,13 @@ func runStartBound(cmd *exec.Cmd, stdin []byte, bound time.Duration) (bool, erro
 	_ = inW.Close()
 	return stopped, err
 }
+
+// heldStderrExit is the error of a call of runStartBound that exited non-zero
+// while a child held its stderr past startBoundDrain. It wraps the exec error.
+type heldStderrExit struct{ err error }
+
+func (e heldStderrExit) Error() string { return e.err.Error() }
+func (e heldStderrExit) Unwrap() error { return e.err }
 
 // repoListingMaxBytes bounds the listing that the read of the repository config
 // takes from git for one file. A listing names the whole key of each setting, so
@@ -229,14 +263,18 @@ var repoListingMaxBytes = 8 * repoConfigMaxBytes
 // repository config, about 31 s after the start (cell B1 of rounds task101-01
 // and task101-02, Linux VM). In the
 // `config.worktree` listings and the entry test of git.status that is
-// claustrum's own, not measured. macOS, Windows, an included
-// file and git.info are not measured: they get the same (claustrum's own). A
-// variable, so that a test can lower it.
+// claustrum's own, not measured. macOS is measured in rounds task082-02 and
+// task111-02. Windows, an included file and git.info are not measured: they
+// get the same (claustrum's own). A variable, so that a test can lower it.
 var repoReadBound = 30 * time.Second
 
 // startBoundDrain is the time that runStartBound reads the pipes after its
 // bound. 5fd08069 answers B1 and B2 about 1 s after the 30 s bound (rounds
-// task101-01 and task101-02, Linux VM).
+// task101-01 and task101-02, Linux VM). It is also the time that the copy of
+// stderr gets after the reap. With a child that holds stderr alone, 5fd08069
+// goes on about 1.1 to 1.4 s after the exit of git (cells B1-e of rounds
+// task111-01 and task111-02, Linux and macOS VMs). The exact value of 1 s is
+// claustrum's own.
 var startBoundDrain = time.Second
 
 // errListingTooLarge ends a listing that passes repoListingMaxBytes.
@@ -300,6 +338,18 @@ func badLineDetail(errOut []byte, path string) string {
 		return "fatal: bad config line " + string(m[1]) + " in " + quoteOperand(path)
 	}
 	return ""
+}
+
+// stderrLines is each line of errOut that is not empty, with its spaces at its
+// ends cut, joined by one space, as allLines does.
+func stderrLines(errOut []byte) string {
+	var lines []string
+	for line := range strings.SplitSeq(string(errOut), "\n") {
+		if line = strings.TrimSpace(line); line != "" {
+			lines = append(lines, line)
+		}
+	}
+	return strings.Join(lines, " ")
 }
 
 // openRepoFile opens path for a read. The open does not wait, so a FIFO with no
@@ -584,6 +634,18 @@ func (r *repoConfigRead) file(path string, depth int) string {
 				// not measured: it gets the call too.
 				versionAfterFailure()
 				return d
+			}
+			// A listing that exits non-zero while a child holds its stderr is
+			// refused with the lines read up to the cut of the stderr copy, and
+			// one `git version` call follows. 5fd08069 answers so in cells
+			// B1e-x1 of rounds task111-09 and task111-10 (Linux and macOS VMs).
+			// A failed listing with no holder keeps the rule before it
+			// (claustrum's own, not measured).
+			if errors.As(err, new(heldStderrExit)) {
+				if d := stderrLines(errOut); d != "" {
+					versionAfterFailure()
+					return d
+				}
 			}
 		}
 		r.unlisted = true

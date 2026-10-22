@@ -67,7 +67,9 @@ and in [PROTOCOL.md](PROTOCOL.md).
 
 **Off-wire churn.** The `-install` prune and sweeps (PR 558). The stop and
 take-over steps (PRs 552, 553, 560 and 562). The daemon log open (PRs 568 and
-574). The pipe waits of git calls (PRs 583 and 586).
+574). The pipe waits of git calls (PRs 583 and 586), and the reap of git at the
+end of its stdout. The wait for a stderr that a child holds is on the wire (see
+below).
 
 **How it was bounded.** The slices were measured side by side on Linux, macOS
 and Windows VMs. The final check of the whole build ran the full comparison
@@ -76,9 +78,15 @@ battery on the Linux VM. On the macOS and Windows VMs it ran the changed areas
 `git.info` on a folder with no repository during the first start test. PR 596
 closed it, and the off switch during a `git.info` with it (rounds `task103-01`
 to `task103-06`). D4, D5, D9, D13, D18, D21 and D25 are retired. D27 is new (PR 563).
+In round `val-s3p2b2-5` 109 requests of the `val-s3p2b1` cells and 77 requests
+of newer cells ran with the order of the variables (Linux VM). The calls differ
+there in two kinds of place: the differences that stay, and the rows that the
+last edits of the copy follow. On the macOS VM 124 of 177 cells have no call
+that differs. The reply of claustrum to cell X2 of round `task077-03` is
+byte-equal in rounds `task077-04` to `task077-06` (Windows VM).
 
 One Windows claustrum run where both requests got `-32001` was the test
-kit, not claustrum (round `task104-01`). Three items stay open:
+kit, not claustrum (round `task104-01`). Two items stay open:
 
 - The off switch during `git.status` and the worktree methods: Linux ran every
   cell. macOS ran every cell but C6, C6b, C6n and S3 (`task105-03`,
@@ -92,10 +100,15 @@ kit, not claustrum (round `task104-01`). Three items stay open:
   in 31 of 60 runs and `5fd08069` in 37 of 60, within noise. `5fd08069` waited
   in 44 of 60 in round `task107-01`, so the race is noisy and the rounds show no
   measurable effect of the change.
-- Off the wire, `5fd08069` keeps an exited git wrapper as a zombie until the
-  process that holds its pipe ends, or until the reply. claustrum reaps it at
-  once (round `task082-02` on macOS, round `task101-03` on Linux). A client
-  cannot see it.
+
+Off the wire, `5fd08069` keeps an exited git wrapper as a zombie until the
+process that holds its stdout ends. For a config listing on standard input
+that wait ends at the 30 s bound of the call. Rounds `task101-03` and
+`task082-02` show both (Linux and macOS VMs). On the wire, with a holder of
+stderr alone, it reaps git at its exit and goes on about 2 s later, about 1 s
+on that listing. Cells A1-e and B1-e of rounds `task111-01` and `task111-02`
+show it (Linux and macOS VMs). claustrum follows both (rounds `task111-03` and
+`task111-04`, Linux and macOS VMs).
 
 ### `89cb6289d0e434f573cfc7267dd0cbb8c56ca298` — 2026-09-28 (built)
 

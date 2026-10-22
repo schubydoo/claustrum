@@ -223,6 +223,11 @@ func runGitLingering(args []string) int {
 //     CLAUSTRUM_GITSTUB_WAITMS set, the call sleeps that many milliseconds
 //     instead, and the descendant keeps CLAUSTRUM_GITSTUB_MS.
 //   - "holdfail": as "holdonly", but the call exits with CLAUSTRUM_GITSTUB_EXIT.
+//   - "logterm": no real git runs. The call catches SIGTERM and appends "ready"
+//     to the file CLAUSTRUM_GITSTUB_TERMLOG. Each SIGTERM appends "term". With
+//     CLAUSTRUM_GITSTUB_TERMEXIT set it exits with that code at the first one.
+//     Otherwise it sleeps CLAUSTRUM_GITSTUB_MS milliseconds and exits with
+//     CLAUSTRUM_GITSTUB_EXIT.
 //
 // "fail", "gatefail", "postfail" and "holdfail" exit with CLAUSTRUM_GITSTUB_EXIT, 1 when it is not set.
 //
@@ -463,6 +468,8 @@ func runGitSlow(args []string) int {
 				return c
 			}
 			return exitCode
+		case "logterm":
+			return logTermStub(exitCode)
 		}
 	}
 	cmd := exec.Command(os.Getenv("CLAUSTRUM_GITSTUB_REAL"), args...)
@@ -505,9 +512,31 @@ func runGitSlow(args []string) int {
 	return code
 }
 
+// logTermStub is the mode "logterm" of the git stub. exitCode is the code of a
+// call that sleeps to its end.
+func logTermStub(exitCode int) int {
+	terms := make(chan os.Signal, 1)
+	signal.Notify(terms, syscall.SIGTERM)
+	appendLine(os.Getenv("CLAUSTRUM_GITSTUB_TERMLOG"), "ready")
+	ms, _ := strconv.Atoi(os.Getenv("CLAUSTRUM_GITSTUB_MS"))
+	end := time.After(time.Duration(ms) * time.Millisecond)
+	for {
+		select {
+		case <-terms:
+			appendLine(os.Getenv("CLAUSTRUM_GITSTUB_TERMLOG"), "term")
+			if c, err := strconv.Atoi(os.Getenv("CLAUSTRUM_GITSTUB_TERMEXIT")); err == nil {
+				return c
+			}
+		case <-end:
+			return exitCode
+		}
+	}
+}
+
 // holdStubOutput starts the descendant of the modes "hold" and "holdonly". It
 // holds the stdout and stderr of this call for CLAUSTRUM_GITSTUB_MS
-// milliseconds. It returns 1 when the descendant does not start.
+// milliseconds. With CLAUSTRUM_GITSTUB_HOLDSTDERR=1 it holds stderr alone. It
+// returns 1 when the descendant does not start.
 func holdStubOutput() int {
 	exe, err := os.Executable()
 	if err != nil {
@@ -518,6 +547,9 @@ func holdStubOutput() int {
 	child := exec.Command(exe, strconv.Itoa((ms+999)/1000))
 	child.Env = buildEnv(map[string]string{"CLAUSTRUM_TEST_HELPER": "sleep"})
 	child.Stdout, child.Stderr = os.Stdout, os.Stderr
+	if os.Getenv("CLAUSTRUM_GITSTUB_HOLDSTDERR") == "1" {
+		child.Stdout = nil
+	}
 	if err := child.Start(); err != nil {
 		fmt.Fprintln(os.Stderr, err)
 		return 1
@@ -980,6 +1012,9 @@ func runHelper(mode string, args []string) int {
 	case "stderr-exit5": // integration fixture: one stderr line, exit 5
 		fmt.Fprint(os.Stderr, "err\n")
 		return 5
+	case "both-streams": // one stdout line, then one stderr line, exit 0
+		fmt.Print("out\n")
+		fmt.Fprint(os.Stderr, "err\n")
 	case "tree":
 		// Fixture for the whole-tree kill tests: wait for the parent's
 		// go-ahead on stdin (so confineProcess runs before any grandchild
@@ -1072,6 +1107,32 @@ func runHelper(mode string, args []string) int {
 		}
 		fmt.Print("early\n")
 		return 7
+	case "held-stdout":
+		// A git call that exits 0 while its child holds the stdout. args[0] gets
+		// the pid of this process and of the child, one per line. The child
+		// sleeps args[1] seconds. Its stderr is not that of this process.
+		exe, err := os.Executable()
+		if err != nil {
+			fmt.Fprintln(os.Stderr, err)
+			return 1
+		}
+		child := exec.Command(exe, args[1])
+		child.Env = buildEnv(map[string]string{"CLAUSTRUM_TEST_HELPER": "sleep"})
+		child.Stdout = os.Stdout
+		if err := child.Start(); err != nil {
+			fmt.Fprintln(os.Stderr, err)
+			return 1
+		}
+		fmt.Print("early\n")
+		pids := strconv.Itoa(os.Getpid()) + "\n" + strconv.Itoa(child.Process.Pid) + "\n"
+		if err := os.WriteFile(args[0]+".tmp", []byte(pids), 0o644); err != nil {
+			fmt.Fprintln(os.Stderr, err)
+			return 1
+		}
+		if err := os.Rename(args[0]+".tmp", args[0]); err != nil {
+			fmt.Fprintln(os.Stderr, err)
+			return 1
+		}
 	case "git-lingering":
 		// Stand-in `git` for git.worktree_create's lingering-descendant tests. Reached
 		// when this binary is invoked through a PATH symlink named `git` (see

@@ -249,18 +249,18 @@ Every OS serves the same JSON-RPC methods. Full internals →
       The second rollback runs when the
       `timeoutMs` of the caller expired during the add, the checkout or the copy
       step. It also runs after a post-checkout drain that exceeded that
-      `timeoutMs`, a failed read-tree checkout and a failed `config.worktree`
-      copy. It
-      also runs after a failed placement of the index of the new worktree. The
+      `timeoutMs`, a failed read-tree checkout, a failed `config.worktree`
+      copy and a failed placement of the index of the new worktree. The
       filter rule of the checkout (`gitfilter.go`) leads to it after a read-tree
       call that fails at a filter of the repository. So does a refusal before
       it, in the state `shadow`, for an unusable filter, or in a create with no
       settings copy for a failed rule listing. In the state `fallback-git` the
       rule does not run, and git runs the filter, as on `5fd08069` (cell R-Q4f
       of round `task084-01`, Linux VM). In the state
-      `shadow` over 64 filter names and a failed or slow last listing refuse
-      too, and so does a checkout listing that its 30 s limit stopped (cell TA), and
-      a failed first checkout listing (cell L6 of round `task084-02`, Linux VM). `5fd08069` rolls back in cells F1 and Q3 (Linux VM) and D5 (Linux
+      `shadow` over 64 filter names refuse too, and a last listing that fails or
+      runs at 30 s and does not exit 0. So does a first checkout listing
+      that its 30 s limit stopped (cell TA) or that failed (cell L6 of round
+      `task084-02`, Linux VM). `5fd08069` rolls back in cells F1 and Q3 (Linux VM) and D5 (Linux
       and Windows VMs). It
       deletes the entries
       of the leaf in the order that the directory read returns them, and it

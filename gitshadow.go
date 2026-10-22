@@ -835,6 +835,11 @@ func shadowTestCalls(dir, check string) (state, cause string) {
 	//     5fd08069 answers that text about 31 s after call 7 started, 11 s
 	//     after its exit (cell B2 of rounds task101-01 and task101-02, Linux
 	//     VM). So the bound counts from the start.
+	//   - The call exits 0 and a child holds its stderr alone: 5fd08069 goes on
+	//     about 1.1 s after the exit, and the test passes (cell B2e of round
+	//     task111-03, Linux VM). Round task111-10 has equal replies on macOS.
+	//     A call 7 that exits 1 there gives the lines read before the cut
+	//     (claustrum's own, not measured).
 	//
 	// A call 7 that fails on its own is followed by one `git version` call
 	// (cannotRunText). If that call fails too, its text is the whole failure.
