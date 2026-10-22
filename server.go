@@ -757,6 +757,16 @@ var daemonStartTimeout = 12 * time.Second
 var startDaemonChild = startDetached
 
 func daemonizeWithToken(socket, forwardToken string) {
+	// Locate the own binary before the first write. On Linux a failure ends the
+	// launcher (selfLocateFails). Elsewhere it re-execs os.Args[0].
+	self, err := osExecutable()
+	if err != nil {
+		if selfLocateFails {
+			fmt.Fprintf(os.Stderr, "claustrum: locate self: %v\n", err)
+			osExit(1)
+		}
+		self = os.Args[0]
+	}
 	// Create the socket's directory, mode 0700, before anything opens a file in it.
 	// Measured: with a missing socket directory the reference starts normally and
 	// leaves d sub(700) / rpc.sock(600) / daemon.token(600) / remote-server.log(600)
@@ -766,10 +776,6 @@ func daemonizeWithToken(socket, forwardToken string) {
 	// log create below.
 	if dir := filepath.Dir(socket); dir != "" && dir != "." {
 		_ = os.MkdirAll(dir, 0o700)
-	}
-	self, err := os.Executable()
-	if err != nil {
-		self = os.Args[0]
 	}
 	cmd := exec.Command(self, os.Args[1:]...)
 	// daemonChildEnv is our private re-exec sentinel (detected in runServe);
