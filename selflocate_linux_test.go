@@ -3,7 +3,9 @@ package main
 import (
 	"io"
 	"os"
+	"os/exec"
 	"path/filepath"
+	"strings"
 	"syscall"
 	"testing"
 )
@@ -69,5 +71,43 @@ func TestServeLauncherStopsWithoutSelfExe(t *testing.T) {
 				t.Errorf("entries of %s = %v, want only the token file", base, names)
 			}
 		})
+	}
+}
+
+// TestServeLauncherFallsBackToArgsZero pins the arm of macOS and Windows on
+// Linux. With selfLocateFails off, a failed os.Executable makes the launcher
+// re-exec os.Args[0] and go on to the start of the child.
+func TestServeLauncherFallsBackToArgsZero(t *testing.T) {
+	oldFails := selfLocateFails
+	selfLocateFails = false
+	t.Cleanup(func() { selfLocateFails = oldFails })
+	stubOsExit(t)
+	stubOsExecutable(t, "", errNoExecutable)
+	var started []string
+	oldStart := startDaemonChild
+	startDaemonChild = func(cmd *exec.Cmd) error { started = cmd.Args; return errStartRefused }
+	t.Cleanup(func() { startDaemonChild = oldStart })
+
+	sock := filepath.Join(shortTempDir(t), "run", "rpc.sock")
+	var code int
+	var exited bool
+	stderr := captureStderr(t, func() {
+		code, exited = catchExit(func() { daemonizeWithToken(sock, "") })
+	})
+
+	if !exited || code != 1 {
+		t.Errorf("daemonizeWithToken: exited=%v code=%d, want exit 1 from the stubbed start", exited, code)
+	}
+	if len(started) == 0 || started[0] != os.Args[0] {
+		t.Errorf("the child starts as %q, want os.Args[0] %q", started, os.Args[0])
+	}
+	if want := "daemonize: " + errStartRefused.Error(); !strings.Contains(stderr, want) {
+		t.Errorf("stderr = %q, want it to contain %q", stderr, want)
+	}
+	if strings.Contains(stderr, "locate self") {
+		t.Errorf("stderr = %q, want no locate self line", stderr)
+	}
+	if _, err := os.Stat(filepath.Dir(sock)); err != nil {
+		t.Errorf("the socket folder: %v, want the launcher to make it", err)
 	}
 }
