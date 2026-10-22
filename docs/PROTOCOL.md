@@ -1221,8 +1221,7 @@ Windows VMs saw it at that place.
   `[Server] cleanup: closed <n> connection(s), killed <n> child process group(s)`,
   as the reference does. The first count includes the connection that sent the
   request, also when its client closed it first (`5fd08069`, cell W-S2 of round
-  `tier3-01`, Windows VM). On a Windows VM `89cb6289` logged `closed 0` in 2 of 9 such stops in one
-  run. The rate is not measured. On Linux and Windows VMs, `f6010b97` and `89cb6289` logged that line at
+  `tier3-01`, Windows VM). On Linux and Windows VMs, `f6010b97` and `89cb6289` logged that line at
   every clean shutdown (rows RP11, RP12a, RP12b, ST03, ST09, WN03, WJ03). The
   counts for a child that ended just before the shutdown are not measured.
 - Log lines on a shutdown by `SIGTERM`. The daemon logs

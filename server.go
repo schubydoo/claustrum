@@ -139,7 +139,7 @@ type conn struct {
 	wmu    sync.Mutex
 	closed bool
 
-	// sentStop is set under server.mu when this connection sent server.shutdown.
+	// sentStop is set under the lock of the server when this connection sent server.shutdown.
 	sentStop bool
 
 	// done is closed when serveConn returns, so the per-connection idle watcher
