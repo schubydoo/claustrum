@@ -86,6 +86,12 @@ func (s *server) handleServer(c *conn, req *request) *response {
 		// its connection close (measured).
 		logInfof("[ServerHandler] server.shutdown received over RPC")
 		logInfof("[Server] shutdown requested")
+		if c != nil {
+			// The cleanup count keeps this connection (dropConns).
+			s.mu.Lock()
+			c.sentStop = true
+			s.mu.Unlock()
+		}
 		s.signalShutdown()
 		return ptr(okResult(req.ID, shutdownResult{OK: true}))
 	default:
