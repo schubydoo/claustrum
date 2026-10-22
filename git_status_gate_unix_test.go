@@ -287,3 +287,34 @@ func TestGitStatusReftableNotAFolder(t *testing.T) {
 		})
 	}
 }
+
+// On 5fd08069 a sharedindex name with 40 hex digits that is a symlink passes, and
+// neither the link nor its target is copied. The target is missing in cell F of round
+// tier3-20 and a regular file of the entry in cell G of round tier3-23 (Linux VM).
+func TestGitStatusSharedIndexLink(t *testing.T) {
+	for _, c := range []struct{ cell, target string }{{"F", "missing-target"}, {"G", "g-target"}} {
+		t.Run(c.cell, func(t *testing.T) {
+			f := newStatusFixture(t)
+			if c.cell == "G" {
+				f.write(t, c.target, "7 bytes")
+			}
+			oldCopy := copyStatusFile
+			t.Cleanup(func() { copyStatusFile = oldCopy })
+			var copied []string
+			copyStatusFile = func(root *os.Root, name, dst string, max int64) error {
+				copied = append(copied, name)
+				return oldCopy(root, name, dst, max)
+			}
+			name := "sharedindex." + strings.Repeat("1", 40)
+			mustSymlink(t, filepath.Join(f.entry, c.target), filepath.Join(f.entry, name))
+			if got := f.status(t); got != statusClean {
+				t.Errorf("%s sharedindex link = %s\nwant %s", c.cell, got, statusClean)
+			}
+			for _, n := range copied {
+				if n == name || n == c.target {
+					t.Errorf("%s copied %v, want neither %s nor %s", c.cell, copied, name, c.target)
+				}
+			}
+		})
+	}
+}
