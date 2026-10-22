@@ -131,7 +131,8 @@ func runInstall(o installOpts) {
 		// The cli folder is made before the CLI is looked for, also on a cache
 		// hit (makeCLIDir). A failure takes the arm of a failed install below
 		// (claustrum's own, not measured). So a present CLI with D/sub a regular
-		// file gets no probe, the mkdir error, an empty cliPath and the 10 minute sweep.
+		// file gets no probe, the mkdir error and an empty cliPath. The 10 minute
+		// sweep then finds no folder to sweep.
 		dirErr := makeCLIDir(o, f.CliPath)
 		checkErr := errCLINotRunnable
 		if dirErr == nil && isRegularFile(f.CliPath) && (installManaged == nil || cliFileLooksRunnable(f.CliPath)) {

@@ -361,8 +361,8 @@ Every OS serves the same JSON-RPC methods. Full internals →
       `--version` run does not start or exits non-zero gets one plain remove.
       A stopped run keeps it. On Windows claustrum can leave that file when
       the exited CLI holds it (claustrum's own code, not measured).
-      Two guards run before that tree delete. D6 runs first: `ensureCLI` runs
-      it before it writes or removes
+      Two guards run before that tree delete. D6 runs first: `makeCLIDir` and
+      `ensureCLI` run it before they write or remove
       anything at a path built from the version. D6
       makes the version one path component, so the CLI path is a direct child
       of the cli-dir. D6 does not test which folder that child is. With a
@@ -387,8 +387,7 @@ Every OS serves the same JSON-RPC methods. Full internals →
       name with a plain `os.Remove`, never as a tree. A folder and a
       link (from the code) stay. The 10 minute sweep takes `.fetch-<digits>` and
       `<version>.zst`. It runs before a new CLI runs, after a failed attempt
-      or a failed raw folder step (claustrum's own, not measured), and after a
-      D6 refusal. On a cache hit it runs only after a
+      and after a D6 refusal. On a cache hit it runs only after a
       `--version` run that its bound stopped (cell P6 of `89cb6289`). The 7
       day sweep takes `<version>.zst.part`. It runs once, before any CLI runs,
       also on a cache hit (cell L9 of `5fd08069`). Neither names the version
