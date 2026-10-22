@@ -1112,7 +1112,16 @@ func hostileConfigRefusal(u gitUse, dir string, heavy bool) configCheck {
 		}
 		return configCheck{refusal: msg}
 	}
-	r := runListing(u.stop.context(), dir, "", u.precursorEnv(heavy, u.pin(dir)))
+	return listingCheck(u, plainListing(u, dir, heavy), dir, heavy)
+}
+
+// plainListing runs the listing of hostileConfigRefusal in dir.
+func plainListing(u gitUse, dir string, heavy bool) listingRun {
+	return runListing(u.stop.context(), dir, "", u.precursorEnv(heavy, u.pin(dir)))
+}
+
+// listingCheck reads the listing r of hostileConfigRefusal, after the count check.
+func listingCheck(u gitUse, r listingRun, dir string, heavy bool) configCheck {
 	if r.err == nil {
 		l, reason := parseConfigListing(r.out)
 		switch reason {

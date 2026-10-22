@@ -201,7 +201,10 @@ func TestWorktreeRemoveGoneWithoutRepository(t *testing.T) {
 
 // A gone worktree under a repository whose config cannot be listed, or whose git
 // directory fails the trust check, is refused with the reason in the lock-check text
-// (rows G07 and T02). A present worktree answers the generic text (row G08).
+// (rows G07 and T02). A present worktree answers the refusal of the second listing
+// after the lock-check words. The listing of this server reads the bad config, as
+// with "shadowDirOff":true on 5fd08069 (cell G08b of round tier3-17, Linux VM). The
+// test replaces row G08 of f6010b97, which answered the generic lock-check text.
 func TestWorktreeRemoveGoneHostileRepository(t *testing.T) {
 	t.Run("bad config", func(t *testing.T) {
 		f := newRmFixture(t)
@@ -212,7 +215,10 @@ func TestWorktreeRemoveGoneHostileRepository(t *testing.T) {
 		if !strings.HasPrefix(got, prefix) || !strings.HasSuffix(got, "); retry") {
 			t.Errorf("error = %q\nwant %q…); retry", got, prefix)
 		}
-		wantRemoveError(t, removeFrame(t, map[string]any{"baseRepo": f.repo, "worktreePath": f.wt}), lockCheckRefusal(f.wt))
+		got = removeErrorField(t, removeFrame(t, map[string]any{"baseRepo": f.repo, "worktreePath": f.wt}))
+		if prefix := "failed to remove worktree: could not check whether " + f.wt + " is locked: " + hooksRefusalPrefix + "exit status 128: "; !strings.HasPrefix(got, prefix) {
+			t.Errorf("error = %q\nwant %q…", got, prefix)
+		}
 		mustExist(t, f.wt)
 	})
 	t.Run("stray commondir", func(t *testing.T) {

@@ -944,7 +944,8 @@ cell C-… is of round `tier0-20` against `5fd08069` on a Linux VM.
 | git.worktree_remove | `refusing to remove worktree: <p> is gone but its registration is locked (git worktree lock); unlock it to remove the registration and branch` | in `error`, with no `errorCode`, for a gone worktree with a locked registration. Nothing is deleted (`f6010b97`, macOS VM). On Linux and macOS a gone worktree whose locked entry sits behind a linked `<git dir>/worktrees` gets success, and its branch goes. That follows `5fd08069` (cell L1 of round `tier0-26`, Linux VM), by the maintainer's decision of 2026-10-14. |
 | git.worktree_remove | `failed to remove worktree: could not check whether <p> is locked (<reason>); retry` | in `error`, with no `errorCode`, for a gone worktree. Without `worktreeRoot`, `<reason>` is the hooks refusal or the trust refusal text (`f6010b97`, macOS VM). Since `89cb6289` it is also the `git cannot run` text (row L11). claustrum puts a limit refusal of the listing there too. `89cb6289` measured the limits on `git.info` only. `<reason>` is also the refusal of the daemon's `GIT_CONFIG_COUNT` (Linux, macOS and Windows VMs). With `worktreeRoot` and a missing absolute `baseRepo` without a `..` component, `<reason>` is the refusal of the daemon's `GIT_CONFIG_COUNT` (Linux and macOS VMs) |
 | git.worktree_remove | `failed to remove worktree: "" does not name a directory` | in `error` (empty `worktreePath`, without `worktreeRoot`) |
-| git.worktree_remove | `failed to remove worktree: could not check whether <p> is locked (its registrations could not be examined); retry` | in `error`, with no `errorCode`. Without `worktreeRoot`, for a worktree directory that exists: the configuration of `baseRepo` cannot be read, `baseRepo` holds no repository, or the trust check refuses its git directory. When the daemon's `GIT_CONFIG_COUNT` is refused, the same holds. Linux and macOS VMs measured that also for a `baseRepo` of `<T>/missing/..`, which does not resolve. In both modes, for a worktree directory that exists: the worktree registry exists but cannot be read, or, on Linux and macOS, is a symbolic link (`5fd08069`, cell C3 of rounds `tier0-24` and `tier0-25m`, Linux and macOS VMs, cells L2 and L3 of round `tier0-26`, Linux VM). Nothing is deleted |
+| git.worktree_remove | `failed to remove worktree: could not check whether <p> is locked: <text>` | in `error`, without `worktreeRoot`. `<text>` is the text of the refused step |
+| git.worktree_remove | `failed to remove worktree: could not check whether <p> is locked (its registrations could not be examined); retry` | in `error`, with no `errorCode`. Without `worktreeRoot`, for a worktree directory that exists: the listing of `baseRepo` cannot be used, `baseRepo` holds no repository, or the trust check refuses its git directory. When the daemon's `GIT_CONFIG_COUNT` is refused, the same holds. Linux and macOS VMs measured that also for a `baseRepo` of `<T>/missing/..`, which does not resolve. In both modes, for a worktree directory that exists: the worktree registry exists but cannot be read, or, on Linux and macOS, is a symbolic link (`5fd08069`, cell C3 of rounds `tier0-24` and `tier0-25m`, Linux and macOS VMs, cells L2 and L3 of round `tier0-26`, Linux VM). Nothing is deleted |
 | git.worktree_remove | `failed to remove worktree: could not check whether <p> is locked (the repository at <baseRepo> could not be read); retry` | in `error`, with no `errorCode`, with `worktreeRoot`, when the daemon's `GIT_CONFIG_COUNT` is refused, `baseRepo` is missing and the worktree directory exists. This row covers an absolute `baseRepo` without a `..` component. Nothing is deleted (`f6010b97`, Linux and macOS VMs). With no `git` on `PATH`, the same text answers a missing `baseRepo` in three rows (`f6010b97` and `89cb6289`, Linux VM). The worktree directory holds a file (row L13wa), is empty (row L13we), or holds a `.git` file that names its entry (row DG1) |
 | git.worktree_remove | `failed to remove worktree: cannot determine the repository's work tree: <reason>` | in `error`, with no `errorCode`, with `worktreeRoot` only. `<reason>` is a trust refusal text, `exit status 128`, the hooks refusal, or the refusal of the daemon's `GIT_CONFIG_COUNT` (`f6010b97`, Linux VM). Since `89cb6289` it is also `git finds no repository here: <git text>` (row N04). With git 2.56 also the text of a failed call about the repository (round `tier0-27`). With no `git` on `PATH`, both references answer the exec error alone in nine rows where `baseRepo` exists (Linux VM, see "Git-directory trust check"). claustrum also puts the `git cannot run` text and a limit refusal of the listing there. Neither is measured with `worktreeRoot`. Nothing is deleted. See [git.worktree_remove](protocol/git-worktree-remove.md) |
 | git.worktree_remove | `failed to remove worktree: cannot list the repository's worktrees: <exec error>` | in `error`, with no `errorCode`, with `worktreeRoot` only. `git worktree list --porcelain -z` and then `git worktree list --porcelain` both fail in `baseRepo`. Nothing is deleted. `89cb6289` answers `exit status 128` for a repository with a valid `HEAD` whose `.git/commondir` is a dangling relative symlink (row DG2s-g, Linux VM) |
@@ -1482,7 +1483,7 @@ not run: the worktree entry this folder's .git names no longer exists`.
 | `git.list_branches` | `{"error":{"code":-32603,"message":<text>}}` | `{"isRepo":false,"branches":[]}` |
 | `git.status` | `{"error":{"code":-32603,"message":<text>}}` | `{"isRepo":false,"clean":false}` |
 | `git.worktree_create` | `{"success":false,"error":<text>,"errorCode":"worktree_add_failed"}` | `{"success":false,"error":"not a git repository","errorCode":"not_a_repo"}` |
-| `git.worktree_remove` | without `worktreeRoot`, the lock-check refusal for a worktree directory that exists, and `could not check whether <p> is locked (<text>); retry` for a gone one. With it, the work-tree refusal and `<text>` | without `worktreeRoot`, the lock-check refusal for a worktree directory that exists, and `{"success":true}` for a gone one. With it, the work-tree refusal and `exit status 128` |
+| `git.worktree_remove` | without `worktreeRoot`, for a worktree directory that exists, `could not check whether <p> is locked: <text>`, and `could not check whether <p> is locked (<text>); retry` for a gone one. With it, the work-tree refusal and `<text>` | without `worktreeRoot`, the lock-check refusal for a worktree directory that exists, and `{"success":true}` for a gone one. With it, the work-tree refusal and `exit status 128` |
 
 The lock-check refusal is
 `{"success":false,"error":"failed to remove worktree: could not check whether <worktreePath> is locked (its registrations could not be examined); retry"}`.
@@ -1521,8 +1522,8 @@ Two more states are not measured. The first is a daemon `GIT_COMMON_DIR`, where 
 listing gets no `GIT_DIR=<null>`. The second is a `.git` file that names a regular
 file, on Linux and macOS. The rest is from the code. In both
 states `git.worktree_create` runs no listing in a folder where the trust check
-finds no repository. `git.worktree_remove` runs the listing there and does not read
-its answer. Both keep the "no repository" column. In the second state `git.info`
+finds no repository. `git.worktree_create` keeps the "no repository" column, and `git.worktree_remove`
+keeps it unless its listing fails (from the code). In the second state `git.info`
 and `git.list_branches` run no listing either, and they keep that column. With a
 daemon `GIT_COMMON_DIR` those two methods skip the trust check, and the listing
 classes below answer. In both states the listing of `git.status` still carries
@@ -1558,8 +1559,7 @@ The classes come in this order (Linux, macOS and Windows VMs):
    L14b, L14d, L14e and N01 to N04). The answer is "no repository". With a
    `branchName`, `git.worktree_remove` without `worktreeRoot` runs a second listing
    for the branch step and keeps the branch. A gone worktree then
-   answers `{"success":true,"branchKept":true}`. For a worktree directory that
-   exists, claustrum answers the lock-check refusal. Not measured. Exit 1 with that
+   answers `{"success":true,"branchKept":true}`. Exit 1 with that
    text is not this class (row L14c). For a `.git` file to a gone git dir, git 2.56
    says `gitfile does not point to a valid repository`. A gone entry under
    `.git/worktrees` answers "no repository" on each method but
@@ -2655,11 +2655,7 @@ that measured it.
   `open <tmp>/claude-ssh-index-<n>/index: no such file or directory` and in the
   `GIT_INDEX_FILE` of each read-tree. The suffix is decimal digits. The name of
   `89cb6289` on Windows is not measured, and claustrum uses the same prefix there.
-- `git.worktree_remove` without `worktreeRoot`, for a worktree directory that exists.
-  If the hooks refusal check or the heavy `rev-parse --absolute-git-dir` after it
-  fails, the check runs once more. That
-  is a second listing, and a second `rev-parse` when that listing passes. Then the
-  method answers the lock-check refusal. Linux and macOS VMs.
+- `git.worktree_remove` without `worktreeRoot`: see [its page](protocol/git-worktree-remove.md).
 - `git.worktree_remove` with `worktreeRoot`. A light `rev-parse --show-toplevel`
   follows the light check, with no listing of its own. Before the daemon decides
   whether `worktreePath` is a registered worktree, it runs a light
@@ -2786,13 +2782,7 @@ Windows, `git.worktree_create` with `worktreeRoot` answers as in row A-N6 (cell
 Wf-P3-crNroot). With nothing set it answers `not_a_repo` (cell Wf-P0-crNroot).
 `git.worktree_remove` with `worktreeRoot` is not measured on Windows for this
 check. From the code: claustrum refuses a `worktreeRoot` there before the check.
-Take row A-N4 with a worktree directory that exists and holds a file. `89cb6289`
-and claustrum answer `could not check whether <worktreePath> is locked (its
-registrations could not be examined); retry`, with nothing set and with an empty
-key. The folder and the file stay. Cells CaP0 and CaP3 show that on Linux and macOS
-VMs. Cells CabP0 and CabP3 show it with a `branchName` on the Linux VM. That state
-is not measured on Windows. From the code: claustrum answers the lock-check refusal
-there and deletes nothing.
+Row A-N4 of `git.worktree_remove` is on [its page](protocol/git-worktree-remove.md).
 
 No row measures a listing over a limit of "Hook pins" in a folder that holds no
 repository. That is a listing that passes and holds too many hook names, or a key

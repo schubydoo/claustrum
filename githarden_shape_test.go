@@ -656,10 +656,13 @@ func TestHardenedGitCallShape(t *testing.T) {
 		checkHardenedEnv(t, "worktree_remove with worktreeRoot", calls)
 	})
 
-	// When the refusal check of an in-repo remove fails, the check runs once more
-	// before the lock-check answer, as on f6010b97 (Linux and macOS VMs): a second
-	// listing, and a second rev-parse when that listing passes. The worktree
-	// directory exists: a gone one answers from its own path.
+	// When the refusal check of an in-repo remove fails, the check runs once more:
+	// a second listing, and a second rev-parse when that listing passes. f6010b97
+	// answers the lock-check text after a git directory that git cannot use (Linux
+	// and macOS VMs). A config with a bad line gets the refusal of the second
+	// listing, as on 5fd08069 (cell G08b of round tier3-17, Linux VM). That
+	// replaces the lock-check text of f6010b97 there. The worktree directory
+	// exists: a gone one answers from its own path.
 	checkTwice := func(t *testing.T, g wtFixture, wantHardened bool) {
 		t.Helper()
 		if err := os.MkdirAll(g.leaf(), 0o755); err != nil {
@@ -673,8 +676,10 @@ func TestHardenedGitCallShape(t *testing.T) {
 		if wantHardened {
 			unit = 2
 		} else {
-			// Each failed listing is followed by `git version` in the root directory
-			// (89cb6289, row L10). It is checked here and then left out of the count.
+			// Each failed listing is followed by `git version` in the root
+			// directory (89cb6289, row L10). 5fd08069 does the same after the exit
+			// 128 of a bad config line (cell G08b of round tier3-17, Linux VM). It is
+			// checked here and then left out of the count.
 			var kept []shapeCall
 			for i, c := range calls {
 				if !slices.Equal(c.argv, []string{"version"}) {

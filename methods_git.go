@@ -2392,13 +2392,16 @@ func gitWorktreeRemoveLocked(req *request, p *gitParams, repo string) response {
 	// baseRepo, and a locked worktree is refused. 89cb6289 deletes it (row p6d on
 	// Linux and macOS VMs). That refusal is divergence D22.
 	dropEntry := true
+	// relisted is true when the first plain listing failed and a second one ran
+	// (removeListingCheck).
+	relisted := false
 	_, statErr := os.Stat(repo)
 	repoMissing := errors.Is(statErr, fs.ErrNotExist)
 	if p.WorktreeRoot == "" {
-		// If the repo's config cannot be listed, or baseRepo holds no repository, or its
-		// git directory fails the trust check (gitdirtrust.go), the registrations cannot
-		// be examined. Nothing is deleted. Measured side by side against f6010b97 on
-		// Linux, macOS and Windows VMs (rows G08, T03 and T04 on macOS). For a baseRepo
+		// If baseRepo holds no repository, or its git directory fails the trust check
+		// (gitdirtrust.go), the registrations cannot be examined. Nothing is deleted.
+		// Measured side by side against f6010b97 on Linux, macOS and Windows VMs (rows
+		// T03 and T04 on macOS). A failed listing follows removeListingCheck. For a baseRepo
 		// that holds no repository, 89cb6289 runs the listing and the rev-parse twice
 		// before that answer (row A5 on Linux, macOS and Windows VMs).
 		t := requestGitDirTrust(repo, false)
@@ -2431,14 +2434,13 @@ func gitWorktreeRemoveLocked(req *request, p *gitParams, repo string) response {
 		// once more before it answers: a second listing, and a second rev-parse when that
 		// listing passes. That repeat was measured on Linux and macOS VMs (a corrupt
 		// config, and a git directory that git cannot use). The answer is the same
-		// whatever the second check finds.
+		// whatever the second check finds. A first listing that git ran and that
+		// failed is the exception: removeListingCheck runs it again, as 5fd08069 does.
 		//
 		// A listing that answers "no repository" (hostileConfigRefusal) gets the same
 		// answer here. With no git on PATH, 89cb6289 answers so too (row L13xa on a Linux
-		// VM). For a listing that says "not a git repository", 89cb6289 was measured with
-		// the worktree folder absent only. Those rows are L14a, L14b, L14d, L14e and N01
-		// to N04. With the folder present, claustrum answers the lock-check refusal. Not
-		// measured.
+		// VM). With the folder present, a first listing that says "not a git
+		// repository" is listed again (cell F1n, see removeListingCheck).
 		if repoMissing {
 			// With no git on PATH the answer is the lock-check refusal, and nothing is
 			// deleted. 89cb6289 answers so for <T>/missing/.. and for <T>/dl/.. with a
@@ -2449,7 +2451,9 @@ func gitWorktreeRemoveLocked(req *request, p *gitParams, repo string) response {
 			}
 			dropEntry = false
 		} else {
-			c := hostileConfigRefusal(req.use, repo, true)
+			var c configCheck
+			var final bool
+			c, relisted, final = removeListingCheck(req.use, repo, verdict == gitDirNoRepo)
 			var checkErr error
 			if !c.refused() {
 				answered, checkErr = repositoryGitDir(req.use, repo, &c.listing)
@@ -2463,6 +2467,19 @@ func gitWorktreeRemoveLocked(req *request, p *gitParams, repo string) response {
 			if copyGone(checkErr) {
 				return refuse("failed to remove worktree: could not check whether " + p.WorktreePath + " is locked: " + checkErr.Error())
 			}
+			// A failed listing that is the answer gives the text of the failed listing
+			// after the words of the lock check, as on 5fd08069 (cells F2, F3, G08b and
+			// CaP3, see removeListingCheck). One that says "no repository" gets the lock-check
+			// refusal with no third listing (claustrum's own, not measured).
+			if final && c.refusal != "" {
+				return refuse("failed to remove worktree: could not check whether " + p.WorktreePath + " is locked: " + c.refusal)
+			}
+			if final && c.refused() {
+				return refuse(lockCheckRefusal(p.WorktreePath))
+			}
+			// Any other failed check runs once more, as on f6010b97 (Linux and macOS
+			// VMs) and in row A5 of 89cb6289. 5fd08069 repeats in cell Q1 and not in FR
+			// and CaP0 (tier3-17, Linux VM).
 			if c.refused() || checkErr != nil {
 				repeatRepositoryCheck(req.use, repo)
 				return refuse(lockCheckRefusal(p.WorktreePath))
@@ -2482,6 +2499,13 @@ func gitWorktreeRemoveLocked(req *request, p *gitParams, repo string) response {
 	if p.WorktreeRoot == "" {
 		commonDir = registrationGitDir(repo, answered)
 		probe = newRegistrationProbe(req.use, answered, inRepoWorkTree(repo))
+		// After a second listing that passed, 5fd08069 makes the pair of the probe
+		// before it answers (cells F1, F1n and F3s of round tier3-13, macOS VM, and
+		// round task111-09, Linux VM). The order of the pair and the deletes is not
+		// measured. claustrum does not use the answer.
+		if relisted {
+			probe.run()
+		}
 	}
 	// A registrations folder that is a symbolic link refuses the remove, and
 	// nothing is deleted (registrationsLinked). The test comes before the lock

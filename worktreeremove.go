@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"io/fs"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"runtime"
 	"strings"
@@ -593,6 +594,48 @@ func repeatRepositoryCheck(u gitUse, repo string) {
 	if c := hostileConfigRefusal(u, repo, true); !c.refused() {
 		noRepositoryAt(u, repo, c.listing)
 	}
+}
+
+// removeListingCheck is the first listing check of a remove without worktreeRoot,
+// for a worktree folder that exists. A listing that git ran and that exited
+// non-zero or died by a signal runs once more, whatever its stderr says. Exit 0
+// with stderr text is a success. `git version` runs before the second listing,
+// except after the "not a git repository" text of exit 128. 5fd08069 does so in
+// cells F1, F1n, F2 and F3 of rounds tier3-13 (macOS VM), tier3-17 (Linux VM) and
+// tier3-19 (Windows VM, F1 and F2), and in cell G08b of round tier3-17.
+// relisted reports that the second listing ran. final reports that a failed
+// check is the answer: the text of the failed listing after the words of the lock
+// check, or the lock-check refusal when it found no repository. Which listing's
+// text is not measured: both gave the same text in every measured cell.
+//
+// noRepo is true when the trust check found no repository. Then no second
+// listing runs. 5fd08069 shows it for a plain folder (cell CaP3 of round
+// tier3-17, Linux VM, an empty daemon GIT_CONFIG_KEY_0). The other no-repository
+// states are claustrum's own. The text of git 2.56 for a `.git` file that names
+// no valid repository is not final: one more listing runs, and the answer is the
+// lock-check refusal, the answer before this step was built (not measured,
+// claustrum's own).
+//
+// The text of git 2.56 for a `.git` file that names no valid repository gets
+// `git version` first (not measured). Not measured, claustrum's own: a listing
+// whose folder went keeps its answer and runs no second listing, and a failed `git
+// version` after the first listing is the answer, in the form of a failed second
+// listing.
+func removeListingCheck(u gitUse, repo string, noRepo bool) (c configCheck, relisted, final bool) {
+	r := plainListing(u, repo, true)
+	var ee *exec.ExitError
+	if !errors.As(r.err, &ee) || isGitStop(r.err) || copyGone(r.err) {
+		return listingCheck(u, r, repo, true), false, false
+	}
+	if noRepo {
+		return listingCheck(u, r, repo, true), false, !r.saysGitFileNowhere()
+	}
+	if !r.saysNoRepository() {
+		if v := gitVersionRun(u, true); v.err != nil {
+			return configCheck{refusal: gitCannotRunPrefix + v.detail()}, false, true
+		}
+	}
+	return hostileConfigRefusal(u, repo, true), true, true
 }
 
 // dropWorktreeEntryByPath deletes the one entry whose record names the worktree. It
