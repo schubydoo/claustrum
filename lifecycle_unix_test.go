@@ -293,7 +293,8 @@ func TestRunServeParentDaemonizes(t *testing.T) {
 	t.Setenv(daemonChildEnv, "")
 	t.Setenv("CLAUSTRUM_TEST_HELPER", "exit:0")
 
-	tf := filepath.Join(t.TempDir(), "token")
+	dir := shortTempDir(t)
+	tf := filepath.Join(dir, "token")
 	if err := os.WriteFile(tf, []byte("fd-token\n"), 0o600); err != nil {
 		t.Fatal(err)
 	}
@@ -302,9 +303,15 @@ func TestRunServeParentDaemonizes(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	code, exited := catchExit(func() { runServe("unused.sock", "", fd, "", wireLogOptions{}, false, false) })
+	// The launcher opens the daemon log beside the socket. A socket in the temp
+	// folder keeps that log out of the package folder.
+	sock := filepath.Join(dir, "unused.sock")
+	code, exited := catchExit(func() { runServe(sock, "", fd, "", wireLogOptions{}, false, false) })
 	if !exited || code != 1 {
 		t.Errorf("parent runServe: exited=%v code=%d, want exit 1 (the stub child never binds)", exited, code)
+	}
+	if _, err := os.Stat(filepath.Join(dir, daemonLogName)); err != nil {
+		t.Errorf("the launcher did not open its log beside the temp socket: %v", err)
 	}
 }
 
