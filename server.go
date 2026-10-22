@@ -69,6 +69,7 @@ type server struct {
 
 	mu           sync.Mutex
 	conns        map[*conn]struct{}
+	stopsGone    int // connections that sent server.shutdown and left conns, for the cleanup count
 	shutdown     chan struct{}
 	once         sync.Once
 	metricsLn    net.Listener // optional Prometheus listener; nil unless -metrics-addr set
@@ -137,6 +138,9 @@ type conn struct {
 	ac     *activityConn
 	wmu    sync.Mutex
 	closed bool
+
+	// sentStop is set under server.mu when this connection sent server.shutdown.
+	sentStop bool
 
 	// done is closed when serveConn returns, so the per-connection idle watcher
 	// (closeWhenIdle) exits promptly instead of lingering until the idle timeout.
@@ -1010,6 +1014,9 @@ func (s *server) serveConn(c *conn) {
 			close(c.done) // stop the idle watcher (nil when a test builds a conn directly)
 		}
 		s.mu.Lock()
+		if _, ok := s.conns[c]; ok && c.sentStop {
+			s.stopsGone++
+		}
 		delete(s.conns, c)
 		s.mu.Unlock()
 		s.procs.detachConn(c)
@@ -1322,7 +1329,10 @@ func (s *server) closeAll(socket string) {
 // TryLock keeps a writer that is stuck on a full socket buffer from blocking the
 // teardown. That writer then fails when the close lands.
 //
-// It returns the number of connections it closed, for the "cleanup:" line.
+// It returns the number of connections it closed, for the "cleanup:" line. A
+// connection that sent server.shutdown counts also when its client closed it
+// first. 5fd08069 logs "closed 2" for one idle client and the -stop client (cell
+// W-S2 of round tier3-01, Windows VM, 3 of 3 runs).
 func (s *server) dropConns() int {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -1333,7 +1343,7 @@ func (s *server) dropConns() int {
 		}
 		c.nc.Close()
 	}
-	return len(s.conns)
+	return len(s.conns) + s.stopsGone
 }
 
 // stopChildren implements the -keep-children policy on graceful shutdown. By
