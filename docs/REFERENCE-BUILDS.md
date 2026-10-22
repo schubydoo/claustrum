@@ -507,7 +507,7 @@ byte-identical frames on every probed case (locked refusal, non-worktree delete,
 re-create, normal removal). The residual difference was the worktree-removal
 mechanism, and that difference was off-wire on those cases. On other rows the old
 mechanism was wire-visible, for example a partial delete failure and a symbolic-link
-leaf. See [PROTOCOL.md](PROTOCOL.md) → `git.worktree_remove`.
+leaf. See [git.worktree_remove](protocol/git-worktree-remove.md).
 
 Beyond git, the build adds a daemon-to-daemon reconnect handoff
 and idle-connection management (the SSH-reliability items in the Desktop changelog).
