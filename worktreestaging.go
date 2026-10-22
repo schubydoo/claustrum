@@ -450,8 +450,12 @@ func (e *addRefused) Error() string { return e.text }
 // val-s3p2b2-12-windows, Windows VM, 2 of 2 runs). claustrum answers the same
 // after 10 calls (table S9 of val-s3p2b2-13-windows, 2 runs). The other failed
 // steps are not measured in attach mode: they get the same rule. On Linux and
-// macOS the refusal of worktreesFolderRefusal is such an error too.
-type addNotPrepared struct{ text string }
+// macOS the refusal of worktreesFolderRefusal is such an error too. offLink
+// marks the refusal of offWorktreesRefusal.
+type addNotPrepared struct {
+	text    string
+	offLink bool
+}
 
 func (e *addNotPrepared) Error() string { return e.text }
 

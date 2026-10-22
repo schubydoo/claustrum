@@ -1453,13 +1453,9 @@ func gitWorktreeCreateLocked(req *request, p *gitParams, repo string) response {
 		return refuseAdd("git worktree add failed: " + msg)
 	}
 	// With "shadowDirOff":true, a registrations folder that is a link or a file
-	// refuses the create before the add (offWorktreesRefusal). A create that
-	// took the copy at a later gate has the test of worktreeAdd instead.
-	if bool(p.ShadowDirOff) && !req.use.shadow() {
-		if msg := offWorktreesRefusal(repo); msg != "" {
-			return refuseAdd("git worktree add failed: " + msg)
-		}
-	}
+	// refuses the add after its listing (offWorktreesRefusal in worktreeAdd). A
+	// create that took the copy at a later gate has the test of a hold instead.
+	offMember := bool(p.ShadowDirOff) && !req.use.shadow()
 	// incompleteAdd answers an add that git ended well and that the daemon did
 	// not complete (addIncomplete), with the rollback of a failed checkout. On
 	// 5fd08069 the leaf is gone and the new branch stays, with the text of the
@@ -1512,7 +1508,7 @@ func gitWorktreeCreateLocked(req *request, p *gitParams, repo string) response {
 		}
 	}
 	listEntriesBefore()
-	addStderr, addErr := worktreeAdd(baseCtx, req.use, repo, p.WorktreePath, checkpoint, addArgs...)
+	addStderr, addErr := worktreeAdd(baseCtx, req.use, repo, p.WorktreePath, checkpoint, offMember, addArgs...)
 	added = addErr == nil
 	if resp, ok := incompleteAdd(addErr, createdBranch); ok {
 		return resp
@@ -1534,7 +1530,15 @@ func gitWorktreeCreateLocked(req *request, p *gitParams, repo string) response {
 		// (addNotPrepared): the frame has its text one time (cell E1 of round
 		// tier0-11, Linux VM, for a link at `worktrees`).
 		var notPrepared *addNotPrepared
-		if verifyCreatedWorktree(p.WorktreePath, checkpoint) != "" || errors.As(addErr, &notPrepared) {
+		if errors.As(addErr, &notPrepared) || verifyCreatedWorktree(p.WorktreePath, checkpoint) != "" {
+			// In attach mode 5fd08069 runs two listings after `rev-parse
+			// --absolute-git-dir` and answers the text one time (cell C2offA of
+			// round tier3-02, Linux and macOS VMs). claustrum runs the second
+			// one here. Under a hold in attach mode the second listing is not
+			// measured.
+			if notPrepared != nil && notPrepared.offLink {
+				offLinkListing(baseCtx, req.use, repo)
+			}
 			undoFailedAdd(p.WorktreePath, checkpoint)
 			return okResult(req.ID, worktreeResult{
 				Success:   false,
@@ -1554,7 +1558,7 @@ func gitWorktreeCreateLocked(req *request, p *gitParams, repo string) response {
 			fallbackArgs = append(fallbackArgs, startCommit)
 		}
 		listEntriesBefore()
-		addStderr, addErr = worktreeAdd(baseCtx, req.use, repo, p.WorktreePath, checkpoint, fallbackArgs...)
+		addStderr, addErr = worktreeAdd(baseCtx, req.use, repo, p.WorktreePath, checkpoint, offMember, fallbackArgs...)
 		added = addErr == nil
 		if resp, ok := incompleteAdd(addErr, p.BranchName); ok {
 			return resp
