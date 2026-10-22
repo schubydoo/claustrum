@@ -550,6 +550,10 @@ holds the wire contract.
 against `7c2f88d` both point to token persistence and to nothing else. No other
 method or phase changed.
 
+**Launcher bound.** The `-serve` launcher of `5db5e4a` waited about 10 s for its
+child. With a zero-byte `-token-file` it exited 1 after 10.07 s. claustrum used
+10 s until row P7 of `89cb6289` (12.06 s, Linux VM).
+
 ### `7c2f88d13e5f269762dd4d463aa4eb3102214110` — 2026-07-02
 
 **Wire delta.** Method count 18 → 19. claustrum matches all five changes

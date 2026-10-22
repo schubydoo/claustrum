@@ -89,6 +89,8 @@ component_management:
       name: server & lifecycle
       paths:
         - server.go
+        - selflocate_linux.go
+        - selflocate_other.go
         - tokenpersist.go
         - pipetransport.go
         - pipetransport_windows.go
