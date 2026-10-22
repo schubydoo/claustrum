@@ -15,7 +15,7 @@
 | `timeoutMs` | no | How long the daemon waits for the process to end after the signal, in milliseconds. The default is 3000. A value of `0` or below means the default. The daemon limits a larger value to 30000. |
 | `escalate` | no | What the daemon does at the end of that time. With `true`, the default, it ends the process by force. With `false`, it leaves the process alone. |
 
-The first signal reaches the same processes as a signal of [process.kill](../PROTOCOL.md#processkill).
+The first signal reaches the same processes as a signal of [process.kill](../PROTOCOL.md#processkill), except `KILL` inside the exit drain (see [Differences from the reference](#differences-from-the-reference)).
 
 ## Response
 
@@ -68,8 +68,8 @@ On Windows the daemon ignores the signal name. Each first signal ends the direct
 
 ## Differences from the reference
 
-claustrum is built to answer as the reference daemon does. No entry of the divergence catalog names this method yet. The case below can change a response, and the reference is not measured for it.
+claustrum is built to answer as the reference daemon does. No entry of the divergence catalog names this method.
 
-One case is claustrum's own choice, and no measurement of the reference covers it. For a short time after a child ends, the daemon still collects its last output and did not yet send the `exit` frame. A request in that time does not answer `alreadyExited`, and the daemon sends no first signal. If the `exit` frame comes inside the wait, the answer is `{"found": true, "died": true}`. If the wait ends first, the request goes on as for a child whose output is not complete.
+For a short time after a child ends, the daemon still collects its last output and did not yet send the `exit` frame. A request in that time does not answer `alreadyExited`, and the daemon sends no first signal. On Linux and macOS, `"signal": "KILL"` sends `SIGKILL` to the group at once instead. Windows makes that call too, and it ends nothing (not measured). If the `exit` frame comes inside the wait, the answer is `{"found": true, "died": true}`. If the wait ends first, the request goes on as for a child whose output is not complete. `5fd08069` gives the same answers and the same group kill (rounds `tier3-03` and `tier3-12`, macOS and Linux VMs). Whether it sends a first signal to the ended child is not measured, and Windows is not measured.
 
-That missing first signal is a guard of claustrum: the operating system can give the process id (pid) of a child that ended to another process. With `"signal": "KILL"` the guard also changes the answer. The other processes of the group then do not end at once, the wait can run out, and the answer has `"escalated": true`. Item 21 of the [ledger of completed work](../IMPROVEMENTS.md) has the guard for `process.kill`.
+For a signal other than `KILL`, that missing first signal is a guard of claustrum: the operating system can give the process id (pid) of a child that ended to another process. For `KILL` claustrum follows `5fd08069` (cell K2a), and so it accepts the risk that the number of the group went to other processes. Item 21 of the [ledger of completed work](../IMPROVEMENTS.md) has the guard for `process.kill`.

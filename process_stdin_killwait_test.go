@@ -398,3 +398,52 @@ func TestSocketStdinExitedProcessPrecedence(t *testing.T) {
 		t.Errorf("exited fresh = %+v, want Process not running", env.Error)
 	}
 }
+
+// TestSocketStdinEmptyAtAppliedIsDuplicate pins cells S2a to S2e of rounds
+// tier3-03 and tier3-12 (5fd08069, macOS and Linux VMs). A request with no bytes
+// and an offset equal to applied answers duplicate, on a live and on an exited
+// process. Without an offset the live process answers plain success and the
+// exited one -32602.
+func TestSocketStdinEmptyAtAppliedIsDuplicate(t *testing.T) {
+	sock := startSocketServer(t)
+	cl := dial(t, sock)
+	cl.call(spawnReqArgs(t, 1, "E1", "sleep", "30"))
+	cl.call(spawnReqArgs(t, 2, "E0", "sleep", "30"))
+
+	next := 10
+	stdin := func(proc, data, offset string) *rpcEnvelope {
+		off := ""
+		if offset != "" {
+			off = `,"offset":` + offset
+		}
+		next++
+		raw := cl.call(authed(`{"jsonrpc":"2.0","id":` + strconv.Itoa(next) +
+			`,"method":"process.stdin","params":{"id":"` + proc + `","data":"` + data + `"` + off + `}}`))
+		return decodeReply(t, raw, nil)
+	}
+	wantResult := func(cell string, env *rpcEnvelope, want string) {
+		t.Helper()
+		if env.Error != nil || string(env.Result) != want {
+			t.Errorf("%s: result %s, error %+v, want %s", cell, env.Result, env.Error, want)
+		}
+	}
+	four := base64.StdEncoding.EncodeToString([]byte("AAAA"))
+
+	wantResult("S2e", stdin("E1", "", ""), `{"success":true,"applied":0}`)
+	wantResult("write", stdin("E1", four, ""), `{"success":true,"applied":4}`)
+	wantResult("S2d", stdin("E1", "", "4"), `{"success":true,"applied":4,"duplicate":true}`)
+
+	for i, id := range []string{"E1", "E0"} {
+		var kw killAndWaitResult
+		decodeReply(t, cl.call(authed(`{"jsonrpc":"2.0","id":`+strconv.Itoa(3+i)+
+			`,"method":"process.killAndWait","params":{"id":"`+id+`","signal":"KILL"}}`)), &kw)
+		if !kw.Died && !kw.AlreadyExited {
+			t.Fatalf("killAndWait %s did not confirm the exit: %+v", id, kw)
+		}
+	}
+	wantResult("S2c", stdin("E1", "", "4"), `{"success":true,"applied":4,"duplicate":true}`)
+	wantResult("S2b", stdin("E0", "", "0"), `{"success":true,"applied":0,"duplicate":true}`)
+	if env := stdin("E0", "", ""); env.Error == nil || env.Error.Code != codeInvalidParam || env.Error.Message != "Process not running" {
+		t.Errorf("S2a: result %s, error %+v, want -32602 Process not running", env.Result, env.Error)
+	}
+}
