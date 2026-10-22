@@ -426,10 +426,11 @@ func (m *procManager) liveArgv() [][]string {
 // field still does: killAndWaitProc answers alreadyExited from it, so inside the
 // drain a killAndWait answers alreadyExited:false and waits, rather than reporting
 // an already-exited process. It delivers no FIRST signal either: signalIfLive's
-// reaped guard suppresses that. With escalate true and the drain still pending at
-// the end of the grace, killGroupAfterExit still sends the group SIGKILL.
-// Leaving killAndWait on this side of the narrowing is claustrum's choice. The
-// reference answer for a kill inside the drain is NOT probe-measured.
+// reaped guard suppresses that. The one exception is "signal":"KILL", which kills
+// the group at once (killGroupInDrain). With escalate true and the drain still
+// pending at the end of the grace, killGroupAfterExit still sends the group SIGKILL.
+// 5fd08069 answers the same in cells K1a to K1c and K2a of rounds tier3-03 and
+// tier3-12 (macOS and Linux VMs).
 // The other callers are internal (the session supersede, the shutdown log line).
 // Use signalIfLive, which holds p.mu across the reaped check and the delivery, to
 // decide whether it is safe to signal.
@@ -472,7 +473,7 @@ var signalGroup = func(g *procGroup, proc *os.Process, signame string) error {
 // p.mu is held across the check, the stamp and the delivery: a reaped check that
 // returns before the signal leaves a gap for the exit goroutine to reap in
 // between, which is the very race the check exists to prevent. Every signal site
-// goes through here for that reason.
+// goes through here for that reason, except killGroupAfterExit and killGroupInDrain.
 //
 // One window remains and cannot be closed at this layer: the kernel frees the
 // pid inside cmd.Wait, a moment before the exit goroutine can take p.mu and set
@@ -507,8 +508,9 @@ func (p *managedProc) signalIfLive(signame, killedBy string) bool {
 // NOT take the reaped guard signalIfLive applies: by construction it runs after
 // the reap, so that guard would make it a no-op and the orphans would survive.
 //
-// This is the one place claustrum knowingly signals a pgid whose leader is gone.
-// Its one caller is the escalation of killAndWaitProc, after the grace ran out.
+// With killGroupInDrain it is one of two places where claustrum knowingly signals
+// a pgid whose leader is gone. Its one caller is the escalation of killAndWaitProc,
+// after the grace ran out.
 // There the leader has often ended, and a group member that holds its pipes keeps
 // the exit drain pending.
 //
@@ -526,6 +528,22 @@ func (p *managedProc) killGroupAfterExit() error {
 		return nil
 	}
 	return signalGroup(p.group, p.cmd.Process, "KILL")
+}
+
+// killGroupInDrain sends SIGKILL to the group of a process inside its exit drain:
+// reaped, and its exit frame not out yet. 5fd08069 kills the group at once for a
+// killAndWait with "signal":"KILL" there (cell K2a of rounds tier3-03 and
+// tier3-12, macOS and Linux VMs). Another signal reaches no member of the group
+// there (cells K1a to K1c). Not measured: whether 5fd08069 also signals the ended child, the
+// spelling "SIGKILL" and the Windows answer. A process.kill there still sends
+// nothing (not measured). On Windows the error is ignored.
+func (p *managedProc) killGroupInDrain() {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	if !p.running || !p.reaped || p.cmd == nil || p.cmd.Process == nil {
+		return
+	}
+	_ = signalGroup(p.group, p.cmd.Process, "KILL")
 }
 
 // emit assigns the next per-process seq, buffers the frame, and fans it out to
@@ -1106,7 +1124,9 @@ func (p *managedProc) enqueueStdinLocked(data []byte) (full bool) {
 		}
 		return true
 	}
-	if p.stdinDone {
+	// An empty write queues nothing, so empty requests do not pile up in a queue
+	// that no longer drains.
+	if p.stdinDone || len(data) == 0 {
 		return false
 	}
 	p.stdinQ = append(p.stdinQ, data)
@@ -1120,8 +1140,8 @@ func (p *managedProc) enqueueStdinLocked(data []byte) (full bool) {
 // believes this data starts at; nil means "append at the current high-water"
 // (the legacy, offset-less behavior). It returns the new cumulative applied byte
 // count, plus:
-//   - duplicate=true when the data is wholly at-or-before what's already applied
-//     (nothing new is enqueued; applied is unchanged), and
+//   - duplicate=true when the data is wholly at-or-before what's already applied,
+//     or is empty at offset == applied. Nothing new is enqueued, and applied is unchanged.
 //   - gap=true when offset is ahead of applied (a hole that would drop input —
 //     the caller must resend from `applied`; nothing is enqueued).
 //
@@ -1152,13 +1172,15 @@ func (p *managedProc) applyStdin(data []byte, offset *uint64, running func() boo
 			p.stdinMu.Unlock()
 			return cur, false, true, false, false
 		}
-		if skip := cur - off; skip > 0 {
-			if skip >= uint64(len(data)) {
-				p.stdinMu.Unlock()
-				return cur, true, false, false, false
-			}
-			data = data[skip:]
+		// An offset equal to applied with no bytes is a duplicate too, also on an
+		// exited process (5fd08069, cells S2b to S2d of rounds tier3-03 and
+		// tier3-12, macOS and Linux VMs).
+		skip := cur - off
+		if skip >= uint64(len(data)) {
+			p.stdinMu.Unlock()
+			return cur, true, false, false, false
 		}
+		data = data[skip:]
 	}
 	if !running() {
 		p.stdinMu.Unlock()
@@ -1178,12 +1200,15 @@ func (p *managedProc) applyStdin(data []byte, offset *uint64, running func() boo
 }
 
 // stdinWriter drains the async queue to the child's stdin in FIFO order for the
-// life of the process. A write error (child gone / pipe closed) or stdinDone (set
-// when the process exits) stops it and discards any unsent data.
+// life of the process. stdinDone (set when the process exits) stops it and
+// discards any unsent data. After a write error (the child closed its stdin) it
+// writes no more, and the queue keeps taking bytes until it is full. 5fd08069 does
+// the same (cell S1 of rounds tier3-03 and tier3-12, macOS and Linux VMs).
 func (p *managedProc) stdinWriter() {
+	broken := false
 	p.stdinMu.Lock()
 	for {
-		for len(p.stdinQ) == 0 && !p.stdinDone {
+		for (broken || len(p.stdinQ) == 0) && !p.stdinDone {
 			p.stdinCond.Wait()
 		}
 		if p.stdinDone {
@@ -1202,14 +1227,10 @@ func (p *managedProc) stdinWriter() {
 
 		p.stdinMu.Lock()
 		if err != nil {
-			// The whole queue is discarded here — everything the client sent and
-			// got success:true for, that the child will now never see. Silently
-			// dropping it left no trace at all.
+			// The child never sees the queued bytes, nor any that come later.
+			// Silently dropping them left no trace at all.
 			logWarnf("[process.Manager] drainStdin %s: write error: %v", p.id, err)
-			p.stdinQ, p.stdinQBytes, p.stdinDone = nil, 0, true
-			p.stdinCond.Broadcast()
-			p.stdinMu.Unlock()
-			return
+			broken = true
 		}
 	}
 }
@@ -1390,11 +1411,13 @@ func (m *procManager) killAndWaitProc(p *managedProc, signal string, grace time.
 	if !p.isRunning() {
 		return true, true, true, false
 	}
-	p.signalIfLive(signal, "client")
+	if !p.signalIfLive(signal, "client") && strings.TrimPrefix(signal, "SIG") == "KILL" {
+		p.killGroupInDrain()
+	}
 	select {
 	case <-p.done:
 		// The process ended within the grace. Its group gets no SIGKILL here, with
-		// escalate true or false. Measured on Linux with strace against 89cb6289: the
+		// escalate true or false, except the KILL in the drain above. Measured on Linux with strace against 89cb6289: the
 		// child exits on SIGTERM, and a kid in its group has its own stdio. For
 		// process.killAndWait with the default (row X2b, 3 of 3 runs) and for the
 		// session supersede (row X2a, 4 of 4 runs), 89cb6289 sent the SIGTERM to the
@@ -1458,6 +1481,12 @@ func (m *procManager) reattach(c *conn, id string, fromSeq uint64) (p *managedPr
 		return nil, false, false, 0, 0, 0
 	}
 	met.reattaches.Add(1)
+	// The write lock of c comes first, so no wait on a socket write holds p.mu.
+	// The lock order is c.wmu, then p.stdinMu, then p.mu. No path holds p.mu or
+	// p.stdinMu and then takes a wmu.
+	if c != nil {
+		c.wmu.Lock()
+	}
 	p.mu.Lock()
 	// A reattach TRANSFERS the frame stream to the new connection; it does not
 	// add a second listener. Measured at 5db5e4a: after a reattach, output
@@ -1482,6 +1511,7 @@ func (m *procManager) reattach(c *conn, id string, fromSeq uint64) (p *managedPr
 			superseded = append(superseded, old)
 		}
 	}
+	_, attached := p.subs[c]
 	p.subs = map[*conn]struct{}{c: {}}
 	// On 90fca6e6 a reattach inside the exit drain answers running:false
 	// (measured). The process was already waited on, so it is not resumable.
@@ -1497,23 +1527,53 @@ func (m *procManager) reattach(c *conn, id string, fromSeq uint64) (p *managedPr
 		lastSeq = p.buffer[len(p.buffer)-1].Seq
 	}
 	p.mu.Unlock()
-	for _, old := range superseded {
-		old.supersede("process " + id + " reattached from another connection")
+	// A new connection gets no live frame before its replay ends. The reattach
+	// keeps the write lock of c until the replay is written, so a live emit to c
+	// waits for it. 5fd08069 sends no frame above lastSeq before the stored frames
+	// end (cell R1 of rounds tier3-03 and tier3-12, macOS and Linux VMs). A
+	// reattach on a connection that is already attached keeps the old order, as
+	// on 5fd08069 (cell R2). A test that dispatches with no connection takes the
+	// old order too.
+	hold := !attached && c != nil
+	if c != nil && !hold {
+		c.wmu.Unlock()
 	}
+	afterReplaySnapshot(id)
 	p.stdinMu.Lock()
 	stdinApplied = p.stdinApplied
 	p.stdinMu.Unlock()
-	for _, f := range replay {
-		if err := c.writeJSON(f); err != nil {
-			logWarnf("[frameSink] replay write failed, detaching: %v", err)
-			p.mu.Lock()
-			delete(p.subs, c)
-			p.mu.Unlock()
-			break
+	var err error
+	if !hold {
+		for _, old := range superseded {
+			old.supersede("process " + id + " reattached from another connection")
 		}
+		for _, f := range replay {
+			if err = c.writeJSON(f); err != nil {
+				break
+			}
+		}
+	} else {
+		err = c.writeReplayLocked(replay)
+		c.wmu.Unlock()
+		// After the replay, as supersede takes the write lock of the old
+		// connection. The later close is claustrum's own, not measured.
+		for _, old := range superseded {
+			old.supersede("process " + id + " reattached from another connection")
+		}
+	}
+	if err != nil {
+		logWarnf("[frameSink] replay write failed, detaching: %v", err)
+		p.mu.Lock()
+		delete(p.subs, c)
+		p.mu.Unlock()
 	}
 	return p, true, running, firstSeq, lastSeq, stdinApplied
 }
+
+// afterReplaySnapshot runs in reattach after p.mu goes and before the replay is
+// written. It is a seam for a test that emits a live frame there. Production never
+// reassigns it.
+var afterReplaySnapshot = func(id string) {}
 
 func (m *procManager) detachConn(c *conn) {
 	m.mu.Lock()

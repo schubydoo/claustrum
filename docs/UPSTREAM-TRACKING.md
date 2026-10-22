@@ -647,11 +647,13 @@ traps that matter for telling drift from expected:
   that exists and does not start ends the old process first, on `89cb6289` and
   on claustrum (Linux rows H4a to H4c).
 - A descendant that lives on after `process.killAndWait` or a session supersede
-  is not drift in one case: the process ended on the graceful signal within the
-  grace. `89cb6289` then sends its group no `SIGKILL` (Linux rows X2a and X2b,
+  is not drift in these cases. One is a process that ended on the graceful
+  signal within the grace. `89cb6289` then sends its group no `SIGKILL` (Linux rows X2a and X2b,
   also B1 and H4a to H4c). claustrum is built to it. When the grace runs out,
   both send the group `SIGKILL` (Linux rows B2, B3 and X1). macOS rows X2a to
-  X2c give the same. Windows has no X2 row.
+  X2c give the same. Windows has no X2 row. The holder of the pipes also lives on,
+  with equal answers on `5fd08069`, in cells K1b, K1c and K2b (rounds `tier3-03`
+  and `tier3-12`, macOS and Linux VMs).
 - A daemon that runs no login shell before its first `process.spawn` is not drift
   (Linux and macOS rows G1 and G2 against `89cb6289`).
 - A first spawn that answers after 4.6 s with a timed-out PATH line is not drift

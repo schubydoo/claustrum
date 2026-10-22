@@ -42,13 +42,13 @@ Each result has the first five members. If the daemon has no such process, the r
 ## What the request does
 
 1. The daemon makes this connection the one receiver of the frames of the process. A reattach does not add a second receiver.
-2. The daemon closes each other connection that received the frames before. It closes the whole connection, so that client also loses the streams of its other processes. A reattach on the connection that already receives the frames closes nothing.
+2. The daemon closes each other connection that received the frames before. It closes the whole connection, so that client also loses the streams of its other processes. A reattach on the connection that already receives the frames closes nothing. For a new connection this close comes after step 3 (claustrum's own, not measured).
 3. The daemon sends the stored frames with a `seq` above `fromSeq` to this connection, in order.
 4. The daemon sends the result.
 
-New frames of the process go to this connection from step 1 on. No frame above `lastSeq` reaches an old connection. An old connection can still get a frame at or below `lastSeq` that the daemon was already writing.
+New frames of the process go to this connection after step 3. On the connection that already receives the frames they go there from step 1 on. No frame above `lastSeq` reaches an old connection. An old connection can still get a frame at or below `lastSeq` that the daemon was already writing.
 
-From the code, and not measured: a new frame with a `seq` above `lastSeq` can arrive on this connection before the stored frames end, or before the result. Order the frames by `seq`. On a reattach from the connection that already receives the frames, a frame at or below `lastSeq` can arrive twice. Drop a frame whose `seq` you already have, from either connection.
+On a reattach from the connection that already receives the frames, a frame at or below `lastSeq` can arrive twice. `5fd08069` does the same (rounds `tier3-03` and `tier3-12`, macOS and Linux VMs). Drop a frame whose `seq` you already have. From the code, and not measured: a new frame can arrive before the result.
 
 ## Frames that the daemon no longer has
 
