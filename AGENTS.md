@@ -473,8 +473,8 @@ Every OS serves the same JSON-RPC methods. Full internals →
       through the path. The comment at the top of `gitdirheld.go` has the
       list of the steps.
     - By the path stay: git itself, a request that holds no git directory
-      (`"shadowDirOff":true` or a start while such a request runs, until a
-      later gate before its first good add, the state
+      (`"shadowDirOff":true` or a start while such a request runs, until its
+      later gate, the state
       `fallback-git`, no run folder), and
       on Linux and macOS the index in a `worktrees` entry that is a symbolic
       link, with the identity test of D24. So does the stale step for a
@@ -498,11 +498,13 @@ Every OS serves the same JSON-RPC methods. Full internals →
     - On Windows a directory symbolic link at `.git` is refused as a junction
       is, on every git method without `"shadowDirOff":true`, before any write
       or remove (`gitDirIsSymlink`). `5fd08069` refuses it with equal replies,
-      and the folder behind the link is unchanged on both (Windows VM).
-      With `"shadowDirOff":true`, or for a request that starts while such a
-      request runs (from the code, not measured), nothing is refused, and git makes and
-      removes the worktree in the folder behind the link. `5fd08069` does the
-      same for a junction and for a directory symbolic link (Windows VM).
+      and neither changes the folder behind the link (Windows VM).
+      With `"shadowDirOff":true` git makes and removes the worktree behind
+      either link at `.git` (`5fd08069`, Windows VM). With the member, either
+      link at `.git\worktrees` refuses the create after its listing, and the
+      leaf goes, as on `5fd08069` (cells C2off and C2offJ of rounds `tier3-02`
+      and `tier3-05`, Windows VM). A request started during one gets both
+      rules until its later gate (from the code, not measured).
   [git.worktree_create](docs/protocol/git-worktree-create.md#the-held-git-directory)
   has the rules for a reader.
 - In the state `shadow` `git.worktree_create` writes into the git directory of
