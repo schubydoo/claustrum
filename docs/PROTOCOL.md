@@ -1220,8 +1220,8 @@ Windows VMs saw it at that place.
   The daemon then logs
   `[Server] cleanup: closed <n> connection(s), killed <n> child process group(s)`,
   as the reference does. The first count includes the connection that sent the
-  request (`5fd08069`, cell W-S2 of round `tier3-01`, measured on a Windows VM
-  only). On Linux and Windows VMs, `f6010b97` and `89cb6289` logged that line at
+  request (`5fd08069`, cell W-S2 of round `tier3-01`, Windows VM only).
+  [UPSTREAM-TRACKING.md](UPSTREAM-TRACKING.md) has a `89cb6289` run with `closed 0`. On Linux and Windows VMs, `f6010b97` and `89cb6289` logged that line at
   every clean shutdown (rows RP11, RP12a, RP12b, ST03, ST09, WN03, WJ03). The
   counts for a child that ended just before the shutdown are not measured.
 - Log lines on a shutdown by `SIGTERM`. The daemon logs

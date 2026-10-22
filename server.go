@@ -1265,8 +1265,9 @@ func (s *server) teardown(socket string) {
 //
 // Its last log line is the reference's "cleanup:" line. Linux and Windows VMs measured it
 // against f6010b97 and 89cb6289 at every clean shutdown (-stop, SIGTERM, the orphan
-// self-exit). The first count is the connections that this shutdown closed, the
-// connection of -stop included. The second count is the children that got the kill.
+// self-exit). The first count is the connections that this shutdown closed, plus the
+// connection that sent server.shutdown if it already left (see dropConns). The second
+// count is the children that got the kill.
 // Not measured: the counts for a child that ended by itself just before the shutdown.
 func (s *server) closeAll(socket string) {
 	s.ln.Close()
