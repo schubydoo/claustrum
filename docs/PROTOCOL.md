@@ -3961,33 +3961,34 @@ the Linux, macOS and Windows VMs of each row. `<b>` is `branchName` as sent.
   - One bound of 60 s covers for-each-ref and rev-list together. At the
     bound the running call is killed, with no SIGTERM first. In row R22a (L)
     for-each-ref ended 60.002 s after its start. In row B2-01 (L) for-each-ref used
-    40 s, and rev-list got the other 20 s. On W the call ended at about 59.9 s with
+    40 s, and rev-list got the other 20 s. On W it ended at about 59.9 s with
     exit code 1 (row B2-02). On M it ended at about 61.2 s, in a run with one VM stall.
-  - claustrum starts the bound right before the config listing of for-each-ref. The
-    bound also covers rev-parse. Both are claustrum's choice (not measured).
+  - claustrum starts the bound right before the config listing of for-each-ref, and
+    it also covers rev-parse (claustrum's choice, not measured).
   - update-ref gets SIGTERM 5 s after it starts, on L and M. A call that ignores it
     is killed 5 s later (rows R23a, R23b, R23a1 and R23b1). On W it is killed at
     about 5 s, with exit code 1 (row R23a). The 5 s count from the start of
     update-ref, after its config listing.
   - The same stop holds in the create rollback. `f6010b97` already stopped update-ref
     there, and the undo text ends `: signal: terminated` (row B2-09e, L M). A rollback
-    update-ref that ignores the SIGTERM is killed 5 s later, as on remove. That is
-    claustrum's choice (not measured).
-  - Only the git process gets the SIGTERM or the kill, not its children. That is
-    claustrum's choice (not measured).
+    update-ref that ignores the SIGTERM is killed 5 s later, as on remove (claustrum's
+    choice, not measured).
+  - Only the git process, not its children, gets the SIGTERM or the kill
+    (claustrum's choice, not measured).
   - The caller's `timeoutMs` does not stop the step (rows C04 and B2-10, L).
-- Within one daemon, the check and the delete of a branch run one at a time for one
+- Within one daemon, the check and delete of a branch run one at a time per
   repository, also through a linked worktree. Two removes of worktrees whose
-  branches share a unique commit then leave one of the two branches. The reply that
-  comes second carries the member. This holds for one `baseRepo` (rows R21, L, and
+  branches share a unique commit then leave one of the branches. The second reply
+  carries the member. This holds for one `baseRepo` (rows R21, L, and
   B2-12, M) and through a linked worktree (row R21b, L).
-  The branch steps of different repositories run at the same time (row B2-08, L). The
-  rows do not tell a lock on the common dir from one on the main worktree. claustrum
-  keys the lock by the git dir of the entries, the common dir. That is claustrum's
-  choice (not measured). A create rollback takes the same lock (not measured).
-- claustrum still runs two requests with the same `baseRepo` one after the other,
-  as before. `89cb6289` deletes both worktree directories first (row R21, L). No frame
-  shows that difference.
+  The branch steps of different repositories run at the same time (row B2-08, L).
+  claustrum keys the lock by the common dir, also in a rollback (not measured).
+- claustrum runs two removes of one `baseRepo` one after the other.
+  `89cb6289` deletes both worktree directories first (row R21, L).
+- A remove deletes its leaf during the `worktree add` of a create in its git
+  directory. Its entry, branch and reply wait for the add, not the checkout
+  (`5fd08069`, round `tier3-02`, cell T3, L M, T3M and T3C, L). A create's add and a
+  remove through another `baseRepo` also wait (not measured).
 
 The remove frame never gains text from this step. A kept branch adds only
 `"branchKept":true`. Every kept case of steps 1 to 6 sets it on remove (rows R02,
