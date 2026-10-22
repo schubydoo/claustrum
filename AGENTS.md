@@ -361,8 +361,8 @@ Every OS serves the same JSON-RPC methods. Full internals →
       `--version` run does not start or exits non-zero gets one plain remove.
       A stopped run keeps it. On Windows claustrum can leave that file when
       the exited CLI holds it (claustrum's own code, not measured).
-      Two guards run before that tree delete. D6 runs first: `ensureCLI` runs
-      it before it writes or removes
+      Two guards run before that tree delete. D6 runs first: `makeCLIDir` and
+      `ensureCLI` run it before they write or remove
       anything at a path built from the version. D6
       makes the version one path component, so the CLI path is a direct child
       of the cli-dir. D6 does not test which folder that child is. With a
@@ -372,8 +372,8 @@ Every OS serves the same JSON-RPC methods. Full internals →
       contains it. It runs `wipesHomeDir` first. Then it compares the folder at
       the CLI path with home and with each parent folder of home by identity
       (`os.SameFile`). It does that for the given and the resolved home
-      path. The reference deletes home there (measured on Linux, macOS
-      and Windows).
+      path. The reference deletes home there (Linux, macOS
+      and Windows VMs).
       `-install` also removes two operator-named paths with a plain
       `os.Remove`, never as a tree (`clearNonFolderCLIDir`). The first is the
       cli-dir entry, only when it is a regular file, a symlink to a
@@ -383,16 +383,15 @@ Every OS serves the same JSON-RPC methods. Full internals →
       removed. The reference does both (Linux, macOS and Windows VMs). Do not
       widen either delete or build either path from anything but the
       cli-dir.
-      `-install` also sweeps the cli-dir. Each sweep is one plain `os.Remove`
-      for each regular file with its name, never as a tree. A folder and a
+      `-install` also sweeps the cli-dir. Each sweep removes regular files by
+      name with a plain `os.Remove`, never as a tree. A folder and a
       link (from the code) stay. The 10 minute sweep takes `.fetch-<digits>` and
-      `<version>.zst`. It runs before the run of a new CLI, after a failed
-      attempt and after a D6 refusal. On a cache hit it runs only after a
+      `<version>.zst`. It runs before a new CLI runs, after a failed attempt
+      and after a D6 refusal. On a cache hit it runs only after a
       `--version` run that its bound stopped (cell P6 of `89cb6289`). The 7
       day sweep takes `<version>.zst.part`. It runs once, before any CLI runs,
-      also on a cache hit (cell L9 of `5fd08069`). They name only the cli-dir,
-      never the version. Neither
-      sweep removes the `-cli-zst` blob. The names are measured on `5fd08069`
+      also on a cache hit (cell L9 of `5fd08069`). Neither names the version
+      or removes the `-cli-zst` blob. The names are measured on `5fd08069`
       (cells L8, M3a and W5, Linux, macOS and Windows VMs).
       The `-cli-keep` prune runs after a good install only, so after D6. It
       is one plain `os.Remove` for each version file past the keep count, in

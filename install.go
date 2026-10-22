@@ -128,8 +128,14 @@ func runInstall(o installOpts) {
 		//
 		// With the launcher gate on, a file that is no program of this machine
 		// does not run, and the install runs over it (cliFileLooksRunnable).
+		// The cli folder is made before the CLI is looked for, also on a cache
+		// hit (makeCLIDir). A failure takes the arm of a failed install below
+		// (claustrum's own, not measured). So a present CLI with D/sub a regular
+		// file gets no probe, the mkdir error and an empty cliPath. The 10 minute
+		// sweep then finds no folder to sweep.
+		dirErr := makeCLIDir(o, f.CliPath)
 		checkErr := errCLINotRunnable
-		if isRegularFile(f.CliPath) && (installManaged == nil || cliFileLooksRunnable(f.CliPath)) {
+		if dirErr == nil && isRegularFile(f.CliPath) && (installManaged == nil || cliFileLooksRunnable(f.CliPath)) {
 			checkErr = installCLICheck(f.CliPath, false)
 		}
 		var stopped *cliStoppedError
@@ -150,7 +156,10 @@ func runInstall(o installOpts) {
 			// .fetch-123 and 1.0.0.zst stay (cell L9, Linux VM).
 			f.CliWasPresent = true
 		} else {
-			err := ensureCLI(o, f.CliPath)
+			err := dirErr
+			if err == nil {
+				err = ensureCLI(o, f.CliPath)
+			}
 			if err != nil {
 				f.CliError = err.Error()
 				f.CliUnresponsive = errors.As(err, &stopped)
@@ -219,6 +228,36 @@ type cliDirError struct{ err error }
 
 func (e *cliDirError) Error() string { return fmt.Sprintf("mkdir cli dir: %v", e.err) }
 
+// makeCLIDir is the folder step of runInstall. It runs before the CLI is looked
+// for, so a cache hit makes the folders too (cell L-V3 of round tier3-01).
+//
+// The mkdir uses the -cli-dir text as given, not the cleaned folder of cliPath.
+// So D/sub/.. makes D/sub, and D/a/b/../.. makes D/a and D/a/b. With D/sub a
+// regular file the answer is "mkdir cli dir: mkdir D/sub: not a directory", and
+// the file stays. 5fd08069 does the same in cells L-HS10b, L-V1, L-V2 and L-V3
+// (Linux VM) and M-HS10b (macOS VM). On Windows the step is off
+// (rawCLIDirStep). There 5fd08069 makes nothing and answers the "missing" error,
+// also with sub a file (cells W-HS10b and W-V1, Windows VM).
+//
+// clearNonFolderCLIDir keeps the cleaned folder of cliPath, as before. With the
+// raw text a ".." after a symbolic link names another entry. The cleaned folder
+// keeps its removes on the entries of before (claustrum's own, not measured).
+// Its place before the mkdir is not measured.
+//
+// A version that D6 refuses skips this step, so the refusal of ensureCLI still
+// comes before any write or remove at a path built from the version
+// (claustrum's own).
+func makeCLIDir(o installOpts, cliPath string) error {
+	if !rawCLIDirStep || validateCLIVersion(o.cliVersion) != nil {
+		return nil
+	}
+	clearNonFolderCLIDir(filepath.Dir(cliPath))
+	if err := os.MkdirAll(o.cliDir, 0o700); err != nil {
+		return &cliDirError{err: err}
+	}
+	return nil
+}
+
 // hashBlobFile is sha256File behind a seam, so ensureCLI's -cli-zst hash-failure arm is
 // reachable from a test: the blob has just been opened and read a byte at that
 // point, so no fixture can make the very next hash of the same path fail.
@@ -272,7 +311,8 @@ func ensureCLI(o installOpts, cliPath string) error {
 	// no source flag on f6010b97. A failure leaves the cli-dir, empty if it was
 	// new. A missing blob, a 404, a refused connection and a missing source all
 	// leave it. A -cli-url download also shows it 1.5 s into a 3 s wait for
-	// headers.
+	// headers. On Linux and macOS, makeCLIDir made the folders of the raw
+	// -cli-dir text before the cache probe. This step then makes the cleaned one.
 	//
 	// 0700, not 0755: the reference creates the whole cli-dir chain owner-only.
 	// Probe-measured under umask 022 against 5db5e4a. The "mkdir cli dir: "

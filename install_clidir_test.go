@@ -257,3 +257,18 @@ func TestInstallVersionGuardRunsBeforeTheCLIDirReplace(t *testing.T) {
 	wantContent(t, dir, "a regular file\n")
 	wantContent(t, marker, "beside\n")
 }
+
+// rawCLIDirCell is an existing empty folder D with the stub environment, for
+// the cells of round tier3-01 (install_clidir_raw_*_test.go).
+func rawCLIDirCell(t *testing.T) string {
+	t.Helper()
+	f := newStubFixture(t)
+	d := filepath.Join(f.root, "D")
+	if err := os.Mkdir(d, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	return d
+}
+
+// missingTail ends the facts line of a miss of 1.0.0 with no source flag.
+const missingTail = `false,"cliError":"cli 1.0.0 missing and no --cli-url or --cli-zst provided"}` + "\n"

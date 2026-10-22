@@ -5630,11 +5630,12 @@ Checksum and verify ordering:
   refused connection and a missing source all leave it. That matches the
   reference: on every measured build from `5db5e4a` for `-cli-zst`, and on
   `f6010b97` for `-cli-url` and a missing source. Measured on a Linux VM.
-- The folder that claustrum creates is the cleaned cli-dir path. For
-  `-cli-dir <dir>/sub/..` that is `<dir>`, so it makes no folder `sub`. That is
-  a code fact. `89cb6289` creates `<dir>/sub` (mode `0700`), when no folder
-  `sub` exists before the run (Linux cell HS10b, three runs). In that cell
-  claustrum refuses at the home guard, and no folder `sub` exists after the run.
+- On Linux and macOS the folder step uses the `-cli-dir` text as given, also on
+  a cache hit (a Linux VM row). So `-cli-dir <dir>/sub/..` makes `<dir>/sub` (mode `0700`).
+  Windows makes nothing there. If the step fails, `cliPath` is empty and
+  `cliError` is the mkdir error, such as `mkdir cli dir: mkdir <dir>/sub: not a
+  directory`. `5fd08069` does the same (round `tier3-01`, Linux, macOS and
+  Windows VMs).
 
 One opt-in wall-clock bound exists, and it is off by default, so a stock
 claustrum does not apply it. The other `-install` clocks in this paragraph are

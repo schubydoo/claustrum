@@ -33,3 +33,8 @@ func probeCLIPathMissing(path string) bool {
 // 5fd08069 a running old CLI gives "Access is denied." (cells W1 and W2,
 // Windows VM). placeStagedCLI tries such a rename again.
 func renameDenied(err error) bool { return errors.Is(err, syscall.ERROR_ACCESS_DENIED) }
+
+// rawCLIDirStep is off on Windows, so -install keeps its folder step on a cache
+// miss only. 5fd08069 makes nothing for C:\D\sub\.. there, also with sub a file
+// (cells W-HS10b and W-V1 of round tier3-01, Windows VM).
+const rawCLIDirStep = false
