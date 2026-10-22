@@ -224,7 +224,9 @@ func TestStaleStepActsNothingBehindALink(t *testing.T) {
 			}
 			mustWrite(t, filepath.Join(target, "old", "gitdir"), filepath.ToSlash(leaf)+"/.git\n")
 			kind.link(t, filepath.Join(f.gitDir, "worktrees"), target)
-			f.u.accepted.dropStaleRegistration(leaf)
+			if f.u.accepted.dropStaleRegistration(leaf) {
+				t.Error("the step reports a match behind the link, want none")
+			}
 			if len(*f.removals) != 0 {
 				t.Errorf("the step asked to remove %q behind the link, want nothing", *f.removals)
 			}

@@ -68,7 +68,9 @@ func TestHeldStaleStepRules(t *testing.T) {
 		mustWrite(t, filepath.Join(target, "old", "gitdir"), record(f))
 		mustWrite(t, filepath.Join(target, "MARK"), "mark\n")
 		linkAt(t, filepath.Join(f.gitDir, "worktrees"), target)
-		f.u.accepted.dropStaleRegistration(leaf(f))
+		if f.u.accepted.dropStaleRegistration(leaf(f)) {
+			t.Error("the step reports a match behind the link, want none")
+		}
 		if len(*f.removals) != 0 {
 			t.Errorf("the step asked to remove %q behind the link, want nothing", *f.removals)
 		}

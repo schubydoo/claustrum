@@ -1440,7 +1440,9 @@ func gitWorktreeCreateLocked(req *request, p *gitParams, repo string) response {
 			}
 		}
 	}
-	// On Windows the stale step runs here, before the listing of the add.
+	// On Windows the stale step runs here, before the listing of the add. A
+	// refusal between the mkdir of the leaf and this point leaves the stale
+	// entry in place (not measured).
 	if staleStepAfterGitDir {
 		staleMatched = staleStep()
 	}
