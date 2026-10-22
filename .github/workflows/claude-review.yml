@@ -35,8 +35,18 @@ name: Claude Code Review
 #      request cannot rewrite the rules that govern its own review.
 #
 # SECURITY: the action itself only runs for users with write access and denies bots by
-# default. The `if:` below is narrower still — maintainer only, because this spends a
-# personal subscription quota — and cheaper, since it stops the job spinning up at all.
+# default. The `if:` below is narrower still — maintainer only, because each run bills
+# the API usage of the `claustrum` workspace — and cheaper, since it stops the job
+# spinning up at all.
+#
+# AUTH: Workload Identity Federation, no stored credential. The job's GitHub OIDC token
+# (`id-token: write`) is exchanged for a short-lived Anthropic token by the federation
+# rule in the repo variables. The rule matches only this file on main, an issue_comment
+# event, this repo and owner by numeric id, and the owner as actor. So a fork PR, another
+# workflow or another commenter gets no token. Do NOT add `claude_code_oauth_token` or
+# `anthropic_api_key` back: a static credential wins over federation and silently
+# replaces it. A failed exchange shows its reason on the authentication history page of
+# the Workload identity settings in the Claude Console.
 # Advisory only: `contents: read` (Claude cannot push) and the instructions require a
 # COMMENT review, never REQUEST_CHANGES, so it can never gate a merge.
 
@@ -164,7 +174,12 @@ jobs:
         id: review
         uses: anthropics/claude-code-action@a5a423f75c251dcbff8a74e99f83b2cb03c72bfa # v1.0.256
         with:
-          claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
+          # Workload Identity Federation (see AUTH in the banner). These are identifiers,
+          # not credentials, so they are repo variables, not secrets.
+          anthropic_federation_rule_id: ${{ vars.ANTHROPIC_FEDERATION_RULE_ID }}
+          anthropic_organization_id: ${{ vars.ANTHROPIC_ORG_ID }}
+          anthropic_service_account_id: ${{ vars.ANTHROPIC_SERVICE_ACCOUNT_ID }}
+          anthropic_workspace_id: ${{ vars.ANTHROPIC_WORKSPACE_ID }}
           trigger_phrase: "@claude review"
           # NO `prompt:` — see the banner. Guidance goes through the system prompt.
           #
@@ -228,8 +243,8 @@ jobs:
           #
           # ⚠️ Two things this does NOT buy, so nobody reads a guarantee into it.
           # (1) Quota. That same run cost $4.6038 over 61 turns ≈ $0.075/turn, so the worst
-          #     case per review moves from ~$4.60 to ~$11 — against the personal subscription
-          #     quota that line 36 gives as the reason this job is maintainer-only. The trade
+          #     case per review moves from ~$4.60 to ~$11, billed to the `claustrum`
+          #     workspace (the reason this job is maintainer-only). The trade
           #     is still favourable (an exhausted run bills in full and publishes nothing, so
           #     it is the most expensive outcome as well as the useless one), but the ceiling
           #     did move.
