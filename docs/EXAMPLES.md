@@ -103,19 +103,14 @@ one frame and change `lastSeq`. When the connection that spawned a process
 disconnects, the process continues to run. A *new* connection can `reattach` to
 that process and continue to read the stream. This is the reconnect path.
 
-## Opt into `pid` + `startTime` — `wantPid` (claustrum extension)
+## Opt into `pid` + `startTime` with `wantPid` (claustrum extension)
 
-!!! note "An addition, not reference behavior"
-    The reference daemon has no `wantPid`. This is an opt-in claustrum
-    extension, CT-1. See [DIVERGENCES.md](DIVERGENCES.md). If you omit it,
-    which is the default, every frame stays byte-identical to the reference.
-    `wantPid` does not change the original `spawn` and `reattach` behavior.
-    If you ask for them, it *adds* fields, and nothing else.
-
-`process.spawn` and `process.reattach` accept `"wantPid":true`. When you set it,
-the result carries the child's OS `pid` and a `startTime` token. The daemon
-returns the same two values on spawn and on reattach for the same `id`. Use them
-to detect PID reuse and orphans:
+The reference daemon has no `wantPid`. It is claustrum's opt-in extension,
+[CT-1](DIVERGENCES.md#ct-1), and without it every frame stays byte-identical to
+the reference. With `"wantPid":true`, `process.spawn` and `process.reattach` of a found
+process add the OS `pid` of the child and a `startTime` token. Both methods
+return the same two values for the same `id`. [process.spawn](protocol/process-spawn.md#response) says how to
+compare `startTime`.
 
 ```sh
 run '[{"jsonrpc":"2.0","id":1,"method":"process.spawn",
@@ -127,16 +122,6 @@ run '[{"jsonrpc":"2.0","id":1,"method":"process.spawn",
 # {"id":2,"result":{"found":true,"running":false,"firstSeq":1,"lastSeq":2,"stdinApplied":0,"pid":12345,"startTime":1718040000.12}}
 ```
 
-Without `wantPid`, those same two replies are exactly `{"success":true}` and
-`{"found":…,"running":…,"firstSeq":…,"lastSeq":…,"stdinApplied":…}`. The
-`pid` and `startTime` fields are absent (`omitempty`).
-
-`startTime` is an opaque token. Store it. Then compare a daemon value
-against a *later* daemon value for the same `id` to detect PID reuse. Do
-not compare it for equality against a process start time that you read from
-the OS (for example, psutil `create_time`). `startTime` is the daemon's wall
-clock at the moment of the spawn, not the kernel's process-creation time.
-
 ## Extract a plugin tarball
 
 ```sh
@@ -145,11 +130,10 @@ run "[{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"files.extract_tar\",
 # {"id":1,"result":{"success":true,"fileCount":N}}   (expects a gzip tarball; destDir must be absolute, non-root)
 ```
 
-The daemon also refuses a `destDir` that *is or contains* your home directory.
-This is the `wipesHomeDir` guard, not only the absolute/non-root check that the
-comment shows. `extract_tar` deletes `destDir` before it extracts, and `"~"`
-expands to `$HOME`. Thus the home guard stops a bare `"~"` from deleting your
-home directory. See [DIVERGENCES.md](DIVERGENCES.md) (D2).
+The request deletes `destDir` before it extracts. The daemon refuses a
+`destDir` that is or contains your home directory, so a bare `"~"` does not
+delete home ([D2](DIVERGENCES.md#d2)). See
+[files.extract_tar](protocol/files-extract-tar.md).
 
 ## Shut it down
 
@@ -178,7 +162,9 @@ because `https://example.invalid` is unreachable. The download thus fails.
 `libc` is `glibc` on a glibc linux host and `musl` on a musl linux host. Off
 linux, `libc` is empty (`""`).
 
-## Operational knobs (claustrum-only, all off the wire)
+## Operational knobs
+
+These are claustrum's own, and none changes a frame.
 
 ### Token on a file descriptor
 
@@ -216,27 +202,14 @@ CLAUSTRUM_LOG_LEVEL=warn claustrum -serve -socket "$D/rpc.sock" -token-file "$D/
 
 ### `-keep-children`
 
-Use `-keep-children` (CT-2) to let child processes survive a daemon
-restart or upgrade. A graceful shutdown leaves the spawned children running.
-
-- Off by default. A shutdown kills the children: the whole tree on Linux and
-  macOS, the direct child on Windows.
-- No re-adoption. The new daemon does not re-adopt the survivors. Reconcile
-  them out-of-band with the CT-1 `pid` and `startTime`.
-- Survivors lose stdio. Stdin gets EOF, and writes to stdout and stderr hit
-  a closed pipe (SIGPIPE/EPIPE, see [PROTOCOL.md](PROTOCOL.md)). Thus only
-  children that tolerate this condition outlive the daemon.
-- Windows honors it too. A child is in no Job Object, so the children live on
-  after the daemon exits.
-- Two limits on Linux and macOS. The host cleaner ends an orphaned Claude Code
-  group under the install root by its own rule, a kept one too. The next daemon
-  start ends a kept process whose `id` a later spawn took. See
-  [DIVERGENCES.md](DIVERGENCES.md) CT-2.
+Use `-keep-children` to let child processes survive a daemon restart or
+upgrade. A graceful shutdown then leaves the spawned children running. Without
+the flag, a shutdown kills the whole tree on Linux and macOS, and the direct
+child on Windows. The new daemon does not re-adopt the survivors, and they lose
+their stdio. [CT-2](DIVERGENCES.md#ct-2) has these limits and the others.
 
 ```sh
 claustrum -serve -socket "$D/rpc.sock" -token-file "$D/token" -keep-children
 # on graceful shutdown the daemon logs, instead of killing them:
 #   [Server] -keep-children: leaving 2 running child process(es) alive across shutdown
 ```
-
-See [DIVERGENCES.md](DIVERGENCES.md) for the CT-2 catalog entry.
