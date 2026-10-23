@@ -95,9 +95,11 @@ privileged as the daemon's user. Four of those paths reach a recursive delete
   `git worktree add`, for example an expired `timeoutMs` or a failed checkout.
   Before the add, the daemon also removes a stale registration that names the
   new worktree. If two entries name it, or the entry holds a `locked` file,
-  nothing goes. Each rollback delete after a good add goes through an `os.Root`,
-  after the home guard (D24 adds an identity test). The one exception is the
-  registration delete of a create that accepted no registration. That delete
+  nothing goes. On Windows an entry whose record names a path that exists
+  stays too (D27). Each rollback delete after a good add goes through an
+  `os.Root`, after the home guard (D24 adds an identity test). The one exception
+  is the registration delete of a create that holds no git directory and
+  accepted no registration. That delete
   runs no home guard, and on Windows it uses no `os.Root`. It tests the
   `gitdir` record and the registrations directory. After a failed add, the daemon
   removes the worktree path only as an empty directory. See
@@ -134,8 +136,10 @@ Details for the three surfaces that need more than a row:
   tokens. Exposing the endpoint on a reachable interface discloses coarse
   operational counts to anyone who can connect.
 - `-wire-log`: redaction is by key. It covers the `auth` member and any key
-  named like a credential (token, secret, password, api_key), at any depth. A
-  secret inside a payload string is not caught. A reader of the file sees what the client sent and what the daemon sent back,
+  whose name holds token, secret, password, passwd, credential or api_key, at
+  any depth. With `-wire-log-max-string=0`, only a string value is redacted, so
+  an object or a number under such a key stays in the file. A secret inside a
+  payload string is not caught. A reader of the file sees what the client sent and what the daemon sent back,
   such as file contents and child output. Keep the flag off unless you need it,
   and store a capture with the same care as the socket token.
 - `-listen-pipe`: the pipe carries an owner-only DACL, in SDDL
