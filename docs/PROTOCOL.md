@@ -2655,7 +2655,6 @@ that measured it.
   `open <tmp>/claude-ssh-index-<n>/index: no such file or directory` and in the
   `GIT_INDEX_FILE` of each read-tree. The suffix is decimal digits. The name of
   `89cb6289` on Windows is not measured, and claustrum uses the same prefix there.
-- `git.worktree_remove` without `worktreeRoot`: the tests pin its calls.
 - `git.worktree_remove` with `worktreeRoot`. A light `rev-parse --show-toplevel`
   follows the light check, with no listing of its own. Before the daemon decides
   whether `worktreePath` is a registered worktree, it runs a light

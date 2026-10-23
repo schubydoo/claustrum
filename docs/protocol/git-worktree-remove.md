@@ -42,7 +42,7 @@ A failure has no `errorCode`. Unless a section below says otherwise, a failure d
 | `failed to remove worktree: could not check whether <p> is locked` | The daemon could not read the repository safely. A text in brackets ends with `; retry`. Only a passing cause, such as a file that changed during the request, gives a second try a chance. A repository that git cannot use fails again in the same way. A text after a colon has no `; retry`. |
 | `failed to remove worktree:` with another text | A check or a delete step failed. The sections below say what stays. |
 
-Three texts start in another way: the home refusal `worktreePath must not be or contain the home directory: "<p>"`, the managed-worktrees refusal `baseRepo is inside a managed worktrees directory …`, and the registration text of step 3 below.
+In the texts, `<p>` is `worktreePath` as sent. Three texts start in another way: the home refusal `worktreePath must not be or contain the home directory: "<p>"`, the managed-worktrees refusal `baseRepo is inside a managed worktrees directory …`, and the registration text of step 3 below.
 
 ## Where the paths can be
 
@@ -110,7 +110,7 @@ No delete follows a symbolic link out of the worktree directory or out of its pa
 
 Without `worktreeRoot`, a `baseRepo` that does not exist, such as `<T>/missing/..`, still lets the worktree directory go. Its registration stays. With no `git` on `PATH`, a worktree directory that exists gets the lock-check refusal, and nothing is deleted. A gone one gets success, with `branchKept` when the request names a branch, and its registration stays.
 
-With `worktreeRoot`, a directory without a verified registration goes in two cases only: it is empty, or it is a stale worktree of `baseRepo` whose registration is gone. Any other directory is refused and stays: `refusing to remove worktree: <p> is not a worktree of <repo> (<reason>), so it is left in place; remove it by hand if it is a leftover`. A read error there gives `failed to remove worktree: could not verify that <p> is a worktree of <repo> (<detail>); retry`. A `baseRepo` that does not exist with no `git` on `PATH` gives `failed to remove worktree: could not check whether <p> is locked (the repository at <repo> could not be read); retry`.
+With `worktreeRoot`, a directory without a verified registration goes in two cases only: it is empty, or it is a stale worktree of `baseRepo` whose registration is gone. Any other directory is refused and stays: `refusing to remove worktree: <p> is not a worktree of <repo> (<reason>), so it is left in place; remove it by hand if it is a leftover`. A read error there gives `failed to remove worktree: could not verify that <p> is a worktree of <repo> (<detail>); retry`, with the cleaned path as `<p>`. A `baseRepo` that does not exist with no `git` on `PATH` gives `failed to remove worktree: could not check whether <p> is locked (the repository at <repo> could not be read); retry`.
 
 A worktree directory that is gone is not an error by itself. The repository checks above still apply. Then the daemon looks up the registration by path. A locked registration gives `… is gone but its registration is locked`. Otherwise the one registration that names the worktree goes, the branch step runs, and the reply is a success.
 
@@ -121,7 +121,7 @@ A worktree directory that is gone is not an error by itself. The repository chec
 | `worktreeRoot` | Allowed. | Refused: `refusing to remove worktree: <root> cannot be used: a custom worktree location is not supported on Windows hosts yet`. |
 | A junction between `baseRepo` and the worktree | Does not apply. | Refused ([D19](../DIVERGENCES.md#d19)). |
 | A folder that the daemon cannot read | Refused with the texts above. | Not measured. |
-| `<git dir>/worktrees` is a symbolic link | A worktree that exists gets the lock-check refusal, and nothing is deleted. A gone worktree gets success, and the branch step runs. Its registration stays. | Not measured. |
+| `<git dir>/worktrees` is a symbolic link | A worktree that exists gets the lock-check refusal, and nothing is deleted. A gone worktree gets success, and the branch step runs. Its registration stays. | No refusal. The registration behind the link that names the worktree goes (from the code). |
 | Path compare of a registration | Exact. macOS does not ignore letter case. | Ignores letter case and slash direction. An 8.3 short name does not match a worktree that exists. A `baseRepo` through a `subst` drive or a junction to the repository matches, and the registration goes. |
 
 ## Differences from the reference
