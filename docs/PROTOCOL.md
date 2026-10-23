@@ -2266,8 +2266,8 @@ A folder goes between the git calls of a request, never during one. The next cal
 makes it again, with no new config read. A call right after its own config listing
 does not (claustrum's own, not measured). A call whose remake fails gets the `cannot
 write its copy` text above, or the 128 text when all 128 folders are held (from the
-code). Each git call holds its folder until its pipe wait ends (claustrum's own,
-not measured). So with all 128 held,
+code). A git call that runs in a repository folder holds that folder until its
+pipe wait ends (claustrum's own, not measured). So with all 128 held,
 a new repository gets the 128 text then, and nothing goes. If its folder went and is
 not made again, or its daemon shut down or replaced it, a call fails alone (from the code). It gets
 this text, and a listing puts `listing the configuration in
