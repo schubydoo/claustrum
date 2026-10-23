@@ -143,9 +143,10 @@ environment.
 
 ### Token persistence (`daemon.token`)
 
-The file is measured against `5db5e4a`, the token swap at a new start against
-`89cb6289` on a Linux VM, and the unlink by identity on Windows against `5fd08069`. The file
-is off the JSON-RPC wire, because it sits beside the socket.
+The file came with `5db5e4a`, and claustrum matches it. The token swap at a new
+start is measured against `89cb6289` on a Linux VM, and the unlink by identity on
+Windows against `5fd08069`. The file is off the JSON-RPC wire, because it sits
+beside the socket.
 
 Once the socket is listenable, the daemon writes its token to `daemon.token` in
 the directory of the socket, with mode `0600`. The write is atomic, through a
@@ -158,19 +159,20 @@ after the `-token-fd` pipe closed.
 A new daemon replaces the token of a dead daemon only after its reap, its `bind`
 and its `listen`. Until then the file holds the old token.
 
-The daemon unlinks the file on the graceful `server.shutdown` or `SIGTERM` path
-only. A `SIGKILL` or a crash leaves it. `-stop` also removes it after a failed
+The daemon unlinks the file only on a graceful stop: `server.shutdown`,
+`SIGTERM`, `SIGINT` or its self-exit. A `SIGKILL` or a crash leaves it. `-stop` also removes it after a failed
 connect, unless it prints `survivor`. See the `-stop` section below.
 
 The daemon unlinks `daemon.token` only if the file at the path is still the file
 that it wrote, by identity (`os.SameFile`). So a departing daemon keeps the token
-of a successor that already wrote its own. That holds on Windows too. The same
-guard covers `rpc.sock` on Linux and macOS and the `rpc.pipe` pointer on Windows.
-A token or pipe pointer with no recorded identity stays. A socket with no
-recorded identity is removed with a plain unlink (both claustrum's own). Two states remove the socket of
-a successor. On Linux ext4 the new socket can get the inode of the old one, and
-the old daemon then removes it as its own (Linux VM). On Windows the old daemon removes it when it stops after a take-over
-(Windows VM). The launcher half of the handoff is under
+of a successor that already wrote its own. That is measured on Windows. On Linux
+and macOS it is from the code, not measured. The same guard covers `rpc.sock` on
+Linux and macOS and the `rpc.pipe` pointer on Windows. A token or pipe pointer
+with no recorded identity stays. A socket with no recorded identity is removed
+with a plain unlink (both claustrum's own). Two states remove the socket of a
+successor (`5fd08069`). On Linux ext4 the new socket can get the inode of the old
+one, and the old daemon then removes it as its own (Linux VM). On Windows the old
+daemon removes it when it stops after a take-over (Windows VM). The launcher half of the handoff is under
 [Daemon startup](#daemon-startup-serve).
 
 The fixed name and the folder of the socket are the reconnect contract, so they
@@ -190,12 +192,13 @@ lock exists on Linux and macOS only. It is a file beside the socket, off the JSO
 
 Before it binds the socket, a `-serve` daemon takes an exclusive `flock` on
 `daemon.lock` in the directory of the socket (mode `0600`). It then writes an
-owner record into the file, a JSON object. Until the reap of its start ends, the
-record is `{"pid":<n>,"role":"serve","node":"<node>"}`. After the reap and the
-bind, it is `{pid, role, node, instanceId, startedAt}` (also macOS VM). `node` is omitted when
+owner record into the file, a JSON object. Both forms of the record are measured
+on a macOS VM too. Until the reap of its start ends, the record is
+`{"pid":<n>,"role":"serve","node":"<node>"}`. After the reap and the bind, it is
+`{pid, role, node, instanceId, startedAt}`. From the code: `node` is omitted when
 the machine identity is unknown. The `instanceId` is the one of the listening
 line and of `server.capabilities`. The `startedAt` is the one that
-`server.capabilities` answers (also macOS VM). The machine
+`server.capabilities` answers (also macOS VM). From the code: the machine
 identity is the boot id joined to the pid-namespace inode on Linux, and
 `sysctl kern.bootsessionuuid` on macOS.
 
@@ -224,34 +227,36 @@ holder with the full record, and `pid <n>` for a holder with the short record.
 [daemon] serve: previous owner of <dir>: killed
 ```
 
-The first two lines are measured on a macOS VM too.
+The first two lines, in the `pid <n>` form, are measured on a macOS VM too.
 
 The summary line ends in `terminated` after a `SIGTERM` and in `killed` after a
 `SIGKILL`. A holder that the `SIGKILL` stopped gets no "exited" line.
 
 A signal can reach a daemon during its own start, for example from a second
 daemon or from `-stop`. The rules of this paragraph are measured on a Linux VM.
-The case of a second daemon is measured on a macOS VM too. The daemon logs one `received` line, for example
+The `SIGTERM` from a second daemon (the first case) is measured on a macOS VM
+too. The daemon logs one `received` line, for example
 `[daemon] received terminated; shutting down (children will be killed)`, or
 `received interrupt` with the same tail. It handles one `SIGTERM` or `SIGINT`. It
 finishes the reap of its start, binds and listens, writes its token, and then
 shuts down and exits 0. A daemon that gets the signal while it evicts an older
 holder still evicts it first. It sends the child of that holder `SIGTERM`
-before it serves. A `-stop` during the reap prints `terminated` and
-exits 0. In both cases the launcher of the signalled daemon exits 1 after about
-12 s with `daemon did not take over <socket> (predecessor still owns it)`. A
-second daemon that sent `SIGKILL` to a first one during its start takes the
-lock, and it sends no signal to the child that the dead daemon recorded.
+before it binds. A `-stop` during the reap prints `terminated` and exits 0.
+After a signal during an eviction, or a `-stop` during the reap, the launcher of
+the signalled daemon exits 1 after about 12 s with
+`daemon did not take over <socket> (predecessor still owns it)`. A second daemon
+that sent `SIGKILL` to a first one during its start takes the lock and serves
+with its full record.
 
 The eviction fires only against a holder that is one of our own `-serve`
 daemons for this socket, on this machine. In each other case the daemon
 signals nothing and serves without the lock. It logs a refusal line and, except
 for an unusable record, the summary
 `[daemon] serve: previous owner of <dir>: survivor`. For these refusals the word
-`survivor` is claustrum's own, taken from the `--stop` case below. claustrum refuses a holder on another machine or container that shares
-the folder. It also refuses a holder with an unknown machine identity, and a
-holder that is not its serve process for this socket. The text of that refusal line is claustrum's
-own. A holder that survives `SIGKILL` stays too, with the same summary.
+`survivor` is claustrum's own, not measured. claustrum refuses a holder on
+another machine or container that shares the folder. It also refuses a holder
+with an unknown machine identity, and a holder that is not its serve process for
+this socket. The text of that refusal line is claustrum's own. A holder that survives `SIGKILL` stays too, with the same summary.
 
 A holder whose record has the role `stop` gets no signal. The daemon tries the
 lock every 50 ms for 2 s. Then it logs this line and serves without the lock
@@ -283,8 +288,8 @@ the exit and logs this line (`5fd08069`, Linux and macOS VMs):
 [daemon] run-dir lock acquired late (previous holder gone); recorded pid <n> (instance "<hex>")
 ```
 
-claustrum also tries again after its own refusals (claustrum's own). It does not
-try again after a failed open of the file or a refused lock call.
+claustrum also tries again in every other case where another process keeps the
+lock (claustrum's own). It does not try again after a failed open of the file or a refused lock call.
 
 Windows has no run-dir lock. Two daemons are kept apart there by the
 remove-then-rebind handoff of the socket. On Windows the "not the run dir's lock
