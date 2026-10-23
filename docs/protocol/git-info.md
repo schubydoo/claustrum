@@ -10,7 +10,7 @@
 
 | Parameter | Required | Meaning |
 |---|---|---|
-| `path` | no | A folder of the repository. A subfolder gives the same answer as the top folder. Without `path`, the daemon answers for its own working directory. [Path handling](../PROTOCOL.md#path-handling) has the rules for a leading `~`. |
+| `path` | no | A folder of the repository. A subfolder gives the same `root`. Without `path`, the daemon answers for its own working directory. [Path handling](../PROTOCOL.md#path-handling) has the rules for a leading `~`. |
 | `shadowDirOff` | no | `true` turns off, for this request, the daemon's own read of the repository's git config and the settings copy. A git request that starts while such a request runs gets the same. Only the JSON value `true` counts. `"true"`, `1`, `null` and `false` do nothing and are no error. |
 
 ## Response
@@ -106,15 +106,15 @@ This method has no `errorCode` member. A failure is a JSON-RPC error. The texts 
 
 | Code | Start of the text | Cause |
 |---|---|---|
-| `-32602` | `Invalid params` | `params` is absent, or `path` is not a string. See [the rules for `params`](../PROTOCOL.md#params-presence-and-typing). |
+| `-32602` | `Invalid params` | The request has no `params` member, or `params` or `path` has the wrong type. See [the rules for `params`](../PROTOCOL.md#params-presence-and-typing). |
 | `-32603` | `the repository's git directory could not be trusted; git not run: ` | The daemon does not trust the git directory. See [Git-directory trust check](../PROTOCOL.md#git-directory-trust-check). A `GIT_COMMON_DIR` in the daemon's environment turns this check off for this method. |
-| `-32603` | `config-defined hooks could not be pinned off; git not run: ` | The daemon cannot list the git config, or it refuses its own `GIT_CONFIG_COUNT`. This also comes for a folder that holds no repository. See [Hardened git calls](../PROTOCOL.md#hardened-git-calls) and [The daemon's own git environment](../PROTOCOL.md#the-daemons-own-git-environment). |
+| `-32603` | `config-defined hooks could not be pinned off; git not run: ` | The daemon cannot list the git config, or it refuses its own `GIT_CONFIG_COUNT`. A config listing that runs 30 seconds is stopped, and the text goes on with `listing the configuration in force: git took too long: Claude stopped git config after 30 seconds; try again`. A daemon `GIT_DIR` that names a worktree entry that is gone gets `the worktree entry this folder's .git names no longer exists` after the prefix. See [Git-directory trust check](../PROTOCOL.md#git-directory-trust-check). This also comes for a folder that holds no repository. See [Hardened git calls](../PROTOCOL.md#hardened-git-calls) and [The daemon's own git environment](../PROTOCOL.md#the-daemons-own-git-environment). |
 | `-32603` | `this repository's git config cannot be used: ` or `a file in this repository's .git directory cannot be used: ` | The daemon read the git config of the repository and does not accept it. `"shadowDirOff":true` turns that read off. See [Repository config refusals](../PROTOCOL.md#repository-config-refusals). |
 | `-32603` | `Claude could not test git on the remote machine (` | The start test of the settings copy failed. The daemon keeps the failure for 10 seconds. |
 | `-32603` | `git could not check this repository on the remote machine: ` or `git and Claude disagree about which repository holds this folder: ` | The call that asks git about the repository failed, did not end in 30 seconds, or named another repository. |
-| `-32603` | `git cannot run on this host; git not run: ` | A failure of the start test or of the call about the repository, and then a `git version` call failed too. |
+| `-32603` | `git cannot run on this host; git not run: ` | A config listing, the start test or the call about the repository failed, and then a `git version` call failed too. |
 | `-32603` | `Claude could not prepare its own files on the remote machine: ` | The daemon cannot make the folder of the settings copy for this repository. |
-| `-32603` | `git took too long: Claude stopped git <subcommand> after 2 minutes; try again` | A git call ran too long, and the daemon stopped it. A config listing before a call stops at 30 seconds. See [Time limits of git calls](../PROTOCOL.md#time-limits-of-git-calls). |
+| `-32603` | `git took too long: Claude stopped git <subcommand> after 2 minutes; try again` | A git call ran too long, and the daemon stopped it. While a request with `"shadowDirOff":true` runs, the text says `after 30 minutes` (claustrum's own, not measured). See [Time limits of git calls](../PROTOCOL.md#time-limits-of-git-calls). |
 
 The section [The settings copy](../PROTOCOL.md#the-settings-copy) has the causes of the four texts of the copy.
 
@@ -128,8 +128,8 @@ The method changes nothing in the repository. The settings copy can add files to
 |---|---|---|
 | `root` | The folder found by the walk, in the native form. | Confirmed by git, with forward slashes. A junction in `path` does not resolve. |
 | `path` is a regular file | The "no repository" body. | `-32603` with `config-defined hooks could not be pinned off; git not run: listing the configuration in force: fork/exec <git.exe path>: The directory name is invalid.` |
-| A junction from repository P into repository R | Does not apply. | `root`, `repo` and `repoSlug` come from P. `branch` comes from R, and `defaultBranch` is `""`. |
+| A junction from repository P into repository R | Does not apply. | With no `GIT_DIR` or `GIT_COMMON_DIR` in the daemon's environment, `root`, `repo` and `repoSlug` come from P. `branch` comes from R, and `defaultBranch` is `""`. |
 
 ## Differences from the reference
 
-claustrum answers as the reference daemon does, and it follows the pinned build `5fd08069`. No entry of the divergence catalog applies to this method. The measured cells behind each rule are in the tests and in the [reference build history](../REFERENCE-BUILDS.md).
+claustrum is built to answer as the reference daemon does, and it follows the pinned build `5fd08069`. No entry of the divergence catalog applies to this method. The measured cells behind each rule are in the tests and in the [reference build history](../REFERENCE-BUILDS.md).

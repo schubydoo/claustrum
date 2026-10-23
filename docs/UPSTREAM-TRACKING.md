@@ -573,7 +573,7 @@ traps that matter for telling drift from expected:
     part ([PROTOCOL.md](PROTOCOL.md) → `git.status`, rule 6).
 
   See [PROTOCOL.md](PROTOCOL.md) → Git-directory trust check, Hardened git calls
-  and git.info.
+  and [git.info → The root](protocol/git-info.md#the-root).
 - D12 needs a VALID zstd body. The decoder answers an invalid one at 0 s,
   which reads like "no divergence". Also, a zero download timeout frees the body
   read only: the transport still applies `net.Dialer{Timeout: 30s}`,
@@ -808,12 +808,15 @@ so do the `git.status` and `git.list_branches` answers for `<dir>\<junction>\T`.
 Other code resolves `baseRepo` through `EvalSymlinks` too, so other Windows junction
 rows can move as well. A `go` line below 1.23 in `go.mod` has the same effect. The
 `git.info` root for a path with a junction before its last component rests on the
-same failure (rows D03-junction and W09). With the walk following the junction, those
+same failure (rows D03-junction and W09, `TestInfoRootLinkThenDotDotWindows` and `TestInfoRootBelowJunctionWindows`). With the walk following the junction, those
 roots can move too. The `GIT_COMMON_DIR` pin of the trust check for such a path
 rests on it as well (`walkStart`, `gitdirtrust.go`). With the walk following the
-junction, the pin names the repository behind the junction. The `git.info` frames
-of Windows VM cells B-01, B-02, B-07 to B-09, B-15, B-16, B-17k and B-17d then
-change. This
+junction, the pin names the repository behind the junction. The `git.info` answers
+for such a path then change: `root`, `repo` and `repoSlug` can move to the
+repository behind the junction ([git.info → Differences by system](protocol/git-info.md#differences-by-system)).
+The frames of `89cb6289` are pinned in `TestInfoThroughJunctionWindows`
+(`gitinfo_junction_windows_test.go`), and the pins of the cells are in
+[PROTOCOL.md → Git-directory trust check](PROTOCOL.md#git-directory-trust-check). This
 entry is derived from the Go source (`os/types_windows.go` and
 `path/filepath/symlink.go`), not measured. Check those rows after each Go bump that
 changes `winsymlink`.
