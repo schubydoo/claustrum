@@ -107,9 +107,9 @@ that process and continue to read the stream. This is the reconnect path.
 
 The reference daemon has no `wantPid`. It is claustrum's opt-in extension,
 [CT-1](DIVERGENCES.md#ct-1), and without it every frame stays byte-identical to
-the reference. With `"wantPid":true`, `process.spawn` and `process.reattach`
-add the OS `pid` of the child and a `startTime` token. Both methods return the
-same two values for the same `id`. [process.spawn](protocol/process-spawn.md#response) says how to
+the reference. With `"wantPid":true`, `process.spawn` and `process.reattach` of a found
+process add the OS `pid` of the child and a `startTime` token. Both methods
+return the same two values for the same `id`. [process.spawn](protocol/process-spawn.md#response) says how to
 compare `startTime`.
 
 ```sh

@@ -148,12 +148,12 @@ client unchanged:
 - `-wire-log` appends every JSON-RPC frame to a file for diagnostics. It redacts
   credentials by key only.
 
-One opt-in member changes a frame: `"wantPid":true` adds `pid` and `startTime` to the result
-of `process.spawn` and `process.reattach` (CT-1). Three more flags opt into a deliberate
+One opt-in member of claustrum's own changes a frame: `"wantPid":true` adds `pid` and
+`startTime` to the result of `process.spawn`, and of `process.reattach` for a found process (CT-1). Three more flags opt into a deliberate
 divergence: `-max-extract-bytes` (D3), `-max-cli-bytes` (D10) and `-cli-download-timeout`
 (D12). [docs/DIVERGENCES.md](docs/DIVERGENCES.md) has each entry and its limits. The
-[flags table](docs/PROTOCOL.md#flags-and-config-keys) lists every flag, its `claustrum.conf`
-key and the deprecated flags that set nothing.
+[flags table](docs/PROTOCOL.md#flags-and-config-keys) lists the optional flags of `-serve` and
+`-install`, their `claustrum.conf` keys and the deprecated flags that set nothing.
 
 ## Platforms
 

@@ -52,11 +52,13 @@ clients, so none changes the frames that a client sees:
 - the token on a file descriptor, `-token-fd`
 - `-keep-children` (CT-2)
 
-[Examples](EXAMPLES.md#operational-knobs) shows each one, and the
-[flags table](PROTOCOL.md#flags-and-config-keys) lists every flag.
+[Examples](EXAMPLES.md#operational-knobs) shows each one but `-wire-log`, which
+[Flags of claustrum alone](PROTOCOL.md#flags-of-claustrum-alone) describes. The
+[flags table](PROTOCOL.md#flags-and-config-keys) lists the optional flags and their keys.
 
-One opt-in member changes a frame: `"wantPid":true` adds `pid` and `startTime`
-to the result of `process.spawn` and `process.reattach`
+One opt-in member of claustrum's own changes a frame: `"wantPid":true` adds `pid`
+and `startTime` to the result of `process.spawn`, and of `process.reattach` for a
+found process
 ([CT-1](DIVERGENCES.md#ct-1)).
 
 ## Where to go next
