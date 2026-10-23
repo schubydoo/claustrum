@@ -184,7 +184,8 @@ no flag and no key.
   - `-install`, before the tree delete of a folder at the CLI path. The reply is
     `cli path must not be or contain the home directory: "<path>"`. The folder
     test is by identity too (`folderHoldsHome`). The sweeps and the `-cli-keep`
-    prune skip such an entry (`cliEntryHoldsHome`).
+    prune skip such an entry (`cliEntryHoldsHome`). `89cb6289` removed an empty
+    home folder there.
 - **Reference.** It wipes home for `"destDir":"~"` and answers
   `{"success":true}` (measured on `7d193f89`). `-install` removes home as a tree
   and puts the CLI file there (measured with `-cli-zst` on Linux, macOS and
@@ -253,12 +254,12 @@ no flag and no key.
   `../victim` it destroys the target.
 - **Systems and switch.** Linux, macOS and Windows. Always on, no switch.
 - **Cost.** None for a bare version: `1.0.86`, a commit sha and `latest` are
-  measured as accepted. A lexical containment test was not taken, because it
-  accepts `link/1.0.0` through an intermediate symlink. An `EvalSymlinks` test
-  only adds a TOCTOU window.
+  measured as accepted.
 - **Rule.** Rule 3 clause (b). The real client passes bare version strings. The
   evidence is an observed value plus a measured accepted set, not an
-  enumeration.
+  enumeration. A lexical containment test was not taken, because it accepts
+  `link/1.0.0` through an intermediate symlink. An `EvalSymlinks` test only adds
+  a TOCTOU window.
 - **Reopen trigger.** Desktop passes a `-cli-version` that is not a single path
   component.
 - **Pointers.** `install.go`.
