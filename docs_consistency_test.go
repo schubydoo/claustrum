@@ -426,6 +426,7 @@ type docPinSentence struct {
 }
 
 var docPinSentences = []docPinSentence{
+	{"AGENTS.md", regexp.MustCompile("Unmarked behavior follows the reference, pinned at `([0-9a-f]+)`")},
 	{"docs/UPSTREAM-TRACKING.md", regexp.MustCompile("claustrum follows `([0-9a-f]+)`, the build that `scripts/UPSTREAM_SHA` names")},
 	{"docs/UPSTREAM-TRACKING.md", regexp.MustCompile("The build pinned today, `([0-9a-f]+)`")},
 	{"docs/UPSTREAM-TRACKING.md", regexp.MustCompile("the current baseline, `([0-9a-f]+)`")},

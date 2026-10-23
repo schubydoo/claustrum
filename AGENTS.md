@@ -121,9 +121,10 @@ Every OS serves the same JSON-RPC methods. Full internals →
 
 ## Gotchas — Part A: always-on safety (hold these before touching code)
 
-Unmarked rules follow the reference, pinned at `5fd08069`. A D-number,
+Unmarked behavior follows the reference, pinned at `5fd08069`. A D-number,
 "claustrum's own", "from the code" and "not measured" mark the exceptions. A
-rule that names another build follows that build.
+rule that names another build follows that build. A file, function or Go API
+name describes claustrum's code, not a measurement.
 
 - `process.spawn` runs arbitrary commands as the user of the daemon. This is by
   design. Treat socket + token as equivalent to shell access. The threat model
