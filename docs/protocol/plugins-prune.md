@@ -89,4 +89,4 @@ The paths and the `<error>` texts in `legacy` and `errors` are those of the oper
 
 ## Differences from the reference
 
-No entry of the [divergence catalog](../DIVERGENCES.md) applies to this method. `kept` and `staleArchives` are in the response because the reference has them. The one measurement of the reference, on `19f30c46`, showed both as `0`. The `errors` member is not measured.
+No entry of the [divergence catalog](../DIVERGENCES.md) applies to this method. `kept` and `staleArchives` are in the response because the reference has them. No measurement against the reference build `19f30c46` made either one differ from `0`. The `errors` member is not measured.

@@ -77,4 +77,4 @@ One entry of the [divergence catalog](../DIVERGENCES.md) applies to this method:
 
 - [CT-1](../DIVERGENCES.md#ct-1): the optional `wantPid` parameter with the members `pid` and `startTime`. A request without `wantPid` gets no such member.
 
-The exact time that the reference keeps a process that exited is not known. The 15 minutes of claustrum and the extra time of up to about one minute are claustrum's own.
+The exact time that the reference keeps a process that exited is not known: the measurements bracket it to more than 45 seconds and at most 960 seconds. The 15 minutes of claustrum and the extra time of up to about one minute are its own choice inside that range.
