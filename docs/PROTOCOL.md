@@ -463,6 +463,8 @@ Linux is not measured for the `lsof` states above. On Linux three states keep th
 that cannot be opened, a lock that is no regular file, and lock content that is no
 record. The dir then gets claustrum's own line
 `[hostclean] run dir "<dir>" kept: whether a process holds its run-dir lock could not be determined`.
+An empty `daemon.lock` is not such content: the cleaner asks whether a live process
+holds it, and the dir goes when none does.
 On Linux, when `/proc/locks` cannot be read, a dir whose `daemon.lock` is a regular
 file, empty or with a record, stays with the `could not be examined` line. That
 holds also when a process holds the lock (`5fd08069`). On Linux the pass logs
