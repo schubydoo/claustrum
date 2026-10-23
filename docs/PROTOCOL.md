@@ -143,204 +143,141 @@ environment.
 
 ### Token persistence (`daemon.token`)
 
-Once the socket is listenable, the daemon writes the token to `daemon.token` in
-the socket's directory. The file has mode `0600`. The daemon writes it atomically
-through a `daemon.token-*` temp file and a rename, and it unlinks the file on
-graceful shutdown. A client can therefore reconnect to an already-running daemon
-and re-authenticate after the original `-token-file` was unlinked, or after the
-`-token-fd` pipe closed. The write does not depend on the token source, because it
-uses the in-memory token. The write is also best-effort. The daemon logs a failure
-(`[daemon] failed to persist token: …`) and continues. Reference build `5db5e4a`
-added this, and claustrum matches it. It is off the JSON-RPC wire, because the
-file sits beside the socket, not on it. An unclean kill (`SIGKILL` or a crash)
-leaves the file behind, because the daemon removes it only on the graceful
-`server.shutdown` / `SIGTERM` path. `-stop` also removes it after a failed
+The file came with `5db5e4a`, and claustrum matches it. The token swap at a new
+start is measured against `89cb6289` on a Linux VM, and the unlink by identity on
+Windows against `5fd08069`. The file is off the JSON-RPC wire, because it sits
+beside the socket.
+
+Once the socket is listenable, the daemon writes its token to `daemon.token` in
+the directory of the socket, with mode `0600`. The write is atomic, through a
+`daemon.token-*` temp file and a rename. It uses the token in memory, so it does
+not depend on `-token-file` or `-token-fd`. A failed write logs
+`[daemon] failed to persist token: …`, and the daemon serves on. A client can
+therefore reconnect and authenticate after the `-token-file` was unlinked, or
+after the `-token-fd` pipe closed.
+
+A new daemon replaces the token of a dead daemon only after its reap, its `bind`
+and its `listen`. Until then the file holds the old token.
+
+The daemon unlinks the file only on a graceful stop: `server.shutdown`,
+`SIGTERM`, `SIGINT` or its self-exit. A `SIGKILL` or a crash leaves it. `-stop` also removes it after a failed
 connect, unless it prints `survivor`. See the `-stop` section below.
 
-A new daemon replaces the token of a dead daemon only after its bind. On a Linux
-VM (row P12, two runs), a dead daemon left its `daemon.token` and one recorded
-child that ignored `SIGTERM`. For the 2.2 s of the reap, the file still held the
-token of the dead daemon. `89cb6289` and claustrum renamed the new token into
-place after the `SIGKILL` of the reap, the `bind` and the `listen`.
+The daemon unlinks `daemon.token` only if the file at the path is still the file
+that it wrote, by identity (`os.SameFile`). So a departing daemon keeps the token
+of a successor that already wrote its own. That is measured on Windows. On Linux
+and macOS it is from the code, not measured. The same guard covers `rpc.sock` on
+Linux and macOS and the `rpc.pipe` pointer on Windows. A token or pipe pointer
+with no recorded identity stays. A socket with no recorded identity is removed
+with a plain unlink (both claustrum's own). Two states remove the socket of a
+successor (`5fd08069`). On Linux ext4 the new socket can get the inode of the old
+one, and the old daemon then removes it as its own (Linux VM). On Windows the old
+daemon removes it when it stops after a take-over (Windows VM). The launcher half of the handoff is under
+[Daemon startup](#daemon-startup-serve).
 
-The fixed name and the socket-dir location are the reconnect contract, so they are
-not configurable. On Windows `0600` is not an owner-only DACL. This is a Go
-`os.CreateTemp` limitation, and the per-user session dir is the confinement. It is
-a parity caveat that claustrum deliberately does not "fix". The former caveat "two
-daemons in one directory collide on this file" is now bounded. On Linux and macOS
-the run-dir lock (below) evicts a prior live daemon of the same socket before the
-new one binds. Two same-socket daemons therefore no longer coexist to collide on
-the honest path. A collision survives only where eviction is refused, and on
-Windows, which ships no run-dir lock. Eviction is refused for a foreign or
-cross-machine lock holder, and for a holder that survives `SIGKILL`.
-
-The unlink carries an inode-ownership qualifier. On graceful shutdown the
-daemon unlinks `daemon.token` only when the file on disk is still the inode this
-daemon wrote. At startup the daemon reads that identity through an open handle
-of the file. At the stop it compares the file at the path to it (`os.SameFile`). A
-restart's successor can republish `daemon.token`
-before the predecessor leaves. The
-departing predecessor then leaves the file alone. It does not delete the
-successor's token and break the new daemon's reconnect auth. `5fd08069` keeps that
-token on Windows too (cell W3 of round `task091-01`, Windows VM). On Linux and macOS the socket file
-carries the same identity guard on the same graceful path. On Windows the
-`rpc.pipe` pointer carries it too (`unlinkOwnSocket` /
-`dropOwnTokenFile` / `removePipeNameFileIfOwned`). Each removes its file only
-when the recorded identity still matches. They differ only in the no-identity
-fallback. A socket the daemon never recorded is removed with a plain unlink. A
-token or pipe pointer with no recorded identity is left in place, not unlinked.
-Two states remove the new `rpc.sock` on `5fd08069` and on claustrum `080c94a`
-(round `task091-01`). On Linux ext4 the new socket can get the inode of the old
-one. The old daemon then tests it after the bind (cell L3t, Linux VM). On Windows
-the old daemon stops after a take-over (cell W3, Windows VM).
-This is the departing-daemon half of the daemon-to-daemon handoff. The launcher
-half is under [Daemon startup](#daemon-startup-serve). It is off the JSON-RPC
-wire.
+The fixed name and the folder of the socket are the reconnect contract, so they
+are not configurable. On Windows `0600` is not an owner-only DACL. That is a
+limit of `os.CreateTemp` in Go, and the per-user session folder is the
+confinement. It is a parity caveat that claustrum does not "fix". On Linux and
+macOS the [run-dir lock](#run-dir-lock-daemonlock) evicts a prior live daemon of
+the same socket before the new one binds, so two daemons do not collide on this
+file. They still collide where an eviction is refused, and on Windows, which has
+no run-dir lock.
 
 ### Run-dir lock (`daemon.lock`)
 
+A rule here without a mark is measured against `89cb6289` on a Linux VM, and on
+macOS where marked. A rule marked `5fd08069` is measured against that build. The
+lock exists on Linux and macOS only. It is a file beside the socket, off the JSON-RPC wire.
+
 Before it binds the socket, a `-serve` daemon takes an exclusive `flock` on
-`daemon.lock` in the socket's directory (mode `0600`). It then writes an owner
-record into that file. The record is a JSON object. At first it is
-`{pid, role, node}`, where `role` is `serve`. After the reap of the start and the
-bind, the daemon writes it again as `{pid, role, node, instanceId, startedAt}`.
-`node` is omitted when the machine identity is unknown. Build `4534d86` added the
-lock, and claustrum matches it. It is a file beside the socket, off the wire. On
-graceful shutdown the daemon truncates the record, drops the lock and leaves the
-file in place. `daemon.token` is unlinked instead. A
-Linux VM measured the same end state against `89cb6289` in the stop rows:
-`daemon.token` and `rpc.sock` removed, `daemon.lock` left empty. On a Linux VM the
-`instanceId` of the record, of the listening line and of `server.capabilities` held
-one value in 36 of 36 daemons of `89cb6289`.
+`daemon.lock` in the directory of the socket (mode `0600`). It then writes an
+owner record into the file, a JSON object. Both forms of the record are measured
+on a macOS VM too. Until the reap of its start ends, the record is
+`{"pid":<n>,"role":"serve","node":"<node>"}`. After the reap and the bind, it is
+`{pid, role, node, instanceId, startedAt}`. From the code: `node` is omitted when
+the machine identity is unknown. The `instanceId` is the one of the listening
+line and of `server.capabilities`. The `startedAt` is the one that
+`server.capabilities` answers (also macOS VM). From the code: the machine
+identity is the boot id joined to the pid-namespace inode on Linux, and
+`sysctl kern.bootsessionuuid` on macOS.
 
-On Linux and macOS the stop closes the listener, tests `rpc.sock` and removes it
-if it is its own, closes the connections and kills the child groups. Then it removes `daemon.token` and releases the lock.
-`5fd08069` stops in that order (round `task091-01`, cells L1 to L3 and L1k, Linux VM).
+On a graceful stop the daemon closes the listener and removes its own
+`rpc.sock`. It closes the connections and kills the child groups. Then it
+removes `daemon.token`, truncates the record and releases the lock. That order
+is measured against `5fd08069` on a Linux VM, and not on macOS. The file
+`daemon.lock` stays, empty.
 
-Linux and macOS VMs measured the two forms of the record against `89cb6289`. In
-row D1 a dead daemon left one recorded child that ignores `SIGTERM`. The lock of
-the new daemon held `{"pid":<n>,"role":"serve","node":"<node>"}` for about 2 s.
-Then it held the full record. With nothing to reap (row D2), the first read on
-macOS showed the full record. On Linux one read of row D2b showed the short form.
-The `startedAt` of the record is the `startedAt` that `server.capabilities`
-answers. Row D3 measured that on `89cb6289` in one Linux read and in 3 of 3 macOS
-reads.
+A prior live daemon of the same socket can hold the lock. The new daemon then
+sends it `SIGTERM` and tries the lock every 50 ms for 2 s. If the lock is still
+held, it tests the holder again and sends `SIGKILL` (that test is measured
+against `4534d86`). Then it tries the lock for
+1 s more (claustrum's own value). It waits on the lock, not on the pid. On Linux
+both signals go through one `pidfd_open` descriptor with `pidfd_send_signal`.
+claustrum uses `kill` on macOS, and the call of the reference there is not
+measured.
 
-A prior live daemon can still hold the lock. The newcomer then evicts it before it
-takes over, with `SIGTERM` and then `SIGKILL` after a grace period. On Linux the
-`SIGTERM` goes out as `pidfd_open` and then `pidfd_send_signal`. A Linux VM
-measured those two calls with `strace` against `89cb6289` (row E3). The
-`SIGKILL` is `pidfd_send_signal` with the same descriptor number (rows H7 and
-N3). macOS uses `kill`. The call of the macOS reference is not measured. The identity
-reads of the holder come between the open and the send. On a Linux VM (row P6, by
-`strace`, 2 of 2 runs), `89cb6289` made these calls in this order: `pidfd_open`,
-the read of `/proc/<pid>/ns/pid`, the read of `/proc/<pid>/cmdline`, then
-`pidfd_send_signal`. claustrum is built to that order.
-
-After the `SIGTERM` the newcomer waits for the lock, not for the pid. On a Linux
-VM (row H7, by `strace`), the holder was stopped with `SIGSTOP`. `89cb6289` tried
-`flock(LOCK_EX|LOCK_NB)` on `daemon.lock` every 50 ms, and the call answered
-`EAGAIN` 43 times. It sent the `SIGKILL` 2.02 s after the `SIGTERM`, and it got
-the lock 50 ms later. It sent no `kill(pid, 0)` in that row, and none in rows E3,
-P5, P6, N3 and N4. claustrum is built to it: it tries the lock every 50 ms for 2 s,
-sends the `SIGKILL`, and tries for 1 s more. That 1 s is claustrum's own value
-and is not measured. Before the `SIGKILL` claustrum tests the identity of the
-holder again. The eviction fires only against a holder that is verifiably one of
-our own `-serve` daemons for this socket, on this machine (`daemon_runlock_unix.go`).
-
-A holder whose record has role `stop` gets no signal. The newcomer tries the lock
-every 50 ms for 2 s. Then it logs this line and serves without the lock:
+The daemon logs these lines. `<who>` is `pid <n> (instance "<hex>")` for a
+holder with the full record, and `pid <n>` for a holder with the short record.
 
 ```
-serve: <dir>/daemon.lock is held by a --stop (pid <n>) that has not let go; leaving it
+[daemon] serve: run dir is held by a live daemon, <who>; sending SIGTERM
+[daemon] serve: previous daemon <who> exited after SIGTERM
+[daemon] serve: WARNING previous daemon <who> ignored SIGTERM for 2s; sending SIGKILL (its Claude Code children, if any, are ended next, before this daemon serves)
+[daemon] serve: previous owner of <dir>: killed
 ```
 
-`5fd08069` does so in cells L2 and L3 of round `task091-01` (Linux and macOS VMs).
+The first two lines, in the `pid <n>` form, are measured on a macOS VM too.
 
-If the record of the holder has no instance, the eviction lines name its pid
-alone. On a Linux VM and on a macOS VM, `89cb6289` logged these two lines for a
-holder with the short record (row P5, 5 of 5 runs on each system):
+The summary line ends in `terminated` after a `SIGTERM`, in `killed` after a
+`SIGKILL`, and in `survivor` for a holder that stays (`4534d86`). The
+`terminated` line is `[daemon] serve: previous owner of <dir>: terminated`
+(`4534d86`). A holder that the `SIGKILL` stopped gets no "exited" line.
+
+A signal can reach a daemon during its own start, for example from a second
+daemon or from `-stop`. The rules of this paragraph are measured on a Linux VM.
+The `SIGTERM` from a second daemon (the first case) is measured on a macOS VM
+too. The daemon logs one `received` line, for example
+`[daemon] received terminated; shutting down (children will be killed)`, or
+`received interrupt` with the same tail. It handles one `SIGTERM` or `SIGINT`. It
+finishes the reap of its start, binds and listens, writes its token, and then
+shuts down and exits 0. A daemon that gets the signal while it evicts an older
+holder still evicts it first. It sends the child of that holder `SIGTERM`
+before it binds. A `-stop` during the reap prints `terminated` and exits 0.
+After a signal during an eviction, or a `-stop` during the reap, the launcher of
+the signalled daemon exits 1 after about 12 s with
+`daemon did not take over <socket> (predecessor still owns it)`. A second daemon
+that sent `SIGKILL` to a first one during its start takes the lock and serves
+with its full record.
+
+The eviction fires only against a holder that is one of our own `-serve`
+daemons for this socket, on this machine. If the first test of the holder fails,
+the daemon signals nothing and serves without the lock. It logs a refusal line
+and, except for an unusable record, the summary
+`[daemon] serve: previous owner of <dir>: survivor`. claustrum refuses a holder
+on another machine or container that shares the folder. It also refuses a holder
+with an unknown machine identity, and a holder that is not its serve process for
+this socket. For the three refusals above the word `survivor` is claustrum's
+own, not measured. The text of that refusal line is claustrum's own too. A
+holder that survives `SIGKILL` stays, with the same summary (from the code, not
+measured).
+
+If the second test of the holder fails, right before the `SIGKILL`, the daemon
+treats the holder as gone. It logs
+`[daemon] serve: pid <n> is no longer our serve holder before SIGKILL (<reason>); treating the previous daemon as gone`
+and the summary `terminated`, and then tries the lock once more. Normally it
+then serves with the lock.
+
+A holder whose record has the role `stop` gets no signal. The daemon tries the
+lock every 50 ms for 2 s. Then it logs this line and serves without the lock
+(`5fd08069`, Linux and macOS VMs):
 
 ```
-serve: run dir is held by a live daemon, pid <n>; sending SIGTERM
-serve: previous daemon pid <n> exited after SIGTERM
+[daemon] serve: <dir>/daemon.lock is held by a --stop (pid <n>) that has not let go; leaving it
 ```
 
-For a holder with the full record, both lines read
-`pid <n> (instance "<hex>")` (row E3). claustrum is built to both rows.
-
-A holder that still has the lock after the 2 s gets `SIGKILL`. On a Linux VM
-(row H7), `89cb6289` then logged these two lines:
-
-```
-serve: WARNING previous daemon pid <n> (instance "<hex>") ignored SIGTERM for 2s; sending SIGKILL (its Claude Code children, if any, are ended next, before this daemon serves)
-serve: previous owner of <dir>: killed
-```
-
-For a holder with the short record, the first line reads `pid <n>` with no
-instance (row N3). claustrum is built to both rows.
-
-A signal can reach a daemon during its start. On a Linux VM (row P5, 5 of 5
-runs), a second daemon started 0.5 s after a first one. The first daemon still
-waited in the reap of its start, for a recorded child that ignored `SIGTERM`. The
-second daemon sent `SIGTERM` to the first one. The first daemon of `89cb6289` did
-not end there. Its log held these lines in this order:
-
-```
-[process.Registry] ending orphaned process group <pgid> recorded by daemon instance "<inst>" (pid <dpid>): SIGTERM
-[daemon] received terminated; shutting down (children will be killed)
-[process.Registry] group <pgid> outlived SIGTERM for 2s: SIGKILL
-[daemon] serve: predecessor's children — 1 orphaned group(s): 0 ended on SIGTERM, 1 on SIGKILL, 0 survived; 0 stale record(s) dropped, 0 kept
-[Server] shutdown requested
-Claude remote server listening on <socket> (pid <n>, instance <32-hex>)
-[daemon] host cleaning off: executable "<binary>" is not a deployed daemon under <root>/srv
-[Server] cleanup: closed 0 connection(s), killed 0 child process group(s)
-```
-
-The first daemon bound, listened and wrote its token, then removed the socket
-and the token and exited 0. The recorded child got one `SIGTERM` and one
-`SIGKILL`, both from the first daemon. The second daemon signalled no child, and
-it served. On a macOS VM (row P5, 5 runs), the first daemon of `89cb6289` went
-on in the same way. Its log held the received line, the outlived line, the
-summary line, the `shutdown requested` line, its listening line and the cleanup
-line, in that order.
-claustrum is built to that row. It installs its handler for `SIGTERM` and `SIGINT`
-before the claim of the lock, and it handles one signal.
-
-More Linux rows measured a signal or a second start during a start. In each row
-the recorded child of a dead daemon ignored `SIGTERM`. Build `ac5cadb` of
-claustrum sent the same signals and gave the same end state as `89cb6289` in
-each row but one, the 0.05 s gap:
-
-- A `SIGTERM` or a `SIGINT` 1 s into the reap (rows H8a and H8b). The daemon
-  logged `received terminated; shutting down (children will be killed)`, or
-  `received interrupt` with the same tail. It sent the `SIGKILL` of the reap at
-  2.1 s, bound and exited 0. The run folder then held `children`, an empty
-  `daemon.lock` and the logs.
-- Two `SIGTERM` 0.3 s apart (row H8c). The daemon logged one `received` line and
-  did the same.
-- A `SIGTERM` to a daemon that waits in its eviction of an older holder (row N4).
-  The daemon still sent the holder `SIGKILL` after the 2 s, took the lock, sent
-  the child of that holder `SIGTERM`, bound and exited 0. Its launcher exited 1
-  after 12.08 s with `daemon did not take over <socket> (predecessor still owns it)`.
-- A `-stop` 0.5 s into the reap (row N5). The connect of `-stop` was refused. It
-  sent the daemon one `SIGTERM` and tried the lock every 50 ms. The daemon
-  finished the reap, bound and exited 0. `-stop` then got the lock, printed
-  `terminated` and exited 0, 1.7 s after its start. The launcher of the daemon
-  exited 1 after 12.09 s with the timeout line.
-- A second daemon 0.2 s after the first (row N3, 3 runs). The second daemon sent
-  `SIGTERM` only. The first one finished, bound and exited 0. The second one
-  then bound and held the lock with its full record.
-- A second daemon 0.05 s after the first (row N3, 3 runs). The first daemon was
-  still in its start after the 2 s, so the second daemon sent it `SIGKILL`.
-  `89cb6289` then got the lock, bound and wrote its own full record. It sent the
-  recorded child no signal. Build `ac5cadb` of
-  claustrum read the killed daemon as alive and served without the lock. claustrum
-  now waits on the lock, as `89cb6289` does.
-
-A process that is no daemon can hold the lock, with no owner record in the file.
-The daemon then signals nothing and logs three lines. On a Linux VM (row ST02),
-`f6010b97` and `89cb6289` logged the same three texts:
+A process that is no daemon can hold the lock, with no owner record in the
+file. The daemon signals nothing and logs three lines (Linux VM):
 
 ```
 [daemon] serve: WARNING <dir>/daemon.lock is held by a live process we will not signal (its holder is not a daemon (role "")); leaving it alone
@@ -348,39 +285,36 @@ The daemon then signals nothing and logs three lines. On a Linux VM (row ST02),
 [daemon] serve: not the run dir's lock holder; leaving any predecessor's children alone and recording none
 ```
 
-claustrum logs the third line at every start that ends without the lock, and then
-reaps and records nothing. Other cases and role texts are not measured.
-Cell H5 (`5fd08069`, Linux VM) measures a held flock.
-With such a holder on an empty file, `5fd08069` tries the lock every 30 s, and a
-failed try logs nothing (round `task005-01`, Linux and macOS VMs). A good try writes
-the full record, holds the lock until the exit and logs this line. claustrum is built
-to both:
+claustrum logs the third line at every start that ends without the lock
+(claustrum's own beyond this row, not measured). Such a
+daemon reaps no children and records none. Other role texts are not measured.
+
+While another process holds the lock, the daemon tries it again every 30 s
+(`5fd08069`, Linux and macOS VMs, for a holder of an empty file). A failed try
+logs nothing. A good try writes the full record, holds the lock until
+the exit and logs this line (`5fd08069`, Linux and macOS VMs):
 
 ```
 [daemon] run-dir lock acquired late (previous holder gone); recorded pid <n> (instance "<hex>")
 ```
 
-claustrum also tries after its other refusals (claustrum's own), not after a failed open
-or a refused lock call.
+claustrum also tries again in every other case where another process keeps the
+lock (claustrum's own). It does not try again after a failed open of the file or a refused lock call.
 
-The lock, the owner record, and the eviction run on Linux and macOS only. The
-machine identity (`node`) is the boot id joined to the pid-namespace inode on
-Linux, and `sysctl kern.bootsessionuuid` on macOS. Windows ships no run-dir
-lock. Mutual exclusion on Windows stays the socket remove-then-rebind handoff.
-On Windows the "not the run dir's lock holder" line above is the first log line of
-every start. A Windows VM (row K11) measured that against `f6010b97` and
-`89cb6289`.
-On macOS claustrum makes sure of the holder through `sysctl KERN_PROCARGS2`,
-where the reference skips that test. This holds for the
-eviction and for `-stop`. See [DIVERGENCES.md](DIVERGENCES.md) D15.
+Windows has no run-dir lock. Two daemons are kept apart there by the
+remove-then-rebind handoff of the socket. On Windows the "not the run dir's lock
+holder" line above is the first log line of every start (Windows VM).
+
+On macOS claustrum verifies the holder through `sysctl KERN_PROCARGS2` before it
+signals it, in the eviction and in `-stop`. The reference skips that test. See
+[DIVERGENCES.md](DIVERGENCES.md) D15.
 
 ### Host cleaner (off-wire, Linux and macOS)
 
 A periodic sweep ends orphaned Claude Code process groups, retires abandoned
 daemons and tidies stale run dirs. It
 reaches no JSON-RPC frame, so nothing here is a wire contract. It is recorded
-because one of its decisions is an always-on divergence that a client can feel as
-a lost session.
+because its decisions end processes and remove folders on the host.
 
 The sweep ends no stranded daemon. A stranded daemon is a daemon whose socket path
 no longer leads to it. The cleaner sends no signal to such a daemon and none to its
@@ -459,7 +393,11 @@ Before it signals a daemon whose run dir went idle past the threshold, or whose 
 dir name carries `.removing-` from an earlier removal, the cleaner
 asks whether that daemon still has a live client. On macOS it asks `lsof`. That
 run has three bounds: a command deadline, a wait for the output pipe, and a
-last bound that gives up on it. Those bounds are claustrum's own.
+last bound that gives up on it at 17 s. Those bounds are claustrum's own.
+With an `lsof` run that `SIGKILL` cannot end, `5fd08069` ends that pass 17 s after
+it starts, with its one `lsof` run still hung (round `tier4-01`, macOS VM). The cause
+of that 17 s is not known. Its match with the abandon bound of claustrum is no
+measurement of a bound of `5fd08069`.
 
 The cleaner asks `lsof` two more things on macOS: whether the stdio of an orphan
 is three pipes, and whether a process holds the `daemon.lock` of an idle run dir.
@@ -473,7 +411,7 @@ and E4 hold an idle daemon, and rows D1k and E3k hold a daemon with one client:
 |---|---|---|
 | the command does not start | the daemon gets no SIGTERM (rows D1i and D1k, as `89cb6289`) | a dir with a lock file stays (row C3, as `89cb6289`) |
 | the run writes to stderr and exits 1 | the daemon gets no SIGTERM (rows E3i, E3k and E4, as `89cb6289`) | a dir with a lock file stays (rows D2p, D2f and E4, as `89cb6289`) |
-| the run is given up on | busy, so no SIGTERM ([DIVERGENCES.md](DIVERGENCES.md) D17, not measured) | kept (not measured, claustrum's own) |
+| the run is given up on | no SIGTERM, the `was not retired` line and no `left alone` line, as `5fd08069` (round `tier4-01`, macOS VM) | kept (not measured, claustrum's own) |
 | the 15 s deadline ends the run | no SIGTERM (`5fd08069` under a hung `lsof`, cells B1 and B2. claustrum gives the same result, round 8, macOS VM) | kept (cells L1 and L2) |
 | the run completes with nothing on stderr | the output decides | the output decides |
 
@@ -487,6 +425,12 @@ for the daemon, the first one before every run dir line. Its summary counts
 [hostclean] daemon pid <pid> left alone this pass: its open files could not be inspected
 [hostclean] run dir "<dir>" unused for 40 days: its daemon (pid <pid>) was not retired: a connection is attached to it right now, or that could not be read: in use after all
 ```
+
+In round `tier4-01` (macOS VM) `SIGKILL` cannot end the `lsof` run of an idle
+daemon with no client. There both passes log only the `was not retired` line. claustrum
+runs `lsof` three times, 17 s apart, and its pass takes 51 s. `5fd08069` runs it
+once, and its pass takes 17 s. From the code, claustrum reads a run it gave up on
+as busy and reads the daemon again until its busy sampling ends.
 
 In the two control rows `lsof` starts. Both sides retire the idle daemon (row D1ci)
 and spare the daemon with a client (row D1ck).
@@ -927,7 +871,7 @@ cell C-… is of round `tier0-20` against `5fd08069` on a Linux VM.
 | files.extract_tar | `mkdir <entry>: mkdirat <place>: file exists` | in `error` field. A file is at the place of a directory entry |
 | git.status | `baseRepo is required` | -32602. `baseRepo` is now required, since `7d193f89` |
 | git.status / git.list_branches | `<go error>`, for example `exit status 128` | -32603 (git failed, stdout parse) |
-| git.list_branches / git.info / git.status / git.worktree_create | `git took too long: Claude stopped git <subcommand> after 2 minutes; try again` | -32603. Create: after the text of the stopped step, as `git worktree add failed: ` or the `mkdir_failed` text of the parent step. Alone, with `worktree_add_failed`, for a stopped repository test |
+| git.list_branches / git.info / git.status / git.worktree_create | `git took too long: Claude stopped git <subcommand> after 2 minutes; try again` | -32603. Create: after the text of the stopped step, as `git worktree add failed: ` or the `mkdir_failed` text of the parent step. Alone, with `worktree_add_failed`, for a stopped repository test. While a request with `"shadowDirOff":true` runs, the text says `after 30 minutes` (claustrum's own) |
 | the four methods | `config-defined hooks could not be pinned off; git not run: listing the configuration in force: git took too long: Claude stopped git config after 30 seconds; try again` | -32603. Create: `worktree_add_failed`, after `git worktree add failed (checkout): ` for the checkout listing |
 | the four methods | `this repository's git config cannot be used: git did not finish reading "<path>" within 30 seconds; try again` | -32603. Create: `worktree_add_failed` |
 | git.worktree_create | `git worktree add failed (completing the new worktree's git files): this repository's git config cannot be used: git did not finish reading it within 30 seconds; try again` | in `error`, `worktree_add_failed`. The listing of `config.worktree` after the add ran 30 s, and the rollback of a failed checkout runs (cell TW) |
@@ -1152,7 +1096,7 @@ The expanded spelling is wire-visible on eight frames, so it is contract.
 error text. The expanded string also appears in the error text of `files.stat`,
 `files.read`, `files.list`, `files.validate`, `files.extract_tar` and
 `process.spawn`. Two places do *not* carry the spelling. `files.list` entry paths
-are re-joined, and `git.info`'s `root` comes from git's own output. On a
+are re-joined, and `git.info`'s `root` comes from the walk with links resolved, and on Windows from git's confirmation of it. On a
 trailing-separator spelling the difference is a change of *verdict*. POSIX
 `stat("f.txt/")` gives `ENOTDIR`. Once the daemon removes the separator, a
 `-32603` error frame becomes a success frame. Ids 15, 16, 18 and 19 of
@@ -1558,7 +1502,7 @@ not run: the worktree entry this folder's .git names no longer exists`.
 
 | method | refused | no repository |
 |---|---|---|
-| `git.info` | `{"error":{"code":-32603,"message":<text>}}` | `{"isRepo":false,"repoSlug":"","defaultBranch":""}` |
+| `git.info` | `{"error":{"code":-32603,"message":<text>}}` | `{"isRepo":false,"repoSlug":"","defaultBranch":""[,"settingsControl":"<state>"]}` |
 | `git.list_branches` | `{"error":{"code":-32603,"message":<text>}}` | `{"isRepo":false,"branches":[]}` |
 | `git.status` | `{"error":{"code":-32603,"message":<text>}}` | `{"isRepo":false,"clean":false}` |
 | `git.worktree_create` | `{"success":false,"error":<text>,"errorCode":"worktree_add_failed"}` | `{"success":false,"error":"not a git repository","errorCode":"not_a_repo"}` |
@@ -2942,157 +2886,7 @@ no such limit.
 #### git.info
 `{path[,shadowDirOff]}` → repo: `{"isRepo":true,"repo":"<dir>","branch":"<b>","root":"<abs>","repoSlug":"<owner/repo>","defaultBranch":"<b>"[,"settingsControl":"<state>"]}` · non-repo: `{"isRepo":false,"repoSlug":"","defaultBranch":""[,"settingsControl":"<state>"]}`
 
-- `settingsControl` is the last member, since `5fd08069`. Its values are
-  `"shadow"`, `"fallback-git"` and `"off-switch"`. Before a start test of the
-  daemon gave a state, there is no such member. See [The settings copy](#the-settings-copy).
-
-- `repo` is the base name of `root`. A name that starts with `-` or `+` leaves the
-  member out, and the other members keep their order: `{"isRepo":true,"branch":"main","root":"<F>/-repo","repoSlug":"i/r","defaultBranch":"main"}`.
-  `f6010b97` and `89cb6289` do so on Linux and macOS VMs (rows I11a and I11b). The
-  general rule behind those two rows is not measured.
-
-- A refused daemon `GIT_CONFIG_COUNT` changes the answers of this method (see "The
-  daemon's own git environment").
-- Since `f6010b97` the git-directory trust check runs on `path`. A refused
-  git directory answers `-32603` with the refusal text. "No repository" answers the
-  non-repo body. A `GIT_COMMON_DIR` in the daemon's environment turns the check off
-  for this method. See [Git-directory trust check](#git-directory-trust-check).
-- A repository config that the daemon does not accept answers `-32603` with a
-  refusal text. See [Repository config refusals](#repository-config-refusals).
-- A failed start test, a bad answer of the call about the repository, and a copy
-  folder that cannot be made answer `-32603` with their text. See
-  [The settings copy](#the-settings-copy).
-- The daemon reads `branch` with `branch --show-current`, so it works on an unborn
-  HEAD. An empty repo gives the init branch name, for example `master`. A detached
-  HEAD gives `branch:"detached:<short-sha>"`.
-- When `branch --show-current` fails, the result has no `branch` member at all.
-  git's error text never appears there. An example is a HEAD that git fails to
-  resolve (`ref: refs/heads/main` or 40 hex digits, each followed by junk). Measured
-  side by side against `90fca6e6` and `f6010b97` on a Linux VM. If the `rev-parse
-  --short HEAD` call of a detached HEAD fails, the result has no `branch` member
-  either. `5fd08069` answers so in cell V6-13d of round `val-s3p2b2-3` (Windows
-  VM).
-- `root` is the absolute repo top-level. A subdirectory as `path` gives the same
-  `root` (added by reference `7cbfa471`). Since `89cb6289` it is the folder where
-  the walk of the trust check found the repository, the one that holds the `.git`
-  directory or file. Its spelling is `path` after symlink resolution and the walk
-  up. A component that is not a symlink keeps its letter case and Unicode form as
-  sent (rows I07a, I07b and I08 on a macOS VM). A symlink resolves before a
-  later `..` pops it (row D01). `core.worktree`, and the daemon's `GIT_DIR` and
-  `GIT_WORK_TREE`, do not move it. A walk that finds a git directory with no work
-  tree, or nothing, answers the non-repo body after `rev-parse --git-dir` (rows I04,
-  I05 and T11a). On Linux and macOS no `rev-parse --show-toplevel` runs. On the first
-  request, a repository with no `origin/HEAD` takes 9 calls. They are the excludes
-  read, then a listing before each of `rev-parse --git-dir`, `remote get-url
-  origin`, `symbolic-ref` and `branch --show-current` (row L01). Row L01 is of
-  `89cb6289`. Without the member, the first `git.info` of a daemon of `5fd08069`
-  has 21 calls there (cell 50a of round `s3p2b-edges`, Linux VM). The 12 more are
-  the ten test calls, the call about the repository and one config read.
-- On Windows git checks the root. After `rev-parse --git-dir` the daemon runs `git
-  --git-dir=<pin> config -z --list` and `git -c … --git-dir=<pin> --work-tree=<walk
-  root> rev-parse --show-toplevel`, both in `<pin>`, the `GIT_COMMON_DIR` pin (row
-  W01). In the state `shadow` `<pin>` is the git directory, and `GIT_COMMON_DIR`
-  names the copy (row D5 of round `val-s3p2b2-3`, Windows VM, `5fd08069`). When git's answer names the same directory as the walk root, the root is
-  git's answer as printed. Else it is the walk root with forward slashes (rows W14 to
-  W16). A directory symlink resolves in the walk and a junction does not (row D03).
-  Some points are not measured. claustrum tests the same directory by file identity
-  (`os.SameFile`). That is derived from rows W08 and W09. claustrum takes no
-  relative answer. The spelling of the walk root is not measured. With no pin,
-  claustrum runs the pair on the git directory of the walk. One state with no pin
-  is measured. With a daemon `GIT_COMMON_DIR`, the pair and the root are equal on
-  `89cb6289` and the claustrum build of this change in every call (Windows VM, cell B-13).
-  The other states with no pin are not measured.
-- On Windows a path through a junction can name two repositories. The fixture is
-  that of the trust check: a junction `<P>\J` to `<R>\inner`, P on branch `main`
-  with the origin `p/p`, and R on branch `rmain` with the origin `r/r`. For the
-  path `<P>\J\sub` with no daemon `GIT_DIR` or `GIT_COMMON_DIR`, each call after
-  the excludes read carries `GIT_COMMON_DIR=<P>\.git`, the entry of P (cells
-  B-01, B-02, B-07 to B-09 and B-16). The other rows of the table have other
-  entries. The calls of the method run in `<P>\J\sub`, and `rev-parse --git-dir`
-  prints `<R>/.git` there. `89cb6289` answers these fields on a Windows VM:
-
-    | Cell | State | `root`, `repo` | `branch` | `repoSlug` | `defaultBranch` |
-    |---|---|---|---|---|---|
-    | B-01, B-02 | `path` is `<P>\J\sub` | P | `rmain` | `p/p` | `""` |
-    | B-04 | `path` is `<P>\J` | P | `rmain` | `p/p` | `""` |
-    | B-07 | P has no origin | P | `rmain` | `""` | `""` |
-    | B-08 | R has no origin | P | `rmain` | `p/p` | `""` |
-    | B-09 | R is on a detached HEAD | P | `detached:<short sha of R>` | `p/p` | `""` |
-    | B-16 | the config of R sets `core.hooksPath` and `core.fsmonitor` | P | `rmain` | `p/p` | `""` |
-    | B-17k | `path` is `<KP>\J\sub`, `<KP>` a junction to P | P | `rmain` | `p/p` | `""` |
-    | B-17d | `path` is `<P>\J\..\J\sub` | P | `rmain` | `p/p` | `""` |
-    | B-05p | `path` is P, no junction | P | `main` | `p/p` | `main` |
-    | B-05r | `path` is `<R>\inner\sub`, no junction | R | `rmain` | `r/r` | `rmain` |
-    | B-06 | a folder symlink in the place of the junction | R | `rmain` | `r/r` | `rmain` |
-    | B-13 | daemon `GIT_COMMON_DIR` of R | P | `rmain` | `r/r` | `rmain` |
-    | B-14 | daemon `GIT_DIR` of R | P | `rmain` | `r/r` | `rmain` |
-
-  In the mixed cells the listing prints `remote.origin.url` of P, `symbolic-ref
-  refs/remotes/origin/HEAD` prints `refs/remotes/origin/rmain`, and the `rev-parse
-  --verify` of that ref exits 1 (cell B-01). In cell B-15 the config file of P has
-  a broken line. The listing in `<P>\J\sub` exits 128, and `89cb6289` answers
-  `-32603` with the listing refusal that ends
-  `fatal: bad config line 15 in file <P>\.git/config`, after 3 git calls. In cell B-03 the junction is outside any
-  repository, and the answer is the non-repo body. The claustrum build of this change
-  answers the same frame in each of these cells (Windows VM). For cell B-15 now,
-  see "Git-directory trust check". Its calls carry the
-  same entries in these cells, except B-14. In cell B-03 it runs one call less
-  (see the trust check). The claustrum test on real junctions runs on Windows
-  only. It has 11 cells: B-01, B-03, B-04, B-05p, B-05r, B-07, B-08, B-15, B-16,
-  B-17k and B-17d. A test with simulated links runs on Linux and macOS. In cell
-  B-14 calls 4 and 5 differ. They are the root pair. `89cb6289` runs them with
-  `--git-dir=<P>\.git`, in the folder `<P>\.git`, with `GIT_COMMON_DIR=<P>\.git`.
-  The claustrum build of this change runs them with `--git-dir=<R>\.git`, in the folder
-  `<R>\.git`, with `GIT_COMMON_DIR=<R>\.git`. The frames are equal. Cell J-f-info
-  repeats cell B-14 with the same result. Not measured: a junction to another
-  drive, and a junction to a bare repository. Three more states have no cell of
-  `89cb6289`. The answers of claustrum there are from the code:
-    - The `path` goes through the junction, and `<P>\.git\commondir` is a stray
-      file. claustrum judges `<P>\.git` by the stray-commondir rules, and a refusal
-      names P. The build before the spelled start ran no trust check there.
-    - A junction outside any repository leads into a repository whose config file
-      has a broken line. claustrum answers the non-repo body. The build before the
-      spelled start answered the listing refusal for the config file of that
-      repository.
-    - The `path` is `<P>\missing\..`, and `<P>\.git\commondir` is a stray file.
-      The answer is that of the first state.
-- The excludes read runs before the trust check, so it also runs before a trust
-  refusal, as on both references.
-- `7c2f88d` added `repoSlug` and `defaultBranch`. Both are always present,
-  including on the non-repo body. Each is an empty string when the daemon cannot
-  determine it.
-- `repoSlug` is `owner/repo` from `remote.origin.url`. The daemon populates it only
-  for a canonical `github.com` remote. These rules are measured across 42 URL
-  shapes:
-    - The scheme must be `https`, `http`, `ssh`, `git`, or absent. An absent scheme
-      is the scp-like `[user@]host:owner/repo`. `git+ssh://` and `file://` give
-      `""`.
-    - The host must equal `github.com` case-insensitively. `www.github.com`, the
-      trailing-dot `github.com.`, a port (`github.com:443`), GitLab, Bitbucket and
-      self-hosted GHE all give `""`. The daemon strips userinfo.
-    - The path must be exactly two non-empty segments after one optional trailing
-      `/` and one optional `.git`.
-    - The owner is alphanumerics with *interior* hyphens only. `ac-me` and `ac--me`
-      pass. `-acme`, `acme-`, `acme_corp` and `acme.co` do not.
-    - The repo is alphanumerics plus `.`, `_`, `-`. It must not start with `-`, it
-      must not be `.` or `..`, and it must not end in a lowercase `.wiki`. That
-      last test is case-sensitive and suffix-only, so `GIZMO.WIKI` and a repo named
-      `wiki` are accepted.
-- `defaultBranch` is what `refs/remotes/origin/HEAD` points to. It is empty when
-  `refs/remotes/origin/HEAD` is unset. The daemon checks the name. A name that
-  starts with `-` gives `""` with no further call. Else a `rev-parse --verify --quiet
-  refs/remotes/origin/<name>^{commit}` runs, with its listing, and only exit 0 keeps
-  the name. A dangling `origin/HEAD` and one that names a blob give `""` too.
-  `f6010b97` and `89cb6289` do so on Linux and macOS VMs (rows I10a to I10c). The
-  call has the heavy profile, as on `5fd08069` (cell B3d of round `s3p2-linux`,
-  Linux VM, with no `"shadowDirOff"` member). With the member, cell A2 of round
-  `val-s3p2b1` shows the same on Linux, macOS and Windows VMs. In a partial clone
-  no build starts a fetch for `git.info`. The object store, the refs and
-  `packed-refs` are unchanged after 4 requests, and `defaultBranch` is equal. That
-  is cell B3 of round `val-s3p2b1` on a Linux VM, for `89cb6289`, `5fd08069` and
-  claustrum, with and without the member. Not
-  measured: other invalid names, and a `symbolic-ref` answer outside
-  `refs/remotes/origin/` (claustrum verifies it the same way).
+Describes the git repository that holds `path`: its root, branch, GitHub slug, default branch and the state of the settings copy. The page [git.info](protocol/git-info.md) has the request, the response and the errors.
 
 #### git.status
 `{path,baseRepo}` → clean: `{"isRepo":true,"clean":true}` · dirty: `{…,"clean":false,"changes":["M  a.txt"," M b.txt","?? new"]}`

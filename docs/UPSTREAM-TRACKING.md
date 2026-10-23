@@ -573,7 +573,7 @@ traps that matter for telling drift from expected:
     part ([git.status](protocol/git-status.md#path)).
 
   See [PROTOCOL.md](PROTOCOL.md) → Git-directory trust check, Hardened git calls
-  and git.info.
+  and [git.info → The root](protocol/git-info.md#the-root).
 - D12 needs a VALID zstd body. The decoder answers an invalid one at 0 s,
   which reads like "no divergence". Also, a zero download timeout frees the body
   read only: the transport still applies `net.Dialer{Timeout: 30s}`,
@@ -600,10 +600,11 @@ traps that matter for telling drift from expected:
   to be misread. `19f30c46` copies eight of the nine, so a file missing from a
   seeded worktree looks like a regression against the previous pin.
   [REFERENCE-BUILDS.md](REFERENCE-BUILDS.md) holds all seven, and all seven are
-  reconciled. One carries an exception. On the host cleaner's macOS busy
-  probe, claustrum reads an `lsof` run it gave up on as busy. The reference side is
-  not probe-measured. That is [DIVERGENCES.md](DIVERGENCES.md) D17, not drift.
-  D17 is the abandoned run only, not a run that the deadline ends. For both reads, an `lsof`
+  reconciled. On the host cleaner's macOS busy
+  probe, the daemon gets no SIGTERM after an `lsof` run that claustrum gave up on,
+  as on `5fd08069` (round `tier4-01`, macOS VM). The retired D17 covered it. A macOS
+  pass with three hung `lsof` runs and 51 s is the known difference from `5fd08069`,
+  which runs one and ends in 17 s. It is not drift. For the busy read and the lock read, an `lsof`
   command that does not start is parity with `89cb6289` (macOS VM, 3 of 3 runs).
   So is a run that writes to stderr and exits 1.
 - The `90fca6e6` reconciliation shipped four PRs. A full re-check then found a
@@ -808,12 +809,15 @@ so do the `git.status` and `git.list_branches` answers for `<dir>\<junction>\T`.
 Other code resolves `baseRepo` through `EvalSymlinks` too, so other Windows junction
 rows can move as well. A `go` line below 1.23 in `go.mod` has the same effect. The
 `git.info` root for a path with a junction before its last component rests on the
-same failure (rows D03-junction and W09). With the walk following the junction, those
+same failure (rows D03-junction and W09, `TestInfoRootLinkThenDotDotWindows` and `TestInfoRootBelowJunctionWindows`). With the walk following the junction, those
 roots can move too. The `GIT_COMMON_DIR` pin of the trust check for such a path
 rests on it as well (`walkStart`, `gitdirtrust.go`). With the walk following the
-junction, the pin names the repository behind the junction. The `git.info` frames
-of Windows VM cells B-01, B-02, B-07 to B-09, B-15, B-16, B-17k and B-17d then
-change. This
+junction, the pin names the repository behind the junction. The `git.info` answers
+for such a path then change: `root`, `repo` and `repoSlug` can move to the
+repository behind the junction ([git.info → Differences by system](protocol/git-info.md#differences-by-system)).
+The frames of `89cb6289` are pinned in `TestInfoThroughJunctionWindows`
+(`gitinfo_junction_windows_test.go`), and the pins of the cells are in
+[PROTOCOL.md → Git-directory trust check](PROTOCOL.md#git-directory-trust-check). This
 entry is derived from the Go source (`os/types_windows.go` and
 `path/filepath/symlink.go`), not measured. Check those rows after each Go bump that
 changes `winsymlink`.
