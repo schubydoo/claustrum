@@ -2,4 +2,4 @@
 default: minor
 ---
 
-The five git methods refuse a repository config that the daemon does not accept, as `5fd08069` does. Two examples are a format version other than `0` or `1`, and a config file over 8 MiB. `"shadowDirOff":true` in a request turns that off.
+The git methods now refuse a repository config that the daemon does not accept, such as a format version other than 0 or 1, a config file over 8 MiB, or a broken `config.worktree` with `extensions.worktreeConfig` on. `"shadowDirOff":true` turns this off.

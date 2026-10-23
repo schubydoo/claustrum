@@ -2,4 +2,4 @@
 default: minor
 ---
 
-`server.capabilities` answers the `peerCheck` member and lists the `server.peer_check` feature, as `5fd08069` does. With `CLAUDE_SSH_PEER_CHECK=1` macOS and Windows answer `"unavailable"` and serve every caller. No child of the daemon inherits the variable.
+`server.capabilities` now reports the `peerCheck` state and the `server.peer_check` feature. With `CLAUDE_SSH_PEER_CHECK=1` on Linux the daemon answers `"peerCheck":"on"` and refuses a caller in other namespaces with a `-32006` frame. macOS and Windows answer `"unavailable"` and serve every caller. No child of the daemon gets the variable.

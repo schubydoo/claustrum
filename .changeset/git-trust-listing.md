@@ -2,4 +2,4 @@
 default: minor
 ---
 
-`git.info` takes its root from repository discovery, and `server.capabilities` advertises `git.info.discovered_root`. The git methods pin each hook name of the configuration listing and trust a stray `commondir` of `.` or `./`. They answer a failed listing by its cause, as `89cb6289` does.
+`git.info` now takes its root from repository discovery, also through a junction on Windows, and `server.capabilities` lists `git.info.discovered_root`. `git.status` reports worktree and submodule entries as the reference does, and refuses index files over 2 GiB in total on a linked worktree.
