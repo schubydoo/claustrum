@@ -279,8 +279,8 @@ another text:
 
 An `open <path>: resource temporarily unavailable` of `files.read` on a regular
 file that another process holds under a lease is not drift either. From the
-code, it comes from the `O_NONBLOCK` open of claustrum. No VM row has that
-case.
+code, it comes from the `O_NONBLOCK` open of claustrum. That case is not
+measured on a VM.
 
 ### Triage gotchas — when a probe result is misleading
 
@@ -298,44 +298,44 @@ traps that matter for telling drift from expected:
   calls turn the hint off with `-c advice.graftFileDeprecated=false`. Its heavy
   calls print the hint on stderr, and no reply holds it. A hint in a frame
   of `f6010b97` and none in the frame of claustrum is therefore not drift. The
-  texts of `5fd08069` have no hint either, and those of `89cb6289` have it (cell
-  B2 of round `val-s3p2b1`, Linux, macOS and Windows VMs).
+  texts of `5fd08069` have no hint either, and those of `89cb6289` have it
+  (Linux, macOS and Windows VMs).
 - In a repo with no `.claude/`, a `timeoutMs` that expires during the copy step
   splits the pins. `f6010b97` runs no copy `ls-files` and answers success.
   `90fca6e6` and claustrum answer `timeout` "after the checkout finished" and roll
   back. `89cb6289` answers like claustrum (the Linux timeout set of the whole-build
   check of issue 442). That difference is not drift.
-- In two cells of `git.worktree_create` a folder stays on claustrum that
-  `89cb6289` removes. In cell B6 it is an empty folder at the path of the new
-  registration. In cell B6b it is the registration of a live sibling worktree
+- In two states of a `git.worktree_create` rollback a folder stays on claustrum
+  that `89cb6289` removes. In one it is an empty folder at the path of the new
+  registration. In the other it is the registration of a live sibling worktree
   that a wrapper moved to that path (Linux and macOS VMs). The frames are
-  equal. A kept
-  folder there is D24, not drift.
-- The branch step of `git.worktree_remove` and of the create rollbacks splits the
-  pins. claustrum follows `89cb6289`, the pin before `5fd08069`. `5fd08069` is
-  not measured in these rows. Against `f6010b97`, `server.capabilities` differs by the
-  `git.worktree_remove.unpushedGuard` and `launcher.managed` features and by the
-  `launcher.resolve` method. On remove, every kept case of the
-  branch step differs. claustrum keeps the branch and adds `"branchKept":true`, where
-  `f6010b97` adds no member. In most of these cases `f6010b97` also deletes
-  the branch. The kept classes, with their rows:
-  - A commit that no other ref reaches: R02, R05 to R08, R10b, R17a, R19, R20, R24b
-    and B2-04a. Also R21, R21b, B2-08 and B2-12, where `89cb6289` and claustrum keep
-    a branch with the member, and `f6010b97` deletes both branches.
-  - A lock file on the branch: R14. There `f6010b97` keeps the branch too.
-  - 10001 or more heads: R15a and R15c.
-  - A letter-case twin: R16 and R16b.
-  - No repository at `baseRepo`: R18 and R18b. Neither side deletes anything there.
-  - A `baseRepo` that does not exist: X3. Neither side deletes anything there.
-  - for-each-ref stopped at the 60 s bound: R22a and B2-02.
-  - rev-list stopped at that bound, or failed: B2-01 and B2-03.
-  - update-ref stopped: R23a and R23b.
+  equal. A kept folder there is D24, not drift.
+- The branch step of `git.worktree_remove` and of the create rollbacks splits
+  the pins. claustrum follows `89cb6289`, the pin before `5fd08069`. `5fd08069`
+  is not measured in these states. Against `f6010b97`, `server.capabilities`
+  differs by the `git.worktree_remove.unpushedGuard` and `launcher.managed`
+  features and by the `launcher.resolve` method. On remove, every kept case of
+  the branch step differs. claustrum keeps the branch and adds
+  `"branchKept":true`, where `f6010b97` adds no member. In most of these cases
+  `f6010b97` also deletes the branch. The kept classes:
+  - A commit that no other ref reaches. In some of these states two removes
+    are sent together on one connection. `89cb6289` and claustrum keep a
+    branch with the member there, and `f6010b97` deletes both branches.
+  - A lock file on the branch. There `f6010b97` keeps the branch too.
+  - 10001 or more heads.
+  - A letter-case twin.
+  - No repository at `baseRepo`. Neither side deletes anything there.
+  - A `baseRepo` that does not exist. Neither side deletes anything there.
+  - for-each-ref stopped at the 60 s bound.
+  - rev-list stopped at that bound, or failed.
+  - update-ref stopped.
 
-  In the create rollbacks, these rows differ from `f6010b97`: C02, C04, C05, C06, C06b,
-  C09, C10, B2-09a, B2-09b, B2-09c, B2-09f and B2-10. There `f6010b97` deletes the
-  branch and adds no branch text. Those differences are not drift. Rows C07a, C07b,
-  B2-09e, X1 and X2 equal `f6010b97`. See [PROTOCOL.md](PROTOCOL.md) → The branch
-  step.
+  In most measured create rollbacks, `f6010b97` deletes the branch and adds no
+  branch text. claustrum answers by the branch step of `89cb6289` there. Those
+  differences are not drift. The answers equal `f6010b97` when update-ref fails,
+  is stopped or meets a lock file on the branch, and for a branch name that
+  starts with `+`, where no call of the step runs. See
+  [PROTOCOL.md](PROTOCOL.md) → The branch step.
 - The managed launcher splits the pins the same way, not drift. claustrum follows
   `89cb6289`: `launcher.resolve`, the `process.spawn` `launcher` param, the child
   env strip, and the gated launcher runs of `-install` and `-probe-cli`. The one
@@ -353,10 +353,10 @@ traps that matter for telling drift from expected:
   such entry for the values `1` and `0` (Linux, macOS and Windows VMs). Its git
   calls have none for `0` (Linux VM). A child of `89cb6289` is not measured.
   Against `5fd08069` the measured peer check log lines differ by a level tag only
-  (round `task011-02`, Linux VM). See [The peer check](protocol/server.md#the-peer-check).
+  (Linux VM). See [The peer check](protocol/server.md#the-peer-check).
 - `files.extract_tar` splits the builds too, not drift. claustrum follows the pin
   `5fd08069` in these places. Against
-  `89cb6289` each of them differs in the measured rows:
+  `89cb6289` each of them differs where it was measured:
   - `server.capabilities` lists `files.extract_tar.execBit` directly after
     `process.stdin.offset` (Linux, macOS and Windows VMs).
   - On Linux and macOS a file whose archive mode has the execute bit of the
@@ -375,7 +375,7 @@ traps that matter for telling drift from expected:
     parent folder: `clean destDir: RemoveAll <name>: …` (Linux, macOS and
     Windows VMs), `open parent: open <path>: …` and `mkdir destDir: mkdirat
     <name>: …` (Linux and macOS VMs). `89cb6289` has a `clean destDir:` or
-    `mkdir destDir:` text with the whole path in the rows where it fails.
+    `mkdir destDir:` text with the whole path where it fails.
   - With a parent folder of mode `0300` and no `destDir`, the answer is the
     `open parent:` text and no `destDir` is made. `89cb6289` extracts (Linux
     and macOS VMs).
@@ -411,10 +411,9 @@ traps that matter for telling drift from expected:
   as a build split.
 - The git filters of the `git.worktree_create` checkout split the builds too,
   not drift. claustrum follows the pin `5fd08069`. In the state `fallback-git`
-  and with `"shadowDirOff":true`
-  claustrum has no filter rule, as `5fd08069` (cells R-Q4f and R-Q4g of round `task084-01`, Linux VM). With
-  `shadowDirOff` the rule is off, as before. Against
-  `89cb6289` these answers differ:
+  and with `"shadowDirOff":true` claustrum has no filter rule, as `5fd08069`
+  (Linux VM). With `shadowDirOff` the rule is off, as before. Against `89cb6289`
+  these answers differ:
   - A checkout that needs a filter which only the repository config defines
     answers `errorCode:"repository_only_filter"`, and nothing is left.
     `89cb6289` runs the filter (Linux and Windows VMs).
@@ -458,7 +457,7 @@ traps that matter for telling drift from expected:
   false, the hooks refusal, another refusal of that build such as `exit status
   128`, or no answer there. The call log has one more call
   for each config file of a first read. Each state but the three Windows texts
-  ran on a Linux VM, and part of them on macOS and Windows VMs. Most cells ran
+  ran on a Linux VM, and part of them on macOS and Windows VMs. Most states ran
   `git.info` and `git.status`.
   With `"shadowDirOff":true` in the request, or while such a request runs (Linux
   VM), the read does not run. A
@@ -490,11 +489,11 @@ traps that matter for telling drift from expected:
   Against `5fd08069` the call logs differ in `git.worktree_create`. `5fd08069`
   makes more rounds with `worktreeRoot`, and other listings with `existingBranch`. Those differences are not drift. See
   [Where the calls differ from `5fd08069`](PROTOCOL.md#where-the-calls-differ-from-5fd08069).
-- The `worktreeRoot` location rules follow `5fd08069` (rounds `tier0-20` to
-  `tier0-22`), not drift. `89cb6289` is not measured in these cells.
-- A remove behind a linked `<git dir>/worktrees` follows `5fd08069`, not drift:
-  cell C3 of rounds `tier0-24` and `tier0-25m` (Linux and macOS VMs) and L1 of
-  round `tier0-26` (Linux VM). `89cb6289` is not measured.
+- The `worktreeRoot` location rules follow `5fd08069` (Linux and macOS VMs), not
+  drift. `89cb6289` is not measured there.
+- A remove behind a linked `<git dir>/worktrees` follows `5fd08069`, not drift
+  (Linux and macOS VMs, and for a gone worktree with a locked entry a Linux
+  VM). `89cb6289` is not measured.
 - The settings copy of the git methods splits the builds too, not drift.
   Against `89cb6289` a triager can meet these points. Each is in
   [The settings copy](PROTOCOL.md#the-settings-copy):
@@ -522,55 +521,56 @@ traps that matter for telling drift from expected:
     config reads that `5fd08069` ends early.
   - On Windows, two reply texts of a create whose `.git` becomes a file
     `gitdir: <X>` while the create runs (Windows VM).
-- A remove with a worktree folder that exists lists again after a failed listing.
-  It answers the text of the failed listing or goes on (`5fd08069`, rounds
-  `tier3-13`, `tier3-17` and `tier3-19`). `f6010b97` answers the lock-check text
-  (row G08). In round `tier3-17` (Linux VM) claustrum makes one more listing and
-  `rev-parse` in cells CaP0 and FR with equal replies, and in cell CaP3 both answer
-  the colon form where `89cb6289` answered the lock-check text.
+- A remove with a worktree folder that exists lists again after a failed
+  listing. It answers the text of the failed listing or goes on (`5fd08069`,
+  Linux, macOS and Windows VMs). `f6010b97` answers the lock-check text. With a
+  `baseRepo` that is a plain folder and nothing set, and after a `rev-parse
+  --absolute-git-dir` that fails after a failed first listing, claustrum makes
+  one more listing and `rev-parse` than `5fd08069`, with equal replies (Linux
+  VM). With an empty `GIT_CONFIG_KEY_0` in the daemon environment, both answer
+  the hooks refusal with the text of the failed listing, where `89cb6289`
+  answered the lock-check text.
 - The reap of a child record with a `program` key splits the pins too, off the
-  wire. claustrum follows `89cb6289`. `5fd08069` is not measured in these rows.
-  On Linux, if the process runs `program` or
-  holds it as one whole argument, `89cb6289` accepts the record. Linux rows PG02a, PG02b,
-  ED03a, ED03b, ED04a and ED04e show that. `f6010b97` sends no signal in rows ED03a
-  to ED04e. That difference is not drift. See
+  wire. claustrum follows `89cb6289`. `5fd08069` is not measured there.
+  On Linux, when the process runs `program` or holds it as one whole argument,
+  `89cb6289` accepts the record (Linux VM). `f6010b97` sends no signal in some
+  of those states. That difference is not drift. See
   [PROTOCOL.md → Child records and the reap](PROTOCOL.md#child-records-and-the-reap-linux-and-macos).
 - The configuration listing, the stray `commondir` rules and the `git.info` root
   split the pins too. claustrum follows `89cb6289` there. `5fd08069` is not
-  measured in these rows. In the state `shadow` the answers of
+  measured there. In the state `shadow` the answers of
   [The settings copy](PROTOCOL.md#the-settings-copy) come first. Against
   `f6010b97` these differences are not drift:
   - `server.capabilities` carries `git.info.discovered_root`.
-  - A stray `commondir` that reads `.` or `./` is served when its git directory is
-    valid (rows T01, T02 and T11). With a bad `HEAD` it gets S3 (row T10a). A
-    dangling relative symlink that stays in a valid git directory counts as none
-    (row T07c). With `worktreeRoot`, `git.worktree_remove` then answers `cannot list
-    the repository's worktrees: exit status 128` (row DG2s-g). Without
-    `worktreeRoot` it answers `{"success":true,"branchKept":true}` and keeps the
-    branch. It deletes the entry. If the worktree exists, it deletes that too (rows
-    DG3-g and DG3x-g). `f6010b97` refuses there and keeps everything. With a bad `HEAD` the
-    symlink gets S3 too (row DG2-g). Any other content or file gets S1 or S2. In all
-    these rows but DG3-g, `f6010b97` gives one older text: `%q exists where git
-    itself never writes one (git keeps that file only in a linked worktree's entry
-    under .git/worktrees/); remove it if you did not create it, and treat its
-    appearance as tampering`. In row DG3-g it answers the lock-check text with `its
+  - A stray `commondir` that reads `.` or `./` is served in a valid git
+    directory. With a bad `HEAD` it gets S3. A dangling relative symlink that
+    stays in a valid git directory counts as none. With `worktreeRoot`,
+    `git.worktree_remove` then answers `cannot list the repository's worktrees:
+    exit status 128`. Without `worktreeRoot` it answers
+    `{"success":true,"branchKept":true}` and keeps the branch. It deletes the
+    entry. If the worktree exists, it deletes that too. `f6010b97` refuses there
+    and keeps everything. With a bad `HEAD` the symlink gets S3 too. Any other
+    content or file gets S1 or S2. S1 to S3 are the texts of [Git-directory
+    trust check](PROTOCOL.md#git-directory-trust-check). In all of these states
+    but one, `f6010b97` gives one older text: `%q exists where git itself never
+    writes one (git keeps that file only in a linked worktree's entry under
+    .git/worktrees/); remove it if you did not create it, and treat its
+    appearance as tampering`. For that symlink on a remove of an existing
+    worktree without `worktreeRoot`, it answers the lock-check text with `its
     registrations could not be examined`.
-  - A listing error is in English under a German daemon locale (row L03).
+  - A listing error is in English under a German daemon locale.
   - A configuration key of 1048576 bytes passes, and one byte more gets the key
-    text. `f6010b97` refuses both with `bufio.Scanner: token too long` (rows L08b
-    and L08c).
+    text. `f6010b97` refuses both with `bufio.Scanner: token too long`.
   - A listing that exits 128 with `fatal: not a git repository` answers the "no
     repository" shapes, and `git.worktree_remove` with `worktreeRoot` gives `git
-    finds no repository here: …`. `f6010b97` gives the hooks refusal (rows L14a,
-    L14b, L14d, L14e and N01 to N04).
+    finds no repository here: …`. `f6010b97` gives the hooks refusal.
   - When `git version` also fails, the text says git cannot run. `f6010b97` gives
-    the hooks refusal, or the "no repository" shape for a git that cannot start
-    (rows L11, L12 and L15).
+    the hooks refusal, or the "no repository" shape for a git that cannot start.
   - The `git.info` root comes from the walk, so a daemon `GIT_DIR` with a plain
-    folder answers the non-repo body (rows I04a and I04b). The slug after `lnk/..`
-    is the one of the resolved repository (row D01). On Windows the daemon does not
-    take a toplevel answer that names another folder or is relative (rows W14 and
-    W16). A symlink there resolves before `..` (row D03).
+    folder answers the non-repo body. The slug after `lnk/..` is the one of the
+    resolved repository. On Windows the daemon does not take a toplevel answer
+    that names another folder or is relative. A symlink there resolves before
+    `..`.
   - claustrum keeps D16 as it is. `git.status` now answers by the worktree
     entries of `baseRepo`, as `89cb6289` answers, so the `.git` inside `path` plays no
     part ([git.status](protocol/git-status.md#path)).
@@ -589,27 +589,26 @@ traps that matter for telling drift from expected:
   difference there drift.
 - A download that is not a zstd archive answers `decompressing: …` with
   `fetch.bytes` 4 and one progress line. That holds with a right and a wrong
-  checksum (`5fd08069`, cells L15a and L15b, Linux VM). For such a body,
-  another count is drift.
+  checksum (`5fd08069`, Linux VM). For such a body, another count is drift.
 - The `ldd` libc probe bounds ldd itself at 5 s on both binaries (parity since
   `19f30c46`). There is no libc probe off linux at all.
-- claustrum made seven changes for `90fca6e6` while the JSON-RPC surface stood still.
-  A triager who meets one of them and finds the drift check quiet is looking at
-  parity, not drift. No method, field or error string moved. Three of the seven
-  still change what a client reads. A reattach now closes the connection it
-  replaces. A reaped process reads as not running for `process.stdin` and
-  `process.reattach` inside the exit drain. A new worktree no longer inherits the
-  nine Claude runtime-state names under `.claude/`. That last one is the likeliest
-  to be misread. `19f30c46` copies eight of the nine, so a file missing from a
-  seeded worktree looks like a regression against the previous pin.
-  [REFERENCE-BUILDS.md](REFERENCE-BUILDS.md) holds all seven, and all seven are
-  reconciled. On the host cleaner's macOS busy
-  probe, the daemon gets no SIGTERM after an `lsof` run that claustrum gave up on,
-  as on `5fd08069` (round `tier4-01`, macOS VM). The retired D17 covered it. A macOS
-  pass with three hung `lsof` runs and 51 s is the known difference from `5fd08069`,
-  which runs one and ends in 17 s. It is not drift. For the busy read and the lock read, an `lsof`
-  command that does not start is parity with `89cb6289` (macOS VM, 3 of 3 runs).
-  So is a run that writes to stderr and exits 1.
+- claustrum made seven changes for `90fca6e6` while the JSON-RPC surface stood
+  still. A triager who meets one of them and finds the drift check quiet is
+  looking at parity, not drift. No method, field or error string moved. Three of
+  the seven still change what a client reads. A reattach now closes the
+  connection it replaces. A reaped process reads as not running for
+  `process.stdin` and `process.reattach` inside the exit drain. A new worktree
+  no longer inherits the nine Claude runtime-state names under `.claude/`. That
+  last one is the likeliest to be misread. `19f30c46` copies eight of the nine,
+  so a file missing from a seeded worktree looks like a regression against the
+  previous pin. [REFERENCE-BUILDS.md](REFERENCE-BUILDS.md) holds all seven, and
+  all seven are reconciled. On the host cleaner's macOS busy probe, the daemon
+  gets no SIGTERM after an `lsof` run that claustrum gave up on, as on
+  `5fd08069` (macOS VM). The retired D17 covered it. A macOS pass with three
+  hung `lsof` runs and 51 s is the known difference from `5fd08069`, which runs
+  one and ends in 17 s. It is not drift. For the busy read and the lock read, an
+  `lsof` command that does not start is parity with `89cb6289` (macOS VM, in
+  every run). So is a run that writes to stderr and exits 1.
 - The `90fca6e6` reconciliation shipped four PRs. A full re-check then found a
   seventh change that the first pass had missed. A new value inside an existing
   function shows in no symbol list, so a quiet symbol comparison does not prove
@@ -617,115 +616,110 @@ traps that matter for telling drift from expected:
 
 - A reference daemon that stays alive after its socket path is gone is not drift.
   On a Linux VM, the host cleaner of `f6010b97` and `89cb6289` sent no signal to
-  such a daemon. It sent none to its children (rows ST01, ST02, ST04 to ST10, HC16 to
-  HC19). The daemon ended by itself after 11 to 12 minutes (rows ST09 and ST11). The
-  cleaner of claustrum sends none either. On a macOS VM the two references sent none
-  either (rows ST01, ST09, ST10, HC16, HC18).
+  such a daemon. It sent none to its children. The daemon ended by itself after
+  11 to 12 minutes. The cleaner of claustrum sends none either. On a macOS VM
+  the two references sent none either.
 - On Windows a serving process that outlives its SSH session is not drift, and
-  children that outlive a killed daemon are not drift. A Windows VM measured both
-  against `f6010b97` and `89cb6289` (rows WJ01 to WJ07 and WN03, and row WJ08 on
-  `89cb6289`). A later run on that VM measured the same on claustrum (rows WJ01 to
-  WJ08, WN03). A spawned child is in no job on either side, and a kill ends the direct
-  child only (kill forms: `89cb6289`). Descendants that outlive a kill or a `-stop` are not drift.
+  children that outlive a killed daemon are not drift. A Windows VM measured
+  both against `f6010b97` and `89cb6289`, with one state on `89cb6289` only. A
+  later run on that VM measured the same on claustrum. A spawned child is in no
+  job on either side, and a kill ends the direct child only (kill forms:
+  `89cb6289`). Descendants that outlive a kill or a `-stop` are not drift.
 - A daemon that accepts no connection for some seconds after its start is not
   drift. On Linux and macOS the daemon binds its socket after the reap of its
   start. With a recorded child that ignored `SIGTERM`, the first connection to
   `89cb6289` worked 2.2 to 2.4 s after its start (Linux and macOS VMs). Before
-  that a client got `ECONNREFUSED` (row D1a) or `ENOENT` (row D1b). In that
+  that a client got `ECONNREFUSED` or `ENOENT`. In that
   time `daemon.lock` holds `pid`, `role` and `node` only. claustrum is built to
   the same order.
 - Child records and both markers on a socket that is not `run/<id>/rpc.sock` are
-  not drift. `89cb6289` writes them on every socket shape (Linux and macOS rows F1
-  to F4), and claustrum does too.
+  not drift. `89cb6289` writes them on every socket shape (Linux and macOS
+  VMs), and claustrum does too.
 - Records that stay after a daemon start are not drift in two cases. One start
-  handles 128 record names (Linux row C1) and ends 64 groups (Linux row C4), on
-  `89cb6289`. claustrum is built to it. The rest goes at a later start.
+  handles 128 record names and ends 64 groups, on `89cb6289` (Linux VM).
+  claustrum is built to it. The rest goes at a later start.
 - A first process that lives on after a second `process.spawn` took its `id` is
   not drift. `89cb6289` sends it no signal, and a stop of the daemon leaves it
-  alive. Linux and macOS rows A1 to A4 and Windows rows EV and EVInh measure that.
-  The frames of that first process still come on its own
-  connection, under the same `processId` (Linux row P2 against `89cb6289`).
-  claustrum is built to it.
+  alive (Linux, macOS and Windows VMs). The frames of that first process still
+  come on its own connection, under the same `processId` (Linux VM against
+  `89cb6289`). claustrum is built to it.
 - A `process.spawn` reply that comes 3 to 5 s late is not drift when the spawn
   supersedes a session process. `89cb6289` answers after the old process ended
-  (Linux and macOS rows B1 to B3, Windows rows SS and SSInh). claustrum does the
-  same.
+  (Linux, macOS and Windows VMs). claustrum does the same.
 - An old session process that lives on after a failed session spawn is not drift
   in one case: the command of the new spawn does not exist. `89cb6289` sends the
-  old process no signal there (Linux rows P3, H1 and H9, macOS row P3, Windows
-  rows SSm-path, SSm-bare and SSm-noext). claustrum is built to it. A command
-  that exists and does not start ends the old process first, on `89cb6289` and
-  on claustrum (Linux rows H4a to H4c).
+  old process no signal there (Linux, macOS and Windows VMs). claustrum is built
+  to it. A command that exists and does not start ends the old process first,
+  on `89cb6289` and on claustrum (Linux VM).
 - A descendant that lives on after `process.killAndWait` or a session supersede
   is not drift in these cases. One is a process that ended on the graceful
-  signal within the grace. `89cb6289` then sends its group no `SIGKILL` (Linux rows X2a and X2b,
-  also B1 and H4a to H4c). claustrum is built to it. When the grace runs out,
-  both send the group `SIGKILL` (Linux rows B2, B3 and X1). macOS rows X2a to
-  X2c give the same. Windows has no X2 row. The holder of the pipes also lives on,
-  with equal answers on `5fd08069`, in cells K1b, K1c and K2b (rounds `tier3-03`
-  and `tier3-12`, macOS and Linux VMs).
+  signal within the grace. `89cb6289` then sends its group no `SIGKILL` (Linux
+  and macOS VMs). Windows is not measured in that case. claustrum is built to
+  it. When the grace runs out, both send the group `SIGKILL` (Linux VM). The
+  holder of the pipes also lives on, with equal answers on `5fd08069` (macOS and
+  Linux VMs).
 - A daemon that runs no login shell before its first `process.spawn` is not drift
-  (Linux and macOS rows G1 and G2 against `89cb6289`).
+  (Linux and macOS VMs against `89cb6289`).
 - A first spawn that answers after 4.6 s with a timed-out PATH line is not drift
   when a process of the login profile holds the output pipe. `89cb6289` does that
-  (Linux rows P13 and P13k), and claustrum is built to it.
+  (Linux VM), and claustrum is built to it.
 - A `-serve` launcher that gives up after 12 s is not drift. If the daemon child
-  of `89cb6289` ends before the bind, its launcher exits 1 after 12.06 s (Linux
-  row P7, macOS row P7 and two Windows rows).
+  of `89cb6289` ends before the bind, its launcher exits 1 after 12.06 s (Linux,
+  macOS and Windows VMs).
 - A daemon that gets `SIGTERM` or `SIGINT` during its start, goes on to its bind
-  and then exits 0 is not drift. `89cb6289` does that (Linux rows P5, H8a to H8c,
-  N4 and N5, macOS row P5), and claustrum is built to it. Its launcher then exits
-  1 after 12 s (rows N4 and N5).
+  and then exits 0 is not drift. `89cb6289` does that (Linux and macOS VMs), and
+  claustrum is built to it. When a `SIGTERM` comes while the daemon waits to
+  evict a live daemon, or from a `-stop` during the reap of its start, its
+  launcher then exits 1 after 12 s (Linux VM).
 - A daemon that gets `SIGKILL` from a second daemon during its start is not
-  drift. `89cb6289` does that when the two starts are 0.05 s apart (Linux row N3).
-  The second daemon waits on the lock, and claustrum is built to it (row H7).
+  drift. `89cb6289` does that when the two starts are 0.05 s apart (Linux VM).
+  The second daemon waits on the lock, and claustrum is built to it.
 - The order of two or more new caller keys in a child environment is not drift.
-  `89cb6289` gave three rotations of the request order in 20 spawns (Linux rows
-  P9 and N7). claustrum iterates the decoded map and builds no order of its own.
-  On Windows see D23.
+  `89cb6289` gave three rotations of the request order over many spawns (Linux
+  VM). claustrum iterates the decoded map and builds no order of its own. On
+  Windows see D23.
 - A record or a marker with two blanks in its macOS start text is not accepted.
   An older claustrum build wrote that form. `89cb6289` and claustrum
-  drop such a record and send no signal (macOS rows TBr and TBe). A child of such
+  drop such a record and send no signal (macOS VM). A child of such
   an older build is therefore not ended at the next start.
 - A child of a live daemon that a new daemon ends on macOS is not drift in one
   case: the `daemonStart` of its record holds two blanks. `89cb6289` and claustrum
-  then read that daemon as gone (macOS row N6).
+  then read that daemon as gone (macOS VM).
 - These differences on Linux and macOS are known and open. They are not drift.
     - At the reap of a start, `89cb6289` probes a group right after its `SIGTERM`.
-      If the group still answers, it sends `SIGKILL` (rows K5, P8k, P8b and C1).
-      claustrum probes after 50 ms. That is [DIVERGENCES.md](DIVERGENCES.md) D20.
+      If the group still answers, it sends `SIGKILL`. claustrum probes after
+      50 ms. That is [DIVERGENCES.md](DIVERGENCES.md) D20.
     - claustrum logs an exit line for a child that a shutdown kills:
       `Process <id> exited with code -1, terminated by SIGKILL, signalled at shutdown request`.
-      `89cb6289` logs none (Linux row E3, macOS row A3). `5fd08069` wrote it on
-      Linux, not on macOS (round `task003-01`).
+      `89cb6289` logs none (Linux and macOS VMs). `5fd08069` wrote it on
+      Linux, not on macOS.
     - After a `-stop` during the wait of a supersede, claustrum can log the exit
-      line of the old process and the `supersedes` line. `89cb6289` logged neither
-      (row P1: Linux 1 of 6 runs against 0 of 7, macOS 2 of 2 against 0 of 2).
+      line of the old process and the `supersedes` line. `89cb6289` logged
+      neither in any run. claustrum logged them in one Linux run and in every
+      run on macOS.
     - `89cb6289` calls unlink on one child record up to three times at a stop or
       a kill. claustrum calls it once. `89cb6289` also calls unlink on a record
-      that it never wrote (Linux rows P1, B1, A3, P11a). The files left are the
-      same.
+      that it never wrote (Linux VM). The files left are the same.
     - On macOS `89cb6289` runs one `ps` at the daemon start and one per spawn.
-      claustrum runs none at the start and three per spawn (macOS rows G1 and G2).
+      claustrum runs none at the start and three per spawn (macOS VM).
     - With a zero-byte `-token-file` the daemon log of `89cb6289` holds
       `claude-ssh: empty token in --token-file`. claustrum logs
-      `claustrum: token is empty` (row P7 on Linux and macOS, and two Windows
-      rows).
+      `claustrum: token is empty` (Linux, macOS and Windows VMs).
     - When a frame cannot reach a closed connection, `89cb6289` logs
       `[frameSink] write failed, detaching: write unix <socket>->@: use of closed network connection`.
       claustrum logs `[frameSink] write failed, detaching: use of closed network connection`
-      (Linux row N2c).
+      (Linux VM).
 - One difference on Windows is known and open. It is not drift.
     - At a stop with one connection, `89cb6289` logged `closed 0 connection(s)`
-      in 2 of 9 runs. claustrum logged `closed 1` in 9 of 9. The rate is not
+      in some runs. claustrum logged `closed 1` in every run. The rate is not
       measured.
 - A child that `process.spawn` starts as a shutdown begins is known, not drift.
-  `5fd08069` left some running (round `task003-01`: Linux 64, macOS 1081,
-  Windows 2). claustrum ends them (round `task003-04`: 0 left).
+  `5fd08069` left dozens running on Linux, about a thousand on macOS and two on
+  Windows (Linux, macOS and Windows VMs). claustrum ends them all.
 - A child environment block in name order on Windows is not drift. `f6010b97`
-  and `89cb6289` keep the order of the daemon, then `CLAUDE_SSH_DAEMON_CHILD=1`
-  (rows WN01a, WN01b). On `89cb6289` an added `PATH` entry and new caller keys
-  come after it (Windows VM rows V2, V5, V9 and V10). The stdout frame of
+  and `89cb6289` keep the order of the daemon, then `CLAUDE_SSH_DAEMON_CHILD=1`.
+  On `89cb6289` an added `PATH` entry and new caller keys come after it
+  (Windows VM). The stdout frame of
   `cmd /c set` therefore differs in bytes. That is
   [DIVERGENCES.md](DIVERGENCES.md) D23.
 - The log lines of claustrum keep its level tag and the name `Claustrum` in the
@@ -798,32 +792,37 @@ frame changes. The S1, S1b, S1c and S1d cases in
 
 ### Windows junctions in `filepath.EvalSymlinks`
 
-Two refusals rest on a failed `filepath.EvalSymlinks`. One is the trust-root test
-of the worktree methods (`baseRepoWalkFails`, `worktreecontain.go`). The other is
-`unresolvable` (`methods_git.go`), which `git.status` applies to `baseRepo` and
-`git.list_branches` to `path`. On Windows both depend on the `winsymlink` GODEBUG
-setting, which Go 1.23 turned on. With it on, `os.Lstat` reports a junction as
-neither a symbolic link nor a directory. With it off, a junction is a symbolic link.
-With it on, the walk of `EvalSymlinks` fails at a junction before the last
-component. claustrum answers Windows VM rows J1 and J3 with the trust-root refusal
-for that reason. With `GODEBUG=winsymlink=0` in the daemon environment, the walk
-follows the junction instead. claustrum's answers to rows J1 and J3 then flip, and
-so do the `git.status` and `git.list_branches` answers for `<dir>\<junction>\T`.
-Other code resolves `baseRepo` through `EvalSymlinks` too, so other Windows junction
-rows can move as well. A `go` line below 1.23 in `go.mod` has the same effect. The
-`git.info` root for a path with a junction before its last component rests on the
-same failure (rows D03-junction and W09, `TestInfoRootLinkThenDotDotWindows` and `TestInfoRootBelowJunctionWindows`). With the walk following the junction, those
+Two refusals rest on a failed `filepath.EvalSymlinks`. One is the trust-root
+test of the worktree methods (`baseRepoWalkFails`, `worktreecontain.go`). The
+other is `unresolvable` (`methods_git.go`), which `git.status` applies to
+`baseRepo` and `git.list_branches` to `path`. On Windows both depend on the
+`winsymlink` GODEBUG setting, which Go 1.23 turned on. With it on, `os.Lstat`
+reports a junction as neither a symbolic link nor a directory. With it off, a
+junction is a symbolic link. With it on, the walk of `EvalSymlinks` fails at a
+junction before the last component. For that reason claustrum answers
+`git.worktree_create` and `git.worktree_remove` with the trust-root refusal when
+a junction sits before the last component of a `baseRepo` that exists (Windows
+VM). With `GODEBUG=winsymlink=0` in the daemon environment, the walk follows the
+junction instead. Those answers then flip, and so do the `git.status` and
+`git.list_branches` answers for `<dir>\<junction>\T`. Other code resolves
+`baseRepo` through `EvalSymlinks` too, so other Windows junction answers can
+move as well. A `go` line below 1.23 in `go.mod` has the same effect. The
+`git.info` root for a path with a junction before its last component rests on
+the same failure. That covers `<T>\lnk\..` with a junction `lnk` and a
+repository below a junction (`TestInfoRootLinkThenDotDotWindows` and
+`TestInfoRootBelowJunctionWindows`). With the walk following the junction, those
 roots can move too. The `GIT_COMMON_DIR` pin of the trust check for such a path
 rests on it as well (`walkStart`, `gitdirtrust.go`). With the walk following the
-junction, the pin names the repository behind the junction. The `git.info` answers
-for such a path then change: `root`, `repo` and `repoSlug` can move to the
-repository behind the junction ([git.info → Differences by system](protocol/git-info.md#differences-by-system)).
-The frames of `89cb6289` are pinned in `TestInfoThroughJunctionWindows`
-(`gitinfo_junction_windows_test.go`), and the pins of the cells are in
-[PROTOCOL.md → Git-directory trust check](PROTOCOL.md#git-directory-trust-check). This
-entry is derived from the Go source (`os/types_windows.go` and
-`path/filepath/symlink.go`), not measured. Check those rows after each Go bump that
-changes `winsymlink`.
+junction, the pin names the repository behind the junction. The `git.info`
+answers for such a path then change: `root`, `repo` and `repoSlug` can move to
+the repository behind the junction ([git.info → Differences by
+system](protocol/git-info.md#differences-by-system)). The frames of `89cb6289`
+are pinned in `TestInfoThroughJunctionWindows`
+(`gitinfo_junction_windows_test.go`), and the pinned answers are in [PROTOCOL.md
+→ Git-directory trust check](PROTOCOL.md#git-directory-trust-check). This entry
+is derived from the Go source (`os/types_windows.go` and
+`path/filepath/symlink.go`), not measured. Check those answers after each Go
+bump that changes `winsymlink`.
 
 ### The git version under the checkout tests
 
