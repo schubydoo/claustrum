@@ -80,7 +80,8 @@ children it spawns. The rules of each step are in PROTOCOL.md. This list names
 the files and the seams.
 
 - **Token.** `-token-file` or `-token-fd` gives the token. `tokenpersist.go`
-  writes `daemon.token` and unlinks it at a graceful stop. See
+  writes `daemon.token` and unlinks it at a graceful stop if it is still its
+  own file. See
   [The token source](PROTOCOL.md#the-token-source) and
   [Token persistence](PROTOCOL.md#token-persistence-daemontoken).
 - **Re-exec sentinel.** An internal sentinel, `CLAUSTRUM_DAEMON_CHILD`, gates the
@@ -94,7 +95,8 @@ the files and the seams.
   inherit it as they do under the reference (see
   [The re-exec marker](PROTOCOL.md#the-re-exec-marker)).
 - **Identity markers.** On Linux and macOS each `process.spawn` child starts
-  through the exec-child trampoline: `execchild_unix.go`, with the start-time
+  through the exec-child trampoline, or directly when the trampoline does not
+  start: `execchild_unix.go`, with the start-time
   source in `execchild_linux.go` and `execchild_darwin.go`. The target's Go-runtime
   env is held and restored across the re-exec. See
   [process.spawn](protocol/process-spawn.md#the-identity-markers-linux-and-macos).
@@ -111,7 +113,7 @@ the files and the seams.
   `hostclean_linux.go` / `hostclean_darwin.go` hold the OS reads. Windows links no
   cleaner. The gate, the signals, the `lsof` reads and the log lines are in
   [Host cleaner](PROTOCOL.md#host-cleaner-off-wire-linux-and-macos). These rules
-  are only here:
+  are not under that heading:
     - The first pass runs 15 s after the start, then one pass a day. The cleaner
       acts only on this user's own processes and on the `run`, `srv` and `ccd-cli`
       folders of its own root. A pass acts only after it confirms that its own
