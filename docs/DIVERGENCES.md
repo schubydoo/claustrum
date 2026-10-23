@@ -136,12 +136,13 @@ rather than repeating them in each entry:
 - No opt-in bound is a hang detector. Each bound is a threshold, so an
   honest-but-slow or honest-but-large input trips it too. That is precisely why
   they are off by default.
-- At the shipped defaults, each wall-clock bound of `-install` is a bound of the
-  reference, not a divergence. These are the bounds of the `--version` run, of a
-  managed launcher run, of the download and of the `ldd` libc probe.
+- At the shipped defaults, each bound below is a bound of the reference, not a
+  divergence. These are the bounds of the `--version` run, of a managed launcher
+  run, of the download and of the `ldd` libc probe.
   [PROTOCOL.md → -install](PROTOCOL.md#-install-ensure-the-agent-cli) has the
-  value and the rule of each one. One clock is claustrum's own choice and is not
-  measured: the wait of up to 2 s for the output of a stopped launcher run.
+  value and the rule of each one. Two clocks are claustrum's own choice: the
+  wait of up to 2 s for the output of a stopped launcher run, and the 0.2 s
+  bound of the Windows rename retry.
   The stdlib transport clocks (`net.Dialer{Timeout: 30s}`,
   `TLSHandshakeTimeout: 10s`) apply on `-cli-url` only. They are always-on,
   unnumbered, and unprobed on the reference.
@@ -150,10 +151,10 @@ rather than repeating them in each entry:
 
 | ID | What it does | Default | How to activate | Why (rule / clause) | Reopen trigger |
 |----|--------------|---------|-----------------|---------------------|----------------|
-| [D2](#d2) | Refuse a destructive path that is or contains `$HOME`, on three methods and on `-install` | always-on | always-on | rule 3 clause (a). The `files.extract_tar` wipe through the parent handle and its two tests: maintainer decision of 2026-10-10 | an honest caller legitimately targeting a path that is/contains home, or a Windows `destDir` with the `\\?\` prefix and a dot or a space after its last name |
+| [D2](#d2) | Refuse a destructive path that is or contains `$HOME`, on three methods and on `-install` | always-on | always-on | rule 3 clause (a). The `files.extract_tar` wipe through the parent handle and its three tests: maintainer decision of 2026-10-10 | an honest caller legitimately targeting a path that is/contains home, or a Windows `destDir` with the `\\?\` prefix and a dot or a space after its last name |
 | [D3](#d3) | Cap `files.extract_tar` output size | off (`0` = unlimited) | `-max-extract-bytes` / `max-extract-bytes` | rule 4 (who-pays) | operator's cap refuses a legit extraction, or default lets a bomb through |
 | [D6](#d6) | `-cli-version` must be a single path component | always-on | always-on | rule 3 clause (b) | Desktop passing a multi-component `-cli-version` |
-| [D8](#d8) | Refuse a link, a FIFO and, on Linux and macOS, another user's `remote-server.log` at the start. The reference can write through them or block. The `git-shadow` sweep makes no lock file in the target of a link | always-on | always-on | rule 3 clause (b), and the maintainer's decision of 2026-10-19 | a shared socket folder that needs the log, the reference refusing these entries on every host, or the reference making no lock file through a link |
+| [D8](#d8) | Refuse a link, a FIFO and, on Linux and macOS, another user's `remote-server.log` at the start. An own link to an own file passes on Linux and macOS. The reference can write through them or block. The `git-shadow` sweep makes no lock file in the target of a link | always-on | always-on | rule 3 clause (b), and the maintainer's decision of 2026-10-19 | a shared socket folder that needs the log, the reference refusing these entries on every host, or the reference making no lock file through a link |
 | [D10](#d10) | Cap `-install` CLI size (decompressed + download body) | off (`0`) | `-max-cli-bytes` / key | rule 4 (who-pays) | Desktop ceasing to treat a disk-full message as terminal |
 | [D12](#d12) | Bound on the `-install` download exchange | off (`0`) | `-cli-download-timeout` / key | rule 4 | operator with the bound set reporting an honest slow download failed |
 | [D15](#d15) | Verify a run-dir lock holder is our serve process before signalling it, in the serve eviction and in `-stop` (macOS) | always-on | always-on | rule 3 clause (a) | the reference adding the same macOS check, or a macOS holder legitimately un-inspectable via `KERN_PROCARGS2` |
@@ -216,8 +217,9 @@ entry needs it. A fact that comes from reading claustrum's code is marked
     a dot or a space after home or after a folder above it.
   - The path as the system resolves it and the name inside the parent handle
     must name one entry. If not, the reply is
-    `clean destDir: "<name>" is not the entry that the path names`, or the
-    same text after `mkdir destDir:`, and nothing is deleted. On Windows a path
+    `clean destDir: "<name>" is not the entry that the path names`, and
+    nothing is deleted. With `mkdir destDir:` the wipe has run, and the entry at
+    that name goes with a plain remove, never as a tree. On Windows a path
     with the `\\?\` prefix and a dot or a space after its last name gets this
     reply. `5fd08069` extracts into the folder with no dot or space there, and
     for the last name `...` it answers `clean destDir: RemoveAll ...: invalid argument`
@@ -242,7 +244,7 @@ entry needs it. A fact that comes from reading claustrum's code is marked
   home path as given and as resolved.
   - The reference removes home as a tree and puts the CLI file there, also for
     a folder that contains home. If the new CLI then fails, nothing is left at
-    the path. Measured with `-cli-zst` on Linux, macOS and Windows.
+    the path (Linux and macOS). Measured with `-cli-zst` on Linux, macOS and Windows.
   - A folder at the CLI path that is not home and does not contain it is
     replaced, as on the reference. With no source flag neither binary removes
     anything.
@@ -251,7 +253,8 @@ entry needs it. A fact that comes from reading claustrum's code is marked
     case-sensitive volume on macOS and a UNC path.
   - The sweeps and the `-cli-keep` prune keep the same guard
     (`cliEntryHoldsHome`) as defense in depth. On `5fd08069` they remove regular
-    files only, so a home folder stays on both binaries.
+    files only, so a home folder stays on both binaries (derived, no home cell
+    on `5fd08069`).
 - **Where the home folder comes from.** Both guards take it from
   `os.UserHomeDir`: the `HOME` variable, or `USERPROFILE` on Windows. With that
   variable unset or empty they refuse nothing (from the code, not measured).
@@ -820,7 +823,7 @@ Reopen trigger: the reference moves to Go 1.26 or newer.
   per-key validation (`version-override` gated to
   `^(?:[0-9a-fA-F]{40}|[0-9a-fA-F]{64})$` and lower-cased). claustrum uses every
   value as data, never as a format string. Any doubt → stock. Startup never fails.
-- **Pointers.** [PROTOCOL.md](PROTOCOL.md#flags-and-config-keys) (`-version`), and `config.go`.
+- **Pointers.** [PROTOCOL.md → -version](PROTOCOL.md#-version), and `config.go`.
 
 ### CT-4 · Opt-in hardened token persistence — deferred idea { #ct-4 }
 
@@ -866,7 +869,9 @@ A retired entry is a divergence that a later reference build, or a later
 measurement of the reference, made moot. The maintainer also retires an entry to
 follow the reference. Its number is not reused, and its old
 link points here. Where a retired entry had a flag, the flag and its
-`claustrum.conf` key are still accepted, set nothing, and log one warning.
+`claustrum.conf` key are still accepted, set nothing, and log one warning. The
+warning comes in the mode of the flag, `-serve` or `-install`. A duration flag
+whose value does not parse fails the flag parse with exit 2 (from the code).
 
 ### D1 · Verify the `-cli-zst` blob against a supplied checksum (retired) { #d1 }
 
