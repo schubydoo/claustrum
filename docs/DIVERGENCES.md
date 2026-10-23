@@ -154,253 +154,189 @@ no flag and no key.
 
 - **Behavior.** `wipesHomeDir` (`homeguard.go`) refuses a target that is the
   home directory or contains it. It resolves a relative path with
-  `filepath.Abs` first and then compares the text. A path under home stays
-  allowed, because `~/.claude/…` is the install path of the daemon itself. These
-  deletes run it:
-  - `files.extract_tar` before the wipe of `destDir`. The reply starts with
-    `destDir must not be or contain the home directory:`.
-  - `git.worktree_remove` before the delete of `worktreePath`.
+  `filepath.Abs` and then compares the text. It does not resolve symbolic links.
+  A path under home stays allowed, because `~/.claude/…` is the install path of
+  the daemon. Home comes from `os.UserHomeDir`: `HOME`, or `USERPROFILE` on
+  Windows. With that variable unset or empty, nothing is refused (from the
+  code). The guard runs before these deletes:
+  - `files.extract_tar`, before the wipe of `destDir`. The reply starts with
+    `destDir must not be or contain the home directory:`. A folder at the last
+    name of `destDir` that is home or a parent folder of it is refused by
+    identity too. On Linux and macOS that covers a path through a link above the
+    last name. On Windows it covers the `\\?\` prefix and the 8.3 name of home.
+    The maintainer approved this delete path on 2026-10-10.
+    [files.extract_tar](protocol/files-extract-tar.md) has the two other tests
+    of claustrum's own and their texts.
+  - `git.worktree_remove`. Since `7d193f89` the reference first refuses a
+    `worktreePath` that is not strictly inside `baseRepo`. So without
+    `worktreeRoot` the guard fires only for a repository that is an ancestor of
+    home. With `worktreeRoot` it is the active home guard.
   - Each rollback delete of `git.worktree_create`, and from the code its stale
-    step before the add. The one exception is the registration delete of a
-    create that holds no git directory and accepted no registration. That
-    delete tests the `gitdir` record and the registrations directory instead. After a failed
-    `git worktree add`, create only removes an empty leaf with an rmdir. The
-    guard is defense in depth behind the containment of create. It emits no
-    frame.
-  - On Windows, the cleanup of old `.claude-new-worktree-*` entries of the git
-    directory of `baseRepo`, and the two staging removes of a create. A refused
-    entry stays. That guard is claustrum's own: no measured entry of the
-    reference held the home folder.
-  - The deletes inside the folder `git-shadow` of the daemon, on the full path.
-- **`files.extract_tar` tests by identity too.** The wipe removes the last name
-  of `destDir` through a handle of the parent folder. That handle follows no
-  link and no junction. A link or a junction at `destDir` itself is removed as a
-  link, and its target stays, as on the reference. claustrum adds three tests.
-  They are part of this entry and claustrum's own. The maintainer approved this
-  delete path on 2026-10-10.
-  - A folder at the last name that is the home folder, or a parent folder of
-    it, gets the home refusal by identity. The archive is gone by then. On
-    Linux and macOS this covers a path through a link above the last name. On
-    Windows it covers a path with the `\\?\` prefix and the short 8.3 name of
-    home, which pass the text compare. The Windows text compare already refuses
-    a dot or a space after home or after a folder above it.
-  - The path as the system resolves it and the name inside the parent handle
-    must name one entry. If not, the reply is
-    `clean destDir: "<name>" is not the entry that the path names`, and
-    nothing is deleted. With `mkdir destDir:` the entry is the folder that the
-    daemon just made, and it goes with a plain remove, never as a tree (from the
-    code). On Windows a path with the `\\?\` prefix and a dot or a space after its
-    last name gets one of these two replies. `5fd08069` extracts into the folder with no dot or space there, and
-    for the last name `...` it answers `clean destDir: RemoveAll ...: invalid argument`
-    (Windows VM).
-  - After the open of `destDir`, claustrum tests that `destDir` is still a real
-    folder and the folder of the handle. If not, it answers
-    `open destDir: "<name>" changed while it was opened` and writes and removes
-    nothing. A link that leaves the parent folder fails the open first, with
-    `open destDir: openat <name>: path escapes from parent`. No measurement
-    says what the reference does in that race.
-  The page [files.extract_tar](protocol/files-extract-tar.md) has the order of
-  the steps and what stays after each failure.
-- **`-install` is guarded too.** The install removes a folder at the CLI path,
-  `<cli-dir>/<version>`, as a tree before the new CLI runs. With a cli-dir that
-  is the parent of home and a version that is its leaf name, that path is home.
-  D6 does not cover that case. claustrum refuses a CLI path that is home or
-  contains it, with
-  `cli path must not be or contain the home directory: "<path>"`. The folder
-  stays, the blob stays and no CLI runs. The guard (`folderHoldsHome`) runs
-  `wipesHomeDir` first. Then it compares the folder at the CLI path by file
-  identity with home and with each parent folder of home. It does that for the
-  home path as given and as resolved.
-  - The reference removes home as a tree and puts the CLI file there, also for
-    a folder that contains home (measured with `-cli-zst` on Linux, macOS and
-    Windows). If the new CLI then fails, nothing is left at the path (Linux and
-    macOS).
-  - A folder at the CLI path that is not home and does not contain it is
-    replaced, as on the reference. With no source flag neither binary removes
-    anything.
-  - Not measured: `-cli-url`, a mount of a parent folder of home, a home folder
-    that does not exist, a hard link, Unicode normalization forms, a
-    case-sensitive volume on macOS and a UNC path.
-  - The sweeps and the `-cli-keep` prune keep the same guard
-    (`cliEntryHoldsHome`) as defense in depth. On `5fd08069` they remove regular
-    files only, so a home folder stays there (not measured on
-    `5fd08069` with a home folder). `89cb6289` removed an empty home folder there.
-- **Where the home folder comes from.** Both guards take it from
-  `os.UserHomeDir`: the `HOME` variable, or `USERPROFILE` on Windows. With that
-  variable unset or empty they refuse nothing (from the code, not measured).
-- **`git.worktree_remove` refuses a home path as parity.** Since `7d193f89` the
-  reference refuses a `worktreePath` that is not strictly inside `baseRepo`,
-  with its own "not inside the repository" text. That refusal comes first. So
-  on the default branch `wipesHomeDir` is defense in depth. It fires in one case
-  only: a repository is an ancestor of home. On the `worktreeRoot` branch that
-  containment does not apply, and `wipesHomeDir` is the active home guard.
-  `files.extract_tar` has no such containment, so there `wipesHomeDir` is the
-  only home guard.
-- **Why the guard resolves a relative path.** Before `7d193f89`,
-  `"worktreePath":".."` from a daemon whose working folder is home reached
-  `os.RemoveAll` on the parent of home (measured).
-- **This fired.** On 2026-08-02 an in-repo fuzzer sent `"destDir":"~"` at a live
-  daemon and destroyed the maintainer's home directory. The old gate
-  `IsAbs && !isFilesystemRoot` passed it, because home is absolute and not a
-  file system root.
-- **Why always-on.** Rule 3 clause (a). On `files.extract_tar` the reference
-  wipes home for `"destDir":"~"` and answers `{"success":true}` (measured on
-  `7d193f89`). That is unrecoverable data loss. No honest caller has a use for
-  deleting home, but a caller can reach that path by accident. The same holds
-  for `-install`.
-- **Not a security boundary.** The socket and the token already grant
-  `process.spawn`
+    step before the add. It is defense in depth and emits no frame. The
+    exception is the registration delete of a create that holds no git
+    directory and accepted no registration. That delete tests the `gitdir` record and the registrations
+    directory instead. On Windows the guard also runs before the cleanup of old
+    `.claude-new-worktree-*` entries and before the two staging removes. A
+    refused entry stays.
+  - The deletes inside the folder `git-shadow` of the daemon.
+  - `-install`, before the tree delete of a folder at the CLI path. The reply is
+    `cli path must not be or contain the home directory: "<path>"`. The folder
+    test is by identity too (`folderHoldsHome`). The sweeps and the `-cli-keep`
+    prune skip such an entry (`cliEntryHoldsHome`).
+- **Reference.** It wipes home for `"destDir":"~"` and answers
+  `{"success":true}` (measured on `7d193f89`). `-install` removes home as a tree
+  and puts the CLI file there (Linux, macOS and Windows). No measured staging
+  entry of the reference held home, so that guard is claustrum's own.
+- **Systems and switch.** Linux, macOS and Windows, with the staging removes
+  on Windows only. Always on, no switch.
+- **Cost.** A caller that names home, or a folder that holds it, gets a refusal.
+  On Windows claustrum refuses a `destDir` with the `\\?\` prefix and a dot or a
+  space after its last name. There `5fd08069` extracts into the folder with no
+  dot or space. For the last name `...` both answer
+  `clean destDir: RemoveAll ...: invalid argument`.
+- **Rule.** Rule 3 clause (a). The home wipe is unrecoverable data loss. No
+  honest caller has a use for it, but a caller can reach it by accident. On
+  2026-08-02 an in-repo fuzzer sent `"destDir":"~"` to a live daemon and
+  destroyed the maintainer's home directory. The old gate
+  `IsAbs && !isFilesystemRoot` passed it. Before `7d193f89`,
+  `"worktreePath":".."` from a daemon in home reached `os.RemoveAll` on the
+  parent of home. That is why the guard resolves a relative path. It is not a
+  security boundary: the socket and the token already grant `process.spawn`
   ([SECURITY.md](https://github.com/schubydoo/claustrum/blob/main/SECURITY.md)).
-  This guard stops the accidental, generated or mistyped path. `wipesHomeDir`
-  does not resolve symbolic links. The tests by identity above compare folders.
-- **Reopen trigger.** An honest caller legitimately naming a destructive target
-  that *is or contains* a home directory. Or a Windows `destDir` with the `\\?\`
-  prefix and a dot or a space after its last name that a client needs.
+  It stops the accidental, generated or mistyped path.
+- **Reopen trigger.** An honest caller that names a destructive target that is
+  or contains a home directory. Or a client that needs a Windows `destDir` with
+  the `\\?\` prefix and a dot or a space after its last name.
 - **Pointers.** [files.extract_tar](protocol/files-extract-tar.md),
-  [git.worktree_remove](protocol/git-worktree-remove.md#where-the-paths-can-be)
-  and [PROTOCOL.md → -install](PROTOCOL.md#-install-ensure-the-agent-cli).
-  Also `homeguard.go` and `homeguard_test.go`. There `wipeDestDir` seams the
-  destructive call, so the suite is safe against an unfixed tree. For
-  `-install`: `stageAndInstall` and `cliEntryHoldsHome` in `install.go`.
+  [git.worktree_remove](protocol/git-worktree-remove.md#where-the-paths-can-be),
+  [PROTOCOL.md → -install](PROTOCOL.md#-install-ensure-the-agent-cli),
+  `homeguard_test.go` (the `wipeDestDir` seam keeps the suite safe against an
+  unfixed tree) and `install.go` (`stageAndInstall`).
 
 ### D3 · Make the `files.extract_tar` size cap opt-in { #d3 }
 
-- **Behavior.** `maxExtractBytes` caps extraction output. An over-cap extraction
-  returns `{"success":false,"fileCount":0,"error":"extraction size limit exceeded"}`
+- **Behavior.** `maxExtractBytes` caps the extraction output. An over-cap
+  extraction returns
+  `{"success":false,"fileCount":0,"error":"extraction size limit exceeded"}`
   and removes the truncated entry.
-- **Default.** `0` = unlimited = byte-identical. **Activate:** `-max-extract-bytes
-  <n>` or the `max-extract-bytes` key. The disabled state bypasses `io.LimitReader`
-  (`io.Copy(out, tr)`).
-- **Why opt-in.** The reference completes a 629 MB extraction with no cap
-  (measured on `5db5e4a`). That is a frame, not an unbounded wait. So a non-zero
-  default fails an extraction that the reference completes, and Desktop owns the
-  argv (rule 4).
-- **Reopen trigger.** An operator's cap refusing a legitimate extraction, or the
-  default letting a size bomb through in normal use.
-- **Pointers.** The page [files.extract_tar](protocol/files-extract-tar.md#the-size-limit)
+- **Reference.** No cap. It completed a 629 MB extraction (measured on
+  `5db5e4a`).
+- **Systems and switch.** Linux, macOS and Windows. Default `0`, off. Turn it on
+  with `-max-extract-bytes <n>` or the `max-extract-bytes` key. Off bypasses
+  `io.LimitReader`.
+- **Cost.** A cap fails an honest extraction above it.
+- **Rule.** Rule 4. The reference answers a frame, not an unbounded wait, and
+  Desktop owns the argv.
+- **Reopen trigger.** An operator's cap that refuses a legitimate extraction, or
+  the default that lets a size bomb through in normal use.
+- **Pointers.** [files.extract_tar](protocol/files-extract-tar.md#the-size-limit)
   and `methods_files.go`.
 
 ### D6 · `-cli-version` must name a single path component (always-on) { #d6 }
 
-- **Behavior.** The install clears the CLI path, `<cli-dir>/<version>`
-  (`<version>.exe` on Windows), with an `os.RemoveAll`. A version that reaches
-  outside the cli-dir therefore deletes unrelated data. claustrum refuses `.`,
-  `..`, and a version with `/` or `\`, on every OS. The reply is
-  `cli version "…" must be a single path component`. The install then writes
-  nothing, removes nothing at a path built from the version, and keeps the blob.
-- **The cache hit comes first.** A regular file that is already at the joined
-  path is run with `--version`. A run that passes answers `"cliWasPresent":true`
-  with that path, as on the reference (measured on Linux and macOS). A run that
-  is stopped answers the unresponsive text and sweeps the cli-dir. D6 answers
-  in two cases only: that run fails, or no file is there.
-- **The sweeps are not behind this rule.** They name only the cli-dir. From the
-  code: the `<version>.zst.part` sweep runs before the refusal, and the 10
-  minute sweep runs after it.
-- **What the reference does.** It has no such rule. With `-cli-version ../x` and
-  a blob it installs to `<parent>/x`, outside the cli-dir, and runs that file
-  (Linux, macOS and Windows). With `../victim` it destroys the target.
-- **A single component rather than a lexical containment check.** A lexical
-  check accepts `link/1.0.0`, an intermediate symlink under the cli-dir that the
-  open follows. An `EvalSymlinks` check adds only a TOCTOU window before the
-  `RemoveAll`. A last component that is itself a symlink stays legal, because
-  `os.RemoveAll` unlinks it. So the rule is narrower than "no symlinks".
-- **Why always-on.** Rule 3 clause (b). The real client passes bare version
-  strings: `1.0.86`, a commit sha and `latest` are measured as accepted. The
-  evidence is an observed value plus a measured accepted-set, not an
+- **Behavior.** The install clears the CLI path, `<cli-dir>/<version>`, with an
+  `os.RemoveAll`. claustrum refuses a version that is `.` or `..`, or that holds
+  `/` or `\`, with `cli version "…" must be a single path component`. Nothing
+  is written or removed at a path built from the version, and the blob stays.
+  A last component that is a symbolic link stays legal, because `os.RemoveAll`
+  unlinks it. [PROTOCOL.md → -install](PROTOCOL.md#-install-ensure-the-agent-cli)
+  has the cache hit that comes first and the sweeps that are not behind this
+  rule.
+- **Reference.** No such rule. With `-cli-version ../x` and a blob it installs
+  to `<parent>/x`, outside the cli-dir. With `../victim` it destroys the target
+  (Linux, macOS and Windows).
+- **Systems and switch.** Linux, macOS and Windows. Always on, no switch.
+- **Cost.** None for a bare version: `1.0.86`, a commit sha and `latest` are
+  measured as accepted. A lexical containment test was not taken, because it
+  accepts `link/1.0.0` through an intermediate symlink. An `EvalSymlinks` test
+  only adds a TOCTOU window.
+- **Rule.** Rule 3 clause (b). The real client passes bare version strings. The
+  evidence is an observed value plus a measured accepted set, not an
   enumeration.
-- **Reopen trigger.** Desktop passing a `-cli-version` that is not a single path
+- **Reopen trigger.** Desktop passes a `-cli-version` that is not a single path
   component.
-- **Pointers.** [PROTOCOL.md → -install](PROTOCOL.md#-install-ensure-the-agent-cli),
-  and `install.go`.
+- **Pointers.** `install.go`.
 
 ### D8 · claustrum refuses a link, a FIFO or another user's `remote-server.log`, and the `git-shadow` sweep writes nothing through a link (always-on) { #d8 }
 
-- **Parity first.** The launcher renames the log to `remote-server.log.old`.
-  After a failed rename it judges the entry at the log path by `Lstat`. On Linux and macOS it truncates
-  an own regular file, and the own regular file behind an own link. A folder
-  fails the start with `is a directory`. A failed create with nothing at the
-  path fails it with the create error. These match `5fd08069`.
-- **What differs (Linux and macOS).** Every other entry fails the start with
-  `claustrum: open log: open <path>: permission denied` and exit 1, and the
-  entry stays unchanged. Examples are a link to another user's file, a FIFO and
-  another user's file. `5fd08069` refuses the same in a sticky world-writable
-  folder with the `fs.protected` sysctls on. On macOS, and on Linux with those
-  sysctls off, it writes through a link or into another user's file, and it
-  blocks on a FIFO.
-- **claustrum's own, not measured.** The target of an own link must be an own
-  regular file with one link. An own file with a second hard link is refused.
-  An own file that the open cannot write fails the start with the error of that
-  open.
-- **Windows.** The launcher truncates a regular file with no owner test, as
-  `5fd08069` does for a held log. It refuses a file symbolic link, where
-  `5fd08069` writes through it. The rename moves a folder onto a regular `.old`
-  on both.
-- **git-shadow sweep.** A symbolic link in `git-shadow` with a folder name of
-  this host goes with one plain remove. On Windows a junction goes the same way.
-  Nothing is written in the target. `5fd08069` makes an empty lock file in the
-  target (Linux, macOS and Windows VMs).
-- **Why always-on.** The maintainer's decision of 2026-10-19, after `5fd08069`
-  truncated a file of another user and the target of a planted link. Rule 3
-  clause (b): the deployed socket folder (`~/.claude/remote/`) is per-user and
-  not world-writable. So no honest start reaches the refusal, and no honest
-  sweep meets a planted link.
-- **Reopen trigger.** A deployment that puts the socket folder somewhere shared, the
-  reference refusing these entries on every host, or the reference making no lock
-  file through a link.
-- **Pointers.** [PROTOCOL.md → Daemon log](PROTOCOL.md#daemon-log-remote-serverlog), `server.go`
-  (`openDaemonLog`), `detach_unix.go` (`openHeldDaemonLog`) and `gitshadowsweep.go`
-  (`sweepLink`).
+- **Behavior.** After a failed rename to `remote-server.log.old`, the launcher
+  judges the entry at the log path by `Lstat`.
+  [PROTOCOL.md → Daemon log](PROTOCOL.md#daemon-log-remote-serverlog) has the
+  steps that match the reference.
+  - Linux and macOS: an own regular file, or the own regular file behind an own
+    link, is truncated. Every other entry fails the start with
+    `claustrum: open log: open <path>: permission denied` and exit 1, and stays
+    unchanged. Examples are a link to another user's file, a FIFO and another
+    user's file. Three rules are claustrum's own, not measured. The target of an
+    own link must be an own regular file with one link. An own file with a
+    second hard link is refused. An own file that the open cannot write fails
+    the start with the error of that open.
+  - Windows: a regular file is truncated with no owner test. A file symbolic
+    link is refused.
+  - The `git-shadow` sweep: a symbolic link with a folder name of this host goes
+    with one plain remove, and on Windows a junction too. Nothing is written in
+    the target.
+- **Reference.** On Linux it refuses the same entries only in a sticky
+  world-writable folder with the `fs.protected` sysctls on. Elsewhere on Linux
+  and macOS it writes through a link or into another user's file, and it blocks
+  on a FIFO. On Windows it writes through a file symbolic link. Its sweep makes
+  an empty lock file in the target of a link.
+- **Systems and switch.** Linux, macOS and Windows, as split above. Always on,
+  no switch.
+- **Cost.** None in the deployed socket folder.
+- **Rule.** The maintainer's decision of 2026-10-19, after `5fd08069` truncated
+  a file of another user and the target of a planted link. Rule 3 clause (b):
+  the deployed socket folder (`~/.claude/remote/`) is per-user and not
+  world-writable. So no honest start reaches the refusal, and no honest sweep
+  meets a planted link.
+- **Reopen trigger.** A deployment that puts the socket folder somewhere shared,
+  the reference refusing these entries on every host, or the reference making
+  no lock file through a link.
+- **Pointers.** `server.go` (`openDaemonLog`), `detach_unix.go`
+  (`openHeldDaemonLog`) and `gitshadowsweep.go` (`sweepLink`).
 
 ### D10 · Make the `-install` CLI size cap opt-in { #d10 }
 
-- **Behavior.** `maxCLIBytes` governs two reads: the decompressed CLI
-  (`decompressing: decompressed CLI exceeds <n> bytes`) and the HTTP download body
+- **Behavior.** `maxCLIBytes` caps the decompressed CLI
+  (`decompressing: decompressed CLI exceeds <n> bytes`) and the download body
   (`download failed: response exceeds <n> bytes`).
-- **Default.** `0` = unlimited (byte-identical). **Activate:** `-max-cli-bytes <n>`
-  or the key. When disabled, both call sites bypass their `LimitReader`.
-- **claustrum streams the body and never buffers it.** It decompresses the
-  download into the staging file and hashes it in the same pass. So "cap off"
-  does not mean unbounded memory. The memory of the streamed decode is not
-  measured.
-- **Who pays for opting in.** A cap set below free space replaces a disk-full report
-  with the cap's own message, which costs the user the free-space hint. But that
-  cost turns on the `cliError` driver claim
-  ([ARCHITECTURE.md](ARCHITECTURE.md#driver-claims-and-their-provenance)). At the
-  default, claustrum preserves the disk-full report and matches the reference.
-- **Why opt-in.** The reference takes a 600 MiB payload to the runnability check
-  on both the decompress and the download paths (measured). That is a frame, not
-  an unbounded wait. So a non-zero default fails an install that the reference
-  completes, and Desktop owns the argv (rule 4).
-- **Reopen trigger.** Desktop ceasing to treat a disk-full message as terminal
-  (which removes the cost).
+- **Reference.** It takes a 600 MiB payload as far as the run test of the new
+  CLI, on both paths.
+- **Systems and switch.** Linux, macOS and Windows. Default `0`, off. Turn it on
+  with `-max-cli-bytes <n>` or the `max-cli-bytes` key. Off bypasses both
+  `LimitReader`s. claustrum streams the download into the staging file and
+  hashes it in the same pass, so "cap off" does not mean unbounded memory. The
+  memory of the streamed decode is not measured.
+- **Cost.** A cap below the free space replaces a disk-full report with the
+  cap's own message, so the user loses the free-space hint. That cost turns on
+  the `cliError` driver claim
+  ([ARCHITECTURE.md](ARCHITECTURE.md#driver-claims-and-their-provenance)).
+- **Rule.** Rule 4. The reference answers a frame, not an unbounded wait, and
+  Desktop owns the argv.
+- **Reopen trigger.** Desktop stops treating a disk-full message as terminal,
+  which removes the cost.
 - **Pointers.** [PROTOCOL.md → -install](PROTOCOL.md#-install-ensure-the-agent-cli)
   and `install.go` (`fetchCLI`, `zstdDecompress`).
 
 ### D12 · Make the `-install` CLI download bound opt-in { #d12 }
 
-- **Behavior.** The download runs with `http.Client{Timeout: cliDownloadTimeout}`.
-  The bound covers the whole exchange, including the body read. So a real body
-  over a link that needs six minutes trips it exactly as a black hole does.
-- **Default.** `0` = no bound (byte-identical). `http.Client{Timeout: 0}` is the
-  stdlib's own "no timeout" sentinel. **Activate:** `-cli-download-timeout <dur>` or
-  the key.
-- **Zero frees the body read, not every clock.** `fetchCLI` uses a clone of
-  `http.DefaultTransport`, which still applies `net.Dialer{Timeout: 30s}` and
-  `TLSHandshakeTimeout: 10s` on `-cli-url`. A SYN-black-holed host therefore fails
-  at 30 s with the bound off. Both clocks are always-on stdlib defaults, unnumbered
-  and unprobed on the reference.
-- **Two 60 s limits are parity, not this divergence.** The wait for the response
-  headers ends at 60 s (measured on Linux and Windows). A body that sends no byte
-  for 60 s is stopped. Both are always on. A bound set below 60 s fires first, and
-  no measurement covers that pair.
-- **Why opt-in.** A non-zero bound adds a cap on the total exchange. The
-  reference has none in the measured window. A body that trickles 1 byte every
-  30 s was still downloading at 150 s, because each byte resets the idle clock.
-  A valid blob that took about 324 s to arrive installed on `5db5e4a`. Such an
-  honest slow download pays under a non-zero bound, and Desktop owns the argv
-  (rule 4).
-- **Reopen trigger.** An operator with the bound set reporting an honest slow
-  download failed by it.
+- **Behavior.** `http.Client{Timeout: cliDownloadTimeout}` bounds the whole
+  download, the body read too. So a real body that needs six minutes trips it,
+  as a black hole does. With the bound off, the transport clocks of the
+  [conventions](#conventions-for-opt-in-divergences) still apply, so a
+  SYN-black-holed host fails at 30 s.
+- **Reference.** No bound on the total exchange in the measured window. A valid
+  blob that took about 324 s to arrive installed (measured on `5db5e4a`). Two
+  60 s limits are parity and always on: the wait for the response headers
+  (Linux and Windows), and a body that sends no byte for 60 s. A bound below
+  60 s fires first, and no measurement covers that pair.
+- **Systems and switch.** Linux, macOS and Windows. Default `0`, off:
+  `http.Client{Timeout: 0}` is the stdlib's own "no timeout". Turn it on with
+  `-cli-download-timeout <dur>` or the `cli-download-timeout` key.
+- **Cost.** An honest slow download fails under the bound.
+- **Rule.** Rule 4. Desktop owns the argv.
+- **Reopen trigger.** An operator with the bound set reports an honest slow
+  download that it failed.
 - **Pointers.** [PROTOCOL.md → -install](PROTOCOL.md#-install-ensure-the-agent-cli)
   and `install.go` (`fetchCLI`).
 
