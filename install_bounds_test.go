@@ -526,7 +526,7 @@ func TestInstallKeepsTheDownloadConnectionOpenDuringTheRun(t *testing.T) {
 // (cell H1) or contains it (cell H5). claustrum refuses both: the folder is not
 // removed, the blob stays and no CLI runs. With the home folder elsewhere the
 // same folder is replaced, as before (cell H3). The cell names are the Linux
-// ones. docs/DIVERGENCES.md D2 lists the cells of the three systems.
+// ones. macOS and Windows have their own cells.
 //
 // SAFETY: every path is under t.TempDir, and the home variable names a fixture
 // folder there. Without the guard the test deletes only that fixture.

@@ -21,8 +21,8 @@ import (
 // cannot be made. install_homeguard_windows_test.go runs the same cells with a
 // junction, which needs none.
 //
-// docs/DIVERGENCES.md D2 lists the cells that were measured against 89cb6289.
-// In each of them the reference removes the folder.
+// The cells with a home folder that exists were measured against 89cb6289 on
+// Linux, macOS and Windows. In each of them the reference removes the folder.
 func TestInstallHomeGuardResolvesSymlinks(t *testing.T) {
 	homeGuardLinkCells(t, func(t *testing.T, link, target string) {
 		t.Helper()
