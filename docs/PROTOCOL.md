@@ -2403,278 +2403,240 @@ rows of a create whose `.git` becomes a file.
 
 #### Hardened git calls
 
-The git methods run most git steps as hardened calls. A hardened call carries a fixed
-set of `-c` options and a fixed set of environment variables. This shape reaches a
-reply or the disk in at least four places. One is the `git.status` answer for a
-replaced `HEAD` commit (see [git.status](protocol/git-status.md#what-the-status-reads)). The three others are in
-`git.worktree_create`. Its failure texts have no graft-file hint. A tree path of
-270 characters creates on Windows. The records of a new worktree hold absolute
-paths.
-A logging git wrapper measured
-the points below. The option lists and the variables are those of `5fd08069`. In
-the state `shadow` the folder variables name the settings copy (see
-[The settings copy](#the-settings-copy)). With `"shadowDirOff":true` and in the
-state `fallback-git` a call carries `GIT_COMMON_DIR=<git directory>` alone. See "Not
-equal to `5fd08069`" below for what differs. Each point names its build and the VMs
-that measured it.
+The git methods run most git steps as hardened calls. A hardened call is a git call
+with a fixed list of `-c` options and a fixed set of environment variables. The lists
+and the variables were measured against `5fd08069` with a logging git wrapper. The
+`GIT_COMMON_DIR` pin and the hook pins were measured against `f6010b97`, and the
+limits of the hook pins against `89cb6289`. A rule that names no system was measured
+on Linux, macOS and Windows VMs.
 
-- Working directory. Each hardened call runs with the repository directory as its
-  working directory, and it passes no `-C`. The checkout of `git.worktree_create`
-  runs in the new worktree. The `git status` call runs in the worktree. Both name
-  their directories with `--git-dir` and `--work-tree`. Linux, macOS and Windows VMs.
-- Profiles. A call uses the light profile or the heavy profile. Each profile has its
-  own `-c` options and its own variables. The light variables are, in this order,
-  `GIT_ALLOW_PROTOCOL=https:ssh`, `GIT_TERMINAL_PROMPT=0`, `GIT_NO_REPLACE_OBJECTS=1`
-  and `GIT_GRAFT_FILE=<null>`. The daemon's own `GIT_ALLOW_PROTOCOL` changes the
-  first value (see the next section). The heavy variables are, in this order,
-  `GIT_NO_LAZY_FETCH=1`, `GIT_NO_REPLACE_OBJECTS=1`, `GIT_GRAFT_FILE=<null>`,
-  `GIT_ALLOW_PROTOCOL=denied_by_claude_ssh`, an empty `GIT_ASKPASS` and
-  `GIT_TERMINAL_PROMPT=0`. `5fd08069` sends the four and the six in these orders
-  with `"shadowDirOff":true` (cell B1, round `s3-linux`, Linux VM). Cells A1 and
-  A3 of round `val-s3p2b1` show the same two orders with the member on Linux and
-  macOS VMs. The Windows logs of `5fd08069` are sorted by name. They show the same
-  values and no order (cell B1, round `s3-windows` and cells A1 and A3 of round
-  `val-s3p2b1`, with the member).
-  `89cb6289` sends four heavy variables: it has no `GIT_NO_REPLACE_OBJECTS` and no
-  `GIT_GRAFT_FILE` there. Without the member, in the states `shadow` and
-  `fallback-git`, the light calls of a create and their listings carry six values.
-  The three listings of the branch step of a remove carry them too.
-  Cell Q-S4c of round `val-s3p2b2-3` shows the values in the state `fallback-git`
-  (Windows VM). The checkout and its listings keep the four light values. Then comes
-  `GIT_COMMON_DIR` when the
-  trust check pins it. In the state `shadow` that is the copy, with
-  `GIT_OBJECT_DIRECTORY`, `GIT_DIR` and `GIT_WORK_TREE` after it. Then come the hook pins, from `GIT_CONFIG_COUNT`: two base
-  pins, and two for each hook name of the listing before the call (see below). The
-  daemon's own `GIT_CONFIG_COUNT` moves them (see the next section). The
-  `GIT_COMMON_DIR` pin and the hook pins were measured against `f6010b97` on Linux,
-  macOS and Windows VMs.
-- Heavy calls. The hardened calls of `git.info`, `git.list_branches` and
-  `git.status` use the heavy profile. So does each `rev-parse --absolute-git-dir`,
-  and the `--git-dir=<dir> --work-tree=<dir> rev-parse --show-toplevel` call with
-  its listing. Cells B0 and B1 of round `s3-linux` show that on `5fd08069` for the
-  three methods (Linux VM). B1 has `"shadowDirOff":true` and B0 has no such member.
-  With the member, cell B1 of rounds `s3-macos` and `s3-windows` shows it for
-  `git.info` and `git.list_branches` (macOS and Windows VMs). Cell G4-off-hook of
-  round `s3p2-macos` shows it for the calls of `git.status` and for the pair (macOS
-  VM). Cell B1 of round `s3-windows` shows it for the pair and for the `hash-object`
-  and `status` calls of `git.status` (Windows VM). Without the member, cells B3d and
-  B3e of round `s3p2-linux` show the origin verify and `rev-parse --short HEAD`
-  (Linux VM). With the member, cell A2 of round `val-s3p2b1` shows both calls with
-  the heavy profile (Linux, macOS and Windows VMs). Cell A6 of that round shows the
-  pair in `git.worktree_remove`, with the member (Linux, macOS and Windows VMs).
-  There the registration record names the worktree through a link, and the pair
-  runs three times. `89cb6289` runs
-  `git.info`, `git.list_branches` and that `rev-parse --show-toplevel` call with the
-  light profile. The other hardened calls of claustrum use the light profile, except
-  the calls of [the branch step](#the-branch-step), which have their own variables.
-  Of the claustrum calls, only the `status`, `ls-files` and `diff-index` calls of
-  `git.status` add `GIT_OPTIONAL_LOCKS=0`. The checkout adds `GIT_INDEX_FILE`.
-- Option lists. The heavy profile has 28 `-c` items and the light profile has 20,
-  as on `5fd08069`. Cells B0 and B1 of round `s3-linux` show both lists (Linux VM).
-  Cell 50 of round `s3p2b-edges` and cell B1 of rounds `s3-macos` and `s3-windows`
-  show them on macOS and Windows VMs. `89cb6289` sends 23 and 13. The heavy list is
-  `core.fsmonitor=false`, `core.hooksPath=/dev/null`,
-  `core.attributesFile=/dev/null`, `core.excludesFile=<file>`,
-  `core.longpaths=true`, `protocol.allow=never`, the same for `ext`, `fd`, `file`,
-  `git`, `ssh`, `http` and `https`, `credential.helper=`, `core.askPass=`,
-  `fetch.bundleURI=`, `core.alternateRefsCommand=`, `alias.remote-https=`,
-  `alias.remote-http=`, `alias.remote-ssh=`,
-  `alias.remote-denied_by_claude_ssh.command=`, `help.autocorrect=0`,
-  `submodule.recurse=false`, `fetch.recurseSubmodules=false`,
-  `push.recurseSubmodules=false`, `gc.auto=0`, `maintenance.auto=false` and
-  `core.commitGraph=false`. The light list is `core.hooksPath=/dev/null`,
-  `core.fsmonitor=false`, `branch.autoSetupMerge=false`, `fetch.bundleURI=`,
-  `http.saveCookies=false`, `core.alternateRefsCommand=`, the four `alias.remote-`
-  items, `help.autocorrect=0`, `core.excludesFile=<file>`, the three submodule
-  items, `gc.auto=0`, `maintenance.auto=false`, `advice.graftFileDeprecated=false`,
-  `worktree.useRelativePaths=false` and `core.longpaths=true`. The checkout adds
-  `core.splitIndex=false` and `core.commitGraph=false` after the light list. The
-  `rev-list` call of the branch step adds `core.commitGraph=false`.
-- Not equal to `5fd08069`. Two sets of rounds compared the calls of claustrum with
-  those of `5fd08069`, request by request. Round `val-s3p2b1` ran the build of the
-  option lists, in its cells A1 to A7 and B1 to B9. Rounds `val-s3p2b2-3` and
-  `val-s3p2b2-5` ran a build with the settings copy, without the member. Not
-  each cell ran on each system. The Windows log is sorted by name, so the order of
-  the variables has rows on Linux and macOS VMs only. The first four points say
-  what is equal. The points after them are the differences that stay. The reply
-  lines are equal in each of those.
-    - Equal with the member. A call that both builds make is equal in list,
-      arguments, working directory and variables (Linux, macOS and Windows VMs).
-      The order of the variables is equal too (Linux and macOS VMs). That holds
-      for the calls of `existingBranch`, of `sourceBranch` and of the
-      `.worktreeinclude` step (cell A3, Linux, macOS and Windows VMs). It holds
-      for a create and a remove with `worktreeRoot` (cell A4, Linux and macOS
-      VMs). Windows refuses `worktreeRoot` before any such call. Round
-      `val-s3p2b1` measured this point. The rounds of the settings copy sent no
-      member.
-    - Equal without the member, in the state `shadow`. The folder variables, the
-      six values of the light calls of a create, the `lfs.storage` item and
-      `LANGUAGE=C` of the checkout, and its second listing. Also the ten test
-      calls, the call about the repository and the names of the short-lived
-      entries (round `val-s3p2b2-5`, Linux and macOS VMs).
-    - Equal in the state `fallback-git`: the names of the short-lived entries and
-      the variables (cell Q-S4c, round `val-s3p2b2-5`, Windows VM).
-    - Equal: the top folder pair. After `rev-parse --absolute-git-dir`, a
-      create runs the `--git-dir=<dir> --work-tree=<repo> rev-parse
-      --show-toplevel` call with its listing, also with the member. It runs
-      when `<git dir>/worktrees` is a real folder and no entry
-      names the leaf. Cells: R-Q2b of `task084-01` (Linux, macOS, Windows
-      VMs), A3 of `val-s3p2b1`, and the C6 and E cells of `task109-01/-02` (Linux
-      VM). `fallback-git` runs none (not measured).
-    - Stays, with `worktreeRoot`: `5fd08069` runs one round of six calls
-      before the add, after the add and after the checkout. claustrum runs it
-      before the add only. The round is `rev-parse --show-toplevel`, `rev-parse
-      --absolute-git-dir` and `worktree list --porcelain -z`, each after its
-      listing. That is cell A4 of round `val-s3p2b1` (Linux and macOS VMs). Without the
-      member the create has 31 calls on `5fd08069` and 18 on claustrum (cell
-      `n3-root` of round `val-s3p2b2-5`, Linux VM).
-    - Stays, with `worktreeRoot`: a second remove of a worktree that is gone. It
-      has 12 calls on `5fd08069` and 8 on claustrum. The four more are two
-      `--git-dir=<dir>` pairs (cell `n3-root` of round `val-s3p2b2-5`, Linux VM).
-    - Stays, with `existingBranch`: `5fd08069` runs two listings in a row
-      before the attach add, and claustrum runs one (cell A3, Linux, macOS and
-      Windows VMs). After a failed attach add, `5fd08069` runs the `-b` add with no
-      listing before it. claustrum runs one listing there (cell B2, Linux, macOS
-      and Windows VMs). Both rounds show it.
-    - Stays: the read-tree of claustrum carries filter items before its list in
-      some cells with a git filter or with git-lfs.
-    - The names of the short-lived entries with the member are from the code and
-      its test: `claude-ssh-gitdir-<n>`, `claude-ssh-index-<n>` and
-      `claude-ssh-worktreeinclude-<n>/patterns`. `5fd08069` has those names in
-      cells A1 and A3 of round `val-s3p2b1` (Linux, macOS and Windows VMs).
-- Graft hint. With `GIT_GRAFT_FILE` set, git can print 8 `hint:` lines about
-  `info/grafts` on standard error. The light list turns them
-  off with `advice.graftFileDeprecated=false`. The heavy list does not. On
-  `5fd08069` and on claustrum, three calls of `git.status` print the hint in a
-  repository with no `info/grafts` file. They are `status`, `diff-index` and
-  `rev-parse --verify -q HEAD^{commit}`. `89cb6289` prints no hint there (cell B8
-  of round `val-s3p2b1`, Linux and Windows VMs). With an `info/grafts` file of one line, the
-  three calls print the hint on each of the three builds (cell B5, Linux and
-  Windows VMs). The `status`, `ls-files`, `rev-parse` and `diff-index` calls of
-  `git.status` give stdout only to the reply. A failure of one of them answers
-  the exec error. So no reply line of cells B5 and B8 holds a `hint:` line
-  (Linux, macOS and Windows VMs).
-  These cells ran with and without `"shadowDirOff":true`.
-- Reply lines against `b027ede`, the build before the option lists. Among the
-  requests of round `val-s3p2b1` that both builds ran, the replies differ in cells
-  B1, B2, B4 and B9 only. `git.status` has cell B1. Cell B7 ran the cells of groups A and B of round `s3p2` on
-  both builds. No reply line differs: 65 requests on a Linux VM, 76 lines on a
-  macOS VM and 41 requests on a Windows VM.
-- Null device. `<null>` is `/dev/null` on Linux and macOS, and `NUL` on Windows.
-  The same value goes into `-c core.excludesFile` when the user has no global
-  excludes file. The `-c core.hooksPath` and `-c core.attributesFile` values stay
-  `/dev/null` on Windows. Windows VM. claustrum only: the `status`, `ls-files` and
-  `diff-index` calls of `git.status` pass `-c core.excludesFile=/dev/null` on Windows
-  too. That is divergence D16.
-- Configuration listing. Before each hardened call except the first (see the next
-  point), the daemon runs `git config -z --list` in the same directory. `89cb6289`
-  dropped `--name-only`. The listing carries the profile variables of the call after
-  it, and `GIT_COMMON_DIR`. Before a call of the branch step it carries the light
-  variables, and in the state `shadow` the six values of a create call. It carries
-  no hook pins. One listing is the exception, in the state `shadow`: the second
-  listing before the checkout. It carries the pins, `GIT_INDEX_FILE` and
-  `LANGUAGE=C`, and no `LC_ALL`. `5fd08069` sends it so in cell A3 of round
-  `val-s3p2b1` (Linux, macOS and Windows VMs). The listing before the checkout and the
-  listing before the `git status` call start with `--git-dir=<dir>`. Linux, macOS
-  and Windows VMs.
-- Listing locale. The listing drops the daemon's own `LC_ALL` and `LANGUAGE` and
-  ends with `LC_ALL=C` and `LANGUAGE=C`, after the `GIT_COMMON_DIR` pin. `LANG` and
-  the rest keep their places. git then writes its listing errors in English (row
-  L03, Linux VM). The call after the listing keeps the daemon's `LC_ALL`, `LANGUAGE`
-  and `LANG` (row L02, Linux, macOS and Windows VMs). Other `LC_*`
-  variables stay too. Only `LC_ALL`, `LANGUAGE` and `LANG` were measured.
-- Hook pins. `git config -z --list` ends each record with a NUL byte and puts a LF
-  between key and value. A hook key that stands in a value pins nothing (row L04). A
-  key `hook.<name>.<var>` names a hook.
-  The name is the text between the first and the last dot. It can be empty or hold
-  dots. `hook.<var>` names none. Each name counts once, in the order the
-  listing first shows it, and gets `hook.<name>.enabled=false` and an empty
-  `hook.<name>.event` (row L05). Each hardened call takes the names of the listing
-  right before it. That choice is not measured: only configurations that stay the
-  same during a request were run. Three limits refuse the method after the first listing, before
-  any hardened call. A key over 1048576 bytes gets the hooks refusal with `a
-  configuration key is longer than the listing reads` (row L08c). Row L08c had the
-  key in the section `x`. In some sections a key over 1024 bytes is refused before
-  the listing (see [Repository config refusals](#repository-config-refusals)). More than 1024
-  names get `config-defined hooks could not be pinned off; git not run: too many
-  configured hooks to pin` (row L06b). Names whose bytes add up to more than 65536
-  get `…git not run: configured hook names exceed the aggregate pin byte bound` (row
-  L07b). A value has no cap: 2 MiB passes (row L09). Linux, macOS and Windows VMs.
-  Some points are not measured. Only `command` and `event` were used as `<var>`.
-  claustrum pins two names that differ in letter case as two names. It counts a
-  name under two keys once in the limits. It tests the count before the byte sum.
-  A sum over 65536 made of names of at most 1024 bytes was not run. Nor was a value
-  over 2 MiB. Every measured failure hit the first listing. No row has a listing
-  over a limit in a folder that holds no repository. From the code, three rules
-  follow. A later listing that runs right before a hardened call does not refuse
-  that call. If it fails or exceeds a limit, the call gets the two base pins only.
-  A failure of one of the two later listings of `git.status` refuses, and a limit
-  does not refuse there (see [git.status](protocol/git-status.md#errors)). In a folder that holds no repository, the first listing follows
-  "The daemon's own git environment": a limit refuses each method except
-  `git.status`.
-- Hooks refusal check. The first listing of a method is the hooks refusal check. It
-  is not an extra call. If it fails, the method answers by the class of the failure
-  (see [Git-directory trust check](#git-directory-trust-check)). If it exceeds a
-  limit, the method answers the limit refusal (see Hook pins above).
-  `git.worktree_create` runs it with the light profile. `5fd08069` does so with
-  `"shadowDirOff":true` (cell B1 of rounds `s3-linux`, `s3-macos` and `s3-windows`,
-  on Linux, macOS and Windows VMs). Without the member the listing of `5fd08069`
-  carries six values (cell B0, round `s3-linux`, Linux VM). That of claustrum
-  does too in the state `shadow` (round `val-s3p2b2-5`, Linux VM). `git.info`,
-  `git.list_branches`, `git.status` and `git.worktree_remove` run it with the heavy
-  profile. `5fd08069` does so in cells B0 and B1 of round `s3-linux` (Linux VM).
-  With the member, cell B1 of round `s3-windows` shows the same for the four
-  methods (Windows VM). With `worktreeRoot`, `git.worktree_remove` runs a light check.
-  Later a heavy listing and `rev-parse --absolute-git-dir` follow. Linux VM.
-- Excludes read. Before its first listing, an uncached request runs `git config
-  --includes --path core.excludesFile`. Two concurrent requests run two (rounds
-  `task103-01`, `task103-03`, Linux VM). It adds only `GIT_DIR=<null>`, in the
-  temporary directory. Linux, macOS and Windows VMs.
-- The probe `git --attr-source=<empty tree> version` adds no variable. Linux, macOS
-  and Windows VMs.
-- The `git status` call starts with `--attr-source=<empty tree>`. The heavy `-c`
-  options, `--git-dir` and `--work-tree` follow it. Linux and macOS VMs. It and its
-  listing pin `GIT_COMMON_DIR` to the clean path of the common git directory. On
-  Windows the reference pins it with backslashes (Windows VM). claustrum cleans the
-  path to match, and its Windows unit test checks the pin.
-- Variable order. A `GIT_*` variable of the daemon's own environment keeps its
-  place, before the variables that the daemon adds. The next section gives the
-  exceptions. If the daemon adds a variable that its environment already has, the
-  added value and place win. Linux and macOS VMs. On Windows the block of a git
-  child of claustrum is in name order. `f6010b97` and `89cb6289` do not sort it
-  (Windows VM, row V17h for `89cb6289`). That is
-  [`DIVERGENCES.md`](DIVERGENCES.md) → D23.
-- Temporary names. [The folders](#the-folders) of the settings copy names the
-  short-lived folders of a request. With `"shadowDirOff":true` the git dir of
-  `git status` starts with `claude-ssh-gitdir-`, and the folder of the include
-  step with `claude-ssh-worktreeinclude-`. `5fd08069` has those two names in cells A1
-  and A3 of round `val-s3p2b1` (Linux, macOS and Windows VMs). The temporary index
-  directory of the
-  checkout starts with `claude-ssh-index-`, as on `89cb6289`. Cell X1 shows that
-  name on Linux and macOS VMs. It is in the frame text
-  `open <tmp>/claude-ssh-index-<n>/index: no such file or directory` and in the
-  `GIT_INDEX_FILE` of each read-tree. The suffix is decimal digits. The name of
-  `89cb6289` on Windows is not measured, and claustrum uses the same prefix there.
-- `git.worktree_remove` with `worktreeRoot`. A light `rev-parse --show-toplevel`
-  follows the light check, with no listing of its own. Before the daemon decides
-  whether `worktreePath` is a registered worktree, it runs a light
-  `worktree list --porcelain -z` and a heavy `rev-parse --absolute-git-dir`. Each
-  of them has its listing. claustrum runs the `rev-parse` after it located the
-  worktree folder. It uses the answer only as the `--git-dir` of the two
-  calls that follow. For a `baseRepo` that exists, the "leads into"
-  and "not reachable" refusals come right after `worktree list`.
-  With the excludes read that is 7 calls, as on `f6010b97` and `89cb6289`. For a
-  missing `baseRepo` and a missing root, both references send "not reachable" with
-  no git call, and claustrum makes none there too (row T9). Linux and macOS VMs.
-- `git.worktree_create` with `worktreeRoot`. After the repo test and the in-repo
-  root test, claustrum runs a light `rev-parse --show-toplevel`, a heavy
-  `rev-parse --absolute-git-dir` and a light `worktree list --porcelain -z` in
-  `baseRepo`. Each has its listing. With the excludes read and the repo test that
-  is 9 calls. `f6010b97` makes the same 9 calls before it refuses a root in a
-  checkout. `89cb6289` also makes 9 calls, in this order. claustrum does not use the
-  answer of `rev-parse --absolute-git-dir`. Linux and macOS VMs. A failed `show-toplevel`,
-  or two failed `worktree list` calls, stop the create with `mkdir_failed` (cells
-  C-W17b and C-W17).
+A client sees this shape in four places:
+
+- `git.status` reads the real `HEAD` commit, also where `refs/replace` names another
+  (see [git.status](protocol/git-status.md#what-the-status-reads)).
+- The failure texts of `git.worktree_create` hold no graft-file `hint:` lines.
+- On Windows a create with a tree path of 270 characters succeeds.
+- The records of a new worktree hold absolute paths, also where the user config sets
+  `worktree.useRelativePaths`.
+
+##### Refusal texts
+
+The first config listing of a method is the hooks refusal check. It is not an extra
+call. Each method answers these texts in its own error frame (see the
+[Error-string catalogue](#error-string-catalogue)):
+
+| Cause | Text |
+|---|---|
+| The listing fails | `config-defined hooks could not be pinned off; git not run: listing the configuration in force: <exec error>: <git text>`. [Git-directory trust check](#git-directory-trust-check) gives the classes of the failure |
+| The listing fails, and `git version` fails too | `git cannot run on this host; git not run: <exec error>: <git text>`, with the detail of `git version` |
+| A config key over 1048576 bytes | `config-defined hooks could not be pinned off; git not run: listing the configuration in force: a configuration key is longer than the listing reads` |
+| More than 1024 hook names | `config-defined hooks could not be pinned off; git not run: too many configured hooks to pin` |
+| Hook names over 65536 bytes in sum | `config-defined hooks could not be pinned off; git not run: configured hook names exceed the aggregate pin byte bound` |
+
+A config value has no cap: 2 MiB passes. In some sections a key over 1024 bytes is
+refused before the listing (see [Repository config refusals](#repository-config-refusals)).
+The limits refuse at the first listing only. In a folder that holds no repository, a
+limit refuses each method except `git.status`. That rule is from the code.
+
+##### Hook pins
+
+`git config -z --list` ends each record with a NUL byte and puts a LF between key and
+value. A key `hook.<name>.<var>` names a hook. The name is the text between the first
+and the last dot. It can be empty or hold dots. `hook.<var>` names no hook, and a hook
+key inside a value pins nothing.
+
+Each hardened call gets two base pins, `hook.enabled=false` and an empty
+`hook.event`. Each hook name adds `hook.<name>.enabled=false` and an empty
+`hook.<name>.event`. A name counts once, in the order that the listing first shows
+it. The pins go in through `GIT_CONFIG_COUNT`. The daemon's own `GIT_CONFIG_COUNT`
+moves them (see the next section).
+
+These points are from the code, not measured:
+
+- Each hardened call takes the names of the listing right before it.
+- A later listing that fails or exceeds a limit does not refuse its call. The call
+  then gets the two base pins only. The two later listings of `git.status` are the
+  exception: a failure there refuses (see [git.status](protocol/git-status.md#errors)).
+- Two names that differ only in letter case get two pins. A name under two keys
+  counts once toward the limits. The count is tested before the byte sum.
+
+Only `command` and `event` were measured as `<var>`.
+
+##### Profiles
+
+A hardened call uses the heavy profile or the light profile:
+
+| Profile | `-c` items | Variables, in this order | Calls |
+|---|---|---|---|
+| heavy | 28 | `GIT_NO_LAZY_FETCH=1`, `GIT_NO_REPLACE_OBJECTS=1`, `GIT_GRAFT_FILE=<null>`, `GIT_ALLOW_PROTOCOL=denied_by_claude_ssh`, an empty `GIT_ASKPASS`, `GIT_TERMINAL_PROMPT=0` | `git.info`, `git.list_branches` and `git.status`. Each `rev-parse --absolute-git-dir`, and the `--git-dir=<dir> --work-tree=<dir> rev-parse --show-toplevel` call. The hooks refusal check of `git.info`, `git.list_branches`, `git.status` and `git.worktree_remove` |
+| light | 20 | `GIT_ALLOW_PROTOCOL=https:ssh`, `GIT_TERMINAL_PROMPT=0`, `GIT_NO_REPLACE_OBJECTS=1`, `GIT_GRAFT_FILE=<null>` | the other hardened calls, mostly those of `git.worktree_create`. The hooks refusal check of a create, and of a remove with `worktreeRoot` |
+
+- The daemon's own `GIT_ALLOW_PROTOCOL` changes the first light value (see the next
+  section).
+- In the states `shadow` and `fallback-git` without `"shadowDirOff":true`, the light
+  calls of a create and their listings carry the six heavy values. So do the three listings of the branch step of a remove. The checkout
+  and its listings keep the four light values. With `"shadowDirOff":true` the light
+  calls carry the four light values.
+- The calls of [the branch step](#the-branch-step) have their own variables.
+- The `status`, `ls-files` and `diff-index` calls of `git.status` add
+  `GIT_OPTIONAL_LOCKS=0`. The checkout adds `GIT_INDEX_FILE`.
+- The order of the variables is measured on Linux and macOS VMs. The Windows logs of
+  `5fd08069` are sorted by name and show the same values.
+
+The heavy list, in order:
+
+```text
+core.fsmonitor=false
+core.hooksPath=/dev/null
+core.attributesFile=/dev/null
+core.excludesFile=<file>
+core.longpaths=true
+protocol.allow=never
+protocol.ext.allow=never
+protocol.fd.allow=never
+protocol.file.allow=never
+protocol.git.allow=never
+protocol.ssh.allow=never
+protocol.http.allow=never
+protocol.https.allow=never
+credential.helper=
+core.askPass=
+fetch.bundleURI=
+core.alternateRefsCommand=
+alias.remote-https=
+alias.remote-http=
+alias.remote-ssh=
+alias.remote-denied_by_claude_ssh.command=
+help.autocorrect=0
+submodule.recurse=false
+fetch.recurseSubmodules=false
+push.recurseSubmodules=false
+gc.auto=0
+maintenance.auto=false
+core.commitGraph=false
+```
+
+The light list, in order:
+
+```text
+core.hooksPath=/dev/null
+core.fsmonitor=false
+branch.autoSetupMerge=false
+fetch.bundleURI=
+http.saveCookies=false
+core.alternateRefsCommand=
+alias.remote-https=
+alias.remote-http=
+alias.remote-ssh=
+alias.remote-denied_by_claude_ssh.command=
+help.autocorrect=0
+core.excludesFile=<file>
+submodule.recurse=false
+fetch.recurseSubmodules=false
+push.recurseSubmodules=false
+gc.auto=0
+maintenance.auto=false
+advice.graftFileDeprecated=false
+worktree.useRelativePaths=false
+core.longpaths=true
+```
+
+The checkout adds `core.splitIndex=false` and `core.commitGraph=false` after the
+light list. The `rev-list` call of the branch step adds `core.commitGraph=false`.
+
+`<null>` is `/dev/null` on Linux and macOS, and `NUL` on Windows. When the user has
+no global excludes file, `<file>` is `<null>`. Else it is that file. The
+`core.hooksPath` and `core.attributesFile` values stay `/dev/null` on Windows. On
+Windows the `status`, `ls-files` and `diff-index` calls of `git.status` pass
+`core.excludesFile=/dev/null` too. That is claustrum's own, see
+[D16](DIVERGENCES.md#d16).
+
+With `GIT_GRAFT_FILE` set, git can print 8 `hint:` lines about `info/grafts` on
+standard error. The light list turns them off with
+`advice.graftFileDeprecated=false`, and the heavy list does not. The calls of
+`git.status` give only stdout to the reply, so no reply holds a `hint:` line.
+
+##### Environment and working directory
+
+Each hardened call runs with the repository directory as its working directory, and
+it passes no `-C`. The checkout of `git.worktree_create` runs in the new worktree,
+and the `git status` call in the worktree. Both name their folders with `--git-dir`
+and `--work-tree`.
+
+The environment of a hardened call has four parts, in this order:
+
+1. the daemon's own environment
+2. the profile variables
+3. the `GIT_COMMON_DIR` pin, if the [trust check](#git-directory-trust-check) sets one
+4. the hook pins
+
+In the state `shadow` the pin names the copy, and `GIT_OBJECT_DIRECTORY`, `GIT_DIR` and
+`GIT_WORK_TREE` follow it (see [The settings copy](#the-settings-copy)). With
+`"shadowDirOff":true` and in the state `fallback-git` the call carries
+`GIT_COMMON_DIR=<git directory>` alone.
+
+A `GIT_*` variable of the daemon keeps its place, before the added variables. The
+next section gives the exceptions. If the daemon adds a variable that its
+environment already has, the added value and place win. Linux and macOS VMs. On
+Windows claustrum gives a git child its environment in name order. That is
+[D23](DIVERGENCES.md#d23).
+
+The `git status` call of `git.status` starts with `--attr-source=<empty tree>`. The
+heavy `-c` options, `--git-dir` and `--work-tree` follow it (Linux and macOS VMs).
+It and its listing pin `GIT_COMMON_DIR` to the clean path of the common git
+directory. On Windows that path has backslashes.
+
+##### Listings and probes
+
+Before each hardened call except the first, the daemon runs `git config -z --list`
+in the same directory. The listing carries the profile variables of the call after
+it and the `GIT_COMMON_DIR` pin, and no hook pins. It drops the daemon's own
+`LC_ALL` and `LANGUAGE` and ends with `LC_ALL=C` and `LANGUAGE=C`. git then writes
+its listing errors in English (Linux VM). The call after the listing keeps the
+daemon's `LC_ALL`, `LANGUAGE` and `LANG` (Linux, macOS and Windows VMs). Other
+`LC_*` variables stay too, but only those three were measured.
+
+Before its first listing, a request with no cached value runs `git config --includes
+--path core.excludesFile` in the temporary directory. It adds only `GIT_DIR=<null>`.
+Two concurrent requests run it twice. The probe `git --attr-source=<empty tree>
+version` adds no variable.
+
+##### Temporary names
+
+[The folders](#the-folders) of the settings copy names the short-lived folders of a
+request. With `"shadowDirOff":true` they are temporary folders with these names:
+
+- `claude-ssh-gitdir-<n>`, the git directory of the `git status` call
+- `claude-ssh-worktreeinclude-<n>`, the folder of the include step of a create
+- `claude-ssh-index-<n>`, the index folder of the checkout of a create
+
+`<n>` is decimal digits. `5fd08069` uses the three names on Linux, macOS and Windows
+VMs. A client can see the index name in the text
+`open <tmp>/claude-ssh-index-<n>/index: no such file or directory`.
+
+##### Calls with `worktreeRoot`
+
+If the `rev-parse --show-toplevel` call of a `git.worktree_create` with
+`worktreeRoot` fails, the create stops with `mkdir_failed`. Two failed `worktree
+list` calls stop it the same way. If `baseRepo` and the root are both missing, a
+`git.worktree_remove` with `worktreeRoot` makes no git call and answers "not
+reachable". Linux and macOS VMs.
+
+##### Where the calls differ from `5fd08069`
+
+The reply lines are equal in each of these. Otherwise a call that both builds make is
+equal in list, arguments, working directory and variables. The order of the
+variables is equal on Linux and macOS VMs.
+
+- With `worktreeRoot`, `5fd08069` runs `rev-parse --show-toplevel`, `rev-parse
+  --absolute-git-dir` and `worktree list --porcelain -z` before the add, after the
+  add and after the checkout. claustrum runs them before the add only. A second remove of
+  a gone worktree makes fewer calls too.
+- With `existingBranch`, claustrum runs one config listing before the attach add,
+  where `5fd08069` runs two. After a failed attach add, claustrum runs one listing
+  before the `-b` add, and `5fd08069` none.
+- With a git filter or git-lfs, the read-tree of claustrum can carry filter items
+  before its list.
 
 #### The daemon's own git environment
 
