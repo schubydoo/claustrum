@@ -77,9 +77,9 @@ func (s *server) handleServer(c *conn, req *request) *response {
 		// wins a race with the teardown. signalShutdown fires here, and the handler
 		// returns the reply at once for handleRequest to write. It does not wait
 		// for the close of the connections. 5fd08069 answers before the close in
-		// part of the runs (cells R1, R2 and R4 of round task034-01, see
-		// docs/PROTOCOL.md). Under a handler panic no frame is emitted for shutdown
-		// (the recover in handleRequest skips the error frame).
+		// part of the runs (see "The reply races the close" on the server.shutdown
+		// page under docs/protocol/). Under a handler panic no frame is emitted for
+		// shutdown (the recover in handleRequest skips the error frame).
 		//
 		// The two log lines come before the teardown starts, so they precede
 		// every connection close. The reference logged them in this order before

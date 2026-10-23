@@ -41,13 +41,13 @@ The members come in this order:
 |---|---|
 | `version` | The version of the daemon. |
 | `methods` | The 20 methods, in the order of [Methods](../PROTOCOL.md#methods-20). `plugins.prune` is last on every system. |
-| `instanceId` | 32 hexadecimal characters, new at each start of the daemon. claustrum makes it from 16 random bytes (claustrum's own). On Linux and macOS the owner record of `daemon.lock` holds the same value. The banner of the log holds it too. |
+| `instanceId` | 32 hexadecimal characters, new at each start of the daemon. claustrum makes it from 16 random bytes (claustrum's own). On Linux and macOS the owner record of `daemon.lock` holds the same value. The banner of the log holds it too (`f6010b97` and `89cb6289`, see [Daemon log](../PROTOCOL.md#daemon-log-remote-serverlog)). |
 | `startedAt` | The start time of the daemon in unix milliseconds. The daemon sets it after its start steps and the bind of the socket (measured against `89cb6289` on a Linux VM). |
 | `features` | The optional extensions that this build supports. See [Features](#features). |
 | `peerCheck` | The state of the peer check. See [The peer check](#the-peer-check). |
 | `peerCheckBy` | The parts that the check compares. With `"off"` or `"unavailable"` the reply has no such member. |
 
-A request for `server.capabilities` does not count as activity for the idle exit of the daemon. Every other request past the auth step counts. The idle exit runs on Linux and macOS only (claustrum's own, not measured). See [Orphan-exit self-probe](../PROTOCOL.md#orphan-exit-self-probe).
+A request for `server.capabilities` does not count as activity for the idle exit of the daemon. Every other request past the auth step counts. The idle exit runs on Linux and macOS only. These three rules are claustrum's own, not measured. See [Orphan-exit self-probe](../PROTOCOL.md#orphan-exit-self-probe).
 
 ### Features
 
@@ -59,7 +59,7 @@ The `features` array is always present. The example above shows its members in o
 
 The peer check lets the daemon refuse a caller that runs in other namespaces, for example a process in a sandbox. Only the variable `CLAUDE_SSH_PEER_CHECK=1` in the environment of the daemon turns it on. The value must be exactly `1`. Any other value, for example `0`, `true`, `on`, `01` or the empty value, leaves it off. No variable leaves it off too.
 
-The daemon reads the variable once, at its start, and then removes it from its own environment. On Windows the removal covers any letter case. So no child of the daemon inherits it: no `process.spawn` child, no git call, no launcher run and no login-shell read. A `process.spawn` request whose `env` names the variable still gives it to that child. If the removal fails, the daemon logs one WARN line (claustrum's own), and the children inherit the variable.
+The daemon reads the variable once, at its start, and then removes it from its own environment. On Windows the removal covers any letter case. So no child of the daemon inherits it: no `process.spawn` child, no git call, no launcher run and no login-shell read (the launcher run and the login-shell read: from the code). A `process.spawn` request whose `env` names the variable still gives it to that child. If the removal fails, the daemon logs one WARN line (claustrum's own), and the children inherit the variable.
 
 The `peerCheck` member:
 
@@ -115,7 +115,7 @@ A client must treat EOF after a shutdown request as a success. The reference oft
 
 ### What the stop does
 
-The stop closes the listener. On Linux and macOS, if the socket file is still the one that the daemon bound, the stop removes it. On Windows the close of the listener removes the path, also the socket of a successor. Then the stop closes every connection and ends the children. That is the whole process group on Linux and macOS, and the direct child on Windows. With `-keep-children` the children keep running ([CT-2](../DIVERGENCES.md#ct-2)). If `daemon.token` is still the file of this daemon, the daemon removes it (measured on Windows, from the code on Linux and macOS). The daemon then exits with code 0 (from the code). See [Token persistence](../PROTOCOL.md#token-persistence-daemontoken).
+The stop closes the listener. On Linux and macOS, if the socket file is still the one that the daemon bound, the stop removes it (from the code on macOS). On Windows the close of the listener removes the path, also the socket of a successor. Then the stop closes every connection and ends the children. That is the whole process group on Linux and macOS, and the direct child on Windows. With `-keep-children` the children keep running ([CT-2](../DIVERGENCES.md#ct-2)). If `daemon.token` is still the file of this daemon, the daemon removes it. A successor's file stays (measured on Windows, from the code on Linux and macOS). The daemon then exits with code 0 (from the code). See [Token persistence](../PROTOCOL.md#token-persistence-daemontoken).
 
 ### Log lines
 
@@ -134,7 +134,7 @@ Each `[Server] Connection closed: <addr>` line, when it is logged, comes after t
 
 The first count includes the connection that sent the request (measured on Windows only).
 
-A stop by `SIGTERM` first logs `[daemon] received terminated; shutting down (children will be killed)`. Then it logs `[Server] shutdown requested` and the `cleanup:` line. For `SIGINT` the first line names that signal. With `-keep-children` the first line says `kept` in place of `killed` (claustrum's own), and the `cleanup:` line says `killed 0 child process group(s)`.
+A stop by `SIGTERM` first logs `[daemon] received terminated; shutting down (children will be killed)`. Then it logs `[Server] shutdown requested` and the `cleanup:` line. For `SIGINT` the first line names that signal (Linux and macOS). With `-keep-children` the first line says `kept` in place of `killed` (claustrum's own), and the `cleanup:` line says `killed 0 child process group(s)`.
 
 A handler panic in `server.shutdown` writes no frame. See [Handler panic recovery](../PROTOCOL.md#handler-panic-recovery).
 
@@ -144,7 +144,7 @@ A handler panic in `server.shutdown` writes no frame. See [Handler panic recover
 |---|---|---|---|
 | `git.worktree.external_root` in `features` | Listed. | Listed. | Not listed. |
 | `peerCheck` with `CLAUDE_SSH_PEER_CHECK=1` | `"on"`, with `peerCheckBy`. The daemon refuses a caller in other namespaces. | `"unavailable"`. The daemon serves every caller. | `"unavailable"`. The daemon serves every caller. |
-| Start line with the variable at `1` | INFO. It names the namespaces of the daemon. | WARN. It says that the system names no namespaces. | WARN, as on macOS. |
+| Start line with the variable at `1` (claustrum's own) | INFO. It names the namespaces of the daemon. | WARN. It says that the system names no namespaces. | WARN, as on macOS. |
 
 ## Differences from the reference
 

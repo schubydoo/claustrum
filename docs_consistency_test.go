@@ -81,8 +81,8 @@ func docSetDiff(a, b map[string]bool) []string {
 	return out
 }
 
-// TestDocsEveryMethodHasAHome: each method of server.capabilities has a heading in
-// docs/PROTOCOL.md or a page in docs/protocol/.
+// TestDocsEveryMethodHasAHome: each method of server.capabilities has a heading or a
+// first table cell in docs/PROTOCOL.md, or a page in docs/protocol/.
 func TestDocsEveryMethodHasAHome(t *testing.T) {
 	named := map[string]bool{}
 	for _, line := range strings.Split(docRead(t, "docs", "PROTOCOL.md"), "\n") {
