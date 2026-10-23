@@ -2,7 +2,7 @@
 
 `process.killAndWait` sends a signal to a child process and waits for the process to end. If the process does not end in time, the daemon can end it by force. The result says what happened.
 
-A rule on this page that is not marked "claustrum's own" or "not measured" follows the reference build `5fd08069`.
+An unmarked rule on this page matches the reference as measured on `5fd08069` or on an earlier build.
 
 ## Request
 

@@ -2,7 +2,7 @@
 
 `process.stdin` sends bytes to the standard input of a child process that `process.spawn` started. With `offset`, a caller can send the same bytes again after a reconnect, and the daemon accepts them one time.
 
-A rule on this page that is not marked "claustrum's own" or "not measured" follows the reference build `5fd08069`.
+An unmarked rule on this page matches the reference as measured on `5fd08069` or on an earlier build.
 
 ## Request
 

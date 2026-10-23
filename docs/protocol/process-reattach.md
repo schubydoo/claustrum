@@ -2,7 +2,7 @@
 
 `process.reattach` moves the output stream of a child process to the connection that sends the request. A client uses it to continue a session after a reconnect. The daemon sends the stored output frames that the client missed, and then the result.
 
-A rule on this page that is not marked "claustrum's own" or "not measured" follows the reference build `5fd08069`.
+An unmarked rule on this page matches the reference as measured on `5fd08069` or on an earlier build.
 
 ## Request
 

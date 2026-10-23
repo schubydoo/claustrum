@@ -2,7 +2,7 @@
 
 `files.validate` says whether a path exists and whether it is a directory. It reports a path that the daemon cannot examine in the response, not as a JSON-RPC error.
 
-A rule on this page that is not marked "claustrum's own" or "not measured" follows the reference build `5fd08069`.
+An unmarked rule on this page matches the reference as measured on `5fd08069` or on an earlier build.
 
 ## Request
 

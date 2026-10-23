@@ -2,7 +2,7 @@
 
 `plugins.prune` deletes the cached plugin directories that no session used for some days. The directories are under the plugin roots of the daemon. The caller cannot name a path.
 
-A rule on this page that is not marked "claustrum's own" or "not measured" follows the reference build `5fd08069`.
+An unmarked rule on this page matches the reference as measured on `5fd08069` or on an earlier build.
 
 ## Request
 

@@ -2,7 +2,7 @@
 
 `process.kill` sends a signal to a child process that `process.spawn` started. It answers at once and does not wait for the process to end. To wait for the end, use [process.killAndWait](process-killandwait.md).
 
-A rule on this page that is not marked "claustrum's own" or "not measured" follows the reference build `89cb6289`, and the rules for Windows children that outlive the daemon follow `f6010b97` too.
+An unmarked rule on this page matches the reference as measured on `89cb6289`, and on `f6010b97` too for Windows children that outlive the daemon.
 
 ## Request
 
