@@ -38,17 +38,17 @@ in-progress commit, run `git commit --no-verify`.
   wire surface two ways. The unit tests cover frame encoding, dispatch, auth and
   error routing, the replay buffer, env merging, and the `-install` pipeline. The
   socket-integration suite boots the daemon and asserts every method's frames
-  against golden fixtures in `testdata/`. CI gates the in-repo suite on every PR. The
-  cross-binary validation battery diffs frames against the reference daemon. It
-  lives in the gitignored `scratch/` tree. See Compatibility below.
+  against golden fixtures in `testdata/`. CI gates the in-repo suite on every PR. See
+  Compatibility below.
 
   Add tests for new or changed behavior in the same PR. CI enforces this with
   a 95% statement-coverage floor. The `coverage` job in
   `.github/workflows/ci.yml` holds that floor. The suite currently sits near
   99%, so an untested change shows up as a drop.
 - Compatibility. If you touch the wire surface (`rpc.go`, `methods_*.go`,
-  `process.go`, `results.go`), re-run the validation battery in `scratch/`.
-  Make sure that the frames stay byte-identical. A change that diverges on
+  `process.go`, `results.go`), the frames must stay byte-identical. A golden
+  fixture (`testdata/socket_*.golden.json`) changes only for a new reference
+  frame or a documented divergence. A change that diverges on
   purpose must say so in the PR. It must add an entry to the divergence catalog
   in [docs/DIVERGENCES.md](docs/DIVERGENCES.md). It must record its wire frames
   in [docs/PROTOCOL.md](docs/PROTOCOL.md), or in the page of its method under

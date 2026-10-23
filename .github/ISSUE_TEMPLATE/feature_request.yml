@@ -5,11 +5,14 @@ body:
   - type: markdown
     attributes:
       value: >
-        Thanks for the idea! Note claustrum's one hard rule: it stays
+        Note claustrum's one hard rule: it stays
         **byte-identical to the reference daemon's JSON-RPC frames**. Changes to
         the wire surface (methods, params, result field order, error codes, frame
-        shape) need a deliberate, documented protocol decision — see
-        [docs/PROTOCOL.md](https://github.com/schubydoo/claustrum/blob/main/docs/PROTOCOL.md).
+        shape) need a deliberate, documented decision: an entry in
+        [docs/DIVERGENCES.md](https://github.com/schubydoo/claustrum/blob/main/docs/DIVERGENCES.md)
+        and the frames in
+        [docs/PROTOCOL.md](https://github.com/schubydoo/claustrum/blob/main/docs/PROTOCOL.md)
+        or on the page of the method.
   - type: textarea
     id: problem
     attributes:
@@ -29,8 +32,8 @@ body:
     attributes:
       label: Does this affect the JSON-RPC wire surface?
       options:
-        - "No — additive / tooling / docs only"
-        - "Yes — touches methods, params, results, or frames"
+        - "No: additive / tooling / docs only"
+        - "Yes: touches methods, params, results, or frames"
         - "Not sure"
     validations:
       required: true
