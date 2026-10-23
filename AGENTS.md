@@ -184,7 +184,8 @@ Every OS serves the same JSON-RPC methods. Full internals →
       the repository and a copy folder that cannot be made, as on `5fd08069`.
       On Windows a junction at any directory between `baseRepo` and the leaf is
       refused too. At a junction at `.claude` or `.claude\worktrees`,
-      `89cb6289` answers success and deletes the branch. At a junction above
+      `89cb6289` answers success and deletes the branch, for a branch that
+      another ref reaches. At a junction above
       `.claude`, it answers success with no leaf and no branch there. That is
       D19, widened by the maintainer's decision of 2026-10-07. The containment
       of the reference refuses a home path first: `worktreePath` must be
@@ -193,8 +194,9 @@ Every OS serves the same JSON-RPC methods. Full internals →
       ancestor of home. On the `worktreeRoot` branch that in-repo containment
       does not apply, so there `wipesHomeDir` is the active home guard. Both
       branches run it before the delete. With `worktreeRoot`, the location
-      refusals delete nothing, as on `5fd08069`. They refuse a reserved name,
-      a location that holds the repository, a link and a loop.
+      refusals delete nothing, as on `5fd08069`. They refuse a reserved name, a
+      root that holds or leads into the repository, a root inside a worktree of
+      it, a root that resolves to `/`, and a link loop.
     - When `git.worktree_create` rolls back a worktree, it deletes
       `worktreePath`. There are two rollbacks. After a failed `git worktree
       add`, it runs no git call and removes the leaf only if the leaf is an
@@ -203,12 +205,13 @@ Every OS serves the same JSON-RPC methods. Full internals →
       common git directory of `baseRepo`, as `5fd08069` does. A stale entry is
       one whose `gitdir` record names the `.git` of the new leaf. Create
       removes that entry only if it is the one stale entry with no `locked`
-      file, as `89cb6289` and `5fd08069` do. The delete is one
+      file, as `89cb6289` does on Linux and macOS and `5fd08069` on Windows. The delete is one
       `os.Root.RemoveAll`, after `wipesHomeDir` on the entry path. It goes
       through a root at that folder. When a Windows create holds the git
       directory, it goes through the held folder. On Windows the step runs after `rev-parse
-      --absolute-git-dir`. With `"shadowDirOff":true` it deletes nothing behind
-      a junction or a directory symbolic link at that folder. Its compare
+      --absolute-git-dir`. It deletes nothing behind a junction or a directory
+      symbolic link at that folder (`5fd08069` with `"shadowDirOff":true`,
+      claustrum's own in the state `shadow`). Its compare
       ignores letter case, as on `5fd08069`. A create that holds no git
       directory is not measured there. An entry whose record names a path that
       exists stays (D27, Windows).
@@ -241,7 +244,7 @@ Every OS serves the same JSON-RPC methods. Full internals →
       `5fd08069`. In the state `shadow` these refuse too: over 64 filter
       names, and a last listing that fails or runs at 30 s and does not exit 0.
       So does a first checkout listing that failed or that its 30 s limit
-      stopped.
+      stopped, as on `5fd08069` (Linux and Windows VMs).
       The rollback deletes the entries of the leaf in the order that the
       directory read returns them, and it stops at the first failure. Then it
       deletes the registration, runs the branch step on the created branch, and
@@ -408,7 +411,8 @@ Every OS serves the same JSON-RPC methods. Full internals →
   operator. The deletes are these:
     - The test folder `.check-<n>`, after each start test, also a failed one.
     - The folder of the daemon, with each folder of a repository in it. It goes
-      at shutdown (`closeAll`), after the lock file is closed. It also goes
+      at shutdown (`shadowHost.close`, from `closeAll`), after its own lock file
+      is closed. It also goes
       right after a lock step that failed. The empty `git-shadow` stays.
       `5fd08069` removes the folder at `-stop` and at `server.shutdown` (Linux,
       macOS and Windows VMs).
@@ -634,8 +638,9 @@ leader again. See the entry.
 D22 is on-wire and always-on. `git.worktree_remove` refuses a worktree that is
 locked in the `.git` folder of `baseRepo`. `89cb6289` answers success in four
 such states, and with `worktreeRoot` the frame differs in three more. That is
-the maintainer's decision of 2026-10-03. The one exception is in Part A: a gone
-worktree behind a linked `<git dir>/worktrees`. See the entry.
+the maintainer's decision of 2026-10-03. The one exception is in Part A: on Linux
+and macOS, a gone worktree whose locked entry sits behind a linked
+`<git dir>/worktrees`. See the entry.
 
 D23, Windows only: a child gets its environment block in name order, because
 Go 1.26 sorts it and the reference builds use go1.25.14. The entry retires when the reference moves to Go 1.26 or newer.
