@@ -554,7 +554,7 @@ any write. macOS and Windows re-exec `os.Args[0]` instead (not measured). The
 launcher creates a missing socket folder with mode `0700`. It sends the stdout and
 stderr of the daemon to the [daemon log](#daemon-log-remote-serverlog).
 
-##### The launcher wait
+#### The launcher wait
 
 The launcher connects to the socket path every 50 ms, for 12 s at most. It closes
 each connection at once, so the log of the daemon that answers holds a
@@ -584,7 +584,7 @@ A restart on a live socket unlinks the old socket and binds a new one. This is o
 the JSON-RPC wire. The departing daemon's matching half is the inode-ownership
 unlink under [Token persistence](#token-persistence-daemontoken).
 
-##### The bind after the reap (Linux and macOS)
+#### The bind after the reap (Linux and macOS)
 
 The daemon takes these steps in order. It claims `daemon.lock` and reaps the
 recorded children of a dead daemon. Then it removes the old socket file, binds,
@@ -599,7 +599,7 @@ reap itself.
 On Windows the daemon also removes the old socket file before it binds. It runs no
 reap there.
 
-##### The job of the launcher (Windows)
+#### The job of the launcher (Windows)
 
 On Windows the launcher starts the daemon outside the job of the launcher
 (`CREATE_BREAKAWAY_FROM_JOB`). So the daemon stays alive after an SSH session whose
@@ -679,8 +679,10 @@ The launcher creates `remote-server.log` in the socket's directory with mode
 no fresh file (see below). This matches `4534d86`, which
 keeps the previous session's log as `.old` on every restart. The launcher
 redirects the daemonized child's stdout and stderr into that file, so the
-launcher's own streams stay empty, except in the cases under
-[Daemon startup](#daemon-startup-serve). On Linux and macOS, when the limit raise
+launcher's own streams stay empty, except for the launcher's own failures. Those
+are under [Daemon startup](#daemon-startup-serve) and
+[The token source](#the-token-source), and a log that cannot be created gives
+`claustrum: open log: <err>`. On Linux and macOS, when the limit raise
 works, the first line tells the open-files limit that `process.spawn` children
 get. This line is at INFO level, so `CLAUSTRUM_LOG_LEVEL=warn` drops it. The
 ready banner follows, with no timestamp:
@@ -3425,9 +3427,10 @@ The binary self-daemonizes. It re-execs itself as a detached process, which
 reparents to init, and that process runs the RPC server.
 [Daemon startup](#daemon-startup-serve) has what the start does, the ready line,
 and the exit codes and texts of the launcher. Unless a rule here says otherwise,
-it is measured against `89cb6289` on Linux and macOS VMs.
+it is measured against `89cb6289` on Linux and macOS VMs. The flags under
+[Flags of claustrum alone](#flags-of-claustrum-alone) have no reference run.
 
-##### The token source
+#### The token source
 
 A token source is required. The detached daemon tests for it, not the launcher.
 The daemon writes its reason to its own stderr, which is the
@@ -3454,7 +3457,7 @@ The daemon writes its reason to its own stderr, which is the
   `claustrum: read --token-file: open : <err>`, and the launcher gives up at 12 s
   (from the code).
 
-##### The login-shell PATH (Linux and macOS)
+#### The login-shell PATH (Linux and macOS)
 
 The daemon runs no login shell at its start. The first `process.spawn` reads the
 login-shell PATH, and that spawn waits for the read. The daemon keeps the result
@@ -3486,7 +3489,7 @@ entries is not measured. A daemon that has a `TERM`, or that has no `HOME`, `PAT
 or `USER`, is not measured either. The shell of the SSH agent read gets another
 environment.
 
-##### The re-exec marker
+#### The re-exec marker
 
 The re-exec marker is `CLAUSTRUM_DAEMON_CHILD`, not the reference's
 `CLAUDE_SSH_DAEMON_CHILD`. [ARCHITECTURE.md](ARCHITECTURE.md) has the reason.
@@ -3494,7 +3497,7 @@ claustrum unsets its own marker before it spawns. The daemon still sets
 `CLAUDE_SSH_DAEMON_CHILD=1` in its environment, so `process.spawn` children
 inherit it as on the reference.
 
-##### Flags of claustrum alone
+#### Flags of claustrum alone
 
 These flags are off the wire. `-keep-children` and `-listen-pipe` have an entry in
 [`DIVERGENCES.md`](DIVERGENCES.md). `-metrics-addr` and `-wire-log` have none, and
@@ -3533,7 +3536,7 @@ this section holds their detail:
   reaches EOF, and a stdout or stderr write gets SIGPIPE, or EPIPE for a child that
   ignores SIGPIPE, such as Node. It therefore suits only children that tolerate
   dead stdio. On Windows the flag keeps the whole tree alive after `-stop` and
-  after `server.shutdown`, the direct child too. The stdio of a survivor is not
+  after `server.shutdown`, the direct child too (Windows VM). The stdio of a survivor is not
   measured there. The reference has no such flag, and `89cb6289` exits `2` on it.
 - `-listen-pipe` is CT-5 and Windows-only. See [Named-pipe
   transport](#named-pipe-transport-windows-opt-in). The daemon logs a setup failure
