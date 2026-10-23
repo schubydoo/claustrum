@@ -1,8 +1,8 @@
 site_name: claustrum
 site_description: >-
   A tiny, dependency-light Go daemon that hosts a remote Claude Code session
-  over SSH: a CLI-version manager, a process supervisor, and a JSON-RPC multiplexer
-  over an AF_UNIX socket.
+  over SSH: a CLI-version manager, a process supervisor, and a JSON-RPC
+  multiplexer over an AF_UNIX socket.
 site_url: https://schubydoo.github.io/claustrum/
 site_author: Schuby
 

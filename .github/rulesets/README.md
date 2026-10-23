@@ -6,7 +6,7 @@ file maps to one GitHub ruleset:
 - `main.json` → ruleset `main` (branch). It protects the default branch. There
   is no deletion, no force-push, and linear history. Changes land through
   squash-only PRs with all review threads resolved. Three required checks must
-  pass (listed below). They are `strict`, so the branch must be up to date
+  pass (listed under Bootstrap order). They are `strict`, so the branch must be up to date
   first.
 - `tags.json` → ruleset `protect-version-tags` (tag). It makes `v*` release
   tags immutable: no deletion, no force-update.

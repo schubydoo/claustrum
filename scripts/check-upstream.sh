@@ -1,9 +1,10 @@
 #!/usr/bin/env bash
 # check-upstream.sh — detect drift between claustrum and a reference claude-ssh
-# build, identified by git SHA. It diffs method names, CLI flags, -version
-# format, and the app-facing string set. It starts no daemon, but it runs the
-# downloaded reference binary with -help and -version. Run it in CI or on a
-# disposable VM only, never on a host where a claustrum daemon serves.
+# build, identified by git SHA. It diffs method names, CLI flags and the
+# app-facing string set, and it prints the -version shape of both binaries for a
+# person to compare. It starts no daemon, but it executes the downloaded
+# reference binary (-help, -version), so run it in CI or on a disposable VM,
+# never on a host you care about.
 #
 # Usage:  scripts/check-upstream.sh [<sha>]
 #   <sha>  reference build SHA. Defaults to scripts/UPSTREAM_SHA.
