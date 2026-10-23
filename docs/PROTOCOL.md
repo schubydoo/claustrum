@@ -2220,7 +2220,8 @@ sharing.
   `.gitdir-<n>` for a `git.status`, and `.index-<n>` and `.worktreeinclude-<n>` for a
   create. Also `.config-<n>` for a create in a repository with a `config.worktree`
   file, and `.s<n>` on Windows. In the state `fallback-git` the first three are there
-  too. For `.worktreeinclude-<n>` that is not measured. With
+  too (`.gitdir-<n>` on Linux and macOS, `.index-<n>` on Windows). For
+  `.worktreeinclude-<n>` that is not measured. With
   `"shadowDirOff":true` the first three are in the temporary folder, as
   `claude-ssh-gitdir-<n>`, `claude-ssh-index-<n>` and
   `claude-ssh-worktreeinclude-<n>`.
@@ -2261,8 +2262,10 @@ held, a request gets this text and nothing goes:
 
 A folder goes between the git calls of a request, never during one. The next call
 makes it again, with no new config read. A call right after its own config listing
-does not. A call whose remake fails gets the `cannot write its copy` text above. A
-config listing holds its folder while it waits for its pipes. So with all 128 held,
+does not (claustrum's own, not measured). A call whose remake fails gets the `cannot
+write its copy` text above, or the 128 text when all 128 folders are held (from the
+code). A config listing holds its folder while it waits for its pipes (claustrum's
+own, not measured). So with all 128 held,
 a new repository gets the 128 text then, and nothing goes. If its folder went and is
 not made again, or its daemon shut down, a call fails alone (from the code). It gets
 this text, and a listing puts `listing the configuration in
