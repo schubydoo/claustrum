@@ -559,8 +559,10 @@ stderr of the daemon to the [daemon log](#daemon-log-remote-serverlog).
 The launcher connects to the socket path every 50 ms, for 12 s at most. It closes
 each connection at once, so the log of the daemon that answers holds a
 `New connection from: @` / `Connection closed: @` pair. A socket file that refuses
-the connect does not end the wait. A killed daemon leaves such a file. A folder at
-the path does not end the wait either.
+the connect does not end the wait. A killed daemon leaves such a file. A folder
+that holds an entry at the path does not end the wait either. The daemon cannot
+remove it, so it never binds (Linux and Windows VMs). An empty folder there is
+removed as an old socket file is (from the code, not measured).
 
 - The predecessor is the daemon that answered on the path before the start. On
   Linux and macOS, a daemon that answers and is not the predecessor ends the wait
@@ -573,9 +575,10 @@ the path does not end the wait either.
   other wait gives `claustrum: timeout waiting for daemon to accept on <socket>`.
 
 After exit `0` the socket accepts connections. The launcher prints nothing on
-success. The daemon prints its ready line
-`Claustrum remote server listening on <socket> (pid <pid>, instance <32-hex>)` on
-its own stdout, so the line goes to the daemon log.
+success, except the Windows breakaway line below. The daemon prints its
+[ready line](#daemon-log-remote-serverlog) on its own stdout, which is the daemon
+log. When the launcher opens no log, the daemon keeps the stdout of the launcher,
+so the line goes there (from the code).
 
 A restart on a live socket unlinks the old socket and binds a new one. This is off
 the JSON-RPC wire. The departing daemon's matching half is the inode-ownership
@@ -592,6 +595,9 @@ it gets `ENOENT`. A recorded child
 that ignores `SIGTERM` makes the wait about 2 s. See
 [Child records and the reap](#child-records-and-the-reap-linux-and-macos) for the
 reap itself.
+
+On Windows the daemon also removes the old socket file before it binds. It runs no
+reap there.
 
 ##### The job of the launcher (Windows)
 
@@ -3424,22 +3430,24 @@ it is measured against `89cb6289` on Linux and macOS VMs.
 
 A token source is required. The detached daemon tests for it, not the launcher.
 The daemon writes its reason to its own stderr, which is the
-[daemon log](#daemon-log-remote-serverlog), and exits. The launcher then reports
-`claustrum: timeout waiting for daemon to accept on <socket>` after 12 s, with exit
-`1`. This is deliberate parity.
+[daemon log](#daemon-log-remote-serverlog), and exits. The launcher then gives up at
+12 s, as under [The launcher wait](#the-launcher-wait). This is deliberate parity.
 
 - With neither flag the reason is
   `claustrum: daemonized child requires --token-file or --token-fd`. That case is
   not measured on `89cb6289`.
 - A zero-byte `-token-file` behaves the same way.
-- A `-token-file` that cannot be read gives `claustrum: read --token-file: <err>`.
+- A `-token-file` that cannot be read gives `claustrum: read --token-file: <err>`
+  (from the code).
 - The daemon reads the token as a line. It strips one trailing `\n` or `\r\n`, and
   preserves other surrounding whitespace verbatim. It then removes the
-  `-token-file`.
+  `-token-file`, as under [Authentication](#authentication).
 - `-token-fd <n>` is claustrum-only. The launcher reads the token from an
   already-open fd, where `0` is stdin, and forwards it to the daemon over an
   inherited pipe. So this handoff never touches disk. A failed read there gives
   `claustrum: read --token-fd: <err>` on the stderr of the launcher, with exit `1`
+  (from the code). An empty token there is no read failure. The daemon then logs
+  `claustrum: read --token-file: open : <err>`, and the launcher gives up at 12 s
   (from the code).
 
 ##### The login-shell PATH (Linux and macOS)
@@ -3463,8 +3471,7 @@ daemon's own PATH and runs no shell (from the code). See
   pipe of the shell. The daemon sends that process no signal. claustrum closes its
   end of the pipe two caps after the shell ended (claustrum's own, not measured).
 - The [SSH agent hand-off](protocol/process-spawn.md#the-ssh-agent-hand-off-linux-and-macos)
-  runs the login shell again, with its own cap of 4 s. So a login shell that hangs
-  delays the first spawn by about 8 s. A later spawn answers at once.
+  can run the login shell a second time at the first spawn.
 
 The shell of the PATH read gets seven entries. Five come from the daemon: `HOME`,
 `PATH`, `SHELL`, `TERM` and `USER`. A name that the daemon does not have gets an

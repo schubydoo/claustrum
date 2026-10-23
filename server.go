@@ -871,8 +871,8 @@ var daemonPeerPID = connPeerPID
 // closed at once. So the log of the daemon that answered holds a
 // "New connection from: @" / "Connection closed: @" pair from the launcher.
 //
-// A socket file that does not accept yet, a folder at the path and a stale socket
-// file do not end the wait. On 5fd08069 a client connect right after the launcher
+// A socket file that does not accept yet, a folder with content at the path and a
+// stale socket file do not end the wait. On 5fd08069 a client connect right after the launcher
 // exit worked when the listen was late, and the launcher timed out with a folder
 // with a file at the path (round task006-01, cells C7b and C9n, Linux VM).
 //
