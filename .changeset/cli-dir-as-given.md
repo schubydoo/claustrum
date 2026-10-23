@@ -2,4 +2,4 @@
 default: patch
 ---
 
-On Linux and macOS `-install` makes the folders of the `-cli-dir` text as given, so `-cli-dir D/sub/..` makes `D/sub` as `5fd08069` does (round `tier3-01`, Linux and macOS VMs). If that folder step fails, the facts line has an empty `cliPath` and the mkdir error as `cliError`.
+`-install` now replaces a regular file, a symlink to a regular file or a FIFO at the `-cli-dir` path, and removes a regular file named `ccd-cli-version` beside the cli-dir. On Linux and macOS it makes the folders of `-cli-dir` as given, so `D/sub/..` makes `D/sub`.

@@ -2,4 +2,4 @@
 default: patch
 ---
 
-With `worktreeRoot`, `git.worktree_create` and `git.worktree_remove` refuse reserved names, a repository in the per-repository folder, its git directory, its listed worktrees, long link chains and links to `/`, and delete nothing. Create also refuses session folders.
+With `worktreeRoot`, the worktree methods now refuse unsafe locations and delete nothing there: the file system root, reserved names, repository folders, long link chains, and a relative or missing `baseRepo`. On Linux and macOS create also refuses a root below a folder that a user other than you or root owns, or that a group other than your own private group, or every user, can write without the sticky bit.

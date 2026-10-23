@@ -2,4 +2,4 @@
 default: patch
 ---
 
-On Linux and macOS, an existing worktree's remove deletes nothing behind a linked `.git/worktrees`, and a gone one there loses its branch. A create refuses a linked or unlistable one, and goes on when a real copy replaces `.git` mid-add.
+On Linux and macOS a remove of an existing worktree deletes nothing behind a linked `.git/worktrees`, and the remove of a gone one there deletes its branch. A create refuses a linked or unlistable `.git/worktrees`.

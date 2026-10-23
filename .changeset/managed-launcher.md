@@ -2,4 +2,4 @@
 default: minor
 ---
 
-Adds the `89cb6289` managed launcher: `launcher.resolve`, the `process.spawn` `launcher` param (claustrum ignored it before), a child env strip, and launcher runs in `-install` and `-probe-cli`.
+Adds the managed launcher: `launcher.resolve`, the `launcher` param of `process.spawn` with a child environment strip, and launcher runs of `-install` and `-probe-cli` with `CLAUDE_SSH_MANAGED_LAUNCHER=1`. There `-install` on Linux replaces a cached CLI file that is no program.

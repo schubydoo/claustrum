@@ -1,5 +1,5 @@
 ---
-default: patch
+default: minor
 ---
 
-`files.extract_tar` follows `5fd08069`. On Linux and macOS the execute bit of the owner arrives as mode `0700`. A name that leaves `destDir` and comes back is refused, and the entry `error` texts changed. `server.capabilities` lists `files.extract_tar.execBit`.
+`files.extract_tar` now gives a file with the owner's execute bit mode `0700` on Linux and macOS, also refuses the home folder by another spelling such as a link, refuses a name that leaves `destDir` and comes back, and uses the reference error texts. `server.capabilities` lists `files.extract_tar.execBit`.
