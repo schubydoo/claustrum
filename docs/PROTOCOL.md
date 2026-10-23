@@ -210,7 +210,8 @@ is measured against `5fd08069` on a Linux VM, and not on macOS. The file
 
 A prior live daemon of the same socket can hold the lock. The new daemon then
 sends it `SIGTERM` and tries the lock every 50 ms for 2 s. If the lock is still
-held, it tests the holder again and sends `SIGKILL`. Then it tries the lock for
+held, it tests the holder again and sends `SIGKILL` (that test is measured
+against `4534d86`). Then it tries the lock for
 1 s more (claustrum's own value). It waits on the lock, not on the pid. On Linux
 both signals go through one `pidfd_open` descriptor with `pidfd_send_signal`.
 claustrum uses `kill` on macOS, and the call of the reference there is not
@@ -223,14 +224,15 @@ holder with the full record, and `pid <n>` for a holder with the short record.
 [daemon] serve: run dir is held by a live daemon, <who>; sending SIGTERM
 [daemon] serve: previous daemon <who> exited after SIGTERM
 [daemon] serve: WARNING previous daemon <who> ignored SIGTERM for 2s; sending SIGKILL (its Claude Code children, if any, are ended next, before this daemon serves)
-[daemon] serve: previous owner of <dir>: terminated
 [daemon] serve: previous owner of <dir>: killed
 ```
 
 The first two lines, in the `pid <n>` form, are measured on a macOS VM too.
 
-The summary line ends in `terminated` after a `SIGTERM` and in `killed` after a
-`SIGKILL`. A holder that the `SIGKILL` stopped gets no "exited" line.
+The summary line ends in `terminated` after a `SIGTERM`, in `killed` after a
+`SIGKILL`, and in `survivor` for a holder that stays (`4534d86`). The
+`terminated` line is `[daemon] serve: previous owner of <dir>: terminated`
+(`4534d86`). A holder that the `SIGKILL` stopped gets no "exited" line.
 
 A signal can reach a daemon during its own start, for example from a second
 daemon or from `-stop`. The rules of this paragraph are measured on a Linux VM.
@@ -249,14 +251,22 @@ that sent `SIGKILL` to a first one during its start takes the lock and serves
 with its full record.
 
 The eviction fires only against a holder that is one of our own `-serve`
-daemons for this socket, on this machine. In each other case the daemon
-signals nothing and serves without the lock. It logs a refusal line and, except
-for an unusable record, the summary
-`[daemon] serve: previous owner of <dir>: survivor`. For these refusals the word
-`survivor` is claustrum's own, not measured. claustrum refuses a holder on
-another machine or container that shares the folder. It also refuses a holder
+daemons for this socket, on this machine. If the first test of the holder fails,
+the daemon signals nothing and serves without the lock. It logs a refusal line
+and, except for an unusable record, the summary
+`[daemon] serve: previous owner of <dir>: survivor`. claustrum refuses a holder
+on another machine or container that shares the folder. It also refuses a holder
 with an unknown machine identity, and a holder that is not its serve process for
-this socket. The text of that refusal line is claustrum's own. A holder that survives `SIGKILL` stays too, with the same summary.
+this socket. For the three refusals above the word `survivor` is claustrum's
+own, not measured. The text of that refusal line is claustrum's own too. A
+holder that survives `SIGKILL` stays, with the same summary (from the code, not
+measured).
+
+If the second test of the holder fails, right before the `SIGKILL`, the daemon
+treats the holder as gone. It logs
+`[daemon] serve: pid <n> is no longer our serve holder before SIGKILL (<reason>); treating the previous daemon as gone`
+and the summary `terminated`, and then tries the lock once more. Normally it
+then serves with the lock.
 
 A holder whose record has the role `stop` gets no signal. The daemon tries the
 lock every 50 ms for 2 s. Then it logs this line and serves without the lock
