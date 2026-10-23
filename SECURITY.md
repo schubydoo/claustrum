@@ -35,7 +35,7 @@ daemon now refuses a launcher that fails its checks, and it refuses every launch
 on Windows. The daemon does not enforce the launcher. A spawn without the param
 runs the command directly. The param gives a caller no power that the socket and
 token did not already give. See
-[`docs/PROTOCOL.md`](docs/PROTOCOL.md) → process.spawn and
+[process.spawn](docs/protocol/process-spawn.md#the-managed-launcher) and
 [launcher.resolve](docs/protocol/launcher-resolve.md).
 
 ### Auth & tokens

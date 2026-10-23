@@ -97,6 +97,7 @@ nav:
       - git.worktree_create: protocol/git-worktree-create.md
       - git.worktree_remove: protocol/git-worktree-remove.md
       - launcher.resolve: protocol/launcher-resolve.md
+      - process.spawn: protocol/process-spawn.md
       - process.stdin: protocol/process-stdin.md
       - process.kill: protocol/process-kill.md
       - process.killAndWait: protocol/process-killandwait.md
