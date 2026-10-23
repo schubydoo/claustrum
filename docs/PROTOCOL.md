@@ -576,7 +576,7 @@ D1a). It got `ENOENT` when no socket file was there (row D1b). Linux and macOS V
 measured both against `89cb6289`. The first connection worked 2.2 to 2.4 s after
 the start. With nothing to reap, the first connection
 worked 0.1 to 0.24 s after the start (row D2). See
-[process.spawn](#processspawn) for the reap itself.
+[Child records and the reap](#child-records-and-the-reap-linux-and-macos) for the reap itself.
 
 On a timeout the launcher prints
 `claustrum: timeout waiting for daemon to accept on <socket>` to stderr and
@@ -615,6 +615,46 @@ printed this text after a time stamp, and claustrum puts its level tag before it
 ```
 [daemon] detached spawn failed (fork/exec <binary>: Access is denied.); retrying without breakaway
 ```
+
+#### Child records and the reap (Linux and macOS)
+
+A daemon that holds the [run-dir lock](#run-dir-lock-daemonlock) records each [process.spawn](protocol/process-spawn.md) child in `<run dir>/children/<pid>.json`, on every socket shape. That is `19f30c46` parity. The run dir is the folder of the socket path. The child needs a pid of 2 or more and a start time that the daemon can read. Windows writes no record and reaps none (Windows VM). Unless a rule says otherwise, the rules below are measured against `89cb6289` on Linux, and a rule that names macOS on macOS.
+
+The record is one JSON object with the members in this order:
+
+```json
+{"pid":<int>,"node":"<boot-id>/pid:[<inode>]","host":"machine-id:<hex>","instance":"<daemon instance id>","daemonPid":<int>,"daemonStart":"<start>","argv0":"<child argv0>","start":"<start>","at":<epoch-ms>}
+```
+
+`daemonStart` and `start` are strings. They hold clock ticks on Linux and the date text of `CLAUDE_SSH_CHILD` on macOS. On macOS the node is the boot-session UUID, and the host is the hostname. With a `launcher`, `argv0` is the launcher, and a `program` member after `argv0` holds the command. claustrum writes no `program` without a launcher (not measured on the reference).
+
+- The daemon writes a record through a temp file `children/.rec-<pid>.json.<12 characters>` and a rename. The source of the 12 characters is claustrum's own.
+- The end of the child removes its record, before the pipe drain.
+- A graceful shutdown removes the records of the children that it ends. claustrum waits 1 s at most for them (claustrum's own). With `-keep-children` it removes the records of the children that stay alive, so the next daemon leaves them alone. That rule is claustrum's own, as the flag is.
+- A record stays after a kill of the daemon, and for a process whose `id` a later spawn took.
+- After a rename of the run dir, a record goes under the new name. The daemon holds the run dir open.
+- No record goes through a `children` that is not a real folder inside the run dir. The remove at the end of the child is the one exception: it follows a symbolic link to a folder inside the run dir.
+
+At a `-serve` start, after the run-dir lock and before the bind, the daemon reads the records:
+
+- It walks `children` in directory order and handles the first 128 names that end in `.json`. The rest wait for the next start. Kept records count toward the 128. So 128 records of another machine, which stay for 30 days, stop every reap, and an orphan behind them stays alive.
+- It sends `SIGTERM` to 64 groups at most. The others keep their records for the next start.
+- Only a regular file is a record. A link, a FIFO or an empty folder with a `.json` name is removed, with no signal. The target of a link stays. A folder with content stays (from the code).
+- It reads at most 4096 bytes of a record. A record whose first 4096 bytes are not one JSON value is removed, with no signal.
+- If `children` is not a real folder, it reads, signals and removes nothing. That is measured for a symbolic link to a folder. The other kinds are claustrum's own.
+
+A record of a daemon that is alive stays. So does a record from another machine, for 30 days (from the code). A record of a dead pid is removed. So is a record from an earlier boot of this machine (from the code). For a record of a dead daemon on this machine, the daemon tests the process. If it still is the recorded child, its group gets `SIGTERM`. Else the record goes with no signal. The test has four parts:
+
+- The process started at the recorded `start`, so the pid is not reused. On macOS a `start` with two blanks before a one-digit day does not match.
+- It leads its own process group.
+- It runs `argv0`. With a `program` member, it can also run `program`, or hold `program` as one whole argument. On Linux the program is the first argument of `/proc/<pid>/cmdline`, and a name with the same last path component matches. On macOS the daemon reads the command text of `ps`, which cuts words at blanks. So a `program` with a blank never matches an argument there.
+- `CLAUDE_SSH_RUN_DIR` names this run dir, and `CLAUDE_SSH_CHILD` names the pid and start of the process itself.
+
+A process that the daemon cannot inspect keeps its record and gets no signal (`5fd08069`, from the code). The daemon does not test the owner of a record file.
+
+On macOS a `daemonStart` with two blanks before a one-digit day does not match the live daemon either. An older claustrum build wrote such a text on days 1 to 9 of a month. A new daemon on macOS reads such a daemon as gone, although it is alive. It ends a recorded child whose own `start` matches, such as one that started on day 10 or later. A child that started on days 1 to 9 has two blanks in its `start` too, so its record is dropped with no signal.
+
+After the `SIGTERM` the daemon polls for 2 s. At each poll a group takes the whole test again. A group that fails it gets nothing more. A group that still passes after 2 s gets `SIGKILL`. After the last group is done, the records of all signalled groups go together. A leader that reads as gone is read again after 50 ms before the `SIGKILL` of its group ([D20](DIVERGENCES.md#d20)). A group that still cannot be inspected at the end, or that outlives the `SIGKILL`, keeps its record. The [log lines](#lines-of-child-processes) of the reap are under the daemon log.
 
 ### Idle-connection close
 
@@ -715,6 +755,43 @@ claustrum does not remove the log on graceful shutdown. This differs from the
 socket and from `daemon.token`. The log outlives the daemon, so a post-mortem
 stays readable. The fixed name and location are the deployment contract, and they
 are not configurable.
+
+#### Lines of child processes
+
+These lines tell of [process.spawn](protocol/process-spawn.md) children and of their [records and the reap](#child-records-and-the-reap-linux-and-macos). claustrum prints a level tag before each line. The reference prints none. The levels are claustrum's own, and `CLAUSTRUM_LOG_LEVEL=warn` drops the INFO lines. Unless a row says otherwise, each text is the text of `89cb6289`, measured on Linux. The group-ended, outlived and dropped-record lines are measured on macOS too.
+
+| Event | Level | Line |
+|---|---|---|
+| A start | INFO | `[process.Manager] Process <id> started, PID=<n>, command=<command>` (from the code). With a launcher, ` via launcher <argv0>` follows. |
+| A failed start | ERROR | `[process.Manager] Failed to start process <id>: <message>`, with the text of the error frame |
+| An exit | INFO | `[process.Manager] Process <id> exited with code <n>`, then `, terminated by <signal>` for a signal and `, signalled at client request` or `, signalled at shutdown request` for a kill by the daemon |
+| The drain limit | WARN | `[process.Manager] Process <id>: pipe drain grace expired (grandchild holding stdio?); force-closing` |
+| A supersede | INFO | `[process.Manager] process <new id> supersedes <old id> for session <key>: died=<bool> escalated=<bool> alreadyExited=<bool>` (from the code), after the exit line of the old process |
+| `children` not a folder | ERROR | `[process.Registry] <run dir>/children is not a directory; recording nothing`, or `reaping nothing` at a start |
+| A record write fails | ERROR | `[process.Registry] cannot record child <pid>: <error>` |
+| A record remove fails | WARN | `[process.Registry] cannot remove record of child <pid>: <error>` |
+| Over 128 records | WARN | `[process.Registry] more than 128 records in <run dir>/children; leaving the rest for the next start` |
+| Over 64 groups | WARN | `[process.Registry] <n> more orphaned group(s) recorded in <run dir>/children than the 64 one start ends; leaving those for the next start` |
+| A record dropped | INFO | `[process.Registry] record <pid>.json: pid <pid> is not a child to end (<reason>); dropping the record, signalling nothing` |
+| A record kept | INFO | `[process.Registry] record <pid>.json: pid <pid> cannot be inspected now (<reason>); keeping the record, signalling nothing` (`5fd08069`, Linux VM) |
+| A group ended | INFO | `[process.Registry] ending orphaned process group <pgid> recorded by daemon instance "<instance>" (pid <daemon pid>): SIGTERM` |
+| The grace ran out | WARN | `[process.Registry] group <pgid> outlived SIGTERM for 2s: SIGKILL` |
+| A group fails the test | INFO | `[process.Registry] group <pgid> no longer verifies (<reason>); nothing more is sent to it` |
+| The reap summary | INFO | `[daemon] serve: predecessor's children — <n> orphaned group(s): <a> ended on SIGTERM, <b> on SIGKILL, <c> survived; <d> stale record(s) dropped, <e> kept` |
+
+The exit line is a race at a shutdown, on the reference and on claustrum. It can be missing. A reap that sent no `SIGTERM` and kept no record writes no summary.
+
+The main `<reason>` texts of a dropped record and of a group that fails the test are these:
+
+- `it does not run the recorded program "<argv0>"`, with `and neither runs nor was handed "<program>"` after it for a record with `program`
+- `it does not lead its own process group`
+- `it did not start at the recorded "<start>": the pid has been reused`
+- `it was not started by a daemon of this run dir: no CLAUDE_SSH_RUN_DIR names it`
+- `it belongs to a daemon of another run dir: its CLAUDE_SSH_RUN_DIR names a different one`
+- `it was not started by a daemon itself: its CLAUDE_SSH_CHILD does not name its own pid and start (something a child started)`
+- `environment unreadable: <error>`, and on `5fd08069` `pid namespace unreadable: <error>` and `stat unreadable: <error>`
+- `the record names no program to verify against`
+- claustrum's own: `pid is out of range`, `pid is this daemon`, `pid is this daemon's parent or process group` and `record has no start time to verify against`
 
 ### Orphan-exit self-probe
 
@@ -1162,7 +1239,9 @@ Windows VMs saw it at that place.
   `server.peer_check` (rounds `task011-01` and `s12`).
 - `peerCheck` comes directly after `features`, in every answer. The daemon reads
   `CLAUDE_SSH_PEER_CHECK` once, at its start, and then removes it from its
-  environment. Only the exact value `1` turns the check on. Each other value, and
+  environment. On Windows that covers any letter case. Unless the removal fails, no
+  child of the daemon inherits it: no `process.spawn` child, no git call, no
+  launcher run and no login-shell read. Only the exact value `1` turns the check on. Each other value, and
   no variable, answer `"off"`. On `5fd08069` each of these gave `"off"`:
     - Linux VM: no variable, `0`, `off`, the empty value, `true`, `yes`, `on`,
       `2`, `01` and ` 1` (a space before the digit).
@@ -3176,7 +3255,7 @@ A host administrator names a managed launcher in the managed settings. The
 managed launcher is a program that runs the Claude Code CLI on this host. The
 daemon puts its argv in front of the CLI command. Three surfaces use it:
 [launcher.resolve](protocol/launcher-resolve.md), the `launcher` param of
-[process.spawn](#processspawn), and the launcher runs of `-install` and
+[process.spawn](protocol/process-spawn.md#the-managed-launcher), and the launcher runs of `-install` and
 `-probe-cli`. Every rule of these surfaces is measured against `89cb6289` on a
 Linux VM unless it says otherwise. A rule that names macOS or Windows was measured there too.
 
@@ -3192,601 +3271,8 @@ as id-less stream notifications, and it buffers them for a later replay.
 
 #### process.spawn
 `{id,command[,args][,cwd][,env][,disableShellAgentSocket][,launcher][,wantPid]}` → `{"success":true}`, then stream frames
-- `args`: string[]. `env`: `{KEY:VAL}`, merged over the daemon environment.
-- Missing `id` → `-32602 Process ID is required`. Missing `command` →
-  `-32602 Command is required`.
-- A request with the `id` of a process that still runs succeeds and replaces the
-  table entry. The first process gets no signal and keeps running. A
-  `process.kill` of that `id` then reaches the second process only (row A2). In
-  claustrum `process.stdin` and `process.reattach` name the second process too.
-  `-stop` and `server.shutdown` end only the processes of the table, so the first
-  process outlives the daemon (row A3). Linux and macOS VMs measured this against `89cb6289` (rows
-  A1 to A4), and a Windows VM too (rows EV and EVInh). On Linux and macOS the
-  record of the first process stays, and the next daemon start ends that process
-  from it (row A4). The first process keeps its own connection. On a Linux VM
-  (row P2, two runs), the first process of `89cb6289` wrote and ended after the
-  replace. Its stream frames still came on its own connection, under the same
-  `processId`, with seq 2 to 9. Its exit frame came there with seq 10. The
-  connection of the second process got the frames of the second process only.
-  macOS row P2 and Windows row EVc gave the same split of the frames on
-  `89cb6289` and on claustrum. Three more Linux rows measured two processes under
-  one `id`. `89cb6289` and claustrum gave the same
-  frames in each:
-    - Both spawns come on one connection (row N2a). That connection gets both
-      streams under the one `processId`. Each process counts its own `seq`, so
-      seq 1 to 9 and an exit frame with seq 10 come twice.
-    - The connection of the first process sends `process.reattach` for the `id`
-      with `fromSeq` 0 (row N2b). The reply names the second process
-      (`"firstSeq":1,"lastSeq":2`), and its two frames come before the reply. The
-      connection of the second process gets EOF. The first connection then
-      carries both processes up to both exit frames.
-    - The first connection closes, and a third connection sends
-      `process.reattach` with `fromSeq` 5 (row N2c). The reply is
-      `{"found":true,"running":true,"firstSeq":1,"lastSeq":3,"stdinApplied":0}`
-      with no replay. The second connection gets EOF. The third one gets seq 4 to
-      9 and the exit frame of the second process, and no frame of the first.
-- Session superseding is `4534d86` parity. A `process.spawn` whose `args` name a
-  stream-json CLI session terminates any OTHER running process of the SAME session
-  id. Such `args` carry an `--input-format=stream-json` or
-  `--output-format=stream-json` arg, or a bare `stream-json` arg. They also carry a
-  valid `--session-id` or `--resume` token, with the resume fallback suppressed by
-  `--fork-session`. The superseded process is killed through the
-  SIGTERM-then-SIGKILL path, and its exit frame reaches its client. That
-  frame carries `killedBy:"client"` (rows B1 to B3 below). A spawn with
-  no session key, or with a different session id, supersedes nothing. claustrum reads
-  the argument after a bare flag as its value, as `5fd08069` does for `--resume`
-  (K1, K2, Linux VM). claustrum also serializes concurrent spawns of one session.
-  The daemon ends the other process and waits for its end before it starts the new
-  one. The reply of the new spawn therefore comes after the exit frame of the old
-  process. Linux and macOS VMs measured that against `89cb6289` (rows B1 to B4, two
-  runs each):
-    - The old process exits on `SIGTERM`: the reply follows at once (row B1). Its
-      group gets no `SIGKILL` (Linux row X2a).
-    - The old process ignores `SIGTERM`: the daemon sends `SIGKILL` to its group
-      after 3 s, and the reply follows (row B2).
-    - The old process exits, and a process in another group holds its pipes: the
-      exit frame and the reply come 5 s after the request (row B3).
-    - A spawn with the `id` and the session of a process that still runs
-      supersedes nothing and sends no signal (row B4).
-  The daemon log holds the exit line of the old process, then the `supersedes`
-  line, then the started line of the new process. A Windows VM measured the same
-  order of exit frame and reply on `89cb6289` and on claustrum (rows SS and SSInh,
-  3 runs each).
-  There the first child ended and its descendants lived on. Not measured: two or
-  more other processes of one session. claustrum ends them one after the other.
-  - A session spawn whose command does not exist supersedes nothing. On a Linux VM
-    (rows P3 and H1) and on a macOS VM (row P3), `89cb6289` answered
-    `-32603 fork/exec <path>: no such file or directory`. The old
-    process got no signal and kept its record. claustrum is built to those rows and
-    tests the command after it builds the child environment, before the
-    supersede.
-  - The test is one `stat` of the command path. Linux rows H1 to H6 and H9
-    measured it with `strace`. `89cb6289` and claustrum made the same `stat`
-    calls and gave the same replies in each row:
-      - The path is read as the request gives it, and it is not joined with `cwd`.
-        A session spawn of `./tool` with a `cwd` that holds `tool` answered
-        `fork/exec ./tool: no such file or directory` (row H3). The same request
-        with no session arguments started.
-      - A spawn with no session key runs no `stat` of the command (row H2).
-      - A command that exists and does not start passes the test. A file of mode
-        0644, a directory and a script with a missing interpreter each got the
-        supersede first. The old process got `SIGTERM` and ended, and the start
-        error came after it (rows H4a to H4c).
-      - A bare command name that the lookup does not find answers
-        `exec: "<name>": executable file not found in $PATH`. The old process
-        gets no signal (row H9).
-      - A `cwd` that is missing or is a file answers its own error, and the old
-        process gets no signal (rows H5a and H5b). That test comes before the
-        PATH read of the first spawn (row H6) and before the `stat` of the
-        command (row H3).
-    With a `launcher`, the fifth check below is that test.
-  - On Windows the lookup answers first. Then claustrum runs one `stat` of an
-    absolute command path. On a Windows VM (row SSm-path, 3 of 3 runs),
-    `89cb6289` answered
-    `-32603 fork/exec <path>: The system cannot find the file specified.` for a
-    missing path that ends in `.exe`, and the old process lived on. claustrum is
-    built to that row. A bare name (row SSm-bare) and a path with no extension (row
-    SSm-noext) answered `exec: "<name>": executable file not found in %PATH%` on
-    both, with no supersede. Not measured: a relative path. claustrum runs no
-    `stat` of it.
-  - A `-stop` can come while a spawn waits for the old process. Linux and macOS
-    VMs measured that against `89cb6289` (row P1, 7 Linux runs and 2 macOS runs). The old process
-    did not end on `SIGTERM`, and `-stop` came 1 s after the spawn request. The spawn got
-    no reply, and no connection got an exit frame. The new process never started.
-    The daemon sent `SIGKILL` to the group of the old process and removed its
-    record. `-stop` printed `stopped` and exited 0. The log held no `supersedes`
-    line and no exit line. claustrum gave the same events. Its log differs: build
-    `ac5cadb` wrote the exit line of the old process and the `supersedes` line in
-    1 of 6 Linux runs and in 2 of 2 macOS runs. That difference is open. See
-    [UPSTREAM-TRACKING.md](UPSTREAM-TRACKING.md).
-- A spawn whose child start returns after the shutdown began gets no reply, and
-  claustrum ends its child, also with `-keep-children`
-  ([CT-2](DIVERGENCES.md#ct-2)). `5fd08069` left late children running (round
-  `task003-01`: Linux 64, macOS 1081, Windows 2). claustrum left none (round
-  `task003-04`, no `-keep-children`).
-- The SSH agent hand-off is `f6010b97` parity on linux and darwin, advertised as
-  `process.spawn.shellAgentSocket`, and measured on both. The daemon builds the
-  child env from its own env, the login-shell PATH and the caller's `env`. If that
-  env has no `SSH_AUTH_SOCK` entry, the child gets `SSH_AUTH_SOCK=<socket>` after
-  the caller's entries. The socket is what the user's login shell exports.
-  - An entry that is already present wins, even with an empty value, such as
-    `"SSH_AUTH_SOCK":""` in the spawn `env`.
-  - `"disableShellAgentSocket":true` also skips it. A non-bool value answers
-    `-32602 Invalid params`, and `null` counts as `false`.
-  - The daemon runs `<shell> -l -i -c …` on the first spawn that needs a socket,
-    not at startup. The shell choice is the one the PATH extraction uses: `$SHELL`
-    when it is executable, then `/bin/zsh`, `/bin/bash` and `/bin/sh`. The run has
-    a 4 s deadline, and a shell that the kill cannot end is given up on at 5 s.
-    The first spawn of a daemon also runs the PATH read, which has its own 4 s
-    deadline. On a Linux VM with a shell that sleeps 10 s, the first spawn of
-    `89cb6289` answered after 8 s (row G3).
-  - A socket that does not accept a connection within 250 ms is not handed on. The
-    daemon caches the answer and runs the login shell again only 10 minutes after
-    the last run. After 3 failed runs in a row it stops asking. A connection
-    attempt that has not returned after 500 ms ends the hand-off for the life of
-    the daemon.
-  - A spawn never fails because of this step. At the default log level, each
-    login-shell run and each give-up writes a `[shellenv]` line to the daemon log.
-    A spawn served from the cache, or skipped, writes none.
-  - On Windows the capability and the param exist, but spawn runs no login shell
-    and adds no `SSH_AUTH_SOCK`. Measured with a Git bash `$SHELL` whose profile
-    exports a live socket: neither daemon starts it.
-- On Windows the child gets the daemon's own PATH, when it is not empty, as its `PATH` entry. A Windows VM
-  measured the rows below against `89cb6289`, 3 runs each.
-  - claustrum reads the daemon's PATH once, at the first spawn (from the code). A
-    second spawn got the same entry as the first on `89cb6289` (row R8). No shell
-    runs.
-  - When that value is not empty, the child env gets an entry named exactly `PATH`
-    with that value. An entry named `PATH` is replaced in place, and otherwise
-    `PATH=` is added. Then the caller's `env` comes.
-  - Go's os/exec keeps the last of the entries whose names differ only in case
-    (from the code). So a daemon entry named `Path` with a value does not reach the
-    child.
-  - A daemon with `Path=<value>` gave the child `PATH=<value>` and no `Path` entry
-    (row R1). A daemon with `PATH=<value>` gave `PATH=<value>` (row R6b).
-  - With a daemon `Path` entry, a caller `Path` value was lost, and the child got
-    the daemon value as `PATH` (row R4). A caller `PATH` or `path` value reached the child with its own name
-    (rows R3 and R5).
-  - A daemon with no path entry gave the child none (row R6). A daemon `Path` with
-    an empty value stayed empty, and no `PATH` entry came (row R6c).
-  - The CLI child of `-install` keeps `Path` (row R2). It is no `process.spawn` child.
-  - claustrum is built to these rows. Its Windows unit test checks rows R1 and R4,
-    with rows R3 and R6 as controls.
-  - These rows give the set of entries, not their order. On Windows the block of
-    a claustrum child is in name order. `89cb6289` keeps the order of its
-    launching block, then `CLAUDE_SSH_DAEMON_CHILD=1`, then the added entries
-    (Windows VM rows V1 to V10). That is [`DIVERGENCES.md`](DIVERGENCES.md) → D23.
-- The `launcher` param is `89cb6289` parity: a string array that names a
-  managed launcher. The child runs as `<launcher...> <command> <args...>`. The
-  launcher is the process, and its stream frames are its own.
-  - `launcher` absent or `null` means no launcher, and the command runs directly. A
-    non-array `launcher` or a non-string element → `-32602 Invalid params`, with no
-    log line. A `null` element becomes an empty arg.
-  - The checks run in this order. First, on Windows any non-null `launcher`, `[]`
-    too, → `-32004 the managed launcher cannot be used: a launcher cannot be
-    applied on a Windows host`. The command does not run.
-  - Second, a relative `command` with any non-null `launcher` →
-    `-32602 command must be an absolute path when a launcher is given`.
-  - Third, the [launcher checks](protocol/launcher-resolve.md#the-launcher-checks) of launcher.resolve run, with
-    the command in place of `cliPath`. A refusal →
-    `-32004 the managed launcher cannot be used: <reason>`. `[]` gives the
-    no-launcher text.
-  - Fourth, the cwd check gives its usual frame (its place before the command
-    check is inferred from log order). Fifth, a command that is missing, a folder
-    or not executable gives the same `-32603 fork/exec <command>: <reason>` frame
-    as a spawn without a launcher. The launcher does not run. Measured for a
-    missing file, a folder and a 0644 file, on Linux and macOS.
-  - Sixth, a launcher that passes the checks but does not start →
-    `-32005 the managed launcher <path> could not be started: <reason>`. A missing
-    `#!` interpreter, or a script with Windows CRLF line endings, gives
-    `its interpreter was not found (the program on its #! line, or the loader of an ELF binary; a script saved with Windows CRLF line endings fails this way)`.
-    A 0755 text file with no `#!` gives `exec format error`. macOS gives the same
-    interpreter text (S6a only). claustrum gives the same frames through its
-    exec-child trampoline (tested, not VM-measured).
-  - claustrum's choices (not measured) follow. The Windows refusal comes before
-    the relative-command check. The bad-command check comes before the launcher
-    starts. Any other start failure gives its errno text.
-  - The log lines are `[process.Manager] Failed to start process <id>: <message>`
-    for each refusal, and
-    `[process.Manager] Process <id> started, PID=<n>, command=<command> via launcher <argv0>`
-    for a start. The started line names argv[0] only. A refusal writes no
-    `[LauncherHandler]` line.
-  - A spawn does not read the managed settings. Rows SP-a and SP-b measured this
-    on Linux: with a usable launcher in the settings, a spawn without the param
-    runs the command directly, and a spawn with the param runs the launcher it
-    names. The caller resolves the launcher with `launcher.resolve` and passes it
-    here. The
-    `CLAUDE_SSH_MANAGED_LAUNCHER` gate does not change a spawn.
-- Every spawned child loses `CLAUDE_SSH_MANAGED_LAUNCHER` and
-  `CLAUDE_SSH_E2E_MANAGED_SETTINGS_DIR` (`89cb6289` parity, measured on Linux and
-  macOS). A child with a launcher also loses `CLAUDE_CODE_PROCESS_WRAPPER`. A
-  child without one keeps it. The strip covers the
-  daemon env and the spawn `env` param. claustrum strips on Windows too. That is
-  claustrum's choice (not measured).
-- No child of the daemon inherits `CLAUDE_SSH_PEER_CHECK`. The daemon removes
-  the variable from its own environment after the read at its start, with any
-  value. That covers a `process.spawn` child, a git call, a launcher run and the
-  login-shell read. Measured on `5fd08069`:
-    - A `process.spawn` child had no such entry for the daemon values `1` and
-      `0` (Linux, macOS and Windows VMs).
-    - The git calls of one `git.info` had none for the value `0` (Linux VM).
-    - A marker variable of the daemon arrived in each of those children.
-    - With the lower-case name `claude_ssh_peer_check=1` in the daemon
-      environment, the child had no entry of that name in any letter case
-      (Windows VM).
-    - The start environment of the daemon process still showed the variable
-      (`/proc/<pid>/environ` on a Linux VM, `ps eww` on a macOS VM).
 
-  The launcher runs and the login-shell read of `5fd08069` are not measured.
-  A build of claustrum with this removal gave the same child rows on those VMs,
-  the lower-case row on the Windows VM included. A removal that fails gets one
-  WARN line of claustrum's own, and the children then inherit the variable. A spawn
-  `env` param that names the variable reaches the child, as on `5fd08069`
-  (Linux, macOS and Windows VMs).
-- `wantPid` is a claustrum-only opt-in, CT-1. With `"wantPid":true` the reply gains
-  two fields after `success`: `{"success":true,"pid":<int>,"startTime":<number>}`.
-  `pid` is the child's OS pid. `startTime` is the daemon's wall clock in epoch
-  seconds, captured at spawn. Spawn and reattach return the identical value for the
-  same process. It is an opaque token for PID-reuse and orphan detection. Compare a
-  persisted daemon value against a later daemon value for the same id. Do not
-  equality-compare it against an OS-read process start time
-  (`psutil create_time`), because the two derivations differ. When `wantPid` is
-  absent or not `true` (claustrum's own), the daemon omits both fields through
-  `omitempty`, and the frame is byte-identical to `{"success":true}`. `5fd08069`
-  ignores the member (cells P1 and P2 of round `task015-01`, Linux VM). See
-  [`DIVERGENCES.md`](DIVERGENCES.md) → CT-1.
-- The exec-child trampoline is `19f30c46` parity on linux and darwin. On every
-  socket shape, a spawned child is launched
-  through a self-re-exec trampoline (`<self> --exec-child <path> <argv…>`). That
-  trampoline adds two environment markers that give the child a stable,
-  pid-reuse-safe identity. The first is `CLAUDE_SSH_RUN_DIR=<run dir>`, set by the
-  daemon. The run dir is the folder of the socket path, cleaned and not made
-  absolute. The second is `CLAUDE_SSH_CHILD=<pid>:<startTicks>`, set by the
-  trampoline from the child's own pid and its start-time. On linux the start-time
-  is the `/proc` clock ticks. On darwin it is a date text: the `ps` start-time
-  with one blank between its words. The five
-  Go-runtime vars (`GODEBUG`, `GOGC`, `GOMAXPROCS`, `GOMEMLIMIT`, `GOTRACEBACK`)
-  are stashed under `CLAUDE_SSH_HELD_<name>` across the re-exec. They are restored
-  before the target runs, so they do not perturb the transient trampoline. A
-  command that
-  does not resolve to a runnable file is not trampolined, so its spawn error frame
-  is unchanged (`fork/exec …` or `exec: … not found in $PATH`). When the
-  trampoline itself does not start, the daemon starts the command directly and
-  answers with the error of that start. Measured on Linux against `89cb6289` with
-  a `cwd` of mode 000 (row CW03): the frame is
-  `-32603 fork/exec <command>: permission denied`. The daemon first logs
-  `[process.Manager] exec trampoline failed for <id> (fork/exec /proc/self/exe: permission denied); starting it directly — a successor daemon will not be able to reap it`.
-  That log text is the Linux text. This changes one `process.spawn` frame of
-  claustrum. For a `cwd` that the daemon cannot enter, the error text named the
-  trampoline before (`fork/exec /proc/self/exe: permission denied`). It now names
-  the command (row CW03). Not measured: the trampoline start fails and the direct
-  start works. claustrum then answers success, where it answered an error before.
-  It gives that child `CLAUDE_SSH_RUN_DIR` and no `CLAUDE_SSH_CHILD`.
-  `f6010b97` and `89cb6289` set both markers on every socket
-  shape (Linux and macOS rows EV01a to EV01i, and Linux row K3). Linux and macOS VMs measured the
-  values and the order against `89cb6289` (Linux rows F1 to F5, macOS rows F1 to
-  F4). The socket
-  `<R>/b/s.sock` gives `CLAUDE_SSH_RUN_DIR=<R>/b`. A relative socket `s.sock` gives
-  `CLAUDE_SSH_RUN_DIR=.`. The socket `<R>//run/./c1/rpc.sock` gives `<R>/run/c1`.
-  The child environment is the daemon environment, where
-  `CLAUDE_SSH_DAEMON_CHILD` is the last entry. A caller key that the daemon
-  environment holds replaces that entry in place. A new caller key comes after the
-  daemon entries. `CLAUDE_SSH_RUN_DIR` and then `CLAUDE_SSH_CHILD` are the last two
-  entries. A caller value of those two does not reach the child (Linux rows EV02a
-  and EV02e). An empty caller value of `CLAUDE_SSH_DAEMON_CHILD` stays empty.
-  claustrum builds the environment by these rules. A Go-runtime variable keeps its
-  place. On a Linux VM (rows P4a to P4c), a `GOGC` of the daemon environment of
-  `89cb6289` stayed at its place there, before `CLAUDE_SSH_DAEMON_CHILD`. A
-  `GOMAXPROCS` of the spawn `env` stood with the new caller keys, before
-  `CLAUDE_SSH_RUN_DIR`. The two markers were the last two entries. claustrum is
-  built to those rows. `GODEBUG`, `GOMEMLIMIT` and `GOTRACEBACK` are not measured,
-  and claustrum treats them the same way. Two or more new caller keys have no
-  fixed order on `89cb6289`. A Linux VM ran 20 spawns per row. For the request
-  order `ZZ, AA, MM` it gave `ZZ, AA, MM` 16 times, `AA, MM, ZZ` 3 times and
-  `MM, ZZ, AA` once (row P9). For the request order `ZZ, MM, AA` it gave
-  `ZZ, MM, AA` 16 times, `MM, AA, ZZ` 3 times and `AA, ZZ, MM` once (row N7). Each
-  order is a rotation of the request order. Build `ac5cadb` of claustrum gave name
-  order in 20 of 20 spawns of both rows, and name order is not one of the three
-  orders of row N7. claustrum now iterates the decoded map again and builds no
-  order of its own. That gave a rotation of the request order in each of the 20
-  spawns of a row (Linux rows P9 and N7, macOS row EV20). A request with more keys
-  is not measured on Linux and macOS. On Windows the block of a claustrum child
-  is in name order (divergence D23). The
-  trampoline is off-wire and adds no JSON-RPC frame. The start failure above is
-  the one frame that it changes. It was verified against
-  `19f30c46` on a VM. The marker set and format match, and the values are
-  per-process. On macOS the start text in `CLAUDE_SSH_CHILD` has one blank before
-  a one-digit day (`Fri Oct 2 17:35:19 2026`), where `ps -o lstart=` prints two. A
-  macOS VM measured that on `89cb6289` (rows F1 to F4). In those rows the text of
-  the record and the text of the marker were byte-equal, on `89cb6289` and on
-  claustrum. Only days 1 and 2 of a
-  month are measured. The held Go vars round-trip. A missing target, a
-  non-executable-format target, and a relative-under-`cwd` target each return the
-  identical `-32603 fork/exec …` frame, or are trampolined exactly as the
-  reference does. Darwin links the same subsystem, with the start-time from `ps`
-  instead of `/proc`. This was validated against `19f30c46` on a macOS VM. On
-  windows the reference daemon reports it is not the run-dir lock holder, so it
-  stamps neither marker. A windows VM showed that a run-shaped-socket child has the
-  same environment as a bare-socket child.
-- The orphan-child registry record is `19f30c46` parity on linux and darwin. On
-  every socket shape, a lock holder records each spawned child with a pid
-  of 2 or more and a readable start-time to `<runDir>/children/<pid>.json`. The run
-  dir is the folder of the socket path. The references write the record on every
-  socket shape (Linux and macOS rows EV01a to EV01i, and rows F1 to F4 of both
-  systems on `89cb6289`). On macOS the start text of the record has one blank between its
-  words, as in `CLAUDE_SSH_CHILD`. A macOS VM measured mixed pairs of `89cb6289`
-  and claustrum (rows RP15c, RP15d, RP15f and RP15g, 3 runs each). A daemon of
-  one binary ended the recorded child of a dead daemon of the other, in both
-  directions, with a launcher and without one. claustrum compares the start
-  texts exactly at the reap, as `89cb6289` does. A record whose `start` holds two
-  blanks before a one-digit day does not match. `89cb6289` and claustrum dropped
-  such a record, sent no signal and logged the same line (rows TBr and TBe):
-  `[process.Registry] record <pid>.json: pid <pid> is not a child to end (it did not start at the recorded "<text>": the pid has been reused); dropping the record, signalling nothing`.
-  A `daemonStart` with two blanks does not match either. Both binaries then read
-  that daemon as gone and ended its recorded child, while the daemon was alive
-  (row N6, 2 runs each). With the one-blank text they kept the record and sent no
-  signal (row N6k). From the code: an older claustrum build wrote two
-  blanks on day 1 to 9 of a month. The first start of a newer daemon on macOS
-  does not end a child of that build from those days.
-  The
-  daemon writes it atomically, through a temp file renamed into place. The temp
-  file is `children/.rec-<pid>.json.<12 chars>` (`89cb6289`, measured on Linux, row
-  SP06). The source of the 12 chars is not measured. claustrum uses the nanosecond
-  clock in base 36. A later
-  daemon reads these to reap children a since-exited daemon left behind. The record
-  is an ordered JSON object:
-  `{"pid":<int>,"node":"<boot-id>/pid:[<inode>]","host":"machine-id:<hex>","instance":"<daemon instance id>","daemonPid":<int>,"daemonStart":"<ticks>","argv0":"<child argv0>","start":"<ticks>","at":<epoch-ms>}`.
-  The field ORDER and the string-vs-number typing are the on-disk contract,
-  measured byte-for-byte against `19f30c46`. With a `launcher`, `argv0` is the
-  launcher, and a `program` field holds the command, after `argv0` and before
-  `start`. That is `89cb6289` parity, measured on Linux. claustrum omits `program`
-  without a launcher, so that record keeps its `19f30c46` bytes. That is
-  claustrum's choice (not measured). `daemonStart` and `start` are STRINGS,
-  holding clock ticks on linux and a date text on darwin. `pid`, `daemonPid`
-  and `at` are numbers. This record is off-wire, because it adds no JSON-RPC
-  frame. On linux and darwin the daemon reaps these records at `-serve` startup,
-  before it binds the socket.
-  See [ARCHITECTURE.md](ARCHITECTURE.md) → orphan reap. On darwin the node is the
-  boot-session UUID and the host is the hostname, and the start-times come from
-  `ps` rather than `/proc`. On windows the reference daemon reports it is not the
-  run-dir lock holder, so it records no children and reaps none. A windows VM
-  showed that a spawned child leaves the children dir empty, and that planted
-  records survive startup.
-- The life of a record on linux and darwin. Each row is measured on Linux against
-  `89cb6289`. The macOS rows SP01a to SP09b are equal on `89cb6289` and claustrum.
-  - The end of the child removes its record (rows SP01, SP03, SP04, SP06 and
-    CW02b). The removal comes before the pipe drain, so it does not wait for the
-    exit frame (row SP05).
-  - A graceful shutdown leaves no record at the default, without `-keep-children`
-    (rows RP12a, STa and STb, equal on `89cb6289` and claustrum). claustrum waits
-    for the children that it killed, for 1 s at most. That bound is claustrum's own
-    value. Not measured: a child that outlives the bound.
-  - With `-keep-children` the shutdown removes the records of the children that it
-    leaves alive. The next daemon then finds no record of them and sends them no
-    signal. That rule is claustrum's own, as the flag is. A Linux VM ran it on
-    claustrum only (row P14). `-stop` of a daemon with the flag sent no kill and
-    removed the records of its two children. A new daemon then sent no signal and
-    logged no reap line, with the flag and without it. Both children stayed
-    alive. The rule has two limits. A process whose `id` a later spawn took keeps
-    its record. The host cleaner does not read the records. See
-    [DIVERGENCES.md](DIVERGENCES.md) CT-2.
-  - A spawn that takes the `id` of a running child leaves the record of that child
-    in place. Linux and macOS rows A1 to A3 measure that.
-  - A daemon that is killed leaves its records. The next daemon on that socket
-    reads them at its start.
-  - If `children` is a regular file or a symlink, the daemon writes no record
-    through it. It logs
-    `[process.Registry] <runDir>/children is not a directory; recording nothing`.
-    Row SP07a measures a regular file. Row SP07b measures a symlink that leads out
-    of the run dir. Linux rows SLa and SLb and macOS rows KDa and KDb measure a
-    relative symlink to a folder inside the run dir. Neither side writes a record
-    through it.
-  - If the record cannot be written, the daemon logs
-    `[process.Registry] cannot record child <pid>: <error>`. Row SP07c measures a
-    `children` folder of mode 000, where the error is
-    `openat children/.rec-<pid>.json.<12 chars>: permission denied`. Row P11a
-    measures a `children` folder of mode 755 that another user owns. On `89cb6289`
-    and claustrum the spawn succeeded, the child got both markers, no record was
-    written, and the log held that line.
-  - In rows SP07a to SP07c the daemon still tries the removal at the end of
-    the child. It logs
-    `[process.Registry] cannot remove record of child <pid>: removeat children/<pid>.json: <reason>`
-    before the exited line. The reason is `not a directory` for a regular file,
-    `path escapes from parent` for a symlink that leads out of the run dir, and
-    `permission denied` for mode 000.
-  - The removal goes through a relative symlink to a folder inside the run dir.
-    Both sides remove a file `<pid>.json` in that folder at the end of the child
-    (Linux row SLb, macOS row KDb). With no such file both sides log nothing
-    (Linux row SLa, macOS row KDa).
-  - A relative symlink that leads out of the run dir is refused like an absolute
-    one. Both sides keep a file `<pid>.json` in the outside folder and log the
-    `path escapes from parent` line (Linux row SLc, macOS row KDc).
-  - A removal that finds no record logs nothing. That is claustrum's choice (not
-    measured).
-  - The daemon holds its run dir open. After a rename of the run dir, a record goes
-    under the new name, and the old path is not made again (row SP08).
-  - claustrum prints each of these lines after its level tag.
-- The reap of the records at a `-serve` start on linux and darwin. Each row is
-  measured on Linux against `89cb6289`, unless the bullet names macOS.
-  - The reap runs on every socket shape, in the folder of the socket (Linux and
-    macOS rows EV01a to EV01i).
-  - The daemon walks the children folder in directory order, the order of `ls -U`.
-    One start handles the first 128 names that end in `.json`. One more such name
-    ends the walk, and the daemon logs
-    `[process.Registry] more than 128 records in <runDir>/children; leaving the rest for the next start`.
-    Row C1: of 131 names, the first 128 of the directory order were gone after the
-    first start. The second start removed the last 3 and logged no line. Not
-    measured: whether a name that does not end in `.json` counts. claustrum does
-    not count it.
-  - At most 64 groups get `SIGTERM` at one start, in the order of the walk (rows C2
-    and C4). For more verified groups the daemon logs
-    `[process.Registry] <n> more orphaned group(s) recorded in <runDir>/children than the 64 one start ends; leaving those for the next start`.
-    Row C4: with 70 recorded children, 64 got `SIGTERM` and 6 records stayed.
-  - claustrum reads at most 4096 bytes of a record. A record whose first 4096
-    bytes are not one JSON value is removed, with no signal and no line. On
-    `89cb6289`, records of 5259 and 5290 bytes were removed with no signal and no
-    line while their children ran (rows C3a and C3b). Both held an `argv0` of 5000
-    characters, so the rows do not tell a read limit from a field limit. A
-    valid record with blanks after it, 2 MiB in all, was read (row ED14g). Row P8
-    measured the bound with a pad in an added last field. Records of 4095 and
-    4096 bytes got `SIGTERM`. Records of 4097 and 5000 bytes got no signal and no
-    line, and they were removed. `89cb6289` and claustrum did the same in each
-    of the four sizes, so the bound is 4096 bytes on both.
-  - Records that the daemon keeps count toward the 128 too. Row P10 staged 128
-    records of another machine and then one record of a live orphan, the last in
-    directory order. In two starts, `89cb6289` and claustrum sent no signal and
-    removed no record. Each start logged the 128 line and a summary with
-    `0 orphaned group(s)` and `128 kept`. The orphan stayed alive.
-  - The owner of a record file is not tested. Row P11b replaced the record of a
-    live child with a copy that root owns (mode 644, same bytes). The next start
-    of `89cb6289` and of claustrum sent `SIGTERM` to that child and removed the
-    record.
-  - A record that is not a child to end is dropped at once, with the line
-    `[process.Registry] record <pid>.json: pid <pid> is not a child to end (<reason>); dropping the record, signalling nothing`.
-    The reason is one of the texts that the bullets below list. Not measured: the
-    place of this line when the 128 line and the 64 line print too. claustrum
-    prints the 128 line, then the record lines, then the 64 line.
-  - Each group that gets `SIGTERM` logs
-    `[process.Registry] ending orphaned process group <pgid> recorded by daemon instance "<instance>" (pid <daemon pid>): SIGTERM`.
-    A group that gets the `SIGKILL` after the 2 s grace logs
-    `[process.Registry] group <pgid> outlived SIGTERM for 2s: SIGKILL`.
-    Linux and macOS rows A4 and D1 measure both lines.
-  - The records of the groups that got `SIGTERM` are removed together, when the
-    last group is done. Row RP04: of five groups, all five records were gone at
-    the 2.1 s poll and none earlier.
-  - The sweep ends with one summary line when it sent a `SIGTERM` or kept a record:
-    `[daemon] serve: predecessor's children — <n> orphaned group(s): <a> ended on SIGTERM, <b> on SIGKILL, <c> survived; <d> stale record(s) dropped, <e> kept`.
-    A sweep that only removed records logs no summary (row C1, second start).
-    `<n>` counts the groups that got `SIGTERM`. `kept` counts the records of a live
-    owner or of another machine, the verified groups over 64 (row C4:
-    `6 kept`), and a process it cannot inspect (`5fd08069`, cells H2d, H4). `dropped` counts a record with the record line (row RP07), a record of a
-    dead pid (row C1: `127 stale record(s) dropped`), and a group that no longer
-    verifies after its `SIGTERM` (row PG05a). Not measured: the number
-    that the other removed records take. claustrum counts each of them as dropped.
-  - Only a regular file is read as a record. A symlink, a FIFO or an empty folder
-    with a `.json` name is removed, with no signal and no log line (rows ED16a to
-    ED16c). The target of the symlink stays.
-  - A record with a `program` key is accepted in three cases. The process runs
-    `argv0`. The process runs `program`, by its full path or by its base name
-    (rows PG02a, ED03a and ED03b). One whole argument of the process equals
-    `program` byte for byte (rows PG02b, ED04a and ED04e).
-  - An argument does not match by its base name, by a cleaned path, or as a part
-    of a longer argument (rows ED04b, ED04c and ED04d). An empty `argv0` is refused
-    before `program` is read (row ED02c). `f6010b97` sends no signal in rows ED03a
-    to ED04e.
-  - On Linux the daemon reads the process from `/proc`. The program is the first
-    argument of `/proc/<pid>/cmdline`, and the arguments are whole, blanks included.
-    A recorded name matches the program when the two are equal or have the same
-    last path component. A `program` with a blank matches the argument that equals
-    it (Linux row ED04e: `SIGTERM`).
-  - On macOS the daemon judges the process by the command text that `ps` prints,
-    as the macOS rows of `89cb6289` do. The words of that text are cut at blanks. The first
-    word is the program. A recorded name matches in three cases. It equals the
-    whole text. The text starts with it and one blank. It has the last path
-    component of the first word.
-  - So on macOS a program at a path with a blank is still ended (rows PG04s and
-    PG02s, `/tmp/e/bin/my stub`). A `program` with a blank is never taken as an
-    argument, because no single word equals it (macOS row ED04e: no signal).
-  - These macOS rows are equal on `89cb6289` and claustrum in 3 of 3 runs: PG02a,
-    PG02b, ED03a, ED04a and B1 to B8 send `SIGTERM` or none as the rule gives, and
-    ED01a sends none. Rows ED03b and ED04b to ED04d are measured on `89cb6289`
-    only. For claustrum they follow from the rule.
-  - Rows B4a to B4c measure two blanks and a tab on macOS. A path with two blanks
-    is ended when the record holds both blanks (B4a), and is not when the record
-    holds one (B4b). `ps` prints a tab as the four characters `\011`, so a record
-    with a tab matches no text and the child gets no signal (B4c). Not measured: a
-    `program` key with two blanks or a tab.
-  - The children folder must be a real folder inside the run dir. The daemon lists
-    it through the run dir that it holds open, so the reap never leaves the run
-    dir. If `children` is a symlink to a folder, the daemon reads nothing, sends
-    nothing and removes nothing. It logs
-    `[process.Registry] <runDir>/children is not a directory; reaping nothing`
-    before the listening line. Rows SYa and SYb measure that on `f6010b97` and
-    `89cb6289`, for a folder outside the run dir and for one inside it. claustrum
-    does the same for every `children` entry that is not a real folder. The other
-    shapes are not measured.
-  - During the 2 s grace, a group that got `SIGTERM` takes the whole record test
-    again at each poll, and once more before the `SIGKILL`. If the test fails, the
-    daemon sends nothing more. claustrum removes that record at the end of the
-    sweep, with the records of the other groups. When `89cb6289` removes it is not
-    measured. Row PG05a
-    measures a child that replaced itself with another program: `89cb6289` logs
-    the line below 0.1 to 0.3 s after its start.
-  - The line is
-    `[process.Registry] group <pgid> no longer verifies (<reason>); nothing more is sent to it`.
-    The reason is the text of `89cb6289` for the test that failed, where a row
-    measures one. Otherwise the text is claustrum's own. For row PG05a it
-    is `it does not run the recorded program "<argv0>"`. With a `program` key the
-    text goes on with `and neither runs nor was handed "<program>"` (rows ED04b to
-    ED04d).
-  - The other reason texts are these. `it does not lead its own process group`
-    (row RP07). `it did not start at the recorded "<start>": the pid has been reused`
-    (row ED07).
-    `it was not started by a daemon of this run dir: no CLAUDE_SSH_RUN_DIR names it`
-    (row ED10a).
-    `it belongs to a daemon of another run dir: its CLAUDE_SSH_RUN_DIR names a different one`
-    (row ED10b).
-    `it was not started by a daemon itself: its CLAUDE_SSH_CHILD does not name its own pid and start (something a child started)`
-    (rows ED10c and ED10d).
-    `environment unreadable: open /proc/<pid>/environ: permission denied` (one run
-    of row PG05a). `pid namespace unreadable: <error>`, `stat unreadable: <error>` (`5fd08069`, cells H3v, P7).
-  - Those rows measure each text in another line of the reference, at the first
-    test of a record. In the `no longer verifies` line, only the program text and
-    the environment text are measured.
-  - A group that is gone at a poll counts as ended on the `SIGTERM`. A read that
-    fails because the process has just ended is not a failed test. Rows K5 and
-    ED04a measure a child that exits on the `SIGTERM`: `89cb6289` logs
-    `1 ended on SIGTERM`.
-  - A read that takes the leader for gone is not final. claustrum waits 50 ms and
-    reads the leader again. If the leader is still gone and the group still
-    answers, the daemon sends `SIGKILL` to the group. Row RP05a measures that
-    `SIGKILL` for a leader that exited and left members that ignore `SIGTERM`.
-    There `89cb6289` sends it right after the `SIGTERM`, with no wait.
-  - The 50 ms wait is claustrum's own value. It is there for a child that replaces
-    its program on the `SIGTERM`. In the first 30 runs of row PG05a (three sets of
-    ten), `89cb6289` sent a `SIGKILL` within 4 ms of the `SIGTERM` in 9 runs, and
-    the child ended. In its other 21 runs the child stayed alive. With the wait, a
-    leader that reads alive again takes the record test and gets the
-    `no longer verifies` line. This is [`DIVERGENCES.md`](DIVERGENCES.md) → D20.
-  - Measured on Linux with the wait, in 30 later runs of row PG05a for each
-    binary: claustrum ended the child in no run, and `89cb6289` in 5 runs. In 10
-    runs of row RP05a, claustrum sent the group `SIGKILL` 51 to 55 ms after the
-    `SIGTERM` in 9 runs and 152 ms after it in one. `89cb6289` sent it 0.4 to
-    4.9 ms after the `SIGTERM`.
-  - claustrum prints each line of the reap after its level tag. `89cb6289` prints
-    no level. The level of each line is claustrum's own choice. The 128 line, the
-    64 line and the outlived line are WARN. The `is not a directory` line is
-    ERROR. The others are INFO.
-- The log lines of a spawn and of an exit. They are off-wire. Each one is measured
-  against `89cb6289`. The macOS rows CW01 to CW05 are equal on `89cb6289` and
-  claustrum.
-  - A `cwd` that is missing or is not a folder logs
-    `[process.Manager] Failed to start process <id>: <message>`. The message is the
-    message of the error frame (Linux rows CW01, CW02a, CW02c, CW04c and CW05,
-    Windows rows CW01, CW02a, CW02c and CW04c). On Windows, rows K4, CW01,
-    CW02a, CW02c, CW04a, CW04b and CW04c are equal on `89cb6289` and claustrum:
-    the same frame, and the same line apart from the level tag. Neither side
-    makes a `children` folder or a record file there.
-  - The exited line is `[process.Manager] Process <id> exited with code <n>`. A
-    child that a client request ended adds `, signalled at client request` (Linux
-    rows SP03a and SP03b). A child that a signal ended adds
-    `, terminated by <signal>` (Linux row SP04, with `SIGKILL`). A plain exit adds
-    nothing (Linux row SP01).
-  - A line with both parts has the signal part first. `89cb6289` printed
-    `Process <id> exited with code -1, terminated by SIGKILL, signalled at shutdown request`
-    in Linux row STb, a `server.shutdown` request with two children.
-  - That line is a race on the reference. `89cb6289` printed it in row STb, and
-    printed no exited line in two runs of rows RP11 and RP12a. claustrum prints it
-    when the exit goroutine reaches the line before the daemon exits. Measured on
-    Linux: one line for two ended children in rows STa and STb (three or more runs each).
-    In a later Linux stop row with two children, each side printed one such line,
-    for one child. `89cb6289` printed it after the `cleanup:` line, and claustrum
-    before it.
-    In rows RP11, RP12a and RP12b the count was none, one or two, and it changed
-    between runs.
-  - When the drain grace expires, the daemon logs
-    `[process.Manager] Process <id>: pipe drain grace expired (grandchild holding stdio?); force-closing`
-    before the two read-error lines (Linux row SP05).
+Starts a child process as the user of the daemon and streams its output as stream frames. The page [process.spawn](protocol/process-spawn.md) has the parameters, the environment of the child, the launcher checks and the errors.
 
 #### process.stdin
 `{id,data[,offset]}` → `{"success":true,"applied":<int>[,"duplicate":true]}`
@@ -3940,7 +3426,7 @@ measured a login shell that sleeps 10 s (row G3). The shell was killed after 4 s
 The first spawn answered after 8 s, because the SSH agent read ran that shell
 again for 4 s. The second spawn answered at once. On Windows the first spawn
 reads the daemon's own PATH and runs no shell (claustrum, from the code). See
-`process.spawn`.
+[process.spawn](protocol/process-spawn.md#the-environment-of-the-child).
 
 When `$SHELL` is an executable file, login-shell PATH extraction on Unix runs
 `$SHELL -l -i -c …`. Otherwise it runs the first usable of `/bin/zsh`,
