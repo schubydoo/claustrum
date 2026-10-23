@@ -12,8 +12,9 @@ Per-method wire facts (params, result field order, error texts) live in
 [PROTOCOL.md](PROTOCOL.md) and on the pages under `protocol/`. The history of the
 reference builds is in [REFERENCE-BUILDS.md](REFERENCE-BUILDS.md).
 
-A measurement of the reference in this file is against `5fd08069`, the build that
-claustrum follows, unless the text names another build. A fact that comes from
+claustrum follows the reference build `5fd08069`. An entry names the build of a
+measurement where the build matters. A measurement that names no build was made
+on `5fd08069` or on an earlier build. A fact that comes from
 reading claustrum's code is marked "from the code".
 
 ## The one hard rule
@@ -34,7 +35,8 @@ The standard, in priority order:
 >    match. How ugly the reference's behaviour is does not matter.
 > 2. Match by default. A wart Desktop tolerates is the contract, not a bug. The
 >    burden of proof is always on the divergence.
-> 3. If one of three conditions holds, a divergence earns ALWAYS-ON.
+> 3. A divergence earns ALWAYS-ON only if one of three conditions holds, or by the
+>    exception in rule 4.
 >    **(a)** Two things hold together. The reference's behaviour on that path
 >    is not a frame at all: an unbounded wait, unbounded memory, or
 >    unrecoverable data loss. And no honest caller can observe the
@@ -94,12 +96,12 @@ and the reopen trigger.
 
 These hold for each opt-in entry:
 
-- A flag and a matching `claustrum.conf` key. For every key of that file, the
+- A flag and a matching `claustrum.conf` key. The key is the knob an operator can
+  reach (see the argv premise above). For each key that has a flag, the
   precedence is an explicit CLI flag, then the config file, then the default.
 - The default is off, which is the zero value. A disabled bound bypasses its guard
-  entirely: a cap of `0` skips its `io.LimitReader`, and a timeout of `0` skips
-  `context.WithTimeout`. The download relies on `http.Client{Timeout: 0}`, the
-  stdlib's own "no timeout". Never use a huge-but-finite value instead. The
+  entirely: a cap of `0` skips its `io.LimitReader`. A download bound of `0` is
+  `http.Client{Timeout: 0}`, the stdlib's own "no timeout". Never use a huge-but-finite value instead. The
   `cap+1` and armed-cancel arithmetic defines the boundary, and a huge value
   invents a new one.
 - No opt-in bound is a hang detector. Each one is a threshold that an honest slow
@@ -118,19 +120,19 @@ These hold for each opt-in entry:
 
 | ID | What it does | Default | How to activate | Why (rule / clause) | Reopen trigger |
 |----|--------------|---------|-----------------|---------------------|----------------|
-| [D2](#d2) | Refuse a destructive path that is or holds `$HOME` | always-on | always-on | rule 3 (a). The `files.extract_tar` wipe: decision of 2026-10-10 | an honest caller that needs such a path |
-| [D3](#d3) | Cap `files.extract_tar` output size | off (`0`) | `-max-extract-bytes` / key | rule 4 | the cap refuses an honest extraction |
+| [D2](#d2) | Refuse a destructive path that is or holds `$HOME` | always-on | always-on | rule 3 (a). The `files.extract_tar` wipe: decision of 2026-10-10 | an honest caller that needs such a path (more in the entry) |
+| [D3](#d3) | Cap `files.extract_tar` output size | off (`0`) | `-max-extract-bytes` / key | rule 4 | the cap refuses an honest extraction (more in the entry) |
 | [D6](#d6) | `-cli-version` is one path component | always-on | always-on | rule 3 (b) | Desktop sends a multi-component version |
-| [D8](#d8) | Refuse a link, a FIFO or another user's `remote-server.log` | always-on | always-on | rule 3 (b), decision of 2026-10-19 | a shared socket folder that needs the log |
+| [D8](#d8) | Refuse a link, a FIFO or (Linux, macOS) another user's `remote-server.log`. The `git-shadow` sweep writes nothing through a link | always-on | always-on | rule 3 (b), decision of 2026-10-19 | a shared socket folder that needs the log (more in the entry) |
 | [D10](#d10) | Cap the `-install` CLI size | off (`0`) | `-max-cli-bytes` / key | rule 4 | Desktop stops treating disk-full as terminal |
 | [D12](#d12) | Bound the `-install` download | off (`0`) | `-cli-download-timeout` / key | rule 4 | an honest slow download fails under the bound |
-| [D15](#d15) | Verify a lock holder before a signal (macOS) | always-on (macOS) | always-on | rule 3 (a) | the reference verifies the holder too |
-| [D16](#d16) | `git.status` of a linked worktree works (Windows) | always-on (Windows) | always-on | decision of 2026-10-13 | the reference or Git for Windows fixes the error |
-| [D19](#d19) | Refuse a junction between `baseRepo` and the leaf on remove (Windows) | always-on (Windows) | always-on | rule 3 (b), decisions of 2026-09-27 and 2026-10-07 | a client that needs the success reply |
-| [D20](#d20) | Wait 50 ms and read again before a group `SIGKILL` at a `-serve` start (Linux and macOS) | always-on (Linux and macOS) | always-on | rule 3 (a) | the reference waits there too |
-| [D22](#d22) | Refuse a worktree locked in the `.git` folder of `baseRepo` on remove | always-on | always-on | decision of 2026-10-03 | a caller that needs that removal |
+| [D15](#d15) | Verify a lock holder before a signal (macOS) | always-on (macOS) | always-on | rule 3 (a) | the reference verifies the holder too (more in the entry) |
+| [D16](#d16) | `git.status` of a linked worktree works (Windows) | always-on (Windows) | always-on | decision of 2026-10-13 | the reference or Git for Windows fixes the error (more in the entry) |
+| [D19](#d19) | Refuse a junction between `baseRepo` and the leaf on remove (Windows) | always-on (Windows) | always-on | rule 3 (b), decisions of 2026-09-27 and 2026-10-07 | a client that needs the success reply (more in the entry) |
+| [D20](#d20) | Wait 50 ms and read again before a group `SIGKILL` at a `-serve` start (Linux and macOS) | always-on (Linux and macOS) | always-on | rule 3 (a) | the reference waits there too (more in the entry) |
+| [D22](#d22) | Refuse a worktree locked in the `.git` folder of `baseRepo` on remove | always-on | always-on | decision of 2026-10-03 | a caller that needs that removal (more in the entry) |
 | [D23](#d23) | A child's environment block is in name order (Windows) | always-on (Windows) | always-on | decision of 2026-10-13 | the reference moves to Go 1.26 or newer |
-| [D24](#d24) | In a create rollback, keep a folder that replaced the registration. On Windows, run no git call after a `.git` file swap | always-on | always-on | decisions of 2026-10-07 and 2026-10-19 | the reference keeps such a folder |
+| [D24](#d24) | In a create rollback, keep a folder that replaced the registration. On Windows, run no git call after a `.git` file swap | always-on | always-on | decisions of 2026-10-07 and 2026-10-19 | the reference keeps such a folder (more in the entry) |
 | [D27](#d27) | Keep a stale entry whose record names a path that exists (Windows) | always-on (Windows) | always-on | decision of 2026-10-18 | a measurement of the reference with the same test |
 | [CT-1](#ct-1) | `wantPid` adds `pid` and `startTime` | off | the caller sends `"wantPid":true` | optional-param extension | none |
 | [CT-2](#ct-2) | `-keep-children` keeps the child tree at shutdown | off | `-keep-children` / key | off-wire extension | none |
@@ -140,7 +142,7 @@ These hold for each opt-in entry:
 
 Tags: **opt-in** means an operator switch, a flag and a config key. **always-on**
 means no switch. The CT rows are off until someone asks: CT-1 by the caller,
-CT-3 by the file, CT-2 and CT-5 by a flag and a key.
+CT-3 by the file, CT-2 and CT-5 by a flag and a key. CT-4 is not built.
 
 ## Entries
 
