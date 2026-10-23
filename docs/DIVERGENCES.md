@@ -13,7 +13,7 @@ Per-method wire facts (params, result field order, error texts) live in
 reference builds is in [REFERENCE-BUILDS.md](REFERENCE-BUILDS.md).
 
 claustrum follows the reference build `5fd08069`. An entry names the build of a
-measurement where the build matters. A measurement that names no build was made
+measurement where the build matters. A measurement of the reference that names no build was made
 on `5fd08069` or on an earlier build. A fact that comes from
 reading claustrum's code is marked "from the code".
 
@@ -44,8 +44,8 @@ The standard, in priority order:
 >    **(c)** The trigger is reachable, but both binaries fail the operation and
 >    the only delta is diagnostic text.
 > 4. Anything else that changes an honest-path frame is OPT-IN, default off, or
->    it does not ship. The one exception is a maintainer decision to keep an
->    entry always-on. That entry gives the date of the decision and a reopen
+>    it does not ship. The one exception is a maintainer decision that an
+>    entry is always-on. That entry gives the date of the decision and a reopen
 >    trigger.
 
 Corollaries:
@@ -102,7 +102,7 @@ These hold for each opt-in entry:
 - The default is off, which is the zero value. A disabled bound bypasses its guard
   entirely: a cap of `0` skips its `io.LimitReader`. A download bound of `0` is
   `http.Client{Timeout: 0}`, the stdlib's own "no timeout". Never use a huge-but-finite value instead. The
-  `cap+1` and armed-cancel arithmetic defines the boundary, and a huge value
+  `cap+1` arithmetic defines the boundary, and a huge value
   invents a new one.
 - No opt-in bound is a hang detector. Each one is a threshold that an honest slow
   or large input trips too. That is why they are off by default.
@@ -123,14 +123,14 @@ These hold for each opt-in entry:
 | [D2](#d2) | Refuse a destructive path that is or holds `$HOME` | always-on | always-on | rule 3 (a). The `files.extract_tar` wipe: decision of 2026-10-10 | an honest caller that needs such a path (more in the entry) |
 | [D3](#d3) | Cap `files.extract_tar` output size | off (`0`) | `-max-extract-bytes` / key | rule 4 | the cap refuses an honest extraction (more in the entry) |
 | [D6](#d6) | `-cli-version` is one path component | always-on | always-on | rule 3 (b) | Desktop sends a multi-component version |
-| [D8](#d8) | Refuse a link, a FIFO or (Linux, macOS) another user's `remote-server.log`. The `git-shadow` sweep writes nothing through a link | always-on | always-on | rule 3 (b), decision of 2026-10-19 | a shared socket folder that needs the log (more in the entry) |
+| [D8](#d8) | Refuse a FIFO, a link (not an own link to an own file on Linux and macOS) or (Linux, macOS) another user's `remote-server.log`. The `git-shadow` sweep writes nothing through a link | always-on | always-on | rule 3 (b), decision of 2026-10-19 | a shared socket folder that needs the log (more in the entry) |
 | [D10](#d10) | Cap the `-install` CLI size | off (`0`) | `-max-cli-bytes` / key | rule 4 | Desktop stops treating disk-full as terminal |
 | [D12](#d12) | Bound the `-install` download | off (`0`) | `-cli-download-timeout` / key | rule 4 | an honest slow download fails under the bound |
 | [D15](#d15) | Verify a lock holder before a signal (macOS) | always-on (macOS) | always-on | rule 3 (a) | the reference verifies the holder too (more in the entry) |
-| [D16](#d16) | `git.status` of a linked worktree works (Windows) | always-on (Windows) | always-on | decision of 2026-10-13 | the reference or Git for Windows fixes the error (more in the entry) |
+| [D16](#d16) | `git.status` of a linked worktree works (Windows, no global excludes file) | always-on (Windows) | always-on | decision of 2026-10-13 | the reference or Git for Windows fixes the error (more in the entry) |
 | [D19](#d19) | Refuse a junction between `baseRepo` and the leaf on remove (Windows) | always-on (Windows) | always-on | rule 3 (b), decisions of 2026-09-27 and 2026-10-07 | a client that needs the success reply (more in the entry) |
-| [D20](#d20) | Wait 50 ms and read again before a group `SIGKILL` at a `-serve` start (Linux and macOS) | always-on (Linux and macOS) | always-on | rule 3 (a) | the reference waits there too (more in the entry) |
-| [D22](#d22) | Refuse a worktree locked in the `.git` folder of `baseRepo` on remove | always-on | always-on | decision of 2026-10-03 | a caller that needs that removal (more in the entry) |
+| [D20](#d20) | Wait 50 ms and read again before the group `SIGKILL` of a leader that reads as gone, at a `-serve` start (Linux and macOS) | always-on (Linux and macOS) | always-on | rule 3 (a) | the reference waits there too (more in the entry) |
+| [D22](#d22) | Refuse a worktree locked in the `.git` folder of `baseRepo` on remove, where the reference answers success in four states | always-on | always-on | decision of 2026-10-03 | a caller that needs that removal (more in the entry) |
 | [D23](#d23) | A child's environment block is in name order (Windows) | always-on (Windows) | always-on | decision of 2026-10-13 | the reference moves to Go 1.26 or newer |
 | [D24](#d24) | In a create rollback, keep a folder that replaced the registration. On Windows, run no git call after a `.git` file swap | always-on | always-on | decisions of 2026-10-07 and 2026-10-19 | the reference keeps such a folder (more in the entry) |
 | [D27](#d27) | Keep a stale entry whose record names a path that exists (Windows) | always-on (Windows) | always-on | decision of 2026-10-18 | a measurement of the reference with the same test |
