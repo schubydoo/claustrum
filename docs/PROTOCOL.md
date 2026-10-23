@@ -734,7 +734,8 @@ following it, and it opens no FIFO:
 - A folder fails the start with `is a directory`.
 - An own regular file is truncated. It keeps its mode and gets the lines.
 - An own link to an own regular file gets the same: the file is truncated (Linux
-  VM).
+  VM). On Windows a link fails with `permission denied`
+  ([D8](DIVERGENCES.md#d8)).
 - Every other entry fails the start with `permission denied` and stays
   unchanged. That is [D8](DIVERGENCES.md#d8).
 
@@ -3641,7 +3642,7 @@ writes the other lines with `(instance "")` then (claustrum's own).
 A holder with no daemon role, after a successful connect, gives this line:
 
 ```text
-<ts> WARN  [daemon] stop: WARNING <dir>/daemon.lock is held by a live process we will not signal (its holder is not a daemon (role "")); leaving it alone
+<ts> WARN  [daemon] stop: WARNING <dir>/daemon.lock is held by a live process we will not signal (its holder is not a daemon (role "<role>")); leaving it alone
 ```
 
 A lock that another daemon took during the `SIGTERM` wait gives this line, with
@@ -3669,7 +3670,8 @@ it, stale or not, unless the word is `survivor`. The socket unlink removes a
 stale socket, a regular file and an empty directory. It keeps a non-empty
 directory, and a path in a directory that the user cannot write.
 
-The unlink does not check what the path is. So a live foreign listener that
+The unlink does not check what the path is. So, unless the word is `survivor`, a
+live foreign listener that
 refuses the connect with `EACCES` loses its socket path. The listener stays
 alive, but a client that dials by path cannot reach it after that. A variant
 that removes only a socket is recorded under [Candidates considered but not
