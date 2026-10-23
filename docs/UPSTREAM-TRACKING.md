@@ -353,7 +353,7 @@ traps that matter for telling drift from expected:
   such entry for the values `1` and `0` (Linux, macOS and Windows VMs). Its git
   calls have none for `0` (Linux VM). A child of `89cb6289` is not measured.
   Against `5fd08069` the measured peer check log lines differ by a level tag only
-  (round `task011-02`, Linux VM). See [PROTOCOL.md](PROTOCOL.md) → server.*.
+  (round `task011-02`, Linux VM). See [The peer check](protocol/server.md#the-peer-check).
 - `files.extract_tar` splits the builds too, not drift. claustrum follows the pin
   `5fd08069` in these places. Against
   `89cb6289` each of them differs in the measured rows:
