@@ -694,7 +694,7 @@ operator-declinable. Only CT-2 and CT-5 carry a flag and a key.
 - **Reopen trigger.** A measurement that shows the reference waiting before that
   `SIGKILL` (then this becomes parity). Or a report of a child that outlived a
   daemon restart because it replaced its program.
-- **Pointers.** [PROTOCOL.md](PROTOCOL.md) → process.spawn. Also `childreap.go`
+- **Pointers.** [PROTOCOL.md → Child records and the reap](PROTOCOL.md#child-records-and-the-reap-linux-and-macos). Also `childreap.go`
   (`settleGone`, `reapGoneLeader`). Evidence in
   `scratch/89cb6289/e-linux/REPORT.md` and `REPORT-val1.md` to `REPORT-val5.md`
   there, and in `scratch/89cb6289/e-macos/REPORT-val1.md` to `REPORT-val3.md`.
@@ -925,7 +925,7 @@ Reopen trigger: the reference moves to Go 1.26 or newer.
 - The extension is tolerant in both directions: an older daemon ignores the param,
   and an older client never sees the fields. A client can therefore send `wantPid`
   unconditionally. The sibling clauster client pins the contract.
-- **Pointers.** [PROTOCOL.md](PROTOCOL.md) (`process.spawn`), the page
+- **Pointers.** The pages [process.spawn](protocol/process-spawn.md#response) and
   [process.reattach](protocol/process-reattach.md), and `results.go`.
 
 ### CT-2 · Opt-in `-keep-children` serve flag { #ct-2 }
