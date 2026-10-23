@@ -654,3 +654,18 @@ func TestDocsWordLimits(t *testing.T) {
 		}
 	}
 }
+
+// TestDocsTestsKeepTheirPrefix: every test of this file is named TestDocs*. CI runs
+// them with -run '^TestDocs' on a docs-only pull request (decision-051), so a test
+// with another name would not run there.
+func TestDocsTestsKeepTheirPrefix(t *testing.T) {
+	src, err := os.ReadFile("docs_consistency_test.go")
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, m := range regexp.MustCompile(`(?m)^func (Test\w*)\(`).FindAllStringSubmatch(string(src), -1) {
+		if !strings.HasPrefix(m[1], "TestDocs") {
+			t.Errorf("%s does not start with TestDocs, so a docs-only pull request skips it", m[1])
+		}
+	}
+}
