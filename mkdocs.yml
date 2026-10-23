@@ -86,6 +86,7 @@ nav:
   - Architecture: ARCHITECTURE.md
   - Protocol reference: PROTOCOL.md
   - Methods:
+      - server.*: protocol/server.md
       - files.list: protocol/files-list.md
       - files.validate: protocol/files-validate.md
       - files.stat: protocol/files-stat.md
