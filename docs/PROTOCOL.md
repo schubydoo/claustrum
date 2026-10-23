@@ -132,7 +132,7 @@ Once the socket is listenable, the daemon writes the token that it holds in memo
 atomic, through a `daemon.token-*` temp file and a rename. A failed write logs
 `[daemon] failed to persist token: …`, and the daemon serves on. A new daemon
 replaces the token of a dead daemon only after its reap, its `bind` and its
-`listen`. Until then the file holds the old token (measured on Linux).
+`listen`, and until then the file holds the old token (measured on Linux).
 
 The daemon unlinks the file only on a graceful stop: `server.shutdown`,
 `SIGTERM`, `SIGINT` or its self-exit. A `SIGKILL` or a crash leaves it. `-stop`
@@ -174,13 +174,13 @@ record into the file, a JSON object. Both forms below are also macOS. Until the
 reap of its start ends, the record is `{"pid":<n>,"role":"serve","node":"<node>"}`. After the reap
 and the bind, it is `{pid, role, node, instanceId, startedAt}`, with the
 `instanceId` of the listening line and the `instanceId` and `startedAt` that
-`server.capabilities` answers. From the code:
+`server.capabilities` answers. The `startedAt` match is also macOS. From the code:
 `node` is the boot id joined to the pid-namespace inode on Linux, and
 `sysctl kern.bootsessionuuid` on macOS, and the record has no `node` if that
 identity is unknown.
 
 On a graceful stop the daemon removes its own `rpc.sock`, kills its child groups
-and then removes `daemon.token` (see [server.shutdown](protocol/server.md#servershutdown)). Last
+and then removes `daemon.token` (see [What the stop does](protocol/server.md#what-the-stop-does)). Last
 it truncates the record and releases the lock.
 `daemon.lock` stays, empty.
 
@@ -247,8 +247,8 @@ and the summary `terminated`, and tries the lock once more. Normally it then
 serves with the lock.
 
 A holder whose record has the role `stop` gets no signal. The daemon tries the
-lock every 50 ms for 2 s, logs this line and serves without the lock (also
-macOS):
+lock every 50 ms for 2 s. Then it logs this line and serves without the lock
+(also macOS):
 
 ```
 [daemon] serve: <dir>/daemon.lock is held by a --stop (pid <n>) that has not let go; leaving it
@@ -286,7 +286,7 @@ a refused lock call.
 
 #### Windows and macOS
 
-Windows has no run-dir lock (from the code). The remove-then-rebind handoff of
+Windows has no run-dir lock (measured on Windows). The remove-then-rebind handoff of
 the socket keeps two daemons apart there, and the "not the run dir's lock holder"
 line above is the first log line of every start (measured on Windows).
 
