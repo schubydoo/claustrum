@@ -185,15 +185,19 @@ no flag and no key.
     prune skip such an entry (`cliEntryHoldsHome`).
 - **Reference.** It wipes home for `"destDir":"~"` and answers
   `{"success":true}` (measured on `7d193f89`). `-install` removes home as a tree
-  and puts the CLI file there (Linux, macOS and Windows). No measured staging
-  entry of the reference held home, so that guard is claustrum's own.
+  and puts the CLI file there (measured with `-cli-zst` on Linux, macOS and
+  Windows). Not measured: `-cli-url`, a mount of a parent folder of home, a home
+  folder that does not exist, a hard link, Unicode normalization forms, a
+  case-sensitive volume on macOS and a UNC path. For the last name `...` both
+  answer `clean destDir: RemoveAll ...: invalid argument` on Windows, which is
+  parity. No measured staging entry of the reference held home, so that guard
+  is claustrum's own.
 - **Systems and switch.** Linux, macOS and Windows, with the staging removes
   on Windows only. Always on, no switch.
 - **Cost.** A caller that names home, or a folder that holds it, gets a refusal.
   On Windows claustrum refuses a `destDir` with the `\\?\` prefix and a dot or a
   space after its last name. There `5fd08069` extracts into the folder with no
-  dot or space. For the last name `...` both answer
-  `clean destDir: RemoveAll ...: invalid argument`.
+  dot or space.
 - **Rule.** Rule 3 clause (a). The home wipe is unrecoverable data loss. No
   honest caller has a use for it, but a caller can reach it by accident. On
   2026-08-02 an in-repo fuzzer sent `"destDir":"~"` to a live daemon and
@@ -243,8 +247,8 @@ no flag and no key.
   has the cache hit that comes first and the sweeps that are not behind this
   rule.
 - **Reference.** No such rule. With `-cli-version ../x` and a blob it installs
-  to `<parent>/x`, outside the cli-dir. With `../victim` it destroys the target
-  (Linux, macOS and Windows).
+  to `<parent>/x`, outside the cli-dir (Linux, macOS and Windows). With
+  `../victim` it destroys the target.
 - **Systems and switch.** Linux, macOS and Windows. Always on, no switch.
 - **Cost.** None for a bare version: `1.0.86`, a commit sha and `latest` are
   measured as accepted. A lexical containment test was not taken, because it
@@ -259,8 +263,8 @@ no flag and no key.
 
 ### D8 · claustrum refuses a link, a FIFO or another user's `remote-server.log`, and the `git-shadow` sweep writes nothing through a link (always-on) { #d8 }
 
-- **Behavior.** After a failed rename to `remote-server.log.old`, the launcher
-  judges the entry at the log path by `Lstat`.
+- **Behavior.** If the fresh create of the log fails, the launcher judges the
+  entry at the log path by `Lstat`.
   [PROTOCOL.md → Daemon log](PROTOCOL.md#daemon-log-remote-serverlog) has the
   steps that match the reference.
   - Linux and macOS: an own regular file, or the own regular file behind an own
@@ -276,10 +280,10 @@ no flag and no key.
   - The `git-shadow` sweep: a symbolic link with a folder name of this host goes
     with one plain remove, and on Windows a junction too. Nothing is written in
     the target.
-- **Reference.** On Linux it refuses the same entries only in a sticky
-  world-writable folder with the `fs.protected` sysctls on. Elsewhere on Linux
-  and macOS it writes through a link or into another user's file, and it blocks
-  on a FIFO. On Windows it writes through a file symbolic link. Its sweep makes
+- **Reference.** On Linux it refuses the same entries in a sticky
+  world-writable folder with the `fs.protected` sysctls on. On macOS, and on
+  Linux with those sysctls off, it writes through a link or into another user's
+  file, and it blocks on a FIFO. On Windows it writes through a file symbolic link. Its sweep makes
   an empty lock file in the target of a link.
 - **Systems and switch.** Linux, macOS and Windows, as split above. Always on,
   no switch.
