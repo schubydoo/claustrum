@@ -19,7 +19,7 @@ The params errors are all `-32602`:
 | Request | Error |
 |---|---|
 | No `params` member, a `params` that is not an object, or a `cliPath` that is not a string | `Invalid params` |
-| `{}`, `"params":null`, a `null` or empty `cliPath`, or a misspelled key | `cliPath is required` |
+| `{}`, `"params":null`, a `null` or empty `cliPath`, or a key with another name, such as `path` | `cliPath is required` |
 
 Another method of the `launcher.*` namespace gets `-32601 Unknown method: launcher.<x>`.
 
@@ -121,14 +121,14 @@ The log line writes these texts raw. The frame escapes them as above.
 
 ## Log lines
 
-An unusable or unreadable answer writes one line at WARN. A usable or none answer writes none.
+An unusable or unreadable answer writes one line, at WARN (claustrum's own). A usable or none answer writes none.
 
 ```text
 [LauncherHandler] managed launcher from <source> refused: <reason>
 [LauncherHandler] managed settings unreadable: <path>: <reason>
 ```
 
-A repeat of the same line writes nothing. A usable or none answer between two equal refusals makes the second one log again. A `process.spawn` refusal writes no `[LauncherHandler]` line.
+A repeat of the same line writes nothing. A usable answer between two equal refusals makes the second one log again. A none answer does the same (claustrum's own). A `process.spawn` refusal writes no `[LauncherHandler]` line.
 
 ## Differences by system
 

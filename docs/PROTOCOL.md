@@ -957,7 +957,7 @@ cell C-… is of round `tier0-20` against `5fd08069` on a Linux VM.
 | git.worktree_remove | `worktreePath must not be or contain the home directory: …` | D2, in `error`. It sits behind `7d193f89` containment on the default branch, where it fires only if a repo is an ancestor of home. It is the active home guard on the `external_root` branch |
 | process.spawn | `Process ID is required` / `Command is required` | |
 | process.spawn | `command must be an absolute path when a launcher is given` | with a `launcher` param |
-| process.spawn | `the managed launcher cannot be used: <reason>` | -32004. The reasons are the [launcher.resolve texts](protocol/launcher-resolve.md#unusable-reasons), and `a launcher cannot be applied on a Windows host` |
+| process.spawn | `the managed launcher cannot be used: <reason>` | -32004. The reasons are the argv[0] and no-launcher [texts of launcher.resolve](protocol/launcher-resolve.md#unusable-reasons), and `a launcher cannot be applied on a Windows host` |
 | process.spawn | `the managed launcher <path> could not be started: <reason>` | -32005 |
 | launcher.resolve | `cliPath is required` | `{}`, `null` params, a `null` or empty `cliPath`, or a wrong key |
 | process.stdin | `Invalid base64 data` / `Process not found` / `Process not running` | order: decode → not-found → offset verdict (`-32003`/duplicate) → not-running (fresh write only) |
