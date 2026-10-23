@@ -90,7 +90,9 @@ Each opt-in entry rests on one driver claim: Claude Desktop owns the daemon's ar
 on `-serve` and `-install`, so the `claustrum.conf` key is the knob an operator
 can reach. [ARCHITECTURE.md → Driver claims and their
 provenance](ARCHITECTURE.md#driver-claims-and-their-provenance) has the evidence
-and the reopen trigger.
+and the reopen trigger. A route to the argv would make a flag-only opt-in enough
+for Desktop-driven hosts. It would not moot the config key, which serves every
+other driver.
 
 ## Conventions for opt-in divergences
 
@@ -142,7 +144,9 @@ These hold for each opt-in entry:
 
 Tags: **opt-in** means an operator switch, a flag and a config key. **always-on**
 means no switch. The CT rows are off until someone asks: CT-1 by the caller,
-CT-3 by the file, CT-2 and CT-5 by a flag and a key. CT-4 is not built.
+CT-3 by the file, CT-2 and CT-5 by a flag and a key. CT-4 is not built. In the
+CT headings "opt-in" means "off unless somebody asks for it": CT-1 and CT-3 have
+no flag and no key.
 
 ## Entries
 
