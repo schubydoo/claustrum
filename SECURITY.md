@@ -93,14 +93,18 @@ privileged as the daemon's user. Four of those paths reach a recursive delete
 - When `git.worktree_create` rolls back a worktree, it deletes the worktree path
   and its registration. A rollback follows a failure after a successful
   `git worktree add`, for example an expired `timeoutMs` or a failed checkout.
-  Before the add, the daemon also removes one stale registration that names the
-  new worktree, unless it holds a `locked` file. Each delete goes through an
-  `os.Root`, after the home guard. A registration goes only after tests that it
-  is the registration of the new worktree (D24). After a failed add, the daemon
+  Before the add, the daemon also removes a stale registration that names the
+  new worktree. If two entries name it, or the entry holds a `locked` file,
+  nothing goes. Each delete of the worktree path goes through an `os.Root`,
+  after the home guard. To go, a registration must sit directly in the
+  registrations directory of `baseRepo`, and its `gitdir` record must name the
+  new worktree. On Linux and macOS that delete also goes through an `os.Root`.
+  It also gets the identity test of D24 after an answer of git. After a failed add, the daemon
   removes the worktree path only as an empty directory. See
   [git.worktree_create](docs/protocol/git-worktree-create.md#after-a-failure).
-- On Windows, `git.worktree_create` removes old staging entries from the git
-  directory of `baseRepo`. Their names start with `.claude-new-worktree-`, and
+- On Windows, in the state `shadow` and after a good `git worktree add`,
+  `git.worktree_create` removes old staging entries from the git directory of
+  `baseRepo`, through its held handle of that folder. Their names start with `.claude-new-worktree-`, and
   their own write time is 1 hour old or more. Only a real folder goes as a tree.
   A file, a link or a junction goes with a plain remove, so the target of a
   junction stays.
@@ -129,15 +133,17 @@ Details for the three surfaces that need more than a row:
   reattaches, and bytes only. They hold no command output, no arguments, and no
   tokens. Exposing the endpoint on a reachable interface discloses coarse
   operational counts to anyone who can connect.
-- `-wire-log`: redaction covers the `auth` member and token-like env keys only.
-  A reader of the file sees what the client sent and what the daemon sent back,
+- `-wire-log`: redaction is by key. It covers the `auth` member and any key
+  named like a credential (token, secret, password, api_key), at any depth. A
+  secret inside a payload string is not caught. A reader of the file sees what the client sent and what the daemon sent back,
   such as file contents and child output. Keep the flag off unless you need it,
   and store a capture with the same care as the socket token.
 - `-listen-pipe`: the pipe carries an owner-only DACL, in SDDL
   `D:P(A;;GA;;;<current-user-SID>)`. It grants GENERIC_ALL to the SID of the
   daemon user only, as the `0600` mode does for the socket. go-winio's
   `ListenPipe` also creates the pipe with `FILE_PIPE_REJECT_REMOTE_CLIENTS`, so
-  a client over SMB (`\\host\pipe\…`) is refused. With the flag off, no pipe
+  a client over SMB (`\\host\pipe\…`) is refused. The pipe grants no access that
+  the socket plus the token did not already grant. With the flag off, no pipe
   exists. The pipe name is published to `rpc.pipe` in the socket directory and
   removed at a graceful shutdown. The name is not a secret, because the DACL is
   the access control.

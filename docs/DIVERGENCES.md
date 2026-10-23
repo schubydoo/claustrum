@@ -194,7 +194,9 @@ entry needs it. A fact that comes from reading claustrum's code is marked
     `destDir must not be or contain the home directory:`.
   - `git.worktree_remove` before the delete of `worktreePath`.
   - Each rollback delete of `git.worktree_create`, and from the code its stale
-    step before the add. After a failed
+    step before the add. The one exception is the registration delete of a
+    create that holds no git directory and accepted no registration. That
+    delete tests the `gitdir` record and the registrations directory instead. After a failed
     `git worktree add`, create only removes an empty leaf with an rmdir. The
     guard is defense in depth behind the containment of create. It emits no
     frame.
