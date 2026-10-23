@@ -389,7 +389,7 @@ line and changed nothing, in a check with no positive control.
 ##### When the cleaner runs
 
 The cleaner is on in one case only. The socket path is cleaned first, so `.` and
-double slashes drop out. The cleaned path is absolute, and its
+double slashes drop out, and `..` is resolved by text (from the code for `..`). The cleaned path is absolute, and its
 last three components read `run/<id>/rpc.sock`, with that exact case. The folder above
 `run` is the root. The resolved daemon binary is `<root>/srv/<id>/<name>`, one
 folder below `srv`, under that root or under the symlink-resolved form of that root.
@@ -442,12 +442,18 @@ gets this line (macOS VM):
 On Linux the signal goes through `pidfd_send_signal`, as on the reference. The
 cleaner opens the descriptor with `pidfd_open` before its last identity test. So on
 Linux a pid that changes hands after the test gets no signal (from the code). On a
-kernel without that call claustrum uses `kill` (not measured).
-
-On Linux a stopped daemon on an idle run dir gets no SIGTERM (`5fd08069`). The
-pass logs `[hostclean] daemon pid <pid> left alone this pass: it could not be inspected (or is stopped)`. macOS uses `kill`, and the call of the macOS reference is not
-measured. On a macOS VM the cleaners of `89cb6289` and claustrum ended the same
+kernel without that call claustrum uses `kill` (not measured). macOS uses `kill`,
+and the call of the macOS reference is not measured. On a macOS VM the cleaners of `89cb6289` and claustrum ended the same
 daemons and orphan groups and removed the same folders.
+
+On Linux a stopped daemon on an idle run dir gets no SIGTERM, and the dir stays
+(`5fd08069`). The run dir gets the `was not retired` line with the reason
+`the listener could not be verified as a daemon of ours (not inspectable)`. A daemon
+5 minutes old or more also gets this line, and counts as undecided:
+
+```
+[hostclean] daemon pid <pid> left alone this pass: it could not be inspected (or is stopped)
+```
 
 ##### The `lsof` reads (macOS)
 
@@ -530,7 +536,7 @@ On macOS the dir goes in these states:
 
 No `lsof` runs for a missing lock, so a failed run changes nothing (from the
 code). That is measured for a command that does not start and for a run that
-exits 1.
+writes to stderr and exits 1.
 
 Not measured: a second pass, and an `lsof` run that writes to stderr with another
 exit code or with output on stdout too. claustrum reads each such run as no
@@ -540,9 +546,10 @@ Linux is not measured for these states. On Linux three states keep the dir: a lo
 that cannot be opened, a lock that is no regular file, and lock content that is no
 record. The dir then gets claustrum's own line
 `[hostclean] run dir "<dir>" kept: whether a process holds its run-dir lock could not be determined`.
-On Linux a `/proc/locks` that cannot be read keeps the dir, with the
-`could not be examined` line. That holds also for a lock that a process holds (`5fd08069`).
-On Linux the pass logs neither `left alone this pass` line of the `lsof` reads.
+On Linux, when `/proc/locks` cannot be read, a dir whose `daemon.lock` is a regular
+file, empty or with a record, stays with the `could not be examined` line. That
+holds also when a process holds the lock (`5fd08069`). On Linux the pass logs
+neither `left alone this pass` line of the `lsof` reads (from the code).
 
 ### Daemon startup (`-serve`)
 
