@@ -850,7 +850,7 @@ cell C-… is of round `tier0-20` against `5fd08069` on a Linux VM.
 | files.extract_tar | `mkdir <entry>: mkdirat <place>: file exists` | in `error` field. A file is at the place of a directory entry |
 | git.status | `baseRepo is required` | -32602. `baseRepo` is now required, since `7d193f89` |
 | git.status / git.list_branches | `<go error>`, for example `exit status 128` | -32603 (git failed, stdout parse) |
-| git.list_branches / git.info / git.status / git.worktree_create | `git took too long: Claude stopped git <subcommand> after 2 minutes; try again` | -32603. Create: after the text of the stopped step, as `git worktree add failed: ` or the `mkdir_failed` text of the parent step. Alone, with `worktree_add_failed`, for a stopped repository test |
+| git.list_branches / git.info / git.status / git.worktree_create | `git took too long: Claude stopped git <subcommand> after 2 minutes; try again` | -32603. Create: after the text of the stopped step, as `git worktree add failed: ` or the `mkdir_failed` text of the parent step. Alone, with `worktree_add_failed`, for a stopped repository test. While a request with `"shadowDirOff":true` runs, the text says `after 30 minutes` (claustrum's own) |
 | the four methods | `config-defined hooks could not be pinned off; git not run: listing the configuration in force: git took too long: Claude stopped git config after 30 seconds; try again` | -32603. Create: `worktree_add_failed`, after `git worktree add failed (checkout): ` for the checkout listing |
 | the four methods | `this repository's git config cannot be used: git did not finish reading "<path>" within 30 seconds; try again` | -32603. Create: `worktree_add_failed` |
 | git.worktree_create | `git worktree add failed (completing the new worktree's git files): this repository's git config cannot be used: git did not finish reading it within 30 seconds; try again` | in `error`, `worktree_add_failed`. The listing of `config.worktree` after the add ran 30 s, and the rollback of a failed checkout runs (cell TW) |
@@ -1075,7 +1075,7 @@ The expanded spelling is wire-visible on eight frames, so it is contract.
 error text. The expanded string also appears in the error text of `files.stat`,
 `files.read`, `files.list`, `files.validate`, `files.extract_tar` and
 `process.spawn`. Two places do *not* carry the spelling. `files.list` entry paths
-are re-joined, and `git.info`'s `root` comes from git's own output. On a
+are re-joined, and `git.info`'s `root` comes from the walk with links resolved, and on Windows from git's confirmation of it. On a
 trailing-separator spelling the difference is a change of *verdict*. POSIX
 `stat("f.txt/")` gives `ENOTDIR`. Once the daemon removes the separator, a
 `-32603` error frame becomes a success frame. Ids 15, 16, 18 and 19 of
