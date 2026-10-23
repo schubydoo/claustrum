@@ -218,8 +218,7 @@ children it spawns.
   line before a `SIGKILL` is one more. So are the reasons for a held lock and for a
   listener that is not our daemon. When the cleaner is off, the daemon logs one
   `[daemon] host cleaning off:` line after the listening line. On macOS its busy read takes an `lsof` run it
-  gave up on as busy, and the reference side of that is not probe-measured. That one is a numbered divergence,
-  [DIVERGENCES.md](DIVERGENCES.md) D17. After 30 days
+  gave up on as busy, and the retire then sends no SIGTERM, as on `5fd08069` (round `tier4-01`, macOS VM). After 30 days
   of run-dir idleness, or at once for a run dir named with `.removing-`, the retire path can
   SIGTERM a socket-live daemon.
 - On Unix, claustrum reads the interactive PATH from the login shell inside the
