@@ -265,8 +265,8 @@ func TestStdioPipesAndBusyCheckDarwin(t *testing.T) {
 		t.Errorf("an abandoned lsof run: pipes=%v canRead=%v, want false false", pipes, canRead)
 	}
 
-	// hcBusyCheck: a completed run with a connected peer is busy. An abandoned run reads busy
-	// under D17, and both are readings.
+	// hcBusyCheck: a completed run with a connected peer is busy. An abandoned run reads busy,
+	// and both are readings.
 	runLsof = func(...string) (string, bool, bool, bool) { return "p1\nf3\ntunix\nn->/run/other\n", true, true, false }
 	if busy, canRead := hcBusyCheck(1); !busy || !canRead {
 		t.Errorf("connected peer: busy=%v canRead=%v, want true true", busy, canRead)
@@ -279,7 +279,7 @@ func TestStdioPipesAndBusyCheckDarwin(t *testing.T) {
 	}
 	runLsof = func(...string) (string, bool, bool, bool) { return "", false, true, false }
 	if busy, canRead := hcBusyCheck(1); !busy || !canRead {
-		t.Errorf("abandoned run: busy=%v canRead=%v, want true true (D17)", busy, canRead)
+		t.Errorf("abandoned run: busy=%v canRead=%v, want true true", busy, canRead)
 	}
 }
 
@@ -330,12 +330,12 @@ func TestStdioReadAnswersDarwin(t *testing.T) {
 	}
 }
 
-// TestHcBusyAbandonedRunReadsBusy pins D17.
+// TestHcBusyAbandonedRunReadsBusy pins the busy read of an abandoned run.
 //
 // The two arms differ ONLY in the flag: both return no output. A completed run that
 // saw nothing is evidence the pid is idle, and must read as not busy. That arm is
 // the control. An abandoned run is not evidence of anything, and claustrum reads it
-// as busy. Deleting the D17 arm in hcBusy makes the second assertion fail while
+// as busy. Deleting the abandoned arm in hcBusy makes the second assertion fail while
 // the control still passes.
 func TestHcBusyAbandonedRunReadsBusy(t *testing.T) {
 	old := runLsof
@@ -345,10 +345,10 @@ func TestHcBusyAbandonedRunReadsBusy(t *testing.T) {
 	runLsof = func(...string) (string, bool, bool, bool) { return "", true, true, false }
 	if hcBusy(1) {
 		t.Fatal("a completed run that found nothing read as busy; that is the parity " +
-			"answer and D17 must not change it")
+			"answer and the abandoned arm must not change it")
 	}
 
-	// The divergence: the run was abandoned, so nothing is known about the pid.
+	// The run was abandoned, so nothing is known about the pid.
 	runLsof = func(...string) (string, bool, bool, bool) { return "", false, true, false }
 	if !hcBusy(1) {
 		t.Error("an abandoned run read as not busy; a wedged lsof would then let the " +
@@ -919,7 +919,7 @@ func TestRunLsofIsBounded(t *testing.T) {
 			t.Error("a run the deadline ended did not report it")
 		}
 		// The deadline killed the command, so the run COMPLETED, and the flag above
-		// tells its readers that it is no answer. D17 is the next arm only, and that
+		// tells its readers that it is no answer. The busy read keys on the next arm only, and that
 		// is why this arm asserts ok and the next asserts !ok.
 		if !ok {
 			t.Error("a run the deadline ended reported itself abandoned")
@@ -941,7 +941,7 @@ func TestRunLsofIsBounded(t *testing.T) {
 		got, ok, _, _ := runLsof("-p", "1")
 		elapsed := time.Since(start)
 		if ok {
-			t.Error("an abandoned run reported itself completed; D17 keys on this flag, " +
+			t.Error("an abandoned run reported itself completed; the busy read keys on this flag, " +
 				"so a wrong answer here reads an unreadable pid as idle")
 		}
 		if got != "" {

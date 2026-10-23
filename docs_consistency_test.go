@@ -605,6 +605,7 @@ var docWordLimits = map[string]int{
 	"docs/protocol/files-read.md":          900,
 	"docs/protocol/files-stat.md":          500,
 	"docs/protocol/files-validate.md":      400,
+	"docs/protocol/git-info.md":            2000,
 	"docs/protocol/git-list-branches.md":   1000,
 	"docs/protocol/git-status.md":          3100,
 	"docs/protocol/git-worktree-create.md": 3100,
