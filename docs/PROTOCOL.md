@@ -618,7 +618,7 @@ printed this text after a time stamp, and claustrum puts its level tag before it
 
 #### Child records and the reap (Linux and macOS)
 
-A daemon that holds the [run-dir lock](#run-dir-lock-daemonlock) records each [process.spawn](protocol/process-spawn.md) child in `<run dir>/children/<pid>.json`, on every socket shape. The run dir is the folder of the socket path. The child needs a pid of 2 or more and a start time that the daemon can read. Windows writes no record and reaps none.
+A daemon that holds the [run-dir lock](#run-dir-lock-daemonlock) records each [process.spawn](protocol/process-spawn.md) child in `<run dir>/children/<pid>.json`, on every socket shape. That is `19f30c46` parity. The run dir is the folder of the socket path. The child needs a pid of 2 or more and a start time that the daemon can read. Windows writes no record and reaps none (Windows VM). Unless a rule says otherwise, the rules below are measured against `89cb6289` on Linux, and a rule that names macOS on macOS.
 
 The record is one JSON object with the members in this order:
 
@@ -628,9 +628,9 @@ The record is one JSON object with the members in this order:
 
 `daemonStart` and `start` are strings. They hold clock ticks on Linux and the date text of `CLAUDE_SSH_CHILD` on macOS. On macOS the node is the boot-session UUID, and the host is the hostname. With a `launcher`, `argv0` is the launcher, and a `program` member after `argv0` holds the command. claustrum writes no `program` without a launcher (not measured on the reference).
 
-- The daemon writes a record through a temp file `children/.rec-<pid>.json.<12 characters>` and a rename.
+- The daemon writes a record through a temp file `children/.rec-<pid>.json.<12 characters>` and a rename. The source of the 12 characters is claustrum's own.
 - The end of the child removes its record, before the pipe drain.
-- A graceful shutdown removes the records of the children that it ends. claustrum waits 1 s at most for them. With `-keep-children` it removes the records of the children that stay alive, so the next daemon leaves them alone.
+- A graceful shutdown removes the records of the children that it ends. claustrum waits 1 s at most for them (claustrum's own). With `-keep-children` it removes the records of the children that stay alive, so the next daemon leaves them alone. That rule is claustrum's own, as the flag is.
 - A record stays after a kill of the daemon, and for a process whose `id` a later spawn took.
 - After a rename of the run dir, a record goes under the new name. The daemon holds the run dir open.
 - No record goes through a `children` that is not a real folder inside the run dir. The remove at the end of the child is the one exception: it follows a symbolic link to a folder inside the run dir.
@@ -639,22 +639,22 @@ At a `-serve` start, after the run-dir lock and before the bind, the daemon read
 
 - It walks `children` in directory order and handles the first 128 names that end in `.json`. The rest wait for the next start. Kept records count toward the 128. So 128 records of another machine, which stay for 30 days, stop every reap, and an orphan behind them stays alive.
 - It sends `SIGTERM` to 64 groups at most. The others keep their records for the next start.
-- Only a regular file is a record. A link, a FIFO or a folder with a `.json` name is removed, with no signal. The target of a link stays.
+- Only a regular file is a record. A link, a FIFO or an empty folder with a `.json` name is removed, with no signal. The target of a link stays. A folder with content stays (from the code).
 - It reads at most 4096 bytes of a record. A record whose first 4096 bytes are not one JSON value is removed, with no signal.
-- If `children` is not a real folder, it reads, signals and removes nothing.
+- If `children` is not a real folder, it reads, signals and removes nothing. That is measured for a symbolic link to a folder. The other kinds are claustrum's own.
 
-A record of a daemon that is alive stays. So does a record from another machine, for 30 days (from the code). A record from an earlier boot of this machine, and a record of a dead pid, are removed. For a record of a dead daemon on this machine, the daemon tests the process. If it still is the recorded child, its group gets `SIGTERM`. Else the record goes with no signal. The test has four parts:
+A record of a daemon that is alive stays. So does a record from another machine, for 30 days (from the code). A record of a dead pid is removed. So is a record from an earlier boot of this machine (from the code). For a record of a dead daemon on this machine, the daemon tests the process. If it still is the recorded child, its group gets `SIGTERM`. Else the record goes with no signal. The test has four parts:
 
 - The process started at the recorded `start`, so the pid is not reused. On macOS a `start` with two blanks before a one-digit day does not match.
 - It leads its own process group.
 - It runs `argv0`. With a `program` member, it can also run `program`, or hold `program` as one whole argument. On Linux the program is the first argument of `/proc/<pid>/cmdline`, and a name with the same last path component matches. On macOS the daemon reads the command text of `ps`, which cuts words at blanks. So a `program` with a blank never matches an argument there.
 - `CLAUDE_SSH_RUN_DIR` names this run dir, and `CLAUDE_SSH_CHILD` names the pid and start of the process itself.
 
-A process that the daemon cannot inspect keeps its record and gets no signal. The daemon does not test the owner of a record file.
+A process that the daemon cannot inspect keeps its record and gets no signal (`5fd08069`, from the code). The daemon does not test the owner of a record file.
 
-On macOS a `daemonStart` with two blanks before a one-digit day does not match the live daemon either. An older claustrum build wrote such a text on days 1 to 9 of a month. A new daemon on macOS reads such a daemon as gone, although it is alive, and ends its recorded children.
+On macOS a `daemonStart` with two blanks before a one-digit day does not match the live daemon either. An older claustrum build wrote such a text on days 1 to 9 of a month. A new daemon on macOS reads such a daemon as gone, although it is alive. It ends a recorded child whose own `start` matches, such as one that started on day 10 or later. A child that started on days 1 to 9 has two blanks in its `start` too, so its record is dropped with no signal.
 
-After the `SIGTERM` the daemon polls for 2 s. At each poll a group takes the whole test again. A group that fails it gets nothing more. A group that still passes after 2 s gets `SIGKILL`. After the last group is done, the records of all signalled groups go together. A leader that reads as gone is read again after 50 ms before the `SIGKILL` of its group ([D20](DIVERGENCES.md#d20)). The [log lines](#lines-of-child-processes) of the reap are under the daemon log.
+After the `SIGTERM` the daemon polls for 2 s. At each poll a group takes the whole test again. A group that fails it gets nothing more. A group that still passes after 2 s gets `SIGKILL`. After the last group is done, the records of all signalled groups go together. A leader that reads as gone is read again after 50 ms before the `SIGKILL` of its group ([D20](DIVERGENCES.md#d20)). A group that still cannot be inspected at the end, or that outlives the `SIGKILL`, keeps its record. The [log lines](#lines-of-child-processes) of the reap are under the daemon log.
 
 ### Idle-connection close
 
@@ -758,7 +758,7 @@ are not configurable.
 
 #### Lines of child processes
 
-These lines tell of [process.spawn](protocol/process-spawn.md) children and of their [records and the reap](#child-records-and-the-reap-linux-and-macos). claustrum prints a level tag before each line. The reference prints none. The levels are claustrum's own, and `CLAUSTRUM_LOG_LEVEL=warn` drops the INFO lines.
+These lines tell of [process.spawn](protocol/process-spawn.md) children and of their [records and the reap](#child-records-and-the-reap-linux-and-macos). claustrum prints a level tag before each line. The reference prints none. The levels are claustrum's own, and `CLAUSTRUM_LOG_LEVEL=warn` drops the INFO lines. Unless a row says otherwise, each text is the text of `89cb6289`, measured on Linux. The group-ended, outlived and dropped-record lines are measured on macOS too.
 
 | Event | Level | Line |
 |---|---|---|
@@ -773,7 +773,7 @@ These lines tell of [process.spawn](protocol/process-spawn.md) children and of t
 | Over 128 records | WARN | `[process.Registry] more than 128 records in <run dir>/children; leaving the rest for the next start` |
 | Over 64 groups | WARN | `[process.Registry] <n> more orphaned group(s) recorded in <run dir>/children than the 64 one start ends; leaving those for the next start` |
 | A record dropped | INFO | `[process.Registry] record <pid>.json: pid <pid> is not a child to end (<reason>); dropping the record, signalling nothing` |
-| A record kept | INFO | `[process.Registry] record <pid>.json: pid <pid> cannot be inspected now (<reason>); keeping the record, signalling nothing` |
+| A record kept | INFO | `[process.Registry] record <pid>.json: pid <pid> cannot be inspected now (<reason>); keeping the record, signalling nothing` (`5fd08069`, Linux VM) |
 | A group ended | INFO | `[process.Registry] ending orphaned process group <pgid> recorded by daemon instance "<instance>" (pid <daemon pid>): SIGTERM` |
 | The grace ran out | WARN | `[process.Registry] group <pgid> outlived SIGTERM for 2s: SIGKILL` |
 | A group fails the test | INFO | `[process.Registry] group <pgid> no longer verifies (<reason>); nothing more is sent to it` |
@@ -789,8 +789,9 @@ The main `<reason>` texts of a dropped record and of a group that fails the test
 - `it was not started by a daemon of this run dir: no CLAUDE_SSH_RUN_DIR names it`
 - `it belongs to a daemon of another run dir: its CLAUDE_SSH_RUN_DIR names a different one`
 - `it was not started by a daemon itself: its CLAUDE_SSH_CHILD does not name its own pid and start (something a child started)`
-- `environment unreadable: <error>`, `pid namespace unreadable: <error>` and `stat unreadable: <error>`
-- `pid is out of range`, `pid is this daemon`, `pid is this daemon's parent or process group`, `record has no start time to verify against` and `the record names no program to verify against`
+- `environment unreadable: <error>`, and on `5fd08069` `pid namespace unreadable: <error>` and `stat unreadable: <error>`
+- `the record names no program to verify against`
+- claustrum's own: `pid is out of range`, `pid is this daemon`, `pid is this daemon's parent or process group` and `record has no start time to verify against`
 
 ### Orphan-exit self-probe
 
