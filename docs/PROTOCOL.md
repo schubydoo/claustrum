@@ -26,7 +26,8 @@ their reopen triggers are in [`DIVERGENCES.md`](DIVERGENCES.md).
 - The daemon dispatches the requests of one connection concurrently. Responses
   can arrive out of request order. Match them by `id`.
 - Two error replies skip the concurrent dispatch. The daemon writes them on its
-  read path, before it reads the next line. The reference does the same.
+  read path, before it reads the next line. The reference does the same
+  (measured on Linux).
   - The parse error (`-32700`) covers any line that does not decode into a
     request. A partial object, a line of only spaces, `[1]`, `123`, `"x"` and a
     batch array all get it. The frame is
@@ -47,9 +48,9 @@ their reopen triggers are in [`DIVERGENCES.md`](DIVERGENCES.md).
     `[Server] Unauthorized request: method=…, id=…` before it writes the error
     reply. When the reply write fails, the failure line comes after the
     parse-error line. In a Go type-mismatch error, the type name differs from
-    the reference.
+    the reference (measured on Linux).
 - At a client EOF the daemon logs `[Server] Connection closed: <addr>`, then
-  closes the socket.
+  closes the socket (measured on Linux).
 - On Windows, when the client half-closes, the daemon does not wait for a request
   in flight. The reply to that request is lost, and a partial last line does not
   change that (measured on Windows).
