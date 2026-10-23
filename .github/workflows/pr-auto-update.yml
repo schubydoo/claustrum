@@ -15,6 +15,15 @@
 #
 # Bot-authored PRs (knope's release PR, Renovate) are skipped via the
 # `user.type === "Bot"` check; fork PRs and the excluded labels are skipped too.
+#
+# Two operational levers (ported from clauster):
+#   - Per-PR hold: label a PR `no-autoupdate` to leave it BEHIND main (it stays
+#     out of the sweep until the maintainer updates it by hand).
+#   - Global kill-switch: `gh variable set AUTO_UPDATE --body off` pauses the
+#     whole sweep repo-wide (every open PR is left behind); `gh variable set
+#     AUTO_UPDATE --body on` (or `gh variable delete AUTO_UPDATE`) resumes it.
+# Either way, a held/paused PR sits BEHIND main and can't merge under the
+# strict-up-to-date ruleset until it's updated by hand — that's the intent.
 name: Auto-update PRs
 
 on:
@@ -46,13 +55,27 @@ jobs:
           permission-contents: write
           permission-pull-requests: read
 
+      # Fail loud if the mint produced an empty token. Without this guard,
+      # github-script below would fall back to the job's GITHUB_TOKEN, and merge
+      # commits pushed with GITHUB_TOKEN do not re-trigger the updated PR's CI.
+      - name: Verify App token was minted
+        if: ${{ steps.app-token.outputs.token == '' }}
+        run: |
+          echo "::error::App token mint produced an empty token; refusing to proceed (a merge commit pushed with GITHUB_TOKEN would not re-trigger PR CI)."
+          exit 1
+
       - name: Update open PRs targeting the default branch
         uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 # v9.0.0
+        env:
+          AUTO_UPDATE: ${{ vars.AUTO_UPDATE }}
         with:
           github-token: ${{ steps.app-token.outputs.token }}
           script: |
+            const mode = (process.env.AUTO_UPDATE || 'on').trim().toLowerCase();
+            if (mode === 'off') { core.info('auto-update disabled via the AUTO_UPDATE repo variable'); return; }
             const EXCLUDE = new Set([
               "dependencies",
+              "no-autoupdate", // per-PR opt-out: the maintainer updates this one by hand
               "autorelease: pending",
               "autorelease: tagged",
               "autorelease: snapshot",

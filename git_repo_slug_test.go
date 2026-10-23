@@ -7,15 +7,15 @@ import (
 )
 
 // Tests for git.info's repoSlug / defaultBranch fields, added by the reference
-// daemon in 7c2f88d. See docs/PROTOCOL.md and docs/UPSTREAM-TRACKING.md.
+// daemon in 7c2f88d. See docs/protocol/git-info.md and docs/UPSTREAM-TRACKING.md.
 
 // parseRepoSlug reduces a remote URL to owner/repo. The rule is NOT "the path
 // after the host is exactly two segments", which is what this said until
 // 2026-08-02 and would admit gitlab.com/acme/gizmo: the host must be github.com,
 // AND the path must be exactly two segments, AND each segment must pass its own
 // charset predicate (the owner's is stricter than the repo's). The full rule is
-// pinned by TestParseRepoSlugMatchesReference below, and tabulated in
-// docs/PROTOCOL.md.
+// pinned by TestParseRepoSlugMatchesReference below, and listed in
+// docs/protocol/git-info.md.
 func TestParseRepoSlug(t *testing.T) {
 	cases := []struct{ url, want string }{
 		{"git@github.com:acme/widgets.git", "acme/widgets"},

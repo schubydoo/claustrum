@@ -110,8 +110,8 @@ type gitInfoResult struct {
 	// RepoSlug is the "owner/repo" parsed from remote.origin.url, .git and
 	// userinfo stripped. Populated only when the host is github.com, the path is
 	// exactly two segments (a subgroup like group/sub/proj yields ""), and both
-	// segments pass their charset rules — see parseRepoSlug, and the 42-shape
-	// table in docs/PROTOCOL.md. The host gate is not optional: describing this
+	// segments pass their charset rules — see parseRepoSlug, and the rules
+	// in docs/protocol/git-info.md. The host gate is not optional: describing this
 	// as the segment count alone would admit gitlab.com/acme/gizmo.
 	// DefaultBranch is what refs/remotes/origin/HEAD points to (empty when unset).
 	RepoSlug      string `json:"repoSlug"`
