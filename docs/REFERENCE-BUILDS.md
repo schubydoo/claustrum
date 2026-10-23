@@ -588,8 +588,8 @@ byte-for-byte (values and timing) against the reference:
    including on the non-repo body. The slug rule requires the host to be
    `github.com` and applies a charset check to both segments. The rule is not
    "exactly two path segments".
-   [PROTOCOL.md → git.info](PROTOCOL.md#gitinfo) is authoritative for that rule,
-   and its 42-shape table backs it.
+   [git.info → repoSlug](protocol/git-info.md#reposlug) is authoritative for that
+   rule.
 5. `server.capabilities` gained a `features` array
    (`["process.stdin.offset"]`).
 
