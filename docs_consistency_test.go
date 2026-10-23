@@ -580,10 +580,12 @@ func TestDocsEveryErrorCodeIsDocumented(t *testing.T) {
 // up, without the maintainer's word.
 var docWordLimits = map[string]int{
 	"AGENTS.md":                            7600,
+	"CONTRIBUTING.md":                      1300,
+	"README.md":                            1300,
 	"SECURITY.md":                          1700,
 	"docs/ARCHITECTURE.md":                 4500,
 	"docs/DIVERGENCES.md":                  10400,
-	"docs/EXAMPLES.md":                     1300,
+	"docs/EXAMPLES.md":                     1200,
 	"docs/GLOSSARY.md":                     1300,
 	"docs/IMPROVEMENTS.md":                 2300,
 	"docs/PROTOCOL.md":                     45900,
@@ -618,10 +620,11 @@ const (
 // docNoWordLimit has no word limit: the ledger is append-only by the maintainer's decision of 2026-10-21.
 const docNoWordLimit = "docs/REFERENCE-BUILDS.md"
 
-// TestDocsWordLimits: each Markdown file under docs/, AGENTS.md and SECURITY.md, except
-// docNoWordLimit, has at most the words of its limit. A word is a run of characters between white space.
+// TestDocsWordLimits: each Markdown file under docs/, AGENTS.md, CONTRIBUTING.md, README.md
+// and SECURITY.md, except docNoWordLimit, has at most the words of its limit. A word is a run
+// of characters between white space.
 func TestDocsWordLimits(t *testing.T) {
-	files := []string{"AGENTS.md", "SECURITY.md"}
+	files := []string{"AGENTS.md", "CONTRIBUTING.md", "README.md", "SECURITY.md"}
 	err := filepath.WalkDir("docs", func(p string, d os.DirEntry, err error) error {
 		if err == nil && !d.IsDir() && strings.HasSuffix(p, ".md") {
 			files = append(files, filepath.ToSlash(p))
