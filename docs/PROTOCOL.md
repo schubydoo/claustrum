@@ -459,7 +459,8 @@ Before it signals a daemon whose run dir went idle past the threshold, or whose 
 dir name carries `.removing-` from an earlier removal, the cleaner
 asks whether that daemon still has a live client. On macOS it asks `lsof`. That
 run has three bounds: a command deadline, a wait for the output pipe, and a
-last bound that gives up on it. Those bounds are claustrum's own.
+last bound that gives up on it at 17 s, as on `5fd08069` (round `tier4-01`, macOS VM).
+The other two bounds are claustrum's own.
 
 The cleaner asks `lsof` two more things on macOS: whether the stdio of an orphan
 is three pipes, and whether a process holds the `daemon.lock` of an idle run dir.
@@ -473,7 +474,7 @@ and E4 hold an idle daemon, and rows D1k and E3k hold a daemon with one client:
 |---|---|---|
 | the command does not start | the daemon gets no SIGTERM (rows D1i and D1k, as `89cb6289`) | a dir with a lock file stays (row C3, as `89cb6289`) |
 | the run writes to stderr and exits 1 | the daemon gets no SIGTERM (rows E3i, E3k and E4, as `89cb6289`) | a dir with a lock file stays (rows D2p, D2f and E4, as `89cb6289`) |
-| the run is given up on | busy, so no SIGTERM ([DIVERGENCES.md](DIVERGENCES.md) D17, not measured) | kept (not measured, claustrum's own) |
+| the run is given up on | no SIGTERM and the refusal line below, as `5fd08069` (round `tier4-01`, macOS VM). claustrum runs `lsof` three times and its pass takes 51 s, against one run and 17 s, a known gap | kept (not measured, claustrum's own) |
 | the 15 s deadline ends the run | no SIGTERM (`5fd08069` under a hung `lsof`, cells B1 and B2. claustrum gives the same result, round 8, macOS VM) | kept (cells L1 and L2) |
 | the run completes with nothing on stderr | the output decides | the output decides |
 

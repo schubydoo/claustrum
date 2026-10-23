@@ -57,8 +57,8 @@ var hcLsofEnv = []string{"LC_ALL=C", "LANG=C", "PATH=/bin:/usr/bin:/usr/sbin"}
 
 // The three bounds on one lsof run.
 //
-// claustrum bounds every lsof run its host cleaner makes. The three values are
-// claustrum's own. The reference side is not probe-measured.
+// claustrum bounds every lsof run its host cleaner makes. 5fd08069 also gives up on a
+// run at 17 s (round tier4-01, macOS VM). The other two values are claustrum's own.
 //
 // Why three and not two. The deadline kills the command. The wait delay then bounds
 // how long the run waits for the output pipe to close, which covers a child that
@@ -68,10 +68,10 @@ var hcLsofEnv = []string{"LC_ALL=C", "LANG=C", "PATH=/bin:/usr/bin:/usr/sbin"}
 // stuck on an unresponsive mount. The abandon bound is what covers it: the run is
 // given up on.
 //
-// The gap between the bounds is what makes D17 safe. A merely slow lsof is killed by
+// The gap between the bounds keeps the busy read safe. A merely slow lsof is killed by
 // the deadline and its output pipe closes within the wait delay, so the run COMPLETES
 // with no output well before the abandon bound. So the two empty results really do
-// mean different things, and only the second one is the divergence.
+// mean different things, and only the second one reads as busy.
 //
 // The cost of getting this wrong is a whole cleaner pass: retireAbandoned samples
 // hcBusy for up to hcBusyWindow, and on darwin every one of those samples is an lsof
@@ -127,7 +127,7 @@ var (
 	//
 	// The second result says whether the run COMPLETED. An abandoned run answers false
 	// with no output, which is not the same fact as "lsof looked and found nothing" —
-	// see D17 and hcBusy below.
+	// see hcBusy below.
 	//
 	// The third result says whether the run ANSWERED. It is false when the command did
 	// not start, and when it wrote to stderr. The exit code is no rule: lsof exits 1
@@ -386,9 +386,9 @@ func parseLsofFtn(out string) []lsofRec {
 // record whose name shows a connected peer ("->") is an immediate yes; otherwise more than one
 // unix endpoint means an accepted connection sits alongside the bare listener.
 //
-// D17: an ABANDONED run answers busy. A run that finished and saw nothing and a run that was
-// given up on both produce no output. claustrum keeps them apart, because only the first is
-// evidence. The reference side is not probe-measured. This arm is reachable only when the
+// An ABANDONED run answers busy. A run that finished and saw nothing and a run that was given
+// up on both produce no output. claustrum keeps them apart, because only the first is evidence.
+// 5fd08069 sends no SIGTERM there either (round tier4-01). This arm is reachable only when the
 // read failed outright. A run that did not answer reads as not busy here, and so does a
 // run that the deadline ended. hcBusyCheck tells them apart.
 func hcBusy(pid int) bool {
@@ -397,7 +397,7 @@ func hcBusy(pid int) bool {
 }
 
 // hcBusyCheck is hcBusy plus whether the answer is a reading at all. An abandoned run is a
-// reading: it answers busy (D17). A run that did not answer is no reading. The retire then
+// reading: it answers busy. A run that did not answer is no reading. The retire then
 // refuses the daemon, and no SIGTERM goes out. That is
 // what 89cb6289 did on a macOS VM, for a command that did not start (rows D1i and D1k) and
 // for a run that wrote to stderr (rows E3i and E3k), 3 of 3 each. A run that the deadline
