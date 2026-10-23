@@ -3922,7 +3922,7 @@ never "a huge limit".
 | `-cli-probe-timeout <dur>` | `cli-probe-timeout` | none | deprecated. It sets nothing and logs one warning. The direct `<cli> --version` run always has its 30 s and 120 s bounds (retired D11) | -install |
 | `-cli-download-timeout <dur>` | `cli-download-timeout` | `0` | download deadline (D12) | -install |
 | `-libc-probe-timeout <dur>` | `libc-probe-timeout` | none | deprecated. It sets nothing and logs one warning. The `ldd` probe always has its 5 s bound (retired D14) | -install |
-| `-cli-keep <n>` | none | `3` | version files of the cli-dir to retain on prune, the new CLI among them. The new CLI always stays. `0` and a negative value remove every other version file | -install |
+| `-cli-keep <n>` | none | `3` | version files of the cli-dir to retain on prune, the new CLI among them. The new CLI always stays. `0` and a negative value remove every version file but the new CLI | -install |
 | none (config only) | `version-override` | none | `-version` stdout rebrand (CT-3) | -version |
 
 Config-value parsing: bool keys accept `true/1/yes/on` and `false/0/no/off`. The
@@ -4257,7 +4257,7 @@ claustrum -install -cli-version <v> [-cli-dir <d>] \
 ```
 
 `-install` makes sure that one CLI version is in the cli-dir. On a cache miss it
-downloads or reads the CLI, verifies and extracts it, puts it in place and runs
+downloads or reads the CLI, extracts and verifies it, puts it in place and runs
 `<cli> --version` once. Then it prunes old versions and prints one
 `__INSTALL_RESULT__<json>` facts line (schema in [ARCHITECTURE.md](ARCHITECTURE.md)).
 A rule that is not marked claustrum's own is measured against `89cb6289`. The
@@ -4330,8 +4330,9 @@ The managed launcher (`89cb6289` parity):
   (Linux).
 - An empty `cliPath` gains no launcher field. That holds without `-cli-version`,
   where the line ends `"cliPath":"","cliWasPresent":false}`, and for a cli-dir that
-  cannot be made (Linux). The launcher gets a CLI path in the default CLI folder
-  (macOS).
+  cannot be made (Linux).
+- With `-cli-version` and no `-cli-dir`, the CLI path is in the default CLI folder,
+  and the launcher gets that path (macOS).
 - `none`: the CLI runs directly under the direct bounds below, with the gate in its
   env. The facts end `"cliWasPresent":true,"launcherStatus":"none"}`. A stopped
   direct run ends `"cliUnresponsive":true,"launcherStatus":"none"}`. On Windows the
@@ -4392,9 +4393,8 @@ no usable launcher: the gate is unset, or the launcher status is `none`.
 - The download time is outside the bound (Linux and Windows). claustrum starts the
   clock right before the process start call.
 - On Linux and macOS the CLI runs in a process group of its own, in the session of
-  `-install`. The stop kills that group with SIGKILL, so a CLI that ignores SIGTERM
-  stops at the same time. A child in a new session survives. The signal name is
-  claustrum's own.
+  `-install`. A CLI that ignores SIGTERM stops at the same time. claustrum kills
+  the group with SIGKILL (claustrum's own). A child in a new session survives.
 - On Windows the stop ends the CLI process, and its children stay alive.
 - A process that holds the output of the CLI after the CLI exited delays nothing.
   claustrum gives the CLI the null device as stdin, stdout and stderr (claustrum's
@@ -4480,15 +4480,15 @@ Checksum and verify ordering:
 - The compare is case-sensitive on both paths. The right digest in upper case
   answers `checksum mismatch: expected=<UPPER>, actual=<lower>` (`7d193f89` and
   `f6010b97`, Linux).
-- Every run with a CLI path and a version that D6 accepts makes the cli-dir first
-  (mode `0700`, with its parents), also on a cache hit. On a cache miss that is
-  before the source check, before the blob opens and before any network access
-  (`5db5e4a` and later for `-cli-zst`, `f6010b97` for `-cli-url` and a missing
-  source, Linux). So after that step a failed
-  cache miss leaves the cli-dir. A new cli-dir stays empty.
-- On Linux and macOS the folder step uses the `-cli-dir` text as given. So
-  `-cli-dir <dir>/sub/..` makes `<dir>/sub` (mode `0700`). Windows makes nothing
-  there. If the step fails, `cliPath` is empty and `cliError` is the mkdir error,
+- Every cache miss with a CLI path and a version that D6 accepts makes the cli-dir
+  first (mode `0700`, with its parents). That is before the source check, before
+  the blob opens and before any network access (`5db5e4a` and later for
+  `-cli-zst`, `f6010b97` for `-cli-url` and a missing source, Linux). So after that
+  step a failed cache miss leaves the cli-dir. A new cli-dir stays empty.
+- On Linux and macOS that folder step also runs on a cache hit. Windows makes the
+  cli-dir on a cache miss only. On Linux and macOS the step uses the `-cli-dir` text
+  as given, so `-cli-dir <dir>/sub/..` makes `<dir>/sub` (mode `0700`). On Windows
+  `<dir>/sub` is not made. If the step fails, `cliPath` is empty and `cliError` is the mkdir error,
   such as `mkdir cli dir: mkdir <dir>/sub: not a directory`.
 
 The other clocks: every `-install` clock above is always on and is a clock of the
@@ -4538,7 +4538,7 @@ Staging and cleanup:
   new CLI (Linux). A new CLI that then exits non-zero leaves nothing at that path
   (claustrum's own).
 - claustrum clears an occupied `cliPath` only when it is a directory, because
-  `rename(2)` refuses to replace a non-empty directory. A regular file is replaced
+  `rename(2)` refuses to replace a directory. A regular file is replaced
   by the rename. A directory that claustrum cannot remove answers
   `clearing stale dir at <path>: <err>`. On Windows the cleared name is
   `<version>.exe`. The D6 rule runs first, so `cliPath` is a direct child of the
@@ -4593,8 +4593,8 @@ Staging and cleanup:
       names are not measured.
     - The order is the mtime, newest first. Entries with one mtime stay in byte
       order of the name, so the later name goes (`89cb6289`). The new CLI takes its place in the
-      order and always stays. `-cli-keep 0` and a negative value remove every other
-      version file, and the result line follows with exit `0` and an empty stderr.
+      order and always stays. `-cli-keep 0` and a negative value remove every
+      version file but the new CLI, and the result line follows with exit `0` and an empty stderr.
     - A failed install, a stopped run and a cache hit do not prune.
 - Two sweeps remove old regular files of the cli-dir with one plain remove each,
   never as a tree. A folder and a link stay (from the code for a link):
