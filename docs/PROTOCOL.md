@@ -1,17 +1,18 @@
 # claustrum protocol reference
 
 claustrum uses newline-delimited JSON-RPC 2.0 over an `AF_UNIX`
-`SOCK_STREAM` socket. Each method has a page under `docs/protocol/`, and the three
-`server.*` methods share one page. [Methods (20)](#methods-20) lists them. This
+`SOCK_STREAM` socket. [Methods (20)](#methods-20) lists the page of each method.
+The three `server.*` methods share one page. This
 document holds the rules that more than one method shares, the life of the daemon
 off the wire, and the flags. The pinned reference build is `5fd08069`. A rule with
 no mark matches the reference as measured on `5fd08069` or on an earlier build.
 Where a section names a build in its first lines, that build holds for the
 section. A rule marked "claustrum's own" is not a parity claim: the reference has
-no such rule, or it does something else. A rule marked "not measured" or "from
-the code" was read from claustrum's code, with no reference run. A mark
-"measured on <system>" limits its sentence to that system. The divergences, their rules and their reopen triggers are
-in [`DIVERGENCES.md`](DIVERGENCES.md).
+no such rule, or it does something else. A D-number marks a deliberate
+divergence, not the reference. A rule marked "not measured" or "from the code"
+was read from claustrum's code, with no reference run. A mark "measured on
+<system>" limits its sentence to that system. The divergences, their rules and
+their reopen triggers are in [`DIVERGENCES.md`](DIVERGENCES.md).
 
 ## Transport
 
@@ -49,15 +50,15 @@ in [`DIVERGENCES.md`](DIVERGENCES.md).
     the reference.
 - At a client EOF the daemon logs `[Server] Connection closed: <addr>`, then
   closes the socket.
-- When the client half-closes, the daemon does not wait for a request in flight.
-  The reply to that request is lost (measured on Windows). A partial last line
-  does not change that.
+- On Windows, when the client half-closes, the daemon does not wait for a request
+  in flight. The reply to that request is lost, and a partial last line does not
+  change that (measured on Windows).
 - Input that ends without a final newline. The daemon reads the last bytes
   before EOF as one more line, and the rules above apply. A tail of only `\r`
   is a blank line and gets no reply.
   - If an earlier valid line came first, the reply to it races the close. The
-    client gets the parse-error frame for the tail, and it cannot count on the
-    earlier reply.
+    client gets the parse-error frame for the tail (measured on Windows), and it
+    cannot count on the earlier reply.
   - On Windows this case has a timing difference, not parity. The reference
     sends the earlier reply in each measured run and closes later than claustrum.
     claustrum sends that reply in some runs only.
