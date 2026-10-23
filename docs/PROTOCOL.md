@@ -637,7 +637,7 @@ The record is one JSON object with the members in this order:
 
 At a `-serve` start, after the run-dir lock and before the bind, the daemon reads the records:
 
-- It walks `children` in directory order and handles the first 128 names that end in `.json`. The rest wait for the next start.
+- It walks `children` in directory order and handles the first 128 names that end in `.json`. The rest wait for the next start. Kept records count toward the 128. So 128 records of another machine, which stay for 30 days, stop every reap, and an orphan behind them stays alive.
 - It sends `SIGTERM` to 64 groups at most. The others keep their records for the next start.
 - Only a regular file is a record. A link, a FIFO or a folder with a `.json` name is removed, with no signal. The target of a link stays.
 - It reads at most 4096 bytes of a record. A record whose first 4096 bytes are not one JSON value is removed, with no signal.
@@ -651,6 +651,8 @@ A record of a daemon that is alive stays. So does a record from another machine,
 - `CLAUDE_SSH_RUN_DIR` names this run dir, and `CLAUDE_SSH_CHILD` names the pid and start of the process itself.
 
 A process that the daemon cannot inspect keeps its record and gets no signal. The daemon does not test the owner of a record file.
+
+On macOS a `daemonStart` with two blanks before a one-digit day does not match the live daemon either. An older claustrum build wrote such a text on days 1 to 9 of a month. A new daemon on macOS reads such a daemon as gone, although it is alive, and ends its recorded children.
 
 After the `SIGTERM` the daemon polls for 2 s. At each poll a group takes the whole test again. A group that fails it gets nothing more. A group that still passes after 2 s gets `SIGKILL`. After the last group is done, the records of all signalled groups go together. A leader that reads as gone is read again after 50 ms before the `SIGKILL` of its group ([D20](DIVERGENCES.md#d20)). The [log lines](#lines-of-child-processes) of the reap are under the daemon log.
 
@@ -756,29 +758,30 @@ are not configurable.
 
 #### Lines of child processes
 
-These lines tell of [process.spawn](protocol/process-spawn.md) children and of their [records and the reap](#child-records-and-the-reap-linux-and-macos). claustrum prints a level tag before each line. The reference prints none.
+These lines tell of [process.spawn](protocol/process-spawn.md) children and of their [records and the reap](#child-records-and-the-reap-linux-and-macos). claustrum prints a level tag before each line. The reference prints none. The levels are claustrum's own, and `CLAUSTRUM_LOG_LEVEL=warn` drops the INFO lines.
 
-| Event | Line |
-|---|---|
-| A start | `[process.Manager] Process <id> started, PID=<n>, command=<command>` (from the code). With a launcher, ` via launcher <argv0>` follows. |
-| A failed start | `[process.Manager] Failed to start process <id>: <message>`, with the text of the error frame |
-| An exit | `[process.Manager] Process <id> exited with code <n>`, then `, terminated by <signal>` for a signal and `, signalled at client request` or `, signalled at shutdown request` for a kill by the daemon |
-| The drain limit | `[process.Manager] Process <id>: pipe drain grace expired (grandchild holding stdio?); force-closing` |
-| A supersede | `[process.Manager] process <new id> supersedes <old id> for session <key>: died=<bool> escalated=<bool> alreadyExited=<bool>` (from the code), after the exit line of the old process |
-| `children` not a folder | `[process.Registry] <run dir>/children is not a directory; recording nothing`, or `reaping nothing` at a start |
-| A record write fails | `[process.Registry] cannot record child <pid>: <error>` |
-| A record remove fails | `[process.Registry] cannot remove record of child <pid>: <error>` |
-| Over 128 records | `[process.Registry] more than 128 records in <run dir>/children; leaving the rest for the next start` |
-| Over 64 groups | `[process.Registry] <n> more orphaned group(s) recorded in <run dir>/children than the 64 one start ends; leaving those for the next start` |
-| A record dropped | `[process.Registry] record <pid>.json: pid <pid> is not a child to end (<reason>); dropping the record, signalling nothing` |
-| A group ended | `[process.Registry] ending orphaned process group <pgid> recorded by daemon instance "<instance>" (pid <daemon pid>): SIGTERM` |
-| The grace ran out | `[process.Registry] group <pgid> outlived SIGTERM for 2s: SIGKILL` |
-| A group fails the test | `[process.Registry] group <pgid> no longer verifies (<reason>); nothing more is sent to it` |
-| The reap summary | `[daemon] serve: predecessor's children — <n> orphaned group(s): <a> ended on SIGTERM, <b> on SIGKILL, <c> survived; <d> stale record(s) dropped, <e> kept` |
+| Event | Level | Line |
+|---|---|---|
+| A start | INFO | `[process.Manager] Process <id> started, PID=<n>, command=<command>` (from the code). With a launcher, ` via launcher <argv0>` follows. |
+| A failed start | ERROR | `[process.Manager] Failed to start process <id>: <message>`, with the text of the error frame |
+| An exit | INFO | `[process.Manager] Process <id> exited with code <n>`, then `, terminated by <signal>` for a signal and `, signalled at client request` or `, signalled at shutdown request` for a kill by the daemon |
+| The drain limit | WARN | `[process.Manager] Process <id>: pipe drain grace expired (grandchild holding stdio?); force-closing` |
+| A supersede | INFO | `[process.Manager] process <new id> supersedes <old id> for session <key>: died=<bool> escalated=<bool> alreadyExited=<bool>` (from the code), after the exit line of the old process |
+| `children` not a folder | ERROR | `[process.Registry] <run dir>/children is not a directory; recording nothing`, or `reaping nothing` at a start |
+| A record write fails | ERROR | `[process.Registry] cannot record child <pid>: <error>` |
+| A record remove fails | WARN | `[process.Registry] cannot remove record of child <pid>: <error>` |
+| Over 128 records | WARN | `[process.Registry] more than 128 records in <run dir>/children; leaving the rest for the next start` |
+| Over 64 groups | WARN | `[process.Registry] <n> more orphaned group(s) recorded in <run dir>/children than the 64 one start ends; leaving those for the next start` |
+| A record dropped | INFO | `[process.Registry] record <pid>.json: pid <pid> is not a child to end (<reason>); dropping the record, signalling nothing` |
+| A record kept | INFO | `[process.Registry] record <pid>.json: pid <pid> cannot be inspected now (<reason>); keeping the record, signalling nothing` |
+| A group ended | INFO | `[process.Registry] ending orphaned process group <pgid> recorded by daemon instance "<instance>" (pid <daemon pid>): SIGTERM` |
+| The grace ran out | WARN | `[process.Registry] group <pgid> outlived SIGTERM for 2s: SIGKILL` |
+| A group fails the test | INFO | `[process.Registry] group <pgid> no longer verifies (<reason>); nothing more is sent to it` |
+| The reap summary | INFO | `[daemon] serve: predecessor's children — <n> orphaned group(s): <a> ended on SIGTERM, <b> on SIGKILL, <c> survived; <d> stale record(s) dropped, <e> kept` |
 
 The exit line is a race at a shutdown, on the reference and on claustrum. It can be missing. A reap that sent no `SIGTERM` and kept no record writes no summary.
 
-The `<reason>` texts are these:
+The main `<reason>` texts of a dropped record and of a group that fails the test are these:
 
 - `it does not run the recorded program "<argv0>"`, with `and neither runs nor was handed "<program>"` after it for a record with `program`
 - `it does not lead its own process group`
@@ -787,6 +790,7 @@ The `<reason>` texts are these:
 - `it belongs to a daemon of another run dir: its CLAUDE_SSH_RUN_DIR names a different one`
 - `it was not started by a daemon itself: its CLAUDE_SSH_CHILD does not name its own pid and start (something a child started)`
 - `environment unreadable: <error>`, `pid namespace unreadable: <error>` and `stat unreadable: <error>`
+- `pid is out of range`, `pid is this daemon`, `pid is this daemon's parent or process group`, `record has no start time to verify against` and `the record names no program to verify against`
 
 ### Orphan-exit self-probe
 
@@ -1234,8 +1238,9 @@ Windows VMs saw it at that place.
   `server.peer_check` (rounds `task011-01` and `s12`).
 - `peerCheck` comes directly after `features`, in every answer. The daemon reads
   `CLAUDE_SSH_PEER_CHECK` once, at its start, and then removes it from its
-  environment. So no child of the daemon inherits it: no `process.spawn` child, no
-  git call, no launcher run and no login-shell read. Only the exact value `1` turns the check on. Each other value, and
+  environment. On Windows that covers any letter case. Unless the removal fails, no
+  child of the daemon inherits it: no `process.spawn` child, no git call, no
+  launcher run and no login-shell read. Only the exact value `1` turns the check on. Each other value, and
   no variable, answer `"off"`. On `5fd08069` each of these gave `"off"`:
     - Linux VM: no variable, `0`, `off`, the empty value, `true`, `yes`, `on`,
       `2`, `01` and ` 1` (a space before the digit).

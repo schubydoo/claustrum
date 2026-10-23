@@ -48,7 +48,7 @@ Failure is a JSON-RPC error. There is no `errorCode` member.
 | `-32603` | `fork/exec <command>: <reason>` | The command is missing, a folder or not executable, or the start fails. On Windows a missing file gives the reason `The system cannot find the file specified.` |
 | `-32005` | `the managed launcher <path> could not be started: <reason>` | The launcher passes the checks and does not start. |
 
-`<cwd>` and `<command>` are the values after the tilde expansion. A failure starts no child and makes no record. The daemon logs `[process.Manager] Failed to start process <id>: <message>`, where `<message>` is the text of the frame. An `Invalid params` error writes no line.
+`<cwd>` is the value after the tilde expansion. `<command>` is the value as the request gives it. A failure starts no child and makes no record. The daemon logs `[process.Manager] Failed to start process <id>: <message>`, where `<message>` is the text of the frame. An `Invalid params`, `Process ID is required` or `Command is required` error writes no line.
 
 One failure ends another process first: a session spawn whose command exists and does not start. See [Session supersede](#session-supersede).
 
@@ -63,7 +63,7 @@ One failure ends another process first: a session spawn whose command exists and
 The child gets the environment of the daemon with the `env` of the request merged over it. On Linux and macOS the entries come in this order:
 
 1. The entries of the daemon, with `CLAUDE_SSH_DAEMON_CHILD=1` last. A caller key that the daemon has replaces that entry in place. An empty caller value of `CLAUDE_SSH_DAEMON_CHILD` stays empty.
-2. The new caller keys. Two or more of them come in no fixed order. The reference gives a rotation of the request order, and claustrum does too.
+2. The new caller keys. Two or more of them come in no fixed order. With three new keys, both give a rotation of the request order. More keys are not measured.
 3. `SSH_AUTH_SOCK` from the hand-off below. Without that step there is no entry here.
 4. `CLAUDE_SSH_RUN_DIR` and then `CLAUDE_SSH_CHILD`, the two identity markers below. A caller value of either does not reach the child.
 
@@ -73,10 +73,10 @@ The daemon removes these names:
 
 | Name | Removed from |
 |---|---|
-| `CLAUDE_RPC_TOKEN` | Every child. |
+| `CLAUDE_RPC_TOKEN` | The daemon value, for every child. A value in the `env` of the request reaches the child. |
 | `CLAUDE_SSH_MANAGED_LAUNCHER`, `CLAUDE_SSH_E2E_MANAGED_SETTINGS_DIR` | Every child. The removal covers the `env` of the request too. |
 | `CLAUDE_CODE_PROCESS_WRAPPER` | A child with a `launcher`, also from the `env` of the request. A child without one keeps it. |
-| `CLAUDE_SSH_PEER_CHECK` | The daemon removes it from its own environment at its start, in any letter case. A value in the `env` of the request reaches the child. If the removal fails, the daemon logs one WARN line, and the children inherit it. |
+| `CLAUDE_SSH_PEER_CHECK` | The daemon removes it from its own environment at its start. On Windows that covers any letter case. A value in the `env` of the request reaches the child. If the removal fails, the daemon logs one WARN line, and the children inherit it. |
 
 The Go runtime variables `GODEBUG`, `GOGC`, `GOMAXPROCS`, `GOMEMLIMIT` and `GOTRACEBACK` reach the child with their values and at their places.
 
@@ -135,6 +135,7 @@ Before it ends the old process, a session spawn tests its command. If the test f
 - A bare name that the lookup does not find answers its lookup error.
 - A missing or wrong `cwd` answers its own error first.
 - A command that exists and does not start passes the test. A file of mode 0644, a folder and a script with a missing interpreter each end the old process first, and then the error comes.
+- With a `launcher`, step 5 of [the launcher checks](#the-managed-launcher) is the test. So a missing, folder or not executable command ends no old process. A launcher that does not start ends the old process first, and then `-32005` comes.
 - On Windows the lookup answers first. Then the daemon runs one `stat` of an absolute `command` only. A missing path that ends in `.exe` answers `fork/exec <path>: The system cannot find the file specified.` A relative path gets no `stat` (not measured on the reference).
 
 A `-stop` can come while a spawn waits for the old process. The spawn then gets no reply, and the new process never starts. The daemon sends `SIGKILL` to the group of the old process, and no connection gets its `exit` frame.
