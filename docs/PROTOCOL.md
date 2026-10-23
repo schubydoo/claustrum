@@ -883,8 +883,8 @@ cell C-… is of round `tier0-20` against `5fd08069` on a Linux VM.
 | git.worktree_create | `failed to create parent directory: "" does not name a directory` | in `error`, `errorCode:"mkdir_failed"` (empty `worktreePath`, without `worktreeRoot`) |
 | git.worktree_create | `failed to create parent directory: <repo>\<component> is not a directory` | in `error`, `errorCode:"mkdir_failed"`, Windows, when a directory between `baseRepo` and the leaf is a junction. `<repo>\<component>` is the path of the first junction. Nothing is created: no directory, no entry, no branch. Measured for `.claude` and `.claude\worktrees` (`f6010b97`, Windows VM, rows JCR1 and JCR2). Measured for a junction `<P>\J` above them, with the paths `<P>\J\sub\.claude\worktrees\w1` and `<P>\J\.claude\worktrees\w1`: `89cb6289` and the claustrum build of this change answer equal frames (Windows VM, cells J-b-wt-pj and J-b-wt-pJ). claustrum also refuses a non-symlink reparse point that is not a junction the same way (not measured) |
 | git.worktree_create | `refusing to create worktree: <root> is the repository <repo> or inside it; a worktree location must be outside the repository` | in `error`, `errorCode:"unsafe_path"`, with `worktreeRoot`. A root that is `baseRepo` or lies beneath it by whole components is refused. `<B>/Tx` beside `<B>/T` passes. `<root>` is `worktreeRoot` as sent, and `<repo>` is `baseRepo` as sent. claustrum cleans both paths first, as on remove (not measured on create). It comes after the repo test and before the root-chain tests. claustrum runs it after the two-level test, as on remove (not measured on create). Nothing is created. Measured against `f6010b97` and `89cb6289` on Linux and macOS VMs |
-| git.worktree_create | `refusing to create worktree: <root> passes through <dir>, which is writable by <who> without the sticky bit (mode <mode>), so they could replace what is beneath it; choose a location under directories only you (or the system) control, or remove the extra write permission (chmod go-w)` / `refusing to create worktree: <root> passes through <dir>, which is owned by uid <uid>, neither you nor the system; choose a location you reach through your own directories` | in `error`, `errorCode:"unsafe_path"`, Linux and macOS, with `worktreeRoot`. This is the ancestor test. It judges each directory above the root, top first. The root itself is not judged. The daemon resolves the symlinks of each level, then judges each directory from `/` down to that resolved level. Last it resolves the root and judges each directory above the resolved root. So when the root is a symlink, the chain above its target is judged. `<root>` stays the symlink as sent (row G42, Linux and macOS VMs, `89cb6289` only). A missing level or a failed resolve ends the walk with no refusal. The first failing directory reached is named. When the failing directories lie on one chain, that is the highest one. The kind of failure plays no part. `<dir>` is that directory with its symlinks resolved, and `<root>` is `worktreeRoot` as sent. The owner test comes first. uid 0 and the daemon's user pass. Any other owner gives the second text, even with the sticky bit set. `<uid>` prints unsigned, for example 4294967294 on macOS. Then the sticky bit clears the write tests. The group-write bit refuses unless the group is the private group of the daemon's user. The four tests of the private group are those of the root's own write test (`rootGroupIsPrivate`). The other-write bit always refuses. An owner of uid 0 gets no exemption from the write tests. `<who>` is "its group", "every user on this host" or "its group and every user on this host", as for the root. `<mode>` is the permission bits as four octal digits, so a mode of 2775 prints `0775`. Only the chain of the root is walked, not the chain of `baseRepo`. A create without `worktreeRoot` and `git.worktree_remove` run no ancestor test. It comes after the test above and the 9 git calls (see "Hardened git calls"). After its owner and mode, each directory gets the checkout tests and the `.git` test below. The first failing directory from the top decides (cells C-W15 and C-W21). `5fd08069` refuses a link above the root that another user owns (cell C-W16), and answers "not a directory" for a regular file (cell C-W14). The order of these tests inside one directory is not measured. So a failing directory above the root gets this text even when its owner has no search access to it (row G36a). The `lstat` text does not apply there. Nothing is created. Measured against `f6010b97` and `89cb6289` on Linux and macOS VMs (rows K1, G1 to G41b, Y11d, T7 and T7c). In macOS rows G28 and Y11d the root is a firmlink spelling, and `<dir>` is `/System/Volumes/Data`. Only Linux VMs measured rows G1, G32, G33a, G33c, G34b and G36b. A macOS VM measured the other round 2 rows and G42 against `89cb6289` only. Other cases are claustrum's choice and are not measured. The comment of `worktreeRootAncestorRefusal` lists them. The walk also tests the folders above a link in the root (cells X1, X2 and M3 of round `tier0-22`, Linux and macOS VMs). |
-| git.worktree_create | `refusing to create worktree: <root> leads into the repository <repo> (at <at>); a worktree location must be outside the repository` | in `error`, `errorCode:"unsafe_path"`, with `worktreeRoot`. The root passes the in-repo test and the ancestor test above but leads into the git top level of `baseRepo`, the main checkout or the git directory, also a separate one (cell C-W7). The remove row below gives the test. claustrum compares file identity as on remove (not measured on create). In macOS row Y11d and Linux row T7 the root also leads into the repository, and both references send the ancestor text. `<repo>` is `baseRepo` as sent. It comes after 9 git calls (see "Hardened git calls"). Nothing is created. Measured against `f6010b97` and `89cb6289` on Linux and macOS VMs |
+| git.worktree_create | `refusing to create worktree: <root> passes through <dir>, which is writable by <who> without the sticky bit (mode <mode>), so they could replace what is beneath it; choose a location under directories only you (or the system) control, or remove the extra write permission (chmod go-w)` / `refusing to create worktree: <root> passes through <dir>, which is owned by uid <uid>, neither you nor the system; choose a location you reach through your own directories` | in `error`, `errorCode:"unsafe_path"`, Linux and macOS, with `worktreeRoot`. This is the ancestor test. It judges each directory above the root, top first. The root itself is not judged. The daemon resolves the symlinks of each level, then judges each directory from `/` down to that resolved level. Last it resolves the root and judges each directory above the resolved root. So when the root is a symlink, the chain above its target is judged. `<root>` stays the symlink as sent (row G42, Linux and macOS VMs, `89cb6289` only). A missing level or a failed resolve ends the walk with no refusal. The first failing directory reached is named. When the failing directories lie on one chain, that is the highest one. The kind of failure plays no part. `<dir>` is that directory with its symlinks resolved, and `<root>` is `worktreeRoot` as sent. The owner test comes first. uid 0 and the daemon's user pass. Any other owner gives the second text, even with the sticky bit set. `<uid>` prints unsigned, for example 4294967294 on macOS. Then the sticky bit clears the write tests. The group-write bit refuses unless the group is the private group of the daemon's user. The four tests of the private group are those of the root's own write test (`rootGroupIsPrivate`). The other-write bit always refuses. An owner of uid 0 gets no exemption from the write tests. `<who>` is "its group", "every user on this host" or "its group and every user on this host", as for the root. `<mode>` is the permission bits as four octal digits, so a mode of 2775 prints `0775`. Only the chain of the root is walked, not the chain of `baseRepo`. A create without `worktreeRoot` and `git.worktree_remove` run no ancestor test. It comes after the test above and the 9 git calls. After its owner and mode, each directory gets the checkout tests and the `.git` test below. The first failing directory from the top decides (cells C-W15 and C-W21). `5fd08069` refuses a link above the root that another user owns (cell C-W16), and answers "not a directory" for a regular file (cell C-W14). The order of these tests inside one directory is not measured. So a failing directory above the root gets this text even when its owner has no search access to it (row G36a). The `lstat` text does not apply there. Nothing is created. Measured against `f6010b97` and `89cb6289` on Linux and macOS VMs (rows K1, G1 to G41b, Y11d, T7 and T7c). In macOS rows G28 and Y11d the root is a firmlink spelling, and `<dir>` is `/System/Volumes/Data`. Only Linux VMs measured rows G1, G32, G33a, G33c, G34b and G36b. A macOS VM measured the other round 2 rows and G42 against `89cb6289` only. Other cases are claustrum's choice and are not measured. The comment of `worktreeRootAncestorRefusal` lists them. The walk also tests the folders above a link in the root (cells X1, X2 and M3 of round `tier0-22`, Linux and macOS VMs). |
+| git.worktree_create | `refusing to create worktree: <root> leads into the repository <repo> (at <at>); a worktree location must be outside the repository` | in `error`, `errorCode:"unsafe_path"`, with `worktreeRoot`. The root passes the in-repo test and the ancestor test above but leads into the git top level of `baseRepo`, the main checkout or the git directory, also a separate one (cell C-W7). The remove row below gives the test. claustrum compares file identity as on remove (not measured on create). In macOS row Y11d and Linux row T7 the root also leads into the repository, and both references send the ancestor text. `<repo>` is `baseRepo` as sent. It comes after 9 git calls. Nothing is created. Measured against `f6010b97` and `89cb6289` on Linux and macOS VMs |
 | git.worktree_create | `refusing to create worktree: <root> leads into <wt>, a worktree of the repository <repo> (at <wt>); a worktree location must be outside the repository's checkouts` | in `error`, `errorCode:"unsafe_path"`, with `worktreeRoot`. The root passes the tests above but lies in a linked worktree `<wt>` of the repository. The remove row below gives the test. `<repo>` is `baseRepo` as sent. A listed worktree whose folder is gone refuses too. The create makes that folder first, with mode 0700 (cell C-W8). Nothing else is created. Measured against `f6010b97` and `89cb6289` on Linux and macOS VMs |
 | git.worktree_create | `refusing to create worktree: <root> is inside a git checkout (<dir> has a .git entry); a worktree location must be outside every checkout, so that no session working in one can reach it — choose a directory that is not part of any repository` | in `error`, `errorCode:"unsafe_path"`, Linux and macOS, with `worktreeRoot`, when a directory from `/` down to the root holds a `.git` entry of any kind. A missing directory is skipped. The ancestor test answers first at the same directory (rows G18, G40a and G40b). Nothing is created. Measured against `f6010b97` on Linux and macOS VMs, with a `.git` entry up to five levels above the root. `<root>` is `worktreeRoot` as sent, with a trailing slash or `//` kept. `<dir>` is that directory, resolved and cleaned. When several directories hold a `.git` entry, the highest one is named. Linux and macOS VMs measured these spellings and that choice |
 | git.worktree_create | `refusing to create worktree: <dir> is itself a git checkout (it has a .git entry); a worktree location must be outside every checkout` | in `error`, `errorCode:"unsafe_path"`, Linux and macOS, with `worktreeRoot`, when the `<directory>` level holds a `.git` entry. Nothing is created. Measured against `f6010b97` on Linux and macOS VMs, also under a symlinked root, where `<dir>` has the root resolved |
@@ -2410,14 +2410,14 @@ and the variables were measured against `5fd08069` with a logging git wrapper. T
 limits of the hook pins against `89cb6289`. A rule that names no system was measured
 on Linux, macOS and Windows VMs.
 
-A client sees this shape in four places:
+A client sees this shape in at least four places:
 
 - `git.status` reads the real `HEAD` commit, also where `refs/replace` names another
   (see [git.status](protocol/git-status.md#what-the-status-reads)).
 - The failure texts of `git.worktree_create` hold no graft-file `hint:` lines.
 - On Windows a create with a tree path of 270 characters succeeds.
 - The records of a new worktree hold absolute paths, also where the user config sets
-  `worktree.useRelativePaths`.
+  `worktree.useRelativePaths` (macOS and Windows VMs).
 
 ##### Refusal texts
 
@@ -2427,7 +2427,7 @@ call. Each method answers these texts in its own error frame (see the
 
 | Cause | Text |
 |---|---|
-| The listing fails | `config-defined hooks could not be pinned off; git not run: listing the configuration in force: <exec error>: <git text>`. [Git-directory trust check](#git-directory-trust-check) gives the classes of the failure |
+| The listing fails | `config-defined hooks could not be pinned off; git not run: listing the configuration in force: <exec error>: <git text>`. When git wrote no text on standard error, the text ends after `<exec error>`. [Git-directory trust check](#git-directory-trust-check) gives the classes of the failure |
 | The listing fails, and `git version` fails too | `git cannot run on this host; git not run: <exec error>: <git text>`, with the detail of `git version` |
 | A config key over 1048576 bytes | `config-defined hooks could not be pinned off; git not run: listing the configuration in force: a configuration key is longer than the listing reads` |
 | More than 1024 hook names | `config-defined hooks could not be pinned off; git not run: too many configured hooks to pin` |
@@ -2435,8 +2435,9 @@ call. Each method answers these texts in its own error frame (see the
 
 A config value has no cap: 2 MiB passes. In some sections a key over 1024 bytes is
 refused before the listing (see [Repository config refusals](#repository-config-refusals)).
-The limits refuse at the first listing only. In a folder that holds no repository, a
-limit refuses each method except `git.status`. That rule is from the code.
+The limits refuse at the first listing only. In a folder that holds no repository, the
+first listing follows [The daemon's own git environment](#the-daemons-own-git-environment).
+There a limit refuses each method except `git.status`. That rule is from the code.
 
 ##### Hook pins
 
@@ -2449,7 +2450,7 @@ Each hardened call gets two base pins, `hook.enabled=false` and an empty
 `hook.event`. Each hook name adds `hook.<name>.enabled=false` and an empty
 `hook.<name>.event`. A name counts once, in the order that the listing first shows
 it. The pins go in through `GIT_CONFIG_COUNT`. The daemon's own `GIT_CONFIG_COUNT`
-moves them (see the next section).
+moves them (see [The daemon's own git environment](#the-daemons-own-git-environment)).
 
 These points are from the code, not measured:
 
@@ -2469,12 +2470,14 @@ A hardened call uses the heavy profile or the light profile:
 | Profile | `-c` items | Variables, in this order | Calls |
 |---|---|---|---|
 | heavy | 28 | `GIT_NO_LAZY_FETCH=1`, `GIT_NO_REPLACE_OBJECTS=1`, `GIT_GRAFT_FILE=<null>`, `GIT_ALLOW_PROTOCOL=denied_by_claude_ssh`, an empty `GIT_ASKPASS`, `GIT_TERMINAL_PROMPT=0` | `git.info`, `git.list_branches` and `git.status`. Each `rev-parse --absolute-git-dir`, and the `--git-dir=<dir> --work-tree=<dir> rev-parse --show-toplevel` call. The hooks refusal check of `git.info`, `git.list_branches`, `git.status` and `git.worktree_remove` |
-| light | 20 | `GIT_ALLOW_PROTOCOL=https:ssh`, `GIT_TERMINAL_PROMPT=0`, `GIT_NO_REPLACE_OBJECTS=1`, `GIT_GRAFT_FILE=<null>` | the other hardened calls, mostly those of `git.worktree_create`. The hooks refusal check of a create, and of a remove with `worktreeRoot` |
+| light | 20 | `GIT_ALLOW_PROTOCOL=https:ssh`, `GIT_TERMINAL_PROMPT=0`, `GIT_NO_REPLACE_OBJECTS=1`, `GIT_GRAFT_FILE=<null>` | the other hardened calls, mostly those of `git.worktree_create`. The hooks refusal check of a create, and of a remove with `worktreeRoot` (Linux VM) |
 
-- The daemon's own `GIT_ALLOW_PROTOCOL` changes the first light value (see the next
-  section).
+- The daemon's own `GIT_ALLOW_PROTOCOL` changes the first light value (see
+  [The daemon's own git environment](#the-daemons-own-git-environment)).
 - In the states `shadow` and `fallback-git` without `"shadowDirOff":true`, the light
-  calls of a create and their listings carry the six heavy values. So do the three listings of the branch step of a remove. The checkout
+  calls of a create and their listings carry the six heavy values. Linux and macOS
+  VMs measured the state `shadow`, and a Windows VM the state `fallback-git`. So do the
+  three listings of the branch step of a remove. The checkout
   and its listings keep the four light values. With `"shadowDirOff":true` the light
   calls carry the four light values.
 - The calls of [the branch step](#the-branch-step) have their own variables.
@@ -2553,8 +2556,10 @@ Windows the `status`, `ls-files` and `diff-index` calls of `git.status` pass
 
 With `GIT_GRAFT_FILE` set, git can print 8 `hint:` lines about `info/grafts` on
 standard error. The light list turns them off with
-`advice.graftFileDeprecated=false`, and the heavy list does not. The calls of
-`git.status` give only stdout to the reply, so no reply holds a `hint:` line.
+`advice.graftFileDeprecated=false`, and the heavy list does not. The `status`,
+`ls-files`, `rev-parse` and `diff-index` calls of `git.status` give only stdout to
+the reply. A failure of one of them answers the exec error. So no `git.status`
+reply holds a `hint:` line.
 
 ##### Environment and working directory
 
@@ -2575,8 +2580,9 @@ In the state `shadow` the pin names the copy, and `GIT_OBJECT_DIRECTORY`, `GIT_D
 `"shadowDirOff":true` and in the state `fallback-git` the call carries
 `GIT_COMMON_DIR=<git directory>` alone.
 
-A `GIT_*` variable of the daemon keeps its place, before the added variables. The
-next section gives the exceptions. If the daemon adds a variable that its
+A `GIT_*` variable of the daemon keeps its place, before the added variables.
+[The daemon's own git environment](#the-daemons-own-git-environment) gives the
+exceptions. If the daemon adds a variable that its
 environment already has, the added value and place win. Linux and macOS VMs. On
 Windows claustrum gives a git child its environment in name order. That is
 [D23](DIVERGENCES.md#d23).
@@ -2590,7 +2596,11 @@ directory. On Windows that path has backslashes.
 
 Before each hardened call except the first, the daemon runs `git config -z --list`
 in the same directory. The listing carries the profile variables of the call after
-it and the `GIT_COMMON_DIR` pin, and no hook pins. It drops the daemon's own
+it and the `GIT_COMMON_DIR` pin, and no hook pins. A listing before a call of the
+branch step carries the light variables, and in the state `shadow` the six heavy
+values. In the state `shadow` a second listing runs right before the checkout. It
+carries the hook pins, `GIT_INDEX_FILE` and `LANGUAGE=C`, and no `LC_ALL`. A listing
+drops the daemon's own
 `LC_ALL` and `LANGUAGE` and ends with `LC_ALL=C` and `LANGUAGE=C`. git then writes
 its listing errors in English (Linux VM). The call after the listing keeps the
 daemon's `LC_ALL`, `LANGUAGE` and `LANG` (Linux, macOS and Windows VMs). Other
@@ -2598,7 +2608,7 @@ daemon's `LC_ALL`, `LANGUAGE` and `LANG` (Linux, macOS and Windows VMs). Other
 
 Before its first listing, a request with no cached value runs `git config --includes
 --path core.excludesFile` in the temporary directory. It adds only `GIT_DIR=<null>`.
-Two concurrent requests run it twice. The probe `git --attr-source=<empty tree>
+Two concurrent requests run it twice (Linux VM). The probe `git --attr-source=<empty tree>
 version` adds no variable.
 
 ##### Temporary names
@@ -2610,8 +2620,8 @@ request. With `"shadowDirOff":true` they are temporary folders with these names:
 - `claude-ssh-worktreeinclude-<n>`, the folder of the include step of a create
 - `claude-ssh-index-<n>`, the index folder of the checkout of a create
 
-`<n>` is decimal digits. `5fd08069` uses the three names on Linux, macOS and Windows
-VMs. A client can see the index name in the text
+`<n>` is decimal digits. With `"shadowDirOff":true`, `5fd08069` uses the three names
+(Linux, macOS and Windows VMs). A client can see the index name in the text
 `open <tmp>/claude-ssh-index-<n>/index: no such file or directory`.
 
 ##### Calls with `worktreeRoot`
@@ -2619,19 +2629,22 @@ VMs. A client can see the index name in the text
 If the `rev-parse --show-toplevel` call of a `git.worktree_create` with
 `worktreeRoot` fails, the create stops with `mkdir_failed`. Two failed `worktree
 list` calls stop it the same way. If `baseRepo` and the root are both missing, a
-`git.worktree_remove` with `worktreeRoot` makes no git call and answers "not
-reachable". Linux and macOS VMs.
+`git.worktree_remove` with `worktreeRoot` makes no git call. It answers the `the
+worktree location <root> is not reachable` refusal of the
+[Error-string catalogue](#error-string-catalogue). Linux and macOS VMs.
 
 ##### Where the calls differ from `5fd08069`
 
-The reply lines are equal in each of these. Otherwise a call that both builds make is
-equal in list, arguments, working directory and variables. The order of the
+The reply lines are equal in each of these. With `"shadowDirOff":true` a call that
+both builds make is equal in list, arguments, working directory and variables.
+Without the member, Linux and macOS VMs measured the equal points in the state
+`shadow`, and a Windows VM in the state `fallback-git`. The order of the
 variables is equal on Linux and macOS VMs.
 
 - With `worktreeRoot`, `5fd08069` runs `rev-parse --show-toplevel`, `rev-parse
   --absolute-git-dir` and `worktree list --porcelain -z` before the add, after the
-  add and after the checkout. claustrum runs them before the add only. A second remove of
-  a gone worktree makes fewer calls too.
+  add and after the checkout. claustrum runs them before the add only (Linux and
+  macOS VMs). A second remove of a gone worktree makes fewer calls too (Linux VM).
 - With `existingBranch`, claustrum runs one config listing before the attach add,
   where `5fd08069` runs two. After a failed attach add, claustrum runs one listing
   before the `-b` add, and `5fd08069` none.
