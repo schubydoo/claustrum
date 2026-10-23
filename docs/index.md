@@ -54,12 +54,12 @@ clients, so none changes the frames that a client sees:
 
 [Examples](EXAMPLES.md#operational-knobs) shows each one but `-wire-log`, which
 [Flags of claustrum alone](PROTOCOL.md#flags-of-claustrum-alone) describes. The
-[flags table](PROTOCOL.md#flags-and-config-keys) lists the token, knob, divergence and deprecated flags with their keys.
+[flags table](PROTOCOL.md#flags-and-config-keys) lists the token, knob, divergence
+and deprecated flags with their keys.
 
 One opt-in member of claustrum's own changes a frame: `"wantPid":true` adds `pid`
 and `startTime` to the result of `process.spawn`, and of `process.reattach` for a
-found process
-([CT-1](DIVERGENCES.md#ct-1)).
+found process ([CT-1](DIVERGENCES.md#ct-1)).
 
 ## Where to go next
 

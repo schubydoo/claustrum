@@ -137,8 +137,8 @@ reattach through the replay buffer, and extract a plugin tarball.
 
 ### Operational knobs
 
-All of these are off by default. Each one is claustrum's own and leaves the frames of a
-client unchanged:
+All of these are off by default or invisible to clients. Each one is claustrum's own and
+leaves the frames of a client unchanged:
 
 - `CLAUSTRUM_LOG_LEVEL` raises the threshold of the leveled stderr log. Logging is always on.
 - `-metrics-addr` opts into a local Prometheus `/metrics` endpoint. Without the flag, no
@@ -153,7 +153,7 @@ One opt-in member of claustrum's own changes a frame: `"wantPid":true` adds `pid
 divergence: `-max-extract-bytes` (D3), `-max-cli-bytes` (D10) and `-cli-download-timeout`
 (D12). [docs/DIVERGENCES.md](docs/DIVERGENCES.md) has each entry and its limits. The
 [flags table](docs/PROTOCOL.md#flags-and-config-keys) lists the token, knob, divergence and
-deprecated flags with their `claustrum.conf` keys. [-install](docs/PROTOCOL.md#-install-ensure-the-agent-cli)
+deprecated flags with their `claustrum.conf` keys. [-install](docs/PROTOCOL.md#-install--ensure-the-agent-cli)
 has the `-cli-*` flags.
 
 ## Platforms

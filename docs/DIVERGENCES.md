@@ -744,8 +744,9 @@ Reopen trigger: the reference moves to Go 1.26 or newer.
 ### CT-1 · Opt-in `wantPid` (pid + startTime) on spawn/reattach { #ct-1 }
 
 - `process.spawn` / `process.reattach` accept an optional `"wantPid":true`. The
-  reply of a spawn, and of a reattach that finds the process, then gains `pid` (the child's OS pid) and `startTime`. This is the first
-  wire-surface *extension*.
+  reply of a spawn, and of a reattach that finds the process, then gains `pid`
+  (the child's OS pid) and `startTime`. This is the first wire-surface
+  *extension*.
 - The default path is byte-identical. When `wantPid` is absent or not `true`,
   `omitempty` omits both fields, and the frame is exactly the old
   `{"success":true}` / `{found,running,firstSeq,lastSeq,stdinApplied}`. The fields live on a
