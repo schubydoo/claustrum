@@ -1329,12 +1329,12 @@ the daemon walks up from the request folder:
   Only `git.info` reaches that start. `git.list_branches` and `git.status` resolve
   the path first, and so do `git.worktree_create` and `git.worktree_remove` for a
   `baseRepo` that exists. If that resolve fails, they answer there.
-- From the code: on Windows a refusal of a config on `git.info` follows the
-  spelled start too. In the state `shadow` without `"shadowDirOff":true`, it is
-  the class 1 text of [Repository config refusals](#repository-config-refusals).
-  A config that git refuses and the daemon's read accepts, such as an
-  `include.path` with no value, gets the hooks refusal. So does any refused
-  config outside that state.
+- On Windows a refusal of a config on `git.info` follows the spelled start too
+  (`89cb6289`, Windows VM). From the code: in the state `shadow` without
+  `"shadowDirOff":true`, it is the class 1 text of
+  [Repository config refusals](#repository-config-refusals). A config that git
+  refuses and the daemon's read accepts, such as an `include.path` with no value,
+  gets the hooks refusal. So does any refused config outside that state.
 - `process.spawn` does not use the walk.
 - A `.git` folder that passes the git-directory test is the git directory.
 - A `.git` folder that fails the test ends the walk. If it holds a `commondir`
@@ -1459,6 +1459,7 @@ The daemon's own environment changes the check as follows:
 
 ##### Trust refusal texts and frames
 
+M2 to M5 are texts of `f6010b97`, and S1 to S3 are texts of `89cb6289`.
 M2 to M4 and S1 to S3 start with `the repository's git directory could not be
 trusted; git not run: commondir not as git writes it: `. Each `%q` of a path is Go
 quoting of the path cut to its first 300 runes. The content in S1 is cut to its
@@ -1517,8 +1518,8 @@ because Windows refuses every `worktreeRoot` first. See
 A daemon `GIT_DIR` that names a regular file differs by system. On Linux and macOS
 no listing runs, and the "no repository" column answers. `89cb6289` answers so
 for `git.info` on a plain folder and on a repository, also with an empty
-`GIT_CONFIG_KEY_0` (Linux and macOS VMs). Other methods are from the code. On Windows a file with no `gitdir:` line
-gets the refusal of a config on the five methods: `this repository's git config
+`GIT_CONFIG_KEY_0` (Linux and macOS VMs). Other methods are from the code. On
+Windows a file with no `gitdir:` line gets the refusal of a config on the five methods: `this repository's git config
 cannot be used: open <GIT_DIR>: not a directory` (`5fd08069`, Windows VM). With a
 git older than 2.56, a `.git` file to a gone git dir keeps the "no repository"
 frame of `git.info` (Linux and macOS VMs).
@@ -1569,8 +1570,9 @@ The classes come in this order:
    `5fd08069`, on Linux and Windows VMs.
 3. Any other failure, a failed start included. The daemon runs `git version` with
    no `-c` option. It runs in `/` on Linux and macOS, and in the daemon's working
-   folder on Windows (from the code). If that call fails too, the text is `git cannot run on this
-   host; git not run: <exec error>: <git text>`. Else it is the hooks refusal.
+   folder on Windows (that folder is from the code). If that call fails too, the
+   text is `git cannot run on this host; git not run: <exec error>: <git text>`.
+   Else it is the hooks refusal.
 
 The `git version` call of class 3 gets no `GIT_CONFIG_COUNT`, `GIT_CONFIG_KEY_<n>`,
 `GIT_CONFIG_VALUE_<n>` or `GIT_CONFIG_GLOBAL` of the daemon. claustrum passes the
@@ -1584,7 +1586,8 @@ lower-case name, such as `git_config_global`, stays on the call (from the code).
 With `"shadowDirOff":true` the `git version` call has the six heavy values for
 `git.info` and the four light values for `git.worktree_create`. `5fd08069` does
 so on Linux, macOS and Windows VMs. Without the member the call of a create
-carries six values (`5fd08069`, Linux VM). From the code: claustrum sends those six in the state `shadow`.
+carries six values (`5fd08069`, Linux VM). From the code: claustrum sends those
+six in the state `shadow`.
 
 ##### Where git cannot start
 
@@ -1658,8 +1661,8 @@ those of the listing. Take a listing that exits 128 on an empty
 `GIT_CONFIG_KEY_0`, and a stub `git version` that exits 1. `89cb6289` then answers
 `git cannot run on this host; git not run: exit status 1: <stderr of git version>`.
 A plain folder carries the same text on Linux, macOS and Windows VMs. So does
-`git.worktree_remove` with `worktreeRoot` on Linux and macOS VMs. claustrum makes `<git text>` with the text rule
-below. From the code: each listing of a git method that answers this text takes it
+`git.worktree_remove` with `worktreeRoot` on Linux and macOS VMs. claustrum makes
+`<git text>` with the text rule below. From the code: each listing of a git method that answers this text takes it
 from the version call.
 
 The hooks refusal is `config-defined hooks could not be pinned off; git not run:
