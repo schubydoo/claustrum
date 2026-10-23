@@ -614,6 +614,7 @@ var docWordLimits = map[string]int{
 	"docs/protocol/process-kill.md":        1100,
 	"docs/protocol/process-killandwait.md": 1000,
 	"docs/protocol/process-reattach.md":    1000,
+	"docs/protocol/process-spawn.md":       3600,
 	"docs/protocol/process-stdin.md":       900,
 }
 
