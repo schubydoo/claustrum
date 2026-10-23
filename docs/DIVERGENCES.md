@@ -142,7 +142,7 @@ rather than repeating them in each entry:
   stopped at 33 s and at 123 s. The download gives up after 60 s without response
   headers, and after 60 s without a body byte. The `ldd` libc probe has a 5 s
   bound on ldd itself and a 2 s drain after ldd exits.
-  [PROTOCOL.md](PROTOCOL.md) → `-install` names the measurement behind each one.
+  [PROTOCOL.md](PROTOCOL.md) → `-install` has the rule of each one.
   One clock is claustrum's own choice and is not measured: the wait of up to 2 s
   for the output of a stopped launcher run.
   The stdlib transport clocks (`net.Dialer{Timeout: 30s}`,
@@ -1131,7 +1131,7 @@ link points here.
 - The outcome at the bound is not one of the three that this entry named. The
   reference answers a `cli unresponsive: …` `cliError` with
   `"cliUnresponsive":true`. On a cache hit it installs nothing. After an install
-  it keeps the new CLI. [PROTOCOL.md](PROTOCOL.md) → `-install` holds the rows.
+  it keeps the new CLI. [PROTOCOL.md](PROTOCOL.md) → `-install` has the rules.
 - claustrum now does the same, always. The bounds are unit-tested with shrunk
   values.
 - The `-cli-probe-timeout` flag and its `claustrum.conf` key are deprecated.
