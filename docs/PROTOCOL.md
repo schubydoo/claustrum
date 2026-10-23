@@ -2645,12 +2645,12 @@ no such limit.
 Describes the git repository that holds `path`: its root, branch, GitHub slug, default branch and the state of the settings copy. The page [git.info](protocol/git-info.md) has the request, the response and the errors.
 
 #### git.status
-`{path,baseRepo}` → clean: `{"isRepo":true,"clean":true}` · dirty: `{…,"clean":false,"changes":["M  a.txt"," M b.txt","?? new"]}`
+`{path,baseRepo[,shadowDirOff]}` → clean: `{"isRepo":true,"clean":true}` · dirty: `{…,"clean":false,"changes":["M  a.txt"," M b.txt","?? new"]}`
 
 Reports the changes in a linked git worktree of a session. The page [git.status](protocol/git-status.md) has the request, the response and the errors.
 
 #### git.list_branches
-`{path}` → `{"isRepo":true,"branches":[…sorted…]}`
+`{path[,shadowDirOff]}` → `{"isRepo":true,"branches":[…sorted…]}`
 
 Lists the local branches of a git repository. The page [git.list_branches](protocol/git-list-branches.md) has the parameters, the response and the errors.
 
@@ -2660,7 +2660,7 @@ Lists the local branches of a git repository. The page [git.list_branches](proto
 Makes a linked git worktree for a session, on a new branch or on a branch that exists. The page [git.worktree_create](protocol/git-worktree-create.md) has the parameters, the response and the error codes.
 
 #### git.worktree_remove
-`{baseRepo,worktreePath[,branchName][,worktreeRoot]}` → `{"success":true}` (lenient), or `{"success":true,"branchKept":true}` when the branch step keeps the branch
+`{baseRepo,worktreePath[,branchName][,worktreeRoot][,shadowDirOff]}` → `{"success":true}` (lenient), or `{"success":true,"branchKept":true}` when the branch step keeps the branch
 
 Deletes a linked git worktree of a session and its registration, and then runs the branch step. The page [git.worktree_remove](protocol/git-worktree-remove.md) has the request, the response and the refusals.
 
