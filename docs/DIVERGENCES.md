@@ -1171,7 +1171,7 @@ link points here.
 
 ### D17 · An abandoned `lsof` run reads as busy, not idle (retired) { #d17 }
 
-- With an `lsof` run that `SIGKILL` cannot end, `5fd08069` also sends no SIGTERM, keeps the run dir and logs the same refusal line (round `tier4-01`, macOS VM, 3 runs each). Only the time of the pass differs, 17 s against 51 s, a known gap.
+- With an `lsof` run that `SIGKILL` cannot end, `5fd08069` also sends no SIGTERM, keeps the run dir and logs the same refusal line (round `tier4-01`, macOS VM, 3 runs each). The pass differs: `5fd08069` runs `lsof` once and ends in 17 s, claustrum runs it three times and ends in 51 s. Each hung run stays behind on both. The cause: claustrum reads a run it gave up on as busy and reads the daemon again until its busy sampling ends (from the code).
 
 ### D18 · `-cli-version` must not start with `.blob-` (retired) { #d18 }
 

@@ -117,8 +117,9 @@ checks once (cell CaP0 of round `tier3-17`, Linux VM), where row A5 of `89cb6289
 checked twice.
 
 With an `lsof` run that `SIGKILL` cannot end, the macOS host cleaner is parity in
-reply, signals and disk (round `tier4-01`, macOS VM). The pass time differs:
-17 s on `5fd08069` against 51 s on claustrum, a known gap.
+the log line, signals and disk (round `tier4-01`, macOS VM). The pass differs:
+`5fd08069` runs `lsof` once and ends in 17 s, claustrum runs it three times and
+ends in 51 s. The cause: claustrum reads a run it gave up on as busy and reads the daemon again until its busy sampling ends (from the code).
 
 ### `89cb6289d0e434f573cfc7267dd0cbb8c56ca298` — 2026-09-28 (built)
 

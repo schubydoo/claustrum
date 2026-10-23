@@ -57,8 +57,8 @@ var hcLsofEnv = []string{"LC_ALL=C", "LANG=C", "PATH=/bin:/usr/bin:/usr/sbin"}
 
 // The three bounds on one lsof run.
 //
-// claustrum bounds every lsof run its host cleaner makes. 5fd08069 also gives up on a
-// run at 17 s (round tier4-01, macOS VM). The other two values are claustrum's own.
+// claustrum bounds every lsof run its host cleaner makes. The three values are claustrum's own.
+// 5fd08069 ends its pass 17 s after it starts, with its one lsof run still hung (round tier4-01).
 //
 // Why three and not two. The deadline kills the command. The wait delay then bounds
 // how long the run waits for the output pipe to close, which covers a child that
