@@ -321,7 +321,7 @@ that names macOS was measured on a macOS VM against `89cb6289`. A rule marked
 claustrum links no cleaner on Windows. The Windows references logged no cleaner
 line and changed nothing, in a check with no positive control.
 
-##### When the cleaner runs
+#### When the cleaner runs
 
 The cleaner is on in one case only. The socket path is cleaned first, so `.` and
 double slashes drop out, and `..` is resolved by text (from the code for `..`). The cleaned path is absolute, and its
@@ -358,7 +358,7 @@ lines name the run folders in the spelling of the socket as given. If the
 resolution of the root fails, the list holds only the root as given (not
 measured).
 
-##### Signals of the cleaner
+#### Signals of the cleaner
 
 The sweep ends no stranded daemon. A stranded daemon is a daemon whose socket path
 no longer leads to it. The cleaner sends no signal to such a daemon and none to its
@@ -384,13 +384,13 @@ daemons and orphan groups and removed the same folders.
 On Linux a stopped daemon on an idle run dir gets no SIGTERM, and the dir stays
 (`5fd08069`). The run dir gets the `was not retired` line with the reason
 `the listener could not be verified as a daemon of ours (not inspectable)`. A daemon
-5 minutes old or more also gets this line, and counts as undecided:
+5 minutes old or more gets a line of its own too, and counts as undecided:
 
 ```
 [hostclean] daemon pid <pid> left alone this pass: it could not be inspected (or is stopped)
 ```
 
-##### The `lsof` reads (macOS)
+#### The `lsof` reads (macOS)
 
 On macOS the cleaner asks `lsof` three things:
 
@@ -398,8 +398,9 @@ On macOS the cleaner asks `lsof` three things:
 - whether the stdio of an orphan is three pipes
 - whether a process holds the `daemon.lock` of an idle run dir
 
-An `lsof` run has a command deadline, and the cleaner gives up on a run that
-outlives a later bound. Those bounds are claustrum's own. claustrum tells these
+An `lsof` run has a command deadline and a wait for its output pipe, and the
+cleaner gives up on a run that outlives a later bound. The pipe wait lets a slow run
+end with no output well before that bound. Those bounds are claustrum's own. claustrum tells these
 outcomes of a run apart:
 
 | `lsof` outcome | busy read of a daemon | lock read of a run dir |
@@ -444,13 +445,15 @@ spares the group with claustrum's own line:
 [hostclean] spared process group <pgid> this sweep: its open descriptors were unreadable
 ```
 
-##### The lock of an idle run dir
+#### The lock of an idle run dir
 
 On macOS these states of the `daemon.lock` of an idle run dir keep the dir, with
 the line `[hostclean] run dir "<dir>" unused for <n> days: kept, its daemon.lock could not be examined`:
 
 - the `lsof` command does not start, or the run writes to stderr and exits 1, and
-  the dir has a `daemon.lock` of any content, also one that a live process holds
+  the dir has a `daemon.lock` that is empty, holds the record of a dead daemon,
+  or that a live process holds. Any other content takes the same arm (from the
+  code)
 - the `daemon.lock` has mode 0000
 - the `daemon.lock` is a symlink to a regular file, a folder, or a FIFO
 
@@ -477,7 +480,7 @@ Not measured: a second pass, and an `lsof` run that writes to stderr with anothe
 exit code or with output on stdout too. claustrum reads each such run as no
 answer, whatever the exit code and the output are.
 
-Linux is not measured for these states. On Linux three states keep the dir: a lock
+Linux is not measured for the `lsof` states above. On Linux three states keep the dir: a lock
 that cannot be opened, a lock that is no regular file, and lock content that is no
 record. The dir then gets claustrum's own line
 `[hostclean] run dir "<dir>" kept: whether a process holds its run-dir lock could not be determined`.
