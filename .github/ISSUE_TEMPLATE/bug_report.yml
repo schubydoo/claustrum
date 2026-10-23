@@ -6,7 +6,7 @@ body:
     attributes:
       value: >
         Thanks for taking the time to file a bug. **For security vulnerabilities,
-        do not open an issue** — report it privately via a
+        do not open an issue**. Report it privately via a
         [GitHub Security Advisory](https://github.com/schubydoo/claustrum/security/advisories/new)
         (see [SECURITY.md](https://github.com/schubydoo/claustrum/blob/main/SECURITY.md)).
   - type: textarea
@@ -31,7 +31,7 @@ body:
     id: version
     attributes:
       label: claustrum version
-      description: Output of `claustrum -version` (e.g. `claustrum v0.1.0 (built ...)`).
+      description: Output of `claustrum -version` (the form is `claustrum <version> (built <timestamp>)`, with no leading `v`).
     validations:
       required: true
   - type: dropdown
