@@ -993,7 +993,7 @@ cell C-… is of round `tier0-20` against `5fd08069` on a Linux VM.
 | git.worktree_create | `refusing to create worktree: <dir> is writable by <who> (mode <mode>); choose a directory only you can write to, or remove the extra write permission (chmod go-w)` | for the root, and for the `<directory>` level (cell C-W18). claustrum tests that level before its `.git` test (not measured) |
 | git.worktree_create | `failed to create parent directory: cannot determine the repository's work tree: <exec error>` | `errorCode:"mkdir_failed"`, cell C-W17b |
 | git.worktree_create | `failed to create parent directory: cannot list the repository's worktrees: <exec error>` | `errorCode:"mkdir_failed"`, cell C-W17 |
-| git.worktree_create | `git worktree add failed: <text>` | in `error`, `errorCode:"worktree_add_failed"`. `<text>` is made from git's stderr by the [text rule](#git-directory-trust-check). The text of claustrum does not start with git's graft-file `hint:` lines. The rollback runs no git call and removes the leaf only if it is empty. A pre-existing branch is not deleted (`4534d86`). A failed add answers this frame even when the caller `timeoutMs` expired during the add (measured against `f6010b97` and `90fca6e6` on a macOS VM) |
+| git.worktree_create | `git worktree add failed: <text>` | in `error`, `errorCode:"worktree_add_failed"`. `<text>` is made from git's stderr by the [text rule](#the-cannot-run-and-hooks-refusal-texts). The text of claustrum does not start with git's graft-file `hint:` lines. The rollback runs no git call and removes the leaf only if it is empty. A pre-existing branch is not deleted (`4534d86`). A failed add answers this frame even when the caller `timeoutMs` expired during the add (measured against `f6010b97` and `90fca6e6` on a macOS VM) |
 | git.worktree_create | `git worktree add failed (completing the new worktree's git files): <cause>` | in `error`, `errorCode:"worktree_add_failed"`, when the `config.worktree` step after the add fails. On Windows a failed staging step gives it, such as `git registered <n> worktrees where one was expected; try again` or `the repository already has a hundred worktrees called "<name>"; remove some (git worktree prune, git worktree remove)` (rounds `task009-01`, `task087-01`). No checkout runs, and the rollback is that of a failed checkout. It wins over an expired `timeoutMs` (cell R8 of round `task007-03`, Linux VM). `5fd08069`, rounds `task007-01` and `task007-03` (Linux and macOS VMs), and cell C1 on a Windows VM |
 | git.worktree_create | `git worktree add failed: <fallback text> (attaching to the existing branch <b> was refused first: <attach text>)` | in `error`, `errorCode:"worktree_add_failed"`, when the attach add for `existingBranch` fails and the fallback `-b <branchName>` add fails too. The text rule makes each text on its own, each with its own 512-byte cap. Measured against `f6010b97` and `90fca6e6` on a macOS VM |
 | git.worktree_create | `git worktree add failed (checkout): <text>` | in `error`, `errorCode:"worktree_add_failed"`, when the `read-tree` checkout fails. Same text rule, and the same rule for the `hint:` lines. With a settings copy a `<text>` that holds `smudge filter lfs failed` after the cut gets `. Claude doesn't use ssh, credential, or proxy settings from this repository's own git config. If the download needs one and you trust that setting, copy it into ~/.gitconfig on the remote machine, then try again.` after it (`5fd08069`, round `task081-01`, Linux VM). The new directory is removed. The branch the call created goes only when another ref reaches its tip (see [The branch step](#the-branch-step)). In attach mode the attached branch is kept (measured against `f6010b97`). A failed placement of the index answers this frame too. The OS error is `openat <registration name>/index: permission denied` (`89cb6289`, rows A14, A14f and A14b, Linux and macOS VMs) or `open <temporary directory>/index: no such file or directory` (cell X1, the same VMs). On Windows it is `openat index: <cause>` (`5fd08069`, cells S11 and S12 of round `task087-01`), or claustrum's own `the registration <p> is not the folder that was moved into place` (D24, not measured) |
@@ -1385,10 +1385,12 @@ the daemon walks up from the request folder:
   Only `git.info` reaches that start. `git.list_branches` and `git.status` resolve
   the path first, and so do `git.worktree_create` and `git.worktree_remove` for a
   `baseRepo` that exists. If that resolve fails, they answer there.
-- On Windows a refusal of a config on `git.info` follows the spelled start too. It
-  is the class 1 text of [Repository config refusals](#repository-config-refusals).
+- From the code: on Windows a refusal of a config on `git.info` follows the
+  spelled start too. In the state `shadow` without `"shadowDirOff":true`, it is
+  the class 1 text of [Repository config refusals](#repository-config-refusals).
   A config that git refuses and the daemon's read accepts, such as an
-  `include.path` with no value, gets the hooks refusal.
+  `include.path` with no value, gets the hooks refusal. So does any refused
+  config outside that state.
 - `process.spawn` does not use the walk.
 - A `.git` folder that passes the git-directory test is the git directory.
 - A `.git` folder that fails the test ends the walk. If it holds a `commondir`
@@ -1475,7 +1477,7 @@ these steps:
    deletes the worktree folder and its entry, and the branch stays. If the folder
    is gone before the request, it deletes the entry. These remove rules are
    measured on a Linux VM. When G fails the git-directory test, that symlink gets
-   S3.
+   S3 (Linux VM).
 2. A `commondir` that is not a regular file of at most 1048576 bytes gets S2 with
    its reason. A relative symlink that stays in G is followed. A dangling symlink
    that is absolute, or that leaves G, gets S2 with `openat commondir: path
@@ -1485,7 +1487,7 @@ these steps:
    ` .`, `. `, `.<TAB>`, `./x`, `..`, an empty file, `.\` and the absolute path of
    G itself are all refused.
 4. G then passes the git-directory test, or it gets S3. The content test comes
-   first.
+   first. When both S2 and S3 apply, which one answers is not measured.
 5. Else G is trusted, and git runs with `GIT_COMMON_DIR` pinned to G.
 
 ##### The daemon's `GIT_DIR` and `GIT_COMMON_DIR`
@@ -1529,7 +1531,7 @@ UTF-8 byte stays a byte and prints as `\xff`. The rest of the text is never cut.
 | S3 | `%q sits in a git directory git would not take as a repository (its HEAD, objects or refs missing or invalid), so git would look for one somewhere else; repair that directory (usually its HEAD file)` | `<G>/commondir` |
 
 `<name>` in S1 and S2 is literal text, and the JSON encoder writes it as
-`<name>`.
+`\u003cname\u003e`.
 
 The M4 and S2 reasons seen include `commondir is not a regular file`,
 `commondir is larger than 1048576 bytes`,
@@ -1562,13 +1564,16 @@ on `PATH`, the exec error replaces both texts of the table (class 1 below).
 Where the trust check finds no repository, the daemon still runs the configuration
 listing in that folder. In a plain folder it carries `GIT_DIR=<null>`. The frames
 are then those of the "no repository" column. A listing that fails by class 3
-below gives the "refused" column. That holds for a plain folder and for a folder
-with an empty `.git` folder, on Linux, macOS and Windows VMs. See
+below gives the "refused" column. `89cb6289` answers so for a plain folder and for
+a folder with an empty `.git` folder, on Linux, macOS and Windows VMs. The one
+exception is `git.worktree_remove` with `worktreeRoot`, which is Linux VM only. On
+macOS that remove answers the `worktreePath` shape refusal there, with no git call.
+See
 [The daemon's own git environment](#the-daemons-own-git-environment).
 
 A daemon `GIT_DIR` that names a regular file differs by system. On Linux and macOS
-no listing runs, and the "no repository" column answers. That holds for
-`git.info` on a plain folder and on a repository, also with an empty
+no listing runs, and the "no repository" column answers. `89cb6289` answers so
+for `git.info` on a plain folder and on a repository, also with an empty
 `GIT_CONFIG_KEY_0` (Linux and macOS VMs). On Windows a file with no `gitdir:` line
 gets the refusal of a config on the five methods: `this repository's git config
 cannot be used: open <GIT_DIR>: not a directory` (`5fd08069`, Windows VM). With a
@@ -1617,11 +1622,11 @@ The classes come in this order:
    `git.worktree_remove`. Another gone git dir answers the error of
    [the call about the repository](#the-call-about-the-repository) in the folder
    that holds `.git`. With `"shadowDirOff":true` that git dir gets the hooks
-   refusal on every method. These git 2.56 rules are measured on `5fd08069`, on
-   Linux and Windows VMs.
+   refusal on every method (Linux VM). The other git 2.56 rules are measured on
+   `5fd08069`, on Linux and Windows VMs.
 3. Any other failure, a failed start included. The daemon runs `git version` with
    no `-c` option. It runs in `/` on Linux and macOS, and in the daemon's working
-   folder on Windows. If that call fails too, the text is `git cannot run on this
+   folder on Windows (from the code). If that call fails too, the text is `git cannot run on this
    host; git not run: <exec error>: <git text>`. Else it is the hooks refusal.
 
 The `git version` call of class 3 gets no `GIT_CONFIG_COUNT`, `GIT_CONFIG_KEY_<n>`,
@@ -1634,9 +1639,9 @@ lower-case name, such as `git_config_global`, stays on the call (from the code).
 `baseRepo`, `git version` gets the light environment (Linux VM).
 
 With `"shadowDirOff":true` the `git version` call has the six heavy values for
-`git.info` and the four light values for `git.worktree_create`. Without the member
-the call of a create carries six values. `5fd08069` does both on Linux, macOS and
-Windows VMs. From the code: claustrum sends those six in the state `shadow`.
+`git.info` and the four light values for `git.worktree_create`. `5fd08069` does
+so on Linux, macOS and Windows VMs. Without the member the call of a create
+carries six values (`5fd08069`, Linux VM). From the code: claustrum sends those six in the state `shadow`.
 
 ##### Where git cannot start
 
@@ -1707,10 +1712,10 @@ that token (Windows VM).
 
 The "cannot run" text carries the exec error and the stderr of `git version`, not
 those of the listing. Take a listing that exits 128 on an empty
-`GIT_CONFIG_KEY_0`, and a stub `git version` that exits 1. The text is then `git
-cannot run on this host; git not run: exit status 1: <stderr of git version>`. A
-plain folder and `git.worktree_remove` with `worktreeRoot` carry the same text, on
-Linux, macOS and Windows VMs. claustrum makes `<git text>` with the text rule
+`GIT_CONFIG_KEY_0`, and a stub `git version` that exits 1. `89cb6289` then answers
+`git cannot run on this host; git not run: exit status 1: <stderr of git version>`.
+A plain folder carries the same text on Linux, macOS and Windows VMs. So does
+`git.worktree_remove` with `worktreeRoot` on Linux and macOS VMs. claustrum makes `<git text>` with the text rule
 below. From the code: each listing of a git method that answers this text takes it
 from the version call.
 
