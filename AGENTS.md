@@ -113,17 +113,17 @@ Every OS serves the same JSON-RPC methods. Full internals →
   line. Several sentences on it are fine. `scripts/lint_changesets.py` gates this in CI and pre-commit.
 - Before a PR, make all four of these true: `gofmt -l .` prints nothing,
   `go vet ./...` is clean, `golangci-lint run` is clean, and
-  `make test` is green. For a wire-surface change, the golden fixtures
-  (`testdata/socket_*.golden.json`) must pass unchanged, so that the frames
-  stay byte-identical.
+  `make test` is green. For a wire-surface change, a golden fixture
+  (`testdata/socket_*.golden.json`) changes only for a new reference frame or
+  a catalogued divergence. Name the reason in the PR.
 - CI gates every PR on the branch ruleset's required checks: `ci required checks
   passed` + `security required checks passed` + `conventional PR title`.
 
 ## Gotchas — Part A: always-on safety (hold these before touching code)
 
-Unmarked rules follow the pinned reference build `5fd08069`. "claustrum's own"
-and "not measured" mark the exceptions. A rule that names another build
-follows that build.
+Unmarked rules follow the reference, pinned at `5fd08069`. A D-number,
+"claustrum's own", "from the code" and "not measured" mark the exceptions. A
+rule that names another build follows that build.
 
 - `process.spawn` runs arbitrary commands as the user of the daemon. This is by
   design. Treat socket + token as equivalent to shell access. The threat model
@@ -157,7 +157,8 @@ follows that build.
       and a path with the `\\?\` prefix read a name with a dot or a space after
       it in two ways. Both tests follow the mkdir again. If the two views differ
       there, the entry at that name goes with a plain `os.Root.Remove`, never as
-      a tree. No remove runs after a home refusal. This delete path is approved
+      a tree. No remove runs after a home refusal. The identity test, the view
+      test and the open test are claustrum's own (D2). This delete path is approved
       by the maintainer. Do not widen it.
     - `git.worktree_remove` deletes `worktreePath` itself. It runs no `git
       worktree remove`. It deletes the entries of the leaf except `.git` in the
@@ -174,7 +175,7 @@ follows that build.
       refused. A worktree LOCKED in the `.git` folder of `baseRepo` is refused,
       not deleted (D22). On Linux and macOS a gone worktree whose locked entry
       sits behind a linked `<git dir>/worktrees` gets success, and its branch
-      goes. That is approved by the maintainer. Do not widen it.
+      goes. That exception follows the reference. Do not widen it.
       A repository config, or one of three files of the git directory, that the
       daemon does not accept refuses the remove before any delete.
       `"shadowDirOff":true` in the request turns that refusal off.
@@ -387,9 +388,9 @@ follows that build.
   because `~/.claude/…` is the install path of the daemon itself. The guard is
   always-on, not opt-in. Any RPC path param that reaches a recursive delete
   owes this guard. `IsAbs && !isFilesystemRoot` is not a substitute: home
-  passes both tests, and neither test resolves a relative path. A daemon in home
-  that receives `worktreePath:".."` therefore still destroys home through the
-  parent directory. See
+  passes both tests, and neither test resolves a relative path. With only that gate,
+  a daemon in home that receives `worktreePath:".."` reaches the parent of
+  home. See
   [`docs/DIVERGENCES.md`](docs/DIVERGENCES.md) D2.
 - `plugins.prune` is a further `os.RemoveAll` site, and it is safe by
   construction. It deletes `<socket-derived-root>/<hash>`. The root comes from
@@ -457,8 +458,8 @@ follows that build.
       approved by the maintainer). Another git directory is not
       measured. Add no other step that resolves the path of the git directory
       again, and never widen a delete of these steps. A rollback after the
-      first move is not measured. After the second, the rollback acts in the
-      copy.
+      first move is not measured. After the second, the rollback acts through
+      that new folder.
     - On Windows a directory symbolic link at `.git` is refused as a junction
       is, on every git method without `"shadowDirOff":true`, before any write
       or remove (`gitDirIsSymlink`). The folder behind the link stays
@@ -609,7 +610,7 @@ JSON-RPC frame changes.
 | [D2](docs/DIVERGENCES.md#d2) | Refuse a destructive path that is home or contains home, on three methods and on `-install` | always-on | all |
 | [D3](docs/DIVERGENCES.md#d3) | Cap the output size of `files.extract_tar` | off | all |
 | [D6](docs/DIVERGENCES.md#d6) | `-cli-version` must be one path component | always-on | all |
-| [D8](docs/DIVERGENCES.md#d8) | Refuse a link, a FIFO and, on Linux and macOS, another user's `remote-server.log` at the start. The `git-shadow` sweep makes no lock file in the target of a link | always-on | all |
+| [D8](docs/DIVERGENCES.md#d8) | Refuse a link, a FIFO and, on Linux and macOS, another user's `remote-server.log` at the start. An own link to an own file passes on Linux and macOS. The `git-shadow` sweep makes no lock file in the target of a link | always-on | all |
 | [D10](docs/DIVERGENCES.md#d10) | Cap the CLI size of `-install` (decompressed and download body) | off | all |
 | [D12](docs/DIVERGENCES.md#d12) | Bound the download exchange of `-install` | off | all |
 | [D15](docs/DIVERGENCES.md#d15) | Verify that a run-dir lock holder is our serve process before a signal, in the serve eviction and in `-stop` | always-on | macOS |
