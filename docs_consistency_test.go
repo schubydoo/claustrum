@@ -609,6 +609,7 @@ var docWordLimits = map[string]int{
 	"docs/protocol/git-status.md":          3100,
 	"docs/protocol/git-worktree-create.md": 3100,
 	"docs/protocol/git-worktree-remove.md": 2300,
+	"docs/protocol/launcher-resolve.md":    1700,
 	"docs/protocol/plugins-prune.md":       1100,
 	"docs/protocol/process-killandwait.md": 1000,
 	"docs/protocol/process-reattach.md":    1000,
