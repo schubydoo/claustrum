@@ -31,7 +31,7 @@ body:
     id: version
     attributes:
       label: claustrum version
-      description: Output of `claustrum -version` (for example `claustrum 1.14.0 (built ...)`).
+      description: Output of `claustrum -version` (the form is `claustrum <version> (built <timestamp>)`, with no leading `v`).
     validations:
       required: true
   - type: dropdown

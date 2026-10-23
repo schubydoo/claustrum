@@ -45,8 +45,9 @@ A change that breaks one of these is wrong. Passing tests do not make it right:
    such a change, the PR must say how it was measured.
 2. An intentional divergence must be documented: an entry in `docs/DIVERGENCES.md`,
    its frames in `docs/PROTOCOL.md` or on the page of its method under
-   `docs/protocol/`, and a note in the PR. An undocumented one is Important even where it is an improvement. That case
-   matters most, because it will read as a bug to the next person.
+   `docs/protocol/`, and a note in the PR. An undocumented one is Important even
+   where it is an improvement. That case matters most, because it will read as a
+   bug to the next person.
 3. Parity claims need a measurement, not a plausible story. "The reference does X"
    is a finding only with the observation attached. Beware evidence that proves a
    weaker claim than the one being made. This repo shipped that mistake before.

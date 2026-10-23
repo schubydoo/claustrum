@@ -20,12 +20,15 @@ internal-only PRs apply the `no-changelog` label instead. See CONTRIBUTING.md.
       [`docs/DIVERGENCES.md`](../docs/DIVERGENCES.md), and its frames are in
       [`docs/PROTOCOL.md`](../docs/PROTOCOL.md) or in the page of its method
       under `docs/protocol/`. It is described below.
+- [ ] Wire-surface change that matches the reference. The PR says how the frames
+      were measured, and any golden fixture it changes is a new reference frame.
 
 ## Checklist
 
 - [ ] `gofmt -l .` is empty, and `go vet ./...` and `golangci-lint run` are clean
 - [ ] `make test` passes
 - [ ] `make all` cross-compiles all six targets
-- [ ] If the wire surface changed: a golden fixture (`testdata/socket_*.golden.json`)
-      changed only for a new reference frame or a divergence documented above
+- [ ] If the wire surface changed: `make test` is green, and any golden fixture
+      (`testdata/socket_*.golden.json`) it changes is a new reference frame or a
+      divergence documented above
 - [ ] No new dependencies / no telemetry
