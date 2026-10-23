@@ -480,8 +480,10 @@ traps that matter for telling drift from expected:
   claustrum differs from `89cb6289` in four states: `git.status` with replace
   objects, the `hint:` lines in a failure text of `git.worktree_create`, a long
   tree path on Windows, and the paths of a new worktree with
-  `worktree.useRelativePaths`. The call logs differ in the `-c` lists and in two
-  variables: `89cb6289` sends no `GIT_NO_REPLACE_OBJECTS` and no `GIT_GRAFT_FILE`. The rules are in
+  `worktree.useRelativePaths`. The call logs differ in the `-c` lists, where `89cb6289`
+  sends 23 and 13 items and claustrum 28 and 20. They also differ in two heavy
+  variables: the heavy profile of `89cb6289` has no `GIT_NO_REPLACE_OBJECTS` and no
+  `GIT_GRAFT_FILE`. The rules are in
   [Hardened git calls](PROTOCOL.md#hardened-git-calls).
 
   Against `5fd08069` the call logs differ in `git.worktree_create`. `5fd08069`

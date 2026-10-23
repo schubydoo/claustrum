@@ -2552,7 +2552,7 @@ A hardened call uses the heavy profile or the light profile:
 | Profile | `-c` items | Variables, in this order | Calls |
 |---|---|---|---|
 | heavy | 28 | `GIT_NO_LAZY_FETCH=1`, `GIT_NO_REPLACE_OBJECTS=1`, `GIT_GRAFT_FILE=<null>`, `GIT_ALLOW_PROTOCOL=denied_by_claude_ssh`, an empty `GIT_ASKPASS`, `GIT_TERMINAL_PROMPT=0` | `git.info`, `git.list_branches` and `git.status`. Each `rev-parse --absolute-git-dir`, and the `--git-dir=<dir> --work-tree=<dir> rev-parse --show-toplevel` call. The hooks refusal check of `git.info`, `git.list_branches`, `git.status` and `git.worktree_remove` |
-| light | 20 | `GIT_ALLOW_PROTOCOL=https:ssh`, `GIT_TERMINAL_PROMPT=0`, `GIT_NO_REPLACE_OBJECTS=1`, `GIT_GRAFT_FILE=<null>` | the other hardened calls, mostly those of `git.worktree_create`. The hooks refusal check of a create, and of a remove with `worktreeRoot` (Linux VM) |
+| light | 20 | `GIT_ALLOW_PROTOCOL=https:ssh`, `GIT_TERMINAL_PROMPT=0`, `GIT_NO_REPLACE_OBJECTS=1`, `GIT_GRAFT_FILE=<null>` | the other hardened calls, mostly those of `git.worktree_create`. The hooks refusal check of a create, and of a remove with `worktreeRoot` (the remove on a Linux VM) |
 
 - The daemon's own `GIT_ALLOW_PROTOCOL` changes the first light value (see
   [The daemon's own git environment](#the-daemons-own-git-environment)).
@@ -2676,8 +2676,9 @@ directory. On Windows that path has backslashes.
 
 ##### Listings and probes
 
-Before each hardened call except the first, the daemon runs `git config -z --list`
-in the same directory. The listing carries the profile variables of the call after
+Before each hardened call except the first (see [Refusal texts](#refusal-texts)),
+the daemon runs `git config -z --list` in the same directory. The listing before the
+checkout and the listing before the `git status` call start with `--git-dir=<dir>`. The listing carries the profile variables of the call after
 it and the `GIT_COMMON_DIR` pin, and no hook pins. A listing before a call of the
 branch step carries the light variables, and in the states `shadow` and
 `fallback-git` the six heavy values. In the state `shadow` a second listing runs right before the checkout. It
@@ -2702,15 +2703,21 @@ request. With `"shadowDirOff":true` they are temporary folders with these names:
 - `claude-ssh-worktreeinclude-<n>`, the folder of the include step of a create
 - `claude-ssh-index-<n>`, the index folder of the checkout of a create
 
-`<n>` is decimal digits. With `"shadowDirOff":true`, `5fd08069` uses the three names
-(Linux, macOS and Windows VMs). On Linux and macOS a client can see the index name
+`<n>` is decimal digits. With `"shadowDirOff":true`, `5fd08069` uses the first two
+names (Linux, macOS and Windows VMs), and `89cb6289` the index name (Linux and
+macOS VMs). On Linux and macOS a client can see the index name
 in the text `open <tmp>/claude-ssh-index-<n>/index: no such file or directory`. The
 index name on Windows is claustrum's own (not measured).
 
 ##### Calls with `worktreeRoot`
 
+A create with `worktreeRoot` runs a light `rev-parse --show-toplevel`, a heavy
+`rev-parse --absolute-git-dir` and a light `worktree list --porcelain -z` in
+`baseRepo`, each after its own listing. With the excludes read and the repo test,
+that is the 9 git calls of the error catalogue (Linux and macOS VMs).
+
 If the `rev-parse --show-toplevel` call of a `git.worktree_create` with
-`worktreeRoot` fails, the create stops with `mkdir_failed`. Two failed `worktree
+`worktreeRoot` fails, the create stops with `mkdir_failed` (Linux VM). Two failed `worktree
 list` calls stop it the same way (Linux VM). If `baseRepo` and the root are both missing, a
 `git.worktree_remove` with `worktreeRoot` makes no git call. It answers the `the
 worktree location <root> is not reachable` refusal of the
@@ -2718,7 +2725,7 @@ worktree location <root> is not reachable` refusal of the
 
 ##### Where the calls differ from `5fd08069`
 
-The reply lines are equal in each of these. With `"shadowDirOff":true` a call that
+With `"shadowDirOff":true` a call that
 both builds make is equal in list, arguments, working directory and variables.
 Without the member these are equal: the folder variables, the six values of the
 light calls of a create, the `lfs.storage` item and `LANGUAGE=C` of the checkout,
@@ -2736,6 +2743,8 @@ variables is equal on Linux and macOS VMs.
   before the `-b` add, and `5fd08069` none.
 - With a git filter or git-lfs, the read-tree of claustrum can carry filter items
   before its list.
+
+The reply lines are equal in each difference above.
 
 #### The daemon's own git environment
 
