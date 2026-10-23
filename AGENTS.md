@@ -204,8 +204,8 @@ Every OS serves the same JSON-RPC methods. Full internals →
       Before the add, create removes one stale entry of `worktrees` in the
       common git directory of `baseRepo`, as `5fd08069` does. A stale entry is
       one whose `gitdir` record names the `.git` of the new leaf. Create
-      removes that entry only if it is the one stale entry with no `locked`
-      file, as `89cb6289` does on Linux and macOS and `5fd08069` on Windows. The delete is one
+      removes that entry only if it is the only stale entry and holds no
+      `locked` file, as `89cb6289` does on Linux and macOS and `5fd08069` on Windows. The delete is one
       `os.Root.RemoveAll`, after `wipesHomeDir` on the entry path. It goes
       through a root at that folder. When a Windows create holds the git
       directory, it goes through the held folder. On Windows the step runs after `rev-parse
@@ -244,7 +244,7 @@ Every OS serves the same JSON-RPC methods. Full internals →
       `5fd08069`. In the state `shadow` these refuse too: over 64 filter
       names, and a last listing that fails or runs at 30 s and does not exit 0.
       So does a first checkout listing that failed or that its 30 s limit
-      stopped, as on `5fd08069` (Linux and Windows VMs).
+      stopped, as on `5fd08069` (Linux and macOS VMs).
       The rollback deletes the entries of the leaf in the order that the
       directory read returns them, and it stops at the first failure. Then it
       deletes the registration, runs the branch step on the created branch, and
