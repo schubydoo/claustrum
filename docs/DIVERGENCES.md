@@ -286,7 +286,7 @@ no flag and no key.
   world-writable folder with the `fs.protected` sysctls on. On macOS, and on
   Linux with those sysctls off, it writes through a link or into another user's
   file, and it blocks on a FIFO. On Windows it writes through a file symbolic link. Its sweep makes
-  an empty lock file in the target of a link (Linux, macOS and Windows VMs).
+  an empty lock file in the target of a link (Linux, macOS and Windows).
 - **Systems and switch.** Linux, macOS and Windows, as split above. Always on,
   no switch.
 - **Cost.** None in the deployed socket folder.
