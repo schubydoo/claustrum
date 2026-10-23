@@ -101,7 +101,7 @@ battery on the Linux VM. On the macOS and Windows VMs it ran the changed areas
 closed it, and the off switch during a `git.info` with it (rounds `task103-01`
 to `task103-06`).
 
-**Measured details.** In round `val-s3p2b2-5` 109 requests of the `val-s3p2b1` cells and 77 requests
+In round `val-s3p2b2-5` 109 requests of the `val-s3p2b1` cells and 77 requests
 of newer cells ran with the order of the variables (Linux VM). The calls differ
 there in two kinds of place: the differences that stay, and the rows that the
 last edits of the copy follow. On the macOS VM 124 of 177 cells have no call
@@ -124,7 +124,7 @@ One Windows claustrum run where both requests got
   in 44 of 60 in round `task107-01`, so the race is noisy and the rounds show no
   measurable effect of the change.
 
-Off the wire, `5fd08069` keeps an exited git wrapper as a zombie until the
+**Measured details.** Off the wire, `5fd08069` keeps an exited git wrapper as a zombie until the
 process that holds its stdout ends. For a config listing on standard input
 that wait ends at the 30 s bound of the call. Rounds `task101-03` and
 `task082-02` show both (Linux and macOS VMs). On the wire, with a holder of
@@ -287,8 +287,6 @@ seven changes that claustrum made for this build:
 7. The darwin host cleaner's `lsof` run. claustrum now gives a run 15 s and gives
    up on a wedged one at 17 s. These are its own values, not probe-measured. This
    is the one a full re-check found after the first four slices had merged.
-
-**Off-wire churn.** Items 1, 2 and 4 to 7 change no byte of a frame.
 
 **Missed at first.** Item 7 escaped the first pass. A second, full re-check after
 the first four PRs had merged is what found it.
