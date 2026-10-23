@@ -44,11 +44,11 @@ release.
 | `4534d86…` | D16 | | D15 covers the macOS holder check of the new run-dir lock |
 
 This second table holds only what the build sections below record. A build with
-no row records no divergence change. An entry that no section opens has no
-"opened" cell. [DIVERGENCES.md](DIVERGENCES.md) holds each entry.
+no row has no divergence change in its section. [DIVERGENCES.md](DIVERGENCES.md) holds each entry.
 
 Each per-build section takes its labels from one set, always in this order, and
-uses only the labels it needs. The lead paragraph gives the header facts. Examples
+uses only the labels it needs. A lead paragraph, where a section has one, gives
+the header facts. Examples
 are the Desktop release that pinned the build, its `-version` line and its Go
 stamp. The **wire delta** is what claustrum must match
 byte-for-byte. **Off-wire churn** is any source that moved but never reaches the
@@ -57,7 +57,7 @@ reconciliation did not find. **Older gaps closed** are fixes, in the same work,
 for behavior that older builds already had. **How it was bounded** gives the
 measurement that showed that nothing else changed. **Measured details** are
 single measurements that fit no label above. **Divergences** names the entries of
-[DIVERGENCES.md](DIVERGENCES.md) that the work opened or retired. **Reconciled
+[DIVERGENCES.md](DIVERGENCES.md) that the work opened, retired or changed. **Reconciled
 in** names the PRs. The baseline section has the header facts only. The forensics
 stay outside the committed tree. Correction of 2026-10-23: this paragraph said
 that each per-build section has three parts.
@@ -99,14 +99,16 @@ battery on the Linux VM. On the macOS and Windows VMs it ran the changed areas
 (rounds `task082-01` to `task082-03`). Its one frame difference was a
 `git.info` on a folder with no repository during the first start test. PR 596
 closed it, and the off switch during a `git.info` with it (rounds `task103-01`
-to `task103-06`). In round `val-s3p2b2-5` 109 requests of the `val-s3p2b1` cells and 77 requests
+to `task103-06`).
+
+**Measured details.** In round `val-s3p2b2-5` 109 requests of the `val-s3p2b1` cells and 77 requests
 of newer cells ran with the order of the variables (Linux VM). The calls differ
 there in two kinds of place: the differences that stay, and the rows that the
 last edits of the copy follow. On the macOS VM 124 of 177 cells have no call
 that differs. The reply of claustrum to cell X2 of round `task077-03` is
 byte-equal in rounds `task077-04` to `task077-06` (Windows VM).
 
-**Measured details.** One Windows claustrum run where both requests got
+One Windows claustrum run where both requests got
 `-32001` was the test kit, not claustrum (round `task104-01`). Two items stay open:
 
 - The off switch during `git.status` and the worktree methods: Linux ran every
@@ -257,10 +259,8 @@ for this build. Items 1, 3 and 4 are measured.
 **Wire delta.** Exactly one item changes the bytes of a frame: item 3, and claustrum
 had to change its own frames to stay byte-identical. Items 1 and 4 are observable
 off the frame instead. They show in the connection lifecycle and in the seeded
-worktree, which is precisely what a frame diff cannot catch.
-
-**Off-wire churn.** The other six items change no byte of a frame. The list holds
-all seven changes that claustrum made for this build:
+worktree, which is precisely what a frame diff cannot catch. The list holds all
+seven changes that claustrum made for this build:
 
 1. A reattach closes the connection it replaces. `process.reattach` already
    transferred the frame stream to the reattaching connection. It now also closes
@@ -287,6 +287,8 @@ all seven changes that claustrum made for this build:
 7. The darwin host cleaner's `lsof` run. claustrum now gives a run 15 s and gives
    up on a wedged one at 17 s. These are its own values, not probe-measured. This
    is the one a full re-check found after the first four slices had merged.
+
+**Off-wire churn.** Items 1, 2 and 4 to 7 change no byte of a frame.
 
 **Missed at first.** Item 7 escaped the first pass. A second, full re-check after
 the first four PRs had merged is what found it.
@@ -351,8 +353,6 @@ One is a CLI mode. One raises the inherited file limit. A closing note covers wi
   windows. Windows ships no
   run-dir lock, so the daemon is never the run-dir lock holder there. It records no
   children, reaps nothing, and stamps no child markers. A windows VM showed this.
-  A windows VM showed again that D16 (git.status of a linked worktree) persists on this
-  build.
 
 **Missed at first.** This build also bounds the `ldd` libc probe at 5 s. That
 change was reconciled later, under issue 408.
@@ -362,6 +362,9 @@ the CLI flags, the `-version` format, and the tracked strings all match. The new
 `-probe-cli` flag appears in both binaries. The two wire changes went through the
 frame battery. Claustrum reconciled each off-wire subsystem 1:1. A throwaway VM
 checked the destructive paths on linux, darwin, and windows.
+
+**Divergences.** A windows VM showed again that D16 (git.status of a linked
+worktree) persists on this build.
 
 **Reconciled in.** PRs 356 through 371, with later follow-up parity fixes (the
 plugins.prune sibling-daemon classification and the inherited file-limit raise).
