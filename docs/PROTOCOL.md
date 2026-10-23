@@ -718,7 +718,9 @@ namespaces of the daemon:
 [Server] serving only callers in "user:[4026531837] net:1 pidfd"
 ```
 
-On macOS and Windows the line is at WARN level and comes last before the banner:
+On macOS and Windows the line is at WARN level and comes last before the banner,
+with no reap line between them. Its place beside the lines of a reap is not
+measured:
 
 ```
 [Server] this system names no namespaces: cannot tell callers in a sandbox from others, serving all
@@ -739,8 +741,9 @@ following it, and it opens no FIFO:
 - Every other entry fails the start with `permission denied` and stays
   unchanged. That is [D8](DIVERGENCES.md#d8).
 
-A failed start prints one line on stderr and exits 1, with no daemon, socket,
-`daemon.lock` or `daemon.token`. `5fd08069` does the same with its own prefix:
+A failed start prints one line on stderr and exits 1. `5fd08069` prints the same
+refusal with its own prefix. No daemon, socket, `daemon.lock` or `daemon.token`
+follows it (from the code):
 
 ```
 claustrum: open log: open <path>: is a directory
