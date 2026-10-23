@@ -2127,8 +2127,9 @@ sends it, and an error reply has none (Linux, macOS and Windows).
   `fork/exec <git.exe>: The directory name is invalid.`
 - A request with the member gets `"off-switch"` also as the first request of a
   daemon, in a "no repository" reply and while a failed test is kept.
-- A hold that starts while a request runs moves the later git commands of that
-  request to the git directory. After the hold a later command runs the test and
+- A hold that starts while a request runs moves each later git command of that
+  request that starts its own config listing to the git directory. A command that
+  already runs keeps the copy. After the hold a later command runs the test and
   takes the copy (Linux, macOS and Windows). A create in a hold makes no copy.
 - In that time `git.status`, `git.list_branches` and `git.worktree_remove` get no
   config refusal, as with the member. On a repository of format version 3 they
@@ -2137,7 +2138,8 @@ sends it, and an error reply has none (Linux, macOS and Windows).
   remove deletes nothing there because git itself fails. On a config that only the
   daemon refuses, the remove deletes. macOS and Windows are not measured.
 - A held request keeps no hold for later requests. A `worktree add` that started in
-  the hold is not stopped at 2 minutes after the holder answers.
+  the hold is not stopped at 2 minutes after the holder answers. A held call that
+  starts after that answer has the 2 minute limit (claustrum's own, not measured).
 - Only the JSON value `true` counts for `shadowDirOff`. `"true"`, `1`, `null` and
   `false` are as no member (Linux and macOS).
 - In the state `fallback-git` the test runs again on the first request more than 10
@@ -2149,7 +2151,8 @@ sends it, and an error reply has none (Linux, macOS and Windows).
 
 The first request that reaches a repository, or the `.git` file above, without the
 member runs the test. It is 10 git calls in a folder `.check-<n>` of the daemon, and
-that folder is gone at the reply. Call 7 reads the config of the test repository. If
+that folder is gone at the reply. Call 7 reads the config of the test repository. It
+runs in `/`, and on Windows in the working folder of the daemon (from the code). If
 the test fails, the request gets this text:
 
 `Claude could not test git on the remote machine (<cause>). Check free disk space and quota there, then try again.`
@@ -2171,7 +2174,7 @@ in the working folder of the daemon.
 | `git <verb> failed under "<folder>": signal: killed` | The daemon ended a test call other than call 7 after 30 seconds (Linux and macOS). On Windows the end is `exit status 1` |
 | the same with ` (git version <v>)` at its end | The failed or ended call was one of calls 1 to 5 (measured for `init` and `mktree`) |
 | `this repository's git config cannot be used: <error lines of git>` | Call 7 failed, and the plain `git version` after it works |
-| `this repository's git config cannot be used: git did not finish reading "<config of the test repository>" within 30 seconds; try again` | Call 7 held its pipes past 30 seconds. The reply comes near 31 s. With stderr alone held, a call 7 that exits 1 gives the lines read before the cut (not measured) |
+| `this repository's git config cannot be used: git did not finish reading "<config of the test repository>" within 30 seconds; try again` | Call 7 ran, or held its stdout, past 30 seconds. The reply comes near 31 s. With stderr alone held, a call 7 that exits 1 gives the lines read before the cut (not measured) |
 | `mkdir <path>: <reason>` or `open <path>: <reason>`, with no quotes | A folder or the lock file of the daemon cannot be made |
 
 Some failed calls give `fallback-git` and not a failure. That is the case when git
@@ -2211,12 +2214,13 @@ sharing.
   `rebase-merge/head-name`, `rebase-apply/head-name` and `BISECT_START`.
 - The daemon makes the folder at the first request that accepts the config of the
   repository. After a change of a file, a later request writes its copy again.
-- The folder `.probe` of the daemon is the target of [the call about the
-  repository](#the-call-about-the-repository).
+- [The call about the repository](#the-call-about-the-repository) names a folder
+  `.probe` of the daemon.
 - One request also keeps short-lived entries in the folder of the daemon:
   `.gitdir-<n>` for a `git.status`, and `.index-<n>` and `.worktreeinclude-<n>` for a
   create. Also `.config-<n>` for a create in a repository with a `config.worktree`
-  file, and `.s<n>` on Windows. In the state `fallback-git` they are there too. With
+  file, and `.s<n>` on Windows. In the state `fallback-git` the first three are there
+  too. For `.worktreeinclude-<n>` that is not measured. With
   `"shadowDirOff":true` the first three are in the temporary folder, as
   `claude-ssh-gitdir-<n>`, `claude-ssh-index-<n>` and
   `claude-ssh-worktreeinclude-<n>`.
@@ -2256,9 +2260,12 @@ held, a request gets this text and nothing goes:
 `Claude could not prepare its own files on the remote machine: git is running in 128 repositories at once; try again`
 
 A folder goes between the git calls of a request, never during one. The next call
-makes it again, with no new config read. While a config listing waits for its pipes,
-a new repository gets the 128 text. A call fails alone if its folder went, or its
-daemon shut down. It gets this text, and a listing puts `listing the configuration in
+makes it again, with no new config read. A call right after its own config listing
+does not. A call whose remake fails gets the `cannot write its copy` text above. A
+config listing holds its folder while it waits for its pipes. So with all 128 held,
+a new repository gets the 128 text then, and nothing goes. If its folder went and is
+not made again, or its daemon shut down, a call fails alone (from the code). It gets
+this text, and a listing puts `listing the configuration in
 force: ` before it (Linux and Windows):
 
 `Claude could not prepare its own files on the remote machine: its copy of this repository's settings was cleared away before git started; try again`
@@ -2342,6 +2349,10 @@ place, in a repository with that extension and a `config.worktree` file. The
 
 In the differences that stay the reply lines are equal, except in two Windows rows of
 a create whose `.git` becomes a file.
+
+- After the start test on a `.git` file that names a missing path, `5fd08069` runs a
+  `rev-parse` against `.probe`. claustrum runs a config listing there and makes no
+  `.probe`, with equal frames (macOS and Windows).
 
 #### Hardened git calls
 
