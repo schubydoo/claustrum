@@ -668,7 +668,7 @@ func gitStatus(req *request) response {
 	if p.BaseRepo == "" {
 		return errResult(req.ID, codeInvalidParam, "baseRepo is required")
 	}
-	// The gate of 89cb6289 (gitstatus.go, docs/PROTOCOL.md). Every failure of it
+	// The gate of 89cb6289 (gitstatus.go, docs/protocol/git-status.md). Every failure of it
 	// answers the full status shape with isRepo:false, not the bare notRepoResult of
 	// git.info.
 	notRepo := okResult(req.ID, gitStatusResult{})

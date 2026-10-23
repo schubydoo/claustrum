@@ -570,7 +570,7 @@ traps that matter for telling drift from expected:
     W16). A symlink there resolves before `..` (row D03).
   - claustrum keeps D16 as it is. `git.status` now answers by the worktree
     entries of `baseRepo`, as `89cb6289` answers, so the `.git` inside `path` plays no
-    part ([PROTOCOL.md](PROTOCOL.md) → `git.status`, rule 6).
+    part ([git.status](protocol/git-status.md#the-registration-match)).
 
   See [PROTOCOL.md](PROTOCOL.md) → Git-directory trust check, Hardened git calls
   and git.info.
