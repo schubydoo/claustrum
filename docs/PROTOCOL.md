@@ -46,9 +46,10 @@ their reopen triggers are in [`DIVERGENCES.md`](DIVERGENCES.md).
     same connection.
   - The daemon logs `[Server] Parse error: <json error>` or
     `[Server] Unauthorized request: method=…, id=…` before it writes the error
-    reply. When the reply write fails, the failure line comes after the
-    parse-error line. In a Go type-mismatch error, the type name differs from
-    the reference (measured on Linux).
+    reply, and the reference logs the same text (measured on Linux). When the
+    reply write fails, the failure line comes after the parse-error line
+    (measured on Linux). In a Go type-mismatch error, the type name differs
+    from the reference (measured on Linux).
 - At a client EOF the daemon logs `[Server] Connection closed: <addr>`, then
   closes the socket (measured on Linux).
 - On Windows, when the client half-closes, the daemon does not wait for a request
