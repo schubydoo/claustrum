@@ -205,16 +205,16 @@ Every OS serves the same JSON-RPC methods. Full internals →
       common git directory of `baseRepo`, as `5fd08069` does. A stale entry is
       one whose `gitdir` record names the `.git` of the new leaf. Create
       removes that entry only if it is the only stale entry and holds no
-      `locked` file, as `89cb6289` does on Linux and macOS and `5fd08069` on Windows. The delete is one
-      `os.Root.RemoveAll`, after `wipesHomeDir` on the entry path. It goes
-      through a root at that folder. When a Windows create holds the git
-      directory, it goes through the held folder. On Windows the step runs after `rev-parse
-      --absolute-git-dir`. It deletes nothing behind a junction or a directory
-      symbolic link at that folder (`5fd08069` with `"shadowDirOff":true`,
-      claustrum's own in the state `shadow`). Its compare
-      ignores letter case, as on `5fd08069`. A create that holds no git
-      directory is not measured there. An entry whose record names a path that
-      exists stays (D27, Windows).
+      `locked` file, as `89cb6289` does on Linux and macOS and `5fd08069` on
+      Windows. The delete is one `os.Root.RemoveAll`, after `wipesHomeDir` on
+      the entry path. It goes through a root at that folder. When a Windows
+      create holds the git directory, it goes through the held folder. On
+      Windows the step runs after `rev-parse --absolute-git-dir`. It deletes
+      nothing behind a junction or a directory symbolic link at that folder
+      (`5fd08069` with `"shadowDirOff":true`, claustrum's own in the state
+      `shadow`). Its compare ignores letter case, as on `5fd08069`. A create
+      that holds no git directory is not measured there. An entry whose record
+      names a path that exists stays (D27, Windows).
       The second rollback follows a successful add. On Linux and macOS these
       refusals come before it and before the checkout. They delete nothing,
       except an empty leaf that has no `.git` file, as on `5fd08069`. They
@@ -243,8 +243,8 @@ Every OS serves the same JSON-RPC methods. Full internals →
       `fallback-git` the rule does not run, and git runs the filter, as on
       `5fd08069`. In the state `shadow` these refuse too: over 64 filter
       names, and a last listing that fails or runs at 30 s and does not exit 0.
-      So does a first checkout listing that failed or that its 30 s limit
-      stopped, as on `5fd08069` (Linux and macOS VMs).
+      So does a first checkout listing that failed, as on `5fd08069` (Linux
+      and macOS VMs), or that its 30 s limit stopped (Linux VM).
       The rollback deletes the entries of the leaf in the order that the
       directory read returns them, and it stops at the first failure. Then it
       deletes the registration, runs the branch step on the created branch, and
