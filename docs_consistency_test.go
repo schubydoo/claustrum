@@ -426,6 +426,7 @@ type docPinSentence struct {
 }
 
 var docPinSentences = []docPinSentence{
+	{"AGENTS.md", regexp.MustCompile("Unmarked behavior follows the reference, pinned at `([0-9a-f]+)`")},
 	{"docs/UPSTREAM-TRACKING.md", regexp.MustCompile("claustrum follows `([0-9a-f]+)`, the build that `scripts/UPSTREAM_SHA` names")},
 	{"docs/UPSTREAM-TRACKING.md", regexp.MustCompile("The build pinned today, `([0-9a-f]+)`")},
 	{"docs/UPSTREAM-TRACKING.md", regexp.MustCompile("the current baseline, `([0-9a-f]+)`")},
@@ -578,7 +579,7 @@ func TestDocsEveryErrorCodeIsDocumented(t *testing.T) {
 // because the documents grew past what a person can read. A limit goes down, never
 // up, without the maintainer's word.
 var docWordLimits = map[string]int{
-	"AGENTS.md":                            7800,
+	"AGENTS.md":                            7600,
 	"SECURITY.md":                          1700,
 	"docs/ARCHITECTURE.md":                 5700,
 	"docs/DIVERGENCES.md":                  10400,
@@ -650,6 +651,21 @@ func TestDocsWordLimits(t *testing.T) {
 	for f := range docWordLimits {
 		if !seen[f] {
 			t.Errorf("docWordLimits names %s, which does not exist: delete the row", f)
+		}
+	}
+}
+
+// TestDocsTestsKeepTheirPrefix: every test of this file is named TestDocs*. CI runs
+// them with -run '^TestDocs' on a docs-only pull request (decision-051), so a test
+// with another name would not run there.
+func TestDocsTestsKeepTheirPrefix(t *testing.T) {
+	src, err := os.ReadFile("docs_consistency_test.go")
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, m := range regexp.MustCompile(`(?m)^func (Test\w*)\(`).FindAllStringSubmatch(string(src), -1) {
+		if !strings.HasPrefix(m[1], "TestDocs") {
+			t.Errorf("%s does not start with TestDocs, so a docs-only pull request skips it", m[1])
 		}
 	}
 }
