@@ -40,14 +40,12 @@ host. It is not a network relay. It is local plumbing:
 
 `claustrum` is a from-scratch, behaviorally-compatible implementation of that daemon. It
 produces byte-identical JSON-RPC frames for every method, apart from a small set of
-documented, deliberate divergences. Those divergences are listed in
-[docs/DIVERGENCES.md](docs/DIVERGENCES.md). You can also use claustrum on its own. For
-example, it can be a building block for self-hosted tooling such as
+deliberate divergences in [docs/DIVERGENCES.md](docs/DIVERGENCES.md). You can also use it on
+its own, for example as a building block for self-hosted tooling such as
 [clauster](https://github.com/schubydoo/clauster).
 
-> Status: stable (v1.0+). The JSON-RPC, process, file, and git surface is complete and
-> validated. The CLI-version installer is implemented, and its behavior is checked. No
-> telemetry, ever.
+> Status: stable (v1.0+). The JSON-RPC, process, file and git surface and the CLI-version
+> installer are complete. No telemetry, ever.
 
 ## Install / build
 
@@ -55,12 +53,9 @@ Claustrum requires Go 1.26. The toolchain is held below 1.27, because the defaul
 `jsonv2` of Go 1.27 moves inherited wire bytes. See
 [docs/UPSTREAM-TRACKING.md](docs/UPSTREAM-TRACKING.md). Build with the `go.mod` toolchain.
 
-Two dependencies are cross-platform. `github.com/klauspost/compress` is for zstd. `golang.org/x/sys`
-provides system calls on all three OSes: the peer credentials of the socket on Linux, the holder
-check of the run-dir lock on macOS, and the kill of a child on Windows.
-One more module is compiled into Windows builds only.
-`github.com/Microsoft/go-winio` provides the opt-in `-listen-pipe` named-pipe transport
-(CT-5).
+Two dependencies are cross-platform: `github.com/klauspost/compress` for zstd, and
+`golang.org/x/sys` for system calls. Windows builds also compile in
+`github.com/Microsoft/go-winio`, for the opt-in `-listen-pipe` named-pipe transport (CT-5).
 
 ```sh
 # build the native binary
@@ -75,14 +70,11 @@ go install github.com/schubydoo/claustrum@latest
 ```
 
 `claustrum -version` prints `claustrum <version> (built <iso8601>)`. A local `go build` stamps
-the SHA and the time from the embedded VCS build info. A released binary carries its tag.
-`go install …@vX.Y.Z` reports the resolved module version and the tagged release timestamp.
-The code that stamps the version lives in `buildstamp.go`. A pseudo-version such as `@main` prints
-`built unknown`.
+the VCS SHA and time, and a release carries its tag. `go install …@vX.Y.Z` reports the module
+version and the tag time. A pseudo-version such as `@main` prints `built unknown`.
 
-A `go install` binary is not flag-for-flag identical to a release artifact. It takes the host
-cgo defaults, it has no `-trimpath`, and it is not stripped. Pass the release flags for an
-equivalent build:
+A plain `go install` binary takes the host cgo defaults, has no `-trimpath`, and is not
+stripped. Pass the release flags for a build equal to a release:
 
 ```sh
 CGO_ENABLED=0 go install -trimpath -ldflags="-s -w" github.com/schubydoo/claustrum@latest
@@ -124,97 +116,56 @@ printf '{"jsonrpc":"2.0","id":2,"method":"server.capabilities","auth":"%s"}\n' "
 claustrum -stop -socket "$D/rpc.sock"   # no token needed: shutdown is unauthenticated
 ```
 
-[docs/PROTOCOL.md](docs/PROTOCOL.md) and [docs/EXAMPLES.md](docs/EXAMPLES.md) hold more worked
-examples. They spawn a process and read its base64 output stream. They reattach and catch up
-through the replay buffer. They extract a plugin tarball.
+[docs/EXAMPLES.md](docs/EXAMPLES.md) has more sessions: spawn a process and read its stream,
+reattach through the replay buffer, and extract a plugin tarball.
 
 ## How it works
 
 - Transport: NDJSON over `AF_UNIX` `SOCK_STREAM`, at mode `0600`. There is one persistent
   connection. Requests dispatch concurrently.
-- Auth: every request carries an in-band `"auth":"<token>"`. The daemon's token comes from
-  `-token-file` or from `-token-fd`. With `-token-file` the daemon reads the file once and then
-  unlinks it. With `-token-fd` the daemon reads the token from an open descriptor. It forwards
-  the token to the daemonized child over a pipe, so the handoff never touches disk. Claustrum
-  reads `CLAUDE_RPC_TOKEN` nowhere, and strips it from
-  spawned children. One method is the exception to auth itself: `server.shutdown` is not
-  authenticated, which matches the reference. Therefore `-stop` sends no token at all.
+- Auth: every request carries an in-band `"auth":"<token>"`. The token comes from
+  `-token-file` or `-token-fd`, and [SECURITY.md](SECURITY.md) describes the handoff.
+  `server.shutdown` is the one method without auth, as on the reference, so `-stop` sends
+  no token.
 - The daemon has 20 methods, across `server.*`, `files.*`, `git.*`, `launcher.*`,
-  `process.*`, and `plugins.*`. `server.capabilities` self-describes them.
+  `process.*`, and `plugins.*`. `server.capabilities` self-describes them. Each method has
+  a page under [docs/protocol/](docs/protocol/).
 - `process.*` is the core. A client supplies its own `id` on `spawn`. The daemon streams id-less
   `{"type":"stream",…}` notifications, which carry base64 stdout and stderr and an `exit`. The
   daemon buffers those notifications and replays them on `reattach{fromSeq}`. This is how the
-  daemon hosts both the agent and the MCP servers. `process.spawn` and `process.reattach` also
-  accept `"wantPid":true` (CT-1). That member adds `pid` and `startTime` to the result, for the
-  detection of PID reuse and orphans. A client that does not opt in sees byte-identical frames.
+  daemon hosts both the agent and the MCP servers.
 
 ### Operational knobs
 
-These knobs belong to claustrum only, and they stay off the wire:
+All of these are off by default. Each one is claustrum's own and leaves the frames of a
+client unchanged:
 
 - `CLAUSTRUM_LOG_LEVEL` raises the threshold of the leveled stderr log. Logging is always on.
 - `-metrics-addr` opts into a local Prometheus `/metrics` endpoint. Without the flag, no
   listener exists.
-- `-keep-children` (CT-2) leaves spawned children running across a graceful
-  shutdown. [docs/DIVERGENCES.md](docs/DIVERGENCES.md) CT-2 names its limits.
+- `-keep-children` (CT-2) leaves spawned children running across a graceful shutdown.
 - `-listen-pipe` (CT-5, Windows only) also serves the same JSON-RPC over a named pipe.
 - `-wire-log` appends every JSON-RPC frame to a file for diagnostics. It redacts
   credentials by key only.
 
-All of them are off by default.
-
-Three flags opt into a deliberate divergence from the reference. Each flag is off by default,
-and each flag has a matching `claustrum.conf` key. When Claude Desktop owns the argv, that key
-is the reachable knob. That is a driver claim. See
-[docs/ARCHITECTURE.md → Driver claims and their provenance](docs/ARCHITECTURE.md#driver-claims-and-their-provenance).
-See [docs/DIVERGENCES.md](docs/DIVERGENCES.md) for the catalog, the rules, and the
-measurements.
-
-| Flag | Default | Opts into | Scope |
-|------|---------|-----------|-------|
-| `-max-extract-bytes` (D3) | off (0) | a size cap for `files.extract_tar`, with an error frame over the cap | `-serve` |
-| `-max-cli-bytes` (D10) | off (0) | a size cap on the decompressed CLI + download body | `-install` |
-| `-cli-download-timeout` (D12) | off (0) | a deadline on the CLI download | `-install` |
-
-`-git-timeout` is deprecated. It sets nothing and logs one warning. The git calls of the daemon have the time limits of `5fd08069`, for example 2 minutes for one call.
-
-`-libc-probe-timeout` is deprecated. It sets nothing and logs one warning. The `ldd` libc probe always has the reference's 5 s bound.
-
-`-files-read-regular-only` is deprecated. It sets nothing and logs one warning. `files.read` refuses a file that is not regular, as `5fd08069` does. The null device still reads on Linux and macOS.
-
-`-cli-probe-timeout` is deprecated too. It sets nothing and logs one warning. The direct `<cli> --version` run of `-install` always has the reference's bounds. They are 30 s for a present CLI and 120 s for a CLI that the same run installed. A managed launcher run has 33 s and 123 s.
-
-For the full details, see [docs/PROTOCOL.md](docs/PROTOCOL.md) and [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md).
+One opt-in member changes a frame: `"wantPid":true` adds `pid` and `startTime` to the result
+of `process.spawn` and `process.reattach` (CT-1). Three more flags opt into a deliberate
+divergence: `-max-extract-bytes` (D3), `-max-cli-bytes` (D10) and `-cli-download-timeout`
+(D12). [docs/DIVERGENCES.md](docs/DIVERGENCES.md) has each entry and its limits. The
+[flags table](docs/PROTOCOL.md#flags-and-config-keys) lists every flag, its `claustrum.conf`
+key and the deprecated flags that set nothing.
 
 ## Platforms
 
-Claustrum cross-compiles to linux, macOS (darwin), and windows, on amd64 and arm64. That is
-six targets. It is a static `CGO_ENABLED=0` Go binary. OS-specific behavior is isolated in the
-`*_unix.go` and `*_windows.go` files. Examples of that behavior:
+Claustrum cross-compiles to linux, macOS (darwin), and windows, on amd64 and arm64. It is a
+static `CGO_ENABLED=0` Go binary, and every OS serves the same JSON-RPC methods.
 
-- The daemonize step.
-- Process groups on Unix for a whole-tree kill. On Windows a kill ends the direct child only.
-- Login-shell PATH extraction.
-- The Windows-only `-listen-pipe` transport.
+## Tests
 
-Every OS serves the same JSON-RPC methods.
-
-## Validation
-
-`claustrum` is checked against a reference daemon with a request battery. The battery
-exercises every method, every error path, and the full process lifecycle. It then diffs
-normalized frames. The current status is byte-identical on every method the battery exercises,
-apart from the documented, deliberate divergences. Those divergences are catalogued in
-[docs/DIVERGENCES.md](docs/DIVERGENCES.md). Most of them are opt-in and off by default. A few
-are always-on or conditional. The code for the battery lives in `scratch/`, which is local and
-not published.
-
-An in-repo test suite locks the same contract without the reference binary. CI runs that suite
-on every PR, on linux, macOS, and Windows. A socket-integration battery boots the daemon and
-asserts every method's frames against committed golden fixtures. Unit tests cover the install
-pipeline and the bridge and stop clients. Statement coverage is about 99%. See
-[docs/UPSTREAM-TRACKING.md](docs/UPSTREAM-TRACKING.md) for how compatibility is kept in sync over
-time.
+CI runs the in-repo tests on every PR, on linux, macOS, and Windows. A socket-integration suite
+boots the daemon and asserts the frames of every method against committed golden fixtures.
+[docs/UPSTREAM-TRACKING.md](docs/UPSTREAM-TRACKING.md) describes how compatibility with the
+reference stays in sync.
 
 ## Contributing
 

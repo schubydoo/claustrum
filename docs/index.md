@@ -19,11 +19,9 @@ implementation (see
 
 The daemon is one binary. A flag selects the mode:
 
-- `-serve` is the daemon. It opens an `AF_UNIX` listener and runs one read loop
-  for each connection. It sets the socket file to mode `0600`. That mode is
-  owner-only on Linux and macOS, and it is not an owner-only ACL on Windows. It
+- `-serve` is the daemon. It listens on an `AF_UNIX` socket with mode `0600`,
   dispatches requests concurrently, daemonizes itself, and shuts down
-  gracefully.
+  gracefully. On Windows the mode `0600` is not an owner-only ACL.
 - `-bridge` is a simple relay between stdio and the socket. An SSH session
   attaches to this mode.
 - `-install` is the installer. It downloads the CLI, makes sure that the
@@ -44,38 +42,22 @@ replay the retained frames with `reattach`. The replay buffer has a bound of
 
 ## Operational extras
 
-claustrum carries a few claustrum-only operational extras that the wire contract
-does not cover. Each extra is either off by default or invisible to clients.
-Thus no extra changes the frames that a client sees. For details, see the
-[protocol reference](PROTOCOL.md).
+A few extras are claustrum's own. Each one is off by default or invisible to
+clients, so none changes the frames that a client sees:
 
-- Logging: leveled stderr logging, always on. It emits everything by
-  default. `CLAUSTRUM_LOG_LEVEL` only *raises* the threshold and makes the
-  daemon quieter. It never turns logging off entirely.
-- Metrics: a Prometheus `/metrics` endpoint that `-metrics-addr` supplies.
-  It is off by default. If you do not set the flag, no listener exists.
-- Wire log: `-wire-log <path>` appends every JSON-RPC frame to a JSONL file
-  for diagnostics. It is off by default, and it has no effect on the wire. It
-  captures frame payloads and redacts credentials by key only, so a capture is
-  sensitive. See [PROTOCOL.md](PROTOCOL.md).
-- Token handoff: `-token-fd` supplies the token on a file descriptor, so
-  you write no token file. The daemon also writes `daemon.token` beside the
-  socket with each token flag. See [PROTOCOL.md](PROTOCOL.md).
-- `-keep-children` (CT-2) leaves spawned processes running at a graceful
-  shutdown. They lose their stdio. The flag is off by default. The default
-  shutdown kills the whole tree on Linux and macOS, and the direct child on
-  Windows.
+- the log level, `CLAUSTRUM_LOG_LEVEL`
+- Prometheus metrics, `-metrics-addr`
+- a frame capture, `-wire-log`. A capture holds frame payloads, so treat it as
+  sensitive.
+- the token on a file descriptor, `-token-fd`
+- `-keep-children` (CT-2)
 
-## Protocol extension
+[Examples](EXAMPLES.md#operational-knobs) shows each one, and the
+[flags table](PROTOCOL.md#flags-and-config-keys) lists every flag.
 
-claustrum has one opt-in addition to the response frames. `wantPid` is
-claustrum's own parameter. If a client passes `"wantPid":true` to
-`process.spawn`, the response has `pid` and `startTime`. With
-`process.reattach`, if the daemon found the process, the response has the two
-fields too. These two fields let the client detect PID reuse (CT-1).
-
-Without `wantPid`, the two responses have no `pid` and no `startTime`. The
-[divergence catalog](DIVERGENCES.md) records the addition as CT-1.
+One opt-in member changes a frame: `"wantPid":true` adds `pid` and `startTime`
+to the result of `process.spawn` and `process.reattach`
+([CT-1](DIVERGENCES.md#ct-1)).
 
 ## Where to go next
 
@@ -84,8 +66,27 @@ Without `wantPid`, the two responses have no `pid` and no `startTime`. The
 - :material-sitemap: **[Architecture](ARCHITECTURE.md)**. The three runtime
   roles, the concurrency and replay model, and how a
   [driver](GLOSSARY.md#driver) uses it.
-- :material-protocol: **[Protocol reference](PROTOCOL.md)**. Every method, its
-  parameters, response shape, and error codes.
+- :material-protocol: **[Protocol reference](PROTOCOL.md)**. The transport,
+  the error texts, the stream frames and the flags that every method shares.
+- :material-api: **Methods**. One page for each method:
+  [server.*](protocol/server.md),
+  [files.list](protocol/files-list.md),
+  [files.validate](protocol/files-validate.md),
+  [files.stat](protocol/files-stat.md),
+  [files.read](protocol/files-read.md),
+  [files.extract_tar](protocol/files-extract-tar.md),
+  [git.info](protocol/git-info.md),
+  [git.status](protocol/git-status.md),
+  [git.list_branches](protocol/git-list-branches.md),
+  [git.worktree_create](protocol/git-worktree-create.md),
+  [git.worktree_remove](protocol/git-worktree-remove.md),
+  [launcher.resolve](protocol/launcher-resolve.md),
+  [process.spawn](protocol/process-spawn.md),
+  [process.stdin](protocol/process-stdin.md),
+  [process.kill](protocol/process-kill.md),
+  [process.killAndWait](protocol/process-killandwait.md),
+  [process.reattach](protocol/process-reattach.md) and
+  [plugins.prune](protocol/plugins-prune.md).
 - :material-console: **[Examples](EXAMPLES.md)**. Worked client sessions over
   the socket.
 - :material-sync: **[Upstream tracking](UPSTREAM-TRACKING.md)**. How the
