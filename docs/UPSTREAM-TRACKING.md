@@ -193,16 +193,16 @@ means that a probe which reaches the path shows it. The battery never drives
 | [D2](DIVERGENCES.md#d2) | Always-on | Maybe | A delete path that is or holds the home folder is refused, also on `-install` |
 | [D3](DIVERGENCES.md#d3) | Off | No | An opt-in size cap fails `files.extract_tar` |
 | [D6](DIVERGENCES.md#d6) | Always-on | Maybe | A `-cli-version` of more than one path component is refused |
-| [D8](DIVERGENCES.md#d8) | Always-on | No, a start failure | A link, a FIFO or another user's `remote-server.log` fails the start |
+| [D8](DIVERGENCES.md#d8) | Always-on | No, a start failure | On Linux and macOS a FIFO, another user's file or a link to one at `remote-server.log` fails the start. On Windows a file link does. The `git-shadow` sweep writes nothing through a link |
 | [D10](DIVERGENCES.md#d10) | Off | No, install path | An opt-in size cap fails `-install` |
 | [D12](DIVERGENCES.md#d12) | Off | No, install path | An opt-in bound fails a slow `-install` download |
 | [D15](DIVERGENCES.md#d15) | Always-on, macOS | No, off the wire | A lock holder that is not our `-serve` gets no signal |
-| [D16](DIVERGENCES.md#d16) | Always-on, Windows | Yes | `git.status` of a linked worktree answers the status, not an error |
+| [D16](DIVERGENCES.md#d16) | Always-on, Windows | Yes | `git.status` of a linked worktree answers the status, not an error, when the user has no global excludes file |
 | [D19](DIVERGENCES.md#d19) | Always-on, Windows | Maybe | `git.worktree_remove` refuses a junction between `baseRepo` and the leaf |
 | [D20](DIVERGENCES.md#d20) | Always-on, Linux and macOS | No, off the wire | The group `SIGKILL` of a gone leader comes about 50 ms later |
-| [D22](DIVERGENCES.md#d22) | Always-on | Maybe | `git.worktree_remove` refuses a locked worktree |
+| [D22](DIVERGENCES.md#d22) | Always-on | Maybe | `git.worktree_remove` refuses a locked worktree where `89cb6289` answers success (four states) |
 | [D23](DIVERGENCES.md#d23) | Always-on, Windows | Maybe, in stream frames | The environment block of a child is in name order |
-| [D24](DIVERGENCES.md#d24) | Always-on | No for a replaced folder: the disk differs. Yes at the index placement, and after a `.git` file swap on Windows | A create rollback keeps a folder that replaced the registration |
+| [D24](DIVERGENCES.md#d24) | Always-on | No for a replaced folder: the disk differs. Yes at the index placement (not measured), and after a `.git` file swap on Windows | A create rollback keeps a folder that replaced the registration. On Windows it runs no git call after a `.git` file swap |
 | [D27](DIVERGENCES.md#d27) | Always-on, Windows | Yes, in a case-sensitive folder | The stale step keeps an entry whose record path exists |
 | [CT-1](DIVERGENCES.md#ct-1) | Opt-in | Yes, on request | `pid` and `startTime` on spawn and reattach |
 | [CT-2](DIVERGENCES.md#ct-2) | Opt-in | No | Children survive shutdown |
@@ -214,7 +214,8 @@ D1, D4, D5, D7, D9, D11, D13, D14, D17, D18, D21 and D25 are retired: claustrum
 matches the reference there. A difference on those paths is drift, unless a live
 entry above covers it. A difference against `89cb6289` on the D4 paths is
 expected, and so is the stop of a slow git call (D5). See
-[DIVERGENCES.md → Retired entries](DIVERGENCES.md#retired-entries).
+[DIVERGENCES.md → Retired entries](DIVERGENCES.md#retired-entries), and the
+`files-read-regular-only` paragraph below.
 
 Some flags are claustrum's own and have no entry: `-token-fd`
 ([PROTOCOL.md → Flags and config keys](PROTOCOL.md#flags-and-config-keys)), and
