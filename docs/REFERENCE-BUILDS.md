@@ -40,8 +40,8 @@ must match byte-for-byte. **Off-wire churn** (or **Off-wire**) is any source tha
 moved but never reaches the JSON-RPC surface. **How it was bounded** gives the
 measurement that showed that nothing else changed. Some sections add more labels,
 for example **Missed at first**, **Older gaps closed in the same work** and
-**Reconciled in**. Correction of 2026-10-23: this paragraph said that each section
-has exactly the three parts. The forensics stay outside the committed tree.
+**Reconciled in**. Correction of 2026-10-23: this paragraph said that each per-build
+section has three parts. The forensics stay outside the committed tree.
 
 ### `5fd08069bd5f33e9b8a2b104c631bbbfbd4e2536` — 2026-10-05 (built)
 
