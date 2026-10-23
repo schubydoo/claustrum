@@ -206,7 +206,7 @@ means that a probe which reaches the path shows it. The battery never drives
 | [D27](DIVERGENCES.md#d27) | Always-on, Windows | Yes, in a case-sensitive folder | The stale step keeps an entry whose record path exists |
 | [CT-1](DIVERGENCES.md#ct-1) | Opt-in | Yes, on request | `pid` and `startTime` on spawn and reattach |
 | [CT-2](DIVERGENCES.md#ct-2) | Opt-in | No | Children survive shutdown |
-| [CT-3](DIVERGENCES.md#ct-3) | Opt-in | Only `version-override`, in the `-version` diff | The `claustrum.conf` file |
+| [CT-3](DIVERGENCES.md#ct-3) | Opt-in | Only `version-override`, in the static check's `-version` diff | The `claustrum.conf` file |
 | [CT-4](DIVERGENCES.md#ct-4) | Not built | No | None |
 | [CT-5](DIVERGENCES.md#ct-5) | Opt-in, Windows | No | An extra named-pipe transport |
 
