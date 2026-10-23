@@ -11,12 +11,14 @@ import (
 // user's home directory with it — true when p IS the home directory, and true
 // when p is an ANCESTOR of it ("/home", "/Users", a drive root).
 //
-// Why this exists, precisely. Three paths hand a caller-supplied path to a
+// Why this exists, precisely. Four paths hand a caller-supplied path to a
 // recursive delete: files.extract_tar wipes destDir before unpacking
 // (methods_files.go), git.worktree_remove deletes worktreePath itself
 // (worktreeremove.go; a worktree locked in the .git folder of baseRepo is
-// refused, not deleted), and the rollback of git.worktree_create deletes the worktree it created (worktreeverify.go).
-// -install is a fourth caller of this guard: it deletes a folder at the CLI path
+// refused, not deleted), the rollback of git.worktree_create deletes the worktree it created (worktreeverify.go),
+// and on Windows git.worktree_create removes old staging entries of the git
+// directory of baseRepo (worktreestaging.go, sweepOldStaging).
+// -install is a fifth caller of this guard: it deletes a folder at the CLI path
 // (install.go, stageAndInstall). Its sweep and its prune call the guard for
 // each entry that they remove (cliEntryHoldsHome). The RPC
 // paths are `~`-expanded first — bindParams
