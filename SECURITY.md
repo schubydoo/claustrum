@@ -29,10 +29,9 @@ Everything below assumes an actor who does not already hold both. An actor who
 holds both can do whatever the daemon's user can.
 
 A caller passes a managed launcher to `process.spawn` in its `launcher` param.
-The child then runs through that program, as `89cb6289` does. Before this parity,
-claustrum ignored the param and ran the command directly, past the wrapper. The
-daemon now refuses a launcher that fails its checks, and it refuses every launcher
-on Windows. The daemon does not enforce the launcher. A spawn without the param
+The child then runs through that program, as on the reference. The daemon
+refuses a launcher that fails its checks, and it refuses every launcher on
+Windows. The daemon does not enforce the launcher. A spawn without the param
 runs the command directly. The param gives a caller no power that the socket and
 token did not already give. See
 [process.spawn](docs/protocol/process-spawn.md#the-managed-launcher) and
@@ -41,29 +40,23 @@ token did not already give. See
 ### Auth & tokens
 
 - Auth is an in-band per-request token. The `-serve` daemon takes it from
-  `-token-file` or from `-token-fd`. With `-token-file`, the file is unlinked
-  immediately after reading. With `-token-fd`, the token is read from an open
-  descriptor and forwarded to the detached daemon over a pipe. That handoff is
-  never on disk, never in argv, and never in the environment.
-- claustrum never reads a token from the environment. No mode reads
-  `CLAUDE_RPC_TOKEN`. `-bridge` is a dumb relay, and its client carries its own
-  `auth`. The daemon unsets the variable before it daemonizes, and it strips the
-  variable from every spawned child.
+  `-token-file`, which it unlinks right after the read, or from `-token-fd`. A
+  `-token-fd` token goes to the detached daemon over a pipe, never on disk, in
+  argv or in the environment.
+- No mode reads `CLAUDE_RPC_TOKEN`. `-bridge` is a relay, and its client carries
+  its own `auth`. The daemon unsets the variable before it daemonizes, and it
+  strips the variable from every spawned child.
 - Protect the token and the socket together. Whoever can read the token *and*
   reach the socket can drive the daemon. The socket is owner-only by design. Keep
   the token source owner-readable and short-lived.
 - The running daemon persists its token to `daemon.token` (mode `0600`) in the
-  socket's directory. A client can therefore reconnect after the `-token-file`
-  source or the `-token-fd` source is gone. This is parity with the reference
-  daemon, upstream `5db5e4a`. See [`docs/PROTOCOL.md`](docs/PROTOCOL.md) → Token
-  persistence. The file is written atomically and unlinked on graceful shutdown.
-  An unclean kill (`SIGKILL`) or a crash leaves the file behind, because cleanup
-  runs only on the graceful path. This widens the on-disk token window, compared
-  with the immediate unlink of the source. Treat the socket directory as owner-only,
-  because it is where the token lives for the daemon's lifetime. On POSIX the file
-  is `0600`. On Windows those bits are not an owner-only DACL, which is a Go
-  `os.CreateTemp` limitation. Confinement on Windows
-  therefore comes from the session directory's ACL.
+  socket's directory, so a client can reconnect after the token source is gone.
+  This is parity with the reference daemon. See
+  [`docs/PROTOCOL.md`](docs/PROTOCOL.md) → Token persistence. The daemon unlinks
+  the file at a graceful shutdown. A `SIGKILL` or a crash leaves the file behind.
+  The token therefore stays on disk longer than its source, so keep the socket
+  directory owner-only. On Windows the `0600` bits are not an owner-only DACL, so
+  the ACL of the session directory confines the file.
 - `server.shutdown` is the one method the token does not gate. It is not
   authenticated. That is behavioral parity with the reference. Desktop stops the
   daemon with no token in its environment. Reaching the socket stops the
@@ -88,38 +81,29 @@ token did not already give. See
 ### Caller-supplied paths
 
 `files.*` and `git.*` read and act on paths the caller supplies. They are as
-privileged as the daemon's user. Three of those paths reach a recursive delete
-(`os.RemoveAll` or `os.Root.RemoveAll`). `git.worktree_remove` uses
-`os.Root.RemoveAll`. The rollback of `git.worktree_create` uses it too, and both
-on Windows:
+privileged as the daemon's user. Four of those paths reach a recursive delete
+(`os.RemoveAll` or `os.Root.RemoveAll`):
 
-- `files.extract_tar` wipes its destination before unpacking.
+- `files.extract_tar` wipes its destination before unpacking. The wipe goes
+  through a handle of the parent folder, which follows no link and no junction.
 - `git.worktree_remove` deletes the worktree path, and then its entry under the
   git directory. Each delete goes through an `os.Root`, so no delete follows a
   symlink out of the worktree. A worktree locked in the `.git` folder of `baseRepo`
   is refused, not deleted.
-- When `git.worktree_create` rolls back a worktree, it deletes the worktree path.
-  That rollback happens when the caller `timeoutMs` expires during a successful
-  add, the checkout or the copy step. It also happens after the post-checkout
-  drain exceeds the caller `timeoutMs`, after a failed read-tree checkout, and
-  after a failed copy of `config.worktree`.
-  It also happens when the daemon cannot place the index of
-  the new worktree.
-  On Linux and macOS the refusals after the add delete nothing, except an
-  empty worktree path and the rollback below. If git
-  answered `rev-parse
-  --absolute-git-dir`, on Linux and macOS the index of the new
-  worktree goes into the registration that passed those refusals. The rollback
-  deletes that registration, or after a failed `rev-parse --show-toplevel` the
-  one new entry of the listing after the add. That delete goes through an
-  `os.Root` at the registrations directory. Both act only while the folder at
-  that path is still the folder that the refusals or a stat right after that listing saw (D24). On Windows the same guard covers the registration that the staging step moved (the rollback in cell B6w of round `task087-03`, the index not measured).
-  Before the add, if only one stale registration names the new worktree in
-  its record, the daemon removes it. That delete goes through an `os.Root`
-  too, after the home guard. A registration that holds a `locked` file stays.
-  Windows has both tests, as on `5fd08069` (round `tier3-05`, Windows VM).
-  After a failed `git worktree add`, the daemon only removes the worktree path
-  if it is an empty directory. That removal cannot delete content.
+- When `git.worktree_create` rolls back a worktree, it deletes the worktree path
+  and its registration. A rollback follows a failure after a successful
+  `git worktree add`, for example an expired `timeoutMs` or a failed checkout.
+  Before the add, the daemon also removes one stale registration that names the
+  new worktree, unless it holds a `locked` file. Each delete goes through an
+  `os.Root`, after the home guard. A registration goes only after tests that it
+  is the registration of the new worktree (D24). After a failed add, the daemon
+  removes the worktree path only as an empty directory. See
+  [git.worktree_create](docs/protocol/git-worktree-create.md#after-a-failure).
+- On Windows, `git.worktree_create` removes old staging entries from the git
+  directory of `baseRepo`. Their names start with `.claude-new-worktree-`, and
+  their own write time is 1 hour old or more. Only a real folder goes as a tree.
+  A file, a link or a junction goes with a plain remove, so the target of a
+  junction stays.
 
 `wipesHomeDir` (`homeguard.go`) refuses any target that is or contains the home
 directory. It is an always-on guard (D2). See
@@ -145,27 +129,17 @@ Details for the three surfaces that need more than a row:
   reattaches, and bytes only. They hold no command output, no arguments, and no
   tokens. Exposing the endpoint on a reachable interface discloses coarse
   operational counts to anyone who can connect.
-- `-wire-log`: unlike the counters, a capture contains the frame payloads. Those
-  payloads are arguments, file contents, and the `process.spawn` environment.
-  Redaction is by key, on the `auth` member and on token-like env keys. It
-  therefore withholds those keys, but it cannot find a credential embedded in a
-  free-form payload string. Anyone who reads the file gains what the client
-  sent and what the daemon sent back, such as file contents and the output of
-  each child.
-  Keep the flag off unless you need it. Store a capture with the same care as the
-  socket token.
+- `-wire-log`: redaction covers the `auth` member and token-like env keys only.
+  A reader of the file sees what the client sent and what the daemon sent back,
+  such as file contents and child output. Keep the flag off unless you need it,
+  and store a capture with the same care as the socket token.
 - `-listen-pipe`: the pipe carries an owner-only DACL, in SDDL
-  `D:P(A;;GA;;;<current-user-SID>)`. That DACL grants GENERIC_ALL to the daemon
-  user's SID, and to no Everyone principal, no Authenticated-Users principal, and
-  no anonymous principal. That DACL is the named-pipe analogue of the socket's
-  `0600` mode. The pipe is local-only by two independent mechanisms. The first mechanism
-  is that DACL. The second is go-winio's `ListenPipe`, which creates the pipe with
-  `FILE_PIPE_REJECT_REMOTE_CLIENTS`. A client that reaches the pipe over SMB
-  (`\\host\pipe\…`) is therefore refused, regardless of the DACL. The pipe grants
-  no access that the socket plus the token did not already grant. With the flag
-  off, no pipe exists, and behavior is byte-for-byte identical to the reference.
-  The chosen pipe name is published to `rpc.pipe` in the socket directory, and it
-  is removed on graceful shutdown. The name is not a secret, because the DACL is
+  `D:P(A;;GA;;;<current-user-SID>)`. It grants GENERIC_ALL to the SID of the
+  daemon user only, as the `0600` mode does for the socket. go-winio's
+  `ListenPipe` also creates the pipe with `FILE_PIPE_REJECT_REMOTE_CLIENTS`, so
+  a client over SMB (`\\host\pipe\…`) is refused. With the flag off, no pipe
+  exists. The pipe name is published to `rpc.pipe` in the socket directory and
+  removed at a graceful shutdown. The name is not a secret, because the DACL is
   the access control.
 
 Some reports require the socket plus the token already, or host shell access.
