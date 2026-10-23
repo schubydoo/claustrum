@@ -822,7 +822,7 @@ contract.
 | `-32002` | `stdin backpressure: queue full`, from `process.stdin` when the per-process async stdin queue is already full (16 MiB). The write is rejected, not blocked. |
 | `-32004` | `the managed launcher cannot be used: <reason>`, from `process.spawn` when the checks refuse its `launcher` param, and for any `launcher` on Windows (added in `89cb6289`) |
 | `-32005` | `the managed launcher <path> could not be started: <reason>`, from `process.spawn` when the launcher passes the checks but does not start (added in `89cb6289`) |
-| `-32006` | `Refused: this server could not confirm that the caller is in its own namespaces`, on Linux (see server.*) |
+| `-32006` | `Refused: this server could not confirm that the caller is in its own namespaces`, on Linux with `CLAUDE_SSH_PEER_CHECK=1` (see [A refused caller](protocol/server.md#a-refused-caller-linux)) |
 | `-32001` | `Unauthorized: invalid or missing auth token` |
 
 ### Error-string catalogue
@@ -998,7 +998,7 @@ panic in any handler, and the daemon does not crash. The reply is
 `[Server] recovered panic: method=<m> id=<id>: <v>`. One method is the exception.
 A recovered `server.shutdown` panic writes no frame at all. Its only reply is
 `{"ok":true}`.
-See `server.*` below.
+See [server.shutdown](protocol/server.md#servershutdown).
 
 This frame is claustrum's own. It is not a statement about the wire. No input is
 known to reach a handler panic. Extensive fuzzing found none, and each of
@@ -1146,123 +1146,22 @@ Windows VMs saw it at that place.
 
 ### server.*
 
-| method | params | result |
-|---|---|---|
-| `server.ping` | none | `{"pong":true}` |
-| `server.capabilities` | none | `{"version":"<id>","methods":[…20…],"instanceId":"<32-hex>","startedAt":<unix-ms>,"features":["process.stdin.offset","files.extract_tar.execBit","git.status.baseRepo","git.info.discovered_root","git.worktree_create.timeoutMs","git.worktree_create.existingBranch","git.worktree_remove.unpushedGuard","process.spawn.shellAgentSocket","launcher.managed","server.peer_check","git.shadow_dir","git.worktree.external_root","server.instance_id"],"peerCheck":"off"}`. `plugins.prune` is the last method on every OS. `git.worktree.external_root` is omitted on Windows. `files.extract_tar.execBit`, `git.worktree_create.timeoutMs`, `git.worktree_create.existingBranch`, `git.worktree_remove.unpushedGuard`, `process.spawn.shellAgentSocket`, `launcher.managed`, `server.peer_check`, `git.shadow_dir`, `instanceId`, `startedAt` and `peerCheck` are present on every OS |
-| `server.shutdown` | none | `{"ok":true}`, when the reply gets out. The handler returns the reply as soon as the stop has started. The frame arrives only when its write wins the race with the close. See below |
+The page [server.*](protocol/server.md) has the requests, the replies and the rules of the three methods.
 
-- `server.version` was removed in `7d193f89`. It now answers
-  `-32601 "Unknown method: server.version"` like any other unknown method.
-- `instanceId` and `startedAt` were added by `4534d86`. They sit between `methods`
-  and `features`. `instanceId` is a 32-hex string, and `startedAt` is the daemon's
-  boot time in unix milliseconds. Both are present on every OS. claustrum
-  generates `instanceId` from 16 crypto/rand bytes at startup. It stamps
-  `startedAt` after the reap of the start and the bind. On a Linux VM the
-  `startedAt` of `89cb6289` was within 1.5 ms of its `listen` call (rows D1 and
-  D2, 8 of 8 runs). macOS has no call times. The owner record of
-  `daemon.lock` holds the same two values. It echoes both on the capabilities
-  reply for parity.
-- The `features` array was added by `7c2f88d`. It follows `instanceId` and
-  `startedAt`, and it advertises optional extensions. `process.stdin.offset`, the
-  resumable and idempotent stdin contract, landed first. `7d193f89` added
-  `git.status.baseRepo` and `git.worktree.external_root`. That build drops the
-  latter on Windows, and claustrum matches. `4534d86` inserted
-  `git.worktree_create.timeoutMs` before `git.worktree.external_root` and appended
-  `server.instance_id`, which is always last. `19f30c46` inserted
-  `git.worktree_create.existingBranch` after `git.worktree_create.timeoutMs`.
-  `f6010b97` inserted `process.spawn.shellAgentSocket` after it. `89cb6289`
-  inserted `git.worktree_remove.unpushedGuard` after
-  `git.worktree_create.existingBranch`, `git.info.discovered_root` after
-  `git.status.baseRepo` and `launcher.managed` after
-  `process.spawn.shellAgentSocket`. The `CLAUDE_SSH_MANAGED_LAUNCHER` gate does not
-  change the capabilities frame (measured on macOS). `5fd08069` inserted
-  `server.peer_check` after `launcher.managed` and `files.extract_tar.execBit`
-  after `process.stdin.offset`. The Linux, macOS and Windows VMs saw the features of
-  `89cb6289` and `5fd08069` at their places. `git.shadow_dir` follows
-  `server.peer_check` (rounds `task011-01` and `s12`).
-- `peerCheck` comes directly after `features`, in every answer. The daemon reads
-  `CLAUDE_SSH_PEER_CHECK` once, at its start, and then removes it from its
-  environment. On Windows that covers any letter case. Unless the removal fails, no
-  child of the daemon inherits it: no `process.spawn` child, no git call, no
-  launcher run and no login-shell read. Only the exact value `1` turns the check on. Each other value, and
-  no variable, answer `"off"`. On `5fd08069` each of these gave `"off"`:
-    - Linux VM: no variable, `0`, `off`, the empty value, `true`, `yes`, `on`,
-      `2`, `01` and ` 1` (a space before the digit).
-    - macOS VM: no variable, `0`, `off`, the empty value and `true`.
-    - Windows VM: no variable, `0` and `off`.
+#### server.ping
+none → `{"pong":true}`
 
-  With `1`, macOS and Windows answer `"unavailable"`, as `5fd08069` does (macOS
-  and Windows VMs), and serve every caller. Linux answers
-  `"peerCheck":"on","peerCheckBy":["network","pidfd"]` (round `task011-01`, cell
-  P1, Linux VM). A kernel that lacks a part gets another state from claustrum
-  (not measured). The start line is in
-  [Daemon log](#daemon-log-remote-serverlog).
-- On Linux with `1` the daemon checks each new connection before it reads from
-  it. It refuses a caller whose text, in the form of the start line, differs
-  from its own (cell P2). How claustrum reads each part is its own (not
-  measured). A refused caller gets one frame, then the connection closes:
+Tells a client that the daemon answers. See [server.ping](protocol/server.md#serverping).
 
-  ```
-  {"jsonrpc":"2.0","id":null,"error":{"code":-32006,"message":"Refused: this server could not confirm that the caller is in its own namespaces","data":{"reason":"other_namespace"}}}
-  ```
+#### server.capabilities
+none → `{"version","methods":[…20…],"instanceId","startedAt","features":[…],"peerCheck"[,"peerCheckBy"]}`
 
-  The reason is `other_namespace` for other namespaces (cell P2) and
-  `unreadable` for a link that the daemon cannot read (cell P3, a root caller).
-  An exited caller gets `lookup_failed` (cell P7). claustrum gives every other
-  failure `lookup_failed` (not measured).
-  The daemon reads no request, so an unauthenticated `server.shutdown` does
-  nothing (cell P4). A caller that wrote first reads the frame and then a reset
-  (cell P5). A refused connection has no `New connection` line. Refusals 1 to 10
-  each log one WARN line, and refusals 11 and 12 log none (cell P6):
+Lists the methods and the features of the daemon, and the state of the peer check. See [server.capabilities](protocol/server.md#servercapabilities).
 
-  ```
-  [Server] refused caller number 1 (other_namespace): "user:[4026532385] net:1 pidfd"; this server's namespaces are "user:[4026531837] net:1 pidfd"
-  ```
+#### server.shutdown
+none → `{"ok":true}`, when the reply wins the race with the close
 
-  A caller that exited gets no line (cell P7). claustrum gives the frames and
-  check lines of `5fd08069` in cells P0 to P8, but for a level tag (round
-  `task011-02`, Linux VM).
-- `server.shutdown` is not authenticated. See [Authentication](#authentication).
-- On the reference, `server.shutdown` often closes the connection with no reply.
-  In round `task034-01` the `{"ok":true}` frame of `5fd08069` came before the close
-  in 21 of 30 runs on macOS and in 4 to 9 of 30 on Windows (cell R1). On Linux it
-  came in 0 of 30 (R1), and in 6 of 30 with a second idle connection (R2). Under
-  `-stop` the daemon wrote it in 5 of 30 runs on macOS and 1 of 30 on Linux (R4).
-  In claustrum the handler signals the teardown and returns the reply at once. It
-  does not wait for the close of the connections, so the reply write races that
-  close. The teardown closes the listener and tests the socket first. Then it
-  closes every connection, before its other cleanup. A connection whose writer is
-  busy is not marked closed.
-  When the frame arrives, it is `{"jsonrpc":"2.0","id":<id>,"result":{"ok":true}}`
-  followed by EOF. An idle connection gets a clean EOF with no bytes.
-- Log order on `server.shutdown`. The daemon logs
-  `[ServerHandler] server.shutdown received over RPC`, then
-  `[Server] shutdown requested`, before the teardown closes any connection.
-  Each connection's `[Server] Connection closed: <addr>` line, when it is
-  logged, comes after its close. Measured with `strace` against `f6010b97` and `90fca6e6` on a Linux
-  VM, the reference wrote the two lines before its connection close in 36 of
-  36 traced runs. Its `Connection closed` line came after the close in 32 of
-  them. Each of the other 4 runs also wrote the shutdown reply.
-  The daemon then logs
-  `[Server] cleanup: closed <n> connection(s), killed <n> child process group(s)`,
-  as the reference does. The first count includes the connection that sent the
-  request (`5fd08069`, cell W-S2 of round `tier3-01`, Windows VM only).
-  [UPSTREAM-TRACKING.md](UPSTREAM-TRACKING.md) has a `89cb6289` run with `closed 0`. On Linux and Windows VMs, `f6010b97` and `89cb6289` logged that line at
-  every clean shutdown (rows RP11, RP12a, RP12b, ST03, ST09, WN03, WJ03). The
-  counts for a child that ended just before the shutdown are not measured.
-- Log lines on a shutdown by `SIGTERM`. The daemon logs
-  `[daemon] received terminated; shutting down (children will be killed)`, then
-  `[Server] shutdown requested`, then the `cleanup:` line. On a Linux VM,
-  `f6010b97` and `89cb6289` logged these three lines (rows RP11, RP12b, ST03).
-  The line for `SIGINT` names that signal (`5fd08069`, round `task003-01`, Linux and macOS). With
-  `-keep-children` claustrum writes `kept` in place of `killed` in the first line.
-  The `cleanup:` line then says `killed 0 child process group(s)`.
-- On `5fd08069` reply delivery is a timing race. In round `task034-02` claustrum answered
-  in 30 of 30 runs of cell R1 on Linux, macOS and Windows. `5fd08069` answered in 1
-  of 30 on Linux, 22 of 30 on macOS, and 8 and 6 of 30 in two Windows passes. In
-  cell R3, a take-over on macOS, `5fd08069` answered in 5 of 30 and claustrum in 30
-  of 30. The frame bytes are equal.
+Stops the daemon, with no auth. See [server.shutdown](protocol/server.md#servershutdown).
 
 ### files.* (param: `path`)
 
@@ -3380,8 +3279,7 @@ claustrum -stop -socket <p>          # no token needed, and none is read
 not authenticated. See [Authentication](#authentication). The request is
 `{"jsonrpc":"2.0","id":1,"method":"server.shutdown"}` and a newline. `-stop` then
 reads once, with a 2 s deadline, and discards what it reads. It never relays a
-frame to stdout. A live daemon's reply does not always arrive (see `server.*`
-above). On `5fd08069` -stop prints `stopped` with rc 0 both when the reply arrives
+frame to stdout. A live daemon's reply does not always arrive (see [The reply races the close](protocol/server.md#the-reply-races-the-close)). On `5fd08069` -stop prints `stopped` with rc 0 both when the reply arrives
 and when it gets EOF (cell R4 of round `task034-01`).
 
 After the read, on Linux and macOS, `-stop` tries `daemon.lock` every 50 ms for up

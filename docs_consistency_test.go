@@ -459,23 +459,16 @@ func TestDocsPinnedBuild(t *testing.T) {
 	}
 }
 
-// TestDocsCapabilityFeatures: the features array in the server.capabilities row of
-// docs/PROTOCOL.md equals capabilityFeatures, name for name and in order. The
+// TestDocsCapabilityFeatures: the features array in the server.capabilities example
+// of the server page under docs/protocol equals capabilityFeatures, name for name and in order. The
 // document shows the unix list. On Windows externalRootCapabilityFeatures is empty,
 // so the test puts git.worktree.external_root back where methods_server.go appends
 // it (from the code: after the fixed names, before server.instance_id).
 func TestDocsCapabilityFeatures(t *testing.T) {
 	const ext = "git.worktree.external_root"
-	var row string
-	for _, line := range strings.Split(docRead(t, "docs", "PROTOCOL.md"), "\n") {
-		if strings.HasPrefix(line, "| `server.capabilities` |") {
-			row = line
-			break
-		}
-	}
-	m := regexp.MustCompile(`"features":\[([^\]]*)\]`).FindStringSubmatch(row)
+	m := regexp.MustCompile(`"features":\s*\[([^\]]*)\]`).FindStringSubmatch(docRead(t, "docs", "protocol", "server.md"))
 	if m == nil {
-		t.Fatal("docs/PROTOCOL.md has no \"| `server.capabilities` |\" row with a \"features\":[…] array: restore the row, or update docs_consistency_test.go")
+		t.Fatal("docs/protocol/server.md has no \"features\":[…] array: restore the server.capabilities example, or update docs_consistency_test.go")
 	}
 	var doc []string
 	for _, q := range regexp.MustCompile(`"([^"]+)"`).FindAllStringSubmatch(m[1], -1) {
@@ -491,7 +484,7 @@ func TestDocsCapabilityFeatures(t *testing.T) {
 		want = append(want[:last:last], ext, want[last])
 	}
 	if strings.Join(doc, " ") != strings.Join(want, " ") {
-		t.Errorf("the features array of docs/PROTOCOL.md differs from capabilityFeatures in methods_server.go: make the array in the server.capabilities row read\n%s\nit reads\n%s", strings.Join(want, ", "), strings.Join(doc, ", "))
+		t.Errorf("the features array of docs/protocol/server.md differs from capabilityFeatures in methods_server.go: make the array in the server.capabilities example read\n%s\nit reads\n%s", strings.Join(want, ", "), strings.Join(doc, ", "))
 	}
 }
 
@@ -617,6 +610,7 @@ var docWordLimits = map[string]int{
 	"docs/protocol/process-reattach.md":    1000,
 	"docs/protocol/process-spawn.md":       3600,
 	"docs/protocol/process-stdin.md":       900,
+	"docs/protocol/server.md":              1600,
 }
 
 // The limits of a document that docWordLimits does not name.
