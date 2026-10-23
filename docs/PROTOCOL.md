@@ -3135,7 +3135,7 @@ the catalog.
 ##### The branch step in a remove reply
 
 The remove frame never gains text from this step. Each case of the keep list
-adds `"branchKept":true`, and nothing else does. A skipped name adds no member.
+adds `"branchKept":true`. A skipped name adds no member.
 
 ##### The branch step in an undo text
 
@@ -3147,13 +3147,13 @@ reaches, it also sets `"branchKept":true` after `errorCode`:
 |---|---|---|
 | the branch holds a commit that no other ref reaches | `the worktree itself was removed, but branch <b> was left in place: it now has commits no other branch or remote-tracking ref reaches. To keep that work, push the branch or rename it. To discard it, run git branch -D <b>. This branch name cannot be reused until the branch is renamed or deleted` (Linux, macOS and Windows VMs) | `"branchKept":true` |
 | the same, after a failed rmdir of the leaf | `<rmdir text>; branch <b> was left in place: it now has commits …` with no `the worktree itself was removed, but ` (Linux and Windows VMs) | `"branchKept":true` |
-| 10001 branches, a case twin, a list that does not parse, or a `rev-parse` that does not report the branch absent | `branch <b> still exists; delete it by hand (for example: git branch -d <b>, which git refuses if that would lose commits) before retrying this branch name: could not check whether another branch or remote-tracking ref reaches its commits` (Linux, macOS and Windows VMs, but the list and `rev-parse` cases are claustrum's own) | none |
-| a call of the check failed or was stopped | the same, then a space and the process error in parentheses, for example ` (exit status 128)` or ` (signal: killed)` | none |
+| 10001 branches, a case twin, a list that does not parse, or a `rev-parse` that finds the branch (exit 0) | `branch <b> still exists; delete it by hand (for example: git branch -d <b>, which git refuses if that would lose commits) before retrying this branch name: could not check whether another branch or remote-tracking ref reaches its commits` (Linux, macOS and Windows VMs, but the list and `rev-parse` cases are claustrum's own) | none |
+| a call of the check failed or was stopped | the same, then a space and the process error in parentheses, for example ` (exit status 128)` or ` (signal: killed)` (a failed `rev-parse` is claustrum's own) | none |
 | after a failed `config.worktree` step, the config is refused at a second read | the same, with that refusal in parentheses (`5fd08069`, Linux and macOS VMs) | none |
 | the delete failed or was stopped | `branch <b> still exists; delete it by hand (for example: git branch -D <b>) before retrying this branch name: <process error>`, for example `exit status 128` or `signal: terminated` (Linux and macOS VMs) | none |
 | the same, with `refs/heads/<b>.lock` present | `… before retrying this branch name. A lock refs/heads/<b>.lock is also present: if another git process is running against this repository, the lock may be live and clears on its own; if none is, it is stale debris of the interrupted delete — remove the lock file by hand too: <process error>` | none |
 | the name starts with `+`, so no call runs | `branch <b> left in place (its name is unsafe to pass to update-ref); delete it by hand` | none |
-| the branch is absent at the check, or the step deleted it (Linux, macOS and Windows VMs) | none | none |
+| the step deleted it (Linux, macOS and Windows VMs), or the branch is absent at the check | none | none |
 
 - The dash in the lock text is the raw UTF-8 em dash U+2014.
 - claustrum adds the lock part when the file `<common git dir>/refs/heads/<b>.lock`
