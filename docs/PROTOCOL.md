@@ -2771,8 +2771,9 @@ The repository calls are the configuration listings, the hardened calls,
 additions (`5fd08069`).
 
 - The daemon's `PATH`, `GIT_EXEC_PATH`, `GIT_SSH` and loader variables are
-  cleaned for the repository calls and the calls of the start test. The calls of
-  the start test also get no `GIT_` variable of the daemon (`5fd08069`).
+  cleaned for the repository calls and the calls of the start test (`5fd08069`).
+  The calls of the start test also get no `GIT_` variable of the daemon
+  (`5fd08069`).
 - `GIT_CONFIG` and `GIT_CONFIG_PARAMETERS` do not reach a repository call. The
   names match exactly, in upper case. So on Windows `git_config` and
   `Git_Config_Parameters` reach git.
@@ -2798,14 +2799,12 @@ additions (`5fd08069`).
   `denied_by_claude_ssh`. On Windows a lower-case `git_allow_protocol` sets it
   too.
 
-The daemon reads each value that it parses from the standard output of git.
-`5fd08069` does so for the branch of `git.info` and the repository test of a
-create (Linux VM). The rest is from the code.
+The daemon reads each value that it parses from the standard output of git (from
+the code). `5fd08069` does so for the branch of `git.info` and the repository
+test of a create (Linux VM).
 
-In a plain folder, with no `GIT_COMMON_DIR` in the daemon's environment, the
-listing carries `GIT_DIR=<null>` (`89cb6289`).
-[Git-directory trust check](#git-directory-trust-check) gives the other states and
-their frames.
+[Git-directory trust check](#git-directory-trust-check) gives the `GIT_DIR` of the
+listing in a folder with no repository, and its frames.
 
 ##### The check of `GIT_CONFIG_COUNT`
 
@@ -2853,7 +2852,7 @@ hooks refusal. `89cb6289` answers so for `git.info` on a plain
 folder and on a repository, and for `git.worktree_create` on a plain folder.
 
 `89cb6289` and claustrum answer these failures in a folder that holds no
-repository too, with these frames. Nothing changes on disk.
+repository too, with these frames. `f6010b97` refuses these requests too. Nothing changes on disk.
 
 | Request | Frame |
 |---|---|
@@ -2864,9 +2863,9 @@ repository too, with these frames. Nothing changes on disk.
 | `git.worktree_remove` without `worktreeRoot`, plain-folder `baseRepo`, worktree directory gone | `{"success":false,"error":"failed to remove worktree: could not check whether <worktreePath> is locked (<text>); retry"}` |
 | `git.worktree_remove` with `worktreeRoot`, plain-folder `baseRepo` | `{"success":false,"error":"failed to remove worktree: cannot determine the repository's work tree: <text>"}`. Linux and macOS VMs. Windows is not measured. There claustrum refuses the `worktreeRoot` first (from the code) |
 
-A path that does not exist keeps its frames. On Windows that is measured for
-`git.info`. On Linux and macOS a plain folder of mode 0000, where git cannot
-start, keeps its frames too.
+A path that does not exist answers as it does with nothing set (Linux and macOS
+VMs, and `git.info` on a Windows VM). On Linux and macOS a plain folder of mode
+0000, where git cannot start, answers so too.
 
 These states are not measured. The rules are from the code.
 
