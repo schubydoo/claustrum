@@ -4606,9 +4606,10 @@ downloads or reads the CLI, verifies and extracts it, puts it in place and runs
 `<cli> --version` once. Then it prunes old versions and prints one
 `__INSTALL_RESULT__<json>` facts line (schema in [ARCHITECTURE.md](ARCHITECTURE.md)).
 A rule that is not marked claustrum's own is measured against `89cb6289`. The
-prune, the sweeps, the blob, the checksum order, the cli-dir step, the rename text
-and retry, the Linux cache-hit file test and the `is a directory` text are measured
-against `5fd08069`. A rule from another build names it. Both builds ran on Linux, macOS and Windows VMs, and a rule
+prune, the sweeps, the blob, the rename text and the retry and the Linux cache-hit
+file test are measured against `5fd08069`. The checksum order, the raw `-cli-dir`
+text step and the `is a directory` text are measured on `5fd08069`, and `89cb6289`
+is not measured there. A rule from another build names it. Both builds ran on Linux, macOS and Windows VMs, and a rule
 that names one system was measured there only.
 
 | Flag | Default | Meaning |
@@ -4699,7 +4700,7 @@ The managed launcher (`89cb6289` parity):
   then read `"cliWasPresent":false`, the launcher `cli unresponsive: …` text above,
   `"cliUnresponsive":true`, `"launcherStatus":"unresponsive"` and
   `"launcherReason":"did not exit within 33s and was stopped"`. The CLI file stays,
-  no install follows, nothing is pruned and the sweep runs (Linux and macOS). With
+  no install follows (with a source flag, claustrum's own), nothing is pruned and the sweep runs (Linux and macOS). With
   a usable launcher the direct bounds do not apply (Linux and macOS).
 - The run right after a fresh install has a bound of 123 s (Linux). A stopped run
   gives the same facts with
@@ -4754,7 +4755,7 @@ The default CLI folder:
 - With `-cli-version` and no `-cli-dir`, or an empty `-cli-dir`, the CLI folder is
   `<home>/.claude/remote/ccd-cli`. On Windows `<home>` is `USERPROFILE`, and `HOME`
   is not read. The other steps work there as in an explicit folder.
-- A cache miss makes the folder chain, with or without a source flag. Each new
+- A cache miss with a version that D6 accepts makes the folder chain, with or without a source flag. Each new
   level gets mode `0700`, also with umask `000`, and a level that exists keeps its
   mode (Linux and macOS).
 
@@ -4837,7 +4838,7 @@ Checksum and verify ordering:
 
 The other clocks: every `-install` clock above is always on and is a clock of the
 reference, except the opt-in D12 deadline, the 2 s wait for the output of a
-stopped launcher run and the 0.2 s rename retry (claustrum's own). The stdlib transport clocks
+stopped launcher run and the 0.2 s bound of the rename retry (claustrum's own). The stdlib transport clocks
 (`net.Dialer{Timeout:30s}`, `TLSHandshakeTimeout:10s`) apply on `-cli-url` only,
 and they are not probed on the reference. `-cli-probe-timeout` and
 `-libc-probe-timeout` are deprecated no-ops.
@@ -4874,7 +4875,7 @@ Staging and cleanup:
   decompressed into that file as it arrives, and no other file is made.
 - An install puts the new CLI at its final path, removes the `-cli-zst` blob and
   runs the 10 minute sweep. Then `<final path> --version` runs. The prune follows a
-  good run only. A run that does not start or exits non-zero removes the new CLI again with one plain
+  good run only. A direct run that does not start or exits non-zero removes the new CLI again with one plain
   remove. A stopped run keeps the new CLI. On Windows claustrum can leave that file
   when the exited CLI holds it (claustrum's own).
 - What is at the final path goes before the new CLI runs. A folder there is removed
@@ -4906,7 +4907,7 @@ Staging and cleanup:
   too (claustrum's own). A CLI that then does not run still costs the blob.
 - On Windows a rename that access denied stops is tried again for 0.2 s. If the
   target then holds the bytes of the staging file, the install counts as done and
-  the staging file goes. The pauses are claustrum's own.
+  the staging file goes. The 0.2 s bound and the pauses are claustrum's own.
 - A cli-dir path that names no folder is replaced. The trigger is a regular file, a
   symlink to a regular file or a FIFO at the cli-dir path. `-install` removes that
   entry, and for a symlink it removes the link and keeps the target. It also
@@ -4936,12 +4937,12 @@ Staging and cleanup:
     - claustrum counts a name of three runs of digits with dots between them. Other
       names are not measured.
     - The order is the mtime, newest first. Entries with one mtime stay in byte
-      order of the name, so the later name goes. The new CLI takes its place in the
+      order of the name, so the later name goes (`89cb6289`). The new CLI takes its place in the
       order and always stays. `-cli-keep 0` and a negative value remove every other
       version file, and the result line follows with exit `0` and an empty stderr.
     - A failed install, a stopped run and a cache hit do not prune.
 - Two sweeps remove old regular files of the cli-dir with one plain remove each,
-  never as a tree. A folder and a link stay (claustrum's own for a link):
+  never as a tree. A folder and a link stay (from the code for a link):
     - The 10 minute sweep takes `.fetch-<digits>` and `<version>.zst`. A file
       `.fetch-d`, a file `x.zst` and a folder `.fetch-9` stay.
     - The 7 day sweep takes `<version>.zst.part`. A file `p.zst.part` stays, also at 8 days old.
@@ -4951,14 +4952,14 @@ Staging and cleanup:
       only after a run that its bound stopped.
     - Neither sweep removes the `-cli-zst` blob, so a blob `1.0.0.zst` in the
       cli-dir stays.
-    - The names match the letter case, and a future mtime is not old (claustrum's
-      own).
+    - The names match the letter case (claustrum's own). A future mtime is not old
+      (`f6010b97`).
     - A concurrent install can take a staging file only once it is more than 10
       minutes old. claustrum then retries a `-cli-zst` staging step once.
 - The sweeps and the prune skip an entry of the cli-dir that is the home folder or
   holds it ([D2](DIVERGENCES.md#d2), claustrum's own). They remove regular files
-  only, so a home folder stays there on the reference too (from the code, no
-  home cell).
+  only, so a home folder stays there on `5fd08069` too (derived from its
+  cells, no home cell).
 
 The libc probe fills the `libc` fact:
 - claustrum runs `ldd` on every probe, and its output decides. A "musl" banner
