@@ -319,7 +319,7 @@ traps that matter for telling drift from expected:
   `f6010b97` adds no member. In most of these cases `f6010b97` also deletes
   the branch. The kept classes:
   - A commit that no other ref reaches. In some of these states two removes
-    run at the same time on one connection. `89cb6289` and claustrum keep a
+    are sent together on one connection. `89cb6289` and claustrum keep a
     branch with the member there, and `f6010b97` deletes both branches.
   - A lock file on the branch. There `f6010b97` keeps the branch too.
   - 10001 or more heads.
@@ -334,7 +334,7 @@ traps that matter for telling drift from expected:
   branch text. claustrum answers by the branch step of `89cb6289` there. Those
   differences are not drift. The answers equal `f6010b97` when update-ref fails,
   is stopped or meets a lock file on the branch, and for a branch name that
-  update-ref cannot take. See
+  starts with `+`, where no call of the step runs. See
   [PROTOCOL.md](PROTOCOL.md) → The branch step.
 - The managed launcher splits the pins the same way, not drift. claustrum follows
   `89cb6289`: `launcher.resolve`, the `process.spawn` `launcher` param, the child
@@ -524,12 +524,12 @@ traps that matter for telling drift from expected:
     `gitdir: <X>` while the create runs (Windows VM).
 - A remove with a worktree folder that exists lists again after a failed listing.
   It answers the text of the failed listing or goes on (`5fd08069`, Linux, macOS and
-  Windows VMs). `f6010b97` answers the lock-check text. In a plain folder with
-  nothing set, and after a `rev-parse --absolute-git-dir` that fails after a
+  Windows VMs). `f6010b97` answers the lock-check text. With a `baseRepo` that is a
+  plain folder and nothing set, and after a `rev-parse --absolute-git-dir` that fails after a
   failed first listing, claustrum makes one more listing and `rev-parse` than
   `5fd08069`, with equal replies (Linux VM). With an empty `GIT_CONFIG_KEY_0` in
-  the daemon environment, both answer the colon form where `89cb6289` answered
-  the lock-check text.
+  the daemon environment, both answer the hooks refusal with the text of the
+  failed listing, where `89cb6289` answered the lock-check text.
 - The reap of a child record with a `program` key splits the pins too, off the
   wire. claustrum follows `89cb6289`. `5fd08069` is not measured there.
   On Linux, when the process runs `program` or holds it as one whole argument,
@@ -668,7 +668,7 @@ traps that matter for telling drift from expected:
   macOS and Windows VMs).
 - A daemon that gets `SIGTERM` or `SIGINT` during its start, goes on to its bind
   and then exits 0 is not drift. `89cb6289` does that (Linux and macOS VMs), and
-  claustrum is built to it. When the signal comes while the daemon waits to
+  claustrum is built to it. When a `SIGTERM` comes while the daemon waits to
   evict a live daemon, or from a `-stop` during the reap of its start, its
   launcher then exits 1 after 12 s (Linux VM).
 - A daemon that gets `SIGKILL` from a second daemon during its start is not
@@ -801,7 +801,7 @@ neither a symbolic link nor a directory. With it off, a junction is a symbolic l
 With it on, the walk of `EvalSymlinks` fails at a junction before the last
 component. For that reason claustrum answers `git.worktree_create` and
 `git.worktree_remove` with the trust-root refusal when a junction sits before
-the last component of `baseRepo` (Windows VM). With `GODEBUG=winsymlink=0`
+the last component of a `baseRepo` that exists (Windows VM). With `GODEBUG=winsymlink=0`
 in the daemon environment, the walk follows the junction instead. Those answers
 then flip, and so do the `git.status` and `git.list_branches` answers for
 `<dir>\<junction>\T`. Other code resolves `baseRepo` through `EvalSymlinks` too,
