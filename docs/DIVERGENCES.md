@@ -591,7 +591,7 @@ operator-declinable. Only CT-2 and CT-5 carry a flag and a key.
   reference does: that change is the value `NUL` in those three calls. The
   reference stops at its `status` call, so its value for the other two is not
   measured there.
-- **Pointers.** [PROTOCOL.md](PROTOCOL.md) → `git.status`. Also `gitstatus.go`
+- **Pointers.** [git.status](protocol/git-status.md#differences-by-system). Also `gitstatus.go`
   (`statusChanges`) and `githarden.go` (`statusExcludesFile`).
 
 ### D19 · Refuse a junction between `baseRepo` and the leaf on remove (Windows, always-on) { #d19 }
