@@ -155,6 +155,8 @@ no flag and no key.
 - **Behavior.** `wipesHomeDir` (`homeguard.go`) refuses a target that is the
   home directory or contains it. It resolves a relative path with
   `filepath.Abs` and then compares the text. It does not resolve symbolic links.
+  On Windows `filepath.Abs` drops a dot or a space after a name, so home with a
+  dot or a space after it is refused too.
   A path under home stays allowed, because `~/.claude/…` is the install path of
   the daemon. Home comes from `os.UserHomeDir`: `HOME`, or `USERPROFILE` on
   Windows. With that variable unset or empty, nothing is refused (from the
@@ -188,9 +190,9 @@ no flag and no key.
   and puts the CLI file there (measured with `-cli-zst` on Linux, macOS and
   Windows). Not measured: `-cli-url`, a mount of a parent folder of home, a home
   folder that does not exist, a hard link, Unicode normalization forms, a
-  case-sensitive volume on macOS and a UNC path. For the last name `...` both
-  answer `clean destDir: RemoveAll ...: invalid argument` on Windows, which is
-  parity. No measured staging entry of the reference held home, so that guard
+  case-sensitive volume on macOS and a UNC path. For the last name `...`, claustrum
+  and `5fd08069` answer `clean destDir: RemoveAll ...: invalid argument` on
+  Windows, which is parity. No measured staging entry of the reference held home, so that guard
   is claustrum's own.
 - **Systems and switch.** Linux, macOS and Windows, with the staging removes
   on Windows only. Always on, no switch.
@@ -266,7 +268,7 @@ no flag and no key.
 - **Behavior.** If the fresh create of the log fails, the launcher judges the
   entry at the log path by `Lstat`.
   [PROTOCOL.md → Daemon log](PROTOCOL.md#daemon-log-remote-serverlog) has the
-  steps that match the reference.
+  steps, which match `5fd08069` apart from the entries below.
   - Linux and macOS: an own regular file, or the own regular file behind an own
     link, is truncated. Every other entry fails the start with
     `claustrum: open log: open <path>: permission denied` and exit 1, and stays
@@ -284,7 +286,7 @@ no flag and no key.
   world-writable folder with the `fs.protected` sysctls on. On macOS, and on
   Linux with those sysctls off, it writes through a link or into another user's
   file, and it blocks on a FIFO. On Windows it writes through a file symbolic link. Its sweep makes
-  an empty lock file in the target of a link.
+  an empty lock file in the target of a link (Linux, macOS and Windows VMs).
 - **Systems and switch.** Linux, macOS and Windows, as split above. Always on,
   no switch.
 - **Cost.** None in the deployed socket folder.
