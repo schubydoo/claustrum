@@ -165,35 +165,36 @@ eviction is refused, and on Windows, which has no run-dir lock.
 ### Run-dir lock (`daemon.lock`)
 
 The lock exists on Linux and macOS only. It is a file beside the socket, off the
-JSON-RPC wire. A rule of this section without a mark is measured on Linux. A rule marked "also
-macOS" is measured on macOS too.
+JSON-RPC wire. A rule of this section without a mark is measured on Linux. A rule
+marked "also macOS" is measured on macOS too.
 
 Before it binds the socket, a `-serve` daemon takes an exclusive `flock` on
 `daemon.lock` in the directory of the socket (mode `0600`). It writes an owner
-record into the file, a JSON object. Both forms below are also macOS. Until the
-reap of its start ends, the record is `{"pid":<n>,"role":"serve","node":"<node>"}`. After the reap
-and the bind, it is `{pid, role, node, instanceId, startedAt}`, with the
-`instanceId` of the listening line and the `instanceId` and `startedAt` that
-`server.capabilities` answers. The `startedAt` match is also macOS. From the code:
+record into the file, a JSON object. Both of its two forms are measured on macOS
+too. Until the reap of its start ends, the record is
+`{"pid":<n>,"role":"serve","node":"<node>"}`. After the reap and the bind, it is
+`{pid, role, node, instanceId, startedAt}`, with the `instanceId` of the
+listening line and the `instanceId` and `startedAt` that `server.capabilities`
+answers. The `startedAt` match is measured on macOS too. From the code:
 `node` is the boot id joined to the pid-namespace inode on Linux, and
 `sysctl kern.bootsessionuuid` on macOS, and the record has no `node` if that
 identity is unknown.
 
 On a graceful stop the daemon removes its own `rpc.sock`, kills its child groups
-and then removes `daemon.token` (see [What the stop does](protocol/server.md#what-the-stop-does)). Last
-it truncates the record and releases the lock.
-`daemon.lock` stays, empty.
+and then removes `daemon.token` (see
+[What the stop does](protocol/server.md#what-the-stop-does)). Last it truncates
+the record and releases the lock. `daemon.lock` stays, empty.
 
 #### Eviction of a live holder
 
 A rule here without a mark is measured on Linux.
 
 A prior live daemon of the same socket can hold the lock. The new daemon then
-sends it `SIGTERM` and tries the lock every 50 ms for 2 s. If the lock is still held, it
-tests the holder again, sends `SIGKILL` and tries the lock for 1 s more
-(claustrum's own value). It waits on the lock, not on the pid. On Linux both
-signals go through one `pidfd_open` descriptor with `pidfd_send_signal`. On macOS claustrum uses `kill`
-(the call of the reference there is not measured).
+sends it `SIGTERM` and tries the lock every 50 ms for 2 s. If the lock is still
+held, it tests the holder again and sends `SIGKILL`. Then it tries the lock for
+1 s more (claustrum's own value). It waits on the lock, not on the pid. On Linux
+both signals go through one `pidfd_open` descriptor with `pidfd_send_signal`. On
+macOS claustrum uses `kill` (the call of the reference there is not measured).
 
 The daemon logs these lines. `<who>` is `pid <n> (instance "<hex>")` for a
 holder with the full record, and `pid <n>` for the short record. The first two
@@ -286,12 +287,13 @@ a refused lock call.
 
 #### Windows and macOS
 
-Windows has no run-dir lock (measured on Windows). The remove-then-rebind handoff of
-the socket keeps two daemons apart there, and the "not the run dir's lock holder"
+Windows has no run-dir lock (measured on Windows). The remove-then-rebind
+handoff of the socket keeps two daemons apart there, and the "not the run dir's lock holder"
 line above is the first log line of every start (measured on Windows).
 
 On macOS claustrum verifies the holder through `sysctl KERN_PROCARGS2` before it
-signals it, in the eviction and in `-stop`. The reference skips that test. See
+signals it, in the eviction and in `-stop`. The reference skips that test
+(measured on macOS). See
 [DIVERGENCES.md](DIVERGENCES.md) D15.
 
 ### Host cleaner (off-wire, Linux and macOS)
