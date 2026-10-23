@@ -1,12 +1,15 @@
 # claustrum protocol reference
 
 claustrum uses newline-delimited JSON-RPC 2.0 over an `AF_UNIX`
-`SOCK_STREAM` socket. Each method has its own page under `docs/protocol/`, and
-[Methods (20)](#methods-20) lists them. This document holds the rules that more
-than one method shares, the life of the daemon off the wire, and the flags. The
-pinned reference build is `5fd08069`. A rule with no mark follows the reference at
-a build up to `5fd08069`. A rule marked "claustrum's own" or "not measured" has no
-reference measurement. The divergences, their rules and their reopen triggers are
+`SOCK_STREAM` socket. Each method has a page under `docs/protocol/`, and the three
+`server.*` methods share one page. [Methods (20)](#methods-20) lists them. This
+document holds the rules that more than one method shares, the life of the daemon
+off the wire, and the flags. The pinned reference build is `5fd08069`. A rule with
+no mark matches the reference as measured on `5fd08069` or on an earlier build.
+Where a section names a build in its first lines, that build holds for the
+section. A rule marked "claustrum's own" is not a parity claim: the reference has
+no such rule, or it does something else. A rule marked "not measured" or "from
+the code" was read from claustrum's code, with no reference run. The divergences, their rules and their reopen triggers are
 in [`DIVERGENCES.md`](DIVERGENCES.md).
 
 ## Transport
@@ -46,7 +49,8 @@ in [`DIVERGENCES.md`](DIVERGENCES.md).
 - At a client EOF the daemon logs `[Server] Connection closed: <addr>`, then
   closes the socket.
 - When the client half-closes, the daemon does not wait for a request in flight.
-  The reply to that request is lost (measured on Windows).
+  The reply to that request is lost (measured on Windows). A partial last line
+  does not change that.
 - Input that ends without a final newline. The daemon reads the last bytes
   before EOF as one more line, and the rules above apply. A tail of only `\r`
   is a blank line and gets no reply.
@@ -54,7 +58,7 @@ in [`DIVERGENCES.md`](DIVERGENCES.md).
     client gets the parse-error frame for the tail, and it cannot count on the
     earlier reply.
   - On Windows this case has a timing difference, not parity. The reference
-    sends the earlier reply in every run and closes later than claustrum.
+    sends the earlier reply in each measured run and closes later than claustrum.
     claustrum sends that reply in some runs only.
   - At the idle close, the daemon also reads the last bytes as a line. It
     dispatches a valid request. It writes the error for a bad tail on the read
@@ -75,13 +79,14 @@ socket. The framing, the field order and the `"auth"` member are the same.
 - **Name and discovery.** The name is `\\.\pipe\claustrum-<random-instance-id>`,
   new at each start. The daemon writes it atomically to `rpc.pipe` in the socket's
   directory, before the pipe accepts and before the ready banner. A client reads
-  the name from that file.
-- **Stale-file rule.** At start the daemon removes a leftover `rpc.pipe`. At a
-  graceful shutdown, if the file is still the one that it wrote (by identity, as
-  for [`daemon.token`](#token-persistence-daemontoken)), the daemon removes it.
-  Any other file stays. So `rpc.pipe` exists only
-  while a pipe is served, a successor keeps its own file, and a client never
-  dials a stale name.
+  the name from that file and does not build it.
+- **Stale-file rule.** At start the daemon removes or replaces a leftover
+  `rpc.pipe`, on every OS. At a graceful shutdown, if the file is still the one
+  that it wrote (by identity, as for
+  [`daemon.token`](#token-persistence-daemontoken)), the daemon removes it. Any
+  other file stays. So after a graceful shutdown or a new start no stale
+  `rpc.pipe` stays, and a successor keeps its own file. After a crash the file
+  stays until the next start, and a dial of its name fails.
 - **Owner-only and local.** The pipe has an owner-only DACL, the analogue of the
   socket's `0600`, and it refuses remote clients. See
   [SECURITY.md](https://github.com/schubydoo/claustrum/blob/main/SECURITY.md).
@@ -781,8 +786,8 @@ object comes back with its keys sorted (`{"b":1,"a":2}` → `{"a":2,"b":1}`).
 Integers, strings, arrays and `null` are unchanged. A client that matches replies
 by the id *text* must compare the decoded value instead.
 
-Results are ordered structs, never maps. The field order on each method page is
-the wire contract.
+Results are ordered structs, never maps. The field order on each method page, and
+under [Stream notifications](#stream-notifications), is the wire contract.
 
 ### Error codes
 
