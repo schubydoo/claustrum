@@ -6,7 +6,8 @@
   { "name": "good first issue", "color": "7057ff", "description": "Good for newcomers" },
   { "name": "help wanted", "color": "008672", "description": "Extra attention is needed" },
   { "name": "breaking", "color": "b60205", "description": "Backwards-incompatible change — protocol/wire surface affected" },
-  { "name": "wire-surface", "color": "fbca04", "description": "Touches the JSON-RPC frame contract (rpc/methods/results/process) — needs the validation battery" },
+  { "name": "wire-surface", "color": "fbca04", "description": "Touches the JSON-RPC frame contract (rpc/methods/results/process)" },
   { "name": "security", "color": "d93f0b", "description": "Security-related" },
-  { "name": "dependencies", "color": "ededed", "description": "Dependency update PRs" }
+  { "name": "dependencies", "color": "ededed", "description": "Dependency update PRs" },
+  { "name": "no-changelog", "color": "6e7781", "description": "Internal-only PR (CI/tooling/refactor/tests): changeset-check opt-out, no release fragment needed" }
 ]
