@@ -40,7 +40,7 @@ On Linux and macOS, each child runs in its own process group. Two cases:
 
 On Windows each signal ends the direct child only: see [Windows child trees](#windows-child-trees).
 
-The daemon sends no signal to a child that already ended. That holds also while the daemon still collects the last output of the child and did not yet send its `exit` frame. The result is `{"success": true}` all the same. In that time `process.killAndWait` with `"signal": "KILL"` sends `SIGKILL` to the group at once, and `process.kill` does not.
+The daemon sends no signal to a child that already ended. That holds also while the daemon still collects the last output of the child and did not yet send its `exit` frame. The result is `{"success": true}` all the same. On Linux and macOS, in that time `process.killAndWait` with `"signal": "KILL"` sends `SIGKILL` to the group at once, and `process.kill` does not.
 
 ## The exit frame
 
@@ -62,7 +62,7 @@ On Windows a child is in no Job Object, and Windows has no process group. A kill
 |---|---|---|
 | `process.kill` with each `signal` value | ends, exit code 1 | live on |
 | `process.killAndWait` with each form | ends, exit code 1 | live on |
-| `-stop` and `server.shutdown` | ends, exit code 1 | live on |
+| `-stop` and `server.shutdown` | ends, exit code 1 (without `-keep-children`, see [CT-2](../DIVERGENCES.md#ct-2)) | live on |
 | `taskkill /F` of the daemon | lives on | live on |
 
 A new daemon on the same socket does not end them either.
@@ -87,7 +87,7 @@ If a process that the child started holds the output pipes of the child, the `ex
 
 ## Differences from the reference
 
-claustrum is built to answer as the reference daemon does. No entry of the divergence catalog names this method.
+claustrum is built to answer as the reference daemon does. No entry of the divergence catalog changes this method.
 
 The skip of a child that already ended is a guard of claustrum. The operating system can give the process id (pid) or the group number of a child that ended to another process. The reply is the same with or without the guard. Item 21 of the [ledger of completed work](../IMPROVEMENTS.md) has the guard. Whether the reference sends a signal to such a child is not measured.
 
