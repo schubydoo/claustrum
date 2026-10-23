@@ -43,15 +43,17 @@ release.
 | `19f30c46…` | | | D16 persists on this build |
 | `4534d86…` | D16 | | D15 covers the macOS holder check of the new run-dir lock |
 
-This second table holds only what the build sections below record. A build with
-no row has no divergence change in its section. [DIVERGENCES.md](DIVERGENCES.md) holds each entry.
+This second table holds only what the build sections below record. A build with no
+row records no divergence as opened, retired or changed. A section can still cite
+an entry for context. [DIVERGENCES.md](DIVERGENCES.md) holds each entry.
 
 Each per-build section takes its labels from one set, always in this order, and
 uses only the labels it needs. A lead paragraph, where a section has one, gives
 the header facts. Examples
 are the Desktop release that pinned the build, its `-version` line and its Go
-stamp. The **wire delta** is what claustrum must match
-byte-for-byte. **Off-wire churn** is any source that moved but never reaches the
+stamp. **Wire delta** is what claustrum must match
+byte-for-byte. A Wire delta list can also carry the off-frame changes of the same
+work, as `90fca6e6` does. **Off-wire churn** is any source that moved but never reaches the
 JSON-RPC surface. **Missed at first** is a change of the build that the first
 reconciliation did not find. **Older gaps closed** are fixes, in the same work,
 for behavior that older builds already had. **How it was bounded** gives the
