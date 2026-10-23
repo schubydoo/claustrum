@@ -1870,8 +1870,8 @@ against `5fd08069` on a Linux VM. A rule that names macOS or Windows was measure
 
 The read runs only in the state `shadow` of [the settings copy](#the-settings-copy).
 In the state `fallback-git` the daemon makes no read and gives no refusal. On git
-2.11 and 2.12 `5fd08069` is in that state and gives no refusal. claustrum is not
-measured on those gits.
+2.11.4 and 2.12.5 `5fd08069` is in that state and gives no refusal. Git 2.13.7 is
+the oldest git that ran with the refusal. claustrum is not measured on those gits.
 
 A refusal is `<class>: <detail>`, shown as `<text>` in these frames. Most rules were
 measured on `git.info` and `git.status`. Four states ran on all five methods. They
@@ -1931,7 +1931,7 @@ worktree. With a daemon `GIT_COMMON_DIR`, `git.info` and `git.list_branches` rea
 nothing (claustrum's own).
 
 From the code: the call gets no `GIT_CONFIG` and no `GIT_CONFIG_PARAMETERS` of the
-daemon, and it runs with `GIT_DIR=<null device>` and `LC_ALL=C`. On Linux and macOS the
+daemon, and it runs with `GIT_DIR=<null device>`, `LC_ALL=C` and `LANGUAGE=C`. On Linux and macOS the
 daemon opens each file of the read with no controlling terminal. A config can be a
 link to a pty slave.
 
@@ -1940,7 +1940,7 @@ master closes (Linux VM).
 
 ##### The kept verdict
 
-A verdict with a refusal is not kept. Each later request reads
+A verdict with a refusal is not used again. Each later request reads
 again, as on `5fd08069` (Linux, macOS and Windows VMs). claustrum keeps the verdict of
 a read that accepted the config, for 256 git directories at most. `5fd08069` also
 reads an unchanged accepted config only once. If each file of that read is unchanged,
@@ -2049,8 +2049,8 @@ itself.
 
 ##### Which answer comes first
 
-A refused config comes before a refused file of the git
-directory. In class 2, `shallow` comes before `info/attributes` (Linux, macOS and
+A refused config comes first, then a refused `config.worktree` file of a linked
+worktree, then a refused file of the git directory (from the code for the middle step). In class 2, `shallow` comes before `info/attributes` (Linux, macOS and
 Windows VMs), and `info/attributes` comes before `info/exclude`.
 
 ##### A folder that is not a repository
