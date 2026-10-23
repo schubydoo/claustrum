@@ -2927,14 +2927,9 @@ One binary, six modes: `-serve`, `-bridge`, `-stop`, `-version`, `-install` and
 
 ### Flags and config keys
 
-Every opt-in divergence flag defaults to its zero value, which is OFF, and which
-is byte-identical to the reference. Each flag has a matching `claustrum.conf` key.
-Claude Desktop owns the `-serve` and `-install` argv. That is a driver claim. See
-[ARCHITECTURE.md → Driver claims and their
-provenance](ARCHITECTURE.md#driver-claims-and-their-provenance). The configuration
-key is therefore the reachable knob. The precedence is: explicit CLI flag, then
-configuration, then default. A disabled bound bypasses the guard entirely. It is
-never "a huge limit".
+[DIVERGENCES.md → Conventions for opt-in
+divergences](DIVERGENCES.md#conventions-for-opt-in-divergences) has the default,
+the precedence of a flag and its key, and the bypass rule.
 
 | flag | config key | default | effect when set | mode |
 |---|---|---|---|---|
