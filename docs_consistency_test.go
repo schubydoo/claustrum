@@ -580,7 +580,7 @@ func TestDocsEveryErrorCodeIsDocumented(t *testing.T) {
 var docWordLimits = map[string]int{
 	"AGENTS.md":                            7800,
 	"SECURITY.md":                          1700,
-	"docs/ARCHITECTURE.md":                 5700,
+	"docs/ARCHITECTURE.md":                 4500,
 	"docs/DIVERGENCES.md":                  10400,
 	"docs/EXAMPLES.md":                     1300,
 	"docs/GLOSSARY.md":                     1300,

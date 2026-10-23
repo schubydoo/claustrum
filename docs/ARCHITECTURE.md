@@ -76,172 +76,89 @@ file is `<cli-version>.exe`.
 
 Claustrum daemonizes itself: it detaches from the controlling session and, on
 Unix, reparents to init. It then opens the `0600` socket. It supervises the
-children it spawns.
+children it spawns. The rules of each step are in PROTOCOL.md. This list names
+the files and the seams.
 
-- The auth token arrives through `-token-file` or `-token-fd`. With
-  `-token-file`, claustrum reads the file once and then unlinks it. With
-  `-token-fd`, claustrum reads the token from an open descriptor and forwards it
-  to the detached child over a pipe. This handoff never touches disk.
-- Once listening, the daemon persists the token to `daemon.token` (`0600`)
-  beside the socket. It writes a temp file and renames it, so the write is
-  atomic. A client that reconnects can then authenticate again after that source
-  is gone. The daemon unlinks `daemon.token` on graceful shutdown while it is still its
-  own file. This is
-  behavioral parity with reference `5db5e4a` (`tokenpersist.go`). See
-  [PROTOCOL.md → Token persistence](PROTOCOL.md#token-persistence-daemontoken).
-- An internal sentinel, `CLAUSTRUM_DAEMON_CHILD`, gates the self-daemonize
-  re-exec. The name is claustrum's own on purpose. It is *not* the reference's
-  `CLAUDE_SSH_DAEMON_CHILD`. A surrounding claude-ssh session exports that name
-  to every descendant. If claustrum used that name as its sentinel, the launcher
-  mistakes itself for the child and skips its own daemonize and token-forward
-  path. The child unsets the sentinel after it reads it.
-  Claustrum keeps reference parity by a separate route. `daemonizeWithToken`
-  still sets `CLAUDE_SSH_DAEMON_CHILD=1` in the daemon's environ, so
-  `process.spawn` children inherit it exactly as they do under the reference (see
-  [PROTOCOL.md](PROTOCOL.md)).
-- `19f30c46` launches `process.spawn` children
-  through a self-re-exec exec-child trampoline. `f6010b97` and `89cb6289` do so on
-  every socket shape (Linux and macOS rows EV01a to EV01i), and claustrum does too. The child then carries a
-  `CLAUDE_SSH_CHILD=<pid>:<startTicks>` identity and `CLAUDE_SSH_RUN_DIR`. That pair is a
-  stable marker in the child's environment, and pid reuse cannot confuse it. The target's
-  Go-runtime env is held and restored across the re-exec. Claustrum reproduces this
-  on linux and darwin (shared
-  `execchild_unix.go`, with the start-time source in `execchild_linux.go` and
-  `execchild_darwin.go`). On windows the reference daemon reports it is not the run-dir lock
-  holder and stamps neither marker. A windows VM showed a child under a run-shaped socket has
-  the same environment as one under a bare socket.
-  This behavior is off-wire. See [process.spawn](protocol/process-spawn.md#the-identity-markers-linux-and-macos).
-- A daemon that holds the run-dir lock at its start also records each spawned child to
-  `<runDir>/children/<pid>.json` (`childrecord.go` + `childrecord_linux.go` /
-  `childrecord_darwin.go`). The run dir is the folder of the socket path, on every
-  socket shape. The file is an ordered JSON record. A later daemon reads it to
-  reap children that a since-exited daemon left behind. The write is atomic on linux and
-  darwin. The daemon holds the run dir open. It writes each record below that handle, so
-  no write follows a symlink out of the run dir (`childrecord_unix.go`). The end of a
-  child removes its record the same way, before the pipe drain. On windows the
-  reference daemon reports it is not the run-dir lock holder, so it records no children. A
-  windows VM showed a spawned child leaves the children dir empty. This behavior is
-  off-wire. See [PROTOCOL.md → Child records and the reap](PROTOCOL.md#child-records-and-the-reap-linux-and-macos).
-- At `-serve` startup a daemon that holds the run-dir lock reaps those
-  records (shared `childreap.go`, with the live-process read in `childreap_linux.go` /
-  `childreap_darwin.go`). The reap happens right after the daemon claims the run dir,
-  and before it binds the socket. During the reap the owner record of `daemon.lock`
-  holds `pid`, `role` and `node` only. After the bind the daemon adds `instanceId` and
-  `startedAt` (Linux and macOS rows D1 and XL against `89cb6289`).
-  That claim evicts a live predecessor on the same socket, unless eviction is refused.
-  One start handles the first 128 record names of the directory order. It sends
-  `SIGTERM` to 64 groups at most, in that order (Linux rows C1, C2 and C4 against
-  `89cb6289`). The daemon reads at most 4096 bytes of a record. On `89cb6289` and
-  claustrum, a record of 4096 bytes got the signal and one of 4097 bytes got none
-  (Linux row P8).
-  Three conditions must hold before the daemon reaps a child. The record's node matches ours
-  (same boot and machine). The owning daemon is gone. The live process still is that
-  recorded child. For that third condition, the start-time matches, so there is no pid
-  reuse. The process leads its own group and runs the recorded program. For a record with
-  a `program` key, the process runs `argv0` or `program`, or holds `program` as one whole
-  argument. It also carries
-  `CLAUDE_SSH_RUN_DIR` for this run dir plus a self-naming `CLAUDE_SSH_CHILD`. Only a
-  regular file is read as a record. A verified
-  orphan's process group gets `SIGTERM`, a 2s grace, then `SIGKILL` and a 1s escalate.
-  During the grace the process takes the whole record test again at each poll, and once
-  more before the `SIGKILL`. A group that fails it is dropped at that poll and gets
-  nothing more. The reap lists the children folder through the run dir that the daemon
-  holds open, and it follows no symlink there. The 2s grace is measured on Linux against `89cb6289` (rows RP02,
-  RP03, RP04 and RP10). The 1s escalate is claustrum's own value, not probe-measured.
-  The records of the groups that got `SIGTERM` are removed together, when the last
-  group is done (Linux row RP04). A record whose owner is still alive, or from another boot
-  or machine, is never reaped. It runs on linux and darwin. On windows the reference daemon
-  reports it is not the run-dir lock holder, so it reaps nothing. A windows VM showed planted
-  child records survive a daemon startup untouched. The kill and every live-process read sit
-  behind seams, so tests exercise the decision
-  without ending a real process. This behavior is off-wire. See
-  [PROTOCOL.md → Child records and the reap](PROTOCOL.md#child-records-and-the-reap-linux-and-macos).
-- Also at `-serve` startup the daemon starts a periodic host cleaner (the shared decision
-  layer in `hostclean.go`, with the OS reads in `hostclean_linux.go` / `hostclean_darwin.go`).
-  The cleaner is a background sweep that keeps the install tidy. It runs 15s after startup
-  and then daily. It is confined to the install root of the daemon's own
-  socket (`<root>/run`, `<root>/srv` and `<root>/ccd-cli`). Its root list holds that root as
-  the socket path gives it, and also its symlink-resolved form when that differs. Both
-  name one folder. It runs only when the
-  cleaned socket path is an absolute `<root>/run/<id>/rpc.sock`. The daemon binary must
-  also be `<root>/srv/<id>/<name>` under a root of that list. If the daemon cannot read
-  its own executable path, that binary test does not run (not measured). A Linux VM measured the decisions of that gate
-  against `89cb6289` (see PROTOCOL.md → Host cleaner). It is also confined to this
-  user's own processes. It therefore never reaches an unrelated process or path. Each pass first makes sure that
-  its own socket still leads to itself, and without that the pass does not act.
-  Next it lists the run dirs and reads the idle age of each one. It does this before it
-  dials any other daemon, because a dial writes a line to that daemon's log.
-  A pass ends no stranded daemon. A stranded daemon is a daemon whose socket path no longer
-  leads to it. The cleaner sends no signal to it and none to its children. On a Linux VM,
-  `f6010b97` and `89cb6289` sent none (rows ST01, ST02, ST04 to ST10, HC16 to HC19, HC23 to
-  HC26). On a macOS VM they sent none either (rows ST01, ST09, ST10, HC16, HC18). The
-  stranded daemon ends by itself after its own timer.
-  A pass ends orphaned Claude Code process groups. An orphan is a `stream-json` daemon
-  child that leads its own process group. Its parent is pid 1, its binary sits directly in
-  `<root>/ccd-cli`, and its stdin, stdout and stderr are pipes. It gets `SIGTERM`, a 3s
-  grace, then `SIGKILL`. One pass ends 64 groups at most.
-  The 15s delay matches the reference, as measured on Linux and macOS against `f6010b97`.
-  The 3s grace and the limit of 64 groups match the reference too. A Linux VM measured
-  both against `f6010b97` and `89cb6289` (rows HC21a and HC22). The daily
-  period, the 5 min age and the 30-day idle age are claustrum's own values,
-  not probe-measured.
-  A pass also retires stale run dirs. A stale run dir is idle past 30
-  days, or its name carries `.removing-` from an earlier removal. Its socket is unanswered, and no live process holds its lock. An empty lock file is
-  not indeterminate: the cleaner asks whether a live process holds it. On macOS the pid of
-  the cleaner itself is no holder, and lock content that is no record is asked about its
-  holder too. A dir with a lock file stays if the `lsof` command does not start, writes
-  to stderr and exits 1, or is ended by its deadline ([PROTOCOL.md](PROTOCOL.md) → Host cleaner). The list skips the
-  cleaner's own run dir and any entry that is not a plain directory, a symlink included.
-  The tidy reads the idle age again before it probes a dir, and it keeps a dir that came
-  back into use, unless the dir has a staging name. It renames a stale dir to
-  `<name>.removing-<own pid>-<base-36 time>` inside the run root and then removes it. A
-  socket can appear after the rename, or its lock can become held or unreadable. The
-  cleaner then renames the dir back. A dir whose daemon it retires goes in the same pass,
-  once that daemon's socket is gone.
-  The cleaner spares an ambiguous orphan with a logged
-  reason. It keeps a run dir it cannot probe conclusively. The retire path never touches a
-  fresh or foreign daemon. "Busy" is weaker
-  than those two: it is a 3-second sampling
-  window, not a state. A daemon that is idle across the window and gains a client a
-  moment later is still signalled. On Linux the retire signal goes through
-  `pidfd_send_signal`, as on the reference (rows HC10, HC12 to HC15). This path is DESTRUCTIVE and host-wide. Every process read,
-  kill, dial, rename and remove therefore sits behind a seam, and tests never touch a real
-  process. A test that lets a rename or a remove run for real does so inside its own temp
-  dir. Its real behavior is measured only on a throwaway VM, never on a host that
-  runs sibling daemons. It runs on linux and darwin. On windows it is a no-op. This
-  behavior is off-wire. Its log lines carry the `[hostclean]` prefix after claustrum's level
-  tag. The lines that the Linux and macOS measurements against `f6010b97` and `89cb6289`
-  captured use the captured texts. Among them are four limit lines: more than 4096
-  processes, more than 64 orphan groups, more than 64 run dirs, and 8 retirements.
-  claustrum counts retire attempts there. The reference count after a refused attempt is
-  not measured. The
-  line before a `SIGKILL` is one more. So are the reasons for a held lock and for a
-  listener that is not our daemon. When the cleaner is off, the daemon logs one
-  `[daemon] host cleaning off:` line after the listening line. On macOS its busy read takes an `lsof` run it
-  gave up on as busy, and the retire then sends no SIGTERM, as on `5fd08069` (round `tier4-01`, macOS VM). After 30 days
-  of run-dir idleness, or at once for a run dir named with `.removing-`, the retire path can
-  SIGTERM a socket-live daemon.
-- On Unix, claustrum reads the interactive PATH from the login shell inside the
-  first `process.spawn`, not at its start. A slow login shell therefore does not
-  delay the moment the socket becomes available. It delays the first spawn. The
-  read has a 4 s deadline. At that deadline the daemon kills the group of the
-  shell (Linux row G3: the shell and its `sleep` child ended at 4 s). The
-  deadline also holds after the shell is gone, while a process of the profile in
-  another session holds the output pipe open. The daemon then sends no signal and
-  takes the read as timed out (Linux rows P13 and P13k and macOS row P13 against `89cb6289`). The
-  shell of that read gets `HOME`, `PATH`, `SHELL`, `TERM`, `USER` and two fixed
-  entries only (Linux row P13v). The result is kept for the life of the daemon (Linux
-  and macOS rows G1 and G2, Linux row G3, against `89cb6289`).
-- With `-listen-pipe` (Windows-only, opt-in), the daemon *additionally*
-  opens a Windows named pipe. That pipe serves the identical JSON-RPC dispatch
-  through a second `acceptLoop` over the same `serveConn`. Before it accepts on
-  the pipe, the daemon publishes the chosen pipe name to `rpc.pipe` beside the
-  socket. It removes `rpc.pipe` on graceful shutdown. The transport is strictly
-  additive, and the socket path does not change.
-- The daemon makes no outbound network connections. Every dial it makes is to a
-  local `AF_UNIX` socket. It opens no inbound
-  listener beyond the socket unless the operator opts into `-metrics-addr` (TCP)
-  or `-listen-pipe` (a local, owner-only Windows named pipe).
+- **Token.** `-token-file` or `-token-fd` gives the token. `tokenpersist.go`
+  writes `daemon.token` and unlinks it at a graceful stop. See
+  [The token source](PROTOCOL.md#the-token-source) and
+  [Token persistence](PROTOCOL.md#token-persistence-daemontoken).
+- **Re-exec sentinel.** An internal sentinel, `CLAUSTRUM_DAEMON_CHILD`, gates the
+  self-daemonize re-exec. The name is claustrum's own on purpose. It is *not* the
+  reference's `CLAUDE_SSH_DAEMON_CHILD`. A surrounding claude-ssh session exports
+  that name to every descendant. If claustrum used that name as its sentinel, the
+  launcher mistakes itself for the child and skips its own daemonize and
+  token-forward path. The child unsets the sentinel after it reads it. Claustrum
+  keeps reference parity by a separate route. `daemonizeWithToken` still sets
+  `CLAUDE_SSH_DAEMON_CHILD=1` in the daemon's environ, so `process.spawn` children
+  inherit it as they do under the reference (see
+  [The re-exec marker](PROTOCOL.md#the-re-exec-marker)).
+- **Identity markers.** On Linux and macOS each `process.spawn` child starts
+  through the exec-child trampoline: `execchild_unix.go`, with the start-time
+  source in `execchild_linux.go` and `execchild_darwin.go`. The target's Go-runtime
+  env is held and restored across the re-exec. See
+  [process.spawn](protocol/process-spawn.md#the-identity-markers-linux-and-macos).
+- **Child records and the reap.** `childrecord.go`, `childrecord_unix.go` and
+  `childrecord_linux.go` / `childrecord_darwin.go` write and remove the records.
+  `childreap.go`, with the live-process read in `childreap_linux.go` /
+  `childreap_darwin.go`, reaps them at the start. Both act through the run dir that
+  the daemon holds open, so no write or read follows a symlink out of it. The kill
+  and every live-process read sit behind package-var seams, so tests exercise the
+  decision without ending a real process. After the `SIGKILL` the reap waits 1 s
+  (`reapEscalate`, claustrum's own value). See
+  [Child records and the reap](PROTOCOL.md#child-records-and-the-reap-linux-and-macos).
+- **Host cleaner.** `hostclean.go` holds the shared decision layer, and
+  `hostclean_linux.go` / `hostclean_darwin.go` hold the OS reads. Windows links no
+  cleaner. The gate, the signals, the `lsof` reads and the log lines are in
+  [Host cleaner](PROTOCOL.md#host-cleaner-off-wire-linux-and-macos). These rules
+  are only here:
+    - The first pass runs 15 s after the start, then one pass a day. The cleaner
+      acts only on this user's own processes and on the `run`, `srv` and `ccd-cli`
+      folders of its own root. A pass acts only after it confirms that its own
+      socket still leads to itself.
+    - An orphan is a `stream-json` daemon child that leads its own process group.
+      Its parent is pid 1, its binary sits directly in `<root>/ccd-cli`, and its
+      stdin, stdout and stderr are pipes. Its group gets `SIGTERM`, a 3 s grace,
+      then `SIGKILL`. One pass ends 64 groups at most. A daemon or an orphan
+      younger than 5 minutes is never touched. An ambiguous orphan is spared with
+      a logged reason.
+    - A stale run dir is idle past 30 days, or its name carries `.removing-`. Its
+      socket does not answer, and no live process holds its lock. The pass reads
+      the idle age of each run dir before it dials any daemon, because a dial
+      writes a line to that daemon's log. It skips its own run dir and every entry
+      that is not a plain directory, a symlink included. It reads the idle age
+      again before it probes a dir, and it keeps a dir that came back into use,
+      unless the dir has a staging name. It renames a stale dir to
+      `<name>.removing-<own pid>-<base-36 time>` inside the run root and then
+      removes it. If a socket appears after the rename, or the lock becomes held
+      or unreadable, it renames the dir back. A dir whose daemon it retires goes
+      in the same pass, once that daemon's socket is gone. A dir it cannot probe
+      conclusively stays.
+    - "Busy" is a 3 s sampling window, not a state. A daemon that is idle across
+      the window and gains a client a moment later still gets `SIGTERM`.
+    - The limit lines are four: more than 4096 processes, more than 64 orphan
+      groups, more than 64 run dirs, and 8 retire attempts in one pass. The log
+      lines carry the `[hostclean]` prefix after claustrum's level tag. The line
+      before a `SIGKILL` and the reasons for a held lock and for a listener that
+      is not our daemon use the texts of the reference too.
+    - The 15 s delay, the 3 s grace and the limit of 64 groups match the
+      reference. The daily period, the 5 minute age and the 30-day idle age are
+      claustrum's own.
+
+  This path is destructive and host-wide. Every process read, kill, dial, rename
+  and remove sits behind a seam, and tests never touch a real process. A test that
+  lets a rename or a remove run for real does so inside its own temp dir.
+- **Login-shell PATH.** `shellenv_unix.go` runs the read at the first
+  `process.spawn`, in a process group of its own. At the 4 s cap it kills that
+  group. `shellenv_windows.go` reads the daemon's own PATH. See
+  [The login-shell PATH](PROTOCOL.md#the-login-shell-path-linux-and-macos).
+- **Named pipe.** With `-listen-pipe` (Windows only, opt-in) a second
+  `acceptLoop` serves the same `serveConn` over a named pipe
+  (`pipetransport*.go`). See
+  [Named-pipe transport](PROTOCOL.md#named-pipe-transport-windows-opt-in).
+- **Network.** The daemon makes no outbound network connections. Every dial it
+  makes is to a local `AF_UNIX` socket. It opens no inbound listener beyond the
+  socket unless the operator opts into `-metrics-addr` (TCP) or `-listen-pipe`.
 
 ### 3 · JSON-RPC multiplexer + replay
 
