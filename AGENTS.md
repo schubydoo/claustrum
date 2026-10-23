@@ -137,7 +137,7 @@ name describes claustrum's code, not a measurement.
   |------|---------|--------|-------|------|
   | `files.extract_tar` | RPC | the last name of `destDir` | `wipesHomeDir`, `destEntryHoldsHome`, `checkDestViews` | `wipeDestDir`, `os.Root.RemoveAll` |
   | `git.worktree_remove` | RPC | `worktreePath`, its registration | `wipesHomeDir` on `worktreePath`, containment | `worktreeremove.go`, `os.Root.RemoveAll` |
-  | `git.worktree_create` rollback | RPC | `worktreePath`, its registration, one stale entry, two Windows staging removes | `wipesHomeDir` (D2), identity tests, one exception (see Registration) | `worktreeverify.go`, `githarden_index_*.go`, `gitdirheld.go`, `worktreestale*.go`, `worktreestaging.go`. `os.Root.RemoveAll`, and on Windows a plain `os.RemoveAll` for that registration |
+  | `git.worktree_create` rollback | RPC | `worktreePath`, its registration, one stale entry, two Windows staging removes | `wipesHomeDir` (D2), identity tests, one exception (see Registration) | `worktreeverify.go`, `githarden_index_*.go`, `gitdirheld.go`, `worktreestale*.go`, `worktreestaging.go`. `os.Root.RemoveAll`, one exception |
   | `git.worktree_create` staging (Windows) | RPC: a good add in `shadow` | old staging entries of the `baseRepo` git directory | prefix, age, `wipesHomeDir` | `sweepOldStaging` |
   | `-install` | operator | the CLI path | D6, `folderHoldsHome` | `stageAndInstall`, `os.RemoveAll` |
 
@@ -204,8 +204,8 @@ name describes claustrum's code, not a measurement.
       refusals delete nothing. They refuse a reserved name, a
       root that holds or leads into the repository, a root inside a worktree of
       it, a root that resolves to `/`, and a link loop.
-    - `git.worktree_create` deletes before the add and in its rollbacks.
-      When it rolls back a worktree, it deletes `worktreePath`. There are two rollbacks. After a failed `git worktree
+    - `git.worktree_create` deletes before the add and in a rollback. A
+      rollback deletes `worktreePath`. There are two rollbacks. After a failed `git worktree
       add`, it runs no git call and removes the leaf only if the leaf is an
       empty directory. The second rollback follows a successful add. It
       deletes the entries of the leaf in the order that the directory read
