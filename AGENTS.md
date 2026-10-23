@@ -137,7 +137,7 @@ name describes claustrum's code, not a measurement.
   |------|---------|--------|-------|------|
   | `files.extract_tar` | RPC | the last name of `destDir` | `wipesHomeDir`, `destEntryHoldsHome`, `checkDestViews` | `wipeDestDir`, `os.Root.RemoveAll` |
   | `git.worktree_remove` | RPC | `worktreePath`, its registration | `wipesHomeDir` on `worktreePath`, containment | `worktreeremove.go`, `os.Root.RemoveAll` |
-  | `git.worktree_create` rollback | RPC | `worktreePath`, its registration, one stale entry, two Windows staging removes | `wipesHomeDir` and identity tests, except on the registration of a create that holds no git directory and accepted none (D2) | `worktreeverify.go`, `githarden_index_*.go`, `gitdirheld.go`, `worktreestale*.go`, `worktreestaging.go`. `os.Root.RemoveAll`, and on Windows a plain `os.RemoveAll` for that registration |
+  | `git.worktree_create` rollback | RPC | `worktreePath`, its registration, one stale entry, two Windows staging removes | `wipesHomeDir` (D2) and identity tests, except no `wipesHomeDir` on the registration of a create that holds no git directory and accepted none | `worktreeverify.go`, `githarden_index_*.go`, `gitdirheld.go`, `worktreestale*.go`, `worktreestaging.go`. `os.Root.RemoveAll`, and on Windows a plain `os.RemoveAll` for that registration |
   | `git.worktree_create` staging (Windows) | RPC: a good add in `shadow` | old staging entries of the `baseRepo` git directory | prefix, age, `wipesHomeDir` | `sweepOldStaging` |
   | `-install` | operator | the CLI path | D6, `folderHoldsHome` | `stageAndInstall`, `os.RemoveAll` |
 
