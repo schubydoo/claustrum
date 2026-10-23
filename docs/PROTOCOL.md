@@ -1161,7 +1161,7 @@ Lists the methods and the features of the daemon, and the state of the peer chec
 #### server.shutdown
 none → `{"ok":true}`, when the reply wins the race with the close
 
-Stops the daemon, with no auth. See [server.shutdown](protocol/server.md#servershutdown).
+Stops the daemon and needs no auth. See [server.shutdown](protocol/server.md#servershutdown).
 
 ### files.* (param: `path`)
 

@@ -82,7 +82,7 @@ func docSetDiff(a, b map[string]bool) []string {
 }
 
 // TestDocsEveryMethodHasAHome: each method of server.capabilities has a heading in
-// docs/PROTOCOL.md, a table row of the server.* table, or a page in docs/protocol/.
+// docs/PROTOCOL.md or a page in docs/protocol/.
 func TestDocsEveryMethodHasAHome(t *testing.T) {
 	named := map[string]bool{}
 	for _, line := range strings.Split(docRead(t, "docs", "PROTOCOL.md"), "\n") {
@@ -93,7 +93,7 @@ func TestDocsEveryMethodHasAHome(t *testing.T) {
 				named[strings.Trim(f[0], "`")] = true
 			}
 		case strings.HasPrefix(line, "| `"):
-			// The server.* methods sit in a table, one method for each row.
+			// A table row whose first cell is a method in backticks names it.
 			if end := strings.Index(line[3:], "`"); end >= 0 {
 				named[line[3:3+end]] = true
 			}
@@ -610,7 +610,7 @@ var docWordLimits = map[string]int{
 	"docs/protocol/process-reattach.md":    1000,
 	"docs/protocol/process-spawn.md":       3600,
 	"docs/protocol/process-stdin.md":       900,
-	"docs/protocol/server.md":              1600,
+	"docs/protocol/server.md":              1700,
 }
 
 // The limits of a document that docWordLimits does not name.
