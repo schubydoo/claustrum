@@ -312,33 +312,23 @@ signals it, in the eviction and in `-stop`. The reference skips that test. See
 ### Host cleaner (off-wire, Linux and macOS)
 
 A periodic sweep ends orphaned Claude Code process groups, retires abandoned
-daemons and tidies stale run dirs. It
-reaches no JSON-RPC frame, so nothing here is a wire contract. It is recorded
-because its decisions end processes and remove folders on the host.
+daemons and tidies stale run dirs. It reaches no JSON-RPC frame, so nothing here is
+a wire contract. It is recorded because it ends processes and removes folders on
+the host. A rule with no mark was measured against `89cb6289` on a Linux VM. A rule
+that names macOS was measured on a macOS VM against `89cb6289`. A rule marked
+`5fd08069` was measured against that build.
 
-The sweep ends no stranded daemon. A stranded daemon is a daemon whose socket path
-no longer leads to it. The cleaner sends no signal to such a daemon and none to its
-children. On a Linux VM, `f6010b97` and `89cb6289` sent none in every staged shape
-(rows ST01, ST02, ST04 to ST10, HC16 to HC19, HC23 to HC26). On Linux and macOS
-the stranded daemon ends by itself. See [Orphan-exit self-probe](#orphan-exit-self-probe). On a macOS
-VM, `f6010b97` and `89cb6289` sent none either (rows ST01, ST09, ST10, HC16,
-HC18). In row ST01 on that VM, claustrum sent none either.
+claustrum links no cleaner on Windows. The Windows references logged no cleaner
+line and changed nothing, in a check with no positive control.
 
-The cleaner retires an abandoned daemon with `SIGTERM`. On Linux the signal goes
-through `pidfd_send_signal`, as on the reference (rows HC10, HC12 to HC15, by
-`strace`). `89cb6289` and claustrum open the descriptor with `pidfd_open`, then read
-`/proc/<pid>/stat`, then send the signal. A Linux VM saw that order in 26 of 26
-retires for each binary (rows HC10, HC12a, HC13, HC14). On a kernel without that
-call claustrum uses `kill`. That fallback is
-not measured. macOS uses `kill`. The call of the macOS reference is not measured.
-On a macOS VM, the cleaners of `89cb6289` and claustrum ended the same daemons and
-orphan groups and removed the same folders (rows K9, HC01, HC10, HC14c, HC20,
-HC22d).
+#### When the cleaner runs
 
-The cleaner is on in one case only. The cleaned socket path is absolute, and its
-last three components read `run/<id>/rpc.sock`. The folder above `run` is the
-root. The resolved daemon binary is `<root>/srv/<id>/<name>` under that root, or
-under the symlink-resolved form of that root. In every other case the cleaner is
+The cleaner is on in one case only. The socket path is cleaned first, so `.` and
+double slashes drop out, and `..` is resolved by text (from the code for `..`). The cleaned path is absolute, and its
+last three components read `run/<id>/rpc.sock`, with that exact case. The folder above
+`run` is the root. The resolved daemon binary is `<root>/srv/<id>/<name>`, one
+folder below `srv`, under that root or under the symlink-resolved form of that root.
+The first pass then runs 15 s after the start. In every other case the cleaner is
 off and runs no pass. The daemon then logs one of two lines, right after the
 listening line:
 
@@ -348,141 +338,156 @@ listening line:
 ```
 
 The socket line names the socket as given. The executable line names the resolved
-binary and the `srv` of the root as given. If the daemon cannot read its own
-executable path, the binary test does not run. That case is not measured.
+binary and the `srv` of the root as given. These cases turn the cleaner off. A
+macOS VM gave the same decision in the nine shapes that it ran.
+
+- socket line: a relative socket path
+- socket line: a folder above `<id>` with another name than `run`, also a symlink to `run`
+- executable line: a binary outside `<root>/srv`, directly in `srv`, or two folders below it
+- executable line: a binary under the `srv` of another root
+- executable line: a binary path that is a symlink to a file outside `<root>/srv`
+
+A path through a symlink to the root or to a folder above it keeps the cleaner on,
+for the socket and for the binary. If the daemon cannot read its own executable
+path, the binary test does not run (not measured).
 
 A pass acts on one folder. Its root list holds the root as the socket path gives
-it. When the resolved form of that root differs, the list also holds that form,
-which is the same folder under its real path. The root of the binary is never
-added. A pass lists each run folder once, and its lines name the run folders in
-the spelling of the socket as given. If the resolution of the root fails, the list
-holds only the root as given. That case is not measured.
+it. When the resolved form of that root differs, the list also holds that form.
+The root of the binary is never added. A pass lists each run folder once, and its
+lines name the run folders in the spelling of the socket as given. If the
+resolution of the root fails, the list holds only the root as given (not
+measured).
 
-A Linux VM measured the decisions of this gate against `89cb6289`, in start rows
-and in rows with staged fixtures. claustrum gave the same decision in each row:
+#### Signals of the cleaner
 
-| start row | `89cb6289` and claustrum |
-|---|---|
-| `<R>/run/c1/rpc.sock`, binary `<R>/srv/d1/<name>` | on, a pass 15 s after the start |
-| `<R>/run/./k1/rpc.sock`, `<R>//run/k1/rpc.sock` (rows KS-i-j, KS-i-k) | on |
-| `<R>/b/s.sock`, `<R>/b/rpc.sock`, `<R>/run/rpc.sock`, `<R>/run/c1/x.sock`, `<R>/run/c1/d/rpc.sock`, `<R>/RUN/c1/rpc.sock` | off, socket line |
-| `<R>/lnk/c1/rpc.sock`, where `lnk` is a symlink to `run` | off, socket line |
-| relative `run/c1/rpc.sock` (rows START-i-h, START-p-h, KREL) | off, socket line |
-| `<R>/run/c1/rpc.sock`, binary outside `<R>/srv` (the plain layout) | off, executable line |
-| binary `<R>/srv/<name>`, or `<R>/srv/d1/sub/<name>` | off, executable line |
-| binary `<R>/srv/d1/<name>` that is a symlink to a file outside | off, executable line with the resolved path |
-| binary under the `srv` of another root (rows START-x-e, KXB, KS-x-e) | off, executable line |
-| another file name in `<R>/srv/d1` | on |
-| binary started through a symlink to `<R>`, socket through the real path (row KS-u-e) | on |
-| socket through a symlink `<R>l` to `<R>`, binary through either path (rows KS-m-e, KS-q-e) | on, the lines name `<R>l/run/<id>` |
-| binary and socket through a symlink one level above the root | on |
+The sweep ends no stranded daemon. A stranded daemon is a daemon whose socket path
+no longer leads to it. The cleaner sends no signal to such a daemon and none to its
+children, on Linux and macOS. The stranded daemon ends by itself. See
+[Orphan-exit self-probe](#orphan-exit-self-probe).
 
-The socket rows gave the socket line in the install layout and in the plain
-layout. In rows KREL and KXB `89cb6289` sent no signal and removed no folder. In
-rows KS-m-e and KS-q-e it ran one pass with staged fixtures. `f6010b97` logged the
-same two texts in its rows (EV01, K3, ST08 and every plain-layout row). A macOS VM
-measured nine gate shapes against `89cb6289` (rows GSa to GSg3). claustrum made the
-same decision in each one, with the same log lines. In row GSc the daemon binary
-runs through a symlinked root and the socket has the real path: both run the
-cleaner.
+The cleaner retires an abandoned daemon with `SIGTERM`. That is a daemon on a run
+dir that is idle past the threshold, or whose name carries `.removing-` from an
+earlier removal. A daemon younger than 5 minutes is not retired, and the run dir
+gets this line (macOS VM):
 
-claustrum links no cleaner on Windows. The Windows references logged no cleaner
-line and changed nothing in 120 s (row WN06, with no positive control).
+```
+[hostclean] run dir "<dir>" unused for <n> days: its daemon (pid <pid>) was not retired: it is too young to judge
+```
 
-Before it signals a daemon whose run dir went idle past the threshold, or whose run
-dir name carries `.removing-` from an earlier removal, the cleaner
-asks whether that daemon still has a live client. On macOS it asks `lsof`. That
-run has three bounds: a command deadline, a wait for the output pipe, and a
-last bound that gives up on it at 17 s. Those bounds are claustrum's own.
-With an `lsof` run that `SIGKILL` cannot end, `5fd08069` ends that pass 17 s after
-it starts, with its one `lsof` run still hung (round `tier4-01`, macOS VM). The cause
-of that 17 s is not known. Its match with the abandon bound of claustrum is no
-measurement of a bound of `5fd08069`.
+On Linux the signal goes through `pidfd_send_signal`, as on the reference. The
+cleaner opens the descriptor with `pidfd_open` before its last identity test. So on
+Linux a pid that changes hands after the test gets no signal (from the code). On a
+kernel without that call claustrum uses `kill` (not measured). macOS uses `kill`,
+and the call of the macOS reference is not measured. On a macOS VM the cleaners of `89cb6289` and claustrum ended the same
+daemons and orphan groups and removed the same folders.
 
-The cleaner asks `lsof` two more things on macOS: whether the stdio of an orphan
-is three pipes, and whether a process holds the `daemon.lock` of an idle run dir.
-claustrum tells these outcomes of an `lsof` run apart. A macOS VM measured the first two against
-`89cb6289`, 3 of 3 runs in each row. The rows
-are of the macOS host cleaner round of issue 429. The rows where the command
-does not start ran under a sandbox rule that denies the exec of `lsof`. Rows E3i
-and E4 hold an idle daemon, and rows D1k and E3k hold a daemon with one client:
+On Linux a stopped daemon on an idle run dir gets no SIGTERM, and the dir stays
+(`5fd08069`). The run dir gets the `was not retired` line with the reason
+`the listener could not be verified as a daemon of ours (not inspectable)`. A daemon
+5 minutes old or more gets a line of its own too, and counts as undecided:
+
+```
+[hostclean] daemon pid <pid> left alone this pass: it could not be inspected (or is stopped)
+```
+
+#### The `lsof` reads (macOS)
+
+On macOS the cleaner asks `lsof` three things:
+
+- whether a daemon it is about to retire still has a live client
+- whether the stdio of an orphan is three pipes
+- whether a process holds the `daemon.lock` of an idle run dir
+
+An `lsof` run has a command deadline and a wait for its output pipe, and the
+cleaner gives up on a run that outlives a later bound. The pipe wait lets a slow run
+end with no output well before that bound. Those bounds are claustrum's own. claustrum tells these
+outcomes of a run apart:
 
 | `lsof` outcome | busy read of a daemon | lock read of a run dir |
 |---|---|---|
-| the command does not start | the daemon gets no SIGTERM (rows D1i and D1k, as `89cb6289`) | a dir with a lock file stays (row C3, as `89cb6289`) |
-| the run writes to stderr and exits 1 | the daemon gets no SIGTERM (rows E3i, E3k and E4, as `89cb6289`) | a dir with a lock file stays (rows D2p, D2f and E4, as `89cb6289`) |
-| the run is given up on | no SIGTERM, the `was not retired` line and no `left alone` line, as `5fd08069` (round `tier4-01`, macOS VM) | kept (not measured, claustrum's own) |
-| the 15 s deadline ends the run | no SIGTERM (`5fd08069` under a hung `lsof`, cells B1 and B2. claustrum gives the same result, round 8, macOS VM) | kept (cells L1 and L2) |
+| the command does not start | the daemon gets no SIGTERM | a dir with a lock file stays |
+| the run writes to stderr and exits 1 | the daemon gets no SIGTERM | a dir with a lock file stays |
+| the cleaner gives up on the run | no SIGTERM, the `was not retired` line and no `left alone` line, as `5fd08069` | kept (claustrum's own, not measured) |
+| the deadline ends the run | no SIGTERM, as `5fd08069` | kept, as `5fd08069` |
 | the run completes with nothing on stderr | the output decides | the output decides |
 
-The exit code is no rule. `lsof` exits 1 with no text when no process holds the
-file, and the dir then goes (rows C1 and C6). In rows
-D1i, D1k, E3i and E3k the pass of `89cb6289` and of claustrum logs these two lines
-for the daemon, the first one before every run dir line. Its summary counts
-`abandoned daemons retired 0` and `candidates left undecided 1`:
+The exit code is no rule. When no process holds the file, `lsof` exits 1 with no
+text, and the dir then goes. claustrum reads a run that it gave up on as busy, and
+it reads the daemon again until its busy sampling ends. So its pass runs longer
+than the pass of `5fd08069`, with the same signals and folders.
+[D17](DIVERGENCES.md#d17) is retired as parity for that reason.
+
+When the busy read of a daemon gets no answer, the pass logs these two lines for
+it. The first one comes before every run dir line. The summary counts the daemon
+under `candidates left undecided`:
 
 ```
 [hostclean] daemon pid <pid> left alone this pass: its open files could not be inspected
-[hostclean] run dir "<dir>" unused for 40 days: its daemon (pid <pid>) was not retired: a connection is attached to it right now, or that could not be read: in use after all
+[hostclean] run dir "<dir>" unused for <n> days: its daemon (pid <pid>) was not retired: a connection is attached to it right now, or that could not be read: in use after all
 ```
 
-In round `tier4-01` (macOS VM) `SIGKILL` cannot end the `lsof` run of an idle
-daemon with no client. There both passes log only the `was not retired` line. claustrum
-runs `lsof` three times, 17 s apart, and its pass takes 51 s. `5fd08069` runs it
-once, and its pass takes 17 s. From the code, claustrum reads a run it gave up on
-as busy and reads the daemon again until its busy sampling ends.
+The first line goes only to a daemon that is 5 minutes old or more and serves an
+idle run dir. Each such daemon gets it and counts once. With more than 4096
+processes claustrum prints no such line (from the code, not measured).
 
-In the two control rows `lsof` starts. Both sides retire the idle daemon (row D1ci)
-and spare the daemon with a client (row D1ck).
-
-On claustrum the first line goes to a daemon that is a candidate for the retire. In row E2 two
-daemons are over 5 minutes old on run dirs that are 40 days old. Each gets the
-line, and the summary counts `undecided 2`. In row E1 a second daemon is about 33 s old
-on a fresh run dir. It gets no line, and the count stays 1. claustrum asks for
-both: an age of 5 minutes and an idle run dir. Both hold on `89cb6289` in two more
-rows. In row F1 a daemon about 33 s old is on a run dir that is 40 days old. It
-gets no such line on either side, and both sides print
-`its daemon (pid <pid>) was not retired: it is too young to judge` for the run dir.
-In row F2 a daemon 5 minutes old is on a run dir with a fresh mtime, and no line
-names it on either side. From the code: with more than 4096 processes claustrum
-prints no such line. That state is not measured.
-
-Row E5 adds an orphaned Claude Code group to the state of row D1i. Neither side
-signals the group. Both log this line after the daemon line and before the run
-dir lines, and the summary counts `undecided 2`:
+When the stdio read of an orphaned Claude Code group gets no answer, the cleaner
+does not signal the group. The pass logs this line after the daemon line and
+before the run dir lines, and counts the group as undecided:
 
 ```
 [hostclean] process group <pgid> left alone this pass: its descriptors could not be inspected
 ```
 
-With a working `lsof` both sides end the group (row E5c). After an `lsof` run that
-writes to stderr and exits 1, both sides print the same line and signal nothing
-(row F3). A run that is given up on spares the orphan with claustrum's own line.
+With a working `lsof` the cleaner ends the group. A run that the cleaner gave up on
+spares the group with claustrum's own line:
 
-The lock read has these measured states (macOS VM against `89cb6289`, 3 of 3 runs
-in each row, and claustrum gives the same answer):
+```
+[hostclean] spared process group <pgid> this sweep: its open descriptors were unreadable
+```
 
-| row | state | `89cb6289` and claustrum |
-|---|---|---|
-| C3 | the `lsof` command does not start, and the dir has a `daemon.lock` (empty, or the record of a dead daemon) | the dir stays, with the line `[hostclean] run dir "<dir>" unused for 40 days: kept, its daemon.lock could not be examined` |
-| D2p, D2f | the `lsof` run writes to stderr and exits 1. In rows D2p and D2f a live process holds one of the lock files | the dir stays, with the same line |
-| D4 | the `daemon.lock` has mode 0000 | the dir stays, with the same line |
-| E7a, E7b, F4 | the `daemon.lock` is a symlink to a regular file, a folder, or a FIFO | the dir stays, with the same line |
-| C3, D2p, D2f, D4 | the dir has no `daemon.lock` | the dir goes |
-| C2 | another live process holds the lock file open | the dir stays, with the held line |
-| C4 | only the cleaner itself holds the lock file open | the dir goes |
-| D3 | the cleaner and a child of the cleaner hold the lock file open | the dir stays, with the held line |
-| C5 | the lock file holds 7 bytes that are no record, and no process holds it | the dir goes |
-| D7a, D7b | the lock file holds `{}`, or the first half of a record | the dir goes |
-| D5 | the lock holds the record of a live pid that does not hold the file | the dir goes |
-| C6 | the lock holds the record of a dead pid, and no process holds it | the dir goes |
+#### The lock of an idle run dir
+
+On macOS these states of the `daemon.lock` of an idle run dir keep the dir, with
+the line `[hostclean] run dir "<dir>" unused for <n> days: kept, its daemon.lock could not be examined`:
+
+- the `lsof` command does not start, or the run writes to stderr and exits 1, and
+  the dir has a `daemon.lock` that is empty, holds the record of a dead daemon,
+  or that a live process holds. Any other content takes the same arm (from the
+  code)
+- the `daemon.lock` has mode 0000
+- the `daemon.lock` is a symlink to a regular file, a folder, or a FIFO
+
+On macOS these states keep the dir with the line
+`[hostclean] run dir "<dir>" unused for <n> days: kept, a live process holds its daemon.lock`:
+
+- another live process holds the lock file open
+- the cleaner and a child of the cleaner hold the lock file open
+
+On macOS the dir goes in these states:
+
+- the dir has no `daemon.lock`
+- only the cleaner itself holds the lock file open
+- the lock holds no record (text, `{}`, or the first half of a record), and no
+  process holds it
+- the lock holds the record of a live pid that does not hold the file
+- the lock holds the record of a dead pid, and no process holds it
+
+No `lsof` runs for a missing lock, so a failed run changes nothing (from the
+code). That is measured for a command that does not start and for a run that
+writes to stderr and exits 1.
 
 Not measured: a second pass, and an `lsof` run that writes to stderr with another
 exit code or with output on stdout too. claustrum reads each such run as no
-answer, whatever the exit code and the output are. Linux is not
-measured for these states. On Linux, a lock that cannot be opened, a lock that is
-no regular file, and lock content that is no record keep the dir with claustrum's
-own line. On Linux the pass logs no `left alone this pass` line.
+answer, whatever the exit code and the output are.
+
+Linux is not measured for the `lsof` states above. On Linux three states keep the dir: a lock
+that cannot be opened, a lock that is no regular file, and lock content that is no
+record. The dir then gets claustrum's own line
+`[hostclean] run dir "<dir>" kept: whether a process holds its run-dir lock could not be determined`.
+On Linux, when `/proc/locks` cannot be read, a dir whose `daemon.lock` is a regular
+file, empty or with a record, stays with the `could not be examined` line. That
+holds also when a process holds the lock (`5fd08069`). On Linux the pass logs
+neither `left alone this pass` line of the `lsof` reads (from the code).
 
 ### Daemon startup (`-serve`)
 
