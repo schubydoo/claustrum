@@ -161,7 +161,7 @@ rather than repeating them in each entry:
 | [D16](#d16) | `git.status` of a linked worktree returns the status on Windows. With no global excludes file of the user, the reference errors `exit status 128` there | always-on (Windows) | always-on | claustrum-more-correct (D2/D8 pattern). **REACHABLE** | the reference fixing its Windows git.status, a Git for Windows release that accepts `NUL` there, or a decision to reproduce its failure for strict 1:1 |
 | [D19](#d19) | `git.worktree_remove` refuses a junction at any directory between `baseRepo` and the leaf. The reference answers success there, and at `.claude` or `.claude\worktrees` it deletes the branch (Windows) | always-on (Windows) | always-on | rule 3 clause (b): the create of both daemons refuses that junction. Maintainer decisions of 2026-09-27 and, for the levels above `.claude`, of 2026-10-07 | the reference refusing the junction or deleting through it, or a Windows client that depends on the success reply |
 | [D20](#d20) | Wait 50 ms and read again before the group `SIGKILL` of a child-group leader that reads as gone, at the reap of a `-serve` start (Linux and macOS) | always-on (Linux and macOS) | always-on | rule 3 clause (a) | a measurement that shows the reference waiting before that `SIGKILL`, or a report of a child that outlived a restart because it replaced its program |
-| [D22](#d22) | `git.worktree_remove` refuses a worktree locked in the `.git` folder of `baseRepo`. In four states of the daemon environment or the disk, the reference answers success | always-on | always-on | Maintainer decision of 2026-10-03. The frame differs from the reference in those four states | a caller that needs the removal of a locked worktree there, or a measurement that shows the reference refusing there |
+| [D22](#d22) | `git.worktree_remove` refuses a worktree locked in the `.git` folder of `baseRepo`. The reference answers success in four states: a daemon `GIT_DIR` of another repository (with or without `GIT_COMMON_DIR`, the folder present or gone), or a `baseRepo` spelled through a missing name | always-on | always-on | Maintainer decision of 2026-10-03. The frame differs from the reference in those four states | a caller that needs the removal of a locked worktree there, or a measurement that shows the reference refusing there |
 | [D23](#d23) | The environment block of a child is in name order (Windows). The reference does not sort it | always-on (Windows) | always-on | Maintainer decision of 2026-10-13: claustrum stays on Go 1.26, which sorts the block | the reference moves to Go 1.26 or newer |
 | [D24](#d24) | The rollback of `git.worktree_create` keeps a folder that replaced the new registration, where the reference removes it. On Windows a rollback after `.git` became a file runs no git call | always-on | always-on | Maintainer decisions of 2026-10-07 and, for the `.git` file, of 2026-10-19. The frames are equal for a replaced folder, and the disk differs. They differ after the `.git` file swap | a measurement of the reference keeping such a folder. Or a decision to match its disk, or to run the branch step in the repository that the `.git` file names |
 | [D27](#d27) | On Windows the stale step of `git.worktree_create` keeps an entry whose `gitdir` record names a path that exists. The reference deletes the entry of a live worktree in a folder with case sensitivity on | always-on (Windows) | always-on | The maintainer's decision of 2026-10-18 | a measurement of the reference with the same test |
@@ -218,10 +218,10 @@ entry needs it. A fact that comes from reading claustrum's code is marked
   - The path as the system resolves it and the name inside the parent handle
     must name one entry. If not, the reply is
     `clean destDir: "<name>" is not the entry that the path names`, and
-    nothing is deleted. With `mkdir destDir:` the wipe has run, and the entry at
-    that name goes with a plain remove, never as a tree. On Windows a path
-    with the `\\?\` prefix and a dot or a space after its last name gets this
-    reply. `5fd08069` extracts into the folder with no dot or space there, and
+    nothing is deleted. With `mkdir destDir:` the entry is the folder that the
+    daemon just made, and it goes with a plain remove, never as a tree (from the
+    code). On Windows a path with the `\\?\` prefix and a dot or a space after its
+    last name gets one of these two replies. `5fd08069` extracts into the folder with no dot or space there, and
     for the last name `...` it answers `clean destDir: RemoveAll ...: invalid argument`
     (Windows VM).
   - After the open of `destDir`, claustrum tests that `destDir` is still a real
@@ -243,8 +243,9 @@ entry needs it. A fact that comes from reading claustrum's code is marked
   identity with home and with each parent folder of home. It does that for the
   home path as given and as resolved.
   - The reference removes home as a tree and puts the CLI file there, also for
-    a folder that contains home. If the new CLI then fails, nothing is left at
-    the path (Linux and macOS). Measured with `-cli-zst` on Linux, macOS and Windows.
+    a folder that contains home (measured with `-cli-zst` on Linux, macOS and
+    Windows). If the new CLI then fails, nothing is left at the path (Linux and
+    macOS).
   - A folder at the CLI path that is not home and does not contain it is
     replaced, as on the reference. With no source flag neither binary removes
     anything.
