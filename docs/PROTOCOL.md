@@ -1,35 +1,34 @@
 # claustrum protocol reference
 
 claustrum uses newline-delimited JSON-RPC 2.0 over an `AF_UNIX`
-`SOCK_STREAM` socket. This document is the complete wire contract. The validation
-battery checks that same contract byte-for-byte. All reference behaviour was
-probed at `5db5e4a` unless a line says otherwise. The divergence catalog, its
-rules, and the reopen triggers are in [`DIVERGENCES.md`](DIVERGENCES.md).
+`SOCK_STREAM` socket. Each method has its own page under `docs/protocol/`, and
+[Methods (20)](#methods-20) lists them. This document holds the rules that more
+than one method shares, the life of the daemon off the wire, and the flags. The
+pinned reference build is `5fd08069`. A rule with no mark follows the reference at
+a build up to `5fd08069`. A rule marked "claustrum's own" or "not measured" has no
+reference measurement. The divergences, their rules and their reopen triggers are
+in [`DIVERGENCES.md`](DIVERGENCES.md).
 
 ## Transport
 
 - One JSON object per line (NDJSON). No length prefix, no binary framing.
-- A single request line has a cap of 1 MiB (`bufio` max token = `1024*1024`).
-  The daemon serves a line up to 1048575 bytes. A line of 1048576 bytes or more
-  closes the connection with no reply. Chunk large `process.stdin` payloads below
-  this cap.
-- `AF_UNIX` stream socket, created mode `0600` (owner only).
+- One request line has a cap of 1 MiB. The daemon serves a line of up to 1048575
+  bytes. A line of 1048576 bytes or more closes the connection with no reply.
+  Send a large `process.stdin` payload in chunks below this cap.
+- The `AF_UNIX` stream socket is created with mode `0600` (owner only).
 - The connection is persistent. It stays open after a response, and id-less
-  stream notifications arrive on it asynchronously.
-- The daemon dispatches a connection's requests concurrently. Responses can
-  arrive out of request order. Match them by `id`.
-- Two error replies skip the concurrent dispatch: the parse error (`-32700`)
-  and the auth error (`-32001`). The daemon writes them on its read path,
-  before it reads the next line. Every other reply goes through the
-  concurrent dispatch. Measured against `f6010b97` and `90fca6e6` on a Linux
-  VM, the reference did the same:
-  - The parse error covers any line that does not decode into a request. A
-    partial object, a line of only spaces, `[1]`, `123`, `"x"` and a batch
-    array all get it. The frame is
+  stream notifications arrive on it at any time.
+- The daemon dispatches the requests of one connection concurrently. Responses
+  can arrive out of request order. Match them by `id`.
+- Two error replies skip the concurrent dispatch. The daemon writes them on its
+  read path, before it reads the next line. The reference does the same.
+  - The parse error (`-32700`) covers any line that does not decode into a
+    request. A partial object, a line of only spaces, `[1]`, `123`, `"x"` and a
+    batch array all get it. The frame is
     `{"jsonrpc":"2.0","id":null,"error":{"code":-32700,"message":"Parse error"}}`,
     76 bytes with its newline.
-  - The auth error covers a request with a missing or wrong `auth`. The
-    lines `null`, `{}` and `{"jsonrpc":"2.0"}` get it too. The frame echoes
+  - The auth error (`-32001`) covers a request with a missing or wrong `auth`.
+    The lines `null`, `{}` and `{"jsonrpc":"2.0"}` get it too. The frame echoes
     the request `id`, re-encoded as in [Message shapes](#message-shapes). A
     `null` or missing `id` gives `"id":null`. An unauthenticated
     `server.shutdown` is not an auth error (see
@@ -41,104 +40,75 @@ rules, and the reopen triggers are in [`DIVERGENCES.md`](DIVERGENCES.md).
     same connection.
   - The daemon logs `[Server] Parse error: <json error>` or
     `[Server] Unauthorized request: method=…, id=…` before it writes the error
-    reply. Measured against `f6010b97` and `90fca6e6` on a Linux VM, the
-    reference logged the same parse-error text. When its reply write failed,
-    the failure line came after the parse-error line. In a Go type-mismatch
-    error, the type name differs from the reference.
-  - At a client EOF the daemon logs `[Server] Connection closed: <addr>`, then
-    closes the socket. Measured with strace on a Linux VM, `f6010b97`,
-    `90fca6e6` and claustrum all log this line before the close, in 20 of 20
-    runs each.
-  - The daemon does not wait for a request in flight when the client
-    half-closes. The probe sent a `files.read` of a pipe that returned data
-    after 100 ms, 500 ms or 2 s. Measured against `f6010b97` and `90fca6e6`
-    on a Windows VM, the reply was lost in 60 of 60 runs per build. A
-    partial last line did not change that. claustrum lost the reply in 60 of
-    60 runs too.
+    reply. When the reply write fails, the failure line comes after the
+    parse-error line. In a Go type-mismatch error, the type name differs from
+    the reference.
+- At a client EOF the daemon logs `[Server] Connection closed: <addr>`, then
+  closes the socket.
+- When the client half-closes, the daemon does not wait for a request in flight.
+  The reply to that request is lost (measured on Windows).
 - Input that ends without a final newline. The daemon reads the last bytes
   before EOF as one more line, and the rules above apply. A tail of only `\r`
   is a blank line and gets no reply.
-  - If an earlier valid line came first, the parse error for the tail and the
-    reply to the earlier line race. The probe sent a `server.ping` line, a
-    partial line, then a half-close, in 50 runs per build. Measured on a Linux
-    VM, `f6010b97` and `90fca6e6` each sent the `server.ping` reply in 1 of 50
-    runs. claustrum sent it in 4 of 50 runs. All three builds closed about
-    2 ms after the half-close. On Linux, claustrum matches the reference.
-  - On Windows this case has a measured timing difference, not parity.
-    Measured on a Windows VM, `f6010b97` and `90fca6e6` each sent the
-    `server.ping` reply in 50 of 50 runs, in either order. They closed about
-    12 ms after the half-close. claustrum sent the reply in 21 of 50 runs and
-    closed after about 2.4 ms. Every run on every build got the parse-error
-    frame. The cause of the later close of the reference is not known.
+  - If an earlier valid line came first, the reply to it races the close. The
+    client gets the parse-error frame for the tail, and it cannot count on the
+    earlier reply.
+  - On Windows this case has a timing difference, not parity. The reference
+    sends the earlier reply in every run and closes later than claustrum.
+    claustrum sends that reply in some runs only.
   - At the idle close, the daemon also reads the last bytes as a line. It
     dispatches a valid request. It writes the error for a bad tail on the read
-    path, but the connection is already closed, so that write fails. The wire
-    carried 0 bytes on each measured build.
-- Either end of an `AF_UNIX` connection on Windows can miss the other end's
-  close. Measured on a Windows VM, a reader got the bytes before the EOF and
-  then blocked. A new read returned the EOF. A plain blocking `WSARecv` loop
-  missed it too. One claustrum `-bridge` run hung in this way until the probe
-  killed it. One `90fca6e6` `-bridge` run also hung until the kill.
+    path, but the connection is already closed, so the wire carries no bytes.
+- On Windows either end of an `AF_UNIX` connection can miss the close of the
+  other end. A reader gets the bytes before the EOF and then blocks. A new read
+  returns the EOF. A `-bridge` of claustrum or of the reference can hang in this
+  way.
 
 ### Named-pipe transport (Windows, opt-in)
 
-This is a strictly additive claustrum extension (CT-5). The reference daemon has no
-such transport. It is off by default. When it is off, claustrum is byte-for-byte
-identical to the reference. Set `-serve -listen-pipe`, or set `listen-pipe = true`
-in `claustrum.conf`. claustrum then *additionally* serves the exact same NDJSON
-JSON-RPC dispatch over a Windows named pipe, concurrently with the socket. The
-wire contract, field ordering, framing, and `"auth"` handshake are the same. It
-exists so that a Windows client that cannot consume `AF_UNIX` can still connect.
-One such client is Python `asyncio`, whose Unix transports are Unix-loop-only.
+This is claustrum's own extension, off by default ([CT-5](DIVERGENCES.md#ct-5)).
+With `-serve -listen-pipe`, or `listen-pipe = true` in `claustrum.conf`, the daemon
+also serves the same JSON-RPC dispatch over a Windows named pipe, beside the
+socket. The framing, the field order and the `"auth"` member are the same.
 
-- **Windows-only.** Other platforms ignore it and log a warning.
-- **Name and discovery.** claustrum chooses the name
-  (`\\.\pipe\claustrum-<random-instance-id>`). It publishes that name to
-  `rpc.pipe` in the socket's directory, beside `rpc.sock` and `daemon.token`.
-  claustrum writes the file atomically before the pipe accepts and before the ready
-  banner. On graceful shutdown claustrum removes the file only when the file is
-  still the inode this daemon published. It uses `os.SameFile`, the same handoff
-  guard that `daemon.token` carries. See
-  [Token persistence](#token-persistence-daemontoken). A restart's successor
-  therefore keeps its own pointer. The client reads that file to learn the opaque
-  name.
-- **Stale-file invariant.** The name is random for each boot. Therefore `rpc.pipe`
-  exists if and only if a pipe is actively served this boot. Startup removes any
-  leftover file from an unclean crash. A client can therefore never dial a stale
-  name.
-- **Owner-only and local.** Two independent mechanisms give this. The first is an
-  owner-only DACL (SDDL `D:P(A;;GA;;;<current-user-SID>)`), the named-pipe
-  analogue of the socket's `0600`. The second is remote-client rejection at
-  creation (`FILE_PIPE_REJECT_REMOTE_CLIENTS`), set by go-winio's `ListenPipe`.
-  See [SECURITY.md](https://github.com/schubydoo/claustrum/blob/main/SECURITY.md).
-
-See [`DIVERGENCES.md`](DIVERGENCES.md) → CT-5 for the full contract.
+- **Windows-only.** Other platforms ignore the flag and log a warning.
+- **Name and discovery.** The name is `\\.\pipe\claustrum-<random-instance-id>`,
+  new at each start. The daemon writes it atomically to `rpc.pipe` in the socket's
+  directory, before the pipe accepts and before the ready banner. A client reads
+  the name from that file.
+- **Stale-file rule.** At start the daemon removes a leftover `rpc.pipe`. At a
+  graceful shutdown, if the file is still the one that it wrote (by identity, as
+  for [`daemon.token`](#token-persistence-daemontoken)), the daemon removes it.
+  Any other file stays. So `rpc.pipe` exists only
+  while a pipe is served, a successor keeps its own file, and a client never
+  dials a stale name.
+- **Owner-only and local.** The pipe has an owner-only DACL, the analogue of the
+  socket's `0600`, and it refuses remote clients. See
+  [SECURITY.md](https://github.com/schubydoo/claustrum/blob/main/SECURITY.md).
 
 ## Authentication
 
-Every request carries a top-level `"auth":"<token>"`. `server.shutdown` is the one
-exception, and it is not authenticated at all. A shutdown frame that the daemon
-reads stops it, with any `auth` member or none. `-stop` sends no
-`auth` member. This matches the reference, and the Desktop client depends on it.
-Desktop stops the daemon with `server --stop --socket <sock>` from a bare SSH
-command line, with no `CLAUDE_RPC_TOKEN` in its environment. The exemption covers
-auth only. The daemon still rejects a shutdown frame that carries a bad or absent
-`jsonrpc` version with `-32600`, and the daemon stays up. Every other method
-rejects an unauthenticated request with
+Every request carries a top-level `"auth":"<token>"`. Every method but
+`server.shutdown` rejects a request with a missing or wrong token with
 `-32001 Unauthorized: invalid or missing auth token`. It also logs
 `[Server] Unauthorized request: method=…, id=…`.
+
+`server.shutdown` is not authenticated, as on the reference. A shutdown frame that
+the daemon reads stops it, with any `auth` member or none. `-stop` sends no `auth`
+member. Desktop stops the daemon with `server --stop --socket <sock>` from a bare
+SSH command line, with no `CLAUDE_RPC_TOKEN` in its environment. The exemption
+covers auth only (see [Validation precedence](#validation-precedence)).
 
 The server's expected token comes from `-token-file` or from `-token-fd`. With
 `-token-file` the daemon reads the file once at startup and then unlinks it. With
 `-token-fd` the daemon reads the token from an open descriptor and forwards it to
 the detached child over a pipe. That handoff never touches disk.
 
-No claustrum mode reads `CLAUDE_RPC_TOKEN`. This holds for `-serve`, for
-`-bridge`, and for `-stop`. `-bridge` is a simple relay and does not add auth. The
-client that speaks through it must include `"auth"` itself, from the
-`daemon.token` handshake below or from its launcher. claustrum only *removes* the
-variable. It unsets the variable before it daemonizes, and it strips the variable
-from every spawned child. Therefore a token never reaches a child through the
+No claustrum mode reads `CLAUDE_RPC_TOKEN`: not `-serve`, not `-bridge` and not
+`-stop`. `-bridge` is a relay and adds no auth. The client that speaks through it
+sends `"auth"` itself, from the `daemon.token` handshake below or from its
+launcher. claustrum unsets the variable before it daemonizes, and it strips the
+variable from every spawned child. So a token never reaches a child through the
 environment.
 
 ### Token persistence (`daemon.token`)
@@ -811,8 +781,8 @@ object comes back with its keys sorted (`{"b":1,"a":2}` → `{"a":2,"b":1}`).
 Integers, strings, arrays and `null` are unchanged. A client that matches replies
 by the id *text* must compare the decoded value instead.
 
-Results are ordered structs, never maps. The field order below is the wire
-contract.
+Results are ordered structs, never maps. The field order on each method page is
+the wire contract.
 
 ### Error codes
 
@@ -823,10 +793,10 @@ contract.
 | `-32601` | `Invalid method format: <m>` (method has no `.`), `Unknown namespace: <ns>` (well-formed but unknown namespace), or `Unknown method: <ns>.<m>` (known namespace, unknown method) |
 | `-32602` | invalid params (see per-method messages) |
 | `-32603` | internal error, for example `open <path>: no such file or directory`. A recovered handler panic also gives this code, with `recovered panic: <v>` |
-| `-32003` | `stdin offset gap: offset ahead of applied bytes`, from `process.stdin` with an `offset` past the applied high-water (added in `7c2f88d`) |
 | `-32002` | `stdin backpressure: queue full`, from `process.stdin` when the per-process async stdin queue is already full (16 MiB). The write is rejected, not blocked. |
-| `-32004` | `the managed launcher cannot be used: <reason>`, from `process.spawn` when the checks refuse its `launcher` param, and for any `launcher` on Windows (added in `89cb6289`) |
-| `-32005` | `the managed launcher <path> could not be started: <reason>`, from `process.spawn` when the launcher passes the checks but does not start (added in `89cb6289`) |
+| `-32003` | `stdin offset gap: offset ahead of applied bytes`, from `process.stdin` with an `offset` past the applied high-water |
+| `-32004` | `the managed launcher cannot be used: <reason>`, from `process.spawn` when the checks refuse its `launcher` param, and for any `launcher` on Windows |
+| `-32005` | `the managed launcher <path> could not be started: <reason>`, from `process.spawn` when the launcher passes the checks but does not start |
 | `-32006` | `Refused: this server could not confirm that the caller is in its own namespaces`, on Linux with `CLAUDE_SSH_PEER_CHECK=1` (see [A refused caller](protocol/server.md#a-refused-caller-linux)) |
 | `-32001` | `Unauthorized: invalid or missing auth token` |
 
@@ -1005,34 +975,22 @@ that names systems without "measured" holds on each one. The [reference build hi
 
 ### Handler panic recovery
 
-The per-request goroutine wraps dispatch in `recover()`. It therefore catches a
-panic in any handler, and the daemon does not crash. The reply is
-`{"error":{"code":-32603,"message":"recovered panic: <v>"}}`, and the daemon logs
-`[Server] recovered panic: method=<m> id=<id>: <v>`. One method is the exception.
-A recovered `server.shutdown` panic writes no frame at all. Its only reply is
-`{"ok":true}`.
-See [server.shutdown](protocol/server.md#servershutdown).
+The per-request goroutine recovers a panic in any handler, so the daemon does not
+crash. The reply is `{"error":{"code":-32603,"message":"recovered panic: <v>"}}`,
+and the daemon logs `[Server] recovered panic: method=<m> id=<id>: <v>`. A
+recovered panic in `server.shutdown` writes no frame at all. Its only reply is
+`{"ok":true}` (see [server.shutdown](protocol/server.md#servershutdown)).
 
-This frame is claustrum's own. It is not a statement about the wire. No input is
-known to reach a handler panic. Extensive fuzzing found none, and each of
-claustrum's own panic sites is an unreachable stdlib guard or an
-already-bounds-guarded slice. `-32603` is the JSON-RPC 2.0 *Internal error* code.
-The message prefix, log line, and id rendering are claustrum's own conventions.
-They are documented so that an operator who sees the frame knows what it means.
-They are not a compatibility guarantee.
+The frame and the log line are claustrum's own, not a compatibility guarantee. No
+input is known to reach a handler panic.
 
 ### Validation precedence
 
-The daemon tests a request in the order parse, then auth, then version, then
-method, then params:
-
-- The daemon tests auth *before* the `jsonrpc` version. A request can fail both
-  tests, with no `auth` and with a missing or wrong `jsonrpc`. That request
-  reports `-32001 Unauthorized`, not the version error.
-- **`server.shutdown` is the exception.** The daemon skips auth for it entirely. A
-  shutdown frame that is missing both `auth` and `jsonrpc` therefore gets
-  `-32600 Invalid JSON-RPC version`, because the version gate still applies, and
-  the daemon stays up.
+The daemon tests a request in the order parse, auth, version, method, params. So a
+request with no `auth` and a missing or wrong `jsonrpc` gets `-32001 Unauthorized`,
+not the version error. `server.shutdown` skips the auth test only. A shutdown frame
+with a missing or wrong `jsonrpc` gets `-32600 Invalid JSON-RPC version`, and the
+daemon stays up.
 
 ### Params presence and typing
 
@@ -1050,7 +1008,7 @@ Every `files.*` / `git.*` / `process.*` method requires a `params` object.
 - The daemon ignores a member that another method of the namespace reads,
   whatever its type.
   So `files.stat {"maxBytes":"{"}` answers as `files.stat` with no `maxBytes`.
-  `5fd08069` does the same (round `task015-01`, Linux, macOS and Windows VMs).
+  The reference does the same on Linux, macOS and Windows.
 
 ## Path handling
 
