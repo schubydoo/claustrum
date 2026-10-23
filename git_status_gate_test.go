@@ -12,7 +12,7 @@ import (
 )
 
 // The gate of git.status, row by row. Each row is from the side-by-side probe of
-// 89cb6289 on Linux, macOS and Windows VMs. docs/PROTOCOL.md → git.status gives the
+// 89cb6289 on Linux, macOS and Windows VMs. docs/protocol/git-status.md gives the
 // rules.
 
 const (
