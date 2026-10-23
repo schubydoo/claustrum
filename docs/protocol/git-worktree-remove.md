@@ -132,4 +132,4 @@ These entries of the divergence catalog apply to this method:
 - [D19](../DIVERGENCES.md#d19): Windows refuses a junction between `baseRepo` and the worktree.
 - [D22](../DIVERGENCES.md#d22): a worktree that is locked in the `.git` folder of `baseRepo` is refused.
 
-The measured cells behind each rule are in the tests and in the [reference build history](../REFERENCE-BUILDS.md).
+Most rules follow `5fd08069`, `89cb6289` or `f6010b97`. The cells are in the tests and the [reference build history](../REFERENCE-BUILDS.md).
