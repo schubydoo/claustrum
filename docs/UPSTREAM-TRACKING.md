@@ -353,7 +353,7 @@ traps that matter for telling drift from expected:
   such entry for the values `1` and `0` (Linux, macOS and Windows VMs). Its git
   calls have none for `0` (Linux VM). A child of `89cb6289` is not measured.
   Against `5fd08069` the measured peer check log lines differ by a level tag only
-  (round `task011-02`, Linux VM). See [PROTOCOL.md](PROTOCOL.md) → server.*.
+  (round `task011-02`, Linux VM). See [The peer check](protocol/server.md#the-peer-check).
 - `files.extract_tar` splits the builds too, not drift. claustrum follows the pin
   `5fd08069` in these places. Against
   `89cb6289` each of them differs in the measured rows:
@@ -475,19 +475,21 @@ traps that matter for telling drift from expected:
   passes 64 MiB can get no refusal on claustrum (from the code, not measured on
   `5fd08069`).
 
-  The states, the bounds and the cells are in
-  [PROTOCOL.md](PROTOCOL.md#repository-config-refusals).
+  The bounds are in
+  [PROTOCOL.md → Repository config refusals](PROTOCOL.md#repository-config-refusals).
 - The option lists of the git calls split the builds too, not drift.
   claustrum differs from `89cb6289` in four states: `git.status` with replace
   objects, the `hint:` lines in a failure text of `git.worktree_create`, a long
   tree path on Windows, and the paths of a new worktree with
-  `worktree.useRelativePaths`. The call logs differ in the `-c` lists and in two
-  variables. The cells and the systems are in
+  `worktree.useRelativePaths`. The call logs differ in the `-c` lists, where `89cb6289`
+  sends 23 and 13 items and claustrum 28 and 20. They also differ in two heavy
+  variables: the heavy profile of `89cb6289` has no `GIT_NO_REPLACE_OBJECTS` and no
+  `GIT_GRAFT_FILE`. The rules are in
   [Hardened git calls](PROTOCOL.md#hardened-git-calls).
 
   Against `5fd08069` the call logs differ in `git.worktree_create`. `5fd08069`
-  makes more rounds with `worktreeRoot`, and other listings with `existingBranch`. Those differences are not drift. See "Not equal
-  to `5fd08069`" in [PROTOCOL.md](PROTOCOL.md#hardened-git-calls).
+  makes more rounds with `worktreeRoot`, and other listings with `existingBranch`. Those differences are not drift. See
+  [Where the calls differ from `5fd08069`](PROTOCOL.md#where-the-calls-differ-from-5fd08069).
 - The `worktreeRoot` location rules follow `5fd08069` (rounds `tier0-20` to
   `tier0-22`), not drift. `89cb6289` is not measured in these cells.
 - A remove behind a linked `<git dir>/worktrees` follows `5fd08069`, not drift:
