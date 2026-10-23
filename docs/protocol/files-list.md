@@ -2,7 +2,7 @@
 
 `files.list` lists the entries of one directory. It does not list hidden entries, and it does not go into subdirectories.
 
-An unmarked rule on this page matches the reference as measured on `5fd08069` or on an earlier build.
+claustrum is built to answer as the reference does.
 
 ## Request
 

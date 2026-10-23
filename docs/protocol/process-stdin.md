@@ -66,4 +66,4 @@ The daemon never holds a request back because the queue is full. It answers `-32
 
 ## Differences from the reference
 
-No entry of the [divergence catalog](../DIVERGENCES.md) applies to this method. The answers to a request with no bytes and after the child closes its input are measured on Linux and macOS.
+No entry of the [divergence catalog](../DIVERGENCES.md) applies to this method. The answers to a request with no bytes and after the child closes its input are measured on Linux and macOS. On Windows they are not measured.

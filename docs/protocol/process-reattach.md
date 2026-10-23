@@ -50,7 +50,7 @@ Each result has the first five members. If the daemon has no such process, the r
 
 New frames of the process go to this connection after step 3. On the connection that already receives the frames they go there from step 1 on. No frame above `lastSeq` reaches an old connection. An old connection can still get a frame at or below `lastSeq` that the daemon was already writing.
 
-On a reattach from the connection that already receives the frames, a frame at or below `lastSeq` can arrive twice. This is measured on Linux and macOS. Drop a frame whose `seq` you already have. From the code, and not measured: a new frame can arrive before the result.
+On a reattach from the connection that already receives the frames, a frame at or below `lastSeq` can arrive twice (measured on Linux and macOS). Drop a frame whose `seq` you already have. From the code, and not measured: a new frame can arrive before the result.
 
 ## Frames that the daemon no longer has
 

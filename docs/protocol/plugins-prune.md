@@ -15,7 +15,7 @@ An unmarked rule on this page matches the reference as measured on `5fd08069` or
 | `minAgeDays` | no | The number of days that a directory stays after its last use. The daemon limits the value to the range 7 to 3650. Without a value, or with a value below 7, the daemon uses 7. |
 | `keep` | no | A list of strings. The daemon accepts it and does not use it. A directory whose name is in `keep` is deleted as any other. |
 
-No `params` member gets `-32602 Invalid params: unexpected end of JSON input`. `"params": null` gets the defaults (not measured).
+No `params` member gets `-32602 Invalid params: unexpected end of JSON input` (measured on Linux). `"params": null` gets the defaults (not measured).
 
 ## Which directories the daemon deletes
 
@@ -89,4 +89,4 @@ The paths and the `<error>` texts in `legacy` and `errors` are those of the oper
 
 ## Differences from the reference
 
-No entry of the [divergence catalog](../DIVERGENCES.md) applies to this method. `kept` and `staleArchives` are in the response because the reference has them. No measurement of the reference showed either one other than `0`. The `errors` member is not measured.
+No entry of the [divergence catalog](../DIVERGENCES.md) applies to this method. `kept` and `staleArchives` are in the response because the reference has them. The one measurement of the reference, on `19f30c46`, showed both as `0`. The `errors` member is not measured.

@@ -57,7 +57,7 @@ On Windows only the direct child ends: see [Differences by system](#differences-
 
 ## A request during the exit drain
 
-For a short time after a child ends, the daemon still collects its last output and did not yet send the `exit` frame. A request in that time does not answer `alreadyExited`, and the daemon sends no first signal. On Linux and macOS, `"signal": "KILL"` sends `SIGKILL` to the group at once instead. Windows makes that call too, and it ends nothing (not measured). If the `exit` frame comes inside the wait, the answer is `{"found": true, "died": true}`. If the wait ends first, the request goes on as for a child whose output is not complete. These answers and the group kill are measured on Linux and macOS. Whether the reference sends a first signal to the ended child is not measured.
+For a short time after a child ends, the daemon still collects its last output and did not yet send the `exit` frame. A request in that time does not answer `alreadyExited`, and the daemon sends no first signal. On Linux and macOS, `"signal": "KILL"` sends `SIGKILL` to the group at once instead. Windows makes that call too, and it ends nothing (not measured). If the `exit` frame comes inside the wait, the answer is `{"found": true, "died": true}`. If the wait ends first, the request goes on as for a child whose output is not complete. These answers and the group kill are measured on Linux and macOS, not on Windows. Whether the reference sends a first signal to the ended child is not measured.
 
 For a signal other than `KILL`, that missing first signal is a guard of claustrum: the operating system can give the process id (pid) of a child that ended to another process. For `KILL` claustrum follows the reference and accepts the risk that the group number went to another process.
 
@@ -76,4 +76,4 @@ On Windows the daemon ignores the signal name. Each first signal ends the direct
 
 ## Differences from the reference
 
-No entry of the [divergence catalog](../DIVERGENCES.md) names this method. The missing first signal of [the exit drain](#a-request-during-the-exit-drain) is a guard of claustrum.
+No entry of the [divergence catalog](../DIVERGENCES.md) names this method. For a signal other than `KILL`, the missing first signal of [the exit drain](#a-request-during-the-exit-drain) is a guard of claustrum.
