@@ -15,7 +15,7 @@
 | `timeoutMs` | no | How long the daemon waits for the process to end after the signal, in milliseconds. The default is 3000. A value of `0` or below means the default. The daemon limits a larger value to 30000. |
 | `escalate` | no | What the daemon does at the end of that time. With `true`, the default, it ends the process by force. With `false`, it leaves the process alone. |
 
-The first signal reaches the same processes as a signal of [process.kill](../PROTOCOL.md#processkill), except `KILL` inside the exit drain (see [Differences from the reference](#differences-from-the-reference)).
+The first signal reaches the same processes as a signal of [process.kill](process-kill.md#which-processes-a-signal-reaches), except `KILL` inside the exit drain (see [Differences from the reference](#differences-from-the-reference)).
 
 ## Response
 
@@ -64,7 +64,7 @@ This method has no `errorCode` member. A failure is a JSON-RPC error.
 
 ## Differences by system
 
-On Windows the daemon ignores the signal name. Each first signal ends the direct child at once, with exit code 1. The force ends the direct child only too. See [Windows child trees](../PROTOCOL.md#windows-child-trees).
+On Windows the daemon ignores the signal name. Each first signal ends the direct child at once, with exit code 1. The force ends the direct child only too. See [Windows child trees](process-kill.md#windows-child-trees).
 
 ## Differences from the reference
 
