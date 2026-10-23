@@ -355,7 +355,7 @@ operator-declinable. Only CT-2 and CT-5 carry a flag and a key.
   identity.
 - **Reopen trigger.** An honest caller legitimately naming a destructive target
   that *is or contains* a home directory.
-- **Pointers.** The page [files.extract_tar](protocol/files-extract-tar.md), and [git.worktree_remove](protocol/git-worktree-remove.md#home-and-relative-paths) (the `git.worktree_create` guard emits no frame). Also `homeguard.go` and
+- **Pointers.** The page [files.extract_tar](protocol/files-extract-tar.md), and [git.worktree_remove](protocol/git-worktree-remove.md#where-the-paths-can-be) (the `git.worktree_create` guard emits no frame). Also `homeguard.go` and
   `homeguard_test.go` (`wipeDestDir` seams the destructive call, so the suite is
   safe against an unfixed tree). For `-install`: `stageAndInstall` and
   `cliEntryHoldsHome` in `install.go`, and [PROTOCOL.md](PROTOCOL.md) → `-install` → Staging and
@@ -691,7 +691,7 @@ operator-declinable. Only CT-2 and CT-5 carry a flag and a key.
   this becomes parity), or the reference deleting the tree through the junction. Or a Windows
   client that depends on the success reply for a junction between `baseRepo` and
   the leaf.
-- **Pointers.** [git.worktree_remove](protocol/git-worktree-remove.md#junctions-and-links-on-the-path). Also
+- **Pointers.** [git.worktree_remove](protocol/git-worktree-remove.md#where-the-paths-can-be). Also
   `worktreeremove.go` (`openRemoveParent`). Evidence in
   `scratch/i429/remove-val-windows-6bed4ee.md`,
   `scratch/i429/remove-val-windows-8755717.md`,
@@ -820,7 +820,7 @@ operator-declinable. Only CT-2 and CT-5 carry a flag and a key.
 - **Reopen trigger.** A caller that needs the removal of a locked worktree in
   these states. Or a measurement that shows the reference refusing there (then
   this becomes parity).
-- **Pointers.** [git.worktree_remove](protocol/git-worktree-remove.md#the-entry-and-the-lock). Also
+- **Pointers.** [git.worktree_remove](protocol/git-worktree-remove.md#the-repository-checks). Also
   `worktreeremove.go` (`lockedInBaseRepo`) and `methods_git.go`. Evidence in
   `scratch/i429/s2-linux/REPORT-rev1.md`, and in `REPORT-val3.md` under
   `scratch/i429/s2-linux`, `s2-macos` and `s2-windows`, and in

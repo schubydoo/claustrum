@@ -950,7 +950,7 @@ cell C-… is of round `tier0-20` against `5fd08069` on a Linux VM.
 | git.worktree_remove | `failed to remove worktree: cannot determine the repository's work tree: <reason>` | in `error`, with no `errorCode`, with `worktreeRoot` only. `<reason>` is a trust refusal text, `exit status 128`, the hooks refusal, or the refusal of the daemon's `GIT_CONFIG_COUNT` (`f6010b97`, Linux VM). Since `89cb6289` it is also `git finds no repository here: <git text>` (row N04). With git 2.56 also the text of a failed call about the repository (round `tier0-27`). With no `git` on `PATH`, both references answer the exec error alone in nine rows where `baseRepo` exists (Linux VM, see "Git-directory trust check"). claustrum also puts the `git cannot run` text and a limit refusal of the listing there. Neither is measured with `worktreeRoot`. Nothing is deleted. See [git.worktree_remove](protocol/git-worktree-remove.md#the-repository-checks) |
 | git.worktree_remove | `failed to remove worktree: cannot list the repository's worktrees: <exec error>` | in `error`, with no `errorCode`, with `worktreeRoot` only. `git worktree list --porcelain -z` and then `git worktree list --porcelain` both fail in `baseRepo`. Nothing is deleted. `89cb6289` answers `exit status 128` for a repository with a valid `HEAD` whose `.git/commondir` is a dangling relative symlink (row DG2s-g, Linux VM) |
 | git.worktree_remove | `failed to remove worktree: statat .claude: permission denied` / `failed to remove worktree: open <baseRepo>: <error>` | in `error`, with no `errorCode`, without `worktreeRoot` only. `baseRepo` cannot be searched (mode 0600), or cannot be opened (mode 0000, or a regular file). On Linux and macOS the first text names the first component of `worktreePath` below `baseRepo`, for example `statat wt` or `statat a` (`89cb6289`, cells U19, N4, N5, N6a, N6b and N7a). Nothing is deleted |
-| git.worktree_remove | `failed to remove worktree: open <root>: permission denied` / `failed to remove worktree: openat <name>: permission denied` / `failed to remove worktree: statat .: permission denied` | in `error`, with no `errorCode`, Linux and macOS, for a folder that the daemon cannot read or search. With `worktreeRoot`, that is a folder from the root down to the worktree folder. Without it, that is a folder between `baseRepo` and the worktree folder. `<root>` is `worktreeRoot` with its symbolic links resolved. `<name>` is one path component. Nothing is deleted. Measured against `89cb6289` on Linux and macOS VMs (rows B1 to B6, B8 to B11b, B13a to B14c and B17a to B17d, row B18 on the macOS VM only, cells U1 to U11h and U13a to U15b). Windows is not measured. See [git.worktree_remove](protocol/git-worktree-remove.md#folders-the-daemon-cannot-read) |
+| git.worktree_remove | `failed to remove worktree: open <root>: permission denied` / `failed to remove worktree: openat <name>: permission denied` / `failed to remove worktree: statat .: permission denied` | in `error`, with no `errorCode`, Linux and macOS, for a folder that the daemon cannot read or search. With `worktreeRoot`, that is a folder from the root down to the worktree folder. Without it, that is a folder between `baseRepo` and the worktree folder. `<root>` is `worktreeRoot` with its symbolic links resolved. `<name>` is one path component. Nothing is deleted. Measured against `89cb6289` on Linux and macOS VMs (rows B1 to B6, B8 to B11b, B13a to B14c and B17a to B17d, row B18 on the macOS VM only, cells U1 to U11h and U13a to U15b). Windows is not measured. See [git.worktree_remove](protocol/git-worktree-remove.md#the-repository-checks) |
 | git.worktree_remove | `failed to remove worktree: RemoveAll <entry>: <errno text>` | in `error`, when the delete of the worktree fails part-way. If an entry other than `.git` fails, `.git` stays. The entry of the worktree and the branch stay in every case (`f6010b97`, macOS VM) |
 | git.worktree_remove | `removed the worktree but could not drop its registration (RemoveAll <name>: <errno text>)` | in `error`, `success:false`, when the verified entry cannot be deleted after the tree. The branch step still runs. On `f6010b97` the branch is deleted (macOS VM). Since `89cb6289` a kept branch adds `"branchKept":true` after `error` (row R19, Linux VM) |
 | git.worktree_remove | `failed to remove worktree: openat <path from baseRepo>: path escapes from parent` | D19, Windows, in `error`, with no `errorCode`, when a directory between `baseRepo` and the leaf is a junction. `<path from baseRepo>` is the folder that holds the leaf, relative to `baseRepo`. It is `.claude\worktrees` in the default layout, and `J\sub\.claude\worktrees` and `J\.claude\worktrees` in cells J-b-wt-pj and J-b-wt-pJ (Windows VM). claustrum's own text. Nothing is deleted, and the branch stays |
@@ -1550,7 +1550,7 @@ The classes come in this order (Linux, macOS and Windows VMs):
    claustrum a refused daemon `GIT_CONFIG_COUNT` answers before the exec error when
    `stat` reads `baseRepo`. For the chains of rows LNKb and LNKr, claustrum runs no
    count check. Neither order is measured. A `baseRepo` that does not exist gets no work-tree
-   refusal (rows L13wa to L13wr, see [git.worktree_remove](protocol/git-worktree-remove.md#the-repository-checks)). Not measured: a
+   refusal (rows L13wa to L13wr, see [git.worktree_remove](protocol/git-worktree-remove.md#what-the-delete-removes)). Not measured: a
    daemon-created worktree under `worktreeRoot`, and `commondir` contents other than
    `x`. Rows L13xa and L13xb ran one repository layout only.
 2. The listing exits 128, and its stderr starts with `fatal: not a git repository`
@@ -2655,7 +2655,7 @@ that measured it.
   `open <tmp>/claude-ssh-index-<n>/index: no such file or directory` and in the
   `GIT_INDEX_FILE` of each read-tree. The suffix is decimal digits. The name of
   `89cb6289` on Windows is not measured, and claustrum uses the same prefix there.
-- `git.worktree_remove` without `worktreeRoot`: see [its page](protocol/git-worktree-remove.md#the-git-calls).
+- `git.worktree_remove` without `worktreeRoot`: the tests pin its calls.
 - `git.worktree_remove` with `worktreeRoot`. A light `rev-parse --show-toplevel`
   follows the light check, with no listing of its own. Before the daemon decides
   whether `worktreePath` is a registered worktree, it runs a light
@@ -2782,7 +2782,7 @@ Windows, `git.worktree_create` with `worktreeRoot` answers as in row A-N6 (cell
 Wf-P3-crNroot). With nothing set it answers `not_a_repo` (cell Wf-P0-crNroot).
 `git.worktree_remove` with `worktreeRoot` is not measured on Windows for this
 check. From the code: claustrum refuses a `worktreeRoot` there before the check.
-Row A-N4 of `git.worktree_remove` is on [its page](protocol/git-worktree-remove.md#the-repository-checks).
+Row A-N4 of `git.worktree_remove` is in [the reference build history](REFERENCE-BUILDS.md).
 
 No row measures a listing over a limit of "Hook pins" in a folder that holds no
 repository. That is a listing that passes and holds too many hook names, or a key
