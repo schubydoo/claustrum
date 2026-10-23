@@ -2,6 +2,8 @@
 
 `process.stdin` sends bytes to the standard input of a child process that `process.spawn` started. With `offset`, a caller can send the same bytes again after a reconnect, and the daemon accepts them one time.
 
+An unmarked rule on this page matches the reference as measured on `5fd08069` or on an earlier build.
+
 ## Request
 
 ```json
@@ -64,4 +66,4 @@ The daemon never holds a request back because the queue is full. It answers `-32
 
 ## Differences from the reference
 
-claustrum is built to answer as the reference daemon does, and no entry of the divergence catalog applies to this method. `5fd08069` answers the same for a request with no bytes and after the child closes its input (rounds `tier3-03` and `tier3-12`, macOS and Linux VMs).
+No entry of the [divergence catalog](../DIVERGENCES.md) applies to this method. The answers to a request with no bytes and after the child closes its input are measured on Linux and macOS. On Windows they are not measured.
