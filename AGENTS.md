@@ -135,11 +135,11 @@ name describes claustrum's code, not a measurement.
 
   | Path | Trigger | Target | Guard | Code |
   |------|---------|--------|-------|------|
-  | 1. `files.extract_tar` | RPC | the last name of `destDir` | `wipesHomeDir`, `destEntryHoldsHome`, `checkDestViews` | `wipeDestDir`, `os.Root.RemoveAll` |
-  | 2. `git.worktree_remove` | RPC | `worktreePath`, its registration | `wipesHomeDir`, containment | `worktreeremove.go`, `os.Root.RemoveAll` |
-  | 3. `git.worktree_create` rollback | RPC: a stale entry before the add, a failed create | `worktreePath`, its registration, one stale entry, two Windows staging removes | `wipesHomeDir`, identity tests | `worktreeverify.go`, `worktreestale*.go`, `os.Root.RemoveAll` (also on Windows) |
-  | 4. `git.worktree_create` staging cleanup, Windows only | RPC: a good add in the state `shadow` | old staging entries below the git directory of `baseRepo` | prefix, age, `wipesHomeDir` | `sweepOldStaging` |
-  | 5. `-install` | operator flags | the CLI path | D6, `folderHoldsHome` | `stageAndInstall`, `os.RemoveAll` |
+  | `files.extract_tar` | RPC | the last name of `destDir` | `wipesHomeDir`, `destEntryHoldsHome`, `checkDestViews` | `wipeDestDir`, `os.Root.RemoveAll` |
+  | `git.worktree_remove` | RPC | `worktreePath`, its registration | `wipesHomeDir` on `worktreePath`, containment | `worktreeremove.go`, `os.Root.RemoveAll` |
+  | `git.worktree_create` rollback | RPC | `worktreePath`, its registration, one stale entry, two Windows staging removes | `wipesHomeDir` and identity tests, except on the registration of a create that holds no git directory and accepted none (D2) | `worktreeverify.go`, `githarden_index_*.go`, `gitdirheld.go`, `worktreestale*.go`, `worktreestaging.go`. `os.Root.RemoveAll`, and on Windows a plain `os.RemoveAll` for that registration |
+  | `git.worktree_create` staging (Windows) | RPC: a good add in `shadow` | old staging entries of the `baseRepo` git directory | prefix, age, `wipesHomeDir` | `sweepOldStaging` |
+  | `-install` | operator | the CLI path | D6, `folderHoldsHome` | `stageAndInstall`, `os.RemoveAll` |
 
   The deletes inside the folder `git-shadow` are not among the five: their root
   comes from the socket, as in `plugins.prune` (see below).
@@ -214,7 +214,7 @@ name describes claustrum's code, not a measurement.
       removes the empty leaf. On Linux and macOS, and on Windows for a moved
       registration, a registration that cannot be deleted skips the branch
       step.
-        - **Stale step.** Before the add, create removes one stale entry of
+        - **Stale.** Before the add, create removes one stale entry of
           `worktrees` in the common git directory of `baseRepo`. A stale entry
           is one whose `gitdir` record names the `.git` of the new leaf. Create
           removes that entry only if it is the only stale entry and holds no
@@ -228,40 +228,39 @@ name describes claustrum's code, not a measurement.
           (claustrum's own in the state `shadow`). Its compare ignores letter
           case. A create that holds no git directory is not measured there. An
           entry whose record names a path that exists stays (D27, Windows).
-        - **Refusals after the add.** On Linux and macOS these refusals come
-          before the second rollback and before the checkout. They delete
-          nothing, except an empty leaf that has no `.git` file. They answer a
-          `.git` file of the leaf that is gone, is no regular file or has no
-          `gitdir: `. They answer a registration that is a symbolic link and a
-          `commondir` path through a symbolic link. They answer a record that
-          names another worktree and a leaf that is no longer the folder of the
-          create. They also answer a `.git` file that names no registration, a
-          `commondir` file or a `gitdir` record that cannot be read, a
-          registration that is not the one new name of its folder, and a listing
-          that fails. One more state deletes before the checkout. The record
-          names another path, the `rev-parse --show-toplevel` call fails by
-          itself, and the folder has one new name. The create then runs the
-          second rollback on that name, never on the name in the `.git` file. A
-          show-toplevel call that a time limit stopped starts no rollback
-          (claustrum's own, not measured).
-        - **Rollback triggers.** The second rollback runs when the `timeoutMs`
-          of the caller expired during the add, the checkout or the copy step.
-          It also runs after a post-checkout drain that exceeded that
-          `timeoutMs`, a failed read-tree checkout, a failed `config.worktree`
-          copy and a failed placement of the index of the new worktree. The
-          filter rule of the checkout (`gitfilter.go`) leads to it after a
-          read-tree call that fails at a filter of the repository. So does a
-          refusal before it. In the state `shadow` that is a refusal for an
-          unusable filter. In a create with no settings copy it is a refusal for
-          a failed rule listing. In the state `fallback-git` the rule does not
-          run, and git runs the filter. In the state `shadow` these refuse too:
-          over 64 filter names, and a last listing that fails or runs at 30 s
-          and does not exit 0. So does a first checkout listing that failed or
-          that its 30 s limit stopped.
-        - **Registration choice.** On Linux and macOS, if git answered
-          `rev-parse --absolute-git-dir`, the registration of the rollback is
-          the entry that the tests after the add accepted. That is the entry of
-          the registrations directory of `baseRepo` with the last name of the
+        - **Refusals.** On Linux and macOS these refusals come before the second
+          rollback and before the checkout. They delete nothing, except an empty
+          leaf that has no `.git` file. They answer a `.git` file of the leaf
+          that is gone, is no regular file or has no `gitdir: `. They answer a
+          registration that is a symbolic link and a `commondir` path through a
+          symbolic link. They answer a record that names another worktree and a
+          leaf that is no longer the folder of the create. They also answer a
+          `.git` file that names no registration, a `commondir` file or a
+          `gitdir` record that cannot be read, a registration that is not the
+          one new name of its folder, and a listing that fails. One more state
+          deletes before the checkout. The record names another path, the
+          `rev-parse --show-toplevel` call fails by itself, and the folder has
+          one new name. The create then runs the second rollback on that name,
+          never on the name in the `.git` file. A show-toplevel call that a time
+          limit stopped starts no rollback (claustrum's own, not measured).
+        - **Triggers.** The second rollback runs when the `timeoutMs` of the
+          caller expired during the add, the checkout or the copy step. It also
+          runs after a post-checkout drain that exceeded that `timeoutMs`, a
+          failed read-tree checkout, a failed `config.worktree` copy and a
+          failed placement of the index of the new worktree. The filter rule of
+          the checkout (`gitfilter.go`) leads to it after a read-tree call that
+          fails at a filter of the repository. So does a refusal before it. In
+          the state `shadow` that is a refusal for an unusable filter. In a
+          create with no settings copy it is a refusal for a failed rule
+          listing. In the state `fallback-git` the rule does not run, and git
+          runs the filter. In the state `shadow` these refuse too: over 64
+          filter names, and a last listing that fails or runs at 30 s and does
+          not exit 0. So does a first checkout listing that failed or that its
+          30 s limit stopped.
+        - **Registration.** On Linux and macOS, if git answered `rev-parse
+          --absolute-git-dir`, the registration of the rollback is the entry
+          that the tests after the add accepted. That is the entry of the
+          registrations directory of `baseRepo` with the last name of the
           `gitdir:` path, read once after the add. After a failed `rev-parse
           --show-toplevel` it is the one new name above. The rollback reads
           neither the `.git` file of the leaf nor the `gitdir` record again.
@@ -287,24 +286,24 @@ name describes claustrum's code, not a measurement.
           acts on the resolved path that its check verified, and on Linux and
           macOS through a root at the registrations directory, which must still
           have the identity that the check saw.
-        - **Index placement.** On Linux and macOS the placement of the index
-          removes a file, a link or an empty folder at `<registration>/index`,
-          after a create there answered "file exists". That is one
-          `os.Root.Remove` of the fixed name `index`, never a tree. The
-          registration of the placement is that same entry. With no answer of
-          git it is the folder that the `gitdir:` path names. If git answered,
-          the create refuses before the checkout an entry whose `gitdir` record
-          cannot be read or names another path, as `89cb6289` does (Linux and
-          macOS). The placement then reads no record again: a record that goes
-          during the checkout does not stop it. The placement has the identity
-          test of the rollback, on the root that it opened. It places nothing if
-          the folder at the path is not the accepted one at that test (D24, not
-          measured). With no answer the registration tests do not run. An entry
-          then gets the index only if its `gitdir` record can be read and names
-          the new worktree. An entry folder whose stat fails takes the placement
-          itself, which fails there. With no answer of git, a registration whose
+        - **Index.** On Linux and macOS the placement of the index removes a
+          file, a link or an empty folder at `<registration>/index`, after a
+          create there answered "file exists". That is one `os.Root.Remove` of
+          the fixed name `index`, never a tree. The registration of the
+          placement is that same entry. With no answer of git it is the folder
+          that the `gitdir:` path names. If git answered, the create refuses
+          before the checkout an entry whose `gitdir` record cannot be read or
+          names another path, as `89cb6289` does (Linux and macOS). The
+          placement then reads no record again: a record that goes during the
+          checkout does not stop it. The placement has the identity test of the
+          rollback, on the root that it opened. It places nothing if the folder
+          at the path is not the accepted one at that test (D24, not measured).
+          With no answer the registration tests do not run. An entry then gets
+          the index only if its `gitdir` record can be read and names the new
+          worktree. An entry folder whose stat fails takes the placement itself,
+          which fails there. With no answer of git, a registration whose
           back-pointer cannot be read is never deleted.
-        - **Leaf guards.** `wipesHomeDir` guards every delete of the leaf as
+        - **Leaf.** `wipesHomeDir` guards every delete of the leaf as
           defense-in-depth behind the containment that create applies itself.
           Create also tests the checkpoint identity of the leaf again, so a swap
           while create runs cannot redirect a delete. Create holds the leaf and
