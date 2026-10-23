@@ -614,7 +614,7 @@ a time stamp, and claustrum puts its level tag before it:
 
 #### Child records and the reap (Linux and macOS)
 
-A daemon that holds the [run-dir lock](#run-dir-lock-daemonlock) records each [process.spawn](protocol/process-spawn.md) child in `<run dir>/children/<pid>.json`, on every socket shape. The run dir is the folder of the socket path. The child needs a pid of 2 or more and a start time that the daemon can read. Windows writes no record and reaps none. Unless a rule says otherwise, the rules below are measured against `89cb6289` on Linux, and a rule that names macOS on macOS.
+A daemon that holds the [run-dir lock](#run-dir-lock-daemonlock) records each [process.spawn](protocol/process-spawn.md) child in `<run dir>/children/<pid>.json`, on every socket shape. The run dir is the folder of the socket path. The child needs a pid of 2 or more and a start time that the daemon can read. Windows writes no record and reaps none (Windows VM). Unless a rule says otherwise, the rules below are measured against `89cb6289` on Linux, and a rule that names macOS on macOS.
 
 The record is one JSON object with the members in this order:
 
@@ -679,7 +679,8 @@ The launcher creates `remote-server.log` in the socket's directory with mode
 no fresh file (see below). This matches `4534d86`, which
 keeps the previous session's log as `.old` on every restart. The launcher
 redirects the daemonized child's stdout and stderr into that file, so the
-launcher's own streams stay empty. On Linux and macOS, when the limit raise
+launcher's own streams stay empty, except in the cases under
+[Daemon startup](#daemon-startup-serve). On Linux and macOS, when the limit raise
 works, the first line tells the open-files limit that `process.spawn` children
 get. This line is at INFO level, so `CLAUSTRUM_LOG_LEVEL=warn` drops it. The
 ready banner follows, with no timestamp:
@@ -3436,13 +3437,16 @@ The daemon writes its reason to its own stderr, which is the
 - With neither flag the reason is
   `claustrum: daemonized child requires --token-file or --token-fd`. That case is
   not measured on `89cb6289`.
-- A zero-byte `-token-file` behaves the same way.
+- A zero-byte `-token-file` behaves the same way, with the reason
+  `claustrum: token is empty`. The daemon removes the file first.
 - A `-token-file` that cannot be read gives `claustrum: read --token-file: <err>`
   (from the code).
-- The daemon reads the token as a line. It strips one trailing `\n` or `\r\n`, and
-  preserves other surrounding whitespace verbatim. It then removes the
+- The daemon reads the token as a line. It strips every trailing `\r` and `\n`, and
+  keeps other whitespace verbatim (from the code; the reference rows cover one
+  `\n` or `\r\n`). It then removes the
   `-token-file`, as under [Authentication](#authentication).
-- `-token-fd <n>` is claustrum-only. The launcher reads the token from an
+- `-token-fd <n>` is claustrum-only. On Windows the start fails (from the code, not
+  measured). On Linux and macOS the launcher reads the token from an
   already-open fd, where `0` is stdin, and forwards it to the daemon over an
   inherited pipe. So this handoff never touches disk. A failed read there gives
   `claustrum: read --token-fd: <err>` on the stderr of the launcher, with exit `1`

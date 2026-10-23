@@ -647,8 +647,8 @@ func newServerOnSocket(socket, token, metricsAddr string, wlopt wireLogOptions, 
 }
 
 // normalizeToken mirrors the reference daemon's token-file handling: it reads
-// the token as a line, so a single trailing newline (`\n` or `\r\n`) from the
-// SFTP-uploaded file is stripped, while spaces and other interior/surrounding
+// the token as a line, so every trailing `\r` and `\n` from the SFTP-uploaded
+// file is stripped (the probe covered one `\n` or `\r\n`), while spaces and other interior/surrounding
 // whitespace are preserved verbatim (probe-verified — see
 // scratch/probe/contract_probe.sh). Without this, a token file that ends in a
 // newline would make every client request fail auth even though the client sent
