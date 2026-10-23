@@ -1549,7 +1549,7 @@ not run: the worktree entry this folder's .git names no longer exists`.
 | `git.list_branches` | `{"error":{"code":-32603,"message":<text>}}` | `{"isRepo":false,"branches":[]}` |
 | `git.status` | `{"error":{"code":-32603,"message":<text>}}` | `{"isRepo":false,"clean":false}` |
 | `git.worktree_create` | `{"success":false,"error":<text>,"errorCode":"worktree_add_failed"}` | `{"success":false,"error":"not a git repository","errorCode":"not_a_repo"}` |
-| `git.worktree_remove` | without `worktreeRoot`, for a worktree directory that exists, `could not check whether <p> is locked: <text>`, and `could not check whether <p> is locked (<text>); retry` for a gone one. With it, the work-tree refusal and `<text>` | without `worktreeRoot`, the lock-check refusal for a worktree directory that exists, and `{"success":true}` for a gone one. With it, the work-tree refusal and `exit status 128` |
+| `git.worktree_remove` | without `worktreeRoot`, the lock-check refusal for a worktree directory that exists, and `could not check whether <p> is locked (<text>); retry` for a gone one. A failed listing in a folder that exists gives `could not check whether <p> is locked: <text>`. With it, the work-tree refusal and `<text>` | without `worktreeRoot`, the lock-check refusal for a worktree directory that exists, and `{"success":true}` for a gone one. With it, the work-tree refusal and `exit status 128` |
 
 The lock-check refusal is
 `{"success":false,"error":"failed to remove worktree: could not check whether <worktreePath> is locked (its registrations could not be examined); retry"}`.
@@ -1565,16 +1565,15 @@ Where the trust check finds no repository, the daemon still runs the configurati
 listing in that folder. In a plain folder it carries `GIT_DIR=<null>`. The frames
 are then those of the "no repository" column. A listing that fails by class 3
 below gives the "refused" column. `89cb6289` answers so for a plain folder and for
-a folder with an empty `.git` folder, on Linux, macOS and Windows VMs. The one
-exception is `git.worktree_remove` with `worktreeRoot`, which is Linux VM only. On
-macOS that remove answers the `worktreePath` shape refusal there, with no git call.
-See
+a folder with an empty `.git` folder, on Linux, macOS and Windows VMs.
+`git.worktree_remove` with `worktreeRoot` is measured on Linux and macOS VMs only,
+because Windows refuses every `worktreeRoot` first. See
 [The daemon's own git environment](#the-daemons-own-git-environment).
 
 A daemon `GIT_DIR` that names a regular file differs by system. On Linux and macOS
 no listing runs, and the "no repository" column answers. `89cb6289` answers so
 for `git.info` on a plain folder and on a repository, also with an empty
-`GIT_CONFIG_KEY_0` (Linux and macOS VMs). On Windows a file with no `gitdir:` line
+`GIT_CONFIG_KEY_0` (Linux and macOS VMs). Other methods are from the code. On Windows a file with no `gitdir:` line
 gets the refusal of a config on the five methods: `this repository's git config
 cannot be used: open <GIT_DIR>: not a directory` (`5fd08069`, Windows VM). With a
 git older than 2.56, a `.git` file to a gone git dir keeps the "no repository"
