@@ -54,7 +54,7 @@ clients, so none changes the frames that a client sees:
 
 [Examples](EXAMPLES.md#operational-knobs) shows each one but `-wire-log`, which
 [Flags of claustrum alone](PROTOCOL.md#flags-of-claustrum-alone) describes. The
-[flags table](PROTOCOL.md#flags-and-config-keys) lists the optional flags and their keys.
+[flags table](PROTOCOL.md#flags-and-config-keys) lists the token, knob, divergence and deprecated flags with their keys.
 
 One opt-in member of claustrum's own changes a frame: `"wantPid":true` adds `pid`
 and `startTime` to the result of `process.spawn`, and of `process.reattach` for a
@@ -69,7 +69,7 @@ found process
   roles, the concurrency and replay model, and how a
   [driver](GLOSSARY.md#driver) uses it.
 - :material-protocol: **[Protocol reference](PROTOCOL.md)**. The transport,
-  the error texts, the stream frames and the flags that every method shares.
+  the error texts, the stream frames, and the modes and flags of the binary.
 - :material-api: **Methods**. One page for each method:
   [server.*](protocol/server.md),
   [files.list](protocol/files-list.md),

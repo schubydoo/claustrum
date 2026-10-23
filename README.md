@@ -152,8 +152,9 @@ One opt-in member of claustrum's own changes a frame: `"wantPid":true` adds `pid
 `startTime` to the result of `process.spawn`, and of `process.reattach` for a found process (CT-1). Three more flags opt into a deliberate
 divergence: `-max-extract-bytes` (D3), `-max-cli-bytes` (D10) and `-cli-download-timeout`
 (D12). [docs/DIVERGENCES.md](docs/DIVERGENCES.md) has each entry and its limits. The
-[flags table](docs/PROTOCOL.md#flags-and-config-keys) lists the optional flags of `-serve` and
-`-install`, their `claustrum.conf` keys and the deprecated flags that set nothing.
+[flags table](docs/PROTOCOL.md#flags-and-config-keys) lists the token, knob, divergence and
+deprecated flags with their `claustrum.conf` keys. [-install](docs/PROTOCOL.md#-install-ensure-the-agent-cli)
+has the `-cli-*` flags.
 
 ## Platforms
 
