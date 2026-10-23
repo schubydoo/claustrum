@@ -16,9 +16,9 @@ import (
 )
 
 // git.status as 89cb6289 answers it. The request passes a gate first, and then four
-// git commands build `changes`. docs/PROTOCOL.md → git.status gives the rules. Each
-// rule names its rows. The rows are from Linux, macOS and Windows VMs, side by side
-// against 89cb6289.
+// git commands build `changes`. docs/protocol/git-status.md gives the rules. The
+// comments below name the rows. The rows are from Linux, macOS and Windows VMs, side
+// by side against 89cb6289.
 //
 // The gate does not ask git inside `path`. It reads the worktree entries under the
 // common directory of baseRepo and looks for the one entry that names `path`. So a
