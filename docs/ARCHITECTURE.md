@@ -76,8 +76,8 @@ file is `<cli-version>.exe`.
 
 Claustrum daemonizes itself: it detaches from the controlling session and, on
 Unix, reparents to init. It then opens the `0600` socket. It supervises the
-children it spawns. The rules of each step are in PROTOCOL.md. This list names
-the files and the seams.
+children it spawns. Most rules of each step are in PROTOCOL.md. This list names
+the files and the seams, and the rules that have no other home.
 
 - **Token.** `-token-file` or `-token-fd` gives the token. `tokenpersist.go`
   writes `daemon.token` and unlinks it at a graceful stop if it is still its
@@ -106,14 +106,14 @@ the files and the seams.
   `childreap_darwin.go`, reaps them at the start. Both act through the run dir that
   the daemon holds open, so no write or read follows a symlink out of it. The kill
   and every live-process read sit behind package-var seams, so tests exercise the
-  decision without ending a real process. After the `SIGKILL` the reap waits 1 s
+  decision without ending a real process. After the `SIGKILL` the reap waits up to 1 s
   (`reapEscalate`, claustrum's own value). See
   [Child records and the reap](PROTOCOL.md#child-records-and-the-reap-linux-and-macos).
 - **Host cleaner.** `hostclean.go` holds the shared decision layer, and
   `hostclean_linux.go` / `hostclean_darwin.go` hold the OS reads. Windows links no
   cleaner. The gate, the signals, the `lsof` reads and the log lines are in
-  [Host cleaner](PROTOCOL.md#host-cleaner-off-wire-linux-and-macos). These rules
-  are not under that heading:
+  [Host cleaner](PROTOCOL.md#host-cleaner-off-wire-linux-and-macos). Most of these
+  rules are not under that heading:
     - The first pass runs 15 s after the start, then one pass a day. The cleaner
       acts only on this user's own processes and on the `run`, `srv` and `ccd-cli`
       folders of its own root. A pass acts only after it confirms that its own
@@ -142,7 +142,7 @@ the files and the seams.
       groups, more than 64 run dirs, and 8 retire attempts in one pass. The log
       lines carry the `[hostclean]` prefix after claustrum's level tag. The line
       before a `SIGKILL` and the reasons for a held lock and for a listener that
-      is not our daemon use the texts of the reference too.
+      is not our daemon use the texts of the reference.
     - The 15 s delay, the 3 s grace and the limit of 64 groups match the
       reference. The daily period, the 5 minute age and the 30-day idle age are
       claustrum's own.
