@@ -52,8 +52,8 @@ token did not already give. See
 - The running daemon persists its token to `daemon.token` (mode `0600`) in the
   socket's directory, so a client can reconnect after the token source is gone.
   This is parity with the reference daemon. See
-  [`docs/PROTOCOL.md`](docs/PROTOCOL.md) → Token persistence. The daemon unlinks
-  the file at a graceful shutdown. A `SIGKILL` or a crash leaves the file behind.
+  [`docs/PROTOCOL.md`](docs/PROTOCOL.md) → Token persistence. At a graceful
+  shutdown, a daemon whose own file is still in place unlinks it. A `SIGKILL` or a crash leaves the file behind.
   The token therefore stays on disk longer than its source, so keep the socket
   directory owner-only. On Windows the `0600` bits are not an owner-only DACL, so
   the ACL of the session directory confines the file.
@@ -95,11 +95,11 @@ privileged as the daemon's user. Four of those paths reach a recursive delete
   `git worktree add`, for example an expired `timeoutMs` or a failed checkout.
   Before the add, the daemon also removes a stale registration that names the
   new worktree. If two entries name it, or the entry holds a `locked` file,
-  nothing goes. Each delete of the worktree path goes through an `os.Root`,
-  after the home guard. To go, a registration must sit directly in the
-  registrations directory of `baseRepo`, and its `gitdir` record must name the
-  new worktree. On Linux and macOS that delete also goes through an `os.Root`.
-  It also gets the identity test of D24 after an answer of git. After a failed add, the daemon
+  nothing goes. Each rollback delete after a good add goes through an `os.Root`,
+  after the home guard (D24 adds an identity test). The one exception is the
+  registration delete of a create that accepted no registration. That delete
+  runs no home guard, and on Windows it uses no `os.Root`. It tests the
+  `gitdir` record and the registrations directory. After a failed add, the daemon
   removes the worktree path only as an empty directory. See
   [git.worktree_create](docs/protocol/git-worktree-create.md#after-a-failure).
 - On Windows, in the state `shadow` and after a good `git worktree add`,
