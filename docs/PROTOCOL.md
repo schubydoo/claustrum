@@ -1034,7 +1034,7 @@ cell C-… is of round `tier0-20` against `5fd08069` on a Linux VM.
 | git.worktree_remove | `worktreePath must not be or contain the home directory: …` | D2, in `error`. It sits behind `7d193f89` containment on the default branch, where it fires only if a repo is an ancestor of home. It is the active home guard on the `external_root` branch |
 | process.spawn | `Process ID is required` / `Command is required` | |
 | process.spawn | `command must be an absolute path when a launcher is given` | with a `launcher` param |
-| process.spawn | `the managed launcher cannot be used: <reason>` | -32004. The reasons are the `launcher.resolve` texts, and `a launcher cannot be applied on a Windows host` |
+| process.spawn | `the managed launcher cannot be used: <reason>` | -32004. The reasons are the argv[0] and no-launcher [texts of launcher.resolve](protocol/launcher-resolve.md#unusable-reasons), and `a launcher cannot be applied on a Windows host` |
 | process.spawn | `the managed launcher <path> could not be started: <reason>` | -32005 |
 | launcher.resolve | `cliPath is required` | `{}`, `null` params, a `null` or empty `cliPath`, or a wrong key |
 | process.stdin | `Invalid base64 data` / `Process not found` / `Process not running` | order: decode → not-found → offset verdict (`-32003`/duplicate) → not-running (fresh write only) |
@@ -3611,169 +3611,15 @@ The create rollback adds a text part after `; and the undo could not finish for
 A host administrator names a managed launcher in the managed settings. The
 managed launcher is a program that runs the Claude Code CLI on this host. The
 daemon puts its argv in front of the CLI command. Three surfaces use it:
-`launcher.resolve` below, the `launcher` param of
+[launcher.resolve](protocol/launcher-resolve.md), the `launcher` param of
 [process.spawn](protocol/process-spawn.md#the-managed-launcher), and the launcher runs of `-install` and
-`-probe-cli`. Every rule below is measured against `89cb6289` on a Linux VM
-unless it says otherwise. A rule that names macOS or Windows was measured there too.
+`-probe-cli`. Every rule of these surfaces is measured against `89cb6289` on a
+Linux VM unless it says otherwise. A rule that names macOS or Windows was measured there too.
 
 #### launcher.resolve
-`{cliPath}` → one of four shapes. Each shape keeps this field order:
+`{cliPath}` → one of four shapes.
 
-```jsonc
-{"status":"none"}
-{"status":"usable","argv":["<launcher>","<arg>",…],"source":"<file>"}
-{"status":"unusable","source":"<file>","reason":"<text>"}
-{"status":"unreadable","reason":"<text>","path":"<file or folder>"}
-```
-
-- No `params` member, a non-object `params` or a non-string `cliPath` →
-  `-32602 Invalid params`. `{}`, `"params":null`, a `null` or empty `cliPath`, or a
-  wrong key (wrong key: Windows only) → `-32602 cliPath is required`. Any other string is a `cliPath`, a
-  relative one too. Another `launcher.<x>` method → `-32601 Unknown method:
-  launcher.<x>`. The params checks are the same on Windows.
-- The method reads the settings files on every call. It caches nothing, so an
-  edit shows on the next call. It never runs the launcher. The
-  `CLAUDE_SSH_MANAGED_LAUNCHER` gate does not change a frame (measured on macOS).
-- claustrum does not `~`-expand `cliPath`. That is claustrum's choice (not
-  measured).
-
-The settings folder and its files:
-
-- The folder is `/etc/claude-code` on Linux and `/Library/Application Support/ClaudeCode`
-  on macOS. The base file is `managed-settings.json` in it. The drop-in folder is
-  `managed-settings.d` in it.
-- `CLAUDE_SSH_E2E_MANAGED_SETTINGS_DIR` moves the folder only when the system
-  folder has neither the base file nor a drop-in. With the system folder absent,
-  `89cb6289` reads the variable's folder and logs nothing (row RX, measured on
-  Linux and macOS). A base file in the system folder makes it ignore the variable
-  and read the system folder (row RXs, Linux and macOS). A drop-in there does too
-  (row RXd, Linux). A hidden `.json` entry alone in `managed-settings.d` counts as
-  well (row RXd2, Linux). The resolve then answers from the system folder and
-  skips that entry, so it answers `{"status":"none"}`. It then logs
-  `[launcher] CLAUDE_SSH_E2E_MANAGED_SETTINGS_DIR ignored: <system folder> holds this host's policy`
-  once per daemon (row RXs: two resolves, the line only on the first).
-  `<system folder>` is the folder of the OS. An existing but empty system folder
-  does not count (row RXe, Linux). An empty value counts as unset, and the system
-  folder is read (row RY, measured on Linux and macOS). claustrum's choices (not
-  measured) follow. A base file counts when its path exists, a dangling symlink
-  too. A base file counts whatever it holds, `{}` or an unreadable file too. A
-  `managed-settings.d` counts when it holds an entry whose name ends in `.json`
-  and that is a file or a symlink, a dangling symlink too. A non-`.json` entry and
-  a folder entry do not count, as for the drop-in rule. More than two resolves
-  still log one line. `-install` and `-probe-cli` honor the variable the same way
-  and log nothing.
-- On Windows `89cb6289` answered `{"status":"none"}` for every fixture tried. The
-  fixtures were a file in `C:\Program Files\ClaudeCode` (both keys, also with the
-  gate), the E2E folder and `C:\ProgramData\ClaudeCode`. The launcher never ran.
-  claustrum answers none on Windows and reads no file.
-- A missing or empty folder answers none, with no log line. So does a base file
-  of `{}`, of zero bytes or of white space only.
-- The base file is read first, then the drop-ins in name order. A later file
-  with a value wins, and `source` names that file. A missing base file is fine.
-- A drop-in name ends in `.json` in lower case and does not start with a dot. So
-  `.hidden.json`, `x.JSON` and `a.js` are skipped. A folder entry and a FIFO
-  entry are skipped. The FIFO is not opened.
-- A symlink entry is followed. `source` then keeps the link path. A dangling
-  symlink is skipped. A symlink to a folder makes the answer unreadable, with
-  `is a directory`.
-- A regular file named `managed-settings.d` is ignored.
-- A value of the wrong type in a later file is skipped, and the earlier value
-  stays. Rows: `{"processWrapper":5}`, `{"env":"x"}` and
-  `{"env":{"CLAUDE_CODE_PROCESS_WRAPPER":true}}`.
-- One unreadable file makes the whole answer unreadable, and `path` names it. A
-  valid base file does not help.
-- claustrum's choices (not measured) follow. The drop-ins sort in byte order. The
-  first unreadable file in read order is the one reported. Each file gives one
-  value, so a later file's `processWrapper` wins over an earlier file's env key.
-
-| unreadable file | `reason` |
-|---|---|
-| mode 000, daemon not root (Linux and macOS) | `permission denied` |
-| a folder | `is a directory` |
-| a FIFO (answered at once, not opened) | `not a regular file` |
-| more than 2097152 bytes (2097152 is read) | `larger than 2 MiB` |
-| `{` | `not valid JSON` |
-| `[]` or `null` | `not a JSON object` |
-| a UTF-16BE BOM, or a raw U+00A0 before the JSON | `not valid JSON` |
-| a drop-in folder whose listing fails | `the drop-in directory could not be listed: permission denied`, with the folder as `path` |
-
-claustrum gives a regular-file drop-in, and the target of a drop-in symlink, the
-same reasons (not measured, except `is a directory` and `not valid JSON`).
-
-A UTF-8 BOM is dropped. A UTF-16LE BOM with UTF-16LE text is read. Both answer
-usable. claustrum drops a trailing odd byte of UTF-16LE text. That is
-claustrum's choice (not measured).
-
-The value:
-
-- Two keys carry it: `env.CLAUDE_CODE_PROCESS_WRAPPER` and `processWrapper`, each a
-  string. Both keys gave the same frames on every R10 and R11 row. In one file the env key
-  wins, in both key orders.
-- An env value of `""` counts as unset, so `processWrapper` answers. An env value
-  of three spaces counts as set with no launcher. claustrum also counts a
-  `processWrapper` of `""` as unset. That is claustrum's choice (not measured).
-- A value that starts with `[`, after leading white space, is a JSON array of
-  strings. JSON escapes decode, and the metacharacter check does not apply.
-- Any other value is an argv list, not a shell command. A space, U+00A0 and U+FEFF
-  split words. U+0085 does not. Double quotes group, so a quoted metacharacter is
-  fine. Inside double quotes `\"` gives `"` and `\\` gives `\`. Any other
-  backslash stays, so `"e\nf"` keeps its two characters. Outside quotes a
-  backslash is a plain character, and a `"` after it opens a quote. Single
-  quotes are plain characters.
-- An invalid byte in the file comes out as U+FFFD.
-- claustrum's choice (not measured): the other white space of Go's
-  `unicode.IsSpace`, except U+0085, splits words too. The scan stops at the first
-  unquoted metacharacter.
-
-The reason texts. The frame escapes `&`, `<`, `>` and `"` as JSON does. The log
-line writes them raw. `—` is the raw bytes `e2 80 94` in both.
-
-| case | `reason` |
-|---|---|
-| no launcher: three spaces, `""`, `[]` or `[""]` | `the value is set but contains no launcher — unset it to run without one, or set it to the absolute path of your launcher` |
-| a later empty JSON element, `["<w>",""]` | `the JSON array contains an empty element — remove it, or fill in the value it was a placeholder for` |
-| a JSON element that is not a string | `JSON form must be an array of strings` |
-| starts with `[` and is not valid JSON | ``value starts with `[` but is not valid JSON`` |
-| an unquoted `;` `\|` `&` `$` `(` `)` backtick `<` `>` | ``the value contains an unquoted shell metacharacter (one of ; \| & $ ( ) ` < >) — it is an argv list, not a shell command`` |
-| an open double quote | `unterminated double quote` |
-| a later empty `""` word | ``the value contains an empty `""` token — remove it, or fill in the value it was a placeholder for`` |
-| argv[0] is not absolute | `the launcher must be an absolute path, not a bare name resolved via PATH` |
-| argv[0] equals `cliPath` | ``launcher `<argv0>` is Claude Code's own path`` |
-| argv[0] ends in `.js`, `.mjs`, `.ts`, `.tsx` or `.jsx` (case-sensitive) | ``launcher `<argv0>` is a script the SDK would run in place of Claude Code`` |
-| argv[0] is missing, a folder or not executable | ``launcher `<argv0>` does not exist or is not an executable regular file`` |
-
-The launcher checks:
-
-- They check argv[0] only. The launcher args are not checked against files.
-- The own-path check is a string compare. It comes before the absolute check and
-  before the existence check. So `c` with `cliPath` `c` is the own-path text,
-  and a missing `/opt/claude/cli` with that `cliPath` is too.
-- A symlink to an executable file is usable, and `argv` keeps the link path.
-  argv[0] is quoted as parsed, not cleaned or resolved.
-- A long argv[0] is cut in the text. One row is measured: a 300-byte path with a
-  3-byte character at bytes 254 to 256 kept 254 bytes, then `…` (`e2 80 a6`),
-  inside the backticks. The log line shows the same cut, and `argv` keeps the whole
-  path. claustrum's choice (not measured): the limit is 256 bytes, cut back to the
-  start of a character, for the own-path, script and existence texts alike.
-- claustrum's choice (not measured): the script check comes before the existence
-  check, so a missing `x.js` gets the script text.
-
-Output bytes follow Go's default JSON encoder. In a `usable` frame `<`, `&`, `>`
-and U+2028 come out as JSON escapes. U+0085, U+FFFD and `—` stay raw.
-
-Log lines. An unusable or unreadable answer writes one line. A usable or none
-answer writes none:
-
-```text
-[LauncherHandler] managed launcher from <source> refused: <reason>
-[LauncherHandler] managed settings unreadable: <path>: <reason>
-```
-
-A repeat of the same answer writes no line. A usable answer between two equal
-refusals makes the second one log again. A `process.spawn` refusal writes no
-`[LauncherHandler]` line. claustrum's choices (not measured) follow. The repeat
-test compares the whole line. A none answer resets it like a usable one. The
-lines log at WARN.
+Reads the managed settings and answers the managed launcher for a CLI, or why there is none. The page [launcher.resolve](protocol/launcher-resolve.md) has the request, the four response shapes and the reason texts.
 
 ### process.* (the agent/MCP-hosting core)
 
@@ -4363,7 +4209,7 @@ The managed launcher (`89cb6289` parity):
   a usable launcher. claustrum treats every value other than `1` as off. That is
   claustrum's choice (not measured for other values).
 - With the gate and a CLI path, `-install` resolves the launcher for that path, as
-  `launcher.resolve` does. The facts line then gains launcher fields after
+  [launcher.resolve](protocol/launcher-resolve.md) does. The facts line then gains launcher fields after
   `cliWasPresent`, `cliError` and `cliUnresponsive`, in this order:
   `launcherStatus`, `launcher`, `launcherSource`, `launcherPath`,
   `launcherReason`, `launcherStderr`. A field that does not apply is omitted.

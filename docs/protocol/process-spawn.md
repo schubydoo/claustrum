@@ -142,7 +142,7 @@ A `-stop` can come while a spawn waits for the old process (measured on Linux an
 
 ## The managed launcher
 
-With `launcher`, the child runs as `<launcher...> <command> <args...>`. The launcher is the process, and the stream frames are its own. A client gets the launcher from [launcher.resolve](../PROTOCOL.md#launcherresolve) and passes it here. A spawn reads no managed settings, and the `CLAUDE_SSH_MANAGED_LAUNCHER` gate does not change it (measured on Linux).
+With `launcher`, the child runs as `<launcher...> <command> <args...>`. The launcher is the process, and the stream frames are its own. A client gets the launcher from [launcher.resolve](launcher-resolve.md) and passes it here. A spawn reads no managed settings, and the `CLAUDE_SSH_MANAGED_LAUNCHER` gate does not change it (measured on Linux).
 
 The checks run in this order. They are measured on Linux. Step 5 is measured on macOS too, and so is the interpreter text of step 6:
 
