@@ -40,8 +40,8 @@ must match byte-for-byte. **Off-wire churn** (or **Off-wire**) is any source tha
 moved but never reaches the JSON-RPC surface. **How it was bounded** gives the
 measurement that showed that nothing else changed. Some sections add more labels,
 for example **Missed at first**, **Older gaps closed in the same work** and
-**Reconciled in**. Correction of 2026-10-23: this paragraph said that each per-build
-section has three parts. The forensics stay outside the committed tree.
+**Reconciled in**. The forensics stay outside the committed tree. Correction of
+2026-10-23: this paragraph said that each per-build section has three parts.
 
 ### `5fd08069bd5f33e9b8a2b104c631bbbfbd4e2536` — 2026-10-05 (built)
 
@@ -650,7 +650,8 @@ divergence:
   Correction of 2026-10-23: PR 558 removed `fetchToFile`. The download is now
   `fetchCLI`, called by `stageDownload`. The rename is still `os.Rename`. On
   Windows, if it fails with access denied, claustrum tries it again for a short
-  bound (`placeStagedCLI`).
+  bound (`placeStagedCLI`). If it still fails and the CLI path already holds the
+  staged bytes, the install counts as done and the staging file goes.
 - Changed code on the `process.spawn` failure path, which is wire-reachable. It was
   therefore the killAndWait-shaped risk: a change that the happy-path battery
   never stresses.
