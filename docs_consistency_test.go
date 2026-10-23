@@ -426,6 +426,7 @@ type docPinSentence struct {
 }
 
 var docPinSentences = []docPinSentence{
+	{"AGENTS.md", regexp.MustCompile("Unmarked behavior follows the reference, pinned at `([0-9a-f]+)`")},
 	{"docs/UPSTREAM-TRACKING.md", regexp.MustCompile("claustrum follows `([0-9a-f]+)`, the build that `scripts/UPSTREAM_SHA` names")},
 	{"docs/UPSTREAM-TRACKING.md", regexp.MustCompile("The build pinned today, `([0-9a-f]+)`")},
 	{"docs/UPSTREAM-TRACKING.md", regexp.MustCompile("the current baseline, `([0-9a-f]+)`")},
@@ -578,7 +579,7 @@ func TestDocsEveryErrorCodeIsDocumented(t *testing.T) {
 // because the documents grew past what a person can read. A limit goes down, never
 // up, without the maintainer's word.
 var docWordLimits = map[string]int{
-	"AGENTS.md":                            7800,
+	"AGENTS.md":                            7600,
 	"SECURITY.md":                          1700,
 	"docs/ARCHITECTURE.md":                 4500,
 	"docs/DIVERGENCES.md":                  10400,
