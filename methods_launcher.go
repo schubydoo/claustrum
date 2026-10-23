@@ -52,8 +52,7 @@ const (
 	// off, which is claustrum's choice. -serve does not read it.
 	managedLauncherGateEnv = "CLAUDE_SSH_MANAGED_LAUNCHER"
 	// managedSettingsDirEnv moves the managed-settings folder. The reference honors
-	// it on Linux (measured). claustrum honors it on macOS too: that is claustrum's
-	// choice (not measured on macOS). Windows answers none with it set (measured).
+	// it on Linux and macOS (row RX). Windows answers none with it set (measured).
 	managedSettingsDirEnv = "CLAUDE_SSH_E2E_MANAGED_SETTINGS_DIR"
 	// managedWrapperEnv is the env-key form of the value, and also the variable
 	// that a launched child loses.

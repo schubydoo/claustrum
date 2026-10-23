@@ -19,7 +19,7 @@ The params errors are all `-32602`:
 | Request | Error |
 |---|---|
 | No `params` member, a `params` that is not an object, or a `cliPath` that is not a string | `Invalid params` |
-| `{}`, `"params":null`, a `null` or empty `cliPath`, or a key with another name, such as `path` | `cliPath is required` |
+| `{}`, `"params":null`, a `null` or empty `cliPath`, or a key with another name, such as `path` (a key that differs only in letter case binds as `cliPath`) | `cliPath is required` |
 
 Another method of the `launcher.*` namespace gets `-32601 Unknown method: launcher.<x>`.
 
@@ -60,7 +60,7 @@ The settings folder is `/etc/claude-code` on Linux and `/Library/Application Sup
 
 ### The test variable
 
-A non-empty `CLAUDE_SSH_E2E_MANAGED_SETTINGS_DIR` in the daemon's environment names another folder. The daemon reads it only if the system folder has neither the base file nor a `.json` drop-in, a hidden one included. Else it logs this line once:
+A non-empty `CLAUDE_SSH_E2E_MANAGED_SETTINGS_DIR` in the daemon's environment names another folder. The daemon reads it only if the system folder has neither the base file nor a `.json` drop-in, a hidden one included. Else it logs this line once per daemon. After the second resolve that is claustrum's own:
 
 ```text
 [launcher] CLAUDE_SSH_E2E_MANAGED_SETTINGS_DIR ignored: <system folder> holds this host's policy
@@ -78,6 +78,8 @@ A non-empty `CLAUDE_SSH_E2E_MANAGED_SETTINGS_DIR` in the daemon's environment na
 | `[]` or `null` | `not a JSON object` |
 | A UTF-16BE mark, or a raw U+00A0 before the JSON | `not valid JSON` |
 | A drop-in folder whose listing fails | `the drop-in directory could not be listed: permission denied`, with the folder as `path` |
+
+For a drop-in, the reasons other than `is a directory` and `not valid JSON` are claustrum's own.
 
 ## The value
 
