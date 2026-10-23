@@ -647,9 +647,9 @@ func newServerOnSocket(socket, token, metricsAddr string, wlopt wireLogOptions, 
 }
 
 // normalizeToken mirrors the reference daemon's token-file handling: it reads
-// the token as a line, so a single trailing newline (`\n` or `\r\n`) from the
-// SFTP-uploaded file is stripped, while spaces and other interior/surrounding
-// whitespace are preserved verbatim (probe-verified — see
+// the token as a line, so every trailing `\r` and `\n` from the SFTP-uploaded
+// file is stripped (the probe covered one `\n` or `\r\n`), while spaces and
+// other interior/surrounding whitespace are preserved verbatim (probe-verified — see
 // scratch/probe/contract_probe.sh). Without this, a token file that ends in a
 // newline would make every client request fail auth even though the client sent
 // the correct token.
@@ -871,8 +871,8 @@ var daemonPeerPID = connPeerPID
 // closed at once. So the log of the daemon that answered holds a
 // "New connection from: @" / "Connection closed: @" pair from the launcher.
 //
-// A socket file that does not accept yet, a folder at the path and a stale socket
-// file do not end the wait. On 5fd08069 a client connect right after the launcher
+// A socket file that does not accept yet, a folder with content at the path and
+// a stale socket file do not end the wait. On 5fd08069 a client connect right after the launcher
 // exit worked when the listen was late, and the launcher timed out with a folder
 // with a file at the path (round task006-01, cells C7b and C9n, Linux VM).
 //

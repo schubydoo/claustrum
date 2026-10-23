@@ -16,8 +16,7 @@ reads this from `/proc/net/unix`. On macOS it learns this from an `lsof` run. If
 the host cleaner gives up on that run before a result comes, the daemon is also
 busy. The host cleaner sends no `SIGTERM` to
 a busy daemon. See
-[Host cleaner](PROTOCOL.md#host-cleaner-off-wire-linux-and-macos) and
-[D17](DIVERGENCES.md#d17).
+[Host cleaner](PROTOCOL.md#host-cleaner-off-wire-linux-and-macos).
 
 ## cleaner
 
