@@ -9,7 +9,8 @@ no mark matches the reference as measured on `5fd08069` or on an earlier build.
 Where a section names a build in its first lines, that build holds for the
 section. A rule marked "claustrum's own" is not a parity claim: the reference has
 no such rule, or it does something else. A rule marked "not measured" or "from
-the code" was read from claustrum's code, with no reference run. The divergences, their rules and their reopen triggers are
+the code" was read from claustrum's code, with no reference run. A mark
+"measured on <system>" limits its sentence to that system. The divergences, their rules and their reopen triggers are
 in [`DIVERGENCES.md`](DIVERGENCES.md).
 
 ## Transport
@@ -80,12 +81,13 @@ socket. The framing, the field order and the `"auth"` member are the same.
   new at each start. The daemon writes it atomically to `rpc.pipe` in the socket's
   directory, before the pipe accepts and before the ready banner. A client reads
   the name from that file and does not build it.
-- **Stale-file rule.** At start the daemon removes or replaces a leftover
-  `rpc.pipe`, on every OS. At a graceful shutdown, if the file is still the one
+- **Stale-file rule.** At start the daemon removes or replaces any `rpc.pipe`
+  there, on every OS. At a graceful shutdown, if the file is still the one
   that it wrote (by identity, as for
   [`daemon.token`](#token-persistence-daemontoken)), the daemon removes it. Any
   other file stays. So after a graceful shutdown or a new start no stale
-  `rpc.pipe` stays, and a successor keeps its own file. After a crash the file
+  `rpc.pipe` stays, except a file whose identity the daemon could not record, and
+  a successor keeps its own file. After a crash the file
   stays until the next start, and a dial of its name fails.
 - **Owner-only and local.** The pipe has an owner-only DACL, the analogue of the
   socket's `0600`, and it refuses remote clients. See
