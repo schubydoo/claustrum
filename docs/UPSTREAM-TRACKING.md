@@ -474,8 +474,8 @@ traps that matter for telling drift from expected:
   passes 64 MiB can get no refusal on claustrum (from the code, not measured on
   `5fd08069`).
 
-  The states, the bounds and the cells are in
-  [PROTOCOL.md](PROTOCOL.md#repository-config-refusals).
+  The bounds are in
+  [PROTOCOL.md → Repository config refusals](PROTOCOL.md#repository-config-refusals).
 - The option lists of the git calls split the builds too, not drift.
   claustrum differs from `89cb6289` in four states: `git.status` with replace
   objects, the `hint:` lines in a failure text of `git.worktree_create`, a long

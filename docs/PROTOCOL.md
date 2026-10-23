@@ -1790,11 +1790,14 @@ refusal. A rule that is not marked "claustrum's own" or "from the code" is measu
 against `5fd08069` on a Linux VM. A rule that names macOS or Windows was measured there.
 
 The read runs only in the state `shadow` of [the settings copy](#the-settings-copy).
-In the state `fallback-git` the daemon makes no read and gives no refusal. git 2.11
-and 2.12 give that state, and `5fd08069` gives no refusal there.
+In the state `fallback-git` the daemon makes no read and gives no refusal. On git
+2.11 and 2.12 `5fd08069` is in that state and gives no refusal. claustrum is not
+measured on those gits.
 
-**The reply forms.** `<text>` is `<class>: <detail>`. Most rules were measured on
-`git.info` and `git.status`, and four states on all five methods.
+A refusal is `<class>: <detail>`, shown as `<text>` in these frames. Most rules were
+measured on `git.info` and `git.status`. Four states ran on all five methods. They
+are format version `2`, a config of 20 MiB, an `info/exclude` of 20 MiB and a
+`shallow` file with a text line.
 
 | Method | Answer |
 |---|---|
@@ -1804,11 +1807,13 @@ and 2.12 give that state, and `5fd08069` gives no refusal there.
 | `git.worktree_remove` with `worktreeRoot` | `{"result":{"success":false,"error":"failed to remove worktree: cannot determine the repository's work tree: <text>"}}`. Nothing is removed |
 
 On `git.worktree_remove` the refusal also comes for a worktree folder that does not
-exist, and the branch `branchName` stays. That holds on Linux, macOS and Windows VMs,
-also in a bare repository. With `worktreeRoot` the refusal comes for a worktree that
-exists and for a missing one (Linux and macOS VMs).
+exist, and the branch `branchName` stays. That holds on Linux, macOS and Windows VMs.
+Linux and Windows VMs ran it in a bare repository too. With `worktreeRoot` the
+refusal comes for a worktree that exists and for a missing one (Linux and macOS VMs).
 
-**Paths in the texts.** A path in quotes uses the separators of the system, and Go's
+##### Paths in the texts
+
+A path in quotes uses the separators of the system, and Go's
 `%q` quotes it. A path of more than 300 characters is cut to its first 300
 characters, with no mark of the cut. On Windows each backslash is doubled inside the
 quotes, and the JSON encoding doubles it again. The path of the `open <file>:` text is not in quotes, and it is not cut. The `<worktreePath>` of the
@@ -1819,12 +1824,15 @@ symbolic link gets the real path. On Windows a request through a junction keeps 
 spelling of the junction, and a request in another letter case gets the real spelling.
 
 The path of an included file is the folder of the file that holds the setting, one
-separator, and the value as written. On Windows `path = <dir>/inc.cfg` gives
+separator, and the value as written. The Windows `is outside` text is the exception:
+it names the cleaned path. On Windows `path = <dir>/inc.cfg` gives
 `<git dir>\<dir>/inc.cfg`. The folder of the holding file stays as written too. With
 `include.path = a/../b/inc.cfg`, a `path = x.cfg` in that file names
 `<git dir>/a/../b/x.cfg` (Linux and macOS VMs).
 
-**The switch.** `"shadowDirOff": true` in the request turns the read off for that
+##### Turning the read off
+
+`"shadowDirOff": true` in the request turns the read off for that
 request, on the five methods. A git request that starts while it runs has the switch
 too. The request then gets the answer that it gets with no read. A FIFO as the config
 then gets no answer in 10 s (Linux and macOS VMs). The member name matches without
@@ -1833,7 +1841,9 @@ regard to letter case, so `"SHADOWDIROFF": true` is the switch too. The values
 and Windows VMs. With `worktreeRoot` and the switch, a remove of a worktree with a
 config of 20 MiB removes the worktree (macOS VM).
 
-**The read.** The daemon gives each config file to git on standard input, with one
+##### How the daemon reads a config
+
+The daemon gives each config file to git on standard input, with one
 call for each file: `git config --no-includes --file - --list -z`. git follows no
 include there. The daemon follows each `include.path` setting itself. If the request
 names a linked worktree, the daemon reads the config of the repository of that
@@ -1845,7 +1855,9 @@ daemon, and it runs with `GIT_DIR=<null device>` and `LC_ALL=C`. On Linux and ma
 daemon opens each file of the read with no controlling terminal. A config can be a
 link to a pty slave. After the pty master closes, the daemon stays up (Linux VM).
 
-**The kept verdict.** A verdict with a refusal is not kept. Each later request reads
+##### The kept verdict
+
+A verdict with a refusal is not kept. Each later request reads
 again, as on `5fd08069` (Linux, macOS and Windows VMs). claustrum keeps the verdict of
 a read that accepted the config, for 256 git directories at most. `5fd08069` also
 reads an unchanged accepted config only once. If each file of that read is unchanged,
@@ -1866,7 +1878,9 @@ the daemon itself, such as too many open files, then answers one request only. T
 rule is claustrum's own. The tests of `shallow`, `info/attributes` and `info/exclude`
 run in each request, and they are no part of the kept read.
 
-**Class 1** is `this repository's git config cannot be used: <detail>`. The format
+##### Class 1: the git config
+
+Class 1 is `this repository's git config cannot be used: <detail>`. The format
 version and the extensions of an included file are not tested.
 
 | Detail | When |
@@ -1886,42 +1900,58 @@ version and the extensions of an included file are not tested.
 | `"<file>" includes "<value>", and on Windows Claude follows an include only if its path is relative and stays inside the repository; if that line is yours and you trust the file, put the line into ~/.gitconfig on the remote machine instead` | Windows: an absolute include value, also to a missing file, `~/x` and `~root/x`. An absolute value and `~/x` get it also in an `includeIf` section whose condition does not match. `<value>` is cut to its first 300 characters |
 | `"<file>": is, or is reached through, a link that Claude does not follow here; replace the link with what it points to` | Windows: the config is a file link. Also Windows, on every git method that reads the config: the git directory is a junction or a directory symbolic link, and `<file>` is `<git dir>\config` |
 
-**Extensions.** Under format version `1` the daemon refuses an extension other than
-`worktreeConfig` in two cases. [The copied settings file](#the-copied-settings-file)
-has no rule for its key, or the rule does not accept its value. Refused are
-`preciousObjects = 1234567890`, `objectFormat = sha512`, `refStorage` with no value and
-`partialClone = a/-b`. Not refused are `worktreeConfig = maybe`, `objectFormat = SHA256`, `refStorage = FILES`,
-`preciousObjects = yes` and `preciousObjects = 1` (Linux, macOS and Windows VMs). An
-extension in a config with no format version key is not refused. So this rule does not
-refuse a sha256 repository or a reftable repository.
-
-**No refusal.** No refusal comes from a config that is missing, empty, a dangling
+No refusal comes from a config that is missing, empty, a dangling
 symbolic link or a symbolic link to a regular file. A NUL byte in a value, an empty
 `include.path` and one with no value give none either. On Linux the daemon follows a
 relative include, also one that leaves the git directory. It also follows an absolute
 include, and `~/x` with a home folder.
 
-**Two more kinds of file.** These files get the kind test and the size test, with
-their own path in the text. A format version `2` in such a file is not refused.
+Two more kinds of file get the kind test and the size test, with their own path in
+the text. A format version `2` in such a file is not refused.
 
 - The file of an `includeIf` section, whatever its condition is (Linux, macOS and
   Windows VMs). Its filter settings count for the filter rule of the checkout.
 - The `config.worktree` file of a linked worktree. If the config turns
   `extensions.worktreeConfig` on, that file gets the tests. `true`, `yes`, `on` and
-  `1` in any letter case turn it on, and so does the key with no value. `false`, `no` and `0` do not (Linux, macOS
+  `1` turn it on, also in upper case and in mixed case such as `Yes` and `tRuE`. So
+  does the key with no value. `false`, `no` and `0` do not (Linux, macOS
   and Windows VMs). The trust check of the request finds that linked worktree. On
   `git.status` it is the worktree that `baseRepo` names. All five methods ran, and
   `git.worktree_remove` on a Linux VM only.
 
-**The count of settings.** Each setting of a counted section costs the bytes of its
+##### Extensions
+
+Under format version `1` the daemon refuses an extension other than
+`worktreeConfig` in two cases. [The copied settings file](#the-copied-settings-file)
+has no rule for its key, or the rule does not accept its value. Refused are
+`preciousObjects = 1234567890`, `objectFormat = sha512`, `refStorage` with no value and
+`partialClone = a/-b`. Not refused are `worktreeConfig = maybe`, `objectFormat = SHA256`, `refStorage = FILES`,
+`preciousObjects = yes` and `preciousObjects = 1` (Linux, macOS and Windows VMs). An
+extension in a config with no format version key is not refused. Under version `1`
+the rules accept `objectFormat = sha256` and `refStorage = reftable`, so a sha256 or
+a reftable repository is not refused. A value that git itself refuses but the copy
+leaves out, such as `extensions.objectformat = md5` under version `0`, gets the
+normal answers of a repository.
+
+Four extension states are measured on `5fd08069` but not on a claustrum build with
+the settings copy. They are `worktreeConfig = maybe` and `objectFormat = SHA256` under
+version `1`, `refStorage = FILES`, and `objectFormat = md5` with no version key. For
+`objectFormat = SHA256` the `git.status` of `5fd08069` answers `exit status 128`.
+
+##### The count of settings
+
+Each setting of a counted section costs the bytes of its
 full name, the bytes of its value, and 96. The config has its own sum, and the
 included files have one sum between them. The file in which a sum passes 8388608 is
 refused. The counted sections are `core`, `remote`, `extensions`, `include`, `branch`,
 `lfs`, `index`, `url`, `filter`, `feature`, `checkout` and `includeif`. The sections
 `x` and `user` do not count. This arithmetic is fitted to the measured bounds on Linux,
-macOS and Windows VMs. The exact pairs are measured in `core` and `remote`.
+macOS and Windows VMs. The exact pairs are measured in `core` and `remote` on a Linux
+VM.
 
-**Class 2** is `a file in this repository's .git directory cannot be used: <detail>`.
+##### Class 2: files of the git directory
+
+Class 2 is `a file in this repository's .git directory cannot be used: <detail>`.
 The files are `shallow`, `info/attributes` and `info/exclude`, and the git directory
 itself.
 
@@ -1934,11 +1964,13 @@ itself.
 | `open <file>: <reason>` | `shallow` has mode 000 (`permission denied`) or is a socket (`no such device or address`). The path is not in quotes. An `info/attributes` or `info/exclude` of mode 000 is not refused |
 | `"<file>" holds something other than object ids` | A line of `shallow` is not 40 or 64 hex characters in lower case. That rule is fitted to the measured states. A blank line, an id with a space after it and a file of one line end are refused. A line end of CRLF, a last line with no newline and an empty file pass |
 
-**Two refused files.** A refused config comes before a refused file of the git
+##### Which answer comes first
+
+A refused config comes before a refused file of the git
 directory. In class 2, `shallow` comes before `info/attributes` (Linux, macOS and
 Windows VMs), and `info/attributes` comes before `info/exclude`.
 
-**No repository.** A folder with no repository keeps its "not a repository" answers.
+A folder with no repository keeps its "not a repository" answers.
 That holds for a `HEAD` that is no ref and no object id, also with format version `2`.
 It also holds for a repository of another owner with no `safe.directory` (Linux, macOS
 and Windows VMs). The call about the repository in
@@ -1950,13 +1982,9 @@ repository" answer and reads no config. git's text for another owner is
 of the owner inside the 5 seconds of a kept good answer, a request answers normally.
 The first request after that time answers "not a repository".
 
-**Where claustrum differs from `5fd08069`.** Four extension states ran only on a build
-without the settings copy, so they are not measured for claustrum. They are
-`worktreeConfig = maybe` and `objectFormat = SHA256` under version `1`,
-`refStorage = FILES`, and `objectFormat = md5` with no version key. For
-`objectFormat = SHA256` the `git.status` of `5fd08069` answers `exit status 128`.
+##### claustrum's own choices
 
-**claustrum's own choices** (from the code, not measured on `5fd08069`):
+These rules are from the code and are not measured on `5fd08069`:
 
 - `extensions.worktreeConfig` starts the `config.worktree` test with values that no
   run had, such as `oN` or `007`. The last such setting of the config counts.
