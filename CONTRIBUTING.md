@@ -4,8 +4,8 @@ Thanks for your interest in claustrum!
 
 claustrum is a small, dependency-light Go daemon with one hard rule. It must stay
 behaviorally compatible with the protocol it implements. A change that alters the
-JSON-RPC surface, the error codes, or the frame shapes must keep the validation
-battery green. The battery is described below.
+JSON-RPC surface, the error codes, or the frame shapes must keep the golden
+fixtures in `testdata/` green. See Compatibility below.
 
 ## Dev setup
 

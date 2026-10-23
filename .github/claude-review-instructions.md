@@ -75,7 +75,7 @@ pass while asserting nothing. Treat these as Important, not as nits:
 3. A buffered channel drained after the producer stops is a deadlock, not a slow
    consumer. The channel of `pipeConn` holds 64. Fill it, and the write blocks inside
    the producer, which then never reads its stop flag again. This hung a macOS leg
-   until the job timeout.
+   until the time limit of `go test`.
 4. Timers used as synchronization. A `time.Sleep` before a channel close, "to let
    things land", drops whatever is still in flight. A dropped observation is a MISSED
    failure, so the test passes where it must fail. Prefer a sentinel through the
