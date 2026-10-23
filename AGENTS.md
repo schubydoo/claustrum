@@ -346,7 +346,7 @@ rule that names another build follows that build.
       child is. With a cli-dir that is the parent of the home folder and a
       version that is its leaf name, the CLI path is the home folder. So
       `folderHoldsHome` runs right before the tree delete and refuses a CLI
-      path that is home or contains it. It runs `wipesHomeDir` first. Then it
+      path that is home or contains it (D2). It runs `wipesHomeDir` first. Then it
       compares the folder at the CLI path with home and with each parent folder
       of home by identity (`os.SameFile`). It does that for the given and the
       resolved home path. The reference deletes home there.
@@ -388,9 +388,9 @@ rule that names another build follows that build.
   because `~/.claude/…` is the install path of the daemon itself. The guard is
   always-on, not opt-in. Any RPC path param that reaches a recursive delete
   owes this guard. `IsAbs && !isFilesystemRoot` is not a substitute: home
-  passes both tests, and neither test resolves a relative path. With only that gate,
-  a daemon in home that receives `worktreePath:".."` reaches the parent of
-  home. See
+  passes both tests, and neither test resolves a relative path. Before `7d193f89`, `worktreePath:".."` from a
+  daemon whose working folder is home reached `os.RemoveAll` on the parent of
+  home, so the guard resolves a relative path first. See
   [`docs/DIVERGENCES.md`](docs/DIVERGENCES.md) D2.
 - `plugins.prune` is a further `os.RemoveAll` site, and it is safe by
   construction. It deletes `<socket-derived-root>/<hash>`. The root comes from
@@ -526,7 +526,7 @@ rule that names another build follows that build.
   folder. After the open, `extractTarGz` tests it
   against the folder that `wipesHomeDir` judged: `destDir` must be a real
   directory and the folder of the handle. If not, the request fails before any
-  entry and before the remove. The remove takes whatever sits at `.synced` in
+  entry and before the remove (claustrum's own, D2). The remove takes whatever sits at `.synced` in
   that folder at that moment. In a normal run that is the entry of the archive.
   After a directory entry `.synced/` with content, an empty file stays there.
   On Linux and macOS the file has mode `0600`. This step is approved by the
@@ -595,15 +595,15 @@ rule that names another build follows that build.
   are not the limiter of a divergence, and
   [PROTOCOL.md → Time limits of git calls](docs/PROTOCOL.md#time-limits-of-git-calls)
   lists them. `git.worktree_remove` gets none of these limits, and
-  `-git-timeout` is a no-op that logs one warning.
+  `-git-timeout` is a no-op that logs one warning. The branch step has its own
+  bounds ([Time limits of the branch step](docs/PROTOCOL.md#time-limits-of-the-branch-step)).
 
 ## Gotchas — Part B: the live divergences
 
 A divergence is a deliberate difference from the reference. It is not a bug.
 Do not "fix" one toward the reference without the maintainer. The table lists
 every live entry of [`docs/DIVERGENCES.md`](docs/DIVERGENCES.md), which holds
-the rules, the cost and the reopen trigger of each. "Off-wire" means that no
-JSON-RPC frame changes.
+the rules, the cost and the reopen trigger of each.
 
 | ID | Summary | Default | System |
 |----|---------|---------|--------|
@@ -616,13 +616,13 @@ JSON-RPC frame changes.
 | [D15](docs/DIVERGENCES.md#d15) | Verify that a run-dir lock holder is our serve process before a signal, in the serve eviction and in `-stop` | always-on | macOS |
 | [D16](docs/DIVERGENCES.md#d16) | `git.status` of a linked worktree returns the status. With no global excludes file of the user, the reference errors there | always-on | Windows |
 | [D19](docs/DIVERGENCES.md#d19) | `git.worktree_remove` refuses a junction at any directory between `baseRepo` and the leaf | always-on | Windows |
-| [D20](docs/DIVERGENCES.md#d20) | Wait 50 ms and read again before the group `SIGKILL` of a child-group leader that reads as gone, at the reap of a `-serve` start | always-on, off-wire | Linux, macOS |
+| [D20](docs/DIVERGENCES.md#d20) | Wait 50 ms and read again before the group `SIGKILL` of a child-group leader that reads as gone, at the reap of a `-serve` start | always-on | Linux, macOS |
 | [D22](docs/DIVERGENCES.md#d22) | `git.worktree_remove` refuses a worktree locked in the `.git` folder of `baseRepo`. Part A names the one exception | always-on | all |
 | [D23](docs/DIVERGENCES.md#d23) | The environment block of a child is in name order | always-on | Windows |
 | [D24](docs/DIVERGENCES.md#d24) | The rollback of `git.worktree_create` keeps a folder that replaced the new registration. On Windows a rollback after `.git` became a file runs no git call | always-on | all |
 | [D27](docs/DIVERGENCES.md#d27) | The stale step of `git.worktree_create` keeps an entry whose `gitdir` record names a path that exists | always-on | Windows |
 | [CT-1](docs/DIVERGENCES.md#ct-1) | Opt-in `wantPid` adds `pid` and `startTime` on spawn and reattach | off (the caller asks) | all |
-| [CT-2](docs/DIVERGENCES.md#ct-2) | `-keep-children` leaves the child tree running on shutdown | off, off-wire | all |
+| [CT-2](docs/DIVERGENCES.md#ct-2) | `-keep-children` leaves the child tree running on shutdown | off | all |
 | [CT-3](docs/DIVERGENCES.md#ct-3) | The `claustrum.conf` config file | off (no file) | all |
 | [CT-4](docs/DIVERGENCES.md#ct-4) | Hardened token persistence, a deferred idea | not built | none |
 | [CT-5](docs/DIVERGENCES.md#ct-5) | The `-listen-pipe` named-pipe transport | off | Windows |
