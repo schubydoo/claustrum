@@ -21,6 +21,47 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  # A pull request that changes only documentation skips test, cross-build and
+  # coverage (decision-051). The docs tests still run in the lint job. Any other
+  # path, a push to main, or a failed diff runs every job.
+  changes:
+    name: detect changes
+    runs-on: ubuntu-latest
+    timeout-minutes: 2
+    outputs:
+      go: ${{ steps.diff.outputs.go }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        if: github.event_name == 'pull_request'
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Diff against base
+        id: diff
+        if: github.event_name == 'pull_request'
+        env:
+          BASE_REF: ${{ github.base_ref }}
+        run: |
+          set -euo pipefail
+          git fetch origin "${BASE_REF}" --depth=50
+          files=$(git diff --name-only "origin/${BASE_REF}...HEAD")
+          echo "Changed files:"
+          printf '%s\n' "$files"
+          go=false
+          while IFS= read -r f; do
+            [ -z "$f" ] && continue
+            case "$f" in
+              docs/*|mkdocs.yml|.changeset/*.md|.github/ISSUE_TEMPLATE/*) ;;
+              .github/PULL_REQUEST_TEMPLATE.md|.github/claude-review-instructions.md) ;;
+              testdata/*) go=true ;;
+              *.md) ;;
+              *) go=true ;;
+            esac
+          done <<< "$files"
+          if [ -z "$files" ]; then go=true; fi
+          echo "go=$go" >> "$GITHUB_OUTPUT"
+          echo "Resolved flags: go=$go"
+
   lint:
     name: lint (gofmt + vet + tidy + golangci)
     runs-on: ubuntu-latest
@@ -79,7 +120,14 @@ jobs:
           python3 -m unittest discover -s scripts -p 'test_*.py'
           python3 scripts/lint_codecov_components.py
 
+      # The docs tests are Go tests. They run here too, so that a docs-only pull
+      # request, which skips the test job, still runs them.
+      - name: docs tests
+        run: go test -count=1 -run '^TestDocs' .
+
   test:
+    needs: changes
+    if: needs.changes.outputs.go != 'false'
     name: test (${{ matrix.os }}${{ matrix.shard && format(', {0}', matrix.shard) || '' }})
     runs-on: ${{ matrix.os }}
     timeout-minutes: 15 # the windows legs are markedly slower than ubuntu/macos
@@ -274,6 +322,8 @@ jobs:
           retention-days: 7
 
   cross-build:
+    needs: changes
+    if: needs.changes.outputs.go != 'false'
     name: cross-build (6 targets)
     runs-on: ubuntu-latest
     timeout-minutes: 10
@@ -304,6 +354,8 @@ jobs:
     # the osExit-seam lifecycle tests took it to ~98% — what remains is
     # unreachable in-process (os.Executable/build-info/crypto-rand failures) or
     # Windows-only arms this Ubuntu job can't see.)
+    needs: changes
+    if: needs.changes.outputs.go != 'false'
     name: coverage (>= 95%)
     runs-on: ubuntu-latest
     timeout-minutes: 15 # above the 12 minutes of the go test time limit below
@@ -372,7 +424,7 @@ jobs:
     # failure should block merging. Add new required jobs by extending `needs`.
     name: ci required checks passed
     if: always()
-    needs: [lint, test, cross-build, coverage]
+    needs: [changes, lint, test, cross-build, coverage]
     runs-on: ubuntu-latest
     timeout-minutes: 2
     steps:
