@@ -11,7 +11,7 @@
 | Parameter | Required | Meaning |
 |---|---|---|
 | `path` | no | A folder of the repository. A subfolder gives the same `root`. Without `path`, the daemon answers for its own working directory. [Path handling](../PROTOCOL.md#path-handling) has the rules for a leading `~`. |
-| `shadowDirOff` | no | `true` turns off, for this request, the daemon's own read of the repository's git config and the settings copy. A git request that starts while such a request runs gets the same. Only the JSON value `true` counts. `"true"`, `1`, `null` and `false` do nothing and are no error. |
+| `shadowDirOff` | no | `true` turns off the daemon's own read of the repository's git config and its [settings copy](../PROTOCOL.md#the-settings-copy) for this request, as in [Turning the read off](../PROTOCOL.md#turning-the-read-off). |
 
 ## Response
 
@@ -24,7 +24,7 @@ For a repository:
 | Member | Meaning |
 |---|---|
 | `isRepo` | `true`. |
-| `repo` | The last name of `root`. If that name starts with `-` or `+`, the member is left out, and the other members keep their order (Linux and macOS VMs). |
+| `repo` | The last name of `root`. If that name starts with `-` or `+`, the member is left out, and the other members keep their order (measured on Linux and macOS). |
 | `branch` | The current branch. See [The branch](#the-branch). The member can be absent. |
 | `root` | The absolute top folder of the repository. See [The root](#the-root). |
 | `repoSlug` | `owner/repo` of a GitHub `origin`, or `""`. See [repoSlug](#reposlug). |
@@ -52,7 +52,7 @@ The daemon gives this response in these cases:
 
 - The daemon reads the branch name from git, so an unborn branch has its name. An empty repository gives the name of its initial branch, for example `master`.
 - A detached HEAD gives `"branch":"detached:<short-sha>"`.
-- If git cannot name the branch, the member is absent. An example is a HEAD that git fails to resolve (Linux VM). On a detached HEAD whose short name git cannot give, the member is absent too (Windows VM). git's error text never appears in the member.
+- If git cannot name the branch, the member is absent. An example is a HEAD that git fails to resolve (measured on Linux). On a detached HEAD whose short name git cannot give, the member is absent too (measured on Windows). git's error text never appears in the member.
 
 ## The root
 
@@ -61,15 +61,19 @@ The daemon gives this response in these cases:
 On Linux and macOS:
 
 - `root` is `path` with its symbolic links resolved, then walked up to that folder.
-- A component that is not a symbolic link keeps its letter case and Unicode form as sent (macOS VM).
+- A component that is not a symbolic link keeps its letter case and Unicode form as sent (measured on macOS).
 - A symbolic link resolves before a later `..` removes it.
 - `core.worktree`, and `GIT_DIR` and `GIT_WORK_TREE` in the daemon's environment, do not move `root`.
 
-On Windows the daemon finds the folder the same way, and then asks git to confirm it. If git names the same folder, `root` is the answer of git as printed. Else it is the folder that the daemon found. In both cases the separators are forward slashes. The walk resolves a folder symbolic link and no junction, so a `..` after a junction is taken by text. When git confirms the folder, `root` is git's spelling, which can name the target of a junction. These rules were measured on a Windows VM. The comparison of the two folders is by file identity (claustrum's own, not measured).
+On Windows:
+
+- The daemon finds the folder the same way, and then asks git to confirm it. If git names the same folder, `root` is the answer of git as printed. Else it is the folder that the daemon found. In both cases the separators are forward slashes.
+- The walk resolves a folder symbolic link and no junction, so a `..` after a junction is taken by text. When git confirms the folder, `root` is git's spelling, which can name the target of a junction.
+- The comparison of the two folders is by file identity (claustrum's own, not measured).
 
 ## repoSlug
 
-`repoSlug` is `owner/repo` from the URL of the `origin` remote, after any `url.<base>.insteadOf` rewrite of git. The daemon fills it only for a canonical `github.com` remote. These rules were measured across 42 URL shapes on `5db5e4a`:
+`repoSlug` is `owner/repo` from the URL of the `origin` remote, after any `url.<base>.insteadOf` rewrite of git. The daemon fills it only for a canonical `github.com` remote:
 
 - The scheme must be `https`, `http`, `ssh`, `git`, or absent. An absent scheme is the scp-like form `[user@]host:owner/repo`. An absent scheme also takes `host/owner/repo` (claustrum's own, not measured). `git+ssh://` and `file://` give `""`.
 - The host must equal `github.com`, in any letter case. `www.github.com`, `github.com.`, GitLab, Bitbucket and a self-hosted GitHub Enterprise give `""`. The daemon removes the user part. A port such as `github.com:443` lands in the path, so `github.com:443/owner/repo` gives three segments and `""`.
@@ -85,9 +89,9 @@ With no `origin`, `repoSlug` is `""`.
 
 - If `refs/remotes/origin/HEAD` is not set, the value is `""`.
 - A name that starts with `-` gives `""`.
-- Else the name must name a commit at `refs/remotes/origin/<name>`. A dangling `origin/HEAD`, and one that names a blob, give `""` (Linux and macOS VMs).
+- Else the name must name a commit at `refs/remotes/origin/<name>`. A dangling `origin/HEAD`, and one that names a blob, give `""` (measured on Linux and macOS).
 
-The daemon fetches nothing for this member, also in a partial clone (Linux VM).
+The daemon fetches nothing for this member, also in a partial clone (measured on Linux).
 
 ## settingsControl
 
@@ -104,19 +108,19 @@ The section [The states and `settingsControl`](../PROTOCOL.md#the-states-and-set
 
 This method has no `errorCode` member. A failure is a JSON-RPC error. The texts are in the [error-string catalog](../PROTOCOL.md#error-string-catalogue).
 
-| Code | Start of the text | Cause |
+| Code | Text | Cause |
 |---|---|---|
 | `-32602` | `Invalid params` | The request has no `params` member, or `params` or `path` has the wrong type. See [the rules for `params`](../PROTOCOL.md#params-presence-and-typing). |
-| `-32603` | `the repository's git directory could not be trusted; git not run: ` | The daemon does not trust the git directory. See [Git-directory trust check](../PROTOCOL.md#git-directory-trust-check). A `GIT_COMMON_DIR` in the daemon's environment turns this check off for this method. |
-| `-32603` | `config-defined hooks could not be pinned off; git not run: ` | The daemon cannot list the git config, or it refuses its own `GIT_CONFIG_COUNT`. A config listing that runs 30 seconds is stopped, and the text goes on with `listing the configuration in force: git took too long: Claude stopped git config after 30 seconds; try again`. A daemon `GIT_DIR` that names a worktree entry that is gone gets `the worktree entry this folder's .git names no longer exists` after the prefix. See [Git-directory trust check](../PROTOCOL.md#git-directory-trust-check). This also comes for a folder that holds no repository, when the listing there fails, and the `GIT_CONFIG_COUNT` refusal also comes for a path that does not exist or is a file. See [Hardened git calls](../PROTOCOL.md#hardened-git-calls) and [The daemon's own git environment](../PROTOCOL.md#the-daemons-own-git-environment). |
-| `-32603` | `this repository's git config cannot be used: ` or `a file in this repository's .git directory cannot be used: ` | The daemon read the git config of the repository and does not accept it. `"shadowDirOff":true` turns that read off. See [Repository config refusals](../PROTOCOL.md#repository-config-refusals). |
-| `-32603` | `Claude could not test git on the remote machine (` | The start test of the settings copy failed. The daemon keeps the failure for 10 seconds. |
-| `-32603` | `git could not check this repository on the remote machine: ` or `git and Claude disagree about which repository holds this folder: ` | The call that asks git about the repository failed, did not end in 30 seconds, or named another repository. |
-| `-32603` | `git cannot run on this host; git not run: ` | A config listing, the start test or the call about the repository failed, and then a `git version` call failed too. |
-| `-32603` | `Claude could not prepare its own files on the remote machine: ` | The daemon cannot make or update the folder of the settings copy for this repository, or the copy went before git started. With 128 repository folders in use at once, the text names that limit. |
-| `-32603` | `git took too long: Claude stopped git <subcommand> after 2 minutes; try again` | A git call ran too long, and the daemon stopped it. While a request with `"shadowDirOff":true` runs, the text says `after 30 minutes` (claustrum's own, not measured). See [Time limits of git calls](../PROTOCOL.md#time-limits-of-git-calls). |
+| `-32603` | `the repository's git directory could not be trusted; git not run: …` | The daemon does not trust the git directory. See [Git-directory trust check](../PROTOCOL.md#git-directory-trust-check). |
+| `-32603` | `config-defined hooks could not be pinned off; git not run: …` | A config listing failed or passed a limit of the hook pins, the daemon refuses its own git environment, or a daemon `GIT_DIR` names a gone worktree entry. A listing that runs 30 seconds is stopped, and the text goes on with `listing the configuration in force: git took too long: Claude stopped git config after 30 seconds; try again`. See [Refusal texts](../PROTOCOL.md#refusal-texts) and [The daemon's own git environment](../PROTOCOL.md#the-daemons-own-git-environment). |
+| `-32603` | `git cannot run on this host; git not run: …` | A config listing, the start test or the call about the repository failed, and then a `git version` call failed too. |
+| `-32603` | `this repository's git config cannot be used: …` or `a file in this repository's .git directory cannot be used: …` | The daemon read the git config of the repository, or a file of its git directory, and does not accept it. See [Repository config refusals](../PROTOCOL.md#repository-config-refusals). |
+| `-32603` | `Claude could not test git on the remote machine (…). Check free disk space and quota there, then try again.` | The start test of the settings copy failed. The daemon keeps the failure for 10 seconds. See [The start test](../PROTOCOL.md#the-start-test). |
+| `-32603` | `git could not check this repository on the remote machine: …` or `git and Claude disagree about which repository holds this folder: …` | The call that asks git about the repository failed, did not end in 30 seconds, or named another repository. See [The call about the repository](../PROTOCOL.md#the-call-about-the-repository). |
+| `-32603` | `Claude could not prepare its own files on the remote machine: …` | The daemon cannot prepare the folder of the settings copy for this repository. See [The folders](../PROTOCOL.md#the-folders). |
+| `-32603` | `git took too long: Claude stopped git <subcommand> after 2 minutes; try again` | A git call ran 2 minutes, and the daemon stopped it. While a request with `"shadowDirOff":true` runs, that one included, the limit is 30 minutes, and the text says `after 30 minutes` (claustrum's own). See [Time limits of git calls](../PROTOCOL.md#time-limits-of-git-calls). |
 
-The section [The settings copy](../PROTOCOL.md#the-settings-copy) has the causes of the four texts of the copy.
+A `GIT_COMMON_DIR` in the daemon's environment turns the git-directory trust check off for this method.
 
 ## What changes on disk
 
@@ -128,8 +132,8 @@ The method changes nothing in the repository. The settings copy can add files to
 |---|---|---|
 | `root` | The folder found by the walk, in the native form. | Confirmed by git, with forward slashes. The walk does not resolve a junction. |
 | `path` is a regular file | The "no repository" body. | `-32603` with `config-defined hooks could not be pinned off; git not run: listing the configuration in force: fork/exec <git.exe path>: The directory name is invalid.` |
-| A junction from repository P into repository R | Does not apply. | With no `GIT_DIR` or `GIT_COMMON_DIR` in the daemon's environment, `root`, `repo` and `repoSlug` come from P. `branch` comes from R, and `defaultBranch` can be `""`. Measured on a Windows VM. |
+| A junction from repository P into repository R | Does not apply. | With no `GIT_DIR` or `GIT_COMMON_DIR` in the daemon's environment, `root`, `repo` and `repoSlug` come from P. `branch` comes from R, and `defaultBranch` can be `""`. |
 
 ## Differences from the reference
 
-claustrum is built to answer as the reference daemon does, and it follows the pinned build `5fd08069`. The rules of the settings copy were measured on `5fd08069`. The other rules were measured on builds before it, most on `89cb6289`. No entry of the divergence catalog applies to this method. The measured cells behind each rule are in the tests and in the [reference build history](../REFERENCE-BUILDS.md).
+An unmarked rule on this page matches the reference as measured on `5fd08069` or on an earlier build. No entry of the divergence catalog applies to this method. The measured cells behind each rule are in the tests and in the [reference build history](../REFERENCE-BUILDS.md).
