@@ -4267,7 +4267,7 @@ never "a huge limit".
 | `-cli-probe-timeout <dur>` | `cli-probe-timeout` | none | deprecated. It sets nothing and logs one warning. The direct `<cli> --version` run always has its 30 s and 120 s bounds (retired D11) | -install |
 | `-cli-download-timeout <dur>` | `cli-download-timeout` | `0` | download deadline (D12) | -install |
 | `-libc-probe-timeout <dur>` | `libc-probe-timeout` | none | deprecated. It sets nothing and logs one warning. The `ldd` probe always has its 5 s bound (retired D14) | -install |
-| `-cli-keep <n>` | none | `3` | version files of the cli-dir to retain on prune, the new CLI among them. The new CLI always stays. `0` and a negative value remove every older version file | -install |
+| `-cli-keep <n>` | none | `3` | version files of the cli-dir to retain on prune, the new CLI among them. The new CLI always stays. `0` and a negative value remove every other version file | -install |
 | none (config only) | `version-override` | none | `-version` stdout rebrand (CT-3) | -version |
 
 Config-value parsing: bool keys accept `true/1/yes/on` and `false/0/no/off`. The
@@ -4606,13 +4606,14 @@ downloads or reads the CLI, verifies and extracts it, puts it in place and runs
 `<cli> --version` once. Then it prunes old versions and prints one
 `__INSTALL_RESULT__<json>` facts line (schema in [ARCHITECTURE.md](ARCHITECTURE.md)).
 A rule that is not marked claustrum's own is measured against `89cb6289`. The
-prune, the sweeps, the blob, the checksum order and the cli-dir step are measured
-against `5fd08069`. Both builds ran on Linux, macOS and Windows VMs, and a rule
+prune, the sweeps, the blob, the checksum order, the cli-dir step, the rename text
+and retry, the Linux cache-hit file test and the `is a directory` text are measured
+against `5fd08069`. A rule from another build names it. Both builds ran on Linux, macOS and Windows VMs, and a rule
 that names one system was measured there only.
 
 | Flag | Default | Meaning |
 |---|---|---|
-| `-cli-version <v>` | none | The version to ensure. It names the CLI file. Without it the `cliPath` is empty, nothing runs and no folder is made |
+| `-cli-version <v>` | none | The version to ensure. It names the CLI file. Without it the `cliPath` is empty, no CLI runs and no folder is made |
 | `-cli-dir <d>` | `<home>/.claude/remote/ccd-cli` | The folder of the version files. An empty value takes the default too |
 | `-cli-url <u>` | none | Download the zstd archive of the CLI from this URL |
 | `-cli-checksum <sha256>` | none | The SHA-256 of the archive |
@@ -4644,13 +4645,13 @@ The `cliError` catalogue follows:
 | `decompressing: <err>` | bad zstd blob or body, for example `invalid input: magic number mismatch`. A `-cli-zst` folder gives `read <p>: is a directory` (Linux) |
 | `decompressing: decompressed CLI exceeds <n> bytes` | D10 cap, opt-in |
 | `staging cli: <err>` | no staging file can be made in the cli-dir (claustrum's own, not measured) |
-| `download failed with status <n>` | the server answered a status other than 200 |
+| `download failed with status <n>` | the server answered a status other than 200 (`5db5e4a`) |
 | `download failed: response exceeds <n> bytes` | D10 cap on the download body, opt-in |
 | `download failed: <transport err>` | a transport error before the body, for example a refused connection |
 | `download failed: Get "<url>": net/http: timeout awaiting response headers` | no response headers for 60 s (always-on, parity, see below) |
 | `download interrupted after <got>/<total> bytes: <transport err>` | a body read that ended with a transport error, for example `read tcp …: read: connection reset by peer` (parity, see below) |
 | `download failed: context deadline exceeded (Client.Timeout or context cancellation while reading body)` | D12 download deadline, opt-in |
-| `download stalled: no data for 60s after <got>/<total> bytes` | read-idle abort, meaning no bytes for 60 s on the `-cli-url` body (always-on, parity) |
+| `download stalled: no data for 60s after <got>/<total> bytes` | read-idle abort, meaning no bytes for 60 s on the `-cli-url` body (always-on, parity, `4534d86`) |
 | `mkdir cli dir: <err>` | cli-dir uncreatable. `cliPath` is then empty. A file or a FIFO at the cli-dir path is replaced first (see Staging and cleanup) |
 | `cli version "…" must be a single path component` | D6 hardening |
 | `cli path must not be or contain the home directory: "<path>"` | a folder at the final path that is the home folder or one of its parent folders (D2 hardening) |
@@ -4779,9 +4780,9 @@ Download progress and `fetch` stats, on the `-cli-url` path:
   final line (`f6010b97`, Linux).
 - Between those two lines a tick comes each 1 s. If the byte count of a tick equals
   the count of the last printed line, the tick prints nothing. The counts jump irregularly, so a
-  consumer treats them as progress, not as a byte-exact sequence. claustrum always
-  prints the final line, and it starts the tick clock at the first readable
-  body (claustrum's own).
+  consumer treats them as progress, not as a byte-exact sequence. claustrum prints
+  the final line also when a tick printed that count already, and it starts the
+  tick clock at the first readable body (claustrum's own).
 - The facts line gains a `fetch` object after `cliError`,
   `{"bytes":<n>,"ms":<n>,"longestPauseMs":<n>}`. Those are bytes read, download
   duration and the largest gap between reads. It is the last field, except with
@@ -4821,10 +4822,13 @@ Checksum and verify ordering:
   as the reference does ([D1](DIVERGENCES.md#d1), retired). A mismatch
   keeps the blob. An absent or empty checksum verifies nothing.
 - The compare is case-sensitive on both paths. The right digest in upper case
-  answers `checksum mismatch: expected=<UPPER>, actual=<lower>`.
-- Every run with a CLI path makes the cli-dir first (mode `0700`, with its
-  parents), also on a cache hit. On a cache miss that is before the source check,
-  before the blob opens and before any network access. So after that step a failed
+  answers `checksum mismatch: expected=<UPPER>, actual=<lower>` (`7d193f89` and
+  `f6010b97`, Linux).
+- Every run with a CLI path and a version that D6 accepts makes the cli-dir first
+  (mode `0700`, with its parents), also on a cache hit. On a cache miss that is
+  before the source check, before the blob opens and before any network access
+  (`5db5e4a` and later for `-cli-zst`, `f6010b97` for `-cli-url` and a missing
+  source, Linux). So after that step a failed
   cache miss leaves the cli-dir. A new cli-dir stays empty.
 - On Linux and macOS the folder step uses the `-cli-dir` text as given. So
   `-cli-dir <dir>/sub/..` makes `<dir>/sub` (mode `0700`). Windows makes nothing
@@ -4832,8 +4836,8 @@ Checksum and verify ordering:
   such as `mkdir cli dir: mkdir <dir>/sub: not a directory`.
 
 The other clocks: every `-install` clock above is always on and is a clock of the
-reference, except the opt-in D12 deadline and the 2 s wait for the output of a
-stopped launcher run (claustrum's own). The stdlib transport clocks
+reference, except the opt-in D12 deadline, the 2 s wait for the output of a
+stopped launcher run and the 0.2 s rename retry (claustrum's own). The stdlib transport clocks
 (`net.Dialer{Timeout:30s}`, `TLSHandshakeTimeout:10s`) apply on `-cli-url` only,
 and they are not probed on the reference. `-cli-probe-timeout` and
 `-libc-probe-timeout` are deprecated no-ops.
@@ -4870,7 +4874,7 @@ Staging and cleanup:
   decompressed into that file as it arrives, and no other file is made.
 - An install puts the new CLI at its final path, removes the `-cli-zst` blob and
   runs the 10 minute sweep. Then `<final path> --version` runs. The prune follows a
-  good run only. A run that exits non-zero removes the new CLI again with one plain
+  good run only. A run that does not start or exits non-zero removes the new CLI again with one plain
   remove. A stopped run keeps the new CLI. On Windows claustrum can leave that file
   when the exited CLI holds it (claustrum's own).
 - What is at the final path goes before the new CLI runs. A folder there is removed
@@ -4889,9 +4893,9 @@ Staging and cleanup:
   stays, the blob stays and no CLI runs. The reference removes that folder as a
   tree and puts the CLI file there. That is measured with `-cli-zst` on Linux,
   macOS and Windows, and `-cli-url` is not measured.
-- That guard compares the folder at the final path with the home folder and with
-  each parent folder of it, by file identity. It does that for the home path as
-  given and for its resolved path. The home guard of the RPC paths stays lexical.
+- That guard runs the lexical test of the RPC paths first. Then it compares the
+  folder at the final path with the home folder and with each parent folder of it,
+  by file identity, for the home path as given and for its resolved path.
 - On macOS the volume ignores letter case, so a `-cli-version` in another letter
   case names a folder on disk. Both binaries replace such a folder that does not
   hold home, and the new file takes the name of the command. For a folder that
@@ -4919,7 +4923,8 @@ Staging and cleanup:
   and macOS texts. Windows has no FIFO case and no case with a parent that is not
   writable.
 - Both removes are plain removes of one path, never a tree. claustrum's own (not
-  measured): it removes the version file first, and it leaves a socket, a device,
+  measured): it removes the version file first, and if that fails, the cli-dir
+  entry stays. It leaves a socket, a device,
   a symlink to a FIFO and a `ccd-cli-version` that is a folder or a symlink alone.
 - The `-cli-keep` prune:
     - Only a version file counts, and only a version file goes, with one plain
@@ -4932,7 +4937,7 @@ Staging and cleanup:
       names are not measured.
     - The order is the mtime, newest first. Entries with one mtime stay in byte
       order of the name, so the later name goes. The new CLI takes its place in the
-      order and always stays. `-cli-keep 0` and a negative value remove every older
+      order and always stays. `-cli-keep 0` and a negative value remove every other
       version file, and the result line follows with exit `0` and an empty stderr.
     - A failed install, a stopped run and a cache hit do not prune.
 - Two sweeps remove old regular files of the cli-dir with one plain remove each,
@@ -4952,19 +4957,21 @@ Staging and cleanup:
       minutes old. claustrum then retries a `-cli-zst` staging step once.
 - The sweeps and the prune skip an entry of the cli-dir that is the home folder or
   holds it ([D2](DIVERGENCES.md#d2), claustrum's own). They remove regular files
-  only, so a home folder stays there on the reference too.
+  only, so a home folder stays there on the reference too (from the code, no
+  home cell).
 
 The libc probe fills the `libc` fact:
 - claustrum runs `ldd` on every probe, and its output decides. A "musl" banner
   reports `musl`, and any other output reports `glibc`. The `/lib/ld-musl-*.so.*`
   marker is read only when `ldd` produced no output.
-- The probe bounds ldd itself at 5 s (Linux). `ldd` runs in its own process group,
+- The probe bounds ldd itself at 5 s, as the reference does since `19f30c46`
+  (Linux). `ldd` runs in its own process group,
   and if it still runs at 5 s the whole group is killed. Output written before that
   kill is dropped, so the marker decides. No log line is written, and the facts
   line keeps its shape. The bound applies on a fresh install and on a cache hit.
 - If `ldd` exits before 5 s while a child still holds its output pipe, the probe
   waits up to 2 s more. Then it uses the output it has, even past 5 s, and the
-  child is not killed (Linux).
+  child is not killed (`f6010b97`, Linux).
 
 ### -probe-cli — classify a CLI binary
 
