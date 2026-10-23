@@ -4,7 +4,7 @@ The `server.*` methods describe the daemon and stop it. `server.ping` tells a cl
 
 ## Request
 
-None of the three methods takes parameters. The daemon does not read `params` for them. A `params` of any type, or no `params` member, gives the same reply.
+None of the three methods takes parameters. The daemon does not read `params` for them. A `params` of any type, or no `params` member, gives the same reply (from the code).
 
 ```json
 {"jsonrpc": "2.0", "id": 1, "method": "server.ping", "auth": "<token>"}
@@ -42,7 +42,7 @@ The members come in this order:
 | `version` | The version of the daemon. |
 | `methods` | The 20 methods, in the order of [Methods](../PROTOCOL.md#methods-20). `plugins.prune` is last on every system. |
 | `instanceId` | 32 hexadecimal characters, new at each start of the daemon. claustrum makes it from 16 random bytes (claustrum's own). On Linux and macOS the owner record of `daemon.lock` holds the same value. The banner of the log holds it too (`f6010b97` and `89cb6289`, see [Daemon log](../PROTOCOL.md#daemon-log-remote-serverlog)). |
-| `startedAt` | The start time of the daemon in unix milliseconds. The daemon sets it after its start steps and the bind of the socket (measured against `89cb6289` on a Linux VM). |
+| `startedAt` | The start time of the daemon in unix milliseconds. claustrum sets it after its start steps and the bind of the socket (from the code). On `89cb6289` it is within 1.5 ms of the listen call (Linux VM). |
 | `features` | The optional extensions that this build supports. See [Features](#features). |
 | `peerCheck` | The state of the peer check. See [The peer check](#the-peer-check). |
 | `peerCheckBy` | The parts that the check compares. With `"off"` or `"unavailable"` the reply has no such member. |
@@ -126,7 +126,7 @@ On `server.shutdown` the daemon logs these two lines before it closes any connec
 [Server] shutdown requested
 ```
 
-Each `[Server] Connection closed: <addr>` line, when it is logged, comes after the close of its connection. Then the daemon logs:
+If the daemon logs a `[Server] Connection closed: <addr>` line, the line comes after the close of its connection. Then the daemon logs:
 
 ```
 [Server] cleanup: closed <n> connection(s), killed <n> child process group(s)

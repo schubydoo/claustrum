@@ -81,21 +81,15 @@ func docSetDiff(a, b map[string]bool) []string {
 	return out
 }
 
-// TestDocsEveryMethodHasAHome: each method of server.capabilities has a heading or a
-// first table cell in docs/PROTOCOL.md, or a page in docs/protocol/.
+// TestDocsEveryMethodHasAHome: each method of server.capabilities has a heading in
+// docs/PROTOCOL.md, or a page in docs/protocol/.
 func TestDocsEveryMethodHasAHome(t *testing.T) {
 	named := map[string]bool{}
 	for _, line := range strings.Split(docRead(t, "docs", "PROTOCOL.md"), "\n") {
-		switch {
-		case strings.HasPrefix(line, "##"):
+		if strings.HasPrefix(line, "##") {
 			// A heading names the method as its first word, with or without backticks.
 			if f := strings.Fields(strings.TrimLeft(line, "#")); len(f) > 0 {
 				named[strings.Trim(f[0], "`")] = true
-			}
-		case strings.HasPrefix(line, "| `"):
-			// A table row whose first cell is a method in backticks names it.
-			if end := strings.Index(line[3:], "`"); end >= 0 {
-				named[line[3:3+end]] = true
 			}
 		}
 	}
