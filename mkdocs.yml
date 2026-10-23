@@ -97,6 +97,7 @@ nav:
       - git.worktree_remove: protocol/git-worktree-remove.md
       - launcher.resolve: protocol/launcher-resolve.md
       - process.stdin: protocol/process-stdin.md
+      - process.kill: protocol/process-kill.md
       - process.killAndWait: protocol/process-killandwait.md
       - process.reattach: protocol/process-reattach.md
       - plugins.prune: protocol/plugins-prune.md
