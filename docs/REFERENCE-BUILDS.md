@@ -35,13 +35,34 @@ release.
 | `7cbfa471…` | 2026-06-04 | `git.info` gained `root` (+ off-wire churn, described below) | [PR 60](https://github.com/schubydoo/claustrum/pull/60) |
 | `8de85faa…` | 2026-05-21 | baseline (initial clean-room target) | initial implementation |
 
-Most per-build sections have three parts. The **wire delta** is what claustrum
-must match byte-for-byte. **Off-wire churn** (or **Off-wire**) is any source that
-moved but never reaches the JSON-RPC surface. **How it was bounded** gives the
-measurement that showed that nothing else changed. Some sections add more labels,
-for example **Missed at first**, **Older gaps closed in the same work** and
-**Reconciled in**. The forensics stay outside the committed tree. Correction of
-2026-10-23: this paragraph said that each per-build section has three parts.
+| Reference SHA | Divergences opened | Divergences retired | Other divergence notes |
+|---|---|---|---|
+| `5fd08069…` | D27 | D4, D5, D9, D13, D17, D18, D21, D25 | |
+| `89cb6289…` | D20, D21, D22, D23, D24 | D11 | D2 gained its `-install` refusal of a home folder |
+| `f6010b97…` | D18, D19 | D1, D7, D14 | D16 is still needed, and its Windows cause is known |
+| `19f30c46…` | | | D16 persists on this build |
+| `4534d86…` | D16 | | D15 covers the macOS holder check of the new run-dir lock |
+
+This second table holds only what the build sections below record. A build with no
+row records no divergence as opened, retired or changed. A section can still cite
+an entry for context. [DIVERGENCES.md](DIVERGENCES.md) holds each entry.
+
+Each per-build section takes its labels from one set, always in this order, and
+uses only the labels it needs. A lead paragraph, where a section has one, gives
+the header facts. Examples
+are the Desktop release that pinned the build, its `-version` line and its Go
+stamp. **Wire delta** is what claustrum must match
+byte-for-byte. A Wire delta list can also carry the off-frame changes of the same
+work, as `90fca6e6` does. **Off-wire churn** is any source that moved but never reaches the
+JSON-RPC surface. **Missed at first** is a change of the build that the first
+reconciliation did not find. **Older gaps closed** are fixes, in the same work,
+for behavior that older builds already had. **How it was bounded** gives the
+measurement that showed that nothing else changed. **Measured details** are
+single measurements that fit no label above. **Divergences** names the entries of
+[DIVERGENCES.md](DIVERGENCES.md) that the work opened, retired or changed. **Reconciled
+in** names the PRs. The baseline section has the header facts only. The forensics
+stay outside the committed tree. Correction of 2026-10-23: this paragraph said
+that each per-build section has three parts.
 
 ### `5fd08069bd5f33e9b8a2b104c631bbbfbd4e2536` — 2026-10-05 (built)
 
@@ -80,7 +101,8 @@ battery on the Linux VM. On the macOS and Windows VMs it ran the changed areas
 (rounds `task082-01` to `task082-03`). Its one frame difference was a
 `git.info` on a folder with no repository during the first start test. PR 596
 closed it, and the off switch during a `git.info` with it (rounds `task103-01`
-to `task103-06`). D4, D5, D9, D13, D17, D18, D21 and D25 are retired. D27 is new (PR 563).
+to `task103-06`).
+
 In round `val-s3p2b2-5` 109 requests of the `val-s3p2b1` cells and 77 requests
 of newer cells ran with the order of the variables (Linux VM). The calls differ
 there in two kinds of place: the differences that stay, and the rows that the
@@ -88,8 +110,8 @@ last edits of the copy follow. On the macOS VM 124 of 177 cells have no call
 that differs. The reply of claustrum to cell X2 of round `task077-03` is
 byte-equal in rounds `task077-04` to `task077-06` (Windows VM).
 
-One Windows claustrum run where both requests got `-32001` was the test
-kit, not claustrum (round `task104-01`). Two items stay open:
+One Windows claustrum run where both requests got
+`-32001` was the test kit, not claustrum (round `task104-01`). Two items stay open:
 
 - The off switch during `git.status` and the worktree methods: Linux ran every
   cell. macOS ran every cell but C6, C6b, C6n and S3 (`task105-03`,
@@ -104,7 +126,7 @@ kit, not claustrum (round `task104-01`). Two items stay open:
   in 44 of 60 in round `task107-01`, so the race is noisy and the rounds show no
   measurable effect of the change.
 
-Off the wire, `5fd08069` keeps an exited git wrapper as a zombie until the
+**Measured details.** Off the wire, `5fd08069` keeps an exited git wrapper as a zombie until the
 process that holds its stdout ends. For a config listing on standard input
 that wait ends at the 30 s bound of the call. Rounds `task101-03` and
 `task082-02` show both (Linux and macOS VMs). On the wire, with a holder of
@@ -123,6 +145,9 @@ With an `lsof` run that `SIGKILL` cannot end, the macOS host cleaner is parity i
 the log line, signals and disk (round `tier4-01`, macOS VM). The pass differs:
 `5fd08069` runs `lsof` once and ends in 17 s, claustrum runs it three times and
 ends in 51 s. The cause: claustrum reads a run it gave up on as busy and reads the daemon again until its busy sampling ends (from the code).
+
+**Divergences.** D4, D5, D9, D13, D17, D18, D21 and D25 are retired. D27 is new
+(PR 563).
 
 ### `89cb6289d0e434f573cfc7267dd0cbb8c56ca298` — 2026-09-28 (built)
 
@@ -155,7 +180,7 @@ Issue 442 tracked the reconciliation. The build carries a `go1.25.14` stamp
 (PR 448). The reap of a child record reads its `program` key, which `f6010b97`
 does not read (PR 453).
 
-**Older gaps closed in the same work.** Some fixes are for behavior that
+**Older gaps closed.** Some fixes of the same work are for behavior that
 `f6010b97` shares with this build. That is all of PR 445, most of PR 447, and
 parts of PRs 446, 450, 451, 453, 454 and 455.
 PR 445 refuses a `worktreeRoot` that leads into a checkout of the repository.
@@ -169,13 +194,15 @@ ran on all three systems. The frame battery was byte-equal on each, apart from
 the fields that change per run and the D16 frame on Windows. The D19 junction
 rows are not part of the battery. The check
 found no new frame difference that a slice had not taken. Issue 429 lists its
-other differences. D20, D21, D22, D23 and D24 are new in this work, and D11 is
-retired. D2 gained its `-install` refusal of a home folder (PR 451).
+other differences.
 
-With nothing set and with an empty daemon `GIT_CONFIG_KEY_0`, `89cb6289` answered
+**Measured details.** With nothing set and with an empty daemon `GIT_CONFIG_KEY_0`, `89cb6289` answered
 `could not check whether <worktreePath> is locked (its registrations could not be
 examined); retry`, and the folder and the file stayed (cells CaP0 and CaP3 on Linux
 and macOS VMs, CabP0 and CabP3 with a `branchName` on the Linux VM).
+
+**Divergences.** D20, D21, D22, D23 and D24 are new in this work, and D11 is
+retired. D2 gained its `-install` refusal of a home folder (PR 451).
 
 ### `f6010b978a0b0f4ca0dcb7dadda9cc4271a608a1` — 2026-09-24 (observed)
 
@@ -198,7 +225,7 @@ carries a `go1.25.14` stamp (`go version` on the binary), the same as `90fca6e6`
 **Off-wire churn.** The `.worktreeinclude` directory scan (PRs 420, 426) and the
 hardened git call shape (PR 425).
 
-**Older gaps closed in the same work.** PRs 411, 416, 417 and 427, and parts of
+**Older gaps closed.** In the same work, PRs 411, 416, 417 and 427, and parts of
 PR 419, fix behavior that older builds already had. PR 411 is the
 `git.worktree_remove` refusal of a `baseRepo` with no repository, which stops a
 recursive delete. The rows above name those builds.
@@ -208,12 +235,14 @@ and Windows VMs. A whole-build re-check of main against this build then ran on
 all three OSes. It found no new frame difference. It found argv and log
 leftovers (PR 426), older `-install` gaps (PR 427) and a stale D9 example. For
 `git.status {"baseRepo":[1,2]}` both binaries answered the same frame,
-`{"code":-32602,"message":"Invalid params"}`, on Linux, macOS and Windows. D16
-is still needed, and its Windows cause is now known. D1, D7 and D14 are
-retired, and D18 is new. A later pass matched `git.worktree_remove` to this build
-and closed most of its older gaps. D19, the Windows junction refusal, is new with it.
+`{"code":-32602,"message":"Invalid params"}`, on Linux, macOS and Windows. A later
+pass matched `git.worktree_remove` to this build and closed most of its older gaps.
 Another pass matched the `git.worktree_create` directory modes, parent-step error
 texts and checkout refusal for a worktree location to this build on Linux and macOS.
+
+**Divergences.** D16 is still needed, and its Windows cause is now known. D1, D7
+and D14 are retired, and D18 is new. D19, the Windows junction refusal, is new
+with the later `git.worktree_remove` pass.
 
 ### `90fca6e6a55c4d4c659e8c6ed511b7969ab17315` — 2026-09-14 (built)
 
@@ -232,9 +261,8 @@ for this build. Items 1, 3 and 4 are measured.
 **Wire delta.** Exactly one item changes the bytes of a frame: item 3, and claustrum
 had to change its own frames to stay byte-identical. Items 1 and 4 are observable
 off the frame instead. They show in the connection lifecycle and in the seeded
-worktree, which is precisely what a frame diff cannot catch.
-
-**The seven.**
+worktree, which is precisely what a frame diff cannot catch. The list holds all
+seven changes that claustrum made for this build:
 
 1. A reattach closes the connection it replaces. `process.reattach` already
    transferred the frame stream to the reattaching connection. It now also closes
@@ -262,14 +290,14 @@ worktree, which is precisely what a frame diff cannot catch.
    up on a wedged one at 17 s. These are its own values, not probe-measured. This
    is the one a full re-check found after the first four slices had merged.
 
+**Missed at first.** Item 7 escaped the first pass. A second, full re-check after
+the first four PRs had merged is what found it.
+
 **How it was bounded.** Items 1, 3 and 4 were measured on VMs. Items 2, 5, 6 and 7
 are not probe-measured. For 5, 6 and 7 the
 callers sit behind a 5-minute process age and a 30-day idle age, which makes
 staging them expensive. The code for each states that its values are claustrum's
 own.
-
-Item 7 escaped the first pass. A second, full re-check after the first four
-PRs had merged is what found it.
 
 **Reconciled in.** PRs 387 through 390 are the four implementation slices. PR 391
 corrects claims those four left wrong. PR 392 adds item 7 and puts the host cleaner's
@@ -285,9 +313,6 @@ build on top of `3ef9370`. This build has two wire changes, both matched
 byte-for-byte, plus four off-wire subsystems, one new off-wire CLI mode, and a
 startup file-limit raise.
 
-**Missed at first.** This build also bounds the `ldd` libc probe at 5 s. That
-change was reconciled later, under issue 408.
-
 **Wire delta.**
 
 1. `plugins.prune` added. The method count goes from 18 to 19. This is a new
@@ -300,7 +325,7 @@ change was reconciled later, under issue 408.
    gains the matching feature. An absent or empty value keeps the create-a-branch
    behavior, which is parity.
 
-**Off-wire.** These source changes move no client-visible frame. Four are subsystems.
+**Off-wire churn.** These source changes move no client-visible frame. Four are subsystems.
 One is a CLI mode. One raises the inherited file limit. A closing note covers windows.
 
 - `-probe-cli` CLI mode. A one-shot flag runs a bounded `<cli> --version` probe
@@ -328,14 +353,18 @@ One is a CLI mode. One raises the inherited file limit. A closing note covers wi
   windows. Windows ships no
   run-dir lock, so the daemon is never the run-dir lock holder there. It records no
   children, reaps nothing, and stamps no child markers. A windows VM showed this.
-  A windows VM showed again that D16 (git.status of a linked worktree) persists on this
-  build.
+
+**Missed at first.** This build also bounds the `ldd` libc probe at 5 s. That
+change was reconciled later, under issue 408.
 
 **How it was bounded.** The static drift check passes for `19f30c46`. The 19 methods,
 the CLI flags, the `-version` format, and the tracked strings all match. The new
 `-probe-cli` flag appears in both binaries. The two wire changes went through the
 frame battery. Claustrum reconciled each off-wire subsystem 1:1. A throwaway VM
 checked the destructive paths on linux, darwin, and windows.
+
+**Divergences.** A windows VM showed again that D16 (git.status of a linked
+worktree) persists on this build.
 
 **Reconciled in.** PRs 356 through 371, with later follow-up parity fixes (the
 plugins.prune sibling-daemon classification and the inherited file-limit raise).
@@ -348,7 +377,7 @@ and the `-version` format are byte-identical. One off-wire change, linux only.
 
 **Wire delta.** None.
 
-**Off-wire.** The `-install` libc probe (linux only) was reordered.
+**Off-wire churn.** The `-install` libc probe (linux only) was reordered.
 Build 4534d86 and earlier consulted the musl loader glob (`/lib/ld-musl-*.so.*`)
 first and ran `ldd --version` only on a miss. Build 3ef9370 runs `ldd` on every
 call and lets its output decide. A "musl" banner reports `musl`. Any other output
@@ -374,9 +403,6 @@ lifecycle-focused build on top of `7d193f89`. Three wire changes, all matched
 byte-for-byte, plus a large off-wire daemon-lifecycle layer and one new documented
 divergence (D16). The RPC method set is unchanged at 18.
 
-**Missed at first.** This build also added the 10-minute age gate to the install
-temp sweep. That change was reconciled later, under issue 408.
-
 **Wire delta.**
 
 1. `server.capabilities` gains two fields and two features. The result adds
@@ -399,18 +425,13 @@ in-repo `.gitattributes` no longer runs a clean filter during status. The first
 change line's leading space was reconciled here too. `5db5e4a` dropped that space,
 and `7d193f89` and `4534d86` keep it. Claustrum had carried the stale `5db5e4a` trim.
 
-New divergence D16. On Windows the reference's own `git.status` of a linked worktree
-errors `-32603 "exit status 128"` (measured). Claustrum reproduces the same
-temp-gitdir assembly and returns the status. The Windows failure mechanism was not
-pinned in this cycle. A later measurement pinned it. The behavior is byte-identical on Linux and macOS. On
-Windows, when the user has no global excludes file, it is a reachable divergence. See
-[DIVERGENCES.md](DIVERGENCES.md) D16.
-
-**Off-wire.** A daemon-lifecycle layer that does not move a client-visible frame. It
+**Off-wire churn.** A daemon-lifecycle layer that does not move a client-visible frame. It
 holds `-install` download progress plus a 60-second read-idle abort. It also holds a
 run-dir lock with an owner record, an orphan-exit self-probe, and session supersede.
-It bounds the `git.worktree_create` post-checkout drain. The macOS run-dir holder
-check is the always-on divergence D15.
+It bounds the `git.worktree_create` post-checkout drain.
+
+**Missed at first.** This build also added the 10-minute age gate to the install
+temp sweep. That change was reconciled later, under issue 408.
 
 **How it was bounded.** Full frame captures against the new binary, plus VM
 measurements on Windows and macOS. The three-OS osparity sweep
@@ -418,6 +439,14 @@ measurements on Windows and macOS. The three-OS osparity sweep
 byte-identical between claustrum and the reference. Windows is byte-identical apart from two things. One is
 the documented D16 divergence (git.status of a linked worktree). The other is the
 shared Windows worktree-timeout timing race, which the reference exhibits too.
+
+**Divergences.** New divergence D16. On Windows the reference's own `git.status` of a linked worktree
+errors `-32603 "exit status 128"` (measured). Claustrum reproduces the same
+temp-gitdir assembly and returns the status. The Windows failure mechanism was not
+pinned in this cycle. A later measurement pinned it. The behavior is byte-identical on Linux and macOS. On
+Windows, when the user has no global excludes file, it is a reachable divergence. See
+[DIVERGENCES.md](DIVERGENCES.md) D16. The macOS run-dir holder check of the
+off-wire lifecycle layer is the always-on divergence D15.
 
 **Reconciled in.** PRs 314–333.
 
@@ -428,9 +457,6 @@ session-worktree surface. Seven wire changes, all matched byte-for-byte. Four ar
 listed below. The other three are the `git.status` untracked handling, the
 `worktree_remove` registration prune, and the `worktree_remove` locked-worktree
 refusal. The off-wire git rewrite and VM probes surfaced those three.
-
-**Missed at first.** This build also checks a supplied `-cli-checksum` against
-the `-cli-zst` blob. That change was reconciled later, under issue 408.
 
 **Wire delta.**
 
@@ -543,6 +569,9 @@ check refuses a `baseRepo` that itself sits under a managed-worktrees marker
 against `7d193f89` on an ephemeral VM. That VM covered the external-worktree refusals,
 the marker body, and the nested-base-repo refusal through a planted marker.
 
+**Missed at first.** This build also checks a supplied `-cli-checksum` against
+the `-cli-zst` blob. That change was reconciled later, under issue 408.
+
 **How it was bounded.** The cross-binary frame battery reports claustrum ≡
 `7d193f89` byte-identical across the method suite. Every worktree, status and list edge
 shape above was additionally probed per-method against the reference on an ephemeral
@@ -568,8 +597,8 @@ holds the wire contract.
 against `7c2f88d` both point to token persistence and to nothing else. No other
 method or phase changed.
 
-**Launcher bound.** The `-serve` launcher of `5db5e4a` waited about 10 s for its
-child. With a zero-byte `-token-file` it exited 1 after 10.07 s. claustrum used
+**Measured details.** The launcher bound: the `-serve` launcher of `5db5e4a`
+waited about 10 s for its child. With a zero-byte `-token-file` it exited 1 after 10.07 s. claustrum used
 10 s until row P7 of `89cb6289` (12.06 s, Linux VM).
 
 ### `7c2f88d13e5f269762dd4d463aa4eb3102214110` — 2026-07-02
