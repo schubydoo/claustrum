@@ -1433,7 +1433,7 @@ The daemon's own environment changes the check as follows:
   `GIT_DIR` that names a gone entry gets M5. On Linux and macOS a `GIT_DIR` that
   names a `.git` file means "no repository". On Windows that `.git` file is trusted
   and pinned to itself, and without `"shadowDirOff":true` class 2 of
-  [Repository config refusals](#repository-config-refusals) answers. With its entry
+  [Repository config refusals](#class-2-files-of-the-git-directory) answers. With its entry
   gone that is not measured on `5fd08069`. Any other
   `GIT_DIR` that does not exist is left to git.
   Git then runs with `GIT_COMMON_DIR` pinned to that `GIT_DIR`, unless the daemon's
@@ -1837,8 +1837,9 @@ request, on the five methods. A git request that starts while it runs has the sw
 too. The request then gets the answer that it gets with no read. A FIFO as the config
 then gets no answer in 10 s (Linux and macOS VMs). The member name matches without
 regard to letter case, so `"SHADOWDIROFF": true` is the switch too. The values
-`"true"`, `1`, `null` and `false` act as no member. These facts hold on Linux, macOS
-and Windows VMs. With `worktreeRoot` and the switch, a remove of a worktree with a
+`"true"`, `1`, `null` and `false` act as no member. The switch, its letter case and
+these values hold on Linux, macOS and Windows VMs. A request that starts while it
+runs ran on a Linux VM. With `worktreeRoot` and the switch, a remove of a worktree with a
 config of 20 MiB removes the worktree (macOS VM).
 
 ##### How the daemon reads a config
@@ -1853,7 +1854,10 @@ nothing (claustrum's own).
 From the code: the call gets no `GIT_CONFIG` and no `GIT_CONFIG_PARAMETERS` of the
 daemon, and it runs with `GIT_DIR=<null device>` and `LC_ALL=C`. On Linux and macOS the
 daemon opens each file of the read with no controlling terminal. A config can be a
-link to a pty slave. After the pty master closes, the daemon stays up (Linux VM).
+link to a pty slave.
+
+With a config that is a link to a pty slave, `5fd08069` stays up after the pty
+master closes (Linux VM).
 
 ##### The kept verdict
 
@@ -1913,7 +1917,7 @@ the text. A format version `2` in such a file is not refused.
   Windows VMs). Its filter settings count for the filter rule of the checkout.
 - The `config.worktree` file of a linked worktree. If the config turns
   `extensions.worktreeConfig` on, that file gets the tests. `true`, `yes`, `on` and
-  `1` turn it on, also in upper case and in mixed case such as `Yes` and `tRuE`. So
+  `1` turn it on, and so do `TRUE`, `ON`, `Yes`, `On` and `tRuE`. So
   does the key with no value. `false`, `no` and `0` do not (Linux, macOS
   and Windows VMs). The trust check of the request finds that linked worktree. On
   `git.status` it is the worktree that `baseRepo` names. All five methods ran, and
@@ -1930,8 +1934,8 @@ has no rule for its key, or the rule does not accept its value. Refused are
 extension in a config with no format version key is not refused. Under version `1`
 the rules accept `objectFormat = sha256` and `refStorage = reftable`, so a sha256 or
 a reftable repository is not refused. A value that git itself refuses but the copy
-leaves out, such as `extensions.objectformat = md5` under version `0`, gets the
-normal answers of a repository.
+leaves out, such as `extensions.objectformat = md5` under version `0`, gets no
+refusal of the daemon. The method answers as git does.
 
 Four extension states are measured on `5fd08069` but not on a claustrum build with
 the settings copy. They are `worktreeConfig = maybe` and `objectFormat = SHA256` under
@@ -1969,6 +1973,8 @@ itself.
 A refused config comes before a refused file of the git
 directory. In class 2, `shallow` comes before `info/attributes` (Linux, macOS and
 Windows VMs), and `info/attributes` comes before `info/exclude`.
+
+##### A folder that is not a repository
 
 A folder with no repository keeps its "not a repository" answers.
 That holds for a `HEAD` that is no ref and no object id, also with format version `2`.
