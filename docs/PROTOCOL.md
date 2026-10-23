@@ -460,7 +460,9 @@ asks whether that daemon still has a live client. On macOS it asks `lsof`. That
 run has three bounds: a command deadline, a wait for the output pipe, and a
 last bound that gives up on it at 17 s. Those bounds are claustrum's own.
 With an `lsof` run that `SIGKILL` cannot end, `5fd08069` ends that pass 17 s after
-it starts, with its one `lsof` run still hung (round `tier4-01`, macOS VM).
+it starts, with its one `lsof` run still hung (round `tier4-01`, macOS VM). The cause
+of that 17 s is not known. Its match with the abandon bound of claustrum is no
+measurement of a bound of `5fd08069`.
 
 The cleaner asks `lsof` two more things on macOS: whether the stdio of an orphan
 is three pipes, and whether a process holds the `daemon.lock` of an idle run dir.
@@ -474,7 +476,7 @@ and E4 hold an idle daemon, and rows D1k and E3k hold a daemon with one client:
 |---|---|---|
 | the command does not start | the daemon gets no SIGTERM (rows D1i and D1k, as `89cb6289`) | a dir with a lock file stays (row C3, as `89cb6289`) |
 | the run writes to stderr and exits 1 | the daemon gets no SIGTERM (rows E3i, E3k and E4, as `89cb6289`) | a dir with a lock file stays (rows D2p, D2f and E4, as `89cb6289`) |
-| the run is given up on | no SIGTERM and the second line below, and no `left alone` line, as `5fd08069` (round `tier4-01`, macOS VM). claustrum runs `lsof` three times and its pass takes 51 s, against one run and 17 s. The cause: claustrum reads a run it gave up on as busy and reads the daemon again until its busy sampling ends (from the code) | kept (not measured, claustrum's own) |
+| the run is given up on | no SIGTERM, the `was not retired` line and no `left alone` line, as `5fd08069` (round `tier4-01`, macOS VM) | kept (not measured, claustrum's own) |
 | the 15 s deadline ends the run | no SIGTERM (`5fd08069` under a hung `lsof`, cells B1 and B2. claustrum gives the same result, round 8, macOS VM) | kept (cells L1 and L2) |
 | the run completes with nothing on stderr | the output decides | the output decides |
 
@@ -488,6 +490,12 @@ for the daemon, the first one before every run dir line. Its summary counts
 [hostclean] daemon pid <pid> left alone this pass: its open files could not be inspected
 [hostclean] run dir "<dir>" unused for 40 days: its daemon (pid <pid>) was not retired: a connection is attached to it right now, or that could not be read: in use after all
 ```
+
+In round `tier4-01` (macOS VM) `SIGKILL` cannot end the `lsof` run of an idle
+daemon with no client. There both passes log only the `was not retired` line. claustrum
+runs `lsof` three times, 17 s apart, and its pass takes 51 s. `5fd08069` runs it
+once, and its pass takes 17 s. From the code, claustrum reads a run it gave up on
+as busy and reads the daemon again until its busy sampling ends.
 
 In the two control rows `lsof` starts. Both sides retire the idle daemon (row D1ci)
 and spare the daemon with a client (row D1ck).
