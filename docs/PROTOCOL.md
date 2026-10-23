@@ -936,7 +936,7 @@ cell C-… is of round `tier0-20` against `5fd08069` on a Linux VM.
 | files.extract_tar | `mkdir <entry>: mkdirat <place>: file exists` | in `error` field. A file is at the place of a directory entry |
 | git.status | `baseRepo is required` | -32602. `baseRepo` is now required, since `7d193f89` |
 | git.status / git.list_branches | `<go error>`, for example `exit status 128` | -32603 (git failed, stdout parse) |
-| git.list_branches / git.info / git.status / git.worktree_create | `git took too long: Claude stopped git <subcommand> after 2 minutes; try again` | -32603. Create: after the text of the stopped step, as `git worktree add failed: ` or the `mkdir_failed` text of the parent step. Alone, with `worktree_add_failed`, for a stopped repository test |
+| git.list_branches / git.info / git.status / git.worktree_create | `git took too long: Claude stopped git <subcommand> after 2 minutes; try again` | -32603. Create: after the text of the stopped step, as `git worktree add failed: ` or the `mkdir_failed` text of the parent step. Alone, with `worktree_add_failed`, for a stopped repository test. While a request with `"shadowDirOff":true` runs, the text says `after 30 minutes` (claustrum's own) |
 | the four methods | `config-defined hooks could not be pinned off; git not run: listing the configuration in force: git took too long: Claude stopped git config after 30 seconds; try again` | -32603. Create: `worktree_add_failed`, after `git worktree add failed (checkout): ` for the checkout listing |
 | the four methods | `this repository's git config cannot be used: git did not finish reading "<path>" within 30 seconds; try again` | -32603. Create: `worktree_add_failed` |
 | git.worktree_create | `git worktree add failed (completing the new worktree's git files): this repository's git config cannot be used: git did not finish reading it within 30 seconds; try again` | in `error`, `worktree_add_failed`. The listing of `config.worktree` after the add ran 30 s, and the rollback of a failed checkout runs (cell TW) |
@@ -1161,7 +1161,7 @@ The expanded spelling is wire-visible on eight frames, so it is contract.
 error text. The expanded string also appears in the error text of `files.stat`,
 `files.read`, `files.list`, `files.validate`, `files.extract_tar` and
 `process.spawn`. Two places do *not* carry the spelling. `files.list` entry paths
-are re-joined, and `git.info`'s `root` comes from git's own output. On a
+are re-joined, and `git.info`'s `root` comes from the walk with links resolved, and on Windows from git's confirmation of it. On a
 trailing-separator spelling the difference is a change of *verdict*. POSIX
 `stat("f.txt/")` gives `ENOTDIR`. Once the daemon removes the separator, a
 `-32603` error frame becomes a success frame. Ids 15, 16, 18 and 19 of
@@ -1567,7 +1567,7 @@ not run: the worktree entry this folder's .git names no longer exists`.
 
 | method | refused | no repository |
 |---|---|---|
-| `git.info` | `{"error":{"code":-32603,"message":<text>}}` | `{"isRepo":false,"repoSlug":"","defaultBranch":""}` |
+| `git.info` | `{"error":{"code":-32603,"message":<text>}}` | `{"isRepo":false,"repoSlug":"","defaultBranch":""[,"settingsControl":"<state>"]}` |
 | `git.list_branches` | `{"error":{"code":-32603,"message":<text>}}` | `{"isRepo":false,"branches":[]}` |
 | `git.status` | `{"error":{"code":-32603,"message":<text>}}` | `{"isRepo":false,"clean":false}` |
 | `git.worktree_create` | `{"success":false,"error":<text>,"errorCode":"worktree_add_failed"}` | `{"success":false,"error":"not a git repository","errorCode":"not_a_repo"}` |
@@ -2951,157 +2951,7 @@ no such limit.
 #### git.info
 `{path[,shadowDirOff]}` → repo: `{"isRepo":true,"repo":"<dir>","branch":"<b>","root":"<abs>","repoSlug":"<owner/repo>","defaultBranch":"<b>"[,"settingsControl":"<state>"]}` · non-repo: `{"isRepo":false,"repoSlug":"","defaultBranch":""[,"settingsControl":"<state>"]}`
 
-- `settingsControl` is the last member, since `5fd08069`. Its values are
-  `"shadow"`, `"fallback-git"` and `"off-switch"`. Before a start test of the
-  daemon gave a state, there is no such member. See [The settings copy](#the-settings-copy).
-
-- `repo` is the base name of `root`. A name that starts with `-` or `+` leaves the
-  member out, and the other members keep their order: `{"isRepo":true,"branch":"main","root":"<F>/-repo","repoSlug":"i/r","defaultBranch":"main"}`.
-  `f6010b97` and `89cb6289` do so on Linux and macOS VMs (rows I11a and I11b). The
-  general rule behind those two rows is not measured.
-
-- A refused daemon `GIT_CONFIG_COUNT` changes the answers of this method (see "The
-  daemon's own git environment").
-- Since `f6010b97` the git-directory trust check runs on `path`. A refused
-  git directory answers `-32603` with the refusal text. "No repository" answers the
-  non-repo body. A `GIT_COMMON_DIR` in the daemon's environment turns the check off
-  for this method. See [Git-directory trust check](#git-directory-trust-check).
-- A repository config that the daemon does not accept answers `-32603` with a
-  refusal text. See [Repository config refusals](#repository-config-refusals).
-- A failed start test, a bad answer of the call about the repository, and a copy
-  folder that cannot be made answer `-32603` with their text. See
-  [The settings copy](#the-settings-copy).
-- The daemon reads `branch` with `branch --show-current`, so it works on an unborn
-  HEAD. An empty repo gives the init branch name, for example `master`. A detached
-  HEAD gives `branch:"detached:<short-sha>"`.
-- When `branch --show-current` fails, the result has no `branch` member at all.
-  git's error text never appears there. An example is a HEAD that git fails to
-  resolve (`ref: refs/heads/main` or 40 hex digits, each followed by junk). Measured
-  side by side against `90fca6e6` and `f6010b97` on a Linux VM. If the `rev-parse
-  --short HEAD` call of a detached HEAD fails, the result has no `branch` member
-  either. `5fd08069` answers so in cell V6-13d of round `val-s3p2b2-3` (Windows
-  VM).
-- `root` is the absolute repo top-level. A subdirectory as `path` gives the same
-  `root` (added by reference `7cbfa471`). Since `89cb6289` it is the folder where
-  the walk of the trust check found the repository, the one that holds the `.git`
-  directory or file. Its spelling is `path` after symlink resolution and the walk
-  up. A component that is not a symlink keeps its letter case and Unicode form as
-  sent (rows I07a, I07b and I08 on a macOS VM). A symlink resolves before a
-  later `..` pops it (row D01). `core.worktree`, and the daemon's `GIT_DIR` and
-  `GIT_WORK_TREE`, do not move it. A walk that finds a git directory with no work
-  tree, or nothing, answers the non-repo body after `rev-parse --git-dir` (rows I04,
-  I05 and T11a). On Linux and macOS no `rev-parse --show-toplevel` runs. On the first
-  request, a repository with no `origin/HEAD` takes 9 calls. They are the excludes
-  read, then a listing before each of `rev-parse --git-dir`, `remote get-url
-  origin`, `symbolic-ref` and `branch --show-current` (row L01). Row L01 is of
-  `89cb6289`. Without the member, the first `git.info` of a daemon of `5fd08069`
-  has 21 calls there (cell 50a of round `s3p2b-edges`, Linux VM). The 12 more are
-  the ten test calls, the call about the repository and one config read.
-- On Windows git checks the root. After `rev-parse --git-dir` the daemon runs `git
-  --git-dir=<pin> config -z --list` and `git -c … --git-dir=<pin> --work-tree=<walk
-  root> rev-parse --show-toplevel`, both in `<pin>`, the `GIT_COMMON_DIR` pin (row
-  W01). In the state `shadow` `<pin>` is the git directory, and `GIT_COMMON_DIR`
-  names the copy (row D5 of round `val-s3p2b2-3`, Windows VM, `5fd08069`). When git's answer names the same directory as the walk root, the root is
-  git's answer as printed. Else it is the walk root with forward slashes (rows W14 to
-  W16). A directory symlink resolves in the walk and a junction does not (row D03).
-  Some points are not measured. claustrum tests the same directory by file identity
-  (`os.SameFile`). That is derived from rows W08 and W09. claustrum takes no
-  relative answer. The spelling of the walk root is not measured. With no pin,
-  claustrum runs the pair on the git directory of the walk. One state with no pin
-  is measured. With a daemon `GIT_COMMON_DIR`, the pair and the root are equal on
-  `89cb6289` and the claustrum build of this change in every call (Windows VM, cell B-13).
-  The other states with no pin are not measured.
-- On Windows a path through a junction can name two repositories. The fixture is
-  that of the trust check: a junction `<P>\J` to `<R>\inner`, P on branch `main`
-  with the origin `p/p`, and R on branch `rmain` with the origin `r/r`. For the
-  path `<P>\J\sub` with no daemon `GIT_DIR` or `GIT_COMMON_DIR`, each call after
-  the excludes read carries `GIT_COMMON_DIR=<P>\.git`, the entry of P (cells
-  B-01, B-02, B-07 to B-09 and B-16). The other rows of the table have other
-  entries. The calls of the method run in `<P>\J\sub`, and `rev-parse --git-dir`
-  prints `<R>/.git` there. `89cb6289` answers these fields on a Windows VM:
-
-    | Cell | State | `root`, `repo` | `branch` | `repoSlug` | `defaultBranch` |
-    |---|---|---|---|---|---|
-    | B-01, B-02 | `path` is `<P>\J\sub` | P | `rmain` | `p/p` | `""` |
-    | B-04 | `path` is `<P>\J` | P | `rmain` | `p/p` | `""` |
-    | B-07 | P has no origin | P | `rmain` | `""` | `""` |
-    | B-08 | R has no origin | P | `rmain` | `p/p` | `""` |
-    | B-09 | R is on a detached HEAD | P | `detached:<short sha of R>` | `p/p` | `""` |
-    | B-16 | the config of R sets `core.hooksPath` and `core.fsmonitor` | P | `rmain` | `p/p` | `""` |
-    | B-17k | `path` is `<KP>\J\sub`, `<KP>` a junction to P | P | `rmain` | `p/p` | `""` |
-    | B-17d | `path` is `<P>\J\..\J\sub` | P | `rmain` | `p/p` | `""` |
-    | B-05p | `path` is P, no junction | P | `main` | `p/p` | `main` |
-    | B-05r | `path` is `<R>\inner\sub`, no junction | R | `rmain` | `r/r` | `rmain` |
-    | B-06 | a folder symlink in the place of the junction | R | `rmain` | `r/r` | `rmain` |
-    | B-13 | daemon `GIT_COMMON_DIR` of R | P | `rmain` | `r/r` | `rmain` |
-    | B-14 | daemon `GIT_DIR` of R | P | `rmain` | `r/r` | `rmain` |
-
-  In the mixed cells the listing prints `remote.origin.url` of P, `symbolic-ref
-  refs/remotes/origin/HEAD` prints `refs/remotes/origin/rmain`, and the `rev-parse
-  --verify` of that ref exits 1 (cell B-01). In cell B-15 the config file of P has
-  a broken line. The listing in `<P>\J\sub` exits 128, and `89cb6289` answers
-  `-32603` with the listing refusal that ends
-  `fatal: bad config line 15 in file <P>\.git/config`, after 3 git calls. In cell B-03 the junction is outside any
-  repository, and the answer is the non-repo body. The claustrum build of this change
-  answers the same frame in each of these cells (Windows VM). For cell B-15 now,
-  see "Git-directory trust check". Its calls carry the
-  same entries in these cells, except B-14. In cell B-03 it runs one call less
-  (see the trust check). The claustrum test on real junctions runs on Windows
-  only. It has 11 cells: B-01, B-03, B-04, B-05p, B-05r, B-07, B-08, B-15, B-16,
-  B-17k and B-17d. A test with simulated links runs on Linux and macOS. In cell
-  B-14 calls 4 and 5 differ. They are the root pair. `89cb6289` runs them with
-  `--git-dir=<P>\.git`, in the folder `<P>\.git`, with `GIT_COMMON_DIR=<P>\.git`.
-  The claustrum build of this change runs them with `--git-dir=<R>\.git`, in the folder
-  `<R>\.git`, with `GIT_COMMON_DIR=<R>\.git`. The frames are equal. Cell J-f-info
-  repeats cell B-14 with the same result. Not measured: a junction to another
-  drive, and a junction to a bare repository. Three more states have no cell of
-  `89cb6289`. The answers of claustrum there are from the code:
-    - The `path` goes through the junction, and `<P>\.git\commondir` is a stray
-      file. claustrum judges `<P>\.git` by the stray-commondir rules, and a refusal
-      names P. The build before the spelled start ran no trust check there.
-    - A junction outside any repository leads into a repository whose config file
-      has a broken line. claustrum answers the non-repo body. The build before the
-      spelled start answered the listing refusal for the config file of that
-      repository.
-    - The `path` is `<P>\missing\..`, and `<P>\.git\commondir` is a stray file.
-      The answer is that of the first state.
-- The excludes read runs before the trust check, so it also runs before a trust
-  refusal, as on both references.
-- `7c2f88d` added `repoSlug` and `defaultBranch`. Both are always present,
-  including on the non-repo body. Each is an empty string when the daemon cannot
-  determine it.
-- `repoSlug` is `owner/repo` from `remote.origin.url`. The daemon populates it only
-  for a canonical `github.com` remote. These rules are measured across 42 URL
-  shapes:
-    - The scheme must be `https`, `http`, `ssh`, `git`, or absent. An absent scheme
-      is the scp-like `[user@]host:owner/repo`. `git+ssh://` and `file://` give
-      `""`.
-    - The host must equal `github.com` case-insensitively. `www.github.com`, the
-      trailing-dot `github.com.`, a port (`github.com:443`), GitLab, Bitbucket and
-      self-hosted GHE all give `""`. The daemon strips userinfo.
-    - The path must be exactly two non-empty segments after one optional trailing
-      `/` and one optional `.git`.
-    - The owner is alphanumerics with *interior* hyphens only. `ac-me` and `ac--me`
-      pass. `-acme`, `acme-`, `acme_corp` and `acme.co` do not.
-    - The repo is alphanumerics plus `.`, `_`, `-`. It must not start with `-`, it
-      must not be `.` or `..`, and it must not end in a lowercase `.wiki`. That
-      last test is case-sensitive and suffix-only, so `GIZMO.WIKI` and a repo named
-      `wiki` are accepted.
-- `defaultBranch` is what `refs/remotes/origin/HEAD` points to. It is empty when
-  `refs/remotes/origin/HEAD` is unset. The daemon checks the name. A name that
-  starts with `-` gives `""` with no further call. Else a `rev-parse --verify --quiet
-  refs/remotes/origin/<name>^{commit}` runs, with its listing, and only exit 0 keeps
-  the name. A dangling `origin/HEAD` and one that names a blob give `""` too.
-  `f6010b97` and `89cb6289` do so on Linux and macOS VMs (rows I10a to I10c). The
-  call has the heavy profile, as on `5fd08069` (cell B3d of round `s3p2-linux`,
-  Linux VM, with no `"shadowDirOff"` member). With the member, cell A2 of round
-  `val-s3p2b1` shows the same on Linux, macOS and Windows VMs. In a partial clone
-  no build starts a fetch for `git.info`. The object store, the refs and
-  `packed-refs` are unchanged after 4 requests, and `defaultBranch` is equal. That
-  is cell B3 of round `val-s3p2b1` on a Linux VM, for `89cb6289`, `5fd08069` and
-  claustrum, with and without the member. Not
-  measured: other invalid names, and a `symbolic-ref` answer outside
-  `refs/remotes/origin/` (claustrum verifies it the same way).
+Describes the git repository that holds `path`: its root, branch, GitHub slug, default branch and the state of the settings copy. The page [git.info](protocol/git-info.md) has the request, the response and the errors.
 
 #### git.status
 `{path,baseRepo}` → clean: `{"isRepo":true,"clean":true}` · dirty: `{…,"clean":false,"changes":["M  a.txt"," M b.txt","?? new"]}`

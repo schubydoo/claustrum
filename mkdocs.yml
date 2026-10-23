@@ -91,6 +91,7 @@ nav:
       - files.stat: protocol/files-stat.md
       - files.read: protocol/files-read.md
       - files.extract_tar: protocol/files-extract-tar.md
+      - git.info: protocol/git-info.md
       - git.status: protocol/git-status.md
       - git.list_branches: protocol/git-list-branches.md
       - git.worktree_create: protocol/git-worktree-create.md
