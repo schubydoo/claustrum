@@ -3120,7 +3120,8 @@ The branch step deletes a branch only when another local branch or a
 remote-tracking ref reaches its tip. Else it keeps the branch.
 `git.worktree_remove` runs it after the worktree directory and its registration
 go. The `git.worktree_create` rollbacks run it on the branch that the call made.
-`<b>` is `branchName` as sent. A rule that is not marked is measured against
+`<b>` is `branchName` as sent. `<tip>` is the object name in the listed record
+of `refs/heads/<b>`. A rule that is not marked is measured against
 `89cb6289` on a Linux VM. A rule that names macOS or Windows was measured there
 too. A rule marked "claustrum's own" is not measured.
 
@@ -3173,8 +3174,10 @@ calls set `GIT_TERMINAL_PROMPT=0`,
 the hook pins,
 `GIT_NO_LAZY_FETCH=1`,
 `GIT_ALLOW_PROTOCOL=denied_by_claude_ssh` and an empty `GIT_ASKPASS` (Linux,
-macOS and Windows VMs). Only `rev-list` gets a pipe on stdin (macOS VM): one
-`^<refname>` line for each other local branch that is not a symbolic ref. In
+macOS and Windows VMs). Only `rev-list` gets a pipe on stdin: one
+`^<refname>` line for each other local branch that is not a symbolic ref. The
+other calls get the null device, where `89cb6289` gives a character device (macOS
+VM). In
 some states the reference runs more git calls than claustrum. Examples are no
 repository at `baseRepo`, a gone worktree path, a second create at one path and
 an attach add. The frames are equal.
@@ -3186,7 +3189,8 @@ the catalog.
 
 - One bound of 60 s covers the branch list and the commit check together. At the
   bound the running call is killed, with no SIGTERM first (Linux, macOS and
-  Windows VMs). The bound also covers `rev-parse` (claustrum's own). A stopped
+  Windows VMs). The bound starts before the configuration listing of
+  `for-each-ref` and also covers `rev-parse` (claustrum's own). A stopped
   `rev-parse` is a failure and keeps the branch, also on Windows, where the kill
   gives exit code 1 (claustrum's own).
 - `update-ref` gets SIGTERM 5 s after it starts, on Linux and macOS. A call that
@@ -3203,18 +3207,20 @@ the catalog.
   one goes through a linked worktree. If two removes have branches that share a
   unique commit, one branch stays, and the second reply has
   `"branchKept":true` (Linux and macOS VMs). claustrum keys this lock by the
-  common git dir (claustrum's own).
+  common git dir, also in a rollback (claustrum's own). So two names of one git
+  directory count as one repository here.
 - The steps of different repositories run at the same time.
 - claustrum runs two removes of one `baseRepo` one after the other. `89cb6289`
   deletes both worktree directories first.
 - A remove deletes its worktree directory while the `worktree add` of a create
   in the same git directory runs. Its registration, branch and reply wait for
-  the add, not for the checkout (`5fd08069`, Linux and macOS VMs).
+  the add (`5fd08069`, Linux and macOS VMs). They do not wait for the checkout
+  (Linux VM).
 
 ##### The branch step in a remove reply
 
 The remove frame never gains text from this step. Each case of the keep list
-adds `"branchKept":true`. A skipped name adds no member.
+that a remove can reach adds `"branchKept":true`. A skipped name adds no member.
 
 ##### The branch step in an undo text
 
