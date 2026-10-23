@@ -28,17 +28,20 @@ release.
 | `19f30c46…` | 2026-09-11 (observed) | 2 changes + 4 off-wire subsystems + a new CLI mode. See below | [PRs 356–371](https://github.com/schubydoo/claustrum/pull/371), and the `ldd` bound under issue 408 |
 | `3ef9370e…` | 2026-09-03 (built) | none (off-wire: linux libc probe reordered ldd-first) | [PR 345](https://github.com/schubydoo/claustrum/pull/345) |
 | `4534d86…` | 2026-09-04 (observed) | 3 changes + off-wire lifecycle layer | [PRs 314–333](https://github.com/schubydoo/claustrum/pull/333), and the sweep age gate under issue 408 |
-| `7d193f89…` | 2026-08-25 | 6 changes + off-wire git rewrite. See below | [PR 286](https://github.com/schubydoo/claustrum/pull/286), and the `-cli-zst` checksum check under issue 408 |
+| `7d193f89…` | 2026-08-25 | 7 changes + off-wire git rewrite (corrected 2026-10-23: this row said 6). See below | [PR 286](https://github.com/schubydoo/claustrum/pull/286), and the `-cli-zst` checksum check under issue 408 |
 | `5db5e4a1…` | 2026-07-06 | none (off-wire: `daemon.token` persistence) | [PR 131](https://github.com/schubydoo/claustrum/pull/131) |
 | `7c2f88d1…` | 2026-07-02 | 5 changes. See below | [PR 120](https://github.com/schubydoo/claustrum/pull/120) |
 | `d20a77da…` | 2026-06-09 | none (pure rebuild) | [PR 97](https://github.com/schubydoo/claustrum/pull/97) (pin bump only) |
 | `7cbfa471…` | 2026-06-04 | `git.info` gained `root` (+ off-wire churn, described below) | [PR 60](https://github.com/schubydoo/claustrum/pull/60) |
 | `8de85faa…` | 2026-05-21 | baseline (initial clean-room target) | initial implementation |
 
-Each per-build section has three parts. The **wire delta** is what claustrum
-must match byte-for-byte. **Off-wire churn** is any source that moved but never
-reaches the JSON-RPC surface. **How it was bounded** gives the measurement that
-showed that nothing else changed. The forensics stay outside the committed tree.
+Most per-build sections have three parts. The **wire delta** is what claustrum
+must match byte-for-byte. **Off-wire churn** (or **Off-wire**) is any source that
+moved but never reaches the JSON-RPC surface. **How it was bounded** gives the
+measurement that showed that nothing else changed. Some sections add more labels,
+for example **Missed at first**, **Older gaps closed in the same work** and
+**Reconciled in**. Correction of 2026-10-23: this paragraph said that each section
+has exactly the three parts. The forensics stay outside the committed tree.
 
 ### `5fd08069bd5f33e9b8a2b104c631bbbfbd4e2536` — 2026-10-05 (built)
 
@@ -644,6 +647,10 @@ divergence:
   `fetchToFile`, which streams to a temp file. claustrum then uses a plain
   atomic `os.Rename`, which POSIX-replaces a target *file*. The reference
   handling of an existing target is not probe-measured. It has no wire impact.
+  Correction of 2026-10-23: PR 558 removed `fetchToFile`. The download is now
+  `fetchCLI`, called by `stageDownload`. The rename is still `os.Rename`. On
+  Windows, if it fails with access denied, claustrum tries it again for a short
+  bound (`placeStagedCLI`).
 - Changed code on the `process.spawn` failure path, which is wire-reachable. It was
   therefore the killAndWait-shaped risk: a change that the happy-path battery
   never stresses.
