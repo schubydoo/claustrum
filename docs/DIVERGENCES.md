@@ -254,8 +254,8 @@ entry needs it. A fact that comes from reading claustrum's code is marked
     case-sensitive volume on macOS and a UNC path.
   - The sweeps and the `-cli-keep` prune keep the same guard
     (`cliEntryHoldsHome`) as defense in depth. On `5fd08069` they remove regular
-    files only, so a home folder stays on both binaries (derived, no home cell
-    on `5fd08069`).
+    files only, so a home folder stays there (not measured on
+    `5fd08069` with a home folder). `89cb6289` removed an empty home folder there.
 - **Where the home folder comes from.** Both guards take it from
   `os.UserHomeDir`: the `HOME` variable, or `USERPROFILE` on Windows. With that
   variable unset or empty they refuse nothing (from the code, not measured).
@@ -681,12 +681,12 @@ Reopen trigger: the reference moves to Go 1.26 or newer.
     `the registration <entry> is not the folder that was moved into place`.
   If git gave no answer to `rev-parse --absolute-git-dir`, the guard does not
   run.
-- **A replaced folder (Linux and macOS).** A process renames the new
+- **A replaced folder.** A process renames the new
   registration and puts another folder at its name before the rollback.
-  `89cb6289` removes the folder at the name. That folder can be the
+  On Linux and macOS `89cb6289` removes the folder at the name. That folder can be the
   registration of a live sibling worktree. claustrum removes no folder of the
-  registrations directory. The frame is the plain failed checkout on both
-  sides, and the leaf and the branch are gone on both. On Windows `5fd08069`
+  registrations directory. On Linux and macOS the frame is the plain failed
+  checkout on both sides, and the leaf and the branch are gone on both. On Windows `5fd08069`
   deletes the folder that took the name of the moved registration, claustrum
   keeps it, and the frames are equal.
 - **A `.git` file swap (Windows).** Right after the add, `.git` becomes a file
