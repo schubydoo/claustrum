@@ -112,9 +112,9 @@ the files and the seams, and the rules that have no other home.
 - **Host cleaner.** `hostclean.go` holds the shared decision layer, and
   `hostclean_linux.go` / `hostclean_darwin.go` hold the OS reads. Windows links no
   cleaner. The gate, the signals, the `lsof` reads and the log lines are in
-  [Host cleaner](PROTOCOL.md#host-cleaner-off-wire-linux-and-macos). Most of these
-  rules are not under that heading:
-    - The first pass runs 15 s after the start, then one pass a day. The cleaner
+  [Host cleaner](PROTOCOL.md#host-cleaner-off-wire-linux-and-macos). The rules below
+  have no home there:
+    - After the first pass, one pass runs each day. The cleaner
       acts only on this user's own processes and on the `run`, `srv` and `ccd-cli`
       folders of its own root. A pass acts only after it confirms that its own
       socket still leads to itself.
@@ -139,7 +139,9 @@ the files and the seams, and the rules that have no other home.
     - "Busy" is a 3 s sampling window, not a state. A daemon that is idle across
       the window and gains a client a moment later still gets `SIGTERM`.
     - The limit lines are four: more than 4096 processes, more than 64 orphan
-      groups, more than 64 run dirs, and 8 retire attempts in one pass. The log
+      groups, more than 64 run dirs, and 8 retire attempts in one pass. claustrum
+      counts attempts there, refused ones included. The reference count after a
+      refused attempt is not measured. The log
       lines carry the `[hostclean]` prefix after claustrum's level tag. The line
       before a `SIGKILL` and the reasons for a held lock and for a listener that
       is not our daemon use the texts of the reference.
@@ -149,7 +151,9 @@ the files and the seams, and the rules that have no other home.
 
   This path is destructive and host-wide. Every process read, kill, dial, rename
   and remove sits behind a seam, and tests never touch a real process. A test that
-  lets a rename or a remove run for real does so inside its own temp dir.
+  lets a rename or a remove run for real does so inside its own temp dir. Test the
+  real cleaner only on a disposable machine, never on a host that runs other
+  daemons.
 - **Login-shell PATH.** `shellenv_unix.go` runs the read at the first
   `process.spawn`, in a process group of its own. At the 4 s cap it kills that
   group. `shellenv_windows.go` reads the daemon's own PATH. See
