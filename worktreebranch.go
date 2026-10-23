@@ -15,7 +15,7 @@ import (
 // The branch step of git.worktree_remove and of the git.worktree_create rollbacks.
 // Since 89cb6289 the daemon deletes the branch only when another local branch or a
 // remote-tracking ref reaches its tip. Else it keeps the branch. docs/PROTOCOL.md →
-// "The branch step" gives each rule with its rows and VMs.
+// "The branch step" gives each rule.
 
 // branchListLimit is the --count of the for-each-ref call. A listing of that many
 // records keeps the branch, and no further call runs (rows R15a and R15c). With 10000
@@ -283,7 +283,7 @@ func branchLockPresent(repo, branch string) bool {
 // leaf stays. Then the kept text drops its "the worktree itself was removed, but "
 // start. After a failed rmdir the leaf part comes first (row C05). A
 // leaf that the home or identity guard skipped stays too (claustrum's own path).
-// docs/PROTOCOL.md → "The branch step" gives each text with its rows and VMs.
+// docs/PROTOCOL.md → "The branch step" gives each text.
 func rollbackBranchText(repo, branch string, res branchStepResult, leafLeft bool) string {
 	switch res.kind {
 	case branchNotRun:
