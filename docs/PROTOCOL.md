@@ -2127,10 +2127,11 @@ sends it, and an error reply has none (Linux, macOS and Windows).
   `fork/exec <git.exe>: The directory name is invalid.`
 - A request with the member gets `"off-switch"` also as the first request of a
   daemon, in a "no repository" reply and while a failed test is kept.
-- A hold that starts while a request runs moves each later git command of that
-  request that starts its own config listing to the git directory. A command that
-  already runs keeps the copy. After the hold a later command runs the test and
-  takes the copy (Linux, macOS and Windows). A create in a hold makes no copy.
+- A hold during a request moves to the git directory each later command that
+  starts its own config listing (Linux, macOS and Windows). The config check and
+  the call after it keep the copy, as does a command that already runs. On Linux,
+  after the hold a later command runs the test and takes the copy. A create in a
+  hold makes no copy.
 - In that time `git.status`, `git.list_branches` and `git.worktree_remove` get no
   config refusal, as with the member. On a repository of format version 3 they
   answer `{"isRepo":false,"clean":false}`, `{"isRepo":false,"branches":[]}` and the
@@ -2178,7 +2179,8 @@ in the working folder of the daemon.
 | `mkdir <path>: <reason>` or `open <path>: <reason>`, with no quotes | A folder or the lock file of the daemon cannot be made |
 
 Some failed calls give `fallback-git` and not a failure. That is the case when git
-refuses the copy and the same call works without it. At call 10 a `No space left on
+refuses the copy and the same call works without it. A test call that works and
+answers wrongly gives it too. At call 10 a `No space left on
 device` error or an end by a signal fails the test. If two calls fail, the cause
 names the first. A test call that takes 29 s passes, and one of 32 s gives the error
 at about 31 s.
@@ -2264,10 +2266,10 @@ A folder goes between the git calls of a request, never during one. The next cal
 makes it again, with no new config read. A call right after its own config listing
 does not (claustrum's own, not measured). A call whose remake fails gets the `cannot
 write its copy` text above, or the 128 text when all 128 folders are held (from the
-code). A config listing holds its folder while it waits for its pipes (claustrum's
-own, not measured). So with all 128 held,
+code). Each git call holds its folder until its pipe wait ends (claustrum's own,
+not measured). So with all 128 held,
 a new repository gets the 128 text then, and nothing goes. If its folder went and is
-not made again, or its daemon shut down, a call fails alone (from the code). It gets
+not made again, or its daemon shut down or replaced it, a call fails alone (from the code). It gets
 this text, and a listing puts `listing the configuration in
 force: ` before it (Linux and Windows):
 
@@ -2299,7 +2301,8 @@ blocks of rewritten URLs. The file ends with
 ##### The call about the repository
 
 In the state `shadow` the daemon asks git about the repository before the calls of
-the method. The call is `rev-parse --git-dir` in the root of the work tree. It names
+the method. The call is `-c core.hooksPath=<null device> -c core.fsmonitor=false
+rev-parse --git-dir`, in the root of the work tree. It names
 the folder `.probe` of the daemon, and the daemon writes an emptied `.probe/config`
 again when it changed. The call drops the daemon's `GIT_NAMESPACE`,
 `GIT_INDEX_FILE`, `GIT_DISCOVERY_ACROSS_FILESYSTEM` and
@@ -2312,9 +2315,9 @@ is kept 5 seconds from the end of the call. A change of the root folder or of it
 | Answer of git | Reply |
 |---|---|
 | exit 128 with a text that starts with `fatal: not a git repository` in any letter case, or that holds `detected dubious ownership` or `cannot use bare repository` | The "no repository" answer of each method. No config is read, and no copy is made. git 2.56's text for a `.git` file to nowhere, `unsafe repository`, and the two phrases at other places of the text get the same answer (claustrum's own, not measured) |
-| exit 1, exit 128 with no text, a signal (`signal: terminated`) or a git that cannot start | `git could not check this repository on the remote machine: at "<root>": exit status <n>` |
-| exit 1 or exit 2 with a text, or exit 128 with another text | The same text with git's text in place of `exit status 1`. Two lines stand there with one space between them. `warning: w` before `fatal: not a git repository` gets this reply on all five methods. So does `fatal: error reading '<repo>/.git'` (Windows) |
-| either of the two rows above | One `git version` call follows. If it fails, the reply is `git cannot run on this host; git not run: <exec error>: <git text>` in the frame of each method. A remove makes two such calls and deletes nothing. A git that cannot start is not measured here |
+| exit 1, exit 128 with no text, a signal (`signal: terminated`) or a git that cannot start (Windows) | `git could not check this repository on the remote machine: at "<root>": exit status <n>` |
+| exit 1 or exit 2 with a text, or exit 128 with another text | The same text with git's text in place of `exit status 1`. Two lines stand there with one space between them. `warning: w` before `fatal: not a git repository` gets this reply. This row holds on all five methods. So does `fatal: error reading '<repo>/.git'` (Windows) |
+| either of the two rows above | One `git version` call follows. If it fails, the reply is `git cannot run on this host; git not run: <exec error>: <git text>` in the frame of each method. A remove makes two such calls and deletes nothing. A git that cannot start is not measured here. After an exit 128 with no text or a signal, `git.info` and `git.worktree_create` are not measured. Neither is a remove with `worktreeRoot` |
 | another path than the git directory, in two calls | `git and Claude disagree about which repository holds this folder: from "<root>" git finds "<path>", Claude finds "<git directory>"; try again`. `<path>` is the path as git printed it: with forward slashes on Windows |
 | no answer in 30 seconds | `git could not check this repository on the remote machine: it did not finish within 30 seconds in "<root>"; try again` (Linux, macOS and Windows) |
 
