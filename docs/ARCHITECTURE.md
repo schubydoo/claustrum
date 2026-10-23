@@ -110,7 +110,7 @@ children it spawns.
   `execchild_darwin.go`). On windows the reference daemon reports it is not the run-dir lock
   holder and stamps neither marker. A windows VM showed a child under a run-shaped socket has
   the same environment as one under a bare socket.
-  This behavior is off-wire. See [PROTOCOL.md](PROTOCOL.md) → process.spawn.
+  This behavior is off-wire. See [process.spawn](protocol/process-spawn.md#the-identity-markers-linux-and-macos).
 - A daemon that holds the run-dir lock at its start also records each spawned child to
   `<runDir>/children/<pid>.json` (`childrecord.go` + `childrecord_linux.go` /
   `childrecord_darwin.go`). The run dir is the folder of the socket path, on every
@@ -121,7 +121,7 @@ children it spawns.
   child removes its record the same way, before the pipe drain. On windows the
   reference daemon reports it is not the run-dir lock holder, so it records no children. A
   windows VM showed a spawned child leaves the children dir empty. This behavior is
-  off-wire. See [PROTOCOL.md](PROTOCOL.md) → process.spawn.
+  off-wire. See [process.spawn](protocol/process-spawn.md#child-records-linux-and-macos).
 - At `-serve` startup a daemon that holds the run-dir lock reaps those
   records (shared `childreap.go`, with the live-process read in `childreap_linux.go` /
   `childreap_darwin.go`). The reap happens right after the daemon claims the run dir,
@@ -155,7 +155,7 @@ children it spawns.
   child records survive a daemon startup untouched. The kill and every live-process read sit
   behind seams, so tests exercise the decision
   without ending a real process. This behavior is off-wire. See
-  [PROTOCOL.md](PROTOCOL.md) → process.spawn.
+  [process.spawn](protocol/process-spawn.md#the-reap-at-the-next-start-linux-and-macos).
 - Also at `-serve` startup the daemon starts a periodic host cleaner (the shared decision
   layer in `hostclean.go`, with the OS reads in `hostclean_linux.go` / `hostclean_darwin.go`).
   The cleaner is a background sweep that keeps the install tidy. It runs 15s after startup
