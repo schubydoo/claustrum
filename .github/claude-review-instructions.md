@@ -43,9 +43,11 @@ A change that breaks one of these is wrong. Passing tests do not make it right:
    the reference emits, and are never a map. Maps sort keys and diverge. Some changes
    under `rpc.go`, `methods_*.go`, `process.go` or `results.go` can move a byte. For
    such a change, the PR must say how it was measured.
-2. An intentional divergence must be documented, in `docs/PROTOCOL.md` and in the
-   PR. An undocumented one is Important even where it is an improvement. That case
-   matters most, because it will read as a bug to the next person.
+2. An intentional divergence must be documented: an entry in `docs/DIVERGENCES.md`,
+   its frames in `docs/PROTOCOL.md` or on the page of its method under
+   `docs/protocol/`, and a note in the PR. An undocumented one is Important even
+   where it is an improvement. That case matters most, because it will read as a
+   bug to the next person.
 3. Parity claims need a measurement, not a plausible story. "The reference does X"
    is a finding only with the observation attached. Beware evidence that proves a
    weaker claim than the one being made. This repo shipped that mistake before.
@@ -55,8 +57,6 @@ A change that breaks one of these is wrong. Passing tests do not make it right:
 5. Never add telemetry.
 6. Cross-platform parity. OS specifics live in `*_unix.go` / `*_windows.go`, and
    `make all` must cross-compile for all six targets.
-7. A changeset body is ONE line. knope renders a multi-line body as a `####` heading
-   instead of a bullet. That broke the changelog twice.
 
 ## Test-quality rules, and why they are here
 
@@ -75,8 +75,8 @@ pass while asserting nothing. Treat these as Important, not as nits:
      skip never fires. It looks like a portability guard and is not one.
 3. A buffered channel drained after the producer stops is a deadlock, not a slow
    consumer. The channel of `pipeConn` holds 64. Fill it, and the write blocks inside
-   the producer, which then never reads its stop flag again. This hung a macOS leg for
-   the full 10-minute timeout.
+   the producer, which then never reads its stop flag again. This hung a macOS leg
+   until the time limit of `go test`.
 4. Timers used as synchronization. A `time.Sleep` before a channel close, "to let
    things land", drops whatever is still in flight. A dropped observation is a MISSED
    failure, so the test passes where it must fail. Prefer a sentinel through the
@@ -96,6 +96,7 @@ CI already enforces these on every PR, and paying a reviewer to re-find them is 
 - Known-CVE dependencies: Trivy, `dependency-review`, Renovate
 - Generic OWASP checklist items with no call site in the diff: CodeQL
 - Unpinned GitHub Actions: `zizmor` (blanket hash-pin policy)
+- A multi-line changeset body: `scripts/lint_changesets.py` (CI and pre-commit)
 
 Also do not report: anything in `CHANGELOG.md`, generated files, or an issue explicitly
 silenced by a lint-ignore comment.
