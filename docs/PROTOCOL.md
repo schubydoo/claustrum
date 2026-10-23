@@ -930,7 +930,7 @@ cell C-… is of round `tier0-20` against `5fd08069` on a Linux VM.
 | git.worktree_create | `git worktree add failed (checkout): the git filter "<name>" has values in this repository's git config that no option of git can replace for the checkout` | in `error`, `errorCode:"worktree_add_failed"`, in the state `shadow` (claustrum's own, not measured). With no settings copy it answers a repository `process` key beside an outside filter with none. It also answers a shared name with `=` and a name that is not valid UTF-8 there. With a copy it answers a shared name with `=` or one that is not valid UTF-8 where the repository adds only `required = true`. With a copy `5fd08069` answers success for the `process` key (cell F1 of round `task073-02`, Linux VM), and claustrum follows it. |
 | git.worktree_create | `git worktree add timed out after <n>ms (deadline expired {before the checkout started / during the checkout): <text> / after the checkout finished})` | in `error`, `errorCode:"timeout"`, from the caller-supplied `timeoutMs` (`4534d86`). An absent `timeoutMs`, or 0, arms no deadline. `<text>` comes from the stderr of the killed git, by the same text rule |
 | git.worktree_create | `<frame>; and the undo could not finish for <leaf>: {the worktree directory, its registration, and the branch all remain; remove them by hand before retrying (RemoveAll <entry>: <OS error>) / the worktree directory remains (re-populated while undoing?); remove it by hand before retrying (removeat <leaf base name>: <OS error>)}` | appended to the checkout-failure frame and to each `timeout` frame when a step of the rollback fails. The `errorCode` stays as it was. Measured against `f6010b97` and `90fca6e6` on a Windows VM. In attach mode the first text reads `the worktree directory and its registration both remain` instead, because the call made no branch (row C08b, `f6010b97` and `89cb6289`, Linux VM). On Linux and macOS a registration that cannot be deleted gives `the worktree registration and the branch remain; remove them by hand before retrying (RemoveAll <registration name>: <OS error>)` instead, with the leaf removed (`89cb6289`, rows A14 and A14f on a Linux VM, A14 and A14b on a macOS VM). The text in the parentheses can be claustrum's own, see step 2 of the rollback. In attach mode it reads `the worktree registration remains; remove it by hand before retrying (RemoveAll <registration name>: <OS error>)` (cell X5, Linux and macOS VMs). No rmdir text joins either one (cell X11, Linux VM) |
-| git.worktree_create | `<frame>; and the undo could not finish for <leaf>: <branch part>` | appended when the branch step of the rollback keeps the branch that the call made. See [The branch step](#the-branch-step) for each `<branch part>`. After a failed leaf rmdir, the branch part follows the rmdir text after `; ` (row C05). Some cases also add `"branchKept":true` after `errorCode`. The table there gives each case |
+| git.worktree_create | `<frame>; and the undo could not finish for <leaf>: <branch part>` | appended when the branch step of the rollback keeps the branch that the call made. See [The branch step](#the-branch-step) for each `<branch part>`. After a failed leaf rmdir, the branch part follows the rmdir text after `; `. Some cases also add `"branchKept":true` after `errorCode`. The table there gives each case |
 | git.worktree_remove | `refusing to remove worktree: <p> {is a relative path / contains a ".." component / has a component Windows reads as a different name (trailing dot or space, or a colon) [Windows] / is not inside the repository <repo>; …}` | in `error`, with no `errorCode`. This is `7d193f89` containment. The spelling refusal is Windows-only and comes before containment. `<repo>` is `baseRepo` as sent. An absent or empty `baseRepo` gives the empty string (`f6010b97`, Linux and macOS VMs). A Windows VM measured an absent one. With `worktreeRoot`, the first two texts also refuse a relative, absent or `..` `baseRepo`, and `<p>` is then `baseRepo` as sent. An empty `worktreePath` gets the first text there (`f6010b97`, Linux and macOS VMs) |
 | git.worktree_remove | `refusing to remove worktree: <root> is a filesystem root; choose the worktree location by its absolute path, without "..", beneath the filesystem root` | in `error`, with no `errorCode`, Linux and macOS, with `worktreeRoot`. A `worktreeRoot` of `/` is refused. `89cb6289` sends this frame for a `worktreePath` of `/<name>`, with no git call. The frame is the same with the folder present or gone, and for a daemon that runs as root. Nothing is deleted (Linux VM, cells R1n, R1u and R1r, and macOS VM, cells R1a and R1b). Cells R2 to R6 of the create row hold here too. claustrum tests a relative `worktreePath` first, as on create (not measured on remove). A root with a `..` component that cleans to `/` gets the `..` text (from the code, not measured). Windows refuses every `worktreeRoot` first, so a drive root such as `C:\` is not measured |
 | git.worktree_remove | `refusing to remove worktree: <root> is the repository <repo> or inside it; a worktree location must be outside the repository` | in `error`, with no `errorCode`, with `worktreeRoot`. The test cleans the root and `baseRepo` and compares whole components. A root that is `baseRepo` or lies beneath it is refused, and `<B>/Tx` beside `<B>/T` passes. `<root>` is `worktreeRoot` as sent, so a trailing slash stays. `<repo>` is `baseRepo` as sent, so `<T>/` and `<T>/.` stay too. It comes after the spelling, `baseRepo` and two-level tests, and before any git call. The worktree is not looked at. Nothing is deleted. Measured against `f6010b97` and `89cb6289` on Linux and macOS VMs |
@@ -3056,7 +3056,8 @@ too. A rule marked "claustrum's own" is not measured.
 - If `branchName` names a symbolic ref, the step deletes the symbolic ref only.
 - The delete passes the tip that the check saw as the old value. So git refuses
   the delete if the branch moved after the check.
-- If the branch does not exist, the step deletes nothing and keeps nothing.
+- If the branch list is read and `rev-parse --verify` reports the branch absent,
+  the step deletes nothing and keeps nothing (Linux, macOS and Windows VMs).
 - The step keeps the branch in each of these cases (Linux, macOS and Windows
   VMs where not marked):
     - The branch holds a commit that no other ref reaches.
@@ -3085,15 +3086,19 @@ refs/heads/`, `rev-parse --verify --quiet refs/heads/<b>^{commit}`,
 `rev-list -n 1 <tip> --not --remotes --not --stdin --` and
 `update-ref --no-deref -d refs/heads/<b> <tip>`. Every call carries the light
 `-c` list, and `rev-list` adds `-c core.commitGraph=false` after it. The daemon's
-own environment comes first. Then the calls set `GIT_TERMINAL_PROMPT=0`,
+own environment comes first (see
+[The daemon's own git environment](#the-daemons-own-git-environment)). Then the
+calls set `GIT_TERMINAL_PROMPT=0`,
 `GIT_NO_REPLACE_OBJECTS=1`, `GIT_GRAFT_FILE=<null device>` and the
-`GIT_COMMON_DIR` pin. Then come the inherited config pairs, the hook pins,
+`GIT_COMMON_DIR` pin. Then come `GIT_CONFIG_COUNT`, the inherited config pairs,
+the hook pins,
 `GIT_NO_LAZY_FETCH=1`,
 `GIT_ALLOW_PROTOCOL=denied_by_claude_ssh` and an empty `GIT_ASKPASS` (Linux,
-macOS and Windows VMs). Only `rev-list` reads stdin: one `^<refname>` line for
-each other local branch that is not a symbolic ref. In two states the reference
-runs more git calls than claustrum: no repository at `baseRepo`, and a gone
-worktree path. The frames are equal.
+macOS and Windows VMs). Only `rev-list` gets a pipe on stdin (macOS VM): one
+`^<refname>` line for each other local branch that is not a symbolic ref. In
+some states the reference runs more git calls than claustrum. Examples are no
+repository at `baseRepo`, a gone worktree path, a second create at one path and
+an attach add. The frames are equal.
 
 ##### Time limits of the branch step
 
@@ -3102,7 +3107,9 @@ the catalog.
 
 - One bound of 60 s covers the branch list and the commit check together. At the
   bound the running call is killed, with no SIGTERM first (Linux, macOS and
-  Windows VMs). The bound also covers `rev-parse` (claustrum's own).
+  Windows VMs). The bound also covers `rev-parse` (claustrum's own). A stopped
+  `rev-parse` is a failure and keeps the branch, also on Windows, where the kill
+  gives exit code 1 (claustrum's own).
 - `update-ref` gets SIGTERM 5 s after it starts, on Linux and macOS. A call that
   ignores it is killed 5 s later. On Windows it is killed at 5 s. That holds for
   a remove and for a create rollback (Linux and macOS VMs). The kill after
@@ -3127,8 +3134,8 @@ the catalog.
 
 ##### The branch step in a remove reply
 
-The remove frame never gains text from this step. Each case that keeps the
-branch adds `"branchKept":true`, and nothing else.
+The remove frame never gains text from this step. Each case of the keep list
+adds `"branchKept":true`, and nothing else does. A skipped name adds no member.
 
 ##### The branch step in an undo text
 
@@ -3140,25 +3147,26 @@ reaches, it also sets `"branchKept":true` after `errorCode`:
 |---|---|---|
 | the branch holds a commit that no other ref reaches | `the worktree itself was removed, but branch <b> was left in place: it now has commits no other branch or remote-tracking ref reaches. To keep that work, push the branch or rename it. To discard it, run git branch -D <b>. This branch name cannot be reused until the branch is renamed or deleted` (Linux, macOS and Windows VMs) | `"branchKept":true` |
 | the same, after a failed rmdir of the leaf | `<rmdir text>; branch <b> was left in place: it now has commits …` with no `the worktree itself was removed, but ` (Linux and Windows VMs) | `"branchKept":true` |
-| 10001 branches, a case twin, a list that does not parse, or a `rev-parse` that does not report the branch absent | `branch <b> still exists; delete it by hand (for example: git branch -d <b>, which git refuses if that would lose commits) before retrying this branch name: could not check whether another branch or remote-tracking ref reaches its commits` (Linux, macOS and Windows VMs) | none |
+| 10001 branches, a case twin, a list that does not parse, or a `rev-parse` that does not report the branch absent | `branch <b> still exists; delete it by hand (for example: git branch -d <b>, which git refuses if that would lose commits) before retrying this branch name: could not check whether another branch or remote-tracking ref reaches its commits` (Linux, macOS and Windows VMs, but the list and `rev-parse` cases are claustrum's own) | none |
 | a call of the check failed or was stopped | the same, then a space and the process error in parentheses, for example ` (exit status 128)` or ` (signal: killed)` | none |
 | after a failed `config.worktree` step, the config is refused at a second read | the same, with that refusal in parentheses (`5fd08069`, Linux and macOS VMs) | none |
 | the delete failed or was stopped | `branch <b> still exists; delete it by hand (for example: git branch -D <b>) before retrying this branch name: <process error>`, for example `exit status 128` or `signal: terminated` (Linux and macOS VMs) | none |
 | the same, with `refs/heads/<b>.lock` present | `… before retrying this branch name. A lock refs/heads/<b>.lock is also present: if another git process is running against this repository, the lock may be live and clears on its own; if none is, it is stale debris of the interrupted delete — remove the lock file by hand too: <process error>` | none |
 | the name starts with `+`, so no call runs | `branch <b> left in place (its name is unsafe to pass to update-ref); delete it by hand` | none |
-| the branch is absent, or the step deleted it | none | none |
+| the branch is absent at the check, or the step deleted it (Linux, macOS and Windows VMs) | none | none |
 
 - The dash in the lock text is the raw UTF-8 em dash U+2014.
 - claustrum adds the lock part when the file `<common git dir>/refs/heads/<b>.lock`
   exists after the failure, also after a stop (claustrum's own).
 - A name that starts with `-` gets the text of a `+` name (claustrum's own). A
-  create does not reach it, because git refuses `-b -<name>`.
+  create does not reach it, because git refuses `-b -<name>` (host git, not
+  measured).
 - When claustrum's home or identity guard skips the leaf, the leaf stays. A kept
   branch then gets its text without `the worktree itself was removed, but `
   (claustrum's own).
 - On Windows a stopped call ends with exit code 1. A Windows rollback text then
   ends `exit status 1` or ` (exit status 1)` where Linux and macOS show a signal
-  (not measured).
+  (the Windows texts are not measured).
 - A rollback that fails in two places, other than after a failed rmdir, joins
   the two parts with `; ` in the same order (claustrum's own).
 
