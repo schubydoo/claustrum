@@ -2,6 +2,8 @@
 
 `process.kill` sends a signal to a child process that `process.spawn` started. It answers at once and does not wait for the process to end. To wait for the end, use [process.killAndWait](process-killandwait.md).
 
+An unmarked rule on this page matches the reference as measured on `89cb6289`, and on `f6010b97` too for Windows children that outlive the daemon.
+
 ## Request
 
 ```json
@@ -13,7 +15,7 @@
 | `id` | no | The id of the process, as given to `process.spawn`. An absent, empty or unknown `id` signals nothing and gets the same result as a known one. |
 | `signal` | no | `TERM`, `KILL`, `INT` or `HUP`, with or without the prefix `SIG`. The default is `TERM`. The names are case-sensitive, and each other value means `TERM`. So `quit` and `int` send `SIGTERM`. On Windows the daemon ignores the name: see [Differences by system](#differences-by-system). |
 
-After a second `process.spawn` with the `id` of a process that still runs, the request reaches the newer process only. See [process.spawn](../PROTOCOL.md#processspawn).
+After a second `process.spawn` with the `id` of a process that still runs, the request reaches the newer process only. See [process.spawn](process-spawn.md#a-spawn-with-an-id-that-is-in-use).
 
 ## Response
 
@@ -87,8 +89,6 @@ If a process that the child started holds the output pipes of the child, the `ex
 
 ## Differences from the reference
 
-claustrum is built to answer as the reference daemon does. A rule that is not marked "claustrum's own" or "not measured" is measured against `89cb6289`, and the Windows children that outlive the daemon also against `f6010b97`. No entry of the divergence catalog changes this method.
+No entry of the [divergence catalog](../DIVERGENCES.md) changes this method.
 
 The skip of a child that already ended is a guard of claustrum. The operating system can give the process id (pid) or the group number of a child that ended to another process. The reply is the same with or without the guard. Item 21 of the [ledger of completed work](../IMPROVEMENTS.md) has the guard. Whether the reference sends a signal to such a child is not measured.
-
-The measured cells behind each rule are in the tests: the Windows rows in `winjob_windows_test.go` and `sysproc_windows_test.go`, and the signal split in the comment of `signalProcessGroup`.

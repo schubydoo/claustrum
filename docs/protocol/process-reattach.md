@@ -2,6 +2,8 @@
 
 `process.reattach` moves the output stream of a child process to the connection that sends the request. A client uses it to continue a session after a reconnect. The daemon sends the stored output frames that the client missed, and then the result.
 
+An unmarked rule on this page matches the reference as measured on `5fd08069` or on an earlier build.
+
 ## Request
 
 ```json
@@ -48,7 +50,7 @@ Each result has the first five members. If the daemon has no such process, the r
 
 New frames of the process go to this connection after step 3. On the connection that already receives the frames they go there from step 1 on. No frame above `lastSeq` reaches an old connection. An old connection can still get a frame at or below `lastSeq` that the daemon was already writing.
 
-On a reattach from the connection that already receives the frames, a frame at or below `lastSeq` can arrive twice. `5fd08069` does the same (rounds `tier3-03` and `tier3-12`, macOS and Linux VMs). Drop a frame whose `seq` you already have. From the code, and not measured: a new frame can arrive before the result.
+On a reattach from the connection that already receives the frames, a frame at or below `lastSeq` can arrive twice (measured on Linux and macOS). Drop a frame whose `seq` you already have. From the code, and not measured: a new frame can arrive before the result.
 
 ## Frames that the daemon no longer has
 
@@ -71,8 +73,8 @@ This method has no `errorCode` member. A failure is a JSON-RPC error.
 
 ## Differences from the reference
 
-claustrum is built to answer as the reference daemon does. One entry of the divergence catalog applies to this method:
+One entry of the [divergence catalog](../DIVERGENCES.md) applies to this method:
 
 - [CT-1](../DIVERGENCES.md#ct-1): the optional `wantPid` parameter with the members `pid` and `startTime`. A request without `wantPid` gets no such member.
 
-The exact time that the reference keeps a process that exited is not known. The measurements bracket it to more than 45 seconds and at most 960 seconds. The 15 minutes of claustrum are its own choice inside that range, and so is the extra time of up to about one minute.
+The exact time that the reference keeps a process that exited is not known: the measurements bracket it to more than 45 seconds and at most 960 seconds. The 15 minutes of claustrum and the extra time of up to about one minute are its own choice inside that range.

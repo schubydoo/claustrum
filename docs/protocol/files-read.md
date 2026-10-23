@@ -2,6 +2,8 @@
 
 `files.read` returns the content of one file as text. It has a size limit, and it is not for binary files.
 
+An unmarked rule on this page matches the reference as measured on `5fd08069` or on an earlier build.
+
 ## Request
 
 ```json
@@ -52,8 +54,6 @@ The daemon opens the path first. Then it tests the kind of the open file. It fol
 
 The open does not wait for the writer of a FIFO, so the refusal comes at once. The open is visible to a writer that waits in its own open of the FIFO: that open returns.
 
-The reference build `5fd08069` gives these answers on Linux, macOS and Windows VMs. `89cb6289` does not refuse such a file. The flag `-files-read-regular-only` and its key in `claustrum.conf` are deprecated. They set nothing and log one warning.
-
 ## Errors
 
 This method has no `errorCode` member. A failure is a JSON-RPC error.
@@ -72,4 +72,4 @@ The daemon makes the tests in the order of the table. A text with `<path>` holds
 
 ## Differences from the reference
 
-claustrum is built to answer as the reference daemon does, and no entry of the divergence catalog applies to this method. [D4](../DIVERGENCES.md#d4) is retired: it was the optional refusal of a path that is not a regular file.
+No entry of the [divergence catalog](../DIVERGENCES.md) applies to this method. [D4](../DIVERGENCES.md#d4) is retired: it was the optional refusal of a path that is not a regular file. Its flag is deprecated: see [Flags and config keys](../PROTOCOL.md#flags-and-config-keys). The refusal of a file that is not regular is new in `5fd08069`: `89cb6289` does not refuse such a file (see [UPSTREAM-TRACKING.md](../UPSTREAM-TRACKING.md)).

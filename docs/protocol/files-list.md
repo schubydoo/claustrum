@@ -2,6 +2,8 @@
 
 `files.list` lists the entries of one directory. It does not list hidden entries, and it does not go into subdirectories.
 
+claustrum is built to answer as the reference does. The error texts of this page match the reference as measured on `7d193f89`.
+
 ## Request
 
 ```json
@@ -52,4 +54,4 @@ The `-32603` texts come from the operating system, and the table gives those of 
 
 ## Differences from the reference
 
-claustrum is built to answer as the reference daemon does, and no entry of the divergence catalog applies to this method.
+No entry of the [divergence catalog](../DIVERGENCES.md) applies to this method.
