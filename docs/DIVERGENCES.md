@@ -1,53 +1,52 @@
 # claustrum — deliberate divergences
 
 Almost everything claustrum does is byte-identical to the reference daemon. This
-file is the canonical catalog of the exceptions. The exceptions are the
-behaviours that *knowingly* change a frame or an action. This file also gives the
-rules that gate every one of them.
+file is the catalog of the exceptions: the behaviours that *knowingly* change a
+frame or an action. It also gives the rules that gate each one.
 
-The [catalog table](#catalog) is the fast path. It gives one row per divergence,
-with its default, how to activate it, and its reopen trigger. The
-[rules](#how-we-decide-the-rules) come first for a reason: they decide which
-shape an entry can take. The three shapes are always-on, opt-in, and conditional.
+The [catalog table](#catalog) has one row per divergence. The
+[rules](#how-we-decide-the-rules) come first, because they decide which shape an
+entry can take: always-on or opt-in.
 
-Per-method wire facts (params, result field order, error strings) live in
-[PROTOCOL.md](PROTOCOL.md) and on the pages under `protocol/`. Driver-claim
-provenance lives in
-[ARCHITECTURE.md](ARCHITECTURE.md#driver-claims-and-their-provenance). The
-measured cells and rounds behind each entry are not in this file. The history of
-the reference builds is in [REFERENCE-BUILDS.md](REFERENCE-BUILDS.md).
+Per-method wire facts (params, result field order, error texts) live in
+[PROTOCOL.md](PROTOCOL.md) and on the pages under `protocol/`. The history of the
+reference builds is in [REFERENCE-BUILDS.md](REFERENCE-BUILDS.md).
+
+claustrum follows the reference build `5fd08069`. An entry names the build of a
+measurement where the build matters. A measurement of the reference that names no build was made
+on `5fd08069` or on an earlier build. A fact that comes from
+reading claustrum's code is marked "from the code".
 
 ## The one hard rule
 
 Byte-identical JSON-RPC frames are the product. A divergence needs a reason.
-Matching does not need a reason. "Off by default" must mean byte-identical, not
-almost byte-identical. An opt-in divergence that is not active leaves the wire
-exactly as the reference leaves it.
-
-[PROTOCOL.md](PROTOCOL.md) and the PR that shipped it also document every
-intentional divergence below. The
+Matching does not. "Off by default" means byte-identical, not almost
+byte-identical. An opt-in divergence that is not active leaves the wire exactly as
+the reference leaves it. The
 [out-of-scope list](#explicitly-out-of-scope-would-break-compatibility) at the end
-gives the inverse: the changes we will never make.
+gives the changes we will never make.
 
 ## How we decide (the rules)
 
 The standard, in priority order:
 
-> 1. Claude Desktop must keep working. Claustrum is a drop-in. If a behaviour
->    is reachable by Desktop, and matching the reference is what keeps Desktop
->    working, we match. How ugly the reference's behaviour is does not matter.
-> 2. Match by default. A wart Desktop tolerates is the contract, not a bug.
->    Divergence needs a reason. Matching does not. The burden of proof is always
->    on the divergence.
-> 3. A divergence earns ALWAYS-ON only if one of three conditions holds.
+> 1. Claude Desktop must keep working. Claustrum is a drop-in. If Desktop can
+>    reach a behaviour, and matching the reference keeps Desktop working, we
+>    match. How ugly the reference's behaviour is does not matter.
+> 2. Match by default. A wart Desktop tolerates is the contract, not a bug. The
+>    burden of proof is always on the divergence.
+> 3. A divergence earns ALWAYS-ON only if one of three conditions holds, or by the
+>    exception in rule 4.
 >    **(a)** Two things hold together. The reference's behaviour on that path
->    is not a frame at all, which means an unbounded wait, unbounded memory,
->    or unrecoverable data loss. And no honest caller can observe the
->    difference. **(b)** The trigger itself is unreachable on an honest path. **(c)** The trigger is reachable,
->    but both binaries fail the operation and the only delta is diagnostic
->    text.
+>    is not a frame at all: an unbounded wait, unbounded memory, or
+>    unrecoverable data loss. And no honest caller can observe the
+>    difference. **(b)** The trigger itself is unreachable on an honest path.
+>    **(c)** The trigger is reachable, but both binaries fail the operation and
+>    the only delta is diagnostic text.
 > 4. Anything else that changes an honest-path frame is OPT-IN, default off, or
->    it does not ship.
+>    it does not ship. The one exception is a maintainer decision that an
+>    entry is always-on. That entry gives the date of the decision and a reopen
+>    trigger.
 
 Corollaries:
 
@@ -56,130 +55,98 @@ Corollaries:
 - "The reference does it too" is a reason to match, never a reason to call it
   safe. D2 is the standing counter-example: the reference wipes a home directory,
   and we still refuse to do it.
-- Every always-on divergence owes a reopen trigger. The reopen trigger is the
-  observation that makes us take the divergence back out. An always-on
-  divergence with no reopen trigger is a preference, not a decision.
+- Every always-on divergence owes a reopen trigger: the observation that makes us
+  take it back out. Without one it is a preference, not a decision.
 
 ### Reading the clauses
 
-Clause (a) is an AND. Both halves must hold: the reference's behaviour is not a
-frame, *and* no honest caller observes the difference. The second half is where
-thresholds fail. A bound is a *threshold*. A threshold cannot separate a hostile
-input from an input that is only slow or large, so an honest input trips it too.
-The test is this question:
+Clause (a) is an AND. The second half is where thresholds fail. A bound is a
+threshold, and a threshold cannot tell a hostile input from one that is only slow
+or large. So an honest input trips it too. The test:
 
 > When the guard fires on an honest input, who pays, and can they decline?
 
-If the honest input is reachable, and the caller cannot turn the guard off, then
-always-on is not justified. This holds no matter how the reference behaves on the
-hostile path. This test flipped every timeout and size cap from always-on to
-opt-in (D3, D10, D12, and the retired D5, D11 and D14). The retired D4 was the
-non-threshold sibling.
+Take an honest input that is reachable, and a guard that the caller cannot turn
+off. Then always-on is not justified, however the reference behaves on the
+hostile path. That is why each divergence that is a timeout or a size cap is
+opt-in (D3, D10, D12). D2 passes both
+halves: the home wipe is unrecoverable data loss, and no honest caller has a use
+for it. A caller can still reach that path by accident, which is what the guard
+is for.
 
-*Canonical example:* D2 satisfies both halves. The reference's home-wipe is
-unrecoverable data loss, and no honest caller has a legitimate *use* for deleting
-home. A caller can still reach that path by accident, which is exactly what the
-guard is for.
+Clause (b) is used by D6, D8 and D19, and each has its own trigger. D6 rests on an
+observed value plus a measured accepted set. So read it as unenumerated, not
+established. Rule 2 puts the burden on the divergence. D19 holds for worktrees
+that either daemon creates, because both creates refuse the junction. A worktree
+made outside the daemon can still sit behind it.
 
-Clause (b): the trigger is unreachable on an honest path. Three always-on
-entries use this form (D6, D8, D19). Each entry has its own trigger,
-and the glosses are not interchangeable. D6 is asserted rather than
-enumerated: it rests on an observed value plus a measured accepted-set. Read
-it as unenumerated, not established (rule 2 puts the burden on the
-divergence). D19 holds for worktrees that either daemon creates, because both
-creates refuse the junction. A worktree made outside the daemon can still sit behind
-it.
-
-*Canonical example:* D6. A `-cli-version` naming a destructive path outside the
-cli-dir is not something any correct client emits.
-
-Clause (c): both binaries fail, and the only delta is diagnostic text.
-This clause is deliberately narrow, and we wrote it for the retired
-[D13](#d13), which did not meet it. The clause justifies no entry in this file
-today. A reader must not take two things on trust. First, an `error.code` is not
-diagnostic text, because a client branches on it. Second, on-disk state that a
-caller can `files.stat` is not diagnostic text either.
-
-*Canonical example:* none currently qualifies.
+Clause (c) is narrow, and no entry uses it today. An `error.code` is not
+diagnostic text, because a client branches on it. On-disk state that a caller can
+`files.stat` is not diagnostic text either.
 
 ### The "Desktop owns the argv" premise
 
-Every opt-in tag rests on one claim about the driver: Claude Desktop owns the
-daemon's argv on both `-serve` and `-install`. Therefore an operator cannot reach
-a flag-only knob, and the `claustrum.conf` key (read beside the executable) is the
-reachable one. This claim is the premise under D3, D10, D12 and
-under the "(opt-in)" tag itself.
-
-The claim has one canonical record, with its provenance, its evidence and its
-reopen trigger:
-[ARCHITECTURE.md → Driver claims and their provenance](ARCHITECTURE.md#driver-claims-and-their-provenance).
-That section also holds the other two driver claims: Desktop parses `cliError`,
-and Desktop uses the reported `libc` to choose a CLI build. A way for an operator
-to influence the argv reopens the claim, and so does a Desktop release that adds one. Such
-a route makes a flag-only opt-in enough for Desktop-driven hosts. It does not
-moot the config key, which serves every other driver.
+Each opt-in entry rests on one driver claim: Claude Desktop owns the daemon's argv
+on `-serve` and `-install`, so the `claustrum.conf` key is the knob an operator
+can reach. [ARCHITECTURE.md → Driver claims and their
+provenance](ARCHITECTURE.md#driver-claims-and-their-provenance) has the evidence
+and the reopen trigger. A route to the argv would make a flag-only opt-in enough
+for Desktop-driven hosts. It would not moot the config key, which serves every
+other driver.
 
 ## Conventions for opt-in divergences
 
-These conventions hold for every opt-in entry. This section states them once
-rather than repeating them in each entry:
+These hold for each opt-in entry:
 
-- A flag and a matching `claustrum.conf` key. The config key is the reachable
-  knob (see the argv premise above). Precedence is explicit CLI flag > config >
-  default. claustrum resolves it with `flag.Visit`.
-- Default off is the zero value, and disabled bypasses the guard entirely. A
-  cap set to `0` skips its `io.LimitReader`. A timeout set to `0` skips
-  `context.WithTimeout`. For the download, `0` instead relies on
-  `http.Client{Timeout: 0}`, which is the stdlib's own "no timeout". Never use a
-  huge-but-finite value. The `cap+1` / armed-cancel arithmetic is what defines the
-  boundary. Routing the unlimited case through that arithmetic invents a boundary.
-- No opt-in bound is a hang detector. Each bound is a threshold, so an
-  honest-but-slow or honest-but-large input trips it too. That is precisely why
-  they are off by default.
-- At the shipped defaults, each bound below is a bound of the reference, not a
-  divergence. These are the bounds of the `--version` run, of a managed launcher
-  run, of the download and of the `ldd` libc probe.
-  [PROTOCOL.md → -install](PROTOCOL.md#-install-ensure-the-agent-cli) has the
-  value and the rule of each one. Two clocks are claustrum's own choice: the
-  wait of up to 2 s for the output of a stopped launcher run, and the 0.2 s
-  bound of the Windows rename retry.
-  The stdlib transport clocks (`net.Dialer{Timeout: 30s}`,
-  `TLSHandshakeTimeout: 10s`) apply on `-cli-url` only. They are always-on,
-  unnumbered, and unprobed on the reference.
+- A flag and a matching `claustrum.conf` key. The key is the knob an operator can
+  reach (see the argv premise above). For each key that has a flag, the
+  precedence is an explicit CLI flag, then the config file, then the default.
+- The default is off, which is the zero value. A disabled bound bypasses its guard
+  entirely: a cap of `0` skips its `io.LimitReader`. A download bound of `0` is
+  `http.Client{Timeout: 0}`, the stdlib's own "no timeout". Never use a huge-but-finite value instead. The
+  `cap+1` arithmetic defines the boundary, and a huge value
+  invents a new one.
+- No opt-in bound is a hang detector. Each one is a threshold that an honest slow
+  or large input trips too. That is why they are off by default.
+- At the shipped defaults, the bounds of the `--version` run, of a managed
+  launcher run, of the download and of the `ldd` libc probe are bounds of the
+  reference, not divergences.
+  [PROTOCOL.md → -install](PROTOCOL.md#-install-ensure-the-agent-cli) has each
+  value. Two clocks are claustrum's own: the wait of up to 2 s for the output of a
+  stopped launcher run, and the 0.2 s bound of the Windows rename retry. The
+  stdlib transport clocks (`net.Dialer{Timeout: 30s}`, `TLSHandshakeTimeout:
+  10s`) apply on `-cli-url` only. They are always-on, unnumbered, and not
+  probed on the reference.
 
 ## Catalog
 
 | ID | What it does | Default | How to activate | Why (rule / clause) | Reopen trigger |
 |----|--------------|---------|-----------------|---------------------|----------------|
-| [D2](#d2) | Refuse a destructive path that is or contains `$HOME`, on three methods and on `-install` | always-on | always-on | rule 3 clause (a). The `files.extract_tar` wipe through the parent handle and its three tests: maintainer decision of 2026-10-10 | an honest caller legitimately targeting a path that is/contains home, or a Windows `destDir` with the `\\?\` prefix and a dot or a space after its last name |
-| [D3](#d3) | Cap `files.extract_tar` output size | off (`0` = unlimited) | `-max-extract-bytes` / `max-extract-bytes` | rule 4 (who-pays) | operator's cap refuses a legit extraction, or default lets a bomb through |
-| [D6](#d6) | `-cli-version` must be a single path component | always-on | always-on | rule 3 clause (b) | Desktop passing a multi-component `-cli-version` |
-| [D8](#d8) | Refuse a link, a FIFO and, on Linux and macOS, another user's `remote-server.log` at the start. An own link to an own file passes on Linux and macOS. The reference can write through them or block. The `git-shadow` sweep makes no lock file in the target of a link | always-on | always-on | rule 3 clause (b), and the maintainer's decision of 2026-10-19 | a shared socket folder that needs the log, the reference refusing these entries on every host, or the reference making no lock file through a link |
-| [D10](#d10) | Cap `-install` CLI size (decompressed + download body) | off (`0`) | `-max-cli-bytes` / key | rule 4 (who-pays) | Desktop ceasing to treat a disk-full message as terminal |
-| [D12](#d12) | Bound on the `-install` download exchange | off (`0`) | `-cli-download-timeout` / key | rule 4 | operator with the bound set reporting an honest slow download failed |
-| [D15](#d15) | Verify a run-dir lock holder is our serve process before signalling it, in the serve eviction and in `-stop` (macOS) | always-on | always-on | rule 3 clause (a) | the reference adding the same macOS check, or a macOS holder legitimately un-inspectable via `KERN_PROCARGS2` |
-| [D16](#d16) | `git.status` of a linked worktree returns the status on Windows. With no global excludes file of the user, the reference errors `exit status 128` there | always-on (Windows) | always-on | claustrum-more-correct (D2/D8 pattern). **REACHABLE** | the reference fixing its Windows git.status, a Git for Windows release that accepts `NUL` there, or a decision to reproduce its failure for strict 1:1 |
-| [D19](#d19) | `git.worktree_remove` refuses a junction at any directory between `baseRepo` and the leaf. The reference answers success there, and at `.claude` or `.claude\worktrees` it deletes the branch (Windows) | always-on (Windows) | always-on | rule 3 clause (b): the create of both daemons refuses that junction. Maintainer decisions of 2026-09-27 and, for the levels above `.claude`, of 2026-10-07 | the reference refusing the junction or deleting through it, or a Windows client that depends on the success reply |
-| [D20](#d20) | Wait 50 ms and read again before the group `SIGKILL` of a child-group leader that reads as gone, at the reap of a `-serve` start (Linux and macOS) | always-on (Linux and macOS) | always-on | rule 3 clause (a) | a measurement that shows the reference waiting before that `SIGKILL`, or a report of a child that outlived a restart because it replaced its program |
-| [D22](#d22) | `git.worktree_remove` refuses a worktree locked in the `.git` folder of `baseRepo`. The reference answers success in four states: a daemon `GIT_DIR` of another repository (with or without `GIT_COMMON_DIR`, the folder present or gone), or a `baseRepo` spelled through a missing name | always-on | always-on | Maintainer decision of 2026-10-03. The frame differs from the reference in those four states | a caller that needs the removal of a locked worktree there, or a measurement that shows the reference refusing there |
-| [D23](#d23) | The environment block of a child is in name order (Windows). The reference does not sort it | always-on (Windows) | always-on | Maintainer decision of 2026-10-13: claustrum stays on Go 1.26, which sorts the block | the reference moves to Go 1.26 or newer |
-| [D24](#d24) | The rollback of `git.worktree_create` keeps a folder that replaced the new registration, where the reference removes it. On Windows a rollback after `.git` became a file runs no git call | always-on | always-on | Maintainer decisions of 2026-10-07 and, for the `.git` file, of 2026-10-19. The frames are equal for a replaced folder, and the disk differs. They differ after the `.git` file swap | a measurement of the reference keeping such a folder. Or a decision to match its disk, or to run the branch step in the repository that the `.git` file names |
-| [D27](#d27) | On Windows the stale step of `git.worktree_create` keeps an entry whose `gitdir` record names a path that exists. The reference deletes the entry of a live worktree in a folder with case sensitivity on | always-on (Windows) | always-on | The maintainer's decision of 2026-10-18 | a measurement of the reference with the same test |
-| [CT-1](#ct-1) | Opt-in `wantPid` → `pid` + `startTime` on spawn/reattach | off (fields omitted) | caller sends `"wantPid":true` | sanctioned optional-param extension | — (additive, degrades both ways) |
-| [CT-2](#ct-2) | `-keep-children` leaves the child tree running on shutdown | off | `-keep-children` / `keep-children` key | off-wire opt-in extension | — |
-| [CT-3](#ct-3) | `claustrum.conf` config file | absent ⇒ stock | create the file | the opt-in mechanism itself | — |
-| [CT-4](#ct-4) | Hardened token persistence | not built (deferred idea) | — | deferred | — |
-| [CT-5](#ct-5) | `-listen-pipe` Windows named-pipe transport | off | `-listen-pipe` / `listen-pipe` key (Windows) | additive opt-in transport | — |
+| [D2](#d2) | Refuse a destructive path that is or holds `$HOME` | always-on | always-on | rule 3 (a). The `files.extract_tar` wipe: decision of 2026-10-10 | an honest caller that needs such a path (more in the entry) |
+| [D3](#d3) | Cap `files.extract_tar` output size | off (`0`) | `-max-extract-bytes` / key | rule 4 | the cap refuses an honest extraction (more in the entry) |
+| [D6](#d6) | `-cli-version` is one path component | always-on | always-on | rule 3 (b) | Desktop sends a multi-component version |
+| [D8](#d8) | Refuse a FIFO, a link (not an own link to an own file on Linux and macOS) or (Linux, macOS) another user's `remote-server.log`. The `git-shadow` sweep writes nothing through a link | always-on | always-on | rule 3 (b), decision of 2026-10-19 | a shared socket folder that needs the log (more in the entry) |
+| [D10](#d10) | Cap the `-install` CLI size | off (`0`) | `-max-cli-bytes` / key | rule 4 | Desktop stops treating disk-full as terminal |
+| [D12](#d12) | Bound the `-install` download | off (`0`) | `-cli-download-timeout` / key | rule 4 | an honest slow download fails under the bound |
+| [D15](#d15) | Verify a lock holder before a signal (macOS) | always-on (macOS) | always-on | rule 3 (a) | the reference verifies the holder too (more in the entry) |
+| [D16](#d16) | `git.status` of a linked worktree works (Windows, no global excludes file) | always-on (Windows) | always-on | decision of 2026-10-13 | the reference or Git for Windows fixes the error (more in the entry) |
+| [D19](#d19) | Refuse a junction between `baseRepo` and the leaf on remove (Windows) | always-on (Windows) | always-on | rule 3 (b), decisions of 2026-09-27 and 2026-10-07 | a client that needs the success reply (more in the entry) |
+| [D20](#d20) | Wait 50 ms and read again before the group `SIGKILL` of a leader that reads as gone, at a `-serve` start (Linux and macOS) | always-on (Linux and macOS) | always-on | rule 3 (a) | the reference waits there too (more in the entry) |
+| [D22](#d22) | Refuse a worktree locked in the `.git` folder of `baseRepo` on remove, where the reference answers success in four states | always-on | always-on | decision of 2026-10-03 | a caller that needs that removal (more in the entry) |
+| [D23](#d23) | A child's environment block is in name order (Windows) | always-on (Windows) | always-on | decision of 2026-10-13 | the reference moves to Go 1.26 or newer |
+| [D24](#d24) | In a create rollback, keep a folder that replaced the registration. On Windows, run no git call after a `.git` file swap | always-on | always-on | decisions of 2026-10-07 and 2026-10-19 | the reference keeps such a folder (more in the entry) |
+| [D27](#d27) | Keep a stale entry whose record names a path that exists (Windows) | always-on (Windows) | always-on | decision of 2026-10-18 | a measurement of the reference with the same test |
+| [CT-1](#ct-1) | `wantPid` adds `pid` and `startTime` | off | the caller sends `"wantPid":true` | optional-param extension | none |
+| [CT-2](#ct-2) | `-keep-children` keeps the child tree at shutdown | off | `-keep-children` / key | off-wire extension | none |
+| [CT-3](#ct-3) | The `claustrum.conf` config file | absent | create the file | the opt-in mechanism itself | none |
+| [CT-4](#ct-4) | Hardened token persistence | not built | none | deferred idea | none |
+| [CT-5](#ct-5) | `-listen-pipe` named-pipe transport (Windows) | off | `-listen-pipe` / key | additive transport | none |
 
-Tags: **opt-in** = operator-declinable (flag + config key). **conditional** =
-activated by the caller. No current entry is conditional. **always-on** = no switch. The CT block uses
-"opt-in" in the looser sense of "off unless somebody asks for it". CT-1 is
-caller-activated and CT-3 *is* the config mechanism, so neither one is
-operator-declinable. Only CT-2 and CT-5 carry a flag and a key.
-
-An entry names the reference build that it was measured against where the
-entry needs it. A fact that comes from reading claustrum's code is marked
-"from the code".
+Tags: **opt-in** means an operator switch, a flag and a config key. **always-on**
+means no switch. The CT rows are off until someone asks: CT-1 by the caller,
+CT-3 by the file, CT-2 and CT-5 by a flag and a key. CT-4 is not built. In the
+CT headings "opt-in" means "off unless somebody asks for it": CT-1 and CT-3 have
+no flag and no key.
 
 ## Entries
 
