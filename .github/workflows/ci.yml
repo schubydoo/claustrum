@@ -52,10 +52,12 @@ jobs:
             [ -z "$f" ] && continue
             # A case glob matches "/" too, so *.md takes every Markdown file
             # outside a testdata folder. The arms above it name the
-            # documentation paths that are not Markdown.
+            # documentation paths that are not Markdown. docs_consistency_test.go
+            # holds only the docs tests and their word limits: the lint job
+            # compiles it (go vet) and runs it (TestDocs).
             case "$f" in
               testdata/*|*/testdata/*) go=true ;;
-              docs/*|mkdocs.yml|.github/ISSUE_TEMPLATE/*) ;;
+              docs/*|mkdocs.yml|.github/ISSUE_TEMPLATE/*|docs_consistency_test.go) ;;
               *.md) ;;
               *) go=true ;;
             esac
