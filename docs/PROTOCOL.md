@@ -143,204 +143,120 @@ environment.
 
 ### Token persistence (`daemon.token`)
 
-Once the socket is listenable, the daemon writes the token to `daemon.token` in
-the socket's directory. The file has mode `0600`. The daemon writes it atomically
-through a `daemon.token-*` temp file and a rename, and it unlinks the file on
-graceful shutdown. A client can therefore reconnect to an already-running daemon
-and re-authenticate after the original `-token-file` was unlinked, or after the
-`-token-fd` pipe closed. The write does not depend on the token source, because it
-uses the in-memory token. The write is also best-effort. The daemon logs a failure
-(`[daemon] failed to persist token: …`) and continues. Reference build `5db5e4a`
-added this, and claustrum matches it. It is off the JSON-RPC wire, because the
-file sits beside the socket, not on it. An unclean kill (`SIGKILL` or a crash)
-leaves the file behind, because the daemon removes it only on the graceful
-`server.shutdown` / `SIGTERM` path. `-stop` also removes it after a failed
+The file is measured against `5db5e4a`, the token swap at a new start against
+`89cb6289` on a Linux VM, and the unlink by identity against `5fd08069`. The file
+is off the JSON-RPC wire, because it sits beside the socket.
+
+Once the socket is listenable, the daemon writes its token to `daemon.token` in
+the directory of the socket, with mode `0600`. The write is atomic, through a
+`daemon.token-*` temp file and a rename. It uses the token in memory, so it does
+not depend on `-token-file` or `-token-fd`. A failed write logs
+`[daemon] failed to persist token: …`, and the daemon serves on. A client can
+therefore reconnect and authenticate after the `-token-file` was unlinked, or
+after the `-token-fd` pipe closed.
+
+A new daemon replaces the token of a dead daemon only after its reap, its `bind`
+and its `listen`. Until then the file holds the old token.
+
+The daemon unlinks the file on the graceful `server.shutdown` or `SIGTERM` path
+only. A `SIGKILL` or a crash leaves it. `-stop` also removes it after a failed
 connect, unless it prints `survivor`. See the `-stop` section below.
 
-A new daemon replaces the token of a dead daemon only after its bind. On a Linux
-VM (row P12, two runs), a dead daemon left its `daemon.token` and one recorded
-child that ignored `SIGTERM`. For the 2.2 s of the reap, the file still held the
-token of the dead daemon. `89cb6289` and claustrum renamed the new token into
-place after the `SIGKILL` of the reap, the `bind` and the `listen`.
+The daemon unlinks `daemon.token` only if the file at the path is still the file
+that it wrote, by identity (`os.SameFile`). So a departing daemon keeps the token
+of a successor that already wrote its own. That holds on Windows too. The same
+guard covers `rpc.sock` on Linux and macOS and the `rpc.pipe` pointer on Windows.
+A token or pipe pointer with no recorded identity stays. A socket with no
+recorded identity is removed with a plain unlink. Two states remove the socket of
+a successor. On Linux ext4 the new socket can get the inode of the old one, and
+the old daemon then removes it as its own (Linux VM). On Windows the old daemon removes it when it stops after a take-over
+(Windows VM). The launcher half of the handoff is under
+[Daemon startup](#daemon-startup-serve).
 
-The fixed name and the socket-dir location are the reconnect contract, so they are
-not configurable. On Windows `0600` is not an owner-only DACL. This is a Go
-`os.CreateTemp` limitation, and the per-user session dir is the confinement. It is
-a parity caveat that claustrum deliberately does not "fix". The former caveat "two
-daemons in one directory collide on this file" is now bounded. On Linux and macOS
-the run-dir lock (below) evicts a prior live daemon of the same socket before the
-new one binds. Two same-socket daemons therefore no longer coexist to collide on
-the honest path. A collision survives only where eviction is refused, and on
-Windows, which ships no run-dir lock. Eviction is refused for a foreign or
-cross-machine lock holder, and for a holder that survives `SIGKILL`.
-
-The unlink carries an inode-ownership qualifier. On graceful shutdown the
-daemon unlinks `daemon.token` only when the file on disk is still the inode this
-daemon wrote. At startup the daemon reads that identity through an open handle
-of the file. At the stop it compares the file at the path to it (`os.SameFile`). A
-restart's successor can republish `daemon.token`
-before the predecessor leaves. The
-departing predecessor then leaves the file alone. It does not delete the
-successor's token and break the new daemon's reconnect auth. `5fd08069` keeps that
-token on Windows too (cell W3 of round `task091-01`, Windows VM). On Linux and macOS the socket file
-carries the same identity guard on the same graceful path. On Windows the
-`rpc.pipe` pointer carries it too (`unlinkOwnSocket` /
-`dropOwnTokenFile` / `removePipeNameFileIfOwned`). Each removes its file only
-when the recorded identity still matches. They differ only in the no-identity
-fallback. A socket the daemon never recorded is removed with a plain unlink. A
-token or pipe pointer with no recorded identity is left in place, not unlinked.
-Two states remove the new `rpc.sock` on `5fd08069` and on claustrum `080c94a`
-(round `task091-01`). On Linux ext4 the new socket can get the inode of the old
-one. The old daemon then tests it after the bind (cell L3t, Linux VM). On Windows
-the old daemon stops after a take-over (cell W3, Windows VM).
-This is the departing-daemon half of the daemon-to-daemon handoff. The launcher
-half is under [Daemon startup](#daemon-startup-serve). It is off the JSON-RPC
-wire.
+The fixed name and the folder of the socket are the reconnect contract, so they
+are not configurable. On Windows `0600` is not an owner-only DACL. That is a
+limit of `os.CreateTemp` in Go, and the per-user session folder is the
+confinement. It is a parity caveat that claustrum does not "fix". On Linux and
+macOS the [run-dir lock](#run-dir-lock-daemonlock) evicts a prior live daemon of
+the same socket before the new one binds, so two daemons do not collide on this
+file. They still collide where an eviction is refused, and on Windows, which has
+no run-dir lock.
 
 ### Run-dir lock (`daemon.lock`)
 
+A rule here without a mark is measured against `89cb6289` on Linux and macOS
+VMs. A rule marked `5fd08069` is measured against that build. The lock exists on Linux
+and macOS only. It is a file beside the socket, off the JSON-RPC wire.
+
 Before it binds the socket, a `-serve` daemon takes an exclusive `flock` on
-`daemon.lock` in the socket's directory (mode `0600`). It then writes an owner
-record into that file. The record is a JSON object. At first it is
-`{pid, role, node}`, where `role` is `serve`. After the reap of the start and the
-bind, the daemon writes it again as `{pid, role, node, instanceId, startedAt}`.
-`node` is omitted when the machine identity is unknown. Build `4534d86` added the
-lock, and claustrum matches it. It is a file beside the socket, off the wire. On
-graceful shutdown the daemon truncates the record, drops the lock and leaves the
-file in place. `daemon.token` is unlinked instead. A
-Linux VM measured the same end state against `89cb6289` in the stop rows:
-`daemon.token` and `rpc.sock` removed, `daemon.lock` left empty. On a Linux VM the
-`instanceId` of the record, of the listening line and of `server.capabilities` held
-one value in 36 of 36 daemons of `89cb6289`.
+`daemon.lock` in the directory of the socket (mode `0600`). It then writes an
+owner record into the file, a JSON object. Until the reap of its start ends, the
+record is `{"pid":<n>,"role":"serve","node":"<node>"}`. After the reap and the
+bind, it is `{pid, role, node, instanceId, startedAt}`. `node` is omitted when
+the machine identity is unknown. The `instanceId` is the one of the listening
+line and of `server.capabilities`. The `startedAt` is the one that
+`server.capabilities` answers. The machine
+identity is the boot id joined to the pid-namespace inode on Linux, and
+`sysctl kern.bootsessionuuid` on macOS.
 
-On Linux and macOS the stop closes the listener, tests `rpc.sock` and removes it
-if it is its own, closes the connections and kills the child groups. Then it removes `daemon.token` and releases the lock.
-`5fd08069` stops in that order (round `task091-01`, cells L1 to L3 and L1k, Linux VM).
+On a graceful stop the daemon closes the listener and removes its own
+`rpc.sock`. It closes the connections and kills the child groups. Then it
+removes `daemon.token`, truncates the record and releases the lock. The file
+`daemon.lock` stays, empty (`5fd08069`, Linux VM).
 
-Linux and macOS VMs measured the two forms of the record against `89cb6289`. In
-row D1 a dead daemon left one recorded child that ignores `SIGTERM`. The lock of
-the new daemon held `{"pid":<n>,"role":"serve","node":"<node>"}` for about 2 s.
-Then it held the full record. With nothing to reap (row D2), the first read on
-macOS showed the full record. On Linux one read of row D2b showed the short form.
-The `startedAt` of the record is the `startedAt` that `server.capabilities`
-answers. Row D3 measured that on `89cb6289` in one Linux read and in 3 of 3 macOS
-reads.
+A prior live daemon of the same socket can hold the lock. The new daemon then
+sends it `SIGTERM` and tries the lock every 50 ms for 2 s. If the lock is still
+held, it tests the holder again and sends `SIGKILL`. Then it tries the lock for
+1 s more (claustrum's own value). It waits on the lock, not on the pid. On Linux
+both signals go through one `pidfd_open` descriptor with `pidfd_send_signal`.
+claustrum uses `kill` on macOS, and the call of the reference there is not
+measured.
 
-A prior live daemon can still hold the lock. The newcomer then evicts it before it
-takes over, with `SIGTERM` and then `SIGKILL` after a grace period. On Linux the
-`SIGTERM` goes out as `pidfd_open` and then `pidfd_send_signal`. A Linux VM
-measured those two calls with `strace` against `89cb6289` (row E3). The
-`SIGKILL` is `pidfd_send_signal` with the same descriptor number (rows H7 and
-N3). macOS uses `kill`. The call of the macOS reference is not measured. The identity
-reads of the holder come between the open and the send. On a Linux VM (row P6, by
-`strace`, 2 of 2 runs), `89cb6289` made these calls in this order: `pidfd_open`,
-the read of `/proc/<pid>/ns/pid`, the read of `/proc/<pid>/cmdline`, then
-`pidfd_send_signal`. claustrum is built to that order.
-
-After the `SIGTERM` the newcomer waits for the lock, not for the pid. On a Linux
-VM (row H7, by `strace`), the holder was stopped with `SIGSTOP`. `89cb6289` tried
-`flock(LOCK_EX|LOCK_NB)` on `daemon.lock` every 50 ms, and the call answered
-`EAGAIN` 43 times. It sent the `SIGKILL` 2.02 s after the `SIGTERM`, and it got
-the lock 50 ms later. It sent no `kill(pid, 0)` in that row, and none in rows E3,
-P5, P6, N3 and N4. claustrum is built to it: it tries the lock every 50 ms for 2 s,
-sends the `SIGKILL`, and tries for 1 s more. That 1 s is claustrum's own value
-and is not measured. Before the `SIGKILL` claustrum tests the identity of the
-holder again. The eviction fires only against a holder that is verifiably one of
-our own `-serve` daemons for this socket, on this machine (`daemon_runlock_unix.go`).
-
-A holder whose record has role `stop` gets no signal. The newcomer tries the lock
-every 50 ms for 2 s. Then it logs this line and serves without the lock:
+The daemon logs these lines. `<who>` is `pid <n> (instance "<hex>")` for a
+holder with the full record, and `pid <n>` for a holder with the short record.
 
 ```
-serve: <dir>/daemon.lock is held by a --stop (pid <n>) that has not let go; leaving it
+[daemon] serve: run dir is held by a live daemon, <who>; sending SIGTERM
+[daemon] serve: previous daemon <who> exited after SIGTERM
+[daemon] serve: WARNING previous daemon <who> ignored SIGTERM for 2s; sending SIGKILL (its Claude Code children, if any, are ended next, before this daemon serves)
+[daemon] serve: previous owner of <dir>: terminated
+[daemon] serve: previous owner of <dir>: killed
 ```
 
-`5fd08069` does so in cells L2 and L3 of round `task091-01` (Linux and macOS VMs).
+The summary line ends in `terminated` after a `SIGTERM` and in `killed` after a
+`SIGKILL`. A holder that the `SIGKILL` stopped gets no "exited" line.
 
-If the record of the holder has no instance, the eviction lines name its pid
-alone. On a Linux VM and on a macOS VM, `89cb6289` logged these two lines for a
-holder with the short record (row P5, 5 of 5 runs on each system):
+A signal can reach a daemon during its own start, for example from a second
+daemon or from `-stop`. The daemon logs one `received` line, for example
+`[daemon] received terminated; shutting down (children will be killed)`, or
+`received interrupt` with the same tail. It handles one `SIGTERM` or `SIGINT`. It
+finishes the reap of its start, binds and listens, writes its token, and then
+shuts down and exits 0. A daemon that gets the signal while it evicts an older
+holder still evicts it first. A `-stop` during the reap prints `terminated` and
+exits 0. In both cases the launcher of the signalled daemon exits 1 after about
+12 s with `daemon did not take over <socket> (predecessor still owns it)`. A
+second daemon that sent `SIGKILL` to a first one during its start takes the lock
+and sends the recorded children of the first one no signal.
 
-```
-serve: run dir is held by a live daemon, pid <n>; sending SIGTERM
-serve: previous daemon pid <n> exited after SIGTERM
-```
+The eviction fires only against a holder that is one of our own `-serve`
+daemons for this socket, on this machine. In each other case the daemon
+signals nothing, logs a refusal line and the summary
+`[daemon] serve: previous owner of <dir>: survivor`, and serves without the
+lock. claustrum refuses a holder on another machine or container that shares
+the folder. It also refuses a holder with an unknown machine identity, and a
+holder that is not its serve process for this socket. The text of that refusal line is claustrum's
+own. A holder that survives `SIGKILL` stays too, with the same summary.
 
-For a holder with the full record, both lines read
-`pid <n> (instance "<hex>")` (row E3). claustrum is built to both rows.
-
-A holder that still has the lock after the 2 s gets `SIGKILL`. On a Linux VM
-(row H7), `89cb6289` then logged these two lines:
-
-```
-serve: WARNING previous daemon pid <n> (instance "<hex>") ignored SIGTERM for 2s; sending SIGKILL (its Claude Code children, if any, are ended next, before this daemon serves)
-serve: previous owner of <dir>: killed
-```
-
-For a holder with the short record, the first line reads `pid <n>` with no
-instance (row N3). claustrum is built to both rows.
-
-A signal can reach a daemon during its start. On a Linux VM (row P5, 5 of 5
-runs), a second daemon started 0.5 s after a first one. The first daemon still
-waited in the reap of its start, for a recorded child that ignored `SIGTERM`. The
-second daemon sent `SIGTERM` to the first one. The first daemon of `89cb6289` did
-not end there. Its log held these lines in this order:
+A holder whose record has the role `stop` gets no signal. The daemon tries the
+lock every 50 ms for 2 s, and then logs this line (`5fd08069`, Linux and macOS
+VMs):
 
 ```
-[process.Registry] ending orphaned process group <pgid> recorded by daemon instance "<inst>" (pid <dpid>): SIGTERM
-[daemon] received terminated; shutting down (children will be killed)
-[process.Registry] group <pgid> outlived SIGTERM for 2s: SIGKILL
-[daemon] serve: predecessor's children — 1 orphaned group(s): 0 ended on SIGTERM, 1 on SIGKILL, 0 survived; 0 stale record(s) dropped, 0 kept
-[Server] shutdown requested
-Claude remote server listening on <socket> (pid <n>, instance <32-hex>)
-[daemon] host cleaning off: executable "<binary>" is not a deployed daemon under <root>/srv
-[Server] cleanup: closed 0 connection(s), killed 0 child process group(s)
+[daemon] serve: <dir>/daemon.lock is held by a --stop (pid <n>) that has not let go; leaving it
 ```
 
-The first daemon bound, listened and wrote its token, then removed the socket
-and the token and exited 0. The recorded child got one `SIGTERM` and one
-`SIGKILL`, both from the first daemon. The second daemon signalled no child, and
-it served. On a macOS VM (row P5, 5 runs), the first daemon of `89cb6289` went
-on in the same way. Its log held the received line, the outlived line, the
-summary line, the `shutdown requested` line, its listening line and the cleanup
-line, in that order.
-claustrum is built to that row. It installs its handler for `SIGTERM` and `SIGINT`
-before the claim of the lock, and it handles one signal.
-
-More Linux rows measured a signal or a second start during a start. In each row
-the recorded child of a dead daemon ignored `SIGTERM`. Build `ac5cadb` of
-claustrum sent the same signals and gave the same end state as `89cb6289` in
-each row but one, the 0.05 s gap:
-
-- A `SIGTERM` or a `SIGINT` 1 s into the reap (rows H8a and H8b). The daemon
-  logged `received terminated; shutting down (children will be killed)`, or
-  `received interrupt` with the same tail. It sent the `SIGKILL` of the reap at
-  2.1 s, bound and exited 0. The run folder then held `children`, an empty
-  `daemon.lock` and the logs.
-- Two `SIGTERM` 0.3 s apart (row H8c). The daemon logged one `received` line and
-  did the same.
-- A `SIGTERM` to a daemon that waits in its eviction of an older holder (row N4).
-  The daemon still sent the holder `SIGKILL` after the 2 s, took the lock, sent
-  the child of that holder `SIGTERM`, bound and exited 0. Its launcher exited 1
-  after 12.08 s with `daemon did not take over <socket> (predecessor still owns it)`.
-- A `-stop` 0.5 s into the reap (row N5). The connect of `-stop` was refused. It
-  sent the daemon one `SIGTERM` and tried the lock every 50 ms. The daemon
-  finished the reap, bound and exited 0. `-stop` then got the lock, printed
-  `terminated` and exited 0, 1.7 s after its start. The launcher of the daemon
-  exited 1 after 12.09 s with the timeout line.
-- A second daemon 0.2 s after the first (row N3, 3 runs). The second daemon sent
-  `SIGTERM` only. The first one finished, bound and exited 0. The second one
-  then bound and held the lock with its full record.
-- A second daemon 0.05 s after the first (row N3, 3 runs). The first daemon was
-  still in its start after the 2 s, so the second daemon sent it `SIGKILL`.
-  `89cb6289` then got the lock, bound and wrote its own full record. It sent the
-  recorded child no signal. Build `ac5cadb` of
-  claustrum read the killed daemon as alive and served without the lock. claustrum
-  now waits on the lock, as `89cb6289` does.
-
-A process that is no daemon can hold the lock, with no owner record in the file.
-The daemon then signals nothing and logs three lines. On a Linux VM (row ST02),
-`f6010b97` and `89cb6289` logged the same three texts:
+A process that is no daemon can hold the lock, with no owner record in the
+file. The daemon signals nothing and logs three lines (Linux VM):
 
 ```
 [daemon] serve: WARNING <dir>/daemon.lock is held by a live process we will not signal (its holder is not a daemon (role "")); leaving it alone
@@ -348,31 +264,27 @@ The daemon then signals nothing and logs three lines. On a Linux VM (row ST02),
 [daemon] serve: not the run dir's lock holder; leaving any predecessor's children alone and recording none
 ```
 
-claustrum logs the third line at every start that ends without the lock, and then
-reaps and records nothing. Other cases and role texts are not measured.
-Cell H5 (`5fd08069`, Linux VM) measures a held flock.
-With such a holder on an empty file, `5fd08069` tries the lock every 30 s, and a
-failed try logs nothing (round `task005-01`, Linux and macOS VMs). A good try writes
-the full record, holds the lock until the exit and logs this line. claustrum is built
-to both:
+claustrum logs the third line at every start that ends without the lock. Such a
+daemon reaps no children and records none. Other role texts are not measured.
+
+While another process holds the lock, the daemon tries it again every 30 s. A
+failed try logs nothing. A good try writes the full record, holds the lock until
+the exit and logs this line (`5fd08069`, Linux and macOS VMs):
 
 ```
 [daemon] run-dir lock acquired late (previous holder gone); recorded pid <n> (instance "<hex>")
 ```
 
-claustrum also tries after its other refusals (claustrum's own), not after a failed open
-or a refused lock call.
+claustrum also tries again after its own refusals (claustrum's own). It does not
+try again after a failed open of the file or a refused lock call.
 
-The lock, the owner record, and the eviction run on Linux and macOS only. The
-machine identity (`node`) is the boot id joined to the pid-namespace inode on
-Linux, and `sysctl kern.bootsessionuuid` on macOS. Windows ships no run-dir
-lock. Mutual exclusion on Windows stays the socket remove-then-rebind handoff.
-On Windows the "not the run dir's lock holder" line above is the first log line of
-every start. A Windows VM (row K11) measured that against `f6010b97` and
-`89cb6289`.
-On macOS claustrum makes sure of the holder through `sysctl KERN_PROCARGS2`,
-where the reference skips that test. This holds for the
-eviction and for `-stop`. See [DIVERGENCES.md](DIVERGENCES.md) D15.
+Windows has no run-dir lock. Two daemons are kept apart there by the
+remove-then-rebind handoff of the socket. On Windows the "not the run dir's lock
+holder" line above is the first log line of every start (Windows VM).
+
+On macOS claustrum verifies the holder through `sysctl KERN_PROCARGS2` before it
+signals it, in the eviction and in `-stop`. The reference skips that test. See
+[DIVERGENCES.md](DIVERGENCES.md) D15.
 
 ### Host cleaner (off-wire, Linux and macOS)
 
