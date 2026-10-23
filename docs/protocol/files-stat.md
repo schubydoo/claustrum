@@ -2,6 +2,8 @@
 
 `files.stat` says whether a path exists. If it exists, the response gives its kind, its size and its mode.
 
+A rule on this page that is not marked "claustrum's own" or "not measured" follows the reference build `5fd08069`.
+
 ## Request
 
 ```json
@@ -48,4 +50,4 @@ The text holds `path` after the `~` expansion. The texts with `<reason>` are tho
 
 ## Differences from the reference
 
-claustrum is built to answer as the reference daemon does, and no entry of the divergence catalog applies to this method.
+No entry of the [divergence catalog](../DIVERGENCES.md) applies to this method.
