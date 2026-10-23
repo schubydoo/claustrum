@@ -1550,7 +1550,7 @@ The classes come in this order (Linux, macOS and Windows VMs):
    claustrum a refused daemon `GIT_CONFIG_COUNT` answers before the exec error when
    `stat` reads `baseRepo`. For the chains of rows LNKb and LNKr, claustrum runs no
    count check. Neither order is measured. A `baseRepo` that does not exist gets no work-tree
-   refusal (rows L13wa to L13wr, see [git.worktree_remove](protocol/git-worktree-remove.md#what-the-delete-removes)). Not measured: a
+   refusal (rows L13wa to L13wr, see [git.worktree_remove](protocol/git-worktree-remove.md#the-repository-checks)). Not measured: a
    daemon-created worktree under `worktreeRoot`, and `commondir` contents other than
    `x`. Rows L13xa and L13xb ran one repository layout only.
 2. The listing exits 128, and its stderr starts with `fatal: not a git repository`
@@ -2661,8 +2661,8 @@ that measured it.
   whether `worktreePath` is a registered worktree, it runs a light
   `worktree list --porcelain -z` and a heavy `rev-parse --absolute-git-dir`. Each
   of them has its listing. claustrum runs the `rev-parse` after it located the
-  worktree folder. It uses the answer only as the `--git-dir` of the pair (see
-  `git.worktree_remove`). For a `baseRepo` that exists, the "leads into"
+  worktree folder. It uses the answer only as the `--git-dir` of the two
+  calls that follow. For a `baseRepo` that exists, the "leads into"
   and "not reachable" refusals come right after `worktree list`.
   With the excludes read that is 7 calls, as on `f6010b97` and `89cb6289`. For a
   missing `baseRepo` and a missing root, both references send "not reachable" with
@@ -2782,7 +2782,7 @@ Windows, `git.worktree_create` with `worktreeRoot` answers as in row A-N6 (cell
 Wf-P3-crNroot). With nothing set it answers `not_a_repo` (cell Wf-P0-crNroot).
 `git.worktree_remove` with `worktreeRoot` is not measured on Windows for this
 check. From the code: claustrum refuses a `worktreeRoot` there before the check.
-Row A-N4 of `git.worktree_remove` is in [the reference build history](REFERENCE-BUILDS.md).
+Row A-N4 of `git.worktree_remove` is pinned in `gitlisting_norepo_test.go`.
 
 No row measures a listing over a limit of "Hook pins" in a folder that holds no
 repository. That is a listing that passes and holds too many hook names, or a key
