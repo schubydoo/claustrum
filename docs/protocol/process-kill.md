@@ -40,11 +40,11 @@ On Linux and macOS, each child runs in its own process group. Two cases:
 
 On Windows each signal ends the direct child only: see [Windows child trees](#windows-child-trees).
 
-The daemon sends no signal to a child that already ended. That holds also while the daemon still collects the last output of the child and did not yet send its `exit` frame. The result is `{"success": true}` all the same. On Linux and macOS, in that time `process.killAndWait` with `"signal": "KILL"` sends `SIGKILL` to the group at once, and `process.kill` does not.
+`process.kill` sends no signal to a child that already ended. That holds also while the daemon still collects the last output of the child and did not yet send its `exit` frame. The result is `{"success": true}` all the same. On Linux and macOS, in that time `process.killAndWait` with `"signal": "KILL"` sends `SIGKILL` to the group at once, and `process.kill` does not.
 
 ## The exit frame
 
-A process that this request ended gets an `exit` frame with `"killedBy": "client"`. On Linux and macOS a process that the signal ended has `"exitCode": -1` and the name of the signal:
+A process that got the signal of this request gets an `exit` frame with `"killedBy": "client"`. On Linux and macOS a process that the signal ended has `"exitCode": -1` and the name of the signal:
 
 ```json
 {"type": "stream", "processId": "p1", "stream": "exit", "seq": 3, "exitCode": -1, "signal": "SIGTERM", "killedBy": "client"}
@@ -56,7 +56,7 @@ The `exit` frame waits for the output of the child. If another process holds the
 
 ## Windows child trees
 
-On Windows a child is in no Job Object, and Windows has no process group. A kill ends the direct child only, with exit code 1. The processes that the child started live on.
+On Windows a child is in no Job Object, and the kill goes to the direct child, never to its process group. A kill ends the direct child only, with exit code 1. The processes that the child started live on.
 
 | Action | Direct child | Processes that the child started |
 |---|---|---|
@@ -83,7 +83,7 @@ If a process that the child started holds the output pipes of the child, the `ex
 | `KILL` | Goes to the process group of the child. | Ends the direct child only. |
 | Each other signal | Goes to the direct child only. | Ends the direct child only. |
 | `exit` frame of a killed child | `"exitCode": -1` and a `signal` member. | `"exitCode": 1` and no `signal` member. |
-| Pid reuse | On Linux the signal to the direct child goes through a pid file descriptor, so it cannot reach another process. macOS and an old Linux kernel send it by pid. | The daemon holds a handle of the child, so the kill cannot reach another process. |
+| Pid reuse | On Linux the signal to the direct child goes through a pid file descriptor, so it cannot reach another process. macOS and an old Linux kernel send it by pid. `KILL` goes to the group by its number on every system. The skip of an ended child guards that case. | The daemon holds a handle of the child, so the kill cannot reach another process. |
 
 ## Differences from the reference
 

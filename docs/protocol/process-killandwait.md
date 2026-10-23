@@ -51,7 +51,7 @@ If the child ends inside the wait and its output is complete, the daemon sends n
 
 The output of a child is not complete while another process holds the output pipe open, in its group or not. The daemon waits at most 5 seconds for that output after the child ended. If the wait of the request ends first, the daemon uses the force although the child itself ended. If those 5 seconds end first, the answer is `{"found": true, "died": true}`, and the daemon sends no `SIGKILL`.
 
-Windows has no process group: see [Differences by system](#differences-by-system).
+On Windows only the direct child ends: see [Differences by system](#differences-by-system).
 
 ## Errors
 
