@@ -542,75 +542,65 @@ own line. On Linux the pass logs no `left alone this pass` line.
 
 ### Daemon startup (`-serve`)
 
-On Linux a launcher with no readable `/proc/self/exe` exits `1` with `claustrum: locate self:
-<error>` before any write, as on `5fd08069` (round `tier3-02`, Linux VM). macOS and Windows
-re-exec `os.Args[0]` (not measured).
+This section holds what the launcher and the daemon do at a `-serve` start. The
+flags are under [-serve, run the daemon](#-serve-run-the-daemon). The launcher
+wait and the self-locate are measured against `5fd08069`, and the other rules
+against `89cb6289`, on the systems that each rule names.
 
-The `-serve` launcher creates a missing socket folder (mode `0700`). The launcher
-connects every 50 ms (`task006-01`, C4). On Linux and macOS it exits `0` once a
-socket answers that is not the predecessor's (C3, C7b: Linux VM). At 12 s a
-connect that reached the predecessor gives `daemon did not take over`, else the
-timeout line (C4, C5, C9n, C9: Linux and macOS VMs). Each connection closes at
-once, so the answering daemon's log holds a `New connection from: @` /
-`Connection closed: @` pair.
+The launcher is the `-serve` process that the operator starts. It re-execs its own
+binary as the detached daemon and waits for it. On Linux a launcher that cannot
+read `/proc/self/exe` prints `claustrum: locate self: <error>` and exits `1` before
+any write. macOS and Windows re-exec `os.Args[0]` instead (not measured). The
+launcher creates a missing socket folder with mode `0700`. It sends the stdout and
+stderr of the daemon to the [daemon log](#daemon-log-remote-serverlog).
 
-The launcher bound of claustrum is 12 s. In row P7 (Linux VM) a daemon child of
-`89cb6289` ended before its bind, and the launcher exited `1` after 12.06 s. The
-row holds three forms: a stale socket file, no socket file, and an empty run
-folder. A macOS VM gave 12.08 to 12.16 s in those three forms (row P7). A
-Windows VM measured 12.058 s with a stale socket file and with none. The bound is
-shared code, and claustrum took 12.01 to 12.13 s in those rows.
+##### The launcher wait
 
-On Linux and macOS the daemon binds the socket only after the reap of its start.
-The order is: claim `daemon.lock`, reap the recorded children of a dead daemon,
-remove the old socket file, bind, complete the owner record. On a Linux VM the
-calls of `89cb6289` came in this order (row D1, by `strace`): the open of
-`daemon.lock`, the signals of the reap, the unlink of the old socket file, `bind`
-and `listen`. The `strace` rows hold no write to the lock. The place of the last
-step comes from the `startedAt` of the full record. In 8 of 8 Linux runs of rows
-D1 and D2 it was within 1.5 ms of the `listen` call. While the reap waits
-for a group to end, nothing listens on the path. In row D1 a recorded child
-ignored `SIGTERM`, so the wait took about 2 s. A client that connected in that
-wait got `ECONNREFUSED` when the socket file of the dead daemon was there (row
-D1a). It got `ENOENT` when no socket file was there (row D1b). Linux and macOS VMs
-measured both against `89cb6289`. The first connection worked 2.2 to 2.4 s after
-the start. With nothing to reap, the first connection
-worked 0.1 to 0.24 s after the start (row D2). See
-[Child records and the reap](#child-records-and-the-reap-linux-and-macos) for the reap itself.
+The launcher connects to the socket path every 50 ms, for 12 s at most. It closes
+each connection at once, so the log of the daemon that answers holds a
+`New connection from: @` / `Connection closed: @` pair. A socket file that refuses
+the connect does not end the wait. A killed daemon leaves such a file. A folder at
+the path does not end the wait either.
 
-On a timeout the launcher prints
-`claustrum: timeout waiting for daemon to accept on <socket>` to stderr and
-exits `1`. On success it prints the ready banner and exits `0`. After a successful
-`-serve`, the socket accepts connections before `-serve` returns. Measurement
-detail is condensed out of this reference.
+- The predecessor is the daemon that answered on the path before the start. On
+  Linux and macOS, a daemon that answers and is not the predecessor ends the wait
+  with exit `0`.
+- On Windows the first connect that works ends the wait, also one that the
+  predecessor answers.
+- At 12 s the launcher gives up with exit `1` and prints one of two lines to
+  stderr. A connect that reached the predecessor gives
+  `claustrum: daemon did not take over <socket> (predecessor still owns it)`. Any
+  other wait gives `claustrum: timeout waiting for daemon to accept on <socket>`.
 
-Reference build `7d193f89` added a daemon-to-daemon socket handoff. A restart on a
-live socket unlinks the old socket and binds a new one. On Windows the first
-connect that works ends the wait, also one that the predecessor answers, as on
-`5fd08069` (round `task006-01`, cell C3, Windows VM). With a folder that holds a
-file at the path, both time out at 12 s (round `task006-02`, cell C9n, Windows VM).
-This is off the JSON-RPC wire. The departing
-daemon's matching half is the inode-ownership unlink under
-[Token persistence](#token-persistence-daemontoken).
+After exit `0` the socket accepts connections. The launcher prints nothing on
+success. The daemon prints its ready line
+`Claustrum remote server listening on <socket> (pid <pid>, instance <32-hex>)` on
+its own stdout, so the line goes to the daemon log.
 
-A killed daemon leaves its socket file on disk. A connect there is refused, so the
-launcher waits for the new daemon. On a Linux VM (row XA), the `-serve` command of
-`f6010b97` and `89cb6289` returned when the socket accepted, 2.06 s after its
-start. With a daemon that never binds, `89cb6289` exited `1` after 12.06 s (form a
-of row P7).
+A restart on a live socket unlinks the old socket and binds a new one. This is off
+the JSON-RPC wire. The departing daemon's matching half is the inode-ownership
+unlink under [Token persistence](#token-persistence-daemontoken).
 
-On Windows the launcher starts the serving process outside the job of the
-launcher (`CREATE_BREAKAWAY_FROM_JOB`). The SSH server of the Windows VM puts each
-session in a job with the limit flags `0x2800`. That job ends its processes when
-the session ends, and it allows breakaway. On that VM (rows WJ01 to WJ07), the
-serving process of `f6010b97` and `89cb6289` was outside the session job. Row WJ08
-shows the same for `89cb6289`. It was alive 120 s after the session closed (row
-WJ01). The serving process of claustrum was outside that job in rows WJ01 to WJ08.
-How the reference leaves the job is not measured. A job that refuses breakaway
-refuses that start. The launcher then starts the serving process inside the job
-and prints one line on its stderr. On a Windows VM (row JB, a job with the limit
-flags `0x2000`), `89cb6289` and claustrum both served from inside that job. Both
-printed this text after a time stamp, and claustrum puts its level tag before it:
+##### The bind after the reap (Linux and macOS)
+
+The daemon takes these steps in order. It claims `daemon.lock` and reaps the
+recorded children of a dead daemon. Then it removes the old socket file, binds,
+and completes the owner record of the lock. So nothing listens on the path while
+the reap waits for a group to end. A client connect in that wait fails. With the
+socket file of the dead daemon there, it gets `ECONNREFUSED`. With no socket file,
+it gets `ENOENT`. A recorded child
+that ignores `SIGTERM` makes the wait about 2 s. See
+[Child records and the reap](#child-records-and-the-reap-linux-and-macos) for the
+reap itself.
+
+##### The job of the launcher (Windows)
+
+On Windows the launcher starts the daemon outside the job of the launcher
+(`CREATE_BREAKAWAY_FROM_JOB`). So the daemon stays alive after an SSH session whose
+job ends its processes. How the reference leaves the job is not measured. A job
+that refuses breakaway refuses that start. The launcher then starts the daemon
+inside the job and prints one line on its stderr. `89cb6289` prints this text after
+a time stamp, and claustrum puts its level tag before it:
 
 ```
 [daemon] detached spawn failed (fork/exec <binary>: Access is denied.); retrying without breakaway
@@ -618,7 +608,7 @@ printed this text after a time stamp, and claustrum puts its level tag before it
 
 #### Child records and the reap (Linux and macOS)
 
-A daemon that holds the [run-dir lock](#run-dir-lock-daemonlock) records each [process.spawn](protocol/process-spawn.md) child in `<run dir>/children/<pid>.json`, on every socket shape. That is `19f30c46` parity. The run dir is the folder of the socket path. The child needs a pid of 2 or more and a start time that the daemon can read. Windows writes no record and reaps none (Windows VM). Unless a rule says otherwise, the rules below are measured against `89cb6289` on Linux, and a rule that names macOS on macOS.
+A daemon that holds the [run-dir lock](#run-dir-lock-daemonlock) records each [process.spawn](protocol/process-spawn.md) child in `<run dir>/children/<pid>.json`, on every socket shape. The run dir is the folder of the socket path. The child needs a pid of 2 or more and a start time that the daemon can read. Windows writes no record and reaps none. Unless a rule says otherwise, the rules below are measured against `89cb6289` on Linux, and a rule that names macOS on macOS.
 
 The record is one JSON object with the members in this order:
 
@@ -3424,89 +3414,80 @@ claustrum -serve -socket <p> {-token-file <p> | -token-fd <n>} [-metrics-addr <a
           [-max-extract-bytes <n>]
 ```
 
-The binary self-daemonizes, which means it reparents to init and detaches. It then
-runs the RPC server. On success it
-prints `Claustrum remote server listening on <socket> (pid <pid>, instance <32-hex>)`
-to stdout.
+The binary self-daemonizes. It re-execs itself as a detached process, which
+reparents to init, and that process runs the RPC server.
+[Daemon startup](#daemon-startup-serve) has what the start does, the ready line,
+and the exit codes and texts of the launcher. Unless a rule here says otherwise,
+it is measured against `89cb6289` on Linux and macOS VMs.
 
-On Unix the daemon runs no login shell at its start. The first `process.spawn`
-reads the login-shell PATH, and that spawn waits for the read. The daemon keeps
-the result for its life, and it keeps a failed read too. Linux and macOS VMs
-measured that against `89cb6289` (rows G1 and G2). No shell ran in 20 s without a
-spawn. The first spawn ran the shell, and the second spawn ran none. A Linux VM
-measured a login shell that sleeps 10 s (row G3). The shell was killed after 4 s.
-The first spawn answered after 8 s, because the SSH agent read ran that shell
-again for 4 s. The second spawn answered at once. On Windows the first spawn
-reads the daemon's own PATH and runs no shell (claustrum, from the code). See
+##### The token source
+
+A token source is required. The detached daemon tests for it, not the launcher.
+The daemon writes its reason to its own stderr, which is the
+[daemon log](#daemon-log-remote-serverlog), and exits. The launcher then reports
+`claustrum: timeout waiting for daemon to accept on <socket>` after 12 s, with exit
+`1`. This is deliberate parity.
+
+- With neither flag the reason is
+  `claustrum: daemonized child requires --token-file or --token-fd`. That case is
+  not measured on `89cb6289`.
+- A zero-byte `-token-file` behaves the same way.
+- A `-token-file` that cannot be read gives `claustrum: read --token-file: <err>`.
+- The daemon reads the token as a line. It strips one trailing `\n` or `\r\n`, and
+  preserves other surrounding whitespace verbatim. It then removes the
+  `-token-file`.
+- `-token-fd <n>` is claustrum-only. The launcher reads the token from an
+  already-open fd, where `0` is stdin, and forwards it to the daemon over an
+  inherited pipe. So this handoff never touches disk. A failed read there gives
+  `claustrum: read --token-fd: <err>` on the stderr of the launcher, with exit `1`
+  (from the code).
+
+##### The login-shell PATH (Linux and macOS)
+
+The daemon runs no login shell at its start. The first `process.spawn` reads the
+login-shell PATH, and that spawn waits for the read. The daemon keeps the result
+for its life, and it keeps a failed read too. On Windows the first spawn reads the
+daemon's own PATH and runs no shell (from the code). See
 [process.spawn](protocol/process-spawn.md#the-environment-of-the-child).
 
-When `$SHELL` is an executable file, login-shell PATH extraction on Unix runs
-`$SHELL -l -i -c …`. Otherwise it runs the first usable of `/bin/zsh`,
-`/bin/bash` and `/bin/sh`. zsh comes first, which matches the reference. The value
-reaches
-`process.spawn` children as their `PATH` only. It never reaches the daemon's own
-environment, so it never changes how the daemon resolves a `command`. The
-extraction has a cap of 4 s. On a timeout the daemon discards whatever the shell
-printed, even a valid PATH, and children fall back to the inherited PATH.
+- If `$SHELL` is an executable file, the read runs `$SHELL -l -i -c …`. Otherwise
+  it runs the first usable of `/bin/zsh`, `/bin/bash` and `/bin/sh`.
+- The value reaches `process.spawn` children as their `PATH` only. It never
+  reaches the daemon's own environment, so it never changes how the daemon
+  resolves a `command`.
+- The read has a cap of 4 s. At the cap the daemon kills the shell and discards
+  whatever it printed, even a valid PATH. Children then get the inherited PATH,
+  and the log holds
+  `[shellenv] Failed to extract PATH from login shell: shell PATH extraction timed out (<shell>)`.
+- The cap also holds after the shell ends while another process holds the output
+  pipe of the shell. The daemon sends that process no signal. claustrum closes its
+  end of the pipe two caps after the shell ended (claustrum's own, not measured).
+- The [SSH agent hand-off](protocol/process-spawn.md#the-ssh-agent-hand-off-linux-and-macos)
+  runs the login shell again, with its own cap of 4 s. So a login shell that hangs
+  delays the first spawn by about 8 s. A later spawn answers at once.
 
-The cap also holds after the shell is gone, while another process holds the
-output pipe of the shell. On a Linux VM (rows P13 and P13k), the login shell left
-`setsid sleep 30` on the pipe and ended after 0.06 s. The first spawn of
-`89cb6289` answered after 4.6 s, in 3 of 3 runs. Its log held
-`[shellenv] Failed to extract PATH from login shell: shell PATH extraction timed out (<shell>)`.
-The daemon sent no signal, and the second spawn answered at once. claustrum is
-built to those rows. claustrum answered after 4.6 to 4.7 s with the same line
-(Linux row P13, 3 runs). A macOS VM measured the same (row P13): the first spawn
-answered after 4.7 s on `89cb6289` and after 4.7 to 4.9 s on claustrum, with the
-same line. One part is claustrum's own and is not measured: it closes its end of
-that pipe two caps after the shell ended.
+The shell of the PATH read gets seven entries. Five come from the daemon: `HOME`,
+`PATH`, `SHELL`, `TERM` and `USER`. A name that the daemon does not have gets an
+empty value. The other two are `DISABLE_AUTO_UPDATE=true` and
+`ZSH_DISABLE_COMPFIX=true`. No other entry of the
+daemon reaches it, such as `LANG` or `CLAUDE_SSH_DAEMON_CHILD`. The order of the
+entries is not measured. A daemon that has a `TERM`, or that has no `HOME`, `PATH`
+or `USER`, is not measured either. The shell of the SSH agent read gets another
+environment.
 
-The shell of the PATH read gets a small environment. On a Linux VM (row P13v),
-the PATH shell of `89cb6289` got seven entries from the daemon. They were
-`DISABLE_AUTO_UPDATE=true`, `HOME`, `PATH`, `SHELL`, an empty `TERM`, `USER` and
-`ZSH_DISABLE_COMPFIX=true`. The daemon had no `TERM`. Its `LANG` and its
-`CLAUDE_SSH_DAEMON_CHILD` did not reach the shell. claustrum is built to that
-row. macOS rows P13v and P13z gave the same seven entries on `89cb6289` and on
-claustrum. In row P13z the daemon had no `SHELL`, and the entry was empty on
-both. Not measured: the order of the entries, and a daemon that has a `TERM`.
-Also not measured: a daemon with no `HOME`, `PATH` or `USER`.
-claustrum copies the five values from its environment and writes an empty value
-for a name that is not set. The shell of the SSH agent read gets another
-environment. In Linux row P13v and macOS row P13z that one was equal on
-`89cb6289` and claustrum.
+##### The re-exec marker
 
-A token source is required. The detached child tests for it, not the launcher:
-- Both flags missing → the launcher daemonizes anyway, the child refuses to start,
-  and the launcher reports its accept timeout after 12 s:
-  `claustrum: timeout waiting for daemon to accept on <socket>`, exit `1`. The
-  specific reason (`claustrum: daemonized child requires --token-file or
-  --token-fd`) reaches only the child's detached stderr. This is deliberate
-  parity. A zero-byte
-  `-token-file` behaves identically. On a Linux VM (row P7), the launcher of
-  `89cb6289` exited 1 after 12.06 s with a zero-byte `-token-file`, in three
-  forms: a stale socket file, no socket file, and an empty run folder. The
-  launcher bound of claustrum is 12 s, to that row. Both flags missing is not
-  measured on `89cb6289`.
-- The daemon reads the token as a line. It strips one trailing `\n` or `\r\n`, and
-  preserves other surrounding whitespace verbatim.
-- A bad `-token-file` → `claustrum: read --token-file: <err>`, exit `1`.
-- `-token-fd <n>` is claustrum-only. It reads from an already-open fd, where `0` is
-  stdin, so this handoff never touches disk. The launcher forwards it to the
-  detached child over an inherited pipe.
+The re-exec marker is `CLAUSTRUM_DAEMON_CHILD`, not the reference's
+`CLAUDE_SSH_DAEMON_CHILD`. [ARCHITECTURE.md](ARCHITECTURE.md) has the reason.
+claustrum unsets its own marker before it spawns. The daemon still sets
+`CLAUDE_SSH_DAEMON_CHILD=1` in its environment, so `process.spawn` children
+inherit it as on the reference.
 
-The daemonize sentinel is internal and claustrum-namespaced. The re-exec marker is
-`CLAUSTRUM_DAEMON_CHILD`, not the reference's `CLAUDE_SSH_DAEMON_CHILD`. The
-reference name cannot serve here. A host that runs *inside* a real claude-ssh
-session exports `CLAUDE_SSH_DAEMON_CHILD=1` ambiently. If claustrum used that name,
-the launcher mistakes itself for the already-daemonized child. claustrum keeps the observable
-parity separately. `daemonizeWithToken` still sets `CLAUDE_SSH_DAEMON_CHILD=1` in
-the daemon's environ, so that variable propagates into `process.spawn` children.
-`TestSpawnInheritsDaemonChildMarker` pins that. claustrum unsets the internal
-marker before it spawns.
+##### Flags of claustrum alone
 
-Claustrum-only extras follow. They are off the wire. `-keep-children` and
-`-listen-pipe` have an entry in [`DIVERGENCES.md`](DIVERGENCES.md). `-metrics-addr`
-and `-wire-log` have none, and this section holds their detail:
+These flags are off the wire. `-keep-children` and `-listen-pipe` have an entry in
+[`DIVERGENCES.md`](DIVERGENCES.md). `-metrics-addr` and `-wire-log` have none, and
+this section holds their detail:
 - `-metrics-addr <a>` serves Prometheus counters at
   `http://<a>/metrics`, covering connections, spawns and exits, reattaches, and
   stream and stdin bytes. It is off by default, with no listener. It counts only,
@@ -3536,15 +3517,13 @@ and `-wire-log` have none, and this section holds their detail:
   process(es) alive across shutdown`. On Linux and macOS that shutdown also
   removes the records of the kept children. The reap of the next daemon start
   then sends them no signal. That rule is claustrum's own, and CT-2 names its two
-  limits: a process whose `id` a later spawn took, and the host cleaner. The new daemon does not re-adopt them, and
-  the survivors lose their stdio. Their stdin reaches EOF, and a stdout or stderr
-  write gets SIGPIPE, or EPIPE for a child that ignores SIGPIPE, such as Node. It
-  therefore suits only children that tolerate dead stdio. The stdio of a survivor
-  is not measured on Windows. The flag works on
-  Windows too, as claustrum's own flag. There it changes each graceful shutdown:
-  the direct child stays alive as well. On a Windows VM the whole tree of claustrum
-  was alive after `-stop` and after `server.shutdown` with the flag. The reference
-  has no such flag. On that VM `89cb6289` refused it with exit code 2.
+  limits: a process whose `id` a later spawn took, and the host cleaner. The new
+  daemon does not re-adopt them, and the survivors lose their stdio. Their stdin
+  reaches EOF, and a stdout or stderr write gets SIGPIPE, or EPIPE for a child that
+  ignores SIGPIPE, such as Node. It therefore suits only children that tolerate
+  dead stdio. On Windows the flag keeps the whole tree alive after `-stop` and
+  after `server.shutdown`, the direct child too. The stdio of a survivor is not
+  measured there. The reference has no such flag, and `89cb6289` exits `2` on it.
 - `-listen-pipe` is CT-5 and Windows-only. See [Named-pipe
   transport](#named-pipe-transport-windows-opt-in). The daemon logs a setup failure
   (`[Server] named-pipe transport: …`), which is non-fatal. The socket still serves.
