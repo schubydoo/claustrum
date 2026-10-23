@@ -50,10 +50,12 @@ jobs:
           go=false
           while IFS= read -r f; do
             [ -z "$f" ] && continue
+            # A case glob matches "/" too, so *.md takes every Markdown file
+            # outside a testdata folder. The arms above it name the
+            # documentation paths that are not Markdown.
             case "$f" in
-              docs/*|mkdocs.yml|.changeset/*.md|.github/ISSUE_TEMPLATE/*) ;;
-              .github/PULL_REQUEST_TEMPLATE.md|.github/claude-review-instructions.md) ;;
-              testdata/*) go=true ;;
+              testdata/*|*/testdata/*) go=true ;;
+              docs/*|mkdocs.yml|.github/ISSUE_TEMPLATE/*) ;;
               *.md) ;;
               *) go=true ;;
             esac
@@ -127,7 +129,7 @@ jobs:
 
   test:
     needs: changes
-    if: needs.changes.outputs.go != 'false'
+    if: ${{ !cancelled() && needs.changes.outputs.go != 'false' }}
     name: test (${{ matrix.os }}${{ matrix.shard && format(', {0}', matrix.shard) || '' }})
     runs-on: ${{ matrix.os }}
     timeout-minutes: 15 # the windows legs are markedly slower than ubuntu/macos
@@ -323,7 +325,7 @@ jobs:
 
   cross-build:
     needs: changes
-    if: needs.changes.outputs.go != 'false'
+    if: ${{ !cancelled() && needs.changes.outputs.go != 'false' }}
     name: cross-build (6 targets)
     runs-on: ubuntu-latest
     timeout-minutes: 10
@@ -355,7 +357,7 @@ jobs:
     # unreachable in-process (os.Executable/build-info/crypto-rand failures) or
     # Windows-only arms this Ubuntu job can't see.)
     needs: changes
-    if: needs.changes.outputs.go != 'false'
+    if: ${{ !cancelled() && needs.changes.outputs.go != 'false' }}
     name: coverage (>= 95%)
     runs-on: ubuntu-latest
     timeout-minutes: 15 # above the 12 minutes of the go test time limit below
