@@ -183,47 +183,46 @@ opt-in?
 
 ### Which divergences a probe can see
 
-`battery-visible?` asks whether the standard frame battery (`validate.sh` /
-`battery.js`) shows a diff. The install-path entries (D10 and D12) run under
-`-install`, which the frame battery never drives at all.
+`Battery-visible?` asks whether the standard frame battery shows a diff. "Maybe"
+means that a probe which reaches the path shows it. The battery never drives
+`-install`. Each symptom below is expected, not drift. The entry in
+[DIVERGENCES.md](DIVERGENCES.md) has the texts and the detail.
 
-| ID | Default | Battery-visible? | What it is |
-|----|---------|------------------|------------|
-| D3 | Off (`0` = unlimited) | No. Off the default path | `files.extract_tar` size cap |
-| D10 | Off (`0` = unlimited) | No. Install path | `-install` CLI size cap |
-| D12 | Off (`0` = no bound) | No. Install path | `-install` download bound |
-| D2 | Always-on | Maybe. A probe that reaches the path shows it (expected) | destructive-path home-dir refusal. On `-install` it is the `cli path must not be or contain the home directory` text. That refusal is this guard, not drift. |
-| D6 | Always-on | Maybe. A probe that reaches the path shows it (expected) | `-cli-version` single path component |
-| D19 | Always-on, Windows only | Maybe. A Windows probe with a junction at any directory between `baseRepo` and the leaf shows it (expected) | `git.worktree_remove` refuses that junction with `failed to remove worktree: openat <path from baseRepo>: path escapes from parent`. At `.claude` or `.claude\worktrees`, `f6010b97` answers success and deletes the branch, and `89cb6289` does the same for a branch that another ref reaches. At a junction `<P>\J` above `.claude`, `89cb6289` answers success after 2 git calls. No leaf and no branch existed there (Windows VM). The maintainer widened the entry to those levels on 2026-10-07. That is this entry, not drift |
-| D20 | Always-on, Linux and macOS | No. Off the wire. It is a signal time at a daemon start, not a frame | 50 ms settle before the group `SIGKILL` of a leader that reads as gone. That `SIGKILL` comes about 50 ms later than on `89cb6289`. A child that replaces its program on `SIGTERM` is ended by claustrum in no run, and by `89cb6289` in some Linux runs. Where the child ends on `SIGTERM`, `89cb6289` also sends a group `SIGKILL` right after it in some Linux runs, and claustrum sends none. None of these is drift |
-| D22 | Always-on | Maybe. A probe that reaches the path shows it (expected) | `git.worktree_remove` refuses a worktree that is locked in the `.git` folder of `baseRepo`. `89cb6289` answers success in four states: a daemon `GIT_DIR` of another repository with `GIT_COMMON_DIR`, the same without `GIT_COMMON_DIR`, the same with `GIT_COMMON_DIR` and the folder gone, and a `baseRepo` spelled through a missing name (see the entry). With `worktreeRoot` the frame differs too. A maintainer decision of 2026-10-03. The refusal is not drift. On Linux and macOS a gone worktree whose locked entry sits behind a linked `<git dir>/worktrees` gets success, and its branch goes. That follows `5fd08069` (Linux VM), by the maintainer's decision of 2026-10-14. |
-| D23 | Always-on, Windows only | Maybe. A Windows probe whose child prints its environment block shows it in the stream frames (expected) | the environment block of a child is in name order. `89cb6289` keeps the order of its launching block, then `CLAUDE_SSH_DAEMON_CHILD=1`, then the added entries (Windows VM, `process.spawn` children). The set of entries and the response frames are equal there. Cause: the Go version. The other order is not drift |
-| D24 | Always-on | No for a replaced registration folder, with equal frames: the disk differs (Linux, macOS and Windows VMs). A probe that lists the registrations folder shows it. Yes after a `.git` file swap on Windows (Windows VM). At the placement the frame holds claustrum's own text `is not the folder that was tested after the add`, or `is not the folder that was moved into place` on Windows (not measured) | If git answered `rev-parse --absolute-git-dir`, the rollback of `git.worktree_create` deletes the registration only if the folder at its path is still the folder that the create accepted after the add. `89cb6289` removes the folder at that path (Linux and macOS VMs). The placement of the index has the same test (not measured). On Windows a rollback after `.git` became a file runs no git call. Maintainer decisions of 2026-10-07 and 2026-10-19. The kept folder and that frame are not drift |
-| D27 | Always-on, Windows only | Yes on a Windows run with a case-sensitive `.claude\worktrees` and a live worktree in another letter case. `5fd08069` deletes its entry and answers success. claustrum keeps it and answers git's `worktree_add_failed` text | the stale step keeps an entry whose record path exists. A maintainer decision of 2026-10-18. Not drift |
-| D8 | Always-on | No. It is a start failure of the launcher or a file on disk, not a frame | a link, a FIFO, and on Linux and macOS another user's file, at `remote-server.log` fails the start with `permission denied`. `5fd08069` writes through a link or another user's file and blocks on a FIFO, on macOS and on Linux with the `fs.protected` sysctls off. On Windows it writes through a link (Windows VM). The `git-shadow` sweep makes no lock file in the target of a link |
-| D16 | Always-on, Windows only | Yes on a Windows run. `git.status` of a linked worktree: the reference answers `exit status 128` when the user has no global excludes file, claustrum answers the status | the `core.excludesFile` of the `status`, `ls-files` and `diff-index` calls of `git.status` is `/dev/null`, not `NUL`. The reference stops at its `status` call there, so its value for the other two is not measured |
-| CT-1 | Opt-in (`wantPid`) | Yes, on request. It adds `pid`/`startTime` | spawn/reattach reply extension |
-| CT-2 | Opt-in (`-keep-children`) | No | children survive shutdown |
-| CT-3 | Opt-in (`claustrum.conf`) | Only `version-override`, via the static check's `-version` diff | the configuration file itself |
-| CT-4 | Not built. A deferred idea, recorded in DIVERGENCES.md only | No. There is no code | opt-in hardened token persistence (a `persist-token` key, or a Windows owner-only DACL) |
-| CT-5 | Opt-in (`-listen-pipe`, Windows) | No | additional named-pipe transport |
+| ID | Default | Battery-visible? | Symptom |
+|----|---------|------------------|---------|
+| [D2](DIVERGENCES.md#d2) | Always-on | Maybe | A delete path that is or holds the home folder is refused, also on `-install` |
+| [D3](DIVERGENCES.md#d3) | Off | No | An opt-in size cap fails `files.extract_tar` |
+| [D6](DIVERGENCES.md#d6) | Always-on | Maybe | A `-cli-version` of more than one path component is refused |
+| [D8](DIVERGENCES.md#d8) | Always-on | No, a start failure | A link, a FIFO or another user's `remote-server.log` fails the start |
+| [D10](DIVERGENCES.md#d10) | Off | No, install path | An opt-in size cap fails `-install` |
+| [D12](DIVERGENCES.md#d12) | Off | No, install path | An opt-in bound fails a slow `-install` download |
+| [D15](DIVERGENCES.md#d15) | Always-on, macOS | No, off the wire | A lock holder that is not our `-serve` gets no signal |
+| [D16](DIVERGENCES.md#d16) | Always-on, Windows | Yes | `git.status` of a linked worktree answers the status, not an error |
+| [D19](DIVERGENCES.md#d19) | Always-on, Windows | Maybe | `git.worktree_remove` refuses a junction between `baseRepo` and the leaf |
+| [D20](DIVERGENCES.md#d20) | Always-on, Linux and macOS | No, off the wire | The group `SIGKILL` of a gone leader comes about 50 ms later |
+| [D22](DIVERGENCES.md#d22) | Always-on | Maybe | `git.worktree_remove` refuses a locked worktree |
+| [D23](DIVERGENCES.md#d23) | Always-on, Windows | Maybe, in stream frames | The environment block of a child is in name order |
+| [D24](DIVERGENCES.md#d24) | Always-on | No for a replaced folder: the disk differs. Yes at the index placement, and after a `.git` file swap on Windows | A create rollback keeps a folder that replaced the registration |
+| [D27](DIVERGENCES.md#d27) | Always-on, Windows | Yes, in a case-sensitive folder | The stale step keeps an entry whose record path exists |
+| [CT-1](DIVERGENCES.md#ct-1) | Opt-in | Yes, on request | `pid` and `startTime` on spawn and reattach |
+| [CT-2](DIVERGENCES.md#ct-2) | Opt-in | No | Children survive shutdown |
+| [CT-3](DIVERGENCES.md#ct-3) | Opt-in | Only `version-override`, in the `-version` diff | The `claustrum.conf` file |
+| [CT-4](DIVERGENCES.md#ct-4) | Not built | No | None |
+| [CT-5](DIVERGENCES.md#ct-5) | Opt-in, Windows | No | An extra named-pipe transport |
 
-D1, D7, D9, D11, D13, D14, D18, D21 and D25 are retired. The reference changed on the path, or a later
-measurement corrected the premise, or the maintainer chose to follow the reference. claustrum now matches it. A difference on those paths is drift, not a divergence, unless
-an entry in the table above covers it (for example D6, D10).
-D4 is retired too. Its paths follow `5fd08069`, so a difference against
-`89cb6289` there is expected. The paragraph on `files-read-regular-only` below
-names the differences. D5 is retired too. The git calls follow the time limits
-of `5fd08069`, so a stop of a slow git is expected. See
+D1, D4, D5, D7, D9, D11, D13, D14, D17, D18, D21 and D25 are retired: claustrum
+matches the reference there. A difference on those paths is drift, unless a live
+entry above covers it. A difference against `89cb6289` on the D4 paths is
+expected, and so is the stop of a slow git call (D5). See
 [DIVERGENCES.md → Retired entries](DIVERGENCES.md#retired-entries).
 
-Check both indexes. The shipped ledger ([docs/IMPROVEMENTS.md](IMPROVEMENTS.md))
-numbers several more claustrum-only behaviors, and they are just as real. They are
-item 16 (`-metrics-addr`) and item 18 (`-token-fd`). Item 21 is another: claustrum skips the
-kill signal for a child that already exited. Check both the divergence catalog and
-the shipped ledger before you conclude that something is drift. `-wire-log` is
-claustrum-only too, and it is in neither index: its detail is in
-[PROTOCOL.md → Flags and config keys](PROTOCOL.md#flags-and-config-keys).
+Some flags are claustrum's own and have no entry: `-token-fd`
+([PROTOCOL.md → Flags and config keys](PROTOCOL.md#flags-and-config-keys)), and
+`-metrics-addr` and `-wire-log`
+([PROTOCOL.md → Flags of claustrum alone](PROTOCOL.md#flags-of-claustrum-alone)).
+So is the skip of the kill signal for a child that already ended
+([process.kill → Differences from the reference](protocol/process-kill.md#differences-from-the-reference)).
+Check those before you conclude that something is drift.
 
 ### Drift, or an activated opt-in? — the parse-behaviour table
 
