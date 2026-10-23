@@ -782,7 +782,7 @@ func gitStatus(req *request) response {
 
 // unresolvable reports whether filepath.EvalSymlinks fails on p, for any reason.
 // git.status treats such a baseRepo as missing, and git.list_branches such a path
-// (docs/PROTOCOL.md).
+// (docs/protocol/git-status.md, docs/PROTOCOL.md).
 func unresolvable(p string) bool {
 	_, err := filepath.EvalSymlinks(p)
 	return err != nil
