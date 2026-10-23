@@ -2455,9 +2455,12 @@ moves them (see [The daemon's own git environment](#the-daemons-own-git-environm
 These points are from the code, not measured:
 
 - Each hardened call takes the names of the listing right before it.
-- A later listing that fails or exceeds a limit does not refuse its call. The call
-  then gets the two base pins only. The two later listings of `git.status` are the
-  exception: a failure there refuses (see [git.status](protocol/git-status.md#errors)).
+- A later listing that exceeds a limit does not refuse its call. The call then gets
+  the two base pins only. A later listing that fails refuses in three places: the two
+  later listings of `git.status` (see [git.status](protocol/git-status.md#errors)), the
+  two listings before the checkout of a create in the state `shadow` (see the
+  [Error-string catalogue](#error-string-catalogue)), and any listing that its time
+  limit stopped.
 - Two names that differ only in letter case get two pins. A name under two keys
   counts once toward the limits. The count is tested before the byte sum.
 
@@ -2475,9 +2478,9 @@ A hardened call uses the heavy profile or the light profile:
 - The daemon's own `GIT_ALLOW_PROTOCOL` changes the first light value (see
   [The daemon's own git environment](#the-daemons-own-git-environment)).
 - In the states `shadow` and `fallback-git` without `"shadowDirOff":true`, the light
-  calls of a create and their listings carry the six heavy values. Linux and macOS
-  VMs measured the state `shadow`, and a Windows VM the state `fallback-git`. So do the
-  three listings of the branch step of a remove. The checkout
+  calls of a create and their listings carry the six heavy values. So do the three
+  listings of the branch step of a remove. Linux and macOS VMs measured the state
+  `shadow`, and a Windows VM the state `fallback-git`. The checkout
   and its listings keep the four light values. With `"shadowDirOff":true` the light
   calls carry the four light values.
 - The calls of [the branch step](#the-branch-step) have their own variables.
@@ -2597,10 +2600,10 @@ directory. On Windows that path has backslashes.
 Before each hardened call except the first, the daemon runs `git config -z --list`
 in the same directory. The listing carries the profile variables of the call after
 it and the `GIT_COMMON_DIR` pin, and no hook pins. A listing before a call of the
-branch step carries the light variables, and in the state `shadow` the six heavy
-values. In the state `shadow` a second listing runs right before the checkout. It
-carries the hook pins, `GIT_INDEX_FILE` and `LANGUAGE=C`, and no `LC_ALL`. A listing
-drops the daemon's own
+branch step carries the light variables, and in the states `shadow` and
+`fallback-git` the six heavy values. In the state `shadow` a second listing runs right before the checkout. It
+carries the hook pins, `GIT_INDEX_FILE` and `LANGUAGE=C`, and it adds no `LC_ALL`.
+Every other listing drops the daemon's own
 `LC_ALL` and `LANGUAGE` and ends with `LC_ALL=C` and `LANGUAGE=C`. git then writes
 its listing errors in English (Linux VM). The call after the listing keeps the
 daemon's `LC_ALL`, `LANGUAGE` and `LANG` (Linux, macOS and Windows VMs). Other
@@ -2621,14 +2624,15 @@ request. With `"shadowDirOff":true` they are temporary folders with these names:
 - `claude-ssh-index-<n>`, the index folder of the checkout of a create
 
 `<n>` is decimal digits. With `"shadowDirOff":true`, `5fd08069` uses the three names
-(Linux, macOS and Windows VMs). A client can see the index name in the text
-`open <tmp>/claude-ssh-index-<n>/index: no such file or directory`.
+(Linux, macOS and Windows VMs). On Linux and macOS a client can see the index name
+in the text `open <tmp>/claude-ssh-index-<n>/index: no such file or directory`. The
+index name on Windows is claustrum's own (not measured).
 
 ##### Calls with `worktreeRoot`
 
 If the `rev-parse --show-toplevel` call of a `git.worktree_create` with
 `worktreeRoot` fails, the create stops with `mkdir_failed`. Two failed `worktree
-list` calls stop it the same way. If `baseRepo` and the root are both missing, a
+list` calls stop it the same way (Linux VM). If `baseRepo` and the root are both missing, a
 `git.worktree_remove` with `worktreeRoot` makes no git call. It answers the `the
 worktree location <root> is not reachable` refusal of the
 [Error-string catalogue](#error-string-catalogue). Linux and macOS VMs.
@@ -2637,8 +2641,11 @@ worktree location <root> is not reachable` refusal of the
 
 The reply lines are equal in each of these. With `"shadowDirOff":true` a call that
 both builds make is equal in list, arguments, working directory and variables.
-Without the member, Linux and macOS VMs measured the equal points in the state
-`shadow`, and a Windows VM in the state `fallback-git`. The order of the
+Without the member these are equal: the folder variables, the six values of the
+light calls of a create, the `lfs.storage` item and `LANGUAGE=C` of the checkout,
+its second listing and the names of the short-lived entries (state `shadow`, Linux
+and macOS VMs). In the state `fallback-git` the variables and the names are equal
+(Windows VM). The order of the
 variables is equal on Linux and macOS VMs.
 
 - With `worktreeRoot`, `5fd08069` runs `rev-parse --show-toplevel`, `rev-parse
