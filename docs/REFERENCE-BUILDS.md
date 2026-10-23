@@ -77,7 +77,7 @@ battery on the Linux VM. On the macOS and Windows VMs it ran the changed areas
 (rounds `task082-01` to `task082-03`). Its one frame difference was a
 `git.info` on a folder with no repository during the first start test. PR 596
 closed it, and the off switch during a `git.info` with it (rounds `task103-01`
-to `task103-06`). D4, D5, D9, D13, D18, D21 and D25 are retired. D27 is new (PR 563).
+to `task103-06`). D4, D5, D9, D13, D17, D18, D21 and D25 are retired. D27 is new (PR 563).
 In round `val-s3p2b2-5` 109 requests of the `val-s3p2b1` cells and 77 requests
 of newer cells ran with the order of the variables (Linux VM). The calls differ
 there in two kinds of place: the differences that stay, and the rows that the
@@ -115,6 +115,11 @@ and the remove can go on (rounds `tier3-13`, `tier3-17` and `tier3-19`). Row G08
 of `f6010b97` answered the lock-check text there. In a plain folder `5fd08069`
 checks once (cell CaP0 of round `tier3-17`, Linux VM), where row A5 of `89cb6289`
 checked twice.
+
+With an `lsof` run that `SIGKILL` cannot end, the macOS host cleaner is parity in
+the log line, signals and disk (round `tier4-01`, macOS VM). The pass differs:
+`5fd08069` runs `lsof` once and ends in 17 s, claustrum runs it three times and
+ends in 51 s. The cause: claustrum reads a run it gave up on as busy and reads the daemon again until its busy sampling ends (from the code).
 
 ### `89cb6289d0e434f573cfc7267dd0cbb8c56ca298` — 2026-09-28 (built)
 
@@ -264,10 +269,9 @@ Item 7 escaped the first pass. A second, full re-check after the first four
 PRs had merged is what found it.
 
 **Reconciled in.** PRs 387 through 390 are the four implementation slices. PR 391
-corrects claims those four left wrong. PR 392 adds item 7, puts the host cleaner's
-listener check first, and carries the one deliberate exception in this build's
-reconciliation. On the macOS busy probe claustrum reads an `lsof` run it gave up on
-as busy. The reference side is not probe-measured ([DIVERGENCES.md](DIVERGENCES.md) D17).
+corrects claims those four left wrong. PR 392 adds item 7 and puts the host cleaner's
+listener check first. The macOS busy read that it shipped, which reads an `lsof`
+run it gave up on as busy, is parity with `5fd08069` (round `tier4-01`).
 This bump follows all six.
 
 ### `19f30c46353dde1606cad1fede73d0e9be222140` — 2026-09-11 (observed)

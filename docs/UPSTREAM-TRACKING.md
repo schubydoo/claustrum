@@ -474,19 +474,21 @@ traps that matter for telling drift from expected:
   passes 64 MiB can get no refusal on claustrum (from the code, not measured on
   `5fd08069`).
 
-  The states, the bounds and the cells are in
-  [PROTOCOL.md](PROTOCOL.md#repository-config-refusals).
+  The bounds are in
+  [PROTOCOL.md → Repository config refusals](PROTOCOL.md#repository-config-refusals).
 - The option lists of the git calls split the builds too, not drift.
   claustrum differs from `89cb6289` in four states: `git.status` with replace
   objects, the `hint:` lines in a failure text of `git.worktree_create`, a long
   tree path on Windows, and the paths of a new worktree with
-  `worktree.useRelativePaths`. The call logs differ in the `-c` lists and in two
-  variables. The cells and the systems are in
+  `worktree.useRelativePaths`. The call logs differ in the `-c` lists, where `89cb6289`
+  sends 23 and 13 items and claustrum 28 and 20. They also differ in two heavy
+  variables: the heavy profile of `89cb6289` has no `GIT_NO_REPLACE_OBJECTS` and no
+  `GIT_GRAFT_FILE`. The rules are in
   [Hardened git calls](PROTOCOL.md#hardened-git-calls).
 
   Against `5fd08069` the call logs differ in `git.worktree_create`. `5fd08069`
-  makes more rounds with `worktreeRoot`, and other listings with `existingBranch`. Those differences are not drift. See "Not equal
-  to `5fd08069`" in [PROTOCOL.md](PROTOCOL.md#hardened-git-calls).
+  makes more rounds with `worktreeRoot`, and other listings with `existingBranch`. Those differences are not drift. See
+  [Where the calls differ from `5fd08069`](PROTOCOL.md#where-the-calls-differ-from-5fd08069).
 - The `worktreeRoot` location rules follow `5fd08069` (rounds `tier0-20` to
   `tier0-22`), not drift. `89cb6289` is not measured in these cells.
 - A remove behind a linked `<git dir>/worktrees` follows `5fd08069`, not drift:
@@ -600,10 +602,11 @@ traps that matter for telling drift from expected:
   to be misread. `19f30c46` copies eight of the nine, so a file missing from a
   seeded worktree looks like a regression against the previous pin.
   [REFERENCE-BUILDS.md](REFERENCE-BUILDS.md) holds all seven, and all seven are
-  reconciled. One carries an exception. On the host cleaner's macOS busy
-  probe, claustrum reads an `lsof` run it gave up on as busy. The reference side is
-  not probe-measured. That is [DIVERGENCES.md](DIVERGENCES.md) D17, not drift.
-  D17 is the abandoned run only, not a run that the deadline ends. For both reads, an `lsof`
+  reconciled. On the host cleaner's macOS busy
+  probe, the daemon gets no SIGTERM after an `lsof` run that claustrum gave up on,
+  as on `5fd08069` (round `tier4-01`, macOS VM). The retired D17 covered it. A macOS
+  pass with three hung `lsof` runs and 51 s is the known difference from `5fd08069`,
+  which runs one and ends in 17 s. It is not drift. For the busy read and the lock read, an `lsof`
   command that does not start is parity with `89cb6289` (macOS VM, 3 of 3 runs).
   So is a run that writes to stderr and exits 1.
 - The `90fca6e6` reconciliation shipped four PRs. A full re-check then found a
