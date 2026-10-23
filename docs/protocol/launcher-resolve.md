@@ -19,7 +19,7 @@ The params errors are all `-32602`:
 | Request | Error |
 |---|---|
 | No `params` member, a `params` that is not an object, or a `cliPath` that is not a string | `Invalid params` |
-| `{}`, `"params":null`, a `null` or empty `cliPath`, or a key with another name, such as `path` (a key that differs only in letter case binds as `cliPath`) | `cliPath is required` |
+| `{}`, `"params":null`, a `null` or empty `cliPath`, or a key with another name, such as `path` (measured on Windows) | `cliPath is required` |
 
 Another method of the `launcher.*` namespace gets `-32601 Unknown method: launcher.<x>`.
 
@@ -41,7 +41,7 @@ The result has one of four shapes. Each keeps this member order:
 | `unusable` | A value is set, but the daemon refuses it. `reason` says why. |
 | `unreadable` | A settings file or the drop-in folder cannot be read. `path` names it. |
 
-The daemon reads the files on every call, so an edit shows on the next call. The `CLAUDE_SSH_MANAGED_LAUNCHER` variable does not change a frame.
+The daemon reads the files on every call, so an edit shows on the next call. The `CLAUDE_SSH_MANAGED_LAUNCHER` variable does not change a frame (measured on macOS).
 
 The bytes follow Go's default JSON encoder. In a frame, `<`, `&`, `>` and `"` come out as JSON escapes, and so does U+2028 in an `argv`. U+0085, U+FFFD and the dash U+2014 of the reason texts stay raw. That dash is the bytes `e2 80 94`.
 
@@ -60,7 +60,7 @@ The settings folder is `/etc/claude-code` on Linux and `/Library/Application Sup
 
 ### The test variable
 
-A non-empty `CLAUDE_SSH_E2E_MANAGED_SETTINGS_DIR` in the daemon's environment names another folder. The daemon reads it only if the system folder has neither the base file nor a `.json` drop-in, a hidden one included. Else it logs this line once per daemon. After the second resolve that is claustrum's own:
+A non-empty `CLAUDE_SSH_E2E_MANAGED_SETTINGS_DIR` in the daemon's environment names another folder. The daemon reads it only if the system folder has neither the base file nor a `.json` drop-in, a hidden one included. Else it logs this line once per daemon. Two resolves are measured. That it stays at one line past the second is claustrum's own:
 
 ```text
 [launcher] CLAUDE_SSH_E2E_MANAGED_SETTINGS_DIR ignored: <system folder> holds this host's policy
@@ -99,7 +99,7 @@ The log line writes these texts raw. The frame escapes them as above.
 
 | Case | `reason` |
 |---|---|
-| No launcher: three spaces, `""`, `[]` or `[""]` | `the value is set but contains no launcher — unset it to run without one, or set it to the absolute path of your launcher` |
+| No launcher: three spaces, a value of two double quotes, `[]` or `[""]` | `the value is set but contains no launcher — unset it to run without one, or set it to the absolute path of your launcher` |
 | A later empty JSON element, `["<w>",""]` | `the JSON array contains an empty element — remove it, or fill in the value it was a placeholder for` |
 | A JSON element that is not a string | `JSON form must be an array of strings` |
 | Starts with `[` and is not valid JSON | ``value starts with `[` but is not valid JSON`` |
@@ -113,7 +113,7 @@ The log line writes these texts raw. The frame escapes them as above.
 
 ## The launcher checks
 
-`process.spawn` runs these same checks, with its command in place of `cliPath`.
+`process.spawn` runs these same checks, with its command in place of `cliPath`. On Windows a spawn with a launcher is refused before them.
 
 - The checks test argv[0] only. The launcher arguments are not tested against files.
 - The own-path check is a string compare. It comes before the absolute check and the existence check. So `c` with the `cliPath` `c` gets the own-path text, and so does a missing `/opt/claude/cli` with that `cliPath`.
@@ -137,10 +137,10 @@ A repeat of the same line writes nothing. A usable answer between two equal refu
 | | Linux | macOS | Windows |
 |---|---|---|---|
 | Settings folder | `/etc/claude-code` | `/Library/Application Support/ClaudeCode` | None. The daemon reads no file and answers `none`. |
-| `CLAUDE_SSH_E2E_MANAGED_SETTINGS_DIR` | Honored as above. | Honored as above. | Ignored. The answer is `none`. |
+| `CLAUDE_SSH_E2E_MANAGED_SETTINGS_DIR` | Honored as above. | Honored as above. | Not read. No line is logged, and the answer is `none`. |
 
 ## Differences from the reference
 
-No entry of the [divergence catalog](../DIVERGENCES.md) applies to this method. A rule marked "claustrum's own" is not measured on the reference.
+No entry of the [divergence catalog](../DIVERGENCES.md) applies to this method. A rule that is not marked "claustrum's own" is measured against `89cb6289` on a Linux VM, and a rule that names macOS or Windows was measured there. A rule marked "claustrum's own" is not measured on the reference.
 
 The measured cells behind each rule are in the tests and in the [reference build history](../REFERENCE-BUILDS.md).
