@@ -121,7 +121,7 @@ children it spawns.
   child removes its record the same way, before the pipe drain. On windows the
   reference daemon reports it is not the run-dir lock holder, so it records no children. A
   windows VM showed a spawned child leaves the children dir empty. This behavior is
-  off-wire. See [process.spawn](protocol/process-spawn.md#child-records-linux-and-macos).
+  off-wire. See [PROTOCOL.md → Child records and the reap](PROTOCOL.md#child-records-and-the-reap-linux-and-macos).
 - At `-serve` startup a daemon that holds the run-dir lock reaps those
   records (shared `childreap.go`, with the live-process read in `childreap_linux.go` /
   `childreap_darwin.go`). The reap happens right after the daemon claims the run dir,
@@ -155,7 +155,7 @@ children it spawns.
   child records survive a daemon startup untouched. The kill and every live-process read sit
   behind seams, so tests exercise the decision
   without ending a real process. This behavior is off-wire. See
-  [process.spawn](protocol/process-spawn.md#the-reap-at-the-next-start-linux-and-macos).
+  [PROTOCOL.md → Child records and the reap](PROTOCOL.md#child-records-and-the-reap-linux-and-macos).
 - Also at `-serve` startup the daemon starts a periodic host cleaner (the shared decision
   layer in `hostclean.go`, with the OS reads in `hostclean_linux.go` / `hostclean_darwin.go`).
   The cleaner is a background sweep that keeps the install tidy. It runs 15s after startup

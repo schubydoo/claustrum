@@ -531,7 +531,7 @@ traps that matter for telling drift from expected:
   holds it as one whole argument, `89cb6289` accepts the record. Linux rows PG02a, PG02b,
   ED03a, ED03b, ED04a and ED04e show that. `f6010b97` sends no signal in rows ED03a
   to ED04e. That difference is not drift. See
-  [process.spawn](protocol/process-spawn.md#the-reap-at-the-next-start-linux-and-macos).
+  [PROTOCOL.md → Child records and the reap](PROTOCOL.md#child-records-and-the-reap-linux-and-macos).
 - The configuration listing, the stray `commondir` rules and the `git.info` root
   split the pins too. claustrum follows `89cb6289` there. `5fd08069` is not
   measured in these rows. In the state `shadow` the answers of

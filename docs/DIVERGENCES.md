@@ -744,7 +744,7 @@ operator-declinable. Only CT-2 and CT-5 carry a flag and a key.
 - **Reopen trigger.** A measurement that shows the reference waiting before that
   `SIGKILL` (then this becomes parity). Or a report of a child that outlived a
   daemon restart because it replaced its program.
-- **Pointers.** [process.spawn](protocol/process-spawn.md#the-reap-at-the-next-start-linux-and-macos). Also `childreap.go`
+- **Pointers.** [PROTOCOL.md → Child records and the reap](PROTOCOL.md#child-records-and-the-reap-linux-and-macos). Also `childreap.go`
   (`settleGone`, `reapGoneLeader`). Evidence in
   `scratch/89cb6289/e-linux/REPORT.md` and `REPORT-val1.md` to `REPORT-val5.md`
   there, and in `scratch/89cb6289/e-macos/REPORT-val1.md` to `REPORT-val3.md`.

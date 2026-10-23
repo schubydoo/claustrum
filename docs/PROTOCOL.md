@@ -576,7 +576,7 @@ D1a). It got `ENOENT` when no socket file was there (row D1b). Linux and macOS V
 measured both against `89cb6289`. The first connection worked 2.2 to 2.4 s after
 the start. With nothing to reap, the first connection
 worked 0.1 to 0.24 s after the start (row D2). See
-[process.spawn](protocol/process-spawn.md#the-reap-at-the-next-start-linux-and-macos) for the reap itself.
+[Child records and the reap](#child-records-and-the-reap-linux-and-macos) for the reap itself.
 
 On a timeout the launcher prints
 `claustrum: timeout waiting for daemon to accept on <socket>` to stderr and
@@ -615,6 +615,44 @@ printed this text after a time stamp, and claustrum puts its level tag before it
 ```
 [daemon] detached spawn failed (fork/exec <binary>: Access is denied.); retrying without breakaway
 ```
+
+#### Child records and the reap (Linux and macOS)
+
+A daemon that holds the [run-dir lock](#run-dir-lock-daemonlock) records each [process.spawn](protocol/process-spawn.md) child in `<run dir>/children/<pid>.json`, on every socket shape. The run dir is the folder of the socket path. The child needs a pid of 2 or more and a start time that the daemon can read. Windows writes no record and reaps none.
+
+The record is one JSON object with the members in this order:
+
+```json
+{"pid":<int>,"node":"<boot-id>/pid:[<inode>]","host":"machine-id:<hex>","instance":"<daemon instance id>","daemonPid":<int>,"daemonStart":"<start>","argv0":"<child argv0>","start":"<start>","at":<epoch-ms>}
+```
+
+`daemonStart` and `start` are strings. They hold clock ticks on Linux and the date text of `CLAUDE_SSH_CHILD` on macOS. On macOS the node is the boot-session UUID, and the host is the hostname. With a `launcher`, `argv0` is the launcher, and a `program` member after `argv0` holds the command. claustrum writes no `program` without a launcher (not measured on the reference).
+
+- The daemon writes a record through a temp file `children/.rec-<pid>.json.<12 characters>` and a rename.
+- The end of the child removes its record, before the pipe drain.
+- A graceful shutdown removes the records of the children that it ends. claustrum waits 1 s at most for them. With `-keep-children` it removes the records of the children that stay alive, so the next daemon leaves them alone.
+- A record stays after a kill of the daemon, and for a process whose `id` a later spawn took.
+- After a rename of the run dir, a record goes under the new name. The daemon holds the run dir open.
+- No record goes through a `children` that is not a real folder inside the run dir. The remove at the end of the child is the one exception: it follows a symbolic link to a folder inside the run dir.
+
+At a `-serve` start, after the run-dir lock and before the bind, the daemon reads the records:
+
+- It walks `children` in directory order and handles the first 128 names that end in `.json`. The rest wait for the next start.
+- It sends `SIGTERM` to 64 groups at most. The others keep their records for the next start.
+- Only a regular file is a record. A link, a FIFO or a folder with a `.json` name is removed, with no signal. The target of a link stays.
+- It reads at most 4096 bytes of a record. A record whose first 4096 bytes are not one JSON value is removed, with no signal.
+- If `children` is not a real folder, it reads, signals and removes nothing.
+
+A record of a daemon that is alive stays. So does a record from another machine, for 30 days (from the code). A record from an earlier boot of this machine, and a record of a dead pid, are removed. For a record of a dead daemon on this machine, the daemon tests the process. If it still is the recorded child, its group gets `SIGTERM`. Else the record goes with no signal. The test has four parts:
+
+- The process started at the recorded `start`, so the pid is not reused. On macOS a `start` with two blanks before a one-digit day does not match.
+- It leads its own process group.
+- It runs `argv0`. With a `program` member, it can also run `program`, or hold `program` as one whole argument. On Linux the program is the first argument of `/proc/<pid>/cmdline`, and a name with the same last path component matches. On macOS the daemon reads the command text of `ps`, which cuts words at blanks. So a `program` with a blank never matches an argument there.
+- `CLAUDE_SSH_RUN_DIR` names this run dir, and `CLAUDE_SSH_CHILD` names the pid and start of the process itself.
+
+A process that the daemon cannot inspect keeps its record and gets no signal. The daemon does not test the owner of a record file.
+
+After the `SIGTERM` the daemon polls for 2 s. At each poll a group takes the whole test again. A group that fails it gets nothing more. A group that still passes after 2 s gets `SIGKILL`. After the last group is done, the records of all signalled groups go together. A leader that reads as gone is read again after 50 ms before the `SIGKILL` of its group ([D20](DIVERGENCES.md#d20)). The [log lines](#lines-of-child-processes) of the reap are under the daemon log.
 
 ### Idle-connection close
 
@@ -715,6 +753,40 @@ claustrum does not remove the log on graceful shutdown. This differs from the
 socket and from `daemon.token`. The log outlives the daemon, so a post-mortem
 stays readable. The fixed name and location are the deployment contract, and they
 are not configurable.
+
+#### Lines of child processes
+
+These lines tell of [process.spawn](protocol/process-spawn.md) children and of their [records and the reap](#child-records-and-the-reap-linux-and-macos). claustrum prints a level tag before each line. The reference prints none.
+
+| Event | Line |
+|---|---|
+| A start | `[process.Manager] Process <id> started, PID=<n>, command=<command>` (from the code). With a launcher, ` via launcher <argv0>` follows. |
+| A failed start | `[process.Manager] Failed to start process <id>: <message>`, with the text of the error frame |
+| An exit | `[process.Manager] Process <id> exited with code <n>`, then `, terminated by <signal>` for a signal and `, signalled at client request` or `, signalled at shutdown request` for a kill by the daemon |
+| The drain limit | `[process.Manager] Process <id>: pipe drain grace expired (grandchild holding stdio?); force-closing` |
+| A supersede | `[process.Manager] process <new id> supersedes <old id> for session <key>: died=<bool> escalated=<bool> alreadyExited=<bool>` (from the code), after the exit line of the old process |
+| `children` not a folder | `[process.Registry] <run dir>/children is not a directory; recording nothing`, or `reaping nothing` at a start |
+| A record write fails | `[process.Registry] cannot record child <pid>: <error>` |
+| A record remove fails | `[process.Registry] cannot remove record of child <pid>: <error>` |
+| Over 128 records | `[process.Registry] more than 128 records in <run dir>/children; leaving the rest for the next start` |
+| Over 64 groups | `[process.Registry] <n> more orphaned group(s) recorded in <run dir>/children than the 64 one start ends; leaving those for the next start` |
+| A record dropped | `[process.Registry] record <pid>.json: pid <pid> is not a child to end (<reason>); dropping the record, signalling nothing` |
+| A group ended | `[process.Registry] ending orphaned process group <pgid> recorded by daemon instance "<instance>" (pid <daemon pid>): SIGTERM` |
+| The grace ran out | `[process.Registry] group <pgid> outlived SIGTERM for 2s: SIGKILL` |
+| A group fails the test | `[process.Registry] group <pgid> no longer verifies (<reason>); nothing more is sent to it` |
+| The reap summary | `[daemon] serve: predecessor's children — <n> orphaned group(s): <a> ended on SIGTERM, <b> on SIGKILL, <c> survived; <d> stale record(s) dropped, <e> kept` |
+
+The exit line is a race at a shutdown, on the reference and on claustrum. It can be missing. A reap that sent no `SIGTERM` and kept no record writes no summary.
+
+The `<reason>` texts are these:
+
+- `it does not run the recorded program "<argv0>"`, with `and neither runs nor was handed "<program>"` after it for a record with `program`
+- `it does not lead its own process group`
+- `it did not start at the recorded "<start>": the pid has been reused`
+- `it was not started by a daemon of this run dir: no CLAUDE_SSH_RUN_DIR names it`
+- `it belongs to a daemon of another run dir: its CLAUDE_SSH_RUN_DIR names a different one`
+- `it was not started by a daemon itself: its CLAUDE_SSH_CHILD does not name its own pid and start (something a child started)`
+- `environment unreadable: <error>`, `pid namespace unreadable: <error>` and `stat unreadable: <error>`
 
 ### Orphan-exit self-probe
 
