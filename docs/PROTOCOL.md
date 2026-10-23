@@ -617,19 +617,29 @@ self-probe below.
 
 ### Daemon log (`remote-server.log`)
 
-The launcher creates `remote-server.log` in the socket's directory with mode
-`0600`. The launcher rotates any existing log to
-`remote-server.log.old` and creates a fresh one. A log that cannot be renamed gets
-no fresh file (see below). This matches `4534d86`, which
-keeps the previous session's log as `.old` on every restart. The launcher
-redirects the daemonized child's stdout and stderr into that file, so the
-launcher's own streams stay empty, except for the launcher's own failures. Those
-are under [Daemon startup](#daemon-startup-serve) and
+The rules of the file are measured against `5fd08069`, and the startup lines
+against `f6010b97` and `89cb6289`. The peer-check lines are measured against
+`5fd08069`. A rule that names one system was measured on
+a VM of that system, and an unmarked rule on Linux and macOS VMs.
+
+At each start the launcher renames an existing `remote-server.log` in the
+socket's directory to `remote-server.log.old`. Then it creates a fresh log there
+with mode `0600`. It sends the stdout and stderr of the daemonized child into
+that file, so its own streams stay empty, except for the launcher's own
+failures. Those are under [Daemon startup](#daemon-startup-serve) and
 [The token source](#the-token-source), and a log that cannot be created gives
-`claustrum: open log: <err>`. On Linux and macOS, when the limit raise
-works, the first line tells the open-files limit that `process.spawn` children
-get. This line is at INFO level, so `CLAUSTRUM_LOG_LEVEL=warn` drops it. The
-ready banner follows, with no timestamp:
+`claustrum: open log: <err>`. claustrum does not remove the log at
+shutdown (from the code), unlike the socket and `daemon.token`. So the log of the last run stays
+readable. The fixed name and location are the deployment contract, and they are
+not configurable.
+
+claustrum writes a level tag before each line of its logger. The banner and a
+start error that begins `claustrum:` have none. The reference writes no tag. `CLAUSTRUM_LOG_LEVEL=warn` drops the INFO lines.
+
+When the raise of the open-files limit works on Linux and macOS, the first line
+tells the limit that `process.spawn` children get. It is the lower of 65536 and
+the hard limit. On Windows there is no such line. The ready banner follows, with
+no timestamp:
 
 ```
 2026/07/31 00:17:30 INFO  [daemon] child processes will start with an open-files limit of 65536
@@ -638,70 +648,61 @@ Claustrum remote server listening on /run/user/1000/claude/rpc.sock (pid 4711, i
 2026/07/31 00:17:30 INFO  [Server] New connection from: @
 ```
 
-The value of the first line is the soft limit it set, which is the lower of 65536 and the hard limit. `f6010b97`
-writes the same line, with no level tag, before its banner. Linux and macOS VMs
-measured this, with the value 65536. On the Windows VM the reference log has no
-such line, and claustrum writes none there. A failed raise was not measured.
-Claustrum writes no line then.
+A failed raise writes no line (claustrum's own, not measured). The banner ends
+with the pid of the daemon and its instance, the `instanceId` of
+`server.capabilities`. The name `Claustrum` is claustrum's own, and the
+reference prints `Claude` there.
 
 A start with `CLAUDE_SSH_PEER_CHECK=1` writes one more line before the banner.
-On Linux it is at INFO level and names the namespaces of the daemon:
+On Linux it is at INFO level, comes after the open-files line, and names the
+namespaces of the daemon:
 
 ```
 [Server] serving only callers in "user:[4026531837] net:1 pidfd"
 ```
 
-`5fd08069` writes it after its open-files line (round `task011-01`, Linux VM).
-On macOS and Windows the line is at WARN level, and `5fd08069` writes this text
-last before its banner (macOS and Windows VMs):
+On macOS and Windows the line is at WARN level and comes last before the banner,
+with no reap line between them. Its place beside the lines of a reap is not
+measured:
 
 ```
 [Server] this system names no namespaces: cannot tell callers in a sandbox from others, serving all
 ```
 
 A Linux kernel that names no namespace gets that line too (claustrum's own, not
-measured). The place of the line beside the lines of a reap is not measured.
+measured).
 
-The banner ends with the pid of the daemon and its instance. The instance is the
-`instanceId` of `server.capabilities`. `f6010b97` and `89cb6289` print the same
-suffix (Linux, macOS and Windows VMs). The name `Claustrum` is claustrum's own.
-The reference prints `Claude` there. The banner beside the lines of
-`-listen-pipe` and `-metrics-addr` is not measured.
+If the fresh create fails, the launcher judges the entry at the path without
+following it, and it opens no FIFO:
 
-If the rename fails, claustrum's launcher judges the entry at the path by `Lstat`
-and opens no FIFO. An own regular file is truncated, keeps its mode and gets the
-lines. So does the own regular file behind an own link. A folder fails the start.
-The launcher then prints one line on stderr and exits 1, with no daemon, socket,
-`daemon.lock` or `daemon.token`:
+- Nothing at the path fails the start with the error of the create (Linux VM).
+- A folder fails the start with `is a directory`.
+- An own regular file is truncated. It keeps its mode and gets the lines.
+- An own link to an own regular file gets the same: the file is truncated (Linux
+  VM). On Windows a link fails with `permission denied`
+  ([D8](DIVERGENCES.md#d8)).
+- Every other entry fails the start with `permission denied` and stays
+  unchanged. That is [D8](DIVERGENCES.md#d8).
+
+A failed start prints one line on stderr and exits 1. `5fd08069` prints the same
+refusal with its own prefix. No daemon, socket, `daemon.lock` or `daemon.token`
+follows it (from the code):
 
 ```
 claustrum: open log: open <path>: is a directory
 ```
 
-A create that fails with nothing at the path fails the start the same way, with the
-error of the create. `5fd08069` does all four, with its own prefix. Rounds
-`task015-03` and `task015-04` show cells E1 and E3 on the Linux and macOS VMs, and E5
-and E6 on the Linux VM. Every other
-entry fails the start with `permission denied` and stays unchanged. That is
-[D8](DIVERGENCES.md#d8). On Windows the rename moves a folder onto a regular `.old`,
-as on `5fd08069` (cell W1 of round `task015-04`, Windows VM).
-
-On Windows a second daemon can start on a live socket. The first daemon holds
-`remote-server.log` open, so the launcher cannot rotate it. The launcher then
-truncates that file, and the second daemon logs there. Each daemon writes at the
-offset of its own handle. So the earlier lines of the first daemon are lost, and
-its later lines sit behind a block of NUL bytes. A log that another process holds
-with no delete share is truncated too, and `.old` stays. `5fd08069` does both
-(cells W1 and W3 of round `task015-01`, Windows VM).
-
-claustrum does not remove the log on graceful shutdown. This differs from the
-socket and from `daemon.token`. The log outlives the daemon, so a post-mortem
-stays readable. The fixed name and location are the deployment contract, and they
-are not configurable.
+On Windows the rename moves a folder onto a regular `.old`. A second daemon can
+start on a live socket there. The first daemon holds the log open, so the
+rename fails, and the launcher truncates the log. The second daemon then logs
+there. Each daemon writes at the offset of its own handle. So the earlier lines
+of the first daemon are lost, and its later lines sit behind a block of NUL
+bytes. A log that another process holds with no delete share is truncated too,
+and `.old` stays. This is parity now, and [D21](DIVERGENCES.md#d21) is retired.
 
 #### Lines of child processes
 
-These lines tell of [process.spawn](protocol/process-spawn.md) children and of their [records and the reap](#child-records-and-the-reap-linux-and-macos). claustrum prints a level tag before each line. The reference prints none. The levels are claustrum's own, and `CLAUSTRUM_LOG_LEVEL=warn` drops the INFO lines. Unless a row says otherwise, each text is the text of `89cb6289`, measured on Linux. The group-ended, outlived and dropped-record lines are measured on macOS too.
+These lines tell of [process.spawn](protocol/process-spawn.md) children and of their [records and the reap](#child-records-and-the-reap-linux-and-macos). The levels are claustrum's own. Unless a row says otherwise, each text is the text of `89cb6289`, measured on Linux. The group-ended, outlived and dropped-record lines are measured on macOS too.
 
 | Event | Level | Line |
 |---|---|---|
@@ -3258,64 +3259,52 @@ On Windows the daemon can miss the half-close of the bridge (see
 claustrum -stop -socket <p>          # no token needed, and none is read
 ```
 
-`-stop` sends `server.shutdown` with no `auth` member, because that method is
-not authenticated. See [Authentication](#authentication). The request is
-`{"jsonrpc":"2.0","id":1,"method":"server.shutdown"}` and a newline. `-stop` then
-reads once, with a 2 s deadline, and discards what it reads. It never relays a
-frame to stdout. A live daemon's reply does not always arrive (see `server.*`
-above). On `5fd08069` -stop prints `stopped` with rc 0 both when the reply arrives
-and when it gets EOF (cell R4 of round `task034-01`).
+The words, the signals and the removes are measured against `f6010b97` and
+`90fca6e6` on Linux and macOS VMs. The steps after a successful connect are
+measured against `5fd08069` on Linux, macOS and Windows VMs. A rule marked
+claustrum's own is not measured.
 
-After the read, on Linux and macOS, `-stop` tries `daemon.lock` every 50 ms for up
-to 3 s. A lock that comes free gives `stopped` and no signal. A lock still held
-after 3 s gets the signal steps of a failed connect, below. `5fd08069` does this
-in cells S1 to S5 of round `task034-01` (Linux and macOS VMs). There `terminated`
-came at about 3.1 s and `killed` at about 7.1 s. A holder whose record names no
-daemon role got no signal and the word `survivor`, at about 3.6 s. In cell S4 of
-round `task034-02` it came at 3.54 to 3.65 s, after 72 lock tries (Linux and macOS
-VMs). So claustrum tries the lock for 0.5 s more for that holder. A lock that comes free then gives `stopped` (claustrum's
-own, not measured). A lock that a new holder took during the `SIGTERM` wait gives
-`survivor` and no signal to it (cell S2b, Linux VM). Its line is below.
-On Windows `-stop` prints `stopped` at once, as
-`5fd08069` does (cell W-S1, Windows VM).
-
-A lock that comes free gets no write (cells S1 and S5 of round `task034-02`, Linux
-and macOS VMs). Only after `terminated` or
-`killed` does `-stop` write `{"pid":<pid>,"role":"stop","node":"<node>"}` into
-`daemon.lock`, and empties the file before it prints the word (Linux cells S2 and
-S3, macOS cell S3). After `terminated` or `killed`, `-stop` also removes the
-socket and `daemon.token`. In those cells the daemon had already removed both.
+`-stop` sends `{"jsonrpc":"2.0","id":1,"method":"server.shutdown"}` and a
+newline. It sends no `auth` member, because that method is not authenticated
+(see [Authentication](#authentication)). Then it reads once, with a 2 s deadline
+(`5db5e4a`), and discards what it reads. It never relays a frame to stdout. A live daemon's
+reply does not always arrive (see `server.*` above). A reply and an EOF lead to
+the same next step. claustrum treats every other read result the same way
+(claustrum's own).
 
 `-stop` prints one word on stdout, then a newline, and exits `0` in every state
-in the table below. The words and the rules below are measured against
-`f6010b97` and `90fca6e6` on a Linux VM, except the rules marked as claustrum's
-own. The 3 s wait is measured on `5fd08069` (round `task034-01`). After `SIGKILL`, `-stop` polls the lock for 1.5 s. The word `killed` needs
-the lock to become free in that wait. The macOS results are below.
+in this table:
 
 | word | state |
 |---|---|
-| `stopped` | The connect succeeded. On Linux and macOS the lock also came free within 3 s, or there is no usable `daemon.lock` (claustrum's own). |
-| `none` | The connect failed, and `daemon.lock` is free or missing. claustrum also prints `none` when the lock cannot be opened or locked. |
-| `terminated` | The connect failed, or the lock was still held 3 s after it, and a live serve daemon of this binary for this socket holds `daemon.lock`. `-stop` sent `SIGTERM`, and the lock became free. |
-| `killed` | As `terminated`, but the lock was still held 4 s after `SIGTERM`. `-stop` sent `SIGKILL`. |
-| `survivor` | As `terminated`, but a live process that is not that daemon holds `daemon.lock`. `-stop` does not signal it. The word is also `survivor` if the lock is still held 1.5 s after `SIGKILL`. `-stop` does not wait longer. claustrum prints it too when a signal cannot reach a holder that is still there. |
+| `stopped` | The connect succeeded. On Linux and macOS `daemon.lock` also came free within 3 s, or there is no usable `daemon.lock` (claustrum's own). On Windows the word comes at once. |
+| `none` | The connect failed, and `daemon.lock` is free or missing. If the lock cannot be opened or locked, claustrum prints `none` too. |
+| `terminated` | The connect failed, or the lock was still held 3 s after a successful connect. A live serve daemon of this binary for this socket holds `daemon.lock`. `-stop` sent `SIGTERM`, and the lock came free within 4 s. |
+| `killed` | As `terminated`, but the lock was still held 4 s after `SIGTERM`. `-stop` sent `SIGKILL`, and the lock came free within 1.5 s. |
+| `survivor` | A live process that is not that daemon holds `daemon.lock`, and `-stop` does not signal it. If the lock is still held 1.5 s after `SIGKILL`, the word is `survivor` too, and `-stop` does not wait longer. If a signal cannot reach a holder that is still there, claustrum prints it too. |
+
+After a successful connect, on Linux and macOS, `-stop` tries `daemon.lock` every 50 ms for up
+to 3 s. A lock that comes free gives `stopped` and no signal. A lock still held
+after 3 s gets the signal steps of a failed connect. A holder whose record names
+no daemon role gets no signal. `-stop` tries the lock for 0.5 s more, and then
+prints `survivor`. A lock that comes free in that time gives `stopped`
+(claustrum's own).
 
 The lock check uses the holder test of the serve eviction. See [Run-dir
-lock](#run-dir-lock-daemonlock). The exact rule of the Linux reference was not
-isolated. Windows has no run-dir lock, so a failed connect there always prints
-`none`.
+lock](#run-dir-lock-daemonlock). On Linux the holder test of the reference is
+not isolated (not measured). Before `SIGKILL`, `-stop` tests the holder again. A
+lock that another process took during the `SIGTERM` wait gives `survivor`. The
+new holder gets no signal (`5fd08069`, Linux VM, after a successful connect.
+After a failed connect it is claustrum's own). Windows has no run-dir lock, so a
+failed connect there always prints `none`.
 
-On macOS the words and effects match the references in 22 of 24 measured states.
-The two other states have a live lock holder that is not a serve process. The
-macOS reference signals any live holder whose lock record says role `serve` on
-this host's node. It does not check the holder's command line. claustrum keeps
-its holder check on macOS, so it does not signal such a holder and prints
-`survivor`. This is part of [D15](DIVERGENCES.md#d15). It was measured on a macOS
-VM against `f6010b97` and `90fca6e6`.
+The macOS reference signals any live holder whose lock record says role `serve`
+on this host's node. It does not check the holder's command line. claustrum
+keeps its holder test on macOS, so it does not signal such a holder that is not
+a serve process. It prints `survivor`. This is part of [D15](DIVERGENCES.md#d15).
 
-The lock path writes these lines to stderr. claustrum adds its own level tag, as
-it does for the serve eviction lines. The message text of these five lines is the
-reference text:
+The lock steps write these lines to stderr. claustrum adds its own level tag
+before the reference text, as it does for the serve eviction lines:
 
 ```text
 <ts> INFO  [daemon] stop: run dir is held by a live daemon, pid <N> (instance "<hex32>"); sending SIGTERM
@@ -3325,53 +3314,46 @@ reference text:
 <ts> WARN  [daemon] stop: WARNING previous daemon pid <N> (instance "<hex32>") survived SIGKILL (uninterruptible?); proceeding without run-dir ownership
 ```
 
-A holder with the short record, a daemon that has not bound yet, gives the first
-two lines with `pid <N>` and no instance. On a Linux VM (row N5), `89cb6289`
-logged `[daemon] stop: run dir is held by a live daemon, pid <N>; sending SIGTERM`
-and `[daemon] stop: previous daemon pid <N> exited after SIGTERM`. claustrum is
-built to that row. The other lines are not measured for a short record, and
-claustrum writes them with `(instance "")`.
+A daemon that has not bound yet has a short record. That holder gives the first
+two lines with `pid <N>` and no instance (`89cb6289`, Linux VM). claustrum
+writes the other lines with `(instance "")` then (claustrum's own).
 
-After a successful connect, a holder whose record names no daemon role gives this
-line. It is the text of `5fd08069` in cell S4 (Linux VM):
+A holder with no daemon role, after a successful connect, gives this line:
 
 ```text
-<ts> WARN  [daemon] stop: WARNING <dir>/daemon.lock is held by a live process we will not signal (its holder is not a daemon (role "")); leaving it alone
+<ts> WARN  [daemon] stop: WARNING <dir>/daemon.lock is held by a live process we will not signal (its holder is not a daemon (role "<role>")); leaving it alone
 ```
 
 A lock that another daemon took during the `SIGTERM` wait gives this line, with
-the pid and instance of the new holder. It is the text of
-`5fd08069` in cell S2b of round `task034-02` (Linux VM):
+the pid and instance of the new holder:
 
 ```text
 <ts> WARN  [daemon] stop: <dir>/daemon.lock changed hands during eviction (now pid <N> (instance "<id>")); leaving the new holder alone
 ```
 
-This line is claustrum's own. It comes from the second holder check:
+This line is claustrum's own. It comes from the second holder test:
 
 ```text
 <ts> WARN  [daemon] stop: pid <N> is no longer our serve holder before SIGKILL (<reason>); leaving it alone
 ```
 
-After a successful connect, `-stop` removes nothing, except after `terminated` or
-`killed`. A live daemon removes its own
-socket and `daemon.token` when it stops. After a failed connect, `-stop` removes
-the socket path and the `daemon.token` beside it, stale or not. It does this after
-the lock check. If the word is `survivor`, `-stop` removes neither file. This is
-measured for a holder that `-stop` does not signal and for a lock that outlives
-`SIGKILL`. The other `survivor` cases follow the same rule. `-stop` never creates
-or removes `daemon.lock`. After a failed connect it writes no record into it, as
-on `f6010b97` and `90fca6e6`. The socket unlink removes
-a stale socket, a regular file and an empty directory. It keeps a non-empty
-directory, and a path in a directory that the user cannot write. The references do
-the same.
+`-stop` never creates or removes `daemon.lock`. It writes a record into it only
+after a successful connect that led to `terminated` or `killed`. Then it writes
+`{"pid":<pid>,"role":"stop","node":"<node>"}` and empties the file again before
+it prints the word.
 
-If the word is not `survivor`, a live foreign listener that refuses the connect
-with `EACCES` loses its socket path. The listener stays alive, but a client that
-dials by path cannot reach it afterwards. The unlink does not check what the path is. A variant that removes
-only a socket keeps a regular file and an empty directory at the path. It does
-not keep the socket of such a listener. That variant is a candidate not taken.
-It is recorded under [Candidates considered but not
+After a successful connect, `-stop` removes the socket and `daemon.token` only
+after `terminated` or `killed` (from the code). A live daemon removes both files itself at its stop. After
+a failed connect, `-stop` removes the socket path and the `daemon.token` beside
+it, stale or not, unless the word is `survivor`. The socket unlink removes a
+stale socket, a regular file and an empty directory. It keeps a non-empty
+directory, and a path in a directory that the user cannot write.
+
+The unlink does not check what the path is. So, unless the word is `survivor`, a
+live foreign listener that
+refuses the connect with `EACCES` loses its socket path. The listener stays
+alive, but a client that dials by path cannot reach it after that. A variant
+that removes only a socket is recorded under [Candidates considered but not
 taken](DIVERGENCES.md#candidates-considered-but-not-taken).
 
 `-version`, `-install` and `-probe-cli` win over `-stop`. `-bridge` and `-serve`
