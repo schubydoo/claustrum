@@ -5,10 +5,9 @@ file maps to one GitHub ruleset:
 
 - `main.json` → ruleset `main` (branch). It protects the default branch. There
   is no deletion, no force-push, and linear history. Changes land through
-  squash-only PRs with all review threads resolved. Three checks must pass:
-  `ci required checks passed`, `security required checks passed`, and
-  `conventional PR title`. Those checks are `strict`, so the branch must be up
-  to date first.
+  squash-only PRs with all review threads resolved. Three required checks must
+  pass (listed under Bootstrap order). They are `strict`, so the branch must be up to date
+  first.
 - `tags.json` → ruleset `protect-version-tags` (tag). It makes `v*` release
   tags immutable: no deletion, no force-update.
 
