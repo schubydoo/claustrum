@@ -1,7 +1,7 @@
 site_name: claustrum
 site_description: >-
   A tiny, dependency-light Go daemon that hosts a remote Claude Code session
-  over SSH — CLI-version manager, process supervisor, and JSON-RPC multiplexer
+  over SSH: a CLI-version manager, a process supervisor, and a JSON-RPC multiplexer
   over an AF_UNIX socket.
 site_url: https://schubydoo.github.io/claustrum/
 site_author: Schuby
@@ -13,9 +13,10 @@ edit_uri: edit/main/docs/
 # docs/ is the source tree; the built site lands in ./site (gitignored).
 docs_dir: docs
 
-# The build toolchain lives in docs/requirements.txt for locality; keep it out
-# of the published site.
+# The build toolchain lives in docs/requirements.in and docs/requirements.txt
+# for locality. Keep both out of the published site.
 exclude_docs: |
+  requirements.in
   requirements.txt
 
 # Fail --strict on a broken internal anchor: mkdocs 1.6 reports these at info
@@ -74,9 +75,6 @@ markdown_extensions:
   - pymdownx.superfences
   - pymdownx.tabbed:
       alternate_style: true
-  # GitHub renders ~~strikethrough~~ natively; mkdocs needs this extension, or
-  # the backlog's "done" rows show literal ~~ tildes.
-  - pymdownx.tilde
 
 extra_css:
   - stylesheets/extra.css
