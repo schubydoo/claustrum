@@ -678,19 +678,20 @@ self-probe below.
 ### Daemon log (`remote-server.log`)
 
 The rules of the file are measured against `5fd08069`, and the startup lines
-against `f6010b97` and `89cb6289`. A rule that names one system was measured on
+against `f6010b97` and `89cb6289`. The peer-check lines are measured against
+`5fd08069`. A rule that names one system was measured on
 a VM of that system, and an unmarked rule on Linux and macOS VMs.
 
 At each start the launcher renames an existing `remote-server.log` in the
 socket's directory to `remote-server.log.old`. Then it creates a fresh log there
 with mode `0600`. It sends the stdout and stderr of the daemonized child into
-that file, so its own streams stay empty. The daemon does not remove the log at
-shutdown, unlike the socket and `daemon.token`. So the log of the last run stays
+that file, so its own streams stay empty. claustrum does not remove the log at
+shutdown (from the code), unlike the socket and `daemon.token`. So the log of the last run stays
 readable. The fixed name and location are the deployment contract, and they are
 not configurable.
 
-claustrum writes a level tag before each line except the banner. The reference
-writes none. `CLAUSTRUM_LOG_LEVEL=warn` drops the INFO lines.
+claustrum writes a level tag before each line of its logger. The banner and a
+start error that begins `claustrum:` have none. The reference writes no tag. `CLAUSTRUM_LOG_LEVEL=warn` drops the INFO lines.
 
 When the raise of the open-files limit works on Linux and macOS, the first line
 tells the limit that `process.spawn` children get. It is the lower of 65536 and
@@ -729,10 +730,11 @@ measured).
 If the fresh create fails, the launcher judges the entry at the path without
 following it, and it opens no FIFO:
 
-- Nothing at the path fails the start with the error of the create.
+- Nothing at the path fails the start with the error of the create (Linux VM).
 - A folder fails the start with `is a directory`.
-- An own regular file, or an own link to an own regular file, is truncated. It
-  keeps its mode and gets the lines.
+- An own regular file is truncated. It keeps its mode and gets the lines.
+- An own link to an own regular file gets the same: the file is truncated (Linux
+  VM).
 - Every other entry fails the start with `permission denied` and stays
   unchanged. That is [D8](DIVERGENCES.md#d8).
 
@@ -768,7 +770,7 @@ These lines tell of [process.spawn](protocol/process-spawn.md) children and of t
 | Over 128 records | WARN | `[process.Registry] more than 128 records in <run dir>/children; leaving the rest for the next start` |
 | Over 64 groups | WARN | `[process.Registry] <n> more orphaned group(s) recorded in <run dir>/children than the 64 one start ends; leaving those for the next start` |
 | A record dropped | INFO | `[process.Registry] record <pid>.json: pid <pid> is not a child to end (<reason>); dropping the record, signalling nothing` |
-| A record kept | INFO | `[process.Registry] record <pid>.json: pid <pid> cannot be inspected now (<reason>); keeping the record, signalling nothing` (`5fd08069`) |
+| A record kept | INFO | `[process.Registry] record <pid>.json: pid <pid> cannot be inspected now (<reason>); keeping the record, signalling nothing` (`5fd08069`, Linux VM) |
 | A group ended | INFO | `[process.Registry] ending orphaned process group <pgid> recorded by daemon instance "<instance>" (pid <daemon pid>): SIGTERM` |
 | The grace ran out | WARN | `[process.Registry] group <pgid> outlived SIGTERM for 2s: SIGKILL` |
 | A group fails the test | INFO | `[process.Registry] group <pgid> no longer verifies (<reason>); nothing more is sent to it` |
@@ -3578,14 +3580,14 @@ claustrum -stop -socket <p>          # no token needed, and none is read
 ```
 
 The words, the signals and the removes are measured against `f6010b97` and
-`90fca6e6` on Linux and macOS VMs. The lock wait after a reply is measured
-against `5fd08069` on Linux, macOS and Windows VMs. A rule marked claustrum's own
-is not measured.
+`90fca6e6` on Linux and macOS VMs. The steps after a successful connect are
+measured against `5fd08069` on Linux, macOS and Windows VMs. A rule marked
+claustrum's own is not measured.
 
 `-stop` sends `{"jsonrpc":"2.0","id":1,"method":"server.shutdown"}` and a
 newline. It sends no `auth` member, because that method is not authenticated
-(see [Authentication](#authentication)). Then it reads once, with a 2 s deadline,
-and discards what it reads. It never relays a frame to stdout. A live daemon's
+(see [Authentication](#authentication)). Then it reads once, with a 2 s deadline
+(`5db5e4a`), and discards what it reads. It never relays a frame to stdout. A live daemon's
 reply does not always arrive (see `server.*` above). A reply and an EOF lead to
 the same next step. claustrum treats every other read result the same way
 (claustrum's own).
@@ -3597,11 +3599,11 @@ in this table:
 |---|---|
 | `stopped` | The connect succeeded. On Linux and macOS `daemon.lock` also came free within 3 s, or there is no usable `daemon.lock` (claustrum's own). On Windows the word comes at once. |
 | `none` | The connect failed, and `daemon.lock` is free or missing. If the lock cannot be opened or locked, claustrum prints `none` too. |
-| `terminated` | The connect failed, or the lock was still held 3 s after the reply. A live serve daemon of this binary for this socket holds `daemon.lock`. `-stop` sent `SIGTERM`, and the lock came free within 4 s. |
+| `terminated` | The connect failed, or the lock was still held 3 s after a successful connect. A live serve daemon of this binary for this socket holds `daemon.lock`. `-stop` sent `SIGTERM`, and the lock came free within 4 s. |
 | `killed` | As `terminated`, but the lock was still held 4 s after `SIGTERM`. `-stop` sent `SIGKILL`, and the lock came free within 1.5 s. |
 | `survivor` | A live process that is not that daemon holds `daemon.lock`, and `-stop` does not signal it. If the lock is still held 1.5 s after `SIGKILL`, the word is `survivor` too, and `-stop` does not wait longer. If a signal cannot reach a holder that is still there, claustrum prints it too. |
 
-After a reply, on Linux and macOS, `-stop` tries `daemon.lock` every 50 ms for up
+After a successful connect, on Linux and macOS, `-stop` tries `daemon.lock` every 50 ms for up
 to 3 s. A lock that comes free gives `stopped` and no signal. A lock still held
 after 3 s gets the signal steps of a failed connect. A holder whose record names
 no daemon role gets no signal. `-stop` tries the lock for 0.5 s more, and then
@@ -3609,9 +3611,11 @@ prints `survivor`. A lock that comes free in that time gives `stopped`
 (claustrum's own).
 
 The lock check uses the holder test of the serve eviction. See [Run-dir
-lock](#run-dir-lock-daemonlock). Before `SIGKILL`, `-stop` tests the holder
-again. A lock that another process took during the `SIGTERM` wait gives
-`survivor`, and the new holder gets no signal. Windows has no run-dir lock, so a
+lock](#run-dir-lock-daemonlock). On Linux the holder test of the reference is
+not isolated (not measured). Before `SIGKILL`, `-stop` tests the holder again. A
+lock that another process took during the `SIGTERM` wait gives `survivor`. The
+new holder gets no signal (`5fd08069`, Linux VM, after a successful connect.
+After a failed connect it is claustrum's own). Windows has no run-dir lock, so a
 failed connect there always prints `none`.
 
 The macOS reference signals any live holder whose lock record says role `serve`
@@ -3634,7 +3638,7 @@ A daemon that has not bound yet has a short record. That holder gives the first
 two lines with `pid <N>` and no instance (`89cb6289`, Linux VM). claustrum
 writes the other lines with `(instance "")` then (claustrum's own).
 
-A holder with no daemon role, after a reply, gives this line:
+A holder with no daemon role, after a successful connect, gives this line:
 
 ```text
 <ts> WARN  [daemon] stop: WARNING <dir>/daemon.lock is held by a live process we will not signal (its holder is not a daemon (role "")); leaving it alone
@@ -3654,12 +3658,12 @@ This line is claustrum's own. It comes from the second holder test:
 ```
 
 `-stop` never creates or removes `daemon.lock`. It writes a record into it only
-after a reply that led to `terminated` or `killed`. Then it writes
+after a successful connect that led to `terminated` or `killed`. Then it writes
 `{"pid":<pid>,"role":"stop","node":"<node>"}` and empties the file again before
 it prints the word.
 
-After a reply, `-stop` removes the socket and `daemon.token` only after
-`terminated` or `killed`. A live daemon removes both files itself at its stop. After
+After a successful connect, `-stop` removes the socket and `daemon.token` only
+after `terminated` or `killed` (from the code). A live daemon removes both files itself at its stop. After
 a failed connect, `-stop` removes the socket path and the `daemon.token` beside
 it, stale or not, unless the word is `survivor`. The socket unlink removes a
 stale socket, a regular file and an empty directory. It keeps a non-empty
