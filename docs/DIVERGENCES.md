@@ -142,7 +142,7 @@ rather than repeating them in each entry:
   stopped at 33 s and at 123 s. The download gives up after 60 s without response
   headers, and after 60 s without a body byte. The `ldd` libc probe has a 5 s
   bound on ldd itself and a 2 s drain after ldd exits.
-  [PROTOCOL.md](PROTOCOL.md) → `-install` names the measurement behind each one.
+  [PROTOCOL.md](PROTOCOL.md) → `-install` has the rule of each one.
   One clock is claustrum's own choice and is not measured: the wait of up to 2 s
   for the output of a stopped launcher run.
   The stdlib transport clocks (`net.Dialer{Timeout: 30s}`,
@@ -161,7 +161,6 @@ rather than repeating them in each entry:
 | [D12](#d12) | Bound on the `-install` download exchange | off (`0`) | `-cli-download-timeout` / key | rule 4 | operator with the bound set reporting an honest slow download failed |
 | [D15](#d15) | Verify a run-dir lock holder is our serve process before signalling it, in the serve eviction and in `-stop` (macOS) | always-on | always-on | rule 3 clause (a) | the reference adding the same macOS check, or a macOS holder legitimately un-inspectable via `KERN_PROCARGS2` |
 | [D16](#d16) | `git.status` of a linked worktree returns the status on Windows, where the reference errors `exit status 128` (cause: `core.excludesFile=NUL` in its status call, when the user has no global excludes file) | always-on (Windows) | always-on | claustrum-more-correct (D2/D8 pattern). **REACHABLE** | the reference fixing its Windows git.status, a Git for Windows release that accepts `NUL` there, or a decision to reproduce its failure for strict 1:1 |
-| [D17](#d17) | An abandoned `lsof` run reads as busy, not idle (macOS) | always-on (macOS) | always-on | rule 3 clause (a) | a measurement of the reference with an `lsof` run that cannot be killed, or an operator reporting a run dir the cleaner will not tidy on such a host |
 | [D19](#d19) | `git.worktree_remove` refuses a junction at any directory between `baseRepo` and the leaf. At `.claude` or `.claude\worktrees`, `f6010b97` answers success and deletes only the branch, and `89cb6289` does the same for a branch that another ref reaches. At a level above `.claude`, `89cb6289` answers success with no leaf and no branch there (Windows) | always-on (Windows) | always-on | rule 3 clause (b): the create of both daemons refuses that junction. Maintainer decisions of 2026-09-27 and, for the levels above `.claude`, of 2026-10-07 | the reference refusing the junction or deleting through it, or a Windows client that depends on the success reply |
 | [D20](#d20) | Wait 50 ms and read again before the group `SIGKILL` of a child-group leader that reads as gone, at the reap of a `-serve` start (Linux and macOS) | always-on (Linux and macOS) | always-on | rule 3 clause (a) | a measurement that shows the reference waiting before that `SIGKILL`, or a report of a child that outlived a restart because it replaced its program |
 | [D22](#d22) | `git.worktree_remove` refuses a worktree locked in the `.git` folder of `baseRepo`, in four states where `89cb6289` answers success. Two have a daemon `GIT_DIR` and `GIT_COMMON_DIR` of another repository, with the folder present or gone. One has a daemon `GIT_DIR` alone. One has a `baseRepo` that does not exist as sent. With `worktreeRoot`, rows q2 to q4 (Linux VM) differ in the frame too | always-on | always-on | Maintainer decision of 2026-10-03. The frame differs from `89cb6289` in those four states and in rows q2 to q4 | a caller that needs the removal of a locked worktree there, or a measurement that shows the reference refusing there |
@@ -594,55 +593,6 @@ operator-declinable. Only CT-2 and CT-5 carry a flag and a key.
   measured there.
 - **Pointers.** [git.status](protocol/git-status.md#differences-by-system). Also `gitstatus.go`
   (`statusChanges`) and `githarden.go` (`statusExcludesFile`).
-
-### D17 · An abandoned `lsof` run reads as busy, not idle (macOS) { #d17 }
-
-- **Behavior.** The macOS host cleaner asks `lsof` whether a daemon has a live client.
-  That run is bounded, and the last bound gives up on a run that never returns. A run
-  that gave up produces no output, and so does a run that finished and saw nothing.
-  claustrum keeps them apart. A run it gave up on reads as busy, because it is not
-  evidence about the pid at all. The reference side of this entry is not probe-measured.
-- **Default.** Always-on, macOS only. The command
-  deadline kills a slow run, and the wait delay bounds its pipe. Such a run therefore
-  completes with no output well before the abandon bound. Reaching the abandon arm
-  needs a process `SIGKILL` cannot end.
-- **Why always-on (rule 3 clause (a)).** The harm it refuses is unrecoverable. If an
-  abandoned run reads as not busy, `retireAbandoned` takes that as permission to
-  continue. After the identity re-check it SIGTERMs the daemon. Where an `lsof` run cannot be killed, that
-  ends a session that is in fact serving a client. The loss is that session's state,
-  which extends rule 3's list rather than sitting inside it, the same extension
-  [D15](#d15) made and the same reason. The other half: a slow `lsof` completes
-  before the abandon bound (see **Default**), so no honest caller reaches this arm.
-  It is the same shape as
-  [D15](#d15), which refuses to act on an identity the daemon cannot verify. It is
-  also the same shape as two spares claustrum already has. It spares a daemon whose
-  open files it cannot inspect, and an orphan whose descriptors it cannot inspect.
-  That is an argument for D17 rather than a premise this entry rests on, because the clause-(a) case stands
-  on the harm alone.
-- **Cost.** A daemon whose `lsof` cannot be killed is never retired by the busy gate, so
-  its run dir stays until `lsof` works again. That is the conservative direction. It also costs
-  three wedged runs on such a host: one for the pass line and two in the sampler. Each abandoned
-  run leaves a process and a goroutine behind. claustrum caps neither.
-- **A run that the 15 s deadline ends is outside this entry.** The lock read then
-  keeps the run dir, and the busy read does not retire the daemon. `5fd08069` does
-  both under an `lsof` that hangs (cells L1, L2, B1 and B2, macOS VM). No staging
-  reached the 17 s arm.
-- **Only the abandoned run is this entry.** Two other `lsof` outcomes are parity
-  with `89cb6289` on a macOS VM, 3 of 3 runs each: a command that does not start,
-  and a run that writes to stderr and exits 1. In both, the daemon gets no SIGTERM,
-  and a run dir with a lock file stays.
-- **Linux is outside this entry.** On Linux the busy read comes from `/proc`, not
-  `lsof`. If `/proc` cannot read a daemon's descriptors or its `net/unix` table, the
-  retire refuses that daemon. The reference's
-  retire refusal, captured on the Linux run for a busy daemon, uses one text for both
-  cases: "a connection is attached to it right now, or that could not be read". The Linux
-  run did not stage an unreadable `/proc`, so neither arm is measured. Neither arm is a numbered divergence, because neither is known to
-  differ from the reference.
-- **Reopen trigger.** A measurement of the reference with an `lsof` run that cannot
-  be killed. Or an operator reporting a run dir the cleaner will not tidy
-  on such a host.
-- **Pointers.** [PROTOCOL.md](PROTOCOL.md) → Host cleaner. Also `hostclean_darwin.go`
-  (`runLsof`, `hcBusy`), `hostclean.go` (`hcSettledBusy`, `retireAbandoned`).
 
 ### D19 · Refuse a junction between `baseRepo` and the leaf on remove (Windows, always-on) { #d19 }
 
@@ -1181,7 +1131,7 @@ link points here.
 - The outcome at the bound is not one of the three that this entry named. The
   reference answers a `cli unresponsive: …` `cliError` with
   `"cliUnresponsive":true`. On a cache hit it installs nothing. After an install
-  it keeps the new CLI. [PROTOCOL.md](PROTOCOL.md) → `-install` holds the rows.
+  it keeps the new CLI. [PROTOCOL.md](PROTOCOL.md) → `-install` has the rules.
 - claustrum now does the same, always. The bounds are unit-tested with shrunk
   values.
 - The `-cli-probe-timeout` flag and its `claustrum.conf` key are deprecated.
@@ -1218,6 +1168,10 @@ link points here.
   `-install`.
 - No knob stays to change the bound. A different bound is a new divergence, and
   rule 2 puts the burden of proof on it. No measurement gives that proof today.
+
+### D17 · An abandoned `lsof` run reads as busy, not idle (retired) { #d17 }
+
+- The old daemon was idle, with no client, and `SIGKILL` could not end its `lsof` run. `5fd08069` also sends no SIGTERM there, keeps the run dir and logs the same refusal line (round `tier4-01`, macOS VM, 3 runs each). The pass differs: `5fd08069` runs `lsof` once and ends in 17 s, claustrum runs it three times and ends in 51 s. Each hung run stays behind on both. The cause: claustrum reads a run it gave up on as busy and reads the daemon again until its busy sampling ends (from the code). That difference changes no signal and no folder, so it is no divergence.
 
 ### D18 · `-cli-version` must not start with `.blob-` (retired) { #d18 }
 

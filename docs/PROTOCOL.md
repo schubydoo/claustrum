@@ -143,204 +143,141 @@ environment.
 
 ### Token persistence (`daemon.token`)
 
-Once the socket is listenable, the daemon writes the token to `daemon.token` in
-the socket's directory. The file has mode `0600`. The daemon writes it atomically
-through a `daemon.token-*` temp file and a rename, and it unlinks the file on
-graceful shutdown. A client can therefore reconnect to an already-running daemon
-and re-authenticate after the original `-token-file` was unlinked, or after the
-`-token-fd` pipe closed. The write does not depend on the token source, because it
-uses the in-memory token. The write is also best-effort. The daemon logs a failure
-(`[daemon] failed to persist token: …`) and continues. Reference build `5db5e4a`
-added this, and claustrum matches it. It is off the JSON-RPC wire, because the
-file sits beside the socket, not on it. An unclean kill (`SIGKILL` or a crash)
-leaves the file behind, because the daemon removes it only on the graceful
-`server.shutdown` / `SIGTERM` path. `-stop` also removes it after a failed
+The file came with `5db5e4a`, and claustrum matches it. The token swap at a new
+start is measured against `89cb6289` on a Linux VM, and the unlink by identity on
+Windows against `5fd08069`. The file is off the JSON-RPC wire, because it sits
+beside the socket.
+
+Once the socket is listenable, the daemon writes its token to `daemon.token` in
+the directory of the socket, with mode `0600`. The write is atomic, through a
+`daemon.token-*` temp file and a rename. It uses the token in memory, so it does
+not depend on `-token-file` or `-token-fd`. A failed write logs
+`[daemon] failed to persist token: …`, and the daemon serves on. A client can
+therefore reconnect and authenticate after the `-token-file` was unlinked, or
+after the `-token-fd` pipe closed.
+
+A new daemon replaces the token of a dead daemon only after its reap, its `bind`
+and its `listen`. Until then the file holds the old token.
+
+The daemon unlinks the file only on a graceful stop: `server.shutdown`,
+`SIGTERM`, `SIGINT` or its self-exit. A `SIGKILL` or a crash leaves it. `-stop` also removes it after a failed
 connect, unless it prints `survivor`. See the `-stop` section below.
 
-A new daemon replaces the token of a dead daemon only after its bind. On a Linux
-VM (row P12, two runs), a dead daemon left its `daemon.token` and one recorded
-child that ignored `SIGTERM`. For the 2.2 s of the reap, the file still held the
-token of the dead daemon. `89cb6289` and claustrum renamed the new token into
-place after the `SIGKILL` of the reap, the `bind` and the `listen`.
+The daemon unlinks `daemon.token` only if the file at the path is still the file
+that it wrote, by identity (`os.SameFile`). So a departing daemon keeps the token
+of a successor that already wrote its own. That is measured on Windows. On Linux
+and macOS it is from the code, not measured. The same guard covers `rpc.sock` on
+Linux and macOS and the `rpc.pipe` pointer on Windows. A token or pipe pointer
+with no recorded identity stays. A socket with no recorded identity is removed
+with a plain unlink (both claustrum's own). Two states remove the socket of a
+successor (`5fd08069`). On Linux ext4 the new socket can get the inode of the old
+one, and the old daemon then removes it as its own (Linux VM). On Windows the old
+daemon removes it when it stops after a take-over (Windows VM). The launcher half of the handoff is under
+[Daemon startup](#daemon-startup-serve).
 
-The fixed name and the socket-dir location are the reconnect contract, so they are
-not configurable. On Windows `0600` is not an owner-only DACL. This is a Go
-`os.CreateTemp` limitation, and the per-user session dir is the confinement. It is
-a parity caveat that claustrum deliberately does not "fix". The former caveat "two
-daemons in one directory collide on this file" is now bounded. On Linux and macOS
-the run-dir lock (below) evicts a prior live daemon of the same socket before the
-new one binds. Two same-socket daemons therefore no longer coexist to collide on
-the honest path. A collision survives only where eviction is refused, and on
-Windows, which ships no run-dir lock. Eviction is refused for a foreign or
-cross-machine lock holder, and for a holder that survives `SIGKILL`.
-
-The unlink carries an inode-ownership qualifier. On graceful shutdown the
-daemon unlinks `daemon.token` only when the file on disk is still the inode this
-daemon wrote. At startup the daemon reads that identity through an open handle
-of the file. At the stop it compares the file at the path to it (`os.SameFile`). A
-restart's successor can republish `daemon.token`
-before the predecessor leaves. The
-departing predecessor then leaves the file alone. It does not delete the
-successor's token and break the new daemon's reconnect auth. `5fd08069` keeps that
-token on Windows too (cell W3 of round `task091-01`, Windows VM). On Linux and macOS the socket file
-carries the same identity guard on the same graceful path. On Windows the
-`rpc.pipe` pointer carries it too (`unlinkOwnSocket` /
-`dropOwnTokenFile` / `removePipeNameFileIfOwned`). Each removes its file only
-when the recorded identity still matches. They differ only in the no-identity
-fallback. A socket the daemon never recorded is removed with a plain unlink. A
-token or pipe pointer with no recorded identity is left in place, not unlinked.
-Two states remove the new `rpc.sock` on `5fd08069` and on claustrum `080c94a`
-(round `task091-01`). On Linux ext4 the new socket can get the inode of the old
-one. The old daemon then tests it after the bind (cell L3t, Linux VM). On Windows
-the old daemon stops after a take-over (cell W3, Windows VM).
-This is the departing-daemon half of the daemon-to-daemon handoff. The launcher
-half is under [Daemon startup](#daemon-startup-serve). It is off the JSON-RPC
-wire.
+The fixed name and the folder of the socket are the reconnect contract, so they
+are not configurable. On Windows `0600` is not an owner-only DACL. That is a
+limit of `os.CreateTemp` in Go, and the per-user session folder is the
+confinement. It is a parity caveat that claustrum does not "fix". On Linux and
+macOS the [run-dir lock](#run-dir-lock-daemonlock) evicts a prior live daemon of
+the same socket before the new one binds, so two daemons do not collide on this
+file. They still collide where an eviction is refused, and on Windows, which has
+no run-dir lock.
 
 ### Run-dir lock (`daemon.lock`)
 
+A rule here without a mark is measured against `89cb6289` on a Linux VM, and on
+macOS where marked. A rule marked `5fd08069` is measured against that build. The
+lock exists on Linux and macOS only. It is a file beside the socket, off the JSON-RPC wire.
+
 Before it binds the socket, a `-serve` daemon takes an exclusive `flock` on
-`daemon.lock` in the socket's directory (mode `0600`). It then writes an owner
-record into that file. The record is a JSON object. At first it is
-`{pid, role, node}`, where `role` is `serve`. After the reap of the start and the
-bind, the daemon writes it again as `{pid, role, node, instanceId, startedAt}`.
-`node` is omitted when the machine identity is unknown. Build `4534d86` added the
-lock, and claustrum matches it. It is a file beside the socket, off the wire. On
-graceful shutdown the daemon truncates the record, drops the lock and leaves the
-file in place. `daemon.token` is unlinked instead. A
-Linux VM measured the same end state against `89cb6289` in the stop rows:
-`daemon.token` and `rpc.sock` removed, `daemon.lock` left empty. On a Linux VM the
-`instanceId` of the record, of the listening line and of `server.capabilities` held
-one value in 36 of 36 daemons of `89cb6289`.
+`daemon.lock` in the directory of the socket (mode `0600`). It then writes an
+owner record into the file, a JSON object. Both forms of the record are measured
+on a macOS VM too. Until the reap of its start ends, the record is
+`{"pid":<n>,"role":"serve","node":"<node>"}`. After the reap and the bind, it is
+`{pid, role, node, instanceId, startedAt}`. From the code: `node` is omitted when
+the machine identity is unknown. The `instanceId` is the one of the listening
+line and of `server.capabilities`. The `startedAt` is the one that
+`server.capabilities` answers (also macOS VM). From the code: the machine
+identity is the boot id joined to the pid-namespace inode on Linux, and
+`sysctl kern.bootsessionuuid` on macOS.
 
-On Linux and macOS the stop closes the listener, tests `rpc.sock` and removes it
-if it is its own, closes the connections and kills the child groups. Then it removes `daemon.token` and releases the lock.
-`5fd08069` stops in that order (round `task091-01`, cells L1 to L3 and L1k, Linux VM).
+On a graceful stop the daemon closes the listener and removes its own
+`rpc.sock`. It closes the connections and kills the child groups. Then it
+removes `daemon.token`, truncates the record and releases the lock. That order
+is measured against `5fd08069` on a Linux VM, and not on macOS. The file
+`daemon.lock` stays, empty.
 
-Linux and macOS VMs measured the two forms of the record against `89cb6289`. In
-row D1 a dead daemon left one recorded child that ignores `SIGTERM`. The lock of
-the new daemon held `{"pid":<n>,"role":"serve","node":"<node>"}` for about 2 s.
-Then it held the full record. With nothing to reap (row D2), the first read on
-macOS showed the full record. On Linux one read of row D2b showed the short form.
-The `startedAt` of the record is the `startedAt` that `server.capabilities`
-answers. Row D3 measured that on `89cb6289` in one Linux read and in 3 of 3 macOS
-reads.
+A prior live daemon of the same socket can hold the lock. The new daemon then
+sends it `SIGTERM` and tries the lock every 50 ms for 2 s. If the lock is still
+held, it tests the holder again and sends `SIGKILL` (that test is measured
+against `4534d86`). Then it tries the lock for
+1 s more (claustrum's own value). It waits on the lock, not on the pid. On Linux
+both signals go through one `pidfd_open` descriptor with `pidfd_send_signal`.
+claustrum uses `kill` on macOS, and the call of the reference there is not
+measured.
 
-A prior live daemon can still hold the lock. The newcomer then evicts it before it
-takes over, with `SIGTERM` and then `SIGKILL` after a grace period. On Linux the
-`SIGTERM` goes out as `pidfd_open` and then `pidfd_send_signal`. A Linux VM
-measured those two calls with `strace` against `89cb6289` (row E3). The
-`SIGKILL` is `pidfd_send_signal` with the same descriptor number (rows H7 and
-N3). macOS uses `kill`. The call of the macOS reference is not measured. The identity
-reads of the holder come between the open and the send. On a Linux VM (row P6, by
-`strace`, 2 of 2 runs), `89cb6289` made these calls in this order: `pidfd_open`,
-the read of `/proc/<pid>/ns/pid`, the read of `/proc/<pid>/cmdline`, then
-`pidfd_send_signal`. claustrum is built to that order.
-
-After the `SIGTERM` the newcomer waits for the lock, not for the pid. On a Linux
-VM (row H7, by `strace`), the holder was stopped with `SIGSTOP`. `89cb6289` tried
-`flock(LOCK_EX|LOCK_NB)` on `daemon.lock` every 50 ms, and the call answered
-`EAGAIN` 43 times. It sent the `SIGKILL` 2.02 s after the `SIGTERM`, and it got
-the lock 50 ms later. It sent no `kill(pid, 0)` in that row, and none in rows E3,
-P5, P6, N3 and N4. claustrum is built to it: it tries the lock every 50 ms for 2 s,
-sends the `SIGKILL`, and tries for 1 s more. That 1 s is claustrum's own value
-and is not measured. Before the `SIGKILL` claustrum tests the identity of the
-holder again. The eviction fires only against a holder that is verifiably one of
-our own `-serve` daemons for this socket, on this machine (`daemon_runlock_unix.go`).
-
-A holder whose record has role `stop` gets no signal. The newcomer tries the lock
-every 50 ms for 2 s. Then it logs this line and serves without the lock:
+The daemon logs these lines. `<who>` is `pid <n> (instance "<hex>")` for a
+holder with the full record, and `pid <n>` for a holder with the short record.
 
 ```
-serve: <dir>/daemon.lock is held by a --stop (pid <n>) that has not let go; leaving it
+[daemon] serve: run dir is held by a live daemon, <who>; sending SIGTERM
+[daemon] serve: previous daemon <who> exited after SIGTERM
+[daemon] serve: WARNING previous daemon <who> ignored SIGTERM for 2s; sending SIGKILL (its Claude Code children, if any, are ended next, before this daemon serves)
+[daemon] serve: previous owner of <dir>: killed
 ```
 
-`5fd08069` does so in cells L2 and L3 of round `task091-01` (Linux and macOS VMs).
+The first two lines, in the `pid <n>` form, are measured on a macOS VM too.
 
-If the record of the holder has no instance, the eviction lines name its pid
-alone. On a Linux VM and on a macOS VM, `89cb6289` logged these two lines for a
-holder with the short record (row P5, 5 of 5 runs on each system):
+The summary line ends in `terminated` after a `SIGTERM`, in `killed` after a
+`SIGKILL`, and in `survivor` for a holder that stays (`4534d86`). The
+`terminated` line is `[daemon] serve: previous owner of <dir>: terminated`
+(`4534d86`). A holder that the `SIGKILL` stopped gets no "exited" line.
+
+A signal can reach a daemon during its own start, for example from a second
+daemon or from `-stop`. The rules of this paragraph are measured on a Linux VM.
+The `SIGTERM` from a second daemon (the first case) is measured on a macOS VM
+too. The daemon logs one `received` line, for example
+`[daemon] received terminated; shutting down (children will be killed)`, or
+`received interrupt` with the same tail. It handles one `SIGTERM` or `SIGINT`. It
+finishes the reap of its start, binds and listens, writes its token, and then
+shuts down and exits 0. A daemon that gets the signal while it evicts an older
+holder still evicts it first. It sends the child of that holder `SIGTERM`
+before it binds. A `-stop` during the reap prints `terminated` and exits 0.
+After a signal during an eviction, or a `-stop` during the reap, the launcher of
+the signalled daemon exits 1 after about 12 s with
+`daemon did not take over <socket> (predecessor still owns it)`. A second daemon
+that sent `SIGKILL` to a first one during its start takes the lock and serves
+with its full record.
+
+The eviction fires only against a holder that is one of our own `-serve`
+daemons for this socket, on this machine. If the first test of the holder fails,
+the daemon signals nothing and serves without the lock. It logs a refusal line
+and, except for an unusable record, the summary
+`[daemon] serve: previous owner of <dir>: survivor`. claustrum refuses a holder
+on another machine or container that shares the folder. It also refuses a holder
+with an unknown machine identity, and a holder that is not its serve process for
+this socket. For the three refusals above the word `survivor` is claustrum's
+own, not measured. The text of that refusal line is claustrum's own too. A
+holder that survives `SIGKILL` stays, with the same summary (from the code, not
+measured).
+
+If the second test of the holder fails, right before the `SIGKILL`, the daemon
+treats the holder as gone. It logs
+`[daemon] serve: pid <n> is no longer our serve holder before SIGKILL (<reason>); treating the previous daemon as gone`
+and the summary `terminated`, and then tries the lock once more. Normally it
+then serves with the lock.
+
+A holder whose record has the role `stop` gets no signal. The daemon tries the
+lock every 50 ms for 2 s. Then it logs this line and serves without the lock
+(`5fd08069`, Linux and macOS VMs):
 
 ```
-serve: run dir is held by a live daemon, pid <n>; sending SIGTERM
-serve: previous daemon pid <n> exited after SIGTERM
+[daemon] serve: <dir>/daemon.lock is held by a --stop (pid <n>) that has not let go; leaving it
 ```
 
-For a holder with the full record, both lines read
-`pid <n> (instance "<hex>")` (row E3). claustrum is built to both rows.
-
-A holder that still has the lock after the 2 s gets `SIGKILL`. On a Linux VM
-(row H7), `89cb6289` then logged these two lines:
-
-```
-serve: WARNING previous daemon pid <n> (instance "<hex>") ignored SIGTERM for 2s; sending SIGKILL (its Claude Code children, if any, are ended next, before this daemon serves)
-serve: previous owner of <dir>: killed
-```
-
-For a holder with the short record, the first line reads `pid <n>` with no
-instance (row N3). claustrum is built to both rows.
-
-A signal can reach a daemon during its start. On a Linux VM (row P5, 5 of 5
-runs), a second daemon started 0.5 s after a first one. The first daemon still
-waited in the reap of its start, for a recorded child that ignored `SIGTERM`. The
-second daemon sent `SIGTERM` to the first one. The first daemon of `89cb6289` did
-not end there. Its log held these lines in this order:
-
-```
-[process.Registry] ending orphaned process group <pgid> recorded by daemon instance "<inst>" (pid <dpid>): SIGTERM
-[daemon] received terminated; shutting down (children will be killed)
-[process.Registry] group <pgid> outlived SIGTERM for 2s: SIGKILL
-[daemon] serve: predecessor's children — 1 orphaned group(s): 0 ended on SIGTERM, 1 on SIGKILL, 0 survived; 0 stale record(s) dropped, 0 kept
-[Server] shutdown requested
-Claude remote server listening on <socket> (pid <n>, instance <32-hex>)
-[daemon] host cleaning off: executable "<binary>" is not a deployed daemon under <root>/srv
-[Server] cleanup: closed 0 connection(s), killed 0 child process group(s)
-```
-
-The first daemon bound, listened and wrote its token, then removed the socket
-and the token and exited 0. The recorded child got one `SIGTERM` and one
-`SIGKILL`, both from the first daemon. The second daemon signalled no child, and
-it served. On a macOS VM (row P5, 5 runs), the first daemon of `89cb6289` went
-on in the same way. Its log held the received line, the outlived line, the
-summary line, the `shutdown requested` line, its listening line and the cleanup
-line, in that order.
-claustrum is built to that row. It installs its handler for `SIGTERM` and `SIGINT`
-before the claim of the lock, and it handles one signal.
-
-More Linux rows measured a signal or a second start during a start. In each row
-the recorded child of a dead daemon ignored `SIGTERM`. Build `ac5cadb` of
-claustrum sent the same signals and gave the same end state as `89cb6289` in
-each row but one, the 0.05 s gap:
-
-- A `SIGTERM` or a `SIGINT` 1 s into the reap (rows H8a and H8b). The daemon
-  logged `received terminated; shutting down (children will be killed)`, or
-  `received interrupt` with the same tail. It sent the `SIGKILL` of the reap at
-  2.1 s, bound and exited 0. The run folder then held `children`, an empty
-  `daemon.lock` and the logs.
-- Two `SIGTERM` 0.3 s apart (row H8c). The daemon logged one `received` line and
-  did the same.
-- A `SIGTERM` to a daemon that waits in its eviction of an older holder (row N4).
-  The daemon still sent the holder `SIGKILL` after the 2 s, took the lock, sent
-  the child of that holder `SIGTERM`, bound and exited 0. Its launcher exited 1
-  after 12.08 s with `daemon did not take over <socket> (predecessor still owns it)`.
-- A `-stop` 0.5 s into the reap (row N5). The connect of `-stop` was refused. It
-  sent the daemon one `SIGTERM` and tried the lock every 50 ms. The daemon
-  finished the reap, bound and exited 0. `-stop` then got the lock, printed
-  `terminated` and exited 0, 1.7 s after its start. The launcher of the daemon
-  exited 1 after 12.09 s with the timeout line.
-- A second daemon 0.2 s after the first (row N3, 3 runs). The second daemon sent
-  `SIGTERM` only. The first one finished, bound and exited 0. The second one
-  then bound and held the lock with its full record.
-- A second daemon 0.05 s after the first (row N3, 3 runs). The first daemon was
-  still in its start after the 2 s, so the second daemon sent it `SIGKILL`.
-  `89cb6289` then got the lock, bound and wrote its own full record. It sent the
-  recorded child no signal. Build `ac5cadb` of
-  claustrum read the killed daemon as alive and served without the lock. claustrum
-  now waits on the lock, as `89cb6289` does.
-
-A process that is no daemon can hold the lock, with no owner record in the file.
-The daemon then signals nothing and logs three lines. On a Linux VM (row ST02),
-`f6010b97` and `89cb6289` logged the same three texts:
+A process that is no daemon can hold the lock, with no owner record in the
+file. The daemon signals nothing and logs three lines (Linux VM):
 
 ```
 [daemon] serve: WARNING <dir>/daemon.lock is held by a live process we will not signal (its holder is not a daemon (role "")); leaving it alone
@@ -348,39 +285,36 @@ The daemon then signals nothing and logs three lines. On a Linux VM (row ST02),
 [daemon] serve: not the run dir's lock holder; leaving any predecessor's children alone and recording none
 ```
 
-claustrum logs the third line at every start that ends without the lock, and then
-reaps and records nothing. Other cases and role texts are not measured.
-Cell H5 (`5fd08069`, Linux VM) measures a held flock.
-With such a holder on an empty file, `5fd08069` tries the lock every 30 s, and a
-failed try logs nothing (round `task005-01`, Linux and macOS VMs). A good try writes
-the full record, holds the lock until the exit and logs this line. claustrum is built
-to both:
+claustrum logs the third line at every start that ends without the lock
+(claustrum's own beyond this row, not measured). Such a
+daemon reaps no children and records none. Other role texts are not measured.
+
+While another process holds the lock, the daemon tries it again every 30 s
+(`5fd08069`, Linux and macOS VMs, for a holder of an empty file). A failed try
+logs nothing. A good try writes the full record, holds the lock until
+the exit and logs this line (`5fd08069`, Linux and macOS VMs):
 
 ```
 [daemon] run-dir lock acquired late (previous holder gone); recorded pid <n> (instance "<hex>")
 ```
 
-claustrum also tries after its other refusals (claustrum's own), not after a failed open
-or a refused lock call.
+claustrum also tries again in every other case where another process keeps the
+lock (claustrum's own). It does not try again after a failed open of the file or a refused lock call.
 
-The lock, the owner record, and the eviction run on Linux and macOS only. The
-machine identity (`node`) is the boot id joined to the pid-namespace inode on
-Linux, and `sysctl kern.bootsessionuuid` on macOS. Windows ships no run-dir
-lock. Mutual exclusion on Windows stays the socket remove-then-rebind handoff.
-On Windows the "not the run dir's lock holder" line above is the first log line of
-every start. A Windows VM (row K11) measured that against `f6010b97` and
-`89cb6289`.
-On macOS claustrum makes sure of the holder through `sysctl KERN_PROCARGS2`,
-where the reference skips that test. This holds for the
-eviction and for `-stop`. See [DIVERGENCES.md](DIVERGENCES.md) D15.
+Windows has no run-dir lock. Two daemons are kept apart there by the
+remove-then-rebind handoff of the socket. On Windows the "not the run dir's lock
+holder" line above is the first log line of every start (Windows VM).
+
+On macOS claustrum verifies the holder through `sysctl KERN_PROCARGS2` before it
+signals it, in the eviction and in `-stop`. The reference skips that test. See
+[DIVERGENCES.md](DIVERGENCES.md) D15.
 
 ### Host cleaner (off-wire, Linux and macOS)
 
 A periodic sweep ends orphaned Claude Code process groups, retires abandoned
 daemons and tidies stale run dirs. It
 reaches no JSON-RPC frame, so nothing here is a wire contract. It is recorded
-because one of its decisions is an always-on divergence that a client can feel as
-a lost session.
+because its decisions end processes and remove folders on the host.
 
 The sweep ends no stranded daemon. A stranded daemon is a daemon whose socket path
 no longer leads to it. The cleaner sends no signal to such a daemon and none to its
@@ -459,7 +393,11 @@ Before it signals a daemon whose run dir went idle past the threshold, or whose 
 dir name carries `.removing-` from an earlier removal, the cleaner
 asks whether that daemon still has a live client. On macOS it asks `lsof`. That
 run has three bounds: a command deadline, a wait for the output pipe, and a
-last bound that gives up on it. Those bounds are claustrum's own.
+last bound that gives up on it at 17 s. Those bounds are claustrum's own.
+With an `lsof` run that `SIGKILL` cannot end, `5fd08069` ends that pass 17 s after
+it starts, with its one `lsof` run still hung (round `tier4-01`, macOS VM). The cause
+of that 17 s is not known. Its match with the abandon bound of claustrum is no
+measurement of a bound of `5fd08069`.
 
 The cleaner asks `lsof` two more things on macOS: whether the stdio of an orphan
 is three pipes, and whether a process holds the `daemon.lock` of an idle run dir.
@@ -473,7 +411,7 @@ and E4 hold an idle daemon, and rows D1k and E3k hold a daemon with one client:
 |---|---|---|
 | the command does not start | the daemon gets no SIGTERM (rows D1i and D1k, as `89cb6289`) | a dir with a lock file stays (row C3, as `89cb6289`) |
 | the run writes to stderr and exits 1 | the daemon gets no SIGTERM (rows E3i, E3k and E4, as `89cb6289`) | a dir with a lock file stays (rows D2p, D2f and E4, as `89cb6289`) |
-| the run is given up on | busy, so no SIGTERM ([DIVERGENCES.md](DIVERGENCES.md) D17, not measured) | kept (not measured, claustrum's own) |
+| the run is given up on | no SIGTERM, the `was not retired` line and no `left alone` line, as `5fd08069` (round `tier4-01`, macOS VM) | kept (not measured, claustrum's own) |
 | the 15 s deadline ends the run | no SIGTERM (`5fd08069` under a hung `lsof`, cells B1 and B2. claustrum gives the same result, round 8, macOS VM) | kept (cells L1 and L2) |
 | the run completes with nothing on stderr | the output decides | the output decides |
 
@@ -487,6 +425,12 @@ for the daemon, the first one before every run dir line. Its summary counts
 [hostclean] daemon pid <pid> left alone this pass: its open files could not be inspected
 [hostclean] run dir "<dir>" unused for 40 days: its daemon (pid <pid>) was not retired: a connection is attached to it right now, or that could not be read: in use after all
 ```
+
+In round `tier4-01` (macOS VM) `SIGKILL` cannot end the `lsof` run of an idle
+daemon with no client. There both passes log only the `was not retired` line. claustrum
+runs `lsof` three times, 17 s apart, and its pass takes 51 s. `5fd08069` runs it
+once, and its pass takes 17 s. From the code, claustrum reads a run it gave up on
+as busy and reads the daemon again until its busy sampling ends.
 
 In the two control rows `lsof` starts. Both sides retire the idle daemon (row D1ci)
 and spare the daemon with a client (row D1ck).
@@ -927,7 +871,7 @@ cell C-… is of round `tier0-20` against `5fd08069` on a Linux VM.
 | files.extract_tar | `mkdir <entry>: mkdirat <place>: file exists` | in `error` field. A file is at the place of a directory entry |
 | git.status | `baseRepo is required` | -32602. `baseRepo` is now required, since `7d193f89` |
 | git.status / git.list_branches | `<go error>`, for example `exit status 128` | -32603 (git failed, stdout parse) |
-| git.list_branches / git.info / git.status / git.worktree_create | `git took too long: Claude stopped git <subcommand> after 2 minutes; try again` | -32603. Create: after the text of the stopped step, as `git worktree add failed: ` or the `mkdir_failed` text of the parent step. Alone, with `worktree_add_failed`, for a stopped repository test |
+| git.list_branches / git.info / git.status / git.worktree_create | `git took too long: Claude stopped git <subcommand> after 2 minutes; try again` | -32603. Create: after the text of the stopped step, as `git worktree add failed: ` or the `mkdir_failed` text of the parent step. Alone, with `worktree_add_failed`, for a stopped repository test. While a request with `"shadowDirOff":true` runs, the text says `after 30 minutes` (claustrum's own) |
 | the four methods | `config-defined hooks could not be pinned off; git not run: listing the configuration in force: git took too long: Claude stopped git config after 30 seconds; try again` | -32603. Create: `worktree_add_failed`, after `git worktree add failed (checkout): ` for the checkout listing |
 | the four methods | `this repository's git config cannot be used: git did not finish reading "<path>" within 30 seconds; try again` | -32603. Create: `worktree_add_failed` |
 | git.worktree_create | `git worktree add failed (completing the new worktree's git files): this repository's git config cannot be used: git did not finish reading it within 30 seconds; try again` | in `error`, `worktree_add_failed`. The listing of `config.worktree` after the add ran 30 s, and the rollback of a failed checkout runs (cell TW) |
@@ -1152,7 +1096,7 @@ The expanded spelling is wire-visible on eight frames, so it is contract.
 error text. The expanded string also appears in the error text of `files.stat`,
 `files.read`, `files.list`, `files.validate`, `files.extract_tar` and
 `process.spawn`. Two places do *not* carry the spelling. `files.list` entry paths
-are re-joined, and `git.info`'s `root` comes from git's own output. On a
+are re-joined, and `git.info`'s `root` comes from the walk with links resolved, and on Windows from git's confirmation of it. On a
 trailing-separator spelling the difference is a change of *verdict*. POSIX
 `stat("f.txt/")` gives `ENOTDIR`. Once the daemon removes the separator, a
 `-32603` error frame becomes a success frame. Ids 15, 16, 18 and 19 of
@@ -1512,7 +1456,7 @@ The daemon's own environment changes the check as follows:
   `GIT_DIR` that names a gone entry gets M5. On Linux and macOS a `GIT_DIR` that
   names a `.git` file means "no repository". On Windows that `.git` file is trusted
   and pinned to itself, and without `"shadowDirOff":true` class 2 of
-  [Repository config refusals](#repository-config-refusals) answers. With its entry
+  [Repository config refusals](#class-2-files-of-the-git-directory) answers. With its entry
   gone that is not measured on `5fd08069`. Any other
   `GIT_DIR` that does not exist is left to git.
   Git then runs with `GIT_COMMON_DIR` pinned to that `GIT_DIR`, unless the daemon's
@@ -1558,7 +1502,7 @@ not run: the worktree entry this folder's .git names no longer exists`.
 
 | method | refused | no repository |
 |---|---|---|
-| `git.info` | `{"error":{"code":-32603,"message":<text>}}` | `{"isRepo":false,"repoSlug":"","defaultBranch":""}` |
+| `git.info` | `{"error":{"code":-32603,"message":<text>}}` | `{"isRepo":false,"repoSlug":"","defaultBranch":""[,"settingsControl":"<state>"]}` |
 | `git.list_branches` | `{"error":{"code":-32603,"message":<text>}}` | `{"isRepo":false,"branches":[]}` |
 | `git.status` | `{"error":{"code":-32603,"message":<text>}}` | `{"isRepo":false,"clean":false}` |
 | `git.worktree_create` | `{"success":false,"error":<text>,"errorCode":"worktree_add_failed"}` | `{"success":false,"error":"not a git repository","errorCode":"not_a_repo"}` |
@@ -1863,16 +1807,20 @@ Not measured:
 
 #### Repository config refusals
 
-Since `5fd08069` the daemon reads the config of a repository itself. If it does not
-accept the config, or a file of the git directory, the request gets a
-refusal. claustrum follows that build here. In the state `shadow` it makes the read
-after the start test and after the call about the repository (see
-[The settings copy](#the-settings-copy)). In the state `fallback-git` it makes no
-read and gives no such refusal, as `5fd08069` (cell O4 of round `s3p2-oldgit`, Linux
-VM). The rules below ran on a Linux VM. A rule for
-one system names that system.
+The daemon reads the git config of a repository itself, and it tests some files of
+the git directory. If it does not accept one of them, the git method answers with a
+refusal. A rule that is not marked "claustrum's own" or "from the code" is measured
+against `5fd08069` on a Linux VM. A rule that names macOS or Windows was measured there.
 
-The five methods are the `git.*` methods. `<text>` is `<class>: <detail>`.
+The read runs only in the state `shadow` of [the settings copy](#the-settings-copy).
+In the state `fallback-git` the daemon makes no read and gives no refusal. On git
+2.11.4 and 2.12.5 `5fd08069` is in that state and gives no refusal. Git 2.13.7 is
+the oldest git that ran with the refusal. claustrum is not measured on those gits.
+
+A refusal is `<class>: <detail>`, shown as `<text>` in these frames. Most rules were
+measured on `git.info` and `git.status`. Four states ran on all five methods. They
+are format version `2`, a config of 20 MiB, an `info/exclude` of 20 MiB and a
+`shallow` file with a text line.
 
 | Method | Answer |
 |---|---|
@@ -1881,604 +1829,502 @@ The five methods are the `git.*` methods. `<text>` is `<class>: <detail>`.
 | `git.worktree_remove` | `{"result":{"success":false,"error":"failed to remove worktree: could not check whether <worktreePath> is locked: <text>"}}`. The worktree stays, and no branch is deleted |
 | `git.worktree_remove` with `worktreeRoot` | `{"result":{"success":false,"error":"failed to remove worktree: cannot determine the repository's work tree: <text>"}}`. Nothing is removed |
 
-Four states ran on all five methods (cells W7, X1 and V9). They are format version
-`2`, a config of 20 MiB, an `info/exclude` of 20 MiB and a `shallow` file with a
-text line. Most other cells ran `git.info` and `git.status`.
+On `git.worktree_remove` the refusal also comes for a worktree folder that does not
+exist, and the branch `branchName` stays. That holds on Linux, macOS and Windows VMs.
+Linux and Windows VMs ran it in a bare repository too. With `worktreeRoot` the
+refusal comes for a worktree that exists and for a missing one (Linux and macOS VMs).
 
-On `git.worktree_remove` the refusal comes for a worktree folder that does not
-exist too, and the branch `branchName` stays. `5fd08069` answers so on a Windows
-VM (cells F1a, F1b, F2a, F2b, G1a to G1c, W6, W6x and X12). It answers so on
-Linux and macOS VMs too (cells N1). The N1 states are format version `2`, a config
-of 20 MiB and an `info/exclude` of 20 MiB. Linux and Windows VMs ran them in a
-bare repository too. With the two files of 20 MiB, `89cb6289` answers success
-there and deletes that branch.
+##### Paths in the texts
 
-With `worktreeRoot`, `5fd08069` answers the text of the last table row (cells N14,
-Linux and macOS VMs). The states were format version `2` and a config of 20 MiB.
-Each ran with a worktree that exists and with a folder that is missing. With the
-config of 20 MiB, `89cb6289` removes the worktree folder and its registration
-there. In cells P4 (macOS VM) the worktree exists. An `info/exclude` of 20 MiB gets
-that frame with its class 2 text. A syntax error in the config gets it with the
-class 1 text of the syntax error. Nothing is removed in the two cells.
+A path in quotes uses the separators of the system, and Go's
+`%q` quotes it. A path of more than 300 characters is cut to its first 300
+characters, with no mark of the cut. On Windows each backslash is doubled inside the
+quotes, and the JSON encoding doubles it again. The path of the `open <file>:` text is not in quotes, and it is not cut. The `<worktreePath>` of the
+remove text is as sent, and it is not cut.
 
-A path in quotes is the path of the file with the separators of the system, quoted
-as Go's `%q` quotes it. A path of more than 300 characters is cut to its first 300
-characters. The text has no mark of the cut (cells X12 and V12, also with
-characters of two bytes). On Windows each backslash is doubled inside the quotes,
-and the JSON encoding doubles it again. The path of the `open <file>:` text is not
-in quotes, and it is not cut (cell V12, a path of 400 bytes). The `<worktreePath>`
-of the remove text is as sent, and it is not cut.
+On Linux and macOS the path of the config is the resolved path. A request through a
+symbolic link gets the real path. On Windows a request through a junction keeps the
+spelling of the junction, and a request in another letter case gets the real spelling.
 
-On Linux and macOS VMs the path of the config is the resolved path. A request
-through a symbolic link gets the real path in the text (cells V11). On a Windows VM
-a request through a junction keeps the spelling of the junction. A request in
-another letter case gets the real spelling (cells V11).
+The path of an included file is the folder of the file that holds the setting, one
+separator, and the value as written. The Windows `is outside` text is the exception:
+it names the cleaned path. On Windows `path = <dir>/inc.cfg` gives
+`<git dir>\<dir>/inc.cfg`. The folder of the holding file stays as written too. With
+`include.path = a/../b/inc.cfg`, a `path = x.cfg` in that file names
+`<git dir>/a/../b/x.cfg` (Linux and macOS VMs).
 
-**The switch.** `"shadowDirOff": true` in the request turns the read off for that
-request, on the five methods (cells X1 and V2). A git request that starts while it
-runs has the switch too (cell C9 of round `task073-01`, Linux VM). The request then gets the answer
-that it had before this rule. A FIFO as the config then gets no answer in 10 s. The
-member name matches without regard to letter case: `"SHADOWDIROFF": true` is the
-switch too. The values `"true"`, `1`, `null` and `false` are as no member. Cells V3
-measured both facts on `git.info` and `git.status`, with format version `2`. Cells
-V2 and V3 ran on Linux, macOS and Windows VMs, and the FIFO on Linux and macOS VMs.
-With `worktreeRoot`, the switch and a config of 20 MiB, `5fd08069` removes the
-worktree (cell P4, macOS VM).
+##### Turning the read off
 
-**The read.** claustrum gives each config file to git on standard input, with one
-call for each file: `git config --no-includes --file - --list -z`. The call log of
-`5fd08069` shows that call. git follows no include in it. claustrum follows each
-`include.path` setting itself. If the request names a linked worktree, claustrum
-reads the config of the repository of that worktree.
+`"shadowDirOff": true` in the request turns the read off for that
+request, on the five methods. A git request that starts while it runs has the switch
+too. The request then gets the answer that it gets with no read. A FIFO as the config
+then gets no answer in 10 s (Linux and macOS VMs). The member name matches without
+regard to letter case, so `"SHADOWDIROFF": true` is the switch too. The values
+`"true"`, `1`, `null` and `false` act as no member. The switch, its letter case and
+these values hold on Linux, macOS and Windows VMs. A request that starts while it
+runs ran on a Linux VM. With `worktreeRoot` and the switch, a remove of a worktree with a
+config of 20 MiB removes the worktree (macOS VM).
 
-From the code: claustrum runs that call in the root directory on Linux and macOS,
-and in the working directory of the daemon on Windows. The environment of the call
-is that of the cleaned daemon without `GIT_CONFIG`, `GIT_CONFIG_PARAMETERS`, `LC_ALL` and
-`LANGUAGE`. Then come `GIT_DIR=<null device>`, `LC_ALL=C` and `LANGUAGE=C`. On Linux and macOS claustrum opens each file
-of the read with the flag that gives the daemon no controlling terminal. In cell
-V17 the config is a link to a pty slave. If the pty master closes, `89cb6289` and
-`5fd08069` stay up (Linux VM).
+##### How the daemon reads a config
 
-**The kept verdict.** On `5fd08069` a second `git.info` on a repository with an
-accepted config makes no such call (cells B4 and V19). A request after a change of
-the config makes one (cell B4). With a refused format version, a later request of
-`5fd08069` makes the read again (cells N10 and P5, Linux, macOS and Windows VMs).
-claustrum keeps the verdict of a read that accepted the config, for 256 git
-directories at most. A verdict with a refusal is not used again: each later request
-reads again, as on `5fd08069`. If each file that an accepted read used is
-unchanged, a later request starts no such call. A file is unchanged if
-its size, its modification time and its mode are the same, and its identity where
-the system gives one. A file that was missing must still be missing. This rule and
-the number 256 are claustrum's own. Cell B4 ran one repeat and one changed config.
-The tests of `shallow`, `info/attributes` and `info/exclude` run in each request
-and are no part of the kept read. On `5fd08069` a change of one of those files
-gives no config read (cells 19a to 19c of round `val-s3p2b2-3`, Linux VM).
+The daemon gives each config file to git on standard input, with one
+call for each file: `git config --no-includes --file - --list -z`. git follows no
+include there. The daemon follows each `include.path` setting itself. If the request
+names a linked worktree, the daemon reads the config of the repository of that
+worktree. With a daemon `GIT_COMMON_DIR`, `git.info` and `git.list_branches` read
+nothing (claustrum's own).
 
-From the code: the identity test is Go's `os.SameFile`. On Linux and macOS that is
-the device and the inode of the file. This page claims no identity test on Windows.
-These tests do not see these changes:
+From the code: the call gets no `GIT_CONFIG` and no `GIT_CONFIG_PARAMETERS` of the
+daemon, and it runs with `GIT_DIR=<null device>`, `LC_ALL=C` and `LANGUAGE=C`. On Linux and macOS the
+daemon opens each file of the read with no controlling terminal. A config can be a
+link to a pty slave.
 
-- A change that keeps the size, the time, the mode and the identity. One example
-  is a rewrite in place with the same size inside one step of the file time.
-- A change during the read, after the daemon recorded the state of that file.
-- A change of a file whose path the daemon cannot examine. Such a path has the
-  state of a missing file.
+With a config that is a link to a pty slave, `5fd08069` stays up after the pty
+master closes (Linux VM).
 
-claustrum does not keep a verdict if an open or a read of the daemon ended with an
-error in that read. So a refusal with an `open <file>:` text is read again at the
-next request. An error of the daemon itself, such as too many open files, then
-answers one request only. That rule is claustrum's own.
+##### The kept verdict
 
-**Class 1** is `this repository's git config cannot be used: <detail>`. The format
-version and the extensions of an included file are not tested (cells X7 and X9).
+A verdict with a refusal is not used again. Each later request reads
+again, as on `5fd08069` (Linux, macOS and Windows VMs). claustrum keeps the verdict of
+a read that accepted the config, for 256 git directories at most. `5fd08069` also
+reads an unchanged accepted config only once. If each file of that read is unchanged,
+a later request starts no config call. An unchanged file has the same size,
+modification time and mode, and the same identity where the system gives one. A file
+that was missing must still be missing. This test and the number 256 are claustrum's
+own.
+
+From the code: the identity test is Go's `os.SameFile`. On Linux and macOS that is the
+device and the inode. This page claims no identity test on Windows. The test misses a
+rewrite in place that keeps the size inside one step of the file time. It also misses
+a change during the read. A path that the daemon cannot examine has the state of a
+missing file.
+
+After a failed open or read of the daemon, claustrum keeps no verdict of that read. So
+a refusal with an `open <file>:` text is read again at the next request. An error of
+the daemon itself, such as too many open files, then answers one request only. That
+rule is claustrum's own. The tests of `shallow`, `info/attributes` and `info/exclude`
+run in each request, and they are no part of the kept read.
+
+##### Class 1: the git config
+
+Class 1 is `this repository's git config cannot be used: <detail>`. The format
+version and the extensions of an included file are not tested.
 
 | Detail | When |
 |---|---|
-| `the repository uses format version "<v>", which this version of Claude does not support` | The last value of `core.repositoryformatversion`, as git lists it, is not exactly the text `0` or `1`. A config with no such key is not refused. `<v>` is cut to its first 20 characters, with no mark. A value of 20 characters is whole, and one of 21 shows 20 (cells P1, Linux, macOS and Windows VMs) |
-| `the repository uses git extension "<name>", or a value of it, that this version of Claude does not support` | The format version is `1`, and an `extensions.<name>` setting is refused. `<name>` is in lower case. It is cut to its first 60 characters, with no mark. A name of 60 characters is whole, and one of 61 shows 60 (cells P1, Linux, macOS and Windows VMs). Under version `0` none of the settings that ran is refused |
-| `"<file>" includes "<value>", and Claude expands neither ~user nor %(prefix), nor ~ where no home directory is set; write that path out in full` | An include value of the form `~user/…` or `%(prefix)/…`, in an `include` section or in an `includeIf` section. The condition of the `includeIf` section does not have to match (cells N12, Linux VM). `<file>` is the file that holds the setting. `<value>` is cut to its first 100 characters (cells V12, Linux and macOS VMs) |
-| `its includes go past what Claude follows (16 files, nested 3 deep)` | More than 16 included files, or an include chain of more than 3 levels below the config. A missing file counts, and so does the file of an `includeIf` section, also a missing one (cells V8 and N7). A file that includes itself gets this text too |
-| `"<file>" is not a regular file` | The config or an included file is a FIFO or a directory. A config that is a symbolic link to the null device gets it. So does an included file that is a symbolic link to a FIFO. `include.path = ~` gets it with the path of the home folder (cell N13, Linux VM). So does a `config.worktree` of the git directory with `extensions.worktreeConfig` on (cells C8, V1, V2, R2 and R3 of rounds `task007-01` to `task007-03`, Linux and macOS VMs). The daemon's own read does not wait on a FIFO |
-| `"<file>" is larger than 8 MiB` | The config, an included file or that `config.worktree` has more than 8388608 bytes (cells X6 and V7, and R7 of round `task007-03`) |
-| `"<file>" has a setting in section "<section>" whose name is longer than 1024 bytes` | The full name of a setting, with its section and subsection, has more than 1024 bytes. The pair 1024 and 1025 is measured in `core`, `remote`, `lfs`, `url`, `filter`, `extensions`, `include` and `includeif`. Cells N6 measured it in `index`, `feature` and `checkout` too (Linux, macOS and Windows VMs). `<section>` is in lower case, without the subsection. The bound holds in an included file, with the path of that file. Cells V7 measured that one level below the config, and cells N8 two and three levels below it |
+| `the repository uses format version "<v>", which this version of Claude does not support` | The last value of `core.repositoryformatversion`, as git lists it, is not exactly the text `0` or `1`. A config with no such key is not refused. `<v>` is cut to its first 20 characters, with no mark (Linux, macOS and Windows VMs) |
+| `the repository uses git extension "<name>", or a value of it, that this version of Claude does not support` | The format version is `1`, and an `extensions.<name>` setting is refused (see "Extensions" below). `<name>` is in lower case. It is cut to its first 60 characters, with no mark (Linux, macOS and Windows VMs) |
+| `"<file>" includes "<value>", and Claude expands neither ~user nor %(prefix), nor ~ where no home directory is set; write that path out in full` | An include value of the form `~user/…` or `%(prefix)/…`, in an `include` section or in an `includeIf` section. The condition of the `includeIf` section does not have to match. `<file>` is the file that holds the setting. `<value>` is cut to its first 100 characters (Linux and macOS VMs) |
+| `its includes go past what Claude follows (16 files, nested 3 deep)` | More than 16 included files, or an include chain of more than 3 levels below the config. A missing file counts, and so does the file of an `includeIf` section, also a missing one. A file that includes itself gets this text too |
+| `"<file>" is not a regular file` | The config or an included file is a FIFO or a directory. A config that is a symbolic link to the null device gets it. So does an included file that is a symbolic link to a FIFO. `include.path = ~` gets it with the path of the home folder. So does a `config.worktree` of the git directory with `extensions.worktreeConfig` on (Linux and macOS VMs). The daemon's own read does not wait on a FIFO |
+| `"<file>" is larger than 8 MiB` | The config, an included file or that `config.worktree` has more than 8388608 bytes |
+| `"<file>" has a setting in section "<section>" whose name is longer than 1024 bytes` | The full name of a setting, with its section and subsection, has more than 1024 bytes. The sections are `core`, `remote`, `lfs`, `url`, `filter`, `extensions`, `include`, `includeif`, `index`, `feature` and `checkout`. The last three are measured on macOS and Windows VMs too. `<section>` is in lower case, without the subsection. The bound holds in an included file, with the path of that file |
 | `"<file>" has more settings than Claude reads (8 MiB); remove repeated ones` | See "The count of settings" below |
-| `open <file>: <reason>` | The daemon cannot open the config, an included file or that `config.worktree` (cell R4 of round `task007-03`). A file of mode 000 gives `permission denied`. A socket gives `no such device or address` on a Linux VM. As the config, a socket gives `operation not supported on socket` on a macOS VM |
-| `<error lines of git>` | The listing of the config exits non-zero while a child holds its stderr. The lines read until then are joined by one space. One `git version` call follows (cells B1e-x1 of rounds `task111-09`, `task111-10` and `task111-14`, Linux, macOS and Windows VMs) |
-| `fatal: bad config line <n> in "<file>"` | The config or an included file has a syntax error. So does the `config.worktree` file of the git directory with `extensions.worktreeConfig` on (cell C3b of round `tier0-14`, Linux VM). It comes before an extension refusal (cell E3 of round `tier0-16`, Linux VM). The text is that of git, with the path in quotes |
-| `"<included file>" is outside "<repo>", and on Windows Claude reads a repository's settings only from inside it; if the line that includes it is yours and you trust the file, put that line into ~/.gitconfig on the remote machine instead` | Windows: a relative include that leaves the repository. For a bare repository `<repo>` is its git directory (cell W6) |
-| `"<file>" includes "<value>", and on Windows Claude follows an include only if its path is relative and stays inside the repository; if that line is yours and you trust the file, put the line into ~/.gitconfig on the remote machine instead` | Windows: an absolute include value, also to a missing file, `~/x` and `~root/x`. An absolute value and `~/x` get it in an `includeIf` section whose condition does not match too (cells N12w). `<value>` is cut to its first 300 characters. A value of 300 characters is whole, and one of 301 shows 300 (cells P7w, Windows VM) |
-| `"<file>": is, or is reached through, a link that Claude does not follow here; replace the link with what it points to` | Windows: the config is a file link. Windows, every git method that reads the config: the git directory is a junction or a directory symbolic link, and `<file>` is `<git dir>\config`. |
+| `open <file>: <reason>` | The daemon cannot open the config, an included file or that `config.worktree`. A file of mode 000 gives `permission denied`. A socket gives `no such device or address` on Linux. As the config, a socket gives `operation not supported on socket` on macOS |
+| `<error lines of git>` | The listing of the config exits non-zero while a child holds its stderr. The lines read until then are joined by one space. One `git version` call follows (Linux, macOS and Windows VMs) |
+| `fatal: bad config line <n> in "<file>"` | The config or an included file has a syntax error. So does the `config.worktree` file of the git directory with `extensions.worktreeConfig` on. This text comes before an extension refusal. The text is that of git, with the path in quotes |
+| `"<included file>" is outside "<repo>", and on Windows Claude reads a repository's settings only from inside it; if the line that includes it is yours and you trust the file, put that line into ~/.gitconfig on the remote machine instead` | Windows: a relative include that leaves the repository. For a bare repository `<repo>` is its git directory |
+| `"<file>" includes "<value>", and on Windows Claude follows an include only if its path is relative and stays inside the repository; if that line is yours and you trust the file, put the line into ~/.gitconfig on the remote machine instead` | Windows: an absolute include value, also to a missing file, `~/x` and `~root/x`. An absolute value and `~/x` get it also in an `includeIf` section whose condition does not match. `<value>` is cut to its first 300 characters |
+| `"<file>": is, or is reached through, a link that Claude does not follow here; replace the link with what it points to` | Windows: the config is a file link. Also Windows, on every git method that reads the config: the git directory is a junction or a directory symbolic link, and `<file>` is `<git dir>\config` |
 
-The path of an included file is the folder of the file that holds the setting, one
-separator, and the value as written. On a Windows VM `path = <dir>/inc.cfg` gives
-`<git dir>\<dir>/inc.cfg` in a text (cells V12c and V12d). The folder of the
-holding file stays as written too. With `include.path = a/../b/inc.cfg`, a
-`path = x.cfg` in that file names `<git dir>/a/../b/x.cfg` (cell N13-b, Linux and
-macOS VMs).
+No refusal comes from a config that is missing, empty, a dangling
+symbolic link or a symbolic link to a regular file. A NUL byte in a value, an empty
+`include.path` and one with no value give none either. On Linux the daemon follows a
+relative include, also one that leaves the git directory. It also follows an absolute
+include, and `~/x` with a home folder.
 
-Under format version `1` claustrum refuses an extension other than
-`worktreeConfig` when [the copied settings file](#the-copied-settings-file) has
-no rule for its key or does not accept its value. `5fd08069` refuses
-`preciousObjects = 1234567890`, `objectFormat = sha512`, `refStorage` with no
-value and `partialClone = a/-b` (cells R1 to R4 of round `tier0-14`, Linux VM).
-Cells V6 (Linux, macOS and Windows VMs) measured these settings as not refused: `worktreeConfig = maybe`, `objectFormat = SHA256`, `refStorage = FILES`,
-`preciousObjects = yes` and `preciousObjects = 1`. An extension in a config with no
-format version key is not refused either. This rule does not refuse a sha256 repository or a reftable repository.
+Two more kinds of file get the kind test and the size test, with their own path in
+the text. A format version `2` in such a file is not refused.
 
-No refusal comes from a config that is missing, empty, a dangling symbolic link
-or a symbolic link to a regular file. A NUL byte in a value, an empty
-`include.path` and one with no value give none either. On Linux the daemon follows a relative include, also one that
-leaves the git directory, an absolute include and `~/x` with a home folder.
+- The file of an `includeIf` section, whatever its condition is (Linux, macOS and
+  Windows VMs). Its filter settings count for the filter rule of the checkout.
+- The `config.worktree` file of a linked worktree. If the config turns
+  `extensions.worktreeConfig` on, that file gets the tests. `true`, `yes`, `on` and
+  `1` turn it on, and so do `TRUE`, `ON`, `Yes`, `On` and `tRuE`. So
+  does the key with no value. `false`, `no` and `0` do not (Linux, macOS
+  and Windows VMs). The trust check of the request finds that linked worktree. On
+  `git.status` it is the worktree that `baseRepo` names. All five methods ran, and
+  `git.worktree_remove` on a Linux VM only.
 
-Two kinds of file get the kind test and the size test, with their own path in the
-text. A format version `2` in such a file is not refused. No other content of it
-ran. The filter settings of an `includeIf` file count for the filter rule (cell
-F1b of round `task084-02`).
+##### Extensions
 
-- The file of an `includeIf` section, whatever its condition is. The conditions
-  that ran are `gitdir:` that matches and that does not match, `gitdir/i:`,
-  `onbranch:` and `hasconfig:` (cells X9 and V8, Linux, macOS and Windows VMs).
-- The `config.worktree` file of a linked worktree. The config sets
-  `extensions.worktreeConfig` to `true`, `yes`, `1` or `TRUE`, or has that key with
-  no value (cells X2 and V14). `on` and `ON` start the test too, and `false`, `no`
-  and `0` do not (cells N4, Linux, macOS and Windows VMs). `Yes`, `On` and `tRuE`
-  start it too (cells P2, the same three systems). The trust check of the request finds that linked worktree. On `git.status` that is the worktree that `baseRepo` names. Cells V14
-  ran `git.info`, `git.status`, `git.list_branches` and `git.worktree_create`
-  (Linux, macOS and Windows VMs). On the macOS VM the values other than `true` ran
-  `git.info`. Cell W14 ran `git.worktree_remove` on a Linux VM.
+Under format version `1` the daemon refuses an extension other than
+`worktreeConfig` in two cases. [The copied settings file](#the-copied-settings-file)
+has no rule for its key, or the rule does not accept its value. Refused are
+`preciousObjects = 1234567890`, `objectFormat = sha512`, `refStorage` with no value and
+`partialClone = a/-b`. Not refused are `worktreeConfig = maybe`, `objectFormat = SHA256`, `refStorage = FILES`,
+`preciousObjects = yes` and `preciousObjects = 1` (Linux, macOS and Windows VMs). An
+extension in a config with no format version key is not refused. Under version `1`
+the rules accept `objectFormat = sha256` and `refStorage = reftable`, so a sha256 or
+a reftable repository is not refused. A value that git itself refuses but the copy
+leaves out, such as `extensions.objectformat = md5` under version `0`, gets no
+refusal of the daemon. The method answers as git does.
 
-**The count of settings.** Each setting of a counted section costs the bytes of its
+Four extension states are measured on `5fd08069` but not on a claustrum build with
+the settings copy. They are `worktreeConfig = maybe` and `objectFormat = SHA256` under
+version `1`, `refStorage = FILES`, and `objectFormat = md5` with no version key. For
+`objectFormat = SHA256` the `git.status` of `5fd08069` answers `exit status 128`.
+
+##### The count of settings
+
+Each setting of a counted section costs the bytes of its
 full name, the bytes of its value, and 96. The config has its own sum, and the
-included files have one sum between them. The file in which a sum passes 8388608
-is refused. Cells X5 found five counted sections: `core`,
-`remote`, `extensions`, `include` and `branch`. Cells V5 found seven more: `lfs`,
-`index`, `url`, `filter`, `feature`, `checkout` and `includeif`. The sections `x` and `user` do not count. This
-arithmetic is fitted to the measured bounds. The exact pairs are in `core` and `remote`. For each other counted
-section one cell of 200000 lines was refused (cells X5 and V5). An included file
-of 200000 `core.filemode = true` lines is refused with its own path (cells V7).
-Cells N5 ran files of 40000 `core.filemode = true` lines on Linux, macOS and
-Windows VMs. One such included file passes. Two are refused, and the text names
-the second one. The config with 40000 such lines and one such included file
-passes. Cells P3 ran files of 30000 such lines on the same three systems. Two
-included files pass, and three are refused. A file that includes a second one
-passes. A chain of three, one below the other, is refused. In the two refused
-cells the text names the third file.
+included files have one sum between them. The file in which a sum passes 8388608 is
+refused. The counted sections are `core`, `remote`, `extensions`, `include`, `branch`,
+`lfs`, `index`, `url`, `filter`, `feature`, `checkout` and `includeif`. The sections
+`x` and `user` do not count. This arithmetic is fitted to the measured bounds on Linux,
+macOS and Windows VMs. The exact pairs are measured in `core` and `remote` on a Linux
+VM.
 
-**Class 2** is `a file in this repository's .git directory cannot be used: <detail>`.
-The files are `shallow`, `info/attributes` and `info/exclude`, and the git
-directory itself.
+##### Class 2: files of the git directory
+
+Class 2 is `a file in this repository's .git directory cannot be used: <detail>`.
+The files are `shallow`, `info/attributes` and `info/exclude`, and the git directory
+itself.
 
 | Detail | When |
 |---|---|
 | `"<file>" is not a regular file` | `info/attributes` or `info/exclude` is a FIFO or a directory. A symbolic link there passes, also one to the null device. `shallow` is a FIFO, a directory or a symbolic link to the null device. The daemon does not wait on a FIFO |
 | `"<file>": it is larger than 4 MiB` | `info/attributes` or `info/exclude` has more than 4194304 bytes |
 | `"<file>" is larger than 4 MiB` | `shallow` has more than 4194304 bytes |
-| `open <git dir>: not a directory` | On Windows a daemon `GIT_DIR=.git` names the `.git` file of a linked worktree, on the five methods (cells c19 to c22 of round `task039-01`, V-RM of round `task039-02`, Windows VM) |
-| `open <file>: <reason>` | `shallow` has mode 000 (`permission denied`) or is a socket (`no such device or address`, cell V10, Linux VM). The path is not in quotes. An `info/attributes` or `info/exclude` of mode 000 is not refused |
-| `"<file>" holds something other than object ids` | A line of `shallow` is not 40 or 64 hex characters in lower case. That rule is fitted to the cells. Refused are a text line, an id in upper case, and a blank line before or after an id. So are a line of 39, 41 or 63 hex characters and an id with a space after it. A file that holds one line end is refused too (cells V10). A line end of CRLF and a last line with no newline pass. An empty file passes |
+| `open <git dir>: not a directory` | Windows: a daemon `GIT_DIR=.git` names the `.git` file of a linked worktree, on the five methods |
+| `open <file>: <reason>` | `shallow` has mode 000 (`permission denied`) or is a socket (`no such device or address`). The path is not in quotes. An `info/attributes` or `info/exclude` of mode 000 is not refused |
+| `"<file>" holds something other than object ids` | A line of `shallow` is not 40 or 64 hex characters in lower case. That rule is fitted to the measured states. A blank line, an id with a space after it and a file of one line end are refused. A line end of CRLF, a last line with no newline and an empty file pass |
 
-**Two refused files.** A refused config comes before a refused file of the git
-directory. In class 2, `shallow` comes before `info/attributes` (cells V16, Linux,
-macOS and Windows VMs). `info/attributes` comes before `info/exclude`. Cells P6
-ran that pair four ways on a Linux VM: a file of 20 MiB with a FIFO, two files of
-20 MiB, two FIFOs, and a FIFO with a directory. Two more P6 cells have a refused
-`shallow` with a FIFO as one of the two other files, and the text names `shallow`.
+##### Which answer comes first
 
-**No refusal.** A folder with no repository keeps its answers. `5fd08069` keeps
-the "not a repository" answers for a `HEAD` that is no ref and no object id, also
-with format version `2` (cells X3). It keeps them for a repository of another
-owner with no `safe.directory` too. Cells V1 ran that owner on Linux, macOS and
-Windows VMs. The refused states were format version `2`, a config of 20 MiB and an
-`info/exclude` of 20 MiB. A FIFO as the config ran on Linux and macOS VMs. Which call of that build
-decides is not measured.
+A refused config comes first, then a refused `config.worktree` file of a linked
+worktree, then a refused file of the git directory (from the code for the middle step). In class 2, `shallow` comes before `info/attributes` (Linux, macOS and
+Windows VMs), and `info/attributes` comes before `info/exclude`.
 
-In the first state claustrum finds no repository, so it reads nothing. The second
-state is decided by the call about the repository, on `5fd08069` and on claustrum.
-That call comes before the read. If git answers it with exit 128 and a no-repository
-text, the method gives its "not a repository" answer and reads no config. git's text for
-another owner is `detected dubious ownership in repository`. In cells X9 of round
-`val-s3p2b2-5` a repository of another owner has format version `3` or a syntax
-error. Each request of `5fd08069` there is that one call, and a remove makes it two
-times (Linux and macOS VMs). An answer of git that names a problem is not kept. So
-a new `safe.directory` line counts at the next request, as on `5fd08069` (cell
-N15-a, Linux and macOS VMs).
-[The settings copy](#the-settings-copy) has that call.
+##### A folder that is not a repository
 
-claustrum asks git no question about the owner beyond that call. With
-`"shadowDirOff":true` and in the state `fallback-git` it makes no read, so no
-refusal comes there.
+A folder with no repository keeps its "not a repository" answers.
+That holds for a `HEAD` that is no ref and no object id, also with format version `2`.
+It also holds for a repository of another owner with no `safe.directory` (Linux, macOS
+and Windows VMs). The call about the repository in
+[the settings copy](#the-settings-copy) decides that state, before the read. If git
+answers it with exit 128 and a no-repository text, the method gives its "not a
+repository" answer and reads no config. git's text for another owner is
+`detected dubious ownership in repository`. Such an answer is not kept, so a new
+`safe.directory` line counts at the next request (Linux and macOS VMs). After a change
+of the owner inside the 5 seconds of a kept good answer, a request answers normally.
+The first request after that time answers "not a repository".
 
-**Where claustrum differs from `5fd08069`.** A line with "from the code" ran on no
-VM. Rounds `val-s3p2b2-3` and `val-s3p2b2-5` ran a build with the settings copy.
+##### claustrum's own choices
 
-- On git 2.11.4 and 2.12.5, `5fd08069` gives no refusal in the four fixtures of
-  cells V18 (Linux VM). The fixtures are format version `2`, a config of 20 MiB, a
-  FIFO as the config and an `info/exclude` of 20 MiB. Git 2.13.7 is the oldest git
-  that ran with the refusal. Those two gits give the state `fallback-git`. From the
-  code: claustrum makes no read in that state. No claustrum build with that state
-  ran on those gits.
-- In some states git itself refuses a value of the config, and `5fd08069` gives
-  the answer of a repository, because its copy leaves the value out. A claustrum
-  build with the copy answers as `5fd08069` in cells C2c, X5b, X9-03 and X9-04
-  (round `val-s3p2b2-3`) and in the 48 X8 cells (round `val-s3p2b2-5`, Linux VM). Cell C2c has `extensions.objectformat = md5` under version `0`.
-  Cells X9-03 and X9-04 have an `include.path` with an empty value or with none.
-  Four V6 cells of the older rounds did not run on a build with the copy (not
-  measured). Two are `worktreeConfig = maybe` and `objectFormat = SHA256` under
-  version `1`. One is `refStorage = FILES`, and one has no version key and
-  `objectFormat = md5`. For `objectFormat = SHA256` the `git.status` of `5fd08069`
-  answers `exit status 128`.
-- After a change of the owner inside the 5 seconds of a kept good answer,
-  `5fd08069` and a claustrum build with the copy answer normally. The first
-  request after that time answers "not a repository" (cell 31 of round
-  `val-s3p2b2-5`, Linux VM).
-- A config that is replaced 50 times each second (cell E4 of round
-  `val-s3p2b2-5`). `5fd08069` makes 4 config reads for
-  each `git.info` and 10 for each `git.status`. claustrum makes 1 for each (Linux
-  VM, one run). The reply lines are equal.
-- A config with a very long key, or one key 200000 times. On a Windows VM 15 config
-  read calls of `5fd08069` have no end record in cells E1a, E2a and E2b. The same
-  calls of claustrum end with exit 0 (rounds `val-s3p2b2-3` and `val-s3p2b2-5`).
-  The reply lines are equal.
+These rules are from the code and are not measured on `5fd08069`:
 
-**claustrum's own choices** (from the code, not measured on `5fd08069`):
-
-- `extensions.worktreeConfig` starts the `config.worktree` test with values
-  that no cell ran, such as `oN` or `007`. The last such setting of the config counts.
-- Under format version `1` the value rule refuses extension values that no cell
-  ran, such as `preciousObjects = -1`.
-- The cuts of the format version value and of the extension name count
-  characters. The cells have ASCII text.
+- `extensions.worktreeConfig` starts the `config.worktree` test with values that no
+  run had, such as `oN` or `007`. The last such setting of the config counts.
+- Under format version `1` the value rule refuses extension values that no run had,
+  such as `preciousObjects = -1`.
+- The cuts of the format version value and of the extension name count characters.
+  The measured texts are ASCII.
 - The `config.worktree` open error and size bound hold on `git.status`,
   `git.list_branches` and `git.worktree_remove` too, and every kind on Windows.
 - The name bound and the count of settings are tested on a whole file before an
-  include of that file is followed. That order is fitted to two cells of 200000
-  include lines of a missing file, which get the "more settings" text.
+  include of that file is followed. So 200000 include lines of a missing file get the
+  "more settings" text, as measured.
 - The two include limits come before the open of an included file.
 - An open error of the file of an `includeIf` section gives no refusal.
 - An open error other than the measured ones gets the same `open <file>: <reason>`
   form.
-- A `~/x` include is joined to the home folder and cleaned.
-- On Windows a `%(prefix)/…` value gets the "expands neither" text, with the cut
-  at 100 characters.
-- The read runs after the trust check accepted the git directory, and after the
-  test of the daemon's own `GIT_CONFIG_COUNT`.
-- `~/x` with no home folder gets the "expands neither" refusal. No daemon starts
-  with no home folder.
-- On `git.worktree_remove` with `worktreeRoot`, the read comes after the trust
-  check and before the configuration listing. Cells N14 and P4 have a repository
-  that passes the checks before it.
-- The listing that the read takes from git for one config file has a bound of
-  64 MiB. A file with a long subsection name and many keys lists as far more
-  bytes than it has. The read tests the name bound and the count of settings
-  on the first 64 MiB of such a listing. If neither refuses, the read has no
-  verdict, and the request gets no refusal.
-- If the read gives no verdict, the method goes on as before. A read gives none
-  if its git call fails with anything other than a syntax error text, the stop
-  at 30 seconds ([Time limits of git calls](#time-limits-of-git-calls)) or the
-  error lines above, such as a git that does not start. A failed call with no
-  holder of stderr is claustrum's own case (not measured). So does a config file that the
-  daemon opens and cannot read.
-- With a daemon `GIT_COMMON_DIR`, `git.info` and `git.list_branches` read
-  nothing: the trust check pins no git directory there.
-- A bare repository whose config the daemon refuses, on a host where git refuses
-  bare repositories (`safe.bareRepository = explicit`), gets the refusal.
-- An `includeIf` line in a file three levels below the config gets the "includes
-  go past" text.
-- On Windows claustrum refuses a link at a config file and at an included file, and
-  a junction or a directory symbolic link at the git directory itself. It tests no other folder above the file. It also refuses an include value that starts
-  with a slash or a drive.
+- A `~/x` include is joined to the home folder and cleaned. With no home folder it
+  gets the "expands neither" refusal. No daemon starts with no home folder.
+- On Windows a `%(prefix)/…` value gets the "expands neither" text, with the cut at
+  100 characters.
+- A refusal of the trust check and of the daemon's own `GIT_CONFIG_COUNT` comes before
+  a refusal of the read. On `git.worktree_remove` with `worktreeRoot` the read comes
+  before the configuration listing.
+- The listing that the read takes from git for one config file has a bound of 64 MiB.
+  A long subsection name with many keys lists as far more bytes than the file has.
+  The read tests the name bound and the count on the first 64 MiB of such a listing.
+  If neither refuses, the read gives no verdict.
+- If the read gives no verdict, the method goes on as with no read. A failed git call
+  gives none, except for a syntax error, the error lines above and the stop at 30
+  seconds ([Time limits of git calls](#time-limits-of-git-calls)). So a git that does
+  not start gives none, and so does a failed call with no holder of stderr. A config
+  file that the daemon opens and cannot read gives none too.
+- A bare repository whose config the daemon refuses, on a host where git refuses bare
+  repositories (`safe.bareRepository = explicit`), gets the refusal.
+- An `includeIf` line in a file three levels below the config gets the "includes go
+  past" text.
+- On Windows the daemon refuses a link at a config file and at an included file, and a
+  junction or a directory symbolic link at the git directory itself. It tests no other
+  folder above the file. It also refuses an include value that starts with a slash or
+  a drive.
 
 #### The settings copy
 
-Since `5fd08069` the daemon keeps its own copy of the git settings of a repository.
-The copy is in a folder `git-shadow` beside the socket. The git calls of the five
-methods name that copy, so git reads the copy and not the config of the repository.
-claustrum follows that build.
+The daemon keeps its own copy of the git settings of a repository. The copy is in a
+folder `git-shadow` beside the socket. The git calls of the five git methods name
+that copy, so git reads the copy and not the config of the repository. A rule here
+that is not marked "claustrum's own" or "from the code" is measured against
+`5fd08069` on a Linux VM. A rule that names macOS or Windows was measured on that
+system.
 
 ##### The states and `settingsControl`
 
-`git.info` reports the state in its last member, `settingsControl`.
-No other method sends it, and an error reply has none
-(cell A1, round `s3`, Linux, macOS and Windows VMs).
+`git.info` reports the state in its last member, `settingsControl`. No other method
+sends it, and an error reply has none (Linux, macOS and Windows).
 
 | `settingsControl` | When | What it changes |
 |---|---|---|
-| no member | No start test of the daemon gave a state yet | Nothing. A folder with no repository, or a `HEAD` that is no ref, starts no test (cell E5, round `s3p2`, Linux VM). The `.git` file below is the exception |
+| no member | No start test of the daemon gave a state yet | Nothing. A folder with no repository, or a `HEAD` that is no ref, starts no test. The `.git` file below is the exception |
 | `"shadow"` | The start test passed | The git calls name the copy. Before them the daemon asks git about the repository |
-| `"fallback-git"` | The git of the host does not work on such a copy. `5fd08069` reports it on git 2.11.4 and 2.12.5 (round `s3p2-oldgit`, Linux VM) | The git calls name the git directory. The daemon reads no repository config, gives no config refusal, makes no copy and does not ask git about it |
+| `"fallback-git"` | The git of the host does not work on such a copy, for example git 2.11.4 and 2.12.5 | The git calls name the git directory. The daemon reads no repository config, gives no config refusal, makes no copy and does not ask git about it |
 | `"off-switch"` | A request with `"shadowDirOff":true` runs (the hold) when the reply is made | A request that starts then names the git directory, with no test, folder or config read |
 
-- After the test the "no repository" reply has it too:
+- After the test the "no repository" reply has the member too:
   `{"isRepo":false,"repoSlug":"","defaultBranch":"","settingsControl":"shadow"}`.
-  That reply waits for a running test and has its state, or no member after
-  a failed test (cells T2, T3 and T8, round `task103-01`, Linux VM). So does
-  a missing path (cell T7d, round `task103-06`). On a folder with no repository
-  the other methods answer at once (cells T5 to T6b).
-- As the first git request of a daemon, a `git.info` on a folder whose `.git`
-  file names a missing path runs the test and gives that reply.
-  A missing entry under `worktrees` of an existing git directory runs no test, and
-  the reply has no member (`5fd08069`, cells V3 and V4, round `task083-01`,
-  Linux, macOS and Windows VMs). A missing entry in a missing
-  repository runs the test (cell V4g, round `task083-02`, Linux VM). After the
-  test on such a file `5fd08069` runs a `rev-parse` against `.probe` in its run
-  folder, and has it at the reply. claustrum runs a config listing in its place
-  and makes no `.probe`, with equal frames (cell V3, round `task083-03`, macOS
-  and Windows VMs).
-- A `git.info` on a path that does not exist starts no test. As the first git
-  request of a daemon it makes one call, the excludes read, and its reply has no
-  member. A later one makes none. No process starts for it (cell T7s of round
-  `task107-01`, Linux VM).
+  That reply waits for a running test and has its state. After a failed test it has
+  no member. A path that does not exist gets the same, but starts no test itself. On
+  a folder with no repository the other methods answer at once.
+- As the first git request of a daemon, a `git.info` on a folder whose `.git` file
+  names a missing path runs the test and gives that reply. A missing entry under
+  `worktrees` of an existing git directory runs no test, and the reply has no member
+  (Linux, macOS and Windows). A missing entry in a missing repository runs the test.
 - With no git in the daemon's `PATH`, a `git.info` on a repository answers "no
-  repository" with no test (`5fd08069`, cell C7, round `tier0-5`, Linux VM). Its
-  member follows the daemon's state (not measured).
+  repository" with no test. Its member follows the daemon's state (not measured).
 - A `git.info` on a regular file gets the gate of the repository of its folder.
-  Outside any repository it starts no test. As the first git request of a daemon
-  its reply has no member on Linux and macOS. On Windows it is the hooks
-  refusal, with `fork/exec <git.exe>: The directory name is invalid.`
+  Outside any repository it starts no test. As the first git request of a daemon its
+  reply has no member on Linux and macOS. On Windows it is the hooks refusal, with
+  `fork/exec <git.exe>: The directory name is invalid.`
 - A request with the member gets `"off-switch"` also as the first request of a
-  daemon, in a "no repository" reply and while a failed test is kept (cells A1
-  and B1 of round `s3`, cell 32 of round `s3p2b-edges`, Linux VM).
-- A hold that starts during a `git.info` moves to the git directory each
-  command after its first config listing and the next call, the Windows root
-  pair too (cells O2 of `task103-02` and `task103-04`, Linux, macOS and Windows VMs).
-  After a hold a later command runs the test and takes the copy (cell O1).
-  `git.list_branches` (cells L0 to L2, Linux VM), `git.status` and the
-  worktree methods (`task105-01` to `task105-10`, Linux and macOS) do the same.
-  Windows ran C1, C2, C0, C4 and C5 (`task105-05`, `task105-07`). A
-  call about the repository follows a later test (R2, C4, C5), except before a
-  `--git-dir=` call (S2, C3). A create in a hold makes no copy, and `git.info` answers `"off-switch"` (cells H4 and H1, round `task073-02`).
+  daemon, in a "no repository" reply and while a failed test is kept.
+- A hold during a request moves to the git directory each later command that
+  starts its own config listing (Linux, macOS and Windows). The config check and
+  the call after it keep the copy, as does a command that already runs. On Linux,
+  after the hold a later command runs the test and takes the copy. A create in a
+  hold makes no copy.
 - In that time `git.status`, `git.list_branches` and `git.worktree_remove` get no
   config refusal, as with the member. On a repository of format version 3 they
   answer `{"isRepo":false,"clean":false}`, `{"isRepo":false,"branches":[]}` and the
-  lock-check text that ends `(its registrations could not be examined); retry`.
-  The remove deletes nothing there because git itself fails (cells Q1 to Q3 of
-  round `task073-05`, Linux VM). On a config that only the daemon refuses, the
-  remove deletes, as on `5fd08069` (cells Q10 and Q11, round `task073-08`, Linux
-  VM). macOS and Windows are not measured.
-- A held request keeps no hold for later requests. No build stopped at 2
-  minutes its `worktree add` of 130 s whose holder answered first (cell Q4 of
-  round `task073-05`, Linux VM). A held call that starts after that answer has the
-  2 minute limit (claustrum's own, not measured).
+  lock-check text that ends `(its registrations could not be examined); retry`. The
+  remove deletes nothing there because git itself fails. On a config that only the
+  daemon refuses, the remove deletes. macOS and Windows are not measured.
+- A held request keeps no hold for later requests. A `worktree add` that started in
+  the hold is not stopped at 2 minutes after the holder answers. A held call that
+  starts after that answer has the 2 minute limit (claustrum's own, not measured).
 - Only the JSON value `true` counts for `shadowDirOff`. `"true"`, `1`, `null` and
-  `false` are as no member (cell B3, round `s3`, Linux VM, and cell S1-seq of
-  round `val-s3p2b2-1`, macOS VM).
+  `false` are as no member (Linux and macOS).
 - In the state `fallback-git` the test runs again on the first request more than 10
-  minutes after the last test. On `5fd08069` 599.8 s gives no test and 605.5 s gives
-  one (cell 28, round `s3p2b-edges`, Linux VM). In the state `shadow` no second
-  test ran up to 720 s.
-- The daemon logs one `[GitHandler]` line at the first decision of the state and
-  one at a change.
+  minutes after the last test. In the state `shadow` no second test ran up to 720 s.
+- The daemon logs one `[GitHandler]` line at the first decision of the state and one
+  at a change.
 
 ##### The start test
 
-The first request that reaches a repository, or the `.git` file above, without the member runs the test. It is
-10 git calls in a folder `.check-<n>` of the daemon, and that folder is gone at the
-reply. If the test fails, the request gets this text:
+The first request that reaches a repository, or the `.git` file above, without the
+member runs the test. It is 10 git calls in a folder `.check-<n>` of the daemon, and
+that folder is gone at the reply. Call 7 reads the config of the test repository. It
+runs in `/`, and on Windows in the working folder of the daemon (from the code). If
+the test fails, the request gets this text:
 
 `Claude could not test git on the remote machine (<cause>). Check free disk space and quota there, then try again.`
 
-`git.info`, `git.status` and `git.list_branches` answer
-it as a `-32603` error. `git.worktree_create` answers it in `error`, with the
-`errorCode` `worktree_add_failed`. `git.worktree_remove` answers it after `failed
-to remove worktree: could not check whether <worktreePath> is locked: `, with no
-`errorCode`. `89cb6289` answers those requests normally.
+`git.info`, `git.status` and `git.list_branches` answer it as a `-32603` error.
+`git.worktree_create` answers it in `error`, with the `errorCode`
+`worktree_add_failed`. `git.worktree_remove` answers it after `failed to remove
+worktree: could not check whether <worktreePath> is locked: `, with no `errorCode`.
 
 A failed call 7 is followed by one `git version` call. If it fails too, the text is
-`git cannot run on this host; git not run: <exec error>: <git text>` alone, in the same frames. The
-exec error and the text are those of `git version`. A remove deletes nothing there.
-`5fd08069` does so in cells E1 to E5 of round `task083-01` (Linux VM), and E1 and
-E2 on macOS and Windows VMs. On Windows that `git version` runs in the working
-folder of the daemon.
+`git cannot run on this host; git not run: <exec error>: <git text>` alone, in the
+same frames. The exec error and the text are those of `git version`. A remove
+deletes nothing there (Linux, macOS and Windows). On Windows that `git version` runs
+in the working folder of the daemon.
 
 | `<cause>` | When |
 |---|---|
 | `git <verb> failed under "<folder of the daemon>": <error lines of git, space-joined>` | A test call other than call 7 failed. Go's `%q` quotes the folder |
-| `git <verb> failed under "<folder>": signal: killed` | The daemon ended a test call other than call 7 after 30 seconds (Linux and macOS VMs). On a Windows VM the end is `exit status 1` |
+| `git <verb> failed under "<folder>": signal: killed` | The daemon ended a test call other than call 7 after 30 seconds (Linux and macOS). On Windows the end is `exit status 1` |
 | the same with ` (git version <v>)` at its end | The failed or ended call was one of calls 1 to 5 (measured for `init` and `mktree`) |
-| `this repository's git config cannot be used: <error lines of git>` | Call 7 failed, and the plain `git version` after it works (cells E9 and E9c, round `task083-01`, Linux VM) |
+| `this repository's git config cannot be used: <error lines of git>` | Call 7 failed, and the plain `git version` after it works |
+| `this repository's git config cannot be used: git did not finish reading "<config of the test repository>" within 30 seconds; try again` | Call 7 ran, or held its stdout, past 30 seconds. The reply comes near 31 s. With stderr alone held, a call 7 that exits 1 gives the lines read before the cut (not measured) |
 | `mkdir <path>: <reason>` or `open <path>: <reason>`, with no quotes | A folder or the lock file of the daemon cannot be made |
 
-A call 6 with exit 1 goes on (cell C3). `real` at call 6, or a wrong answer at calls 8
-to 10, gives `fallback-git`, as does git's refusal when that call without the copy
-works (cells C1, C2, C3b, C4 and C5). At call 10, `No space left on device` in the
-error or an end by a signal fails the test (cells N1 to N3). Two failed calls
-name the first (cell C9). All cells: round `tier0-5` on `5fd08069` (Linux
-VM).
+Some failed calls give `fallback-git` and not a failure. That is the case when git
+refuses the copy and the same call works without it. A test call that works and
+answers wrongly gives it too. At call 10 a `No space left on
+device` error or an end by a signal fails the test. If two calls fail, the cause
+names the first. A test call that takes 29 s passes, and one of 32 s gives the error
+at about 31 s.
 
 - The daemon keeps a failure for 10 seconds from the end of the failed test. A
   request in that time gets the kept text with no git call.
 - The kept failure holds after its cause is gone. A request with
   `"shadowDirOff":true` works in that time.
-- A test call that a wrapper holds 29 s passes. One held 32 s gives the error at
-  about 31 s (cell 31, round `s3p2b-edges`, Linux VM).
-- Call 7 with pipes held past 30 s ends near 31 s (cell B2 of
-  rounds `task101-01` and `task101-02`, Linux VM). The cause is `this repository's git config cannot be
-  used: git did not finish reading "<config of the test repository>" within 30
-  seconds; try again`. With stderr alone held, a call 7 that exits 1 gives the
-  lines read before the cut (not measured).
 
 ##### The folders
 
 The folder of one daemon is `<socket folder>/git-shadow/<host form>-<pid>-<16 hex>`.
 `<host form>` is the host name with each character outside `A-Z`, `a-z`, `0-9` and `.`
-written as `_`. A `-` becoming `_` and a kept `.` are measured (cell C6, round `s3`,
-and `.local` on a macOS VM in round `task075-01`). The other characters are not
-measured. On Linux and macOS
-that folder and each folder of a copy have mode `0700`, and the files of a copy
-have `0600`. The daemon makes the folder at
-the first request that runs the test. It holds an exclusive lock on the file `lock`
-in it for its whole life. On Windows the hold is an open handle with no sharing.
+written as `_`. A `-` becoming `_` and a kept `.` are measured (Linux and macOS). The
+other characters are not measured. On Linux and macOS that folder and each folder of
+a copy have mode `0700`, and the files of a copy have `0600`. The daemon makes the
+folder at the first request that runs the test. It holds an exclusive lock on the
+file `lock` in it for its whole life. On Windows the hold is an open handle with no
+sharing.
 
 - At `-stop` and at `server.shutdown` the daemon removes its folder. The empty
-  `git-shadow` stays (round `s3p2`, Linux, macOS and Windows VMs).
+  `git-shadow` stays (Linux, macOS and Windows).
 - If the folder is removed while the daemon runs, the next request makes it again
-  with another hex part (cell B6, round `s3`, Linux and macOS VMs).
-- The folder of one repository is `<folder of the daemon>/<32 hex>`. The name is
-  the first 32 hex digits of the sha256 of the path of the git directory. A linked
+  with another hex part (Linux and macOS).
+- The folder of one repository is `<folder of the daemon>/<32 hex>`. The name is the
+  first 32 hex digits of the sha256 of the path of the git directory. A linked
   worktree uses the folder of its main repository.
-- That folder holds `HEAD`, `config`, the empty folders `objects` and `refs`,
-  and `info/exclude` where the repository has it. On Linux and macOS it holds a link `worktrees` to the
-  `worktrees` folder of the git directory. On Windows it has no such entry.
+- That folder holds `HEAD`, `config`, the empty folders `objects` and `refs`, and
+  `info/exclude` where the repository has it. On Linux and macOS it holds a link
+  `worktrees` to the `worktrees` folder of the git directory. On Windows it has no
+  such entry.
 - More copies follow the state of the repository: `shallow`, `info/attributes`,
   `rebase-merge/head-name`, `rebase-apply/head-name` and `BISECT_START`.
 - The daemon makes the folder at the first request that accepts the config of the
   repository. After a change of a file, a later request writes its copy again.
-- In the state `fallback-git` the short-lived entries of a request are in the
-  folder of the daemon too. The light calls of a create carry six values there
-  (cell Q-S4c, round `val-s3p2b2-3`, Windows VM).
+- [The call about the repository](#the-call-about-the-repository) names a folder
+  `.probe` of the daemon.
 - One request also keeps short-lived entries in the folder of the daemon:
-  `.gitdir-<n>` for a `git.status`, and `.index-<n>` and `.worktreeinclude-<n>` for
-  a create. Also `.config-<n>` for a create in a repository with a
-  `config.worktree` file, and `.s<n>` on Windows. With `"shadowDirOff":true` the
-  first three are in the temporary folder, as `claude-ssh-gitdir-<n>`,
-  `claude-ssh-index-<n>` and `claude-ssh-worktreeinclude-<n>`.
-- On Windows the daemon makes the short-lived folders of a request by their
-  full path (from the code). Cell X3 denies new folders in its folder, with the
-  backup and restore privileges on, after a first `git.info`. There a create
-  succeeds on both builds with byte-equal replies (round `task077-06`, Windows
-  VM). With both privileges off both builds fail alike at `.s<n>` (cell X3c).
-  The folders `.config-<n>`, `.worktreeinclude-<n>` and the `.gitdir-<n>` of
-  `git.status` are not measured there (claustrum's own).
+  `.gitdir-<n>` for a `git.status`, and `.index-<n>` and `.worktreeinclude-<n>` for a
+  create. Also `.config-<n>` for a create in a repository with a `config.worktree`
+  file, and `.s<n>` on Windows. In the state `fallback-git` the first three are there
+  too (`.gitdir-<n>` on Linux and macOS, `.index-<n>` on Windows). For
+  `.worktreeinclude-<n>` that is not measured. With
+  `"shadowDirOff":true` the first three are in the temporary folder, as
+  `claude-ssh-gitdir-<n>`, `claude-ssh-index-<n>` and
+  `claude-ssh-worktreeinclude-<n>`.
+- On Windows, if the folder of the daemon denies new folders, a create still works
+  with the backup and restore privileges on. With both off it fails at `.s<n>`.
 
 If the folder of a repository cannot be made, the request gets this text in the
 three shapes of the start test:
 
 `Claude could not prepare its own files on the remote machine: cannot write its copy of the repository's git config: <cause>`
 
-The cause is the `mkdir` error of the folder.
-The same request again gets the same line with no git call.
-On Windows a held copy gets 2 s of retries, then
-`rename <temp file> <copy>: Access is denied.` with full paths (`5fd08069`, round `task009-01`).
+The cause is the `mkdir` error of the folder. The same request again gets the same
+line with no git call. On Windows a held copy gets 2 s of retries, then `rename
+<temp file> <copy>: Access is denied.` with full paths.
 
-The request that makes the folder of the daemon also sweeps `git-shadow`. An
-entry goes if its lock file can be taken and its name has the host form of this
-host. An entry with another name goes only when it is old: 8 days goes and 6 days
-stays (cells G7b and G7c). The bound of 7 days is not measured. A held
-lock keeps the folder of a live daemon. `5fd08069` does the same in cells G1 to G12 of
-round `task075-01` (Linux VM). Cells G1, G3 to G10 and G12 give the same outcomes on a macOS VM.
-In round `task075-02` claustrum gives the outcomes of `5fd08069` in each cell that
-ran, except at a link. Those are every cell on the Linux VM and the cells above on
-the macOS VM. On the Windows VM they are G1, G3, G7, G7b, G7c, G8 and G12.
-On Linux and macOS the age is read after the lock step, so a folder with no lock
-file gets one and stays. On Windows the age is read before, and such a folder of
-8 days goes (cell G7, Windows VM). On Windows the held lock keeps the folder of a
-live daemon from a remove by hand. So no later request sweeps again (cell G12 of
-round `task075-02`, both builds). A lock error other than a held lock keeps the
-entry (claustrum's own, not measured). A folder with no lock file that is less than 1
-minute old stays and gets none (claustrum's own, not measured). A planted link, or a junction on Windows, goes
-as a link, and claustrum makes no lock file in its target
-([D8](DIVERGENCES.md#d8)).
+The request that makes the folder of the daemon also sweeps `git-shadow`. An entry
+goes if its lock file can be taken and its name has the host form of this host. An
+entry with another name goes only when it is old: 8 days goes and 6 days stays. The
+bound of 7 days is not measured. A held lock keeps the folder of a live daemon. The
+sweep is measured on Linux and macOS, and in part on Windows.
 
-The folder of the daemon keeps 128 repository folders. A new repository removes
-the folder with the oldest use that no git call holds (EL2 cell 45, Linux VM). On
-`5fd08069` a held folder stays. With all 128 held, a request gets this text
-and nothing goes (E2L cells 37 and 36, Linux VM):
+- On Linux and macOS the age is read after the lock step, so a folder with no lock
+  file gets one and stays. On Windows the age is read before, and such a folder of 8
+  days goes.
+- On Windows the held lock keeps the folder of a live daemon from a remove by hand,
+  so no later request sweeps again.
+- A lock error other than a held lock keeps the entry. A folder with no lock file
+  that is less than 1 minute old stays and gets none. Both are claustrum's own, not
+  measured.
+- A planted link, or a junction on Windows, goes as a link, and claustrum makes no
+  lock file in its target ([D8](DIVERGENCES.md#d8)).
+
+The folder of the daemon keeps 128 repository folders. A new repository removes the
+folder with the oldest use that no git call holds. A held folder stays. With all 128
+held, a request gets this text and nothing goes:
 
 `Claude could not prepare its own files on the remote machine: git is running in 128 repositories at once; try again`
 
-On `5fd08069` a folder goes between git calls of a request, never during one.
-It comes back without a new config read (E3L cell 54, Linux VM).
-claustrum holds a call's folder until its pipe wait ends (not measured). A
-call remakes a gone or partial folder, except right after its listing. Only the call fails
-if its folder went, or its daemon shut down or replaced it. A failed remake
-answers its own text. On `5fd08069` (cell V8W2, round `task013-01`, Linux VM)
-a new repository gets the text above while a config listing waits for
-its pipes, and no folder goes. A listing puts `listing the configuration in force: ` before it
-(E3L cell 54 and EL2 cell 47, Linux VM, EW cell 46, Windows VM):
+A folder goes between the git calls of a request, never during one. The next call
+makes it again, with no new config read. A call right after its own config listing
+does not (claustrum's own, not measured). A call whose remake fails gets the `cannot
+write its copy` text above, or the 128 text when all 128 folders are held (from the
+code). A git call that runs in a repository folder holds that folder until its
+pipe wait ends (claustrum's own, not measured). So with all 128 held,
+a new repository gets the 128 text then, and nothing goes. If its folder went and is
+not made again, or its daemon shut down or replaced it, a call fails alone (from the code). It gets
+this text, and a listing puts `listing the configuration in
+force: ` before it (Linux and Windows):
 
 `Claude could not prepare its own files on the remote machine: its copy of this repository's settings was cleared away before git started; try again`
 
 ##### The copied settings file
 
-The `config` of the copy is the daemon's own text. Each carried setting is one
-block of two lines, `[<section>]` and `<key> = "<value>"`, in the order of the file
-of the repository. The last `core.bare` of `config.worktree` follows, then the
-`[url]` blocks of rewritten URLs. The file ends with
+The `config` of the copy is the daemon's own text. Each carried setting is one block
+of two lines, `[<section>]` and `<key> = "<value>"`, in the order of the file of the
+repository. The last `core.bare` of `config.worktree` follows, then the `[url]`
+blocks of rewritten URLs. The file ends with
 `[lfs]\n\trepositoryformatversion = 0\n`.
 
-- `gitshadowconfig.go` gives 41 keys one rule of accepted values each. Cells C1
-  to C5 of round `tier0-14` measured what they show (Linux VM). The rest is not
-  measured.
+- 41 keys are carried, each with one rule of accepted values (`gitshadowconfig.go`).
+  Only some of those rules are measured.
 - `remote.<name>.url`, `.lfsurl`, `.promisor` and `.partialclonefilter`,
   `lfs.<url>.access` and `branch.<name>.remote` are carried too. The length of a
   rewritten URL is not measured.
 - Every other key is dropped, such as `core.hooksPath` and `user.*`.
-- Outside the version and extension refusals, a value that its rule does not accept is left
-  out with no refusal. One example is
-  `core.filemode = maybe`. `89cb6289` answers "no repository" or the hooks refusal there (cell A3, round `s3p2`,
-  Linux, macOS and Windows VMs).
+- Outside the version and extension refusals, a value that its rule does not accept
+  is left out with no refusal. One example is `core.filemode = maybe`.
 - Where the copy carries a value that git refuses, `git.info` answers "no
-  repository" with the member. One example is `extensions.objectformat = sha256`
-  in a sha1 repository (cell A3, round `s3p2`, the three systems).
-- A setting of an `[include]` file is carried at the place of the include line.
-  Its format version, `extensions.*`, `core.bare` (cell C4, round `tier0-14`)
-  and `filter.*` (not measured) are dropped.
-  A setting of an `includeIf` file is not carried.
+  repository" with the member (Linux, macOS and Windows). One example is
+  `extensions.objectformat = sha256` in a sha1 repository.
+- A setting of an `[include]` file is carried at the place of the include line. Its
+  format version, `extensions.*`, `core.bare` and `filter.*` (not measured) are
+  dropped. A setting of an `includeIf` file is not carried.
 
 ##### The call about the repository
 
-In the state `shadow` the daemon asks git about the repository, before the
-config read and the calls of the method. The call is `rev-parse --git-dir` with two
-`-c` items, in the root of the work tree. It names a folder `.probe` of the daemon.
-It drops the daemon's `GIT_NAMESPACE`, `GIT_INDEX_FILE`, `GIT_DISCOVERY_ACROSS_FILESYSTEM`
-and `GIT_ALTERNATE_OBJECT_DIRECTORIES`, and keeps its `GIT_CONFIG_COUNT` pairs (round
-`tier3-02`, the three systems). So a pair that git reads to find the repository, such as
-`safe.directory`, changes these answers (from the code, not measured).
-The daemon writes an emptied
-`.probe/config` again (`5fd08069`, cell C10, round `tier0-5`, Linux VM). A good answer is kept 5 seconds from the end of the call.
-A change of the root folder or of its `.git` entry makes the daemon ask again.
+In the state `shadow` the daemon asks git about the repository before the calls of
+the method. The call is `-c core.hooksPath=<null device> -c core.fsmonitor=false
+rev-parse --git-dir`, in the root of the work tree. It names
+the folder `.probe` of the daemon, and the daemon writes an emptied `.probe/config`
+again when it changed. The call drops the daemon's `GIT_NAMESPACE`,
+`GIT_INDEX_FILE`, `GIT_DISCOVERY_ACROSS_FILESYSTEM` and
+`GIT_ALTERNATE_OBJECT_DIRECTORIES`, and keeps its `GIT_CONFIG_COUNT` pairs (Linux,
+macOS and Windows). So a pair that git reads to find the repository, such as
+`safe.directory`, changes these answers (from the code, not measured). A good answer
+is kept 5 seconds from the end of the call. A change of the root folder or of its
+`.git` entry makes the daemon ask again.
 
 | Answer of git | Reply |
 |---|---|
-| exit 128 with a text that starts with `fatal: not a git repository` in any letter case, or that holds `detected dubious ownership` or `cannot use bare repository` | The "no repository" answer of each method. No config is read, and no copy is made. `5fd08069` answers so in cells P5 to P7, P9 and P10 of round `task073-03` (Linux VM). git 2.56's text for a `.git` file to nowhere, `unsafe repository`, and the two phrases at other places of the text get the same answer (claustrum's own, not measured) |
-| exit 1, exit 128 with no text, a signal (`signal: terminated`, cell P13) or a git that cannot start (cell W2-280) | `git could not check this repository on the remote machine: at "<root>": exit status <n>` |
-| exit 1 or exit 2 with a text, or exit 128 with another text | the same text with git's text in place of `exit status 1`. Two lines stand there with one space between them (cell P3, round `val-s3p2b2-7`, and cell N-f, round `val-s3p2b2-8`, Linux VM). `warning: w` before `fatal: not a git repository` gets this reply (cell P8, round `task073-03`). `5fd08069` answers so on all five methods (cells Q5 to Q7, round `task073-05`). So does `fatal: error reading '<repo>/.git'` (cell W2-268, round `task073-01`, Windows VM) |
-| either of the two rows above | One `git version` call follows. If it fails, the reply is `git cannot run on this host; git not run: <exec error>: <git text>` in the frame of each method. A remove makes two such calls and deletes nothing. `5fd08069` answers so after `fatal: bad config line 3 in file <home>/.gitconfig` on `git.info` (cell E8, round `task083-01`, Linux VM). It answers so on the other four methods (cell E8m, round `task083-02`) and after an exit 1 (cell P14x, round `task073-03`). On `git.status`, `git.list_branches` and `git.worktree_remove` it answers so after an exit 128 with no text and after a SIGTERM (cells Q8 and Q9, round `task073-05`). Those two on `git.info` and `git.worktree_create`, a git that cannot start, and a remove with `worktreeRoot` are not measured |
-| another path than the git directory, in two calls | `git and Claude disagree about which repository holds this folder: from "<root>" git finds "<path>", Claude finds "<git directory>"; try again`. `<path>` is the path as git printed it: with forward slashes on Windows (table P2 of round `val-s3p2b2-7`, Windows VM) |
-| no answer in 30 seconds | `git could not check this repository on the remote machine: it did not finish within 30 seconds in "<root>"; try again` |
+| exit 128 with a text that starts with `fatal: not a git repository` in any letter case, or that holds `detected dubious ownership` or `cannot use bare repository` | The "no repository" answer of each method. No config is read, and no copy is made. git 2.56's text for a `.git` file to nowhere, `unsafe repository`, and the two phrases at other places of the text get the same answer (claustrum's own, not measured) |
+| exit 1, exit 128 with no text, a signal (`signal: terminated`) or a git that cannot start (Windows) | `git could not check this repository on the remote machine: at "<root>": exit status <n>` |
+| exit 1 or exit 2 with a text, or exit 128 with another text | The same text with git's text in place of `exit status 1`. Two lines stand there with one space between them. `warning: w` before `fatal: not a git repository` gets this reply. This row holds on all five methods. So does `fatal: error reading '<repo>/.git'` (Windows) |
+| either of the two rows above | One `git version` call follows. If it fails, the reply is `git cannot run on this host; git not run: <exec error>: <git text>` in the frame of each method. A remove makes two such calls and deletes nothing. A git that cannot start is not measured here. After an exit 128 with no text or a signal, `git.info` and `git.worktree_create` are not measured. Neither is a remove with `worktreeRoot` |
+| another path than the git directory, in two calls | `git and Claude disagree about which repository holds this folder: from "<root>" git finds "<path>", Claude finds "<git directory>"; try again`. `<path>` is the path as git printed it: with forward slashes on Windows |
+| no answer in 30 seconds | `git could not check this repository on the remote machine: it did not finish within 30 seconds in "<root>"; try again` (Linux, macOS and Windows) |
 
-The three texts have the shapes of the start test. A wrapper answers the call in
-cells 37 to 39 of round `s3p2b-edges` (Linux VM). Cell 40 has the 30 seconds on
-macOS and Windows VMs. A bad answer is not kept, and a
-remove asks twice. For a repository of another owner
-with no `safe.directory`, `git.worktree_remove` answers the lock-check refusal that
-ends `(its registrations could not be examined); retry`.
-With a child that holds the pipes, an exit 0 counts by its output so far (`git.status`,
-cells P1 to P3 of round `task100-01`, Linux VM). The other four methods and macOS and
-Windows are not measured.
+The three texts have the shapes of the start test. A bad answer is not kept, and a
+remove asks twice. For a repository of another owner with no `safe.directory`,
+`git.worktree_remove` answers the lock-check refusal that ends `(its registrations
+could not be examined); retry`. With a child that holds the pipes, an exit 0 counts
+by its output so far (measured on `git.status` only).
 
-One `git version` call also follows a config read that failed with a syntax error (cells 39 and
-`x9-syntax-own` of round `val-s3p2b2-5`, Linux VM).
+One `git version` call also follows a config read that failed with a syntax error.
 
 ##### The git calls
 
 In the state `shadow` each hardened call carries `GIT_COMMON_DIR=<copy>` and
 `GIT_OBJECT_DIRECTORY=<git directory>/objects`. A call with no `--git-dir=` in its
 arguments also carries `GIT_DIR` and `GIT_WORK_TREE`. The four come right after the
-profile values, in that order (cell B3a, round `s3p2`, Linux, macOS and Windows
-VMs. The order is from Linux and macOS VMs). [Hardened git calls](#hardened-git-calls)
-has the other points of a call.
+profile values, in that order (Linux, macOS and Windows, the order from Linux and
+macOS). [Hardened git calls](#hardened-git-calls) has the other points of a call.
 
 ##### `config.worktree`
 
 The copy has no `extensions.worktreeConfig` setting, so git reads no
 `config.worktree` file in the state `shadow`. The daemon does two things in its
-place, in a repository with that extension and a `config.worktree` file.
-`worktreeConfig` values `2` and `10` turn that extension on (cells C3c and K1 of rounds
-`tier0-14` and `tier0-16`, Linux VM).
+place, in a repository with that extension and a `config.worktree` file. The
+`worktreeConfig` values `2` and `10` turn that extension on.
 
 - Each key of the copied settings file but the format version, `extensions.*` and
-  `core.bare` goes before the option list of the git calls as one `-c` item, with
-  the value of the copy, sorted by key. Cells C3a of `tier0-14` and W1 of
-  `tier0-16` show six keys (Linux VM). Other keys and a repeated key are not
-  measured. A call on a linked worktree gets the items of its own file.
+  `core.bare` goes before the option list of the git calls as one `-c` item, with the
+  value of the copy, sorted by key. Six keys are measured. Other keys and a repeated
+  key are not measured. A call on a linked worktree gets the items of its own file.
 - A new worktree of `git.worktree_create` gets its own `config.worktree` file. See
   [git.worktree_create](protocol/git-worktree-create.md).
 
 ##### Where claustrum differs from `5fd08069`
 
-In the differences that stay the reply lines are equal, except in two Windows
-rows of a create whose `.git` becomes a file.
+In the differences that stay the reply lines are equal, except in two Windows rows of
+a create whose `.git` becomes a file.
+
+- After the start test on a `.git` file that names a missing path, `5fd08069` runs a
+  `rev-parse` against `.probe`. claustrum runs a config listing there and makes no
+  `.probe`, with equal frames (macOS and Windows).
 
 #### Hardened git calls
 
@@ -2933,157 +2779,7 @@ no such limit.
 #### git.info
 `{path[,shadowDirOff]}` → repo: `{"isRepo":true,"repo":"<dir>","branch":"<b>","root":"<abs>","repoSlug":"<owner/repo>","defaultBranch":"<b>"[,"settingsControl":"<state>"]}` · non-repo: `{"isRepo":false,"repoSlug":"","defaultBranch":""[,"settingsControl":"<state>"]}`
 
-- `settingsControl` is the last member, since `5fd08069`. Its values are
-  `"shadow"`, `"fallback-git"` and `"off-switch"`. Before a start test of the
-  daemon gave a state, there is no such member. See [The settings copy](#the-settings-copy).
-
-- `repo` is the base name of `root`. A name that starts with `-` or `+` leaves the
-  member out, and the other members keep their order: `{"isRepo":true,"branch":"main","root":"<F>/-repo","repoSlug":"i/r","defaultBranch":"main"}`.
-  `f6010b97` and `89cb6289` do so on Linux and macOS VMs (rows I11a and I11b). The
-  general rule behind those two rows is not measured.
-
-- A refused daemon `GIT_CONFIG_COUNT` changes the answers of this method (see "The
-  daemon's own git environment").
-- Since `f6010b97` the git-directory trust check runs on `path`. A refused
-  git directory answers `-32603` with the refusal text. "No repository" answers the
-  non-repo body. A `GIT_COMMON_DIR` in the daemon's environment turns the check off
-  for this method. See [Git-directory trust check](#git-directory-trust-check).
-- A repository config that the daemon does not accept answers `-32603` with a
-  refusal text. See [Repository config refusals](#repository-config-refusals).
-- A failed start test, a bad answer of the call about the repository, and a copy
-  folder that cannot be made answer `-32603` with their text. See
-  [The settings copy](#the-settings-copy).
-- The daemon reads `branch` with `branch --show-current`, so it works on an unborn
-  HEAD. An empty repo gives the init branch name, for example `master`. A detached
-  HEAD gives `branch:"detached:<short-sha>"`.
-- When `branch --show-current` fails, the result has no `branch` member at all.
-  git's error text never appears there. An example is a HEAD that git fails to
-  resolve (`ref: refs/heads/main` or 40 hex digits, each followed by junk). Measured
-  side by side against `90fca6e6` and `f6010b97` on a Linux VM. If the `rev-parse
-  --short HEAD` call of a detached HEAD fails, the result has no `branch` member
-  either. `5fd08069` answers so in cell V6-13d of round `val-s3p2b2-3` (Windows
-  VM).
-- `root` is the absolute repo top-level. A subdirectory as `path` gives the same
-  `root` (added by reference `7cbfa471`). Since `89cb6289` it is the folder where
-  the walk of the trust check found the repository, the one that holds the `.git`
-  directory or file. Its spelling is `path` after symlink resolution and the walk
-  up. A component that is not a symlink keeps its letter case and Unicode form as
-  sent (rows I07a, I07b and I08 on a macOS VM). A symlink resolves before a
-  later `..` pops it (row D01). `core.worktree`, and the daemon's `GIT_DIR` and
-  `GIT_WORK_TREE`, do not move it. A walk that finds a git directory with no work
-  tree, or nothing, answers the non-repo body after `rev-parse --git-dir` (rows I04,
-  I05 and T11a). On Linux and macOS no `rev-parse --show-toplevel` runs. On the first
-  request, a repository with no `origin/HEAD` takes 9 calls. They are the excludes
-  read, then a listing before each of `rev-parse --git-dir`, `remote get-url
-  origin`, `symbolic-ref` and `branch --show-current` (row L01). Row L01 is of
-  `89cb6289`. Without the member, the first `git.info` of a daemon of `5fd08069`
-  has 21 calls there (cell 50a of round `s3p2b-edges`, Linux VM). The 12 more are
-  the ten test calls, the call about the repository and one config read.
-- On Windows git checks the root. After `rev-parse --git-dir` the daemon runs `git
-  --git-dir=<pin> config -z --list` and `git -c … --git-dir=<pin> --work-tree=<walk
-  root> rev-parse --show-toplevel`, both in `<pin>`, the `GIT_COMMON_DIR` pin (row
-  W01). In the state `shadow` `<pin>` is the git directory, and `GIT_COMMON_DIR`
-  names the copy (row D5 of round `val-s3p2b2-3`, Windows VM, `5fd08069`). When git's answer names the same directory as the walk root, the root is
-  git's answer as printed. Else it is the walk root with forward slashes (rows W14 to
-  W16). A directory symlink resolves in the walk and a junction does not (row D03).
-  Some points are not measured. claustrum tests the same directory by file identity
-  (`os.SameFile`). That is derived from rows W08 and W09. claustrum takes no
-  relative answer. The spelling of the walk root is not measured. With no pin,
-  claustrum runs the pair on the git directory of the walk. One state with no pin
-  is measured. With a daemon `GIT_COMMON_DIR`, the pair and the root are equal on
-  `89cb6289` and the claustrum build of this change in every call (Windows VM, cell B-13).
-  The other states with no pin are not measured.
-- On Windows a path through a junction can name two repositories. The fixture is
-  that of the trust check: a junction `<P>\J` to `<R>\inner`, P on branch `main`
-  with the origin `p/p`, and R on branch `rmain` with the origin `r/r`. For the
-  path `<P>\J\sub` with no daemon `GIT_DIR` or `GIT_COMMON_DIR`, each call after
-  the excludes read carries `GIT_COMMON_DIR=<P>\.git`, the entry of P (cells
-  B-01, B-02, B-07 to B-09 and B-16). The other rows of the table have other
-  entries. The calls of the method run in `<P>\J\sub`, and `rev-parse --git-dir`
-  prints `<R>/.git` there. `89cb6289` answers these fields on a Windows VM:
-
-    | Cell | State | `root`, `repo` | `branch` | `repoSlug` | `defaultBranch` |
-    |---|---|---|---|---|---|
-    | B-01, B-02 | `path` is `<P>\J\sub` | P | `rmain` | `p/p` | `""` |
-    | B-04 | `path` is `<P>\J` | P | `rmain` | `p/p` | `""` |
-    | B-07 | P has no origin | P | `rmain` | `""` | `""` |
-    | B-08 | R has no origin | P | `rmain` | `p/p` | `""` |
-    | B-09 | R is on a detached HEAD | P | `detached:<short sha of R>` | `p/p` | `""` |
-    | B-16 | the config of R sets `core.hooksPath` and `core.fsmonitor` | P | `rmain` | `p/p` | `""` |
-    | B-17k | `path` is `<KP>\J\sub`, `<KP>` a junction to P | P | `rmain` | `p/p` | `""` |
-    | B-17d | `path` is `<P>\J\..\J\sub` | P | `rmain` | `p/p` | `""` |
-    | B-05p | `path` is P, no junction | P | `main` | `p/p` | `main` |
-    | B-05r | `path` is `<R>\inner\sub`, no junction | R | `rmain` | `r/r` | `rmain` |
-    | B-06 | a folder symlink in the place of the junction | R | `rmain` | `r/r` | `rmain` |
-    | B-13 | daemon `GIT_COMMON_DIR` of R | P | `rmain` | `r/r` | `rmain` |
-    | B-14 | daemon `GIT_DIR` of R | P | `rmain` | `r/r` | `rmain` |
-
-  In the mixed cells the listing prints `remote.origin.url` of P, `symbolic-ref
-  refs/remotes/origin/HEAD` prints `refs/remotes/origin/rmain`, and the `rev-parse
-  --verify` of that ref exits 1 (cell B-01). In cell B-15 the config file of P has
-  a broken line. The listing in `<P>\J\sub` exits 128, and `89cb6289` answers
-  `-32603` with the listing refusal that ends
-  `fatal: bad config line 15 in file <P>\.git/config`, after 3 git calls. In cell B-03 the junction is outside any
-  repository, and the answer is the non-repo body. The claustrum build of this change
-  answers the same frame in each of these cells (Windows VM). For cell B-15 now,
-  see "Git-directory trust check". Its calls carry the
-  same entries in these cells, except B-14. In cell B-03 it runs one call less
-  (see the trust check). The claustrum test on real junctions runs on Windows
-  only. It has 11 cells: B-01, B-03, B-04, B-05p, B-05r, B-07, B-08, B-15, B-16,
-  B-17k and B-17d. A test with simulated links runs on Linux and macOS. In cell
-  B-14 calls 4 and 5 differ. They are the root pair. `89cb6289` runs them with
-  `--git-dir=<P>\.git`, in the folder `<P>\.git`, with `GIT_COMMON_DIR=<P>\.git`.
-  The claustrum build of this change runs them with `--git-dir=<R>\.git`, in the folder
-  `<R>\.git`, with `GIT_COMMON_DIR=<R>\.git`. The frames are equal. Cell J-f-info
-  repeats cell B-14 with the same result. Not measured: a junction to another
-  drive, and a junction to a bare repository. Three more states have no cell of
-  `89cb6289`. The answers of claustrum there are from the code:
-    - The `path` goes through the junction, and `<P>\.git\commondir` is a stray
-      file. claustrum judges `<P>\.git` by the stray-commondir rules, and a refusal
-      names P. The build before the spelled start ran no trust check there.
-    - A junction outside any repository leads into a repository whose config file
-      has a broken line. claustrum answers the non-repo body. The build before the
-      spelled start answered the listing refusal for the config file of that
-      repository.
-    - The `path` is `<P>\missing\..`, and `<P>\.git\commondir` is a stray file.
-      The answer is that of the first state.
-- The excludes read runs before the trust check, so it also runs before a trust
-  refusal, as on both references.
-- `7c2f88d` added `repoSlug` and `defaultBranch`. Both are always present,
-  including on the non-repo body. Each is an empty string when the daemon cannot
-  determine it.
-- `repoSlug` is `owner/repo` from `remote.origin.url`. The daemon populates it only
-  for a canonical `github.com` remote. These rules are measured across 42 URL
-  shapes:
-    - The scheme must be `https`, `http`, `ssh`, `git`, or absent. An absent scheme
-      is the scp-like `[user@]host:owner/repo`. `git+ssh://` and `file://` give
-      `""`.
-    - The host must equal `github.com` case-insensitively. `www.github.com`, the
-      trailing-dot `github.com.`, a port (`github.com:443`), GitLab, Bitbucket and
-      self-hosted GHE all give `""`. The daemon strips userinfo.
-    - The path must be exactly two non-empty segments after one optional trailing
-      `/` and one optional `.git`.
-    - The owner is alphanumerics with *interior* hyphens only. `ac-me` and `ac--me`
-      pass. `-acme`, `acme-`, `acme_corp` and `acme.co` do not.
-    - The repo is alphanumerics plus `.`, `_`, `-`. It must not start with `-`, it
-      must not be `.` or `..`, and it must not end in a lowercase `.wiki`. That
-      last test is case-sensitive and suffix-only, so `GIZMO.WIKI` and a repo named
-      `wiki` are accepted.
-- `defaultBranch` is what `refs/remotes/origin/HEAD` points to. It is empty when
-  `refs/remotes/origin/HEAD` is unset. The daemon checks the name. A name that
-  starts with `-` gives `""` with no further call. Else a `rev-parse --verify --quiet
-  refs/remotes/origin/<name>^{commit}` runs, with its listing, and only exit 0 keeps
-  the name. A dangling `origin/HEAD` and one that names a blob give `""` too.
-  `f6010b97` and `89cb6289` do so on Linux and macOS VMs (rows I10a to I10c). The
-  call has the heavy profile, as on `5fd08069` (cell B3d of round `s3p2-linux`,
-  Linux VM, with no `"shadowDirOff"` member). With the member, cell A2 of round
-  `val-s3p2b1` shows the same on Linux, macOS and Windows VMs. In a partial clone
-  no build starts a fetch for `git.info`. The object store, the refs and
-  `packed-refs` are unchanged after 4 requests, and `defaultBranch` is equal. That
-  is cell B3 of round `val-s3p2b1` on a Linux VM, for `89cb6289`, `5fd08069` and
-  claustrum, with and without the member. Not
-  measured: other invalid names, and a `symbolic-ref` answer outside
-  `refs/remotes/origin/` (claustrum verifies it the same way).
+Describes the git repository that holds `path`: its root, branch, GitHub slug, default branch and the state of the settings copy. The page [git.info](protocol/git-info.md) has the request, the response and the errors.
 
 #### git.status
 `{path,baseRepo}` → clean: `{"isRepo":true,"clean":true}` · dirty: `{…,"clean":false,"changes":["M  a.txt"," M b.txt","?? new"]}`
@@ -3399,7 +3095,7 @@ never "a huge limit".
 | `-cli-probe-timeout <dur>` | `cli-probe-timeout` | none | deprecated. It sets nothing and logs one warning. The direct `<cli> --version` run always has its 30 s and 120 s bounds (retired D11) | -install |
 | `-cli-download-timeout <dur>` | `cli-download-timeout` | `0` | download deadline (D12) | -install |
 | `-libc-probe-timeout <dur>` | `libc-probe-timeout` | none | deprecated. It sets nothing and logs one warning. The `ldd` probe always has its 5 s bound (retired D14) | -install |
-| `-cli-keep <n>` | none | `3` | version files of the cli-dir to retain on prune, the new CLI among them. The new CLI always stays. `0` and a negative value remove every older version file | -install |
+| `-cli-keep <n>` | none | `3` | version files of the cli-dir to retain on prune, the new CLI among them. The new CLI always stays. `0` and a negative value remove every version file but the new CLI | -install |
 | none (config only) | `version-override` | none | `-version` stdout rebrand (CT-3) | -version |
 
 Config-value parsing: bool keys accept `true/1/yes/on` and `false/0/no/off`. The
@@ -3733,14 +3429,38 @@ claustrum -install -cli-version <v> [-cli-dir <d>] \
           [-max-cli-bytes <n>] [-cli-download-timeout <dur>]
 ```
 
-`-install` downloads, verifies, extracts and prunes, and then prints one
-`__INSTALL_RESULT__<json>` facts line (schema in
-[ARCHITECTURE.md](ARCHITECTURE.md)). `-install` exits `0` whenever it prints
-the facts line. It reports a failure inside the facts as `cliError`, not through
-the exit code. Three cases print no facts line. A flag that does not parse exits
-`2`. `-cli-version` with no `-cli-dir` and no home folder exits `2`. Any other
-run with no home folder exits `1` (see the default CLI folder below). `-install`
-reaches the network only with `-cli-url`.
+`-install` makes sure that one CLI version is in the cli-dir. On a cache miss it
+downloads or reads the CLI, extracts and verifies it, puts it in place and runs
+`<cli> --version` once. Then it prunes old versions and prints one
+`__INSTALL_RESULT__<json>` facts line (schema in [ARCHITECTURE.md](ARCHITECTURE.md)).
+A rule that is not marked claustrum's own is measured against `89cb6289`. The
+prune, the sweeps, the blob, the rename text and the retry and the Linux cache-hit
+file test are measured against `5fd08069`. The checksum order, the raw `-cli-dir`
+text step and the `is a directory` text are measured on `5fd08069`, and `89cb6289`
+is not measured there. A rule from another build names it. Both builds ran on Linux, macOS and Windows VMs, and a rule
+that names one system was measured there only.
+
+| Flag | Default | Meaning |
+|---|---|---|
+| `-cli-version <v>` | none | The version to ensure. It names the CLI file. Without it the `cliPath` is empty, no CLI runs and no folder is made |
+| `-cli-dir <d>` | `<home>/.claude/remote/ccd-cli` | The folder of the version files. An empty value takes the default too |
+| `-cli-url <u>` | none | Download the zstd archive of the CLI from this URL |
+| `-cli-checksum <sha256>` | none | The SHA-256 of the archive |
+| `-cli-zst <p>` | none | Read the zstd archive from this file, the blob |
+
+`-cli-keep`, `-max-cli-bytes`, `-cli-download-timeout` and the deprecated
+`-cli-probe-timeout` and `-libc-probe-timeout` are in
+[Flags and config keys](#flags-and-config-keys). `-install` reaches the network only
+with `-cli-url`.
+
+`-install` exits `0` whenever it prints the facts line. It reports a failure inside
+the facts as `cliError`, not through the exit code. Three cases print no facts
+line. A flag that does not parse exits `2`. `-cli-version` with no `-cli-dir` and
+no home folder exits `2`. Any other run with no home folder exits `1`. With no `HOME`
+the reference prints `claude-ssh: cannot resolve home directory: $HOME is not defined`
+on stderr (Linux). claustrum prints the same line with its own prefix,
+`claustrum: `. On Windows its line names `%userprofile%`. The exit `1` cases, macOS and a missing `USERPROFILE` are not
+measured.
 
 The `cliError` catalogue follows:
 
@@ -3749,494 +3469,338 @@ The `cliError` catalogue follows:
 | `installed cli at <path> is not runnable` | the `--version` run of a new CLI did not start or exited non-zero. `<path>` is the final path |
 | `cli <v> missing and no --cli-url or --cli-zst provided` | cache miss with no source flag |
 | `cli unresponsive: the installed Claude Code binary started but did not answer --version within 30s (120s for a first run) and was stopped; the host is not letting it run (endpoint security software or a stalled network home are the usual causes)` | a direct `--version` run stopped at 30 s (120 s after an install in the same run). Always-on, parity (see below) |
-| `checksum mismatch: expected=<x>, actual=<y>` | `-cli-checksum` verify failed. This applies to `-cli-url` always, and to `-cli-zst` only when a checksum is supplied. The compare is case-sensitive |
+| `checksum mismatch: expected=<x>, actual=<y>` | `-cli-checksum` verify failed. It applies to every `-cli-url` run. With a supplied checksum it applies to `-cli-zst` too. The compare is case-sensitive |
 | `opening input: <err>` | `-cli-zst` open error |
-| `decompressing: <err>` | bad zstd blob or body, for example `invalid input: magic number mismatch`. A `-cli-zst` folder gives `read <p>: is a directory` (`5fd08069`, cell L13, Linux VM) |
+| `decompressing: <err>` | bad zstd blob or body, for example `invalid input: magic number mismatch`. A `-cli-zst` folder gives `read <p>: is a directory` (Linux) |
 | `decompressing: decompressed CLI exceeds <n> bytes` | D10 cap, opt-in |
+| `staging cli: <err>` | no staging file can be made in the cli-dir (claustrum's own, not measured) |
+| `download failed with status <n>` | the server answered a status other than 200 (`5db5e4a`) |
 | `download failed: response exceeds <n> bytes` | D10 cap on the download body, opt-in |
 | `download failed: <transport err>` | a transport error before the body, for example a refused connection |
 | `download failed: Get "<url>": net/http: timeout awaiting response headers` | no response headers for 60 s (always-on, parity, see below) |
 | `download interrupted after <got>/<total> bytes: <transport err>` | a body read that ended with a transport error, for example `read tcp …: read: connection reset by peer` (parity, see below) |
 | `download failed: context deadline exceeded (Client.Timeout or context cancellation while reading body)` | D12 download deadline, opt-in |
-| `download stalled: no data for 60s after <got>/<total> bytes` | read-idle abort, meaning no bytes for 60 s on the `-cli-url` body (always-on, `4534d86` parity, VM-measured) |
+| `download stalled: no data for 60s after <got>/<total> bytes` | read-idle abort, meaning no bytes for 60 s on the `-cli-url` body (always-on, parity, `4534d86`) |
 | `mkdir cli dir: <err>` | cli-dir uncreatable. `cliPath` is then empty. A file or a FIFO at the cli-dir path is replaced first (see Staging and cleanup) |
 | `cli version "…" must be a single path component` | D6 hardening |
 | `cli path must not be or contain the home directory: "<path>"` | a folder at the final path that is the home folder or one of its parent folders (D2 hardening) |
 | `clearing stale dir at <path>: <err>` | an occupied `cliPath` directory that claustrum cannot remove |
-| `rename: <err>` | the rename of the new CLI failed, for example `rename: rename <tmp> <cli>: Access is denied.` on Windows (`5fd08069`, cells W1 and W6). The prefix on Linux and macOS is claustrum's own |
+| `rename: <err>` | the rename of the new CLI failed, for example `rename: rename <tmp> <cli>: Access is denied.` on Windows. The prefix on Linux and macOS is claustrum's own |
 | `rename: staging file vanished before install: <err>` | a concurrent sweep took the staging file |
 | `cli unresponsive: the installed Claude Code binary was started through the host's managed launcher <argv0> and the run did not answer --version within 33s (123s for a first run), so it was stopped; the launcher or the host is not letting it finish` | a managed launcher run stopped at 33 s (123 s after a fresh install), with `CLAUDE_SSH_MANAGED_LAUNCHER=1` (see below) |
 
 The managed launcher (`89cb6289` parity):
 - `-install` uses the [managed launcher](#launcher-added-89cb6289) only when
-  `CLAUDE_SSH_MANAGED_LAUNCHER` is exactly `1`. The values `true` and `1 ` (a
-  trailing space) and an unset variable add no field and run no launcher, even with
-  a usable launcher. claustrum treats every value other than `1` as off. That is
-  claustrum's choice (not measured for other values).
+  `CLAUDE_SSH_MANAGED_LAUNCHER` is exactly `1`. Every other value, and an unset
+  variable, adds no field and runs no launcher. Values other than `true` and `1 `
+  (a trailing space) are not measured.
 - With the gate and a CLI path, `-install` resolves the launcher for that path, as
-  [launcher.resolve](protocol/launcher-resolve.md) does. The facts line then gains launcher fields after
-  `cliWasPresent`, `cliError` and `cliUnresponsive`, in this order:
-  `launcherStatus`, `launcher`, `launcherSource`, `launcherPath`,
-  `launcherReason`, `launcherStderr`. A field that does not apply is omitted.
-  With `-cli-url`, `fetch` comes after `cliUnresponsive` and before
-  `launcherStatus`. That is measured on a Linux VM for the statuses `usable`,
-  `none`, `unusable`, `probe_failed` and `unresponsive`.
-- Without `-cli-version` the `cliPath` is empty and the facts line gains no
-  launcher field. A `cliPath` that is empty because the cli-dir cannot be made
-  gains no launcher field either (measured on a Linux VM with the gate, against
-  `f6010b97` and `89cb6289`). Without
-  `-cli-version`, with or without `-cli-dir`, the line ends
-  `"cliPath":"","cliWasPresent":false}` and no launcher runs. That is measured on
-  a Linux VM with the gate, for a usable launcher, an unusable one and none.
-- With `-cli-version` and no `-cli-dir`, the CLI path is in the default CLI
-  folder (see below), with the gate and without it. The launcher gets that path
-  (measured on macOS).
-- `none`: the CLI runs directly, as without the gate, under the direct bounds
-  below. That run keeps the gate in its env. The facts end
-  `"cliWasPresent":true,"launcherStatus":"none"}`. A stopped direct run ends
-  `"cliUnresponsive":true,"launcherStatus":"none"}` (measured on Linux, macOS and
-  Windows).
+  [launcher.resolve](protocol/launcher-resolve.md) does. The facts line then gains
+  launcher fields after `cliWasPresent`, `cliError` and `cliUnresponsive`, in this
+  order: `launcherStatus`, `launcher`, `launcherSource`, `launcherPath`,
+  `launcherReason`, `launcherStderr`. A field that does not apply is omitted. With
+  `-cli-url`, `fetch` comes after `cliUnresponsive` and before `launcherStatus`
+  (Linux).
+- An empty `cliPath` gains no launcher field. That holds without `-cli-version`,
+  where the line ends `"cliPath":"","cliWasPresent":false}`, and for a cli-dir that
+  cannot be made (Linux).
+- With `-cli-version` and no `-cli-dir`, the CLI path is in the default CLI folder,
+  and the launcher gets that path (macOS).
+- `none`: the CLI runs directly under the direct bounds below, with the gate in its
+  env. The facts end `"cliWasPresent":true,"launcherStatus":"none"}`. A stopped
+  direct run ends `"cliUnresponsive":true,"launcherStatus":"none"}`. On Windows the
+  resolve always answers none, so `-install` appends `"launcherStatus":"none"` last
+  and runs the CLI directly.
 - `usable`: the CLI runs once, as `<launcher argv...> <cli> --version`. No direct
-  run happens. The launcher's stdout is not reported, and its stderr does not
-  reach `-install` stderr. The facts add `launcher` and `launcherSource`.
+  run happens. The launcher's stdout is not reported, and its stderr does not reach
+  `-install` stderr. The facts add `launcher` and `launcherSource`.
 - `unusable` or `unreadable`: the CLI does not run at all. `cliWasPresent` stays
   true, and there is no `cliError`. The facts add `launcherSource` or
   `launcherPath`, and `launcherReason`.
-- A launcher run that exits non-zero, or ends on a signal, is `probe_failed`.
+- `probe_failed`: the launcher run exited non-zero or ended on a signal.
   `launcherReason` is `exit status <n>` or `terminated by SIGTERM`. The CLI file
-  stays, `cliWasPresent` stays true, and there is no `cliError`.
-  `launcherStderr` holds the launcher's stderr and is omitted when it is empty.
-- `launcherStderr` keeps 8192 bytes. More stderr adds `\n[… <n> more
-  bytes]`, with the JSON escape `\n` on the line and `…` as raw `e2 80 a6`.
-  `<n>` is the count of dropped bytes. Measured with 10000 bytes: 8192 kept and
-  1808 named. claustrum's choices (not measured): it keeps the first bytes, and it
-  adds the `\n` even when the kept part ends in a newline.
-- On a cache hit, a launcher run that has not ended at 33 s is stopped. The facts
-  then read `"cliWasPresent":false`, the `cli unresponsive: …` `cliError` above,
+  stays, `cliWasPresent` stays true, and there is no `cliError`. `launcherStderr`
+  holds the launcher's stderr. If that is empty, the field is omitted.
+- `launcherStderr` keeps 8192 bytes. More stderr adds `\n[… <n> more bytes]`, with
+  the JSON escape `\n` on the line and `…` as raw `e2 80 a6`. `<n>` is the count of
+  dropped bytes. claustrum's own (not measured): it keeps the first bytes, and it
+  adds the `\n` also after a kept part that ends in a newline.
+- On a cache hit a launcher run that has not ended at 33 s is stopped. The facts
+  then read `"cliWasPresent":false`, the launcher `cli unresponsive: …` text above,
   `"cliUnresponsive":true`, `"launcherStatus":"unresponsive"` and
-  `"launcherReason":"did not exit within 33s and was stopped"`. The CLI file
-  stays. The reference stopped a 60 s launcher at 33.057 s and left no process.
-  This bound is parity. With a usable launcher the direct bounds below do not
-  apply. A CLI that answers at 31 s through a launcher is present (measured on
-  Linux and macOS).
-- The run right after a fresh install has a bound of 123 s. The reference stopped
-  a 300 s launcher at 123.048 s after a `-cli-url` install and at 123.066 s after
-  a `-cli-zst` install (Linux VM). It let a 100 s launcher finish as `usable`
-  after a `-cli-url` install.
-  The stopped facts are the ones above, with
-  `"launcherReason":"did not exit within 123s and was stopped"`. The `cliError`
-  text is the same. The CLI is installed all the same, and the blob is consumed.
-- No install follows a stopped launcher run on a cache hit, and nothing is
-  pruned. The sweep runs: a swept file more than 10 minutes old is removed
-  (measured on Linux and macOS).
-- claustrum's choices (not measured): the stop kills the run's whole process
-  group, then waits up to 2 s for its output. The texts name the launcher's
-  argv[0] only. No install follows a stopped launcher run on a cache hit when a
-  source flag is given either.
-- A fresh install puts the CLI at its final path, then runs it once through a
-  usable launcher. The facts read `"cliWasPresent":false` with the usable fields.
-  The launcher gets the final path (measured on Linux and macOS).
-- Right after a fresh `-cli-url` install, a failed run still installs the CLI.
-  An unusable launcher installs the CLI without a run. Both are measured on a
-  Linux VM. claustrum does the same for an unreadable answer and for `-cli-zst`.
-  That is claustrum's choice (not measured).
-- After a stopped first run no prune follows (measured on Linux and macOS).
-- On a cache hit on Linux the CLI file must be a regular file with an exec bit.
-  It must start with `#!` or an ELF header of this machine. Another file does
-  not run, and the install runs over it. `5fd08069` does that for a text file and
-  an arm64 ELF on amd64, then answers `"launcherStatus":"usable"` (cells L14a
-  and L14b, Linux VM). The test beyond those two files is claustrum's own.
+  `"launcherReason":"did not exit within 33s and was stopped"`. The CLI file stays,
+  no install follows (with a source flag, claustrum's own), nothing is pruned and the sweep runs (Linux and macOS). With
+  a usable launcher the direct bounds do not apply (Linux and macOS).
+- The run right after a fresh install has a bound of 123 s (Linux). A stopped run
+  gives the same facts with
+  `"launcherReason":"did not exit within 123s and was stopped"`. The CLI stays
+  installed, the blob is consumed and nothing is pruned.
+- A fresh install puts the CLI at its final path and then runs it once through a
+  usable launcher, which gets the final path. The facts read
+  `"cliWasPresent":false` with the usable fields (Linux and macOS). A failed run
+  and an unusable launcher still leave the CLI installed (Linux, `-cli-url`).
+  claustrum does the same for an unreadable answer and for `-cli-zst` (claustrum's
+  own).
+- On a cache hit on Linux the CLI file must be a regular file with an exec bit
+  that starts with `#!` or an ELF header of this machine. Another file does not
+  run, and the install runs over it. The reference does that for a text file and
+  for an ELF of another machine. The test beyond those two files is claustrum's
+  own.
 - The launcher run gets the daemon env without `CLAUDE_SSH_MANAGED_LAUNCHER`
-  (measured on Linux and macOS). claustrum also drops `CLAUDE_CODE_PROCESS_WRAPPER`
-  and `CLAUDE_SSH_E2E_MANAGED_SETTINGS_DIR` there, as for a spawn with a launcher.
-  That is claustrum's choice (not measured).
+  (Linux and macOS). claustrum also drops `CLAUDE_CODE_PROCESS_WRAPPER` and
+  `CLAUDE_SSH_E2E_MANAGED_SETTINGS_DIR` there, as for a spawn with a launcher
+  (claustrum's own).
+- claustrum's own (not measured): the stop kills the run's whole process group and
+  then waits up to 2 s for its output. The texts name the launcher's argv[0] only.
 - `-install` still exits `0` with an empty stderr, and it writes no
   `[LauncherHandler]` line.
-- On Windows the resolve answers none. With the gate and a CLI path `-install` appends
-  `"launcherStatus":"none"` last and runs the CLI directly (measured on a Windows
-  VM).
 
-The direct `--version` run and its bounds are parity. They are measured on
-`f6010b97` and `89cb6289`. A direct run is a run with no usable launcher: the gate
-is unset, or the launcher status is `none`.
-- On a cache hit, a run that has not ended after 30 s is stopped. The facts
-  then read `"cliWasPresent":false`, the `cli unresponsive: …` `cliError` of a
-  direct run and `"cliUnresponsive":true`. `-install` exits `0` with an empty
-  stderr. A CLI that answers at 28 s is present. Measured on Linux, macOS and
-  Windows. A CLI that answers at 31 s is stopped (Linux and Windows).
-- The run of a CLI that this run installed is stopped at 120 s, with the same
-  text. A CLI that answers at 118 s installs with no error. Measured on Linux,
-  macOS and Windows. A CLI that answers at 121 s is stopped (Linux and Windows).
-- The class of the bound follows the install in this run. With a file that does
-  not run at the final path and a blob, the new CLI gets the 120 s bound
-  (measured on Linux).
-- The download time is outside the bound. A 15 s download and a CLI that answers
-  at 110 s install with no error (measured on Linux and Windows).
-- claustrum starts the clock right before the process start call. Measured on
-  Windows against `89cb6289`: a stopped run has a wall time of 30.01 to 30.06 s,
-  or 120.02 to 120.06 s. The start delay of the CLI does not change it. That the clock
-  of the reference starts before the start call is inferred from those wall
-  times. On Linux and macOS both readings fit the rows.
-- On Linux and macOS the CLI runs in a process group of its own, in the session
-  of `-install`. The stop ends a child in the group of the CLI. A child in a new
-  session survives. A CLI that ignores SIGTERM is stopped at the same time.
-  claustrum kills the group with SIGKILL. The name of the signal is not measured.
-- On Windows the stop ends the CLI process. Its children stay alive (measured).
-- A process that holds the stdout and stderr of the CLI after the CLI exited
-  delays nothing (measured on Linux, macOS and Windows). claustrum gives the CLI
-  the null device as stdin, stdout and stderr. What the reference gives it is
-  not measured.
-- After a stopped cache hit the CLI file stays, and nothing is installed. A
-  `-cli-zst` blob stays and nothing is pruned. The sweep runs. Measured on
-  Linux, macOS and Windows. A `-cli-url` server gets no request (Linux and
-  Windows).
+The direct `--version` run and its bounds are parity. A direct run is a run with
+no usable launcher: the gate is unset, or the launcher status is `none`.
+- On a cache hit a run that has not ended after 30 s is stopped. The facts then
+  read `"cliWasPresent":false`, the direct `cli unresponsive: …` text and
+  `"cliUnresponsive":true`. `-install` exits `0` with an empty stderr.
+- The run of a CLI that this run installed is stopped at 120 s, with the same text.
+  A new CLI that replaced a file at the final path that did not run gets the same
+  bound (Linux).
+- The download time is outside the bound (Linux and Windows). claustrum starts the
+  clock right before the process start call.
+- On Linux and macOS the CLI runs in a process group of its own, in the session of
+  `-install`. A CLI that ignores SIGTERM stops at the same time. claustrum kills
+  the group with SIGKILL (claustrum's own). A child in a new session survives.
+- On Windows the stop ends the CLI process, and its children stay alive.
+- A process that holds the output of the CLI after the CLI exited delays nothing.
+  claustrum gives the CLI the null device as stdin, stdout and stderr (claustrum's
+  own).
+- After a stopped cache hit the CLI file stays, nothing is installed or pruned, a
+  `-cli-zst` blob stays and the sweep runs. A `-cli-url` server gets no request
+  (Linux and Windows).
 - After a stopped first run the new CLI stays at its final path, the `-cli-zst`
-  blob is consumed and nothing is pruned. Measured on Linux, macOS and Windows.
-  With `-cli-url` the facts carry `fetch` after `cliUnresponsive`.
-- Not measured: a CLI that exits non-zero after a long time, and a second
-  `-install` on the CLI that a stopped first run left.
+  blob is consumed and nothing is pruned. With `-cli-url` the facts carry `fetch`
+  after `cliUnresponsive`.
 
-The default CLI folder is parity, measured on `89cb6289`:
-- With `-cli-version` and no `-cli-dir`, or an empty `-cli-dir`, the CLI folder
-  is `<home>/.claude/remote/ccd-cli`. Measured on Linux, macOS and Windows. On
-  Windows `<home>` is `USERPROFILE`, and `HOME` is not read.
-- The other steps work in that folder as in an explicit one. The install from
-  `-cli-zst` or `-cli-url` is measured on Linux, macOS and Windows. The cache hit
-  is measured on macOS and Windows. The launcher run is measured on macOS.
-- A cache miss makes the folder chain, with or without a source flag. Each new
-  level gets mode `0700`. A level that exists keeps its mode. Measured on Linux
-  and macOS. With umask `000` the new levels still get `0700` (Linux). The
-  Windows listing shows no modes.
-- Without `-cli-version` the `cliPath` is empty, nothing runs and no folder is
-  made. The default folder does not apply (measured on macOS and Windows).
-- With no home folder, `-install -cli-version <v>` with no `-cli-dir` prints
-  nothing on stdout and exits `2`. The reference prints
-  `claude-ssh: cannot resolve home directory: $HOME is not defined` on stderr.
-  claustrum prints the same line with its own prefix, `claustrum: `. Measured on
-  Linux against `f6010b97` and `89cb6289`, with `HOME` not in the environment.
-- Not measured: no home folder together with `-cli-dir`, without `-cli-version`,
-  or in another mode. claustrum exits `1` in each of those cases, with the same
-  stderr line.
-- Not measured either: macOS, and a missing `USERPROFILE` on Windows. claustrum
-  exits `2` there for the same arguments. On Windows its stderr line names
-  `%userprofile%`.
+The default CLI folder:
+- With `-cli-version` and no `-cli-dir`, or an empty `-cli-dir`, the CLI folder is
+  `<home>/.claude/remote/ccd-cli`. On Windows `<home>` is `USERPROFILE`, and `HOME`
+  is not read. The other steps work there as in an explicit folder.
+- A cache miss with a version that D6 accepts makes the folder chain, with or without a source flag. Each new
+  level gets mode `0700`, also with umask `000`, and a level that exists keeps its
+  mode (Linux and macOS).
 
-The CLI file name on Windows is parity, measured on a Windows VM against
-`89cb6289`:
-- The CLI file is `<cli-dir>\<version>.exe`. The `cliPath`, the file on disk,
-  the path of the `--version` run and the `not runnable` text all carry that
-  name. The `missing` text names the version with no suffix.
+The CLI file name on Windows:
+- The CLI file is `<cli-dir>\<version>.exe`. The `cliPath`, the file on disk, the
+  path of the `--version` run and the `not runnable` text all carry that name. The
+  `missing` text names the version with no suffix.
+- The suffix is added always, so `-cli-version 9.9.9.exe` installs `9.9.9.exe.exe`.
+  A version that ends in `.EXE` is not measured.
 - Only `<version>.exe` counts as present. A file with the bare name counts for
-  nothing, and it does not run.
-- The suffix is added always. `-cli-version 9.9.9.exe` installs `9.9.9.exe.exe`.
-- The prune counts only `<version>.exe` files (`5fd08069`, cell W3).
-- A folder at the bare name stays. A folder at the `.exe` name is replaced by
-  the CLI file.
-- A CLI that an older claustrum installed at the bare name counts for nothing.
-  `-install` answers `missing` for it until a source flag installs the `.exe`
-  file beside it.
-- Not measured: a version that ends in `.EXE`. A version that
-  the sweep claims by its end, such as `1.0.0.zst`, installs as `1.0.0.zst.exe`. The
-  sweep does not claim that name. No row measures that case.
+  nothing and does not run. So a CLI that an older claustrum installed at the bare
+  name answers `missing` until a source flag installs the `.exe` file beside it.
+- A folder at the bare name stays. A folder at the `.exe` name is replaced by the
+  CLI file.
 
-Download progress and `fetch` stats came with `4534d86`, on the `-cli-url` path:
-- While downloading, `-install` prints `__INSTALL_PROGRESS__<json>` lines to
-  stdout: `{"phase":"download","bytes":<n>[,"total":<m>]}`.
-  `total` carries the Content-Length and is dropped when the server sends none,
-  as with a chunked body.
-- A leading `bytes:0` line comes first, after the response headers and before
-  any body byte. A server that sends no headers gets no line (measured on
-  `89cb6289` on Linux and Windows). A final
+Download progress and `fetch` stats, on the `-cli-url` path:
+- While downloading, `-install` prints `__INSTALL_PROGRESS__<json>` lines to stdout:
+  `{"phase":"download","bytes":<n>[,"total":<m>]}`. `total` carries the
+  Content-Length. If the server sends none, `total` is dropped.
+- A leading `bytes:0` line comes after the response headers and before any body
+  byte. A server that sends no headers gets no line (Linux and Windows). A final
   `bytes:<n>` line comes only after the checksum passes. A failed check prints no
-  final line. Measured on a Linux VM against `f6010b97` with a 57-byte blob, 5 of
-  5 runs per row: `bytes:0` then `bytes:57` on success, and `bytes:0` alone on a
-  mismatch.
-- Between those two lines a tick comes each 1 s. A tick prints a line only when
-  the byte count differs from the last printed line. Measured on `89cb6289`: a
-  body of 6 parts that are 20 s apart prints 7 lines, not one line per second
-  (Linux, macOS and Windows). A body with no byte prints the leading line only
-  (Linux and Windows). A body with no Content-Length follows the same rule (Linux and
-  Windows). claustrum printed a line on every tick before.
-- The tick lines show the count at the tick, so their byte counts jump
-  irregularly. A consumer treats them as progress, not as a byte-exact sequence.
-- Not measured: whether the final line repeats a count that a tick printed
-  already, and what starts the tick clock. claustrum always prints the final
-  line, and it starts the tick clock when the body becomes readable.
-- The `__INSTALL_RESULT__` facts line gains a `fetch` object after `cliError`. It is
-  the last field, except with the managed launcher gate (see above):
+  final line (`f6010b97`, Linux).
+- Between those two lines a tick comes each 1 s. If the byte count of a tick equals
+  the count of the last printed line, the tick prints nothing. The counts jump irregularly, so a
+  consumer treats them as progress, not as a byte-exact sequence. claustrum prints
+  the final line also when a tick printed that count already, and it starts the
+  tick clock at the first readable body (claustrum's own).
+- The facts line gains a `fetch` object after `cliError`,
   `{"bytes":<n>,"ms":<n>,"longestPauseMs":<n>}`. Those are bytes read, download
-  duration, and the largest gap between reads. It appears whenever a `-cli-url`
-  download was attempted, even a 0-byte 404. It is dropped on the `-cli-zst` path
-  and on the cache-hit path.
-- claustrum does not close its idle connections after the download. Its
-  transport is a copy of the Go default transport, whose idle limit is 90 s.
-  When the client closes the download connection is measured with three kinds
-  of server:
-    - macOS, a server that never closes first (18 runs). `89cb6289` and
-      claustrum both close the connection 90.0 to 90.1 s after the last body
-      byte, while the CLI runs.
-    - macOS, a server that closes at its own 5 s limit (18 runs): neither
-      binary closes first.
-    - Linux, a server that sends `Connection: close`: `89cb6289` closes 2 to
-      51 ms after the last body byte, and claustrum 0 to 5 ms after it.
-    - Not measured: Windows, and a CLI run shorter than 90 s against a server
-      that never closes first.
-- The wait for the response headers has an always-on 60 s limit. A server that
-  reads the request and sends nothing fails the install with
-  `download failed: Get "<url>": net/http: timeout awaiting response headers`.
-  No progress line is printed, and `fetch` reads `"bytes":0` and
-  `"longestPauseMs":0`. This is parity: `f6010b97` and `89cb6289` give up after
-  60.0 s (measured on Linux and Windows). claustrum had no such limit before.
-  Not measured: macOS, and the exact start point of the limit.
+  duration and the largest gap between reads. It is the last field, except with
+  the managed launcher gate (see above). It appears whenever a download was
+  attempted, even a 0-byte 404. A `-cli-zst` install and a cache hit have no
+  `fetch`.
+- claustrum does not close its idle connections after the download. Its transport
+  is a copy of the Go default transport, whose idle limit is 90 s.
+- The wait for the response headers has an always-on 60 s limit (Linux and
+  Windows). A server that sends nothing fails the install with
+  `download failed: Get "<url>": net/http: timeout awaiting response headers`. No
+  progress line is printed, and `fetch` reads `"bytes":0` and
+  `"longestPauseMs":0`.
 - A body read that ends with a transport error fails the install with
-  `download interrupted after <got>/<total> bytes: <transport err>`, with no
-  `download failed: ` prefix. The wait from the last byte to the error counts for
-  `longestPauseMs`. One progress line is printed, and the cli-dir stays empty.
-  This is parity: measured on a Linux VM against `f6010b97` and `89cb6289` with a
-  connection reset after half the body. claustrum answered
-  `download failed: <transport err>` with `"longestPauseMs":0` before. Not
-  measured: any other read error, a body with no Content-Length, and an error
-  before the first body byte. claustrum words them the same way, with a `<total>`
-  of `0` for a body with no length. The opted-in D12 deadline keeps its own
-  text.
-- The `-cli-url` body has an always-on 60 s read-idle abort, reset on every byte,
-  that fails the install with the `download stalled: …` cliError above. This is
-  parity, not a divergence, because the reference does it. It is a read-idle bound,
-  not a total deadline, so a slow-but-progressing download completes. That total
-  cap is the opt-in D12, which is off by default.
+  `download interrupted after <got>/<total> bytes: <transport err>` (Linux). The
+  wait from the last byte to the error counts for `longestPauseMs`. One progress
+  line is printed, and the cli-dir stays empty. claustrum words other read errors
+  the same way, with a `<total>` of `0` for a body with no length (claustrum's
+  own).
+- The body has an always-on 60 s read-idle abort, reset on every byte. It fails
+  the install with the `download stalled: …` text above. It is no total deadline,
+  so a slow download that keeps sending completes. The total deadline is the
+  opt-in [D12](DIVERGENCES.md#d12), off by default. When armed, it bounds the
+  whole exchange, so an honest download that is too slow fails with
+  `download failed: context deadline exceeded (…)`.
 
 Checksum and verify ordering:
 - claustrum verifies `-cli-checksum` on the `-cli-url` path unconditionally. An
   empty checksum still fails.
-- The source is decompressed into the staging file first, and the checksum
-  comes after it. A body that is no zstd archive answers
+- The source is decompressed into the staging file first, and the checksum comes
+  after it. A body that is no zstd archive answers
   `decompressing: invalid input: magic number mismatch` with a right and with a
-  wrong checksum. `fetch` then counts the bytes that the decoder read:
-  `"bytes":4` for a body of 4096 bytes. Only the leading progress line is
-  printed (`5fd08069`, cells L15a and L15b, Linux VM). The retired D13 holds the old
-  order. No chmod, clear or rename runs before the checksum passes
-  (claustrum's own reading).
-- On the `-cli-zst` path claustrum verifies the blob only when a `-cli-checksum`
-  is supplied, as the reference does since `7d193f89`. A mismatch answers
-  `checksum mismatch` and keeps the blob. An absent or empty checksum verifies
-  nothing.
+  wrong checksum. `fetch` then counts the bytes that the decoder read, and only the
+  leading progress line is printed (Linux). No chmod, clear or rename runs before
+  the checksum passes (claustrum's own).
+- If a `-cli-checksum` is supplied, claustrum also verifies the `-cli-zst` blob,
+  as the reference does ([D1](DIVERGENCES.md#d1), retired). A mismatch
+  keeps the blob. An absent or empty checksum verifies nothing.
 - The compare is case-sensitive on both paths. The right digest in upper case
-  answers `checksum mismatch: expected=<UPPER>, actual=<lower>`, as on the
-  reference.
-- On every cache miss claustrum creates the cli-dir (mode `0700`, with its
-  parents) first. That is before the source check, before it opens a `-cli-zst`
-  blob and before any `-cli-url` network access. So every failed cache miss past
-  the version check leaves the cli-dir, empty if it was new. A mismatch, a 404, a
-  refused connection and a missing source all leave it. That matches the
-  reference: on every measured build from `5db5e4a` for `-cli-zst`, and on
-  `f6010b97` for `-cli-url` and a missing source. Measured on a Linux VM.
-- On Linux and macOS the folder step uses the `-cli-dir` text as given, also on
-  a cache hit (a Linux VM row). So `-cli-dir <dir>/sub/..` makes `<dir>/sub` (mode `0700`).
-  Windows makes nothing there. If the step fails, `cliPath` is empty and
-  `cliError` is the mkdir error, such as `mkdir cli dir: mkdir <dir>/sub: not a
-  directory`. `5fd08069` does the same (round `tier3-01`, Linux, macOS and
-  Windows VMs).
+  answers `checksum mismatch: expected=<UPPER>, actual=<lower>` (`7d193f89` and
+  `f6010b97`, Linux).
+- Every cache miss with a CLI path and a version that D6 accepts makes the cli-dir
+  first (mode `0700`, with its parents). That is before the source check, before
+  the blob opens and before any network access (`5db5e4a` and later for
+  `-cli-zst`, `f6010b97` for `-cli-url` and a missing source, Linux). So after that
+  step a failed cache miss leaves the cli-dir. A new cli-dir stays empty.
+- On Linux and macOS that folder step also runs on a cache hit. Windows makes the
+  cli-dir on a cache miss only. On Linux and macOS the step uses the `-cli-dir` text
+  as given, so `-cli-dir <dir>/sub/..` makes `<dir>/sub` (mode `0700`). On Windows
+  `<dir>/sub` is not made. If the step fails, `cliPath` is empty and `cliError` is the mkdir error,
+  such as `mkdir cli dir: mkdir <dir>/sub: not a directory`.
 
-One opt-in wall-clock bound exists, and it is off by default, so a stock
-claustrum does not apply it. The other `-install` clocks in this paragraph are
-always on, and each one is a clock of the reference. The direct `--version` run has its
-30 s and 120 s bounds, and a launcher run has its 33 s and 123 s bounds. The
-download has the 60 s response-header limit and the 60 s read-idle abort. The `ldd` probe has the
-reference's 5 s bound on ldd itself and a 2 s drain after ldd exits. The stdlib
-transport clocks (`net.Dialer{Timeout:30s}`, `TLSHandshakeTimeout:10s`) apply on
-`-cli-url` only. They are always on, and they are not probed on the reference.
-One clock is claustrum's own choice and is not measured: the wait of up to 2 s
-for the output of a stopped launcher run.
-See [`DIVERGENCES.md`](DIVERGENCES.md):
-- `-cli-download-timeout <dur>` is D12. `0` gives `http.Client{Timeout:0}`, which
-  is no bound. When armed, it bounds the whole exchange. An honest download that is
-  merely too slow therefore trips `download failed: context deadline exceeded (…)`
-  as surely as a black hole does.
-- `-cli-probe-timeout <dur>` is a deprecated no-op. It was the opt-in D11, which
-  is retired: the reference bounds the direct `--version` run itself.
-- The `ldd --version` libc probe bounds ldd itself at 5 s, as on the reference
-  since `19f30c46`. It is not a knob. `-libc-probe-timeout` is a deprecated no-op. See
-  Staging and cleanup below.
+The other clocks: every `-install` clock above is always on and is a clock of the
+reference, except the opt-in D12 deadline, the 2 s wait for the output of a
+stopped launcher run and the 0.2 s bound of the rename retry (claustrum's own). The stdlib transport clocks
+(`net.Dialer{Timeout:30s}`, `TLSHandshakeTimeout:10s`) apply on `-cli-url` only,
+and they are not probed on the reference. `-cli-probe-timeout` and
+`-libc-probe-timeout` are deprecated no-ops.
 
-D10 is the opt-in size cap. `-max-cli-bytes <n>`, or the `max-cli-bytes`
-configuration key, governs both the decompressed CLI and the download body. `0` is
-off, which is parity, because the reference took a 600 MiB payload to the
-runnability test. claustrum streams the blob and never buffers it. It keeps a
-`-cli-zst` path, not a `[]byte`, so the staging retry can re-read it. "Cap off" therefore does not
-mean unbounded memory. See [`DIVERGENCES.md`](DIVERGENCES.md) → D10.
+[D10](DIVERGENCES.md#d10) is the opt-in size cap. `-max-cli-bytes <n>`, or the
+`max-cli-bytes` config key, governs both the decompressed CLI and the
+download body. `0` is off, which is parity. claustrum streams the blob and never
+buffers it, so "cap off" does not mean unbounded memory.
 
-`-cli-version` hardening is claustrum-only:
-- D6 requires a single path component. The clearing step is an `os.RemoveAll`
-  on the CLI path, `<cli-dir>/<version>` (on Windows `<version>.exe`). A version
-  that escapes the cli-dir
-  therefore deletes unrelated data. Measured, the reference destroys the target on
-  `../victim`. `link/1.0.0` through an intermediate symlink also escapes. claustrum answers
-  `cli version "…" must be a single path component`. It answers before
-  the install writes or removes anything at a path built from the version. The
-  two sweeps of the cli-dir name only the cli-dir, and they are not behind this
-  rule. claustrum answers the refusal, writes nothing and keeps the blob. That
-  rule runs on the install path. A regular file that
-  is already at the joined path is first run with `--version`, as the cache-hit
-  check. A run that passes answers `"cliWasPresent":true` with that path, as
-  on the reference. That is measured with `-cli-version ../x` on Linux against
-  `f6010b97` and `89cb6289`, and on macOS against `89cb6289`. A run that is
-  stopped answers the unresponsive text and sweeps the cli-dir. D6 answers only
-  when that run fails, or when no file is there. The reference has no such rule.
-  With `../x` and a blob it installs to `<parent>/x`, outside the cli-dir, and
-  runs that file. That is cell V1c on Linux, macOS and Windows. It
-  refuses `.`, `..`, `/` and `\` on every OS. claustrum uses a single-component
-  test and not lexical containment, because containment accepts `link/1.0.0`, and
-  `EvalSymlinks` adds a TOCTOU window. A final component that is itself a
-  symlink stays legal, because `os.RemoveAll` unlinks it and does not follow it. The
-  real client passes bare versions. `1.0.86`, `2.0.0-beta.1`, a commit sha,
-  `latest` and `1.0.86+build.5` are all measured as accepted.
-- A version that the sweep claims, such as `.fetch-1` or `1.0.0.zst`, installs.
-  The same run keeps it, because the sweep removes only old entries. A later
-  install removes it once it is more than 10 minutes old. This matches the
-  reference since `4534d86`. The retired D7 refused such a version. On Windows
-  the file is `<version>.exe`, and the sweep keeps it.
+`-cli-version` hardening, [D6](DIVERGENCES.md#d6), is claustrum-only:
+- The version must be one path component. Otherwise claustrum answers
+  `cli version "…" must be a single path component`. It answers before the install
+  writes or removes anything at a path built from the version. It writes nothing
+  and keeps the blob. The reference has no such rule. With `../x` and a blob it
+  installs to `<parent>/x`, outside the cli-dir. On `../victim` it destroys the
+  target.
+- It refuses `.`, `..`, `/` and `\` on every OS. A final component that is a
+  symlink stays legal. `1.0.86`, `2.0.0-beta.1`, a commit sha, `latest` and
+  `1.0.86+build.5` are accepted.
+- A regular file at the joined path is first run with `--version`, as the cache-hit
+  check. A run that passes answers `"cliWasPresent":true` with that path, as on the
+  reference (Linux and macOS). A stopped run answers the unresponsive text. D6
+  answers only when that run fails, or when no file is there.
+- The two sweeps of the cli-dir name only the cli-dir, and they are not behind
+  this rule.
+- A version with a sweep name, such as `.fetch-1` or `1.0.0.zst`, installs. The
+  same run keeps it, because the sweep removes only old entries. A later install
+  removes it once it is more than 10 minutes old. On Windows the file is
+  `<version>.exe`, and the sweep keeps it.
 
 Staging and cleanup:
-- An install follows the order of the reference. The new CLI is put at its
-  final path, the `-cli-zst` blob is removed and the sweep runs. Then
-  `<final path> --version` runs. At that run the
-  cli-dir holds no `.fetch-` temp of this install and no swept
-  file more than 10 minutes old. On `5fd08069` the blob is gone at that run
-  (cells L11, M4 and W7). The prune follows a good run only. A run that
-  exits non-zero removes the new CLI again with one plain remove. A stopped run
-  keeps the new CLI. Measured on `89cb6289` on Linux, macOS and Windows. On
-  Windows claustrum can leave that file when the exited CLI holds it
-  (claustrum's own code, not measured).
-- What is at the final path goes before the new CLI runs. A folder there is
-  removed with the file in it, and at the run the cli-dir holds the CLI file
-  only. Measured on Linux, macOS and Windows. A file there that does not run is
-  replaced by the new CLI before the run (measured on Linux). claustrum replaced
-  both only after the run before.
-- claustrum does not remove a folder at the final path that is the home folder
-  or contains it. It answers
-  `cli path must not be or contain the home directory: "<path>"`. The folder is
-  not removed, the blob stays and no CLI runs. This is a divergence
-  ([D2](DIVERGENCES.md#d2)). The reference removes that folder as a tree and puts
-  the CLI file there. When the new CLI then fails, the folder is gone and nothing
-  is left at the path (Linux cell H2, macOS cell HX2L). Measured with
-  `-cli-zst` on Linux, macOS and Windows. [D2](DIVERGENCES.md#d2) lists the
-  cells and what no cell covers. Not measured: `-cli-url`.
-- That guard compares the folder at the final path with the home folder and
-  with each parent folder of it, by file identity. It does that for the home
-  path as given and for its resolved path. The home guard of the RPC paths
-  stays lexical.
-- The sweeps and the `-cli-keep` prune skip an entry of the cli-dir that is
-  the home folder or holds it ([D2](DIVERGENCES.md#d2)). They remove regular
-  files only, so a home folder stays there on `5fd08069` too (from those cells,
-  no home cell on `5fd08069`).
-- The volume of the macOS VM ignores letter case. There a `-cli-version` in
-  another letter case names the folder on disk. With `-cli-version ALICE` and a
-  folder `alice` that is not the home folder, both binaries replace the folder.
-  The new file has the name `ALICE`, as the command gave it (cells HXKC and
-  HXKC0). With `-cli-version USERS` and a folder `users` that contains the home
-  folder, `89cb6289` removes the folder and names the new file `USERS`.
-  claustrum refuses, and the folder keeps its name (cell HXK5).
-- Not measured: a new CLI that exits non-zero over a file or a folder at the
-  final path. claustrum then removes the new CLI as for an empty one.
-- Not measured: how the reference writes the final file, and the order of its
-  sweep against that write.
-  claustrum decompresses to `<cli-dir>/.fetch-<random>`, renames that file to the
-  final path and then sweeps.
-- A cli-dir path that names something that is not a folder is replaced, as on
-  the reference. The trigger is a regular file, a symlink to a regular file or a
-  FIFO at the cli-dir path. `-install` removes that entry. For a symlink it
-  removes the link and keeps the target. It also removes the regular file named
-  exactly `ccd-cli-version` in the parent folder of the cli-dir. Then it makes
-  the cli folder with mode `0700` and goes on. That holds for the default CLI
-  folder too, and with no source flag, before the `missing` answer.
-- The name `ccd-cli-version` is literal. It does not follow the name of the
-  cli-dir, and a file named `other-version`, `ccd-cli-version.bak` or
-  `zzz-version` stays.
-- A folder, a symlink to a folder and an absent cli-dir trigger nothing, and
-  `ccd-cli-version` stays. A dangling symlink triggers nothing either: the
-  answer is `mkdir cli dir: mkdir <path>: file exists` with an empty `cliPath`.
-- With a parent folder that is not writable nothing is removed. The answer is
-  `mkdir cli dir: mkdir <path>: not a directory` with an empty `cliPath`.
-- The four bullets above are measured against `f6010b97` and `89cb6289`, one
-  run for each shape: 14 shapes on Linux and on macOS, 13 on Windows. Windows has
-  no FIFO row and no row with a parent that is not writable. The `mkdir` texts
-  above are the Linux and macOS texts. No mode is claimed on Windows.
-- Both removes are plain removes of one path. Nothing is removed as a tree.
-  claustrum's remove does not open the FIFO. When a FIFO stays behind the
-  cli-dir path, claustrum's sweep after the mkdir error opens that path once as
-  a directory. That open fails at once (measured on Linux).
-- Not measured: a socket, a device or a symlink to a FIFO at the cli-dir path.
-  A `ccd-cli-version` that is a folder or a symlink is not measured either.
-  claustrum leaves each of them alone. Not measured: the `-cli-url` source and the launcher gate with
-  these shapes, and the order of the two removes. claustrum removes the version
-  file first.
-- claustrum stages the CLI at `<cli-dir>/.fetch-<random>` and renames it into
-  place. This is one code path for `-cli-url` and `-cli-zst` alike. A download
-  is decompressed into that file as it arrives, and no other file is made.
-- The `-cli-zst` blob goes once the new CLI is in place. Every earlier failure
-  keeps it. On `5fd08069` it stays after a blob that is no zstd archive (cell
-  L3) and a folder that cannot be cleared (cells L12 and M5). It stays after a
-  denied rename too (cells W1 and W6). claustrum keeps it after a failed chmod too (claustrum's
-  own). A CLI that then does not run still costs the blob. The sweeps skip the
-  blob, so a blob `1.0.0.zst` in the cli-dir stays (cell L3).
-- On Windows a rename that access denied stops is tried again for 0.2 s.
-  `5fd08069` keeps the staging file 0.26 to 0.53 s there (cells W1). The
-  staging file of claustrum lived 0.35 to 0.48 s there (round `task090-02`). If the
-  target holds the bytes of the staging file, the install counts as done and
-  the staging file goes, as on `5fd08069` (cells W2). The pauses are
-  claustrum's own.
-- The `-cli-keep` prune follows `5fd08069` (cells L4 to L6, M1, M2a, M2b, W3,
-  W4a and W4b, Linux, macOS and Windows VMs):
-    - Only a version file counts, and only a version file goes. On Linux and
-      macOS that is a regular file whose name is a version such as `1.0.0`,
-      with an exec bit. On Windows it is a regular file `<version>.exe`. A
-      folder, a link, `README`, `.blob-planted`, a `1.1.0` with mode `0644`, a
-      bare `1.1.0` on Windows and `README.exe` stay and take no keep place.
-    - claustrum counts a name of three runs of digits with dots between them,
-      such as `1.0.0`. Other names are not measured.
-    - The order is the mtime, newest first. The new CLI takes its place in the
-      order and always stays. `-cli-keep 0` removes the older version files.
-    - A negative `-cli-keep` counts as 0. The result line follows, with exit
-      `0` and an empty stderr.
-    - Entries with one mtime stay in byte order of the name, so the later name
-      goes. That order is measured on `89cb6289` (cells T1).
-    - A failed install and a cache hit do not prune.
-- Two sweeps remove old regular files of the cli-dir with one plain remove
-  each (`5fd08069`, cells L8 to L10, M3a, M3b and W5):
-    - The 10 minute sweep takes `.fetch-<digits>` and `<version>.zst`. A file
-      `.fetch-d`, a file `x.zst`, an empty folder `.fetch-9` and a folder
-      `.fetch-e` with content stay.
-    - The 7 day sweep takes `<version>.zst.part`. A file `p.zst.part` stays at
-      8 days. 7 days and 5 s go, and 7 days less 5 s stay.
-    - The 7 day sweep runs once before any CLI runs. On a good cache hit only
-      that sweep runs (cell L9). The 10 minute sweep runs before the run of a
-      new CLI and after a failed attempt. It also runs after a cache hit whose
-      run was stopped (cell P6 of `89cb6289`).
-    - The names match the letter case, and a future mtime is not old
-      (claustrum's own, not measured on `5fd08069`).
-    - A concurrent install can reclaim a staging file only once it is more
-      than 10 minutes old. claustrum retries a `-cli-zst` staging step once
-      then.
-- claustrum clears an occupied `cliPath`, and that is not fatal. `rename(2)`
-  refuses to replace a non-empty directory, so claustrum removes it first, as a
-  tree. It removes it only when `cliPath` is a directory. A regular file, which an
-  installed CLI always is, is replaced atomically by the rename. If claustrum cannot remove it →
+- claustrum stages the CLI at `<cli-dir>/.fetch-<random>` and renames it to the
+  final path. That is one code path for `-cli-url` and `-cli-zst`. A download is
+  decompressed into that file as it arrives, and no other file is made.
+- An install puts the new CLI at its final path, removes the `-cli-zst` blob and
+  runs the 10 minute sweep. Then `<final path> --version` runs. The prune follows a
+  good run only. A direct run that does not start or exits non-zero removes the new CLI again with one plain
+  remove. A stopped run keeps the new CLI. On Windows claustrum can leave that file
+  when the exited CLI holds it (claustrum's own).
+- What is at the final path goes before the new CLI runs. A folder there is removed
+  as a tree, with its content. A file there that does not run is replaced by the
+  new CLI (Linux). A new CLI that then exits non-zero leaves nothing at that path
+  (claustrum's own).
+- claustrum clears an occupied `cliPath` only when it is a directory, because
+  `rename(2)` refuses to replace a directory. A regular file is replaced
+  by the rename. A directory that claustrum cannot remove answers
   `clearing stale dir at <path>: <err>`. On Windows the cleared name is
-  `<version>.exe`. The D6 rule runs before this step, so `cliPath` is a direct
-  child of the cli-dir.
-- claustrum runs `ldd` on every libc probe since build 3ef9370, and its output
-  decides the answer. A "musl" banner reports `musl`, and any other output reports
-  `glibc`. The `/lib/ld-musl-*.so.*` marker is consulted only when `ldd` produced
-  no output.
-- The probe bounds ldd itself at 5 s, as on the reference since `19f30c46`. `ldd`
-  runs in its own process group. If ldd still runs at 5 s, the whole group is
-  killed. Output written before that kill is dropped, so the marker decides. No log line is
-  written, and the facts line keeps its shape. The bound applies on a fresh
-  install and on a cache hit. Measured on a Linux VM.
+  `<version>.exe`. The D6 rule runs first, so `cliPath` is a direct child of the
+  cli-dir.
+- claustrum does not remove a folder at the final path that is the home folder or
+  contains it ([D2](DIVERGENCES.md#d2)). It answers
+  `cli path must not be or contain the home directory: "<path>"`. The folder
+  stays, the blob stays and no CLI runs. The reference removes that folder as a
+  tree and puts the CLI file there. That is measured with `-cli-zst` on Linux,
+  macOS and Windows, and `-cli-url` is not measured.
+- That guard runs the lexical test of the RPC paths first. Then it compares the
+  folder at the final path with the home folder and with each parent folder of it,
+  by file identity, for the home path as given and for its resolved path.
+- On macOS the volume ignores letter case, so a `-cli-version` in another letter
+  case names a folder on disk. Both binaries replace such a folder that does not
+  hold home, and the new file takes the name of the command. For a folder that
+  holds home, claustrum refuses as above.
+- The `-cli-zst` blob goes with one plain remove once the new CLI is in place.
+  Every earlier failure keeps it: a blob that is no zstd archive, a folder that
+  cannot be cleared and a denied rename. claustrum keeps it after a failed chmod
+  too (claustrum's own). A CLI that then does not run still costs the blob.
+- On Windows a rename that access denied stops is tried again for 0.2 s. If the
+  target then holds the bytes of the staging file, the install counts as done and
+  the staging file goes. The 0.2 s bound and the pauses are claustrum's own.
+- A cli-dir path that names no folder is replaced. The trigger is a regular file, a
+  symlink to a regular file or a FIFO at the cli-dir path. `-install` removes that
+  entry, and for a symlink it removes the link and keeps the target. It also
+  removes the regular file named exactly `ccd-cli-version` in the parent folder of
+  the cli-dir. Then it makes the cli folder with mode `0700` and goes on. That holds
+  for the default CLI folder too, and with no source flag.
+- The name `ccd-cli-version` is literal. A file named `other-version`,
+  `ccd-cli-version.bak` or `zzz-version` stays.
+- A folder, a symlink to a folder and an absent cli-dir trigger nothing, and
+  `ccd-cli-version` stays. A dangling symlink triggers nothing either, and the
+  answer is `mkdir cli dir: mkdir <path>: file exists` with an empty `cliPath`.
+  With a parent folder that is not writable nothing is removed, and the answer is
+  `mkdir cli dir: mkdir <path>: not a directory`. Those `mkdir` texts are the Linux
+  and macOS texts. Windows has no FIFO case and no case with a parent that is not
+  writable.
+- Both removes are plain removes of one path, never a tree. claustrum's own (not
+  measured): it removes the version file first, and if that fails, the cli-dir
+  entry stays. It leaves a socket, a device,
+  a symlink to a FIFO and a `ccd-cli-version` that is a folder or a symlink alone.
+- The `-cli-keep` prune:
+    - Only a version file counts, and only a version file goes, with one plain
+      remove, never as a tree. On Linux and macOS that is a regular file whose name
+      is a version such as `1.0.0`, with an exec bit. On Windows it is a regular
+      file `<version>.exe`. Every other entry stays and takes no keep place, for
+      example a folder, a link, `README`, a `1.1.0` with mode `0644`, a bare
+      `1.1.0` on Windows and `README.exe`.
+    - claustrum counts a name of three runs of digits with dots between them. Other
+      names are not measured.
+    - The order is the mtime, newest first. Entries with one mtime stay in byte
+      order of the name, so the later name goes (`89cb6289`). The new CLI takes its place in the
+      order and always stays. `-cli-keep 0` and a negative value remove every
+      version file but the new CLI, and the result line follows with exit `0` and an empty stderr.
+    - A failed install, a stopped run and a cache hit do not prune.
+- Two sweeps remove old regular files of the cli-dir with one plain remove each,
+  never as a tree. A folder and a link stay (from the code for a link):
+    - The 10 minute sweep takes `.fetch-<digits>` and `<version>.zst`. A file
+      `.fetch-d`, a file `x.zst` and a folder `.fetch-9` stay.
+    - The 7 day sweep takes `<version>.zst.part`. A file `p.zst.part` stays, also at 8 days old.
+    - The 7 day sweep runs once before any CLI runs, also on a cache hit. On a good
+      cache hit only that sweep runs. The 10 minute sweep runs before the run of a
+      new CLI, after a failed attempt and after a D6 refusal. On a cache hit it runs
+      only after a run that its bound stopped.
+    - Neither sweep removes the `-cli-zst` blob, so a blob `1.0.0.zst` in the
+      cli-dir stays.
+    - The names match the letter case (claustrum's own). A future mtime is not old
+      (`f6010b97`).
+    - A concurrent install can take a staging file only once it is more than 10
+      minutes old. claustrum then retries a `-cli-zst` staging step once.
+- The sweeps and the prune skip an entry of the cli-dir that is the home folder or
+  holds it ([D2](DIVERGENCES.md#d2), claustrum's own). They remove regular files
+  only, so a home folder stays there on `5fd08069` too (derived from its
+  cells, no home cell).
+
+The libc probe fills the `libc` fact:
+- claustrum runs `ldd` on every probe, and its output decides. A "musl" banner
+  reports `musl`, and any other output reports `glibc`. The `/lib/ld-musl-*.so.*`
+  marker is read only when `ldd` produced no output.
+- The probe bounds ldd itself at 5 s, as the reference does since `19f30c46`
+  (Linux). `ldd` runs in its own process group,
+  and if it still runs at 5 s the whole group is killed. Output written before that
+  kill is dropped, so the marker decides. No log line is written, and the facts
+  line keeps its shape. The bound applies on a fresh install and on a cache hit.
 - If `ldd` exits before 5 s while a child still holds its output pipe, the probe
-  waits up to 2 s more. Then it uses the output it has, even past 5 s. The child
-  is not killed. Measured on a Linux VM against `f6010b97` for exits from 0.5 s to
-  4.5 s: the reference answered musl about 2 s after ldd exited.
+  waits up to 2 s more. Then it uses the output it has, even past 5 s, and the
+  child is not killed (`f6010b97`, Linux).
 
 ### -probe-cli — classify a CLI binary
 
