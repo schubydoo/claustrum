@@ -107,8 +107,9 @@ Every request carries a top-level `"auth":"<token>"`. Every method but
 `server.shutdown` is not authenticated, as on the reference. A shutdown frame that
 the daemon reads stops it, with any `auth` member or none. `-stop` sends no `auth`
 member. Desktop stops the daemon with `server --stop --socket <sock>` from a bare
-SSH command line, with no `CLAUDE_RPC_TOKEN` in its environment. The exemption
-covers auth only (see [Validation precedence](#validation-precedence)).
+SSH command, with no `CLAUDE_RPC_TOKEN` in its environment
+([driver claim](ARCHITECTURE.md#driver-claims-and-their-provenance)). The
+exemption covers auth only ([Validation precedence](#validation-precedence)).
 
 The server's expected token comes from `-token-file` or from `-token-fd`. With
 `-token-file` the daemon reads the file once at startup and then unlinks it. With
