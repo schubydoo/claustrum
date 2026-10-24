@@ -28,8 +28,8 @@ the same JSON-RPC methods.
 
 ## The git subsystem
 
-The five `git.*` methods start in `methods_git.go`. Their params are in
-`gitparams.go`. The other files hold these steps:
+The five `git.*` methods start in `methods_git.go`, and their params in
+`gitparams.go`.
 
 - **Each git call.** `gitenv.go`, `gitchildenv*.go` and `githarden.go` build the
   environment of a git child. `gitstop.go` holds the time limits.
@@ -46,10 +46,12 @@ The five `git.*` methods start in `methods_git.go`. Their params are in
   `externalunsupported_*.go` and `spelling_*.go` hold the path refusals of both.
   `worktreelock.go` holds their locks. `worktreebranch*.go` holds the branch
   step of a remove and of a rollback.
-- **Create.** `gitdiraccept.go` and `gitdirheld.go` hold the git directory open and act through it.
-  `worktreeverify.go` holds the tests after the add and the rollback steps.
-  `githarden_index_*.go` places the index. For a create that holds no git
-  directory, it deletes the registration of a rollback. `worktreestaging.go` is the Windows staging step. The copy steps
+- **Create.** `gitdiraccept.go` and `gitdirheld.go` hold the git directory open
+  and act through it. On Linux and macOS `gitshadowuse.go` also holds the
+  `worktree add` steps. `worktreeverify.go` holds the tests after the add and
+  the rollback steps. `githarden_index_*.go` places the index. For a create
+  that holds no git directory, it deletes the registration of a rollback.
+  `worktreestaging.go` is the Windows staging step. The copy steps
   are `worktreecopy.go`, `worktreeinclude*.go` and `worktreeclaude.go`. The
   other steps are `worktreemkdir_*.go`, `worktreestale*.go` and
   `worktreesource.go`.
