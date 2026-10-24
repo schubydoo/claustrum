@@ -200,7 +200,7 @@ no flag and no key.
 - **Cost.** A caller that names home, or a folder that holds it, gets a refusal.
   On Windows claustrum refuses a `destDir` with the `\\?\` prefix and a dot or a
   space after its last name. There `5fd08069` extracts into the folder with no
-  dot or space.
+  dot or space, and `89cb6289` into the folder with the exact name.
 - **Rule.** Rule 3 clause (a). The home wipe is unrecoverable data loss. No
   honest caller has a use for it, but a caller can reach it by accident. On
   2026-08-02 an in-repo fuzzer sent `"destDir":"~"` to a live daemon and
