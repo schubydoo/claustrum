@@ -715,4 +715,5 @@ Do these three steps after you reconcile a new build.
 
 1. Add a row and a detail section here, newest first.
 2. Update [`scripts/UPSTREAM_SHA`](https://github.com/schubydoo/claustrum/blob/main/scripts/UPSTREAM_SHA).
-3. Document any wire change in [`PROTOCOL.md`](PROTOCOL.md).
+3. Document any wire change on the page of the method under `docs/protocol/`,
+   or in [`PROTOCOL.md`](PROTOCOL.md).

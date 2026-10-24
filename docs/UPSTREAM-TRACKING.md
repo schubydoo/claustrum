@@ -30,8 +30,8 @@ sources, easiest first:
 2. The Desktop app bundle. A
    `JSON.parse('{"version":"<sha>","manifest":{…},"baseUrl":".../claude-ssh-releases"}')`
    literal inside `resources/app.asar` holds the pinned SHA and the six checksums
-   and sizes. A parallel literal pins the CLI (`claude-code-releases`), so match
-   the bucket by path segment. Two scripts read the literal offline:
+   and sizes. A parallel literal pins the CLI (`claude-code-releases`). Its
+   `baseUrl` can end in `/rc/<sha>`, so match the bucket by path segment. Two scripts read the literal offline:
    - [`scripts/extract-desktop-pin.py`](https://github.com/schubydoo/claustrum/blob/main/scripts/extract-desktop-pin.py)
      reads it from a Linux `.deb`, a Windows `.nupkg` or a macOS `.zip`.
    - [`scripts/latest-desktop-sha.py`](https://github.com/schubydoo/claustrum/blob/main/scripts/latest-desktop-sha.py)
@@ -51,8 +51,8 @@ sources, easiest first:
 ### claustrum re-uploads every session (harmless)
 
 The client runs `--version` on `~/.claude/remote/srv/<pinned-sha>/server`. For a
-line that starts `claude-ssh <pinned-sha>`, it skips the upload. The stock claustrum
-line starts `claustrum`, so the client sends the daemon again by SFTP every
+`--version` output that matches `/claude-ssh\s+(\S+)/` with the pinned SHA as that
+token, it skips the upload. The stock claustrum line holds no such match, so the client sends the daemon again by SFTP every
 session. That is not drift: the version line is CLI stdout, not a frame. The
 opt-in `version-override` ([CT-3](DIVERGENCES.md#ct-3)) stops the re-upload. See
 [PROTOCOL.md → `-version`](PROTOCOL.md#-version).
@@ -93,8 +93,8 @@ reference and against claustrum, and diff the results:
 1. Start each binary as a private `-serve` on a throwaway socket, with its own
    `-token-file`.
 2. Send every method, with the same requests, to each daemon.
-3. Mask the values that differ on every run, such as the version SHA and the
-   token, and diff the two sets of frames.
+3. Mask the values that differ between runs or between the two binaries, such
+   as the version id and the token, and diff the two sets of frames.
 
 The in-repo goldens (`testdata/socket_*.golden.json`) hold claustrum's side of
 that contract, so `make test` catches a change of claustrum's own frames.
@@ -580,17 +580,17 @@ them after each Go bump.
 ### Windows junctions in `filepath.EvalSymlinks`
 
 On Windows, the walk of `filepath.EvalSymlinks` fails at a junction before the
-last component, because Go 1.23 turned on the `winsymlink` GODEBUG setting. These
-answers rest on that failure:
+last component. Go 1.23 caused this: it turned on the `winsymlink` GODEBUG
+setting (from the Go source). These answers rest on that failure:
 
 - The trust-root refusal of `git.worktree_create` and `git.worktree_remove` for a
   junction before the last component of a `baseRepo` that exists (measured on
   Windows).
 - The `unresolvable` refusal of `git.status` (`baseRepo`) and
-  `git.list_branches` (`path`) for `<dir>\<junction>\T`.
-- The `git.info` answers for a path with a junction before its last component:
-  `root`, `repo`, `repoSlug` and the `GIT_COMMON_DIR` pin of the trust check
-  ([git.info → Differences by system](protocol/git-info.md#differences-by-system),
+  `git.list_branches` (`path`) for `<dir>\<junction>\T` (from the code).
+- The `git.info` answers for a path with a junction before its last component
+  (from the code). These are `root`, `repo`, `repoSlug` and the `GIT_COMMON_DIR`
+  pin of the trust check ([git.info → Differences by system](protocol/git-info.md#differences-by-system),
   [PROTOCOL.md → Git-directory trust check](PROTOCOL.md#git-directory-trust-check)).
 
 With `GODEBUG=winsymlink=0` in the daemon environment, or a `go` line below 1.23
