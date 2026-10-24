@@ -19,7 +19,7 @@ more dependency goes into Windows builds only. It is
 | `handlers/prune.go` | the sole non-`main` package: `handlers.PruneParams`, so `plugins.prune`'s `-32602` body carries the reference's `handlers.PruneParams` type name byte-for-byte |
 | `process.go` | process manager: registry, per-process seq, replay buffer, subscribers. It captures the immutable `pid`/`startTime` pair behind the CT-1 `wantPid` opt-in |
 | `bridge.go` | `-bridge` relay and `-stop` |
-| `install.go` | `-install`: download/verify/extract/prune + `__INSTALL_RESULT__` facts |
+| `install.go` | `-install`: download/extract/verify/prune + `__INSTALL_RESULT__` facts |
 | `logging.go` | leveled stderr logger (`CLAUSTRUM_LOG_LEVEL`). The level tag precedes the byte-intact `[Component]` prefixes |
 | `metrics.go` | opt-in Prometheus counters at `/metrics` (`-metrics-addr`, with no listener by default). Counting runs always, as atomics |
 | `wirelog.go` | opt-in `-wire-log` frame capture. A pure side channel over already-marshaled bytes, off by default, with by-key credential redaction |
@@ -42,40 +42,13 @@ Every OS serves the same JSON-RPC methods. Only the OS-split files
 
 ### 1 · CLI-version manager (`-install`)
 
-This mode makes sure the pinned `claude` CLI is present under `-cli-dir`. With
-no `-cli-dir` the folder is `<home>/.claude/remote/ccd-cli`. On Windows the CLI
-file is `<cli-version>.exe`.
-
-- If `<cli-dir>/<cli-version>` exists *and* is runnable (`<cli> --version`
-  exits 0), claustrum keeps it as it is. That direct run is stopped when it has
-  not ended after 30 s, as on the reference. `-install` then reports the CLI as
-  unresponsive and installs nothing. The direct run of a CLI that this `-install`
-  put in place is stopped after 120 s. A managed launcher run has 33 s and
-  123 s. See
-  [PROTOCOL.md](PROTOCOL.md) → `-install`. The `89cb6289` section of
-  [REFERENCE-BUILDS.md](REFERENCE-BUILDS.md) has its history.
-- If not, claustrum gets the blob from one of two sources:
-    - `-cli-zst` names a local `.zst` file. Claustrum removes it once the new
-      CLI is in place, before the `--version` run. Every earlier failure keeps
-      it. A supplied `-cli-checksum` makes claustrum
-      verify the blob against it, case-sensitively. Without that flag claustrum
-      does not verify the blob. The reference does the same. Claustrum creates
-      the cli-dir before it opens the blob.
-    - `-cli-url` makes claustrum download the blob. Claustrum verifies its
-      SHA-256 against `-cli-checksum` *unconditionally* (even an empty checksum
-      fails).
-- Claustrum decompresses the source with zstd to a temp path, verifies the
-  checksum, applies
-  `chmod 0755` and renames the file into place atomically. An interrupted
-  install never leaves a half-written CLI. A folder at the final path is removed
-  before the rename, and a file there is replaced by it. Claustrum then runs
-  `<cli> --version` at the final path, and it removes a new CLI that exits
-  non-zero.
-- Claustrum prunes the version files to the `-cli-keep` newest (by mtime,
-  default 3). The new CLI always stays, and a negative keep counts as 0. Every
-  other entry stays. The prune and the sweeps skip an entry that is the home
-  folder or holds it ([D2](DIVERGENCES.md#d2)).
-- Claustrum prints one line: `__INSTALL_RESULT__{json}`.
+This mode makes sure the pinned `claude` CLI is present under `-cli-dir`.
+Claustrum decompresses the source with zstd to a temp path. It verifies a
+supplied `-cli-checksum`, always on `-cli-url`. Then it applies `chmod 0755` and
+renames the file into place atomically. An interrupted install never leaves a
+half-written CLI.
+[-install and -probe-cli](INSTALL.md) has the sources, the bounds, every
+delete, the prune and the `__INSTALL_RESULT__` facts.
 
 ### 2 · Daemon / process supervisor (`-serve`)
 
@@ -243,87 +216,6 @@ sits in front of those calls so operators can quiet the daemon:
   exactly what the daemon always has. A higher threshold drops everything below
   the chosen level.
 - The level is a local diagnostic knob. It touches stderr only, never the wire.
-
-## `__INSTALL_RESULT__` facts
-
-```jsonc
-{
-  "serverVersion": "<daemon id>",
-  "os":   "linux",            // GOOS
-  "arch": "amd64",            // GOARCH
-  "libc": "glibc",            // or "musl"; "" off linux (no probe). On linux an ldd
-                              // still running at 5 s is killed, its output is
-                              // dropped, and the loader glob decides.
-                              // The driver uses
-                              // this field to pick which CLI build to download —
-                              // a third-binary claim; see the provenance note below.
-  "cliPath": "<cli-dir>/<cli-version>", // <cli-version>.exe on Windows. It is "" when the
-                              // cli-dir cannot be made, and without -cli-version
-  "cliWasPresent": false,     // true only if it existed AND answered --version within 30 s.
-                              // That is without CLAUDE_SSH_MANAGED_LAUNCHER=1; the gated rules
-                              // are in PROTOCOL.md → -install
-  "cliError": "…",            // omitted on success
-  "cliUnresponsive": true,    // a --version run that its bound stopped. A direct run has 30 s,
-                              // and 120 s after an install in the same run. A managed launcher
-                              // run has 33 s and 123 s. Omitted when it does not apply.
-  // 89cb6289: the launcher* fields appear only with CLAUDE_SSH_MANAGED_LAUNCHER=1,
-  // each omitted when it does not apply. See PROTOCOL.md → -install.
-  "fetch": {                  // 4534d86: present whenever a -cli-url download was
-    "bytes": 0,               // attempted, even a 0-byte 404. Omitted on -cli-zst / cache hit.
-    "ms": 0,                  // download duration
-    "longestPauseMs": 0       // largest gap between reads (~60000 on a read-idle stall abort)
-  },                          // It is the last field without the gate.
-  "launcherStatus": "usable", // none / usable / unusable / unreadable / probe_failed / unresponsive
-  "launcher": ["<argv>"],     // the launcher argv, when one was resolved
-  "launcherSource": "<file>", // the settings file that gave the value
-  "launcherPath": "<file>",   // the unreadable file or folder
-  "launcherReason": "…",      // why it was refused, failed or stopped
-  "launcherStderr": "…"       // the failed run's stderr, 8192 bytes kept
-}
-```
-
-This section covers the `cliError` strings. Every error that `ensureCLI` returns
-lands here verbatim, with the wrapping prefix that its phase adds. That is the
-form a driver sees. The table below groups the strings by phase and quotes no
-count. If you need a count, re-derive it from `ensureCLI`:
-
-| phase | string |
-|---|---|
-| version check | `cli version "<v>" must be a single path component` |
-| source | `cli <v> missing and no --cli-url or --cli-zst provided` |
-| | `opening input: <err>` (`-cli-zst` read) |
-| download | `download failed: <err>`. This is the catch-all wrap for any download error that is not one of the bare forms below. Those errors are a transport failure before the body and the 60 s response-header limit (`Get "<url>": net/http: timeout awaiting response headers`). They also include the D10 cap (`response exceeds <n> bytes`) and the D12 deadline (`context deadline exceeded (…)`, off by default) |
-| | `download failed with status <code>`. Non-200, no URL, no reason phrase (bare, no prefix) |
-| | `download stalled: no data for <n>s after <got>/<total> bytes`. This is the 60s read-idle abort (always-on, `4534d86` parity, bare, no prefix) |
-| | `download interrupted after <got>/<total> bytes: <err>`. A body read that ended with a transport error (always-on, parity, bare, no prefix) |
-| verify | `checksum mismatch: expected=<a>, actual=<b>` |
-| install | `mkdir cli dir: <err>` |
-| | `staging cli: <err>` |
-| | `decompressing: <err>` |
-| | `decompressing: decompressed CLI exceeds <n> bytes` |
-| | `installed cli at <path> is not runnable` |
-| | `cli unresponsive: the installed Claude Code binary started but did not answer --version within 30s (120s for a first run) and was stopped; the host is not letting it run (endpoint security software or a stalled network home are the usual causes)`. A direct `--version` run that its bound stopped |
-| | `cli path must not be or contain the home directory: "<path>"`. The D2 home guard, claustrum-only |
-| | `clearing stale dir at <path>: <err>` |
-| | `rename: staging file vanished before install: <err>` |
-| | `rename: <err>` |
-| managed launcher | `cli unresponsive: the installed Claude Code binary was started through the host's managed launcher <argv0> and the run did not answer --version within 33s (123s for a first run), so it was stopped; the launcher or the host is not letting it finish`. Only with `CLAUDE_SSH_MANAGED_LAUNCHER=1` |
-
-The download forms use different wording on purpose, to match the reference. The
-status, stall and interrupted forms are fully worded and go out bare.
-`staging cli:` and `decompressing:` also go out bare on `-cli-url`. Every other
-download error carries the `download failed: ` prefix. Those other errors are a
-transport failure before the body, the response-header limit, the D10 cap, the
-D12 deadline. The
-status form omits the URL, so a signed URL cannot reach whatever captures the
-`__INSTALL_RESULT__` line. A bare `chmod` failure propagates as the raw
-Go error.
-
-These strings are not free-form diagnostics: the driver reads them. A change to a
-row's wording can change what a user sees. No JSON-RPC frame has to move. A
-new guard whose error pre-empts a row can do the same. D10's opt-in cap is the
-worked example. How the driver classifies them is a third-binary claim. See
-[Driver claims and their provenance](#driver-claims-and-their-provenance).
 
 ## Driver claims and their provenance
 
