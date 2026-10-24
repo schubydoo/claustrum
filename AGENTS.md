@@ -645,6 +645,7 @@ frames → [`docs/PROTOCOL.md`](docs/PROTOCOL.md). Driver-claim provenance
 ## Where detail lives
 
 - Protocol / frames → [`docs/PROTOCOL.md`](docs/PROTOCOL.md)
+- Running the daemon (token file, lock, cleaner, start, log) → [`docs/DAEMON.md`](docs/DAEMON.md)
 - One short page for each method → `docs/protocol/`
 - Divergence catalog + rules → [`docs/DIVERGENCES.md`](docs/DIVERGENCES.md)
 - Internals + driver-claim provenance → [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md)
