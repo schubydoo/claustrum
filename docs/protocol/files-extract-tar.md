@@ -125,6 +125,8 @@ By default there is no limit on the size of the extracted files. An operator can
 | An absolute `destDir` | Starts with `/`. | Has a drive or a share. `\dir` and `C:dir` are relative. |
 | `\` in the name of an entry | A character of the name. | A separator. |
 | The home test | Letter case counts. | Letter case does not count. |
+| A last name of `destDir` that ends in a dot or a space, with no `\\?\` prefix | A plain name (from the code). | The `destDir` is wiped and filled (measured on Windows). |
+| The last names `NUL`, `a:b`, `CON`, `COM1`, `dest?` and `dest*` | A plain name (from the code). | `clean destDir: RemoveAll <name>: …`, and `destDir` does not change (measured on Windows). |
 
 ## Differences from the reference
 
