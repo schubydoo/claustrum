@@ -59,9 +59,10 @@ token did not already give. See
   the ACL of the session directory confines the file.
 - `server.shutdown` is the one method the token does not gate. It is not
   authenticated. That is behavioral parity with the reference. Desktop stops the
-  daemon with no token in its environment. Reaching the socket stops the
+  daemon with no token in its environment
+  ([driver claim](docs/ARCHITECTURE.md#driver-claims-and-their-provenance)). Reaching the socket stops the
   daemon and drops every session, unless the Linux peer check refuses the
-  caller. `-stop` sends no token. The socket's owner-only mode is what confines this. An
+  caller. `-stop` sends no token. The socket's owner-only mode confines this. An
   actor who already shares the uid can do strictly more through `process.spawn`.
   The optional Windows named-pipe transport shares this dispatch, so the same
   exception applies.
