@@ -1333,9 +1333,12 @@ and their limits against `89cb6289`. A rule that names no system was measured on
 Linux, macOS and Windows. `githarden.go` holds the lists, and
 `githarden_shape_test.go` tests them.
 
-Each hardened call passes no `-C`. Most of them run in the repository directory.
-Before each one, the daemon runs a config listing (`git config -z --list`) with the
-profile of that call. There are two profiles:
+Each hardened call passes no `-C`. Before each one, the daemon runs a config
+listing (`git config -z --list`) with the profile of that call. Before its first
+listing, a request with no cached value runs the excludes read, `git config
+--includes --path core.excludesFile`, in the temporary directory. It adds only
+`GIT_DIR=<null>`. The probe `git --attr-source=<empty tree> version` adds no
+variable. There are two profiles:
 
 - The heavy profile forbids every transport protocol
   (`GIT_ALLOW_PROTOCOL=denied_by_claude_ssh`). `git.info`, `git.list_branches` and
@@ -1349,22 +1352,22 @@ profile of that call. There are two profiles:
 [The daemon's own git environment](#the-daemons-own-git-environment) gives the
 variables of the daemon that change these values. A variable that the daemon adds
 wins over the same variable of the daemon's own environment (measured on Linux and
-macOS). On Windows claustrum
-gives a git child its environment in name order. That is
-[D23](DIVERGENCES.md#d23).
+macOS). On Windows claustrum gives a git child its environment in name order. That
+is [D23](DIVERGENCES.md#d23).
 
 A client sees the hardening in these places:
 
 - `git.status` reads the real `HEAD` commit, also where `refs/replace` names another
   (see [git.status](protocol/git-status.md#what-the-status-reads)).
-- The failure texts of `git.worktree_create` and the replies of `git.status` hold
-  no graft-file `hint:` lines.
+- The failure texts of `git.worktree_create` hold no graft-file `hint:` lines: the
+  light list turns them off. No `git.status` reply holds one either, because its
+  calls give only stdout to the reply.
 - On Windows a create with a tree path of 270 characters succeeds.
 - The records of a new worktree hold absolute paths, also where the user config sets
   `worktree.useRelativePaths` (measured on macOS and Windows).
 - Each call passes the user's global excludes file as `core.excludesFile`. When
-  the user has none, the value is the null device. On Windows the `status`, `ls-files` and
-  `diff-index` calls of `git.status` pass `/dev/null` there. That is claustrum's
+  the user has none, the value is the null device. On Windows the `status`,
+  `ls-files` and `diff-index` calls of `git.status` pass `/dev/null` there. That is claustrum's
   own, see [D16](DIVERGENCES.md#d16).
 - The config listings run with `LC_ALL=C` and `LANGUAGE=C`. git then writes its
   listing errors in English (measured on Linux). The one exception is the second

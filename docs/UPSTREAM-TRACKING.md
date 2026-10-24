@@ -364,12 +364,14 @@ the linked pages. The history of each build is in
   - With a git filter or git-lfs, the read-tree of claustrum can carry filter
     items before its list.
 
-  With `"shadowDirOff":true` the other calls are equal. Without the member the
-  folder variables, the heavy variables of a create, the `lfs.storage` item of the checkout and the
-  names of the short-lived entries are equal. That is measured
-  on Linux and macOS in the state `shadow`. On Windows the variables and the names
-  are measured in the state `fallback-git`. See
-  [Hardened git calls](PROTOCOL.md#hardened-git-calls).
+  With `"shadowDirOff":true` the other calls are equal in list, arguments,
+  working directory and variables. Without the member these are equal: the
+  folder variables and the six heavy values of the light calls of a create. So
+  are the `lfs.storage` item of the checkout and the names of the short-lived
+  entries. That is measured
+  on Linux and macOS in the state `shadow`. On Windows the variables and the
+  names are measured in the state `fallback-git`. `githarden.go` holds the
+  lists. See [Hardened git calls](PROTOCOL.md#hardened-git-calls).
 - The `worktreeRoot` location rules follow `5fd08069` (measured on Linux and
   macOS). `89cb6289` is not measured there.
 - A remove behind a linked `<git dir>/worktrees` follows `5fd08069` (measured on
