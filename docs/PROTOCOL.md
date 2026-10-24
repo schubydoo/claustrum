@@ -722,7 +722,8 @@ log lines and, once orphaned, a self-directed authed `server.capabilities`
 request.
 
 Every 60 seconds the daemon compares the file identity of its socket path
-(`os.SameFile`) to the inode it bound. If the path is gone or another inode, a
+(`os.SameFile`) to the inode it bound. The check interval of the reference is
+not measured. If the path is gone or another inode, a
 10-minute grace clock starts. A path that still matches resets the clock. A check
 that sees a client starts the clock again and writes no line. So the first line
 below does not come after that client leaves, as on `5fd08069` (measured on Linux
@@ -730,9 +731,10 @@ and macOS). After the grace with nobody connected, the daemon dials its socket
 and compares the `instanceId` of the reply to its own. A probe that reaches itself
 resets the clock. Two failed probes, 60 seconds apart, start a graceful shutdown.
 It closes listeners, drops clients, and stops child process groups unless
-`-keep-children` is set. Both daemons exit with code 0, with no signal from
-another process (measured on Linux). The reference removes `daemon.token`, and
-claustrum does so through its graceful stop (from the code).
+`-keep-children` is set. `89cb6289` and claustrum exit with code 0, with no
+signal from another process (measured on Linux). `89cb6289` removes
+`daemon.token` (measured on Linux). claustrum removes it through its graceful
+stop (from the code).
 
 These are the log lines of `89cb6289`, and claustrum logs the same texts
 (measured on Linux):
@@ -747,9 +749,9 @@ These are the log lines of `89cb6289`, and claustrum logs the same texts
 
 On `89cb6289` the second line came about 10 minutes after the first, and the
 third one minute later (measured on Linux). The reference logs `orphaned for
-11m0s` or `12m0s`. claustrum logged `12m0s` (measured on Linux), and the code
-prints `11m0s` at exact ticks. The cause of that minute is not measured. The
-check interval of the reference is not measured. At
+11m0s` or `12m0s` (measured on Linux). claustrum logged `12m0s` (measured on
+Linux), and the code prints `11m0s` at exact ticks. The cause of that minute is
+not measured. At
 the self-exit the reference ends the children with `SIGKILL`, and claustrum ends
 them too (measured on Linux).
 
