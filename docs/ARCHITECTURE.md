@@ -249,10 +249,11 @@ them. Three of them carry rules of these docs:
   "(opt-in)" convention: a flag and a configuration key, because the key is the
   reachable knob.
 
-D6 also rests on a driver claim with no fixture: what Desktop sends as
-`-cli-version`.
+Two driver claims have no fixture: what Desktop sends as `-cli-version` (D6),
+and that Desktop stops the daemon with no token
+([Authentication](PROTOCOL.md#authentication)).
 
-Each claim has a fixture that runs against the driver, with a control that can
+Each claim in the table has a fixture that runs against the driver, with a control that can
 come out wrong. Only the argv fixture was run.
 
 | claim | fixture | control that must fire |
@@ -263,12 +264,12 @@ come out wrong. Only the argv fixture was run.
 
 The argv claim holds, by inspection of the shipped client. Desktop builds the
 daemon's argv from a fixed set of flags. Only the operands change: the download
-URL, its checksum and the uploaded blob path. Over two cold starts on one host,
+URL, its checksum and the uploaded blob path. On one host,
 Desktop ran `-install` bare, then with `-cli-url` and `-cli-checksum`. Once,
 with that download forced to fail, it uploaded the blob over SFTP and ran
 `-install` with `-cli-zst`.
 
-The argv claim underpins D3, D10 and D12. The `cliError` claim underpins D10.
+The `cliError` claim underpins D10.
 `libc` underpins no current entry. This list is kept by hand and is not
 complete. Each entry in [DIVERGENCES.md](DIVERGENCES.md) has its own reopen
 trigger.

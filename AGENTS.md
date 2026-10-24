@@ -548,11 +548,12 @@ name describes claustrum's code, not a measurement.
   `/proc/<pid>/environ`. With `-token-fd` the daemon reads the token from an
   open descriptor. It forwards the token to the daemonized child over a pipe,
   so this handoff never touches disk. No mode reads `CLAUDE_RPC_TOKEN`:
-  `-bridge` relays a client that supplies its own `auth`, and the daemon strips
-  the variable from spawned children. `server.shutdown` is the one method that
-  is not authenticated. That is parity with the reference. Desktop stops the
-  daemon with no token in its environment, so `-stop` sends no
-  `auth` member. Every other method rejects an unauthenticated request `-32001`.
+  `-bridge` relays a client with its own `auth`, and the daemon strips
+  the variable from spawned children. `server.shutdown` is the one
+  unauthenticated method. That is parity with the reference. Desktop stops the
+  daemon with no token in its environment
+  ([driver claim](docs/ARCHITECTURE.md#driver-claims-and-their-provenance)), so
+  `-stop` sends no `auth` member. Every other method rejects an unauthenticated request `-32001`.
 - The daemon persists its token to `daemon.token` (mode `0600`) beside the
   socket. It writes the file atomically at startup. At a graceful shutdown, if
   the file is still the file of this daemon by identity, the daemon unlinks it.
