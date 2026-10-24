@@ -249,7 +249,7 @@ process holds under a lease is not drift either. It comes from the `O_NONBLOCK`
 open of claustrum (from the code, not measured). See
 [files.read](protocol/files-read.md).
 
-### Triage gotchas — when a probe result is misleading
+### Triage gotchas: when a probe result is misleading
 
 These are the traps that matter for telling drift from expected. In the git and
 files methods, claustrum follows `5fd08069`, the build that `scripts/UPSTREAM_SHA`
@@ -369,7 +369,9 @@ the linked pages. The history of each build is in
   refuses gets a normal answer where the copy leaves it out. Against `5fd08069`
   the config reads above differ. Two reply texts differ too, for a Windows
   create whose `.git` becomes a file `gitdir: <X>` while it runs (measured on
-  Windows).
+  Windows). After the start test on a `.git` file that names a missing path,
+  claustrum runs a config listing and makes no `.probe`, where `5fd08069` runs a
+  `rev-parse` against `.probe` (measured on macOS and Windows), with equal frames.
   See [The settings copy](PROTOCOL.md#the-settings-copy).
 - A remove with a worktree folder that exists lists again after a failed
   listing, as on `5fd08069` (measured on Linux, macOS and Windows). `f6010b97`
