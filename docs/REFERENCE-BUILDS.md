@@ -706,7 +706,9 @@ bump procedure therefore compares more than the wire (see
 ### `8de85faaa11694321e937499a18c7ab88f37c76c` — 2026-05-21
 
 This build is the baseline. The clean-room reimplementation was first built
-against it.
+against it. A real-session capture against it, with the full `process.*`
+lifecycle, a stream over 32 KiB and a mid-stream reconnect through
+`process.reattach`, was byte-identical for the methods that this build exposed.
 
 ## When you bump the pin
 
@@ -715,4 +717,5 @@ Do these three steps after you reconcile a new build.
 
 1. Add a row and a detail section here, newest first.
 2. Update [`scripts/UPSTREAM_SHA`](https://github.com/schubydoo/claustrum/blob/main/scripts/UPSTREAM_SHA).
-3. Document any wire change in [`PROTOCOL.md`](PROTOCOL.md).
+3. Document any wire change on the page of the method under `docs/protocol/`,
+   or in [`PROTOCOL.md`](PROTOCOL.md).
