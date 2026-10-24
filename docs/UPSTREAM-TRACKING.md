@@ -278,7 +278,7 @@ process holds under a lease is not drift either. It comes from the `O_NONBLOCK`
 open of claustrum (from the code, not measured). See
 [files.read](protocol/files-read.md).
 
-### Triage gotchas — when a probe result is misleading
+### Triage gotchas: when a probe result is misleading
 
 These are the traps that matter for telling drift from expected. In the git and
 files methods, claustrum follows `5fd08069`, the build that `scripts/UPSTREAM_SHA`
