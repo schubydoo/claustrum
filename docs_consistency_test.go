@@ -579,7 +579,7 @@ func TestDocsEveryErrorCodeIsDocumented(t *testing.T) {
 // because the documents grew past what a person can read. A limit goes down, never
 // up, without the maintainer's word.
 var docWordLimits = map[string]int{
-	"AGENTS.md":                            7600,
+	"AGENTS.md":                            7500,
 	"CONTRIBUTING.md":                      1300,
 	"README.md":                            1300,
 	"SECURITY.md":                          1700,

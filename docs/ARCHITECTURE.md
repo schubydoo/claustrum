@@ -29,6 +29,11 @@ more dependency goes into Windows builds only. It is
 | `detach_unix.go` / `detach_windows.go` | daemonize attr (setsid vs DETACHED_PROCESS with `CREATE_BREAKAWAY_FROM_JOB`) and the start of the daemonized child. On Windows the daemon starts outside the job of its launcher. If that job refuses breakaway, the daemon starts inside it and the launcher logs one line, as `89cb6289` does (row JB of a Windows VM) |
 | `shellenv_unix.go` / `shellenv_windows.go` | login-shell PATH extraction (Unix) / the daemon's own PATH for `process.spawn` children (Windows) |
 | `shellagent.go` / `shellagent_unix.go` / `shellagent_windows.go` | `process.spawn` SSH agent hand-off: the login shell's `SSH_AUTH_SOCK`, checked and cached (Unix) / no-op (Windows) |
+| `gitshadow.go` / `gitshadow_unix.go` / `gitshadow_windows.go` | the settings copy of the git methods: the state, the member `settingsControl` of `git.info`, the start test, and the folder of one daemon under `<socket folder>/git-shadow` with its lock |
+| `gitshadowsweep.go` / `gitshadowhold.go` | the sweep of the folders of daemons that are gone, and the hold of a repository folder while a git call uses it |
+| `gitshadowprobe.go` / `gitshadowrepo.go` / `gitshadowconfig.go` | the call that asks git about a repository, the folder of one repository, and the text of the copied settings file |
+| `gitshadowuse.go` | the folder variables of the git calls. It also has the `worktree add` steps on Linux and macOS |
+| `worktreestaging.go` / `gitworktreeconfig.go` | the Windows create with its staging folder. The `config.worktree` file of a new worktree |
 
 Every OS serves the same JSON-RPC methods. Only the OS-split files
 (`*_unix.go`, `*_linux.go`, `*_windows.go` and their kin) are different.
