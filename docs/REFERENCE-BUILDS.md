@@ -76,7 +76,7 @@ and in [PROTOCOL.md](PROTOCOL.md).
 
 - The git methods run git on a copy of the git settings in a folder
   `git-shadow`. `git.info` gains the last member `settingsControl`, and
-  `"shadowDirOff":true` turns the copy off (PRs 518, 570, 575, 582 and 596).
+  `"shadowDirOff":true` turns the copy off (PRs 518, 570, 575, 582 and 596). The older build `89cb6289` has no settings copy and answers a request with a failed test normally, and claustrum follows `5fd08069` there.
 - The git methods refuse a repository config that the daemon does not accept.
   The git calls get new option lists and time limits (PRs 512, 513 and 559).
 - `git.worktree_create` refuses a filter that only the repository defines. On
