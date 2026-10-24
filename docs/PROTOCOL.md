@@ -1099,76 +1099,105 @@ other two stat it:
 
 ## Methods (20)
 
-`server.capabilities` self-describes the set. Order as returned:
+`server.capabilities` lists the methods in the order of this table. The
+[reference build history](REFERENCE-BUILDS.md) records the builds that added or
+removed a method.
 
+| Method | Params → result | Page |
+|---|---|---|
+| `server.ping` | none → `{"pong":true}` | [server.*](protocol/server.md#serverping) |
+| `server.capabilities` | none → `{"version","methods":[…20…],"instanceId","startedAt","features":[…],"peerCheck"[,"peerCheckBy"]}` | [server.*](protocol/server.md#servercapabilities) |
+| `server.shutdown` | none → `{"ok":true}`, when the reply wins the race with the close | [server.*](protocol/server.md#servershutdown) |
+| `files.list` | `{path}` → `{"entries":[{"name","path","isDir"},…]}` (name-sorted) | [files.list](protocol/files-list.md) |
+| `files.validate` | `{path}` → `{"valid":bool,"isDir":bool[,"error"]}` | [files.validate](protocol/files-validate.md) |
+| `files.stat` | `{path}` → `{"exists","isDir","size","mode":"-rw-r--r--"}` | [files.stat](protocol/files-stat.md) |
+| `files.read` | `{path[,maxBytes]}` → `{"content":"<raw text>","exists":true}` | [files.read](protocol/files-read.md) |
+| `files.extract_tar` | `{archivePath,destDir}` → `{"success":true,"fileCount":<n>}` | [files.extract_tar](protocol/files-extract-tar.md) |
+| `git.info` | `{path[,shadowDirOff]}` → repo: `{"isRepo":true,"repo":"<dir>","branch":"<b>","root":"<abs>","repoSlug":"<owner/repo>","defaultBranch":"<b>"[,"settingsControl":"<state>"]}` · non-repo: `{"isRepo":false,"repoSlug":"","defaultBranch":""[,"settingsControl":"<state>"]}` | [git.info](protocol/git-info.md) |
+| `git.status` | `{path,baseRepo[,shadowDirOff]}` → clean: `{"isRepo":true,"clean":true}` · dirty: `{…,"clean":false,"changes":["M  a.txt"," M b.txt","?? new"]}` | [git.status](protocol/git-status.md) |
+| `git.list_branches` | `{path[,shadowDirOff]}` → `{"isRepo":true,"branches":[…sorted…]}` | [git.list_branches](protocol/git-list-branches.md) |
+| `git.worktree_create` | `{baseRepo,branchName,worktreePath[,sourceBranch][,existingBranch][,worktreeRoot][,timeoutMs][,shadowDirOff]}` → `{"success":true,"path":"<worktreePath>","sourceBranch":"<b>","branch":"<b>"}` | [git.worktree_create](protocol/git-worktree-create.md) |
+| `git.worktree_remove` | `{baseRepo,worktreePath[,branchName][,worktreeRoot][,shadowDirOff]}` → `{"success":true}`, or `{"success":true,"branchKept":true}` when the branch step keeps the branch | [git.worktree_remove](protocol/git-worktree-remove.md) |
+| `launcher.resolve` | `{cliPath}` → one of four shapes | [launcher.resolve](protocol/launcher-resolve.md) |
+| `process.spawn` | `{id,command[,args][,cwd][,env][,disableShellAgentSocket][,launcher][,wantPid]}` → `{"success":true}`, then stream frames | [process.spawn](protocol/process-spawn.md) |
+| `process.stdin` | `{id,data[,offset]}` → `{"success":true,"applied":<int>[,"duplicate":true]}` | [process.stdin](protocol/process-stdin.md) |
+| `process.kill` | `{id[,signal]}` → `{"success":true}` | [process.kill](protocol/process-kill.md) |
+| `process.killAndWait` | `{id[,signal][,timeoutMs][,escalate]}` → `{"found":<bool>,"died":<bool>[,"alreadyExited":true][,"escalated":true]}` | [process.killAndWait](protocol/process-killandwait.md) |
+| `process.reattach` | `{id,fromSeq[,wantPid]}` → `{"found","running","firstSeq","lastSeq","stdinApplied"}` | [process.reattach](protocol/process-reattach.md) |
+| `plugins.prune` | `{[keep],[minAgeDays]}` → `{"root":"<per-install root>","pruned":[…],"prunedLegacy":[…],"staleArchives":0,"kept":0,"live":<n>,"young":<n>,"legacy":"<state>","minAgeDays":<clamped>}` | [plugins.prune](protocol/plugins-prune.md) |
+
+### Stream notifications
+
+A `process.*` client supplies its own `id`, which is any string. The daemon
+delivers output as id-less stream notifications, and it buffers them for a
+later replay.
+
+```jsonc
+{"type":"stream","processId":"<id>","stream":"stdout","seq":1,"data":"<base64>"}
+{"type":"stream","processId":"<id>","stream":"stderr","seq":2,"data":"<base64>"}
+{"type":"stream","processId":"<id>","stream":"exit","seq":3,"exitCode":0}
+{"type":"stream","processId":"<id>","stream":"exit","seq":3,"exitCode":-1,"signal":"SIGTERM","killedBy":"client"}
 ```
-server.ping  server.capabilities  server.shutdown
-files.list   files.validate  files.stat  files.read  files.extract_tar
-git.info     git.status      git.list_branches  git.worktree_create  git.worktree_remove
-launcher.resolve
-process.spawn  process.stdin  process.kill  process.killAndWait  process.reattach
-plugins.prune
-```
 
-Reference `7c2f88d` added `process.killAndWait` between `process.kill` and
-`process.reattach`, for 19 methods. `7d193f89` then removed `server.version` and
-brought the set to 18. Calling `server.version` now answers
-`-32601 "Unknown method: server.version"`. The `-version` CLI flag is a separate
-surface and still prints the daemon's version. `19f30c46` appended
-`plugins.prune` last and brought the set back to 19. `plugins.prune` is the only
-member of the `plugins.*` namespace. `89cb6289` added `launcher.resolve` between
-`git.worktree_remove` and `process.spawn`, for 20 methods. The Linux, macOS and
-Windows VMs saw it at that place.
+- `seq` is per-process. It starts at 1 and is monotonic across
+  stdout/stderr/exit.
+- `data` is base64 for stdout/stderr. The `exit` frame carries `exitCode` and no
+  `data`. A signal-terminated child reports `exitCode: -1`, not `128+signo`.
+- `signal` and `killedBy` were added by `4534d86`. They appear on the `exit` frame
+  only, both after `exitCode`, and both are omitempty, so a normal exit stays
+  byte-identical. `signal` is the SIG-prefixed name of the terminating signal, such
+  as `SIGTERM` or `SIGKILL`, read from the wait status. It is omitted on a normal
+  exit, and it is omitted always on Windows, which has no signal on the wait path.
+  That was measured on a Windows VM, where the reference omits `signal` and still
+  emits `killedBy`. `killedBy` names who asked the daemon to kill the process. It
+  is `client` for `process.kill` and `process.killAndWait`, and `shutdown` for the
+  shutdown and `killAll` sweep. `killedBy` is emitted on every OS. The `client`
+  values and the `SIGTERM` and `SIGKILL` names are live-measured. The other mapped
+  signal names derive from the same wait-status path and are not individually
+  measured against the reference. The `shutdown` value is not probe-measured,
+  because the shutdown exit frame races connection teardown
+  and is not client-observable.
+- The `exit` frame waits at most 5 seconds after the process exits for
+  stdout/stderr to reach EOF. The daemon then closes the read ends and emits the
+  frame anyway. This matters when the command leaves a grandchild that holds the
+  same pipe, as `npm run dev &` does. The daemon does not forward output that the
+  grandchild writes after the cap, because that write fails `EPIPE`. The
+  `process.reattach` `running` flag does not wait for that frame. Since `90fca6e6`,
+  a reattach inside the drain window reports `running: false`. In claustrum it
+  flips at the reap itself. On the reference the flip is measured one second into
+  the drain. The probe therefore bounds the flip
+  at one second rather than at the reap.
+  `process.stdin` refuses inside the same window with `-32602 Process not
+  running`, for a write that carries fresh bytes. An offset gap still
+  answers `-32003` and a wholly duplicate write still answers
+  `{"success":true,…,"duplicate":true}`. Before `90fca6e6`, both paths reported
+  the process as still running inside the drain, measured on `19f30c46`. The
+  refusal also stops the drain window from inflating `applied` and `stdinApplied`, which used to count bytes the
+  closed pipe discarded. The acknowledgement caveat of `stdinApplied` (see the page
+  [process.reattach](protocol/process-reattach.md)) still
+  applies for a write accepted while the process was genuinely live.
+- Each stdout/stderr frame carries at most one 32 KiB read. Larger output splits
+  across frames. Concatenate `data` in `seq` order to reassemble it. The exact
+  frame *boundaries* depend on pipe scheduling and are not stable. Only the
+  reassembled bytes are stable.
+- The replay buffer has a bound of 16 MiB per process. The daemon counts the
+  serialized frame including its trailing newline, which is the bytes a subscriber
+  receives, not the base64 `data` alone. An exit frame therefore costs its envelope
+  although it carries no `data`. The daemon drops frames oldest-first, whole frames
+  at a time, once adding a new frame pushes the buffer total over the cap. It always retains at least one
+  frame, even a frame larger than the cap. `reattach{fromSeq:0}` therefore replays
+  everything still retained, and not necessarily everything ever emitted.
+  `firstSeq` is the floor. Compare it against the last `seq` you saw to detect a
+  gap.
+- A process survives the disconnect of the connection that spawned it. Another
+  connection picks it up with `reattach`. This is the multi-attach and reconnect
+  mechanism.
 
-### server.*
+## Shared rules of the git methods
 
-The page [server.*](protocol/server.md) has the requests, the replies and the rules of the three methods.
+This section holds the rules that more than one `git.*` method uses.
 
-#### server.ping
-none → `{"pong":true}`
-
-Tells a client that the daemon answers. See [server.ping](protocol/server.md#serverping).
-
-#### server.capabilities
-none → `{"version","methods":[…20…],"instanceId","startedAt","features":[…],"peerCheck"[,"peerCheckBy"]}`
-
-Lists the methods and the features of the daemon, and the state of the peer check. See [server.capabilities](protocol/server.md#servercapabilities).
-
-#### server.shutdown
-none → `{"ok":true}`, when the reply wins the race with the close
-
-Stops the daemon and needs no auth. See [server.shutdown](protocol/server.md#servershutdown).
-
-### files.* (param: `path`)
-
-#### files.stat
-`{path}` → `{"exists","isDir","size","mode":"-rw-r--r--"}`
-
-Says whether a path exists, and gives its kind, size and mode. The page [files.stat](protocol/files-stat.md) has the parameters, the response and the errors.
-
-#### files.list
-`{path}` → `{"entries":[{"name","path","isDir"},…]}` (name-sorted)
-
-Lists the entries of one directory, without the hidden entries. The page [files.list](protocol/files-list.md) has the parameters, the response and the errors.
-
-#### files.read
-`{path[,maxBytes]}` → `{"content":"<raw text>","exists":true}`
-
-Returns the content of one file as text, up to a size limit. The page [files.read](protocol/files-read.md) has the parameters, the response and the errors.
-
-#### files.validate
-`{path}` → `{"valid":bool,"isDir":bool[,"error"]}`
-
-Says whether a path exists and whether it is a directory. The page [files.validate](protocol/files-validate.md) has the parameters, the response and the errors.
-
-#### files.extract_tar
-`{archivePath,destDir}` → extracts a gzip tar → `{"success":true,"fileCount":<n>}`
-
-Unpacks a gzip tar archive into a directory. It deletes the old content of the directory and the archive. The page [files.extract_tar](protocol/files-extract-tar.md) has the parameters, the response and what stays after a failure.
-
-### git.* (param: `path` = repo dir; worktree ops use `baseRepo`)
-
-#### Git-directory trust check
+### Git-directory trust check
 
 Every `git.*` method checks the git directory of the folder that it runs git in,
 before git runs there. That folder is `path` for `git.info` and
@@ -1183,7 +1212,7 @@ against `89cb6289` on Linux, macOS and Windows VMs. They are a stray `commondir`
 a failed configuration listing and a folder where git cannot start. A rule that
 names one system or another build was measured there.
 
-##### How the daemon finds the git directory
+#### How the daemon finds the git directory
 
 When the daemon's own environment sets neither `GIT_DIR` nor `GIT_COMMON_DIR`,
 the daemon walks up from the request folder:
@@ -1232,7 +1261,7 @@ with 40 hex digits in either case. A symlink `HEAD` passes when its target text
 starts with `refs/`. Any other `HEAD` fails at once. A FIFO `HEAD` is one example,
 and git itself blocks on it.
 
-##### How the daemon judges the git directory
+#### How the daemon judges the git directory
 
 The daemon then judges the git directory G:
 
@@ -1279,7 +1308,7 @@ The daemon then judges the git directory G:
   junction `<KP>` to a repository, the pin is `<KP>\.git`, as on `89cb6289`
   (Windows VM).
 
-##### A stray `commondir`
+#### A stray `commondir`
 
 A stray `commondir` is one in a git directory G that is not an entry: a main
 `.git`, a bare repository or a submodule's git directory. The daemon judges it in
@@ -1309,7 +1338,7 @@ these steps:
    first. When both S2 and S3 apply, which one answers is not measured.
 5. Else G is trusted, and git runs with `GIT_COMMON_DIR` pinned to G.
 
-##### The daemon's `GIT_DIR` and `GIT_COMMON_DIR`
+#### The daemon's `GIT_DIR` and `GIT_COMMON_DIR`
 
 The daemon's own environment changes the check as follows:
 
@@ -1332,7 +1361,7 @@ The daemon's own environment changes the check as follows:
 - `GIT_CONFIG`, `GIT_CONFIG_PARAMETERS` and `GIT_CEILING_DIRECTORIES` do not
   change the check.
 
-##### Trust refusal texts and frames
+#### Trust refusal texts and frames
 
 M2 to M5 are texts of `f6010b97`, and S1 to S3 are texts of `89cb6289`.
 M2 to M4 and S1 to S3 start with `the repository's git directory could not be
@@ -1379,7 +1408,7 @@ repository's work tree: <reason>"}`, also with no `errorCode`. With `worktreeRoo
 the listing classes below give their own reason. With `worktreeRoot` and no `git`
 on `PATH`, the exec error replaces both texts of the table (class 1 below).
 
-##### A folder with no repository
+#### A folder with no repository
 
 Where the trust check finds no repository, the daemon still runs the configuration
 listing in that folder. In a plain folder it carries `GIT_DIR=<null>`. The frames
@@ -1411,7 +1440,7 @@ classes below answer. In both states the listing of `git.status` still carries
 `GIT_DIR=<null>`. A listing that fails there is the refusal of `git.status`, as in
 a plain folder.
 
-##### A failed configuration listing
+#### A failed configuration listing
 
 When the configuration listing fails, the daemon sorts the failure into a class.
 The classes come in this order:
@@ -1464,7 +1493,7 @@ so on Linux, macOS and Windows VMs. Without the member the call of a create
 carries six values (`5fd08069`, Linux VM). From the code: claustrum sends those
 six in the state `shadow`.
 
-##### Where git cannot start
+#### Where git cannot start
 
 On Linux and macOS git sometimes cannot start in the folder itself. That is a
 file, or a folder that the daemon cannot search (mode 0600 or 0000). The listing
@@ -1529,7 +1558,7 @@ hooks refusal with `exit status 128: fatal: unable to access 'NUL/config':
 Permission denied`. The folder beside it with no deny entry keeps its frame under
 that token (Windows VM).
 
-##### The "cannot run" and hooks refusal texts
+#### The "cannot run" and hooks refusal texts
 
 The "cannot run" text carries the exec error and the stderr of `git version`, not
 those of the listing. Take a listing that exits 128 on an empty
@@ -1554,7 +1583,7 @@ That holds in the frames of all five methods (Linux and macOS VMs). On claustrum
 syntax error in a config file of the repository gets the class 1 text first: see
 [Repository config refusals](#repository-config-refusals).
 
-#### A FIFO where the daemon reads a git file
+### A FIFO where the daemon reads a git file
 
 This section covers three reads of the daemon itself: a `.git` file, the `commondir`
 file of a worktree entry and the `gitdir` record of a worktree entry. On Linux and
@@ -1629,7 +1658,7 @@ Not measured:
   this state. A git 2.47 gives no answer in 5 s to `rev-parse --git-dir` there
   (Linux host, not a VM).
 
-#### Repository config refusals
+### Repository config refusals
 
 The daemon reads the git config of a repository itself, and it tests some files of
 the git directory. If it does not accept one of them, the git method answers with a
@@ -1658,7 +1687,7 @@ exist, and the branch `branchName` stays. That holds on Linux, macOS and Windows
 Linux and Windows VMs ran it in a bare repository too. With `worktreeRoot` the
 refusal comes for a worktree that exists and for a missing one (Linux and macOS VMs).
 
-##### Paths in the texts
+#### Paths in the texts
 
 A path in quotes uses the separators of the system, and Go's
 `%q` quotes it. A path of more than 300 characters is cut to its first 300
@@ -1677,7 +1706,7 @@ it names the cleaned path. On Windows `path = <dir>/inc.cfg` gives
 `include.path = a/../b/inc.cfg`, a `path = x.cfg` in that file names
 `<git dir>/a/../b/x.cfg` (Linux and macOS VMs).
 
-##### Turning the read off
+#### Turning the read off
 
 `"shadowDirOff": true` in the request turns the read off for that
 request, on the five methods. A git request that starts while it runs has the switch
@@ -1689,7 +1718,7 @@ these values hold on Linux, macOS and Windows VMs. A request that starts while i
 runs ran on a Linux VM. With `worktreeRoot` and the switch, a remove of a worktree with a
 config of 20 MiB removes the worktree (macOS VM).
 
-##### How the daemon reads a config
+#### How the daemon reads a config
 
 The daemon gives each config file to git on standard input, with one
 call for each file: `git config --no-includes --file - --list -z`. git follows no
@@ -1706,7 +1735,7 @@ link to a pty slave.
 With a config that is a link to a pty slave, `5fd08069` stays up after the pty
 master closes (Linux VM).
 
-##### The kept verdict
+#### The kept verdict
 
 A verdict with a refusal is not used again. Each later request reads
 again, as on `5fd08069` (Linux, macOS and Windows VMs). claustrum keeps the verdict of
@@ -1729,7 +1758,7 @@ the daemon itself, such as too many open files, then answers one request only. T
 rule is claustrum's own. The tests of `shallow`, `info/attributes` and `info/exclude`
 run in each request, and they are no part of the kept read.
 
-##### Class 1: the git config
+#### Class 1: the git config
 
 Class 1 is `this repository's git config cannot be used: <detail>`. The format
 version and the extensions of an included file are not tested.
@@ -1770,7 +1799,7 @@ the text. A format version `2` in such a file is not refused.
   `git.status` it is the worktree that `baseRepo` names. All five methods ran, and
   `git.worktree_remove` on a Linux VM only.
 
-##### Extensions
+#### Extensions
 
 Under format version `1` the daemon refuses an extension other than
 `worktreeConfig` in two cases. [The copied settings file](#the-copied-settings-file)
@@ -1789,7 +1818,7 @@ the settings copy. They are `worktreeConfig = maybe` and `objectFormat = SHA256`
 version `1`, `refStorage = FILES`, and `objectFormat = md5` with no version key. For
 `objectFormat = SHA256` the `git.status` of `5fd08069` answers `exit status 128`.
 
-##### The count of settings
+#### The count of settings
 
 Each setting of a counted section costs the bytes of its
 full name, the bytes of its value, and 96. The config has its own sum, and the
@@ -1800,7 +1829,7 @@ refused. The counted sections are `core`, `remote`, `extensions`, `include`, `br
 macOS and Windows VMs. The exact pairs are measured in `core` and `remote` on a Linux
 VM.
 
-##### Class 2: files of the git directory
+#### Class 2: files of the git directory
 
 Class 2 is `a file in this repository's .git directory cannot be used: <detail>`.
 The files are `shallow`, `info/attributes` and `info/exclude`, and the git directory
@@ -1815,13 +1844,13 @@ itself.
 | `open <file>: <reason>` | `shallow` has mode 000 (`permission denied`) or is a socket (`no such device or address`). The path is not in quotes. An `info/attributes` or `info/exclude` of mode 000 is not refused |
 | `"<file>" holds something other than object ids` | A line of `shallow` is not 40 or 64 hex characters in lower case. That rule is fitted to the measured states. A blank line, an id with a space after it and a file of one line end are refused. A line end of CRLF, a last line with no newline and an empty file pass |
 
-##### Which answer comes first
+#### Which answer comes first
 
 A refused config comes first, then a refused `config.worktree` file of a linked
 worktree, then a refused file of the git directory (from the code for the middle step). In class 2, `shallow` comes before `info/attributes` (Linux, macOS and
 Windows VMs), and `info/attributes` comes before `info/exclude`.
 
-##### A folder that is not a repository
+#### A folder that is not a repository
 
 A folder with no repository keeps its "not a repository" answers.
 That holds for a `HEAD` that is no ref and no object id, also with format version `2`.
@@ -1835,7 +1864,7 @@ repository" answer and reads no config. git's text for another owner is
 of the owner inside the 5 seconds of a kept good answer, a request answers normally.
 The first request after that time answers "not a repository".
 
-##### claustrum's own choices
+#### claustrum's own choices
 
 These rules are from the code and are not measured on `5fd08069`:
 
@@ -1879,7 +1908,7 @@ These rules are from the code and are not measured on `5fd08069`:
   folder above the file. It also refuses an include value that starts with a slash or
   a drive.
 
-#### The settings copy
+### The settings copy
 
 The daemon keeps its own copy of the git settings of a repository. The copy is in a
 folder `git-shadow` beside the socket. The git calls of the five git methods name
@@ -1888,7 +1917,7 @@ that is not marked "claustrum's own" or "from the code" is measured against
 `5fd08069` on a Linux VM. A rule that names macOS or Windows was measured on that
 system.
 
-##### The states and `settingsControl`
+#### The states and `settingsControl`
 
 `git.info` reports the state in its last member, `settingsControl`. No other method
 sends it, and an error reply has none (Linux, macOS and Windows).
@@ -1938,7 +1967,7 @@ sends it, and an error reply has none (Linux, macOS and Windows).
 - The daemon logs one `[GitHandler]` line at the first decision of the state and one
   at a change.
 
-##### The start test
+#### The start test
 
 The first request that reaches a repository, or the `.git` file above, without the
 member runs the test. It is 10 git calls in a folder `.check-<n>` of the daemon, and
@@ -1980,7 +2009,7 @@ at about 31 s.
 - The kept failure holds after its cause is gone. A request with
   `"shadowDirOff":true` works in that time.
 
-##### The folders
+#### The folders
 
 The folder of one daemon is `<socket folder>/git-shadow/<host form>-<pid>-<16 hex>`.
 `<host form>` is the host name with each character outside `A-Z`, `a-z`, `0-9` and `.`
@@ -2065,7 +2094,7 @@ force: ` before it (Linux and Windows):
 
 `Claude could not prepare its own files on the remote machine: its copy of this repository's settings was cleared away before git started; try again`
 
-##### The copied settings file
+#### The copied settings file
 
 The `config` of the copy is the daemon's own text. Each carried setting is one block
 of two lines, `[<section>]` and `<key> = "<value>"`, in the order of the file of the
@@ -2088,7 +2117,7 @@ blocks of rewritten URLs. The file ends with
   format version, `extensions.*`, `core.bare` and `filter.*` (not measured) are
   dropped. A setting of an `includeIf` file is not carried.
 
-##### The call about the repository
+#### The call about the repository
 
 In the state `shadow` the daemon asks git about the repository before the calls of
 the method. The call is `-c core.hooksPath=<null device> -c core.fsmonitor=false
@@ -2119,7 +2148,7 @@ by its output so far (measured on `git.status` only).
 
 One `git version` call also follows a config read that failed with a syntax error.
 
-##### The git calls
+#### The git calls
 
 In the state `shadow` each hardened call carries `GIT_COMMON_DIR=<copy>` and
 `GIT_OBJECT_DIRECTORY=<git directory>/objects`. A call with no `--git-dir=` in its
@@ -2127,7 +2156,7 @@ arguments also carries `GIT_DIR` and `GIT_WORK_TREE`. The four come right after 
 profile values, in that order (Linux, macOS and Windows, the order from Linux and
 macOS). [Hardened git calls](#hardened-git-calls) has the other points of a call.
 
-##### `config.worktree`
+#### `config.worktree`
 
 The copy has no `extensions.worktreeConfig` setting, so git reads no
 `config.worktree` file in the state `shadow`. The daemon does two things in its
@@ -2141,7 +2170,7 @@ place, in a repository with that extension and a `config.worktree` file. The
 - A new worktree of `git.worktree_create` gets its own `config.worktree` file. See
   [git.worktree_create](protocol/git-worktree-create.md).
 
-##### Where claustrum differs from `5fd08069`
+#### Where claustrum differs from `5fd08069`
 
 In the differences that stay the reply lines are equal, except in two Windows rows of
 a create whose `.git` becomes a file.
@@ -2150,7 +2179,7 @@ a create whose `.git` becomes a file.
   `rev-parse` against `.probe`. claustrum runs a config listing there and makes no
   `.probe`, with equal frames (macOS and Windows).
 
-#### Hardened git calls
+### Hardened git calls
 
 The git methods run most git steps as hardened calls. A hardened call is a git call
 with a fixed list of `-c` options and a fixed set of environment variables. The lists
@@ -2168,7 +2197,7 @@ A client sees this shape in at least four places:
 - The records of a new worktree hold absolute paths, also where the user config sets
   `worktree.useRelativePaths` (macOS and Windows VMs).
 
-##### Refusal texts
+#### Refusal texts
 
 The first config listing of a method is the hooks refusal check. It is not an extra
 call. Each method answers these texts in its own error frame (see the
@@ -2188,7 +2217,7 @@ The limits refuse at the first listing only. In a folder that holds no repositor
 first listing follows [The daemon's own git environment](#the-daemons-own-git-environment).
 There a limit refuses each method except `git.status`. That rule is from the code.
 
-##### Hook pins
+#### Hook pins
 
 `git config -z --list` ends each record with a NUL byte and puts a LF between key and
 value. A key `hook.<name>.<var>` names a hook. The name is the text between the first
@@ -2215,7 +2244,7 @@ These points are from the code, not measured:
 
 Only `command` and `event` were measured as `<var>`.
 
-##### Profiles
+#### Profiles
 
 A hardened call uses the heavy profile or the light profile:
 
@@ -2313,7 +2342,7 @@ standard error. The light list turns them off with
 the reply. A failure of one of them answers the exec error. So no `git.status`
 reply holds a `hint:` line.
 
-##### Environment and working directory
+#### Environment and working directory
 
 Each hardened call runs with the repository directory as its working directory, and
 it passes no `-C`. The checkout of `git.worktree_create` runs in the new worktree,
@@ -2344,7 +2373,7 @@ heavy `-c` options, `--git-dir` and `--work-tree` follow it (Linux and macOS VMs
 It and its listing pin `GIT_COMMON_DIR` to the clean path of the common git
 directory. On Windows that path has backslashes.
 
-##### Listings and probes
+#### Listings and probes
 
 Before each hardened call except the first (see [Refusal texts](#refusal-texts)),
 the daemon runs `git config -z --list` in the same directory. The listing before the
@@ -2364,7 +2393,7 @@ Before its first listing, a request with no cached value runs `git config --incl
 Two concurrent requests run it twice (Linux VM). The probe `git --attr-source=<empty tree>
 version` adds no variable.
 
-##### Temporary names
+#### Temporary names
 
 [The folders](#the-folders) of the settings copy names the short-lived folders of a
 request. With `"shadowDirOff":true` they are temporary folders with these names:
@@ -2379,7 +2408,7 @@ macOS VMs). On Linux and macOS a client can see the index name
 in the text `open <tmp>/claude-ssh-index-<n>/index: no such file or directory`. The
 index name on Windows is claustrum's own (not measured).
 
-##### Calls with `worktreeRoot`
+#### Calls with `worktreeRoot`
 
 A create with `worktreeRoot` runs a light `rev-parse --show-toplevel`, a heavy
 `rev-parse --absolute-git-dir` and a light `worktree list --porcelain -z` in
@@ -2393,7 +2422,7 @@ list` calls stop it the same way (Linux VM). If `baseRepo` and the root are both
 worktree location <root> is not reachable` refusal of the
 [Error-string catalogue](#error-string-catalogue). Linux and macOS VMs.
 
-##### Where the calls differ from `5fd08069`
+#### Where the calls differ from `5fd08069`
 
 With `"shadowDirOff":true` a call that
 both builds make is equal in list, arguments, working directory and variables.
@@ -2416,7 +2445,7 @@ variables is equal on Linux and macOS VMs.
 
 The reply lines are equal in each difference above.
 
-#### The daemon's own git environment
+### The daemon's own git environment
 
 This section names the variables of the daemon's own environment that reach the
 git calls of the git methods. It also gives the refusals of that environment. A
@@ -2424,7 +2453,7 @@ rule
 here is measured against `f6010b97` on Linux, macOS and Windows VMs, unless it
 names another build or fewer systems.
 
-##### Variables that the git calls keep or drop
+#### Variables that the git calls keep or drop
 
 The repository calls are the configuration listings, the hardened calls,
 `worktree add`, the checkout and `git status`. The excludes read and the
@@ -2467,7 +2496,7 @@ test of a create (Linux VM).
 [Git-directory trust check](#git-directory-trust-check) gives the `GIT_DIR` of the
 listing in a folder with no repository, and its frames.
 
-##### The check of `GIT_CONFIG_COUNT`
+#### The check of `GIT_CONFIG_COUNT`
 
 The git methods check the daemon's `GIT_CONFIG_COUNT`. The check reads the count
 and its pairs by their exact upper-case names. On Windows it does not see a
@@ -2492,7 +2521,7 @@ lower-case `git_config_count` or `git_config_key_0`.
 `GIT_CONFIG_COUNT=0`, a pair with an empty value and `GIT_CONFIG_PARAMETERS='x`
 change no frame in a plain folder.
 
-##### Configuration listings that git cannot parse
+#### Configuration listings that git cannot parse
 
 With a key that git cannot read, git fails each configuration listing with exit
 status 128. `<text>` is then `config-defined hooks could not be pinned off; git not
@@ -2540,7 +2569,7 @@ These states are not measured. The rules are from the code.
 - A `.git` file with no `gitdir:` line. Its listing carries `GIT_DIR=<null>`, so
   the folder answers as a plain folder does.
 
-##### Where each method answers the refusal
+#### Where each method answers the refusal
 
 A refusal text starts with `config-defined hooks could not be pinned off; git not
 run: `. Before the refusal, the daemon runs no git call except the excludes read.
@@ -2567,7 +2596,7 @@ table gives the frame of each method, and the refusals that come before the chec
 | `git.worktree_remove` with `worktreeRoot`, `baseRepo` missing, absolute and without a `..` component, worktree directory present | `{"success":false,"error":"failed to remove worktree: could not check whether <worktreePath> is locked (the repository at <baseRepo> could not be read); retry"}`. Linux and macOS VMs |
 | `git.worktree_remove` with `worktreeRoot`, `baseRepo` missing, absolute and without a `..` component, worktree directory gone | `{"success":false,"error":"failed to remove worktree: could not check whether <worktreePath> is locked (<text>); retry"}`. If the root is missing too, the "not reachable" refusal comes first. Linux and macOS VMs |
 
-#### Time limits of git calls
+### Time limits of git calls
 
 On `git.list_branches`, `git.info`, `git.status` and `git.worktree_create` most
 calls end at 2 minutes (`5fd08069`, round `task010-01`, Linux, macOS and Windows
@@ -2602,32 +2631,7 @@ no such limit.
 - `git.worktree_remove` gets none of these limits. Its first call has the 30 s bound
   of the call about the repository (cell TR, round `task010-02`, Linux VM).
 
-#### git.info
-`{path[,shadowDirOff]}` → repo: `{"isRepo":true,"repo":"<dir>","branch":"<b>","root":"<abs>","repoSlug":"<owner/repo>","defaultBranch":"<b>"[,"settingsControl":"<state>"]}` · non-repo: `{"isRepo":false,"repoSlug":"","defaultBranch":""[,"settingsControl":"<state>"]}`
-
-Describes the git repository that holds `path`: its root, branch, GitHub slug, default branch and the state of the settings copy. The page [git.info](protocol/git-info.md) has the request, the response and the errors.
-
-#### git.status
-`{path,baseRepo[,shadowDirOff]}` → clean: `{"isRepo":true,"clean":true}` · dirty: `{…,"clean":false,"changes":["M  a.txt"," M b.txt","?? new"]}`
-
-Reports the changes in a linked git worktree of a session. The page [git.status](protocol/git-status.md) has the request, the response and the errors.
-
-#### git.list_branches
-`{path[,shadowDirOff]}` → `{"isRepo":true,"branches":[…sorted…]}`
-
-Lists the local branches of a git repository. The page [git.list_branches](protocol/git-list-branches.md) has the parameters, the response and the errors.
-
-#### git.worktree_create
-`{baseRepo,branchName,worktreePath[,sourceBranch][,existingBranch][,worktreeRoot][,timeoutMs][,shadowDirOff]}` → `{"success":true,"path":"<worktreePath>","sourceBranch":"<b>","branch":"<b>"}`
-
-Makes a linked git worktree for a session, on a new branch or on a branch that exists. The page [git.worktree_create](protocol/git-worktree-create.md) has the parameters, the response and the error codes.
-
-#### git.worktree_remove
-`{baseRepo,worktreePath[,branchName][,worktreeRoot][,shadowDirOff]}` → `{"success":true}` (lenient), or `{"success":true,"branchKept":true}` when the branch step keeps the branch
-
-Deletes a linked git worktree of a session and its registration, and then runs the branch step. The page [git.worktree_remove](protocol/git-worktree-remove.md) has the request, the response and the refusals.
-
-#### The branch step
+### The branch step
 
 The branch step deletes a branch only when another local branch or a
 remote-tracking ref reaches its tip. Else it keeps the branch.
@@ -2638,7 +2642,7 @@ of `refs/heads/<b>`. A rule that is not marked is measured against
 `89cb6289` on a Linux VM. A rule that names macOS or Windows was measured there
 too. A rule marked "claustrum's own" is not measured.
 
-##### Which branch the step deletes
+#### Which branch the step deletes
 
 - The step runs no git call for an empty `branchName`, or for one that starts
   with `-` or `+`. The branch stays.
@@ -2670,7 +2674,7 @@ too. A rule marked "claustrum's own" is not measured.
       reads the config of the repository again. A refusal there keeps the
       branch (`5fd08069`, Linux and macOS VMs).
 
-##### The git calls of the branch step
+#### The git calls of the branch step
 
 Each call runs in `baseRepo` after its own configuration listing (see
 [Hardened git calls](#hardened-git-calls)). The calls are
@@ -2695,7 +2699,7 @@ some states the reference runs more git calls than claustrum. Examples are no
 repository at `baseRepo`, a gone worktree path, a second create at one path and
 an attach add. The frames are equal.
 
-##### Time limits of the branch step
+#### Time limits of the branch step
 
 These bounds are parity. They are always on, and they are not a divergence of
 the catalog.
@@ -2714,7 +2718,7 @@ the catalog.
   (claustrum's own).
 - The `timeoutMs` of the caller does not stop the step.
 
-##### Two branch steps at once
+#### Two branch steps at once
 
 - Within one daemon, the steps of one repository run one at a time, also when
   one goes through a linked worktree. If two removes have branches that share a
@@ -2730,12 +2734,12 @@ the catalog.
   the add (`5fd08069`, Linux and macOS VMs). They do not wait for the checkout
   (Linux VM).
 
-##### The branch step in a remove reply
+#### The branch step in a remove reply
 
 The remove frame never gains text from this step. Each case of the keep list
 that a remove can reach adds `"branchKept":true`. A skipped name adds no member.
 
-##### The branch step in an undo text
+#### The branch step in an undo text
 
 A create rollback that keeps the branch adds a part after `; and the undo could
 not finish for <leaf>: `. If the branch holds a commit that no other ref
@@ -2767,121 +2771,6 @@ reaches, it also sets `"branchKept":true` after `errorCode`:
   (the Windows texts are not measured).
 - A rollback that fails in two places, other than after a failed rmdir, joins
   the two parts with `; ` in the same order (claustrum's own).
-
-### launcher.* (added `89cb6289`)
-
-A host administrator names a managed launcher in the managed settings. The
-managed launcher is a program that runs the Claude Code CLI on this host. The
-daemon puts its argv in front of the CLI command. Three surfaces use it:
-[launcher.resolve](protocol/launcher-resolve.md), the `launcher` param of
-[process.spawn](protocol/process-spawn.md#the-managed-launcher), and the launcher runs of `-install` and
-`-probe-cli`. Every rule of these surfaces is measured against `89cb6289` on a
-Linux VM unless it says otherwise. A rule that names macOS or Windows was measured there too.
-
-#### launcher.resolve
-`{cliPath}` → one of four shapes.
-
-Reads the managed settings and answers the managed launcher for a CLI, or why there is none. The page [launcher.resolve](protocol/launcher-resolve.md) has the request, the four response shapes and the reason texts.
-
-### process.* (the agent/MCP-hosting core)
-
-The client supplies its own `id`, which is any string. The daemon delivers output
-as id-less stream notifications, and it buffers them for a later replay.
-
-#### process.spawn
-`{id,command[,args][,cwd][,env][,disableShellAgentSocket][,launcher][,wantPid]}` → `{"success":true}`, then stream frames
-
-Starts a child process as the user of the daemon and streams its output as stream frames. The page [process.spawn](protocol/process-spawn.md) has the parameters, the environment of the child, the launcher checks and the errors.
-
-#### process.stdin
-`{id,data[,offset]}` → `{"success":true,"applied":<int>[,"duplicate":true]}`
-
-Sends bytes to the standard input of a child process, with an optional `offset` that makes a repeated send safe. The page [process.stdin](protocol/process-stdin.md) has the parameters, the response and the errors.
-
-#### process.kill
-`{id[,signal]}` → `{"success":true}`
-
-Sends a signal to a child process and answers at once, without a wait for its end. The page [process.kill](protocol/process-kill.md) has the parameters, the signals, the Windows child trees and the errors.
-
-#### process.killAndWait
-`{id[,signal][,timeoutMs][,escalate]}` → `{"found":<bool>,"died":<bool>[,"alreadyExited":true][,"escalated":true]}`
-
-Sends a signal to a child process, waits for it to end, and can end it by force. The page [process.killAndWait](protocol/process-killandwait.md) has the parameters, the results and the errors.
-
-#### process.reattach
-`{id,fromSeq[,wantPid]}` → `{"found","running","firstSeq","lastSeq","stdinApplied"}`
-
-Moves the output stream of a child process to the connection that sends the request, and sends the stored frames that the client missed. The page [process.reattach](protocol/process-reattach.md) has the parameters, the response and the errors.
-
-### plugins.* (added `19f30c46`)
-
-#### plugins.prune
-`{[keep],[minAgeDays]}` → `{"root":"<per-install root>","pruned":[…],"prunedLegacy":[…],"staleArchives":0,"kept":0,"live":<n>,"young":<n>,"legacy":"absent|swept|skipped: …","minAgeDays":<clamped>}`
-
-Deletes the cached plugin directories that no session used for some days. The page [plugins.prune](protocol/plugins-prune.md) has the parameters, the response and the errors.
-
-### Stream notifications
-
-```jsonc
-{"type":"stream","processId":"<id>","stream":"stdout","seq":1,"data":"<base64>"}
-{"type":"stream","processId":"<id>","stream":"stderr","seq":2,"data":"<base64>"}
-{"type":"stream","processId":"<id>","stream":"exit","seq":3,"exitCode":0}
-{"type":"stream","processId":"<id>","stream":"exit","seq":3,"exitCode":-1,"signal":"SIGTERM","killedBy":"client"}
-```
-
-- `seq` is per-process. It starts at 1 and is monotonic across
-  stdout/stderr/exit.
-- `data` is base64 for stdout/stderr. The `exit` frame carries `exitCode` and no
-  `data`. A signal-terminated child reports `exitCode: -1`, not `128+signo`.
-- `signal` and `killedBy` were added by `4534d86`. They appear on the `exit` frame
-  only, both after `exitCode`, and both are omitempty, so a normal exit stays
-  byte-identical. `signal` is the SIG-prefixed name of the terminating signal, such
-  as `SIGTERM` or `SIGKILL`, read from the wait status. It is omitted on a normal
-  exit, and it is omitted always on Windows, which has no signal on the wait path.
-  That was measured on a Windows VM, where the reference omits `signal` and still
-  emits `killedBy`. `killedBy` names who asked the daemon to kill the process. It
-  is `client` for `process.kill` and `process.killAndWait`, and `shutdown` for the
-  shutdown and `killAll` sweep. `killedBy` is emitted on every OS. The `client`
-  values and the `SIGTERM` and `SIGKILL` names are live-measured. The other mapped
-  signal names derive from the same wait-status path and are not individually
-  measured against the reference. The `shutdown` value is not probe-measured,
-  because the shutdown exit frame races connection teardown
-  and is not client-observable.
-- The `exit` frame waits at most 5 seconds after the process exits for
-  stdout/stderr to reach EOF. The daemon then closes the read ends and emits the
-  frame anyway. This matters when the command leaves a grandchild that holds the
-  same pipe, as `npm run dev &` does. The daemon does not forward output that the
-  grandchild writes after the cap, because that write fails `EPIPE`. The
-  `process.reattach` `running` flag does not wait for that frame. Since `90fca6e6`,
-  a reattach inside the drain window reports `running: false`. In claustrum it
-  flips at the reap itself. On the reference the flip is measured one second into
-  the drain. The probe therefore bounds the flip
-  at one second rather than at the reap.
-  `process.stdin` refuses inside the same window with `-32602 Process not
-  running`, for a write that carries fresh bytes. An offset gap still
-  answers `-32003` and a wholly duplicate write still answers
-  `{"success":true,…,"duplicate":true}`. Before `90fca6e6`, both paths reported
-  the process as still running inside the drain, measured on `19f30c46`. The
-  refusal also stops the drain window from inflating `applied` and `stdinApplied`, which used to count bytes the
-  closed pipe discarded. The acknowledgement caveat of `stdinApplied` (see the page
-  [process.reattach](protocol/process-reattach.md)) still
-  applies for a write accepted while the process was genuinely live.
-- Each stdout/stderr frame carries at most one 32 KiB read. Larger output splits
-  across frames. Concatenate `data` in `seq` order to reassemble it. The exact
-  frame *boundaries* depend on pipe scheduling and are not stable. Only the
-  reassembled bytes are stable.
-- The replay buffer has a bound of 16 MiB per process. The daemon counts the
-  serialized frame including its trailing newline, which is the bytes a subscriber
-  receives, not the base64 `data` alone. An exit frame therefore costs its envelope
-  although it carries no `data`. The daemon drops frames oldest-first, whole frames
-  at a time, once adding a new frame pushes the buffer total over the cap. It always retains at least one
-  frame, even a frame larger than the cap. `reattach{fromSeq:0}` therefore replays
-  everything still retained, and not necessarily everything ever emitted.
-  `firstSeq` is the floor. Compare it against the last `seq` you saw to detect a
-  gap.
-- A process survives the disconnect of the connection that spawned it. Another
-  connection picks it up with `reattach`. This is the multi-attach and reconnect
-  mechanism.
 
 ## Daemon lifecycle (flags)
 
@@ -3279,8 +3168,8 @@ The `cliError` catalogue follows:
 | `rename: staging file vanished before install: <err>` | a concurrent sweep took the staging file |
 | `cli unresponsive: the installed Claude Code binary was started through the host's managed launcher <argv0> and the run did not answer --version within 33s (123s for a first run), so it was stopped; the launcher or the host is not letting it finish` | a managed launcher run stopped at 33 s (123 s after a fresh install), with `CLAUDE_SSH_MANAGED_LAUNCHER=1` (see below) |
 
-The managed launcher (`89cb6289` parity):
-- `-install` uses the [managed launcher](#launcher-added-89cb6289) only when
+The managed launcher (measured against `89cb6289` on a Linux VM unless a rule says otherwise):
+- `-install` uses the [managed launcher](protocol/launcher-resolve.md) only when
   `CLAUDE_SSH_MANAGED_LAUNCHER` is exactly `1`. Every other value, and an unset
   variable, adds no field and runs no launcher. Values other than `true` and `1 `
   (a trailing space) are not measured.
@@ -3333,7 +3222,7 @@ The managed launcher (`89cb6289` parity):
   own).
 - On a cache hit on Linux the CLI file must be a regular file with an exec bit
   that starts with `#!` or an ELF header of this machine. Another file does not
-  run, and the install runs over it. The reference does that for a text file and
+  run, and the install runs over it. `5fd08069` does that for a text file and
   for an ELF of another machine. The test beyond those two files is claustrum's
   own.
 - The launcher run gets the daemon env without `CLAUDE_SSH_MANAGED_LAUNCHER`
@@ -3610,7 +3499,7 @@ The libc probe fills the `libc` fact:
   path with another extension. claustrum tests only that the path exists.
 
 With `CLAUDE_SSH_MANAGED_LAUNCHER=1` the probe uses the
-[managed launcher](#launcher-added-89cb6289) (`89cb6289` parity). Every
+[managed launcher](protocol/launcher-resolve.md) (measured against `89cb6289` on a Linux VM unless a rule says otherwise). Every
 `-probe-cli` row exits `0`, and each stderr text below ends in one newline:
 
 - A usable launcher runs `<launcher argv...> <path> --version`. If the run exits

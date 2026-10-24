@@ -160,7 +160,9 @@ Issue 442 tracked the reconciliation. The build carries a `go1.25.14` stamp
 
 **Wire delta.**
 
-- A managed launcher. `launcher.resolve` is a new method, `process.spawn` gains
+- A managed launcher. `launcher.resolve` is a new method, between
+  `git.worktree_remove` and `process.spawn` in `methods`, for 20 methods (Linux,
+  macOS and Windows VMs). `process.spawn` gains
   the `launcher` param, and `server.capabilities` gains the `launcher.managed`
   feature, with two new error codes. With `CLAUDE_SSH_MANAGED_LAUNCHER=1`,
   `-install` and `-probe-cli` run the CLI through the launcher. `-install` gains
@@ -320,7 +322,7 @@ startup file-limit raise.
 1. `plugins.prune` added. The method count goes from 18 to 19. This is a new
    method in a new `plugins` namespace. It prunes cached CLI plugin directories
    under the plugin root and reports what it removed. `server.capabilities` lists it
-   in `methods`. The page [plugins.prune](protocol/plugins-prune.md) holds the frames.
+   last in `methods`. The page [plugins.prune](protocol/plugins-prune.md) holds the frames.
 2. `git.worktree_create` gains `existingBranch`. A caller passes
    `existingBranch:"<branch>"`, naming an existing local branch, to reuse it rather
    than create one. The result gains a `branch` field, and `server.capabilities`
