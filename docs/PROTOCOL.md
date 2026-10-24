@@ -492,7 +492,7 @@ each connection at once, so the log of the daemon that answers holds a
 the connect does not end the wait. A killed daemon leaves such a file. A folder
 with content at the path does not end the wait either. The daemon cannot remove
 it, so it never binds (measured on Linux and Windows). An empty folder there is
-removed as an old socket file is (not measured).
+removed as an old socket file is (from the code, not measured).
 
 - The predecessor is the daemon that answered on the path before the start. On
   Linux and macOS, a daemon that answers and is not the predecessor ends the wait
@@ -582,8 +582,8 @@ After the `SIGTERM` the daemon polls for 2 s. At each poll a group takes the who
 ### Idle-connection close
 
 A `-serve` daemon closes any accepted connection that goes 5 minutes with no read
-or write. This matches `f6010b97`, and `5fd08069` closes at the same times
-(measured on Linux and macOS). The timeout is fixed and always on, with no flag
+or write. This matches `f6010b97` (measured on Linux). `5fd08069` closes at the
+same times (measured on Linux and macOS). The timeout is fixed and always on, with no flag
 and no configuration key. A watcher of each connection checks at a quarter of the
 timeout, at most every 30 s. At the timeout it closes the socket and logs
 `[Server] closing connection idle <d> in both directions: <addr>`. The reference
@@ -730,8 +730,9 @@ and macOS). After the grace with nobody connected, the daemon dials its socket
 and compares the `instanceId` of the reply to its own. A probe that reaches itself
 resets the clock. Two failed probes, 60 seconds apart, start a graceful shutdown.
 It closes listeners, drops clients, and stops child process groups unless
-`-keep-children` is set. The daemon exits with code 0 and removes `daemon.token`
-(measured on Linux).
+`-keep-children` is set. Both daemons exit with code 0, with no signal from
+another process (measured on Linux). The reference removes `daemon.token`, and
+claustrum does so through its graceful stop (from the code).
 
 These are the log lines of `89cb6289`, and claustrum logs the same texts
 (measured on Linux):
@@ -744,9 +745,11 @@ These are the log lines of `89cb6289`, and claustrum logs the same texts
 [Server] cleanup: closed 0 connection(s), killed 0 child process group(s)
 ```
 
-The second line comes about 10 minutes after the first, and the third line one
-minute later. The reference logs `orphaned for 11m0s` or `12m0s`, and claustrum
-logs `12m0s` (measured on Linux). The cause of that minute is not measured. At
+On `89cb6289` the second line came about 10 minutes after the first, and the
+third one minute later (measured on Linux). The reference logs `orphaned for
+11m0s` or `12m0s`. claustrum logged `12m0s` (measured on Linux), and the code
+prints `11m0s` at exact ticks. The cause of that minute is not measured. The
+check interval of the reference is not measured. At
 the self-exit the reference ends the children with `SIGKILL`, and claustrum ends
 them too (measured on Linux).
 
