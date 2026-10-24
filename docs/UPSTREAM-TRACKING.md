@@ -341,7 +341,7 @@ traps that matter for telling drift from expected:
   env strip, and the gated launcher runs of `-install` and `-probe-cli`. The one
   exception is the Linux file test on a cache hit before a launcher run. It
   follows `5fd08069` (see the `-install` prune and sweeps below). Other launcher
-  runs of `5fd08069` are not measured. `f6010b97` has none of these. See [launcher.resolve](protocol/launcher-resolve.md) and [process.spawn → The managed launcher](protocol/process-spawn.md#the-managed-launcher).
+  runs of `5fd08069` are not measured. `f6010b97` has none of these. See [launcher.resolve](protocol/launcher-resolve.md), [process.spawn → The managed launcher](protocol/process-spawn.md#the-managed-launcher) and [PROTOCOL.md → -install](PROTOCOL.md#-install-ensure-the-agent-cli).
 - The peer check splits the builds, not drift. claustrum follows `5fd08069`, the
   build that `scripts/UPSTREAM_SHA` names. `server.capabilities`
   carries the `peerCheck` and `peerCheckBy` members and the `server.peer_check`

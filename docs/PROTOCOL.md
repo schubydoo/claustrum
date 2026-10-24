@@ -3231,7 +3231,7 @@ The managed launcher (measured against `89cb6289` on a Linux VM unless a rule na
   own).
 - On a cache hit on Linux the CLI file must be a regular file with an exec bit
   that starts with `#!` or an ELF header of this machine. Another file does not
-  run, and the install runs over it. The reference does that for a text file and
+  run, and the install runs over it. `5fd08069` does that for a text file and
   for an ELF of another machine. The test beyond those two files is claustrum's
   own.
 - The launcher run gets the daemon env without `CLAUDE_SSH_MANAGED_LAUNCHER`
