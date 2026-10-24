@@ -17,7 +17,7 @@ jobs:
       issues: write
       id-token: write
       actions: read
-    uses: schubydoo/shared-workflows/.github/workflows/claude-review.yml@8a52bad6c129dde6afe5f6adf36c342d4a574cc7 # main
+    uses: schubydoo/shared-workflows/.github/workflows/claude-review.yml@6b10fb0269119a5a84ab7cc563bfbf98ee59be17 # main
     with:
       model: claude-opus-5
       timeout-minutes: 60
