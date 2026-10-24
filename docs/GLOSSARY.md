@@ -138,8 +138,9 @@ Noun. This term has two uses:
   against at this time. The file `scripts/UPSTREAM_SHA` holds its SHA. See
   [Reference builds](REFERENCE-BUILDS.md#when-you-bump-the-pin).
 - A pin is a value that the daemon gives to a git call and that the git
-  configuration cannot change. Examples are the `GIT_COMMON_DIR` pin and the
-  hook pins. See [Hardened git calls](PROTOCOL.md#hardened-git-calls).
+  configuration cannot change. Examples are the
+  [`GIT_COMMON_DIR` pin](PROTOCOL.md#git-directory-trust-check) and the
+  [hook pins](PROTOCOL.md#hook-pins).
 
 ## probe
 
