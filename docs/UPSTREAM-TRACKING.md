@@ -604,9 +604,8 @@ traps that matter for telling drift from expected:
   previous pin. [REFERENCE-BUILDS.md](REFERENCE-BUILDS.md) holds all seven, and
   all seven are reconciled. The macOS `lsof` reads of the host cleaner follow
   [The `lsof` reads](PROTOCOL.md#the-lsof-reads-macos). The longer pass of
-  claustrum there is in the
-  [`5fd08069` section](REFERENCE-BUILDS.md#5fd08069bd5f33e9b8a2b104c631bbbfbd4e2536-2026-10-05-built),
-  and it is not drift. An `lsof` command that does not start, and a run that
+  claustrum there is in the `5fd08069` section of
+  [REFERENCE-BUILDS.md](REFERENCE-BUILDS.md), and it is not drift. An `lsof` command that does not start, and a run that
   writes to stderr and exits 1, are parity with `89cb6289` for the busy read and
   the lock read (measured on macOS, in every run).
 - The `90fca6e6` reconciliation shipped four PRs. A full re-check then found a
