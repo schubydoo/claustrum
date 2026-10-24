@@ -392,15 +392,14 @@ reference.
 - The limit lines are four: more than 4096 processes, more than 64 orphan
   groups, more than 64 run dirs, and 8 retire attempts in one pass. claustrum
   counts attempts there, refused ones included. The reference count after a
-  refused attempt is not measured. The retire-limit line and the lines for more
-  than 4096 processes and more than 64 orphan groups are the texts of the
-  reference (measured on Linux). The log
-  lines carry the `[hostclean]` prefix after claustrum's level tag. The line
-  before a `SIGKILL` and the reasons for a listener that is not our daemon use
-  the texts of the reference (measured on Linux).
+  refused attempt is not measured. All four limit lines are the texts of the
+  reference (measured on Linux). The log lines carry the `[hostclean]` prefix
+  after claustrum's level tag. The line before a `SIGKILL` and two reasons for
+  a listener that is not our daemon, `not our daemon binary` and `not serving
+  that socket`, use the texts of the reference (measured on Linux).
 - The 15 s delay, the 3 s grace and the limit of 64 groups match the
-  reference. The daily period, the 5 minute age and the 30-day idle age are
-  claustrum's own.
+  reference. The daily period, the 5 minute age, the 30-day idle age and the
+  3 s busy window are claustrum's own.
 
 ## Daemon startup (`-serve`)
 

@@ -601,7 +601,7 @@ var docWordLimits = map[string]int{
 	"README.md":                            1300,
 	"SECURITY.md":                          1700,
 	"docs/ARCHITECTURE.md":                 4100,
-	"docs/DAEMON.md":                       7300, // a new page: its words moved from PROTOCOL.md and ARCHITECTURE.md, with about 200 words of room
+	"docs/DAEMON.md":                       7300, // a new page: its words moved from PROTOCOL.md and ARCHITECTURE.md, with room for a first edit
 	"docs/DIVERGENCES.md":                  8000,
 	"docs/EXAMPLES.md":                     1200,
 	"docs/GLOSSARY.md":                     1300,
