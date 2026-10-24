@@ -349,305 +349,253 @@ no flag and no key.
 
 ### D15 · Verify a run-dir lock holder is our serve process before signalling it (macOS) { #d15 }
 
-- **Behavior.** Before a new `-serve` daemon signals a live holder of the run-dir
-  lock, it verifies that the holder is one of our own `-serve` processes bound to
-  this socket. On Linux the reference and claustrum both verify the command line
-  of the holder (claustrum reads `/proc/<pid>/cmdline`). On macOS the reference
-  sends SIGTERM to the recorded pid unverified. It does so also to a holder that
-  is not a serve process (measured on a macOS VM). claustrum reads the argument vector
-  from `sysctl KERN_PROCARGS2` and refuses to signal a pid whose argv is not our
-  `-serve` for this socket.
-- **`-stop` too.** `-stop` runs the same holder check before it signals. On macOS
-  the reference `-stop` signals any live holder whose lock record says role
-  `serve` on this host's node. It sends `SIGTERM`. To a holder that ignores it,
-  it sends `SIGKILL` 4 s later. claustrum does not signal such a holder, and prints
-  `survivor`. On Linux the reference also refuses that holder, so Linux is
-  parity.
-- **Default.** Always-on, macOS only. On the honest path the live lock holder wrote
-  its own pid into the record, so the verification passes and the outcome is
-  identical to the reference (the predecessor is evicted).
-- **Why always-on (rule 3 clause (a)).** Signalling an unverified pid is
-  unrecoverable harm. A crash can leave a stale record whose pid an unrelated
-  process reuses. A foreign process can also hold the flock. The reference then
-  SIGTERMs that innocent process. No honest caller benefits from skipping the
-  check. The same guard is always-on on Linux, so macOS matches the safety of
-  Linux rather than the macOS gap of the reference.
-- **Cost.** None on the honest path. Where the reference evicts and claustrum
-  does not, the holder is un-inspectable or is not a serve process. There
-  claustrum serves without run-dir ownership instead of killing the holder.
-- **Reopen trigger.** The reference adding the same holder check on macOS (then this
-  becomes parity, not a divergence). Or a legitimate macOS holder that
-  `KERN_PROCARGS2` cannot read, reported as a failed handover.
-- **Not the only identity gate.** The host cleaner has its own gate in
-  `retireAbandoned`, before its SIGTERM. That gate is parity, not this entry.
-  On Linux both daemons refuse a listener that is not their daemon binary, and
-  one that serves another socket. On macOS the first case is measured equal,
-  and the second is not measured.
-- **Pointers.** [PROTOCOL.md → Run-dir lock](PROTOCOL.md#run-dir-lock-daemonlock)
-  and `-stop`. Also `daemon_runlock_unix.go` (`holderSignalRefusal`,
-  `stopRunDirHolder`), `daemon_runlock_darwin.go` (`realIsServeCmdline`,
-  `procArgv`) and `daemon_runlock_linux.go`.
+- **Behavior.** Before a new `-serve` daemon or `-stop` signals a live holder of
+  the run-dir lock, it verifies that the holder is one of our own `-serve`
+  processes for this socket. On macOS claustrum reads the argument vector with
+  `sysctl KERN_PROCARGS2`. It signals no other pid. The daemon then serves
+  without run-dir ownership, and `-stop` prints `survivor`.
+- **Reference.** On Linux it verifies the command line of the holder too, so
+  Linux is parity. On macOS it sends `SIGTERM` to the recorded pid unverified,
+  also to a holder that is not a serve process (measured on macOS). On macOS its
+  `-stop` signals any live holder whose record says role `serve` on the node of
+  this host: `SIGTERM`, then `SIGKILL` 4 s later to a holder that ignores it.
+- **Systems and switch.** macOS. Always on, no switch.
+- **Cost.** None on the honest path: the live holder wrote its own pid into the
+  record, so the check passes and the predecessor is evicted. A holder that
+  cannot be inspected, or is not a serve process, stays alive where the
+  reference signals it.
+- **Rule.** Rule 3 clause (a). A signal to an unverified pid is unrecoverable
+  harm. A crash can leave a stale record whose pid an unrelated process reuses,
+  and a foreign process can hold the flock. No honest caller gains from skipping
+  the check.
+- **Reopen trigger.** The reference adds the same holder check on macOS (then
+  this is parity). Or a legitimate macOS holder that `KERN_PROCARGS2` cannot
+  read, reported as a failed handover.
+- **Pointers.** [PROTOCOL.md → Run-dir lock](PROTOCOL.md#run-dir-lock-daemonlock).
+  The host cleaner has its own gate, which is parity
+  ([Signals of the cleaner](PROTOCOL.md#signals-of-the-cleaner)). Code:
+  `daemon_runlock_unix.go` (`holderSignalRefusal`, `stopRunDirHolder`),
+  `daemon_runlock_darwin.go` (`realIsServeCmdline`, `procArgv`) and
+  `daemon_runlock_linux.go`.
 
 ### D16 · `git.status` of a linked worktree returns the status on Windows, where the reference errors (Windows) { #d16 }
 
-- **Behavior.** `git.status` with a `baseRepo` and a `path` that names a linked
-  worktree returns the porcelain status of that worktree. On Linux and macOS the
-  reference and claustrum are byte-identical. On Windows, with no global excludes
-  file of the user, `5fd08069` returns `-32603 "exit status 128"` (Windows VM). claustrum returns the status result
-  (`{"isRepo":true,"clean":false,"changes":[…]}`).
-- **The cause.** The status call of the reference passes
-  `-c core.excludesFile=NUL`, the Windows null device. With that value,
-  `git status` of Git for Windows 2.55.0 exits 128 with
-  `fatal: cannot use NUL as an exclude file`. With `/dev/null` it prints the
-  status. With a user excludes file the reference passes that file, its status
-  works, and D16 does not arise.
-- **The one value that differs.** On Windows claustrum passes
+- **Behavior.** On Windows, with no global excludes file of the user,
+  `git.status` of a `path` that names a linked worktree returns the status
+  result (`{"isRepo":true,"clean":false,"changes":[…]}`). claustrum passes
   `-c core.excludesFile=/dev/null` to the `status`, `ls-files` and `diff-index`
-  calls of `git.status` (`statusExcludesFile` in `githarden.go`). Every other call
-  that passes `-c core.excludesFile` passes `NUL` there, as the reference does.
-- **Why diverge.** The path is reachable: a Windows client that runs status on a
-  session worktree gets it by design. The reference answers an error for a valid
-  status there. That is the D2 and D8 pattern. D16 stays by the maintainer's
-  decision of 2026-10-13.
-- **Cost.** A Windows client that diffs frames against the reference sees a result
-  where the reference sends an error.
-- **Reopen trigger.** The reference fixing its Windows `git.status`. A Git for
-  Windows release that accepts `NUL` there. Or a decision to answer 128 as the
+  calls of `git.status` (`statusExcludesFile`). Every other call with that item
+  passes `NUL`, as the reference does.
+- **Reference.** On Windows it answers `-32603 "exit status 128"` there
+  (measured on Windows). It passes `NUL`, and Git for Windows 2.55.0 refuses it
+  with `fatal: cannot use NUL as an exclude file`. With a user excludes file its
+  status works. Linux and macOS are byte-identical.
+- **Systems and switch.** Windows. Always on, no switch.
+- **Cost.** A Windows client that diffs frames against the reference sees a
+  result where the reference sends an error.
+- **Rule.** Rule 4, by the maintainer's decision of 2026-10-13. A Windows client
+  that runs status on a session worktree reaches this path by design.
+- **Reopen trigger.** The reference fixes its Windows `git.status`. Or a Git for
+  Windows release accepts `NUL` there. Or a decision to answer 128 as the
   reference does: that change is the value `NUL` in those three calls. The
   reference stops at its `status` call, so its value for the other two is not
-  measured there.
-- **Pointers.** [git.status](protocol/git-status.md#differences-by-system). Also `gitstatus.go`
-  (`statusChanges`) and `githarden.go` (`statusExcludesFile`).
+  measured.
+- **Pointers.** [git.status](protocol/git-status.md#differences-by-system),
+  `gitstatus.go` and `githarden.go`.
 
 ### D19 · Refuse a junction between `baseRepo` and the leaf on remove (Windows, always-on) { #d19 }
 
-- **Behavior.** On Windows, `git.worktree_remove` refuses a request with a junction
-  at any directory between `baseRepo` and the leaf. The reply is
+- **Behavior.** On Windows, `git.worktree_remove` refuses a junction at any
+  directory between `baseRepo` and the leaf:
   `{"success":false,"error":"failed to remove worktree: openat <path from
-  baseRepo>: path escapes from parent"}`. `<path from baseRepo>` is the folder that
-  holds the leaf, relative to `baseRepo`. It is `.claude\\worktrees` in the frame
-  for a junction at `.claude` or at `.claude\worktrees`. That text is claustrum's
-  own, the error of `os.Root`. Nothing is deleted, and the branch stays.
-- **The reference at `.claude` or `.claude\worktrees`.** It answers
-  `{"success":true}` and deletes nothing but the branch. When the junction leads
-  to a live worktree, that worktree is left on a deleted branch. With no worktree
-  behind the junction it answers `{"success":true}` too. Measured on `f6010b97`,
-  and on `89cb6289` for a branch that another ref reaches (Windows VM).
-- **The reference at a junction above `.claude`.** For a leaf and a branch that
-  do not exist, `89cb6289` answers `{"success":true}`. claustrum answers its
-  refusal there with no git call. Nothing changes on disk on either side
-  (Windows VM). Not measured: a live worktree behind such a
-  junction, and the branch step there.
-- **Default.** Always-on, Windows only. **Activate:** always-on. There is no flag
-  and no key.
-- **Why always-on.** Rule 3 clause (b), by the maintainer's decision of
-  2026-09-27. The `git.worktree_create` of both daemons refuses a junction there
-  with `mkdir_failed` and creates nothing. Above `.claude` both answer
+  baseRepo>: path escapes from parent"}`. Here `<path from baseRepo>` is the
+  folder that holds the leaf. For a junction at `.claude` or
+  `.claude\worktrees` the frame has `.claude\\worktrees`. That text is claustrum's own,
+  the error of `os.Root`. Nothing is deleted, and the branch stays. For a
+  junction above `.claude` no git call runs.
+- **Reference.** On Windows, for a junction at `.claude` or `.claude\worktrees`,
+  it answers `{"success":true}` and deletes only the branch. So a live worktree
+  behind the junction is left on a deleted branch. With no worktree behind it,
+  the answer is `{"success":true}` too. This is measured on `f6010b97`, and on
+  `89cb6289` for a branch that another ref reaches. On Windows, for a
+  junction above `.claude` and a leaf and branch that do not exist, `89cb6289`
+  answers `{"success":true}`, and nothing changes on disk. Not measured: a live
+  worktree behind such a junction, and the branch step there.
+- **Systems and switch.** Windows. Always on, no switch.
+- **Cost.** A Windows client sees `success:false` where the reference sends
+  `success:true`. A branch that the reference deletes stays. A client that
+  relies on the remove to delete the branch there must delete it itself.
+- **Rule.** Rule 3 clause (b), by the maintainer's decision of 2026-09-27,
+  widened on 2026-10-07 to any directory between `baseRepo` and the leaf. The
+  `git.worktree_create` of both daemons refuses a junction there with
+  `mkdir_failed`. Above `.claude` both answer
   `failed to create parent directory: <P>\J is not a directory`, with equal
-  frames. So neither daemon creates a worktree there. Only a worktree made
-  outside the daemon sits there. The maintainer widened the entry on 2026-10-07
-  to a junction at any directory between `baseRepo` and the leaf.
-- **Cost.** A Windows client that diffs frames against the reference sees
-  `success:false` where the reference sends `success:true`. A branch that the
-  reference deletes stays with claustrum. A client that relies on the remove to
-  delete the branch there must delete it itself.
-- **Reopen trigger.** The reference refusing the junction with the same text (then
-  this becomes parity), or the reference deleting the tree through the junction. Or a Windows
-  client that depends on the success reply for a junction between `baseRepo` and
-  the leaf.
-- **Pointers.** [git.worktree_remove](protocol/git-worktree-remove.md#where-the-paths-can-be). Also
-  `worktreeremove.go` (`openRemoveParent`).
+  frames. So only a worktree made
+  outside the daemon sits behind it.
+- **Reopen trigger.** The reference refuses the junction with the same text (then
+  this is parity), or deletes the tree through the junction. Or a Windows client
+  depends on the success reply there.
+- **Pointers.** [git.worktree_remove](protocol/git-worktree-remove.md#where-the-paths-can-be)
+  and `worktreeremove.go` (`openRemoveParent`).
 
 ### D20 · Wait for a settle before the group `SIGKILL` of a leader that reads as gone (Linux and macOS) { #d20 }
 
-- **Behavior.** At a `-serve` start the daemon ends the child groups that a dead
-  predecessor left: `SIGTERM` to the group, then a wait of 2 s. If the leader of a
-  group reads as gone in that wait and the group still answers, the daemon sends
-  `SIGKILL` to the group. claustrum first waits 50 ms and reads the leader again. A
-  leader that is alive again takes the record test. A leader that fails that test
-  gets no more signals. This is off-wire. No frame changes.
-- **The reference.** `89cb6289` sends that `SIGKILL` with no wait, within 5 ms
-  of the `SIGTERM` (Linux). A child that replaces its program on `SIGTERM` is
-  then ended in about one run of four on Linux, and in no run on macOS. The
-  reference also sends a group `SIGKILL` right after the `SIGTERM` in some runs
-  where the child ends on `SIGTERM` (Linux). claustrum sends none there.
-- **claustrum, measured.** With the wait, claustrum ended the child that
-  replaces its program in no run, on Linux and on macOS.
-- **Default.** Always-on, Linux and macOS. **Activate:** always-on. There is no
-  flag and no key. The 50 ms is claustrum's own value.
-- **Why always-on (rule 3 clause (a)).** The harm it refuses is a `SIGKILL` to a
-  live process that is no longer the recorded child. That loss cannot be taken
-  back. It is the same shape as [D15](#d15), which refuses to signal an identity
-  that the daemon cannot verify. On the honest path the outcome stays inside what
-  the reference shows. The child that replaces its program stays alive, as in
-  most runs of the reference. A group whose leader exits still gets its
-  `SIGKILL`. The only honest-path difference is the time of one signal at a
-  daemon start, off the wire.
-- **Cost.** The group `SIGKILL` comes about 50 ms later, on Linux and macOS. A
-  reap whose groups all end on the `SIGTERM` returns one wait later.
-- **The wait is a threshold.** A program replacement that takes longer than 50 ms
-  still gets the `SIGKILL`. No measured run shows that.
-- **Reopen trigger.** A measurement that shows the reference waiting before that
-  `SIGKILL` (then this becomes parity). Or a report of a child that outlived a
-  daemon restart because it replaced its program.
-- **Pointers.** [PROTOCOL.md → Child records and the reap](PROTOCOL.md#child-records-and-the-reap-linux-and-macos). Also `childreap.go`
-  (`settleGone`, `reapGoneLeader`).
+- **Behavior.** At a `-serve` start the daemon ends the child groups of a dead
+  predecessor: `SIGTERM` to the group, then a wait of 2 s. A leader can read as
+  gone in that wait while its group still answers. claustrum then waits 50 ms
+  and reads the leader again before the group `SIGKILL`. A leader that is alive
+  again takes the record test. A leader that fails that test gets no more
+  signals. No frame changes.
+- **Reference.** `89cb6289` sends that `SIGKILL` within 5 ms of the `SIGTERM`
+  (measured on Linux). So a child that replaces its program on `SIGTERM` is
+  sometimes ended on Linux, and was not ended on macOS. It also sends a group
+  `SIGKILL` in some runs where the child ends on `SIGTERM` (measured on Linux).
+  claustrum sends none there, and with the wait it did not end the child that
+  replaces its program (measured on Linux and macOS).
+- **Systems and switch.** Linux and macOS. Always on, no switch. The 50 ms is
+  claustrum's own value.
+- **Cost.** The group `SIGKILL` comes about 50 ms later. A reap whose groups all
+  end on the `SIGTERM` returns one wait later. A program replacement that takes
+  longer than 50 ms still gets the `SIGKILL`. No measured run shows that.
+- **Rule.** Rule 3 clause (a). A `SIGKILL` to a live process that is no longer
+  the recorded child cannot be taken back, the same shape as [D15](#d15). On the
+  honest path the outcome stays inside what the reference shows. The child that
+  replaces its program stays alive, as in most runs of the reference. A group
+  whose leader exits still gets its `SIGKILL`. Only the time of one signal moves,
+  off the wire.
+- **Reopen trigger.** A measurement shows the reference waiting before that
+  `SIGKILL` (then this is parity). Or a child outlived a daemon restart because
+  it replaced its program.
+- **Pointers.** [PROTOCOL.md → Child records and the reap](PROTOCOL.md#child-records-and-the-reap-linux-and-macos)
+  and `childreap.go` (`settleGone`, `reapGoneLeader`).
 
 ### D22 · Refuse a worktree locked in the `.git` folder of `baseRepo` on remove (always-on) { #d22 }
 
 - **Behavior.** `git.worktree_remove` refuses a worktree that is locked in the
-  `.git` folder of `baseRepo`, and deletes nothing. In the plain state the
-  reference refuses it too, with the same text, since `7d193f89`.
-- **The four states that differ.** S is a worktree locked in T, the `.git`
-  folder of `baseRepo`, and X is another repository. `89cb6289` answers
-  success, and claustrum answers the locked refusal and deletes nothing:
-  - The daemon has `GIT_DIR` and `GIT_COMMON_DIR` of X. The reference answers
-    `{"success":true}` and deletes the folder of S. The entry of T with its
-    `locked` file stays. Linux, macOS and Windows.
-  - The daemon has `GIT_DIR` of X alone. The reference answers
-    `{"success":true}` and deletes the folder of S. Linux, macOS and Windows.
-  - `baseRepo` is `<T>/missing/..` with no folder `missing`. The reference
-    answers `{"success":true,"branchKept":true}` and deletes the folder of S.
-    Linux and macOS.
-  - The environment of the first state, and the folder of S is gone. The
-    reference answers `{"success":true}` and deletes nothing. claustrum answers
-    the "is gone but its registration is locked" refusal. Linux, macOS and
-    Windows.
-- **With `worktreeRoot` (Linux).** With a daemon `GIT_DIR` of X, alone or with
-  `GIT_COMMON_DIR`, the reference answers the transient `could not verify`
-  text. With the folder gone it answers `{"success":true}`. It deletes nothing
-  in these states, and claustrum answers the locked refusals. The end state is
-  the same, and the frame and the git calls differ.
-- **The exception.** On Linux and macOS a gone worktree whose locked entry sits
-  behind a linked `<git dir>/worktrees` gets success, and its branch goes. That
-  follows `5fd08069` (Linux VM), by the maintainer's decision of 2026-10-14.
-- **How.** The removal can read its entries from another git directory. Then
-  claustrum also reads the entries under `<baseRepo>/.git/worktrees`, with no git
-  call, with and without `worktreeRoot`. For a folder there that it cannot read,
-  claustrum answers the lock-check refusal and deletes nothing. A folder that does
-  not exist counts as not locked. With no daemon environment both sides refuse.
-- **Default.** Always-on, on every system. **Activate:** always-on. There is no
-  flag and no key.
-- **Why always-on.** The maintainer's decision of 2026-10-03. A lock is the
+  `.git` folder of `baseRepo`, and deletes nothing. The removal can read its
+  entries from another git directory. Then claustrum also reads
+  `<baseRepo>/.git/worktrees`, with no git call, with and without
+  `worktreeRoot`. A folder there that it cannot read gives the lock-check
+  refusal, and nothing is deleted. A missing folder counts as not locked. On
+  Linux and macOS a gone worktree whose locked entry sits behind a linked
+  `<git dir>/worktrees` gets success, and its branch goes. That follows
+  `5fd08069` (measured on Linux), by the maintainer's decision of 2026-10-14.
+- **Reference.** In the plain state it refuses with the same text. `89cb6289`
+  answers success in four states. S is a worktree locked in T, the `.git` folder
+  of `baseRepo`, and X is another repository:
+  - a daemon `GIT_DIR` of X, with or without `GIT_COMMON_DIR` of X: it deletes
+    the folder of S, and the entry in T stays (Linux, macOS and Windows)
+  - `baseRepo` `<T>/missing/..` with no folder `missing`: it deletes the folder
+    of S with `"branchKept":true` (Linux and macOS, Windows refuses that
+    `baseRepo` on both sides)
+  - the `GIT_DIR` and `GIT_COMMON_DIR` state with the folder of S gone: it
+    deletes nothing. claustrum answers the "is gone but its registration is
+    locked" refusal (Linux, macOS and Windows)
+
+  With `worktreeRoot` in the `GIT_DIR` states, `89cb6289` answers the
+  `could not verify` text, or success with the folder gone. It deletes nothing,
+  and claustrum answers the locked refusals (measured on Linux). Not measured: a daemon `GIT_COMMON_DIR` of a third
+  repository, and a `worktrees` folder that cannot be read.
+- **Systems and switch.** Linux, macOS and Windows. Always on, no switch.
+- **Cost.** In these states claustrum sends `success:false` with a locked text,
+  and a folder stays that the reference deletes. A caller must unlock the
+  worktree first. Each state needs a daemon `GIT_DIR`, a `baseRepo` spelled
+  through a missing name, or a folder removed by hand. No measurement shows a
+  client that reaches one of them.
+- **Rule.** Rule 4, by the maintainer's decision of 2026-10-03. A lock is the
   user's own instruction not to delete, and a deleted folder cannot be taken
-  back. No clause of rule 3 covers this entry. Rule 4 says that a change to a
-  frame on an honest path is opt-in or does not ship. The maintainer accepted
-  this frame difference. Each state needs something that the request does not
-  create: a `GIT_DIR` in the daemon's environment, a `baseRepo` spelled through
-  a missing name, or a folder removed by hand. No measurement shows a client
-  that reaches one of them.
-- **Cost.** In these states the frame differs: claustrum sends `success:false`
-  with a locked text. Where the reference deletes the folder, the folder stays.
-  A caller there must unlock the worktree first.
-- **Not measured.** The reference on Windows with `<T>/missing/..`: Windows
-  refuses that `baseRepo` on both sides. A daemon `GIT_COMMON_DIR` of a third
-  repository. A daemon environment with a `<baseRepo>/.git/worktrees` folder
-  that cannot be read.
-- **Not covered.** A `baseRepo` with no `.git` folder of its own: a subfolder of T,
-  a linked worktree or a submodule. With a daemon `GIT_DIR` of another repository,
-  claustrum does not read the lock in the real repository there. It deletes the
-  locked worktree, as the reference does in the first state. The maintainer
-  decided on 2026-10-03 to keep that. The reference is not measured there.
+  back. The same decision keeps one gap: a `baseRepo` with no `.git` folder of
+  its own, such as a subfolder of T, a linked worktree or a submodule. With a
+  daemon `GIT_DIR` of another repository, claustrum does not read the lock there
+  and deletes the locked worktree. The reference is not measured there.
 - **Reopen trigger.** A caller that needs the removal of a locked worktree in
   these states. Or a measurement that shows the reference refusing there (then
-  this becomes parity).
-- **Pointers.** [git.worktree_remove](protocol/git-worktree-remove.md#the-repository-checks). Also
-  `worktreeremove.go` (`lockedInBaseRepo`) and `methods_git.go`.
+  this is parity).
+- **Pointers.** [git.worktree_remove](protocol/git-worktree-remove.md#the-repository-checks)
+  and `worktreeremove.go` (`lockedInBaseRepo`).
 
 ### D23 · The environment block of a child is in name order (Windows) { #d23 }
 
-On Windows claustrum gives a child its environment block in name order. The
-reference does not sort it. Go sorts the block since 1.26, and the reference
-builds use go1.25.14. A claustrum build with go1.25.14 matched the order of
-`5fd08069` (Windows VM, 2026-10-13). That covers `process.spawn`, the git
-children and `-install`.
-
-claustrum stays on Go 1.26 (maintainer's decision, 2026-10-13). Go 1.26.9 fixed
-standard library advisories of go1.25.14, one in the folder handles of the
-Windows file guards (GO-2026-6604). The entry is always-on, with no flag and no
-key.
-
-Reopen trigger: the reference moves to Go 1.26 or newer.
+- **Behavior.** On Windows claustrum gives a child its environment block in name
+  order: `process.spawn`, the git children and `-install`.
+- **Reference.** It does not sort the block. Go sorts it since 1.26, and the
+  reference builds use go1.25.14. A claustrum build with go1.25.14 matched the
+  order of `5fd08069` (measured on Windows).
+- **Systems and switch.** Windows. Always on, no switch.
+- **Cost.** A child sees its variables in another order.
+- **Rule.** Rule 4, by the maintainer's decision of 2026-10-13: claustrum stays
+  on Go 1.26. Go 1.26.9 fixed standard library advisories of go1.25.14, one in
+  the folder handles of the Windows file guards (GO-2026-6604).
+- **Reopen trigger.** The reference moves to Go 1.26 or newer.
+- **Pointers.** `process.go`.
 
 ### D24 · In the create rollback, keep a folder that replaced the new registration and run no git call after a `.git` file swap { #d24 }
 
-- **Behavior.** `git.worktree_create` tests the registration of the new
-  worktree right after the add. When the tests accept it, claustrum takes the
-  identity of the registration folder. It holds that folder open until the
-  create answers, so a new folder cannot get that identity. If the open fails,
-  the identity comes from a stat of the path (not measured).
-  - A rollback deletes the folder at that path in one case only: it still has
-    that identity. The test runs on the registrations directory that the delete
-    opened. The rollback adds no text to the frame, and the branch step runs.
+- **Behavior.** The tests after the add can accept the registration of the new
+  worktree. Then `git.worktree_create` takes the identity of that folder and
+  holds it open until it answers. If the open fails, the identity comes from a
+  stat of the path (not measured). On Windows the identity is that of the
+  staging folder, held open from its mkdir to the end of the move.
+  - A rollback deletes the registration in one case only: the folder at the path
+    still has that identity. It adds no text, and the branch step runs.
   - After a failed `rev-parse --show-toplevel`, the rollback deletes the one new
-    entry of the listing after the add, with the identity from that listing. If
-    a sibling registration was moved to that name during the call, `5fd08069`
-    deletes it, and claustrum keeps it (Linux VM).
-  - The placement of the index has the same test. If the folder is not the
-    accepted one, claustrum places nothing. It answers a failed checkout with
-    its own text,
-    `the registration <entry> is not the folder that was tested after the add`.
-  - On Windows the same tests guard the registration that the staging step
-    moved. The identity is that of the staging folder, held open from its mkdir
-    to the end of the move. The text there is
-    `the registration <entry> is not the folder that was moved into place`.
-  If git gave no answer to `rev-parse --absolute-git-dir`, the guard does not
-  run.
-- **A replaced folder.** A process renames the new
-  registration and puts another folder at its name before the rollback.
-  On Linux and macOS `89cb6289` removes the folder at the name. That folder can be the
-  registration of a live sibling worktree. claustrum removes no folder of the
-  registrations directory. On Linux and macOS the frame is the plain failed
-  checkout on both sides, and the leaf and the branch are gone on both. On Windows `5fd08069`
-  deletes the folder that took the name of the moved registration, claustrum
-  keeps it, and the frames are equal.
-- **A `.git` file swap (Windows).** Right after the add, `.git` becomes a file
-  `gitdir: <the git directory of a second repository>`. `5fd08069` runs the
-  branch step in that repository: it deletes a branch of the same name there
-  that `main` reaches, or keeps it with `branchKept`. claustrum runs no git call
-  after the swap and changes nothing in that repository. Its undo text says
-  that the branch still exists. The frames differ.
-- **Default.** Always-on. **Activate:** always-on. There is no
-  flag and no key.
-- **Why always-on.** The maintainer's decision of 2026-10-07: the guard stays.
-  The harm that it refuses is the loss of the registration of another worktree.
-  The decision of 2026-10-19 adds the `.git` file swap, where the harm is a
-  branch deleted in the repository that the file names. No clause of rule 3
-  covers this entry. It stands on those decisions, and the reopen trigger takes
-  it back.
-- **Cost.** For a replaced folder, a folder stays that the reference removes, and
-  no frame differs. To reach the guard, the registrations folder must change
-  between the add and the rollback. After a `.git` file swap the frame
-  differs, and a branch can stay that `5fd08069` deletes.
-- **Not measured.** The guard at the placement of the index, on every system. A
+    entry of the listing after the add, by the identity from that listing. A
+    sibling registration moved to that name stays. `5fd08069` deletes it
+    (measured on Linux).
+  - The placement of the index has the same test. On a mismatch it places
+    nothing and answers a failed checkout with a text of its own
+    ([git.worktree_create](protocol/git-worktree-create.md#differences-from-the-reference)).
+  - If git gave no answer to `rev-parse --absolute-git-dir`, the guard does not
+    run.
+
+  On Windows, after a swap of `.git` to a file that names a second repository,
+  claustrum runs no git call and changes nothing there. Its undo text says that
+  the branch still exists.
+- **Reference.** A process renames the new registration and puts another folder
+  at its name before the rollback. On Linux and macOS `89cb6289` removes that
+  folder, which can be the registration of a live sibling worktree. On Windows
+  `5fd08069` deletes it too. The frames are equal, and on Linux and macOS the
+  leaf and the branch go on both sides. On Windows, after the `.git`
+  swap, `5fd08069` runs the branch step in the second repository. It deletes a
+  branch of the same name there that `main` reaches, or keeps it with
+  `branchKept`. The frames differ.
+- **Systems and switch.** Linux, macOS and Windows, with the `.git` swap on
+  Windows only. Always on, no switch.
+- **Cost.** A replaced folder stays that the reference removes, and no frame
+  differs. The registrations folder must change between the add and the
+  rollback to reach the guard. After a `.git` swap the frame differs, and a branch can stay that
+  `5fd08069` deletes. Not measured: the guard at the index placement, and a
   replaced folder with a daemon `GIT_DIR` of another repository.
+- **Rule.** Rule 4, by the maintainer's decision of 2026-10-07: the guard
+  refuses the loss of the registration of another worktree. The decision of
+  2026-10-19 adds the `.git` swap, where the harm is a branch deleted in the
+  repository that the file names.
 - **Reopen trigger.** A measurement that shows the reference keeping such a
-  folder. Or a decision to match its disk for a replaced folder. Or a decision
-  to run the branch step in the repository that the `.git` file names.
+  folder. Or a decision to match its disk for a replaced folder. Or a decision to
+  run the branch step in the repository that the `.git` file names.
 - **Pointers.** [git.worktree_create](protocol/git-worktree-create.md#after-a-failure).
 
 ### D27 · Keep a stale entry whose record names a path that exists (Windows) { #d27 }
 
 - **Behavior.** On Windows the stale step of `git.worktree_create` compares the
   `gitdir` record of each entry with the new leaf without regard to letter case.
-  Before it deletes an entry that matched, it tests the path that the record
-  names, as written, with `Lstat`. If that path exists, the entry stays. Both
-  forms of the step have the test: through the held git directory and by the
-  path. Linux and macOS have an exact compare, so the missing leaf already
-  proves that the entry is stale there.
-- **The state that differs.** A folder `.claude\worktrees` with case sensitivity
+  Before it deletes a matched entry, it tests the path that the record names, as
+  written, with `Lstat`. If that path exists, the entry stays. Both forms of the
+  step have the test: through the held git directory and by the path. Linux and
+  macOS compare exactly, so the missing leaf already proves the entry stale.
+- **Reference.** On Windows a folder `.claude\worktrees` with case sensitivity
   on holds a live worktree `W1`, and a client creates `w1`. `5fd08069` deletes
   `.git\worktrees\W1` before the add and answers success. `W1` then reads the
-  records of `w1`, and its own branch is no longer checked out (Windows VM).
-  claustrum keeps the entry, and `W1` stays on its branch. The create answers
+  records of `w1`, and its own branch is no longer checked out.
+- **Systems and switch.** Windows. On-wire, always on, no switch.
+- **Cost.** In that state the create answers
   `{"success":false,"error":"git worktree add failed: Preparing worktree (new branch 'b1') fatal: '<repo>/.claude/worktrees/w1' is a missing but already registered worktree; use 'add -f' to override, or 'prune' or 'remove' to clear","errorCode":"worktree_add_failed"}`.
-  The branch `b1` stays, because git makes it before it refuses.
-- **Default.** On-wire, always-on, Windows only. **Activate:** always-on.
-- **Why always-on.** The reference destroys the records of a live worktree in a
-  state that a client can reach. The maintainer's decision of 2026-10-18.
-- **Cost.** The frame above. None where the folder of a stale entry is gone
-  (from the code). A `Lstat` that fails with another error than "does not
-  exist" keeps a stale entry too, and then the add fails.
+  The branch `b1` stays, because git makes it before it refuses. No cost where
+  the folder of a stale entry is gone (from the code). A `Lstat` that fails with
+  another error than "does not exist" keeps a stale entry too, and then the add
+  fails.
+- **Rule.** Rule 4, by the maintainer's decision of 2026-10-18. The reference
+  destroys the records of a live worktree in a state that a client can reach.
 - **Reopen trigger.** A measurement that shows `5fd08069` with the same test.
 - **Pointers.** [git.worktree_create](protocol/git-worktree-create.md#differences-by-system).
 

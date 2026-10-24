@@ -347,7 +347,9 @@ children, on Linux and macOS. The stranded daemon ends by itself. See
 
 The cleaner retires an abandoned daemon with `SIGTERM`. That is a daemon on a run
 dir that is idle past the threshold, or whose name carries `.removing-` from an
-earlier removal. A daemon younger than 5 minutes is not retired, and the run dir
+earlier removal. A listener that is not the daemon binary, or that serves another
+socket, gets no signal. On macOS the first case is measured, and the second is
+not measured. This gate is parity, not [D15](DIVERGENCES.md#d15). A daemon younger than 5 minutes is not retired, and the run dir
 gets this line (macOS VM):
 
 ```

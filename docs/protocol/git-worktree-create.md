@@ -164,7 +164,7 @@ A copy that fails does not fail the request. If the deadline of `timeoutMs` expi
 These entries of the divergence catalog apply to this method:
 
 - [D2](../DIVERGENCES.md#d2): a delete refuses a path that is the home directory or holds it.
-- [D24](../DIVERGENCES.md#d24): a rollback and the index placement leave a registration directory that something replaced. On Windows a rollback after a swap of the `.git` file of the worktree runs no git call.
+- [D24](../DIVERGENCES.md#d24): a rollback and the index placement leave a registration directory that something replaced. Such a placement answers a failed checkout with `the registration <entry> is not the folder that was tested after the add`, or on Windows `the registration <entry> is not the folder that was moved into place`. On Windows a rollback after a swap of the `.git` file of the worktree runs no git call.
 - [D27](../DIVERGENCES.md#d27): on Windows the stale step keeps an entry whose record names a path that exists.
 
 Most rules follow a measured reference build. The marks "claustrum's own" and "not measured" flag the known exceptions. The measured cells are in the tests and in the [reference build history](../REFERENCE-BUILDS.md).
