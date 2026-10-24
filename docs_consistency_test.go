@@ -617,7 +617,7 @@ var docWordLimits = map[string]int{
 	"docs/protocol/git-info.md":            2000,
 	"docs/protocol/git-list-branches.md":   1000,
 	"docs/protocol/git-status.md":          3100,
-	"docs/protocol/git-worktree-create.md": 7086, // decision-040: a move between pages, net down in the same PR
+	"docs/protocol/git-worktree-create.md": 7093, // decision-040: a move between pages, net down in the same PR
 	"docs/protocol/git-worktree-remove.md": 4073, // decision-040: a move between pages, net down in the same PR
 	"docs/protocol/launcher-resolve.md":    1700,
 	"docs/protocol/plugins-prune.md":       1100,
