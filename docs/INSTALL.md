@@ -220,7 +220,7 @@ Download progress and `fetch` stats, on the `-cli-url` path:
   consumer treats them as progress, not as a byte-exact sequence. claustrum prints
   the final line also when a tick printed that count already, and it starts the
   tick clock at the first readable body (claustrum's own).
-- The facts line gains a `fetch` object after `cliError`,
+- The facts line gains a `fetch` object after `cliError` and `cliUnresponsive`,
   `{"bytes":<n>,"ms":<n>,"longestPauseMs":<n>}`. Those are bytes read, download
   duration and the largest gap between reads. It is the last field, except with
   the managed launcher gate (see above). It appears whenever a download was

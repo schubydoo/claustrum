@@ -24,8 +24,9 @@ The daemon is one binary. A flag selects the mode:
   gracefully. On Windows the mode `0600` is not an owner-only ACL.
 - `-bridge` is a simple relay between stdio and the socket. An SSH session
   attaches to this mode.
-- `-install` is the installer. It downloads the CLI, extracts the zstd
-  archive, and makes sure that the SHA-256 matches. See
+- `-install` is the installer. It downloads the CLI or reads an uploaded
+  blob, and extracts the zstd archive. It checks the SHA-256 on every download,
+  and on a blob only with `-cli-checksum`. See
   [`-install`](INSTALL.md#-install-ensure-the-agent-cli).
 - `-probe-cli` runs `<cli> --version` on one CLI binary with a deadline. If
   the CLI hangs or does not run, it prints a marker. See
