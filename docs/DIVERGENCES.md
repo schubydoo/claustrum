@@ -609,213 +609,167 @@ no flag and no key.
 
 ### CT-1 · Opt-in `wantPid` (pid + startTime) on spawn/reattach { #ct-1 }
 
-- `process.spawn` / `process.reattach` accept an optional `"wantPid":true`. The
-  reply of a spawn, and of a reattach that finds the process, then gains `pid`
-  (the child's OS pid) and `startTime`. This is the first wire-surface
-  *extension*.
-- The default path is byte-identical. When `wantPid` is absent or not `true`,
-  `omitempty` omits both fields, and the frame is exactly the old
-  `{"success":true}` / `{found,running,firstSeq,lastSeq,stdinApplied}`. The fields live on a
-  dedicated `spawnResult` struct, so they can never leak into the `successResult`
-  that `process.stdin` / `process.kill` share.
-- `startTime` is an opaque daemon token. It is the daemon's epoch-seconds wall
-  clock captured at spawn, and the daemon returns it identically on spawn and
-  reattach for the same id. Use it to detect PID reuse and orphans. It is not
-  OS-comparable: do not equality-check it against psutil `create_time`.
-- The extension is tolerant in both directions: an older daemon ignores the param,
-  and an older client never sees the fields. A client can therefore send `wantPid`
-  unconditionally. The sibling clauster client pins the contract.
-- **Pointers.** The pages [process.spawn](protocol/process-spawn.md#response) and
-  [process.reattach](protocol/process-reattach.md), and `results.go`.
+- **Behavior.** `process.spawn` and `process.reattach` accept an optional
+  `"wantPid":true`. The result of a spawn, and of a reattach that finds the
+  process, then also has `pid` and `startTime`. Without `wantPid` the frame is
+  byte-identical to the reference.
+- **Why.** A client can detect a reused pid or an orphan. An older daemon ignores
+  the parameter, and an older client never sees the members. So a client can
+  send `wantPid` on every request.
+- **Activate.** The caller sends `"wantPid":true`. There is no flag and no key.
+- **Pointers.** [process.spawn](protocol/process-spawn.md#response) has what
+  `startTime` means. Also [process.reattach](protocol/process-reattach.md) and
+  `results.go`.
 
 ### CT-2 · Opt-in `-keep-children` serve flag { #ct-2 }
 
-- A `-serve` flag, off the wire: it changes no method, no frame and no capability.
-  At the default (off), graceful shutdown kills the children: the whole tree on
-  Linux and macOS, the direct child on Windows. When set, it
-  leaves spawned children running so they survive a daemon restart/upgrade, and it
-  logs one line with the surviving count. The new daemon does not re-adopt them. An
-  out-of-band consumer reconciles them through the CT-1 `pid`/`startTime`.
-- A child whose start returns after the shutdown began is ended also with the flag
-  (from the code, `TestLateStartEndedWithKeepChildren`). Its client got no reply,
-  so no client has its `pid`.
-- Caveat: survivors lose their stdio. The daemon-side pipe ends die with the
-  daemon: the child sees EOF on stdin, and a later write gets SIGPIPE/EPIPE.
-  Therefore only children that tolerate dead stdio genuinely survive. Not measured
-  on Windows.
-- **The records of the kept children.** On Linux and macOS a child has a record in
-  `<runDir>/children`. The reap of the next daemon start ends each recorded
-  child of a daemon that is gone. With the flag, the graceful shutdown removes the
-  records of the children that it leaves alive. The next daemon then finds no
-  record of them and sends them no signal. This rule is claustrum's own. On a
-  Linux VM, `-stop` with the flag sent no kill and removed the records. The
-  children lived on, and a new daemon sent them no signal.
-- Two limits of that rule. It covers the processes of the process table only. A
-  process whose `id` a later spawn took keeps its record, so the next start ends
-  it. The host cleaner does not read the records. By its own rule it ends an
-  orphaned Claude Code group under the install root, a kept one too. That is not
-  measured with the flag.
-- **Windows.** The flag works there too. A child is in no Job Object, so the exit
-  of the daemon does not end it, on the reference too. With the flag, `-stop` and
-  `server.shutdown` leave the direct child alive (measured on a Windows VM).
-- The reference has no such flag: `89cb6289` exits with code 2 for it.
-- **Activate:** `-keep-children` or the `keep-children` key.
-- **Pointers.** [PROTOCOL.md → -serve](PROTOCOL.md#-serve-run-the-daemon).
+- **Behavior.** Off the wire. Without the flag, a graceful shutdown ends the
+  children. A graceful shutdown is `-stop`, `server.shutdown`, `SIGTERM`,
+  `SIGINT` or the self-exit. With the flag it leaves the spawned children
+  running and logs one line with their count. The new daemon does not re-adopt
+  them. A client can find them again through the CT-1 `pid` and `startTime`.
+- **Limits.** The survivors lose their stdio, so only a child that tolerates a
+  dead stdin and stdout lives on (not measured on Windows). On Linux and macOS
+  the shutdown removes the records of the kept children (claustrum's own). So the reap of the next start
+  sends them no signal. That covers the processes of the process table only.
+  A process whose `id` a later spawn took keeps its record, and the next start
+  ends it. The host cleaner does not read the records. It ends an orphaned
+  Claude Code group under the install root, a kept one too (not measured with
+  the flag). A child whose start returns after the shutdown began is ended also
+  with the flag (from the code). Its client got no reply, so no client has its
+  `pid`.
+- **Reference.** `89cb6289` has no such flag and exits with code 2 on it.
+- **Activate.** `-keep-children` or the `keep-children` key.
+- **Pointers.** [PROTOCOL.md → Flags of claustrum
+  alone](PROTOCOL.md#flags-of-claustrum-alone) has the log line, the stdio of the
+  survivors and Windows.
 
 ### CT-3 · Opt-in `claustrum.conf` config file { #ct-3 }
 
-- A single place to turn deviations on. Absent ⇒ stock. This is an optional
-  `key = value` file, read from the directory that holds the binary. If the file is
-  missing, unreadable, non-regular, or malformed, claustrum behaves as a stock
-  replica. Every key gates an already-opt-in divergence. The file adds zero new
-  dependency (stdlib `bufio` + `strings.Cut`, `#` comments). claustrum ignores
-  unknown keys and invalid values, which keeps the format forward-compatible and
-  fail-safe. Precedence: explicit CLI flag > config > default.
-- Keys mirror the flags: `version-override`, `keep-children`, `metrics-addr`,
-  `wire-log`, `wire-log-max-string`, `listen-pipe`, `max-extract-bytes` (D3), `max-cli-bytes` (D10),
-  `cli-download-timeout` (D12). Four more keys are deprecated and set
-  nothing: `files-read-regular-only` (retired D4), `git-timeout` (retired D5),
-  `cli-probe-timeout` (retired D11) and `libc-probe-timeout` (retired D14). Durations use `time.ParseDuration`, which
-  rejects a bare number, except zero. Zero parses in unboundedly many spellings and
-  always means disabled. No accepted oddity can switch a divergence *on*.
-- `version-override` makes claustrum a permanent drop-in. The desktop client
-  decides whether to re-upload the daemon: it runs `<bin> --version` on the cached
-  `~/.claude/remote/srv/<pinned-sha>/server` and matches the output against the SHA
-  it pins. Stock claustrum prints its own version, so the client re-SFTPs the
-  reference every session. Set the key to that bare commit SHA. A 40-hex git SHA-1
-  is accepted, and a 64-hex value is accepted too. Anything else is a no-op.
-  claustrum then prints
-  `claude-ssh <sha> (via Claustrum …)`, the client hits the cache, and it stops
-  overwriting.
-- **Off the wire, off by default.** `-version` is CLI stdout, not a JSON-RPC frame.
-  `server.capabilities` still reports claustrum's own version.
-- Fail-safe and hardened: regular-file-only via `Lstat`, `io.LimitReader` ≤ 64 KiB,
-  per-key validation (`version-override` gated to
-  `^(?:[0-9a-fA-F]{40}|[0-9a-fA-F]{64})$` and lower-cased). claustrum uses every
-  value as data, never as a format string. Any doubt → stock. Startup never fails.
-- **Pointers.** [PROTOCOL.md → -version](PROTOCOL.md#-version), and `config.go`.
+- **Behavior.** `claustrum.conf` is an optional `key = value` file with `#`
+  comments, in the folder that holds the binary. Each key but
+  `version-override` mirrors a flag. The
+  [flags table](PROTOCOL.md#flags-and-config-keys) lists each key, the
+  deprecated ones too. Each key that sets something turns on, or tunes, a behavior
+  that is off by default. The deprecated keys set nothing and log one
+  warning.
+- **Fail-safe.** A missing file, a file that cannot be read and a path that is no
+  regular file, a link too, give stock behavior. claustrum reads at most the
+  first 64 KiB. It ignores an unknown key and an invalid value. A problem of the
+  file never fails the start. A `wire-log` path that cannot be opened does fail
+  it. A duration uses `time.ParseDuration`, which
+  refuses a bare number other than zero. A zero in any spelling means off. So no
+  accepted value can switch a divergence on by mistake.
+- **`version-override`.** Set it to the commit SHA that the desktop client pins,
+  and the client stops uploading the reference each session. The value is 40 or
+  64 hex digits, claustrum prints it in lower case, and any other value does
+  nothing. [PROTOCOL.md → -version](PROTOCOL.md#-version) has the output and
+  how the client reads it.
+- **Activate.** Create the file.
+- **Pointers.** `config.go`.
 
 ### CT-4 · Opt-in hardened token persistence — deferred idea { #ct-4 }
 
-- **Context.** The daemon persists its token to `daemon.token` (`0600`) beside the
-  socket, so a client can reconnect. That is parity, and it is on by default
-  (`tokenpersist.go`). There are two accepted parity caveats. The file survives an
-  unclean kill or crash, because cleanup runs only on graceful shutdown. And on
-  Windows, `0600` is not an owner-only DACL.
-- **Idea (not built).** A `claustrum.conf` key, for example `persist-token = false`,
-  or a Windows owner-only DACL on the file, or both. These are for operators who
-  prefer a smaller on-disk
-  token window over drop-in reconnect. Must stay absent ⇒ stock.
-- **Why deferred.** There is no demand. The default matches the reference, and the
-  socket directory is already owner-scoped in the real deployment. We record the
-  idea so the security trade-off is not lost.
-- **Pointers.** [PROTOCOL.md → Token persistence](PROTOCOL.md#token-persistence-daemontoken), and `tokenpersist.go`.
+- **Idea (not built).** A `claustrum.conf` key such as `persist-token = false`,
+  or an owner-only DACL on `daemon.token` on Windows, or both. It is for an
+  operator who prefers a smaller on-disk token window over reconnect. Without
+  the key the daemon stays stock.
+- **Why deferred.** There is no demand. The default matches the reference, and
+  the socket folder is owner-only in the real deployment.
+- **Pointers.** [PROTOCOL.md → Token
+  persistence](PROTOCOL.md#token-persistence-daemontoken) has the file and its
+  two caveats, and `tokenpersist.go`.
 
 ### CT-5 · Opt-in `-listen-pipe` Windows named-pipe transport { #ct-5 }
 
-- **Shipped.** `-listen-pipe` makes `-serve` *additionally* serve the exact same
-  NDJSON JSON-RPC dispatch over a Windows named pipe, concurrently with the
-  `AF_UNIX` socket. Off ⇒ stock. The wire contract, the field ordering and the
-  framing stay the same whether a request arrives over the socket or over the pipe.
-- **Why.** Without the pipe, a Windows client that cannot consume an `AF_UNIX`
-  socket cannot attach. Python `asyncio` is the notable example: its Windows
-  Proactor loop natively supports named pipes. This was clauster's ask.
-- **Discovery + auth.** claustrum picks the pipe name
-  (`\\.\pipe\claustrum-<instance-id>`, client-opaque) and publishes it to `rpc.pipe`
-  beside the socket (atomic write before accepting, and claustrum removes it on
-  graceful shutdown). Same in-band `"auth"` + `daemon.token` handshake. Owner-only
-  DACL (SDDL
-  `D:P(A;;GA;;;<current-user-SID>)`), local-only, no new authenticated surface
-  ([SECURITY.md](https://github.com/schubydoo/claustrum/blob/main/SECURITY.md)).
-- **Windows-only:** elsewhere claustrum ignores the flag and prints a warning
-  (`honorListenPipe`). A setup failure is non-fatal: the socket still serves.
-- **Activate:** `-listen-pipe` or the `listen-pipe` key.
-- **Pointers.** [PROTOCOL.md → Named-pipe transport](PROTOCOL.md#named-pipe-transport-windows-opt-in).
-  Also `pipetransport.go` and `pipetransport_windows.go`.
+- **Behavior.** On Windows, `-serve` also serves the same JSON-RPC dispatch over a
+  named pipe, beside the `AF_UNIX` socket, with the same frames and the same
+  `"auth"`. Other systems ignore the
+  flag and log a warning. A setup failure is not fatal, and the socket still
+  serves.
+- **Why.** A Windows client that cannot use an `AF_UNIX` socket can attach.
+  Python `asyncio` is the example: its Windows loop supports named pipes.
+- **Activate.** `-listen-pipe` or the `listen-pipe` key.
+- **Pointers.** [PROTOCOL.md → Named-pipe
+  transport](PROTOCOL.md#named-pipe-transport-windows-opt-in) has the name, the
+  file rules and the DACL. Also `pipetransport.go` and
+  `pipetransport_windows.go`.
 
 ## Retired entries
 
-A retired entry is a divergence that a later reference build, or a later
-measurement of the reference, made moot. The maintainer also retires an entry to
-follow the reference. Its number is not reused, and its old
-link points here. Where a retired entry had a flag, the flag and its
-`claustrum.conf` key are still accepted, set nothing, and log one warning. The
-warning comes in the mode of the flag, `-serve` or `-install`. A duration flag
+A retired entry is a divergence that the reference made moot, or one that the
+maintainer retired to follow the reference. It links to the home of its rule
+where it has one. Its number is not reused. A retired
+flag and its `claustrum.conf` key are still accepted and set nothing. Either one
+logs one warning in the mode of the flag, `-serve` or `-install`. A duration flag
 whose value does not parse fails the flag parse with exit 2 (from the code).
 
 ### D1 · Verify the `-cli-zst` blob against a supplied checksum (retired) { #d1 }
 
-Since `7d193f89` the reference checks a supplied `-cli-checksum` against the
-`-cli-zst` blob, and claustrum does the same. The compare is case-sensitive, and
-a mismatch answers `checksum mismatch` and keeps the blob.
+claustrum checks a supplied `-cli-checksum` against the `-cli-zst` blob, as the
+reference does: see [PROTOCOL.md → -install](PROTOCOL.md#-install-ensure-the-agent-cli).
 
 ### D4 · `files.read` refuses a file that is not regular (retired) { #d4 }
 
-D4 made that refusal opt-in, because older builds read such a path. `5fd08069`
-refuses it with `-32602 files.read: not a regular file` (Linux, macOS and
-Windows VMs), and claustrum now does the same with no switch. The flag
-`-files-read-regular-only` warns on `-serve`.
+`files.read` refuses a path that is not a regular file with no switch, as the
+reference does: see [files.read](protocol/files-read.md).
 
 ### D5 · Deadline on the `git` calls (retired) { #d5 }
 
-D5 made a deadline on the git calls opt-in. `5fd08069` stops the git calls of
-four methods at measured limits, and claustrum now has those limits, always. See
+The git calls have the time limits of the reference, always: see
 [PROTOCOL.md → Time limits of git calls](PROTOCOL.md#time-limits-of-git-calls).
-The flag `-git-timeout` warns on `-serve`.
 
 ### D7 · `-cli-version` must not collide with the install temp sweep (retired) { #d7 }
 
-Since `4534d86` the sweep removes an entry that is about 10 minutes old or more.
-So the reference installs a version such as `.fetch-1` and keeps it. claustrum
-does the same, and [D6](#d6) still applies to every version.
+A version with a sweep name, such as `.fetch-1`, installs and stays in that run,
+as on the reference: see [PROTOCOL.md → -install](PROTOCOL.md#-install-ensure-the-agent-cli).
+[D6](#d6) still applies to every version.
 
 ### D9 · Namespace-wide params binding (retired) { #d9 }
 
-A method now ignores a member that another method of its namespace reads, as
-`5fd08069` does (Linux, macOS and Windows VMs).
+A method ignores a member that another method of its namespace reads, as the
+reference does: see [PROTOCOL.md → Params presence and
+typing](PROTOCOL.md#params-presence-and-typing).
 
 ### D11 · Deadline on the `<cli> --version` run of `-install` (retired) { #d11 }
 
-The reference stops a present CLI at 30 s (Linux, macOS and Windows). It stops
-a CLI that it installed in the same run at 120 s. It answers a `cli unresponsive: …`
-`cliError` with `"cliUnresponsive":true`. claustrum now does the
-same, always. The flag `-cli-probe-timeout` warns on `-install`.
+D11 made a deadline on that run opt-in, and claustrum now stops it at the 30 s and
+120 s of the reference, always: see
+[PROTOCOL.md → -install](PROTOCOL.md#-install-ensure-the-agent-cli).
 
 ### D13 · `-install` verified the checksum before decompressing (retired) { #d13 }
 
-`5fd08069` decompresses first and answers the decoder text with a right or a
-wrong checksum. claustrum now decompresses into the staging file first and
-verifies before the chmod, the clear and the rename.
+claustrum decompresses into the staging file first, as the reference does, so a
+body that is no zstd archive answers the decoder text. The checksum test comes
+before the chmod, the clear and the rename (claustrum's own): see
+[PROTOCOL.md → -install](PROTOCOL.md#-install-ensure-the-agent-cli).
 
 ### D14 · Deadline on the `ldd --version` libc probe (retired) { #d14 }
 
-Since `19f30c46` the reference bounds `ldd` at 5 s and then waits up to about
-2 s for its output. claustrum now does the same, always. The flag
-`-libc-probe-timeout` warns on `-install`.
+The `ldd` probe has the 5 s bound of the reference, always: see
+[PROTOCOL.md → -install](PROTOCOL.md#-install-ensure-the-agent-cli).
 
 ### D17 · An abandoned `lsof` run reads as busy, not idle (retired) { #d17 }
 
-Take an idle daemon whose `lsof` run `SIGKILL` cannot end. There `5fd08069`
-also sends no SIGTERM. It keeps the run dir and logs the same refusal line
-(macOS VM).
-claustrum takes longer for that pass, but no signal and no folder differ, so it
-is no divergence.
+On macOS an idle daemon whose `lsof` run `SIGKILL` cannot end gets no SIGTERM
+and keeps its run dir, as on the reference. Only the time of that pass differs:
+see [PROTOCOL.md → The `lsof` reads](PROTOCOL.md#the-lsof-reads-macos).
 
 ### D18 · `-cli-version` must not start with `.blob-` (retired) { #d18 }
 
-`5fd08069` counts and removes no `.blob-` file, because its prune counts version
-files only (Linux, macOS and Windows VMs). claustrum writes no `.blob-` file
-now, and it accepts such a version.
+The prune counts version files only, as on the reference. claustrum writes no
+`.blob-` file now, and it accepts a version that starts with `.blob-`.
 
 ### D21 · A second daemon on a live socket appends to `remote-server.log` (retired) { #d21 }
 
-On Windows the launcher now truncates a held log, and each daemon writes at its
-own offset, as `5fd08069` does (Windows VM).
+On Windows the launcher truncates a held log, and each daemon writes at its own
+offset, as on the reference: see [PROTOCOL.md → Daemon
+log](PROTOCOL.md#daemon-log-remote-serverlog).
 
 ### D25 · Answer `"unavailable"` for the peer check and serve every caller (retired) { #d25 }
 
-On Linux claustrum now checks the namespaces of each caller, with the frames of
-`5fd08069` (Linux VM).
+On Linux claustrum checks the namespaces of each caller with the frames of the
+reference: see [server.capabilities](protocol/server.md#the-peer-check).
 
 ## Candidates considered but not taken
 

@@ -52,8 +52,8 @@ file is `<cli-version>.exe`.
   unresponsive and installs nothing. The direct run of a CLI that this `-install`
   put in place is stopped after 120 s. A managed launcher run has 33 s and
   123 s. See
-  [PROTOCOL.md](PROTOCOL.md) → `-install`. The retired
-  [D11](DIVERGENCES.md#d11) holds the history of this bound.
+  [PROTOCOL.md](PROTOCOL.md) → `-install`. The `89cb6289` section of
+  [REFERENCE-BUILDS.md](REFERENCE-BUILDS.md) has its history.
 - If not, claustrum gets the blob from one of two sources:
     - `-cli-zst` names a local `.zst` file. Claustrum removes it once the new
       CLI is in place, before the `--version` run. Every earlier failure keeps
