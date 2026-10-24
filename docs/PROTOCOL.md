@@ -5,7 +5,8 @@ claustrum uses newline-delimited JSON-RPC 2.0 over an `AF_UNIX`
 The three `server.*` methods share one page. This
 document holds the rules that more than one method shares, and the flags. The life
 of the daemon off the wire is on [Running the daemon](DAEMON.md). The pinned
-reference build is `5fd08069`. A rule with no mark matches the reference as measured on `5fd08069` or on an earlier build.
+reference build is `5fd08069`. A rule with no mark matches the reference as
+measured on `5fd08069` or on an earlier build.
 Where a section names a build in its first lines, that build holds for the
 section. A rule marked "claustrum's own" is not a parity claim: the reference has
 no such rule, or it does something else. A D-number marks a deliberate

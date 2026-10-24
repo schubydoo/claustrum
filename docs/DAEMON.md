@@ -23,8 +23,8 @@ replaces the token of a dead daemon only after its reap, its `bind` and its
 The daemon unlinks the file only on a graceful stop: `server.shutdown`,
 `SIGTERM`, `SIGINT` or its self-exit. A `SIGKILL` or a crash leaves it. `-stop`
 also removes it after a failed connect, unless it prints `survivor` (see
-[-stop](PROTOCOL.md#-stop-ask-a-running-daemon-to-shut-down)). The unlink tests identity (`os.SameFile`). If the file
-at the path is not the file that the daemon wrote, the file stays. So a
+[-stop](PROTOCOL.md#-stop-ask-a-running-daemon-to-shut-down)). The unlink
+tests identity (`os.SameFile`). If the file at the path is not the file that the daemon wrote, the file stays. So a
 departing daemon keeps the token of a successor (measured on Windows, from the
 code on Linux and macOS). The same guard covers `rpc.sock` on Linux and macOS and
 the `rpc.pipe` pointer on Windows. A token or pipe pointer with no recorded
@@ -372,8 +372,8 @@ reference.
 - An orphan is a `stream-json` daemon child that leads its own process group.
   Its parent is pid 1, its binary sits directly in `<root>/ccd-cli`, and its
   stdin, stdout and stderr are pipes. Its group gets `SIGTERM`, a 3 s grace,
-  then `SIGKILL`. One pass ends 64 groups at most. A daemon or an orphan
-  younger than 5 minutes is never touched. An ambiguous orphan is spared with
+  then `SIGKILL`. One pass ends 64 groups at most. A daemon or an orphan that
+  is too young is never touched. An ambiguous orphan is spared with
   a logged reason.
 - A stale run dir is idle past 30 days, or its name carries `.removing-`. Its
   socket does not answer, and no live process holds its lock. The pass reads
@@ -394,9 +394,10 @@ reference.
   counts attempts there, refused ones included. The reference count after a
   refused attempt is not measured. All four limit lines are the texts of the
   reference (measured on Linux). The log lines carry the `[hostclean]` prefix
-  after claustrum's level tag. The line before a `SIGKILL` and two reasons for
-  a listener that is not our daemon, `not our daemon binary` and `not serving
-  that socket`, use the texts of the reference (measured on Linux).
+  after claustrum's level tag. The line before a `SIGKILL`, the reason for a
+  held lock, and two reasons for a listener that is not our daemon, `not our
+  daemon binary` and `not serving that socket`, use the texts of the reference
+  (measured on Linux).
 - The 15 s delay, the 3 s grace and the limit of 64 groups match the
   reference. The daily period, the 5 minute age, the 30-day idle age and the
   3 s busy window are claustrum's own.
@@ -404,8 +405,8 @@ reference.
 ## Daemon startup (`-serve`)
 
 This section holds what the launcher and the daemon do at a `-serve` start. The
-flags are under [-serve, run the daemon](PROTOCOL.md#-serve-run-the-daemon). The launcher
-wait and the self-locate are measured against `5fd08069`, and the other rules
+flags are under [-serve, run the daemon](PROTOCOL.md#-serve-run-the-daemon).
+The launcher wait and the self-locate are measured against `5fd08069`, and the other rules
 against `89cb6289`, on the systems that each rule names.
 
 The launcher is the `-serve` process that the operator starts. It re-execs its own

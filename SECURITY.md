@@ -148,9 +148,9 @@ Details for the three surfaces that need more than a row:
   `ListenPipe` also creates the pipe with `FILE_PIPE_REJECT_REMOTE_CLIENTS`, so
   a client over SMB (`\\host\pipe\…`) is refused. The pipe grants no access that
   the socket plus the token did not already grant. With the flag off, no pipe
-  exists. The pipe name is published to `rpc.pipe` in the socket directory and
-  removed at a graceful shutdown if it is still its own. The name is not a secret, because the DACL is
-  the access control.
+  exists. The pipe name is published to `rpc.pipe` in the socket directory. A
+  graceful shutdown removes that file only if it is still the file the daemon
+  wrote. The name is not a secret, because the DACL is the access control.
 
 Some reports require the socket plus the token already, or host shell access.
 Other reports amount to "the operator can run commands on their own host." Both
