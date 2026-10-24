@@ -429,9 +429,9 @@ the linked pages. The history of each build is in
   [git.info → The root](protocol/git-info.md#the-root).
 - D12 needs a valid zstd body. The decoder answers an invalid body at once, and
   that reads like "no divergence". A zero download timeout frees the body read
-  only. The transport clocks and the 60 s wait for the response headers still
-  apply, and that wait is parity. See
-  [-install](INSTALL.md#-install-ensure-the-agent-cli).
+  only. The [transport clocks](DIVERGENCES.md#conventions-for-opt-in-divergences)
+  and the 60 s wait for the response headers still apply, and that wait is
+  parity. See [-install](INSTALL.md#-install-ensure-the-agent-cli).
 - A connection reset in the body answers
   `download interrupted after <got>/<total> bytes: <err>`, as on `f6010b97` and
   `89cb6289` (measured on Linux). Another text there is drift. A body that ends
