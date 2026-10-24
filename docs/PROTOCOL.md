@@ -167,8 +167,10 @@ under [Stream notifications](#stream-notifications), is the wire contract.
 
 ### Error-string catalogue
 
-Every method-level error text, verbatim, in one place. The method pages under
-`docs/protocol/` give the trigger and the result shape. A text with no code and no
+The method-level error texts, verbatim. A text that only `git.worktree_create` or
+only `git.worktree_remove` sends is on the page of that method, and the row of the
+method links there. The method pages under `docs/protocol/` give the trigger and
+the result shape. A text with no code and no
 "in `error`" note is a JSON-RPC error `-32602`. "in `error`" is the `error` member of
 the result. A row that says "in the frame of" a method, or "The same frames", is
 `-32603` on `git.info`, `git.status` and `git.list_branches`. On `git.worktree_create`
@@ -222,7 +224,6 @@ that names systems without "measured" holds on each one. The [reference build hi
 | git.list_branches / git.info / git.status / git.worktree_create | `git took too long: Claude stopped git <subcommand> after 2 minutes; try again` | -32603 on the other methods. Create puts it after the text of the stopped step, as `git worktree add failed: ` or the `mkdir_failed` text of the parent step. A stopped repository test gets it alone, with `worktree_add_failed`. While a request with `"shadowDirOff":true` runs, the text says `after 30 minutes` (claustrum's own). See [Time limits of git calls](#time-limits-of-git-calls) |
 | the four methods | `config-defined hooks could not be pinned off; git not run: listing the configuration in force: git took too long: Claude stopped git config after 30 seconds; try again` | -32603 on the other methods. Create: in `error`, `worktree_add_failed`, after `git worktree add failed (checkout): ` for the checkout listing |
 | the four methods | `this repository's git config cannot be used: git did not finish reading "<path>" within 30 seconds; try again` | -32603 on the other methods. Create: in `error`, `worktree_add_failed` |
-| git.worktree_create | `git worktree add failed (completing the new worktree's git files): this repository's git config cannot be used: git did not finish reading it within 30 seconds; try again` | in `error`, `worktree_add_failed`. The listing of `config.worktree` after the add ran 30 s. The rollback of a failed checkout runs |
 | git.status | `<file>: not a regular file` | -32603. claustrum's own text, from the copy into the temporary git folder after the gate passed. `<file>` is `info/sparse-checkout` when that entry is a folder or a FIFO. The reference is not measured there |
 | git.status | `<file> is larger than <n> bytes` | -32603. claustrum's own text, for a copied file over its bound, also one that grew after the gate. `<n>` is 1073741824 for `index`, a `sharedindex.<40 or 64 hex>` file, `info/sparse-checkout` and a reftable file, and 1048576 for `HEAD` and `config.worktree`. The reference is not measured there |
 | git.status | `<os error>` of the copy or of the temporary folder, for example `openat index: permission denied` or `stat <dir>: no such file or directory` | -32603. The raw Go error when a file of the entry cannot be copied, or a file of the temporary git folder cannot be made. With `"shadowDirOff":true`, and on a server with no run folder, a temporary folder that cannot be made answers the raw Go error too. The reference is not measured there. In the states `shadow` and `fallback-git` a `.gitdir-<n>` that cannot be made answers `{"isRepo":false,"clean":false}`: see [git.status → Errors](protocol/git-status.md#errors) |
@@ -230,7 +231,7 @@ that names systems without "measured" holds on each one. The [reference build hi
 | git.* | `config-defined hooks could not be pinned off; git not run: inherited GIT_CONFIG pair <n> is incomplete` | in the frame of each method, when a pair below the daemon's `GIT_CONFIG_COUNT` is not set. See [The daemon's own git environment](#the-daemons-own-git-environment) |
 | git.* | `config-defined hooks could not be pinned off; git not run: listing the configuration in force: exit status 128: <git text>` | in the frame of each method, for a `GIT_CONFIG_KEY_<n>` of the daemon that git cannot read. A folder that holds no repository gets it too. Linux, macOS and Windows. See [The daemon's own git environment](#the-daemons-own-git-environment) |
 | git.* | `config-defined hooks could not be pinned off; git not run: listing the configuration in force: fork/exec <git.exe path>: The directory name is invalid.` | Windows only. In the frame of `git.info`, `git.list_branches`, `git.status` and `git.worktree_create`. The `path` of the first two, or the `baseRepo` of the last two, exists and git cannot start in it. That is a regular file, a file symlink or a folder with a path of 296 characters. The path `NUL` and a file name with one more dot at its end get it too. Only `git.info` is measured for the symlink, the long folder, `NUL` and the dot. See [Git-directory trust check](#git-directory-trust-check) |
-| git.* | `git cannot run on this host; git not run: <exec error>: <git text>` | in the frame of each method, when the configuration listing fails and `git version` fails too. The exec error and the text are those of `git version`. Linux, macOS and Windows. It also follows a failed call 7 of [the start test](#the-start-test), and a failed [call about the repository](#the-call-about-the-repository), when `git version` fails too. For `git.worktree_remove` see the table in [Git-directory trust check](#git-directory-trust-check) |
+| git.* | `git cannot run on this host; git not run: <exec error>: <git text>` | in the frame of each method, when the configuration listing fails and `git version` fails too. The exec error and the text are those of `git version`. Linux, macOS and Windows. It also follows a failed read of the test repository's config in [the start test](#the-start-test), and a failed [call about the repository](#the-call-about-the-repository), when `git version` fails too. For `git.worktree_remove` see the table in [Git-directory trust check](#git-directory-trust-check) |
 | git.* | `this repository's git config cannot be used: <detail>` | -32603 on `git.info`, `git.status` and `git.list_branches`, and in the frame of `git.worktree_create` and `git.worktree_remove`. The details are in [Repository config refusals](#repository-config-refusals) |
 | git.* | `a file in this repository's .git directory cannot be used: <detail>` | The same frames. See [Repository config refusals](#repository-config-refusals) |
 | git.* | `Claude could not test git on the remote machine (<cause>). Check free disk space and quota there, then try again.` | -32603 on `git.info`, `git.status` and `git.list_branches`, and in the frame of `git.worktree_create` and `git.worktree_remove`. See [The settings copy](#the-settings-copy) |
@@ -244,86 +245,15 @@ that names systems without "measured" holds on each one. The [reference build hi
 | git.* | `config-defined hooks could not be pinned off; git not run: too many configured hooks to pin` / `config-defined hooks could not be pinned off; git not run: configured hook names exceed the aggregate pin byte bound` | in the frame of each method, for more than 1024 hook names, or names over 65536 bytes in sum. Measured on `git.info`. See [Hardened git calls](#hardened-git-calls) |
 | git.* | `the repository's git directory could not be trusted; git not run: commondir not as git writes it: <S1, S2 or S3>` | in the frame of each method, for a stray `commondir`. [Git-directory trust check](#git-directory-trust-check) gives the three texts |
 | git.worktree_create / git.worktree_remove | `baseRepo is inside a managed worktrees directory (beneath .claude/worktrees, or beneath a directory holding a .claude-managed-worktrees marker), or could not be validated as a trust root` | in `error`. Create adds `errorCode:"nested_base_repo"`, and remove has none. It answers a `baseRepo` under a managed worktrees tree, or one that fails claustrum's own trust-root test. No git runs. See [git.worktree_create](protocol/git-worktree-create.md) and [git.worktree_remove](protocol/git-worktree-remove.md#where-the-paths-can-be) |
-| git.worktree_create | `branchName is required` | |
-| git.worktree_create | `not a git repository` | in `error`, `errorCode:"not_a_repo"` |
-| git.worktree_create | `refusing to create worktree: <p> {is a relative path / contains a ".." component / has a component Windows reads as a different name (trailing dot or space, or a colon) [Windows] / is not inside the repository <repo>; … / already exists, …}` | in `error`, `errorCode:"unsafe_path"`. The spelling refusal is Windows only and comes before containment. On Linux and macOS the `already exists` text cleans `<p>`. It resolves the symlinks of the parent folder of the leaf and keeps the last name. `<repo>` is `baseRepo` as sent, so an absent `baseRepo` gives the empty string. With `worktreeRoot`, the first two texts also refuse a relative, absent or `..` `baseRepo`, and `<p>` is then `baseRepo` as sent |
-| git.worktree_create | `refusing to create worktree: <root> is a filesystem root; choose the worktree location by its absolute path, without "..", beneath the filesystem root` | in `error`, `errorCode:"unsafe_path"`, Linux and macOS, with `worktreeRoot`. A root of `/`, `//` or `/.` is refused, also with the folder gone and for a daemon that runs as root. `<root>` is `worktreeRoot` as sent. A root that is another mount point passes. A relative `worktreePath` gets its own text first. A root with a `..` component that cleans to `/` gets the `..` text (from the code, not measured). Windows refuses every `worktreeRoot` first. Nothing is created |
-| git.worktree_create | `refusing to create worktree: <c> is a symbolic link; a symlinked .claude or .claude/worktrees …` | in `error`, `errorCode:"symlinked_component"`, for a symlinked ancestor component under the repo |
-| git.worktree_create | `failed to create parent directory: "" does not name a directory` | in `error`, `errorCode:"mkdir_failed"` (empty `worktreePath`, without `worktreeRoot`) |
-| git.worktree_create | `failed to create parent directory: <repo>\<component> is not a directory` | in `error`, `errorCode:"mkdir_failed"`, Windows, when a directory between `baseRepo` and the leaf is a junction. `<repo>\<component>` is the path of the first junction. Nothing is created: no directory, no entry, no branch. claustrum also refuses a non-symlink reparse point that is not a junction the same way (not measured) |
-| git.worktree_create | `refusing to create worktree: <root> is the repository <repo> or inside it; a worktree location must be outside the repository` | in `error`, `errorCode:"unsafe_path"`, with `worktreeRoot`. A root that is `baseRepo` or lies beneath it by whole components is refused. `<B>/Tx` beside `<B>/T` passes. `<root>` and `<repo>` are as sent. claustrum cleans both paths first, as on remove (not measured on create). Nothing is created. Measured on Linux and macOS. |
-| git.worktree_create | `refusing to create worktree: <root> passes through <dir>, which is writable by <who> without the sticky bit (mode <mode>), so they could replace what is beneath it; choose a location under directories only you (or the system) control, or remove the extra write permission (chmod go-w)` / `refusing to create worktree: <root> passes through <dir>, which is owned by uid <uid>, neither you nor the system; choose a location you reach through your own directories` | in `error`, `errorCode:"unsafe_path"`, Linux and macOS, with `worktreeRoot`. This is the ancestor test of each directory above the root, not of the root itself. For a root that is a symlink, the directories above its target are judged too. The second text names an owner other than uid 0 and the daemon's user, also with the sticky bit set. The first names a directory that its group or every user can write without the sticky bit. A group-write bit passes for the private group of the daemon's user, as in the root's own write test. uid 0 gets no exemption from the write tests. `<dir>` is the first failing directory of the walk from `/`, with its symlinks resolved, also one that the daemon cannot search. A symbolic link above the root that another user owns gets the second text. `<dir>` is then the link as written in the root. `<root>` is `worktreeRoot` as sent. `<who>` is "its group", "every user on this host" or "its group and every user on this host". `<mode>` is four octal digits of the permission bits, so 2775 prints `0775`. `<uid>` prints unsigned, for example 4294967294 on macOS. On macOS a firmlink spelling of the root names `/System/Volumes/Data`. A missing level, or any other failed resolve, ends the walk with no refusal. A create without `worktreeRoot` and `git.worktree_remove` run no ancestor test. Nothing is created. The comment of `worktreeRootAncestorRefusal` lists the cases that are claustrum's own choice |
-| git.worktree_create | `refusing to create worktree: <root> leads into the repository <repo> (at <at>); a worktree location must be outside the repository` | in `error`, `errorCode:"unsafe_path"`, with `worktreeRoot`, Linux and macOS. The root passes the tests above but leads into the repository. That is the git top level of `baseRepo`, the main checkout or the git directory, also a separate one. The remove row of this text gives the test. claustrum compares file identity as on remove (not measured on create). When the ancestor test refuses the same root, its text answers. `<repo>` is `baseRepo` as sent. Nothing is created |
-| git.worktree_create | `refusing to create worktree: <root> leads into <wt>, a worktree of the repository <repo> (at <wt>); a worktree location must be outside the repository's checkouts` | in `error`, `errorCode:"unsafe_path"`, with `worktreeRoot`, Linux and macOS. The root lies in a linked worktree `<wt>` of the repository. The remove row of this text gives the test. `<repo>` is `baseRepo` as sent. A listed worktree whose folder is gone refuses too. The create makes that folder first, with mode 0700. Nothing else is created |
-| git.worktree_create | `refusing to create worktree: <root> is inside a git checkout (<dir> has a .git entry); a worktree location must be outside every checkout, so that no session working in one can reach it — choose a directory that is not part of any repository` | in `error`, `errorCode:"unsafe_path"`, Linux and macOS, with `worktreeRoot`. A directory from `/` down to the root holds a `.git` entry of any kind. A missing directory is skipped. The ancestor text answers first at the same directory. `<root>` is `worktreeRoot` as sent, with a trailing slash or `//` kept. `<dir>` is the highest such directory, resolved and cleaned. Nothing is created |
-| git.worktree_create | `refusing to create worktree: <dir> is itself a git checkout (it has a .git entry); a worktree location must be outside every checkout` | in `error`, `errorCode:"unsafe_path"`, Linux and macOS, with `worktreeRoot`, when the `<directory>` level holds a `.git` entry. `<dir>` has the symlinks of the root resolved. Nothing is created |
-| git.worktree_create | `refusing to create worktree: <root> passes through too many symbolic links (a loop?)` | in `error`, `errorCode:"unsafe_path"`, Linux and macOS, with `worktreeRoot`. A symlink loop or too many links lie in the path of the root. claustrum uses the kernel limit (not measured). The remove sends it too. `<root>` is `worktreeRoot` without a trailing slash. claustrum also drops a `//` here (not measured). Nothing is created |
-| git.worktree_create | `refusing to create worktree: <p> carries a .git file that does not name this repository's own worktree admin directory` | in `error`, `errorCode:"unsafe_path"`, Linux and macOS, after a successful add. `<p>` is spelled as in the `already exists` text. The `gitdir:` path of the new `.git` file is not in a folder named `worktrees`. Or it names no entry of the `worktrees` folder of `baseRepo`, or a symbolic link. Or the `commondir` file of the registration does not name the git directory by text. Or that `commondir` file or the `gitdir` record cannot be read as a file. No checkout runs and nothing is rolled back |
-| git.worktree_create | `refusing to create worktree: <p> was not populated by git worktree add` | in `error`, `errorCode:"unsafe_path"`, Linux and macOS, after a successful add, when the git directory of `baseRepo` has no `worktrees` folder. A daemon `GIT_COMMON_DIR` of another repository gets it too. In the state `shadow` it also answers a `.git` that no longer names the held git directory right after the add. That `.git` is no real directory that passes the gate. No checkout runs and nothing is rolled back |
-| git.worktree_create | `refusing to create worktree: <p> carries a .git file naming an admin directory whose own record is of a different worktree` | in `error`, `errorCode:"unsafe_path"`, after a successful add. The `gitdir` record of the registration does not name `<p>/.git`. A record with a slash or a blank at its end, a `/./` part or a double slash names it. An expired `timeoutMs` gets the same answer. No checkout runs and nothing is rolled back |
-| git.worktree_create | `git worktree add failed (verification): could not verify the worktree's registration: git did not report its spelling of the path (entry <name>); retry` | in `error`, `errorCode:"worktree_add_failed"`, Linux and macOS. The state of the row above, and git fails the `rev-parse --show-toplevel` call that follows. `<name>` is the entry that the `.git` file names. The leaf, the one new entry of the `worktrees` folder and the new branch go. claustrum's own, not measured: the folder has one new entry, and no time limit stopped the call |
-| git.worktree_create | `refusing to create worktree: <p> carries a .git file naming an admin entry other than the one just created for it` | in `error`, `errorCode:"unsafe_path"`, after a successful add. The registration is not the one new name of the `worktrees` folder since the listing before the add: there are two new entries, or none. On Windows a leaf `.git` file of another staged entry gets it before the move. Only the leaf and the branch go then. claustrum's own, not measured: a listing that fails gets it, and a refusal of the four rows above comes first. Otherwise no checkout runs and nothing is rolled back |
-| git.worktree_create | `refusing to create worktree: <p> has no .git file` / `refusing to create worktree: <p>/.git is not a regular file` / `refusing to create worktree: <p>/.git does not name a git dir` | in `error`, `errorCode:"unsafe_path"`, Linux and macOS, after a successful add. The `.git` entry of the new worktree is gone, is no regular file, or does not start with `gitdir: `. The registration and the branch stay, and an empty leaf goes |
-| git.worktree_create | `refusing to create worktree: <p> is no longer the directory that was created for the worktree` | in `error`, `errorCode:"unsafe_path"`, Linux and macOS, before the checkout. Another folder is at the path of the leaf. Nothing is checked out or rolled back |
-| git.worktree_create | `git worktree add failed: cannot prepare the repository's worktrees directory: "<git dir>/worktrees" is not a directory` / `git worktree add failed: cannot prepare the repository's worktrees directory: openat worktrees: permission denied` / `git worktree add failed: cannot list the repository's worktree entries: "worktrees" is a link or a file where Claude needs a real directory; put the directory itself in its place` | in `error`, `errorCode:"worktree_add_failed"`. In the state `shadow` on Linux and macOS, a symbolic link or a file at `worktrees` gets the first text. A folder there that cannot be opened gets the second. With `"shadowDirOff":true` a link or a file there gets the third. On Windows a junction or a directory symbolic link gets the third too. A file there on Windows is claustrum's own, not measured. No `worktree add` runs, and no leaf or branch stays. Measured on Linux and macOS. |
-| git.worktree_create | `failed to create parent directory: lstat <path>: <errno text>` | in `error`, `errorCode:"mkdir_failed"`, Linux and macOS, with `worktreeRoot`. A root symlink names a missing target, and `<path>` is that target. Or a directory from `/` down to the root cannot be searched, and `<path>` is `<dir>/.git` for the highest such directory. A directory above the root that fails the ancestor test gets the ancestor text instead. Other errors of the resolve are sent as Go prints them (not measured). Nothing is created |
-| git.worktree_create | `failed to create parent directory: <path>: not a directory` | in `error`, `errorCode:"mkdir_failed"`, Linux and macOS, with `worktreeRoot`. The deepest existing part of the root is not a directory after its symlinks are resolved. `<path>` is that resolved path: the root, a path above it, or the file that a root symlink names. A regular file above the root gets this text, not the ancestor text. Nothing is created |
-| git.worktree_create | `failed to create parent directory: <path> is not a directory` | in `error`, `errorCode:"mkdir_failed"`, Linux and macOS. Without `worktreeRoot`, an existing component above the leaf is not a directory. `<path>` is its full path, with the symlinks of the repo resolved and with `//` and `/./` removed. With `worktreeRoot`, the `<directory>` level exists and is not a directory, and `<path>` is its path with the root resolved. A `<directory>` that is a symlink gets the symlink refusal first. Nothing is created. On Windows, without `worktreeRoot`, a file in the path keeps the `os.MkdirAll` text, `mkdir <path>: <OS error>` (not measured) |
-| git.worktree_create | `failed to create parent directory: statat .: <errno text>` | in `error`, `errorCode:"mkdir_failed"`, Linux and macOS, without `worktreeRoot`. An existing `.claude` or `.claude/worktrees` cannot be searched, also when nothing is left to create |
-| git.worktree_create | `failed to create parent directory: statat <name>/.git: <errno text>` | in `error`, `errorCode:"mkdir_failed"`, Linux and macOS, with `worktreeRoot`, when the `<directory>` level exists and cannot be searched. `<name>` is its last component |
-| git.worktree_create | `failed to create parent directory: mkdirat <name>: <errno text>` | in `error`, `errorCode:"mkdir_failed"`, Linux and macOS, when a missing directory above the leaf cannot be created. Without `worktreeRoot`, `<name>` is the last component of that directory. With `worktreeRoot`, `<name>` is its path relative to the deepest directory that existed before the call, for example `a/b`. A directory that the call made before the failure stays. Measured with `permission denied` and `file name too long`. Other errno texts take the same shape (not measured) |
-| git.worktree_create | `failed to create parent directory: cannot mark <dir> as a worktree location: openat .claude-managed-worktrees: <errno text>` | in `error`, `errorCode:"mkdir_failed"`, Linux and macOS, with `worktreeRoot`, when the marker cannot be created and no entry of that name exists. `<dir>` is the `<directory>` level with the symlinks of the root resolved. The leaf is not made |
-| git.worktree_create / git.worktree_remove | `refusing to <verb> worktree: <p> is not <worktree location>/<directory>/<name> beneath <root>` | in `error`, as are the rows below it up to `cannot list the repository's worktrees`. `<p>` and `<root>` as sent. Create adds `errorCode:"unsafe_path"` in each of these rows that names no other code |
+| git.worktree_create | The texts that only this method sends | On the page: [git.worktree_create → Error texts](protocol/git-worktree-create.md#error-texts) |
+| git.worktree_create / git.worktree_remove | `refusing to <verb> worktree: <p> is not <worktree location>/<directory>/<name> beneath <root>` | in `error`, as are the rows below it up to `passes through too many symbolic links`. `<p>` and `<root>` as sent. Create adds `errorCode:"unsafe_path"` in each of these rows that names no other code |
 | git.worktree_create / git.worktree_remove | `refusing to <verb> worktree: <p> uses the reserved name <name> for a directory under the worktree location` | `<name>` is `.git` or `.claude-managed-worktrees`, in any letter case |
 | git.worktree_create / git.worktree_remove | `refusing to <verb> worktree: <root> has a component named <name>, which is reserved; …` | A `.claude-managed-worktrees` component is not measured |
 | git.worktree_create / git.worktree_remove | `refusing to <verb> worktree: <root> would place worktrees in <dir>, which contains the repository <repo>; choose a location the repository is not inside` | |
 | git.worktree_create / git.worktree_remove | `refusing to <verb> worktree: <root> would place worktrees in <dir>, which is (or is inside) <wt>, a worktree of the repository <repo>; …` | |
 | git.worktree_create / git.worktree_remove | `refusing to <verb> worktree: <root> resolves to the filesystem root; …` | |
-| git.worktree_create | `refusing to create worktree: <root> leads into a session worktree (at <p>; beneath .claude/worktrees, or beneath a directory holding a .claude-managed-worktrees marker); a worktree location must be outside every session's worktree` | |
-| git.worktree_create | `refusing to create worktree: <root> would be made inside a session worktree or its per-repository directory (at <p>; …` | |
-| git.worktree_create | `refusing to create worktree: <root> is itself a per-repository worktree directory (it holds a .claude-managed-worktrees marker); choose the directory above it, or another location` | |
-| git.worktree_create | `refusing to create worktree: <dir> is writable by <who> (mode <mode>); choose a directory only you can write to, or remove the extra write permission (chmod go-w)` | for the root, and for the `<directory>` level |
-| git.worktree_create | `failed to create parent directory: cannot determine the repository's work tree: <exec error>` | `errorCode:"mkdir_failed"` |
-| git.worktree_create | `failed to create parent directory: cannot list the repository's worktrees: <exec error>` | `errorCode:"mkdir_failed"` |
-| git.worktree_create | `git worktree add failed: <text>` | in `error`, `errorCode:"worktree_add_failed"`. `<text>` is made from git's stderr by the [text rule](#the-cannot-run-and-hooks-refusal-texts). The text of claustrum does not start with git's graft-file `hint:` lines. The rollback runs no git call and removes the leaf only if it is empty. A branch that existed before is not deleted. A failed add answers this frame also when the caller `timeoutMs` expired during the add (measured on macOS) |
-| git.worktree_create | `git worktree add failed (completing the new worktree's git files): <cause>` | in `error`, `errorCode:"worktree_add_failed"`, when the `config.worktree` step after the add fails. On Windows a failed staging step gives it, such as `git registered <n> worktrees where one was expected; try again` or `the repository already has a hundred worktrees called "<name>"; remove some (git worktree prune, git worktree remove)`. No checkout runs, and the rollback is that of a failed checkout. It wins over an expired `timeoutMs`. Linux, macOS and Windows |
-| git.worktree_create | `git worktree add failed: <fallback text> (attaching to the existing branch <b> was refused first: <attach text>)` | in `error`, `errorCode:"worktree_add_failed"`, when the attach add for `existingBranch` fails and the fallback `-b <branchName>` add fails too. The text rule makes each text on its own, each with its own 512-byte cap (measured on macOS) |
-| git.worktree_create | `git worktree add failed (checkout): <text>` | in `error`, `errorCode:"worktree_add_failed"`, when the `read-tree` checkout fails. Same text rule, and the same rule for the `hint:` lines. With a settings copy a `<text>` that holds `smudge filter lfs failed` after the cut gets `. Claude doesn't use ssh, credential, or proxy settings from this repository's own git config. If the download needs one and you trust that setting, copy it into ~/.gitconfig on the remote machine, then try again.` after it. The new directory is removed. The branch the call created goes only when another ref reaches its tip (see [The branch step](#the-branch-step)). In attach mode the attached branch is kept. A failed placement of the index answers this frame too. On Linux and macOS its OS error is `openat <registration name>/index: permission denied` or `open <temporary directory>/index: no such file or directory`, or claustrum's own `the registration <p> is not the folder that was tested after the add` (D24, not measured). On Windows it is `openat index: <cause>`, or claustrum's own `the registration <p> is not the folder that was moved into place` (D24, not measured) |
-| git.worktree_create | `Claude doesn't run the "<name>" git filter, because only this repository's own git config defines it. If you trust that filter, copy the [filter "<name>"] section from that config (usually .git/config) into ~/.gitconfig on the remote machine, then try again.` | in `error`, `errorCode:"repository_only_filter"`, in the state `shadow`. A path of the checkout uses a git filter that only the git config of the repository defines. With a settings copy, a filter whose outside definition is only `process = cat` gets it too. A quote mark in `<name>` has a backslash before it. The rollback is the one of a failed checkout. Linux and Windows. In the state `fallback-git` git runs the filter. See [Git filters](protocol/git-worktree-create.md#git-filters) |
-| git.worktree_create | `git worktree add failed (checkout): this repository's git config cannot be used: a filter defined only there has a name longer than 200 bytes (it starts "<first 40 bytes>"); define it in ~/.gitconfig on the remote machine, or rename it` | in `error`, `errorCode:"worktree_add_failed"`, in the state `shadow`, for such a filter with a name over 200 bytes. The rollback is the one of a failed checkout. Linux and Windows |
-| git.worktree_create | `git worktree add failed (checkout): this repository's git config cannot be used: it defines more than 64 filters` | in `error`, `errorCode:"worktree_add_failed"`, in the state `shadow` with a settings copy, when the repository config has more than 64 filter names. A name with a `smudge` key counts (Linux, macOS and Windows), and so does one with only a `clean` key (Linux and macOS). A name with only other keys counts too (claustrum's own). No read-tree call runs, and the rollback is the one of a failed checkout. The text wins over the texts of a name with `=` and of a name over 200 bytes. A failed config listing wins over it |
-| git.worktree_create | `git worktree add failed (checkout): Claude could not read your own git config on the remote machine (<cause>). Run git config --list there to see the problem.` | in `error`, `errorCode:"worktree_add_failed"`, in the state `shadow` with a settings copy, when the config listing right before the checkout fails. No read-tree call runs, and the rollback is the one of a failed checkout. `<cause>` is `exit status 1` for a listing that exits 1 (Linux, macOS and Windows). That holds also while a child holds stdout past 30 s (claustrum's own, not measured). A git that still runs at 30 seconds is stopped as in [Time limits of git calls](#time-limits-of-git-calls). Unless it exits 0, `<cause>` is then `git took too long: Claude stopped git config after 30 seconds; try again`. An exit 0 counts, also with stdout held past 30 s. The `timeoutMs` of the caller does not end the listing. On Windows a `.git` that became a regular file during the first listing does not stop the checkout. The second listing can then fail with `exit status 128` |
-| git.worktree_create | `git worktree add failed (checkout): config-defined hooks could not be pinned off; git not run: listing the configuration in force: <detail>` | in `error`, `errorCode:"worktree_add_failed"`, in the state `shadow`, when the first config listing after the add fails. One `git version` call runs first, and the rollback follows. If that `git version` fails too, the text after `(checkout): ` is `git cannot run on this host; git not run: <exec error>: <git text>` (measured on Linux). The rest is measured on Linux and macOS. |
-| git.worktree_create | `git worktree add failed (checkout): this repository's git config cannot be used: the filter "<name>" is defined only there, and Claude cannot handle "=" in a filter's name; define it in ~/.gitconfig on the remote machine, or rename it` | in `error`, `errorCode:"worktree_add_failed"`, in the state `shadow`, for such a filter with `=` in its name. The rollback is the one of a failed checkout |
-| git.worktree_create | `git worktree add failed (checkout): this repository's git config cannot be used: it names a program for git-lfs ("<key>"); remove that setting, or put it into ~/.gitconfig on the remote machine` | in `error`, `errorCode:"worktree_add_failed"`, in the state `shadow` and only with no settings copy. A path uses the filter `lfs` of the user or the system config. The config of the repository has the key `<key>`, a program key of git-lfs. The rollback is the one of a failed checkout. The text is claustrum's own |
-| git.worktree_create | `git worktree add failed (checkout): the git filter "<name>" has values in this repository's git config that no option of git can replace for the checkout` | in `error`, `errorCode:"worktree_add_failed"`, in the state `shadow` (claustrum's own, not measured). With no settings copy it answers a repository `process` key beside an outside filter with none. It also answers a shared name with `=` and a name that is not valid UTF-8 there. With a copy it answers a shared name with `=` or one that is not valid UTF-8 where the repository adds only `required = true`. With a copy the reference answers success for the `process` key, and claustrum follows it |
-| git.worktree_create | `git worktree add timed out after <n>ms (deadline expired {before the checkout started / during the checkout): <text> / after the checkout finished})` | in `error`, `errorCode:"timeout"`, from the caller-supplied `timeoutMs`. An absent `timeoutMs`, or 0, arms no deadline. `<text>` comes from the stderr of the killed git, by the same text rule |
-| git.worktree_create | `<frame>; and the undo could not finish for <leaf>: {the worktree directory, its registration, and the branch all remain; remove them by hand before retrying (RemoveAll <entry>: <OS error>) / the worktree directory remains (re-populated while undoing?); remove it by hand before retrying (removeat <leaf base name>: <OS error>)}` | in `error`, appended to the checkout-failure frame and to each `timeout` frame when a step of the rollback fails. The `errorCode` stays as it was. The two texts in braces were measured on Windows only. In attach mode the first text reads `the worktree directory and its registration both remain` instead, because the call made no branch. On Linux and macOS a registration that cannot be deleted gives `the worktree registration and the branch remain; remove them by hand before retrying (RemoveAll <registration name>: <OS error>)` instead, with the leaf removed. In attach mode it reads `the worktree registration remains; remove it by hand before retrying (RemoveAll <registration name>: <OS error>)`. The text in the parentheses of a registration text can be claustrum's own. No rmdir text joins either one |
-| git.worktree_create | `<frame>; and the undo could not finish for <leaf>: <branch part>` | in `error`, appended when the branch step of the rollback keeps the branch that the call made. After a failed leaf rmdir, the branch part follows the rmdir text after `; `. Some cases also add `"branchKept":true` after `errorCode`. [The branch step](#the-branch-step) gives each `<branch part>` and each case |
-| git.worktree_remove | `refusing to remove worktree: <p> {is a relative path / contains a ".." component / has a component Windows reads as a different name (trailing dot or space, or a colon) [Windows] / is not inside the repository <repo>; …}` | in `error`, with no `errorCode`. The spelling refusal is Windows only and comes before containment. `<repo>` is `baseRepo` as sent, so an absent or empty `baseRepo` gives the empty string. With `worktreeRoot`, the first two texts also refuse a relative, absent or `..` `baseRepo`, and `<p>` is then `baseRepo` as sent. An empty `worktreePath` gets the first text there |
-| git.worktree_remove | `refusing to remove worktree: <root> is a filesystem root; choose the worktree location by its absolute path, without "..", beneath the filesystem root` | in `error`, with no `errorCode`, Linux and macOS, with `worktreeRoot`. The rules of the create row hold. claustrum tests a relative `worktreePath` first, as on create (not measured on remove). No git call runs, and nothing is deleted |
-| git.worktree_remove | `refusing to remove worktree: <root> is the repository <repo> or inside it; a worktree location must be outside the repository` | in `error`, with no `errorCode`, with `worktreeRoot`, Linux and macOS. The test cleans the root and `baseRepo` and compares whole components. A root that is `baseRepo` or lies beneath it is refused, and `<B>/Tx` beside `<B>/T` passes. `<root>` is `worktreeRoot` as sent, so a trailing slash stays. `<repo>` is `baseRepo` as sent, so `<T>/` and `<T>/.` stay too. No git call runs. Nothing is deleted |
-| git.worktree_remove | `refusing to remove worktree: <root> leads into the repository <repo> (at <at>); a worktree location must be outside the repository` | in `error`, with no `errorCode`, with `worktreeRoot`, Linux and macOS. The daemon resolves the symlinks of the longest existing part of the root and appends the missing rest. `<at>` is the outermost path from there up to `/` that is the same file as one of three folders. These are the git top level of `baseRepo`, the main checkout and the git directory, also a separate one. The main checkout is the first entry of `worktree list`. So `<at>` is a prefix of the resolved root, for example `/private/tmp/…` for a root sent as `/tmp/…` on macOS. A bind mount (Linux), a firmlink spelling and a case variant (macOS) match too, and `<at>` keeps their spelling. That holds for the main checkout of a linked `baseRepo` too. If both checkouts hold the root, the main checkout is named. A folder nearer to `/` that the row below matches gives that text (from the code). `<repo>` is `baseRepo` as sent. Nothing is deleted |
-| git.worktree_remove | `refusing to remove worktree: <root> leads into <wt>, a worktree of the repository <repo> (at <wt>); a worktree location must be outside the repository's checkouts` | in `error`, with no `errorCode`, with `worktreeRoot`, Linux and macOS. `<wt>` is a linked worktree in `worktree list` that is the resolved root or a parent of it by whole components. The test compares `<wt>` as listed, as a string: no symlink resolve, no case fold, no file identity. It skips a listed worktree whose path does not exist, also a locked one. claustrum keeps the entry on another error of the lstat (not measured). Of two nested worktrees, the outer one is named. A root that holds a linked worktree passes. `<repo>` is `baseRepo` as sent. Nothing is deleted |
-| git.worktree_remove | `failed to remove worktree: the worktree location <root> is not reachable (<reason>); nothing was removed — retry once it is available, or remove the worktree by hand` | in `error`, with no `errorCode`, with `worktreeRoot`, Linux and macOS. The root passes the three tests above but does not exist or does not resolve. `<root>` is `worktreeRoot` as sent. For a root that does not exist, `<reason>` is `<path> does not exist`, with the links of its existing part followed and a final slash dropped. A root below a regular file gets `<file>: not a directory`. For a symlink that does not resolve, `<reason>` is the error of the resolve, for example `lstat <target>: no such file or directory`. claustrum sends other resolve errors the same way (not measured). For `permission denied` the text is `failed to remove worktree: lstat <root>: permission denied` (Linux). Nothing is deleted, and the branch stays |
-| git.worktree_remove | `refusing to remove worktree: <c> is a symbolic link; a symlinked .claude or .claude/worktrees …` | in `error`, with no `errorCode`. It keeps the delete off a planted link |
-| git.worktree_remove | `refusing to remove worktree: <t> {is a symbolic link, not a worktree directory / is not a directory}` | in `error`, with no `errorCode`, for a leaf that is a symbolic link or not a directory. `<t>` has the symbolic links of `baseRepo` resolved, or with `worktreeRoot` those of the root. Nothing is deleted (measured on macOS) |
-| git.worktree_remove | `refusing to remove worktree: <t> changed while the removal was checking it` | in `error`, with no `errorCode`. claustrum's own text for a leaf that another directory replaced between two looks. Nothing is deleted. On Linux and macOS, with `worktreeRoot`, a `<directory>` that turns into a symlink out of the root between two looks answers `failed to remove worktree: openat <directory>: path escapes from parent`. That text is claustrum's own and is not a parity claim |
-| git.worktree_remove | `refusing to remove worktree: <p> is locked (git worktree lock); unlock it to remove it` | in `error`, with no `errorCode`, for a LOCKED worktree (`success:false`). The worktree stays. The text is fixed whatever the lock reason is. claustrum also refuses some locks where the reference deletes the folder or answers success ([D22](DIVERGENCES.md#d22)) |
-| git.worktree_remove | `refusing to remove worktree: <p> is gone but its registration is locked (git worktree lock); unlock it to remove the registration and branch` | in `error`, with no `errorCode`, for a gone worktree with a locked registration. Nothing is deleted (measured on macOS). On Linux and macOS a gone worktree whose locked entry sits behind a linked `<git dir>/worktrees` gets success, and its branch goes |
-| git.worktree_remove | `failed to remove worktree: could not check whether <p> is locked (<reason>); retry` | in `error`, with no `errorCode`, for a gone worktree. Without `worktreeRoot`, `<reason>` is the hooks refusal or the trust refusal (measured on macOS), or the `git cannot run` text. It is also the refusal of the daemon's `GIT_CONFIG_COUNT` (Linux, macOS and Windows). claustrum puts a limit refusal of the listing there too, not measured on remove. With `worktreeRoot` and a missing absolute `baseRepo` without a `..` component, `<reason>` is the refusal of the daemon's `GIT_CONFIG_COUNT` (Linux and macOS) |
-| git.worktree_remove | `failed to remove worktree: "" does not name a directory` | in `error` (empty `worktreePath`, without `worktreeRoot`) |
-| git.worktree_remove | `failed to remove worktree: could not check whether <p> is locked: <text>` | in `error`, without `worktreeRoot`. `<text>` is the text of the refused step |
-| git.worktree_remove | `failed to remove worktree: could not check whether <p> is locked (its registrations could not be examined); retry` | in `error`, with no `errorCode`, for a worktree directory that exists. Without `worktreeRoot`: the listing of `baseRepo` cannot be used, `baseRepo` holds no repository, or the trust check refuses its git directory. A refused `GIT_CONFIG_COUNT` of the daemon gets it too, also for a `baseRepo` such as `<T>/missing/..`. In both modes: the worktree registry exists but cannot be read, or, on Linux and macOS, is a symbolic link. Nothing is deleted |
-| git.worktree_remove | `failed to remove worktree: could not check whether <p> is locked (the repository at <baseRepo> could not be read); retry` | in `error`, with no `errorCode`, with `worktreeRoot`. An absolute `baseRepo` without a `..` component is missing, and the worktree directory exists. The daemon's `GIT_CONFIG_COUNT` is refused (Linux and macOS). With no `git` on `PATH` (Linux), it answers a worktree directory that holds a file, is empty, or has a `.git` file naming its entry. Nothing is deleted |
-| git.worktree_remove | `failed to remove worktree: cannot determine the repository's work tree: <reason>` | in `error`, with no `errorCode`, with `worktreeRoot` only. `<reason>` is a trust refusal text, `exit status 128`, the hooks refusal or the refusal of the daemon's `GIT_CONFIG_COUNT`. It is also `git finds no repository here: <git text>`, or with git 2.56 the text of a failed call about the repository. With no `git` on `PATH` it is the exec error alone, where `baseRepo` exists. claustrum also puts the `git cannot run` text and a limit refusal of the listing there (not measured with `worktreeRoot`). Nothing is deleted. See [git.worktree_remove](protocol/git-worktree-remove.md#the-repository-checks) |
-| git.worktree_remove | `failed to remove worktree: cannot list the repository's worktrees: <exec error>` | in `error`, with no `errorCode`, with `worktreeRoot` only. `git worktree list --porcelain -z` and then `git worktree list --porcelain` both fail in `baseRepo`, for example with `exit status 128`. Nothing is deleted |
-| git.worktree_remove | `failed to remove worktree: statat .claude: permission denied` / `failed to remove worktree: open <baseRepo>: <error>` | in `error`, with no `errorCode`, without `worktreeRoot` only. `baseRepo` cannot be searched (mode 0600), or cannot be opened (mode 0000, or a regular file). On Linux and macOS the first text names the first component of `worktreePath` below `baseRepo`, for example `statat wt`. Nothing is deleted |
-| git.worktree_remove | `failed to remove worktree: open <root>: permission denied` / `failed to remove worktree: openat <name>: permission denied` / `failed to remove worktree: statat .: permission denied` | in `error`, with no `errorCode`, Linux and macOS, for a folder that the daemon cannot read or search. With `worktreeRoot`, that is a folder from the root down to the worktree folder. Without it, that is a folder between `baseRepo` and the worktree folder. `<root>` is `worktreeRoot` with its symbolic links resolved. `<name>` is one path component. Nothing is deleted. Windows is not measured. See [git.worktree_remove](protocol/git-worktree-remove.md#the-repository-checks) |
-| git.worktree_remove | `failed to remove worktree: RemoveAll <entry>: <errno text>` | in `error`, when the delete of the worktree fails part-way. If an entry other than `.git` fails, `.git` stays. The registration of the worktree and the branch stay in every case (measured on macOS) |
-| git.worktree_remove | `removed the worktree but could not drop its registration (RemoveAll <name>: <errno text>)` | in `error`, `success:false`, when the verified registration cannot be deleted after the tree. The branch step still runs. A kept branch adds `"branchKept":true` after `error` |
-| git.worktree_remove | `failed to remove worktree: openat <path from baseRepo>: path escapes from parent` | D19, Windows, in `error`, with no `errorCode`, when a directory between `baseRepo` and the leaf is a junction. `<path from baseRepo>` is the folder that holds the leaf, relative to `baseRepo`, for example `.claude\worktrees`. claustrum's own text. Nothing is deleted, and the branch stays |
-| git.worktree_remove | `worktreePath must not be or contain the home directory: …` | D2, in `error`. Without `worktreeRoot` the containment answers first, so it fires only if a repo is an ancestor of home. With `worktreeRoot` it is the active home guard |
+| git.worktree_create / git.worktree_remove | `refusing to <verb> worktree: <root> passes through too many symbolic links (a loop?)` | Create: `errorCode:"unsafe_path"`. Linux and macOS, with `worktreeRoot`. A symlink loop or too many links lie in the path of the root. claustrum uses the kernel limit (not measured). `<root>` is `worktreeRoot` without a trailing slash. claustrum also drops a `//` here (not measured). Nothing is created or removed |
+| git.worktree_remove | The texts that only this method sends | On the page: [git.worktree_remove → Error texts](protocol/git-worktree-remove.md#error-texts) |
 | process.spawn | `Process ID is required` / `Command is required` | |
 | process.spawn | `command must be an absolute path when a launcher is given` | with a `launcher` param |
 | process.spawn | `the managed launcher cannot be used: <reason>` | -32004. The reasons are the argv[0] and no-launcher [texts of launcher.resolve](protocol/launcher-resolve.md#unusable-reasons), and `a launcher cannot be applied on a Windows host` |
@@ -335,8 +265,8 @@ that names systems without "measured" holds on each one. The [reference build hi
 | process.killAndWait / process.reattach | `Process ID is required` / `Invalid params` | |
 
 `-install` reports failures inside the `__INSTALL_RESULT__` facts line as
-`cliError` strings, not through an exit code. They are catalogued in the
-`-install` section below.
+`cliError` strings, not through an exit code. They are catalogued in
+[-install](INSTALL.md#-install-ensure-the-agent-cli).
 
 ### Handler panic recovery
 
@@ -1585,8 +1515,8 @@ These points are from the code, not measured:
 - A later listing that exceeds a limit does not refuse its call. The call then gets
   the two base pins only. A later listing that fails refuses in three places: the two
   later listings of `git.status` (see [git.status](protocol/git-status.md#errors)), the
-  two listings before the checkout of a create in the state `shadow` (see the
-  [Error-string catalogue](#error-string-catalogue)), and any listing that its time
+  two listings before the checkout of a create in the state `shadow` (see
+  [git.worktree_create → Error texts](protocol/git-worktree-create.md#error-texts)), and any listing that its time
   limit stopped.
 - Two names that differ only in letter case get two pins. A name under two keys
   counts once toward the limits. The count is tested before the byte sum.
@@ -1768,8 +1698,8 @@ If the `rev-parse --show-toplevel` call of a `git.worktree_create` with
 `worktreeRoot` fails, the create stops with `mkdir_failed` (Linux VM). Two failed `worktree
 list` calls stop it the same way (Linux VM). If `baseRepo` and the root are both missing, a
 `git.worktree_remove` with `worktreeRoot` makes no git call. It answers the `the
-worktree location <root> is not reachable` refusal of the
-[Error-string catalogue](#error-string-catalogue). Linux and macOS VMs.
+worktree location <root> is not reachable` refusal of
+[git.worktree_remove → Error texts](protocol/git-worktree-remove.md#error-texts). Linux and macOS VMs.
 
 #### Where the calls differ from `5fd08069`
 
@@ -2124,7 +2054,8 @@ reaches, it also sets `"branchKept":true` after `errorCode`:
 ## Daemon lifecycle (flags)
 
 One binary, six modes: `-serve`, `-bridge`, `-stop`, `-version`, `-install` and
-`-probe-cli`.
+`-probe-cli`. `-install` and `-probe-cli` are on
+[their own page](INSTALL.md).
 
 ### Flags and config keys
 
@@ -2449,450 +2380,6 @@ still reports claustrum's own `<id>`. `server.version` was removed in `7d193f89`
 See
 [`DIVERGENCES.md`](DIVERGENCES.md) → CT-3.
 
-### -install — ensure the agent CLI
-
-```text
-claustrum -install -cli-version <v> [-cli-dir <d>] \
-          [-cli-url <u> -cli-checksum <sha256>] [-cli-zst <p>] [-cli-keep <n>] \
-          [-max-cli-bytes <n>] [-cli-download-timeout <dur>]
-```
-
-`-install` makes sure that one CLI version is in the cli-dir. On a cache miss it
-downloads or reads the CLI, extracts and verifies it, puts it in place and runs
-`<cli> --version` once. Then it prunes old versions and prints one
-`__INSTALL_RESULT__<json>` facts line (schema in [ARCHITECTURE.md](ARCHITECTURE.md)).
-A rule that is not marked claustrum's own is measured against `89cb6289`. The
-prune, the sweeps, the blob, the rename text and the retry and the Linux cache-hit
-file test are measured against `5fd08069`. The checksum order, the raw `-cli-dir`
-text step and the `is a directory` text are measured on `5fd08069`, and `89cb6289`
-is not measured there. A rule from another build names it. Both builds ran on Linux, macOS and Windows VMs, and a rule
-that names one system was measured there only.
-
-| Flag | Default | Meaning |
-|---|---|---|
-| `-cli-version <v>` | none | The version to ensure. It names the CLI file. Without it the `cliPath` is empty, no CLI runs and no folder is made |
-| `-cli-dir <d>` | `<home>/.claude/remote/ccd-cli` | The folder of the version files. An empty value takes the default too |
-| `-cli-url <u>` | none | Download the zstd archive of the CLI from this URL |
-| `-cli-checksum <sha256>` | none | The SHA-256 of the archive |
-| `-cli-zst <p>` | none | Read the zstd archive from this file, the blob |
-
-`-cli-keep`, `-max-cli-bytes`, `-cli-download-timeout` and the deprecated
-`-cli-probe-timeout` and `-libc-probe-timeout` are in
-[Flags and config keys](#flags-and-config-keys). `-install` reaches the network only
-with `-cli-url`.
-
-`-install` exits `0` whenever it prints the facts line. It reports a failure inside
-the facts as `cliError`, not through the exit code. Three cases print no facts
-line. A flag that does not parse exits `2`. `-cli-version` with no `-cli-dir` and
-no home folder exits `2`. Any other run with no home folder exits `1`. With no `HOME`
-the reference prints `claude-ssh: cannot resolve home directory: $HOME is not defined`
-on stderr (Linux). claustrum prints the same line with its own prefix,
-`claustrum: `. On Windows its line names `%userprofile%`. The exit `1` cases, macOS and a missing `USERPROFILE` are not
-measured.
-
-The `cliError` catalogue follows:
-
-| `cliError` | trigger |
-|---|---|
-| `installed cli at <path> is not runnable` | the `--version` run of a new CLI did not start or exited non-zero. `<path>` is the final path |
-| `cli <v> missing and no --cli-url or --cli-zst provided` | cache miss with no source flag |
-| `cli unresponsive: the installed Claude Code binary started but did not answer --version within 30s (120s for a first run) and was stopped; the host is not letting it run (endpoint security software or a stalled network home are the usual causes)` | a direct `--version` run stopped at 30 s (120 s after an install in the same run). Always-on, parity (see below) |
-| `checksum mismatch: expected=<x>, actual=<y>` | `-cli-checksum` verify failed. It applies to every `-cli-url` run. With a supplied checksum it applies to `-cli-zst` too. The compare is case-sensitive |
-| `opening input: <err>` | `-cli-zst` open error |
-| `decompressing: <err>` | bad zstd blob or body, for example `invalid input: magic number mismatch`. A `-cli-zst` folder gives `read <p>: is a directory` (Linux) |
-| `decompressing: decompressed CLI exceeds <n> bytes` | D10 cap, opt-in |
-| `staging cli: <err>` | no staging file can be made in the cli-dir (claustrum's own, not measured) |
-| `download failed with status <n>` | the server answered a status other than 200 (`5db5e4a`) |
-| `download failed: response exceeds <n> bytes` | D10 cap on the download body, opt-in |
-| `download failed: <transport err>` | a transport error before the body, for example a refused connection |
-| `download failed: Get "<url>": net/http: timeout awaiting response headers` | no response headers for 60 s (always-on, parity, see below) |
-| `download interrupted after <got>/<total> bytes: <transport err>` | a body read that ended with a transport error, for example `read tcp …: read: connection reset by peer` (parity, see below) |
-| `download failed: context deadline exceeded (Client.Timeout or context cancellation while reading body)` | D12 download deadline, opt-in |
-| `download stalled: no data for 60s after <got>/<total> bytes` | read-idle abort, meaning no bytes for 60 s on the `-cli-url` body (always-on, parity, `4534d86`) |
-| `mkdir cli dir: <err>` | cli-dir uncreatable. `cliPath` is then empty. A file or a FIFO at the cli-dir path is replaced first (see Staging and cleanup) |
-| `cli version "…" must be a single path component` | D6 hardening |
-| `cli path must not be or contain the home directory: "<path>"` | a folder at the final path that is the home folder or one of its parent folders (D2 hardening) |
-| `clearing stale dir at <path>: <err>` | an occupied `cliPath` directory that claustrum cannot remove |
-| `rename: <err>` | the rename of the new CLI failed, for example `rename: rename <tmp> <cli>: Access is denied.` on Windows. The prefix on Linux and macOS is claustrum's own |
-| `rename: staging file vanished before install: <err>` | a concurrent sweep took the staging file |
-| `cli unresponsive: the installed Claude Code binary was started through the host's managed launcher <argv0> and the run did not answer --version within 33s (123s for a first run), so it was stopped; the launcher or the host is not letting it finish` | a managed launcher run stopped at 33 s (123 s after a fresh install), with `CLAUDE_SSH_MANAGED_LAUNCHER=1` (see below) |
-
-The managed launcher (measured against `89cb6289` on a Linux VM unless a rule says otherwise):
-- `-install` uses the [managed launcher](protocol/launcher-resolve.md) only when
-  `CLAUDE_SSH_MANAGED_LAUNCHER` is exactly `1`. Every other value, and an unset
-  variable, adds no field and runs no launcher. Values other than `true` and `1 `
-  (a trailing space) are not measured.
-- With the gate and a CLI path, `-install` resolves the launcher for that path, as
-  [launcher.resolve](protocol/launcher-resolve.md) does. The facts line then gains
-  launcher fields after `cliWasPresent`, `cliError` and `cliUnresponsive`, in this
-  order: `launcherStatus`, `launcher`, `launcherSource`, `launcherPath`,
-  `launcherReason`, `launcherStderr`. A field that does not apply is omitted. With
-  `-cli-url`, `fetch` comes after `cliUnresponsive` and before `launcherStatus`
-  (Linux).
-- An empty `cliPath` gains no launcher field. That holds without `-cli-version`,
-  where the line ends `"cliPath":"","cliWasPresent":false}`, and for a cli-dir that
-  cannot be made (Linux).
-- With `-cli-version` and no `-cli-dir`, the CLI path is in the default CLI folder,
-  and the launcher gets that path (macOS).
-- `none`: the CLI runs directly under the direct bounds below, with the gate in its
-  env. The facts end `"cliWasPresent":true,"launcherStatus":"none"}`. A stopped
-  direct run ends `"cliUnresponsive":true,"launcherStatus":"none"}`. On Windows the
-  resolve always answers none, so `-install` appends `"launcherStatus":"none"` last
-  and runs the CLI directly.
-- `usable`: the CLI runs once, as `<launcher argv...> <cli> --version`. No direct
-  run happens. The launcher's stdout is not reported, and its stderr does not reach
-  `-install` stderr. The facts add `launcher` and `launcherSource`.
-- `unusable` or `unreadable`: the CLI does not run at all. `cliWasPresent` stays
-  true, and there is no `cliError`. The facts add `launcherSource` or
-  `launcherPath`, and `launcherReason`.
-- `probe_failed`: the launcher run exited non-zero or ended on a signal.
-  `launcherReason` is `exit status <n>` or `terminated by SIGTERM`. The CLI file
-  stays, `cliWasPresent` stays true, and there is no `cliError`. `launcherStderr`
-  holds the launcher's stderr. If that is empty, the field is omitted.
-- `launcherStderr` keeps 8192 bytes. More stderr adds `\n[… <n> more bytes]`, with
-  the JSON escape `\n` on the line and `…` as raw `e2 80 a6`. `<n>` is the count of
-  dropped bytes. claustrum's own (not measured): it keeps the first bytes, and it
-  adds the `\n` also after a kept part that ends in a newline.
-- On a cache hit a launcher run that has not ended at 33 s is stopped. The facts
-  then read `"cliWasPresent":false`, the launcher `cli unresponsive: …` text above,
-  `"cliUnresponsive":true`, `"launcherStatus":"unresponsive"` and
-  `"launcherReason":"did not exit within 33s and was stopped"`. The CLI file stays,
-  no install follows (with a source flag, claustrum's own), nothing is pruned and the sweep runs (Linux and macOS). With
-  a usable launcher the direct bounds do not apply (Linux and macOS).
-- The run right after a fresh install has a bound of 123 s (Linux). A stopped run
-  gives the same facts with
-  `"launcherReason":"did not exit within 123s and was stopped"`. The CLI stays
-  installed, the blob is consumed and nothing is pruned.
-- A fresh install puts the CLI at its final path and then runs it once through a
-  usable launcher, which gets the final path. The facts read
-  `"cliWasPresent":false` with the usable fields (Linux and macOS). A failed run
-  and an unusable launcher still leave the CLI installed (Linux, `-cli-url`).
-  claustrum does the same for an unreadable answer and for `-cli-zst` (claustrum's
-  own).
-- On a cache hit on Linux the CLI file must be a regular file with an exec bit
-  that starts with `#!` or an ELF header of this machine. Another file does not
-  run, and the install runs over it. `5fd08069` does that for a text file and
-  for an ELF of another machine. The test beyond those two files is claustrum's
-  own.
-- The launcher run gets the daemon env without `CLAUDE_SSH_MANAGED_LAUNCHER`
-  (Linux and macOS). claustrum also drops `CLAUDE_CODE_PROCESS_WRAPPER` and
-  `CLAUDE_SSH_E2E_MANAGED_SETTINGS_DIR` there, as for a spawn with a launcher
-  (claustrum's own).
-- claustrum's own (not measured): the stop kills the run's whole process group and
-  then waits up to 2 s for its output. The texts name the launcher's argv[0] only.
-- `-install` still exits `0` with an empty stderr, and it writes no
-  `[LauncherHandler]` line.
-
-The direct `--version` run and its bounds are parity. A direct run is a run with
-no usable launcher: the gate is unset, or the launcher status is `none`.
-- On a cache hit a run that has not ended after 30 s is stopped. The facts then
-  read `"cliWasPresent":false`, the direct `cli unresponsive: …` text and
-  `"cliUnresponsive":true`. `-install` exits `0` with an empty stderr.
-- The run of a CLI that this run installed is stopped at 120 s, with the same text.
-  A new CLI that replaced a file at the final path that did not run gets the same
-  bound (Linux).
-- The download time is outside the bound (Linux and Windows). claustrum starts the
-  clock right before the process start call.
-- On Linux and macOS the CLI runs in a process group of its own, in the session of
-  `-install`. A CLI that ignores SIGTERM stops at the same time. claustrum kills
-  the group with SIGKILL (claustrum's own). A child in a new session survives.
-- On Windows the stop ends the CLI process, and its children stay alive.
-- A process that holds the output of the CLI after the CLI exited delays nothing.
-  claustrum gives the CLI the null device as stdin, stdout and stderr (claustrum's
-  own).
-- After a stopped cache hit the CLI file stays, nothing is installed or pruned, a
-  `-cli-zst` blob stays and the sweep runs. A `-cli-url` server gets no request
-  (Linux and Windows).
-- After a stopped first run the new CLI stays at its final path, the `-cli-zst`
-  blob is consumed and nothing is pruned. With `-cli-url` the facts carry `fetch`
-  after `cliUnresponsive`.
-
-The default CLI folder:
-- With `-cli-version` and no `-cli-dir`, or an empty `-cli-dir`, the CLI folder is
-  `<home>/.claude/remote/ccd-cli`. On Windows `<home>` is `USERPROFILE`, and `HOME`
-  is not read. The other steps work there as in an explicit folder.
-- A cache miss with a version that D6 accepts makes the folder chain, with or without a source flag. Each new
-  level gets mode `0700`, also with umask `000`, and a level that exists keeps its
-  mode (Linux and macOS).
-
-The CLI file name on Windows:
-- The CLI file is `<cli-dir>\<version>.exe`. The `cliPath`, the file on disk, the
-  path of the `--version` run and the `not runnable` text all carry that name. The
-  `missing` text names the version with no suffix.
-- The suffix is added always, so `-cli-version 9.9.9.exe` installs `9.9.9.exe.exe`.
-  A version that ends in `.EXE` is not measured.
-- Only `<version>.exe` counts as present. A file with the bare name counts for
-  nothing and does not run. So a CLI that an older claustrum installed at the bare
-  name answers `missing` until a source flag installs the `.exe` file beside it.
-- A folder at the bare name stays. A folder at the `.exe` name is replaced by the
-  CLI file.
-
-Download progress and `fetch` stats, on the `-cli-url` path:
-- While downloading, `-install` prints `__INSTALL_PROGRESS__<json>` lines to stdout:
-  `{"phase":"download","bytes":<n>[,"total":<m>]}`. `total` carries the
-  Content-Length. If the server sends none, `total` is dropped.
-- A leading `bytes:0` line comes after the response headers and before any body
-  byte. A server that sends no headers gets no line (Linux and Windows). A final
-  `bytes:<n>` line comes only after the checksum passes. A failed check prints no
-  final line (`f6010b97`, Linux).
-- Between those two lines a tick comes each 1 s. If the byte count of a tick equals
-  the count of the last printed line, the tick prints nothing. The counts jump irregularly, so a
-  consumer treats them as progress, not as a byte-exact sequence. claustrum prints
-  the final line also when a tick printed that count already, and it starts the
-  tick clock at the first readable body (claustrum's own).
-- The facts line gains a `fetch` object after `cliError`,
-  `{"bytes":<n>,"ms":<n>,"longestPauseMs":<n>}`. Those are bytes read, download
-  duration and the largest gap between reads. It is the last field, except with
-  the managed launcher gate (see above). It appears whenever a download was
-  attempted, even a 0-byte 404. A `-cli-zst` install and a cache hit have no
-  `fetch`.
-- claustrum does not close its idle connections after the download. Its transport
-  is a copy of the Go default transport, whose idle limit is 90 s.
-- The wait for the response headers has an always-on 60 s limit (Linux and
-  Windows). A server that sends nothing fails the install with
-  `download failed: Get "<url>": net/http: timeout awaiting response headers`. No
-  progress line is printed, and `fetch` reads `"bytes":0` and
-  `"longestPauseMs":0`.
-- A body read that ends with a transport error fails the install with
-  `download interrupted after <got>/<total> bytes: <transport err>` (Linux). The
-  wait from the last byte to the error counts for `longestPauseMs`. One progress
-  line is printed, and the cli-dir stays empty. claustrum words other read errors
-  the same way, with a `<total>` of `0` for a body with no length (claustrum's
-  own).
-- The body has an always-on 60 s read-idle abort, reset on every byte. It fails
-  the install with the `download stalled: …` text above. It is no total deadline,
-  so a slow download that keeps sending completes. The total deadline is the
-  opt-in [D12](DIVERGENCES.md#d12), off by default. When armed, it bounds the
-  whole exchange, so an honest download that is too slow fails with
-  `download failed: context deadline exceeded (…)`.
-
-Checksum and verify ordering:
-- claustrum verifies `-cli-checksum` on the `-cli-url` path unconditionally. An
-  empty checksum still fails.
-- The source is decompressed into the staging file first, and the checksum comes
-  after it. A body that is no zstd archive answers
-  `decompressing: invalid input: magic number mismatch` with a right and with a
-  wrong checksum. `fetch` then counts the bytes that the decoder read, and only the
-  leading progress line is printed (Linux). No chmod, clear or rename runs before
-  the checksum passes (claustrum's own).
-- If a `-cli-checksum` is supplied, claustrum also verifies the `-cli-zst` blob,
-  as the reference does ([D1](DIVERGENCES.md#d1), retired). A mismatch
-  keeps the blob. An absent or empty checksum verifies nothing.
-- The compare is case-sensitive on both paths. The right digest in upper case
-  answers `checksum mismatch: expected=<UPPER>, actual=<lower>` (`7d193f89` and
-  `f6010b97`, Linux).
-- Every cache miss with a CLI path and a version that D6 accepts makes the cli-dir
-  first (mode `0700`, with its parents). That is before the source check, before
-  the blob opens and before any network access (`5db5e4a` and later for
-  `-cli-zst`, `f6010b97` for `-cli-url` and a missing source, Linux). So after that
-  step a failed cache miss leaves the cli-dir. A new cli-dir stays empty.
-- On Linux and macOS that folder step also runs on a cache hit. Windows makes the
-  cli-dir on a cache miss only. On Linux and macOS the step uses the `-cli-dir` text
-  as given, so `-cli-dir <dir>/sub/..` makes `<dir>/sub` (mode `0700`). On Windows
-  `<dir>/sub` is not made. If the step fails, `cliPath` is empty and `cliError` is the mkdir error,
-  such as `mkdir cli dir: mkdir <dir>/sub: not a directory`.
-
-The other clocks: every `-install` clock above is always on and is a clock of the
-reference, except the opt-in D12 deadline, the 2 s wait for the output of a
-stopped launcher run and the 0.2 s bound of the rename retry (claustrum's own). The stdlib transport clocks
-(`net.Dialer{Timeout:30s}`, `TLSHandshakeTimeout:10s`) apply on `-cli-url` only,
-and they are not probed on the reference. `-cli-probe-timeout` and
-`-libc-probe-timeout` are deprecated no-ops.
-
-[D10](DIVERGENCES.md#d10) is the opt-in size cap. `-max-cli-bytes <n>`, or the
-`max-cli-bytes` config key, governs both the decompressed CLI and the
-download body. `0` is off, which is parity. claustrum streams the blob and never
-buffers it, so "cap off" does not mean unbounded memory.
-
-`-cli-version` hardening, [D6](DIVERGENCES.md#d6), is claustrum-only:
-- The version must be one path component. Otherwise claustrum answers
-  `cli version "…" must be a single path component`. It answers before the install
-  writes or removes anything at a path built from the version. It writes nothing
-  and keeps the blob. The reference has no such rule. With `../x` and a blob it
-  installs to `<parent>/x`, outside the cli-dir. On `../victim` it destroys the
-  target.
-- It refuses `.`, `..`, `/` and `\` on every OS. A final component that is a
-  symlink stays legal. `1.0.86`, `2.0.0-beta.1`, a commit sha, `latest` and
-  `1.0.86+build.5` are accepted.
-- A regular file at the joined path is first run with `--version`, as the cache-hit
-  check. A run that passes answers `"cliWasPresent":true` with that path, as on the
-  reference (Linux and macOS). A stopped run answers the unresponsive text. D6
-  answers only when that run fails, or when no file is there.
-- The two sweeps of the cli-dir name only the cli-dir, and they are not behind
-  this rule.
-- A version with a sweep name, such as `.fetch-1` or `1.0.0.zst`, installs. The
-  same run keeps it, because the sweep removes only old entries. A later install
-  removes it once it is more than 10 minutes old. On Windows the file is
-  `<version>.exe`, and the sweep keeps it.
-
-Staging and cleanup:
-- claustrum stages the CLI at `<cli-dir>/.fetch-<random>` and renames it to the
-  final path. That is one code path for `-cli-url` and `-cli-zst`. A download is
-  decompressed into that file as it arrives, and no other file is made.
-- An install puts the new CLI at its final path, removes the `-cli-zst` blob and
-  runs the 10 minute sweep. Then `<final path> --version` runs. The prune follows a
-  good run only. A direct run that does not start or exits non-zero removes the new CLI again with one plain
-  remove. A stopped run keeps the new CLI. On Windows claustrum can leave that file
-  when the exited CLI holds it (claustrum's own).
-- What is at the final path goes before the new CLI runs. A folder there is removed
-  as a tree, with its content. A file there that does not run is replaced by the
-  new CLI (Linux). A new CLI that then exits non-zero leaves nothing at that path
-  (claustrum's own).
-- claustrum clears an occupied `cliPath` only when it is a directory, because
-  `rename(2)` refuses to replace a directory. A regular file is replaced
-  by the rename. A directory that claustrum cannot remove answers
-  `clearing stale dir at <path>: <err>`. On Windows the cleared name is
-  `<version>.exe`. The D6 rule runs first, so `cliPath` is a direct child of the
-  cli-dir.
-- claustrum does not remove a folder at the final path that is the home folder or
-  contains it ([D2](DIVERGENCES.md#d2)). It answers
-  `cli path must not be or contain the home directory: "<path>"`. The folder
-  stays, the blob stays and no CLI runs. The reference removes that folder as a
-  tree and puts the CLI file there. That is measured with `-cli-zst` on Linux,
-  macOS and Windows, and `-cli-url` is not measured.
-- That guard runs the lexical test of the RPC paths first. Then it compares the
-  folder at the final path with the home folder and with each parent folder of it,
-  by file identity, for the home path as given and for its resolved path.
-- On macOS the volume ignores letter case, so a `-cli-version` in another letter
-  case names a folder on disk. Both binaries replace such a folder that does not
-  hold home, and the new file takes the name of the command. For a folder that
-  holds home, claustrum refuses as above.
-- The `-cli-zst` blob goes with one plain remove once the new CLI is in place.
-  Every earlier failure keeps it: a blob that is no zstd archive, a folder that
-  cannot be cleared and a denied rename. claustrum keeps it after a failed chmod
-  too (claustrum's own). A CLI that then does not run still costs the blob.
-- On Windows a rename that access denied stops is tried again for 0.2 s. If the
-  target then holds the bytes of the staging file, the install counts as done and
-  the staging file goes. The 0.2 s bound and the pauses are claustrum's own.
-- A cli-dir path that names no folder is replaced. The trigger is a regular file, a
-  symlink to a regular file or a FIFO at the cli-dir path. `-install` removes that
-  entry, and for a symlink it removes the link and keeps the target. It also
-  removes the regular file named exactly `ccd-cli-version` in the parent folder of
-  the cli-dir. Then it makes the cli folder with mode `0700` and goes on. That holds
-  for the default CLI folder too, and with no source flag.
-- The name `ccd-cli-version` is literal. A file named `other-version`,
-  `ccd-cli-version.bak` or `zzz-version` stays.
-- A folder, a symlink to a folder and an absent cli-dir trigger nothing, and
-  `ccd-cli-version` stays. A dangling symlink triggers nothing either, and the
-  answer is `mkdir cli dir: mkdir <path>: file exists` with an empty `cliPath`.
-  With a parent folder that is not writable nothing is removed, and the answer is
-  `mkdir cli dir: mkdir <path>: not a directory`. Those `mkdir` texts are the Linux
-  and macOS texts. Windows has no FIFO case and no case with a parent that is not
-  writable.
-- Both removes are plain removes of one path, never a tree. claustrum's own (not
-  measured): it removes the version file first, and if that fails, the cli-dir
-  entry stays. It leaves a socket, a device,
-  a symlink to a FIFO and a `ccd-cli-version` that is a folder or a symlink alone.
-- The `-cli-keep` prune:
-    - Only a version file counts, and only a version file goes, with one plain
-      remove, never as a tree. On Linux and macOS that is a regular file whose name
-      is a version such as `1.0.0`, with an exec bit. On Windows it is a regular
-      file `<version>.exe`. Every other entry stays and takes no keep place, for
-      example a folder, a link, `README`, a `1.1.0` with mode `0644`, a bare
-      `1.1.0` on Windows and `README.exe`.
-    - claustrum counts a name of three runs of digits with dots between them. Other
-      names are not measured.
-    - The order is the mtime, newest first. Entries with one mtime stay in byte
-      order of the name, so the later name goes (`89cb6289`). The new CLI takes its place in the
-      order and always stays. `-cli-keep 0` and a negative value remove every
-      version file but the new CLI, and the result line follows with exit `0` and an empty stderr.
-    - A failed install, a stopped run and a cache hit do not prune.
-- Two sweeps remove old regular files of the cli-dir with one plain remove each,
-  never as a tree. A folder and a link stay (from the code for a link):
-    - The 10 minute sweep takes `.fetch-<digits>` and `<version>.zst`. A file
-      `.fetch-d`, a file `x.zst` and a folder `.fetch-9` stay.
-    - The 7 day sweep takes `<version>.zst.part`. A file `p.zst.part` stays, also at 8 days old.
-    - The 7 day sweep runs once before any CLI runs, also on a cache hit. On a good
-      cache hit only that sweep runs. The 10 minute sweep runs before the run of a
-      new CLI, after a failed attempt and after a D6 refusal. On a cache hit it runs
-      only after a run that its bound stopped.
-    - Neither sweep removes the `-cli-zst` blob, so a blob `1.0.0.zst` in the
-      cli-dir stays.
-    - The names match the letter case (claustrum's own). A future mtime is not old
-      (`f6010b97`).
-    - A concurrent install can take a staging file only once it is more than 10
-      minutes old. claustrum then retries a `-cli-zst` staging step once.
-- The sweeps and the prune skip an entry of the cli-dir that is the home folder or
-  holds it ([D2](DIVERGENCES.md#d2), claustrum's own). They remove regular files
-  only, so a home folder stays there on `5fd08069` too (derived from its
-  cells, no home cell).
-
-The libc probe fills the `libc` fact:
-- claustrum runs `ldd` on every probe, and its output decides. A "musl" banner
-  reports `musl`, and any other output reports `glibc`. The `/lib/ld-musl-*.so.*`
-  marker is read only when `ldd` produced no output.
-- The probe bounds ldd itself at 5 s, as the reference does since `19f30c46`
-  (Linux). `ldd` runs in its own process group,
-  and if it still runs at 5 s the whole group is killed. Output written before that
-  kill is dropped, so the marker decides. No log line is written, and the facts
-  line keeps its shape. The bound applies on a fresh install and on a cache hit.
-- If `ldd` exits before 5 s while a child still holds its output pipe, the probe
-  waits up to 2 s more. Then it uses the output it has, even past 5 s, and the
-  child is not killed (`f6010b97`, Linux).
-
-### -probe-cli — classify a CLI binary
-
-`-probe-cli <path>` runs the bounded `<path> --version` runnability probe and exits
-`0`. It is how Claude Desktop classifies a CLI binary out of band, without a full
-`-install` (reference build `19f30c46`). Its stdout is:
-
-- If the CLI runs and exits 0 within the bound, stdout stays empty.
-- If the deadline had to kill it, stdout is `__CLI_HUNG__\n`.
-- If the binary is missing or does not run, stdout is `__CLI_BAD__\n`. Not running
-  means it either fails to start or exits non-zero.
-- On Windows, a path with no file at exactly that name gives `__CLI_BAD__\n`, and
-  nothing starts. The probe never adds `.exe`. Measured on a Windows VM against
-  `89cb6289`: with only `9.9.9.exe` on disk, `-probe-cli <dir>\9.9.9` answers
-  `__CLI_BAD__` and the CLI does not run. claustrum ran `9.9.9.exe` there before.
-  Not measured: the exact test of the reference, a folder, a relative path and a
-  path with another extension. claustrum tests only that the path exists.
-
-With `CLAUDE_SSH_MANAGED_LAUNCHER=1` the probe uses the
-[managed launcher](protocol/launcher-resolve.md) (measured against `89cb6289` on a Linux VM unless a rule says otherwise). Every
-`-probe-cli` row exits `0`, and each stderr text below ends in one newline:
-
-- A usable launcher runs `<launcher argv...> <path> --version`. If the run exits
-  0, stdout and stderr stay empty.
-- An unusable launcher prints `__CLI_LAUNCHER__\n`, and the CLI does not run.
-  stderr is `claude-ssh: <path> was not run: managed launcher unusable: <reason>`.
-- Unreadable settings print `__CLI_LAUNCHER__\n`, and the CLI does not run. stderr
-  is `claude-ssh: <path> was not run: managed settings unreadable: <file>: <reason>`.
-- A failed launcher run prints `__CLI_LAUNCHER__\n`, not `__CLI_BAD__`. stderr
-  holds four lines. The launcher output `L5: to stderr\n` is followed by one more
-  newline:
-
-```text
-claude-ssh: the managed launcher's run printed:
-L5: to stderr
-
-claude-ssh: <path> --version through the managed launcher <argv0> did not succeed: exit status 3
-```
-
-- A launcher run that has not ended at 33 s is stopped. stdout is
-  `__CLI_HUNG__\n`, and stderr is `claude-ssh: ` and the `cli unresponsive: …`
-  text of `-install`. The reference stopped a 150 s launcher at 33.069 s.
-- Without the gate the probe runs directly, as before. On Windows the gate shows
-  no difference (measured on a Windows VM).
-- claustrum's choices (not measured) follow. A none answer runs the probe
-  directly. An empty launcher stderr leaves out the `printed:` block. The stderr
-  cap of `-install` applies. A signal reads `terminated by SIG<name>`.
-
-The `-help` text of `-probe-cli` names this mode. It is the one `-help` line that
-differs from `f6010b97` (measured on Linux, macOS and Windows).
-
-The direct bound is a fixed 30 s, always applied. Measured on `89cb6289` on
-Linux, macOS and Windows: a CLI that answers at 28 s passes, and one that answers
-at 33 s gives `__CLI_HUNG__` at 30.0 s. The mode unsets `CLAUDE_RPC_TOKEN` so the
-probed child never inherits it. The probe runs in its own process group. On Unix the
-fixed deadline group-kills the whole subtree, so a `--version` that forks a descendant
-cannot outlive the probe. On Windows the direct child is killed and `WaitDelay` bounds
-the mode, so a stray descendant is left to exit on its own. The mode installs no SIGINT
-handler. A Ctrl-C therefore terminates the claustrum process itself, with exit 130 and
-empty stdout. The probed CLI runs in its own process group, so a terminal Ctrl-C is not
-delivered to it. The mode ignores
-SIGPIPE, as `-install` does, so a stdout pipe the caller closes mid-write fails the
-write with EPIPE instead of terminating the process.
-
 ### Behavior shared by every mode
 
 - The default socket is `~/.claude/remote/rpc.sock`. When `-socket` is omitted, all
@@ -2905,7 +2392,7 @@ write with EPIPE instead of terminating the process.
   on stderr and exits `2`, with no usage dump. An *unknown flag* gets the stdlib
   `flag` error plus the usage, and exit `2`.
 
-See [ARCHITECTURE.md](ARCHITECTURE.md) for the `-install` facts schema and the
-deployment lifecycle. See [`DIVERGENCES.md`](DIVERGENCES.md) for the full
+See [-install](INSTALL.md#__install_result__-facts) for the facts schema and
+[ARCHITECTURE.md](ARCHITECTURE.md) for the deployment lifecycle. See [`DIVERGENCES.md`](DIVERGENCES.md) for the full
 divergence catalog and rules. See [EXAMPLES.md](EXAMPLES.md) for runnable
 snippets.
