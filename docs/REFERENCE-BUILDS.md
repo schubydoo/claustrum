@@ -654,7 +654,7 @@ synthetic battery stays the gate for it. That client also bears on the
 `-cli-zst` checksum path (retired D1): `--install` carries `--cli-checksum` on the `--cli-url` download. A
 later argv capture (2026-08-10, two cold starts on one host) shows this
 independently. Correction of 2026-10-24: the retired D1 entry no longer holds what Desktop
-supplies on the `--cli-zst` SFTP fallback. The one captured `-cli-zst` call
+supplies on the `-cli-zst` SFTP fallback. The one captured `-cli-zst` call
 (2026-08-10) supplied no `-cli-checksum`.
 
 ### `d20a77da22b7d4822f758654b226299ad7021c22` — 2026-06-09
