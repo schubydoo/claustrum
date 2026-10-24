@@ -608,7 +608,7 @@ var docWordLimits = map[string]int{
 	"docs/GLOSSARY.md":                     1300,
 	"docs/IMPROVEMENTS.md":                 1700,
 	"docs/INSTALL.md":                      5900,  // a new page: its words moved from PROTOCOL.md and ARCHITECTURE.md, with room for a first edit
-	"docs/PROTOCOL.md":                     24410, // decision-040: words moved to the method pages, to INSTALL.md and to UPSTREAM-TRACKING.md
+	"docs/PROTOCOL.md":                     24292, // decision-040: words moved to the method pages, to INSTALL.md and to UPSTREAM-TRACKING.md
 	"docs/UPSTREAM-TRACKING.md":            6200,
 	"docs/index.md":                        800,
 	"docs/protocol/files-extract-tar.md":   2254,
@@ -619,8 +619,8 @@ var docWordLimits = map[string]int{
 	"docs/protocol/git-info.md":            2000,
 	"docs/protocol/git-list-branches.md":   1000,
 	"docs/protocol/git-status.md":          3186, // decision-040: a move between pages, net down in the same PR
-	"docs/protocol/git-worktree-create.md": 7093, // decision-040: a move between pages, net down in the same PR
-	"docs/protocol/git-worktree-remove.md": 4073, // decision-040: a move between pages, net down in the same PR
+	"docs/protocol/git-worktree-create.md": 6951, // decision-050: the trim of the create and remove pages
+	"docs/protocol/git-worktree-remove.md": 4069, // decision-050: the trim of the create and remove pages
 	"docs/protocol/launcher-resolve.md":    1700,
 	"docs/protocol/plugins-prune.md":       1100,
 	"docs/protocol/process-kill.md":        1100,
