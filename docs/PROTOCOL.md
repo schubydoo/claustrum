@@ -297,8 +297,8 @@ measured against `89cb6289` on a Linux VM. A rule that names macOS was measured 
 a macOS VM against `89cb6289`. A rule marked `5fd08069` was measured against that
 build.
 
-claustrum links no cleaner on Windows. The Windows reference showed none either,
-in a check with no positive control.
+claustrum links no cleaner on Windows. The Windows references logged no cleaner
+line and changed nothing, in a check with no positive control.
 
 #### When the cleaner runs
 
@@ -327,8 +327,8 @@ path, the binary test does not run (not measured).
 
 A pass acts on the root as the socket path gives it and on its resolved form, never
 on the root of the binary. If the resolution fails, it acts on the root as given
-only (not measured). A pass lists each run folder once, in the spelling of the
-socket as given.
+only (not measured). A pass lists each run folder once, and its lines name each
+in the spelling of the socket as given.
 
 #### Signals of the cleaner
 
@@ -338,8 +338,8 @@ daemon ends by itself, see [Orphan-exit self-probe](#orphan-exit-self-probe).
 
 The cleaner retires an abandoned daemon with `SIGTERM`. That is a daemon on a run
 dir that is idle past the threshold, or whose name carries `.removing-` from an
-earlier removal. A daemon younger than 5 minutes is not retired. On macOS the run
-dir then gets this line:
+earlier removal. A daemon younger than 5 minutes is not retired, and the run dir
+gets this line (measured on macOS):
 
 ```
 [hostclean] run dir "<dir>" unused for <n> days: its daemon (pid <pid>) was not retired: it is too young to judge
@@ -365,8 +365,8 @@ On Linux (`5fd08069`) a stopped daemon on an idle run dir:
 
 #### The `lsof` reads (macOS)
 
-Every rule of this sub-section holds on macOS only. Linux runs no `lsof` and logs
-none of its lines below (from the code). The cleaner asks `lsof` three things:
+Every rule of this sub-section holds on macOS only. Linux runs no `lsof`, and it logs
+neither `left alone this pass` line below (from the code). The cleaner asks `lsof` three things:
 
 - whether a daemon it is about to retire still has a live client
 - whether the stdio of an orphan is three pipes
@@ -387,9 +387,9 @@ The exit code is no rule. When no process holds the file, `lsof` exits 1 with no
 text, and the dir then goes. claustrum reads every run that writes to stderr as no
 answer, whatever its exit code and stdout. Of those runs, only exit 1 with no
 stdout is measured.
-After a run that it gave up on, claustrum reads the daemon again, so the pass
-takes longer. The signals and folders stay the same ([D17](DIVERGENCES.md#d17),
-retired).
+After a run that it gave up on, claustrum reads the daemon again, so its pass
+takes longer than the pass of `5fd08069`, with the same signals and folders
+([D17](DIVERGENCES.md#d17), retired).
 
 When the busy read of a daemon gets no answer, the pass logs these two lines and
 counts the daemon under `candidates left undecided`. The first line comes before
@@ -400,8 +400,8 @@ every run dir line:
 [hostclean] run dir "<dir>" unused for <n> days: its daemon (pid <pid>) was not retired: a connection is attached to it right now, or that could not be read: in use after all
 ```
 
-The first line goes once to each daemon that is 5 minutes old or more and serves
-an idle run dir. With more than 4096 processes claustrum prints no such line (from
+The first line goes only to a daemon that is 5 minutes old or more and serves an
+idle run dir, once for each such daemon. With more than 4096 processes claustrum prints no such line (from
 the code, not measured).
 
 When the stdio read of an orphaned Claude Code group gets no answer, the cleaner
@@ -439,8 +439,8 @@ On macOS these states keep the dir with the line
 
 On macOS the dir goes in these states:
 
-- the dir has no `daemon.lock`. No `lsof` runs then, so a failed run changes
-  nothing
+- the dir has no `daemon.lock`, also when `lsof` does not start or writes to
+  stderr and exits 1. No `lsof` runs then (from the code)
 - only the cleaner itself holds the lock file open
 - the lock holds no record (text, `{}`, or the first half of a record), and no
   process holds it
@@ -453,10 +453,10 @@ On Linux a lock that cannot be opened, a lock that is no regular file, and lock
 content that is no record keep the dir, with claustrum's own line
 `[hostclean] run dir "<dir>" kept: whether a process holds its run-dir lock could not be determined`.
 On Linux an empty `daemon.lock` is not such content: the dir goes when no live
-process holds it. On Linux (`5fd08069`) the
-`could not be examined` line keeps a dir when `/proc/locks` cannot be read. That
-is for a `daemon.lock` that is a regular file, empty or with a record. A process
-that holds the lock changes nothing there.
+process holds it. On Linux (`5fd08069`),
+when `/proc/locks` cannot be read, a dir whose `daemon.lock` is a regular file,
+empty or with a record, stays with the `could not be examined` line, also when a
+process holds the lock.
 
 ### Daemon startup (`-serve`)
 
