@@ -236,7 +236,7 @@ var docMethodCountSentences = []docCountSentence{
 }
 
 // TestDocsMethodCount: the documents state the present method count, and it equals
-// len(capabilityMethods). The history sentences of PROTOCOL.md and
+// len(capabilityMethods). The history sentences of
 // REFERENCE-BUILDS.md are not in the list on purpose.
 func TestDocsMethodCount(t *testing.T) {
 	want := len(capabilityMethods)
