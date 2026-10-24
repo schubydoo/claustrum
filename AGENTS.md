@@ -62,9 +62,9 @@ The table names the files that an agent must not break. The full file map is in
 | `worktreestale*.go` | the stale registration step before the add |
 | `worktreestaging.go` | the Windows staging folder, its move and the cleanup of old staging entries |
 | `gitdirheld.go` | the held git directory and the list of the steps that act through it |
-| `githarden_index_*.go` | the placement of the index of a new worktree |
+| `githarden_index_*.go` | the placement of the index of a new worktree, and the registration delete of the second rollback (`removeCreatedRegistration`) |
 | `install.go` | the CLI path delete, the sweeps, the prune and the blob remove of `-install` |
-| `gitshadow.go` · `gitshadowsweep.go` | the deletes in the folder `git-shadow` |
+| `gitshadow.go` (`removeEntry`, which each delete there goes through) · `gitshadowsweep.go` · `gitshadowrepo.go` · `gitshadowuse.go` | the deletes in the folder `git-shadow` |
 
 Every OS serves the same JSON-RPC methods.
 
