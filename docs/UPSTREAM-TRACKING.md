@@ -414,7 +414,7 @@ the linked pages. The history of each build is in
   On Linux, when the process runs `program` or holds it as one whole argument,
   `89cb6289` accepts the record (Linux VM). `f6010b97` sends no signal in some
   of those states. That difference is not drift. See
-  [PROTOCOL.md → Child records and the reap](PROTOCOL.md#child-records-and-the-reap-linux-and-macos).
+  [DAEMON.md → Child records and the reap](DAEMON.md#child-records-and-the-reap-linux-and-macos).
 - The configuration listing, the stray `commondir` rules and the `git.info` root
   follow `89cb6289`. `5fd08069` is not measured there. In the state `shadow` the
   answers of [The settings copy](PROTOCOL.md#the-settings-copy) come first.
@@ -460,7 +460,7 @@ the linked pages. The history of each build is in
 - On macOS the `lsof` reads of the host cleaner, and the longer pass of claustrum
   after a run that it gave up on, are not drift. An `lsof` that does not start,
   and a run that writes to stderr and exits 1, are parity with `89cb6289`
-  (measured on macOS). See [The `lsof` reads](PROTOCOL.md#the-lsof-reads-macos).
+  (measured on macOS). See [The `lsof` reads](DAEMON.md#the-lsof-reads-macos).
 
 Unless an item names another build, the daemon items below are measured against
 `89cb6289`.
@@ -468,17 +468,17 @@ Unless an item names another build, the daemon items below are measured against
 - On Linux and macOS a stranded daemon and its children get no signal from the host cleaner, as on `f6010b97` and
   `89cb6289`. The
   daemon ends by itself. See
-  [Signals of the cleaner](PROTOCOL.md#signals-of-the-cleaner).
+  [Signals of the cleaner](DAEMON.md#signals-of-the-cleaner).
 - On Windows a daemon that outlives its SSH session and children that outlive a
   killed daemon are not drift, against `f6010b97` and `89cb6289`, one state on
   `89cb6289` only. Descendants that outlive a kill or a `-stop` are not drift
   either. A child is in no job, and a kill ends the direct child only (kill forms
-  measured on `89cb6289`). See [The job of the launcher](PROTOCOL.md#the-job-of-the-launcher-windows)
+  measured on `89cb6289`). See [The job of the launcher](DAEMON.md#the-job-of-the-launcher-windows)
   and [Windows child trees](protocol/process-kill.md#windows-child-trees).
 - On Linux and macOS a daemon accepts no connection while the reap of its start
   waits. A connect then gets `ECONNREFUSED` or `ENOENT`, and `daemon.lock` holds
   `pid`, `role` and `node` only. That is not drift. See
-  [The bind after the reap](PROTOCOL.md#the-bind-after-the-reap-linux-and-macos).
+  [The bind after the reap](DAEMON.md#the-bind-after-the-reap-linux-and-macos).
 - On Linux and macOS records and both identity markers on a socket that is not
   `run/<id>/rpc.sock` are not drift. Records that stay after a start past 128
   record names or 64 groups are not drift either (measured on Linux). An older claustrum
@@ -486,7 +486,7 @@ Unless an item names another build, the daemon items below are measured against
   a `daemonStart` in that form does not match, so a new daemon reads that live
   daemon as gone, and a `start` in that form does not match either. Neither is
   drift. See
-  [Child records and the reap](PROTOCOL.md#child-records-and-the-reap-linux-and-macos).
+  [Child records and the reap](DAEMON.md#child-records-and-the-reap-linux-and-macos).
 - A first process that lives on after a second `process.spawn` took its `id` is
   not drift. It gets no signal, and a stop leaves it alive (measured on Linux, macOS and
   Windows). Its frames still come
@@ -508,12 +508,12 @@ Unless an item names another build, the daemon items below are measured against
   line (measured on Linux). Neither is drift. See
   [The login-shell PATH](PROTOCOL.md#the-login-shell-path-linux-and-macos).
 - A `-serve` launcher that gives up after 12 s is not drift, also for a daemon
-  that ends before its bind (measured on Linux, macOS and Windows). See [The launcher wait](PROTOCOL.md#the-launcher-wait).
+  that ends before its bind (measured on Linux, macOS and Windows). See [The launcher wait](DAEMON.md#the-launcher-wait).
   A daemon that gets `SIGTERM` or `SIGINT` during its start binds and then exits
   0, and that is not drift (measured on Linux, and on macOS for a `SIGTERM` from a
   second daemon). A daemon that a second daemon ends with `SIGKILL` during
   its start is not drift (measured on Linux). See
-  [Eviction of a live holder](PROTOCOL.md#eviction-of-a-live-holder).
+  [Eviction of a live holder](DAEMON.md#eviction-of-a-live-holder).
 - The order of two or more new caller keys in a child environment is not fixed,
   as on `89cb6289` (measured on Linux). That is not drift. See
   [The environment of the child](protocol/process-spawn.md#the-environment-of-the-child).
@@ -550,7 +550,7 @@ Unless an item names another build, the daemon items below are measured against
     - On Windows, at a stop with one connection, `89cb6289` can log `closed 0
       connection(s)`, and claustrum logs `closed 1`.
 - The level tag and the name `Claustrum` in the listening line differ from the
-  reference by design. See [Daemon log](PROTOCOL.md#daemon-log-remote-serverlog).
+  reference by design. See [Daemon log](DAEMON.md#daemon-log-remote-serverlog).
 
 ## Toolchain-induced drift — the Go 1.27 `jsonv2` hold
 

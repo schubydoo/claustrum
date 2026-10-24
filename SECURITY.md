@@ -52,7 +52,7 @@ token did not already give. See
 - The running daemon persists its token to `daemon.token` (mode `0600`) in the
   socket's directory, so a client can reconnect after the token source is gone.
   This is parity with the reference daemon. See
-  [`docs/PROTOCOL.md`](docs/PROTOCOL.md) → Token persistence. At a graceful
+  [`docs/DAEMON.md`](docs/DAEMON.md) → Token persistence. At a graceful
   shutdown, a daemon whose own file is still in place unlinks it. A `SIGKILL` or a crash leaves the file behind.
   The token therefore stays on disk longer than its source, so keep the socket
   directory owner-only. On Windows the `0600` bits are not an owner-only DACL, so
@@ -148,9 +148,9 @@ Details for the three surfaces that need more than a row:
   `ListenPipe` also creates the pipe with `FILE_PIPE_REJECT_REMOTE_CLIENTS`, so
   a client over SMB (`\\host\pipe\…`) is refused. The pipe grants no access that
   the socket plus the token did not already grant. With the flag off, no pipe
-  exists. The pipe name is published to `rpc.pipe` in the socket directory and
-  removed at a graceful shutdown. The name is not a secret, because the DACL is
-  the access control.
+  exists. The pipe name is published to `rpc.pipe` in the socket directory. A
+  graceful shutdown removes that file only if it is still the file the daemon
+  wrote. The name is not a secret, because the DACL is the access control.
 
 Some reports require the socket plus the token already, or host shell access.
 Other reports amount to "the operator can run commands on their own host." Both

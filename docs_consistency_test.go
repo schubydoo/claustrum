@@ -600,12 +600,13 @@ var docWordLimits = map[string]int{
 	"CONTRIBUTING.md":                      1300,
 	"README.md":                            1300,
 	"SECURITY.md":                          1700,
-	"docs/ARCHITECTURE.md":                 4507,
+	"docs/ARCHITECTURE.md":                 4100,
+	"docs/DAEMON.md":                       7300, // a new page: its words moved from PROTOCOL.md and ARCHITECTURE.md, with room for a first edit
 	"docs/DIVERGENCES.md":                  8000,
 	"docs/EXAMPLES.md":                     1200,
 	"docs/GLOSSARY.md":                     1300,
 	"docs/IMPROVEMENTS.md":                 1700,
-	"docs/PROTOCOL.md":                     44700,
+	"docs/PROTOCOL.md":                     38000,
 	"docs/UPSTREAM-TRACKING.md":            6600,
 	"docs/index.md":                        800,
 	"docs/protocol/files-extract-tar.md":   2269, // decision-040: a move between pages, net down in the same PR
