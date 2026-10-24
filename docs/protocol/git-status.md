@@ -12,7 +12,7 @@
 |---|---|---|
 | `path` | no | The linked worktree. Send an absolute path. Without `path`, the daemon looks for a registration of its own working directory (not measured). Send `path`. A relative `path` gives `"isRepo": false` or `-32603 exit status 128`. From the code, `.` is the exception: it works like no `path`. [Path handling](../PROTOCOL.md#path-handling) has the rules for a leading `~`. |
 | `baseRepo` | yes | The repository that owns the worktree. A linked worktree as `baseRepo` gives `"isRepo": false`. Send the main repository (from the code, not measured). |
-| `shadowDirOff` | no | `true` turns off the daemon's own read of the repository's git config and its [settings copy](../PROTOCOL.md#the-settings-copy) for this request, as in [Turning the read off](../PROTOCOL.md#turning-the-read-off). |
+| `shadowDirOff` | no | `true` turns off the daemon's own read of the repository's git config and its settings copy for this request. See [Turning the read off](../PROTOCOL.md#turning-the-read-off). |
 
 ## Response
 
@@ -51,18 +51,18 @@ This method has no `errorCode` member. A failure is a JSON-RPC error. A failure 
 | `-32602` | `Invalid params` | The request has no `params` member, or a member that it reads has the wrong type. See [the rules for `params`](../PROTOCOL.md#params-presence-and-typing). |
 | `-32602` | `baseRepo is required` | `baseRepo` is absent, or empty (from the code). |
 | `-32603` | `the repository's git directory could not be trusted; git not run: …` | The daemon does not trust the git directory. See [Git-directory trust check](../PROTOCOL.md#git-directory-trust-check). |
-| `-32603` | `config-defined hooks could not be pinned off; git not run: …` | A config listing failed or passed a limit of the hook pins, the daemon refuses its own git environment, or a daemon `GIT_DIR` names a gone worktree entry. A listing that runs 30 seconds is stopped, and the text goes on with `listing the configuration in force: git took too long: Claude stopped git config after 30 seconds; try again`. See [Trust refusal texts and frames](../PROTOCOL.md#trust-refusal-texts-and-frames), [Refusal texts](../PROTOCOL.md#refusal-texts) and [The daemon's own git environment](../PROTOCOL.md#the-daemons-own-git-environment). |
-| `-32603` | `git cannot run on this host; git not run: …` | A config listing, call 7 of the start test or the call about the repository failed, and then a `git version` call failed too. |
+| `-32603` | `config-defined hooks could not be pinned off; git not run: …` | A config listing failed or passed a limit of the hook pins, the daemon refuses its own git environment, or a daemon `GIT_DIR` names a gone worktree entry. A listing stopped at 30 seconds goes on with `listing the configuration in force: git took too long: Claude stopped git config after 30 seconds; try again`. See [Refusal texts](../PROTOCOL.md#refusal-texts) and [The daemon's own git environment](../PROTOCOL.md#the-daemons-own-git-environment). |
+| `-32603` | `git cannot run on this host; git not run: …` | A config listing, call 7 of the start test or the call about the repository failed, and then a `git version` call failed too. See [A failed configuration listing](../PROTOCOL.md#a-failed-configuration-listing), [The start test](../PROTOCOL.md#the-start-test) and [The call about the repository](../PROTOCOL.md#the-call-about-the-repository). |
 | `-32603` | `this repository's git config cannot be used: …` or `a file in this repository's .git directory cannot be used: …` | The daemon read the git config of the repository, or a file of its git directory, and does not accept it. See [Repository config refusals](../PROTOCOL.md#repository-config-refusals). |
 | `-32603` | `Claude could not test git on the remote machine (…). Check free disk space and quota there, then try again.` | The start test of the settings copy failed. The daemon keeps the failure for 10 seconds. See [The start test](../PROTOCOL.md#the-start-test). |
 | `-32603` | `git could not check this repository on the remote machine: …` or `git and Claude disagree about which repository holds this folder: …` | The call that asks git about the repository failed, did not end in 30 seconds, or named another repository. See [The call about the repository](../PROTOCOL.md#the-call-about-the-repository). |
 | `-32603` | `Claude could not prepare its own files on the remote machine: …` | The daemon cannot prepare the folder of the settings copy for this repository. See [The folders](../PROTOCOL.md#the-folders). |
-| `-32603` | `git took too long: Claude stopped git <subcommand> after 2 minutes; try again` | A git call ran 2 minutes, and the daemon stopped it. While a request with `"shadowDirOff":true` runs, that one included, the limit is 30 minutes, and the text says `after 30 minutes` (claustrum's own). See [Time limits of git calls](../PROTOCOL.md#time-limits-of-git-calls). |
+| `-32603` | `git took too long: Claude stopped git <subcommand> after 2 minutes; try again` | A git call ran 2 minutes, and the daemon stopped it. While a `"shadowDirOff":true` request runs, that one included, the limit is 30 minutes, and the text says so (claustrum's own). See [Time limits of git calls](../PROTOCOL.md#time-limits-of-git-calls). |
 | `-32603` | The Go error of the git call, for example `exit status 128` | `git status`, `git ls-files` or `git diff-index` failed. The text of git does not show. A relative `path` that matches a registration gets `exit status 128`, because git takes it as sent. |
 | `-32603` | `config-defined hooks could not be pinned off; git not run: listing the configuration in force: ` and the start error, for example `chdir <path>: no such file or directory` | `path` passed the test as a cleaned path, but git cannot start in the path as sent. An example is `<dir>/missing/..` outside `baseRepo` (measured on Linux and macOS). |
 | `-32603` | `<file>: not a regular file`, `<file> is larger than <n> bytes`, or an error of the file system | claustrum's own texts. A file of the worktree registration changed after the test, or the daemon cannot copy it. The texts are in the [error-string catalog](../PROTOCOL.md#error-string-catalogue). |
 
-A config listing that fails refuses at each listing of the method, also at the later ones in the git directory and in the temporary folder (from the code). A listing that passes a limit of the hook pins refuses only at the first listing, in a folder that holds a repository. A stopped listing of `config.worktree` gives `{"isRepo":false,"clean":false}` (measured on Linux).
+A config listing that fails refuses at each listing of the method, also at the later one in the git directory (measured on Linux) and in the temporary folder (from the code). A listing that passes a limit of the hook pins refuses only at the first listing, in a folder that holds a repository. A stopped listing of `config.worktree` gives `{"isRepo":false,"clean":false}` (measured on Linux).
 
 The daemon makes the temporary git folder in its own run folder. If it cannot make that folder there, the response is `{"isRepo":false,"clean":false}` (measured on Linux and Windows). With `"shadowDirOff":true`, or on a server with no run folder, the folder is in the temporary directory of the system. A failure there answers `-32603` with the error of the file system (from the code, not measured).
 
@@ -149,7 +149,7 @@ The limits:
 
 - A porcelain line over 512 bytes is cut to 512 bytes, and `…` follows (measured on Linux). At most 10000 porcelain lines pass, and no entry marks the cut (measured on Linux). The submodule entries still follow (measured on Linux).
 - A submodule name over 200 bytes is cut to 200 bytes, and `…` follows (measured on Linux). The name is then quoted with double quotes, `\"`, `\n`, `\t`, and `\xff` for a byte that is not valid UTF-8 (measured on Linux). A printable character outside ASCII stays (measured on Linux).
-- At most 100 submodule entries pass (measured on Linux). Then one entry gives the count of the rest, for example ` S … (+20 more submodule entries)`.
+- At most 100 submodule entries pass (measured on Linux). Then one entry gives the count of the rest, for example ` S … (+20 more submodule entries)` (measured on Linux).
 
 claustrum's own, not measured: a cut can split a multi-byte character. In a porcelain line, the JSON encoding then sends U+FFFD for each leftover byte. In a submodule name, the quoting writes each leftover byte as `\xNN`.
 
@@ -170,7 +170,7 @@ claustrum's own, not measured: a cut can split a multi-byte character. In a porc
 
 ## Differences from the reference
 
-An unmarked rule on this page matches the reference as measured on `5fd08069` or on an earlier build. A row of Errors that links a section of PROTOCOL.md has the system marks of that section.
+An unmarked rule on this page matches the reference as measured on `5fd08069` or on an earlier build. A linked Errors row has the system marks of its PROTOCOL.md section.
 
 This entry of the divergence catalog applies to this method:
 
