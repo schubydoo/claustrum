@@ -270,8 +270,8 @@ the measured cases its texts are these:
   daemon cannot search.
 - On Windows, `CreateFile <path>: …` for `CON`, `CONIN$`, `CONOUT$`, a `\` after a
   regular file, and a name that is too long. A NUL byte gets `Stat <path>: …`.
-- On each system, where the open fails, `path is a directory` for a directory and
-  `file exceeds maxBytes` for a file over the limit.
+- On each system, where the open fails, `files.read: path is a directory` for a
+  directory and `files.read: file exceeds maxBytes` for a file over the limit.
 
 An `open <path>: resource temporarily unavailable` for a regular file that another
 process holds under a lease is not drift either. It comes from the `O_NONBLOCK`
@@ -458,8 +458,9 @@ the linked pages. The history of each build is in
   a missing file there is no regression. A quiet symbol comparison does not prove
   that nothing changed, so re-check the whole build after the slices merge.
 - On macOS the `lsof` reads of the host cleaner, and the longer pass of claustrum
-  after a run that it gave up on, are not drift. See
-  [The `lsof` reads](PROTOCOL.md#the-lsof-reads-macos).
+  after a run that it gave up on, are not drift. An `lsof` that does not start,
+  and a run that writes to stderr and exits 1, are parity with `89cb6289`
+  (measured on macOS). See [The `lsof` reads](PROTOCOL.md#the-lsof-reads-macos).
 
 Unless an item names another build, the daemon items below are measured against
 `89cb6289`. The linked sections name the systems of each rule.
@@ -471,7 +472,8 @@ Unless an item names another build, the daemon items below are measured against
   [Signals of the cleaner](PROTOCOL.md#signals-of-the-cleaner).
 - On Windows these are not drift, against `f6010b97` and `89cb6289`: a daemon that outlives
   its SSH session, children that outlive a killed daemon, and descendants that
-  outlive a kill or a `-stop`. A child is in no job, and a kill ends the direct
+  outlive a kill or a `-stop`. One of these states, and the kill forms, are
+  measured on `89cb6289` only. A child is in no job, and a kill ends the direct
   child only. See [The job of the launcher](PROTOCOL.md#the-job-of-the-launcher-windows)
   and [Windows child trees](protocol/process-kill.md#windows-child-trees).
 - On Linux and macOS a daemon accepts no connection while the reap of its start
@@ -533,9 +535,9 @@ Unless an item names another build, the daemon items below are measured against
     - On Linux and macOS, after a `-stop` during the wait of a supersede,
       claustrum can log the exit line of the old process and the `supersedes`
       line. `89cb6289` logs neither.
-    - On Linux and macOS `89cb6289` unlinks a child record up to three times at
-      a stop or a kill, and claustrum unlinks it once. On Linux `89cb6289` also
-      unlinks a record that it never wrote. The files left are the same.
+    - On Linux `89cb6289` unlinks a child record up to three times at a stop or
+      a kill, and claustrum unlinks it once. `89cb6289` also unlinks a record
+      that it never wrote. The files left are the same.
     - On macOS `89cb6289` runs one `ps` at the daemon start and one for each
       spawn. claustrum runs none at the start and three for each spawn.
     - With a zero-byte `-token-file`, `89cb6289` logs `claude-ssh: empty token in
