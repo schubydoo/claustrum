@@ -653,8 +653,9 @@ capture of a real session will therefore not exercise the new method, and the
 synthetic battery stays the gate for it. That client also bears on the
 `-cli-zst` checksum path (retired D1): `--install` carries `--cli-checksum` on the `--cli-url` download. A
 later argv capture (2026-08-10, two cold starts on one host) shows this
-independently. The retired [D1](DIVERGENCES.md#d1) entry records what Desktop
-supplies on the `--cli-zst` SFTP fallback, and the limits of that record.
+independently. Correction of 2026-10-24: the retired D1 entry never held what
+Desktop supplies on the `--cli-zst` SFTP fallback. [Driver claims and their
+provenance](ARCHITECTURE.md#driver-claims-and-their-provenance) holds it.
 
 ### `d20a77da22b7d4822f758654b226299ad7021c22` — 2026-06-09
 

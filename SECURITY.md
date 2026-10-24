@@ -64,9 +64,7 @@ token did not already give. See
   caller. `-stop` sends no token. The socket's owner-only mode is what confines this. An
   actor who already shares the uid can do strictly more through `process.spawn`.
   The optional Windows named-pipe transport shares this dispatch, so the same
-  exception applies. The claim that the Desktop client relies on this teardown
-  path is a driver claim. See
-  [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md#driver-claims-and-their-provenance).
+  exception applies.
 
 ### Network
 

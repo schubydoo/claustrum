@@ -231,10 +231,11 @@ jobs:
 
           ### Next steps (docs/UPSTREAM-TRACKING.md Step 4)
           1. Reconcile any wire drift the check flagged.
-          2. Run the private byte-for-byte battery in \`scratch/\` for frame parity.
+          2. Run a byte-for-byte frame battery against the new build.
           3. Bump \`scripts/UPSTREAM_SHA\` to \`$SHA\`, add a row and a
              detail section headed with the full SHA to \`docs/REFERENCE-BUILDS.md\`
-             (the watcher reads only those headings), and note it in \`CHANGELOG.md\`.
+             (the watcher reads only those headings). For a user-facing change, add
+             a \`.changeset/\` fragment.
 
           _This issue is opened once per new SHA; the watcher goes quiet again once
           the baseline is bumped._

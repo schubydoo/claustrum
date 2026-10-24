@@ -158,10 +158,10 @@ under [Stream notifications](#stream-notifications), is the wire contract.
 | `-32601` | `Invalid method format: <m>` (method has no `.`), `Unknown namespace: <ns>` (well-formed but unknown namespace), or `Unknown method: <ns>.<m>` (known namespace, unknown method) |
 | `-32602` | invalid params (see per-method messages) |
 | `-32603` | internal error, for example `open <path>: no such file or directory`. A recovered handler panic also gives this code, with `recovered panic: <v>` |
-| `-32002` | `stdin backpressure: queue full`, from `process.stdin` when the per-process async stdin queue is already full (16 MiB). The write is rejected, not blocked. |
-| `-32003` | `stdin offset gap: offset ahead of applied bytes`, from `process.stdin` with an `offset` past the applied high-water |
-| `-32004` | `the managed launcher cannot be used: <reason>`, from `process.spawn` when the checks refuse its `launcher` param, and for any `launcher` on Windows |
-| `-32005` | `the managed launcher <path> could not be started: <reason>`, from `process.spawn` when the launcher passes the checks but does not start |
+| `-32002` | a full stdin queue, from `process.stdin` (see [Errors](protocol/process-stdin.md#errors)) |
+| `-32003` | an `offset` past the applied bytes, from `process.stdin` (see [Errors](protocol/process-stdin.md#errors)) |
+| `-32004` | a refused `launcher`, from `process.spawn` (see [The managed launcher](protocol/process-spawn.md#the-managed-launcher)) |
+| `-32005` | a launcher that does not start, from `process.spawn` (see [The managed launcher](protocol/process-spawn.md#the-managed-launcher)) |
 | `-32006` | `Refused: this server could not confirm that the caller is in its own namespaces`, on Linux with `CLAUDE_SSH_PEER_CHECK=1` (see [A refused caller](protocol/server.md#a-refused-caller-linux)) |
 | `-32001` | `Unauthorized: invalid or missing auth token` |
 
@@ -175,7 +175,7 @@ the result. A row that says "in the frame of" a method, or "The same frames", is
 `-32603` on `git.info`, `git.status` and `git.list_branches`. On `git.worktree_create`
 and `git.worktree_remove` it is in `error`. A remove can wrap such a text in a longer
 one, as the table in [Git-directory trust check](#git-directory-trust-check) shows. A
-row with no mark holds a text of the reference daemon, measured on a Linux VM against a
+row with no mark holds a text of the reference daemon, measured on Linux against a
 build up to `5fd08069`. A "measured on macOS" or "measured on Windows" mark covers the
 sentence that it ends, and that sentence was measured on that system only. A sentence
 that names systems without "measured" holds on each one. The [reference build history](REFERENCE-BUILDS.md) has the builds.
@@ -351,7 +351,7 @@ other two stat it:
   instead. Reachable reasons include `not a directory` (a path component is a
   regular file), `file name too long`, and `invalid argument` (a NUL byte in the
   path). For `files.read`, `5fd08069` gives these three with `open` on Linux and
-  macOS VMs.
+  macOS.
 
 ## Methods (20)
 
@@ -1576,35 +1576,34 @@ These states are not measured. The rules are from the code.
 
 On `git.list_branches`, `git.info`, `git.status` and `git.worktree_create` most
 calls end at 2 minutes. Config listings before a git call have a 30 second limit (the one before the
-checkout: Linux and macOS VMs).
-So do the repository config read (`git.status`, Linux VM) and each
-`config.worktree` listing (Linux VM). A create with the filter rule and no
+checkout: measured on Linux and macOS).
+So do the repository config read (`git.status`, measured on Linux) and each
+`config.worktree` listing (measured on Linux). A create with the filter rule and no
 settings copy runs claustrum's own `--show-scope` listing, with the 2 minute
 limit and the `timeoutMs`. A stopped call of the top folder pair stops the create
 with the stop text (claustrum's own). The scan of ignored files ends at 10
-minutes (Linux and macOS VMs). Read-tree checkouts have no such limit.
+minutes (measured on Linux and macOS). Read-tree checkouts have no such limit.
 
 - The stop is SIGTERM, then SIGKILL 2 s later. On Windows the process ends at
   once. Config file listings get SIGKILL alone, not the listing before the
-  read-tree call (Linux and macOS VMs).
+  read-tree call (measured on Linux and macOS).
 - Before a good add no call follows a stopped call. A stopped add removes an
   empty leaf. A stopped repository test of a create answers the stop text alone,
-  with `worktree_add_failed` (Linux VM). After a good add the rollback runs its
-  own calls (Linux and macOS VMs). A stopped scan copies nothing, and the create succeeds.
+  with `worktree_add_failed` (measured on Linux). After a good add the rollback runs its
+  own calls (measured on Linux and macOS). A stopped scan copies nothing, and the create succeeds.
 - While a `"shadowDirOff":true` request runs, no call of that request stops at
-  2 minutes. No call of another request stops at 2 minutes then either (Linux
-  VM). claustrum's own limit is then 30 minutes.
+  2 minutes. No call of another request stops at 2 minutes then either (measured on Linux). claustrum's own limit is then 30 minutes.
 - `timeoutMs` does not end the add. With `"shadowDirOff":true` it does not end
-  the listing before the checkout either (Linux VM).
+  the listing before the checkout either (measured on Linux).
 - With no `timeoutMs` a reply waits 2 s after git exits for a child that holds
   its output and gets no signal. Listings before a call wait until stdout
   closes, also past the limit. The `status` scan waits too, within its limit
-  (Linux VM). Held past 30 s, the
-  config read on standard input ends near 31 s (Linux VM), and `config.worktree`
+  (measured on Linux). Held past 30 s, the
+  config read on standard input ends near 31 s (measured on Linux), and `config.worktree`
   reads too (not measured). A holder of stderr alone delays a config listing
-  about 2 s and that read 1 to 1.5 s (Linux and macOS VMs).
+  about 2 s and that read 1 to 1.5 s (measured on Linux and macOS).
 - `git.worktree_remove` gets none of these limits. Its first call has the 30 s
-  bound of the call about the repository (Linux VM).
+  bound of the call about the repository (measured on Linux).
 
 ### The branch step
 
@@ -1614,13 +1613,13 @@ remote-tracking ref reaches its tip. Else it keeps the branch.
 go. The `git.worktree_create` rollbacks run it on the branch that the call made.
 `<b>` is `branchName` as sent. `<tip>` is the object name in the listed record
 of `refs/heads/<b>`. A rule of this section with no other mark is measured
-against `89cb6289` on a Linux VM.
+against `89cb6289` on Linux.
 
 The step runs `for-each-ref`, `rev-parse --verify`, `rev-list` and
 `update-ref`. Each runs in `baseRepo` after its own configuration listing. It
 carries the light `-c` list and the six values of the heavy profile, in an order
-of their own (see [Hardened git calls](#hardened-git-calls)) (Linux, macOS and
-Windows VMs).
+of their own (see [Hardened git calls](#hardened-git-calls)) (measured on Linux, macOS and
+Windows).
 
 #### Which branch the step deletes
 
@@ -1634,39 +1633,38 @@ Windows VMs).
 - The delete passes the tip that the check saw as the old value. So git refuses
   the delete if the branch moved after the check.
 - If the branch list is read and `rev-parse --verify` reports the branch absent,
-  the step deletes nothing and keeps nothing (Linux, macOS and Windows VMs).
-- The step keeps the branch in each of these cases (Linux, macOS and Windows
-  VMs where not marked):
+  the step deletes nothing and keeps nothing (measured on Linux, macOS and Windows).
+- The step keeps the branch in each of these cases (measured on Linux, macOS and Windows where not marked):
     - The branch holds a commit that no other ref reaches.
-    - The branch list cannot be read, or its read is stopped (Linux VM, and the
-      stop on macOS and Windows VMs). A configuration listing that answers
-      `fatal: not a git repository` keeps the branch too (Linux and macOS VMs).
+    - The branch list cannot be read, or its read is stopped (measured on Linux, and the
+      stop on macOS and Windows). A configuration listing that answers
+      `fatal: not a git repository` keeps the branch too (measured on Linux and macOS).
     - The repository has 10001 local branches or more. With 10000 the full check
       runs.
     - Another local branch has the same name in another letter case. claustrum
       folds case with Go's `strings.EqualFold`, also outside ASCII (claustrum's
       own).
-    - The check of the commits fails or is stopped (Linux VM).
+    - The check of the commits fails or is stopped (measured on Linux).
     - The delete fails or is stopped.
     - A list that does not parse, and a branch that is not listed but that
       `rev-parse --verify` does not report as absent (claustrum's own).
     - In a create rollback after a failed `config.worktree` step, the daemon
       reads the config of the repository again. A refusal there keeps the
-      branch (`5fd08069`, Linux and macOS VMs).
+      branch (`5fd08069`, measured on Linux and macOS).
 
 #### Time limits of the branch step
 
 These bounds are always on. They are not a divergence.
 
 - One bound of 60 s covers the branch list and the commit check together. At the
-  bound the running call is killed, with no SIGTERM first (Linux, macOS and
-  Windows VMs). The bound starts before the configuration listing of
+  bound the running call is killed, with no SIGTERM first (measured on Linux, macOS and
+  Windows). The bound starts before the configuration listing of
   `for-each-ref` and also covers `rev-parse` (claustrum's own). A stopped
   `rev-parse` is a failure and keeps the branch, also on Windows, where the kill
   gives exit code 1 (claustrum's own).
 - `update-ref` gets SIGTERM 5 s after it starts, on Linux and macOS. A call that
   ignores it is killed 5 s later. On Windows it is killed at 5 s. That holds for
-  a remove and for a create rollback (Linux and macOS VMs). The kill after
+  a remove and for a create rollback (measured on Linux and macOS). The kill after
   SIGTERM in a rollback is claustrum's own.
 - Only the git process gets the SIGTERM or the kill, not its children
   (claustrum's own).
@@ -1677,15 +1675,15 @@ These bounds are always on. They are not a divergence.
 - Within one daemon, the steps of one repository run one at a time, also when
   one goes through a linked worktree. If two removes have branches that share a
   unique commit, one branch stays, and the second reply has
-  `"branchKept":true` (Linux and macOS VMs). claustrum keys this lock by the
+  `"branchKept":true` (measured on Linux and macOS). claustrum keys this lock by the
   common git dir, also in a rollback (claustrum's own).
 - The steps of different repositories run at the same time.
 - claustrum runs two removes of one `baseRepo` one after the other (claustrum's
   own).
 - A remove deletes its worktree directory while the `worktree add` of a create
   in the same git directory runs. Its registration, branch and reply wait for
-  the add (`5fd08069`, Linux and macOS VMs). They do not wait for the checkout
-  (Linux VM).
+  the add (`5fd08069`, measured on Linux and macOS). They do not wait for the checkout
+  (measured on Linux).
 
 #### The branch step in a remove reply
 
@@ -1700,15 +1698,15 @@ reaches, it also sets `"branchKept":true` after `errorCode`:
 
 | outcome | part | member |
 |---|---|---|
-| the branch holds a commit that no other ref reaches | `the worktree itself was removed, but branch <b> was left in place: it now has commits no other branch or remote-tracking ref reaches. To keep that work, push the branch or rename it. To discard it, run git branch -D <b>. This branch name cannot be reused until the branch is renamed or deleted` (Linux, macOS and Windows VMs) | `"branchKept":true` |
-| the same, after a failed rmdir of the leaf | `<rmdir text>; branch <b> was left in place: it now has commits …` with no `the worktree itself was removed, but ` (Linux and Windows VMs) | `"branchKept":true` |
-| 10001 branches, a case twin, a list that does not parse, or a `rev-parse` that finds the branch (exit 0) | `branch <b> still exists; delete it by hand (for example: git branch -d <b>, which git refuses if that would lose commits) before retrying this branch name: could not check whether another branch or remote-tracking ref reaches its commits` (Linux, macOS and Windows VMs, but the list and `rev-parse` cases are claustrum's own) | none |
+| the branch holds a commit that no other ref reaches | `the worktree itself was removed, but branch <b> was left in place: it now has commits no other branch or remote-tracking ref reaches. To keep that work, push the branch or rename it. To discard it, run git branch -D <b>. This branch name cannot be reused until the branch is renamed or deleted` (measured on Linux, macOS and Windows) | `"branchKept":true` |
+| the same, after a failed rmdir of the leaf | `<rmdir text>; branch <b> was left in place: it now has commits …` with no `the worktree itself was removed, but ` (measured on Linux and Windows) | `"branchKept":true` |
+| 10001 branches, a case twin, a list that does not parse, or a `rev-parse` that finds the branch (exit 0) | `branch <b> still exists; delete it by hand (for example: git branch -d <b>, which git refuses if that would lose commits) before retrying this branch name: could not check whether another branch or remote-tracking ref reaches its commits` (measured on Linux, macOS and Windows, but the list and `rev-parse` cases are claustrum's own) | none |
 | a call of the check failed or was stopped | the same, then a space and the process error in parentheses, for example ` (exit status 128)` or ` (signal: killed)` (a failed `rev-parse` is claustrum's own) | none |
-| after a failed `config.worktree` step, the config is refused at a second read | the same, with that refusal in parentheses (`5fd08069`, Linux and macOS VMs) | none |
-| the delete failed or was stopped | `branch <b> still exists; delete it by hand (for example: git branch -D <b>) before retrying this branch name: <process error>`, for example `exit status 128` or `signal: terminated` (Linux and macOS VMs) | none |
+| after a failed `config.worktree` step, the config is refused at a second read | the same, with that refusal in parentheses (`5fd08069`, measured on Linux and macOS) | none |
+| the delete failed or was stopped | `branch <b> still exists; delete it by hand (for example: git branch -D <b>) before retrying this branch name: <process error>`, for example `exit status 128` or `signal: terminated` (measured on Linux and macOS) | none |
 | the same, with `refs/heads/<b>.lock` present | `… before retrying this branch name. A lock refs/heads/<b>.lock is also present: if another git process is running against this repository, the lock may be live and clears on its own; if none is, it is stale debris of the interrupted delete — remove the lock file by hand too: <process error>` | none |
 | the name starts with `+`, so no call runs | `branch <b> left in place (its name is unsafe to pass to update-ref); delete it by hand` | none |
-| the step deleted it (Linux, macOS and Windows VMs), or the branch is absent at the check | none | none |
+| the step deleted it (measured on Linux, macOS and Windows), or the branch is absent at the check | none | none |
 
 - The dash in the lock text is the raw UTF-8 em dash U+2014.
 - claustrum adds the lock part when the file `<common git dir>/refs/heads/<b>.lock`
