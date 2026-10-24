@@ -39,7 +39,7 @@ in-progress commit, run `git commit --no-verify`.
   error routing, the replay buffer, env merging, and the `-install` pipeline. The
   socket-integration suite boots the daemon and asserts every method's frames
   against golden fixtures in `testdata/`. To regenerate the fixtures, run
-  `go test -run Socket -update`. CI gates the in-repo suite on every PR. See
+  `go test -run Socket -update` on each OS whose golden changed. CI gates the in-repo suite on every PR. See
   Compatibility below.
 
   Add tests for new or changed behavior in the same PR. CI enforces this with
