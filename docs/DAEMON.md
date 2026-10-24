@@ -186,8 +186,8 @@ signals it, in the eviction and in `-stop`. The reference skips that test
 
 A periodic sweep ends orphaned Claude Code process groups, retires abandoned
 daemons and tidies stale run dirs. It reaches no JSON-RPC frame. A rule with no mark was
-measured against `89cb6289` on a Linux VM. A rule that names macOS was measured on
-a macOS VM against `89cb6289`. A rule marked `5fd08069` or `f6010b97` was measured
+measured against `89cb6289` on Linux. A rule that names macOS was measured on
+macOS against `89cb6289`. A rule marked `5fd08069` or `f6010b97` was measured
 against that build.
 
 claustrum links no cleaner on Windows. The Windows references logged no cleaner

@@ -486,8 +486,9 @@ func extractTarGz(archivePath, destDir string) (int, error) {
 	//
 	//  1. The missing folders above destDir are made, each with mode 0700 less
 	//     the umask. A failure answers "mkdir parent: mkdir <path>: <reason>",
-	//     with the whole path of the folder that fails, and nothing changes on
-	//     disk (89cb6289 and 5fd08069, Linux and macOS VMs). The older text "mkdir parent
+	//     with the whole path of the folder that fails (89cb6289 and 5fd08069,
+	//     Linux and macOS VMs). The folders made before it stay (from the
+	//     code). The older text "mkdir parent
 	//     <entry>: " in the entry loop has the name of an archive entry.
 	//  2. The parent folder of destDir is opened as a handle. A failure answers
 	//     "open parent: open <parent>: <reason>", and destDir stays as it is

@@ -16,7 +16,7 @@
   "documentation_basics_status": "Met",
   "documentation_basics_justification": "The README documents installation, the run modes and the flags, and usage; a full documentation site is published from docs/ (mkdocs-material) covering architecture, the protocol reference, divergences, examples and upstream tracking, and CI runs `mkdocs build --strict` on every docs change. CONTRIBUTING.md and SECURITY.md are also provided. https://schubydoo.github.io/claustrum/",
   "documentation_interface_status": "Met",
-  "documentation_interface_justification": "The external interface is documented in full: docs/PROTOCOL.md specifies the JSON-RPC surface (all 19 server.*/files.*/git.*/process.* methods, their parameters, result frames and error codes), the README and docs document the command-line flags for -serve/-bridge/-stop/-install, and docs/EXAMPLES.md gives worked client examples. https://github.com/schubydoo/claustrum/blob/main/docs/PROTOCOL.md",
+  "documentation_interface_justification": "The external interface is documented in full: docs/PROTOCOL.md and its method pages specify the JSON-RPC surface (all 20 server.*/files.*/git.*/launcher.*/plugins.*/process.* methods, their parameters, result frames and error codes), the README and docs document the command-line flags for -serve/-bridge/-stop/-install, and docs/EXAMPLES.md gives worked client examples. https://github.com/schubydoo/claustrum/blob/main/docs/PROTOCOL.md",
   "sites_https_status": "Met",
   "sites_https_justification": "The repository, the documentation site (GitHub Pages) and the release download channel (GitHub Releases) are all served over HTTPS. https://schubydoo.github.io/claustrum/",
   "discussion_status": "Met",

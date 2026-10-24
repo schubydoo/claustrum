@@ -402,11 +402,11 @@ the linked pages. The history of each build is in
 - The reap of a child record with a `program` key splits the pins too, off the
   wire. claustrum follows `89cb6289`. `5fd08069` is not measured there.
   On Linux, when the process runs `program` or holds it as one whole argument,
-  `89cb6289` accepts the record (Linux VM). `f6010b97` sends no signal in some
+  `89cb6289` accepts the record (measured on Linux). `f6010b97` sends no signal in some
   of those states. That difference is not drift. See
   [DAEMON.md → Child records and the reap](DAEMON.md#child-records-and-the-reap-linux-and-macos).
 - The configuration listing, the stray `commondir` rules and the `git.info` root
-  follow `89cb6289`. `5fd08069` is not measured there. In the state `shadow` the
+  follow `89cb6289`. In the state `shadow` the
   answers of [The settings copy](PROTOCOL.md#the-settings-copy) come first.
   Against `f6010b97` these differences are not drift:
   - `server.capabilities` carries `git.info.discovered_root`.

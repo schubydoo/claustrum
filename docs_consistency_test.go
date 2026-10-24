@@ -597,38 +597,38 @@ func TestDocsEveryErrorCodeIsDocumented(t *testing.T) {
 // because the documents grew past what a person can read. A limit goes down, never
 // up, without the maintainer's word.
 var docWordLimits = map[string]int{
-	"AGENTS.md":                            7500,
-	"CONTRIBUTING.md":                      1300,
-	"README.md":                            1300,
-	"SECURITY.md":                          1700,
+	"AGENTS.md":                            7399,
+	"CONTRIBUTING.md":                      1071,
+	"README.md":                            1120,
+	"SECURITY.md":                          1553,
 	"docs/ARCHITECTURE.md":                 2669,
-	"docs/DAEMON.md":                       7300, // a new page: its words moved from PROTOCOL.md and ARCHITECTURE.md, with room for a first edit
-	"docs/DIVERGENCES.md":                  8000,
-	"docs/EXAMPLES.md":                     1200,
-	"docs/GLOSSARY.md":                     1300,
-	"docs/IMPROVEMENTS.md":                 1700,
-	"docs/INSTALL.md":                      5500,
-	"docs/PROTOCOL.md":                     22334, // decision-040: words moved to the method pages, to INSTALL.md and to UPSTREAM-TRACKING.md
-	"docs/UPSTREAM-TRACKING.md":            6232,  // decision-040: words moved from PROTOCOL.md, net down in the same PR
-	"docs/index.md":                        800,
+	"docs/DAEMON.md":                       7175, // a new page: its words moved from PROTOCOL.md and ARCHITECTURE.md
+	"docs/DIVERGENCES.md":                  7881,
+	"docs/EXAMPLES.md":                     1025,
+	"docs/GLOSSARY.md":                     1297,
+	"docs/IMPROVEMENTS.md":                 1593,
+	"docs/INSTALL.md":                      5344,
+	"docs/PROTOCOL.md":                     22313, // decision-040: words moved to the method pages, to INSTALL.md and to UPSTREAM-TRACKING.md
+	"docs/UPSTREAM-TRACKING.md":            6228,  // decision-040: words moved from PROTOCOL.md, net down in the same PR
+	"docs/index.md":                        661,
 	"docs/protocol/files-extract-tar.md":   2254,
-	"docs/protocol/files-list.md":          500,
-	"docs/protocol/files-read.md":          900,
-	"docs/protocol/files-stat.md":          500,
-	"docs/protocol/files-validate.md":      400,
-	"docs/protocol/git-info.md":            2000,
+	"docs/protocol/files-list.md":          449,
+	"docs/protocol/files-read.md":          825,
+	"docs/protocol/files-stat.md":          435,
+	"docs/protocol/files-validate.md":      365,
+	"docs/protocol/git-info.md":            1856,
 	"docs/protocol/git-list-branches.md":   1000,
-	"docs/protocol/git-status.md":          3186, // decision-040: a move between pages, net down in the same PR
+	"docs/protocol/git-status.md":          3185, // decision-040: a move between pages, net down in the same PR
 	"docs/protocol/git-worktree-create.md": 6951, // decision-050: the trim of the create and remove pages
 	"docs/protocol/git-worktree-remove.md": 4069, // decision-050: the trim of the create and remove pages
-	"docs/protocol/launcher-resolve.md":    1700,
-	"docs/protocol/plugins-prune.md":       1100,
-	"docs/protocol/process-kill.md":        1100,
+	"docs/protocol/launcher-resolve.md":    1626,
+	"docs/protocol/plugins-prune.md":       1093,
+	"docs/protocol/process-kill.md":        967,
 	"docs/protocol/process-killandwait.md": 1000,
-	"docs/protocol/process-reattach.md":    1000,
-	"docs/protocol/process-spawn.md":       3511, // decision-040: a move between pages, net down in the same PR
-	"docs/protocol/process-stdin.md":       900,
-	"docs/protocol/server.md":              1700,
+	"docs/protocol/process-reattach.md":    988,
+	"docs/protocol/process-spawn.md":       3498, // decision-040: a move between pages, net down in the same PR
+	"docs/protocol/process-stdin.md":       895,
+	"docs/protocol/server.md":              1511,
 }
 
 // The limits of a document that docWordLimits does not name.

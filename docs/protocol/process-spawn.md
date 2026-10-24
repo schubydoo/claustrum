@@ -162,13 +162,13 @@ The checks run in this order. They are measured on Linux. Step 5 is measured on 
 5. A `command` that is missing, a folder or not executable gets `fork/exec <command>: <reason>`, as without a launcher. The launcher does not run.
 6. A launcher that does not start gets `-32005`. A missing `#!` interpreter, or a script with Windows CRLF line ends, gives the reason `its interpreter was not found (the program on its #! line, or the loader of an ELF binary; a script saved with Windows CRLF line endings fails this way)`. A 0755 text file with no `#!` gives `exec format error`.
 
-claustrum's own order, not measured on the reference: step 1 comes before step 2, and step 5 comes before the launcher starts. A start failure other than those two gives its errno text. The step 6 frames of claustrum are tested, not measured on a VM.
+claustrum's own order, not measured on the reference: step 1 comes before step 2, and step 5 comes before the launcher starts. A start failure other than those two gives its errno text. The step 6 frames of claustrum are tested, not measured.
 
 A started launcher logs the start line of [Lines of child processes](../DAEMON.md#lines-of-child-processes), which names the first element of `launcher` only. A refusal writes no `[LauncherHandler]` line.
 
 ## A spawn during a shutdown
 
-A spawn that reaches the start of its child after the shutdown began gets no reply. The daemon ends that child at once, also with `-keep-children`. The reference leaves such a child running ([CT-2](../DIVERGENCES.md#ct-2)).
+A spawn that reaches the start of its child after the shutdown began gets no reply. The daemon ends that child at once, also with `-keep-children` ([CT-2](../DIVERGENCES.md#ct-2)). The reference leaves it running (measured on Linux, macOS and Windows).
 
 ## A later daemon start
 
@@ -193,7 +193,7 @@ Unless a rule says otherwise, the rules of this page are measured against `89cb6
 These entries of the divergence catalog apply to this method:
 
 - [CT-1](../DIVERGENCES.md#ct-1): the optional `wantPid` parameter with `pid` and `startTime` in the result.
-- [CT-2](../DIVERGENCES.md#ct-2): the `-keep-children` flag. A child that starts after the shutdown began is ended even with that flag.
+- [CT-2](../DIVERGENCES.md#ct-2): the `-keep-children` flag.
 - [D20](../DIVERGENCES.md#d20): the 50 ms wait in the reap before the `SIGKILL` of a group whose leader reads as gone.
 - [D23](../DIVERGENCES.md#d23): on Windows the environment block of a child is in name order.
 
