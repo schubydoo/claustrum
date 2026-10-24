@@ -16,8 +16,9 @@ names. See [`-install`](INSTALL.md#-install-ensure-the-agent-cli).
 
 ## busy
 
-Adjective. A daemon is busy when the host cleaner reads it as in use. The host
-cleaner sends no `SIGTERM` to a busy daemon. See
+Adjective. A daemon that the host cleaner reads as in use, for example with a
+client connection, is busy. The host cleaner sends no `SIGTERM` to a busy
+daemon. See
 [Host cleaner](DAEMON.md#host-cleaner-off-wire-linux-and-macos).
 
 ## cleaner
@@ -25,8 +26,7 @@ cleaner sends no `SIGTERM` to a busy daemon. See
 Noun. The cleaner, or host cleaner, is a part of the daemon on Linux and macOS,
 for one socket layout only. At intervals it stops orphan Claude Code process
 groups and daemons that are not in use, and it removes stale run directories.
-See
-[Host cleaner](DAEMON.md#host-cleaner-off-wire-linux-and-macos).
+See [Host cleaner](DAEMON.md#host-cleaner-off-wire-linux-and-macos).
 
 ## cli-dir
 
@@ -111,12 +111,12 @@ files. See
 
 ## orphan
 
-Noun. On Linux and macOS an orphan is a child process group whose daemon is
-gone. See
-[Passes, orphans and stale run dirs](DAEMON.md#passes-orphans-and-stale-run-dirs).
-An orphaned, or stranded, daemon is one whose socket path no longer leads to
-it. See
-[Orphan-exit self-probe](DAEMON.md#orphan-exit-self-probe).
+Noun. This term has two uses:
+
+- On Linux and macOS an orphan is a child process group whose daemon is gone.
+  See [Passes, orphans and stale run dirs](DAEMON.md#passes-orphans-and-stale-run-dirs).
+- An orphaned, or stranded, daemon is one whose socket path no longer leads to
+  it. See [Orphan-exit self-probe](DAEMON.md#orphan-exit-self-probe).
 
 ## parity
 
@@ -161,8 +161,8 @@ reference build. See
 ## reference
 
 Noun. The reference is the daemon that claustrum reimplements in a clean room.
-A git SHA identifies each reference build. In "protocol reference" the phrase names the
-document PROTOCOL.md. See [Reference builds](REFERENCE-BUILDS.md).
+A git SHA identifies each reference build. In "protocol reference" the phrase
+names the document PROTOCOL.md. See [Reference builds](REFERENCE-BUILDS.md).
 
 ## refusal
 
@@ -173,8 +173,7 @@ rule, a guard, the OS or another program rejects it. See
 ## registration
 
 Noun. A registration is the entry `<git dir>/worktrees/<name>` of a linked
-worktree. Its `gitdir` record names the `.git` file of the
-worktree. See
+worktree. Its `gitdir` record names the `.git` file of the worktree. See
 [After a failure](protocol/git-worktree-create.md#after-a-failure).
 
 ## run dir
@@ -187,8 +186,8 @@ On Linux and macOS it also holds `daemon.lock` and the child records. See
 
 Noun. This term has two uses:
 
-- The seed is the ignored files that `git.worktree_create` copies into a new
-  worktree. See
+- The seed is the set of ignored files that `git.worktree_create` copies into
+  a new worktree. See
   [The copy of ignored files](protocol/git-worktree-create.md#the-copy-of-ignored-files).
 - A seed is an input from which a fuzz test starts. See
   [IMPROVEMENTS.md](IMPROVEMENTS.md).
@@ -210,8 +209,8 @@ Noun and verb. This term has two uses:
 
 - To stage a file is the git operation that adds a change to the index.
 - A staging file or name is a temporary one that an operation uses until it
-  completes. For example, `-install` writes
-  the CLI to a staging file and then renames it. See
+  completes. For example, `-install` writes the CLI to a staging file and then
+  renames it. See
   [`-install`](INSTALL.md#-install-ensure-the-agent-cli).
 
 ## stale
@@ -224,8 +223,8 @@ directory, and a stale worktree entry. See
 ## stamp
 
 Noun. A stamp is a small piece of data that a program puts on an object to
-identify it. A build stamp identifies the build or the toolchain of a binary. See
-[Reference builds](REFERENCE-BUILDS.md).
+identify it. A build stamp identifies the build or the toolchain of a binary.
+See [Reference builds](REFERENCE-BUILDS.md).
 
 ## state
 
@@ -253,6 +252,6 @@ cannot complete, the daemon adds an undo text to the error. See
 ## wire
 
 Noun. The wire is the byte stream of the JSON-RPC connection between a client
-and the daemon. A behavior that is off the wire
-changes no frame. The wire surface is the set of all the methods and frames that
-a client can see on the wire. See [Transport](PROTOCOL.md#transport).
+and the daemon. A behavior that is off the wire changes no frame. The wire
+surface is the set of all the methods and frames that a client can see on the
+wire. See [Transport](PROTOCOL.md#transport).
