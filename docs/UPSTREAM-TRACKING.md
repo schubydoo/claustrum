@@ -400,7 +400,7 @@ the linked pages. The history of each build is in
   create whose `.git` becomes a file `gitdir: <X>` while it runs (measured on
   Windows). After the start test on a `.git` file that names a missing path,
   claustrum runs a config listing and makes no `.probe`, where `5fd08069` runs a
-  `rev-parse` against `.probe`. The frames are equal (measured on macOS and Windows).
+  `rev-parse` against `.probe` (measured on macOS and Windows), with equal frames.
   See [The settings copy](PROTOCOL.md#the-settings-copy).
 - A remove with a worktree folder that exists lists again after a failed
   listing, as on `5fd08069` (measured on Linux, macOS and Windows). `f6010b97`
