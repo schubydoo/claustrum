@@ -315,8 +315,8 @@ var errDestViewsDiffer = errors.New("is not the entry that the path names")
 // "clean destDir: RemoveAll NUL: path escapes from parent" for the last name
 // NUL, and "RemoveAll dest?: The filename, directory name, or volume label
 // syntax is incorrect." for dest?. For a last name of dots and spaces alone,
-// such as "...", it answers "RemoveAll ...: invalid argument". Nothing changes
-// on disk there.
+// such as "...", it answers "RemoveAll ...: invalid argument". destDir does
+// not change there.
 //
 // A parent folder that the daemon opened and cannot search gives a permission
 // error at that lstat. The answer is then the text of a parent that cannot be

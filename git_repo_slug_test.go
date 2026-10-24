@@ -7,7 +7,7 @@ import (
 )
 
 // Tests for git.info's repoSlug / defaultBranch fields, added by the reference
-// daemon in 7c2f88d. See docs/protocol/git-info.md and docs/UPSTREAM-TRACKING.md.
+// daemon in 7c2f88d. See docs/protocol/git-info.md and docs/REFERENCE-BUILDS.md.
 
 // parseRepoSlug reduces a remote URL to owner/repo. The rule is NOT "the path
 // after the host is exactly two segments", which is what this said until

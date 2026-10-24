@@ -14,10 +14,11 @@ import (
 // opaque pipe name to dial; claustrum, not the client, chooses that name.
 //
 // Like rpc.sock and daemon.token, this file is written atomically before the
-// pipe begins accepting (and before the daemon prints its ready line) and removed
-// on graceful shutdown; it is left behind only on an unclean kill/crash. The
-// fixed name + socket-dir location ARE the discovery contract, so they are
-// deliberately not configurable.
+// pipe begins accepting (and before the daemon prints its ready line). A graceful
+// shutdown removes it if it is still this daemon's own file. It stays after an
+// unclean kill or crash, when its identity could not be recorded, and when the
+// unlink fails. The fixed name + socket-dir location ARE the discovery
+// contract, so they are deliberately not configurable.
 const pipeNameFileName = "rpc.pipe"
 
 // pipeNameFilePath is where rpc.pipe lives: beside the socket, the per-session
@@ -42,10 +43,9 @@ func writePipeNameFile(socket, name string) error {
 	return writeFileViaTemp(createPipeTemp, filepath.Dir(socket), pipeNameFilePath(socket), name)
 }
 
-// removePipeNameFile unlinks rpc.pipe on graceful shutdown, mirroring
-// dropOwnTokenFile: an absent file is silent (the pipe was never started, or
-// shutdown ran twice); any other stat error or a failed unlink is logged.
-// Best-effort — the process is exiting regardless. Safe to call unconditionally.
+// removePipeNameFile unlinks a stale rpc.pipe at start, when this boot serves no
+// pipe (enablePipe). An absent file is silent. Any other stat error or a failed
+// unlink is logged, and the daemon goes on. Safe to call unconditionally.
 func removePipeNameFile(socket string) {
 	path := pipeNameFilePath(socket)
 	if _, err := os.Stat(path); err != nil {
