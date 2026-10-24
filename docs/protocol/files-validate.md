@@ -2,7 +2,7 @@
 
 `files.validate` says whether a path exists and whether it is a directory. It reports a path that the daemon cannot examine in the response, not as a JSON-RPC error.
 
-claustrum is built to answer as the reference does.
+claustrum is built to answer as the reference does. The error texts of this page match the reference as measured on Linux against a build up to `5fd08069`.
 
 ## Request
 

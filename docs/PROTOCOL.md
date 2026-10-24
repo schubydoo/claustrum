@@ -167,9 +167,8 @@ under [Stream notifications](#stream-notifications), is the wire contract.
 
 ### Error-string catalogue
 
-The method-level error texts, verbatim. A text that only `git.worktree_create` or
-only `git.worktree_remove` sends is on the page of that method, and the row of the
-method links there. The method pages under `docs/protocol/` give the trigger and
+The method-level error texts, verbatim. A text that only one method sends is on the
+page of that method, and a row of the method links there. The method pages under `docs/protocol/` give the trigger and
 the result shape. A text with no code and no
 "in `error`" note is a JSON-RPC error `-32602`. "in `error`" is the `error` member of
 the result. A row that says "in the frame of" a method, or "The same frames", is
@@ -188,49 +187,20 @@ that names systems without "measured" holds on each one. The [reference build hi
 | protocol | `Invalid params` | -32602 (absent/mistyped `params`) |
 | protocol | `Unauthorized: invalid or missing auth token` | -32001 |
 | protocol | `recovered panic: <v>` | -32603 (claustrum-only, see [Handler panic recovery](#handler-panic-recovery)) |
-| files.stat | `stat <path>: <reason>` | -32603 (any stat failure other than ENOENT) |
-| files.read | `open <path>: <reason>` | -32603 (any open failure other than ENOENT) |
-| files.read | `files.read: path is a directory` | |
-| files.read | `files.read: file exceeds maxBytes` | |
-| files.read | `files.read: not a regular file` | -32602. The path opens and is not a regular file. See [files.read](protocol/files-read.md) |
-| files.list | `open …: no such file or directory` | -32603 (missing dir) |
-| files.list | `open <p>: not a directory` | -32603. The path is not a directory |
-| files.list | `open <p>: permission denied` | -32603 (an unreadable directory) |
-| files.validate | `Path does not exist` | in `error` field, `valid:false` |
-| files.extract_tar | `archivePath and destDir are required` | |
-| files.extract_tar | `destDir must be an absolute, non-root path: …` | in `error` field, for a relative `destDir`. claustrum also refuses a file system root with it (not measured) |
-| files.extract_tar | `destDir must not be or contain the home directory: …` | D2, in `error` field |
-| files.extract_tar | `open archive: …` | in `error` field (the archive cannot be opened) |
-| files.extract_tar | `gzip: …` | in `error` field (a bad gzip header) |
-| files.extract_tar | `tar read: …` | in `error` field (an entry that the tar reader cannot read) |
-| files.extract_tar | `write <entry>: …` | in `error` field (the content of a file cannot be copied) |
-| files.extract_tar | `unsafe path in archive: <entry>` | in `error` field (zip slip) |
-| files.extract_tar | `unsupported tar entry type <c>: <entry>` | in `error` field |
-| files.extract_tar | `extraction size limit exceeded` | D3 opt-in, in `error` field |
-| files.extract_tar | `clean destDir: RemoveAll <name>: …` | in `error` field. The daemon cannot delete the old `destDir` or an entry in it. `<name>` is the last name of `destDir` |
-| files.extract_tar | `mkdir parent: mkdir <path>: …` | in `error` field. The daemon cannot create a folder above `destDir`. `<path>` is the whole path of that folder. The text `mkdir parent <entry>: …` below is for an archive entry |
-| files.extract_tar | `mkdir destDir: mkdirat <name>: …` | in `error` field. The daemon cannot create `destDir` |
-| files.extract_tar | `clean destDir: "<name>" is not the entry that the path names` / `mkdir destDir: "<name>" is not …` | in `error` field. claustrum's own text: the path of `destDir` and its last name in the parent folder do not name one entry. See [D2](DIVERGENCES.md#d2) |
-| files.extract_tar | `write .synced: …` | in `error` field |
-| files.extract_tar | `open parent: open <parent>: …` | in `error` field. The daemon cannot open the folder that holds `destDir` |
-| files.extract_tar | `open destDir: openat <name>: …` | in `error` field. The daemon cannot open the new `destDir` |
-| files.extract_tar | `open destDir: "<name>" could not be examined (statat .: permission denied)` | in `error` field. The daemon cannot search the new `destDir`. See [files.extract_tar](protocol/files-extract-tar.md) |
-| files.extract_tar | `open destDir: "<name>" changed while it was opened` | in `error` field. claustrum's own text: another process replaced `destDir`. See [D2](DIVERGENCES.md#d2) |
-| files.extract_tar | `create <entry>: openat <place>: file exists` | in `error` field. A directory is at the place of a file entry. On Windows the text ends with `is a directory`. `<place>` is relative to `destDir` |
-| files.extract_tar | `mkdir parent <entry>: mkdirat <place>: file exists` | in `error` field. A file is at the place of the directory of a file entry. Match the prefix |
-| files.extract_tar | `mkdir <entry>: mkdirat <place>: file exists` | in `error` field. A file is at the place of a directory entry |
-| git.status | `baseRepo is required` | -32602 |
-| git.status / git.list_branches | `<go error>`, for example `exit status 128` | -32603 (git failed, stdout parse) |
+| files.stat | The texts that only this method sends | On the page: [files.stat → Errors](protocol/files-stat.md#errors) |
+| files.read | The texts that only this method sends | On the page: [files.read → Errors](protocol/files-read.md#errors) |
+| files.list | The texts that only this method sends | On the page: [files.list → Errors](protocol/files-list.md#errors) |
+| files.validate | The texts that only this method sends | On the page: [files.validate → Response](protocol/files-validate.md#response) |
+| files.extract_tar | The texts that only this method sends | On the page: [files.extract_tar → Response](protocol/files-extract-tar.md#response) |
+| git.status | The texts that only this method sends | On the page: [git.status → Errors](protocol/git-status.md#errors) |
+| git.status / git.list_branches | `<go error>`, for example `exit status 128` | -32603. The git call failed |
 | git.list_branches / git.info / git.status / git.worktree_create | `git took too long: Claude stopped git <subcommand> after 2 minutes; try again` | -32603 on the other methods. Create puts it after the text of the stopped step, as `git worktree add failed: ` or the `mkdir_failed` text of the parent step. A stopped repository test gets it alone, with `worktree_add_failed`. While a request with `"shadowDirOff":true` runs, the text says `after 30 minutes` (claustrum's own). See [Time limits of git calls](#time-limits-of-git-calls) |
 | the four methods | `config-defined hooks could not be pinned off; git not run: listing the configuration in force: git took too long: Claude stopped git config after 30 seconds; try again` | -32603 on the other methods. Create: in `error`, `worktree_add_failed`, after `git worktree add failed (checkout): ` for the checkout listing |
 | the four methods | `this repository's git config cannot be used: git did not finish reading "<path>" within 30 seconds; try again` | -32603 on the other methods. Create: in `error`, `worktree_add_failed` |
-| git.status | `<file>: not a regular file` | -32603. claustrum's own text, from the copy into the temporary git folder after the gate passed. `<file>` is `info/sparse-checkout` when that entry is a folder or a FIFO. The reference is not measured there |
-| git.status | `<file> is larger than <n> bytes` | -32603. claustrum's own text, for a copied file over its bound, also one that grew after the gate. `<n>` is 1073741824 for `index`, a `sharedindex.<40 or 64 hex>` file, `info/sparse-checkout` and a reftable file, and 1048576 for `HEAD` and `config.worktree`. The reference is not measured there |
-| git.status | `<os error>` of the copy or of the temporary folder, for example `openat index: permission denied` or `stat <dir>: no such file or directory` | -32603. The raw Go error when a file of the entry cannot be copied, or a file of the temporary git folder cannot be made. With `"shadowDirOff":true`, and on a server with no run folder, a temporary folder that cannot be made answers the raw Go error too. The reference is not measured there. In the states `shadow` and `fallback-git` a `.gitdir-<n>` that cannot be made answers `{"isRepo":false,"clean":false}`: see [git.status → Errors](protocol/git-status.md#errors) |
 | git.* | `config-defined hooks could not be pinned off; git not run: inherited GIT_CONFIG_COUNT "<value>" is not a count` | in the frame of each method, when the daemon's own `GIT_CONFIG_COUNT` does not parse. See [The daemon's own git environment](#the-daemons-own-git-environment) |
 | git.* | `config-defined hooks could not be pinned off; git not run: inherited GIT_CONFIG pair <n> is incomplete` | in the frame of each method, when a pair below the daemon's `GIT_CONFIG_COUNT` is not set. See [The daemon's own git environment](#the-daemons-own-git-environment) |
-| git.* | `config-defined hooks could not be pinned off; git not run: listing the configuration in force: exit status 128: <git text>` | in the frame of each method, for a `GIT_CONFIG_KEY_<n>` of the daemon that git cannot read. A folder that holds no repository gets it too. Linux, macOS and Windows. See [The daemon's own git environment](#the-daemons-own-git-environment) |
-| git.* | `config-defined hooks could not be pinned off; git not run: listing the configuration in force: fork/exec <git.exe path>: The directory name is invalid.` | Windows only. In the frame of `git.info`, `git.list_branches`, `git.status` and `git.worktree_create`. The `path` of the first two, or the `baseRepo` of the last two, exists and git cannot start in it. That is a regular file, a file symlink or a folder with a path of 296 characters. The path `NUL` and a file name with one more dot at its end get it too. Only `git.info` is measured for the symlink, the long folder, `NUL` and the dot. See [Git-directory trust check](#git-directory-trust-check) |
+| git.* | `config-defined hooks could not be pinned off; git not run: listing the configuration in force: exit status 128: <git text>` | in the frame of each method, for a `GIT_CONFIG_KEY_<n>` of the daemon that git cannot read. Linux, macOS and Windows. See [The daemon's own git environment](#the-daemons-own-git-environment) |
+| git.* | `config-defined hooks could not be pinned off; git not run: listing the configuration in force: fork/exec <git.exe path>: The directory name is invalid.` | Windows only. In the frame of `git.info`, `git.list_branches`, `git.status` and `git.worktree_create`. The `path` of the first two, or the `baseRepo` of the last two, exists and git cannot start in it, for example a regular file. See [Git-directory trust check](#git-directory-trust-check) |
 | git.* | `git cannot run on this host; git not run: <exec error>: <git text>` | in the frame of each method, when the configuration listing fails and `git version` fails too. The exec error and the text are those of `git version`. Linux, macOS and Windows. It also follows a failed read of the test repository's config in [the start test](#the-start-test), and a failed [call about the repository](#the-call-about-the-repository), when `git version` fails too. For `git.worktree_remove` see the table in [Git-directory trust check](#git-directory-trust-check) |
 | git.* | `this repository's git config cannot be used: <detail>` | -32603 on `git.info`, `git.status` and `git.list_branches`, and in the frame of `git.worktree_create` and `git.worktree_remove`. The details are in [Repository config refusals](#repository-config-refusals) |
 | git.* | `a file in this repository's .git directory cannot be used: <detail>` | The same frames. See [Repository config refusals](#repository-config-refusals) |
@@ -254,15 +224,11 @@ that names systems without "measured" holds on each one. The [reference build hi
 | git.worktree_create / git.worktree_remove | `refusing to <verb> worktree: <root> resolves to the filesystem root; …` | |
 | git.worktree_create / git.worktree_remove | `refusing to <verb> worktree: <root> passes through too many symbolic links (a loop?)` | Create: `errorCode:"unsafe_path"`. Linux and macOS, with `worktreeRoot`. A symlink loop or too many links lie in the path of the root. claustrum uses the kernel limit (not measured). `<root>` is `worktreeRoot` without a trailing slash. claustrum also drops a `//` here (not measured). Nothing is created or removed |
 | git.worktree_remove | The texts that only this method sends | On the page: [git.worktree_remove → Error texts](protocol/git-worktree-remove.md#error-texts) |
-| process.spawn | `Process ID is required` / `Command is required` | |
-| process.spawn | `command must be an absolute path when a launcher is given` | with a `launcher` param |
-| process.spawn | `the managed launcher cannot be used: <reason>` | -32004. The reasons are the argv[0] and no-launcher [texts of launcher.resolve](protocol/launcher-resolve.md#unusable-reasons), and `a launcher cannot be applied on a Windows host` |
-| process.spawn | `the managed launcher <path> could not be started: <reason>` | -32005 |
-| launcher.resolve | `cliPath is required` | `{}`, `null` params, a `null` or empty `cliPath`, or a wrong key |
-| process.stdin | `Invalid base64 data` / `Process not found` / `Process not running` | [process.stdin → Errors](protocol/process-stdin.md#errors) gives the order of the tests |
-| process.stdin | `stdin offset gap: offset ahead of applied bytes` | -32003 |
-| process.stdin | `stdin backpressure: queue full` | -32002 (queue full, ~16 MiB) |
-| process.killAndWait / process.reattach | `Process ID is required` / `Invalid params` | |
+| process.spawn | The texts that only this method sends | On the page: [process.spawn → Response](protocol/process-spawn.md#response) |
+| launcher.resolve | The texts that only this method sends | On the page: [launcher.resolve → Request](protocol/launcher-resolve.md#request) |
+| process.stdin | The texts that only this method sends | On the page: [process.stdin → Errors](protocol/process-stdin.md#errors) |
+| process.spawn / process.killAndWait / process.reattach | `Process ID is required` | `id` is absent or empty |
+| plugins.prune | The texts that only this method sends | On the page: [plugins.prune → Errors](protocol/plugins-prune.md#errors) |
 
 `-install` reports failures inside the `__INSTALL_RESULT__` facts line as
 `cliError` strings, not through an exit code. They are catalogued in
