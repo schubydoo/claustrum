@@ -24,8 +24,10 @@ A rule that is not marked claustrum's own is measured against `89cb6289`. The
 prune, the sweeps, the blob, the rename text and the retry and the Linux cache-hit
 file test are measured against `5fd08069`. The checksum order, the raw `-cli-dir`
 text step and the `is a directory` text are measured on `5fd08069`, and `89cb6289`
-is not measured there. A rule from another build names it. Both builds ran on Linux, macOS and Windows VMs, and a rule
-that names one system was measured there only.
+is not measured there. A rule from another build names it. Both builds ran on
+Linux, macOS and Windows VMs, and a rule that names one system was measured
+there only. The `89cb6289` section of
+[REFERENCE-BUILDS.md](REFERENCE-BUILDS.md) has the history of these rules.
 
 | Flag | Default | Meaning |
 |---|---|---|

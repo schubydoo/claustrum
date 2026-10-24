@@ -19,7 +19,7 @@ more dependency goes into Windows builds only. It is
 | `handlers/prune.go` | the sole non-`main` package: `handlers.PruneParams`, so `plugins.prune`'s `-32602` body carries the reference's `handlers.PruneParams` type name byte-for-byte |
 | `process.go` | process manager: registry, per-process seq, replay buffer, subscribers. It captures the immutable `pid`/`startTime` pair behind the CT-1 `wantPid` opt-in |
 | `bridge.go` | `-bridge` relay and `-stop` |
-| `install.go` | `-install`: download/verify/extract/prune + `__INSTALL_RESULT__` facts |
+| `install.go` | `-install`: download/extract/verify/prune + `__INSTALL_RESULT__` facts |
 | `logging.go` | leveled stderr logger (`CLAUSTRUM_LOG_LEVEL`). The level tag precedes the byte-intact `[Component]` prefixes |
 | `metrics.go` | opt-in Prometheus counters at `/metrics` (`-metrics-addr`, with no listener by default). Counting runs always, as atomics |
 | `wirelog.go` | opt-in `-wire-log` frame capture. A pure side channel over already-marshaled bytes, off by default, with by-key credential redaction |
@@ -43,9 +43,10 @@ Every OS serves the same JSON-RPC methods. Only the OS-split files
 ### 1 · CLI-version manager (`-install`)
 
 This mode makes sure the pinned `claude` CLI is present under `-cli-dir`.
-Claustrum decompresses the source with zstd to a temp path, verifies the
-checksum, applies `chmod 0755` and renames the file into place atomically. An
-interrupted install never leaves a half-written CLI.
+Claustrum decompresses the source with zstd to a temp path. It verifies a
+supplied `-cli-checksum`, always on `-cli-url`. Then it applies `chmod 0755` and
+renames the file into place atomically. An interrupted install never leaves a
+half-written CLI.
 [-install and -probe-cli](INSTALL.md) has the sources, the bounds, every
 delete, the prune and the `__INSTALL_RESULT__` facts.
 
