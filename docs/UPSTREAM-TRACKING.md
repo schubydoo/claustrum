@@ -54,6 +54,7 @@ The client runs `--version` on `~/.claude/remote/srv/<pinned-sha>/server`. For a
 `--version` output that matches `/claude-ssh\s+(\S+)/` with the pinned SHA as that
 token, it skips the upload. The stock claustrum line holds no such match, so the client sends the daemon again by SFTP every
 session. That is not drift: the version line is CLI stdout, not a frame. The
+daemon that runs at the end is still claustrum. The
 opt-in `version-override` ([CT-3](DIVERGENCES.md#ct-3)) stops the re-upload. See
 [PROTOCOL.md → `-version`](PROTOCOL.md#-version).
 
@@ -116,7 +117,8 @@ of the real desktop client:
   token and host paths. Never commit one.
 
 The last capture ran against `8de85faa`, a build well behind the current
-baseline, `5fd08069`. Run a capture again for a build that changes `process.*`
+baseline, `5fd08069`. Its result is in
+[REFERENCE-BUILDS.md](REFERENCE-BUILDS.md#8de85faaa11694321e937499a18c7ab88f37c76c-2026-05-21). Run a capture again for a build that changes `process.*`
 behavior that the synthetic battery cannot model (real reconnect timing,
 multi-process reattach).
 
@@ -580,13 +582,13 @@ them after each Go bump.
 ### Windows junctions in `filepath.EvalSymlinks`
 
 On Windows, the walk of `filepath.EvalSymlinks` fails at a junction before the
-last component. Go 1.23 caused this: it turned on the `winsymlink` GODEBUG
-setting (from the Go source). These answers rest on that failure:
+last component, since Go 1.23 turned on the `winsymlink` GODEBUG setting (from
+the Go source, not measured). These answers rest on that failure:
 
-- The trust-root refusal of `git.worktree_create` and `git.worktree_remove` for a
-  junction before the last component of a `baseRepo` that exists (measured on
-  Windows).
-- The `unresolvable` refusal of `git.status` (`baseRepo`) and
+- The trust-root refusal, claustrum's own, of `git.worktree_create` and
+  `git.worktree_remove` for a junction before the last component of a `baseRepo`
+  that exists (measured on Windows).
+- The `"isRepo": false` answer of `git.status` (`baseRepo`) and
   `git.list_branches` (`path`) for `<dir>\<junction>\T` (from the code).
 - The `git.info` answers for a path with a junction before its last component
   (from the code). These are `root`, `repo`, `repoSlug` and the `GIT_COMMON_DIR`
