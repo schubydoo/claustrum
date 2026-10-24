@@ -198,8 +198,8 @@ The readiness banner `Claustrum remote server listening on <socket> (pid <pid>,
 instance <id>)` goes to stdout with no prefix. The leveled logger in
 [`logging.go`](https://github.com/schubydoo/claustrum/blob/main/logging.go)
 writes to stderr through the stdlib `log` package, which adds a
-`2006/01/02 15:04:05` timestamp. The logger puts a level tag (`DEBUG`, `INFO`, `WARN` or `ERROR`) before the `[Component]` prefix,
-as in `INFO  [Server] New connection from: …`. So a grep for a prefix such as
+`2006/01/02 15:04:05` timestamp. The logger puts a level tag (`DEBUG`, `INFO`,
+`WARN` or `ERROR`) before the `[Component]` prefix, as in `INFO  [Server] New connection from: …`. So a grep for a prefix such as
 `[Server]` or `[process.Manager]` keeps matching.
 
 `CLAUSTRUM_LOG_LEVEL` (`debug`, `info`, `warn` or `error`) sets the threshold
@@ -227,24 +227,29 @@ them. Three of them carry rules of these docs:
   "(opt-in)" convention: a flag and a configuration key, because the key is the
   reachable knob.
 
+D6 also rests on a driver claim with no fixture: what Desktop sends as
+`-cli-version`.
+
 Each claim has a fixture that runs against the driver, with a control that can
 come out wrong. Only the argv fixture was run.
 
 | claim | fixture | control that must fire |
 |---|---|---|
 | `cliError` | two `-install` failures whose messages straddle the disk-full shape. Observe a retry or a terminal report | a real disk-full failure shows as terminal with an actionable code |
-| `libc` | a stub `ldd` that prints a musl banner, so the daemon reports `musl`. The exit code of `ldd` is not read, and its output outranks the loader glob. See which build the driver fetches | a glibc host fetches the glibc build, so the musl arm differs from the default |
+| `libc` | a stub `ldd` that prints a musl banner, so the daemon reports `musl`. The exit code of `ldd` is not read, and its output outranks the loader glob ([REFERENCE-BUILDS.md](REFERENCE-BUILDS.md)). See which build the driver fetches | a glibc host fetches the glibc build, so the musl arm differs from the default |
 | argv | find where the shipped client builds the daemon's argv. Check the setup UI, a capture of the argv, and Desktop's configuration files | an argv built from a setting or a configuration file makes the claim false |
 
-The argv claim holds (from the shipped client). Desktop builds the daemon's argv
-from a fixed set of flags. Only the operands change: the download URL, its
-checksum and the uploaded blob path. On a cold start Desktop ran `-install` bare,
-then with `-cli-url` and `-cli-checksum`. Once, with that download forced to fail, it uploaded the blob over
-SFTP and ran `-install` with `-cli-zst`.
+The argv claim holds, by inspection of the shipped client. Desktop builds the
+daemon's argv from a fixed set of flags. Only the operands change: the download
+URL, its checksum and the uploaded blob path. Over two cold starts on one host,
+Desktop ran `-install` bare, then with `-cli-url` and `-cli-checksum`. Once,
+with that download forced to fail, it uploaded the blob over SFTP and ran
+`-install` with `-cli-zst`.
 
 The argv claim underpins D3, D10 and D12. The `cliError` claim underpins D10.
-This list is kept by hand and is not complete. Each entry in
-[DIVERGENCES.md](DIVERGENCES.md) has its own reopen trigger.
+`libc` underpins no current entry. This list is kept by hand and is not
+complete. Each entry in [DIVERGENCES.md](DIVERGENCES.md) has its own reopen
+trigger.
 
 If someone finds a route to the daemon's argv, or a Desktop release adds one,
 the argv claim reopens. Such a route is a new configuration field, or a
