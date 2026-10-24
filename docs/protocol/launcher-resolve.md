@@ -60,7 +60,7 @@ The settings folder is `/etc/claude-code` on Linux and `/Library/Application Sup
 
 ### The test variable
 
-A non-empty `CLAUDE_SSH_E2E_MANAGED_SETTINGS_DIR` in the daemon's environment names another folder. The daemon reads it only if the system folder has neither the base file nor a `.json` drop-in, a hidden one included. Else it logs this line once per daemon. Two resolves are measured. That it stays at one line past the second is claustrum's own:
+A non-empty `CLAUDE_SSH_E2E_MANAGED_SETTINGS_DIR` in the daemon's environment names another folder. The daemon reads it only if the system folder has neither the base file nor a `.json` drop-in, a hidden one included. Else it logs this line once per daemon. From the third resolve on, that one line is claustrum's own:
 
 ```text
 [launcher] CLAUDE_SSH_E2E_MANAGED_SETTINGS_DIR ignored: <system folder> holds this host's policy
@@ -113,7 +113,7 @@ The log line writes these texts raw. The frame escapes them as above.
 
 ## The launcher checks
 
-`process.spawn` runs these same checks, with its command in place of `cliPath`. On Windows a spawn with a launcher is refused before them.
+`process.spawn` runs these same checks, with its command in place of `cliPath`, after [its own first steps](process-spawn.md#the-managed-launcher).
 
 - The checks test argv[0] only. The launcher arguments are not tested against files.
 - The own-path check is a string compare. It comes before the absolute check and the existence check. So `c` with the `cliPath` `c` gets the own-path text, and so does a missing `/opt/claude/cli` with that `cliPath`.
@@ -141,6 +141,6 @@ A repeat of the same line writes nothing. A usable answer between two equal refu
 
 ## Differences from the reference
 
-No entry of the [divergence catalog](../DIVERGENCES.md) applies to this method. A rule that is not marked "claustrum's own" is measured against `89cb6289` on a Linux VM, and a rule that names macOS or Windows was measured there. A rule marked "claustrum's own" is not measured on the reference.
+No entry of the [divergence catalog](../DIVERGENCES.md) applies to this method. A rule that is not marked "claustrum's own" is measured against `89cb6289` on Linux, and a rule that names macOS or Windows was measured there. A rule marked "claustrum's own" is not measured on the reference.
 
 The measured cells behind each rule are in the tests and in the [reference build history](../REFERENCE-BUILDS.md).

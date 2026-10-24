@@ -203,7 +203,9 @@ other differences.
 **Measured details.** With nothing set and with an empty daemon `GIT_CONFIG_KEY_0`, `89cb6289` answered
 `could not check whether <worktreePath> is locked (its registrations could not be
 examined); retry`, and the folder and the file stayed (cells CaP0 and CaP3 on Linux
-and macOS VMs, CabP0 and CabP3 with a `branchName` on the Linux VM).
+and macOS VMs, CabP0 and CabP3 with a `branchName` on the Linux VM). The
+`startedAt` of `server.capabilities` is within 1.5 ms of the listen call (Linux
+VM).
 
 **Divergences.** D20, D21, D22, D23 and D24 are new in this work, and D11 is
 retired. D2 gained its `-install` refusal of a home folder (PR 451).
