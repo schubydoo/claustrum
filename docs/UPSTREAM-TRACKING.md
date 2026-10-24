@@ -262,9 +262,17 @@ dropped silently.
 
 `files.read` follows `5fd08069`: the refusal `-32602 files.read: not a regular
 file`, and an `open <path>: …` text where the open fails. Against `89cb6289` these
-are not drift. That build reads such a path, waits, or answers another text: `stat
-<path>: …` on Linux and macOS, `CreateFile <path>: …` or `Stat <path>: …` on
-Windows, and `path is a directory` or `file exceeds maxBytes` where the open fails.
+are not drift. That build reads such a path, waits, or answers another text. In
+the measured cases its texts are these:
+
+- On Linux and macOS, `stat <path>: …` for a symlink loop, a `/` or a further
+  component after a regular file, a name that is too long, a NUL byte, and a folder that the
+  daemon cannot search.
+- On Windows, `CreateFile <path>: …` for `CON`, `CONIN$`, `CONOUT$`, a `\` after a
+  regular file, and a name that is too long. A NUL byte gets `Stat <path>: …`.
+- On each system, where the open fails, `path is a directory` for a directory and
+  `file exceeds maxBytes` for a file over the limit.
+
 An `open <path>: resource temporarily unavailable` for a regular file that another
 process holds under a lease is not drift either. It comes from the `O_NONBLOCK`
 open of claustrum (from the code, not measured). See
@@ -468,7 +476,7 @@ Unless an item names another build, the daemon items below are measured against
   and [Windows child trees](protocol/process-kill.md#windows-child-trees).
 - On Linux and macOS a daemon accepts no connection while the reap of its start
   waits. A connect then gets `ECONNREFUSED` or `ENOENT`, and `daemon.lock` holds
-  the short record. That is not drift. See
+  `pid`, `role` and `node` only. That is not drift. See
   [The bind after the reap](PROTOCOL.md#the-bind-after-the-reap-linux-and-macos).
 - On Linux and macOS records and both identity markers on a socket that is not
   `run/<id>/rpc.sock` are not drift. Records that stay after a start past 128
@@ -498,12 +506,13 @@ Unless an item names another build, the daemon items below are measured against
   [The login-shell PATH](PROTOCOL.md#the-login-shell-path-linux-and-macos).
 - A `-serve` launcher that gives up after 12 s is not drift. That holds also for a
   daemon that ends before its bind. See [The launcher wait](PROTOCOL.md#the-launcher-wait).
-  On Linux and macOS a daemon that gets `SIGTERM` or `SIGINT` during its start
-  binds and then exits 0, and that is not drift. A daemon that a second daemon ends with `SIGKILL` during
+  A daemon that gets `SIGTERM` or `SIGINT` during its start binds and then exits
+  0, and that is not drift (measured on Linux, and on macOS for a `SIGTERM` from a
+  second daemon). A daemon that a second daemon ends with `SIGKILL` during
   its start is not drift (measured on Linux). See
   [Eviction of a live holder](PROTOCOL.md#eviction-of-a-live-holder).
-- On Linux and macOS the order of two or more new caller keys in a child
-  environment is not fixed. That is not drift. See
+- The order of two or more new caller keys in a child environment is not fixed,
+  as on `89cb6289` (measured on Linux). That is not drift. See
   [The environment of the child](protocol/process-spawn.md#the-environment-of-the-child).
 - On Windows the environment block of a child is in name order. `f6010b97` and
   `89cb6289` keep the order of the daemon, then `CLAUDE_SSH_DAEMON_CHILD=1`. On
@@ -524,9 +533,9 @@ Unless an item names another build, the daemon items below are measured against
     - On Linux and macOS, after a `-stop` during the wait of a supersede,
       claustrum can log the exit line of the old process and the `supersedes`
       line. `89cb6289` logs neither.
-    - On Linux `89cb6289` unlinks a child record more than once at a stop or a
-      kill, and it unlinks a record that it never wrote. The files left are the
-      same.
+    - On Linux and macOS `89cb6289` unlinks a child record up to three times at
+      a stop or a kill, and claustrum unlinks it once. On Linux `89cb6289` also
+      unlinks a record that it never wrote. The files left are the same.
     - On macOS `89cb6289` runs one `ps` at the daemon start and one for each
       spawn. claustrum runs none at the start and three for each spawn.
     - With a zero-byte `-token-file`, `89cb6289` logs `claude-ssh: empty token in

@@ -149,7 +149,7 @@ Neither set includes `.claude/worktrees` or the session state of Claude under `.
 
 Each copy is a new file with mode `0666` less the umask, not the mode of its source. The daemon skips symbolic links. A copy does not replace a file or a link that the checkout made.
 
-A copy that fails does not fail the request. If the deadline of `timeoutMs` expires during the copy, the request fails with `timeout`. A scan of ignored files stops at 10 minutes ([Time limits of git calls](../PROTOCOL.md#time-limits-of-git-calls)). Then nothing is copied. The skip of the `.claude/` files is claustrum's own.
+A copy that fails does not fail the request. If the deadline of `timeoutMs` expires during the copy, the request fails with `timeout`. A scan of ignored files stops at 10 minutes ([Time limits of git calls](../PROTOCOL.md#time-limits-of-git-calls)). Then nothing is copied. After a stopped scan the `.claude/` copy does not run either (claustrum's own, not measured).
 
 ## Differences by system
 

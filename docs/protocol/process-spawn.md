@@ -63,7 +63,7 @@ One failure ends another process first: a session spawn whose command exists and
 The child gets the environment of the daemon with the `env` of the request merged over it. On Linux and macOS the entries come in this order:
 
 1. The entries of the daemon, with `CLAUDE_SSH_DAEMON_CHILD=1` last. A caller key that the daemon has replaces that entry in place. An empty caller value of `CLAUDE_SSH_DAEMON_CHILD` stays empty (measured on Linux).
-2. The new caller keys. Two or more of them come in no fixed order. With three new keys, the reference and claustrum each gave a rotation of the request order. More keys are not measured.
+2. The new caller keys. Two or more of them come in no fixed order. With three new keys, the reference and claustrum each gave a rotation of the request order (measured on Linux). More keys are not measured.
 3. `SSH_AUTH_SOCK` from the hand-off below. Without that step there is no entry here.
 4. `CLAUDE_SSH_RUN_DIR` and then `CLAUDE_SSH_CHILD`, the two identity markers below. A caller value of either does not reach the child.
 
