@@ -93,6 +93,8 @@ claustrum -version
 claustrum -probe-cli <cli>                              # probe <cli> --version (30s direct, 33s via a managed launcher): empty=runs / __CLI_HUNG__ / __CLI_BAD__ / __CLI_LAUNCHER__; exit 0
 ```
 
+Add `-probe-retries <n>` to `-probe-cli` to retry a hung probe up to `n` times before it reports `__CLI_HUNG__`.
+
 ### Start a daemon and talk to it
 
 ```sh
