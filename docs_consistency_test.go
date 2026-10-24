@@ -606,7 +606,7 @@ var docWordLimits = map[string]int{
 	"docs/GLOSSARY.md":                     1300,
 	"docs/IMPROVEMENTS.md":                 2300,
 	"docs/PROTOCOL.md":                     44700,
-	"docs/UPSTREAM-TRACKING.md":            7200,
+	"docs/UPSTREAM-TRACKING.md":            6600,
 	"docs/index.md":                        800,
 	"docs/protocol/files-extract-tar.md":   2269, // decision-040: a move between pages, net down in the same PR
 	"docs/protocol/files-list.md":          500,

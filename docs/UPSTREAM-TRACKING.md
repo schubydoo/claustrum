@@ -233,12 +233,11 @@ Check those before you conclude that something is drift.
 
 An opt-in key that is *present* is not a deadline that is *in force*. A mistyped or
 inert value leaves the divergence off, and the parity behavior that results reads
-exactly like drift. When a symptom matches a D-shaped divergence on a stock
-claustrum, check for the key or flag first. Then make sure that the value parses to
+like drift. So check for the key or flag first, and check that its value parses to
 a positive duration. One knob takes a duration: D12 (`cli-download-timeout`),
-which logs under `[Install]`. The deprecated `git-timeout`, `cli-probe-timeout`
-and `libc-probe-timeout` set nothing, whatever their value. A flag value that does
-not parse still exits 2, as in the table:
+which logs under `[Install]`. The deprecated `git-timeout`, `cli-probe-timeout`,
+`libc-probe-timeout` and `files-read-regular-only` set nothing, whatever their
+value. A flag value that does not parse still exits 2:
 
 | Value shape | Configuration key in `claustrum.conf` | `-…` flag on the argv |
 |-------------|--------------------------------|-----------------------|
@@ -246,45 +245,28 @@ not parse still exits 2, as in the table:
 | Negative (`= -1s`) | Dropped silently, with no log and no deadline | Normalized to 0 with an `[Install]` stderr warning, then runs normally (exit 0, facts line printed) |
 | Any zero (`0`, `+0`, `-0`, `0s`, `-0m`, `-0.4ns`) | Accepted. It reads as opted-in but the deadline stays off | Accepted, with the deadline off |
 
-The configuration path is silent, and that silence is the shape that looks like
-drift. A missing `__INSTALL_RESULT__` does not by itself mean a malformed flag.
-`-install` prints no facts line while it waits for a CLI that does not answer.
-That wait ends at 30 s on a cache hit and at 120 s after an install. Through a
-usable managed launcher it ends at 33 s and at 123 s. The
-facts line then carries `"cliUnresponsive":true`. That is parity. Discriminate on
-exit. Exit 2 with `parse error` on stderr is the bad flag. Exit 2 with
-`cannot resolve home directory` on stderr is a missing home folder.
+The configuration path is silent, and that silence looks like drift. A missing
+`__INSTALL_RESULT__` line does not by itself mean a bad flag. `-install` prints no
+facts line while it waits for a CLI that does not answer. That is parity, and the
+facts line then carries `"cliUnresponsive":true`
+([-install](PROTOCOL.md#-install-ensure-the-agent-cli) has the bounds). Tell the
+cases apart on stderr. `parse error` with exit 2 is a bad flag. `cannot resolve
+home directory` is a missing home folder.
 
-The deprecated `files-read-regular-only` (retired D4) sets nothing, whatever
-its value. It is a bool, not a duration. Its flag forms parse like this:
+`files-read-regular-only` is a bool. `-files-read-regular-only=maybe` exits 2 with
+the usage. In the space form, `-files-read-regular-only maybe`, the bool does not
+take `maybe`. It becomes a positional, parsing stops, and every later flag is
+dropped silently.
 
-- Flag `=value` form unrecognized (`-files-read-regular-only=maybe`): `flag.Bool`
-  rejects it with usage + exit 2.
-- Flag space form (`-files-read-regular-only maybe`): a bool does not consume
-  the next arg. `maybe` becomes a positional and parsing stops. That silently
-  drops every later flag.
-
-A `-32602 files.read: not a regular file` on a stock claustrum is not drift. It
-is the rule of `5fd08069`. Against `89cb6289` the same request differs: that
-build reads the path, waits, or answers another error. An `open <path>: …` text
-of `files.read` is not drift in these measured cases, where `89cb6289` has
-another text:
-
-- Linux and macOS, `stat <path>: …` on `89cb6289`: a symlink loop, a `/` or a
-  further component after a regular file, a name that is too long, a NUL byte,
-  and a folder that the daemon cannot search. The battery row for `files.read`
-  of `~/a.txt/` shows it.
-- Windows, `CreateFile <path>: …` on `89cb6289`: `CON`, `CONIN$`, `CONOUT$`, a
-  `\` after a regular file, and a name that is too long. A NUL byte gets
-  `Stat <path>: …` there.
-- Each system, where the open fails: `89cb6289` answers `files.read: path is a
-  directory` for a directory and `files.read: file exceeds maxBytes` for a file
-  over the limit.
-
-An `open <path>: resource temporarily unavailable` of `files.read` on a regular
-file that another process holds under a lease is not drift either. From the
-code, it comes from the `O_NONBLOCK` open of claustrum. That case is not
-measured on a VM.
+`files.read` follows `5fd08069`: the refusal `-32602 files.read: not a regular
+file`, and an `open <path>: …` text where the open fails. Against `89cb6289` these
+are not drift. That build reads such a path, waits, or answers another text: `stat
+<path>: …` on Linux and macOS, `CreateFile <path>: …` or `Stat <path>: …` on
+Windows, and `path is a directory` or `file exceeds maxBytes` where the open fails.
+An `open <path>: resource temporarily unavailable` for a regular file that another
+process holds under a lease is not drift either. It comes from the `O_NONBLOCK`
+open of claustrum (from the code, not measured). See
+[files.read](protocol/files-read.md).
 
 ### Triage gotchas — when a probe result is misleading
 
@@ -445,152 +427,116 @@ the linked pages. The history of each build is in
   See [Git-directory trust check](PROTOCOL.md#git-directory-trust-check),
   [Hardened git calls](PROTOCOL.md#hardened-git-calls) and
   [git.info → The root](protocol/git-info.md#the-root).
-- D12 needs a VALID zstd body. The decoder answers an invalid one at 0 s,
-  which reads like "no divergence". Also, a zero download timeout frees the body
-  read only: the transport still applies `net.Dialer{Timeout: 30s}`,
-  `TLSHandshakeTimeout: 10s` and the 60 s response-header limit. That last limit
-  is parity.
+- D12 needs a valid zstd body. The decoder answers an invalid body at once, and
+  that reads like "no divergence". A zero download timeout frees the body read
+  only. The transport clocks and the 60 s wait for the response headers still
+  apply, and that wait is parity. See
+  [-install](PROTOCOL.md#-install-ensure-the-agent-cli).
 - A connection reset in the body answers
-  `download interrupted after <got>/<total> bytes: <err>` on both binaries
-  (measured on Linux against `f6010b97` and `89cb6289`). A different text there
-  is drift. A body that ends before its length is not measured, so do not call a
-  difference there drift.
+  `download interrupted after <got>/<total> bytes: <err>`, as on `f6010b97` and
+  `89cb6289` (measured on Linux). Another text there is drift. A body that ends
+  before its length is not measured, so a difference there is no proof of drift.
 - A download that is not a zstd archive answers `decompressing: …` with
-  `fetch.bytes` 4 and one progress line. That holds with a right and a wrong
-  checksum (`5fd08069`, Linux VM). For such a body, another count is drift.
-- The `ldd` libc probe bounds ldd itself at 5 s on both binaries (parity since
-  `19f30c46`). There is no libc probe off linux at all.
-- claustrum made seven changes for `90fca6e6` while the JSON-RPC surface stood
-  still. A triager who meets one of them and finds the drift check quiet is
-  looking at parity, not drift. No method, field or error string moved. Three of
-  the seven still change what a client reads. A reattach now closes the
-  connection it replaces. A reaped process reads as not running for
-  `process.stdin` and `process.reattach` inside the exit drain. A new worktree
-  no longer inherits the nine Claude runtime-state names under `.claude/`. That
-  last one is the likeliest to be misread. `19f30c46` copies eight of the nine,
-  so a file missing from a seeded worktree looks like a regression against the
-  previous pin. [REFERENCE-BUILDS.md](REFERENCE-BUILDS.md) holds all seven, and
-  all seven are reconciled. The macOS `lsof` reads of the host cleaner follow
-  [The `lsof` reads](PROTOCOL.md#the-lsof-reads-macos). The longer pass of
-  claustrum there is in the `5fd08069` section of
-  [REFERENCE-BUILDS.md](REFERENCE-BUILDS.md), and it is not drift. An `lsof` command that does not start, and a run that
-  writes to stderr and exits 1, are parity with `89cb6289` for the busy read and
-  the lock read (measured on macOS, in every run).
-- The `90fca6e6` reconciliation shipped four PRs. A full re-check then found a
-  seventh change that the first pass had missed. A new value inside an existing
-  function shows in no symbol list, so a quiet symbol comparison does not prove
-  that nothing changed. Re-check the whole build after the slices merge.
+  `fetch.bytes` 4 and one progress line, with a right and a wrong checksum, as on
+  `5fd08069` (measured on Linux). Another count for such a body is drift.
+- The `ldd` libc probe has its 5 s bound, as on the reference since `19f30c46`.
+  There is no libc probe off Linux.
+- The seven changes of claustrum for `90fca6e6` are not drift, and the drift check
+  is quiet on them. [REFERENCE-BUILDS.md](REFERENCE-BUILDS.md) lists them. Three
+  change what a client reads. One is that a new worktree does not get the nine
+  Claude session-state names under `.claude/`. `19f30c46` copies eight of them, so
+  a missing file there is no regression. A quiet symbol comparison does not prove
+  that nothing changed, so re-check the whole build after the slices merge.
+- On macOS the `lsof` reads of the host cleaner, and the longer pass of claustrum
+  after a run that it gave up on, are not drift. See
+  [The `lsof` reads](PROTOCOL.md#the-lsof-reads-macos).
 
-- A reference daemon that stays alive after its socket path is gone is not drift.
-  On a Linux VM, the host cleaner of `f6010b97` and `89cb6289` sent no signal to
-  such a daemon. It sent none to its children. The daemon ended by itself after
-  11 to 12 minutes. The cleaner of claustrum sends none either. On a macOS VM
-  the two references sent none either.
-- On Windows a serving process that outlives its SSH session is not drift, and
-  children that outlive a killed daemon are not drift. A Windows VM measured
-  both against `f6010b97` and `89cb6289`, with one state on `89cb6289` only. A
-  later run on that VM measured the same on claustrum. A spawned child is in no
-  job on either side, and a kill ends the direct child only (kill forms:
-  `89cb6289`). Descendants that outlive a kill or a `-stop` are not drift.
-- A daemon that accepts no connection for some seconds after its start is not
-  drift. On Linux and macOS the daemon binds its socket after the reap of its
-  start. With a recorded child that ignored `SIGTERM`, the first connection to
-  `89cb6289` worked 2.2 to 2.4 s after its start (Linux and macOS VMs). Before
-  that a client got `ECONNREFUSED` or `ENOENT`. In that
-  time `daemon.lock` holds `pid`, `role` and `node` only. claustrum is built to
-  the same order.
-- Child records and both markers on a socket that is not `run/<id>/rpc.sock` are
-  not drift. `89cb6289` writes them on every socket shape (Linux and macOS
-  VMs), and claustrum does too.
-- Records that stay after a daemon start are not drift in two cases. One start
-  handles 128 record names and ends 64 groups, on `89cb6289` (Linux VM).
-  claustrum is built to it. The rest goes at a later start.
+Unless an item names another build, the daemon items below are measured against
+`89cb6289`. The linked sections name the systems of each rule.
+
+- On Linux and macOS a stranded daemon, whose socket path no longer leads to it,
+  and its children get no signal from the host cleaner, as on `f6010b97` and
+  `89cb6289`. The
+  daemon ends by itself. See
+  [Signals of the cleaner](PROTOCOL.md#signals-of-the-cleaner).
+- On Windows these are not drift, against `f6010b97` and `89cb6289`: a daemon that outlives
+  its SSH session, children that outlive a killed daemon, and descendants that
+  outlive a kill or a `-stop`. A child is in no job, and a kill ends the direct
+  child only. See [The job of the launcher](PROTOCOL.md#the-job-of-the-launcher-windows)
+  and [Windows child trees](protocol/process-kill.md#windows-child-trees).
+- On Linux and macOS a daemon accepts no connection while the reap of its start
+  waits. A connect then gets `ECONNREFUSED` or `ENOENT`, and `daemon.lock` holds
+  the short record. That is not drift. See
+  [The bind after the reap](PROTOCOL.md#the-bind-after-the-reap-linux-and-macos).
+- On Linux and macOS records and both identity markers on a socket that is not
+  `run/<id>/rpc.sock` are not drift. Records that stay after a start past 128
+  record names or 64 groups are not drift either (measured on Linux). An older claustrum
+  build wrote two blanks before a one-digit day in its macOS start texts. On macOS
+  a `daemonStart` in that form reads its live daemon as gone, and a `start` in
+  that form does not match. Neither is drift. See
+  [Child records and the reap](PROTOCOL.md#child-records-and-the-reap-linux-and-macos).
 - A first process that lives on after a second `process.spawn` took its `id` is
-  not drift. `89cb6289` sends it no signal, and a stop of the daemon leaves it
-  alive (Linux, macOS and Windows VMs). The frames of that first process still
-  come on its own connection, under the same `processId` (Linux VM against
-  `89cb6289`). claustrum is built to it.
-- A `process.spawn` reply that comes 3 to 5 s late is not drift when the spawn
-  supersedes a session process. `89cb6289` answers after the old process ended
-  (Linux, macOS and Windows VMs). claustrum does the same.
-- An old session process that lives on after a failed session spawn is not drift
-  in one case: the command of the new spawn does not exist. `89cb6289` sends the
-  old process no signal there (Linux, macOS and Windows VMs). claustrum is built
-  to it. A command that exists and does not start ends the old process first,
-  on `89cb6289` and on claustrum (Linux VM).
-- A descendant that lives on after `process.killAndWait` or a session supersede
-  is not drift in these cases. One is a process that ended on the graceful
-  signal within the grace. `89cb6289` then sends its group no `SIGKILL` (Linux
-  and macOS VMs). Windows is not measured in that case. claustrum is built to
-  it. When the grace runs out, both send the group `SIGKILL` (Linux VM). The
-  holder of the pipes also lives on, with equal answers on `5fd08069` (macOS and
-  Linux VMs).
-- A daemon that runs no login shell before its first `process.spawn` is not drift
-  (Linux and macOS VMs against `89cb6289`).
-- A first spawn that answers after 4.6 s with a timed-out PATH line is not drift
-  when a process of the login profile holds the output pipe. `89cb6289` does that
-  (Linux VM), and claustrum is built to it.
-- A `-serve` launcher that gives up after 12 s is not drift. If the daemon child
-  of `89cb6289` ends before the bind, its launcher exits 1 after 12.06 s (Linux,
-  macOS and Windows VMs).
-- A daemon that gets `SIGTERM` or `SIGINT` during its start, goes on to its bind
-  and then exits 0 is not drift. `89cb6289` does that (Linux and macOS VMs), and
-  claustrum is built to it. When a `SIGTERM` comes while the daemon waits to
-  evict a live daemon, or from a `-stop` during the reap of its start, its
-  launcher then exits 1 after 12 s (Linux VM).
-- A daemon that gets `SIGKILL` from a second daemon during its start is not
-  drift. `89cb6289` does that when the two starts are 0.05 s apart (Linux VM).
-  The second daemon waits on the lock, and claustrum is built to it.
-- The order of two or more new caller keys in a child environment is not drift.
-  `89cb6289` gave three rotations of the request order over many spawns (Linux
-  VM). claustrum iterates the decoded map and builds no order of its own. On
-  Windows see D23.
-- A record or a marker with two blanks in its macOS start text is not accepted.
-  An older claustrum build wrote that form. `89cb6289` and claustrum
-  drop such a record and send no signal (macOS VM). A child of such
-  an older build is therefore not ended at the next start.
-- A child of a live daemon that a new daemon ends on macOS is not drift in one
-  case: the `daemonStart` of its record holds two blanks. `89cb6289` and claustrum
-  then read that daemon as gone (macOS VM).
-- These differences on Linux and macOS are known and open. They are not drift.
-    - At the reap of a start, `89cb6289` probes a group right after its `SIGTERM`.
-      If the group still answers, it sends `SIGKILL`. claustrum probes after
-      50 ms. That is [DIVERGENCES.md](DIVERGENCES.md) D20.
-    - claustrum logs an exit line for a child that a shutdown kills:
-      `Process <id> exited with code -1, terminated by SIGKILL, signalled at shutdown request`.
-      `89cb6289` logs none (Linux and macOS VMs). `5fd08069` wrote it on
-      Linux, not on macOS.
-    - After a `-stop` during the wait of a supersede, claustrum can log the exit
-      line of the old process and the `supersedes` line. `89cb6289` logged
-      neither in any run. claustrum logged them in one Linux run and in every
-      run on macOS.
-    - `89cb6289` calls unlink on one child record up to three times at a stop or
-      a kill. claustrum calls it once. `89cb6289` also calls unlink on a record
-      that it never wrote (Linux VM). The files left are the same.
-    - On macOS `89cb6289` runs one `ps` at the daemon start and one per spawn.
-      claustrum runs none at the start and three per spawn (macOS VM).
-    - With a zero-byte `-token-file` the daemon log of `89cb6289` holds
-      `claude-ssh: empty token in --token-file`. claustrum logs
-      `claustrum: token is empty` (Linux, macOS and Windows VMs).
-    - When a frame cannot reach a closed connection, `89cb6289` logs
+  not drift. It gets no signal, and a stop leaves it alive. Its frames still come
+  on its own connection (measured on Linux). See
+  [A spawn with an `id` that is in use](protocol/process-spawn.md#a-spawn-with-an-id-that-is-in-use).
+- A session spawn answers after the old process of its session ended. If the
+  command of the new spawn does not exist, the old process gets no signal. A command
+  that exists and does not start ends the old process first (measured on Linux).
+  None of these is drift. See
+  [Session supersede](protocol/process-spawn.md#session-supersede).
+- On Linux and macOS, if a child of `process.killAndWait` or a supersede ends on
+  the graceful signal within the grace, its group gets no `SIGKILL`. A descendant
+  that lives on then is not drift. A process that holds the output pipes
+  lives on too, as on `5fd08069`. See
+  [process.killAndWait](protocol/process-killandwait.md).
+- On Linux and macOS the daemon runs no login shell before its first
+  `process.spawn`. A process of the login profile can hold the output pipe of the
+  shell. The first spawn then waits for the 4 s cap and logs the timed-out PATH
+  line (measured on Linux). Neither is drift. See
+  [The login-shell PATH](PROTOCOL.md#the-login-shell-path-linux-and-macos).
+- A `-serve` launcher that gives up after 12 s is not drift. That holds also for a
+  daemon that ends before its bind. See [The launcher wait](PROTOCOL.md#the-launcher-wait).
+  On Linux and macOS a daemon that gets `SIGTERM` or `SIGINT` during its start
+  binds and then exits 0, and that is not drift. A daemon that a second daemon ends with `SIGKILL` during
+  its start is not drift (measured on Linux). See
+  [Eviction of a live holder](PROTOCOL.md#eviction-of-a-live-holder).
+- On Linux and macOS the order of two or more new caller keys in a child
+  environment is not fixed. That is not drift. See
+  [The environment of the child](protocol/process-spawn.md#the-environment-of-the-child).
+- On Windows the environment block of a child is in name order. `f6010b97` and
+  `89cb6289` keep the order of the daemon, then `CLAUDE_SSH_DAEMON_CHILD=1`. On
+  `89cb6289` an added `PATH` entry and the new caller keys come after it. So the
+  stdout frame of `cmd /c set` differs
+  in bytes. That is [D23](DIVERGENCES.md#d23).
+- A child that `process.spawn` starts as a shutdown begins is ended by claustrum.
+  `5fd08069` leaves it running on Linux, macOS and Windows. That is known, not
+  drift. See
+  [A spawn during a shutdown](protocol/process-spawn.md#a-spawn-during-a-shutdown).
+- These log and call differences are known and open. They are not drift.
+    - On Linux and macOS, the later `SIGKILL` of a gone leader at the reap of a
+      start is [D20](DIVERGENCES.md#d20).
+    - On Linux and macOS claustrum logs the exit line `Process <id> exited with
+      code -1, terminated by SIGKILL, signalled at shutdown request` for a child
+      that a shutdown kills. `89cb6289` logs none, and `5fd08069` logs it on Linux
+      only.
+    - On Linux and macOS, after a `-stop` during the wait of a supersede,
+      claustrum can log the exit line of the old process and the `supersedes`
+      line. `89cb6289` logs neither.
+    - On Linux `89cb6289` unlinks a child record more than once at a stop or a
+      kill, and it unlinks a record that it never wrote. The files left are the
+      same.
+    - On macOS `89cb6289` runs one `ps` at the daemon start and one for each
+      spawn. claustrum runs none at the start and three for each spawn.
+    - With a zero-byte `-token-file`, `89cb6289` logs `claude-ssh: empty token in
+      --token-file`, and claustrum logs `claustrum: token is empty`.
+    - On Linux, for a frame that cannot reach a closed connection, `89cb6289` logs
       `[frameSink] write failed, detaching: write unix <socket>->@: use of closed network connection`.
-      claustrum logs `[frameSink] write failed, detaching: use of closed network connection`
-      (Linux VM).
-- One difference on Windows is known and open. It is not drift.
-    - At a stop with one connection, `89cb6289` logged `closed 0 connection(s)`
-      in some runs. claustrum logged `closed 1` in every run. The rate is not
-      measured.
-- A child that `process.spawn` starts as a shutdown begins is known, not drift.
-  `5fd08069` left dozens running on Linux, about a thousand on macOS and two on
-  Windows (Linux, macOS and Windows VMs). claustrum ends them all.
-- A child environment block in name order on Windows is not drift. `f6010b97`
-  and `89cb6289` keep the order of the daemon, then `CLAUDE_SSH_DAEMON_CHILD=1`.
-  On `89cb6289` an added `PATH` entry and new caller keys come after it
-  (Windows VM). The stdout frame of
-  `cmd /c set` therefore differs in bytes. That is
-  [DIVERGENCES.md](DIVERGENCES.md) D23.
-- The log lines of claustrum keep its level tag and the name `Claustrum` in the
-  listening line. Both differ from the reference by design.
+      claustrum logs
+      `[frameSink] write failed, detaching: use of closed network connection`.
+    - On Windows, at a stop with one connection, `89cb6289` can log `closed 0
+      connection(s)`, and claustrum logs `closed 1`.
+- The level tag and the name `Claustrum` in the listening line differ from the
+  reference by design. See [Daemon log](PROTOCOL.md#daemon-log-remote-serverlog).
 
 ## Toolchain-induced drift — the Go 1.27 `jsonv2` hold
 
