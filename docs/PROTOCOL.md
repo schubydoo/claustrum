@@ -1319,8 +1319,10 @@ sends it, and an error reply has none (Linux, macOS and Windows).
   the remove deletes nothing. On a config that only the daemon refuses, the remove
   deletes. macOS and Windows are not measured for these replies and removes.
 - A held request keeps no hold for later requests. A `worktree add` that started in
-  the hold is not stopped at 2 minutes. A held call that starts after the holder
-  answers has the 2 minute limit (claustrum's own, not measured).
+  the hold is not stopped at 2 minutes during the hold. It is not stopped at 2
+  minutes also after the holder answers (claustrum's own, not measured). A held call
+  that starts after that answer has the 2 minute limit (claustrum's own, not
+  measured).
 - In the state `fallback-git` the test runs again on the first request more than 10
   minutes after the last test. In the state `shadow` it does not run again (from the
   code).
@@ -1329,13 +1331,15 @@ sends it, and an error reply has none (Linux, macOS and Windows).
 
 #### The start test
 
-The first request without the member that reaches a repository, or a `.git` file to
-a missing repository, runs the test. On a `.git` file that names a missing path the
-steps after the test differ from `5fd08069`, with equal frames (see
+The first request without the member that reaches a repository, or a `git.info` on a
+`.git` file to a missing repository, runs the test. On a `.git` file that names a
+missing path the steps after the test differ from `5fd08069` (measured on macOS and
+Windows), with equal frames (see
 [UPSTREAM-TRACKING.md](UPSTREAM-TRACKING.md#triage-gotchas-when-a-probe-result-is-misleading)). The
 test makes a small repository and a copy of it in a folder `.check-<n>` of the
 daemon, and runs git calls there. One of them is the read of the test repository's
-config. The folder is gone at the reply. If the test fails, the request gets this
+config. It runs in `/`, and on Windows in the working folder of the daemon (from the
+code). The folder is gone at the reply. If the test fails, the request gets this
 text:
 
 `Claude could not test git on the remote machine (<cause>). Check free disk space and quota there, then try again.`
@@ -1353,7 +1357,7 @@ remove deletes nothing there (Linux, macOS and Windows).
 | `<cause>` | When |
 |---|---|
 | `git <verb> failed under "<folder of the daemon>": <error lines of git, space-joined>` | A test call other than the read of the test repository's config failed. Go's `%q` quotes the folder |
-| `git <verb> failed under "<folder>": signal: killed` | The daemon ended such a test call after 30 seconds, and the reply comes near 31 s (Linux and macOS). On Windows the end is `exit status 1` |
+| `git <verb> failed under "<folder>": signal: killed` | The daemon ended such a test call after 30 seconds (Linux and macOS). The reply comes near 31 s (Linux). On Windows the end is `exit status 1` |
 | the same with ` (git version <v>)` at its end | The failed or ended call was one of the calls that make the test repository (measured for `init` and `mktree`) |
 | `this repository's git config cannot be used: <error lines of git>` | The read of the test repository's config failed, and the plain `git version` after it works |
 | `this repository's git config cannot be used: git did not finish reading "<config of the test repository>" within 30 seconds; try again` | The read of the test repository's config ran, or held its stdout, past 30 seconds. The reply comes near 31 s. With stderr alone held, a read that exits 1 gives the lines read before the cut (not measured) |
@@ -1474,7 +1478,8 @@ blocks of rewritten URLs. The file ends with
 #### The call about the repository
 
 In the state `shadow` the daemon asks git about the repository before the calls of
-the method, with one `rev-parse` call in the root of the work tree. The call names
+the method. The call is `-c core.hooksPath=<null device> -c core.fsmonitor=false
+rev-parse --git-dir`, in the root of the work tree. It names
 the folder `.probe` of the daemon, and the daemon writes an emptied `.probe/config`
 again when it changed. The call drops the daemon's `GIT_NAMESPACE`,
 `GIT_INDEX_FILE`, `GIT_DISCOVERY_ACROSS_FILESYSTEM` and
@@ -1504,7 +1509,9 @@ One `git version` call also follows a config read that failed with a syntax erro
 
 In the state `shadow` each hardened call carries `GIT_COMMON_DIR=<copy>` and
 `GIT_OBJECT_DIRECTORY=<git directory>/objects`. A call with no `--git-dir=` in its
-arguments also carries `GIT_DIR` and `GIT_WORK_TREE` (Linux, macOS and Windows).
+arguments also carries `GIT_DIR` and `GIT_WORK_TREE` (Linux, macOS and Windows). The
+four come right after the profile values, in that order (order measured on Linux and
+macOS).
 [Hardened git calls](#hardened-git-calls) has the other points of a call.
 
 #### `config.worktree`
@@ -1515,7 +1522,7 @@ place, in a repository with that extension and a `config.worktree` file. The
 `worktreeConfig` values `2` and `10` turn that extension on.
 
 - Each key of the copied settings file but the format version, `extensions.*` and
-  `core.bare` goes to the git calls as one `-c` item, with the value of the copy,
+  `core.bare` goes before the option list of the git calls as one `-c` item, with the value of the copy,
   sorted by key. Six keys are measured. Other keys and a repeated key are not
   measured. A call on a linked worktree gets the items of its own file.
 - A new worktree of `git.worktree_create` gets its own `config.worktree` file. See
