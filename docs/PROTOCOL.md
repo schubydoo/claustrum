@@ -1592,7 +1592,7 @@ The reply lines are equal in each difference above.
 ### The daemon's own git environment
 
 This section names the variables of the daemon's own environment that reach the
-git calls of the git methods. It also gives the two refusals of that environment. A rule
+calls of the git methods. It also gives the refusals of that environment. A rule
 here holds on Linux, macOS and Windows, unless it names fewer systems.
 
 #### Variables that the git calls keep or drop
@@ -1611,12 +1611,12 @@ additions.
 - A listing gets the daemon's `GIT_CONFIG_COUNT`, `GIT_CONFIG_KEY_<n>` and
   `GIT_CONFIG_VALUE_<n>` as they are. It keeps a name with a leading-zero index,
   such as `GIT_CONFIG_KEY_01`, in its place (measured on Linux and macOS).
-- A hardened call gets `GIT_CONFIG_COUNT` with the number of all the pairs. The
-  daemon's pairs `0` to `count-1` come first, in index order. The [hook pins](#hook-pins)
-  follow, from the pair `count` on. The `GIT_INDEX_FILE` of the checkout and the
-  `GIT_OPTIONAL_LOCKS` of the `status`, `ls-files` and `diff-index` calls follow
-  the pins. The variables come in that order (measured on Linux and
-  macOS).
+- A hardened call gets `GIT_CONFIG_COUNT` first, with the number of all the pairs.
+  The daemon's pairs `0` to `count-1` follow it, in index order. The
+  [hook pins](#hook-pins) follow them, from the pair `count` on. The
+  `GIT_INDEX_FILE` of the checkout and the `GIT_OPTIONAL_LOCKS` of the `status`,
+  `ls-files` and `diff-index` calls follow the pins. The order is measured on Linux
+  and macOS.
 - A hardened call gets no other `GIT_CONFIG_KEY_<digits>` or
   `GIT_CONFIG_VALUE_<digits>`. A leading-zero index such as `GIT_CONFIG_KEY_01`
   is removed too. Other names, such as `GIT_CONFIGX` or `GIT_CONFIG_S4`, reach
@@ -1689,8 +1689,8 @@ folder gets the refusal. Nothing changes on disk.
 Both refusals start with `config-defined hooks could not be pinned off; git not
 run: `, and each method answers them in one frame. A refusal of the git-directory
 trust check comes first, with the trust text in the frame. A remove of a present
-worktree gets the lock-check text instead. For the count that is
-measured on Linux and macOS, in a remove only for a gone worktree without
+worktree gets the lock-check text instead. For the count, the trust-check order
+is measured on Linux and macOS, in a remove only for a gone worktree without
 `worktreeRoot` or a `baseRepo` that exists with it. On Windows it is measured in
 `git.info`, `git.status` and the remove of a gone worktree. For a listing that
 git cannot parse it is from the code. "The count" below is the check of
