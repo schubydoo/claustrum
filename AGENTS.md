@@ -44,7 +44,8 @@ daemon. The wire surface is the product.
 There is one binary. A flag selects the mode (`main.go`): `-serve`, `-bridge`,
 `-stop`, `-version`, `-install`, `-probe-cli`.
 
-The table names the files that an agent must not break. The full file map is in
+The table names the files that an agent must not break. The file map of the
+modes and the OS splits is in
 [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md#source-layout-flat-package-main).
 
 | File | Role |
@@ -64,7 +65,7 @@ The table names the files that an agent must not break. The full file map is in
 | `gitdirheld.go` | the held git directory and the list of the steps that act through it |
 | `githarden_index_*.go` | the placement of the index of a new worktree, and the registration delete of the second rollback (`removeCreatedRegistration`) |
 | `install.go` | the CLI path delete, the sweeps, the prune and the blob remove of `-install` |
-| `gitshadow.go` (`removeEntry`, which each delete there goes through) · `gitshadowsweep.go` · `gitshadowrepo.go` · `gitshadowuse.go` | the deletes in the folder `git-shadow` |
+| `gitshadow.go` (`removeEntry` and `removeLink`, which each delete there goes through) · `gitshadowsweep.go` · `gitshadowrepo.go` · `gitshadowuse.go` | the deletes in the folder `git-shadow` |
 
 Every OS serves the same JSON-RPC methods.
 
