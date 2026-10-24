@@ -67,8 +67,8 @@ On Linux and macOS:
 
 On Windows:
 
-- The daemon finds the folder the same way, and then asks git to confirm it. If git names the same folder, `root` is the answer of git as printed. Else it is the folder that the daemon found. In both cases the separators are forward slashes.
-- The walk resolves a folder symbolic link and no junction, so a `..` after a junction is taken by text. When git confirms the folder, `root` is git's spelling, which can name the target of a junction.
+- The daemon finds the folder the same way, and then asks git to confirm it (measured on Windows). If git names the same folder, `root` is the answer of git as printed (measured on Windows). Else it is the folder that the daemon found (measured on Windows). In both cases the separators are forward slashes (measured on Windows).
+- The walk resolves a folder symbolic link and no junction, so a `..` after a junction is taken by text (measured on Windows). When git confirms the folder, `root` is git's spelling, which can name the target of a junction (measured on Windows).
 - The comparison of the two folders is by file identity (claustrum's own, not measured).
 
 ## repoSlug
@@ -113,12 +113,12 @@ This method has no `errorCode` member. A failure is a JSON-RPC error. The texts 
 | `-32602` | `Invalid params` | The request has no `params` member, or `params` or `path` has the wrong type. See [the rules for `params`](../PROTOCOL.md#params-presence-and-typing). |
 | `-32603` | `the repository's git directory could not be trusted; git not run: …` | The daemon does not trust the git directory. See [Git-directory trust check](../PROTOCOL.md#git-directory-trust-check). |
 | `-32603` | `config-defined hooks could not be pinned off; git not run: …` | A config listing failed or passed a limit of the hook pins, the daemon refuses its own git environment, or a daemon `GIT_DIR` names a gone worktree entry. A listing stopped at 30 seconds goes on with `listing the configuration in force: git took too long: Claude stopped git config after 30 seconds; try again`. See [Refusal texts](../PROTOCOL.md#refusal-texts) and [The daemon's own git environment](../PROTOCOL.md#the-daemons-own-git-environment). |
-| `-32603` | `git cannot run on this host; git not run: …` | A config listing, call 7 of the start test or the call about the repository failed, and then a `git version` call failed too. See [A failed configuration listing](../PROTOCOL.md#a-failed-configuration-listing), [The start test](../PROTOCOL.md#the-start-test) and [The call about the repository](../PROTOCOL.md#the-call-about-the-repository). |
+| `-32603` | `git cannot run on this host; git not run: …` | A config listing, call 7 of the start test or the call about the repository failed, and then `git version` failed too. See [A failed configuration listing](../PROTOCOL.md#a-failed-configuration-listing), [The start test](../PROTOCOL.md#the-start-test) and [The call about the repository](../PROTOCOL.md#the-call-about-the-repository). |
 | `-32603` | `this repository's git config cannot be used: …` or `a file in this repository's .git directory cannot be used: …` | The daemon read the git config of the repository, or a file of its git directory, and does not accept it. See [Repository config refusals](../PROTOCOL.md#repository-config-refusals). |
 | `-32603` | `Claude could not test git on the remote machine (…). Check free disk space and quota there, then try again.` | The start test of the settings copy failed. The daemon keeps the failure for 10 seconds. See [The start test](../PROTOCOL.md#the-start-test). |
 | `-32603` | `git could not check this repository on the remote machine: …` or `git and Claude disagree about which repository holds this folder: …` | The call that asks git about the repository failed, did not end in 30 seconds, or named another repository. See [The call about the repository](../PROTOCOL.md#the-call-about-the-repository). |
 | `-32603` | `Claude could not prepare its own files on the remote machine: …` | The daemon cannot prepare the folder of the settings copy for this repository. See [The folders](../PROTOCOL.md#the-folders). |
-| `-32603` | `git took too long: Claude stopped git <subcommand> after 2 minutes; try again` | A git call ran 2 minutes, and the daemon stopped it. While a `"shadowDirOff":true` request runs, that one included, the limit is 30 minutes, and the text says so (claustrum's own). See [Time limits of git calls](../PROTOCOL.md#time-limits-of-git-calls). |
+| `-32603` | `git took too long: Claude stopped git <subcommand> after 2 minutes; try again` | A git call ran 2 minutes, and the daemon stopped it. While a `"shadowDirOff":true` request runs, that one included, the limit is 30 minutes, and the text says so (claustrum's own, not measured). See [Time limits of git calls](../PROTOCOL.md#time-limits-of-git-calls). |
 
 A `GIT_COMMON_DIR` in the daemon's environment turns the git-directory trust check off for this method.
 
@@ -132,8 +132,8 @@ The method changes nothing in the repository. The settings copy can add files to
 |---|---|---|
 | `root` | The folder found by the walk, in the native form. | Confirmed by git, with forward slashes. The walk does not resolve a junction. |
 | `path` is a regular file | The "no repository" body. | `-32603` with `config-defined hooks could not be pinned off; git not run: listing the configuration in force: fork/exec <git.exe path>: The directory name is invalid.` |
-| A junction from repository P into repository R | Does not apply. | With no `GIT_DIR` or `GIT_COMMON_DIR` in the daemon's environment, `root`, `repo` and `repoSlug` come from P. `branch` comes from R, and `defaultBranch` can be `""`. |
+| A junction from repository P into repository R | Does not apply. | With no `GIT_DIR` or `GIT_COMMON_DIR` in the daemon's environment, `root`, `repo` and `repoSlug` come from P. `branch` comes from R, and `defaultBranch` can be `""` (measured on Windows). |
 
 ## Differences from the reference
 
-An unmarked rule on this page matches the reference as measured on `5fd08069` or on an earlier build. The rules of Request, Response, What changes on disk, The branch, the Linux and macOS part of The root, repoSlug and defaultBranch are measured, but the system was not recorded. A linked Errors row has the system marks of its PROTOCOL.md section. No entry of the divergence catalog applies to this method. The measured cells behind each rule are in the tests and in the [reference build history](../REFERENCE-BUILDS.md).
+An unmarked rule on this page matches the reference as measured on `5fd08069` or on an earlier build. The rules of Request, Response, What changes on disk, The branch, the Linux and macOS part of The root, repoSlug and defaultBranch are measured, but the system was not recorded. Linked Errors rows carry the system marks of their section. No entry of the divergence catalog applies to this method. The measured cells behind each rule are in the tests and in the [reference build history](../REFERENCE-BUILDS.md).
