@@ -365,7 +365,7 @@ On Linux (`5fd08069`) a stopped daemon on an idle run dir:
 
 #### The `lsof` reads (macOS)
 
-Every rule of this sub-section holds on macOS only. Linux runs no `lsof`, and it logs
+Every rule of this sub-section holds on macOS, unless it names Linux. Linux runs no `lsof`, and it logs
 neither `left alone this pass` line below (from the code). The cleaner asks `lsof` three things:
 
 - whether a daemon it is about to retire still has a live client
@@ -401,8 +401,10 @@ every run dir line:
 ```
 
 The first line goes only to a daemon that is 5 minutes old or more and serves an
-idle run dir, once for each such daemon. With more than 4096 processes claustrum prints no such line (from
-the code, not measured).
+idle run dir, once for each such daemon. With more than 4096 processes claustrum
+prints no such line (from the code, not measured). On Linux and macOS the second
+line also comes for a daemon that still has a client, or whose connections could
+not be read (from the code for Linux).
 
 When the stdio read of an orphaned Claude Code group gets no answer, the cleaner
 does not signal the group. It logs this line after the daemon line and before the
@@ -413,7 +415,8 @@ run dir lines, and counts the group as undecided:
 ```
 
 With a working `lsof` the cleaner ends the group. A run that the cleaner gave up
-on spares the group with claustrum's own line:
+on spares the group with claustrum's own line. On Linux and macOS the same line
+comes when the descriptors of the group cannot be read (from the code for Linux):
 
 ```
 [hostclean] spared process group <pgid> this sweep: its open descriptors were unreadable
