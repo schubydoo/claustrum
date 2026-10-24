@@ -624,8 +624,8 @@ no flag and no key.
 ### CT-2 · Opt-in `-keep-children` serve flag { #ct-2 }
 
 - **Behavior.** Off the wire. Without the flag, a graceful shutdown ends the
-  children. With it, `-stop` and `server.shutdown` leave the spawned children
-  running and log one line with their count. The new daemon does not re-adopt
+  children. A graceful shutdown is `-stop`, `server.shutdown`, `SIGTERM`,
+  `SIGINT` or the self-exit. With the flag it leaves the spawned children running and log one line with their count. The new daemon does not re-adopt
   them. A client can find them again through the CT-1 `pid` and `startTime`.
 - **Limits.** The survivors lose their stdio, so only a child that tolerates a
   dead stdin and stdout lives on (not measured on Windows). On Linux and macOS the shutdown removes the
@@ -649,7 +649,7 @@ no flag and no key.
   comments, in the folder that holds the binary. Its keys mirror the flags. The
   [flags table](PROTOCOL.md#flags-and-config-keys) lists each key, the
   deprecated ones too. Each key that sets something turns on, or tunes, a behavior
-  that is off without the file. The deprecated keys set nothing and log one
+  that is off by default. The deprecated keys set nothing and log one
   warning.
 - **Fail-safe.** A missing file, a file that cannot be read and a path that is no
   regular file, a link too, give stock behavior. claustrum reads at most the

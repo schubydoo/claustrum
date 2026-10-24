@@ -56,7 +56,7 @@ One failure ends another process first: a session spawn whose command exists and
 
 - **Process group.** On Linux and macOS the child leads its own process group. A `KILL` from [process.kill](../PROTOCOL.md#processkill) reaches the whole group. On Windows the child starts in a new process group and in no Job Object. A kill there ends the direct child only, as [Windows child trees](process-kill.md#windows-child-trees) says.
 - **Streams.** The stdout and the stderr of the child are pipes of the daemon. The daemon sends what it reads as stream frames to the connection that spawned the process, and it stores them for a replay. The stdin of the child is a pipe that [process.stdin](process-stdin.md) writes to.
-- **The life of the process.** A close of its connection does not end the process. `-stop` and `server.shutdown` end the processes of the table. With `-keep-children` they leave them alive ([CT-2](../DIVERGENCES.md#ct-2)).
+- **The life of the process.** A close of its connection does not end the process. A graceful shutdown (`-stop`, `server.shutdown`, `SIGTERM`, `SIGINT`, the self-exit) ends the processes of the table. With `-keep-children` it leaves them alive ([CT-2](../DIVERGENCES.md#ct-2)).
 
 ## The environment of the child
 

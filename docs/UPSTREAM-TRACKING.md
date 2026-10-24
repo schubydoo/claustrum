@@ -212,7 +212,8 @@ means that a probe which reaches the path shows it. The battery never drives
 
 D1, D4, D5, D7, D9, D11, D13, D14, D17, D18, D21 and D25 are retired: claustrum
 matches the reference there. A difference on those paths is drift, unless a live
-entry above covers it. A difference against `89cb6289` on the D4 paths is
+entry above covers it. The D13 order of the checksum test and the D17 time of a
+pass are claustrum's own and not drift. A difference against `89cb6289` on the D4 paths is
 expected, and so is the stop of a slow git call (D5). See
 [DIVERGENCES.md → Retired entries](DIVERGENCES.md#retired-entries), and the
 `files-read-regular-only` paragraph below.
