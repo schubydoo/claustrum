@@ -116,7 +116,7 @@ A worktree directory that is gone is not an error by itself. The repository chec
 
 ## Error texts
 
-Each text is in `error`, with no `errorCode`. The texts that this method shares with other methods are in the [error-string catalog](../PROTOCOL.md#error-string-catalogue). A row with no mark holds a text of the reference, measured on Linux against a build up to `5fd08069`. A "measured on macOS" or "measured on Windows" mark covers the sentence that it ends, and that sentence was measured on that system only. A sentence that names systems without "measured" holds on each one.
+Each text is in `error`, with no `errorCode`. The shared texts are in the [error-string catalog](../PROTOCOL.md#error-string-catalogue). A row with no mark holds a text of the reference, measured on Linux against a build up to `5fd08069`. A "measured on macOS" or "measured on Windows" mark covers the sentence that it ends, and that sentence was measured on that system only. A sentence that names systems without "measured" holds on each one.
 
 | Text | Cause |
 |---|---|
