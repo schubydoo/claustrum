@@ -4,6 +4,7 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"slices"
 	"sort"
 	"strconv"
 	"strings"
@@ -81,17 +82,33 @@ func docSetDiff(a, b map[string]bool) []string {
 	return out
 }
 
+// docMethodRowRE finds a row of the method table of docs/PROTOCOL.md: the method in
+// group 1, and the page that its last cell links to in group 2.
+var docMethodRowRE = regexp.MustCompile("(?m)^\\| `([A-Za-z_.]+)` \\|.*\\]\\(protocol/([a-z0-9-]+\\.md)(?:#[a-z0-9_-]+)?\\) \\|$")
+
 // TestDocsEveryMethodHasAHome: each method of server.capabilities has a heading in
-// docs/PROTOCOL.md, or a page in docs/protocol/.
+// docs/PROTOCOL.md, a page in docs/protocol/, or a row of the method table of
+// docs/PROTOCOL.md that links to a page that exists.
 func TestDocsEveryMethodHasAHome(t *testing.T) {
 	named := map[string]bool{}
-	for _, line := range strings.Split(docRead(t, "docs", "PROTOCOL.md"), "\n") {
+	text := docRead(t, "docs", "PROTOCOL.md")
+	for _, line := range strings.Split(text, "\n") {
 		if strings.HasPrefix(line, "##") {
 			// A heading names the method as its first word, with or without backticks.
 			if f := strings.Fields(strings.TrimLeft(line, "#")); len(f) > 0 {
 				named[strings.Trim(f[0], "`")] = true
 			}
 		}
+	}
+	var rows []string
+	for _, m := range docMethodRowRE.FindAllStringSubmatch(text, -1) {
+		if _, err := os.Stat(filepath.Join("docs", "protocol", m[2])); err == nil {
+			named[m[1]] = true
+		}
+		rows = append(rows, m[1])
+	}
+	if !slices.Equal(rows, capabilityMethods) {
+		t.Errorf("the method table of docs/PROTOCOL.md is %v, and server.capabilities returns %v: put the rows in the order of capabilityMethods", rows, capabilityMethods)
 	}
 	for _, m := range capabilityMethods {
 		page := strings.NewReplacer(".", "-", "_", "-").Replace(m)
@@ -100,7 +117,7 @@ func TestDocsEveryMethodHasAHome(t *testing.T) {
 		if named[m] || err1 == nil || err2 == nil {
 			continue
 		}
-		t.Errorf("docs/PROTOCOL.md has no section for the method %q: add a \"#### %s\" heading, or a page docs/protocol/%s.md", m, m, page)
+		t.Errorf("docs/PROTOCOL.md has no section for the method %q: add a row for it to the method table of docs/PROTOCOL.md with a link to its page, or a page docs/protocol/%s.md", m, page)
 	}
 }
 
@@ -225,7 +242,7 @@ var docMethodCountSentences = []docCountSentence{
 }
 
 // TestDocsMethodCount: the documents state the present method count, and it equals
-// len(capabilityMethods). The history sentences of PROTOCOL.md and
+// len(capabilityMethods). The history sentences of
 // REFERENCE-BUILDS.md are not in the list on purpose.
 func TestDocsMethodCount(t *testing.T) {
 	want := len(capabilityMethods)
@@ -588,7 +605,7 @@ var docWordLimits = map[string]int{
 	"docs/EXAMPLES.md":                     1200,
 	"docs/GLOSSARY.md":                     1300,
 	"docs/IMPROVEMENTS.md":                 2300,
-	"docs/PROTOCOL.md":                     45200,
+	"docs/PROTOCOL.md":                     44700,
 	"docs/UPSTREAM-TRACKING.md":            7200,
 	"docs/index.md":                        800,
 	"docs/protocol/files-extract-tar.md":   2269, // decision-040: a move between pages, net down in the same PR

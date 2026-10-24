@@ -326,8 +326,9 @@ the linked pages. The history of each build is in
   runs of `-install` and `-probe-cli`. The Linux file test on a cache hit before a
   launcher run follows `5fd08069`. Other launcher runs of `5fd08069` are not
   measured. `f6010b97` has none of these. See
-  [PROTOCOL.md → launcher.*](PROTOCOL.md#launcher-added-89cb6289) and
-  [launcher.resolve](protocol/launcher-resolve.md).
+  [launcher.resolve](protocol/launcher-resolve.md),
+  [process.spawn → The managed launcher](protocol/process-spawn.md#the-managed-launcher)
+  and [PROTOCOL.md → -install](PROTOCOL.md#-install-ensure-the-agent-cli).
 - The peer check follows `5fd08069`. `server.capabilities` carries the
   `peerCheck` and `peerCheckBy` members and the `server.peer_check` and
   `git.shadow_dir` features. On Linux with `CLAUDE_SSH_PEER_CHECK=1` the daemon refuses a caller in other

@@ -142,7 +142,7 @@ gives the cause. See
 Noun. This term has two uses:
 
 - The seed is the set of files that `git.worktree_create` copies into a new
-  worktree. See [`git.worktree_create`](PROTOCOL.md#gitworktree_create).
+  worktree. See [`git.worktree_create`](protocol/git-worktree-create.md).
 - A seed is an input from which a fuzz test starts. See
   [IMPROVEMENTS.md](IMPROVEMENTS.md).
 
@@ -211,7 +211,7 @@ of `-install` in the CLI directory and the sweep of the host cleaner. See
 
 Noun. The undo is the rollback of `git.worktree_create`. If the rollback
 cannot complete, the daemon adds an undo text to the error. See
-[`git.worktree_create`](PROTOCOL.md#gitworktree_create).
+[`git.worktree_create`](protocol/git-worktree-create.md).
 
 ## wire
 
