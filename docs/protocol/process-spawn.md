@@ -48,7 +48,7 @@ Failure is a JSON-RPC error. There is no `errorCode` member.
 | `-32603` | `fork/exec <command>: <reason>` | The command is missing, a folder or not executable, or the start fails. On Windows a missing file gives the reason `The system cannot find the file specified.` |
 | `-32005` | `the managed launcher <path> could not be started: <reason>` | The launcher passes the checks and does not start. |
 
-`<cwd>` is the value after the tilde expansion. `<command>` is the path of the start: the value of the request, or for a bare name the path that the lookup found on `PATH`. A failure starts no child and makes no record. It logs the failed-start line of [Lines of child processes](../PROTOCOL.md#lines-of-child-processes). An `Invalid params`, `Process ID is required` or `Command is required` error writes no line.
+`<cwd>` is the value after the tilde expansion. `<command>` is the path of the start: the value of the request, or for a bare name the path that the lookup found on `PATH`. A failure starts no child and makes no record. It logs the failed-start line of [Lines of child processes](../DAEMON.md#lines-of-child-processes). An `Invalid params`, `Process ID is required` or `Command is required` error writes no line.
 
 One failure ends another process first: a session spawn whose command exists and does not start. See [Session supersede](#session-supersede).
 
@@ -155,7 +155,7 @@ The checks run in this order. They are measured on Linux. Step 5 is measured on 
 
 claustrum's own order, not measured on the reference: step 1 comes before step 2, and step 5 comes before the launcher starts. A start failure other than those two gives its errno text. The step 6 frames of claustrum are tested, not measured on a VM.
 
-A started launcher logs the start line of [Lines of child processes](../PROTOCOL.md#lines-of-child-processes), which names the first element of `launcher` only. A refusal writes no `[LauncherHandler]` line.
+A started launcher logs the start line of [Lines of child processes](../DAEMON.md#lines-of-child-processes), which names the first element of `launcher` only. A refusal writes no `[LauncherHandler]` line.
 
 ## A spawn during a shutdown
 
@@ -163,7 +163,7 @@ A spawn that reaches the start of its child after the shutdown began gets no rep
 
 ## A later daemon start
 
-On Linux and macOS a daemon that holds the [run-dir lock](../PROTOCOL.md#run-dir-lock-daemonlock) records each child in its run dir. A later daemon start on the same socket reads the records of a daemon that is gone. It ends each child whose process still matches its record, with `SIGTERM` and then `SIGKILL`. So a child that outlives its daemon can end at the next start. [Child records and the reap](../PROTOCOL.md#child-records-and-the-reap-linux-and-macos) has the rules. Windows records no child. A record that cannot be written does not fail the spawn. The reply is success, and the child still gets both identity markers.
+On Linux and macOS a daemon that holds the [run-dir lock](../DAEMON.md#run-dir-lock-daemonlock) records each child in its run dir. A later daemon start on the same socket reads the records of a daemon that is gone. It ends each child whose process still matches its record, with `SIGTERM` and then `SIGKILL`. So a child that outlives its daemon can end at the next start. [Child records and the reap](../DAEMON.md#child-records-and-the-reap-linux-and-macos) has the rules. Windows records no child. A record that cannot be written does not fail the spawn. The reply is success, and the child still gets both identity markers.
 
 ## Differences by system
 

@@ -16,7 +16,7 @@ reads this from `/proc/net/unix`. On macOS it learns this from an `lsof` run. If
 the host cleaner gives up on that run before a result comes, the daemon is also
 busy. The host cleaner sends no `SIGTERM` to
 a busy daemon. See
-[Host cleaner](PROTOCOL.md#host-cleaner-off-wire-linux-and-macos).
+[Host cleaner](DAEMON.md#host-cleaner-off-wire-linux-and-macos).
 
 ## cleaner
 
@@ -25,7 +25,7 @@ At intervals it stops orphan Claude Code process groups and daemons that are
 not in use, and it removes stale run directories. It works for only one layout
 of the socket path, and only for a daemon binary that is deployed under that
 layout. See
-[Host cleaner](PROTOCOL.md#host-cleaner-off-wire-linux-and-macos).
+[Host cleaner](DAEMON.md#host-cleaner-off-wire-linux-and-macos).
 
 ## containment
 
@@ -61,7 +61,7 @@ is a driver. See
 Noun. Eviction is the step in which a new daemon stops the daemon that holds
 the same socket. The new daemon does this before it binds the socket. It runs on Linux
 and macOS only. See
-[`daemon.lock`](PROTOCOL.md#run-dir-lock-daemonlock).
+[`daemon.lock`](DAEMON.md#run-dir-lock-daemonlock).
 
 ## guard
 
@@ -80,7 +80,7 @@ Noun. This term has three uses:
 - The identity of a machine is the set of values by which the daemon knows
   the host and its PID namespace.
 
-See [`daemon.lock`](PROTOCOL.md#run-dir-lock-daemonlock).
+See [`daemon.lock`](DAEMON.md#run-dir-lock-daemonlock).
 
 ## parity
 
@@ -93,7 +93,7 @@ reference. A behavior that has parity is not a divergence. See
 Noun. A pass is one full cycle of an operation through its items. For example,
 each run of the host cleaner is a pass. The documents also use the term for
 one cycle of measurements. See
-[Host cleaner](PROTOCOL.md#host-cleaner-off-wire-linux-and-macos).
+[Host cleaner](DAEMON.md#host-cleaner-off-wire-linux-and-macos).
 
 ## pin
 
@@ -178,7 +178,7 @@ Noun and verb. This term has three uses:
 Adjective. A stale object is left over from an operation or a daemon that
 stopped, and it is not in use. Examples are a stale socket file, a stale run
 directory, and a stale worktree entry. See
-[Host cleaner](PROTOCOL.md#host-cleaner-off-wire-linux-and-macos).
+[Host cleaner](DAEMON.md#host-cleaner-off-wire-linux-and-macos).
 
 ## stamp
 

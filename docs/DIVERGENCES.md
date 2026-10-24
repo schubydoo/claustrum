@@ -268,7 +268,7 @@ no flag and no key.
 
 - **Behavior.** If the fresh create of the log fails, the launcher judges the
   entry at the log path by `Lstat`.
-  [PROTOCOL.md → Daemon log](PROTOCOL.md#daemon-log-remote-serverlog) has the
+  [DAEMON.md → Daemon log](DAEMON.md#daemon-log-remote-serverlog) has the
   steps, which match `5fd08069` apart from the entries below.
   - Linux and macOS: an own regular file, or the own regular file behind an own
     link, is truncated. Every other entry fails the start with
@@ -371,9 +371,9 @@ no flag and no key.
 - **Reopen trigger.** The reference adds the same holder check on macOS (then
   this is parity). Or a legitimate macOS holder that `KERN_PROCARGS2` cannot
   read, reported as a failed handover.
-- **Pointers.** [PROTOCOL.md → Run-dir lock](PROTOCOL.md#run-dir-lock-daemonlock).
+- **Pointers.** [DAEMON.md → Run-dir lock](DAEMON.md#run-dir-lock-daemonlock).
   The host cleaner has its own gate, which is parity
-  ([Signals of the cleaner](PROTOCOL.md#signals-of-the-cleaner),
+  ([Signals of the cleaner](DAEMON.md#signals-of-the-cleaner),
   `retireAbandoned`). Code:
   `daemon_runlock_unix.go` (`holderSignalRefusal`, `stopRunDirHolder`),
   `daemon_runlock_darwin.go` (`realIsServeCmdline`, `procArgv`) and
@@ -468,7 +468,7 @@ no flag and no key.
 - **Reopen trigger.** A measurement shows the reference waiting before that
   `SIGKILL` (then this is parity). Or a child outlived a daemon restart because
   it replaced its program.
-- **Pointers.** [PROTOCOL.md → Child records and the reap](PROTOCOL.md#child-records-and-the-reap-linux-and-macos)
+- **Pointers.** [DAEMON.md → Child records and the reap](DAEMON.md#child-records-and-the-reap-linux-and-macos)
   and `childreap.go` (`settleGone`, `reapGoneLeader`).
 
 ### D22 · Refuse a worktree locked in the `.git` folder of `baseRepo` on remove (always-on) { #d22 }
@@ -676,8 +676,8 @@ no flag and no key.
   the key the daemon stays stock.
 - **Why deferred.** There is no demand. The default matches the reference, and
   the socket folder is owner-only in the real deployment.
-- **Pointers.** [PROTOCOL.md → Token
-  persistence](PROTOCOL.md#token-persistence-daemontoken) has the file and its
+- **Pointers.** [DAEMON.md → Token
+  persistence](DAEMON.md#token-persistence-daemontoken) has the file and its
   two caveats, and `tokenpersist.go`.
 
 ### CT-5 · Opt-in `-listen-pipe` Windows named-pipe transport { #ct-5 }
@@ -753,7 +753,7 @@ The `ldd` probe has the 5 s bound of the reference, always: see
 
 On macOS an idle daemon whose `lsof` run `SIGKILL` cannot end gets no SIGTERM
 and keeps its run dir, as on the reference. Only the time of that pass differs:
-see [PROTOCOL.md → The `lsof` reads](PROTOCOL.md#the-lsof-reads-macos).
+see [DAEMON.md → The `lsof` reads](DAEMON.md#the-lsof-reads-macos).
 
 ### D18 · `-cli-version` must not start with `.blob-` (retired) { #d18 }
 
@@ -763,8 +763,8 @@ The prune counts version files only, as on the reference. claustrum writes no
 ### D21 · A second daemon on a live socket appends to `remote-server.log` (retired) { #d21 }
 
 On Windows the launcher truncates a held log, and each daemon writes at its own
-offset, as on the reference: see [PROTOCOL.md → Daemon
-log](PROTOCOL.md#daemon-log-remote-serverlog).
+offset, as on the reference: see [DAEMON.md → Daemon
+log](DAEMON.md#daemon-log-remote-serverlog).
 
 ### D25 · Answer `"unavailable"` for the peer check and serve every caller (retired) { #d25 }
 

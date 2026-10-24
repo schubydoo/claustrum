@@ -70,6 +70,9 @@ found process ([CT-1](DIVERGENCES.md#ct-1)).
   [driver](GLOSSARY.md#driver) uses it.
 - :material-protocol: **[Protocol reference](PROTOCOL.md)**. The transport,
   the error texts, the stream frames, and the modes and flags of the binary.
+- :material-cog: **[Running the daemon](DAEMON.md)**. The token file and the
+  lock beside the socket, the host cleaner, the start, the log and the orphan
+  exit.
 - :material-api: **Methods**. One page for each method:
   [server.*](protocol/server.md),
   [files.list](protocol/files-list.md),

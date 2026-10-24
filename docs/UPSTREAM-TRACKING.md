@@ -424,7 +424,7 @@ the linked pages. The history of each build is in
   On Linux, when the process runs `program` or holds it as one whole argument,
   `89cb6289` accepts the record (Linux VM). `f6010b97` sends no signal in some
   of those states. That difference is not drift. See
-  [PROTOCOL.md → Child records and the reap](PROTOCOL.md#child-records-and-the-reap-linux-and-macos).
+  [DAEMON.md → Child records and the reap](DAEMON.md#child-records-and-the-reap-linux-and-macos).
 - The configuration listing, the stray `commondir` rules and the `git.info` root
   follow `89cb6289`. `5fd08069` is not measured there. In the state `shadow` the
   answers of [The settings copy](PROTOCOL.md#the-settings-copy) come first.
@@ -473,7 +473,7 @@ the linked pages. The history of each build is in
   so a file missing from a seeded worktree looks like a regression against the
   previous pin. [REFERENCE-BUILDS.md](REFERENCE-BUILDS.md) holds all seven, and
   all seven are reconciled. The macOS `lsof` reads of the host cleaner follow
-  [The `lsof` reads](PROTOCOL.md#the-lsof-reads-macos). The longer pass of
+  [The `lsof` reads](DAEMON.md#the-lsof-reads-macos). The longer pass of
   claustrum there is in the `5fd08069` section of
   [REFERENCE-BUILDS.md](REFERENCE-BUILDS.md), and it is not drift. An `lsof` command that does not start, and a run that
   writes to stderr and exits 1, are parity with `89cb6289` for the busy read and

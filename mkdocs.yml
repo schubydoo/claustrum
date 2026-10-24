@@ -83,6 +83,7 @@ nav:
   - Home: index.md
   - Architecture: ARCHITECTURE.md
   - Protocol reference: PROTOCOL.md
+  - Running the daemon: DAEMON.md
   - Methods:
       - server.*: protocol/server.md
       - files.list: protocol/files-list.md
