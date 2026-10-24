@@ -168,8 +168,8 @@ under [Stream notifications](#stream-notifications), is the wire contract.
 ### Error-string catalogue
 
 The method-level error texts, verbatim. A text that only one method sends is on the
-page of that method, and a row of the method links there. The method pages under `docs/protocol/` give the trigger and
-the result shape. A text with no code and no
+page of that method, and a row of the method links there. The method pages under
+`docs/protocol/` give the trigger and the result shape. A text with no code and no
 "in `error`" note is a JSON-RPC error `-32602`. "in `error`" is the `error` member of
 the result. A row that says "in the frame of" a method, or "The same frames", is
 `-32603` on `git.info`, `git.status` and `git.list_branches`. On `git.worktree_create`
