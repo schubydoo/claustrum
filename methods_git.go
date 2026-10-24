@@ -206,8 +206,8 @@ func gitInfo(req *request) response {
 	}
 	// The git-directory trust check runs on path (gitdirtrust.go). The check of the
 	// daemon's own GIT_CONFIG_COUNT comes after a trust refusal and before the "no
-	// repository" answer (docs/PROTOCOL.md → "Where each method
-	// answers the refusal").
+	// repository" answer (docs/PROTOCOL.md → "Where each method answers the
+	// refusal").
 	t := requestGitDirTrust(p.Path, true)
 	if t.verdict == gitDirRefused {
 		return errResult(req.ID, codeInternal, t.refusal)
@@ -815,8 +815,8 @@ func gitListBranches(req *request) response {
 	}
 	// The git-directory trust check runs on path (gitdirtrust.go). The check of the
 	// daemon's own GIT_CONFIG_COUNT comes after a trust refusal and before the "no
-	// repository" answer (docs/PROTOCOL.md → "Where each method
-	// answers the refusal").
+	// repository" answer (docs/PROTOCOL.md → "Where each method answers the
+	// refusal").
 	t := requestGitDirTrust(p.Path, true)
 	if t.verdict == gitDirRefused {
 		return errResult(req.ID, codeInternal, t.refusal)
@@ -2689,8 +2689,7 @@ func removeGoneWorktree(req *request, p *gitParams, repo, path string) response 
 	}
 	// The check of the daemon's own GIT_CONFIG_COUNT refuses in both modes. Without
 	// worktreeRoot it comes after a trust refusal and before the "no repository"
-	// answer (docs/PROTOCOL.md → "Where each method
-	// answers the refusal").
+	// answer (docs/PROTOCOL.md → "Where each method answers the refusal").
 	checkRegistration := true
 	// answered is the answer of `rev-parse --absolute-git-dir` in baseRepo, or "".
 	answered := ""
@@ -2874,8 +2873,8 @@ func lockCheckRefusal(worktreePath string) string {
 		" is locked (its registrations could not be examined); retry"
 }
 
-// unreadableRepoLockCheckRefusal is the lock-check refusal of git.worktree_remove that
-// names the repository (docs/PROTOCOL.md → "Where each method answers the
+// unreadableRepoLockCheckRefusal is the lock-check refusal of git.worktree_remove
+// that names the repository (docs/PROTOCOL.md → "Where each method answers the
 // refusal").
 func unreadableRepoLockCheckRefusal(worktreePath, repo string) string {
 	return "failed to remove worktree: could not check whether " + worktreePath +

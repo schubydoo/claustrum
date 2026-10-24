@@ -182,8 +182,7 @@ func profileEnv(heavy bool) []string {
 // carries no hook pins, and the daemon's GIT_CONFIG_COUNT set is kept as it is. The
 // heavy set comes before a heavy call and the light set before a light call
 // (docs/PROTOCOL.md → "Listings and probes"). The call after the listing keeps
-// the daemon's own LC_ALL,
-// LANGUAGE and LANG in their places.
+// the daemon's own LC_ALL, LANGUAGE and LANG in their places.
 //
 // pin is the GIT_COMMON_DIR pin of the git-directory trust check (commonDirPinEnv),
 // or nil. gitUse.precursorEnv is this function with the profile of one request.

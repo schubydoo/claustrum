@@ -98,9 +98,8 @@ func TestWaitForDaemonAcceptGivesUpAtDeadline(t *testing.T) {
 
 // A failed start is NOT silent: the launcher prints the timeout line to stderr
 // and exits 1. docs/DAEMON.md → "The launcher wait" quotes that line as the
-// contract, and the exit code
-// alone was already covered — this pins the message text so the documented
-// string cannot drift away from the code.
+// contract, and the exit code alone was already covered — this pins the message
+// text so the documented string cannot drift away from the code.
 //
 // The reference reports exactly this and exits 1 (measured at 5db5e4a with a
 // zero-byte -token-file, whose child refuses to start): "claude-ssh: timeout

@@ -17,9 +17,8 @@ import (
 // pipe begins accepting (and before the daemon prints its ready line). A graceful
 // shutdown removes it if it is still this daemon's own file. It stays after an
 // unclean kill or crash, when its identity could not be recorded, and when the
-// unlink fails. The
-// fixed name + socket-dir location ARE the discovery contract, so they are
-// deliberately not configurable.
+// unlink fails. The fixed name + socket-dir location ARE the discovery
+// contract, so they are deliberately not configurable.
 const pipeNameFileName = "rpc.pipe"
 
 // pipeNameFilePath is where rpc.pipe lives: beside the socket, the per-session
