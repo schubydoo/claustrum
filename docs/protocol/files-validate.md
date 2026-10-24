@@ -2,6 +2,8 @@
 
 `files.validate` says whether a path exists and whether it is a directory. It reports a path that the daemon cannot examine in the response, not as a JSON-RPC error.
 
+claustrum is built to answer as the reference does.
+
 ## Request
 
 ```json
@@ -48,4 +50,4 @@ This method has no `errorCode` member. It has one JSON-RPC error.
 
 ## Differences from the reference
 
-claustrum is built to answer as the reference daemon does, and no entry of the divergence catalog applies to this method.
+No entry of the [divergence catalog](../DIVERGENCES.md) applies to this method.
