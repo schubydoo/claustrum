@@ -628,7 +628,7 @@ no flag and no key.
   running and log one line with their count. The new daemon does not re-adopt
   them. A client can find them again through the CT-1 `pid` and `startTime`.
 - **Limits.** The survivors lose their stdio, so only a child that tolerates a
-  dead stdin and stdout lives on. On Linux and macOS the shutdown removes the
+  dead stdin and stdout lives on (not measured on Windows). On Linux and macOS the shutdown removes the
   records of the kept children (claustrum's own). So the reap of the next start
   sends them no signal. That covers the processes of the process table only.
   A process whose `id` a later spawn took keeps its record, and the next start
@@ -637,7 +637,7 @@ no flag and no key.
   the flag). A child whose start returns after the shutdown began is ended also
   with the flag (from the code). Its client got no reply, so no client has its
   `pid`.
-- **Reference.** No such flag. It exits with code 2 on it.
+- **Reference.** `89cb6289` has no such flag and exits with code 2 on it.
 - **Activate.** `-keep-children` or the `keep-children` key.
 - **Pointers.** [PROTOCOL.md → Flags of claustrum
   alone](PROTOCOL.md#flags-of-claustrum-alone) has the log line, the stdio of the
@@ -648,11 +648,14 @@ no flag and no key.
 - **Behavior.** `claustrum.conf` is an optional `key = value` file with `#`
   comments, in the folder that holds the binary. Its keys mirror the flags. The
   [flags table](PROTOCOL.md#flags-and-config-keys) lists each key, the
-  deprecated ones too. Each key sets a behavior that is off without it.
+  deprecated ones too. Each key that sets something turns on, or tunes, a behavior
+  that is off without the file. The deprecated keys set nothing and log one
+  warning.
 - **Fail-safe.** A missing file, a file that cannot be read and a path that is no
   regular file, a link too, give stock behavior. claustrum reads at most the
-  first 64 KiB. It ignores an unknown key and an invalid value, and a problem of
-  the file never fails the start. A duration uses `time.ParseDuration`, which
+  first 64 KiB. It ignores an unknown key and an invalid value. A problem of the
+  file never fails the start. A `wire-log` path that cannot be opened does fail
+  it. A duration uses `time.ParseDuration`, which
   refuses a bare number other than zero. A zero in any spelling means off. So no
   accepted value can switch a divergence on by mistake.
 - **`version-override`.** Set it to the commit SHA that the desktop client pins,
@@ -734,7 +737,8 @@ D11 made a deadline on that run opt-in, and claustrum now stops it at the 30 s a
 
 claustrum decompresses into the staging file first, as the reference does, so a
 body that is no zstd archive answers the decoder text. The checksum test comes
-before the chmod, the clear and the rename.
+before the chmod, the clear and the rename (claustrum's own): see
+[PROTOCOL.md → -install](PROTOCOL.md#-install-ensure-the-agent-cli).
 
 ### D14 · Deadline on the `ldd --version` libc probe (retired) { #d14 }
 
