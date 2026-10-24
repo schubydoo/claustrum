@@ -123,7 +123,7 @@ the files and the seams, and the rules that have no other home.
 - **Login-shell PATH.** `shellenv_unix.go` runs the read at the first
   `process.spawn`, in a process group of its own. At the 4 s cap it kills that
   group. `shellenv_windows.go` reads the daemon's own PATH. See
-  [The login-shell PATH](PROTOCOL.md#the-login-shell-path-linux-and-macos).
+  [The login-shell PATH](protocol/process-spawn.md#the-login-shell-path-linux-and-macos).
 - **Named pipe.** With `-listen-pipe` (Windows only, opt-in) a second
   `acceptLoop` serves the same `serveConn` over a named pipe
   (`pipetransport*.go`). See

@@ -399,39 +399,30 @@ later replay.
   stdout/stderr/exit.
 - `data` is base64 for stdout/stderr. The `exit` frame carries `exitCode` and no
   `data`. A signal-terminated child reports `exitCode: -1`, not `128+signo`.
-- `signal` and `killedBy` were added by `4534d86`. They appear on the `exit` frame
-  only, both after `exitCode`, and both are omitempty, so a normal exit stays
-  byte-identical. `signal` is the SIG-prefixed name of the terminating signal, such
-  as `SIGTERM` or `SIGKILL`, read from the wait status. It is omitted on a normal
-  exit, and it is omitted always on Windows, which has no signal on the wait path.
-  That was measured on a Windows VM, where the reference omits `signal` and still
-  emits `killedBy`. `killedBy` names who asked the daemon to kill the process. It
-  is `client` for `process.kill` and `process.killAndWait`, and `shutdown` for the
-  shutdown and `killAll` sweep. `killedBy` is emitted on every OS. The `client`
-  values and the `SIGTERM` and `SIGKILL` names are live-measured. The other mapped
-  signal names derive from the same wait-status path and are not individually
-  measured against the reference. The `shutdown` value is not probe-measured,
-  because the shutdown exit frame races connection teardown
-  and is not client-observable.
+- `signal` and `killedBy` appear on the `exit` frame only, both after `exitCode`,
+  and both are omitempty, so a normal exit stays byte-identical. `signal` is the
+  SIG-prefixed name of the terminating signal from the wait status, such as
+  `SIGTERM` or `SIGKILL`. It is omitted on a normal exit. It is omitted always on
+  Windows (measured on Windows). `killedBy` names who asked the daemon to kill the
+  process: `client` for `process.kill` and `process.killAndWait`, and `shutdown`
+  for the shutdown and `killAll` sweep. It is emitted on every OS. Signal names
+  other than `SIGTERM` and `SIGKILL` are not measured. The `shutdown` value is not
+  measured, because that exit frame races the close of the connection.
 - The `exit` frame waits at most 5 seconds after the process exits for
   stdout/stderr to reach EOF. The daemon then closes the read ends and emits the
-  frame anyway. This matters when the command leaves a grandchild that holds the
-  same pipe, as `npm run dev &` does. The daemon does not forward output that the
-  grandchild writes after the cap, because that write fails `EPIPE`. The
-  `process.reattach` `running` flag does not wait for that frame. Since `90fca6e6`,
-  a reattach inside the drain window reports `running: false`. In claustrum it
-  flips at the reap itself. On the reference the flip is measured one second into
-  the drain. The probe therefore bounds the flip
-  at one second rather than at the reap.
-  `process.stdin` refuses inside the same window with `-32602 Process not
-  running`, for a write that carries fresh bytes. An offset gap still
-  answers `-32003` and a wholly duplicate write still answers
-  `{"success":true,…,"duplicate":true}`. Before `90fca6e6`, both paths reported
-  the process as still running inside the drain, measured on `19f30c46`. The
-  refusal also stops the drain window from inflating `applied` and `stdinApplied`, which used to count bytes the
-  closed pipe discarded. The acknowledgement caveat of `stdinApplied` (see the page
-  [process.reattach](protocol/process-reattach.md)) still
-  applies for a write accepted while the process was genuinely live.
+  frame anyway. This matters when a grandchild holds the same pipe, as
+  `npm run dev &` does. Output that the grandchild writes after the cap is lost,
+  because that write fails `EPIPE`.
+- Inside that drain window `process.reattach` reports `running: false`. claustrum
+  flips it at the reap. The reference is measured `false` one second into the
+  drain.
+- Inside the same window `process.stdin` answers `-32602 Process not running` for
+  a write that carries fresh bytes, so `applied` and `stdinApplied` do not count
+  bytes that the closed pipe discarded. An offset gap still answers `-32003`, and
+  a wholly duplicate write still answers `{"success":true,…,"duplicate":true}`.
+  The acknowledgement caveat of `stdinApplied` (see
+  [process.reattach](protocol/process-reattach.md)) still applies to a write
+  accepted while the process was live.
 - Each stdout/stderr frame carries at most one 32 KiB read. Larger output splits
   across frames. Concatenate `data` in `seq` order to reassemble it. The exact
   frame *boundaries* depend on pipe scheduling and are not stable. Only the
@@ -1746,37 +1737,36 @@ These states are not measured. The rules are from the code.
 ### Time limits of git calls
 
 On `git.list_branches`, `git.info`, `git.status` and `git.worktree_create` most
-calls end at 2 minutes (`5fd08069`, round `task010-01`, Linux, macOS and Windows
-VMs). Config listings before a git call have a 30 second limit (cells T10 and TA).
+calls end at 2 minutes. Config listings before a git call have a 30 second limit (the one before the
+checkout: Linux and macOS VMs).
 So do the repository config read (`git.status`, Linux VM) and each
-`config.worktree` listing (cells TW and TS, round `task010-04`, Linux VM).
-A create with the filter rule and no settings copy runs claustrum's own
-`--show-scope` listing, with the 2 minute limit and the `timeoutMs`. A stopped call of the top folder pair stops the create with the stop
-text (claustrum's own).
-The scan of
-ignored files ends at 10 minutes (Linux and macOS VMs). Read-tree checkouts have
-no such limit.
+`config.worktree` listing (Linux VM). A create with the filter rule and no
+settings copy runs claustrum's own `--show-scope` listing, with the 2 minute
+limit and the `timeoutMs`. A stopped call of the top folder pair stops the create
+with the stop text (claustrum's own). The scan of ignored files ends at 10
+minutes (Linux and macOS VMs). Read-tree checkouts have no such limit.
 
 - The stop is SIGTERM, then SIGKILL 2 s later. On Windows the process ends at
   once. Config file listings get SIGKILL alone, not the listing before the
-  read-tree call (Linux VM, cell A4x).
+  read-tree call (Linux and macOS VMs).
 - Before a good add no call follows a stopped call. A stopped add removes an
   empty leaf. A stopped repository test of a create answers the stop text alone,
-  with `worktree_add_failed` (cell TI). After a good add the rollback runs its own
-  calls (cells TA and TW). A stopped scan copies nothing, and the create succeeds.
-- While a `"shadowDirOff":true` request runs, no daemon call stops at 2
-  minutes (cells T8 and T9). Then claustrum's own limit is 30 minutes.
-- `timeoutMs` does not end the add (cell T6), nor, with `"shadowDirOff":true`,
-  the listing before the checkout (cell T12).
+  with `worktree_add_failed` (Linux VM). After a good add the rollback runs its
+  own calls (Linux and macOS VMs). A stopped scan copies nothing, and the create succeeds.
+- While a `"shadowDirOff":true` request runs, no call of that request stops at
+  2 minutes. No call of another request stops at 2 minutes then either (Linux
+  VM). claustrum's own limit is then 30 minutes.
+- `timeoutMs` does not end the add. With `"shadowDirOff":true` it does not end
+  the listing before the checkout either (Linux VM).
 - With no `timeoutMs` a reply waits 2 s after git exits for a child that holds
-  its output and gets no signal. Listings before a call and the `status` scan
-  wait until stdout closes, A1 and A2 past the limit (A1 to A4 of round
-  `task101-01`, both pipes held, Linux VM). Held past 30 s, the config read on standard input ends near 31 s (B1), and
-  `config.worktree` reads too (not measured). A holder of stderr alone delays a
-  config listing about 2 s and that read 1 to 1.5 s (A1-e and B1-e of rounds
-  `task111-01` and `task111-02`, Linux and macOS VMs).
-- `git.worktree_remove` gets none of these limits. Its first call has the 30 s bound
-  of the call about the repository (cell TR, round `task010-02`, Linux VM).
+  its output and gets no signal. Listings before a call wait until stdout
+  closes, also past the limit. The `status` scan waits too, within its limit
+  (Linux VM). Held past 30 s, the
+  config read on standard input ends near 31 s (Linux VM), and `config.worktree`
+  reads too (not measured). A holder of stderr alone delays a config listing
+  about 2 s and that read 1 to 1.5 s (Linux and macOS VMs).
+- `git.worktree_remove` gets none of these limits. Its first call has the 30 s
+  bound of the call about the repository (Linux VM).
 
 ### The branch step
 
@@ -1785,9 +1775,14 @@ remote-tracking ref reaches its tip. Else it keeps the branch.
 `git.worktree_remove` runs it after the worktree directory and its registration
 go. The `git.worktree_create` rollbacks run it on the branch that the call made.
 `<b>` is `branchName` as sent. `<tip>` is the object name in the listed record
-of `refs/heads/<b>`. A rule that is not marked is measured against
-`89cb6289` on a Linux VM. A rule that names macOS or Windows was measured there
-too. A rule marked "claustrum's own" is not measured.
+of `refs/heads/<b>`. A rule of this section with no other mark is measured
+against `89cb6289` on a Linux VM.
+
+The step runs `for-each-ref`, `rev-parse --verify`, `rev-list` and
+`update-ref`. Each runs in `baseRepo` after its own configuration listing. It
+carries the light `-c` list and the six values of the heavy profile, in an order
+of their own (see [Hardened git calls](#hardened-git-calls)) (Linux, macOS and
+Windows VMs).
 
 #### Which branch the step deletes
 
@@ -1821,35 +1816,9 @@ too. A rule marked "claustrum's own" is not measured.
       reads the config of the repository again. A refusal there keeps the
       branch (`5fd08069`, Linux and macOS VMs).
 
-#### The git calls of the branch step
-
-Each call runs in `baseRepo` after its own configuration listing (see
-[Hardened git calls](#hardened-git-calls)). The calls are
-`for-each-ref --count=10001 --format=%(objectname)%00%(refname)%00%(symref)
-refs/heads/`, `rev-parse --verify --quiet refs/heads/<b>^{commit}`,
-`rev-list -n 1 <tip> --not --remotes --not --stdin --` and
-`update-ref --no-deref -d refs/heads/<b> <tip>`. Every call carries the light
-`-c` list, and `rev-list` adds `-c core.commitGraph=false` after it. The daemon's
-own environment comes first (see
-[The daemon's own git environment](#the-daemons-own-git-environment)). Then the
-calls set `GIT_TERMINAL_PROMPT=0`,
-`GIT_NO_REPLACE_OBJECTS=1`, `GIT_GRAFT_FILE=<null device>` and the
-`GIT_COMMON_DIR` pin. Then come `GIT_CONFIG_COUNT`, the inherited config pairs,
-the hook pins,
-`GIT_NO_LAZY_FETCH=1`,
-`GIT_ALLOW_PROTOCOL=denied_by_claude_ssh` and an empty `GIT_ASKPASS` (Linux,
-macOS and Windows VMs). Only `rev-list` gets a pipe on stdin: one
-`^<refname>` line for each other local branch that is not a symbolic ref. The
-other calls get the null device, where `89cb6289` gives a character device (macOS
-VM). In
-some states the reference runs more git calls than claustrum. Examples are no
-repository at `baseRepo`, a gone worktree path, a second create at one path and
-an attach add. The frames are equal.
-
 #### Time limits of the branch step
 
-These bounds are parity. They are always on, and they are not a divergence of
-the catalog.
+These bounds are always on. They are not a divergence.
 
 - One bound of 60 s covers the branch list and the commit check together. At the
   bound the running call is killed, with no SIGTERM first (Linux, macOS and
@@ -1871,11 +1840,10 @@ the catalog.
   one goes through a linked worktree. If two removes have branches that share a
   unique commit, one branch stays, and the second reply has
   `"branchKept":true` (Linux and macOS VMs). claustrum keys this lock by the
-  common git dir, also in a rollback (claustrum's own). So two names of one git
-  directory count as one repository here.
+  common git dir, also in a rollback (claustrum's own).
 - The steps of different repositories run at the same time.
-- claustrum runs two removes of one `baseRepo` one after the other. `89cb6289`
-  deletes both worktree directories first.
+- claustrum runs two removes of one `baseRepo` one after the other (claustrum's
+  own).
 - A remove deletes its worktree directory while the `worktree add` of a create
   in the same git directory runs. Its registration, branch and reply wait for
   the add (`5fd08069`, Linux and macOS VMs). They do not wait for the checkout
@@ -1950,10 +1918,9 @@ the precedence of a flag and its key, and the bypass rule.
 | `-cli-keep <n>` | none | `3` | version files of the cli-dir to retain on prune, the new CLI among them. The new CLI always stays. `0` and a negative value remove every version file but the new CLI | -install |
 | none (config only) | `version-override` | none | `-version` stdout rebrand (CT-3) | -version |
 
-Config-value parsing: bool keys accept `true/1/yes/on` and `false/0/no/off`. The
-parser ignores a negative or unparseable numeric value, so a typo can never
-silently enable a cap. An unrecognised bool value leaves the key unset, and the
-flag value, or the default, stands.
+Bool keys accept `true/1/yes/on` and `false/0/no/off`. Any other bool value, and a
+negative or unparseable number, leaves the key unset, so the flag value or the
+default stands.
 
 ### -serve — run the daemon
 
@@ -1967,8 +1934,11 @@ The binary self-daemonizes. It re-execs itself as a detached process, which
 reparents to init, and that process runs the RPC server.
 [Daemon startup](DAEMON.md#daemon-startup-serve) has what the start does, the ready line,
 and the exit codes and texts of the launcher. Unless a rule here says otherwise,
-it is measured against `89cb6289` on Linux and macOS VMs. The flags under
+it is measured against `89cb6289` on Linux and macOS. The flags under
 [Flags of claustrum alone](#flags-of-claustrum-alone) have no reference run.
+`process.spawn` has [the login-shell
+PATH](protocol/process-spawn.md#the-login-shell-path-linux-and-macos) of the
+children.
 
 #### The token source
 
@@ -1978,15 +1948,14 @@ The daemon writes its reason to its own stderr, which is the
 12 s, as under [The launcher wait](DAEMON.md#the-launcher-wait). This is deliberate parity.
 
 - With neither flag the reason is
-  `claustrum: daemonized child requires --token-file or --token-fd`. That case is
-  not measured on `89cb6289`.
+  `claustrum: daemonized child requires --token-file or --token-fd` (not
+  measured).
 - A zero-byte `-token-file` behaves the same way, with the reason
   `claustrum: token is empty`. The daemon removes the file first.
 - A `-token-file` that cannot be read gives `claustrum: read --token-file: <err>`
   (from the code).
-- The daemon reads the token as a line. It strips every trailing `\r` and `\n`, and
-  keeps other whitespace verbatim (from the code; the reference rows cover one
-  `\n` or `\r\n`). It then removes the
+- The daemon reads the token as a line. It strips every trailing `\r` and `\n` (a single
+  `\n` or `\r\n` is measured). It keeps other whitespace verbatim (from the code). It then removes the
   `-token-file`, as under [Authentication](#authentication).
 - `-token-fd <n>` is claustrum-only. On Windows the start fails (from the code, not
   measured). On Linux and macOS the launcher reads the token from an
@@ -1996,38 +1965,6 @@ The daemon writes its reason to its own stderr, which is the
   (from the code). An empty token there is no read failure. The daemon then logs
   `claustrum: read --token-file: open : <err>`, and the launcher gives up at 12 s
   (from the code).
-
-#### The login-shell PATH (Linux and macOS)
-
-The daemon runs no login shell at its start. The first `process.spawn` reads the
-login-shell PATH, and that spawn waits for the read. The daemon keeps the result
-for its life, and it keeps a failed read too. On Windows the first spawn reads the
-daemon's own PATH and runs no shell (from the code). See
-[process.spawn](protocol/process-spawn.md#the-environment-of-the-child).
-
-- If `$SHELL` is an executable file, the read runs `$SHELL -l -i -c …`. Otherwise
-  it runs the first usable of `/bin/zsh`, `/bin/bash` and `/bin/sh`.
-- The value reaches `process.spawn` children as their `PATH` only. It never
-  reaches the daemon's own environment, so it never changes how the daemon
-  resolves a `command`.
-- The read has a cap of 4 s. At the cap the daemon kills the shell and discards
-  whatever it printed, even a valid PATH. Children then get the inherited PATH,
-  and the log holds
-  `[shellenv] Failed to extract PATH from login shell: shell PATH extraction timed out (<shell>)`.
-- The cap also holds after the shell ends while another process holds the output
-  pipe of the shell. The daemon sends that process no signal. claustrum closes its
-  end of the pipe two caps after the shell ended (claustrum's own, not measured).
-- The [SSH agent hand-off](protocol/process-spawn.md#the-ssh-agent-hand-off-linux-and-macos)
-  can run the login shell a second time at the first spawn.
-
-The shell of the PATH read gets seven entries. Five come from the daemon: `HOME`,
-`PATH`, `SHELL`, `TERM` and `USER`. A name that the daemon does not have gets an
-empty value. The other two are `DISABLE_AUTO_UPDATE=true` and
-`ZSH_DISABLE_COMPFIX=true`. No other entry of the
-daemon reaches it, such as `LANG` or `CLAUDE_SSH_DAEMON_CHILD`. The order of the
-entries is not measured. A daemon that has a `TERM`, or that has no `HOME`, `PATH`
-or `USER`, is not measured either. The shell of the SSH agent read gets another
-environment.
 
 #### The re-exec marker
 
@@ -2040,51 +1977,39 @@ inherit it as on the reference.
 #### Flags of claustrum alone
 
 These flags are off the wire. `-keep-children` and `-listen-pipe` have an entry in
-[`DIVERGENCES.md`](DIVERGENCES.md). `-metrics-addr` and `-wire-log` have none, and
-this section holds their detail:
+[`DIVERGENCES.md`](DIVERGENCES.md). `-metrics-addr` and `-wire-log` have none:
 - `-metrics-addr <a>` serves Prometheus counters at
   `http://<a>/metrics`, covering connections, spawns and exits, reattaches, and
   stream and stdin bytes. It is off by default, with no listener. It counts only,
   and it has no auth, so bind it to loopback. The daemon logs a bind failure
   (`[Server] metrics: …`), which is non-fatal.
 - `-wire-log <p>` appends every JSON-RPC frame, in both directions, to
-  `<p>` as JSONL. It is a diagnostic side channel that observes already-marshaled
-  bytes, so a daemon that logs emits frames byte-identical to one that does not. It
-  is off by default, with no file and no work. `-wire-log-max-string <n>` bounds
-  each string value. The default is 512, and `0` keeps whole payloads, which is
-  needed to reconstruct a session from stream frames. Credentials are redacted by
-  key, which covers the `auth` member and token-like env keys. A secret a client
-  embeds inside a payload string is not caught, so redaction is best-effort, not a
-  guarantee. A capture holds the frames of both directions, such as the `content`
-  of a `files.read` reply, `process.stdin` and the spawn env. It is therefore
-  forced to `0600` on every open, appends included, and it belongs somewhere
-  private. Each record carries the
-  frame as a decoded `body`, which is structured and truncated per value. That is a
-  normalized view, so field order is not significant there. At
-  `-wire-log-max-string=0` the record carries the frame as `raw` instead, verbatim,
-  preserving the field order and number formatting that *is* the wire contract. An
-  unopenable path is fatal, not silent.
-- `-keep-children` is CT-2. It is off by default, so a graceful
-  shutdown kills the children: the whole tree on Linux and macOS, the direct child
-  on Windows. When set, it leaves spawned children running
-  across a restart, and logs `[Server] -keep-children: leaving <n> running child
-  process(es) alive across shutdown`. On Linux and macOS that shutdown also
-  removes the records of the kept children. The reap of the next daemon start
-  then sends them no signal. That rule is claustrum's own, and CT-2 names its two
-  limits: a process whose `id` a later spawn took, and the host cleaner. The new
-  daemon does not re-adopt them, and the survivors lose their stdio. Their stdin
-  reaches EOF, and a stdout or stderr write gets SIGPIPE, or EPIPE for a child that
-  ignores SIGPIPE, such as Node. It therefore suits only children that tolerate
-  dead stdio. On Windows the flag keeps the whole tree alive after `-stop` and
-  after `server.shutdown`, the direct child too (Windows VM). The stdio of a survivor is not
-  measured there. The reference has no such flag, and `89cb6289` exits `2` on it.
+  `<p>` as JSONL. It observes already-marshaled bytes, so a daemon that logs
+  emits frames byte-identical to one that does not. It is off by default, with no
+  file and no work. `-wire-log-max-string <n>` bounds each string value. The
+  default is 512, and `0` keeps whole payloads, which is needed to reconstruct a
+  session from stream frames. Each record carries the frame as a decoded `body`,
+  truncated per value, where field order is not significant. At
+  `-wire-log-max-string=0` the record carries the frame as `raw` instead,
+  verbatim, with the field order and number formatting of the wire. An
+  unopenable path is fatal. [SECURITY.md](https://github.com/schubydoo/claustrum/blob/main/SECURITY.md) has the redaction and
+  the file mode.
+- `-keep-children` is [CT-2](DIVERGENCES.md#ct-2), off by default. Without it, a
+  graceful shutdown ends the children: the whole tree on Linux and macOS, the
+  direct child on Windows. With it, the children stay alive across a restart,
+  and the daemon logs `[Server] -keep-children: leaving <n> running child
+  process(es) alive across shutdown`. A survivor loses its stdio. Its stdin
+  reaches EOF, and a stdout or stderr write gets SIGPIPE, or EPIPE for a child
+  that ignores SIGPIPE, such as Node. On Windows the flag keeps the whole tree
+  alive after `-stop` and after `server.shutdown`, the direct child too
+  (measured on Windows). The stdio of a survivor is not measured there.
 - `-listen-pipe` is CT-5 and Windows-only. See [Named-pipe
   transport](#named-pipe-transport-windows-opt-in). The daemon logs a setup failure
   (`[Server] named-pipe transport: …`), which is non-fatal. The socket still serves.
 
-The opt-in divergence on this mode is `-max-extract-bytes` (D3). Off is parity.
-Its frame is in [files.extract_tar](protocol/files-extract-tar.md). See the flags
-table and [`DIVERGENCES.md`](DIVERGENCES.md).
+The opt-in divergence of this mode on the wire is `-max-extract-bytes`
+([D3](DIVERGENCES.md#d3)). Off is parity. Its frame is in
+[files.extract_tar](protocol/files-extract-tar.md).
 
 ### -bridge — stdio↔socket relay
 
@@ -2097,14 +2022,10 @@ client that speaks through it supplies `"auth"` itself. It is strict, so a dial
 failure is a hard error: `claustrum: dial server: <err>` on stderr, exit `1`.
 
 At stdin EOF the bridge half-closes its socket write side, so the daemon reads
-EOF. The bridge then keeps copying the socket to stdout. It exits `0` when the
-daemon closes the connection, even with stdin still open. It prints every frame
-that arrived before the close. Measured against `f6010b97` and `90fca6e6` on
-Linux and Windows VMs, the reference bridge relayed the parse-error frame for a
-final partial line. It then exited `0`. Measured on a Linux VM, the
-reference bridge also exited `0` with stdin still open once the daemon closed.
-It printed the frames that arrived before the close. If the half-close fails,
-the claustrum bridge closes the socket fully.
+EOF, and the bridge keeps copying the socket to stdout. It relays the
+parse-error frame of a final partial line, and then exits `0` (measured on Linux
+and Windows). It prints every frame that arrived before the daemon closed the
+connection, and it exits `0` also with stdin still open (measured on Linux). If the half-close fails, the claustrum bridge closes the socket fully.
 
 On Windows the daemon can miss the half-close of the bridge (see
 [Transport](#transport)). The bridge then does not exit.
@@ -2115,15 +2036,13 @@ On Windows the daemon can miss the half-close of the bridge (see
 claustrum -stop -socket <p>          # no token needed, and none is read
 ```
 
-The words, the signals and the removes are measured against `f6010b97` and
-`90fca6e6` on Linux and macOS VMs. The steps after a successful connect are
-measured against `5fd08069` on Linux, macOS and Windows VMs. A rule marked
-claustrum's own is not measured.
+Unless a rule says otherwise, the rules of `-stop` are measured on Linux and
+macOS, and the steps after a successful connect on Windows too. A rule marked claustrum's own is not measured.
 
 `-stop` sends `{"jsonrpc":"2.0","id":1,"method":"server.shutdown"}` and a
 newline. It sends no `auth` member, because that method is not authenticated
-(see [Authentication](#authentication)). Then it reads once, with a 2 s deadline
-(`5db5e4a`), and discards what it reads. It never relays a frame to stdout. A live daemon's
+(see [Authentication](#authentication)). Then it reads once, with a 2 s deadline,
+and discards what it reads. It never relays a frame to stdout. A live daemon's
 reply does not always arrive (see [The reply races the close](protocol/server.md#the-reply-races-the-close)). A reply and an EOF lead to
 the same next step. claustrum treats every other read result the same way
 (claustrum's own).
@@ -2150,14 +2069,11 @@ The lock check uses the holder test of the serve eviction. See [Run-dir
 lock](DAEMON.md#run-dir-lock-daemonlock). On Linux the holder test of the reference is
 not isolated (not measured). Before `SIGKILL`, `-stop` tests the holder again. A
 lock that another process took during the `SIGTERM` wait gives `survivor`. The
-new holder gets no signal (`5fd08069`, Linux VM, after a successful connect.
-After a failed connect it is claustrum's own). Windows has no run-dir lock, so a
-failed connect there always prints `none`.
-
-The macOS reference signals any live holder whose lock record says role `serve`
-on this host's node. It does not check the holder's command line. claustrum
-keeps its holder test on macOS, so it does not signal such a holder that is not
-a serve process. It prints `survivor`. This is part of [D15](DIVERGENCES.md#d15).
+new holder gets no signal (measured on Linux after a successful connect. After a
+failed connect it is claustrum's own). Windows has no run-dir lock, so a
+failed connect there always prints `none`. On macOS claustrum does not signal a
+holder that is not a serve process, and prints `survivor`
+([D15](DIVERGENCES.md#d15)).
 
 The lock steps write these lines to stderr. claustrum adds its own level tag
 before the reference text, as it does for the serve eviction lines:
@@ -2171,7 +2087,7 @@ before the reference text, as it does for the serve eviction lines:
 ```
 
 A daemon that has not bound yet has a short record. That holder gives the first
-two lines with `pid <N>` and no instance (`89cb6289`, Linux VM). claustrum
+two lines with `pid <N>` and no instance (measured on Linux). claustrum
 writes the other lines with `(instance "")` then (claustrum's own).
 
 A holder with no daemon role, after a successful connect, gives this line:
@@ -2206,21 +2122,18 @@ stale socket, a regular file and an empty directory. It keeps a non-empty
 directory, and a path in a directory that the user cannot write.
 
 The unlink does not check what the path is. So, unless the word is `survivor`, a
-live foreign listener that
-refuses the connect with `EACCES` loses its socket path. The listener stays
-alive, but a client that dials by path cannot reach it after that. A variant
-that removes only a socket is recorded under [Candidates considered but not
+live foreign listener that refuses the connect with `EACCES` loses its socket
+path, and a client that dials by path cannot reach it. A variant that removes
+only a socket is under [Candidates considered but not
 taken](DIVERGENCES.md#candidates-considered-but-not-taken).
 
 `-version`, `-install` and `-probe-cli` win over `-stop`. `-bridge` and `-serve`
 win too. With `-stop -bridge` claustrum runs the bridge, and with `-stop -serve`
 it runs serve.
 
-> Upgrading a live daemon needs care. A daemon still running from a build that
-> predates the shutdown-auth-exemption change *does* require auth on
-> `server.shutdown`. It answers `-32001` and keeps running. `-stop` prints
-> `stopped` and exits `0` either way, so the caller sees success while the old
-> daemon survives. Stop the old daemon before you upgrade, or kill it by PID once.
+A daemon of a build before the auth exemption of `server.shutdown` keeps running
+while `-stop` prints `stopped`. [IMPROVEMENTS.md](IMPROVEMENTS.md) item 37 has
+the upgrade step.
 
 ### -version
 
@@ -2228,25 +2141,17 @@ it runs serve.
 claustrum -version                   # → claustrum <id> (built <time>)
 ```
 
-`version-override` through `claustrum.conf` is an intentional divergence. It is
-claustrum-only, CT-3. `claustrum.conf` is an optional `key = value` file. claustrum
-reads it from the directory that holds the binary, and it gates the opt-in
-divergences above. An absent or malformed file gives stock behaviour. The file can
-set `version-override` to a bare commit SHA. That SHA is a 40-hex git SHA-1, the
-string the desktop client pins. claustrum also accepts 64-hex, and anything else is
-a no-op. The output then becomes:
+With `version-override` set in `claustrum.conf` ([CT-3](DIVERGENCES.md#ct-3)),
+the output is:
 
 ```text
 claustrum -version                   # → claude-ssh <sha> (via Claustrum <id>, built <time>)
 ```
 
-This exists so that the desktop client treats an already-deployed claustrum as
-up-to-date. That client decides whether to re-upload from a `<bin> --version`
-output that matches `/claude-ssh\s+(\S+)/`. The override is CLI stdout only, not a
-JSON-RPC frame, so it does not touch the wire contract. `server.capabilities`
-still reports claustrum's own `<id>`. `server.version` was removed in `7d193f89`.
-See
-[`DIVERGENCES.md`](DIVERGENCES.md) → CT-3.
+The desktop client decides whether to upload the reference again from a
+`<bin> --version` output that matches `/claude-ssh\s+(\S+)/`. The override
+changes this stdout only. No JSON-RPC frame changes, and `server.capabilities`
+still reports claustrum's own `<id>`.
 
 ### Behavior shared by every mode
 
