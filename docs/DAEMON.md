@@ -234,8 +234,8 @@ dir that is idle past the threshold, or whose name carries `.removing-` from an
 earlier removal. A listener that is not the daemon binary, or that serves another
 socket, gets no signal. On macOS the first case is measured, and the second is
 not measured. This gate is parity, not [D15](DIVERGENCES.md#d15). A daemon
-younger than 5 minutes is not retired, and the run dir gets this line (measured
-on macOS):
+that is too young is not retired, and the run dir gets this line (measured on
+macOS for a daemon about 33 s old). The age of 5 minutes is claustrum's own:
 
 ```
 [hostclean] run dir "<dir>" unused for <n> days: its daemon (pid <pid>) was not retired: it is too young to judge
@@ -253,7 +253,8 @@ On Linux (`5fd08069`) a stopped daemon on an idle run dir:
 - gets no SIGTERM, and the dir stays
 - gives the run dir the `was not retired` line with the reason
   `the listener could not be verified as a daemon of ours (not inspectable)`
-- gets this line too if it is 5 minutes old or more, and counts as undecided:
+- gets this line too if it is past claustrum's own age of 5 minutes, and counts
+  as undecided:
 
 ```
 [hostclean] daemon pid <pid> left alone this pass: it could not be inspected (or is stopped)
@@ -296,8 +297,8 @@ every run dir line:
 [hostclean] run dir "<dir>" unused for <n> days: its daemon (pid <pid>) was not retired: a connection is attached to it right now, or that could not be read: in use after all
 ```
 
-The first line goes only to a daemon that is 5 minutes old or more and serves an
-idle run dir, once for each such daemon. With more than 4096 processes claustrum
+The first line goes only to a daemon that is past claustrum's own age of 5
+minutes and serves an idle run dir, once for each such daemon. With more than 4096 processes claustrum
 prints no such line (from the code, not measured). On Linux and macOS the second
 line also comes for a daemon that still has a client (measured against
 `f6010b97`). On Linux it also comes for a daemon whose connections could not be
@@ -361,8 +362,8 @@ process holds the lock.
 
 ### Passes, orphans and stale run dirs
 
-These rules are read from claustrum's code. The last bullet names the values
-that match the reference.
+These rules are read from claustrum's code, except where a bullet names the
+reference.
 
 - After the first pass, one pass runs each day. The cleaner
   acts only on this user's own processes and on the `run`, `srv` and `ccd-cli`
@@ -391,10 +392,12 @@ that match the reference.
 - The limit lines are four: more than 4096 processes, more than 64 orphan
   groups, more than 64 run dirs, and 8 retire attempts in one pass. claustrum
   counts attempts there, refused ones included. The reference count after a
-  refused attempt is not measured. The log
+  refused attempt is not measured. The retire-limit line and the lines for more
+  than 4096 processes and more than 64 orphan groups are the texts of the
+  reference (measured on Linux). The log
   lines carry the `[hostclean]` prefix after claustrum's level tag. The line
-  before a `SIGKILL` and the reasons for a held lock and for a listener that
-  is not our daemon use the texts of the reference.
+  before a `SIGKILL` and the reasons for a listener that is not our daemon use
+  the texts of the reference (measured on Linux).
 - The 15 s delay, the 3 s grace and the limit of 64 groups match the
   reference. The daily period, the 5 minute age and the 30-day idle age are
   claustrum's own.

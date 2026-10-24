@@ -15,7 +15,7 @@ import (
 //
 // Like rpc.sock and daemon.token, this file is written atomically before the
 // pipe begins accepting (and before the daemon prints its ready line) and removed
-// on graceful shutdown if it is still its own; it is left behind only on an unclean kill/crash. The
+// on graceful shutdown; it is left behind only on an unclean kill/crash. The
 // fixed name + socket-dir location ARE the discovery contract, so they are
 // deliberately not configurable.
 const pipeNameFileName = "rpc.pipe"
