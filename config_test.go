@@ -481,8 +481,8 @@ func TestParseConfig_HugeTailBounded(t *testing.T) {
 }
 
 // A negative -max-extract-bytes is normalised to 0 (cap disabled) rather than
-// reaching the daemon as a negative. The config path already rejects a negative
-// so a typo cannot silently enable a cap; the flag had no validation, and the two
+// reaching the daemon as a negative. The config path already rejects a negative;
+// the flag had no validation, and the two
 // paths disagreeing about the same input is the gap this closes.
 func TestEffectiveMaxExtractBytesNormalisesNegative(t *testing.T) {
 	var cfg config
