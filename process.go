@@ -82,7 +82,8 @@ type streamFrame struct {
 //
 // Those figures are one frame apart between runs (19,195 then 19,194 for the
 // reference) because frame boundaries depend on pipe scheduling and are not
-// deterministic — see the note on frame boundaries in docs/PROTOCOL.md. The
+// deterministic — see the note on frame boundaries in docs/PROTOCOL.md →
+// "Stream notifications". The
 // exact-agreement claim is about a single run comparing both binaries, not about
 // a number that reproduces across runs.
 //

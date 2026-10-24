@@ -12,8 +12,10 @@ import (
 
 // The directory scan of the `.worktreeinclude` copy.
 //
-// Every rule and every number in this file was measured against f6010b97.
-// docs/PROTOCOL.md names the VMs that measured each rule.
+// Unless a comment names another build or says not measured, a rule here was
+// measured against f6010b97. This file does not record the system of each
+// unmarked rule. docs/protocol/git-worktree-create.md → "The copy
+// of ignored files" describes the copy for a client.
 //
 // The scan has two forms. The old scan lists every ignored file that the
 // manifest names. The new scan first lists the ignored entries of the repo. Then

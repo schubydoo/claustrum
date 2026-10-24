@@ -97,7 +97,8 @@ func TestWaitForDaemonAcceptGivesUpAtDeadline(t *testing.T) {
 }
 
 // A failed start is NOT silent: the launcher prints the timeout line to stderr
-// and exits 1. PROTOCOL.md quotes that line as the contract, and the exit code
+// and exits 1. docs/DAEMON.md → "The launcher wait" quotes that line as the
+// contract, and the exit code
 // alone was already covered — this pins the message text so the documented
 // string cannot drift away from the code.
 //

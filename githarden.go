@@ -181,7 +181,8 @@ func profileEnv(heavy bool) []string {
 // its listing errors in English whatever the daemon's locale (rows L01 to L03). It
 // carries no hook pins, and the daemon's GIT_CONFIG_COUNT set is kept as it is. The
 // heavy set comes before a heavy call and the light set before a light call
-// (docs/PROTOCOL.md). The call after the listing keeps the daemon's own LC_ALL,
+// (docs/PROTOCOL.md → "Listings and probes"). The call after the listing keeps
+// the daemon's own LC_ALL,
 // LANGUAGE and LANG in their places.
 //
 // pin is the GIT_COMMON_DIR pin of the git-directory trust check (commonDirPinEnv),
@@ -197,7 +198,8 @@ func precursorEnv(heavy bool, pin []string) []string {
 // GIT_CONFIG_PARAMETERS, less GIT_CONFIG_COUNT
 // and every GIT_CONFIG_KEY_<digits> and GIT_CONFIG_VALUE_<digits>. Then come the
 // profile, pin, and configPinEnv: the count, the inherited pairs and the hook pins of
-// hooks (gitenv.go). docs/PROTOCOL.md gives the order.
+// hooks (gitenv.go). docs/PROTOCOL.md → "Environment and working directory"
+// and "Variables that the git calls keep or drop" give the order.
 //
 // GIT_OPTIONAL_LOCKS=0 is not part of it. git.status adds it to its status, ls-files
 // and diff-index calls only (gitstatus.go). The heavy `rev-parse --absolute-git-dir` of git.worktree_create and

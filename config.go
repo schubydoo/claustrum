@@ -16,7 +16,10 @@ import (
 // claustrum behaves as a stock replica of the reference daemon: every setting it
 // carries gates an opt-in divergence that is off by default. Keys mirror the CLI
 // flag names; unknown keys and invalid values are ignored, so the file is
-// forward-compatible and can never make a mode fail.
+// forward-compatible. A wire-log path that cannot be opened stops the -serve
+// boot (newServerOnSocket). max-extract-bytes, max-cli-bytes and
+// cli-download-timeout fail an operation that goes over their threshold, by
+// design.
 //
 // The file is looked up next to the binary so it travels with a deploy (the same
 // directory the drop-in server lands in); the desktop client only globs
