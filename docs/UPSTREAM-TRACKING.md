@@ -224,6 +224,10 @@ Some flags are claustrum's own and have no entry: `-token-fd`
 ([PROTOCOL.md → Flags of claustrum alone](PROTOCOL.md#flags-of-claustrum-alone)).
 So is the skip of the kill signal for a child that already ended
 ([process.kill → Differences from the reference](protocol/process-kill.md#differences-from-the-reference)).
+So is a rule of `process.killAndWait`. For a signal other than `KILL` it sends no
+first signal during the exit drain. On Linux and macOS `KILL` goes to the group at
+once, as on the reference
+([A request during the exit drain](protocol/process-killandwait.md#a-request-during-the-exit-drain)).
 Check those before you conclude that something is drift.
 
 ### Drift, or an activated opt-in? — the parse-behaviour table
@@ -285,252 +289,134 @@ measured on a VM.
 
 ### Triage gotchas — when a probe result is misleading
 
-These are the
-traps that matter for telling drift from expected:
+These are the traps that matter for telling drift from expected. In the git and
+files methods, claustrum follows `5fd08069`, the build that `scripts/UPSTREAM_SHA`
+names. The exceptions are the D-entries above, and the places where an item below
+or the linked page names an older build. A probe against an older build
+shows the differences of each item as a build split, not drift. The rules are on
+the linked pages. The history of each build is in
+[REFERENCE-BUILDS.md](REFERENCE-BUILDS.md).
 
 - A git call that runs 2 minutes is stopped, and the reply carries `git took too
-  long`. That is parity with `5fd08069`, not drift. A scan of ignored files that
-  the limit of 10 minutes stopped answers `{"success":true}` with no copied file.
-  See [PROTOCOL.md → Time limits of git calls](PROTOCOL.md#time-limits-of-git-calls).
-- The failure frames of `git.worktree_create` differ between pins. In
-  `f6010b97` the git text can start with git's graft-file deprecation `hint:` lines.
-  In the add-failure frame the 512-byte cap can then cut the rest of the text.
-  `90fca6e6` prints no hint. claustrum sets `GIT_GRAFT_FILE` too, and its light
-  calls turn the hint off with `-c advice.graftFileDeprecated=false`. Its heavy
-  calls print the hint on stderr, and no reply holds it. A hint in a frame
-  of `f6010b97` and none in the frame of claustrum is therefore not drift. The
-  texts of `5fd08069` have no hint either, and those of `89cb6289` have it
-  (Linux, macOS and Windows VMs).
-- In a repo with no `.claude/`, a `timeoutMs` that expires during the copy step
-  splits the pins. `f6010b97` runs no copy `ls-files` and answers success.
-  `90fca6e6` and claustrum answer `timeout` "after the checkout finished" and roll
-  back. `89cb6289` answers like claustrum (the Linux timeout set of the whole-build
-  check of issue 442). That difference is not drift.
-- In two states of a `git.worktree_create` rollback a folder stays on claustrum
-  that `89cb6289` removes. In one it is an empty folder at the path of the new
-  registration. In the other it is the registration of a live sibling worktree
-  that a wrapper moved to that path (Linux and macOS VMs). The frames are
-  equal. A kept folder there is D24, not drift.
-- The branch step of `git.worktree_remove` and of the create rollbacks splits
-  the pins. claustrum follows `89cb6289`, the pin before `5fd08069`. `5fd08069`
-  is not measured in these states. Against `f6010b97`, `server.capabilities`
-  differs by the `git.worktree_remove.unpushedGuard` and `launcher.managed`
-  features and by the `launcher.resolve` method. On remove, every kept case of
-  the branch step differs. claustrum keeps the branch and adds
-  `"branchKept":true`, where `f6010b97` adds no member. In most of these cases
-  `f6010b97` also deletes the branch. The kept classes:
-  - A commit that no other ref reaches. In some of these states two removes
-    are sent together on one connection. `89cb6289` and claustrum keep a
-    branch with the member there, and `f6010b97` deletes both branches.
-  - A lock file on the branch. There `f6010b97` keeps the branch too.
-  - 10001 or more heads.
-  - A letter-case twin.
-  - No repository at `baseRepo`. Neither side deletes anything there.
-  - A `baseRepo` that does not exist. Neither side deletes anything there.
-  - for-each-ref stopped at the 60 s bound.
-  - rev-list stopped at that bound, or failed.
-  - update-ref stopped.
+  long`. A scan of ignored files that its limit of 10 minutes stopped answers
+  `{"success":true}` with no copied file. Both are parity, not drift. See
+  [PROTOCOL.md → Time limits of git calls](PROTOCOL.md#time-limits-of-git-calls).
+- The failure texts of `git.worktree_create` hold no graft-file `hint:` lines, as
+  on `5fd08069` and `90fca6e6`. The texts of `f6010b97` and `89cb6289` can hold
+  them. See [Hardened git calls](PROTOCOL.md#hardened-git-calls).
+- In a repository with no `.claude/`, a `timeoutMs` that expires during the copy
+  step answers `timeout` "after the checkout finished" and rolls back, as on
+  `90fca6e6` and `89cb6289` (measured on Linux for `89cb6289`). `f6010b97`
+  answers success there. See
+  [The copy of ignored files](protocol/git-worktree-create.md#the-copy-of-ignored-files).
+- A folder that a `git.worktree_create` rollback keeps where `89cb6289` removes it
+  is [D24](DIVERGENCES.md#d24), not drift. The frames are equal.
+- The branch step of `git.worktree_remove` and of the create rollbacks follows
+  `89cb6289`. `5fd08069` is not measured there. On remove, each kept case of the keep
+  list adds `"branchKept":true`, where `f6010b97` adds no member and in most
+  states deletes the branch. In four states a create rollback answers as
+  `f6010b97`: update-ref fails, is stopped or meets a lock, or the name starts
+  with `+`.
+  Against `f6010b97`, `server.capabilities` also differs by the
+  `git.worktree_remove.unpushedGuard` and `launcher.managed` features and by the
+  `launcher.resolve` method. See [The branch step](PROTOCOL.md#the-branch-step).
+- The managed launcher follows `89cb6289`: `launcher.resolve`, the
+  `process.spawn` `launcher` param, the child env strip, and the gated launcher
+  runs of `-install` and `-probe-cli`. The Linux file test on a cache hit before a
+  launcher run follows `5fd08069`. Other launcher runs of `5fd08069` are not
+  measured. `f6010b97` has none of these. See
+  [PROTOCOL.md → launcher.*](PROTOCOL.md#launcher-added-89cb6289) and
+  [launcher.resolve](protocol/launcher-resolve.md).
+- The peer check follows `5fd08069`. `server.capabilities` carries the
+  `peerCheck` and `peerCheckBy` members and the `server.peer_check` and
+  `git.shadow_dir` features. On Linux with `CLAUDE_SSH_PEER_CHECK=1` the daemon refuses a caller in other
+  namespaces with `-32006`. The frames of `89cb6289` have none of these. The
+  peer check log lines differ from `5fd08069` by a level tag only (measured on
+  Linux). See [The peer check](protocol/server.md#the-peer-check).
+- `files.extract_tar` follows `5fd08069`, and `89cb6289` differs in each of these
+  points:
+  - the `files.extract_tar.execBit` feature
+  - the mode `0700` of a file with the execute bit of the owner (Linux and macOS)
+  - the refusal of a name that leaves `destDir` and comes back
+  - the last entry of a file that the archive names two times
+  - the `error` texts of the entry and `destDir` steps.
 
-  In most measured create rollbacks, `f6010b97` deletes the branch and adds no
-  branch text. claustrum answers by the branch step of `89cb6289` there. Those
-  differences are not drift. The answers equal `f6010b97` when update-ref fails,
-  is stopped or meets a lock file on the branch, and for a branch name that
-  starts with `+`, where no call of the step runs. See
-  [PROTOCOL.md](PROTOCOL.md) → The branch step.
-- The managed launcher splits the pins the same way, not drift. claustrum follows
-  `89cb6289`: `launcher.resolve`, the `process.spawn` `launcher` param, the child
-  env strip, and the gated launcher runs of `-install` and `-probe-cli`. The one
-  exception is the Linux file test on a cache hit before a launcher run. It
-  follows `5fd08069` (see the `-install` prune and sweeps below). Other launcher
-  runs of `5fd08069` are not measured. `f6010b97` has none of these. See [PROTOCOL.md](PROTOCOL.md) → launcher.*.
-- The peer check splits the builds, not drift. claustrum follows `5fd08069`, the
-  build that `scripts/UPSTREAM_SHA` names. `server.capabilities`
-  carries the `peerCheck` and `peerCheckBy` members and the `server.peer_check`
-  and `git.shadow_dir` features. On Linux the daemon refuses a caller in other
-  namespaces with `-32006`. The frames of `89cb6289` have no such member and no
-  such feature (Linux, macOS and Windows VMs). The daemon
-  removes `CLAUDE_SSH_PEER_CHECK` from its own environment after the read, so
-  its children do not inherit it. A `process.spawn` child of `5fd08069` has no
-  such entry for the values `1` and `0` (Linux, macOS and Windows VMs). Its git
-  calls have none for `0` (Linux VM). A child of `89cb6289` is not measured.
-  Against `5fd08069` the measured peer check log lines differ by a level tag only
-  (Linux VM). See [The peer check](protocol/server.md#the-peer-check).
-- `files.extract_tar` splits the builds too, not drift. claustrum follows the pin
-  `5fd08069` in these places. Against
-  `89cb6289` each of them differs where it was measured:
-  - `server.capabilities` lists `files.extract_tar.execBit` directly after
-    `process.stdin.offset` (Linux, macOS and Windows VMs).
-  - On Linux and macOS a file whose archive mode has the execute bit of the
-    owner arrives with mode `0700`, not `0600`. The frame is equal.
-  - A name that leaves `destDir` and comes back answers `unsafe path in
-    archive: <name>`. `89cb6289` extracts `../dest/x.txt`, and it answers a
-    `create` text for `sub/../../dest`.
-  - A file that the archive names two times has the mode of the last entry
-    (Linux and macOS VMs). On a volume that ignores letter case it has the name
-    of the last entry (Windows and macOS VMs).
-  - The texts after `mkdir parent <entry>:`, `mkdir <entry>:` and
-    `create <entry>:` name the place below `destDir`, not the whole path.
-  - A `destDir` that the daemon cannot search or open fails with
-    `open destDir:`. `89cb6289` fails later, or it extracts.
-  - The texts of the `destDir` steps name the last name of `destDir`, or the
-    parent folder: `clean destDir: RemoveAll <name>: …` (Linux, macOS and
-    Windows VMs), `open parent: open <path>: …` and `mkdir destDir: mkdirat
-    <name>: …` (Linux and macOS VMs). `89cb6289` has a `clean destDir:` or
-    `mkdir destDir:` text with the whole path where it fails.
-  - With a parent folder of mode `0300` and no `destDir`, the answer is the
-    `open parent:` text and no `destDir` is made. `89cb6289` extracts (Linux
-    and macOS VMs).
-  - A parent folder of mode `0400` or `0600` answers the `open parent:` text
-    too, where `89cb6289` answers `clean destDir: openfdat <path>: …` (Linux
-    and macOS VMs. The answer of claustrum is from a Linux VM).
-  - On Windows, with no `\\?\` prefix, a `destDir` whose last name ends in a
-    dot or a space is wiped and filled. `89cb6289` keeps the old file, or it
-    fails (Windows VM).
-  - On Windows the last names `NUL`, `a:b`, `CON`, `COM1`, `dest?` and `dest*`
-    answer `clean destDir: RemoveAll <name>: …`. `89cb6289` answers another
-    text, or it makes a folder (Windows VM).
-
-  A folder above `destDir` that cannot be made answers `mkdir parent: mkdir
-  <path>: …` on `89cb6289` and on `5fd08069` (Linux, macOS and Windows VMs). That is
-  no difference against the pin.
-
-  Against both builds these answers are not drift. On Windows a `destDir` with the
-  `\\?\` prefix and a dot or a space after its last name answers
-  `clean destDir: "<name>" is not the entry that the path names`, and nothing is
-  deleted. Or it answers the same text after `mkdir destDir:`, and the folder that
-  the daemon just made goes with a plain remove. `89cb6289` extracts into
-  a folder with the exact name, and `5fd08069` into the folder with no dot or
-  space (Windows VM). A `destDir` whose last name is the home folder by
-  identity gets the home refusal. See [D2](DIVERGENCES.md#d2).
-- The `-install` prune and sweeps split the builds too, not drift. They follow
-  the pin `5fd08069`, not `89cb6289`. Folders and links stay and take no
-  keep place. `x.zst`, `.fetch-d`, `p.zst.part` and empty folders stay in the
-  sweeps. A `.blob-` file is not counted, a negative `-cli-keep` exits `0`, and
-  the new CLI stays with `-cli-keep 0`. The blob timing, the `rename: ` prefix,
-  the Windows rename retry and the Linux file test of a cache hit follow `5fd08069` too
-  ([PROTOCOL.md](PROTOCOL.md) → `-install`). A probe against `89cb6289` shows these
-  as a build split.
-- The git filters of the `git.worktree_create` checkout split the builds too,
-  not drift. claustrum follows the pin `5fd08069`. In the state `fallback-git`
-  and with `"shadowDirOff":true` claustrum has no filter rule, as `5fd08069`
-  (Linux VM). With `shadowDirOff` the rule is off, as before. Against `89cb6289`
-  these answers differ:
-  - A checkout that needs a filter which only the repository config defines
-    answers `errorCode:"repository_only_filter"`, and nothing is left.
-    `89cb6289` runs the filter (Linux and Windows VMs).
-  - With a filter in the repository config and in a config outside it, the
-    outside filter runs. `89cb6289` runs the one of the repository
-    (Linux VM). A user `process = cat` with a repository `smudge` command
-    answers `repository_only_filter`, as on `5fd08069`.
-  - A filter that only the repository defines, with a name of 300 bytes,
-    answers `worktree_add_failed` with the text about a name longer than 200
-    bytes (Linux and Windows VMs).
-  - With a settings copy, a filter that only the repository defines, with a
-    name that is not valid UTF-8 and a value that does not pass, answers git's
-    checkout text on Linux and success with no filter run on Windows, and
-    `89cb6289` runs the filter (Windows VM). With no copy it answers the text
-    about values that no option of git can replace (claustrum's own).
-  - In the state `shadow`, more than 64 filter names, and a last config listing
-    before the checkout that fails, or whose git still runs at 30 s and does not
-    exit 0 after the SIGTERM, fail the create (claustrum's code, `89cb6289` not
-    run).
-
-  Against `5fd08069` these differences are not drift:
+  A `destDir` that the daemon cannot search or open gets the `open destDir:`
+  refusal, where `89cb6289` fails later or extracts. On Linux and macOS, a parent
+  folder of mode `0300` with no `destDir` gets the `open parent:` refusal, where
+  `89cb6289` extracts. The two Windows rows of
+  [Differences by system](protocol/files-extract-tar.md#differences-by-system)
+  are parity, and `89cb6289` differs in both (measured on Windows). A `\\?\` path with a dot or a space after its
+  last name differs from both builds ([D2](DIVERGENCES.md#d2)). A `destDir` that
+  is the home folder by identity gets the home refusal (D2). See
+  [files.extract_tar](protocol/files-extract-tar.md).
+- The `-install` prune and sweeps follow `5fd08069`, and so do the blob timing,
+  the Windows `rename: ` prefix, the Windows rename retry and the Linux file test of a
+  cache hit. See [PROTOCOL.md → -install](PROTOCOL.md#-install-ensure-the-agent-cli).
+- The git filters of the `git.worktree_create` checkout follow `5fd08069`. Against
+  `89cb6289` the refusal `repository_only_filter` is new. So are the texts for a
+  name over 200 bytes and for more than 64 filters (`89cb6289` not run for 64
+  filters). An outside filter now runs
+  where the repository defines the same name. Against `5fd08069` these differences are not drift:
   - With a `GIT_DIR` and a `GIT_WORK_TREE` of another repository in the daemon
-    environment, `5fd08069` answers the filter refusal. claustrum answers
-    `not_a_repo`, as `89cb6289` does (Linux VM).
-  - A `~/.gitconfig` that is a directory has another text on `5fd08069`.
-    claustrum has the text of `89cb6289` (Linux VM).
-  - With a temporary directory that cannot be used, `5fd08069` answers the
-    filter refusal. claustrum fails as `89cb6289` does (Linux and Windows
-    VMs).
-  - With a program key of git-lfs in the config of the repository and no
-    settings copy, the filter `lfs` does not run on claustrum. A create with a
-    file under it answers the filter refusal for `lfs`, or claustrum's own
-    `worktree_add_failed` text that names the key. `5fd08069` is not measured
-    in that state.
-  - In the call log, some `filter.` pairs differ.
-- The refusals of a repository config split the builds too, not drift.
-  Against `89cb6289` a config that the daemon does not accept gets a text that
-  starts with `this repository's git config cannot be used: `. A refused file of
-  the git directory gets a text that starts with `a file in this repository's
-  .git directory cannot be used: `. `89cb6289` gives a normal answer, `isRepo`
-  false, the hooks refusal, another refusal of that build such as `exit status
-  128`, or no answer there. The call log has one more call
-  for each config file of a first read. Each state but the three Windows texts
-  ran on a Linux VM, and part of them on macOS and Windows VMs. Most states ran
-  `git.info` and `git.status`.
-  With `"shadowDirOff":true` in the request, or while such a request runs (Linux
-  VM), the read does not run. A
-  `git.worktree_remove` of a worktree folder that does not exist is refused
-  too. With a config of 20 MiB, `89cb6289` deletes the branch there (Linux,
-  macOS and Windows VMs). With `worktreeRoot` the refused remove has the text
-  `cannot determine the repository's work tree: ` before the refusal (Linux
-  and macOS VMs).
+    environment, claustrum answers `not_a_repo`, as `89cb6289` does, where
+    `5fd08069` answers the filter refusal (measured on Linux).
+  - A `~/.gitconfig` that is a directory gets the text of `89cb6289` (measured on
+    Linux).
+  - With a temporary directory that cannot be used, claustrum fails as
+    `89cb6289` does, where `5fd08069` answers the filter refusal (measured on
+    Linux and Windows).
+  - A git-lfs program key of the repository with no settings copy (claustrum's
+    own, `5fd08069` not measured), and some `filter.` pairs of the call log.
 
-  Against `5fd08069` these differences are not drift. On a config that changes many
-  times each second, `5fd08069` makes more config reads than claustrum (Linux
-  VM). For a config with a very long key, `5fd08069` ends config read calls
-  early, and claustrum lets them end (Windows VM). A config whose listing by git
-  passes 64 MiB can get no refusal on claustrum (from the code, not measured on
-  `5fd08069`).
-
-  The bounds are in
-  [PROTOCOL.md → Repository config refusals](PROTOCOL.md#repository-config-refusals).
-- The option lists of the git calls split the builds too, not drift.
-  claustrum differs from `89cb6289` in four states: `git.status` with replace
-  objects, the `hint:` lines in a failure text of `git.worktree_create`, a long
-  tree path on Windows, and the paths of a new worktree with
-  `worktree.useRelativePaths`. The call logs differ in the `-c` lists, where `89cb6289`
-  sends 23 and 13 items and claustrum 28 and 20. They also differ in two heavy
-  variables: the heavy profile of `89cb6289` has no `GIT_NO_REPLACE_OBJECTS` and no
-  `GIT_GRAFT_FILE`. The rules are in
-  [Hardened git calls](PROTOCOL.md#hardened-git-calls).
-
-  Against `5fd08069` the call logs differ in `git.worktree_create`. `5fd08069`
-  makes more rounds with `worktreeRoot`, and other listings with `existingBranch`. Those differences are not drift. See
+  See [Git filters](protocol/git-worktree-create.md#git-filters).
+- The refusals of a repository config follow `5fd08069`. Against `89cb6289` the
+  texts that start with `this repository's git config cannot be used: ` and
+  `a file in this repository's .git directory cannot be used: ` are new, and the
+  call log has one more call for each config file of a first read. A
+  `git.worktree_remove` of a worktree folder that does not exist is refused too.
+  With `worktreeRoot` the refused remove has the text `cannot determine the
+  repository's work tree: ` before the refusal (measured on Linux and macOS).
+  With `"shadowDirOff":true`, or while such a request runs (measured on Linux),
+  the read does not run. Against `5fd08069` these differences are not drift. On a config that
+  changes many times each second, `5fd08069` makes more config reads (measured on
+  Linux). For a config with a very long key, `5fd08069` ends config reads early
+  (measured on Windows). A config whose listing passes 64 MiB can get no refusal
+  on claustrum (claustrum's own, not measured). See
+  [Repository config refusals](PROTOCOL.md#repository-config-refusals).
+- The option lists of the git calls follow `5fd08069`. Against `89cb6289` they
+  differ in four states: `git.status` with replace objects, the `hint:` lines
+  above, a long tree path on Windows, and the paths of a new worktree with
+  `worktree.useRelativePaths`. The `-c` lists and heavy variables of the call
+  log differ too. Against `5fd08069` the call logs of `git.worktree_create` differ with
+  `worktreeRoot` and with `existingBranch`. See
+  [Hardened git calls](PROTOCOL.md#hardened-git-calls) and
   [Where the calls differ from `5fd08069`](PROTOCOL.md#where-the-calls-differ-from-5fd08069).
-- The `worktreeRoot` location rules follow `5fd08069` (Linux and macOS VMs), not
-  drift. `89cb6289` is not measured there.
-- A remove behind a linked `<git dir>/worktrees` follows `5fd08069`, not drift
-  (Linux and macOS VMs, and for a gone worktree with a locked entry a Linux
-  VM). `89cb6289` is not measured.
-- The settings copy of the git methods splits the builds too, not drift.
-  Against `89cb6289` a triager can meet these points. Each is in
-  [The settings copy](PROTOCOL.md#the-settings-copy):
-  - `git.info` has a last member `settingsControl`.
-  - The run folder has a folder `git-shadow`.
-  - A first git request makes 12 more git calls.
-  - These texts are new. They start with
-    `Claude could not test git on the remote machine`,
-    `git could not check this repository on the remote machine`,
-    `git and Claude disagree about which repository holds this folder` and
-    `Claude could not prepare its own files on the remote machine`. A create
-    also answers `cannot list the repository's worktree entries`,
-    `cannot prepare the repository's worktrees directory`,
-    `git worktree add failed (completing the new worktree's git files)` and
-    `".git" is a link or a file where Claude needs a real directory`.
-  - On Windows each git method refuses a junction or a directory symbolic link
-    at `.git` with the link text, without `"shadowDirOff":true`.
-  - A config value that git refuses gets a normal answer where the copy leaves
-    it out.
-  - On Windows a create removes old `.claude-new-worktree-*` entries of the git
-    directory. See [git.worktree_create](protocol/git-worktree-create.md#the-settings-copy).
-
-  Against `5fd08069` these differences are not drift:
-  - The config reads on a config that changes many times each second, and the
-    config reads that `5fd08069` ends early.
-  - On Windows, two reply texts of a create whose `.git` becomes a file
-    `gitdir: <X>` while the create runs (Windows VM).
+- The `worktreeRoot` location rules follow `5fd08069` (measured on Linux and
+  macOS). `89cb6289` is not measured there.
+- A remove behind a linked `<git dir>/worktrees` follows `5fd08069` (measured on
+  Linux and macOS, and for a gone worktree with a locked entry on Linux).
+  `89cb6289` is not measured.
+- The settings copy follows `5fd08069`. Against `89cb6289` a triager meets the
+  `git.info` member `settingsControl`, the folder `git-shadow` in the run folder,
+  12 more git calls in a first git request, and new refusal texts. On Windows
+  each git method refuses a junction or a directory symbolic link at `.git`
+  without `"shadowDirOff":true`. On Windows a create removes old
+  `.claude-new-worktree-*` entries of the git directory. A config value that git
+  refuses gets a normal answer where the copy leaves it out. Against `5fd08069`
+  the config reads above differ. Two reply texts differ too, for a Windows
+  create whose `.git` becomes a file `gitdir: <X>` while it runs (measured on
+  Windows).
+  See [The settings copy](PROTOCOL.md#the-settings-copy).
 - A remove with a worktree folder that exists lists again after a failed
-  listing. It answers the text of the failed listing or goes on (`5fd08069`,
-  Linux, macOS and Windows VMs). `f6010b97` answers the lock-check text. With a
-  `baseRepo` that is a plain folder and nothing set, and after a `rev-parse
-  --absolute-git-dir` that fails after a failed first listing, claustrum makes
-  one more listing and `rev-parse` than `5fd08069`, with equal replies (Linux
-  VM). With an empty `GIT_CONFIG_KEY_0` in the daemon environment, both answer
-  the hooks refusal with the text of the failed listing, where `89cb6289`
-  answered the lock-check text.
+  listing, as on `5fd08069` (measured on Linux, macOS and Windows). `f6010b97`
+  answers the lock-check text there. Take an empty `GIT_CONFIG_KEY_0` in the
+  daemon environment. claustrum and `5fd08069` then answer the hooks refusal with
+  the text of the failed listing. `89cb6289` answers the lock-check text. Take a
+  `baseRepo` that is a plain folder, with nothing set. After a failed first
+  listing and a failed `rev-parse --absolute-git-dir`, claustrum makes one more
+  listing and `rev-parse` than `5fd08069`. The replies are equal (measured on
+  Linux). See [The repository checks](protocol/git-worktree-remove.md#the-repository-checks).
 - The reap of a child record with a `program` key splits the pins too, off the
   wire. claustrum follows `89cb6289`. `5fd08069` is not measured there.
   On Linux, when the process runs `program` or holds it as one whole argument,
@@ -538,46 +424,27 @@ traps that matter for telling drift from expected:
   of those states. That difference is not drift. See
   [PROTOCOL.md → Child records and the reap](PROTOCOL.md#child-records-and-the-reap-linux-and-macos).
 - The configuration listing, the stray `commondir` rules and the `git.info` root
-  split the pins too. claustrum follows `89cb6289` there. `5fd08069` is not
-  measured there. In the state `shadow` the answers of
-  [The settings copy](PROTOCOL.md#the-settings-copy) come first. Against
-  `f6010b97` these differences are not drift:
+  follow `89cb6289`. `5fd08069` is not measured there. In the state `shadow` the
+  answers of [The settings copy](PROTOCOL.md#the-settings-copy) come first.
+  Against `f6010b97` these differences are not drift:
   - `server.capabilities` carries `git.info.discovered_root`.
-  - A stray `commondir` that reads `.` or `./` is served in a valid git
-    directory. With a bad `HEAD` it gets S3. A dangling relative symlink that
-    stays in a valid git directory counts as none. With `worktreeRoot`,
-    `git.worktree_remove` then answers `cannot list the repository's worktrees:
-    exit status 128`. Without `worktreeRoot` it answers
-    `{"success":true,"branchKept":true}` and keeps the branch. It deletes the
-    entry. If the worktree exists, it deletes that too. `f6010b97` refuses there
-    and keeps everything. With a bad `HEAD` the symlink gets S3 too. Any other
-    content or file gets S1 or S2. S1 to S3 are the texts of [Git-directory
-    trust check](PROTOCOL.md#git-directory-trust-check). In all of these states
-    but one, `f6010b97` gives one older text: `%q exists where git itself never
-    writes one (git keeps that file only in a linked worktree's entry under
-    .git/worktrees/); remove it if you did not create it, and treat its
-    appearance as tampering`. For that symlink on a remove of an existing
-    worktree without `worktreeRoot`, it answers the lock-check text with `its
-    registrations could not be examined`.
+  - A stray `commondir` gets the texts S1 to S3, and a dangling relative
+    `commondir` symlink in a valid git directory counts as none. `f6010b97` gives
+    one older text, and it refuses the remove there.
   - A listing error is in English under a German daemon locale.
   - A configuration key of 1048576 bytes passes, and one byte more gets the key
-    text. `f6010b97` refuses both with `bufio.Scanner: token too long`.
+    text.
   - A listing that exits 128 with `fatal: not a git repository` answers the "no
-    repository" shapes, and `git.worktree_remove` with `worktreeRoot` gives `git
-    finds no repository here: …`. `f6010b97` gives the hooks refusal.
-  - When `git version` also fails, the text says git cannot run. `f6010b97` gives
-    the hooks refusal, or the "no repository" shape for a git that cannot start.
-  - The `git.info` root comes from the walk, so a daemon `GIT_DIR` with a plain
-    folder answers the non-repo body. The slug after `lnk/..` is the one of the
-    resolved repository. On Windows the daemon does not take a toplevel answer
-    that names another folder or is relative. A symlink there resolves before
-    `..`.
-  - claustrum keeps D16 as it is. `git.status` now answers by the worktree
-    entries of `baseRepo`, as `89cb6289` answers, so the `.git` inside `path` plays no
-    part ([git.status](protocol/git-status.md#path)).
+    repository" shapes. When `git version` also fails, the text says git cannot
+    run. `f6010b97` gives the hooks refusal there.
+  - The `git.info` root comes from the walk.
+  - [D16](DIVERGENCES.md#d16) stays. `git.status` answers by the worktree entries
+    of `baseRepo`, as `89cb6289` does
+    ([git.status](protocol/git-status.md#path)).
 
-  See [PROTOCOL.md](PROTOCOL.md) → Git-directory trust check, Hardened git calls
-  and [git.info → The root](protocol/git-info.md#the-root).
+  See [Git-directory trust check](PROTOCOL.md#git-directory-trust-check),
+  [Hardened git calls](PROTOCOL.md#hardened-git-calls) and
+  [git.info → The root](protocol/git-info.md#the-root).
 - D12 needs a VALID zstd body. The decoder answers an invalid one at 0 s,
   which reads like "no divergence". Also, a zero download timeout frees the body
   read only: the transport still applies `net.Dialer{Timeout: 30s}`,
