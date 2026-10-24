@@ -41,8 +41,8 @@ The members come in this order:
 |---|---|
 | `version` | The version of the daemon. |
 | `methods` | The 20 methods, in the order of [Methods](../PROTOCOL.md#methods-20). `plugins.prune` is last on every system. |
-| `instanceId` | 32 hexadecimal characters, new at each start of the daemon. claustrum makes it from 16 random bytes (claustrum's own). On Linux and macOS the owner record of `daemon.lock` holds the same value. The banner of the log holds it too (`f6010b97` and `89cb6289`, see [Daemon log](../PROTOCOL.md#daemon-log-remote-serverlog)). |
-| `startedAt` | The start time of the daemon in unix milliseconds. claustrum sets it after its start steps and the bind of the socket (from the code). On `89cb6289` it is within 1.5 ms of the listen call (Linux VM). |
+| `instanceId` | 32 hexadecimal characters, new at each start of the daemon. claustrum makes it from 16 random bytes (claustrum's own). On Linux and macOS the owner record of `daemon.lock` holds the same value. The banner of the [daemon log](../PROTOCOL.md#daemon-log-remote-serverlog) holds it too (measured on `89cb6289`). |
+| `startedAt` | The start time of the daemon in unix milliseconds. claustrum sets it after its start steps and the bind of the socket (from the code). |
 | `features` | The optional extensions that this build supports. See [Features](#features). |
 | `peerCheck` | The state of the peer check. See [The peer check](#the-peer-check). |
 | `peerCheckBy` | The parts that the check compares. With `"off"` or `"unavailable"` the reply has no such member. |
@@ -111,13 +111,15 @@ The handler starts the stop and returns the reply at once. It does not wait for 
 - If the close wins, the client reads EOF with no bytes.
 - Another connection that is idle gets a clean EOF with no bytes.
 
-A client must treat EOF after a shutdown request as a success. The reference often closes with no reply, more often on Linux than on macOS and Windows. claustrum answered in each measured run, and the frame bytes are equal.
+A client must treat EOF after a shutdown request as a success. The reference often closes with no reply. claustrum sent the reply in each measured run. If both send it, the frame bytes are equal.
 
 ### What the stop does
 
-The stop closes the listener. On Linux and macOS, if the socket file is still the one that the daemon bound, the stop removes it (from the code on macOS). On Windows the close of the listener removes the path, also the socket of a successor. Then the stop closes every connection and ends the children. That is the whole process group on Linux and macOS, and the direct child on Windows. With `-keep-children` the children keep running ([CT-2](../DIVERGENCES.md#ct-2)). If `daemon.token` is still the file of this daemon, the daemon removes it. A successor's file stays (measured on Windows, from the code on Linux and macOS). The daemon then exits with code 0 (from the code). See [Token persistence](../PROTOCOL.md#token-persistence-daemontoken).
+The stop closes the listener. On Linux and macOS, if the socket file is still the one that the daemon bound, the stop removes it (from the code on macOS). On Windows the close of the listener removes the path, also the socket of a successor. Then the stop closes every connection and ends the children. That is the whole process group on Linux and macOS, and the direct child on Windows. With `-keep-children` the children keep running ([CT-2](../DIVERGENCES.md#ct-2)). The stop removes `daemon.token` by the rules of [Token persistence](../PROTOCOL.md#token-persistence-daemontoken). The daemon then exits with code 0 (from the code).
 
 ### Log lines
+
+The lines of this section are measured against `5fd08069` on Linux, unless a rule names another build or a system. The order of the shutdown lines and the signal lines were measured against `f6010b97` too.
 
 On `server.shutdown` the daemon logs these two lines before it closes any connection:
 
@@ -132,11 +134,11 @@ If the daemon logs a `[Server] Connection closed: <addr>` line, the line comes a
 [Server] cleanup: closed <n> connection(s), killed <n> child process group(s)
 ```
 
-The first count includes the connection that sent the request (measured on Windows only).
+The first count includes the connection that sent the request (measured against `5fd08069` on Windows only).
 
-A stop by `SIGTERM` first logs `[daemon] received terminated; shutting down (children will be killed)`. Then it logs `[Server] shutdown requested` and the `cleanup:` line. For `SIGINT` the first line names that signal (Linux and macOS). With `-keep-children` the first line says `kept` in place of `killed` (claustrum's own), and the `cleanup:` line says `killed 0 child process group(s)`.
+A stop by `SIGTERM` first logs `[daemon] received terminated; shutting down (children will be killed)`. Then it logs `[Server] shutdown requested` and the `cleanup:` line. For `SIGINT` the first line names that signal (measured against `5fd08069` on Linux and macOS). With `-keep-children` the first line says `kept` in place of `killed`, and the `cleanup:` line says `killed 0 child process group(s)` (both claustrum's own).
 
-A handler panic in `server.shutdown` writes no frame. See [Handler panic recovery](../PROTOCOL.md#handler-panic-recovery).
+A handler panic in `server.shutdown` writes no frame (claustrum's own). See [Handler panic recovery](../PROTOCOL.md#handler-panic-recovery).
 
 ## Differences by system
 
@@ -148,6 +150,6 @@ A handler panic in `server.shutdown` writes no frame. See [Handler panic recover
 
 ## Differences from the reference
 
-`-keep-children` is claustrum's own flag ([CT-2](../DIVERGENCES.md#ct-2)). `89cb6289` exits 2 on it. The peer check follows the reference, so [D25](../DIVERGENCES.md#d25) is retired.
+`-keep-children` is claustrum's own flag ([CT-2](../DIVERGENCES.md#ct-2)). The peer check follows the reference.
 
-A rule that is not marked "claustrum's own" is measured against `5fd08069` on a Linux VM. A rule that names macOS or Windows was measured there. The order of the shutdown log lines was measured against `f6010b97` and `90fca6e6` on a Linux VM. The signal lines were measured against `f6010b97` and `89cb6289` on a Linux VM. The measured cells behind each rule are in the tests and in the [reference build history](../REFERENCE-BUILDS.md).
+A rule that is not marked "claustrum's own" is measured against `5fd08069` on Linux, and a rule that names macOS or Windows was measured there. The measured cells behind each rule are in the tests and in the [reference build history](../REFERENCE-BUILDS.md).
