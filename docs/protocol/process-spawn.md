@@ -67,7 +67,7 @@ The child gets the environment of the daemon with the `env` of the request merge
 3. `SSH_AUTH_SOCK` from the hand-off below. Without that step there is no entry here.
 4. `CLAUDE_SSH_RUN_DIR` and then `CLAUDE_SSH_CHILD`, the two identity markers below. A caller value of either does not reach the child.
 
-After a good read, the `PATH` entry of the child is the login-shell `PATH` of the user. A `PATH` in `env` wins over it. The read runs at the first spawn, and that spawn waits for it. See [-serve](../PROTOCOL.md#-serve-run-the-daemon). The value never changes how the daemon looks up `command`.
+After a good read, the `PATH` entry of the child is the login-shell `PATH` of the user. A `PATH` in `env` wins over it. The read runs at the first spawn, and that spawn waits for it. See [The login-shell PATH](#the-login-shell-path-linux-and-macos). The value never changes how the daemon looks up `command`.
 
 The daemon removes these names:
 
@@ -79,6 +79,15 @@ The daemon removes these names:
 | `CLAUDE_SSH_PEER_CHECK` | The daemon removes it from its own environment at its start. On Windows that covers any letter case. A value in the `env` of the request reaches the child. Measured on Linux, macOS and Windows. If the removal fails, claustrum logs one WARN line of its own, and the children inherit it. |
 
 The Go runtime variables `GODEBUG`, `GOGC`, `GOMAXPROCS`, `GOMEMLIMIT` and `GOTRACEBACK` reach the child with their values and at their places. `GOGC` and `GOMAXPROCS` are measured on Linux. claustrum treats the other three the same way.
+
+### The login-shell PATH (Linux and macOS)
+
+The daemon runs no login shell at its start. It keeps the result of the first read for its life, a failed read too.
+
+- If `$SHELL` is an executable file, the read runs `$SHELL -l -i -c …`. Otherwise it runs the first usable of `/bin/zsh`, `/bin/bash` and `/bin/sh`.
+- The read has a cap of 4 s. At the cap the daemon kills the shell and discards what it printed, even a valid `PATH`. Children then get the inherited `PATH`, and the log holds `[shellenv] Failed to extract PATH from login shell: shell PATH extraction timed out (<shell>)`.
+- The cap also holds when another process holds the output pipe after the shell ended. The daemon sends that process no signal. claustrum closes its end of the pipe two caps after the shell ended (claustrum's own, not measured).
+- The shell gets seven entries. Five come from the daemon: `HOME`, `PATH`, `SHELL`, `TERM` and `USER`. A name that the daemon does not have gets an empty value. The other two are `DISABLE_AUTO_UPDATE=true` and `ZSH_DISABLE_COMPFIX=true`. No other entry of the daemon reaches it, such as `LANG` or `CLAUDE_SSH_DAEMON_CHILD`. The order of the entries is not measured. A daemon that has a `TERM`, or that has no `HOME`, `PATH` or `USER`, is not measured either. The shell of the SSH agent hand-off gets another environment.
 
 ### The identity markers (Linux and macOS)
 
