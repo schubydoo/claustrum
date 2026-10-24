@@ -18,7 +18,7 @@ daemon. The wire surface is the product.
 |------|---------|
 | Build the binary | `make build`. CGO is off, the build uses `-trimpath`, and the binary is stripped. Output: `./claustrum` |
 | Cross-build all 6 targets | `make all`. Targets: linux/darwin/windows × amd64/arm64 → `dist/` |
-| Format | `make fmt` runs `gofmt -w`. `gofmt -l .` must be empty |
+| Format | `make fmt` runs `gofmt -l -w *.go`, so it skips `handlers/`. `gofmt -l .` must be empty |
 | Vet | `make vet` (`go vet ./...`) |
 | Lint | `golangci-lint run ./...`. The configuration is `.golangci.yml` (v2) |
 | Tests | `make test` (`go test -race -timeout 20m ./...`). This runs the unit suites and the socket-integration suites. The time limit is explicit, because a race run on one Linux host took more than 9 minutes, near the 10 minute default of `go test` |
@@ -44,24 +44,30 @@ daemon. The wire surface is the product.
 There is one binary. A flag selects the mode (`main.go`): `-serve`, `-bridge`,
 `-stop`, `-version`, `-install`, `-probe-cli`.
 
+The table names the files that an agent must not break. The file map of the
+modes and the OS splits is in
+[`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md#source-layout-flat-package-main).
+
 | File | Role |
 |------|------|
-| `rpc.go` | request/response types, error codes, and `dispatch`. The dispatch order is parse → auth → version → route. Dispatch tests auth before the jsonrpc version, except on the unauthenticated `server.shutdown` |
-| `server.go` | the `-serve` daemon: `AF_UNIX` listener (mode `0600`), per-conn read loop, concurrent dispatch, self-daemonize, graceful shutdown |
-| `methods_*.go` | the 20 methods across `server.*` / `files.*` / `git.*` / `launcher.*` / `process.*` / `plugins.*`. `methods_launcher.go` also holds `launcher.resolve`, the `process.spawn` launcher checks and the child env strip |
-| `managedlauncher*.go` | the managed launcher's OS split (the settings folder, the Windows refusal) and the launcher runs of `-install` and `-probe-cli` behind `CLAUDE_SSH_MANAGED_LAUNCHER=1` (`89cb6289`) |
-| `results.go` | result structs, with fields declared in the exact order the reference emits. Never use a map. A map sorts its keys and diverges from the wire contract |
-| `process.go` | `procManager` / `managedProc`: spawn in own process group, base64 stream frames, async stdin writer (bounded queue + backpressure), per-process replay buffer, `reattach` |
-| `bridge.go` | `-bridge`: a stdio↔socket relay. SSH attaches to it. It injects no auth |
-| `logging.go` | leveled stderr logger (`CLAUSTRUM_LOG_LEVEL`, default emit-everything). The level tag goes before the `[Component]` prefixes, so existing greps keep matching |
-| `metrics.go` | opt-in Prometheus counters at `/metrics`. The `-metrics-addr` flag creates the listener. Without that flag there is no listener. Counting is always-on atomics |
-| `wirelog.go` | opt-in `-wire-log` JSON-RPC frame capture. It is a pure side channel over already-marshaled bytes, and it is off by default. It redacts credentials by key only, not by payload contents. It forces `0600` on every open |
-| `gitshadow*.go` · `worktreestaging.go` · `gitworktreeconfig.go` | the settings copy of the git methods, as on `5fd08069`. `gitshadow.go` has the state, the member `settingsControl` of `git.info`, the folder of one daemon under `<socket folder>/git-shadow` and the start test. The lock of that folder is in `gitshadow_unix.go` and `gitshadow_windows.go`. `gitshadowprobe.go` has the call that asks git about a repository. `gitshadowrepo.go` has the folder of one repository, and `gitshadowconfig.go` the text of the copied settings file. `gitshadowuse.go` has the folder variables of the git calls and the `worktree add` steps on Linux and macOS. `worktreestaging.go` has the Windows create: the folder `.s<n>`, the staging folder with its rename, and the cleanup of old staging entries. `gitworktreeconfig.go` has the `config.worktree` items and the file of a new worktree |
-| `install.go` | `-install`: CLI download / extract (zstd) / verify (SHA-256) / prune. A `-cli-url` download is verified unconditionally. If a `-cli-checksum` is supplied, claustrum also verifies the local `-cli-zst` blob, as the reference does. The compare is case-sensitive |
-| `*_unix.go` / `*_windows.go` · `pipetransport*.go` | OS specifics (daemonize, process groups on Unix, login-shell PATH) and the opt-in, default-off, Windows-only `-listen-pipe` named-pipe transport (CT-5). On Windows a kill ends the direct child only, and no child is in a job of the daemon. The daemon starts outside the job of its launcher. If that job refuses, the daemon starts inside it and the launcher logs one line. `-keep-children` works on Windows as claustrum's own flag: `89cb6289` exits 2 on it |
+| `rpc.go` | request and response types, error codes, and the dispatch order |
+| `results.go` | result structs, with fields in the order of the reference. Never a map |
+| `methods_*.go` | the 20 methods across `server.*` / `files.*` / `git.*` / `launcher.*` / `process.*` / `plugins.*` |
+| `process.go` | spawn, stream frames, stdin queue, replay buffer, `reattach` |
+| `handlers/prune.go` | the params type of `plugins.prune`, whose name is in its `-32602` text |
+| `homeguard.go` | `wipesHomeDir`, the home guard that each RPC path to a recursive delete owes |
+| `methods_files.go` | the wipe of `destDir` and the `.synced` marker of `files.extract_tar` |
+| `methods_plugins.go` | the delete of `plugins.prune` |
+| `worktreeremove.go` | the deletes of `git.worktree_remove` |
+| `worktreeverify.go` | the tests after the `worktree add` and both rollbacks of `git.worktree_create` |
+| `worktreestale*.go` | the stale registration step before the add |
+| `worktreestaging.go` | the Windows staging folder, its move and the cleanup of old staging entries |
+| `gitdirheld.go` | the held git directory and the list of the steps that act through it |
+| `githarden_index_*.go` | the placement of the index of a new worktree, and the registration delete of the second rollback (`removeCreatedRegistration`) |
+| `install.go` | the CLI path delete, the sweeps, the prune and the blob remove of `-install` |
+| `gitshadow.go` (`removeEntry` and `removeLink`, which each delete there goes through) · `gitshadowsweep.go` · `gitshadowrepo.go` · `gitshadowuse.go` | the deletes in the folder `git-shadow` |
 
-Every OS serves the same JSON-RPC methods. Full internals →
-[`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md).
+Every OS serves the same JSON-RPC methods.
 
 ## Conventions
 
