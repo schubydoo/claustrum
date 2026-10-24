@@ -134,11 +134,11 @@ If the daemon logs a `[Server] Connection closed: <addr>` line, the line comes a
 [Server] cleanup: closed <n> connection(s), killed <n> child process group(s)
 ```
 
-The first count includes the connection that sent the request (measured against `89cb6289` on Windows only).
+The first count includes the connection that sent the request (measured against `5fd08069` on Windows only).
 
-A stop by `SIGTERM` first logs `[daemon] received terminated; shutting down (children will be killed)`. Then it logs `[Server] shutdown requested` and the `cleanup:` line. For `SIGINT` the first line names that signal (measured against `5fd08069` on Linux and macOS). With `-keep-children` the first line says `kept` in place of `killed` (claustrum's own), and the `cleanup:` line says `killed 0 child process group(s)`.
+A stop by `SIGTERM` first logs `[daemon] received terminated; shutting down (children will be killed)`. Then it logs `[Server] shutdown requested` and the `cleanup:` line. For `SIGINT` the first line names that signal (measured against `5fd08069` on Linux and macOS). With `-keep-children` the first line says `kept` in place of `killed`, and the `cleanup:` line says `killed 0 child process group(s)` (both claustrum's own).
 
-A handler panic in `server.shutdown` writes no frame. See [Handler panic recovery](../PROTOCOL.md#handler-panic-recovery).
+A handler panic in `server.shutdown` writes no frame (claustrum's own). See [Handler panic recovery](../PROTOCOL.md#handler-panic-recovery).
 
 ## Differences by system
 

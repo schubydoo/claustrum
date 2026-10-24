@@ -153,7 +153,7 @@ The checks run in this order. They are measured on Linux. Step 5 is measured on 
 5. A `command` that is missing, a folder or not executable gets `fork/exec <command>: <reason>`, as without a launcher. The launcher does not run.
 6. A launcher that does not start gets `-32005`. A missing `#!` interpreter, or a script with Windows CRLF line ends, gives the reason `its interpreter was not found (the program on its #! line, or the loader of an ELF binary; a script saved with Windows CRLF line endings fails this way)`. A 0755 text file with no `#!` gives `exec format error`.
 
-claustrum's own order, not measured on the reference: step 1 comes before step 2, and step 5 comes before the launcher starts. A start failure other than those two gives its errno text.
+claustrum's own order, not measured on the reference: step 1 comes before step 2, and step 5 comes before the launcher starts. A start failure other than those two gives its errno text. The step 6 frames of claustrum are tested, not measured on a VM.
 
 A started launcher logs the start line of [Lines of child processes](../PROTOCOL.md#lines-of-child-processes), which names the first element of `launcher` only. A refusal writes no `[LauncherHandler]` line.
 
