@@ -584,7 +584,7 @@ var docWordLimits = map[string]int{
 	"README.md":                            1300,
 	"SECURITY.md":                          1700,
 	"docs/ARCHITECTURE.md":                 4500,
-	"docs/DIVERGENCES.md":                  9700,
+	"docs/DIVERGENCES.md":                  9100,
 	"docs/EXAMPLES.md":                     1200,
 	"docs/GLOSSARY.md":                     1300,
 	"docs/IMPROVEMENTS.md":                 2300,
