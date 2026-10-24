@@ -20,8 +20,8 @@ claustrum -install -cli-version <v> [-cli-dir <d>] \
 downloads or reads the CLI, extracts and verifies it, puts it in place and runs
 `<cli> --version` once. Then it prunes old versions and prints one
 `__INSTALL_RESULT__<json>` facts line (schema in [`__INSTALL_RESULT__` facts](#__install_result__-facts)).
-A rule that names no system was measured on Linux, macOS and Windows. A rule
-that names one system was measured on that system only.
+The builds ran on Linux, macOS and Windows. A rule that names one system, or
+that sits under a lead-in that names one, was measured on that system only.
 [REFERENCE-BUILDS.md](REFERENCE-BUILDS.md) has the history of most of these rules.
 
 | Flag | Default | Meaning |
@@ -470,8 +470,8 @@ claude-ssh: <path> --version through the managed launcher <argv0> did not succee
   cap of `-install` applies. A signal reads `terminated by SIG<name>`.
 
 The `-help` text of `-probe-cli` names this mode. With the managed launcher, the
-reference changed this one `-help` line and no other (measured on Linux, macOS
-and Windows).
+reference changed this one `-help` line from `f6010b97` and no other (measured
+on Linux, macOS and Windows).
 
 The direct bound is a fixed 30 s, always applied. The mode unsets
 `CLAUDE_RPC_TOKEN` so the probed child never inherits it. The probed CLI runs in
