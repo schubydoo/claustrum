@@ -31,7 +31,8 @@ sources, easiest first:
    `JSON.parse('{"version":"<sha>","manifest":{…},"baseUrl":".../claude-ssh-releases"}')`
    literal inside `resources/app.asar` holds the pinned SHA and the six checksums
    and sizes. A parallel literal pins the CLI (`claude-code-releases`). Its
-   `baseUrl` can end in `/rc/<sha>`, so match the bucket by path segment. Two scripts read the literal offline:
+   `baseUrl` can end in `/rc/<sha>`, so match the bucket by path segment. Two
+   scripts read the literal offline:
    - [`scripts/extract-desktop-pin.py`](https://github.com/schubydoo/claustrum/blob/main/scripts/extract-desktop-pin.py)
      reads it from a Linux `.deb`, a Windows `.nupkg` or a macOS `.zip`.
    - [`scripts/latest-desktop-sha.py`](https://github.com/schubydoo/claustrum/blob/main/scripts/latest-desktop-sha.py)
@@ -52,8 +53,8 @@ sources, easiest first:
 
 The client runs `--version` on `~/.claude/remote/srv/<pinned-sha>/server`. For a
 `--version` output that matches `/claude-ssh\s+(\S+)/` with the pinned SHA as that
-token, it skips the upload. The stock claustrum line holds no such match, so the client sends the daemon again by SFTP every
-session. That is not drift: the version line is CLI stdout, not a frame. The
+token, it skips the upload. The stock claustrum line holds no such match, so the
+client sends the daemon again by SFTP every session. That is not drift: the version line is CLI stdout, not a frame. The
 daemon that runs at the end is still claustrum. The
 opt-in `version-override` ([CT-3](DIVERGENCES.md#ct-3)) stops the re-upload. See
 [PROTOCOL.md → `-version`](PROTOCOL.md#-version).
@@ -118,9 +119,10 @@ of the real desktop client:
 
 The last capture ran against `8de85faa`, a build well behind the current
 baseline, `5fd08069`. Its result is in
-[REFERENCE-BUILDS.md](REFERENCE-BUILDS.md#8de85faaa11694321e937499a18c7ab88f37c76c-2026-05-21). Run a capture again for a build that changes `process.*`
-behavior that the synthetic battery cannot model (real reconnect timing,
-multi-process reattach).
+[REFERENCE-BUILDS.md](REFERENCE-BUILDS.md#8de85faaa11694321e937499a18c7ab88f37c76c-2026-05-21).
+Use a capture as a periodic spot-check. Use it again for a build that changes
+`process.*` behavior that the synthetic battery cannot fully model (real
+reconnect timing, multi-process reattach).
 
 ## Step 4 — reconcile
 
@@ -132,12 +134,10 @@ If the check reports drift:
    unchanged behavior unchanged.
 3. Run the static check and the byte-for-byte battery again, until both are
    clean.
-4. Bump the pin to the new SHA in `scripts/UPSTREAM_SHA`. The other steps are in
-   [REFERENCE-BUILDS.md → When you bump the pin](REFERENCE-BUILDS.md#when-you-bump-the-pin).
-   If the wire surface changed, update the page of the method under
-   `docs/protocol/`, or `docs/PROTOCOL.md`. For a user-facing change, add a
-   `.changeset/` fragment with `knope document-change`. knope writes
-   `CHANGELOG.md`.
+4. Bump the pin to the new SHA in `scripts/UPSTREAM_SHA`, and take the other
+   steps of [REFERENCE-BUILDS.md → When you bump the pin](REFERENCE-BUILDS.md#when-you-bump-the-pin).
+   For a user-facing change, add a `.changeset/` fragment with
+   `knope document-change`. knope writes `CHANGELOG.md`.
 
 ## Don't reconcile the deliberate divergences away
 
@@ -532,10 +532,9 @@ its frame bytes from Go's `encoding/json`
 the reference stays the same.
 
 Go 1.27 does that. It turns on the `jsonv2` GOEXPERIMENT by default, and the v2
-`Marshal` renders an invalid UTF-8 byte as the literal U+FFFD character (bytes `EF BF BD`). Go 1.26
-and earlier emit the six-ASCII
-`\ufffd` escape. The build pinned
-today, `5fd08069`, carries a go1.25.14 stamp (`go version` on the binary), as
+`Marshal` renders an invalid UTF-8 byte as the literal U+FFFD character (bytes
+`EF BF BD`). Go 1.26 and earlier emit the six-ASCII `\ufffd` escape. The build
+pinned today, `5fd08069`, carries a go1.25.14 stamp (`go version` on the binary), as
 `89cb6289` does. So it emits the same escape. `files.read` puts raw file bytes
 into `content`, so under Go 1.27 every read of a file with a non-UTF-8 byte
 diverges from the reference. `TestInheritedInvalidUTF8BecomesReplacementChar` and
@@ -611,7 +610,7 @@ The `-z` option needs git 2.36 or later. On an older git that call fails, and bo
 methods run `git worktree list --porcelain` instead. The references on such a git
 are not measured. The tests in `worktree_root_checkout_unix_test.go` that need
 `-z` skip there, so a skip in CI means a git older than 2.36. Check them after the
-git of a CI runner changes.
+git of a CI runner or a test VM changes.
 
 ## Automating it
 
