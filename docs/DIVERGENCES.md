@@ -625,11 +625,12 @@ no flag and no key.
 
 - **Behavior.** Off the wire. Without the flag, a graceful shutdown ends the
   children. A graceful shutdown is `-stop`, `server.shutdown`, `SIGTERM`,
-  `SIGINT` or the self-exit. With the flag it leaves the spawned children running and log one line with their count. The new daemon does not re-adopt
+  `SIGINT` or the self-exit. With the flag it leaves the spawned children
+  running and logs one line with their count. The new daemon does not re-adopt
   them. A client can find them again through the CT-1 `pid` and `startTime`.
 - **Limits.** The survivors lose their stdio, so only a child that tolerates a
-  dead stdin and stdout lives on (not measured on Windows). On Linux and macOS the shutdown removes the
-  records of the kept children (claustrum's own). So the reap of the next start
+  dead stdin and stdout lives on (not measured on Windows). On Linux and macOS
+  the shutdown removes the records of the kept children (claustrum's own). So the reap of the next start
   sends them no signal. That covers the processes of the process table only.
   A process whose `id` a later spawn took keeps its record, and the next start
   ends it. The host cleaner does not read the records. It ends an orphaned
@@ -646,7 +647,8 @@ no flag and no key.
 ### CT-3 · Opt-in `claustrum.conf` config file { #ct-3 }
 
 - **Behavior.** `claustrum.conf` is an optional `key = value` file with `#`
-  comments, in the folder that holds the binary. Its keys mirror the flags. The
+  comments, in the folder that holds the binary. Each key but
+  `version-override` mirrors a flag. The
   [flags table](PROTOCOL.md#flags-and-config-keys) lists each key, the
   deprecated ones too. Each key that sets something turns on, or tunes, a behavior
   that is off by default. The deprecated keys set nothing and log one
@@ -696,9 +698,10 @@ no flag and no key.
 ## Retired entries
 
 A retired entry is a divergence that the reference made moot, or one that the
-maintainer retired to follow the reference. Its number is not reused. A retired
-flag and its `claustrum.conf` key are still accepted and set nothing. Each logs
-one warning in the mode of the flag, `-serve` or `-install`. A duration flag
+maintainer retired to follow the reference. It links to the home of its rule
+where it has one. Its number is not reused. A retired
+flag and its `claustrum.conf` key are still accepted and set nothing. Either one
+logs one warning in the mode of the flag, `-serve` or `-install`. A duration flag
 whose value does not parse fails the flag parse with exit 2 (from the code).
 
 ### D1 · Verify the `-cli-zst` blob against a supplied checksum (retired) { #d1 }
@@ -719,7 +722,8 @@ The git calls have the time limits of the reference, always: see
 ### D7 · `-cli-version` must not collide with the install temp sweep (retired) { #d7 }
 
 A version with a sweep name, such as `.fetch-1`, installs and stays in that run,
-as on the reference. [D6](#d6) still applies to every version.
+as on the reference: see [PROTOCOL.md → -install](PROTOCOL.md#-install-ensure-the-agent-cli).
+[D6](#d6) still applies to every version.
 
 ### D9 · Namespace-wide params binding (retired) { #d9 }
 
@@ -753,8 +757,8 @@ see [PROTOCOL.md → The `lsof` reads](PROTOCOL.md#the-lsof-reads-macos).
 
 ### D18 · `-cli-version` must not start with `.blob-` (retired) { #d18 }
 
-claustrum writes no `.blob-` file and accepts a version that starts with
-`.blob-`, and the prune counts version files only, as on the reference.
+The prune counts version files only, as on the reference. claustrum writes no
+`.blob-` file now, and it accepts a version that starts with `.blob-`.
 
 ### D21 · A second daemon on a live socket appends to `remote-server.log` (retired) { #d21 }
 
