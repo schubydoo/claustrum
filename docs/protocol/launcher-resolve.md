@@ -60,7 +60,7 @@ The settings folder is `/etc/claude-code` on Linux and `/Library/Application Sup
 
 ### The test variable
 
-A non-empty `CLAUDE_SSH_E2E_MANAGED_SETTINGS_DIR` in the daemon's environment names another folder. The daemon reads it only if the system folder has neither the base file nor a `.json` drop-in, a hidden one included. Else it logs this line once per daemon. From the third resolve on, that one line is claustrum's own:
+A non-empty `CLAUDE_SSH_E2E_MANAGED_SETTINGS_DIR` in the daemon's environment names another folder. The daemon reads it only if the system folder has neither the base file nor a `.json` drop-in, a hidden one included. Else it logs this line once per daemon. That no further line comes from the third resolve on is claustrum's own:
 
 ```text
 [launcher] CLAUDE_SSH_E2E_MANAGED_SETTINGS_DIR ignored: <system folder> holds this host's policy
