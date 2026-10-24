@@ -2,7 +2,7 @@
 
 `files.stat` says whether a path exists. If it exists, the response gives its kind, its size and its mode.
 
-claustrum is built to answer as the reference does.
+claustrum is built to answer as the reference does. The error texts of this page match the reference as measured on Linux against a build up to `5fd08069`.
 
 ## Request
 

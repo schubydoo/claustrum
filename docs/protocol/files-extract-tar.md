@@ -66,7 +66,7 @@ Read `success`. A failure has no `errorCode` member, so the `error` text is the 
 | `gzip:` | The daemon cannot read a gzip header. |
 | `tar read:` | The daemon cannot read the next entry. Gzip data that is not a tar archive gives this text at the first entry. Gzip data with no content is an archive with no entries: the request succeeds with `fileCount` `0`, and `destDir` is then empty but for the marker. |
 | `open parent:` | The daemon cannot open the directory that holds `destDir`, or cannot search it. The text is `open parent: open <path of that directory>: <reason>`. |
-| `clean destDir:` | The daemon cannot delete the old `destDir`, or an entry in it. The text is `clean destDir: RemoveAll <name>: <reason>`. |
+| `clean destDir:` | The daemon cannot delete the old `destDir`, or an entry in it. The text is `clean destDir: RemoveAll <name>: <reason>`, with the last name of `destDir` as `<name>`. |
 | `mkdir parent: mkdir <path>:` | The daemon cannot create a directory above `destDir`. `<path>` is the whole path of that directory. This text has no entry name: `mkdir parent <entry>:` below is another failure. |
 | `mkdir destDir:` | The daemon cannot create `destDir`. The text is `mkdir destDir: mkdirat <name>: <reason>`. |
 | `clean destDir: "<name>" is not the entry that the path names`, and the same after `mkdir destDir:` | The path of `destDir` and its last name inside the parent directory do not name one entry. Nothing in `destDir` goes, except the new folder after `mkdir destDir:` (from the code). On Windows a path with the `\\?\` prefix and a dot or a space after its last name gives this text. `89cb6289` extracts into a folder with the exact name there, and `5fd08069` into the folder with no dot or space. |
