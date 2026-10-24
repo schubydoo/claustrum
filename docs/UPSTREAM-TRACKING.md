@@ -224,7 +224,7 @@ Some flags are claustrum's own and have no entry: `-token-fd`
 So is the skip of the kill signal for a child that already ended
 ([process.kill → Differences from the reference](protocol/process-kill.md#differences-from-the-reference)).
 So is a rule of `process.killAndWait`. During the exit drain it sends no first
-signal. `KILL` goes to the group at once, as on the reference
+signal. On Linux and macOS `KILL` goes to the group at once, as on the reference
 ([A request during the exit drain](protocol/process-killandwait.md#a-request-during-the-exit-drain)).
 Check those before you conclude that something is drift.
 
@@ -327,7 +327,7 @@ the linked pages. The history of each build is in
   [launcher.resolve](protocol/launcher-resolve.md).
 - The peer check follows `5fd08069`. `server.capabilities` carries the
   `peerCheck` and `peerCheckBy` members and the `server.peer_check` and
-  `git.shadow_dir` features. On Linux the daemon refuses a caller in other
+  `git.shadow_dir` features. On Linux with `CLAUDE_SSH_PEER_CHECK=1` the daemon refuses a caller in other
   namespaces with `-32006`. The frames of `89cb6289` have none of these. The
   peer check log lines differ from `5fd08069` by a level tag only (measured on
   Linux). See [The peer check](protocol/server.md#the-peer-check).
@@ -344,16 +344,17 @@ the linked pages. The history of each build is in
   cannot search or open gets the `open destDir:` refusal, where `89cb6289` fails
   later or extracts. The two Windows rows of
   [Differences by system](protocol/files-extract-tar.md#differences-by-system)
-  are parity (measured on Windows). A `\\?\` path with a dot or a space after its
+  are parity, and `89cb6289` differs in both (measured on Windows). A `\\?\` path with a dot or a space after its
   last name differs from both builds ([D2](DIVERGENCES.md#d2)). A `destDir` that
   is the home folder by identity gets the home refusal (D2). See
   [files.extract_tar](protocol/files-extract-tar.md).
 - The `-install` prune and sweeps follow `5fd08069`, and so do the blob timing,
-  the `rename: ` prefix, the Windows rename retry and the Linux file test of a
+  the Windows `rename: ` prefix, the Windows rename retry and the Linux file test of a
   cache hit. See [PROTOCOL.md → -install](PROTOCOL.md#-install-ensure-the-agent-cli).
 - The git filters of the `git.worktree_create` checkout follow `5fd08069`. Against
   `89cb6289` the refusal `repository_only_filter` is new. So are the texts for a
-  name over 200 bytes and for more than 64 filters. An outside filter now runs
+  name over 200 bytes and for more than 64 filters (`89cb6289` not run for 64
+  filters). An outside filter now runs
   where the repository defines the same name. Against `5fd08069` these differences are not drift:
   - With a `GIT_DIR` and a `GIT_WORK_TREE` of another repository in the daemon
     environment, claustrum answers `not_a_repo`, as `89cb6289` does, where
