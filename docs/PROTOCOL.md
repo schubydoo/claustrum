@@ -161,7 +161,7 @@ under [Stream notifications](#stream-notifications), is the wire contract.
 | `-32002` | a full stdin queue, from `process.stdin` (see [Errors](protocol/process-stdin.md#errors)) |
 | `-32003` | an `offset` past the applied bytes, from `process.stdin` (see [Errors](protocol/process-stdin.md#errors)) |
 | `-32004` | a refused `launcher`, from `process.spawn` (see [The managed launcher](protocol/process-spawn.md#the-managed-launcher)) |
-| `-32005` | a launcher that does not start, from `process.spawn` (see [The managed launcher](protocol/process-spawn.md#the-managed-launcher)) |
+| `-32005` | a launcher that does not start, from `process.spawn` (see [Response](protocol/process-spawn.md#response)) |
 | `-32006` | `Refused: this server could not confirm that the caller is in its own namespaces`, on Linux with `CLAUDE_SSH_PEER_CHECK=1` (see [A refused caller](protocol/server.md#a-refused-caller-linux)) |
 | `-32001` | `Unauthorized: invalid or missing auth token` |
 

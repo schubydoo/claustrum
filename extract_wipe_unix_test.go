@@ -310,8 +310,8 @@ func TestFilesExtractTarWipeStaysInDestDir(t *testing.T) {
 // TestFilesExtractTarParentCannotBeMade holds the answer for a folder above
 // destDir that cannot be made. The frames are those of 89cb6289 and 5fd08069 on
 // a Linux VM: the prefix is "mkdir parent: ", and the text has the whole path of
-// the folder that fails. Nothing changes on disk, and an old destDir keeps its
-// content.
+// the folder that fails. Nothing changes on disk in these cases, which fail at the
+// first missing folder, and an old destDir keeps its content.
 func TestFilesExtractTarParentCannotBeMade(t *testing.T) {
 	skipIfRoot(t)
 	for _, tc := range []struct {

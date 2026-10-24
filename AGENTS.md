@@ -219,7 +219,8 @@ name describes claustrum's code, not a measurement.
       registration, runs the branch step on the created branch, and then
       removes the empty leaf. On Linux and macOS, and on Windows for a moved
       registration (not measured on Windows), a registration that cannot be
-      deleted skips the branch step.
+      deleted skips the branch step, except in the state `shadow` after an
+      empty answer of git (claustrum's own).
         - **Stale.** Before the add, create removes one stale entry of
           `worktrees` in the common git directory of `baseRepo`. A stale entry
           is one whose `gitdir` record names the `.git` of the new leaf. Create
