@@ -866,13 +866,14 @@ config is in
 
 The daemon reads the git config of a repository itself, and it tests some files of
 the git directory. If it does not accept one of them, the git method answers with a
-refusal. A rule with no mark follows `5fd08069` as measured on Linux. A mark names
-each other system where a rule was measured too. A rule that names its systems
+refusal. A rule with no mark follows `5fd08069` as measured on Linux. A mark `(also <system>)`
+means the rule was measured there too. A rule that names its systems
 was measured there. Most rules were measured on
 `git.info` and `git.status`.
 
 The read runs only in the state `shadow` of [the settings copy](#the-settings-copy).
-In the state `fallback-git` the daemon makes no read and gives no refusal. The daemon
+In the state `fallback-git` the daemon makes no read and gives no refusal. Git 2.13.7 is the
+oldest git that ran with the refusal. The daemon
 follows each `include.path` setting itself, and for a linked worktree it reads the
 config of the repository of that worktree. A refusal is not kept (also macOS and
 Windows), and an accepted config is read once and again after one of its files
@@ -1041,7 +1042,7 @@ These rules are from the code and are not measured on `5fd08069`:
 - A read with a failed open or read of the daemon is not kept, also when it accepts
   the config. So the next request reads again.
 - The change test misses a change that keeps the size, modification time, mode and
-  identity of each file of the read.
+  identity, where the system gives one, of each file of the read.
 - An open error of the file of an `includeIf` section gives no refusal. An open
   error other than the measured ones gets the same `open <file>: <reason>` form.
 - A `~/x` include is joined to the home folder and cleaned. With no home folder it
@@ -1298,8 +1299,6 @@ remove asks twice. For a repository of another owner with no `safe.directory`,
 `git.worktree_remove` answers the lock-check refusal that ends `(its registrations
 could not be examined); retry`. With a child that holds the pipes, an exit 0 counts
 by its output so far (measured on `git.status` only).
-
-One `git version` call also follows a config read that failed with a syntax error.
 
 #### The git calls
 
