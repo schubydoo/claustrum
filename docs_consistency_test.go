@@ -4,6 +4,7 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"slices"
 	"sort"
 	"strconv"
 	"strings"
@@ -99,10 +100,15 @@ func TestDocsEveryMethodHasAHome(t *testing.T) {
 			}
 		}
 	}
+	var rows []string
 	for _, m := range docMethodRowRE.FindAllStringSubmatch(text, -1) {
 		if _, err := os.Stat(filepath.Join("docs", "protocol", m[2])); err == nil {
 			named[m[1]] = true
 		}
+		rows = append(rows, m[1])
+	}
+	if !slices.Equal(rows, capabilityMethods) {
+		t.Errorf("the method table of docs/PROTOCOL.md is %v, and server.capabilities returns %v: put the rows in the order of capabilityMethods", rows, capabilityMethods)
 	}
 	for _, m := range capabilityMethods {
 		page := strings.NewReplacer(".", "-", "_", "-").Replace(m)

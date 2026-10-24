@@ -3168,7 +3168,7 @@ The `cliError` catalogue follows:
 | `rename: staging file vanished before install: <err>` | a concurrent sweep took the staging file |
 | `cli unresponsive: the installed Claude Code binary was started through the host's managed launcher <argv0> and the run did not answer --version within 33s (123s for a first run), so it was stopped; the launcher or the host is not letting it finish` | a managed launcher run stopped at 33 s (123 s after a fresh install), with `CLAUDE_SSH_MANAGED_LAUNCHER=1` (see below) |
 
-The managed launcher (measured against `89cb6289` on a Linux VM unless a rule names another system):
+The managed launcher (measured against `89cb6289` on a Linux VM unless a rule says otherwise):
 - `-install` uses the [managed launcher](protocol/launcher-resolve.md) only when
   `CLAUDE_SSH_MANAGED_LAUNCHER` is exactly `1`. Every other value, and an unset
   variable, adds no field and runs no launcher. Values other than `true` and `1 `
@@ -3499,7 +3499,7 @@ The libc probe fills the `libc` fact:
   path with another extension. claustrum tests only that the path exists.
 
 With `CLAUDE_SSH_MANAGED_LAUNCHER=1` the probe uses the
-[managed launcher](protocol/launcher-resolve.md) (measured against `89cb6289` on a Linux VM unless a rule names another system). Every
+[managed launcher](protocol/launcher-resolve.md) (measured against `89cb6289` on a Linux VM unless a rule says otherwise). Every
 `-probe-cli` row exits `0`, and each stderr text below ends in one newline:
 
 - A usable launcher runs `<launcher argv...> <path> --version`. If the run exits
