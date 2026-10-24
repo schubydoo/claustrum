@@ -608,10 +608,10 @@ var docWordLimits = map[string]int{
 	"docs/GLOSSARY.md":                     1300,
 	"docs/IMPROVEMENTS.md":                 1700,
 	"docs/INSTALL.md":                      5900,  // a new page: its words moved from PROTOCOL.md and ARCHITECTURE.md, with room for a first edit
-	"docs/PROTOCOL.md":                     24894, // decision-040: words moved to the method pages, to INSTALL.md and to UPSTREAM-TRACKING.md
+	"docs/PROTOCOL.md":                     24410, // decision-040: words moved to the method pages, to INSTALL.md and to UPSTREAM-TRACKING.md
 	"docs/UPSTREAM-TRACKING.md":            6200,
 	"docs/index.md":                        800,
-	"docs/protocol/files-extract-tar.md":   2274, // decision-040: a move between pages, net down in the same PR
+	"docs/protocol/files-extract-tar.md":   2254,
 	"docs/protocol/files-list.md":          500,
 	"docs/protocol/files-read.md":          900,
 	"docs/protocol/files-stat.md":          500,
