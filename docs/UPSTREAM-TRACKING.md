@@ -351,10 +351,27 @@ the linked pages. The history of each build is in
   differ in four states: `git.status` with replace objects, the `hint:` lines
   above, a long tree path on Windows, and the paths of a new worktree with
   `worktree.useRelativePaths`. The `-c` lists and heavy variables of the call
-  log differ too. Against `5fd08069` the call logs of `git.worktree_create` differ with
-  `worktreeRoot` and with `existingBranch`. See
-  [Hardened git calls](PROTOCOL.md#hardened-git-calls) and
-  [Where the calls differ from `5fd08069`](PROTOCOL.md#where-the-calls-differ-from-5fd08069).
+  log differ too. Against `5fd08069` the call logs differ in these states, with
+  equal replies:
+  - With `worktreeRoot`, `5fd08069` runs `rev-parse --show-toplevel`, `rev-parse
+    --absolute-git-dir` and `worktree list --porcelain -z` before the add, after
+    the add and after the checkout. claustrum runs them before the add only
+    (measured on Linux and macOS). A second remove of a gone worktree makes fewer
+    calls too (measured on Linux).
+  - With `existingBranch`, claustrum runs one config listing before the attach
+    add, where `5fd08069` runs two. After a failed attach add, claustrum runs one
+    listing before the `-b` add, and `5fd08069` none.
+  - With a git filter or git-lfs, the read-tree of claustrum can carry filter
+    items before its list.
+
+  With `"shadowDirOff":true` the other calls are equal in list, arguments,
+  working directory and variables. Without the member these are equal: the
+  folder variables and the six heavy values of the light calls of a create. So
+  are the `lfs.storage` item of the checkout and the names of the short-lived
+  entries. That is measured
+  on Linux and macOS in the state `shadow`. On Windows the variables and the
+  names are measured in the state `fallback-git`. `githarden.go` holds the
+  lists. See [Hardened git calls](PROTOCOL.md#hardened-git-calls).
 - The `worktreeRoot` location rules follow `5fd08069` (measured on Linux and
   macOS). `89cb6289` is not measured there.
 - A remove behind a linked `<git dir>/worktrees` follows `5fd08069` (measured on
@@ -412,10 +429,9 @@ the linked pages. The history of each build is in
   [git.info → The root](protocol/git-info.md#the-root).
 - D12 needs a valid zstd body. The decoder answers an invalid body at once, and
   that reads like "no divergence". A zero download timeout frees the body read
-  only. The transport clocks and the 60 s wait for the response headers still
-  apply, and that wait is parity. See
-  [-install](INSTALL.md#-install-ensure-the-agent-cli) and the
-  [conventions](DIVERGENCES.md#conventions-for-opt-in-divergences).
+  only. The [transport clocks](DIVERGENCES.md#conventions-for-opt-in-divergences)
+  and the 60 s wait for the response headers still apply, and that wait is
+  parity. See [-install](INSTALL.md#-install-ensure-the-agent-cli).
 - A connection reset in the body answers
   `download interrupted after <got>/<total> bytes: <err>`, as on `f6010b97` and
   `89cb6289` (measured on Linux). Another text there is drift. A body that ends

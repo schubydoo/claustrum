@@ -178,10 +178,11 @@ func profileEnv(heavy bool) []string {
 // hardened call: listingEnvBase (the daemon's own environment after gitChildEnv,
 // without GIT_CONFIG, GIT_CONFIG_PARAMETERS, LC_ALL and LANGUAGE), the profile of the call that follows
 // it, pin, and then LC_ALL=C and LANGUAGE=C as the last two entries. git then prints
-// its listing errors in English whatever the daemon's locale (rows L01 to L03). It
+// its listing errors in English whatever the daemon's locale (rows L01 to L03,
+// TestListingLocaleEnv). It
 // carries no hook pins, and the daemon's GIT_CONFIG_COUNT set is kept as it is. The
 // heavy set comes before a heavy call and the light set before a light call
-// (docs/PROTOCOL.md → "Listings and probes"). The call after the listing keeps
+// (checkAlternation in TestHardenedGitCallShape). The call after the listing keeps
 // the daemon's own LC_ALL, LANGUAGE and LANG in their places.
 //
 // pin is the GIT_COMMON_DIR pin of the git-directory trust check (commonDirPinEnv),
@@ -197,8 +198,8 @@ func precursorEnv(heavy bool, pin []string) []string {
 // GIT_CONFIG_PARAMETERS, less GIT_CONFIG_COUNT
 // and every GIT_CONFIG_KEY_<digits> and GIT_CONFIG_VALUE_<digits>. Then come the
 // profile, pin, and configPinEnv: the count, the inherited pairs and the hook pins of
-// hooks (gitenv.go). docs/PROTOCOL.md → "Environment and working directory"
-// and "Variables that the git calls keep or drop" give the order.
+// hooks (gitenv.go). TestHardenedGitEnvOrder tests the order. docs/PROTOCOL.md →
+// "Variables that the git calls keep or drop" gives the rules of the daemon's variables.
 //
 // GIT_OPTIONAL_LOCKS=0 is not part of it. git.status adds it to its status, ls-files
 // and diff-index calls only (gitstatus.go). The heavy `rev-parse --absolute-git-dir` of git.worktree_create and
