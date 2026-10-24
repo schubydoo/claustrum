@@ -335,8 +335,8 @@ that names systems without "measured" holds on each one. The [reference build hi
 | process.killAndWait / process.reattach | `Process ID is required` / `Invalid params` | |
 
 `-install` reports failures inside the `__INSTALL_RESULT__` facts line as
-`cliError` strings, not through an exit code. They are catalogued in the
-`-install` section below.
+`cliError` strings, not through an exit code. They are catalogued in
+[-install](INSTALL.md#-install-ensure-the-agent-cli).
 
 ### Handler panic recovery
 
