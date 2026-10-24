@@ -46,10 +46,10 @@ The five `git.*` methods start in `methods_git.go`. Their params are in
   `externalunsupported_*.go` and `spelling_*.go` hold the path refusals of both.
   `worktreelock.go` holds their locks. `worktreebranch*.go` holds the branch
   step of a remove and of a rollback.
-- **Create.** `gitdiraccept.go` and `gitdirheld.go` hold the git directory open.
+- **Create.** `gitdiraccept.go` and `gitdirheld.go` hold the git directory open and act through it.
   `worktreeverify.go` holds the tests after the add and the rollback steps.
-  `githarden_index_*.go` places the index and deletes the registration of a
-  rollback. `worktreestaging.go` is the Windows staging step. The copy steps
+  `githarden_index_*.go` places the index. For a create that holds no git
+  directory, it deletes the registration of a rollback. `worktreestaging.go` is the Windows staging step. The copy steps
   are `worktreecopy.go`, `worktreeinclude*.go` and `worktreeclaude.go`. The
   other steps are `worktreemkdir_*.go`, `worktreestale*.go` and
   `worktreesource.go`.
