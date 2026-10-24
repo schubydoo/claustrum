@@ -2027,7 +2027,7 @@ These flags are off the wire. `-keep-children` and `-listen-pipe` have an entry 
   transport](#named-pipe-transport-windows-opt-in). The daemon logs a setup failure
   (`[Server] named-pipe transport: …`), which is non-fatal. The socket still serves.
 
-The one opt-in divergence of this mode is `-max-extract-bytes`
+The opt-in divergence of this mode on the wire is `-max-extract-bytes`
 ([D3](DIVERGENCES.md#d3)). Off is parity. Its frame is in
 [files.extract_tar](protocol/files-extract-tar.md).
 
@@ -2042,11 +2042,10 @@ client that speaks through it supplies `"auth"` itself. It is strict, so a dial
 failure is a hard error: `claustrum: dial server: <err>` on stderr, exit `1`.
 
 At stdin EOF the bridge half-closes its socket write side, so the daemon reads
-EOF, and the bridge keeps copying the socket to stdout. It prints every frame that
-arrived before the daemon closed the connection, also the parse-error frame of a
-final partial line, and then exits `0` (measured on Linux and Windows). It exits
-`0` also with stdin still open, once the daemon closes the connection (measured
-on Linux). If the half-close fails, the claustrum bridge closes the socket fully.
+EOF, and the bridge keeps copying the socket to stdout. It relays the
+parse-error frame of a final partial line, and then exits `0` (measured on Linux
+and Windows). It prints every frame that arrived before the daemon closed the
+connection, and it exits `0` also with stdin still open (measured on Linux). If the half-close fails, the claustrum bridge closes the socket fully.
 
 On Windows the daemon can miss the half-close of the bridge (see
 [Transport](#transport)). The bridge then does not exit.
@@ -2057,8 +2056,8 @@ On Windows the daemon can miss the half-close of the bridge (see
 claustrum -stop -socket <p>          # no token needed, and none is read
 ```
 
-The rules of `-stop` are measured on Linux and macOS, and the steps after a
-successful connect on Windows too. A rule marked claustrum's own is not measured.
+Unless a rule says otherwise, the rules of `-stop` are measured on Linux and
+macOS, and the steps after a successful connect on Windows too. A rule marked claustrum's own is not measured.
 
 `-stop` sends `{"jsonrpc":"2.0","id":1,"method":"server.shutdown"}` and a
 newline. It sends no `auth` member, because that method is not authenticated
@@ -2151,6 +2150,10 @@ taken](DIVERGENCES.md#candidates-considered-but-not-taken).
 `-version`, `-install` and `-probe-cli` win over `-stop`. `-bridge` and `-serve`
 win too. With `-stop -bridge` claustrum runs the bridge, and with `-stop -serve`
 it runs serve.
+
+A daemon of a build before the auth exemption of `server.shutdown` keeps running
+while `-stop` prints `stopped`. [IMPROVEMENTS.md](IMPROVEMENTS.md) item 37 has
+the upgrade step.
 
 ### -version
 
