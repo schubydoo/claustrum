@@ -14,7 +14,9 @@ import (
 // 7c2f88d: the process.stdin.offset idempotency contract (stdin "applied"/
 // "duplicate" + reattach "stdinApplied"), process.killAndWait (and its
 // timeoutMs/escalate params via clampKillWaitMs), and the server.capabilities
-// "features" array that advertises them. See docs/PROTOCOL.md.
+// "features" array that advertises them. See docs/protocol/process-stdin.md,
+// docs/protocol/process-killandwait.md, docs/protocol/process-reattach.md and
+// the "Features" section of the server.* page under docs/protocol/.
 
 // rpcEnvelope is a minimal reply decoder shared by the 7c2f88d wire-surface tests
 // (also used by git_repo_slug_test.go and killandwait_unix_test.go).

@@ -292,8 +292,8 @@ func TestDecodeAndNeedParams(t *testing.T) {
 
 // TestIDForLog pins the rendering of the id in the unauthorized log line.
 //
-// docs/PROTOCOL.md documents that line, and `string(req.ID)` used to produce it
-// straight from the raw request bytes. Now that ID is a decoded interface{},
+// docs/PROTOCOL.md → Authentication documents that line, and `string(req.ID)`
+// used to produce it straight from the raw request bytes. Now that ID is a decoded interface{},
 // the text has to be reconstructed — so this locks the shapes that line has
 // always had: a bare number, a quoted string, and empty for an absent id.
 func TestIDForLog(t *testing.T) {

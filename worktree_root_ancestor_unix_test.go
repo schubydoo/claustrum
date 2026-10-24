@@ -628,8 +628,9 @@ func TestWorktreeCreateRootAncestorBeforeGitChain(t *testing.T) {
 	}
 }
 
-// Rows Y11d and T7 of docs/PROTOCOL.md: the ancestor text comes before the checkout
-// tests. The root leads into the repository <B>/G/T through the symlink <B>/L, and
+// Rows Y11d and T7 (see the comment above the call of worktreeRootAncestorRefusal
+// in methods_git.go): the ancestor text comes before the checkout tests. The root
+// leads into the repository <B>/G/T through the symlink <B>/L, and
 // <B>/G is group-writable.
 func TestWorktreeCreateRootAncestorBeforeCheckout(t *testing.T) {
 	sharedGroup(t)

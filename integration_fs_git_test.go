@@ -318,7 +318,7 @@ func TestSocketErrorTextParity(t *testing.T) {
 		}),
 		// W8 — the two shapes differ; both are pinned.
 		//
-		// The command comes from the test binary, not /bin/pwd. CLAUDE.md's rule
+		// The command comes from the test binary, not /bin/pwd. AGENTS.md's rule
 		// is that process fixtures never come from /bin/*, because a system binary
 		// that exists on Linux may not on another leg. It survived here only
 		// because both spawns fail at chdir BEFORE exec, so the binary is never

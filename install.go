@@ -265,8 +265,10 @@ func makeCLIDir(o installOpts, cliPath string) error {
 var hashBlobFile = sha256File
 
 // ensureCLI materializes the CLI binary from a .zst blob: either an already
-// uploaded one (-cli-zst, SFTP fallback) or a download (-cli-url), verified
-// against -cli-checksum, then zstd-decompressed to cliPath.
+// uploaded one (-cli-zst, SFTP fallback) or a download (-cli-url). The blob is
+// zstd-decompressed into a staging file and then verified against -cli-checksum
+// (always on -cli-url, on -cli-zst only when one is supplied). The staging file
+// is then renamed to cliPath.
 func ensureCLI(o installOpts, cliPath string) error {
 	// Validate -cli-version before the install writes or removes anything at a
 	// path built from the version. The rules and their measurements live on

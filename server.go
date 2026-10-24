@@ -35,7 +35,7 @@ const tokenPipeEnv = "CLAUSTRUM_TOKEN_PIPE"
 // open :". This sentinel is purely a re-exec marker and never crosses the wire,
 // so namespacing it is free. The separate reference-parity marker that
 // process.spawn children must still inherit is daemonChildMarker, set in
-// daemonizeWithToken. See docs/PROTOCOL.md.
+// daemonizeWithToken. See docs/PROTOCOL.md → "The re-exec marker".
 const daemonChildEnv = "CLAUSTRUM_DAEMON_CHILD"
 
 // daemonChildMarker is the env var the *reference* daemon carries in its environ
@@ -915,13 +915,14 @@ func waitForDaemonAccept(socket string, predPID int) (accepted, sawPredecessor b
 // runServe's daemonize+os.Exit shell (the success arm that stores a live pipe
 // listener is Windows-only, covered by the windows-latest CI leg).
 //
-// It maintains one invariant on every -serve startup — mirroring the stale-socket
-// clear (os.Remove(socket)): rpc.pipe exists iff a pipe is actively served this
-// boot. The pipe name is per-boot-random, so a leftover rpc.pipe from an unclean
-// crash names a pipe that no longer exists; when we do not serve a pipe (flag off,
-// non-Windows, or startPipeTransport failed) we remove any such stale file so a
-// Windows client can never read it and dial a dead pipe. When we do serve one,
-// startPipeTransport has already written the fresh name.
+// At each -serve start it clears a stale rpc.pipe, as the stale-socket clear
+// (os.Remove(socket)) does for the socket. The pipe name is random for each boot,
+// so a leftover rpc.pipe from an unclean exit names a pipe that no longer exists.
+// When this boot serves no pipe (flag off, non-Windows, or startPipeTransport
+// failed), enablePipe removes any such file. When it serves one,
+// startPipeTransport has already written the new name. After an unclean exit, or
+// a graceful exit that could not record the identity of rpc.pipe, a client can
+// still read a stale rpc.pipe and dial a dead pipe until the next start.
 func (s *server) enablePipe(socket string, listenPipe bool) {
 	if !listenPipe {
 		removePipeNameFile(socket) // not serving a pipe this boot → no stale rpc.pipe
@@ -1130,7 +1131,8 @@ func (s *server) handleRequest(c *conn, raw []byte, req request, ordered bool, t
 	// codeInternal, the JSON-RPC 2.0 standard "Internal error"; the message
 	// and log line follow claustrum's own conventions. Nothing here can be
 	// probe-verified, and nothing here needs to be: an unreachable frame
-	// cannot diverge from anything. See docs/IMPROVEMENTS.md.
+	// cannot diverge from anything. See docs/PROTOCOL.md → "Handler panic
+	// recovery".
 	// The stdin ticket covers DISPATCH ONLY, never the response write.
 	// dispatch appends the chunk to the process's existing stdin FIFO
 	// (applyStdin) before it returns, so byte order is already fixed by
