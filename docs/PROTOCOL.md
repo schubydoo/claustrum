@@ -1405,8 +1405,7 @@ A hardened call uses the heavy profile or the light profile:
   `shadow`, and a Windows VM the state `fallback-git`. The checkout
   and its listings keep the four light values. With `"shadowDirOff":true` the light
   calls carry the four light values.
-- The calls of [the branch step](#the-branch-step) carry the six heavy values,
-  in an order of their own.
+- The calls of [the branch step](#the-branch-step) have their own variables.
 - The `status`, `ls-files` and `diff-index` calls of `git.status` add
   `GIT_OPTIONAL_LOCKS=0`. The checkout adds `GIT_INDEX_FILE`.
 - The order of the variables is measured on Linux and macOS VMs. The Windows logs of
@@ -1785,10 +1784,11 @@ go. The `git.worktree_create` rollbacks run it on the branch that the call made.
 of `refs/heads/<b>`. A rule of this section with no other mark is measured
 against `89cb6289` on a Linux VM.
 
-Each git call of the step runs in `baseRepo` after its own configuration
-listing. It carries the light `-c` list and the six values of the heavy
-profile, in an order of their own (see [Hardened git calls](#hardened-git-calls))
-(Linux, macOS and Windows VMs).
+The step runs `for-each-ref`, `rev-parse --verify`, `rev-list` and
+`update-ref`. Each runs in `baseRepo` after its own configuration listing. It
+carries the light `-c` list and the six values of the heavy profile, in an order
+of their own (see [Hardened git calls](#hardened-git-calls)) (Linux, macOS and
+Windows VMs).
 
 #### Which branch the step deletes
 
