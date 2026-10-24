@@ -495,7 +495,7 @@ no flag and no key.
     deletes nothing (Linux, macOS and Windows). claustrum answers the "is gone
     but its registration is locked" refusal
 
-  With `worktreeRoot` in the `GIT_DIR` states, `89cb6289` answers the
+  On Linux, with `worktreeRoot` in the `GIT_DIR` states, `89cb6289` answers the
   `could not verify` text, or success with the folder gone. It deletes nothing,
   and claustrum answers the locked refusals (measured on Linux). Not measured: a daemon `GIT_COMMON_DIR` of a third
   repository, and a `worktrees` folder that cannot be read.
