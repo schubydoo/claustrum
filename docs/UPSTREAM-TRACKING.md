@@ -365,7 +365,7 @@ the linked pages. The history of each build is in
     items before its list.
 
   With `"shadowDirOff":true` the other calls are equal. Without the member the
-  folder variables, the heavy variables of a create, the checkout items and the
+  folder variables, the heavy variables of a create, the `lfs.storage` item of the checkout and the
   names of the short-lived entries are equal. That is measured
   on Linux and macOS in the state `shadow`. On Windows the variables and the names
   are measured in the state `fallback-git`. See

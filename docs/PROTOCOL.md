@@ -1249,8 +1249,8 @@ an open handle with no sharing.
   too (`.gitdir-<n>` on Linux and macOS, `.index-<n>` on Windows, and
   `.worktreeinclude-<n>` from the code). With `"shadowDirOff":true` the first three
   are in the temporary folder, as `claude-ssh-gitdir-<n>`, `claude-ssh-index-<n>` and
-  `claude-ssh-worktreeinclude-<n>`. The index name on Windows is claustrum's own
-  (not measured).
+  `claude-ssh-worktreeinclude-<n>`. On Linux and macOS the index name is as on
+  `89cb6289`. On Windows it is claustrum's own (not measured).
 - On Windows, if the folder of the daemon denies new folders, a create still works
   with the backup and restore privileges on. With both off it fails at `.s<n>`.
 
@@ -1383,8 +1383,8 @@ Linux, macOS and Windows. `githarden.go` holds the lists, and
 `githarden_shape_test.go` tests them.
 
 Each hardened call passes no `-C`. Most of them run in the repository directory.
-Before each one, the daemon runs a config listing (`git config -z --list`). There are two
-profiles:
+Before each one, the daemon runs a config listing (`git config -z --list`) with the
+profile of that call. There are two profiles:
 
 - The heavy profile forbids every transport protocol
   (`GIT_ALLOW_PROTOCOL=denied_by_claude_ssh`). `git.info`, `git.list_branches` and
@@ -1423,8 +1423,7 @@ A client sees the hardening in these places:
   ends with `LANGUAGE=C`.
 - On Linux and macOS, with `"shadowDirOff":true`, a create can answer the text
   `open <tmp>/claude-ssh-index-<n>/index: no such file or directory`. `<n>` is
-  decimal digits. On Linux and macOS that name is as on `89cb6289`. On Windows the
-  index name is claustrum's own (not measured).
+  decimal digits.
 
 #### Refusal texts
 
@@ -1448,7 +1447,8 @@ There a limit refuses each method except `git.status`. That rule is from the cod
 
 #### Hook pins
 
-Each hardened call pins off the hooks that the listing right before it names. A key
+Each hardened call pins off the hooks that the listing right before it names (from
+the code). A key
 `hook.<name>.<var>` names a hook. The name is the text between the first and the last
 dot, and it can be empty or hold dots. `hook.<var>` names no hook, and a hook key
 inside a value pins nothing. The call gets `hook.enabled=false` and an empty
