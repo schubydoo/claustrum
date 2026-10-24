@@ -1583,36 +1583,31 @@ The reply lines are equal in each difference above.
 ### The daemon's own git environment
 
 This section names the variables of the daemon's own environment that reach the
-git calls of the git methods. It also gives the refusals of that environment. A
-rule
-here is measured against `f6010b97` on Linux, macOS and Windows VMs, unless it
-names another build or fewer systems.
+calls of the git methods. It also gives the refusals of that environment. A rule
+here holds on Linux, macOS and Windows, unless it names fewer systems.
 
 #### Variables that the git calls keep or drop
 
 The repository calls are the configuration listings, the hardened calls,
 `worktree add`, the checkout and `git status`. The excludes read and the
 `--attr-source` probe get the daemon's environment as it is, plus their own
-additions (`5fd08069`).
+additions.
 
 - The daemon's `PATH`, `GIT_EXEC_PATH`, `GIT_SSH` and loader variables are
-  cleaned for the repository calls and the calls of the start test (`5fd08069`).
-  The calls of the start test also get no `GIT_` variable of the daemon
-  (`5fd08069`).
+  cleaned for the repository calls and the calls of the start test. The calls of
+  the start test also get no `GIT_` variable of the daemon.
 - `GIT_CONFIG` and `GIT_CONFIG_PARAMETERS` do not reach a repository call. The
   names match exactly, in upper case. So on Windows `git_config` and
   `Git_Config_Parameters` reach git.
 - A listing gets the daemon's `GIT_CONFIG_COUNT`, `GIT_CONFIG_KEY_<n>` and
   `GIT_CONFIG_VALUE_<n>` as they are. It keeps a name with a leading-zero index,
-  such as `GIT_CONFIG_KEY_01`, in its place (Linux and macOS VMs).
-- A hardened call gets these names after the profile and the `GIT_COMMON_DIR`
-  pin. First comes `GIT_CONFIG_COUNT`, with the number of all the pairs. Then
-  come the daemon's pairs `0` to `count-1`, in index order. Then come the hook
-  pins, from the pair `count` on. They are `hook.enabled=false`, an empty
-  `hook.event`, and then the two pins of each hook name (`89cb6289`). The
+  such as `GIT_CONFIG_KEY_01`, in its place (measured on Linux and macOS).
+- A hardened call gets `GIT_CONFIG_COUNT` first, with the number of all the pairs.
+  The daemon's pairs `0` to `count-1` follow it, in index order. The
+  [hook pins](#hook-pins) follow them, from the pair `count` on. The
   `GIT_INDEX_FILE` of the checkout and the `GIT_OPTIONAL_LOCKS` of the `status`,
-  `ls-files` and `diff-index` calls follow them. The order is measured on Linux
-  and macOS VMs.
+  `ls-files` and `diff-index` calls follow the pins. The order is measured on Linux
+  and macOS.
 - A hardened call gets no other `GIT_CONFIG_KEY_<digits>` or
   `GIT_CONFIG_VALUE_<digits>`. A leading-zero index such as `GIT_CONFIG_KEY_01`
   is removed too. Other names, such as `GIT_CONFIGX` or `GIT_CONFIG_S4`, reach
@@ -1625,17 +1620,18 @@ additions (`5fd08069`).
   too.
 
 The daemon reads each value that it parses from the standard output of git (from
-the code). `5fd08069` does so for the branch of `git.info` and the repository
-test of a create (Linux VM).
+the code). The reference does so for the branch of `git.info` and the repository
+test of a create (measured on Linux).
 
 [Git-directory trust check](#git-directory-trust-check) gives the `GIT_DIR` of the
 listing in a folder with no repository, and its frames.
 
 #### The check of `GIT_CONFIG_COUNT`
 
-The git methods check the daemon's `GIT_CONFIG_COUNT`. The check reads the count
-and its pairs by their exact upper-case names. On Windows it does not see a
-lower-case `git_config_count` or `git_config_key_0`.
+The git methods check the daemon's `GIT_CONFIG_COUNT`, with no git call except
+the excludes read. The check reads the count and its pairs by their exact
+upper-case names. On Windows it does not see a lower-case `git_config_count` or
+`git_config_key_0`.
 
 - If the count is not set, there is no check.
 - An empty value counts as `0`. Else the check skips leading space, tab, `\n`,
@@ -1653,15 +1649,14 @@ lower-case `git_config_count` or `git_config_key_0`.
 - An empty key is not refused here. git then fails the listing, also in a folder
   that holds no repository (see the next section).
 
-`GIT_CONFIG_COUNT=0`, a pair with an empty value and `GIT_CONFIG_PARAMETERS='x`
-change no frame in a plain folder.
+`GIT_CONFIG_PARAMETERS='x` changes no frame in a plain folder.
 
 #### Configuration listings that git cannot parse
 
 With a key that git cannot read, git fails each configuration listing with exit
 status 128. `<text>` is then `config-defined hooks could not be pinned off; git not
 run: listing the configuration in force: exit status 128: <git text>`. A good pair
-before the broken pair changes nothing. The git of the VMs gave these texts:
+before the broken pair changes nothing. `<git text>` comes from git, for example:
 
 | Key | `<git text>` |
 |---|---|
@@ -1671,26 +1666,61 @@ before the broken pair changes nothing. The git of the VMs gave these texts:
 
 A `GIT_CONFIG_GLOBAL` that names a file git cannot parse fails each listing too.
 With the content `[broken`, `<git text>` is `fatal: bad config line 1 in file
-<file>` (Linux and macOS VMs). The `git version` call that follows a failed
-listing gets no `GIT_CONFIG_GLOBAL` and passes (`89cb6289`). So the text stays the
-hooks refusal. `89cb6289` answers so for `git.info` on a plain
-folder and on a repository, and for `git.worktree_create` on a plain folder.
+<file>` (measured on Linux and macOS). The `git version` call after a failed
+listing gets no `GIT_CONFIG_GLOBAL` and passes, so the text stays the hooks
+refusal (measured for `git.info` and `git.worktree_create`).
 
-`89cb6289` and claustrum answer these failures in a folder that holds no
-repository too, with these frames. `f6010b97` refuses these requests too. Nothing changes on disk.
+This refusal needs a folder where git starts. A path that does not exist answers
+as it does with nothing set (measured on Linux and macOS, and for `git.info` on
+Windows). On Linux and macOS a plain folder of mode 0000 answers so too. A plain
+folder gets the refusal. Nothing changes on disk.
 
-| Request | Frame |
-|---|---|
-| `git.info` on a plain folder, or on a folder with an empty `.git` folder | `{"error":{"code":-32603,"message":<text>}}` |
-| `git.list_branches` on a plain folder | the same |
-| `git.status` with a plain-folder `baseRepo` | the same |
-| `git.worktree_create` with a plain-folder `baseRepo`, without and with `worktreeRoot` | `{"success":false,"error":<text>,"errorCode":"worktree_add_failed"}`, and no folder is made. With nothing set, a create with `worktreeRoot` on Windows answers `not_a_repo` |
-| `git.worktree_remove` without `worktreeRoot`, plain-folder `baseRepo`, worktree directory gone | `{"success":false,"error":"failed to remove worktree: could not check whether <worktreePath> is locked (<text>); retry"}` |
-| `git.worktree_remove` with `worktreeRoot`, plain-folder `baseRepo` | `{"success":false,"error":"failed to remove worktree: cannot determine the repository's work tree: <text>"}`. Linux and macOS VMs. Windows is not measured. There claustrum refuses the `worktreeRoot` first (from the code) |
+#### Where each method answers the refusal
 
-A path that does not exist answers as it does with nothing set (Linux and macOS
-VMs, and `git.info` on a Windows VM). On Linux and macOS a plain folder of mode
-0000, where git cannot start, answers so too.
+Both refusals start with `config-defined hooks could not be pinned off; git not
+run: `, and each method answers them in one frame. A refusal of the git-directory
+trust check comes first, with the trust text in the frame. A remove of a present
+worktree gets the lock-check text instead. For the count, the trust-check order
+is measured on Linux and macOS, in a remove only for a gone worktree without
+`worktreeRoot` or a `baseRepo` that exists with it. On Windows it is measured in
+`git.info`, `git.status` and the remove of a gone worktree. For a listing that
+git cannot parse it is from the code. "The count" below is the check of
+`GIT_CONFIG_COUNT`, and "the listing" is a listing that git cannot parse.
+
+| Method | Frame | Where |
+|---|---|---|
+| `git.info` | `{"error":{"code":-32603,"message":<text>}}` | Also a plain folder. The listing also refuses a folder with an empty `.git` folder, and from the code the count does too. The count also refuses a missing folder and a file |
+| `git.list_branches` | the same | Also a plain folder. The count also refuses a file and an empty or absent `path`, with a repository or a plain folder as the daemon's working directory. A `path` that is not empty and does not resolve, or that is inside a managed worktrees directory, gets `{"isRepo":false,"branches":[]}` before the count, with no git call |
+| `git.status` | the same | Also a plain-folder `baseRepo`. The count also refuses a `path` that is a plain folder, the repository, missing or a file. A `baseRepo` that does not resolve gets `{"isRepo":false,"clean":false}` before the count, with no git call. See [git.status](protocol/git-status.md#baserepo). From the code: a `baseRepo` in a managed worktrees tree answers the same way. That case is not measured with a refused count |
+| `git.worktree_create` | `{"success":false,"error":<text>,"errorCode":"worktree_add_failed"}`, and no folder is made | Also a plain-folder `baseRepo`. The listing refuses it without and with `worktreeRoot`, and from the code the count does too. Without the refusal, a create with `worktreeRoot` there on Windows answers `not_a_repo`. The count also refuses a missing `baseRepo`. It comes before the refusals of a relative `worktreePath`, a `..` component, a path outside the repository and a path that exists. Three frames come before it: the `-32602` frame of a missing `branchName`, the `nested_base_repo` frame of a `baseRepo` inside a managed worktrees directory, and on Windows the frame of claustrum's own trust-root test. On Windows the count also comes before the `worktreeRoot` refusal |
+| `git.worktree_remove` | Without `worktreeRoot`, for a gone worktree: `{"success":false,"error":"failed to remove worktree: could not check whether <worktreePath> is locked (<text>); retry"}`. With `worktreeRoot`: `{"success":false,"error":"failed to remove worktree: cannot determine the repository's work tree: <text>"}` (measured on Linux and macOS) | A plain-folder `baseRepo`. The list below has the other cases |
+
+The other cases of `git.worktree_remove`:
+
+- These refusals come first, with their usual frames: a relative path, a path
+  outside the repository, the repository itself and a `..` component. With
+  `worktreeRoot` they are also a path outside the root, a `..` `baseRepo` and a
+  root in `baseRepo` (measured on Linux and macOS). On Windows the `worktreeRoot`
+  refusal comes first. For a listing that git cannot parse, that is from the
+  code.
+- On Windows a `baseRepo` that fails claustrum's own trust-root test gets the
+  managed-worktrees refusal first.
+- Without `worktreeRoot`, `open <baseRepo>: not a directory` comes first for a
+  regular-file `baseRepo`. So does `statat .claude: permission denied` for a
+  `baseRepo` with mode 0600 and a path under `.claude` (measured on Linux and
+  macOS).
+- Without `worktreeRoot`, the count also refuses a missing `baseRepo` in the
+  gone-worktree frame. For a worktree directory that is present, the count puts
+  `its registrations could not be examined` in place of `<text>`. On Linux and
+  macOS a `baseRepo` of `<T>/missing/..`, which does not resolve, gets that frame
+  too. On Windows that `baseRepo` gets the managed-worktrees refusal first.
+- With `worktreeRoot`, the count also refuses a `baseRepo` that is a repository in
+  the work-tree frame. A trust refusal puts its own text there instead. For a
+  missing absolute `baseRepo` without a `..` component, the count answers in the
+  gone-worktree frame. A worktree directory that is present then gets `the
+  repository at <baseRepo> could not be read` in place of `<text>`. If the root is
+  missing too, the "not reachable" refusal comes first. Each rule of this bullet
+  is measured on Linux and macOS.
 
 These states are not measured. The rules are from the code.
 
@@ -1703,33 +1733,6 @@ These states are not measured. The rules are from the code.
   that fails.
 - A `.git` file with no `gitdir:` line. Its listing carries `GIT_DIR=<null>`, so
   the folder answers as a plain folder does.
-
-#### Where each method answers the refusal
-
-A refusal text starts with `config-defined hooks could not be pinned off; git not
-run: `. Before the refusal, the daemon runs no git call except the excludes read.
-A refusal of the git-directory trust check comes first, with the trust text in the
-frame. That holds on Linux and macOS VMs in `git.info`, `git.list_branches`,
-`git.status` and `git.worktree_create`. On the same VMs it holds in
-`git.worktree_remove` for a gone worktree without `worktreeRoot`. With
-`worktreeRoot` it holds there for a `baseRepo` that exists. A Windows VM measured
-it in `git.info`, `git.status` and the remove of a gone worktree. The
-table gives the frame of each method, and the refusals that come before the check.
-
-| Method | Frame |
-|---|---|
-| `git.info` | `{"error":{"code":-32603,"message":<text>}}`, also for a plain dir, a missing dir and a file |
-| `git.list_branches` | the same, also for a plain dir, a file, and an empty or absent `path`. For an empty or absent `path`, the daemon's working directory was a repository or a plain dir |
-| `git.list_branches`, `path` not empty and does not resolve, or inside a managed worktrees directory | `{"isRepo":false,"branches":[]}`, before the check and with no git call |
-| `git.status` | the same as `git.info`, also for a `path` that is a plain dir, the repository, missing or a file, and for a plain-dir `baseRepo` |
-| `git.status`, `baseRepo` does not resolve | `{"isRepo":false,"clean":false}`, before the check and with no git call. See [git.status](protocol/git-status.md#baserepo). From the code: a `baseRepo` in a managed worktrees tree answers the same way. That case is not measured with a refused count |
-| `git.worktree_create` | `{"success":false,"error":<text>,"errorCode":"worktree_add_failed"}`, also for a plain-dir or missing `baseRepo`. The check comes before the refusals of a relative `worktreePath`, a `..` component, a path outside the repository and a path that exists. Three frames come first: the `-32602` frame of a missing `branchName`, the `nested_base_repo` frame of a `baseRepo` inside a managed worktrees directory, and the frame of claustrum's own trust-root test (Windows VM only). On Windows the check comes before the `worktreeRoot` refusal |
-| `git.worktree_remove` | Some refusals come first, with their usual frames. These are a relative path, a path outside the repository, the repository itself and a `..` component. With `worktreeRoot` they are also a path outside the root, a `..` `baseRepo` and a root in `baseRepo` (Linux and macOS VMs). On Windows the `worktreeRoot` refusal comes first. A `baseRepo` that fails claustrum's own trust-root test gets the managed-worktrees refusal first (Windows VM only). Without `worktreeRoot`, `open <baseRepo>: not a directory` comes first for a regular-file `baseRepo`. So does `statat .claude: permission denied` for a `baseRepo` with mode 0600 and a path under `.claude` (Linux and macOS VMs) |
-| `git.worktree_remove`, no `worktreeRoot`, worktree directory gone | `{"success":false,"error":"failed to remove worktree: could not check whether <worktreePath> is locked (<text>); retry"}`, also for a plain-dir or missing `baseRepo` |
-| `git.worktree_remove`, no `worktreeRoot`, worktree directory present | `{"success":false,"error":"failed to remove worktree: could not check whether <worktreePath> is locked (its registrations could not be examined); retry"}`. On Linux and macOS VMs a `baseRepo` of `<T>/missing/..`, which does not resolve, gets it too. On Windows that `baseRepo` gets the managed-worktrees refusal first |
-| `git.worktree_remove` with `worktreeRoot`, `baseRepo` a repository or a plain dir | `{"success":false,"error":"failed to remove worktree: cannot determine the repository's work tree: <text>"}`. A trust refusal puts its own text there instead. Linux and macOS VMs |
-| `git.worktree_remove` with `worktreeRoot`, `baseRepo` missing, absolute and without a `..` component, worktree directory present | `{"success":false,"error":"failed to remove worktree: could not check whether <worktreePath> is locked (the repository at <baseRepo> could not be read); retry"}`. Linux and macOS VMs |
-| `git.worktree_remove` with `worktreeRoot`, `baseRepo` missing, absolute and without a `..` component, worktree directory gone | `{"success":false,"error":"failed to remove worktree: could not check whether <worktreePath> is locked (<text>); retry"}`. If the root is missing too, the "not reachable" refusal comes first. Linux and macOS VMs |
 
 ### Time limits of git calls
 
