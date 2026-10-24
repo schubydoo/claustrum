@@ -223,8 +223,9 @@ Some flags are claustrum's own and have no entry: `-token-fd`
 ([PROTOCOL.md → Flags of claustrum alone](PROTOCOL.md#flags-of-claustrum-alone)).
 So is the skip of the kill signal for a child that already ended
 ([process.kill → Differences from the reference](protocol/process-kill.md#differences-from-the-reference)).
-So is a rule of `process.killAndWait`. During the exit drain it sends no first
-signal. On Linux and macOS `KILL` goes to the group at once, as on the reference
+So is a rule of `process.killAndWait`. For a signal other than `KILL` it sends no
+first signal during the exit drain. On Linux and macOS `KILL` goes to the group at
+once, as on the reference
 ([A request during the exit drain](protocol/process-killandwait.md#a-request-during-the-exit-drain)).
 Check those before you conclude that something is drift.
 
@@ -339,10 +340,10 @@ the linked pages. The history of each build is in
   - the last entry of a file that the archive names two times
   - the `error` texts of the entry and `destDir` steps.
 
-  On Linux and macOS, a parent folder of mode `0300` with no `destDir` gets the
-  `open parent:` refusal, where `89cb6289` extracts. A `destDir` that the daemon
-  cannot search or open gets the `open destDir:` refusal, where `89cb6289` fails
-  later or extracts. The two Windows rows of
+  A `destDir` that the daemon cannot search or open gets the `open destDir:`
+  refusal, where `89cb6289` fails later or extracts. On Linux and macOS, a parent
+  folder of mode `0300` with no `destDir` gets the `open parent:` refusal, where
+  `89cb6289` extracts. The two Windows rows of
   [Differences by system](protocol/files-extract-tar.md#differences-by-system)
   are parity, and `89cb6289` differs in both (measured on Windows). A `\\?\` path with a dot or a space after its
   last name differs from both builds ([D2](DIVERGENCES.md#d2)). A `destDir` that

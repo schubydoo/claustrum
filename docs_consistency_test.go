@@ -591,7 +591,7 @@ var docWordLimits = map[string]int{
 	"docs/PROTOCOL.md":                     45200,
 	"docs/UPSTREAM-TRACKING.md":            7200,
 	"docs/index.md":                        800,
-	"docs/protocol/files-extract-tar.md":   2269,
+	"docs/protocol/files-extract-tar.md":   2269, // decision-040: a move between pages, net down in the same PR
 	"docs/protocol/files-list.md":          500,
 	"docs/protocol/files-read.md":          900,
 	"docs/protocol/files-stat.md":          500,
