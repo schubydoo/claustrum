@@ -1272,10 +1272,9 @@ These rules are from the code and are not measured on `5fd08069`:
 
 The daemon keeps its own copy of the git settings of a repository. The copy is in a
 folder `git-shadow` beside the socket. The git calls of the five git methods name
-that copy, so git reads the copy and not the config of the repository. A rule here
-that is not marked "claustrum's own" or "from the code" is measured against
-`5fd08069` on a Linux VM. A rule that names macOS or Windows was measured on that
-system.
+that copy, so git reads the copy and not the config of the repository. The rules
+here follow `5fd08069`. A rule that names no system was measured on Linux, and a
+rule that names macOS or Windows was measured there too.
 
 #### The states and `settingsControl`
 
@@ -1284,55 +1283,44 @@ sends it, and an error reply has none (Linux, macOS and Windows).
 
 | `settingsControl` | When | What it changes |
 |---|---|---|
-| no member | No start test of the daemon gave a state yet | Nothing. A folder with no repository, or a `HEAD` that is no ref, starts no test. The `.git` file below is the exception |
+| no member | No start test of the daemon gave a state yet | Nothing. A folder with no repository, or a `HEAD` that is no ref, starts no test. A `.git` file that names a missing path starts it |
 | `"shadow"` | The start test passed | The git calls name the copy. Before them the daemon asks git about the repository |
 | `"fallback-git"` | The git of the host does not work on such a copy, for example git 2.11.4 and 2.12.5 | The git calls name the git directory. The daemon reads no repository config, gives no config refusal, makes no copy and does not ask git about it |
 | `"off-switch"` | A request with `"shadowDirOff":true` runs (the hold) when the reply is made | A request that starts then names the git directory, with no test, folder or config read |
 
 - After the test the "no repository" reply has the member too:
   `{"isRepo":false,"repoSlug":"","defaultBranch":"","settingsControl":"shadow"}`.
-  That reply waits for a running test and has its state. After a failed test it has
-  no member. A path that does not exist gets the same, but starts no test itself. On
-  a folder with no repository the other methods answer at once.
-- As the first git request of a daemon, a `git.info` on a folder whose `.git` file
-  names a missing path runs the test and gives that reply. A missing entry under
-  `worktrees` of an existing git directory runs no test, and the reply has no member
-  (Linux, macOS and Windows). A missing entry in a missing repository runs the test.
-- With no git in the daemon's `PATH`, a `git.info` on a repository answers "no
-  repository" with no test. Its member follows the daemon's state (not measured).
-- A `git.info` on a regular file gets the gate of the repository of its folder.
-  Outside any repository it starts no test. As the first git request of a daemon its
-  reply has no member on Linux and macOS. On Windows it is the hooks refusal, with
-  `fork/exec <git.exe>: The directory name is invalid.`
-- A request with the member gets `"off-switch"` also as the first request of a
-  daemon, in a "no repository" reply and while a failed test is kept.
-- A hold during a request moves to the git directory each later command that
-  starts its own config listing (Linux, macOS and Windows). The config check and
-  the call after it keep the copy, as does a command that already runs. On Linux,
-  after the hold a later command runs the test and takes the copy. A create in a
-  hold makes no copy.
-- In that time `git.status`, `git.list_branches` and `git.worktree_remove` get no
-  config refusal, as with the member. On a repository of format version 3 they
-  answer `{"isRepo":false,"clean":false}`, `{"isRepo":false,"branches":[]}` and the
-  lock-check text that ends `(its registrations could not be examined); retry`. The
-  remove deletes nothing there because git itself fails. On a config that only the
-  daemon refuses, the remove deletes. macOS and Windows are not measured.
+  That reply waits for a running test. After a failed test it has no member. On a
+  folder with no repository the other methods answer at once.
+- On Windows a `git.info` on a regular file outside any repository, as the first git
+  request of a daemon, gets the hooks refusal with `fork/exec <git.exe>: The
+  directory name is invalid.`
+- The member is `"off-switch"` also in a "no repository" reply and while a failed
+  test is kept. [Turning the read off](#turning-the-read-off) has the values that
+  count as the switch.
+- During a hold, each later command that starts its own config listing names the
+  git directory (Linux, macOS and Windows). A create in a hold makes no copy.
+  `git.status`, `git.list_branches` and `git.worktree_remove` then get no config
+  refusal. On a repository of format version 3 they answer
+  `{"isRepo":false,"clean":false}`, `{"isRepo":false,"branches":[]}` and the
+  lock-check text that ends `(its registrations could not be examined); retry`, and
+  the remove deletes nothing. On a config that only the daemon refuses, the remove
+  deletes.
 - A held request keeps no hold for later requests. A `worktree add` that started in
-  the hold is not stopped at 2 minutes after the holder answers. A held call that
-  starts after that answer has the 2 minute limit (claustrum's own, not measured).
-- Only the JSON value `true` counts for `shadowDirOff`. `"true"`, `1`, `null` and
-  `false` are as no member (Linux and macOS).
+  the hold is not stopped at 2 minutes. A held call that starts after the holder
+  answers has the 2 minute limit (claustrum's own, not measured).
 - In the state `fallback-git` the test runs again on the first request more than 10
-  minutes after the last test. In the state `shadow` no second test ran up to 720 s.
+  minutes after the last test. In the state `shadow` it does not run again (from the
+  code).
 - The daemon logs one `[GitHandler]` line at the first decision of the state and one
   at a change.
 
 #### The start test
 
-The first request that reaches a repository, or the `.git` file above, without the
-member runs the test. It is 10 git calls in a folder `.check-<n>` of the daemon, and
-that folder is gone at the reply. Call 7 reads the config of the test repository. It
-runs in `/`, and on Windows in the working folder of the daemon (from the code). If
+The first request without the member that reaches a repository, or a `.git` file
+that names a missing path, runs the test. The test makes a small repository and a
+copy of it in a folder `.check-<n>` of the daemon, and runs git calls there. One of
+them reads the config of the test repository. The folder is gone at the reply. If
 the test fails, the request gets this text:
 
 `Claude could not test git on the remote machine (<cause>). Check free disk space and quota there, then try again.`
@@ -1342,43 +1330,38 @@ the test fails, the request gets this text:
 `worktree_add_failed`. `git.worktree_remove` answers it after `failed to remove
 worktree: could not check whether <worktreePath> is locked: `, with no `errorCode`.
 
-A failed call 7 is followed by one `git version` call. If it fails too, the text is
-`git cannot run on this host; git not run: <exec error>: <git text>` alone, in the
-same frames. The exec error and the text are those of `git version`. A remove
-deletes nothing there (Linux, macOS and Windows). On Windows that `git version` runs
-in the working folder of the daemon.
+A failed config read of the test is followed by one `git version` call. If it fails
+too, the text is `git cannot run on this host; git not run: <exec error>: <git text>`
+alone, in the same frames. The exec error and the text are those of `git version`. A
+remove deletes nothing there (Linux, macOS and Windows).
 
 | `<cause>` | When |
 |---|---|
-| `git <verb> failed under "<folder of the daemon>": <error lines of git, space-joined>` | A test call other than call 7 failed. Go's `%q` quotes the folder |
-| `git <verb> failed under "<folder>": signal: killed` | The daemon ended a test call other than call 7 after 30 seconds (Linux and macOS). On Windows the end is `exit status 1` |
-| the same with ` (git version <v>)` at its end | The failed or ended call was one of calls 1 to 5 (measured for `init` and `mktree`) |
-| `this repository's git config cannot be used: <error lines of git>` | Call 7 failed, and the plain `git version` after it works |
-| `this repository's git config cannot be used: git did not finish reading "<config of the test repository>" within 30 seconds; try again` | Call 7 ran, or held its stdout, past 30 seconds. The reply comes near 31 s. With stderr alone held, a call 7 that exits 1 gives the lines read before the cut (not measured) |
+| `git <verb> failed under "<folder of the daemon>": <error lines of git, space-joined>` | A test call other than the config read failed. Go's `%q` quotes the folder |
+| `git <verb> failed under "<folder>": signal: killed` | The daemon ended such a test call after 30 seconds, and the reply comes near 31 s (Linux and macOS). On Windows the end is `exit status 1` |
+| the same with ` (git version <v>)` at its end | The failed or ended call was one of the calls that make the test repository (measured for `init` and `mktree`) |
+| `this repository's git config cannot be used: <error lines of git>` | The config read failed, and the plain `git version` after it works |
+| `this repository's git config cannot be used: git did not finish reading "<config of the test repository>" within 30 seconds; try again` | The config read ran, or held its stdout, past 30 seconds. The reply comes near 31 s. With stderr alone held, a read that exits 1 gives the lines read before the cut (not measured) |
 | `mkdir <path>: <reason>` or `open <path>: <reason>`, with no quotes | A folder or the lock file of the daemon cannot be made |
 
-Some failed calls give `fallback-git` and not a failure. That is the case when git
-refuses the copy and the same call works without it. A test call that works and
-answers wrongly gives it too. At call 10 a `No space left on
-device` error or an end by a signal fails the test. If two calls fail, the cause
-names the first. A test call that takes 29 s passes, and one of 32 s gives the error
-at about 31 s.
+If git refuses the copy and the same call works without it, the state is
+`fallback-git` and not a failure. A test call that works and answers wrongly gives
+it too. At the last call, a `worktree add`, a `No space left on device` error or an
+end by a signal fails the test. If two calls fail, the cause names the first.
 
-- The daemon keeps a failure for 10 seconds from the end of the failed test. A
-  request in that time gets the kept text with no git call.
-- The kept failure holds after its cause is gone. A request with
-  `"shadowDirOff":true` works in that time.
+The daemon keeps a failure for 10 seconds from the end of the failed test, also
+after its cause is gone. A request in that time gets the kept text with no git call.
+A request with `"shadowDirOff":true` works in that time.
 
 #### The folders
 
 The folder of one daemon is `<socket folder>/git-shadow/<host form>-<pid>-<16 hex>`.
 `<host form>` is the host name with each character outside `A-Z`, `a-z`, `0-9` and `.`
-written as `_`. A `-` becoming `_` and a kept `.` are measured (Linux and macOS). The
-other characters are not measured. On Linux and macOS that folder and each folder of
-a copy have mode `0700`, and the files of a copy have `0600`. The daemon makes the
-folder at the first request that runs the test. It holds an exclusive lock on the
-file `lock` in it for its whole life. On Windows the hold is an open handle with no
-sharing.
+written as `_` (measured for `-` and `.` on Linux and macOS). On Linux and macOS that
+folder and each folder of a copy have mode `0700`, and the files of a copy have
+`0600`. The daemon makes the folder at the first request that runs the test. It holds
+an exclusive lock on the file `lock` in it for its whole life. On Windows the hold is
+an open handle with no sharing.
 
 - At `-stop` and at `server.shutdown` the daemon removes its folder. The empty
   `git-shadow` stays (Linux, macOS and Windows).
@@ -1401,10 +1384,9 @@ sharing.
   `.gitdir-<n>` for a `git.status`, and `.index-<n>` and `.worktreeinclude-<n>` for a
   create. Also `.config-<n>` for a create in a repository with a `config.worktree`
   file, and `.s<n>` on Windows. In the state `fallback-git` the first three are there
-  too (`.gitdir-<n>` on Linux and macOS, `.index-<n>` on Windows). For
-  `.worktreeinclude-<n>` that is not measured. With
-  `"shadowDirOff":true` the first three are in the temporary folder, as
-  `claude-ssh-gitdir-<n>`, `claude-ssh-index-<n>` and
+  too (`.gitdir-<n>` on Linux and macOS, `.index-<n>` on Windows, and
+  `.worktreeinclude-<n>` from the code). With `"shadowDirOff":true` the first three
+  are in the temporary folder, as `claude-ssh-gitdir-<n>`, `claude-ssh-index-<n>` and
   `claude-ssh-worktreeinclude-<n>`.
 - On Windows, if the folder of the daemon denies new folders, a create still works
   with the backup and restore privileges on. With both off it fails at `.s<n>`.
@@ -1418,11 +1400,11 @@ The cause is the `mkdir` error of the folder. The same request again gets the sa
 line with no git call. On Windows a held copy gets 2 s of retries, then `rename
 <temp file> <copy>: Access is denied.` with full paths.
 
-The request that makes the folder of the daemon also sweeps `git-shadow`. An entry
-goes if its lock file can be taken and its name has the host form of this host. An
-entry with another name goes only when it is old: 8 days goes and 6 days stays. The
-bound of 7 days is not measured. A held lock keeps the folder of a live daemon. The
-sweep is measured on Linux and macOS, and in part on Windows.
+The request that makes the folder of the daemon also sweeps `git-shadow` (measured
+on Linux and macOS, and in part on Windows). If the lock file of an entry can be
+taken and its name has the host form of this host, the entry goes. An entry with
+another name must also be more than 7 days old (the exact bound is not measured). A
+held lock keeps the folder of a live daemon.
 
 - On Linux and macOS the age is read after the lock step, so a folder with no lock
   file gets one and stays. On Windows the age is read before, and such a folder of 8
@@ -1436,21 +1418,19 @@ sweep is measured on Linux and macOS, and in part on Windows.
   lock file in its target ([D8](DIVERGENCES.md#d8)).
 
 The folder of the daemon keeps 128 repository folders. A new repository removes the
-folder with the oldest use that no git call holds. A held folder stays. With all 128
-held, a request gets this text and nothing goes:
+folder with the oldest use that no git call holds. A git call holds its folder until
+the wait for its pipes ends (claustrum's own, not measured). With all 128 held, a
+request gets this text and nothing goes:
 
 `Claude could not prepare its own files on the remote machine: git is running in 128 repositories at once; try again`
 
 A folder goes between the git calls of a request, never during one. The next call
-makes it again, with no new config read. A call right after its own config listing
-does not (claustrum's own, not measured). A call whose remake fails gets the `cannot
-write its copy` text above, or the 128 text when all 128 folders are held (from the
-code). A git call that runs in a repository folder holds that folder until its
-pipe wait ends (claustrum's own, not measured). So with all 128 held,
-a new repository gets the 128 text then, and nothing goes. If its folder went and is
-not made again, or its daemon shut down or replaced it, a call fails alone (from the code). It gets
-this text, and a listing puts `listing the configuration in
-force: ` before it (Linux and Windows):
+makes it again with no new config read, except a call right after its own config
+listing (claustrum's own, not measured). A failed remake gets the `cannot write its
+copy` text or the 128 text (from the code). A call whose folder went and is not made
+again, or whose daemon shut down or replaced it, fails alone (from the code). It gets
+this text, and a listing puts `listing the configuration in force: ` before it (Linux
+and Windows):
 
 `Claude could not prepare its own files on the remote machine: its copy of this repository's settings was cleared away before git started; try again`
 
@@ -1465,8 +1445,7 @@ blocks of rewritten URLs. The file ends with
 - 41 keys are carried, each with one rule of accepted values (`gitshadowconfig.go`).
   Only some of those rules are measured.
 - `remote.<name>.url`, `.lfsurl`, `.promisor` and `.partialclonefilter`,
-  `lfs.<url>.access` and `branch.<name>.remote` are carried too. The length of a
-  rewritten URL is not measured.
+  `lfs.<url>.access` and `branch.<name>.remote` are carried too.
 - Every other key is dropped, such as `core.hooksPath` and `user.*`.
 - Outside the version and extension refusals, a value that its rule does not accept
   is left out with no refusal. One example is `core.filemode = maybe`.
@@ -1480,23 +1459,21 @@ blocks of rewritten URLs. The file ends with
 #### The call about the repository
 
 In the state `shadow` the daemon asks git about the repository before the calls of
-the method. The call is `-c core.hooksPath=<null device> -c core.fsmonitor=false
-rev-parse --git-dir`, in the root of the work tree. It names
+the method, with one `rev-parse` call in the root of the work tree. The call names
 the folder `.probe` of the daemon, and the daemon writes an emptied `.probe/config`
 again when it changed. The call drops the daemon's `GIT_NAMESPACE`,
 `GIT_INDEX_FILE`, `GIT_DISCOVERY_ACROSS_FILESYSTEM` and
 `GIT_ALTERNATE_OBJECT_DIRECTORIES`, and keeps its `GIT_CONFIG_COUNT` pairs (Linux,
-macOS and Windows). So a pair that git reads to find the repository, such as
-`safe.directory`, changes these answers (from the code, not measured). A good answer
-is kept 5 seconds from the end of the call. A change of the root folder or of its
-`.git` entry makes the daemon ask again.
+macOS and Windows). So a pair such as `safe.directory` changes the answers (from the
+code). A good answer is kept 5 seconds from the end of the call. A change of the root
+folder or of its `.git` entry makes the daemon ask again.
 
 | Answer of git | Reply |
 |---|---|
 | exit 128 with a text that starts with `fatal: not a git repository` in any letter case, or that holds `detected dubious ownership` or `cannot use bare repository` | The "no repository" answer of each method. No config is read, and no copy is made. git 2.56's text for a `.git` file to nowhere, `unsafe repository`, and the two phrases at other places of the text get the same answer (claustrum's own, not measured) |
 | exit 1, exit 128 with no text, a signal (`signal: terminated`) or a git that cannot start (Windows) | `git could not check this repository on the remote machine: at "<root>": exit status <n>` |
-| exit 1 or exit 2 with a text, or exit 128 with another text | The same text with git's text in place of `exit status 1`. Two lines stand there with one space between them. `warning: w` before `fatal: not a git repository` gets this reply. This row holds on all five methods. So does `fatal: error reading '<repo>/.git'` (Windows) |
-| either of the two rows above | One `git version` call follows. If it fails, the reply is `git cannot run on this host; git not run: <exec error>: <git text>` in the frame of each method. A remove makes two such calls and deletes nothing. A git that cannot start is not measured here. After an exit 128 with no text or a signal, `git.info` and `git.worktree_create` are not measured. Neither is a remove with `worktreeRoot` |
+| exit 1 or exit 2 with a text, or exit 128 with another text | The same text with git's text in place of `exit status 1`. Two lines stand there with one space between them. A text with a line before `fatal: not a git repository` gets this reply, and so does `fatal: error reading '<repo>/.git'` (Windows) |
+| either of the two rows above | One `git version` call follows. If it fails, the reply is `git cannot run on this host; git not run: <exec error>: <git text>` in the frame of each method. A remove makes two such calls and deletes nothing |
 | another path than the git directory, in two calls | `git and Claude disagree about which repository holds this folder: from "<root>" git finds "<path>", Claude finds "<git directory>"; try again`. `<path>` is the path as git printed it: with forward slashes on Windows |
 | no answer in 30 seconds | `git could not check this repository on the remote machine: it did not finish within 30 seconds in "<root>"; try again` (Linux, macOS and Windows) |
 
@@ -1512,9 +1489,8 @@ One `git version` call also follows a config read that failed with a syntax erro
 
 In the state `shadow` each hardened call carries `GIT_COMMON_DIR=<copy>` and
 `GIT_OBJECT_DIRECTORY=<git directory>/objects`. A call with no `--git-dir=` in its
-arguments also carries `GIT_DIR` and `GIT_WORK_TREE`. The four come right after the
-profile values, in that order (Linux, macOS and Windows, the order from Linux and
-macOS). [Hardened git calls](#hardened-git-calls) has the other points of a call.
+arguments also carries `GIT_DIR` and `GIT_WORK_TREE` (Linux, macOS and Windows).
+[Hardened git calls](#hardened-git-calls) has the other points of a call.
 
 #### `config.worktree`
 
@@ -1524,20 +1500,10 @@ place, in a repository with that extension and a `config.worktree` file. The
 `worktreeConfig` values `2` and `10` turn that extension on.
 
 - Each key of the copied settings file but the format version, `extensions.*` and
-  `core.bare` goes before the option list of the git calls as one `-c` item, with the
-  value of the copy, sorted by key. Six keys are measured. Other keys and a repeated
-  key are not measured. A call on a linked worktree gets the items of its own file.
+  `core.bare` goes to the git calls as one `-c` item, with the value of the copy,
+  sorted by key. A call on a linked worktree gets the items of its own file.
 - A new worktree of `git.worktree_create` gets its own `config.worktree` file. See
   [git.worktree_create](protocol/git-worktree-create.md).
-
-#### Where claustrum differs from `5fd08069`
-
-In the differences that stay the reply lines are equal, except in two Windows rows of
-a create whose `.git` becomes a file.
-
-- After the start test on a `.git` file that names a missing path, `5fd08069` runs a
-  `rev-parse` against `.probe`. claustrum runs a config listing there and makes no
-  `.probe`, with equal frames (macOS and Windows).
 
 ### Hardened git calls
 

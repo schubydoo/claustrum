@@ -398,7 +398,9 @@ the linked pages. The history of each build is in
   refuses gets a normal answer where the copy leaves it out. Against `5fd08069`
   the config reads above differ. Two reply texts differ too, for a Windows
   create whose `.git` becomes a file `gitdir: <X>` while it runs (measured on
-  Windows).
+  Windows). After the start test on a `.git` file that names a missing path,
+  claustrum runs a config listing and makes no `.probe`, where `5fd08069` runs a
+  `rev-parse` against `.probe`. The frames are equal (measured on macOS and Windows).
   See [The settings copy](PROTOCOL.md#the-settings-copy).
 - A remove with a worktree folder that exists lists again after a failed
   listing, as on `5fd08069` (measured on Linux, macOS and Windows). `f6010b97`
