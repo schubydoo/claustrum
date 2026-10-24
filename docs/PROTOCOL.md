@@ -1283,7 +1283,7 @@ sends it, and an error reply has none (Linux, macOS and Windows).
 
 | `settingsControl` | When | What it changes |
 |---|---|---|
-| no member | No start test of the daemon gave a state yet | Nothing. A folder with no repository, or a `HEAD` that is no ref, starts no test. A `.git` file to a missing repository starts it |
+| no member | No start test of the daemon gave a state yet | Nothing. A folder with no repository, or a `HEAD` that is no ref, starts no test. A `git.info` on a `.git` file to a missing repository starts it |
 | `"shadow"` | The start test passed | The git calls name the copy. Before them the daemon asks git about the repository |
 | `"fallback-git"` | The git of the host does not work on such a copy, for example git 2.11.4 and 2.12.5 | The git calls name the git directory. The daemon reads no repository config, gives no config refusal, makes no copy and does not ask git about it |
 | `"off-switch"` | A request with `"shadowDirOff":true` runs (the hold) when the reply is made | A request that starts then names the git directory, with no test, folder or config read |
@@ -1324,8 +1324,7 @@ sends it, and an error reply has none (Linux, macOS and Windows).
   that starts after that answer has the 2 minute limit (claustrum's own, not
   measured).
 - In the state `fallback-git` the test runs again on the first request more than 10
-  minutes after the last test. In the state `shadow` it does not run again (from the
-  code).
+  minutes after the last test. In the state `shadow` no second test ran up to 720 s.
 - The daemon logs one `[GitHandler]` line at the first decision of the state and one
   at a change.
 
@@ -1365,7 +1364,7 @@ remove deletes nothing there (Linux, macOS and Windows).
 
 If git refuses the copy and the same call works without it, the state is
 `fallback-git` and not a failure. A test call that works and answers wrongly gives
-it too. At the last call, a `worktree add`, a `No space left on device` error or an
+it too. At the last call, which is a `worktree add`, a `No space left on device` error or an
 end by a signal fails the test. If two calls fail, the cause names the first.
 
 The daemon keeps a failure for 10 seconds from the end of the failed test, also
@@ -1446,7 +1445,7 @@ request gets this text and nothing goes:
 A folder goes between the git calls of a request, never during one. The next call
 makes it again with no new config read, except a call right after its own config
 listing (claustrum's own, not measured). A failed remake gets the `cannot write its
-copy` text or the 128 text (from the code). A call whose folder went and is not made
+copy` text above, or the 128 text when all 128 folders are held (from the code). A call whose folder went and is not made
 again, or whose daemon shut down or replaced it, fails alone (from the code). It gets
 this text, and a listing puts `listing the configuration in force: ` before it (Linux
 and Windows):
@@ -1464,7 +1463,8 @@ blocks of rewritten URLs. The file ends with
 - 41 keys are carried, each with one rule of accepted values (`gitshadowconfig.go`).
   Only some of those rules are measured.
 - `remote.<name>.url`, `.lfsurl`, `.promisor` and `.partialclonefilter`,
-  `lfs.<url>.access` and `branch.<name>.remote` are carried too.
+  `lfs.<url>.access` and `branch.<name>.remote` are carried too. The length of a
+  rewritten URL is not measured.
 - Every other key is dropped, such as `core.hooksPath` and `user.*`.
 - Outside the version and extension refusals, a value that its rule does not accept
   is left out with no refusal. One example is `core.filemode = maybe`.
@@ -1492,7 +1492,7 @@ folder or of its `.git` entry makes the daemon ask again.
 |---|---|
 | exit 128 with a text that starts with `fatal: not a git repository` in any letter case, or that holds `detected dubious ownership` or `cannot use bare repository` | The "no repository" answer of each method. No config is read, and no copy is made. git 2.56's text for a `.git` file to nowhere, `unsafe repository`, and the two phrases at other places of the text get the same answer (claustrum's own, not measured) |
 | exit 1, exit 128 with no text, a signal (`signal: terminated`) or a git that cannot start (Windows) | `git could not check this repository on the remote machine: at "<root>": exit status <n>` |
-| exit 1 or exit 2 with a text, or exit 128 with another text | The same text with git's text in place of `exit status 1`. Two lines stand there with one space between them. `warning: w` before `fatal: not a git repository` gets this reply, and so does `fatal: error reading '<repo>/.git'` (Windows) |
+| exit 1 or exit 2 with a text, or exit 128 with another text | The same text with git's text in place of `exit status 1`. Two lines stand there with one space between them. `warning: w` before `fatal: not a git repository` gets this reply, and so does `fatal: error reading '<repo>/.git'` (Windows). This row holds on all five methods |
 | either of the two rows above | One `git version` call follows. If it fails, the reply is `git cannot run on this host; git not run: <exec error>: <git text>` in the frame of each method. A remove makes two such calls and deletes nothing. Not measured: a git that cannot start, `git.info` and `git.worktree_create` after exit 128 with no text or a signal, a remove with `worktreeRoot` |
 | another path than the git directory, in two calls | `git and Claude disagree about which repository holds this folder: from "<root>" git finds "<path>", Claude finds "<git directory>"; try again`. `<path>` is the path as git printed it: with forward slashes on Windows |
 | no answer in 30 seconds | `git could not check this repository on the remote machine: it did not finish within 30 seconds in "<root>"; try again` (Linux, macOS and Windows) |
