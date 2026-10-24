@@ -294,8 +294,8 @@ signals it, in the eviction and in `-stop`. The reference skips that test. See
 A periodic sweep ends orphaned Claude Code process groups, retires abandoned
 daemons and tidies stale run dirs. It reaches no JSON-RPC frame. A rule with no mark was
 measured against `89cb6289` on a Linux VM. A rule that names macOS was measured on
-a macOS VM against `89cb6289`. A rule marked `5fd08069` was measured against that
-build.
+a macOS VM against `89cb6289`. A rule marked `5fd08069` or `f6010b97` was measured
+against that build.
 
 claustrum links no cleaner on Windows. The Windows references logged no cleaner
 line and changed nothing, in a check with no positive control.
@@ -325,8 +325,8 @@ A path through a symlink to the root or to a folder above it keeps the cleaner o
 for the socket and for the binary. If the daemon cannot read its own executable
 path, the binary test does not run (not measured).
 
-A pass acts on the root as the socket path gives it and on its resolved form, never
-on the root of the binary. If the resolution fails, it acts on the root as given
+A pass acts on the root as the socket path gives it and on its resolved form, the
+same folder under its real path. It never acts on the root of the binary. If the resolution fails, it acts on the root as given
 only (not measured). A pass lists each run folder once, and its lines name each
 in the spelling of the socket as given.
 
@@ -417,8 +417,8 @@ run dir lines, and counts the group as undecided:
 
 With a working `lsof` the cleaner ends the group. A run that the cleaner gave up
 on spares the group with claustrum's own line. On Linux the same line comes when
-`/proc/<pid>/fd` of the group cannot be read. On macOS it comes when a completed
-`lsof` run lists no file of the group (from the code):
+`/proc/<pid>/fd` of the group cannot be read (from the code). On macOS it comes
+when a completed `lsof` run lists no file of the group (from the code):
 
 ```
 [hostclean] spared process group <pgid> this sweep: its open descriptors were unreadable
