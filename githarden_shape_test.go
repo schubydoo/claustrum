@@ -270,8 +270,7 @@ func checkHardenedEnv(t *testing.T, what string, calls []shapeCall) {
 // the hardened helpers make, and their order, as f6010b97 makes them on Linux, macOS
 // and Windows VMs, with the lists and variables of 5fd08069:
 //
-//   - Every hardened call and every config listing runs in the repository directory
-//     and passes no -C.
+//   - Every hardened call and every config listing passes no -C.
 //   - One listing runs right before each hardened call. In git.info,
 //     git.list_branches, git.worktree_create and git.worktree_remove, the hooks
 //     refusal check is the listing of the first call, not an extra one.

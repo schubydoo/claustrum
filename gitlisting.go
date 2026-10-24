@@ -13,8 +13,8 @@ import (
 
 // The configuration listing that runs before every hardened git call, and what the
 // daemon reads from it. 89cb6289 lists keys and values (`config -z --list`), and its
-// hardened calls pin off every hook name the listings show. docs/PROTOCOL.md → "Hardened
-// git calls" gives the rules. Each rule was measured side by side against 89cb6289 on
+// hardened calls pin off every hook name the listings show. gitlisting_test.go tests
+// the rules, and docs/PROTOCOL.md → "Hook pins" gives them for a reader. Each rule was measured side by side against 89cb6289 on
 // Linux, macOS and Windows VMs, unless its comment says otherwise. The locale rule of
 // row L03 (an English listing error under a German locale) is from a Linux VM only.
 
