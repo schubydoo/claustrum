@@ -602,13 +602,11 @@ traps that matter for telling drift from expected:
   last one is the likeliest to be misread. `19f30c46` copies eight of the nine,
   so a file missing from a seeded worktree looks like a regression against the
   previous pin. [REFERENCE-BUILDS.md](REFERENCE-BUILDS.md) holds all seven, and
-  all seven are reconciled. On the host cleaner's macOS busy probe, the daemon
-  gets no SIGTERM after an `lsof` run that claustrum gave up on, as on
-  `5fd08069` (macOS VM). The retired D17 covered it. A macOS pass with three
-  hung `lsof` runs and 51 s is the known difference from `5fd08069`, which runs
-  one and ends in 17 s. It is not drift. For the busy read and the lock read, an
-  `lsof` command that does not start is parity with `89cb6289` (macOS VM, in
-  every run). So is a run that writes to stderr and exits 1.
+  all seven are reconciled. The macOS `lsof` reads of the host cleaner follow
+  [The `lsof` reads](PROTOCOL.md#the-lsof-reads-macos). The longer pass of
+  claustrum there is in the
+  [`5fd08069` section](REFERENCE-BUILDS.md#5fd08069bd5f33e9b8a2b104c631bbbfbd4e2536-2026-10-05-built),
+  and it is not drift.
 - The `90fca6e6` reconciliation shipped four PRs. A full re-check then found a
   seventh change that the first pass had missed. A new value inside an existing
   function shows in no symbol list, so a quiet symbol comparison does not prove

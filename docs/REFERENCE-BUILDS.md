@@ -111,7 +111,8 @@ that differs. The reply of claustrum to cell X2 of round `task077-03` is
 byte-equal in rounds `task077-04` to `task077-06` (Windows VM).
 
 One Windows claustrum run where both requests got
-`-32001` was the test kit, not claustrum (round `task104-01`). Two items stay open:
+`-32001` was the test kit, not claustrum (round `task104-01`). The check left
+two areas open. They are tracked outside this ledger. What it measured there:
 
 - The off switch during `git.status` and the worktree methods: Linux ran every
   cell. macOS ran every cell but C6, C6b, C6n and S3 (`task105-03`,
