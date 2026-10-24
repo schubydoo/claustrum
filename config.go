@@ -189,8 +189,8 @@ func applyConfigKey(cfg *config, key, val string) {
 	// let the second set both caps, and gofmt / vet / lint / the suite all pass.
 	case "max-extract-bytes":
 		// A plain byte count; 0 disables the cap (the default). Negative values
-		// and anything unparseable are rejected, so a typo can never silently
-		// enable a cap the operator did not ask for.
+		// and anything unparseable are rejected. Any positive number sets the cap,
+		// a wrong digit too ("10" for "0").
 		if n, err := strconv.ParseInt(val, 10, 64); err == nil && n >= 0 {
 			cfg.maxExtractBytes = &n
 		}
@@ -204,14 +204,14 @@ func applyConfigKey(cfg *config, key, val string) {
 		cfg.cliProbeTimeoutSeen = true
 	case "cli-download-timeout":
 		// A Go duration ("10m", "90s"); 0 disables the bound (the default).
-		// Negative and unparseable values are rejected, so a typo can never
-		// silently impose a deadline the reference does not have. A bare number is
+		// Negative and unparseable values are rejected. Any other nonzero duration
+		// sets the bound, a wrong digit too ("10s" for "0s"). A bare number is
 		// unparseable on purpose — "300" meaning 300ns would be a trap — EXCEPT for
 		// zero, of which there are unboundedly many spellings ("0"/"+0"/"-0" via
 		// ParseDuration's special case, every zero-valued duration with a unit, and
 		// a negative that truncates like "-0.4ns"). All reach d == 0 and pass the
-		// guard, which is harmless: zero IS the disabled value, so nothing accepted
-		// here can switch the bound ON. Do not special-case "-0s".
+		// guard, which is harmless: zero IS the disabled value, so no zero spelling
+		// can switch the bound ON. Do not special-case "-0s".
 		if d, err := time.ParseDuration(val); err == nil && d >= 0 {
 			cfg.cliDownloadTimeout = &d
 		}

@@ -658,8 +658,9 @@ no flag and no key.
   first 64 KiB. It ignores an unknown key and an invalid value. A problem of the
   file never fails the start. A `wire-log` path that cannot be opened does fail
   it. A duration uses `time.ParseDuration`, which
-  refuses a bare number other than zero. A zero in any spelling means off. So no
-  accepted value can switch a divergence on by mistake.
+  refuses a bare number other than zero. A zero in any spelling means off. A wrong
+  digit still turns a cap or a deadline on: `10` for `0` on a cap,
+  `10s` for `0s` on the deadline.
 - **`version-override`.** Set it to the commit SHA that the desktop client pins,
   and the client stops uploading the reference each session. The value is 40 or
   64 hex digits, claustrum prints it in lower case, and any other value does
