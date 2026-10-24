@@ -1,11 +1,9 @@
 # Staying in lock-step with the reference daemon
 
-claustrum is behaviorally compatible with a reference daemon. That daemon ships
-inside Claude Desktop's SSH-remote feature. A git SHA gives its version, and a
-public CDN holds it as per-platform zstd blobs. This document tells you how to
-detect a new build. It also tells you how to find out whether that build changed
-anything claustrum must match. For the running history of which builds changed
-what, see the [reference build ledger](REFERENCE-BUILDS.md).
+claustrum is behaviorally compatible with a reference daemon that ships inside
+Claude Desktop's SSH-remote feature. This page tells you how to detect a new
+build, and how to find out whether it changed anything claustrum must match. The
+history of each build is in the [reference build ledger](REFERENCE-BUILDS.md).
 
 ## How the reference is distributed
 
@@ -29,29 +27,18 @@ sources, easiest first:
    ```sh
    ls -1d ~/.claude/remote/srv/*/server | sed -E 's#.*/srv/([0-9a-f]+)/server#\1#'
    ```
-2. The Desktop app bundle. The app contains the pinned SHA, and all six
-   per-platform checksums and sizes, as a build-time constant. You can read
-   that constant offline, and it needs no network. In the Linux `.deb` it is a
+2. The Desktop app bundle. A
    `JSON.parse('{"version":"<sha>","manifest":{…},"baseUrl":".../claude-ssh-releases"}')`
-   literal inside `resources/app.asar`. That file is a minified
-   `.vite/build/index.chunk-*.js`, so the chunk name and the wrapper function are
-   random for each build. A parallel literal pins the CLI
-   (`claude-code-releases`). From version 1.24012.9 onward, its `baseUrl`
-   carries a channel suffix, `claude-code-releases/rc/<sha>`. The extractor
-   therefore matches the bucket by path *segment*, not by `endswith`. A new Desktop
-   build is itself the "new SHA" signal. Two scripts read the constant:
+   literal inside `resources/app.asar` holds the pinned SHA and the six checksums
+   and sizes. A parallel literal pins the CLI (`claude-code-releases`). Its
+   `baseUrl` can end in `/rc/<sha>`, so match the bucket by path segment. Two
+   scripts read the literal offline:
    - [`scripts/extract-desktop-pin.py`](https://github.com/schubydoo/claustrum/blob/main/scripts/extract-desktop-pin.py)
-     reads it directly from a Linux `.deb`, a Windows `.nupkg` or a macOS `.zip`.
-     It uses the standard library only: `ar` → `data.tar.xz` → `app.asar`, or zip
-     → `app.asar`, then an enclosure brace-match. You need no `dpkg`, no `unzip`
-     and no `asar`. The Windows and macOS bundles carry the same literal.
+     reads it from a Linux `.deb`, a Windows `.nupkg` or a macOS `.zip`.
    - [`scripts/latest-desktop-sha.py`](https://github.com/schubydoo/claustrum/blob/main/scripts/latest-desktop-sha.py)
      runs the full loop for one platform (`--platform linux|windows|macos`,
-     default `linux`): find the newest Desktop → download → extract → compare to
+     default `linux`): find the newest Desktop, download, extract, and compare to
      `UPSTREAM_SHA`.
-
-   Observed pins: Linux 1.18286.0 (2026-07-02) pinned `7c2f88d…`. Versions
-   1.20186.1 → 1.24012.9 pin `5db5e4a…`.
 3. The Desktop machine's cache. The per-platform binaries are under
    `<app-data>/claude-ssh-remote/<sha>/` (`%APPDATA%/Claude/…` on Windows),
    beside a `.verified-<goos>-<goarch>` marker.
@@ -64,21 +51,13 @@ sources, easiest first:
 
 ### claustrum re-uploads every session (harmless)
 
-Before a session the client runs `server --version` on the cached
-`~/.claude/remote/srv/<pinned-sha>/server`. It then matches `/claude-ssh\s+(\S+)/`.
-It skips the re-upload only for a first token that equals the pinned SHA.
-claustrum prints `claustrum <ver> (built …)`, which is its own identity. So the
-token never matches, and the client sends the daemon again by SFTP every
-session. That transfer is idempotent and is approximately 2.3 MB. The
-`claude-ssh:`→`claustrum:` rebrand causes this. The version line is CLI stdout,
-not a JSON-RPC frame. The wire contract therefore does not change, and the redeploy
-is harmless. The daemon that runs at the end is still claustrum.
-
-A drop-in build stamp makes the client see claustrum as up-to-date and stops
-the overwrite. Such a stamp emits `claude-ssh <pinned-sha>` as the first token,
-and the binary goes at `srv/<pinned-sha>/server`. It is off by default. It is an
-opt-in build stamp, not a wire change. Mechanism and the `-version` format:
-[docs/PROTOCOL.md → `-version`](PROTOCOL.md#-version).
+The client runs `--version` on `~/.claude/remote/srv/<pinned-sha>/server`. For a
+`--version` output that matches `/claude-ssh\s+(\S+)/` with the pinned SHA as that
+token, it skips the upload. The stock claustrum line holds no such match, so the
+client sends the daemon again by SFTP every session. That is not drift: the version line is CLI stdout, not a frame. The
+daemon that runs at the end is still claustrum. The
+opt-in `version-override` ([CT-3](DIVERGENCES.md#ct-3)) stops the re-upload. See
+[PROTOCOL.md → `-version`](PROTOCOL.md#-version).
 
 ## Step 2 — run the drift check
 
@@ -110,50 +89,40 @@ has network access.
 
 The static check catches methods, flags, and strings that were added or removed.
 Frame-level byte-identity covers result field order, stream framing, error bodies,
-and `reattach` semantics. To make sure that it holds, run the private validation
-battery against both the new reference and claustrum. That battery stays in `scratch/` and is not published:
+and `reattach` semantics. To check it, run one frame battery against the new
+reference and against claustrum, and diff the results:
 
-```sh
-# starts each binary as a PRIVATE -serve on a throwaway /tmp socket, runs the
-# full method battery, and diffs normalized frames. Never touches a live daemon.
-scratch/probe/validate.sh <path-to-reference> > /tmp/ref.json
-scratch/probe/validate.sh ./claustrum          > /tmp/mine.json
-diff /tmp/ref.json /tmp/mine.json
-```
+1. Start each binary as a private `-serve` on a throwaway socket, with its own
+   `-token-file`.
+2. Send every method, with the same requests, to each daemon.
+3. Mask the values that differ between runs or between the two binaries, such
+   as the version id and the token, and diff the two sets of frames.
 
-> Safety: probe only a private instance on a `/tmp` socket with its own
-> `-token-file`. Never point the probe at a live daemon's socket. Clean up after
-> every probe.
+The in-repo goldens (`testdata/socket_*.golden.json`) hold claustrum's side of
+that contract, so `make test` catches a change of claustrum's own frames.
+
+> Safety: probe only a private instance on a throwaway socket. Never point the
+> probe at a live daemon's socket. Clean up after every probe.
 
 ## Step 3b — real-session capture (highest fidelity, optional)
 
-Steps 2–3 drive the daemon with synthetic requests we write. The best check is
-the traffic of the real desktop client. This is the method:
+Steps 2–3 drive the daemon with synthetic requests. The best check is the traffic
+of the real desktop client:
 
-- The bridge (`server --bridge`) is a simple stdio relay. So a tee on its stdin and
-  stdout records the exact client↔daemon NDJSON of a live session. You can then
-  replay that record against claustrum and diff it.
-- The tools are in `scratch/capture/` (gitignored): a `capture-bridge`,
-  `replay.js`, and a `REPLAY.md` runbook. `replay.js` diffs without regard to
-  order. It keys responses by `id` and stream frames by `processId`+`seq`. It
-  masks the version SHA, the token, and (with `--mask-data`) nondeterministic agent
-  payloads.
-- A throwaway SSH user records the session, through a `ForceCommand` wrapper
-  scoped to that user, so the capture never touches a live daemon. Raw dumps carry
-  the session token and host paths. Keep them in `scratch/` (gitignored). Never
-  commit them.
+- The bridge (`server --bridge`) is a stdio relay. A tee on its stdin and stdout
+  records the exact client↔daemon NDJSON of a live session. Replay that record
+  against claustrum, and diff without regard to order: key responses by `id` and
+  stream frames by `processId` and `seq`.
+- Record with a throwaway SSH user, through a `ForceCommand` wrapper for that
+  user, so the capture never touches a live daemon. A raw dump holds the session
+  token and host paths. Never commit one.
 
-We last ran this capture against a then-pinned reference, `8de85faa`. That build is
-now well behind the current baseline, `5fd08069`. It used a real Desktop session and
-covered the full `process.*` lifecycle. That lifecycle included a >32 KiB output
-stream and a mid-stream disconnect and reconnect that drove `process.reattach`. The
-result was byte-identical for the methods that build exposed. The `server.capabilities`
-set, the stream-envelope field order, and per-process `reattach` replay all
-matched. [docs/PROTOCOL.md](PROTOCOL.md) holds the canonical frame shapes.
-
-Use this capture as a periodic spot-check. Use it again for a new build that changes
-`process.*` behavior the synthetic battery cannot fully model (real reconnect
-timing, multi-process reattach).
+The last capture ran against `8de85faa`, a build well behind the current
+baseline, `5fd08069`. Its result is in
+[REFERENCE-BUILDS.md](REFERENCE-BUILDS.md#8de85faaa11694321e937499a18c7ab88f37c76c-2026-05-21).
+Use a capture as a periodic spot-check. Use it again for a build that changes
+`process.*` behavior that the synthetic battery cannot fully model (real
+reconnect timing, multi-process reattach).
 
 ## Step 4 — reconcile
 
@@ -165,8 +134,10 @@ If the check reports drift:
    unchanged behavior unchanged.
 3. Run the static check and the byte-for-byte battery again, until both are
    clean.
-4. Update `scripts/UPSTREAM_SHA` to the new SHA. Note the change in
-   `CHANGELOG.md`. If the wire surface changed, update `docs/PROTOCOL.md`.
+4. Bump the pin to the new SHA in `scripts/UPSTREAM_SHA`, and take the other
+   steps of [REFERENCE-BUILDS.md → When you bump the pin](REFERENCE-BUILDS.md#when-you-bump-the-pin).
+   For a user-facing change, add a `.changeset/` fragment with
+   `knope document-change`. knope writes `CHANGELOG.md`.
 
 ## Don't reconcile the deliberate divergences away
 
@@ -555,40 +526,30 @@ Unless an item names another build, the daemon items below are measured against
 ## Toolchain-induced drift — the Go 1.27 `jsonv2` hold
 
 Reference drift is not the only way the wire can move. claustrum inherits some of
-its frame bytes straight from Go's `encoding/json` (see
-[docs/ARCHITECTURE.md → "Inherited wire bytes"](ARCHITECTURE.md#inherited-wire-bytes) and
-`inherited_encoding_test.go`). A change in the Go toolchain claustrum is
-built with can therefore move those bytes. The reference does not have to change
-at all.
+its frame bytes from Go's `encoding/json`
+([ARCHITECTURE.md → Inherited wire bytes](ARCHITECTURE.md#inherited-wire-bytes),
+`inherited_encoding_test.go`). So a new Go toolchain can move those bytes while
+the reference stays the same.
 
-Go 1.27 does exactly that. It enables the `jsonv2` GOEXPERIMENT by default
-(`internal/buildcfg/exp.go` sets `JSONv2: true`), which reimplements
-`encoding/json`'s `Marshal` on the v2 engine. That engine renders an invalid
-UTF-8 byte as the literal U+FFFD character (bytes `EF BF BD`). Go 1.26
-and earlier emit the six-ASCII
-`\ufffd` escape, and so did the reference daemon at `5db5e4a`. The build pinned
-today, `5fd08069`, carries a go1.25.14 stamp (`go version` on the binary), as
-`89cb6289` does. So it emits the same escape. `files.read`
-puts raw file bytes into the `content` string. Under Go 1.27, every read of a file
-holding a non-UTF-8 byte therefore diverges from the
-reference. `TestInheritedInvalidUTF8BecomesReplacementChar` and
+Go 1.27 does that. It turns on the `jsonv2` GOEXPERIMENT by default, and the v2
+`Marshal` renders an invalid UTF-8 byte as the literal U+FFFD character (bytes
+`EF BF BD`). Go 1.26 and earlier emit the six-ASCII `\ufffd` escape. The build
+pinned today, `5fd08069`, carries a go1.25.14 stamp (`go version` on the binary), as
+`89cb6289` does. So it emits the same escape. `files.read` puts raw file bytes
+into `content`, so under Go 1.27 every read of a file with a non-UTF-8 byte
+diverges from the reference. `TestInheritedInvalidUTF8BecomesReplacementChar` and
 `TestInheritedLoneSurrogateBecomesThreeReplacements` fail under 1.27 for this
-reason. That is the guard working as intended, not a stale expectation.
+reason. That is the guard working, not a stale expectation.
 
 Current stance: hold the build toolchain at 1.26.x. The hold lives in the
 Renovate preset (`schubydoo/renovate-config` → `claustrum.json`,
 `allowedVersions: <1.27` on the `go` dep). 1.26.x patch and security bumps
-still flow, while 1.27+ is blocked. That preset constrains `go.mod`. The hold
-therefore follows a build path automatically only where that path resolves its
-toolchain from `go.mod`. A `setup-go` step naming its own version sits outside it.
-An explicit `go-version: 1.26.7` still honors the hold but stops tracking it, and
-`go-version: stable` leaves it altogether. Nothing in this repo detects that.
-No lint, no guard and no test reads `setup-go` inputs. The first signal is
-therefore a failing run, at whatever cadence that workflow runs. `mutation.yml` used
-`go-version: stable`, and it is a weekly cron. Go 1.27.0 went stable, and the
-break surfaced up to a week later, on the 2026-08-24 scheduled run. It surfaced
-again on 2026-08-31 (run 33387062009) before it was diagnosed. All eight `setup-go`
-steps now use `go-version-file: go.mod`.
+still flow, while 1.27+ is blocked. That preset constrains `go.mod`, so the hold
+reaches only a build path that resolves its toolchain from `go.mod`. Every
+`setup-go` step uses `go-version-file: go.mod`. Keep it so. A step that names its
+own version leaves the hold (`go-version: stable`) or stops tracking it (a fixed
+`1.26.x`). No lint, guard or test reads `setup-go` inputs, so the first signal is
+a failing run of that workflow.
 `GOEXPERIMENT=nojsonv2` restores the `\ufffd`
 escape under a 1.27 toolchain (measured). It is therefore the compensating knob for
 a future constraint that forces the build onto 1.27 before the trigger below fires.
@@ -610,82 +571,68 @@ again after each Go bump.
 
 ### The symlink-loop text of `filepath.EvalSymlinks`
 
-Both worktree methods refuse a symlink loop in a `worktreeRoot`
-(`locationLinkRefusal`). A kernel ELOOP catches a long chain. A root that is itself a link in a
-loop, or starts a chain of more than 255 links, rests on the text "EvalSymlinks: too many links" of `filepath.EvalSymlinks`
-(`isSymlinkLoop`). If a Go release rewords it, that
-frame changes. The S1, S1b, S1c and S1d cases in
-`worktree_create_chain_unix_test.go` then fail. Check them after each Go bump.
+Both worktree methods refuse a symlink loop in a `worktreeRoot`. A kernel ELOOP
+catches a long chain. A root that is itself a link in a loop, or starts a chain of
+more than 255 links, rests on the text "EvalSymlinks: too many links" of
+`filepath.EvalSymlinks`. If a Go release rewords it, that frame changes, and the
+S1, S1b, S1c and S1d cases in `worktree_create_chain_unix_test.go` fail. Check
+them after each Go bump.
 
 ### Windows junctions in `filepath.EvalSymlinks`
 
-Two refusals rest on a failed `filepath.EvalSymlinks`. One is the trust-root
-test of the worktree methods (`baseRepoWalkFails`, `worktreecontain.go`). The
-other is `unresolvable` (`methods_git.go`), which `git.status` applies to
-`baseRepo` and `git.list_branches` to `path`. On Windows both depend on the
-`winsymlink` GODEBUG setting, which Go 1.23 turned on. With it on, `os.Lstat`
-reports a junction as neither a symbolic link nor a directory. With it off, a
-junction is a symbolic link. With it on, the walk of `EvalSymlinks` fails at a
-junction before the last component. For that reason claustrum answers
-`git.worktree_create` and `git.worktree_remove` with the trust-root refusal when
-a junction sits before the last component of a `baseRepo` that exists (Windows
-VM). With `GODEBUG=winsymlink=0` in the daemon environment, the walk follows the
-junction instead. Those answers then flip, and so do the `git.status` and
-`git.list_branches` answers for `<dir>\<junction>\T`. Other code resolves
-`baseRepo` through `EvalSymlinks` too, so other Windows junction answers can
-move as well. A `go` line below 1.23 in `go.mod` has the same effect. The
-`git.info` root for a path with a junction before its last component rests on
-the same failure. That covers `<T>\lnk\..` with a junction `lnk` and a
-repository below a junction (`TestInfoRootLinkThenDotDotWindows` and
-`TestInfoRootBelowJunctionWindows`). With the walk following the junction, those
-roots can move too. The `GIT_COMMON_DIR` pin of the trust check for such a path
-rests on it as well (`walkStart`, `gitdirtrust.go`). With the walk following the
-junction, the pin names the repository behind the junction. The `git.info`
-answers for such a path then change: `root`, `repo` and `repoSlug` can move to
-the repository behind the junction ([git.info → Differences by
-system](protocol/git-info.md#differences-by-system)). The frames of `89cb6289`
-are pinned in `TestInfoThroughJunctionWindows`
-(`gitinfo_junction_windows_test.go`), and the pinned answers are in [PROTOCOL.md
-→ Git-directory trust check](PROTOCOL.md#git-directory-trust-check). This entry
-is derived from the Go source (`os/types_windows.go` and
-`path/filepath/symlink.go`), not measured. Check those answers after each Go
-bump that changes `winsymlink`.
+On Windows, the walk of `filepath.EvalSymlinks` fails at a junction before the
+last component, since Go 1.23 turned on the `winsymlink` GODEBUG setting (from
+the Go source, not measured). These answers rest on that failure:
+
+- The trust-root refusal, claustrum's own, of `git.worktree_create` and
+  `git.worktree_remove` for a junction before the last component of a `baseRepo`
+  that exists (measured on Windows).
+- The `"isRepo": false` answer of `git.status` (`baseRepo`) and
+  `git.list_branches` (`path`) for `<dir>\<junction>\T` (from the code).
+- The `git.info` answers for a path with a junction before its last component
+  (from the code). These are `root`, `repo`, `repoSlug` and the `GIT_COMMON_DIR`
+  pin of the trust check ([git.info → Differences by system](protocol/git-info.md#differences-by-system),
+  [PROTOCOL.md → Git-directory trust check](PROTOCOL.md#git-directory-trust-check)).
+
+With `GODEBUG=winsymlink=0` in the daemon environment, or a `go` line below 1.23
+in `go.mod`, the walk follows the junction. Those answers then flip or move to the
+repository behind the junction, and other Windows junction answers can move too.
+That is derived from the Go source (`os/types_windows.go` and
+`path/filepath/symlink.go`), not measured. After each Go bump that changes
+`winsymlink`, check `TestInfoRootLinkThenDotDotWindows`,
+`TestInfoRootBelowJunctionWindows` and `TestInfoThroughJunctionWindows`, which pins
+the frames of `89cb6289`.
 
 ### The git version under the checkout tests
 
-With a `worktreeRoot`, both worktree methods run `git worktree list --porcelain -z`
-(`worktreeListCall`, `worktreeexternal.go`). The `-z` option needs git 2.36 or
-later. On an older git that call fails. Both methods then run `git worktree list --porcelain` (`worktreeListTwice`). The references on such
-a git are not measured. Several tests in
-`worktree_root_checkout_unix_test.go` expect a working call. They skip there
-(`requireWorktreeListZ`), so a skip in CI means a git older than 2.36.
-Check them after the git of a CI runner or a test VM changes.
+With a `worktreeRoot`, both worktree methods run `git worktree list --porcelain -z`.
+The `-z` option needs git 2.36 or later. On an older git that call fails, and both
+methods run `git worktree list --porcelain` instead. The references on such a git
+are not measured. The tests in `worktree_root_checkout_unix_test.go` that need
+`-z` skip there, so a skip in CI means a git older than 2.36. Check them after the
+git of a CI runner or a test VM changes.
 
 ## Automating it
 
 - [`.github/workflows/upstream-desktop-watch.yml`](https://github.com/schubydoo/claustrum/blob/main/.github/workflows/upstream-desktop-watch.yml)
-  runs twice daily (cron `17 6,18 * * *`). It runs one leg for each of Linux,
-  Windows and macOS. Each leg calls `scripts/latest-desktop-sha.py --platform <p>`
-  to find the SHA that the *newest* Claude Desktop for that platform pins. That is
-  Step 1, automated, and it needs no out-of-band source. A new pin must
-  meet two tests. It differs from `scripts/UPSTREAM_SHA`, and no build heading in
-  [`REFERENCE-BUILDS.md`](REFERENCE-BUILDS.md) (a "### `<full sha>`" line)
-  matches it. A SHA that only the prose mentions does not count. A lagging platform
-  that still pins an older, reconciled build therefore stays quiet. A new pin on
-  any platform makes that leg run `check-upstream.sh <sha>` for the static drift
-  diff and open a single idempotent tracking issue. If that issue is still open,
-  a later leg that finds the same SHA adds a comment to it. A leg skips all
+  runs twice daily (cron `17 6,18 * * *`), with one leg for each of Linux,
+  Windows and macOS. Each leg runs Step 1: `scripts/latest-desktop-sha.py
+  --platform <p>` finds the SHA that the newest Claude Desktop for that platform
+  pins. A new pin differs from `scripts/UPSTREAM_SHA` and matches no build
+  heading (a "### `<full sha>`" line) of
+  [`REFERENCE-BUILDS.md`](REFERENCE-BUILDS.md). A SHA in the prose does not count,
+  so a platform that still pins a reconciled build stays quiet. For a new pin, the
+  leg runs `check-upstream.sh <sha>` and opens one tracking issue. While that issue
+  is open, a later leg with the same SHA adds a comment to it. A leg skips the
   downloads for a Desktop version that it already analyzed. Reconciliation
   (Step 4) stays a human decision.
-- The platforms ship on separate schedules, so one platform can pin a newer
-  reference build than the others. On 2026-09-24, Linux Desktop 2.7032.0 pinned
-  `90fca6e6…`, and Windows and macOS Desktop 2.9939.2 pinned `f6010b97…`. A
-  Linux-only watcher did not see that new build. For Linux, the script reads the
-  APT `Packages` index (`.deb`). For Windows, it reads the Squirrel `RELEASES`
-  file for win32/x64 (`-full.nupkg`). For macOS, it reads `RELEASES.json` for
-  darwin/universal (`.zip`). The script checks the `.deb` by SHA-256 and the
-  `.nupkg` by SHA-1 and size. The macOS feed publishes no checksum, so TLS is
-  the only integrity check on that download. The script therefore refuses a
-  URL or a redirect that is not HTTPS, for every feed and package.
+- Each platform has its own leg because the platforms ship on separate
+  schedules, so one can pin a newer reference build than the others. Linux uses
+  the APT `Packages` index (`.deb`). Windows uses the Squirrel `RELEASES` file
+  for win32/x64 (`-full.nupkg`). macOS uses `RELEASES.json` for darwin/universal
+  (`.zip`). The script checks the `.deb` by SHA-256 and the `.nupkg` by SHA-1 and
+  size. The macOS feed publishes no checksum, so TLS is the only integrity check
+  there. The script therefore refuses a URL or a redirect that is not HTTPS, for
+  every feed and package.
 - You can still run `check-upstream.sh` by hand against any SHA. Examples are a
   SHA you just found, or a check that a re-published build did not shift.
