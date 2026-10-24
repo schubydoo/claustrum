@@ -454,8 +454,8 @@ the linked pages. The history of each build is in
 - The seven changes of claustrum for `90fca6e6` are not drift, and the drift check
   is quiet on them. [REFERENCE-BUILDS.md](REFERENCE-BUILDS.md) lists them. Three
   change what a client reads. One is that a new worktree does not get the nine
-  Claude session-state names under `.claude/`. `19f30c46` copies eight of them, so
-  a missing file there is no regression. A quiet symbol comparison does not prove
+  Claude runtime state names under `.claude/`. `19f30c46` copies eight of them, so
+  a file missing from a seeded worktree looks like a regression against that pin. A quiet symbol comparison does not prove
   that nothing changed, so re-check the whole build after the slices merge.
 - On macOS the `lsof` reads of the host cleaner, and the longer pass of claustrum
   after a run that it gave up on, are not drift. An `lsof` that does not start,
@@ -463,18 +463,17 @@ the linked pages. The history of each build is in
   (measured on macOS). See [The `lsof` reads](PROTOCOL.md#the-lsof-reads-macos).
 
 Unless an item names another build, the daemon items below are measured against
-`89cb6289`. The linked sections name the systems of each rule.
+`89cb6289`.
 
-- On Linux and macOS a stranded daemon, whose socket path no longer leads to it,
-  and its children get no signal from the host cleaner, as on `f6010b97` and
+- On Linux and macOS a stranded daemon and its children get no signal from the host cleaner, as on `f6010b97` and
   `89cb6289`. The
   daemon ends by itself. See
   [Signals of the cleaner](PROTOCOL.md#signals-of-the-cleaner).
-- On Windows these are not drift, against `f6010b97` and `89cb6289`: a daemon that outlives
-  its SSH session, children that outlive a killed daemon, and descendants that
-  outlive a kill or a `-stop`. One of these states, and the kill forms, are
-  measured on `89cb6289` only. A child is in no job, and a kill ends the direct
-  child only. See [The job of the launcher](PROTOCOL.md#the-job-of-the-launcher-windows)
+- On Windows a daemon that outlives its SSH session and children that outlive a
+  killed daemon are not drift, against `f6010b97` and `89cb6289`, one state on
+  `89cb6289` only. Descendants that outlive a kill or a `-stop` are not drift
+  either. A child is in no job, and a kill ends the direct child only (kill forms
+  measured on `89cb6289`). See [The job of the launcher](PROTOCOL.md#the-job-of-the-launcher-windows)
   and [Windows child trees](protocol/process-kill.md#windows-child-trees).
 - On Linux and macOS a daemon accepts no connection while the reap of its start
   waits. A connect then gets `ECONNREFUSED` or `ENOENT`, and `daemon.lock` holds
@@ -484,14 +483,16 @@ Unless an item names another build, the daemon items below are measured against
   `run/<id>/rpc.sock` are not drift. Records that stay after a start past 128
   record names or 64 groups are not drift either (measured on Linux). An older claustrum
   build wrote two blanks before a one-digit day in its macOS start texts. On macOS
-  a `daemonStart` in that form reads its live daemon as gone, and a `start` in
-  that form does not match. Neither is drift. See
+  a `daemonStart` in that form does not match, so a new daemon reads that live
+  daemon as gone, and a `start` in that form does not match either. Neither is
+  drift. See
   [Child records and the reap](PROTOCOL.md#child-records-and-the-reap-linux-and-macos).
 - A first process that lives on after a second `process.spawn` took its `id` is
-  not drift. It gets no signal, and a stop leaves it alive. Its frames still come
+  not drift. It gets no signal, and a stop leaves it alive (measured on Linux, macOS and
+  Windows). Its frames still come
   on its own connection (measured on Linux). See
   [A spawn with an `id` that is in use](protocol/process-spawn.md#a-spawn-with-an-id-that-is-in-use).
-- A session spawn answers after the old process of its session ended. If the
+- A session spawn answers after the old process ended. If the
   command of the new spawn does not exist, the old process gets no signal. A command
   that exists and does not start ends the old process first (measured on Linux).
   None of these is drift. See
@@ -502,12 +503,12 @@ Unless an item names another build, the daemon items below are measured against
   lives on too, as on `5fd08069`. See
   [process.killAndWait](protocol/process-killandwait.md).
 - On Linux and macOS the daemon runs no login shell before its first
-  `process.spawn`. A process of the login profile can hold the output pipe of the
-  shell. The first spawn then waits for the 4 s cap and logs the timed-out PATH
+  `process.spawn`. When a process of the login profile holds the output pipe of the
+  shell, the first spawn waits for the 4 s cap and logs the timed-out PATH
   line (measured on Linux). Neither is drift. See
   [The login-shell PATH](PROTOCOL.md#the-login-shell-path-linux-and-macos).
-- A `-serve` launcher that gives up after 12 s is not drift. That holds also for a
-  daemon that ends before its bind. See [The launcher wait](PROTOCOL.md#the-launcher-wait).
+- A `-serve` launcher that gives up after 12 s is not drift, also for a daemon
+  that ends before its bind (measured on Linux, macOS and Windows). See [The launcher wait](PROTOCOL.md#the-launcher-wait).
   A daemon that gets `SIGTERM` or `SIGINT` during its start binds and then exits
   0, and that is not drift (measured on Linux, and on macOS for a `SIGTERM` from a
   second daemon). A daemon that a second daemon ends with `SIGKILL` during
