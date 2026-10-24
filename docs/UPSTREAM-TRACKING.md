@@ -224,7 +224,7 @@ Some flags are claustrum's own and have no entry: `-token-fd`
 So is the skip of the kill signal for a child that already ended
 ([process.kill → Differences from the reference](protocol/process-kill.md#differences-from-the-reference)).
 So is a rule of `process.killAndWait`. During the exit drain it sends no first
-signal other than `KILL`
+signal. `KILL` goes to the group at once, as on the reference
 ([A request during the exit drain](protocol/process-killandwait.md#a-request-during-the-exit-drain)).
 Check those before you conclude that something is drift.
 
@@ -289,7 +289,8 @@ measured on a VM.
 
 These are the traps that matter for telling drift from expected. In the git and
 files methods, claustrum follows `5fd08069`, the build that `scripts/UPSTREAM_SHA`
-names, unless an item below names another build. A probe against an older build
+names. The exceptions are the D-entries above, and the places where an item below
+or the linked page names an older build. A probe against an older build
 shows the differences of each item as a build split, not drift. The rules are on
 the linked pages. The history of each build is in
 [REFERENCE-BUILDS.md](REFERENCE-BUILDS.md).
@@ -309,9 +310,12 @@ the linked pages. The history of each build is in
 - A folder that a `git.worktree_create` rollback keeps where `89cb6289` removes it
   is [D24](DIVERGENCES.md#d24), not drift. The frames are equal.
 - The branch step of `git.worktree_remove` and of the create rollbacks follows
-  `89cb6289`. `5fd08069` is not measured there. Against `f6010b97`, a kept branch
-  adds `"branchKept":true`, where `f6010b97` adds no member and in most states
-  deletes the branch. `server.capabilities` also differs by the
+  `89cb6289`. `5fd08069` is not measured there. On remove, each kept case of the keep
+  list adds `"branchKept":true`, where `f6010b97` adds no member and in most
+  states deletes the branch. In four states a create rollback answers as
+  `f6010b97`: update-ref fails, is stopped or meets a lock, or the name starts
+  with `+`.
+  Against `f6010b97`, `server.capabilities` also differs by the
   `git.worktree_remove.unpushedGuard` and `launcher.managed` features and by the
   `launcher.resolve` method. See [The branch step](PROTOCOL.md#the-branch-step).
 - The managed launcher follows `89cb6289`: `launcher.resolve`, the
@@ -319,6 +323,7 @@ the linked pages. The history of each build is in
   runs of `-install` and `-probe-cli`. The Linux file test on a cache hit before a
   launcher run follows `5fd08069`. Other launcher runs of `5fd08069` are not
   measured. `f6010b97` has none of these. See
+  [PROTOCOL.md → launcher.*](PROTOCOL.md#launcher-added-89cb6289) and
   [launcher.resolve](protocol/launcher-resolve.md).
 - The peer check follows `5fd08069`. `server.capabilities` carries the
   `peerCheck` and `peerCheckBy` members and the `server.peer_check` and
@@ -334,12 +339,14 @@ the linked pages. The history of each build is in
   - the last entry of a file that the archive names two times
   - the `error` texts of the entry and `destDir` steps.
 
-  Its Windows rules for the last name of `destDir` are parity, measured on
-  Windows. See
-  [Differences by system](protocol/files-extract-tar.md#differences-by-system).
-  A `\\?\` path with a dot or a space
-  after its last name differs from both builds. A `destDir` that is the home
-  folder by identity gets the home refusal ([D2](DIVERGENCES.md#d2)). See
+  On Linux and macOS, a parent folder of mode `0300` with no `destDir` gets the
+  `open parent:` refusal, where `89cb6289` extracts. A `destDir` that the daemon
+  cannot search or open gets the `open destDir:` refusal, where `89cb6289` fails
+  later or extracts. The two Windows rows of
+  [Differences by system](protocol/files-extract-tar.md#differences-by-system)
+  are parity (measured on Windows). A `\\?\` path with a dot or a space after its
+  last name differs from both builds ([D2](DIVERGENCES.md#d2)). A `destDir` that
+  is the home folder by identity gets the home refusal (D2). See
   [files.extract_tar](protocol/files-extract-tar.md).
 - The `-install` prune and sweeps follow `5fd08069`, and so do the blob timing,
   the `rename: ` prefix, the Windows rename retry and the Linux file test of a
@@ -367,8 +374,8 @@ the linked pages. The history of each build is in
   `git.worktree_remove` of a worktree folder that does not exist is refused too.
   With `worktreeRoot` the refused remove has the text `cannot determine the
   repository's work tree: ` before the refusal (measured on Linux and macOS).
-  With `"shadowDirOff":true`, or while such a request runs, the read does not
-  run. Against `5fd08069` these differences are not drift. On a config that
+  With `"shadowDirOff":true`, or while such a request runs (measured on Linux),
+  the read does not run. Against `5fd08069` these differences are not drift. On a config that
   changes many times each second, `5fd08069` makes more config reads (measured on
   Linux). For a config with a very long key, `5fd08069` ends config reads early
   (measured on Windows). A config whose listing passes 64 MiB can get no refusal
@@ -399,10 +406,13 @@ the linked pages. The history of each build is in
   Windows).
   See [The settings copy](PROTOCOL.md#the-settings-copy).
 - A remove with a worktree folder that exists lists again after a failed
-  listing, as on `5fd08069` (measured on Linux, macOS and Windows). `f6010b97`,
-  and `89cb6289` with an empty `GIT_CONFIG_KEY_0` in the daemon environment,
-  answer the lock-check text there. In a plain folder claustrum makes one more
-  listing and `rev-parse` than `5fd08069`, with equal replies (measured on
+  listing, as on `5fd08069` (measured on Linux, macOS and Windows). `f6010b97`
+  answers the lock-check text there. Take an empty `GIT_CONFIG_KEY_0` in the
+  daemon environment. claustrum and `5fd08069` then answer the hooks refusal with
+  the text of the failed listing. `89cb6289` answers the lock-check text. Take a
+  `baseRepo` that is a plain folder, with nothing set. After a failed first
+  listing and a failed `rev-parse --absolute-git-dir`, claustrum makes one more
+  listing and `rev-parse` than `5fd08069`. The replies are equal (measured on
   Linux). See [The repository checks](protocol/git-worktree-remove.md#the-repository-checks).
 - The reap of a child record with a `program` key splits the pins too, off the
   wire. claustrum follows `89cb6289`. `5fd08069` is not measured there.
