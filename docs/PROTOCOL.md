@@ -537,7 +537,7 @@ On Windows the launcher starts the daemon outside the job of the launcher
 (`CREATE_BREAKAWAY_FROM_JOB`). So the daemon stays alive after an SSH session whose
 job ends its processes. How the reference leaves the job is not measured. If the
 job refuses breakaway, the launcher starts the daemon inside the job and prints
-one line on its stderr. The reference prints this text after a time stamp, and
+one line on its stderr. `89cb6289` prints this text after a time stamp, and
 claustrum puts its level tag before it:
 
 ```
@@ -586,11 +586,11 @@ After the `SIGTERM` the daemon polls for 2 s. At each poll a group takes the who
 
 A `-serve` daemon closes any accepted connection that goes 5 minutes with no read
 or write. This matches `f6010b97` (measured on Linux). `5fd08069` closes at the
-same times (measured on Linux and macOS). The timeout is fixed and always on, with no flag
-and no configuration key. A watcher of each connection checks at a quarter of the
-timeout, at most every 30 s. At the timeout it closes the socket and logs
-`[Server] closing connection idle <d> in both directions: <addr>`. The reference
-logs that text with `5m0s` and `@` (measured on Linux). The watcher ends with its
+same times as claustrum (measured on Linux and macOS). The timeout is fixed and
+always on, with no flag and no configuration key. A watcher of each connection
+checks at a quarter of the timeout, capped at 30 s. At the timeout it closes the
+socket and logs `[Server] closing connection idle <d> in both directions:
+<addr>`. `89cb6289` logs that text with `5m0s` and `@` (measured on Linux). The watcher ends with its
 connection and at shutdown. The close sends no frame, and it never ends the
 daemon. On Linux and macOS the [orphan-exit self-probe](#orphan-exit-self-probe)
 retires a daemon with no client.
@@ -598,8 +598,8 @@ retires a daemon with no client.
 ### Daemon log (`remote-server.log`)
 
 The rules of the file and the peer-check lines are measured against `5fd08069`,
-and the startup lines against `f6010b97` and `89cb6289`. A rule that names one system was measured on that system, and an
-unmarked rule on Linux and macOS.
+and the startup lines against `f6010b97` and `89cb6289`. A rule that names one
+system was measured on that system, and an unmarked rule on Linux and macOS.
 
 At each start the launcher renames an existing `remote-server.log` in the
 socket's directory to `remote-server.log.old`. Then it creates a fresh log there
@@ -739,8 +739,8 @@ signal from another process (measured on Linux). `89cb6289` removes
 `daemon.token` (measured on Linux). claustrum removes it through its graceful
 stop (from the code).
 
-These are the log lines of `89cb6289`, and claustrum logs the same texts
-(measured on Linux):
+These are the log lines of `89cb6289` in one run, and claustrum logs the same
+texts with its own values (measured on Linux):
 
 ```
 [Server] socket path <socket> no longer leads to this daemon; shutting down if that holds for 10m0s with nobody connected
@@ -754,9 +754,8 @@ On `89cb6289` the second line came about 10 minutes after the first, and the
 third one minute later (measured on Linux). The reference logs `orphaned for
 11m0s` or `12m0s` (measured on Linux). claustrum logged `12m0s` (measured on
 Linux), and the code prints `11m0s` at exact ticks. The cause of that minute is
-not measured. At
-the self-exit the reference ends the children with `SIGKILL`, and claustrum ends
-them too (measured on Linux).
+not measured. At the self-exit `89cb6289` ends the children with `SIGKILL`, and
+claustrum ends them too (measured on Linux).
 
 A check with no client also ends a daemon after 30 days with no counted request,
 on the monotonic clock. Each request past auth counts, except
