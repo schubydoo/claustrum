@@ -51,8 +51,8 @@ This method has no `errorCode` member. A failure is a JSON-RPC error. A failure 
 | `-32602` | `Invalid params` | The request has no `params` member, or a member that it reads has the wrong type. See [the rules for `params`](../PROTOCOL.md#params-presence-and-typing). |
 | `-32602` | `baseRepo is required` | `baseRepo` is absent, or empty (from the code). |
 | `-32603` | `the repository's git directory could not be trusted; git not run: …` | The daemon does not trust the git directory. See [Git-directory trust check](../PROTOCOL.md#git-directory-trust-check). |
-| `-32603` | `config-defined hooks could not be pinned off; git not run: …` | A config listing failed or passed a limit of the hook pins, the daemon refuses its own git environment, or a daemon `GIT_DIR` names a gone worktree entry. A listing that runs 30 seconds is stopped, and the text goes on with `listing the configuration in force: git took too long: Claude stopped git config after 30 seconds; try again`. See [Refusal texts](../PROTOCOL.md#refusal-texts) and [The daemon's own git environment](../PROTOCOL.md#the-daemons-own-git-environment). |
-| `-32603` | `git cannot run on this host; git not run: …` | A config listing, the start test or the call about the repository failed, and then a `git version` call failed too. |
+| `-32603` | `config-defined hooks could not be pinned off; git not run: …` | A config listing failed or passed a limit of the hook pins, the daemon refuses its own git environment, or a daemon `GIT_DIR` names a gone worktree entry. A listing that runs 30 seconds is stopped, and the text goes on with `listing the configuration in force: git took too long: Claude stopped git config after 30 seconds; try again`. See [Trust refusal texts and frames](../PROTOCOL.md#trust-refusal-texts-and-frames), [Refusal texts](../PROTOCOL.md#refusal-texts) and [The daemon's own git environment](../PROTOCOL.md#the-daemons-own-git-environment). |
+| `-32603` | `git cannot run on this host; git not run: …` | A config listing, call 7 of the start test or the call about the repository failed, and then a `git version` call failed too. |
 | `-32603` | `this repository's git config cannot be used: …` or `a file in this repository's .git directory cannot be used: …` | The daemon read the git config of the repository, or a file of its git directory, and does not accept it. See [Repository config refusals](../PROTOCOL.md#repository-config-refusals). |
 | `-32603` | `Claude could not test git on the remote machine (…). Check free disk space and quota there, then try again.` | The start test of the settings copy failed. The daemon keeps the failure for 10 seconds. See [The start test](../PROTOCOL.md#the-start-test). |
 | `-32603` | `git could not check this repository on the remote machine: …` or `git and Claude disagree about which repository holds this folder: …` | The call that asks git about the repository failed, did not end in 30 seconds, or named another repository. See [The call about the repository](../PROTOCOL.md#the-call-about-the-repository). |
@@ -135,11 +135,11 @@ The daemon runs `git status`, `ls-files`, `rev-parse` and `diff-index` in `path`
 2. One entry for each gitlink in the index, unless `<name>/.git` does not exist (measured on Linux). A gitlink is an index entry of mode `160000`. There is one entry for each index stage, so a gitlink in conflict gives three (measured on Linux).
 3. One entry for each staged change whose old or new mode is `160000` (measured on Linux).
 
-A submodule entry is ` S `, the quoted name and one of three texts:
+A submodule entry is ` S `, the quoted name and one of three texts (measured on Linux):
 
 | Text | Meaning |
 |---|---|
-| ` (submodule present; contents not inspected)` | `<name>/.git` exists, as a file, a folder or a dangling symbolic link. A gitlink path that is a symbolic link to a folder inside the work tree counts as present. |
+| ` (submodule present; contents not inspected)` | `<name>/.git` exists, as a file, a folder or a dangling symbolic link. A gitlink path that is a symbolic link to a folder inside the work tree counts as present (measured on Linux). |
 | ` (submodule; could not be inspected)` | The daemon cannot look at `<name>/.git` (measured on Linux). Examples are a gitlink path that is a regular file, a symbolic link out of the work tree, or a folder of mode 000 (measured on Linux). |
 | ` (submodule change staged; contents not inspected)` | A staged change of a gitlink (measured on Linux). |
 
@@ -149,7 +149,7 @@ The limits:
 
 - A porcelain line over 512 bytes is cut to 512 bytes, and `…` follows (measured on Linux). At most 10000 porcelain lines pass, and no entry marks the cut (measured on Linux). The submodule entries still follow (measured on Linux).
 - A submodule name over 200 bytes is cut to 200 bytes, and `…` follows (measured on Linux). The name is then quoted with double quotes, `\"`, `\n`, `\t`, and `\xff` for a byte that is not valid UTF-8 (measured on Linux). A printable character outside ASCII stays (measured on Linux).
-- At most 100 submodule entries pass. Then one entry gives the count of the rest, for example ` S … (+20 more submodule entries)`.
+- At most 100 submodule entries pass (measured on Linux). Then one entry gives the count of the rest, for example ` S … (+20 more submodule entries)`.
 
 claustrum's own, not measured: a cut can split a multi-byte character. In a porcelain line, the JSON encoding then sends U+FFFD for each leftover byte. In a submodule name, the quoting writes each leftover byte as `\xNN`.
 
@@ -170,7 +170,7 @@ claustrum's own, not measured: a cut can split a multi-byte character. In a porc
 
 ## Differences from the reference
 
-An unmarked rule on this page matches the reference as measured on `5fd08069` or on an earlier build.
+An unmarked rule on this page matches the reference as measured on `5fd08069` or on an earlier build. A row of Errors that links a section of PROTOCOL.md has the system marks of that section.
 
 This entry of the divergence catalog applies to this method:
 
