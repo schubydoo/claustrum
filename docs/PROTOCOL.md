@@ -757,7 +757,8 @@ path that does not exist keeps its frame.
 On Windows git cannot start in some paths that exist, and the listing fails by
 class 3 with the start error `fork/exec <git.exe path>: The directory name is
 invalid.`. `<git.exe path>` is the git that `PATH` resolves. The hooks refusal
-with that error answers these requests in the "refused" frame of the table above,
+with that error answers these requests in the "refused" frame of
+[Trust refusal texts and frames](#trust-refusal-texts-and-frames),
 and nothing changes on disk:
 
 - `git.info` with `path` a regular file in a plain folder or in a repository, a
@@ -827,16 +828,18 @@ git that walks past a FIFO `.git`:
 - A `.git` that is a FIFO, a socket (measured on Linux only) or a symlink to a FIFO
   or to `/dev/null` is skipped by the walk. For a FIFO, `git.info`,
   `git.list_branches`, a create and a remove then answer for the repository above
-  it. For the other three kinds, `git.info` and a create do. A create there
-  succeeds. `git.status` with that folder as `path` and the repository above
-  as `baseRepo` answers `{"isRepo":false,"clean":false}`. With no repository above, the answer is "no
+  it. That remove deletes the folder, the entry and the branch. For a socket and a
+  symlink to `/dev/null`, `git.info` and a create do. For a symlink to a FIFO, a
+  create does. A create there succeeds. `git.status` with that folder as `path`
+  and the repository above as `baseRepo` answers
+  `{"isRepo":false,"clean":false}`. With no repository above, the answer is "no
   repository", and a create makes nothing.
 - A `commondir` FIFO in the entry of a linked `baseRepo` gives M4 with
   `commondir is not a regular file`.
 - A `commondir` FIFO in the entry of the worktree that a remove names: without
   `worktreeRoot` the remove succeeds and deletes the folder, the entry and the
-  branch. A locked worktree there gets the locked refusal, and nothing is deleted. With
-  `worktreeRoot` the remove gives no answer in 40 s, and nothing is deleted. It
+  branch. A locked worktree there gets the locked refusal, and nothing is deleted.
+  With `worktreeRoot` the remove gives no answer in 40 s, and nothing is deleted. It
   waits in `git worktree list --porcelain -z`.
 - A remove of a worktree whose entry has a `commondir` regular file of 2 MiB
   succeeds and deletes the folder, the entry and the branch (measured on Linux and
@@ -853,7 +856,10 @@ git that walks past a FIFO `.git`:
 The [time limit](#time-limits-of-git-calls) of the add ends that create (from the
 code). A device file or a socket as a `commondir` file or a `gitdir` record is no
 usable file (from the code). claustrum reads nothing from a FIFO that a writer
-opens during the request (from the code). A FIFO as the config is in
+opens during the request (from the code). After `git worktree add`, a `commondir`
+of the git directory of `baseRepo` that is not a regular file counts as none, so
+that git directory is its own common directory (from the code). A FIFO as the
+config is in
 [Repository config refusals](#repository-config-refusals).
 
 ### Repository config refusals
