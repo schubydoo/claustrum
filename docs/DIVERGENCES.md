@@ -382,10 +382,10 @@ no flag and no key.
 
 - **Behavior.** On Windows, with no global excludes file of the user,
   `git.status` of a `path` that names a linked worktree returns the status
-  result (`{"isRepo":true,"clean":false,"changes":[…]}`). claustrum passes
-  `-c core.excludesFile=/dev/null` to the `status`, `ls-files` and `diff-index`
-  calls of `git.status` (`statusExcludesFile`). Every other call with that item
-  passes `NUL`, as the reference does.
+  result (`{"isRepo":true,"clean":false,"changes":[…]}`). On Windows claustrum
+  passes `-c core.excludesFile=/dev/null` to the `status`, `ls-files` and
+  `diff-index` calls of `git.status` (`statusExcludesFile`). Every other call
+  with that item passes `NUL` there, as the reference does.
 - **Reference.** On Windows it answers `-32603 "exit status 128"` there
   (measured on Windows). It passes `NUL`, and Git for Windows 2.55.0 refuses it
   with `fatal: cannot use NUL as an exclude file`. With a user excludes file its
@@ -417,9 +417,10 @@ no flag and no key.
   it answers `{"success":true}` and deletes only the branch. So a live worktree
   behind the junction is left on a deleted branch. With no worktree behind it,
   the answer is `{"success":true}` too. This is measured on `f6010b97`, and on
-  `89cb6289` for a branch that another ref reaches. On Windows, for a
-  junction above `.claude` and a leaf and branch that do not exist, `89cb6289`
-  answers `{"success":true}`, and nothing changes on disk. Not measured: a live
+  `89cb6289` for a branch that another ref reaches. A junction above `.claude`
+  with a leaf and branch that do not exist gets `{"success":true}` from
+  `89cb6289`. Nothing changes on disk (measured on Windows).
+  Not measured: a live
   worktree behind such a junction, and the branch step there.
 - **Systems and switch.** Windows. Always on, no switch.
 - **Cost.** A Windows client sees `success:false` where the reference sends
@@ -448,10 +449,10 @@ no flag and no key.
   signals. No frame changes.
 - **Reference.** `89cb6289` sends that `SIGKILL` within 5 ms of the `SIGTERM`
   (measured on Linux). So a child that replaces its program on `SIGTERM` is
-  sometimes ended on Linux, and was not ended on macOS. It also sends a group
-  `SIGKILL` in some runs where the child ends on `SIGTERM` (measured on Linux).
-  claustrum sends none there, and with the wait it did not end the child that
-  replaces its program (measured on Linux and macOS).
+  sometimes ended on Linux, and was not ended on macOS (measured on Linux and
+  macOS). It also sends a group `SIGKILL` in some runs where the child ends on
+  `SIGTERM` (measured on Linux). claustrum sends none there. With the wait it
+  did not end the child that replaces its program (measured on Linux and macOS).
 - **Systems and switch.** Linux and macOS. Always on, no switch. The 50 ms is
   claustrum's own value.
 - **Cost.** The group `SIGKILL` comes about 50 ms later. A reap whose groups all
@@ -483,14 +484,16 @@ no flag and no key.
 - **Reference.** In the plain state it refuses with the same text. `89cb6289`
   answers success in four states. S is a worktree locked in T, the `.git` folder
   of `baseRepo`, and X is another repository:
-  - a daemon `GIT_DIR` of X, with or without `GIT_COMMON_DIR` of X: it deletes
-    the folder of S, and the entry in T stays (Linux, macOS and Windows)
+  - a daemon `GIT_DIR` and `GIT_COMMON_DIR` of X: it deletes the folder of S,
+    and the entry in T with its `locked` file stays (Linux, macOS and Windows)
+  - a daemon `GIT_DIR` of X alone: it deletes the folder of S (Linux, macOS and
+    Windows)
   - `baseRepo` `<T>/missing/..` with no folder `missing`: it deletes the folder
-    of S with `"branchKept":true` (Linux and macOS, Windows refuses that
-    `baseRepo` on both sides)
+    of S with `"branchKept":true` (Linux and macOS). This state is not measured
+    on Windows: both sides refuse that `baseRepo` there
   - the `GIT_DIR` and `GIT_COMMON_DIR` state with the folder of S gone: it
-    deletes nothing. claustrum answers the "is gone but its registration is
-    locked" refusal (Linux, macOS and Windows)
+    deletes nothing (Linux, macOS and Windows). claustrum answers the "is gone
+    but its registration is locked" refusal
 
   With `worktreeRoot` in the `GIT_DIR` states, `89cb6289` answers the
   `could not verify` text, or success with the folder gone. It deletes nothing,
@@ -533,11 +536,13 @@ no flag and no key.
 
 - **Behavior.** The tests after the add can accept the registration of the new
   worktree. Then `git.worktree_create` takes the identity of that folder and
-  holds it open until it answers. If the open fails, the identity comes from a
-  stat of the path (not measured). On Windows the identity is that of the
-  staging folder, held open from its mkdir to the end of the move.
+  holds it open until it answers. While that handle is open, a new folder cannot
+  get that identity. If the open fails, the identity comes from a stat of the
+  path (not measured). On Windows the identity is that of the staging folder,
+  held open from its mkdir to the end of the move.
   - A rollback deletes the registration in one case only: the folder at the path
-    still has that identity. It adds no text, and the branch step runs.
+    still has that identity. The test runs through the root that the delete
+    opened. It adds no text, and the branch step runs.
   - After a failed `rev-parse --show-toplevel`, the rollback deletes the one new
     entry of the listing after the add, by the identity from that listing. A
     sibling registration moved to that name stays. `5fd08069` deletes it
@@ -586,9 +591,10 @@ no flag and no key.
 - **Reference.** On Windows a folder `.claude\worktrees` with case sensitivity
   on holds a live worktree `W1`, and a client creates `w1`. `5fd08069` deletes
   `.git\worktrees\W1` before the add and answers success. `W1` then reads the
-  records of `w1`, and its own branch is no longer checked out.
+  records of `w1`, and its own branch is no longer checked out (measured on
+  Windows).
 - **Systems and switch.** Windows. On-wire, always on, no switch.
-- **Cost.** In that state the create answers
+- **Cost.** `W1` stays on its branch. In that state the create answers
   `{"success":false,"error":"git worktree add failed: Preparing worktree (new branch 'b1') fatal: '<repo>/.claude/worktrees/w1' is a missing but already registered worktree; use 'add -f' to override, or 'prune' or 'remove' to clear","errorCode":"worktree_add_failed"}`.
   The branch `b1` stays, because git makes it before it refuses. No cost where
   the folder of a stale entry is gone (from the code). A `Lstat` that fails with
