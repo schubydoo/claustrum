@@ -104,7 +104,8 @@ Noun. This term has two uses:
   [Reference builds](REFERENCE-BUILDS.md#when-you-bump-the-pin).
 - A pin is a value that the daemon gives to a git call and that the git
   configuration cannot change. Examples are the `GIT_COMMON_DIR` pin and the
-  hook pins. See [Hardened git calls](PROTOCOL.md#hardened-git-calls).
+  hook pins. See [Git-directory trust check](PROTOCOL.md#git-directory-trust-check)
+  and [Hook pins](PROTOCOL.md#hook-pins).
 
 ## probe
 
