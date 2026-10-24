@@ -1454,7 +1454,8 @@ A hardened call uses the heavy profile or the light profile:
   `shadow`, and a Windows VM the state `fallback-git`. The checkout
   and its listings keep the four light values. With `"shadowDirOff":true` the light
   calls carry the four light values.
-- The calls of [the branch step](#the-branch-step) have their own variables.
+- The calls of [the branch step](#the-branch-step) carry the six heavy values,
+  in an order of their own.
 - The `status`, `ls-files` and `diff-index` calls of `git.status` add
   `GIT_OPTIONAL_LOCKS=0`. The checkout adds `GIT_INDEX_FILE`.
 - The order of the variables is measured on Linux and macOS VMs. The Windows logs of
@@ -1792,37 +1793,36 @@ table gives the frame of each method, and the refusals that come before the chec
 ### Time limits of git calls
 
 On `git.list_branches`, `git.info`, `git.status` and `git.worktree_create` most
-calls end at 2 minutes (`5fd08069`, round `task010-01`, Linux, macOS and Windows
-VMs). Config listings before a git call have a 30 second limit (cells T10 and TA).
+calls end at 2 minutes. Config listings before a git call have a 30 second limit (the one before the
+checkout: Linux and macOS VMs).
 So do the repository config read (`git.status`, Linux VM) and each
-`config.worktree` listing (cells TW and TS, round `task010-04`, Linux VM).
-A create with the filter rule and no settings copy runs claustrum's own
-`--show-scope` listing, with the 2 minute limit and the `timeoutMs`. A stopped call of the top folder pair stops the create with the stop
-text (claustrum's own).
-The scan of
-ignored files ends at 10 minutes (Linux and macOS VMs). Read-tree checkouts have
-no such limit.
+`config.worktree` listing (Linux VM). A create with the filter rule and no
+settings copy runs claustrum's own `--show-scope` listing, with the 2 minute
+limit and the `timeoutMs`. A stopped call of the top folder pair stops the create
+with the stop text (claustrum's own). The scan of ignored files ends at 10
+minutes (Linux and macOS VMs). Read-tree checkouts have no such limit.
 
 - The stop is SIGTERM, then SIGKILL 2 s later. On Windows the process ends at
   once. Config file listings get SIGKILL alone, not the listing before the
-  read-tree call (Linux VM, cell A4x).
+  read-tree call (Linux and macOS VMs).
 - Before a good add no call follows a stopped call. A stopped add removes an
   empty leaf. A stopped repository test of a create answers the stop text alone,
-  with `worktree_add_failed` (cell TI). After a good add the rollback runs its own
-  calls (cells TA and TW). A stopped scan copies nothing, and the create succeeds.
-- While a `"shadowDirOff":true` request runs, no daemon call stops at 2
-  minutes (cells T8 and T9). Then claustrum's own limit is 30 minutes.
-- `timeoutMs` does not end the add (cell T6), nor, with `"shadowDirOff":true`,
-  the listing before the checkout (cell T12).
+  with `worktree_add_failed` (Linux VM). After a good add the rollback runs its
+  own calls (Linux and macOS VMs). A stopped scan copies nothing, and the create succeeds.
+- While a `"shadowDirOff":true` request runs, no call of that request stops at
+  2 minutes. No call of another request stops at 2 minutes then either (Linux
+  VM). claustrum's own limit is then 30 minutes.
+- `timeoutMs` does not end the add. With `"shadowDirOff":true` it does not end
+  the listing before the checkout either (Linux VM).
 - With no `timeoutMs` a reply waits 2 s after git exits for a child that holds
-  its output and gets no signal. Listings before a call and the `status` scan
-  wait until stdout closes, A1 and A2 past the limit (A1 to A4 of round
-  `task101-01`, both pipes held, Linux VM). Held past 30 s, the config read on standard input ends near 31 s (B1), and
-  `config.worktree` reads too (not measured). A holder of stderr alone delays a
-  config listing about 2 s and that read 1 to 1.5 s (A1-e and B1-e of rounds
-  `task111-01` and `task111-02`, Linux and macOS VMs).
-- `git.worktree_remove` gets none of these limits. Its first call has the 30 s bound
-  of the call about the repository (cell TR, round `task010-02`, Linux VM).
+  its output and gets no signal. Listings before a call wait until stdout
+  closes, also past the limit. The `status` scan waits too, within its limit
+  (Linux VM). Held past 30 s, the
+  config read on standard input ends near 31 s (Linux VM), and `config.worktree`
+  reads too (not measured). A holder of stderr alone delays a config listing
+  about 2 s and that read 1 to 1.5 s (Linux and macOS VMs).
+- `git.worktree_remove` gets none of these limits. Its first call has the 30 s
+  bound of the call about the repository (Linux VM).
 
 ### The branch step
 
@@ -1831,9 +1831,13 @@ remote-tracking ref reaches its tip. Else it keeps the branch.
 `git.worktree_remove` runs it after the worktree directory and its registration
 go. The `git.worktree_create` rollbacks run it on the branch that the call made.
 `<b>` is `branchName` as sent. `<tip>` is the object name in the listed record
-of `refs/heads/<b>`. A rule that is not marked is measured against
-`89cb6289` on a Linux VM. A rule that names macOS or Windows was measured there
-too. A rule marked "claustrum's own" is not measured.
+of `refs/heads/<b>`. A rule of this section with no other mark is measured
+against `89cb6289` on a Linux VM.
+
+Each git call of the step runs in `baseRepo` after its own configuration
+listing. It carries the light `-c` list and the six values of the heavy
+profile, in an order of their own (see [Hardened git calls](#hardened-git-calls))
+(Linux, macOS and Windows VMs).
 
 #### Which branch the step deletes
 
@@ -1867,35 +1871,9 @@ too. A rule marked "claustrum's own" is not measured.
       reads the config of the repository again. A refusal there keeps the
       branch (`5fd08069`, Linux and macOS VMs).
 
-#### The git calls of the branch step
-
-Each call runs in `baseRepo` after its own configuration listing (see
-[Hardened git calls](#hardened-git-calls)). The calls are
-`for-each-ref --count=10001 --format=%(objectname)%00%(refname)%00%(symref)
-refs/heads/`, `rev-parse --verify --quiet refs/heads/<b>^{commit}`,
-`rev-list -n 1 <tip> --not --remotes --not --stdin --` and
-`update-ref --no-deref -d refs/heads/<b> <tip>`. Every call carries the light
-`-c` list, and `rev-list` adds `-c core.commitGraph=false` after it. The daemon's
-own environment comes first (see
-[The daemon's own git environment](#the-daemons-own-git-environment)). Then the
-calls set `GIT_TERMINAL_PROMPT=0`,
-`GIT_NO_REPLACE_OBJECTS=1`, `GIT_GRAFT_FILE=<null device>` and the
-`GIT_COMMON_DIR` pin. Then come `GIT_CONFIG_COUNT`, the inherited config pairs,
-the hook pins,
-`GIT_NO_LAZY_FETCH=1`,
-`GIT_ALLOW_PROTOCOL=denied_by_claude_ssh` and an empty `GIT_ASKPASS` (Linux,
-macOS and Windows VMs). Only `rev-list` gets a pipe on stdin: one
-`^<refname>` line for each other local branch that is not a symbolic ref. The
-other calls get the null device, where `89cb6289` gives a character device (macOS
-VM). In
-some states the reference runs more git calls than claustrum. Examples are no
-repository at `baseRepo`, a gone worktree path, a second create at one path and
-an attach add. The frames are equal.
-
 #### Time limits of the branch step
 
-These bounds are parity. They are always on, and they are not a divergence of
-the catalog.
+These bounds are always on. They are not a divergence.
 
 - One bound of 60 s covers the branch list and the commit check together. At the
   bound the running call is killed, with no SIGTERM first (Linux, macOS and
@@ -1917,11 +1895,10 @@ the catalog.
   one goes through a linked worktree. If two removes have branches that share a
   unique commit, one branch stays, and the second reply has
   `"branchKept":true` (Linux and macOS VMs). claustrum keys this lock by the
-  common git dir, also in a rollback (claustrum's own). So two names of one git
-  directory count as one repository here.
+  common git dir, also in a rollback (claustrum's own).
 - The steps of different repositories run at the same time.
-- claustrum runs two removes of one `baseRepo` one after the other. `89cb6289`
-  deletes both worktree directories first.
+- claustrum runs two removes of one `baseRepo` one after the other (claustrum's
+  own).
 - A remove deletes its worktree directory while the `worktree add` of a create
   in the same git directory runs. Its registration, branch and reply wait for
   the add (`5fd08069`, Linux and macOS VMs). They do not wait for the checkout
