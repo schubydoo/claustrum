@@ -605,7 +605,7 @@ var docWordLimits = map[string]int{
 	"docs/DIVERGENCES.md":                  8000,
 	"docs/EXAMPLES.md":                     1200,
 	"docs/GLOSSARY.md":                     1300,
-	"docs/IMPROVEMENTS.md":                 2300,
+	"docs/IMPROVEMENTS.md":                 1700,
 	"docs/PROTOCOL.md":                     37900,
 	"docs/UPSTREAM-TRACKING.md":            7200,
 	"docs/index.md":                        800,
