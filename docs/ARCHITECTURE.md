@@ -10,8 +10,8 @@ more dependency goes into Windows builds only. It is
 
 All code is in `package main`, except `handlers/prune.go`. That package holds
 `handlers.PruneParams`, so the `-32602` text of `plugins.prune` names the type
-of the reference byte for byte. A suffix `_unix`, `_linux`, `_darwin`,
-`_windows` or `_other` marks the part of a group for that OS. Every OS serves
+of the reference byte for byte. A suffix such as `_unix` or `_windows`, or a
+build tag alone, marks the part of a group for one OS. Every OS serves
 the same JSON-RPC methods.
 
 | group | files | what they hold |
@@ -33,7 +33,8 @@ The five `git.*` methods start in `methods_git.go`. Their params are in
 
 - **Each git call.** `gitenv.go`, `gitchildenv*.go` and `githarden.go` build the
   environment of a git child. `gitstop.go` holds the time limits.
-  `gitlive_*.go` tests whether a git process still runs.
+  `gitlive_*.go` tests whether a git process still runs. `gitworktreeconfig*.go`
+  holds the `config.worktree` items, and the file of a new worktree.
 - **Trust of a repository.** `gitdirtrust*.go`, `gitlisting.go`,
   `gitrepoconfig*.go`, `gitfilter.go` and `gitplainfile_*.go` hold the checks
   before git runs. They also read the `.git` files.
@@ -41,16 +42,18 @@ The five `git.*` methods start in `methods_git.go`. Their params are in
   holds the folder of one daemon under `<socket folder>/git-shadow` with its
   lock, the hold of a repository folder and the copied settings.
 - **Info and status.** `gitstatus.go` and `gitinforoot_*.go`.
+- **Create and remove.** `worktreecontain.go`, `worktreeexternal*.go`,
+  `externalunsupported_*.go` and `spelling_*.go` hold the path refusals of both.
+  `worktreelock.go` holds their locks. `worktreebranch*.go` holds the branch
+  step of a remove and of a rollback.
 - **Create.** `gitdiraccept.go` and `gitdirheld.go` hold the git directory open.
-  `worktreecontain.go`, `worktreeexternal*.go`, `externalunsupported_*.go` and
-  `spelling_*.go` hold the path refusals. `worktreeverify.go` holds the tests
-  after the add and both rollbacks. `worktreestaging.go` is the Windows staging
-  step. The copy steps are `worktreecopy.go`, `worktreeinclude*.go` and
-  `worktreeclaude.go`. The other steps are `worktreelock.go`,
-  `worktreemkdir_*.go`, `worktreestale*.go`, `worktreesource.go`,
-  `githarden_index_*.go` and `gitworktreeconfig*.go`.
-- **Remove.** `worktreeremove.go`. `worktreebranch*.go` holds the branch step of
-  a remove and of a rollback.
+  `worktreeverify.go` holds the tests after the add and the rollback steps.
+  `githarden_index_*.go` places the index and deletes the registration of a
+  rollback. `worktreestaging.go` is the Windows staging step. The copy steps
+  are `worktreecopy.go`, `worktreeinclude*.go` and `worktreeclaude.go`. The
+  other steps are `worktreemkdir_*.go`, `worktreestale*.go` and
+  `worktreesource.go`.
+- **Remove.** `worktreeremove.go`.
 
 [`AGENTS.md`](https://github.com/schubydoo/claustrum/blob/main/AGENTS.md) names
 the delete paths of these files and their guards. The page of each method has
@@ -144,7 +147,7 @@ session attaches to it. It injects no auth.)
   interleave safely.
 - Each managed process has a monotonic `seq`, an append-only frame buffer, and a
   set of subscriber connections. `spawn` subscribes the connection that spawned
-  the process. A process whose `id` a later spawn took keeps its subscribers. `reattach` REPLACES the whole subscriber set with the requester. It then
+  the process. `reattach` REPLACES the whole subscriber set with the requester. It then
   replays buffered frames with `seq > fromSeq`. Any connection attached before
   stops receiving frames for that process. It also closes each connection that
   it displaced. Claustrum detaches a dead
