@@ -373,7 +373,8 @@ no flag and no key.
   read, reported as a failed handover.
 - **Pointers.** [PROTOCOL.md → Run-dir lock](PROTOCOL.md#run-dir-lock-daemonlock).
   The host cleaner has its own gate, which is parity
-  ([Signals of the cleaner](PROTOCOL.md#signals-of-the-cleaner)). Code:
+  ([Signals of the cleaner](PROTOCOL.md#signals-of-the-cleaner),
+  `retireAbandoned`). Code:
   `daemon_runlock_unix.go` (`holderSignalRefusal`, `stopRunDirHolder`),
   `daemon_runlock_darwin.go` (`realIsServeCmdline`, `procArgv`) and
   `daemon_runlock_linux.go`.
@@ -401,7 +402,7 @@ no flag and no key.
   reference stops at its `status` call, so its value for the other two is not
   measured.
 - **Pointers.** [git.status](protocol/git-status.md#differences-by-system),
-  `gitstatus.go` and `githarden.go`.
+  `gitstatus.go` (`statusChanges`) and `githarden.go`.
 
 ### D19 · Refuse a junction between `baseRepo` and the leaf on remove (Windows, always-on) { #d19 }
 
@@ -446,13 +447,13 @@ no flag and no key.
   gone in that wait while its group still answers. claustrum then waits 50 ms
   and reads the leader again before the group `SIGKILL`. A leader that is alive
   again takes the record test. A leader that fails that test gets no more
-  signals. No frame changes.
+  signals. No frame changes. With the wait, claustrum did not end the child
+  that replaces its program (measured on Linux and macOS).
 - **Reference.** `89cb6289` sends that `SIGKILL` within 5 ms of the `SIGTERM`
   (measured on Linux). So a child that replaces its program on `SIGTERM` is
   sometimes ended on Linux, and was not ended on macOS (measured on Linux and
   macOS). It also sends a group `SIGKILL` in some runs where the child ends on
-  `SIGTERM` (measured on Linux). claustrum sends none there. With the wait it
-  did not end the child that replaces its program (measured on Linux and macOS).
+  `SIGTERM` (measured on Linux). claustrum sends none there.
 - **Systems and switch.** Linux and macOS. Always on, no switch. The 50 ms is
   claustrum's own value.
 - **Cost.** The group `SIGKILL` comes about 50 ms later. A reap whose groups all
@@ -587,14 +588,15 @@ no flag and no key.
   Before it deletes a matched entry, it tests the path that the record names, as
   written, with `Lstat`. If that path exists, the entry stays. Both forms of the
   step have the test: through the held git directory and by the path. Linux and
-  macOS compare exactly, so the missing leaf already proves the entry stale.
+  macOS compare exactly, so the missing leaf already proves the entry stale. In
+  the state below claustrum keeps the entry, and `W1` stays on its branch.
 - **Reference.** On Windows a folder `.claude\worktrees` with case sensitivity
   on holds a live worktree `W1`, and a client creates `w1`. `5fd08069` deletes
   `.git\worktrees\W1` before the add and answers success. `W1` then reads the
   records of `w1`, and its own branch is no longer checked out (measured on
   Windows).
 - **Systems and switch.** Windows. On-wire, always on, no switch.
-- **Cost.** `W1` stays on its branch. In that state the create answers
+- **Cost.** In that state the create answers
   `{"success":false,"error":"git worktree add failed: Preparing worktree (new branch 'b1') fatal: '<repo>/.claude/worktrees/w1' is a missing but already registered worktree; use 'add -f' to override, or 'prune' or 'remove' to clear","errorCode":"worktree_add_failed"}`.
   The branch `b1` stays, because git makes it before it refuses. No cost where
   the folder of a stale entry is gone (from the code). A `Lstat` that fails with
