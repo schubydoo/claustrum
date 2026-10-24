@@ -204,8 +204,8 @@ Check those before you conclude that something is drift.
 
 ### Drift, or an activated opt-in? — the parse-behaviour table
 
-An opt-in key that is *present* is not a deadline that is *in force*. A mistyped or
-inert value leaves the divergence off, and the parity behavior that results reads
+An opt-in key that is *present* is not a deadline that is *in force*. An unparseable,
+negative or inert value leaves the divergence off, and the resulting parity behavior reads
 like drift. So check for the key or flag first, and check that its value parses to
 a positive duration. One knob takes a duration: D12 (`cli-download-timeout`),
 which logs under `[Install]`. The deprecated `git-timeout`, `cli-probe-timeout`,
