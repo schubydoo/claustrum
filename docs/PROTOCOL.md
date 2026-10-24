@@ -490,9 +490,9 @@ The launcher connects to the socket path every 50 ms, for 12 s at most. It close
 each connection at once, so the log of the daemon that answers holds a
 `New connection from: @` / `Connection closed: @` pair. A socket file that refuses
 the connect does not end the wait. A killed daemon leaves such a file. A folder
-that holds an entry at the path does not end the wait either. The daemon cannot
-remove it, so it never binds (Linux and Windows VMs). An empty folder there is
-removed as an old socket file is (from the code, not measured).
+with content at the path does not end the wait either. The daemon cannot remove
+it, so it never binds (measured on Linux and Windows). An empty folder there is
+removed as an old socket file is (not measured).
 
 - The predecessor is the daemon that answered on the path before the start. On
   Linux and macOS, a daemon that answers and is not the predecessor ends the wait
@@ -504,27 +504,26 @@ removed as an old socket file is (from the code, not measured).
   `claustrum: daemon did not take over <socket> (predecessor still owns it)`. Any
   other wait gives `claustrum: timeout waiting for daemon to accept on <socket>`.
 
-After exit `0` the socket accepts connections. The launcher prints nothing on
-success, except the Windows breakaway line below. The daemon prints its
+After exit `0` the socket accepts connections. On success the launcher prints
+nothing but the Windows breakaway line below. The daemon prints its
 [ready line](#daemon-log-remote-serverlog) on its own stdout, which is the daemon
-log. When the launcher opens no log, the daemon keeps the stdout of the launcher,
-so the line goes there (from the code).
+log. When the launcher opens no log, that stdout is the stdout of the launcher
+(from the code).
 
-A restart on a live socket unlinks the old socket and binds a new one. This is off
-the JSON-RPC wire. The departing daemon's matching half is the inode-ownership
-unlink under [Token persistence](#token-persistence-daemontoken).
+A restart on a live socket unlinks the old socket and binds a new one, off the
+JSON-RPC wire. The half of the departing daemon is the identity-tested unlink
+under [Token persistence](#token-persistence-daemontoken).
 
 #### The bind after the reap (Linux and macOS)
 
-The daemon takes these steps in order. It claims `daemon.lock` and reaps the
-recorded children of a dead daemon. Then it removes the old socket file, binds,
-and completes the owner record of the lock. So nothing listens on the path while
-the reap waits for a group to end. A client connect in that wait fails. With the
-socket file of the dead daemon there, it gets `ECONNREFUSED`. With no socket file,
-it gets `ENOENT`. A recorded child
-that ignores `SIGTERM` makes the wait about 2 s. See
-[Child records and the reap](#child-records-and-the-reap-linux-and-macos) for the
-reap itself.
+The daemon claims `daemon.lock` and reaps the recorded children of a dead daemon.
+Only then does it remove the old socket file, bind, and complete the owner record
+of the lock. So nothing listens on the
+path while the reap waits for a group to end. A client connect in that wait fails:
+with the socket file of the dead daemon there, it gets `ECONNREFUSED`, and with no
+socket file, it gets `ENOENT`. A recorded child that ignores `SIGTERM` makes the
+wait about 2 s. [Child records and the reap](#child-records-and-the-reap-linux-and-macos)
+has the reap itself.
 
 On Windows the daemon also removes the old socket file before it binds. It runs no
 reap there.
@@ -533,10 +532,10 @@ reap there.
 
 On Windows the launcher starts the daemon outside the job of the launcher
 (`CREATE_BREAKAWAY_FROM_JOB`). So the daemon stays alive after an SSH session whose
-job ends its processes. How the reference leaves the job is not measured. A job
-that refuses breakaway refuses that start. The launcher then starts the daemon
-inside the job and prints one line on its stderr. `89cb6289` prints this text after
-a time stamp, and claustrum puts its level tag before it:
+job ends its processes. How the reference leaves the job is not measured. If the
+job refuses breakaway, the launcher starts the daemon inside the job and prints
+one line on its stderr. The reference prints this text after a time stamp, and
+claustrum puts its level tag before it:
 
 ```
 [daemon] detached spawn failed (fork/exec <binary>: Access is denied.); retrying without breakaway
@@ -544,7 +543,7 @@ a time stamp, and claustrum puts its level tag before it:
 
 #### Child records and the reap (Linux and macOS)
 
-A daemon that holds the [run-dir lock](#run-dir-lock-daemonlock) records each [process.spawn](protocol/process-spawn.md) child in `<run dir>/children/<pid>.json`, on every socket shape. The run dir is the folder of the socket path. The child needs a pid of 2 or more and a start time that the daemon can read. Windows writes no record and reaps none (Windows VM). Unless a rule says otherwise, the rules below are measured against `89cb6289` on Linux, and a rule that names macOS on macOS.
+A daemon that holds the [run-dir lock](#run-dir-lock-daemonlock) records each [process.spawn](protocol/process-spawn.md) child in `<run dir>/children/<pid>.json`, on every socket shape. The run dir is the folder of the socket path. The child needs a pid of 2 or more and a start time that the daemon can read. Windows writes no record and reaps none (measured on Windows). Unless a rule says otherwise, the rules below are measured against `89cb6289` on Linux, and a rule that names macOS on macOS.
 
 The record is one JSON object with the members in this order:
 
@@ -556,7 +555,7 @@ The record is one JSON object with the members in this order:
 
 - The daemon writes a record through a temp file `children/.rec-<pid>.json.<12 characters>` and a rename. The source of the 12 characters is claustrum's own.
 - The end of the child removes its record, before the pipe drain.
-- A graceful shutdown removes the records of the children that it ends. claustrum waits 1 s at most for them (claustrum's own). With `-keep-children` it removes the records of the children that stay alive, so the next daemon leaves them alone. That rule is claustrum's own, as the flag is.
+- A graceful shutdown removes the records of the children that it ends. claustrum waits 1 s at most for them (claustrum's own). With `-keep-children` it removes the records of the children that stay alive, so the next daemon leaves them alone (claustrum's own, as the flag is).
 - A record stays after a kill of the daemon, and for a process whose `id` a later spawn took.
 - After a rename of the run dir, a record goes under the new name. The daemon holds the run dir open.
 - No record goes through a `children` that is not a real folder inside the run dir. The remove at the end of the child is the one exception: it follows a symbolic link to a folder inside the run dir.
@@ -569,7 +568,7 @@ At a `-serve` start, after the run-dir lock and before the bind, the daemon read
 - It reads at most 4096 bytes of a record. A record whose first 4096 bytes are not one JSON value is removed, with no signal.
 - If `children` is not a real folder, it reads, signals and removes nothing. That is measured for a symbolic link to a folder. The other kinds are claustrum's own.
 
-A record of a daemon that is alive stays. So does a record from another machine, for 30 days (from the code). A record of a dead pid is removed. So is a record from an earlier boot of this machine (from the code). For a record of a dead daemon on this machine, the daemon tests the process. If it still is the recorded child, its group gets `SIGTERM`. Else the record goes with no signal. The test has four parts:
+A record of a daemon that is alive stays. So does a record from another machine, for 30 days (from the code). On macOS a `daemonStart` with two blanks before a one-digit day does not match the live daemon, so a new daemon reads that live daemon as gone. An older claustrum build wrote such a text on days 1 to 9 of a month. The children of that daemon then take the test below, and one whose `start` matches gets `SIGTERM`. A record of a dead pid is removed. So is a record from an earlier boot of this machine (from the code). For a record of a dead daemon on this machine, the daemon tests the process. If it still is the recorded child, its group gets `SIGTERM`. Else the record goes with no signal. The test has four parts:
 
 - The process started at the recorded `start`, so the pid is not reused. On macOS a `start` with two blanks before a one-digit day does not match.
 - It leads its own process group.
@@ -578,35 +577,26 @@ A record of a daemon that is alive stays. So does a record from another machine,
 
 A process that the daemon cannot inspect keeps its record and gets no signal (`5fd08069`, from the code). The daemon does not test the owner of a record file.
 
-On macOS a `daemonStart` with two blanks before a one-digit day does not match the live daemon either. An older claustrum build wrote such a text on days 1 to 9 of a month. A new daemon on macOS reads such a daemon as gone, although it is alive. It ends a recorded child whose own `start` matches, such as one that started on day 10 or later. A child that started on days 1 to 9 has two blanks in its `start` too, so its record is dropped with no signal.
-
 After the `SIGTERM` the daemon polls for 2 s. At each poll a group takes the whole test again. A group that fails it gets nothing more. A group that still passes after 2 s gets `SIGKILL`. After the last group is done, the records of all signalled groups go together. A leader that reads as gone is read again after 50 ms before the `SIGKILL` of its group ([D20](DIVERGENCES.md#d20)). A group that still cannot be inspected at the end, or that outlives the `SIGKILL`, keeps its record. The [log lines](#lines-of-child-processes) of the reap are under the daemon log.
 
 ### Idle-connection close
 
 A `-serve` daemon closes any accepted connection that goes 5 minutes with no read
-or write activity. This matches `f6010b97`, as measured. The timeout is fixed and
-always-on. There is no flag and no configuration key to change it or to disable
-it. The daemon stamps the last activity time on every read and write of the
-connection. A per-connection watcher polls for silence, at a quarter of the
-timeout, bounded to at most 30 s. Once the idle span reaches the timeout, the
-watcher closes the socket and logs
-`[Server] closing connection idle <d> in both directions: <addr>`. On a Linux VM
-(rows HC12a and HC12b), `89cb6289` logged that text with `5m0s` and `@`. `5fd08069`
-closes at the same times as claustrum (cells I1 to I4 of round `task034-01`, Linux
-and macOS VMs). The watcher stops as
-soon as the connection closes for any other reason, and as soon as the daemon
-shuts down. It therefore never outlives its connection. This is off the JSON-RPC wire, because it is connection lifecycle and
-sends no frame. It closes only an idle *connection*, never the daemon. On Linux
-and macOS a client-less orphan daemon is retired by the separate orphan-exit
-self-probe below.
+or write. This matches `f6010b97`, and `5fd08069` closes at the same times
+(measured on Linux and macOS). The timeout is fixed and always on, with no flag
+and no configuration key. A watcher of each connection checks at a quarter of the
+timeout, at most every 30 s. At the timeout it closes the socket and logs
+`[Server] closing connection idle <d> in both directions: <addr>`. The reference
+logs that text with `5m0s` and `@` (measured on Linux). The watcher ends with its
+connection and at shutdown. The close sends no frame, and it never ends the
+daemon. On Linux and macOS the [orphan-exit self-probe](#orphan-exit-self-probe)
+retires a daemon with no client.
 
 ### Daemon log (`remote-server.log`)
 
-The rules of the file are measured against `5fd08069`, and the startup lines
-against `f6010b97` and `89cb6289`. The peer-check lines are measured against
-`5fd08069`. A rule that names one system was measured on
-a VM of that system, and an unmarked rule on Linux and macOS VMs.
+The rules of the file and the peer-check lines are measured against `5fd08069`,
+and the startup lines against `f6010b97` and `89cb6289`. A rule that names one system was measured on that system, and an
+unmarked rule on Linux and macOS.
 
 At each start the launcher renames an existing `remote-server.log` in the
 socket's directory to `remote-server.log.old`. Then it creates a fresh log there
@@ -614,8 +604,8 @@ with mode `0600`. It sends the stdout and stderr of the daemonized child into
 that file, so its own streams stay empty, except for the launcher's own
 failures. Those are under [Daemon startup](#daemon-startup-serve) and
 [The token source](#the-token-source), and a log that cannot be created gives
-`claustrum: open log: <err>`. claustrum does not remove the log at
-shutdown (from the code), unlike the socket and `daemon.token`. So the log of the last run stays
+`claustrum: open log: <err>`. claustrum does not remove the log at shutdown (from
+the code), unlike the socket and `daemon.token`. So the log of the last run stays
 readable. The fixed name and location are the deployment contract, and they are
 not configurable.
 
@@ -661,18 +651,19 @@ measured).
 If the fresh create fails, the launcher judges the entry at the path without
 following it, and it opens no FIFO:
 
-- Nothing at the path fails the start with the error of the create (Linux VM).
+- Nothing at the path fails the start with the error of the create (measured on
+  Linux).
 - A folder fails the start with `is a directory`.
 - An own regular file is truncated. It keeps its mode and gets the lines.
-- An own link to an own regular file gets the same: the file is truncated (Linux
-  VM). On Windows a link fails with `permission denied`
+- An own link to an own regular file gets the same: the file is truncated
+  (measured on Linux). On Windows a link fails with `permission denied`
   ([D8](DIVERGENCES.md#d8)).
 - Every other entry fails the start with `permission denied` and stays
   unchanged. That is [D8](DIVERGENCES.md#d8).
 
-A failed start prints one line on stderr and exits 1. `5fd08069` prints the same
-refusal with its own prefix. No daemon, socket, `daemon.lock` or `daemon.token`
-follows it (from the code):
+A failed start prints one line on stderr and exits 1. The reference prints the
+same refusal with its own prefix. No daemon, socket, `daemon.lock` or
+`daemon.token` follows it (from the code):
 
 ```
 claustrum: open log: open <path>: is a directory
@@ -684,7 +675,7 @@ rename fails, and the launcher truncates the log. The second daemon then logs
 there. Each daemon writes at the offset of its own handle. So the earlier lines
 of the first daemon are lost, and its later lines sit behind a block of NUL
 bytes. A log that another process holds with no delete share is truncated too,
-and `.old` stays. This is parity now, and [D21](DIVERGENCES.md#d21) is retired.
+and `.old` stays. This is parity ([D21](DIVERGENCES.md#d21) is retired).
 
 #### Lines of child processes
 
@@ -703,7 +694,7 @@ These lines tell of [process.spawn](protocol/process-spawn.md) children and of t
 | Over 128 records | WARN | `[process.Registry] more than 128 records in <run dir>/children; leaving the rest for the next start` |
 | Over 64 groups | WARN | `[process.Registry] <n> more orphaned group(s) recorded in <run dir>/children than the 64 one start ends; leaving those for the next start` |
 | A record dropped | INFO | `[process.Registry] record <pid>.json: pid <pid> is not a child to end (<reason>); dropping the record, signalling nothing` |
-| A record kept | INFO | `[process.Registry] record <pid>.json: pid <pid> cannot be inspected now (<reason>); keeping the record, signalling nothing` (`5fd08069`, Linux VM) |
+| A record kept | INFO | `[process.Registry] record <pid>.json: pid <pid> cannot be inspected now (<reason>); keeping the record, signalling nothing` (`5fd08069`, measured on Linux) |
 | A group ended | INFO | `[process.Registry] ending orphaned process group <pgid> recorded by daemon instance "<instance>" (pid <daemon pid>): SIGTERM` |
 | The grace ran out | WARN | `[process.Registry] group <pgid> outlived SIGTERM for 2s: SIGKILL` |
 | A group fails the test | INFO | `[process.Registry] group <pgid> no longer verifies (<reason>); nothing more is sent to it` |
@@ -726,24 +717,24 @@ The main `<reason>` texts of a dropped record and of a group that fails the test
 ### Orphan-exit self-probe
 
 On Linux and macOS a `-serve` daemon whose socket path no longer leads back to it
-shuts down, as on 4534d86. The
-idle timeout closes only a *connection*. The probe is off the JSON-RPC wire. Its
-effects are log lines and, once orphaned, a self-directed authed
-`server.capabilities` request.
+shuts down, as on `4534d86`. The probe is off the JSON-RPC wire. Its effects are
+log lines and, once orphaned, a self-directed authed `server.capabilities`
+request.
 
 Every 60 seconds the daemon compares the file identity of its socket path
 (`os.SameFile`) to the inode it bound. If the path is gone or another inode, a
 10-minute grace clock starts. A path that still matches resets the clock. A check
 that sees a client starts the clock again and writes no line. So the first line
-below does not come after that client leaves, as on `5fd08069` (cell K2 of round
-tier1-01, Linux and macOS VMs). After the grace with nobody connected, the daemon
-dials its socket and compares the `instanceId` of the reply to its own. A probe
-that reaches itself resets the clock. Two failed probes, 60 seconds apart, start a
-graceful shutdown. It closes listeners, drops clients, and stops child process
-groups unless `-keep-children` is set.
+below does not come after that client leaves, as on `5fd08069` (measured on Linux
+and macOS). After the grace with nobody connected, the daemon dials its socket
+and compares the `instanceId` of the reply to its own. A probe that reaches itself
+resets the clock. Two failed probes, 60 seconds apart, start a graceful shutdown.
+It closes listeners, drops clients, and stops child process groups unless
+`-keep-children` is set. The daemon exits with code 0 and removes `daemon.token`
+(measured on Linux).
 
-A Linux VM measured the self-exit of a stranded reference daemon (rows ST09 and
-ST11, several runs). The log lines of `89cb6289` in one run:
+These are the log lines of `89cb6289`, and claustrum logs the same texts
+(measured on Linux):
 
 ```
 [Server] socket path <socket> no longer leads to this daemon; shutting down if that holds for 10m0s with nobody connected
@@ -753,23 +744,19 @@ ST11, several runs). The log lines of `89cb6289` in one run:
 [Server] cleanup: closed 0 connection(s), killed 0 child process group(s)
 ```
 
-The second line came 9 min 59 s after the first, and the third line one minute
-later. `f6010b97` logged the second and third line one minute later
-(`orphaned for 12m0s`), in its one run. `89cb6289` logged `11m0s` in four rows and
-`12m0s` in three. Each daemon exited with code 0, with no signal from another
-process, and removed `daemon.token`. At its self-exit `89cb6289` ended both
-children with `SIGKILL` (row ST11). On a Linux VM, claustrum logged the same
-texts, ended both children and exited with code 0 (rows ST09 and ST11). It logged
-`orphaned for 12m0s` in each of its six rows. The cause of the 60 s difference is
-not measured, and the interval of the reference is not measured.
+The second line comes about 10 minutes after the first, and the third line one
+minute later. The reference logs `orphaned for 11m0s` or `12m0s`, and claustrum
+logs `12m0s` (measured on Linux). The cause of that minute is not measured. At
+the self-exit the reference ends the children with `SIGKILL`, and claustrum ends
+them too (measured on Linux).
 
 A check with no client also ends a daemon after 30 days with no counted request,
 on the monotonic clock. Each request past auth counts, except
 `server.capabilities`. This idle exit is not measured on a reference build.
 
 The checks run on Linux and macOS only. On Windows a daemon whose socket file was
-deleted writes no line. `5fd08069` wrote no line and was still alive after 14 min
-(cell K3 of round tier1-01, Windows VM).
+deleted writes no line. `5fd08069` wrote no line and was still alive after 14
+minutes (measured on Windows).
 
 ## Message shapes
 
