@@ -111,7 +111,7 @@ These hold for each opt-in entry:
 - At the shipped defaults, the bounds of the `--version` run, of a managed
   launcher run, of the download and of the `ldd` libc probe are bounds of the
   reference, not divergences.
-  [PROTOCOL.md → -install](PROTOCOL.md#-install-ensure-the-agent-cli) has each
+  [INSTALL.md → -install](INSTALL.md#-install-ensure-the-agent-cli) has each
   value. Two clocks are claustrum's own: the wait of up to 2 s for the output of a
   stopped launcher run, and the 0.2 s bound of the Windows rename retry. The
   stdlib transport clocks (`net.Dialer{Timeout: 30s}`, `TLSHandshakeTimeout:
@@ -216,7 +216,7 @@ no flag and no key.
   the `\\?\` prefix and a dot or a space after its last name.
 - **Pointers.** [files.extract_tar](protocol/files-extract-tar.md),
   [git.worktree_remove](protocol/git-worktree-remove.md#where-the-paths-can-be),
-  [PROTOCOL.md → -install](PROTOCOL.md#-install-ensure-the-agent-cli),
+  [INSTALL.md → -install](INSTALL.md#-install-ensure-the-agent-cli),
   `homeguard_test.go` (the `wipeDestDir` seam keeps the suite safe against an
   unfixed tree) and `install.go` (`stageAndInstall`).
 
@@ -246,7 +246,7 @@ no flag and no key.
   `/` or `\`, with `cli version "…" must be a single path component`. Nothing
   is written or removed at a path built from the version, and the blob stays.
   A last component that is a symbolic link stays legal, because `os.RemoveAll`
-  unlinks it. [PROTOCOL.md → -install](PROTOCOL.md#-install-ensure-the-agent-cli)
+  unlinks it. [INSTALL.md → -install](INSTALL.md#-install-ensure-the-agent-cli)
   has the cache hit that comes first and the sweeps that are not behind this
   rule.
 - **Reference.** No such rule. With `-cli-version ../x` and a blob it installs
@@ -322,7 +322,7 @@ no flag and no key.
   Desktop owns the argv.
 - **Reopen trigger.** Desktop stops treating a disk-full message as terminal,
   which removes the cost.
-- **Pointers.** [PROTOCOL.md → -install](PROTOCOL.md#-install-ensure-the-agent-cli)
+- **Pointers.** [INSTALL.md → -install](INSTALL.md#-install-ensure-the-agent-cli)
   and `install.go` (`fetchCLI`, `zstdDecompress`).
 
 ### D12 · Make the `-install` CLI download bound opt-in { #d12 }
@@ -344,7 +344,7 @@ no flag and no key.
 - **Rule.** Rule 4. Desktop owns the argv.
 - **Reopen trigger.** An operator with the bound set reports an honest slow
   download that it failed.
-- **Pointers.** [PROTOCOL.md → -install](PROTOCOL.md#-install-ensure-the-agent-cli)
+- **Pointers.** [INSTALL.md → -install](INSTALL.md#-install-ensure-the-agent-cli)
   and `install.go` (`fetchCLI`).
 
 ### D15 · Verify a run-dir lock holder is our serve process before signalling it (macOS) { #d15 }
@@ -707,7 +707,7 @@ whose value does not parse fails the flag parse with exit 2 (from the code).
 ### D1 · Verify the `-cli-zst` blob against a supplied checksum (retired) { #d1 }
 
 claustrum checks a supplied `-cli-checksum` against the `-cli-zst` blob, as the
-reference does: see [PROTOCOL.md → -install](PROTOCOL.md#-install-ensure-the-agent-cli).
+reference does: see [INSTALL.md → -install](INSTALL.md#-install-ensure-the-agent-cli).
 
 ### D4 · `files.read` refuses a file that is not regular (retired) { #d4 }
 
@@ -722,7 +722,7 @@ The git calls have the time limits of the reference, always: see
 ### D7 · `-cli-version` must not collide with the install temp sweep (retired) { #d7 }
 
 A version with a sweep name, such as `.fetch-1`, installs and stays in that run,
-as on the reference: see [PROTOCOL.md → -install](PROTOCOL.md#-install-ensure-the-agent-cli).
+as on the reference: see [INSTALL.md → -install](INSTALL.md#-install-ensure-the-agent-cli).
 [D6](#d6) still applies to every version.
 
 ### D9 · Namespace-wide params binding (retired) { #d9 }
@@ -735,19 +735,19 @@ typing](PROTOCOL.md#params-presence-and-typing).
 
 D11 made a deadline on that run opt-in, and claustrum now stops it at the 30 s and
 120 s of the reference, always: see
-[PROTOCOL.md → -install](PROTOCOL.md#-install-ensure-the-agent-cli).
+[INSTALL.md → -install](INSTALL.md#-install-ensure-the-agent-cli).
 
 ### D13 · `-install` verified the checksum before decompressing (retired) { #d13 }
 
 claustrum decompresses into the staging file first, as the reference does, so a
 body that is no zstd archive answers the decoder text. The checksum test comes
 before the chmod, the clear and the rename (claustrum's own): see
-[PROTOCOL.md → -install](PROTOCOL.md#-install-ensure-the-agent-cli).
+[INSTALL.md → -install](INSTALL.md#-install-ensure-the-agent-cli).
 
 ### D14 · Deadline on the `ldd --version` libc probe (retired) { #d14 }
 
 The `ldd` probe has the 5 s bound of the reference, always: see
-[PROTOCOL.md → -install](PROTOCOL.md#-install-ensure-the-agent-cli).
+[INSTALL.md → -install](INSTALL.md#-install-ensure-the-agent-cli).
 
 ### D17 · An abandoned `lsof` run reads as busy, not idle (retired) { #d17 }
 

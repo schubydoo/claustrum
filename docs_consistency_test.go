@@ -398,14 +398,15 @@ func TestDocsSiteListsEveryDocument(t *testing.T) {
 var docFlagDefRE = regexp.MustCompile(`flag\.[A-Za-z0-9]+\((?:[^,"]*,\s*)?"([a-z0-9-]+)"`)
 
 // docExpectedFlagCount is the number of flags that main.go defines today. Update
-// it when a flag is added or removed, and document the new flag in PROTOCOL.md.
+// it when a flag is added or removed, and document the new flag in PROTOCOL.md
+// (or in INSTALL.md for a flag of -install).
 const docExpectedFlagCount = 27
 
 // docUndocumentedFlags lists flags that the documents deliberately leave out.
 var docUndocumentedFlags = map[string]string{}
 
 // TestDocsEveryFlagIsDocumented: each flag that main.go defines appears as a code
-// span `-name` in docs/PROTOCOL.md or README.md, alone or inside a longer span such
+// span `-name` in docs/PROTOCOL.md, docs/INSTALL.md or README.md, alone or inside a longer span such
 // as `-wire-log <path>`.
 func TestDocsEveryFlagIsDocumented(t *testing.T) {
 	defs := docFlagDefRE.FindAllStringSubmatch(docRead(t, "main.go"), -1)
@@ -413,7 +414,7 @@ func TestDocsEveryFlagIsDocumented(t *testing.T) {
 		t.Fatalf("main.go defines %d flags by the pattern docFlagDefRE, but the test expects %d: update docExpectedFlagCount in docs_consistency_test.go (a flag was added or removed, or its definition no longer matches the pattern)", len(defs), docExpectedFlagCount)
 	}
 	var spans []string
-	for _, f := range []string{"docs/PROTOCOL.md", "README.md"} {
+	for _, f := range []string{"docs/PROTOCOL.md", "docs/INSTALL.md", "README.md"} {
 		spans = append(spans, docSpans(docRead(t, docRel(f)))...)
 	}
 	// A flag counts as named when a span holds a word "-name" or "--name", with an
@@ -430,7 +431,7 @@ func TestDocsEveryFlagIsDocumented(t *testing.T) {
 			continue
 		}
 		if !words[name] {
-			t.Errorf("main.go defines the flag -%s, but docs/PROTOCOL.md and README.md have no code span for it: document `-%s` in the flags section of docs/PROTOCOL.md", name, name)
+			t.Errorf("main.go defines the flag -%s, but docs/PROTOCOL.md, docs/INSTALL.md and README.md have no code span for it: document `-%s` in the flags section of docs/PROTOCOL.md", name, name)
 		}
 	}
 }
@@ -600,13 +601,14 @@ var docWordLimits = map[string]int{
 	"CONTRIBUTING.md":                      1300,
 	"README.md":                            1300,
 	"SECURITY.md":                          1700,
-	"docs/ARCHITECTURE.md":                 4100,
+	"docs/ARCHITECTURE.md":                 3100,
 	"docs/DAEMON.md":                       7300, // a new page: its words moved from PROTOCOL.md and ARCHITECTURE.md, with room for a first edit
 	"docs/DIVERGENCES.md":                  8000,
 	"docs/EXAMPLES.md":                     1200,
 	"docs/GLOSSARY.md":                     1300,
 	"docs/IMPROVEMENTS.md":                 1700,
-	"docs/PROTOCOL.md":                     38000,
+	"docs/INSTALL.md":                      5900, // a new page: its words moved from PROTOCOL.md and ARCHITECTURE.md, with room for a first edit
+	"docs/PROTOCOL.md":                     32900,
 	"docs/UPSTREAM-TRACKING.md":            6600,
 	"docs/index.md":                        800,
 	"docs/protocol/files-extract-tar.md":   2269, // decision-040: a move between pages, net down in the same PR

@@ -26,10 +26,10 @@ The daemon is one binary. A flag selects the mode:
   attaches to this mode.
 - `-install` is the installer. It downloads the CLI, makes sure that the
   SHA-256 matches, and extracts the zstd archive. See
-  [`-install`](PROTOCOL.md#-install-ensure-the-agent-cli).
+  [`-install`](INSTALL.md#-install-ensure-the-agent-cli).
 - `-probe-cli` runs `<cli> --version` on one CLI binary with a deadline. If
   the CLI hangs or does not run, it prints a marker. See
-  [`-probe-cli`](PROTOCOL.md#-probe-cli-classify-a-cli-binary).
+  [`-probe-cli`](INSTALL.md#-probe-cli-classify-a-cli-binary).
 - `-stop` sends `server.shutdown`. `-version` reports the build.
 
 The daemon supplies 20 methods across the `server.*`, `files.*`, `git.*`,
@@ -73,6 +73,8 @@ found process ([CT-1](DIVERGENCES.md#ct-1)).
 - :material-cog: **[Running the daemon](DAEMON.md)**. The token file and the
   lock beside the socket, the host cleaner, the start, the log and the orphan
   exit.
+- :material-download: **[-install and -probe-cli](INSTALL.md)**. The install
+  of the agent CLI, its `cliError` texts and facts line, and the CLI probe.
 - :material-api: **Methods**. One page for each method:
   [server.*](protocol/server.md),
   [files.list](protocol/files-list.md),

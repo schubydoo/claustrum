@@ -112,7 +112,7 @@ Noun. This term has two uses:
 
 - A probe is a test that claustrum runs on a program to find its state.
   Examples are the `<cli> --version` probe of `-probe-cli` and the libc probe.
-  See [`-probe-cli`](PROTOCOL.md#-probe-cli-classify-a-cli-binary).
+  See [`-probe-cli`](INSTALL.md#-probe-cli-classify-a-cli-binary).
 - A probe is a measurement of a reference binary that uses only its inputs
   and its outputs. See
   [Upstream tracking](UPSTREAM-TRACKING.md#which-divergences-a-probe-can-see).
@@ -169,7 +169,7 @@ Noun and verb. This term has three uses:
 - A staging file or a staging name is a temporary file or a temporary name
   that an operation uses until it completes. For example, `-install` writes
   the CLI to a staging file and then renames it. See
-  [Architecture](ARCHITECTURE.md#1-cli-version-manager-install).
+  [`-install`](INSTALL.md#-install-ensure-the-agent-cli).
 - A staged fixture is a test state that a person prepares before a
   measurement.
 
@@ -205,7 +205,7 @@ Noun. This term has two uses:
 Noun. A sweep is an operation that goes through all the entries of a directory
 or a list and removes the entries that a rule selects. Examples are the sweeps
 of `-install` in the CLI directory and the sweep of the host cleaner. See
-[Architecture](ARCHITECTURE.md#1-cli-version-manager-install).
+[`-install`](INSTALL.md#-install-ensure-the-agent-cli).
 
 ## undo
 

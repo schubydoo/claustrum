@@ -2,7 +2,7 @@
 
 `launcher.resolve` tells a client which managed launcher the host administrator set for a CLI. A managed launcher is a program that runs the Claude Code CLI on this host. The method reads the managed settings files and answers with the launcher argv, or with the reason why there is none. It never runs the launcher, and it changes nothing on disk.
 
-A client passes a usable `argv` to [process.spawn](process-spawn.md#the-managed-launcher) in its `launcher` param. A spawn does not read the managed settings itself. With `CLAUDE_SSH_MANAGED_LAUNCHER=1`, [`-install`](../PROTOCOL.md#-install-ensure-the-agent-cli) and [`-probe-cli`](../PROTOCOL.md#-probe-cli-classify-a-cli-binary) run the CLI through the launcher too.
+A client passes a usable `argv` to [process.spawn](process-spawn.md#the-managed-launcher) in its `launcher` param. A spawn does not read the managed settings itself. With `CLAUDE_SSH_MANAGED_LAUNCHER=1`, [`-install`](../INSTALL.md#-install-ensure-the-agent-cli) and [`-probe-cli`](../INSTALL.md#-probe-cli-classify-a-cli-binary) run the CLI through the launcher too.
 
 ## Request
 
