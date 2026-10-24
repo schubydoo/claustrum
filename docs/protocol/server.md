@@ -111,7 +111,7 @@ The handler starts the stop and returns the reply at once. It does not wait for 
 - If the close wins, the client reads EOF with no bytes.
 - Another connection that is idle gets a clean EOF with no bytes.
 
-A client must treat EOF after a shutdown request as a success. The reference often closes with no reply. When both send the reply, the frame bytes are equal.
+A client must treat EOF after a shutdown request as a success. The reference often closes with no reply. claustrum sent the reply in each measured run. If both send it, the frame bytes are equal.
 
 ### What the stop does
 
@@ -119,7 +119,7 @@ The stop closes the listener. On Linux and macOS, if the socket file is still th
 
 ### Log lines
 
-The lines of this section are measured against `f6010b97` on Linux, unless a rule names a system.
+The lines of this section are measured against `5fd08069` on Linux, unless a rule names another build or a system. The order of the shutdown lines and the signal lines were measured against `f6010b97` too.
 
 On `server.shutdown` the daemon logs these two lines before it closes any connection:
 
