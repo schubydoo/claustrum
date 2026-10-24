@@ -179,8 +179,8 @@ worktree. Its `gitdir` record names the `.git` file of the worktree. See
 
 ## run dir
 
-Noun. The run dir is the folder of the socket path. Some pages call it the run
-folder. It holds `daemon.token`.
+Noun. The run dir (also: run folder) is the folder of the socket path. It holds
+`daemon.token`.
 On Linux and macOS it also holds `daemon.lock` and the child records. See
 [`daemon.lock`](DAEMON.md#run-dir-lock-daemonlock).
 
