@@ -190,89 +190,64 @@ substituted is what distinguishes them.
 
 ## Operational logging
 
-The logging mirrors the reference daemon:
+The logs are not part of the JSON-RPC wire contract. The log file, the startup
+lines and the differences from the reference are in [DAEMON.md → Daemon
+log](DAEMON.md#daemon-log-remote-serverlog).
 
-- The readiness banner (`… remote server listening on <socket>`) goes to
-  stdout, without a prefix. Only its product name is different (rebranded).
-- Every operational or diagnostic line goes to stderr through the standard
-  `log` package, which adds a `2006/01/02 15:04:05` timestamp prefix. These lines
-  are the `[Server]` connection lifecycle, the `[process.Manager]` spawn, stream
-  and exit lines, `[daemon]`, `[shellenv]`, and `[frameSink]`.
-- These logs are not part of the JSON-RPC wire contract. Claustrum still keeps
-  them byte-faithful (minus the timestamp and PID), so anything tailing the
-  daemon log behaves identically.
+The readiness banner `Claustrum remote server listening on <socket> (pid <pid>,
+instance <id>)` goes to stdout with no prefix. The leveled logger in
+[`logging.go`](https://github.com/schubydoo/claustrum/blob/main/logging.go)
+writes to stderr through the stdlib `log` package, which adds a
+`2006/01/02 15:04:05` timestamp. The logger puts a level tag (`DEBUG`, `INFO`, `WARN` or `ERROR`) before the `[Component]` prefix,
+as in `INFO  [Server] New connection from: …`. So a grep for a prefix such as
+`[Server]` or `[process.Manager]` keeps matching.
 
-A tiny leveled logger
-([`logging.go`](https://github.com/schubydoo/claustrum/blob/main/logging.go))
-sits in front of those calls so operators can quiet the daemon:
-
-- Each line carries a level (`DEBUG`/`INFO`/`WARN`/`ERROR`). The logger emits it
-  as a short tag *before* the `[Component]` prefix, as in `INFO  [Server] New
-  connection from: …`. The prefixes thus stay byte-intact, and any grep for
-  `[Server]`, `[process.Manager]`, `[frameSink]`, or `[shellenv]` keeps matching.
-- Claustrum sets the threshold once, at startup, from `CLAUSTRUM_LOG_LEVEL`
-  (`debug`|`info`|`warn`|`error`).
-- The threshold defaults to `debug`. An unset (or unrecognized) value emits
-  exactly what the daemon always has. A higher threshold drops everything below
-  the chosen level.
-- The level is a local diagnostic knob. It touches stderr only, never the wire.
+`CLAUSTRUM_LOG_LEVEL` (`debug`, `info`, `warn` or `error`) sets the threshold
+once, at startup. An unset or unknown value means `debug`, which emits every
+line. A higher threshold drops each line below it. The level changes the log
+only, never the wire.
 
 ## Driver claims and their provenance
 
-A few facts these docs rely on describe a third binary. That binary is the driver
-(Claude Desktop, or a tool such as clauster). The reference-vs-claustrum harness compares
-two daemons, so it cannot settle any of these facts. Three of them are
-load-bearing:
+A few facts these docs rely on describe a third binary: the driver (Claude
+Desktop, or a tool such as clauster). A comparison of two daemons cannot settle
+them. Three of them carry rules of these docs:
 
-- `cliError` classification. The driver reads `cliError` as text. It
-  surfaces a disk-full-shaped message as a terminal error with an actionable
-  code, and everything else as retryable. The claim is about that classification
-  only. A `-cli-url` rung whose download was forced to fail returned a
-  non-disk-full `cliError`. Desktop answered it with a further rung rather
-  than a terminal report. That shows escalation on a failed rung. It does not
-  distinguish reading the `cliError` text from reacting to any non-success, and
-  the terminal arm is still unobserved.
-- `libc` build selection. The driver uses the `__INSTALL_RESULT__` `libc`
-  field to pick which CLI build to download.
-- "Desktop owns the argv". An operator has no way to influence the daemon's
-  argv. A divergence reachable only through an argv flag is therefore unreachable
-  on Desktop-driven hosts. This premise lets D3, D10 and D12 be
-  opt-in. It also defines the "(opt-in)" tagging convention: a flag and
-  a configuration key, because the configuration key is the reachable knob.
+- `cliError` classification. The driver reads `cliError` as text. It shows a
+  disk-full-shaped message as a terminal error with an actionable code, and
+  everything else as retryable. A failed `-cli-url` download with another
+  `cliError` got a further attempt from Desktop. That does not tell a read of
+  the text from a reaction to any failure, and the terminal side is not
+  observed.
+- `libc` build selection. The driver uses the `libc` field of
+  `__INSTALL_RESULT__` to pick the CLI build to download.
+- "Desktop owns the argv". An operator cannot change the daemon's argv, so a
+  divergence that only an argv flag reaches is unreachable on Desktop-driven
+  hosts. This premise lets D3, D10 and D12 be opt-in. It also defines the
+  "(opt-in)" convention: a flag and a configuration key, because the key is the
+  reachable knob.
 
-"The harness cannot settle it" is not "unverifiable". Each claim has a
-fixture that can settle it. That fixture runs against the *driver*, with a control
-that can come out wrong. The argv row's fixtures were run. The `cliError` and
-`libc` fixtures were not run.
+Each claim has a fixture that runs against the driver, with a control that can
+come out wrong. Only the argv fixture was run.
 
 | claim | fixture | control that must fire |
 |---|---|---|
-| `cliError` classification | two `-install` failures whose messages straddle the disk-full shape. Observe a retry vs a terminal report | a genuine disk-full failure observed as terminal with an actionable code, proving the terminal side is reachable |
-| `libc` build selection | a stub `ldd` printing a musl banner (its exit code is not consulted since 3ef9370, and its output outranks the loader glob). The daemon then reports `musl`. See which build the client fetches | a glibc host where the daemon reports `glibc` fetches the glibc build, so the musl arm is distinguishable from the client's default |
-| argv | inspect the shipped client for where the daemon's argv is built. Corroborate with the setup UI, a capture of the argv Desktop passes (cache-hit and fetching), and an enumeration of Desktop's configuration files | if the argv is assembled from a setting or a configuration file, the claim is false |
+| `cliError` | two `-install` failures whose messages straddle the disk-full shape. Observe a retry or a terminal report | a real disk-full failure shows as terminal with an actionable code |
+| `libc` | a stub `ldd` that prints a musl banner, so the daemon reports `musl`. The exit code of `ldd` is not read, and its output outranks the loader glob. See which build the driver fetches | a glibc host fetches the glibc build, so the musl arm differs from the default |
+| argv | find where the shipped client builds the daemon's argv. Check the setup UI, a capture of the argv, and Desktop's configuration files | an argv built from a setting or a configuration file makes the claim false |
 
-The argv claim is discharged. Claude Desktop builds the daemon's argv from a
-fixed set of flags. Only their operands are runtime values: the download URL, its
-checksum, and the uploaded blob path. There is no operator-reachable route to add or
-change a flag. This was found by inspecting the shipped client (2026-08-09). The fetching
-`-install` argv is observed over two cold starts on one host (2026-08-10). The observed
-argv was bare, then `-cli-url` + `-cli-checksum`. Once, with that download forced to
-fail, an SFTP upload was re-invoked as `-cli-zst`. Both records live in `scratch/`
-(gitignored).
+The argv claim holds (from the shipped client). Desktop builds the daemon's argv
+from a fixed set of flags. Only the operands change: the download URL, its
+checksum and the uploaded blob path. On a cold start Desktop ran `-install` bare,
+then with `-cli-url` and `-cli-checksum`. Once, with that download forced to fail, it uploaded the blob over
+SFTP and ran `-install` with `-cli-zst`.
 
-The `cliError` and `libc` claims remain design constraints. The argv claim is a
-driver result, not a parity one. Two argv dependents (D3, D12) carry
-reopen triggers for their own behavior. The other one (D10) carries a rider about
-the `cliError` claim. All live in [DIVERGENCES.md](DIVERGENCES.md). If
-someone finds a route to influence the daemon's argv, the argv claim reopens. A
-Desktop release that adds such a route reopens it too. That route is a new configuration
-field, or a configuration file it turns into argv. A forwarded env var does not
-qualify, because nothing in `config.go` or `main.go` reads the
-environment for these knobs. The dependents list is maintained by hand, and it was
-incomplete every time somebody checked it. Treat it as best-known, not complete. The
-argv claim underpins D3, D10 and D12. `cliError` underpins D10
-and clause (c)'s error-string rider. Both underpinned the retired D11. `cliError` also underpinned the retired D13. The argv
-claim underpinned the retired D5. `libc`
-underpins no current entry. It underpinned the retired D14. One further driver claim is
-untracked and unprovenanced: D6's clause-(b) evidence, which rests on what Desktop
-emits as `-cli-version`.
+The argv claim underpins D3, D10 and D12. The `cliError` claim underpins D10.
+This list is kept by hand and is not complete. Each entry in
+[DIVERGENCES.md](DIVERGENCES.md) has its own reopen trigger.
+
+If someone finds a route to the daemon's argv, or a Desktop release adds one,
+the argv claim reopens. Such a route is a new configuration field, or a
+configuration file that Desktop turns into argv. A forwarded env var is not one,
+because nothing in `config.go` or `main.go` reads the environment for these
+knobs.
