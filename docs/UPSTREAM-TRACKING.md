@@ -334,10 +334,10 @@ the linked pages. The history of each build is in
   - the last entry of a file that the archive names two times
   - the `error` texts of the entry and `destDir` steps.
 
-  On Windows, with no `\\?\` prefix, a `destDir` whose last name ends in a dot or
-  a space is wiped and filled (measured on Windows). On Windows the last names
-  `NUL`, `a:b`, `CON`, `COM1`, `dest?` and `dest*` answer `clean destDir:
-  RemoveAll <name>: …` (measured on Windows). A `\\?\` path with a dot or a space
+  Its Windows rules for the last name of `destDir` are parity, measured on
+  Windows. See
+  [Differences by system](protocol/files-extract-tar.md#differences-by-system).
+  A `\\?\` path with a dot or a space
   after its last name differs from both builds. A `destDir` that is the home
   folder by identity gets the home refusal ([D2](DIVERGENCES.md#d2)). See
   [files.extract_tar](protocol/files-extract-tar.md).

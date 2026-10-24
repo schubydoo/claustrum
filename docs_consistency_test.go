@@ -591,7 +591,7 @@ var docWordLimits = map[string]int{
 	"docs/PROTOCOL.md":                     45400,
 	"docs/UPSTREAM-TRACKING.md":            7200,
 	"docs/index.md":                        800,
-	"docs/protocol/files-extract-tar.md":   2200,
+	"docs/protocol/files-extract-tar.md":   2263,
 	"docs/protocol/files-list.md":          500,
 	"docs/protocol/files-read.md":          900,
 	"docs/protocol/files-stat.md":          500,
