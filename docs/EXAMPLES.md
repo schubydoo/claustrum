@@ -170,7 +170,7 @@ These are claustrum's own, and none changes a frame.
 
 Start the daemon with the token on a file descriptor instead of a temp file
 (fd `0` also works, to pipe the token on stdin). The daemon itself still
-persists `daemon.token` beside the socket ([PROTOCOL.md](PROTOCOL.md)):
+persists `daemon.token` beside the socket ([DAEMON.md](DAEMON.md#token-persistence-daemontoken)):
 
 ```sh
 claustrum -serve -socket "$D/rpc.sock" -token-fd 3 3< <(printf '%s' "$TOK")

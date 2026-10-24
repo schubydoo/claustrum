@@ -81,14 +81,15 @@ file is `<cli-version>.exe`.
 
 Claustrum daemonizes itself: it detaches from the controlling session and, on
 Unix, reparents to init. It then opens the `0600` socket. It supervises the
-children it spawns. Most rules of each step are in PROTOCOL.md. This list names
+children it spawns. Most rules of each step are in PROTOCOL.md and
+[Running the daemon](DAEMON.md). This list names
 the files and the seams, and the rules that have no other home.
 
 - **Token.** `-token-file` or `-token-fd` gives the token. `tokenpersist.go`
   writes `daemon.token` and unlinks it at a graceful stop if it is still its
   own file. See
   [The token source](PROTOCOL.md#the-token-source) and
-  [Token persistence](PROTOCOL.md#token-persistence-daemontoken).
+  [Token persistence](DAEMON.md#token-persistence-daemontoken).
 - **Re-exec sentinel.** An internal sentinel, `CLAUSTRUM_DAEMON_CHILD`, gates the
   self-daemonize re-exec. The name is claustrum's own on purpose. It is *not* the
   reference's `CLAUDE_SSH_DAEMON_CHILD`. A surrounding claude-ssh session exports
@@ -111,48 +112,12 @@ the files and the seams, and the rules that have no other home.
   `childreap_darwin.go`, reaps them at the start. Both act through the run dir that
   the daemon holds open, so no write or read follows a symlink out of it. The kill
   and every live-process read sit behind package-var seams, so tests exercise the
-  decision without ending a real process. After the `SIGKILL` the reap waits up to 1 s
-  (`reapEscalate`, claustrum's own value). See
-  [Child records and the reap](PROTOCOL.md#child-records-and-the-reap-linux-and-macos).
+  decision without ending a real process. See
+  [Child records and the reap](DAEMON.md#child-records-and-the-reap-linux-and-macos).
 - **Host cleaner.** `hostclean.go` holds the shared decision layer, and
   `hostclean_linux.go` / `hostclean_darwin.go` hold the OS reads. Windows links no
-  cleaner. The gate, the signals, the `lsof` reads and the log lines are in
-  [Host cleaner](PROTOCOL.md#host-cleaner-off-wire-linux-and-macos). The rules below
-  have no home there:
-    - After the first pass, one pass runs each day. The cleaner
-      acts only on this user's own processes and on the `run`, `srv` and `ccd-cli`
-      folders of its own root. A pass acts only after it confirms that its own
-      socket still leads to itself.
-    - An orphan is a `stream-json` daemon child that leads its own process group.
-      Its parent is pid 1, its binary sits directly in `<root>/ccd-cli`, and its
-      stdin, stdout and stderr are pipes. Its group gets `SIGTERM`, a 3 s grace,
-      then `SIGKILL`. One pass ends 64 groups at most. A daemon or an orphan
-      younger than 5 minutes is never touched. An ambiguous orphan is spared with
-      a logged reason.
-    - A stale run dir is idle past 30 days, or its name carries `.removing-`. Its
-      socket does not answer, and no live process holds its lock. The pass reads
-      the idle age of each run dir before it dials any daemon, because a dial
-      writes a line to that daemon's log. It skips its own run dir and every entry
-      that is not a plain directory, a symlink included. It reads the idle age
-      again before it probes a dir, and it keeps a dir that came back into use,
-      unless the dir has a staging name. It renames a stale dir to
-      `<name>.removing-<own pid>-<base-36 time>` inside the run root and then
-      removes it. If a socket appears after the rename, or the lock becomes held
-      or unreadable, it renames the dir back. A dir whose daemon it retires goes
-      in the same pass, once that daemon's socket is gone. A dir it cannot probe
-      conclusively stays.
-    - "Busy" is a 3 s sampling window, not a state. A daemon that is idle across
-      the window and gains a client a moment later still gets `SIGTERM`.
-    - The limit lines are four: more than 4096 processes, more than 64 orphan
-      groups, more than 64 run dirs, and 8 retire attempts in one pass. claustrum
-      counts attempts there, refused ones included. The reference count after a
-      refused attempt is not measured. The log
-      lines carry the `[hostclean]` prefix after claustrum's level tag. The line
-      before a `SIGKILL` and the reasons for a held lock and for a listener that
-      is not our daemon use the texts of the reference.
-    - The 15 s delay, the 3 s grace and the limit of 64 groups match the
-      reference. The daily period, the 5 minute age and the 30-day idle age are
-      claustrum's own.
+  cleaner. Its rules and log lines are in
+  [Host cleaner](DAEMON.md#host-cleaner-off-wire-linux-and-macos).
 
   This path is destructive and host-wide. Every process read, kill, dial, rename
   and remove sits behind a seam, and tests never touch a real process. A test that

@@ -163,7 +163,7 @@ A spawn that reaches the start of its child after the shutdown began gets no rep
 
 ## A later daemon start
 
-On Linux and macOS a daemon that holds the [run-dir lock](../PROTOCOL.md#run-dir-lock-daemonlock) records each child in its run dir. A later daemon start on the same socket reads the records of a daemon that is gone. It ends each child whose process still matches its record, with `SIGTERM` and then `SIGKILL`. So a child that outlives its daemon can end at the next start. [Child records and the reap](../PROTOCOL.md#child-records-and-the-reap-linux-and-macos) has the rules. Windows records no child. A record that cannot be written does not fail the spawn. The reply is success, and the child still gets both identity markers.
+On Linux and macOS a daemon that holds the [run-dir lock](../DAEMON.md#run-dir-lock-daemonlock) records each child in its run dir. A later daemon start on the same socket reads the records of a daemon that is gone. It ends each child whose process still matches its record, with `SIGTERM` and then `SIGKILL`. So a child that outlives its daemon can end at the next start. [Child records and the reap](../DAEMON.md#child-records-and-the-reap-linux-and-macos) has the rules. Windows records no child. A record that cannot be written does not fail the spawn. The reply is success, and the child still gets both identity markers.
 
 ## Differences by system
 

@@ -41,13 +41,13 @@ The members come in this order:
 |---|---|
 | `version` | The version of the daemon. |
 | `methods` | The 20 methods, in the order of [Methods](../PROTOCOL.md#methods-20). `plugins.prune` is last on every system. |
-| `instanceId` | 32 hexadecimal characters, new at each start of the daemon. claustrum makes it from 16 random bytes (claustrum's own). On Linux and macOS the owner record of `daemon.lock` holds the same value. The banner of the log holds it too (`f6010b97` and `89cb6289`, see [Daemon log](../PROTOCOL.md#daemon-log-remote-serverlog)). |
+| `instanceId` | 32 hexadecimal characters, new at each start of the daemon. claustrum makes it from 16 random bytes (claustrum's own). On Linux and macOS the owner record of `daemon.lock` holds the same value. The banner of the log holds it too (`f6010b97` and `89cb6289`, see [Daemon log](../DAEMON.md#daemon-log-remote-serverlog)). |
 | `startedAt` | The start time of the daemon in unix milliseconds. claustrum sets it after its start steps and the bind of the socket (from the code). On `89cb6289` it is within 1.5 ms of the listen call (Linux VM). |
 | `features` | The optional extensions that this build supports. See [Features](#features). |
 | `peerCheck` | The state of the peer check. See [The peer check](#the-peer-check). |
 | `peerCheckBy` | The parts that the check compares. With `"off"` or `"unavailable"` the reply has no such member. |
 
-A request for `server.capabilities` does not count as activity for the idle exit of the daemon. Every other request past the auth step counts. The idle exit runs on Linux and macOS only. These three rules are claustrum's own, not measured. See [Orphan-exit self-probe](../PROTOCOL.md#orphan-exit-self-probe).
+A request for `server.capabilities` does not count as activity for the idle exit of the daemon. Every other request past the auth step counts. The idle exit runs on Linux and macOS only. These three rules are claustrum's own, not measured. See [Orphan-exit self-probe](../DAEMON.md#orphan-exit-self-probe).
 
 ### Features
 
@@ -71,7 +71,7 @@ The `peerCheck` member:
 
 On a Linux kernel that lacks a part of the check, claustrum answers `"unavailable"`, `"network_only"` or `"by_pid"`. It can also answer `"on"` with another `peerCheckBy` (claustrum's own, not measured).
 
-With `1` the daemon writes one line at its start (the level is claustrum's own). The texts are in [Daemon log](../PROTOCOL.md#daemon-log-remote-serverlog).
+With `1` the daemon writes one line at its start (the level is claustrum's own). The texts are in [Daemon log](../DAEMON.md#daemon-log-remote-serverlog).
 
 ### A refused caller (Linux)
 
@@ -115,7 +115,7 @@ A client must treat EOF after a shutdown request as a success. The reference oft
 
 ### What the stop does
 
-The stop closes the listener. On Linux and macOS, if the socket file is still the one that the daemon bound, the stop removes it (from the code on macOS). On Windows the close of the listener removes the path, also the socket of a successor. Then the stop closes every connection and ends the children. That is the whole process group on Linux and macOS, and the direct child on Windows. With `-keep-children` the children keep running ([CT-2](../DIVERGENCES.md#ct-2)). If `daemon.token` is still the file of this daemon, the daemon removes it. A successor's file stays (measured on Windows, from the code on Linux and macOS). The daemon then exits with code 0 (from the code). See [Token persistence](../PROTOCOL.md#token-persistence-daemontoken).
+The stop closes the listener. On Linux and macOS, if the socket file is still the one that the daemon bound, the stop removes it (from the code on macOS). On Windows the close of the listener removes the path, also the socket of a successor. Then the stop closes every connection and ends the children. That is the whole process group on Linux and macOS, and the direct child on Windows. With `-keep-children` the children keep running ([CT-2](../DIVERGENCES.md#ct-2)). If `daemon.token` is still the file of this daemon, the daemon removes it. A successor's file stays (measured on Windows, from the code on Linux and macOS). The daemon then exits with code 0 (from the code). See [Token persistence](../DAEMON.md#token-persistence-daemontoken).
 
 ### Log lines
 

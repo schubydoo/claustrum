@@ -565,7 +565,7 @@ name describes claustrum's code, not a measurement.
   daemon before it binds. Two cases remain: eviction is refused, or the host is
   Windows, which ships no run-dir lock. That lock is parity, not a claustrum
   "fix". The macOS holder-verification that claustrum applies to the lock is a
-  hardening divergence (D15). See [`docs/PROTOCOL.md`](docs/PROTOCOL.md) → Token
+  hardening divergence (D15). See [`docs/DAEMON.md`](docs/DAEMON.md) → Token
   persistence / Run-dir lock.
 - The requests of one connection dispatch concurrently. Parse and auth errors
   are the exception: the read loop writes them
