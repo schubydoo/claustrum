@@ -154,8 +154,8 @@ Post at most five Nits per review. If there are more, post the five that matter 
 
 ## Re-reviews
 
-If the PR was reviewed before, open with a `## Previous findings` section. Resolve
-every prior Important finding as exactly one of these:
+If the PR was reviewed before, open with a `## Previous findings` section, below the
+tally line. Resolve every prior Important finding as exactly one of these:
 
 - FIXED: cite the line or commit that addressed it
 - ACCEPTED: quote the technical justification of the author and say why it resolves the
@@ -166,12 +166,93 @@ A finding marked FIXED or ACCEPTED is closed. Do not re-raise it. After the firs
 review, post Important findings only. Suppress new Nits entirely, so a one-line fix
 cannot reach round seven on style.
 
+Then reply on the earlier threads that are now closed, so the status sits where the
+maintainer resolves threads. The listing has no review id, no time and no body. Use it
+as follows:
+
+1. Run the read-only `comments` command before you submit the new review. A comment in
+   that listing whose `user` is you and whose `in_reply_to_id` is `null` opens a thread
+   from an earlier review. Threads that your new review opens are not in it.
+2. Skip a thread that already carries a reply from you: a comment whose `user` is you
+   and whose `in_reply_to_id` is the `id` of that thread.
+3. Submit the new review. Then give each remaining thread whose finding is FIXED or
+   ACCEPTED one reply, built with the reply recipe under Output. The reply is one line,
+   FIXED in `<short sha>` or ACCEPTED, plus at most one sentence of reason. Write a new
+   `reply.json` for each reply. Match a thread to its finding by `path`,
+   `original_line` and `original_start_line`. If two threads share all three, reply to
+   neither, because the listing cannot tell which finding each one holds.
+4. Do not reply on a STILL OPEN thread. A thread then gets at most one reply from you,
+   and that reply never goes out of date, because a closed finding stays closed.
+5. Reply to Nits as well as to Important findings, and to resolved threads too. A reply
+   does not reopen a thread. Reply to at most 15 threads in one run, oldest `id` first.
+6. If the `comments` command or a reply is refused, do not retry it and do not reach
+   for another command. Skip the remaining replies, and say which command was refused.
+   Say it in the review summary for a refused `comments` call, because that call runs
+   before the submit. Say it in your final message for a refused reply, because the
+   summary is posted by then. Never post a second review or a standalone comment.
+
+The `## Previous findings` section of the summary stays as it is. It covers every
+finding, STILL OPEN ones included.
+
 ## Output
 
 - Post every line-specific finding as an inline comment, and group them into exactly
   one submitted review. Do not submit a separate review per finding. Each inline
   comment becomes a thread that the maintainer replies to and resolves. One grouped
   review is the difference between one pass over the PR and several passes.
+- Submit the review exactly as follows. One POST carries the body and every anchor. It
+  is the only shape that both groups the findings and gets through the tool permissions.
+  1. Use the `Write` tool to create `review.json` at the exact path that the submit
+     command in the system prompt names. That path is outside every checkout. You
+     cannot write in the workspace. The payload holds exactly four keys: `commit_id`
+     (the pinned head SHA from the system prompt), `event: "COMMENT"`, `body` (the
+     summary), and a `comments` array of `{path, line, side: "RIGHT", body}` entries,
+     one per finding. Use `side: "LEFT"` only for a line that the diff removes. The
+     guard refuses any other event and any other top-level key.
+  2. Run `gh api repos/<owner>/<repo>/pulls/<n>/reviews --input <dir>/review.json`,
+     exactly as the system prompt spells it out with the real values. The tool
+     permissions match that command character for character, so an added flag or a
+     different path is refused.
+
+  Every `line` must be a line that the diff touches, on that side. GitHub rejects the
+  whole POST with 422 when one entry names a line outside the diff. One bad anchor
+  then loses the body and every other finding with it. To flag an unchanged line,
+  anchor the comment to the nearest changed line and name the real line in the comment
+  body. If the POST returns 422, read `review.json` again, correct that entry with
+  `Write`, and repeat the same POST. Never fall back to a shape that posts findings one
+  at a time.
+
+  Never post a standalone inline comment. GitHub wraps each standalone review comment
+  in a submitted review of its own, so every one of them splits the review. That is a
+  `POST .../pulls/<n>/comments` without `in_reply_to`, or an inline-comment tool.
+  Every anchor rides in the `comments` array of the single POST above. A clarification
+  after the fact, and the status reply of a re-review on an earlier thread, is a reply
+  on the thread, not a new comment.
+
+  To reply, `Write` `reply.json` as `{"body": "...", "in_reply_to": <id>}` at the
+  exact path that the reply command names. `<id>` is the numeric id of the review
+  comment that opens the thread. Get the id from the read-only `comments` command that
+  the system prompt carries verbatim:
+  `gh api repos/<owner>/<repo>/pulls/<n>/comments --paginate --jq '.[] | {id,
+  in_reply_to_id, path, line, original_line, original_start_line, user: .user.login}'`.
+  It is the only source of review-comment ids, and it prints those fields for each
+  comment, not the bodies. The id that you need is the `id` of the comment of the
+  thread whose `in_reply_to_id` is `null`. Find that comment by its `path` and
+  `original_line`, because a push that outdates the thread sets `line` to `null`. Then
+  run `gh api repos/<owner>/<repo>/pulls/<n>/comments --input <dir>/reply.json`. Run
+  both commands exactly as the system prompt spells them out. `reply.json` must always
+  carry `in_reply_to`. Without it, that endpoint posts a standalone review comment,
+  which splits the review.
+
+  Every shell command outside the exact list in the system prompt is refused. That
+  includes read-only commands such as `grep`, `cat`, `find`, `ls` and `cd`. Search
+  with the Grep and Glob tools, and read with the Read tool. These are refused too, so
+  do not reach for them: any other `gh api` call (other read-only GETs included), JSON
+  inline on the command line, shell redirects (`> file`), compound commands (`;`,
+  `&&`, `||`), `python3`, `git`, `gh pr review`, `gh pr comment`, and any `gh` command
+  with `-R`/`--repo`, a URL, or `--search`/`-S`. Reads of `/proc`, the temp directory
+  of the runner, home dotfiles and `.git/` are refused as well. The workflow counts
+  each refused attempt as a denial.
 - Put the summary table in the body of the submitted review, and nowhere else. The
   table lists every finding with its file and line. That table makes the review
   readable without opening the diff, and it survives inline anchors going stale.
@@ -184,7 +265,11 @@ cannot reach round seven on style.
   unrelated issue. Use "Finding 1" or a short description.
 - Link code with the full SHA and a line range with a line of context on each side:
   `https://github.com/schubydoo/claustrum/blob/<full-sha>/methods_git.go#L40-L46`
-- Lead the summary with a one-line tally, for example `2 important, 3 nits`. If there
-  are no important findings, say "No important findings" plainly.
+- The first line of the review body is the tally, in exactly this lowercase form:
+  `2 important, 3 nits`. Use the singular when a count is 1: `1 important, 1 nit`. A
+  clean review reads `0 important, 0 nits`, optionally followed by "No important
+  findings". Nothing goes above the tally, not even a `## Previous findings` heading.
+  The guard step of the workflow parses that first line to tell a grouped review from
+  a body-only one.
 - Use a committable ```suggestion``` block in one case only: committing it fixes the
   issue entirely. If follow-up work is needed, describe the fix instead.
