@@ -8,35 +8,58 @@ more dependency goes into Windows builds only. It is
 
 ## Source layout (flat `package main`)
 
-| file | responsibility |
-|---|---|
-| `main.go` | flag parsing, mode dispatch, version resolution |
-| `server.go` | `-serve` daemon: AF_UNIX listener, per-connection loop, concurrent dispatch, graceful shutdown (kills children, or leaves them with `-keep-children`). The flag works on Windows too, as claustrum's own flag: `89cb6289` exits 2 on it |
-| `rpc.go` | JSON-RPC request and response types, error codes, dispatch + params gate |
-| `results.go` | result structs (field order is part of the wire contract) |
-| `methods_server.go` / `methods_files.go` / `methods_git.go` / `methods_launcher.go` / `methods_process.go` / `methods_plugins.go` | the 20 method handlers (`19f30c46` added `plugins.prune`, `89cb6289` added `launcher.resolve`). `methods_launcher.go` also holds the settings reader, the `process.spawn` launcher checks and the child env strip |
-| `managedlauncher*.go` | the managed launcher's OS split and the launcher runs of `-install` and `-probe-cli` (`89cb6289`) |
-| `handlers/prune.go` | the sole non-`main` package: `handlers.PruneParams`, so `plugins.prune`'s `-32602` body carries the reference's `handlers.PruneParams` type name byte-for-byte |
-| `process.go` | process manager: registry, per-process seq, replay buffer, subscribers. It captures the immutable `pid`/`startTime` pair behind the CT-1 `wantPid` opt-in |
-| `bridge.go` | `-bridge` relay and `-stop` |
-| `install.go` | `-install`: download/extract/verify/prune + `__INSTALL_RESULT__` facts |
-| `logging.go` | leveled stderr logger (`CLAUSTRUM_LOG_LEVEL`). The level tag precedes the byte-intact `[Component]` prefixes |
-| `metrics.go` | opt-in Prometheus counters at `/metrics` (`-metrics-addr`, with no listener by default). Counting runs always, as atomics |
-| `wirelog.go` | opt-in `-wire-log` frame capture. A pure side channel over already-marshaled bytes, off by default, with by-key credential redaction |
-| `sysproc_unix.go` / `sysproc_windows.go` | the kill of a child: the process group on Unix (setpgid + negative-pid signal), the direct child only on Windows (no Job Object, as on the reference). A Windows VM measured that against `89cb6289`: no child is in a job of the daemon |
-| `pipetransport.go` | `-listen-pipe` shared helpers: `rpc.pipe` name-file lifecycle (atomic write / remove), owner-only SDDL builder, pipe-name + instance-id generation (all platform-neutral) |
-| `pipetransport_windows.go` / `pipetransport_other.go` | the optional Windows named-pipe listener (`startPipeTransport` via go-winio, owner-only DACL) vs the non-Windows no-op stub + `honorListenPipe` warning |
-| `detach_unix.go` / `detach_windows.go` | daemonize attr (setsid vs DETACHED_PROCESS with `CREATE_BREAKAWAY_FROM_JOB`) and the start of the daemonized child. On Windows the daemon starts outside the job of its launcher. If that job refuses breakaway, the daemon starts inside it and the launcher logs one line, as `89cb6289` does (row JB of a Windows VM) |
-| `shellenv_unix.go` / `shellenv_windows.go` | login-shell PATH extraction (Unix) / the daemon's own PATH for `process.spawn` children (Windows) |
-| `shellagent.go` / `shellagent_unix.go` / `shellagent_windows.go` | `process.spawn` SSH agent hand-off: the login shell's `SSH_AUTH_SOCK`, checked and cached (Unix) / no-op (Windows) |
-| `gitshadow.go` / `gitshadow_unix.go` / `gitshadow_windows.go` | the settings copy of the git methods: the state, the member `settingsControl` of `git.info`, the start test, and the folder of one daemon under `<socket folder>/git-shadow` with its lock |
-| `gitshadowsweep.go` / `gitshadowhold.go` | the sweep of the folders of daemons that are gone, and the hold of a repository folder while a git call uses it |
-| `gitshadowprobe.go` / `gitshadowrepo.go` / `gitshadowconfig.go` | the call that asks git about a repository, the folder of one repository, and the text of the copied settings file |
-| `gitshadowuse.go` | the folder variables of the git calls. It also has the `worktree add` steps on Linux and macOS |
-| `worktreestaging.go` / `gitworktreeconfig.go` | the Windows create with its staging folder. The `config.worktree` items of the git calls, and the `config.worktree` file of a new worktree |
+All code is in `package main`, except `handlers/prune.go`. That package holds
+`handlers.PruneParams`, so the `-32602` text of `plugins.prune` names the type
+of the reference byte for byte. A suffix such as `_unix` or `_windows`, or a
+build tag alone, marks the part of a group for one OS. Every OS serves
+the same JSON-RPC methods.
 
-Every OS serves the same JSON-RPC methods. Only the OS-split files
-(`*_unix.go`, `*_linux.go`, `*_windows.go` and their kin) are different.
+| group | files | what they hold |
+|---|---|---|
+| Modes | `main.go`, `config.go`, `buildstamp.go`, `bridge.go`, `selflocate_*.go`, `ignorepipe*.go` | The flags and the mode switch. `claustrum.conf`. The version stamp. `-bridge` and `-stop`. The self-locate test of `-serve`. No exit on SIGPIPE in `-install` and `-probe-cli`. |
+| Transport | `server.go`, `idleconn.go`, `detach_*.go`, `dahandoff.go`, `livepred_*.go`, `peerpid_*.go`, `peercheck*.go`, `pipetransport*.go`, `raiselimit_*.go` | The `AF_UNIX` listener and the connection loop. The idle close of a connection. The self-daemonize. The socket handoff between two daemons. The peer check. The opt-in Windows named pipe. The open-file limit that children inherit. |
+| Dispatch | `rpc.go`, `results.go`, `methods_*.go`, `capfeatures_*.go`, `expandpath.go`, `homeguard.go`, `filesread_*.go`, `odirectory_*.go`, `pluginsibling_*.go`, `handlers/prune.go` | The request and response types, the error codes, the dispatch order and the params gate. The result structs, whose field order is wire contract. `methods_*.go` has the 20 method handlers. The `server.capabilities` features. The `~` expansion. `wipesHomeDir`. OS parts of `files.*` and `plugins.prune`. `methods_launcher.go` also holds the settings reader, the `process.spawn` launcher checks and the child env strip. |
+| Process | `process.go`, `process_signal_*.go`, `sysproc_*.go`, `execchild*.go`, `sessionsupersede.go`, `shellenv*.go`, `shellagent*.go` | The registry, seq, replay buffer and subscribers. The signal names. The kill of a child. The exec-child trampoline. The supersede of a session spawn. The login-shell PATH. The SSH agent hand-off. |
+| Git | `git*.go`, `worktree*.go`, `externalunsupported_*.go`, `spelling_*.go` | See [The git subsystem](#the-git-subsystem). |
+| Install | `install*.go`, `libc_*.go`, `managedlauncher*.go` | `-install` and `-probe-cli`. The download. The file test of a cache hit. The libc probe. The managed launcher. |
+| Host and lock | `daemon_runlock_*.go`, `tokenpersist.go`, `childrecord*.go`, `childreap*.go`, `hostclean*.go`, `orphanexit.go`, `selfexit_*.go` | The run-dir lock. `daemon.token`. The child records and their reap. The host cleaner. The orphan exit and the idle exit. |
+| Logs | `logging.go`, `metrics.go`, `wirelog.go` | The leveled stderr logger. The opt-in `/metrics` counters. The opt-in `-wire-log` capture. |
+| Shared | `renameretry*.go`, `pathcanon_*.go` | The retry of a rename on Windows. The canonical form of a path. |
+
+## The git subsystem
+
+The five `git.*` methods start in `methods_git.go`, and their params in
+`gitparams.go`.
+
+- **Each git call.** `gitenv.go`, `gitchildenv*.go` and `githarden.go` build the
+  environment of a git child. `gitstop.go` holds the time limits.
+  `gitlive_*.go` tests whether a git process still runs. `gitworktreeconfig*.go`
+  holds the `config.worktree` items, and the file of a new worktree.
+- **Trust of a repository.** `gitdirtrust*.go`, `gitlisting.go`,
+  `gitrepoconfig*.go`, `gitfilter.go` and `gitplainfile_*.go` hold the checks
+  before git runs. They also read the `.git` files.
+- **Settings copy.** `gitshadow*.go` holds the state and the sweep. It also
+  holds the folder of one daemon under `<socket folder>/git-shadow` with its
+  lock, the hold of a repository folder and the copied settings.
+- **Info and status.** `gitstatus.go` and `gitinforoot_*.go`.
+- **Create and remove.** `worktreecontain.go`, `worktreeexternal*.go`,
+  `externalunsupported_*.go` and `spelling_*.go` hold the path refusals of both.
+  `worktreelock.go` holds their locks. `worktreebranch*.go` holds the branch
+  step of a remove and of a rollback.
+- **Create.** `gitdiraccept.go` and `gitdirheld.go` hold the git directory open
+  and act through it. On Linux and macOS `gitshadowuse.go` also holds the
+  `worktree add` steps. `worktreeverify.go` holds the tests after the add and
+  the rollback steps. `githarden_index_*.go` places the index. For a create
+  that holds no git directory, it deletes the registration of a rollback.
+  `worktreestaging.go` is the Windows staging step. The copy steps
+  are `worktreecopy.go`, `worktreeinclude*.go` and `worktreeclaude.go`. The
+  other steps are `worktreemkdir_*.go`, `worktreestale*.go` and
+  `worktreesource.go`.
+- **Remove.** `worktreeremove.go`.
+
+[`AGENTS.md`](https://github.com/schubydoo/claustrum/blob/main/AGENTS.md) names
+the delete paths of these files and their guards. The page of each method has
+its rules, as in [git.worktree_create](protocol/git-worktree-create.md).
 
 ## The three runtime roles
 
@@ -100,7 +123,7 @@ the files and the seams, and the rules that have no other home.
 - **Login-shell PATH.** `shellenv_unix.go` runs the read at the first
   `process.spawn`, in a process group of its own. At the 4 s cap it kills that
   group. `shellenv_windows.go` reads the daemon's own PATH. See
-  [The login-shell PATH](PROTOCOL.md#the-login-shell-path-linux-and-macos).
+  [The login-shell PATH](protocol/process-spawn.md#the-login-shell-path-linux-and-macos).
 - **Named pipe.** With `-listen-pipe` (Windows only, opt-in) a second
   `acceptLoop` serves the same `serveConn` over a named pipe
   (`pipetransport*.go`). See
@@ -126,11 +149,10 @@ session attaches to it. It injects no auth.)
   interleave safely.
 - Each managed process has a monotonic `seq`, an append-only frame buffer, and a
   set of subscriber connections. `spawn` subscribes the connection that spawned
-  the process. A process whose `id` a later spawn took keeps its subscribers, as
-  on `89cb6289` (Linux and macOS row P2, Windows row EVc). `reattach` REPLACES the whole subscriber set with the requester. It then
+  the process. `reattach` REPLACES the whole subscriber set with the requester. It then
   replays buffered frames with `seq > fromSeq`. Any connection attached before
-  stops receiving frames for that process. Since `90fca6e6` it also closes each
-  connection it displaced. Claustrum detaches a dead
+  stops receiving frames for that process. It also closes each connection that
+  it displaced. Claustrum detaches a dead
   subscriber (`[frameSink] replay write failed, detaching`).
 
 ## Deployment lifecycle (how a driver uses it)
