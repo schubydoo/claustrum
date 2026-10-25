@@ -1,4 +1,4 @@
-/* Fold every top-level h2 section of a page into a native <details open>.
+/* Fold every top-level h2 section, on pages with two or more h2, into a native <details open>.
    Runs after each Material instant navigation (document$). */
 (function () {
   "use strict";
@@ -7,7 +7,8 @@
 
   function foldPage() {
     var root = document.querySelector(".md-content__inner.md-typeset");
-    if (!root || root.hasAttribute("data-fold-done")) return;
+    if (!root) return;
+    if (root.hasAttribute("data-fold-done")) { revealHash(false); return; }
     root.setAttribute("data-fold-done", "");
     var h2s = Array.prototype.filter.call(root.children, function (el) {
       return el.tagName === "H2";
