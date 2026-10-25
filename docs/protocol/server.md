@@ -2,7 +2,7 @@
 
 The `server.*` methods describe the daemon and stop it. `server.ping` tells a client that the daemon answers. `server.capabilities` lists the methods and the optional features of this build. `server.shutdown` stops the daemon. The surprise: `server.shutdown` needs no token, and its reply can lose a race with the close of the connection.
 
-An untagged rule on this page matches build `5fd08069`, measured on Linux. A rule that names macOS or Windows was measured there against `5fd08069`. The measured cells behind each rule are in the tests and in the [reference build history](../REFERENCE-BUILDS.md).
+An untagged rule on this page matches build `5fd08069`, measured on Linux. A rule that names macOS or Windows was measured there too. The measured cells behind each rule are in the tests and in the [reference build history](../REFERENCE-BUILDS.md).
 
 ## Request
 
