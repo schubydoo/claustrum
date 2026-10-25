@@ -68,8 +68,7 @@ its rules, as in [git.worktree_create](protocol/git-worktree-create.md).
 This mode makes sure the pinned `claude` CLI is present under `-cli-dir`.
 Claustrum decompresses the source with zstd to a temp path. It verifies a
 supplied `-cli-checksum`, always on `-cli-url`. Then it applies `chmod 0755` and
-renames the file into place atomically. An interrupted install never leaves a
-half-written CLI.
+renames the file into place atomically.
 [-install and -probe-cli](INSTALL.md) has the sources, the bounds, every
 delete, the prune and the `__INSTALL_RESULT__` facts.
 
@@ -77,18 +76,17 @@ delete, the prune and the `__INSTALL_RESULT__` facts.
 
 Claustrum daemonizes itself: it detaches from the controlling session and, on
 Unix, reparents to init. It then binds the socket and sets its mode to `0600`.
-On Linux and macOS, the run-dir lock and the orphan reap come first. It
-supervises the children it spawns. Most rules are in PROTOCOL.md and [Running the daemon](DAEMON.md). This list
+On Linux and macOS, the run-dir lock and, for its holder, the orphan reap come first. Most rules are in PROTOCOL.md and [Running the daemon](DAEMON.md). This list
 names the files, the seams and the rules with no other home.
 
 ```mermaid
 flowchart TD
-    A["parent reads token"] --> B["re-exec with token pipe"]
-    B --> C["child reads token"]
+    A["parent: reads -token-fd, if set"] --> B["re-exec detached (pipe for -token-fd)"]
+    B --> C["child: token from pipe or file"]
     C --> D["run-dir lock (Unix only)"]
     D -->|"held"| E["evict holder"]
     E --> F
-    D --> F["reap orphans (Unix only)"]
+    D --> F["reap orphans (lock holder only)"]
     F --> G["bind socket"]
     C -.->|"Windows: no lock"| G
     G --> H["chmod 0600"]
@@ -102,7 +100,7 @@ flowchart TD
   [The token source](PROTOCOL.md#the-token-source) and
   [Token persistence](DAEMON.md#token-persistence-daemontoken).
 - **Re-exec sentinel.** An internal sentinel, `CLAUSTRUM_DAEMON_CHILD`, gates the
-  self-daemonize re-exec. The name is claustrum's own on purpose. It is *not* the
+  self-daemonize re-exec. It is *not* the
   reference's `CLAUDE_SSH_DAEMON_CHILD`. A surrounding claude-ssh session exports
   that name to every descendant. If claustrum used that name as its sentinel, the
   launcher mistakes itself for the child and skips its own daemonize and
@@ -184,34 +182,34 @@ flowchart TD
 
 ```mermaid
 sequenceDiagram
-    participant C as Client
-    participant D as Daemon
-    participant P as Child
-    C->>D: spawn
-    D->>P: start
-    P->>D: output
-    D->>C: frame seq 1
-    Note over D: buffer, 16 MiB cap
-    C--xD: disconnect
-    P->>D: output
-    Note over D: seq 2 buffered
-    C->>D: reattach, fromSeq 1
-    D->>C: replay seq above 1
-    D->>C: reattach result
-    P->>D: exit
-    D->>C: exit frame
+    participant Client
+    participant Daemon
+    participant Child
+    Client->>Daemon: spawn
+    Daemon->>Child: start
+    Child->>Daemon: output
+    Daemon->>Client: frame seq 1
+    Note over Daemon: buffer, 16 MiB cap
+    Client--xDaemon: disconnect
+    Child->>Daemon: output
+    Note over Daemon: seq 2 buffered
+    Client->>Daemon: reattach, fromSeq 1
+    Daemon->>Client: replay seq above 1
+    Daemon->>Client: reattach result
+    Child->>Daemon: exit
+    Daemon->>Client: exit frame
 ```
 
 ## Deployment lifecycle (how a driver uses it)
 
-A driver (Claude Desktop, or your own tool such as clauster) does this:
+A driver (Claude Desktop, or your own tool such as clauster) typically does this:
 
 1. Probes the remote OS and arch.
-2. Uploads the daemon binary if it is absent.
+2. Makes sure the daemon binary is present on the remote.
 3. Runs `claustrum -install …` for the agent CLI.
 4. Starts `claustrum -serve -socket … -token-file …`.
 5. Attaches per session with `claustrum -bridge -socket …` and speaks JSON-RPC
-   (in-band auth) through it.
+   through it.
 6. Drives the agent and any MCP servers as `process.spawn` children. It writes to
    each child's stdin with `process.stdin` (base64), and it reads that child's
    stdout from the stream notifications.
@@ -222,7 +220,7 @@ Go's standard library, not claustrum's code, produces some of claustrum's
 byte-identical output. The reference is also a Go program, so inherited
 agreement is agreement nobody verified.
 
-Two things follow. A Go upgrade that changes an escaping rule moves the wire,
+Two things follow: a Go upgrade that changes an escaping rule moves the wire,
 and this repo shows no diff. A reimplementation in another language must
 re-derive every row below by hand.
 
@@ -245,7 +243,7 @@ The decode-side row is the one row with a user-visible consequence: a file
 whose name is not valid UTF-8 cannot be addressed through the protocol at all,
 on either daemon. The request decoder substitutes U+FFFD before any method runs,
 so the daemon operates on a name that does not exist. The reference behaves
-the same way.
+the same way. Keep it: changing it moves inherited wire bytes.
 
 `inherited_encoding_test.go` and `inherited_encoding_unix_test.go` pin these
 rules against regression. For the encode-side rules they assert escape TEXT
@@ -292,8 +290,7 @@ Two driver claims have no fixture: what Desktop sends as `-cli-version` (D6),
 and that Desktop stops the daemon with no token
 ([Authentication](PROTOCOL.md#authentication)).
 
-Each claim in the table has a fixture that runs against the driver, with a control that can
-come out wrong. Only the argv fixture was run.
+Each claim has a fixture and a control that can come out wrong. Only the argv fixture was run.
 
 | claim | fixture | control that must fire |
 |---|---|---|
@@ -303,7 +300,7 @@ come out wrong. Only the argv fixture was run.
 
 The argv claim holds, by inspection of the shipped client. Desktop builds the
 daemon's argv from a fixed set of flags. Only the operands change: the download
-URL, its checksum and the uploaded blob path.
+URL, its checksum and the uploaded blob path. The argv capture of 2026-08-10 (two cold starts and one `-cli-zst` call) shows these shapes ([REFERENCE-BUILDS.md](REFERENCE-BUILDS.md#7c2f88d13e5f269762dd4d463aa4eb3102214110-2026-07-02)).
 
 The `cliError` claim underpins D10.
 `libc` underpins no current entry. This list is kept by hand and is not
