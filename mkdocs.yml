@@ -74,6 +74,11 @@ markdown_extensions:
       anchor_linenums: true
   - pymdownx.details
   - pymdownx.inlinehilite
+  # Shared evidence-tag hovers: one file for every page, outside docs/.
+  - pymdownx.snippets:
+      base_path: includes
+      auto_append:
+        - abbreviations.md
   # Mermaid diagrams: Material loads Mermaid from a CDN in the reader's browser.
   - pymdownx.superfences:
       custom_fences:

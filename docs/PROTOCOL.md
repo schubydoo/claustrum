@@ -1407,7 +1407,7 @@ inside a value pins nothing. The call gets `hook.enabled=false` and an empty
   only `hook.enabled=false` and an empty `hook.event` (from the code).
 - A later listing that fails refuses in three places:
     - the two later listings of `git.status` (see
-      [git.status](protocol/git-status.md#errors)). For the listing in the git
+      [git.status](protocol/git-status.md#rare-states)). For the listing in the git
       directory, this is measured on Linux. For the listing in the temporary
       folder, it is from the code.
     - the two listings before the checkout of a create in the state `shadow`

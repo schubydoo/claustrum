@@ -1,6 +1,6 @@
 # Docs style guide
 
-This guide gives one template for each page type, the limits for a page, and the rule for evidence marks. When you write or change a page under `docs/`, use it. A reader needs to find the answer fast, so each page opens with a summary and puts the common case before the rare one.
+This guide gives one template for each page type, the limits for a page, and the rule for evidence marks. When you write or change a page under `docs/`, use it. Each page opens with a summary and puts the common case before the rare one.
 
 ## Page types
 
@@ -17,6 +17,8 @@ Each page has one type. The type sets the order of the sections.
 Do not mix types on one page. Link to the explanation instead of explaining in a how-to.
 
 ## Templates
+
+"Top line" below means the line of [Evidence marks](#evidence-marks).
 
 ### Reference: a method page
 
@@ -55,6 +57,8 @@ The common case first, in the order a client meets it.
 Link to each divergence entry.
 ```
 
+A page keeps a heading that other pages link to, in the template order. Use one tab for systems that share a rule. A tag inside a tab narrows that tab, and an untagged rule in a tab follows the top line. Group an Errors table of more than about 8 rows under H3 headings.
+
 ### How-to
 
 ```markdown
@@ -62,7 +66,7 @@ Link to each divergence entry.
 
 Summary: the goal and the result, in 2 sentences.
 
-An untagged rule on this page matches build `<id>` or an earlier build, measured on Linux, macOS and Windows.
+Top line.
 
 ## Before you start
 What the reader needs: a version, a file, a right.
@@ -85,7 +89,7 @@ One row for each known failure: the symptom and the fix.
 
 Summary: the end result and the time it takes.
 
-An untagged rule on this page matches build `<id>` or an earlier build, measured on Linux, macOS and Windows.
+Top line.
 
 ## Before you start
 ## Step 1: <name>
@@ -101,7 +105,7 @@ Links to the how-to and reference pages.
 
 Summary: the question this page answers.
 
-An untagged rule on this page matches build `<id>` or an earlier build, measured on Linux, macOS and Windows.
+Top line.
 
 ## The idea
 ## How it works
@@ -118,7 +122,7 @@ The cost and the alternative that lost.
 
 Summary: what the record holds and who keeps it.
 
-An untagged rule on this page matches build `<id>` or an earlier build, measured on Linux, macOS and Windows.
+Top line.
 
 ## Table
 One row for each entry, newest first.
@@ -140,13 +144,13 @@ Move these out of the page:
 
 A fact tagged "not measured" or "from the code" stays on the page. It tells the reader how far to trust the rule.
 
-Each fact has one home. Link to the home. Do not copy its text.
+Each fact has one home. Link to the home. Do not copy its text. A rewrite can move a fact to its shared home, and the fact map names that home.
 
 ## Limits
 
-**Words between two headings: at most 250.** This is a target for new and rewritten text. No test enforces it yet.
+**Words between two headings: at most 250.** This is a target for new and rewritten text. No test enforces it yet. A table or a tab block counts as one unit.
 
-**Sentence length: 8 to 20 words in a procedure, 8 to 25 words in a description.** Pages average about 8 to 14 words per sentence (baseline of 2026-10-25). A run of sentences under 8 words reads as a list with no thread. Join two related short sentences, and say why before the rule.
+**Sentence length: 8 to 20 words in a procedure, 8 to 25 words in a description.** A run of sentences under 8 words reads as a list with no thread. Join two related short sentences, and say why before the rule.
 
 **Words in a page.** Every page except `docs/REFERENCE-BUILDS.md` has a word limit. A row in `docWordLimits` (`docs_consistency_test.go`) sets it, or the default applies: 1500 words, or 1200 under `docs/protocol/`. A new page gets its count plus about 200 words. Do not raise an existing limit: cut instead.
 
@@ -163,20 +167,20 @@ Keep these plain-English rules:
 
 Evidence is the proof for a rule: which build and which system it was measured on. Do not repeat it after every sentence, and never drop a fact to save a tag.
 
-1. **A top line on every page.** Every template has it as the first line after the summary, in one fixed form: "An untagged rule on this page matches build `<id>` or an earlier build, measured on Linux, macOS and Windows."
-2. **A tag for each exception.** Put the tag at the end of the block that it covers. The tags are "(measured on Linux only)" (or macOS or Windows), "(not measured)", "(from the code)" and "(claustrum's own)". They stay three separate kinds beside the platform tag. Never merge them. Every rule of those kinds carries its tag. Give each tag hover text with an abbreviation line.
-3. **A scope sentence for a section.** If all rules of the section share one tag, use one. Say it once under the heading and leave the tags out inside. A mixed section keeps its tags. A tag covers only its own block. If one block holds two rules with different evidence, each rule keeps its tag.
+1. **A top line on every page.** It is the first line after the summary, in one fixed form: "An untagged rule on this page matches build `<id>` or an earlier build, measured on Linux, macOS and Windows."
+2. **A tag for each exception.** Put the tag at the end of the block that it covers. The tags are "(measured on Linux)" (or macOS or Windows, or two of them), "(not measured)", "(from the code)" and "(claustrum's own)". The tag names the system that ran the test and claims no other. A tag copies the evidence of the old page for that rule, and never widens or narrows it. Two tags on one rule sit side by side, "claustrum's own" first. "Not measured" says what is unmeasured: if it is the reference side, the sentence says so. Every rule of those kinds carries its tag. The hover text of the tags is defined once for the site, in `includes/abbreviations.md`.
+3. **A scope sentence for a section or a subsection.** If all rules of it share one tag, use one. Say it once under the heading and leave the tags out inside. A mixed section keeps its tags. A tag covers only its own block. If one block holds two rules with different evidence, each rule keeps its tag.
 
 Before (the real text of `docs/protocol/git-status.md`):
 
 ```markdown
-2. One entry for each gitlink in the index, unless `<name>/.git` does not exist (measured on Linux). A gitlink is an index entry of mode `160000`. There is one entry for each index stage, so a gitlink in conflict gives three (measured on Linux).
+claustrum's own, not measured: a cut can split a multi-byte character. In a porcelain line, the JSON encoding then sends U+FFFD for each leftover byte.
 ```
 
 After:
 
 ```markdown
-2. One entry for each gitlink in the index, unless `<name>/.git` does not exist (measured on Linux only). A gitlink is an index entry of mode `160000`. There is one entry for each index stage, so a gitlink in conflict gives three (measured on Linux only).
+A cut can split a multi-byte character (claustrum's own) (not measured). In a porcelain line, the JSON encoding then sends U+FFFD for each leftover byte (claustrum's own) (not measured).
 ```
 
-The definition sentence has no tag, because it is a fact of git and not a rule of the daemon. Each rule keeps its own tag, because they are two rules.
+Each rule keeps its own tags, because they are separate rules.

@@ -70,10 +70,10 @@ A failure is a JSON-RPC error with no `errorCode` member. It changes nothing in 
 |---|---|---|
 | `-32603` | `git took too long: Claude stopped git <subcommand> after 2 minutes; try again` | A git call ran 2 minutes, and the daemon stopped it. While a `"shadowDirOff":true` request runs, that one included, the limit is 30 minutes, and the text says so (claustrum's own) (not measured). [Time limits of git calls](../PROTOCOL.md#time-limits-of-git-calls). |
 | `-32603` | The Go error of the git call, for example `exit status 128` | `git status`, `git ls-files` or `git diff-index` failed. The text of git does not show. A relative `path` that matches a registration gets `exit status 128`, because git takes it as sent. |
-| `-32603` | `config-defined hooks could not be pinned off; git not run: listing the configuration in force: ` and the start error, for example `chdir <path>: no such file or directory` | `path` passed the test as a cleaned path, but git cannot start in the path as sent. An example is `<dir>/missing/..` outside `baseRepo` (measured on Linux and macOS only). |
-| `-32603` | `<file>: not a regular file` | From the copy into the temporary git folder after the gate passed. An `info/sparse-checkout` folder or FIFO gets it (claustrum's own) (not measured). |
-| `-32603` | `<file> is larger than <n> bytes` | A copied file is over its bound, also one that grew after the gate. `<n>` is 1073741824 for `index`, a `sharedindex.<40 or 64 hex>` file, `info/sparse-checkout` and a reftable file, and 1048576 for `HEAD` and `config.worktree` (claustrum's own) (not measured). |
-| `-32603` | An error of the file system, for example `openat index: permission denied` or `stat <dir>: no such file or directory` | The raw Go error. The daemon cannot copy a file of the registration or make a file of the temporary git folder (not measured). |
+| `-32603` | `config-defined hooks could not be pinned off; git not run: listing the configuration in force: ` and the start error, for example `chdir <path>: no such file or directory` | `path` passed the test as a cleaned path, but git cannot start in the path as sent. An example is `<dir>/missing/..` outside `baseRepo` (measured on Linux and macOS). |
+| `-32603` | `<file>: not a regular file` | From the copy into the temporary git folder after the gate passed (claustrum's own). An `info/sparse-checkout` folder or FIFO gets it. The reference is not measured there. |
+| `-32603` | `<file> is larger than <n> bytes` | A copied file is over its bound, also one that grew after the gate (claustrum's own). `<n>` is 1073741824 for `index`, a `sharedindex.<40 or 64 hex>` file, `info/sparse-checkout` and a reftable file, and 1048576 for `HEAD` and `config.worktree` (claustrum's own). The reference is not measured there. |
+| `-32603` | An error of the file system, for example `openat index: permission denied` or `stat <dir>: no such file or directory` | The raw Go error. The daemon cannot copy a file of the registration or make a file of the temporary git folder. The reference is not measured there. |
 
 A failed config listing and a failed temporary folder have notes under [Rare states](#rare-states).
 
@@ -86,7 +86,7 @@ The daemon does not ask git inside `path`. It reads the registrations of the rep
 Each of these gives `"isRepo": false` before any git call:
 
 - `baseRepo` has the components `.claude/worktrees` in it, or is that folder. `<dir>/.claude` alone passes.
-- A folder above `baseRepo` holds an entry named `.claude-managed-worktrees` and no `.git`. A marker inside `baseRepo` itself does not count. A marker one or two levels above counts (measured on Linux only). Further up the test is claustrum's own (not measured).
+- A folder above `baseRepo` holds an entry named `.claude-managed-worktrees` and no `.git`. A marker inside `baseRepo` itself does not count. A marker one or two levels above counts (measured on Linux). Further up the test is claustrum's own (not measured).
 - `baseRepo` does not resolve. For example, it does not exist, or a `..` after a symbolic link goes up from the target of the link and finds no folder.
 
 Then the [git-directory trust check](../PROTOCOL.md#git-directory-trust-check) runs on `baseRepo`, not on `path`. A refusal answers `-32603`, also for a good linked worktree as `path`. If the check finds no repository, the answer is `"isRepo": false`, with [exceptions](#rare-states). A config of `baseRepo` that the daemon does not accept answers `-32603`, as in [Repository config refusals](../PROTOCOL.md#repository-config-refusals).
@@ -98,8 +98,8 @@ Then the [git-directory trust check](../PROTOCOL.md#git-directory-trust-check) r
 Each of these gives `"isRepo": false`:
 
 - `path` is not a folder, or it does not exist.
-- `path` lies inside `baseRepo`, and a component below `baseRepo` is a symbolic link. That includes a link at `.claude`, and a link at the last component (measured on Linux only).
-- `path` lies inside `baseRepo` and has a `..` component. A `.` component passes (measured on Linux only). Outside `baseRepo` a `..` passes.
+- `path` lies inside `baseRepo`, and a component below `baseRepo` is a symbolic link. That includes a link at `.claude`, and a link at the last component (measured on Linux).
+- `path` lies inside `baseRepo` and has a `..` component. A `.` component passes (measured on Linux). Outside `baseRepo` a `..` passes.
 
 The `.git` file inside `path` plays no part. If it is missing, damaged or names another place, the answer is still the status. So is a locked worktree.
 
@@ -114,9 +114,9 @@ Exactly one registration must name `path`. Two that match give `"isRepo": false`
 The matched registration must pass these tests. Each failure gives `"isRepo": false`.
 
 - `commondir` must be a regular file, or a relative symbolic link to a file in the registration folder. Its value must equal `<common>` as text, in the spelling that git printed.
-- `HEAD` must hold 40 or 64 hex characters, or a `ref:` line under `refs/` (measured on Linux only). A branch that does not exist and a detached commit pass.
-- `index` must be a regular file of at most 1 GiB, or be missing (measured on Linux and Windows only). A symbolic link to a regular file in the registration folder passes too (measured on Linux only). A `sharedindex.<hex>` file that is a regular file has the same 1 GiB bound. The `index` and all `sharedindex.*` files together must hold at most 2 GiB (measured on Linux only).
-- `config.worktree` can be missing. If it exists, it must parse and hold only `core.sparseCheckout`, `core.sparseCheckoutCone` and `index.sparse`. `user.name` gives `"isRepo": false`. So does `core.bare`, and `core.sparseCheckoutCone` passes (measured on Linux only). claustrum refuses every other key too (not measured).
+- `HEAD` must hold 40 or 64 hex characters, or a `ref:` line under `refs/` (measured on Linux). A branch that does not exist and a detached commit pass.
+- `index` must be a regular file of at most 1 GiB, or be missing (measured on Linux and Windows). A symbolic link to a regular file in the registration folder passes too (measured on Linux). A `sharedindex.<hex>` file that is a regular file has the same 1 GiB bound. The `index` and all `sharedindex.*` files together must hold at most 2 GiB (measured on Linux).
+- `config.worktree` can be missing. If it exists, it must parse and hold only `core.sparseCheckout`, `core.sparseCheckoutCone` and `index.sparse`. `user.name` gives `"isRepo": false`. So does `core.bare`, and `core.sparseCheckoutCone` passes (measured on Linux). claustrum refuses every other key too (not measured).
 
 ## What the status reads
 
@@ -143,26 +143,24 @@ If `HEAD` names no commit, `diff-index` compares the staged changes with the emp
 `changes` holds three groups, in this order.
 
 1. The lines of `git status --porcelain`, verbatim, minus the line end. Warnings on stderr never appear. The XY column is positional, so the leading space of an unstaged change is data: `"M  a.txt"` is staged and `" M b.txt"` is unstaged. An untracked file in an untracked folder has its own entry, as `"?? sub/u.txt"`.
-2. One entry for each gitlink in the index, unless `<name>/.git` does not exist. A gitlink is an index entry of mode `160000`. There is one entry for each index stage, so a gitlink in conflict gives three.
-3. One entry for each staged change whose old or new mode is `160000`.
+2. One entry for each gitlink in the index, unless `<name>/.git` does not exist (measured on Linux). A gitlink is an index entry of mode `160000`. There is one entry for each index stage, so a gitlink in conflict gives three (measured on Linux).
+3. One entry for each staged change whose old or new mode is `160000` (measured on Linux).
 
-Groups 2 and 3 are measured on Linux only, and one gitlink can have entries in all three.
+One gitlink can have entries in all three groups (measured on Linux).
 
 ### Submodule entries and limits
 
-Every rule in this subsection is measured on Linux only.
-
-A submodule entry is ` S `, the quoted name and one of three texts:
+A submodule entry is ` S `, the quoted name and one of three texts (measured on Linux):
 
 | Text | Meaning |
 |---|---|
-| ` (submodule present; contents not inspected)` | `<name>/.git` exists, as a file, a folder or a dangling symbolic link. A gitlink path that is a symbolic link to a folder inside the work tree counts as present. |
-| ` (submodule; could not be inspected)` | The daemon cannot look at `<name>/.git`. Examples are a gitlink path that is a regular file, a symbolic link out of the work tree, or a folder of mode 000. |
-| ` (submodule change staged; contents not inspected)` | A staged change of a gitlink. |
+| ` (submodule present; contents not inspected)` | `<name>/.git` exists, as a file, a folder or a dangling symbolic link. A gitlink path that is a symbolic link to a folder inside the work tree counts as present (measured on Linux). |
+| ` (submodule; could not be inspected)` | The daemon cannot look at `<name>/.git` (measured on Linux). Examples are a gitlink path that is a regular file, a symbolic link out of the work tree, or a folder of mode 000 (measured on Linux). |
+| ` (submodule change staged; contents not inspected)` | A staged change of a gitlink (measured on Linux). |
 
-- A porcelain line over 512 bytes is cut to 512 bytes, and `…` follows. At most 10000 porcelain lines pass, and no entry marks the cut. The submodule entries still follow.
-- A submodule name over 200 bytes is cut to 200 bytes, and `…` follows. The name is then quoted with double quotes, `\"`, `\n`, `\t`, and `\xff` for a byte that is not valid UTF-8. A printable character outside ASCII stays.
-- At most 100 submodule entries pass. Then one entry counts the rest, for example ` S … (+20 more submodule entries)`.
+- A porcelain line over 512 bytes is cut to 512 bytes, and `…` follows (measured on Linux). At most 10000 porcelain lines pass, and no entry marks the cut (measured on Linux). The submodule entries still follow (measured on Linux).
+- A submodule name over 200 bytes is cut to 200 bytes, and `…` follows (measured on Linux). The name is then quoted with double quotes, `\"`, `\n`, `\t`, and `\xff` for a byte that is not valid UTF-8 (measured on Linux). A printable character outside ASCII stays (measured on Linux).
+- At most 100 submodule entries pass (measured on Linux). Then one entry counts the rest, for example ` S … (+20 more submodule entries)` (measured on Linux).
 
 ## Differences by system
 
@@ -177,7 +175,7 @@ An untagged rule in a tab is measured on that system.
     - Letter case in the registration match is exact.
     - `path` matches as sent and as resolved, and in no other spelling.
     - The `commondir` value must be exact text.
-    - A gitlink path that is a regular file gives ` (submodule; could not be inspected)` (measured on Linux only).
+    - A gitlink path that is a regular file gives ` (submodule; could not be inspected)` (measured on Linux).
 
 === "macOS"
 
@@ -202,21 +200,21 @@ An untagged rule in a tab is measured on that system.
 ??? note "A check that finds no repository"
     A config listing that fails gives the hooks refusal. If `git version` fails too, it gives the "cannot run" text of [Hardened git calls](../PROTOCOL.md#hardened-git-calls).
 
-    A `.git` file can name a gone git directory that is no registration. If git 2.56 or newer says so, the answer is `git could not check this repository on the remote machine: at "<root>": …`. With `"shadowDirOff":true` it is the hooks refusal. An older git gives `"isRepo": false`. All three rules are measured on Linux only.
+    A `.git` file can name a gone git directory that is no registration. If git 2.56 or newer says so, the answer is `git could not check this repository on the remote machine: at "<root>": …` (measured on Linux). With `"shadowDirOff":true` it is the hooks refusal (measured on Linux). An older git gives `"isRepo": false` (measured on Linux).
 
 ??? note "A failed config listing"
-    The first config listing refuses by [these classes](../PROTOCOL.md#a-failed-configuration-listing). [Hook pins](../PROTOCOL.md#hook-pins) has the rules for later listings and for a hook-pin limit. The empty-tree listing never refuses (from the code). A stopped listing of `config.worktree` gives `{"isRepo":false,"clean":false}` (measured on Linux only).
+    The first config listing refuses by [these classes](../PROTOCOL.md#a-failed-configuration-listing). [Hook pins](../PROTOCOL.md#hook-pins) has the rules for later listings. The empty-tree listing never refuses (from the code). Over a hook-pin limit the first listing refuses in a repository (from the code). A stopped listing of `config.worktree` gives `{"isRepo":false,"clean":false}` (measured on Linux).
 
 ??? note "No temporary git folder"
-    If the daemon cannot make its folder under `git-shadow`, the response is `{"isRepo":false,"clean":false}` (measured on Linux and Windows only). When the folder is in the temporary directory of the system, a failure answers `-32603` with the error of the file system (not measured).
+    If the daemon cannot make its folder under `git-shadow`, the response is `{"isRepo":false,"clean":false}` (measured on Linux and Windows). When the folder is in the temporary directory of the system, a failure answers `-32603` with the error of the file system (not measured).
 
 ??? note "Reftable and FIFO files"
-    A repository can have the reftable format. If the `reftable` folder then holds a `tables.list` file, it must name at least one table. Each table must be a regular file. If `reftable` is not a real folder, or `tables.list` is a FIFO, the request goes on. git then shows every tracked file as added. All of this is measured on macOS only.
+    A repository can have the reftable format. If the `reftable` folder then holds a `tables.list` file, it must name at least one table (measured on macOS). Each table must be a regular file (measured on macOS). If `reftable` is not a real folder, or `tables.list` is a FIFO, the request goes on (measured on macOS). git then shows every tracked file as added (measured on macOS).
 
-    No test waits on a FIFO. A FIFO in place of `gitdir`, `commondir` or `config.worktree` fails at once (measured on Linux and macOS only). A FIFO at `index` fails at once too (measured on Linux only), and so does one at `HEAD` (from the code).
+    No test waits on a FIFO (measured on Linux and macOS). A FIFO in place of `gitdir`, `commondir` or `config.worktree` fails at once (measured on Linux and macOS). A FIFO at `index` fails at once too (measured on Linux), and so does one at `HEAD` (from the code).
 
 ??? note "A cut inside a multi-byte character"
-    In a porcelain line, the JSON encoding sends U+FFFD for each leftover byte. In a submodule name, the quoting writes each leftover byte as `\xNN` (claustrum's own) (not measured).
+    A cut can split a multi-byte character (claustrum's own) (not measured). In a porcelain line, the JSON encoding then sends U+FFFD for each leftover byte (claustrum's own) (not measured). In a submodule name, the quoting writes each leftover byte as `\xNN` (claustrum's own) (not measured).
 
 ## Differences from the reference
 
@@ -227,11 +225,3 @@ This entry of the divergence catalog applies:
 - [D16](../DIVERGENCES.md#d16): on Windows, with no global excludes file of the user, claustrum answers the status where the reference answers `-32603 "exit status 128"`.
 
 The measured cells behind each rule are in the tests and in the [reference build history](../REFERENCE-BUILDS.md).
-
-*[measured on Linux only]: Not measured elsewhere.
-*[measured on Linux and macOS only]: Not measured on Windows.
-*[measured on Linux and Windows only]: Not measured on macOS.
-*[measured on macOS only]: Not measured elsewhere.
-*[not measured]: No test measured this.
-*[from the code]: Read from the code. Not measured.
-*[claustrum's own]: A rule of claustrum, with no reference behavior.
