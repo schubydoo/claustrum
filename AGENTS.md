@@ -647,8 +647,9 @@ frames → [`docs/PROTOCOL.md`](docs/PROTOCOL.md). Driver-claim provenance
 ## Where detail lives
 
 - Protocol / frames → [`docs/PROTOCOL.md`](docs/PROTOCOL.md)
-- Running the daemon (token file, lock, cleaner, start, log) → [`docs/DAEMON.md`](docs/DAEMON.md)
+- Running the daemon (token, lock, cleaner, start, log) → [`docs/DAEMON.md`](docs/DAEMON.md)
 - `-install` and `-probe-cli` (`cliError` texts, facts line) → [`docs/INSTALL.md`](docs/INSTALL.md)
+- Docs style guide → [`docs/STYLE.md`](docs/STYLE.md)
 - One short page for each method → `docs/protocol/`
 - Divergence catalog + rules → [`docs/DIVERGENCES.md`](docs/DIVERGENCES.md)
 - Internals + driver-claim provenance → [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md)
@@ -656,14 +657,13 @@ frames → [`docs/PROTOCOL.md`](docs/PROTOCOL.md). Driver-claim provenance
 - Keeping compatibility in sync → [`docs/UPSTREAM-TRACKING.md`](docs/UPSTREAM-TRACKING.md)
 - History of the reference builds → [`docs/REFERENCE-BUILDS.md`](docs/REFERENCE-BUILDS.md)
 - Terms → [`docs/GLOSSARY.md`](docs/GLOSSARY.md)
-- Shipped ledger (completed work) → [`docs/IMPROVEMENTS.md`](docs/IMPROVEMENTS.md)
-- Host-local agent guardrails + agent-tool routing → `CLAUDE.local.md` (gitignored)
+- Shipped ledger → [`docs/IMPROVEMENTS.md`](docs/IMPROVEMENTS.md)
+- Host-local guardrails + tool routing → `CLAUDE.local.md` (gitignored)
 - CI · security · releases → [`.github/workflows/`](.github/workflows/) (the
   `ci` / `security` aggregators are the required checks). Releases: pending
   `.changeset/` fragments → knope opens a version PR (`knope-prepare.yml`).
   Merging it tags `v*` (`knope-release.yml`), and the tag fires `release.yml`.
   That release is signed and carries SBOM and SLSA, via
   [`.goreleaser.yaml`](.goreleaser.yaml). Gated on the `KNOPE_ENABLED` repo var.
-- Claude Code / Anthropic API specifics → prefer current docs (context7 /
-  find-docs) over memory:
+- Claude Code / Anthropic API specifics → prefer current docs (context7) over memory:
   <https://docs.anthropic.com/en/docs/claude-code/overview>.
