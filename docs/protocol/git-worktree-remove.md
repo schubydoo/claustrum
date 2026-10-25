@@ -180,7 +180,7 @@ A worktree directory that is gone is not an error by itself. The repository chec
 ## Rare states
 
 ??? note "No git directory is held"
-    The remove holds no git directory, and on Linux and macOS a swap of `.git` during a remove leads the delete of the registration into the folder at the path (from the code). Windows is not measured.
+    The remove holds no git directory (from the code). On Linux and macOS a swap of `.git` during a remove leads the delete of the registration into the folder at the path. Windows is not measured.
 
 ## Differences from the reference
 
