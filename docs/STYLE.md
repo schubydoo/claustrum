@@ -57,7 +57,7 @@ The common case first, in the order a client meets it.
 Link to each divergence entry.
 ```
 
-A page keeps a heading that other pages link to, in the template order. Use one tab for systems that share a rule. A tag inside a tab narrows that tab, and an untagged rule in a tab follows the top line. Group an Errors table of more than about 8 rows under H3 headings.
+A page keeps a heading that other pages link to, in the template order. Use one tab for systems that share a rule. A tag inside a tab narrows that tab, and an untagged rule in a tab is measured on the systems of its tab. Group an Errors table of more than about 8 rows under H3 headings.
 
 ### How-to
 
