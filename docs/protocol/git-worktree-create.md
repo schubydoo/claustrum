@@ -46,8 +46,6 @@ Failure:
 {"success": false, "error": "<text>", "errorCode": "<code>"}
 ```
 
-Decide by `errorCode` first.
-
 | `errorCode` | Meaning |
 |---|---|
 | `unsafe_path` | The daemon refuses a path. For example, `worktreePath` is relative, has a `..` component, is outside `baseRepo`, or exists. A `worktreeRoot` that is not safe gives this code too. So does a worktree that git registered in an unexpected place. |
@@ -65,9 +63,9 @@ A request with no `branchName` gets the JSON-RPC error `-32602`.
 
 ## Error texts
 
-Each text is in `error`, unless the row names a JSON-RPC error. A row with no mark holds a text of the reference, measured on Linux. A mark such as "measured on macOS" limits its sentence to that system. A sentence that names systems without "measured" holds on each one.
+Each text is in `error`, unless the row names a JSON-RPC error. The shared texts are in the [error-string catalogue](../PROTOCOL.md#error-string-catalogue). A row with no mark holds a text of the reference, measured on Linux. A mark such as "measured on macOS" limits its sentence to that system. A sentence that names systems without "measured" holds on each one.
 
-### Location and path refusals
+### Location, path and post-add refusals
 
 | Text | Code and cause |
 |---|---|
@@ -84,20 +82,15 @@ Each text is in `error`, unless the row names a JSON-RPC error. A row with no ma
 | `refusing to create worktree: <root> leads into <wt>, a worktree of the repository <repo> (at <wt>); a worktree location must be outside the repository's checkouts` | `errorCode:"unsafe_path"`, with `worktreeRoot`, Linux and macOS. The root lies in a linked worktree `<wt>` of the repository. The [remove row](git-worktree-remove.md#error-texts) of this text gives the test. `<repo>` is `baseRepo` as sent. A listed worktree whose folder is gone refuses too. The create makes that folder first, with mode 0700. Nothing else is created |
 | `refusing to create worktree: <root> is inside a git checkout (<dir> has a .git entry); a worktree location must be outside every checkout, so that no session working in one can reach it — choose a directory that is not part of any repository` | `errorCode:"unsafe_path"`, Linux and macOS, with `worktreeRoot`. A directory from `/` down to the root holds a `.git` entry of any kind. A missing directory is skipped. The ancestor text answers first at the same directory. `<root>` is `worktreeRoot` as sent, with a trailing slash or `//` kept. `<dir>` is the highest such directory, resolved and cleaned. Nothing is created |
 | `refusing to create worktree: <dir> is itself a git checkout (it has a .git entry); a worktree location must be outside every checkout` | `errorCode:"unsafe_path"`, Linux and macOS, with `worktreeRoot`, when the `<directory>` level holds a `.git` entry. `<dir>` has the symlinks of the root resolved. Nothing is created |
-
-### Refusals after the add
-
-| Text | Code and cause |
-|---|---|
 | `refusing to create worktree: <p> carries a .git file that does not name this repository's own worktree admin directory` | `errorCode:"unsafe_path"`, Linux and macOS, after a successful add. `<p>` is spelled as in the `already exists` text. The `gitdir:` path of the new `.git` file is not in a folder named `worktrees`. Or it names no entry of the `worktrees` folder of `baseRepo`, or a symbolic link. Or the `commondir` file of the registration does not name the git directory by text. Or that `commondir` file or the `gitdir` record cannot be read as a file. No checkout runs and nothing is rolled back |
 | `refusing to create worktree: <p> was not populated by git worktree add` | `errorCode:"unsafe_path"`, Linux and macOS, after a successful add, when the git directory of `baseRepo` has no `worktrees` folder. A daemon `GIT_COMMON_DIR` of another repository gets it too. In the state `shadow` it also answers a `.git` that no longer names the held git directory right after the add. That `.git` is no real directory that passes the gate. No checkout runs and nothing is rolled back |
 | `refusing to create worktree: <p> carries a .git file naming an admin directory whose own record is of a different worktree` | `errorCode:"unsafe_path"`, after a successful add. The `gitdir` record of the registration does not name `<p>/.git`. A record with a slash or a blank at its end, a `/./` part or a double slash names it. An expired `timeoutMs` gets the same answer. No checkout runs and nothing is rolled back |
 | `git worktree add failed (verification): could not verify the worktree's registration: git did not report its spelling of the path (entry <name>); retry` | `errorCode:"worktree_add_failed"`, Linux and macOS. The state of the row above, and git fails the `rev-parse --show-toplevel` call that follows. `<name>` is the entry that the `.git` file names. The leaf, the one new entry of the `worktrees` folder and the new branch go. claustrum's own, not measured: the folder has one new entry, and no time limit stopped the call |
-| `refusing to create worktree: <p> carries a .git file naming an admin entry other than the one just created for it` | `errorCode:"unsafe_path"`, after a successful add. The registration is not the one new name of the `worktrees` folder since the listing before the add: there are two new entries, or none. On Windows a leaf `.git` file of another staged entry gets it before the move. claustrum's own, not measured: a listing that fails gets it, and a refusal of the four rows above comes first. Otherwise no checkout runs and nothing is rolled back |
+| `refusing to create worktree: <p> carries a .git file naming an admin entry other than the one just created for it` | `errorCode:"unsafe_path"`, after a successful add. The registration is not the one new name of the `worktrees` folder since the listing before the add: there are two new entries, or none. On Windows a leaf `.git` file of another staged entry gets it before the move. Only the leaf and the branch go then. claustrum's own, not measured: a listing that fails gets it, and a refusal of the four rows above comes first. Otherwise no checkout runs and nothing is rolled back |
 | `refusing to create worktree: <p> has no .git file` / `refusing to create worktree: <p>/.git is not a regular file` / `refusing to create worktree: <p>/.git does not name a git dir` | `errorCode:"unsafe_path"`, Linux and macOS, after a successful add. The `.git` entry of the new worktree is gone, is no regular file, or does not start with `gitdir: `. The registration and the branch stay, and an empty leaf goes |
 | `refusing to create worktree: <p> is no longer the directory that was created for the worktree` | `errorCode:"unsafe_path"`, Linux and macOS, before the checkout. Another folder is at the path of the leaf. Nothing is checked out or rolled back |
 
-### Folder and session worktree errors
+### Folder and session errors
 
 | Text | Code and cause |
 |---|---|
@@ -137,14 +130,11 @@ Each text is in `error`, unless the row names a JSON-RPC error. A row with no ma
 | `<frame>; and the undo could not finish for <leaf>: {the worktree directory, its registration, and the branch all remain; remove them by hand before retrying (RemoveAll <entry>: <OS error>) / the worktree directory remains (re-populated while undoing?); remove it by hand before retrying (removeat <leaf base name>: <OS error>)}` | Appended to the checkout-failure frame and to each `timeout` frame when a step of the rollback fails. The `errorCode` stays as it was. The two texts in braces were measured on Windows only. In attach mode the first text reads `the worktree directory and its registration both remain` instead, because the call made no branch. On Linux and macOS a registration that cannot be deleted gives `the worktree registration and the branch remain; remove them by hand before retrying (RemoveAll <registration name>: <OS error>)` instead, with the leaf removed. In attach mode it reads `the worktree registration remains; remove it by hand before retrying (RemoveAll <registration name>: <OS error>)`. The text in the parentheses of a registration text can be claustrum's own. No rmdir text joins either one |
 | `<frame>; and the undo could not finish for <leaf>: <branch part>` | Appended when the branch step of the rollback keeps the branch that the call made. After a failed leaf rmdir, the branch part follows the rmdir text after `; `. Some cases also add `"branchKept":true` after `errorCode`. [The branch step](git-rules-calls.md#the-branch-step) gives each `<branch part>` and each case |
 
-## How a create runs
+## The main steps
 
 ```mermaid
 flowchart TD
     A["gate"] --> B["before the add"] --> C["git worktree add"] --> E["config.worktree step"] --> F["checkout"] --> G["copy of ignored files"]
-    C -->|"fails"| R1["rollback of a failed add"]
-    E -->|"fails"| R2["rollback of a failed checkout"]
-    F -->|"fails"| R2
 ```
 
 ## The held git directory
@@ -152,7 +142,7 @@ flowchart TD
 In the state `shadow` a create holds the git directory of `baseRepo` open from its gate to its reply. The gate is the trust check of the git directory and the daemon's own read of its config.
 
 - The git directory must be a real directory at the gate (the test is claustrum's own). On Windows a junction or a directory symbolic link there is refused, on every git method without `"shadowDirOff": true`. With that member both link kinds pass, and git works in the folder behind the link. On Linux and macOS a `.git` that is a symbolic link before the request is resolved, and the daemon holds its target.
-- The daemon's own deletes, renames, new folders and file writes inside the git directory go through the held folder. A folder that is put at the path while the create runs gets none of them, except the directory that the hold moves to.
+- The daemon's own deletes, renames, new folders and file writes inside the git directory go through the held folder. A folder that is put at the path while the create runs gets none of them, except the directory that the hold moves to ([Rare states](#rare-states)).
 - These go by the path: git itself, a host in the state `fallback-git` or with no run folder, and a request with `"shadowDirOff": true`. So does a request that starts while such a request runs, until a later gate before its first good add (claustrum's own). Before that gate, or with a `worktrees` folder outside the held folder, the stale-registration step goes by the path too (from the code).
 
 ## The settings copy
@@ -167,7 +157,7 @@ The git calls of the daemon read its own copy of the repository's git settings. 
 
 ## Git filters
 
-In the state `shadow`, a checkout file that uses a filter that only the repository config defines fails the request. The text is in [Error texts](#error-texts).
+In the state `shadow`, a checkout that needs a filter that only the repository config defines, with a value that does not pass, fails the request.
 
 In the state `fallback-git` git runs the filters, and this section does not apply. In the state `shadow`:
 
@@ -219,7 +209,7 @@ Before the add, a request can remove one stale registration in the common git di
     - If the branch holds commits that no other ref reaches, the daemon keeps the branch. The response then has `"branchKept": true`.
     - After a failed `config.worktree` step, a refused second config read keeps the branch without `branchKept` (Linux and macOS).
     - If a delete fails, the error text ends with a clause that says what remains. If the files of the worktree cannot be deleted, the registration and the branch stay. A registration that cannot be deleted keeps the branch too, on Windows only for a moved registration (not measured on Windows). On Linux and macOS in the state `shadow`, after an empty answer of git about the git directory, a registration that cannot be deleted adds no clause, and the branch step runs (claustrum's own). On Windows a registration that stays adds no clause, unless the create moved it (not measured).
-    - If something replaced the worktree directory, the rollback keeps the replacement and adds no clause. It also keeps a replaced registration directory ([D24](../DIVERGENCES.md#d24)).
+    - If something replaced the worktree directory, the rollback keeps the replacement and adds no clause.
 
 ## Differences by system
 
@@ -232,8 +222,8 @@ Before the add, a request can remove one stale registration in the common git di
 === "Windows"
 
     - A junction between `baseRepo` and the worktree is refused with `mkdir_failed`.
-    - The stale registration goes by the same rule, after `rev-parse --absolute-git-dir`. The compare ignores letter case, measured for a create that holds its git directory.
-    - Git writes the registration into a short-lived folder of the daemon. The daemon copies it into `<git dir>\.claude-new-worktree-<16 hex>` and renames that folder to the first free name of `<name>`, `<name>1` to `<name>99` in `<git dir>\worktrees`. A held folder gets 2 s of retries, also past `timeoutMs`. A rename that still fails gives `worktree_add_failed`, and the rollback removes the staging folder. A failed write of the `.git` file of the worktree, and a rollback, remove the moved registration by its name. `config.worktree` and the index are new files there.
+    - The stale registration goes by the same rule, after `rev-parse --absolute-git-dir`. The compare ignores letter case, measured for a create that holds its git directory. An entry whose record names a path that exists stays ([D27](../DIVERGENCES.md#d27)).
+    - In the state `shadow`, git writes the registration into a short-lived folder of the daemon. The daemon copies it into `<git dir>\.claude-new-worktree-<16 hex>` and renames that folder to the first free name of `<name>`, `<name>1` to `<name>99` in `<git dir>\worktrees`. A held folder gets 2 s of retries, also past `timeoutMs`. A rename that still fails gives `worktree_add_failed`, and the rollback removes the staging folder. A failed write of the `.git` file of the worktree, and a rollback, remove the moved registration by its name. `config.worktree` and the index are new files there.
     - Before that step, a create removes old staging entries of the git directory. Their name starts with `.claude-new-worktree-`, and their write time is 1 hour or more. A junction goes as a junction, and its target stays.
 
 ## Rare states
@@ -246,7 +236,7 @@ Before the add, a request can remove one stale registration in the common git di
 
 ??? note "A failed step before the add"
 
-    - On Windows any failed step before the add gives `git worktree add failed: cannot prepare the repository's worktrees directory: <cause>`, and no `worktree add` runs.
+    - In the state `shadow` on Windows, a failed step that prepares the add (the `worktrees` folder, the read of the registrations, the folder `.s<n>`) gives `git worktree add failed: cannot prepare the repository's worktrees directory: <cause>`, and no `worktree add` runs.
     - With `"shadowDirOff": true`, a link or a file at `worktrees` refuses the add after its listing (Linux, macOS and Windows). A file there on Windows is not measured.
 
 ## Differences from the reference
