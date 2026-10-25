@@ -716,7 +716,7 @@ var docSectionRunLimits = map[string]int{
 	"docs/protocol/git-rules-settings-copy.md": 891,
 	"docs/protocol/git-rules-trust.md":         659,
 	"docs/protocol/git-status.md":              414,
-	"docs/protocol/git-worktree-create.md":     3951,
+	"docs/protocol/git-worktree-create.md":     2389,
 	"docs/protocol/git-worktree-remove.md":     1721,
 	"docs/protocol/launcher-resolve.md":        293,
 	"docs/protocol/plugins-prune.md":           258,
