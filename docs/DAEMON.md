@@ -11,8 +11,8 @@ section. The other marks are those of the [protocol reference](PROTOCOL.md).
 
 ### Start the daemon
 
-1. Run the binary with `-serve` ([flags](PROTOCOL.md#-serve-run-the-daemon)).
-2. Wait for the launcher to exit ([launcher wait](#the-launcher-wait)).
+1. Run the binary with `-serve`, `-socket` and a token source ([flags](PROTOCOL.md#-serve-run-the-daemon)).
+2. Wait for the launcher ([launcher wait](#the-launcher-wait)).
 
 ### Stop the daemon
 
@@ -31,13 +31,13 @@ section. The other marks are those of the [protocol reference](PROTOCOL.md).
 ### Recover after a crash or a stale lock
 
 1. Restart the daemon ([launcher](#the-launcher-wait)).
-2. On Linux and macOS, wait for the reap of children ([the reap](#the-bind-after-the-reap-linux-and-macos)).
+2. On Linux and macOS, wait for the reap of children ([reap](#the-bind-after-the-reap-linux-and-macos)).
 3. If the log says `[daemon] serve: WARNING … (its holder is not a daemon (role ""))`, a non-daemon process holds `daemon.lock` ([no signal](#holders-that-get-no-signal)).
 
 ### Read the cleaner's lines
 
 1. Find the `[hostclean]` lines and the `[daemon] host cleaning off` line in the [log](#daemon-log-remote-serverlog).
-2. `host cleaning off` means no pass runs ([when it runs](#when-the-cleaner-runs)).
+2. `host cleaning off` means no pass runs ([runs](#when-the-cleaner-runs)).
 3. `was not retired` means the cleaner did not retire that daemon, and its reason says why ([signals](#signals-of-the-cleaner)).
 
 ## Token persistence (`daemon.token`)
