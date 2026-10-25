@@ -1,6 +1,6 @@
 # git.info
 
-`git.info` describes the git repository that holds a folder. It answers the top folder of the repository, the current branch, the GitHub name of the `origin` remote and the default branch of `origin`. It also reports the state of the daemon's [settings copy](../PROTOCOL.md#the-settings-copy). The method changes nothing in the repository and fetches nothing.
+`git.info` describes the git repository that holds a folder. It answers the top folder of the repository, the current branch, the GitHub name of the `origin` remote and the default branch of `origin`. It also reports the state of the daemon's [settings copy](git-rules-settings-copy.md#the-settings-copy). The method changes nothing in the repository and fetches nothing.
 
 An untagged rule on this page matches build `5fd08069` or an earlier build. The rules of Request, Response, What changes on disk, The branch, repoSlug and defaultBranch, and the Linux and macOS part of The root, are measured, but the system was not recorded. A linked Errors row carries the system marks of its section. The measured cells behind each rule are in the tests and in the [reference build history](../REFERENCE-BUILDS.md).
 
@@ -13,7 +13,7 @@ An untagged rule on this page matches build `5fd08069` or an earlier build. The 
 | Parameter | Required | Meaning |
 |---|---|---|
 | `path` | no | A folder of the repository. A subfolder gives the same `root`. Without `path`, the daemon answers for its own working directory. [Path handling](../PROTOCOL.md#path-handling) has the rules for a leading `~`. |
-| `shadowDirOff` | no | `true` turns off the daemon's own read of the repository's git config and its settings copy for this request. See [Turning the read off](../PROTOCOL.md#turning-the-read-off). |
+| `shadowDirOff` | no | `true` turns off the daemon's own read of the repository's git config and its settings copy for this request. See [Turning the read off](git-rules-config.md#turning-the-read-off). |
 
 ## Response
 
@@ -59,19 +59,19 @@ This method has no `errorCode` member. A failure is a JSON-RPC error. The texts 
 | Code | Text | Cause |
 |---|---|---|
 | `-32602` | `Invalid params` | The request has no `params` member, or `params` or `path` has the wrong type. [The rules for `params`](../PROTOCOL.md#params-presence-and-typing). |
-| `-32603` | `the repository's git directory could not be trusted; git not run: …` | The daemon does not trust the git directory. [Git-directory trust check](../PROTOCOL.md#git-directory-trust-check). |
-| `-32603` | `config-defined hooks could not be pinned off; git not run: …` | A config listing failed or passed a limit of the hook pins, the daemon refuses its own git environment, or a daemon `GIT_DIR` names a gone worktree entry. A listing stopped at 30 seconds goes on with `listing the configuration in force: git took too long: Claude stopped git config after 30 seconds; try again`. [Refusal texts](../PROTOCOL.md#refusal-texts) and [The daemon's own git environment](../PROTOCOL.md#the-daemons-own-git-environment). |
-| `-32603` | `git cannot run on this host; git not run: …` | A config listing, the read of the test repository's config or the call about the repository failed, and then `git version` failed too. [A failed configuration listing](../PROTOCOL.md#a-failed-configuration-listing), [The start test](../PROTOCOL.md#the-start-test) and [The call about the repository](../PROTOCOL.md#the-call-about-the-repository). |
-| `-32603` | `this repository's git config cannot be used: …` or `a file in this repository's .git directory cannot be used: …` | The daemon read the git config of the repository, or a file of its git directory, and does not accept it. [Repository config refusals](../PROTOCOL.md#repository-config-refusals). |
-| `-32603` | `Claude could not test git on the remote machine (…). Check free disk space and quota there, then try again.` | The start test of the settings copy failed. The daemon keeps the failure for 10 seconds. [The start test](../PROTOCOL.md#the-start-test). |
-| `-32603` | `git could not check this repository on the remote machine: …` or `git and Claude disagree about which repository holds this folder: …` | The call that asks git about the repository failed, did not end in 30 seconds, or named another repository. [The call about the repository](../PROTOCOL.md#the-call-about-the-repository). |
-| `-32603` | `Claude could not prepare its own files on the remote machine: …` | The daemon cannot prepare the folder of the settings copy for this repository. [The folders](../PROTOCOL.md#the-folders). |
+| `-32603` | `the repository's git directory could not be trusted; git not run: …` | The daemon does not trust the git directory. [Git-directory trust check](git-rules-trust.md#git-directory-trust-check). |
+| `-32603` | `config-defined hooks could not be pinned off; git not run: …` | A config listing failed or passed a limit of the hook pins, the daemon refuses its own git environment, or a daemon `GIT_DIR` names a gone worktree entry. A listing stopped at 30 seconds goes on with `listing the configuration in force: git took too long: Claude stopped git config after 30 seconds; try again`. [Refusal texts](git-rules-calls.md#refusal-texts) and [The daemon's own git environment](git-rules-calls.md#the-daemons-own-git-environment). |
+| `-32603` | `git cannot run on this host; git not run: …` | A config listing, the read of the test repository's config or the call about the repository failed, and then `git version` failed too. [A failed configuration listing](git-rules-trust.md#a-failed-configuration-listing), [The start test](git-rules-settings-copy.md#the-start-test) and [The call about the repository](git-rules-settings-copy.md#the-call-about-the-repository). |
+| `-32603` | `this repository's git config cannot be used: …` or `a file in this repository's .git directory cannot be used: …` | The daemon read the git config of the repository, or a file of its git directory, and does not accept it. [Repository config refusals](git-rules-config.md#repository-config-refusals). |
+| `-32603` | `Claude could not test git on the remote machine (…). Check free disk space and quota there, then try again.` | The start test of the settings copy failed. The daemon keeps the failure for 10 seconds. [The start test](git-rules-settings-copy.md#the-start-test). |
+| `-32603` | `git could not check this repository on the remote machine: …` or `git and Claude disagree about which repository holds this folder: …` | The call that asks git about the repository failed, did not end in 30 seconds, or named another repository. [The call about the repository](git-rules-settings-copy.md#the-call-about-the-repository). |
+| `-32603` | `Claude could not prepare its own files on the remote machine: …` | The daemon cannot prepare the folder of the settings copy for this repository. [The folders](git-rules-settings-copy.md#the-folders). |
 
 ### Git failures
 
 | Code | Text | Cause |
 |---|---|---|
-| `-32603` | `git took too long: Claude stopped git <subcommand> after 2 minutes; try again` | A git call ran 2 minutes, and the daemon stopped it. While a `"shadowDirOff":true` request runs, that one included, the limit is 30 minutes, and the text says so (claustrum's own, not measured). [Time limits of git calls](../PROTOCOL.md#time-limits-of-git-calls). |
+| `-32603` | `git took too long: Claude stopped git <subcommand> after 2 minutes; try again` | A git call ran 2 minutes, and the daemon stopped it. While a `"shadowDirOff":true` request runs, that one included, the limit is 30 minutes, and the text says so (claustrum's own, not measured). [Time limits of git calls](git-rules-calls.md#time-limits-of-git-calls). |
 
 A `GIT_COMMON_DIR` in the daemon's environment turns the git-directory trust check off for this method.
 
@@ -129,11 +129,11 @@ The daemon fetches nothing for this member, also in a partial clone (measured on
 - A request with `"shadowDirOff":true` gets `"off-switch"`, also as the first request of a daemon (measured on Linux).
 - An error reply has no member.
 
-The section [The states and `settingsControl`](../PROTOCOL.md#the-states-and-settingscontrol) has the effect of each state and the time of the next test.
+The section [The states and `settingsControl`](git-rules-settings-copy.md#the-states-and-settingscontrol) has the effect of each state and the time of the next test.
 
 ## What changes on disk
 
-The settings copy can add files to the folder `git-shadow` beside the socket: the folder of the daemon, and a copy of the settings of the repository. [The folders](../PROTOCOL.md#the-folders) has the names.
+The settings copy can add files to the folder `git-shadow` beside the socket: the folder of the daemon, and a copy of the settings of the repository. [The folders](git-rules-settings-copy.md#the-folders) has the names.
 
 ## Differences by system
 

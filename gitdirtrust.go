@@ -14,7 +14,7 @@ import (
 // The git-directory trust check that every git.* method applies to the directory it
 // runs git in, before git runs. It follows reference f6010b97. It was measured black
 // box, side by side against that build, on a Linux VM. Where a case can exist on macOS
-// or Windows, it was measured on those VMs too. docs/PROTOCOL.md → Git-directory trust
+// or Windows, it was measured on those VMs too. docs/protocol/git-rules-trust.md → Git-directory trust
 // check describes it.
 //
 // The check finds the git directory, then judges it. A linked-worktree entry must carry

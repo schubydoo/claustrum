@@ -139,8 +139,8 @@ Noun. This term has two uses:
   [Reference builds](REFERENCE-BUILDS.md#when-you-bump-the-pin).
 - A pin is a value that the daemon gives to a git call and that the git
   configuration cannot change. Examples are the
-  [`GIT_COMMON_DIR` pin](PROTOCOL.md#git-directory-trust-check) and the
-  [hook pins](PROTOCOL.md#hook-pins).
+  [`GIT_COMMON_DIR` pin](protocol/git-rules-trust.md#git-directory-trust-check) and the
+  [hook pins](protocol/git-rules-calls.md#hook-pins).
 
 ## probe
 
@@ -197,7 +197,7 @@ Noun. This term has two uses:
 ## settings copy
 
 Noun. The daemon's own copy of a repository's git settings. See
-[The settings copy](PROTOCOL.md#the-settings-copy).
+[The settings copy](protocol/git-rules-settings-copy.md#the-settings-copy).
 
 ## spelling
 
@@ -231,7 +231,7 @@ See [Reference builds](REFERENCE-BUILDS.md).
 ## state
 
 Noun. The value of `settingsControl`: `shadow`, `fallback-git` or `off-switch`.
-See [The settings copy](PROTOCOL.md#the-settings-copy).
+See [The settings copy](protocol/git-rules-settings-copy.md#the-settings-copy).
 
 ## success
 

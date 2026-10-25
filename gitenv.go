@@ -9,7 +9,7 @@ import (
 )
 
 // The daemon's own GIT_* variables on the git calls of the git methods. The rules
-// are in docs/PROTOCOL.md, "The daemon's own git environment".
+// are in docs/protocol/git-rules-calls.md, "The daemon's own git environment".
 //
 //   - A repository call (a listing, a hardened call, `worktree add`, the checkout
 //     or `git status`) drops GIT_CONFIG and GIT_CONFIG_PARAMETERS. The names match

@@ -206,7 +206,7 @@ func gitInfo(req *request) response {
 	}
 	// The git-directory trust check runs on path (gitdirtrust.go). The check of the
 	// daemon's own GIT_CONFIG_COUNT comes after a trust refusal and before the "no
-	// repository" answer (docs/PROTOCOL.md → "Where each method answers the
+	// repository" answer (docs/protocol/git-rules-calls.md → "Where each method answers the
 	// refusal").
 	t := requestGitDirTrust(p.Path, true)
 	if t.verdict == gitDirRefused {
@@ -815,7 +815,7 @@ func gitListBranches(req *request) response {
 	}
 	// The git-directory trust check runs on path (gitdirtrust.go). The check of the
 	// daemon's own GIT_CONFIG_COUNT comes after a trust refusal and before the "no
-	// repository" answer (docs/PROTOCOL.md → "Where each method answers the
+	// repository" answer (docs/protocol/git-rules-calls.md → "Where each method answers the
 	// refusal").
 	t := requestGitDirTrust(p.Path, true)
 	if t.verdict == gitDirRefused {
@@ -2572,7 +2572,7 @@ func gitWorktreeRemoveLocked(req *request, p *gitParams, repo string) response {
 		// With a refused daemon GIT_CONFIG_COUNT, externalWorkTreeRefusal has already
 		// refused a baseRepo that exists. For a missing absolute baseRepo without a
 		// ".." component, the answer is a lock-check refusal that names the repository
-		// (docs/PROTOCOL.md → "Where each method answers the refusal").
+		// (docs/protocol/git-rules-calls.md → "Where each method answers the refusal").
 		if _, bad := daemonCountRefusal(); bad {
 			return refuse(unreadableRepoLockCheckRefusal(p.WorktreePath, repo))
 		}
@@ -2689,7 +2689,7 @@ func removeGoneWorktree(req *request, p *gitParams, repo, path string) response 
 	}
 	// The check of the daemon's own GIT_CONFIG_COUNT refuses in both modes. Without
 	// worktreeRoot it comes after a trust refusal and before the "no repository"
-	// answer (docs/PROTOCOL.md → "Where each method answers the refusal").
+	// answer (docs/protocol/git-rules-calls.md → "Where each method answers the refusal").
 	checkRegistration := true
 	// answered is the answer of `rev-parse --absolute-git-dir` in baseRepo, or "".
 	answered := ""
@@ -2874,7 +2874,7 @@ func lockCheckRefusal(worktreePath string) string {
 }
 
 // unreadableRepoLockCheckRefusal is the lock-check refusal of git.worktree_remove
-// that names the repository (docs/PROTOCOL.md → "Where each method answers the
+// that names the repository (docs/protocol/git-rules-calls.md → "Where each method answers the
 // refusal").
 func unreadableRepoLockCheckRefusal(worktreePath, repo string) string {
 	return "failed to remove worktree: could not check whether " + worktreePath +

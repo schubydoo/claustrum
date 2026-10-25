@@ -37,7 +37,7 @@ func sameGitDirPath(a, b string) bool {
 // and f6010b97 does not. A `.git` file or a daemon GIT_DIR that names an entry as
 // ...\GIT~1\WORKTR~1\<name> is therefore not an entry, because its parent is not named
 // "worktrees". Its commondir then counts as stray, and its content "../.." gets the
-// stray-content text (S1 of docs/PROTOCOL.md), which names the short path. f6010b97
+// stray-content text (S1 of docs/protocol/git-rules-trust.md), which names the short path. f6010b97
 // refused it with its older stray text on a Windows 11 VM (rows K04 and K10). The S1
 // text follows from the stray rules and is not measured on 89cb6289. A path that has
 // both a link and a short name is not measured. The kept path is cleaned, so the

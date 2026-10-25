@@ -111,6 +111,11 @@ nav:
               - git.list_branches (branches): protocol/git-list-branches.md
               - git.worktree_create (new worktree): protocol/git-worktree-create.md
               - git.worktree_remove (delete worktree): protocol/git-worktree-remove.md
+              - Shared git rules:
+                  - Trust check: protocol/git-rules-trust.md
+                  - Config refusals: protocol/git-rules-config.md
+                  - The settings copy: protocol/git-rules-settings-copy.md
+                  - Hardened git calls and time limits: protocol/git-rules-calls.md
           - launcher.resolve (managed launcher): protocol/launcher-resolve.md
           - Process:
               - process.spawn (start): protocol/process-spawn.md

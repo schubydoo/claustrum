@@ -198,7 +198,7 @@ func precursorEnv(heavy bool, pin []string) []string {
 // GIT_CONFIG_PARAMETERS, less GIT_CONFIG_COUNT
 // and every GIT_CONFIG_KEY_<digits> and GIT_CONFIG_VALUE_<digits>. Then come the
 // profile, pin, and configPinEnv: the count, the inherited pairs and the hook pins of
-// hooks (gitenv.go). TestHardenedGitEnvOrder tests the order. docs/PROTOCOL.md →
+// hooks (gitenv.go). TestHardenedGitEnvOrder tests the order. docs/protocol/git-rules-calls.md →
 // "Variables that the git calls keep or drop" gives the rules of the daemon's variables.
 //
 // GIT_OPTIONAL_LOCKS=0 is not part of it. git.status adds it to its status, ls-files
@@ -1106,7 +1106,7 @@ func (c configCheck) refused() bool {
 // The check of the daemon's own GIT_CONFIG_COUNT (daemonCountRefusal) comes
 // first. When it refuses, no listing runs, and a directory is refused with its text.
 // A dir that does not exist, or is not a directory, is not refused by that check. See
-// docs/PROTOCOL.md, "The daemon's own git environment".
+// docs/protocol/git-rules-calls.md, "The daemon's own git environment".
 func hostileConfigRefusal(u gitUse, dir string, heavy bool) configCheck {
 	if msg, bad := daemonCountRefusal(); bad {
 		if fi, err := os.Stat(dir); err != nil || !fi.IsDir() {

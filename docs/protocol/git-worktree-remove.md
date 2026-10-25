@@ -1,6 +1,6 @@
 # git.worktree_remove
 
-`git.worktree_remove` deletes a linked git worktree that a session made. It deletes the worktree directory and then the registration of the worktree. If the request names a branch, it runs [the branch step](../PROTOCOL.md#the-branch-step) on it last. The daemon deletes the files itself. It runs no `git worktree remove` and no `git worktree prune`.
+`git.worktree_remove` deletes a linked git worktree that a session made. It deletes the worktree directory and then the registration of the worktree. If the request names a branch, it runs [the branch step](git-rules-calls.md#the-branch-step) on it last. The daemon deletes the files itself. It runs no `git worktree remove` and no `git worktree prune`.
 
 ## Request
 
@@ -14,7 +14,7 @@
 | `worktreePath` | yes | The worktree to delete. See [Where the paths can be](#where-the-paths-can-be). |
 | `branchName` | no | The branch that the branch step deletes after the worktree. |
 | `worktreeRoot` | no | A location outside the repository, as on [git.worktree_create](git-worktree-create.md#request). Windows refuses it. |
-| `shadowDirOff` | no | `true` turns off, for this request, the daemon's own read of the repository's git config and [the settings copy](../PROTOCOL.md#the-settings-copy). A git request that starts while such a request runs gets the same. |
+| `shadowDirOff` | no | `true` turns off, for this request, the daemon's own read of the repository's git config and [the settings copy](git-rules-settings-copy.md#the-settings-copy). A git request that starts while such a request runs gets the same. |
 
 Treat `worktreePath` as a path that you ask the daemon to delete, not as a filter. Without `worktreeRoot`, a plain directory inside the repository is deleted too, and the reply is success.
 
@@ -70,8 +70,8 @@ On both:
 
 Before it deletes anything, the daemon checks the repository. Each of these refuses, and nothing is deleted.
 
-- The [git-directory trust check](../PROTOCOL.md#git-directory-trust-check) runs on `baseRepo`. Without `worktreeRoot`, if it refuses the git directory and the worktree directory exists, the text is the lock-check refusal: `failed to remove worktree: could not check whether <p> is locked (its registrations could not be examined); retry`. If the worktree directory is gone, the text is `… is locked (<trust refusal text>); retry`.
-- Without `worktreeRoot`, a git config of `baseRepo` that the daemon does not accept gives `… is locked: <text>`. See [Repository config refusals](../PROTOCOL.md#repository-config-refusals). `"shadowDirOff":true` turns this check off. A failure of the settings copy gives the same form.
+- The [git-directory trust check](git-rules-trust.md#git-directory-trust-check) runs on `baseRepo`. Without `worktreeRoot`, if it refuses the git directory and the worktree directory exists, the text is the lock-check refusal: `failed to remove worktree: could not check whether <p> is locked (its registrations could not be examined); retry`. If the worktree directory is gone, the text is `… is locked (<trust refusal text>); retry`.
+- Without `worktreeRoot`, a git config of `baseRepo` that the daemon does not accept gives `… is locked: <text>`. See [Repository config refusals](git-rules-config.md#repository-config-refusals). `"shadowDirOff":true` turns this check off. A failure of the settings copy gives the same form.
 - Without `worktreeRoot`, for a worktree directory that exists, a failed listing of the configuration runs once more. If the second try fails too, the text is `… is locked: <text of the failed listing>`. For a gone worktree directory there is no second try, and the text is `… is locked (<text>); retry`.
 - With `worktreeRoot`, the daemon must find the work tree of the repository. If it cannot, the text is `failed to remove worktree: cannot determine the repository's work tree: <reason>`. The reason says what failed. Git cannot start, the trust check refuses or finds no repository, or the git config or the settings copy is refused. Or the configuration listing fails, `baseRepo` is itself a git directory, or `git rev-parse` fails. With no `git` on `PATH`, the reason is the error of the start. A `baseRepo` that does not exist skips this check.
 - A worktree that is locked (`git worktree lock`) is refused with `refusing to remove worktree: <p> is locked (git worktree lock); unlock it to remove it`. A lock in the `.git` folder of `baseRepo` is refused too, also where the reference deletes the worktree ([D22](../DIVERGENCES.md#d22)).
