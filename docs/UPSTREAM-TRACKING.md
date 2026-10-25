@@ -308,9 +308,9 @@ the linked pages. The history of each build is in
   A `destDir` the daemon cannot search or open gets the `open destDir:`
   refusal, where `89cb6289` fails later or extracts. On Linux and macOS, a parent
   folder of mode `0300` with no `destDir` gets the `open parent:` refusal, where
-  `89cb6289` extracts. The Windows bullets of
+  `89cb6289` extracts. The two Windows last-name bullets of
   [Differences by system](protocol/files-extract-tar.md#differences-by-system)
-  (a last name with a dot or space and no `\\?\` prefix, reserved names like `NUL`, `dest?`) are parity, and `89cb6289` differs in both (measured on Windows). A `\\?\` path with a dot or a space after its
+  (a last name with a dot or space and no `\\?\` prefix, names like `NUL`, `dest?`) are parity. `89cb6289` differs in both (measured on Windows). A `\\?\` path with a dot or a space after its
   last name differs from both builds ([D2](DIVERGENCES.md#d2)). A `destDir` that
   is the home folder by identity gets the home refusal (D2).
 - The `-install` prune and sweeps follow `5fd08069`, and so do the blob timing,
