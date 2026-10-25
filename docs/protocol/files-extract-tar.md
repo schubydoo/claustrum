@@ -13,7 +13,7 @@ An untagged rule on this page follows build `5fd08069`, and so do the example te
 | Parameter | Required | Meaning |
 |---|---|---|
 | `archivePath` | yes | The gzip tar archive. The daemon makes no test of this path. After it opened the file, it deletes it, also a file that is not an archive. |
-| `destDir` | yes | The directory to fill. The daemon deletes what is there. It must be an absolute path. It cannot be a file system root, the home directory, or a directory that holds the home directory. A directory under the home directory is accepted. The first home test compares the paths as text. The [test by identity](#before-the-entries) covers a link above the last name: see [D2](../DIVERGENCES.md#d2). |
+| `destDir` | yes | The directory to fill. The daemon deletes what is there. It must be an absolute path. It cannot be a file system root, the home directory, or a directory that holds the home directory. A directory under the home directory is accepted. The first home test compares the paths as text. On Linux and macOS the [test by identity](#before-the-entries) covers a link above the last name: see [D2](../DIVERGENCES.md#d2). |
 
 [Path handling](../PROTOCOL.md#path-handling) has the rules for a leading `~` in both parameters.
 
@@ -48,7 +48,7 @@ Read `success`. A failure has no `errorCode` member, so the `error` text is the 
 |---|---|
 | `destDir must be an absolute, non-root path:` | `destDir` is relative. Or it is a file system root (not measured). |
 | `destDir must not be or contain the home directory:` | `destDir` is the home directory, or holds it. The daemon tests the text of the path first. Later it tests the directory at the last name of `destDir` by identity. |
-| `open archive:` | The daemon cannot open the archive. For example, it does not exist. |
+| `open archive:` | The daemon cannot open the archive. For example, it is absent. |
 | `gzip:` | The daemon cannot read a gzip header. |
 | `open parent:` | The daemon cannot open or search the directory that holds `destDir`. The text is `open parent: open <path of that directory>: <reason>`. |
 | `clean destDir:` | The daemon cannot delete the old `destDir`, or an entry in it. The text is `clean destDir: RemoveAll <name>: <reason>`, with the last name of `destDir` as `<name>`. |
@@ -67,7 +67,7 @@ Read `success`. A failure has no `errorCode` member, so the `error` text is the 
 | `mkdir parent <entry>:` | The daemon cannot create the directory for a file. A file entry `a` and then an entry `a/b` give `mkdir parent a/b: mkdirat a: file exists`. |
 | `mkdir <entry>:` | The daemon cannot create the directory of a directory entry. A file entry `a` and then a directory entry `a/` give `mkdir a/: mkdirat a: file exists`. |
 | `create <entry>:` | The daemon cannot create the file. A directory entry `d` and then a file entry `d` give `create d: openat d: file exists` on Linux and macOS, and `create d: openat d: is a directory` on Windows. |
-| `write <entry>:` | The daemon cannot copy the content of a file. For example, the archive is cut inside the file, or its compressed data is damaged. |
+| `write <entry>:` | The daemon cannot copy the content of a file. For example, the archive is cut inside the file, or its data is damaged. |
 | `extraction size limit exceeded` | Only with `-max-extract-bytes`: the files written are larger than the limit. |
 | `write .synced:` | The daemon cannot remove the entry at `.synced`, or it cannot write the marker file. |
 
@@ -87,7 +87,7 @@ The daemon does these steps in order:
 5. It deletes the archive. It does that after a failure too, once the archive was open.
 
 - The daemon writes regular files and directories only. Each other kind of entry fails the request, for example a symbolic link, a hard link or a device.
-- A directory gets the mode `0700`. If the mode of a file in the archive has the execute bit of the owner, the file gets `0700`. If it does not, the file gets `0600`. No other mode bit of the archive applies, so no setuid, setgid or sticky bit arrives. On Linux and macOS the umask of the daemon applies to these modes.
+- A directory gets the mode `0700`. If the mode of a file in the archive has the execute bit of the owner, the file gets `0700`. If it does not, the file gets `0600`. No other mode bit of the archive applies, so no setuid, setgid or sticky bit arrives. On Linux and macOS the daemon umask applies to these modes.
 - A second file entry with the name of an earlier one replaces that file. The new file has the mode of the last entry (Linux and macOS). On a volume that ignores letter case it has the name of the last entry too (Windows and macOS). `fileCount` counts each entry.
 - An entry cannot leave `destDir`. If a name leaves `destDir` at a step, the request fails, also when the name comes back. `../evil` and `../dest/x.txt` are examples. A `..` that stays inside, as in `a/../b.txt`, is accepted. A name that starts with `/` lands inside `destDir`.
 - The marker replaces what the archive put at `.synced` at the top. A file entry with that name ends empty with mode `0600`. A directory entry with that name goes with all its content. `fileCount` still counts the files of the archive there. A `.synced` below another directory is a normal entry.
