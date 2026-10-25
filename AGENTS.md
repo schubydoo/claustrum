@@ -132,8 +132,6 @@ Unmarked behavior follows the reference, pinned at `5fd08069`. A D-number,
 rule that names another build follows that build. A file, function or Go API
 name describes claustrum's code, not a measurement.
 
-### Shell access
-
 `process.spawn` runs arbitrary commands as the user of the daemon. This is by
 design. Treat socket + token as equivalent to shell access. The threat model is
 in [`SECURITY.md`](SECURITY.md).
@@ -145,7 +143,7 @@ delete. The daemon `~`-expands the RPC paths first, so `"~"` once meant
 `os.RemoveAll($HOME)`. That destroyed a home directory. The five paths remain
 the only recursive deletes whose target a caller or an operator names. The
 deletes inside the folder `git-shadow` are not among the five: their root comes
-from the socket, as in `plugins.prune` (see below).
+from the socket, as in `plugins.prune`.
 
 | Path | What is deleted | Who names it | Guard | Method page |
 |------|-----------------|--------------|-------|-------------|
@@ -293,7 +291,7 @@ The caller, in `worktreePath` and `baseRepo` (RPC).
 Before the add, create removes one stale entry of `worktrees` in the common git
 directory of `baseRepo`. The stale test: [After a
 failure](docs/protocol/git-worktree-create.md#after-a-failure). Create removes
-that entry only if it is the only stale entry and holds no `locked` file.
+that entry only if it is the only stale entry and holds no `locked` file. On Linux and macOS that follows `89cb6289`.
 Windows keeps an entry with a `locked` file too (`windowsStaleEntryGoes`). The delete is one
 `os.Root.RemoveAll`, after `wipesHomeDir` on the entry path. It goes through a
 root at that folder. When a Windows create holds the git directory, it goes
@@ -353,8 +351,6 @@ get that identity. If the open fails, the identity comes from a stat of the path
 the accepted one at that test (D24). In the state `shadow` a failed `rev-parse
 --absolute-git-dir` stops the create. So "no answer of git" below is a create
 outside that state, or an empty answer.
-
-##### Guards: which registration
 
 A create that holds its git directory deletes the registration by its name
 through the held folder. On Windows it is the moved entry. If `.git` is no
@@ -468,7 +464,7 @@ the exited CLI holds it (claustrum's own code, not measured).
   never as a tree (`clearNonFolderCLIDir`). The first is the cli-dir entry, only
   when it is a regular file, a symlink to a regular file or a FIFO. The second
   is the regular file named exactly `ccd-cli-version` in the parent folder of
-  the cli-dir. No other name and no other file kind is removed. The rest:
+  the cli-dir. No other name and no other file kind is removed.
   [Staging and cleanup](docs/INSTALL.md#staging-and-cleanup).
 - `-install` also sweeps the cli-dir. Each sweep removes regular files by name
   with a plain `os.Remove`, never as a tree. A folder and a link (from the code)
@@ -614,8 +610,6 @@ measured. Add no other step that resolves the path of the git directory again,
 and never widen a delete of these steps. A rollback after the first move is not
 measured. After the second, the rollback acts through that new folder.
 
-#### Links at `.git` on Windows
-
 On Windows a directory symbolic link at `.git` is refused as a junction is, on
 every git method without `"shadowDirOff":true`, before any write or remove
 (`gitDirIsSymlink`). The folder behind the link stays unchanged. With
@@ -717,7 +711,8 @@ provoke it through the `dispatchRequest` seam.
 ### Network
 
 `-serve` makes no outbound network connections. `-install` reaches the network
-only with `-cli-url`, and verifies the SHA-256 of that download unconditionally
+only with `-cli-url`, and verifies the SHA-256 of that download before the new CLI is put in place,
+unconditionally
 ([SECURITY.md → Network](SECURITY.md#network)). Every dial `-serve` makes is to
 a local `AF_UNIX` socket, never network egress.
 
