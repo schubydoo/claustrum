@@ -2,7 +2,7 @@
 
 These two modes put the agent CLI in place and test it. The other modes and the flags table are under [Daemon lifecycle (flags)](PROTOCOL.md#daemon-lifecycle-flags).
 
-An untagged rule on this page matches build `5fd08069` or an earlier build, measured on Linux, macOS and Windows. A rule that names one system, or that sits under a lead-in that names one, was measured on that system only. A build that a section names in its first lines holds for that section. The other marks are those of the [protocol reference](PROTOCOL.md). [REFERENCE-BUILDS.md](REFERENCE-BUILDS.md) has the history of most of these rules.
+An untagged rule on this page matches the reference as measured on build `5fd08069` or an earlier build. A build that a section names in its first lines holds for that section. The other marks are those of the [protocol reference](PROTOCOL.md).
 
 ## Common tasks
 
@@ -14,7 +14,7 @@ An untagged rule on this page matches build `5fd08069` or an earlier build, meas
 ### Install from a blob
 
 1. Run `claustrum -install -cli-version <v> -cli-zst <p>`. Add `-cli-checksum <sha256>` to verify the blob.
-2. Expect the blob gone after a good install ([rules](#staging-and-cleanup)).
+2. The blob goes once a cache miss put the new CLI in place. A cache hit keeps it ([rules](#staging-and-cleanup)).
 
 ### Keep N versions
 
@@ -24,7 +24,7 @@ An untagged rule on this page matches build `5fd08069` or an earlier build, meas
 ### Read the facts line
 
 1. Find the stdout line that starts with `__INSTALL_RESULT__` ([fields](#__install_result__-facts)).
-2. Test `cliError`, not the exit code ([rules](#-install-ensure-the-agent-cli)).
+2. Test `cliError`, and with the managed launcher gate also `launcherStatus` ([rules](#-install-ensure-the-agent-cli)).
 
 ### Classify a CLI
 
@@ -33,23 +33,20 @@ An untagged rule on this page matches build `5fd08069` or an earlier build, meas
 
 ### Decide a retry
 
-Fix the cause, then run the command again ([texts](#the-clierror-catalogue)).
-
-- `missing…`, `checksum mismatch`, `opening input` and `decompressing`: the input is wrong. Add a source flag, fix the digest or its letter case, or replace the blob.
-- `download failed`, `download interrupted` and `download stalled`: the server or the network failed.
-- `not runnable` and `cli unresponsive`: the new CLI did not run and was removed, or the host stopped it and it stays.
-- `mkdir cli dir`, `staging cli`, `rename`, `clearing stale dir`, `single path component` and `home directory`: change `-cli-dir` or `-cli-version`, or clear the final path.
+1. Find the text of `cliError` in [the `cliError` catalogue](#the-clierror-catalogue) and read its row.
 
 ## -install — ensure the agent CLI
+
+The builds ran on Linux, macOS and Windows. A rule that names one system, or that sits under a lead-in that names one, was measured on that system only. [REFERENCE-BUILDS.md](REFERENCE-BUILDS.md) has the history of most of these rules.
 
 `-install` makes sure that one CLI version is in the cli-dir. On a cache miss it
 downloads or reads the CLI, extracts and verifies it, puts it in place and runs
 `<cli> --version` once. Then it prunes old versions and prints one
 `__INSTALL_RESULT__<json>` facts line (schema in [`__INSTALL_RESULT__` facts](#__install_result__-facts)).
 
-- `-cli-version <v>` (default none): The version to ensure. It names the CLI file. Without it the `cliPath` is empty, no CLI runs and no folder is made.
+- `-cli-version <v>` (default none, required): The version to ensure. It names the CLI file. Without it the `cliPath` is empty, no CLI runs and no folder is made.
 - `-cli-dir <d>` (default `<home>/.claude/remote/ccd-cli`): The folder of the version files. An empty value takes the default too.
-- `-cli-url <u>` (default none): Download the zstd archive of the CLI from this URL.
+- `-cli-url <u>` (default none): Download the zstd archive of the CLI from this URL. Send it with `-cli-checksum`.
 - `-cli-checksum <sha256>` (default none): The SHA-256 of the archive.
 - `-cli-zst <p>` (default none): Read the zstd archive from this file, the blob.
 
