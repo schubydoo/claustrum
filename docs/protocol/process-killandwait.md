@@ -1,8 +1,8 @@
 # process.killAndWait
 
-`process.killAndWait` sends a signal to a child process and waits for the process to end. If the process does not end in time, the daemon can end it by force. The result says what happened.
+`process.killAndWait` sends a signal to a child process and waits for the process to end. If the process does not end in time, the daemon can end it by force, and the result says what happened.
 
-An unmarked rule on this page matches the reference as measured on `5fd08069` or on an earlier build.
+An untagged rule on this page matches build `5fd08069` or an earlier build.
 
 ## Request
 
@@ -32,7 +32,7 @@ The first signal reaches the same processes as a signal of [process.kill](proces
 | `alreadyExited` | `true` in a result for a process whose `exit` frame went out before the request. The daemon then sent no signal. Each other result has no `alreadyExited` member. |
 | `escalated` | `true` in a result of a request whose wait ran out, after which the daemon used the force. Each other result has no `escalated` member. |
 
-The results:
+Results:
 
 | Result | What happened |
 |---|---|
@@ -45,22 +45,6 @@ The results:
 
 The response comes at the end of the process and its output, or at the end of the wait, whichever is first. With the defaults that is up to 3 seconds, and up to 7 seconds more after the use of force.
 
-## Which processes the force reaches
-
-On Linux and macOS, the force is a `SIGKILL` to the process group of the child. So the processes that the child started end too, unless one left the group.
-
-If the child ends inside the wait and its output is complete, the daemon sends no `SIGKILL`. A process that the child started then stays, and it can go on to run. Use `"signal": "KILL"` to end the whole group at once.
-
-The output of a child is not complete while another process holds the output pipe open, in its group or not. The daemon waits at most 5 seconds for that output after the child ended. If the wait of the request ends first, the daemon uses the force although the child itself ended. If those 5 seconds end first, the answer is `{"found": true, "died": true}`, and the daemon sends no `SIGKILL`.
-
-On Windows only the direct child ends: see [Differences by system](#differences-by-system).
-
-## A request during the exit drain
-
-For a short time after a child ends, the daemon still collects its last output and did not yet send the `exit` frame. A request in that time does not answer `alreadyExited`, and the daemon sends no first signal. On Linux and macOS, `"signal": "KILL"` sends `SIGKILL` to the group at once instead. Windows makes that call too, and it ends nothing (not measured). If the `exit` frame comes inside the wait, the answer is `{"found": true, "died": true}`. If the wait ends first, the request goes on as for a child whose output is not complete. These answers and the group kill are measured on Linux and macOS, not on Windows. Whether the reference sends a first signal to the ended child is not measured.
-
-For a signal other than `KILL`, that missing first signal is a guard of claustrum: the operating system can give the process id (pid) of a child that ended to another process. For `KILL` claustrum follows the reference and accepts the risk that the group number went to another process.
-
 ## Errors
 
 This method has no `errorCode` member. A failure is a JSON-RPC error.
@@ -70,10 +54,31 @@ This method has no `errorCode` member. A failure is a JSON-RPC error.
 | `-32602` | `Invalid params` | The request has no `params` member, or `params` or a member that it reads has the wrong type. See [the rules for `params`](../PROTOCOL.md#params-presence-and-typing). |
 | `-32602` | `Process ID is required` | `id` is absent or empty. |
 
+## Which processes the force reaches
+
+On Linux and macOS, the force is a `SIGKILL` to the process group of the child. So the processes that the child started end too, unless one left the group.
+
+If the child ends inside the wait and its output is complete, the daemon sends no `SIGKILL`. A process that the child started then stays, and it can go on to run. Use `"signal": "KILL"` to end the whole group at once.
+
+The output of a child is not complete while another process holds the output pipe open, in its group or not. The daemon waits at most 5 seconds for that output after the child ended. If the wait of the request ends first, the daemon uses the force although the child itself ended. If those 5 seconds end first, the answer is `{"found": true, "died": true}`, and the daemon sends no `SIGKILL`.
+
 ## Differences by system
 
 On Windows the daemon ignores the signal name. Each first signal ends the direct child at once, with exit code 1. The force ends the direct child only too. See [Windows child trees](process-kill.md#windows-child-trees).
 
+## Rare states
+
+### A request during the exit drain
+
+For a short time after a child ends, the daemon still collects its last output and did not yet send the `exit` frame. A request then does not answer `alreadyExited`, and the daemon sends no first signal.
+
+- On Linux and macOS, `"signal": "KILL"` sends `SIGKILL` to the group at once instead. Windows makes that call too, and it ends nothing (not measured).
+- If the `exit` frame comes inside the wait, the answer is `{"found": true, "died": true}`. If the wait ends first, the request goes on as for a child whose output is not complete.
+
+These answers and the group kill are measured on Linux and macOS, not on Windows. Whether the reference sends a first signal to the ended child is open (not measured).
+
+For a signal other than `KILL`, that missing first signal is a guard (claustrum's own): the operating system can give the process id (pid) of a child that ended to another process. For `KILL` claustrum follows the reference and accepts the risk that the group number went to another process.
+
 ## Differences from the reference
 
-No entry of the [divergence catalog](../DIVERGENCES.md) names this method. For a signal other than `KILL`, the missing first signal of [the exit drain](#a-request-during-the-exit-drain) is a guard of claustrum.
+No entry of the [divergence catalog](../DIVERGENCES.md) names this method. [The exit drain](#a-request-during-the-exit-drain) has one guard (claustrum's own).
