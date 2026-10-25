@@ -57,7 +57,7 @@ New frames of the process go to this connection after step 3. On the connection 
 
 ## Frames that the daemon no longer has
 
-The daemon stores at most 16 MiB of frames for each process and drops the oldest frames first: see [Stream notifications](../PROTOCOL.md#stream-notifications). So a replay can start later than `fromSeq` asks.
+The daemon stores at most 16 MiB of frames for each process and drops the oldest frames first: see [Stream notifications](streams.md#stream-notifications). So a replay can start later than `fromSeq` asks.
 
 Compare `firstSeq` with the last `seq` that you have. If `firstSeq` is more than one above it, frames are lost, and the output of the process has a gap that no request can fill.
 

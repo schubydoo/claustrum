@@ -79,4 +79,4 @@ The daemon opens the path first. Then it tests the kind of the open file. It fol
 
 ## Differences from the reference
 
-No entry of the [divergence catalog](../DIVERGENCES.md) applies to this method. [D4](../DIVERGENCES.md#d4) is retired: it was the optional refusal of a path that is not a regular file. Its flag is deprecated: see [Flags and config keys](../PROTOCOL.md#flags-and-config-keys). The refusal of a file that is not regular is new in `5fd08069`: `89cb6289` does not refuse such a file (see [UPSTREAM-TRACKING.md](../UPSTREAM-TRACKING.md)).
+No entry of the [divergence catalog](../DIVERGENCES.md) applies to this method. [D4](../DIVERGENCES.md#d4) is retired: it was the optional refusal of a path that is not a regular file. Its flag is deprecated: see [Flags and config keys](flags.md#flags-and-config-keys). The refusal of a file that is not regular is new in `5fd08069`: `89cb6289` does not refuse such a file (see [UPSTREAM-TRACKING.md](../UPSTREAM-TRACKING.md)).

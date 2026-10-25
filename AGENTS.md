@@ -5,7 +5,7 @@ reimplementation of the small daemon that hosts a remote Claude Code session
 over SSH. It combines three parts: a local CLI-version manager, a process
 supervisor, and a JSON-RPC multiplexer over an `AF_UNIX` socket. The
 multiplexer holds a replay buffer. Black-box probes of the reference binary
-captured a behavioral contract, and claustrum is built to that contract. No
+captured a contract, and claustrum is built to that contract. No
 code was copied, and no decompiler or disassembler output was transcribed into
 the code (see [`NOTICE`](NOTICE)).
 
@@ -30,12 +30,12 @@ daemon. The wire surface is the product.
   drift. Every build has `github.com/klauspost/compress` (zstd) and
   `golang.org/x/sys` (its `unix` or `windows` package).
   `github.com/Microsoft/go-winio` is Windows-only.
-- In-repo tests cover the wire surface two ways: fast unit tests, and a
+- Tests cover the wire surface two ways: fast unit tests, and a
   socket-integration suite (`harness_test.go` + `integration*_test.go`). The
   suite boots the daemon on a temp `AF_UNIX` socket. It asserts the frames of
   every method against golden fixtures (`testdata/socket_*.golden.json`). CI
-  therefore gates compatibility without the reference binary, on linux, macOS
-  and Windows. Process fixtures come from the test binary itself
+  gates compatibility without the reference binary, on linux, macOS
+  and Windows. Process fixtures come from the test binary
   (`helperproc_test.go`), never from `/bin/*`, so stream bytes match the
   goldens on every OS. Statement coverage is approximately 99%.
 
@@ -92,10 +92,10 @@ Every OS serves the same JSON-RPC methods.
   The history of completed work goes into
   [`docs/IMPROVEMENTS.md`](docs/IMPROVEMENTS.md). The history of a reference
   build goes into [`docs/REFERENCE-BUILDS.md`](docs/REFERENCE-BUILDS.md).
-  Another document links to
-  that home and does not copy the text.
-  [`docs/PROTOCOL.md`](docs/PROTOCOL.md) keeps the sections that more than one
-  method uses, for example the error texts. The shared git rules have pages
+  Link to
+  that home. Do not copy the text.
+  [`docs/PROTOCOL.md`](docs/PROTOCOL.md) keeps the other sections that more than one
+  method uses. The error texts, the stream frames, the flags and the shared git rules have pages
   under `docs/protocol/`. The rule is for the documents under `docs/`.
   `AGENTS.md` keeps the safety rules of Part A, because an agent must hold
   them before it touches code.

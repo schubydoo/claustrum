@@ -398,7 +398,7 @@ func TestDocsSiteListsEveryDocument(t *testing.T) {
 var docFlagDefRE = regexp.MustCompile(`flag\.[A-Za-z0-9]+\((?:[^,"]*,\s*)?"([a-z0-9-]+)"`)
 
 // docExpectedFlagCount is the number of flags that main.go defines today. Update
-// it when a flag is added or removed, and document the new flag in PROTOCOL.md
+// it when a flag is added or removed, and document the new flag in docs/protocol/flags.md
 // (or in INSTALL.md for a flag of -install).
 const docExpectedFlagCount = 27
 
@@ -406,7 +406,7 @@ const docExpectedFlagCount = 27
 var docUndocumentedFlags = map[string]string{}
 
 // TestDocsEveryFlagIsDocumented: each flag that main.go defines appears as a code
-// span `-name` in docs/PROTOCOL.md, docs/INSTALL.md or README.md, alone or inside a longer span such
+// span `-name` in docs/protocol/flags.md, docs/INSTALL.md or README.md, alone or inside a longer span such
 // as `-wire-log <path>`.
 func TestDocsEveryFlagIsDocumented(t *testing.T) {
 	defs := docFlagDefRE.FindAllStringSubmatch(docRead(t, "main.go"), -1)
@@ -414,7 +414,7 @@ func TestDocsEveryFlagIsDocumented(t *testing.T) {
 		t.Fatalf("main.go defines %d flags by the pattern docFlagDefRE, but the test expects %d: update docExpectedFlagCount in docs_consistency_test.go (a flag was added or removed, or its definition no longer matches the pattern)", len(defs), docExpectedFlagCount)
 	}
 	var spans []string
-	for _, f := range []string{"docs/PROTOCOL.md", "docs/INSTALL.md", "README.md"} {
+	for _, f := range []string{"docs/protocol/flags.md", "docs/INSTALL.md", "README.md"} {
 		spans = append(spans, docSpans(docRead(t, docRel(f)))...)
 	}
 	// A flag counts as named when a span holds a word "-name" or "--name", with an
@@ -431,7 +431,7 @@ func TestDocsEveryFlagIsDocumented(t *testing.T) {
 			continue
 		}
 		if !words[name] {
-			t.Errorf("main.go defines the flag -%s, but docs/PROTOCOL.md, docs/INSTALL.md and README.md have no code span for it: document `-%s` in the flags section of docs/PROTOCOL.md", name, name)
+			t.Errorf("main.go defines the flag -%s, but docs/protocol/flags.md, docs/INSTALL.md and README.md have no code span for it: document `-%s` in the flags table of docs/protocol/flags.md", name, name)
 		}
 	}
 }
@@ -570,7 +570,7 @@ func TestDocsEveryErrorCodeIsDocumented(t *testing.T) {
 	}
 	for c, file := range codes {
 		if !named[c] {
-			t.Errorf("the code can send errorCode %q (%s), but no document names it: add it to the error table of its method page under docs/protocol/, or to the error catalog of docs/PROTOCOL.md", c, file)
+			t.Errorf("the code can send errorCode %q (%s), but no document names it: add it to the error table of its method page under docs/protocol/, or to the error catalog of docs/protocol/errors.md", c, file)
 		}
 	}
 	for i, p := range pages {
@@ -597,7 +597,7 @@ func TestDocsEveryErrorCodeIsDocumented(t *testing.T) {
 // because the documents grew past what a person can read. A limit goes down, never
 // up, without the maintainer's word.
 var docWordLimits = map[string]int{
-	"AGENTS.md":                                7385,
+	"AGENTS.md":                                7383,
 	"CONTRIBUTING.md":                          1071,
 	"README.md":                                1120,
 	"SECURITY.md":                              1553,
@@ -608,16 +608,18 @@ var docWordLimits = map[string]int{
 	"docs/GLOSSARY.md":                         1297,
 	"docs/IMPROVEMENTS.md":                     1590,
 	"docs/INSTALL.md":                          5300, // task-207: page rewrite
-	"docs/PROTOCOL.md":                         7618, // TASK-202: the shared git rules moved to the git-rules pages
-	"docs/STYLE.md":                            1298, // task-203b: the page rewrite
+	"docs/PROTOCOL.md":                         2804, // TASK-202: the error texts, stream frames and flags moved to their own pages
+	"docs/STYLE.md":                            1293, // task-203b: the page rewrite
 	"docs/TOUR.md":                             850,  // a new page: its word count plus about 200
 	"docs/UPSTREAM-TRACKING.md":                6224, // decision-040: words moved from PROTOCOL.md, net down in the same PR
 	"docs/index.md":                            316,  // the reader router of TASK-201
+	"docs/protocol/errors.md":                  1871, // TASK-202: moved from PROTOCOL.md
 	"docs/protocol/files-extract-tar.md":       2253,
 	"docs/protocol/files-list.md":              449,
 	"docs/protocol/files-read.md":              825,
 	"docs/protocol/files-stat.md":              434, // TASK-203 rewrite
 	"docs/protocol/files-validate.md":          365,
+	"docs/protocol/flags.md":                   2633, // TASK-202: moved from PROTOCOL.md
 	"docs/protocol/git-info.md":                1851, // task-203b: the page rewrite
 	"docs/protocol/git-rules-calls.md":         4569, // TASK-202: moved from PROTOCOL.md
 	"docs/protocol/git-rules-config.md":        2864, // TASK-202: moved from PROTOCOL.md
@@ -628,13 +630,14 @@ var docWordLimits = map[string]int{
 	"docs/protocol/git-worktree-create.md":     6951, // task-205: rewrite to the page template
 	"docs/protocol/git-worktree-remove.md":     4067, // task-206: rewrite to the page template
 	"docs/protocol/launcher-resolve.md":        1620, // task-204: rewrite to the page template
-	"docs/protocol/plugins-prune.md":           1089, // task-203b: the page rewrite
+	"docs/protocol/plugins-prune.md":           1084, // task-203b: the page rewrite
 	"docs/protocol/process-kill.md":            931,  // TASK-203c: the page template
 	"docs/protocol/process-killandwait.md":     977,  // TASK-203c: the page template
 	"docs/protocol/process-reattach.md":        988,
 	"docs/protocol/process-spawn.md":           3474, // task-204: rewrite to the page template
 	"docs/protocol/process-stdin.md":           893,  // TASK-203c: the page template
 	"docs/protocol/server.md":                  1490, // task-203b: the page rewrite
+	"docs/protocol/streams.md":                 574,  // TASK-202: moved from PROTOCOL.md
 }
 
 // The limits of a document that docWordLimits does not name.
@@ -704,11 +707,13 @@ var docSectionRunLimits = map[string]int{
 	"docs/DIVERGENCES.md":                      709,
 	"docs/IMPROVEMENTS.md":                     1484,
 	"docs/INSTALL.md":                          736,
-	"docs/PROTOCOL.md":                         1809,
-	"docs/STYLE.md":                            348,
+	"docs/PROTOCOL.md":                         603,
+	"docs/STYLE.md":                            343,
 	"docs/UPSTREAM-TRACKING.md":                2960,
 	"docs/index.md":                            314,
+	"docs/protocol/errors.md":                  1809,
 	"docs/protocol/files-extract-tar.md":       388,
+	"docs/protocol/flags.md":                   824,
 	"docs/protocol/git-info.md":                368,
 	"docs/protocol/git-list-branches.md":       372,
 	"docs/protocol/git-rules-calls.md":         830,
@@ -724,6 +729,7 @@ var docSectionRunLimits = map[string]int{
 	"docs/protocol/process-spawn.md":           371,
 	"docs/protocol/process-stdin.md":           305,
 	"docs/protocol/server.md":                  256,
+	"docs/protocol/streams.md":                 500,
 }
 
 // docSectionRunTarget is the run limit of a page that has no row in docSectionRunLimits.

@@ -648,8 +648,8 @@ have no flag and no key.
   `pid`.
 - **Rule.** Off-wire extension.
 - **Reopen trigger.** None.
-- **Pointers.** [PROTOCOL.md → Flags of claustrum
-  alone](PROTOCOL.md#flags-of-claustrum-alone) has the log line, the stdio of the
+- **Pointers.** [flags.md → Flags of claustrum
+  alone](protocol/flags.md#flags-of-claustrum-alone) has the log line, the stdio of the
   survivors and Windows.
 
 ### CT-3 · Opt-in `claustrum.conf` config file { #ct-3 }
@@ -657,7 +657,7 @@ have no flag and no key.
 - **Behavior.** `claustrum.conf` is an optional `key = value` file with `#`
   comments, in the folder that holds the binary. Each key but
   `version-override` mirrors a flag. The
-  [flags table](PROTOCOL.md#flags-and-config-keys) lists each key, the
+  [flags table](protocol/flags.md#flags-and-config-keys) lists each key, the
   deprecated ones too. Each key that sets something turns on, or tunes, a behavior
   that is off by default. The deprecated keys set nothing and log one
   warning.
@@ -670,7 +670,7 @@ have no flag and no key.
   - `version-override`: set it to the commit SHA that the desktop client pins,
     and the client stops uploading the reference each session. The value is 40 or
     64 hex digits, claustrum prints it in lower case, and any other value does
-    nothing. [PROTOCOL.md → -version](PROTOCOL.md#-version) has the output and
+    nothing. [flags.md → -version](protocol/flags.md#-version) has the output and
     how the client reads it.
 - **Reference.** None stated.
 - **Systems and switch.** All systems. Create the file.

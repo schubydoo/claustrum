@@ -96,6 +96,8 @@ nav:
   - Write a client:
       - How claustrum works: ARCHITECTURE.md
       - Protocol overview: PROTOCOL.md
+      - Error texts: protocol/errors.md
+      - Stream frames: protocol/streams.md
       - Examples: EXAMPLES.md
       - Methods:
           - server.* (ping, capabilities, shutdown): protocol/server.md
@@ -126,6 +128,7 @@ nav:
           - plugins.prune (clean up plugins): protocol/plugins-prune.md
   - Run the daemon:
       - Start, stop, log, token: DAEMON.md
+      - Flags and modes: protocol/flags.md
       - Install the agent CLI: INSTALL.md
       - Security policy: https://github.com/schubydoo/claustrum/blob/main/SECURITY.md
   - Contribute:

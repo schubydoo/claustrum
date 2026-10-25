@@ -50,7 +50,7 @@ A process that got the signal of this request gets an `exit` frame with `"killed
 {"type": "stream", "processId": "p1", "stream": "exit", "seq": 3, "exitCode": -1, "signal": "SIGTERM", "killedBy": "client"}
 ```
 
-A child that catches the signal and exits by itself gets its own exit code, and `killedBy` stays. A child that ended before the request gets no `killedBy`. The full frame rules are in [Stream notifications](../PROTOCOL.md#stream-notifications).
+A child that catches the signal and exits by itself gets its own exit code, and `killedBy` stays. A child that ended before the request gets no `killedBy`. The full frame rules are in [Stream notifications](streams.md#stream-notifications).
 
 The `exit` frame waits for the output of the child. If another process holds the output pipe open, the frame comes up to 5 seconds after the child ended.
 

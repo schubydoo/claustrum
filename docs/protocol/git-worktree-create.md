@@ -65,7 +65,7 @@ A request with no `branchName` gets the JSON-RPC error `-32602`.
 
 ## Error texts
 
-Each text is in `error`, unless the row names a JSON-RPC error. The shared texts are in the [error-string catalogue](../PROTOCOL.md#error-string-catalogue). A row with no mark holds a text of the reference, measured on Linux. A mark such as "measured on macOS" limits its sentence to that system. A sentence that names systems without "measured" holds on each one.
+Each text is in `error`, unless the row names a JSON-RPC error. The shared texts are in the [error-string catalogue](errors.md#error-string-catalogue). A row with no mark holds a text of the reference, measured on Linux. A mark such as "measured on macOS" limits its sentence to that system. A sentence that names systems without "measured" holds on each one.
 
 ### Request, path, folder and post-add refusals
 

@@ -48,7 +48,7 @@ In the texts, `<p>` is `worktreePath` as sent. Three texts start in another way:
 
 ## Error texts
 
-The shared texts are in the [error-string catalogue](../PROTOCOL.md#error-string-catalogue). A row with no mark holds a text of the reference, measured on Linux. A mark such as "measured on macOS" limits its sentence to that system. A sentence that names systems without "measured" holds on each one. `<repo>` is `baseRepo` as sent in every row. A row in the first two groups below deletes nothing unless it says so.
+The shared texts are in the [error-string catalogue](errors.md#error-string-catalogue). A row with no mark holds a text of the reference, measured on Linux. A mark such as "measured on macOS" limits its sentence to that system. A sentence that names systems without "measured" holds on each one. `<repo>` is `baseRepo` as sent in every row. A row in the first two groups below deletes nothing unless it says so.
 
 ### Path and location
 
@@ -101,7 +101,7 @@ With `worktreeRoot`:
 - `worktreePath` must be `<worktreeRoot>/<directory>/<name>`, as on `git.worktree_create`. An empty `worktreePath` gets the text for a relative path.
 - `baseRepo` must be absolute and carry no `..` component.
 - A symbolic link at the `<directory>` level gives `refusing to remove worktree: <dir> is a symbolic link; the directory under the worktree location must be a real directory`.
-- A root that is `/`, that is or leads into the repository or one of its worktrees, or that cannot be reached, is refused. The location refusals also include [a reserved name](../PROTOCOL.md#error-string-catalogue) (`.git` and `.claude-managed-worktrees`, in any letter case) and [a link loop](../PROTOCOL.md#error-string-catalogue). The remove runs no ancestor test, so some roots that the create refuses pass here.
+- A root that is `/`, that is or leads into the repository or one of its worktrees, or that cannot be reached, is refused. The location refusals also include [a reserved name](errors.md#error-string-catalogue) (`.git` and `.claude-managed-worktrees`, in any letter case) and [a link loop](errors.md#error-string-catalogue). The remove runs no ancestor test, so some roots that the create refuses pass here.
 - The containment in the repository does not apply here. So the home guard refuses a `worktreePath` that is the home directory or holds it, with the home refusal above ([D2](../DIVERGENCES.md#d2)).
 
 On both:

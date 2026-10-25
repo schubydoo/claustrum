@@ -1,7 +1,7 @@
 # Running the daemon
 
 This page holds what a `-serve` daemon does off the JSON-RPC wire. The flags
-are under [Daemon lifecycle (flags)](PROTOCOL.md#daemon-lifecycle-flags).
+are under [Daemon lifecycle (flags)](protocol/flags.md#daemon-lifecycle-flags).
 
 A rule with no mark matches the reference as measured on `5fd08069` or on an
 earlier build. A build that a section names in its first lines holds for that
@@ -11,12 +11,12 @@ section. The other marks are those of the [protocol reference](PROTOCOL.md).
 
 ### Start the daemon
 
-1. Run the binary with `-serve`, `-socket` and a token source ([flags](PROTOCOL.md#-serve-run-the-daemon)).
+1. Run the binary with `-serve`, `-socket` and a token source ([flags](protocol/flags.md#-serve-run-the-daemon)).
 2. Wait for the launcher ([launcher wait](#the-launcher-wait)).
 
 ### Stop the daemon
 
-1. Run the binary with `-stop` ([-stop](PROTOCOL.md#-stop-ask-a-running-daemon-to-shut-down)).
+1. Run the binary with `-stop` ([-stop](protocol/flags.md#-stop-ask-a-running-daemon-to-shut-down)).
 2. After a failed connect, `-stop` removes `daemon.token` unless it prints `survivor` ([token](#token-persistence-daemontoken)).
 
 ### Find the log
@@ -26,7 +26,7 @@ section. The other marks are those of the [protocol reference](PROTOCOL.md).
 ### Find and rotate the token
 
 1. Read `daemon.token` in the socket directory ([token](#token-persistence-daemontoken)).
-2. Stop the daemon. Start a new one with the new token ([token source](PROTOCOL.md#the-token-source)).
+2. Stop the daemon. Start a new one with the new token ([token source](protocol/flags.md#the-token-source)).
 
 ### Recover after a crash or a stale lock
 
@@ -54,7 +54,7 @@ replaces a dead daemon's token only after its reap, its `bind` and its
 The daemon unlinks the file only on a graceful stop: `server.shutdown`,
 `SIGTERM`, `SIGINT` or its self-exit. A `SIGKILL` or a crash leaves it. `-stop`
 also removes it after a failed connect, unless it prints `survivor` (see
-[-stop](PROTOCOL.md#-stop-ask-a-running-daemon-to-shut-down)). The unlink
+[-stop](protocol/flags.md#-stop-ask-a-running-daemon-to-shut-down)). The unlink
 tests identity (`os.SameFile`). A file at the path that the daemon did not write stays, so a
 departing daemon keeps the successor's token (measured on Windows, from the
 code on Linux and macOS). The same guard covers `rpc.sock` on Linux and macOS and
@@ -507,7 +507,7 @@ system was measured on that system, and an unmarked rule on Linux and macOS.
 At each start the launcher renames an existing `remote-server.log` in the
 socket's directory to `remote-server.log.old`. Then it creates a fresh log there
 with mode `0600`. It sends the stdout and stderr of the daemonized child into that file, so its own streams stay empty, except for the launcher's own failures. Those are under [Daemon startup](#daemon-startup-serve) and
-[The token source](PROTOCOL.md#the-token-source), and a log that cannot be created gives
+[The token source](protocol/flags.md#the-token-source), and a log that cannot be created gives
 `claustrum: open log: <err>`. claustrum does not remove the log at shutdown (from the code), unlike the socket and `daemon.token`. So the log of the last run stays readable. The fixed name and location are the deployment contract, and are not configurable.
 
 claustrum writes a level tag before each line of its logger. The banner and a
