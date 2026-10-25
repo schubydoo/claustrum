@@ -71,11 +71,11 @@ A failure is a JSON-RPC error with no `errorCode` member. It changes nothing in 
 | `-32603` | `git took too long: Claude stopped git <subcommand> after 2 minutes; try again` | A git call ran 2 minutes, and the daemon stopped it. While a `"shadowDirOff":true` request runs, that one included, the limit is 30 minutes, and the text says so (claustrum's own) (not measured). [Time limits of git calls](../PROTOCOL.md#time-limits-of-git-calls). |
 | `-32603` | The Go error of the git call, for example `exit status 128` | `git status`, `git ls-files` or `git diff-index` failed. The text of git does not show. A relative `path` that matches a registration gets `exit status 128`, because git takes it as sent. |
 | `-32603` | `config-defined hooks could not be pinned off; git not run: listing the configuration in force: ` and the start error, for example `chdir <path>: no such file or directory` | `path` passed the test as a cleaned path, but git cannot start in the path as sent. An example is `<dir>/missing/..` outside `baseRepo` (measured on Linux and macOS). |
-| `-32603` | `<file>: not a regular file` | From the copy into the temporary git folder after the gate passed (claustrum's own). An `info/sparse-checkout` folder or FIFO gets it. The reference is not measured there. |
-| `-32603` | `<file> is larger than <n> bytes` | A copied file is over its bound, also one that grew after the gate (claustrum's own). `<n>` is 1073741824 for `index`, a `sharedindex.<40 or 64 hex>` file, `info/sparse-checkout` and a reftable file, and 1048576 for `HEAD` and `config.worktree` (claustrum's own). The reference is not measured there. |
+| `-32603` | `<file>: not a regular file` (claustrum's own) | From the copy into the temporary git folder after the gate passed. An `info/sparse-checkout` folder or FIFO gets it. The reference is not measured there. |
+| `-32603` | `<file> is larger than <n> bytes` (claustrum's own) | A copied file is over its bound, also one that grew after the gate (claustrum's own). `<n>` is 1073741824 for `index`, a `sharedindex.<40 or 64 hex>` file, `info/sparse-checkout` and a reftable file, and 1048576 for `HEAD` and `config.worktree` (claustrum's own). The reference is not measured there. |
 | `-32603` | An error of the file system, for example `openat index: permission denied` or `stat <dir>: no such file or directory` | The raw Go error. The daemon cannot copy a file of the registration or make a file of the temporary git folder. The reference is not measured there. |
 
-A failed config listing and a failed temporary folder have notes under [Rare states](#rare-states).
+Failed listings and temporary folders: [Rare states](#rare-states).
 
 ## How the daemon finds the worktree
 
@@ -164,8 +164,6 @@ A submodule entry is ` S `, the quoted name and one of three texts (measured on 
 
 ## Differences by system
 
-An untagged rule in a tab is measured on that system.
-
 === "Linux and macOS"
 
     - With no global excludes file of the user, the status runs.
@@ -203,7 +201,7 @@ An untagged rule in a tab is measured on that system.
     A `.git` file can name a gone git directory that is no registration. If git 2.56 or newer says so, the answer is `git could not check this repository on the remote machine: at "<root>": …` (measured on Linux). With `"shadowDirOff":true` it is the hooks refusal (measured on Linux). An older git gives `"isRepo": false` (measured on Linux).
 
 ??? note "A failed config listing"
-    The first config listing refuses by [these classes](../PROTOCOL.md#a-failed-configuration-listing). [Hook pins](../PROTOCOL.md#hook-pins) has the rules for later listings. The empty-tree listing never refuses (from the code). Over a hook-pin limit the first listing refuses in a repository (from the code). A stopped listing of `config.worktree` gives `{"isRepo":false,"clean":false}` (measured on Linux).
+    The first config listing refuses by [these classes](../PROTOCOL.md#a-failed-configuration-listing). Later listings refuse any failure, in the git directory (measured on Linux) and in the temporary folder (from the code). Over a hook-pin limit the first listing refuses in a repository (from the code), and later ones do not (from the code). The empty-tree listing never refuses (from the code). A stopped listing of `config.worktree` gives `{"isRepo":false,"clean":false}` (measured on Linux).
 
 ??? note "No temporary git folder"
     If the daemon cannot make its folder under `git-shadow`, the response is `{"isRepo":false,"clean":false}` (measured on Linux and Windows). When the folder is in the temporary directory of the system, a failure answers `-32603` with the error of the file system (not measured).
@@ -220,7 +218,7 @@ An untagged rule in a tab is measured on that system.
 
 A rule that names a system is measured there only. A linked rule keeps the marks of its own section.
 
-This entry of the divergence catalog applies:
+Divergence entry:
 
 - [D16](../DIVERGENCES.md#d16): on Windows, with no global excludes file of the user, claustrum answers the status where the reference answers `-32603 "exit status 128"`.
 

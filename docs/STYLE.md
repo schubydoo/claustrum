@@ -171,7 +171,7 @@ Evidence is the proof for a rule: which build and which system it was measured o
 2. **A tag for each exception.** Put the tag at the end of the block that it covers. The tags are "(measured on Linux)" (or macOS or Windows, or two of them), "(not measured)", "(from the code)" and "(claustrum's own)". The tag names the system that ran the test and claims no other. A tag copies the evidence of the old page for that rule, and never widens or narrows it. Two tags on one rule sit side by side, "claustrum's own" first. "Not measured" says what is unmeasured: if it is the reference side, the sentence says so. Every rule of those kinds carries its tag. The hover text of the tags is defined once for the site, in `includes/abbreviations.md`.
 3. **A scope sentence for a section or a subsection.** If all rules of it share one tag, use one. Say it once under the heading and leave the tags out inside. A mixed section keeps its tags. A tag covers only its own block. If one block holds two rules with different evidence, each rule keeps its tag.
 
-Before (the real text of `docs/protocol/git-status.md`):
+Before (the old text of `docs/protocol/git-status.md`, before this rewrite):
 
 ```markdown
 claustrum's own, not measured: a cut can split a multi-byte character. In a porcelain line, the JSON encoding then sends U+FFFD for each leftover byte.
