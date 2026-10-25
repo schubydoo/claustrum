@@ -49,7 +49,7 @@ The daemon follows a symbolic link. The response then describes the target of th
 ## Platform notes
 
 === "Linux and macOS"
-    The `error` texts are those of the example.
+    The `error` texts are those of Linux and macOS.
 === "Windows"
     The `error` texts differ.
 

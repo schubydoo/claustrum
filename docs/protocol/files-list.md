@@ -55,7 +55,7 @@ The `-32603` texts come from the operating system and hold `path` after the `~` 
 === "Linux and macOS"
     The `-32603` texts are those of the table.
 === "Windows"
-    The separators of `path` are `\`. The `-32603` texts differ.
+    Each entry `path` uses `\` separators. The `-32603` texts differ.
 
 ## Differences from the reference
 
