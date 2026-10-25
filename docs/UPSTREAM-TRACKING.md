@@ -302,18 +302,17 @@ the linked pages. The history of each build is in
   - the `files.extract_tar.execBit` feature
   - the mode `0700` of a file with the execute bit of the owner (Linux and macOS)
   - the refusal of a name that leaves `destDir` and comes back
-  - the last entry of a file that the archive names two times
+  - the last entry of a file that the archive names twice
   - the `error` texts of the entry and `destDir` steps.
 
-  A `destDir` that the daemon cannot search or open gets the `open destDir:`
+  A `destDir` the daemon cannot search or open gets the `open destDir:`
   refusal, where `89cb6289` fails later or extracts. On Linux and macOS, a parent
   folder of mode `0300` with no `destDir` gets the `open parent:` refusal, where
-  `89cb6289` extracts. The two Windows rows of
+  `89cb6289` extracts. The Windows bullets of
   [Differences by system](protocol/files-extract-tar.md#differences-by-system)
-  are parity, and `89cb6289` differs in both (measured on Windows). A `\\?\` path with a dot or a space after its
+  (dot or space, `NUL`) are parity, and `89cb6289` differs in both (measured on Windows). A `\\?\` path with a dot or a space after its
   last name differs from both builds ([D2](DIVERGENCES.md#d2)). A `destDir` that
-  is the home folder by identity gets the home refusal (D2). See
-  [files.extract_tar](protocol/files-extract-tar.md).
+  is the home folder by identity gets the home refusal (D2).
 - The `-install` prune and sweeps follow `5fd08069`, and so do the blob timing,
   the Windows `rename: ` prefix, the Windows rename retry and the Linux file test of a
   cache hit. See [INSTALL.md → -install](INSTALL.md#-install-ensure-the-agent-cli).
