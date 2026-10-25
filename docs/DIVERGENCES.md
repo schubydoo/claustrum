@@ -140,7 +140,7 @@ names what changes. Default "off" means a flag, a key or the caller turns it on.
 | [D20](#d20) | Wait 50 ms and read again before the group `SIGKILL` of a leader that reads as gone | off-wire | always-on | Linux, macOS |
 | [D22](#d22) | Refuse a worktree locked in the `.git` folder of `baseRepo` on remove | on-wire | always-on | all |
 | [D23](#d23) | A child's environment block is in name order | off-wire (child environment, visible in stream output) | always-on | Windows |
-| [D24](#d24) | In a create rollback, keep a folder that replaced the registration. On Windows, run no git call after a `.git` file swap | on-wire (Windows `.git` swap only) | always-on | all |
+| [D24](#d24) | In a create rollback, keep a folder that replaced the registration. On Windows, run no git call after a `.git` file swap | on-wire (the index-placement text, and the Windows `.git` swap) | always-on | all |
 | [D27](#d27) | Keep a stale entry whose record names a path that exists | on-wire | always-on | Windows |
 | [CT-1](#ct-1) | `wantPid` adds `pid` and `startTime` | on-wire | off (the caller asks) | all |
 | [CT-2](#ct-2) | `-keep-children` keeps the child tree at shutdown | off-wire | off | all |
