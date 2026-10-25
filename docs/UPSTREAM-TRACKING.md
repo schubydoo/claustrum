@@ -1,9 +1,10 @@
 # Staying in lock-step with the reference daemon
 
-This page is for maintainers who bump the pin. claustrum is
-behaviorally compatible with a reference daemon that ships inside Claude
-Desktop's SSH-remote feature. Use this page to detect a new build and find out
-whether it changed anything claustrum must match. Each build's history is in the [reference build ledger](REFERENCE-BUILDS.md).
+This page is for maintainers who bump the pin. claustrum is behaviorally
+compatible with a reference daemon that ships in Claude Desktop's SSH-remote
+feature. Use it to detect a new build and see if it changed anything
+claustrum must match. The history of each build is in the
+[reference build ledger](REFERENCE-BUILDS.md).
 
 ## How the reference is distributed
 
