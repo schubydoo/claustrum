@@ -1,8 +1,8 @@
 # plugins.prune
 
-`plugins.prune` deletes the cached plugin directories that no session used for some days. The directories are under the plugin roots of the daemon. The caller cannot name a path.
+`plugins.prune` deletes the cached plugin directories that no session used for some days. The directories are under the plugin roots of the daemon. The caller cannot name a path. Do not read an empty `pruned` list as "nothing to delete". Read `errors` and `legacy` too.
 
-An unmarked rule on this page matches the reference as measured on `5fd08069` or on an earlier build.
+An untagged rule on this page matches build `5fd08069` or an earlier build. The system is not recorded.
 
 ## Request
 
@@ -16,6 +16,36 @@ An unmarked rule on this page matches the reference as measured on `5fd08069` or
 | `keep` | no | A list of strings. The daemon accepts it and does not use it. A directory whose name is in `keep` is deleted as any other. |
 
 No `params` member gets `-32602 Invalid params: unexpected end of JSON input` (measured on Linux). `"params": null` gets the defaults (not measured).
+
+## Response
+
+```json
+{"root": "/home/me/.claude/remote/plugins/abc", "pruned": ["0123456789abcdef"], "prunedLegacy": [], "staleArchives": 0, "kept": 0, "live": 1, "young": 2, "legacy": "swept", "minAgeDays": 30}
+```
+
+| Member | Meaning |
+|---|---|
+| `root` | The root of this install. |
+| `pruned` | The hashes that the daemon deleted in the root of this install, sorted. |
+| `prunedLegacy` | The hashes that the daemon deleted in the shared root, sorted. |
+| `staleArchives` | Always `0`. |
+| `kept` | Always `0`. |
+| `live` | The number of live directories. It is one count over the roots that the daemon went through. |
+| `young` | The number of young directories that are not live. It counts over the same roots. |
+| `legacy` | What the daemon did with the shared root: see [The `legacy` member](#the-legacy-member). |
+| `skipped` | The reason, in a response of a daemon that has no plugin roots. Each other response has no `skipped` member. |
+| `errors` | One text in the form `<path>: <error>` for each directory that the daemon cannot delete, and for a root that it cannot list. A root that does not exist is not a failure. A directory in `errors` can be deleted in part. A response with no such failure has no `errors` member. A response with `errors` is still a success (not measured). |
+| `minAgeDays` | The value that the daemon used, after the limits. |
+
+If the socket of the daemon is not at `run/<clientId>/rpc.sock`, the daemon has no plugin roots and deletes nothing. `root` is then `""` and `minAgeDays` is `0`. `skipped` holds the reason, and `legacy` is `skipped: ` and then the reason.
+
+## Errors
+
+This method has no `errorCode` member. A failure is a JSON-RPC error.
+
+| Code | Text | Cause |
+|---|---|---|
+| `-32602` | `Invalid params: <detail>` | The JSON decoder refuses `params` or a member of it. For example, a member has the wrong type, or `minAgeDays` is not a whole number. `<detail>` is the text of the JSON decoder. The other methods answer `Invalid params` with no detail. |
 
 ## Which directories the daemon deletes
 
@@ -33,27 +63,7 @@ The daemon keeps a directory in two cases, and deletes it with all its content i
 
 The daemon always goes through the root of this install. If a daemon of another install runs, the daemon leaves the shared root alone, because the sessions of that daemon can use the shared directories. The member `legacy` says what it did.
 
-## Response
-
-```json
-{"root": "/home/me/.claude/remote/plugins/abc", "pruned": ["0123456789abcdef"], "prunedLegacy": [], "staleArchives": 0, "kept": 0, "live": 1, "young": 2, "legacy": "swept", "minAgeDays": 30}
-```
-
-| Member | Meaning |
-|---|---|
-| `root` | The root of this install. |
-| `pruned` | The hashes that the daemon deleted in the root of this install, sorted. |
-| `prunedLegacy` | The hashes that the daemon deleted in the shared root, sorted. |
-| `staleArchives` | Always `0`. |
-| `kept` | Always `0`. |
-| `live` | The number of live directories. It is one count over the roots that the daemon went through. |
-| `young` | The number of young directories that are not live. It is one count over the roots that the daemon went through. |
-| `legacy` | What the daemon did with the shared root: see the table below. |
-| `skipped` | The reason, in a response of a daemon that has no plugin roots. Each other response has no `skipped` member. |
-| `errors` | One text in the form `<path>: <error>` for each directory that the daemon cannot delete, and for a root that it cannot list. A root that does not exist is not a failure. A directory in `errors` can be deleted in part. A response with no such failure has no `errors` member. A response with `errors` is still a success. |
-| `minAgeDays` | The value that the daemon used, after the limits. |
-
-The values of `legacy`:
+### The `legacy` member
 
 | `legacy` | Meaning |
 |---|---|
@@ -70,18 +80,6 @@ The values of `legacy`:
 | `cannot rule out <rel>: <error>` | The connection failed for a reason that does not show that no daemon listens. |
 | `cannot inspect <socket path>: <error>` | The daemon cannot examine the socket path. |
 | `cannot read <run directory>: <error>` | The daemon cannot list `<X>/run`. |
-
-If the socket of the daemon is not at `run/<clientId>/rpc.sock`, the daemon has no plugin roots and deletes nothing. `root` is then `""` and `minAgeDays` is `0`. `skipped` holds the reason, and `legacy` is `skipped: ` and then the reason.
-
-Do not read an empty `pruned` list as "nothing to delete". Read `errors` and `legacy` too.
-
-## Errors
-
-This method has no `errorCode` member. A failure is a JSON-RPC error.
-
-| Code | Text | Cause |
-|---|---|---|
-| `-32602` | `Invalid params: <detail>` | The JSON decoder refuses `params` or a member of it. For example, a member has the wrong type, or `minAgeDays` is not a whole number. `<detail>` is the text of the JSON decoder. The other methods answer `Invalid params` with no detail. |
 
 ## Differences by system
 

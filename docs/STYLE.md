@@ -1,6 +1,6 @@
 # Docs style guide
 
-This guide gives one template for each page type, the limits for a page, and the rule for evidence marks. When you write or change a page under `docs/`, use it. Each page opens with a summary and puts the common case before the rare one.
+This guide gives one template for each page type, the limits for a page, and the rule for evidence marks. When you write or change a page under `docs/`, use it.
 
 ## Page types
 
@@ -14,7 +14,7 @@ Each page has one type. The type sets the order of the sections.
 | Explanation | Why does it work this way? | [Architecture](ARCHITECTURE.md) |
 | Record | What happened, and when? | [Reference builds](REFERENCE-BUILDS.md) |
 
-Do not mix types on one page. Link to the explanation instead of explaining in a how-to.
+Do not mix types on one page. A how-to links to its explanation instead of explaining.
 
 ## Templates
 
@@ -57,7 +57,7 @@ The common case first, in the order a client meets it.
 Link to each divergence entry.
 ```
 
-A page keeps a heading that other pages link to, in the template order. Use one tab for systems that share a rule. A tag inside a tab narrows that tab, and an untagged rule in a tab is measured on the systems of its tab. Group an Errors table of more than about 8 rows under H3 headings.
+A page keeps a heading that other pages link to, in the template order, even under Rare states. Use one tab for systems that share a rule. A tag inside a tab narrows that tab. An untagged rule in a tab claims only the systems that both the top line and the tab name. If they share none, the rule carries its own tag. Group an Errors table of more than about 8 rows under H3 headings.
 
 ### How-to
 
@@ -133,7 +133,7 @@ One short section for each entry, in the same order.
 
 ## What goes where
 
-The main text holds what a reader needs in the common case. A rule that the reader acts on stays on the page, with one example for each rule that a client applies.
+The main text holds what a reader needs in the common case. A rule that the reader acts on stays on the page.
 
 Put a rare state in a collapsed block (`??? note "Title"`). A rare state is a state a client reaches only in an unusual setup, such as a link in a path. A collapsed block still counts for the word limit.
 
@@ -142,13 +142,13 @@ Move these out of the page:
 - History of builds, and "before, claustrum did X": to [the shipped ledger](IMPROVEMENTS.md) or [the reference builds](REFERENCE-BUILDS.md).
 - Cell names, round names, run counts, VM names and tags, and private tools: out of the repo. This repo serves forks, so name no tool that a fork does not have.
 
-A fact tagged "not measured" or "from the code" stays on the page. It tells the reader how far to trust the rule.
+A fact tagged "not measured" or "from the code" stays on the page.
 
-Each fact has one home. Link to the home. Do not copy its text. A rewrite can move a fact to its shared home, and the fact map names that home.
+Each fact has one home. Link to the home. Do not copy its text. A rewrite can move a fact to its shared home. The fact map names that home.
 
 ## Limits
 
-**Words between two headings: at most 250.** This is a target for new and rewritten text. No test enforces it yet. A table or a tab block counts as one unit.
+**Words between two headings: at most 250.** This is a target for new and rewritten text. A table or a tab block counts as one unit.
 
 **Sentence length: 8 to 20 words in a procedure, 8 to 25 words in a description.** A run of sentences under 8 words reads as a list with no thread. Join two related short sentences, and say why before the rule.
 
@@ -167,20 +167,6 @@ Keep these plain-English rules:
 
 Evidence is the proof for a rule: which build and which system it was measured on. Do not repeat it after every sentence, and never drop a fact to save a tag.
 
-1. **A top line on every page.** It is the first line after the summary, in one fixed form: "An untagged rule on this page matches build `<id>` or an earlier build, measured on Linux, macOS and Windows."
-2. **A tag for each exception.** Put the tag at the end of the block that it covers. The tags are "(measured on Linux)" (or macOS or Windows, or two of them), "(not measured)", "(from the code)" and "(claustrum's own)". The tag names the system that ran the test and claims no other. A tag copies the evidence of the old page for that rule, and never widens or narrows it. Two tags on one rule sit side by side, "claustrum's own" first. "Not measured" says what is unmeasured: if it is the reference side, the sentence says so. Every rule of those kinds carries its tag. The tags are plain words with no hover text.
+1. **A top line on every page.** It is the first line after the summary, in one of three forms: "An untagged rule on this page matches build `<id>` or an earlier build, measured on Linux, macOS and Windows." Use that form only if the unmarked rules of the page match it. If they were measured on fewer systems, name those systems in the top line. The second form scopes only the error texts: "The error texts of this page match the reference as measured on <systems>." The third form is for a page whose unmarked rules have no recorded system: "An untagged rule on this page matches build `<id>` or an earlier build. The system is not recorded." It claims no system for a tab, so an untagged rule in a tab claims no system, and a rule that the old page tied to a system keeps its tag.
+2. **A tag for each exception.** Put the tag at the end of the block that it covers. The tags are "(measured on Linux)" (or macOS or Windows, or two of them), "(not measured)", "(from the code)" and "(claustrum's own)". The tag names the system that ran the test and claims no other. A tag copies the evidence of the old page for that rule, and never widens or narrows it. Two tags on one rule sit side by side, "claustrum's own" first. "Not measured" says what is unmeasured: if it is the reference side, the sentence says so. Every rule of those kinds carries its tag.
 3. **A scope sentence for a section or a subsection.** If all rules of it share one tag, use one. Say it once under the heading and leave the tags out inside. A mixed section keeps its tags. A tag covers only its own block. If one block holds two rules with different evidence, each rule keeps its tag.
-
-Before (the old text of `docs/protocol/git-status.md`, before this rewrite):
-
-```markdown
-claustrum's own, not measured: a cut can split a multi-byte character. In a porcelain line, the JSON encoding then sends U+FFFD for each leftover byte.
-```
-
-After:
-
-```markdown
-A cut can split a multi-byte character (claustrum's own) (not measured). In a porcelain line, the JSON encoding then sends U+FFFD for each leftover byte (claustrum's own) (not measured).
-```
-
-Each rule keeps its own tags, because they are separate rules.
