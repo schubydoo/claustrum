@@ -76,10 +76,25 @@ delete, the prune and the `__INSTALL_RESULT__` facts.
 ### 2 · Daemon / process supervisor (`-serve`)
 
 Claustrum daemonizes itself: it detaches from the controlling session and, on
-Unix, reparents to init. It then opens the `0600` socket. It supervises the
-children it spawns. Most rules of each step are in PROTOCOL.md and
-[Running the daemon](DAEMON.md). This list names
-the files and the seams, and the rules that have no other home.
+Unix, reparents to init. It then binds the socket and sets its mode to `0600`.
+On Linux and macOS, the run-dir lock and the orphan reap come first. It
+supervises the children it spawns. Most rules are in PROTOCOL.md and [Running the daemon](DAEMON.md). This list
+names the files, the seams and the rules with no other home.
+
+```mermaid
+flowchart TD
+    A["parent reads token"] --> B["re-exec with token pipe"]
+    B --> C["child reads token"]
+    C --> D["run-dir lock (Unix only)"]
+    D -->|"held"| E["evict holder"]
+    E --> F
+    D --> F["reap orphans (Unix only)"]
+    F --> G["bind socket"]
+    C -.->|"Windows: no lock"| G
+    G --> H["chmod 0600"]
+    H --> I["write daemon.token"]
+    I --> J["accept loops"]
+```
 
 - **Token.** `-token-file` or `-token-fd` gives the token. `tokenpersist.go`
   writes `daemon.token` and unlinks it at a graceful stop if it is still its
@@ -91,8 +106,8 @@ the files and the seams, and the rules that have no other home.
   reference's `CLAUDE_SSH_DAEMON_CHILD`. A surrounding claude-ssh session exports
   that name to every descendant. If claustrum used that name as its sentinel, the
   launcher mistakes itself for the child and skips its own daemonize and
-  token-forward path. The child unsets the sentinel after it reads it. Claustrum
-  keeps reference parity by a separate route. `daemonizeWithToken` still sets
+  token-forward path. The child unsets the sentinel after it reads it. Parity
+  comes by a separate route. `daemonizeWithToken` still sets
   `CLAUDE_SSH_DAEMON_CHILD=1` in the daemon's environ, so `process.spawn` children
   inherit it as they do under the reference (see
   [The re-exec marker](PROTOCOL.md#the-re-exec-marker)).
@@ -107,8 +122,7 @@ the files and the seams, and the rules that have no other home.
   `childreap.go`, with the live-process read in `childreap_linux.go` /
   `childreap_darwin.go`, reaps them at the start. Both act through the run dir that
   the daemon holds open, so no write or read follows a symlink out of it. The kill
-  and every live-process read sit behind package-var seams, so tests exercise the
-  decision without ending a real process. See
+  and every live-process read sit behind package-var seams, so tests end no real process. See
   [Child records and the reap](DAEMON.md#child-records-and-the-reap-linux-and-macos).
 - **Host cleaner.** `hostclean.go` holds the shared decision layer, and
   `hostclean_linux.go` / `hostclean_darwin.go` hold the OS reads. Windows links no
@@ -134,35 +148,67 @@ the files and the seams, and the rules that have no other home.
 
 ### 3 · JSON-RPC multiplexer + replay
 
-This role uses one persistent socket, concurrent request dispatch, and in-band
-token auth. It also keeps a per-process frame buffer (`process.*`). A client that
-connects late, or that reconnects, catches up on that buffer with `reattach`.
+This role serves one socket with concurrent dispatch and in-band token auth.
+Each process keeps a frame buffer, and `reattach` replays it.
 
-(`-bridge` is a fourth, trivial mode: a dumb stdio↔socket relay. An SSH
-session attaches to it. It injects no auth.)
+(`-bridge` is a fourth mode: a stdio↔socket relay that SSH attaches to. It
+injects no auth.)
 
 ## Concurrency & replay model
 
-- Each request that passes the parse and auth checks runs in its own
-  goroutine. The read loop writes the parse and auth errors itself. A mutex
+```mermaid
+flowchart TD
+    A["accept"] --> B["read loop"]
+    B --> C{"parse"}
+    C -->|"-32700"| W["read loop writes"]
+    C --> D{"auth"}
+    D -->|"-32001"| W
+    W --> B
+    D --> G["goroutine"]
+    G --> V{"version"}
+    V -->|"-32600"| R
+    V --> M{"method"}
+    M -->|"-32601"| R
+    M --> H["handler"]
+    H --> R["reply"]
+```
+
+- Each request that passes parse and auth runs in its own goroutine. A mutex
   serializes the per-connection writer, so responses and stream frames
   interleave safely.
 - Each managed process has a monotonic `seq`, an append-only frame buffer, and a
-  set of subscriber connections. `spawn` subscribes the connection that spawned
-  the process. `reattach` REPLACES the whole subscriber set with the requester. It then
-  replays buffered frames with `seq > fromSeq`. Any connection attached before
-  stops receiving frames for that process. It also closes each connection that
-  it displaced. Claustrum detaches a dead
+  set of subscriber connections. `spawn` subscribes its connection. `reattach`
+  REPLACES the whole subscriber set with the requester, replays frames with
+  `seq > fromSeq`, and closes each connection that it displaced. Claustrum detaches a dead
   subscriber (`[frameSink] replay write failed, detaching`).
+
+```mermaid
+sequenceDiagram
+    participant C as Client
+    participant D as Daemon
+    participant P as Child
+    C->>D: spawn
+    D->>P: start
+    P->>D: output
+    D->>C: frame seq 1
+    Note over D: buffer, 16 MiB cap
+    C--xD: disconnect
+    P->>D: output
+    Note over D: seq 2 buffered
+    C->>D: reattach, fromSeq 1
+    D->>C: replay seq above 1
+    D->>C: reattach result
+    P->>D: exit
+    D->>C: exit frame
+```
 
 ## Deployment lifecycle (how a driver uses it)
 
-A driver (Claude Desktop, or your own tool such as clauster) typically does this:
+A driver (Claude Desktop, or your own tool such as clauster) does this:
 
 1. Probes the remote OS and arch.
-2. Makes sure that the daemon binary is present on the remote, for example by
-   uploading it.
-3. Runs `claustrum -install …` to make sure that the agent CLI is present.
+2. Uploads the daemon binary if it is absent.
+3. Runs `claustrum -install …` for the agent CLI.
 4. Starts `claustrum -serve -socket … -token-file …`.
 5. Attaches per session with `claustrum -bridge -socket …` and speaks JSON-RPC
    (in-band auth) through it.
@@ -173,19 +219,16 @@ A driver (Claude Desktop, or your own tool such as clauster) typically does this
 ## Inherited wire bytes
 
 Go's standard library, not claustrum's code, produces some of claustrum's
-byte-identical output. The reference is also a Go program, so its stdlib does
-unpaid parity work for us. That is a real asset, but inherited agreement is
-agreement nobody verified.
+byte-identical output. The reference is also a Go program, so inherited
+agreement is agreement nobody verified.
 
-Two things follow. First, a Go upgrade that changes an escaping rule moves the
-wire, and this repo shows no diff. Second, a reimplementation in another language
-must re-derive every row below by hand. The list is the honest cost estimate for
-that work.
+Two things follow. A Go upgrade that changes an escaping rule moves the wire,
+and this repo shows no diff. A reimplementation in another language must
+re-derive every row below by hand.
 
 The stdlib decides the rows marked **inherited**. **Deliberate** means claustrum
-chose the mechanism *because* it reproduced the reference. That is inherited
-behavior that someone measured and adopted, rather than inherited behavior nobody
-looked at.
+chose the mechanism *because* it reproduced the reference, after someone
+measured it.
 
 | Surface | Where | Source | Status |
 |---|---|---|---|
@@ -201,19 +244,17 @@ looked at.
 The decode-side row is the one row with a user-visible consequence: a file
 whose name is not valid UTF-8 cannot be addressed through the protocol at all,
 on either daemon. The request decoder substitutes U+FFFD before any method runs,
-so the daemon operates on a name that does not exist. This is not a claustrum
-limitation to fix. It is the reference's behavior, and claustrum inherits it by
-the same route.
+so the daemon operates on a name that does not exist. The reference behaves
+the same way.
 
 `inherited_encoding_test.go` and `inherited_encoding_unix_test.go` pin these
 rules against regression. For the encode-side rules they assert escape TEXT
-(`\ufffd`). For the decode-side rule they assert the U+FFFD CHARACTER. Which side
-substituted is what distinguishes them.
+(`\ufffd`). For the decode-side rule they assert the U+FFFD CHARACTER.
 
 ## Operational logging
 
-The logs are not part of the JSON-RPC wire contract. The log file, the startup
-lines and the differences from the reference are in [DAEMON.md → Daemon
+The logs are not wire contract. The log file, the startup lines and the
+differences from the reference are in [DAEMON.md → Daemon
 log](DAEMON.md#daemon-log-remote-serverlog).
 
 The readiness banner `Claustrum remote server listening on <socket> (pid <pid>,
@@ -221,13 +262,11 @@ instance <id>)` goes to stdout with no prefix. The leveled logger in
 [`logging.go`](https://github.com/schubydoo/claustrum/blob/main/logging.go)
 writes to stderr through the stdlib `log` package, which adds a
 `2006/01/02 15:04:05` timestamp. The logger puts a level tag (`DEBUG`, `INFO`,
-`WARN` or `ERROR`) before the `[Component]` prefix, as in `INFO  [Server] New connection from: …`. So a grep for a prefix such as
-`[Server]` or `[process.Manager]` keeps matching.
+`WARN` or `ERROR`) before the `[Component]` prefix. So a grep for a prefix such as `[Server]` or `[process.Manager]` keeps matching.
 
 `CLAUSTRUM_LOG_LEVEL` (`debug`, `info`, `warn` or `error`) sets the threshold
 once, at startup. An unset or unknown value means `debug`, which emits every
-line. A higher threshold drops each line below it. The level changes the log
-only, never the wire.
+line. A higher threshold drops each line below it. The wire never changes.
 
 ## Driver claims and their provenance
 
@@ -264,10 +303,7 @@ come out wrong. Only the argv fixture was run.
 
 The argv claim holds, by inspection of the shipped client. Desktop builds the
 daemon's argv from a fixed set of flags. Only the operands change: the download
-URL, its checksum and the uploaded blob path. On one host,
-Desktop ran `-install` bare, then with `-cli-url` and `-cli-checksum`. Once,
-with that download forced to fail, it uploaded the blob over SFTP and ran
-`-install` with `-cli-zst`.
+URL, its checksum and the uploaded blob path.
 
 The `cliError` claim underpins D10.
 `libc` underpins no current entry. This list is kept by hand and is not
