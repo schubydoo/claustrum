@@ -90,7 +90,7 @@ With `"wantPid":true` in the params, the result has two more members. The golden
 
 After the result, the output of the child arrives as id-less stream frames. The `data` member is base64. The last frame has `"stream":"exit"`. See [Stream notifications](PROTOCOL.md#stream-notifications).
 
-Both frames are **exact** (`results_test.go:110-120`). The test uses `AAA` as a stand-in for the data. A real frame holds the base64 of the output, for example `aGVsbG8K` for `hello` and a newline:
+Both frames are **exact** (`results_test.go:110-113`). The test uses `AAA` as a stand-in for the data. A real frame holds the base64 of the output, for example `aGVsbG8K` for `hello` and a newline:
 
 ```json
 {"type":"stream","processId":"p1","stream":"stdout","seq":1,"data":"AAA"}

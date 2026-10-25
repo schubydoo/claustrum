@@ -612,7 +612,7 @@ var docWordLimits = map[string]int{
 	"docs/STYLE.md":                        1300,  // a new page: its word count plus about 200
 	"docs/TOUR.md":                         850,   // a new page: its word count plus about 200
 	"docs/UPSTREAM-TRACKING.md":            6228,  // decision-040: words moved from PROTOCOL.md, net down in the same PR
-	"docs/index.md":                        661,
+	"docs/index.md":                        316,   // the reader router of TASK-201
 	"docs/protocol/files-extract-tar.md":   2254,
 	"docs/protocol/files-list.md":          449,
 	"docs/protocol/files-read.md":          825,
