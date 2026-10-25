@@ -95,7 +95,7 @@ Every OS serves the same JSON-RPC methods.
   Another document links to
   that home and does not copy the text.
   [`docs/PROTOCOL.md`](docs/PROTOCOL.md) keeps the sections that more than one
-  method uses, for example the error texts. The shared git rules have pages
+  method uses. The error texts and the shared git rules have pages
   under `docs/protocol/`. The rule is for the documents under `docs/`.
   `AGENTS.md` keeps the safety rules of Part A, because an agent must hold
   them before it touches code.

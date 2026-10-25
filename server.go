@@ -35,7 +35,7 @@ const tokenPipeEnv = "CLAUSTRUM_TOKEN_PIPE"
 // open :". This sentinel is purely a re-exec marker and never crosses the wire,
 // so namespacing it is free. The separate reference-parity marker that
 // process.spawn children must still inherit is daemonChildMarker, set in
-// daemonizeWithToken. See docs/PROTOCOL.md → "The re-exec marker".
+// daemonizeWithToken. See docs/protocol/flags.md → "The re-exec marker".
 const daemonChildEnv = "CLAUSTRUM_DAEMON_CHILD"
 
 // daemonChildMarker is the env var the *reference* daemon carries in its environ

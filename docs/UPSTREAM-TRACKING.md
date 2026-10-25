@@ -58,7 +58,7 @@ token, it skips the upload. The stock claustrum line holds no such match, so the
 client sends the daemon again by SFTP every session. That is not drift: the version line is CLI stdout, not a frame. The
 daemon that runs at the end is still claustrum. The
 opt-in `version-override` ([CT-3](DIVERGENCES.md#ct-3)) stops the re-upload. See
-[PROTOCOL.md → `-version`](PROTOCOL.md#-version).
+[flags.md → `-version`](protocol/flags.md#-version).
 
 ## Step 2 — run the drift check
 
@@ -192,9 +192,9 @@ expected, and so is the stop of a slow git call (D5). See
 `files-read-regular-only` paragraph below.
 
 Some flags are claustrum's own and have no entry: `-token-fd`
-([PROTOCOL.md → Flags and config keys](PROTOCOL.md#flags-and-config-keys)), and
+([flags.md → Flags and config keys](protocol/flags.md#flags-and-config-keys)), and
 `-metrics-addr` and `-wire-log`
-([PROTOCOL.md → Flags of claustrum alone](PROTOCOL.md#flags-of-claustrum-alone)).
+([flags.md → Flags of claustrum alone](protocol/flags.md#flags-of-claustrum-alone)).
 So is the skip of the kill signal for a child that already ended
 ([process.kill → Differences from the reference](protocol/process-kill.md#differences-from-the-reference)).
 So is a rule of `process.killAndWait`. For a signal other than `KILL` it sends no

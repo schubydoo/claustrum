@@ -52,7 +52,7 @@ The daemon gives this response in these cases:
 
 ## Errors
 
-This method has no `errorCode` member. A failure is a JSON-RPC error. The texts are in the [error-string catalog](../PROTOCOL.md#error-string-catalogue).
+This method has no `errorCode` member. A failure is a JSON-RPC error. The texts are in the [error-string catalog](errors.md#error-string-catalogue).
 
 ### Shared refusals
 

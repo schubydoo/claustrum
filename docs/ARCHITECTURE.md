@@ -97,7 +97,7 @@ flowchart TD
 - **Token.** `-token-file` or `-token-fd` gives the token. `tokenpersist.go`
   writes `daemon.token` and unlinks it at a graceful stop if it is still its
   own file. See
-  [The token source](PROTOCOL.md#the-token-source) and
+  [The token source](protocol/flags.md#the-token-source) and
   [Token persistence](DAEMON.md#token-persistence-daemontoken).
 - **Re-exec sentinel.** An internal sentinel, `CLAUSTRUM_DAEMON_CHILD`, gates the
   self-daemonize re-exec. It is *not* the
@@ -108,7 +108,7 @@ flowchart TD
   comes by a separate route. `daemonizeWithToken` still sets
   `CLAUDE_SSH_DAEMON_CHILD=1` in the daemon's environ, so `process.spawn` children
   inherit it as they do under the reference (see
-  [The re-exec marker](PROTOCOL.md#the-re-exec-marker)).
+  [The re-exec marker](protocol/flags.md#the-re-exec-marker)).
 - **Identity markers.** On Linux and macOS each `process.spawn` child starts
   through the exec-child trampoline, or directly when the trampoline does not
   start: `execchild_unix.go`, with the start-time

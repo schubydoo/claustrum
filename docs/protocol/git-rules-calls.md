@@ -63,7 +63,7 @@ A client sees the hardening in these places:
 
 The first config listing of a method is the hooks refusal check. It is not an extra
 call. Each method answers these texts in its own error frame (see the
-[Error-string catalogue](../PROTOCOL.md#error-string-catalogue)):
+[Error-string catalogue](errors.md#error-string-catalogue)):
 
 | Cause | Text |
 |---|---|

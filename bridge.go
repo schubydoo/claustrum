@@ -15,7 +15,7 @@ import (
 // matching the reference). -stop instead reports a failed dial as a word.
 //
 // At stdin EOF the bridge half-closes the socket. It keeps relaying the socket
-// to stdout. docs/PROTOCOL.md (-bridge) gives the exit rule.
+// to stdout. docs/protocol/flags.md (-bridge) gives the exit rule.
 // Measured against f6010b97 and 90fca6e6 on Linux and Windows VMs, the
 // reference bridge got stdin `{"jsonrpc":"2.0","id":1,` then EOF. It put the
 // 76-byte -32700 frame on stdout and exited 0. Measured on a Linux VM, the

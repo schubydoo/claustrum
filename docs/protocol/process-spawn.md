@@ -33,7 +33,7 @@ With `"wantPid": true` the result is `{"success":true,"pid":<int>,"startTime":<n
 
 Use `startTime` as an opaque token to detect a reused pid. Compare it only with a later daemon value. It does not equal a start time that the OS reports for the process.
 
-After the result, the output comes as [stream notifications](../PROTOCOL.md#stream-notifications) with the `id` as `processId`. The last one is the `exit` frame.
+After the result, the output comes as [stream notifications](streams.md#stream-notifications) with the `id` as `processId`. The last one is the `exit` frame.
 
 ## Errors
 

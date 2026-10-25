@@ -1,6 +1,6 @@
 # -install and -probe-cli
 
-These two modes put the agent CLI in place and test it. The other modes and the flags table are under [Daemon lifecycle (flags)](PROTOCOL.md#daemon-lifecycle-flags).
+These two modes put the agent CLI in place and test it. The other modes and the flags table are under [Daemon lifecycle (flags)](protocol/flags.md#daemon-lifecycle-flags).
 
 An untagged rule on this page matches the reference as measured on build `5fd08069` or an earlier build. A build that a section names in its first lines holds for that section. The other marks are those of the [protocol reference](PROTOCOL.md).
 
@@ -52,7 +52,7 @@ downloads or reads the CLI, extracts and verifies it, puts it in place and runs
 
 `-cli-keep`, `-max-cli-bytes` ([D10](DIVERGENCES.md#d10)), `-cli-download-timeout` and the deprecated
 `-cli-probe-timeout` and `-libc-probe-timeout` are in
-[Flags and config keys](PROTOCOL.md#flags-and-config-keys). `-install` reaches the network only
+[Flags and config keys](protocol/flags.md#flags-and-config-keys). `-install` reaches the network only
 with `-cli-url`.
 
 `-install` exits `0` whenever it prints the facts line. It reports a failure inside

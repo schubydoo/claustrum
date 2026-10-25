@@ -169,7 +169,7 @@ names the document PROTOCOL.md. See [Reference builds](REFERENCE-BUILDS.md).
 
 Noun. A refusal is a result in which an operation does not happen because a
 rule, a guard, the OS or another program rejects it. See
-[catalog of error texts](PROTOCOL.md#error-string-catalogue).
+[catalog of error texts](protocol/errors.md#error-string-catalogue).
 
 ## registration
 

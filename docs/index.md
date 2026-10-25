@@ -6,13 +6,13 @@ claustrum is a tiny, dependency-light Go daemon. It reimplements, clean-room, th
     Stay byte-identical to the JSON-RPC frames of the reference daemon. The
     [wire](GLOSSARY.md#wire) surface *is* the product.
 
-New here? Read the [Tour of one session](TOUR.md). It shows the frames of one session, from connect to shutdown. Then pick the path that fits you. A flag selects the mode of the binary, and the [flags table](PROTOCOL.md#flags-and-config-keys) lists each one.
+New here? Read the [Tour of one session](TOUR.md). It shows the frames of one session, from connect to shutdown. Then pick the path that fits you. A flag selects the mode of the binary, and the [flags table](protocol/flags.md#flags-and-config-keys) lists each one.
 
 <div class="grid cards" markdown>
 
 - :material-api: **You write a client**
     1. [How claustrum works](ARCHITECTURE.md). The three runtime roles and the replay model.
-    2. [Protocol overview](PROTOCOL.md). The transport, the error texts and the stream frames.
+    2. [Protocol overview](PROTOCOL.md), with the [error texts](protocol/errors.md) and [stream frames](protocol/streams.md).
     3. [Worked client sessions](EXAMPLES.md). Runnable requests and a small client.
     4. [process.spawn](protocol/process-spawn.md), [process.reattach](protocol/process-reattach.md), and the other method pages under Methods in the left menu.
 
