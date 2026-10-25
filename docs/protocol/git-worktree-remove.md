@@ -128,7 +128,7 @@ If `<git dir>/worktrees` exists but cannot be read, a worktree that exists gets 
 
 ## What the delete removes
 
-The registration is the folder `<git dir>/worktrees/<name>` that git keeps for each linked worktree. `<git dir>` is the git directory of the main repository. For a linked worktree as `baseRepo` it is the git directory of its main repository. A daemon with `GIT_DIR` in its environment uses the repository that `GIT_DIR` names.
+The registration is the folder `<git dir>/worktrees/<name>` that git keeps for each linked worktree. `<git dir>` is the git directory of the main repository. For a linked worktree as `baseRepo` it is the git directory of its main repository. A daemon that sets `GIT_DIR` and `GIT_COMMON_DIR` uses the repository that `GIT_DIR` names.
 
 The daemon finds the registration from the `.git` file of the worktree. The registration must name the worktree back. Without such a registration, it deletes the one registration whose record names `worktreePath`. If two match, it deletes no registration. If a registration that matches is locked, the request is refused first, as above. Without `worktreeRoot`, if the path compare misses the registration (another letter case on macOS, an 8.3 short name on Windows), the worktree directory still goes and its registration stays.
 

@@ -216,8 +216,7 @@ This delete path is approved by the maintainer. Do not widen it.
 ##### What is deleted
 
 `git.worktree_remove` deletes `worktreePath` itself. It runs no `git worktree
-remove`. The order of the deletes, where they stop and the case of a `baseRepo`
-that does not exist are in [What the delete
+remove`. Order, stops and a missing `baseRepo`: [What the delete
 removes](docs/protocol/git-worktree-remove.md#what-the-delete-removes). Without
 `worktreeRoot` and with a daemon `GIT_DIR` and `GIT_COMMON_DIR`, `<git dir>` is
 the repository that `GIT_DIR` names. The remove holds no git directory, and the
@@ -228,7 +227,7 @@ parent.
 
 ##### Who names the path
 
-The caller, in `worktreePath` (RPC).
+The caller, in `worktreePath` and `baseRepo` (RPC).
 
 ##### Guards
 
@@ -269,8 +268,7 @@ reference. Do not widen it.
 
 ##### Detail
 
-[git.worktree_remove](docs/protocol/git-worktree-remove.md). Code:
-`worktreeremove.go`.
+[git.worktree_remove](docs/protocol/git-worktree-remove.md).
 
 #### Path 3: the `git.worktree_create` rollback
 
@@ -290,16 +288,13 @@ something](docs/protocol/git-worktree-create.md#after-a-failure).
 
 The caller, in `worktreePath` and `baseRepo` (RPC).
 
-##### Guards
-
-`wipesHomeDir` (D2), identity tests, and one exception (see Guards: which registration).
-
 ##### Guards: stale entry
 
 Before the add, create removes one stale entry of `worktrees` in the common git
-directory of `baseRepo`. Which entry is stale and when it goes: [After a
-failure](docs/protocol/git-worktree-create.md#after-a-failure). Windows keeps an
-entry with a `locked` file too (`windowsStaleEntryGoes`). The delete is one
+directory of `baseRepo`. The stale test: [After a
+failure](docs/protocol/git-worktree-create.md#after-a-failure). Create removes
+that entry only if it is the only stale entry and holds no `locked` file.
+Windows keeps an entry with a `locked` file too (`windowsStaleEntryGoes`). The delete is one
 `os.Root.RemoveAll`, after `wipesHomeDir` on the entry path. It goes through a
 root at that folder. When a Windows create holds the git directory, it goes
 through the held folder. On Windows the step runs after `rev-parse
@@ -325,7 +320,7 @@ folder has one new name. The create then runs the second rollback on that name,
 never on the name in the `.git` file. A show-toplevel call that a time limit
 stopped starts no rollback (claustrum's own, not measured).
 
-##### Guards: triggers
+##### When the second rollback runs
 
 The second rollback runs when the `timeoutMs` of the caller expired during the
 add, the checkout or the copy step. It also runs after a post-checkout drain
@@ -404,13 +399,12 @@ the held parent. An rmdir cannot delete content.
 
 ##### Never widen
 
-See the last rules of [The held git directory](#the-held-git-directory).
+Never widen a delete of the [two steps that move
+the hold](#two-steps-that-move-the-hold).
 
 ##### Detail
 
 [git.worktree_create](docs/protocol/git-worktree-create.md#after-a-failure).
-Code: `worktreeverify.go`, `githarden_index_*.go`, `gitdirheld.go`,
-`worktreestale*.go`, `worktreestaging.go`.
 
 #### Path 4: the `git.worktree_create` staging sweep (Windows)
 
@@ -471,9 +465,14 @@ remove. A stopped run keeps it. On Windows claustrum can leave that file when
 the exited CLI holds it (claustrum's own code, not measured).
 
 - `-install` also removes two operator-named paths with a plain `os.Remove`,
-  never as a tree (`clearNonFolderCLIDir`). The kinds and the names: [Staging
-  and cleanup](docs/INSTALL.md#staging-and-cleanup).
-- `-install` also sweeps the cli-dir. The 10 minute sweep takes
+  never as a tree (`clearNonFolderCLIDir`). The first is the cli-dir entry, only
+  when it is a regular file, a symlink to a regular file or a FIFO. The second
+  is the regular file named exactly `ccd-cli-version` in the parent folder of
+  the cli-dir. No other name and no other file kind is removed. The rest:
+  [Staging and cleanup](docs/INSTALL.md#staging-and-cleanup).
+- `-install` also sweeps the cli-dir. Each sweep removes regular files by name
+  with a plain `os.Remove`, never as a tree. A folder and a link (from the code)
+  stay. Neither sweep names the version. The 10 minute sweep takes
   `.fetch-<digits>` and `<version>.zst`. It runs before a new CLI runs, after a
   failed attempt and after a D6 refusal. On a cache hit it runs only after a
   `--version` run that its bound stopped, as on `89cb6289`. The other sweep and
@@ -488,8 +487,6 @@ the exited CLI holds it (claustrum's own code, not measured).
 The operator: `-cli-dir`, `-cli-version` and `-cli-zst`.
 
 ##### Guards, in order
-
-Two guards run before the tree delete.
 
 1. D6 runs first: `makeCLIDir` and `ensureCLI` run it before they write or
    remove anything at a path built from the version. D6 makes the version one
@@ -515,8 +512,7 @@ tree delete.
 
 ##### Detail
 
-[-install](docs/INSTALL.md#-install-ensure-the-agent-cli). Code:
-`stageAndInstall`, `os.RemoveAll`.
+[-install](docs/INSTALL.md#-install--ensure-the-agent-cli).
 
 ### `plugins.prune`
 
@@ -538,8 +534,6 @@ made, or one that a directory read of `git-shadow` or of the folder of the
 daemon returned. No part of the path comes from an RPC value or from an
 operator.
 
-##### The git-shadow deletes
-
 - The test folder `.check-<n>`, after each start test, also a failed one.
 - The folder of the daemon, with each folder of a repository in it. It goes at
   shutdown (`shadowHost.close`, from `closeAll`), after its own lock file is
@@ -558,8 +552,6 @@ operator.
   minute (claustrum's own). A link goes as a link, and nothing is made in its
   target (D8).
 - One repository folder at 128 (`evictOldRepoFolder`).
-
-##### More git-shadow rules
 
 On Linux and macOS the folder of a repository holds a link `worktrees` into the
 git directory. The root removes that link and not its target
@@ -594,8 +586,9 @@ first of the five paths.
 In the state `shadow` `git.worktree_create` holds the git directory of
 `baseRepo` open from its gate to its reply (`acceptedGitDir`). After a gate
 under the off switch, claustrum takes the hold at a later gate before the first
-good add (claustrum's own). A stale step before that gate goes by the path. Hold
-these rules:
+good add (claustrum's own). A stale step before that gate goes by the path.
+[git.worktree_create](docs/protocol/git-worktree-create.md#the-held-git-directory)
+has the rules for a reader. Hold these rules:
 
 - Each delete, rename, new folder and file write of the create and of its
   rollback inside the git directory goes through the held folder, never through
@@ -630,9 +623,6 @@ every git method without `"shadowDirOff":true`, before any write or remove
 `.git`. With the member, either link at `.git\worktrees` refuses the create
 after its listing, and the leaf goes. A request started during one gets both
 rules until its later gate (from the code, not measured).
-
-[git.worktree_create](docs/protocol/git-worktree-create.md#the-held-git-directory)
-has the rules for a reader.
 
 ### What `git.worktree_create` writes
 
@@ -710,8 +700,7 @@ request `-32001`.
 
 ### Token persistence and the run-dir lock
 
-The daemon persists its token to `daemon.token` beside the socket, so a client
-can reconnect: [Token persistence](docs/DAEMON.md#token-persistence-daemontoken)
+The daemon persists its token to `daemon.token` (mode `0600`) beside the socket: [Token persistence](docs/DAEMON.md#token-persistence-daemontoken)
 (`tokenpersist.go`). The fixed name and the socket-dir location are the
 reconnect contract, so they are deliberately not configurable. One parity caveat
 remains: on Windows `0600` is not an owner-only DACL. Do not "fix" that caveat
@@ -737,12 +726,11 @@ provoke it through the `dispatchRequest` seam.
 
 ### Network
 
-`-serve` makes no outbound network connections. `-install` reaches the network
-only with `-cli-url`. That download path verifies its SHA-256 before the new CLI
-is put in place, unconditionally. Every dial `-serve` makes is to a local
-`AF_UNIX` socket, never network egress.
+`-serve` makes no outbound network connections, and `-install` reaches the
+network only with `-cli-url`: [SECURITY.md → Network](SECURITY.md#network). The
+download is verified by SHA-256, unconditionally.
 
-### Time bounds of `-install` and the libc probe
+### Time bounds
 
 The `ldd` libc probe bounds ldd itself at 5 s (`lddProbeTimeout`). The direct
 `<cli> --version` run of `-install` is stopped at 30 s on a cache hit
@@ -793,7 +781,7 @@ the rules, the cost and the reopen trigger of each.
 | [D20](docs/DIVERGENCES.md#d20) | Wait 50 ms and read again before the group `SIGKILL` of a child-group leader that reads as gone, at the reap of a `-serve` start | always-on | Linux, macOS |
 | [D22](docs/DIVERGENCES.md#d22) | `git.worktree_remove` refuses a worktree locked in the `.git` folder of `baseRepo`. Part A names the one exception | always-on | all |
 | [D23](docs/DIVERGENCES.md#d23) | The environment block of a child is in name order | always-on | Windows |
-| [D24](docs/DIVERGENCES.md#d24) | The rollback of `git.worktree_create` keeps a folder that replaced the new registration. On Windows a rollback after `.git` became a file runs no git call | always-on | all |
+| [D24](docs/DIVERGENCES.md#d24) | The rollback of `git.worktree_create` keeps a folder that replaced the new registration. On Windows a rollback after `.git` became a file that names a second repository runs no git call | always-on | all |
 | [D27](docs/DIVERGENCES.md#d27) | The stale step of `git.worktree_create` keeps an entry whose `gitdir` record names a path that exists | always-on | Windows |
 | [CT-1](docs/DIVERGENCES.md#ct-1) | Opt-in `wantPid` adds `pid` and `startTime` on spawn and reattach | off (the caller asks) | all |
 | [CT-2](docs/DIVERGENCES.md#ct-2) | `-keep-children` leaves the child tree running on shutdown | off | all |
@@ -805,10 +793,7 @@ The three caps and bounds D3, D10 and D12 default off. That is the parity
 position: a non-off default fails an operation that the reference completes.
 Claude Desktop owns the `-serve` / `-install` argv, so the `claustrum.conf`
 key is the reachable knob, not the flag. Each disabled state bypasses its
-limiter entirely, by the "never simplify" rule of Part A. Per-method wire
-frames → [`docs/PROTOCOL.md`](docs/PROTOCOL.md). Driver-claim provenance
-("Desktop owns the argv", `cliError` classification, libc selection) →
-[`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md).
+limiter entirely, by the "never simplify" rule of Part A.
 
 ## Where detail lives
 
