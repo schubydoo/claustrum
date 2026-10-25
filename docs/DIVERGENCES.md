@@ -120,17 +120,18 @@ These hold for each opt-in entry:
 
 ## Catalog
 
-One row for each live entry. "On-wire" means the entry changes a JSON-RPC reply
-frame or its text. "Off-wire" means it changes a file, a log, a signal, a child
-environment or a folder only. A note in brackets names what changes. Default "off" means a flag, a
-key or the caller turns it on. "Always-on" means no switch.
+One row for each live or deferred entry. "On-wire" means the entry changes a
+JSON-RPC reply frame or its text. "Off-wire" means it changes a file, a log, a
+signal, a child environment, a folder or a transport only. A note in brackets
+names what changes. Default "off" means a flag, a key or the caller turns it on.
+"Always-on" means no switch. "None" and "not built" mark the deferred idea CT-4.
 
 | ID | Summary | Wire | Default | OS |
 |----|---------|------|---------|----|
 | [D2](#d2) | Refuse a destructive path that is or holds `$HOME` | on-wire | always-on | all |
 | [D3](#d3) | Cap `files.extract_tar` output size | on-wire | off (`0`) | all |
 | [D6](#d6) | `-cli-version` is one path component | off-wire (`-install` output) | always-on | all |
-| [D8](#d8) | Refuse a link, a FIFO or another user's `remote-server.log` at start. The `git-shadow` sweep writes nothing through a link | off-wire | always-on | all |
+| [D8](#d8) | Refuse a link, a FIFO or another user's `remote-server.log` (Linux, macOS) at start. An own link to an own file passes on Linux and macOS. The `git-shadow` sweep writes nothing through a link | off-wire | always-on | all |
 | [D10](#d10) | Cap the `-install` CLI size | off-wire (`-install` output) | off (`0`) | all |
 | [D12](#d12) | Bound the `-install` download | off-wire (`-install` output) | off (`0`) | all |
 | [D15](#d15) | Verify a lock holder before a signal | off-wire | always-on | macOS |
@@ -138,8 +139,8 @@ key or the caller turns it on. "Always-on" means no switch.
 | [D19](#d19) | Refuse a junction between `baseRepo` and the leaf on remove | on-wire | always-on | Windows |
 | [D20](#d20) | Wait 50 ms and read again before the group `SIGKILL` of a leader that reads as gone | off-wire | always-on | Linux, macOS |
 | [D22](#d22) | Refuse a worktree locked in the `.git` folder of `baseRepo` on remove | on-wire | always-on | all |
-| [D23](#d23) | A child's environment block is in name order | off-wire | always-on | Windows |
-| [D24](#d24) | In a create rollback, keep a folder that replaced the registration. On Windows, run no git call after a `.git` file swap | see entry | always-on | all |
+| [D23](#d23) | A child's environment block is in name order | off-wire (child environment, visible in stream output) | always-on | Windows |
+| [D24](#d24) | In a create rollback, keep a folder that replaced the registration. On Windows, run no git call after a `.git` file swap | on-wire (Windows `.git` swap only) | always-on | all |
 | [D27](#d27) | Keep a stale entry whose record names a path that exists | on-wire | always-on | Windows |
 | [CT-1](#ct-1) | `wantPid` adds `pid` and `startTime` | on-wire | off (the caller asks) | all |
 | [CT-2](#ct-2) | `-keep-children` keeps the child tree at shutdown | off-wire | off | all |
@@ -665,9 +666,7 @@ have no flag and no key.
     first 64 KiB. It ignores an unknown key and an invalid value. A problem of the
     file never fails the start. A `wire-log` path that cannot be opened does fail
     it. A duration uses `time.ParseDuration`, which
-    refuses a bare number other than zero. A zero in any spelling means off. A wrong
-    digit still turns a cap or a deadline on: `10` for `0` on a cap,
-    `10s` for `0s` on the deadline.
+    refuses a bare number other than zero. A zero in any spelling means off.
   - `version-override`: set it to the commit SHA that the desktop client pins,
     and the client stops uploading the reference each session. The value is 40 or
     64 hex digits, claustrum prints it in lower case, and any other value does
@@ -675,7 +674,8 @@ have no flag and no key.
     how the client reads it.
 - **Reference.** None stated.
 - **Systems and switch.** All systems. Create the file.
-- **Cost.** None stated.
+- **Cost.** A wrong digit still turns a cap or a deadline on: `10` for `0` on a cap,
+  `10s` for `0s` on the deadline.
 - **Rule.** The opt-in mechanism itself.
 - **Reopen trigger.** None.
 - **Pointers.** `config.go`.
@@ -686,11 +686,11 @@ have no flag and no key.
   `persist-token = false`, or an owner-only DACL on `daemon.token` on Windows, or
   both. It is for an operator who prefers a smaller on-disk token window over
   reconnect. Without the key the daemon stays stock.
-- **Reference.** None stated.
+- **Reference.** The default matches the reference.
 - **Systems and switch.** None. Not built.
 - **Cost.** None stated.
-- **Rule.** Deferred, because there is no demand. The default matches the
-  reference, and the socket folder is owner-only in the real deployment.
+- **Rule.** Deferred, because there is no demand. The socket folder is owner-only
+  in the real deployment.
 - **Reopen trigger.** None.
 - **Pointers.** [DAEMON.md → Token
   persistence](DAEMON.md#token-persistence-daemontoken) has the file and its
