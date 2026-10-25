@@ -609,7 +609,7 @@ var docWordLimits = map[string]int{
 	"docs/IMPROVEMENTS.md":                 1593,
 	"docs/INSTALL.md":                      5344,
 	"docs/PROTOCOL.md":                     22313, // decision-040: words moved to the method pages, to INSTALL.md and to UPSTREAM-TRACKING.md
-	"docs/STYLE.md":                        1300,  // a new page: its word count plus about 200
+	"docs/STYLE.md":                        1294,  // task-203b: the page rewrite
 	"docs/TOUR.md":                         850,   // a new page: its word count plus about 200
 	"docs/UPSTREAM-TRACKING.md":            6228,  // decision-040: words moved from PROTOCOL.md, net down in the same PR
 	"docs/index.md":                        316,   // the reader router of TASK-201
@@ -618,19 +618,19 @@ var docWordLimits = map[string]int{
 	"docs/protocol/files-read.md":          825,
 	"docs/protocol/files-stat.md":          434, // TASK-203 rewrite
 	"docs/protocol/files-validate.md":      365,
-	"docs/protocol/git-info.md":            1856,
-	"docs/protocol/git-list-branches.md":   1000,
+	"docs/protocol/git-info.md":            1851, // task-203b: the page rewrite
+	"docs/protocol/git-list-branches.md":   998,  // task-203b: the page rewrite
 	"docs/protocol/git-status.md":          3185, // decision-040: a move between pages, net down in the same PR
 	"docs/protocol/git-worktree-create.md": 6951, // decision-050: the trim of the create and remove pages
 	"docs/protocol/git-worktree-remove.md": 4069, // decision-050: the trim of the create and remove pages
 	"docs/protocol/launcher-resolve.md":    1620, // task-204: rewrite to the page template
-	"docs/protocol/plugins-prune.md":       1093,
+	"docs/protocol/plugins-prune.md":       1088, // task-203b: the page rewrite
 	"docs/protocol/process-kill.md":        967,
 	"docs/protocol/process-killandwait.md": 1000,
 	"docs/protocol/process-reattach.md":    988,
 	"docs/protocol/process-spawn.md":       3474, // task-204: rewrite to the page template
 	"docs/protocol/process-stdin.md":       895,
-	"docs/protocol/server.md":              1511,
+	"docs/protocol/server.md":              1493, // task-203b: the page rewrite
 }
 
 // The limits of a document that docWordLimits does not name.

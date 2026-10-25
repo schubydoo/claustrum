@@ -1,6 +1,8 @@
 # server.*
 
-The `server.*` methods describe the daemon and stop it. `server.ping` tells a client that the daemon answers. `server.capabilities` lists the methods and the optional features of this build. `server.shutdown` stops the daemon.
+The `server.*` methods describe the daemon and stop it. `server.ping` tells a client that the daemon answers. `server.capabilities` lists the methods and the optional features of this build. `server.shutdown` stops the daemon. The surprise: `server.shutdown` needs no token, and its reply can lose a race with the close of the connection.
+
+An untagged rule on this page matches build `5fd08069`, measured on Linux. A rule that names macOS or Windows was measured there against `5fd08069`. The measured cells behind each rule are in the tests and in the [reference build history](../REFERENCE-BUILDS.md).
 
 ## Request
 
@@ -119,7 +121,7 @@ The stop closes the listener. On Linux and macOS, if the socket file is still th
 
 ### Log lines
 
-The lines of this section are measured against `5fd08069` on Linux, unless a rule names another build or a system. The order of the shutdown lines and the signal lines were measured against `f6010b97` too.
+An untagged rule in this section is measured against `5fd08069` on Linux, unless the rule names another build or a system. The order of the shutdown lines and the signal lines were measured against `f6010b97` too.
 
 On `server.shutdown` the daemon logs these two lines before it closes any connection:
 
@@ -142,14 +144,17 @@ A handler panic in `server.shutdown` writes no frame (claustrum's own). See [Han
 
 ## Differences by system
 
-| | Linux | macOS | Windows |
-|---|---|---|---|
-| `git.worktree.external_root` in `features` | Listed. | Listed. | Not listed. |
-| `peerCheck` with `CLAUDE_SSH_PEER_CHECK=1` | `"on"`, with `peerCheckBy`. The daemon refuses a caller in other namespaces. | `"unavailable"`. The daemon serves every caller. | `"unavailable"`. The daemon serves every caller. |
-| Start line with the variable at `1` (claustrum's own) | INFO. It names the namespaces of the daemon. | WARN. It says that the system names no namespaces. | WARN, as on macOS. |
+The `peerCheck` values per system are in [The peer check](#the-peer-check), and `git.worktree.external_root` is in [Features](#features). The start line with `CLAUDE_SSH_PEER_CHECK=1` differs:
+
+=== "Linux"
+    INFO. It names the namespaces of the daemon (claustrum's own).
+
+=== "macOS"
+    WARN. It says that the system names no namespaces (claustrum's own).
+
+=== "Windows"
+    WARN, as on macOS (claustrum's own).
 
 ## Differences from the reference
 
 `-keep-children` is claustrum's own flag ([CT-2](../DIVERGENCES.md#ct-2)). The peer check follows the reference.
-
-A rule that is not marked "claustrum's own" is measured against `5fd08069` on Linux, and a rule that names macOS or Windows was measured there. The measured cells behind each rule are in the tests and in the [reference build history](../REFERENCE-BUILDS.md).
