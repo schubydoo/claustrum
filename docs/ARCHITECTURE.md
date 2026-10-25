@@ -120,7 +120,7 @@ flowchart TD
   `childreap.go`, with the live-process read in `childreap_linux.go` /
   `childreap_darwin.go`, reaps them at the start. Both act through the run dir that
   the daemon holds open, so no write or read follows a symlink out of it. The kill
-  and every live-process read sit behind package-var seams, so tests end no real process. See
+  and every live-process read sit behind package-var seams, so tests exercise the decision and end no real process. See
   [Child records and the reap](DAEMON.md#child-records-and-the-reap-linux-and-macos).
 - **Host cleaner.** `hostclean.go` holds the shared decision layer, and
   `hostclean_linux.go` / `hostclean_darwin.go` hold the OS reads. Windows links no
@@ -147,7 +147,6 @@ flowchart TD
 ### 3 · JSON-RPC multiplexer + replay
 
 This role serves one socket with concurrent dispatch and in-band token auth.
-Each process keeps a frame buffer, and `reattach` replays it.
 
 (`-bridge` is a fourth mode: a stdio↔socket relay that SSH attaches to. It
 injects no auth.)
@@ -217,10 +216,10 @@ A driver (Claude Desktop, or your own tool such as clauster) typically does this
 ## Inherited wire bytes
 
 Go's standard library, not claustrum's code, produces some of claustrum's
-byte-identical output. The reference is also a Go program, so inherited
-agreement is agreement nobody verified.
+byte-identical output. The reference is also a Go program, so its stdlib gives
+the same bytes. Inherited agreement is agreement nobody verified.
 
-Two things follow: a Go upgrade that changes an escaping rule moves the wire,
+Two results: a Go upgrade that changes an escaping rule moves the wire,
 and this repo shows no diff. A reimplementation in another language must
 re-derive every row below by hand.
 
@@ -263,8 +262,8 @@ writes to stderr through the stdlib `log` package, which adds a
 `WARN` or `ERROR`) before the `[Component]` prefix. So a grep for a prefix such as `[Server]` or `[process.Manager]` keeps matching.
 
 `CLAUSTRUM_LOG_LEVEL` (`debug`, `info`, `warn` or `error`) sets the threshold
-once, at startup. An unset or unknown value means `debug`, which emits every
-line. A higher threshold drops each line below it. The wire never changes.
+at startup. An unset or unknown value means `debug`, which emits every
+line. A higher threshold drops each line below it.
 
 ## Driver claims and their provenance
 
