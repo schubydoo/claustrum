@@ -629,7 +629,7 @@ var docWordLimits = map[string]int{
 	"docs/protocol/process-killandwait.md": 977,  // TASK-203c: the page template
 	"docs/protocol/process-reattach.md":    988,
 	"docs/protocol/process-spawn.md":       3474, // task-204: rewrite to the page template
-	"docs/protocol/process-stdin.md":       894,  // TASK-203c: the page template
+	"docs/protocol/process-stdin.md":       893,  // TASK-203c: the page template
 	"docs/protocol/server.md":              1490, // task-203b: the page rewrite
 }
 

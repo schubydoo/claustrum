@@ -42,8 +42,8 @@ This method has no `errorCode` member. A failure is a JSON-RPC error. The daemon
 | `-32602` | `Invalid base64 data` | `data` is not valid base64. This test comes before the test of `id`. |
 | `-32602` | `Process not found` | The daemon has no process with this `id`. |
 | `-32003` | `stdin offset gap: offset ahead of applied bytes` | `offset` is above `applied`. |
-| `-32602` | `Process not running` | The process exited, and the request is not a gap and not a duplicate. A request with no bytes and no `offset` gets this error too. The answer can come before the `exit` frame of the process. |
-| `-32002` | `stdin backpressure: queue full` | The queue of the process holds bytes that the child did not read yet. This request does not fit in the limit of 16 MiB. The daemon accepts nothing, and `applied` does not change. Send the request again later. |
+| `-32602` | `Process not running` | The process exited, and the request is not a gap and not a duplicate. A request with no bytes and no `offset` gets this error too (measured on Linux and macOS) (not measured on Windows). The answer can come before the `exit` frame of the process. |
+| `-32002` | `stdin backpressure: queue full` | The queue of the process holds bytes that the child did not read yet. This request does not fit in the limit of 16 MiB. The daemon accepts nothing, and `applied` does not change. Send the request again later. After the child closes its input, a retry fails: see [Rare states](#rare-states). |
 
 The daemon never holds a request back because the queue is full. It answers `-32002` at once.
 
@@ -64,23 +64,13 @@ After a reconnect, read the count from the `stdinApplied` member of `process.rea
 
 The daemon advertises this behavior as the feature `process.stdin.offset` in `server.capabilities`.
 
-## Platform notes
-
-The answers to a request with no bytes and after the child closes its input:
-
-=== "Linux and macOS"
-    (measured on Linux and macOS)
-
-=== "Windows"
-    (not measured)
-
 ## Rare states
 
 ??? note "A closed input"
 
     If the child exits or closes its input first, the child never gets the bytes in the queue. No response says so.
 
-    After the child closes its input, the queue keeps the bytes of later requests. `applied` grows until the queue is full. The queue does not drain then, so each later request that does not fit gets `-32002` (from the code).
+    After the child closes its input, the queue keeps the bytes of later requests. `applied` grows until the queue is full (measured on Linux and macOS) (not measured on Windows). The queue does not drain then, so each later request that does not fit gets `-32002` (from the code).
 
 ## Differences from the reference
 
