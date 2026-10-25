@@ -122,17 +122,17 @@ These hold for each opt-in entry:
 
 One row for each live entry. "On-wire" means the entry changes a JSON-RPC reply
 frame or its text. "Off-wire" means it changes a file, a log, a signal, a child
-environment, a folder or an `-install` result only. Default "off" means a flag, a
+environment or a folder only. A note in brackets names what changes. Default "off" means a flag, a
 key or the caller turns it on. "Always-on" means no switch.
 
 | ID | Summary | Wire | Default | OS |
 |----|---------|------|---------|----|
 | [D2](#d2) | Refuse a destructive path that is or holds `$HOME` | on-wire | always-on | all |
 | [D3](#d3) | Cap `files.extract_tar` output size | on-wire | off (`0`) | all |
-| [D6](#d6) | `-cli-version` is one path component | off-wire | always-on | all |
+| [D6](#d6) | `-cli-version` is one path component | off-wire (`-install` output) | always-on | all |
 | [D8](#d8) | Refuse a link, a FIFO or another user's `remote-server.log` at start. The `git-shadow` sweep writes nothing through a link | off-wire | always-on | all |
-| [D10](#d10) | Cap the `-install` CLI size | off-wire | off (`0`) | all |
-| [D12](#d12) | Bound the `-install` download | off-wire | off (`0`) | all |
+| [D10](#d10) | Cap the `-install` CLI size | off-wire (`-install` output) | off (`0`) | all |
+| [D12](#d12) | Bound the `-install` download | off-wire (`-install` output) | off (`0`) | all |
 | [D15](#d15) | Verify a lock holder before a signal | off-wire | always-on | macOS |
 | [D16](#d16) | `git.status` of a linked worktree works, where the reference errors | on-wire | always-on | Windows |
 | [D19](#d19) | Refuse a junction between `baseRepo` and the leaf on remove | on-wire | always-on | Windows |
