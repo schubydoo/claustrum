@@ -282,7 +282,7 @@ the linked pages. The history of each build is in
   with `+`.
   Against `f6010b97`, `server.capabilities` also differs by the
   `git.worktree_remove.unpushedGuard` and `launcher.managed` features and by the
-  `launcher.resolve` method. See [The branch step](PROTOCOL.md#the-branch-step).
+  `launcher.resolve` method.
 - The managed launcher follows `89cb6289`: `launcher.resolve`, the
   `process.spawn` `launcher` param, the child env strip, and the gated launcher
   runs of `-install` and `-probe-cli`. The Linux file test on a cache hit before a
@@ -296,27 +296,26 @@ the linked pages. The history of each build is in
   `git.shadow_dir` features. On Linux with `CLAUDE_SSH_PEER_CHECK=1` the daemon refuses a caller in other
   namespaces with `-32006`. The frames of `89cb6289` have none of these. The
   peer check log lines differ from `5fd08069` by a level tag only (measured on
-  Linux). See [The peer check](protocol/server.md#the-peer-check).
+  Linux).
 - `files.extract_tar` follows `5fd08069`, and `89cb6289` differs in each of these
   points:
   - the `files.extract_tar.execBit` feature
   - the mode `0700` of a file with the execute bit of the owner (Linux and macOS)
   - the refusal of a name that leaves `destDir` and comes back
-  - the last entry of a file that the archive names two times
+  - the last entry of a file that the archive names twice
   - the `error` texts of the entry and `destDir` steps.
 
-  A `destDir` that the daemon cannot search or open gets the `open destDir:`
+  A `destDir` the daemon cannot search or open gets the `open destDir:`
   refusal, where `89cb6289` fails later or extracts. On Linux and macOS, a parent
   folder of mode `0300` with no `destDir` gets the `open parent:` refusal, where
-  `89cb6289` extracts. The two Windows rows of
+  `89cb6289` extracts. The two Windows last-name bullets of
   [Differences by system](protocol/files-extract-tar.md#differences-by-system)
-  are parity, and `89cb6289` differs in both (measured on Windows). A `\\?\` path with a dot or a space after its
+  (a last name with a dot or space and no `\\?\` prefix, names like `NUL`, `dest?`) are parity. `89cb6289` differs in both (measured on Windows). A `\\?\` path with a dot or a space after its
   last name differs from both builds ([D2](DIVERGENCES.md#d2)). A `destDir` that
-  is the home folder by identity gets the home refusal (D2). See
-  [files.extract_tar](protocol/files-extract-tar.md).
+  is the home folder by identity gets the home refusal (D2).
 - The `-install` prune and sweeps follow `5fd08069`, and so do the blob timing,
   the Windows `rename: ` prefix, the Windows rename retry and the Linux file test of a
-  cache hit. See [INSTALL.md → -install](INSTALL.md#-install-ensure-the-agent-cli).
+  cache hit.
 - The git filters of the `git.worktree_create` checkout follow `5fd08069`. Against
   `89cb6289` the refusal `repository_only_filter` is new. So are the texts for a
   name over 200 bytes and for more than 64 filters (`89cb6289` not run for 64

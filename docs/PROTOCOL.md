@@ -192,7 +192,7 @@ that names systems without "measured" holds on each one. The [reference build hi
 | files.read | The texts that only this method sends | On the page: [files.read → Errors](protocol/files-read.md#errors) |
 | files.list | The texts that only this method sends | On the page: [files.list → Errors](protocol/files-list.md#errors) |
 | files.validate | The texts that only this method sends | On the page: [files.validate → Response](protocol/files-validate.md#response) |
-| files.extract_tar | The texts that only this method sends | On the page: [files.extract_tar → Response](protocol/files-extract-tar.md#response) |
+| files.extract_tar | The texts that only this method sends | On the page: [files.extract_tar → Errors](protocol/files-extract-tar.md#errors) |
 | git.status | The texts that only this method sends | On the page: [git.status → Errors](protocol/git-status.md#errors) |
 | git.status / git.list_branches | `<go error>`, for example `exit status 128` | -32603. The git call failed |
 | git.list_branches / git.info / git.status / git.worktree_create | `git took too long: Claude stopped git <subcommand> after 2 minutes; try again` | -32603 on the other methods. Create puts it after the text of the stopped step, as `git worktree add failed: ` or the `mkdir_failed` text of the parent step. A stopped repository test gets it alone, with `worktree_add_failed`. While a request with `"shadowDirOff":true` runs, the text says `after 30 minutes` (claustrum's own). See [Time limits of git calls](#time-limits-of-git-calls) |
