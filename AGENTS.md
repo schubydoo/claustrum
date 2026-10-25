@@ -5,7 +5,7 @@ reimplementation of the small daemon that hosts a remote Claude Code session
 over SSH. It combines three parts: a local CLI-version manager, a process
 supervisor, and a JSON-RPC multiplexer over an `AF_UNIX` socket. The
 multiplexer holds a replay buffer. Black-box probes of the reference binary
-captured a behavioral contract, and claustrum is built to that contract. No
+captured a contract, and claustrum is built to that contract. No
 code was copied, and no decompiler or disassembler output was transcribed into
 the code (see [`NOTICE`](NOTICE)).
 
@@ -21,7 +21,7 @@ daemon. The wire surface is the product.
 | Format | `make fmt` runs `gofmt -l -w *.go`, so it skips `handlers/`. `gofmt -l .` must be empty |
 | Vet | `make vet` (`go vet ./...`) |
 | Lint | `golangci-lint run ./...`. The configuration is `.golangci.yml` (v2) |
-| Tests | `make test` (`go test -race -timeout 20m ./...`). This runs the unit suites and the socket-integration suites. The time limit is explicit, because a race run took more than 9 minutes, near the 10 minute default of `go test` |
+| Tests | `make test` (`go test -race -timeout 20m ./...`). This runs the unit suites and the socket-integration suites. The time limit is explicit, because a race run on one Linux host took more than 9 minutes, near the 10 minute default of `go test` |
 
 - Use Go 1.26 and `CGO_ENABLED=0`. The build toolchain is deliberately held
   below 1.27. The default `jsonv2` in 1.27 moves inherited wire bytes, so build
@@ -30,12 +30,12 @@ daemon. The wire surface is the product.
   drift. Every build has `github.com/klauspost/compress` (zstd) and
   `golang.org/x/sys` (its `unix` or `windows` package).
   `github.com/Microsoft/go-winio` is Windows-only.
-- In-repo tests cover the wire surface two ways: fast unit tests, and a
+- Tests cover the wire surface two ways: fast unit tests, and a
   socket-integration suite (`harness_test.go` + `integration*_test.go`). The
   suite boots the daemon on a temp `AF_UNIX` socket. It asserts the frames of
   every method against golden fixtures (`testdata/socket_*.golden.json`). CI
-  therefore gates compatibility without the reference binary, on linux, macOS
-  and Windows. Process fixtures come from the test binary itself
+  gates compatibility without the reference binary, on linux, macOS
+  and Windows. Process fixtures come from the test binary
   (`helperproc_test.go`), never from `/bin/*`, so stream bytes match the
   goldens on every OS. Statement coverage is approximately 99%.
 
