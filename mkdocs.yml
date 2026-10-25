@@ -86,6 +86,9 @@ markdown_extensions:
 extra_css:
   - stylesheets/extra.css
 
+extra_javascript:
+  - javascripts/fold.js
+
 nav:
   - Start:
       - Home: index.md

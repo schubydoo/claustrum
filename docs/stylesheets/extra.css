@@ -54,3 +54,87 @@
   text-transform: uppercase;
   margin-top: 0.9em;
 }
+
+/* Foldable h2 sections (docs/javascripts/fold.js). The h2 stays inside a native
+   <summary>, so its id, permalink and table-of-contents entry keep working.
+   Material styles every <details> as an admonition, so the first rules strip that. */
+.md-typeset details.claustrum-fold {
+  display: block;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  border-radius: 0;
+  box-shadow: none;
+  background: none;
+  font-size: inherit;
+  overflow: visible;
+  break-inside: auto;
+}
+
+.md-typeset details.claustrum-fold > .claustrum-fold__body {
+  padding: 0;
+}
+
+.md-typeset details.claustrum-fold > summary {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  min-height: 0;
+  margin: 2rem 0 0.8rem;
+  padding: 0;
+  border-radius: 0.2rem;
+  background: none;
+  font-weight: inherit;
+  cursor: pointer;
+  list-style: none;
+}
+
+.md-typeset details.claustrum-fold > summary::-webkit-details-marker {
+  display: none;
+}
+
+.md-typeset details.claustrum-fold > summary::after {
+  display: none;
+}
+
+.md-typeset details.claustrum-fold > summary > h2 {
+  flex: 1;
+  min-width: 0;
+  margin: 0;
+}
+
+.md-typeset details.claustrum-fold > summary::before {
+  position: static;
+  flex: none;
+  width: 1.2rem;
+  height: 1.2rem;
+  background-color: var(--md-default-fg-color--light);
+  -webkit-mask: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'><path d='M7.41 8.58 12 13.17l4.59-4.59L18 10l-6 6-6-6z'/></svg>") center / contain no-repeat;
+  mask: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'><path d='M7.41 8.58 12 13.17l4.59-4.59L18 10l-6 6-6-6z'/></svg>") center / contain no-repeat;
+  transform: none;
+}
+
+.md-typeset details.claustrum-fold:not([open]) > summary::before {
+  transform: rotate(-90deg);
+}
+
+.md-typeset details.claustrum-fold > summary:hover::before {
+  background-color: var(--md-accent-fg-color);
+}
+
+.md-typeset details.claustrum-fold > summary:focus-visible {
+  outline: 2px solid var(--md-accent-fg-color);
+  outline-offset: 2px;
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  .md-typeset details.claustrum-fold > summary::before {
+    transition: transform 0.15s ease;
+  }
+}
+
+@media print {
+  .md-typeset details.claustrum-fold > summary::before {
+    display: none;
+  }
+}
