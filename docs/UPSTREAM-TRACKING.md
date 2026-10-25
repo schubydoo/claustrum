@@ -263,10 +263,10 @@ the linked pages. The history of each build is in
 - A git call that runs 2 minutes is stopped, and the reply carries `git took too
   long`. A scan of ignored files that its limit of 10 minutes stopped answers
   `{"success":true}` with no copied file. Both are parity, not drift. See
-  [PROTOCOL.md → Time limits of git calls](PROTOCOL.md#time-limits-of-git-calls).
+  [Time limits of git calls](protocol/git-rules-calls.md#time-limits-of-git-calls).
 - The failure texts of `git.worktree_create` hold no graft-file `hint:` lines, as
   on `5fd08069` and `90fca6e6`. The texts of `f6010b97` and `89cb6289` can hold
-  them. See [Hardened git calls](PROTOCOL.md#hardened-git-calls).
+  them. See [Hardened git calls](protocol/git-rules-calls.md#hardened-git-calls).
 - In a repository with no `.claude/`, a `timeoutMs` that expires during the copy
   step answers `timeout` "after the checkout finished" and rolls back, as on
   `90fca6e6` and `89cb6289` (measured on Linux for `89cb6289`). `f6010b97`
@@ -346,7 +346,7 @@ the linked pages. The history of each build is in
   Linux). For a config with a very long key, `5fd08069` ends config reads early
   (measured on Windows). A config whose listing passes 64 MiB can get no refusal
   on claustrum (claustrum's own, not measured). See
-  [Repository config refusals](PROTOCOL.md#repository-config-refusals).
+  [Repository config refusals](protocol/git-rules-config.md#repository-config-refusals).
 - The option lists of the git calls follow `5fd08069`. Against `89cb6289` they
   differ in four states: `git.status` with replace objects, the `hint:` lines
   above, a long tree path on Windows, and the paths of a new worktree with
@@ -371,7 +371,7 @@ the linked pages. The history of each build is in
   entries. That is measured
   on Linux and macOS in the state `shadow`. On Windows the variables and the
   names are measured in the state `fallback-git`. `githarden.go` holds the
-  lists. See [Hardened git calls](PROTOCOL.md#hardened-git-calls).
+  lists. See [Hardened git calls](protocol/git-rules-calls.md#hardened-git-calls).
 - The `worktreeRoot` location rules follow `5fd08069` (measured on Linux and
   macOS). `89cb6289` is not measured there.
 - A remove behind a linked `<git dir>/worktrees` follows `5fd08069` (measured on
@@ -389,7 +389,7 @@ the linked pages. The history of each build is in
   Windows). After the start test on a `.git` file that names a missing path,
   claustrum runs a config listing and makes no `.probe`, where `5fd08069` runs a
   `rev-parse` against `.probe` (measured on macOS and Windows), with equal frames.
-  See [The settings copy](PROTOCOL.md#the-settings-copy).
+  See [The settings copy](protocol/git-rules-settings-copy.md#the-settings-copy).
 - A remove with a worktree folder that exists lists again after a failed
   listing, as on `5fd08069` (measured on Linux, macOS and Windows). `f6010b97`
   answers the lock-check text there. Take an empty `GIT_CONFIG_KEY_0` in the
@@ -407,7 +407,7 @@ the linked pages. The history of each build is in
   [DAEMON.md → Child records and the reap](DAEMON.md#child-records-and-the-reap-linux-and-macos).
 - The configuration listing, the stray `commondir` rules and the `git.info` root
   follow `89cb6289`. In the state `shadow` the
-  answers of [The settings copy](PROTOCOL.md#the-settings-copy) come first.
+  answers of [The settings copy](protocol/git-rules-settings-copy.md#the-settings-copy) come first.
   Against `f6010b97` these differences are not drift:
   - `server.capabilities` carries `git.info.discovered_root`.
   - A stray `commondir` gets the texts S1 to S3, and a dangling relative
@@ -424,8 +424,8 @@ the linked pages. The history of each build is in
     of `baseRepo`, as `89cb6289` does
     ([git.status](protocol/git-status.md#path)).
 
-  See [Git-directory trust check](PROTOCOL.md#git-directory-trust-check),
-  [Hardened git calls](PROTOCOL.md#hardened-git-calls) and
+  See [Git-directory trust check](protocol/git-rules-trust.md#git-directory-trust-check),
+  [Hardened git calls](protocol/git-rules-calls.md#hardened-git-calls) and
   [git.info → The root](protocol/git-info.md#the-root).
 - D12 needs a valid zstd body. The decoder answers an invalid body at once, and
   that reads like "no divergence". A zero download timeout frees the body read
@@ -611,7 +611,7 @@ the Go source, not measured). These answers rest on that failure:
 - The `git.info` answers for a path with a junction before its last component
   (from the code). These are `root`, `repo`, `repoSlug` and the `GIT_COMMON_DIR`
   pin of the trust check ([git.info → Differences by system](protocol/git-info.md#differences-by-system),
-  [PROTOCOL.md → Git-directory trust check](PROTOCOL.md#git-directory-trust-check)).
+  [Git-directory trust check](protocol/git-rules-trust.md#git-directory-trust-check)).
 
 With `GODEBUG=winsymlink=0` in the daemon environment, or a `go` line below 1.23
 in `go.mod`, the walk follows the junction. Those answers then flip or move to the

@@ -737,7 +737,7 @@ reference does: see [files.read](protocol/files-read.md).
 ### D5 · Deadline on the `git` calls (retired) { #d5 }
 
 The git calls have the time limits of the reference, always: see
-[PROTOCOL.md → Time limits of git calls](PROTOCOL.md#time-limits-of-git-calls).
+[Time limits of git calls](protocol/git-rules-calls.md#time-limits-of-git-calls).
 
 ### D7 · `-cli-version` must not collide with the install temp sweep (retired) { #d7 }
 

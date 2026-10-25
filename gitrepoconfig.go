@@ -19,7 +19,7 @@ import (
 
 // The daemon's own read of a repository's config, and its tests of three files of
 // the git directory. 5fd08069 refuses a git method when it does not accept one of
-// them. docs/PROTOCOL.md, "Repository config refusals", gives the rules.
+// them. docs/protocol/git-rules-config.md, "Repository config refusals", gives the rules.
 // A Linux VM with git 2.43.0 ran
 // every cell that a comment names here, unless the comment names another system.
 // The X cells are those of the edge round.
@@ -47,7 +47,7 @@ const (
 	// 1025 are refused, in core and remote (cells X4).
 	repoConfigKeyMaxBytes = 1024
 	// repoSettingCost and repoSettingsMaxCost make the "more settings" bound. The
-	// arithmetic is in docs/PROTOCOL.md, "The count of settings". It is fitted to
+	// arithmetic is in docs/protocol/git-rules-config.md, "The count of settings". It is fitted to
 	// the measured pairs of cells X5. TestRepoConfigSettingsCost has each pair.
 	repoSettingCost     = 96
 	repoSettingsMaxCost = 8 << 20

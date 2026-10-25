@@ -93,10 +93,10 @@ Every OS serves the same JSON-RPC methods.
   [`docs/IMPROVEMENTS.md`](docs/IMPROVEMENTS.md). The history of a reference
   build goes into [`docs/REFERENCE-BUILDS.md`](docs/REFERENCE-BUILDS.md).
   Another document links to
-  that home and does not copy the text. A method that has no page yet keeps
-  its text in [`docs/PROTOCOL.md`](docs/PROTOCOL.md). That document also
-  keeps the sections that more than one method uses, for example the error
-  texts and the branch step. The rule is for the documents under `docs/`.
+  that home and does not copy the text.
+  [`docs/PROTOCOL.md`](docs/PROTOCOL.md) keeps the sections that more than one
+  method uses, for example the error texts. The shared git rules have pages
+  under `docs/protocol/`. The rule is for the documents under `docs/`.
   `AGENTS.md` keeps the safety rules of Part A, because an agent must hold
   them before it touches code.
 
@@ -600,11 +600,11 @@ name describes claustrum's code, not a measurement.
   and bound in Part B.
 - The git calls of `git.list_branches`, `git.info`, `git.status` and
   `git.worktree_create` have time limits (`gitstop.go`). They are always on and
-  are not the limiter of a divergence, and [PROTOCOL.md → Time limits of git
-  calls](docs/PROTOCOL.md#time-limits-of-git-calls) lists them.
+  are not the limiter of a divergence, and [Time limits of git
+  calls](docs/protocol/git-rules-calls.md#time-limits-of-git-calls) lists them.
   `git.worktree_remove` gets none of these limits, and `-git-timeout` is a no-op
   that logs one warning. The branch step has its own bounds ([Time limits of the
-  branch step](docs/PROTOCOL.md#time-limits-of-the-branch-step)).
+  branch step](docs/protocol/git-rules-calls.md#time-limits-of-the-branch-step)).
 
 ## Gotchas — Part B: the live divergences
 
