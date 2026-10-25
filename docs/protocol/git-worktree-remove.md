@@ -4,7 +4,7 @@
 
 Treat `worktreePath` as a path that you ask the daemon to delete, not as a filter. Without `worktreeRoot`, a plain directory inside the repository is deleted too, and the reply is success.
 
-An untagged rule on this page matches build `5fd08069` or an earlier build. The system is not recorded, except in [Error texts](#error-texts).
+An untagged rule on this page matches the reference as measured on `5fd08069` or on an earlier build.
 
 ## Request
 
@@ -17,7 +17,7 @@ An untagged rule on this page matches build `5fd08069` or an earlier build. The 
 | `baseRepo` | yes | The repository. |
 | `worktreePath` | yes | The worktree to delete. See [Where the paths can be](#where-the-paths-can-be). |
 | `branchName` | no | The branch that the branch step deletes after the worktree. |
-| `worktreeRoot` | no | A location outside the repository, as on [git.worktree_create](git-worktree-create.md#request). Windows refuses it. |
+| `worktreeRoot` | no | A location outside the repository, as on [git.worktree_create](git-worktree-create.md#request). |
 | `shadowDirOff` | no | `true` turns off, for this request, the daemon's own read of the repository's git config and [the settings copy](git-rules-settings-copy.md#the-settings-copy). A git request that starts while such a request runs gets the same. |
 
 ## Response
@@ -57,7 +57,7 @@ The shared texts are in the [error-string catalogue](../PROTOCOL.md#error-string
 | `refusing to remove worktree: <p> {is a relative path / contains a ".." component / has a component Windows reads as a different name (trailing dot or space, or a colon) [Windows] / is not inside the repository <repo>; …}` | The spelling refusal is Windows only and comes before containment. An absent or empty `baseRepo` gives the empty string for `<repo>`. With `worktreeRoot`, the first two texts also refuse a relative, absent or `..` `baseRepo`, and `<p>` is then `baseRepo` as sent. An empty `worktreePath` gets the first text there |
 | `failed to remove worktree: "" does not name a directory` | (empty `worktreePath`, without `worktreeRoot`) |
 | `refusing to remove worktree: <root> is a filesystem root; choose the worktree location by its absolute path, without "..", beneath the filesystem root` | Linux and macOS, with `worktreeRoot`. The rules of the [create row](git-worktree-create.md#error-texts) hold. claustrum tests a relative `worktreePath` first, as on create (not measured on remove). No git call runs |
-| `refusing to remove worktree: <root> is the repository <repo> or inside it; a worktree location must be outside the repository` | With `worktreeRoot`, Linux and macOS. The test cleans the root and `baseRepo` and compares whole components. A root that is `baseRepo` or lies beneath it is refused, and `<B>/Tx` beside `<B>/T` passes. `<root>` is `worktreeRoot` as sent, so a trailing slash stays. So `<T>/` and `<T>/.` stay too. No git call runs |
+| `refusing to remove worktree: <root> is the repository <repo> or inside it; a worktree location must be outside the repository` | With `worktreeRoot`, Linux and macOS. The test cleans the root and `baseRepo` and compares whole components. A root that is `baseRepo` or lies beneath it is refused, and `<B>/Tx` beside `<B>/T` passes. `<root>` is `worktreeRoot` as sent, so a trailing slash stays. `<repo>` keeps `<T>/` and `<T>/.` as sent. No git call runs |
 | `refusing to remove worktree: <root> leads into the repository <repo> (at <at>); a worktree location must be outside the repository` | With `worktreeRoot`, Linux and macOS. The daemon resolves the symlinks of the longest existing part of the root and appends the missing rest. `<at>` is the outermost path from there up to `/` that is the same file as one of three folders. These are the git top level of `baseRepo`, the main checkout and the git directory, also a separate one. The main checkout is the first entry of `worktree list`. So `<at>` is a prefix of the resolved root, for example `/private/tmp/…` for a root sent as `/tmp/…` on macOS. A bind mount (Linux), a firmlink spelling and a case variant (macOS) match too, and `<at>` keeps their spelling. That holds for the main checkout of a linked `baseRepo` too. If both checkouts hold the root, the main checkout is named. A folder nearer to `/` that the row below matches gives that text (from the code) |
 | `refusing to remove worktree: <root> leads into <wt>, a worktree of the repository <repo> (at <wt>); a worktree location must be outside the repository's checkouts` | With `worktreeRoot`, Linux and macOS. `<wt>` is a linked worktree in `worktree list` that is the resolved root or a parent of it by whole components. The test compares `<wt>` as listed, as a string: no symlink resolve, no case fold, no file identity. It skips a listed worktree whose path does not exist, also a locked one. Another lstat error keeps the entry (not measured). Of two nested worktrees, the outer one is named. A root that holds a linked worktree passes |
 | `failed to remove worktree: the worktree location <root> is not reachable (<reason>); nothing was removed — retry once it is available, or remove the worktree by hand` | With `worktreeRoot`, Linux and macOS. The root passes the three tests above but does not exist or does not resolve. `<root>` is `worktreeRoot` as sent. For a root that does not exist, `<reason>` is `<path> does not exist`, with the links of its existing part followed and a final slash dropped. A root below a regular file gets `<file>: not a directory`. For a symlink that does not resolve, `<reason>` is the error of the resolve, for example `lstat <target>: no such file or directory`. For `permission denied` the text is `failed to remove worktree: lstat <root>: permission denied` (Linux) |
@@ -101,12 +101,12 @@ With `worktreeRoot`:
 - `worktreePath` must be `<worktreeRoot>/<directory>/<name>`, as on `git.worktree_create`. An empty `worktreePath` gets the text for a relative path.
 - `baseRepo` must be absolute and carry no `..` component.
 - A symbolic link at the `<directory>` level gives `refusing to remove worktree: <dir> is a symbolic link; the directory under the worktree location must be a real directory`.
-- A root that is `/`, that is or leads into the repository or one of its worktrees, or that cannot be reached, is refused. The location refusals also include a reserved name and a link loop. The remove runs no ancestor test, so some roots that the create refuses pass here. If `git worktree list` fails twice, the `cannot list` text answers.
+- A root that is `/`, that is or leads into the repository or one of its worktrees, or that cannot be reached, is refused. The location refusals also include [a reserved name](../PROTOCOL.md#error-string-catalogue) (`.git` and `.claude-managed-worktrees`, in any letter case) and [a link loop](../PROTOCOL.md#error-string-catalogue). The remove runs no ancestor test, so some roots that the create refuses pass here.
 - The containment in the repository does not apply here. So the home guard refuses a `worktreePath` that is the home directory or holds it, with the home refusal above ([D2](../DIVERGENCES.md#d2)).
 
 On both:
 
-- The home guard runs before the delete, with and without `worktreeRoot`.
+- The home guard ([D2](../DIVERGENCES.md#d2)) runs before the delete, with and without `worktreeRoot`.
 - A `baseRepo` inside a directory of managed worktrees is refused with the managed-worktrees text. So is a `baseRepo` that is not missing and does not resolve, for example `<T>/a.txt/..`.
 - If the last component of `worktreePath` is a symbolic link, the text is `refusing to remove worktree: <t> is a symbolic link, not a worktree directory`. If it is not a directory, the text is `refusing to remove worktree: <t> is not a directory`. `<t>` is the path with the symbolic links of `baseRepo`, or of the root, resolved. On macOS a path under `/tmp` therefore reads `/private/tmp/…`.
 - On Windows, a junction at any directory between `baseRepo` and the worktree is refused ([D19](../DIVERGENCES.md#d19)).
@@ -117,9 +117,9 @@ Before it deletes anything, the daemon checks the repository. Each of these refu
 
 - The [git-directory trust check](git-rules-trust.md#git-directory-trust-check) runs on `baseRepo`. Without `worktreeRoot`, if it refuses the git directory, a worktree directory that exists gets the lock-check refusal, and a gone one gets `… is locked (<trust refusal text>); retry`.
 - Without `worktreeRoot`, a git config of `baseRepo` that the daemon does not accept gives `… is locked: <text>`. See [Repository config refusals](git-rules-config.md#repository-config-refusals). `"shadowDirOff":true` turns this check off. A remove that starts while a `"shadowDirOff":true` request runs gets no such refusal either. It then deletes on a config that only the daemon refuses.
-- A failure of the settings copy gives the same form. A failed start test of the settings copy refuses the remove before any delete. So do a bad answer of git about the repository and a copy folder that cannot be made.
+- Without `worktreeRoot`, a failure of the settings copy gives the same form. A failed start test of the settings copy refuses the remove before any delete. So do a bad answer of git about the repository and a copy folder that cannot be made.
 - Without `worktreeRoot`, for a worktree directory that exists, a failed listing of the configuration runs once more. If the second try fails too, the text is `… is locked: <text of the failed listing>`. For a gone worktree directory there is no second try, and the text is `… is locked (<text>); retry`.
-- With `worktreeRoot`, the daemon must find the work tree of the repository. If it cannot, the `cannot determine the repository's work tree` text answers. The reason says what failed. Git cannot start, the trust check refuses or finds no repository, or the git config or the settings copy is refused. Or the configuration listing fails, `baseRepo` is itself a git directory, or `git rev-parse` fails. A `baseRepo` that does not exist skips this check.
+- With `worktreeRoot`, the daemon must find the work tree of the repository. If it cannot, the `cannot determine the repository's work tree` text answers. The reason: git cannot start, the trust check refuses or finds no repository, or the git config or the settings copy is refused. Or the configuration listing fails, `baseRepo` is itself a git directory, or `git rev-parse` fails. A `baseRepo` that does not exist skips this check.
 - A worktree that is locked (`git worktree lock`) is refused. A lock in the `.git` folder of `baseRepo` is refused too, also where the reference deletes the worktree ([D22](../DIVERGENCES.md#d22)).
 
 Without `worktreeRoot`, if `baseRepo` holds no repository, a worktree directory that exists gets the lock-check refusal. If that listing fails in a plain folder, the text is `… is locked: <text of the failed listing>`. If the worktree directory is gone and the listing passes, the request is a success, and no registration is deleted. With `worktreeRoot`, no repository gives the work-tree refusal, also for a gone worktree.
@@ -130,7 +130,7 @@ If `<git dir>/worktrees` exists but cannot be read, a worktree that exists gets 
 
 The registration is the folder `<git dir>/worktrees/<name>` that git keeps for each linked worktree. `<git dir>` is the git directory of the main repository. For a linked worktree as `baseRepo` it is the git directory of its main repository. A daemon with `GIT_DIR` in its environment uses the repository that `GIT_DIR` names.
 
-The daemon finds the registration from the `.git` file of the worktree. The registration must name the worktree back. Without such a registration, it deletes the one registration whose record names `worktreePath`. If two match, it deletes no registration. If a registration that matches is locked, the request is refused first, as above. If no registration matches, the worktree directory still goes and its registration stays. [Platform notes](#platform-notes) has the path compare.
+The daemon finds the registration from the `.git` file of the worktree. The registration must name the worktree back. Without such a registration, it deletes the one registration whose record names `worktreePath`. If two match, it deletes no registration. If a registration that matches is locked, the request is refused first, as above. Without `worktreeRoot`, if the path compare misses the registration (another letter case on macOS, an 8.3 short name on Windows), the worktree directory still goes and its registration stays.
 
 The steps, in order:
 
@@ -175,12 +175,12 @@ A worktree directory that is gone is not an error by itself. The repository chec
     - Windows refuses `worktreeRoot`: `refusing to remove worktree: <root> cannot be used: a custom worktree location is not supported on Windows hosts yet`.
     - A folder that the daemon cannot read is not measured.
     - If `<git dir>/worktrees` is a symbolic link, there is no refusal. The registration behind the link that names the worktree goes (from the code).
-    - The path compare of a registration ignores letter case and slash direction. An 8.3 short name does not match, also for a worktree that exists. A `baseRepo` through a `subst` drive or a junction to the repository matches, and the registration goes.
+    - The path compare of a registration ignores letter case and slash direction. An 8.3 short name does not match a worktree that exists. A `baseRepo` through a `subst` drive or a junction to the repository matches, and the registration goes.
 
 ## Rare states
 
 ??? note "No git directory is held"
-    The remove holds no git directory. On Linux and macOS a swap of `.git` during a remove leads the delete of the registration into the folder at the path. Windows is not measured.
+    The remove holds no git directory (from the code). On Linux and macOS a swap of `.git` during a remove leads the delete of the registration into the folder at the path. Windows is not measured.
 
 ## Differences from the reference
 
