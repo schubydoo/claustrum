@@ -17,10 +17,18 @@ jobs:
       issues: write
       id-token: write
       actions: read
-    uses: schubydoo/shared-workflows/.github/workflows/claude-review.yml@6b10fb0269119a5a84ab7cc563bfbf98ee59be17 # main
+    uses: schubydoo/shared-workflows/.github/workflows/claude-review.yml@ac5f479fa28d7a28a714cc46ea467fe3657954f5 # feat/api-path (shared-workflows PR 4), the api pilot
     with:
       model: claude-opus-5
       timeout-minutes: 60
+      # The api path: `claude -p` on the plan's API credits, signed in with Workload Identity
+      # Federation, posting as claustrum-ci. These four are identifiers, not credentials.
+      # Set `auth: oauth` (or drop these five lines) to go back to claude-code-action.
+      auth: api
+      anthropic-federation-rule-id: ${{ vars.ANTHROPIC_FEDERATION_RULE_ID }}
+      anthropic-organization-id: ${{ vars.ANTHROPIC_ORG_ID }}
+      anthropic-service-account-id: ${{ vars.ANTHROPIC_SERVICE_ACCOUNT_ID }}
+      anthropic-workspace-id: ${{ vars.ANTHROPIC_WORKSPACE_ID }}
     secrets:
       # The claustrum-ci App. create-github-app-token v3.3.0 takes the numeric App ID in
       # `client-id`: it passes either input to the same appId field.
