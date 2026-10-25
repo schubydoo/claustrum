@@ -607,7 +607,7 @@ var docWordLimits = map[string]int{
 	"docs/EXAMPLES.md":                     1025,
 	"docs/GLOSSARY.md":                     1297,
 	"docs/IMPROVEMENTS.md":                 1593,
-	"docs/INSTALL.md":                      5344,
+	"docs/INSTALL.md":                      5300,  // task-207: page rewrite
 	"docs/PROTOCOL.md":                     22313, // decision-040: words moved to the method pages, to INSTALL.md and to UPSTREAM-TRACKING.md
 	"docs/STYLE.md":                        1299,  // task-203b: the page rewrite
 	"docs/TOUR.md":                         850,   // a new page: its word count plus about 200
