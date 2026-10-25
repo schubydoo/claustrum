@@ -23,8 +23,8 @@ An untagged rule on this page matches the reference as measured on build `5fd080
 
 ### Read the facts line
 
-1. Find the stdout line that starts with `__INSTALL_RESULT__` ([fields](#__install_result__-facts)).
-2. Test `cliError`, and with the managed launcher gate also `launcherStatus` ([rules](#-install-ensure-the-agent-cli)).
+1. Find the stdout line that starts with `__INSTALL_RESULT__` ([fields](#__install_result__-facts)). If there is none, read the exit code ([rules](#-install-ensure-the-agent-cli)).
+2. Test `cliError`, and with the managed launcher gate also `launcherStatus` ([rules](#the-managed-launcher)).
 
 ### Classify a CLI
 
@@ -44,7 +44,7 @@ downloads or reads the CLI, extracts and verifies it, puts it in place and runs
 `<cli> --version` once. Then it prunes old versions and prints one
 `__INSTALL_RESULT__<json>` facts line (schema in [`__INSTALL_RESULT__` facts](#__install_result__-facts)).
 
-- `-cli-version <v>` (default none, required): The version to ensure. It names the CLI file. Without it the `cliPath` is empty, no CLI runs and no folder is made.
+- `-cli-version <v>` (default none, needed for any install, not enforced): The version to ensure. It names the CLI file. Without it the `cliPath` is empty, no CLI runs and no folder is made.
 - `-cli-dir <d>` (default `<home>/.claude/remote/ccd-cli`): The folder of the version files. An empty value takes the default too.
 - `-cli-url <u>` (default none): Download the zstd archive of the CLI from this URL. Send it with `-cli-checksum`.
 - `-cli-checksum <sha256>` (default none): The SHA-256 of the archive.
