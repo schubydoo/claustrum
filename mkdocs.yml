@@ -89,6 +89,7 @@ extra_css:
 nav:
   - Start:
       - Home: index.md
+      - Tour of one session: TOUR.md
       - Glossary: GLOSSARY.md
   - Write a client:
       - How claustrum works: ARCHITECTURE.md

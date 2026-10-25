@@ -47,6 +47,15 @@ its own, for example as a building block for self-hosted tooling such as
 > Status: stable (v1.0+). The JSON-RPC, process, file and git surface and the CLI-version
 > installer are complete. No telemetry, ever.
 
+## Documentation
+
+The [docs site](https://schubydoo.github.io/claustrum/) has one path for each reader:
+
+- Write a client: [Tour of one session](docs/TOUR.md), [Protocol overview](docs/PROTOCOL.md).
+- Run the daemon: [Running the daemon](docs/DAEMON.md), [-install](docs/INSTALL.md).
+- Contribute: [CONTRIBUTING.md](CONTRIBUTING.md), [Divergences](docs/DIVERGENCES.md).
+- Track the reference: [Upstream tracking](docs/UPSTREAM-TRACKING.md).
+
 ## Install / build
 
 Claustrum requires Go 1.26. The toolchain is held below 1.27, because the default
@@ -108,16 +117,9 @@ printf '{"jsonrpc":"2.0","id":1,"method":"server.ping","auth":"%s"}\n' "$TOK" \
   | socat - UNIX-CONNECT:"$D/rpc.sock"
 # -> {"jsonrpc":"2.0","id":1,"result":{"pong":true}}
 
-# 4. enumerate everything the daemon implements
-printf '{"jsonrpc":"2.0","id":2,"method":"server.capabilities","auth":"%s"}\n' "$TOK" \
-  | socat - UNIX-CONNECT:"$D/rpc.sock"
-
-# 5. shut it down
+# 4. shut it down
 claustrum -stop -socket "$D/rpc.sock"   # no token needed: shutdown is unauthenticated
 ```
-
-[docs/EXAMPLES.md](docs/EXAMPLES.md) has more sessions: spawn a process and read its stream,
-reattach through the replay buffer, and extract a plugin tarball.
 
 ## How it works
 
@@ -170,7 +172,7 @@ reference stays in sync.
 
 ## Contributing
 
-See [CONTRIBUTING.md](CONTRIBUTING.md). Issues and PRs welcome.
+See [CONTRIBUTING.md](CONTRIBUTING.md).
 
 ## Security
 

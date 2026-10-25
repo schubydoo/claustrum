@@ -610,6 +610,7 @@ var docWordLimits = map[string]int{
 	"docs/INSTALL.md":                      5344,
 	"docs/PROTOCOL.md":                     22313, // decision-040: words moved to the method pages, to INSTALL.md and to UPSTREAM-TRACKING.md
 	"docs/STYLE.md":                        1300,  // a new page: its word count plus about 200
+	"docs/TOUR.md":                         850,   // a new page: its word count plus about 200
 	"docs/UPSTREAM-TRACKING.md":            6228,  // decision-040: words moved from PROTOCOL.md, net down in the same PR
 	"docs/index.md":                        661,
 	"docs/protocol/files-extract-tar.md":   2254,
