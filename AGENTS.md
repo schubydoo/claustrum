@@ -21,7 +21,7 @@ daemon. The wire surface is the product.
 | Format | `make fmt` runs `gofmt -l -w *.go`, so it skips `handlers/`. `gofmt -l .` must be empty |
 | Vet | `make vet` (`go vet ./...`) |
 | Lint | `golangci-lint run ./...`. The configuration is `.golangci.yml` (v2) |
-| Tests | `make test` (`go test -race -timeout 20m ./...`). This runs the unit suites and the socket-integration suites. The time limit is explicit, because a race run on one Linux host took more than 9 minutes, near the 10 minute default of `go test` |
+| Tests | `make test` (`go test -race -timeout 20m ./...`). This runs the unit suites and the socket-integration suites. The time limit is explicit, because a race run took more than 9 minutes, near the 10 minute default of `go test` |
 
 - Use Go 1.26 and `CGO_ENABLED=0`. The build toolchain is deliberately held
   below 1.27. The default `jsonv2` in 1.27 moves inherited wire bytes, so build
@@ -75,7 +75,7 @@ Every OS serves the same JSON-RPC methods.
   not maps. Any change to `rpc.go` / `methods_*.go` / `process.go` /
   `results.go` must keep the socket-integration suite and its golden
   fixtures green (`make test`). An intentional
-  divergence owes two things. Give it an entry in
+  divergence owes two things. Give it an entry with its decision rules in
   [`docs/DIVERGENCES.md`](docs/DIVERGENCES.md). Give it its wire frames in
   [`docs/PROTOCOL.md`](docs/PROTOCOL.md), or in the page of its method under
   `docs/protocol/`. Call it out in the PR.

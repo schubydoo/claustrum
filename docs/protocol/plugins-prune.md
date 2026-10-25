@@ -2,7 +2,7 @@
 
 `plugins.prune` deletes the cached plugin directories that no session used for some days. The directories are under the plugin roots of the daemon. The caller cannot name a path. Do not read an empty `pruned` list as "nothing to delete". Read `errors` and `legacy` too.
 
-An untagged rule on this page matches build `5fd08069` or an earlier build. The system is not recorded.
+An untagged rule on this page matches build `5fd08069` or an earlier build.
 
 ## Request
 

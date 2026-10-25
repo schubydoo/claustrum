@@ -609,7 +609,7 @@ var docWordLimits = map[string]int{
 	"docs/IMPROVEMENTS.md":                     1590,
 	"docs/INSTALL.md":                          5300, // task-207: page rewrite
 	"docs/PROTOCOL.md":                         2804, // TASK-202: the error texts, stream frames and flags moved to their own pages
-	"docs/STYLE.md":                            1298, // task-203b: the page rewrite
+	"docs/STYLE.md":                            1293, // task-203b: the page rewrite
 	"docs/TOUR.md":                             850,  // a new page: its word count plus about 200
 	"docs/UPSTREAM-TRACKING.md":                6224, // decision-040: words moved from PROTOCOL.md, net down in the same PR
 	"docs/index.md":                            316,  // the reader router of TASK-201
@@ -630,7 +630,7 @@ var docWordLimits = map[string]int{
 	"docs/protocol/git-worktree-create.md":     6951, // task-205: rewrite to the page template
 	"docs/protocol/git-worktree-remove.md":     4067, // task-206: rewrite to the page template
 	"docs/protocol/launcher-resolve.md":        1620, // task-204: rewrite to the page template
-	"docs/protocol/plugins-prune.md":           1089, // task-203b: the page rewrite
+	"docs/protocol/plugins-prune.md":           1084, // task-203b: the page rewrite
 	"docs/protocol/process-kill.md":            931,  // TASK-203c: the page template
 	"docs/protocol/process-killandwait.md":     977,  // TASK-203c: the page template
 	"docs/protocol/process-reattach.md":        988,
@@ -708,7 +708,7 @@ var docSectionRunLimits = map[string]int{
 	"docs/IMPROVEMENTS.md":                     1484,
 	"docs/INSTALL.md":                          736,
 	"docs/PROTOCOL.md":                         603,
-	"docs/STYLE.md":                            348,
+	"docs/STYLE.md":                            343,
 	"docs/UPSTREAM-TRACKING.md":                2960,
 	"docs/index.md":                            314,
 	"docs/protocol/errors.md":                  1809,
