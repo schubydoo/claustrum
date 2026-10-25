@@ -25,6 +25,8 @@
 
 ---
 
+Pass `--pilot-retry-limit <n>` to retry a failed step up to `n` times before the run exits.
+
 ## What it is
 
 When you drive a remote Claude Code session over SSH, a small Go daemon runs on the remote
