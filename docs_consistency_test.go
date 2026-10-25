@@ -623,12 +623,12 @@ var docWordLimits = map[string]int{
 	"docs/protocol/git-status.md":          3185, // decision-040: a move between pages, net down in the same PR
 	"docs/protocol/git-worktree-create.md": 6951, // decision-050: the trim of the create and remove pages
 	"docs/protocol/git-worktree-remove.md": 4069, // decision-050: the trim of the create and remove pages
-	"docs/protocol/launcher-resolve.md":    1626,
+	"docs/protocol/launcher-resolve.md":    1624, // task-204: rewrite to the page template
 	"docs/protocol/plugins-prune.md":       1093,
 	"docs/protocol/process-kill.md":        967,
 	"docs/protocol/process-killandwait.md": 1000,
 	"docs/protocol/process-reattach.md":    988,
-	"docs/protocol/process-spawn.md":       3498, // decision-040: a move between pages, net down in the same PR
+	"docs/protocol/process-spawn.md":       3482, // task-204: rewrite to the page template
 	"docs/protocol/process-stdin.md":       895,
 	"docs/protocol/server.md":              1511,
 }
