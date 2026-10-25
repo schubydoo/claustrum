@@ -1,6 +1,6 @@
 # process.killAndWait
 
-`process.killAndWait` sends a signal to a child process and waits for the process to end. If the process does not end in time, the daemon can end it by force, and the result says what happened. A child that ends inside the wait gets no force, so a process that it started can stay.
+`process.killAndWait` sends a signal to a child process and waits for the process to end. If the process does not end in time, the daemon can end it by force, and the result says what happened.
 
 An untagged rule on this page matches build `5fd08069` or an earlier build.
 

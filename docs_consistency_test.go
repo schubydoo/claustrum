@@ -625,8 +625,8 @@ var docWordLimits = map[string]int{
 	"docs/protocol/git-worktree-remove.md": 4069, // decision-050: the trim of the create and remove pages
 	"docs/protocol/launcher-resolve.md":    1620, // task-204: rewrite to the page template
 	"docs/protocol/plugins-prune.md":       1089, // task-203b: the page rewrite
-	"docs/protocol/process-kill.md":        950,  // TASK-203c: the page template
-	"docs/protocol/process-killandwait.md": 995,  // TASK-203c: the page template
+	"docs/protocol/process-kill.md":        931,  // TASK-203c: the page template
+	"docs/protocol/process-killandwait.md": 977,  // TASK-203c: the page template
 	"docs/protocol/process-reattach.md":    988,
 	"docs/protocol/process-spawn.md":       3474, // task-204: rewrite to the page template
 	"docs/protocol/process-stdin.md":       894,  // TASK-203c: the page template

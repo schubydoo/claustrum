@@ -1,6 +1,6 @@
 # process.kill
 
-`process.kill` sends a signal to a child process that `process.spawn` started. It answers at once and does not wait for the process to end. To wait for the end, use [process.killAndWait](process-killandwait.md). A graceful signal does not end the tree of processes that the child started: use `"signal": "KILL"` for that.
+`process.kill` sends a signal to a child process that `process.spawn` started. It answers at once and does not wait for the process to end. To wait for the end, use [process.killAndWait](process-killandwait.md).
 
 An untagged rule on this page matches build `89cb6289`, and build `f6010b97` too for Windows children that outlive the daemon.
 
