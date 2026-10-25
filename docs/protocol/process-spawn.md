@@ -125,7 +125,7 @@ A tag wins over the top line.
 
     - There is no SSH agent hand-off and no identity marker. The capability and the parameter exist.
     - The block of the child is in name order ([D23](../DIVERGENCES.md#d23)).
-    - The child gets the `PATH` of the daemon as an entry named exactly `PATH`. claustrum reads it once, at the first spawn (from the code). No shell runs (from the code). An entry named `PATH` is replaced in place, else `PATH` is added. Then the `env` of the request comes.
+    - The child gets the `PATH` of the daemon as an entry named exactly `PATH`. claustrum reads it once, at the first spawn (from the code). No shell runs. An entry named `PATH` is replaced in place, else `PATH` is added. Then the `env` of the request comes.
     - Of the entries whose names differ only in letter case, the child gets the last one (from the code, Go's `os/exec`). So a daemon entry named `Path` does not reach the child, and the child gets its value as `PATH`. With a daemon `Path`, a caller `Path` value is lost. A caller `PATH` or `path` value reaches the child with its own name.
     - A daemon with no path entry gives the child none. A daemon `Path` with an empty value gives no `PATH` entry.
 
@@ -151,6 +151,9 @@ The trampoline adds no frame. A command that does not resolve to a runnable file
 
 ??? note "The trampoline does not start"
     If the trampoline itself does not start, the daemon logs `[process.Manager] exec trampoline failed for <id> (<error>); starting it directly — a successor daemon will not be able to reap it` and starts the command directly (measured on Linux). The frame then names the command, for example `fork/exec <command>: permission denied` for a `cwd` that the daemon cannot enter. If that direct start works, the reply is success (from the code) (not measured). The child then gets `CLAUDE_SSH_RUN_DIR` and no `CLAUDE_SSH_CHILD` (from the code) (not measured).
+
+??? note "A later daemon start"
+    On Linux and macOS a daemon that holds the [run-dir lock](../DAEMON.md#run-dir-lock-daemonlock) records each child in its run dir. A later daemon start on the same socket reads the records of a daemon that is gone. It ends each child whose process still matches its record, with `SIGTERM` and then `SIGKILL`. So a child that outlives its daemon can end at the next start. [Child records and the reap](../DAEMON.md#child-records-and-the-reap-linux-and-macos) has the rules. Windows records no child. A record that cannot be written does not fail the spawn. The reply is success, and the child still gets both identity markers.
 
 ### The SSH agent hand-off (Linux and macOS)
 
@@ -206,9 +209,6 @@ A spawn with the `id` and the session of a process that runs supersedes nothing.
 ### A spawn during a shutdown
 
 A spawn that reaches the start of its child after the shutdown began gets no reply. The daemon ends that child at once, also with `-keep-children` ([CT-2](../DIVERGENCES.md#ct-2)). The reference leaves it running (measured on Linux, macOS and Windows).
-
-??? note "A later daemon start"
-    On Linux and macOS a daemon that holds the [run-dir lock](../DAEMON.md#run-dir-lock-daemonlock) records each child in its run dir. A later daemon start on the same socket reads the records of a daemon that is gone. It ends each child whose process still matches its record, with `SIGTERM` and then `SIGKILL`. So a child that outlives its daemon can end at the next start. [Child records and the reap](../DAEMON.md#child-records-and-the-reap-linux-and-macos) has the rules. Windows records no child. A record that cannot be written does not fail the spawn. The reply is success, and the child still gets both identity markers.
 
 ## Differences from the reference
 

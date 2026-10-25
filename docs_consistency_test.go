@@ -628,7 +628,7 @@ var docWordLimits = map[string]int{
 	"docs/protocol/process-kill.md":        967,
 	"docs/protocol/process-killandwait.md": 1000,
 	"docs/protocol/process-reattach.md":    988,
-	"docs/protocol/process-spawn.md":       3477, // task-204: rewrite to the page template
+	"docs/protocol/process-spawn.md":       3474, // task-204: rewrite to the page template
 	"docs/protocol/process-stdin.md":       895,
 	"docs/protocol/server.md":              1511,
 }
