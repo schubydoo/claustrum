@@ -626,7 +626,7 @@ var docWordLimits = map[string]int{
 	"docs/protocol/git-list-branches.md":       998,  // task-203b: the page rewrite
 	"docs/protocol/git-status.md":              3185, // decision-040: a move between pages, net down in the same PR
 	"docs/protocol/git-worktree-create.md":     6951, // task-205: rewrite to the page template
-	"docs/protocol/git-worktree-remove.md":     4069, // decision-050: the trim of the create and remove pages
+	"docs/protocol/git-worktree-remove.md":     4067, // task-206: rewrite to the page template
 	"docs/protocol/launcher-resolve.md":        1620, // task-204: rewrite to the page template
 	"docs/protocol/plugins-prune.md":           1089, // task-203b: the page rewrite
 	"docs/protocol/process-kill.md":            931,  // TASK-203c: the page template

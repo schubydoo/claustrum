@@ -440,7 +440,7 @@ have no flag and no key.
 - **Reopen trigger.** The reference refuses the junction with the same text (then
   this is parity), or deletes the tree through the junction. Or a Windows client
   depends on the success reply there.
-- **Pointers.** [git.worktree_remove](protocol/git-worktree-remove.md#where-the-paths-can-be)
+- **Pointers.** [git.worktree_remove](protocol/git-worktree-remove.md#error-texts)
   and `worktreeremove.go` (`openRemoveParent`).
 
 ### D20 · Wait for a settle before the group `SIGKILL` of a leader that reads as gone (Linux and macOS) { #d20 }
