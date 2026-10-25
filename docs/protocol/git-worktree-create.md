@@ -46,6 +46,8 @@ Failure:
 {"success": false, "error": "<text>", "errorCode": "<code>"}
 ```
 
+Decide by `errorCode` first.
+
 | `errorCode` | Meaning |
 |---|---|
 | `unsafe_path` | The daemon refuses a path. For example, `worktreePath` is relative, has a `..` component, is outside `baseRepo`, or exists. A `worktreeRoot` that is not safe gives this code too. So does a worktree that git registered in an unexpected place. |
@@ -65,7 +67,7 @@ A request with no `branchName` gets the JSON-RPC error `-32602`.
 
 Each text is in `error`, unless the row names a JSON-RPC error. The shared texts are in the [error-string catalogue](../PROTOCOL.md#error-string-catalogue). A row with no mark holds a text of the reference, measured on Linux. A mark such as "measured on macOS" limits its sentence to that system. A sentence that names systems without "measured" holds on each one.
 
-### Location, path and post-add refusals
+### Path, folder and post-add refusals
 
 | Text | Code and cause |
 |---|---|
@@ -89,11 +91,6 @@ Each text is in `error`, unless the row names a JSON-RPC error. The shared texts
 | `refusing to create worktree: <p> carries a .git file naming an admin entry other than the one just created for it` | `errorCode:"unsafe_path"`, after a successful add. The registration is not the one new name of the `worktrees` folder since the listing before the add: there are two new entries, or none. On Windows a leaf `.git` file of another staged entry gets it before the move. Only the leaf and the branch go then. claustrum's own, not measured: a listing that fails gets it, and a refusal of the four rows above comes first. Otherwise no checkout runs and nothing is rolled back |
 | `refusing to create worktree: <p> has no .git file` / `refusing to create worktree: <p>/.git is not a regular file` / `refusing to create worktree: <p>/.git does not name a git dir` | `errorCode:"unsafe_path"`, Linux and macOS, after a successful add. The `.git` entry of the new worktree is gone, is no regular file, or does not start with `gitdir: `. The registration and the branch stay, and an empty leaf goes |
 | `refusing to create worktree: <p> is no longer the directory that was created for the worktree` | `errorCode:"unsafe_path"`, Linux and macOS, before the checkout. Another folder is at the path of the leaf. Nothing is checked out or rolled back |
-
-### Folder and session errors
-
-| Text | Code and cause |
-|---|---|
 | `git worktree add failed: cannot prepare the repository's worktrees directory: "<git dir>/worktrees" is not a directory` / `git worktree add failed: cannot prepare the repository's worktrees directory: openat worktrees: permission denied` / `git worktree add failed: cannot list the repository's worktree entries: "worktrees" is a link or a file where Claude needs a real directory; put the directory itself in its place` | `errorCode:"worktree_add_failed"`. In the state `shadow` on Linux and macOS, a symbolic link or a file at `worktrees` gets the first text. A folder there that cannot be opened gets the second. With `"shadowDirOff":true` a link or a file there gets the third. On Windows a junction or a directory symbolic link gets the third too. A file there on Windows is claustrum's own, not measured. No `worktree add` runs, and no leaf or branch stays. Measured on Linux and macOS. |
 | `failed to create parent directory: lstat <path>: <errno text>` | `errorCode:"mkdir_failed"`, Linux and macOS, with `worktreeRoot`. A root symlink names a missing target, and `<path>` is that target. Or a directory from `/` down to the root cannot be searched, and `<path>` is `<dir>/.git` for the highest such directory. A directory above the root that fails the ancestor test gets the ancestor text instead. Nothing is created |
 | `failed to create parent directory: <path>: not a directory` | `errorCode:"mkdir_failed"`, Linux and macOS, with `worktreeRoot`. The deepest existing part of the root is not a directory after its symlinks are resolved. `<path>` is that resolved path: the root, a path above it, or the file that a root symlink names. A regular file above the root gets this text, not the ancestor text. Nothing is created |
@@ -134,7 +131,7 @@ Each text is in `error`, unless the row names a JSON-RPC error. The shared texts
 
 ```mermaid
 flowchart TD
-    A["gate"] --> B["before the add"] --> C["git worktree add"] --> E["config.worktree step"] --> F["checkout"] --> G["copy of ignored files"]
+    A["gate"] --> C["git worktree add"] --> E["config.worktree step"] --> F["checkout"] --> G["copy of ignored files"]
 ```
 
 ## The held git directory
@@ -157,7 +154,7 @@ The git calls of the daemon read its own copy of the repository's git settings. 
 
 ## Git filters
 
-In the state `shadow`, a checkout that needs a filter that only the repository config defines, with a value that does not pass, fails the request.
+In the state `shadow`, a checkout that needs a filter that only the repository config defines, with a value that does not pass, fails the request. The texts are in [Error texts](#error-texts).
 
 In the state `fallback-git` git runs the filters, and this section does not apply. In the state `shadow`:
 
@@ -215,7 +212,6 @@ Before the add, a request can remove one stale registration in the common git di
 
 === "Linux and macOS"
 
-    - `worktreeRoot` is allowed.
     - A junction between `baseRepo` and the worktree does not apply.
     - The stale registration is removed by the rule of [After a failure](#after-a-failure). The compare keeps letter case.
 
@@ -236,7 +232,7 @@ Before the add, a request can remove one stale registration in the common git di
 
 ??? note "A failed step before the add"
 
-    - In the state `shadow` on Windows, a failed step that prepares the add (the `worktrees` folder, the read of the registrations, the folder `.s<n>`) gives `git worktree add failed: cannot prepare the repository's worktrees directory: <cause>`, and no `worktree add` runs.
+    - In the state `shadow` on Windows, a failed step that prepares the add (for example the `worktrees` folder, the read of the registrations, the folder `.s<n>` and its copy, or a swap of `.git`) gives `git worktree add failed: cannot prepare the repository's worktrees directory: <cause>`, and no `worktree add` runs.
     - With `"shadowDirOff": true`, a link or a file at `worktrees` refuses the add after its listing (Linux, macOS and Windows). A file there on Windows is not measured.
 
 ## Differences from the reference

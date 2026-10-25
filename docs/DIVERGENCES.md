@@ -582,7 +582,7 @@ have no flag and no key.
 - **Reopen trigger.** A measurement that shows the reference keeping such a
   folder. Or a decision to match its disk for a replaced folder. Or a decision to
   run the branch step in the repository that the `.git` file names.
-- **Pointers.** [git.worktree_create](protocol/git-worktree-create.md#after-a-failure).
+- **Pointers.** [git.worktree_create](protocol/git-worktree-create.md#differences-from-the-reference).
 
 ### D27 · Keep a stale entry whose record names a path that exists (Windows) { #d27 }
 
