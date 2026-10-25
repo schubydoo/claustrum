@@ -2,7 +2,7 @@
 
 `process.stdin` sends bytes to the standard input of a child process that `process.spawn` started. With `offset`, a caller can send the same bytes again after a reconnect, and the daemon accepts them one time.
 
-An unmarked rule on this page matches the reference as measured on `5fd08069` or on an earlier build.
+An untagged rule on this page matches build `5fd08069` or an earlier build.
 
 ## Request
 
@@ -30,7 +30,24 @@ One request line has a limit of 1 MiB: see [Transport](../PROTOCOL.md#transport)
 | `applied` | The number of bytes that the daemon accepted for this process, over all requests. It counts the bytes after the base64 decode. Each result has it. A count of `0` is in the result too. |
 | `duplicate` | If the request has `offset` and `data` ends at or before `applied`, `true`. The daemon then accepted no new byte. Each other result has no `duplicate` member. |
 
-`applied` says that the daemon accepted the bytes. It does not say that the child read them. The daemon writes the bytes to the child from a queue, and it does not wait for that write before it answers. If the child exits or closes its input first, the child never gets the bytes in the queue, and no response says so. After the child closes its input, the queue keeps the bytes of later requests and `applied` grows, until the queue is full.
+`applied` says that the daemon accepted the bytes. It does not say that the child read them. The daemon writes the bytes to the child from a queue, and it does not wait for that write before it answers.
+
+## Errors
+
+This method has no `errorCode` member. A failure is a JSON-RPC error. The daemon makes the tests in the order of the table.
+
+| Code | Text | Cause |
+|---|---|---|
+| `-32602` | `Invalid params` | The request has no `params` member, or `params` or a member that it reads has the wrong type. A negative `offset` gets this error too. See [the rules for `params`](../PROTOCOL.md#params-presence-and-typing). |
+| `-32602` | `Invalid base64 data` | `data` is not valid base64. This test comes before the test of `id`. |
+| `-32602` | `Process not found` | The daemon has no process with this `id`. |
+| `-32003` | `stdin offset gap: offset ahead of applied bytes` | `offset` is above `applied`. |
+| `-32602` | `Process not running` | The process exited, and the request is not a gap and not a duplicate. A request with no bytes and no `offset` gets this error too. The answer can come before the `exit` frame of the process. |
+| `-32002` | `stdin backpressure: queue full` | The queue of the process holds bytes that the child did not read yet. This request does not fit in the limit of 16 MiB. The daemon accepts nothing, and `applied` does not change. Send the request again later. |
+
+The daemon never holds a request back because the queue is full. It answers `-32002` at once.
+
+The tests for `offset` come before the test for a process that exited. So for a process that exited, a request with a gap still gets `-32003`. A request with only old bytes still gets `"duplicate": true`. That holds until the daemon forgets the process. Then each request gets `Process not found`.
 
 ## How `offset` works
 
@@ -47,23 +64,24 @@ After a reconnect, read the count from the `stdinApplied` member of `process.rea
 
 The daemon advertises this behavior as the feature `process.stdin.offset` in `server.capabilities`.
 
-## Errors
+## Platform notes
 
-This method has no `errorCode` member. A failure is a JSON-RPC error. The daemon makes the tests in the order of the table.
+The answers to a request with no bytes and after the child closes its input:
 
-| Code | Text | Cause |
-|---|---|---|
-| `-32602` | `Invalid params` | The request has no `params` member, or `params` or a member that it reads has the wrong type. A negative `offset` gets this error too. See [the rules for `params`](../PROTOCOL.md#params-presence-and-typing). |
-| `-32602` | `Invalid base64 data` | `data` is not valid base64. This test comes before the test of `id`. |
-| `-32602` | `Process not found` | The daemon has no process with this `id`. |
-| `-32003` | `stdin offset gap: offset ahead of applied bytes` | `offset` is above `applied`. |
-| `-32602` | `Process not running` | The process exited, and the request is not a gap and not a duplicate. A request with no bytes and no `offset` gets this error too. The answer can come before the `exit` frame of the process. |
-| `-32002` | `stdin backpressure: queue full` | The queue of the process holds bytes that the child did not read yet. This request does not fit in the limit of 16 MiB. The daemon accepts nothing, and `applied` does not change. Send the request again later. After the child closes its input the queue does not drain, so each later request that does not fit gets this error (from the code). |
+=== "Linux and macOS"
+    (measured on Linux and macOS)
 
-The tests for `offset` come before the test for a process that exited. So for a process that exited, a request with a gap still gets `-32003`. A request with only old bytes still gets `"duplicate": true`. That holds until the daemon forgets the process. Then each request gets `Process not found`.
+=== "Windows"
+    (not measured)
 
-The daemon never holds a request back because the queue is full. It answers `-32002` at once.
+## Rare states
+
+??? note "A closed input"
+
+    If the child exits or closes its input first, the child never gets the bytes in the queue. No response says so.
+
+    After the child closes its input, the queue keeps the bytes of later requests. `applied` grows until the queue is full. The queue does not drain then, so each later request that does not fit gets `-32002` (from the code).
 
 ## Differences from the reference
 
-No entry of the [divergence catalog](../DIVERGENCES.md) applies to this method. The answers to a request with no bytes and after the child closes its input are measured on Linux and macOS. On Windows they are not measured.
+No entry of the [divergence catalog](../DIVERGENCES.md) applies to this method.

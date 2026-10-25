@@ -1,8 +1,8 @@
 # process.kill
 
-`process.kill` sends a signal to a child process that `process.spawn` started. It answers at once and does not wait for the process to end. To wait for the end, use [process.killAndWait](process-killandwait.md).
+`process.kill` sends a signal to a child process that `process.spawn` started. It answers at once and does not wait for the process to end. To wait for the end, use [process.killAndWait](process-killandwait.md). A graceful signal does not end the tree of processes that the child started: use `"signal": "KILL"` for that.
 
-An unmarked rule on this page matches the reference as measured on `89cb6289`, and on `f6010b97` too for Windows children that outlive the daemon.
+An untagged rule on this page matches build `89cb6289`, and build `f6010b97` too for Windows children that outlive the daemon.
 
 ## Request
 
@@ -42,8 +42,6 @@ On Linux and macOS, each child runs in its own process group. Two cases:
 
 On Windows each signal ends the direct child only: see [Windows child trees](#windows-child-trees).
 
-`process.kill` sends no signal to a child that already ended. That holds also while the daemon still collects the last output of the child and did not yet send its `exit` frame. The result is `{"success": true}` all the same. On Linux and macOS, in that time `process.killAndWait` with `"signal": "KILL"` sends `SIGKILL` to the group at once, and `process.kill` does not.
-
 ## The exit frame
 
 A process that got the signal of this request gets an `exit` frame with `"killedBy": "client"`. On Linux and macOS a process that the signal ended has `"exitCode": -1` and the name of the signal:
@@ -56,7 +54,17 @@ A child that catches the signal and exits by itself gets its own exit code, and 
 
 The `exit` frame waits for the output of the child. If another process holds the output pipe open, the frame comes up to 5 seconds after the child ended.
 
-## Windows child trees
+## Differences by system
+
+=== "Linux and macOS"
+    The `signal` name selects the signal. `KILL` and each other signal reach the processes in [Which processes a signal reaches](#which-processes-a-signal-reaches).
+
+    On Linux the signal to the direct child goes through a pid file descriptor, so it cannot reach another process. macOS and an old Linux kernel send it by pid. `KILL` goes to the group by its number on both. The skip of an ended child guards that case.
+
+=== "Windows"
+    The `signal` name is ignored. Each value ends the direct child only: see [Windows child trees](#windows-child-trees). The daemon holds a handle of the child, so the kill cannot reach another process.
+
+### Windows child trees
 
 On Windows a child is in no Job Object, and the kill goes to the direct child, never to its process group. A kill ends the direct child only, with exit code 1. The processes that the child started live on.
 
@@ -77,18 +85,15 @@ The `exit` frame on Windows has no `signal` member:
 
 If a process that the child started holds the output pipes of the child, the `exit` frame comes 5 seconds after the kill. The reply of `process.kill` still comes at once. For the answers of `process.killAndWait` in that state, see [its page](process-killandwait.md#which-processes-the-force-reaches).
 
-## Differences by system
+## Rare states
 
-| | Linux and macOS | Windows |
-|---|---|---|
-| The `signal` name | Selects the signal. | Ignored. Each value ends the direct child. |
-| `KILL` | Goes to the process group of the child. | Ends the direct child only. |
-| Each other signal | Goes to the direct child only. | Ends the direct child only. |
-| `exit` frame of a killed child | `"exitCode": -1` and a `signal` member. | `"exitCode": 1` and no `signal` member. |
-| Pid reuse | On Linux the signal to the direct child goes through a pid file descriptor, so it cannot reach another process. macOS and an old Linux kernel send it by pid. `KILL` goes to the group by its number on both. The skip of an ended child guards that case. | The daemon holds a handle of the child, so the kill cannot reach another process. |
+??? note "A child that already ended"
+    `process.kill` sends no signal to a child that already ended. That holds also while the daemon still collects the last output of the child and did not yet send its `exit` frame. The result is `{"success": true}` all the same.
+
+    On Linux and macOS, in that time `process.killAndWait` with `"signal": "KILL"` sends `SIGKILL` to the group at once, and `process.kill` does not.
 
 ## Differences from the reference
 
 No entry of the [divergence catalog](../DIVERGENCES.md) changes this method.
 
-The skip of a child that already ended is a guard of claustrum. The operating system can give the process id (pid) or the group number of a child that ended to another process. The reply is the same with or without the guard. Item 21 of the [ledger of completed work](../IMPROVEMENTS.md) has the guard. Whether the reference sends a signal to such a child is not measured.
+The skip of a child that already ended is a guard (claustrum's own). The operating system can give the process id (pid) or the group number of a child that ended to another process. The reply is the same with or without the guard. Item 21 of the [ledger of completed work](../IMPROVEMENTS.md) has the guard. Whether the reference sends a signal to such a child is a question for the reference side (not measured).
