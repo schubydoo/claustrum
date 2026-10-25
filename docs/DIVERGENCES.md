@@ -120,33 +120,35 @@ These hold for each opt-in entry:
 
 ## Catalog
 
-| ID | What it does | Default | How to activate | Why (rule / clause) | Reopen trigger |
-|----|--------------|---------|-----------------|---------------------|----------------|
-| [D2](#d2) | Refuse a destructive path that is or holds `$HOME` | always-on | always-on | rule 3 (a). The `files.extract_tar` wipe: decision of 2026-10-10 | an honest caller that needs such a path (more in the entry) |
-| [D3](#d3) | Cap `files.extract_tar` output size | off (`0`) | `-max-extract-bytes` / key | rule 4 | the cap refuses an honest extraction (more in the entry) |
-| [D6](#d6) | `-cli-version` is one path component | always-on | always-on | rule 3 (b) | Desktop sends a multi-component version |
-| [D8](#d8) | Refuse a FIFO, a link (not an own link to an own file on Linux and macOS) or (Linux, macOS) another user's `remote-server.log`. The `git-shadow` sweep writes nothing through a link | always-on | always-on | rule 3 (b), decision of 2026-10-19 | a shared socket folder that needs the log (more in the entry) |
-| [D10](#d10) | Cap the `-install` CLI size | off (`0`) | `-max-cli-bytes` / key | rule 4 | Desktop stops treating disk-full as terminal |
-| [D12](#d12) | Bound the `-install` download | off (`0`) | `-cli-download-timeout` / key | rule 4 | an honest slow download fails under the bound |
-| [D15](#d15) | Verify a lock holder before a signal (macOS) | always-on (macOS) | always-on | rule 3 (a) | the reference verifies the holder too (more in the entry) |
-| [D16](#d16) | `git.status` of a linked worktree works (Windows, no global excludes file) | always-on (Windows) | always-on | decision of 2026-10-13 | the reference or Git for Windows fixes the error (more in the entry) |
-| [D19](#d19) | Refuse a junction between `baseRepo` and the leaf on remove (Windows) | always-on (Windows) | always-on | rule 3 (b), decisions of 2026-09-27 and 2026-10-07 | a client that needs the success reply (more in the entry) |
-| [D20](#d20) | Wait 50 ms and read again before the group `SIGKILL` of a leader that reads as gone, at a `-serve` start (Linux and macOS) | always-on (Linux and macOS) | always-on | rule 3 (a) | the reference waits there too (more in the entry) |
-| [D22](#d22) | Refuse a worktree locked in the `.git` folder of `baseRepo` on remove, where the reference answers success in four states | always-on | always-on | decision of 2026-10-03 | a caller that needs that removal (more in the entry) |
-| [D23](#d23) | A child's environment block is in name order (Windows) | always-on (Windows) | always-on | decision of 2026-10-13 | the reference moves to Go 1.26 or newer |
-| [D24](#d24) | In a create rollback, keep a folder that replaced the registration. On Windows, run no git call after a `.git` file swap | always-on | always-on | decisions of 2026-10-07 and 2026-10-19 | the reference keeps such a folder (more in the entry) |
-| [D27](#d27) | Keep a stale entry whose record names a path that exists (Windows) | always-on (Windows) | always-on | decision of 2026-10-18 | a measurement of the reference with the same test |
-| [CT-1](#ct-1) | `wantPid` adds `pid` and `startTime` | off | the caller sends `"wantPid":true` | optional-param extension | none |
-| [CT-2](#ct-2) | `-keep-children` keeps the child tree at shutdown | off | `-keep-children` / key | off-wire extension | none |
-| [CT-3](#ct-3) | The `claustrum.conf` config file | absent | create the file | the opt-in mechanism itself | none |
-| [CT-4](#ct-4) | Hardened token persistence | not built | none | deferred idea | none |
-| [CT-5](#ct-5) | `-listen-pipe` named-pipe transport (Windows) | off | `-listen-pipe` / key | additive transport | none |
+One row for each live entry. "On-wire" means the entry changes a JSON-RPC reply
+frame or its text. "Off-wire" means it changes a file, a log, a signal, a child
+environment, a folder or an `-install` result only. Default "off" means a flag, a
+key or the caller turns it on. "Always-on" means no switch.
 
-Tags: **opt-in** means an operator switch, a flag and a config key. **always-on**
-means no switch. The CT rows are off until someone asks: CT-1 by the caller,
-CT-3 by the file, CT-2 and CT-5 by a flag and a key. CT-4 is not built. In the
-CT headings "opt-in" means "off unless somebody asks for it": CT-1 and CT-3 have
-no flag and no key.
+| ID | Summary | Wire | Default | OS |
+|----|---------|------|---------|----|
+| [D2](#d2) | Refuse a destructive path that is or holds `$HOME` | on-wire | always-on | all |
+| [D3](#d3) | Cap `files.extract_tar` output size | on-wire | off (`0`) | all |
+| [D6](#d6) | `-cli-version` is one path component | off-wire | always-on | all |
+| [D8](#d8) | Refuse a link, a FIFO or another user's `remote-server.log` at start. The `git-shadow` sweep writes nothing through a link | off-wire | always-on | all |
+| [D10](#d10) | Cap the `-install` CLI size | off-wire | off (`0`) | all |
+| [D12](#d12) | Bound the `-install` download | off-wire | off (`0`) | all |
+| [D15](#d15) | Verify a lock holder before a signal | off-wire | always-on | macOS |
+| [D16](#d16) | `git.status` of a linked worktree works, where the reference errors | on-wire | always-on | Windows |
+| [D19](#d19) | Refuse a junction between `baseRepo` and the leaf on remove | on-wire | always-on | Windows |
+| [D20](#d20) | Wait 50 ms and read again before the group `SIGKILL` of a leader that reads as gone | off-wire | always-on | Linux, macOS |
+| [D22](#d22) | Refuse a worktree locked in the `.git` folder of `baseRepo` on remove | on-wire | always-on | all |
+| [D23](#d23) | A child's environment block is in name order | off-wire | always-on | Windows |
+| [D24](#d24) | In a create rollback, keep a folder that replaced the registration. On Windows, run no git call after a `.git` file swap | see entry | always-on | all |
+| [D27](#d27) | Keep a stale entry whose record names a path that exists | on-wire | always-on | Windows |
+| [CT-1](#ct-1) | `wantPid` adds `pid` and `startTime` | on-wire | off (the caller asks) | all |
+| [CT-2](#ct-2) | `-keep-children` keeps the child tree at shutdown | off-wire | off | all |
+| [CT-3](#ct-3) | The `claustrum.conf` config file | off-wire | off (no file) | all |
+| [CT-4](#ct-4) | Hardened token persistence, a deferred idea | none | not built | none |
+| [CT-5](#ct-5) | `-listen-pipe` named-pipe transport | off-wire (same frames) | off | Windows |
+
+In the CT headings "opt-in" means "off unless somebody asks for it": CT-1 and CT-3
+have no flag and no key.
 
 ## Entries
 
@@ -611,12 +613,15 @@ no flag and no key.
 
 - **Behavior.** `process.spawn` and `process.reattach` accept an optional
   `"wantPid":true`. The result of a spawn, and of a reattach that finds the
-  process, then also has `pid` and `startTime`. Without `wantPid` the frame is
-  byte-identical to the reference.
-- **Why.** A client can detect a reused pid or an orphan. An older daemon ignores
-  the parameter, and an older client never sees the members. So a client can
-  send `wantPid` on every request.
-- **Activate.** The caller sends `"wantPid":true`. There is no flag and no key.
+  process, then also has `pid` and `startTime`.
+- **Reference.** Without `wantPid` the frame is byte-identical to the reference.
+- **Systems and switch.** All systems. The caller sends `"wantPid":true`. There is
+  no flag and no key.
+- **Cost.** None stated.
+- **Rule.** Optional-param extension. A client can detect a reused pid or an
+  orphan. An older daemon ignores the parameter, and an older client never sees
+  the members. So a client can send `wantPid` on every request.
+- **Reopen trigger.** None.
 - **Pointers.** [process.spawn](protocol/process-spawn.md#response) has what
   `startTime` means. Also [process.reattach](protocol/process-reattach.md) and
   `results.go`.
@@ -628,7 +633,9 @@ no flag and no key.
   `SIGINT` or the self-exit. With the flag it leaves the spawned children
   running and logs one line with their count. The new daemon does not re-adopt
   them. A client can find them again through the CT-1 `pid` and `startTime`.
-- **Limits.** The survivors lose their stdio, so only a child that tolerates a
+- **Reference.** `89cb6289` has no such flag and exits with code 2 on it.
+- **Systems and switch.** All systems. `-keep-children` or the `keep-children` key.
+- **Cost.** The survivors lose their stdio, so only a child that tolerates a
   dead stdin and stdout lives on (not measured on Windows). On Linux and macOS
   the shutdown removes the records of the kept children (claustrum's own). So the reap of the next start
   sends them no signal. That covers the processes of the process table only.
@@ -638,8 +645,8 @@ no flag and no key.
   the flag). A child whose start returns after the shutdown began is ended also
   with the flag (from the code). Its client got no reply, so no client has its
   `pid`.
-- **Reference.** `89cb6289` has no such flag and exits with code 2 on it.
-- **Activate.** `-keep-children` or the `keep-children` key.
+- **Rule.** Off-wire extension.
+- **Reopen trigger.** None.
 - **Pointers.** [PROTOCOL.md → Flags of claustrum
   alone](PROTOCOL.md#flags-of-claustrum-alone) has the log line, the stdio of the
   survivors and Windows.
@@ -653,30 +660,38 @@ no flag and no key.
   deprecated ones too. Each key that sets something turns on, or tunes, a behavior
   that is off by default. The deprecated keys set nothing and log one
   warning.
-- **Fail-safe.** A missing file, a file that cannot be read and a path that is no
-  regular file, a link too, give stock behavior. claustrum reads at most the
-  first 64 KiB. It ignores an unknown key and an invalid value. A problem of the
-  file never fails the start. A `wire-log` path that cannot be opened does fail
-  it. A duration uses `time.ParseDuration`, which
-  refuses a bare number other than zero. A zero in any spelling means off. A wrong
-  digit still turns a cap or a deadline on: `10` for `0` on a cap,
-  `10s` for `0s` on the deadline.
-- **`version-override`.** Set it to the commit SHA that the desktop client pins,
-  and the client stops uploading the reference each session. The value is 40 or
-  64 hex digits, claustrum prints it in lower case, and any other value does
-  nothing. [PROTOCOL.md → -version](PROTOCOL.md#-version) has the output and
-  how the client reads it.
-- **Activate.** Create the file.
+  - Fail-safe: a missing file, a file that cannot be read and a path that is no
+    regular file, a link too, give stock behavior. claustrum reads at most the
+    first 64 KiB. It ignores an unknown key and an invalid value. A problem of the
+    file never fails the start. A `wire-log` path that cannot be opened does fail
+    it. A duration uses `time.ParseDuration`, which
+    refuses a bare number other than zero. A zero in any spelling means off. A wrong
+    digit still turns a cap or a deadline on: `10` for `0` on a cap,
+    `10s` for `0s` on the deadline.
+  - `version-override`: set it to the commit SHA that the desktop client pins,
+    and the client stops uploading the reference each session. The value is 40 or
+    64 hex digits, claustrum prints it in lower case, and any other value does
+    nothing. [PROTOCOL.md → -version](PROTOCOL.md#-version) has the output and
+    how the client reads it.
+- **Reference.** None stated.
+- **Systems and switch.** All systems. Create the file.
+- **Cost.** None stated.
+- **Rule.** The opt-in mechanism itself.
+- **Reopen trigger.** None.
 - **Pointers.** `config.go`.
 
 ### CT-4 · Opt-in hardened token persistence — deferred idea { #ct-4 }
 
-- **Idea (not built).** A `claustrum.conf` key such as `persist-token = false`,
-  or an owner-only DACL on `daemon.token` on Windows, or both. It is for an
-  operator who prefers a smaller on-disk token window over reconnect. Without
-  the key the daemon stays stock.
-- **Why deferred.** There is no demand. The default matches the reference, and
-  the socket folder is owner-only in the real deployment.
+- **Behavior.** Not built. The idea: a `claustrum.conf` key such as
+  `persist-token = false`, or an owner-only DACL on `daemon.token` on Windows, or
+  both. It is for an operator who prefers a smaller on-disk token window over
+  reconnect. Without the key the daemon stays stock.
+- **Reference.** None stated.
+- **Systems and switch.** None. Not built.
+- **Cost.** None stated.
+- **Rule.** Deferred, because there is no demand. The default matches the
+  reference, and the socket folder is owner-only in the real deployment.
+- **Reopen trigger.** None.
 - **Pointers.** [DAEMON.md → Token
   persistence](DAEMON.md#token-persistence-daemontoken) has the file and its
   two caveats, and `tokenpersist.go`.
@@ -688,9 +703,13 @@ no flag and no key.
   `"auth"`. Other systems ignore the
   flag and log a warning. A setup failure is not fatal, and the socket still
   serves.
-- **Why.** A Windows client that cannot use an `AF_UNIX` socket can attach.
-  Python `asyncio` is the example: its Windows loop supports named pipes.
-- **Activate.** `-listen-pipe` or the `listen-pipe` key.
+- **Reference.** None stated.
+- **Systems and switch.** Windows. `-listen-pipe` or the `listen-pipe` key.
+- **Cost.** None stated.
+- **Rule.** Additive transport. A Windows client that cannot use an `AF_UNIX`
+  socket can attach. Python `asyncio` is the example: its Windows loop supports
+  named pipes.
+- **Reopen trigger.** None.
 - **Pointers.** [PROTOCOL.md → Named-pipe
   transport](PROTOCOL.md#named-pipe-transport-windows-opt-in) has the name, the
   file rules and the DACL. Also `pipetransport.go` and
