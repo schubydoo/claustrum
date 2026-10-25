@@ -1,11 +1,10 @@
 # claustrum — shipped ledger
 
-This document records the completed hardening work on claustrum: the CI, test,
-release, and safety items that changed the daemon from a bare reimplementation
-into a maintained drop-in. Every item here is done. This document is
-history, not a backlog. Each item names what shipped. An item that has a
-current rule links to the page that
-holds its current rule.
+This page is for maintainers who want the history of shipped hardening work. It
+records the completed CI, test, release, and safety items that changed the
+daemon from a bare reimplementation into a maintained drop-in. It is history,
+not a backlog. An item that has a current rule links to the page that holds
+that rule.
 
 Most of this work is wire-neutral. It changes tooling, tests, or OS-level
 behaviour, but it does not change a JSON-RPC frame. The deliberate divergences

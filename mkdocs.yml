@@ -32,8 +32,8 @@ theme:
   features:
     - navigation.instant
     - navigation.tracking
+    - navigation.tabs
     - navigation.top
-    - navigation.sections
     - toc.follow
     - content.code.copy
     - content.action.edit
@@ -87,39 +87,46 @@ extra_css:
   - stylesheets/extra.css
 
 nav:
-  - Home: index.md
-  - Architecture: ARCHITECTURE.md
-  - Protocol reference: PROTOCOL.md
-  - Running the daemon: DAEMON.md
-  - -install and -probe-cli: INSTALL.md
-  - Methods:
-      - server.*: protocol/server.md
-      - files.list: protocol/files-list.md
-      - files.validate: protocol/files-validate.md
-      - files.stat: protocol/files-stat.md
-      - files.read: protocol/files-read.md
-      - files.extract_tar: protocol/files-extract-tar.md
-      - git.info: protocol/git-info.md
-      - git.status: protocol/git-status.md
-      - git.list_branches: protocol/git-list-branches.md
-      - git.worktree_create: protocol/git-worktree-create.md
-      - git.worktree_remove: protocol/git-worktree-remove.md
-      - launcher.resolve: protocol/launcher-resolve.md
-      - process.spawn: protocol/process-spawn.md
-      - process.stdin: protocol/process-stdin.md
-      - process.kill: protocol/process-kill.md
-      - process.killAndWait: protocol/process-killandwait.md
-      - process.reattach: protocol/process-reattach.md
-      - plugins.prune: protocol/plugins-prune.md
-  - Divergences: DIVERGENCES.md
-  - Docs style guide: STYLE.md
-  - Examples: EXAMPLES.md
-  - Upstream tracking: UPSTREAM-TRACKING.md
-  - Reference builds: REFERENCE-BUILDS.md
-  - Shipped ledger: IMPROVEMENTS.md
-  - Glossary: GLOSSARY.md
-  - Project:
-      - Contributing: https://github.com/schubydoo/claustrum/blob/main/CONTRIBUTING.md
+  - Start:
+      - Home: index.md
+      - Glossary: GLOSSARY.md
+  - Write a client:
+      - How claustrum works: ARCHITECTURE.md
+      - Protocol overview: PROTOCOL.md
+      - Examples: EXAMPLES.md
+      - Methods:
+          - server.* (daemon control): protocol/server.md
+          - Files:
+              - files.validate (check a path): protocol/files-validate.md
+              - files.stat (inspect a path): protocol/files-stat.md
+              - files.list (list a folder): protocol/files-list.md
+              - files.read (read a file): protocol/files-read.md
+              - files.extract_tar (unpack a tar): protocol/files-extract-tar.md
+          - Git:
+              - git.info (repo info): protocol/git-info.md
+              - git.status (changed files): protocol/git-status.md
+              - git.list_branches (branches): protocol/git-list-branches.md
+              - git.worktree_create (new worktree): protocol/git-worktree-create.md
+              - git.worktree_remove (delete worktree): protocol/git-worktree-remove.md
+          - launcher.resolve (find the CLI): protocol/launcher-resolve.md
+          - Process:
+              - process.spawn (start): protocol/process-spawn.md
+              - process.stdin (send input): protocol/process-stdin.md
+              - process.kill (signal): protocol/process-kill.md
+              - process.killAndWait (stop and wait): protocol/process-killandwait.md
+              - process.reattach (catch up): protocol/process-reattach.md
+          - plugins.prune (clean up plugins): protocol/plugins-prune.md
+  - Run the daemon:
+      - Start, stop, log, token: DAEMON.md
+      - Install the agent CLI: INSTALL.md
       - Security policy: https://github.com/schubydoo/claustrum/blob/main/SECURITY.md
+  - Contribute:
+      - Divergences: DIVERGENCES.md
+      - Docs style guide: STYLE.md
+      - Contributing guide: https://github.com/schubydoo/claustrum/blob/main/CONTRIBUTING.md
       - Changelog: https://github.com/schubydoo/claustrum/blob/main/CHANGELOG.md
       - Source (GitHub): https://github.com/schubydoo/claustrum
+  - Parity record:
+      - Upstream tracking: UPSTREAM-TRACKING.md
+      - Reference builds: REFERENCE-BUILDS.md
+      - Shipped ledger: IMPROVEMENTS.md
