@@ -35,6 +35,8 @@ Each response has all four members. If the path does not exist, the response is 
 {"exists": false, "isDir": false, "size": 0, "mode": ""}
 ```
 
+The daemon follows a symbolic link. The response describes the target, and no member says that the path is a link. A link to a target that does not exist gives `"exists": false`.
+
 ## Errors
 
 This method has no `errorCode` member. A failure is a JSON-RPC error.
@@ -45,8 +47,6 @@ This method has no `errorCode` member. A failure is a JSON-RPC error.
 | `-32603` | `stat <path>: <reason>` | The daemon cannot examine the path. For example, a component of the path is a regular file (`not a directory`), or a name is too long (`file name too long`). See [Stat failures](../PROTOCOL.md#stat-failures-other-than-does-not-exist). |
 
 The text holds `path` after the `~` expansion.
-
-The daemon follows a symbolic link. The response describes the target, and no member says that the path is a link. A link to a target that does not exist gives `"exists": false`.
 
 ## Platform notes
 

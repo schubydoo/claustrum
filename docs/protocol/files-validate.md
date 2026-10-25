@@ -36,6 +36,8 @@ If the path does not exist:
 
 If the daemon cannot examine the path, `error` holds the text of the operating system in the form `stat <path>: <reason>`. For example, a component of the path is a regular file (`not a directory`). See [Stat failures](../PROTOCOL.md#stat-failures-other-than-does-not-exist). The text holds `path` after the `~` expansion.
 
+The daemon follows a symbolic link. The response then describes the target of the link. A link to a target that does not exist gives `"valid": false`.
+
 ## Errors
 
 This method has no `errorCode` member. It has one JSON-RPC error.
@@ -43,8 +45,6 @@ This method has no `errorCode` member. It has one JSON-RPC error.
 | Code | Text | Cause |
 |---|---|---|
 | `-32602` | `Invalid params` | The request has no `params` member, or `params` or a member that it reads has the wrong type. See [the rules for `params`](../PROTOCOL.md#params-presence-and-typing). |
-
-The daemon follows a symbolic link. The response then describes the target of the link. A link to a target that does not exist gives `"valid": false`.
 
 ## Platform notes
 
