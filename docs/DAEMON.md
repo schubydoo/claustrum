@@ -12,34 +12,33 @@ section. The other marks are those of the [protocol reference](PROTOCOL.md).
 ### Start the daemon
 
 1. Run the binary with `-serve` ([flags](PROTOCOL.md#-serve-run-the-daemon)).
-2. Wait for the launcher. Exit `0` means the socket accepts connections ([launcher wait](#the-launcher-wait)).
+2. Wait for the launcher to exit ([launcher wait](#the-launcher-wait)).
 
 ### Stop the daemon
 
 1. Run the binary with `-stop` ([-stop](PROTOCOL.md#-stop-ask-a-running-daemon-to-shut-down)).
-2. If it prints `survivor`, `daemon.token` stays ([token](#token-persistence-daemontoken)).
+2. After a failed connect, `-stop` removes `daemon.token` unless it prints `survivor` ([token](#token-persistence-daemontoken)).
 
 ### Find the log
 
-1. Open `remote-server.log` in the socket directory. `remote-server.log.old` holds the run before ([log](#daemon-log-remote-serverlog)).
+1. Open `remote-server.log` in the socket directory ([log](#daemon-log-remote-serverlog)).
 
 ### Find and rotate the token
 
 1. Read `daemon.token` in the socket directory ([token](#token-persistence-daemontoken)).
 2. Stop the daemon. Start a new one with the new token ([token source](PROTOCOL.md#the-token-source)).
-3. Until it listens, the file holds the old token ([token](#token-persistence-daemontoken)).
 
 ### Recover after a crash or a stale lock
 
 1. Start the daemon again. A `SIGKILL` or a crash leaves `daemon.token` ([token](#token-persistence-daemontoken)).
 2. On Linux and macOS, wait for the reap of recorded children ([the reap](#the-bind-after-the-reap-linux-and-macos)).
-3. If the log says `held by a live process we will not signal`, a non-daemon process holds `daemon.lock` ([no signal](#holders-that-get-no-signal)).
+3. If the log says `[daemon] serve: WARNING … (its holder is not a daemon (role ""))`, a non-daemon process holds `daemon.lock` ([no signal](#holders-that-get-no-signal)).
 
 ### Read the cleaner's lines
 
 1. Find the `[hostclean]` lines in the [log](#daemon-log-remote-serverlog).
 2. `host cleaning off` means no pass runs ([when it runs](#when-the-cleaner-runs)).
-3. `was not retired` means the daemon got no `SIGTERM` ([signals](#signals-of-the-cleaner)).
+3. `was not retired` means the daemon was left running, and its reason says why ([signals](#signals-of-the-cleaner)).
 
 ## Token persistence (`daemon.token`)
 
@@ -94,8 +93,8 @@ answers. The `startedAt` match is measured on macOS too. From the code:
 `sysctl kern.bootsessionuuid` on macOS, and the record has no `node` if that
 identity is unknown.
 
-On a graceful stop the daemon removes its own `rpc.sock`, kills its child groups, removes `daemon.token` (see
-[What the stop does](protocol/server.md#what-the-stop-does)), truncates
+On a graceful stop the daemon removes its own `rpc.sock`, kills its child groups and then removes `daemon.token` (see
+[What the stop does](protocol/server.md#what-the-stop-does)). Last it truncates
 the record and releases the lock. `daemon.lock` stays, empty.
 
 ### Eviction of a live holder
@@ -475,7 +474,7 @@ At a `-serve` start, after the run-dir lock and before the bind, the daemon read
 - It reads at most 4096 bytes of a record. A record whose first 4096 bytes are not one JSON value is removed, with no signal.
 - If `children` is not a real folder, it reads, signals and removes nothing. That is measured for a symbolic link to a folder. The other kinds are claustrum's own.
 
-A record of a daemon that is alive stays. So does a record from another machine, for 30 days (from the code). On macOS a `daemonStart` with two blanks before a one-digit day does not match the live daemon, so a new daemon reads that live daemon as gone. An older claustrum build wrote such a text on days 1 to 9 of a month. That daemon's children then take the test below, and one whose `start` matches gets `SIGTERM`. A record of a dead pid is removed. So is a record from an earlier boot of this machine (from the code). For a record of a dead daemon on this machine, the daemon tests the process. A recorded child's group gets `SIGTERM`. Else the record goes with no signal. The test has four parts:
+A record of a daemon that is alive stays. So does a record from another machine, for 30 days (from the code). On macOS a `daemonStart` with two blanks before a one-digit day does not match the live daemon, so a new daemon reads that live daemon as gone. An older claustrum build wrote such a text on days 1 to 9 of a month. That daemon's children then take the test below, and one whose `start` matches gets `SIGTERM`. A record of a dead pid is removed. So is a record from an earlier boot of this machine (from the code). For a record of a dead daemon on this machine, the daemon tests the process. If it still is the recorded child, its group gets `SIGTERM`. Else the record goes with no signal. The test has four parts:
 
 - The process started at the recorded `start`, so the pid is not reused. On macOS a `start` with two blanks before a one-digit day does not match.
 - It leads its own process group.

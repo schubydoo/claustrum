@@ -602,7 +602,7 @@ var docWordLimits = map[string]int{
 	"README.md":                            1120,
 	"SECURITY.md":                          1553,
 	"docs/ARCHITECTURE.md":                 2667,
-	"docs/DAEMON.md":                       7174, // TASK-207 tasks-first rewrite, net down by 1
+	"docs/DAEMON.md":                       7175, // a new page: its words moved from PROTOCOL.md and ARCHITECTURE.md
 	"docs/DIVERGENCES.md":                  7766, // TASK-208 summary table
 	"docs/EXAMPLES.md":                     1025,
 	"docs/GLOSSARY.md":                     1297,
