@@ -630,7 +630,7 @@ var docWordLimits = map[string]int{
 	"docs/protocol/process-reattach.md":    988,
 	"docs/protocol/process-spawn.md":       3474, // task-204: rewrite to the page template
 	"docs/protocol/process-stdin.md":       895,
-	"docs/protocol/server.md":              1493, // task-203b: the page rewrite
+	"docs/protocol/server.md":              1491, // task-203b: the page rewrite
 }
 
 // The limits of a document that docWordLimits does not name.

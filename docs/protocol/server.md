@@ -144,7 +144,7 @@ A handler panic in `server.shutdown` writes no frame (claustrum's own). See [Han
 
 ## Differences by system
 
-The `peerCheck` values per system are in [The peer check](#the-peer-check), and `git.worktree.external_root` is in [Features](#features). The start line with `CLAUDE_SSH_PEER_CHECK=1` differs:
+[The peer check](#the-peer-check) and [Features](#features) hold the other differences. The start line with `CLAUDE_SSH_PEER_CHECK=1` differs:
 
 === "Linux"
     INFO. It names the namespaces of the daemon (claustrum's own).
