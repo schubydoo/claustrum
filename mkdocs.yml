@@ -112,6 +112,7 @@ nav:
       - process.reattach: protocol/process-reattach.md
       - plugins.prune: protocol/plugins-prune.md
   - Divergences: DIVERGENCES.md
+  - Docs style guide: STYLE.md
   - Examples: EXAMPLES.md
   - Upstream tracking: UPSTREAM-TRACKING.md
   - Reference builds: REFERENCE-BUILDS.md

@@ -98,14 +98,15 @@ found process ([CT-1](DIVERGENCES.md#ct-1)).
 - :material-console: **[Examples](EXAMPLES.md)**. Worked client sessions over
   the socket.
 - :material-sync: **[Upstream tracking](UPSTREAM-TRACKING.md)**. How the
-  project keeps compatibility with the reference daemon in lock-step.
+  project keeps compatibility with the reference daemon.
 - :material-history: **[Reference builds](REFERENCE-BUILDS.md)**. The history
-  of the reference builds, and what each build changed on the wire.
+  of the reference builds and their wire changes.
 - :material-source-branch: **[Divergences](DIVERGENCES.md)**. Every deliberate
   [divergence](GLOSSARY.md#divergence) from the reference, its default, and how
   to activate it.
+- :material-pencil-ruler: **[Docs style guide](STYLE.md)**. Page templates and limits.
 - :material-format-list-checks: **[Shipped ledger](IMPROVEMENTS.md)**.
-  The completed hardening work, one line per item.
+  The completed hardening work.
 - :material-book-alphabet: **[Glossary](GLOSSARY.md)**. The project terms and
   their definitions.
 

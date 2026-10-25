@@ -57,7 +57,7 @@ in-progress commit, run `git commit --no-verify`.
 - Docs. Update `docs/` for any user-visible behavior change. The site is
   built with mkdocs-material and published to GitHub Pages. CI runs
   `mkdocs build --strict` on every docs change. A broken link or a bad nav entry
-  fails that job. To preview the site on your own machine, run these commands:
+  fails that job. Follow the [docs style guide](docs/STYLE.md). To preview the site, run:
 
   ```sh
   python3 -m venv .venv
