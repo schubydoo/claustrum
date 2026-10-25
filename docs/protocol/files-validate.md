@@ -24,11 +24,9 @@ The daemon does not refuse a request without `path`. It answers as for a path th
 
 | Member | Meaning |
 |---|---|
-| `valid` | If the path exists, `true`. |
+| `valid` | If the path exists, `true`. It does not say that the daemon can read the file or list the directory. |
 | `isDir` | If the path is a directory, `true`. |
 | `error` | The reason for `"valid": false`. A response with `"valid": true` has no `error` member. |
-
-`valid` says that the path exists. It does not say that the daemon can read the file or list the directory.
 
 If the path does not exist:
 
@@ -36,9 +34,7 @@ If the path does not exist:
 {"valid": false, "isDir": false, "error": "Path does not exist"}
 ```
 
-If the daemon cannot examine the path, `error` holds the text of the operating system in the form `stat <path>: <reason>`. For example, a component of the path is a regular file (`not a directory`). See [Stat failures](../PROTOCOL.md#stat-failures-other-than-does-not-exist). The text holds `path` after the `~` expansion. The text is that of Linux and macOS. On Windows the operating system gives other texts.
-
-The daemon follows a symbolic link. The response then describes the target of the link. A link to a target that does not exist gives `"valid": false`.
+If the daemon cannot examine the path, `error` holds the text of the operating system in the form `stat <path>: <reason>`. For example, a component of the path is a regular file (`not a directory`). See [Stat failures](../PROTOCOL.md#stat-failures-other-than-does-not-exist). The text holds `path` after the `~` expansion.
 
 ## Errors
 
@@ -47,6 +43,15 @@ This method has no `errorCode` member. It has one JSON-RPC error.
 | Code | Text | Cause |
 |---|---|---|
 | `-32602` | `Invalid params` | The request has no `params` member, or `params` or a member that it reads has the wrong type. See [the rules for `params`](../PROTOCOL.md#params-presence-and-typing). |
+
+The daemon follows a symbolic link. The response then describes the target of the link. A link to a target that does not exist gives `"valid": false`.
+
+## Platform notes
+
+=== "Linux and macOS"
+    The `error` texts are those of the example.
+=== "Windows"
+    The `error` texts differ.
 
 ## Differences from the reference
 

@@ -2,7 +2,7 @@
 
 `files.read` returns the content of one file as text. It has a size limit, and it is not for binary files.
 
-An unmarked rule on this page matches the reference as measured on `5fd08069` or on an earlier build.
+An untagged rule on this page matches the reference as measured on `5fd08069` or on an earlier build.
 
 ## Request
 
@@ -16,6 +16,8 @@ An unmarked rule on this page matches the reference as measured on `5fd08069` or
 | `maxBytes` | no | The size limit in bytes. Without a value, or with `0` or a negative value, the limit is `262144` (256 KiB). A positive value is the limit, and it can be above the default. |
 
 The daemon does not refuse a request without `path`. It answers as for a file that does not exist.
+
+If the file is larger than the limit, the request fails. The daemon never returns a part of a file. A file of exactly `maxBytes` bytes reads.
 
 ## Response
 
@@ -38,22 +40,6 @@ An empty file gives `"content": ""` too. Read `exists` to tell the two apart.
 
 The content is text. In place of each byte that is not valid UTF-8, the response holds the character U+FFFD. So the bytes of a binary file do not arrive unchanged. See [Inherited wire bytes](../ARCHITECTURE.md#inherited-wire-bytes).
 
-## The size limit
-
-If the file is larger than the limit, the request fails. The daemon never returns a part of a file. A file of exactly `maxBytes` bytes reads.
-
-The daemon compares the limit with the size that the operating system reports for the open file, before the read. That size is `0` for some regular files, for example a file under `/proc`. So the limit does not apply to them. If a file grows after the comparison, the daemon reads all of it. In these cases `content` can be larger than the limit.
-
-## Files that are not regular files
-
-The daemon opens the path first. Then it tests the kind of the open file. It follows a symbolic link.
-
-- A file that is not a regular file and not a directory gets `-32602 files.read: not a regular file`. Examples are a FIFO, a device such as `/dev/zero`, and on Windows `NUL` and a named pipe.
-- On Linux and macOS the null device itself reads as empty content, through each path that names that file. A second device node with the same device numbers gets the refusal.
-- A path that the daemon cannot open keeps the error of the open. A socket is an example. The open comes before the directory test and before the size test. So a directory or a large file that the daemon cannot open gets the error of the open too.
-
-The open does not wait for the writer of a FIFO, so the refusal comes at once. The open is visible to a writer that waits in its own open of the FIFO: that open returns.
-
 ## Errors
 
 This method has no `errorCode` member. A failure is a JSON-RPC error.
@@ -68,7 +54,28 @@ This method has no `errorCode` member. A failure is a JSON-RPC error.
 | `-32602` | `files.read: file exceeds maxBytes` | The file is larger than the limit. |
 | `-32603` | The text of the operating system, for example `read <path>: input/output error` | The daemon cannot read the open file. |
 
-The daemon makes the tests in the order of the table. A text with `<path>` holds `path` after the `~` expansion. The texts with `<path>` are those of Linux and macOS. On Windows the operating system gives other texts.
+The daemon makes the tests in the order of the table. A text with `<path>` holds `path` after the `~` expansion.
+
+## Files that are not regular files
+
+The daemon opens the path first. Then it tests the kind of the open file. It follows a symbolic link.
+
+- A file that is not a regular file and not a directory gets `-32602 files.read: not a regular file`. Examples are a FIFO and a device such as `/dev/zero`.
+- A path that the daemon cannot open keeps the error of the open. A socket is an example. The open comes before the directory test and before the size test. So a directory or large file that the daemon cannot open gets that error too.
+
+## Platform notes
+
+=== "Linux and macOS"
+    The null device itself reads as empty content, through each path that names that file. A second device node with the same device numbers gets the refusal. The `<path>` texts are those of the table.
+=== "Windows"
+    `NUL` and a named pipe get the refusal. The `<path>` texts differ.
+
+## Rare states
+
+??? note "Size 0, growth and FIFO"
+    The daemon compares the limit with the size that the operating system reports for the open file, before the read. That size is `0` for some regular files, for example a file under `/proc`, so the limit does not apply to them. If a file grows after the comparison, the daemon reads all of it. In these cases `content` can be larger than the limit.
+
+    The open does not wait for the writer of a FIFO, so the refusal comes at once. A writer that waits in its own open of the FIFO sees the open, and that open returns.
 
 ## Differences from the reference
 

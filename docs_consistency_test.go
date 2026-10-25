@@ -616,8 +616,8 @@ var docWordLimits = map[string]int{
 	"docs/protocol/files-extract-tar.md":   2254,
 	"docs/protocol/files-list.md":          449,
 	"docs/protocol/files-read.md":          825,
-	"docs/protocol/files-stat.md":          435,
-	"docs/protocol/files-validate.md":      365,
+	"docs/protocol/files-stat.md":          434, // TASK-203 rewrite
+	"docs/protocol/files-validate.md":      364, // TASK-203 rewrite
 	"docs/protocol/git-info.md":            1856,
 	"docs/protocol/git-list-branches.md":   1000,
 	"docs/protocol/git-status.md":          3185, // decision-040: a move between pages, net down in the same PR
