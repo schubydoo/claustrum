@@ -83,15 +83,15 @@ The daemon removes these names:
 | `CLAUDE_RPC_TOKEN` | The daemon value, for every child. A value in the `env` of the request reaches the child. |
 | `CLAUDE_SSH_MANAGED_LAUNCHER`, `CLAUDE_SSH_E2E_MANAGED_SETTINGS_DIR` | Every child. The removal covers the `env` of the request too (measured on Linux and macOS). The removal on Windows (claustrum's own). |
 | `CLAUDE_CODE_PROCESS_WRAPPER` | A child with a `launcher`, also from the `env` of the request. A child without one keeps it (measured on Linux and macOS, claustrum's own on Windows). |
-| `CLAUDE_SSH_PEER_CHECK` | The daemon removes it from its own environment at its start. On Windows that covers any letter case. A value in the `env` of the request reaches the child (measured on Linux, macOS and Windows). If the removal fails, claustrum logs one WARN line of its own, and the children inherit it. |
+| `CLAUDE_SSH_PEER_CHECK` | The daemon removes it from its own environment at its start (measured on Linux, macOS and Windows). On Windows that covers any letter case (measured on Linux, macOS and Windows). A value in the `env` of the request reaches the child (measured on Linux, macOS and Windows). If the removal fails, claustrum logs one WARN line of its own, and the children inherit it. |
 
 The Go runtime variables `GODEBUG`, `GOGC`, `GOMAXPROCS`, `GOMEMLIMIT` and `GOTRACEBACK` reach the child with their values and at their places. `GOGC` and `GOMAXPROCS` are measured on Linux. claustrum treats the other three the same way.
 
 ### The managed launcher
 
-With `launcher`, the child runs as `<launcher...> <command> <args...>`. The launcher is the process, and the stream frames are its own. A client gets the launcher from [launcher.resolve](launcher-resolve.md) and passes it here. A spawn reads no managed settings, and the `CLAUDE_SSH_MANAGED_LAUNCHER` gate does not change it (measured on Linux).
+With `launcher`, the child runs as `<launcher...> <command> <args...>`. The launcher is the process, and the stream frames are its own. A client gets the launcher from [launcher.resolve](launcher-resolve.md) and passes it here. A spawn reads no managed settings. The `CLAUDE_SSH_MANAGED_LAUNCHER` gate does not change it (measured on Linux).
 
-The checks run in this order. They are measured on Linux. Step 5 is measured on macOS too, and so is the interpreter text of step 6:
+The checks run in this order. Step 1 is the Windows rule. The other steps are measured on Linux. Step 5 is measured on macOS too, and so is the interpreter text of step 6:
 
 1. On Windows any `launcher`, `[]` too, gets `-32004 … a launcher cannot be applied on a Windows host`.
 2. A relative `command` gets `-32602 command must be an absolute path when a launcher is given`.
@@ -111,9 +111,8 @@ A tag wins over the top line.
 === "Linux and macOS"
 
     - **Process group.** The child leads its own process group. A `KILL` from [process.kill](process-kill.md) reaches the whole group.
-    - **`PATH` of the child.** The login-shell `PATH`.
     - **SSH agent hand-off and `launcher`.** Yes, and allowed.
-    - **Identity markers, records, reap.** Yes. On Linux the start is in `/proc` ticks. On macOS it is the `ps` date text.
+    - **Identity markers, records, reap.** Yes.
     - **`signal` in the `exit` frame.** Yes.
 
 === "Windows"
@@ -149,6 +148,9 @@ The daemon starts the child through a short re-exec of its own binary, the exec-
 - `CLAUDE_SSH_CHILD=<pid>:<start>`. On Linux `<start>` is the start time of the child in `/proc` clock ticks. On macOS it is the start time from `ps` as a date text with one blank between its words, for example `Fri Oct 2 17:35:19 2026`. Only days 1 and 2 of a month are measured.
 
 The trampoline adds no frame. A command that does not resolve to a runnable file gets the same error frame as without it.
+
+??? note "The trampoline does not start"
+    If the trampoline itself does not start, the daemon logs `[process.Manager] exec trampoline failed for <id> (<error>); starting it directly — a successor daemon will not be able to reap it` and starts the command directly (measured on Linux). The frame then names the command, for example `fork/exec <command>: permission denied` for a `cwd` that the daemon cannot enter. If that direct start works, the reply is success (from the code) (not measured). The child then gets `CLAUDE_SSH_RUN_DIR` and no `CLAUDE_SSH_CHILD` (from the code) (not measured).
 
 ### The SSH agent hand-off (Linux and macOS)
 
@@ -204,9 +206,6 @@ A spawn with the `id` and the session of a process that runs supersedes nothing.
 ### A spawn during a shutdown
 
 A spawn that reaches the start of its child after the shutdown began gets no reply. The daemon ends that child at once, also with `-keep-children` ([CT-2](../DIVERGENCES.md#ct-2)). The reference leaves it running (measured on Linux, macOS and Windows).
-
-??? note "The trampoline does not start"
-    If the trampoline itself does not start, the daemon logs `[process.Manager] exec trampoline failed for <id> (<error>); starting it directly — a successor daemon will not be able to reap it` and starts the command directly (measured on Linux). The frame then names the command, for example `fork/exec <command>: permission denied` for a `cwd` that the daemon cannot enter. If that direct start works, the reply is success (from the code) (not measured). The child then gets `CLAUDE_SSH_RUN_DIR` and no `CLAUDE_SSH_CHILD` (from the code) (not measured).
 
 ??? note "A later daemon start"
     On Linux and macOS a daemon that holds the [run-dir lock](../DAEMON.md#run-dir-lock-daemonlock) records each child in its run dir. A later daemon start on the same socket reads the records of a daemon that is gone. It ends each child whose process still matches its record, with `SIGTERM` and then `SIGKILL`. So a child that outlives its daemon can end at the next start. [Child records and the reap](../DAEMON.md#child-records-and-the-reap-linux-and-macos) has the rules. Windows records no child. A record that cannot be written does not fail the spawn. The reply is success, and the child still gets both identity markers.

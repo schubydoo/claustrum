@@ -105,14 +105,14 @@ The log line writes these texts raw. The frame escapes them as in [Response](#re
 
 ### Log lines
 
-An unusable or unreadable answer writes one line, at WARN (claustrum's own). A usable or none answer writes none (claustrum's own).
+An unusable or unreadable answer writes one line, at WARN (claustrum's own). A usable or none answer writes none.
 
 ```text
 [LauncherHandler] managed launcher from <source> refused: <reason>
 [LauncherHandler] managed settings unreadable: <path>: <reason>
 ```
 
-A repeat of the same line writes nothing. A usable answer between two equal refusals makes the second one log again (claustrum's own). A none answer does the same (claustrum's own). A `process.spawn` refusal writes no `[LauncherHandler]` line.
+A repeat of the same line writes nothing. A usable answer between two equal refusals makes the second one log again. A none answer does the same (claustrum's own). A `process.spawn` refusal writes no `[LauncherHandler]` line.
 
 ## Platform notes
 
