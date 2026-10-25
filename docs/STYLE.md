@@ -148,7 +148,7 @@ Each fact has one home. Link to the home. Do not copy its text.
 
 **Sentence length: 8 to 20 words in a procedure, 8 to 25 words in a description.** Pages average about 8 to 14 words per sentence (baseline of 2026-10-25). A run of sentences under 8 words reads as a list with no thread. Join two related short sentences, and say why before the rule.
 
-**Words in a page.** Every page has a limit in `docWordLimits` (`docs_consistency_test.go`). A page without a row gets the default: 1500 words, or 1200 under `docs/protocol/`. A new page gets its count plus about 200 words. Do not raise an existing limit: cut instead.
+**Words in a page.** Every page except `docs/REFERENCE-BUILDS.md` has a word limit. A row in `docWordLimits` (`docs_consistency_test.go`) sets it, or the default applies: 1500 words, or 1200 under `docs/protocol/`. A new page gets its count plus about 200 words. Do not raise an existing limit: cut instead.
 
 Keep these plain-English rules:
 
@@ -165,7 +165,7 @@ Evidence is the proof for a rule: which build and which system it was measured o
 
 1. **A top line on every page.** Every template has it as the first line after the title, in one fixed form: "An untagged rule on this page matches build `<id>` or an earlier build, measured on Linux, macOS and Windows."
 2. **A tag for each exception.** Put the tag at the end of the block that it covers. The tags are "(measured on Linux only)" (or macOS or Windows), "(not measured)", "(from the code)" and "(claustrum's own)". They stay three separate kinds beside the platform tag. Never merge them. Every rule of those kinds carries its tag. Give each tag hover text with an abbreviation line.
-3. **A scope sentence for a section.** Use one only when all rules of the section share one tag. Say it once under the heading and leave the tags out inside. A mixed section keeps its tags. A tag covers only its own block. If one block holds two rules with different evidence, each rule keeps its tag.
+3. **A scope sentence for a section.** If all rules of the section share one tag, use one. Say it once under the heading and leave the tags out inside. A mixed section keeps its tags. A tag covers only its own block. If one block holds two rules with different evidence, each rule keeps its tag.
 
 Before (the real text of `docs/protocol/git-status.md`):
 
