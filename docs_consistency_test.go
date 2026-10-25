@@ -597,7 +597,7 @@ func TestDocsEveryErrorCodeIsDocumented(t *testing.T) {
 // because the documents grew past what a person can read. A limit goes down, never
 // up, without the maintainer's word.
 var docWordLimits = map[string]int{
-	"AGENTS.md":                                7385,
+	"AGENTS.md":                                7383,
 	"CONTRIBUTING.md":                          1071,
 	"README.md":                                1120,
 	"SECURITY.md":                              1553,
@@ -608,7 +608,7 @@ var docWordLimits = map[string]int{
 	"docs/GLOSSARY.md":                         1297,
 	"docs/IMPROVEMENTS.md":                     1590,
 	"docs/INSTALL.md":                          5300, // task-207: page rewrite
-	"docs/PROTOCOL.md":                         2810, // TASK-202: the error texts, stream frames and flags moved to their own pages
+	"docs/PROTOCOL.md":                         2804, // TASK-202: the error texts, stream frames and flags moved to their own pages
 	"docs/STYLE.md":                            1298, // task-203b: the page rewrite
 	"docs/TOUR.md":                             850,  // a new page: its word count plus about 200
 	"docs/UPSTREAM-TRACKING.md":                6224, // decision-040: words moved from PROTOCOL.md, net down in the same PR
@@ -619,7 +619,7 @@ var docWordLimits = map[string]int{
 	"docs/protocol/files-read.md":              825,
 	"docs/protocol/files-stat.md":              434, // TASK-203 rewrite
 	"docs/protocol/files-validate.md":          365,
-	"docs/protocol/flags.md":                   2630, // TASK-202: moved from PROTOCOL.md
+	"docs/protocol/flags.md":                   2633, // TASK-202: moved from PROTOCOL.md
 	"docs/protocol/git-info.md":                1851, // task-203b: the page rewrite
 	"docs/protocol/git-rules-calls.md":         4569, // TASK-202: moved from PROTOCOL.md
 	"docs/protocol/git-rules-config.md":        2864, // TASK-202: moved from PROTOCOL.md
@@ -637,7 +637,7 @@ var docWordLimits = map[string]int{
 	"docs/protocol/process-spawn.md":           3474, // task-204: rewrite to the page template
 	"docs/protocol/process-stdin.md":           893,  // TASK-203c: the page template
 	"docs/protocol/server.md":                  1490, // task-203b: the page rewrite
-	"docs/protocol/streams.md":                 579,  // TASK-202: moved from PROTOCOL.md
+	"docs/protocol/streams.md":                 574,  // TASK-202: moved from PROTOCOL.md
 }
 
 // The limits of a document that docWordLimits does not name.

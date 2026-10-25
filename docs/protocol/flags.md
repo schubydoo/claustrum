@@ -1,8 +1,8 @@
 # Flags and modes of the binary
 
-This page gives the flags of the claustrum binary and the config keys that match them. It then describes the modes `-serve`, `-bridge`, `-stop` and `-version`, and the rules that every mode shares. The modes `-install` and `-probe-cli` are on the [install page](../INSTALL.md).
+This page gives the flags of the claustrum binary, except `-cli-dir`, `-cli-version`, `-cli-url`, `-cli-checksum` and `-cli-zst` of `-install`, and the config keys that match them. It then describes the modes `-serve`, `-bridge`, `-stop` and `-version`, and the rules that every mode shares. The modes `-install` and `-probe-cli` are on the [install page](../INSTALL.md).
 
-An untagged rule on this page matches build `5fd08069` or an earlier build. The system is not recorded. A section that names a build in its first lines keeps that build.
+An untagged rule on this page matches build `5fd08069` or an earlier build. A section that names its systems or its build keeps that scope.
 
 ## Daemon lifecycle (flags)
 

@@ -2,7 +2,7 @@
 
 This page gives the id-less stream frames that the daemon sends for a process: the `stdout`, `stderr` and `exit` frames, their `seq` numbers and the replay buffer. A process survives the disconnect of the connection that spawned it, and another connection picks it up with `reattach`.
 
-An untagged rule on this page matches build `5fd08069` or an earlier build. The system is not recorded.
+An untagged rule on this page matches build `5fd08069` or an earlier build.
 
 ## Stream notifications
 

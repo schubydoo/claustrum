@@ -2,7 +2,7 @@
 
 This page gives the rules that more than one method shares: the transport, the authentication, the message shapes, the error codes and the path handling. It lists the 20 methods with the page of each, and it links the pages for the error texts, the stream frames, the flags and the shared git rules.
 
-An untagged rule on this page matches build `5fd08069` or an earlier build. The system is not recorded. A section that names a build in its first lines keeps that build.
+An untagged rule on this page matches build `5fd08069` or an earlier build. A section that names its systems or its build keeps that scope.
 
 claustrum uses newline-delimited JSON-RPC 2.0 over an `AF_UNIX`
 `SOCK_STREAM` socket. [Methods (20)](#methods-20) lists the page of each method.

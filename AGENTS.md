@@ -75,7 +75,7 @@ Every OS serves the same JSON-RPC methods.
   not maps. Any change to `rpc.go` / `methods_*.go` / `process.go` /
   `results.go` must keep the socket-integration suite and its golden
   fixtures green (`make test`). An intentional
-  divergence owes two things. Give it an entry with its decision rules in
+  divergence owes two things. Give it an entry in
   [`docs/DIVERGENCES.md`](docs/DIVERGENCES.md). Give it its wire frames in
   [`docs/PROTOCOL.md`](docs/PROTOCOL.md), or in the page of its method under
   `docs/protocol/`. Call it out in the PR.
@@ -92,10 +92,10 @@ Every OS serves the same JSON-RPC methods.
   The history of completed work goes into
   [`docs/IMPROVEMENTS.md`](docs/IMPROVEMENTS.md). The history of a reference
   build goes into [`docs/REFERENCE-BUILDS.md`](docs/REFERENCE-BUILDS.md).
-  Another document links to
-  that home and does not copy the text.
-  [`docs/PROTOCOL.md`](docs/PROTOCOL.md) keeps the sections that more than one
-  method uses. The error texts and the shared git rules have pages
+  Link to
+  that home. Do not copy the text.
+  [`docs/PROTOCOL.md`](docs/PROTOCOL.md) keeps the other sections that more than one
+  method uses. The error texts, the stream frames, the flags and the shared git rules have pages
   under `docs/protocol/`. The rule is for the documents under `docs/`.
   `AGENTS.md` keeps the safety rules of Part A, because an agent must hold
   them before it touches code.
