@@ -95,7 +95,7 @@ nav:
       - Protocol overview: PROTOCOL.md
       - Examples: EXAMPLES.md
       - Methods:
-          - server.* (daemon control): protocol/server.md
+          - server.* (ping, capabilities, shutdown): protocol/server.md
           - Files:
               - files.validate (check a path): protocol/files-validate.md
               - files.stat (inspect a path): protocol/files-stat.md
@@ -108,7 +108,7 @@ nav:
               - git.list_branches (branches): protocol/git-list-branches.md
               - git.worktree_create (new worktree): protocol/git-worktree-create.md
               - git.worktree_remove (delete worktree): protocol/git-worktree-remove.md
-          - launcher.resolve (find the CLI): protocol/launcher-resolve.md
+          - launcher.resolve (managed launcher): protocol/launcher-resolve.md
           - Process:
               - process.spawn (start): protocol/process-spawn.md
               - process.stdin (send input): protocol/process-stdin.md
