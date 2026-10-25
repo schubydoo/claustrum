@@ -2,7 +2,7 @@
 
 Every `git.*` method checks the git directory of its folder before git runs there, unless the `GIT_COMMON_DIR` of the daemon turns the check off for `git.info` and `git.list_branches`. This page gives that check, its refusal texts and the rule for a FIFO.
 
-An untagged rule on this page matches build `5fd08069` or an earlier build. The system is not recorded, unless its section names its systems or its build.
+An untagged rule on this page matches build `5fd08069` or an earlier build. A section that names its systems or its build keeps that scope.
 
 ## Git-directory trust check
 

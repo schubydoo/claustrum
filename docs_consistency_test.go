@@ -619,10 +619,10 @@ var docWordLimits = map[string]int{
 	"docs/protocol/files-stat.md":              434, // TASK-203 rewrite
 	"docs/protocol/files-validate.md":          365,
 	"docs/protocol/git-info.md":                1851, // task-203b: the page rewrite
-	"docs/protocol/git-rules-calls.md":         4571, // TASK-202: moved from PROTOCOL.md
+	"docs/protocol/git-rules-calls.md":         4569, // TASK-202: moved from PROTOCOL.md
 	"docs/protocol/git-rules-config.md":        2864, // TASK-202: moved from PROTOCOL.md
 	"docs/protocol/git-rules-settings-copy.md": 3173, // TASK-202: moved from PROTOCOL.md
-	"docs/protocol/git-rules-trust.md":         4318, // TASK-202: moved from PROTOCOL.md
+	"docs/protocol/git-rules-trust.md":         4316, // TASK-202: moved from PROTOCOL.md
 	"docs/protocol/git-list-branches.md":       998,  // task-203b: the page rewrite
 	"docs/protocol/git-status.md":              3185, // decision-040: a move between pages, net down in the same PR
 	"docs/protocol/git-worktree-create.md":     6951, // decision-050: the trim of the create and remove pages

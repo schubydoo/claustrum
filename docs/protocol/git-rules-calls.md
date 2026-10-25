@@ -2,7 +2,7 @@
 
 The git methods run most git steps as hardened calls. This page gives those calls, their environment, their time limits and the branch step.
 
-An untagged rule on this page matches build `5fd08069` or an earlier build. The system is not recorded, unless its section names its systems or its build.
+An untagged rule on this page matches build `5fd08069` or an earlier build. A section that names its systems or its build keeps that scope.
 
 ## Hardened git calls
 
