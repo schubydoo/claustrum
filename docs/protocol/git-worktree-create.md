@@ -1,6 +1,8 @@
 # git.worktree_create
 
-`git.worktree_create` makes a linked git worktree for a session. It creates a new branch, or attaches the worktree to one that exists. Then it checks out the tracked files and copies some ignored files into it.
+`git.worktree_create` makes a linked git worktree for a session. It creates a new branch, or attaches the worktree to one that exists, then checks out the tracked files and copies some ignored files into it. A failed create can leave things behind. [After a failure](#after-a-failure) lists them.
+
+An untagged rule on this page matches the reference as measured on `5fd08069` or on an earlier build.
 
 ## Request
 
@@ -59,102 +61,16 @@ Decide by `errorCode` first.
 
 A git config of the repository that the daemon does not accept gives `worktree_add_failed`, and nothing is made. The texts are in [Repository config refusals](git-rules-config.md#repository-config-refusals). Three failures of the settings copy do the same: a failed test of the host git, a failed call about the repository, and no folder for the copy.
 
-A request with no `branchName` gets the JSON-RPC error `-32602`. The exact texts are in [Error texts](#error-texts).
-
-## After a failure
-
-A request can create four things outside the worktree, and no failure removes them:
-
-- directories above the worktree
-- the registrations directory `<git dir>/worktrees`
-- with `worktreeRoot`, the marker file `.claude-managed-worktrees` at the `<directory>` level
-- with `worktreeRoot`, the folder of a gone worktree that holds the root
-
-Before the add, a request can remove one stale registration in the common git directory of `baseRepo`. A stale registration is one whose `gitdir` record names the `.git` of the new worktree. If it is the one stale entry and has no `locked` file, it goes. Otherwise none goes. Nothing behind a symbolic link or a junction at `worktrees` goes (measured on Windows with `"shadowDirOff": true`, claustrum's own elsewhere). Two creates through a repository and its linked worktree add in turn.
-
-| Failure | What stays of the worktree |
-|---|---|
-| A refusal of the request or of a path (`not_a_repo`, `nested_base_repo`, `symlinked_component`, and `unsafe_path` for a path) | Nothing, except the folder of a gone worktree above. |
-| A refusal before `git worktree add` (`worktree_add_failed`), or `mkdir_failed` | Nothing. |
-| `git worktree add` runs and fails (`worktree_add_failed`) | If the worktree directory is empty, the daemon removes it. Files that the failed add wrote stay. A registration and a branch that the add made stay too. |
-| A test of the new worktree fails after the add. On Linux and macOS the tests come before the checkout and give `unsafe_path`. A worktree directory replaced during the checkout gives `worktree_add_failed`. So does a failed test on Windows, except a `.git` file that names another staged entry. That gives `unsafe_path`. | Everything, except an empty worktree directory. On Windows, a `.git` file that names another staged entry leaves nothing: the worktree directory and the branch that the request created go. |
-| The checkout or the `config.worktree` step fails, the filter rule refuses, or the deadline expires (`worktree_add_failed`, `repository_only_filter`, `timeout`). Or the text holds `; retry` before any clause of the rollback (Linux and macOS). | The daemon removes the worktree directory and its registration. If this request created the branch, the daemon removes the branch too. |
-
-A rollback leaves something in these cases:
-
-- If the branch holds commits that no other ref reaches, the daemon keeps the branch. The response then has `"branchKept": true`.
-- After a failed `config.worktree` step, a refused second config read keeps the branch without `branchKept` (Linux and macOS).
-- If a delete fails, the error text ends with a clause that says what remains. If the files of the worktree cannot be deleted, the registration and the branch stay. A registration that cannot be deleted keeps the branch too, on Windows only for a moved registration (not measured on Windows). On Linux and macOS in the state `shadow`, after an empty answer of git about the git directory, a registration that cannot be deleted adds no clause, and the branch step runs (claustrum's own). On Windows a registration that stays adds no clause, unless the create moved it (not measured).
-- If something replaced the worktree directory, the rollback keeps the replacement and adds no clause. It also keeps a replaced registration directory ([D24](../DIVERGENCES.md#d24)).
-
-## Git filters
-
-In the state `shadow`, a checkout file that uses a filter that only the repository config defines fails the request:
-
-```json
-{"success": false, "error": "Claude doesn't run the \"<name>\" git filter, because only this repository's own git config defines it. If you trust that filter, copy the [filter \"<name>\"] section from that config (usually .git/config) into ~/.gitconfig on the remote machine, then try again.", "errorCode": "repository_only_filter"}
-```
-
-In the state `fallback-git` git runs the filters, and this section does not apply. In the state `shadow`:
-
-- A filter is defined where its `smudge` or `process` key has a value. A file that the repository config includes counts as that config, also through `includeIf`, whatever its condition. With a settings copy, a last `smudge` or `process` line with no `=` in .git/config is a definition too.
-- A filter of the user or system config or of the daemon environment runs with its values, also if the repository defines it. With a settings copy, an outside `process = cat` is no outside definition, so a repository `smudge` command is refused.
-- With a user `lfs.storage` the checkout gets no `lfs.storage` item of the daemon (Linux, macOS and Windows). A failing user `smudge` fails the request where the repository adds only `required = true`, `yes` or `1`.
-- Three repository values pass: `smudge = cat` under each name, and `git-lfs smudge -- %f` and `git-lfs filter-process` under `lfs`. With a settings copy `git-lfs smudge --skip %f` passes under `lfs` too. A filter whose values are all `cat` gets no item.
-- With a settings copy, a `smudge` value that does not pass refuses the filter, in .git/config or in an `includeIf` file, in either order. In .git/config only the last value counts. A plain include file and `config.worktree` count the same way (not measured).
-- With a settings copy, a refused name that is not valid UTF-8 gets success on Windows. On Linux it gets the checkout text of git less those bytes.
-- With a settings copy, a repository-only `lfs` filter with the `git lfs install` lines gets those lines as items. A git-lfs program key of the repository refuses nothing, and its program does not run. With no settings copy such a key turns the filter `lfs` off (claustrum's own).
-- A failed checkout text with `smudge filter lfs failed` gets a note about ssh, credential and proxy settings after it.
-
-[Error texts](#error-texts) has the other refusals of the rule.
-
-## The settings copy
-
-The git calls of the daemon read its own copy of the repository's git settings. [The settings copy](git-rules-settings-copy.md#the-settings-copy) has the states, the texts and the folder. For this method:
-
-- A missing `<git dir>/worktrees` is made before the add, with mode 0777 less the umask. It stays after a failed add. On Linux and macOS a last `core.sharedrepository` line of the copy other than `umask` sets its mode. macOS is not measured.
-- With `extensions.worktreeConfig` the new worktree gets the `config.worktree` file of `<git dir>`, or of a linked `baseRepo`, less `core.bare` and `core.worktree`.
-- A bare `baseRepo` gets `not_a_repo`.
-- While a `"shadowDirOff": true` request runs, the checkout has its index in `claude-ssh-index-<n>` of the temporary folder.
-- In the state `shadow`, a failed `rev-parse --absolute-git-dir` stops the create with `git worktree add failed: cannot locate the repository's git directory: exit status 128`. macOS is not measured.
-- On Linux and macOS, a linked worktree as `baseRepo` whose registration entry is a symbolic link gets the trust refusal after the prefix `git worktree add failed: cannot locate the repository's git directory: `. The code is `worktree_add_failed`. A path that fails the path tests, or that exists, gets this text too (claustrum's own). Without `worktreeRoot`, the create first makes the parent folders of the worktree, such as `.claude/worktrees`. It makes them only for a `worktreePath` that passes the path tests and does not exist (claustrum's own, not measured). This is measured on Linux only, with `extensions.worktreeConfig` and a `config.worktree` file. Other forms are not measured.
-- On Linux and macOS a symbolic link, a file or a folder that cannot be opened at `worktrees` gives `git worktree add failed: cannot prepare the repository's worktrees directory: <cause>`, and no `worktree add` runs. On Windows any failed step before the add does the same.
-- On Windows git writes the registration into a short-lived folder of the daemon. The daemon copies it into `<git dir>\.claude-new-worktree-<16 hex>` and renames that folder to the first free name of `<name>`, `<name>1` to `<name>99` in `<git dir>\worktrees`. A held folder gets 2 s of retries, also past `timeoutMs`. A rename that still fails gives `worktree_add_failed`, and the rollback removes the staging folder. A failed write of the `.git` file of the worktree, and a rollback, remove the moved registration by its name. `config.worktree` and the index are new files there.
-- On Windows, before that step, a create removes old staging entries of the git directory. Their name starts with `.claude-new-worktree-`, and their write time is 1 hour or more. A junction goes as a junction, and its target stays.
-
-With `"shadowDirOff": true`, a link or a file at `worktrees` refuses the add after its listing (Linux, macOS and Windows). A file there on Windows is not measured.
-
-## The held git directory
-
-In the state `shadow` a create holds the git directory of `baseRepo` open from its gate to its reply. The gate is the trust check of the git directory and the daemon's own read of its config.
-
-- The git directory must be a real directory at the gate (the test is claustrum's own). On Windows a junction or a directory symbolic link there is refused, on every git method without `"shadowDirOff": true`. With that member both link kinds pass, and git works in the folder behind the link. On Linux and macOS a `.git` that is a symbolic link before the request is resolved, and the daemon holds its target.
-- The daemon's own deletes, renames, new folders and file writes inside the git directory go through the held folder. A folder that is put at the path while the create runs gets none of them, except the directory that the hold moves to.
-- On Linux and macOS two swaps move the hold to a copy of the git directory, and the create goes on in the copy. One is a link to the copy at `.git` after the first call or after `rev-parse --abbrev-ref HEAD`. The other is a real copy put there while `git worktree add` runs.
-- Any other swap after `rev-parse --absolute-git-dir` answered and before the add refuses the create before the add.
-- A swap after the read-tree call fails the create with a text that starts `git worktree add failed (checkout): `. On Windows a swap after the first listing of the checkout does the same. The registration gets no index. It and the branch stay, and the text says so.
-- These go by the path: git itself, a host in the state `fallback-git` or with no run folder, and a request with `"shadowDirOff": true`. So does a request that starts while such a request runs, until a later gate before its first good add (claustrum's own). Before that gate, or with a `worktrees` folder outside the held folder, the stale-registration step goes by the path too (from the code).
-
-## The copy of ignored files
-
-After the checkout, the daemon copies two sets of files from `baseRepo` into the new worktree:
-
-- The ignored files that the root file `.worktreeinclude` names. That file uses the syntax of `.gitignore`.
-- The ignored files under `.claude/`.
-
-Neither set includes `.claude/worktrees` or the session state of Claude under `.claude/`, for example `checkpoints`, `mailbox` and `scheduled_tasks.json`.
-
-Each copy is a new file with mode `0666` less the umask, not the mode of its source. The daemon skips symbolic links. A copy does not replace a file or a link that the checkout made.
-
-A copy that fails does not fail the request. If the deadline of `timeoutMs` expires during the copy, the request fails with `timeout`. A scan of ignored files stops at 10 minutes ([Time limits of git calls](git-rules-calls.md#time-limits-of-git-calls)). Then nothing is copied, the `.claude/` pass included (claustrum's own, not measured).
+A request with no `branchName` gets the JSON-RPC error `-32602`.
 
 ## Error texts
 
-Each text is in `error`, unless the row names a JSON-RPC error. The shared texts are in the [error-string catalog](../PROTOCOL.md#error-string-catalogue). A row with no mark holds a text of the reference, measured on Linux. A mark such as "measured on macOS" limits its sentence to that system. A sentence that names systems without "measured" holds on each one.
+Each text is in `error`, unless the row names a JSON-RPC error. The shared texts are in the [error-string catalogue](../PROTOCOL.md#error-string-catalogue). A row with no mark holds a text of the reference, measured on Linux. A mark such as "measured on macOS" limits its sentence to that system. A sentence that names systems without "measured" holds on each one.
+
+### Request, path, folder and post-add refusals
 
 | Text | Code and cause |
 |---|---|
-| `git worktree add failed (completing the new worktree's git files): this repository's git config cannot be used: git did not finish reading it within 30 seconds; try again` | `worktree_add_failed`. The listing of `config.worktree` after the add ran 30 s. The rollback of a failed checkout runs |
 | `branchName is required` | JSON-RPC error `-32602` |
 | `not a git repository` | `errorCode:"not_a_repo"` |
 | `refusing to create worktree: <p> {is a relative path / contains a ".." component / has a component Windows reads as a different name (trailing dot or space, or a colon) [Windows] / is not inside the repository <repo>; … / already exists, …}` | `errorCode:"unsafe_path"`. The spelling refusal is Windows only and comes before containment. On Linux and macOS the `already exists` text cleans `<p>`. It resolves the symlinks of the parent folder of the leaf and keeps the last name. `<repo>` is `baseRepo` as sent, so an absent `baseRepo` gives the empty string. With `worktreeRoot`, the first two texts also refuse a relative, absent or `..` `baseRepo`, and `<p>` is then `baseRepo` as sent |
@@ -189,11 +105,17 @@ Each text is in `error`, unless the row names a JSON-RPC error. The shared texts
 | `refusing to create worktree: <dir> is writable by <who> (mode <mode>); choose a directory only you can write to, or remove the extra write permission (chmod go-w)` | `errorCode:"unsafe_path"`, for the root, and for the `<directory>` level |
 | `failed to create parent directory: cannot determine the repository's work tree: <exec error>` | `errorCode:"mkdir_failed"` |
 | `failed to create parent directory: cannot list the repository's worktrees: <exec error>` | `errorCode:"mkdir_failed"` |
+
+### Add and checkout failures
+
+| Text | Code and cause |
+|---|---|
 | `git worktree add failed: <text>` | `errorCode:"worktree_add_failed"`. `<text>` is made from git's stderr by the [text rule](git-rules-trust.md#the-cannot-run-and-hooks-refusal-texts). The text of claustrum does not start with git's graft-file `hint:` lines. The rollback runs no git call and removes the leaf only if it is empty. A branch that existed before is not deleted. A failed add answers this frame also when the caller `timeoutMs` expired during the add (measured on macOS) |
 | `git worktree add failed (completing the new worktree's git files): <cause>` | `errorCode:"worktree_add_failed"`, when the `config.worktree` step after the add fails. On Windows a failed staging step gives it, such as `git registered <n> worktrees where one was expected; try again` or `the repository already has a hundred worktrees called "<name>"; remove some (git worktree prune, git worktree remove)`. No checkout runs, and the rollback is that of a failed checkout. It wins over an expired `timeoutMs`. Linux, macOS and Windows |
+| `git worktree add failed (completing the new worktree's git files): this repository's git config cannot be used: git did not finish reading it within 30 seconds; try again` | `worktree_add_failed`. The listing of `config.worktree` after the add ran 30 s. The rollback of a failed checkout runs |
 | `git worktree add failed: <fallback text> (attaching to the existing branch <b> was refused first: <attach text>)` | `errorCode:"worktree_add_failed"`, when the attach add for `existingBranch` fails and the fallback `-b <branchName>` add fails too. The text rule makes each text on its own, each with its own 512-byte cap (measured on macOS) |
 | `git worktree add failed (checkout): <text>` | `errorCode:"worktree_add_failed"`, when the `read-tree` checkout fails. Same text rule, and the same rule for the `hint:` lines. With a settings copy a `<text>` that holds `smudge filter lfs failed` after the cut gets `. Claude doesn't use ssh, credential, or proxy settings from this repository's own git config. If the download needs one and you trust that setting, copy it into ~/.gitconfig on the remote machine, then try again.` after it. The new directory is removed. The branch the call created goes only when another ref reaches its tip (see [The branch step](git-rules-calls.md#the-branch-step)). In attach mode the attached branch is kept. A failed placement of the index answers this frame too. On Linux and macOS its OS error is `openat <registration name>/index: permission denied` or `open <temporary directory>/index: no such file or directory`, or claustrum's own `the registration <p> is not the folder that was tested after the add` (D24, not measured). On Windows it is `openat index: <cause>`, or claustrum's own `the registration <p> is not the folder that was moved into place` (D24, not measured) |
-| `Claude doesn't run the "<name>" git filter, because only this repository's own git config defines it. If you trust that filter, copy the [filter "<name>"] section from that config (usually .git/config) into ~/.gitconfig on the remote machine, then try again.` | `errorCode:"repository_only_filter"`, in the state `shadow`. A quote mark in `<name>` has a backslash before it. Linux and Windows. See [Git filters](#git-filters) |
+| `Claude doesn't run the "<name>" git filter, because only this repository's own git config defines it. If you trust that filter, copy the [filter "<name>"] section from that config (usually .git/config) into ~/.gitconfig on the remote machine, then try again.` | `errorCode:"repository_only_filter"`, in the state `shadow`. A quote mark in `<name>` has a backslash before it. Linux and Windows. |
 | `git worktree add failed (checkout): this repository's git config cannot be used: a filter defined only there has a name longer than 200 bytes (it starts "<first 40 bytes>"); define it in ~/.gitconfig on the remote machine, or rename it` | `errorCode:"worktree_add_failed"`, in the state `shadow`, for such a filter with a name over 200 bytes. The rollback is the one of a failed checkout. Linux and Windows |
 | `git worktree add failed (checkout): this repository's git config cannot be used: it defines more than 64 filters` | `errorCode:"worktree_add_failed"`, in the state `shadow` with a settings copy, when the repository config has more than 64 filter names. A name with a `smudge` key counts (Linux, macOS and Windows), and so does one with only a `clean` key (Linux and macOS). A name with only other keys counts too (claustrum's own). No read-tree call runs, and the rollback is the one of a failed checkout. The text wins over the texts of a name with `=` and of a name over 200 bytes. A failed config listing wins over it |
 | `git worktree add failed (checkout): Claude could not read your own git config on the remote machine (<cause>). Run git config --list there to see the problem.` | `errorCode:"worktree_add_failed"`, in the state `shadow` with a settings copy, when the config listing right before the checkout fails. No read-tree call runs, and the rollback is the one of a failed checkout. `<cause>` is `exit status 1` for a listing that exits 1 (Linux, macOS and Windows). On Windows a `.git` that became a regular file during the first listing can make the second listing fail with `exit status 128`. That holds also while a child holds stdout past 30 s (claustrum's own, not measured). A git that still runs at 30 seconds is stopped as in [Time limits of git calls](git-rules-calls.md#time-limits-of-git-calls). Unless it exits 0, `<cause>` is then `git took too long: Claude stopped git config after 30 seconds; try again`. An exit 0 counts, also with stdout held past 30 s. The `timeoutMs` of the caller does not end the listing. |
@@ -201,17 +123,117 @@ Each text is in `error`, unless the row names a JSON-RPC error. The shared texts
 | `git worktree add failed (checkout): this repository's git config cannot be used: the filter "<name>" is defined only there, and Claude cannot handle "=" in a filter's name; define it in ~/.gitconfig on the remote machine, or rename it` | `errorCode:"worktree_add_failed"`, in the state `shadow`, for such a filter with `=` in its name. The rollback is the one of a failed checkout |
 | `git worktree add failed (checkout): this repository's git config cannot be used: it names a program for git-lfs ("<key>"); remove that setting, or put it into ~/.gitconfig on the remote machine` | `errorCode:"worktree_add_failed"`, in the state `shadow` and only with no settings copy. A path uses the filter `lfs` of the user or the system config. The config of the repository has the key `<key>`, a program key of git-lfs. The rollback is the one of a failed checkout. The text is claustrum's own |
 | `git worktree add failed (checkout): the git filter "<name>" has values in this repository's git config that no option of git can replace for the checkout` | `errorCode:"worktree_add_failed"`, in the state `shadow` (claustrum's own, not measured). With no settings copy it answers a repository `process` key beside an outside filter with none. It also answers a shared name with `=` and a name that is not valid UTF-8 there. With a copy it answers a shared name with `=` or one that is not valid UTF-8 where the repository adds only `required = true`. With a copy the reference answers success for the `process` key, and claustrum follows it |
-| `git worktree add timed out after <n>ms (deadline expired {before the checkout started / during the checkout): <text> / after the checkout finished})` | `errorCode:"timeout"`, from the caller-supplied `timeoutMs`. An absent `timeoutMs`, or 0, arms no deadline. `<text>` comes from the stderr of the killed git, by the same text rule |
+| `git worktree add timed out after <n>ms (deadline expired {before the checkout started / during the checkout): <text> / after the checkout finished})` | `errorCode:"timeout"`, from the caller-supplied `timeoutMs`. `<text>` comes from the stderr of the killed git, by the same text rule |
 | `<frame>; and the undo could not finish for <leaf>: {the worktree directory, its registration, and the branch all remain; remove them by hand before retrying (RemoveAll <entry>: <OS error>) / the worktree directory remains (re-populated while undoing?); remove it by hand before retrying (removeat <leaf base name>: <OS error>)}` | Appended to the checkout-failure frame and to each `timeout` frame when a step of the rollback fails. The `errorCode` stays as it was. The two texts in braces were measured on Windows only. In attach mode the first text reads `the worktree directory and its registration both remain` instead, because the call made no branch. On Linux and macOS a registration that cannot be deleted gives `the worktree registration and the branch remain; remove them by hand before retrying (RemoveAll <registration name>: <OS error>)` instead, with the leaf removed. In attach mode it reads `the worktree registration remains; remove it by hand before retrying (RemoveAll <registration name>: <OS error>)`. The text in the parentheses of a registration text can be claustrum's own. No rmdir text joins either one |
 | `<frame>; and the undo could not finish for <leaf>: <branch part>` | Appended when the branch step of the rollback keeps the branch that the call made. After a failed leaf rmdir, the branch part follows the rmdir text after `; `. Some cases also add `"branchKept":true` after `errorCode`. [The branch step](git-rules-calls.md#the-branch-step) gives each `<branch part>` and each case |
 
+## The main steps
+
+```mermaid
+flowchart TD
+    A["gate"] --> C["git worktree add"] --> E["config.worktree step"] --> F["checkout"] --> G["copy of ignored files"]
+```
+
+## The held git directory
+
+In the state `shadow` a create holds the git directory of `baseRepo` open from its gate to its reply. The gate is the trust check of the git directory and the daemon's own read of its config.
+
+- The git directory must be a real directory at the gate (the test is claustrum's own). On Windows a junction or a directory symbolic link there is refused, on every git method without `"shadowDirOff": true`. With that member both link kinds pass, and git works in the folder behind the link. On Linux and macOS a `.git` that is a symbolic link before the request is resolved, and the daemon holds its target.
+- The daemon's own deletes, renames, new folders and file writes inside the git directory go through the held folder. A folder that is put at the path while the create runs gets none of them, except the directory that the hold moves to ([Rare states](#rare-states)).
+- These go by the path: git itself, a host in the state `fallback-git` or with no run folder, and a request with `"shadowDirOff": true`. So does a request that starts while such a request runs, until a later gate before its first good add (claustrum's own). Before that gate, or with a `worktrees` folder outside the held folder, the stale-registration step goes by the path too (from the code).
+
+## The settings copy
+
+The git calls of the daemon read its own copy of the repository's git settings. [The settings copy](git-rules-settings-copy.md#the-settings-copy) has the states, the texts and the folder. For this method:
+
+- A missing `<git dir>/worktrees` is made before the add, with mode 0777 less the umask. It stays after a failed add. On Linux and macOS a last `core.sharedrepository` line of the copy other than `umask` sets its mode. macOS is not measured.
+- With `extensions.worktreeConfig` the new worktree gets the `config.worktree` file of `<git dir>`, or of a linked `baseRepo`, less `core.bare` and `core.worktree`.
+- While a `"shadowDirOff": true` request runs, the checkout has its index in `claude-ssh-index-<n>` of the temporary folder.
+- In the state `shadow`, a failed `rev-parse --absolute-git-dir` stops the create with `git worktree add failed: cannot locate the repository's git directory: exit status 128`. macOS is not measured.
+- On Linux and macOS, a linked worktree as `baseRepo` whose registration entry is a symbolic link gets the trust refusal after the prefix `git worktree add failed: cannot locate the repository's git directory: `. The code is `worktree_add_failed`. A path that fails the path tests, or that exists, gets this text too (claustrum's own). Without `worktreeRoot`, the create first makes the parent folders of the worktree, such as `.claude/worktrees`. It makes them only for a `worktreePath` that passes the path tests and does not exist (claustrum's own, not measured). This is measured on Linux only, with `extensions.worktreeConfig` and a `config.worktree` file. Other forms are not measured.
+
+## Git filters
+
+In the state `shadow`, a checkout that needs a filter that only the repository config defines, with a value that does not pass, fails the request. The texts are in [Error texts](#error-texts).
+
+In the state `fallback-git` git runs the filters, and this section does not apply. In the state `shadow`:
+
+- A filter is defined where its `smudge` or `process` key has a value. A file that the repository config includes counts as that config, also through `includeIf`, whatever its condition. With a settings copy, a last `smudge` or `process` line with no `=` in .git/config is a definition too.
+- A filter of the user or system config or of the daemon environment runs with its values, also if the repository defines it. With a settings copy, an outside `process = cat` is no outside definition, so a repository `smudge` command is refused.
+- With a user `lfs.storage` the checkout gets no `lfs.storage` item of the daemon (Linux, macOS and Windows). A failing user `smudge` fails the request where the repository adds only `required = true`, `yes` or `1`.
+- Three repository values pass: `smudge = cat` under each name, and `git-lfs smudge -- %f` and `git-lfs filter-process` under `lfs`. With a settings copy `git-lfs smudge --skip %f` passes under `lfs` too. A filter whose values are all `cat` gets no item.
+- With a settings copy, a `smudge` value that does not pass refuses the filter, in .git/config or in an `includeIf` file, in either order. In .git/config only the last value counts. A plain include file and `config.worktree` count the same way (not measured).
+- With a settings copy, a refused name that is not valid UTF-8 gets success on Windows. On Linux it gets the checkout text of git less those bytes.
+- With a settings copy, a repository-only `lfs` filter with the `git lfs install` lines gets those lines as items. A git-lfs program key of the repository refuses nothing, and its program does not run. With no settings copy such a key turns the filter `lfs` off (claustrum's own).
+- A failed checkout text with `smudge filter lfs failed` gets a note about ssh, credential and proxy settings after it.
+
+## The copy of ignored files
+
+After the checkout, the daemon copies two sets of files from `baseRepo` into the new worktree:
+
+- The ignored files that the root file `.worktreeinclude` names. That file uses the syntax of `.gitignore`.
+- The ignored files under `.claude/`.
+
+Neither set includes `.claude/worktrees` or the session state of Claude under `.claude/`, for example `checkpoints`, `mailbox` and `scheduled_tasks.json`.
+
+Each copy is a new file with mode `0666` less the umask, not the mode of its source. The daemon skips symbolic links. A copy does not replace a file or a link that the checkout made.
+
+A copy that fails does not fail the request. If the deadline of `timeoutMs` expires during the copy, the request fails with `timeout`. A scan of ignored files stops at 10 minutes ([Time limits of git calls](git-rules-calls.md#time-limits-of-git-calls)). Then nothing is copied, the `.claude/` pass included (claustrum's own, not measured).
+
+## After a failure
+
+A request can create four things outside the worktree, and no failure removes them:
+
+- directories above the worktree
+- the registrations directory `<git dir>/worktrees`
+- with `worktreeRoot`, the marker file `.claude-managed-worktrees` at the `<directory>` level
+- with `worktreeRoot`, the folder of a gone worktree that holds the root
+
+Before the add, a request can remove one stale registration in the common git directory of `baseRepo`. A stale registration is one whose `gitdir` record names the `.git` of the new worktree. If it is the one stale entry and has no `locked` file, it goes. Otherwise none goes. Nothing behind a symbolic link or a junction at `worktrees` goes (measured on Windows with `"shadowDirOff": true`, claustrum's own elsewhere). Two creates through a repository and its linked worktree add in turn.
+
+| Failure | What stays of the worktree |
+|---|---|
+| A refusal of the request or of a path (`not_a_repo`, `nested_base_repo`, `symlinked_component`, and `unsafe_path` for a path) | Nothing, except the folder of a gone worktree above. |
+| A refusal before `git worktree add` (`worktree_add_failed`), or `mkdir_failed` | Nothing. |
+| `git worktree add` runs and fails (`worktree_add_failed`) | If the worktree directory is empty, the daemon removes it. Files that the failed add wrote stay. A registration and a branch that the add made stay too. |
+| A test of the new worktree fails after the add. On Linux and macOS the tests come before the checkout and give `unsafe_path`. A worktree directory replaced during the checkout gives `worktree_add_failed`. So does a failed test on Windows, except a `.git` file that names another staged entry. That gives `unsafe_path`. | Everything, except an empty worktree directory. On Windows, a `.git` file that names another staged entry leaves nothing: the worktree directory and the branch that the request created go. |
+| The checkout or the `config.worktree` step fails, the filter rule refuses, or the deadline expires (`worktree_add_failed`, `repository_only_filter`, `timeout`). Or the text holds `; retry` before any clause of the rollback (Linux and macOS). | The daemon removes the worktree directory and its registration. If this request created the branch, the daemon removes the branch too. |
+
+??? note "When a rollback leaves something"
+
+    A rollback leaves something in these cases:
+
+    - If the branch holds commits that no other ref reaches, the daemon keeps the branch. The response then has `"branchKept": true`.
+    - After a failed `config.worktree` step, a refused second config read keeps the branch without `branchKept` (Linux and macOS).
+    - If a delete fails, the error text ends with a clause that says what remains. If the files of the worktree cannot be deleted, the registration and the branch stay. A registration that cannot be deleted keeps the branch too, on Windows only for a moved registration (not measured on Windows). On Linux and macOS in the state `shadow`, after an empty answer of git about the git directory, a registration that cannot be deleted adds no clause, and the branch step runs (claustrum's own). On Windows a registration that stays adds no clause, unless the create moved it (not measured).
+    - If something replaced the worktree directory, the rollback keeps the replacement and adds no clause.
+
 ## Differences by system
 
-| | Linux and macOS | Windows |
-|---|---|---|
-| `worktreeRoot` | Allowed. | Refused with `unsafe_path`. |
-| A junction between `baseRepo` and the worktree | Does not apply. | Refused with `mkdir_failed`. |
-| The stale registration | Removed by the rule of [After a failure](#after-a-failure). The compare keeps letter case. | The same rule, after `rev-parse --absolute-git-dir`. The compare ignores letter case, measured for a create that holds its git directory. An entry whose record names a path that exists stays ([D27](../DIVERGENCES.md#d27)). |
+=== "Linux and macOS"
+
+    - A junction between `baseRepo` and the worktree does not apply.
+    - The stale registration is removed by the rule of [After a failure](#after-a-failure). The compare keeps letter case.
+
+=== "Windows"
+
+    - A junction between `baseRepo` and the worktree is refused with `mkdir_failed`.
+    - The stale registration goes by the same rule, after `rev-parse --absolute-git-dir`. The compare ignores letter case, measured for a create that holds its git directory. An entry whose record names a path that exists stays ([D27](../DIVERGENCES.md#d27)).
+    - In the state `shadow`, git writes the registration into a short-lived folder of the daemon. The daemon copies it into `<git dir>\.claude-new-worktree-<16 hex>` and renames that folder to the first free name of `<name>`, `<name>1` to `<name>99` in `<git dir>\worktrees`. A held folder gets 2 s of retries, also past `timeoutMs`. A rename that still fails gives `worktree_add_failed`, and the rollback removes the staging folder. A failed write of the `.git` file of the worktree, and a rollback, remove the moved registration by its name. `config.worktree` and the index are new files there.
+    - Before that step, a create removes old staging entries of the git directory. Their name starts with `.claude-new-worktree-`, and their write time is 1 hour or more. A junction goes as a junction, and its target stays.
+
+## Rare states
+
+??? note "When the git directory is replaced during a create"
+
+    - On Linux and macOS two swaps move the hold to a copy of the git directory, and the create goes on in the copy. One is a link to the copy at `.git` after the first call or after `rev-parse --abbrev-ref HEAD`. The other is a real copy put there while `git worktree add` runs.
+    - Any other swap after `rev-parse --absolute-git-dir` answered and before the add refuses the create before the add.
+    - A swap after the read-tree call fails the create with a text that starts `git worktree add failed (checkout): `. On Windows a swap after the first listing of the checkout does the same. The registration gets no index. It and the branch stay, and the text says so.
+
+??? note "A failed step before the add"
+
+    - In the state `shadow` on Windows, a failed step that prepares the add (for example the `worktrees` folder, the read of the registrations, the folder `.s<n>` and its copy, or a swap of `.git`) gives `git worktree add failed: cannot prepare the repository's worktrees directory: <cause>`, and no `worktree add` runs.
+    - With `"shadowDirOff": true`, a link or a file at `worktrees` refuses the add after its listing (Linux, macOS and Windows). A file there on Windows is not measured.
 
 ## Differences from the reference
 
@@ -221,4 +243,4 @@ These entries of the divergence catalog apply to this method:
 - [D24](../DIVERGENCES.md#d24): a rollback and the index placement leave a registration directory that something replaced. On Windows a rollback after a swap of the `.git` file of the worktree runs no git call.
 - [D27](../DIVERGENCES.md#d27): on Windows the stale step keeps an entry whose record names a path that exists.
 
-An unmarked rule on this page matches the reference as measured on `5fd08069` or on an earlier build. The settings copy, the held git directory, the filter rule and the Windows staging step are measured on `5fd08069`, the branch step of a rollback on `89cb6289`. On Linux and macOS the stale-registration step is measured on `89cb6289`, and the modes and texts of the parent step on `f6010b97`. The measured cells are in the tests and in the [reference build history](../REFERENCE-BUILDS.md).
+The settings copy, the held git directory, the filter rule and the Windows staging step are measured on `5fd08069`, the branch step of a rollback on `89cb6289`. On Linux and macOS the stale-registration step is measured on `89cb6289`, and the modes and texts of the parent step on `f6010b97`.
