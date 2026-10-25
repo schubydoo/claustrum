@@ -4,17 +4,17 @@ This guide gives one template for each page type, the limits for a page, and the
 
 ## Page types
 
-Each page has one type. The type sets the order of the sections. The site map names the type of every page.
+Each page has one type. The type sets the order of the sections.
 
 | Type | Reader's question | Example |
 |---|---|---|
-| Tutorial | How do I get a first result? | A tour of one session |
-| How-to | How do I do this task? | Run the daemon |
-| Reference | What exactly does this do? | A method page |
-| Explanation | Why does it work this way? | Architecture |
-| Record | What happened, and when? | Reference builds |
+| Tutorial | How do I get a first result? | [Worked client sessions](EXAMPLES.md) |
+| How-to | How do I do this task? | [Running the daemon](DAEMON.md) |
+| Reference | What exactly does this do? | [git.status](protocol/git-status.md) |
+| Explanation | Why does it work this way? | [Architecture](ARCHITECTURE.md) |
+| Record | What happened, and when? | [Reference builds](REFERENCE-BUILDS.md) |
 
-Do not mix types on one page. A how-to that stops to explain a design loses the reader. Link to the explanation instead.
+Do not mix types on one page. Link to the explanation instead of explaining in a how-to.
 
 ## Templates
 
@@ -25,7 +25,7 @@ Do not mix types on one page. A how-to that stops to explain a design loses the 
 
 Summary in 2 or 3 sentences. Say what the method does, when a client calls it, and its one surprise.
 
-An unmarked rule on this page matches build `<id>`.
+An untagged rule on this page matches build `<id>` or an earlier build, measured on Linux, macOS and Windows.
 
 ## Request
 Example frame, then a table of parameters.
@@ -62,6 +62,8 @@ Link to each divergence entry.
 
 Summary: the goal and the result, in 2 sentences.
 
+An untagged rule on this page matches build `<id>` or an earlier build, measured on Linux, macOS and Windows.
+
 ## Before you start
 What the reader needs: a version, a file, a right.
 
@@ -83,6 +85,8 @@ One row for each known failure: the symptom and the fix.
 
 Summary: the end result and the time it takes.
 
+An untagged rule on this page matches build `<id>` or an earlier build, measured on Linux, macOS and Windows.
+
 ## Before you start
 ## Step 1: <name>
 Each step ends with something the reader sees.
@@ -96,6 +100,8 @@ Links to the how-to and reference pages.
 # The thing, as a noun phrase
 
 Summary: the question this page answers.
+
+An untagged rule on this page matches build `<id>` or an earlier build, measured on Linux, macOS and Windows.
 
 ## The idea
 ## How it works
@@ -112,6 +118,8 @@ The cost and the alternative that lost.
 
 Summary: what the record holds and who keeps it.
 
+An untagged rule on this page matches build `<id>` or an earlier build, measured on Linux, macOS and Windows.
+
 ## Table
 One row for each entry, newest first.
 
@@ -123,22 +131,24 @@ One short section for each entry, in the same order.
 
 The main text holds what a reader needs in the common case. A rule that the reader acts on stays on the page, with one example for each rule that a client applies.
 
-Put a rare state in a collapsed block (`??? note "Title"`). A rare state is a rule that applies to one input in a thousand, such as a link in a path. A reader who does not meet it skips it. A collapsed block still counts for the word limit.
+Put a rare state in a collapsed block (`??? note "Title"`). A rare state is a state a client reaches only in an unusual setup, such as a link in a path. A collapsed block still counts for the word limit.
 
 Move these out of the page:
 
-- History of builds, and "before, claustrum did X".
-- Measurements, run counts, cell names and round names.
-- VM names and tags.
-- Private tools and lab notes. This repo serves forks, so name no tool that a fork does not have.
+- History of builds, and "before, claustrum did X": to [the shipped ledger](IMPROVEMENTS.md) or [the reference builds](REFERENCE-BUILDS.md).
+- Cell names, round names, run counts, VM names and tags, and private tools: out of the repo. This repo serves forks, so name no tool that a fork does not have.
+
+A fact tagged "not measured" or "from the code" stays on the page. It tells the reader how far to trust the rule.
 
 Each fact has one home. Link to the home. Do not copy its text.
 
 ## Limits
 
-**Words between two headings: at most 250.** The short method pages of the baseline run 140 to 250 words under a heading, and a reader finishes them. The long pages run 1,000 words and more under one heading, and a reader loses the thread. If a section grows past 250 words, split it under a new heading or move a rare part to a collapsed block.
+**Words between two headings: at most 250.** This is a target for new and rewritten text. No test enforces it yet.
 
-**Sentence length: 8 to 20 words in a procedure, 8 to 25 words in a description.** The site average today is 9 to 14 words. A run of sentences under 8 words reads as a list with no thread. Join two related short sentences, and say why before the rule.
+**Sentence length: 8 to 20 words in a procedure, 8 to 25 words in a description.** Pages average about 8 to 14 words per sentence (baseline of 2026-10-25). A run of sentences under 8 words reads as a list with no thread. Join two related short sentences, and say why before the rule.
+
+**Words in a page.** Every page has a limit in `docWordLimits` (`docs_consistency_test.go`). A page without a row gets the default: 1500 words, or 1200 under `docs/protocol/`. A new page gets its count plus about 200 words. Do not raise an existing limit: cut instead.
 
 Keep these plain-English rules:
 
@@ -151,22 +161,22 @@ Keep these plain-English rules:
 
 ## Evidence marks
 
-Evidence is the proof for a rule: which build and which system it was measured on. Do not repeat it after every sentence. Use three tools.
+Evidence is the proof for a rule: which build and which system it was measured on. Do not repeat it after every sentence, and never drop a fact to save a tag.
 
-1. **One top line.** Each page opens with one sentence. It names the build that the unmarked rules match, for example "An unmarked rule on this page matches build `5fd08069` or an earlier build, as measured on Linux, macOS and Windows."
-2. **A short tag for an exception.** Put the tag at the end of the block that it covers, in plain words: "(Linux only)", "(own, unmeasured)" or "(from the code)". Give each tag hover text with an abbreviation line, such as `*[Linux only]: Measured on Linux alone.`
-3. **One scope sentence for a whole section.** Say so once under the heading, when every rule in a section has the same class of evidence. Then add no tags inside it.
+1. **A top line on every page.** Every template has it as the first line after the title, in one fixed form: "An untagged rule on this page matches build `<id>` or an earlier build, measured on Linux, macOS and Windows."
+2. **A tag for each exception.** Put the tag at the end of the block that it covers. The tags are "(measured on Linux only)" (or macOS or Windows), "(not measured)", "(from the code)" and "(claustrum's own)". They stay three separate kinds beside the platform tag. Never merge them. Every rule of those kinds carries its tag. Give each tag hover text with an abbreviation line.
+3. **A scope sentence for a section.** Use one only when all rules of the section share one tag. Say it once under the heading and leave the tags out inside. A mixed section keeps its tags. A tag covers only its own block. If one block holds two rules with different evidence, each rule keeps its tag.
 
-Before:
+Before (the real text of `docs/protocol/git-status.md`):
 
 ```markdown
-One entry for each gitlink in the index, unless `<name>/.git` does not exist (measured on Linux). There is one entry for each index stage (measured on Linux).
+2. One entry for each gitlink in the index, unless `<name>/.git` does not exist (measured on Linux). A gitlink is an index entry of mode `160000`. There is one entry for each index stage, so a gitlink in conflict gives three (measured on Linux).
 ```
 
 After:
 
 ```markdown
-One entry for each gitlink in the index, unless `<name>/.git` does not exist. There is one entry for each index stage. (Linux only)
+2. One entry for each gitlink in the index, unless `<name>/.git` does not exist (measured on Linux only). A gitlink is an index entry of mode `160000`. There is one entry for each index stage, so a gitlink in conflict gives three (measured on Linux only).
 ```
 
-The tag covers the block. A reader sees the rule first and the limit of the proof second.
+The definition sentence has no tag, because it is a fact of git and not a rule of the daemon. Each rule keeps its own tag, because they are two rules.
