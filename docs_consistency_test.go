@@ -597,40 +597,44 @@ func TestDocsEveryErrorCodeIsDocumented(t *testing.T) {
 // because the documents grew past what a person can read. A limit goes down, never
 // up, without the maintainer's word.
 var docWordLimits = map[string]int{
-	"AGENTS.md":                            7397,
-	"CONTRIBUTING.md":                      1071,
-	"README.md":                            1120,
-	"SECURITY.md":                          1553,
-	"docs/ARCHITECTURE.md":                 2667,
-	"docs/DAEMON.md":                       7175, // a new page: its words moved from PROTOCOL.md and ARCHITECTURE.md
-	"docs/DIVERGENCES.md":                  7766, // TASK-208 summary table
-	"docs/EXAMPLES.md":                     1025,
-	"docs/GLOSSARY.md":                     1297,
-	"docs/IMPROVEMENTS.md":                 1593,
-	"docs/INSTALL.md":                      5300,  // task-207: page rewrite
-	"docs/PROTOCOL.md":                     22313, // decision-040: words moved to the method pages, to INSTALL.md and to UPSTREAM-TRACKING.md
-	"docs/STYLE.md":                        1299,  // task-203b: the page rewrite
-	"docs/TOUR.md":                         850,   // a new page: its word count plus about 200
-	"docs/UPSTREAM-TRACKING.md":            6228,  // decision-040: words moved from PROTOCOL.md, net down in the same PR
-	"docs/index.md":                        316,   // the reader router of TASK-201
-	"docs/protocol/files-extract-tar.md":   2253,
-	"docs/protocol/files-list.md":          449,
-	"docs/protocol/files-read.md":          825,
-	"docs/protocol/files-stat.md":          434, // TASK-203 rewrite
-	"docs/protocol/files-validate.md":      365,
-	"docs/protocol/git-info.md":            1851, // task-203b: the page rewrite
-	"docs/protocol/git-list-branches.md":   998,  // task-203b: the page rewrite
-	"docs/protocol/git-status.md":          3185, // decision-040: a move between pages, net down in the same PR
-	"docs/protocol/git-worktree-create.md": 6951, // decision-050: the trim of the create and remove pages
-	"docs/protocol/git-worktree-remove.md": 4069, // decision-050: the trim of the create and remove pages
-	"docs/protocol/launcher-resolve.md":    1620, // task-204: rewrite to the page template
-	"docs/protocol/plugins-prune.md":       1089, // task-203b: the page rewrite
-	"docs/protocol/process-kill.md":        931,  // TASK-203c: the page template
-	"docs/protocol/process-killandwait.md": 977,  // TASK-203c: the page template
-	"docs/protocol/process-reattach.md":    988,
-	"docs/protocol/process-spawn.md":       3474, // task-204: rewrite to the page template
-	"docs/protocol/process-stdin.md":       893,  // TASK-203c: the page template
-	"docs/protocol/server.md":              1490, // task-203b: the page rewrite
+	"AGENTS.md":                                7385,
+	"CONTRIBUTING.md":                          1071,
+	"README.md":                                1120,
+	"SECURITY.md":                              1553,
+	"docs/ARCHITECTURE.md":                     2667,
+	"docs/DAEMON.md":                           7175, // a new page: its words moved from PROTOCOL.md and ARCHITECTURE.md
+	"docs/DIVERGENCES.md":                      7764, // TASK-208 summary table
+	"docs/EXAMPLES.md":                         1025,
+	"docs/GLOSSARY.md":                         1297,
+	"docs/IMPROVEMENTS.md":                     1590,
+	"docs/INSTALL.md":                          5300, // task-207: page rewrite
+	"docs/PROTOCOL.md":                         7618, // TASK-202: the shared git rules moved to the git-rules pages
+	"docs/STYLE.md":                            1299, // task-203b: the page rewrite
+	"docs/TOUR.md":                             850,  // a new page: its word count plus about 200
+	"docs/UPSTREAM-TRACKING.md":                6224, // decision-040: words moved from PROTOCOL.md, net down in the same PR
+	"docs/index.md":                            316,  // the reader router of TASK-201
+	"docs/protocol/files-extract-tar.md":       2253,
+	"docs/protocol/files-list.md":              449,
+	"docs/protocol/files-read.md":              825,
+	"docs/protocol/files-stat.md":              434, // TASK-203 rewrite
+	"docs/protocol/files-validate.md":          365,
+	"docs/protocol/git-info.md":                1851, // task-203b: the page rewrite
+	"docs/protocol/git-rules-calls.md":         4571, // TASK-202: moved from PROTOCOL.md
+	"docs/protocol/git-rules-config.md":        2864, // TASK-202: moved from PROTOCOL.md
+	"docs/protocol/git-rules-settings-copy.md": 3173, // TASK-202: moved from PROTOCOL.md
+	"docs/protocol/git-rules-trust.md":         4318, // TASK-202: moved from PROTOCOL.md
+	"docs/protocol/git-list-branches.md":       998,  // task-203b: the page rewrite
+	"docs/protocol/git-status.md":              3185, // decision-040: a move between pages, net down in the same PR
+	"docs/protocol/git-worktree-create.md":     6951, // decision-050: the trim of the create and remove pages
+	"docs/protocol/git-worktree-remove.md":     4069, // decision-050: the trim of the create and remove pages
+	"docs/protocol/launcher-resolve.md":        1620, // task-204: rewrite to the page template
+	"docs/protocol/plugins-prune.md":           1089, // task-203b: the page rewrite
+	"docs/protocol/process-kill.md":            931,  // TASK-203c: the page template
+	"docs/protocol/process-killandwait.md":     977,  // TASK-203c: the page template
+	"docs/protocol/process-reattach.md":        988,
+	"docs/protocol/process-spawn.md":           3474, // task-204: rewrite to the page template
+	"docs/protocol/process-stdin.md":           893,  // TASK-203c: the page template
+	"docs/protocol/server.md":                  1490, // task-203b: the page rewrite
 }
 
 // The limits of a document that docWordLimits does not name.

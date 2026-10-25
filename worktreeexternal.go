@@ -622,7 +622,7 @@ const workTreeUnknownPrefix = "failed to remove worktree: cannot determine the r
 //
 // Before these reasons comes the check of the daemon's own GIT_CONFIG_COUNT, for a
 // baseRepo that os.Stat reads. When it refuses, the reason is the trust refusal text if the
-// trust check refuses, and else the count refusal. See docs/PROTOCOL.md, "The
+// trust check refuses, and else the count refusal. See docs/protocol/git-rules-calls.md, "The
 // daemon's own git environment".
 //
 // Then, with no git on PATH, the reason is the exec error alone: `exec: "git":

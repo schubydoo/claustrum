@@ -14,7 +14,7 @@ An untagged rule on this page matches build `5fd08069` or an earlier build, meas
 |---|---|---|
 | `path` | no | The linked worktree. Send an absolute path. Without `path`, the daemon looks for a registration of its own working directory (not measured). Send `path`. A relative `path` gives `"isRepo": false` or `-32603 exit status 128`. A `.` works like no `path` (from the code). [Path handling](../PROTOCOL.md#path-handling) has the rules for a leading `~`. |
 | `baseRepo` | yes | The repository that owns the worktree. A linked worktree as `baseRepo` gives `"isRepo": false`. Send the main repository (from the code) (not measured). |
-| `shadowDirOff` | no | `true` turns off the daemon's own read of the repository's git config and its settings copy for this request. [Turning the read off](../PROTOCOL.md#turning-the-read-off). |
+| `shadowDirOff` | no | `true` turns off the daemon's own read of the repository's git config and its settings copy for this request. [Turning the read off](git-rules-config.md#turning-the-read-off). |
 
 ## Response
 
@@ -56,19 +56,19 @@ A failure is a JSON-RPC error with no `errorCode` member. It changes nothing in 
 |---|---|---|
 | `-32602` | `Invalid params` | No `params` member, or a member that it reads has the wrong type. [the rules for `params`](../PROTOCOL.md#params-presence-and-typing). |
 | `-32602` | `baseRepo is required` | `baseRepo` is absent, or empty (from the code). |
-| `-32603` | `the repository's git directory could not be trusted; git not run: …` | The daemon does not trust the git directory. [Git-directory trust check](../PROTOCOL.md#git-directory-trust-check). |
-| `-32603` | `config-defined hooks could not be pinned off; git not run: …` | A config listing failed or passed a limit of the hook pins. Or the daemon refuses its own git environment, or a daemon `GIT_DIR` names a gone worktree entry. A listing stopped at 30 seconds has its own text in [the error catalogue](../PROTOCOL.md#error-string-catalogue). [Refusal texts](../PROTOCOL.md#refusal-texts) and [The daemon's own git environment](../PROTOCOL.md#the-daemons-own-git-environment). |
+| `-32603` | `the repository's git directory could not be trusted; git not run: …` | The daemon does not trust the git directory. [Git-directory trust check](git-rules-trust.md#git-directory-trust-check). |
+| `-32603` | `config-defined hooks could not be pinned off; git not run: …` | A config listing failed or passed a limit of the hook pins. Or the daemon refuses its own git environment, or a daemon `GIT_DIR` names a gone worktree entry. A listing stopped at 30 seconds has its own text in [the error catalogue](../PROTOCOL.md#error-string-catalogue). [Refusal texts](git-rules-calls.md#refusal-texts) and [The daemon's own git environment](git-rules-calls.md#the-daemons-own-git-environment). |
 | `-32603` | `git cannot run on this host; git not run: …` | A config listing, the read of the test repository's config or the call about the repository failed, and then `git version` failed too. [the error catalogue](../PROTOCOL.md#error-string-catalogue). |
-| `-32603` | `this repository's git config cannot be used: …` or `a file in this repository's .git directory cannot be used: …` | The daemon does not accept the git config or a git directory file. [Repository config refusals](../PROTOCOL.md#repository-config-refusals). |
-| `-32603` | `Claude could not test git on the remote machine (…). Check free disk space and quota there, then try again.` | The start test of the settings copy failed. The daemon keeps the failure for 10 seconds. [The start test](../PROTOCOL.md#the-start-test). |
-| `-32603` | `git could not check this repository on the remote machine: …` or `git and Claude disagree about which repository holds this folder: …` | The call that asks git about the repository failed, ran over 30 seconds, or named another repository. [The call about the repository](../PROTOCOL.md#the-call-about-the-repository). |
-| `-32603` | `Claude could not prepare its own files on the remote machine: …` | The daemon cannot prepare the folder of the settings copy. [The folders](../PROTOCOL.md#the-folders). |
+| `-32603` | `this repository's git config cannot be used: …` or `a file in this repository's .git directory cannot be used: …` | The daemon does not accept the git config or a git directory file. [Repository config refusals](git-rules-config.md#repository-config-refusals). |
+| `-32603` | `Claude could not test git on the remote machine (…). Check free disk space and quota there, then try again.` | The start test of the settings copy failed. The daemon keeps the failure for 10 seconds. [The start test](git-rules-settings-copy.md#the-start-test). |
+| `-32603` | `git could not check this repository on the remote machine: …` or `git and Claude disagree about which repository holds this folder: …` | The call that asks git about the repository failed, ran over 30 seconds, or named another repository. [The call about the repository](git-rules-settings-copy.md#the-call-about-the-repository). |
+| `-32603` | `Claude could not prepare its own files on the remote machine: …` | The daemon cannot prepare the folder of the settings copy. [The folders](git-rules-settings-copy.md#the-folders). |
 
 ### Git and copy failures
 
 | Code | Text | Cause |
 |---|---|---|
-| `-32603` | `git took too long: Claude stopped git <subcommand> after 2 minutes; try again` | A git call ran 2 minutes, and the daemon stopped it. While a `"shadowDirOff":true` request runs, that one included, the limit is 30 minutes, and the text says so (claustrum's own) (not measured). [Time limits of git calls](../PROTOCOL.md#time-limits-of-git-calls). |
+| `-32603` | `git took too long: Claude stopped git <subcommand> after 2 minutes; try again` | A git call ran 2 minutes, and the daemon stopped it. While a `"shadowDirOff":true` request runs, that one included, the limit is 30 minutes, and the text says so (claustrum's own) (not measured). [Time limits of git calls](git-rules-calls.md#time-limits-of-git-calls). |
 | `-32603` | The Go error of the git call, for example `exit status 128` | `git status`, `git ls-files` or `git diff-index` failed. The text of git does not show. A relative `path` that matches a registration gets `exit status 128`, because git takes it as sent. |
 | `-32603` | `config-defined hooks could not be pinned off; git not run: listing the configuration in force: ` and the start error, for example `chdir <path>: no such file or directory` | `path` passed the test as a cleaned path, but git cannot start in the path as sent. An example is `<dir>/missing/..` outside `baseRepo` (measured on Linux and macOS). |
 | `-32603` | `<file>: not a regular file` (claustrum's own) | From the copy into the temporary git folder after the gate passed. An `info/sparse-checkout` folder or FIFO gets it. The reference is not measured there. |
@@ -89,7 +89,7 @@ Each of these gives `"isRepo": false` before any git call:
 - A folder above `baseRepo` holds an entry named `.claude-managed-worktrees` and no `.git`. A marker inside `baseRepo` itself does not count. A marker one or two levels above counts (measured on Linux). Further up the test is claustrum's own (not measured).
 - `baseRepo` does not resolve. For example, it does not exist, or a `..` after a symbolic link goes up from the target of the link and finds no folder.
 
-Then the [git-directory trust check](../PROTOCOL.md#git-directory-trust-check) runs on `baseRepo`, not on `path`. A refusal answers `-32603`, also for a good linked worktree as `path`. If the check finds no repository, the answer is `"isRepo": false`, with [exceptions](#rare-states). A config of `baseRepo` that the daemon does not accept answers `-32603`, as in [Repository config refusals](../PROTOCOL.md#repository-config-refusals).
+Then the [git-directory trust check](git-rules-trust.md#git-directory-trust-check) runs on `baseRepo`, not on `path`. A refusal answers `-32603`, also for a good linked worktree as `path`. If the check finds no repository, the answer is `"isRepo": false`, with [exceptions](#rare-states). A config of `baseRepo` that the daemon does not accept answers `-32603`, as in [Repository config refusals](git-rules-config.md#repository-config-refusals).
 
 `baseRepo` can be a symbolic link to the repository, a bare repository, a submodule checkout or a subfolder of a repository. If git prints no git directory, the answer is `"isRepo": false`. So is a repository with no `worktrees` folder.
 
@@ -135,7 +135,7 @@ If `HEAD` names no commit, `diff-index` compares the staged changes with the emp
 
 - The calls ignore the `.gitattributes` files of the repository, so no clean filter runs. A git older than 2.40 has no option for that, and then the attributes apply.
 - The calls do not read replace objects (`refs/replace`), so the status is that of the real commits.
-- `status`, `ls-files` and `diff-index` carry `GIT_OPTIONAL_LOCKS=0`. All calls run as [hardened git calls](../PROTOCOL.md#hardened-git-calls).
+- `status`, `ls-files` and `diff-index` carry `GIT_OPTIONAL_LOCKS=0`. All calls run as [hardened git calls](git-rules-calls.md#hardened-git-calls).
 - If the user has a global excludes file, the status uses it.
 
 ## The changes
@@ -184,7 +184,7 @@ A submodule entry is ` S `, the quoted name and one of three texts (measured on 
 
     - With no global excludes file of the user, the status runs. The reference differs ([D16](../DIVERGENCES.md#d16)).
     - A `baseRepo` with a junction before its last component, or a dangling junction, does not resolve: `"isRepo": false`.
-    - A `baseRepo` that exists and in which git cannot start, such as a regular file, gives `-32603` with the start error of the listing. See [Git-directory trust check](../PROTOCOL.md#git-directory-trust-check).
+    - A `baseRepo` that exists and in which git cannot start, such as a regular file, gives `-32603` with the start error of the listing. See [Git-directory trust check](git-rules-trust.md#git-directory-trust-check).
     - A junction below `baseRepo` in `path` gives `"isRepo": false`, as a symbolic link does.
     - A last component of a `path` inside `baseRepo` that ends in a dot or a space, or holds a colon, gives `"isRepo": false`. claustrum refuses such a name at any component (not measured). Outside `baseRepo` a trailing dot or space passes.
     - The folder compare of the registration match ignores letter case. A `gitdir` value that ends in `.GIT` fails.
@@ -196,12 +196,12 @@ A submodule entry is ` S `, the quoted name and one of three texts (measured on 
 ## Rare states
 
 ??? note "A check that finds no repository"
-    A config listing that fails gives the hooks refusal. If `git version` fails too, it gives the "cannot run" text of [Hardened git calls](../PROTOCOL.md#hardened-git-calls).
+    A config listing that fails gives the hooks refusal. If `git version` fails too, it gives the "cannot run" text of [Hardened git calls](git-rules-calls.md#hardened-git-calls).
 
     A `.git` file can name a gone git directory that is no registration. If git 2.56 or newer says so, the answer is `git could not check this repository on the remote machine: at "<root>": …` (measured on Linux). With `"shadowDirOff":true` it is the hooks refusal (measured on Linux). An older git gives `"isRepo": false` (measured on Linux).
 
 ??? note "A failed config listing"
-    The first config listing refuses by [these classes](../PROTOCOL.md#a-failed-configuration-listing). Later listings refuse any failure, in the git directory (measured on Linux) and in the temporary folder (from the code). Over a hook-pin limit the first listing refuses in a repository (from the code), and later ones do not (from the code). The empty-tree listing never refuses (from the code). A stopped listing of `config.worktree` gives `{"isRepo":false,"clean":false}` (measured on Linux).
+    The first config listing refuses by [these classes](git-rules-trust.md#a-failed-configuration-listing). Later listings refuse any failure, in the git directory (measured on Linux) and in the temporary folder (from the code). Over a hook-pin limit the first listing refuses in a repository (from the code), and later ones do not (from the code). The empty-tree listing never refuses (from the code). A stopped listing of `config.worktree` gives `{"isRepo":false,"clean":false}` (measured on Linux).
 
 ??? note "No temporary git folder"
     If the daemon cannot make its folder under `git-shadow`, the response is `{"isRepo":false,"clean":false}` (measured on Linux and Windows). When the folder is in the temporary directory of the system, a failure answers `-32603` with the error of the file system (not measured).
