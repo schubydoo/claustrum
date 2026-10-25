@@ -165,7 +165,7 @@ this guard. `IsAbs && !isFilesystemRoot` is not a substitute: home passes both
 tests, and neither test resolves a relative path. Before `7d193f89`,
 `worktreePath:".."` from a daemon whose working folder is home reached
 `os.RemoveAll` on the parent of home, so the guard resolves a relative path
-first. See [`docs/DIVERGENCES.md`](docs/DIVERGENCES.md) D2.
+first.
 
 #### Path 1: `files.extract_tar`
 
@@ -632,15 +632,11 @@ below are tree deletes. Each goes through an `os.Root`, with a fixed name, a
 name that the daemon read through that root, or a name that it made. The steps
 are these.
 
-#### The `worktrees` folder
-
 The folder `<git dir>/worktrees` (0777 less the umask), made before the add
 through the held folder. It stays after a failed add. On Linux and macOS, a last
 `core.sharedrepository` copy line other than `umask` sets its mode by one
 `os.Root.Chmod`, with the set-group-ID bit, only on a folder that this call
 made. macOS is not measured.
-
-#### The `.git` file
 
 On Linux and macOS, the `.git` file of the new worktree
 (`replaceWorktreeGitFile`). It is one `os.Root.Remove` of the fixed name `.git`
@@ -649,8 +645,6 @@ come first. The leaf must be the folder of the checkpoint, by identity with the
 held handle. `.git` must be a regular file of at most 8192 bytes. Its text must
 be `gitdir: `, the folder of the copy, `/worktrees/`, one name with no
 separator, and a newline. Each other text stays as it is.
-
-#### The `config.worktree` file
 
 The new file `<git dir>/worktrees/<name>/config.worktree` (0666 less the umask)
 (`writeWorktreeConfig`). It goes through the held folder and then a root at the
@@ -664,8 +658,6 @@ remove before the create is claustrum's own. Before that step the daemon runs
 `git config --file <its own file> --unset-all` on a file in `.config-<n>` of its
 own folder.
 
-#### The staging folder (Windows)
-
 On Windows, the staging folder `<git dir>\.claude-new-worktree-<16 hex>` with a
 copy of the whole staged registration, and one `os.Root.Rename` of it to the
 first free name of `<name>`, `<name>1` to `<name>99` in `worktrees`
@@ -676,8 +668,6 @@ removes it as a tree through the held root, by the name that this call made,
 after `wipesHomeDir`. If the `.git` file cannot be replaced, the moved
 registration goes too, by its name. Its identity test against the held staging
 folder is claustrum's own.
-
-#### The index (Windows)
 
 On Windows the index is a new file of the moved registration, through the held
 folder, made as `config.worktree` is. A create with no moved registration uses
@@ -698,7 +688,7 @@ with the reference. Desktop stops the daemon with no token in its environment
 `-stop` sends no `auth` member. Every other method rejects an unauthenticated
 request `-32001`.
 
-### Token persistence and the run-dir lock
+### Token persistence
 
 The daemon persists its token to `daemon.token` (mode `0600`) beside the socket: [Token persistence](docs/DAEMON.md#token-persistence-daemontoken)
 (`tokenpersist.go`). The fixed name and the socket-dir location are the
@@ -726,9 +716,10 @@ provoke it through the `dispatchRequest` seam.
 
 ### Network
 
-`-serve` makes no outbound network connections, and `-install` reaches the
-network only with `-cli-url`: [SECURITY.md → Network](SECURITY.md#network). The
-download is verified by SHA-256, unconditionally.
+`-serve` makes no outbound network connections. `-install` reaches the network
+only with `-cli-url`, and verifies the SHA-256 of that download unconditionally
+([SECURITY.md → Network](SECURITY.md#network)). Every dial `-serve` makes is to
+a local `AF_UNIX` socket, never network egress.
 
 ### Time bounds
 
@@ -793,7 +784,10 @@ The three caps and bounds D3, D10 and D12 default off. That is the parity
 position: a non-off default fails an operation that the reference completes.
 Claude Desktop owns the `-serve` / `-install` argv, so the `claustrum.conf`
 key is the reachable knob, not the flag. Each disabled state bypasses its
-limiter entirely, by the "never simplify" rule of Part A.
+limiter entirely, by the "never simplify" rule of Part A. Per-method wire
+frames → [`docs/PROTOCOL.md`](docs/PROTOCOL.md). Driver-claim provenance
+("Desktop owns the argv", `cliError` classification, libc selection) →
+[`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md).
 
 ## Where detail lives
 
