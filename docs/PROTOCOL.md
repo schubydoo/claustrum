@@ -162,7 +162,7 @@ under [Stream notifications](#stream-notifications), is the wire contract.
 | `-32002` | a full stdin queue, from `process.stdin` (see [Errors](protocol/process-stdin.md#errors)) |
 | `-32003` | an `offset` past the applied bytes, from `process.stdin` (see [Errors](protocol/process-stdin.md#errors)) |
 | `-32004` | a refused `launcher`, from `process.spawn` (see [The managed launcher](protocol/process-spawn.md#the-managed-launcher)) |
-| `-32005` | a launcher that does not start, from `process.spawn` (see [Response](protocol/process-spawn.md#response)) |
+| `-32005` | a launcher that does not start, from `process.spawn` (see [Errors](protocol/process-spawn.md#errors)) |
 | `-32006` | `Refused: this server could not confirm that the caller is in its own namespaces`, on Linux with `CLAUDE_SSH_PEER_CHECK=1` (see [A refused caller](protocol/server.md#a-refused-caller-linux)) |
 | `-32001` | `Unauthorized: invalid or missing auth token` |
 
@@ -225,8 +225,8 @@ that names systems without "measured" holds on each one. The [reference build hi
 | git.worktree_create / git.worktree_remove | `refusing to <verb> worktree: <root> resolves to the filesystem root; …` | |
 | git.worktree_create / git.worktree_remove | `refusing to <verb> worktree: <root> passes through too many symbolic links (a loop?)` | Create: `errorCode:"unsafe_path"`. Linux and macOS, with `worktreeRoot`. A symlink loop or too many links lie in the path of the root. claustrum uses the kernel limit (not measured). `<root>` is `worktreeRoot` without a trailing slash. claustrum also drops a `//` here (not measured). Nothing is created or removed |
 | git.worktree_remove | The texts that only this method sends | On the page: [git.worktree_remove → Error texts](protocol/git-worktree-remove.md#error-texts) |
-| process.spawn | The texts that only this method sends | On the page: [process.spawn → Response](protocol/process-spawn.md#response) |
-| launcher.resolve | The texts that only this method sends | On the page: [launcher.resolve → Request](protocol/launcher-resolve.md#request) |
+| process.spawn | The texts that only this method sends | On the page: [process.spawn → Errors](protocol/process-spawn.md#errors) |
+| launcher.resolve | The texts that only this method sends | On the page: [launcher.resolve → Errors](protocol/launcher-resolve.md#errors) |
 | process.stdin | The texts that only this method sends | On the page: [process.stdin → Errors](protocol/process-stdin.md#errors) |
 | process.spawn / process.killAndWait / process.reattach | `Process ID is required` | `id` is absent or empty |
 | plugins.prune | The texts that only this method sends | On the page: [plugins.prune → Errors](protocol/plugins-prune.md#errors) |
