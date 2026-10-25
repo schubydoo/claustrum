@@ -15,3 +15,42 @@
 .md-typeset table:not([class]) code {
   white-space: nowrap;
 }
+
+/* Sidebar: group headings read as headings, items as items, and both meet WCAG AA
+   (4.5:1) on the Material page background in light and dark mode. */
+[data-md-color-scheme="default"] {
+  --claustrum-nav-item: #3a3f4b;
+  --claustrum-nav-group: #11131a;
+  --claustrum-nav-active: #283593;
+}
+
+[data-md-color-scheme="slate"] {
+  --claustrum-nav-item: #c5c9d6;
+  --claustrum-nav-group: #ffffff;
+  --claustrum-nav-active: #aab4ff;
+}
+
+.md-sidebar .md-nav__link {
+  color: var(--claustrum-nav-item);
+}
+
+.md-sidebar .md-nav__link:hover,
+.md-sidebar .md-nav__link:focus {
+  color: var(--claustrum-nav-active);
+}
+
+.md-sidebar .md-nav__link--active {
+  color: var(--claustrum-nav-active);
+  font-weight: 600;
+}
+
+/* A group (a nested section) is bold, small, upper-case text with space above. */
+.md-sidebar .md-nav__item--nested > .md-nav__link,
+.md-sidebar--primary .md-nav--lifted > .md-nav__list > .md-nav__item--active > .md-nav__link {
+  color: var(--claustrum-nav-group);
+  font-size: 0.64rem;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  margin-top: 0.9em;
+}

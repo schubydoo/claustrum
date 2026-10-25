@@ -1,10 +1,10 @@
 # Reference build ledger
 
 Every claustrum release tracks one specific reference `claude-ssh` daemon build.
-A git SHA identifies the build. [Upstream tracking](UPSTREAM-TRACKING.md)
+A git SHA identifies the build. This page is for maintainers who need the
+reason behind a pin bump. [Upstream tracking](UPSTREAM-TRACKING.md)
 describes how to find and diff a new build. This page is the running history of
-those builds. It records what each build changed on the wire. The reconciliation
-trail therefore stays in one place, and not in many commit messages.
+those builds. It records what each build changed on the wire.
 
 [`scripts/UPSTREAM_SHA`](https://github.com/schubydoo/claustrum/blob/main/scripts/UPSTREAM_SHA)
 holds the SHA of the build that is pinned now. This ledger gives the reasons

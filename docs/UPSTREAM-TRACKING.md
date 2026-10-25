@@ -1,9 +1,10 @@
 # Staying in lock-step with the reference daemon
 
-claustrum is behaviorally compatible with a reference daemon that ships inside
-Claude Desktop's SSH-remote feature. This page tells you how to detect a new
-build, and how to find out whether it changed anything claustrum must match. The
-history of each build is in the [reference build ledger](REFERENCE-BUILDS.md).
+This page is for maintainers who bump the pin. claustrum is behaviorally
+compatible with a reference daemon that ships in Claude Desktop's SSH-remote
+feature. Use it to detect a new build and see if it changed anything
+claustrum must match. The history of each build is in the
+[reference build ledger](REFERENCE-BUILDS.md).
 
 ## How the reference is distributed
 
@@ -16,12 +17,12 @@ history of each build is in the [reference build ledger](REFERENCE-BUILDS.md).
   `windows-amd64`, `windows-arm64`. (GOARCH naming: `amd64`, not `x64`.)
 
 There is no "latest" index. The SHA is the key to each release, so step 1 is
-always "find the new SHA".
+"find the new SHA".
 
 ## Step 1 — find a candidate SHA
 
 The SHA of the reference build is the SHA Claude Desktop deploys now. These are the
-sources, easiest first:
+sources:
 
 1. A host that Desktop connected to. The cache holds one daemon per SHA:
    ```sh
