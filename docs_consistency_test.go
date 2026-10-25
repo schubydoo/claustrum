@@ -609,7 +609,7 @@ var docWordLimits = map[string]int{
 	"docs/IMPROVEMENTS.md":                     1590,
 	"docs/INSTALL.md":                          5300, // task-207: page rewrite
 	"docs/PROTOCOL.md":                         7618, // TASK-202: the shared git rules moved to the git-rules pages
-	"docs/STYLE.md":                            1299, // task-203b: the page rewrite
+	"docs/STYLE.md":                            1298, // task-203b: the page rewrite
 	"docs/TOUR.md":                             850,  // a new page: its word count plus about 200
 	"docs/UPSTREAM-TRACKING.md":                6224, // decision-040: words moved from PROTOCOL.md, net down in the same PR
 	"docs/index.md":                            316,  // the reader router of TASK-201
@@ -646,10 +646,10 @@ const (
 // docNoWordLimit has no word limit: the ledger is append-only by the maintainer's decision of 2026-10-21.
 const docNoWordLimit = "docs/REFERENCE-BUILDS.md"
 
-// TestDocsWordLimits: each Markdown file under docs/, AGENTS.md, CONTRIBUTING.md, README.md
-// and SECURITY.md, except docNoWordLimit, has at most the words of its limit. A word is a run
-// of characters between white space.
-func TestDocsWordLimits(t *testing.T) {
+// docLimitedFiles lists the files that carry word limits: AGENTS.md, CONTRIBUTING.md,
+// README.md, SECURITY.md and each Markdown file under docs/.
+func docLimitedFiles(t *testing.T) []string {
+	t.Helper()
 	files := []string{"AGENTS.md", "CONTRIBUTING.md", "README.md", "SECURITY.md"}
 	err := filepath.WalkDir("docs", func(p string, d os.DirEntry, err error) error {
 		if err == nil && !d.IsDir() && strings.HasSuffix(p, ".md") {
@@ -660,6 +660,14 @@ func TestDocsWordLimits(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	return files
+}
+
+// TestDocsWordLimits: each Markdown file under docs/, AGENTS.md, CONTRIBUTING.md, README.md
+// and SECURITY.md, except docNoWordLimit, has at most the words of its limit. A word is a run
+// of characters between white space.
+func TestDocsWordLimits(t *testing.T) {
+	files := docLimitedFiles(t)
 	seen := map[string]bool{}
 	for _, f := range files {
 		seen[f] = true
@@ -681,6 +689,174 @@ func TestDocsWordLimits(t *testing.T) {
 		if !seen[f] {
 			t.Errorf("docWordLimits names %s, which does not exist: delete the row", f)
 		}
+	}
+}
+
+// docSectionRunLimits holds the most words that each page can have between two headings.
+// A row is the longest run that the page has now: the limit works as a ratchet. A row goes
+// down, never up, without the maintainer's word. A page with no row gets docSectionRunTarget.
+var docSectionRunLimits = map[string]int{
+	"AGENTS.md":                                5479,
+	"CONTRIBUTING.md":                          402,
+	"SECURITY.md":                              559,
+	"docs/ARCHITECTURE.md":                     496,
+	"docs/DAEMON.md":                           889,
+	"docs/DIVERGENCES.md":                      709,
+	"docs/IMPROVEMENTS.md":                     1484,
+	"docs/INSTALL.md":                          736,
+	"docs/PROTOCOL.md":                         1809,
+	"docs/STYLE.md":                            348,
+	"docs/UPSTREAM-TRACKING.md":                2960,
+	"docs/index.md":                            314,
+	"docs/protocol/files-extract-tar.md":       388,
+	"docs/protocol/git-info.md":                368,
+	"docs/protocol/git-list-branches.md":       372,
+	"docs/protocol/git-rules-calls.md":         830,
+	"docs/protocol/git-rules-config.md":        1007,
+	"docs/protocol/git-rules-settings-copy.md": 891,
+	"docs/protocol/git-rules-trust.md":         659,
+	"docs/protocol/git-status.md":              414,
+	"docs/protocol/git-worktree-create.md":     2389,
+	"docs/protocol/git-worktree-remove.md":     1721,
+	"docs/protocol/launcher-resolve.md":        293,
+	"docs/protocol/plugins-prune.md":           258,
+	"docs/protocol/process-killandwait.md":     285,
+	"docs/protocol/process-spawn.md":           371,
+	"docs/protocol/process-stdin.md":           305,
+	"docs/protocol/server.md":                  256,
+}
+
+// docSectionRunTarget is the run limit of a page that has no row in docSectionRunLimits.
+const docSectionRunTarget = 250
+
+// docLongestRun returns the most words that the text has between two headings. A word is a
+// run of characters between white space, as in TestDocsWordLimits. Heading lines and fenced
+// code blocks add no words, and a heading starts a new run.
+func docLongestRun(text string) int {
+	longest, run := 0, 0
+	inFence := false
+	for _, line := range strings.Split(text, "\n") {
+		trim := strings.TrimSpace(line)
+		switch {
+		case strings.HasPrefix(trim, "```") || strings.HasPrefix(trim, "~~~"):
+			inFence = !inFence
+		case inFence:
+		case strings.HasPrefix(line, "#"):
+			run = 0
+		default:
+			run += len(strings.Fields(line))
+			longest = max(longest, run)
+		}
+	}
+	return longest
+}
+
+// docSectionRunProblem returns a message when the page has a run longer than its limit, or
+// "" when it has none.
+func docSectionRunProblem(page, text string, limits map[string]int) string {
+	limit, ok := limits[page]
+	if !ok {
+		limit = docSectionRunTarget
+	}
+	if n := docLongestRun(text); n > limit {
+		return page + " has " + strconv.Itoa(n) + " words between two headings, and its limit is " +
+			strconv.Itoa(limit) + ": add a heading or cut the text, do not raise the limit"
+	}
+	return ""
+}
+
+// TestDocsSectionRuns: no file that TestDocsWordLimits covers has more words between two
+// headings than its row in docSectionRunLimits, or docSectionRunTarget without a row.
+func TestDocsSectionRuns(t *testing.T) {
+	seen := map[string]bool{}
+	for _, f := range docLimitedFiles(t) {
+		seen[f] = true
+		if f == docNoWordLimit {
+			continue
+		}
+		if msg := docSectionRunProblem(f, docRead(t, docRel(f)), docSectionRunLimits); msg != "" {
+			t.Error(msg)
+		}
+	}
+	for f, n := range docSectionRunLimits {
+		if !seen[f] {
+			t.Errorf("docSectionRunLimits names %s, which does not exist: delete the row", f)
+		}
+		if n <= docSectionRunTarget {
+			t.Errorf("docSectionRunLimits gives %s a row of %d: a row must be above %d, so delete it", f, n, docSectionRunTarget)
+		}
+	}
+}
+
+// docProtocolSummaryProblem returns a message when the page has no prose paragraph between
+// its H1 and its first "## " heading, or "" when it has one.
+func docProtocolSummaryProblem(page, text string) string {
+	inFence, afterH1 := false, false
+	for _, line := range strings.Split(text, "\n") {
+		trim := strings.TrimSpace(line)
+		switch {
+		case strings.HasPrefix(trim, "```") || strings.HasPrefix(trim, "~~~"):
+			inFence = !inFence
+		case inFence:
+		case strings.HasPrefix(line, "## "):
+			return page + " has no summary: put a prose paragraph between the H1 and the first ## heading"
+		case strings.HasPrefix(line, "# "):
+			afterH1 = true
+		case afterH1 && docIsProse(line):
+			return ""
+		}
+	}
+	return page + " has no summary: put a prose paragraph between the H1 and the first ## heading"
+}
+
+// docNotProseRE matches the start of a line that is not prose: an indented line, a heading,
+// a list item, a quote, a table row, an admonition or a tab.
+var docNotProseRE = regexp.MustCompile(`^(\s|#|[-*+>|]|\d+[.)]\s|!!!|\?\?\?|===)`)
+
+// docIsProse reports whether a line belongs to a prose paragraph.
+func docIsProse(line string) bool {
+	return strings.TrimSpace(line) != "" && !docNotProseRE.MatchString(line)
+}
+
+// TestDocsProtocolPageSummary: every page under docs/protocol/ has a prose paragraph between
+// its H1 and its first ## heading.
+func TestDocsProtocolPageSummary(t *testing.T) {
+	pages, err := filepath.Glob(filepath.FromSlash("docs/protocol/*.md"))
+	if err != nil || len(pages) == 0 {
+		t.Fatalf("no protocol pages found: %v", err)
+	}
+	for _, f := range pages {
+		f = filepath.ToSlash(f)
+		if msg := docProtocolSummaryProblem(f, docRead(t, docRel(f))); msg != "" {
+			t.Error(msg)
+		}
+	}
+}
+
+// TestDocsReadabilityChecksReportBreakingPages: the two checks above report a page that
+// breaks them, so that a pass of the real tests means something.
+func TestDocsReadabilityChecksReportBreakingPages(t *testing.T) {
+	words := func(n int) string { return strings.TrimSpace(strings.Repeat("word ", n)) }
+	if docSectionRunProblem("docs/X.md", "# X\n\n## A\n\n"+words(251)+"\n", nil) == "" {
+		t.Error("a run of 251 words with no row was not reported")
+	}
+	if docSectionRunProblem("docs/X.md", "# X\n\n## A\n\n"+words(250)+"\n\n## B\n\n"+words(250)+"\n", nil) != "" {
+		t.Error("two runs of 250 words were reported")
+	}
+	if docSectionRunProblem("docs/X.md", "# X\n\n```\n"+words(900)+"\n```\n", nil) != "" {
+		t.Error("words in a fenced block were counted")
+	}
+	if docSectionRunProblem("docs/X.md", "# X\n"+words(251)+"\n", map[string]int{"docs/X.md": 251}) != "" {
+		t.Error("a run at its row was reported")
+	}
+	if docProtocolSummaryProblem("docs/protocol/x.md", "# x\n\n## Request\n\nText.\n") == "" {
+		t.Error("a page with no summary was not reported")
+	}
+	if docProtocolSummaryProblem("docs/protocol/x.md", "# x\n\n- item\n\n| a | b |\n\n!!! note\n    text\n\n```\ntext\n```\n\n## Request\n") == "" {
+		t.Error("a page whose lines before the first ## are not prose was not reported")
+	}
+	if docProtocolSummaryProblem("docs/protocol/x.md", "# x\n\nIt does a thing.\n\n## Request\n") != "" {
+		t.Error("a page with a summary was reported")
 	}
 }
 

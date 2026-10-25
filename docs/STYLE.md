@@ -1,6 +1,6 @@
 # Docs style guide
 
-This guide gives one template for each page type, the limits for a page, and the rule for evidence marks. When you write or change a page under `docs/`, use it.
+This guide gives one template for each page type, the limits for a page, and the rule for evidence marks. When you write or change a page, use it.
 
 ## Page types
 
@@ -148,7 +148,7 @@ Each fact has one home. Link to the home. Do not copy its text. A rewrite can mo
 
 ## Limits
 
-**Words between two headings: at most 250.** This is a target for new and rewritten text. A table or a tab block counts as one unit.
+**Words between two headings: at most 250.** `TestDocsSectionRuns` checks it as a ratchet: each page's current longest run is its cap, and a new page gets 250.
 
 **Sentence length: 8 to 20 words in a procedure, 8 to 25 words in a description.** A run of sentences under 8 words reads as a list with no thread. Join two related short sentences, and say why before the rule.
 
