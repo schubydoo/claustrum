@@ -2,7 +2,7 @@
 
 `plugins.prune` deletes the cached plugin directories that no session used for some days. The directories are under the plugin roots of the daemon. The caller cannot name a path. Do not read an empty `pruned` list as "nothing to delete". Read `errors` and `legacy` too.
 
-An untagged rule on this page matches build `5fd08069` or an earlier build.
+An untagged rule on this page matches build `5fd08069` or an earlier build. The system is not recorded.
 
 ## Request
 
@@ -31,7 +31,7 @@ No `params` member gets `-32602 Invalid params: unexpected end of JSON input` (m
 | `staleArchives` | Always `0`. |
 | `kept` | Always `0`. |
 | `live` | The number of live directories. It is one count over the roots that the daemon went through. |
-| `young` | The number of young directories that are not live. It is one count over the roots that the daemon went through. |
+| `young` | The number of young directories that are not live. It counts over the same roots. |
 | `legacy` | What the daemon did with the shared root: see [The `legacy` member](#the-legacy-member). |
 | `skipped` | The reason, in a response of a daemon that has no plugin roots. Each other response has no `skipped` member. |
 | `errors` | One text in the form `<path>: <error>` for each directory that the daemon cannot delete, and for a root that it cannot list. A root that does not exist is not a failure. A directory in `errors` can be deleted in part. A response with no such failure has no `errors` member. A response with `errors` is still a success (not measured). |
