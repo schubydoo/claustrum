@@ -91,6 +91,12 @@ type stdinParams struct {
 	// absent field ("append here", the legacy behavior) is distinct from offset:0
 	// (which, once anything has been applied, is a duplicate). See applyStdin.
 	Offset *uint64 `json:"offset"`
+	// Attach is a terminal attach number of c8e2f083. A pointer so null and an absent
+	// member are alike, and 0 counts as present. Claustrum has no terminal process, so
+	// every process answers a present attach as not found (see processStdin). A
+	// value that is not a number gets Invalid params from the decode (measured on
+	// Linux). A negative or a fractional number gets the same here (not measured).
+	Attach *uint64 `json:"attach"`
 }
 
 func (s *server) processStdin(req *request) response {
@@ -109,8 +115,14 @@ func (s *server) processStdin(req *request) response {
 	if err != nil {
 		return errResult(req.ID, codeInvalidParam, "Invalid base64 data")
 	}
+	// c8e2f083 answers "Process not found" to a present attach on a process without
+	// a terminal and on an unknown id, with nothing written (measured on Linux). The
+	// order against the base64 test is not measured: the attach test comes after it
+	// here, and the type test of the decode comes before it. The order against the
+	// offset and running tests needs no choice, because this reply writes nothing
+	// and ends the request.
 	mp := s.procs.get(p.ID)
-	if mp == nil {
+	if mp == nil || p.Attach != nil {
 		return errResult(req.ID, codeInvalidParam, "Process not found")
 	}
 	// isLive, not isRunning: 90fca6e6 refuses a write inside the exit drain, after
@@ -189,6 +201,13 @@ type reattachParams struct {
 	// is found, the reply carries pid + startTime. 5fd08069 gives the reattach
 	// result with a wrong-typed wantPid (cell P2 of round task015-01, Linux VM).
 	WantPid jsonTrueSwitch `json:"wantPid"`
+	// Attach, Fresh and Proof are terminal members of c8e2f083. Claustrum decodes
+	// them for the type test and acts on Proof only (see processReattach). The type
+	// test of the decode comes before the empty-id test (not measured), and a
+	// negative or a fractional attach gets Invalid params there (not measured).
+	Attach *uint64 `json:"attach"`
+	Fresh  string  `json:"fresh"`
+	Proof  string  `json:"proof"`
 }
 
 func (s *server) processReattach(c *conn, req *request) response {
@@ -198,6 +217,13 @@ func (s *server) processReattach(c *conn, req *request) response {
 	}
 	if p.ID == "" {
 		return errResult(req.ID, codeInvalidParam, "Process ID is required")
+	}
+	// A non-empty proof gets the zero result for a process without a terminal and for
+	// an unknown id: no replay, and the connection that holds the process keeps it
+	// (c8e2f083, measured on Linux). The order against the id test is not
+	// measured: the empty id keeps its error. Claustrum has no terminal process.
+	if p.Proof != "" {
+		return okResult(req.ID, reattachResult{})
 	}
 	mp, found, running, firstSeq, lastSeq, stdinApplied := s.procs.reattach(c, p.ID, p.FromSeq)
 	res := reattachResult{
