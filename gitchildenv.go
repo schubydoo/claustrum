@@ -13,9 +13,9 @@ import (
 // and task004-02). The cleaning acts on the daemon's own entries only. The names
 // that claustrum adds or drops for a call stay as they were.
 //
-// The excludes read (resolveUserExcludesFile) and the `--attr-source` version
-// probe (attrSourceArgs) keep the daemon's environment as it is. The plain
-// `git version` calls get no cleaning (from the code, no round saw one).
+// The calls outside a repository (gitoutsidecalls.go) start from this cleaned
+// environment too: the excludes read, the `--attr-source` probe, the version gate,
+// the `git version` run and the read of config text.
 //
 // The tests run in this order for one entry, and the first one that drops or
 // keeps the entry ends the work:

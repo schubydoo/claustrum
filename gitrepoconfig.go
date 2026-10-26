@@ -317,13 +317,14 @@ func listRepoConfigText(ctx context.Context, text []byte, dir string, env []stri
 	return out, errText.buf, err
 }
 
-// repoConfigListEnv is the environment of the listing of one config file: that of
-// the daemon, then GIT_DIR=<null device>, LC_ALL=C and LANGUAGE=C. The call log of
-// 5fd08069 shows these three values on a Linux VM, and GIT_DIR=NUL on a Windows VM
-// (cells C2a). The daemon's GIT_CONFIG and GIT_CONFIG_PARAMETERS go, as for every
-// listing of claustrum (not measured here).
+// repoConfigListEnv is the environment of the listing of one config file: the
+// filtered environment of the daemon (gitChildEnv), then GIT_DIR=<null device>,
+// LC_ALL=C and LANGUAGE=C. The call log of 5fd08069 shows these three values on a
+// Linux VM, and GIT_DIR=NUL on a Windows VM. claustrum passes the
+// filtered environment whole (claustrum's own, not measured), so the daemon's
+// GIT_CONFIG and GIT_CONFIG_PARAMETERS stay. The call runs in gitVersionDir.
 func repoConfigListEnv() []string {
-	return append(listingEnvBase(), "GIT_DIR="+os.DevNull, "LC_ALL=C", "LANGUAGE=C")
+	return append(gitChildEnv(), "GIT_DIR="+os.DevNull, "LC_ALL=C", "LANGUAGE=C")
 }
 
 // stdinSyntaxError matches the text of git for a syntax error in a file that it

@@ -32,7 +32,6 @@ func TestIncludeVersionCallOncePerDaemon(t *testing.T) {
 		t.Run(row.name, func(t *testing.T) {
 			f := newSeededShadowFixture(t)
 			includeFixture(t, f.repo)
-			wd := daemonWorkDir(t)
 			for i, member := range row.member {
 				branch := "w" + strconv.Itoa(i+1)
 				params := map[string]any{"baseRepo": f.repo, "branchName": branch, "worktreePath": filepath.Join(f.repo, ".claude", "worktrees", branch)}
@@ -45,7 +44,7 @@ func TestIncludeVersionCallOncePerDaemon(t *testing.T) {
 				}
 				got, want := 0, 0
 				for _, c := range calls {
-					if c.version() && c.cwd == wd {
+					if c.version() && c.cwd == gitVersionDir {
 						got++
 					}
 				}

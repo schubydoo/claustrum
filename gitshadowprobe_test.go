@@ -20,27 +20,23 @@ func (c envCall) isProbe() bool {
 }
 
 // plainVersion reports the `git version` call that follows a failure
-// (versionAfterFailure). It has no option, and the root folder is its working
+// (versionAfterFailure). It has no option, and gitVersionDir is its working
 // directory. It has none of the variables that the daemon adds to its other
-// calls. On Windows the working directory is that of the daemon.
+// calls. A name that the test process holds itself does not count as added.
 func (c envCall) plainVersion(t *testing.T) bool {
 	t.Helper()
 	if !slices.Equal(c.argv, []string{"version"}) {
 		return false
 	}
-	dir := gitVersionDir
-	if dir == "" {
-		wd, err := os.Getwd()
-		if err != nil {
-			t.Fatal(err)
-		}
-		dir = wd
-	}
-	if c.cwd != dir {
+	if !sameFolder(c.cwd, gitVersionDir) {
 		return false
 	}
 	for _, kv := range c.env {
-		switch envName(kv) {
+		name := envName(kv)
+		if _, own := os.LookupEnv(name); own {
+			continue
+		}
+		switch name {
 		case "GIT_DIR", "GIT_COMMON_DIR", "GIT_OBJECT_DIRECTORY", "GIT_WORK_TREE", "GIT_ALLOW_PROTOCOL",
 			"GIT_TERMINAL_PROMPT", "GIT_NO_LAZY_FETCH", "GIT_CEILING_DIRECTORIES", "LC_ALL", "LANGUAGE":
 			return false

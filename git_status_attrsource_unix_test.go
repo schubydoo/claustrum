@@ -6,7 +6,6 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
-	"sync"
 	"testing"
 )
 
@@ -72,17 +71,6 @@ func TestGitStatusIgnoresInRepoGitattributes(t *testing.T) {
 	if _, err := os.Stat(sentinel); err == nil {
 		t.Errorf("the .gitattributes clean filter RAN during git.status; --attr-source must suppress it")
 	}
-}
-
-// resetAttrSourceForTest clears the once-cached --attr-source probe so it re-runs
-// under a controlled PATH. Direct assignment is safe in a test that is not parallel
-// and has no parallel parent: nothing else probes at that time. A top-level test
-// with t.Parallel() starts after every sequential top-level test ended. Parallel
-// rows end before their own top-level test does. Each test that resets the probe
-// also calls t.Setenv, and Go refuses t.Setenv in a parallel test.
-func resetAttrSourceForTest() {
-	attrSourceOnce = sync.Once{}
-	attrSourceOK = false
 }
 
 // git added --attr-source in 2.40, so the option is probed with the reference's own

@@ -10,7 +10,6 @@ import (
 	"slices"
 	"strconv"
 	"strings"
-	"sync"
 	"testing"
 )
 
@@ -46,7 +45,7 @@ func statusCallLog(t *testing.T, root string) func(path, base string) (string, [
 	}
 	resetUserExcludesCache(t)
 	resetAttr := func() {
-		attrSourceOnce = sync.Once{}
+		attrSourceDone = false
 		attrSourceOK = false
 	}
 	resetAttr()
@@ -88,9 +87,6 @@ func statusCallLog(t *testing.T, root string) func(path, base string) (string, [
 				env = "B"
 			}
 			cwd := c.cwd
-			if slices.Contains(c.argv, "core.excludesFile") {
-				cwd = "<temp>"
-			}
 			line := cwd + "|" + env + "|" + strings.Join(argv, " ")
 			// A heavy call has the list of 28 items. Any other count shows in the line.
 			if env == "A" && items != 0 && items != 28 {
@@ -144,7 +140,7 @@ const callRepoConfig = "/|-|config --no-includes --file - --list -z"
 // of the config of baseRepo after the first one.
 func statusGateCalls(probeTree string) []string {
 	return []string{
-		"<temp>|-|config --includes --path core.excludesFile",
+		"/|-|config --includes --path core.excludesFile",
 		callRepoConfig,
 		"<fx>/T|A|config -z --list",
 		"<fx>/T|A|rev-parse --absolute-git-dir",
@@ -171,7 +167,7 @@ func TestGitStatusCallOrder(t *testing.T) {
 	if want := `{"jsonrpc":"2.0","id":1,"result":{"isRepo":true,"clean":false,"changes":[" M t.txt","?? new.txt"]}}`; raw != want {
 		t.Fatalf("K1 frame = %s\nwant %s", raw, want)
 	}
-	want := append(statusGateCalls("<fx>/W"), "<fx>|-|--attr-source="+gitEmptyTree+" version")
+	want := append(statusGateCalls("<fx>/W"), "/|-|--attr-source="+gitEmptyTree+" version")
 	want = append(want, statusCommandCalls("<fx>/W", "<fx>/W", callStatus)...)
 	want = append(want, statusCommandCalls("<fx>/W", "<fx>/W", callLsFiles)...)
 	want = append(want, statusCommandCalls("<fx>/W", "<fx>/W", callHead)...)
@@ -435,9 +431,7 @@ func TestGitStatusCallOrderWithoutAttrSource(t *testing.T) {
 	f := newStatusFixture(t)
 	run := statusCallLog(t, f.root)
 	// The probe counts as done, with the answer "not supported".
-	attrSourceOnce = sync.Once{}
-	attrSourceOnce.Do(func() {})
-	attrSourceOK = false
+	attrSourceDone, attrSourceOK = true, false
 	raw, calls := run(f.W, f.T)
 	if raw != statusClean {
 		t.Fatalf("frame = %s\nwant %s", raw, statusClean)

@@ -791,19 +791,23 @@ func TestIncludeFallbackAboveOneMiB(t *testing.T) {
 	})
 }
 
-// TestGitVersionCmdArgv pins the `git version` call as measured against
-// f6010b97: no `-c` options, no `-C`, and the daemon's own working directory.
+// TestGitVersionCmdArgv pins the `git version` call of the version gate: no `-c`
+// options and no `-C` (f6010b97), the folder of the calls outside a repository
+// and the filtered environment of the daemon (claustrum's own, not measured).
 func TestGitVersionCmdArgv(t *testing.T) {
+	t.Setenv("GIT_SSH", "rel/ssh") // dropped by the filter, so the env must be the filtered one
 	cmd := gitVersionCmd(t.Context())
 	if got := cmd.Args; !slices.Equal(got, []string{"git", "version"}) {
 		t.Errorf("argv = %q, want [git version]", got)
 	}
-	if cmd.Dir != "" {
-		t.Errorf("dir = %q, want the daemon's own working directory", cmd.Dir)
+	if cmd.Dir != gitVersionDir {
+		t.Errorf("dir = %q, want %q", cmd.Dir, gitVersionDir)
 	}
-	// A nil Env hands git the daemon's environment unchanged.
-	if cmd.Env != nil {
-		t.Errorf("env = %q, want the daemon's environment unchanged", cmd.Env)
+	if want := gitChildEnv(); !slices.Equal(cmd.Env, want) {
+		t.Errorf("env differs from the filtered environment of the daemon: got %d entries, want %d", len(cmd.Env), len(want))
+	}
+	if _, ok := lookupExact(cmd.Env, "GIT_SSH"); ok {
+		t.Error("env keeps a relative GIT_SSH")
 	}
 }
 

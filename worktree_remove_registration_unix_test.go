@@ -83,9 +83,6 @@ func removeCallLog(t *testing.T, root string) func(method string, params map[str
 				env = "R"
 			}
 			cwd := c.cwd
-			if slices.Contains(c.argv, "core.excludesFile") {
-				cwd = "<temp>"
-			}
 			line := cwd + "|" + env + "|" + strings.Join(argv, " ")
 			// A heavy call has the list of 28 items. Any other count shows in the line.
 			if env == "H" && items != 0 && items != 28 {
@@ -104,8 +101,8 @@ func removeCallLog(t *testing.T, root string) func(method string, params map[str
 	}
 }
 
-// callExcludes is the read of the user excludes with no daemon environment.
-const callExcludes = "<temp>|-|config --includes --path core.excludesFile D=/dev/null"
+// callExcludes is the read of the user excludes, in the folder of the calls outside a repository.
+const callExcludes = "/|-|config --includes --path core.excludesFile D=/dev/null"
 
 // callConfigRead is the daemon's own read of the config of the repository
 // (gitrepoconfig.go), with no daemon environment. It is not a call of 89cb6289:

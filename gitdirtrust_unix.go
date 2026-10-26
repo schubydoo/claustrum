@@ -42,9 +42,10 @@ func resolveGitDirLinks(g string) string {
 	return g
 }
 
-// gitVersionDir is the working directory of the `git version` call after a failed
-// configuration listing: the root directory, as 89cb6289 runs it on Linux and macOS
-// VMs (rows L10 and L11).
+// gitVersionDir is the working folder of the git calls outside a repository: the
+// `git version` run, the probe, the version gate, the excludes read and the read of
+// config text. It is the root folder on Linux and macOS (claustrum's own, not
+// measured).
 const gitVersionDir = "/"
 
 // nonFolderStartRefuses is false on Linux and macOS. A configuration listing that

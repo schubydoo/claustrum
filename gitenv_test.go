@@ -9,7 +9,6 @@ import (
 	"slices"
 	"strconv"
 	"strings"
-	"sync"
 	"testing"
 )
 
@@ -416,7 +415,7 @@ func installEnvStub(t *testing.T) func(method string, params map[string]any) (st
 	installGitSlowStub(t, realGit)
 	resetUserExcludesCache(t)
 	resetAttr := func() {
-		attrSourceOnce = sync.Once{}
+		attrSourceDone = false
 		attrSourceOK = false
 	}
 	resetAttr()
@@ -436,9 +435,9 @@ func installEnvStub(t *testing.T) func(method string, params map[string]any) (st
 
 // TestDaemonGitEnvPerCallKind checks, per call kind, where the daemon's own
 // GIT_CONFIG, GIT_CONFIG_PARAMETERS, GIT_CONFIG_COUNT set and GIT_ALLOW_PROTOCOL
-// reach git. The rows are round 1 C1, C3 and C4. The excludes read and the
-// --attr-source version probe get them as they are. Every listing drops the first
-// two and keeps the count set. Every hardened call drops the first two and carries
+// reach git. The rows are round 1 C1, C3 and C4. The excludes read, the
+// --attr-source version probe and the read of config text keep them
+// (claustrum's own, not measured). Every listing drops the first two and keeps the count set. Every hardened call drops the first two and carries
 // the extended count set. The light profile filters GIT_ALLOW_PROTOCOL, and the
 // heavy one denies every protocol.
 func TestDaemonGitEnvPerCallKind(t *testing.T) {
@@ -488,12 +487,12 @@ func TestDaemonGitEnvPerCallKind(t *testing.T) {
 				t.Errorf("unhardened call %d %q GIT_ALLOW_PROTOCOL = %q, want the daemon's (round1 C4)", i, c.argv, proto)
 			}
 		case slices.Contains(c.argv, "--no-includes"):
-			// The daemon's own read of the config (gitrepoconfig.go). It drops the
-			// first two as a listing does, and it carries no profile. This row is from
+			// The daemon's own read of the config (gitrepoconfig.go). It carries no
+			// profile and keeps the first two (claustrum's own, not measured). This row is from
 			// the code, not from round 1.
 			kinds["config read"]++
-			if !slices.Equal(got, listingSet) {
-				t.Errorf("config read %d %q = %q\nwant %q", i, c.argv, got, listingSet)
+			if want := sorted(planted[:8]...); !slices.Equal(got, want) {
+				t.Errorf("config read %d %q = %q\nwant %q", i, c.argv, got, want)
 			}
 			if proto != "ssh:https:git" {
 				t.Errorf("config read %d GIT_ALLOW_PROTOCOL = %q, want the daemon's", i, proto)

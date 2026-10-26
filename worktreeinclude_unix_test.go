@@ -123,14 +123,11 @@ func TestIncludeVersionGate(t *testing.T) {
 			if n := versionCalls(t, log); n != 1 {
 				t.Errorf("git version ran %d times with a manifest, want 1", n)
 			}
-			// f6010b97 runs it with no `-c` options and no `-C`, in the daemon's
-			// own working directory.
-			cwd, err := os.Getwd()
-			if err != nil {
-				t.Fatal(err)
-			}
+			// f6010b97 runs it with no `-c` options and no `-C`. claustrum runs
+			// it in the folder of the calls outside a repository (claustrum's own,
+			// not measured).
 			data, _ := os.ReadFile(log)
-			if want := "cwd=" + cwd + " argv=version\n"; string(data) != want {
+			if want := "cwd=" + gitVersionDir + " argv=version\n"; string(data) != want {
 				t.Errorf("git version call = %q, want %q", data, want)
 			}
 		})

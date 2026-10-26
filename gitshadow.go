@@ -612,8 +612,8 @@ var shadowTestDropped = []string{"GIT_DEFAULT_HASH", "GIT_CONFIG_SYSTEM"}
 // (gitVersionRun), the names that the test sets, so that the test stays in its
 // own folder, and shadowTestDropped. Which other entries of the daemon
 // 5fd08069 passes is not measured. The first `git version` call of
-// shadowVersionNote and versionAfterFailure get it with no cleaning.
-// shadowTestEnv cleans it for the test calls.
+// shadowVersionNote and versionAfterFailure do not use it: they get
+// gitVersionEnv(nil). shadowTestEnv cleans it for the test calls.
 func shadowDaemonEnv() []string {
 	env := withoutConfigCountSet(listingEnvOf(os.Environ()))
 	return slices.DeleteFunc(env, func(kv string) bool {
@@ -989,7 +989,7 @@ func readStopText(path string) string {
 // three share the path of `init` and `mktree`: not measured (setupFailed in
 // shadowTestCalls).
 func shadowVersionNote(check string, env []string) string {
-	first := shadowGit(gitVersionDir, shadowDaemonEnv(), "version")
+	first := shadowGit(gitVersionDir, gitVersionEnv(nil), "version")
 	second := shadowGit(check, env, append(shadowTestPrefix(), "version")...)
 	text := second.out
 	if text == "" {
