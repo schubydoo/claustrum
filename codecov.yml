@@ -245,6 +245,9 @@ component_management:
         - gitdirtrust.go
         - gitdirtrust_unix.go
         - gitdirtrust_windows.go
+        - gitnorepo.go
+        - gitnorepo_unix.go
+        - gitnorepo_windows.go
         # the daemon's own read of a .git file, a commondir file and a gitdir record.
         - gitplainfile_unix.go
         - gitplainfile_windows.go

@@ -62,6 +62,10 @@ func gitFileNowhereFrames(t *testing.T, g, text string, off bool) []methodFrame 
 // in V-S2w. Mutations: answer the listing refusal in noRepoCalls, drop
 // statusGitFileNowhere, name dir in place of the folder that holds `.git` in
 // failedListingCheck, or key the rule on the state of the daemon.
+//
+// Without "shadowDirOff":true git.info runs that call itself. Its exit 128 gets the
+// second run, which exits 0, so git.info answers "no repository" (measured on Linux
+// with an older git). With git 2.56 that answer is claustrum's own, not measured.
 func TestGitFileNowhereFourMethodsStub(t *testing.T) {
 	f := newNoRepoFixture(t)
 	f.s, _ = newSeededShadowServer(t)
@@ -100,6 +104,11 @@ func TestGitFileNowhereFourMethodsStub(t *testing.T) {
 				t.Setenv("CLAUSTRUM_GITSTUB_ENVEND", "GIT_COMMON_DIR="+filepath.Join("nowhere", "gitdir"))
 			}
 			rows := gitFileNowhereFrames(t, g, tc.want, tc.off)
+			if !tc.off {
+				// git.info runs the call about the repository in place of the listing.
+				// It exits 128, and its second run exits 0 (TestGoneGitFileInfoCalls).
+				rows[0].frame = noRepoShadow
+			}
 			subRow := rows[0]
 			subRow.params = map[string]any{"path": sub}
 			if tc.off {

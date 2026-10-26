@@ -1114,8 +1114,9 @@ func (c configCheck) refused() bool {
 //     methods. Rows L13xa and L13xb are its removes without worktreeRoot.
 //     git.worktree_remove with worktreeRoot does not come here with no git:
 //     externalWorkTreeRefusal answers first.
-//  2. The listing exits 128 and says "fatal: not a git repository": "no repository"
-//     (rows L14a, L14b, L14d, L14e and N01 to N04). See listingRun.saysNoRepository.
+//  2. The listing exits 128, names no git dir, and the daemon's own search finds no
+//     usable git dir: "no repository". 89cb6289 tested the text "fatal: not a git
+//     repository" instead. See listingRun.saysNoRepository.
 //  3. Any other failure: `git version` runs. If it fails too, the refusal starts with
 //     gitCannotRunPrefix, else with hooksRefusalPrefix (rows L10 to L12, L14c and L15).
 //  4. The listing succeeded but cannot be used: a key over configKeyMaxBytes (row

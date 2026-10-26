@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"io/fs"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"slices"
 	"strings"
@@ -54,6 +55,11 @@ var (
 	// s3p2b-edges-macos and of s3p2b-edges-windows). The split into the two
 	// times is fitted, as for a call of the start test.
 	probeCallBound = 30 * time.Second
+	// probeSecondBound ends the second run of the call (secondProbe), counted
+	// from its own start. c8e2f083 killed a second run that did not end 30 s
+	// after its start (measured on Linux and Windows). The wait for its pipes
+	// after the kill is shadowCallDrain.
+	probeSecondBound = 30 * time.Second
 	// probeClock is the clock of the kept answer.
 	probeClock = time.Now
 )
@@ -348,21 +354,15 @@ func probeArgs() []string {
 //   - Exit 0 and the git directory of the repository: good. Git prints `.git`,
 //     and the full path is good too. A path that is not absolute is taken from
 //     the root.
-//   - Exit 128 with a no-repository text (probeSaysNoRepo): "no repository".
-//     The cells have
-//     the "dubious ownership" text of git for a repository of another owner
-//     and `fatal: not a git repository (or any of the parent directories):
-//     .git` (cells D1 and D3 of s3p2-linux2, s3p2-macos and s3p2-windows).
+//   - Exit 128 with any text: the second run of c8e2f083 (secondProbe). It
+//     replaces the rules of 5fd08069 for exit 128 below.
 //   - Every other failure that probeCallBound did not stop: the error `git could not check this
 //     repository on the remote machine: at "<root>": exit status <n>`, after
 //     one `git version` call (cannotRunText). If that call fails, its text is
 //     the answer (cell P14x of round task073-03, Linux VM). After `fatal: bad
 //     config line 3 in file <home>/.gitconfig` that holds for each of the five
 //     methods (cell E8 of round task083-01 and cells E8s, E8l, E8c and E8r of
-//     round task083-02, Linux VM). Exit 128 with
-//     another text has the rule of exit 1 with a text (cell P8 of round
-//     task073-03, cells Q5 to Q7 of round task073-05, Linux VM, and cell W2-268
-//     of round task073-01, Windows VM). Exit 1 with a text on the
+//     round task083-02, Linux VM). Exit 1 with a text on the
 //     error output has that text in the place of the exec error: `… at
 //     "<root>": fatal: text of the wrapper for p3`, with the same call count
 //     (cells p3 of val-s3p2b2-7-linux2, Linux VM). A text of two lines stands
@@ -428,8 +428,8 @@ func (h *shadowHost) askGit(t gitDirTrust, dir string) repoAnswer {
 			return repoAnswer{text: fmt.Sprintf("git could not check this repository on the remote machine: it did not finish within 30 seconds in %q; try again", root)}
 		}
 		if r.err != nil {
-			if probeSaysNoRepo(r) {
-				return repoAnswer{noRepo: true}
+			if exitedWith128(r) {
+				return secondProbe(folder, root, env, r)
 			}
 			if whole := cannotRunText(); whole != "" {
 				return repoAnswer{text: whole}
@@ -450,33 +450,44 @@ func (h *shadowHost) askGit(t gitDirTrust, dir string) repoAnswer {
 	return repoAnswer{text: fmt.Sprintf("git and Claude disagree about which repository holds this folder: from %q git finds %q, Claude finds %q; try again", root, shown, want)}
 }
 
-// probeSaysNoRepo reports whether a call about the repository that exits 128
-// names no repository by its text, so that no `git version` call follows.
-// Round task073-03 (Linux VM) has these texts of 5fd08069. A text that starts
-// with `fatal: not a git repository`, in any letter case (cells P6 and P7).
-// `detected dubious ownership` after a first line (cell P9). `fatal: cannot use
-// bare repository 'x'` (cell P10). The same text after a first line, as
-// `warning: w`, does not count (cell P8). The text of git 2.56 for a `.git` file
-// to nowhere counts too (claustrum's own, not measured).
+// exitedWith128 reports whether the call ended by itself with exit code 128.
+// A call that a signal ended, or that probeCallBound ended, does not count.
+func exitedWith128(r shadowRun) bool {
+	var exit *exec.ExitError
+	return !r.ended && errors.As(r.err, &exit) && exit.Exited() && exit.ExitCode() == 128
+}
+
+// secondProbe runs the call once more after a first call that exited 128,
+// whatever its text. first is that call. The second run has the argv and the
+// environment env of the first call, plus GIT_DIR=<.probe>, and runs in
+// `.probe` of folder, the folder of the daemon, on every system. Its output is
+// not read.
 //
-// The two phrases count at any place in the text, in any letter case. That is
-// claustrum's own, not measured beyond the cells. The phrase `unsafe
-// repository` of older gits counts the same way (claustrum's own, not measured).
-func probeSaysNoRepo(r shadowRun) bool {
-	l := listingRun{stderr: r.stderr, err: r.err}
-	if l.saysNoRepository() || l.saysGitFileNowhere() {
-		return true
+// c8e2f083 does this (measured on Linux and Windows). A repository of another
+// owner and a bare repository with
+// safe.bareRepository=explicit got the second run, with GIT_DIR. It exited 0,
+// and the answer was "no repository". A second run that did not end was killed
+// 30 s after its start (probeSecondBound). The answer was then `git could not
+// check this repository on the remote machine: at "<root>": ` and the text of
+// the first call, after one `git version` call. On Windows the folder `.probe`
+// was the working folder of the second run.
+//
+// Not measured: the working folder on Linux and macOS, a second run that
+// printed text and exited 0, a second run that exited non-zero, and the place
+// of GIT_DIR in the environment. Not measured either: whether only the process
+// is killed and not its group. exec kills the process alone. A failed `git
+// version` call answers its own text, as after a failed first call
+// (cannotRunText, the rule of 5fd08069).
+func secondProbe(folder, root string, env []string, first shadowRun) repoAnswer {
+	probe := filepath.Join(folder, shadowProbeName)
+	second := exitedInTime(boundedGit(probeSecondBound, probe, slices.Concat(env, []string{"GIT_DIR=" + probe}), probeArgs()...))
+	if second.err == nil {
+		return repoAnswer{noRepo: true}
 	}
-	if !l.exit128Says("") {
-		return false
+	if whole := cannotRunText(); whole != "" {
+		return repoAnswer{text: whole}
 	}
-	text := strings.ToLower(r.stderr)
-	for _, phrase := range []string{"detected dubious ownership", "cannot use bare repository", "unsafe repository"} {
-		if strings.Contains(text, phrase) {
-			return true
-		}
-	}
-	return false
+	return repoAnswer{text: repoCheckFailedText(root, first.allLines())}
 }
 
 // repoCheckFailedText is the error of a failed call about the repository in root.

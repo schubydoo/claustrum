@@ -124,8 +124,9 @@ func TestStartTestCallSevenWithAWorkingVersion(t *testing.T) {
 // delete (cell E8 of round task083-01 and cells E8s, E8l, E8c and E8r of round
 // task083-02, Linux VM). If it works, git.info answers the error of the call, as
 // 5fd08069 does for another text with exit 128 (cell P8 of round task073-03,
-// Linux VM). Mutation: drop the cannotRunText branch in askGit, or treat every
-// text as no repository in probeSaysNoRepo.
+// Linux VM). On c8e2f083 an exit 128 gets a second run (measured on Linux).
+// Here it fails as the first call did, so each request makes two calls about
+// the repository. Mutation: drop the cannotRunText branch in secondProbe.
 func TestProbeExit128WithABrokenConfig(t *testing.T) {
 	line := "fatal: bad config line 3 in file /h/.gitconfig"
 	text := "git cannot run on this host; git not run: exit status 128: " + line
@@ -152,8 +153,8 @@ func TestProbeExit128WithABrokenConfig(t *testing.T) {
 			if method == "git.worktree_remove" {
 				want = 2
 			}
-			if probes, versions := countAfterProbe(t, calls); probes != want || versions != want {
-				t.Errorf("%d calls about the repository and %d plain version calls after them, want %d and %d", probes, versions, want, want)
+			if probes, versions := countAfterProbe(t, calls); probes != 2*want || versions != want {
+				t.Errorf("%d calls about the repository and %d plain version calls after them, want %d and %d", probes, versions, 2*want, want)
 			}
 			if got := entryNames(t, f.wt); !slices.Equal(got, wtBefore) {
 				t.Errorf("the worktree of the fixture holds %v, want %v", got, wtBefore)
@@ -176,8 +177,8 @@ func TestProbeExit128WithABrokenConfig(t *testing.T) {
 		if want := probeErrorShapes(t, f, repoCheckFailedText(f.repo, line))[0]; raw != want {
 			t.Errorf("git.info = %s\n  want %s", raw, want)
 		}
-		if probes, versions := countAfterProbe(t, calls); probes != 1 || versions != 1 {
-			t.Errorf("%d calls about the repository and %d plain version calls after it, want 1 and 1", probes, versions)
+		if probes, versions := countAfterProbe(t, calls); probes != 2 || versions != 1 {
+			t.Errorf("%d calls about the repository and %d plain version calls after them, want 2 and 1", probes, versions)
 		}
 	})
 }

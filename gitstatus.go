@@ -129,13 +129,19 @@ func statusBaseInManagedTree(baseRepo string) bool {
 // parseConfigListing is no refusal here: the answer stays isRepo:false. No row
 // measures that limit in such a folder.
 //
+// A listing that exits 128 with the text of notARepoHead is no refusal here either.
+// The listing names GIT_DIR, so failedListingCheck gives it no "no repository" verdict.
+// git.status keeps the answer isRepo:false that it gave before. c8e2f083 answers
+// isRepo:false on a `.git` file to a gone path (measured on Linux). Its answer to a
+// failed listing here is not measured.
+//
 // s holds the time limits of the request. The listing is the first of the
 // request (configListingLimit).
 func statusNoRepoCalls(s *gitStop, baseRepo string, noGit bool) string {
 	ctx := s.context()
 	pin := []string{"GIT_DIR=" + os.DevNull}
 	r := runListing(ctx, baseRepo, "", precursorEnv(true, pin))
-	if r.err != nil && !noGit {
+	if r.err != nil && !noGit && !r.exit128Says(notARepoHead) {
 		if c := failedListingCheck(gitUse{stop: s}, r, baseRepo, true); c.refusal != "" {
 			return c.refusal
 		}

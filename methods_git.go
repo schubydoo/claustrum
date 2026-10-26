@@ -253,6 +253,17 @@ func gitInfo(req *request) response {
 			if msg := req.shadow.gate(bool(p.ShadowDirOff)); msg != "" {
 				return errResult(req.ID, codeInternal, msg)
 			}
+			// In the state shadow the call about the repository runs in the folder
+			// that holds `.git`, in place of the listing. c8e2f083 runs it, then
+			// its second run with GIT_DIR=<.probe>, which exits 0, and answers "no
+			// repository" (measured on Linux). A failed second run answers its
+			// error (claustrum's own, not measured).
+			if !bool(p.ShadowDirOff) && req.shadow.control(false) == controlShadow {
+				if a := req.shadow.askGit(t, p.Path); a.text != "" {
+					return errResult(req.ID, codeInternal, a.text)
+				}
+				return notRepo()
+			}
 		}
 		// A listing that fails here refuses (rows A-N1 and A-X2 on Linux and macOS VMs,
 		// cells P3-infoN and P3-infoX on a Windows VM).

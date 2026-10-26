@@ -154,16 +154,23 @@ func (f listingFixture) wt() string { return filepath.Join(f.top, ".claude", "wo
 // fiveMethods runs the five git methods on the fixture and returns each part.
 func (f listingFixture) fiveMethods(t *testing.T) map[string]string {
 	t.Helper()
+	return f.fiveMethodsAt(t, f.top)
+}
+
+// fiveMethodsAt is fiveMethods with base as the folder of each request.
+func (f listingFixture) fiveMethodsAt(t *testing.T, base string) map[string]string {
+	t.Helper()
+	wt := filepath.Join(base, ".claude", "worktrees", "w1")
 	out := map[string]string{}
 	for _, m := range []struct {
 		name   string
 		params map[string]any
 	}{
-		{"git.info", map[string]any{"path": f.top}},
-		{"git.list_branches", map[string]any{"path": f.top}},
-		{"git.status", map[string]any{"path": f.top, "baseRepo": f.top}},
-		{"git.worktree_create", map[string]any{"baseRepo": f.top, "worktreePath": f.wt(), "branchName": "w1"}},
-		{"git.worktree_remove", map[string]any{"baseRepo": f.top, "worktreePath": f.wt(), "branchName": "w1"}},
+		{"git.info", map[string]any{"path": base}},
+		{"git.list_branches", map[string]any{"path": base}},
+		{"git.status", map[string]any{"path": base, "baseRepo": base}},
+		{"git.worktree_create", map[string]any{"baseRepo": base, "worktreePath": wt, "branchName": "w1"}},
+		{"git.worktree_remove", map[string]any{"baseRepo": base, "worktreePath": wt, "branchName": "w1"}},
 	} {
 		raw, _ := f.call(t, m.name, m.params)
 		out[m.name] = replyPart(t, raw)
@@ -449,20 +456,30 @@ func stubListing(t *testing.T, code int, stderr string) {
 	t.Setenv("CLAUSTRUM_GITSTUB_EXIT", strconv.Itoa(code))
 }
 
-// A listing that exits 128 and says "fatal: not a git
-// repository", in any letter case and after leading white space, gives the "no
-// repository" shape of each method (rows L14a, L14b and L14d). Mutations: drop the
-// class check, compare case-sensitively, keep the leading white space.
+// A listing that exits 128 in a folder where the daemon's own search finds no
+// repository gives the "no repository" shape of each method. The text of git plays no
+// part (claustrum's own, not measured): the folder is below a repository that is a ceiling of
+// the search, and three English texts and a text in another language all give the
+// same shape. Mutation: make listingFindsNoRepository return false.
 func TestListingNotARepository(t *testing.T) {
 	for _, tc := range []struct{ name, stderr string }{
 		{"L14a", "fatal: not a git repository (stub)"},
 		{"L14b", "FATAL: NOT A GIT REPOSITORY"},
 		{"L14d", strings.Repeat(`\n `, 40) + "fatal: not a git repository (stub)"},
+		{"another language", "fatal: kein Git-Repository (oder irgendein Elternverzeichnis): .git"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			f := newListingFixture(t)
+			// A folder below the repository, with the repository as a ceiling of
+			// git's search. The trust check of the daemon still finds the repository,
+			// so the listing carries no GIT_DIR entry.
+			sub := filepath.Join(f.top, "sub")
+			if err := os.MkdirAll(sub, 0o755); err != nil {
+				t.Fatal(err)
+			}
+			t.Setenv("GIT_CEILING_DIRECTORIES", f.top)
 			stubListing(t, 128, tc.stderr)
-			got := f.fiveMethods(t)
+			got := f.fiveMethodsAt(t, sub)
 			for m, want := range map[string]string{
 				"git.info":            notRepoInfo,
 				"git.list_branches":   notRepoList,
@@ -474,8 +491,8 @@ func TestListingNotARepository(t *testing.T) {
 					t.Errorf("%s = %s\nwant %s", m, got[m], want)
 				}
 			}
-			if exists(f.wt()) {
-				t.Errorf("create left %s", f.wt())
+			if exists(filepath.Join(sub, ".claude")) {
+				t.Errorf("create left %s", filepath.Join(sub, ".claude"))
 			}
 		})
 	}
@@ -576,8 +593,13 @@ func TestListingNotARepositoryNeedsExit128(t *testing.T) {
 // the first listing, and it is not counted here.
 func TestListingNotARepositoryRemoveTrace(t *testing.T) {
 	f := newListingFixture(t)
+	sub := filepath.Join(f.top, "sub")
+	if err := os.MkdirAll(sub, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("GIT_CEILING_DIRECTORIES", f.top)
 	stubListing(t, 128, "fatal: not a git repository (stub)")
-	raw, calls := f.call(t, "git.worktree_remove", map[string]any{"baseRepo": f.top, "worktreePath": f.wt(), "branchName": "w1"})
+	raw, calls := f.call(t, "git.worktree_remove", map[string]any{"baseRepo": sub, "worktreePath": filepath.Join(sub, ".claude", "worktrees", "w1"), "branchName": "w1"})
 	if got := replyPart(t, raw); got != `{"success":true,"branchKept":true}` {
 		t.Errorf("remove = %s", got)
 	}
