@@ -58,7 +58,7 @@ import (
 // VM (cell B1 of s3-windows).
 var gitHardenLight = []string{
 	"core.hooksPath=/dev/null",
-	"core.fsmonitor=false",
+	"core.fsmonitor=",
 	"branch.autoSetupMerge=false",
 	"fetch.bundleURI=",
 	"http.saveCookies=false",
@@ -89,7 +89,7 @@ var gitHardenLight = []string{
 // git.list_branches, and 23 for git.status apart from its `rev-parse
 // --show-toplevel` pair.
 var gitHardenHeavy = []string{
-	"core.fsmonitor=false",
+	"core.fsmonitor=",
 	"core.hooksPath=/dev/null",
 	"core.attributesFile=/dev/null",
 	"core.excludesFile=/dev/null", // placeholder, see profileArgsWithExcludes

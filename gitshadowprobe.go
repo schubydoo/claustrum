@@ -270,7 +270,7 @@ func probeEnv(dir, root string) []string {
 // core.hooksPath=NUL (s3p2-linux2 cell D4, Linux VM. s3p2-windows cells D4 and
 // B3a, Windows VM. Cell 50 of s3p2b-edges-macos).
 func probeArgs() []string {
-	return []string{"-c", "core.hooksPath=" + os.DevNull, "-c", "core.fsmonitor=false", "rev-parse", "--git-dir"}
+	return []string{"-c", "core.hooksPath=" + os.DevNull, "-c", "core.fsmonitor=", "rev-parse", "--git-dir"}
 }
 
 // askGit asks git about the repository of the trust verdict t for a request on

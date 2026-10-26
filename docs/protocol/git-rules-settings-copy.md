@@ -212,9 +212,9 @@ blocks of rewritten URLs. The file ends with
 
 ### The call about the repository
 
-In the state `shadow` the daemon asks git about the repository before the calls of
-the method. The call is `-c core.hooksPath=<null device> -c core.fsmonitor=false
-rev-parse --git-dir`, in the root of the work tree. It names
+In the state `shadow` the daemon runs `rev-parse --git-dir` before the method's
+calls, in the root of the work tree. It passes `-c core.hooksPath=<null device>`
+and `-c core.fsmonitor=` (build `c8e2f083`, measured on Windows). The call names
 the folder `.probe` of the daemon, and the daemon writes an emptied `.probe/config`
 again when it changed. The call drops the daemon's `GIT_NAMESPACE`,
 `GIT_INDEX_FILE`, `GIT_DISCOVERY_ACROSS_FILESYSTEM` and

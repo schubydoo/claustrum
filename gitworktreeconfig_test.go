@@ -71,9 +71,9 @@ func TestWorktreeConfigItems(t *testing.T) {
 // not changed.
 func TestWithFront(t *testing.T) {
 	front := []string{"-c", "core.eol=lf"}
-	argv := []string{"-c", "core.fsmonitor=false", "status"}
+	argv := []string{"-c", "core.fsmonitor=", "status"}
 	got := withFront(front, argv)
-	if want := []string{"-c", "core.eol=lf", "-c", "core.fsmonitor=false", "status"}; !slices.Equal(got, want) {
+	if want := []string{"-c", "core.eol=lf", "-c", "core.fsmonitor=", "status"}; !slices.Equal(got, want) {
 		t.Errorf("argv = %q, want %q", got, want)
 	}
 	if len(front) != 2 || front[1] != "core.eol=lf" {
