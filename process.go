@@ -33,9 +33,9 @@ type streamFrame struct {
 	// sweep. Both omitempty, so a normal exit stays byte-identical to the pre-4534d86
 	// frame. Provenance: the "client" values and the SIGTERM/SIGKILL names are
 	// live-measured against 4534d86. Other mapped signal names are not individually
-	// measured. The Windows signal-omission is VM-measured. The "shutdown" value is
-	// not probe-measured, because the shutdown exit frame races connection
-	// teardown and is not client-observable.
+	// measured. The Windows signal-omission is VM-measured. The "shutdown" label of
+	// a waiting kill is measured on Linux in the log only, because the shutdown exit
+	// frame races connection teardown and is not client-observable.
 	Signal   string `json:"signal,omitempty"`
 	KilledBy string `json:"killedBy,omitempty"`
 
@@ -156,10 +156,11 @@ type managedProc struct {
 	// signalled from outside the daemon, or was already reaped when the kill
 	// arrived — a late kill inside the exit-drain window changed nothing, so it
 	// claims nothing (measured against 4534d86: a natural exit killed inside the
-	// drain window carries no killedBy on the reference). The first reason wins, so
-	// a client kill racing the shutdown sweep stays "client". Provenance for the
-	// value set is split at the KilledBy field comment above: "client" is
-	// live-measured, "shutdown" is not probe-measured. Read and written under p.mu.
+	// drain window carries no killedBy on the reference). The first reason wins, except
+	// that the shutdown sweep replaces an earlier "client" of a kill that still waits.
+	// Provenance for the value set is split at the KilledBy field comment above:
+	// "client" is live-measured, "shutdown" is measured on Linux only in the log.
+	// Read and written under p.mu.
 	killedBy string
 	stdin    io.WriteCloser
 	// cmd is set once in spawn's composite literal and never reassigned, so it is
@@ -469,7 +470,8 @@ var signalGroup = func(g *procGroup, proc *os.Process, signame string) error {
 // a process that exited on its own before the signal could reach it (measured
 // against 4534d86: a natural exit killed inside the drain window carries no
 // killedBy). Pass killedBy "" to signal without claiming attribution. The first
-// reason wins, so a client kill racing the shutdown sweep stays "client".
+// reason wins, except that the shutdown sweep replaces an earlier "client" of a
+// kill that still waits (measured on Linux in the log).
 //
 // p.mu is held across the check, the stamp and the delivery: a reaped check that
 // returns before the signal leaves a gap for the exit goroutine to reap in
@@ -497,7 +499,7 @@ func (p *managedProc) signalIfLive(signame, killedBy string) bool {
 	if !p.running || p.reaped || p.cmd == nil || p.cmd.Process == nil {
 		return false
 	}
-	if killedBy != "" && p.killedBy == "" {
+	if killedBy != "" && (p.killedBy == "" || killedBy == "shutdown") {
 		p.killedBy = killedBy
 	}
 	_ = signalGroup(p.group, p.cmd.Process, signame)
