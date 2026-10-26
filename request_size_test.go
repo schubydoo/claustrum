@@ -148,19 +148,20 @@ func serveConnOnPipe(t *testing.T, write func(net.Conn)) string {
 // cleanup defer.
 func TestOversizeRequestLogsScannerError(t *testing.T) {
 	out := serveConnOnPipe(t, func(cli net.Conn) {
+		showTokenOn(t, cli) // the line is skipped without the token mark
 		// Deliberately unterminated: bufio gives up at the cap either way, and the
 		// client-side write unblocks when serveConn's defer closes its end.
 		_, _ = cli.Write([]byte(strings.Repeat("x", 1024*1024)))
 	})
 
-	i := strings.Index(out, "[Server] scanner error on pipe")
+	i := strings.Index(out, `[Server] scanner error on "pipe"`)
 	if i < 0 {
 		t.Fatalf("no scanner error logged; got:\n%s", out)
 	}
-	if !strings.Contains(out[i:], "bufio.Scanner: token too long") {
+	if !strings.Contains(out[i:], `"bufio.Scanner: token too long"`) {
 		t.Errorf("scanner error carries the wrong cause; got:\n%s", out)
 	}
-	j := strings.Index(out, "[Server] Connection closed: pipe")
+	j := strings.Index(out, `[Server] Connection closed: "pipe"`)
 	if j < 0 {
 		t.Fatalf("no close line logged; got:\n%s", out)
 	}
@@ -172,11 +173,11 @@ func TestOversizeRequestLogsScannerError(t *testing.T) {
 // The counterpart: sc.Err() is nil on a clean EOF, so an ordinary disconnect
 // stays as quiet as it was before the check existed.
 func TestCleanDisconnectLogsNoScannerError(t *testing.T) {
-	out := serveConnOnPipe(t, func(net.Conn) {})
+	out := serveConnOnPipe(t, func(cli net.Conn) { showTokenOn(t, cli) })
 	// Positive control FIRST: this test asserts an absence, so it would pass just
 	// as happily if captureLog saw nothing at all. Anchoring on the line that must
 	// always be there proves the capture window actually covered this connection.
-	if !strings.Contains(out, "[Server] Connection closed: pipe") {
+	if !strings.Contains(out, `[Server] Connection closed: "pipe"`) {
 		t.Fatalf("captured no output for this connection, so the absence below proves nothing; got:\n%s", out)
 	}
 	if strings.Contains(out, "scanner error") {
@@ -229,6 +230,7 @@ func TestServerInitiatedCloseLogsNoScannerError(t *testing.T) {
 	out := captureLog(t, func() {
 		done := make(chan struct{})
 		go func() { defer close(done); s.serveConn(&conn{nc: a.nc}) }()
+		showTokenOn(t, cli)
 		_ = a.nc.Close() // what closeAll does on server.shutdown
 		<-done
 	})

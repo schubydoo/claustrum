@@ -784,6 +784,11 @@ func (c *hostCleaner) judgeOrphan(t hcTracked) (reap bool, reason string) {
 	return true, ""
 }
 
+// hcPassStartLine is the pass line, claustrum's own, not measured. It is
+// 99 bytes. 5fd08069 and 89cb6289 printed "(the next connection logged is this pass
+// probing its own socket)" there.
+const hcPassStartLine = "[hostclean] pass starting (it probes its own socket first: a connection that never shows the token)"
+
 // hcOrphanUninspected is the reason for an orphan whose stdio read got no answer. The pass
 // prints it in the line of the reference, measured on a macOS VM against 89cb6289 (row E5):
 // there the lsof command did not start. A run that writes to stderr and exits 1 gives the
@@ -1102,7 +1107,7 @@ func (c *hostCleaner) undoRename(e runDirEntry, target, reason string) {
 func (c *hostCleaner) Pass() hcSummary {
 	var sum hcSummary
 	c.busyEnded = nil
-	logInfof("[hostclean] pass starting (the next connection logged is this pass probing its own socket)")
+	logInfof(hcPassStartLine)
 	switch state, peer, _ := probeSocket(c.ownSocket); {
 	case state != hcSockLive:
 		logInfof("[hostclean] own socket %q does not lead to this daemon (state %d, pid %d); skipping this pass", c.ownSocket, state, peer)

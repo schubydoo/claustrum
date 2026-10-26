@@ -35,7 +35,7 @@ func TestShutdownLogsBeforeConnectionClose(t *testing.T) {
 		replied := make(chan struct{})
 		go func() {
 			defer close(replied)
-			s.dispatch(nil, []byte(`{"jsonrpc":"2.0","id":1,"method":"server.shutdown"}`))
+			s.dispatch(c, []byte(`{"jsonrpc":"2.0","id":1,"method":"server.shutdown"}`))
 		}()
 		for _, ch := range []chan struct{}{replied, served} {
 			select {
@@ -56,7 +56,7 @@ func TestShutdownLogsBeforeConnectionClose(t *testing.T) {
 	recv := at("INFO  [ServerHandler] server.shutdown received over RPC\n")
 	req := at("INFO  [Server] shutdown requested\n")
 	closed := at("MARK close")
-	line := at("INFO  [Server] Connection closed: pipe\n")
+	line := at("INFO  [Server] Connection closed: \"pipe\"\n")
 	if recv >= req || req >= closed {
 		t.Errorf("want received, then shutdown requested, then the connection close; got:\n%s", out)
 	}

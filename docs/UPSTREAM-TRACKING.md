@@ -519,10 +519,9 @@ Unless an item names another build, the daemon items below are measured against
 - These log and call differences are known and open. They are not drift.
     - On Linux and macOS, the later `SIGKILL` of a gone leader at the reap of a
       start is [D20](DIVERGENCES.md#d20).
-    - On Linux and macOS claustrum logs the exit line `Process <id> exited with
-      code -1, terminated by SIGKILL, signalled at shutdown request` for a child
-      that a shutdown kills. `89cb6289` logs none, and `5fd08069` logs it on Linux
-      only.
+    - On Linux and macOS claustrum logs an exit line with `terminated by
+      SIGKILL, signalled by this daemon (shutdown)` for a child that a shutdown kills. `89cb6289` logs none. `5fd08069` logs it on Linux
+      only, as `signalled at shutdown request`.
     - On Linux and macOS, after a `-stop` during the wait of a supersede,
       claustrum can log the exit line of the old process and the `supersedes`
       line. `89cb6289` logs neither.

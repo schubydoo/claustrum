@@ -130,7 +130,7 @@ On `server.shutdown` the daemon logs these two lines before it closes any connec
 [Server] shutdown requested
 ```
 
-If the daemon logs a `[Server] Connection closed: <addr>` line, the line comes after the close of its connection. Then the daemon logs:
+If the daemon logs a `[Server] Connection closed: <label>` line, the line comes after the close of its connection. Then the daemon logs:
 
 ```
 [Server] cleanup: closed <n> connection(s), killed <n> child process group(s)

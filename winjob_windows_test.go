@@ -201,8 +201,10 @@ func spawnTreeFor(t *testing.T, owner testing.TB, m *procManager, id, mode strin
 }
 
 // TestKillEndsOnlyTheDirectChild: process.kill, process.killAndWait and the kill of a
-// clean stop end the direct child, with exit code 1 and the "signalled at client request"
-// exit line. The grandchild is alive 1 s later. All rows run their kills first, and then
+// clean stop end the direct child, with exit code 1 and the "signalled by this daemon (client)"
+// exit line. That line is claustrum's own on Windows (not measured), and a Linux VM measured
+// it for build c8e2f083. 89cb6289 printed
+// ", signalled at client request" there. The grandchild is alive 1 s later. All rows run their kills first, and then
 // one wait of 1 s serves the check of every grandchild. Measured on a Windows VM against
 // 89cb6289: only the direct child ends, and the grandchild is alive at 1 s, 5 s and 15 s.
 // The rows are seven signal forms of process.kill, three forms of process.killAndWait,
@@ -218,19 +220,19 @@ func TestKillEndsOnlyTheDirectChild(t *testing.T) {
 		wantLog string
 	}{
 		{"kd-kill-default", func(m *procManager, id string) result { m.kill(id, ""); return result{} },
-			", signalled at client request"},
+			", signalled by this daemon (client)"},
 		{"kd-kill-term", func(m *procManager, id string) result { m.kill(id, "TERM"); return result{} },
-			", signalled at client request"},
+			", signalled by this daemon (client)"},
 		{"kd-kill-kill", func(m *procManager, id string) result { m.kill(id, "KILL"); return result{} },
-			", signalled at client request"},
+			", signalled by this daemon (client)"},
 		{"kd-killAndWait-default", func(m *procManager, id string) result {
 			f, d, a, e := m.killAndWait(id, "", 3*time.Second, true)
 			return result{f, d, a, e}
-		}, ", signalled at client request"},
+		}, ", signalled by this daemon (client)"},
 		{"kd-killAndWait-no-escalate", func(m *procManager, id string) result {
 			f, d, a, e := m.killAndWait(id, "", 3*time.Second, false)
 			return result{f, d, a, e}
-		}, ", signalled at client request"},
+		}, ", signalled by this daemon (client)"},
 		// The exit line of a clean stop is not measured on Windows. Only the code is, so
 		// the empty wantLog checks the code alone.
 		{"kd-clean-stop", func(m *procManager, _ string) result { m.killAll(); return result{} }, ""},
@@ -337,7 +339,7 @@ func TestKillWithKidsHoldingThePipes(t *testing.T) {
 		wantLinesInOrder(t, log,
 			"[process.Manager] KillAndWait "+id+": group kill failed: TerminateProcess: Access is denied.",
 			"[process.Manager] Process "+id+": pipe drain grace expired (grandchild holding stdio?); force-closing",
-			exitLineOf(id)+", signalled at client request")
+			exitLineOf(id)+", signalled by this daemon (client)")
 		for _, w := range []string{
 			"[process.Manager] stdout read error for process " + id + ": read |0: file already closed\n",
 			"[process.Manager] stderr read error for process " + id + ": read |0: file already closed\n",
@@ -348,7 +350,7 @@ func TestKillWithKidsHoldingThePipes(t *testing.T) {
 		}
 		// A child left alive by another test can add its own exit line after this one,
 		// so the check takes the exit lines of id and not the end of the log.
-		if w, lines := exitLineOf(id)+", signalled at client request", exitLinesOf(log, id); len(lines) != 1 || lines[0] != w {
+		if w, lines := exitLineOf(id)+", signalled by this daemon (client)", exitLinesOf(log, id); len(lines) != 1 || lines[0] != w {
 			t.Errorf("exit lines of %s = %q, want only %q\nlog:\n%s", id, lines, w, log)
 		}
 		if !processAlive(t, gpid) {
@@ -381,10 +383,10 @@ func TestKillWithKidsHoldingThePipes(t *testing.T) {
 		}
 		wantLinesInOrder(t, log,
 			"[process.Manager] Process "+id+": pipe drain grace expired (grandchild holding stdio?); force-closing",
-			exitLineOf(id)+", signalled at client request")
+			exitLineOf(id)+", signalled by this daemon (client)")
 		// A child left alive by another test can add its own exit line after this one,
 		// so the check takes the exit lines of id and not the end of the log.
-		if w, lines := exitLineOf(id)+", signalled at client request", exitLinesOf(log, id); len(lines) != 1 || lines[0] != w {
+		if w, lines := exitLineOf(id)+", signalled by this daemon (client)", exitLinesOf(log, id); len(lines) != 1 || lines[0] != w {
 			t.Errorf("exit lines of %s = %q, want only %q\nlog:\n%s", id, lines, w, log)
 		}
 		if !processAlive(t, gpid) {

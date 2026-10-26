@@ -142,7 +142,7 @@ files.read: file exceeds maxBytes
 checksum mismatch: expected=%s, actual=%s
 stdin offset gap: offset ahead of applied bytes
 process.stdin.offset
-[Server] Unauthorized request: method=%s, id=%v
+[Server] Unauthorized request
 [process.Manager] Process %s exited with code %d
 [frameSink] replay write failed, detaching: %v
 [shellenv] Extracted shell PATH (%d chars)

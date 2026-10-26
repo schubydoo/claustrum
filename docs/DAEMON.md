@@ -406,7 +406,7 @@ stderr of the daemon to the [daemon log](#daemon-log-remote-serverlog).
 
 ### The launcher wait
 
-The launcher connects to the socket path every 50 ms, for 12 s at most. It closes each connection at once, so the log of the answering daemon holds a `New connection from: @` / `Connection closed: @` pair. A socket file that refuses
+The launcher connects to the socket path every 50 ms, for 12 s at most. It closes each connection at once, so the log of the answering daemon holds a `New connection from: @` / `Connection closed: @` pair. Claustrum logs neither line for it ([Lines of connections](#lines-of-connections)). A socket file that refuses
 the connect does not end the wait. A killed daemon leaves such a file. A folder
 with content at the path does not end the wait either. The daemon cannot remove
 it, so it never binds (measured on Linux and Windows). An empty folder there is
@@ -493,7 +493,7 @@ same times as claustrum (measured on Linux and macOS). The timeout is fixed and
 always on: no flag, no configuration key. A watcher of each connection
 checks at a quarter of the timeout, capped at 30 s. At the timeout it closes the
 socket and logs `[Server] closing connection idle <d> in both directions:
-<addr>`. `89cb6289` logs that text with `5m0s` and `@` (measured on Linux). The watcher ends with its
+<addr>`. `89cb6289` logs that text with `5m0s` and `@` (measured on Linux). Claustrum quotes the address and logs no line for a connection that never showed the token ([Lines of connections](#lines-of-connections)). The watcher ends with its
 connection and at shutdown. The close sends no frame, and it never ends the
 daemon. On Linux and macOS the [orphan-exit self-probe](#orphan-exit-self-probe)
 retires a daemon with no client.
@@ -522,7 +522,6 @@ no timestamp:
 2026/07/31 00:17:30 INFO  [daemon] child processes will start with an open-files limit of 65536
 Claustrum remote server listening on /run/user/1000/claude/rpc.sock (pid 4711, instance 5f1c0a9e2b7d4c3e8a6f0b1d2c3e4f50)
 2026/07/31 00:17:30 INFO  [daemon] host cleaning off: socket path "/run/user/1000/claude/rpc.sock" is not <root>/run/<id>/rpc.sock
-2026/07/31 00:17:30 INFO  [Server] New connection from: @
 ```
 
 A failed raise writes no line (claustrum's own, not measured). The banner ends
@@ -573,13 +572,27 @@ claustrum: open log: open <path>: is a directory
 On Windows the rename moves a folder onto a regular `.old`. A second daemon can start on a live socket there. The first daemon holds the log open, so the rename fails, and the launcher truncates the log. The second daemon then logs there. Each daemon writes at the offset of its own handle, so the first daemon's earlier lines are lost and its later lines sit behind a block of NUL bytes. A log that another process holds with no delete share is truncated too,
 and `.old` stays. This is parity ([D21](DIVERGENCES.md#d21) is retired).
 
+### Lines of connections
+
+These line rules are claustrum's own (claustrum's own, not measured). `89cb6289` and `5fd08069` log the text of the notes.
+
+- A connection gets the token mark at its first request that passes the token check. `server.shutdown` passes with no token. A parse error and a refused request set no mark.
+- The label of a peer is its address in `%q` form, such as `"@"`.
+- `[Server] New connection from: <label>` comes once, at the first request that sets the mark and before the daemon handles it. The older builds log it at the accept.
+- `[Server] Connection closed: <label>` comes only for a connection with the mark.
+- A connection with no mark counts on the close counter and logs `[Server] Connection number <n> that never showed the token: <label>`. The connects of the launcher wait and of a host cleaner pass are such connections.
+- The refused request logs `[Server] Unauthorized request number <n>: method=<method>`, with the method cut to 64 characters and quoted and no id. The older text is `Unauthorized request: method=…, id=…`.
+- The bad line logs `[Server] Parse error number <n>: <json error>`. The older text has no count.
+- The counters are per daemon, one per kind of line. A count starts at 1 and never resets. The line is logged for the counts 1 to 10 and for each multiple of 1000.
+- The `writeResponse: wrote <n>/<m> bytes, error=<error>`, `Failed to write response: <error>` and `scanner error on <label>: <error>` lines quote the error. During the shutdown they are not logged. A connection with no mark logs no `writeResponse` and no `scanner error` line.
+
 ### Lines of child processes
 
 These lines tell of [process.spawn](protocol/process-spawn.md) children and of their [records and the reap](#child-records-and-the-reap-linux-and-macos). The levels are claustrum's own. Unless an item says otherwise, each text is the text of `89cb6289`, measured on Linux. The group-ended, outlived and dropped-record lines are measured on macOS too.
 
 - A start (INFO): `[process.Manager] Process <id> started, PID=<n>, command=<command>` (from the code). With a launcher, ` via launcher <argv0>` follows.
 - A failed start (ERROR): `[process.Manager] Failed to start process <id>: <message>`, with the text of the error frame
-- An exit (INFO): `[process.Manager] Process <id> exited with code <n>`, then `, terminated by <signal>` for a signal and `, signalled at client request` or `, signalled at shutdown request` for a kill by the daemon
+- An exit (INFO): `[process.Manager] Process <id> exited with code <n>`, then `, terminated by <signal>` for a signal and `, signalled at client request` or `, signalled at shutdown request` for a kill by the daemon. Build `c8e2f083` prints `, signalled by this daemon (client)` or `, signalled by this daemon (shutdown)` there (build `c8e2f083`, measured on Linux)
 - The drain limit (WARN): `[process.Manager] Process <id>: pipe drain grace expired (grandchild holding stdio?); force-closing`
 - A supersede (INFO): `[process.Manager] process <new id> supersedes <old id> for session <key>: died=<bool> escalated=<bool> alreadyExited=<bool>` (from the code), after the exit line of the old process
 - `children` not a folder (ERROR): `[process.Registry] <run dir>/children is not a directory; recording nothing`, or `reaping nothing` at a start

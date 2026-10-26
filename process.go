@@ -1016,7 +1016,7 @@ func (p *managedProc) waitReapAndDrain(wg *sync.WaitGroup, stdoutR, stderrR *os.
 	// the kill handle of the direct child. It ends nothing.
 	p.group.close()
 	sigName := exitSignalName(err)
-	logInfof("[process.Manager] Process %s exited with code %d%s", p.id, code, exitLogSuffix(sigName, killedBy))
+	logInfof(fmtProcExited, p.id, code, exitLogSuffix(sigName, killedBy))
 	met.processExits.Add(1)
 	p.emit(streamFrame{Stream: "exit", ExitCode: &code, Signal: sigName, KilledBy: killedBy})
 	// Signal any killAndWait waiter now the child is fully reaped.
@@ -1025,7 +1025,9 @@ func (p *managedProc) waitReapAndDrain(wg *sync.WaitGroup, stdoutR, stderrR *os.
 
 // exitLogSuffix is the tail of the exited line. It holds the same two facts as the
 // exit frame: sigName is the frame's signal member and killedBy is its killedBy
-// member. Measured on Linux against 89cb6289: a process.kill or a
+// member. It now gives ", signalled by this daemon (<killedBy>)", as build
+// c8e2f083 does (measured on Linux). The older text, measured on Linux against
+// 89cb6289, follows. A process.kill or a
 // process.killAndWait that ends a child with exit code 0 gives ", signalled at
 // client request" (rows SP03a, SP03b). A SIGKILL from outside the daemon gives
 // ", terminated by SIGKILL" (row SP04). A plain exit gives no suffix (row SP01).
@@ -1043,7 +1045,9 @@ func exitLogSuffix(sigName, killedBy string) string {
 		suffix += ", terminated by " + sigName
 	}
 	if killedBy != "" {
-		suffix += ", signalled at " + killedBy + " request"
+		// Build c8e2f083 (measured on Linux) prints the daemon as the
+		// signaller. 5fd08069 and 89cb6289 printed ", signalled at <label> request".
+		suffix += ", signalled by this daemon (" + killedBy + ")"
 	}
 	return suffix
 }

@@ -4,6 +4,7 @@ import (
 	"errors"
 	"net"
 	"regexp"
+	"strings"
 	"testing"
 	"time"
 )
@@ -16,6 +17,7 @@ func TestCloseWhenIdle(t *testing.T) {
 		c1, c2 := net.Pipe()
 		defer c2.Close()
 		ac := newActivityConn(c1)
+		ac.shown.Store(true)
 		s := &server{shutdown: make(chan struct{}), idleTimeout: 80 * time.Millisecond}
 		done := make(chan struct{})
 		returned := make(chan struct{})
@@ -32,10 +34,35 @@ func TestCloseWhenIdle(t *testing.T) {
 			t.Error("connection was not actually closed")
 		}
 		// The line of the reference (rows HC12a and HC12b on a Linux VM, 89cb6289):
-		// "[Server] closing connection idle 5m0s in both directions: @". The peer text
-		// of a net.Pipe is "pipe".
-		if got := buf.String(); !regexp.MustCompile(`\[Server\] closing connection idle \d+s in both directions: pipe\n$`).MatchString(got) {
+		// "[Server] closing connection idle 5m0s in both directions: @". Claustrum
+		// quotes the address (claustrum's own, not measured). The peer text of a net.Pipe is "pipe".
+		if got := buf.String(); !regexp.MustCompile(`\[Server\] closing connection idle \d+s in both directions: "pipe"\n$`).MatchString(got) {
 			t.Errorf("log = %q, want the idle-close line", got)
+		}
+	})
+
+	// Claustrum's own, not measured: a connection with no token mark is closed
+	// with no line.
+	t.Run("idle_connection_without_the_token_mark_closes_silently", func(t *testing.T) {
+		c1, c2 := net.Pipe()
+		defer c2.Close()
+		ac := newActivityConn(c1)
+		s := &server{shutdown: make(chan struct{}), idleTimeout: 80 * time.Millisecond}
+		done := make(chan struct{})
+		returned := make(chan struct{})
+		buf := captureLogBuf(t)
+		go func() { s.closeWhenIdle(ac, done); close(returned) }()
+		select {
+		case <-returned:
+		case <-time.After(2 * time.Second):
+			close(done)
+			t.Fatal("idle connection was not closed within 2s")
+		}
+		if _, err := ac.Read(make([]byte, 1)); err == nil {
+			t.Error("connection was not actually closed")
+		}
+		if got := buf.String(); strings.Contains(got, "closing connection idle") {
+			t.Errorf("log = %q, want no idle-close line", got)
 		}
 	})
 
