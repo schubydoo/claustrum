@@ -62,6 +62,47 @@ func TestWorktreeRemoveCraftedGitFile(t *testing.T) {
 	}
 }
 
+// TestWorktreeRemoveLinkedBaseBlankGitDir: baseRepo is a linked worktree whose main git
+// directory is named `m.git `, with a blank at the end. Its `.git` file names
+// `m.git /worktrees/x`, so its path does not end in a blank. The registration of the gone
+// worktree goes, as it did before the measured blank rule (claustrum's own, not
+// measured).
+func TestWorktreeRemoveLinkedBaseBlankGitDir(t *testing.T) {
+	requireGit(t)
+	root := resolveTestRoot(t, t.TempDir())
+	m := filepath.Join(root, "M")
+	gd := filepath.Join(m, "m.git ")
+	runGit(t, root, "init", "-q", "-b", "main", "--separate-git-dir", gd, m)
+	writeFile(t, filepath.Join(m, "t0.txt"), "t0\n", 0o644)
+	runGit(t, m, "add", "t0.txt")
+	runGit(t, m, "commit", "-q", "-m", "t0")
+	x := filepath.Join(root, "x")
+	runGit(t, m, "worktree", "add", "-q", "-b", "x", x)
+	wp := filepath.Join(x, ".claude", "worktrees", "w")
+	runGit(t, x, "worktree", "add", "-q", "-b", "w", wp)
+	if err := os.RemoveAll(wp); err != nil {
+		t.Fatal(err)
+	}
+	if !exists(filepath.Join(gd, "worktrees", "w")) {
+		t.Fatal("setup: the registration of w is missing")
+	}
+	s, _ := newShadowServer(t)
+	raw := dispatchRaw(t, s, rpcLine(t, "git.worktree_remove", map[string]any{
+		"baseRepo": x, "worktreePath": wp, "branchName": "w"}))
+	if raw != removeOK {
+		t.Fatalf("frame = %s\nwant %s", raw, removeOK)
+	}
+	if exists(filepath.Join(gd, "worktrees", "w")) {
+		t.Error("the registration of w stays, want it deleted")
+	}
+	if !exists(filepath.Join(gd, "worktrees", "x")) {
+		t.Error("the registration of baseRepo is gone")
+	}
+	if gitDirHasBranch(t, gd, "w") {
+		t.Error("the branch w stays, want it deleted")
+	}
+}
+
 // gitDirHasBranch asks git whether the git directory gd holds the branch, without the
 // GIT_DIR and GIT_COMMON_DIR of the environment.
 func gitDirHasBranch(t *testing.T, gd, branch string) bool {
