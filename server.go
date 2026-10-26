@@ -304,21 +304,23 @@ func (c *conn) writeLineLocked(b []byte) error {
 
 // writeResponse writes a JSON-RPC response and, on a write error (e.g. the
 // client dropped the connection mid-reply), emits the reference daemon's
-// writeResponse/Failed-to-write log lines with the partial byte count.
-func (c *conn) writeResponse(v interface{}) {
+// writeResponse/Failed-to-write log lines with the partial byte count. It
+// reports a failed write. Only the read loop acts on that, for its -32001 and
+// -32700 replies.
+func (c *conn) writeResponse(v interface{}) (failed bool) {
 	// json.Marshal, not an Encoder: this is the encode that carries EVERY
 	// JSON-RPC reply, and its HTML escaping is inherited wire behaviour — see
 	// docs/ARCHITECTURE.md → "Inherited wire bytes" and the note on writeJSON.
 	b, err := json.Marshal(v)
 	if err != nil {
 		logErrorf("[Server] Failed to write response: %v", err)
-		return
+		return false
 	}
 	b = append(b, '\n')
 	c.wmu.Lock()
 	defer c.wmu.Unlock()
 	if c.closed {
-		return
+		return false
 	}
 	// Recorded under wmu, past the closed check, just before the write, so the
 	// capture is exactly what goes on the wire — in wire order, and never a frame
@@ -328,7 +330,9 @@ func (c *conn) writeResponse(v interface{}) {
 	if err != nil {
 		logDebugf("[Server] writeResponse: wrote %d/%d bytes, error=%v", n, len(b), err)
 		logErrorf("[Server] Failed to write response: %v", err)
+		return true
 	}
+	return false
 }
 
 // runServe self-daemonizes (reparenting to init) then runs the RPC server. The
@@ -1077,7 +1081,12 @@ func (s *server) serveConn(c *conn) {
 		// fails and puts 0 bytes on the wire.
 		req, resp := s.gate(raw)
 		if resp != nil {
-			c.writeResponse(*resp)
+			// A failed write of this reply ends the read loop and so the
+			// connection. Measured on a Linux VM with c8e2f083. A failed
+			// write of any other reply, which handleRequest writes, keeps it.
+			if c.writeResponse(*resp) {
+				break
+			}
 			continue
 		}
 		// Read the method here in the read loop, so a stdin request can take

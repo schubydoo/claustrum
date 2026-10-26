@@ -608,7 +608,7 @@ var docWordLimits = map[string]int{
 	"docs/GLOSSARY.md":                         1297,
 	"docs/IMPROVEMENTS.md":                     1590,
 	"docs/INSTALL.md":                          5307, // task-207: page rewrite
-	"docs/PROTOCOL.md":                         2804, // TASK-202: the error texts, stream frames and flags moved to their own pages
+	"docs/PROTOCOL.md":                         2823, // TASK-230: one sentence on a failed write. TASK-202: the error texts, stream frames and flags moved to their own pages
 	"docs/STYLE.md":                            1293, // task-203b: the page rewrite
 	"docs/TOUR.md":                             850,  // a new page: its word count plus about 200
 	"docs/UPSTREAM-TRACKING.md":                6224, // decision-040: words moved from PROTOCOL.md, net down in the same PR
@@ -707,7 +707,7 @@ var docSectionRunLimits = map[string]int{
 	"docs/DIVERGENCES.md":                      709,
 	"docs/IMPROVEMENTS.md":                     1484,
 	"docs/INSTALL.md":                          736,
-	"docs/PROTOCOL.md":                         603,
+	"docs/PROTOCOL.md":                         622,
 	"docs/STYLE.md":                            343,
 	"docs/UPSTREAM-TRACKING.md":                2960,
 	"docs/index.md":                            314,

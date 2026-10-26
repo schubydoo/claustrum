@@ -55,6 +55,8 @@ their reopen triggers are in [`DIVERGENCES.md`](DIVERGENCES.md).
     reply write fails, the failure line comes after the parse-error line
     (measured on Linux). In a Go type-mismatch error, the type name differs
     from the reference (measured on Linux).
+  - A failed write of either reply closes the connection. Any other keeps it
+    (build `c8e2f083`, measured on Linux).
 - At a client EOF the daemon logs `[Server] Connection closed: <addr>`, then
   closes the socket (measured on Linux).
 - On Windows, when the client half-closes, the daemon does not wait for a request
