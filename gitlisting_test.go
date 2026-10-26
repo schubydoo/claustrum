@@ -607,6 +607,11 @@ func versionDir(t *testing.T) string {
 	if runtime.GOOS != "windows" {
 		return "/"
 	}
+	// Windows: the folder of the calls outside a repository (SystemRoot, else the
+	// folder of the executable), or the working folder when that is empty.
+	if gitVersionDir != "" {
+		return gitVersionDir
+	}
 	wd, err := os.Getwd()
 	if err != nil {
 		t.Fatal(err)

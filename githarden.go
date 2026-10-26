@@ -931,7 +931,10 @@ func statusExcludesFile() string {
 const gitEmptyTree = "4b825dc642cb6eb9a060e54bf8d69288fbee4904"
 
 var (
-	attrSourceOnce sync.Once
+	// attrSourceMu guards the two values below. A probe that ends in "unknown"
+	// stores nothing, so the next use runs it again.
+	attrSourceMu   sync.Mutex
+	attrSourceDone bool
 	attrSourceOK   bool
 )
 
@@ -943,21 +946,43 @@ var (
 // (scratch/probe/attrsource-4534d86.md). It is a no-op on a repo with no attribute
 // rules, so status on an ordinary repo stays byte-identical.
 //
-// git added --attr-source in 2.40, so support is probed once with the reference's own
+// git added --attr-source in 2.40, so support is probed with a
 // guard — `git --attr-source=<empty> version`, which errors on older git. The option
 // is a top-level one, the first argument of the status call, as f6010b97 emits it.
 //
-// The probe runs with the daemon's own environment and adds no variable. f6010b97
-// adds none to it on Linux and Windows VMs.
+// The probe has the filtered environment of the daemon (gitChildEnv) and adds no
+// variable. f6010b97 adds none to it on Linux and Windows VMs. It runs in
+// gitVersionDir. It keeps "supported" and "not supported" for the life of the
+// daemon, and "unknown" not (claustrum's own, not measured). See probeAttrSource.
 func attrSourceArgs() []string {
-	attrSourceOnce.Do(func() {
-		cmd := exec.Command("git", "--attr-source="+gitEmptyTree, "version")
-		attrSourceOK = cmd.Run() == nil
-	})
+	attrSourceMu.Lock()
+	defer attrSourceMu.Unlock()
+	if !attrSourceDone {
+		ok, known := probeAttrSource()
+		if !known {
+			return nil
+		}
+		attrSourceDone, attrSourceOK = true, ok
+	}
 	if attrSourceOK {
 		return []string{"--attr-source=" + gitEmptyTree}
 	}
 	return nil
+}
+
+// probeAttrSource runs the probe. Exit 0 is "supported". A run that exits with a
+// code other than 0 runs `git version` (gitVersionPlain), and exit 0 there is "not
+// supported". Every other failure is "unknown": known is false. That covers a run
+// that did not start, a run that a signal ended and a failed `git version`.
+func probeAttrSource() (supported, known bool) {
+	err := gitOutsideCmd(nil, "--attr-source="+gitEmptyTree, "version").Run()
+	if err == nil {
+		return true, true
+	}
+	if !exitedWithCode(err) {
+		return false, false
+	}
+	return false, gitVersionPlain().Run() == nil
 }
 
 var (
@@ -1004,41 +1029,47 @@ func userExcludesFile() string {
 	return v
 }
 
+// resolveUserExcludesFile reads the excludes file of the user. The read has the
+// filtered environment of the daemon (gitChildEnv) and GIT_DIR=<null device>, and
+// runs in gitVersionDir (claustrum's own, not measured). f6010b97
+// adds GIT_DIR=NUL on a Windows VM and runs it in the temporary directory on Linux
+// and Windows VMs.
+//
+// The configured value wins if it is absolute. `config --includes --path` follows
+// includes and expands a leading ~, matching the reference. It runs WITHOUT the
+// hardening profile so git reports the real global setting, not the pin. The read is
+// kept for the daemon, so it has no time limit of a request. GIT_DIR=<null device>
+// makes it read only the user's global and system config, never a repo's own
+// core.excludesFile. A repo must not be able to inject excludes. This is the cached
+// read that replaced the reference's per-call excludes probe.
+//
+// Else the base folder is XDG_CONFIG_HOME. With that unset, empty or relative, the
+// base is the user home plus .config. A base that is empty or relative gives the
+// null device. If <base>/git/ignore is a regular file after symlinks, that file is
+// the result. In every other case the result is the null device, also when
+// XDG_CONFIG_HOME is set and the file under HOME exists.
 func resolveUserExcludesFile() string {
-	// The configured value wins if absolute. `config --includes --path` follows
-	// includes and expands a leading ~, matching the reference. It runs WITHOUT the
-	// hardening profile so git reports the real global setting, not the pin.
-	// The read is kept for the daemon, so it has no time limit of a request.
-	// GIT_DIR=<null device> makes this read only the user's global/system config, never
-	// a repo's own core.excludesFile — a repo must not be able to inject excludes. This
-	// is the cached read that replaced the reference's per-call excludes probe.
-	// Its working directory is the temporary directory, and GIT_DIR is its only added
-	// variable. f6010b97 runs it so on Linux and Windows VMs, with GIT_DIR=NUL on
-	// Windows.
-	cmd := exec.Command("git", "config", "--includes", "--path", "core.excludesFile")
-	cmd.Dir = os.TempDir()
-	cmd.Env = append(os.Environ(), "GIT_DIR="+os.DevNull)
+	windows := gitEnvHere.windows
+	cmd := gitOutsideCmd([]string{"GIT_DIR=" + os.DevNull}, "config", "--includes", "--path", "core.excludesFile")
 	if out, err := cmd.Output(); err == nil {
-		if p := strings.TrimSpace(string(out)); filepath.IsAbs(p) {
+		if p := strings.TrimSpace(string(out)); absoluteFor(p, windows) {
 			return p
 		}
 	}
-	if xdg := os.Getenv("XDG_CONFIG_HOME"); xdg != "" {
-		if p := filepath.Join(xdg, "git", "ignore"); fileExists(p) {
-			return p
+	base := os.Getenv("XDG_CONFIG_HOME")
+	if base == "" || relativeFor(base, windows) {
+		base = ""
+		if home, err := os.UserHomeDir(); err == nil && home != "" {
+			base = filepath.Join(home, ".config")
 		}
 	}
-	if home, err := os.UserHomeDir(); err == nil {
-		if p := filepath.Join(home, ".config", "git", "ignore"); fileExists(p) {
-			return p
-		}
+	if base == "" || relativeFor(base, windows) {
+		return os.DevNull
+	}
+	if fi, err := os.Stat(filepath.Join(base, "git", "ignore")); err == nil && fi.Mode().IsRegular() {
+		return filepath.Join(base, "git", "ignore")
 	}
 	return os.DevNull
-}
-
-func fileExists(p string) bool {
-	fi, err := os.Stat(p)
-	return err == nil && !fi.IsDir()
 }
 
 // configCheck is the outcome of hostileConfigRefusal.

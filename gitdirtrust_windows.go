@@ -110,11 +110,15 @@ func hasLinkComponent(p string) bool {
 	}
 }
 
-// gitVersionDir is the working directory of the `git version` call after a failed
-// configuration listing. "" keeps the daemon's own working directory. On a Windows VM
-// the daemon's working directory and its socket folder were the same folder, and
-// 89cb6289 ran the call there. So which of the two it uses is not measured.
-const gitVersionDir = ""
+// gitVersionDir is the working folder of the git calls outside a repository: the
+// `git version` run, the probe, the version gate, the excludes read and the read of
+// config text. It is SystemRoot if that is an absolute path, else the folder of the
+// executable of the daemon, else "", the working folder of the daemon
+// (claustrum's own, not measured). It is read once at the start.
+var gitVersionDir = func() string {
+	exe, err := os.Executable()
+	return windowsCallDir(os.Getenv("SystemRoot"), exe, err)
+}()
 
 // nonFolderStartRefuses is true on Windows. A configuration listing that cannot start
 // in a path that exists and is not a folder is a refusal there, as on 89cb6289 (Windows

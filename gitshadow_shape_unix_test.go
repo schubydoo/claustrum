@@ -9,7 +9,6 @@ import (
 	"regexp"
 	"slices"
 	"strings"
-	"sync"
 	"testing"
 )
 
@@ -119,7 +118,7 @@ func newShapeFixture(t *testing.T, state shapeState) shapeFixture {
 	t.Setenv("XDG_CONFIG_HOME", empty)
 	t.Setenv("HOME", empty)
 	resetAttr := func() {
-		attrSourceOnce = sync.Once{}
+		attrSourceDone = false
 		attrSourceOK = false
 	}
 	resetAttr()
@@ -284,7 +283,7 @@ func statusRows() []shapeRow {
 	out := rows(
 		pair("P28", "rev-parse --absolute-git-dir", "<repo>", "{A} {D} {W}", "{A} {G}"),
 		pair("P28", "--git-dir=<repo>/.git --work-tree=<repo> rev-parse --show-toplevel", "<repo>/.git", "{A} {D}", "{A} {G}"),
-		[]shapeRow{same("none", "--attr-source=<id> version", "<cwd>", "none", "none")},
+		[]shapeRow{same("none", "--attr-source=<id> version", "/", "none", "none")},
 	)
 	// The listing before the rev-parse pair has --git-dir, so it is written out.
 	out[2].argv = "--git-dir=<repo>/.git config -z --list"
@@ -405,7 +404,7 @@ func TestGitCallShapePerState(t *testing.T) {
 			if !strings.Contains(raw, `"isRepo":true`) {
 				t.Fatalf("git.info = %s", raw)
 			}
-			first := []string{"none | config --includes --path core.excludesFile | <tmp> | GIT_DIR=/dev/null"}
+			first := []string{"none | config --includes --path core.excludesFile | / | GIT_DIR=/dev/null"}
 			if state == stateShadow {
 				// The call about the repository, then the read of the config. The
 				// ceiling of the call is in TestProbeCallShape.

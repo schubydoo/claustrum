@@ -99,13 +99,15 @@ func gitSelectsIncludeScan() bool {
 }
 
 // includeScanAnswer is the answer of gitSelectsIncludeScan. ran is false when
-// the call did not exit 0.
+// the call did not exit 0 or its output holds no version. The answer is "too old"
+// then, and the caller keeps nothing (claustrum's own, not
+// measured). A version that parses gives a kept answer, new enough or too old.
 func includeScanAnswer() (selects, ran bool) {
 	out, err := gitVersionCmd(context.Background()).Output()
 	if err != nil {
 		return false, false
 	}
-	return versionSelectsIncludeScan(string(out)), true
+	return versionParsed(string(out))
 }
 
 // selectsIncludeScan is gitSelectsIncludeScan for a request of the daemon with
@@ -142,10 +144,14 @@ func (h *shadowHost) includeScan() bool {
 
 // gitVersionCmd builds the `git version` call. Measured against f6010b97 on
 // Linux and macOS VMs, it has no `-c` options and no `-C`, and no other git
-// call runs before it. It runs in the daemon's own working directory, with the
-// daemon's environment unchanged.
+// call runs before it. It runs in gitVersionDir with the filtered environment
+// of the daemon (gitChildEnv), and no name is added or removed
+// (claustrum's own, not measured).
 func gitVersionCmd(ctx context.Context) *exec.Cmd {
-	return exec.CommandContext(ctx, "git", "version")
+	cmd := exec.CommandContext(ctx, "git", "version")
+	cmd.Dir = gitVersionDir
+	cmd.Env = gitChildEnv()
+	return cmd
 }
 
 // versionSelectsIncludeScan parses `git version` output. The first
@@ -155,19 +161,26 @@ func gitVersionCmd(ctx context.Context) *exec.Cmd {
 // and text after the numbers is ignored. Output that does not parse selects
 // the old scan.
 func versionSelectsIncludeScan(out string) bool {
+	selects, _ := versionParsed(out)
+	return selects
+}
+
+// versionParsed is versionSelectsIncludeScan with parsed, which is false when the
+// output holds no version.
+func versionParsed(out string) (selects, parsed bool) {
 	_, rest, ok := strings.Cut(out, "git version ")
 	if !ok {
-		return false
+		return false, false
 	}
 	major, rest, ok := leadingNumber(rest)
 	if !ok || !strings.HasPrefix(rest, ".") {
-		return false
+		return false, false
 	}
 	minor, _, ok := leadingNumber(rest[1:])
 	if !ok {
-		return false
+		return false, false
 	}
-	return major > 2 || (major == 2 && minor >= 32)
+	return major > 2 || (major == 2 && minor >= 32), true
 }
 
 // leadingNumber splits the decimal digits at the start of s from the rest. A

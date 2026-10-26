@@ -240,6 +240,7 @@ component_management:
         - gitchildenv_other.go
         - gitchildenv_unix.go
         - gitchildenv_windows.go
+        - gitoutsidecalls.go
         # the git-directory trust check every git.* method runs first (f6010b97).
         - gitdirtrust.go
         - gitdirtrust_unix.go

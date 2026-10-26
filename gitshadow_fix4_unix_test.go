@@ -7,7 +7,6 @@ import (
 	"path/filepath"
 	"slices"
 	"strings"
-	"sync"
 	"testing"
 	"time"
 )
@@ -99,7 +98,7 @@ func TestShadowStatusFolderComesBeforeTheVersionCall(t *testing.T) {
 	}
 	dir := daemonFolder(t, f.run)
 	resetAttr := func() {
-		attrSourceOnce = sync.Once{}
+		attrSourceDone = false
 		attrSourceOK = false
 	}
 	resetAttr()

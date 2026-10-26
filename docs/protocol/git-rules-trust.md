@@ -267,18 +267,18 @@ The classes come in this order:
    that holds `.git` (measured on Linux and Windows). With `"shadowDirOff":true`
    that git dir gets the hooks refusal on every method (measured on Linux).
 3. Any other failure, a failed start included. The daemon runs `git version`. It
-   runs in `/` on Linux and macOS. On Windows it runs in the daemon's working
-   folder (from the code). If that call fails too, the text is `git cannot run on this
+   runs in the folder of [the calls outside a repository](git-rules-calls.md#calls-outside-a-repository) (claustrum's own, not measured).
+   If that call fails too, the text is `git cannot run on this
    host; git not run: <exec error>: <git text>`. Else it is the hooks refusal.
 
 The `git version` call of class 3 has the profile of the failed listing (see
 [Hardened git calls](git-rules-calls.md#hardened-git-calls)). It gets no `-c` option and no `GIT_CONFIG_COUNT`,
 `GIT_CONFIG_KEY_<n>`, `GIT_CONFIG_VALUE_<n>` or `GIT_CONFIG_GLOBAL` of the daemon.
 claustrum matches these names by their exact upper-case letters, so on Windows a
-lower-case name stays on the call (from the code). claustrum passes the daemon's
-`GIT_CONFIG_SYSTEM` and `GIT_CONFIG_NOSYSTEM` on (not measured). It does not give
-the call the daemon's own `LC_ALL` and `LANGUAGE` back (claustrum's own, not
-measured).
+lower-case name stays on the call (from the code). The call drops the daemon's
+`GIT_CONFIG_SYSTEM` and keeps `GIT_CONFIG_NOSYSTEM` (claustrum's own, not
+measured). It does not give the call the daemon's own `LC_ALL` and `LANGUAGE` back
+(claustrum's own, not measured).
 
 ### Where git cannot start
 

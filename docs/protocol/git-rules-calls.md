@@ -17,9 +17,8 @@ with an empty value (claustrum's own, not measured).
 Each hardened call passes no `-C`. Before each one, the daemon runs a config
 listing (`git config -z --list`) with the profile of that call. Before its first
 listing, a request with no cached value runs the excludes read, `git config
---includes --path core.excludesFile`, in the temporary directory. It adds only
-`GIT_DIR=<null>`. The probe `git --attr-source=<empty tree> version` adds no
-variable. There are two profiles:
+--includes --path core.excludesFile`. [Calls outside a repository](#calls-outside-a-repository)
+gives it and the probe `git --attr-source=<empty tree> version`. There are two profiles:
 
 - The heavy profile forbids every transport protocol
   (`GIT_ALLOW_PROTOCOL=denied_by_claude_ssh`). `git.info`, `git.list_branches` and
@@ -117,14 +116,12 @@ here holds on Linux, macOS and Windows, unless it names fewer systems.
 ### Variables that the git calls keep or drop
 
 The repository calls are the configuration listings, the hardened calls,
-`worktree add`, the checkout and `git status`. The excludes read and the
-`--attr-source` probe get the daemon's environment as it is, plus their own
-additions.
+`worktree add`, the checkout and `git status`.
 
 - The daemon's environment is cleaned for the repository calls and the calls of
   the start test, entry by entry, in this order (claustrum's
-  own, not measured). The calls of the start test also get no `GIT_`
-  variable of the daemon.
+  own, not measured). The calls of the start test, not its first `git version`,
+  also get no `GIT_` variable of the daemon (claustrum's own, not measured).
     - An entry with no `=` and the four `GIT_*_PATHSPECS` variables go. On
       Windows a name matches in any letter case and keeps its spelling.
     - A relative value drops 23 names, such as `HOME` and `GIT_INDEX_FILE`. On
@@ -146,8 +143,8 @@ additions.
       relative path. `SSH_SK_PROVIDER` also needs `internal` or an absolute path on
       macOS and Windows.
     - Every other entry stays.
-- `GIT_CONFIG` and `GIT_CONFIG_PARAMETERS` do not reach a repository call. The
-  names match exactly, in upper case. So on Windows `git_config` and
+- `GIT_CONFIG` and `GIT_CONFIG_PARAMETERS` do not reach a repository call. The read of config text keeps them
+  (claustrum's own, not measured). The names match exactly, in upper case. So on Windows `git_config` and
   `Git_Config_Parameters` reach git.
 - A listing gets the daemon's `GIT_CONFIG_COUNT`, `GIT_CONFIG_KEY_<n>` and
   `GIT_CONFIG_VALUE_<n>` as they are. It keeps a name with a leading-zero index,
@@ -175,6 +172,39 @@ test of a create (measured on Linux).
 
 [Git-directory trust check](git-rules-trust.md#git-directory-trust-check) gives the `GIT_DIR` of the
 listing in a folder with no repository, and its frames.
+
+### Calls outside a repository
+
+These rules are claustrum's own (not measured). Six calls run outside any
+repository: the `git version` run after a failed listing, the `--attr-source`
+probe, the version gate of the include scan, the excludes read, the read of config
+text and the `git version` of the start test. Each one starts from the cleaned
+environment above and runs in one folder. That folder is `/` on Linux and macOS.
+On Windows it is `SystemRoot` if that is absolute. Else the folder of the daemon executable, else the working folder.
+
+- The `git version` run removes `GIT_DIR`, `GIT_CONFIG`, `GIT_NAMESPACE`,
+  `GIT_WORK_TREE`, `GIT_COMMON_DIR`, `GIT_INDEX_FILE`, `GIT_OBJECT_DIRECTORY`,
+  `GIT_ALTERNATE_OBJECT_DIRECTORIES`, `GIT_CONFIG_COUNT`, `GIT_CONFIG_GLOBAL`,
+  `GIT_CONFIG_SYSTEM`, `GIT_CONFIG_PARAMETERS`, `GIT_CEILING_DIRECTORIES`,
+  `GIT_DISCOVERY_ACROSS_FILESYSTEM` and every `GIT_CONFIG_KEY_` and
+  `GIT_CONFIG_VALUE_` name. Letter case must match on every system.
+  `GIT_CONFIG_NOSYSTEM` stays.
+- The probe runs `git --attr-source=<empty tree> version` with no
+  removal. Exit 0 is "supported". Another exit code runs the
+  `git version` run above, and its exit 0 is "not supported". Both last for the life of the daemon. Every other failure is "unknown" and is not stored.
+- The version gate runs `git version` with no removal.
+  Version 2.32 or later is "new enough", an older one is "too old", and the daemon
+  keeps either answer for the life of the host, and keeps nothing with no run
+  folder. If git does not run or prints no version, the answer is "too old" for
+  that call and nothing is kept.
+- The excludes read adds `GIT_DIR=<null>`. An absolute
+  output is the result. Else the base is `XDG_CONFIG_HOME`. Unset, empty or
+  relative, it counts as unset, and the base is the home folder plus `.config`. An
+  empty or relative base gives the null device. A regular file `git/ignore` in the
+  base, after symlinks, is the result. Every other case gives the null device,
+  also when `XDG_CONFIG_HOME` is set and the file is under the home folder.
+- The read of config text keeps `GIT_CONFIG` and `GIT_CONFIG_PARAMETERS` and adds
+  `GIT_DIR=<null>`, `LC_ALL=C` and `LANGUAGE=C`.
 
 ### The check of `GIT_CONFIG_COUNT`
 

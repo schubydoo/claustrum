@@ -512,8 +512,7 @@ func printedProbePath(out, found, sep string) string {
 }
 
 // versionAfterFailure runs one `git version` call, with no option and no added
-// variable. Its working directory is gitVersionDir: `/` on Linux and macOS, the
-// working folder of the daemon on Windows. cannotRunText reads its answer, and
+// variable. Its working directory is gitVersionDir. cannotRunText reads its answer, and
 // the other callers do not. Among the measured places of that call on 5fd08069
 // are these two:
 //
@@ -529,11 +528,11 @@ func printedProbePath(out, found, sep string) string {
 //     val-s3p2b2-5-linux and val-s3p2b2-5-macos, and PA5 of
 //     val-s3p2b2-5-windows).
 //
-// The call has the bound of a call of the start test. A daemon with git
-// variables of its own is not measured: the call gets the environment of the
-// first `git version` call of shadowVersionNote.
+// The call has the bound of a call of the start test. Its environment is
+// gitVersionEnv(nil), also in the first `git version` call of shadowVersionNote
+// (claustrum's own, not measured).
 func versionAfterFailure() shadowRun {
-	return boundedGit(shadowCallBound, gitVersionDir, shadowDaemonEnv(), "version")
+	return boundedGit(shadowCallBound, gitVersionDir, gitVersionEnv(nil), "version")
 }
 
 // cannotRunText runs versionAfterFailure and returns the text of a git that

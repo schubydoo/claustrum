@@ -71,8 +71,8 @@ Windows), with equal frames (see
 [UPSTREAM-TRACKING.md](../UPSTREAM-TRACKING.md#triage-gotchas-when-a-probe-result-is-misleading)). The
 test makes a small repository and a copy of it in a folder `.check-<n>` of the
 daemon, and runs git calls there. One of them is the read of the test repository's
-config. It runs in `/`, and on Windows in the working folder of the daemon (from the
-code). The folder is gone at the reply. If the test fails, the request gets this
+config. It runs in the folder of [the calls outside a repository](git-rules-calls.md#calls-outside-a-repository) (claustrum's own, not measured).
+The test folder is gone at the reply. If the test fails, the request gets this
 text:
 
 `Claude could not test git on the remote machine (<cause>). Check free disk space and quota there, then try again.`

@@ -7,7 +7,6 @@ import (
 	"runtime"
 	"slices"
 	"strings"
-	"sync"
 	"testing"
 )
 
@@ -314,7 +313,7 @@ func TestHardenedGitCallShape(t *testing.T) {
 	}
 	resetUserExcludesCache(t)
 	resetAttr := func() {
-		attrSourceOnce = sync.Once{}
+		attrSourceDone = false
 		attrSourceOK = false
 	}
 	resetAttr()
@@ -376,8 +375,8 @@ func TestHardenedGitCallShape(t *testing.T) {
 		if !slices.Equal(x.argv, []string{"config", "--includes", "--path", "core.excludesFile"}) {
 			t.Fatalf("first call = %q, want the excludes read", x.argv)
 		}
-		if canonicalPath(x.cwd) != canonicalPath(os.TempDir()) {
-			t.Errorf("excludes read runs in %s, want %s", x.cwd, os.TempDir())
+		if canonicalPath(x.cwd) != canonicalPath(gitVersionDir) {
+			t.Errorf("excludes read runs in %s, want %s", x.cwd, gitVersionDir)
 		}
 		if !slices.Equal(x.env, []string{"GIT_DIR=" + shapeNull}) {
 			t.Errorf("excludes read env = %q, want only GIT_DIR=%s", x.env, shapeNull)

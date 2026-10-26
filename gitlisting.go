@@ -4,9 +4,7 @@ import (
 	"bytes"
 	"context"
 	"errors"
-	"os"
 	"os/exec"
-	"slices"
 	"strings"
 	"unicode"
 )
@@ -245,7 +243,7 @@ func listingEnvBase() []string {
 }
 
 // listingEnvOf is listingEnvBase with daemon as the daemon's environment.
-// gitVersionRun and shadowDaemonEnv give it os.Environ(), with no cleaning.
+// shadowDaemonEnv gives it os.Environ(), with no cleaning.
 func listingEnvOf(daemon []string) []string {
 	env := dropConfigOverrides(daemon)
 	out := env[:0]
@@ -384,18 +382,18 @@ func noRepoCreateCalls(t gitDirTrust, s *gitStop, six, off bool, dir string) str
 // file git cannot parse, the `git version` of 89cb6289 has no such entry and exits 0,
 // and the answer is the hooks refusal of the listing (cell C-c on Linux and macOS VMs:
 // git.info on a plain folder and on a repository, and git.worktree_create). Cells Wb
-// show the same on a Windows VM. No log shows a GIT_CONFIG_SYSTEM or a
-// GIT_CONFIG_NOSYSTEM of the daemon, so both stay (not measured).
+// show the same on a Windows VM.
 //
+// The names that go are those of gitVersionEnv (claustrum's own, not
+// measured). They include GIT_CONFIG_SYSTEM. GIT_CONFIG_NOSYSTEM of the daemon stays.
+// The base is the filtered environment of the daemon (gitChildEnv), then the profile.
 // The names match by exact letter case, also on Windows, where the names of the
 // environment have no case. So a lower-case git_config_count or git_config_global
-// of the daemon stays on the call there. Not measured.
+// of the daemon stays on the call there.
 func gitVersionRun(u gitUse, heavy bool) listingRun {
 	cmd := exec.Command("git", "version")
 	cmd.Dir = gitVersionDir
-	env := withoutConfigCountSet(listingEnvOf(os.Environ()))
-	env = slices.DeleteFunc(env, func(kv string) bool { return envName(kv) == "GIT_CONFIG_GLOBAL" })
-	cmd.Env = append(env, u.profileEnv(heavy)...)
+	cmd.Env = gitVersionEnv(append(listingEnvBase(), u.profileEnv(heavy)...))
 	var errBuf bytes.Buffer
 	cmd.Stderr = &errBuf
 	err := gitRun(u.stop.context(), cmd)

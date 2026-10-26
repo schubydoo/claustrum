@@ -408,15 +408,15 @@ func TestHardenedAnswerIsStdoutOnly(t *testing.T) {
 	}
 }
 
-// Every git call of the five git methods gets the cleaned environment, except the
-// excludes read and the version calls, which keep the names as they are. The two
-// names here are removed on every system and do no harm to git. git.status reads
-// a config.worktree file of the entry, so its own read of that file runs too.
+// Every git call of the five git methods gets the cleaned environment, also the
+// excludes read, the version calls and the read of config text (claustrum's own, not measured).
+// The two names here are removed on every system and do no harm to git. git.status
+// reads a config.worktree file of the entry, so its own read of that file runs too.
 func TestGitMethodsCleanTheChildEnv(t *testing.T) {
 	f := newListingFixture(t)
 	t.Setenv("GIT_SSH", "bin/ssh")
 	t.Setenv("DYLD_FRAMEWORK_PATH", "rel")
-	cleaned, raw := 0, 0
+	cleaned := 0
 	for _, m := range []struct {
 		name   string
 		params map[string]any
@@ -437,21 +437,15 @@ func TestGitMethodsCleanTheChildEnv(t *testing.T) {
 		for _, c := range calls {
 			_, ssh := lookupExact(c.env, "GIT_SSH")
 			_, dyld := lookupExact(c.env, "DYLD_FRAMEWORK_PATH")
-			keeps := c.excludesRead() || c.argv[len(c.argv)-1] == "version"
-			switch {
-			case keeps && (!ssh || !dyld):
-				t.Errorf("%s: call %q lost a name of the daemon", m.name, c.argv)
-			case !keeps && (ssh || dyld):
+			if ssh || dyld {
 				t.Errorf("%s: call %q keeps GIT_SSH or DYLD_FRAMEWORK_PATH", m.name, c.argv)
-			case keeps:
-				raw++
-			default:
-				cleaned++
+				continue
 			}
+			cleaned++
 		}
 	}
-	if cleaned == 0 || raw == 0 {
-		t.Fatalf("cleaned %d calls and kept %d: the stub saw too little", cleaned, raw)
+	if cleaned == 0 {
+		t.Fatal("the stub saw no call")
 	}
 }
 
