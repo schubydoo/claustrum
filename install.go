@@ -1471,7 +1471,7 @@ var errLddBound = fmt.Errorf("ldd killed at the bound: %w", context.DeadlineExce
 // WaitDelay alone bounds the drain.
 func runLddVersion(ctx context.Context) ([]byte, error) {
 	cmd := exec.CommandContext(ctx, "ldd", "--version")
-	// The folder is "/" and the environment stays unfiltered. Read from c8e2f083,
+	// The folder is "/" and the environment stays unfiltered. Claustrum's own,
 	// not measured.
 	cmd.Dir = "/"
 	cmd.SysProcAttr = newSysProcAttr()

@@ -234,7 +234,7 @@ component_management:
         - gitinforoot_windows.go
         # the daemon's own GIT_* variables on the git calls of the git methods.
         - gitenv.go
-        # the cleaning of the daemon's environment for the git children (5fd08069, rules of c8e2f083).
+        # the cleaning of the daemon's environment for the git children (5fd08069, with claustrum's own rules).
         - gitchildenv.go
         - gitchildenv_darwin.go
         - gitchildenv_other.go

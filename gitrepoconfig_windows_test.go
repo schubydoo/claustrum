@@ -14,7 +14,7 @@ import (
 // Windows VM (cells C3a to C3d and C4b).
 
 // TestWindowsIncludeTexts pins the two include texts with the paths of the
-// cells. The values `~`, `/x`, `\x` and `C:x` follow build c8e2f083 (not measured). The expected texts are the message of the reply, with the JSON
+// cells. The values `~`, `/x`, `\x` and `C:x` are claustrum's own, not measured. The expected texts are the message of the reply, with the JSON
 // escapes taken off.
 func TestWindowsIncludeTexts(t *testing.T) {
 	const config = `C:\o\w\repo\.git\config`
