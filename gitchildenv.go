@@ -8,8 +8,8 @@ import (
 )
 
 // The cleaning of the daemon's own environment for the git children of the git
-// methods. The rules are the filter of build c8e2f083 (from the code, not
-// measured on a VM). They replace the older filter of 5fd08069 (rounds task004-01
+// methods. The rules are the filter of build c8e2f083 (not measured on a VM).
+// They replace the older filter of 5fd08069 (rounds task004-01
 // and task004-02). The cleaning acts on the daemon's own entries only. The names
 // that claustrum adds or drops for a call stay as they were.
 //

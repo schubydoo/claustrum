@@ -865,8 +865,8 @@ func includeTarget(file, value, gitDir string) (target, detail string) {
 		", and Claude expands neither ~user nor %(prefix), nor ~ where no home directory is set; write that path out in full"
 	switch {
 	case value == "~" || strings.HasPrefix(value, "~/"):
-		// HOME is the home folder here, as in build c8e2f083 (from the code, not
-		// measured). An unset or relative HOME refuses. An empty HOME is not
+		// HOME is the home folder here, as in build c8e2f083 (not measured).
+		// An unset or relative HOME refuses. An empty HOME is not
 		// relative, so `~/x` becomes `/x`. A bare `~` with an empty HOME is not
 		// measured: it gives an empty path. The Unix form of relativeFor is right
 		// here: includeValueDetail refuses every `~` path on Windows first.
