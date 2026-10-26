@@ -454,6 +454,21 @@ func registrationGitDir(repo, answered string) string {
 	return answered
 }
 
+// baseRepoGitFileEndsInSpace reports whether the `.git` of repo is a regular file whose
+// path, as the walk of the trust check reads it (readWalkGitFile), ends in white space.
+// A GIT_DIR of the daemon makes the walk skip that file, so the answer is then false.
+func baseRepoGitFileEndsInSpace(repo string) bool {
+	if os.Getenv("GIT_DIR") != "" {
+		return false
+	}
+	dotGit := filepath.Join(repo, ".git")
+	if fi, err := os.Stat(dotGit); err != nil || !fi.Mode().IsRegular() {
+		return false
+	}
+	target, ok := readWalkGitFile(dotGit, repo)
+	return ok && strings.TrimSpace(target) != target
+}
+
 // lockedInBaseRepo reports whether the repository of baseRepo holds a locked entry of
 // the worktree, when the removal reads its entries from another git directory
 // (commonDir). It looks under <repo>/.git/worktrees: at the entry that the `.git` file

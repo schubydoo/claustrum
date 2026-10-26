@@ -221,7 +221,9 @@ the repository that `GIT_DIR` names. The remove holds no git directory, and the
 swap of `.git` during a remove is in [Rare
 states](docs/protocol/git-worktree-remove.md#rare-states). Each delete goes
 through an `os.Root`, so no delete follows a symlink out of the leaf or its
-parent.
+parent. A NUL, or a second blank after `gitdir:`, in a `.git` file of `baseRepo`
+names the repository whose registration and branch go. With a blank after the
+path only the branch goes.
 
 ##### Who names the path
 

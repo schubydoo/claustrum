@@ -353,7 +353,7 @@ func findGitDir(start string) (g, holder string, ok bool) {
 			}
 			return "", "", false
 		case fi.Mode().IsRegular():
-			target, ok := readGitFile(dotGit, d)
+			target, ok := readWalkGitFile(dotGit, d)
 			if !ok {
 				return "", "", false
 			}
@@ -392,6 +392,50 @@ func readGitFile(path, holder string) (string, bool) {
 		target = filepath.Join(holder, target)
 	}
 	return target, true
+}
+
+// readWalkGitFile reads a `.git` file that the walk of findGitDir found, and returns
+// the git directory that it names. The parse is claustrum's own, not measured:
+//   - The file is at most gitFileMaxBytes long.
+//   - It starts with the exact bytes "gitdir: ", with one blank.
+//   - Each trailing CR and LF goes. Other trailing white space stays. An empty rest
+//     names nothing.
+//   - Then the rest is cut at its first NUL byte.
+//   - A path that is not absolute (filepath.IsAbs) is joined to holder. So on Windows
+//     "gitdir: /x" is joined. A path that the NUL cut makes empty names holder.
+//   - An absolute path stays as the file spells it, as readGitFile keeps it. The calls
+//     pass it on as GIT_COMMON_DIR, so on Windows its forward slashes stay.
+//
+// The outcomes of git.worktree_remove for a NUL or a blank in that file follow the
+// reference (measured on Linux). The join to holder, the folder of the `.git` entry
+// as the walk spells it, is claustrum's own for a `.git` that is a symbolic link (not
+// measured).
+func readWalkGitFile(path, holder string) (string, bool) {
+	f, err := openGitPlainFile(path)
+	if err != nil {
+		return "", false
+	}
+	defer func() { _ = f.Close() }()
+	b, err := io.ReadAll(io.LimitReader(f, gitFileMaxBytes+1))
+	if err != nil || len(b) > gitFileMaxBytes {
+		return "", false
+	}
+	rest, ok := bytes.CutPrefix(b, []byte("gitdir: "))
+	if !ok {
+		return "", false
+	}
+	rest = bytes.TrimRight(rest, "\r\n")
+	if len(rest) == 0 {
+		return "", false
+	}
+	if i := bytes.IndexByte(rest, 0); i >= 0 {
+		rest = rest[:i]
+	}
+	target := string(rest)
+	if filepath.IsAbs(target) {
+		return target, true
+	}
+	return filepath.Join(holder, target), true
 }
 
 // judgeGitDir judges the git directory g. fromEnv is true when the daemon's GIT_DIR

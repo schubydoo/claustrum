@@ -281,7 +281,7 @@ These states are not measured. The rules are from the code.
   of its two frames in the table above. `git.status` answers
   `{"isRepo":false,"clean":false}`. It refuses in that folder only for a listing
   that fails.
-- A `.git` file with no `gitdir:` line. Its listing carries `GIT_DIR=<null>`, so
+- A `.git` file that the walk rejects. Its listing carries `GIT_DIR=<null>`, so
   the folder answers as a plain folder does.
 
 ## Time limits of git calls

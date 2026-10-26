@@ -2825,7 +2825,14 @@ func removeGoneWorktree(req *request, p *gitParams, repo, path string) response 
 		if matches == 0 {
 			probe.pairIfWorktreesDir(commonDir)
 		}
-		dropWorktreeEntryByPath(commonDir, sp)
+		// A `.git` file of baseRepo whose path ends in a blank keeps the registration,
+		// and the branch step still runs. The reference answers so for `gitdir: t.git `
+		// (build c8e2f083, measured on Linux). The test covers each white space at the
+		// end, not only a blank (claustrum's own, not measured). A remove with
+		// worktreeRoot, and every other `.git`, delete the registration as before.
+		if p.WorktreeRoot != "" || !baseRepoGitFileEndsInSpace(repo) {
+			dropWorktreeEntryByPath(commonDir, sp)
+		}
 	}
 	// The branch step runs on this path too (rows R17a and R17b). Without a
 	// repository its for-each-ref fails, and the branch counts as kept (rows R18 and
