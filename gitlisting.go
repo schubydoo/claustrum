@@ -34,7 +34,8 @@ const (
 	// 1024 bytes is not measured. The refusal text names an aggregate bound, so the
 	// daemon counts a sum.
 	hookNameMaxBytes = 1 << 16
-	// notARepoHead starts the stderr of a listing that answers "no repository".
+	// notARepoHead starts the stderr of git where it finds no repository. Only
+	// statusNoRepoCalls still reads it.
 	notARepoHead = "fatal: not a git repository"
 	// gitFileNowhereHead starts the stderr of git 2.56 for a `.git` file that names no
 	// valid repository. Older gits print notARepoHead there.
@@ -121,6 +122,10 @@ type listingRun struct {
 	out    []byte
 	stderr string
 	err    error
+	// dir, gitDir and env are the call that ran: its folder, the --git-dir= option and
+	// its environment. saysNoRepository reads them.
+	dir, gitDir string
+	env         []string
 }
 
 // runListing runs `git [--git-dir=<gitDir>] config -z --list` in dir with env. gitDir
@@ -143,7 +148,7 @@ func runListing(ctx context.Context, dir, gitDir string, env []string) listingRu
 	var errBuf bytes.Buffer
 	cmd.Stderr = &errBuf
 	out, err := gitOutput(ctx, cmd)
-	return listingRun{out: out, stderr: errBuf.String(), err: err}
+	return listingRun{out: out, stderr: errBuf.String(), err: err, dir: dir, gitDir: gitDir, env: env}
 }
 
 // hooks is the listing's hook names, or none when the listing failed or cannot be
@@ -164,14 +169,27 @@ func (r listingRun) hooks() []string {
 	return l.hooks
 }
 
-// saysNoRepository reports whether the listing failed the way git fails where it finds
-// no repository: exit status 128, and stderr that starts with "fatal: not a git
-// repository" once leading white space is dropped, compared without regard to letter
-// case (rows L14a, L14b, L14d and L14e). Exit 1 with that text does not qualify (row
-// L14c). Not measured: whether 89cb6289 tests a prefix or a substring
-// (every text started with it), and exit codes other than 1 and 128.
+// saysNoRepository reports the "no repository" verdict of a failed listing. 5fd08069
+// tested the text: exit status 128, and stderr that starts with "fatal: not a git
+// repository".
+//
+// claustrum ignores the text. The listing must end with exit code 128 and name no
+// git dir: no --git-dir= option, no GIT_DIR= entry in its environment. Then claustrum
+// searches for a git dir upward from the folder (listingFindsNoRepository). That rule
+// is claustrum's own, not measured. In a folder with no repository the listing
+// carries GIT_DIR=<null device>. c8e2f083 then takes the generic path on exit 128
+// (measured on Linux and Windows).
+//
+// One text still counts: for the gitfile text of git 2.56 (saysGitFileNowhere)
+// claustrum gives no "no repository" verdict and keeps the earlier refusal
+// (claustrum's own, not measured).
 func (r listingRun) saysNoRepository() bool {
-	return r.exit128Says(notARepoHead)
+	var ee *exec.ExitError
+	if !errors.As(r.err, &ee) || ee.ExitCode() != 128 || listingNamesGitDir(r.gitDir, r.env) ||
+		r.saysGitFileNowhere() {
+		return false
+	}
+	return listingFindsNoRepository(r.dir)
 }
 
 // saysGitFileNowhere reports whether the listing failed with the text of git 2.56 for

@@ -210,7 +210,9 @@ Where the trust check finds no repository, the daemon still runs the configurati
 listing in that folder. In a plain folder it carries `GIT_DIR=<null>` (see
 [The daemon's own git environment](git-rules-calls.md#the-daemons-own-git-environment)). The frames
 are then those of the "no repository" column. A listing that fails by class 3
-below gives the "refused" column. For `git.worktree_remove` with `worktreeRoot`
+below gives the "refused" column. A `.git` file to a gone entry under the
+`worktrees` folder of a repository gets `GIT_DIR=<null>` too (measured on Linux).
+For `git.worktree_remove` with `worktreeRoot`
 this is measured on Linux and macOS, because Windows refuses every `worktreeRoot`
 first.
 
@@ -253,9 +255,19 @@ The classes come in this order:
    [git.worktree_remove](git-worktree-remove.md#the-repository-checks)).
    A refused daemon `GIT_CONFIG_COUNT` answers before the exec error when `stat`
    reads `baseRepo` (not measured).
-2. The listing exits 128, and its stderr starts with `fatal: not a git
-   repository`. Leading white space is dropped first, and letter case does not
-   count. The answer is "no repository". Exit 1 with that text is not this class.
+2. The listing exits 128, and its call names no git dir: no `--git-dir=` option and no
+   `GIT_DIR=` entry in its environment, exact case. claustrum then searches upward
+   from the folder for a git dir. It uses its own `GIT_CEILING_DIRECTORIES` and stops
+   at a ceiling. It stops at a `.git` directory that fails the git-directory test
+   and holds no `commondir`. On Linux and macOS it stops at a device change. A
+   search that finds no git dir gives "no repository". So does a git dir that fails
+   the git-directory test and has a bad `HEAD` or no `commondir`. The text is `git
+   finds no repository here: <stderr head>`. In the other cases class 3 runs. The
+   text of git plays no part (claustrum's own, not measured). In a folder with no
+   repository the listing carries `GIT_DIR=<null>`, so an exit 128 there takes
+   class 3 (`c8e2f083`, measured on Linux and Windows).
+   On `5fd08069` exit 128 with a stderr that starts with `fatal: not a git
+   repository` gives "no repository".
    With a `branchName`, `git.worktree_remove` without `worktreeRoot` keeps the
    branch, and a gone worktree answers `{"success":true,"branchKept":true}`. For a
    `.git` file to a gone git dir, git 2.56 says `gitfile does not point to a valid
@@ -264,7 +276,9 @@ The classes come in this order:
    `git.worktree_remove` (measured on Linux and Windows). Another gone git dir
    answers the error of
    [the call about the repository](git-rules-settings-copy.md#the-call-about-the-repository) in the folder
-   that holds `.git` (measured on Linux and Windows). With `"shadowDirOff":true`
+   that holds `.git` (measured on Linux and Windows). `git.info` runs that call
+   itself, and its second run gives "no repository" (`c8e2f083`, measured on
+   Linux). With `"shadowDirOff":true`
    that git dir gets the hooks refusal on every method (measured on Linux).
 3. Any other failure, a failed start included. The daemon runs `git version`. It
    runs in the folder of [the calls outside a repository](git-rules-calls.md#calls-outside-a-repository) (claustrum's own, not measured).

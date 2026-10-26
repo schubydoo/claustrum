@@ -64,6 +64,17 @@ func answerProbe(t *testing.T, exit int, stdout, stderr string) {
 	t.Setenv("CLAUSTRUM_GITSTUB_EXIT", strconv.Itoa(exit))
 }
 
+// answerSecondProbe makes the stub answer the second run of the call (the one
+// with GIT_DIR=<.probe>) itself, with the exit code and the error text. The
+// first call keeps the rule of answerProbe.
+func answerSecondProbe(t *testing.T, exit int, stderr string) {
+	t.Helper()
+	t.Setenv("CLAUSTRUM_GITSTUB_MATCH2", "rev-parse,--git-dir")
+	t.Setenv("CLAUSTRUM_GITSTUB_ENVEND2", "GIT_DIR="+string(os.PathSeparator)+shadowProbeName)
+	t.Setenv("CLAUSTRUM_GITSTUB_EXIT2", strconv.Itoa(exit))
+	t.Setenv("CLAUSTRUM_GITSTUB_STDERR2", stderr)
+}
+
 // setProbeClock gives the kept answer a clock that the test moves.
 func setProbeClock(t *testing.T) *time.Time {
 	t.Helper()
@@ -388,7 +399,7 @@ func probeErrorShapes(t *testing.T, f shadowFixture, text string) []string {
 // the text of git for a repository of another owner. A bad answer makes no
 // folder of the repository and no read of its config (the same cell). The
 // counts are the calls about the repository per request: one, two on a remove,
-// and twice that for an answer that names another path.
+// and twice that for an exit 128 or an answer that names another path.
 func TestProbeAnswers(t *testing.T) {
 	type answer struct {
 		name           string
@@ -398,11 +409,13 @@ func TestProbeAnswers(t *testing.T) {
 		// directory %[2]s, or "" for the "no repository" answers.
 		text  string
 		calls int
-		// version is true when one plain `git version` call follows each call
-		// about the repository. On 5fd08069 the requests then have 13, 2, 2, 2
-		// and 4 calls (cell 39 of val-s3p2b2-5-linux2, rows exit 1 and exit
-		// 128, Linux VM).
+		// version is true when one plain `git version` call follows the last
+		// call about the repository of each answer. On 5fd08069 the requests
+		// then have 13, 2, 2, 2 and 4 calls (cell 39 of val-s3p2b2-5-linux2,
+		// rows exit 1 and exit 128, Linux VM).
 		version bool
+		// secondOK makes the second run of an exit 128 exit 0.
+		secondOK bool
 	}
 	// The other path is absolute on the system of the test. Git prints a path
 	// with forward slashes on Windows too, and the text shows it as printed.
@@ -421,8 +434,6 @@ func TestProbeAnswers(t *testing.T) {
 	for _, a := range append([]answer{
 		{name: "exit 1, no text", exit: 1, calls: 1, version: true,
 			text: "git could not check this repository on the remote machine: at %[1]q: exit status 1"},
-		{name: "exit 128, no text", exit: 128, calls: 1, version: true,
-			text: "git could not check this repository on the remote machine: at %[1]q: exit status 128"},
 		// Exit 1 with a text: the text of git stands in the place of the exec
 		// error (cells p3 of val-s3p2b2-7-linux2, Linux VM, 13 and 2 calls).
 		{name: "p3: exit 1 with a text", exit: 1, calls: 1, version: true, stderr: "fatal: text of the wrapper for p3\n",
@@ -436,21 +447,25 @@ func TestProbeAnswers(t *testing.T) {
 			text:   "git could not check this repository on the remote machine: at %[1]q: fatal: line one of the wrapper for p3 hint: line two of the wrapper for p3"},
 		{name: "N-f: exit 2 with a text", exit: 2, calls: 1, version: true, stderr: "fatal: text of the wrapper for p3 with exit 2\n",
 			text: "git could not check this repository on the remote machine: at %[1]q: fatal: text of the wrapper for p3 with exit 2"},
-		{name: "exit 128, not a git repository", exit: 128, calls: 1,
+		// Exit 128 with any text gets the second run of c8e2f083 (measured on
+		// Linux and Windows). With secondOK it exits 0, and the answer is "no
+		// repository". Else it fails as the first call did. The answer is then the
+		// error with the text of the first call, after one `git version` call (not
+		// measured for an exit code, only for the kill). The texts are
+		// those of 5fd08069 in cells D1 and D3 of s3p2-linux2 and round
+		// task073-03 (Linux VM), and W2-268 of round task073-01 (Windows VM).
+		{name: "exit 128, no text", exit: 128, calls: 2, version: true,
+			text: "git could not check this repository on the remote machine: at %[1]q: exit status 128"},
+		{name: "exit 128, not a git repository", exit: 128, calls: 2, secondOK: true,
 			stderr: "fatal: not a git repository (or any of the parent directories): .git\n"},
-		{name: "exit 128, another owner", exit: 128, calls: 1,
+		{name: "exit 128, another owner", exit: 128, calls: 2, secondOK: true,
 			stderr: "fatal: detected dubious ownership in repository at '/x/repo'\n"},
-		// The wrapper rows of round task073-03 (Linux VM). P7, P9 and P10 answer
-		// "no repository" with no `git version` call. P8 and W2-268 (round
-		// task073-01, Windows VM) answer the error after one such call.
-		{name: "P7: exit 128, upper case", exit: 128, calls: 1, stderr: "FATAL: NOT A GIT REPOSITORY (x)\n"},
-		{name: "P9: exit 128, dubious ownership after a first line", exit: 128, calls: 1,
-			stderr: "x\ndetected dubious ownership in y\n"},
-		{name: "P10: exit 128, bare repository", exit: 128, calls: 1, stderr: "fatal: cannot use bare repository 'x'\n"},
-		{name: "P8: exit 128, not a git repository after a first line", exit: 128, calls: 1, version: true,
+		{name: "exit 128, upper case", exit: 128, calls: 2, secondOK: true, stderr: "FATAL: NOT A GIT REPOSITORY (x)\n"},
+		{name: "exit 128, bare repository", exit: 128, calls: 2, secondOK: true, stderr: "fatal: cannot use bare repository 'x'\n"},
+		{name: "exit 128, not a git repository after a first line", exit: 128, calls: 2, version: true,
 			stderr: "warning: w\nfatal: not a git repository\n",
 			text:   "git could not check this repository on the remote machine: at %[1]q: warning: w fatal: not a git repository"},
-		{name: "W2-268: exit 128, error reading", exit: 128, calls: 1, version: true,
+		{name: "W2-268: exit 128, error reading", exit: 128, calls: 2, version: true,
 			stderr: "fatal: error reading '/x/repo/.git'\n",
 			text:   "git could not check this repository on the remote machine: at %[1]q: fatal: error reading '/x/repo/.git'"},
 		{name: "another path", stdout: elsewhere + "\n", calls: 2,
@@ -463,6 +478,9 @@ func TestProbeAnswers(t *testing.T) {
 			t.Run(a.name+"/"+method, func(t *testing.T) {
 				f := newSeededShadowFixture(t)
 				answerProbe(t, a.exit, a.stdout, a.stderr)
+				if a.secondOK {
+					answerSecondProbe(t, 0, "")
+				}
 				m := f.fiveRequests(nil)[i]
 				raw, calls := f.call(t, m.method, m.params)
 				var want string
@@ -495,8 +513,8 @@ func TestProbeAnswers(t *testing.T) {
 				if got := len(probeCalls(calls)); got != wantCalls || len(others) != 0 {
 					t.Errorf("%d calls about the repository, want %d. Other calls: %q, want none", got, wantCalls, others)
 				}
-				if a.version && versions != wantCalls {
-					t.Errorf("%d plain version calls, want one after each of the %d calls about the repository", versions, wantCalls)
+				if want := wantCalls / a.calls; a.version && versions != want {
+					t.Errorf("%d plain version calls, want %d", versions, want)
 				}
 				if names := daemonFolders(t, f.run); len(names) == 1 {
 					if got := entryNames(t, daemonFolder(t, f.run)); slices.Contains(got, shadowRepoName(f.gitDir)) {
@@ -546,10 +564,11 @@ func TestProbeGoodAnswerWithTheFullPath(t *testing.T) {
 	f := newSeededShadowFixture(t)
 	setProbeClock(t)
 	answerProbe(t, 128, "", "fatal: not a git repository (or any of the parent directories): .git\n")
+	answerSecondProbe(t, 0, "")
 	for range 2 {
 		raw, calls := f.info(t, f.repo, nil)
-		if !strings.Contains(raw, `"isRepo":false`) || len(probeCalls(calls)) != 1 {
-			t.Fatalf("git.info with a bad answer = %s with %d calls about the repository, want one each time", raw, len(probeCalls(calls)))
+		if !strings.Contains(raw, `"isRepo":false`) || len(probeCalls(calls)) != 2 {
+			t.Fatalf("git.info with a bad answer = %s with %d calls about the repository, want two each time", raw, len(probeCalls(calls)))
 		}
 	}
 	// Git prints the path with forward slashes on Windows.

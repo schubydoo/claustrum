@@ -227,12 +227,19 @@ macOS and Windows). So a pair such as `safe.directory` changes the answers (from
 code). A good answer is kept 5 seconds from the end of the call. A change of the root
 folder or of its `.git` entry makes the daemon ask again.
 
+An exit 128 with any text gets a second run of the call plus `GIT_DIR=<.probe>`.
+It runs in `.probe` (measured on Windows, claustrum's own elsewhere). Exit 0 there gives the "no
+repository" answer (`c8e2f083`, measured on Linux and Windows). The daemon kills
+a second run 30 seconds after its start. The reply is then the error of the rows
+below, with the text of the first call (`c8e2f083`, measured on Linux and
+Windows). A non-zero exit there gets the same reply (claustrum's own, not
+measured). With no text of the first call, the reply ends in its exit status.
+
 | Answer of git | Reply |
 |---|---|
-| exit 128 with a text that starts with `fatal: not a git repository` in any letter case, or that holds `detected dubious ownership` or `cannot use bare repository` | The "no repository" answer of each method. No config is read, and no copy is made. git 2.56's text for a `.git` file to nowhere, `unsafe repository`, and the two phrases at other places of the text get the same answer (claustrum's own, not measured) |
-| exit 1, exit 128 with no text, a signal (`signal: terminated`) or a git that cannot start (Windows) | `git could not check this repository on the remote machine: at "<root>": exit status <n>` |
-| exit 1 or exit 2 with a text, or exit 128 with another text | The same text with git's text in place of `exit status 1`. Two lines stand there with one space between them. `warning: w` before `fatal: not a git repository` gets this reply, and so does `fatal: error reading '<repo>/.git'` (Windows). This row holds on all five methods |
-| either of the two rows above | One `git version` call follows. If it fails, the reply is `git cannot run on this host; git not run: <exec error>: <git text>` in the frame of each method. A remove makes two such calls and deletes nothing. Not measured: a git that cannot start, `git.info` and `git.worktree_create` after exit 128 with no text or a signal, a remove with `worktreeRoot` |
+| exit 1, a signal (`signal: terminated`) or a git that cannot start (Windows) | `git could not check this repository on the remote machine: at "<root>": exit status <n>` |
+| exit 1 or exit 2 with a text | The same text with git's text in place of `exit status 1`. Two lines stand there with one space between them. This row holds on all five methods |
+| either of the two rows above | One `git version` call follows. If it fails, the reply is `git cannot run on this host; git not run: <exec error>: <git text>` in the frame of each method. A remove makes two such calls and deletes nothing. Not measured: a git that cannot start, `git.info` and `git.worktree_create` after a signal, a remove with `worktreeRoot` |
 | another path than the git directory, in two calls | `git and Claude disagree about which repository holds this folder: from "<root>" git finds "<path>", Claude finds "<git directory>"; try again`. `<path>` is the path as git printed it: with forward slashes on Windows |
 | no answer in 30 seconds | `git could not check this repository on the remote machine: it did not finish within 30 seconds in "<root>"; try again` (Linux, macOS and Windows) |
 

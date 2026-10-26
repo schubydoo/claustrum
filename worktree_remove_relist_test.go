@@ -62,9 +62,9 @@ func relistCalls(calls []envCall) []string {
 
 // A second listing that succeeds lets the remove go on: the leaf and the
 // registration go, and the branch stays. After exit 1 `git version` runs before
-// the second listing (cell F1). After exit 128 with the text of git where it
-// finds no repository it does not (cell F1n). After exit 128 with another text it
-// does (cell G08b of round tier3-17, Linux VM). Mutations: call
+// the second listing (cell F1). After exit 128 it does too, in a repository, also
+// with the text of git where it finds no repository. claustrum decides by the folder,
+// not by the text (TestRemoveListingCheckNoRepository, claustrum's own, not measured). Mutations: call
 // hostileConfigRefusal in place of removeListingCheck in methods_git.go, keep the
 // "no repository" answer in removeListingCheck, or skip `git version` after any
 // exit 128 there.
@@ -74,8 +74,9 @@ func TestRemoveListsAgainAfterFailedListing(t *testing.T) {
 		want               []string
 	}{
 		{"F1", "1", "WRAP-ERR-EARLY", []string{"list", "version", "list", "absolute-git-dir", "gitdir-list", "show-toplevel"}},
-		{"F1n", "128", "fatal: not a git repository (or any of the parent directories): .git",
-			[]string{"list", "list", "absolute-git-dir", "gitdir-list", "show-toplevel"}},
+		// This is a repository, so the text takes the path of any other exit 128.
+		{"no-repository text, repository", "128", "fatal: not a git repository (or any of the parent directories): .git",
+			[]string{"list", "version", "list", "absolute-git-dir", "gitdir-list", "show-toplevel"}},
 		{"G08b", "128", "fatal: bad config line 8 in file .git/config",
 			[]string{"list", "version", "list", "absolute-git-dir", "gitdir-list", "show-toplevel"}},
 	} {

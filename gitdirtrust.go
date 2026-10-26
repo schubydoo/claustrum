@@ -461,7 +461,15 @@ func judgeGitDir(g string, fromEnv bool) gitDirTrust {
 		// goneGitFile follows cells V3, V4 and V4g of rounds task083-01 and
 		// task083-02. Another stat error than a missing path is claustrum's own,
 		// not measured: it runs no test.
-		return gitDirTrust{verdict: gitDirNoRepo, noRepoEnv: []string{"GIT_COMMON_DIR=" + g},
+		//
+		// A gone target with the shape of a linked-worktree entry gets the entry of
+		// noRepoPin in its place. On c8e2f083 and 5fd08069 git.info and git.status on
+		// such a folder list with GIT_DIR=<null device> (measured on Linux).
+		env := []string{"GIT_COMMON_DIR=" + g}
+		if isWorktreeEntry(g) {
+			env = noRepoPin()
+		}
+		return gitDirTrust{verdict: gitDirNoRepo, noRepoEnv: env,
 			goneGitFile: errors.Is(err, fs.ErrNotExist) && !isWorktreeEntry(g)}
 	}
 	if !fi.IsDir() && nonDirGitDirIsNoRepo {

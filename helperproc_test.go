@@ -273,6 +273,8 @@ func runGitLingering(args []string) int {
 // goes on as a call that the first rule does not match. With CLAUSTRUM_GITSTUB_AFTER2
 // set, the second rule matches only once the file that it names exists. With
 // CLAUSTRUM_GITSTUB_DIR2 set, it matches only a call in that folder. With
+// CLAUSTRUM_GITSTUB_ENVEND2 set, it matches only a call that passes it, in the
+// form of CLAUSTRUM_GITSTUB_ENVEND. With
 // CLAUSTRUM_GITSTUB_GATE2 set, it makes that file with ".in" added and waits
 // until the file exists, at most CLAUSTRUM_GITSTUB_MS2 milliseconds, instead of
 // the sleep.
@@ -347,7 +349,7 @@ func runGitSlow(args []string) int {
 			return 128
 		}
 	}
-	if m := os.Getenv("CLAUSTRUM_GITSTUB_MATCH2"); m != "" && stubMatches(args, m) && stubAfter2() && stubDir2() {
+	if m := os.Getenv("CLAUSTRUM_GITSTUB_MATCH2"); m != "" && stubMatches(args, m) && stubAfter2() && stubDir2() && stubEnvEnd2() {
 		leaf := os.Getenv("CLAUSTRUM_GITSTUB_LEAF2")
 		var err error
 		switch os.Getenv("CLAUSTRUM_GITSTUB_ACTION2") {
@@ -578,6 +580,19 @@ func stubDir2() bool {
 		return strings.EqualFold(filepath.Clean(wd), filepath.Clean(dir))
 	}
 	return wd == dir
+}
+
+// stubEnvEnd2 reports whether a call passes the second rule's narrowing by a
+// variable. CLAUSTRUM_GITSTUB_ENVEND2 has the form NAME=text, as
+// CLAUSTRUM_GITSTUB_ENVEND, and keeps only a call whose variable NAME ends with
+// text.
+func stubEnvEnd2() bool {
+	name, end, ok := strings.Cut(os.Getenv("CLAUSTRUM_GITSTUB_ENVEND2"), "=")
+	if !ok {
+		return true
+	}
+	v, set := os.LookupEnv(name)
+	return set && strings.HasSuffix(v, end)
 }
 
 // stubAfter2 reports whether the second rule is on. With CLAUSTRUM_GITSTUB_AFTER2

@@ -7,6 +7,7 @@ import (
 	"os"
 	"path/filepath"
 	"slices"
+	"strings"
 	"testing"
 )
 
@@ -106,7 +107,10 @@ func TestDaemonGitDirFileRunsNoListing(t *testing.T) {
 
 // Cells CbP0 and CbP3 (Linux and macOS VMs). A `.git` file names a git dir that does not exist.
 // git.info answers the "no repository" frame, with and without an empty
-// GIT_CONFIG_KEY_0. Those cells ran a git older than 2.56. Cell V-S2w of round
+// GIT_CONFIG_KEY_0. In claustrum the empty key makes the second run of the call about
+// the repository fail, so git.info answers its error there (claustrum's own, not
+// measured). Those
+// cells ran a git older than 2.56. Cell V-S2w of round
 // task039-02 measures the state on a Windows VM with git 2.56 and no such key, and
 // TestGitFileNowhereFourMethodsStub covers it there. The empty key is not measured on
 // Windows, so this test does not run there.
@@ -151,10 +155,22 @@ func TestGitFileToNowhereKeepsFrame(t *testing.T) {
 			}
 			if newGit && ph.env == nil {
 				first, _ := newShadowServer(t)
-				if got, w := dispatchRaw(t, first, rpcLine(t, "git.info", map[string]any{"path": g})), errFrame(t, check); got != w {
+				if got, w := dispatchRaw(t, first, rpcLine(t, "git.info", map[string]any{"path": g})), noRepoShadow; got != w {
 					t.Errorf("first git.info = %s\nwant %s", got, w)
 				}
 				want = append(want, off...)
+			}
+			// git.info runs the call about the repository and its second run. With the
+			// empty key the second run fails, and the answer is the error with the text
+			// of the first call (claustrum's own, not measured).
+			if ph.env == nil {
+				want[0].frame = noRepoShadow
+			} else if !newGit {
+				got := f.frame(t, "git.info", map[string]any{"path": g})
+				if prefix := `{"jsonrpc":"2.0","id":1,"error":{"code":-32603,"message":"git could not check this repository on the remote machine: at `; !strings.HasPrefix(got, prefix) {
+					t.Errorf("git.info = %s\nwant the error of the call about the repository", got)
+				}
+				want = want[1:]
 			}
 			for _, m := range want {
 				if m.method == "git.status" && ph.env != nil {
