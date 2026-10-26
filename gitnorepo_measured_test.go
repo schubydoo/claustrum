@@ -3,6 +3,7 @@ package main
 import (
 	"os"
 	"path/filepath"
+	"runtime"
 	"slices"
 	"testing"
 )
@@ -109,8 +110,17 @@ func TestGoneGitFileInfoCalls(t *testing.T) {
 						steps = append(steps, "git-dir")
 					}
 				}
-				if !slices.Equal(steps, []string{"list", "git-dir"}) {
-					t.Errorf("calls with GIT_DIR=%s in %s: %q, want the listing, then rev-parse --git-dir. All calls: %v", os.DevNull, g, steps, calls)
+				// The call order is measured on Linux. On Windows git.info finds its
+				// root by its own steps (gitinforoot_windows.go), so only the listing
+				// with the null device is checked there (claustrum's own, not measured).
+				want, ok := []string{"list", "git-dir"}, false
+				if runtime.GOOS == "windows" {
+					ok = len(steps) > 0 && steps[0] == "list"
+				} else {
+					ok = slices.Equal(steps, want)
+				}
+				if !ok {
+					t.Errorf("calls with GIT_DIR=%s in %s: %q, want %q (Windows: the listing first). All calls: %v", os.DevNull, g, steps, want, calls)
 				}
 			}
 			if !row.entry {
