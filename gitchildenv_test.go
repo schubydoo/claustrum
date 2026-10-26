@@ -261,7 +261,7 @@ func TestGitChildEnvLoaders(t *testing.T) {
 	})
 	checkRows(t, windowsForm, "Windows", [][2]string{
 		{"LD_PRELOAD=a.so\tb.so", "LD_PRELOAD=a.so:b.so"},
-		{"LD_PRELOAD=\\\\h\\s\\x.dll", "LD_PRELOAD=\\\\h\\s\\x.dll"},
+		{"LD_PRELOAD=//h/s/x.dll", "LD_PRELOAD=//h/s/x.dll"},
 	})
 }
 
