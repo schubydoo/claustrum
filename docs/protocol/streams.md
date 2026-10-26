@@ -29,8 +29,8 @@ later replay.
   process: `client` for `process.kill` and `process.killAndWait`, and `shutdown`
   for the shutdown and `killAll` sweep. It is emitted on every OS. Signal names
   other than `SIGTERM` and `SIGKILL` are not measured. The shutdown sweep sets
-  `shutdown` on a child whose kill still waits. Linux measured it in the log, because
-  that exit frame races the connection close.
+  `shutdown` only on a `process.killAndWait` that still waits. Linux measured it in the log. Another kill
+  keeps `client` (not measured).
 - The `exit` frame waits at most 5 seconds after the process exits for
   stdout/stderr to reach EOF. The daemon then closes the read ends and emits the
   frame anyway. This matters when a grandchild holds the same pipe, as

@@ -111,6 +111,41 @@ func TestShutdownSweepRelabelsAWaitingKill(t *testing.T) {
 	}
 }
 
+// TestShutdownSweepKeepsReasonOfPlainKill pins a plain process.kill on a child that
+// ignores TERM: nothing waits, so the shutdown sweep keeps "client" (claustrum's own,
+// not measured).
+func TestShutdownSweepKeepsReasonOfPlainKill(t *testing.T) {
+	logs := captureLogBuf(t)
+	m := newTestProcManager(t)
+	t.Cleanup(m.killAll)
+	c, frames := pipeConn(t)
+	exe, env := helperCommand(t, "ignore-term")
+	p, err := m.spawn(c, "c1", exe, nil, "", env, false)
+	if err != nil {
+		t.Fatalf("spawn: %v", err)
+	}
+	select {
+	case f := <-frames:
+		if f.Stream != "stdout" {
+			t.Fatalf("first frame is %q, want the ready line on stdout", f.Stream)
+		}
+	case <-time.After(10 * time.Second):
+		t.Fatal("the helper never became ready")
+	}
+	m.kill("c1", "TERM")
+	if got := killedByOf(p); got != "client" {
+		t.Fatalf("killedBy after the plain kill = %q, want %q", got, "client")
+	}
+	m.killAll()
+	if got := killedByOf(p); got != "client" {
+		t.Errorf("killedBy after the shutdown sweep = %q, want %q", got, "client")
+	}
+	untilExit(t, frames)
+	if want := "terminated by SIGKILL, signalled by this daemon (client)\n"; !strings.Contains(logs.String(), want) {
+		t.Errorf("log = %q\nwant it to hold %q", logs.String(), want)
+	}
+}
+
 // TestExitLineAfterOutsideSIGKILL pins the exited line of a child that a signal from
 // outside the daemon ended: ", terminated by SIGKILL" (89cb6289, Linux row SP04). The
 // test sends the signal to the one process it started itself.

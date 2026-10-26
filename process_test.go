@@ -1131,10 +1131,11 @@ func TestReapedProcessIsNotSignalled(t *testing.T) {
 	if len(signals) != 2 {
 		t.Errorf("signals for a live process = %v, want [TERM KILL]", signals)
 	}
-	// The live kill delivered, so it claims the exit. The later shutdown sweep ends
-	// a kill that still waits, so it replaces "client" (measured on Linux).
-	if got := killedByOf(p); got != "shutdown" {
-		t.Errorf("a shutdown sweep after a client kill stamped killedBy=%q, want %q", got, "shutdown")
+	// The live kill delivered, so it claims the exit. The later shutdown sweep finds
+	// no killAndWait that waits, so the first reason stays (claustrum's own, not
+	// measured).
+	if got := killedByOf(p); got != "client" {
+		t.Errorf("a shutdown sweep after a plain client kill stamped killedBy=%q, want %q", got, "client")
 	}
 }
 

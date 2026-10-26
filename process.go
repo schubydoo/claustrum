@@ -157,12 +157,17 @@ type managedProc struct {
 	// arrived — a late kill inside the exit-drain window changed nothing, so it
 	// claims nothing (measured against 4534d86: a natural exit killed inside the
 	// drain window carries no killedBy on the reference). The first reason wins, except
-	// that the shutdown sweep replaces an earlier "client" of a kill that still waits.
+	// that the shutdown sweep replaces an earlier reason while killAndWaitProc still
+	// waits for the exit (waiting). After a plain process.kill, or after a
+	// killAndWait that returned, the first reason stays (claustrum's own, not measured).
 	// Provenance for the value set is split at the KilledBy field comment above:
 	// "client" is live-measured, "shutdown" is measured on Linux only in the log.
 	// Read and written under p.mu.
 	killedBy string
-	stdin    io.WriteCloser
+	// waiting is true while killAndWaitProc waits for the exit of this process. It is
+	// set and cleared under p.mu, so the shutdown sweep reads it with killedBy.
+	waiting bool
+	stdin   io.WriteCloser
 	// cmd is set once in spawn's composite literal and never reassigned, so it is
 	// safe to read without p.mu (waitReapAndDrain relies on that). signalIfLive and
 	// killGroupAfterExit read it under p.mu for their own reasons, not to protect
@@ -470,8 +475,9 @@ var signalGroup = func(g *procGroup, proc *os.Process, signame string) error {
 // a process that exited on its own before the signal could reach it (measured
 // against 4534d86: a natural exit killed inside the drain window carries no
 // killedBy). Pass killedBy "" to signal without claiming attribution. The first
-// reason wins, except that the shutdown sweep replaces an earlier "client" of a
-// kill that still waits (measured on Linux in the log).
+// reason wins, except that the shutdown sweep replaces an earlier reason while
+// killAndWaitProc still waits for the exit (measured on Linux in the log). Any other
+// earlier reason stays (claustrum's own, not measured).
 //
 // p.mu is held across the check, the stamp and the delivery: a reaped check that
 // returns before the signal leaves a gap for the exit goroutine to reap in
@@ -499,7 +505,7 @@ func (p *managedProc) signalIfLive(signame, killedBy string) bool {
 	if !p.running || p.reaped || p.cmd == nil || p.cmd.Process == nil {
 		return false
 	}
-	if killedBy != "" && (p.killedBy == "" || killedBy == "shutdown") {
+	if killedBy != "" && (p.killedBy == "" || (killedBy == "shutdown" && p.waiting)) {
 		p.killedBy = killedBy
 	}
 	_ = signalGroup(p.group, p.cmd.Process, signame)
@@ -1418,6 +1424,15 @@ func (m *procManager) killAndWaitProc(p *managedProc, signal string, grace time.
 	if !p.isRunning() {
 		return true, true, true, false
 	}
+	// The marker stays set for every wait below and clears on each return.
+	p.mu.Lock()
+	p.waiting = true
+	p.mu.Unlock()
+	defer func() {
+		p.mu.Lock()
+		p.waiting = false
+		p.mu.Unlock()
+	}()
 	if !p.signalIfLive(signal, "client") && strings.TrimPrefix(signal, "SIG") == "KILL" {
 		p.killGroupInDrain()
 	}
