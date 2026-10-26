@@ -15,6 +15,7 @@ An untagged rule on this page matches build `5fd08069` or an earlier build.
 | `id` | yes | The id of the process, as given to `process.spawn`. A request without `id` gets `Process not found`. |
 | `data` | no | The bytes, in base64. Without `data`, the request sends no bytes. |
 | `offset` | no | The position of the first byte of `data` in the stream of all bytes sent to this process, counted from 0. Without `offset`, the daemon appends `data`. |
+| `attach` | no | A number. `attach` (`0` too) gets `Process not found`, no write, as no process has a terminal. `null` counts as absent (build `c8e2f083`, measured on Linux). |
 
 One request line has a limit of 1 MiB: see [Transport](../PROTOCOL.md#transport). `data` is base64, so it costs a third more than the bytes that it carries. Send a large input in several requests, each well below that limit.
 
@@ -40,7 +41,7 @@ This method has no `errorCode` member. A failure is a JSON-RPC error. The daemon
 |---|---|---|
 | `-32602` | `Invalid params` | The request has no `params` member, or `params` or a member that it reads has the wrong type. A negative `offset` gets this error too. See [the rules for `params`](../PROTOCOL.md#params-presence-and-typing). |
 | `-32602` | `Invalid base64 data` | `data` is not valid base64. This test comes before the test of `id`. |
-| `-32602` | `Process not found` | The daemon has no process with this `id`. |
+| `-32602` | `Process not found` | The daemon has no process with this `id`, or `attach` is set. |
 | `-32003` | `stdin offset gap: offset ahead of applied bytes` | `offset` is above `applied`. |
 | `-32602` | `Process not running` | The process exited, and the request is not a gap and not a duplicate. A request with no bytes and no `offset` gets this error too (measured on Linux and macOS) (not measured on Windows). The answer can come before the `exit` frame of the process. |
 | `-32002` | `stdin backpressure: queue full` | The queue of the process holds bytes that the child did not read yet. This request does not fit in the limit of 16 MiB. The daemon accepts nothing, and `applied` does not change. Send the request again later. After the child closes its input, a retry fails: see [Rare states](#rare-states). |

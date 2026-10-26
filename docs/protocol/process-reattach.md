@@ -15,6 +15,7 @@ An untagged rule on this page matches build `5fd08069` or an earlier build.
 | `id` | yes | The id of the process, as given to `process.spawn`. |
 | `fromSeq` | no | The `seq` of the last frame that the client has. The daemon sends the stored frames with a higher `seq`. Without a value, or with `0`, the daemon sends each frame that it still has. A `fromSeq` above `lastSeq` gets no stored frame: the stream still moves, and new frames come from `lastSeq` plus 1. |
 | `wantPid` | no | With `true`, the result of a found process also has `pid` and `startTime`. This is an addition of claustrum: see [CT-1](../DIVERGENCES.md#ct-1). |
+| `attach`, `fresh`, `proof` | no | A number, a text and a text. A non-empty `proof` gets the result of the unknown process, with no replay, and the holding connection keeps the process, because no process has a terminal. An empty `proof` counts as absent. A wrong type gets `Invalid params` (build `c8e2f083`, measured on Linux). |
 
 ## Response
 
