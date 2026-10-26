@@ -3,6 +3,7 @@
 package main
 
 import (
+	"context"
 	"os"
 	"path/filepath"
 	"testing"
@@ -52,5 +53,31 @@ func TestDetectLibcHonoursThePackageVar(t *testing.T) {
 	if got := detectLibc(); got != "glibc" {
 		t.Errorf("detectLibc() with a 50ms bound = %q, want the glibc fallback — "+
 			"detectLibc must pass lddProbeTimeout through, not a hardcoded value", got)
+	}
+}
+
+// TestLddRunsInTheRootFolder pins the working folder of the ldd probe: the stub
+// records its folder, and the folder must be "/".
+func TestLddRunsInTheRootFolder(t *testing.T) {
+	dir := t.TempDir()
+	rec := filepath.Join(dir, "cwd")
+	stub := "#!/bin/sh\npwd > '" + rec + "'\necho 'ldd (GNU libc) 2.39'\n"
+	if err := os.WriteFile(filepath.Join(dir, "ldd"), []byte(stub), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("PATH", dir+string(os.PathListSeparator)+os.Getenv("PATH"))
+	// Start from a folder other than "/".
+	t.Chdir(dir)
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	if _, err := runLddVersion(ctx); err != nil {
+		t.Fatal(err)
+	}
+	got, err := os.ReadFile(rec)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(got) != "/\n" {
+		t.Errorf("ldd ran in %q, want \"/\"", got)
 	}
 }

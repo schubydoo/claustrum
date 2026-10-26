@@ -416,7 +416,7 @@ none with a home folder).
 
 ### The libc probe fills the `libc` fact
 
-- claustrum runs `ldd` on every probe, and its output decides. A "musl" banner
+- claustrum runs `ldd` on every probe, in `/` (build `c8e2f083`, not measured). Its output decides. A "musl" banner
   reports `musl`, and any other output reports `glibc`. The `/lib/ld-musl-*.so.*`
   marker is read only when `ldd` produced no output.
 - The probe bounds ldd itself at 5 s, as the reference does (Linux). `ldd` runs in its own process group,
