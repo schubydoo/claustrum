@@ -616,9 +616,10 @@ var shadowCheckDropped = []string{"GIT_NAMESPACE", "GIT_INDEX_FILE"}
 // GIT_CONFIG_GLOBAL is /dev/null on a Windows VM too (s3p2-windows cell B3a).
 // The daemon's part is cleaned as for every git child (gitChildEnv) and has no
 // GIT_ name (withoutGitNames). 5fd08069 does both on the nine calls of the test
-// (rounds task004-01 and task004-02, Linux, macOS and Windows VMs).
+// (rounds task004-01 and task004-02, Linux, macOS and Windows VMs). The rules of
+// the cleaning follow c8e2f083 (not measured).
 func shadowTestEnv() []string {
-	daemon := slices.DeleteFunc(cleanGitChildEnv(shadowDaemonEnv(), gitEnvWindowsForm), func(kv string) bool {
+	daemon := slices.DeleteFunc(cleanGitChildEnv(shadowDaemonEnv(), gitEnvHere), func(kv string) bool {
 		return slices.Contains(shadowCheckDropped, envName(kv))
 	})
 	daemon = withoutGitNames(daemon)

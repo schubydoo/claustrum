@@ -11,13 +11,20 @@ import (
 
 // cleanOne runs cleanGitChildEnv on one entry and returns what is left of it:
 // the whole entry, or "" when it went.
-func cleanOne(kv string, windows bool) string {
-	out := cleanGitChildEnv([]string{kv}, windows)
+func cleanOne(kv string, form gitEnvForm) string {
+	out := cleanGitChildEnv([]string{kv}, form)
 	if len(out) == 0 {
 		return ""
 	}
 	return out[0]
 }
+
+// The forms of the three systems. The rules run on every host.
+var (
+	linuxForm   = gitEnvForm{}
+	macForm     = gitEnvForm{darwin: true}
+	windowsForm = gitEnvForm{windows: true}
+)
 
 // The rows of Linux and macOS, rounds task004-01 and task004-02 (Linux and macOS
 // VMs). W is the folder of the logging wrapper there.
@@ -33,6 +40,7 @@ func TestCleanGitChildEnvUnixRows(t *testing.T) {
 		{"DYLD_FALLBACK_LIBRARY_PATH=/abs/z::", "DYLD_FALLBACK_LIBRARY_PATH=/abs/z"},
 		{"GIT_EXEC_PATH=rel/exec", ""},
 		{"GIT_EXEC_PATH=", ""},
+		{"GIT_EXEC_PATH", ""},
 		{"DYLD_FRAMEWORK_PATH=rel", ""},
 		{"DYLD_FALLBACK_FRAMEWORK_PATH=.", ""},
 		{"path=rel:/abs", "path=rel:/abs"},
@@ -49,7 +57,7 @@ func TestCleanGitChildEnvUnixRows(t *testing.T) {
 		{"GIT_SSH_COMMAND=rel/ssh", "GIT_SSH_COMMAND=rel/ssh"},
 		{"GIT_FOO=x", "GIT_FOO=x"},
 	} {
-		if got := cleanOne(tc.in, false); got != tc.want {
+		if got := cleanOne(tc.in, linuxForm); got != tc.want {
 			t.Errorf("Linux and macOS: %q gives %q, want %q", tc.in, got, tc.want)
 		}
 	}
@@ -85,9 +93,217 @@ func TestCleanGitChildEnvWindowsRows(t *testing.T) {
 		{`GIT_SSH=bin\ssh`, ""},
 		{`MARKER_KEEP=rel;.\x`, `MARKER_KEEP=rel;.\x`},
 	} {
-		if got := cleanOne(tc.in, true); got != tc.want {
+		if got := cleanOne(tc.in, windowsForm); got != tc.want {
 			t.Errorf("Windows: %q gives %q, want %q", tc.in, got, tc.want)
 		}
+	}
+}
+
+// A table of rows for one system: the entry in, the entry out ("" when it goes).
+func checkRows(t *testing.T, form gitEnvForm, label string, rows [][2]string) {
+	t.Helper()
+	for _, r := range rows {
+		if got := cleanOne(r[0], form); got != r[1] {
+			t.Errorf("%s: %q gives %q, want %q", label, r[0], got, r[1])
+		}
+	}
+}
+
+// Build c8e2f083 (not measured): no '=' goes, a
+// Windows name matches in any letter case and keeps its spelling, and the
+// pathspec names go.
+func TestGitChildEnvNameRules(t *testing.T) {
+	checkRows(t, linuxForm, "Linux", [][2]string{
+		{"NOEQUALS", ""},
+		{"GIT_LITERAL_PATHSPECS=1", ""},
+		{"GIT_GLOB_PATHSPECS=1", ""},
+		{"GIT_NOGLOB_PATHSPECS=1", ""},
+		{"GIT_ICASE_PATHSPECS=1", ""},
+		{"git_literal_pathspecs=1", "git_literal_pathspecs=1"},
+		{"Home=rel", "Home=rel"},
+		{"=C:=C:\\x", "=C:=C:\\x"},
+	})
+	checkRows(t, windowsForm, "Windows", [][2]string{
+		{"NOEQUALS", ""},
+		{"git_literal_pathspecs=1", ""},
+		{"Git_Icase_Pathspecs=1", ""},
+		{"Home=rel", ""},
+		{"Home=C:\\u", "Home=C:\\u"},
+		{"git_ssh=bin/ssh", ""},
+		{"=C:=C:\\x", "=C:=C:\\x"},
+	})
+}
+
+// On Windows the exact value /dev/null keeps GIT_CONFIG_GLOBAL and
+// GIT_CONFIG_SYSTEM at once. A relative value drops the 23
+// names, an absolute or empty value goes on.
+func TestGitChildEnvRelativeValues(t *testing.T) {
+	checkRows(t, windowsForm, "Windows /dev/null", [][2]string{
+		{"GIT_CONFIG_GLOBAL=/dev/null", "GIT_CONFIG_GLOBAL=/dev/null"},
+		{"git_config_system=/dev/null", "git_config_system=/dev/null"},
+		{"GIT_CONFIG_GLOBAL=/DEV/NULL", ""},
+		{"GIT_CONFIG_GLOBAL=nul", "GIT_CONFIG_GLOBAL=nul"},
+		{`GIT_CONFIG_GLOBAL=\\h\s\x`, `GIT_CONFIG_GLOBAL=\\h\s\x`},
+		{`HOME=\x`, ""},
+		{"HOME=/home/x", ""},
+		{`HOME=C:\u`, `HOME=C:\u`},
+		{"HOME=C:/u", "HOME=C:/u"},
+	})
+	checkRows(t, linuxForm, "Linux /dev/null", [][2]string{
+		{"GIT_CONFIG_GLOBAL=/dev/null", "GIT_CONFIG_GLOBAL=/dev/null"},
+		{"GIT_CONFIG_GLOBAL=rel", ""},
+		{"HOME=/home/x", "HOME=/home/x"},
+		{"HOME=", "HOME="},
+	})
+	for _, name := range []string{
+		"HOME", "USERPROFILE", "PROGRAMDATA", "ALLUSERSPROFILE", "XDG_CACHE_HOME", "XDG_CONFIG_HOME",
+		"KRB5_TRACE", "KRB5RCACHEDIR", "GSS_MECH_CONFIG", "OPENSSL_CONF", "OPENSSL_CONF_INCLUDE",
+		"OPENSSL_ENGINES", "OPENSSL_MODULES", "SSLKEYLOGFILE", "SSL_CERT_FILE", "CURL_CA_BUNDLE",
+		"GIT_INDEX_FILE", "GIT_SSL_CAINFO", "GIT_PROXY_SSL_CAINFO", "GIT_TEMPLATE_DIR",
+		"GIT_CONFIG_GLOBAL", "GIT_CONFIG_SYSTEM", "GIT_TEXTDOMAINDIR",
+	} {
+		checkRows(t, linuxForm, "Linux relative value", [][2]string{
+			{name + "=rel/x", ""}, {name + "=/abs/x", name + "=/abs/x"}, {name + "=", name + "="},
+		})
+		checkRows(t, windowsForm, "Windows relative value", [][2]string{
+			{name + `=rel\x`, ""}, {name + `=C:\abs`, name + `=C:\abs`},
+		})
+	}
+}
+
+// The file part of a Kerberos value.
+func TestGitChildEnvKerberos(t *testing.T) {
+	var rows [][2]string
+	for _, v := range []string{"/abs/cc", "FILE:/abs/cc", "KEYRING:persistent:1000", "kcm:", "API:x", "MEMORY:rel",
+		"XCACHE:r", "xctemp:r", "DIR::/a", "DIR:/a", "", "/a:b"} {
+		rows = append(rows, [2]string{"KRB5CCNAME=" + v, "KRB5CCNAME=" + v})
+	}
+	for _, v := range []string{"FILE:rel/cc", "WRFILE:x", ":x", "DIR::rel", "DIR:rel", "rel/cc"} {
+		rows = append(rows, [2]string{"KRB5_KTNAME=" + v, ""}, [2]string{"KRB5_CLIENT_KTNAME=" + v, ""})
+	}
+	rows = append(rows, [2]string{"KRB5CCNAME=a/b:c", ""})
+	checkRows(t, linuxForm, "Linux", rows[:len(rows)-1])
+	checkRows(t, linuxForm, "Linux", rows[len(rows)-1:])
+	checkRows(t, windowsForm, "Windows", [][2]string{
+		{`KRB5CCNAME=C:\x`, `KRB5CCNAME=C:\x`},
+		{`KRB5CCNAME=FILE:C:\x`, `KRB5CCNAME=FILE:C:\x`},
+		{`KRB5CCNAME=FILE:rel`, ""},
+		{`krb5ccname=KEYRING:x`, `krb5ccname=KEYRING:x`},
+	})
+}
+
+// The empty home names, SSH_AUTH_SOCK, HOMEDRIVE and HOMEPATH.
+func TestGitChildEnvHomeAndSocket(t *testing.T) {
+	var win [][2]string
+	for _, n := range []string{"HOME", "USERPROFILE", "PROGRAMDATA", "ALLUSERSPROFILE"} {
+		win = append(win, [2]string{n + "=", ""})
+	}
+	win = append(win,
+		[2]string{`SSH_AUTH_SOCK=\\.\pipe\openssh-ssh-agent`, `SSH_AUTH_SOCK=\\.\pipe\openssh-ssh-agent`},
+		[2]string{`SSH_AUTH_SOCK=\x`, `SSH_AUTH_SOCK=\x`},
+		[2]string{`SSH_AUTH_SOCK=rel`, ""},
+		[2]string{`SSH_AUTH_SOCK=`, `SSH_AUTH_SOCK=`},
+		[2]string{`HOMEDRIVE=`, ""},
+		[2]string{`HOMEDRIVE=C:`, `HOMEDRIVE=C:`},
+		[2]string{`HOMEDRIVE=\\server\share`, `HOMEDRIVE=\\server\share`},
+		[2]string{`HOMEDRIVE=C:\`, ""},
+		[2]string{`HOMEDRIVE=C:\x`, ""},
+		[2]string{`HOMEDRIVE=x`, ""},
+		[2]string{`homedrive=x`, ""},
+		[2]string{`HOMEPATH=`, ""},
+		[2]string{`HOMEPATH=\Users\u`, `HOMEPATH=\Users\u`},
+		[2]string{`HomePath=/Users/u`, `HomePath=/Users/u`},
+		[2]string{`HOMEPATH=Users`, ""},
+	)
+	checkRows(t, windowsForm, "Windows", win)
+	checkRows(t, linuxForm, "Linux", [][2]string{
+		{"SSH_AUTH_SOCK=/tmp/agent", "SSH_AUTH_SOCK=/tmp/agent"},
+		{"SSH_AUTH_SOCK=agent", ""},
+		{"SSH_AUTH_SOCK=", "SSH_AUTH_SOCK="},
+		{"HOMEDRIVE=x", "HOMEDRIVE=x"},
+		{"HOMEPATH=", "HOMEPATH="},
+		{"USERPROFILE=", "USERPROFILE="},
+	})
+}
+
+// Five names keep an empty value, and the 19 list names
+// follow the list rule.
+func TestGitChildEnvLists(t *testing.T) {
+	for _, n := range []string{"SSL_CERT_DIR", "GIT_SSL_CAPATH", "KRB5_CONFIG", "GIT_ALTERNATE_OBJECT_DIRECTORIES", "SASL_PATH"} {
+		for _, f := range []gitEnvForm{linuxForm, macForm, windowsForm} {
+			checkRows(t, f, "empty value", [][2]string{{n + "=", n + "="}, {n + "=rel", ""}})
+		}
+	}
+	for _, n := range []string{
+		"PATH", "LOCPATH", "NLSPATH", "GCONV_PATH", "LD_LIBRARY_PATH", "SASL_PATH", "SASL_CONF_PATH",
+		"KRB5_CONFIG", "SSL_CERT_DIR", "GIT_EXEC_PATH", "GIT_SSL_CAPATH", "GIT_ALTERNATE_OBJECT_DIRECTORIES",
+		"DYLD_LIBRARY_PATH", "DYLD_FRAMEWORK_PATH", "DYLD_INSERT_LIBRARIES", "DYLD_FALLBACK_LIBRARY_PATH",
+		"DYLD_FALLBACK_FRAMEWORK_PATH", "DYLD_VERSIONED_LIBRARY_PATH", "DYLD_VERSIONED_FRAMEWORK_PATH",
+	} {
+		checkRows(t, linuxForm, "Linux "+n, [][2]string{
+			{n + "=rel:/a::/b", n + "=/a:/b"}, {n + "=rel", ""}, {n + "=/a;b:/c", n + "=/c"},
+		})
+		checkRows(t, windowsForm, "Windows "+n, [][2]string{
+			{n + `=rel;C:\a;\\h\s\b;C:\c:d`, n + `=C:\a;\\h\s\b;C:\c:d`}, {n + `=rel`, ""},
+		})
+	}
+	checkRows(t, windowsForm, "Windows", [][2]string{{"Path=;", ""}, {"Path=", ""}})
+}
+
+// LD_PRELOAD splits on white space too, LD_AUDIT on ':' only.
+func TestGitChildEnvLoaders(t *testing.T) {
+	checkRows(t, linuxForm, "Linux", [][2]string{
+		{"LD_PRELOAD=a.so\tb.so\nc.so\vd.so\fe.so\rf.so", "LD_PRELOAD=a.so:b.so:c.so:d.so:e.so:f.so"},
+		{"LD_PRELOAD=x/a.so\ty.so", "LD_PRELOAD=y.so"},
+		{"LD_PRELOAD=x/a.so\ty/b.so", ""},
+		{"LD_AUDIT=a.so\tb.so", "LD_AUDIT=a.so\tb.so"},
+		{"LD_AUDIT=x/a.so\tb", ""},
+	})
+	checkRows(t, windowsForm, "Windows", [][2]string{
+		{"LD_PRELOAD=a.so\tb.so", "LD_PRELOAD=a.so:b.so"},
+		{"LD_PRELOAD=\\\\h\\s\\x.dll", "LD_PRELOAD=\\\\h\\s\\x.dll"},
+	})
+}
+
+// The program names, and SSH_SK_PROVIDER on macOS and Windows.
+func TestGitChildEnvPrograms(t *testing.T) {
+	for _, n := range []string{"GIT_SSH", "GIT_ASKPASS", "SSH_ASKPASS", "SSH_SK_HELPER", "SSH_SK_PROVIDER", "SSH_PKCS11_HELPER"} {
+		checkRows(t, linuxForm, "Linux "+n, [][2]string{
+			{n + "=/abs/p", n + "=/abs/p"}, {n + "=bare", n + "=bare"}, {n + "=", n + "="},
+			{n + "=a/p", ""}, {n + `=a\p`, ""}, {n + `=C:x`, n + `=C:x`},
+		})
+		bare := n + "=bare"
+		if n == "SSH_SK_PROVIDER" {
+			bare = "" // SSH_SK_PROVIDER on Windows
+		}
+		checkRows(t, windowsForm, "Windows "+n, [][2]string{
+			{n + `=C:\p`, n + `=C:\p`}, {n + `=\\h\s\p`, n + `=\\h\s\p`}, {n + "=bare", bare},
+			{n + "=a/p", ""}, {n + `=a\p`, ""}, {n + `=C:x`, ""}, {n + "=/abs/p", ""},
+		})
+	}
+	checkRows(t, linuxForm, "Linux SSH_SK_PROVIDER", [][2]string{{"SSH_SK_PROVIDER=libsk.so", "SSH_SK_PROVIDER=libsk.so"}})
+	checkRows(t, macForm, "macOS SSH_SK_PROVIDER", [][2]string{
+		{"SSH_SK_PROVIDER=internal", "SSH_SK_PROVIDER=internal"},
+		{"SSH_SK_PROVIDER=/usr/lib/sk.dylib", "SSH_SK_PROVIDER=/usr/lib/sk.dylib"},
+		{"SSH_SK_PROVIDER=libsk.so", ""},
+		{"SSH_SK_PROVIDER=", ""},
+		{"SSH_ASKPASS=", "SSH_ASKPASS="},
+	})
+	checkRows(t, windowsForm, "Windows SSH_SK_PROVIDER", [][2]string{
+		{"SSH_SK_PROVIDER=internal", "SSH_SK_PROVIDER=internal"},
+		{`SSH_SK_PROVIDER=C:\sk.dll`, `SSH_SK_PROVIDER=C:\sk.dll`},
+		{"SSH_SK_PROVIDER=libsk.dll", ""},
+		{"SSH_SK_PROVIDER=", ""},
+	})
+}
+
+// An entry that no test touches stays as it is. An empty name on
+// Windows is not measured.
+func TestGitChildEnvOthersStay(t *testing.T) {
+	for _, f := range []gitEnvForm{linuxForm, macForm, windowsForm} {
+		checkRows(t, f, "other entries", [][2]string{
+			{"CLAUSTRUM_X=rel:;\"", "CLAUSTRUM_X=rel:;\""}, {"CLAUSTRUM_Y=", "CLAUSTRUM_Y="}, {"GIT_FOO=rel", "GIT_FOO=rel"},
+		})
 	}
 }
 
@@ -95,7 +311,7 @@ func TestCleanGitChildEnvWindowsRows(t *testing.T) {
 func TestCleanGitChildEnvKeepsOrder(t *testing.T) {
 	in := []string{"A=1", "PATH=rel:/usr/bin", "GIT_SSH=bin/ssh", "B=2", "LD_AUDIT=/a.so", "C=3"}
 	want := []string{"A=1", "PATH=/usr/bin", "B=2", "LD_AUDIT=/a.so", "C=3"}
-	if got := cleanGitChildEnv(in, false); !slices.Equal(got, want) {
+	if got := cleanGitChildEnv(in, linuxForm); !slices.Equal(got, want) {
 		t.Errorf("got %q, want %q", got, want)
 	}
 }

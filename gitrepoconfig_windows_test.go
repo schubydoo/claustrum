@@ -14,7 +14,7 @@ import (
 // Windows VM (cells C3a to C3d and C4b).
 
 // TestWindowsIncludeTexts pins the two include texts with the paths of the
-// cells. The expected texts are the message of the reply, with the JSON
+// cells. The values `~`, `/x`, `\x` and `C:x` follow build c8e2f083 (not measured). The expected texts are the message of the reply, with the JSON
 // escapes taken off.
 func TestWindowsIncludeTexts(t *testing.T) {
 	const config = `C:\o\w\repo\.git\config`
@@ -23,7 +23,7 @@ func TestWindowsIncludeTexts(t *testing.T) {
 			`, and on Windows Claude follows an include only if its path is relative and stays inside the repository; ` +
 			`if that line is yours and you trust the file, put the line into ~/.gitconfig on the remote machine instead`
 	}
-	for _, value := range []string{"C:/o/w/absinc.cfg", "~/x", "C:/o/w/missing.cfg"} {
+	for _, value := range []string{"C:/o/w/absinc.cfg", "~/x", "C:/o/w/missing.cfg", "~", "/x", `\x`, "C:x"} {
 		if got, want := includeValueDetail(config, value), notRelative(value); got != want {
 			t.Errorf("include %s: detail = %q, want %q", value, got, want)
 		}

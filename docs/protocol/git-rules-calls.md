@@ -120,9 +120,31 @@ The repository calls are the configuration listings, the hardened calls,
 `--attr-source` probe get the daemon's environment as it is, plus their own
 additions.
 
-- The daemon's `PATH`, `GIT_EXEC_PATH`, `GIT_SSH` and loader variables are
-  cleaned for the repository calls and the calls of the start test. The calls of
-  the start test also get no `GIT_` variable of the daemon.
+- The daemon's environment is cleaned for the repository calls and the calls of
+  the start test, entry by entry, in this order (build
+  `c8e2f083`, not measured). The calls of the start test also get no `GIT_`
+  variable of the daemon.
+    - An entry with no `=` and the four `GIT_*_PATHSPECS` variables go. On
+      Windows a name matches in any letter case and keeps its spelling.
+    - A relative value drops 23 names, such as `HOME` and `GIT_INDEX_FILE`. On
+      Windows `/dev/null` keeps `GIT_CONFIG_GLOBAL` and `GIT_CONFIG_SYSTEM`. An
+      empty value is not relative. On Windows `NUL` in any case is not.
+    - The Kerberos names `KRB5CCNAME`, `KRB5_KTNAME` and `KRB5_CLIENT_KTNAME` go
+      when their file part is relative. `KEYRING`, `KCM`, `API`, `MEMORY`,
+      `XCACHE` and `XCTEMP` have none.
+    - On Windows an empty `HOME`, `USERPROFILE`, `PROGRAMDATA` or
+      `ALLUSERSPROFILE` goes. So does a `HOMEDRIVE` or `HOMEPATH` of the wrong
+      shape. A relative `SSH_AUTH_SOCK` goes, but not one that starts with a slash
+      on Windows.
+    - 19 list names, such as `PATH`, `LOCPATH` and `SSL_CERT_DIR`, keep their
+      absolute entries. Five of them keep an empty value. The rest go when no
+      entry is left. On Windows a UNC path is absolute.
+    - `LD_PRELOAD` and `LD_AUDIT` keep an absolute piece or one with no `/`.
+      `LD_PRELOAD` splits on white space too.
+    - Six program names, such as `GIT_SSH` and `SSH_ASKPASS`, go when they are a
+      relative path. `SSH_SK_PROVIDER` also needs `internal` or an absolute path on
+      macOS and Windows.
+    - Every other entry stays.
 - `GIT_CONFIG` and `GIT_CONFIG_PARAMETERS` do not reach a repository call. The
   names match exactly, in upper case. So on Windows `git_config` and
   `Git_Config_Parameters` reach git.

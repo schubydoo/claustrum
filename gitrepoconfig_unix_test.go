@@ -355,11 +355,22 @@ func TestRepoConfigIncludeNotExpanded(t *testing.T) {
 	if got, want := configDetail(t, gitDir), unexpanded("inc.cfg", "~root/x"); got != want {
 		t.Errorf("include line in an included file: detail = %q, want %q", got, want)
 	}
-	// No cell: no daemon starts with no home folder. claustrum answers the same text.
-	t.Setenv("HOME", "")
+	// Build c8e2f083 (not measured): an unset or relative
+	// HOME refuses, and an empty HOME is not relative.
 	setRepoConfig(t, gitDir, version0+"[include]\n\tpath = ~/x\n")
+	t.Setenv("HOME", "rel/home")
 	if got, want := configDetail(t, gitDir), unexpanded("config", "~/x"); got != want {
-		t.Errorf("include ~/x with no home folder: detail = %q, want %q", got, want)
+		t.Errorf("include ~/x with a relative HOME: detail = %q, want %q", got, want)
+	}
+	if err := os.Unsetenv("HOME"); err != nil {
+		t.Fatal(err)
+	}
+	if got, want := configDetail(t, gitDir), unexpanded("config", "~/x"); got != want {
+		t.Errorf("include ~/x with HOME unset: detail = %q, want %q", got, want)
+	}
+	t.Setenv("HOME", "")
+	if target, detail := includeTarget("config", "~/x", gitDir); target != "/x" || detail != "" {
+		t.Errorf("include ~/x with an empty HOME = %q, %q, want /x", target, detail)
 	}
 }
 
