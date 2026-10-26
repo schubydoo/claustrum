@@ -233,7 +233,8 @@ func (req *request) newWorktreeConfig(repo string, t gitDirTrust) (text []byte, 
 	}
 	file := filepath.Join(dir, worktreeConfigName)
 	// The calls get the cleaning of gitChildEnv, as on 5fd08069 (cell V2 of round
-	// task004-03, Linux, macOS and Windows VMs). A call that fails gives the
+	// task004-03, Linux, macOS and Windows VMs). The rules of the cleaning follow
+	// c8e2f083 (not measured). A call that fails gives the
 	// cause `removing <key> from the new worktree's config.worktree: exit status
 	// 5` (cell C1 of round task007-01, Linux, macOS and Windows VMs). A call that
 	// the bound ended gives `signal: killed` at about 30 s (cell C2, Linux and

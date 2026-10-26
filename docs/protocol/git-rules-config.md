@@ -187,8 +187,10 @@ These rules are from the code and are not measured on `5fd08069`:
   identity, where the system gives one, of each file of the read.
 - An open error of the file of an `includeIf` section gives no refusal. An open
   error other than the measured ones gets the same `open <file>: <reason>` form.
-- A `~/x` include is joined to the home folder and cleaned. With no home folder it
-  gets the "expands neither" refusal. No daemon starts with no home folder. On Windows a `%(prefix)/…` value gets the
+- On Linux and macOS a `~` include takes the value of `HOME` in place of the `~`,
+  when `HOME` is set and not relative (build `c8e2f083`, not measured). An empty
+  `HOME` counts as set, so `~/x.inc` becomes `/x.inc`. An unset or relative `HOME`
+  gets the "expands neither" refusal. On Windows a `%(prefix)/…` value gets the
   "expands neither" text, with the cut at 100 characters.
 - The listing that the read takes from git for one config file has a bound of 64 MiB.
   The read tests the name bound and the count on the first 64 MiB of a longer

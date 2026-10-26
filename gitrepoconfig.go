@@ -838,12 +838,11 @@ func configFileTests(path string, log *repoReadLog) string {
 
 // includeTarget is the path of the file that the `include.path` value of file
 // names, or the detail of a refusal. A relative value counts from the folder of
-// file, also when it leaves the git directory (cell X9), and `~/` is the home
+// file, also when it leaves the git directory (cell X9), and `~/` is the `HOME`
 // folder of the daemon (cells C3). `~user` and `%(prefix)/` are refused (cells
-// C3, `~root/x` and `%(prefix)/x`). A `~/` value with no home folder gets the
-// same refusal: the text says so, and no daemon starts with no home folder, so
-// no cell ran it. The Windows rules come first (includeValueDetail and
-// includePlaceDetail).
+// C3, `~root/x` and `%(prefix)/x`). A `~/` value with an unset or relative
+// `HOME` gets the same refusal: the text says so, and no cell ran it. The
+// Windows rules come first (includeValueDetail and includePlaceDetail).
 //
 // The value in the text is cut to its first 100 characters: a value of 100 is
 // whole, and one of 101 is cut, also with characters of two bytes (cells V12,
@@ -866,8 +865,13 @@ func includeTarget(file, value, gitDir string) (target, detail string) {
 		", and Claude expands neither ~user nor %(prefix), nor ~ where no home directory is set; write that path out in full"
 	switch {
 	case value == "~" || strings.HasPrefix(value, "~/"):
-		home, err := os.UserHomeDir()
-		if err != nil || home == "" {
+		// HOME is the home folder here, as in build c8e2f083 (not measured).
+		// An unset or relative HOME refuses. An empty HOME is not
+		// relative, so `~/x` becomes `/x`. A bare `~` with an empty HOME is not
+		// measured: it gives an empty path. The Unix form of relativeFor is right
+		// here: includeValueDetail refuses every `~` path on Windows first.
+		home, set := os.LookupEnv("HOME")
+		if !set || relativeFor(home, false) {
 			return "", unexpanded
 		}
 		target = filepath.Join(home, value[1:])

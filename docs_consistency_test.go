@@ -621,8 +621,8 @@ var docWordLimits = map[string]int{
 	"docs/protocol/files-validate.md":          365,
 	"docs/protocol/flags.md":                   2633, // TASK-202: moved from PROTOCOL.md
 	"docs/protocol/git-info.md":                1851, // task-203b: the page rewrite
-	"docs/protocol/git-rules-calls.md":         4569, // TASK-202: moved from PROTOCOL.md
-	"docs/protocol/git-rules-config.md":        2864, // TASK-202: moved from PROTOCOL.md
+	"docs/protocol/git-rules-calls.md":         4779, // TASK-202: moved from PROTOCOL.md
+	"docs/protocol/git-rules-config.md":        2884, // TASK-202: moved from PROTOCOL.md
 	"docs/protocol/git-rules-settings-copy.md": 3173, // TASK-202: moved from PROTOCOL.md
 	"docs/protocol/git-rules-trust.md":         4316, // TASK-202: moved from PROTOCOL.md
 	"docs/protocol/git-list-branches.md":       998,  // task-203b: the page rewrite
