@@ -257,7 +257,7 @@ func checkFront(t *testing.T, what, dir string, calls []envCall, want []string) 
 				t.Errorf("%s: the call %q has no option list", what, line)
 			}
 		case c.isProbe():
-			if !slices.Equal(values, []string{"core.hooksPath=" + os.DevNull, "core.fsmonitor=false"}) {
+			if !slices.Equal(values, []string{"core.hooksPath=" + os.DevNull, "core.fsmonitor="}) {
 				t.Errorf("%s: the call about the repository has the list %q, want its own two items", what, values)
 			}
 		case strings.HasPrefix(rest[0], "--git-dir="+filepath.Join(dir, shadowStatusDirPrefix)):

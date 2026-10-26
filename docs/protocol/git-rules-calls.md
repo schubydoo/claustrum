@@ -11,7 +11,8 @@ with a fixed list of `-c` options and a fixed set of environment variables. The 
 and the variables follow `5fd08069`. The hook pins were measured against `f6010b97`,
 and their limits against `89cb6289`. A rule that names no system was measured on
 Linux, macOS and Windows. `githarden.go` holds the lists, and
-`githarden_shape_test.go` tests them.
+`githarden_shape_test.go` tests them. Each hardened call passes `-c core.fsmonitor=`
+with an empty value (build `c8e2f083`, not measured).
 
 Each hardened call passes no `-C`. Before each one, the daemon runs a config
 listing (`git config -z --list`) with the profile of that call. Before its first

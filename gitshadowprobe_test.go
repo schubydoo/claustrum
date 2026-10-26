@@ -265,7 +265,7 @@ func TestProbeCallShape(t *testing.T) {
 					calls[0].argv, calls[1].argv, calls[2].argv, calls[3].argv)
 			}
 			c := calls[1]
-			if want := []string{"-c", "core.hooksPath=" + os.DevNull, "-c", "core.fsmonitor=false", "rev-parse", "--git-dir"}; !slices.Equal(c.argv, want) {
+			if want := []string{"-c", "core.hooksPath=" + os.DevNull, "-c", "core.fsmonitor=", "rev-parse", "--git-dir"}; !slices.Equal(c.argv, want) {
 				t.Errorf("argv = %q\nwant %q", c.argv, want)
 			}
 			if c.cwd != root {

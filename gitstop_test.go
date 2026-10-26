@@ -116,7 +116,7 @@ func TestGitSubcommand(t *testing.T) {
 		args []string
 		want string
 	}{
-		{[]string{"git", "-c", "core.fsmonitor=false", "-c", "core.hooksPath=/dev/null", "for-each-ref", "refs/heads/"}, "for-each-ref"},
+		{[]string{"git", "-c", "core.fsmonitor=", "-c", "core.hooksPath=/dev/null", "for-each-ref", "refs/heads/"}, "for-each-ref"},
 		{[]string{"git", "--attr-source=4b82", "-c", "a=b", "--git-dir=/s/.gitdir-1", "--work-tree=/w", "status", "--porcelain"}, "status"},
 		{[]string{"git", "-c", "x=y", "worktree", "add", "--no-checkout", "/l"}, "worktree"},
 		{[]string{"git", "config", "-z", "--list"}, "config"},
