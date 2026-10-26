@@ -2825,7 +2825,13 @@ func removeGoneWorktree(req *request, p *gitParams, repo, path string) response 
 		if matches == 0 {
 			probe.pairIfWorktreesDir(commonDir)
 		}
-		dropWorktreeEntryByPath(commonDir, sp)
+		// A git directory path that ends in white space keeps its registration, and
+		// the branch step still runs. The reference answers so for a `.git` file of
+		// baseRepo that names `t.git ` (measured on Linux). Other white space and a
+		// remove with worktreeRoot are not measured. This deletes less, never more.
+		if p.WorktreeRoot != "" || strings.TrimSpace(commonDir) == commonDir {
+			dropWorktreeEntryByPath(commonDir, sp)
+		}
 	}
 	// The branch step runs on this path too (rows R17a and R17b). Without a
 	// repository its for-each-ref fails, and the branch counts as kept (rows R18 and
