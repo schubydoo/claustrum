@@ -9,7 +9,7 @@ import (
 )
 
 // TestSocketC8eStdinAttachAndReattachProof pins the replies of c8e2f083 to the
-// members attach, fresh and proof on a process without a terminal (round r1,
+// members attach, fresh and proof on a process without a terminal (measured on
 // Linux). Claustrum has no terminal process, so every process is one.
 func TestSocketC8eStdinAttachAndReattachProof(t *testing.T) {
 	sock := startSocketServer(t)
