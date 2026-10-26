@@ -50,7 +50,7 @@ modes and the OS splits is in
 
 | File | Role |
 |------|------|
-| `rpc.go` | request and response types, error codes, and the dispatch order |
+| `rpc.go` | types, error codes, `gate` (read loop), `route` (`dispatchRequest`) |
 | `results.go` | result structs, with fields in the order of the reference. Never a map |
 | `methods_*.go` | the 20 methods across `server.*` / `files.*` / `git.*` / `launcher.*` / `process.*` / `plugins.*` |
 | `process.go` | spawn, stream frames, stdin queue, replay buffer, `reattach` |

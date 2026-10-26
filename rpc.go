@@ -158,7 +158,7 @@ func okResult(id interface{}, result interface{}) response {
 	return response{JSONRPC: "2.0", ID: id, Result: result}
 }
 
-// methodShutdown is the one method exempt from the auth gate — see dispatch.
+// methodShutdown is the one method exempt from the auth gate — see gate.
 //
 // The value is also ON THE WIRE: capabilityMethods embeds it, so it is emitted
 // as server.capabilities → result.methods[3]. Changing this string for an auth
@@ -166,6 +166,9 @@ func okResult(id interface{}, result interface{}) response {
 const methodShutdown = "server.shutdown"
 
 // dispatch validates and routes one request and returns the response to send.
+// Only tests call it. In production serveConn runs gate on the read loop and
+// handleRequest runs route through dispatchRequest, so dispatch is a test seam
+// for the same two steps.
 // It returns nil for a process.spawn that reached its start after the shutdown
 // began. Every other path that returns gives a frame, server.shutdown included:
 // {"ok":true}. That frame races the teardown (see handleServer). A handler panic
@@ -262,7 +265,7 @@ func (s *server) gate(raw []byte) (request, *response) {
 	// authenticated RPC connection, and an auth member that IS present is simply
 	// ignored here rather than rejected.
 	//
-	// The exemption covers auth ONLY. The version check in dispatch still applies:
+	// The exemption covers auth ONLY. The version check in route still applies:
 	// measured, a shutdown frame with jsonrpc "1.0" or absent yields -32600 and
 	// the reference stays up.
 	if req.Method != methodShutdown &&
