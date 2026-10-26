@@ -31,7 +31,10 @@ func TestWalkGitFileParse(t *testing.T) {
 		{"empty", "gitdir: \r\n", "", false},
 		{"empty before NUL", "gitdir: \x00x", holder, true},
 		{"slash path", "gitdir: /x\n", slashX, true},
-		{"absolute cleaned", "gitdir: " + abs + "//../h\n", filepath.Join(holder, "elsewhere", "h"), true},
+		// An absolute path keeps its spelling: it goes on to GIT_COMMON_DIR. On
+		// Windows a Clean turned C:/x/g into C:\x\g there.
+		{"absolute kept as spelled", "gitdir: " + abs + "//../h\n", abs + "//../h", true},
+		{"forward slashes kept", "gitdir: " + filepath.ToSlash(abs) + "\n", filepath.ToSlash(abs), true},
 		{"cleaned", "gitdir: a//b/../g\n", filepath.Join(holder, "a", "g"), true},
 	}
 	for _, c := range cases {

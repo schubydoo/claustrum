@@ -403,6 +403,8 @@ func readGitFile(path, holder string) (string, bool) {
 //   - Then the rest is cut at its first NUL byte.
 //   - A path that is not absolute (filepath.IsAbs) is joined to holder. So on Windows
 //     "gitdir: /x" is joined. A path that the NUL cut makes empty names holder.
+//   - An absolute path stays as the file spells it, as readGitFile keeps it. The calls
+//     pass it on as GIT_COMMON_DIR, so on Windows its forward slashes stay.
 //
 // The outcomes of git.worktree_remove for a NUL or a blank in that file follow the
 // reference (measured on Linux). The join to holder, the folder of the `.git` entry
@@ -431,7 +433,7 @@ func readWalkGitFile(path, holder string) (string, bool) {
 	}
 	target := string(rest)
 	if filepath.IsAbs(target) {
-		return filepath.Clean(target), true
+		return target, true
 	}
 	return filepath.Join(holder, target), true
 }
