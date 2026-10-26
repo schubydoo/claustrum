@@ -111,6 +111,48 @@ func TestShutdownSweepRelabelsAWaitingKill(t *testing.T) {
 	}
 }
 
+// TestShutdownSweepRelabelsWhenOneOfTwoWaitsEnded: two killAndWait calls wait on one
+// child that ignores TERM. The short one without escalation returns first. The long
+// one still waits, so the shutdown sweep still relabels the kill (claustrum's own,
+// not measured).
+func TestShutdownSweepRelabelsWhenOneOfTwoWaitsEnded(t *testing.T) {
+	m := newTestProcManager(t)
+	t.Cleanup(m.killAll)
+	c, frames := pipeConn(t)
+	exe, env := helperCommand(t, "ignore-term")
+	p, err := m.spawn(c, "c1", exe, nil, "", env, false)
+	if err != nil {
+		t.Fatalf("spawn: %v", err)
+	}
+	select {
+	case f := <-frames:
+		if f.Stream != "stdout" {
+			t.Fatalf("first frame is %q, want the ready line on stdout", f.Stream)
+		}
+	case <-time.After(10 * time.Second):
+		t.Fatal("the helper never became ready")
+	}
+	long := make(chan struct{})
+	go func() {
+		defer close(long)
+		m.killAndWaitProc(p, "TERM", 20*time.Second, true)
+	}()
+	deadline := time.Now().Add(10 * time.Second)
+	for killedByOf(p) != "client" {
+		if time.Now().After(deadline) {
+			t.Fatal("the long killAndWait never stamped its reason")
+		}
+		time.Sleep(5 * time.Millisecond)
+	}
+	m.killAndWaitProc(p, "TERM", 100*time.Millisecond, false)
+	m.killAll()
+	if got := killedByOf(p); got != "shutdown" {
+		t.Errorf("killedBy after the shutdown sweep = %q, want %q", got, "shutdown")
+	}
+	untilExit(t, frames)
+	<-long
+}
+
 // TestShutdownSweepKeepsReasonOfPlainKill pins a plain process.kill on a child that
 // ignores TERM: nothing waits, so the shutdown sweep keeps "client" (claustrum's own,
 // not measured).

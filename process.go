@@ -164,9 +164,10 @@ type managedProc struct {
 	// "client" is live-measured, "shutdown" is measured on Linux only in the log.
 	// Read and written under p.mu.
 	killedBy string
-	// waiting is true while killAndWaitProc waits for the exit of this process. It is
-	// set and cleared under p.mu, so the shutdown sweep reads it with killedBy.
-	waiting bool
+	// waiting counts the killAndWaitProc calls that wait for the exit of this
+	// process. It changes under p.mu, so the shutdown sweep reads it with killedBy.
+	// A count, so one call that returns leaves another call's wait marked.
+	waiting int
 	stdin   io.WriteCloser
 	// cmd is set once in spawn's composite literal and never reassigned, so it is
 	// safe to read without p.mu (waitReapAndDrain relies on that). signalIfLive and
@@ -505,7 +506,7 @@ func (p *managedProc) signalIfLive(signame, killedBy string) bool {
 	if !p.running || p.reaped || p.cmd == nil || p.cmd.Process == nil {
 		return false
 	}
-	if killedBy != "" && (p.killedBy == "" || (killedBy == "shutdown" && p.waiting)) {
+	if killedBy != "" && (p.killedBy == "" || (killedBy == "shutdown" && p.waiting > 0)) {
 		p.killedBy = killedBy
 	}
 	_ = signalGroup(p.group, p.cmd.Process, signame)
@@ -1424,13 +1425,13 @@ func (m *procManager) killAndWaitProc(p *managedProc, signal string, grace time.
 	if !p.isRunning() {
 		return true, true, true, false
 	}
-	// The marker stays set for every wait below and clears on each return.
+	// The count stays raised for every wait below and drops on each return.
 	p.mu.Lock()
-	p.waiting = true
+	p.waiting++
 	p.mu.Unlock()
 	defer func() {
 		p.mu.Lock()
-		p.waiting = false
+		p.waiting--
 		p.mu.Unlock()
 	}()
 	if !p.signalIfLive(signal, "client") && strings.TrimPrefix(signal, "SIG") == "KILL" {
