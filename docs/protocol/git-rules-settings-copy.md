@@ -227,8 +227,8 @@ macOS and Windows). So a pair such as `safe.directory` changes the answers (from
 code). A good answer is kept 5 seconds from the end of the call. A change of the root
 folder or of its `.git` entry makes the daemon ask again.
 
-An exit 128 with any text gets a second run of the call with `GIT_DIR=<.probe>`
-added, and on Windows with `.probe` as its working folder. Exit 0 there gives the "no
+An exit 128 with any text gets a second run of the call plus `GIT_DIR=<.probe>`.
+It runs in `.probe` (measured on Windows, claustrum's own elsewhere). Exit 0 there gives the "no
 repository" answer (`c8e2f083`, measured on Linux and Windows). The daemon kills
 a second run 30 seconds after its start. The reply is then the error of the rows
 below, with the text of the first call (`c8e2f083`, measured on Linux and

@@ -180,8 +180,9 @@ func (r listingRun) hooks() []string {
 // carries GIT_DIR=<null device>. c8e2f083 then takes the generic path on exit 128
 // (measured on Linux and Windows).
 //
-// One text still counts: claustrum keeps the older no-repository answer for the
-// gitfile text of git 2.56 (saysGitFileNowhere) (claustrum's own, not measured).
+// One text still counts: for the gitfile text of git 2.56 (saysGitFileNowhere)
+// claustrum gives no "no repository" verdict and keeps the earlier refusal
+// (claustrum's own, not measured).
 func (r listingRun) saysNoRepository() bool {
 	var ee *exec.ExitError
 	if !errors.As(r.err, &ee) || ee.ExitCode() != 128 || listingNamesGitDir(r.gitDir, r.env) ||
