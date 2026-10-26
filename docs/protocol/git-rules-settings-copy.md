@@ -215,8 +215,12 @@ blocks of rewritten URLs. The file ends with
 In the state `shadow` the daemon runs `rev-parse --git-dir` before the method's
 calls, in the root of the work tree. It passes `-c core.hooksPath=<null device>`
 and `-c core.fsmonitor=` (build `c8e2f083`, measured on Windows). The call names
-the folder `.probe` of the daemon, and the daemon writes an emptied `.probe/config`
-again when it changed. The call drops the daemon's `GIT_NAMESPACE`,
+the folder `.probe` of the daemon. The daemon removes leftovers such as
+`shallow` and keeps every other entry (claustrum's own, not measured). A planted `keepme`
+stayed (measured on Linux). It rewrites an emptied `config`, keeps an
+unchanged one and replaces a folder at `HEAD` (measured on Linux). If `.probe` cannot be prepared, no git runs. The request gets [the
+`cannot write "<.probe path>"` text](errors.md#error-string-catalogue)
+(measured on Linux: mode 0500, no `HEAD`). The call drops the daemon's `GIT_NAMESPACE`,
 `GIT_INDEX_FILE`, `GIT_DISCOVERY_ACROSS_FILESYSTEM` and
 `GIT_ALTERNATE_OBJECT_DIRECTORIES`, and keeps its `GIT_CONFIG_COUNT` pairs (Linux,
 macOS and Windows). So a pair such as `safe.directory` changes the answers (from the
