@@ -268,7 +268,8 @@ func probeEnv(dir, root string) []string {
 
 // probeArgs is the argv of the call. On a Windows VM the first item is
 // core.hooksPath=NUL (s3p2-linux2 cell D4, Linux VM. s3p2-windows cells D4 and
-// B3a, Windows VM. Cell 50 of s3p2b-edges-macos).
+// B3a, Windows VM. Cell 50 of s3p2b-edges-macos). The empty core.fsmonitor=
+// follows c8e2f083 (measured on Windows).
 func probeArgs() []string {
 	return []string{"-c", "core.hooksPath=" + os.DevNull, "-c", "core.fsmonitor=", "rev-parse", "--git-dir"}
 }

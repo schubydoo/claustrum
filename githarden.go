@@ -17,8 +17,8 @@ import (
 )
 
 // Git-invocation hardening. The call shape came from reference build 7d193f89, and
-// the two lists and the variables are now those of 5fd08069 (see gitHardenLight and
-// gitHardenHeavy). 7d193f89 stopped
+// the two lists and the variables are now those of 5fd08069, with core.fsmonitor=
+// of c8e2f083 (see gitHardenLight and gitHardenHeavy). 7d193f89 stopped
 // shelling out to plain `git <cmd>` and instead runs every git operation under a
 // fixed set of `-c` config overrides plus a hardened environment, with any
 // config-defined hooks pinned off first. The observable output is unchanged for an
@@ -31,7 +31,8 @@ import (
 // an ephemeral VM.
 
 // gitHardenLight is the `-c` list of the calls of git.worktree_create and of the
-// branch step. It is the list of 20 items that 5fd08069 sends. s3-linux cells B0 and
+// branch step. It is the list of 20 items that 5fd08069 sends, except that
+// core.fsmonitor= follows c8e2f083 (not measured on these calls). s3-linux cells B0 and
 // B1 show it on a Linux VM. Cell 50 of s3p2b-edges shows it on macOS and Windows
 // VMs. The measured calls are `rev-parse --is-inside-work-tree`, `rev-parse
 // --abbrev-ref HEAD`, `worktree add`, `read-tree`, `for-each-ref --count=10001`,
@@ -81,7 +82,8 @@ var gitHardenLight = []string{
 
 // gitHardenHeavy is the `-c` list of the calls of git.info, git.status and
 // git.list_branches, and of each `rev-parse --absolute-git-dir`. It is the list of
-// 28 items that 5fd08069 sends on the same calls. s3-linux cells B0 and B1 show it
+// 28 items that 5fd08069 sends on the same calls, except that core.fsmonitor=
+// follows c8e2f083 (not measured on these calls). s3-linux cells B0 and B1 show it
 // on a Linux VM. Cell B1 of s3-macos and of s3-windows shows it for git.info and
 // git.list_branches on macOS and Windows VMs, with "shadowDirOff":true. On the
 // Windows VM 5fd08069 sends /dev/null in the two items before core.excludesFile
