@@ -38,8 +38,9 @@ func untilExit(t *testing.T, frames <-chan streamFrame) string {
 }
 
 // TestExitLineAfterClientKill pins the exited line of a child that a client request
-// ended and that exited with code 0: ", signalled at client request" (89cb6289, Linux
-// rows SP03a and SP03b). Before, the line ended at the code.
+// ended and that exited with code 0: ", signalled by this daemon (client)" (build
+// c8e2f083, measured on Linux). 89cb6289 printed ", signalled at client
+// request" there (rows SP03a and SP03b).
 func TestExitLineAfterClientKill(t *testing.T) {
 	logs := captureLogBuf(t)
 	m := newTestProcManager(t)
@@ -61,7 +62,7 @@ func TestExitLineAfterClientKill(t *testing.T) {
 	}
 	p.signalIfLive("TERM", "client")
 	untilExit(t, frames)
-	if want := "[process.Manager] Process c1 exited with code 0, signalled at client request\n"; !strings.Contains(logs.String(), want) {
+	if want := "[process.Manager] Process c1 exited with code 0, signalled by this daemon (client)\n"; !strings.Contains(logs.String(), want) {
 		t.Errorf("log = %q\nwant it to hold %q", logs.String(), want)
 	}
 }

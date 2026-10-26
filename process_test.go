@@ -273,14 +273,53 @@ func TestWriteResponseLogsOnWriteError(t *testing.T) {
 	client.Close() // writes now fail
 	server.Close()
 	c := &conn{nc: client}
+	c.bareShown.Store(true)
 
-	c.writeResponse(pongResult{Pong: true})
-
-	got := buf.String()
-	if !strings.Contains(got, "[Server] writeResponse: wrote") ||
-		!strings.Contains(got, "[Server] Failed to write response") {
-		t.Errorf("writeResponse on a dead conn logged %q, want both reference lines", got)
+	if !c.writeResponse(pongResult{Pong: true}) {
+		t.Error("writeResponse did not report the failed write")
 	}
+
+	// The error text is in %q form (not measured).
+	got := buf.String()
+	if !strings.Contains(got, `[Server] writeResponse: wrote 0/14 bytes, error="io: read/write on closed pipe"`+"\n") ||
+		!strings.Contains(got, `[Server] Failed to write response: "io: read/write on closed pipe"`+"\n") {
+		t.Errorf("writeResponse on a dead conn logged %q, want both quoted lines", got)
+	}
+}
+
+// A failed write to a connection that never showed the token logs no writeResponse
+// line, and the daemon shutdown silences both lines (not measured).
+func TestWriteResponseFailureLinesSkips(t *testing.T) {
+	dead := func() net.Conn {
+		client, server := net.Pipe()
+		client.Close()
+		server.Close()
+		return client
+	}
+	t.Run("no_token_mark", func(t *testing.T) {
+		buf := captureLogBuf(t)
+		(&conn{nc: dead()}).writeResponse(pongResult{Pong: true})
+		got := buf.String()
+		if strings.Contains(got, "[Server] writeResponse: wrote") {
+			t.Errorf("a connection with no token mark logged the writeResponse line: %q", got)
+		}
+		if !strings.Contains(got, "[Server] Failed to write response: ") {
+			t.Errorf("the Failed to write response line is missing: %q", got)
+		}
+	})
+	t.Run("shutdown", func(t *testing.T) {
+		buf := captureLogBuf(t)
+		down := make(chan struct{})
+		close(down)
+		c := &conn{nc: dead(), down: down}
+		c.bareShown.Store(true)
+		if !c.writeResponse(pongResult{Pong: true}) {
+			t.Error("writeResponse did not report the failed write")
+		}
+		if got := buf.String(); strings.Contains(got, "[Server]") {
+			t.Errorf("a write error during the shutdown logged %q, want nothing", got)
+		}
+	})
 }
 
 // reattach detaches a conn (and logs the replay-write-failed line) when replaying

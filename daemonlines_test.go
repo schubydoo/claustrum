@@ -276,9 +276,10 @@ func TestShutdownLinesKeepChildren(t *testing.T) {
 }
 
 // TestExitLineOfAKilledChild: the exit line of a child that process.kill ended carries
-// ", signalled at client request". Measured on a Windows VM against 89cb6289 in all 10 kill
-// rows ("Process c1 exited with code 1, signalled at client request"), and on Linux (rows
-// SP03a, SP03b). A child that ends by itself gets no such tail.
+// ", signalled by this daemon (client)". That is the text of build c8e2f083, measured on
+// Linux. 89cb6289 printed ", signalled at client request" there, measured on
+// a Windows VM in all 10 kill rows and on Linux (rows SP03a, SP03b). A child that ends by
+// itself gets no such tail.
 func TestExitLineOfAKilledChild(t *testing.T) {
 	m := newTestProcManager(t)
 	t.Cleanup(m.killAll)
@@ -303,7 +304,7 @@ func TestExitLineOfAKilledChild(t *testing.T) {
 		}
 	}
 	log := buf.String()
-	if !regexp.MustCompile(`\[process\.Manager\] Process k1 exited with code -?\d+(, terminated by SIGKILL)?, signalled at client request\n`).MatchString(log) {
+	if !regexp.MustCompile(`\[process\.Manager\] Process k1 exited with code -?\d+(, terminated by SIGKILL)?, signalled by this daemon \(client\)\n`).MatchString(log) {
 		t.Errorf("log lacks the exit line of the killed child with its tail:\n%s", log)
 	}
 	if !strings.Contains(log, "[process.Manager] Process p1 exited with code 0\n") {

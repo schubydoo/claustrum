@@ -40,17 +40,18 @@ func TestSpawnChdirFailureIsLogged(t *testing.T) {
 
 // TestExitLogSuffix pins the tail of the exited line for each pair of facts that the
 // exit frame holds. The first three rows are measured against 89cb6289 on Linux (rows
-// SP01, SP03a and SP04). The last row is the text of 89cb6289 in Linux row STb. The
-// row with SIGTERM and a client request is not measured.
+// SP01 and SP04, and the signal part of the rows). The part with the daemon as the
+// signaller follows build c8e2f083, measured on Linux for SIGKILL at
+// the shutdown and SIGTERM at a client kill. The other rows are not measured.
 func TestExitLogSuffix(t *testing.T) {
 	for _, tc := range []struct {
 		signal, killedBy, want string
 	}{
 		{"", "", ""},
-		{"", "client", ", signalled at client request"},
+		{"", "client", ", signalled by this daemon (client)"},
 		{"SIGKILL", "", ", terminated by SIGKILL"},
-		{"SIGTERM", "client", ", terminated by SIGTERM, signalled at client request"},
-		{"SIGKILL", "shutdown", ", terminated by SIGKILL, signalled at shutdown request"},
+		{"SIGTERM", "client", ", terminated by SIGTERM, signalled by this daemon (client)"},
+		{"SIGKILL", "shutdown", ", terminated by SIGKILL, signalled by this daemon (shutdown)"},
 	} {
 		if got := exitLogSuffix(tc.signal, tc.killedBy); got != tc.want {
 			t.Errorf("exitLogSuffix(%q, %q) = %q, want %q", tc.signal, tc.killedBy, got, tc.want)

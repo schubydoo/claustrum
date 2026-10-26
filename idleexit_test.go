@@ -29,7 +29,7 @@ func TestGateCountsRequestsForIdleExit(t *testing.T) {
 		{"auth failure", `{"jsonrpc":"2.0","id":1,"method":"server.ping","auth":"bad"}`, false},
 	} {
 		s.lastCounted.Store(-1)
-		_, _ = s.gate([]byte(c.raw))
+		_, _ = s.gate(nil, []byte(c.raw))
 		if got := s.lastCounted.Load() != -1; got != c.counts {
 			t.Errorf("%s: restarts the idle time = %v, want %v", c.name, got, c.counts)
 		}

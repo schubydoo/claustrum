@@ -540,7 +540,8 @@ func TestPassEndsOnlyTheMeasuredOrphanGroups(t *testing.T) {
 // ---- Log lines captured on the Linux VM (issue 429) ----
 
 // TestPassOwnSocketLines pins the pass-starting line and the own-socket line for a socket that
-// another process answers. Both were captured on the VM. The line for a socket that does not
+// another process answers. The own-socket line was captured on the VM. The pass-starting line
+// is claustrum's own, not measured. The line for a socket that does not
 // lead anywhere is claustrum's own (origin/main wording); it is asserted separately below.
 func TestPassOwnSocketLines(t *testing.T) {
 	c := &hostCleaner{roots: &hostRoots{roots: []string{"/opt/claude"}}, ownSocket: "/opt/claude/run/self/rpc.sock", selfPid: 1}
@@ -553,8 +554,12 @@ func TestPassOwnSocketLines(t *testing.T) {
 		t.Errorf("summary = %+v, want zero", sum)
 	}
 	got := buf.String()
+	// Claustrum's own, not measured: the line is 99 bytes.
+	if len(hcPassStartLine) != 99 {
+		t.Errorf("pass line is %d bytes, want 99", len(hcPassStartLine))
+	}
 	for _, want := range []string{
-		"[hostclean] pass starting (the next connection logged is this pass probing its own socket)\n",
+		"[hostclean] pass starting (it probes its own socket first: a connection that never shows the token)\n",
 		fmt.Sprintf(`[hostclean] own socket "/opt/claude/run/self/rpc.sock" is answered by pid %d, not this daemon; skipping this pass`, os.Getpid()),
 	} {
 		if !strings.Contains(got, want) {

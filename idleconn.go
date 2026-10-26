@@ -25,6 +25,8 @@ type activityConn struct {
 	// logs a reason and closes. Without it a superseded connection is closed once and then logged a
 	// second time by the idle watcher, which reads as two separate events.
 	closedDeliberately atomic.Bool
+	// shown is the token mark of the connection (conn.tokenMark).
+	shown atomic.Bool
 }
 
 // claimClose returns true for the first caller only. A later caller learns that
@@ -84,8 +86,12 @@ func (s *server) closeWhenIdle(a *activityConn, done <-chan struct{}) {
 				}
 				// The text is the reference's, measured on a Linux VM against
 				// 89cb6289 (rows HC12a and HC12b, a connection idle for 5 minutes).
-				logInfof("[Server] closing connection idle %s in both directions: %s",
-					idle.Round(time.Second), a.RemoteAddr())
+				// Claustrum's own, not measured: the address is quoted, and a
+				// connection that never showed the token logs no line.
+				if a.shown.Load() {
+					logInfof(fmtIdleClose,
+						idle.Round(time.Second), a.RemoteAddr())
+				}
 				_ = a.Close()
 				return
 			}

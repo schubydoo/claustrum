@@ -176,7 +176,7 @@ const methodShutdown = "server.shutdown"
 // server.shutdown, so that request gets no frame.
 // Stream-producing methods (process.*) use the conn to attach the client.
 func (s *server) dispatch(c *conn, raw []byte) *response {
-	req, resp := s.gate(raw)
+	req, resp := s.gate(c, raw)
 	if resp != nil {
 		return resp
 	}
@@ -226,12 +226,18 @@ func (s *server) route(c *conn, req request) *response {
 // dispatch and serveConn both call gate, so the two cannot disagree about
 // these frames. serveConn writes a gate reply on the read path, before it
 // reads the next line. A line that passes gate goes to the async dispatch.
-func (s *server) gate(raw []byte) (request, *response) {
+//
+// c is the connection of the line. A request that passes the token check sets the
+// token mark of c (conn.showToken), and a nil c sets none.
+func (s *server) gate(c *conn, raw []byte) (request, *response) {
 	var req request
 	if err := json.Unmarshal(raw, &req); err != nil {
 		// Logged here, before serveConn writes the reply. The reference logs
-		// "Parse error: <json error>" before its reply write (measured).
-		logWarnf("[Server] Parse error: %v", err)
+		// "Parse error: <json error>" before its reply write (measured). Claustrum
+		// counts the lines and logs the sample (logSampled, claustrum's own, not measured).
+		if n := s.parseLines.Add(1); logSampled(n) {
+			logWarnf(fmtParseError, n, err)
+		}
 		return req, ptr(errResult(nil, codeParse, "Parse error"))
 	}
 	// Precedence is auth → version (probe-verified) for every method that IS
@@ -270,9 +276,14 @@ func (s *server) gate(raw []byte) (request, *response) {
 	// the reference stays up.
 	if req.Method != methodShutdown &&
 		(req.Auth == "" || subtle.ConstantTimeCompare([]byte(req.Auth), []byte(s.token)) != 1) {
-		logWarnf("[Server] Unauthorized request: method=%s, id=%v", req.Method, idForLog(req.ID))
+		// Claustrum's own, not measured: the id is not logged, the method is cut to
+		// 64 characters and quoted, and only the sampled counts log.
+		if n := s.unauthLines.Add(1); logSampled(n) {
+			logWarnf(fmtUnauth, n, req.Method)
+		}
 		return req, ptr(errResult(req.ID, codeUnauthorized, "Unauthorized: invalid or missing auth token"))
 	}
+	c.showToken()
 	// A request past the auth step restarts the idle time of the idle exit, except
 	// server.capabilities (see noteCountedRequest).
 	if req.Method != "server.capabilities" {

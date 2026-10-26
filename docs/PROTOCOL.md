@@ -49,16 +49,16 @@ their reopen triggers are in [`DIVERGENCES.md`](DIVERGENCES.md).
     newline. A reply from the concurrent dispatch races the close.
   - A request whose handler blocks does not delay a later auth error on the
     same connection.
-  - The daemon logs `[Server] Parse error: <json error>` or
-    `[Server] Unauthorized request: method=…, id=…` before it writes the error
-    reply, and the reference logs the same text (measured on Linux). When the
+  - The daemon logs the parse error or the refusal ([texts](DAEMON.md#lines-of-connections))
+    before it writes the error reply, as the reference does (measured on Linux). When the
     reply write fails, the failure line comes after the parse-error line
     (measured on Linux). In a Go type-mismatch error, the type name differs
     from the reference (measured on Linux).
   - A failed write of either reply closes the connection. Any other keeps it
     (build `c8e2f083`, measured on Linux).
 - At a client EOF the daemon logs `[Server] Connection closed: <addr>`, then
-  closes the socket (measured on Linux).
+  closes the socket (measured on Linux). Claustrum logs it only for a
+  [marked](DAEMON.md#lines-of-connections) connection (claustrum's own, not measured).
 - On Windows, when the client half-closes, the daemon does not wait for a request
   in flight. The reply to that request is lost, and a partial last line does not
   change that (measured on Windows).
@@ -107,8 +107,8 @@ socket. The framing, the field order and the `"auth"` member are the same.
 
 Every request carries a top-level `"auth":"<token>"`. Every method but
 `server.shutdown` rejects a request with a missing or wrong token with
-`-32001 Unauthorized: invalid or missing auth token`. It also logs
-`[Server] Unauthorized request: method=…, id=…`.
+`-32001 Unauthorized: invalid or missing auth token`. It also logs an
+[Unauthorized line](DAEMON.md#lines-of-connections).
 
 `server.shutdown` is not authenticated, as on the reference. A shutdown frame that
 the daemon reads stops it, with any `auth` member or none. `-stop` sends no `auth`

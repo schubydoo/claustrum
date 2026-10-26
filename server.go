@@ -79,6 +79,12 @@ type server struct {
 	wlog    *wireLog      // optional JSON-RPC frame recorder; nil unless -wire-log set
 	connSeq atomic.Uint64 // per-daemon connection counter, only to correlate wire-log records
 
+	// The per-daemon counters of the sampled log lines (logSampled). Each line kind
+	// has its own counter, and none resets while the daemon runs.
+	unauthLines atomic.Uint64 // refused requests (Unauthorized request number)
+	parseLines  atomic.Uint64 // lines that are not request JSON (Parse error number)
+	tokenlessCl atomic.Uint64 // closes of a connection that never showed the token
+
 	// lastCounted is monoNow at the last counted request, or at the start of the
 	// daemon. The idle exit reads it (orphanexit.go).
 	lastCounted atomic.Int64
@@ -138,6 +144,12 @@ type conn struct {
 	ac     *activityConn
 	wmu    sync.Mutex
 	closed bool
+
+	// bareShown is the token mark of a conn that has no ac (see tokenMark).
+	bareShown atomic.Bool
+	// down is the shutdown channel of the daemon, nil for a conn that a test builds.
+	// A closed channel silences the write and read error lines (claustrum's own, not measured).
+	down <-chan struct{}
 
 	// sentStop is set under the lock of the server when this connection sent server.shutdown.
 	sentStop bool
@@ -208,7 +220,7 @@ func (c *conn) supersede(reason string) {
 	if !c.ac.claimClose() {
 		return
 	}
-	logInfof("[Server] closing connection %s: %s", c.nc.RemoteAddr(), reason)
+	logInfof("[Server] closing connection %s: %s", c.remoteLabel(), reason)
 	_ = c.nc.Close()
 }
 
@@ -313,7 +325,9 @@ func (c *conn) writeResponse(v interface{}) (failed bool) {
 	// docs/ARCHITECTURE.md → "Inherited wire bytes" and the note on writeJSON.
 	b, err := json.Marshal(v)
 	if err != nil {
-		logErrorf("[Server] Failed to write response: %v", err)
+		if !c.shuttingDown() {
+			logErrorf(fmtReplyFailed, err)
+		}
 		return false
 	}
 	b = append(b, '\n')
@@ -328,8 +342,15 @@ func (c *conn) writeResponse(v interface{}) (failed bool) {
 	c.wlog.record(c.id, "out", b)
 	n, err := c.nc.Write(b)
 	if err != nil {
-		logDebugf("[Server] writeResponse: wrote %d/%d bytes, error=%v", n, len(b), err)
-		logErrorf("[Server] Failed to write response: %v", err)
+		// Claustrum's own, not measured: the error text is quoted, the first line
+		// is skipped for a connection that never showed the token, and both lines
+		// are skipped once the daemon shuts down.
+		if !c.shuttingDown() {
+			if c.tokenMark().Load() {
+				logDebugf(fmtWriteFailed, n, len(b), err)
+			}
+			logErrorf(fmtReplyFailed, err)
+		}
 		return true
 	}
 	return false
@@ -872,8 +893,10 @@ var daemonPeerPID = connPeerPID
 // waitForDaemonAccept waits for the daemonized child to accept, and reports whether
 // it did. It connects to the socket path every daemonStartPoll until
 // daemonStartTimeout. Only a connect that works ends the wait, and the connection is
-// closed at once. So the log of the daemon that answered holds a
-// "New connection from: @" / "Connection closed: @" pair from the launcher.
+// closed at once. On 5fd08069 the log of the daemon that answered holds a
+// "New connection from: @" / "Connection closed: @" pair from the launcher. In
+// claustrum the connection never shows the token, so it logs neither line and
+// counts on the sampled close line (claustrum's own, not measured).
 //
 // A socket file that does not accept yet, a folder with content at the path and
 // a stale socket file do not end the wait. On 5fd08069 a client connect right after the launcher
@@ -1016,9 +1039,10 @@ func (s *server) acceptLoop(ln net.Listener) {
 		// Wrap in an activity-stamping conn so the idle watcher can see the last
 		// read/write. The reference closes a connection idle for 5 minutes (f6010b97).
 		ac := newActivityConn(nc)
-		c := &conn{nc: ac, ac: ac, id: s.connSeq.Add(1), wlog: s.wlog, done: make(chan struct{})}
+		c := &conn{nc: ac, ac: ac, id: s.connSeq.Add(1), wlog: s.wlog, done: make(chan struct{}), down: s.shutdown}
 		met.connections.Add(1)
-		logInfof("[Server] New connection from: %s", c.nc.RemoteAddr())
+		// The New connection line waits for the first request that shows the token
+		// (conn.showToken, claustrum's own, not measured).
 		s.mu.Lock()
 		s.conns[c] = struct{}{}
 		s.mu.Unlock()
@@ -1036,7 +1060,13 @@ var dispatchRequest = func(s *server, c *conn, raw []byte, req request) *respons
 func (s *server) serveConn(c *conn) {
 	defer func() {
 		// Logged before the close, as the reference does (docs/PROTOCOL.md, Transport).
-		logInfof("[Server] Connection closed: %s", c.nc.RemoteAddr())
+		// Claustrum's own, not measured: a connection that never showed the token
+		// logs no close line. Its close counts on the sampled close line instead.
+		if c.tokenMark().Load() {
+			logInfof(fmtConnClosed, c.remoteLabel())
+		} else if n := s.tokenlessCl.Add(1); logSampled(n) {
+			logInfof(fmtTokenless, n, c.remoteLabel())
+		}
 		c.wmu.Lock()
 		c.closed = true
 		c.wmu.Unlock()
@@ -1079,7 +1109,7 @@ func (s *server) serveConn(c *conn) {
 		// Here every later class still goes to the concurrent dispatch below.
 		// At the idle close the connection is already closed, so this write
 		// fails and puts 0 bytes on the wire.
-		req, resp := s.gate(raw)
+		req, resp := s.gate(c, raw)
 		if resp != nil {
 			// A failed write of this reply ends the read loop and so the
 			// connection. Measured on a Linux VM with c8e2f083. A failed
@@ -1116,8 +1146,11 @@ func (s *server) serveConn(c *conn) {
 	// EOF, so an ordinary client disconnect stays quiet on both. The predicate is
 	// per-OS because the -listen-pipe transport's conns are served by this same
 	// serveConn but do not report a close as net.ErrClosed.
-	if err := sc.Err(); err != nil && !isOurClose(err) {
-		logErrorf("[Server] scanner error on %s: %v", c.nc.RemoteAddr(), err)
+	//
+	// Claustrum's own, not measured: the address and the error are quoted, and no
+	// line is logged for a connection that never showed the token or during the shutdown.
+	if err := sc.Err(); err != nil && !isOurClose(err) && c.tokenMark().Load() && !c.shuttingDown() {
+		logErrorf(fmtScannerErr, c.remoteLabel(), err)
 	}
 }
 
