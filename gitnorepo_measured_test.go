@@ -49,12 +49,15 @@ func TestNoRepoFolderListingExit128(t *testing.T) {
 	}
 }
 
-// git.info on a folder whose `.git` file names a gone path, in the state shadow, with
-// the git of the host. c8e2f083 answers "no repository" in both cases, with these
-// calls (measured on Linux). For `<dir>/gone/x` it runs the call about the repository,
-// then its second run with GIT_DIR=<.probe>. For a gone entry under the `worktrees`
-// folder of a repository it runs the listing and the heavy `rev-parse --git-dir`, both
-// with GIT_DIR=<null device>. git.status answers isRepo:false in both cases. Mutations:
+// git.info on a folder whose `.git` file names a gone path, in the state shadow.
+// c8e2f083 answers "no repository" in both cases, with these calls (measured on Linux
+// with git 2.43). For `<dir>/gone/x` it runs the call about the repository, then its
+// second run with GIT_DIR=<.probe>. For a gone entry under the `worktrees` folder of a
+// repository it runs the listing and the heavy `rev-parse --git-dir`, both with
+// GIT_DIR=<null device>. git.status answers isRepo:false in both cases. For
+// `<dir>/gone/x` the stub answers both runs of the call and the listings with the
+// answers of git 2.43. git 2.56 prints its gitfile text in the listing there, and
+// git.status then refuses (TestGitFileNowhereFourMethodsStub). Mutations:
 // drop the call about the repository in gitInfo (the first case fails), or keep
 // GIT_COMMON_DIR for a gone worktree entry in judgeGitDir (the second case fails).
 func TestGoneGitFileInfoCalls(t *testing.T) {
@@ -71,6 +74,11 @@ func TestGoneGitFileInfoCalls(t *testing.T) {
 				target = filepath.Join(f.gitDir, "worktrees", "gone")
 			}
 			writeFile(t, filepath.Join(g, ".git"), "gitdir: "+filepath.ToSlash(target)+"\n", 0o644)
+			older := "fatal: not a git repository: " + filepath.ToSlash(target) + "\n"
+			if !row.entry {
+				answerProbe(t, 128, "", older)
+				answerSecondProbe(t, 0, "")
+			}
 			raw, calls := f.info(t, g, nil)
 			if raw != noRepoShadow {
 				t.Errorf("git.info = %s\n  want %s", raw, noRepoShadow)
@@ -104,6 +112,9 @@ func TestGoneGitFileInfoCalls(t *testing.T) {
 				if !slices.Equal(steps, []string{"list", "git-dir"}) {
 					t.Errorf("calls with GIT_DIR=%s in %s: %q, want the listing, then rev-parse --git-dir. All calls: %v", os.DevNull, g, steps, calls)
 				}
+			}
+			if !row.entry {
+				stageGit(t, stagedCall{Match: []string{"config", "-z", "--list"}, Exit: 128, Stderr: older})
 			}
 			status, _ := f.call(t, "git.status", map[string]any{"path": g, "baseRepo": g})
 			if want := resultOf(notRepoStatus); status != want {
