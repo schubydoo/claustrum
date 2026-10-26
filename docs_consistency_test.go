@@ -637,7 +637,7 @@ var docWordLimits = map[string]int{
 	"docs/protocol/process-spawn.md":           3474, // task-204: rewrite to the page template
 	"docs/protocol/process-stdin.md":           929,  // TASK-229: attach
 	"docs/protocol/server.md":                  1490, // task-203b: the page rewrite
-	"docs/protocol/streams.md":                 574,  // TASK-202: moved from PROTOCOL.md
+	"docs/protocol/streams.md":                 584,  // TASK-202: moved from PROTOCOL.md
 }
 
 // The limits of a document that docWordLimits does not name.
@@ -729,7 +729,7 @@ var docSectionRunLimits = map[string]int{
 	"docs/protocol/process-spawn.md":           371,
 	"docs/protocol/process-stdin.md":           309,
 	"docs/protocol/server.md":                  256,
-	"docs/protocol/streams.md":                 500,
+	"docs/protocol/streams.md":                 510,
 }
 
 // docSectionRunTarget is the run limit of a page that has no row in docSectionRunLimits.

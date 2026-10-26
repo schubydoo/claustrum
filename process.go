@@ -33,9 +33,9 @@ type streamFrame struct {
 	// sweep. Both omitempty, so a normal exit stays byte-identical to the pre-4534d86
 	// frame. Provenance: the "client" values and the SIGTERM/SIGKILL names are
 	// live-measured against 4534d86. Other mapped signal names are not individually
-	// measured. The Windows signal-omission is VM-measured. The "shutdown" value is
-	// not probe-measured, because the shutdown exit frame races connection
-	// teardown and is not client-observable.
+	// measured. The Windows signal-omission is VM-measured. The "shutdown" label of
+	// a waiting kill is measured on Linux in the log only, because the shutdown exit
+	// frame races connection teardown and is not client-observable.
 	Signal   string `json:"signal,omitempty"`
 	KilledBy string `json:"killedBy,omitempty"`
 
@@ -156,12 +156,19 @@ type managedProc struct {
 	// signalled from outside the daemon, or was already reaped when the kill
 	// arrived — a late kill inside the exit-drain window changed nothing, so it
 	// claims nothing (measured against 4534d86: a natural exit killed inside the
-	// drain window carries no killedBy on the reference). The first reason wins, so
-	// a client kill racing the shutdown sweep stays "client". Provenance for the
-	// value set is split at the KilledBy field comment above: "client" is
-	// live-measured, "shutdown" is not probe-measured. Read and written under p.mu.
+	// drain window carries no killedBy on the reference). The first reason wins, except
+	// that the shutdown sweep replaces an earlier reason while killAndWaitProc still
+	// waits for the exit (waiting). After a plain process.kill, or after a
+	// killAndWait that returned, the first reason stays (claustrum's own, not measured).
+	// Provenance for the value set is split at the KilledBy field comment above:
+	// "client" is live-measured, "shutdown" is measured on Linux only in the log.
+	// Read and written under p.mu.
 	killedBy string
-	stdin    io.WriteCloser
+	// waiting counts the killAndWaitProc calls that wait for the exit of this
+	// process. It changes under p.mu, so the shutdown sweep reads it with killedBy.
+	// A count, so one call that returns leaves another call's wait marked.
+	waiting int
+	stdin   io.WriteCloser
 	// cmd is set once in spawn's composite literal and never reassigned, so it is
 	// safe to read without p.mu (waitReapAndDrain relies on that). signalIfLive and
 	// killGroupAfterExit read it under p.mu for their own reasons, not to protect
@@ -469,7 +476,9 @@ var signalGroup = func(g *procGroup, proc *os.Process, signame string) error {
 // a process that exited on its own before the signal could reach it (measured
 // against 4534d86: a natural exit killed inside the drain window carries no
 // killedBy). Pass killedBy "" to signal without claiming attribution. The first
-// reason wins, so a client kill racing the shutdown sweep stays "client".
+// reason wins, except that the shutdown sweep replaces an earlier reason while
+// killAndWaitProc still waits for the exit (measured on Linux in the log). Any other
+// earlier reason stays (claustrum's own, not measured).
 //
 // p.mu is held across the check, the stamp and the delivery: a reaped check that
 // returns before the signal leaves a gap for the exit goroutine to reap in
@@ -497,7 +506,7 @@ func (p *managedProc) signalIfLive(signame, killedBy string) bool {
 	if !p.running || p.reaped || p.cmd == nil || p.cmd.Process == nil {
 		return false
 	}
-	if killedBy != "" && p.killedBy == "" {
+	if killedBy != "" && (p.killedBy == "" || (killedBy == "shutdown" && p.waiting > 0)) {
 		p.killedBy = killedBy
 	}
 	_ = signalGroup(p.group, p.cmd.Process, signame)
@@ -1416,6 +1425,15 @@ func (m *procManager) killAndWaitProc(p *managedProc, signal string, grace time.
 	if !p.isRunning() {
 		return true, true, true, false
 	}
+	// The count stays raised for every wait below and drops on each return.
+	p.mu.Lock()
+	p.waiting++
+	p.mu.Unlock()
+	defer func() {
+		p.mu.Lock()
+		p.waiting--
+		p.mu.Unlock()
+	}()
 	if !p.signalIfLive(signal, "client") && strings.TrimPrefix(signal, "SIG") == "KILL" {
 		p.killGroupInDrain()
 	}
