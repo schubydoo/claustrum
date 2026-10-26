@@ -3,6 +3,7 @@ package main
 import (
 	"errors"
 	"fmt"
+	"io/fs"
 	"os"
 	"path/filepath"
 	"slices"
@@ -146,34 +147,60 @@ func (a repoAnswer) bad() bool {
 	return a.noRepo || a.text != ""
 }
 
-// makeProbeFolder makes the folder `.probe` in dir, the folder of the daemon,
-// with its two files and its three folders. The files are new files through a
-// temporary file, as the copies of a repository: a poll on a macOS VM saw
-// `.probe/.tmp-<digits>` (val-s3p2b2-3-macos row D7).
+// probeLeftovers are the entries of `.probe` that each preparation deletes as a
+// tree when they are there. After an uncached call about the repository,
+// 5fd08069 had removed `info/attributes`, `info/exclude`, `shallow`,
+// `BISECT_LOG`, a folder `worktrees` with a file in it and a folder `reftable`
+// (measured on Linux). The other names are claustrum's own, not measured.
+var probeLeftovers = []string{
+	"info/attributes", "info/exclude", "shallow", "worktrees", "reftable",
+	"rebase-merge/head-name", "rebase-apply/head-name", "rebase-apply/applying",
+	"BISECT_LOG", "BISECT_START",
+}
+
+// probeRebaseFolders go after probeLeftovers with one plain remove each. So
+// only an empty folder or a file goes, and a folder with content stays
+// (claustrum's own, not measured).
+var probeRebaseFolders = []string{"rebase-merge", "rebase-apply"}
+
+// prepareProbeFolder makes the folder `.probe` in dir, the folder of the
+// daemon, with its two files and its three folders. It deletes the entries of
+// probeLeftovers and probeRebaseFolders in it. Every other entry stays
+// (claustrum's own, not measured). A planted `keepme` stayed on 5fd08069 (measured on
+// Linux). The files are new
+// files through a temporary file, as the copies of a repository: a poll on a
+// macOS VM saw `.probe/.tmp-<digits>` (val-s3p2b2-3-macos row D7). A file that
+// holds its text already stays as it is. An unchanged config kept its inode
+// and its time on 5fd08069, and a folder at HEAD became the file (measured on
+// Linux). A failed temporary file goes.
 //
 // 5fd08069 has the folder after a first good request (s3-linux cell A3). It has
 // none in the state fallback-git and after a failed test, where it makes no such
 // call (s3p2-oldgit section 5). A folder of the daemon that it made again after
 // the first one went had none after one git.status that answered normally
-// (s3-linux cell B6, Linux VM, and s3-macos cell B6). claustrum makes the folder
-// right before a call when it is not there (askGit). That fits those rows when
-// the git.status of cell B6 came inside the kept time of the answer, which the
-// cell does not record. The step at which 5fd08069 makes the folder is not
-// measured. Git needs the folder: without it the call answers "not a git
-// repository" (git 2.47.3 on the development host). A folder that cannot be
-// made is not measured: the call runs and gives its own answer.
-func makeProbeFolder(dir string) error {
+// (s3-linux cell B6, Linux VM, and s3-macos cell B6). claustrum prepares the
+// folder right before each call (askGit). That fits those rows when the
+// git.status of cell B6 came inside the kept time of the answer, which the cell
+// does not record. Git needs the folder: without it the call answers "not a git
+// repository" (git 2.47.3 on the development host).
+//
+// Each delete goes through removeEntry or removeOneEntry, with fixed names
+// below the folder of the daemon. An error names its full path
+// (probePathError).
+func (h *shadowHost) prepareProbeFolder(dir string) error {
+	probe := filepath.Join(dir, shadowProbeName)
+	rel := filepath.Join(filepath.Base(dir), shadowProbeName)
 	base, err := os.OpenRoot(dir)
 	if err != nil {
 		return err
 	}
 	defer func() { _ = base.Close() }()
 	if err := base.Mkdir(shadowProbeName, 0o700); err != nil && !errors.Is(err, os.ErrExist) {
-		return err
+		return probePathError(dir, err)
 	}
 	root, err := base.OpenRoot(shadowProbeName)
 	if err != nil {
-		return err
+		return probePathError(dir, err)
 	}
 	defer func() { _ = root.Close() }()
 	// The order is `refs`, `objects`, `info`, then `config`, then `HEAD`. On
@@ -183,40 +210,71 @@ func makeProbeFolder(dir string) error {
 	// `HEAD` (val-s3p2b2-5-windows section 2, one polled run).
 	for _, name := range []string{"refs", "objects", "info"} {
 		if err := root.Mkdir(name, 0o700); err != nil && !errors.Is(err, os.ErrExist) {
+			return probePathError(probe, err)
+		}
+	}
+	for _, name := range probeLeftovers {
+		if err := h.removeEntry(filepath.Join(rel, filepath.FromSlash(name))); err != nil {
+			return probePathError(filepath.Dir(dir), err)
+		}
+	}
+	for _, f := range []struct{ name, text string }{{"config", probeConfigText}, {"HEAD", shadowTestFirstHead}} {
+		if err := h.writeProbeFile(root, rel, f.name, f.text); err != nil {
+			return probePathError(probe, err)
+		}
+	}
+	for _, name := range probeRebaseFolders {
+		_ = h.removeOneEntry(filepath.Join(rel, name))
+	}
+	return nil
+}
+
+// writeProbeFile writes text to name in root, the folder `.probe` at rel below
+// the folder of all daemons, unless the file holds text already. A folder at
+// name goes first as a tree. A temporary file that a failed write left goes.
+func (h *shadowHost) writeProbeFile(root *os.Root, rel, name, text string) error {
+	if got, err := root.ReadFile(name); err == nil && string(got) == text {
+		return nil
+	}
+	if fi, err := root.Lstat(name); err == nil && fi.IsDir() {
+		if err := h.removeEntry(filepath.Join(rel, name)); err != nil {
 			return err
 		}
 	}
-	if _, err := writeNewFile(root, "config", []byte(probeConfigText)); err != nil {
-		return err
+	left, err := writeNewFile(root, name, []byte(text))
+	if left != "" {
+		_ = h.removeEntry(filepath.Join(rel, left))
 	}
-	_, err = writeNewFile(root, "HEAD", []byte(shadowTestFirstHead))
 	return err
 }
 
-// ensureProbeFolder makes the folder `.probe` in folder if its last file, HEAD,
-// is not there. If HEAD is there, it writes the config again when the text of
-// that file is not probeConfigText. 5fd08069 has the 36 bytes again after a
-// git.info that came 6 s after the file was emptied (cell C10 of round
-// tier0-5, Linux VM). Only an emptied file is measured: a missing file and
-// another text share the path. A request inside the kept time of an answer
-// makes no call and does not come here: not measured. A changed HEAD is not
-// measured either: it stays. It holds probeFolderMu from the look to the end
-// of the make.
-func (h *shadowHost) ensureProbeFolder(folder string) {
+// probePathError gives a path error of a root at dir the full path, and the
+// name of the call without the `at` of the root. For a temporary file that
+// cannot be made, 5fd08069 writes `open <.probe path>/.tmp-<n>: permission
+// denied` (measured on Linux). The text of the other calls is claustrum's own,
+// not measured.
+func probePathError(dir string, err error) error {
+	var pe *fs.PathError
+	if errors.As(err, &pe) && !filepath.IsAbs(pe.Path) {
+		return &fs.PathError{Op: strings.TrimSuffix(pe.Op, "at"), Path: filepath.Join(dir, pe.Path), Err: pe.Err}
+	}
+	return err
+}
+
+// ensureProbeFolder prepares the folder `.probe` in folder (prepareProbeFolder)
+// and returns the refusal text of a failed step, or "". The step runs before
+// each call about the repository that no kept answer spares. 5fd08069 has the
+// 36 bytes of the config again after a git.info that came 6 s after the file
+// was emptied (cell C10 of round tier0-5, Linux VM). When `.probe` cannot be
+// prepared, 5fd08069 answers -32603 with this text and runs no git (measured on
+// Linux). It holds probeFolderMu from the look to the end of the make.
+func (h *shadowHost) ensureProbeFolder(folder string) string {
 	h.probeFolderMu.Lock()
 	defer h.probeFolderMu.Unlock()
-	if _, err := os.Lstat(filepath.Join(folder, shadowProbeName, "HEAD")); err != nil {
-		_ = makeProbeFolder(folder)
-		return
+	if err := h.prepareProbeFolder(folder); err != nil {
+		return fmt.Sprintf("Claude could not prepare its own files on the remote machine: cannot write %q: %v", filepath.Join(folder, shadowProbeName), err)
 	}
-	root, err := os.OpenRoot(filepath.Join(folder, shadowProbeName))
-	if err != nil {
-		return
-	}
-	defer func() { _ = root.Close() }()
-	if text, err := root.ReadFile("config"); err != nil || string(text) != probeConfigText {
-		_, _ = writeNewFile(root, "config", []byte(probeConfigText))
-	}
+	return ""
 }
 
 // probeNames are the variables that the call sets. The daemon's own entries of
@@ -359,7 +417,9 @@ func (h *shadowHost) askGit(t gitDirTrust, dir string) repoAnswer {
 	if folder == "" {
 		return repoAnswer{}
 	}
-	h.ensureProbeFolder(folder)
+	if text := h.ensureProbeFolder(folder); text != "" {
+		return repoAnswer{text: text}
+	}
 	env := probeEnv(folder, root)
 	found, shown := "", ""
 	for try := 0; try < 2; try++ {

@@ -215,15 +215,15 @@ func TestWorktreesFolderOfASharedRepository(t *testing.T) {
 // TestProbeFolderOrder: the entries of `.probe` are made in the order `refs`,
 // `objects`, `info`, `config`, `HEAD`. On 5fd08069 the birth times have that
 // order in 14 of 14 folders (row E2 of val-s3p2b2-5-macos, macOS VM). A folder
-// that takes no new entry names the first entry that is missing. A `HEAD` that
-// cannot be replaced shows that the config came before it.
+// that takes no new entry names the first entry that is missing. A folder at
+// `HEAD` that cannot be removed shows that the config came before it.
 func TestProbeFolderOrder(t *testing.T) {
 	if os.Getuid() == 0 {
 		t.Skip("the root user makes an entry in a folder of mode 0500")
 	}
 	order := []string{"refs", "objects", "info"}
 	for i, want := range order {
-		dir := t.TempDir()
+		h, dir := probeTestHost(t)
 		probe := filepath.Join(dir, shadowProbeName)
 		for _, made := range order[:i] {
 			if err := os.MkdirAll(filepath.Join(probe, made), 0o700); err != nil {
@@ -237,18 +237,22 @@ func TestProbeFolderOrder(t *testing.T) {
 			t.Fatal(err)
 		}
 		t.Cleanup(func() { _ = os.Chmod(probe, 0o700) })
-		err := makeProbeFolder(dir)
+		err := h.prepareProbeFolder(dir)
 		if err == nil || !strings.Contains(err.Error(), want) {
 			t.Errorf("with %v there the error is %v, want one that names %s", order[:i], err, want)
 		}
 	}
-	dir := t.TempDir()
+	h, dir := probeTestHost(t)
 	probe := filepath.Join(dir, shadowProbeName)
 	if err := os.MkdirAll(filepath.Join(probe, "HEAD", "x"), 0o700); err != nil {
 		t.Fatal(err)
 	}
-	if err := makeProbeFolder(dir); err == nil {
-		t.Fatal("a HEAD that is a folder with content was replaced")
+	if err := os.Chmod(filepath.Join(probe, "HEAD"), 0o500); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = os.Chmod(filepath.Join(probe, "HEAD"), 0o700) })
+	if err := h.prepareProbeFolder(dir); err == nil {
+		t.Fatal("a HEAD folder whose entry cannot be removed was replaced")
 	}
 	if got, err := os.ReadFile(filepath.Join(probe, "config")); err != nil || string(got) != probeConfigText {
 		t.Errorf("the config before a HEAD that cannot be written = %q, %v, want it there", got, err)

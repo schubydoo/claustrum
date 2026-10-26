@@ -526,10 +526,11 @@ The folder `git-shadow` of the settings copy is a further recursive delete site,
 and it is socket-derived like `plugins.prune`. Each delete there is
 `wipesHomeDir` on the full path, as defense in depth, and then one call through
 a root at `<socket folder>/git-shadow` (`gitshadow.go`). That is
-`os.Root.RemoveAll` (`removeEntry`), or a plain `os.Root.Remove` for a link that
-the sweep found (`removeLink`). The name below that root is one that this daemon
-made, or one that a directory read of `git-shadow` or of the folder of the
-daemon returned. No part of the path comes from an RPC value or from an
+`os.Root.RemoveAll` (`removeEntry`), a plain `os.Root.Remove` for a link that
+the sweep found (`removeLink`), or a plain `os.Root.Remove` that keeps a folder
+with content (`removeOneEntry`). The name below that root is one that this
+daemon made, one that a directory read of `git-shadow` or of the folder of the
+daemon returned, or a fixed name in `.probe`. No part of the path comes from an RPC value or from an
 operator.
 
 - The test folder `.check-<n>`, after each start test, also a failed one.
@@ -550,6 +551,14 @@ operator.
   minute (claustrum's own). A link goes as a link, and nothing is made in its
   target (D8).
 - One repository folder at 128 (`evictOldRepoFolder`).
+- In `.probe` of the folder of the daemon, before each uncached call about the
+  repository (`prepareProbeFolder`), these go as a tree (`removeEntry`):
+  `info/attributes`, `info/exclude`, `shallow`, `worktrees`, `reftable`,
+  `rebase-merge/head-name`, `rebase-apply/head-name`, `rebase-apply/applying`,
+  `BISECT_LOG`, `BISECT_START`, and a folder at `HEAD` or `config`. So does a
+  temp file `.tmp-<n>` that a failed write left. Then `rebase-merge` and
+  `rebase-apply` get one plain remove each (`removeOneEntry`), so a folder with
+  content stays. Every other entry stays.
 
 On Linux and macOS the folder of a repository holds a link `worktrees` into the
 git directory. The root removes that link and not its target
