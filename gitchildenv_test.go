@@ -109,7 +109,7 @@ func checkRows(t *testing.T, form gitEnvForm, label string, rows [][2]string) {
 	}
 }
 
-// Build c8e2f083 (not measured): no '=' goes, a
+// Claustrum's own, not measured: no '=' goes, a
 // Windows name matches in any letter case and keeps its spelling, and the
 // pathspec names go.
 func TestGitChildEnvNameRules(t *testing.T) {

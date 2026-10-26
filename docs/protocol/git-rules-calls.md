@@ -12,7 +12,7 @@ and the variables follow `5fd08069`. The hook pins were measured against `f6010b
 and their limits against `89cb6289`. A rule that names no system was measured on
 Linux, macOS and Windows. `githarden.go` holds the lists, and
 `githarden_shape_test.go` tests them. Each hardened call passes `-c core.fsmonitor=`
-with an empty value (build `c8e2f083`, not measured).
+with an empty value (claustrum's own, not measured).
 
 Each hardened call passes no `-C`. Before each one, the daemon runs a config
 listing (`git config -z --list`) with the profile of that call. Before its first
@@ -122,8 +122,8 @@ The repository calls are the configuration listings, the hardened calls,
 additions.
 
 - The daemon's environment is cleaned for the repository calls and the calls of
-  the start test, entry by entry, in this order (build
-  `c8e2f083`, not measured). The calls of the start test also get no `GIT_`
+  the start test, entry by entry, in this order (claustrum's
+  own, not measured). The calls of the start test also get no `GIT_`
   variable of the daemon.
     - An entry with no `=` and the four `GIT_*_PATHSPECS` variables go. On
       Windows a name matches in any letter case and keeps its spelling.

@@ -188,7 +188,7 @@ These rules are from the code and are not measured on `5fd08069`:
 - An open error of the file of an `includeIf` section gives no refusal. An open
   error other than the measured ones gets the same `open <file>: <reason>` form.
 - On Linux and macOS a `~` include takes the value of `HOME` in place of the `~`,
-  when `HOME` is set and not relative (build `c8e2f083`, not measured). An empty
+  when `HOME` is set and not relative (claustrum's own, not measured). An empty
   `HOME` counts as set, so `~/x.inc` becomes `/x.inc`. An unset or relative `HOME`
   gets the "expands neither" refusal. On Windows a `%(prefix)/…` value gets the
   "expands neither" text, with the cut at 100 characters.

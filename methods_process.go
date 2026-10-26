@@ -91,11 +91,12 @@ type stdinParams struct {
 	// absent field ("append here", the legacy behavior) is distinct from offset:0
 	// (which, once anything has been applied, is a duplicate). See applyStdin.
 	Offset *uint64 `json:"offset"`
-	// Attach is a terminal attach number of c8e2f083. A pointer so null and an absent
-	// member are alike, and 0 counts as present. Claustrum has no terminal process, so
-	// every process answers a present attach as not found (see processStdin). A
-	// value that is not a number gets Invalid params from the decode (measured on
-	// Linux). A negative or a fractional number gets the same here (not measured).
+	// Attach is an optional member. A pointer so null and an absent member are alike,
+	// and 0 counts as present. Every process of claustrum answers a present attach as
+	// not found (see processStdin), and a Linux VM measured that answer for a plain
+	// process. A text or a negative number gets Invalid params from the decode
+	// (measured on Linux). A fractional number gets the same here (claustrum's own,
+	// not measured).
 	Attach *uint64 `json:"attach"`
 }
 
@@ -201,10 +202,11 @@ type reattachParams struct {
 	// is found, the reply carries pid + startTime. 5fd08069 gives the reattach
 	// result with a wrong-typed wantPid (cell P2 of round task015-01, Linux VM).
 	WantPid jsonTrueSwitch `json:"wantPid"`
-	// Attach, Fresh and Proof are terminal members of c8e2f083. Claustrum decodes
-	// them for the type test and acts on Proof only (see processReattach). The type
-	// test of the decode comes before the empty-id test (not measured), and a
-	// negative or a fractional attach gets Invalid params there (not measured).
+	// Attach, Fresh and Proof are optional members. Claustrum decodes them for the
+	// type test and acts on Proof only (see processReattach). A Linux VM measured the
+	// proof answer of a plain process. The type test of the decode comes before the empty-id test,
+	// and a negative or a fractional attach gets Invalid params there (claustrum's
+	// own, not measured).
 	Attach *uint64 `json:"attach"`
 	Fresh  string  `json:"fresh"`
 	Proof  string  `json:"proof"`

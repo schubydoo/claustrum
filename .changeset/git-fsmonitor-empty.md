@@ -2,4 +2,4 @@
 default: patch
 ---
 
-Every hardened git call and the repository owner probe now pass `-c core.fsmonitor=` with an empty value, as the reference does, instead of `core.fsmonitor=false`.
+The repository owner probe now passes `-c core.fsmonitor=` with an empty value instead of `core.fsmonitor=false`, as the reference does on Windows. Every hardened git call passes the same empty value.
