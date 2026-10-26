@@ -118,8 +118,9 @@ func (s *server) processStdin(req *request) response {
 	// c8e2f083 answers "Process not found" to a present attach on a process without
 	// a terminal and on an unknown id, with nothing written (measured on Linux). The
 	// order against the base64 test is not measured: the attach test comes after it
-	// here, and the type test of the decode comes before it. The order against the offset and running tests needs no
-	// choice, because this reply writes nothing and ends the request.
+	// here, and the type test of the decode comes before it. The order against the
+	// offset and running tests needs no choice, because this reply writes nothing
+	// and ends the request.
 	mp := s.procs.get(p.ID)
 	if mp == nil || p.Attach != nil {
 		return errResult(req.ID, codeInvalidParam, "Process not found")
