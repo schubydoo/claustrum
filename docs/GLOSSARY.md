@@ -7,7 +7,7 @@ the meaning of a term in these documents.
 
 Noun. A battery is a set of requests that a script sends to claustrum and to a
 reference build, to compare the frames of the two daemons. See
-[Upstream tracking](UPSTREAM-TRACKING.md#step-3-authoritative-byte-for-byte-recheck-local-only).
+[Upstream tracking](UPSTREAM-TRACKING.md#step-3-authoritative-byte-for-byte-recheck-on-a-vm).
 
 ## blob
 

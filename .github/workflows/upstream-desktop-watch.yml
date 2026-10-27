@@ -231,7 +231,7 @@ jobs:
 
           ### Next steps (docs/UPSTREAM-TRACKING.md Step 4)
           1. Reconcile any wire drift the check flagged.
-          2. Run a byte-for-byte frame battery against the new build.
+          2. Run a byte-for-byte frame battery against the new build, on a disposable VM.
           3. Bump \`scripts/UPSTREAM_SHA\` to \`$SHA\`, add a row and a
              detail section headed with the full SHA to \`docs/REFERENCE-BUILDS.md\`
              (the watcher reads only those headings). For a user-facing change, add

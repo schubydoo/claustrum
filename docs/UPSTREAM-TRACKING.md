@@ -83,18 +83,18 @@ The script needs network access. It does these steps:
 4. With no drift in the checked surface, print `PASS`. With drift, print `DRIFT`
    with the specifics, and exit with a non-zero status.
 
-This static check needs no running daemon. It is safe to run on any machine that
-has network access.
+This check starts no daemon. It runs the downloaded reference only with `-help`
+and `-version`, and it needs network access.
 
-## Step 3 — authoritative byte-for-byte recheck (local only)
+## Step 3 — authoritative byte-for-byte recheck (on a VM)
 
 The static check catches methods, flags, and strings that were added or removed.
 Frame-level byte-identity covers result field order, stream framing, error bodies,
 and `reattach` semantics. To check it, run one frame battery against the new
 reference and against claustrum, and diff the results:
 
-1. Start each binary as a private `-serve` on a throwaway socket, with its own
-   `-token-file`.
+1. On a disposable VM, start each binary as a private `-serve` on a throwaway
+   socket, with its own `-token-file`.
 2. Send every method, with the same requests, to each daemon.
 3. Mask the values that differ between runs or between the two binaries, such
    as the version id and the token, and diff the two sets of frames.
@@ -102,8 +102,8 @@ reference and against claustrum, and diff the results:
 The in-repo goldens (`testdata/socket_*.golden.json`) hold claustrum's side of
 that contract, so `make test` catches a change of claustrum's own frames.
 
-> Safety: probe only a private instance on a throwaway socket. Never point the
-> probe at a live daemon's socket. Clean up after every probe.
+> Safety: never point the probe at a live daemon's socket. Clean up after every
+> probe.
 
 ## Step 3b — real-session capture (highest fidelity, optional)
 

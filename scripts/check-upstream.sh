@@ -2,9 +2,10 @@
 # check-upstream.sh — detect drift between claustrum and a reference claude-ssh
 # build, identified by git SHA. It diffs method names, CLI flags and the
 # app-facing string set, and it prints the -version shape of both binaries for a
-# person to compare. It starts no daemon, but it executes the downloaded
-# reference binary (-help, -version), so run it in CI or on a disposable VM,
-# never on a host you care about.
+# person to compare. It starts no daemon. It runs the downloaded reference
+# binary only with -help and -version, and only after its checksum matches the
+# manifest. It may run on a workstation or in CI. The frame battery (not this
+# script) boots a reference with -serve: run the battery only on a disposable VM.
 #
 # Usage:  scripts/check-upstream.sh [<sha>]
 #   <sha>  reference build SHA. Defaults to scripts/UPSTREAM_SHA.
@@ -38,7 +39,10 @@ fi
 want="$(grep -oE "\"$PLAT\"[^}]*\"checksum\":\"[0-9a-f]+\"" "$man" | grep -oE '[0-9a-f]{64}' | head -1)"
 curl -fsS --max-time 120 "$CDN/$SHA/$PLAT/claude-ssh.zst" -o "$WORK/ref.zst" || { echo "download failed" >&2; exit 2; }
 got="$(sha256sum "$WORK/ref.zst" | awk '{print $1}')"
-if [ -n "$want" ] && [ "$got" != "$want" ]; then
+if [ -z "$want" ]; then
+  echo "DRIFT/UNKNOWN: the manifest for $SHA lists no checksum for $PLAT." >&2; exit 1
+fi
+if [ "$got" != "$want" ]; then
   echo "CHECKSUM MISMATCH: manifest=$want actual=$got" >&2; exit 1
 fi
 zstd -dq -f "$WORK/ref.zst" -o "$WORK/ref" || { echo "zstd failed" >&2; exit 2; }
