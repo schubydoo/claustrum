@@ -21,6 +21,7 @@ release.
 
 | Reference SHA | Built (UTC) | Wire changes | Reconciled in |
 |---|---|---|---|
+| `c8e2f083…` | 2026-10-06 (built) | new `process.stdin` and `process.reattach` members, a second owner probe, new `-32603` texts in a folder with no repository, new `git.worktree_remove` deletes, and the terminal: `process.resize` and `process.spawn.pty`, which claustrum does not build. See below | [PRs 747, 749–757, 759, 760](https://github.com/schubydoo/claustrum/pull/760) |
 | `5fd08069…` | 2026-10-05 (built) | the `settingsControl` member, new `server.capabilities` members and features, the `-32006` refusal, and new `git.*` and `files.*` texts. See below | [PRs 502–596](https://github.com/schubydoo/claustrum/pull/596) |
 | `89cb6289…` | 2026-09-28 (built) | one new method, one new `process.spawn` param, two new error codes, new `-install` and `-probe-cli` output, three new `server.capabilities` features, the `branchKept` member and new `git.*` texts. See below | [PRs 445–455](https://github.com/schubydoo/claustrum/pull/455) |
 | `f6010b97…` | 2026-09-24 (observed) | several frame changes in `git.*`, one new `process.spawn` param and one new `server.capabilities` feature. See below | [PRs 410–427](https://github.com/schubydoo/claustrum/pull/427) |
@@ -63,6 +64,68 @@ single measurements that fit no label above. **Divergences** names the entries o
 in** names the PRs. The baseline section has the header facts only. The forensics
 stay outside the committed tree. Correction of 2026-10-23: this paragraph said
 that each per-build section has three parts.
+
+### `c8e2f083a63593e9adf0bbebc99debff07a5545f` — 2026-10-06 (built)
+
+Its `-version` prints
+`claude-ssh c8e2f083a63593e9adf0bbebc99debff07a5545f (built 2026-10-06T20:47:41Z)`.
+Issue 488 reported the build, pinned by Claude Desktop 2.31226.0 for Windows. It
+carries a `go1.25.14` stamp (`go version` on the binary), the same as `5fd08069`.
+The rules are on the pages of the methods and in [PROTOCOL.md](PROTOCOL.md).
+
+**Wire delta.**
+
+- `process.stdin` gains the member `attach`, and `process.reattach` gains
+  `attach`, `fresh` and `proof`. For a process without a terminal, claustrum
+  answers an `attach` on `process.stdin` and a `proof` on `process.reattach` as
+  this build does. It answers a wrong type of `attach` or `fresh` that way too (PR 751,
+  measured on Linux).
+- When the write of a `-32001` or `-32700` reply fails, the daemon ends the
+  connection (PR 752, measured on Linux).
+- The owner probe passes `-c core.fsmonitor=` with an empty value (PR 750,
+  measured on Windows). If the owner probe exits 128, the daemon runs it a
+  second time with `GIT_DIR` set to the `.probe` folder. An exit 0 gives the "no repository"
+  answer. A second run past 30 s is killed, and the reply is `-32603` (PR 759,
+  measured on Linux and Windows).
+- In a folder with no repository, a configuration listing that fails with `not
+  a git repository` gets a `-32603` reply in `git.info` and `git.list_branches`.
+  `git.worktree_create` gives the same text with `worktree_add_failed` in its
+  result frame (PR 759, measured on Linux and Windows).
+- `git.worktree_remove` reads a `.git` file of `baseRepo` with a NUL or a second
+  blank in a new way, and deletes the registration and the branch that it names
+  (PR 755, measured on Linux).
+
+**Off-wire churn.** The exit log line of a process that the daemon kills ends
+with `, signalled by this daemon (<who>)` (PR 753, measured on Linux). Four
+PRs set rules that are claustrum's own, not measured. PR 747 sets the folder of
+the `ldd` probe, and PR 749 the environment filter of the git calls. PR 753 sets
+the connection log lines, and PR 757 the git calls outside a repository. PR 754
+marks those rules so on the pages.
+
+**Older gaps closed.** Two fixes of the same work are for behavior that VM rounds
+measured on `5fd08069` (Linux VM). Before an owner probe, PR 756 cleans the
+`.probe` folder. If it cannot prepare that folder, it refuses. If the
+shutdown sweep ends a child that a `process.killAndWait` waits for, PR 760
+labels the kill `shutdown`.
+
+**How it was bounded.** Each item of the wire delta was measured side by side
+with `5fd08069` on the systems that its tag names. A round on Linux, macOS and
+Windows VMs compared the `server.capabilities` reply. Areas outside these rounds
+are not measured on this build.
+
+Two items stay open:
+
+- claustrum does not build the terminal of this build: the `pty` member of
+  `process.spawn` and the method `process.resize`. So its `server.capabilities`
+  reply lacks the method `process.resize`, and on Linux and macOS the feature
+  `process.spawn.pty`. This build lists both (Linux, macOS and Windows VMs, no
+  `process.spawn.pty` on Windows). For an unknown id, this build answers
+  `process.resize` with `{"found":false}`, and claustrum answers `-32601`
+  (macOS and Windows VMs). On Windows this build answers a `process.spawn` with
+  `pty` with `-32602`, and claustrum runs the command and answers success
+  (Windows VM).
+- A second owner probe run that exits non-zero gets the same `-32603` reply as a
+  killed run. That reply is claustrum's own, not measured.
 
 ### `5fd08069bd5f33e9b8a2b104c631bbbfbd4e2536` — 2026-10-05 (built)
 

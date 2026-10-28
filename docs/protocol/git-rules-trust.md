@@ -45,10 +45,11 @@ the daemon walks up from the request folder:
 - A `.git` folder that fails the test ends the walk. If it holds a `commondir`
   entry of any type, it is the git directory, and the rules of a stray
   `commondir` judge it. Otherwise the answer is "no repository". Git itself walks
-  on to an outer repository here, so this answer differs from git's own.
+  on to an outer repository here.
 - A regular `.git` file up to 1 MiB starts with `gitdir: `, one blank. First
   trailing CRs and LFs go. Other trailing white space stays. An empty rest means
-  "no repository". Then a NUL ends the path. A relative path (on Windows also
+  "no repository". Then a NUL ends the path. Blank, white-space and NUL rules:
+  `c8e2f083`, Linux. A relative path (on Windows also
   `/x`) joins the holding folder. A path that the NUL makes empty is that folder.
   Else "no repository" (claustrum's own, not measured).
 - A `.git` of another type, such as a FIFO, is skipped, and the walk goes on.

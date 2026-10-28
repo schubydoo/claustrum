@@ -1,6 +1,6 @@
 # process.spawn
 
-`process.spawn` starts a child process as the user of the daemon and streams its output to the connection that sent the request. The client names the process with its own `id`. The process outlives that connection, and another connection can take it over with [process.reattach](process-reattach.md).
+`process.spawn` starts a child process as the user of the daemon and streams its output to the connection that sent the request. The process outlives that connection, and another connection can take it over with [process.reattach](process-reattach.md).
 
 Treat the socket and the token as shell access. The daemon runs any command that a request names. See [`SECURITY.md`](https://github.com/schubydoo/claustrum/blob/main/SECURITY.md).
 
@@ -16,7 +16,7 @@ An untagged rule on this page is measured against build `89cb6289`. The removal 
 |---|---|---|
 | `id` | yes | Any string. The id of the process in each later `process.*` request and in each stream frame. |
 | `command` | yes | The program. A bare name is looked up on the `PATH` of the daemon. With `launcher`, it must be an absolute path. |
-| `args` | no | An array of strings, the arguments after the program. |
+| `args` | no | The arguments after the program, as strings. |
 | `cwd` | no | The working directory of the child. A leading `~` is expanded, as in [Tilde expansion](../PROTOCOL.md#tilde-expansion-in-path-params). Without it, the child gets the working directory of the daemon. |
 | `env` | no | An object of string values, merged over the daemon environment. See [The environment of the child](#the-environment-of-the-child). |
 | `disableShellAgentSocket` | no | `true` skips the SSH agent hand-off for this spawn. `null` counts as `false`. |
@@ -212,11 +212,11 @@ A spawn that reaches the start of its child after the shutdown began gets no rep
 
 ## Differences from the reference
 
-These entries of the [divergence catalog](../DIVERGENCES.md) apply to this method:
+[Divergence catalog](../DIVERGENCES.md) entries of this method:
 
 - [CT-1](../DIVERGENCES.md#ct-1): the optional `wantPid` parameter with `pid` and `startTime` in the result.
 - [CT-2](../DIVERGENCES.md#ct-2): the `-keep-children` flag.
 - [D20](../DIVERGENCES.md#d20): the 50 ms wait in the reap before the `SIGKILL` of a group whose leader reads as gone.
 - [D23](../DIVERGENCES.md#d23): on Windows the environment block of a child is in name order.
 
-claustrum also removes the launcher variables on Windows, which is not measured on the reference. The measured cells behind each rule are in the tests and in the [reference build history](../REFERENCE-BUILDS.md).
+claustrum also removes the launcher variables on Windows, which is not measured on the reference. claustrum lacks the terminal of the pinned `c8e2f083` and ignores its `pty` member. On Windows that build refuses `pty` with `-32602`, and claustrum runs the command (measured on Windows, [open items](../REFERENCE-BUILDS.md#c8e2f083a63593e9adf0bbebc99debff07a5545f-2026-10-06-built)).

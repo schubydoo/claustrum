@@ -16,14 +16,14 @@ daemon. The wire surface is the product.
 
 | Task | Command |
 |------|---------|
-| Build the binary | `make build`. CGO is off, the build uses `-trimpath`, and the binary is stripped. Output: `./claustrum` |
+| Build the binary | `make build`. The build uses `-trimpath`, and the binary is stripped. Output: `./claustrum` |
 | Cross-build all 6 targets | `make all`. Targets: linux/darwin/windows × amd64/arm64 → `dist/` |
 | Format | `make fmt` runs `gofmt -l -w *.go`, so it skips `handlers/`. `gofmt -l .` must be empty |
 | Vet | `make vet` (`go vet ./...`) |
 | Lint | `golangci-lint run ./...`. The configuration is `.golangci.yml` (v2) |
-| Tests | `make test` (`go test -race -timeout 20m ./...`). This runs the unit suites and the socket-integration suites. The time limit is explicit, because a race run on one Linux host took more than 9 minutes, near the 10 minute default of `go test` |
+| Tests | `make test` (`go test -race -timeout 20m ./...`). This runs the unit suites and the socket-integration suites. The time limit is explicit, because a race run took more than 9 minutes, near the 10 minute default of `go test` |
 
-- Use Go 1.26 and `CGO_ENABLED=0`. The build toolchain is deliberately held
+- Use Go 1.26 and `CGO_ENABLED=0`. The build toolchain is held
   below 1.27. The default `jsonv2` in 1.27 moves inherited wire bytes, so build
   and CI resolve Go from `go.mod`, never from `go-version: stable`. See
   [`docs/UPSTREAM-TRACKING.md`](docs/UPSTREAM-TRACKING.md) → toolchain-induced
@@ -127,7 +127,8 @@ Every OS serves the same JSON-RPC methods.
 
 ## Gotchas — Part A: always-on safety (hold these before touching code)
 
-Unmarked behavior follows the reference, pinned at `5fd08069`. A D-number,
+Unmarked behavior follows the reference, pinned at `c8e2f083`, except its
+terminal. It was measured there, on `5fd08069` or on an earlier build. A D-number,
 "claustrum's own", "from the code" and "not measured" mark the exceptions. A
 rule that names another build follows that build. A file, function or Go API
 name describes claustrum's code, not a measurement.
@@ -715,9 +716,9 @@ the exception: the read loop writes them ([`docs/PROTOCOL.md`](docs/PROTOCOL.md)
 not serialize them. The per-request goroutine recovers from panics. It replies
 with `-32603 "recovered panic: <v>"`. For `server.shutdown` it writes no frame
 at all. That frame is claustrum's own and is NOT a parity claim. The path is
-unreachable, so no client can observe it and it cannot diverge from anything. Do
-not add a golden for that frame. Do not treat it as a wire contract. The tests
-provoke it through the `dispatchRequest` seam.
+unreachable, so no client can observe it. Do not add a golden for that frame.
+Do not treat it as a wire contract. The tests provoke it through the
+`dispatchRequest` seam.
 
 ### Network
 
