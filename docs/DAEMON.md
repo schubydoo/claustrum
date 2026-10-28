@@ -592,7 +592,7 @@ These lines tell of [process.spawn](protocol/process-spawn.md) children and of t
 
 - A start (INFO): `[process.Manager] Process <id> started, PID=<n>, command=<command>` (from the code). With a launcher, ` via launcher <argv0>` follows.
 - A failed start (ERROR): `[process.Manager] Failed to start process <id>: <message>`, with the text of the error frame
-- An exit (INFO): `[process.Manager] Process <id> exited with code <n>`, then `, terminated by <signal>` for a signal and `, signalled at client request` or `, signalled at shutdown request` for a kill by the daemon. Build `c8e2f083` prints `, signalled by this daemon (client)` or `, signalled by this daemon (shutdown)` there (build `c8e2f083`, measured on Linux)
+- An exit (INFO): `[process.Manager] Process <id> exited with code <n>`, then `, terminated by <signal>` for a signal and `, signalled by this daemon (client)` or `, signalled by this daemon (shutdown)` for a daemon kill (build `c8e2f083`, measured on Linux). `89cb6289` and `5fd08069` print `, signalled at client request` or `, signalled at shutdown request` there
 - The drain limit (WARN): `[process.Manager] Process <id>: pipe drain grace expired (grandchild holding stdio?); force-closing`
 - A supersede (INFO): `[process.Manager] process <new id> supersedes <old id> for session <key>: died=<bool> escalated=<bool> alreadyExited=<bool>` (from the code), after the exit line of the old process
 - `children` not a folder (ERROR): `[process.Registry] <run dir>/children is not a directory; recording nothing`, or `reaping nothing` at a start

@@ -84,7 +84,7 @@ The script needs network access. It does these steps:
    with the specifics, and exit with a non-zero status.
 
 This check starts no daemon. It runs the downloaded reference only with `-help`
-and `-version`, and it needs network access.
+and `-version`.
 
 ## Step 3 — authoritative byte-for-byte recheck (on a VM)
 
@@ -119,7 +119,7 @@ of the real desktop client:
   token and host paths. Never commit one.
 
 The last capture ran against `8de85faa`, a build well behind the current
-baseline, `5fd08069`. Its result is in
+baseline, `c8e2f083`. Its result is in
 [REFERENCE-BUILDS.md](REFERENCE-BUILDS.md#8de85faaa11694321e937499a18c7ab88f37c76c-2026-05-21).
 Use a capture as a periodic spot-check. Use it again for a build that changes
 `process.*` behavior that the synthetic battery cannot fully model (real
@@ -201,7 +201,11 @@ So is a rule of `process.killAndWait`. For a signal other than `KILL` it sends n
 first signal during the exit drain. On Linux and macOS `KILL` goes to the group at
 once, as on the reference
 ([A request during the exit drain](protocol/process-killandwait.md#a-request-during-the-exit-drain)).
-Check those before you conclude that something is drift.
+claustrum lacks the terminal of `c8e2f083`, so `server.capabilities` lacks
+`process.resize`, and on Linux and macOS `process.spawn.pty`. A `process.resize`
+gets `-32601`, and on Windows a `process.spawn` with `pty` runs its command
+(measured on macOS and Windows). Check those
+before you conclude that something is drift.
 
 ### Drift, or an activated opt-in? — the parse-behaviour table
 
@@ -253,12 +257,11 @@ open of claustrum (from the code, not measured). See
 ### Triage gotchas: when a probe result is misleading
 
 These are the traps that matter for telling drift from expected. In the git and
-files methods, claustrum follows `5fd08069`, the build that `scripts/UPSTREAM_SHA`
+files methods, claustrum follows `c8e2f083`, the build that `scripts/UPSTREAM_SHA`
 names. The exceptions are the D-entries above, and the places where an item below
 or the linked page names an older build. A probe against an older build
 shows the differences of each item as a build split, not drift. The rules are on
-the linked pages. The history of each build is in
-[REFERENCE-BUILDS.md](REFERENCE-BUILDS.md).
+the linked pages.
 
 - A git call that runs 2 minutes is stopped, and the reply carries `git took too
   long`. A scan of ignored files that its limit of 10 minutes stopped answers
@@ -416,9 +419,6 @@ the linked pages. The history of each build is in
   - A listing error is in English under a German daemon locale.
   - A configuration key of 1048576 bytes passes, and one byte more gets the key
     text.
-  - A listing that exits 128 with `fatal: not a git repository` answers the "no
-    repository" shapes. When `git version` also fails, the text says git cannot
-    run. `f6010b97` gives the hooks refusal there.
   - The `git.info` root comes from the walk.
   - [D16](DIVERGENCES.md#d16) stays. `git.status` answers by the worktree entries
     of `baseRepo`, as `89cb6289` does
@@ -521,7 +521,8 @@ Unless an item names another build, the daemon items below are measured against
       start is [D20](DIVERGENCES.md#d20).
     - On Linux and macOS claustrum logs an exit line with `terminated by
       SIGKILL, signalled by this daemon (shutdown)` for a child that a shutdown kills. `89cb6289` logs none. `5fd08069` logs it on Linux
-      only, as `signalled at shutdown request`.
+      only, as `signalled at shutdown request`. The pin `c8e2f083` logs the
+      same line as claustrum (measured on Linux, macOS not measured).
     - On Linux and macOS, after a `-stop` during the wait of a supersede,
       claustrum can log the exit line of the old process and the `supersedes`
       line. `89cb6289` logs neither.
@@ -552,8 +553,8 @@ the reference stays the same.
 Go 1.27 does that. It turns on the `jsonv2` GOEXPERIMENT by default, and the v2
 `Marshal` renders an invalid UTF-8 byte as the literal U+FFFD character (bytes
 `EF BF BD`). Go 1.26 and earlier emit the six-ASCII `\ufffd` escape. The build
-pinned today, `5fd08069`, carries a go1.25.14 stamp (`go version` on the binary), as
-`89cb6289` does. So it emits the same escape. `files.read` puts raw file bytes
+pinned today, `c8e2f083`, carries a go1.25.14 stamp (`go version` on the binary), as
+`5fd08069` does. So it emits the same escape. `files.read` puts raw file bytes
 into `content`, so under Go 1.27 every read of a file with a non-UTF-8 byte
 diverges from the reference. `TestInheritedInvalidUTF8BecomesReplacementChar` and
 `TestInheritedLoneSurrogateBecomesThreeReplacements` fail under 1.27 for this
