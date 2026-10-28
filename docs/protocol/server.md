@@ -2,11 +2,11 @@
 
 The `server.*` methods describe the daemon and stop it. `server.ping` tells a client that the daemon answers. `server.capabilities` lists the methods and the optional features of this build. `server.shutdown` stops the daemon. The surprise: `server.shutdown` needs no token, and its reply can lose a race with the close of the connection.
 
-An untagged rule on this page matches build `5fd08069`, measured on Linux. A rule that names macOS or Windows was measured there too. The measured cells behind each rule are in the tests and in the [reference build history](../REFERENCE-BUILDS.md).
+An untagged rule on this page matches build `5fd08069`, measured on Linux. A rule that names macOS or Windows was measured there too.
 
 ## Request
 
-None of the three methods takes parameters. The daemon does not read `params` for them. A `params` of any type, or no `params` member, gives the same reply (from the code).
+None of the three methods reads `params`. A `params` of any type, or no `params` member, gives the same reply (from the code).
 
 ```json
 {"jsonrpc": "2.0", "id": 1, "method": "server.ping", "auth": "<token>"}
@@ -157,4 +157,4 @@ A handler panic in `server.shutdown` writes no frame (claustrum's own). See [Han
 
 ## Differences from the reference
 
-`-keep-children` is claustrum's own flag ([CT-2](../DIVERGENCES.md#ct-2)). The peer check follows the reference.
+`-keep-children` is claustrum's own flag ([CT-2](../DIVERGENCES.md#ct-2)). The peer check follows the reference. claustrum lacks the terminal of the pinned build `c8e2f083`, so it lists no `process.resize` and no `process.spawn.pty` ([open items](../REFERENCE-BUILDS.md#c8e2f083a63593e9adf0bbebc99debff07a5545f-2026-10-06-built)).
