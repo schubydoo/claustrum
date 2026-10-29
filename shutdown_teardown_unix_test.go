@@ -90,7 +90,8 @@ func TestShutdownTeardownClosesConnsBeforeCleanup(t *testing.T) {
 // so the test accepts both. A second idle connection gets a clean EOF with no
 // bytes. The daemon removes its socket and daemon.token.
 func TestShutdownReplyRacesTeardown(t *testing.T) {
-	const want = `{"jsonrpc":"2.0","id":2,"result":{"ok":true}}` + "\n"
+	// The ping reply before it is 72 bytes with its LF, so this line starts at 72.
+	const want = `{"jsonrpc":"2.0","id":2,"result":{"ok":true},"end":{"at":72,"len":44}}` + "\n"
 	for i := 0; i < 10; i++ {
 		dir := shortTempDir(t)
 		sock := filepath.Join(dir, "s.sock")

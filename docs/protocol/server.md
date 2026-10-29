@@ -80,8 +80,9 @@ With `1` the daemon writes one line at its start (the level is claustrum's own).
 On Linux with the check on, the daemon checks each new connection before it reads from it. It compares the namespaces of the caller with its own. A caller that the check refuses gets one frame, and then the connection closes:
 
 ```
-{"jsonrpc":"2.0","id":null,"error":{"code":-32006,"message":"Refused: this server could not confirm that the caller is in its own namespaces","data":{"reason":"other_namespace"}}}
+{"jsonrpc":"2.0","id":null,"error":{"code":-32006,"message":"Refused: this server could not confirm that the caller is in its own namespaces","data":{"reason":"other_namespace"}},"end":{"at":0,"len":178}}
 ```
+
 
 | `reason` | When |
 |---|---|

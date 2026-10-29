@@ -98,6 +98,7 @@ nav:
       - Protocol overview: PROTOCOL.md
       - Error texts: protocol/errors.md
       - Stream frames: protocol/streams.md
+      - The end member of a line: protocol/line-end.md
       - Examples: EXAMPLES.md
       - Methods:
           - server.* (ping, capabilities, shutdown): protocol/server.md

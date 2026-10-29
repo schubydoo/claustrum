@@ -11,16 +11,17 @@ import (
 	"time"
 )
 
-// eofParseErrFrame is the 76-byte parse-error frame. Measured against
-// f6010b97 and 90fca6e6 on a Linux VM, the reference sent exactly these bytes
-// for a line that does not decode into a request.
-const eofParseErrFrame = `{"jsonrpc":"2.0","id":null,"error":{"code":-32700,"message":"Parse error"}}` + "\n"
+// eofParseErrFrame is the parse-error frame as the first line of a connection.
+// Measured against f6010b97 and 90fca6e6 on a Linux VM, the reference sent 76
+// bytes for a line that does not decode into a request. The end member comes
+// from build 52d82f0a (claustrum's own, not measured, on this line).
+var eofParseErrFrame = string(stampEnd([]byte(`{"jsonrpc":"2.0","id":null,"error":{"code":-32700,"message":"Parse error"}}`+"\n"), 0))
 
 // eofAuthErrFrame is the -32001 frame for a request with the id id, given as
-// raw JSON. Measured against f6010b97 and 90fca6e6 on a Linux VM, the
+// raw JSON, as the first line of a connection. Measured against f6010b97 and 90fca6e6 on a Linux VM, the
 // reference echoed the id, and sent null for a missing id.
 func eofAuthErrFrame(id string) string {
-	return `{"jsonrpc":"2.0","id":` + id + `,"error":{"code":-32001,"message":"Unauthorized: invalid or missing auth token"}}` + "\n"
+	return string(stampEnd([]byte(`{"jsonrpc":"2.0","id":`+id+`,"error":{"code":-32001,"message":"Unauthorized: invalid or missing auth token"}}`+"\n"), 0))
 }
 
 const eofPing = `{"jsonrpc":"2.0","id":1,"method":"server.ping","params":{},"auth":"` + testToken + `"}`

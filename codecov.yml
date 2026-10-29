@@ -89,6 +89,7 @@ component_management:
       name: server & lifecycle
       paths:
         - server.go
+        - lineend.go
         - selflocate_linux.go
         - selflocate_other.go
         - tokenpersist.go

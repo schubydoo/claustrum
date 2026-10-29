@@ -21,7 +21,7 @@ their reopen triggers are in [`DIVERGENCES.md`](DIVERGENCES.md).
 
 ## Transport
 
-- One JSON object per line (NDJSON). No length prefix, no binary framing.
+- One JSON object per line (NDJSON), with an [`end` member](protocol/line-end.md). No length prefix, no binary framing.
 - One request line has a cap of 1 MiB. The daemon serves a line of up to 1048575
   bytes. A line of 1048576 bytes or more closes the connection with no reply.
   Send a large `process.stdin` payload in chunks below this cap.
@@ -36,8 +36,7 @@ their reopen triggers are in [`DIVERGENCES.md`](DIVERGENCES.md).
   - The parse error (`-32700`) covers any line that does not decode into a
     request. A partial object, a line of only spaces, `[1]`, `123`, `"x"` and a
     batch array all get it. The frame is
-    `{"jsonrpc":"2.0","id":null,"error":{"code":-32700,"message":"Parse error"}}`,
-    76 bytes with its newline.
+    `{"jsonrpc":"2.0","id":null,"error":{"code":-32700,"message":"Parse error"}}`.
   - The auth error (`-32001`) covers a request with a missing or wrong `auth`.
     The lines `null`, `{}` and `{"jsonrpc":"2.0"}` get it too. The frame echoes
     the request `id`, re-encoded as in [Message shapes](#message-shapes). A

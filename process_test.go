@@ -281,7 +281,7 @@ func TestWriteResponseLogsOnWriteError(t *testing.T) {
 
 	// The error text is in %q form (not measured).
 	got := buf.String()
-	if !strings.Contains(got, `[Server] writeResponse: wrote 0/14 bytes, error="io: read/write on closed pipe"`+"\n") ||
+	if !strings.Contains(got, `[Server] writeResponse: wrote 0/38 bytes, error="io: read/write on closed pipe"`+"\n") ||
 		!strings.Contains(got, `[Server] Failed to write response: "io: read/write on closed pipe"`+"\n") {
 		t.Errorf("writeResponse on a dead conn logged %q, want both quoted lines", got)
 	}

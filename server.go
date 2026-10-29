@@ -144,6 +144,9 @@ type conn struct {
 	ac     *activityConn
 	wmu    sync.Mutex
 	closed bool
+	// sent is the count of bytes written on this connection. It is guarded by wmu
+	// and gives the "at" of the end member of each line.
+	sent int64
 
 	// bareShown is the token mark of a conn that has no ac (see tokenMark).
 	bareShown atomic.Bool
@@ -309,8 +312,10 @@ func (c *conn) writeLineLocked(b []byte) error {
 	// Recording before the lock would let two writers log in one order and write
 	// in another, and would log a frame the closed check then drops. A frame
 	// fanned out to N subscribers is recorded once per conn: a per-connection view.
+	b = stampEnd(b, c.sent)
 	c.wlog.record(c.id, "out", b)
-	_, err := c.nc.Write(b)
+	n, err := c.nc.Write(b)
+	c.sent += int64(n)
 	return err
 }
 
@@ -339,8 +344,10 @@ func (c *conn) writeResponse(v interface{}) (failed bool) {
 	// Recorded under wmu, past the closed check, just before the write, so the
 	// capture is exactly what goes on the wire — in wire order, and never a frame
 	// the closed check dropped. record neither retains nor mutates b.
+	b = stampEnd(b, c.sent)
 	c.wlog.record(c.id, "out", b)
 	n, err := c.nc.Write(b)
+	c.sent += int64(n)
 	if err != nil {
 		// Claustrum's own, not measured: the error text is quoted, the first line
 		// is skipped for a connection that never showed the token, and both lines

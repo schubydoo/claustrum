@@ -21,7 +21,7 @@ claustrum -serve -socket "$D/rpc.sock" -token-file "$D/token"   # self-daemonize
 req() { printf '%s\n' "$1" | socat -t2 - UNIX-CONNECT:"$D/rpc.sock"; }
 
 req "{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"server.ping\",\"auth\":\"$TOK\"}"
-# {"jsonrpc":"2.0","id":1,"result":{"pong":true}}
+# {"jsonrpc":"2.0","id":1,"result":{"pong":true},"end":{"at":0,"len":46}}
 
 req "{\"jsonrpc\":\"2.0\",\"id\":2,\"method\":\"server.capabilities\",\"auth\":\"$TOK\"}"
 req "{\"jsonrpc\":\"2.0\",\"id\":3,\"method\":\"files.stat\",\"params\":{\"path\":\"/etc/hostname\"},\"auth\":\"$TOK\"}"

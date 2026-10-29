@@ -242,7 +242,9 @@ func peerRefusalLine(reason string) []byte {
 		JSONRPC: "2.0",
 		Error:   peerRefusalError{Code: codePeerRefused, Message: peerRefusedMessage, Data: peerRefusalData{Reason: reason}},
 	})
-	return append(b, '\n')
+	// The refusal is the first line of its connection, so "at" is 0 (build
+	// 52d82f0a, measured on Linux; macOS and Windows are claustrum's own, not measured).
+	return stampEnd(append(b, '\n'), 0)
 }
 
 // peerRefusalLogged tells if the refusal number n gets a log line. Refusals 1 to
