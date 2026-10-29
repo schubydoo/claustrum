@@ -1386,3 +1386,45 @@ func TestZstdDecompressDestError(t *testing.T) {
 		t.Fatal("expected error for missing parent dir, got nil")
 	}
 }
+
+// files.list with includeDotNames true lists the dot names in name order, and
+// false or an absent member lists only the plain name (measured on Linux, macOS
+// and Windows, build 52d82f0a).
+func TestFilesListIncludeDotNames(t *testing.T) {
+	s := newTestServer(t)
+	dir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(dir, ".a"), []byte("x"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Mkdir(filepath.Join(dir, ".b"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "c"), []byte("x"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	entry := func(n string, isDir bool) string {
+		return fmt.Sprintf(`{"name":%q,"path":%q,"isDir":%t}`, n, filepath.Join(dir, n), isDir)
+	}
+	wrap := func(es ...string) string {
+		return `{"jsonrpc":"2.0","id":1,"result":{"entries":[` + strings.Join(es, ",") + `]}}`
+	}
+	for _, tc := range []struct {
+		name   string
+		params map[string]any
+		want   string
+	}{
+		{"true", map[string]any{"path": dir, "includeDotNames": true}, wrap(entry(".a", false), entry(".b", true), entry("c", false))},
+		{"false", map[string]any{"path": dir, "includeDotNames": false}, wrap(entry("c", false))},
+		{"absent", map[string]any{"path": dir}, wrap(entry("c", false))},
+		{"null", map[string]any{"path": dir, "includeDotNames": nil}, wrap(entry("c", false))},
+	} {
+		got := dispatchRaw(t, s, rpcLine(t, "files.list", tc.params))
+		if got != tc.want {
+			t.Errorf("%s: got %s, want %s", tc.name, got, tc.want)
+		}
+	}
+	got := dispatchRaw(t, s, rpcLine(t, "files.list", map[string]any{"path": dir, "includeDotNames": "yes"}))
+	if !strings.Contains(got, `"code":-32602`) {
+		t.Errorf("string value: got %s, want -32602", got)
+	}
+}

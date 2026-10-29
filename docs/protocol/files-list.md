@@ -1,8 +1,8 @@
 # files.list
 
-`files.list` lists the entries of one directory. It does not list hidden entries, and it does not go into subdirectories.
+`files.list` lists the entries of one directory. It does not go into subdirectories.
 
-claustrum is built to answer as the reference does. The error texts of this page match the reference as measured on `7d193f89`.
+The error texts of this page match the reference as measured on `7d193f89`.
 
 ## Request
 
@@ -12,6 +12,7 @@ claustrum is built to answer as the reference does. The error texts of this page
 
 | Parameter | Required | Meaning |
 |---|---|---|
+| `includeDotNames` | no | `true` lists the dot names too. Otherwise they stay out (build `52d82f0a`, measured on Linux, macOS and Windows). Another type gets `-32602` (claustrum's own, not measured). |
 | `path` | yes | The directory to list. The daemon follows a symbolic link at `path`. [Path handling](../PROTOCOL.md#path-handling) has the rules for a leading `~` and for a name that is not valid UTF-8. |
 
 ## Response
@@ -45,17 +46,14 @@ The `-32603` texts come from the operating system and hold `path` after the `~` 
 ## The list
 
 - The entries are in the byte order of their names. So `B` comes before `a`.
-- The daemon omits each entry whose name starts with `.`, for example `.git` and `.env`. No parameter includes them.
-- One response holds all the entries. There is no limit and no paging.
+- The daemon omits each entry whose name starts with `.`, for example `.git` and `.env`, unless `includeDotNames` is `true`.
+- One response holds all entries, with no limit and no paging.
 - An empty directory gives `"entries": []`.
 - `isDir` is `false` for a symbolic link to a target that does not exist. It is also `false` for an entry that the daemon cannot examine.
 
-## Platform notes
+## Windows
 
-=== "Linux and macOS"
-    The `-32603` texts are those of the table.
-=== "Windows"
-    Each entry `path` uses `\` separators. The `-32603` texts differ.
+Each entry `path` uses `\` separators. The `-32603` texts differ.
 
 ## Differences from the reference
 
