@@ -124,6 +124,8 @@ type response struct {
 type rpcError struct {
 	Code    int    `json:"code"`
 	Message string `json:"message"`
+	// Data is absent, not null, when nil, so a frame without it stays as it was.
+	Data interface{} `json:"data,omitempty"`
 }
 
 // idForLog renders an id the way the log line always has: as the JSON text that
@@ -152,6 +154,11 @@ func idForLog(id interface{}) string {
 // field must stay free of omitempty, or a null id would vanish from the frame.
 func errResult(id interface{}, code int, msg string) response {
 	return response{JSONRPC: "2.0", ID: id, Error: &rpcError{Code: code, Message: msg}}
+}
+
+// errResultData is errResult with an error data member.
+func errResultData(id interface{}, code int, msg string, data interface{}) response {
+	return response{JSONRPC: "2.0", ID: id, Error: &rpcError{Code: code, Message: msg, Data: data}}
 }
 
 func okResult(id interface{}, result interface{}) response {

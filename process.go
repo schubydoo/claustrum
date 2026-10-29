@@ -681,12 +681,12 @@ func (m *procManager) spawnVia(c *conn, id, command string, args []string, cwd s
 		// CW02a, CW02c, CW04c, CW05) and on Windows (rows CW01, CW02a, CW02c, CW04c).
 		fi, err := os.Stat(cwd)
 		if err != nil {
-			err = fmt.Errorf("chdir %s: %w", cwd, err)
+			err = &cwdError{fmt.Errorf("chdir %s: %w", cwd, err)}
 			logErrorf("[process.Manager] Failed to start process %s: %v", id, err)
 			return nil, err
 		}
 		if !fi.IsDir() {
-			err = fmt.Errorf("chdir %s: not a directory", cwd)
+			err = &cwdError{fmt.Errorf("chdir %s: not a directory", cwd)}
 			logErrorf("[process.Manager] Failed to start process %s: %v", id, err)
 			return nil, err
 		}
