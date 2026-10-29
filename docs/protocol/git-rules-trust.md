@@ -1,17 +1,15 @@
 # Trust check of the git directory
 
-Every `git.*` method checks the git directory of its folder before git runs there, unless the `GIT_COMMON_DIR` of the daemon turns the check off for `git.info` and `git.list_branches`. This page gives that check, its refusal texts and the rule for a FIFO.
+The `git.*` methods check the git directory of their folder before git runs there.
 
 An untagged rule on this page matches build `5fd08069` or an earlier build. A section that names its systems or its build keeps that scope.
 
 ## Git-directory trust check
 
-Every `git.*` method checks the git directory of the folder that it runs git in,
-before git runs there. That folder is `path` for `git.info` and
-`git.list_branches`. It is `baseRepo` for `git.status`, `git.worktree_create` and
-`git.worktree_remove`. The check has three outcomes. "Trusted" lets git run. "No
+The folder of the check is `path` for `git.info` and `git.list_branches`, and
+`baseRepo` for `git.status`, `git.worktree_create` and `git.worktree_remove`. The check has three outcomes. "Trusted" lets git run. "No
 repository" answers as if the folder held no repository. "Refused" answers with
-one of the texts M2 to M5 and S1 to S3, and git does not run.
+one of the texts M2 to M6 and S1 to S3, and git does not run.
 
 ### How the daemon finds the git directory
 
@@ -57,8 +55,9 @@ the daemon walks up from the request folder:
   That is a bare repository. Nothing found up to the root means "no repository".
 - A request folder that does not exist is left to git.
 
-The git-directory test has three parts. `objects` and `refs` exist, of any type.
-`HEAD` passes. A regular `HEAD` passes when its first 255 bytes start with `ref:`,
+The git-directory test has three parts. `objects` and `refs` exist, of any type on
+Windows, searchable on Linux and macOS (build `52d82f0a`, each place claustrum's
+own). `HEAD` passes. A regular `HEAD` passes when its first 255 bytes start with `ref:`,
 then any spaces, tabs, CRs or LFs, then `refs/`. It also passes when it starts
 with 40 hex digits in either case. A symlink `HEAD` passes when its target text
 starts with `refs/`. Any other `HEAD` fails at once, a FIFO for example.
@@ -72,26 +71,25 @@ The daemon then judges the git directory G:
   a main repository, a bare repository and a submodule all count.
 - G is not an entry and holds no `commondir`: trusted.
 - G is not an entry and holds a `commondir`: the rules of a stray `commondir`
-  judge it. So the honest `commondir` (`../..`) of an entry whose grandparent fails
-  the test gets S1 (not measured).
+  judge it. If only the grandparent test fails, a `commondir` that names it gets
+  M6 (build `52d82f0a`, Linux, `../..`).
 - G is an entry without `commondir`: M3.
 - G is an entry whose `commondir` is not a regular file of at most 1048576 bytes:
   M4. A symlink is followed only when it is relative and stays inside the entry.
-- Otherwise the content is trimmed of spaces, tabs, CRs and LFs. It is taken
-  relative to G when it is not absolute, and cleaned lexically. It has to equal
+- Otherwise trailing CRs and LFs go, and a NUL ends the value (build
+  `52d82f0a`, Linux and Windows). It is taken relative to G when it is not
+  absolute, and cleaned lexically. It has to equal
   the grandparent as a string. No symlink in it is resolved, so naming the
   repository through an alias fails. On Linux and macOS a backslash is an
   ordinary character. On Windows the comparison ignores letter case and slash
   direction. A `\\?\` prefix or a path without a drive letter still fails there.
-  Any other value gets M2. That covers another repository, a missing path, an
-  empty file and a NUL byte.
+  Any other value gets M2. That covers another repository, a missing path and
+  an empty file.
 - A trusted git directory runs git with `GIT_COMMON_DIR` pinned to the repository
   git directory. For an entry that is the grandparent. For any other git
-  directory it is that directory itself. White space around `../..` therefore
-  passes the check, although git itself rejects that file.
-- The pin also keeps git from walking past a trusted nested `.git`. A nested
-  `.git` whose `objects` is a regular file therefore answers "not a repository"
-  from git on Linux and macOS. Git for Windows answers for the nested repository.
+  directory it is that directory itself.
+- The pin also keeps git from walking past a trusted nested `.git`. On Windows a
+  nested `.git` whose `objects` is a regular file answers for itself.
 - An entry folder that is gone means "no repository". On Linux and macOS an entry
   replaced by a regular file means the same. On Windows it gets M3.
 - A `.git` file that names a plain folder, another repository's git directory or
@@ -126,13 +124,13 @@ these steps:
    its reason. A relative symlink that stays in G is followed. A dangling symlink
    that is absolute, or that leaves G, gets S2 with `openat commondir: path
    escapes from parent` (measured on Linux).
-3. The content with every trailing CR and LF removed is exactly `.` or `./`. A
-   space or a tab is not trimmed. Any other content gets S1, which quotes it. So
+3. The content with every trailing CR and LF removed, up to a NUL, is exactly `.`
+   or `./` (the NUL is claustrum's own). A space or a tab is not trimmed. Any other content gets S1, which quotes it. So
    ` .`, `. `, `.<TAB>`, `./x`, `..`, an empty file, `.\` and the absolute path of
    G itself are all refused.
 4. G then passes the git-directory test, or it gets S3. When both S2 and S3 apply,
    which one answers is not measured.
-5. Else G is trusted, and git runs with `GIT_COMMON_DIR` pinned to G.
+5. Else G is trusted.
 
 ### The daemon's `GIT_DIR` and `GIT_COMMON_DIR`
 
@@ -160,9 +158,9 @@ The daemon's own environment changes the check as follows:
 
 ### Trust refusal texts and frames
 
-M2 to M5 are texts of `f6010b97`, and S1 to S3 are texts of `89cb6289`.
-M2 to M4 and S1 to S3 start with `the repository's git directory could not be
-trusted; git not run: commondir not as git writes it: `. Each `%q` of a path is Go
+M2 to M5 are texts of `f6010b97`, S1 and S2 of `89cb6289`, M6 and S3 of `52d82f0a`.
+M2 to M4, M6 and S1 to S3 start with `the repository's git directory could not be
+trusted; git not run: `, all but M6 then `commondir not as git writes it: `. Each `%q` of a path is Go
 quoting of the path cut to its first 300 runes. The content in S1 is cut to its
 first 60 runes instead. A non-ASCII path is cut by runes, not bytes. An invalid
 UTF-8 byte stays a byte and prints as `\xff`. The rest of the text is never cut.
@@ -172,9 +170,10 @@ UTF-8 byte stays a byte and prints as `\xff`. The rest of the text is never cut.
 | M2 | `%q does not name the entry's own repository, %q; restore the file to read ../.. or remove that worktree entry and add the worktree again` | `<entry>/commondir`, `<repo git dir>` |
 | M3 | `worktree entry %q has none (git always writes one there, containing ../..); the entry is damaged or was not made by git — recreate the worktree with git worktree add, or remove the entry` | `<entry>` |
 | M4 | `%q is not a small plain file (<reason>); remove it, or remove that worktree entry and add the worktree again so git rewrites it` | `<entry>/commondir` |
+| M6 | `this worktree's repository, %q, has a missing or damaged HEAD, objects or refs, or your account on the remote machine cannot open them; repair that directory or its permissions` | `<repo git dir>` |
 | S1 | `%q reads %q; git writes that file only inside .git/worktrees/<name>/, and Claude Code's sandbox may leave one containing just "."; anything else sends git's configuration and hooks elsewhere, so treat it as tampering: delete it, and if you did not create it, find out what did` | `<G>/commondir`, the content |
 | S2 | `%q is not a small plain file (<reason>); git writes that file only inside .git/worktrees/<name>/; one here can send git's configuration and hooks elsewhere, so treat it as tampering: delete it, and if you did not create it, find out what did` | `<G>/commondir` |
-| S3 | `%q sits in a git directory git would not take as a repository (its HEAD, objects or refs missing or invalid), so git would look for one somewhere else; repair that directory (usually its HEAD file)` | `<G>/commondir` |
+| S3 | `%q sits in a git directory git would not take as a repository (its HEAD, objects or refs missing, invalid, or not open to your account on the remote machine), so git would look for one somewhere else; repair that directory (usually its HEAD file)` | `<G>/commondir` |
 
 `<name>` in S1 and S2 is literal text, and the JSON encoder writes it as
 `\u003cname\u003e`.
@@ -188,6 +187,8 @@ example `openat commondir: The system cannot find the file specified.`.
 
 M5 has no common prefix. It is `config-defined hooks could not be pinned off; git
 not run: the worktree entry this folder's .git names no longer exists`.
+
+### Frames
 
 | method | refused | no repository |
 |---|---|---|
