@@ -46,6 +46,17 @@ type pathParams struct {
 	Path string `json:"path"`
 }
 
+// listParams holds the members that files.list reads. IncludeDotNames true
+// lists the names that start with a dot (measured on Linux, macOS and Windows,
+// build 52d82f0a). False and absent skip them. Null counts as absent, and a value
+// that is not a bool fails the decode with -32602 (claustrum's own, not measured).
+type listParams struct {
+	Path            string `json:"path"`
+	IncludeDotNames bool   `json:"includeDotNames"`
+}
+
+func (p *listParams) expandPaths() { p.Path = expandPath(p.Path) }
+
 // fileReadParams holds the members that files.read reads. A wrong type there is
 // -32602 "Invalid params" (cell F4).
 type fileReadParams struct {
@@ -104,7 +115,7 @@ func filesStat(req *request) response {
 }
 
 func filesList(req *request) response {
-	var p pathParams
+	var p listParams
 	if bad := bindParams(req, &p); bad != nil {
 		return *bad
 	}
@@ -133,7 +144,8 @@ func filesList(req *request) response {
 		// The reference omits hidden entries (any name beginning with ".",
 		// e.g. .git/.env) from files.list — probe-confirmed against the
 		// reference daemon. Match it so a workspace listing is byte-identical.
-		if strings.HasPrefix(e.Name(), ".") {
+		// includeDotNames:true lists them, in the same order.
+		if !p.IncludeDotNames && strings.HasPrefix(e.Name(), ".") {
 			continue
 		}
 		full := filepath.Join(p.Path, e.Name())
