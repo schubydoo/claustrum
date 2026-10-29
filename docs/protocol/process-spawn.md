@@ -63,7 +63,7 @@ A start refusal adds `data` after `message`: `{"reason":"<reason>"}`. `Invalid p
 | Reason | Linux | Windows |
 |---|---|---|
 | `cwd_missing` | missing or a file | the same |
-| `cwd_unusable` | a `cwd` of mode 000 that exists (also macOS) | not measured |
+| `cwd_unusable` | a `cwd` of mode 000 that exists (also macOS) | none (claustrum's own) |
 | `not_found` | not found | not found, a folder |
 | `not_executable` | mode 0644, a folder | not measured |
 | `launcher` | `-32004` | any `launcher` |
@@ -77,7 +77,7 @@ One failure ends another process first: a session spawn whose command exists and
 
 ### What the child gets
 
-- **Streams.** The stdout and the stderr of the child are pipes of the daemon. The daemon sends what it reads as stream frames to the connection that spawned the process, and stores them for a replay.
+- **Streams.** The stdin, the stdout and the stderr of the child are pipes of the daemon. The daemon sends what it reads as stream frames to the connection that spawned the process, and stores them for a replay.
 - **The life of the process.** A close of its connection does not end the process. A graceful shutdown (`-stop`, `server.shutdown`, `SIGTERM`, `SIGINT`, the self-exit) ends the processes of the table. With `-keep-children` it leaves them alive ([CT-2](../DIVERGENCES.md#ct-2)).
 
 ### The environment of the child
