@@ -48,8 +48,8 @@ type pathParams struct {
 
 // listParams holds the members that files.list reads. IncludeDotNames true
 // lists the names that start with a dot (measured on Linux, macOS and Windows,
-// build 52d82f0a). False, absent and null skip them. A value that is not a bool
-// fails the decode with -32602 (claustrum's own, not measured).
+// build 52d82f0a). False and absent skip them. Null counts as absent, and a value
+// that is not a bool fails the decode with -32602 (claustrum's own, not measured).
 type listParams struct {
 	Path            string `json:"path"`
 	IncludeDotNames bool   `json:"includeDotNames"`
