@@ -362,7 +362,7 @@ func TestPeerCheckRefusesOtherNetworkNamespace(t *testing.T) {
 	if res.Stopped {
 		t.Error("the refused caller stopped the daemon")
 	}
-	if want := `{"jsonrpc":"2.0","id":2,"result":{"pong":true}}`; res.Pong != want {
+	if want := `{"jsonrpc":"2.0","id":2,"result":{"pong":true},"end":{"at":0,"len":46}}`; res.Pong != want {
 		t.Errorf("server.ping after the refusal = %s, want %s", res.Pong, want)
 	}
 	if res.Refused != 1 || res.Conns != 1 {

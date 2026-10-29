@@ -5,6 +5,7 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"flag"
+	"fmt"
 	"net"
 	"os"
 	"path/filepath"
@@ -121,6 +122,10 @@ type testClient struct {
 	mu   sync.Mutex
 	resp []json.RawMessage
 	fr   []streamFrame
+	// read counts the bytes of the lines read so far. endErr holds the first
+	// end member that does not match the real byte count. See checkEnd.
+	read   int64
+	endErr string
 }
 
 func dial(t *testing.T, sock string) *testClient {
@@ -131,8 +136,37 @@ func dial(t *testing.T, sock string) *testClient {
 	}
 	cl := &testClient{t: t, nc: nc}
 	go cl.readLoop()
-	t.Cleanup(func() { nc.Close() })
+	t.Cleanup(func() {
+		nc.Close()
+		cl.mu.Lock()
+		defer cl.mu.Unlock()
+		if cl.endErr != "" {
+			t.Errorf("end member: %s", cl.endErr)
+		}
+	})
 	return cl
+}
+
+// checkEnd tests the end member of one line against the bytes read before it,
+// then returns the line without the member, so the goldens and the decoders see
+// the plain frame. The member is not golden data: its len holds the length of
+// every path in the line, which differs by host. TestSocketEndMemberPingSequence and
+// the unit tests of stampEnd pin the member itself. Called with cl.mu held.
+func (cl *testClient) checkEnd(line []byte) []byte {
+	plain, at, ln, ok := splitEnd(line)
+	switch {
+	case !ok:
+		if cl.endErr == "" {
+			cl.endErr = fmt.Sprintf("line has no end member: %q", line)
+		}
+		plain = line
+	case at != cl.read || ln != int64(len(plain))-1:
+		if cl.endErr == "" {
+			cl.endErr = fmt.Sprintf("line %q has at=%d len=%d, want at=%d len=%d", plain, at, ln, cl.read, len(plain)-1)
+		}
+	}
+	cl.read += int64(len(line)) + 1
+	return plain
 }
 
 func (cl *testClient) readLoop() {
@@ -149,6 +183,7 @@ func (cl *testClient) readLoop() {
 		}
 		_ = json.Unmarshal(line, &probe)
 		cl.mu.Lock()
+		line = cl.checkEnd(line)
 		if probe.Type == "stream" {
 			var f streamFrame
 			if json.Unmarshal(line, &f) == nil {

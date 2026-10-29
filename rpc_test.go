@@ -66,7 +66,7 @@ func dropConnsOnShutdown(tb testing.TB, s *server) {
 // teardown here waits for the reply for at most 5 s after the shutdown signal.
 // Then it drops the connections. The reply must reach the client before that drop.
 func TestShutdownReplyIsWrittenBeforeTheClose(t *testing.T) {
-	const want = `{"jsonrpc":"2.0","id":7,"result":{"ok":true}}` + "\n"
+	const want = `{"jsonrpc":"2.0","id":7,"result":{"ok":true},"end":{"at":0,"len":44}}` + "\n"
 	s := newTestServer(t)
 	srv, client := net.Pipe()
 	t.Cleanup(func() { _ = client.Close() })

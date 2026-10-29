@@ -229,6 +229,7 @@ func TestPeerCheckStateFrames(t *testing.T) {
 func TestPeerRefusalLineBytes(t *testing.T) {
 	for _, reason := range []string{"other_namespace", "unreadable", "lookup_failed"} {
 		want := `{"jsonrpc":"2.0","id":null,"error":{"code":-32006,"message":"Refused: this server could not confirm that the caller is in its own namespaces","data":{"reason":"` + reason + `"}}}` + "\n"
+		want = string(stampEnd([]byte(want), 0)) // the end member is pinned by TestPeerRefusalLineCarriesEndMember
 		if got := string(peerRefusalLine(reason)); got != want {
 			t.Errorf("refusal line =\n%q\nwant\n%q", got, want)
 		}
@@ -377,5 +378,14 @@ func TestPeerGateWithNoOwnTextServesAll(t *testing.T) {
 		if ok, b := peerAdmitOnce(t, g); !ok || b != "" {
 			t.Errorf("gate %+v: admit = %v, read %q", g, ok, b)
 		}
+	}
+}
+
+// The refusal is the first line of its connection, so its end member has at 0
+// (build 52d82f0a, measured on Linux).
+func TestPeerRefusalLineCarriesEndMember(t *testing.T) {
+	want := `{"jsonrpc":"2.0","id":null,"error":{"code":-32006,"message":"Refused: this server could not confirm that the caller is in its own namespaces","data":{"reason":"unreadable"}},"end":{"at":0,"len":173}}` + "\n"
+	if got := string(peerRefusalLine("unreadable")); got != want {
+		t.Errorf("peerRefusalLine = %q, want %q", got, want)
 	}
 }

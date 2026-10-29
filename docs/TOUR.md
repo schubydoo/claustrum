@@ -24,7 +24,7 @@ sequenceDiagram
     D-->>B: ok, or EOF
 ```
 
-Each frame below is one line on the wire. A frame marked **exact** is a line of a golden fixture under `testdata/`, or a frame that a test asserts byte for byte. A frame marked **example** has no such source, and its method page is linked. The token `s3cret-token` is the fixed token of the test suite.
+Each frame below is one line on the wire, less its `end` member. A frame marked **exact** is a line of a golden fixture under `testdata/`, or a frame that a test asserts byte for byte. A frame marked **example** has no such source, and its method page is linked. The token `s3cret-token` is the fixed token of the test suite.
 
 ## Step 1: Connect
 
@@ -39,6 +39,8 @@ Request (**exact**: `integration_test.go:95` with the `auth` member that `authed
 ```json
 {"jsonrpc":"2.0","id":1,"method":"server.ping","auth":"s3cret-token"}
 ```
+
+Every line the daemon sends also ends with an `end` member, see [Transport](PROTOCOL.md#transport). The lines in this tour leave it out. The golden files leave it out too.
 
 Reply (**exact**: `testdata/socket_responses.golden.json`, the entry with `"id": 1`):
 

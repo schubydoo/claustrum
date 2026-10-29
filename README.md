@@ -115,7 +115,7 @@ claustrum -serve -socket "$D/rpc.sock" -token-file "$D/token" &
 # reuse the token generated in step 1 (the daemon unlinked the file when it read it)
 printf '{"jsonrpc":"2.0","id":1,"method":"server.ping","auth":"%s"}\n' "$TOK" \
   | socat - UNIX-CONNECT:"$D/rpc.sock"
-# -> {"jsonrpc":"2.0","id":1,"result":{"pong":true}}
+# -> {"jsonrpc":"2.0","id":1,"result":{"pong":true},"end":{"at":0,"len":46}}
 
 # 4. shut it down
 claustrum -stop -socket "$D/rpc.sock"   # no token needed: shutdown is unauthenticated
