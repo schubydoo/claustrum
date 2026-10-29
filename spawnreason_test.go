@@ -2,6 +2,7 @@ package main
 
 import (
 	"encoding/json"
+	"errors"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -47,7 +48,7 @@ func TestSpawnRefusalReasons(t *testing.T) {
 			errJSON(t, -32603, "chdir "+missing+": "+statErrText(t, missing), "cwd_missing")},
 		{"cwd is a file", map[string]any{"id": "a", "command": exe, "cwd": afile},
 			errJSON(t, -32603, "chdir "+afile+": not a directory", "cwd_missing")},
-		{"bare name not found", map[string]any{"id": "a", "command": "no-such-cmd-r4"}, ""},
+		{"bare name not found", map[string]any{"id": "a", "command": "no-such-cmd"}, ""},
 		{"no id", map[string]any{"command": exe},
 			`{"code":-32602,"message":"Process ID is required"}`},
 		{"no command", map[string]any{"id": "r9"},
@@ -71,6 +72,13 @@ func TestSpawnRefusalReasons(t *testing.T) {
 				t.Fatalf("error = %s\nwant    %s", got, tc.want)
 			}
 		})
+	}
+}
+
+// TestSpawnFailureReasonFallback pins the reason of an error that no rule lists.
+func TestSpawnFailureReasonFallback(t *testing.T) {
+	if got := spawnFailureReason(errors.New("x"), ""); got.Reason != "other" {
+		t.Fatalf("reason = %q, want other", got.Reason)
 	}
 }
 

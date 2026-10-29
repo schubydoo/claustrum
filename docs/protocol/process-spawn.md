@@ -1,6 +1,6 @@
 # process.spawn
 
-`process.spawn` starts a child process as the user of the daemon and streams its output to the connection that sent the request. The process outlives that connection, and another connection can take it over with [process.reattach](process-reattach.md).
+`process.spawn` starts a child process as the user of the daemon and streams its output to the connection that sent the request. The process outlives that connection. [process.reattach](process-reattach.md) takes it over.
 
 Treat the socket and the token as shell access. See [`SECURITY.md`](https://github.com/schubydoo/claustrum/blob/main/SECURITY.md).
 
@@ -56,20 +56,20 @@ A failure is a JSON-RPC error. There is no `errorCode` member.
 
 A failure starts no child and makes no record. It logs the failed-start line of [Lines of child processes](../DAEMON.md#lines-of-child-processes). An `Invalid params`, `Process ID is required` or `Command is required` error writes no line.
 
-### The reason member
+### The reason member (build `52d82f0a`)
 
-A refusal of the start path adds `data` after `message`, as `{"reason":"<reason>"}`. Code and text stay. `Invalid params`, `Process ID is required` and `Command is required` carry none. After a failed start the daemon tests `cwd` again, and a `cwd` that exists and cannot be entered gives `cwd_unusable`.
+A start refusal adds `data` after `message`: `{"reason":"<reason>"}`. `Invalid params` and `Command is required` carry none. `Process ID is required` carries none (claustrum's own, not measured).
 
 | Reason | Linux | Windows |
 |---|---|---|
-| `cwd_missing` | `cwd` missing or not a folder | the same |
-| `cwd_unusable` | `cwd` of mode 000 (also on macOS) | none (claustrum's own, not measured) |
-| `not_found` | a name or path not found | the same, and a folder as `command` |
-| `not_executable` | a file of mode 0644, a folder as `command` | none |
-| `launcher` | `-32004` | every `launcher` |
-| `other` | a relative `command` with a `launcher` | a file that is not a program |
+| `cwd_missing` | missing or a file | the same |
+| `cwd_unusable` | a `cwd` of mode 000 that exists (also macOS) | not measured |
+| `not_found` | not found | not found, a folder |
+| `not_executable` | mode 0644, a folder | not measured |
+| `launcher` | `-32004` | any `launcher` |
+| `other` | a relative `command` with a `launcher` | not a program |
 
-On macOS the other rows follow Linux, as do the `-32005` refusal (`launcher`) and any other start error (`other`) on every system (claustrum's own, not measured).
+On macOS only `cwd_unusable` is measured. The rest follows Linux, as do `-32005` (`launcher`) and other start errors (`other`) (claustrum's own, not measured).
 
 One failure ends another process first: a session spawn whose command exists and does not start. See [Session supersede](#session-supersede).
 
@@ -77,7 +77,7 @@ One failure ends another process first: a session spawn whose command exists and
 
 ### What the child gets
 
-- **Streams.** The stdout and the stderr of the child are pipes of the daemon. The daemon sends what it reads as stream frames to the connection that spawned the process, and stores them for a replay. [process.stdin](process-stdin.md) writes to the stdin pipe.
+- **Streams.** The stdout and the stderr of the child are pipes of the daemon. The daemon sends what it reads as stream frames to the connection that spawned the process, and stores them for a replay.
 - **The life of the process.** A close of its connection does not end the process. A graceful shutdown (`-stop`, `server.shutdown`, `SIGTERM`, `SIGINT`, the self-exit) ends the processes of the table. With `-keep-children` it leaves them alive ([CT-2](../DIVERGENCES.md#ct-2)).
 
 ### The environment of the child
@@ -100,7 +100,7 @@ The daemon removes these names:
 | `CLAUDE_CODE_PROCESS_WRAPPER` | A child with a `launcher`, also from the `env` of the request. A child without one keeps it (measured on Linux and macOS, claustrum's own on Windows). |
 | `CLAUDE_SSH_PEER_CHECK` | The daemon removes it from its own environment at its start (measured on Linux, macOS and Windows). On Windows that covers any letter case (measured on Linux, macOS and Windows). A value in the `env` of the request reaches the child (measured on Linux, macOS and Windows). If the removal fails, claustrum logs one WARN line of its own, and the children inherit it. |
 
-The Go runtime variables `GODEBUG`, `GOGC`, `GOMAXPROCS`, `GOMEMLIMIT` and `GOTRACEBACK` reach the child unchanged. `GOGC` and `GOMAXPROCS` are measured on Linux, the other three are claustrum's own.
+The Go runtime variables `GODEBUG`, `GOGC`, `GOMAXPROCS`, `GOMEMLIMIT` and `GOTRACEBACK` reach the child unchanged. `GOGC` and `GOMAXPROCS` are measured on Linux, the other three are not measured.
 
 ### The managed launcher
 
@@ -150,8 +150,9 @@ The daemon runs no login shell at its start. It keeps the result of the first re
 
 - If `$SHELL` is an executable file, the read runs `$SHELL -l -i -c …`. Otherwise it runs the first usable of `/bin/zsh`, `/bin/bash` and `/bin/sh`.
 - The read has a cap of 4 s. At the cap the daemon kills the shell and discards what it printed, even a valid `PATH`. Children then get the inherited `PATH`, and the log holds `[shellenv] Failed to extract PATH from login shell: shell PATH extraction timed out (<shell>)`.
-- The cap also holds when another process holds the output pipe after the shell ended. claustrum closes its end of the pipe two caps after the shell ended (claustrum's own, not measured).
+- The cap also holds when another process holds the output pipe after the shell ended. The daemon sends that process no signal. claustrum closes its end of the pipe two caps after the shell ended (claustrum's own, not measured).
 - The shell gets seven entries. Five come from the daemon: `HOME`, `PATH`, `SHELL`, `TERM` and `USER`. A name that the daemon does not have gets an empty value. The other two are `DISABLE_AUTO_UPDATE=true` and `ZSH_DISABLE_COMPFIX=true`. No other entry of the daemon reaches it, such as `LANG` or `CLAUDE_SSH_DAEMON_CHILD`.
+- The order of the entries is not measured. A daemon that has a `TERM`, or that has no `HOME`, `PATH` or `USER`, is not measured either.
 - The shell of the SSH agent hand-off gets another environment.
 
 ### The identity markers (Linux and macOS)
@@ -159,7 +160,7 @@ The daemon runs no login shell at its start. It keeps the result of the first re
 The daemon starts the child through a short re-exec of its own binary, the exec-child trampoline. It adds two markers, so a later daemon can tell the child from a process that reuses its pid:
 
 - `CLAUDE_SSH_RUN_DIR=<run dir>`. The run dir is the folder of the socket path, cleaned and not made absolute. The socket `<R>/b/s.sock` gives `<R>/b`.
-- `CLAUDE_SSH_CHILD=<pid>:<start>`. On Linux `<start>` is the start time of the child in `/proc` clock ticks. On macOS it is the start time from `ps` as a date text with one blank between its words.
+- `CLAUDE_SSH_CHILD=<pid>:<start>`. On Linux `<start>` is the start time of the child in `/proc` clock ticks. On macOS it is the start time from `ps` as a date text with one blank between its words. Only days 1 and 2 of a month are measured.
 
 The trampoline adds no frame. A command that does not resolve to a runnable file gets the same error frame as without it.
 
@@ -167,7 +168,7 @@ The trampoline adds no frame. A command that does not resolve to a runnable file
     If the trampoline itself does not start, the daemon logs `[process.Manager] exec trampoline failed for <id> (<error>); starting it directly — a successor daemon will not be able to reap it` and starts the command directly (measured on Linux). The frame then names the command, for example `fork/exec <command>: permission denied` for a `cwd` that the daemon cannot enter. If that direct start works, the reply is success (from the code) (not measured). The child then gets `CLAUDE_SSH_RUN_DIR` and no `CLAUDE_SSH_CHILD` (from the code) (not measured).
 
 ??? note "A later daemon start"
-    On Linux and macOS a daemon that holds the [run-dir lock](../DAEMON.md#run-dir-lock-daemonlock) records each child in its run dir. A later daemon start on the same socket reads the records of a daemon that is gone. It ends each child whose process still matches its record, with `SIGTERM` and then `SIGKILL`. [Child records and the reap](../DAEMON.md#child-records-and-the-reap-linux-and-macos) has the rules. Windows records no child. A record that cannot be written does not fail the spawn.
+    On Linux and macOS a daemon that holds the [run-dir lock](../DAEMON.md#run-dir-lock-daemonlock) records each child in its run dir. A later daemon start on the same socket reads the records of a daemon that is gone. It ends each child whose process still matches its record, with `SIGTERM` and then `SIGKILL`. [Child records and the reap](../DAEMON.md#child-records-and-the-reap-linux-and-macos) has the rules. Windows records no child. A record that cannot be written does not fail the spawn, and the child still gets both identity markers.
 
 ### The SSH agent hand-off (Linux and macOS)
 
@@ -187,7 +188,7 @@ A spawn with the `id` of a process that still runs succeeds and replaces the ent
 - `process.kill`, `process.stdin` and `process.reattach` of that `id` reach the second process only.
 - `-stop` and `server.shutdown` end only the processes of the table, so the first process outlives the daemon. On Linux and macOS its record stays, and the next daemon start ends it.
 - Each process keeps the connection that spawned it, under the same `processId`, and each counts its own `seq`. So a connection that sent both spawns gets two streams under one `processId`, with two `exit` frames (measured on Linux).
-- A `process.reattach` of the `id` names the second process. It moves the stream of the second process and closes the connection that had it. A connection that gets the frames of the first process goes on getting them (measured on Linux).
+- A `process.reattach` of the `id` names the second process. It moves the stream and closes the connection that had it. A connection that gets the frames of the first process goes on getting them (measured on Linux).
 
 ### Session supersede
 

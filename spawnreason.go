@@ -20,9 +20,10 @@ type cwdError struct{ err error }
 func (e *cwdError) Error() string { return e.err.Error() }
 func (e *cwdError) Unwrap() error { return e.err }
 
-// spawnFailureReason gives the reason of a refusal that spawnVia returned.
-// Measured on Linux and on Windows: cwd_missing, cwd_unusable (mode 000 cwd, Linux
-// and macOS), launcher, not_found, not_executable, other. The reasons on macOS other
+// spawnFailureReason gives the reason of a refusal that spawnVia returned (build
+// 52d82f0a). Measured on Linux and on Windows: cwd_missing, launcher, not_found and
+// other. Measured on Linux only: not_executable, and cwd_unusable for a cwd of mode
+// 000 (also on macOS). The reasons on macOS other
 // than cwd_unusable, the -32005 launcher start refusal, a pipe failure and an errno
 // that no row lists are claustrum's own, not measured.
 func spawnFailureReason(err error, cwd string) spawnReason {
