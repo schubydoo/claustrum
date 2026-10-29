@@ -155,6 +155,12 @@ func TestExpandPathsCoversEveryPathField(t *testing.T) {
 		t.Errorf("pathParams.Path = %q", pp.Path)
 	}
 
+	lp := &listParams{Path: "~/l"}
+	lp.expandPaths()
+	if lp.Path != under("l") {
+		t.Errorf("listParams.Path = %q", lp.Path)
+	}
+
 	rp := &fileReadParams{Path: "~/r"}
 	rp.expandPaths()
 	if rp.Path != under("r") {
