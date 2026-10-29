@@ -69,11 +69,12 @@ func (s *server) processSpawn(c *conn, req *request) response {
 		return response{noFrame: true}
 	}
 	if err != nil {
+		reason := spawnFailureReason(err, p.Cwd)
 		var sr *spawnRefusal
 		if errors.As(err, &sr) {
-			return errResult(req.ID, sr.code, sr.msg)
+			return errResultData(req.ID, sr.code, sr.msg, reason)
 		}
-		return errResult(req.ID, codeInternal, err.Error())
+		return errResultData(req.ID, codeInternal, err.Error(), reason)
 	}
 	res := spawnResult{Success: true}
 	if p.WantPid {

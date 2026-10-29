@@ -144,6 +144,10 @@ component_management:
         - methods_git.go
         - gitparams.go
         - methods_process.go
+        # The data.reason member of a refused process.spawn start, with its OS split.
+        - spawnreason.go
+        - spawnreason_unix.go
+        - spawnreason_windows.go
         # 89cb6289 managed launcher: launcher.resolve, the settings reader, the
         # process.spawn launcher checks and the child env strip, with its OS split.
         - methods_launcher.go

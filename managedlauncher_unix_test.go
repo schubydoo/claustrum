@@ -600,8 +600,8 @@ func launchedSpawnReq(t *testing.T, params map[string]any) string {
 	return string(b)
 }
 
-func spawnErrFrame(code, msg string) string {
-	return `{"jsonrpc":"2.0","id":1,"error":{"code":` + code + `,"message":"` + msg + `"}}`
+func spawnErrFrame(code, msg, reason string) string {
+	return `{"jsonrpc":"2.0","id":1,"error":{"code":` + code + `,"message":"` + msg + `","data":{"reason":"` + reason + `"}}}`
 }
 
 func exitCodeOf(frames []streamFrame) int {
@@ -690,16 +690,16 @@ func TestSpawnLauncherRefusals(t *testing.T) {
 		params map[string]any
 		want   string
 	}{
-		{"S2-echo-W", map[string]any{"id": "p1", "command": "echo", "args": []string{"hi"}, "launcher": []string{wrap}}, spawnErrFrame("-32602", managedSpawnRelative)},
-		{"S2-echo-empty", map[string]any{"id": "p1", "command": "echo", "args": []string{"hi"}, "launcher": []string{}}, spawnErrFrame("-32602", managedSpawnRelative)},
-		{"S11-relcmd-badlauncher", map[string]any{"id": "p1", "command": "echo", "args": []string{"hi"}, "launcher": []string{nope}}, spawnErrFrame("-32602", managedSpawnRelative)},
-		{"S3", map[string]any{"id": "p1", "command": exe, "args": []string{"hi"}, "launcher": []string{}}, spawnErrFrame("-32004", cannot+"the value is set but contains no launcher \xe2\x80\x94 unset it to run without one, or set it to the absolute path of your launcher")},
-		{"S5-wrap", map[string]any{"id": "p1", "command": exe, "args": []string{"hi"}, "launcher": []string{"wrap"}}, spawnErrFrame("-32004", cannot+managedNotAbsolute)},
-		{"S5-own-path", map[string]any{"id": "p1", "command": exe, "args": []string{"hi"}, "launcher": []string{exe}}, spawnErrFrame("-32004", cannot+"launcher `"+exe+"` is Claude Code's own path")},
-		{"S5-x.js", map[string]any{"id": "p1", "command": exe, "args": []string{"hi"}, "launcher": []string{xjs}}, spawnErrFrame("-32004", cannot+"launcher `"+xjs+"` is a script the SDK would run in place of Claude Code")},
-		{"S5-nope", map[string]any{"id": "p1", "command": exe, "args": []string{"hi"}, "launcher": []string{nope}}, spawnErrFrame("-32004", cannot+"launcher `"+nope+"` does not exist or is not an executable regular file")},
-		{"S11-badlauncher-nocwd", map[string]any{"id": "p1", "command": exe, "args": []string{"hi"}, "cwd": nocwd, "launcher": []string{nope}}, spawnErrFrame("-32004", cannot+"launcher `"+nope+"` does not exist or is not an executable regular file")},
-		{"S11-goodlauncher-nocwd", map[string]any{"id": "p1", "command": exe, "args": []string{"hi"}, "cwd": nocwd, "launcher": []string{wrap}}, spawnErrFrame("-32603", "chdir "+nocwd+": stat "+nocwd+": no such file or directory")},
+		{"S2-echo-W", map[string]any{"id": "p1", "command": "echo", "args": []string{"hi"}, "launcher": []string{wrap}}, spawnErrFrame("-32602", managedSpawnRelative, "other")},
+		{"S2-echo-empty", map[string]any{"id": "p1", "command": "echo", "args": []string{"hi"}, "launcher": []string{}}, spawnErrFrame("-32602", managedSpawnRelative, "other")},
+		{"S11-relcmd-badlauncher", map[string]any{"id": "p1", "command": "echo", "args": []string{"hi"}, "launcher": []string{nope}}, spawnErrFrame("-32602", managedSpawnRelative, "other")},
+		{"S3", map[string]any{"id": "p1", "command": exe, "args": []string{"hi"}, "launcher": []string{}}, spawnErrFrame("-32004", cannot+"the value is set but contains no launcher \xe2\x80\x94 unset it to run without one, or set it to the absolute path of your launcher", "launcher")},
+		{"S5-wrap", map[string]any{"id": "p1", "command": exe, "args": []string{"hi"}, "launcher": []string{"wrap"}}, spawnErrFrame("-32004", cannot+managedNotAbsolute, "launcher")},
+		{"S5-own-path", map[string]any{"id": "p1", "command": exe, "args": []string{"hi"}, "launcher": []string{exe}}, spawnErrFrame("-32004", cannot+"launcher `"+exe+"` is Claude Code's own path", "launcher")},
+		{"S5-x.js", map[string]any{"id": "p1", "command": exe, "args": []string{"hi"}, "launcher": []string{xjs}}, spawnErrFrame("-32004", cannot+"launcher `"+xjs+"` is a script the SDK would run in place of Claude Code", "launcher")},
+		{"S5-nope", map[string]any{"id": "p1", "command": exe, "args": []string{"hi"}, "launcher": []string{nope}}, spawnErrFrame("-32004", cannot+"launcher `"+nope+"` does not exist or is not an executable regular file", "launcher")},
+		{"S11-badlauncher-nocwd", map[string]any{"id": "p1", "command": exe, "args": []string{"hi"}, "cwd": nocwd, "launcher": []string{nope}}, spawnErrFrame("-32004", cannot+"launcher `"+nope+"` does not exist or is not an executable regular file", "launcher")},
+		{"S11-goodlauncher-nocwd", map[string]any{"id": "p1", "command": exe, "args": []string{"hi"}, "cwd": nocwd, "launcher": []string{wrap}}, spawnErrFrame("-32603", "chdir "+nocwd+": stat "+nocwd+": no such file or directory", "cwd_missing")},
 	}
 	for _, c := range cases {
 		if got := dispatchRaw(t, s, launchedSpawnReq(t, c.params)); got != c.want {
@@ -735,9 +735,9 @@ func TestSpawnLauncherCannotStart(t *testing.T) {
 	writeFileMode(t, s6c, []byte("#!"+exe+"\r\necho hi\n"), 0o755)
 	interp := "its interpreter was not found (the program on its #! line, or the loader of an ELF binary; a script saved with Windows CRLF line endings fails this way)"
 	want := map[string]string{
-		s6a: spawnErrFrame("-32005", "the managed launcher "+s6a+" could not be started: "+interp),
-		s6b: spawnErrFrame("-32005", "the managed launcher "+s6b+" could not be started: exec format error"),
-		s6c: spawnErrFrame("-32005", "the managed launcher "+s6c+" could not be started: "+interp),
+		s6a: spawnErrFrame("-32005", "the managed launcher "+s6a+" could not be started: "+interp, "launcher"),
+		s6b: spawnErrFrame("-32005", "the managed launcher "+s6b+" could not be started: exec format error", "launcher"),
+		s6c: spawnErrFrame("-32005", "the managed launcher "+s6c+" could not be started: "+interp, "launcher"),
 	}
 
 	base, err := os.MkdirTemp("", "cl")
@@ -780,8 +780,8 @@ func TestSpawnLauncherBadCommand(t *testing.T) {
 	writeFileMode(t, c644, []byte("#\n"), 0o644)
 	nope := filepath.Join(tmp, "nope")
 	env := map[string]string{"CLAUSTRUM_TEST_HELPER": "wrap", "CLAUSTRUM_TEST_WRAP_LOG": marker}
-	for cmd, reason := range map[string]string{nope: "no such file or directory", folder: "permission denied", c644: "permission denied"} {
-		want := spawnErrFrame("-32603", "fork/exec "+cmd+": "+reason)
+	for cmd, c := range map[string][2]string{nope: {"no such file or directory", "not_found"}, folder: {"permission denied", "not_executable"}, c644: {"permission denied", "not_executable"}} {
+		want := spawnErrFrame("-32603", "fork/exec "+cmd+": "+c[0], c[1])
 		if got := dispatchRaw(t, s, launchedSpawnReq(t, map[string]any{"id": "p1", "command": cmd, "args": []string{"hi"}, "env": env, "launcher": []string{wrap}})); got != want {
 			t.Errorf("S7 %s with launcher:\n got %s\nwant %s", filepath.Base(cmd), got, want)
 		}

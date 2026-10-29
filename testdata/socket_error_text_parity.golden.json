@@ -21,7 +21,10 @@
     "id": 6,
     "error": {
       "code": -32603,
-      "message": "chdir <DIR>/missingdir: stat <DIR>/missingdir: no such file or directory"
+      "message": "chdir <DIR>/missingdir: stat <DIR>/missingdir: no such file or directory",
+      "data": {
+        "reason": "cwd_missing"
+      }
     }
   },
   {
@@ -29,7 +32,10 @@
     "id": 7,
     "error": {
       "code": -32603,
-      "message": "chdir <DIR>/regular.txt: not a directory"
+      "message": "chdir <DIR>/regular.txt: not a directory",
+      "data": {
+        "reason": "cwd_missing"
+      }
     }
   }
 ]
