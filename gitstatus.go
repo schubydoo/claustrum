@@ -527,12 +527,16 @@ func statusGitdirNames(root *os.Root, entry string, spellings []string) bool {
 // n19g). On macOS a value under /tmp fails, because git answers /private/tmp (row
 // n19b.t). Another letter case fails, on Windows too (rows C11, D10, W04 and x9),
 // and so does a short name (rows K05a, K07a and K15a).
+//
+// The value is read as the trust check reads it (commondirValue). So `../..` with
+// two spaces gives isRepo false, and `../..` with a NUL and more bytes after it
+// passes (build 52d82f0a, measured on Linux).
 func statusEntryNamesCommon(root *os.Root, entry, common string) bool {
 	b, err := statusReadFile(root, "commondir", statusFileMaxBytes)
 	if err != nil {
 		return false
 	}
-	return entryPathValue(entry, b) == common
+	return commondirPath(entry, string(b)) == common
 }
 
 // statusHeadValid judges the `HEAD` file of the matched entry. 40 or 64 hex

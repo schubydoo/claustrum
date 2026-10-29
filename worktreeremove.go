@@ -721,11 +721,9 @@ func verifiedWorktreeEntry(gitDir, commonDir, answered, path string, sp worktree
 	if err != nil {
 		return "", notOurs
 	}
-	named := strings.TrimSpace(string(b))
-	if !filepath.IsAbs(named) {
-		named = filepath.Join(dir, name, named)
-	}
-	named = filepath.Clean(named)
+	// The value is read as the trust check reads it (commondirValue). That read here
+	// is claustrum's own, not measured.
+	named := commondirPath(filepath.Join(dir, name), string(b))
 	if !sameCanonicalPath(named, filepath.Clean(commonDir)) &&
 		!sameCanonicalPath(canonicalPathOfGone(named), canonicalPathOfGone(commonDir)) &&
 		(answered == "" || !sameCanonicalPath(named, filepath.FromSlash(answered))) {

@@ -23,7 +23,7 @@ const (
 	wantTrustPrefix = "the repository's git directory could not be trusted; git not run: commondir not as git writes it: "
 	wantTRTail      = `; git writes that file only inside .git/worktrees/<name>/, and Claude Code's sandbox may leave one containing just "."; anything else sends git's configuration and hooks elsewhere, so treat it as tampering: delete it, and if you did not create it, find out what did`
 	wantTPTail      = "; git writes that file only inside .git/worktrees/<name>/; one here can send git's configuration and hooks elsewhere, so treat it as tampering: delete it, and if you did not create it, find out what did"
-	wantShapeTail   = " sits in a git directory git would not take as a repository (its HEAD, objects or refs missing or invalid), so git would look for one somewhere else; repair that directory (usually its HEAD file)"
+	wantShapeTail   = " sits in a git directory git would not take as a repository (its HEAD, objects or refs missing, invalid, or not open to your account on the remote machine), so git would look for one somewhere else; repair that directory (usually its HEAD file)"
 	wantM5          = "config-defined hooks could not be pinned off; git not run: the worktree entry this folder's .git names no longer exists"
 )
 
@@ -40,6 +40,13 @@ func wantTR(cd, v string) string {
 // to T09).
 func wantTP(cd, reason string) string {
 	return wantTrustPrefix + fmt.Sprintf("%q", cd) + " is not a small plain file (" + reason + ")" + wantTPTail
+}
+
+// wantDamaged is the refusal of an entry whose commondir names a repository git
+// directory repo that fails the git-directory test (build 52d82f0a, measured on Linux).
+func wantDamaged(repo string) string {
+	return "the repository's git directory could not be trusted; git not run: this worktree's repository, " +
+		fmt.Sprintf("%q", repo) + ", has a missing or damaged HEAD, objects or refs, or your account on the remote machine cannot open them; repair that directory or its permissions"
 }
 
 func wantM2(cd, repo string) string {
@@ -316,25 +323,31 @@ func TestGitDirTrustStrayCommondirAnyType(t *testing.T) {
 	}
 }
 
-// An entry's commondir must name its own repository once trimmed, taken
-// relative to the entry and cleaned. Every accepted spelling answers. Every other value
+// An entry's commondir must name its own repository, read by commondirValue, taken
+// relative to the entry and cleaned. The CR, LF, NUL, blank and tab rows follow build
+// 52d82f0a on git.info and git.status (measured on Linux and Windows). Mutation: read
+// the value with strings.Trim of blanks, tabs, CRs and LFs. Every accepted spelling answers. Every other value
 // is refused with M2 on the methods that run in the worktree, and remove from that
 // worktree deletes nothing.
 func TestGitDirTrustEntryCommondirMustNameItsRepository(t *testing.T) {
 	pass := map[string]func(r trustRepo) string{
-		"../.. with newline":   func(trustRepo) string { return "../..\n" },
-		"trailing slash":       func(trustRepo) string { return "../../\n" },
-		"CRLF":                 func(trustRepo) string { return "../..\r\n" },
-		"no newline":           func(trustRepo) string { return "../.." },
-		"absolute own":         func(r trustRepo) string { return filepath.Join(r.T, ".git") + "\n" },
-		"absolute own dotted":  func(r trustRepo) string { return r.T + "/.git/worktrees/..\n" },
-		"trailing white space": func(trustRepo) string { return "../..  \t\n" },
+		"../.. with newline":  func(trustRepo) string { return "../..\n" },
+		"trailing slash":      func(trustRepo) string { return "../../\n" },
+		"CRLF":                func(trustRepo) string { return "../..\r\n" },
+		"no newline":          func(trustRepo) string { return "../.." },
+		"absolute own":        func(r trustRepo) string { return filepath.Join(r.T, ".git") + "\n" },
+		"absolute own dotted": func(r trustRepo) string { return r.T + "/.git/worktrees/..\n" },
+		"CR":                  func(trustRepo) string { return "../..\r" },
+		"two LF":              func(trustRepo) string { return "../..\n\n" },
+		"a NUL":               func(trustRepo) string { return "../..\x00" },
+		"a NUL and junk":      func(trustRepo) string { return "../..\x00junk\n" },
 	}
 	for name, content := range pass {
 		t.Run("accepts "+name, func(t *testing.T) {
 			r := newTrustRepo(t)
 			writeFile(t, filepath.Join(r.entry(), "commondir"), content(r), 0o644)
 			wantResultPrefix(t, "info(TW)", info(t, r.TW), `{"isRepo":true`)
+			wantResult(t, "status(TW,T)", status(t, r.TW, r.T), `{"isRepo":true,"clean":true}`)
 		})
 	}
 
@@ -350,8 +363,14 @@ func TestGitDirTrustEntryCommondirMustNameItsRepository(t *testing.T) {
 		},
 		"a missing path":    func(*testing.T, trustRepo) string { return "/nonexistent/.git\n" },
 		"empty":             func(*testing.T, trustRepo) string { return "" },
-		"a NUL byte":        func(*testing.T, trustRepo) string { return "../..\x00junk\n" },
 		"missing, relative": func(*testing.T, trustRepo) string { return "../../nope\n" },
+		"two blanks":        func(*testing.T, trustRepo) string { return "../..  \n" },
+		"a tab":             func(*testing.T, trustRepo) string { return "../..\t" },
+		"a tab and LF":      func(*testing.T, trustRepo) string { return "../..\t\n" },
+		"a blank, no LF":    func(*testing.T, trustRepo) string { return "../.. " },
+		"a leading NUL":     func(*testing.T, trustRepo) string { return "\x00../..\n" },
+		// Not measured: leading blanks. Nothing but trailing CR and LF goes.
+		"leading blanks": func(*testing.T, trustRepo) string { return "  \t../..\n" },
 	}
 	for name, content := range refuse {
 		t.Run("refuses "+name, func(t *testing.T) {
@@ -361,6 +380,7 @@ func TestGitDirTrustEntryCommondirMustNameItsRepository(t *testing.T) {
 			m2 := wantM2(cd, filepath.Join(r.T, ".git"))
 			wantRPCError(t, "info(TW)", info(t, r.TW), m2)
 			wantRPCError(t, "list_branches(TW)", listBranches(t, r.TW), m2)
+			wantResult(t, "status(TW,T)", status(t, r.TW, r.T), notRepoStatus)
 			wantCreateRefused(t, r.TW, r.T, m2)
 			wantRemoveRefused(t, r.TW, r.SWW, "s1", r.T)
 		})
@@ -488,7 +508,7 @@ func TestGitDirTrustEntryGoneGitFileText(t *testing.T) {
 func TestGitDirTrustCommondirMustBeASmallPlainFile(t *testing.T) {
 	t.Run("exactly 1 MiB passes", func(t *testing.T) {
 		r := newTrustRepo(t)
-		body := "../.." + strings.Repeat(" ", 1<<20-len("../..")-1) + "\n"
+		body := "../.." + strings.Repeat("\n", 1<<20-len("../.."))
 		writeFile(t, filepath.Join(r.entry(), "commondir"), body, 0o644)
 		wantResultPrefix(t, "info(TW)", info(t, r.TW), `{"isRepo":true`)
 	})
@@ -594,7 +614,10 @@ func TestGitDirTrustHeadTest(t *testing.T) {
 			wantResult(t, "list_branches(T/a)", listBranches(t, filepath.Join(r.T, "a")), want)
 		})
 	}
-	t.Run("objects and refs must exist, of any type", func(t *testing.T) {
+	// On Windows objects and refs only have to exist, of any type. On Linux and macOS
+	// a file of mode 0644 fails the search test (gitDirPartUsable).
+	t.Run("objects and refs must be usable", func(t *testing.T) {
+		fileOK := runtime.GOOS == "windows"
 		for _, tc := range []struct {
 			name, missing string
 			asFile        bool
@@ -602,8 +625,8 @@ func TestGitDirTrustHeadTest(t *testing.T) {
 		}{
 			{"objects missing", "objects", false, false},
 			{"refs missing", "refs", false, false},
-			{"objects a file", "objects", true, true},
-			{"refs a file", "refs", true, true},
+			{"objects a file", "objects", true, fileOK},
+			{"refs a file", "refs", true, fileOK},
 		} {
 			t.Run(tc.name, func(t *testing.T) {
 				t.Parallel()
@@ -623,18 +646,11 @@ func TestGitDirTrustHeadTest(t *testing.T) {
 				writeFile(t, filepath.Join(g, "HEAD"), "ref: refs/heads/main\n", 0o644)
 				rep := listBranches(t, filepath.Join(r.T, "a"))
 				if tc.pass {
-					// Passing the test lets git run, pinned to a/.git, and the answer is
-					// git's own. Git on Linux and macOS rejects a `.git` whose objects or
-					// refs is a file, and the pin keeps it from walking on to T (NH18).
-					// Git for Windows accepts that layout, so there the answer is the
-					// nested repository, which has no branches. On Windows this differs
-					// from the "no repository" a type check gives. On Linux and macOS the
-					// D06 case in TestGitDirTrustEntryNeedsAValidRepository tells them apart.
-					want := notRepoList
-					if runtime.GOOS == "windows" {
-						want = `{"isRepo":true,"branches":[]}`
-					}
-					wantResultPrefix(t, "list_branches(T/a)", rep, want)
+					// Passing the test lets git run, pinned to a/.git. Git for Windows
+					// accepts that layout, so the answer is the nested repository, which
+					// has no branches. That differs from the "no repository" of a failed
+					// test.
+					wantResultPrefix(t, "list_branches(T/a)", rep, `{"isRepo":true,"branches":[]}`)
 					return
 				}
 				wantResult(t, "list_branches(T/a)", rep, notRepoList)
@@ -655,8 +671,11 @@ func TestGitDirTrustHeadTest(t *testing.T) {
 
 // A linked-worktree entry counts as an entry only
 // when its grandparent passes the git-directory test and its own name is not ".git".
-// Otherwise its honest commondir counts as stray: S1 for "../..". A regular file named objects
-// still passes the test, so the entry is judged as an entry and git answers for itself.
+// With a failing grandparent, its honest commondir "../.." gets the text of a damaged
+// repository. Build 52d82f0a answers that text for a `refs` moved away (measured on
+// Linux). Missing objects are claustrum's own, not measured. On Windows a regular file
+// named objects still passes the test, so the entry is judged as an entry and git
+// answers for itself. On Linux and macOS that file fails the search test.
 func TestGitDirTrustEntryNeedsAValidRepository(t *testing.T) {
 	t.Run("main objects missing", func(t *testing.T) {
 		r := newTrustRepo(t)
@@ -664,7 +683,7 @@ func TestGitDirTrustEntryNeedsAValidRepository(t *testing.T) {
 		if err := os.Rename(obj, obj+".gone"); err != nil {
 			t.Fatal(err)
 		}
-		m1 := wantTR(filepath.Join(r.entry(), "commondir"), "../..")
+		m1 := wantDamaged(filepath.Join(r.T, ".git"))
 		wantRPCError(t, "info(TW)", info(t, r.TW), m1)
 		wantCreateRefused(t, r.TW, r.T, m1)
 		// T itself now fails the test: no repository, so remove from T is refused.
@@ -678,6 +697,10 @@ func TestGitDirTrustEntryNeedsAValidRepository(t *testing.T) {
 		}
 		writeFile(t, obj, "x", 0o644)
 		rep := info(t, r.TW)
+		if runtime.GOOS != "windows" {
+			wantRPCError(t, "info(TW)", rep, wantDamaged(filepath.Join(r.T, ".git")))
+			return
+		}
 		if rep.Error != nil && strings.HasPrefix(rep.Error.Message, wantTrustPrefix) {
 			t.Errorf("info(TW) = %s; a file named objects passes the test, so the entry must not be refused", rep.Error.Message)
 		}
@@ -762,42 +785,21 @@ func TestGitDirTrustSubmoduleGitDir(t *testing.T) {
 	wantResultPrefix(t, "info(T)", info(t, r.T), `{"isRepo":true`)
 }
 
-// A trusted entry runs git with the common directory pinned to the repository.
-// The check accepts trailing and leading white space in commondir, although git itself
-// rejects the file. With the pin, git reads the repository, and remove from that
-// worktree succeeds. Without the pin, git fails and the method answers with the hooks
-// refusal.
+// A trusted entry runs git with the common directory pinned to the repository. A
+// commondir whose value ends at a NUL is trusted (build 52d82f0a, measured on Linux
+// and Windows). Remove from that worktree then deletes the worktree and its entry
+// under the main repository's git directory, as for an honest "../..". The remove
+// reads the entry's commondir by the same rule (claustrum's own, not measured).
 func TestGitDirTrustPinsTheCommonDirectory(t *testing.T) {
-	for _, content := range []string{"../..  \t\n", "  \t../..\n"} {
+	for _, content := range []string{"../..\x00", "../..\x00junk\n"} {
 		t.Run(fmt.Sprintf("%q", content), func(t *testing.T) {
 			r := newTrustRepo(t)
 			writeFile(t, filepath.Join(r.entry(), "commondir"), content, 0o644)
-			rep := info(t, r.TW)
-			wantResultPrefix(t, "info(TW)", rep, `{"isRepo":true,"repo":"T_wt"`)
-			// What git answers past the pin depends on its version. Whatever it is, a
-			// failing git never becomes the branch name, and git's tab never reaches
-			// the create error (both references write a space there).
-			if strings.Contains(string(rep.Result), `"branch":"fatal`) {
-				t.Errorf("info(TW) = %s, carries git's error as the branch", rep.Result)
-			}
-			if c, _ := create(t, r.TW); strings.ContainsAny(string(c.Result), "\t") || strings.Contains(string(c.Result), `\t`) {
-				t.Errorf("create(TW) = %s, keeps a tab in the error text", c.Result)
-			}
-			// Past the pin, git fails on this commondir, or lists no branch, depending
-			// on its version. A failed for-each-ref keeps s1, and the reply adds the
-			// member (89cb6289, rows R18, R18b and R22a). After a listing without s1,
-			// rev-parse runs and exits 1, so s1 is absent to the branch step. s1 then
-			// stays with no member (rows R11 and B2-09d). Else s1 is at main's tip, and the step deletes it. So the member
-			// is set if and only if s1 still exists and the pinned listing does not
-			// show it absent.
+			writeFile(t, filepath.Join(r.T, ".git", "worktrees", "s1", "commondir"), content, 0o644)
+			wantResultPrefix(t, "info(TW)", info(t, r.TW), `{"isRepo":true,"repo":"T_wt"`)
 			got := string(remove(t, r.TW, r.SWW, "s1").Result)
-			kept := got == `{"success":true,"branchKept":true}`
-			if !kept && got != `{"success":true}` {
-				t.Fatalf("remove(TW,SWW) = %s, want success with or without branchKept", got)
-			}
-			s1 := gitExitOK(r.T, "show-ref", "--verify", "--quiet", "refs/heads/s1")
-			if want := s1 && !pinnedListingLacks(t, r.TW, "refs/heads/s1"); kept != want {
-				t.Errorf("remove(TW,SWW) = %s with s1 present=%v, want branchKept=%v", got, s1, want)
+			if got != `{"success":true}` && got != `{"success":true,"branchKept":true}` {
+				t.Fatalf("remove(TW,SWW) = %s, want success", got)
 			}
 			if exists(r.SWW) {
 				t.Errorf("remove(TW,SWW) left the worktree")
@@ -807,29 +809,14 @@ func TestGitDirTrustPinsTheCommonDirectory(t *testing.T) {
 			if e := filepath.Join(r.T, ".git", "worktrees", "s1"); exists(e) {
 				t.Errorf("remove(TW,SWW) left the entry %s", e)
 			}
+			// Nothing outside the worktree went.
+			for _, p := range []string{r.TW, r.SW, r.D, filepath.Join(r.T, ".git", "worktrees", "T_wt")} {
+				if !exists(p) {
+					t.Errorf("remove(TW,SWW) deleted %s", p)
+				}
+			}
 		})
 	}
-}
-
-// pinnedListingLacks reports whether a for-each-ref in dir, with the daemon's
-// GIT_COMMON_DIR pin for dir, exits 0 and does not list ref.
-func pinnedListingLacks(t *testing.T, dir, ref string) bool {
-	t.Helper()
-	cmd := exec.Command("git", "for-each-ref", "--format=%(refname)", "refs/heads/")
-	cmd.Dir = dir
-	cmd.Env = append(append(os.Environ(), "GIT_CONFIG_GLOBAL="+os.DevNull, "GIT_CONFIG_NOSYSTEM=1"),
-		commonDirPinEnv(dir)...)
-	cmd.Env = append(cmd.Env, gitNoAutoMaintenance...)
-	out, err := cmd.Output()
-	if err != nil {
-		return false
-	}
-	for _, l := range strings.Split(string(out), "\n") {
-		if strings.TrimSpace(l) == ref {
-			return false
-		}
-	}
-	return true
 }
 
 // A GIT_DIR in the daemon's environment is the git directory judged for every
@@ -1114,4 +1101,59 @@ func commitWithFile(t *testing.T, r trustRepo, base, content string) string {
 		tree = out
 	}
 	return gitOut(t, r.T, "commit-tree", strings.TrimSpace(string(tree)), "-m", "fake")
+}
+
+// wantErrorFrame asserts that the whole reply frame of method on a fresh test server is
+// exactly the error frame of msg.
+func wantErrorFrame(t *testing.T, method string, params map[string]any, msg string) {
+	t.Helper()
+	m, err := json.Marshal(msg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := `{"jsonrpc":"2.0","id":1,"error":{"code":-32603,"message":` + string(m) + `}}`
+	if got := dispatchRaw(t, newTestServer(t), rpcLine(t, method, params)); got != want {
+		t.Errorf("%s = %s\nwant %s", method, got, want)
+	}
+}
+
+// The main repository of a linked worktree with its `refs` moved away: git.info on
+// the worktree answers the text of a damaged repository, and git.status gives "no
+// repository" (build 52d82f0a, measured on Linux). Create and remove from the
+// worktree are refused, and nothing is deleted (claustrum's own, not measured).
+// Mutation: drop the call of judgeDamagedRepository in judgeGitDir.
+func TestGitDirTrustEntryOfADamagedRepository(t *testing.T) {
+	r := newTrustRepo(t)
+	refs := filepath.Join(r.T, ".git", "refs")
+	if err := os.Rename(refs, refs+".off"); err != nil {
+		t.Fatal(err)
+	}
+	m := wantDamaged(filepath.Join(r.T, ".git"))
+	wantErrorFrame(t, "git.info", map[string]any{"path": r.TW}, m)
+	wantResult(t, "status(TW,T)", status(t, r.TW, r.T), notRepoStatus)
+	wantCreateRefused(t, r.TW, r.T, m)
+	rep := remove(t, r.TW, r.SWW, "s1")
+	if err := os.Rename(refs+".off", refs); err != nil {
+		t.Fatal(err)
+	}
+	checkRemoveRefused(t, rep, r.SWW, "s1", r.T)
+	if !exists(filepath.Join(r.T, ".git", "worktrees", "s1")) {
+		t.Errorf("remove refused but deleted the entry of %s", r.SWW)
+	}
+}
+
+// A main `.git/commondir` of "." with a HEAD of "garbage" gets S3, whose words name
+// an account that cannot open the files (build 52d82f0a, measured on Linux and
+// Windows). Mutation: the S3 text of 89cb6289.
+func TestStrayCommondirShapeTextNamesTheAccount(t *testing.T) {
+	r := newTrustRepo(t)
+	gitDir := filepath.Join(r.T, ".git")
+	writeFile(t, filepath.Join(gitDir, "HEAD"), "garbage\n", 0o644)
+	cd := filepath.Join(gitDir, "commondir")
+	writeFile(t, cd, ".\n", 0o644)
+	wantErrorFrame(t, "git.info", map[string]any{"path": r.T},
+		"the repository's git directory could not be trusted; git not run: commondir not as git writes it: "+
+			fmt.Sprintf("%q", cd)+" sits in a git directory git would not take as a repository (its HEAD, "+
+			"objects or refs missing, invalid, or not open to your account on the remote machine), so git "+
+			"would look for one somewhere else; repair that directory (usually its HEAD file)")
 }

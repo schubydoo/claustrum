@@ -159,8 +159,19 @@ func TestGitStatusEntryGate(t *testing.T) {
 		{"n19b absolute commondir", func(t *testing.T, f statusFixture) {
 			f.write(t, "commondir", filepath.Join(f.T, ".git")+"\n")
 		}, statusClean},
+		// Row n19c gave a clean status for this content on an older build. Build
+		// 52d82f0a reads only trailing CR and LF away (commondirValue), so the
+		// two blanks stay and the entry fails. That content is not measured there.
 		{"n19c commondir with spaces", func(t *testing.T, f statusFixture) {
 			f.write(t, "commondir", "../..\n  \n")
+		}, statusNotRepo},
+		// Build 52d82f0a: two blanks and LF fail, and a NUL ends the value (measured
+		// on Linux). Mutation: read the value with strings.TrimSpace.
+		{"commondir with two blanks", func(t *testing.T, f statusFixture) {
+			f.write(t, "commondir", "../..  \n")
+		}, statusNotRepo},
+		{"commondir with a NUL and junk", func(t *testing.T, f statusFixture) {
+			f.write(t, "commondir", "../..\x00junk")
 		}, statusClean},
 		{"n19d commondir ../../.", func(t *testing.T, f statusFixture) {
 			f.write(t, "commondir", "../../.\n")

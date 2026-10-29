@@ -236,17 +236,17 @@ func TestGitDirTrustHeadUnixKinds(t *testing.T) {
 }
 
 // A main HEAD made a symlink to another file makes the main git directory fail the
-// test. The linked worktree's entry is then not an entry, and its commondir counts
-// as stray: its content "../.." is refused. T itself is then no repository, so remove
-// from T is refused.
-func TestGitDirTrustMainHeadSymlinkMakesEntryStray(t *testing.T) {
+// test. The linked worktree's entry is then not an entry, and its commondir "../.."
+// gets the text of a damaged repository (claustrum's own for a HEAD, not measured).
+// T itself is then no repository, so remove from T is refused.
+func TestGitDirTrustMainHeadSymlinkRefusesEntry(t *testing.T) {
 	r := newTrustRepo(t)
 	head := filepath.Join(r.T, ".git", "HEAD")
 	if err := os.Rename(head, head+".real"); err != nil {
 		t.Fatal(err)
 	}
 	symlink(t, "HEAD.real", head)
-	m1 := wantTR(filepath.Join(r.entry(), "commondir"), "../..")
+	m1 := wantDamaged(filepath.Join(r.T, ".git"))
 	wantRPCError(t, "info(TW)", info(t, r.TW), m1)
 	wantCreateRefused(t, r.TW, r.T, m1)
 	wantRemoveRefused(t, r.T, r.D, "d0", r.T)
@@ -373,4 +373,37 @@ func TestGitDirTrustOperandQuoting(t *testing.T) {
 	writeFile(t, cd, "x\n", 0o644)
 	want := wantTrustPrefix + `"` + base + `/q\"uo\nte\t\x7f é\u00a0𝄞/T/.git/commondir" reads "x"` + wantTRTail
 	wantRPCError(t, "info(T)", info(t, T), want)
+}
+
+// A `refs` folder of mode 0600 fails the search test of the git-directory test. The
+// first git.info of a daemon then answers "no repository" with no settingsControl
+// (build 52d82f0a, measured on Linux and macOS). A remove from that repository is
+// refused and deletes nothing (claustrum's own, not measured). Mutation: test
+// `objects` and `refs` with os.Stat in gitDirPartUsable.
+func TestGitDirTrustRefsWithoutSearchPermission(t *testing.T) {
+	if os.Geteuid() == 0 {
+		t.Skip("root passes the search test of every folder")
+	}
+	r := newTrustRepo(t)
+	refs := filepath.Join(r.T, ".git", "refs")
+	if err := os.Chmod(refs, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	restore := func() {
+		if err := os.Chmod(refs, 0o755); err != nil {
+			t.Fatal(err)
+		}
+	}
+	t.Cleanup(func() { _ = os.Chmod(refs, 0o755) })
+	s, _ := newShadowServer(t)
+	got := dispatchRaw(t, s, rpcLine(t, "git.info", map[string]any{"path": r.T}))
+	if want := `{"jsonrpc":"2.0","id":1,"result":{"isRepo":false,"repoSlug":"","defaultBranch":""}}`; got != want {
+		t.Errorf("git.info = %s\nwant %s", got, want)
+	}
+	rep := remove(t, r.T, r.D, "d0")
+	restore()
+	checkRemoveRefused(t, rep, r.D, "d0", r.T)
+	if !exists(filepath.Join(r.T, ".git", "worktrees", "d0")) {
+		t.Errorf("remove refused but deleted the entry of %s", r.D)
+	}
 }

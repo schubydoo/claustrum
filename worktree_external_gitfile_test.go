@@ -172,3 +172,36 @@ func TestVerifiedWorktreeEntryRespell(t *testing.T) {
 		t.Errorf("commondir names the answered git dir: name=%q err=%v, want w1, nil", name, err)
 	}
 }
+
+// The remove reads the `commondir` of the entry as the trust check reads it
+// (commondirValue): a NUL ends the value, and blanks stay. That read is claustrum's
+// own here, not measured. Mutation: read the value with strings.TrimSpace.
+func TestVerifiedWorktreeEntryCommondirValue(t *testing.T) {
+	requireGit(t)
+	base := resolveTestRoot(t, t.TempDir())
+	repo := filepath.Join(base, "repo")
+	if err := os.MkdirAll(repo, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	runGit(t, repo, "init", "-q")
+	runGit(t, repo, "commit", "-q", "--allow-empty", "-m", "init")
+	wp := filepath.Join(repo, ".claude", "worktrees", "w1")
+	runGit(t, repo, "worktree", "add", "-q", "-b", "w1", wp)
+	commonDir := filepath.Join(repo, ".git")
+	gitDir := filepath.Join(commonDir, "worktrees", "w1")
+	for _, tc := range []struct {
+		content string
+		ok      bool
+	}{
+		{"../..\x00junk", true},
+		{"../..  \n", false},
+	} {
+		if err := os.WriteFile(filepath.Join(gitDir, "commondir"), []byte(tc.content), 0o644); err != nil {
+			t.Fatal(err)
+		}
+		name, err := verifiedWorktreeEntry(gitDir, commonDir, "", wp, newWorktreePathSet(wp), nil)
+		if got := err == nil && name == "w1"; got != tc.ok {
+			t.Errorf("commondir %q: name=%q err=%v, want verified=%v", tc.content, name, err, tc.ok)
+		}
+	}
+}

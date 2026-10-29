@@ -79,3 +79,24 @@ func TestReadAdminRecordComparesNoPathItCannotResolve(t *testing.T) {
 		t.Errorf("readAdminRecord(path that does not resolve) = %d, want recordNotCompared", got)
 	}
 }
+
+// gitDirRegistryDir reads the `commondir` of the git directory as the trust check
+// reads it (commondirValue): a NUL ends the value, and blanks stay. That read is
+// claustrum's own here, not measured. Mutation: read the value with strings.TrimSpace.
+func TestGitDirRegistryDirCommondirValue(t *testing.T) {
+	g := filepath.Join(t.TempDir(), "r", ".git", "worktrees", "w")
+	if err := os.MkdirAll(g, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	for _, tc := range []struct{ content, want string }{
+		{"../..\x00junk", filepath.Join(g, "..", "..", "worktrees")},
+		{"../.. \n", filepath.Join(g, "../.. ", "worktrees")},
+	} {
+		if err := os.WriteFile(filepath.Join(g, "commondir"), []byte(tc.content), 0o644); err != nil {
+			t.Fatal(err)
+		}
+		if got := gitDirRegistryDir(g); got != tc.want {
+			t.Errorf("commondir %q: gitDirRegistryDir = %q, want %q", tc.content, got, tc.want)
+		}
+	}
+}

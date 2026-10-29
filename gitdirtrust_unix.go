@@ -5,6 +5,8 @@ package main
 import (
 	"path/filepath"
 	"syscall"
+
+	"golang.org/x/sys/unix"
 )
 
 // openNonBlocking is added to the open flags of the trust check's reads. A FIFO named
@@ -26,6 +28,15 @@ const registrationsLinkRefused = true
 // linked worktree with a symbolic link as its entry gets the trust refusal as a
 // failed add (cell C7 of round tier0-24, Linux VM). macOS is not measured.
 const entryLinkRefusedLate = true
+
+// gitDirPartUsable is the test of `objects` and `refs` in the git-directory test
+// (isGitDirShape). On Linux and macOS it is search permission, access(2) with X_OK.
+// So a `refs` folder of mode 0600 fails, and git.info answers "no repository" there
+// (build 52d82f0a, measured on Linux and macOS). Each place that uses the test gets
+// it, which is claustrum's own and not measured.
+func gitDirPartUsable(p string) bool {
+	return unix.Access(p, unix.X_OK) == nil
+}
 
 // sameGitDirPath compares two lexically cleaned paths as plain strings. A backslash is
 // an ordinary file-name character here, so `..\..` in a commondir does not match.
