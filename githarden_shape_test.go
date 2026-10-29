@@ -661,7 +661,9 @@ func TestHardenedGitCallShape(t *testing.T) {
 	// listing, as on 5fd08069 (cell G08b of round tier3-17, Linux VM). That
 	// replaces the lock-check text of f6010b97 there. The worktree directory
 	// exists: a gone one answers from its own path.
-	checkTwice := func(t *testing.T, g wtFixture, wantHardened bool) {
+	// noRepo is true when the trust check finds no repository. Each listing then
+	// carries GIT_DIR=<null device> in the place of the GIT_COMMON_DIR pin.
+	checkTwice := func(t *testing.T, g wtFixture, wantHardened, noRepo bool) {
 		t.Helper()
 		if err := os.MkdirAll(g.leaf(), 0o755); err != nil {
 			t.Fatal(err)
@@ -699,9 +701,13 @@ func TestHardenedGitCallShape(t *testing.T) {
 		if len(calls) != 2*unit {
 			t.Fatalf("calls = %q, want the check twice (%d calls)", calls, 2*unit)
 		}
+		wantEnv := wantShapeEnv(true, false)
+		if noRepo {
+			wantEnv[len(wantEnv)-1] = "GIT_DIR=" + os.DevNull
+		}
 		for i, c := range calls {
 			isListing := i%unit == 0
-			if isListing && (!c.listing() || !sameShapeEnv(c.keysAndValues(), wantShapeEnv(true, false))) {
+			if isListing && (!c.listing() || !sameShapeEnv(c.keysAndValues(), wantEnv)) {
 				t.Errorf("call %d = %q %q, want the heavy listing", i, c.argv, c.env)
 			}
 			if !isListing && (!c.has("rev-parse", "--absolute-git-dir") || !c.heavy()) {
@@ -715,11 +721,14 @@ func TestHardenedGitCallShape(t *testing.T) {
 	t.Run("worktree_remove refused twice, bad config", func(t *testing.T) {
 		g := newWTFixture(t, false)
 		breakListing(t, filepath.Join(g.top, ".git"))
-		checkTwice(t, g, false)
+		checkTwice(t, g, false, false)
 	})
 	t.Run("worktree_remove refused twice, no usable git dir", func(t *testing.T) {
 		// .git/objects is a file, so git finds no repository (row H20). On Windows git
-		// accepts that layout, as f6010b97 does in row H20 on a Windows VM.
+		// accepts that layout, as f6010b97 does in row H20 on a Windows VM. On Linux
+		// and macOS that file fails the search test of the trust check, so the check
+		// finds no repository first (build 52d82f0a on git.info and git.status). The
+		// listings of a remove there are claustrum's own, not measured.
 		if runtime.GOOS == "windows" {
 			t.Skip("git on Windows accepts a .git/objects file (row H20)")
 		}
@@ -729,7 +738,7 @@ func TestHardenedGitCallShape(t *testing.T) {
 			t.Fatal(err)
 		}
 		writeFile(t, objects, "", 0o644)
-		checkTwice(t, g, true)
+		checkTwice(t, g, true, true)
 	})
 
 	// A GIT_* variable of the daemon's own environment keeps its place, before the
