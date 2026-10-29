@@ -332,7 +332,7 @@ component_management:
         - bridge_windows.go
         - main.go
         - config.go
-        # -probe-cli and -install ignore SIGPIPE so a closed stdout does not
+        # -probe-cli, -install and -bridge ignore SIGPIPE so a closed stdout does not
         # kill them mid-write (fd 1). OS-split: signal.Ignore on unix, a no-op on Windows.
         - ignorepipe.go
         - ignorepipe_unix.go

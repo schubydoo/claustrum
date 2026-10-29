@@ -142,7 +142,7 @@ EOF, and it keeps copying the socket to stdout. It relays the
 parse-error frame of a final partial line, then exits `0` (measured on Linux
 and Windows). It prints every frame that arrived before the daemon closed, and exits `0` with stdin still open (measured on Linux). If the half-close fails, claustrum closes the socket fully.
 
-A closed stdout ends the bridge with exit `0` (build `52d82f0a`, measured on Linux and macOS). Claustrum's bridge was not measured.
+A write to a closed stdout gives exit `0` (build `52d82f0a`, measured on Linux and macOS). Claustrum's bridge was not measured.
 
 On Windows the daemon can miss the half-close of the bridge (see
 [Transport](../PROTOCOL.md#transport)). The bridge then does not exit.
