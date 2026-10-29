@@ -1013,6 +1013,10 @@ func runHelper(mode string, args []string) int {
 		} else {
 			fmt.Print(args[0] + " absent\n")
 		}
+	case "bridge":
+		// Fixture for TestBridgeExitsZeroOnClosedStdout: run the real main in -bridge mode.
+		os.Args = []string{"claustrum", "-bridge", "-socket", os.Getenv("CLAUSTRUM_TEST_BRIDGE_SOCK")}
+		main()
 	case "sigpipe":
 		// Behavior fixture for TestIgnoreSigpipeSurvivesClosedStdout: ignore SIGPIPE,
 		// wait for the parent's go-ahead (sent only after it has closed the stdout read

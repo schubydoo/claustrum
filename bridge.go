@@ -21,6 +21,11 @@ import (
 // 76-byte -32700 frame on stdout and exited 0. Measured on a Linux VM, the
 // reference bridge also exited 0 with stdin still open once the daemon closed.
 // It printed the frames that arrived before the close.
+//
+// A closed stdout ends the relay with exit 0. On Linux and macOS main ignores
+// SIGPIPE for -bridge, and the copy to stdout uses plain writes (bridgeStdout).
+// That follows the measured outcome of build 52d82f0a: exit 0 after a closed
+// stdout. The claustrum bridge itself was not measured.
 func runBridge(socket string) error {
 	nc, err := net.Dial("unix", socket)
 	if err != nil {
@@ -33,7 +38,7 @@ func runBridge(socket string) error {
 		_, _ = io.Copy(nc, in)
 		closeWriteOrClose(nc)
 	}()
-	_, _ = io.Copy(out, nc)
+	_, _ = io.Copy(bridgeStdout(out), nc)
 	return nil
 }
 

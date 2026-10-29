@@ -328,6 +328,8 @@ component_management:
       name: bridge, CLI & config
       paths:
         - bridge.go
+        - bridge_unix.go
+        - bridge_windows.go
         - main.go
         - config.go
         # -probe-cli and -install ignore SIGPIPE so a closed stdout does not

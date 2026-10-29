@@ -244,6 +244,8 @@ func main() {
 		})
 		return
 	case *bridge:
+		// A closed stdout must end the relay with exit 0, not SIGPIPE (see runBridge).
+		ignoreSigpipe()
 		if err := runBridge(resolveSocket()); err != nil {
 			fmt.Fprintf(os.Stderr, "claustrum: %v\n", err)
 			osExit(1)
