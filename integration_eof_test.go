@@ -13,8 +13,8 @@ import (
 
 // eofParseErrFrame is the parse-error frame as the first line of a connection.
 // Measured against f6010b97 and 90fca6e6 on a Linux VM, the reference sent 76
-// bytes for a line that does not decode into a request. The end member comes
-// from build 52d82f0a (claustrum's own, not measured, on this line).
+// bytes for a line that does not decode into a request. This line carries the
+// end member too (claustrum's own, not measured).
 var eofParseErrFrame = string(stampEnd([]byte(`{"jsonrpc":"2.0","id":null,"error":{"code":-32700,"message":"Parse error"}}`+"\n"), 0))
 
 // eofAuthErrFrame is the -32001 frame for a request with the id id, given as

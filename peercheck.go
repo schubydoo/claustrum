@@ -243,7 +243,7 @@ func peerRefusalLine(reason string) []byte {
 		Error:   peerRefusalError{Code: codePeerRefused, Message: peerRefusedMessage, Data: peerRefusalData{Reason: reason}},
 	})
 	// The refusal is the first line of its connection, so "at" is 0 (build
-	// 52d82f0a, measured on Linux; macOS and Windows are claustrum's own, not measured).
+	// 52d82f0a, measured on Linux). The check refuses on Linux only.
 	return stampEnd(append(b, '\n'), 0)
 }
 

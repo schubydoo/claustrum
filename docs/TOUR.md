@@ -24,7 +24,7 @@ sequenceDiagram
     D-->>B: ok, or EOF
 ```
 
-Each frame below is one line on the wire. A frame marked **exact** is a line of a golden fixture under `testdata/`, or a frame that a test asserts byte for byte. A frame marked **example** has no such source, and its method page is linked. The token `s3cret-token` is the fixed token of the test suite.
+Each frame below is one line on the wire, less its `end` member. A frame marked **exact** is a line of a golden fixture under `testdata/`, or a frame that a test asserts byte for byte. A frame marked **example** has no such source, and its method page is linked. The token `s3cret-token` is the fixed token of the test suite.
 
 ## Step 1: Connect
 
