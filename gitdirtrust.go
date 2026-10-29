@@ -521,7 +521,7 @@ func judgeGitDir(g string, fromEnv bool) gitDirTrust {
 // commondirValue is the value of the content b of a commondir file. Every trailing CR
 // and LF goes, and the value ends at its first NUL byte. Nothing else is trimmed. So
 // `../..` with a tab, with a space or after a NUL is no `../..`. Build 52d82f0a reads
-// so in git.info and git.status (measured on Linux and Windows). macOS and every other
+// so in git.info on Linux and Windows, and in git.status on Linux. macOS and every other
 // reader of a commondir file are claustrum's own, not measured. So is the order of
 // the two steps.
 func commondirValue(b string) string {
@@ -598,8 +598,8 @@ func isWorktreeEntry(g string) bool {
 // Nor are the order of a reason and a bad HEAD, and a dangling symlink in a git
 // directory with missing objects or refs. Two cases that PROTOCOL.md once refused with
 // the older text were not run on 89cb6289. One is an entry whose grandparent fails the
-// git-directory test. The other is a Windows entry named through 8.3 short names.
-// Their honest content "../.." is refused by step 3.
+// git-directory test, which judgeDamagedRepository takes first. The other is a
+// Windows entry named through 8.3 short names, whose content "../.." step 3 refuses.
 func judgeStrayCommondir(g, cd string) (gitDirTrust, bool) {
 	if _, err := os.Lstat(cd); errors.Is(err, fs.ErrNotExist) {
 		return gitDirTrust{}, false

@@ -30,10 +30,10 @@ const registrationsLinkRefused = true
 const entryLinkRefusedLate = true
 
 // gitDirPartUsable is the test of `objects` and `refs` in the git-directory test
-// (isGitDirShape). On Linux and macOS it is search permission, access(2) with X_OK.
-// So a `refs` folder of mode 0600 fails, and git.info answers "no repository" there
-// (build 52d82f0a, measured on Linux and macOS). Each place that uses the test gets
-// it, which is claustrum's own and not measured.
+// (isGitDirShape). On Linux and macOS it is search permission. So for a daemon that
+// is not root a `refs` folder of mode 0600 fails, and git.info answers "no
+// repository" there (build 52d82f0a, measured on Linux and macOS). Each other place
+// that uses the test, and `objects` of mode 0600, are claustrum's own, not measured.
 func gitDirPartUsable(p string) bool {
 	return unix.Access(p, unix.X_OK) == nil
 }

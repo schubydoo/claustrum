@@ -1,7 +1,5 @@
 # Trust check of the git directory
 
-The `git.*` methods check the git directory of their folder before git runs there.
-
 An untagged rule on this page matches build `5fd08069` or an earlier build. A section that names its systems or its build keeps that scope.
 
 ## Git-directory trust check
@@ -56,8 +54,9 @@ the daemon walks up from the request folder:
 - A request folder that does not exist is left to git.
 
 The git-directory test has three parts. `objects` and `refs` exist, of any type on
-Windows, searchable on Linux and macOS (build `52d82f0a`, each place claustrum's
-own). `HEAD` passes. A regular `HEAD` passes when its first 255 bytes start with `ref:`,
+Windows, searchable on Linux and macOS. A root daemon passes. Only `refs` 0600 on
+`git.info` is measured (build `52d82f0a`), the rest is claustrum's own. `HEAD`
+passes. A regular `HEAD` passes when its first 255 bytes start with `ref:`,
 then any spaces, tabs, CRs or LFs, then `refs/`. It also passes when it starts
 with 40 hex digits in either case. A symlink `HEAD` passes when its target text
 starts with `refs/`. Any other `HEAD` fails at once, a FIFO for example.
@@ -72,12 +71,13 @@ The daemon then judges the git directory G:
 - G is not an entry and holds no `commondir`: trusted.
 - G is not an entry and holds a `commondir`: the rules of a stray `commondir`
   judge it. If only the grandparent test fails, a `commondir` that names it gets
-  M6 (build `52d82f0a`, Linux, `../..`).
+  M6 (build `52d82f0a`, Linux, `refs` moved away, the rest
+  claustrum's own).
 - G is an entry without `commondir`: M3.
 - G is an entry whose `commondir` is not a regular file of at most 1048576 bytes:
   M4. A symlink is followed only when it is relative and stays inside the entry.
 - Otherwise trailing CRs and LFs go, and a NUL ends the value (build
-  `52d82f0a`, Linux and Windows). It is taken relative to G when it is not
+  `52d82f0a`, Linux and Windows). macOS and the step order are not measured. It is taken relative to G when it is not
   absolute, and cleaned lexically. It has to equal
   the grandparent as a string. No symlink in it is resolved, so naming the
   repository through an alias fails. On Linux and macOS a backslash is an
@@ -125,7 +125,7 @@ these steps:
    that is absolute, or that leaves G, gets S2 with `openat commondir: path
    escapes from parent` (measured on Linux).
 3. The content with every trailing CR and LF removed, up to a NUL, is exactly `.`
-   or `./` (the NUL is claustrum's own). A space or a tab is not trimmed. Any other content gets S1, which quotes it. So
+   or `./` (the NUL is claustrum's own, not measured). A space or a tab is not trimmed. Any other content gets S1, which quotes it. So
    ` .`, `. `, `.<TAB>`, `./x`, `..`, an empty file, `.\` and the absolute path of
    G itself are all refused.
 4. G then passes the git-directory test, or it gets S3. When both S2 and S3 apply,
@@ -215,8 +215,7 @@ are then those of the "no repository" column. A listing that fails by class 3
 below gives the "refused" column. A `.git` file to a gone entry under the
 `worktrees` folder of a repository gets `GIT_DIR=<null>` too (measured on Linux).
 For `git.worktree_remove` with `worktreeRoot`
-this is measured on Linux and macOS, because Windows refuses every `worktreeRoot`
-first.
+this is measured on Linux and macOS.
 
 A daemon `GIT_DIR` that names a regular file differs by system. On Linux and macOS
 no listing runs, and the "no repository" column answers, also with an empty
@@ -389,8 +388,7 @@ repository gets the class 1 text first: see
 On Linux and macOS the daemon opens three files of its own reads without
 blocking: a `.git` file, the `commondir` file of a worktree entry and the `gitdir`
 record of a worktree entry. It reads a regular file only. Anything else there, a
-FIFO for example, is no usable file, and the read does not wait. Windows has no
-FIFO in the file system. Each rule below is measured on Linux and macOS, with a
+FIFO for example, is no usable file, and the read does not wait. Each rule below is measured on Linux and macOS, with a
 git that walks past a FIFO `.git`:
 
 - A `.git` that is a FIFO, a socket (measured on Linux only) or a symlink to a FIFO
