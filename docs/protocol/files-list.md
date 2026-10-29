@@ -12,7 +12,7 @@ The error texts of this page match the reference as measured on `7d193f89`.
 
 | Parameter | Required | Meaning |
 |---|---|---|
-| `includeDotNames` | no | `true` lists dot names too. `false` or no member keeps them out (build `52d82f0a`, measured on Linux, macOS and Windows). Another type gets `-32602` (claustrum's own, not measured). |
+| `includeDotNames` | no | `true` lists dot names, and `false` or no member keeps them out (build `52d82f0a`, measured on Linux, macOS and Windows). Another type gets `-32602` (claustrum's own, not measured). |
 | `path` | yes | The directory to list. The daemon follows a symbolic link at `path`. [Path handling](../PROTOCOL.md#path-handling) has the rules for a leading `~` and for a name that is not valid UTF-8. |
 
 ## Response
