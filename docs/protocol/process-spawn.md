@@ -66,7 +66,7 @@ A start refusal adds `data` after `message`: `{"reason":"<reason>"}`. `Invalid p
 | `cwd_unusable` | a `cwd` of mode 000 that exists (also macOS) | none (claustrum's own) |
 | `not_found` | not found | not found, a folder |
 | `not_executable` | mode 0644, a folder | not measured |
-| `launcher` | `-32004` | any `launcher` |
+| `launcher` | missing (`-32004`) | any `launcher` |
 | `other` | a relative `command` with a `launcher` | not a program |
 
 On macOS only `cwd_unusable` is measured. The rest follows Linux, as do `-32005` (`launcher`) and other start errors (`other`) (claustrum's own, not measured).
