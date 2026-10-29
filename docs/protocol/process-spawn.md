@@ -58,18 +58,18 @@ A failure starts no child and makes no record. It logs the failed-start line of 
 
 ### The reason member (build `52d82f0a`)
 
-A start refusal adds `data` after `message`: `{"reason":"<reason>"}`. `Invalid params` and `Command is required` carry none. `Process ID is required` carries none (claustrum's own, not measured).
+A start refusal adds `data` after `message`: `{"reason":"<reason>"}`. `Invalid params`, `Command is required` and `Process ID is required` (claustrum's own, not measured) carry none.
 
 | Reason | Linux | Windows |
 |---|---|---|
 | `cwd_missing` | missing or a file | the same |
-| `cwd_unusable` | a `cwd` of mode 000 that exists (also macOS) | none (claustrum's own) |
+| `cwd_unusable` | a `cwd` of mode 000 that exists | none (claustrum's own) |
 | `not_found` | not found | not found, a folder |
 | `not_executable` | mode 0644, a folder | not measured |
 | `launcher` | missing (`-32004`) | any `launcher` |
 | `other` | a relative `command` with a `launcher` | not a program |
 
-On macOS only `cwd_unusable` is measured. The rest follows Linux, as do `-32005` (`launcher`) and other start errors (`other`) (claustrum's own, not measured).
+On macOS only `cwd_unusable` is measured. The rest follows Linux, as do the other `-32004` refusals and `-32005` (`launcher`) and other errors (`other`) (claustrum's own, not measured).
 
 One failure ends another process first: a session spawn whose command exists and does not start. See [Session supersede](#session-supersede).
 
