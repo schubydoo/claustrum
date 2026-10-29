@@ -10,8 +10,7 @@ import "strconv"
 // every subscriber of a stream frame.
 func stampEnd(line []byte, at int64) []byte {
 	body := line[:len(line)-2] // the line without "}\n"
-	out := make([]byte, 0, len(line)+40)
-	out = append(out, body...)
+	out := append(make([]byte, 0, len(line)), body...)
 	out = append(out, `,"end":{"at":`...)
 	out = strconv.AppendInt(out, at, 10)
 	out = append(out, `,"len":`...)
