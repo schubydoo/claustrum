@@ -1157,3 +1157,19 @@ func TestStrayCommondirShapeTextNamesTheAccount(t *testing.T) {
 			"objects or refs missing, invalid, or not open to your account on the remote machine), so git "+
 			"would look for one somewhere else; repair that directory (usually its HEAD file)")
 }
+
+// Only a git dir whose parent is named `worktrees` can get the text of a damaged
+// repository. A git dir at <x>/sub/<g> whose commondir names a broken <x> goes on
+// to the stray-commondir judgment (claustrum's own, not measured). Mutation: drop
+// the test of the parent name in judgeDamagedRepository.
+func TestGitDirTrustDamagedTextNeedsAWorktreesParent(t *testing.T) {
+	r := newTrustRepo(t)
+	g := filepath.Join(r.base, "X", "sub", "g")
+	if err := os.MkdirAll(g, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	cd := filepath.Join(g, "commondir")
+	writeFile(t, cd, "../..\n", 0o644)
+	writeFile(t, filepath.Join(r.TW, ".git"), "gitdir: "+g+"\n", 0o644)
+	wantRPCError(t, "info(TW)", info(t, r.TW), wantTR(cd, "../.."))
+}
