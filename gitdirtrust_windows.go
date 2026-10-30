@@ -24,6 +24,15 @@ const registrationsLinkRefused = false
 // entryLinkRefusedLate is false on Windows (round tier0-24 ran on Linux only).
 const entryLinkRefusedLate = false
 
+// gitDirPartUsable is the test of `objects` and `refs` in the git-directory test
+// (isGitDirShape). On Windows the entry only has to exist, of any type. With
+// `objects` as a plain file, 52d82f0a answers git.info as a repository there
+// (measured on Windows).
+func gitDirPartUsable(p string) bool {
+	_, err := os.Stat(p)
+	return err == nil
+}
+
 // sameGitDirPath compares two lexically cleaned paths without regard to letter case.
 // filepath.Clean already turned every forward slash into a backslash. A `\\?\` prefix
 // or a path without a drive letter stays different. Measured against f6010b97 on a
