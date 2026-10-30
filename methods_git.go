@@ -257,8 +257,8 @@ func gitInfo(req *request) response {
 			// that holds `.git`, in place of the listing. c8e2f083 runs it, then
 			// its second run with GIT_DIR=<.probe>, which exits 0, and answers "no
 			// repository" (measured on Linux). A failed second run answers its
-			// error, and on Linux and macOS the third run follows the second
-			// (configFreeProbe). Both are claustrum's own here, not measured.
+			// error. On Linux and macOS a second run that exits 0 gets the third
+			// run (configFreeProbe). Both are claustrum's own here, not measured.
 			if !bool(p.ShadowDirOff) && req.shadow.control(false) == controlShadow {
 				if a := req.shadow.askGit(t, p.Path); a.text != "" {
 					return errResult(req.ID, codeInternal, a.text)
