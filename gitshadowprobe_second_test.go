@@ -11,12 +11,27 @@ import (
 )
 
 // lowerSecondProbeBound lowers the bound of the second run of the call about
-// the repository and the wait for its pipes.
+// the repository and the wait for its pipes. On Linux and macOS the second run
+// ends at the bound of the first call, so that bound gets the value too.
 func lowerSecondProbeBound(t *testing.T, bound, drain time.Duration) {
 	t.Helper()
-	oldBound, oldDrain := probeSecondBound, shadowCallDrain
+	oldBound, oldCall, oldDrain := probeSecondBound, probeCallBound, shadowCallDrain
 	probeSecondBound, shadowCallDrain = bound, drain
-	t.Cleanup(func() { probeSecondBound, shadowCallDrain = oldBound, oldDrain })
+	if probeConfigFreeRun {
+		probeCallBound = bound
+	}
+	t.Cleanup(func() { probeSecondBound, probeCallBound, shadowCallDrain = oldBound, oldCall, oldDrain })
+}
+
+// exit128Runs is the count of calls about the repository after a first call
+// that exited 128 and a second run that exited 0: three on Linux and macOS
+// (probeConfigFreeRun), two on Windows. The third run of these tests matches
+// the stub rule of the first call, so it exits 128 too.
+func exit128Runs() int {
+	if probeConfigFreeRun {
+		return 3
+	}
+	return 2
 }
 
 // secondProbeCall is the call about the repository with a GIT_DIR, or false.
@@ -52,7 +67,7 @@ func TestSecondProbeAfterExit128(t *testing.T) {
 		second, versionCall bool
 	}{
 		{name: "exit 128, then 0", exit: 128, stderr: "fatal: first text\n", secondStderr: "fatal: second text\n",
-			probes: 2, second: true},
+			probes: exit128Runs(), second: true},
 		{name: "exit 128, then 1", exit: 128, stderr: "fatal: first text\n", secondExit: 1, secondStderr: "fatal: second text\n",
 			text: failed + "fatal: first text", probes: 2, second: true, versionCall: true},
 		{name: "exit 128 with no text, then 1", exit: 128, secondExit: 1, secondStderr: "fatal: second text\n",
@@ -107,11 +122,13 @@ func TestSecondProbeAfterExit128(t *testing.T) {
 // TestSecondProbeBound pins the kill of a second run that does not end, with a
 // lowered bound. On c8e2f083 the reply came about 30.2 s after the request,
 // with the error and the text of the first call (measured on Linux and
-// Windows). Mutation: run the second run with probeCallBound in place of
-// probeSecondBound (the reply waits for the hold).
+// Windows). On Linux and macOS the bound counts from the start of the first
+// call, and the reply keeps that text (claustrum's own, not measured on
+// 52d82f0a). Mutation: run the second run with no bound (the reply waits for
+// the hold).
 func TestSecondProbeBound(t *testing.T) {
 	f := newSeededShadowFixture(t)
-	lowerSecondProbeBound(t, 300*time.Millisecond, 100*time.Millisecond)
+	lowerSecondProbeBound(t, 2*time.Second, 100*time.Millisecond)
 	answerProbe(t, 128, "", "fatal: first text\n")
 	t.Setenv("CLAUSTRUM_GITSTUB_MATCH2", "rev-parse,--git-dir")
 	t.Setenv("CLAUSTRUM_GITSTUB_ENVEND2", "GIT_DIR="+string(os.PathSeparator)+shadowProbeName)
@@ -126,7 +143,7 @@ func TestSecondProbeBound(t *testing.T) {
 	if _, ok := secondProbeCall(calls); !ok {
 		t.Error("no second run")
 	}
-	if took < 300*time.Millisecond || took > 10*time.Second {
+	if took < 2*time.Second || took > 10*time.Second {
 		t.Errorf("the reply came after %v, want the lowered bound and not the hold of 20 s", took)
 	}
 }

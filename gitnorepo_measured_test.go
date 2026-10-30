@@ -87,7 +87,7 @@ func TestGoneGitFileInfoCalls(t *testing.T) {
 			listings := slices.ContainsFunc(calls, envCall.listing)
 			if !row.entry {
 				second, ok := secondProbeCall(calls)
-				if n := len(probeCalls(calls)); n != 2 || !ok || listings {
+				if n := len(probeCalls(calls)); n != exit128Runs() || !ok || listings {
 					t.Fatalf("calls = %v, want the call about the repository and its second run, and no listing", calls)
 				}
 				probe := filepath.Join(daemonFolder(t, f.run), shadowProbeName)
