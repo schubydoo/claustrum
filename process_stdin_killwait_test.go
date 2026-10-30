@@ -4,6 +4,7 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"runtime"
+	"slices"
 	"strconv"
 	"strings"
 	"testing"
@@ -119,7 +120,7 @@ func TestCapabilitiesAdvertisesNewSurface(t *testing.T) {
 	if !strings.Contains(joined, "git.worktree_remove,launcher.resolve,process.spawn") {
 		t.Errorf("methods missing launcher.resolve between git.worktree_remove and process.spawn: %v", got.Methods)
 	}
-	wantFeatures := []string{"process.stdin.offset", "files.extract_tar.execBit", "git.status.baseRepo", "git.info.discovered_root", "git.worktree_create.timeoutMs", "git.worktree_create.existingBranch", "git.worktree_remove.unpushedGuard", "process.spawn.shellAgentSocket", "launcher.managed", "server.peer_check", "git.shadow_dir", "git.worktree.external_root", "server.instance_id"}
+	wantFeatures := []string{"process.stdin.offset", "process.kill.farewell", "files.extract_tar.execBit", "files.list.includeDotNames", "git.status.baseRepo", "git.info.discovered_root", "git.worktree_create.timeoutMs", "git.worktree_create.existingBranch", "git.worktree_remove.unpushedGuard", "process.spawn.shellAgentSocket", "process.spawn.failure_reason", "server.line_end", "launcher.managed", "server.peer_check", "git.shadow_dir", "git.worktree.external_root", "server.instance_id"}
 	if runtime.GOOS == "windows" {
 		// external_root is gated off on Windows (capfeatures_windows.go), matching the
 		// reference, which drops the feature from its Windows capabilities frame.
@@ -127,7 +128,7 @@ func TestCapabilitiesAdvertisesNewSurface(t *testing.T) {
 		// process.spawn.shellAgentSocket and launcher.managed are present on every OS
 		// (89cb6289 lists launcher.managed on Windows too);
 		// server.instance_id is always last.
-		wantFeatures = []string{"process.stdin.offset", "files.extract_tar.execBit", "git.status.baseRepo", "git.info.discovered_root", "git.worktree_create.timeoutMs", "git.worktree_create.existingBranch", "git.worktree_remove.unpushedGuard", "process.spawn.shellAgentSocket", "launcher.managed", "server.peer_check", "git.shadow_dir", "server.instance_id"}
+		wantFeatures = []string{"process.stdin.offset", "process.kill.farewell", "files.extract_tar.execBit", "files.list.includeDotNames", "git.status.baseRepo", "git.info.discovered_root", "git.worktree_create.timeoutMs", "git.worktree_create.existingBranch", "git.worktree_remove.unpushedGuard", "process.spawn.shellAgentSocket", "process.spawn.failure_reason", "server.line_end", "launcher.managed", "server.peer_check", "git.shadow_dir", "server.instance_id"}
 	}
 	if strings.Join(got.Features, ",") != strings.Join(wantFeatures, ",") {
 		t.Errorf("features = %v, want %v", got.Features, wantFeatures)
@@ -447,5 +448,24 @@ func TestSocketStdinEmptyAtAppliedIsDuplicate(t *testing.T) {
 	wantResult("S2b", stdin("E0", "", "0"), `{"success":true,"applied":0,"duplicate":true}`)
 	if env := stdin("E0", "", ""); env.Error == nil || env.Error.Code != codeInvalidParam || env.Error.Message != "Process not running" {
 		t.Errorf("S2a: result %s, error %+v, want -32602 Process not running", env.Result, env.Error)
+	}
+}
+
+// A daemon with jobs on lists process.stdin.offset to server.instance_id, then
+// process.spawn.job. With jobs off the list has no job name (52d82f0a, Windows VM).
+// The job state is set by hand here, so the rule is pinned on every system.
+func TestCapabilitiesListTheJobNameOnlyWithJobs(t *testing.T) {
+	s := &server{procs: &procManager{}}
+	if got := s.featuresFor(); slices.Contains(got, jobFeature) {
+		t.Errorf("jobs off: features = %v, want no %s", got, jobFeature)
+	}
+	s.procs.jobs = jobsOn
+	got := s.featuresFor()
+	want := append(slices.Clone(capabilityFeatures), jobFeature)
+	if !slices.Equal(got, want) {
+		t.Errorf("jobs on: features = %v, want %v", got, want)
+	}
+	if slices.Contains(capabilityFeatures, jobFeature) {
+		t.Error("featuresFor changed the shared list")
 	}
 }

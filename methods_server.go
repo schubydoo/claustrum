@@ -1,5 +1,7 @@
 package main
 
+import "slices"
+
 var capabilityMethods = []string{
 	"server.ping", "server.capabilities", methodShutdown,
 	"files.list", "files.validate", "files.stat", "files.read", "files.extract_tar",
@@ -42,21 +44,41 @@ var capabilityMethods = []string{
 // Linux, macOS and Windows VMs show it there. 5fd08069 also inserted
 // files.extract_tar.execBit after process.stdin.offset (files.extract_tar keeps the
 // execute bit of the owner as mode 0700). The same three VMs show it at that place. 5fd08069
-// also lists git.shadow_dir after server.peer_check (round task011-01, cell P1,
-// Linux VM, and round s12, macOS and Windows VMs). The array is always emitted.
+// also lists git.shadow_dir after server.peer_check (Linux, macOS and Windows VMs).
+// 52d82f0a inserted process.kill.farewell after process.stdin.offset,
+// files.list.includeDotNames after files.extract_tar.execBit, and
+// process.spawn.failure_reason and server.line_end after shellAgentSocket (Linux,
+// macOS and Windows VMs). The array is always emitted.
 var capabilityFeatures = append(append([]string{
 	"process.stdin.offset",
+	"process.kill.farewell",
 	"files.extract_tar.execBit",
+	"files.list.includeDotNames",
 	"git.status.baseRepo",
 	"git.info.discovered_root",
 	"git.worktree_create.timeoutMs",
 	"git.worktree_create.existingBranch",
 	"git.worktree_remove.unpushedGuard",
 	"process.spawn.shellAgentSocket",
+	"process.spawn.failure_reason",
+	"server.line_end",
 	"launcher.managed",
 	"server.peer_check",
 	"git.shadow_dir",
 }, externalRootCapabilityFeatures...), "server.instance_id")
+
+// jobFeature is the feature of a daemon that puts each child in a job.
+const jobFeature = "process.spawn.job"
+
+// featuresFor is the features list of this daemon. A daemon that puts each child in a
+// job, which only Windows does, adds process.spawn.job after server.instance_id. With
+// CLAUDE_SSH_NO_JOBS=1 the name is not in the list (52d82f0a, Windows VM).
+func (s *server) featuresFor() []string {
+	if s.procs == nil || s.procs.jobs != jobsOn {
+		return capabilityFeatures
+	}
+	return append(slices.Clip(capabilityFeatures), jobFeature)
+}
 
 func (s *server) handleServer(c *conn, req *request) *response {
 	switch req.Method {
@@ -68,7 +90,7 @@ func (s *server) handleServer(c *conn, req *request) *response {
 			Methods:     capabilityMethods,
 			InstanceID:  s.instanceID,
 			StartedAt:   s.startedAt,
-			Features:    capabilityFeatures,
+			Features:    s.featuresFor(),
 			PeerCheck:   s.peerCheckAnswer(),
 			PeerCheckBy: s.peerCheckByAnswer(),
 		}))

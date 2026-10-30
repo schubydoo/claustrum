@@ -30,11 +30,12 @@ func wantPeerCheckLine() string {
 }
 
 // wantCapabilityFeatures is the features array in the order of the frame.
-// files.extract_tar.execBit comes directly after process.stdin.offset, and
-// server.peer_check and git.shadow_dir directly after launcher.managed. Windows
-// lists no git.worktree.external_root.
+// process.kill.farewell comes directly after process.stdin.offset, and
+// files.list.includeDotNames after files.extract_tar.execBit. server.peer_check and
+// git.shadow_dir come directly after launcher.managed. Windows lists no
+// git.worktree.external_root.
 func wantCapabilityFeatures() string {
-	const head = `"process.stdin.offset","files.extract_tar.execBit","git.status.baseRepo","git.info.discovered_root","git.worktree_create.timeoutMs","git.worktree_create.existingBranch","git.worktree_remove.unpushedGuard","process.spawn.shellAgentSocket","launcher.managed","server.peer_check","git.shadow_dir",`
+	const head = `"process.stdin.offset","process.kill.farewell","files.extract_tar.execBit","files.list.includeDotNames","git.status.baseRepo","git.info.discovered_root","git.worktree_create.timeoutMs","git.worktree_create.existingBranch","git.worktree_remove.unpushedGuard","process.spawn.shellAgentSocket","process.spawn.failure_reason","server.line_end","launcher.managed","server.peer_check","git.shadow_dir",`
 	if runtime.GOOS == "windows" {
 		return head + `"server.instance_id"`
 	}

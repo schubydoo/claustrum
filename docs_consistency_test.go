@@ -148,6 +148,8 @@ func TestDocsNoPhantomMethod(t *testing.T) {
 	}
 	// capabilityFeatures lists this one on unix only, and the test must pass on Windows.
 	known["git.worktree.external_root"] = true
+	// featuresFor adds this one on a daemon with jobs on (Windows).
+	known[jobFeature] = true
 	for _, f := range docFiles(t) {
 		for _, span := range docSpans(docRead(t, docRel(f))) {
 			if !docNamespaceRE.MatchString(span) || span == "" {
@@ -198,6 +200,7 @@ func TestDocsNoPhantomMethodInGoText(t *testing.T) {
 	for _, f := range capabilityFeatures {
 		known[f] = true
 	}
+	known[jobFeature] = true
 	files, err := filepath.Glob("*.go")
 	if err != nil || len(files) == 0 {
 		t.Fatalf("no .go files found in the package directory: %v", err)
@@ -639,7 +642,7 @@ var docWordLimits = map[string]int{
 	"docs/protocol/process-reattach.md":        1046, // TASK-229: attach, fresh and proof
 	"docs/protocol/process-spawn.md":           3474, // task-204: rewrite to the page template
 	"docs/protocol/process-stdin.md":           929,  // TASK-229: attach
-	"docs/protocol/server.md":                  1490, // task-203b: the page rewrite
+	"docs/protocol/server.md":                  1496, // TASK-267: four feature names in the example and the job name. task-203b: the page rewrite
 	"docs/protocol/streams.md":                 584,  // TASK-202: moved from PROTOCOL.md
 }
 
