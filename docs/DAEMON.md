@@ -573,13 +573,13 @@ and `.old` stays. This is parity ([D21](DIVERGENCES.md#d21) is retired).
 
 ### Lines of connections
 
-These line rules are claustrum's own, not measured. `89cb6289` and `5fd08069` log the text of the notes.
+These line rules are claustrum's own unless an item names a build. `89cb6289` and `5fd08069` log the text of the notes.
 
 - A connection gets the token mark at its first request that passes the token check. `server.shutdown` passes with no token. A parse error and a refused request set no mark.
 - The label of a peer is its address in `%q` form, such as `"@"`.
 - `[Server] New connection from: <label>` comes once, at the first request that sets the mark and before the daemon handles it. The older builds log it at the accept.
 - `[Server] Connection closed: <label>` comes only for a connection with the mark.
-- A connection with no mark counts on the close counter and logs `[Server] Connection number <n> that never showed the token: <label>`. The connects of the launcher wait and of a host cleaner pass are such connections.
+- A connection with no mark counts on the close counter and logs `[Server] Connection number <n> that never showed the token: <label>`, only if it sent a byte (measured on Linux, `683cc6a9`).
 - The refused request logs `[Server] Unauthorized request number <n>: method=<method>`, with the method cut to 64 characters and quoted and no id. The older text is `Unauthorized request: method=…, id=…`.
 - The bad line logs `[Server] Parse error number <n>: <json error>`. The older text has no count.
 - The counters are per daemon, one per kind of line. A count starts at 1 and never resets. The line is logged for the counts 1 to 10 and for each multiple of 1000.

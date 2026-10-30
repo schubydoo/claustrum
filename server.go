@@ -1063,6 +1063,21 @@ func (s *server) acceptLoop(ln net.Listener) {
 	}
 }
 
+// spokeReader notes that a read returned a byte. serveConn reads and checks it
+// in one goroutine, so it needs no lock.
+type spokeReader struct {
+	r    io.Reader
+	sent bool
+}
+
+func (p *spokeReader) Read(b []byte) (int, error) {
+	n, err := p.r.Read(b)
+	if n > 0 {
+		p.sent = true
+	}
+	return n, err
+}
+
 // dispatchRequest is the seam serveConn dispatches through. A var so a test can
 // force a handler panic and prove the per-request recover keeps the daemon alive
 // (the panic path is otherwise unreachable, so it cannot be provoked by input).
@@ -1070,14 +1085,18 @@ func (s *server) acceptLoop(ln net.Listener) {
 var dispatchRequest = func(s *server, c *conn, raw []byte, req request) *response { return s.route(c, req) }
 
 func (s *server) serveConn(c *conn) {
+	var spoke spokeReader
 	defer func() {
 		// Logged before the close, as the reference does (docs/PROTOCOL.md, Transport).
-		// Claustrum's own, not measured: a connection that never showed the token
-		// logs no close line. Its close counts on the sampled close line instead.
+		// Claustrum's own: a connection that never showed the token
+		// logs no close line. Its close counts on the sampled close line instead,
+		// but only when it sent a byte (measured on Linux, 683cc6a9).
 		if c.tokenMark().Load() {
 			logInfof(fmtConnClosed, c.remoteLabel())
-		} else if n := s.tokenlessCl.Add(1); logSampled(n) {
-			logInfof(fmtTokenless, n, c.remoteLabel())
+		} else if spoke.sent {
+			if n := s.tokenlessCl.Add(1); logSampled(n) {
+				logInfof(fmtTokenless, n, c.remoteLabel())
+			}
 		}
 		c.wmu.Lock()
 		c.closed = true
@@ -1095,7 +1114,8 @@ func (s *server) serveConn(c *conn) {
 		s.procs.detachConn(c)
 	}()
 
-	sc := bufio.NewScanner(c.nc)
+	spoke.r = c.nc
+	sc := bufio.NewScanner(&spoke)
 	// The reference caps a single request line at 1 MiB: a line up to 1048575
 	// bytes is accepted, 1048576+ closes the connection with no reply
 	// (probe-verified to the exact byte). Clients must chunk large process.stdin
