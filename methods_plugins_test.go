@@ -171,6 +171,11 @@ func TestPluginsLayoutFromSocket(t *testing.T) {
 		{"/tmp/cssh-probe.X/rpc.sock", "", "", false},  // not under run/<clientId>
 		{"/x/run/c0ffee01/other.sock", "", "", false},  // wrong socket basename
 		{"/x/notrun/c0ffee01/rpc.sock", "", "", false}, // parent-of-parent not "run"
+		{"/x/RUN/c0ffee01/rpc.sock", "", "", false},    // "run" compares case-sensitively
+		{"/x/run/c0ffee01/RPC.SOCK", "", "", false},    // "rpc.sock" compares case-sensitively
+		{"/x/run/0123ABCD/rpc.sock", "", "", false},    // clientId not lowercase hex
+		{"/x/run/v8-cl/rpc.sock", "", "", false},       // clientId not 8 hex
+		{"/x/run/xx-0123abcd/rpc.sock", "", "", false}, // 8 hex after a prefix
 		{"", "", "", false}, // no path (abstract socket / pipe)
 	}
 	for _, c := range cases {
@@ -182,6 +187,80 @@ func TestPluginsLayoutFromSocket(t *testing.T) {
 			t.Errorf("pluginsLayoutFromSocket(%q) = (%q,%q,%v), want (%q,%q,%v)",
 				c.sock, root, legacy, ok, wantRoot, wantLegacy, c.ok)
 		}
+	}
+}
+
+// TestPluginsPruneClientIDShape boots a real socket at run/<name>/rpc.sock for each
+// name and seeds one old plugin dir in each root. Only a clientId folder of 8
+// lowercase hex characters gets roots and a sweep. Each other name gets the skip
+// answer with root "" and minAgeDays 0, and both plugin dirs stay. 52d82f0a on
+// Windows gave the skip for one such name. The exact pattern is claustrum's own,
+// not measured.
+func TestPluginsPruneClientIDShape(t *testing.T) {
+	const hash = "aaaaaaaaaaaaaaaa"
+	cases := []struct {
+		name  string
+		roots bool
+	}{
+		{"0123abcd", true},
+		{"0123ABCD", false},    // uppercase hex
+		{"v8-cl", false},       // not hex
+		{"xx-0123abcd", false}, // 8 hex after a prefix
+		{"0123abc", false},     // 7 characters
+		{"0123abcde", false},   // 9 characters
+		{"0123abcg", false},    // 8 characters, one not hex
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			// A short temp root, not t.TempDir(): the socket path must stay under the
+			// macOS sockaddr_un limit (~104 bytes).
+			base, err := os.MkdirTemp("", "cl")
+			if err != nil {
+				t.Fatal(err)
+			}
+			t.Cleanup(func() { _ = os.RemoveAll(base) })
+			runDir := filepath.Join(base, "run", c.name)
+			if err := os.MkdirAll(runDir, 0o755); err != nil {
+				t.Fatal(err)
+			}
+			ln, err := net.Listen("unix", filepath.Join(runDir, "rpc.sock"))
+			if err != nil {
+				t.Skipf("AF_UNIX listen unsupported here: %v", err)
+			}
+			t.Cleanup(func() { _ = ln.Close() })
+			perInstall := filepath.Join(base, "plugins", c.name)
+			old := time.Now().Add(-60 * 24 * time.Hour)
+			for _, p := range []string{filepath.Join(perInstall, hash), filepath.Join(base, "plugins", hash)} {
+				if err := os.MkdirAll(p, 0o755); err != nil {
+					t.Fatal(err)
+				}
+				if err := os.Chtimes(p, old, old); err != nil {
+					t.Fatal(err)
+				}
+			}
+
+			res := mustPrune(t, &server{ln: ln, procs: newTestProcManager(t)})
+			if c.roots {
+				if res.Root != perInstall || res.MinAgeDays != 30 || res.Skipped != "" {
+					t.Errorf("root=%q minAgeDays=%d skipped=%q, want %q 30 \"\"", res.Root, res.MinAgeDays, res.Skipped, perInstall)
+				}
+				if !slices.Equal(res.Pruned, []string{hash}) || !slices.Equal(res.PrunedLegacy, []string{hash}) {
+					t.Errorf("pruned=%v prunedLegacy=%v, want [%s] in both", res.Pruned, res.PrunedLegacy, hash)
+				}
+				return
+			}
+			if res.Root != "" || res.MinAgeDays != 0 || res.Skipped != pluginsSkipReason || res.Legacy != "skipped: "+pluginsSkipReason {
+				t.Errorf("root=%q minAgeDays=%d skipped=%q legacy=%q, want the skip answer", res.Root, res.MinAgeDays, res.Skipped, res.Legacy)
+			}
+			if len(res.Pruned) != 0 || len(res.PrunedLegacy) != 0 {
+				t.Errorf("pruned=%v prunedLegacy=%v, want both empty", res.Pruned, res.PrunedLegacy)
+			}
+			for _, p := range []string{filepath.Join(perInstall, hash), filepath.Join(base, "plugins", hash)} {
+				if _, err := os.Stat(p); err != nil {
+					t.Errorf("%s must stay: %v", p, err)
+				}
+			}
+		})
 	}
 }
 
