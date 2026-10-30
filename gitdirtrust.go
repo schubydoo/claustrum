@@ -524,8 +524,9 @@ func judgeGitDir(g string, fromEnv bool) gitDirTrust {
 // so in git.info on Linux and Windows, and in git.status on Linux. macOS, the stray
 // read and the order of the two steps are claustrum's own, not measured. The remove
 // and the create keep their own reads of a registration's commondir
-// (strings.TrimSpace). On the remove that file refuses nothing (build 52d82f0a,
-// measured on Linux, macOS and Windows). The create read is not measured.
+// (strings.TrimSpace). On the remove, blanks, a tab, CR LF or a NUL after `../..`
+// in that file refuse nothing (build 52d82f0a, measured on Linux, macOS and
+// Windows). The create read is not measured.
 func commondirValue(b string) string {
 	v := strings.TrimRight(b, "\r\n")
 	if i := strings.IndexByte(v, 0); i >= 0 {
@@ -554,11 +555,20 @@ func judgeDamagedRepository(g string) (gitDirTrust, bool) {
 	if filepath.Base(parent) != "worktrees" || filepath.Base(g) == ".git" {
 		return gitDirTrust{}, false
 	}
+	repo := filepath.Dir(parent)
+	// An entry with no commondir whose grandparent fails only the search test, or
+	// whose `objects` or `refs` is a file, gets the missing-commondir refusal, as
+	// the existence test gave before (claustrum's own, not measured).
+	if _, err := os.Lstat(filepath.Join(g, "commondir")); errors.Is(err, fs.ErrNotExist) {
+		if partsExist(repo) && headLooksValid(filepath.Join(repo, "HEAD")) {
+			return refuseMissingCommondir(g), true
+		}
+		return gitDirTrust{}, false
+	}
 	content, reason, openErr := readCommondirAt(g)
 	if openErr != nil || reason != "" {
 		return gitDirTrust{}, false
 	}
-	repo := filepath.Dir(parent)
 	if !sameGitDirPath(commondirPath(g, content), repo) {
 		return gitDirTrust{}, false
 	}
@@ -683,6 +693,16 @@ func isGitDirShape(d string) bool {
 		}
 	}
 	return headLooksValid(filepath.Join(d, "HEAD"))
+}
+
+// partsExist reports whether `objects` and `refs` of d exist, of any type.
+func partsExist(d string) bool {
+	for _, name := range []string{"objects", "refs"} {
+		if _, err := os.Stat(filepath.Join(d, name)); err != nil {
+			return false
+		}
+	}
+	return true
 }
 
 // headLooksValid judges HEAD. A symlink passes when its target text starts with

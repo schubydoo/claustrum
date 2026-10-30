@@ -523,3 +523,41 @@ func TestGitDirTrustCreateAndListRefsDenied(t *testing.T) {
 		t.Errorf("create made the leaf or the branch w3")
 	}
 }
+
+// An entry with no commondir, in a repository whose `refs` has mode 0600 or whose
+// `objects` is a file, keeps the missing-commondir refusal (claustrum's own, not
+// measured), as the existence test gave on the earlier code. Mutation: drop the
+// missing-commondir test in judgeDamagedRepository.
+func TestGitDirTrustEntryWithoutCommondirInBrokenRepository(t *testing.T) {
+	for _, tc := range []string{"refs 0600", "objects a file"} {
+		t.Run(tc, func(t *testing.T) {
+			r := newTrustRepo(t)
+			if err := os.Remove(filepath.Join(r.entry(), "commondir")); err != nil {
+				t.Fatal(err)
+			}
+			var undo func()
+			if tc == "refs 0600" {
+				undo = denyRefsSearch(t, r.T)
+			} else {
+				obj := filepath.Join(r.T, ".git", "objects")
+				if err := os.Rename(obj, obj+".gone"); err != nil {
+					t.Fatal(err)
+				}
+				writeFile(t, obj, "x", 0o644)
+				undo = func() {
+					if err := os.Remove(obj); err != nil {
+						t.Fatal(err)
+					}
+					if err := os.Rename(obj+".gone", obj); err != nil {
+						t.Fatal(err)
+					}
+				}
+			}
+			got := gitDirTrustFor(r.TW)
+			undo()
+			if got.verdict != gitDirRefused || got.refusal != wantM3(r.entry()) {
+				t.Errorf("trust of TW = %+v, want the refusal %q", got, wantM3(r.entry()))
+			}
+		})
+	}
+}
