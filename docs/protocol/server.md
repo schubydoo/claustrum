@@ -32,7 +32,7 @@ The reply is always this result.
   "methods": ["server.ping", "server.capabilities", "server.shutdown", "…"],
   "instanceId": "<32 hex characters>",
   "startedAt": 1760000000000,
-  "features": ["process.stdin.offset", "files.extract_tar.execBit", "git.status.baseRepo", "git.info.discovered_root", "git.worktree_create.timeoutMs", "git.worktree_create.existingBranch", "git.worktree_remove.unpushedGuard", "process.spawn.shellAgentSocket", "launcher.managed", "server.peer_check", "git.shadow_dir", "git.worktree.external_root", "server.instance_id"],
+  "features": ["process.stdin.offset", "process.kill.farewell", "files.extract_tar.execBit", "files.list.includeDotNames", "git.status.baseRepo", "git.info.discovered_root", "git.worktree_create.timeoutMs", "git.worktree_create.existingBranch", "git.worktree_remove.unpushedGuard", "process.spawn.shellAgentSocket", "process.spawn.failure_reason", "server.line_end", "launcher.managed", "server.peer_check", "git.shadow_dir", "git.worktree.external_root", "server.instance_id"],
   "peerCheck": "off"
 }
 ```
@@ -53,7 +53,7 @@ A request for `server.capabilities` does not count as activity for the idle exit
 
 ### Features
 
-The `features` array is always present. The example above shows its members in order, as Linux and macOS send them. Windows sends no `git.worktree.external_root`. `server.instance_id` is always last.
+The `features` array is always present. The example above shows its members in order, as Linux and macOS send them. Windows sends no `git.worktree.external_root`, and with jobs on adds `process.spawn.job` last (`52d82f0a`).
 
 `CLAUDE_SSH_MANAGED_LAUNCHER` does not change the list (measured on macOS). Windows lists `launcher.managed` too, although a Windows `process.spawn` refuses every launcher. The peer check changes only the `peerCheck` and `peerCheckBy` members.
 
