@@ -370,6 +370,34 @@ func TestFarewellKeepChildrenSendsThePendingKill(t *testing.T) {
 	}
 }
 
+// The grace timer that fires while the -keep-children shutdown signals a pending
+// farewell sends no second signal (claustrum's own). The seam fires the timer
+// between the read of the farewell and the signal of the sweep.
+func TestFarewellSweepAndGraceSignalOnce(t *testing.T) {
+	s, sock := newRunningServer(t)
+	cl := dial(t, sock)
+	cl.call(spawnReqArgs(t, 1, "fo", "sleep", "30"))
+	cl.call(authed(`{"jsonrpc":"2.0","id":2,"method":"process.kill","params":{"id":"fo","signal":"SIGTERM","farewell":"aGkK","graceMs":20000}}`))
+	signals := countSignalsTo(t, s.procs.get("fo"))
+	farewellSweepHook = func(h *farewellHold) {
+		h.timer.Reset(0)
+		// Give the timer up to 300 ms to signal. With the fix it cannot, because
+		// the sweep holds p.mu here.
+		deadline := time.Now().Add(300 * time.Millisecond)
+		for signals.Load() == 0 && time.Now().Before(deadline) {
+			time.Sleep(2 * time.Millisecond)
+		}
+	}
+	t.Cleanup(func() { farewellSweepHook = nil })
+	s.procs.endPendingFarewells()
+	if n := signals.Load(); n != 1 {
+		t.Errorf("signals to the child = %d, want 1", n)
+	}
+	if kb := exitFrameOfKilledBy(cl.waitExit("fo")); kb != "client" {
+		t.Errorf("exit killedBy = %q, want client", kb)
+	}
+}
+
 // A request with no farewell gets no farewellEnd member.
 func TestKillAndWaitWithoutFarewellHasNoEnd(t *testing.T) {
 	sock := startSocketServer(t)

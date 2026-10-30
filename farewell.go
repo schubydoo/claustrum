@@ -227,11 +227,19 @@ func (m *procManager) endPendingFarewells() {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	for _, p := range m.procs {
+		// p.mu is held from the read of the farewell to the signal, so the grace
+		// timer cannot signal in between. The cut of the signal stops that timer.
 		p.mu.Lock()
-		h := p.farewell
-		p.mu.Unlock()
-		if h != nil {
-			p.signalIfLive(h.signal, "client")
+		if h := p.farewell; h != nil {
+			if farewellSweepHook != nil {
+				farewellSweepHook(h)
+			}
+			p.signalIfLiveLocked(h.signal, "client")
 		}
+		p.mu.Unlock()
 	}
 }
+
+// farewellSweepHook runs in endPendingFarewells between the read of a pending
+// farewell and its signal. A seam for a test. Production never assigns it.
+var farewellSweepHook func(h *farewellHold)

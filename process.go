@@ -508,6 +508,11 @@ var signalGroup = func(g *procGroup, proc *os.Process, signame string) error {
 func (p *managedProc) signalIfLive(signame, killedBy string) bool {
 	p.mu.Lock()
 	defer p.mu.Unlock()
+	return p.signalIfLiveLocked(signame, killedBy)
+}
+
+// signalIfLiveLocked is signalIfLive for a caller that holds p.mu.
+func (p *managedProc) signalIfLiveLocked(signame, killedBy string) bool {
 	if !p.running || p.reaped || p.cmd == nil || p.cmd.Process == nil {
 		return false
 	}
