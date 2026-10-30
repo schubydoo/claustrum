@@ -44,6 +44,8 @@ type farewellAsk struct {
 type farewellHold struct {
 	cut   chan struct{}
 	timer *time.Timer
+	// signal is the signal of the request, for endPendingFarewells.
+	signal string
 }
 
 // rawAbsent reports a member that the request left out or set to null. A null
@@ -103,7 +105,7 @@ func logFarewellNotSaid(id, rule string) {
 // pending farewell, and answers "unsent". A record signalled after a plain kill
 // gives "unsent" (measured on Linux and macOS). A second farewell on a pending one
 // gives "unsent" (claustrum's own, not measured).
-func (p *managedProc) holdFarewell() *farewellHold {
+func (p *managedProc) holdFarewell(signal string) *farewellHold {
 	p.mu.Lock()
 	defer p.mu.Unlock()
 	if !p.running || p.reaped || p.cmd == nil || p.cmd.Process == nil || p.signalled || p.farewell != nil {
@@ -112,7 +114,7 @@ func (p *managedProc) holdFarewell() *farewellHold {
 	if p.killedBy == "" {
 		p.killedBy = "client"
 	}
-	h := &farewellHold{cut: make(chan struct{})}
+	h := &farewellHold{cut: make(chan struct{}), signal: signal}
 	p.farewell = h
 	return h
 }
@@ -152,7 +154,7 @@ func (m *procManager) killWithFarewell(id, signal string, ask farewellAsk) strin
 	if p == nil {
 		return farewellUnsent
 	}
-	h := p.holdFarewell()
+	h := p.holdFarewell(signal)
 	if h == nil {
 		p.signalIfLive(signal, "client")
 		return farewellUnsent
@@ -182,7 +184,7 @@ func (m *procManager) killAndWaitFarewell(id, signal string, grace time.Duration
 	if p == nil {
 		return killAndWaitResult{FarewellEnd: farewellUnsent}
 	}
-	h := p.holdFarewell()
+	h := p.holdFarewell(signal)
 	if h == nil {
 		res.Found, res.Died, res.AlreadyExited, res.Escalated = m.killAndWaitProc(p, signal, grace, escalate)
 		res.FarewellEnd = farewellUnsent
@@ -215,4 +217,21 @@ func (m *procManager) killAndWaitFarewell(id, signal string, grace time.Duration
 	res.Found, res.Died, res.AlreadyExited, res.Escalated = m.signalAndWait(p, signal, grace, escalate)
 	res.FarewellEnd = farewellExpired
 	return res
+}
+
+// endPendingFarewells sends the signal of each pending farewell at once. A shutdown
+// under -keep-children runs it, because no sweep ends those children and the grace
+// does not outlive the daemon. So the kill that a client asked for is not lost. A
+// child with no pending farewell stays (claustrum's own, not measured: CT-2).
+func (m *procManager) endPendingFarewells() {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	for _, p := range m.procs {
+		p.mu.Lock()
+		h := p.farewell
+		p.mu.Unlock()
+		if h != nil {
+			p.signalIfLive(h.signal, "client")
+		}
+	}
 }

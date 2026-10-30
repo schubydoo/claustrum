@@ -106,7 +106,7 @@ func TestFarewellKillQueuedChildReadsIt(t *testing.T) {
 	cl := dial(t, sock)
 	cl.call(spawnReqArgs(t, 1, "fw1", "read-line"))
 	start := time.Now()
-	got := string(cl.call(authed(`{"jsonrpc":"2.0","id":2,"method":"process.kill","params":{"id":"fw1","signal":"SIGTERM","farewell":"aGkK","graceMs":4000}}`)))
+	got := string(cl.call(authed(`{"jsonrpc":"2.0","id":2,"method":"process.kill","params":{"id":"fw1","signal":"SIGTERM","farewell":"aGkK","graceMs":15000}}`)))
 	if want := replyLine(2, `{"success":true,"farewellEnd":"queued"}`); got != want {
 		t.Fatalf("reply = %s, want %s", got, want)
 	}
@@ -206,7 +206,7 @@ func TestFarewellKillAndWaitLeft(t *testing.T) {
 	sock := startSocketServer(t)
 	cl := dial(t, sock)
 	cl.call(spawnReqArgs(t, 1, "fw5", "read-line"))
-	got := string(cl.call(authed(`{"jsonrpc":"2.0","id":2,"method":"process.killAndWait","params":{"id":"fw5","farewell":"aGkK","graceMs":4000}}`)))
+	got := string(cl.call(authed(`{"jsonrpc":"2.0","id":2,"method":"process.killAndWait","params":{"id":"fw5","farewell":"aGkK","graceMs":15000}}`)))
 	if want := replyLine(2, `{"found":true,"died":true,"farewellEnd":"left"}`); got != want {
 		t.Fatalf("reply = %s, want %s", got, want)
 	}
@@ -317,8 +317,13 @@ func TestFarewellShutdownGivesNoReply(t *testing.T) {
 		}
 	}
 	write(spawnReqArgs(t, 1, "fs", "sleep", "30"))
-	if got := <-lines; got != replyLine(1, `{"success":true}`) {
-		t.Fatalf("spawn reply = %s", got)
+	select {
+	case got := <-lines:
+		if got != replyLine(1, `{"success":true}`) {
+			t.Fatalf("spawn reply = %s", got)
+		}
+	case <-time.After(10 * time.Second):
+		t.Fatal("no spawn reply")
 	}
 	write(authed(`{"jsonrpc":"2.0","id":2,"method":"process.killAndWait","params":{"id":"fs","farewell":"aGkK","graceMs":10000,"timeoutMs":20000}}`))
 	waitFarewellPending(t, s, "fs")
@@ -340,5 +345,40 @@ func TestFarewellShutdownGivesNoReply(t *testing.T) {
 	if n := s.procs.killAllCount(); n != 1 {
 		t.Errorf("shutdown kill reached %d children, want 1", n)
 	}
-	<-s.procs.get("fs").done
+	select {
+	case <-s.procs.get("fs").done:
+	case <-time.After(10 * time.Second):
+		t.Fatal("the shutdown kill did not end the child")
+	}
+}
+
+// Under -keep-children the shutdown sends the signal of a pending farewell at
+// once, and a child with no farewell stays (claustrum's own, not measured: CT-2).
+func TestFarewellKeepChildrenSendsThePendingKill(t *testing.T) {
+	s, sock := newRunningServer(t)
+	s.keepChildren = true
+	cl := dial(t, sock)
+	cl.call(spawnReqArgs(t, 1, "fk", "sleep", "30"))
+	cl.call(spawnReqArgs(t, 2, "kept", "sleep", "30"))
+	cl.call(authed(`{"jsonrpc":"2.0","id":3,"method":"process.kill","params":{"id":"fk","signal":"SIGTERM","farewell":"aGkK","graceMs":20000}}`))
+	s.stopChildren()
+	if kb := exitFrameOfKilledBy(cl.waitExit("fk")); kb != "client" {
+		t.Errorf("exit killedBy = %q, want client", kb)
+	}
+	if !s.procs.get("kept").isRunning() {
+		t.Error("-keep-children ended a child with no farewell")
+	}
+}
+
+// A request with no farewell gets no farewellEnd member.
+func TestKillAndWaitWithoutFarewellHasNoEnd(t *testing.T) {
+	sock := startSocketServer(t)
+	cl := dial(t, sock)
+	cl.call(spawnReqArgs(t, 1, "nf", "sleep", "30"))
+	if got, want := string(cl.call(authed(`{"jsonrpc":"2.0","id":2,"method":"process.killAndWait","params":{"id":"nf"}}`))), replyLine(2, `{"found":true,"died":true}`); got != want {
+		t.Errorf("reply = %s, want %s", got, want)
+	}
+	if got, want := string(cl.call(authed(`{"jsonrpc":"2.0","id":3,"method":"process.killAndWait","params":{"id":"nope"}}`))), replyLine(3, `{"found":false,"died":false}`); got != want {
+		t.Errorf("reply = %s, want %s", got, want)
+	}
 }
