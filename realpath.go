@@ -86,11 +86,11 @@ func filesRealpath(req *request) response {
 // exists:false (claustrum's own, not measured).
 func resolveRealpath(path string, missingLeaf bool) (realpathResult, error) {
 	_, err := os.Stat(path)
+	var real string
 	if err == nil {
-		real, err := filepath.EvalSymlinks(path)
-		if err != nil {
-			return realpathResult{}, err
-		}
+		real, err = filepath.EvalSymlinks(path)
+	}
+	if err == nil {
 		return realpathResult{Exists: true, Real: filepath.ToSlash(real)}, nil
 	}
 	if !errors.Is(err, fs.ErrNotExist) {
@@ -100,69 +100,55 @@ func resolveRealpath(path string, missingLeaf bool) (realpathResult, error) {
 		return realpathResult{}, nil
 	}
 	if fi, lerr := os.Lstat(path); lerr == nil && fi.Mode()&fs.ModeSymlink != 0 {
-		return resolveDangling(path)
+		return resolveDangling(path), nil
 	}
-	wouldBe, ok, err := wouldBeUnder(path)
-	if err != nil || !ok {
-		return realpathResult{}, err
+	if wouldBe, ok := wouldBeUnder(path); ok {
+		return realpathResult{WouldBe: wouldBe}, nil
 	}
-	return realpathResult{WouldBe: wouldBe}, nil
+	return realpathResult{}, nil
 }
 
-func resolveDangling(path string) (realpathResult, error) {
+// resolveDangling never fails. The answers of the system for the folders on the
+// way were all good when the caller got here, so a later failure (a race) gives
+// the answer with no wouldBe (claustrum's own, not measured).
+func resolveDangling(path string) realpathResult {
 	res := realpathResult{Dangling: true}
 	target, err := os.Readlink(path)
-	if err != nil {
-		return realpathResult{}, err
-	}
-	if !filepath.IsAbs(target) {
+	if err == nil && !filepath.IsAbs(target) {
 		// The kernel reads a relative target from the real folder of the link.
 		// The target text is not cleaned: EvalSymlinks in wouldBeUnder resolves
 		// each link before it applies a "..". Claustrum's own, not measured.
-		dir, err := filepath.EvalSymlinks(filepath.Dir(path))
-		if err != nil {
-			return realpathResult{}, err
-		}
+		var dir string
+		dir, err = filepath.EvalSymlinks(filepath.Dir(path))
 		target = dir + string(filepath.Separator) + target
 	}
-	wouldBe, ok, err := wouldBeUnder(target)
-	if err != nil {
-		return realpathResult{}, err
+	if err == nil {
+		res.WouldBe, _ = wouldBeUnder(target)
 	}
-	if ok {
-		res.WouldBe = wouldBe
-	}
-	return res, nil
+	return res
 }
 
 // wouldBeUnder resolves the parent folder of path and adds the last name. ok is
-// false when the parent does not exist. The text is split at the last separator
-// and not cleaned, so a ".." after a link is applied to the link target.
-func wouldBeUnder(path string) (string, bool, error) {
+// false when the parent cannot be resolved. The caller tested the path first, so
+// only a missing parent (or a race) gets here. The text is split at the last
+// separator and not cleaned, so a ".." after a link is applied to the link target.
+func wouldBeUnder(path string) (string, bool) {
 	seps := "/"
 	if runtime.GOOS == "windows" {
 		seps = `/\`
 	}
 	path = strings.TrimRight(path, seps)
-	i := strings.LastIndexAny(path, seps)
-	if i < 0 {
-		return "", false, nil
-	}
+	// Every caller passes an absolute path, so a separator is always there.
+	i := max(strings.LastIndexAny(path, seps), 0)
 	parent := path[:i]
 	if parent == "" || strings.HasSuffix(parent, ":") {
 		parent = path[:i+1]
 	}
-	if _, err := os.Stat(parent); err != nil {
-		if errors.Is(err, fs.ErrNotExist) {
-			return "", false, nil
-		}
-		return "", false, err
-	}
 	real, err := filepath.EvalSymlinks(parent)
 	if err != nil {
-		return "", false, err
+		return "", false
 	}
-	return filepath.ToSlash(filepath.Join(real, path[i+1:])), true, nil
+	return filepath.ToSlash(filepath.Join(real, path[i+1:])), true
 }
 
 // realpathFailure maps a failed call to the -32603 reply. The no_usable_name

@@ -96,3 +96,45 @@ func TestSocketFilesRealpathDanglingRealFolder(t *testing.T) {
 		}
 	}
 }
+
+// TestSocketFilesRealpathDanglingTargets covers a dangling link with an absolute
+// target whose parent is the root, an absolute target whose parent is missing,
+// a target behind a folder with mode 000, and a clean "~/" path (claustrum's own,
+// not measured).
+func TestSocketFilesRealpathDanglingTargets(t *testing.T) {
+	root := resolveTestRoot(t, t.TempDir())
+	for name, target := range map[string]string{
+		"top":    "/claustrum-realpath-gone",
+		"nopar":  filepath.Join(root, "missing", "x"),
+		"behind": filepath.Join(root, "np", "sub", "x"),
+	} {
+		if err := os.Symlink(target, filepath.Join(root, name)); err != nil {
+			t.Fatal(err)
+		}
+	}
+	t.Setenv("HOME", root)
+	calls := []map[string]any{
+		{"path": filepath.Join(root, "top"), "missingLeaf": true},
+		{"path": filepath.Join(root, "nopar"), "missingLeaf": true},
+		{"path": "~/absent"},
+	}
+	want := []string{
+		`"wouldBe":"/claustrum-realpath-gone","dangling":true`,
+		`"result":{"exists":false,"dangling":true}`,
+		`"result":{"exists":false}`,
+	}
+	if os.Geteuid() != 0 {
+		np := filepath.Join(root, "np")
+		if err := os.Mkdir(np, 0o000); err != nil {
+			t.Fatal(err)
+		}
+		t.Cleanup(func() { _ = os.Chmod(np, 0o700) })
+		calls = append(calls, map[string]any{"path": filepath.Join(root, "behind"), "missingLeaf": true})
+		want = append(want, `"reason":"no_permission","errno":`+strconv.Itoa(int(syscall.EACCES)))
+	}
+	for i, g := range realpathCalls(t, root, calls) {
+		if !strings.Contains(string(g), want[i]) {
+			t.Errorf("reply %d = %s, want %s", i+1, g, want[i])
+		}
+	}
+}
