@@ -75,6 +75,12 @@ var gitDirMustBeReal = true
 // of val-s3p2b2-3-windows).
 const statusFollowsPrintedGitDir = true
 
+// probeConfigFreeRun is false on Windows: the call about the repository keeps
+// the two runs of c8e2f083 there (secondProbe). The third run of Linux and
+// macOS is not measured on Windows (claustrum's own, not measured). No
+// git-directory test follows a good answer there.
+const probeConfigFreeRun = false
+
 // makeRequestDir makes the short-lived folder name of a request (mode 0700) in
 // folder, the folder of the daemon (requestDir). On Windows it is a plain
 // mkdir by its full path through requestDirMkdir, not through root. With a

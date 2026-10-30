@@ -58,7 +58,8 @@ var (
 	// probeSecondBound ends the second run of the call (secondProbe), counted
 	// from its own start. c8e2f083 killed a second run that did not end 30 s
 	// after its start (measured on Linux and Windows). The wait for its pipes
-	// after the kill is shadowCallDrain.
+	// after the kill is shadowCallDrain. On Linux and macOS the third run ends
+	// at the same time (configFreeProbe, claustrum's own, not measured).
 	probeSecondBound = 30 * time.Second
 	// probeClock is the clock of the kept answer.
 	probeClock = time.Now
@@ -354,8 +355,9 @@ func probeArgs() []string {
 //   - Exit 0 and the git directory of the repository: good. Git prints `.git`,
 //     and the full path is good too. A path that is not absolute is taken from
 //     the root.
-//   - Exit 128 with any text: the second run of c8e2f083 (secondProbe). It
-//     replaces the rules of 5fd08069 for exit 128 below.
+//   - Exit 128 with any text: the second run of c8e2f083 (secondProbe), and on
+//     Linux and macOS the third run of 52d82f0a (configFreeProbe). They
+//     replace the rules of 5fd08069 for exit 128 below.
 //   - Every other failure that probeCallBound did not stop: the error `git could not check this
 //     repository on the remote machine: at "<root>": exit status <n>`, after
 //     one `git version` call (cannotRunText). If that call fails, its text is
@@ -396,7 +398,8 @@ func probeArgs() []string {
 // not absolute, is not measured: it is shown cleaned and from the root.
 func (h *shadowHost) askGit(t gitDirTrust, dir string) repoAnswer {
 	root, _ := gitWalkRoot(dir)
-	if root == "" {
+	inGitDir := root == ""
+	if inGitDir {
 		root = t.pinCommonDir
 	}
 	want := t.pinCommonDir
@@ -425,11 +428,11 @@ func (h *shadowHost) askGit(t gitDirTrust, dir string) repoAnswer {
 	for try := 0; try < 2; try++ {
 		r := exitedInTime(boundedGit(probeCallBound, root, env, probeArgs()...))
 		if r.ended {
-			return repoAnswer{text: fmt.Sprintf("git could not check this repository on the remote machine: it did not finish within 30 seconds in %q; try again", root)}
+			return probeTimeoutAnswer(root)
 		}
 		if r.err != nil {
 			if exitedWith128(r) {
-				return secondProbe(folder, root, env, r)
+				return secondProbe(folder, root, env, r, inGitDir)
 			}
 			if whole := cannotRunText(); whole != "" {
 				return repoAnswer{text: whole}
@@ -443,11 +446,27 @@ func (h *shadowHost) askGit(t gitDirTrust, dir string) repoAnswer {
 		found = filepath.Clean(found)
 		shown = printedProbePath(r.out, found, string(filepath.Separator))
 		if found == filepath.Clean(want) || sameProbeFolder(found, want) {
+			// On Linux and macOS a git directory that fails the git-directory
+			// test now is "no repository". 52d82f0a answers so after `refs` got
+			// mode 0600 right after a good call, with no later git call
+			// (measured on Linux: git.info, git.status of a linked worktree, a
+			// create). macOS, and the test of the common directory at this
+			// place, are claustrum's own, not measured. Windows keeps the rule
+			// of c8e2f083.
+			if probeConfigFreeRun && !isGitDirShape(t.pinCommonDir) {
+				return repoAnswer{noRepo: true}
+			}
 			h.keepProbe(root)
 			return repoAnswer{}
 		}
 	}
 	return repoAnswer{text: fmt.Sprintf("git and Claude disagree about which repository holds this folder: from %q git finds %q, Claude finds %q; try again", root, shown, want)}
+}
+
+// probeTimeoutAnswer is the error of a call about the repository in root that
+// its time limit stopped.
+func probeTimeoutAnswer(root string) repoAnswer {
+	return repoAnswer{text: fmt.Sprintf("git could not check this repository on the remote machine: it did not finish within 30 seconds in %q; try again", root)}
 }
 
 // exitedWith128 reports whether the call ended by itself with exit code 128.
@@ -472,22 +491,72 @@ func exitedWith128(r shadowRun) bool {
 // the first call, after one `git version` call. On Windows the folder `.probe`
 // was the working folder of the second run.
 //
-// Not measured: the working folder on Linux and macOS, a second run that
-// printed text and exited 0, a second run that exited non-zero, and the place
-// of GIT_DIR in the environment. Not measured either: whether only the process
+// 52d82f0a has that working folder on Linux and macOS too. Not measured: a
+// second run that printed text and exited 0, a second run that exited
+// non-zero, and the place of GIT_DIR in the environment. Not measured either: whether only the process
 // is killed and not its group. exec kills the process alone. A failed `git
 // version` call answers its own text, as after a failed first call
 // (cannotRunText, the rule of 5fd08069).
-func secondProbe(folder, root string, env []string, first shadowRun) repoAnswer {
+//
+// On Linux and macOS a second run that exits 0 is followed by the third run
+// of 52d82f0a (configFreeProbe), unless inGitDir: the call runs in the git
+// directory itself. The third run ends probeSecondBound after the start of
+// the second run (claustrum's own, not measured).
+func secondProbe(folder, root string, env []string, first shadowRun, inGitDir bool) repoAnswer {
 	probe := filepath.Join(folder, shadowProbeName)
+	deadline := time.Now().Add(probeSecondBound)
 	second := exitedInTime(boundedGit(probeSecondBound, probe, slices.Concat(env, []string{"GIT_DIR=" + probe}), probeArgs()...))
 	if second.err == nil {
+		if probeConfigFreeRun && !inGitDir {
+			return configFreeProbe(root, env, first, deadline)
+		}
 		return repoAnswer{noRepo: true}
 	}
 	if whole := cannotRunText(); whole != "" {
 		return repoAnswer{text: whole}
 	}
 	return repoAnswer{text: repoCheckFailedText(root, first.allLines())}
+}
+
+// configFreeNames are the variables that the third run of the call sets on top
+// of the environment env of the first call. The daemon's own entries of these
+// names do not go to it.
+var configFreeNames = []string{"GIT_CONFIG_COUNT", "GIT_CONFIG_GLOBAL", "GIT_CONFIG_NOSYSTEM"}
+
+// configFreeProbe is the third run of the call on Linux and macOS: the argv
+// and the environment env of the first call, in root, with GIT_CONFIG_COUNT=0,
+// GIT_CONFIG_GLOBAL=/dev/null and GIT_CONFIG_NOSYSTEM=1. first is the first
+// call, which exited 128. The run ends at deadline. Its output is not read.
+//
+// 52d82f0a does this (measured on Linux and macOS). A `~/.gitconfig` with an
+// includeIf of the repository to a file with a bad line made the first call
+// exit 128. The second run and the third run exited 0. The reply was the error
+// with the text of the first call and `; if that names a git setting or file,
+// fix it, then try again`, with no `git version` call. With the second run and
+// the third run held 20 s each, the reply came 30.3 s after the request, with
+// the error of a call that did not finish (Linux). A bare repository with
+// safe.bareRepository=explicit got no third run (Linux). claustrum runs no
+// third run when the call runs in the git directory itself, and it counts the
+// limit from the start of the second run. Both are claustrum's own, fitted to
+// those rows and not measured.
+//
+// The stop at deadline is that of exec.CommandContext: it kills the git
+// process alone. The held process of the measured row was the git process
+// itself, so the stop of a child of the third run is not measured. Not
+// measured either: a third run that exits non-zero, which answers "no
+// repository", the place of the three variables in the environment, and
+// Windows.
+func configFreeProbe(root string, env []string, first shadowRun, deadline time.Time) repoAnswer {
+	env = slices.DeleteFunc(slices.Clone(env), func(kv string) bool { return slices.Contains(configFreeNames, envName(kv)) })
+	env = append(env, "GIT_CONFIG_COUNT=0", "GIT_CONFIG_GLOBAL=/dev/null", "GIT_CONFIG_NOSYSTEM=1")
+	third := exitedInTime(boundedGit(time.Until(deadline), root, env, probeArgs()...))
+	if third.ended {
+		return probeTimeoutAnswer(root)
+	}
+	if third.err != nil {
+		return repoAnswer{noRepo: true}
+	}
+	return repoAnswer{text: repoCheckFailedText(root, first.allLines()) + "; if that names a git setting or file, fix it, then try again"}
 }
 
 // repoCheckFailedText is the error of a failed call about the repository in root.

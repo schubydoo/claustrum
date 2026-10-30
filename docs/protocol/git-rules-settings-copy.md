@@ -220,20 +220,28 @@ the folder `.probe` of the daemon. The daemon removes leftovers like
 entries are claustrum's own (not measured). It rewrites an emptied `config`, keeps an
 unchanged one and replaces a folder at `HEAD` (measured on Linux). If `.probe` cannot be prepared, no git runs. The request gets [the
 `cannot write "<.probe path>"` text](errors.md#error-string-catalogue)
-(measured on Linux: mode 0500, no `HEAD`). The call drops the daemon's `GIT_NAMESPACE`,
+(Linux). The call drops the daemon's `GIT_NAMESPACE`,
 `GIT_INDEX_FILE`, `GIT_DISCOVERY_ACROSS_FILESYSTEM` and
 `GIT_ALTERNATE_OBJECT_DIRECTORIES`, and keeps its `GIT_CONFIG_COUNT` pairs (Linux,
 macOS and Windows). So a pair such as `safe.directory` changes the answers (from the
 code). A good answer is kept 5 seconds from the end of the call. A change of the root
 folder or of its `.git` entry makes the daemon ask again.
 
-An exit 128 with any text gets a second run of the call plus `GIT_DIR=<.probe>`.
-It runs in `.probe` (measured on Windows, claustrum's own elsewhere). Exit 0 there gives the "no
-repository" answer (`c8e2f083`, measured on Linux and Windows). The daemon kills
-a second run 30 seconds after its start. The reply is then the error of the rows
-below, with the text of the first call (`c8e2f083`, measured on Linux and
-Windows). A non-zero exit there gets the same reply (claustrum's own, not
-measured). With no text of the first call, the reply ends in its exit status.
+An exit 128 with any text gets a second run of the call plus `GIT_DIR=<.probe>`, in
+`.probe` (`52d82f0a` on Linux and macOS, `c8e2f083` on Windows). Exit 0 there gives
+the "no repository" answer on Windows (`c8e2f083`). The daemon kills a second run 30
+seconds after its start, and the reply is then the error of the rows below, with the text
+of the first call or its exit status (`c8e2f083`, Linux and Windows). A non-zero exit
+gets the same (claustrum's own, not measured).
+
+On Linux and macOS a third run follows that exit 0, in the root, with no config of the
+user or the system and no `GIT_DIR` (`52d82f0a`). Its exit 0 gives that error plus `;
+if that names a git setting or file, fix it, then try again`. A bare repository gets
+no third run (Linux). The third run ends 30 seconds after the second run started, and
+a failed one gives "no repository" (claustrum's own, not measured). The stop of a
+child of the third run is not measured. A `refs` made
+[unsearchable](git-rules-trust.md#how-the-daemon-finds-the-git-directory) right after a good
+answer gives "no repository" (`52d82f0a` on Linux, claustrum's own on macOS).
 
 | Answer of git | Reply |
 |---|---|
