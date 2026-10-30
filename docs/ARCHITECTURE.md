@@ -132,9 +132,9 @@ flowchart TD
   lets a rename or a remove run for real does so inside its own temp dir. Test the
   real cleaner only on a disposable machine, never on a host that runs other
   daemons.
-- **Login-shell PATH.** `shellenv_unix.go` runs the read at the first
-  `process.spawn`, in a process group of its own. At the 4 s cap it kills that
-  group. `shellenv_windows.go` reads the daemon's own PATH. See
+- **Login-shell PATH.** `shellenv.go` holds the read, its tries and the gate that
+  the agent hand-off shares. `shellenv_unix.go` runs it in its own process group.
+  `shellenv_windows.go` reads the daemon's own PATH. See
   [The login-shell PATH](protocol/process-spawn.md#the-login-shell-path-linux-and-macos).
 - **Named pipe.** With `-listen-pipe` (Windows only, opt-in) a second
   `acceptLoop` serves the same `serveConn` over a named pipe

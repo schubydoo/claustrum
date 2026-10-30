@@ -66,6 +66,7 @@ func newFakeHandOff(answers ...string) *fakeHandOff {
 			return a, nil
 		},
 		dial: func(p string) (bool, bool) { return f.live[p], f.hung[p] },
+		gate: make(chan struct{}, 1),
 	}
 	return f
 }
@@ -236,6 +237,7 @@ func shrinkAgentProbe(t *testing.T, timeout time.Duration) {
 
 func TestAskLoginShellForAgent(t *testing.T) {
 	long := strings.Repeat("0", 250)
+	shrinkShellCaps(t)
 	// markerOf sets $m to the fresh marker the probe script carries in "$4".
 	markerOf := `m=$(printf '%s' "$4" | grep -o '___CLAUDE_SSH_AGENT_SOCK_[0-9a-f]*___'); `
 	t.Setenv("SSH_TTY", "/dev/pts/9")
@@ -247,19 +249,20 @@ func TestAskLoginShellForAgent(t *testing.T) {
 		{"not exported", `unset SSH_AUTH_SOCK; exec /bin/sh -c "$4"`, "", ""},
 		{"a good line then a hang", `SSH_AUTH_SOCK=/tmp/y.sock; export SSH_AUTH_SOCK; /bin/sh -c "$4"; sleep 5`, "/tmp/y.sock", ""},
 		{"not a path", `SSH_AUTH_SOCK=agent; export SSH_AUTH_SOCK; exec /bin/sh -c "$4"`, "",
-			"printed something other than a path for SSH_AUTH_SOCK; output began: agent"},
+			"printed something other than a path for SSH_AUTH_SOCK (67 bytes on stdout, 0 on stderr)"},
 		{"exit with output", `echo partial-out; echo errline >&2; exit 3`, "",
-			"exited (exit status 3) without printing SSH_AUTH_SOCK; output began: partial-out\nerrline"},
-		{"clean exit, nothing printed", `exit 0`, "", "did not print SSH_AUTH_SOCK"},
-		{"output cut at 200 bytes", `printf ` + long, "",
-			"did not print SSH_AUTH_SOCK; output began: " + long[:200] + "..."},
+			"exited (exit status 3) without printing SSH_AUTH_SOCK (12 bytes on stdout, 8 on stderr)"},
+		{"clean exit, nothing printed", `exit 0`, "", "did not print SSH_AUTH_SOCK (0 bytes on stdout, 0 on stderr)"},
+		{"stdout over its cap", `printf ` + long, "",
+			"exited (cut off after it had printed more than 1 MiB on stdout or 16 MiB on stderr) without printing SSH_AUTH_SOCK (128 bytes on stdout, 0 on stderr)"},
+		{"stderr over its keep", `printf '%080d' 0 >&2`, "", "did not print SSH_AUTH_SOCK (0 bytes on stdout, 32 on stderr)"},
 		{"deadline", `sleep 5`, "", "did not finish within 300ms"},
 		{"stderr between the marker and the path", markerOf + `printf '%s\n' "$m"; echo noise >&2; echo /tmp/z.sock`,
 			"/tmp/z.sock", ""},
 		{"marker only on stderr", markerOf + `printf '%s\n/tmp/z.sock\n' "$m" >&2`, "",
-			"did not print SSH_AUTH_SOCK; output began: ___MARKER___\n/tmp/z.sock"},
-		{"exactly 200 bytes is not cut", `printf ` + long[:200], "",
-			"did not print SSH_AUTH_SOCK; output began: " + long[:200]},
+			"did not print SSH_AUTH_SOCK (0 bytes on stdout, 32 on stderr)"},
+		{"exactly the stdout cap is not cut", `printf ` + long[:128], "",
+			"did not print SSH_AUTH_SOCK (128 bytes on stdout, 0 on stderr)"},
 		{"probe env reaches the shell",
 			`SSH_AUTH_SOCK="/env/$CLAUDE_DESKTOP_RESOLVING_ENVIRONMENT/${SSH_TTY:-none}/${CLAUDE_SSH_PROBE_TEST:-none}"; ` +
 				`export SSH_AUTH_SOCK; exec /bin/sh -c "$4"`, "/env/1/none/none", ""},
@@ -363,5 +366,59 @@ func TestSuiteStubsShellAgentSocket(t *testing.T) {
 	}
 	if _, err := os.Stat(ran); err == nil {
 		t.Error("a login shell ran: TestMain no longer stubs the lookup")
+	}
+}
+
+// TestHandOffRunsNoShellWhileTheGateIsTaken pins the gate of 52d82f0a (Linux and
+// macOS): while another login shell runs, the hand-off returns no socket and runs no
+// shell. claustrum's own, not measured: it counts no try and logs nothing.
+func TestHandOffRunsNoShellWhileTheGateIsTaken(t *testing.T) {
+	logs := captureAgentLog(t)
+	f := newFakeHandOff("/tmp/a.sock", "/tmp/a.sock")
+	f.live["/tmp/a.sock"] = true
+	f.gate <- struct{}{}
+	if got := f.socket(); got != "" || f.probes != 0 || f.failures != 0 || !f.lastRun.IsZero() || logs.String() != "" {
+		t.Fatalf("taken gate: got %q, probes %d, failures %d, lastRun %v, log %q; want nothing",
+			got, f.probes, f.failures, f.lastRun, logs)
+	}
+	<-f.gate
+	if got := f.socket(); got != "/tmp/a.sock" || f.probes != 1 {
+		t.Fatalf("free gate: got %q, probes %d; want the socket", got, f.probes)
+	}
+	if len(f.gate) != 0 {
+		t.Error("the hand-off kept the gate after its run")
+	}
+
+	// A cached socket that died and is due logs its line only when the shell runs.
+	f.live["/tmp/a.sock"] = false
+	f.clock = f.clock.Add(agentReprobeAfter)
+	logs.Reset()
+	f.gate <- struct{}{}
+	if got := f.socket(); got != "" || f.probes != 1 || logs.String() != "" {
+		t.Fatalf("taken gate, dead socket: got %q, probes %d, log %q", got, f.probes, logs)
+	}
+	<-f.gate
+}
+
+// TestPATHReadHoldsTheGateOfTheHandOff pins 52d82f0a (Linux and macOS): a spawn during
+// a running PATH read gets no SSH_AUTH_SOCK, and the agent shell runs after the read.
+// Production gives both steps one gate.
+func TestPATHReadHoldsTheGateOfTheHandOff(t *testing.T) {
+	if agentHandOffState.gate != loginShellGate || loginPATHs.gate != loginShellGate {
+		t.Fatal("the PATH read and the hand-off do not share loginShellGate")
+	}
+	p := installPathReadFake(t)
+	f := newFakeHandOff("/tmp/a.sock")
+	f.gate = loginPATHs.gate
+	f.live["/tmp/a.sock"] = true
+	warmLoginPATHAtStart()
+	r := startedRead(t, p)
+	if got := f.socket(); got != "" || f.probes != 0 {
+		t.Fatalf("during the read: got %q, probes %d; want no shell", got, f.probes)
+	}
+	p.answer <- pathAnswer{path: "/login/bin"}
+	awaitReadEnd(t, r)
+	if got := f.socket(); got != "/tmp/a.sock" || f.probes != 1 {
+		t.Fatalf("after the read: got %q, probes %d; want the socket", got, f.probes)
 	}
 }

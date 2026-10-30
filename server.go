@@ -431,12 +431,11 @@ func runServe(socket, tokenFile string, tokenFd int, metricsAddr string, wlopt w
 	raiseInheritedFileLimit()
 
 	// Arm the read of the login-shell PATH, so spawned children resolve tools the
-	// way an interactive session does. No shell runs here: the first process.spawn
-	// runs the read (buildEnv, see shellenv.go), as on 89cb6289 (Linux and macOS
-	// rows G1 to G3).
-	// Kept in this shell — not newServerOnSocket — so tests booting a server
-	// never fork a login shell.
-	armLoginPATH()
+	// way an interactive session does, and start it in the background unless
+	// CLAUDE_SSH_NO_LOGIN_PATH_WARM is 1 (shellenv.go, measured on Linux and macOS
+	// against 52d82f0a). Kept in this shell, not in newServerOnSocket, so a test that
+	// boots a server never forks a login shell.
+	warmLoginPATHAtStart()
 
 	// The handler for SIGTERM and SIGINT is in place before the claim of the run dir,
 	// so a signal during the start does not end the start (see signalWatch).
@@ -1373,6 +1372,10 @@ func (s *server) closeAll(socket string) {
 	// 5fd08069 (cell L1k of round task091-01, Linux VM, 3 of 3 runs). macOS runs this
 	// code too, and that order is not measured there.
 	killed := s.stopChildren()
+	// A read of the login-shell PATH that still runs ends here. Its shell is no child,
+	// so the cleanup line does not count it (measured on Linux and macOS against
+	// 52d82f0a). Its place among these steps is not measured.
+	stopLoginPATH()
 	dropOwnTokenFile(socket, s.tokenInfo)
 	// Remove rpc.pipe on the same graceful path as rpc.sock/daemon.token, and with the
 	// same ownership guard: only if it is still the inode we published, so a successor's

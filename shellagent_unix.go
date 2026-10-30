@@ -3,10 +3,7 @@
 package main
 
 import (
-	"bytes"
 	"context"
-	"crypto/rand"
-	"encoding/hex"
 	"errors"
 	"fmt"
 	"net"
@@ -47,14 +44,7 @@ var (
 	agentReprobeAfter   = 10 * time.Minute
 )
 
-const (
-	agentMaxFailures = 3
-	// agentOutputLimit is where a failure message cuts the shell's output
-	// before it appends "...". It is a plain byte cut, even inside a UTF-8
-	// sequence: 199 ASCII bytes and then a 3-byte character echo as the 199
-	// bytes, the character's first byte, and "...".
-	agentOutputLimit = 200
-)
+const agentMaxFailures = 3
 
 // agentHandOff is the per-daemon state of the hand-off. One instance serves
 // every connection, and its lock is held across a probe, so concurrent spawns
@@ -69,12 +59,14 @@ type agentHandOff struct {
 	runShell func() (string, error)
 	clock    func() time.Time
 	dial     func(string) (live, hung bool)
+	gate     chan struct{} // the login-shell gate that the PATH read shares
 }
 
 var agentHandOffState = &agentHandOff{
 	runShell: askLoginShellForAgent,
 	clock:    time.Now,
 	dial:     dialAgentSocket,
+	gate:     loginShellGate,
 }
 
 func defaultShellAgentSocket() string { return agentHandOffState.socket() }
@@ -89,6 +81,12 @@ func defaultShellAgentSocket() string { return agentHandOffState.socket() }
 // agentMaxFailures runs in a row have failed. A dial that has not returned
 // within agentDialBound ends the hand-off for the life of the daemon, even if it
 // would have succeeded later.
+//
+// While another login shell runs, such as the PATH read, the step runs no shell and
+// returns "". Measured on Linux and macOS against 52d82f0a: a spawn during a slow PATH
+// read gets no SSH_AUTH_SOCK, no agent run starts during the read, and a later spawn
+// gets the socket. claustrum's own, not measured: that step counts no try and logs
+// nothing.
 func (s *agentHandOff) socket() string {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -103,7 +101,7 @@ func (s *agentHandOff) socket() string {
 		}
 	}
 	due := s.lastRun.IsZero() || s.clock().Sub(s.lastRun) >= agentReprobeAfter
-	if !due || s.failures >= agentMaxFailures {
+	if !due || s.failures >= agentMaxFailures || !tryGate(s.gate) {
 		return ""
 	}
 	if s.sock != "" {
@@ -111,6 +109,7 @@ func (s *agentHandOff) socket() string {
 			agentSockVar, s.sock)
 	}
 	sock, err := s.runShell()
+	<-s.gate
 	s.lastRun = s.clock()
 	if err != nil {
 		s.failures++
@@ -161,41 +160,31 @@ func (s *agentHandOff) stopForGoodLocked(sock string) {
 }
 
 // loginShellError is why a login-shell run yielded no socket. Its text is
-// what the "Could not read" log line carries.
+// what the "Could not read" log line carries. It holds no text that the shell
+// printed, only byte counts (measured on Linux and macOS against 52d82f0a).
 type loginShellError struct {
-	shell, reason, output string
+	shell, reason string
 }
 
-func (e *loginShellError) Error() string {
-	msg := "login shell " + e.shell + " " + e.reason
-	if len(e.output) > 0 {
-		out := e.output
-		if len(out) > agentOutputLimit {
-			out = out[:agentOutputLimit] + "..."
-		}
-		msg += "; output began: " + strings.TrimSpace(out)
-	}
-	return msg
-}
+func (e *loginShellError) Error() string { return "login shell " + e.shell + " " + e.reason }
 
 // askLoginShellForAgent runs the login shell once and returns the
 // SSH_AUTH_SOCK it exports: a path, or "" when it exports none.
 //
 // It mirrors the PATH extraction in shellenv_unix.go in how it starts the shell
-// (same shell choice, `-l -i -c`, own process group, killed as a group), but
-// differs on purpose in how it reads the result. stdout and stderr are kept
-// apart and only stdout is searched: measured, a marker and path printed only
-// on stderr hands on nothing, on both daemons. A good line wins even when the deadline
-// fired or a grandchild held the pipe open. Measured: a shell that prints a
-// good line and then hangs still succeeds, once the deadline ends the run.
+// (same shell choice, `-l -i -c`, own process group, killed as a group, the same
+// output caps), but differs on purpose in how it reads the result. Only stdout is
+// searched: measured, a marker and path printed only on stderr hands on nothing, on
+// both daemons. A good line wins even when the deadline fired or a grandchild held the
+// pipe open. Measured: a shell that prints a good line and then hangs still succeeds,
+// once the deadline ends the run.
 func askLoginShellForAgent() (string, error) {
 	shell := safeLoginShell()
-	var nonce [16]byte
-	if _, err := rand.Read(nonce[:]); err != nil {
+	// A fresh sentinel per run, so fixed profile output cannot match it by accident.
+	sentinel, err := newSentinel("___CLAUDE_SSH_AGENT_SOCK_")
+	if err != nil {
 		return "", err
 	}
-	// A fresh sentinel per run, so fixed profile output cannot match it by accident.
-	sentinel := "___CLAUDE_SSH_AGENT_SOCK_" + hex.EncodeToString(nonce[:]) + "___"
 	script := `/bin/sh -c 'printf "%s\n%s\n" "` + sentinel + `" "$SSH_AUTH_SOCK"'`
 
 	ctx, cancel := context.WithTimeout(context.Background(), agentProbeTimeout)
@@ -205,9 +194,8 @@ func askLoginShellForAgent() (string, error) {
 	cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
 	cmd.Cancel = func() error { return syscall.Kill(-cmd.Process.Pid, syscall.SIGKILL) }
 	cmd.WaitDelay = agentProbeWaitDelay
-	var stdout, stderr bytes.Buffer
-	cmd.Stdout = &stdout
-	cmd.Stderr = &stderr
+	o := newShellOutput()
+	cmd.Stdout, cmd.Stderr = &o.stdout, &o.stderr
 
 	runErr, finished := waitAtMost(agentProbeBound, cmd.Run)
 	if !finished {
@@ -216,23 +204,22 @@ func askLoginShellForAgent() (string, error) {
 		return "", &loginShellError{shell: shell,
 			reason: "did not finish within " + agentProbeTimeout.String() + " and could not be stopped"}
 	}
-	out := stdout.String()
-	if line, found := valueAfterMarker(out, sentinel); found {
+	if line, found := valueAfterMarker(o.stdout.kept.String(), sentinel); found {
 		if line == "" || line[0] == '/' {
 			return line, nil
 		}
+		// The byte counts of this text are claustrum's own (not measured).
 		return "", &loginShellError{shell: shell,
-			reason: "printed something other than a path for SSH_AUTH_SOCK", output: line}
+			reason: "printed something other than a path for SSH_AUTH_SOCK (" + o.counts() + ")"}
 	}
 	if errors.Is(ctx.Err(), context.DeadlineExceeded) {
 		return "", &loginShellError{shell: shell, reason: "did not finish within " + agentProbeTimeout.String()}
 	}
-	both := out + stderr.String()
-	if runErr != nil && !errors.Is(runErr, exec.ErrWaitDelay) {
+	if o.stdout.cut || o.stderr.cut || (runErr != nil && !errors.Is(runErr, exec.ErrWaitDelay)) {
 		return "", &loginShellError{shell: shell,
-			reason: "exited (" + runErr.Error() + ") without printing SSH_AUTH_SOCK", output: both}
+			reason: "exited (" + o.endReason(runErr) + ") without printing SSH_AUTH_SOCK (" + o.counts() + ")"}
 	}
-	return "", &loginShellError{shell: shell, reason: "did not print SSH_AUTH_SOCK", output: both}
+	return "", &loginShellError{shell: shell, reason: "did not print SSH_AUTH_SOCK (" + o.counts() + ")"}
 }
 
 // valueAfterMarker returns the trimmed line that follows the marker line in

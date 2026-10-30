@@ -1,0 +1,5 @@
+---
+default: minor
+---
+
+On Linux and macOS the daemon now reads the login-shell `PATH` in the background at its start, unless `CLAUDE_SSH_NO_LOGIN_PATH_WARM=1`. A spawn waits for that read at most 4 s, and a later spawn tries a failed read again after 30 s, 1m0s, 2m0s and so on. A spawn with `"disableShellAgentSocket":true` and the shutdown end a read that still runs. The read uses a fresh sentinel, caps the shell output and logs byte counts instead of shell output, as does the SSH agent hand-off. That hand-off runs no login shell while the read runs.

@@ -338,3 +338,25 @@ func TestDrainGraceLine(t *testing.T) {
 		"[process.Manager] Process d1: pipe drain grace expired (grandchild holding stdio?); force-closing",
 		"[process.Manager] Process d1 exited with code 7")
 }
+
+// TestShutdownEndsTheLoginPATHRead: the cleanup ends a read of the login-shell PATH
+// that still runs, and no failure line follows. The cleanup line does not count its
+// shell (52d82f0a, Linux and macOS).
+func TestShutdownEndsTheLoginPATHRead(t *testing.T) {
+	s, sock := bootLineServer(t, false)
+	buf := captureLogBuf(t)
+	f := installPathReadFake(t)
+	warmLoginPATHAtStart()
+	r := startedRead(t, f)
+	s.signalShutdown()
+	s.closeAll(sock)
+	select {
+	case <-r.end:
+	default:
+		t.Fatal("the cleanup left the read of the login-shell PATH running")
+	}
+	if got := shellenvLines(buf); got != "" {
+		t.Errorf("the stopped read logged:\n%s", got)
+	}
+	wantLinesInOrder(t, buf.String(), "[Server] cleanup: closed 0 connection(s), killed 0 child process group(s)")
+}

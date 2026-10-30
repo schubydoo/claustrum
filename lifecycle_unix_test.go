@@ -10,7 +10,6 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
-	"sync/atomic"
 	"syscall"
 	"testing"
 	"time"
@@ -211,42 +210,35 @@ func TestRunServeChildFatalArms(t *testing.T) {
 	}
 }
 
-// TestRunServeChildRunsNoLoginShellAtItsStart pins the wiring of row G1 and G2: the
-// start of the daemon arms the read of the login-shell PATH and runs no shell. The
-// first build of a child environment then runs the read, one time.
-func TestRunServeChildRunsNoLoginShellAtItsStart(t *testing.T) {
+// TestRunServeChildStartsTheLoginPATHRead pins the wiring of the warm start on
+// 52d82f0a (Linux and macOS): the start of the daemon starts the read with no spawn,
+// and the warm variable leaves the daemon environment.
+func TestRunServeChildStartsTheLoginPATHRead(t *testing.T) {
 	stubOsExit(t)
 	t.Setenv(daemonChildEnv, "1")
 	t.Setenv(tokenPipeEnv, "")
+	t.Setenv(noLoginPATHWarmEnv, "0")
 	dir := shortTempDir(t)
 	tf := filepath.Join(dir, "token")
 	if err := os.WriteFile(tf, []byte("tok\n"), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	old := loginPATHExtractor
-	var runs atomic.Int32
-	loginPATHExtractor = func() { runs.Add(1) }
-	t.Cleanup(func() {
-		loginPATHExtractor = old
-		resetLoginPATHForTest()
-		// The start installs its signal handler before the bind. Take it out again.
-		signal.Reset(syscall.SIGTERM, syscall.SIGINT)
-	})
+	f := installPathReadFake(t)
+	// The start installs its signal handler before the bind. Take it out again.
+	t.Cleanup(func() { signal.Reset(syscall.SIGTERM, syscall.SIGINT) })
 	// The socket folder does not exist, so the daemon stops at the bind, after the
-	// place where it arms the read.
+	// place where it starts the read.
 	if code, exited := catchExit(func() {
 		runServe(filepath.Join(dir, "no-dir", "s.sock"), tf, -1, "", wireLogOptions{}, false, false)
 	}); !exited || code != 1 {
 		t.Fatalf("child with unbindable socket: exited=%v code=%d, want exit 1", exited, code)
 	}
-	if n := runs.Load(); n != 0 {
-		t.Fatalf("the start of the daemon ran the login shell %d times, want 0", n)
+	r := startedRead(t, f)
+	if _, ok := os.LookupEnv(noLoginPATHWarmEnv); ok {
+		t.Errorf("%s is still in the daemon environment", noLoginPATHWarmEnv)
 	}
-	buildEnv(nil)
-	buildEnv(nil)
-	if n := runs.Load(); n != 1 {
-		t.Errorf("two builds of a child environment ran the read %d times, want 1 (the start did not arm it, or it ran twice)", n)
-	}
+	f.answer <- pathAnswer{path: "/login/bin"}
+	awaitReadEnd(t, r)
 }
 
 // runServe's one remaining parent-side fatal guard: a -token-fd that cannot be
