@@ -62,7 +62,7 @@ func reapProcessGroup(proc *os.Process) {}
 // starts no process before it joins its job. A process that WMI, the Task Scheduler or
 // a service starts for it is outside the job. A kill ends the whole job, with exit code
 // 1. The end of the child ends the rest of its job (endRest). The job never holds the
-// daemon. One job for each child is claustrum's own, not measured.
+// daemon. One job for each child follows 52d82f0a (measured on Windows).
 //
 // Measured on a Windows VM against 52d82f0a. A process.kill of the tree `cmd /c "start
 // /b ping … & ping …"` answers in 11 ms. The exit frame has exitCode 1 and killedBy
@@ -82,14 +82,19 @@ func reapProcessGroup(proc *os.Process) {}
 //
 // An explicit TerminateJobObject ends a job. That is a kill, process.killAndWait, and
 // the kill of a shutdown or of a session supersede. It is also endRest after the exit
-// of the child, and the kill of a spawn that the daemon does not keep. No job has
-// JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE. So a daemon under taskkill /F leaves its children
-// alive, as 89cb6289 does (measured). 52d82f0a is not measured there. A child that
-// -keep-children kept stays in its job, and nothing ends it.
+// of the child, and the kill of a spawn that the daemon does not keep.
 //
-// Each job has JOB_OBJECT_LIMIT_BREAKAWAY_OK. So a start with CREATE_BREAKAWAY_FROM_JOB
-// gets a process outside the job and does not fail with "Access is denied." That is
-// claustrum's own, not measured.
+// The job of a child has the limit flags 0x2800: JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE and
+// JOB_OBJECT_LIMIT_BREAKAWAY_OK. Only the daemon holds a handle of the job, so a daemon
+// that dies ends the trees of its children. Measured on a Windows VM against 52d82f0a:
+// the child reads 0x2800. After a taskkill /F of the daemon, cmd and both pings of the
+// tree are gone at 0, 2 and 5 s, in 3 of 3 runs. A ping outside the daemon stays. A
+// process that a child started with CREATE_BREAKAWAY_FROM_JOB is outside the job. It
+// outlives process.kill, process.killAndWait and the taskkill /F, and a plain grandchild
+// dies in all three. Each child has a job of its own: the kill of one leaves another.
+//
+// With -keep-children (jobsKeep) the flags are 0x800, breakaway only. So a kept child
+// stays in its job after the daemon exits, and nothing ends it (claustrum's own).
 //
 // The handles stay open until the exit drain of the child is over (close). A kill in
 // that window meets a process that has ended. Without a job, TerminateProcess then
@@ -134,7 +139,7 @@ func confineProcess(proc *os.Process, jobs childJobs) (*procGroup, error) {
 		return g, err
 	}
 	defer func() { _ = windows.CloseHandle(quota) }()
-	job, err := newChildJob()
+	job, err := newChildJob(jobs)
 	if err != nil {
 		return g, err
 	}
@@ -146,17 +151,16 @@ func confineProcess(proc *os.Process, jobs childJobs) (*procGroup, error) {
 	return g, nil
 }
 
-// newChildJob makes the job of one child. Its one limit is
-// JOB_OBJECT_LIMIT_BREAKAWAY_OK. The handle is not inheritable, so only the daemon
-// holds it.
-func newChildJob() (windows.Handle, error) {
+// newChildJob makes the job of one child. Its limit flags are childJobFlags of the mode.
+// The handle is not inheritable, so only the daemon holds it.
+func newChildJob(jobs childJobs) (windows.Handle, error) {
 	job, err := windows.CreateJobObject(nil, nil)
 	if err != nil {
 		return 0, os.NewSyscallError("CreateJobObject", err)
 	}
 	info := windows.JOBOBJECT_EXTENDED_LIMIT_INFORMATION{
 		BasicLimitInformation: windows.JOBOBJECT_BASIC_LIMIT_INFORMATION{
-			LimitFlags: windows.JOB_OBJECT_LIMIT_BREAKAWAY_OK,
+			LimitFlags: childJobFlags(jobs),
 		},
 	}
 	if _, err := windows.SetInformationJobObject(job, windows.JobObjectExtendedLimitInformation,
@@ -165,6 +169,15 @@ func newChildJob() (windows.Handle, error) {
 		return 0, os.NewSyscallError("SetInformationJobObject", err)
 	}
 	return job, nil
+}
+
+// childJobFlags gives the limit flags of a child job: 0x2800 for jobsOn, as on 52d82f0a
+// (measured on Windows), and 0x800 for jobsKeep (claustrum's own). See procGroup.
+func childJobFlags(jobs childJobs) uint32 {
+	if jobs == jobsKeep {
+		return windows.JOB_OBJECT_LIMIT_BREAKAWAY_OK
+	}
+	return windows.JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE | windows.JOB_OBJECT_LIMIT_BREAKAWAY_OK
 }
 
 // resumeChild lets a child run that spawnSysProcAttr started suspended. It resumes
@@ -250,8 +263,9 @@ func (g *procGroup) endRest() {
 	}
 }
 
-// close releases the kill handle and the job handle. It ends nothing. Nil-receiver
-// safe and idempotent.
+// close releases the kill handle and the job handle. With jobsOn the close of the job
+// handle ends what is left in the job. After the exit of the child, endRest emptied it
+// already. Nil-receiver safe and idempotent.
 func (g *procGroup) close() {
 	if g == nil {
 		return

@@ -629,10 +629,10 @@ have no flag and no key.
 
 ### CT-2 · Opt-in `-keep-children` serve flag { #ct-2 }
 
-- **Behavior.** Off the wire. Without the flag, a graceful shutdown ends the
-  children. A graceful shutdown is `-stop`, `server.shutdown`, `SIGTERM`,
-  `SIGINT` or the self-exit. With the flag it leaves the spawned children
-  running and logs one line with their count. A child with a pending
+- **Behavior.** Off the wire. Without the flag, a graceful shutdown (`-stop`,
+  `server.shutdown`, `SIGTERM`, `SIGINT` or the self-exit) ends the children.
+  With the flag it leaves them running and logs one line with their count. On
+  Windows a killed daemon leaves the trees too (claustrum's own). A child with a pending
   [farewell](protocol/process-farewell.md) gets its signal. The new daemon does not re-adopt
   them. A client can find them again through the CT-1 `pid` and `startTime`.
 - **Reference.** `89cb6289` has no such flag and exits with code 2 on it.
@@ -649,8 +649,8 @@ have no flag and no key.
 - **Rule.** Off-wire extension.
 - **Reopen trigger.** None.
 - **Pointers.** [flags.md → Flags of claustrum
-  alone](protocol/flags.md#flags-of-claustrum-alone) has the log line, the stdio of the
-  survivors and Windows.
+  alone](protocol/flags.md#flags-of-claustrum-alone) has the log line, the stdio and
+  Windows.
 
 ### CT-3 · Opt-in `claustrum.conf` config file { #ct-3 }
 

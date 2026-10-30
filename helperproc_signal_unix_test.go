@@ -79,3 +79,6 @@ func breakawayStart(*exec.Cmd) {}
 
 // childJobState is empty off Windows, which has no jobs.
 func childJobState(*managedProc) string { return "" }
+
+// ownJobFlags is empty off Windows, which has no jobs.
+func ownJobFlags() string { return "" }

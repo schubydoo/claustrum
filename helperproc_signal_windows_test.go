@@ -3,6 +3,7 @@
 package main
 
 import (
+	"fmt"
 	"os/exec"
 	"syscall"
 	"unsafe"
@@ -60,4 +61,16 @@ func childJobState(p *managedProc) string {
 		return "no-job"
 	}
 	return "in-job"
+}
+
+// ownJobFlags gives the limit flags of the job of this process, in hex, for the
+// "job-flags" helper mode. A zero handle names the job that holds this process. It gives
+// the error text if the query fails.
+func ownJobFlags() string {
+	var info windows.JOBOBJECT_EXTENDED_LIMIT_INFORMATION
+	if err := windows.QueryInformationJobObject(0, windows.JobObjectExtendedLimitInformation,
+		uintptr(unsafe.Pointer(&info)), uint32(unsafe.Sizeof(info)), nil); err != nil {
+		return err.Error()
+	}
+	return fmt.Sprintf("%#x", info.BasicLimitInformation.LimitFlags)
 }
