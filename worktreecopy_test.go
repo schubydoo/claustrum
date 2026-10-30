@@ -58,13 +58,13 @@ func treeOf(t *testing.T, root string) []string {
 //
 // ⚠️ Moving them is not enough either, and moving HOME is a no-op on Windows:
 // os.UserHomeDir reads USERPROFILE there, not HOME. The XDG branch only RETURNS
-// when the file exists, so an empty XDG dir falls through to the real home. This
+// when the file exists, so an empty XDG dir gives the null device. This
 // helper therefore CREATES an empty ignore file under the temp XDG dir, which
 // makes that branch return on every OS and needs no per-OS test. Measured on a
 // Windows VM: without the file, the resolver returned the real
 // C:\Users\...\.config\git\ignore even with HOME moved.
 //
-// The environment is only half of it. userExcludesFile memoizes the resolved path
+// The environment is only half of it. userExcludesFile keeps the configured value
 // for the life of the process, and hardenedProfileArgs injects it as
 // `-c core.excludesFile=`. So whichever test runs FIRST decides the value for
 // every later test, and the environment this one sets arrives too late.

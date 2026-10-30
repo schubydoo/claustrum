@@ -12,7 +12,7 @@ import (
 	"testing"
 )
 
-// resolveUserExcludesFile resolves the user's global excludes as 7d193f89 does
+// userExcludesFile resolves the user's global excludes as 7d193f89 does
 // (observed via a git-argv trace): a configured absolute core.excludesFile wins, else
 // the XDG or HOME default when it exists, else /dev/null. Each branch is exercised with
 // a controlled environment. GIT_CONFIG_SYSTEM is neutralised so the host's own config
@@ -27,7 +27,7 @@ func TestResolveUserExcludesFile(t *testing.T) {
 		gc := filepath.Join(t.TempDir(), "gitconfig")
 		writeFile(t, gc, "[core]\n\texcludesFile = /abs/ignore\n", 0o644)
 		t.Setenv("GIT_CONFIG_GLOBAL", gc)
-		if got := resolveUserExcludesFile(); got != "/abs/ignore" {
+		if got := excludesNow(t); got != "/abs/ignore" {
 			t.Errorf("configured = %q, want /abs/ignore", got)
 		}
 	})
@@ -37,7 +37,7 @@ func TestResolveUserExcludesFile(t *testing.T) {
 		xdg := t.TempDir()
 		writeFile(t, filepath.Join(xdg, "git", "ignore"), "*.x\n", 0o644)
 		t.Setenv("XDG_CONFIG_HOME", xdg)
-		if got, want := resolveUserExcludesFile(), filepath.Join(xdg, "git", "ignore"); got != want {
+		if got, want := excludesNow(t), filepath.Join(xdg, "git", "ignore"); got != want {
 			t.Errorf("xdg = %q, want %q", got, want)
 		}
 	})
@@ -48,7 +48,7 @@ func TestResolveUserExcludesFile(t *testing.T) {
 		home := t.TempDir()
 		writeFile(t, filepath.Join(home, ".config", "git", "ignore"), "*.y\n", 0o644)
 		t.Setenv("HOME", home)
-		if got, want := resolveUserExcludesFile(), filepath.Join(home, ".config", "git", "ignore"); got != want {
+		if got, want := excludesNow(t), filepath.Join(home, ".config", "git", "ignore"); got != want {
 			t.Errorf("home = %q, want %q", got, want)
 		}
 	})
@@ -57,7 +57,7 @@ func TestResolveUserExcludesFile(t *testing.T) {
 		t.Setenv("GIT_CONFIG_GLOBAL", "/dev/null")
 		t.Setenv("XDG_CONFIG_HOME", "")
 		t.Setenv("HOME", t.TempDir()) // no .config/git/ignore inside
-		if got := resolveUserExcludesFile(); got != "/dev/null" {
+		if got := excludesNow(t); got != "/dev/null" {
 			t.Errorf("none = %q, want /dev/null", got)
 		}
 	})

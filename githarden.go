@@ -986,8 +986,8 @@ func probeAttrSource() (supported, known bool) {
 }
 
 var (
-	// A mutex rather than a sync.Once, for two reasons. A test that moves HOME or
-	// XDG_CONFIG_HOME has to force a re-resolve, and clearing a Once means either
+	// A mutex rather than a sync.Once, for two reasons. A test has to force a
+	// re-resolve of the configured value, and clearing a Once means either
 	// copying a lock (go vet copylocks) or writing the pair with no
 	// synchronisation at all, which races any in-flight request goroutine.
 	// The read itself runs outside the mutex. userExcludesGen counts the resets of
@@ -1016,39 +1016,39 @@ func userExcludesFile() string {
 	if userExcludesDone {
 		v := userExcludesCached
 		userExcludesMu.Unlock()
-		return v
+		if v != "" {
+			return v
+		}
+		return defaultExcludesFile()
 	}
 	gen := userExcludesGen
 	userExcludesMu.Unlock()
-	v := resolveUserExcludesFile()
+	v := configuredExcludesFile()
 	userExcludesMu.Lock()
 	if gen == userExcludesGen {
 		userExcludesDone, userExcludesCached = true, v
 	}
 	userExcludesMu.Unlock()
-	return v
+	if v != "" {
+		return v
+	}
+	return defaultExcludesFile()
 }
 
-// resolveUserExcludesFile reads the excludes file of the user. The read has the
-// filtered environment of the daemon (gitChildEnv) and GIT_DIR=<null device>, and
-// runs in gitVersionDir (claustrum's own, not measured). f6010b97
-// adds GIT_DIR=NUL on a Windows VM and runs it in the temporary directory on Linux
-// and Windows VMs.
+// configuredExcludesFile reads the configured core.excludesFile of the user: an
+// absolute value, or "" when there is none. The read has the filtered environment
+// of the daemon (gitChildEnv) and GIT_DIR=<null device>, and runs in gitVersionDir
+// (claustrum's own, not measured). f6010b97 adds GIT_DIR=NUL on a Windows VM and
+// runs it in the temporary directory on Linux and Windows VMs.
 //
-// The configured value wins if it is absolute. `config --includes --path` follows
-// includes and expands a leading ~, matching the reference. It runs WITHOUT the
-// hardening profile so git reports the real global setting, not the pin. The read is
-// kept for the daemon, so it has no time limit of a request. GIT_DIR=<null device>
-// makes it read only the user's global and system config, never a repo's own
-// core.excludesFile. A repo must not be able to inject excludes. This is the cached
-// read that replaced the reference's per-call excludes probe.
-//
-// Else the base folder is XDG_CONFIG_HOME. With that unset, empty or relative, the
-// base is the user home plus .config. A base that is empty or relative gives the
-// null device. If <base>/git/ignore is a regular file after symlinks, that file is
-// the result. In every other case the result is the null device, also when
-// XDG_CONFIG_HOME is set and the file under HOME exists.
-func resolveUserExcludesFile() string {
+// `config --includes --path` follows includes and expands a leading ~, matching the
+// reference. It runs WITHOUT the hardening profile so git reports the real global
+// setting, not the pin. The read is kept for the daemon, so it has no time limit of
+// a request. GIT_DIR=<null device> makes it read only the user's global and system
+// config, never a repo's own core.excludesFile. A repo must not be able to inject
+// excludes. 683cc6a9 makes one read too and looks up the default file on each
+// git.status call (measured on Linux and macOS).
+func configuredExcludesFile() string {
 	windows := gitEnvHere.windows
 	cmd := gitOutsideCmd([]string{"GIT_DIR=" + os.DevNull}, "config", "--includes", "--path", "core.excludesFile")
 	if out, err := cmd.Output(); err == nil {
@@ -1056,6 +1056,15 @@ func resolveUserExcludesFile() string {
 			return p
 		}
 	}
+	return ""
+}
+
+// defaultExcludesFile looks up the default excludes file on each call. A regular
+// file at <base>/git/ignore is the result, else the null device. A file that went
+// or became a folder gives the null device. The lookup with XDG_CONFIG_HOME set is
+// not measured.
+func defaultExcludesFile() string {
+	windows := gitEnvHere.windows
 	base := os.Getenv("XDG_CONFIG_HOME")
 	if base == "" || relativeFor(base, windows) {
 		base = ""

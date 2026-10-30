@@ -1,7 +1,5 @@
 # Hardened git calls and time limits
 
-The git methods run most git steps as hardened calls. This page gives those calls, their environment, their time limits and the branch step.
-
 An untagged rule on this page matches build `5fd08069` or an earlier build. A section that names its systems or its build keeps that scope.
 
 ## Hardened git calls
@@ -45,9 +43,9 @@ A client sees the hardening in these places:
 - On Windows a create with a tree path of 270 characters succeeds.
 - The records of a new worktree hold absolute paths, also where the user config sets
   `worktree.useRelativePaths` (measured on macOS and Windows).
-- Each call passes the user's global excludes file as `core.excludesFile`. When
-  the user has none, the value is the null device. On Windows the `status`,
-  `ls-files` and `diff-index` calls of `git.status` pass `/dev/null` there. That is claustrum's
+- Each call passes the user's global excludes file as `core.excludesFile`
+  ([Calls outside a repository](#calls-outside-a-repository)). On Windows the `status`,
+  `ls-files` and `diff-index` calls of `git.status` pass `/dev/null` where the value is the null device. That is claustrum's
   own, see [D16](../DIVERGENCES.md#d16).
 - The config listings run with `LC_ALL=C` and `LANGUAGE=C`. git then writes its
   listing errors in English (measured on Linux). The one exception is the second
@@ -197,12 +195,14 @@ On Windows it is `SystemRoot` if that is absolute. Else the folder of the daemon
   keeps either answer for the life of the host, and keeps nothing with no run
   folder. If git does not run or prints no version, the answer is "too old" for
   that call and nothing is kept.
-- The excludes read adds `GIT_DIR=<null>`. An absolute
-  output is the result. Else the base is `XDG_CONFIG_HOME`. Unset, empty or
-  relative, it counts as unset, and the base is the home folder plus `.config`. An
-  empty or relative base gives the null device. A regular file `git/ignore` in the
-  base, after symlinks, is the result. Every other case gives the null device,
-  also when `XDG_CONFIG_HOME` is set and the file is under the home folder.
+- The excludes read adds `GIT_DIR=<null>`. An absolute output is the result and
+  the daemon keeps it. With none, each call looks up the file again
+  (`683cc6a9`, measured with `git.status` on Linux and macOS). Claustrum's own,
+  not measured: the base is `XDG_CONFIG_HOME`.
+  Unset, empty or relative, it counts as unset, and the base is the home folder plus
+  `.config`. An empty or relative base gives the null device. A regular file
+  `git/ignore` in the base, after symlinks, is the result. Every other case gives the null
+  device, also when `XDG_CONFIG_HOME` is set and the file is under the home folder.
 - The read of config text keeps `GIT_CONFIG` and `GIT_CONFIG_PARAMETERS` and adds
   `GIT_DIR=<null>`, `LC_ALL=C` and `LANGUAGE=C`.
 

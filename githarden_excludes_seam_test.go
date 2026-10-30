@@ -29,3 +29,11 @@ func resetUserExcludesCache(t *testing.T) {
 		userExcludesMu.Unlock()
 	})
 }
+
+// excludesNow forces a fresh configured read, then returns the value of
+// userExcludesFile.
+func excludesNow(t *testing.T) string {
+	t.Helper()
+	resetUserExcludesCache(t)
+	return userExcludesFile()
+}
