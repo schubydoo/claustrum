@@ -465,7 +465,9 @@ func TestCapabilitiesListTheJobNameOnlyWithJobs(t *testing.T) {
 	if !slices.Equal(got, want) {
 		t.Errorf("jobs on: features = %v, want %v", got, want)
 	}
-	if slices.Contains(capabilityFeatures, jobFeature) {
-		t.Error("featuresFor changed the shared list")
+	// The shared list has spare capacity, so an append without slices.Clip would write
+	// the job name there. Read up to the capacity, not the length.
+	if slices.Contains(capabilityFeatures[:cap(capabilityFeatures)], jobFeature) {
+		t.Error("featuresFor wrote into the spare capacity of the shared list")
 	}
 }
