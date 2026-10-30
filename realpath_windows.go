@@ -3,6 +3,7 @@
 package main
 
 import (
+	"path/filepath"
 	"strings"
 	"syscall"
 )
@@ -35,3 +36,8 @@ func realpathPathRefusal(path string) string {
 }
 
 func isDriveLetter(c byte) bool { return c >= 'a' && c <= 'z' || c >= 'A' && c <= 'Z' }
+
+// realpathClean cleans the text as Win32 does before it opens a path: a ".." after
+// a link removes the link name and not a folder of its target. Claustrum's own,
+// not measured.
+func realpathClean(p string) string { return filepath.Clean(p) }

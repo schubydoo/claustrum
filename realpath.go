@@ -85,6 +85,7 @@ func filesRealpath(req *request) response {
 // of its target exists. A dangling link without missingLeaf gives the plain
 // exists:false (claustrum's own, not measured).
 func resolveRealpath(path string, missingLeaf bool) (realpathResult, error) {
+	path = realpathClean(path)
 	_, err := os.Stat(path)
 	var real string
 	if err == nil {
@@ -109,8 +110,9 @@ func resolveRealpath(path string, missingLeaf bool) (realpathResult, error) {
 }
 
 // splitLast splits an absolute path at its last separator without cleaning it.
-// The parent keeps its ".." elements, so a ".." after a link is applied to the
-// link target when EvalSymlinks resolves it. A trailing separator is dropped.
+// On Linux and macOS the parent keeps its ".." elements, so a ".." after a link
+// is applied to the link target when EvalSymlinks resolves it. On Windows the
+// text is already clean (realpathClean). A trailing separator is dropped.
 func splitLast(path string) (parent, last string) {
 	seps := "/"
 	if runtime.GOOS == "windows" {
@@ -133,14 +135,16 @@ func resolveDangling(path string) realpathResult {
 	res := realpathResult{Dangling: true}
 	target, err := os.Readlink(path)
 	if err == nil && !filepath.IsAbs(target) {
-		// The kernel reads a relative target from the real folder of the link.
-		// The folder text is not cleaned, so a ".." after a link in the request
-		// follows the kernel. Claustrum's own, not measured.
+		// Linux and macOS: the kernel reads a relative target from the real folder
+		// of the link, and the text is not cleaned, so a ".." after a link follows
+		// the kernel. Windows: the target text is cleaned by text, as Win32 does
+		// (realpathClean). Claustrum's own, not measured.
 		folder, _ := splitLast(path)
 		var dir string
 		dir, err = filepath.EvalSymlinks(folder)
 		target = dir + string(filepath.Separator) + target
 	}
+	target = realpathClean(target)
 	if err == nil {
 		res.WouldBe, _ = wouldBeUnder(target)
 	}

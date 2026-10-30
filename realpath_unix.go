@@ -18,3 +18,7 @@ func realpathPathRefusal(path string) string {
 	}
 	return ""
 }
+
+// realpathClean leaves the text as it is: the kernel applies a ".." after a link
+// to the link target.
+func realpathClean(p string) string { return p }

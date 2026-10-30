@@ -37,7 +37,7 @@ The members come in the order of the table. A path below a missing folder gives 
 === "Linux and macOS"
     A link loop gives errno 40 on Linux and 62 on macOS. A chain of 33 links on macOS (32 resolve) and of 41 links on Linux is over the limit. On macOS `/tmp` gives `/private/tmp`.
 === "Windows"
-    Replies use `/` and a drive letter. A relative path, an empty path or `\\srv\s` gives `files.realpath: the path must begin with a drive letter, a colon and a slash`. Other forms are claustrum's own, not measured. A component that ends in a dot or a space gives `files.realpath: a path component ends in a dot or a space`. A `.` or `..` component passes (claustrum's own, not measured). A link loop gives errno 1921.
+    Replies use `/` and a drive letter. A `..` in a path is removed by text before the path is opened (claustrum's own, not measured). A relative path, an empty path or `\\srv\s` gives `files.realpath: the path must begin with a drive letter, a colon and a slash`. Other forms are claustrum's own, not measured. A component that ends in a dot or a space gives `files.realpath: a path component ends in a dot or a space`. A `.` or `..` component passes (claustrum's own, not measured). A link loop gives errno 1921.
 
 ## Differences from the reference
 
