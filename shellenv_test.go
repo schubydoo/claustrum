@@ -332,8 +332,11 @@ func TestLoginPATHFailedReadIsTriedAgainLater(t *testing.T) {
 
 	want := "WARN  [shellenv] Could not read PATH from the login shell after 0s (failure 1; next try in 30s at the earliest; until one works, programs get the daemon's own PATH): boom 1\n" +
 		"WARN  [shellenv] Could not read PATH from the login shell after 0s (failure 2; next try in 1m0s at the earliest; until one works, programs get the daemon's own PATH): boom 2\n" +
-		"WARN  [shellenv] Could not read PATH from the login shell after 0s (failure 3; next try in 2m0s at the earliest; until one works, programs get the daemon's own PATH): boom 3\n" +
-		"DEBUG [shellenv] Extracted shell PATH (10 chars) in 0s, after 3 failed read(s)\n"
+		"WARN  [shellenv] Could not read PATH from the login shell after 0s (failure 3; next try in 2m0s at the earliest; until one works, programs get the daemon's own PATH): boom 3\n"
+	// Windows reads no login shell, so it logs no success line.
+	if loginPATHFromShell {
+		want += "DEBUG [shellenv] Extracted shell PATH (10 chars) in 0s, after 3 failed read(s)\n"
+	}
 	if got := shellenvLines(buf); got != want {
 		t.Errorf("log =\n%s\nwant\n%s", got, want)
 	}
