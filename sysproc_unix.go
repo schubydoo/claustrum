@@ -3,6 +3,7 @@
 package main
 
 import (
+	"errors"
 	"os"
 	"strings"
 	"syscall"
@@ -56,12 +57,19 @@ func resumeChild(*os.Process, *syscall.SysProcAttr) error { return nil }
 // log of 52d82f0a has no job line on Linux (measured).
 func childJobsAtStart(bool, childJobs) childJobs { return jobsOff }
 
-// signal delivers the signal to the child's whole process group. Nil-receiver
-// safe (it doesn't touch the receiver). It returns nil: a failed kill is not
-// reported on Unix, as before. Only the Windows twin returns an error.
+// signal delivers the signal as signalProcessGroup does. Nil-receiver safe (it
+// doesn't touch the receiver). A failed delivery returns a *signalFailed.
+// 52d82f0a answers such a failure of process.kill with its text, for TERM and for
+// KILL (measured on Linux and macOS, a child that runs as root). A process that is
+// done, or a pid or group that is gone (ESRCH), returns nil, as before (claustrum's
+// own, not measured).
 func (*procGroup) signal(proc *os.Process, signame string) error {
-	signalProcessGroup(proc, signame)
-	return nil
+	sig := parseSignal(signame)
+	err := signalProcessGroup(proc, signame)
+	if err == nil || errors.Is(err, os.ErrProcessDone) || errors.Is(err, syscall.ESRCH) {
+		return nil
+	}
+	return &signalFailed{name: sig.String(), err: err}
 }
 
 // endRest has nothing to end on Unix: the process group stays as it is after the
@@ -73,7 +81,7 @@ func (*procGroup) close() {}
 
 // signalProcessGroup delivers signame the way the reference does: SIGKILL goes
 // to the child's entire process group (negative pid), every other signal goes to
-// the direct child alone. Best-effort.
+// the direct child alone.
 //
 // The split is measured, not inferred. Spawning `sh -c "sleep 40 & ...; sleep 40"`
 // and signalling the managed process at 5db5e4a:
@@ -97,14 +105,21 @@ func (*procGroup) close() {}
 // SIGTERM of process.kill, of process.killAndWait and of the supersede is
 // pidfd_send_signal(<fd>, SIGTERM, NULL, 0), and a SIGKILL is kill(-<pid>, SIGKILL).
 // macOS has no such call, and the handle sends kill(pid, sig) there.
-func signalProcessGroup(proc *os.Process, signame string) {
+//
+// 52d82f0a keeps the split (measured on Linux and macOS): TERM, INT and HUP reach
+// the leader only, and KILL reaches its group but not a process in its own session.
+// It returns the error of the call.
+func signalProcessGroup(proc *os.Process, signame string) error {
 	sig := parseSignal(signame)
 	if sig == syscall.SIGKILL {
-		_ = syscall.Kill(-proc.Pid, sig)
-		return
+		return killChildGroup(proc.Pid)
 	}
-	_ = signalOne(proc, sig)
+	return signalOne(proc, sig)
 }
+
+// killChildGroup sends SIGKILL to the process group pgid. A var so a test can see the
+// call and give it an error.
+var killChildGroup = func(pgid int) error { return syscall.Kill(-pgid, syscall.SIGKILL) }
 
 // signalOne sends sig to the single process proc through its process handle. On a
 // Linux kernel with pid file descriptors, the handle of a child that this daemon
@@ -142,3 +157,7 @@ func parseSignal(name string) syscall.Signal {
 		return syscall.SIGTERM
 	}
 }
+
+// logsUnreapedKill is true: a killAndWait whose SIGKILL did not reap the child in
+// killReapGrace logs one line (52d82f0a, measured on Linux and macOS).
+const logsUnreapedKill = true

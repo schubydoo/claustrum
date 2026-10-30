@@ -13,7 +13,7 @@ An untagged rule on this page matches build `5fd08069` or an earlier build.
 | Parameter | Required | Meaning |
 |---|---|---|
 | `id` | yes | The id of the process, as given to `process.spawn`. |
-| `signal` | no | The first signal: `TERM`, `KILL`, `INT` or `HUP`, with or without the prefix `SIG`. The default is `TERM`. The names are case-sensitive, and each other value means `TERM`. On Windows the daemon ignores the name: see [Differences by system](#differences-by-system). |
+| `signal` | no | The first signal, named as for [process.kill](process-kill.md#request). On Windows the daemon ignores the name: see [Differences by system](#differences-by-system). |
 | `timeoutMs` | no | How long the daemon waits for the process to end after the signal, in milliseconds. The default is 3000. A value of `0` or below means the default. The daemon limits a larger value to 30000. |
 | `escalate` | no | What the daemon does at the end of that time. With `true`, the default, it ends the process by force. With `false`, it leaves the process alone. |
 | `farewell`, `graceMs` | no | See [Farewell](process-farewell.md), also for the `farewellEnd` member of the result. |
@@ -30,8 +30,8 @@ The first signal reaches the same processes as a signal of [process.kill](proces
 |---|---|
 | `found` | If the daemon has a process with this `id`, `true`. |
 | `died` | If the process ended and the daemon sent its `exit` frame, `true`. |
-| `alreadyExited` | `true` in a result for a process whose `exit` frame went out before the request. The daemon then sent no signal. Each other result has no `alreadyExited` member. |
-| `escalated` | `true` in a result of a request whose wait ran out, after which the daemon used the force. Each other result has no `escalated` member. |
+| `alreadyExited` | `true` if the `exit` frame went out before the request. The daemon then sent no signal. Otherwise absent. |
+| `escalated` | `true` if the wait ran out and the daemon used the force. Otherwise absent. |
 
 Results:
 
@@ -80,6 +80,10 @@ These answers and the group kill are measured on Linux and macOS, not on Windows
 
 For a signal other than `KILL`, that missing first signal is a guard (claustrum's own): the operating system can reuse the process id (pid) of an ended child. For `KILL` claustrum follows the reference and accepts the risk of a reused group number.
 
+### A refused signal
+
+On Linux and macOS a refused signal, as to a child that runs as root, gives no error. The answer has `"died": false`, and the log names a refused first signal and a refused group kill (`52d82f0a`, measured). Only `TERM` was measured as the first signal.
+
 ## Differences from the reference
 
-No entry of the [divergence catalog](../DIVERGENCES.md) names this method. [The exit drain](#a-request-during-the-exit-drain) has one guard (claustrum's own).
+No entry of the [divergence catalog](../DIVERGENCES.md) names this method.

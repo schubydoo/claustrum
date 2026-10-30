@@ -1,21 +1,18 @@
 # Error texts of the daemon
 
-This page lists the method-level error texts of the daemon in one table. The table links to the method pages for the texts that only one method sends. The [protocol overview](../PROTOCOL.md#error-codes) has the table of error codes.
+This page lists the method-level error texts of the daemon in one table. The [protocol overview](../PROTOCOL.md#error-codes) has the table of error codes.
 
 An untagged row on this page matches build `5fd08069` or an earlier build, measured on Linux.
 
 ## Error-string catalogue
 
 The method-level error texts, verbatim. A text that only one method sends is on the
-page of that method, and a row of the method links there. The method pages under
-`docs/protocol/` give the trigger and the result shape. A text with no code and no
+page of that method, and a row of the method links there. A text with no code and no
 "in `error`" note is a JSON-RPC error `-32602`. "in `error`" is the `error` member of
 the result. A row that says "in the frame of" a method, or "The same frames", is
 `-32603` on `git.info`, `git.status` and `git.list_branches`. On `git.worktree_create`
 and `git.worktree_remove` it is in `error`. A remove can wrap such a text in a longer
-one, as the table in [Git-directory trust check](git-rules-trust.md#git-directory-trust-check) shows. A
-row with no mark holds a text of the reference daemon, measured on Linux against a
-build up to `5fd08069`. A "measured on macOS" or "measured on Windows" mark covers the
+one, as the table in [Git-directory trust check](git-rules-trust.md#git-directory-trust-check) shows. A "measured on macOS" or "measured on Windows" mark covers the
 sentence that it ends, and that sentence was measured on that system only. A sentence
 that names systems without "measured" holds on each one. The [reference build history](../REFERENCE-BUILDS.md) has the builds.
 
@@ -66,6 +63,7 @@ that names systems without "measured" holds on each one. The [reference build hi
 | git.worktree_remove | The texts that only this method sends | On the page: [git.worktree_remove → Error texts](git-worktree-remove.md#error-texts) |
 | process.spawn | The texts that only this method sends | On the page: [process.spawn → Errors](process-spawn.md#errors) |
 | launcher.resolve | The texts that only this method sends | On the page: [launcher.resolve → Errors](launcher-resolve.md#errors) |
+| process.kill | The texts that only this method sends | On the page: [process.kill → Errors](process-kill.md#errors) |
 | process.stdin | The texts that only this method sends | On the page: [process.stdin → Errors](process-stdin.md#errors) |
 | process.spawn / process.killAndWait / process.reattach | `Process ID is required` | `id` is absent or empty |
 | plugins.prune | The texts that only this method sends | On the page: [plugins.prune → Errors](plugins-prune.md#errors) |

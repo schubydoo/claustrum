@@ -163,12 +163,17 @@ func (s *server) processKill(req *request) response {
 		// The rule test comes before the id test, so an unknown id with a bad
 		// farewell gets "invalid" (claustrum's own, not measured).
 		logFarewellNotSaid(p.ID, rule)
-		s.procs.kill(p.ID, p.Signal)
+		_ = s.procs.kill(p.ID, p.Signal)
 		return okResult(req.ID, killResult{Success: true, FarewellEnd: farewellInvalid})
 	case ask != nil:
 		return okResult(req.ID, killResult{Success: true, FarewellEnd: s.procs.killWithFarewell(p.ID, p.Signal, *ask)})
 	}
-	s.procs.kill(p.ID, p.Signal)
+	// A signal that the system refused answers its text (52d82f0a, measured on Linux
+	// and macOS). The case of a bad farewell above keeps its success (claustrum's
+	// own, not measured).
+	if err := s.procs.kill(p.ID, p.Signal); err != nil {
+		return errResult(req.ID, codeInternal, err.Error())
+	}
 	return okResult(req.ID, killResult{Success: true})
 }
 

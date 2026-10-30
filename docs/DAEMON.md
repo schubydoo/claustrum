@@ -507,8 +507,7 @@ system was measured on that system, and an unmarked rule on Linux and macOS.
 At each start the launcher renames an existing `remote-server.log` in the
 socket's directory to `remote-server.log.old`. Then it creates a fresh log there
 with mode `0600`. It sends the stdout and stderr of the daemonized child into that file, so its own streams stay empty, except for the launcher's own failures. Those are under [Daemon startup](#daemon-startup-serve) and
-[The token source](protocol/flags.md#the-token-source), and a log that cannot be created gives
-`claustrum: open log: <err>`. claustrum does not remove the log at shutdown (from the code), unlike the socket and `daemon.token`. So the log of the last run stays readable. The fixed name and location are the deployment contract, and are not configurable.
+[The token source](protocol/flags.md#the-token-source). claustrum does not remove the log at shutdown (from the code), unlike the socket and `daemon.token`. The fixed name and location are the deployment contract, and are not configurable.
 
 claustrum writes a level tag before each line of its logger. The banner and a
 start error that begins `claustrum:` have none. The reference writes no tag. `CLAUSTRUM_LOG_LEVEL=warn` drops the INFO lines.
@@ -525,7 +524,7 @@ Claustrum remote server listening on /run/user/1000/claude/rpc.sock (pid 4711, i
 ```
 
 A failed raise writes no line (claustrum's own, not measured). The banner ends
-with the daemon's pid and its instance, the `instanceId` of
+with the daemon's pid and the `instanceId` of
 `server.capabilities`. The name `Claustrum` is claustrum's own, and the
 reference prints `Claude` there.
 
@@ -574,7 +573,7 @@ and `.old` stays. This is parity ([D21](DIVERGENCES.md#d21) is retired).
 
 ### Lines of connections
 
-These line rules are claustrum's own (claustrum's own, not measured). `89cb6289` and `5fd08069` log the text of the notes.
+These line rules are claustrum's own, not measured. `89cb6289` and `5fd08069` log the text of the notes.
 
 - A connection gets the token mark at its first request that passes the token check. `server.shutdown` passes with no token. A parse error and a refused request set no mark.
 - The label of a peer is its address in `%q` form, such as `"@"`.
@@ -594,6 +593,7 @@ These lines tell of [process.spawn](protocol/process-spawn.md) children and thei
 - A failed start (ERROR): `[process.Manager] Failed to start process <id>: <message>`, with the text of the error frame
 - An exit (INFO): `[process.Manager] Process <id> exited with code <n>`, then `, terminated by <signal>` for a signal and `, asked to end by this daemon (<label>)` for a daemon kill (build `52d82f0a`, measured on Linux and macOS for `client`)
 - A bad `process.kill` farewell (INFO): `[process] kill <id>: its farewell is not said: <rule>` (same build and systems)
+- A refused `process.killAndWait` (WARN): `[process.Manager] KillAndWait <id>: signal terminated failed: <error>`, `group kill failed: <error>` and `still running 7s after SIGKILL (D-state?)` (`52d82f0a`, measured on Linux and macOS)
 - The drain limit (WARN): `[process.Manager] Process <id>: pipe drain grace expired (grandchild holding stdio?); force-closing`
 - A supersede (INFO): `[process.Manager] process <new id> supersedes <old id> for session <key>: died=<bool> escalated=<bool> alreadyExited=<bool>` (from the code), after the exit line of the old process
 - `children` not a folder (ERROR): `[process.Registry] <run dir>/children is not a directory; recording nothing`, or `reaping nothing` at a start
@@ -608,7 +608,7 @@ These lines tell of [process.spawn](protocol/process-spawn.md) children and thei
 - A group fails the test (INFO): `[process.Registry] group <pgid> no longer verifies (<reason>); nothing more is sent to it`
 - The reap summary (INFO): `[daemon] serve: predecessor's children — <n> orphaned group(s): <a> ended on SIGTERM, <b> on SIGKILL, <c> survived; <d> stale record(s) dropped, <e> kept`
 
-The exit line is a race at a shutdown, on the reference and on claustrum. It can be missing. A reap that sent no `SIGTERM` and kept no record writes no summary.
+At a shutdown the exit line can be missing, on the reference and on claustrum. A reap that sent no `SIGTERM` and kept no record writes no summary.
 
 The main `<reason>` texts of a dropped record and of a group that fails the test are these:
 

@@ -174,7 +174,7 @@ func TestShutdownSweepKeepsReasonOfPlainKill(t *testing.T) {
 	case <-time.After(10 * time.Second):
 		t.Fatal("the helper never became ready")
 	}
-	m.kill("c1", "TERM")
+	_ = m.kill("c1", "TERM")
 	if got := killedByOf(p); got != "client" {
 		t.Fatalf("killedBy after the plain kill = %q, want %q", got, "client")
 	}

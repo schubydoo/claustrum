@@ -267,7 +267,7 @@ func TestShutdownLinesKeepChildren(t *testing.T) {
 	}
 	// End the kept child here and wait for its exit. Its exit line then does not land in
 	// the log buffer of a later test.
-	s.procs.kill("c1", "KILL")
+	_ = s.procs.kill("c1", "KILL")
 	select {
 	case <-p.done:
 	case <-time.After(10 * time.Second):
@@ -290,7 +290,7 @@ func TestExitLineOfAKilledChild(t *testing.T) {
 		t.Fatalf("spawn: %v", err)
 	}
 	buf := captureLogBuf(t)
-	m.kill("k1", "KILL")
+	_ = m.kill("k1", "KILL")
 	echo, envEcho := helperCommand(t, "echo")
 	plain, err := m.spawn(c, "p1", echo, []string{"hi"}, "", envEcho, true)
 	if err != nil {

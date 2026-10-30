@@ -148,7 +148,7 @@ func (p *managedProc) cutFarewellLocked() {
 // killWithFarewell is process.kill with a valid farewell. The reply is at once.
 // The farewell goes to the stdin queue, and the signal of the request follows
 // after the grace unless the child ended or another kill cut the farewell. It
-// signals the same process group as kill, through signalIfLive.
+// signals as kill does, through signalIfLive.
 func (m *procManager) killWithFarewell(id, signal string, ask farewellAsk) string {
 	p := m.get(id)
 	if p == nil {
@@ -250,7 +250,7 @@ func (m *procManager) endPendingFarewells() {
 			if farewellSweepHook != nil {
 				farewellSweepHook(h)
 			}
-			p.signalIfLiveLocked(h.signal, "client")
+			_, _ = p.signalIfLiveLocked(h.signal, "client")
 		}
 		p.mu.Unlock()
 	}
