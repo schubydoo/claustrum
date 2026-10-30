@@ -45,4 +45,9 @@ An example is `{"found":true,"died":true,"escalated":true,"farewellEnd":"expired
 - Another kill of the process cuts a pending farewell and signals at once.
 - After `server.shutdown` a waiting `process.killAndWait` gets no reply and no `exit` frame. Its connection ends.
 
-Not measured, claustrum's own: Windows, `invalid` on `process.killAndWait`, and `unsent` for a second farewell on a pending one. Also `cut` for a child that outlives the signal of the cut.
+Not measured, claustrum's own:
+
+- Windows, and `unsent` for a second farewell on a pending one.
+- `invalid` on `process.killAndWait`: the kill goes at once. `invalid` also for an unknown `id` on `process.kill`.
+- `cut` for a child that outlives the signal of the cut.
+- Under `-keep-children` a shutdown sends the signal of each pending farewell at once.
