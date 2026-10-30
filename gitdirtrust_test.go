@@ -788,8 +788,9 @@ func TestGitDirTrustSubmoduleGitDir(t *testing.T) {
 // A trusted entry runs git with the common directory pinned to the repository. A
 // commondir whose value ends at a NUL is trusted (build 52d82f0a, measured on Linux
 // and Windows). Remove from that worktree then deletes the worktree and its entry
-// under the main repository's git directory, as for an honest "../..". The remove
-// reads the entry's commondir by the same rule (claustrum's own, not measured).
+// under the main repository's git directory, as for an honest "../..". The commondir
+// of the removed entry refuses nothing (build 52d82f0a, measured on Linux, macOS and
+// Windows).
 func TestGitDirTrustPinsTheCommonDirectory(t *testing.T) {
 	for _, content := range []string{"../..\x00", "../..\x00junk\n"} {
 		t.Run(fmt.Sprintf("%q", content), func(t *testing.T) {
@@ -1172,4 +1173,37 @@ func TestGitDirTrustDamagedTextNeedsAWorktreesParent(t *testing.T) {
 	writeFile(t, cd, "../..\n", 0o644)
 	writeFile(t, filepath.Join(r.TW, ".git"), "gitdir: "+g+"\n", 0o644)
 	wantRPCError(t, "info(TW)", info(t, r.TW), wantTR(cd, "../.."))
+}
+
+// trustRemoveFrame sends git.worktree_remove of the worktree d0 of r.T on a daemon in the
+// state shadow and returns the whole frame.
+func trustRemoveFrame(t *testing.T, r trustRepo, branch string) string {
+	t.Helper()
+	s, _ := newSeededShadowServer(t)
+	return dispatchRaw(t, s, rpcLine(t, "git.worktree_remove", map[string]any{
+		"baseRepo": r.T, "worktreePath": r.D, "branchName": branch}))
+}
+
+// The remove of a present worktree whose entry commondir is no exact `../..` goes on:
+// the leaf, the entry and the branch go (build 52d82f0a, measured on Linux, macOS and
+// Windows). Nothing else goes.
+func TestGitDirTrustRemoveIgnoresEntryCommondirBytes(t *testing.T) {
+	for _, content := range []string{"../..\x00junk", "../..  \n", "../..\t", "../..\r\n"} {
+		t.Run(fmt.Sprintf("%q", content), func(t *testing.T) {
+			r := newTrustRepo(t)
+			entry := filepath.Join(r.T, ".git", "worktrees", "d0")
+			writeFile(t, filepath.Join(entry, "commondir"), content, 0o644)
+			if got, want := trustRemoveFrame(t, r, "d0"), `{"jsonrpc":"2.0","id":1,"result":{"success":true}}`; got != want {
+				t.Errorf("remove = %s\nwant %s", got, want)
+			}
+			if exists(r.D) || exists(entry) || branchExists(t, r.T, "d0") {
+				t.Errorf("remove left the leaf, the entry or the branch d0")
+			}
+			for _, p := range []string{r.SW, r.TW, filepath.Join(r.T, ".git", "worktrees", "s0"), filepath.Join(r.T, ".git", "worktrees", "T_wt")} {
+				if !exists(p) {
+					t.Errorf("remove deleted %s", p)
+				}
+			}
+		})
+	}
 }

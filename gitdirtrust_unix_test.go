@@ -407,3 +407,119 @@ func TestGitDirTrustRefsWithoutSearchPermission(t *testing.T) {
 		t.Errorf("remove refused but deleted the entry of %s", r.D)
 	}
 }
+
+// denyRefsSearch sets `<repo>/.git/refs` to mode 0600 and returns the undo. It
+// skips the test as root, which passes the search test of every folder.
+func denyRefsSearch(t *testing.T, repo string) func() {
+	t.Helper()
+	if os.Geteuid() == 0 {
+		t.Skip("root passes the search test of every folder")
+	}
+	refs := filepath.Join(repo, ".git", "refs")
+	if err := os.Chmod(refs, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	undo := func() {
+		if err := os.Chmod(refs, 0o755); err != nil {
+			t.Fatal(err)
+		}
+	}
+	t.Cleanup(func() { _ = os.Chmod(refs, 0o755) })
+	return undo
+}
+
+// The remove of a gone worktree from a repository whose `refs` has mode 0600 keeps
+// the entry, and it keeps the branch with the member (build 52d82f0a, measured on
+// Linux and macOS). With an empty branchName the reply has no member. Mutation:
+// test `objects` and `refs` with os.Stat in gitDirPartUsable.
+func TestGitDirTrustRemoveGoneLeafRefsDenied(t *testing.T) {
+	for _, tc := range []struct{ branch, want string }{
+		{"d0", `{"success":true,"branchKept":true}`},
+		{"", `{"success":true}`},
+	} {
+		t.Run(tc.branch, func(t *testing.T) {
+			r := newTrustRepo(t)
+			if err := os.RemoveAll(r.D); err != nil {
+				t.Fatal(err)
+			}
+			undo := denyRefsSearch(t, r.T)
+			got := trustRemoveFrame(t, r, tc.branch)
+			undo()
+			if want := `{"jsonrpc":"2.0","id":1,"result":` + tc.want + `}`; got != want {
+				t.Errorf("remove = %s\nwant %s", got, want)
+			}
+			if !exists(filepath.Join(r.T, ".git", "worktrees", "d0")) || !branchExists(t, r.T, "d0") {
+				t.Errorf("remove deleted the entry or the branch d0")
+			}
+		})
+	}
+}
+
+// A present worktree in a repository whose `refs` has mode 0600, or whose `refs` is
+// gone, gets the lock-check refusal, and nothing is deleted (build 52d82f0a, measured
+// on Linux and macOS for mode 0600, on Linux for a gone `refs`). The entry may have no
+// commondir, also with GIT_COMMON_DIR=<repo>/.git in the daemon environment (measured
+// on Linux and macOS). Mutation: test `objects` and `refs` with os.Stat in
+// gitDirPartUsable.
+func TestGitDirTrustRemovePresentLeafBrokenRefs(t *testing.T) {
+	for _, tc := range []string{"mode 0600", "no commondir", "no commondir, daemon GIT_COMMON_DIR", "refs gone"} {
+		t.Run(tc, func(t *testing.T) {
+			r := newTrustRepo(t)
+			entry := filepath.Join(r.T, ".git", "worktrees", "d0")
+			if strings.HasPrefix(tc, "no commondir") {
+				if err := os.Remove(filepath.Join(entry, "commondir")); err != nil {
+					t.Fatal(err)
+				}
+			}
+			if strings.HasSuffix(tc, "GIT_COMMON_DIR") {
+				t.Setenv("GIT_COMMON_DIR", filepath.Join(r.T, ".git"))
+			}
+			refs := filepath.Join(r.T, ".git", "refs")
+			var undo func()
+			if tc == "refs gone" {
+				if err := os.Rename(refs, refs+".off"); err != nil {
+					t.Fatal(err)
+				}
+				undo = func() {
+					if err := os.Rename(refs+".off", refs); err != nil {
+						t.Fatal(err)
+					}
+				}
+			} else {
+				undo = denyRefsSearch(t, r.T)
+			}
+			got := trustRemoveFrame(t, r, "d0")
+			undo()
+			want, _ := json.Marshal(worktreeRemoveResult{Success: false, Error: wantLockCheck(r.D)})
+			if w := `{"jsonrpc":"2.0","id":1,"result":` + string(want) + `}`; got != w {
+				t.Errorf("remove = %s\nwant %s", got, w)
+			}
+			if !exists(r.D) || !exists(entry) || !branchExists(t, r.T, "d0") {
+				t.Errorf("remove refused but deleted the leaf, the entry or the branch")
+			}
+		})
+	}
+}
+
+// A create and git.list_branches in a repository whose `refs` has mode 0600 answer
+// "no repository", and the create makes nothing (build 52d82f0a, measured on Linux
+// and macOS). Mutation: test `objects` and `refs` with os.Stat in gitDirPartUsable.
+func TestGitDirTrustCreateAndListRefsDenied(t *testing.T) {
+	r := newTrustRepo(t)
+	undo := denyRefsSearch(t, r.T)
+	s, _ := newSeededShadowServer(t)
+	wt := filepath.Join(r.T, ".claude", "worktrees", "w3")
+	c := dispatchRaw(t, s, rpcLine(t, "git.worktree_create", map[string]any{
+		"baseRepo": r.T, "worktreePath": wt, "branchName": "w3"}))
+	l := dispatchRaw(t, s, rpcLine(t, "git.list_branches", map[string]any{"path": r.T}))
+	undo()
+	if want := `{"jsonrpc":"2.0","id":1,"result":` + notRepoCreate + `}`; c != want {
+		t.Errorf("create = %s\nwant %s", c, want)
+	}
+	if want := `{"jsonrpc":"2.0","id":1,"result":` + notRepoList + `}`; l != want {
+		t.Errorf("list_branches = %s\nwant %s", l, want)
+	}
+	if exists(wt) || branchExists(t, r.T, "w3") {
+		t.Errorf("create made the leaf or the branch w3")
+	}
+}
