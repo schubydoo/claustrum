@@ -492,10 +492,9 @@ Unless an item names another build, the daemon items below are measured against
   that lives on then is not drift. A process that holds the output pipes
   lives on too, as on `5fd08069`. See
   [process.killAndWait](protocol/process-killandwait.md).
-- On Linux and macOS the daemon runs no login shell before its first
-  `process.spawn`. When a process of the login profile holds the output pipe of the
-  shell, the first spawn waits for the 4 s cap and logs the timed-out PATH
-  line (measured on Linux). Neither is drift. See
+- On Linux and macOS a login shell that the daemon runs at its start, with no
+  spawn, is the PATH read and not drift. A spawn waits for it at most 4 s
+  (measured against `52d82f0a`). See
   [The login-shell PATH](protocol/process-spawn.md#the-login-shell-path-linux-and-macos).
 - A `-serve` launcher that gives up after 12 s is not drift, also for a daemon
   that ends before its bind (measured on Linux, macOS and Windows). See [The launcher wait](DAEMON.md#the-launcher-wait).

@@ -707,7 +707,7 @@ func (m *procManager) spawnVia(c *conn, id, command string, args []string, cwd s
 	}
 	// The launcher variables are stripped after the caller's env is merged, so the
 	// strip covers the spawn env param as well as the daemon env.
-	cmd.Env = stripManagedLauncherEnv(buildEnv(env), launcher != nil)
+	cmd.Env = stripManagedLauncherEnv(buildSpawnEnv(env, noShellAgent), launcher != nil)
 	// After the caller's env and before the trampoline adds its markers, so an
 	// SSH_AUTH_SOCK from the daemon or the caller (even an empty one) wins.
 	cmd.Env = addShellAgentSocket(cmd.Env, noShellAgent)
@@ -1668,22 +1668,26 @@ func (m *procManager) killAllCount() int {
 // buildEnv merges the caller-supplied env map over the daemon's environment.
 // CLAUDE_RPC_TOKEN is stripped from the base: the reference binary does not
 // propagate the auth token to spawned children (probe-verified 2026-06-09).
-func buildEnv(env map[string]string) []string {
-	// The first spawn of a daemon reads the login-shell PATH here, and every spawn
-	// waits for that one read. A no-op once the read is done, and when it is not
-	// armed (a test server).
-	awaitLoginPATH()
+func buildEnv(env map[string]string) []string { return buildSpawnEnv(env, false) }
+
+// buildSpawnEnv is buildEnv for a spawn. noShellAgent is the disableShellAgentSocket
+// of the request, which ends a read of the login-shell PATH that still runs.
+func buildSpawnEnv(env map[string]string, noShellAgent bool) []string {
+	// A spawn starts a read of the login-shell PATH that is due, and waits for a
+	// running read within its bounds (shellenv.go). A no-op after a good read, and
+	// when the read is not armed (a test server).
+	awaitLoginPATH(noShellAgent)
 	base := removeEnvKey(os.Environ(), "CLAUDE_RPC_TOKEN")
 	// The base holds no CLAUDE_SSH_PEER_CHECK: the daemon removed it from its own
 	// environment at its start (startPeerCheck). A caller key of that name passes.
 	// The login-shell PATH is applied HERE, to the child's environment, rather
-	// than being installed into the daemon's own — see loginPATH in shellenv.go.
+	// than being installed into the daemon's own — see loginPATHs in shellenv.go.
 	// Applied before the caller's env so an explicit PATH in the spawn request
 	// still wins. On Windows the value is the daemon's own PATH, and the exact name
 	// PATH matters. A daemon entry named Path stays in the slice, and os/exec keeps
-	// the later PATH entry (Windows VM rows R1 and R3 against 89cb6289). With a daemon
+	// the later PATH entry (measured on Windows against 89cb6289). With a daemon
 	// entry named Path, a caller key named exactly Path replaces it and still loses to
-	// the later PATH (row R4).
+	// the later PATH.
 	if lp := currentLoginPATH(); lp != "" {
 		base = replaceOrAppendEnv(base, "PATH", lp)
 	}

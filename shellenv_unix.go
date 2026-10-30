@@ -3,25 +3,34 @@
 package main
 
 import (
+	"bytes"
 	"context"
+	"crypto/rand"
+	"encoding/hex"
+	"errors"
+	"fmt"
 	"os"
 	"os/exec"
 	"strings"
 	"sync/atomic"
 	"syscall"
 	"time"
-	"unicode/utf8"
 )
 
-// loginPATHTimeout caps how long the login-shell subprocess runs. It is 4s.
-// Measured against 5db5e4a with a login shell that sleeps 6s: the reference
-// answers the first process.spawn after 4.01s, because it gave up. A 10s cap
-// answers after 5.82s, because it waited. The value is load-bearing: on a
-// host whose login shell takes longer than this, children inherit the daemon's
-// PATH rather than the login PATH, so a longer cap diverges both in first-spawn
-// latency and in every spawned child's environment.
-// A variable so tests can override it without affecting production behavior.
-var loginPATHTimeout = 4 * time.Second
+// The bounds of one PATH read. Variables so tests can shrink them.
+var (
+	// loginPATHTimeout ends the shell of a read. claustrum's own, not measured: no
+	// row ran a read past 10 s that failed. A read of 10 s gave its PATH on Linux and
+	// macOS (52d82f0a).
+	loginPATHTimeout = 30 * time.Second
+	// loginPATHBound ends the wait for a read whose shell the kill cannot end
+	// (claustrum's own, not measured).
+	loginPATHBound = 31 * time.Second
+	// loginPATHWaitDelay closes the output pipes this long after the shell ended.
+	// Measured on Linux and macOS against 52d82f0a: a shell that leaves a process on
+	// its stdout and ends at once gives its PATH, logged "in 500ms" and "in 600ms".
+	loginPATHWaitDelay = 500 * time.Millisecond
+)
 
 // fallbackShells is the candidate list walked when $SHELL is not usable. The
 // reference prefers **zsh**, then bash, then sh.
@@ -83,165 +92,191 @@ func isExecutableFile(path string) bool {
 	return err == nil && fi.Mode().IsRegular() && fi.Mode().Perm()&0o111 != 0
 }
 
-// pathSentinel brackets the PATH value echoed from the login shell.
-const pathSentinel = "___CLAUDE_SSH_PATH_EXTRACT___"
+// pathSentinelPrefix starts the fresh sentinel of each read. The inner command
+// prints the sentinel and the PATH on two lines. Measured on Linux and macOS against
+// 52d82f0a: the shell gets -l, -i, -c and this one command, and two starts of the
+// daemon give two sentinels of 32 hex digits.
+const pathSentinelPrefix = "___CLAUDE_SSH_PATH_"
 
-// pathExtractCmd is the exact inner command run under the login shell.
-const pathExtractCmd = `/bin/sh -c 'printf "%s%s\n" "___CLAUDE_SSH_PATH_EXTRACT___" "$PATH"'`
+// pathReadCommand is the inner command of a read with the sentinel s.
+func pathReadCommand(s string) string {
+	return `/bin/sh -c 'printf "%s\n%s\n" "` + s + `" "$PATH"'`
+}
 
-// extractLoginPATH runs the user's login shell interactively to capture the PATH
-// it resolves, so spawned children inherit a real interactive PATH. Auto-update /
-// compfix noise is suppressed. Best-effort: failures leave the existing PATH.
-func extractLoginPATH() {
+// freshMarker returns prefix, 32 random hex digits and "___".
+func freshMarker(prefix string) (string, error) {
+	var nonce [16]byte
+	if _, err := rand.Read(nonce[:]); err != nil {
+		return "", err
+	}
+	return prefix + hex.EncodeToString(nonce[:]) + "___", nil
+}
+
+// loginPATHFromShell is true where a login shell gives the PATH, so a good read logs
+// its line.
+const loginPATHFromShell = true
+
+// extractLoginPATH runs the login shell of the user once and returns the PATH that it
+// prints. The end of ctx kills the process group of the shell, as the time limit does.
+//
+// Measured on Linux and macOS against 52d82f0a:
+//
+//   - The line after the sentinel line, on stdout or on stderr, is the PATH. It must
+//     end in a newline and hold one absolute directory, or the read fails.
+//   - The exit status does not matter when that line is good.
+//   - A read that a stop ended gives "shell PATH extraction timed out".
+//   - No failure text holds what the shell printed. It gives byte counts.
+//
+// claustrum's own (not measured): stdout is searched first, a bad line in stdout
+// decides the read, and the PATH line is kept as printed, with no trim.
+func extractLoginPATH(ctx context.Context) (string, error) {
 	shell := safeLoginShell()
-	ctx, cancel := context.WithTimeout(context.Background(), loginPATHTimeout)
+	sentinel, err := freshMarker(pathSentinelPrefix)
+	if err != nil {
+		return "", err
+	}
+	ctx, cancel := context.WithTimeout(ctx, loginPATHTimeout)
 	defer cancel()
-	cmd := exec.CommandContext(ctx, shell, "-l", "-i", "-c", pathExtractCmd)
-	// Own process group so all children (e.g. tools the shell forks) are killed
-	// together when the context times out, allowing CombinedOutput to return.
+	cmd := exec.CommandContext(ctx, shell, "-l", "-i", "-c", pathReadCommand(sentinel))
+	// Its own process group, so the kill ends every process of the shell.
 	cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
-	// timedOut records that the DEADLINE killed the command, rather than asking
-	// the clock afterwards. os/exec calls Cancel only when the context finishes
-	// before Wait completes (watchCtx selects between the two and returns without
-	// calling Cancel when Wait wins), so setting it here IS "the deadline fired".
-	//
-	// Reading ctx.Err() after CombinedOutput returns answers a different
-	// question — "is the deadline in the past NOW?" — and a shell that printed a
-	// good sentinel and exited at 3.999s would lose its PATH to any scheduling gap
-	// (a GC pause, a loaded host) that crossed the 4s boundary before the check.
-	// That is the opposite of the divergence this function exists to fix, and it
-	// is likeliest on exactly the hosts whose login shell already sits near the
-	// cap. Not airtight — if Wait and the deadline land in the same instant
-	// watchCtx still picks arbitrarily — but it narrows the window to true
-	// simultaneity instead of "however long the code in between takes".
+	// os/exec calls Cancel only when the context ends before Wait returns. So the flag
+	// says that the time limit or a stop ended the read, not a late clock read.
 	var timedOut atomic.Bool
 	cmd.Cancel = func() error {
 		timedOut.Store(true)
 		return syscall.Kill(-cmd.Process.Pid, syscall.SIGKILL)
 	}
 	cmd.Env = loginPATHShellEnv()
-	// The read ends at the bound also when the shell is gone and another process
-	// still holds its output pipe. The kill above does not cover that case: the
-	// shell ended before the deadline, so no kill goes out. Measured on Linux against
-	// 89cb6289 (rows P13 and P13k): a login shell that leaves `setsid sleep 30` on the
-	// pipe is done after 0.06 s. The first spawn answers after 4.6 s, the daemon
-	// sends no signal, and the log holds the timed-out line below. macOS row P13
-	// gives the same on 89cb6289 (4.7 s) and on claustrum (4.7 to 4.9 s).
-	//
-	// claustrum's own (not measured): WaitDelay closes the pipe of the abandoned read
-	// two bounds after the end of the shell, so that read does not go on for the life
-	// of the holder. It is twice the bound so that the bound always fires first. With
-	// equal values, a shell that ends at once makes both fire together.
-	bound := loginPATHTimeout
-	cmd.WaitDelay = 2 * bound
-	type shellRun struct {
-		out []byte
-		err error
-	}
-	run, finished := waitAtMost(bound, func() shellRun {
-		out, err := cmd.CombinedOutput()
-		return shellRun{out, err}
-	})
-	out, err := run.out, run.err
-	// A timeout DISCARDS whatever the shell printed, even a valid sentinel line,
-	// and reports itself as one line naming the shell. Measured 2026-08-02
-	// against 5db5e4a with a login shell that prints a good sentinel and THEN
-	// sleeps past the cap:
-	//
-	//	reference : child PATH does NOT contain the extracted value
-	//	            "[shellenv] Failed to extract PATH from login shell:
-	//	             shell PATH extraction timed out (/bin/bash)"
-	//	claustrum : child PATH DOES contain it, over two log lines, neither
-	//	            of which says "timed out"
-	//
-	// So this is wire-visible too, not log-only: the child's environment differs.
-	// The check must come BEFORE the sentinel scan below, because the scan is
-	// what would otherwise install the discarded value.
+	cmd.WaitDelay = loginPATHWaitDelay
+	out := newShellOutput()
+	cmd.Stdout, cmd.Stderr = &out.stdout, &out.stderr
+	runErr, finished := waitAtMost(loginPATHBound, cmd.Run)
 	if timedOut.Load() || !finished {
-		logWarnf("[shellenv] Failed to extract PATH from login shell: "+
-			"shell PATH extraction timed out (%s)", shell)
-		return
+		return "", fmt.Errorf("shell PATH extraction timed out (%s)", shell)
 	}
-	if err != nil {
-		logWarnf("[shellenv] Shell command exited with error (may still have PATH): %v", err)
-	}
-	for _, line := range strings.Split(string(out), "\n") {
-		i := strings.Index(line, pathSentinel)
-		if i < 0 {
+	for _, b := range [][]byte{out.stdout.kept.Bytes(), out.stderr.kept.Bytes()} {
+		line, found, whole := pathLineAfter(b, sentinel)
+		if !found {
 			continue
 		}
-		path := strings.TrimSpace(line[i+len(pathSentinel):])
-		if path != "" {
-			// Recorded for spawned children only — NOT installed into the daemon's
-			// own environment. See loginPATH in shellenv.go.
-			setLoginPATH(path)
-			logDebugf("[shellenv] Extracted shell PATH (%d chars)", len(path))
+		if whole && hasAbsoluteDir(line) {
+			// Kept as printed, with no trim (claustrum's own, not measured).
+			return line, nil
 		}
-		return
+		return "", fmt.Errorf("the login shell's PATH line was cut short or had no absolute directory in it (%d bytes read)", len(line))
 	}
-	// The reference wraps this failure and includes the shell's own output, which
-	// is what makes it diagnosable — without the output there is no way to tell a
-	// silent shell from a chatty one that simply never printed the sentinel.
-	// Measured at 5db5e4a: "[shellenv] Failed to extract PATH from login shell:
-	// PATH sentinel not found in shell output: no sentinel here".
-	logWarnf("[shellenv] Failed to extract PATH from login shell: "+
-		"PATH sentinel not found in shell output: %s",
-		truncateShellOutput(strings.TrimRight(string(out), "\n")))
+	return "", fmt.Errorf("the login shell ended (%s) without printing a usable PATH (%s)", out.endReason(runErr), out.counts())
+}
+
+// pathLineAfter returns the text after the sentinel line, up to the next newline.
+// found reports the sentinel line, and whole reports the newline after the text.
+func pathLineAfter(b []byte, sentinel string) (line string, found, whole bool) {
+	i := bytes.Index(b, []byte(sentinel+"\n"))
+	if i < 0 {
+		return "", false, false
+	}
+	rest := b[i+len(sentinel)+1:]
+	if j := bytes.IndexByte(rest, '\n'); j >= 0 {
+		return string(rest[:j]), true, true
+	}
+	return string(rest), true, false
+}
+
+// hasAbsoluteDir reports whether one entry of the PATH list p is absolute.
+func hasAbsoluteDir(p string) bool {
+	for _, d := range strings.Split(p, ":") {
+		if strings.HasPrefix(d, "/") {
+			return true
+		}
+	}
+	return false
 }
 
 // loginPATHShellEnv is the environment of the login shell that extractLoginPATH runs.
-// It holds seven entries and nothing else of the daemon environment.
+// It holds eight entries and nothing else of the daemon environment.
 //
-// Measured on Linux against 89cb6289 (row P13v). A daemon with HOME, PATH, USER,
-// LANG, EFX, SHELL and CLAUDE_SSH_DAEMON_CHILD gave its PATH shell
-// DISABLE_AUTO_UPDATE=true, HOME, PATH, SHELL, TERM= (empty), USER and
-// ZSH_DISABLE_COMPFIX=true. The shell itself added PWD. LANG, EFX and
-// CLAUDE_SSH_DAEMON_CHILD did not reach it. The agent-socket shell has another
-// environment (probeShellEnv).
-//
-// macOS rows P13v and P13z give the same seven entries on 89cb6289 and on claustrum.
-// In row P13z the daemon has no SHELL, and the entry is empty.
+// Measured on Linux and macOS against 52d82f0a: the shell gets
+// CLAUDE_DESKTOP_RESOLVING_ENVIRONMENT=1, DISABLE_AUTO_UPDATE=true, HOME, PATH, SHELL,
+// TERM (empty when the daemon has none), USER and ZSH_DISABLE_COMPFIX=true. The shell
+// itself adds PWD. Measured on 89cb6289: LANG and CLAUDE_SSH_DAEMON_CHILD of the
+// daemon do not reach it, and a daemon with no SHELL gives an empty entry. The agent
+// shell has another environment (probeShellEnv).
 //
 // Not measured: the order of the entries, a daemon that has a TERM, and a daemon
-// with no HOME, PATH or USER. claustrum copies each of the five values from
-// the daemon environment and writes an empty value for a name that is not set, as the
-// rows show for TERM and SHELL.
+// with no HOME, PATH or USER.
 func loginPATHShellEnv() []string {
-	env := make([]string, 0, 7)
+	env := make([]string, 0, 8)
 	for _, name := range []string{"HOME", "PATH", "SHELL", "TERM", "USER"} {
 		env = append(env, name+"="+os.Getenv(name))
 	}
-	return append(env, "DISABLE_AUTO_UPDATE=true", "ZSH_DISABLE_COMPFIX=true")
+	return append(env, "DISABLE_AUTO_UPDATE=true", "ZSH_DISABLE_COMPFIX=true", "CLAUDE_DESKTOP_RESOLVING_ENVIRONMENT=1")
 }
 
-// shellOutputLogLimit is where the reference cuts the shell output it echoes
-// into the failure log above, before appending "...".
-//
-// Measured 2026-08-02 against 5db5e4a with a login shell printing 500 bytes and
-// no sentinel: the logged payload was exactly 203 characters and ended in "...",
-// i.e. 200 kept plus the ellipsis. claustrum echoed all 500. Without the cut a
-// chatty shell writes its whole profile output into the daemon log.
-//
-// The fixture was ASCII, so whether the reference counts bytes or runes is NOT
-// established. Bytes is what a Go slice expression gives and is what this does;
-// a multi-byte fixture would settle it and has not been run.
-const shellOutputLogLimit = 200
+// The caps of what a login shell prints, for the PATH read and the agent run.
+// Measured on Linux and macOS against 52d82f0a: 2 MiB on stdout cuts the read, and
+// the log counts 1048576 bytes. 20 MiB on stderr before a good PATH line still gives
+// the PATH. On macOS the writer wrote 16805888 bytes of stderr before it got EPIPE.
+// The exact bounds are claustrum's own (not measured).
+// Variables so tests can shrink them.
+var (
+	shellStdoutCap  = 1 << 20  // stdout bytes kept, and one more cuts stdout
+	shellStderrKeep = 1 << 20  // stderr bytes kept
+	shellStderrCap  = 16 << 20 // stderr bytes read, and one more cuts stderr
+)
 
-// truncateShellOutput cuts s to shellOutputLogLimit and marks it as cut.
-//
-// The cut walks back to a rune boundary. Byte-slicing has a failure mode that is
-// independent of bytes-vs-runes: a localised profile banner, a glyph or a UTF-8
-// path can put byte 200 mid-sequence, and the log line then carries a truncated
-// code point before the ellipsis — worse than either counting rule. Walking back
-// moves the cut by at most three bytes and leaves ASCII output byte-identical to
-// what was measured, so the 203-byte observation still holds.
-func truncateShellOutput(s string) string {
-	if len(s) <= shellOutputLogLimit {
-		return s
+// errOutputCut is the write error that ends the copy of a stream at its cap. os/exec
+// then closes its end of the pipe, so a later write of the shell fails.
+var errOutputCut = errors.New("login shell output cut")
+
+// cappedOutput keeps the first keep bytes of a stream and reads at most limit bytes.
+type cappedOutput struct {
+	kept        bytes.Buffer
+	keep, limit int
+	total       int
+	cut         bool
+}
+
+func (c *cappedOutput) Write(p []byte) (int, error) {
+	n := len(p)
+	if c.total+n > c.limit {
+		n = c.limit - c.total
+		c.cut = true
 	}
-	cut := shellOutputLogLimit
-	for cut > 0 && !utf8.RuneStart(s[cut]) {
-		cut--
+	if room := c.keep - c.kept.Len(); room > 0 {
+		c.kept.Write(p[:min(n, room)])
 	}
-	return s[:cut] + "..."
+	c.total += n
+	if c.cut {
+		return n, errOutputCut
+	}
+	return n, nil
+}
+
+// shellOutput is the stdout and the stderr of one login-shell run.
+type shellOutput struct{ stdout, stderr cappedOutput }
+
+func newShellOutput() *shellOutput {
+	return &shellOutput{
+		stdout: cappedOutput{keep: shellStdoutCap, limit: shellStdoutCap},
+		stderr: cappedOutput{keep: shellStderrKeep, limit: shellStderrCap},
+	}
+}
+
+// endReason names how a run ended that printed no usable line. A cut stream wins over
+// the exit status (measured on macOS against 52d82f0a for a shell that the cut ended).
+// A clean exit gives "exit status 0" (claustrum's own, not measured).
+func (o *shellOutput) endReason(runErr error) string {
+	if o.stdout.cut || o.stderr.cut {
+		return "cut off after it had printed more than 1 MiB on stdout or 16 MiB on stderr"
+	}
+	if runErr != nil && !errors.Is(runErr, exec.ErrWaitDelay) {
+		return runErr.Error()
+	}
+	return "exit status 0"
+}
+
+// counts renders the kept bytes of both streams for a failure text.
+func (o *shellOutput) counts() string {
+	return fmt.Sprintf("%d bytes on stdout, %d on stderr", o.stdout.kept.Len(), o.stderr.kept.Len())
 }

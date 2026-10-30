@@ -3,73 +3,361 @@
 package main
 
 import (
+	"context"
+	"errors"
 	"os"
 	"path/filepath"
+	"regexp"
 	"slices"
 	"strings"
+	"syscall"
 	"testing"
 	"time"
 )
 
-// extractLoginPATH runs the login shell to resolve an interactive PATH and
-// installs it into the daemon's environment. It is best-effort, so the contract
-// under test is narrow: it must not panic, and it must leave PATH non-empty
-// (either the freshly-extracted value or the pre-existing one on any failure).
+// markerOfPATHRead sets $m to the sentinel of the inner command in "$4". It uses
+// only the shell, no other program.
+const markerOfPATHRead = `m=${4#*'"___CLAUDE_SSH_PATH_'}; m=___CLAUDE_SSH_PATH_${m%%'___"'*}___; `
+
+// helperInShell is a shell command that runs this test binary in a helper mode. The
+// shell of a read gets eight variables only, so the line sets the mode itself.
+func helperInShell(t *testing.T, mode string, args ...string) string {
+	t.Helper()
+	exe, err := os.Executable()
+	if err != nil {
+		t.Fatal(err)
+	}
+	return "CLAUSTRUM_TEST_HELPER=" + mode + " GORACE=atexit_sleep_ms=0 '" + exe + "' " + strings.Join(args, " ")
+}
+
+// TestExtractLoginPATH runs a read through a stub login shell that runs the inner
+// command, so no login profile of the runner runs and no time limit is near.
 func TestExtractLoginPATH(t *testing.T) {
-	t.Setenv("SHELL", "/bin/sh")
-	// extractLoginPATH records into loginPATH, NOT the process environment, so it
-	// leaves package state behind for the next test. Reset both ways round.
-	resetLoginPATHForTest()
-	t.Cleanup(resetLoginPATHForTest)
-
-	extractLoginPATH()
-
-	// Assert the recorded value, not os.Getenv("PATH"). The old assertion could
-	// no longer fail: extractLoginPATH deliberately stopped touching the process
-	// environment, so PATH was only ever whatever t.Setenv had just put there.
-	if currentLoginPATH() == "" {
-		t.Error("extractLoginPATH recorded no login PATH")
+	t.Setenv("PATH", "/usr/bin:/bin:/zzz/daemon")
+	t.Setenv("SHELL", writeFakeShell(t, `exec /bin/sh -c "$4"`))
+	got, err := extractLoginPATH(context.Background())
+	if err != nil || got != "/usr/bin:/bin:/zzz/daemon" {
+		t.Errorf("extractLoginPATH() = %q, %v; want the PATH that the shell printed", got, err)
 	}
 }
 
-// With SHELL unset, extractLoginPATH falls back to /bin/sh rather than failing.
+// With no usable $SHELL the read takes the first usable fallback shell.
 func TestExtractLoginPATHDefaultShell(t *testing.T) {
+	old := fallbackShells
+	t.Cleanup(func() { fallbackShells = old })
+	fallbackShells = []string{writeFakeShell(t, `exec /bin/sh -c "$4"`)}
 	t.Setenv("SHELL", "")
-	resetLoginPATHForTest()
-	t.Cleanup(resetLoginPATHForTest)
-
-	extractLoginPATH() // must not panic; exercises the empty-SHELL default branch
-
-	if currentLoginPATH() == "" {
-		t.Error("extractLoginPATH (default shell) recorded no login PATH")
+	if got, err := extractLoginPATH(context.Background()); err != nil || got == "" {
+		t.Errorf("extractLoginPATH() with the fallback shell = %q, %v", got, err)
 	}
 }
 
-// When the login shell produces no PATH sentinel (e.g. SHELL ignores the
-// command), extractLoginPATH logs the not-found line and leaves PATH intact.
-func TestExtractLoginPATHNoSentinel(t *testing.T) {
+// TestPathReadCommandHasAFreshSentinel pins the argv of 52d82f0a (Linux and macOS):
+// -l, -i, -c and one command that prints the sentinel and the PATH on two lines. Two
+// reads give two sentinels of 32 hex digits.
+func TestPathReadCommandHasAFreshSentinel(t *testing.T) {
+	dir := t.TempDir()
+	t.Setenv("SHELL", writeFakeShell(t, `printf '%s|' "$#" "$1" "$2" "$3" "$4" >> '`+filepath.Join(dir, "argv")+`'; echo >> '`+filepath.Join(dir, "argv")+`'`))
+	for range 2 {
+		_, _ = extractLoginPATH(context.Background())
+	}
+	b, err := os.ReadFile(filepath.Join(dir, "argv"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	re := regexp.MustCompile(`^4\|-l\|-i\|-c\|/bin/sh -c 'printf "%s\\n%s\\n" "(___CLAUDE_SSH_PATH_[0-9a-f]{32}___)" "\$PATH"'\|$`)
+	lines := strings.Split(strings.TrimSpace(string(b)), "\n")
+	if len(lines) != 2 {
+		t.Fatalf("argv lines = %q, want two", lines)
+	}
+	var sentinels []string
+	for _, l := range lines {
+		m := re.FindStringSubmatch(l)
+		if m == nil {
+			t.Fatalf("argv %q does not match %s", l, re)
+		}
+		sentinels = append(sentinels, m[1])
+	}
+	if sentinels[0] == sentinels[1] {
+		t.Errorf("two reads gave the same sentinel %s", sentinels[0])
+	}
+}
+
+// TestExtractLoginPATHParsesTheShellOutput pins the parse of 52d82f0a (Linux and
+// macOS). The line after the sentinel line is the PATH, on stdout or on stderr. The
+// stream order is claustrum's own. It must end in a newline and hold an absolute directory. The exit status does not
+// matter then. No failure text holds what the shell printed.
+func TestExtractLoginPATHParsesTheShellOutput(t *testing.T) {
+	for _, tc := range []struct {
+		name, body, want, wantErr string
+	}{
+		{"only on stderr", markerOfPATHRead + `printf '%s\n%s\n' "$m" /x:/y >&2`, "/x:/y", ""},
+		{"no absolute directory", markerOfPATHRead + `printf '%s\nrelative:dirs\n' "$m"`, "",
+			"the login shell's PATH line was cut short or had no absolute directory in it (13 bytes read)"},
+		{"no final newline", markerOfPATHRead + `printf '%s\n/x:/y' "$m"`, "",
+			"the login shell's PATH line was cut short or had no absolute directory in it (5 bytes read)"},
+		{"a good line and exit 1", markerOfPATHRead + `printf '%s\n/x:/y\n' "$m"; exit 1`, "/x:/y", ""},
+		{"exit 3 and no output", `exit 3`, "",
+			"the login shell ended (exit status 3) without printing a usable PATH (0 bytes on stdout, 0 on stderr)"},
+		{"output and exit 5", `echo SECRET123; echo SECRET123 >&2; exit 5`, "",
+			"the login shell ended (exit status 5) without printing a usable PATH (10 bytes on stdout, 10 on stderr)"},
+		{"clean exit and no output", `exit 0`, "",
+			"the login shell ended (exit status 0) without printing a usable PATH (0 bytes on stdout, 0 on stderr)"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Setenv("SHELL", writeFakeShell(t, tc.body))
+			got, err := extractLoginPATH(context.Background())
+			msg := ""
+			if err != nil {
+				msg = err.Error()
+			}
+			if got != tc.want || msg != tc.wantErr {
+				t.Errorf("got %q, %q; want %q, %q", got, msg, tc.want, tc.wantErr)
+			}
+		})
+	}
+}
+
+// shrinkShellCaps sets small output caps for one test, so a stub shell prints past
+// them with a shell builtin.
+func shrinkShellCaps(t *testing.T) {
+	t.Helper()
+	o1, o2, o3 := shellStdoutCap, shellStderrKeep, shellStderrCap
+	shellStdoutCap, shellStderrKeep, shellStderrCap = 128, 32, 128
+	t.Cleanup(func() { shellStdoutCap, shellStderrKeep, shellStderrCap = o1, o2, o3 })
+}
+
+// TestExtractLoginPATHOutputCaps pins the caps of 52d82f0a (Linux and macOS) on small
+// stand-in caps. Too much stdout fails the read with the cut-off text. A full stderr
+// does not fail a read whose PATH line comes after it. A test of the suite can leave
+// SIGPIPE ignored, and a child then prints a write error on stderr. So the inner
+// command of the first case writes its stderr to /dev/null.
+func TestExtractLoginPATHOutputCaps(t *testing.T) {
+	shrinkShellCaps(t)
+	t.Setenv("PATH", "/usr/bin:/bin:/zzz/caps")
+	const cut = "the login shell ended (cut off after it had printed more than 1 MiB on stdout or 16 MiB on stderr) without printing a usable PATH "
+	for _, tc := range []struct {
+		name, body, want, wantErr string
+	}{
+		{"stdout over its cap", `printf '%0200d' 0; exec /bin/sh -c "$4" 2>/dev/null`, "", cut + "(128 bytes on stdout, 0 on stderr)"},
+		{"stderr over its keep", `printf '%080d' 0 >&2; exec /bin/sh -c "$4"`, "/usr/bin:/bin:/zzz/caps", ""},
+		{"stderr over its cap, then the PATH", `(printf '%0200d' 0 >&2); exec /bin/sh -c "$4"`, "/usr/bin:/bin:/zzz/caps", ""},
+		{"stderr over its cap, no PATH", `printf '%0200d' 0 >&2`, "", cut + "(0 bytes on stdout, 32 on stderr)"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Setenv("SHELL", writeFakeShell(t, tc.body))
+			got, err := extractLoginPATH(context.Background())
+			msg := ""
+			if err != nil {
+				msg = err.Error()
+			}
+			if got != tc.want || msg != tc.wantErr {
+				t.Errorf("got %q, %q; want %q, %q", got, msg, tc.want, tc.wantErr)
+			}
+		})
+	}
+}
+
+// TestCappedOutputAtTheRealSizes holds the production caps in memory: 1 MiB of stdout,
+// and 1 MiB kept of 16 MiB read on stderr. One byte more cuts the stream.
+func TestCappedOutputAtTheRealSizes(t *testing.T) {
+	chunk := make([]byte, 32<<10)
+	fill := func(c *cappedOutput, n int) error {
+		for n > 0 {
+			k := min(n, len(chunk))
+			if _, err := c.Write(chunk[:k]); err != nil {
+				return err
+			}
+			n -= k
+		}
+		return nil
+	}
+	o := newShellOutput()
+	if err := fill(&o.stdout, 1<<20); err != nil || o.stdout.cut {
+		t.Fatalf("1 MiB of stdout: %v, cut %v", err, o.stdout.cut)
+	}
+	if err := fill(&o.stdout, 1); !errors.Is(err, errOutputCut) || o.stdout.kept.Len() != 1<<20 {
+		t.Errorf("one byte more of stdout: %v, kept %d", err, o.stdout.kept.Len())
+	}
+	if err := fill(&o.stderr, 16<<20); err != nil || o.stderr.cut || o.stderr.kept.Len() != 1<<20 {
+		t.Fatalf("16 MiB of stderr: %v, cut %v, kept %d", err, o.stderr.cut, o.stderr.kept.Len())
+	}
+	if err := fill(&o.stderr, 1); !errors.Is(err, errOutputCut) {
+		t.Errorf("one byte more of stderr: %v, want the cut", err)
+	}
+	if got := o.counts(); got != "1048576 bytes on stdout, 1048576 on stderr" {
+		t.Errorf("counts = %q", got)
+	}
+}
+
+// TestExtractLoginPATHClosesAHeldPipe pins 52d82f0a (Linux and macOS): a shell that
+// prints its PATH and leaves a process on its stdout gives its PATH about 500 ms
+// after the shell ends. The holder is this test binary in sleep mode, and it ends by itself.
+func TestExtractLoginPATHClosesAHeldPipe(t *testing.T) {
+	t.Setenv("PATH", "/usr/bin:/bin:/zzz/held")
+	t.Setenv("SHELL", writeFakeShell(t, `/bin/sh -c "$4"; `+helperInShell(t, "sleep", "5")+` &`))
+	start := time.Now()
+	got, err := extractLoginPATH(context.Background())
+	el := time.Since(start)
+	if err != nil || got != "/usr/bin:/bin:/zzz/held" {
+		t.Errorf("got %q, %v; want the PATH", got, err)
+	}
+	if el > 3*time.Second {
+		t.Errorf("the read took %v, want it to end after the wait delay of %v", el, loginPATHWaitDelay)
+	}
+}
+
+// TestExtractLoginPATHDiscardsTheValueOnTimeout: a shell that prints a good line and
+// then outlives the time limit gives no PATH and the timed-out text.
+func TestExtractLoginPATHDiscardsTheValueOnTimeout(t *testing.T) {
+	old := loginPATHTimeout
+	loginPATHTimeout = 300 * time.Millisecond
+	t.Cleanup(func() { loginPATHTimeout = old })
+	shell := writeFakeShell(t, `/bin/sh -c "$4"; `+helperInShell(t, "sleep", "5"))
+	t.Setenv("SHELL", shell)
+	start := time.Now()
+	got, err := extractLoginPATH(context.Background())
+	el := time.Since(start)
+	if el < loginPATHTimeout || el > 4*time.Second {
+		t.Errorf("the read took %v, want the time limit of %v", el, loginPATHTimeout)
+	}
+	if want := "shell PATH extraction timed out (" + shell + ")"; got != "" || err == nil || err.Error() != want {
+		t.Errorf("got %q, %v; want no PATH and %q", got, err, want)
+	}
+}
+
+// TestLoginPATHTimeLimits holds the bounds of a read. The 30 s limit and the 31 s
+// bound are claustrum's own (not measured). The 500 ms after the shell ends is measured.
+func TestLoginPATHTimeLimits(t *testing.T) {
+	if loginPATHTimeout != 30*time.Second || loginPATHBound != 31*time.Second || loginPATHWaitDelay != 500*time.Millisecond {
+		t.Errorf("limits = %v, %v, %v; want 30s, 31s, 500ms", loginPATHTimeout, loginPATHBound, loginPATHWaitDelay)
+	}
+	if loginPATHSpawnWait != 4*time.Second || loginPATHSpawnHorizon != 8*time.Second || loginPATHFirstPause != 30*time.Second {
+		t.Errorf("spawn bounds = %v, %v, %v; want 4s, 8s, 30s", loginPATHSpawnWait, loginPATHSpawnHorizon, loginPATHFirstPause)
+	}
+}
+
+// groupGone polls until no process of the group pgid is left.
+func groupGone(t *testing.T, pgid int) {
+	t.Helper()
+	deadline := time.Now().Add(10 * time.Second)
+	for syscall.Kill(-pgid, 0) == nil {
+		if time.Now().After(deadline) {
+			t.Fatalf("a process of the group %d is still there", pgid)
+		}
+		time.Sleep(20 * time.Millisecond)
+	}
+}
+
+// startSleepingRead starts a real read whose shell writes its pid and then waits on
+// a child in its own group. It returns that pid.
+func startSleepingRead(t *testing.T, start func()) int {
+	t.Helper()
+	pidFile := filepath.Join(t.TempDir(), "pid")
+	t.Setenv("SHELL", writeFakeShell(t, `echo $$ > '`+pidFile+`'; `+helperInShell(t, "sleep", "30")))
+	resetLoginPATHForTest()
+	old := loginPATHExtractor
+	loginPATHExtractor = extractLoginPATH
+	t.Cleanup(func() {
+		resetLoginPATHForTest()
+		loginPATHExtractor = old
+	})
+	start()
+	deadline := time.Now().Add(10 * time.Second)
+	for {
+		b, err := os.ReadFile(pidFile)
+		if err == nil && strings.HasSuffix(string(b), "\n") {
+			var pid int
+			for _, c := range strings.TrimSpace(string(b)) {
+				pid = pid*10 + int(c-'0')
+			}
+			// The group holds only children of this test. A test that fails before the
+			// stop leaves no sleeping helper.
+			t.Cleanup(func() { _ = syscall.Kill(-pid, syscall.SIGKILL) })
+			return pid
+		}
+		if time.Now().After(deadline) {
+			t.Fatal("the stub shell wrote no pid")
+		}
+		time.Sleep(20 * time.Millisecond)
+	}
+}
+
+// TestShutdownKillsTheShellGroupOfTheRead pins 52d82f0a: the shutdown ends the shell
+// of a running read and every process of its group (Linux and macOS), and no failure
+// line follows (Linux). The group holds only children of this test.
+func TestShutdownKillsTheShellGroupOfTheRead(t *testing.T) {
 	buf := captureLogBuf(t)
+	pid := startSleepingRead(t, warmLoginPATHAtStart)
+	if err := syscall.Kill(-pid, 0); err != nil {
+		t.Fatalf("the shell %d leads no process group: %v", pid, err)
+	}
+	r := runningRead()
+	stopLoginPATH()
+	groupGone(t, pid)
+	awaitReadEnd(t, r)
+	if got := shellenvLines(buf); got != "" {
+		t.Errorf("the stopped read logged:\n%s", got)
+	}
+}
 
-	t.Setenv("PATH", os.Getenv("PATH"))
-	// A CONTROLLED stub that emits nothing, not a system binary.
-	//
-	// This used to be "/bin/true", which worked only by accident and stopped
-	// working the moment safeLoginShell landed: macOS has no /bin/true (it ships
-	// /usr/bin/true), so $SHELL became non-executable, safeLoginShell correctly
-	// fell back to /bin/bash, and bash emitted a REAL sentinel — the macOS leg
-	// failed with "Extracted shell PATH (1008 chars)" where a not-found log was
-	// expected. The stub removes the dependency on which system binaries a
-	// platform happens to place where.
-	t.Setenv("SHELL", writeFakeShell(t, "")) // ignores args, emits nothing
+// TestFlaggedSpawnKillsTheShellGroupOfTheRead pins 52d82f0a (Linux and macOS): a
+// spawn with disableShellAgentSocket ends the shell group of a read that still runs
+// after its wait, and the read fails with the timed-out text.
+func TestFlaggedSpawnKillsTheShellGroupOfTheRead(t *testing.T) {
+	buf := captureLogBuf(t)
+	setSpawnWait(t, 100*time.Millisecond)
+	pid := startSleepingRead(t, warmLoginPATHAtStart)
+	if err := syscall.Kill(-pid, 0); err != nil {
+		t.Fatalf("the shell %d leads no process group: %v", pid, err)
+	}
+	r := runningRead()
+	buildSpawnEnv(nil, true)
+	groupGone(t, pid)
+	awaitReadEnd(t, r)
+	if got := shellenvLines(buf); !strings.Contains(got, "Stopping the read of the login shell's PATH") ||
+		!strings.Contains(got, "shell PATH extraction timed out (") {
+		t.Errorf("log has no stop line and timed-out failure:\n%s", got)
+	}
+}
 
-	extractLoginPATH()
+// TestLoginPATHShellGetsEightEntries pins 52d82f0a (Linux and macOS): the shell of
+// the PATH read gets HOME, PATH, SHELL, TERM and USER of the daemon, with an empty
+// TERM when the daemon has none, plus three fixed entries. No other variable of the
+// daemon reaches it.
+func TestLoginPATHShellGetsEightEntries(t *testing.T) {
+	dump := filepath.Join(t.TempDir(), "env")
+	shell := writeFakeShell(t, "export -p > '"+dump+"'")
+	t.Setenv("SHELL", shell)
+	t.Setenv("HOME", "/home/row")
+	t.Setenv("USER", "row")
+	t.Setenv("EFX", "daemon-only")
+	t.Setenv("LANG", "C.UTF-8")
+	t.Setenv(daemonChildMarker, "1")
+	t.Setenv("TERM", "x")
+	os.Unsetenv("TERM") // t.Setenv puts the old state back
 
-	// The reference wraps the failure and appends the shell's own output, so the
-	// log says WHY it could not parse anything. Measured at 5db5e4a:
-	// "[shellenv] Failed to extract PATH from login shell: PATH sentinel not
-	// found in shell output: no sentinel here".
-	if !strings.Contains(buf.String(), "[shellenv] Failed to extract PATH from login shell: PATH sentinel not found in shell output:") {
-		t.Errorf("expected the wrapped sentinel-not-found log, got %q", buf.String())
+	want := []string{"HOME=/home/row", "PATH=" + os.Getenv("PATH"), "SHELL=" + shell, "TERM=", "USER=row",
+		"DISABLE_AUTO_UPDATE=true", "ZSH_DISABLE_COMPFIX=true", "CLAUDE_DESKTOP_RESOLVING_ENVIRONMENT=1"}
+	if got := loginPATHShellEnv(); !slices.Equal(got, want) {
+		t.Errorf("loginPATHShellEnv() = %q, want %q", got, want)
+	}
+
+	_, _ = extractLoginPATH(context.Background())
+	b, err := os.ReadFile(dump)
+	if err != nil {
+		t.Fatalf("the stub shell wrote no environment: %v", err)
+	}
+	for _, w := range want {
+		name, _, _ := strings.Cut(w, "=")
+		if !strings.Contains(string(b), name+"=") {
+			t.Errorf("the shell environment has no %s:\n%s", name, b)
+		}
+	}
+	for _, key := range []string{"EFX", "LANG", daemonChildMarker} {
+		if strings.Contains(string(b), key+"=") {
+			t.Errorf("the shell environment holds %s of the daemon:\n%s", key, b)
+		}
 	}
 }
 
@@ -83,89 +371,6 @@ func writeFakeShell(t *testing.T, body string) string {
 		t.Fatal(err)
 	}
 	return p
-}
-
-// A successful login shell that emits the sentinel at column 0 (index 0) with a
-// distinct PATH must install exactly that value. This pins two conditions the
-// existing "PATH non-empty" assertion can't: the `i < 0` boundary (a `i <= 0`
-// mutant would skip the col-0 match) and the `path != ""` guard (a negated guard
-// would refuse to set a non-empty value). Asserting the *new* value — not just
-// non-emptiness — is what makes both observable.
-func TestExtractLoginPATHInstallsExtractedValue(t *testing.T) {
-	const want = "/zzz/claustrum/extracted/bin"
-	const daemonPATH = "/original/path/should/be/replaced"
-	// Sentinel printed at the very start of the line → strings.Index == 0.
-	shell := writeFakeShell(t, "printf '%s%s\\n' '"+pathSentinel+"' '"+want+"'")
-
-	t.Setenv("PATH", daemonPATH)
-	t.Setenv("SHELL", shell)
-	t.Cleanup(resetLoginPATHForTest)
-
-	extractLoginPATH()
-
-	if got := currentLoginPATH(); got != want {
-		t.Errorf("loginPATH = %q, want %q (column-0 sentinel must record the extracted value)", got, want)
-	}
-	// And it must NOT be installed into the daemon's own environment. The
-	// reference keeps the two apart; mutating os.Environ made the daemon resolve
-	// its own tools through the user's login PATH — measured with a fake `git`
-	// reachable only from the login PATH, which claustrum then ran instead of the
-	// real one.
-	if got := os.Getenv("PATH"); got != daemonPATH {
-		t.Errorf("daemon PATH = %q, want it untouched at %q", got, daemonPATH)
-	}
-}
-
-// The login-PATH cap is the reference's 4s, not a rounder number of our own.
-// Probe-measured against 5db5e4a: with a login shell that sleeps 6s the
-// reference answers the first process.spawn after 4.01s, claustrum at 10s
-// answered after 5.82s. The constant is the whole behaviour here — a slow login
-// shell changes both spawn latency and the PATH every child inherits — so lock
-// the value, not just the fact that a timeout exists.
-func TestLoginPATHTimeoutMatchesReference(t *testing.T) {
-	if loginPATHTimeout != 4*time.Second {
-		t.Errorf("loginPATHTimeout = %v, want 4s (reference-measured at 5db5e4a)", loginPATHTimeout)
-	}
-}
-
-// A stalling login shell must not block extractLoginPATH forever. The internal
-// context timeout kills the subprocess and the function returns. This pins the
-// exec.CommandContext usage; without it the function would hang indefinitely.
-func TestExtractLoginPATHDoesNotHang(t *testing.T) {
-	old := loginPATHTimeout
-	loginPATHTimeout = 500 * time.Millisecond
-	t.Cleanup(func() { loginPATHTimeout = old })
-
-	shell := writeFakeShell(t, "sleep 9999")
-	t.Setenv("SHELL", shell)
-	t.Setenv("PATH", os.Getenv("PATH"))
-
-	done := make(chan struct{})
-	go func() { extractLoginPATH(); close(done) }()
-
-	select {
-	case <-done:
-	case <-time.After(3 * time.Second):
-		t.Fatal("extractLoginPATH did not return — internal timeout not working")
-	}
-}
-
-// When the login shell exits non-zero, extractLoginPATH logs the error branch.
-// Pins the `err != nil` guard: a negated guard would log only on success and stay
-// silent here.
-func TestExtractLoginPATHLogsShellError(t *testing.T) {
-	buf := captureLogBuf(t)
-
-	shell := writeFakeShell(t, "exit 7") // non-zero exit → CombinedOutput err != nil
-
-	t.Setenv("PATH", os.Getenv("PATH"))
-	t.Setenv("SHELL", shell)
-
-	extractLoginPATH()
-
-	if !strings.Contains(buf.String(), "[shellenv] Shell command exited with error") {
-		t.Errorf("non-zero-exit shell did not log the error branch; got %q", buf.String())
-	}
 }
 
 // $SHELL is used only when it is an executable file. A non-executable value
@@ -280,224 +485,17 @@ func TestSafeLoginShellTakesTheFirstExecutableCandidate(t *testing.T) {
 	}
 }
 
-// A login shell that prints a GOOD sentinel and then hangs past the cap must
-// leave loginPATH untouched: the reference discards the value on timeout.
-//
-// Measured 2026-08-02 against 5db5e4a — the reference's spawned child did NOT
-// receive the extracted PATH, while claustrum's did. Wire-visible, because
-// loginPATH becomes every spawned child's environment.
-func TestExtractLoginPATHDiscardsTheValueOnTimeout(t *testing.T) {
-	buf := captureLogBuf(t)
-
-	oldTimeout := loginPATHTimeout
-	loginPATHTimeout = 300 * time.Millisecond
-	t.Cleanup(func() { loginPATHTimeout = oldTimeout })
-
-	// Sentinel first, THEN outlive the cap. The sentinel being valid is the whole
-	// point: a stub that merely hangs cannot tell "discarded" from "never seen".
-	shell := writeFakeShell(t, "printf '%s%s\\n' '"+pathSentinel+"' '/zzz/timed/out'\nsleep 5")
-
-	// Keep the REAL PATH: the stub has to resolve `sleep` to hang at all. An
-	// earlier version pinned PATH to a fake value, so the stub exited 127
-	// immediately, no timeout fired, and the test passed against the unfixed code
-	// for the wrong reason.
-	t.Setenv("SHELL", shell)
-	// Reset BEFORE the body, not only after it. The "" precondition below is a
-	// claim about package state, and registering the reset purely as cleanup
-	// borrows it from whichever test happened to run earlier — so this passed
-	// under the full suite and failed under any -run filter or -shuffle.
-	resetLoginPATHForTest()
-	t.Cleanup(resetLoginPATHForTest)
-
-	start := time.Now()
-	extractLoginPATH()
-	elapsed := time.Since(start)
-
-	// The stub must actually have HUNG. If it dies early instead — an unresolved
-	// `sleep`, say — extractLoginPATH returns at once, no deadline fires, and
-	// every assertion below passes against unfixed code. That exact false pass
-	// happened while writing this test.
-	if elapsed < loginPATHTimeout {
-		t.Fatalf("stub returned in %v, before the %v cap — it did not hang, so this "+
-			"test proves nothing about the timeout path", elapsed, loginPATHTimeout)
-	}
-	if got := currentLoginPATH(); got != "" {
-		t.Errorf("loginPATH = %q after a timeout, want empty — the reference discards it", got)
-	}
-	if !strings.Contains(buf.String(), "shell PATH extraction timed out") {
-		t.Errorf("expected the one-line timeout log, got %q", buf.String())
-	}
-	// One line, not two: the reference says nothing about the exit status here.
-	if strings.Contains(buf.String(), "Shell command exited with error") {
-		t.Errorf("timeout must not also log the exit-status line, got %q", buf.String())
-	}
-}
-
-// TestExtractLoginPATHStopsAtTheBoundWhenThePipeIsHeld pins Linux rows P13 and P13k
-// (89cb6289). The login shell prints a good sentinel and ends at once, and a process
-// that it started still holds the output pipe. The read ends at the bound with the
-// timed-out line, and the value is not kept. The holder is a sleep of 3 s that the
-// stub starts. It gets no signal and ends by itself.
-func TestExtractLoginPATHStopsAtTheBoundWhenThePipeIsHeld(t *testing.T) {
-	buf := captureLogBuf(t)
-
-	oldTimeout := loginPATHTimeout
-	loginPATHTimeout = 300 * time.Millisecond
-	t.Cleanup(func() { loginPATHTimeout = oldTimeout })
-
-	// Keep the real PATH: the stub has to find `sleep`.
-	shell := writeFakeShell(t, "printf '%s%s\\n' '"+pathSentinel+"' '/zzz/held/pipe'\nsleep 3 &")
-	t.Setenv("SHELL", shell)
-	resetLoginPATHForTest()
-	t.Cleanup(resetLoginPATHForTest)
-
-	start := time.Now()
-	extractLoginPATH()
-	elapsed := time.Since(start)
-
-	if elapsed < loginPATHTimeout {
-		t.Fatalf("the read returned after %v, before the bound of %v: nothing held the pipe", elapsed, loginPATHTimeout)
-	}
-	// The holder lives 3 s. A read that waits for the end of the pipe takes that long.
-	if elapsed > 2*time.Second {
-		t.Errorf("the read took %v, want it to end at the bound of %v", elapsed, loginPATHTimeout)
-	}
-	if want := "[shellenv] Failed to extract PATH from login shell: shell PATH extraction timed out (" + shell + ")"; !strings.Contains(buf.String(), want) {
-		t.Errorf("log has no %q:\n%s", want, buf.String())
-	}
-	if got := currentLoginPATH(); got != "" {
-		t.Errorf("loginPATH = %q after the bound, want empty", got)
-	}
-	if strings.Contains(buf.String(), "Shell command exited with error") {
-		t.Errorf("the bound also logged the exit-status line:\n%s", buf.String())
-	}
-}
-
-// TestLoginPATHShellGetsSevenEntries pins Linux row P13v (89cb6289): the login shell of
-// the PATH read gets HOME, PATH, SHELL, TERM and USER of the daemon, with an empty TERM
-// when the daemon has none, plus the two fixed entries. No other variable of the daemon
-// reaches it.
-func TestLoginPATHShellGetsSevenEntries(t *testing.T) {
-	dump := filepath.Join(t.TempDir(), "env")
-	shell := writeFakeShell(t, "env > '"+dump+"'")
-	t.Setenv("SHELL", shell)
-	t.Setenv("HOME", "/home/row")
-	t.Setenv("USER", "row")
-	t.Setenv("EFX", "daemon-only")
-	t.Setenv("LANG", "C.UTF-8")
-	t.Setenv(daemonChildMarker, "1")
-	t.Setenv("TERM", "x")
-	os.Unsetenv("TERM") // t.Setenv puts the old state back
-	resetLoginPATHForTest()
-	t.Cleanup(resetLoginPATHForTest)
-
-	want := []string{"HOME=/home/row", "PATH=" + os.Getenv("PATH"), "SHELL=" + shell, "TERM=", "USER=row",
-		"DISABLE_AUTO_UPDATE=true", "ZSH_DISABLE_COMPFIX=true"}
-	if got := loginPATHShellEnv(); !slices.Equal(got, want) {
-		t.Errorf("loginPATHShellEnv() = %q, want %q", got, want)
-	}
-
-	extractLoginPATH()
-	b, err := os.ReadFile(dump)
-	if err != nil {
-		t.Fatalf("the stub shell wrote no environment: %v", err)
-	}
-	lines := strings.Split(strings.TrimSpace(string(b)), "\n")
-	for _, w := range want {
-		if !slices.Contains(lines, w) {
-			t.Errorf("the shell environment has no %q:\n%s", w, b)
-		}
-	}
-	// The shell itself adds entries such as PWD. A variable of the daemon is not one.
-	for _, l := range lines {
-		for _, key := range []string{"EFX", "LANG", daemonChildMarker} {
-			if strings.HasPrefix(l, key+"=") {
-				t.Errorf("the shell environment holds %q of the daemon", l)
-			}
-		}
-	}
-}
-
-// The echoed shell output is cut at 200 bytes plus "...". Measured 2026-08-02
-// against 5db5e4a: a 500-byte no-sentinel shell produced a 203-character payload.
-func TestTruncateShellOutput(t *testing.T) {
-	if got := truncateShellOutput("short"); got != "short" {
-		t.Errorf("short input = %q, want it unchanged", got)
-	}
-	exact := strings.Repeat("x", shellOutputLogLimit)
-	if got := truncateShellOutput(exact); got != exact {
-		t.Errorf("input at the limit was modified: len %d", len(got))
-	}
-	over := strings.Repeat("y", shellOutputLogLimit+1)
-	got := truncateShellOutput(over)
-	if len(got) != shellOutputLogLimit+3 {
-		t.Errorf("len = %d, want %d (200 kept + \"...\")", len(got), shellOutputLogLimit+3)
-	}
-	if !strings.HasSuffix(got, "...") {
-		t.Errorf("truncated output %q must end in \"...\"", got)
-	}
-}
-
-// And the truncation must actually reach the log line, not just exist.
-func TestExtractLoginPATHTruncatesTheLoggedShellOutput(t *testing.T) {
-	buf := captureLogBuf(t)
-
-	// 500 bytes, no sentinel anywhere — the same shape as the measured fixture.
-	t.Setenv("SHELL", writeFakeShell(t, "printf '%0500d' 0"))
-
-	extractLoginPATH()
-
-	const marker = "PATH sentinel not found in shell output: "
-	i := strings.Index(buf.String(), marker)
-	if i < 0 {
-		t.Fatalf("expected the sentinel-not-found log, got %q", buf.String())
-	}
-	payload := strings.TrimRight(buf.String()[i+len(marker):], "\n")
-	if len(payload) != shellOutputLogLimit+3 {
-		t.Errorf("logged payload is %d chars, want %d — the cut is not reaching the log",
-			len(payload), shellOutputLogLimit+3)
-	}
-}
-
-// stubLoginPATHExtractor replaces the extraction seam with a no-op for the
-// duration of a test.
-//
-// CORRECTION, 2026-08-02: two lifecycle tests used to do this by pointing $SHELL
-// at "/claustrum-no-such-shell", commented "keep extractLoginPATH inert". That
-// stopped being true when safeLoginShell gained a fallback list: an unusable
-// $SHELL no longer fails the extraction, it falls through to /bin/zsh or
-// /bin/bash and runs a REAL login shell. runServe starts that in a background
-// goroutine which outlives the test and writes the runner's real login PATH into
-// package state at an arbitrary later moment, bounded only by the 4s cap.
-//
-// Nothing failed because ~24 test files sit between those tests and this one, so
-// the write always landed in a gap. That is wall-clock luck, not isolation —
-// reproduced with `go test -count=15 -run 'TestRunServeChildFullLifecycle|
-// TestExtractLoginPATHDiscardsTheValueOnTimeout'`, which fails with the leaked
-// PATH. Stub the seam, which is what it exists for (see shellenv_test.go).
-// The restore first runs or awaits an armed read (awaitLoginPATH), with the stub
-// still in place. So no read that runServe armed in the test runs the real
-// extractor later, and no read is live when the seam goes back. awaitLoginPATH
-// returns at once when nothing is armed, so this is free for tests that never
-// boot a server.
+// stubLoginPATHExtractor makes the read a stub that waits for its stop, for a test
+// that boots runServe. The cleanup ends a read that the start left running.
 func stubLoginPATHExtractor(t *testing.T) {
 	t.Helper()
 	old := loginPATHExtractor
-	loginPATHExtractor = func() {}
+	loginPATHExtractor = func(ctx context.Context) (string, error) {
+		<-ctx.Done()
+		return "", ctx.Err()
+	}
 	t.Cleanup(func() {
-		awaitLoginPATH()
+		resetLoginPATHForTest()
 		loginPATHExtractor = old
 	})
-}
-
-// When byte shellOutputLogLimit lands mid-rune the cut walks back to the rune
-// start, so the logged prefix never carries a torn code point.
-func TestTruncateShellOutputWalksBackToRuneBoundary(t *testing.T) {
-	// 199 ASCII bytes + a 2-byte rune: byte 200 is the rune's continuation byte.
-	s := strings.Repeat("a", shellOutputLogLimit-1) + "é"
-	got := truncateShellOutput(s)
-	want := strings.Repeat("a", shellOutputLogLimit-1) + "..."
-	if got != want {
-		t.Errorf("truncateShellOutput = %q (len %d), want %q", got, len(got), want)
-	}
 }
