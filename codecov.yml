@@ -275,6 +275,9 @@ component_management:
         # empty on Windows (parity).
         - process_signal_unix.go
         - process_signal_windows.go
+        # 52d82f0a farewell of process.kill and process.killAndWait: the member rules,
+        # the stdin write and the grace before the signal.
+        - farewell.go
         # 4534d86 session supersede: the argv rule that keys a spawn to a CLI session, the
         # per-key spawn lock, and the eviction of the prior same-session process.
         - sessionsupersede.go

@@ -80,7 +80,7 @@ type shutdownResult struct {
 }
 
 // spawnResult is process.spawn's reply. It is deliberately distinct from the
-// successResult shared by process.stdin/process.kill: the CT-1 opt-in
+// successResult of process.stdin and the killResult: the CT-1 opt-in
 // ("wantPid":true) adds pid + startTime here only, so those fields can never
 // leak into a stdin/kill reply. Both are omitempty, so without the opt-in the
 // frame is byte-identical to the old {"success":true}. startTime is an opaque
@@ -226,6 +226,16 @@ type killAndWaitResult struct {
 	Died          bool `json:"died"`
 	AlreadyExited bool `json:"alreadyExited,omitempty"`
 	Escalated     bool `json:"escalated,omitempty"`
+	// FarewellEnd is the end of a farewell, the last member (measured on Linux,
+	// build 52d82f0a). Absent when the request asks for no farewell.
+	FarewellEnd string `json:"farewellEnd,omitempty"`
+}
+
+// killResult is process.kill's reply: success, then farewellEnd (measured on
+// Linux, build 52d82f0a). Without a farewell it is {"success":true}.
+type killResult struct {
+	Success     bool   `json:"success"`
+	FarewellEnd string `json:"farewellEnd,omitempty"`
 }
 
 // notRepoResult is the git.info body for non-repository paths. Since 7c2f88d the

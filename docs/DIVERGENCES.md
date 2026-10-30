@@ -632,7 +632,8 @@ have no flag and no key.
 - **Behavior.** Off the wire. Without the flag, a graceful shutdown ends the
   children. A graceful shutdown is `-stop`, `server.shutdown`, `SIGTERM`,
   `SIGINT` or the self-exit. With the flag it leaves the spawned children
-  running and logs one line with their count. The new daemon does not re-adopt
+  running and logs one line with their count. A child with a pending
+  [farewell](protocol/process-farewell.md) gets its signal. The new daemon does not re-adopt
   them. A client can find them again through the CT-1 `pid` and `startTime`.
 - **Reference.** `89cb6289` has no such flag and exits with code 2 on it.
 - **Systems and switch.** All systems. `-keep-children` or the `keep-children` key.
@@ -644,8 +645,7 @@ have no flag and no key.
   ends it. The host cleaner does not read the records. It ends an orphaned
   Claude Code group under the install root, a kept one too (not measured with
   the flag). A child whose start returns after the shutdown began is ended also
-  with the flag (from the code). Its client got no reply, so no client has its
-  `pid`.
+  with the flag (from the code).
 - **Rule.** Off-wire extension.
 - **Reopen trigger.** None.
 - **Pointers.** [flags.md → Flags of claustrum

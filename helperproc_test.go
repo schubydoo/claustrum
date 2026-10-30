@@ -939,6 +939,17 @@ func runHelper(mode string, args []string) int {
 		fmt.Print(strings.Join(args, " ") + "\n")
 	case "cat": // /bin/cat: copy stdin to stdout until EOF
 		_, _ = io.Copy(os.Stdout, os.Stdin)
+	case "read-line":
+		// Farewell fixture: read one line of stdin, print "got:<line>" and exit 0.
+		var line []byte
+		b := make([]byte, 1)
+		for {
+			if n, err := os.Stdin.Read(b); n == 0 || err != nil || b[0] == '\n' {
+				break
+			}
+			line = append(line, b[0])
+		}
+		fmt.Print("got:" + string(line) + "\n")
 	case "sleep": // /bin/sleep <seconds>
 		secs, err := strconv.Atoi(args[0])
 		if err != nil {

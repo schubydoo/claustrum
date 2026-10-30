@@ -1444,6 +1444,7 @@ func (s *server) dropConns() int {
 // With -keep-children that number is 0.
 func (s *server) stopChildren() int {
 	if s.keepChildren {
+		s.procs.endPendingFarewells()
 		logInfof("[Server] -keep-children: leaving %d running child process(es) alive across shutdown", s.procs.runningCount())
 		return 0
 	}

@@ -74,7 +74,7 @@ func TestSupersedeWaitsForAVictimThatExitsOnTERM(t *testing.T) {
 		t.Errorf("the spawn took %v, want less than the grace of %v", took, grace)
 	}
 	wantLogOrder(t, logged,
-		"[process.Manager] Process s1 exited with code 0, signalled by this daemon (client)",
+		"[process.Manager] Process s1 exited with code 0, asked to end by this daemon (client)",
 		"[process.Manager] process s2 supersedes s1 for session SESS: died=true escalated=false alreadyExited=false",
 		"[process.Manager] Process s2 started, PID=",
 	)
@@ -90,7 +90,7 @@ func TestSupersedeWaitsForAVictimThatIgnoresTERM(t *testing.T) {
 		t.Errorf("the spawn took %v, want the grace of %v or more", took, grace)
 	}
 	wantLogOrder(t, logged,
-		"[process.Manager] Process s1 exited with code -1, terminated by SIGKILL, signalled by this daemon (client)",
+		"[process.Manager] Process s1 exited with code -1, terminated by SIGKILL, asked to end by this daemon (client)",
 		"[process.Manager] process s2 supersedes s1 for session SESS: died=true escalated=true alreadyExited=false",
 		"[process.Manager] Process s2 started, PID=",
 	)

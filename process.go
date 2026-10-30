@@ -168,7 +168,12 @@ type managedProc struct {
 	// process. It changes under p.mu, so the shutdown sweep reads it with killedBy.
 	// A count, so one call that returns leaves another call's wait marked.
 	waiting int
-	stdin   io.WriteCloser
+	// signalled is set when signalIfLive delivers a signal. A farewell on a
+	// signalled record is not said (see holdFarewell). farewell is the pending
+	// farewell, or nil. Both are read and written under p.mu.
+	signalled bool
+	farewell  *farewellHold
+	stdin     io.WriteCloser
 	// cmd is set once in spawn's composite literal and never reassigned, so it is
 	// safe to read without p.mu (waitReapAndDrain relies on that). signalIfLive and
 	// killGroupAfterExit read it under p.mu for their own reasons, not to protect
@@ -503,12 +508,20 @@ var signalGroup = func(g *procGroup, proc *os.Process, signame string) error {
 func (p *managedProc) signalIfLive(signame, killedBy string) bool {
 	p.mu.Lock()
 	defer p.mu.Unlock()
+	return p.signalIfLiveLocked(signame, killedBy)
+}
+
+// signalIfLiveLocked is signalIfLive for a caller that holds p.mu.
+func (p *managedProc) signalIfLiveLocked(signame, killedBy string) bool {
 	if !p.running || p.reaped || p.cmd == nil || p.cmd.Process == nil {
 		return false
 	}
 	if killedBy != "" && (p.killedBy == "" || (killedBy == "shutdown" && p.waiting > 0)) {
 		p.killedBy = killedBy
 	}
+	// A signal cuts a pending farewell (measured on Linux and macOS).
+	p.cutFarewellLocked()
+	p.signalled = true
 	_ = signalGroup(p.group, p.cmd.Process, signame)
 	return true
 }
@@ -1034,9 +1047,12 @@ func (p *managedProc) waitReapAndDrain(wg *sync.WaitGroup, stdoutR, stderrR *os.
 
 // exitLogSuffix is the tail of the exited line. It holds the same two facts as the
 // exit frame: sigName is the frame's signal member and killedBy is its killedBy
-// member. It now gives ", signalled by this daemon (<killedBy>)", as build
-// c8e2f083 does (measured on Linux). The older text, measured on Linux against
-// 89cb6289, follows. A process.kill or a
+// member. It now gives ", asked to end by this daemon (<killedBy>)", as build
+// 52d82f0a does for the label client (measured on Linux and macOS). A child that
+// ends with code 0 after a farewell gets that part alone. Other labels get the same
+// wording (claustrum's own, not measured). Build c8e2f083 gave ", signalled by this
+// daemon (<killedBy>)" (measured on Linux). The older text, measured on Linux
+// against 89cb6289, follows. A process.kill or a
 // process.killAndWait that ends a child with exit code 0 gives ", signalled at
 // client request" (rows SP03a, SP03b). A SIGKILL from outside the daemon gives
 // ", terminated by SIGKILL" (row SP04). A plain exit gives no suffix (row SP01).
@@ -1054,9 +1070,9 @@ func exitLogSuffix(sigName, killedBy string) string {
 		suffix += ", terminated by " + sigName
 	}
 	if killedBy != "" {
-		// Build c8e2f083 (measured on Linux) prints the daemon as the
-		// signaller. 5fd08069 and 89cb6289 printed ", signalled at <label> request".
-		suffix += ", signalled by this daemon (" + killedBy + ")"
+		// Build 52d82f0a (measured on Linux and macOS). c8e2f083 printed ", signalled
+		// by this daemon (<label>)", 5fd08069 and 89cb6289 ", signalled at <label> request".
+		suffix += ", asked to end by this daemon (" + killedBy + ")"
 	}
 	return suffix
 }
@@ -1434,6 +1450,12 @@ func (m *procManager) killAndWaitProc(p *managedProc, signal string, grace time.
 		p.waiting--
 		p.mu.Unlock()
 	}()
+	return m.signalAndWait(p, signal, grace, escalate)
+}
+
+// signalAndWait is the signal and the wait of killAndWaitProc. The caller holds
+// the waiting count. killAndWaitFarewell runs it at the end of the grace.
+func (m *procManager) signalAndWait(p *managedProc, signal string, grace time.Duration, escalate bool) (found, died, alreadyExited, escalated bool) {
 	if !p.signalIfLive(signal, "client") && strings.TrimPrefix(signal, "SIG") == "KILL" {
 		p.killGroupInDrain()
 	}
