@@ -105,6 +105,7 @@ func TestTokenlessCloseLinesFollowTheSampleRule(t *testing.T) {
 			cli, srv := net.Pipe()
 			done := make(chan struct{})
 			go func() { defer close(done); s.serveConn(&conn{nc: srv}) }()
+			_, _ = cli.Write([]byte("x"))
 			_ = cli.Close()
 			<-done
 		}
@@ -112,6 +113,26 @@ func TestTokenlessCloseLinesFollowTheSampleRule(t *testing.T) {
 	got := countedNumbers(out, "Connection number ")
 	if fmt.Sprint(got) != fmt.Sprint([]int{1, 2, 3, 4, 5, 6, 7, 8, 9, 10}) {
 		t.Errorf("counted close lines carry %v, want 1 to 10", got)
+	}
+}
+
+// A connection that closes with no byte logs no token-less line and does not raise the count.
+func TestTokenlessCloseNeedsAByte(t *testing.T) {
+	s := &server{token: testToken, procs: newTestProcManager(t), conns: map[*conn]struct{}{}, shutdown: make(chan struct{})}
+	out := captureLog(t, func() {
+		for _, send := range []bool{false, true} {
+			cli, srv := net.Pipe()
+			done := make(chan struct{})
+			go func() { defer close(done); s.serveConn(&conn{nc: srv}) }()
+			if send {
+				_, _ = cli.Write([]byte("x"))
+			}
+			_ = cli.Close()
+			<-done
+		}
+	})
+	if got := fmt.Sprint(countedNumbers(out, "Connection number ")); got != "[1]" {
+		t.Errorf("counted close lines carry %v, want [1] (one for the connection that sent a byte)", got)
 	}
 }
 
