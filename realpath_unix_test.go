@@ -75,6 +75,7 @@ func TestSocketFilesRealpathDanglingRealFolder(t *testing.T) {
 		}
 	}
 	links := map[string]string{
+		"real/y":       "gone",
 		"a/L":          filepath.Join(root, "real", "dir"),
 		"real/dir/y":   "../gone",
 		"real/dir/sub": filepath.Join(root, "other", "deep"),
@@ -88,9 +89,15 @@ func TestSocketFilesRealpathDanglingRealFolder(t *testing.T) {
 	got := realpathCalls(t, root, []map[string]any{
 		{"path": filepath.Join(root, "a", "L", "y"), "missingLeaf": true},
 		{"path": filepath.Join(root, "real", "dir", "z"), "missingLeaf": true},
+		// A ".." after a link in the request: the kernel finds the link real/y.
+		{"path": root + "/a/L/../y", "missingLeaf": true},
+		{"path": root + "/a/L/../new", "missingLeaf": true},
 	})
-	for i, want := range []string{"real/gone", "other/gone"} {
-		w := `"wouldBe":"<DIR>/` + want + `","dangling":true`
+	for i, want := range []string{"real/gone", "other/gone", "real/gone", "real/new"} {
+		w := `"wouldBe":"<DIR>/` + want + `"`
+		if i < 3 {
+			w += `,"dangling":true`
+		}
 		if !strings.Contains(string(got[i]), w) {
 			t.Errorf("reply %d = %s, want %s", i+1, got[i], w)
 		}

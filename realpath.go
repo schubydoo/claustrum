@@ -108,6 +108,24 @@ func resolveRealpath(path string, missingLeaf bool) (realpathResult, error) {
 	return realpathResult{}, nil
 }
 
+// splitLast splits an absolute path at its last separator without cleaning it.
+// The parent keeps its ".." elements, so a ".." after a link is applied to the
+// link target when EvalSymlinks resolves it. A trailing separator is dropped.
+func splitLast(path string) (parent, last string) {
+	seps := "/"
+	if runtime.GOOS == "windows" {
+		seps = `/\`
+	}
+	path = strings.TrimRight(path, seps)
+	// Every caller passes an absolute path, so a separator is always there.
+	i := max(strings.LastIndexAny(path, seps), 0)
+	parent = path[:i]
+	if parent == "" || strings.HasSuffix(parent, ":") {
+		parent = path[:i+1]
+	}
+	return parent, path[i+1:]
+}
+
 // resolveDangling never fails. The answers of the system for the folders on the
 // way were all good when the caller got here, so a later failure (a race) gives
 // the answer with no wouldBe (claustrum's own, not measured).
@@ -116,10 +134,11 @@ func resolveDangling(path string) realpathResult {
 	target, err := os.Readlink(path)
 	if err == nil && !filepath.IsAbs(target) {
 		// The kernel reads a relative target from the real folder of the link.
-		// The target text is not cleaned: EvalSymlinks in wouldBeUnder resolves
-		// each link before it applies a "..". Claustrum's own, not measured.
+		// The folder text is not cleaned, so a ".." after a link in the request
+		// follows the kernel. Claustrum's own, not measured.
+		folder, _ := splitLast(path)
 		var dir string
-		dir, err = filepath.EvalSymlinks(filepath.Dir(path))
+		dir, err = filepath.EvalSymlinks(folder)
 		target = dir + string(filepath.Separator) + target
 	}
 	if err == nil {
@@ -130,25 +149,16 @@ func resolveDangling(path string) realpathResult {
 
 // wouldBeUnder resolves the parent folder of path and adds the last name. ok is
 // false when the parent cannot be resolved. The caller tested the path first, so
-// only a missing parent (or a race) gets here. The text is split at the last
-// separator and not cleaned, so a ".." after a link is applied to the link target.
+// only a missing parent (or a race) gets here. The last name is never "." or
+// "..": the path does not exist, and a path that ends in one of them names its
+// parent, so a parent that resolves would make the path exist.
 func wouldBeUnder(path string) (string, bool) {
-	seps := "/"
-	if runtime.GOOS == "windows" {
-		seps = `/\`
-	}
-	path = strings.TrimRight(path, seps)
-	// Every caller passes an absolute path, so a separator is always there.
-	i := max(strings.LastIndexAny(path, seps), 0)
-	parent := path[:i]
-	if parent == "" || strings.HasSuffix(parent, ":") {
-		parent = path[:i+1]
-	}
+	parent, last := splitLast(path)
 	real, err := filepath.EvalSymlinks(parent)
 	if err != nil {
 		return "", false
 	}
-	return filepath.ToSlash(filepath.Join(real, path[i+1:])), true
+	return filepath.ToSlash(filepath.Join(real, last)), true
 }
 
 // realpathFailure maps a failed call to the -32603 reply. The no_usable_name
