@@ -12,9 +12,9 @@ Per-method wire facts (params, result field order, error texts) live in
 [PROTOCOL.md](PROTOCOL.md) and on the pages under `protocol/`. The history of the
 reference builds is in [REFERENCE-BUILDS.md](REFERENCE-BUILDS.md).
 
-claustrum follows the reference build `c8e2f083`, except its [terminal](REFERENCE-BUILDS.md#c8e2f083a63593e9adf0bbebc99debff07a5545f-2026-10-06-built). An
+claustrum follows the reference build `52d82f0a`, except its [terminal](REFERENCE-BUILDS.md#52d82f0a28317830ccacea80f6f4aac1d7563353-2026-10-09-built). An
 entry names the build of a measurement where the build matters. A measurement of the reference that names no build was made
-on `5fd08069` or an earlier build. A fact read from
+on `c8e2f083` or an earlier build. A fact read from
 claustrum's code is marked "from the code".
 
 ## The one hard rule

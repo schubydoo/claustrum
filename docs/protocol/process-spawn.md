@@ -238,4 +238,4 @@ A spawn that reaches the start of its child after the shutdown began gets no rep
 - [D20](../DIVERGENCES.md#d20): the 50 ms wait in the reap before the `SIGKILL` of a group whose leader reads as gone.
 - [D23](../DIVERGENCES.md#d23): on Windows the environment block of a child is in name order.
 
-claustrum also removes the launcher variables on Windows, which is not measured on the reference. claustrum lacks the terminal of the pinned `c8e2f083` and ignores its `pty` member. On Windows that build refuses `pty` with `-32602`, and claustrum runs the command (measured on Windows, [open items](../REFERENCE-BUILDS.md#c8e2f083a63593e9adf0bbebc99debff07a5545f-2026-10-06-built)).
+claustrum also removes the launcher variables on Windows, which is not measured on the reference. claustrum lacks the terminal of the pinned `52d82f0a` and ignores its `pty` member. On Windows `c8e2f083` refuses `pty` with `-32602`, and claustrum runs the command (measured on Windows, [open items](../REFERENCE-BUILDS.md#52d82f0a28317830ccacea80f6f4aac1d7563353-2026-10-09-built)).

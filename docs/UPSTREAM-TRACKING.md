@@ -119,7 +119,7 @@ of the real desktop client:
   token and host paths. Never commit one.
 
 The last capture ran against `8de85faa`, a build well behind the current
-baseline, `c8e2f083`. Its result is in
+baseline, `52d82f0a`. Its result is in
 [REFERENCE-BUILDS.md](REFERENCE-BUILDS.md#8de85faaa11694321e937499a18c7ab88f37c76c-2026-05-21).
 Use a capture as a periodic spot-check. Use it again for a build that changes
 `process.*` behavior that the synthetic battery cannot fully model (real
@@ -201,7 +201,7 @@ So is a rule of `process.killAndWait`. For a signal other than `KILL` it sends n
 first signal during the exit drain. On Linux and macOS `KILL` goes to the group at
 once, as on the reference
 ([A request during the exit drain](protocol/process-killandwait.md#a-request-during-the-exit-drain)).
-claustrum lacks the terminal of `c8e2f083`, so `server.capabilities` lacks
+claustrum lacks the terminal of `52d82f0a`, so `server.capabilities` lacks
 `process.resize`, and on Linux and macOS `process.spawn.pty`. A `process.resize`
 gets `-32601`, and on Windows a `process.spawn` with `pty` runs its command
 (measured on macOS and Windows). Check those
@@ -257,7 +257,7 @@ open of claustrum (from the code, not measured). See
 ### Triage gotchas: when a probe result is misleading
 
 These are the traps that matter for telling drift from expected. In the git and
-files methods, claustrum follows `c8e2f083`, the build that `scripts/UPSTREAM_SHA`
+files methods, claustrum follows `52d82f0a`, the build that `scripts/UPSTREAM_SHA`
 names. The exceptions are the D-entries above, and the places where an item below
 or the linked page names an older build. A probe against an older build
 shows the differences of each item as a build split, not drift. The rules are on
@@ -552,7 +552,7 @@ the reference stays the same.
 Go 1.27 does that. It turns on the `jsonv2` GOEXPERIMENT by default, and the v2
 `Marshal` renders an invalid UTF-8 byte as the literal U+FFFD character (bytes
 `EF BF BD`). Go 1.26 and earlier emit the six-ASCII `\ufffd` escape. The build
-pinned today, `c8e2f083`, carries a go1.25.14 stamp (`go version` on the binary), as
+pinned today, `52d82f0a`, carries a go1.25.14 stamp (`go version` on the binary), as
 `5fd08069` does. So it emits the same escape. `files.read` puts raw file bytes
 into `content`, so under Go 1.27 every read of a file with a non-UTF-8 byte
 diverges from the reference. `TestInheritedInvalidUTF8BecomesReplacementChar` and

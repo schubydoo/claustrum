@@ -13,4 +13,4 @@ Every reply line and every stream frame line that the daemon writes on a connect
 - The `server.shutdown` reply carries the member too (build `52d82f0a`, measured on Linux, macOS and Windows).
 - The refusal line of [the namespace check](server.md#a-refused-caller-linux) carries it at `0` (build `52d82f0a`, measured on Linux).
 
-The parse error, the auth error and the replay lines of `process.reattach` carry it the same way (build `52d82f0a`, measured on Linux, macOS and Windows). The bridge relays lines as they are and adds nothing.
+The parse error, the auth error and the replay lines of `process.reattach` carry it the same way (build `52d82f0a`, measured on Linux, macOS and Windows). The bridge relays lines as they are and adds nothing (from the code).

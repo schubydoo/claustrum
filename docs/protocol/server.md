@@ -12,7 +12,7 @@ None of the three methods reads `params`. A `params` of any type, or no `params`
 {"jsonrpc": "2.0", "id": 1, "method": "server.ping", "auth": "<token>"}
 ```
 
-`server.ping` and `server.capabilities` need the `auth` member, as every other method does. `server.shutdown` is the one method that is not authenticated. See [server.shutdown](#servershutdown).
+`server.ping` and `server.capabilities` need the `auth` member. `server.shutdown` is the one method that is not authenticated. See [server.shutdown](#servershutdown).
 
 `server.version` does not exist. It answers `-32601 Unknown method: server.version`, as any unknown method does. The `-version` flag still prints the version of the daemon.
 
@@ -53,7 +53,7 @@ A request for `server.capabilities` does not count as activity for the idle exit
 
 ### Features
 
-The `features` array is always present. The example above shows its members in order, as Linux and macOS send them. Windows sends no `git.worktree.external_root`, and with jobs on adds `process.spawn.job` last (`52d82f0a`).
+The `features` array is always present. The example above shows the members in the order of `52d82f0a` on Linux and macOS, less `process.spawn.pty`. Windows sends no `git.worktree.external_root`, and with jobs on adds `process.spawn.job` last (`52d82f0a`).
 
 `CLAUDE_SSH_MANAGED_LAUNCHER` does not change the list (measured on macOS). Windows lists `launcher.managed` too, although a Windows `process.spawn` refuses every launcher. The peer check changes only the `peerCheck` and `peerCheckBy` members.
 
@@ -157,4 +157,4 @@ A handler panic in `server.shutdown` writes no frame (claustrum's own). See [Han
 
 ## Differences from the reference
 
-`-keep-children` is claustrum's own flag ([CT-2](../DIVERGENCES.md#ct-2)). The peer check follows the reference. claustrum lacks the terminal of the pinned build `c8e2f083`, so it lists no `process.resize` and no `process.spawn.pty` ([open items](../REFERENCE-BUILDS.md#c8e2f083a63593e9adf0bbebc99debff07a5545f-2026-10-06-built)).
+`-keep-children` is claustrum's own flag ([CT-2](../DIVERGENCES.md#ct-2)). The peer check follows the reference. claustrum lacks the terminal of the pinned build `52d82f0a`, so it lists no `process.resize` and no `process.spawn.pty` ([open items](../REFERENCE-BUILDS.md#52d82f0a28317830ccacea80f6f4aac1d7563353-2026-10-09-built)).
