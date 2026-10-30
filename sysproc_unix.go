@@ -39,12 +39,22 @@ func reapProcessGroup(proc *os.Process) {
 // procGroup is the per-process kill handle. On Unix the child already lives in
 // its own process group (Setpgid, above), so there is no extra OS state to
 // hold. The type exists only so the cross-platform caller can treat every OS
-// uniformly. On Windows it wraps a process handle of the direct child.
+// uniformly. On Windows it wraps a process handle of the direct child and its job.
 type procGroup struct{}
+
+// spawnSysProcAttr is newSysProcAttr for process.spawn. Unix has no jobs.
+func spawnSysProcAttr(childJobs) *syscall.SysProcAttr { return newSysProcAttr() }
 
 // confineProcess is a no-op on Unix — the process group was established by
 // newSysProcAttr at spawn. It returns a non-nil handle for caller uniformity.
-func confineProcess(*os.Process) (*procGroup, error) { return &procGroup{}, nil }
+func confineProcess(*os.Process, childJobs) (*procGroup, error) { return &procGroup{}, nil }
+
+// resumeChild has nothing to do on Unix: no child starts suspended.
+func resumeChild(*os.Process, *syscall.SysProcAttr) error { return nil }
+
+// childJobsAtStart gives jobsOff and logs no line: Linux and macOS have no jobs. The
+// log of 52d82f0a has no job line on Linux (measured).
+func childJobsAtStart(bool, childJobs) childJobs { return jobsOff }
 
 // signal delivers the signal to the child's whole process group. Nil-receiver
 // safe (it doesn't touch the receiver). It returns nil: a failed kill is not
@@ -53,6 +63,10 @@ func (*procGroup) signal(proc *os.Process, signame string) error {
 	signalProcessGroup(proc, signame)
 	return nil
 }
+
+// endRest has nothing to end on Unix: the process group stays as it is after the
+// exit of the child.
+func (*procGroup) endRest() {}
 
 // close has nothing to release on Unix.
 func (*procGroup) close() {}

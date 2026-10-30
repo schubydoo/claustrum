@@ -459,11 +459,11 @@ Unless an item names another build, the daemon items below are measured against
   `89cb6289`. The
   daemon ends by itself. See
   [Signals of the cleaner](DAEMON.md#signals-of-the-cleaner).
-- On Windows a daemon that outlives its SSH session and children that outlive a
-  killed daemon are not drift, against `f6010b97` and `89cb6289`, one state on
-  `89cb6289` only. Descendants that outlive a kill or a `-stop` are not drift
-  either. A child is in no job, and a kill ends the direct child only (kill forms
-  measured on `89cb6289`). See [The job of the launcher](DAEMON.md#the-job-of-the-launcher-windows)
+- On Windows a daemon that outlives its SSH session is not drift, against
+  `f6010b97` and `89cb6289`. Since `52d82f0a` each child is in a job, and a kill
+  ends its tree. With `CLAUDE_SSH_NO_JOBS=1` a tree that outlives the shutdown or
+  the exit of the child is not drift. Neither are children that outlive a killed
+  daemon (`89cb6289`, not measured on `52d82f0a`). See [The job of the launcher](DAEMON.md#the-job-of-the-launcher-windows)
   and [Windows child trees](protocol/process-kill.md#windows-child-trees).
 - On Linux and macOS a daemon accepts no connection while the reap of its start
   waits. A connect then gets `ECONNREFUSED` or `ENOENT`, and `daemon.lock` holds

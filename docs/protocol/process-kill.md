@@ -2,7 +2,7 @@
 
 `process.kill` sends a signal to a child process that `process.spawn` started. It answers at once and does not wait for the process to end. To wait for the end, use [process.killAndWait](process-killandwait.md).
 
-An untagged rule on this page matches build `89cb6289`, and build `f6010b97` too for Windows children that outlive the daemon.
+An untagged rule on this page matches build `89cb6289`.
 
 ## Request
 
@@ -41,7 +41,7 @@ On Linux and macOS, each child runs in its own process group. Two cases:
 - `KILL` goes to the whole process group of the child. So the processes that the child started end too, unless one left the group.
 - Each other signal goes to the direct child only. A process that the child started in the background keeps running. A graceful `process.kill` does not end the tree. Use `"signal": "KILL"` for that.
 
-On Windows each signal ends the direct child only: see [Windows child trees](#windows-child-trees).
+On Windows a kill ends the job of the child (`52d82f0a`): see [Windows child trees](#windows-child-trees).
 
 ## The exit frame
 
@@ -63,20 +63,17 @@ The `exit` frame waits for the output of the child. If another process holds the
     On Linux the signal to the direct child goes through a pid file descriptor, so it cannot reach another process. macOS and an old Linux kernel send it by pid. `KILL` goes to the group by its number on both. The skip of an ended child guards that case.
 
 === "Windows"
-    The `signal` name is ignored. Each value ends the direct child only: see [Windows child trees](#windows-child-trees). The daemon holds a handle of the child, so the kill cannot reach another process.
+    The `signal` name is ignored. A kill ends the job of the child (`52d82f0a`): see [Windows child trees](#windows-child-trees).
 
 ### Windows child trees
 
-On Windows a child is in no Job Object, and the kill goes to the direct child, never to its process group. A kill ends the direct child only, with exit code 1. The processes that the child started live on.
+Since `52d82f0a` each child on Windows runs in a job. A kill and `process.killAndWait` end the whole job at once, with exit code 1. `server.shutdown` ends the job too. A process outside the job stays. When the child exits, the rest of its job ends, and the `exit` frame comes at once. The daemon logs one start line (measured on Windows):
 
-| Action | Direct child | Processes that the child started |
-|---|---|---|
-| `process.kill` with each `signal` value | ends, exit code 1 | live on |
-| `process.killAndWait` with each form | ends, exit code 1 | live on |
-| `-stop` and `server.shutdown` | ends, exit code 1 (without `-keep-children`, see [CT-2](../DIVERGENCES.md#ct-2)) | live on |
-| `taskkill /F` of the daemon | lives on | live on |
+```
+[daemon] job objects for child processes as the socket opens: true (off switch: false)
+```
 
-A new daemon on the same socket does not end them either.
+With `CLAUDE_SSH_NO_JOBS=1` the line ends `false (off switch: true)`. There is no job, and the shutdown and the exit of the child leave the tree. A kill ends the direct child only, as on `89cb6289`. claustrum starts a child suspended until it is in its job (claustrum's own, not measured). A `taskkill /F` of the daemon ends no child, as on `89cb6289` (not measured on `52d82f0a`).
 
 The `exit` frame on Windows has no `signal` member:
 
@@ -84,7 +81,7 @@ The `exit` frame on Windows has no `signal` member:
 {"type": "stream", "processId": "c1", "stream": "exit", "seq": 1, "exitCode": 1, "killedBy": "client"}
 ```
 
-If a process that the child started holds the output pipes of the child, the `exit` frame comes 5 seconds after the kill. The reply of `process.kill` still comes at once. For the answers of `process.killAndWait` in that state, see [its page](process-killandwait.md#which-processes-the-force-reaches).
+With no job, a process that the child started can hold the output pipes of the child. Then the `exit` frame comes 5 seconds after the kill. The reply of `process.kill` still comes at once. For the answers of `process.killAndWait` in that state, see [its page](process-killandwait.md#which-processes-the-force-reaches).
 
 ## Rare states
 

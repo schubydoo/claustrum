@@ -271,6 +271,8 @@ component_management:
         - process.go
         - sysproc_unix.go
         - sysproc_windows.go
+        - childjobs.go
+        - childjobs_windows.go
         # 4534d86 exit-frame `signal` name: read from the wait status on unix, always
         # empty on Windows (parity).
         - process_signal_unix.go

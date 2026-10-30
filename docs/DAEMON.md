@@ -515,7 +515,7 @@ start error that begins `claustrum:` have none. The reference writes no tag. `CL
 
 When the raise of the open-files limit works on Linux and macOS, the first line
 tells the limit that `process.spawn` children get. It is the lower of 65536 and
-the hard limit. On Windows there is no such line. The ready banner follows, with
+the hard limit. On Windows the [job line](protocol/process-kill.md#windows-child-trees) comes second. The ready banner follows, with
 no timestamp:
 
 ```

@@ -1143,6 +1143,27 @@ func runHelper(mode string, args []string) int {
 		}
 		fmt.Print("early\n")
 		return 7
+	case "exit-leave-kid":
+		// Start a grandchild sleeper that inherits the stdout and stderr of this
+		// process, write its pid to args[0], and exit 0 at once. The pipes stay open
+		// while the grandchild lives.
+		exe, err := os.Executable()
+		if err != nil {
+			fmt.Fprintln(os.Stderr, err)
+			return 1
+		}
+		child := exec.Command(exe, "60")
+		child.Env = buildEnv(map[string]string{"CLAUSTRUM_TEST_HELPER": "sleep"})
+		child.Stdout = os.Stdout
+		child.Stderr = os.Stderr
+		if err := child.Start(); err != nil {
+			fmt.Fprintln(os.Stderr, err)
+			return 1
+		}
+		if err := os.WriteFile(args[0], []byte(strconv.Itoa(child.Process.Pid)), 0o644); err != nil {
+			fmt.Fprintln(os.Stderr, err)
+			return 1
+		}
 	case "held-stdout":
 		// A git call that exits 0 while its child holds the stdout. args[0] gets
 		// the pid of this process and of the child, one per line. The child
@@ -1274,7 +1295,9 @@ func runHelper(mode string, args []string) int {
 	case "spawn-hold":
 		// A stand-in for a daemon that owns one child: spawn a sleeper through the
 		// production process manager, write its pid to args[0], then linger until the
-		// test ends this process hard.
+		// test ends this process hard. On Windows args[1] "job" puts the child in a job
+		// of its own, and "no-job" puts it in none. Before the pid it writes the job
+		// state of the child (childJobState) to args[0] + ".job".
 		client, server := net.Pipe()
 		go func() { _, _ = io.Copy(io.Discard, server) }()
 		exe, err := os.Executable()
@@ -1282,12 +1305,41 @@ func runHelper(mode string, args []string) int {
 			fmt.Fprintln(os.Stderr, err)
 			return 1
 		}
-		p, err := newProcManager().spawn(&conn{nc: client}, "held", exe, []string{"60"}, "", map[string]string{"CLAUSTRUM_TEST_HELPER": "sleep"}, true)
+		m := newProcManager()
+		if len(args) > 1 && args[1] == "job" {
+			m.jobs = jobsOn
+		}
+		p, err := m.spawn(&conn{nc: client}, "held", exe, []string{"60"}, "", map[string]string{"CLAUSTRUM_TEST_HELPER": "sleep"}, true)
 		if err != nil {
 			fmt.Fprintln(os.Stderr, err)
 			return 1
 		}
+		if err := os.WriteFile(args[0]+".job", []byte(childJobState(p)), 0o644); err != nil {
+			fmt.Fprintln(os.Stderr, err)
+			return 1
+		}
 		if err := os.WriteFile(args[0], []byte(strconv.Itoa(p.pid)), 0o644); err != nil {
+			fmt.Fprintln(os.Stderr, err)
+			return 1
+		}
+		time.Sleep(60 * time.Second)
+	case "breakaway-start":
+		// Windows: start a sleeper outside the job of this process
+		// (CREATE_BREAKAWAY_FROM_JOB), write its pid to args[0], then linger until the
+		// test ends this process. A job that does not allow breakaway fails the start.
+		exe, err := os.Executable()
+		if err != nil {
+			fmt.Fprintln(os.Stderr, err)
+			return 1
+		}
+		child := exec.Command(exe, "60")
+		child.Env = buildEnv(map[string]string{"CLAUSTRUM_TEST_HELPER": "sleep"})
+		breakawayStart(child)
+		if err := child.Start(); err != nil {
+			fmt.Fprintln(os.Stderr, err)
+			return 1
+		}
+		if err := os.WriteFile(args[0], []byte(strconv.Itoa(child.Process.Pid)), 0o644); err != nil {
 			fmt.Fprintln(os.Stderr, err)
 			return 1
 		}
