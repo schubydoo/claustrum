@@ -365,6 +365,10 @@ func createRows() []shapeRow {
 			{list: "P22", cwd: leaf,
 				argv: "--git-dir=<repo>/.git --work-tree=<leaf> read-tree -u --reset --no-recurse-submodules refs/heads/w1",
 				off:  "{C} {G} {H}" + index[false], fallback: "{C} {G} {H}" + index[true]},
+			// The settle call of 683cc6a9 (worktreesettle.go), in the state shadow only.
+			{list: "ATTR+P20", cwd: leaf,
+				argv:   "--git-dir=<repo>/.git --work-tree=<leaf> diff-files --quiet --ignore-submodules=all",
+				shadow: "{C} {D} {H}" + index[true]},
 		},
 	)
 }

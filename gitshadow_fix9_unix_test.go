@@ -189,6 +189,9 @@ func TestDaemonGitDirStaysFirst(t *testing.T) {
 func TestDaemonGitDirAndCommonDir(t *testing.T) {
 	run := func(t *testing.T, both bool) (lists [][]string, replies []string) {
 		f := newShadowFixture(t)
+		// The probe of --attr-source counts as done, so that neither cell
+		// makes it and the lists stay comparable.
+		setAttrSource(t, true)
 		_, otherGitDir := configRepo(t)
 		t.Setenv("GIT_DIR", otherGitDir)
 		if both {
@@ -247,9 +250,10 @@ func TestDaemonGitDirAndCommonDir(t *testing.T) {
 	}
 	// 5fd08069 makes 20, 2, 4 and 11 calls in the first four requests of both
 	// cells. The git directory of the daemon has no registrations folder, so
-	// the create runs no pair before the add (pairBeforeAdd).
-	if got := []int{len(both[0]), len(both[1]), len(both[2]), len(both[3])}; !slices.Equal(got, []int{20, 2, 4, 11}) {
-		t.Errorf("the first four requests made %v calls, want 20, 2, 4 and 11", got)
+	// the create runs no pair before the add (pairBeforeAdd). 683cc6a9 adds the
+	// settle call after the checkout, so the create makes 12 (worktreesettle.go).
+	if got := []int{len(both[0]), len(both[1]), len(both[2]), len(both[3])}; !slices.Equal(got, []int{20, 2, 4, 12}) {
+		t.Errorf("the first four requests made %v calls, want 20, 2, 4 and 12", got)
 	}
 }
 

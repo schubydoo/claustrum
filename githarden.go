@@ -774,9 +774,22 @@ func runWorktreeCheckout(ctx context.Context, u gitUse, leaf, workTree, gitDir, 
 		"-c", "core.splitIndex=false", "-c", "core.commitGraph=false",
 		"--git-dir="+gitDir, "--work-tree="+workTree,
 		"read-tree", "-u", "--reset", "--no-recurse-submodules", rev)
+	readEnd := time.Now()
 	if err == nil || drained {
 		if u.swapped("index") {
 			return stderr, drained, errGitDirNotReal, nil
+		}
+		// The settle step runs in the state shadow after a checkout that exited 0
+		// in time. With no settings copy and after a drain overrun no call runs
+		// (claustrum's own, not measured).
+		if err == nil && u.shadow() {
+			settleCheckout(ctx, u, leaf, workTree, gitDir, idx, pin, readEnd)
+			// The test of the held git directory runs again right before the
+			// placement, so a swap during the settle step gets the same answer
+			// (claustrum's own, not measured).
+			if u.swapped("settled") {
+				return stderr, drained, errGitDirNotReal, nil
+			}
 		}
 		if u.accepted != nil && tested.path == "" {
 			// A create that holds its git directory, with no registration that

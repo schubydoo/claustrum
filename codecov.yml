@@ -182,6 +182,8 @@ component_management:
         - worktreestale_unix.go
         - worktreestale_windows.go
         - worktreeverify.go
+        # the settle step after the checkout of git.worktree_create (683cc6a9).
+        - worktreesettle.go
         # git.worktree_remove's own delete of the worktree and its entry.
         - worktreeremove.go
         # The branch step of git.worktree_remove and the create rollbacks (89cb6289),
