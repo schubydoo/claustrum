@@ -32,7 +32,7 @@ daemon. The wire surface is the product.
   `github.com/Microsoft/go-winio` is Windows-only.
 - Tests cover the wire surface with fast unit tests and a socket-integration suite
   (`harness_test.go` + `integration*_test.go`). The suite boots the daemon on a temp
-  `AF_UNIX` socket and asserts every frame against golden fixtures
+  `AF_UNIX` socket and asserts the frames of every method against golden fixtures
   (`testdata/socket_*.golden.json`). Process fixtures come from the test binary
   (`helperproc_test.go`), never from `/bin/*`, so stream bytes match the goldens on every OS.
 
@@ -86,7 +86,7 @@ Every OS serves the same JSON-RPC methods.
   `scratch/` is gitignored on purpose.
 - Each fact of the documentation has one home. Link to it and do not copy the text
   ([`docs/STYLE.md`](docs/STYLE.md)). `AGENTS.md` keeps the safety rules of Part A, because
-  an agent must hold them before it touches code.
+  an agent must hold them before it touches code. The rule is for the documents under `docs/`.
 
 ## Always do
 
@@ -133,7 +133,7 @@ from the socket, as in `plugins.prune`.
 |------|-----------------|--------------|-------|-------------|
 | `files.extract_tar` | the last name of `destDir` | the caller (RPC) | `wipesHomeDir`, `destEntryHoldsHome`, `checkDestViews` | [files.extract_tar](docs/protocol/files-extract-tar.md) |
 | `git.worktree_remove` | `worktreePath`, its registration | the caller (RPC) | `wipesHomeDir` on `worktreePath`, containment | [git.worktree_remove](docs/protocol/git-worktree-remove.md) |
-| `git.worktree_create` rollback | `worktreePath`, its registration, one stale entry, two Windows staging removes | the caller (RPC) | `wipesHomeDir` (D2), identity tests, one exception (see Guards: registration) | [git.worktree_create](docs/protocol/git-worktree-create.md#after-a-failure) |
+| `git.worktree_create` rollback | `worktreePath`, its registration, one stale entry, two Windows staging removes | the caller (RPC) | `wipesHomeDir` (D2), identity tests, one exception (see Registration and index) | [git.worktree_create](docs/protocol/git-worktree-create.md#after-a-failure) |
 | `git.worktree_create` staging (Windows) | old staging entries of the `baseRepo` git directory | the caller (RPC): a good add in `shadow` | prefix, age, `wipesHomeDir` | [git.worktree_create](docs/protocol/git-worktree-create.md#differences-by-system) |
 | `-install` | the CLI path | the operator | D6, `folderHoldsHome` | [-install](docs/INSTALL.md#staging-and-cleanup) |
 
@@ -153,8 +153,8 @@ first.
 #### Path 1: `files.extract_tar`
 
 The caller names `destDir`. The wipe removes the last name of the cleaned `destDir` as a
-tree, through a handle of its parent folder (`wipeDestDir`). The handle follows no link
-and refuses the names `.` and `..`. On Windows it refuses a last name of dots and spaces
+tree, through a handle of its parent folder (`wipeDestDir`). The handle follows no link and no
+junction and refuses the names `.` and `..`. On Windows it refuses a last name of dots and spaces
 alone too.
 
 Guards, in order: `wipesHomeDir` on `destDir` before any step. Then `destEntryHoldsHome`
@@ -199,8 +199,8 @@ first rollback runs no git call and removes the leaf only if it is an empty dire
 a good add, the second rollback deletes the entries of the leaf in directory-read order,
 stops at the first failure, deletes the registration, runs the branch step, and removes the
 empty leaf ([When a rollback leaves
-something](docs/protocol/git-worktree-create.md#after-a-failure)). The second rollback runs after an
-expired `timeoutMs`, a failed checkout, `config.worktree` copy or index placement, and a
+something](docs/protocol/git-worktree-create.md#after-a-failure)). The second rollback runs when `timeoutMs` expired during the add, the checkout or the
+copy step, after a post-checkout drain that exceeded that `timeoutMs`, a failed checkout, `config.worktree` copy or index placement, and a
 refusal of the filter rule (`gitfilter.go`, [Git
 filters](docs/protocol/git-worktree-create.md#git-filters)).
 
@@ -212,26 +212,27 @@ filters](docs/protocol/git-worktree-create.md#git-filters)).
   still resolves to the leaf and the parent is still the held parent.
 - **Stale entry.** One `os.Root.RemoveAll` of one stale `worktrees` entry, after
   `wipesHomeDir` on its path, through a root at that folder (the held folder when held).
+  Create removes that entry only if it is the only stale entry and holds no `locked` file.
   Windows keeps an entry with a `locked` file too (`windowsStaleEntryGoes`) and an entry
   whose record names a path that exists (D27). It deletes nothing behind a junction or a
   directory symbolic link at that folder (claustrum's own in the state `shadow`). A Windows
   create with no held git directory is not measured.
 - **Refusals** (Linux and macOS). Before the second rollback and the checkout, these delete
   nothing, except an empty leaf with no `.git` file: a `.git` file of the leaf that is gone,
-  no regular file or without `gitdir: `. A registration or `commondir` path that is a
-  symlink. A record that names another worktree. A leaf that is no longer the folder of
+  no regular file or without `gitdir: `. A registration that is a symbolic link and a `commondir` path through a symbolic link. A record that names another worktree. A leaf that is no longer the folder of
   the create. A `.git` file that names no registration. An unreadable `commondir` or
   `gitdir`. A registration that is not the one new name of its folder. A failed listing. One
   state deletes before the checkout: the record names another path, `rev-parse
   --show-toplevel` fails by itself, and the folder has one new name. The second rollback
-  then acts on that name. A show-toplevel call that a time limit stopped starts no rollback
+  then acts on that name, never on the name in the `.git` file. A show-toplevel call that a time limit stopped starts no rollback
   (claustrum's own, not measured).
+
 ##### Registration and index
 
 - **Registration** (Linux and macOS). If git answered `rev-parse --absolute-git-dir`, it is
   the entry that the tests after the add accepted (after a failed show-toplevel, the one
-  new name). The rollback reads neither the `.git` file nor the `gitdir` record again, as
-  `89cb6289` does not. One `os.Root.RemoveAll` of that name through a root at the
+  new name). The rollback reads neither the `.git` file nor the `gitdir` record again. That follows
+  `89cb6289`, which removes that entry when either one changed. One `os.Root.RemoveAll` of that name through a root at the
   registrations directory, after `wipesHomeDir`. The entry must still have its accepted
   identity after the open, and create holds the accepted folder open. If the open fails, the
   identity comes from a stat of the path (not measured). A folder that is not the accepted
@@ -242,13 +243,14 @@ filters](docs/protocol/git-worktree-create.md#git-filters)).
   the one that the `.git` file names. It goes only if its `gitdir` record names the leaf and
   it resolves strictly inside the registrations directory. That delete runs no
   `wipesHomeDir`. It acts on the verified resolved path, through a root with the checked
-  identity on Linux and macOS, and by plain `os.RemoveAll` on Windows. A registration
+  identity on Linux and macOS, and by plain `os.RemoveAll` on Windows. With no answer of git, a registration
   whose back-pointer cannot be read is never deleted.
 - **Index** (Linux and macOS). One `os.Root.Remove` of the fixed name `index` in the
   registration, never a tree, after "file exists". The registration is the accepted entry.
   With no answer of git it is the folder that the `gitdir:` path names, and it gets the
   index only if its record names the new worktree. With an answer, create refuses before
-  the checkout an entry whose record cannot be read or names another path. The identity
+  the checkout an entry whose record cannot be read or names another path. The placement then reads no record again: a record that goes during the checkout does not
+  stop it. The identity
   test of the rollback applies (D24, not measured). An entry folder whose stat fails takes
   the placement itself, which fails there.
 
@@ -269,9 +271,10 @@ Guards, in order: it runs in the state `shadow` only, after a good add. The path
 name the held git directory, or the create is refused and nothing is removed or made.
 Entries are read with `Lstat` through that root. The name must start with the prefix with
 the dash, and the write time must be 1 hour old or more. `wipesHomeDir` refuses an entry
-that is home or holds it. A failed removal logs one line (not measured). From the code, not
-measured: a failed add, a `"shadowDirOff":true` request with no later gate, and the state
-`fallback-git` run no cleanup.
+that is home or holds it. A failed removal logs one line, and the create goes on (not measured). `git.info` and
+`git.status` remove no entry. From the code, not measured: a failed add, a
+`"shadowDirOff":true` request (or one that starts while such a request runs and takes no
+later gate), and the state `fallback-git` run no cleanup. A request with a later gate runs it.
 
 Never widen: This step is approved by the maintainer. Do not widen the prefix, the kinds
 or the folder of this delete.
@@ -288,7 +291,7 @@ when the exited CLI holds it (claustrum's own, not measured).
 
 Guards, in order: D6 runs first, so the CLI path is a direct child of the cli-dir, but it
 does not test which folder that child is. Right before the tree delete, `folderHoldsHome`
-runs `wipesHomeDir` and compares the folder at the CLI path with home and each parent of
+refuses a CLI path that is home or holds it. It runs `wipesHomeDir` and compares the folder at the CLI path with home and each parent of
 home by identity (`os.SameFile`), for the given and the resolved home path (D2). The
 prune and the sweeps skip an entry that is home or holds it (`cliEntryHoldsHome`, claustrum's
 own, D2). `clearNonFolderCLIDir` removes two paths with a plain `os.Remove`, never as a
@@ -313,14 +316,19 @@ caller-supplied and never `~`-expanded, so it needs no `wipesHomeDir` guard.
 ### The `git-shadow` folder
 
 The folder `git-shadow` of the settings copy is a further recursive delete site, and it is
-socket-derived like `plugins.prune`. Do not build a name below it from a request value. Each
+socket-derived like `plugins.prune`. Do not build a name below it from a request value. The name below the root is one that
+this daemon made, one that a directory read of `git-shadow` or of the folder of the daemon
+returned, or a fixed name in `.probe`. No part of the path comes from an RPC value or from
+an operator. Each
 delete is `wipesHomeDir` on the full path, then one call through a root at `<socket
 folder>/git-shadow` (`gitshadow.go`): `os.Root.RemoveAll` (`removeEntry`), a plain
-`os.Root.Remove` for a link (`removeLink`), or a plain `os.Root.Remove` that keeps a folder
+`os.Root.Remove` for a link that the sweep found (`removeLink`), or a plain `os.Root.Remove` that keeps a folder
 with content (`removeOneEntry`). The sites are the test folder `.check-<n>`, the folder of
 the daemon at shutdown (`shadowHost.close`) or after a failed lock step, a copy that this
 daemon wrote whose repository file is gone, the short-lived entries of one request
-(`.gitdir-<n>`, `.index-<n>`, `.worktreeinclude-<n>`, `.config-<n>`, `.s<n>`), the sweep
+(`.gitdir-<n>`, `.index-<n>`, `.worktreeinclude-<n>`, `.config-<n>`, `.s<n>`), each gone at the end of its step or at the reply (`.config-<n>`
+right after the file of the registration is written, or at the reply of a create refused
+before that step), the sweep
 `sweepOldFolders`, and one repository folder at 128 (`evictOldRepoFolder`). [The
 folders](docs/protocol/git-rules-settings-copy.md#the-folders) has the layout and the sweep
 rules. A folder with no lock stays 1 minute (claustrum's own), and a link goes as a link
@@ -368,9 +376,9 @@ directory](docs/protocol/git-worktree-create.md#the-held-git-directory)). Hold t
   claustrum takes the hold at a later gate before the first good add (claustrum's own).
 - On Linux and macOS no delete of a create or a remove goes behind a `worktrees` entry that
   is a symbolic link, and a remove of an existing worktree folder is refused there.
-- On Windows a directory symbolic link at `.git` is refused as a junction is, before any
+- On Windows a directory symbolic link at `.git` is refused as a junction is, on every git method before any
   write or remove (`gitDirIsSymlink`), unless the request has `"shadowDirOff":true`. A
-  request started during one gets both rules until its later gate (from the code, not
+  request started during one gets this rule until its later gate (from the code, not
   measured).
 
 #### Two steps that move the hold
@@ -395,21 +403,24 @@ or a name that it made ([The settings
 copy](docs/protocol/git-worktree-create.md#the-settings-copy)).
 
 - `<git dir>/worktrees`, made before the add. On Linux and macOS a last
-  `core.sharedrepository` copy line other than `umask` sets its mode by one `os.Root.Chmod`,
+  `core.sharedrepository` copy line other than `umask` sets its mode by one `os.Root.Chmod`, with the set-group-ID bit,
   only on a folder that this call made. macOS is not measured.
 - Linux and macOS: the `.git` file of the new worktree (`replaceWorktreeGitFile`), by one
-  `os.Root.Remove` of the fixed name `.git` and one exclusive create through a root at the
+  `os.Root.Remove` of the fixed name `.git` and one exclusive create with mode 0666 through a root at the
   leaf. The leaf must be the folder of the checkpoint, `.git` a regular file of at most 8192
-  bytes, and its text `gitdir: `, the folder of the copy, `/worktrees/`, one name and a
+  bytes, and its text `gitdir: `, the folder of the copy, `/worktrees/`, one name with no separator and a
   newline. Each other text stays as it is.
 - `config.worktree` of the registration (`writeWorktreeConfig`), through the held folder
   and a root at the registration. That must be a real direct entry of `<git dir>/worktrees`
-  and the accepted one by identity. After an empty answer of git, its `gitdir` record must
+  and the accepted one by identity (on Windows the moved one). After an empty answer of git, its `gitdir` record must
   name the leaf. An entry there goes first by one plain `os.Root.Remove` (Linux and macOS,
-  claustrum's own). Before it the daemon runs `git config --file <its own file> --unset-all`
+  claustrum's own), and the create is exclusive. On Windows a folder there fails and a file
+  there gets the new text. Before it the daemon runs `git config --file <its own file> --unset-all`
   on a file in `.config-<n>`.
 - Windows: the staging folder `<git dir>\.claude-new-worktree-<16 hex>` and one
-  `os.Root.Rename` of it into `worktrees` (`addStage.move`). A failed step after its mkdir
+  `os.Root.Rename` of it into `worktrees` (`addStage.move`). The folder and its files are
+  new, made with exclusive creates through the held root, and the `.git` file of the leaf
+  must name the staged entry first. A failed step after its mkdir
   removes it as a tree through the held root, by the name that this call made, after
   `wipesHomeDir`. If the `.git` file cannot be replaced, the moved registration goes too,
   by its name. Its identity test against the held staging folder is claustrum's own. The index is a
@@ -429,7 +440,7 @@ method rejects an unauthenticated request `-32001`
 The daemon persists its token to `daemon.token` (mode `0600`) beside the socket
 (`tokenpersist.go`). The fixed name and location are the reconnect contract, so they are not
 configurable. On Windows `0600` is not an owner-only DACL. Do not "fix" that without an
-opt-in divergence. See [`docs/DAEMON.md`](docs/DAEMON.md#token-persistence-daemontoken).
+opt-in divergence. `daemon.lock` is parity with `4534d86`, not a claustrum fix. See [`docs/DAEMON.md`](docs/DAEMON.md#token-persistence-daemontoken).
 
 ### Concurrency and panics
 
@@ -443,7 +454,7 @@ recovery](docs/PROTOCOL.md#handler-panic-recovery)).
 
 ### Network
 
-`-serve` makes no outbound network connections. Every dial is to a local `AF_UNIX` socket.
+`-serve` makes no outbound network connections. Every dial of `-serve` is to a local `AF_UNIX` socket.
 `-install` reaches the network only with `-cli-url`, and verifies the SHA-256 of that
 download before the new CLI is put in place, unconditionally ([SECURITY.md →
 Network](SECURITY.md#network)).
@@ -451,7 +462,7 @@ Network](SECURITY.md#network)).
 ### Time bounds
 
 `lddProbeTimeout` is 5 s, `cliRunBound` 30 s and `cliFirstRunBound` 120 s
-([INSTALL.md](docs/INSTALL.md#the-direct-version-run)). The flags `-libc-probe-timeout`
+([INSTALL.md](docs/INSTALL.md#the-direct---version-run)). The flags `-libc-probe-timeout`
 and `-cli-probe-timeout` are deprecated no-ops that log one warning. `-cli-download-timeout`
 sits beside them in the `-install` arm of `main`. A line that sets one of these bounds from
 a flag compiles and passes every isolated test. `TestInstallArmWiresEachFlagToItsOwnGlobal`
