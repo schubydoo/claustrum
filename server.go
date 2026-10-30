@@ -448,9 +448,9 @@ func runServe(socket, tokenFile string, tokenFd int, metricsAddr string, wlopt w
 	fmt.Print(s.listeningLine(socket))
 	// Arm the read of the login-shell PATH, so spawned children resolve tools the
 	// way an interactive session does, and start it in the background unless
-	// CLAUDE_SSH_NO_LOGIN_PATH_WARM is 1 (shellenv.go). Measured on Linux and macOS
-	// against 52d82f0a: the read starts 9 to 28 ms after the start line. It comes
-	// after the listening line, so a start that fails before it leaves no shell. Kept
+	// CLAUDE_SSH_NO_LOGIN_PATH_WARM is 1 (shellenv.go). Measured against 52d82f0a: the
+	// read starts with no spawn on Linux and macOS, 9 to 28 ms after the start line on
+	// Linux. It comes after the listening line, so a start that fails before it leaves no shell. Kept
 	// in this shell, not in newServerOnSocket, so a test that boots a server never
 	// forks a login shell.
 	warmLoginPATHAtStart()

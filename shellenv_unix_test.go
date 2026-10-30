@@ -227,7 +227,7 @@ func TestExtractLoginPATHDiscardsTheValueOnTimeout(t *testing.T) {
 }
 
 // TestLoginPATHTimeLimits holds the bounds of a read. The 30 s limit and the 31 s
-// bound are claustrum's own (not measured). The wait delay is measured.
+// bound are claustrum's own (not measured). The 500 ms after the shell ends is measured.
 func TestLoginPATHTimeLimits(t *testing.T) {
 	if loginPATHTimeout != 30*time.Second || loginPATHBound != 31*time.Second || loginPATHWaitDelay != 500*time.Millisecond {
 		t.Errorf("limits = %v, %v, %v; want 30s, 31s, 500ms", loginPATHTimeout, loginPATHBound, loginPATHWaitDelay)

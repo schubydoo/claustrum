@@ -98,7 +98,7 @@ The daemon removes these names:
 | `CLAUDE_RPC_TOKEN` | The daemon value, for every child. A value in the `env` of the request reaches the child. |
 | `CLAUDE_SSH_MANAGED_LAUNCHER`, `CLAUDE_SSH_E2E_MANAGED_SETTINGS_DIR` | Every child. The removal covers the `env` of the request too (measured on Linux and macOS). The removal on Windows (claustrum's own). |
 | `CLAUDE_CODE_PROCESS_WRAPPER` | A child with a `launcher`, also from the `env` of the request. A child without one keeps it (measured on Linux and macOS, claustrum's own on Windows). |
-| `CLAUDE_SSH_NO_LOGIN_PATH_WARM` | The daemon environment, at its start (claustrum's own on Windows). A value in `env` reaches the child (from the code). |
+| `CLAUDE_SSH_NO_LOGIN_PATH_WARM` | The daemon value, for every child (claustrum's own on Windows). A value in `env` reaches the child (claustrum's own, not measured). |
 | `CLAUDE_SSH_PEER_CHECK` | The daemon environment, at its start. On Windows that covers any letter case. A value in `env` reaches the child. These three are measured on Linux, macOS and Windows. If the removal fails, claustrum logs one WARN line of its own, and the children inherit it. |
 
 The Go runtime variables `GODEBUG`, `GOGC`, `GOMAXPROCS`, `GOMEMLIMIT` and `GOTRACEBACK` reach the child unchanged. `GOGC` and `GOMAXPROCS` are measured on Linux, the other three are not measured.
@@ -152,7 +152,7 @@ The read starts in the background with the daemon. These rules are measured agai
 - `CLAUDE_SSH_NO_LOGIN_PATH_WARM=1` moves the start of the read to the first spawn. The value 0 does not.
 - A spawn waits for a running read at most 4 s, and not past 8 s after its start. Until a good read, children get the inherited `PATH`.
 - A later spawn tries a failed read again after 30 s, then 1m0s and 2m0s. A good read is kept.
-- `"disableShellAgentSocket":true` kills the shell group of a read that still runs after the wait, and after a failure it starts no read. The shutdown kills it too.
+- `"disableShellAgentSocket":true` kills the shell group of a read that still runs after the wait, and after a failure starts no read. The shutdown kills it too.
 - The read runs `$SHELL -l -i -c …` if `$SHELL` is an executable file, or else the first usable of `/bin/zsh`, `/bin/bash` and `/bin/sh`.
 - The `PATH` is the line after a fresh sentinel line, on stdout or on stderr, with a final newline and an absolute directory.
 - 2 MiB on stdout fails the read, and a full stderr does not. A shell that leaves a process on its stdout still gives its PATH, about 500 ms after it ends. The log holds no shell output.
