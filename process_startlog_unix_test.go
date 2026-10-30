@@ -38,8 +38,8 @@ func untilExit(t *testing.T, frames <-chan streamFrame) string {
 }
 
 // TestExitLineAfterClientKill pins the exited line of a child that a client request
-// ended and that exited with code 0: ", signalled by this daemon (client)" (build
-// c8e2f083, measured on Linux). 89cb6289 printed ", signalled at client
+// ended and that exited with code 0: ", asked to end by this daemon (client)" (build
+// 52d82f0a, measured on Linux and macOS for a farewell exit). 89cb6289 printed ", signalled at client
 // request" there (rows SP03a and SP03b).
 func TestExitLineAfterClientKill(t *testing.T) {
 	logs := captureLogBuf(t)
@@ -62,7 +62,7 @@ func TestExitLineAfterClientKill(t *testing.T) {
 	}
 	p.signalIfLive("TERM", "client")
 	untilExit(t, frames)
-	if want := "[process.Manager] Process c1 exited with code 0, signalled by this daemon (client)\n"; !strings.Contains(logs.String(), want) {
+	if want := "[process.Manager] Process c1 exited with code 0, asked to end by this daemon (client)\n"; !strings.Contains(logs.String(), want) {
 		t.Errorf("log = %q\nwant it to hold %q", logs.String(), want)
 	}
 }
@@ -106,7 +106,7 @@ func TestShutdownSweepRelabelsAWaitingKill(t *testing.T) {
 	}
 	untilExit(t, frames)
 	<-done
-	if want := "exited with code -1, terminated by SIGKILL, signalled by this daemon (shutdown)\n"; !strings.Contains(logs.String(), want) {
+	if want := "exited with code -1, terminated by SIGKILL, asked to end by this daemon (shutdown)\n"; !strings.Contains(logs.String(), want) {
 		t.Errorf("log = %q\nwant it to hold %q", logs.String(), want)
 	}
 }
@@ -183,7 +183,7 @@ func TestShutdownSweepKeepsReasonOfPlainKill(t *testing.T) {
 		t.Errorf("killedBy after the shutdown sweep = %q, want %q", got, "client")
 	}
 	untilExit(t, frames)
-	if want := "terminated by SIGKILL, signalled by this daemon (client)\n"; !strings.Contains(logs.String(), want) {
+	if want := "terminated by SIGKILL, asked to end by this daemon (client)\n"; !strings.Contains(logs.String(), want) {
 		t.Errorf("log = %q\nwant it to hold %q", logs.String(), want)
 	}
 }
