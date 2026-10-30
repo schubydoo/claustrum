@@ -453,17 +453,19 @@ func TestSocketStdinEmptyAtAppliedIsDuplicate(t *testing.T) {
 
 // A daemon with jobs on lists process.stdin.offset to server.instance_id, then
 // process.spawn.job. With jobs off the list has no job name (52d82f0a, Windows VM).
-// The job state is set by hand here, so the rule is pinned on every system.
+// The jobs of -keep-children list the name too (claustrum's own). The job state is set
+// by hand here, so the rule is pinned on every system.
 func TestCapabilitiesListTheJobNameOnlyWithJobs(t *testing.T) {
 	s := &server{procs: &procManager{}}
 	if got := s.featuresFor(); slices.Contains(got, jobFeature) {
 		t.Errorf("jobs off: features = %v, want no %s", got, jobFeature)
 	}
-	s.procs.jobs = jobsOn
-	got := s.featuresFor()
 	want := append(slices.Clone(capabilityFeatures), jobFeature)
-	if !slices.Equal(got, want) {
-		t.Errorf("jobs on: features = %v, want %v", got, want)
+	for _, jobs := range []childJobs{jobsOn, jobsKeep} {
+		s.procs.jobs = jobs
+		if got := s.featuresFor(); !slices.Equal(got, want) {
+			t.Errorf("jobs %d: features = %v, want %v", jobs, got, want)
+		}
 	}
 	// The shared list has spare capacity, so an append without slices.Clip would write
 	// the job name there. Read up to the capacity, not the length.

@@ -72,9 +72,10 @@ const jobFeature = "process.spawn.job"
 
 // featuresFor is the features list of this daemon. A daemon that puts each child in a
 // job, which only Windows does, adds process.spawn.job after server.instance_id. With
-// CLAUDE_SSH_NO_JOBS=1 the name is not in the list (52d82f0a, Windows VM).
+// CLAUDE_SSH_NO_JOBS=1 the name is not in the list (52d82f0a, Windows VM). The jobs of
+// -keep-children (jobsKeep) list it too (claustrum's own).
 func (s *server) featuresFor() []string {
-	if s.procs == nil || s.procs.jobs != jobsOn {
+	if s.procs == nil || s.procs.jobs == jobsOff {
 		return capabilityFeatures
 	}
 	return append(slices.Clip(capabilityFeatures), jobFeature)

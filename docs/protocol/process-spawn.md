@@ -1,6 +1,6 @@
 # process.spawn
 
-`process.spawn` starts a child process as the user of the daemon and streams its output to the connection that sent the request. The process outlives that connection. [process.reattach](process-reattach.md) takes it over.
+`process.spawn` starts a child process as the user of the daemon and streams its output to the connection that sent the request. [process.reattach](process-reattach.md) takes the process over.
 
 Treat the socket and the token as shell access. See [`SECURITY.md`](https://github.com/schubydoo/claustrum/blob/main/SECURITY.md).
 
@@ -77,7 +77,7 @@ One failure ends another process first: a session spawn whose command exists and
 
 ### What the child gets
 
-- **Streams.** The stdin, the stdout and the stderr of the child are pipes of the daemon. The daemon sends what it reads as stream frames to the connection that spawned the process, and stores them for a replay.
+- **Streams.** The stdin, stdout and stderr of the child are pipes of the daemon. The daemon sends what it reads as stream frames to the connection that spawned the process, and stores them for a replay.
 - **The life of the process.** A close of its connection does not end the process. A graceful shutdown (`-stop`, `server.shutdown`, `SIGTERM`, `SIGINT`, the self-exit) ends the processes of the table. With `-keep-children` it leaves them alive ([CT-2](../DIVERGENCES.md#ct-2)).
 
 ### The environment of the child
@@ -188,12 +188,12 @@ The daemon advertises it as the feature `process.spawn.shellAgentSocket`. If the
 
 ### A spawn with an `id` that is in use
 
-A spawn with the `id` of a process that still runs succeeds and replaces the entry of the table. The first process gets no signal and keeps running. Then:
+A spawn with the `id` of a process that still runs succeeds and replaces its table entry. The first process gets no signal and keeps running. Then:
 
 - `process.kill`, `process.stdin` and `process.reattach` of that `id` reach the second process only.
-- `-stop` and `server.shutdown` end only the processes of the table, so the first process outlives the daemon. On Linux and macOS its record stays, and the next daemon start ends it.
+- `-stop` and `server.shutdown` end only the processes of the table, so the first process outlives the daemon, except on Windows with jobs on and no `-keep-children` (claustrum's own, not measured). On Linux and macOS its record stays, and the next start ends it.
 - Each process keeps the connection that spawned it, under the same `processId`, and each counts its own `seq`. So a connection that sent both spawns gets two streams under one `processId`, with two `exit` frames (measured on Linux).
-- A `process.reattach` of the `id` names the second process. It moves the stream and closes the connection that had it. A connection that gets the frames of the first process goes on getting them (measured on Linux).
+- A `process.reattach` moves the stream of the second process and closes the connection that had it. A connection that gets the frames of the first process keeps getting them (measured on Linux).
 
 ### Session supersede
 

@@ -68,13 +68,13 @@ The `exit` frame waits for the output of the child. If another process holds the
 
 ### Windows child trees
 
-Since `52d82f0a` each child on Windows runs in a job. A kill and `process.killAndWait` end the whole job at once, with exit code 1. `server.shutdown` ends the job too. A process outside the job stays. When the child exits, the rest of its job ends, and the `exit` frame comes at once. The daemon logs one start line (measured on Windows):
+Since `52d82f0a` each child on Windows runs in a job. A kill and `process.killAndWait` end the job at once, with exit code 1. `server.shutdown` ends the job too. A `taskkill /F` of the daemon ends the tree, but not with `-keep-children` ([CT-2](../DIVERGENCES.md#ct-2)). A process outside the job stays, also one that the child started with `CREATE_BREAKAWAY_FROM_JOB`. When the child exits, the rest of its job ends, and the `exit` frame comes at once. The daemon logs one start line (measured on Windows):
 
 ```
 [daemon] job objects for child processes as the socket opens: true (off switch: false)
 ```
 
-With `CLAUDE_SSH_NO_JOBS=1` the line ends `false (off switch: true)`. There is no job, and the shutdown and the exit of the child leave the tree. A kill ends the direct child only, as on `89cb6289`. claustrum starts a child suspended until it is in its job (claustrum's own, not measured). A `taskkill /F` of the daemon ends no child, as on `89cb6289` (not measured on `52d82f0a`).
+With `CLAUDE_SSH_NO_JOBS=1` the line ends `false (off switch: true)`. There is no job, and the shutdown and the exit of the child leave the tree. A kill ends the direct child only, as on `89cb6289`. claustrum starts a child suspended until it is in its job (claustrum's own, not measured).
 
 The `exit` frame on Windows has no `signal` member:
 

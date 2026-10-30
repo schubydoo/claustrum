@@ -1024,6 +1024,8 @@ func runHelper(mode string, args []string) int {
 		}
 		appendLine(os.Getenv("CLAUSTRUM_GITSTUB_ENVLOG"), line)
 		return 1
+	case "job-flags": // Windows: print the limit flags of the own job, as "0x2800"
+		fmt.Print(ownJobFlags() + "\n")
 	case "lookupenv": // print "<name> set <value>" or "<name> absent" for args[0]
 		if v, ok := os.LookupEnv(args[0]); ok {
 			fmt.Print(args[0] + " set " + v + "\n")
@@ -1296,8 +1298,8 @@ func runHelper(mode string, args []string) int {
 		// A stand-in for a daemon that owns one child: spawn a sleeper through the
 		// production process manager, write its pid to args[0], then linger until the
 		// test ends this process hard. On Windows args[1] "job" puts the child in a job
-		// of its own, and "no-job" puts it in none. Before the pid it writes the job
-		// state of the child (childJobState) to args[0] + ".job".
+		// of its own, "keep" in a job of jobsKeep, and "no-job" in none. Before the pid
+		// it writes the job state of the child (childJobState) to args[0] + ".job".
 		client, server := net.Pipe()
 		go func() { _, _ = io.Copy(io.Discard, server) }()
 		exe, err := os.Executable()
@@ -1308,6 +1310,9 @@ func runHelper(mode string, args []string) int {
 		m := newProcManager()
 		if len(args) > 1 && args[1] == "job" {
 			m.jobs = jobsOn
+		}
+		if len(args) > 1 && args[1] == "keep" {
+			m.jobs = jobsKeep
 		}
 		p, err := m.spawn(&conn{nc: client}, "held", exe, []string{"60"}, "", map[string]string{"CLAUSTRUM_TEST_HELPER": "sleep"}, true)
 		if err != nil {

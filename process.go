@@ -257,10 +257,10 @@ type procManager struct {
 	// this daemon's children apart from its own. Read-only after startup.
 	instanceID string
 	// noRecords is set for a daemon that does not hold the run-dir lock: it writes
-	// no child record. Cell H5 measures that for a held flock (`5fd08069`, Linux VM).
+	// no child record. That is measured for a held flock (`5fd08069`, Linux VM).
 	noRecords bool
 	// jobs tells if spawn puts each child in a job of its own (Windows only, see
-	// childJobs). One job for each child is claustrum's own, not measured. It is set
+	// childJobs). One job for each child follows 52d82f0a (measured on Windows). It is set
 	// once at the start of the daemon. The zero value is off.
 	jobs childJobs
 
@@ -979,15 +979,16 @@ func (m *procManager) spawnVia(c *conn, id, command string, args []string, cwd s
 	m.mu.Lock()
 	// A spawn with the id of a process that still runs replaces the table entry, and
 	// both spawns succeed. The old process gets no signal and keeps its record.
-	// Measured against 89cb6289 on Linux and macOS (rows A1 to A4 and B4) and on
-	// Windows (rows EV and EVInh). kill, stdin and reattach then name the new
-	// process. -stop and server.shutdown end only the processes of the table, so
-	// the old process outlives the daemon (row A3). On Linux and macOS its record
-	// stays, and the next start of a daemon reaps it (row A4).
+	// Measured against 89cb6289 on Linux and macOS, and on Windows with no job. kill,
+	// stdin and reattach then name the new process. -stop and server.shutdown end
+	// only the processes of the table, so the old process outlives the daemon there.
+	// On Linux and macOS its record stays, and the next start of a daemon reaps it. On
+	// Windows with jobs on and no -keep-children the old process ends with its job at
+	// the exit of the daemon (claustrum's own, not measured).
 	//
 	// The old process keeps its subscribers. Its stream frames and its exit frame
-	// still reach its own connection, under the same processId (89cb6289, Linux row
-	// P2: frames seq 2 to 9 and the exit frame seq 10 of the first process came on
+	// still reach its own connection, under the same processId (89cb6289, Linux:
+	// frames seq 2 to 9 and the exit frame seq 10 of the first process came on
 	// connection 1 after the replace). Its seq numbers go on from its own count.
 	m.procs[id] = p
 	m.mu.Unlock()
@@ -1087,7 +1088,8 @@ func (p *managedProc) waitReapAndDrain(wg *sync.WaitGroup, stdoutR, stderrR *os.
 	p.stdinCond.Broadcast()
 	p.stdinMu.Unlock()
 	// Release the OS group handle now the child is gone. On Windows this closes
-	// the kill handle of the direct child and the handle of its job. It ends nothing.
+	// the kill handle of the direct child and the handle of its job. endRest emptied
+	// that job, so the close ends nothing.
 	p.group.close()
 	sigName := exitSignalName(err)
 	logInfof(fmtProcExited, p.id, code, exitLogSuffix(sigName, killedBy))

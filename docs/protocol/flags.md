@@ -118,8 +118,8 @@ These flags are off the wire. `-keep-children` and `-listen-pipe` have an entry 
   process(es) alive across shutdown`. A survivor loses its stdio. Its stdin
   reaches EOF, and a stdout or stderr write gets SIGPIPE, or EPIPE for a child
   that ignores SIGPIPE, such as Node. On Windows the flag keeps the whole tree
-  alive after `-stop` and after `server.shutdown`, the direct child too
-  (measured on Windows with no job). The stdio of a survivor is not measured there.
+  alive after `-stop` and `server.shutdown` (measured with no job, claustrum's
+  own with jobs on, not measured). The stdio of a survivor is not measured there.
 - `-listen-pipe` is CT-5 and Windows-only. See [Named-pipe
   transport](../PROTOCOL.md#named-pipe-transport-windows-opt-in). The daemon logs a setup failure
   (`[Server] named-pipe transport: …`), which is non-fatal. The socket still serves.

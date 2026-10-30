@@ -3,6 +3,7 @@
 package main
 
 import (
+	"encoding/base64"
 	"errors"
 	"fmt"
 	"os"
@@ -42,7 +43,7 @@ func TestSpawnStartsSuspendedOnlyWithJobs(t *testing.T) {
 	for _, tc := range []struct {
 		jobs childJobs
 		want bool
-	}{{jobsOff, false}, {jobsOn, true}} {
+	}{{jobsOff, false}, {jobsOn, true}, {jobsKeep, true}} {
 		attr := spawnSysProcAttr(tc.jobs)
 		if got := attr.CreationFlags&windows.CREATE_SUSPENDED != 0; got != tc.want {
 			t.Errorf("jobs %d: CREATE_SUSPENDED = %v, want %v", tc.jobs, got, tc.want)
@@ -171,71 +172,116 @@ func TestJobChildExitEndsTheRest(t *testing.T) {
 	}
 }
 
-// TestJobCloseEndsNothing: the close of the group handles leaves a child in its job alive.
-// No job ends its processes at the close of its last handle. So a daemon under taskkill
-// /F leaves the tree, and so does a child that -keep-children kept (claustrum's own).
-func TestJobCloseEndsNothing(t *testing.T) {
-	exe, err := os.Executable()
-	if err != nil {
-		t.Fatalf("os.Executable: %v", err)
-	}
-	cmd := exec.Command(exe, "60")
-	cmd.Env = buildEnv(map[string]string{"CLAUSTRUM_TEST_HELPER": "sleep"})
-	cmd.SysProcAttr = spawnSysProcAttr(jobsOn)
-	if err := cmd.Start(); err != nil {
-		t.Fatalf("start: %v", err)
-	}
-	t.Cleanup(func() { _ = cmd.Process.Kill(); _ = cmd.Wait() })
-	group, err := confineProcess(cmd.Process, jobsOn)
-	if err != nil {
-		group.close()
-		t.Fatalf("confineProcess: %v", err)
-	}
-	if err := resumeChild(cmd.Process, cmd.SysProcAttr); err != nil {
-		group.close()
-		t.Fatalf("resumeChild: %v", err)
-	}
-	if !inJob(t, cmd.Process.Pid, group.job) {
-		group.close()
-		t.Fatalf("child %d is not in its job", cmd.Process.Pid)
-	}
-	group.close()
-	if waitProcessGone(cmd.Process.Pid, 2*time.Second) {
-		t.Errorf("child %d ended at the close of its job", cmd.Process.Pid)
+// TestJobCloseByMode: the close of the group handles ends a child in a job of jobsOn and
+// the process that it started, as a daemon that dies closes them. A job of jobsKeep
+// (-keep-children) ends nothing at the close (claustrum's own).
+func TestJobCloseByMode(t *testing.T) {
+	for _, tc := range []struct {
+		jobs childJobs
+		ends bool
+	}{{jobsOn, true}, {jobsKeep, false}} {
+		t.Run(fmt.Sprintf("jobs %d", tc.jobs), func(t *testing.T) {
+			cmd, gpid, group := startConfinedTreeJobs(t, tc.jobs)
+			if group.job == 0 || !inJob(t, gpid, group.job) {
+				t.Fatalf("grandchild %d is not in the job of the child", gpid)
+			}
+			group.close()
+			for _, pid := range []int{cmd.Process.Pid, gpid} {
+				if gone := waitProcessGone(pid, 2*time.Second); gone != tc.ends {
+					t.Errorf("process %d gone after the close = %v, want %v", pid, gone, tc.ends)
+				}
+			}
+		})
 	}
 }
 
-// TestKilledDaemonLeavesAJobChild: a process that owns one spawned child in a job ends
-// hard, as a daemon under taskkill /F does. The child lives on, as the children of
-// 89cb6289 do (measured with no job). 52d82f0a is not measured there. The owner writes
-// the job state of its child first, so the test knows that the child was in a job.
-// TestChildSurvivesAKilledDaemon has the child with no job.
-func TestKilledDaemonLeavesAJobChild(t *testing.T) {
+// TestKilledDaemonByMode: a process that owns one spawned child in a job ends hard, as a
+// daemon under taskkill /F does. With jobsOn the child ends with it. Measured on a Windows
+// VM against 52d82f0a: after a taskkill /F of the daemon the tree is gone at 0, 2 and 5 s,
+// and a process outside the daemon stays. With jobsKeep (-keep-children) the child lives
+// on (claustrum's own). The owner writes the job state of its child first, so the test
+// knows that the child was in a job. TestChildSurvivesAKilledDaemon has the child with no
+// job.
+func TestKilledDaemonByMode(t *testing.T) {
 	exe, err := os.Executable()
 	if err != nil {
 		t.Fatalf("os.Executable: %v", err)
 	}
-	pidFile := filepath.Join(t.TempDir(), "pid")
-	daemon := exec.Command(exe, pidFile, "job")
-	daemon.Env = buildEnv(map[string]string{"CLAUSTRUM_TEST_HELPER": "spawn-hold"})
-	if err := daemon.Start(); err != nil {
-		t.Fatalf("start: %v", err)
+	bystander := startBystander(t)
+	for _, tc := range []struct {
+		mode string
+		ends bool
+	}{{"job", true}, {"keep", false}} {
+		t.Run(tc.mode, func(t *testing.T) {
+			pidFile := filepath.Join(t.TempDir(), "pid")
+			daemon := exec.Command(exe, pidFile, tc.mode)
+			daemon.Env = buildEnv(map[string]string{"CLAUSTRUM_TEST_HELPER": "spawn-hold"})
+			if err := daemon.Start(); err != nil {
+				t.Fatalf("start: %v", err)
+			}
+			t.Cleanup(func() { _ = daemon.Process.Kill(); _, _ = daemon.Process.Wait() })
+			pid := readPIDFile(t, pidFile)
+			holdOwnPid(t, pid)
+			if !processAlive(t, pid) {
+				t.Fatalf("child %d not alive before the kill", pid)
+			}
+			if state, err := os.ReadFile(pidFile + ".job"); err != nil || string(state) != "in-job" {
+				t.Fatalf("job state of the child = %q, %v, want in-job", state, err)
+			}
+			if err := daemon.Process.Kill(); err != nil {
+				t.Fatalf("kill the owner: %v", err)
+			}
+			_ = daemon.Wait()
+			if gone := waitProcessGone(pid, 5*time.Second); gone != tc.ends {
+				t.Errorf("child %d gone after the kill of its owner = %v, want %v", pid, gone, tc.ends)
+			}
+		})
 	}
-	t.Cleanup(func() { _ = daemon.Process.Kill(); _, _ = daemon.Process.Wait() })
-	pid := readPIDFile(t, pidFile)
-	holdOwnPid(t, pid)
-	if !processAlive(t, pid) {
-		t.Fatalf("child %d not alive before the kill", pid)
+	if !processAlive(t, bystander.Process.Pid) {
+		t.Errorf("the bystander %d ended", bystander.Process.Pid)
 	}
-	if state, err := os.ReadFile(pidFile + ".job"); err != nil || string(state) != "in-job" {
-		t.Fatalf("job state of the child = %q, %v, want in-job", state, err)
-	}
-	if err := daemon.Process.Kill(); err != nil {
-		t.Fatalf("kill the owner: %v", err)
-	}
-	_ = daemon.Wait()
-	if waitProcessGone(pid, 2*time.Second) {
-		t.Errorf("child %d ended with its killed owner", pid)
+}
+
+// TestChildReadsJobFlags: a spawned child reads the limit flags of its own job. With
+// jobsOn they are 0x2800 (kill on job close and breakaway allowed), as on 52d82f0a
+// (measured on Windows). With jobsKeep they are 0x800 (claustrum's own).
+func TestChildReadsJobFlags(t *testing.T) {
+	for _, tc := range []struct {
+		jobs childJobs
+		want string
+	}{{jobsOn, "0x2800"}, {jobsKeep, "0x800"}} {
+		t.Run(tc.want, func(t *testing.T) {
+			m := newTestProcManager(t)
+			m.jobs = tc.jobs
+			t.Cleanup(m.killAll)
+			captureLogBuf(t)
+			c, frames := pipeConn(t)
+			exe, env := helperCommand(t, "job-flags")
+			if _, err := m.spawn(c, "jt-flags", exe, nil, "", env, false); err != nil {
+				t.Fatalf("spawn: %v", err)
+			}
+			// The first stdout frame of a new helper can take more than the 3 s of
+			// firstStdout on a slow Windows runner, so this test waits up to 10 s.
+			got := ""
+			deadline := time.After(10 * time.Second)
+			for got == "" {
+				select {
+				case f := <-frames:
+					if f.Stream == "stdout" && f.Data != "" {
+						b, err := base64.StdEncoding.DecodeString(f.Data)
+						if err != nil {
+							t.Fatalf("bad base64 in stdout frame: %v", err)
+						}
+						got = strings.TrimSpace(string(b))
+					}
+				case <-deadline:
+					t.Fatal("no stdout frame within 10 s")
+				}
+			}
+			if got != tc.want {
+				t.Errorf("job flags = %q, want %q", got, tc.want)
+			}
+		})
 	}
 }
 
@@ -266,7 +312,7 @@ func TestJobConfineFailureStillResumes(t *testing.T) {
 
 // TestJobAllowsBreakaway: a process in the job of a child that starts a process with
 // CREATE_BREAKAWAY_FROM_JOB gets it, outside the job. The kill of the job leaves that
-// process. claustrum's own, not measured.
+// process, as on 52d82f0a (measured on Windows).
 func TestJobAllowsBreakaway(t *testing.T) {
 	const id = "jt-breakaway"
 	m := newTestProcManager(t)
@@ -302,24 +348,28 @@ func TestJobAllowsBreakaway(t *testing.T) {
 // TestJobLineAtStart: the start logs one job line (52d82f0a, Windows VM). It ends "true
 // (off switch: false)" with no switch, and "false (off switch: true)" with
 // CLAUDE_SSH_NO_JOBS=1. Only the text "1" is the switch (claustrum's own for "0").
+// -keep-children gives jobsKeep, and the line stays the same (claustrum's own).
 func TestJobLineAtStart(t *testing.T) {
 	for _, tc := range []struct {
 		value    string
 		set      bool
+		keep     bool
 		want     childJobs
 		wantLine string
 	}{
-		{"", false, jobsOn, "true (off switch: false)"},
-		{"1", true, jobsOff, "false (off switch: true)"},
-		{"0", true, jobsOn, "true (off switch: false)"},
+		{"", false, false, jobsOn, "true (off switch: false)"},
+		{"1", true, false, jobsOff, "false (off switch: true)"},
+		{"0", true, false, jobsOn, "true (off switch: false)"},
+		{"", false, true, jobsKeep, "true (off switch: false)"},
+		{"1", true, true, jobsOff, "false (off switch: true)"},
 	} {
-		t.Run(fmt.Sprintf("%q set %v", tc.value, tc.set), func(t *testing.T) {
+		t.Run(fmt.Sprintf("%q set %v keep %v", tc.value, tc.set, tc.keep), func(t *testing.T) {
 			t.Setenv(childJobsOffEnv, tc.value)
 			if !tc.set {
 				_ = os.Unsetenv(childJobsOffEnv)
 			}
 			buf := captureLogBuf(t)
-			if got := startChildJobs(); got != tc.want {
+			if got := startChildJobs(tc.keep); got != tc.want {
 				t.Errorf("jobs = %d, want %d", got, tc.want)
 			}
 			// Another test can leave a child whose exit line lands in this buffer, so the
@@ -346,4 +396,17 @@ func TestJobLineFollowsTheLockLine(t *testing.T) {
 	wantLinesInOrder(t, buf.String(),
 		runDirNotHolderLine,
 		"[daemon] job objects for child processes as the socket opens: true (off switch: false)")
+}
+
+// TestKeepChildrenServerKeepsJobs: a daemon started with -keep-children gives its
+// children the jobs of jobsKeep, so a kept child outlives the daemon (claustrum's own).
+func TestKeepChildrenServerKeepsJobs(t *testing.T) {
+	t.Setenv(childJobsOffEnv, "")
+	_ = os.Unsetenv(childJobsOffEnv)
+	captureLogBuf(t)
+	s, sock := bootLineServer(t, true)
+	t.Cleanup(func() { s.signalShutdown(); s.closeAll(sock) })
+	if s.procs.jobs != jobsKeep {
+		t.Errorf("jobs = %d, want jobsKeep", s.procs.jobs)
+	}
 }

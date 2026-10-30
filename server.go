@@ -639,8 +639,9 @@ func newServerOnSocket(socket, token, metricsAddr string, wlopt wireLogOptions, 
 	sockFI, _ := os.Stat(socket) // identity of the inode we just bound (for unlinkOwnSocket)
 	// The job mode of the children, with its one line on Windows, before the peer-check
 	// line and the listening line. CLAUDE_SSH_NO_JOBS leaves the daemon environment here
-	// on every system (see childjobs.go).
-	procs.jobs = startChildJobs()
+	// on every system (see childjobs.go). With -keep-children a job does not end its
+	// child when the daemon dies.
+	procs.jobs = startChildJobs(keepChildren)
 	// The one line of a start with CLAUDE_SSH_PEER_CHECK=1 comes here, before the
 	// listening line. The daemon also removes the variable from its own environment
 	// here, before it serves a request (see startPeerCheck).
