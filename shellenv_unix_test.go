@@ -84,8 +84,8 @@ func TestPathReadCommandHasAFreshSentinel(t *testing.T) {
 }
 
 // TestExtractLoginPATHParsesTheShellOutput pins the parse of 52d82f0a (Linux and
-// macOS). The line after the sentinel line is the PATH, on stdout or else on stderr.
-// It must end in a newline and hold an absolute directory. The exit status does not
+// macOS). The line after the sentinel line is the PATH, on stdout or on stderr. The
+// stream order is claustrum's own. It must end in a newline and hold an absolute directory. The exit status does not
 // matter then. No failure text holds what the shell printed.
 func TestExtractLoginPATHParsesTheShellOutput(t *testing.T) {
 	for _, tc := range []struct {
@@ -191,8 +191,8 @@ func TestCappedOutputAtTheRealSizes(t *testing.T) {
 }
 
 // TestExtractLoginPATHClosesAHeldPipe pins 52d82f0a (Linux and macOS): a shell that
-// prints its PATH and leaves a process on its stdout gives its PATH after the wait
-// delay of 500 ms. The holder is this test binary in sleep mode, and it ends by itself.
+// prints its PATH and leaves a process on its stdout gives its PATH about 500 ms
+// after the shell ends. The holder is this test binary in sleep mode, and it ends by itself.
 func TestExtractLoginPATHClosesAHeldPipe(t *testing.T) {
 	t.Setenv("PATH", "/usr/bin:/bin:/zzz/held")
 	t.Setenv("SHELL", writeFakeShell(t, `/bin/sh -c "$4"; `+helperInShell(t, "sleep", "5")+` &`))
@@ -271,6 +271,9 @@ func startSleepingRead(t *testing.T, start func()) int {
 			for _, c := range strings.TrimSpace(string(b)) {
 				pid = pid*10 + int(c-'0')
 			}
+			// The group holds only children of this test. A test that fails before the
+			// stop leaves no sleeping helper.
+			t.Cleanup(func() { _ = syscall.Kill(-pid, syscall.SIGKILL) })
 			return pid
 		}
 		if time.Now().After(deadline) {
@@ -280,17 +283,19 @@ func startSleepingRead(t *testing.T, start func()) int {
 	}
 }
 
-// TestShutdownKillsTheShellGroupOfTheRead pins 52d82f0a (Linux and macOS): the
-// shutdown ends the shell of a running read and every process of its group, and no
-// failure line follows. The group holds only children of this test.
+// TestShutdownKillsTheShellGroupOfTheRead pins 52d82f0a: the shutdown ends the shell
+// of a running read and every process of its group (Linux and macOS), and no failure
+// line follows (Linux). The group holds only children of this test.
 func TestShutdownKillsTheShellGroupOfTheRead(t *testing.T) {
 	buf := captureLogBuf(t)
 	pid := startSleepingRead(t, warmLoginPATHAtStart)
 	if err := syscall.Kill(-pid, 0); err != nil {
 		t.Fatalf("the shell %d leads no process group: %v", pid, err)
 	}
+	r := runningRead()
 	stopLoginPATH()
 	groupGone(t, pid)
+	awaitReadEnd(t, r)
 	if got := shellenvLines(buf); got != "" {
 		t.Errorf("the stopped read logged:\n%s", got)
 	}
@@ -306,8 +311,10 @@ func TestFlaggedSpawnKillsTheShellGroupOfTheRead(t *testing.T) {
 	if err := syscall.Kill(-pid, 0); err != nil {
 		t.Fatalf("the shell %d leads no process group: %v", pid, err)
 	}
+	r := runningRead()
 	buildSpawnEnv(nil, true)
 	groupGone(t, pid)
+	awaitReadEnd(t, r)
 	if got := shellenvLines(buf); !strings.Contains(got, "Stopping the read of the login shell's PATH") ||
 		!strings.Contains(got, "shell PATH extraction timed out (") {
 		t.Errorf("log has no stop line and timed-out failure:\n%s", got)

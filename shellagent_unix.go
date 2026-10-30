@@ -82,8 +82,8 @@ func defaultShellAgentSocket() string { return agentHandOffState.socket() }
 // within agentDialBound ends the hand-off for the life of the daemon, even if it
 // would have succeeded later.
 //
-// While another login shell runs, such as the PATH read, the step runs no shell and
-// returns "". Measured on Linux and macOS against 52d82f0a: a spawn during a slow PATH
+// While another login shell runs, such as the PATH read, the step runs no shell.
+// Measured on Linux and macOS against 52d82f0a: a spawn during a slow PATH
 // read gets no SSH_AUTH_SOCK, no agent run starts during the read, and a later spawn
 // gets the socket. claustrum's own, not measured: that step counts no try and logs
 // nothing.
@@ -108,8 +108,11 @@ func (s *agentHandOff) socket() string {
 		logWarnf("[shellenv] %s=%s no longer accepts connections; running the login shell again",
 			agentSockVar, s.sock)
 	}
-	sock, err := s.runShell()
-	<-s.gate
+	// The gate goes free also when runShell panics.
+	sock, err := func() (string, error) {
+		defer func() { <-s.gate }()
+		return s.runShell()
+	}()
 	s.lastRun = s.clock()
 	if err != nil {
 		s.failures++
@@ -171,7 +174,7 @@ func (e *loginShellError) Error() string { return "login shell " + e.shell + " "
 // askLoginShellForAgent runs the login shell once and returns the
 // SSH_AUTH_SOCK it exports: a path, or "" when it exports none.
 //
-// It mirrors the PATH extraction in shellenv_unix.go in how it starts the shell
+// It runs like extractLoginPATH in shellenv_unix.go in how it starts the shell
 // (same shell choice, `-l -i -c`, own process group, killed as a group, the same
 // output caps), but differs on purpose in how it reads the result. Only stdout is
 // searched: measured, a marker and path printed only on stderr hands on nothing, on
@@ -181,7 +184,7 @@ func (e *loginShellError) Error() string { return "login shell " + e.shell + " "
 func askLoginShellForAgent() (string, error) {
 	shell := safeLoginShell()
 	// A fresh sentinel per run, so fixed profile output cannot match it by accident.
-	sentinel, err := newSentinel("___CLAUDE_SSH_AGENT_SOCK_")
+	sentinel, err := freshMarker("___CLAUDE_SSH_AGENT_SOCK_")
 	if err != nil {
 		return "", err
 	}

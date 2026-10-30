@@ -340,8 +340,8 @@ func TestDrainGraceLine(t *testing.T) {
 }
 
 // TestShutdownEndsTheLoginPATHRead: the cleanup ends a read of the login-shell PATH
-// that still runs, and no failure line follows. The cleanup line does not count its
-// shell (52d82f0a, Linux and macOS).
+// that still runs (52d82f0a, Linux and macOS). No failure line follows, and the
+// cleanup line does not count its shell (52d82f0a, Linux).
 func TestShutdownEndsTheLoginPATHRead(t *testing.T) {
 	s, sock := bootLineServer(t, false)
 	buf := captureLogBuf(t)

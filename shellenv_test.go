@@ -395,8 +395,8 @@ func TestLoginPATHFlaggedSpawnStopsTheRead(t *testing.T) {
 	<-done
 }
 
-// TestLoginPATHShutdownStopsTheReadQuietly pins 52d82f0a (Linux and macOS): the
-// shutdown ends a running read, and no failure line follows. No read starts after it.
+// TestLoginPATHShutdownStopsTheReadQuietly pins 52d82f0a: the shutdown ends a running
+// read (Linux and macOS), and no failure line follows (Linux). No read starts after it.
 func TestLoginPATHShutdownStopsTheReadQuietly(t *testing.T) {
 	buf := captureLogBuf(t)
 	f := installPathReadFake(t)
@@ -438,4 +438,47 @@ func TestAwaitLoginPATHReturnsWhenNeverArmed(t *testing.T) {
 	resetLoginPATHForTest()
 	buildEnv(nil)
 	noReadStarted(t, f, "a spawn with no armed read")
+}
+
+// TestSpawnWithDisableShellAgentSocketStopsTheRead sends the flag through
+// process.spawn, so a spawn path that drops it fails here (52d82f0a, Linux and macOS).
+func TestSpawnWithDisableShellAgentSocketStopsTheRead(t *testing.T) {
+	buf := captureLogBuf(t)
+	f := installPathReadFake(t)
+	setSpawnWait(t, 100*time.Millisecond)
+	warmLoginPATHAtStart()
+	r := startedRead(t, f)
+	m := newTestProcManager(t)
+	t.Cleanup(m.killAll)
+	c, frames := pipeConn(t)
+	exe, env := helperCommand(t, "printenv")
+	if _, err := m.spawn(c, "flagged", exe, []string{"PATH"}, "", env, true); err != nil {
+		t.Fatalf("spawn: %v", err)
+	}
+	waitExitFrame(t, frames)
+	select {
+	case <-r.end:
+	default:
+		t.Fatal("the flagged spawn left the read running")
+	}
+	if !strings.Contains(shellenvLines(buf), "Stopping the read of the login shell's PATH") {
+		t.Errorf("log has no stop line:\n%s", shellenvLines(buf))
+	}
+}
+
+// TestLoginPATHReadPanicFailsTheRead: a panic in the read fails it and does not end
+// the daemon (claustrum's own).
+func TestLoginPATHReadPanicFailsTheRead(t *testing.T) {
+	buf := captureLogBuf(t)
+	installPathReadFake(t)
+	loginPATHExtractor = func(context.Context) (string, error) { panic("boom") }
+	warmLoginPATHAtStart()
+	r := runningRead()
+	if r == nil {
+		t.Fatal("no read started")
+	}
+	awaitReadEnd(t, r)
+	if !strings.Contains(shellenvLines(buf), "(failure 1; next try in 30s at the earliest; until one works, programs get the daemon's own PATH): recovered panic: boom") {
+		t.Errorf("log has no failure line for the panic:\n%s", shellenvLines(buf))
+	}
 }

@@ -210,14 +210,13 @@ func TestRunServeChildFatalArms(t *testing.T) {
 	}
 }
 
-// TestRunServeChildStartsTheLoginPATHRead pins the wiring of the warm start on
-// 52d82f0a (Linux and macOS): the start of the daemon starts the read with no spawn,
-// and the warm variable leaves the daemon environment.
-func TestRunServeChildStartsTheLoginPATHRead(t *testing.T) {
+// TestRunServeStartThatFailsStartsNoLoginShell: the read starts after the listening
+// line, so a start that fails before it leaves no shell. The run-dir claim never fails
+// the boot (lockRunFolder), so the failure here is the bind that comes after the claim.
+func TestRunServeStartThatFailsStartsNoLoginShell(t *testing.T) {
 	stubOsExit(t)
 	t.Setenv(daemonChildEnv, "1")
 	t.Setenv(tokenPipeEnv, "")
-	t.Setenv(noLoginPATHWarmEnv, "0")
 	dir := shortTempDir(t)
 	tf := filepath.Join(dir, "token")
 	if err := os.WriteFile(tf, []byte("tok\n"), 0o600); err != nil {
@@ -226,19 +225,52 @@ func TestRunServeChildStartsTheLoginPATHRead(t *testing.T) {
 	f := installPathReadFake(t)
 	// The start installs its signal handler before the bind. Take it out again.
 	t.Cleanup(func() { signal.Reset(syscall.SIGTERM, syscall.SIGINT) })
-	// The socket folder does not exist, so the daemon stops at the bind, after the
-	// place where it starts the read.
 	if code, exited := catchExit(func() {
 		runServe(filepath.Join(dir, "no-dir", "s.sock"), tf, -1, "", wireLogOptions{}, false, false)
 	}); !exited || code != 1 {
 		t.Fatalf("child with unbindable socket: exited=%v code=%d, want exit 1", exited, code)
 	}
+	noReadStarted(t, f, "a start that failed at the bind")
+}
+
+// TestRunServeChildStartsTheLoginPATHRead pins the wiring of the warm start on
+// 52d82f0a (Linux and macOS): a start that binds starts the read with no spawn, and
+// the warm variable leaves the daemon environment.
+func TestRunServeChildStartsTheLoginPATHRead(t *testing.T) {
+	stubOsExit(t)
+	t.Setenv(daemonChildEnv, "1")
+	t.Setenv(tokenPipeEnv, "")
+	t.Setenv(noLoginPATHWarmEnv, "0")
+	dir := shortTempDir(t)
+	sock := filepath.Join(dir, "d.sock")
+	tf := filepath.Join(dir, "token")
+	if err := os.WriteFile(tf, []byte("tok\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	f := installPathReadFake(t)
+	t.Cleanup(func() { signal.Reset(syscall.SIGTERM, syscall.SIGINT) })
+	done := make(chan int, 1)
+	go func() {
+		code, _ := catchExit(func() { runServe(sock, tf, -1, "", wireLogOptions{}, false, false) })
+		done <- code
+	}()
 	r := startedRead(t, f)
 	if _, ok := os.LookupEnv(noLoginPATHWarmEnv); ok {
 		t.Errorf("%s is still in the daemon environment", noLoginPATHWarmEnv)
 	}
 	f.answer <- pathAnswer{path: "/login/bin"}
 	awaitReadEnd(t, r)
+	if err := syscall.Kill(os.Getpid(), syscall.SIGTERM); err != nil {
+		t.Fatalf("self SIGTERM: %v", err)
+	}
+	select {
+	case code := <-done:
+		if code != 0 {
+			t.Errorf("daemon exit code %d, want 0", code)
+		}
+	case <-time.After(10 * time.Second):
+		t.Fatal("daemon did not exit after SIGTERM")
+	}
 }
 
 // runServe's one remaining parent-side fatal guard: a -token-fd that cannot be

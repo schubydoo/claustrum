@@ -98,7 +98,8 @@ The daemon removes these names:
 | `CLAUDE_RPC_TOKEN` | The daemon value, for every child. A value in the `env` of the request reaches the child. |
 | `CLAUDE_SSH_MANAGED_LAUNCHER`, `CLAUDE_SSH_E2E_MANAGED_SETTINGS_DIR` | Every child. The removal covers the `env` of the request too (measured on Linux and macOS). The removal on Windows (claustrum's own). |
 | `CLAUDE_CODE_PROCESS_WRAPPER` | A child with a `launcher`, also from the `env` of the request. A child without one keeps it (measured on Linux and macOS, claustrum's own on Windows). |
-| `CLAUDE_SSH_PEER_CHECK` | The daemon removes it from its own environment at its start (measured on Linux, macOS and Windows). On Windows that covers any letter case (measured on Linux, macOS and Windows). A value in the `env` of the request reaches the child (measured on Linux, macOS and Windows). If the removal fails, claustrum logs one WARN line of its own, and the children inherit it. |
+| `CLAUDE_SSH_NO_LOGIN_PATH_WARM` | The daemon environment, at its start (claustrum's own on Windows). A value in `env` reaches the child (from the code). |
+| `CLAUDE_SSH_PEER_CHECK` | The daemon environment, at its start. On Windows that covers any letter case. A value in `env` reaches the child. These three are measured on Linux, macOS and Windows. If the removal fails, claustrum logs one WARN line of its own, and the children inherit it. |
 
 The Go runtime variables `GODEBUG`, `GOGC`, `GOMAXPROCS`, `GOMEMLIMIT` and `GOTRACEBACK` reach the child unchanged. `GOGC` and `GOMAXPROCS` are measured on Linux, the other three are not measured.
 
@@ -140,23 +141,23 @@ A tag wins over the top line.
 
     - There is no SSH agent hand-off and no identity marker. The capability and the parameter exist.
     - The block of the child is in name order ([D23](../DIVERGENCES.md#d23)).
-    - The child gets the `PATH` of the daemon as an entry named exactly `PATH`. claustrum reads it once, at the first spawn (from the code). No shell runs. An entry named `PATH` is replaced in place, else `PATH` is added. Then the `env` of the request comes.
+    - The child gets the `PATH` of the daemon as an entry named exactly `PATH`. claustrum reads it once, at its start (claustrum's own, not measured). An entry named `PATH` is replaced in place, else `PATH` is added. Then the `env` of the request comes.
     - Of the entries whose names differ only in letter case, the child gets the last one (from the code, Go's `os/exec`). So a daemon `Path` reaches the child as `PATH`, and a caller `Path` value is lost. A caller `PATH` or `path` value keeps its own name.
     - A daemon with no path entry, or a `Path` with an empty value, gives the child no `PATH` entry.
 
 ### The login-shell PATH (Linux and macOS)
 
-The daemon starts the read in the background at its start. These rules are measured against `52d82f0a`.
+The read starts in the background with the daemon. These rules are measured against `52d82f0a`.
 
-- `CLAUDE_SSH_NO_LOGIN_PATH_WARM=1` moves the start of the read to the first spawn. No child gets the variable.
+- `CLAUDE_SSH_NO_LOGIN_PATH_WARM=1` moves the start of the read to the first spawn. The value 0 does not.
 - A spawn waits for a running read at most 4 s, and not past 8 s after its start. Until a good read, children get the inherited `PATH`.
-- A later spawn tries a failed read again after 30 s, then 1m0s, 2m0s and so on. A good read is kept.
-- With `"disableShellAgentSocket":true` a spawn kills the shell group of a read that still runs after its wait, and after a failure it starts no read. The shutdown kills that group too.
+- A later spawn tries a failed read again after 30 s, then 1m0s and 2m0s. A good read is kept.
+- `"disableShellAgentSocket":true` kills the shell group of a read that still runs after the wait, and after a failure it starts no read. The shutdown kills it too.
 - The read runs `$SHELL -l -i -c …` if `$SHELL` is an executable file, or else the first usable of `/bin/zsh`, `/bin/bash` and `/bin/sh`.
-- The `PATH` is the line after a fresh sentinel line, on stdout or else stderr, with a final newline and an absolute directory.
-- Over 1 MiB on stdout fails the read, and a full stderr does not. The pipes close 500 ms after the shell ends. The log holds no shell output.
-- The shell gets `HOME`, `PATH`, `SHELL`, `TERM` and `USER` of the daemon, empty when unset, plus `DISABLE_AUTO_UPDATE=true`, `ZSH_DISABLE_COMPFIX=true` and `CLAUDE_DESKTOP_RESOLVING_ENVIRONMENT=1`.
-- claustrum's own (not measured): a 30 s limit per read, no try after 16 failures, and no wait after 5.
+- The `PATH` is the line after a fresh sentinel line, on stdout or on stderr, with a final newline and an absolute directory.
+- 2 MiB on stdout fails the read, and a full stderr does not. A shell that leaves a process on its stdout still gives its PATH, about 500 ms after it ends. The log holds no shell output.
+- The shell gets `HOME`, `PATH`, `SHELL`, `TERM` and `USER` of the daemon, with `TERM` empty if the daemon has none, plus `DISABLE_AUTO_UPDATE=true`, `ZSH_DISABLE_COMPFIX=true` and `CLAUDE_DESKTOP_RESOLVING_ENVIRONMENT=1`.
+- claustrum's own (not measured): a 30 s limit per read, the stream order, the doubling after 2m0s, no try after 16 failures, and no wait after 5.
 
 ### The identity markers (Linux and macOS)
 
@@ -175,13 +176,13 @@ The trampoline adds no frame. A command that does not resolve to a runnable file
 
 ### The SSH agent hand-off (Linux and macOS)
 
-The daemon advertises it as the feature `process.spawn.shellAgentSocket`. If the environment of the child has no `SSH_AUTH_SOCK` entry, the child gets the `SSH_AUTH_SOCK` that the login shell of the user exports. The rules of this section are measured on Linux and macOS.
+The daemon advertises it as the feature `process.spawn.shellAgentSocket`. If the environment of the child has no `SSH_AUTH_SOCK` entry, the child gets the `SSH_AUTH_SOCK` that the login shell of the user exports. Its rules are measured on Linux and macOS.
 
-- An entry that is there wins, even with an empty value, such as `"SSH_AUTH_SOCK":""` in `env`. `"disableShellAgentSocket":true` skips the step too.
-- The daemon runs the shell of the `PATH` read at the first spawn that needs a socket. The run has a 4 s limit, and the daemon gives up on a shell that the kill cannot end at 5 s.
-- A socket that does not accept a connection in 250 ms is not handed on. The shell runs again only 10 minutes after the last run, and not after 3 failed runs in a row. A connection attempt that has not returned after 500 ms ends the hand-off for the life of the daemon.
-- While the `PATH` read runs, the step runs no shell and hands on nothing (measured against `52d82f0a`).
-- The step never fails a spawn. Each shell run and each give-up writes a `[shellenv]` line to the daemon log.
+- An entry that is there wins, even an empty one such as `"SSH_AUTH_SOCK":""` in `env`. `"disableShellAgentSocket":true` skips the step too.
+- The daemon runs the same shell as the `PATH` read at the first spawn that needs a socket. The run has a 4 s limit, and the daemon gives up on a shell that the kill cannot end at 5 s.
+- A socket that does not accept a connection in 250 ms is not handed on. The shell runs again only 10 minutes after the last run, and not after 3 failed runs in a row. A connection attempt still open after 500 ms ends the hand-off for good.
+- While the `PATH` read runs, the step runs no shell (measured against `52d82f0a`).
+- The step never fails a spawn. Each shell run and each give-up writes a `[shellenv]` log line.
 
 ## Rare states
 

@@ -103,8 +103,8 @@ func pathReadCommand(s string) string {
 	return `/bin/sh -c 'printf "%s\n%s\n" "` + s + `" "$PATH"'`
 }
 
-// newSentinel returns prefix, 32 random hex digits and "___".
-func newSentinel(prefix string) (string, error) {
+// freshMarker returns prefix, 32 random hex digits and "___".
+func freshMarker(prefix string) (string, error) {
 	var nonce [16]byte
 	if _, err := rand.Read(nonce[:]); err != nil {
 		return "", err
@@ -121,17 +121,17 @@ const loginPATHFromShell = true
 //
 // Measured on Linux and macOS against 52d82f0a:
 //
-//   - stdout is searched first, then stderr. The line after the sentinel line is the
-//     PATH. It must end in a newline and hold one absolute directory, or the read fails.
+//   - The line after the sentinel line, on stdout or on stderr, is the PATH. It must
+//     end in a newline and hold one absolute directory, or the read fails.
 //   - The exit status does not matter when that line is good.
-//   - A read that the time limit or a stop ended gives "shell PATH extraction timed out".
+//   - A read that a stop ended gives "shell PATH extraction timed out".
 //   - No failure text holds what the shell printed. It gives byte counts.
 //
-// The order of the two streams and that a bad line in stdout decides are claustrum's
-// own (not measured).
+// claustrum's own (not measured): stdout is searched first, a bad line in stdout
+// decides the read, and the PATH line is kept as printed, with no trim.
 func extractLoginPATH(ctx context.Context) (string, error) {
 	shell := safeLoginShell()
-	sentinel, err := newSentinel(pathSentinelPrefix)
+	sentinel, err := freshMarker(pathSentinelPrefix)
 	if err != nil {
 		return "", err
 	}
@@ -156,11 +156,12 @@ func extractLoginPATH(ctx context.Context) (string, error) {
 		return "", fmt.Errorf("shell PATH extraction timed out (%s)", shell)
 	}
 	for _, b := range [][]byte{out.stdout.kept.Bytes(), out.stderr.kept.Bytes()} {
-		line, found, whole := lineAfterSentinel(b, sentinel)
+		line, found, whole := pathLineAfter(b, sentinel)
 		if !found {
 			continue
 		}
 		if whole && hasAbsoluteDir(line) {
+			// Kept as printed, with no trim (claustrum's own, not measured).
 			return line, nil
 		}
 		return "", fmt.Errorf("the login shell's PATH line was cut short or had no absolute directory in it (%d bytes read)", len(line))
@@ -168,9 +169,9 @@ func extractLoginPATH(ctx context.Context) (string, error) {
 	return "", fmt.Errorf("the login shell ended (%s) without printing a usable PATH (%s)", out.endReason(runErr), out.counts())
 }
 
-// lineAfterSentinel returns the text after the sentinel line, up to the next newline.
+// pathLineAfter returns the text after the sentinel line, up to the next newline.
 // found reports the sentinel line, and whole reports the newline after the text.
-func lineAfterSentinel(b []byte, sentinel string) (line string, found, whole bool) {
+func pathLineAfter(b []byte, sentinel string) (line string, found, whole bool) {
 	i := bytes.Index(b, []byte(sentinel+"\n"))
 	if i < 0 {
 		return "", false, false
@@ -213,10 +214,10 @@ func loginPATHShellEnv() []string {
 }
 
 // The caps of what a login shell prints, for the PATH read and the agent run.
-// Measured on Linux and macOS against 52d82f0a: more than 1 MiB on stdout cuts the
-// read, and the log counts 1048576 bytes. 20 MiB on stderr before a good PATH line
-// still gives the PATH. On macOS the daemon took 16 MiB and one pipe buffer of
-// stderr before the writer got EPIPE. The exact bounds are not measured.
+// Measured on Linux and macOS against 52d82f0a: 2 MiB on stdout cuts the read, and
+// the log counts 1048576 bytes. 20 MiB on stderr before a good PATH line still gives
+// the PATH. On macOS the writer wrote 16805888 bytes of stderr before it got EPIPE.
+// The exact bounds are claustrum's own (not measured).
 // Variables so tests can shrink them.
 var (
 	shellStdoutCap  = 1 << 20  // stdout bytes kept, and one more cuts stdout

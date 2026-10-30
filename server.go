@@ -430,13 +430,6 @@ func runServe(socket, tokenFile string, tokenFd int, metricsAddr string, wlopt w
 	// in-process tests never mutate the test process's own limit.
 	raiseInheritedFileLimit()
 
-	// Arm the read of the login-shell PATH, so spawned children resolve tools the
-	// way an interactive session does, and start it in the background unless
-	// CLAUDE_SSH_NO_LOGIN_PATH_WARM is 1 (shellenv.go, measured on Linux and macOS
-	// against 52d82f0a). Kept in this shell, not in newServerOnSocket, so a test that
-	// boots a server never forks a login shell.
-	warmLoginPATHAtStart()
-
 	// The handler for SIGTERM and SIGINT is in place before the claim of the run dir,
 	// so a signal during the start does not end the start (see signalWatch).
 	sigc := make(chan os.Signal, 1)
@@ -453,6 +446,14 @@ func runServe(socket, tokenFile string, tokenFd int, metricsAddr string, wlopt w
 	watch.attach(s)
 
 	fmt.Print(s.listeningLine(socket))
+	// Arm the read of the login-shell PATH, so spawned children resolve tools the
+	// way an interactive session does, and start it in the background unless
+	// CLAUDE_SSH_NO_LOGIN_PATH_WARM is 1 (shellenv.go). Measured on Linux and macOS
+	// against 52d82f0a: the read starts 9 to 28 ms after the start line. It comes
+	// after the listening line, so a start that fails before it leaves no shell. Kept
+	// in this shell, not in newServerOnSocket, so a test that boots a server never
+	// forks a login shell.
+	warmLoginPATHAtStart()
 	// Start the host cleaner. It is a background sweep that ends orphaned Claude Code
 	// process groups under this install's roots. It also retires abandoned daemons and
 	// tidies their stale run dirs. It runs unconditionally at startup, right after the listening line. It stays
@@ -1369,12 +1370,13 @@ func (s *server) closeAll(socket string) {
 	// returned before the shutdown began, and no record write is open at the exit.
 	s.procs.stopStarts()
 	// The children get the kill before the token removal and the lock release, as on
-	// 5fd08069 (cell L1k of round task091-01, Linux VM, 3 of 3 runs). macOS runs this
-	// code too, and that order is not measured there.
+	// 5fd08069 (Linux, 3 of 3 runs). macOS runs this code too, and that order is not
+	// measured there.
 	killed := s.stopChildren()
-	// A read of the login-shell PATH that still runs ends here. Its shell is no child,
-	// so the cleanup line does not count it (measured on Linux and macOS against
-	// 52d82f0a). Its place among these steps is not measured.
+	// A read of the login-shell PATH that still runs ends here, measured on Linux and
+	// macOS against 52d82f0a. Its shell is no child, so the cleanup line does not
+	// count it (measured on Linux). Its place among these steps is claustrum's own
+	// (not measured).
 	stopLoginPATH()
 	dropOwnTokenFile(socket, s.tokenInfo)
 	// Remove rpc.pipe on the same graceful path as rpc.sock/daemon.token, and with the

@@ -11,26 +11,28 @@ import (
 // The daemon reads the PATH of the login shell for its children. Measured on Linux
 // and macOS against 52d82f0a:
 //
-//   - The read starts at the start of the daemon, with no spawn. Only the value 1 of
-//     CLAUDE_SSH_NO_LOGIN_PATH_WARM turns that off, and then the first spawn starts it.
-//     The daemon removes the variable from its own environment, so no child gets it.
+//   - The read starts at the start of the daemon, with no spawn. The value 1 of
+//     CLAUDE_SSH_NO_LOGIN_PATH_WARM turns it off, and then the first spawn starts it.
+//     The value 0 does not. The daemon removes the variable from its own environment,
+//     so no child inherits it from the daemon.
 //   - A spawn waits for a running read at most 4 s, and never past 8 s after the start
 //     of the read. A child that comes before a good read gets the daemon's own PATH.
 //   - A failed read is tried again by a later spawn, 30 s after the first failure, then
-//     after 1m0s, 2m0s and so on. A good read is kept, and no read runs after it.
+//     after 1m0s and 2m0s. A good read is kept, and no read runs after it.
 //   - A spawn with "disableShellAgentSocket":true ends a read that still runs after its
 //     wait. After a failure such a spawn starts no other read.
-//   - The shutdown ends a running read, and the read logs nothing then.
+//   - The shutdown ends a running read. On Linux the read logs nothing then.
 //
 // The PATH read and the SSH agent hand-off share one gate (loginShellGate). While one
 // login shell runs, the other step runs none.
 //
-// claustrum's own, not measured: the limit of 5 failed reads for the spawn wait, the
-// cap of 16 failed reads, the wait of 1 s after the stop, and that only a spawn
-// starts a try again.
+// claustrum's own, not measured: the doubling of the pause after 2m0s, the limit of 5
+// failed reads for the spawn wait, the cap of 16 failed reads, the wait of 1 s after
+// the stop, and that only a spawn starts a try again.
 //
 // On Windows no login shell runs. The read takes the daemon's own PATH
-// (shellenv_windows.go).
+// (shellenv_windows.go). claustrum's own there, not measured: the read at the start
+// and the removal of the variable.
 
 // noLoginPATHWarmEnv names the variable whose value 1 keeps the read from starting
 // at the start of the daemon.
@@ -186,7 +188,7 @@ func (s *loginPATHState) startLocked() bool {
 // read runs one read, records its result and logs it. The gate goes free when the
 // read returns (claustrum's own, not measured).
 func (s *loginPATHState) read(ctx context.Context, r *loginPATHRun) {
-	path, err := loginPATHExtractor(ctx)
+	path, err := s.extract(ctx)
 	<-r.gate
 	r.cancel()
 	s.mu.Lock()
@@ -205,6 +207,18 @@ func (s *loginPATHState) read(ctx context.Context, r *loginPATHRun) {
 	}
 	s.mu.Unlock()
 	close(r.end)
+}
+
+// extract runs the extractor. A panic in it fails the read and does not end the
+// daemon, as a panic of a request does not (claustrum's own).
+func (s *loginPATHState) extract(ctx context.Context) (path string, err error) {
+	defer func() {
+		if v := recover(); v != nil {
+			logErrorf("[shellenv] recovered panic in the read of the login-shell PATH: %v", v)
+			path, err = "", fmt.Errorf("recovered panic: %v", v)
+		}
+	}()
+	return loginPATHExtractor(ctx)
 }
 
 // failureNoteLocked records when the next read can start, and renders the note of

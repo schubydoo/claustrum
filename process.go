@@ -1681,13 +1681,13 @@ func buildSpawnEnv(env map[string]string, noShellAgent bool) []string {
 	// The base holds no CLAUDE_SSH_PEER_CHECK: the daemon removed it from its own
 	// environment at its start (startPeerCheck). A caller key of that name passes.
 	// The login-shell PATH is applied HERE, to the child's environment, rather
-	// than being installed into the daemon's own — see loginPATH in shellenv.go.
+	// than being installed into the daemon's own — see loginPATHs in shellenv.go.
 	// Applied before the caller's env so an explicit PATH in the spawn request
 	// still wins. On Windows the value is the daemon's own PATH, and the exact name
 	// PATH matters. A daemon entry named Path stays in the slice, and os/exec keeps
-	// the later PATH entry (Windows VM rows R1 and R3 against 89cb6289). With a daemon
+	// the later PATH entry (measured on Windows against 89cb6289). With a daemon
 	// entry named Path, a caller key named exactly Path replaces it and still loses to
-	// the later PATH (row R4).
+	// the later PATH.
 	if lp := currentLoginPATH(); lp != "" {
 		base = replaceOrAppendEnv(base, "PATH", lp)
 	}

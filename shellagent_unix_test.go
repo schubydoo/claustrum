@@ -369,9 +369,9 @@ func TestSuiteStubsShellAgentSocket(t *testing.T) {
 	}
 }
 
-// TestHandOffRunsNoShellWhileTheGateIsTaken pins the gate of 52d82f0a (Linux and
-// macOS): while another login shell runs, the hand-off returns no socket and runs no
-// shell. claustrum's own, not measured: it counts no try and logs nothing.
+// TestHandOffRunsNoShellWhileTheGateIsTaken pins 52d82f0a (Linux and macOS): while
+// the PATH read runs, the hand-off runs no shell. claustrum's own, not measured: it
+// counts no try and logs nothing.
 func TestHandOffRunsNoShellWhileTheGateIsTaken(t *testing.T) {
 	logs := captureAgentLog(t)
 	f := newFakeHandOff("/tmp/a.sock", "/tmp/a.sock")
@@ -420,5 +420,18 @@ func TestPATHReadHoldsTheGateOfTheHandOff(t *testing.T) {
 	awaitReadEnd(t, r)
 	if got := f.socket(); got != "/tmp/a.sock" || f.probes != 1 {
 		t.Fatalf("after the read: got %q, probes %d; want the socket", got, f.probes)
+	}
+}
+
+// TestHandOffFreesTheGateAfterAPanic: a panic in the agent run leaves the gate free.
+func TestHandOffFreesTheGateAfterAPanic(t *testing.T) {
+	f := newFakeHandOff()
+	f.runShell = func() (string, error) { panic("boom") }
+	func() {
+		defer func() { _ = recover() }()
+		f.socket()
+	}()
+	if len(f.gate) != 0 {
+		t.Error("a panic in the agent run kept the gate")
 	}
 }
