@@ -62,3 +62,37 @@ func TestSocketFilesRealpathErrnoFrames(t *testing.T) {
 		t.Errorf("reply = %s, want %s", g, want)
 	}
 }
+
+// TestSocketFilesRealpathDanglingRealFolder pins wouldBe of a dangling link whose
+// relative target has a ".." (claustrum's own, not measured). The kernel reads
+// the target from the real folder of the link, and applies a ".." after a link
+// to the link target.
+func TestSocketFilesRealpathDanglingRealFolder(t *testing.T) {
+	root := resolveTestRoot(t, t.TempDir())
+	for _, d := range []string{"a", "real/dir", "other/deep"} {
+		if err := os.MkdirAll(filepath.Join(root, d), 0o755); err != nil {
+			t.Fatal(err)
+		}
+	}
+	links := map[string]string{
+		"a/L":          filepath.Join(root, "real", "dir"),
+		"real/dir/y":   "../gone",
+		"real/dir/sub": filepath.Join(root, "other", "deep"),
+		"real/dir/z":   "sub/../gone",
+	}
+	for name, target := range links {
+		if err := os.Symlink(target, filepath.Join(root, name)); err != nil {
+			t.Fatal(err)
+		}
+	}
+	got := realpathCalls(t, root, []map[string]any{
+		{"path": filepath.Join(root, "a", "L", "y"), "missingLeaf": true},
+		{"path": filepath.Join(root, "real", "dir", "z"), "missingLeaf": true},
+	})
+	for i, want := range []string{"real/gone", "other/gone"} {
+		w := `"wouldBe":"<DIR>/` + want + `","dangling":true`
+		if !strings.Contains(string(got[i]), w) {
+			t.Errorf("reply %d = %s, want %s", i+1, got[i], w)
+		}
+	}
+}

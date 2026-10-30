@@ -18,7 +18,7 @@
 | `wouldBe` | With `missingLeaf`, the real name of the parent folder plus the missing last name. |
 | `dangling` | `true` for a link whose target does not exist, with `missingLeaf`. `wouldBe` is there only if the parent folder of the target exists. |
 
-Without `missingLeaf` a dangling link gives `{"exists":false}`. `wouldBe` follows one link level. Both are claustrum's own, not measured.
+Without `missingLeaf` a dangling link gives `{"exists":false}`. `wouldBe` follows one link level, and a relative target is read from the real folder of the link. All are claustrum's own, not measured.
 
 The members come in the order of the table. A path below a missing folder gives `{"exists":false}`. With `missingLeaf` this is claustrum's own, not measured.
 

@@ -116,7 +116,14 @@ func resolveDangling(path string) (realpathResult, error) {
 		return realpathResult{}, err
 	}
 	if !filepath.IsAbs(target) {
-		target = filepath.Join(filepath.Dir(path), target)
+		// The kernel reads a relative target from the real folder of the link.
+		// The target text is not cleaned: EvalSymlinks in wouldBeUnder resolves
+		// each link before it applies a "..". Claustrum's own, not measured.
+		dir, err := filepath.EvalSymlinks(filepath.Dir(path))
+		if err != nil {
+			return realpathResult{}, err
+		}
+		target = dir + string(filepath.Separator) + target
 	}
 	wouldBe, ok, err := wouldBeUnder(target)
 	if err != nil {
@@ -129,9 +136,22 @@ func resolveDangling(path string) (realpathResult, error) {
 }
 
 // wouldBeUnder resolves the parent folder of path and adds the last name. ok is
-// false when the parent does not exist.
+// false when the parent does not exist. The text is split at the last separator
+// and not cleaned, so a ".." after a link is applied to the link target.
 func wouldBeUnder(path string) (string, bool, error) {
-	parent := filepath.Dir(path)
+	seps := "/"
+	if runtime.GOOS == "windows" {
+		seps = `/\`
+	}
+	path = strings.TrimRight(path, seps)
+	i := strings.LastIndexAny(path, seps)
+	if i < 0 {
+		return "", false, nil
+	}
+	parent := path[:i]
+	if parent == "" || strings.HasSuffix(parent, ":") {
+		parent = path[:i+1]
+	}
 	if _, err := os.Stat(parent); err != nil {
 		if errors.Is(err, fs.ErrNotExist) {
 			return "", false, nil
@@ -142,7 +162,7 @@ func wouldBeUnder(path string) (string, bool, error) {
 	if err != nil {
 		return "", false, err
 	}
-	return filepath.ToSlash(filepath.Join(real, filepath.Base(path))), true, nil
+	return filepath.ToSlash(filepath.Join(real, path[i+1:])), true, nil
 }
 
 // realpathFailure maps a failed call to the -32603 reply. The no_usable_name
