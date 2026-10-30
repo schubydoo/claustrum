@@ -1760,6 +1760,10 @@ func buildSpawnEnv(env map[string]string, noShellAgent bool) []string {
 	// when the read is not armed (a test server).
 	awaitLoginPATH(noShellAgent)
 	base := removeEnvKey(os.Environ(), "CLAUDE_RPC_TOKEN")
+	// An inherited temp-folder name whose folder cannot take a file is not handed
+	// on (tempfolder_unix.go). A caller key of that name still reaches the child
+	// (claustrum's own, not measured).
+	base = dropUnusableTempVars(base)
 	// The base holds no CLAUDE_SSH_PEER_CHECK: the daemon removed it from its own
 	// environment at its start (startPeerCheck). A caller key of that name passes.
 	// The login-shell PATH is applied HERE, to the child's environment, rather
