@@ -230,7 +230,7 @@ folder or of its `.git` entry makes the daemon ask again.
 An exit 128 with any text gets a second run of the call plus `GIT_DIR=<.probe>`, in
 `.probe` (`52d82f0a` on Linux and macOS, `c8e2f083` on Windows). Exit 0 there gives
 the "no repository" answer on Windows (`c8e2f083`). The daemon kills a second run 30
-seconds after its start. The reply is then the error of the rows below, with the text
+seconds after its start, and the reply is then the error of the rows below, with the text
 of the first call or its exit status (`c8e2f083`, Linux and Windows). A non-zero exit
 gets the same (claustrum's own, not measured).
 
@@ -239,8 +239,8 @@ user or the system and no `GIT_DIR` (`52d82f0a`). Its exit 0 gives that error pl
 if that names a git setting or file, fix it, then try again`. A bare repository gets
 no third run (Linux). The third run ends 30 seconds after the second run started, and
 a failed one gives "no repository" (claustrum's own, not measured). The stop of a
-child of the third run is not measured. A git directory that fails [the git-directory
-test](git-rules-trust.md#how-the-daemon-finds-the-git-directory) right after a good
+child of the third run is not measured. A `refs` made
+[unsearchable](git-rules-trust.md#how-the-daemon-finds-the-git-directory) right after a good
 answer gives "no repository" (`52d82f0a` on Linux, claustrum's own on macOS).
 
 | Answer of git | Reply |
