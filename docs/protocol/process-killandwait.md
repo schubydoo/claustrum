@@ -1,6 +1,6 @@
 # process.killAndWait
 
-`process.killAndWait` sends a signal to a child process and waits for the process to end. If the process does not end in time, the daemon can end it by force, and the result says what happened.
+`process.killAndWait` sends a signal to a child process and waits for the process to end. If the process does not end in time, the daemon can end it by force.
 
 An untagged rule on this page matches build `5fd08069` or an earlier build.
 
@@ -16,6 +16,7 @@ An untagged rule on this page matches build `5fd08069` or an earlier build.
 | `signal` | no | The first signal: `TERM`, `KILL`, `INT` or `HUP`, with or without the prefix `SIG`. The default is `TERM`. The names are case-sensitive, and each other value means `TERM`. On Windows the daemon ignores the name: see [Differences by system](#differences-by-system). |
 | `timeoutMs` | no | How long the daemon waits for the process to end after the signal, in milliseconds. The default is 3000. A value of `0` or below means the default. The daemon limits a larger value to 30000. |
 | `escalate` | no | What the daemon does at the end of that time. With `true`, the default, it ends the process by force. With `false`, it leaves the process alone. |
+| `farewell`, `graceMs` | no | See [Farewell](process-farewell.md), also for the `farewellEnd` member of the result. |
 
 The first signal reaches the same processes as a signal of [process.kill](process-kill.md#which-processes-a-signal-reaches), except `KILL` in [the exit drain](#a-request-during-the-exit-drain).
 
@@ -58,7 +59,7 @@ This method has no `errorCode` member. A failure is a JSON-RPC error.
 
 On Linux and macOS, the force is a `SIGKILL` to the process group of the child. So the processes that the child started end too, unless one left the group.
 
-If the child ends inside the wait and its output is complete, the daemon sends no `SIGKILL`. A process that the child started then stays, and it can go on to run. Use `"signal": "KILL"` to end the whole group at once.
+If the child ends inside the wait and its output is complete, the daemon sends no `SIGKILL`. A process that the child started then stays. Use `"signal": "KILL"` to end the whole group at once.
 
 The output of a child is not complete while another process holds the output pipe open, in its group or not. The daemon waits at most 5 seconds for that output after the child ended. If the wait of the request ends first, the daemon uses the force although the child itself ended. If those 5 seconds end first, the answer is `{"found": true, "died": true}`, and the daemon sends no `SIGKILL`.
 
@@ -75,9 +76,9 @@ For a short time after a child ends, the daemon still collects its last output a
 - On Linux and macOS, `"signal": "KILL"` sends `SIGKILL` to the group at once instead. Windows makes that call too, and it ends nothing (not measured).
 - If the `exit` frame comes inside the wait, the answer is `{"found": true, "died": true}`. If the wait ends first, the request goes on as for a child whose output is not complete.
 
-These answers and the group kill are measured on Linux and macOS, not on Windows. Whether the reference sends a first signal to the ended child is open (not measured).
+These answers and the group kill are measured on Linux and macOS, not on Windows. Whether the reference sends a first signal to the ended child is not measured.
 
-For a signal other than `KILL`, that missing first signal is a guard (claustrum's own): the operating system can give the process id (pid) of a child that ended to another process. For `KILL` claustrum follows the reference and accepts the risk that the group number went to another process.
+For a signal other than `KILL`, that missing first signal is a guard (claustrum's own): the operating system can reuse the process id (pid) of an ended child. For `KILL` claustrum follows the reference and accepts the risk of a reused group number.
 
 ## Differences from the reference
 

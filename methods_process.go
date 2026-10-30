@@ -2,6 +2,7 @@ package main
 
 import (
 	"encoding/base64"
+	"encoding/json"
 	"errors"
 	"time"
 )
@@ -145,6 +146,10 @@ func (s *server) processStdin(req *request) response {
 type killParams struct {
 	ID     string `json:"id"`
 	Signal string `json:"signal"`
+	// Farewell and GraceMs ask for a farewell (see farewell.go). They stay raw, so
+	// a value of the wrong type gets "invalid", not Invalid params (measured).
+	Farewell json.RawMessage `json:"farewell"`
+	GraceMs  json.RawMessage `json:"graceMs"`
 }
 
 func (s *server) processKill(req *request) response {
@@ -152,8 +157,19 @@ func (s *server) processKill(req *request) response {
 	if bad := bindParams(req, &p); bad != nil {
 		return *bad
 	}
+	ask, rule := readFarewell(p.Farewell, p.GraceMs)
+	switch {
+	case rule != "":
+		// The rule test comes before the id test, so an unknown id with a bad
+		// farewell gets "invalid" (claustrum's own, not measured).
+		logFarewellNotSaid(p.ID, rule)
+		s.procs.kill(p.ID, p.Signal)
+		return okResult(req.ID, killResult{Success: true, FarewellEnd: farewellInvalid})
+	case ask != nil:
+		return okResult(req.ID, killResult{Success: true, FarewellEnd: s.procs.killWithFarewell(p.ID, p.Signal, *ask)})
+	}
 	s.procs.kill(p.ID, p.Signal)
-	return okResult(req.ID, successResult{Success: true})
+	return okResult(req.ID, killResult{Success: true})
 }
 
 // killAndWaitParams is distinct from killParams: process.killAndWait accepts a
@@ -165,6 +181,9 @@ type killAndWaitParams struct {
 	Signal    string `json:"signal"`
 	TimeoutMs *int   `json:"timeoutMs"`
 	Escalate  *bool  `json:"escalate"`
+	// Farewell and GraceMs as in killParams.
+	Farewell json.RawMessage `json:"farewell"`
+	GraceMs  json.RawMessage `json:"graceMs"`
 }
 
 // processKillAndWait signals a process and blocks until it is gone (or was already
@@ -190,9 +209,23 @@ func (s *server) processKillAndWait(req *request) response {
 	if p.Escalate != nil {
 		escalate = *p.Escalate
 	}
+	// The farewell rules come after the id test, so the error reply stays as it was.
+	ask, rule := readFarewell(p.Farewell, p.GraceMs)
+	if ask != nil {
+		return okResult(req.ID, s.procs.killAndWaitFarewell(p.ID, p.Signal, grace, escalate, *ask))
+	}
+	if rule != "" {
+		// The plain kill path at once, as process.kill does (claustrum's own, not
+		// measured for process.killAndWait).
+		logFarewellNotSaid(p.ID, rule)
+	}
 	found, died, alreadyExited, escalated := s.procs.killAndWait(p.ID, p.Signal, grace, escalate)
+	end := ""
+	if rule != "" {
+		end = farewellInvalid
+	}
 	return okResult(req.ID, killAndWaitResult{
-		Found: found, Died: died, AlreadyExited: alreadyExited, Escalated: escalated,
+		Found: found, Died: died, AlreadyExited: alreadyExited, Escalated: escalated, FarewellEnd: end,
 	})
 }
 
