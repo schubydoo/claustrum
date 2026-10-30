@@ -60,7 +60,7 @@ func TestChildHandleHoldsAPidfd(t *testing.T) {
 	if fd := pidfdOf(t, cmd.Process.Pid); fd < 0 {
 		t.Fatalf("no pid file descriptor for the child %d in this process", cmd.Process.Pid)
 	}
-	signalProcessGroup(cmd.Process, "TERM")
+	_ = signalProcessGroup(cmd.Process, "TERM")
 	if sig := hcWaitSignal(t, cmd); sig != syscall.SIGTERM {
 		t.Errorf("the helper ended with signal %v, want SIGTERM", sig)
 	}

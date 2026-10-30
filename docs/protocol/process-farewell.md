@@ -43,6 +43,7 @@ An example is `{"found":true,"died":true,"escalated":true,"farewellEnd":"expired
 
 - The `exit` frame has `"killedBy": "client"` from the farewell on. A child that exits with code 0 gets no `signal` member.
 - Another kill of the process cuts a pending farewell and signals at once.
+- The signal reaches the processes that a signal of [process.kill](process-kill.md#which-processes-a-signal-reaches) reaches (from the code).
 - After `server.shutdown` a waiting `process.killAndWait` gets no reply and no `exit` frame. Its connection ends.
 
 Not measured, claustrum's own:
@@ -52,4 +53,5 @@ Not measured, claustrum's own:
 - `invalid` on `process.killAndWait`: the kill goes at once. `invalid` also for an unknown `id` on `process.kill`.
 - `cut` for a child that outlives the signal of the cut.
 - The log line of a failed rule on `process.killAndWait`.
+- A refused signal on Linux and macOS: with a farewell the reply stays a success with `queued` or `unsent`, and `killedBy` stays. The farewell stays pending.
 - Under `-keep-children` a shutdown sends the signal of each pending farewell at once.

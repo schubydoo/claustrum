@@ -477,7 +477,7 @@ var signalGroup = func(g *procGroup, proc *os.Process, signame string) error {
 	return g.signal(proc, signame)
 }
 
-// signalIfLive delivers signame to the process group unless the process has
+// signalIfLive delivers signame as signalProcessGroup does unless the process has
 // already been reaped, and — only when it actually delivers — records who asked
 // for the kill in p.killedBy. Coupling the stamp to the delivery under one lock
 // is deliberate: a kill that lands on an already-reaped process changed nothing,
@@ -508,27 +508,56 @@ var signalGroup = func(g *procGroup, proc *os.Process, signame string) error {
 // can only ever suppress a signal, so claustrum's behaviour here is at most
 // narrower than the reference's, never wider.
 //
-// It reports whether it delivered the signal.
+// It reports whether the process was live.
 func (p *managedProc) signalIfLive(signame, killedBy string) bool {
+	live, _ := p.signalIfLiveErr(signame, killedBy)
+	return live
+}
+
+// signalIfLiveErr is signalIfLive that also returns a *signalFailed of the delivery.
+func (p *managedProc) signalIfLiveErr(signame, killedBy string) (bool, error) {
 	p.mu.Lock()
 	defer p.mu.Unlock()
 	return p.signalIfLiveLocked(signame, killedBy)
 }
 
-// signalIfLiveLocked is signalIfLive for a caller that holds p.mu.
-func (p *managedProc) signalIfLiveLocked(signame, killedBy string) bool {
+// signalIfLiveLocked is signalIfLiveErr for a caller that holds p.mu. A delivery
+// that failed with a *signalFailed stamps no killedBy: 52d82f0a gives such a child
+// no killedBy at its later exit (measured on Linux and macOS). It sets no signalled
+// either, and a refused shutdown KILL stamps no "shutdown" (claustrum's own, not
+// measured). Every other error of signalGroup counts as
+// a delivery, as before. Only Linux and macOS make a *signalFailed.
+func (p *managedProc) signalIfLiveLocked(signame, killedBy string) (bool, error) {
 	if !p.running || p.reaped || p.cmd == nil || p.cmd.Process == nil {
-		return false
+		return false, nil
 	}
-	if killedBy != "" && (p.killedBy == "" || (killedBy == "shutdown" && p.waiting > 0)) {
-		p.killedBy = killedBy
+	var failed *signalFailed
+	if err := signalGroup(p.group, p.cmd.Process, signame); errors.As(err, &failed) {
+		// A refused signal leaves a pending farewell and its timer as they are
+		// (claustrum's own, not measured).
+		return true, failed
 	}
 	// A signal cuts a pending farewell (measured on Linux and macOS).
 	p.cutFarewellLocked()
+	if killedBy != "" && (p.killedBy == "" || (killedBy == "shutdown" && p.waiting > 0)) {
+		p.killedBy = killedBy
+	}
 	p.signalled = true
-	_ = signalGroup(p.group, p.cmd.Process, signame)
-	return true
+	return true, nil
 }
+
+// signalFailed is the error of a signal that the system refused to a live child,
+// such as EPERM for a child that runs as another user. Its text is the text of
+// that error. name is the name of the signal as the log prints it, such as
+// "terminated". Only the procGroup of Linux and macOS makes one.
+type signalFailed struct {
+	name string
+	err  error
+}
+
+func (e *signalFailed) Error() string { return e.err.Error() }
+
+func (e *signalFailed) Unwrap() error { return e.err }
 
 // killGroupAfterExit SIGKILLs the process group once the managed process itself
 // has already exited, sweeping up any child it left behind. Deliberately does
@@ -546,8 +575,9 @@ func (p *managedProc) signalIfLiveLocked(signame, killedBy string) bool {
 // sends none after a process that ended within the grace (Linux rows X2a and X2b),
 // and killAndWaitProc sends none there either.
 //
-// It returns the error of the kill. On Unix that is nil. On Windows it is the error of
-// TerminateJobObject on the job, or of TerminateProcess on a direct child with no job.
+// It returns the error of the kill. On Unix that is a *signalFailed or nil. On Windows
+// it is the error of TerminateJobObject on the job, or of TerminateProcess on a
+// direct child with no job.
 func (p *managedProc) killGroupAfterExit() error {
 	p.mu.Lock()
 	defer p.mu.Unlock()
@@ -1287,17 +1317,22 @@ func (p *managedProc) stdinWriter() {
 	}
 }
 
-// kill is best-effort and signals the whole process group (OS-specific). An
+// kill signals the child: on Unix KILL to its group and each other signal to the
+// child alone (see signalProcessGroup). An
 // already-exited child is skipped: once cmd.Wait has reaped it, its Unix pgid
 // can be recycled, so a late negative-pid signal could hit an unrelated
-// process group. (Windows is immune: the process handle pins identity.) OS-level
-// hardening only; the wire reply does not depend on the signal side effect.
-func (m *procManager) kill(id, signal string) {
+// process group. (Windows is immune: the process handle pins identity.) The skip
+// is OS-level hardening only, and the reply is a success there.
+//
+// It returns a *signalFailed when the system refused the signal, and process.kill
+// answers its text (see signalFailed). Each other case returns nil.
+func (m *procManager) kill(id, signal string) error {
 	p := m.get(id)
 	if p == nil {
-		return
+		return nil
 	}
-	p.signalIfLive(signal, "client")
+	_, err := p.signalIfLiveErr(signal, "client")
+	return err
 }
 
 // defaultKillWaitMs is the graceful-signal grace killAndWait uses when the caller
@@ -1485,7 +1520,13 @@ func (m *procManager) killAndWaitProc(p *managedProc, signal string, grace time.
 // signalAndWait is the signal and the wait of killAndWaitProc. The caller holds
 // the waiting count. killAndWaitFarewell runs it at the end of the grace.
 func (m *procManager) signalAndWait(p *managedProc, signal string, grace time.Duration, escalate bool) (found, died, alreadyExited, escalated bool) {
-	if !p.signalIfLive(signal, "client") && strings.TrimPrefix(signal, "SIG") == "KILL" {
+	live, err := p.signalIfLiveErr(signal, "client")
+	var failed *signalFailed
+	if errors.As(err, &failed) {
+		// The wait and the force go on (52d82f0a, measured on Linux and macOS).
+		logWarnf("[process.Manager] KillAndWait %s: signal %s failed: %v", p.id, failed.name, err)
+	}
+	if !live && strings.TrimPrefix(signal, "SIG") == "KILL" {
 		p.killGroupInDrain()
 	}
 	select {
@@ -1531,8 +1572,10 @@ func (m *procManager) signalAndWait(p *managedProc, signal string, grace time.Du
 	// prints (claustrum's own, not measured).
 	// Measured on a Windows VM against 89cb6289, with kids of the child holding its
 	// stdout and stderr. The line was "KillAndWait c1: group kill failed:
-	// TerminateProcess: Access is denied.". On Unix the kill reports no error, so no
-	// line prints there.
+	// TerminateProcess: Access is denied.". On Linux and macOS a refused SIGKILL
+	// prints "group kill failed: operation not permitted" (52d82f0a, measured). A
+	// group that is gone (ESRCH) prints no line there, as before (claustrum's own,
+	// not measured).
 	if err := p.killGroupAfterExit(); err != nil {
 		logWarnf("[process.Manager] KillAndWait %s: group kill failed: %v", p.id, err)
 	}
@@ -1541,7 +1584,12 @@ func (m *procManager) signalAndWait(p *managedProc, signal string, grace time.Du
 		return true, true, false, true
 	case <-time.After(killReapGrace):
 		// A SIGKILL that hasn't reaped (e.g. uninterruptible sleep) — don't wedge
-		// the dispatch goroutine forever; report not-yet-dead.
+		// the dispatch goroutine forever; report not-yet-dead. 52d82f0a logs the
+		// line below on Linux and macOS (measured, after a refused SIGKILL). Windows
+		// logs none (claustrum's own, not measured).
+		if logsUnreapedKill {
+			logWarnf("[process.Manager] KillAndWait %s: still running 7s after SIGKILL (D-state?)", p.id)
+		}
 		return true, false, false, true
 	}
 }
@@ -1682,7 +1730,8 @@ func (m *procManager) runningCount() int {
 func (m *procManager) killAll() { m.killAllCount() }
 
 // killAllCount sends the shutdown kill to every live child. It returns how many children
-// got it, for the "cleanup:" line of the shutdown.
+// got it, for the "cleanup:" line of the shutdown. A child that refused the kill counts
+// too (claustrum's own, not measured).
 func (m *procManager) killAllCount() int {
 	m.mu.Lock()
 	defer m.mu.Unlock()

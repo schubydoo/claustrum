@@ -219,11 +219,11 @@ func TestKillEndsOnlyTheDirectChild(t *testing.T) {
 		act     func(m *procManager, id string) result
 		wantLog string
 	}{
-		{"kd-kill-default", func(m *procManager, id string) result { m.kill(id, ""); return result{} },
+		{"kd-kill-default", func(m *procManager, id string) result { _ = m.kill(id, ""); return result{} },
 			", asked to end by this daemon (client)"},
-		{"kd-kill-term", func(m *procManager, id string) result { m.kill(id, "TERM"); return result{} },
+		{"kd-kill-term", func(m *procManager, id string) result { _ = m.kill(id, "TERM"); return result{} },
 			", asked to end by this daemon (client)"},
-		{"kd-kill-kill", func(m *procManager, id string) result { m.kill(id, "KILL"); return result{} },
+		{"kd-kill-kill", func(m *procManager, id string) result { _ = m.kill(id, "KILL"); return result{} },
 			", asked to end by this daemon (client)"},
 		{"kd-killAndWait-default", func(m *procManager, id string) result {
 			f, d, a, e := m.killAndWait(id, "", 3*time.Second, true)
@@ -367,7 +367,7 @@ func TestKillWithKidsHoldingThePipes(t *testing.T) {
 		buf := captureLogBuf(t)
 
 		start := time.Now()
-		m.kill(id, "")
+		_ = m.kill(id, "")
 		if replied := time.Since(start); replied > 500*time.Millisecond {
 			t.Errorf("kill returned after %s, want at once", replied)
 		}

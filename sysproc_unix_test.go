@@ -76,7 +76,7 @@ func TestSignalToOneProcessGoesThroughItsHandle(t *testing.T) {
 	// A pid above every pid limit: a signal that misses the seam finds no process.
 	proc := &os.Process{Pid: 1 << 30}
 	for _, name := range []string{"TERM", "", "INT", "HUP"} {
-		signalProcessGroup(proc, name)
+		_ = signalProcessGroup(proc, name)
 	}
 	want := []syscall.Signal{syscall.SIGTERM, syscall.SIGTERM, syscall.SIGINT, syscall.SIGHUP}
 	if len(calls) != len(want) {
@@ -109,14 +109,14 @@ func TestSignalProcessGroupKillsWholeGroup(t *testing.T) {
 	if err := cmd.Start(); err != nil {
 		t.Fatalf("start: %v", err)
 	}
-	t.Cleanup(func() { signalProcessGroup(cmd.Process, "KILL"); _ = cmd.Wait() })
+	t.Cleanup(func() { _ = signalProcessGroup(cmd.Process, "KILL"); _ = cmd.Wait() })
 
 	gpid := readPIDFile(t, pidFile)
 	if err := syscall.Kill(gpid, 0); err != nil {
 		t.Fatalf("grandchild %d not alive before signal: %v", gpid, err)
 	}
 
-	signalProcessGroup(cmd.Process, "KILL")
+	_ = signalProcessGroup(cmd.Process, "KILL")
 
 	if !waitProcessGone(gpid, 3*time.Second) {
 		t.Errorf("grandchild %d survived the group kill — signalProcessGroup hit the leader, not the group", gpid)
@@ -150,7 +150,7 @@ func TestSignalTermSparesTheGroup(t *testing.T) {
 		t.Fatalf("grandchild %d not alive before signal: %v", gpid, err)
 	}
 
-	signalProcessGroup(cmd.Process, "TERM")
+	_ = signalProcessGroup(cmd.Process, "TERM")
 
 	select {
 	case <-waited:

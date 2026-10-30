@@ -924,7 +924,7 @@ func TestMetricsCountProcessOps(t *testing.T) {
 	}
 	m.reattach(c2, "missing", 0) // not found → must not count
 
-	m.kill("mc", "KILL")
+	_ = m.kill("mc", "KILL")
 	deadline := time.After(4 * time.Second)
 	for exited := false; !exited; {
 		select {
@@ -1105,7 +1105,7 @@ func TestReapedProcessIsNotSignalled(t *testing.T) {
 	}
 	m.procs["DRAIN"] = p
 
-	m.kill("DRAIN", "TERM")
+	_ = m.kill("DRAIN", "TERM")
 	if len(signals) != 0 {
 		t.Errorf("kill signalled a reaped process: %v", signals)
 	}
@@ -1126,7 +1126,7 @@ func TestReapedProcessIsNotSignalled(t *testing.T) {
 	p.mu.Lock()
 	p.reaped = false
 	p.mu.Unlock()
-	m.kill("DRAIN", "TERM")
+	_ = m.kill("DRAIN", "TERM")
 	m.killAll()
 	if len(signals) != 2 {
 		t.Errorf("signals for a live process = %v, want [TERM KILL]", signals)

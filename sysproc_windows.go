@@ -267,3 +267,7 @@ func (g *procGroup) close() {
 		g.h = 0
 	}
 }
+
+// logsUnreapedKill is false: Windows logs no line for a child that the kill did not
+// reap in killReapGrace, as before (claustrum's own, not measured).
+const logsUnreapedKill = false

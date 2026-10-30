@@ -1091,8 +1091,8 @@ func TestProcManagerEdgeCases(t *testing.T) {
 	}
 
 	// kill on an unknown id and on a proc with no started process are both no-ops.
-	m.kill("missing", "TERM")
-	m.kill("nostdin", "KILL")
+	_ = m.kill("missing", "TERM")
+	_ = m.kill("nostdin", "KILL")
 
 	// killAll over procs that never started must not panic either.
 	m.killAll()

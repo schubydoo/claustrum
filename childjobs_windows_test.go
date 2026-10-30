@@ -69,7 +69,7 @@ func TestJobEndsTheTree(t *testing.T) {
 		act     func(m *procManager, id string) result
 		wantLog string
 	}{
-		{"jt-kill", func(m *procManager, id string) result { m.kill(id, ""); return result{} },
+		{"jt-kill", func(m *procManager, id string) result { _ = m.kill(id, ""); return result{} },
 			", asked to end by this daemon (client)"},
 		{"jt-killAndWait", func(m *procManager, id string) result {
 			f, d, a, e := m.killAndWait(id, "", 3*time.Second, true)
@@ -288,7 +288,7 @@ func TestJobAllowsBreakaway(t *testing.T) {
 	if inJob(t, pid, p.group.job) {
 		t.Errorf("the breakaway process %d is in the job of the child", pid)
 	}
-	m.kill(id, "")
+	_ = m.kill(id, "")
 	select {
 	case <-p.done:
 	case <-time.After(10 * time.Second):
