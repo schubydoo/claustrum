@@ -133,6 +133,9 @@ streams were equal, and `plugins.prune` differed (see below). The Windows batter
 sent no `server.capabilities`. Areas outside these rounds
 are not measured on this build.
 
+**Divergences.** [CT-2](DIVERGENCES.md#ct-2) now covers a child with a pending
+farewell (PR 775) and a Windows daemon that is killed (PR 781).
+
 These items stay open:
 
 - claustrum does not build the terminal of this build: the `pty` member of
