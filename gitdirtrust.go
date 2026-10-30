@@ -29,8 +29,8 @@ import (
 //   - refused: the method answers with one of the fixed texts below, and git never runs.
 
 const (
-	gitDirTrustPrefix = "the repository's git directory could not be trusted; git not run: " +
-		"commondir not as git writes it: "
+	gitDirTrustLead   = "the repository's git directory could not be trusted; git not run: "
+	gitDirTrustPrefix = gitDirTrustLead + "commondir not as git writes it: "
 	// gitDirEntryGoneRefusal carries the older hooks prefix. It answers a daemon GIT_DIR
 	// that names a linked-worktree entry which no longer exists.
 	gitDirEntryGoneRefusal = hooksPinPrefix +
@@ -140,15 +140,16 @@ const (
 	strayFileTail = "; git writes that file only inside .git/worktrees/<name>/; one here can send git's " +
 		"configuration and hooks elsewhere, so treat it as tampering: delete it, and if you did not " +
 		"create it, find out what did"
+	// strayShapeTail is the text of build 52d82f0a (measured on Linux and Windows).
 	strayShapeTail = " sits in a git directory git would not take as a repository (its HEAD, objects or " +
-		"refs missing or invalid), so git would look for one somewhere else; repair that directory " +
-		"(usually its HEAD file)"
+		"refs missing, invalid, or not open to your account on the remote machine), so git would " +
+		"look for one somewhere else; repair that directory (usually its HEAD file)"
 	// strayValueMaxRunes is the cut of the quoted content (rows T04a, T04b and T06b).
 	strayValueMaxRunes = 60
 )
 
-// refuseStrayContent refuses a stray commondir whose content v, trailing CR and LF
-// removed, is not "." or "./".
+// refuseStrayContent refuses a stray commondir whose value v (commondirValue) is not
+// "." or "./".
 func refuseStrayContent(cd, v string) gitDirTrust {
 	return gitDirTrust{verdict: gitDirRefused, refusal: gitDirTrustPrefix + quoteOperand(cd) +
 		" reads " + quoteCut(v, strayValueMaxRunes) + strayContentTail}
@@ -164,6 +165,16 @@ func refuseStrayFile(cd, reason string) gitDirTrust {
 // fails the git-directory test.
 func refuseStrayShape(cd string) gitDirTrust {
 	return gitDirTrust{verdict: gitDirRefused, refusal: gitDirTrustPrefix + quoteOperand(cd) + strayShapeTail}
+}
+
+// refuseDamagedRepository refuses the entry of a worktree whose commondir names its
+// repository git directory repo, when repo fails the git-directory test. The text is
+// that of build 52d82f0a for a repository whose `refs` was moved away (measured on
+// Linux).
+func refuseDamagedRepository(repo string) gitDirTrust {
+	return gitDirTrust{verdict: gitDirRefused, refusal: gitDirTrustLead + "this worktree's repository, " +
+		quoteOperand(repo) + ", has a missing or damaged HEAD, objects or refs, or your account on " +
+		"the remote machine cannot open them; repair that directory or its permissions"}
 }
 
 func refuseForeignCommondir(cd, repo string) gitDirTrust {
@@ -478,6 +489,9 @@ func judgeGitDir(g string, fromEnv bool) gitDirTrust {
 	g = resolveGitDirLinks(g)
 	cd := filepath.Join(g, "commondir")
 	if !isWorktreeEntry(g) {
+		if t, refused := judgeDamagedRepository(g); refused {
+			return t
+		}
 		if t, refused := judgeStrayCommondir(g, cd); refused {
 			return t
 		}
@@ -496,18 +510,69 @@ func judgeGitDir(g string, fromEnv bool) gitDirTrust {
 	if reason != "" {
 		return refuseUnreadableCommondir(cd, reason)
 	}
-	named := strings.Trim(content, " \t\r\n")
-	if filepath.IsAbs(named) {
-		named = filepath.Clean(named)
-	} else {
-		named = filepath.Join(g, named)
-	}
 	// A string comparison: no symlink in the value is resolved. On Windows the
 	// comparison also ignores letter case and the slash direction.
-	if !sameGitDirPath(named, repo) {
+	if !sameGitDirPath(commondirPath(g, content), repo) {
 		return refuseForeignCommondir(cd, repo)
 	}
 	return gitDirTrust{pinCommonDir: repo, worktreeEntry: g}
+}
+
+// commondirValue is the value of the content b of a commondir file. Every trailing CR
+// and LF goes, and the value ends at its first NUL byte. Nothing else is trimmed. So
+// `../..` with a tab, with a space or after a NUL is no `../..`. Build 52d82f0a reads
+// so in git.info on Linux and Windows, and in git.status on Linux. macOS, the stray
+// read and the order of the two steps are claustrum's own, not measured. The remove
+// and the create keep their own reads of a registration's commondir
+// (strings.TrimSpace). On the remove, blanks, a tab, CR LF or a NUL after `../..`
+// in that file refuse nothing (build 52d82f0a, measured on Linux, macOS and
+// Windows). The create read is not measured.
+func commondirValue(b string) string {
+	v := strings.TrimRight(b, "\r\n")
+	if i := strings.IndexByte(v, 0); i >= 0 {
+		v = v[:i]
+	}
+	return v
+}
+
+// commondirPath is the path that the content of <dir>/commondir names: its value,
+// cleaned when absolute, else joined to dir.
+func commondirPath(dir, content string) string {
+	v := commondirValue(content)
+	if filepath.IsAbs(v) {
+		return filepath.Clean(v)
+	}
+	return filepath.Join(dir, v)
+}
+
+// judgeDamagedRepository refuses g when its parent is named "worktrees", its own name
+// is not ".git", its grandparent fails the git-directory test and its commondir, a
+// small plain file, names that grandparent. Build 52d82f0a answers so for a commondir
+// of `../..` (measured on Linux). Each other commondir that names the grandparent is
+// claustrum's own, not measured. Any other g goes on to judgeStrayCommondir.
+func judgeDamagedRepository(g string) (gitDirTrust, bool) {
+	parent := filepath.Dir(g)
+	if filepath.Base(parent) != "worktrees" || filepath.Base(g) == ".git" {
+		return gitDirTrust{}, false
+	}
+	repo := filepath.Dir(parent)
+	// An entry with no commondir whose grandparent fails only the search test, or
+	// whose `objects` or `refs` is a file, gets the missing-commondir refusal, as
+	// the existence test gave before (claustrum's own, not measured).
+	if _, err := os.Lstat(filepath.Join(g, "commondir")); errors.Is(err, fs.ErrNotExist) {
+		if partsExist(repo) && headLooksValid(filepath.Join(repo, "HEAD")) {
+			return refuseMissingCommondir(g), true
+		}
+		return gitDirTrust{}, false
+	}
+	content, reason, openErr := readCommondirAt(g)
+	if openErr != nil || reason != "" {
+		return gitDirTrust{}, false
+	}
+	if !sameGitDirPath(commondirPath(g, content), repo) {
+		return gitDirTrust{}, false
+	}
+	return refuseDamagedRepository(repo), true
 }
 
 // isWorktreeEntry reports whether g is a linked-worktree entry: its parent is named
@@ -536,6 +601,8 @@ func isWorktreeEntry(g string) bool {
 //  3. The content with every trailing CR and LF removed is exactly "." or "./". A space
 //     or a tab is not trimmed in the measured rows. Anything else is refused and quoted
 //     (rows T01 to T04, T06b and T10b). The content test comes before the shape test.
+//     The value also ends at its first NUL (commondirValue). That cut is claustrum's
+//     own here, not measured.
 //  4. g then passes the git-directory test, or it is refused (row T10a).
 //
 // It reports false when g is trusted. Not measured: leading CR or LF, a lone CR and
@@ -543,8 +610,8 @@ func isWorktreeEntry(g string) bool {
 // Nor are the order of a reason and a bad HEAD, and a dangling symlink in a git
 // directory with missing objects or refs. Two cases that PROTOCOL.md once refused with
 // the older text were not run on 89cb6289. One is an entry whose grandparent fails the
-// git-directory test. The other is a Windows entry named through 8.3 short names.
-// Their honest content "../.." is refused by step 3.
+// git-directory test, which judgeDamagedRepository takes first. The other is a
+// Windows entry named through 8.3 short names, whose content "../.." step 3 refuses.
 func judgeStrayCommondir(g, cd string) (gitDirTrust, bool) {
 	if _, err := os.Lstat(cd); errors.Is(err, fs.ErrNotExist) {
 		return gitDirTrust{}, false
@@ -559,7 +626,7 @@ func judgeStrayCommondir(g, cd string) (gitDirTrust, bool) {
 	case reason != "":
 		return refuseStrayFile(cd, reason), true
 	}
-	v := strings.TrimRight(content, "\r\n")
+	v := commondirValue(content)
 	if v != "." && v != "./" {
 		return refuseStrayContent(cd, v), true
 	}
@@ -617,15 +684,25 @@ func readCommondirAt(dir string) (content, reason string, openErr error) {
 	return string(b), "", nil
 }
 
-// isGitDirShape is the git-directory test: `objects` and `refs` exist (of any type) and
-// HEAD passes headLooksValid.
+// isGitDirShape is the git-directory test: `objects` and `refs` pass gitDirPartUsable
+// and HEAD passes headLooksValid.
 func isGitDirShape(d string) bool {
+	for _, name := range []string{"objects", "refs"} {
+		if !gitDirPartUsable(filepath.Join(d, name)) {
+			return false
+		}
+	}
+	return headLooksValid(filepath.Join(d, "HEAD"))
+}
+
+// partsExist reports whether `objects` and `refs` of d exist, of any type.
+func partsExist(d string) bool {
 	for _, name := range []string{"objects", "refs"} {
 		if _, err := os.Stat(filepath.Join(d, name)); err != nil {
 			return false
 		}
 	}
-	return headLooksValid(filepath.Join(d, "HEAD"))
+	return true
 }
 
 // headLooksValid judges HEAD. A symlink passes when its target text starts with

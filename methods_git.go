@@ -2872,7 +2872,9 @@ func worktreeRemoveHomeRefusal(worktreePath string) string {
 // repository's git directory, since the worktree's own `.git` is a file. A look under
 // <worktree>/.git/worktrees finds nothing, because that directory never exists.
 // Measured side by side against f6010b97 on a Linux VM (C10, remove from a linked
-// worktree whose commondir starts with white space: the reference deletes the entry). When the daemon's own environment sets
+// worktree whose commondir starts with white space: the reference deletes the entry).
+// The trust check now refuses that commondir (commondirValue, claustrum's own on build
+// 52d82f0a, not measured). When the daemon's own environment sets
 // GIT_COMMON_DIR, or the check pinned nothing, the old <repo>/.git stays. A removal
 // without worktreeRoot then takes the answer of its rev-parse call (registrationGitDir).
 func pruneGitDir(repo string) string {

@@ -172,7 +172,6 @@ A submodule entry is ` S `, the quoted name and one of three texts (measured on 
     - A last component of a `path` inside `baseRepo` that ends in a dot or a space, or holds a colon, is not a special case.
     - Letter case in the registration match is exact.
     - `path` matches as sent and as resolved, and in no other spelling.
-    - The `commondir` value must be exact text.
     - A gitlink path that is a regular file gives ` (submodule; could not be inspected)` (measured on Linux).
 
 === "macOS"
