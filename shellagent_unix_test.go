@@ -304,7 +304,157 @@ func TestProbeShellEnv(t *testing.T) {
 	}
 }
 
+// listenAgentSock listens on a unix socket in a short directory: macOS caps a
+// socket path near 104 bytes, and its t.TempDir paths are long.
+func listenAgentSock(t *testing.T, name string) (string, net.Listener) {
+	t.Helper()
+	dir, err := os.MkdirTemp("/tmp", "agsk")
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = os.RemoveAll(dir) })
+	sock := filepath.Join(dir, name)
+	ln, err := net.Listen("unix", sock)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return sock, ln
+}
+
+// resetAgentLive clears the live-answer cache, and again at the end.
+func resetAgentLive(t *testing.T) {
+	t.Helper()
+	clear := func() {
+		agentLive.Lock()
+		agentLive.present = false
+		agentLive.Unlock()
+	}
+	clear()
+	t.Cleanup(clear)
+}
+
+// countDials counts the connects of dialAgentSocket and ends with the test.
+func countDials(t *testing.T) *int {
+	t.Helper()
+	var n int
+	old := dialUnix
+	dialUnix = func(netw, addr string, d time.Duration) (net.Conn, error) {
+		n++
+		return old(netw, addr, d)
+	}
+	t.Cleanup(func() { dialUnix = old })
+	return &n
+}
+
+func TestDialAgentSocketHungStat(t *testing.T) {
+	resetAgentLive(t)
+	release := make(chan struct{})
+	defer close(release)
+	old, oldBound := statAgent, agentDialBound
+	statAgent = func(string) (os.FileInfo, error) { <-release; return nil, errors.New("released") }
+	agentDialBound = 50 * time.Millisecond
+	t.Cleanup(func() { statAgent, agentDialBound = old, oldBound })
+	type answer struct{ live, hung bool }
+	done := make(chan answer, 1)
+	go func() {
+		live, hung := dialAgentSocket("/stuck/agent.sock")
+		done <- answer{live, hung}
+	}()
+	select {
+	case a := <-done:
+		if a.live || !a.hung {
+			t.Errorf("live=%v hung=%v, want a stat that never returns to read as hung", a.live, a.hung)
+		}
+	case <-time.After(5 * time.Second):
+		t.Fatal("dialAgentSocket did not return within the bound")
+	}
+	f := newFakeHandOff("/stuck/agent.sock")
+	f.dial = dialAgentSocket
+	if got := f.socket(); got != "" || f.failures != agentMaxFailures {
+		t.Errorf("got %q, failures %d, want the hand-off ended as for a hung dial", got, f.failures)
+	}
+}
+
+func TestDialAgentSocketPlainFileNoDial(t *testing.T) {
+	resetAgentLive(t)
+	n := countDials(t)
+	plain := filepath.Join(t.TempDir(), "a.sock")
+	if err := os.WriteFile(plain, nil, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if live, hung := dialAgentSocket(plain); live || hung || *n != 0 {
+		t.Errorf("plain file: live=%v hung=%v dials=%d, want dead with no dial", live, hung, *n)
+	}
+}
+
+func TestDialAgentSocketLiveAnswerIsCached(t *testing.T) {
+	resetAgentLive(t)
+	n := countDials(t)
+	now := time.Unix(1_000_000, 0)
+	old := agentLiveNow
+	agentLiveNow = func() time.Time { return now }
+	t.Cleanup(func() { agentLiveNow = old })
+	sock, ln := listenAgentSock(t, "c.sock")
+	if live, _ := dialAgentSocket(sock); !live || *n != 1 {
+		t.Fatalf("first: live=%v dials=%d", live, *n)
+	}
+	// The agent dies and its file stays: Go unlinks on Close, so keep the file
+	// by turning the unlink off.
+	ln.(*net.UnixListener).SetUnlinkOnClose(false)
+	_ = ln.Close()
+	now = now.Add(agentLiveTTL - time.Second)
+	if live, _ := dialAgentSocket(sock); !live || *n != 1 {
+		t.Errorf("inside the expiry: live=%v dials=%d, want the cached answer with no dial", live, *n)
+	}
+	now = now.Add(2 * time.Second)
+	if live, hung := dialAgentSocket(sock); live || hung || *n != 2 {
+		t.Errorf("after the expiry: live=%v hung=%v dials=%d, want one more dial, refused", live, hung, *n)
+	}
+}
+
+func TestDialAgentSocketNewSocketIsDialedAgain(t *testing.T) {
+	resetAgentLive(t)
+	n := countDials(t)
+	sock, ln := listenAgentSock(t, "n.sock")
+	if live, _ := dialAgentSocket(sock); !live || *n != 1 {
+		t.Fatalf("first: live=%v dials=%d", live, *n)
+	}
+	_ = ln.Close() // unlinks the file
+	ln2, err := net.Listen("unix", sock)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer ln2.Close()
+	// A reused inode and a coarse mtime could leave the key as it was.
+	later := time.Now().Add(time.Hour)
+	if err := os.Chtimes(sock, later, later); err != nil {
+		t.Fatal(err)
+	}
+	if live, _ := dialAgentSocket(sock); !live || *n != 2 {
+		t.Errorf("new socket: live=%v dials=%d, want a dial", live, *n)
+	}
+}
+
+func TestDialAgentSocketTouchedSocketIsDialedAgain(t *testing.T) {
+	resetAgentLive(t)
+	n := countDials(t)
+	sock, ln := listenAgentSock(t, "t.sock")
+	if live, _ := dialAgentSocket(sock); !live || *n != 1 {
+		t.Fatalf("first: live=%v dials=%d", live, *n)
+	}
+	ln.(*net.UnixListener).SetUnlinkOnClose(false)
+	_ = ln.Close()
+	later := time.Now().Add(time.Hour)
+	if err := os.Chtimes(sock, later, later); err != nil {
+		t.Fatal(err)
+	}
+	if live, _ := dialAgentSocket(sock); live || *n != 2 {
+		t.Errorf("touched dead socket: live=%v dials=%d, want a refused dial", live, *n)
+	}
+}
+
 func TestDialAgentSocket(t *testing.T) {
+	resetAgentLive(t)
 	// A short directory: macOS caps a unix socket path near 104 bytes, and its
 	// t.TempDir paths are long.
 	dir, err := os.MkdirTemp("/tmp", "agsk")
@@ -342,6 +492,9 @@ func TestWaitAtMostTimesOut(t *testing.T) {
 }
 
 func TestDialAgentSocketHung(t *testing.T) {
+	sock, ln := listenAgentSock(t, "h.sock")
+	defer ln.Close()
+	resetAgentLive(t)
 	release := make(chan struct{})
 	defer close(release)
 	old, oldBound := dialUnix, agentDialBound
@@ -351,7 +504,7 @@ func TestDialAgentSocketHung(t *testing.T) {
 	}
 	agentDialBound = 50 * time.Millisecond
 	t.Cleanup(func() { dialUnix, agentDialBound = old, oldBound })
-	if live, hung := dialAgentSocket("/stuck/agent.sock"); live || !hung {
+	if live, hung := dialAgentSocket(sock); live || !hung {
 		t.Errorf("live=%v hung=%v, want a dial that never returns to read as hung", live, hung)
 	}
 }
