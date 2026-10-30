@@ -54,9 +54,9 @@ the daemon walks up from the request folder:
 - A request folder that does not exist is left to git.
 
 The git-directory test has three parts. `objects` and `refs` exist, of any type on
-Windows, searchable on Linux and macOS. A root daemon passes. `refs` 0600 is measured on
-`git.info`, `git.list_branches`, a create and a remove (build `52d82f0a`). The rest
-is claustrum's own. `HEAD`
+Windows, searchable on Linux and macOS. `refs` 0600 is measured on `git.info`,
+`git.list_branches`, a create and a remove (build `52d82f0a`). A root daemon passes,
+and the rest is claustrum's own, not measured. `HEAD`
 passes. A regular `HEAD` passes when its first 255 bytes start with `ref:`,
 then any spaces, tabs, CRs or LFs, then `refs/`. It also passes when it starts
 with 40 hex digits in either case. A symlink `HEAD` passes when its target text
@@ -73,7 +73,7 @@ The daemon then judges the git directory G:
 - G is not an entry and holds a `commondir`: the rules of a stray `commondir`
   judge it. If only the grandparent test fails, a `commondir` that names it gets
   M6 (build `52d82f0a`, Linux, `refs` moved away, the rest
-  claustrum's own).
+  claustrum's own, not measured).
 - G is an entry without `commondir`: M3.
 - G is an entry whose `commondir` is not a regular file of at most 1048576 bytes:
   M4. A symlink is followed only when it is relative and stays inside the entry.
@@ -205,7 +205,7 @@ It has no `errorCode`, and the path is neither quoted nor cut. The work-tree
 refusal is `{"success":false,"error":"failed to remove worktree: cannot determine the
 repository's work tree: <reason>"}`, also with no `errorCode`. With `worktreeRoot`,
 the listing classes below give their own reason. With `worktreeRoot` and no `git`
-on `PATH`, the exec error replaces both texts of the table (class 1 below).
+on `PATH`, the exec error replaces both texts (class 1 below).
 
 ### A folder with no repository
 
