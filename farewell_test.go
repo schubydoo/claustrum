@@ -6,7 +6,9 @@ import (
 	"encoding/json"
 	"fmt"
 	"net"
+	"os"
 	"strings"
+	"sync/atomic"
 	"testing"
 	"time"
 )
@@ -378,7 +380,19 @@ func TestFarewellSweepAndGraceSignalOnce(t *testing.T) {
 	cl := dial(t, sock)
 	cl.call(spawnReqArgs(t, 1, "fo", "sleep", "30"))
 	cl.call(authed(`{"jsonrpc":"2.0","id":2,"method":"process.kill","params":{"id":"fo","signal":"SIGTERM","farewell":"aGkK","graceMs":20000}}`))
-	signals := countSignalsTo(t, s.procs.get("fo"))
+	// The stub counts the signals to the child and delivers none, so the child
+	// lives on and no reap can drop a second signal before it is counted.
+	p := s.procs.get("fo")
+	realSignal := signalGroup
+	var signals atomic.Int32
+	signalGroup = func(g *procGroup, proc *os.Process, signame string) error {
+		if proc == p.cmd.Process {
+			signals.Add(1)
+			return nil
+		}
+		return realSignal(g, proc, signame)
+	}
+	t.Cleanup(func() { signalGroup = realSignal })
 	farewellSweepHook = func(h *farewellHold) {
 		h.timer.Reset(0)
 		// Give the timer up to 300 ms to signal. With the fix it cannot, because
@@ -393,6 +407,8 @@ func TestFarewellSweepAndGraceSignalOnce(t *testing.T) {
 	if n := signals.Load(); n != 1 {
 		t.Errorf("signals to the child = %d, want 1", n)
 	}
+	signalGroup = realSignal
+	_ = realSignal(p.group, p.cmd.Process, "KILL")
 	if kb := exitFrameOfKilledBy(cl.waitExit("fo")); kb != "client" {
 		t.Errorf("exit killedBy = %q, want client", kb)
 	}
