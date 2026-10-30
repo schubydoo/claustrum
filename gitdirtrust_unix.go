@@ -32,8 +32,9 @@ const entryLinkRefusedLate = true
 // gitDirPartUsable is the test of `objects` and `refs` in the git-directory test
 // (isGitDirShape). On Linux and macOS it is search permission. So for a daemon that
 // is not root a `refs` folder of mode 0600 fails, and git.info answers "no
-// repository" there (build 52d82f0a, measured on Linux and macOS). Each other place
-// that uses the test, and `objects` of mode 0600, are claustrum's own, not measured.
+// repository" there (build 52d82f0a, measured on Linux and macOS on git.info,
+// git.list_branches, a create and a remove). Each other place that uses the test,
+// and `objects` of mode 0600, are claustrum's own, not measured.
 func gitDirPartUsable(p string) bool {
 	return unix.Access(p, unix.X_OK) == nil
 }

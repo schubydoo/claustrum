@@ -55,8 +55,9 @@ the daemon walks up from the request folder:
 
 The git-directory test has three parts. `objects` and `refs` exist, of any type on
 Windows, searchable on Linux and macOS. `refs` 0600 is measured on `git.info`,
-`git.list_branches`, a create and a remove (build `52d82f0a`). A root daemon passes,
-and the rest is claustrum's own, not measured. `HEAD`
+`git.list_branches`, a create and a remove (build `52d82f0a`). `objects` as a file is
+measured on `git.info` (Linux, macOS and Windows). A root daemon and the rest are
+claustrum's own, not measured. `HEAD`
 passes. A regular `HEAD` passes when its first 255 bytes start with `ref:`,
 then any spaces, tabs, CRs or LFs, then `refs/`. It also passes when it starts
 with 40 hex digits in either case. A symlink `HEAD` passes when its target text
@@ -70,6 +71,8 @@ The daemon then judges the git directory G:
   is not `.git`, and its grandparent passes the git-directory test. The entries of
   a main repository, a bare repository and a submodule all count.
 - G is not an entry and holds no `commondir`: trusted.
+- An entry with no `commondir` whose repository fails only the search test, or has
+  `objects` or `refs` as a file, gets M3 (claustrum's own, not measured).
 - G is not an entry and holds a `commondir`: the rules of a stray `commondir`
   judge it. If only the grandparent test fails, a `commondir` that names it gets
   M6 (build `52d82f0a`, Linux, `refs` moved away, the rest
