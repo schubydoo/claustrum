@@ -426,3 +426,38 @@ func TestKillAndWaitWithoutFarewellHasNoEnd(t *testing.T) {
 		t.Errorf("reply = %s, want %s", got, want)
 	}
 }
+
+// fillStdinQueue fills the stdin queue of id to its cap. The child does not read
+// stdin, so the writer blocks on the first chunk and the rest stays queued.
+func fillStdinQueue(s *server, id string) {
+	p := s.procs.get(id)
+	p.stdinMu.Lock()
+	p.stdinQ = append(p.stdinQ, make([]byte, 1<<20), make([]byte, stdinQueueCap))
+	p.stdinQBytes += 1<<20 + stdinQueueCap
+	p.stdinCond.Broadcast()
+	p.stdinMu.Unlock()
+}
+
+// A full stdin queue takes no farewell: the reply is unsent and the signal goes
+// at once, on both methods (claustrum's own, not measured).
+func TestFarewellFullQueueIsUnsent(t *testing.T) {
+	s, sock := newRunningServer(t)
+	cl := dial(t, sock)
+	cl.call(spawnReqArgs(t, 1, "fq1", "sleep", "30"))
+	fillStdinQueue(s, "fq1")
+	if got, want := string(cl.call(authed(`{"jsonrpc":"2.0","id":2,"method":"process.kill","params":{"id":"fq1","signal":"SIGTERM","farewell":"aGkK","graceMs":20000}}`))), replyLine(2, `{"success":true,"farewellEnd":"unsent"}`); got != want {
+		t.Errorf("kill reply = %s, want %s", got, want)
+	}
+	if kb := exitFrameOfKilledBy(cl.waitExit("fq1")); kb != "client" {
+		t.Errorf("exit killedBy = %q, want client", kb)
+	}
+	cl.call(spawnReqArgs(t, 3, "fq2", "sleep", "30"))
+	fillStdinQueue(s, "fq2")
+	start := time.Now()
+	if got, want := string(cl.call(authed(`{"jsonrpc":"2.0","id":4,"method":"process.killAndWait","params":{"id":"fq2","signal":"SIGTERM","farewell":"aGkK","graceMs":20000}}`))), replyLine(4, `{"found":true,"died":true,"farewellEnd":"unsent"}`); got != want {
+		t.Errorf("killAndWait reply = %s, want %s", got, want)
+	}
+	if d := time.Since(start); d > 10*time.Second {
+		t.Errorf("killAndWait took %v, want no wait of the grace", d)
+	}
+}

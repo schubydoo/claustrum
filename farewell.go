@@ -160,8 +160,15 @@ func (m *procManager) killWithFarewell(id, signal string, ask farewellAsk) strin
 		return farewellUnsent
 	}
 	// Outside p.mu: applyStdin takes stdinMu before p.mu. The farewell does not
-	// move the stdin offset of the record (claustrum's own, not measured).
-	p.enqueueStdin(ask.data)
+	// move the stdin offset of the record (claustrum's own, not measured). A full
+	// stdin queue takes no farewell, so the signal goes at once and the reply is
+	// unsent (claustrum's own, not measured).
+	if p.enqueueStdin(ask.data) {
+		if p.dropFarewell(h) {
+			p.signalIfLive(signal, "client")
+		}
+		return farewellUnsent
+	}
 	p.mu.Lock()
 	if p.farewell == h {
 		h.timer = time.AfterFunc(ask.grace, func() {
@@ -198,7 +205,16 @@ func (m *procManager) killAndWaitFarewell(id, signal string, grace time.Duration
 		p.waiting--
 		p.mu.Unlock()
 	}()
-	p.enqueueStdin(ask.data)
+	if p.enqueueStdin(ask.data) {
+		// A full stdin queue takes no farewell: the normal kill path runs at once
+		// (claustrum's own, not measured).
+		if !p.dropFarewell(h) {
+			return killAndWaitResult{Found: true, Died: true, FarewellEnd: farewellCut}
+		}
+		res.Found, res.Died, res.AlreadyExited, res.Escalated = m.signalAndWait(p, signal, grace, escalate)
+		res.FarewellEnd = farewellUnsent
+		return res
+	}
 	t := time.NewTimer(ask.grace)
 	defer t.Stop()
 	select {

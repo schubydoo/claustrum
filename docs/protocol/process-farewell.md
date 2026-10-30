@@ -48,6 +48,7 @@ An example is `{"found":true,"died":true,"escalated":true,"farewellEnd":"expired
 Not measured, claustrum's own:
 
 - Windows, and `unsent` for a second farewell on a pending one.
+- `unsent` when the stdin queue is full: the signal goes at once.
 - `invalid` on `process.killAndWait`: the kill goes at once. `invalid` also for an unknown `id` on `process.kill`.
 - `cut` for a child that outlives the signal of the cut.
 - The log line of a failed rule on `process.killAndWait`.
