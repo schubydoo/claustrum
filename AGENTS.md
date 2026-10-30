@@ -85,8 +85,8 @@ Every OS serves the same JSON-RPC methods.
 - Keep host-specific / reverse-engineering working notes out of the repo.
   `scratch/` is gitignored on purpose.
 - Each fact of the documentation has one home. Link to it and do not copy the text
-  ([`docs/STYLE.md`](docs/STYLE.md)). `AGENTS.md` keeps the safety rules of Part A, because
-  an agent must hold them before it touches code. The rule is for the documents under `docs/`.
+  ([`docs/STYLE.md`](docs/STYLE.md)). The rule is for the documents under `docs/`. `AGENTS.md`
+  keeps the safety rules of Part A, because an agent must hold them before it touches code.
 
 ## Always do
 
@@ -316,7 +316,7 @@ caller-supplied and never `~`-expanded, so it needs no `wipesHomeDir` guard.
 ### The `git-shadow` folder
 
 The folder `git-shadow` of the settings copy is a further recursive delete site, and it is
-socket-derived like `plugins.prune`. Do not build a name below it from a request value. The name below the root is one that
+socket-derived like `plugins.prune`. Do not build a name below it from a request value. The name below `git-shadow` is one that
 this daemon made, one that a directory read of `git-shadow` or of the folder of the daemon
 returned, or a fixed name in `.probe`. No part of the path comes from an RPC value or from
 an operator. Each
