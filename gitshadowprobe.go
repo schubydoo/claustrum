@@ -55,12 +55,11 @@ var (
 	// s3p2b-edges-macos and of s3p2b-edges-windows). The split into the two
 	// times is fitted, as for a call of the start test.
 	probeCallBound = 30 * time.Second
-	// probeSecondBound ends the second run of the call (secondProbe) on
-	// Windows, counted from its own start. c8e2f083 killed a second run that
-	// did not end 30 s after its start (measured on Linux and Windows). The wait
-	// for its pipes after the kill is shadowCallDrain. On Linux and macOS the
-	// second and the third run end at probeCallBound after the start of the
-	// first call (probeConfigFreeRun).
+	// probeSecondBound ends the second run of the call (secondProbe), counted
+	// from its own start. c8e2f083 killed a second run that did not end 30 s
+	// after its start (measured on Linux and Windows). The wait for its pipes
+	// after the kill is shadowCallDrain. On Linux and macOS the third run ends
+	// at the same time (configFreeProbe, claustrum's own, not measured).
 	probeSecondBound = 30 * time.Second
 	// probeClock is the clock of the kept answer.
 	probeClock = time.Now
@@ -427,14 +426,13 @@ func (h *shadowHost) askGit(t gitDirTrust, dir string) repoAnswer {
 	env := probeEnv(folder, root)
 	found, shown := "", ""
 	for try := 0; try < 2; try++ {
-		deadline := time.Now().Add(probeCallBound)
 		r := exitedInTime(boundedGit(probeCallBound, root, env, probeArgs()...))
 		if r.ended {
 			return probeTimeoutAnswer(root)
 		}
 		if r.err != nil {
 			if exitedWith128(r) {
-				return secondProbe(folder, root, env, r, probeRuns{deadline: deadline, inGitDir: inGitDir})
+				return secondProbe(folder, root, env, r, inGitDir)
 			}
 			if whole := cannotRunText(); whole != "" {
 				return repoAnswer{text: whole}
@@ -448,13 +446,14 @@ func (h *shadowHost) askGit(t gitDirTrust, dir string) repoAnswer {
 		found = filepath.Clean(found)
 		shown = printedProbePath(r.out, found, string(filepath.Separator))
 		if found == filepath.Clean(want) || sameProbeFolder(found, want) {
-			// A git directory that fails the git-directory test now is "no
-			// repository". 52d82f0a answers so after `refs` got mode 0600
-			// right after a good call, with no later git call (measured on
-			// Linux: git.info, git.status of a linked worktree, a create). The
-			// test of the common directory at this place is claustrum's own,
-			// not measured.
-			if !isGitDirShape(t.pinCommonDir) {
+			// On Linux and macOS a git directory that fails the git-directory
+			// test now is "no repository". 52d82f0a answers so after `refs` got
+			// mode 0600 right after a good call, with no later git call
+			// (measured on Linux: git.info, git.status of a linked worktree, a
+			// create). macOS, and the test of the common directory at this
+			// place, are claustrum's own, not measured. Windows keeps the rule
+			// of c8e2f083.
+			if probeConfigFreeRun && !isGitDirShape(t.pinCommonDir) {
 				return repoAnswer{noRepo: true}
 			}
 			h.keepProbe(root)
@@ -468,14 +467,6 @@ func (h *shadowHost) askGit(t gitDirTrust, dir string) repoAnswer {
 // its time limit stopped.
 func probeTimeoutAnswer(root string) repoAnswer {
 	return repoAnswer{text: fmt.Sprintf("git could not check this repository on the remote machine: it did not finish within 30 seconds in %q; try again", root)}
-}
-
-// probeRuns is what the later runs of the call take from the first one:
-// deadline is probeCallBound after the start of the first call, and inGitDir
-// is true when the call runs in the git directory itself.
-type probeRuns struct {
-	deadline time.Time
-	inGitDir bool
 }
 
 // exitedWith128 reports whether the call ended by itself with exit code 128.
@@ -500,27 +491,24 @@ func exitedWith128(r shadowRun) bool {
 // the first call, after one `git version` call. On Windows the folder `.probe`
 // was the working folder of the second run.
 //
-// 52d82f0a has that working folder on Linux too. Not measured: the working
-// folder on macOS, a second run that printed text and exited non-zero, and the place
-// of GIT_DIR in the environment. Not measured either: whether only the process
+// 52d82f0a has that working folder on Linux and macOS too. Not measured: a
+// second run that printed text and exited 0, a second run that exited
+// non-zero, and the place of GIT_DIR in the environment. Not measured either: whether only the process
 // is killed and not its group. exec kills the process alone. A failed `git
 // version` call answers its own text, as after a failed first call
 // (cannotRunText, the rule of 5fd08069).
 //
 // On Linux and macOS a second run that exits 0 is followed by the third run
-// of 52d82f0a (configFreeProbe), and the second run ends at the deadline of
-// runs. A second run that the deadline stopped answers as one that did not
-// end (claustrum's own, not measured on 52d82f0a).
-func secondProbe(folder, root string, env []string, first shadowRun, runs probeRuns) repoAnswer {
+// of 52d82f0a (configFreeProbe), unless inGitDir: the call runs in the git
+// directory itself. The third run ends probeSecondBound after the start of
+// the second run (claustrum's own, not measured).
+func secondProbe(folder, root string, env []string, first shadowRun, inGitDir bool) repoAnswer {
 	probe := filepath.Join(folder, shadowProbeName)
-	bound := probeSecondBound
-	if probeConfigFreeRun {
-		bound = time.Until(runs.deadline)
-	}
-	second := exitedInTime(boundedGit(bound, probe, slices.Concat(env, []string{"GIT_DIR=" + probe}), probeArgs()...))
+	deadline := time.Now().Add(probeSecondBound)
+	second := exitedInTime(boundedGit(probeSecondBound, probe, slices.Concat(env, []string{"GIT_DIR=" + probe}), probeArgs()...))
 	if second.err == nil {
-		if probeConfigFreeRun && !runs.inGitDir {
-			return configFreeProbe(root, env, first, runs.deadline)
+		if probeConfigFreeRun && !inGitDir {
+			return configFreeProbe(root, env, first, deadline)
 		}
 		return repoAnswer{noRepo: true}
 	}
@@ -546,15 +534,18 @@ var configFreeNames = []string{"GIT_CONFIG_COUNT", "GIT_CONFIG_GLOBAL", "GIT_CON
 // with the text of the first call and `; if that names a git setting or file,
 // fix it, then try again`, with no `git version` call. With the second run and
 // the third run held 20 s each, the reply came 30.3 s after the request, with
-// the error of a call that did not finish. The held process of the third run
-// was gone (Linux). A bare repository with safe.bareRepository=explicit got no
-// third run, and the answer was "no repository" (Linux). claustrum skips the
-// third run when the call runs in the git directory itself (claustrum's own,
-// fitted to that row).
+// the error of a call that did not finish (Linux). A bare repository with
+// safe.bareRepository=explicit got no third run (Linux). claustrum runs no
+// third run when the call runs in the git directory itself, and it counts the
+// limit from the start of the second run. Both are claustrum's own, fitted to
+// those rows and not measured.
 //
-// Not measured: a third run that exits non-zero, which answers "no
-// repository" as the second run did on c8e2f083, the place of the three
-// variables in the environment, and Windows.
+// The stop at deadline is that of exec.CommandContext: it kills the git
+// process alone. The held process of the measured row was the git process
+// itself, so the stop of a child of the third run is not measured. Not
+// measured either: a third run that exits non-zero, which answers "no
+// repository", the place of the three variables in the environment, and
+// Windows.
 func configFreeProbe(root string, env []string, first shadowRun, deadline time.Time) repoAnswer {
 	env = slices.DeleteFunc(slices.Clone(env), func(kv string) bool { return slices.Contains(configFreeNames, envName(kv)) })
 	env = append(env, "GIT_CONFIG_COUNT=0", "GIT_CONFIG_GLOBAL=/dev/null", "GIT_CONFIG_NOSYSTEM=1")

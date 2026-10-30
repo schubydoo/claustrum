@@ -98,29 +98,36 @@ func TestThirdProbeAfterABadUserConfig(t *testing.T) {
 	}
 }
 
-// TestThirdProbeEndsAtTheBoundOfTheFirstCall pins the time limit of the third
-// run, with a lowered bound. On 52d82f0a, with the second and the third run
-// held 20 s each, the reply came 30.3 s after the request with the error of a
-// call that did not finish, and the third run ended before its hold (measured
-// on Linux). So the third run ends at the bound counted from the start of the
-// first call. Mutation: give the third run probeCallBound of its own (the
-// reply comes after the bound plus the hold of the second run).
-func TestThirdProbeEndsAtTheBoundOfTheFirstCall(t *testing.T) {
-	f := newSeededShadowFixture(t)
-	badIncludeConfig(t, f.repo)
-	const bound, hold = 3 * time.Second, 2 * time.Second
-	lowerProbeBound(t, bound, 100*time.Millisecond)
-	// The second run waits for hold, then the real git answers it.
-	slowGit(t, "rev-parse,--git-dir", "pre", hold, "", "")
-	t.Setenv("CLAUSTRUM_GITSTUB_ENVEND", "GIT_DIR=/"+shadowProbeName)
-	// The third run waits 20 s.
-	t.Setenv("CLAUSTRUM_GITSTUB_MATCH2", "rev-parse,--git-dir")
-	t.Setenv("CLAUSTRUM_GITSTUB_ENVEND2", "GIT_CONFIG_GLOBAL=/dev/null")
-	t.Setenv("CLAUSTRUM_GITSTUB_MS2", strconv.FormatInt((20*time.Second).Milliseconds(), 10))
-	timeLog := filepath.Join(t.TempDir(), "times")
+// probeRunStart is the start of call n (from 1) about the repository in the
+// time log of the git stub. The three runs have one argv.
+func probeRunStart(t *testing.T, timeLog string, n int) time.Time {
+	t.Helper()
+	for _, line := range strings.Split(mustRead(t, timeLog), "\n") {
+		words := strings.Split(line, "\x1f")
+		if len(words) > 3 && words[0] == "start" && slices.Contains(words, "core.fsmonitor=") {
+			if n--; n > 0 {
+				continue
+			}
+			ns, err := strconv.ParseInt(words[1], 10, 64)
+			if err != nil {
+				t.Fatal(err)
+			}
+			return time.Unix(0, ns)
+		}
+	}
+	t.Fatalf("no start of call %d about the repository in the time log", n)
+	return time.Time{}
+}
+
+// stoppedThirdRun runs git.info on the repository of f and checks the reply of
+// a third run that the limit stopped. It returns the time of the reply and the
+// time log of the stub.
+func stoppedThirdRun(t *testing.T, f shadowFixture) (replied time.Time, timeLog string) {
+	t.Helper()
+	timeLog = filepath.Join(t.TempDir(), "times")
 	t.Setenv("CLAUSTRUM_GITSTUB_TIMELOG", timeLog)
 	raw, calls := f.info(t, f.repo, nil)
-	replied := time.Now()
+	replied = time.Now()
 	text := fmt.Sprintf("git could not check this repository on the remote machine: it did not finish within 30 seconds in %q; try again", f.repo)
 	if want := probeErrorShapes(t, f, text)[0]; raw != want {
 		t.Errorf("reply = %s\n  want %s", raw, want)
@@ -128,33 +135,77 @@ func TestThirdProbeEndsAtTheBoundOfTheFirstCall(t *testing.T) {
 	if _, ok := thirdProbeCall(calls); !ok || len(probeCalls(calls)) != 3 {
 		t.Fatalf("%d calls about the repository, want three with a third run", len(probeCalls(calls)))
 	}
-	var start time.Time
-	for _, line := range strings.Split(mustRead(t, timeLog), "\n") {
-		words := strings.Split(line, "\x1f")
-		if len(words) > 3 && words[0] == "start" && slices.Contains(words, "core.fsmonitor=") {
-			ns, err := strconv.ParseInt(words[1], 10, 64)
-			if err != nil {
-				t.Fatal(err)
-			}
-			start = time.Unix(0, ns)
-			break
-		}
-	}
-	if start.IsZero() {
-		t.Fatal("no start of the first call in the time log")
-	}
+	return replied, timeLog
+}
+
+// TestThirdProbeEndsAtTheBoundOfTheSecondRun pins the time limit of the third
+// run, with a lowered bound. On 52d82f0a, with the second and the third run
+// held 20 s each, the reply came 30.3 s after the request with the error of a
+// call that did not finish, and the third run ended before its hold (measured
+// on Linux). claustrum ends the third run at the bound of the second run,
+// counted from the start of the second run (claustrum's own, not measured).
+// Mutation: give the third run a bound of its own (the reply comes after the
+// bound plus the hold of the second run).
+func TestThirdProbeEndsAtTheBoundOfTheSecondRun(t *testing.T) {
+	f := newSeededShadowFixture(t)
+	badIncludeConfig(t, f.repo)
+	const bound, hold = 3 * time.Second, 2 * time.Second
+	lowerSecondProbeBound(t, bound, 100*time.Millisecond)
+	// The second run waits for hold, then the real git answers it.
+	slowGit(t, "rev-parse,--git-dir", "pre", hold, "", "")
+	t.Setenv("CLAUSTRUM_GITSTUB_ENVEND", "GIT_DIR=/"+shadowProbeName)
+	// The third run waits 20 s.
+	t.Setenv("CLAUSTRUM_GITSTUB_MATCH2", "rev-parse,--git-dir")
+	t.Setenv("CLAUSTRUM_GITSTUB_ENVEND2", "GIT_CONFIG_GLOBAL=/dev/null")
+	t.Setenv("CLAUSTRUM_GITSTUB_MS2", strconv.FormatInt((20*time.Second).Milliseconds(), 10))
+	replied, timeLog := stoppedThirdRun(t, f)
 	// The stub logs its start a little after the daemon started it.
-	if took := replied.Sub(start); took < bound-time.Second/2 || took > bound+hold*6/10 {
-		t.Errorf("the reply came %v after the start of the first call, want about the bound %v and less than %v", took, bound, bound+hold*6/10)
+	if took := replied.Sub(probeRunStart(t, timeLog, 2)); took < bound-time.Second/2 || took > bound+hold*6/10 {
+		t.Errorf("the reply came %v after the start of the second run, want about the bound %v and less than %v", took, bound, bound+hold*6/10)
+	}
+}
+
+// TestThirdProbeBoundAfterASlowFirstCall pins the start of that limit: the
+// start of the second run, not of the first call (claustrum's own, not
+// measured). The first call takes 1.5 s and exits 128, the second run works,
+// and the third run waits 20 s. With a bound of 2 s the reply comes about 2 s
+// after the start of the second run. Mutation: count the limit from the start
+// of the first call (the reply comes about 0.5 s after the start of the second
+// run).
+func TestThirdProbeBoundAfterASlowFirstCall(t *testing.T) {
+	f := newSeededShadowFixture(t)
+	dir := resolveTestRoot(t, t.TempDir())
+	global := filepath.Join(dir, "gitconfig")
+	writeFile(t, global, "", 0o644)
+	t.Setenv("GIT_CONFIG_GLOBAL", global)
+	const bound, slow = 2 * time.Second, 1500 * time.Millisecond
+	lowerSecondProbeBound(t, bound, 100*time.Millisecond)
+	// The first call: in the root, with the config of the test. It waits for
+	// slow and exits 128.
+	t.Setenv("CLAUSTRUM_GITSTUB_MATCH2", "rev-parse,--git-dir")
+	t.Setenv("CLAUSTRUM_GITSTUB_DIR2", f.repo)
+	t.Setenv("CLAUSTRUM_GITSTUB_ENVEND2", "GIT_CONFIG_GLOBAL="+global)
+	t.Setenv("CLAUSTRUM_GITSTUB_MS2", strconv.FormatInt(slow.Milliseconds(), 10))
+	t.Setenv("CLAUSTRUM_GITSTUB_EXIT2", "128")
+	t.Setenv("CLAUSTRUM_GITSTUB_STDERR2", "fatal: slow first call\n")
+	// The third run waits 20 s. The second run goes to the real git.
+	slowGit(t, "rev-parse,--git-dir", "pre", 20*time.Second, "", "")
+	t.Setenv("CLAUSTRUM_GITSTUB_ENVEND", "GIT_CONFIG_GLOBAL=/dev/null")
+	replied, timeLog := stoppedThirdRun(t, f)
+	if first, second := probeRunStart(t, timeLog, 1), probeRunStart(t, timeLog, 2); second.Sub(first) < slow {
+		t.Fatalf("the second run started %v after the first call, want at least %v", second.Sub(first), slow)
+	}
+	if took := replied.Sub(probeRunStart(t, timeLog, 2)); took < bound-time.Second/2 || took > bound+time.Second {
+		t.Errorf("the reply came %v after the start of the second run, want about the bound %v", took, bound)
 	}
 }
 
 // TestNoThirdProbeInABareRepository pins a bare repository with
 // safe.bareRepository=explicit: the first call exits 128, the second run exits
-// 0, no third run follows, and git.info answers "no repository" (52d82f0a,
-// measured on Linux). claustrum skips the third run when the call runs in the
-// git directory itself. Mutation: run the third run there too (it exits 0
-// without the setting: the reply is the error).
+// 0, and no third run follows (52d82f0a, measured on Linux). claustrum runs no
+// third run when the call runs in the git directory itself, and git.info then
+// answers "no repository" (claustrum's own, not measured). Mutation: run the
+// third run there too (it exits 0 without the setting: the reply is the error).
 func TestNoThirdProbeInABareRepository(t *testing.T) {
 	f := newSeededShadowFixture(t)
 	bare := filepath.Join(filepath.Dir(f.repo), "bare.git")
@@ -179,6 +230,7 @@ func TestNoThirdProbeInABareRepository(t *testing.T) {
 // git-directory test after a good answer (the replies stay, but later git calls
 // run).
 func TestProbeAnswerThenRefsNotSearchable(t *testing.T) {
+	skipIfRoot(t)
 	for i, method := range []string{"git.info", "git.status", "", "git.worktree_create"} {
 		if method == "" {
 			continue

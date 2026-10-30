@@ -46,7 +46,8 @@ const statusFollowsPrintedGitDir = false
 // probeConfigFreeRun is true on Linux and macOS. After a first call about the
 // repository that exited 128 and a second run that exited 0, the call runs a
 // third time with no config of the user or of the system (configFreeProbe).
-// 52d82f0a does so on Linux and macOS VMs.
+// 52d82f0a does so on Linux and macOS VMs. It also turns on the
+// git-directory test after a good answer (askGit).
 const probeConfigFreeRun = true
 
 // makeRequestDir makes the short-lived folder name of a request (mode 0700) in

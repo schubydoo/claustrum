@@ -11,16 +11,12 @@ import (
 )
 
 // lowerSecondProbeBound lowers the bound of the second run of the call about
-// the repository and the wait for its pipes. On Linux and macOS the second run
-// ends at the bound of the first call, so that bound gets the value too.
+// the repository and the wait for its pipes.
 func lowerSecondProbeBound(t *testing.T, bound, drain time.Duration) {
 	t.Helper()
-	oldBound, oldCall, oldDrain := probeSecondBound, probeCallBound, shadowCallDrain
+	oldBound, oldDrain := probeSecondBound, shadowCallDrain
 	probeSecondBound, shadowCallDrain = bound, drain
-	if probeConfigFreeRun {
-		probeCallBound = bound
-	}
-	t.Cleanup(func() { probeSecondBound, probeCallBound, shadowCallDrain = oldBound, oldCall, oldDrain })
+	t.Cleanup(func() { probeSecondBound, shadowCallDrain = oldBound, oldDrain })
 }
 
 // exit128Runs is the count of calls about the repository after a first call
@@ -122,13 +118,11 @@ func TestSecondProbeAfterExit128(t *testing.T) {
 // TestSecondProbeBound pins the kill of a second run that does not end, with a
 // lowered bound. On c8e2f083 the reply came about 30.2 s after the request,
 // with the error and the text of the first call (measured on Linux and
-// Windows). On Linux and macOS the bound counts from the start of the first
-// call, and the reply keeps that text (claustrum's own, not measured on
-// 52d82f0a). Mutation: run the second run with no bound (the reply waits for
-// the hold).
+// Windows). Mutation: run the second run with probeCallBound in place of
+// probeSecondBound (the reply waits for the hold).
 func TestSecondProbeBound(t *testing.T) {
 	f := newSeededShadowFixture(t)
-	lowerSecondProbeBound(t, 2*time.Second, 100*time.Millisecond)
+	lowerSecondProbeBound(t, 300*time.Millisecond, 100*time.Millisecond)
 	answerProbe(t, 128, "", "fatal: first text\n")
 	t.Setenv("CLAUSTRUM_GITSTUB_MATCH2", "rev-parse,--git-dir")
 	t.Setenv("CLAUSTRUM_GITSTUB_ENVEND2", "GIT_DIR="+string(os.PathSeparator)+shadowProbeName)
@@ -143,7 +137,7 @@ func TestSecondProbeBound(t *testing.T) {
 	if _, ok := secondProbeCall(calls); !ok {
 		t.Error("no second run")
 	}
-	if took < 2*time.Second || took > 10*time.Second {
+	if took < 300*time.Millisecond || took > 10*time.Second {
 		t.Errorf("the reply came after %v, want the lowered bound and not the hold of 20 s", took)
 	}
 }
