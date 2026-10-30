@@ -27,13 +27,11 @@ const (
 	wantM5          = "config-defined hooks could not be pinned off; git not run: the worktree entry this folder's .git names no longer exists"
 )
 
-// wantTR is the refusal of a stray commondir whose content v (trailing CR and LF
-// removed) is not "." or "./" (89cb6289, rows T03 and T04). v must be valid UTF-8.
-func wantTR(cd, v string) string {
-	if r := []rune(v); len(r) > 60 {
-		v = string(r[:60])
-	}
-	return wantTrustPrefix + fmt.Sprintf("%q", cd) + " reads " + fmt.Sprintf("%q", v) + wantTRTail
+// wantTR is the refusal of a stray commondir whose content (trailing CR and LF
+// removed) is not "." or "./". The text does not quote the content (683cc6a9), so
+// the second argument, the content, is unused.
+func wantTR(cd, _ string) string {
+	return wantTrustPrefix + fmt.Sprintf("%q", cd) + ` holds something other than "." or "./"` + wantTRTail
 }
 
 // wantTP is the refusal of a stray commondir that is not a small plain file (rows T05
@@ -951,7 +949,7 @@ func TestGitDirTrustOperandIsCutTo300Runes(t *testing.T) {
 				t.Fatalf("fixture path %d runes, want > 300", utf8.RuneCountInString(cd))
 			}
 			cut := string([]rune(cd)[:300])
-			wantRPCError(t, "info(T)", info(t, T), wantTrustPrefix+fmt.Sprintf("%q", cut)+` reads "x"`+wantTRTail)
+			wantRPCError(t, "info(T)", info(t, T), wantTrustPrefix+fmt.Sprintf("%q", cut)+` holds something other than "." or "./"`+wantTRTail)
 		})
 	}
 }

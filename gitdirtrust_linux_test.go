@@ -22,6 +22,6 @@ func TestGitDirTrustInvalidUTF8Operand(t *testing.T) {
 	if err := os.Symlink(T, alias); err != nil {
 		t.Fatal(err)
 	}
-	want := wantTrustPrefix + `"` + base + `/bad\xffname/T/.git/commondir" reads "x"` + wantTRTail
+	want := wantTrustPrefix + `"` + base + `/bad\xffname/T/.git/commondir" holds something other than "." or "./"` + wantTRTail
 	wantRPCError(t, "info(L)", info(t, alias), want)
 }

@@ -32,7 +32,7 @@ func TestStrayCommondirNotAPlainFileUnix(t *testing.T) {
 		writeFile(t, out, ".", 0o644)
 		cd := filepath.Join(r.T, ".git", "commondir")
 		symlink(t, out, cd)
-		wantRPCError(t, "info(T)", info(t, r.T), wantTP(cd, "openat commondir: path escapes from parent"))
+		wantRPCError(t, "info(T)", info(t, r.T), wantTP(cd, "path escapes from parent"))
 	})
 	for _, tc := range []struct{ name, target string }{
 		{"T07d absolute dangling symlink", "/nonexistent-claustrum-t07d"},
@@ -42,7 +42,7 @@ func TestStrayCommondirNotAPlainFileUnix(t *testing.T) {
 			r := newTrustRepo(t)
 			cd := filepath.Join(r.T, ".git", "commondir")
 			symlink(t, tc.target, cd)
-			want := wantTP(cd, "openat commondir: path escapes from parent")
+			want := wantTP(cd, "path escapes from parent")
 			wantRPCError(t, "info(T)", info(t, r.T), want)
 			wantCreateRefused(t, r.T, r.T, want)
 		})
@@ -55,7 +55,7 @@ func TestStrayCommondirNotAPlainFileUnix(t *testing.T) {
 		if err := os.Chmod(cd, 0); err != nil {
 			t.Fatal(err)
 		}
-		wantRPCError(t, "info(T)", info(t, r.T), wantTP(cd, "openat commondir: permission denied"))
+		wantRPCError(t, "info(T)", info(t, r.T), wantTP(cd, "permission denied"))
 	})
 }
 
@@ -137,5 +137,25 @@ func TestStrayCommondirDanglingSymlinkRemoveInRepository(t *testing.T) {
 				t.Errorf("the branch file %s is gone", branch)
 			}
 		})
+	}
+}
+
+// A git directory that the daemon cannot open (mode 0100 keeps stat and the Lstat of
+// `commondir` working, but the open of the directory fails) gives S2 without the
+// operation and path of the OS error (claustrum's own, not measured). Mutation: read
+// the error from openErr instead of osErr in judgeStrayCommondir.
+func TestStrayCommondirGitDirNotOpenable(t *testing.T) {
+	skipIfRoot(t)
+	r := newTrustRepo(t)
+	g := filepath.Join(r.T, ".git")
+	cd := filepath.Join(g, "commondir")
+	writeFile(t, cd, ".", 0o644)
+	if err := os.Chmod(g, 0o100); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = os.Chmod(g, 0o755) })
+	got := gitDirTrustFor(r.T)
+	if got.verdict != gitDirRefused || got.refusal != wantTP(cd, "permission denied") {
+		t.Errorf("verdict %v, refusal %q", got.verdict, got.refusal)
 	}
 }

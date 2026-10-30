@@ -25,17 +25,16 @@ the daemon walks up from the request folder:
   junction resolves, and the pin is `<R>\.git`. A junction outside any repository
   gives "no repository", and each git call carries `GIT_DIR=NUL`.
 - On Windows the resolve of a folder path can fail, for example at a missing name
-  before `..`. The walk then starts at the spelled path too (from
-  the code). Only `git.info` reaches that start (from the code).
-  `git.list_branches` and `git.status` resolve the path first, and so do
-  `git.worktree_create` and `git.worktree_remove` for a `baseRepo` that exists
-  (from the code). If that resolve fails, they answer there (from the code).
+  before `..`. The walk then starts at the spelled path. Only `git.info`
+  reaches that start. `git.list_branches` and `git.status` resolve the path first, and
+  so do the create and the remove for an existing `baseRepo`. If that resolve fails,
+  they answer there (all from the code).
 - On Windows a refusal of a config on `git.info` follows the spelled start too. In
   the state `shadow` without `"shadowDirOff":true`, it is the class 1 text of
-  [Repository config refusals](git-rules-config.md#repository-config-refusals) (from the code). A
+  [Repository config refusals](git-rules-config.md#repository-config-refusals). A
   config that git refuses and the daemon's read accepts, such as an `include.path`
-  with no value, gets the hooks refusal (from the code). So does any refused
-  config outside that state (from the code).
+  with no value, gets the hooks refusal. So does any refused config outside that
+  state (all from the code).
 - `process.spawn` does not use the walk.
 - A `.git` folder that passes the git-directory test is the git directory.
 - A `.git` folder that fails the test ends the walk. If it holds a `commondir`
@@ -92,8 +91,7 @@ The daemon then judges the git directory G:
   Any other value gets M2. That covers another repository, a missing path and
   an empty file.
 - A trusted git directory runs git with `GIT_COMMON_DIR` pinned to the repository
-  git directory. For an entry that is the grandparent. For any other git
-  directory it is that directory itself.
+  git directory: the grandparent for an entry, else G itself.
 - The pin also keeps git from walking past a trusted nested `.git`. On Windows a
   nested `.git` whose `objects` is a regular file answers for itself.
 - An entry folder that is gone means "no repository". On Linux and macOS an entry
@@ -101,9 +99,8 @@ The daemon then judges the git directory G:
 - A `.git` file that names a plain folder, another repository's git directory or
   the main git directory is not refused. Git answers for itself there.
 - On Windows the daemon does not expand 8.3 short names in G. A `.git` file or a
-  daemon `GIT_DIR` can name an entry as `…\GIT~1\WORKTR~1\<name>`. That G is not
-  an entry, so its `commondir` gets S1 for the content `../..` (the S1 text there
-  is not measured).
+  daemon `GIT_DIR` can name an entry as `…\GIT~1\WORKTR~1\<name>`. That G is no
+  entry, so its `commondir` gets S1 for `../..` (not measured).
 - On Windows the daemon resolves G when a component of G is a symlink. Else it
   keeps G as spelled, also with a junction before its last component. For a
   junction `<KP>` to a repository, the pin is `<KP>\.git`.
@@ -116,22 +113,21 @@ these steps:
 
 1. A `commondir` symlink that leaves G is not followed. A dangling symlink whose
    target is relative and stays in G counts as none when G passes the
-   git-directory test. G is then trusted, and git itself fails to read the file.
-   The method answers what git's failure gives: `git.info` with no `branch`,
+   git-directory test. G is then trusted, and the method answers what git's
+   failure gives: `git.info` with no `branch`,
    `git.list_branches` `-32603 "exit status 128"`, and the failed add on
    `git.worktree_create`. With `worktreeRoot`, `git.worktree_remove` answers
-   `cannot list the repository's worktrees: exit status 128` and deletes nothing
-   (measured on Linux). Without `worktreeRoot` it answers
-   `{"success":true,"branchKept":true}`. It deletes the worktree folder and its
-   entry, and the branch stays (measured on Linux). If the folder is gone before
-   the request, it deletes the entry (measured on Linux). When G fails the
+   `cannot list the repository's worktrees: exit status 128` and deletes nothing.
+   Without `worktreeRoot` it answers `{"success":true,"branchKept":true}`. It
+   deletes the worktree folder and its entry, and the branch stays. If the folder
+   is gone before the request, it deletes the entry (all measured on Linux). When G fails the
    git-directory test, that symlink gets S3 (measured on Linux).
 2. A `commondir` that is not a regular file of at most 1048576 bytes gets S2 with
-   its reason. A relative symlink that stays in G is followed. A dangling symlink
-   that is absolute, or that leaves G, gets S2 with `openat commondir: path
-   escapes from parent` (measured on Linux).
+   its reason. A relative symlink inside G is followed. A dangling symlink
+   that is absolute, or that leaves G, gets S2 with `path escapes
+   from parent` (`683cc6a9`, measured on Linux for an absolute target).
 3. The content with every trailing CR and LF removed, up to a NUL, is exactly `.`
-   or `./` (the NUL is claustrum's own, not measured). A space or a tab is not trimmed. Any other content gets S1, which quotes it. So
+   or `./` (the NUL is claustrum's own, not measured). A space or a tab is not trimmed. Any other content gets S1, which does not quote it. So
    ` .`, `. `, `.<TAB>`, `./x`, `..`, an empty file, `.\` and the absolute path of
    G itself are all refused.
 4. G then passes the git-directory test, or it gets S3. When both S2 and S3 apply,
@@ -164,11 +160,10 @@ The daemon's own environment changes the check as follows:
 
 ### Trust refusal texts and frames
 
-M2 to M5 are texts of `f6010b97`, S1 and S2 of `89cb6289`, M6 and S3 of `52d82f0a`.
+M2 to M5 are texts of `f6010b97`, S1 and S2 of `683cc6a9`, M6 and S3 of `52d82f0a`.
 M2 to M4, M6 and S1 to S3 start with `the repository's git directory could not be
 trusted; git not run: `, all but M6 then `commondir not as git writes it: `. Each `%q` of a path is Go
-quoting of the path cut to its first 300 runes. The content in S1 is cut to its
-first 60 runes instead. A non-ASCII path is cut by runes, not bytes. An invalid
+quoting of the path cut to its first 300 runes. A non-ASCII path is cut by runes, not bytes. An invalid
 UTF-8 byte stays a byte and prints as `\xff`. The rest of the text is never cut.
 
 | id | text after the prefix | operands |
@@ -177,22 +172,23 @@ UTF-8 byte stays a byte and prints as `\xff`. The rest of the text is never cut.
 | M3 | `worktree entry %q has none (git always writes one there, containing ../..); the entry is damaged or was not made by git — recreate the worktree with git worktree add, or remove the entry` | `<entry>` |
 | M4 | `%q is not a small plain file (<reason>); remove it, or remove that worktree entry and add the worktree again so git rewrites it` | `<entry>/commondir` |
 | M6 | `this worktree's repository, %q, has a missing or damaged HEAD, objects or refs, or your account on the remote machine cannot open them; repair that directory or its permissions` | `<repo git dir>` |
-| S1 | `%q reads %q; git writes that file only inside .git/worktrees/<name>/, and Claude Code's sandbox may leave one containing just "."; anything else sends git's configuration and hooks elsewhere, so treat it as tampering: delete it, and if you did not create it, find out what did` | `<G>/commondir`, the content |
+| S1 | `%q holds something other than "." or "./"; git writes that file only inside .git/worktrees/<name>/, and Claude Code's sandbox may leave one containing just "."; anything else sends git's configuration and hooks elsewhere, so treat it as tampering: delete it, and if you did not create it, find out what did` | `<G>/commondir` |
 | S2 | `%q is not a small plain file (<reason>); git writes that file only inside .git/worktrees/<name>/; one here can send git's configuration and hooks elsewhere, so treat it as tampering: delete it, and if you did not create it, find out what did` | `<G>/commondir` |
 | S3 | `%q sits in a git directory git would not take as a repository (its HEAD, objects or refs missing, invalid, or not open to your account on the remote machine), so git would look for one somewhere else; repair that directory (usually its HEAD file)` | `<G>/commondir` |
 
 `<name>` in S1 and S2 is literal text, and the JSON encoder writes it as
 `\u003cname\u003e`.
 
-The M4 and S2 reasons seen include `commondir is not a regular file`,
-`commondir is larger than 1048576 bytes`,
-`openat commondir: path escapes from parent`,
-`openat commondir: no such file or directory` (M4 only) or
-`openat commondir: permission denied`. On Windows the OS text differs, for
-example `openat commondir: The system cannot find the file specified.`.
+The M4 and S2 reasons are `commondir is not a regular file`,
+`commondir is larger than 1048576 bytes` or an OS error. S2 drops its operation and path: `path escapes from parent` (`683cc6a9`, measured on Linux). Other OS errors are claustrum's own, not measured. M4 keeps them.
 
 M5 has no common prefix. It is `config-defined hooks could not be pinned off; git
 not run: the worktree entry this folder's .git names no longer exists`.
+
+On Linux, for a G of 4086 or 4087 bytes, the Lstat of `<G>/commondir` fails with `file name too long`.
+The answer is `config-defined hooks could not be pinned off; git not run: this repository's git
+directory could not be examined (file name too long); if .git is a file, check the path
+written in it` (`683cc6a9`, measured on Linux). Another failed Lstat, macOS and Windows are claustrum's own, not measured.
 
 ### Frames
 
@@ -217,11 +213,10 @@ on `PATH`, the exec error replaces both texts (class 1 below).
 Where the trust check finds no repository, the daemon still runs the configuration
 listing in that folder. In a plain folder it carries `GIT_DIR=<null>` (see
 [The daemon's own git environment](git-rules-calls.md#the-daemons-own-git-environment)). The frames
-are then those of the "no repository" column. A listing that fails by class 3
+are those of the "no repository" column. A listing that fails by class 3
 below gives the "refused" column. A `.git` file to a gone entry under the
-`worktrees` folder of a repository gets `GIT_DIR=<null>` too (measured on Linux).
-For `git.worktree_remove` with `worktreeRoot`
-this is measured on Linux and macOS.
+`worktrees` folder of a repository gets `GIT_DIR=<null>` too (measured on Linux, and
+on macOS for `git.worktree_remove` with `worktreeRoot`).
 
 A daemon `GIT_DIR` that names a regular file differs by system. On Linux and macOS
 no listing runs, and the "no repository" column answers, also with an empty
@@ -297,9 +292,8 @@ The `git version` call of class 3 has the profile of the failed listing (see
 `GIT_CONFIG_KEY_<n>`, `GIT_CONFIG_VALUE_<n>` or `GIT_CONFIG_GLOBAL` of the daemon.
 claustrum matches these names by their exact upper-case letters, so on Windows a
 lower-case name stays on the call (from the code). The call drops the daemon's
-`GIT_CONFIG_SYSTEM` and keeps `GIT_CONFIG_NOSYSTEM` (claustrum's own, not
-measured). It does not give the call the daemon's own `LC_ALL` and `LANGUAGE` back
-(claustrum's own, not measured).
+`GIT_CONFIG_SYSTEM` and keeps `GIT_CONFIG_NOSYSTEM`. It does not give the call the
+daemon's own `LC_ALL` and `LANGUAGE` back (both claustrum's own, not measured).
 
 ### Where git cannot start
 

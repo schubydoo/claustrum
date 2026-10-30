@@ -227,7 +227,7 @@ func TestWorktreeRemoveGoneHostileRepository(t *testing.T) {
 		wp := filepath.Join(filepath.Dir(f.wt), "gone")
 		got := removeErrorField(t, removeFrame(t, map[string]any{"baseRepo": f.repo, "worktreePath": wp}))
 		want := "failed to remove worktree: could not check whether " + wp + " is locked (" +
-			refuseStrayContent(filepath.Join(f.repo, ".git", "commondir"), "x").refusal + "); retry"
+			refuseStrayContent(filepath.Join(f.repo, ".git", "commondir")).refusal + "); retry"
 		if got != want {
 			t.Errorf("error = %q\nwant  %q", got, want)
 		}

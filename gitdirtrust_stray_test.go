@@ -48,46 +48,46 @@ func TestStrayCommondirDotIsTrusted(t *testing.T) {
 	}
 }
 
-// Any other content is refused and quoted exactly, with only the
-// trailing CR and LF removed (rows T03a to T03j). A lone LF reads as "". A backslash
+// Any other content is refused, with only the trailing CR and LF removed
+// before the compare (rows T03a to T03j). A lone LF reads as "". A backslash
 // is not a slash, on every OS (row T03h on a Windows VM). Mutations: trim spaces or
 // tabs, clean the path, map `\` to `/` before the compare.
 func TestStrayCommondirOtherContentIsRefused(t *testing.T) {
-	for _, tc := range []struct{ content, quoted string }{
-		{" .", " ."},
-		{". ", ". "},
-		{".\t", ".\t"},
-		{"./x", "./x"},
-		{"..", ".."},
-		{"", ""},
-		{"\n", ""},
-		{`.\`, `.\`},
+	for _, tc := range []struct{ content string }{
+		{" ."},
+		{". "},
+		{".\t"},
+		{"./x"},
+		{".."},
+		{""},
+		{"\n"},
+		{`.\`},
 	} {
 		t.Run(strings.NewReplacer("\n", `\n`, "\t", `\t`).Replace(tc.content), func(t *testing.T) {
 			r := newTrustRepo(t)
 			cd := filepath.Join(r.T, ".git", "commondir")
 			writeFile(t, cd, tc.content, 0o644)
-			wantRPCError(t, "info(T)", info(t, r.T), wantTR(cd, tc.quoted))
+			wantRPCError(t, "info(T)", info(t, r.T), wantTR(cd, ""))
 		})
 	}
 }
 
-// The content is cut to its first 60 runes, then quoted
-// with %q. An invalid UTF-8 byte stays a byte. A file of exactly 1048576 bytes is read
-// and quoted (rows T04a to T04c and T06b). Mutations: cut bytes, cut at 300 runes,
-// refuse 1048576 bytes as too large.
+// The refusal never quotes the content (build 683cc6a9, measured on Linux for a short
+// content). A file of exactly 1048576 bytes is read and refused with the same text
+// (claustrum's own, not measured). Mutations: quote the content again, refuse 1048576
+// bytes as too large.
 func TestStrayCommondirQuotedValue(t *testing.T) {
-	for _, tc := range []struct{ name, content, want string }{
-		{"100 a", strings.Repeat("a", 100), `"` + strings.Repeat("a", 60) + `"`},
-		{"70 é", strings.Repeat("é", 70), `"` + strings.Repeat("é", 60) + `"`},
-		{"invalid byte", "a\xffb", `"a\xffb"`},
-		{"exactly 1 MiB", strings.Repeat("a", 1<<20), `"` + strings.Repeat("a", 60) + `"`},
+	for _, tc := range []struct{ name, content string }{
+		{"100 a", strings.Repeat("a", 100)},
+		{"70 é", strings.Repeat("é", 70)},
+		{"invalid byte", "a\xffb"},
+		{"exactly 1 MiB", strings.Repeat("a", 1<<20)},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			r := newTrustRepo(t)
 			cd := filepath.Join(r.T, ".git", "commondir")
 			writeFile(t, cd, tc.content, 0o644)
-			want := wantTrustPrefix + fmt.Sprintf("%q", cd) + " reads " + tc.want + wantTRTail
+			want := wantTrustPrefix + fmt.Sprintf("%q", cd) + ` holds something other than "." or "./"` + wantTRTail
 			wantRPCError(t, "info(T)", info(t, r.T), want)
 		})
 	}
