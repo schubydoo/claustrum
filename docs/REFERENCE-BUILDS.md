@@ -21,6 +21,7 @@ release.
 
 | Reference SHA | Built (UTC) | Wire changes | Reconciled in |
 |---|---|---|---|
+| `52d82f0a…` | 2026-10-09 (built) | the `end` member, spawn refusal reasons, `includeDotNames`, the kill farewell, Windows jobs, new git trust rules, a third owner probe and new features. See below | [PRs 767, 769, 771–773, 775–781](https://github.com/schubydoo/claustrum/pull/781) |
 | `c8e2f083…` | 2026-10-06 (built) | new `process.stdin` and `process.reattach` members, a second owner probe, new `-32603` texts in a folder with no repository, new `git.worktree_remove` deletes, and the terminal: `process.resize` and `process.spawn.pty`, which claustrum does not build. See below | [PRs 747, 749–757, 759, 760](https://github.com/schubydoo/claustrum/pull/760) |
 | `5fd08069…` | 2026-10-05 (built) | the `settingsControl` member, new `server.capabilities` members and features, the `-32006` refusal, and new `git.*` and `files.*` texts. See below | [PRs 502–596](https://github.com/schubydoo/claustrum/pull/596) |
 | `89cb6289…` | 2026-09-28 (built) | one new method, one new `process.spawn` param, two new error codes, new `-install` and `-probe-cli` output, three new `server.capabilities` features, the `branchKept` member and new `git.*` texts. See below | [PRs 445–455](https://github.com/schubydoo/claustrum/pull/455) |
@@ -38,6 +39,7 @@ release.
 
 | Reference SHA | Divergences opened | Divergences retired | Other divergence notes |
 |---|---|---|---|
+| `52d82f0a…` | | | CT-2 covers a pending farewell and a killed Windows daemon |
 | `5fd08069…` | D27 | D4, D5, D9, D13, D17, D18, D21, D25 | |
 | `89cb6289…` | D20, D21, D22, D23, D24 | D11 | D2 gained its `-install` refusal of a home folder |
 | `f6010b97…` | D18, D19 | D1, D7, D14 | D16 is still needed, and its Windows cause is known |
@@ -64,6 +66,90 @@ single measurements that fit no label above. **Divergences** names the entries o
 in** names the PRs. The baseline section has the header facts only. The forensics
 stay outside the committed tree. Correction of 2026-10-23: this paragraph said
 that each per-build section has three parts.
+
+### `52d82f0a28317830ccacea80f6f4aac1d7563353` — 2026-10-09 (built)
+
+Its `-version` prints
+`claude-ssh 52d82f0a28317830ccacea80f6f4aac1d7563353 (built 2026-10-09T18:59:47Z)`.
+Issue 522 reported the build, pinned by Claude Desktop 2.37337.0 for Windows. It
+carries a `go1.25.14` stamp (`go version` on the binary). The rules are on the pages of the methods and in
+[PROTOCOL.md](PROTOCOL.md).
+
+**Wire delta.**
+
+- Every reply line and every stream frame line ends with an `end` member. It
+  holds the byte count of the line before the member. It also holds the bytes
+  sent before the line on the connection (PR 767, measured on Linux, macOS and
+  Windows).
+- A refusal of `process.spawn` carries `data.reason`, for example `cwd_missing`
+  or `not_found`. The texts stay the same (PR 769, measured on Linux and
+  Windows, and for `cwd_unusable` on macOS).
+- `files.list` lists dot names with `"includeDotNames":true` (PR 771, measured
+  on Linux, macOS and Windows).
+- `process.kill` and `process.killAndWait` take a farewell for the stdin of the
+  child and a `graceMs`. The reply gains `farewellEnd` (PR 775, measured on Linux
+  and macOS).
+- On Windows each child runs in a job. A kill, `process.killAndWait` and
+  `server.shutdown` end the whole job. `CLAUDE_SSH_NO_JOBS=1` turns the jobs off
+  (PR 778, measured on Windows).
+- On Linux and macOS a `refs` folder that the daemon user cannot search gives
+  "no repository". A `commondir` read drops only trailing CR and LF and stops
+  at a NUL. Two trust texts are new or longer (PR 773). The page of each rule
+  names its systems.
+- After an exit 128 of the owner probe and a second run that exits 0, the
+  daemon runs it a third time with no config of the user or the system. A good
+  third run gives `-32603` with the first error and a hint (PR 776, measured on
+  Linux and macOS).
+- `server.capabilities` gains `process.kill.farewell`,
+  `files.list.includeDotNames`, `process.spawn.failure_reason` and
+  `server.line_end`, and `process.spawn.job` on Windows (PR 779, measured on
+  Linux, macOS and Windows).
+- A `process.kill` whose signal the system refuses answers `-32603` with the error
+  text and sends no `exit` frame. `process.killAndWait` logs the refusal (PR 780,
+  measured on Linux and macOS). Whether `c8e2f083` does the same is not measured.
+- On Windows a `taskkill /F` of the daemon ends the job of each child. A process
+  that a child starts with `CREATE_BREAKAWAY_FROM_JOB` stays (PR 781, measured on
+  Windows).
+
+**Off-wire churn.** The daemon reads the login-shell `PATH` at its start. It tries
+a failed read again and shares one gate with the agent hand-off (PR 777, measured
+on Linux and macOS). The exit log line of a daemon kill ends with `, asked to end
+by this daemon (<label>)` (PR 775, measured on Linux and macOS for `client`). No
+child gets `CLAUDE_SSH_NO_JOBS` from the daemon (PR 778, measured on Linux, macOS
+and Windows). No child gets `CLAUDE_SSH_NO_LOGIN_PATH_WARM` from it either (PR
+777, measured on Linux and macOS).
+
+**Older gaps closed.** After a write to a closed stdout, `-bridge` exits `0` (PR
+772). This build does so on Linux and macOS. On Linux `c8e2f083` already exited
+`0` there, and on macOS it ended by `SIGPIPE`. claustrum's bridge is not
+measured.
+
+**How it was bounded.** Each item of PRs 767 to 779 was measured side by side
+with `c8e2f083` on the systems that its tag names. A last comparison battery ran
+claustrum `6972043d` beside this build on Linux, macOS and Windows VMs. On Linux
+and macOS only the `server.capabilities` reply differed. PR 779 closed that after
+the battery, and no VM ran claustrum with PRs 779 to 781. On Windows 29 of 30
+streams were equal, and `plugins.prune` differed (see below). The Windows battery
+sent no `server.capabilities`. Areas outside these rounds
+are not measured on this build.
+
+These items stay open:
+
+- claustrum does not build the terminal of this build: the `pty` member of
+  `process.spawn` and the method `process.resize`. So its `server.capabilities`
+  reply lacks the method `process.resize`, and on Linux and macOS the feature
+  `process.spawn.pty`. This build lists both on Linux and macOS, and lists no
+  `process.spawn.pty` on Windows (Linux, macOS and Windows VMs). For an unknown
+  id, `c8e2f083` answers `process.resize` with `{"found":false}`, and claustrum
+  answers `-32601` (macOS and Windows VMs). On Windows `c8e2f083` answers a
+  `process.spawn` with `pty` with `-32602`, and claustrum runs the command
+  (Windows VM).
+- `plugins.prune` on Windows: for the run folder of the battery this build
+  answered with the skip reply, and claustrum found its roots (Windows VM).
+  Whether `c8e2f083` does the same is not measured.
+- After a client kill of a child that runs through `sudo` on Linux, the `exit`
+  frame of this build has no `killedBy` member (Linux VM). On macOS it has
+  `"killedBy":"client"`, as claustrum sends (from the code). The cause is not known.
 
 ### `c8e2f083a63593e9adf0bbebc99debff07a5545f` — 2026-10-06 (built)
 

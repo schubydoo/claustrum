@@ -131,9 +131,9 @@ var docNotMethods = map[string]string{
 	"server.go":      "a source file",
 	"process.go":     "a source file",
 	"git.exe":        "the Windows git program, inside an error text",
-	// The terminal of c8e2f083, which claustrum does not build.
-	"process.resize":    "a method of the reference build c8e2f083 that claustrum lacks",
-	"process.spawn.pty": "a feature of the reference build c8e2f083 that claustrum lacks",
+	// The terminal of 52d82f0a, which claustrum does not build.
+	"process.resize":    "a method of the reference build 52d82f0a that claustrum lacks",
+	"process.spawn.pty": "a feature of the reference build 52d82f0a that claustrum lacks",
 }
 
 // TestDocsNoPhantomMethod: a span like `git.<name>` in the documents is a method, an
