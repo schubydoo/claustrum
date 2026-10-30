@@ -81,7 +81,9 @@ The daemon then judges the git directory G:
 - G is an entry whose `commondir` is not a regular file of at most 1048576 bytes:
   M4. A symlink is followed only when it is relative and stays inside the entry.
 - Otherwise trailing CRs and LFs go, and a NUL ends the value (build
-  `52d82f0a`, Linux and Windows). macOS and the step order are not measured. It is taken relative to G when it is not
+  `52d82f0a`, Linux and Windows). macOS and the step order are not measured. Leading
+  white space stays, so a remove from such a linked-worktree `baseRepo` gets M2
+  (claustrum's own, not measured). It is taken relative to G when it is not
   absolute, and cleaned lexically. It has to equal
   the grandparent as a string. No symlink in it is resolved, so naming the
   repository through an alias fails. On Linux and macOS a backslash is an

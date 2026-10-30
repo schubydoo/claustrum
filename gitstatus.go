@@ -444,8 +444,8 @@ func statusReadFile(root *os.Root, name string, max int64) ([]byte, error) {
 }
 
 // entryPathValue is the path that an entry file holds: the content without the white
-// space at both ends, counted from the entry folder when relative, and cleaned (rows
-// n03, n19c and n19d). On Windows the cleaning turns each forward slash into a
+// space at both ends, counted from the entry folder when relative, and cleaned (row
+// n03). On Windows the cleaning turns each forward slash into a
 // backslash (rows D11f and D11b).
 func entryPathValue(entry string, content []byte) string {
 	v := strings.TrimSpace(string(content))
