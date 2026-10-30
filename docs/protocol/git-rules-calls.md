@@ -4,7 +4,7 @@ An untagged rule on this page matches build `5fd08069` or an earlier build. A se
 
 ## Hardened git calls
 
-The git methods run most git steps as hardened calls. A hardened call is a git call
+Most git steps of the git methods are hardened calls: git calls
 with a fixed list of `-c` options and a fixed set of environment variables. The lists
 and the variables follow `5fd08069`. The hook pins were measured against `f6010b97`,
 and their limits against `89cb6289`. A rule that names no system was measured on
@@ -13,7 +13,8 @@ Linux, macOS and Windows. `githarden.go` holds the lists, and
 with an empty value (claustrum's own, not measured).
 
 Each hardened call passes no `-C`. Before each one, the daemon runs a config
-listing (`git config -z --list`) with the profile of that call. Before its first
+listing (`git config -z --list`) with the profile of that call. The settle call
+of a create has no listing (claustrum's own). Before its first
 listing, a request with no cached value runs the excludes read, `git config
 --includes --path core.excludesFile`. [Calls outside a repository](#calls-outside-a-repository)
 gives it and the probe `git --attr-source=<empty tree> version`. There are two profiles:
@@ -23,9 +24,9 @@ gives it and the probe `git --attr-source=<empty tree> version`. There are two p
   `git.status` use it.
 - The light profile allows `https:ssh`. Most calls of `git.worktree_create` use it.
   In the states `shadow` and `fallback-git` without `"shadowDirOff":true`, the light
-  calls of a create carry the heavy variables, except the checkout and its listings
-  (measured on Linux and macOS in the state `shadow`, and on Windows in the state
-  `fallback-git`).
+  calls of a create carry the heavy variables, except the checkout, its listings and
+  the settle call (measured on Linux and macOS in the state `shadow`, and on Windows
+  in the state `fallback-git`, claustrum's own for the settle call).
 
 [The daemon's own git environment](#the-daemons-own-git-environment) gives the
 variables of the daemon that change these values. A variable that the daemon adds
@@ -33,20 +34,20 @@ wins over the same variable of the daemon's own environment (measured on Linux a
 macOS). On Windows claustrum gives a git child its environment in name order. That
 is [D23](../DIVERGENCES.md#d23).
 
-A client sees the hardening in these places:
+A client sees the hardening here:
 
 - `git.status` reads the real `HEAD` commit, also where `refs/replace` names another
   (see [git.status](git-status.md#what-the-status-reads)).
 - The failure texts of `git.worktree_create` hold no graft-file `hint:` lines: the
-  light list turns them off. No `git.status` reply holds one either, because its
+  light list turns them off. No `git.status` reply holds one either: its
   calls give only stdout to the reply.
 - On Windows a create with a tree path of 270 characters succeeds.
 - The records of a new worktree hold absolute paths, also where the user config sets
   `worktree.useRelativePaths` (measured on macOS and Windows).
 - Each call passes the user's global excludes file as `core.excludesFile`
   ([Calls outside a repository](#calls-outside-a-repository)). On Windows the `status`,
-  `ls-files` and `diff-index` calls of `git.status` pass `/dev/null` where the value is the null device. That is claustrum's
-  own, see [D16](../DIVERGENCES.md#d16).
+  `ls-files` and `diff-index` calls of `git.status` pass `/dev/null` where the value is the null device (claustrum's
+  own, [D16](../DIVERGENCES.md#d16)).
 - The config listings run with `LC_ALL=C` and `LANGUAGE=C`. git then writes its
   listing errors in English (measured on Linux). The one exception is the second
   listing before the checkout of a create in the state `shadow`, which adds
@@ -59,7 +60,7 @@ A client sees the hardening in these places:
 
 ### Refusal texts
 
-The first config listing of a method is the hooks refusal check. It is not an extra
+The first config listing of a method is the hooks refusal check, not an extra
 call. Each method answers these texts in its own error frame (see the
 [Error-string catalogue](errors.md#error-string-catalogue)):
 
@@ -89,13 +90,12 @@ inside a value pins nothing. The call gets `hook.enabled=false` and an empty
 [The daemon's own git environment](#the-daemons-own-git-environment)). Only
 `command` and `event` were measured as `<var>`.
 
-- A later listing that exceeds a limit does not refuse its call. The call then gets
+- A later listing over a limit does not refuse its call, which then gets
   only `hook.enabled=false` and an empty `hook.event` (from the code).
 - A later listing that fails refuses in three places:
     - the two later listings of `git.status` (see
-      [git.status](git-status.md#rare-states)). For the listing in the git
-      directory, this is measured on Linux. For the listing in the temporary
-      folder, it is from the code.
+      [git.status](git-status.md#rare-states)). This is measured on Linux in the git
+      directory, and from the code in the temporary folder.
     - the two listings before the checkout of a create in the state `shadow`
       (measured on Linux and macOS, see
       [git.worktree_create → Error texts](git-worktree-create.md#error-texts))
@@ -108,7 +108,7 @@ inside a value pins nothing. The call gets `hook.enabled=false` and an empty
 ## The daemon's own git environment
 
 This section names the variables of the daemon's own environment that reach the
-calls of the git methods. It also gives the refusals of that environment. A rule
+git calls, and their refusals. A rule
 here holds on Linux, macOS and Windows, unless it names fewer systems.
 
 ### Variables that the git calls keep or drop
@@ -117,9 +117,8 @@ The repository calls are the configuration listings, the hardened calls,
 `worktree add`, the checkout and `git status`.
 
 - The daemon's environment is cleaned for the repository calls and the calls of
-  the start test, entry by entry, in this order (claustrum's
-  own, not measured). The calls of the start test, not its first `git version`,
-  also get no `GIT_` variable of the daemon (claustrum's own, not measured).
+  the start test, entry by entry, in this order. The calls of the start test, not its first `git version`,
+  also get no `GIT_` variable of the daemon. Both rules are claustrum's own, not measured.
     - An entry with no `=` and the four `GIT_*_PATHSPECS` variables go. On
       Windows a name matches in any letter case and keeps its spelling.
     - A relative value drops 23 names, such as `HOME` and `GIT_INDEX_FILE`. On
@@ -164,7 +163,7 @@ The repository calls are the configuration listings, the hardened calls,
   `denied_by_claude_ssh`. On Windows a lower-case `git_allow_protocol` sets it
   too.
 
-The daemon reads each value that it parses from the standard output of git (from
+The daemon parses each value from the standard output of git (from
 the code). The reference does so for the branch of `git.info` and the repository
 test of a create (measured on Linux).
 
@@ -213,7 +212,7 @@ the excludes read. The check reads the count and its pairs by their exact
 upper-case names. On Windows it does not see a lower-case `git_config_count` or
 `git_config_key_0`.
 
-- If the count is not set, there is no check.
+- An unset count gets no check.
 - An empty value counts as `0`. Else the check skips leading space, tab, `\n`,
   `\v`, `\f` and `\r` bytes. One optional `+` and one or more digits follow, and
   then the end. So `\t1`, ` +1` and `01` count as `1`, and `00` counts as `0`.
@@ -236,7 +235,7 @@ upper-case names. On Windows it does not see a lower-case `git_config_count` or
 With a key that git cannot read, git fails each configuration listing with exit
 status 128. `<text>` is then `config-defined hooks could not be pinned off; git not
 run: listing the configuration in force: exit status 128: <git text>`. A good pair
-before the broken pair changes nothing. `<git text>` comes from git, for example:
+before it changes nothing. `<git text>` comes from git, for example:
 
 | Key | `<git text>` |
 |---|---|
@@ -250,10 +249,10 @@ With the content `[broken`, `<git text>` is `fatal: bad config line 1 in file
 listing gets no `GIT_CONFIG_GLOBAL` and passes, so the text stays the hooks
 refusal (measured for `git.info` and `git.worktree_create`).
 
-This refusal needs a folder where git starts. A path that does not exist answers
-as it does with nothing set (measured on Linux and macOS, and for `git.info` on
+This refusal needs a folder where git starts. A missing path answers
+as with nothing set (measured on Linux and macOS, and for `git.info` on
 Windows). On Linux and macOS a plain folder of mode 0000 answers so too. A plain
-folder gets the refusal. Nothing changes on disk.
+folder gets the refusal, and nothing changes on disk.
 
 ### Where each method answers the refusal
 
@@ -344,6 +343,7 @@ minutes (measured on Linux and macOS). Read-tree checkouts have no such limit.
   config read on standard input ends near 31 s (measured on Linux), and `config.worktree`
   reads too (not measured). A holder of stderr alone delays a config listing
   about 2 s and that read 1 to 1.5 s (measured on Linux and macOS).
+- The settle call of a create ([The settle step](git-worktree-create.md#the-settle-step)) has its own limit, and its stop stops no later call (claustrum's own).
 - `git.worktree_remove` gets none of these limits. Its first call has the 30 s
   bound of the call about the repository (measured on Linux).
 
