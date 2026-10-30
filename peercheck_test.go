@@ -137,7 +137,10 @@ func TestPeerCheckStartServesEveryCaller(t *testing.T) {
 	if runtime.GOOS != "linux" && own.names() {
 		t.Errorf("own text = %q on %s, want none", own.String(), runtime.GOOS)
 	}
-	tail := `"server.instance_id"],"peerCheck":"` + own.state() + `"`
+	// The list ends with server.instance_id, or with the job name on a Windows daemon
+	// with jobs on.
+	features := s.featuresFor()
+	tail := `"` + features[len(features)-1] + `"],"peerCheck":"` + own.state() + `"`
 	if by := own.by(); by != nil {
 		tail += `,"peerCheckBy":["` + strings.Join(by, `","`) + `"]`
 	}
