@@ -30,14 +30,14 @@ No `params` member gets `-32602 Invalid params: unexpected end of JSON input` (m
 | `prunedLegacy` | The hashes that the daemon deleted in the shared root, sorted. |
 | `staleArchives` | Always `0`. |
 | `kept` | Always `0`. |
-| `live` | The number of live directories. It is one count over the roots that the daemon went through. |
-| `young` | The number of young directories that are not live. It counts over the same roots. |
+| `live` | The number of live directories, over all roots that the daemon went through. |
+| `young` | The number of young directories that are not live, over the same roots. |
 | `legacy` | What the daemon did with the shared root: see [The `legacy` member](#the-legacy-member). |
-| `skipped` | The reason, in a response of a daemon that has no plugin roots. Each other response has no `skipped` member. |
-| `errors` | One text in the form `<path>: <error>` for each directory that the daemon cannot delete, and for a root that it cannot list. A root that does not exist is not a failure. A directory in `errors` can be deleted in part. A response with no such failure has no `errors` member. A response with `errors` is still a success (not measured). |
+| `skipped` | The reason, only in a response of a daemon with no plugin roots. |
+| `errors` | One `<path>: <error>` text for each directory that the daemon cannot delete, and for a root that it cannot list. A root that does not exist is not a failure. A directory in `errors` can be deleted in part. A response with no such failure has no `errors` member. A response with `errors` is still a success (not measured). |
 | `minAgeDays` | The value that the daemon used, after the limits. |
 
-If the socket of the daemon is not at `run/<clientId>/rpc.sock`, the daemon has no plugin roots and deletes nothing. `root` is then `""` and `minAgeDays` is `0`. `skipped` holds the reason, and `legacy` is `skipped: ` and then the reason.
+If the socket of the daemon is not at `run/<clientId>/rpc.sock`, the daemon has no plugin roots and deletes nothing. `root` is then `""` and `minAgeDays` is `0`. claustrum also gives this answer when `<clientId>` is not 8 lowercase hexadecimal characters, on every system (claustrum's own, not measured). On Windows `52d82f0a` gave it for one such name.
 
 ## Errors
 

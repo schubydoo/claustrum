@@ -87,7 +87,8 @@ func (s *server) pluginsPrune(req *request) response {
 	res := pruneResult{Pruned: []string{}, PrunedLegacy: []string{}}
 	root, legacyRoot, ok := pluginsLayoutFromSocket(s.socketPath())
 	if !ok {
-		// No per-install plugin root: the socket is not shaped run/<clientId>/rpc.sock.
+		// No per-install plugin root: the socket is not shaped run/<clientId>/rpc.sock,
+		// or the clientId is not 8 lowercase hex.
 		// root stays "" and minAgeDays stays 0 — the clamp below never runs.
 		res.Legacy = "skipped: " + pluginsSkipReason
 		res.Skipped = pluginsSkipReason
@@ -130,10 +131,17 @@ func (s *server) pluginsPrune(req *request) response {
 	return okResult(req.ID, res)
 }
 
+// pluginClientIDRE matches the clientId folder of the socket: 8 lowercase hex.
+// A clientId folder of another shape gets the skip answer. 52d82f0a on Windows
+// gave the skip for one such name. The exact pattern is claustrum's own, not
+// measured. It applies on every system.
+var pluginClientIDRE = regexp.MustCompile(`^[0-9a-f]{8}$`)
+
 // pluginsLayoutFromSocket derives the plugin roots from the daemon socket path.
 // The socket is <X>/run/<clientId>/rpc.sock; the per-install root is
 // <X>/plugins/<clientId> and the shared legacy root is <X>/plugins. ok is false
-// (a skip) when the socket is not that shape.
+// (a skip) when the socket is not that shape. The names "rpc.sock" and "run"
+// compare case-sensitively.
 func pluginsLayoutFromSocket(sock string) (root, legacyRoot string, ok bool) {
 	if sock == "" || filepath.Base(sock) != "rpc.sock" {
 		return "", "", false
@@ -141,7 +149,7 @@ func pluginsLayoutFromSocket(sock string) (root, legacyRoot string, ok bool) {
 	clientDir := filepath.Dir(sock)      // <X>/run/<clientId>
 	clientID := filepath.Base(clientDir) // <clientId>
 	runDir := filepath.Dir(clientDir)    // <X>/run
-	if filepath.Base(runDir) != "run" || clientID == "" || clientID == "." {
+	if filepath.Base(runDir) != "run" || !pluginClientIDRE.MatchString(clientID) {
 		return "", "", false
 	}
 	base := filepath.Dir(runDir) // <X>
@@ -153,7 +161,9 @@ func pluginsLayoutFromSocket(sock string) (root, legacyRoot string, ok bool) {
 // the caller skips the legacy sweep. It returns the detail to embed in the skip
 // message for the FIRST sibling that may be present, or "" when every sibling is
 // provably gone (so the sweep runs). run/<clientId>/ dirs under base other than own
-// are examined in os.ReadDir (sorted) order. claustrum stats each socket, THEN
+// are examined in os.ReadDir (sorted) order. A name of any shape counts here, not
+// only 8 lowercase hex, so a sibling of another shape still spares the shared
+// legacy plugins (claustrum's own, not measured). claustrum stats each socket, THEN
 // dials it, and only a genuinely absent or dead socket clears it. A
 // permission-denied stat, a slow (timed-out) dial, or any dial error other than
 // connection-refused / not-a-socket / not-found leaves the sibling's liveness in
