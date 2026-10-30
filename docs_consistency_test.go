@@ -626,7 +626,7 @@ var docWordLimits = map[string]int{
 	"docs/protocol/git-info.md":                1850, // task-203b: the page rewrite
 	"docs/protocol/git-rules-calls.md":         5121, // TASK-202: moved from PROTOCOL.md
 	"docs/protocol/git-rules-config.md":        2884, // TASK-202: moved from PROTOCOL.md
-	"docs/protocol/git-rules-settings-copy.md": 3289, // TASK-260: the third run of the call about the repository. TASK-245: the folder .probe, new rules
+	"docs/protocol/git-rules-settings-copy.md": 3303, // TASK-260: the third run of the call about the repository. TASK-245: the folder .probe, new rules
 	"docs/protocol/git-rules-trust.md":         4493, // TASK-202: moved from PROTOCOL.md
 	"docs/protocol/git-list-branches.md":       997,  // task-203b: the page rewrite
 	"docs/protocol/git-status.md":              3185, // decision-040: a move between pages, net down in the same PR

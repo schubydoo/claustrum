@@ -284,7 +284,7 @@ The classes come in this order:
    answers the error of
    [the call about the repository](git-rules-settings-copy.md#the-call-about-the-repository) in the folder
    that holds `.git` (measured on Linux and Windows). `git.info` runs that call
-   itself, and its second run gives "no repository" (`c8e2f083`, measured on
+   itself, and its later runs give "no repository" (`c8e2f083`, measured on
    Linux). With `"shadowDirOff":true`
    that git dir gets the hooks refusal on every method (measured on Linux).
 3. Any other failure, a failed start included. The daemon runs `git version`. It
