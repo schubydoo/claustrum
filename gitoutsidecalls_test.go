@@ -318,7 +318,7 @@ func TestExcludesLookupCall(t *testing.T) {
 	t.Setenv("GIT_DIR", filepath.Join(t.TempDir(), "git"))
 	t.Setenv("XDG_CONFIG_HOME", "")
 	excludesHome(t)
-	resolveUserExcludesFile()
+	excludesNow(t)
 	got := calls()
 	if len(got) != 1 || !got[0].excludesRead() {
 		t.Fatalf("calls = %v, want the excludes read", got)
@@ -335,7 +335,7 @@ func TestExcludesRelativeXDGCountsAsUnset(t *testing.T) {
 	stubAnswer(t, "--includes", 0, "")
 	_, ignore := excludesHome(t)
 	t.Setenv("XDG_CONFIG_HOME", "rel")
-	if got := resolveUserExcludesFile(); got != ignore {
+	if got := excludesNow(t); got != ignore {
 		t.Errorf("lookup = %q, want %q", got, ignore)
 	}
 }
@@ -348,12 +348,12 @@ func TestExcludesAbsoluteXDGWithoutFileIsNullDevice(t *testing.T) {
 	excludesHome(t)
 	xdg := t.TempDir()
 	t.Setenv("XDG_CONFIG_HOME", xdg)
-	if got := resolveUserExcludesFile(); got != os.DevNull {
+	if got := excludesNow(t); got != os.DevNull {
 		t.Errorf("lookup = %q, want %q", got, os.DevNull)
 	}
 	ignore := filepath.Join(xdg, "git", "ignore")
 	writeFile(t, ignore, "*.y\n", 0o644)
-	if got := resolveUserExcludesFile(); got != ignore {
+	if got := excludesNow(t); got != ignore {
 		t.Errorf("lookup with the file = %q, want %q", got, ignore)
 	}
 }
@@ -369,7 +369,7 @@ func TestExcludesRelativeHomeIsNullDevice(t *testing.T) {
 	t.Setenv("XDG_CONFIG_HOME", "")
 	t.Setenv("HOME", "rel")
 	t.Setenv("USERPROFILE", "rel")
-	if got := resolveUserExcludesFile(); got != os.DevNull {
+	if got := excludesNow(t); got != os.DevNull {
 		t.Errorf("lookup = %q, want %q", got, os.DevNull)
 	}
 }
@@ -405,5 +405,47 @@ func TestConfigTextReadCall(t *testing.T) {
 		if v, ok := lookupExact(c.env, name); !ok || v != want {
 			t.Errorf("the read has %s=%q (set %v), want %q", name, v, ok, want)
 		}
+	}
+}
+
+// With no configured value, userExcludesFile makes one config read and looks up
+// the default file again on each call: a new file is passed on the next call, a
+// removed file or a folder gives the null device (683cc6a9).
+func TestExcludesDefaultFileLookedUpOnEachCall(t *testing.T) {
+	calls := outsideStub(t)
+	stubAnswer(t, "--includes", 1, "")
+	t.Setenv("XDG_CONFIG_HOME", "")
+	_, ignore := excludesHome(t)
+	if err := os.Remove(ignore); err != nil {
+		t.Fatal(err)
+	}
+	resetUserExcludesCache(t)
+	if got := userExcludesFile(); got != os.DevNull {
+		t.Fatalf("no file: %q, want %q", got, os.DevNull)
+	}
+	writeFile(t, ignore, "*.tmp\n", 0o644)
+	if got := userExcludesFile(); got != ignore {
+		t.Errorf("file made: %q, want %q", got, ignore)
+	}
+	if err := os.Remove(ignore); err != nil {
+		t.Fatal(err)
+	}
+	if got := userExcludesFile(); got != os.DevNull {
+		t.Errorf("file removed: %q, want %q", got, os.DevNull)
+	}
+	if err := os.Mkdir(ignore, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if got := userExcludesFile(); got != os.DevNull {
+		t.Errorf("folder: %q, want %q", got, os.DevNull)
+	}
+	reads := 0
+	for _, c := range calls() {
+		if c.excludesRead() {
+			reads++
+		}
+	}
+	if reads != 1 {
+		t.Errorf("%d config reads, want 1", reads)
 	}
 }

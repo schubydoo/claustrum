@@ -53,18 +53,18 @@ func treeOf(t *testing.T, root string) []string {
 //
 // GIT_CONFIG_GLOBAL alone is NOT enough, which is the trap this helper exists to
 // close. The user's ignore file is not read through git config at all: when
-// core.excludesFile is unset the resolver falls back to $XDG_CONFIG_HOME/git/ignore,
-// and then to the home directory. So both of those have to move as well.
+// core.excludesFile is unset the resolver looks up $XDG_CONFIG_HOME/git/ignore when
+// XDG_CONFIG_HOME is absolute, and <home>/.config/git/ignore otherwise. So both of
+// those have to move as well.
 //
-// ⚠️ Moving them is not enough either, and moving HOME is a no-op on Windows:
-// os.UserHomeDir reads USERPROFILE there, not HOME. The XDG branch only RETURNS
-// when the file exists, so an empty XDG dir falls through to the real home. This
-// helper therefore CREATES an empty ignore file under the temp XDG dir, which
-// makes that branch return on every OS and needs no per-OS test. Measured on a
-// Windows VM: without the file, the resolver returned the real
-// C:\Users\...\.config\git\ignore even with HOME moved.
+// ⚠️ Moving HOME is a no-op on Windows: os.UserHomeDir reads USERPROFILE there, not
+// HOME. With an absolute XDG dir the resolver never falls back to the home folder,
+// and an empty XDG dir gives the null device. The empty ignore file that this
+// helper creates under the temp XDG dir is belt and braces: it makes the value a
+// real file on every OS. An older resolver fell back to the home folder, and there
+// the file was needed.
 //
-// The environment is only half of it. userExcludesFile memoizes the resolved path
+// The environment is only half of it. userExcludesFile keeps the configured value
 // for the life of the process, and hardenedProfileArgs injects it as
 // `-c core.excludesFile=`. So whichever test runs FIRST decides the value for
 // every later test, and the environment this one sets arrives too late.
