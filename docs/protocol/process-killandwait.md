@@ -59,7 +59,7 @@ This method has no `errorCode` member. A failure is a JSON-RPC error.
 
 On Linux and macOS, the force is a `SIGKILL` to the process group of the child. So the processes that the child started end too, unless one left the group.
 
-If the child ends inside the wait and its output is complete, the daemon sends no `SIGKILL`. A process that the child started then stays and runs on. Use `"signal": "KILL"` to end the whole group at once.
+If the child ends inside the wait and its output is complete, the daemon sends no `SIGKILL`. A process that the child started then stays. Use `"signal": "KILL"` to end the whole group at once.
 
 The output of a child is not complete while another process holds the output pipe open, in its group or not. The daemon waits at most 5 seconds for that output after the child ended. If the wait of the request ends first, the daemon uses the force although the child itself ended. If those 5 seconds end first, the answer is `{"found": true, "died": true}`, and the daemon sends no `SIGKILL`.
 

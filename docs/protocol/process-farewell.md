@@ -14,7 +14,7 @@ An untagged rule on this page matches build `52d82f0a`, measured on Linux and ma
 
 ## The rules
 
-The checks run in this order (measured on Linux). A failure logs `[process] kill <id>: its farewell is not said: <rule>`, and the signal goes at once.
+The checks run in this order (measured on Linux). A failure on `process.kill` logs `[process] kill <id>: its farewell is not said: <rule>`, and the signal goes at once.
 
 1. `of the wrong type`: `farewell` is no string, or `graceMs` is no integer, such as `1.5`.
 2. `a farewell with no graceMs`
@@ -22,7 +22,7 @@ The checks run in this order (measured on Linux). A failure logs `[process] kill
 4. `not base64`
 5. `over the cap`: over 65536 bytes after the decode.
 
-A `null` member and a negative `graceMs` count as absent. `""` with `0` counts as no farewell (measured on Linux). Each other `""` or `0` counts as absent (claustrum's own, not measured).
+A `null` member and a negative `graceMs` count as absent (measured on Linux). `""` with `0` counts as no farewell (measured on Linux). Each other `""` or `0` counts as absent (claustrum's own, not measured).
 
 ## The farewellEnd member
 
@@ -50,4 +50,5 @@ Not measured, claustrum's own:
 - Windows, and `unsent` for a second farewell on a pending one.
 - `invalid` on `process.killAndWait`: the kill goes at once. `invalid` also for an unknown `id` on `process.kill`.
 - `cut` for a child that outlives the signal of the cut.
+- The log line of a failed rule on `process.killAndWait`.
 - Under `-keep-children` a shutdown sends the signal of each pending farewell at once.
