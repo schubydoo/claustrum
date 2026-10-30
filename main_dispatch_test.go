@@ -477,6 +477,12 @@ func TestSigpipeIgnoredForStdoutModes(t *testing.T) {
 	}
 
 	calls = 0
+	runMain(t, "-bridge", "-socket", filepath.Join(t.TempDir(), "nope.sock"))
+	if calls != 1 {
+		t.Errorf("-bridge: ignoreSigpipe called %d times, want 1", calls)
+	}
+
+	calls = 0
 	runMain(t, "-version")
 	if calls != 0 {
 		t.Errorf("-version: ignoreSigpipe called %d times, want 0 (only the stdout-protocol modes ignore SIGPIPE)", calls)
