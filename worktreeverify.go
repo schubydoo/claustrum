@@ -365,10 +365,11 @@ func worktreeRegistryDir(repo string) string {
 		admin = filepath.Join(repo, admin)
 	}
 	common := admin
-	// The value is read as the trust check reads it (commondirValue, claustrum's own
-	// here, not measured).
 	if b, err := readGitPlainFile(filepath.Join(admin, "commondir")); err == nil {
-		common = commondirPath(admin, string(b))
+		common = strings.TrimSpace(string(b))
+		if !filepath.IsAbs(common) {
+			common = filepath.Join(admin, common)
+		}
 	}
 	return filepath.Join(common, "worktrees")
 }
@@ -715,10 +716,11 @@ func verifyCreatedWorktree(worktreePath string, cp worktreeCheckpoint) string {
 // FIFO for example, counts as no file, with no wait (readGitPlainFile, not measured).
 func gitDirRegistryDir(gitDir string) string {
 	common := gitDir
-	// The value is read as the trust check reads it (commondirValue, claustrum's own
-	// here, not measured).
 	if b, err := readGitPlainFile(filepath.Join(gitDir, "commondir")); err == nil {
-		common = commondirPath(gitDir, string(b))
+		common = strings.TrimSpace(string(b))
+		if !filepath.IsAbs(common) {
+			common = filepath.Join(gitDir, common)
+		}
 	}
 	return filepath.Join(common, worktreesSubdir)
 }
@@ -851,9 +853,7 @@ func createdRegistrationRefusal(gitDir, worktreePath, adminDir string) (registra
 	if err != nil {
 		return "", notOurs
 	}
-	// The value is read as the trust check reads it (commondirValue, claustrum's own
-	// here, not measured).
-	named := commondirValue(string(b))
+	named := strings.TrimSpace(string(b))
 	if !filepath.IsAbs(named) {
 		named = filepath.Join(registration, named)
 	}

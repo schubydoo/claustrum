@@ -521,9 +521,11 @@ func judgeGitDir(g string, fromEnv bool) gitDirTrust {
 // commondirValue is the value of the content b of a commondir file. Every trailing CR
 // and LF goes, and the value ends at its first NUL byte. Nothing else is trimmed. So
 // `../..` with a tab, with a space or after a NUL is no `../..`. Build 52d82f0a reads
-// so in git.info on Linux and Windows, and in git.status on Linux. macOS and every other
-// reader of a commondir file are claustrum's own, not measured. So is the order of
-// the two steps.
+// so in git.info on Linux and Windows, and in git.status on Linux. macOS, the stray
+// read and the order of the two steps are claustrum's own, not measured. The remove
+// and the create keep their own reads of a registration's commondir
+// (strings.TrimSpace). On the remove that file refuses nothing (build 52d82f0a,
+// measured on Linux, macOS and Windows). The create read is not measured.
 func commondirValue(b string) string {
 	v := strings.TrimRight(b, "\r\n")
 	if i := strings.IndexByte(v, 0); i >= 0 {
