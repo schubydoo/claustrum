@@ -905,7 +905,7 @@ func (m *procManager) spawnVia(c *conn, id, command string, args []string, cwd s
 	// so it starts no process before it joins its job. A no-op otherwise. If the resume
 	// fails, the spawn ends the child and answers the error, with its Failed to start
 	// line (claustrum's own, not measured).
-	if err := resumeChild(cmd.Process, cmd.SysProcAttr); err != nil {
+	if err := resumeProc(cmd.Process, cmd.SysProcAttr); err != nil {
 		err = fmt.Errorf("resume after the job join: %w", err)
 		logErrorf("[process.Manager] Failed to start process %s: %v", id, err)
 		endUnstarted()
@@ -1403,6 +1403,12 @@ var (
 	osPipe       = os.Pipe
 	cmdStdinPipe = (*exec.Cmd).StdinPipe
 )
+
+// resumeProc is resumeChild behind a seam. The resume cannot fail on Unix, where it
+// does nothing, and on Windows only when a thread of the child cannot be resumed. So
+// the arm of spawn that ends the child and answers the error is unreachable without
+// the seam. Production never reassigns it.
+var resumeProc = resumeChild
 
 // confineProc is confineProcess behind a seam. Confinement cannot fail on Unix: the
 // process group is already set by newSysProcAttr, so the call returns a nil error. On

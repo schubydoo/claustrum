@@ -4,6 +4,7 @@ import (
 	"errors"
 	"os"
 	"strings"
+	"syscall"
 	"testing"
 )
 
@@ -54,5 +55,41 @@ func TestSpawnSurvivesConfinementFailure(t *testing.T) {
 	}
 	if want := "process-group confinement failed for confine: " + errConfine.Error(); !strings.Contains(out, want) {
 		t.Errorf("missing warning %q\n--- captured ---\n%s", want, out)
+	}
+}
+
+// TestSpawnEndsTheChildWhenTheResumeFails pins the arm of spawn after a failed resume:
+// the spawn answers the error, logs the Failed to start line and keeps no record
+// (claustrum's own, not measured).
+func TestSpawnEndsTheChildWhenTheResumeFails(t *testing.T) {
+	errResume := errors.New("boom")
+	old := resumeProc
+	t.Cleanup(func() { resumeProc = old })
+	var started *os.Process
+	resumeProc = func(proc *os.Process, _ *syscall.SysProcAttr) error {
+		started = proc
+		return errResume
+	}
+
+	m := newTestProcManager(t)
+	t.Cleanup(m.killAll)
+	c, _ := pipeConn(t)
+	sleeper, env := helperCommand(t, "sleep")
+
+	var err error
+	out := captureLog(t, func() {
+		_, err = m.spawn(c, "resume", sleeper, []string{"30"}, "", env, false)
+	})
+	if err == nil || !errors.Is(err, errResume) || !strings.Contains(err.Error(), "resume after the job join") {
+		t.Fatalf("spawn error = %v, want the wrapped resume error", err)
+	}
+	if want := "Failed to start process resume: resume after the job join: boom"; !strings.Contains(out, want) {
+		t.Errorf("missing log line %q\n--- captured ---\n%s", want, out)
+	}
+	if m.get("resume") != nil {
+		t.Error("the table holds a record for the child that the spawn ended")
+	}
+	if started == nil {
+		t.Fatal("the seam saw no process")
 	}
 }
