@@ -12,8 +12,9 @@ An untagged rule on this page matches build `89cb6289`, and build `f6010b97` too
 
 | Parameter | Required | Meaning |
 |---|---|---|
-| `id` | no | The id of the process, as given to `process.spawn`. An absent, empty or unknown `id` signals nothing and gets the same result as a known one. |
+| `id` | no | The id of the process, as given to `process.spawn`. An absent, empty or unknown `id` signals nothing. |
 | `signal` | no | `TERM`, `KILL`, `INT` or `HUP`, with or without the prefix `SIG`. The default is `TERM`. The names are case-sensitive, and each other value means `TERM`. So `quit` and `int` send `SIGTERM`. On Windows the daemon ignores the name: see [Differences by system](#differences-by-system). |
+| `farewell`, `graceMs` | no | The [farewell](process-farewell.md) for the stdin of the child, and the wait before the signal. |
 
 After a second `process.spawn` with the `id` of a process that still runs, the request reaches the newer process only. See [process.spawn](process-spawn.md#a-spawn-with-an-id-that-is-in-use).
 
@@ -23,7 +24,7 @@ After a second `process.spawn` with the `id` of a process that still runs, the r
 {"success": true}
 ```
 
-The result is always `{"success": true}`. It does not say whether a process got the signal or ended. The `exit` frame of the stream says that.
+Without a farewell the result is `{"success": true}`. A farewell adds `farewellEnd`: see [Farewell](process-farewell.md). The `exit` frame says whether a process got the signal or ended.
 
 ## Errors
 
@@ -96,4 +97,4 @@ If a process that the child started holds the output pipes of the child, the `ex
 
 No entry of the [divergence catalog](../DIVERGENCES.md) changes this method.
 
-The skip of a child that already ended is a guard (claustrum's own). The operating system can give the process id (pid) or the group number of a child that ended to another process. The reply is the same with or without the guard. Item 21 of the [ledger of completed work](../IMPROVEMENTS.md) has the guard. Whether the reference sends a signal to such a child is a question for the reference side (not measured).
+The skip of a child that already ended is a guard (claustrum's own). The operating system can reuse the process id (pid) or the group number of an ended child. The reply does not change. Item 21 of the [ledger of completed work](../IMPROVEMENTS.md) has the guard. Whether the reference signals such a child is not measured.
