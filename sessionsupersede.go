@@ -165,8 +165,9 @@ func (m *procManager) lockSessionSpawn(key string) func() {
 // then the started line of the new process. The exit frame of the victim reaches its
 // client with killedBy "client".
 //
-// On Linux and macOS the escalation ends the whole tree of the victim. On Windows the
-// kill ends the direct child only, and its descendants live on. A Windows VM measured
+// On Linux and macOS the escalation ends the whole tree of the victim. On Windows with
+// no job the kill ends the direct child only, and its descendants live on. With a job
+// the kill ends the job (claustrum's own, not measured). A Windows VM measured
 // the same order against 89cb6289 (rows SS and SSInh, 3 runs each): the reply of the
 // new spawn comes after the exit frame of the victim.
 //

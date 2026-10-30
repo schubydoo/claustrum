@@ -65,7 +65,7 @@ The output of a child is not complete while another process holds the output pip
 
 ## Differences by system
 
-On Windows the daemon ignores the signal name. Each first signal ends the direct child at once, with exit code 1. The force ends the direct child only too. See [Windows child trees](process-kill.md#windows-child-trees).
+On Windows the daemon ignores the signal name. A kill ends the job of the child at once, with exit code 1 (`52d82f0a`). With no job it ends the direct child only (`89cb6289`). See [Windows child trees](process-kill.md#windows-child-trees).
 
 ## Rare states
 

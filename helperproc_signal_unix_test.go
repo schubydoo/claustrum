@@ -72,3 +72,10 @@ func exitZeroOnSigterm() {
 		os.Exit(0)
 	}()
 }
+
+// breakawayStart has no meaning off Windows: the "breakaway-start" helper mode is
+// Windows-only, so this leaves the command as it is.
+func breakawayStart(*exec.Cmd) {}
+
+// childJobState is empty off Windows, which has no jobs.
+func childJobState(*managedProc) string { return "" }

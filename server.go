@@ -637,6 +637,10 @@ func newServerOnSocket(socket, token, metricsAddr string, wlopt wireLogOptions, 
 	listenPipe = honorListenPipe(listenPipe)
 
 	sockFI, _ := os.Stat(socket) // identity of the inode we just bound (for unlinkOwnSocket)
+	// The job mode of the children, with its one line on Windows, before the peer-check
+	// line and the listening line. CLAUDE_SSH_NO_JOBS leaves the daemon environment here
+	// on every system (see childjobs.go).
+	procs.jobs = startChildJobs()
 	// The one line of a start with CLAUDE_SSH_PEER_CHECK=1 comes here, before the
 	// listening line. The daemon also removes the variable from its own environment
 	// here, before it serves a request (see startPeerCheck).
@@ -1433,7 +1437,8 @@ func (s *server) dropConns() int {
 }
 
 // stopChildren implements the -keep-children policy on graceful shutdown. By
-// default it kills the children: the whole tree on Unix, the direct child on Windows. With
+// default it kills the children: the whole tree on Unix, the job of each child on Windows
+// (the direct child with no job). With
 // -keep-children set, it
 // instead leaves every running child alive so they survive a daemon
 // restart/upgrade, logging one honest line with the surviving count. closeAll

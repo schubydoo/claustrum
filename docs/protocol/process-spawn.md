@@ -95,7 +95,7 @@ The daemon removes these names:
 
 | Name | Removed from |
 |---|---|
-| `CLAUDE_RPC_TOKEN` | The daemon value, for every child. A value in the `env` of the request reaches the child. |
+| `CLAUDE_RPC_TOKEN`, `CLAUDE_SSH_NO_JOBS` (`52d82f0a`, measured on Linux, macOS and Windows) | The daemon value, for every child. A value in the `env` of the request reaches the child (claustrum's own for `CLAUDE_SSH_NO_JOBS`). |
 | `CLAUDE_SSH_MANAGED_LAUNCHER`, `CLAUDE_SSH_E2E_MANAGED_SETTINGS_DIR` | Every child. The removal covers the `env` of the request too (measured on Linux and macOS). The removal on Windows (claustrum's own). |
 | `CLAUDE_CODE_PROCESS_WRAPPER` | A child with a `launcher`, also from the `env` of the request. A child without one keeps it (measured on Linux and macOS, claustrum's own on Windows). |
 | `CLAUDE_SSH_NO_LOGIN_PATH_WARM` | The daemon value, for every child (claustrum's own on Windows). A value in `env` reaches the child (claustrum's own, not measured). |
@@ -133,7 +133,7 @@ A tag wins over the top line.
 
 === "Windows"
 
-    - **Process group.** The child starts in a new process group and in no Job Object. A kill there ends the direct child only, as [Windows child trees](process-kill.md#windows-child-trees) says.
+    - **Process group and job.** The child starts in a new process group and in a [job](process-kill.md#windows-child-trees) (`52d82f0a`).
     - **`launcher`.** Refused with `-32004`.
     - **`signal` in the `exit` frame.** Never.
 
@@ -206,7 +206,7 @@ The argument after a bare `--session-id` or `--resume` is its value. The id has 
 
 #### How the old process ends
 
-The daemon sends `SIGTERM` to the direct child of the old process and waits. After 3 s it sends `SIGKILL` to the group. The `exit` frame of the old process reaches its client with `"killedBy":"client"`. The pipe drain of that frame takes up to 5 s. Then the new process starts, and its reply comes after that `exit` frame. On Windows the old child ends at once, and its descendants live on. claustrum also runs two spawns of one session one after the other (claustrum's own).
+The daemon sends `SIGTERM` to the direct child of the old process and waits. After 3 s it sends `SIGKILL` to the group. The `exit` frame of the old process reaches its client with `"killedBy":"client"`. The pipe drain of that frame takes up to 5 s. Then the new process starts, and its reply comes after that `exit` frame. On Windows the old job ends at once (claustrum's own, not measured). claustrum also runs two spawns of one session one after the other (claustrum's own).
 
 A spawn with the `id` and the session of a running process only replaces it, as [the `id` in use](#a-spawn-with-an-id-that-is-in-use) says.
 

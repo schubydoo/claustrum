@@ -19,8 +19,9 @@ import (
 // These tests are the Windows analogue of sysproc_unix_test.go: they exercise
 // the kill handle in sysproc_windows.go
 // with a real two-level process tree. CI therefore pins the behavior of the file and not
-// only its compilation (IMPROVEMENTS item 20). A kill ends the direct child only,
-// so every test ends the grandchild that it started by its recorded pid.
+// only its compilation (IMPROVEMENTS item 20). The trees here have no job, the state of
+// CLAUDE_SSH_NO_JOBS=1. A kill then ends the direct child only, so every test ends the
+// grandchild that it started by its recorded pid. childjobs_windows_test.go has the jobs.
 
 func TestNewSysProcAttrNewProcessGroup(t *testing.T) {
 	attr := newSysProcAttr()
@@ -56,6 +57,13 @@ func TestDetachSysProcAttrFlags(t *testing.T) {
 // its recorded pid, also after a failed assertion.
 func startConfinedTree(t *testing.T) (*exec.Cmd, int, *procGroup) {
 	t.Helper()
+	return startConfinedTreeJobs(t, jobsOff)
+}
+
+// startConfinedTreeJobs is startConfinedTree with the job mode jobs. With jobsOn the
+// helper starts suspended, joins its job and then resumes, as process.spawn does.
+func startConfinedTreeJobs(t *testing.T, jobs childJobs) (*exec.Cmd, int, *procGroup) {
+	t.Helper()
 	exe, err := os.Executable()
 	if err != nil {
 		t.Fatalf("os.Executable: %v", err)
@@ -63,7 +71,7 @@ func startConfinedTree(t *testing.T) (*exec.Cmd, int, *procGroup) {
 	pidFile := filepath.Join(t.TempDir(), "gpid")
 	cmd := exec.Command(exe, pidFile)
 	cmd.Env = buildEnv(map[string]string{"CLAUSTRUM_TEST_HELPER": "tree"})
-	cmd.SysProcAttr = newSysProcAttr()
+	cmd.SysProcAttr = spawnSysProcAttr(jobs)
 	stdin, err := cmd.StdinPipe()
 	if err != nil {
 		t.Fatalf("stdin pipe: %v", err)
@@ -72,18 +80,36 @@ func startConfinedTree(t *testing.T) (*exec.Cmd, int, *procGroup) {
 		t.Fatalf("start: %v", err)
 	}
 	t.Cleanup(func() { _ = cmd.Process.Kill(); _, _ = cmd.Process.Wait() })
-	group, err := confineProcess(cmd.Process)
+	group, err := confineProcess(cmd.Process, jobs)
+	t.Cleanup(group.close)
 	if err != nil {
 		t.Fatalf("confineProcess: %v", err)
 	}
-	t.Cleanup(group.close)
+	if err := resumeChild(cmd.Process, cmd.SysProcAttr); err != nil {
+		t.Fatalf("resumeChild: %v", err)
+	}
 	// Go-ahead: the helper spawns its grandchild only now.
 	if _, err := io.WriteString(stdin, "g"); err != nil {
 		t.Fatalf("release helper: %v", err)
 	}
 	gpid := readPIDFile(t, pidFile)
-	t.Cleanup(func() { killOwnPid(gpid) })
+	holdOwnPid(t, gpid)
 	return cmd, gpid, group
+}
+
+// holdOwnPid opens a terminate handle of a process that the test started, right after
+// the test learns its pid. The cleanup ends the process through that handle. The handle
+// keeps the pid reserved, so the cleanup cannot reach a later process with that pid. A
+// process that is already gone needs no cleanup.
+func holdOwnPid(t testing.TB, pid int) {
+	h, err := windows.OpenProcess(windows.PROCESS_TERMINATE, false, uint32(pid))
+	if err != nil {
+		return
+	}
+	t.Cleanup(func() {
+		_ = windows.TerminateProcess(h, 1)
+		_ = windows.CloseHandle(h)
+	})
 }
 
 // killOwnPid ends a process that this test started, by its pid. It is a no-op for a pid
@@ -99,7 +125,7 @@ func killOwnPid(pid int) {
 
 // signal ends the direct child only. Its grandchild lives on. Measured on a Windows VM
 // against 89cb6289: every kill form ends only the direct child, and the grandchild is
-// alive 1 s, 5 s and 15 s later. A Job Object around the child ends the grandchild here.
+// alive 1 s, 5 s and 15 s later. The group here has no job.
 func TestSignalEndsOnlyTheDirectChild(t *testing.T) {
 	cmd, gpid, group := startConfinedTree(t)
 
@@ -115,6 +141,28 @@ func TestSignalEndsOnlyTheDirectChild(t *testing.T) {
 	time.Sleep(time.Second)
 	if !processAlive(t, gpid) {
 		t.Errorf("grandchild %d ended with its parent: the kill reached more than the direct child", gpid)
+	}
+}
+
+// TestSignalEndsTheJob: with a job, signal ends the child and its grandchild, before
+// any reap. Measured on a Windows VM against 52d82f0a: no process of the tree is left
+// after a kill.
+func TestSignalEndsTheJob(t *testing.T) {
+	cmd, gpid, group := startConfinedTreeJobs(t, jobsOn)
+	if group.job == 0 {
+		t.Fatal("the child has no job")
+	}
+	if !inJob(t, gpid, group.job) {
+		t.Fatalf("grandchild %d is not in the job of the child", gpid)
+	}
+	if err := group.signal(cmd.Process, "KILL"); err != nil {
+		t.Fatalf("signal: %v", err)
+	}
+	if !waitProcessGone(cmd.Process.Pid, 5*time.Second) {
+		t.Errorf("parent %d survived the kill", cmd.Process.Pid)
+	}
+	if !waitProcessGone(gpid, 5*time.Second) {
+		t.Errorf("grandchild %d survived the kill of its job", gpid)
 	}
 }
 
@@ -134,8 +182,8 @@ func TestSignalOnAnEndedChildIsAccessDenied(t *testing.T) {
 }
 
 // close drops the kill handle and ends nothing. The daemon's death closes the handle the
-// same way. The children of the reference survive a killed daemon (rows WN03, WJ02, WJ05,
-// WJ06 on a Windows VM).
+// same way. The children of 89cb6289 survive a killed daemon (measured on a Windows
+// VM). That holds for a child with no job.
 func TestCloseEndsNothing(t *testing.T) {
 	cmd, gpid, group := startConfinedTree(t)
 

@@ -186,14 +186,14 @@ func spawnTreeFor(t *testing.T, owner testing.TB, m *procManager, id, mode strin
 	if err != nil {
 		t.Fatalf("spawn: %v", err)
 	}
-	t.Cleanup(func() { killOwnPid(p.pid) })
+	holdOwnPid(t, p.pid)
 	if mode == "tree" {
 		if !m.writeStdin(id, []byte("g")) { // go-ahead: the helper starts its grandchild now
 			t.Fatal("stdin go-ahead refused")
 		}
 	}
 	gpid := readPIDFile(t, pidFile)
-	owner.Cleanup(func() { killOwnPid(gpid) })
+	holdOwnPid(owner, gpid)
 	if !processAlive(t, gpid) {
 		t.Fatalf("grandchild %d not alive before the action", gpid)
 	}
@@ -208,8 +208,8 @@ func spawnTreeFor(t *testing.T, owner testing.TB, m *procManager, id, mode strin
 // one wait of 1 s serves the check of every grandchild. Measured on a Windows VM against
 // 89cb6289: only the direct child ends, and the grandchild is alive at 1 s, 5 s and 15 s.
 // The rows are seven signal forms of process.kill, three forms of process.killAndWait,
-// -stop and server.shutdown. claustrum gave the same states in those rows. A Job Object
-// around the child ends the grandchild here.
+// -stop and server.shutdown. claustrum gave the same states in those rows. The manager
+// here has no job, the state of CLAUDE_SSH_NO_JOBS=1. TestJobEndsTheTree has the jobs.
 func TestKillEndsOnlyTheDirectChild(t *testing.T) {
 	type result struct{ found, died, already, escalated bool }
 	// Each row has its own child id, so a child that another test or row left alive cannot
@@ -313,7 +313,9 @@ func exitLinesOf(log, id string) []string {
 // grace. Measured on a Windows VM against 89cb6289: process.kill answers at once and its
 // exit frame comes 5.002 s later. process.killAndWait answers after 5.005 s with
 // found, died and escalated, and the log holds the lines below. The graces are shrunk
-// here: the kill grace ends first, then the drain grace.
+// here: the kill grace ends first, then the drain grace. The manager has no job. With
+// CLAUDE_SSH_NO_JOBS=1, 52d82f0a logs the drain line too when the child exits by itself
+// (measured).
 func TestKillWithKidsHoldingThePipes(t *testing.T) {
 	oldDrain := exitDrainGrace
 	exitDrainGrace = 1500 * time.Millisecond
@@ -506,16 +508,16 @@ func readLogFile(t *testing.T, path string) string {
 	return string(b)
 }
 
-// TestChildSurvivesAKilledDaemon: a process that owns one spawned child ends hard, as a
-// daemon under taskkill /F does. The child is alive 1 s later (rows WJ02, WJ06). The test
-// then ends the child by its pid.
+// TestChildSurvivesAKilledDaemon: a process that owns one spawned child with no job ends
+// hard, as a daemon under taskkill /F does. The child is alive 1 s later (89cb6289, measured).
+// The test then ends the child by its pid.
 func TestChildSurvivesAKilledDaemon(t *testing.T) {
 	exe, err := os.Executable()
 	if err != nil {
 		t.Fatalf("os.Executable: %v", err)
 	}
 	pidFile := filepath.Join(t.TempDir(), "pid")
-	daemon := exec.Command(exe, pidFile)
+	daemon := exec.Command(exe, pidFile, "no-job")
 	daemon.Env = buildEnv(map[string]string{"CLAUSTRUM_TEST_HELPER": "spawn-hold"})
 	if err := daemon.Start(); err != nil {
 		t.Fatalf("start: %v", err)

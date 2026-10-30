@@ -179,7 +179,7 @@ type managedProc struct {
 	// killGroupAfterExit read it under p.mu for their own reasons, not to protect
 	// this write-once pointer.
 	cmd   *exec.Cmd
-	group *procGroup // OS kill handle (the process group on Unix, the direct child on Windows)
+	group *procGroup // OS kill handle (the process group on Unix, the job or the direct child on Windows)
 	// done is closed once by the exit goroutine after the child is reaped, so
 	// killAndWait can block until the process is actually gone.
 	done chan struct{}
@@ -259,6 +259,10 @@ type procManager struct {
 	// noRecords is set for a daemon that does not hold the run-dir lock: it writes
 	// no child record. Cell H5 measures that for a held flock (`5fd08069`, Linux VM).
 	noRecords bool
+	// jobs tells if spawn puts each child in a job of its own (Windows only, see
+	// childJobs). One job for each child is claustrum's own, not measured. It is set
+	// once at the start of the daemon. The zero value is off.
+	jobs childJobs
 
 	// runRoot is the run dir, held open for the child records (linux and darwin, see
 	// childrecord_unix.go). runRootOnce guards the one open. Unused on windows.
@@ -543,7 +547,7 @@ func (p *managedProc) signalIfLiveLocked(signame, killedBy string) bool {
 // and killAndWaitProc sends none there either.
 //
 // It returns the error of the kill. On Unix that is nil. On Windows it is the error of
-// TerminateProcess on the direct child.
+// TerminateJobObject on the job, or of TerminateProcess on a direct child with no job.
 func (p *managedProc) killGroupAfterExit() error {
 	p.mu.Lock()
 	defer p.mu.Unlock()
@@ -728,7 +732,7 @@ func (m *procManager) spawnVia(c *conn, id, command string, args []string, cwd s
 			return nil, err
 		}
 	}
-	cmd.SysProcAttr = newSysProcAttr()
+	cmd.SysProcAttr = spawnSysProcAttr(m.jobs)
 	// Launch through the exec-child trampoline, on every socket shape, so the
 	// spawned child carries CLAUDE_SSH_RUN_DIR and a CLAUDE_SSH_CHILD identity (linux and
 	// darwin; a no-op on windows/other, and a no-op for a command that would fail at Start, so
@@ -867,22 +871,20 @@ func (m *procManager) spawnVia(c *conn, id, command string, args []string, cwd s
 	afterChildStart(id, cmd.Process.Pid)
 	// Take the kill handle of the child. On Unix this is the process group from
 	// newSysProcAttr, so a kill can end the whole tree. On Windows it is a process
-	// handle of the direct child only. A failure here is non-fatal: kill falls back
-	// to the parent. It comes before the check below, which needs the handle.
-	group, err := confineProc(cmd.Process)
+	// handle of the direct child, and with m.jobs the job that the child joins here. A
+	// failure here is non-fatal: kill falls back to the parent. It comes before the
+	// check below, which needs the handle.
+	group, err := confineProc(cmd.Process, m.jobs)
 	if err != nil {
 		logWarnf("[process.Manager] process-group confinement failed for %s: %v", id, err)
 	}
-	// A start that returns after the shutdown began leaves no start line, no
-	// count, no table entry and no record. The kill here ends the child at once,
-	// also with -keep-children, and the wait reaps it.
-	//
-	// The wait is bounded by killReapGrace. This spawn holds the start gate, and
+	// endUnstarted ends a started child that the spawn does not keep, and reaps it. The
+	// wait is bounded by killReapGrace. This spawn holds the start gate, and
 	// stopStarts waits for it. A child that the kill cannot reap must not hold the
 	// gate and the teardown forever. After the bound the spawn goes on, and the
 	// goroutine reaps the child later. Nothing below touches cmd, and the pipe read
 	// ends and the group handle are not used by the wait.
-	if m.startsStopped.Load() {
+	endUnstarted := func() {
 		_ = signalGroup(group, cmd.Process, "KILL")
 		reaped := make(chan struct{})
 		go func() {
@@ -898,6 +900,22 @@ func (m *procManager) spawnVia(c *conn, id, command string, args []string, cwd s
 		group.close()
 		closeAll(stdoutR, stderrR)
 		_ = stdin.Close()
+	}
+	// A Windows child with a job started suspended. It runs only now, after the join,
+	// so it starts no process before it joins its job. A no-op otherwise. If the resume
+	// fails, the spawn ends the child and answers the error, with its Failed to start
+	// line (claustrum's own, not measured).
+	if err := resumeChild(cmd.Process, cmd.SysProcAttr); err != nil {
+		err = fmt.Errorf("resume after the job join: %w", err)
+		logErrorf("[process.Manager] Failed to start process %s: %v", id, err)
+		endUnstarted()
+		return nil, err
+	}
+	// A start that returns after the shutdown began leaves no start line, no
+	// count, no table entry and no record. The kill here ends the child at once,
+	// also with -keep-children, and the wait reaps it.
+	if m.startsStopped.Load() {
+		endUnstarted()
 		return nil, errStartsStopped
 	}
 	// With a launcher the line names the launcher's argv[0] only (measured).
@@ -994,6 +1012,10 @@ func (p *managedProc) waitReapAndDrain(wg *sync.WaitGroup, stdoutR, stderrR *os.
 	if p.recordDone != nil {
 		close(p.recordDone)
 	}
+	// On Windows a child in a job takes the rest of its job with it. So a process
+	// that it started and that holds its pipes ends here, and the drain below ends at
+	// once. A no-op on Unix and for a child with no job.
+	p.group.endRest()
 	// A child can leave a grandchild holding the same stdout — `npm run dev &`,
 	// anything that daemonizes. The pipes then stay open long after the process
 	// we spawned is gone. On the reference the exit frame lands 5 seconds after
@@ -1035,7 +1057,7 @@ func (p *managedProc) waitReapAndDrain(wg *sync.WaitGroup, stdoutR, stderrR *os.
 	p.stdinCond.Broadcast()
 	p.stdinMu.Unlock()
 	// Release the OS group handle now the child is gone. On Windows this closes
-	// the kill handle of the direct child. It ends nothing.
+	// the kill handle of the direct child and the handle of its job. It ends nothing.
 	p.group.close()
 	sigName := exitSignalName(err)
 	logInfof(fmtProcExited, p.id, code, exitLogSuffix(sigName, killedBy))
@@ -1384,7 +1406,8 @@ var (
 
 // confineProc is confineProcess behind a seam. Confinement cannot fail on Unix: the
 // process group is already set by newSysProcAttr, so the call returns a nil error. On
-// Windows it fails only when the OpenProcess it needs fails. The warn-and-continue arm
+// Windows it fails when the OpenProcess it needs fails, or when the job of the child
+// cannot be made or joined. The warn-and-continue arm
 // of spawn is therefore unreachable without the seam. That arm warns, keeps the group
 // that came back and does not abort the spawn. Production never reassigns it.
 var confineProc = confineProcess
@@ -1496,8 +1519,10 @@ func (m *procManager) signalAndWait(p *managedProc, signal string, grace time.Du
 	// the reference kills them. Measured: killAndWait with escalate:true left the
 	// backgrounded sleeper alive on claustrum and dead on the reference.
 	//
-	// On Windows the kill ends the direct child only, and here that child has ended
-	// already. TerminateProcess then fails, and the line below is the reference's.
+	// On Windows with no job the kill ends the direct child only, and here that child
+	// has ended already. TerminateProcess then fails, and the line below is the
+	// reference's. With a job the kill ends the job, which endRest emptied, and no line
+	// prints (claustrum's own, not measured).
 	// Measured on a Windows VM against 89cb6289, with kids of the child holding its
 	// stdout and stderr. The line was "KillAndWait c1: group kill failed:
 	// TerminateProcess: Access is denied.". On Unix the kill reports no error, so no

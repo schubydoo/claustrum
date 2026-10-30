@@ -117,7 +117,7 @@ A client must treat EOF after a shutdown request as a success. The reference oft
 
 ### What the stop does
 
-The stop closes the listener. On Linux and macOS, if the socket file is still the one that the daemon bound, the stop removes it (from the code on macOS). On Windows the close of the listener removes the path, also the socket of a successor. Then the stop closes every connection and ends the children. That is the whole process group on Linux and macOS, and the direct child on Windows. With `-keep-children` the children keep running ([CT-2](../DIVERGENCES.md#ct-2)). The stop removes `daemon.token` by the rules of [Token persistence](../DAEMON.md#token-persistence-daemontoken). The daemon then exits with code 0 (from the code).
+The stop closes the listener. On Linux and macOS, if the socket file is still the one that the daemon bound, the stop removes it (from the code on macOS). On Windows the close of the listener removes the path, also the socket of a successor. Then the stop closes every connection and ends the children. That is the whole process group on Linux and macOS, and the job of each child on Windows (`52d82f0a`). With `-keep-children` the children keep running ([CT-2](../DIVERGENCES.md#ct-2)). The stop removes `daemon.token` by the rules of [Token persistence](../DAEMON.md#token-persistence-daemontoken). The daemon then exits with code 0 (from the code).
 
 ### Log lines
 

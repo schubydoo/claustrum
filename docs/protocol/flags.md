@@ -112,14 +112,14 @@ These flags are off the wire. `-keep-children` and `-listen-pipe` have an entry 
   unopenable path is fatal. [SECURITY.md](https://github.com/schubydoo/claustrum/blob/main/SECURITY.md) has the redaction and
   the file mode.
 - `-keep-children` is [CT-2](../DIVERGENCES.md#ct-2), off by default. Without it, a
-  graceful shutdown ends the children: the whole tree on Linux and macOS, the
-  direct child on Windows. With it, the children stay alive across a restart,
+  graceful shutdown ends the children: the whole tree, on Windows each
+  [job](process-kill.md#windows-child-trees) (`52d82f0a`). With it, the children stay alive across a restart,
   and the daemon logs `[Server] -keep-children: leaving <n> running child
   process(es) alive across shutdown`. A survivor loses its stdio. Its stdin
   reaches EOF, and a stdout or stderr write gets SIGPIPE, or EPIPE for a child
   that ignores SIGPIPE, such as Node. On Windows the flag keeps the whole tree
   alive after `-stop` and after `server.shutdown`, the direct child too
-  (measured on Windows). The stdio of a survivor is not measured there.
+  (measured on Windows with no job). The stdio of a survivor is not measured there.
 - `-listen-pipe` is CT-5 and Windows-only. See [Named-pipe
   transport](../PROTOCOL.md#named-pipe-transport-windows-opt-in). The daemon logs a setup failure
   (`[Server] named-pipe transport: …`), which is non-fatal. The socket still serves.

@@ -32,7 +32,7 @@ func TestSpawnSurvivesConfinementFailure(t *testing.T) {
 	errConfine := errors.New("open process: access is denied")
 	old := confineProc
 	t.Cleanup(func() { confineProc = old })
-	confineProc = func(*os.Process) (*procGroup, error) { return nil, errConfine }
+	confineProc = func(*os.Process, childJobs) (*procGroup, error) { return nil, errConfine }
 
 	m := newTestProcManager(t)
 	t.Cleanup(m.killAll)
