@@ -17,8 +17,15 @@ func TestStrayCommondirNameTooLong(t *testing.T) {
 	base := t.TempDir()
 	deep := base
 	for len(deep) < 4086 {
-		// At least 1 byte, so the loop ends: the slash costs 1 and the chunk the rest.
-		deep = filepath.Join(deep, strings.Repeat("d", max(1, min(200, 4086-len(deep)-1))))
+		r := 4086 - len(deep) // bytes left: one slash and the name
+		if r < 2 {
+			t.Fatalf("temp dir %s leaves %d byte", base, r)
+		}
+		n := min(200, r-1)
+		if r-1-n == 1 {
+			n-- // never leave 1 byte, which a slash alone overshoots
+		}
+		deep = filepath.Join(deep, strings.Repeat("d", n))
 	}
 	if len(deep) != 4086 {
 		t.Fatalf("deep path has %d bytes", len(deep))

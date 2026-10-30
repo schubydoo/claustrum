@@ -48,26 +48,26 @@ func TestStrayCommondirDotIsTrusted(t *testing.T) {
 	}
 }
 
-// Any other content is refused and quoted exactly, with only the
-// trailing CR and LF removed (rows T03a to T03j). A lone LF reads as "". A backslash
+// Any other content is refused, with only the trailing CR and LF removed
+// before the compare (rows T03a to T03j). A lone LF reads as "". A backslash
 // is not a slash, on every OS (row T03h on a Windows VM). Mutations: trim spaces or
 // tabs, clean the path, map `\` to `/` before the compare.
 func TestStrayCommondirOtherContentIsRefused(t *testing.T) {
-	for _, tc := range []struct{ content, quoted string }{
-		{" .", " ."},
-		{". ", ". "},
-		{".\t", ".\t"},
-		{"./x", "./x"},
-		{"..", ".."},
-		{"", ""},
-		{"\n", ""},
-		{`.\`, `.\`},
+	for _, tc := range []struct{ content string }{
+		{" ."},
+		{". "},
+		{".\t"},
+		{"./x"},
+		{".."},
+		{""},
+		{"\n"},
+		{`.\`},
 	} {
 		t.Run(strings.NewReplacer("\n", `\n`, "\t", `\t`).Replace(tc.content), func(t *testing.T) {
 			r := newTrustRepo(t)
 			cd := filepath.Join(r.T, ".git", "commondir")
 			writeFile(t, cd, tc.content, 0o644)
-			wantRPCError(t, "info(T)", info(t, r.T), wantTR(cd, tc.quoted))
+			wantRPCError(t, "info(T)", info(t, r.T), wantTR(cd, ""))
 		})
 	}
 }

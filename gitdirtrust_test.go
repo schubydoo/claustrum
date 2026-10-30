@@ -28,7 +28,8 @@ const (
 )
 
 // wantTR is the refusal of a stray commondir whose content (trailing CR and LF
-// removed) is not "." or "./". The text does not quote the content (683cc6a9).
+// removed) is not "." or "./". The text does not quote the content (683cc6a9), so
+// the second argument, the content, is unused.
 func wantTR(cd, _ string) string {
 	return wantTrustPrefix + fmt.Sprintf("%q", cd) + ` holds something other than "." or "./"` + wantTRTail
 }
