@@ -371,7 +371,7 @@ func TestGitDirTrustOperandQuoting(t *testing.T) {
 	initTrustMain(t, T)
 	cd := filepath.Join(T, ".git", "commondir")
 	writeFile(t, cd, "x\n", 0o644)
-	want := wantTrustPrefix + `"` + base + `/q\"uo\nte\t\x7f é\u00a0𝄞/T/.git/commondir" reads "x"` + wantTRTail
+	want := wantTrustPrefix + `"` + base + `/q\"uo\nte\t\x7f é\u00a0𝄞/T/.git/commondir" holds something other than "." or "./"` + wantTRTail
 	wantRPCError(t, "info(T)", info(t, T), want)
 }
 

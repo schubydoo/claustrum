@@ -301,7 +301,7 @@ func TestCreateFromALinkedWorktreeWithALinkedEntry(t *testing.T) {
 	raw, calls := f.call(t, "git.worktree_create", map[string]any{"baseRepo": b, "worktreePath": leaf, "branchName": "b1", "sourceBranch": "main"})
 	wantFrame(t, raw, frame(`{"success":false,"error":"git worktree add failed: cannot locate the repository's git directory: `+
 		`the repository's git directory could not be trusted; git not run: commondir not as git writes it: \"`+eb+
-		`/commondir\" reads \"../..\"; git writes that file only inside .git/worktrees/\u003cname\u003e/, and Claude Code's sandbox `+
+		`/commondir\" holds something other than \".\" or \"./\"; git writes that file only inside .git/worktrees/\u003cname\u003e/, and Claude Code's sandbox `+
 		`may leave one containing just \".\"; anything else sends git's configuration and hooks elsewhere, so treat it as tampering: `+
 		`delete it, and if you did not create it, find out what did","errorCode":"worktree_add_failed"}`))
 	if addRan(calls) {
