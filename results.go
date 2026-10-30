@@ -58,6 +58,15 @@ type readResult struct {
 	Exists  bool   `json:"exists"`
 }
 
+// realpathResult is the files.realpath result. Real and WouldBe are never both
+// set. Measured on build 683cc6a9 (Linux, macOS and Windows VMs).
+type realpathResult struct {
+	Exists   bool   `json:"exists"`
+	Real     string `json:"real,omitempty"`
+	WouldBe  string `json:"wouldBe,omitempty"`
+	Dangling bool   `json:"dangling,omitempty"`
+}
+
 type validateResult struct {
 	Valid bool   `json:"valid"`
 	IsDir bool   `json:"isDir"`

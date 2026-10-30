@@ -1,0 +1,35 @@
+[
+  {
+    "jsonrpc": "2.0",
+    "id": 1,
+    "result": {
+      "exists": true,
+      "real": "<DIR>/d/real/f"
+    }
+  },
+  {
+    "jsonrpc": "2.0",
+    "id": 2,
+    "result": {
+      "exists": false,
+      "wouldBe": "<DIR>/d/real/new"
+    }
+  },
+  {
+    "jsonrpc": "2.0",
+    "id": 3,
+    "result": {
+      "exists": false,
+      "dangling": true
+    }
+  },
+  {
+    "jsonrpc": "2.0",
+    "id": 4,
+    "result": {
+      "exists": false,
+      "wouldBe": "<DIR>/d/gone",
+      "dangling": true
+    }
+  }
+]

@@ -107,6 +107,7 @@ nav:
               - files.stat (inspect a path): protocol/files-stat.md
               - files.list (list a folder): protocol/files-list.md
               - files.read (read a file): protocol/files-read.md
+              - files.realpath (resolve a path): protocol/files-realpath.md
               - files.extract_tar (unpack a tar): protocol/files-extract-tar.md
           - Git:
               - git.info (repo info): protocol/git-info.md

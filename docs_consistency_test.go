@@ -131,6 +131,8 @@ var docNotMethods = map[string]string{
 	"server.go":      "a source file",
 	"process.go":     "a source file",
 	"git.exe":        "the Windows git program, inside an error text",
+	// Built, but server.capabilities does not list it until the capabilities change. Delete both entries then.
+	"files.realpath": "a method that the daemon answers and does not advertise yet",
 	// The terminal of 52d82f0a, which claustrum does not build.
 	"process.resize":    "a method of the reference build 52d82f0a that claustrum lacks",
 	"process.spawn.pty": "a feature of the reference build 52d82f0a that claustrum lacks",
@@ -182,6 +184,7 @@ var docGoNameRE = regexp.MustCompile(`\b(?:server|files|git|launcher|process|plu
 // A word that ends in ".go", ".exe" or "*", or holds ".log", is a file name or a
 // glob and needs no entry.
 var docGoNotMethods = map[string]string{
+	"files.realpath":                 "a method that the daemon answers and does not advertise yet",
 	"git.list_branch":                "a deliberate typo that a comment of shutdown_auth_test.go gives as an example",
 	"server.capabilities.instanceId": "the instanceId member of the server.capabilities result, named in a comment of pipetransport.go",
 	"server.run":                     "the run method of the server type, named in comments of pipetransport_other.go and pipetransport_windows.go",

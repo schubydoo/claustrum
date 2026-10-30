@@ -27,6 +27,8 @@ func (s *server) handleFiles(req *request) response {
 		fn = filesRead
 	case "files.validate":
 		fn = filesValidate
+	case "files.realpath":
+		fn = filesRealpath
 	case "files.extract_tar":
 		fn = filesExtractTar
 	default:
