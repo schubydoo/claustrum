@@ -37,7 +37,7 @@ If the daemon finds no repository, the response is not an error:
 `"isRepo": false` has more causes than a missing repository. The main ones:
 
 - `path` is not inside a git repository.
-- Unsearchable `refs` or `objects` on Linux and macOS (not measured).
+- `refs` of mode 0600 on Linux and macOS (build `52d82f0a`).
 - `path` does not resolve. For example, it does not exist. That is not an error.
 - `path` is inside a directory of managed worktrees. That is a path under `.claude/worktrees`, or under a directory that holds the marker file `.claude-managed-worktrees`. So the worktree of a session gives `"isRepo": false`. Send the path of the base repository to list its branches. `git.list_branches` ignores a `baseRepo` member (measured on Linux). The daemon makes that test on its own working directory too.
 - The daemon cannot find git on its `PATH`, and `path` holds no repository (measured on Linux). A request with `"shadowDirOff":true` gets that answer from the failed listing too (from the code, not measured). Else a repository gets the failure of the daemon's first start test (from the code, not measured).

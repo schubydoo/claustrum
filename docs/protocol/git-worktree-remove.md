@@ -28,7 +28,7 @@ Success:
 {"success": true}
 ```
 
-If the branch step keeps the branch, the reply is `{"success":true,"branchKept":true}`. The step keeps a branch that holds commits that no other ref reaches. It keeps the branch too if it cannot read the branches, for example for a `baseRepo` that holds no repository or does not exist. Then `branchKept` comes even for a branch that does not exist. The member is only ever `true`. A deleted branch, a branch that does not exist, an empty `branchName`, and a name that starts with `-` or `+` give a plain success.
+If the branch step keeps the branch, the reply is `{"success":true,"branchKept":true}`. It keeps the branch too if it cannot read the branches, for example for a `baseRepo` that holds no repository or does not exist. Then `branchKept` comes even for a missing branch. The member is always `true`. A deleted branch, a branch that does not exist, an empty `branchName`, and a name that starts with `-` or `+` give a plain success.
 
 Failure:
 
@@ -122,7 +122,7 @@ Before it deletes anything, the daemon checks the repository. Each of these refu
 - With `worktreeRoot`, the daemon must find the work tree of the repository. If it cannot, the `cannot determine the repository's work tree` text answers. The reason: git cannot start, the trust check refuses or finds no repository, or the git config or the settings copy is refused. Or the configuration listing fails, `baseRepo` is itself a git directory, or `git rev-parse` fails. A `baseRepo` that does not exist skips this check.
 - A worktree that is locked (`git worktree lock`) is refused. A lock in the `.git` folder of `baseRepo` is refused too, also where the reference deletes the worktree ([D22](../DIVERGENCES.md#d22)).
 
-Without `worktreeRoot`, if `baseRepo` holds no repository, a worktree directory that exists gets the lock-check refusal. If that listing fails in a plain folder, the text is `… is locked: <text of the failed listing>`. If the worktree directory is gone and the listing passes, the request is a success, and no registration is deleted. With `worktreeRoot`, no repository gives the work-tree refusal, also for a gone worktree.
+Without `worktreeRoot`, a `baseRepo` whose `refs` has mode 0600 holds no repository (build `52d82f0a`, Linux and macOS), and so does one with no `refs` (Linux). The entry's `commondir` refuses nothing (`52d82f0a`, all systems). If that listing fails in a plain folder, the text is `… is locked: <text of the failed listing>`. If the worktree directory is gone and the listing passes, the request is a success, and no registration is deleted. With `worktreeRoot`, no repository gives the work-tree refusal, also for a gone worktree.
 
 If `<git dir>/worktrees` exists but cannot be read, a worktree that exists gets the lock-check refusal, and nothing is deleted. A gone worktree then gets success, and its registration stays.
 

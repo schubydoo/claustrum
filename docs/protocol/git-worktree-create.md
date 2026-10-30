@@ -52,7 +52,7 @@ Decide by `errorCode` first.
 |---|---|
 | `unsafe_path` | The daemon refuses a path. For example, `worktreePath` is relative, has a `..` component, is outside `baseRepo`, or exists. A `worktreeRoot` that is not safe gives this code too. So does a worktree that git registered in an unexpected place. |
 | `symlinked_component` | A directory between `baseRepo` and the worktree is a symbolic link. |
-| `not_a_repo` | `baseRepo` is not a git repository, or git itself does not accept it. A bare `baseRepo` gets this code too while the daemon works on its settings copy. |
+| `not_a_repo` | `baseRepo` is not a git repository, as with `refs` 0600 (build `52d82f0a`, Linux and macOS), or git itself does not accept it. A bare `baseRepo` gets this code too while the daemon works on its settings copy. |
 | `nested_base_repo` | `baseRepo` is inside a directory of managed worktrees, or the daemon does not accept it as a trust root. |
 | `mkdir_failed` | The daemon cannot create a directory for the worktree. Or, with `worktreeRoot`, a git call or a `.git` test failed first. |
 | `worktree_add_failed` | `git worktree add`, the checkout or the `config.worktree` step failed. The text holds the message of git, or a refusal of the daemon before the add. A `git worktree add` that runs 2 minutes is stopped. |
@@ -197,13 +197,11 @@ Before the add, a request can remove one stale registration in the common git di
 | A refusal before `git worktree add` (`worktree_add_failed`), or `mkdir_failed` | Nothing. |
 | `git worktree add` runs and fails (`worktree_add_failed`) | If the worktree directory is empty, the daemon removes it. Files that the failed add wrote stay. A registration and a branch that the add made stay too. |
 | A test of the new worktree fails after the add. On Linux and macOS the tests come before the checkout and give `unsafe_path`. A worktree directory replaced during the checkout gives `worktree_add_failed`. So does a failed test on Windows, except a `.git` file that names another staged entry. That gives `unsafe_path`. | Everything, except an empty worktree directory. On Windows, a `.git` file that names another staged entry leaves nothing: the worktree directory and the branch that the request created go. |
-| The checkout or the `config.worktree` step fails, the filter rule refuses, or the deadline expires (`worktree_add_failed`, `repository_only_filter`, `timeout`). Or the text holds `; retry` before any clause of the rollback (Linux and macOS). | The daemon removes the worktree directory and its registration. If this request created the branch, the daemon removes the branch too. |
+| The checkout or the `config.worktree` step fails, the filter rule refuses, or the deadline expires (`worktree_add_failed`, `repository_only_filter`, `timeout`). Or the text holds `; retry` before any clause of the rollback (Linux and macOS). | The daemon removes the worktree directory and its registration. If this request created the branch, the daemon removes it too. |
 
 ??? note "When a rollback leaves something"
 
-    A rollback leaves something in these cases:
-
-    - If the branch holds commits that no other ref reaches, the daemon keeps the branch. The response then has `"branchKept": true`.
+    - If the branch holds commits that no other ref reaches, the daemon keeps the branch. The response has `"branchKept": true`.
     - After a failed `config.worktree` step, a refused second config read keeps the branch without `branchKept` (Linux and macOS).
     - If a delete fails, the error text ends with a clause that says what remains. If the files of the worktree cannot be deleted, the registration and the branch stay. A registration that cannot be deleted keeps the branch too, on Windows only for a moved registration (not measured on Windows). On Linux and macOS in the state `shadow`, after an empty answer of git about the git directory, a registration that cannot be deleted adds no clause, and the branch step runs (claustrum's own). On Windows a registration that stays adds no clause, unless the create moved it (not measured).
     - If something replaced the worktree directory, the rollback keeps the replacement and adds no clause.

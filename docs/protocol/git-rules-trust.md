@@ -54,8 +54,9 @@ the daemon walks up from the request folder:
 - A request folder that does not exist is left to git.
 
 The git-directory test has three parts. `objects` and `refs` exist, of any type on
-Windows, searchable on Linux and macOS. A root daemon passes. Only `refs` 0600 on
-`git.info` is measured (build `52d82f0a`), the rest is claustrum's own. `HEAD`
+Windows, searchable on Linux and macOS. A root daemon passes. `refs` 0600 is measured on
+`git.info`, `git.list_branches`, a create and a remove (build `52d82f0a`). The rest
+is claustrum's own. `HEAD`
 passes. A regular `HEAD` passes when its first 255 bytes start with `ref:`,
 then any spaces, tabs, CRs or LFs, then `refs/`. It also passes when it starts
 with 40 hex digits in either case. A symlink `HEAD` passes when its target text
@@ -196,7 +197,7 @@ not run: the worktree entry this folder's .git names no longer exists`.
 | `git.list_branches` | `{"error":{"code":-32603,"message":<text>}}` | `{"isRepo":false,"branches":[]}` |
 | `git.status` | `{"error":{"code":-32603,"message":<text>}}` | `{"isRepo":false,"clean":false}` |
 | `git.worktree_create` | `{"success":false,"error":<text>,"errorCode":"worktree_add_failed"}` | `{"success":false,"error":"not a git repository","errorCode":"not_a_repo"}` |
-| `git.worktree_remove` | without `worktreeRoot`, the lock-check refusal for a worktree directory that exists, and `could not check whether <p> is locked (<text>); retry` for a gone one. A failed listing in a folder that exists gives `could not check whether <p> is locked: <text>`. With it, the work-tree refusal and `<text>` | without `worktreeRoot`, the lock-check refusal for a worktree directory that exists, and `{"success":true}` for a gone one. With it, the work-tree refusal and `exit status 128` |
+| `git.worktree_remove` | see [The repository checks](git-worktree-remove.md#the-repository-checks) | see there |
 
 The lock-check refusal is
 `{"success":false,"error":"failed to remove worktree: could not check whether <worktreePath> is locked (its registrations could not be examined); retry"}`.
