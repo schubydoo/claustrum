@@ -19,6 +19,17 @@ func lowerSecondProbeBound(t *testing.T, bound, drain time.Duration) {
 	t.Cleanup(func() { probeSecondBound, shadowCallDrain = oldBound, oldDrain })
 }
 
+// exit128Runs is the count of calls about the repository after a first call
+// that exited 128 and a second run that exited 0: three on Linux and macOS
+// (probeConfigFreeRun), two on Windows. The third run of these tests matches
+// the stub rule of the first call, so it exits 128 too.
+func exit128Runs() int {
+	if probeConfigFreeRun {
+		return 3
+	}
+	return 2
+}
+
 // secondProbeCall is the call about the repository with a GIT_DIR, or false.
 func secondProbeCall(calls []envCall) (envCall, bool) {
 	for _, c := range probeCalls(calls) {
@@ -52,7 +63,7 @@ func TestSecondProbeAfterExit128(t *testing.T) {
 		second, versionCall bool
 	}{
 		{name: "exit 128, then 0", exit: 128, stderr: "fatal: first text\n", secondStderr: "fatal: second text\n",
-			probes: 2, second: true},
+			probes: exit128Runs(), second: true},
 		{name: "exit 128, then 1", exit: 128, stderr: "fatal: first text\n", secondExit: 1, secondStderr: "fatal: second text\n",
 			text: failed + "fatal: first text", probes: 2, second: true, versionCall: true},
 		{name: "exit 128 with no text, then 1", exit: 128, secondExit: 1, secondStderr: "fatal: second text\n",

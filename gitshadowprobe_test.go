@@ -456,12 +456,12 @@ func TestProbeAnswers(t *testing.T) {
 		// task073-03 (Linux VM), and W2-268 of round task073-01 (Windows VM).
 		{name: "exit 128, no text", exit: 128, calls: 2, version: true,
 			text: "git could not check this repository on the remote machine: at %[1]q: exit status 128"},
-		{name: "exit 128, not a git repository", exit: 128, calls: 2, secondOK: true,
+		{name: "exit 128, not a git repository", exit: 128, calls: exit128Runs(), secondOK: true,
 			stderr: "fatal: not a git repository (or any of the parent directories): .git\n"},
-		{name: "exit 128, another owner", exit: 128, calls: 2, secondOK: true,
+		{name: "exit 128, another owner", exit: 128, calls: exit128Runs(), secondOK: true,
 			stderr: "fatal: detected dubious ownership in repository at '/x/repo'\n"},
-		{name: "exit 128, upper case", exit: 128, calls: 2, secondOK: true, stderr: "FATAL: NOT A GIT REPOSITORY (x)\n"},
-		{name: "exit 128, bare repository", exit: 128, calls: 2, secondOK: true, stderr: "fatal: cannot use bare repository 'x'\n"},
+		{name: "exit 128, upper case", exit: 128, calls: exit128Runs(), secondOK: true, stderr: "FATAL: NOT A GIT REPOSITORY (x)\n"},
+		{name: "exit 128, bare repository", exit: 128, calls: exit128Runs(), secondOK: true, stderr: "fatal: cannot use bare repository 'x'\n"},
 		{name: "exit 128, not a git repository after a first line", exit: 128, calls: 2, version: true,
 			stderr: "warning: w\nfatal: not a git repository\n",
 			text:   "git could not check this repository on the remote machine: at %[1]q: warning: w fatal: not a git repository"},
@@ -567,8 +567,8 @@ func TestProbeGoodAnswerWithTheFullPath(t *testing.T) {
 	answerSecondProbe(t, 0, "")
 	for range 2 {
 		raw, calls := f.info(t, f.repo, nil)
-		if !strings.Contains(raw, `"isRepo":false`) || len(probeCalls(calls)) != 2 {
-			t.Fatalf("git.info with a bad answer = %s with %d calls about the repository, want two each time", raw, len(probeCalls(calls)))
+		if !strings.Contains(raw, `"isRepo":false`) || len(probeCalls(calls)) != exit128Runs() {
+			t.Fatalf("git.info with a bad answer = %s with %d calls about the repository, want %d each time", raw, len(probeCalls(calls)), exit128Runs())
 		}
 	}
 	// Git prints the path with forward slashes on Windows.
