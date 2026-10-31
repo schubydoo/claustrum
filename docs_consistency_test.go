@@ -607,7 +607,7 @@ func TestDocsEveryErrorCodeIsDocumented(t *testing.T) {
 // because the documents grew past what a person can read. A limit goes down, never
 // up, without the maintainer's word.
 var docWordLimits = map[string]int{
-	"AGENTS.md":                                5592, // the temp-folder test of 683cc6a9. 5537: the two .synced removes of 683cc6a9
+	"AGENTS.md":                                5619, // the empty folder that Windows cannot read. 5592: the temp-folder test of 683cc6a9. 5537: the two .synced removes of 683cc6a9
 	"CONTRIBUTING.md":                          1071,
 	"README.md":                                1133, // 13 are the HTML tokens of the logo <picture> block (maintainer, 2026-10-31)
 	"SECURITY.md":                              1553,
@@ -621,10 +621,10 @@ var docWordLimits = map[string]int{
 	"docs/PROTOCOL.md":                         2826, // TASK-231: one sentence on the close line. TASK-230: one sentence on a failed write. TASK-202: the error texts, stream frames and flags moved to their own pages
 	"docs/STYLE.md":                            1293, // task-203b: the page rewrite
 	"docs/TOUR.md":                             850,  // a new page: its word count plus about 200
-	"docs/UPSTREAM-TRACKING.md":                6228, // the could-not-be-examined text. 6224: decision-040: words moved from PROTOCOL.md, net down in the same PR
+	"docs/UPSTREAM-TRACKING.md":                6230, // the build of the open destDir refusal. 6228: the could-not-be-examined text. 6224: decision-040: words moved from PROTOCOL.md, net down in the same PR
 	"docs/index.md":                            316,  // the reader router of TASK-201
 	"docs/protocol/errors.md":                  1912, // TASK-245: the .probe text, 41 words of a new row
-	"docs/protocol/files-extract-tar.md":       2420, // the .synced rules of 683cc6a9
+	"docs/protocol/files-extract-tar.md":       2457, // the empty folder that Windows cannot read. 2420: the .synced rules of 683cc6a9
 	"docs/protocol/files-list.md":              468,  // the network links of 683cc6a9
 	"docs/protocol/files-read.md":              825,
 	"docs/protocol/files-stat.md":              434, // TASK-203 rewrite
