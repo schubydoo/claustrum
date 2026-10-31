@@ -967,8 +967,10 @@ func gitWorktreeCreateLocked(req *request, p *gitParams, repo string) response {
 	// (gitdirtrust.go). A refusal creates no worktree directory, no entry and no
 	// branch. When the daemon's own environment carries GIT_COMMON_DIR, the refusal
 	// text is wrapped as a failed add. The check of the daemon's own GIT_CONFIG_COUNT
-	// comes after a trust refusal and before the "no repository" answer.
-	t := requestGitDirTrust(repo, false)
+	// comes after a trust refusal and before the "no repository" answer. A git
+	// directory that the daemon cannot search counts as no repository first
+	// (readGitDirTrust).
+	t := readGitDirTrust(repo, false)
 	// The git directory as it is before the gate (acceptedGitDir).
 	var gitDirBefore os.FileInfo
 	if gitDirMustBeReal && t.verdict == gitDirTrusted && t.pinCommonDir != "" {
