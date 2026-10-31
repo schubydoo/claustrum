@@ -16,6 +16,8 @@ one, as the table in [Git-directory trust check](git-rules-trust.md#git-director
 sentence that it ends, and that sentence was measured on that system only. A sentence
 that names systems without "measured" holds on each one. The [reference build history](../REFERENCE-BUILDS.md) has the builds.
 
+### The texts
+
 | namespace / context | error string | code / notes |
 |---|---|---|
 | protocol | `Invalid JSON-RPC version` | -32600 |
@@ -28,6 +30,7 @@ that names systems without "measured" holds on each one. The [reference build hi
 | files.list | The texts that only this method sends | On the page: [files.list → Errors](files-list.md#errors) |
 | files.validate | The texts that only this method sends | On the page: [files.validate → Response](files-validate.md#response) |
 | files.extract_tar | The texts that only this method sends | On the page: [files.extract_tar → Errors](files-extract-tar.md#errors) |
+| files.realpath | The texts that only this method sends | On the page: [files.realpath → Errors](files-realpath.md#errors) |
 | git.status | The texts that only this method sends | On the page: [git.status → Errors](git-status.md#errors) |
 | git.status / git.list_branches | `<go error>`, for example `exit status 128` | -32603. The git call failed |
 | git.list_branches / git.info / git.status / git.worktree_create | `git took too long: Claude stopped git <subcommand> after 2 minutes; try again` | -32603 on the other methods. Create puts it after the text of the stopped step, as `git worktree add failed: ` or the `mkdir_failed` text of the parent step. A stopped repository test gets it alone, with `worktree_add_failed`. While a request with `"shadowDirOff":true` runs, the text says `after 30 minutes` (claustrum's own). See [Time limits of git calls](git-rules-calls.md#time-limits-of-git-calls) |

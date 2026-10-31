@@ -32,14 +32,16 @@ func wantPeerCheckLine() string {
 // wantCapabilityFeatures is the features array in the order of the frame.
 // process.kill.farewell comes directly after process.stdin.offset, and
 // files.list.includeDotNames after files.extract_tar.execBit. server.peer_check and
-// git.shadow_dir come directly after launcher.managed. Windows lists no
-// git.worktree.external_root.
+// git.shadow_dir come directly after launcher.managed. files.list.junctionsAsDirs
+// comes after files.list.includeDotNames, and files.read.real after git.shadow_dir
+// (683cc6a9). Windows lists no git.worktree.external_root and no
+// process.spawn.link_bound.
 func wantCapabilityFeatures() string {
-	const head = `"process.stdin.offset","process.kill.farewell","files.extract_tar.execBit","files.list.includeDotNames","git.status.baseRepo","git.info.discovered_root","git.worktree_create.timeoutMs","git.worktree_create.existingBranch","git.worktree_remove.unpushedGuard","process.spawn.shellAgentSocket","process.spawn.failure_reason","server.line_end","launcher.managed","server.peer_check","git.shadow_dir",`
+	const head = `"process.stdin.offset","process.kill.farewell","files.extract_tar.execBit","files.list.includeDotNames","files.list.junctionsAsDirs","git.status.baseRepo","git.info.discovered_root","git.worktree_create.timeoutMs","git.worktree_create.existingBranch","git.worktree_remove.unpushedGuard","process.spawn.shellAgentSocket","process.spawn.failure_reason","server.line_end","launcher.managed","server.peer_check","git.shadow_dir","files.read.real",`
 	if runtime.GOOS == "windows" {
 		return head + `"server.instance_id"`
 	}
-	return head + `"git.worktree.external_root","server.instance_id"`
+	return head + `"git.worktree.external_root","process.spawn.link_bound","server.instance_id"`
 }
 
 // wantCapabilitiesFrame is the whole frame of a test server, byte for byte. by is
@@ -49,7 +51,7 @@ func wantCapabilitiesFrame(peerCheck, by string) string {
 	if by != "" {
 		tail += `,"peerCheckBy":` + by
 	}
-	return `{"jsonrpc":"2.0","id":1,"result":{"version":"` + Version + `","methods":["server.ping","server.capabilities","server.shutdown","files.list","files.validate","files.stat","files.read","files.extract_tar","git.info","git.status","git.list_branches","git.worktree_create","git.worktree_remove","launcher.resolve","process.spawn","process.stdin","process.kill","process.killAndWait","process.reattach","plugins.prune"],"instanceId":"` + testInstanceID + `","startedAt":1700000000000,"features":[` + wantCapabilityFeatures() + `],` + tail + `}}`
+	return `{"jsonrpc":"2.0","id":1,"result":{"version":"` + Version + `","methods":["server.ping","server.capabilities","server.shutdown","files.list","files.validate","files.stat","files.read","files.extract_tar","git.info","git.status","git.list_branches","git.worktree_create","git.worktree_remove","launcher.resolve","process.spawn","process.stdin","process.kill","process.killAndWait","process.reattach","plugins.prune","files.realpath"],"instanceId":"` + testInstanceID + `","startedAt":1700000000000,"features":[` + wantCapabilityFeatures() + `],` + tail + `}}`
 }
 
 // stubDaemonNSText gives the daemons of one test the own text t.

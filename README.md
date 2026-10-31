@@ -136,7 +136,7 @@ claustrum -stop -socket "$D/rpc.sock"   # no token needed: shutdown is unauthent
   `-token-file` or `-token-fd`, and [SECURITY.md](SECURITY.md) describes the handoff.
   `server.shutdown` is the one method without auth, as on the reference, so `-stop` sends
   no token.
-- The daemon has 20 methods, across `server.*`, `files.*`, `git.*`, `launcher.*`,
+- The daemon has 21 methods, across `server.*`, `files.*`, `git.*`, `launcher.*`,
   `process.*`, and `plugins.*`. `server.capabilities` self-describes them. Each method has
   a page under [docs/protocol/](docs/protocol/).
 - `process.*` is the core. A client supplies its own `id` on `spawn`. The daemon streams id-less

@@ -26,8 +26,8 @@ var (
 )
 
 // filesReadRealAvailable reports whether the start test passed. It runs the test
-// once. A later change lists the feature files.read.real in server.capabilities only
-// when this is true.
+// once. server.capabilities lists the feature files.read.real only when this is
+// true (featuresFor).
 func filesReadRealAvailable() bool {
 	filesRealOnce.Do(func() { filesRealOK = probeOpenHandle() })
 	return filesRealOK

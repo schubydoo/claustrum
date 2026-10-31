@@ -201,7 +201,7 @@ So is a rule of `process.killAndWait`. For a signal other than `KILL` it sends n
 first signal during the exit drain. On Linux and macOS `KILL` goes to the group at
 once, as on the reference
 ([A request during the exit drain](protocol/process-killandwait.md#a-request-during-the-exit-drain)).
-claustrum lacks the terminal of `52d82f0a`, so `server.capabilities` lacks
+claustrum lacks the terminal of `52d82f0a` and `683cc6a9`, so `server.capabilities` lacks
 `process.resize`, and on Linux and macOS `process.spawn.pty`. A `process.resize`
 gets `-32601`, and on Windows a `process.spawn` with `pty` runs its command
 (measured on macOS and Windows). Check those

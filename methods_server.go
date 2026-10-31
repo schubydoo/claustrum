@@ -12,6 +12,9 @@ var capabilityMethods = []string{
 	"process.spawn", "process.stdin", "process.kill", "process.killAndWait", "process.reattach",
 	// plugins.prune (19f30c46) is appended last.
 	"plugins.prune",
+	// 683cc6a9 lists files.realpath after plugins.prune (Linux, macOS and Windows
+	// VMs). It takes the method count to 21.
+	"files.realpath",
 }
 
 // capabilityFeatures advertises optional protocol extensions, in the reference's
@@ -21,7 +24,7 @@ var capabilityMethods = []string{
 // and git.worktree.external_root (a worktreeRoot param places the session worktree
 // OUTSIDE the repo, under that caller-chosen root, instead of inside it). external_root
 // is unix-only: the reference gates that capability off on Windows and drops the feature
-// from its Windows features list (externalRootCapabilityFeatures is OS-split). 4534d86
+// from its Windows features list (osCapabilityFeatures is OS-split). 4534d86
 // inserted git.worktree_create.timeoutMs before external_root (a caller-supplied
 // per-request deadline on the worktree add + checkout), present on every OS, and
 // appended server.instance_id (the capabilities reply now carries a per-boot instanceId),
@@ -48,12 +51,16 @@ var capabilityMethods = []string{
 // 52d82f0a inserted process.kill.farewell after process.stdin.offset,
 // files.list.includeDotNames after files.extract_tar.execBit, and
 // process.spawn.failure_reason and server.line_end after shellAgentSocket (Linux,
-// macOS and Windows VMs). The array is always emitted.
+// macOS and Windows VMs). 683cc6a9 inserted files.list.junctionsAsDirs after
+// files.list.includeDotNames, and files.read.real after git.shadow_dir (Linux, macOS
+// and Windows VMs). It also lists process.spawn.link_bound after external_root, on
+// Linux and macOS only (osCapabilityFeatures). The array is always emitted.
 var capabilityFeatures = append(append([]string{
 	"process.stdin.offset",
 	"process.kill.farewell",
 	"files.extract_tar.execBit",
 	"files.list.includeDotNames",
+	"files.list.junctionsAsDirs",
 	"git.status.baseRepo",
 	"git.info.discovered_root",
 	"git.worktree_create.timeoutMs",
@@ -65,7 +72,12 @@ var capabilityFeatures = append(append([]string{
 	"launcher.managed",
 	"server.peer_check",
 	"git.shadow_dir",
-}, externalRootCapabilityFeatures...), "server.instance_id")
+	filesReadRealFeature,
+}, osCapabilityFeatures...), "server.instance_id")
+
+// filesReadRealFeature is listed only when filesReadRealAvailable is true. The
+// exact start test is claustrum's own.
+const filesReadRealFeature = "files.read.real"
 
 // jobFeature is the feature of a daemon that puts each child in a job.
 const jobFeature = "process.spawn.job"
@@ -75,10 +87,14 @@ const jobFeature = "process.spawn.job"
 // CLAUDE_SSH_NO_JOBS=1 the name is not in the list (52d82f0a, Windows VM). The jobs of
 // -keep-children (jobsKeep) list it too (claustrum's own).
 func (s *server) featuresFor() []string {
-	if s.procs == nil || s.procs.jobs == jobsOff {
-		return capabilityFeatures
+	list := capabilityFeatures
+	if !filesReadRealAvailable() {
+		list = slices.DeleteFunc(slices.Clone(list), func(f string) bool { return f == filesReadRealFeature })
 	}
-	return append(slices.Clip(capabilityFeatures), jobFeature)
+	if s.procs == nil || s.procs.jobs == jobsOff {
+		return list
+	}
+	return append(slices.Clip(list), jobFeature)
 }
 
 func (s *server) handleServer(c *conn, req *request) *response {

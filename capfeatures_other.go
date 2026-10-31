@@ -2,8 +2,7 @@
 
 package main
 
-// externalRootCapabilityFeatures adds git.worktree.external_root to the advertised
-// server.capabilities features on unix, where custom worktree locations are supported.
-// On Windows the capability is gated off (capfeatures_windows.go), so it is omitted —
-// matching the reference, which drops the feature from its Windows capabilities frame.
-var externalRootCapabilityFeatures = []string{"git.worktree.external_root"}
+// osCapabilityFeatures adds git.worktree.external_root and process.spawn.link_bound
+// to the advertised server.capabilities features on unix. The reference lists
+// neither on Windows (external_root: 7d193f89, link_bound: 683cc6a9).
+var osCapabilityFeatures = []string{"git.worktree.external_root", "process.spawn.link_bound"}
