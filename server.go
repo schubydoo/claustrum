@@ -462,6 +462,9 @@ func runServe(socket, tokenFile string, tokenFd int, metricsAddr string, wlopt w
 	// on a throwaway VM, never on a host that runs siblings. Kept in this shell, not in
 	// newServerOnSocket, so an in-process test boot starts no cleaner.
 	startHostCleaner(socket)
+	// The start test of files.read real, once and before the first connection line.
+	// Its place beside the banner and the cleaner line is claustrum's own, not measured.
+	logFilesReadRealStart()
 	s.run(socket)
 }
 

@@ -64,6 +64,7 @@ func (p *listParams) expandPaths() { p.Path = expandPath(p.Path) }
 type fileReadParams struct {
 	Path     string `json:"path"`
 	MaxBytes int64  `json:"maxBytes"`
+	Real     bool   `json:"real"`
 }
 
 // defaultReadMaxBytes is the ceiling files.read applies when the caller supplies
@@ -212,7 +213,36 @@ func filesRead(req *request) response {
 	if _, err := buf.ReadFrom(f); err != nil {
 		return errResult(req.ID, codeInternal, err.Error())
 	}
-	return okResult(req.ID, readResult{Content: buf.String(), Exists: true})
+	res := readResult{Content: buf.String(), Exists: true}
+	if p.Real {
+		res.Real = readRealName(p.Path)
+	}
+	return okResult(req.ID, res)
+}
+
+// readRealName gives the real name for files.read with "real":true, through the
+// resolution of files.realpath (build 683cc6a9). On Linux it gives "" when the
+// start test failed. A relative path is joined to the working folder as text,
+// with no cleaning, so resolveRealpath applies the rules of the system itself.
+// A name that cannot be resolved gives "" (claustrum's own, not measured).
+// On Linux it resolves when the start test passed, and elsewhere always
+// (claustrum's own).
+func readRealName(path string) string {
+	if !filesReadRealAvailable() {
+		return ""
+	}
+	if !filepath.IsAbs(path) {
+		wd, err := os.Getwd()
+		if err != nil {
+			return ""
+		}
+		path = wd + string(filepath.Separator) + path
+	}
+	res, err := resolveRealpath(path, false)
+	if err != nil {
+		return ""
+	}
+	return res.Real
 }
 
 func filesValidate(req *request) response {

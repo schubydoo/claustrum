@@ -185,6 +185,7 @@ var docGoNameRE = regexp.MustCompile(`\b(?:server|files|git|launcher|process|plu
 // glob and needs no entry.
 var docGoNotMethods = map[string]string{
 	"files.realpath":                 "a method that the daemon answers and does not advertise yet",
+	"files.read.real":                "a feature that the daemon answers and does not advertise yet",
 	"git.list_branch":                "a deliberate typo that a comment of shutdown_auth_test.go gives as an example",
 	"server.capabilities.instanceId": "the instanceId member of the server.capabilities result, named in a comment of pipetransport.go",
 	"server.run":                     "the run method of the server type, named in comments of pipetransport_other.go and pipetransport_windows.go",
