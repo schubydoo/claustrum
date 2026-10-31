@@ -17,6 +17,10 @@ import (
 // the Windows build.
 func ignoreSigterm() {}
 
+// ignoreSighup is a no-op on Windows, which has no SIGHUP. The "ignore-hup" mode
+// and its test are Unix-only.
+func ignoreSighup() {}
+
 // stubProcIDs is empty on Windows, which has no process group id or session id
 // of the POSIX kind.
 func stubProcIDs() string { return "" }

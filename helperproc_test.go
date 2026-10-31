@@ -972,6 +972,12 @@ func runHelper(mode string, args []string) int {
 		ignoreSigterm()
 		fmt.Print("ready\n")
 		time.Sleep(60 * time.Second)
+	case "ignore-hup":
+		// Unattended-end fixture (Unix): ignore SIGHUP, so the end must go on to
+		// the SIGKILL. Announce readiness on stdout, as ignore-term does.
+		ignoreSighup()
+		fmt.Print("ready\n")
+		time.Sleep(60 * time.Second)
 	case "term-exit0":
 		// Exit-line fixture (Unix): on SIGTERM, exit with code 0. Announce readiness
 		// on stdout so the test only signals once the handler is installed.

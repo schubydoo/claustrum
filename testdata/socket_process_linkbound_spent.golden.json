@@ -1,0 +1,27 @@
+[
+  {
+    "type": "stream",
+    "processId": "x",
+    "stream": "exit",
+    "seq": 1,
+    "exitCode": 0
+  },
+  {
+    "jsonrpc": "2.0",
+    "id": 2,
+    "error": {
+      "code": -32602,
+      "message": "this id is in use, or was a terminal's or a link-bound process's: take a fresh one",
+      "data": {
+        "reason": "other"
+      }
+    }
+  },
+  {
+    "jsonrpc": "2.0",
+    "id": 3,
+    "result": {
+      "success": true
+    }
+  }
+]

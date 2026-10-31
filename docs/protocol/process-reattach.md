@@ -49,7 +49,7 @@ This method has no `errorCode` member. A failure is a JSON-RPC error.
 
 ## What the request does
 
-1. The daemon makes this connection the one receiver of the frames of the process. A reattach does not add a second receiver.
+1. The daemon makes this connection the one receiver of the frames of the process. A [link-bound](process-link-bound.md#the-link) process keeps its link (claustrum's own).
 2. The daemon closes each other connection that received the frames before. It closes the whole connection, so that client also loses the streams of its other processes. A reattach on the connection that already receives the frames closes nothing. For a new connection this close comes after step 3 (claustrum's own) (not measured).
 3. The daemon sends the stored frames with a `seq` above `fromSeq` to this connection, in order.
 4. The daemon sends the result.

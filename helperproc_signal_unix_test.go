@@ -46,6 +46,10 @@ func exitZeroOnSigtermAfter(gate string) {
 // "ignore-term" helper mode and TestKillAndWaitEscalation).
 func ignoreSigterm() { signal.Ignore(syscall.SIGTERM) }
 
+// ignoreSighup makes the helper child ignore SIGHUP (see the "ignore-hup" helper
+// mode and TestLinkBoundUnattendedEndKillsAfterGrace).
+func ignoreSighup() { signal.Ignore(syscall.SIGHUP) }
+
 // stubProcIDs is the process group, the session and the parent of this helper
 // process, for the START line of the "cli-stub" mode.
 func stubProcIDs() string {
