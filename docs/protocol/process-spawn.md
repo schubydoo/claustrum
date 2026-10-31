@@ -120,7 +120,7 @@ The checks run in this order. Step 1 is the Windows rule. The other steps are me
 5. A `command` that is missing, a folder or not executable gets `fork/exec <command>: <reason>`, as without a launcher. The launcher does not run.
 6. A launcher that does not start gets `-32005`. A missing `#!` interpreter, or a script with Windows CRLF line ends, gives the reason `its interpreter was not found (the program on its #! line, or the loader of an ELF binary; a script saved with Windows CRLF line endings fails this way)`. A 0755 text file with no `#!` gives `exec format error`.
 
-Step 1 comes before step 2, and step 5 before the launcher starts (claustrum's own). A start failure other than those two gives its errno text (claustrum's own). The step 6 frames of claustrum are tested, not measured.
+claustrum's own: step 1 comes before step 2, step 5 before the launcher starts, and any other start failure gives its errno text. The step 6 frames of claustrum are tested, not measured.
 
 A started launcher logs the start line of [Lines of child processes](../DAEMON.md#lines-of-child-processes), which names the first element of `launcher` only. A refusal writes no `[LauncherHandler]` line.
 
@@ -173,19 +173,19 @@ The daemon starts the child through a short re-exec of its own binary, the exec-
 The trampoline adds no frame.
 
 ??? note "The trampoline does not start"
-    If the trampoline does not start, the daemon logs `[process.Manager] exec trampoline failed for <id> (<error>); starting it directly — a successor daemon will not be able to reap it` and starts the command directly (measured on Linux). The frame then names the command, for example `fork/exec <command>: permission denied`. If that direct start works, the reply is success (from the code). The child then gets `CLAUDE_SSH_RUN_DIR` and no `CLAUDE_SSH_CHILD` (from the code).
+    If the trampoline does not start, the daemon logs `[process.Manager] exec trampoline failed for <id> (<error>); starting it directly — a successor daemon will not be able to reap it` and starts the command directly (measured on Linux). The frame then names the command, for example `fork/exec <command>: permission denied` for a `cwd` that the daemon cannot enter. From the code: if that direct start works, the reply is success, and the child gets `CLAUDE_SSH_RUN_DIR` and no `CLAUDE_SSH_CHILD`.
 
 ??? note "A later daemon start"
     On Linux and macOS a daemon that holds the [run-dir lock](../DAEMON.md#run-dir-lock-daemonlock) records each child in its run dir. A later daemon start on the same socket reads the records of a daemon that is gone. It ends each child whose process still matches its record, with `SIGTERM` and then `SIGKILL`. [Child records and the reap](../DAEMON.md#child-records-and-the-reap-linux-and-macos) has the rules. Windows records no child. A record that cannot be written does not fail the spawn, and the child still gets both identity markers.
 
 ### The SSH agent hand-off (Linux and macOS)
 
-The daemon advertises it as the feature `process.spawn.shellAgentSocket`. If the environment of the child has no `SSH_AUTH_SOCK` entry, the child gets the `SSH_AUTH_SOCK` that the login shell of the user exports. Its rules are measured on Linux and macOS.
+The daemon advertises it as the feature `process.spawn.shellAgentSocket`. A child whose environment has no `SSH_AUTH_SOCK` entry gets the one that the user's login shell exports. Its rules are measured on Linux and macOS.
 
 - An entry that is there wins, even an empty one such as `"SSH_AUTH_SOCK":""` in `env`. `"disableShellAgentSocket":true` skips the step too.
 - The daemon runs the same shell as the `PATH` read at the first spawn that needs a socket. The run has a 4 s limit, and the daemon gives up on a shell that the kill cannot end at 5 s.
 - Measured on Linux against `683cc6a9`: a plain file gets no connect call. A live answer holds with no connect at 60 s, for a dead agent, and is gone at 610 s. A new socket there is dialed again. claustrum's own: any other non-socket, the 600 s, and the key of path, device, inode and mtime.
-- A dialed socket that does not accept a connection in 250 ms is not handed on. The shell runs again only 10 minutes after the last run, and not after 3 failed runs in a row. A stat or connection attempt still open after 500 ms ends the hand-off for good.
+- A dialed socket that does not accept a connection in 250 ms is not handed on. The shell runs again only 10 minutes after the last run, and not after 3 failed runs in a row. A connection attempt still open after 500 ms ends the hand-off for good, and so does a stat (claustrum's own).
 - While the `PATH` read runs, the step runs no shell (measured against `52d82f0a`).
 - The step never fails a spawn. Each shell run and each give-up writes a `[shellenv]` log line.
 
