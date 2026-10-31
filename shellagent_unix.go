@@ -73,9 +73,9 @@ func defaultShellAgentSocket() string { return agentHandOffState.socket() }
 
 // socket returns a socket to hand to a child, or "".
 //
-// A cached socket that still accepts a connection is returned with no probe
-// and no log. A cached socket that no longer does stays cached, and is dialed
-// again on every spawn, so an agent restarted at the same path is picked up
+// A cached socket with a live answer of dialAgentSocket is returned with no probe
+// and no log, even if its agent has died since. Once that answer is gone, it is
+// dialed again on every spawn, so an agent restarted at the same path is picked up
 // with no probe. Otherwise the login shell runs again only when it has never
 // run or ran at least agentReprobeAfter ago, and only while fewer than
 // agentMaxFailures runs in a row have failed. A dial that has not returned
@@ -265,23 +265,81 @@ func probeShellEnv(base []string) []string {
 // hang the way a dial into a stuck filesystem does.
 var dialUnix = net.DialTimeout
 
+// agentLiveTTL is how long a live answer for one socket is kept. Measured on
+// Linux against 683cc6a9: a live answer still holds at 60 s with no connect,
+// and is gone at 610 s. The value 600 s is claustrum's own, not measured.
+var agentLiveTTL = 600 * time.Second
+
+// agentLiveKey names one socket file. The key of path, device, inode and
+// modification time is claustrum's own, not measured. Measured on Linux against
+// 683cc6a9: a new inode at the same path is dialed again, and in one run so was a socket
+// that reused the old inode.
+type agentLiveKey struct {
+	path       string
+	dev, ino   uint64
+	mtimeNanos int64
+}
+
+var agentLive struct {
+	sync.Mutex
+	key     agentLiveKey
+	until   time.Time
+	present bool
+}
+
+// statAgent is the stat of dialAgentSocket. A seam, so a test can make it hang.
+var statAgent = os.Stat
+
+// agentLiveNow is the clock of the live-answer cache. A seam for tests.
+var agentLiveNow = time.Now
+
 // dialAgentSocket reports whether path accepts a unix-socket connection
 // within agentDialTimeout (live), and whether the attempt had not returned
-// within agentDialBound (hung).
+// within agentDialBound (hung). A path that is not a socket is dead with no
+// connect call (measured on Linux against 683cc6a9). A live answer is kept for
+// agentLiveTTL and reused with no connect while the socket file is unchanged.
 func dialAgentSocket(path string) (live, hung bool) {
 	if path == "" {
 		return false, false
 	}
-	dialFn, timeout := dialUnix, agentDialTimeout // read once: the goroutine can outlive this call
-	ok, finished := waitAtMost(agentDialBound, func() bool {
+	// The stat and the dial share one bound, because a stuck filesystem can
+	// hang either. The seams are read once: the goroutine can outlive this call.
+	statFn, dialFn, timeout, now := statAgent, dialUnix, agentDialTimeout, agentLiveNow
+	type result struct {
+		live, cached bool
+		key          agentLiveKey
+	}
+	res, finished := waitAtMost(agentDialBound, func() result {
+		fi, err := statFn(path)
+		if err != nil || fi.Mode()&os.ModeSocket == 0 {
+			return result{}
+		}
+		key := agentLiveKey{path: path, mtimeNanos: fi.ModTime().UnixNano()}
+		if st, ok := fi.Sys().(*syscall.Stat_t); ok {
+			key.dev, key.ino = uint64(st.Dev), uint64(st.Ino) //nolint:unconvert // the field types differ by system
+		}
+		agentLive.Lock()
+		cached := agentLive.present && agentLive.key == key && now().Before(agentLive.until)
+		agentLive.Unlock()
+		if cached {
+			return result{live: true, cached: true}
+		}
 		c, err := dialFn("unix", path, timeout)
 		if err != nil {
-			return false
+			return result{}
 		}
 		_ = c.Close()
-		return true
+		return result{live: true, key: key}
 	})
-	return ok && finished, !finished
+	if !finished {
+		return false, true
+	}
+	if res.live && !res.cached {
+		agentLive.Lock()
+		agentLive.key, agentLive.until, agentLive.present = res.key, now().Add(agentLiveTTL), true
+		agentLive.Unlock()
+	}
+	return res.live, false
 }
 
 // waitAtMost runs f and waits at most d for it. On a timeout it returns the
