@@ -1,3 +1,10 @@
+<p align="center">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="docs/assets/logo/logo-mark-white.svg">
+    <img alt="" src="docs/assets/logo/logo-mark.svg" width="96">
+  </picture>
+</p>
+
 <h1 align="center">claustrum</h1>
 
 <p align="center">

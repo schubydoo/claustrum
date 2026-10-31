@@ -609,7 +609,7 @@ func TestDocsEveryErrorCodeIsDocumented(t *testing.T) {
 var docWordLimits = map[string]int{
 	"AGENTS.md":                                5479, // TASK-301: Part A trim, detail on the method pages
 	"CONTRIBUTING.md":                          1071,
-	"README.md":                                1120,
+	"README.md":                                1133, // 13 are the HTML tokens of the logo <picture> block (maintainer, 2026-10-31)
 	"SECURITY.md":                              1553,
 	"docs/ARCHITECTURE.md":                     2667,
 	"docs/DAEMON.md":                           7493, // TASK-231: the new section Lines of connections. 7175: a new page, its words moved from PROTOCOL.md and ARCHITECTURE.md
