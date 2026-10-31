@@ -596,7 +596,8 @@ These lines tell of [process.spawn](protocol/process-spawn.md) children and thei
 - A bad `process.kill` farewell (INFO): `[process] kill <id>: its farewell is not said: <rule>` (same build and systems)
 - A refused `process.killAndWait` (WARN): `[process.Manager] KillAndWait <id>: signal terminated failed: <error>`, `group kill failed: <error>` and `still running 7s after SIGKILL (D-state?)` (`52d82f0a`, measured on Linux and macOS)
 - The drain limit (WARN): `[process.Manager] Process <id>: pipe drain grace expired (grandchild holding stdio?); force-closing`
-- Temp name dropped (WARN): `[process.Manager] the inherited <name>=<value> is not handed on to a child: open <value>/.claude-ssh-<n>: <reason>` (`683cc6a9`, measured on macOS)
+- Temp name dropped (WARN): `[process.Manager] the inherited <name>=<value> is not handed on to a child: open <value>/.claude-ssh-<n>: <reason>` (`683cc6a9`, measured on macOS). For a missing folder, `open` names its nearest existing parent folder (claustrum's own, not measured).
+- A slow temp folder (WARN): `[process.Manager] the temporary folder <value> has not answered in 2s: children keep it until it does`, once from the spawn that started the test (claustrum's own, not measured)
 - A supersede (INFO): `[process.Manager] process <new id> supersedes <old id> for session <key>: died=<bool> escalated=<bool> alreadyExited=<bool>` (from the code), after the exit line of the old process
 - `children` not a folder (ERROR): `[process.Registry] <run dir>/children is not a directory; recording nothing`, or `reaping nothing` at a start
 - A record write fails (ERROR): `[process.Registry] cannot record child <pid>: <error>`

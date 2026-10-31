@@ -363,10 +363,15 @@ name from a parameter or from the archive.
 
 ### The temp-folder test
 
-On Linux and macOS a spawn tests the folder of an inherited `TMPDIR`, `TEMP` or
-`CLAUDE_CODE_TMPDIR` (`tempfolder_unix.go`). It removes one file, `.claude-ssh-<n>`, by
-name with a plain `os.Remove`, only after its own exclusive create. A failed create removes
-nothing (from the code).
+On Linux and macOS a spawn tests the folder of an inherited `CLAUDE_CODE_TMPDIR`, `TMPDIR`,
+`TMP` or `TEMP` (`tempfolder_unix.go`). `TMP` and the order are claustrum's own, not
+measured. For a folder that does not exist, the test runs in its nearest existing parent
+folder (claustrum's own, not measured, approved by the maintainer). It removes one file,
+`.claude-ssh-<n>`, by name with a plain `os.Remove`, only after its own exclusive create. A
+failed create removes nothing (from the code).
+
+Never widen: Do not make or remove the file in any folder but the inherited folder or its
+nearest existing parent.
 
 ### The held git directory
 

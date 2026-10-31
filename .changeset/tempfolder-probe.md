@@ -2,4 +2,4 @@
 default: patch
 ---
 
-On Linux and macOS a spawned child no longer inherits a TMPDIR, TEMP or CLAUDE_CODE_TMPDIR whose folder cannot take a file, and the daemon logs one line for each.
+On Linux and macOS a child no longer inherits a CLAUDE_CODE_TMPDIR, TMPDIR, TMP or TEMP whose folder cannot take a file. A missing folder is tested in its nearest existing parent, and the daemon logs one line for each drop.
