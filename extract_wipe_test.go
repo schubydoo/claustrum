@@ -119,7 +119,7 @@ func TestWipeDestDirCannotTakeTheParent(t *testing.T) {
 // two views differ, as a Windows path with the `\\?\` prefix and a dot after its
 // last name does. Both reference builds extract for such a path (Windows VM).
 //
-// The step for an unreadable empty destDir is on in every row, also off
+// The step for an unreadable empty destDir or file is on in every row, also off
 // Windows. A view test that fails for another reason than a permission error
 // does not start it, so an empty folder that the path does not name stays.
 //

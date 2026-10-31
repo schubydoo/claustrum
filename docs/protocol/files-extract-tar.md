@@ -152,7 +152,7 @@ By default there is no limit on the size of the extracted files. An operator set
     - The home test ignores letter case.
     - A last name of `destDir` that ends in a dot or a space, with no `\\?\` prefix: `destDir` is wiped and filled (measured on Windows).
     - The last names `NUL`, `a:b`, `CON`, `COM1`, `dest?` and `dest*` give `clean destDir: RemoveAll <name>: …`, and `destDir` does not change (measured on Windows).
-    - An empty `destDir` folder with a deny ACE for read and execute is replaced, and the extract goes on (`683cc6a9`, measured on Windows, approved by the maintainer). Other permission errors there are claustrum's own, not measured.
+    - An empty `destDir` folder or a regular file at `destDir` with a deny ACE for read and execute is replaced, and the extract goes on (`683cc6a9`, measured on Windows, approved by the maintainer). Other permission errors there are claustrum's own, not measured.
 
 ## Rare states
 

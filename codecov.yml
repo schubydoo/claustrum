@@ -275,7 +275,7 @@ component_management:
         - netpath_windows.go
         - filesreadreal_linux.go
         - filesreadreal_other.go
-        # files.extract_tar: the remove of an empty destDir that Windows cannot read.
+        # files.extract_tar: the remove of a destDir entry that Windows cannot read.
         - extractunreadable.go
         - extractunreadable_unix.go
         - extractunreadable_windows.go
