@@ -404,9 +404,9 @@ launcher creates a missing socket folder with mode `0700`.
 
 ### The launcher wait
 
-The launcher connects to the socket path every 50 ms, for 12 s at most. It closes each at once, so the daemon log holds a `New connection from: @` / `Connection closed: @` pair. Claustrum logs neither line for it ([Lines of connections](#lines-of-connections)). A socket file that refuses
+The launcher connects to the socket path every 50 ms, for 12 s at most. It closes each at once, so the daemon logs a `New connection from: @` / `Connection closed: @` pair. Claustrum logs neither line for it ([Lines of connections](#lines-of-connections)). A socket file that refuses
 the connect does not end the wait. A folder
-with content at the path does not end the wait either. It never binds (measured on Linux and Windows). An empty folder there is
+with content at the path does not end the wait either. The daemon does not remove it, so it never binds (measured on Linux and Windows). An empty folder there is
 removed as an old socket file is (from the code).
 
 - The predecessor is the daemon that answered on the path before the start. On
@@ -541,7 +541,7 @@ measured:
 A Linux kernel that names no namespace gets that line too (claustrum's own, not
 measured).
 
-At start on Linux, the daemon logs one of these lines once, before the first connection line (measured on Linux, `683cc6a9`). The level tag is claustrum's own, not measured. The place and count of line two are claustrum's own, not measured:
+At start on Linux, the daemon logs one of these lines once, before the first connection line (measured on Linux, `683cc6a9`). The level tag, and the place and count of line two, are claustrum's own, not measured:
 
 ```
 [FilesHandler] files.realpath: using the OS's path for the open handle
