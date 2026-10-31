@@ -5,6 +5,7 @@ package main
 import (
 	"encoding/json"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -157,5 +158,151 @@ func TestStrayCommondirGitDirNotOpenable(t *testing.T) {
 	got := gitDirTrustFor(r.T)
 	if got.verdict != gitDirRefused || got.refusal != wantTP(cd, "permission denied") {
 		t.Errorf("verdict %v, refusal %q", got.verdict, got.refusal)
+	}
+}
+
+// unsearchableFixture makes the git stub log every git call, with no GIT_DIR and
+// no GIT_COMMON_DIR in the daemon environment. It returns the log.
+func unsearchableFixture(t *testing.T) string {
+	t.Helper()
+	skipIfRoot(t)
+	realGit, err := exec.LookPath("git")
+	if err != nil {
+		t.Skip("git not found in PATH")
+	}
+	installGitSlowStub(t, realGit)
+	for _, k := range []string{"GIT_DIR", "GIT_COMMON_DIR"} {
+		t.Setenv(k, "")
+		if err := os.Unsetenv(k); err != nil {
+			t.Fatal(err)
+		}
+	}
+	log := filepath.Join(t.TempDir(), "env.log")
+	t.Setenv("CLAUSTRUM_GITSTUB_ENVLOG", log)
+	return log
+}
+
+// noSearch takes the search bit from dir until the test ends.
+func noSearch(t *testing.T, dir string) {
+	t.Helper()
+	if err := os.Chmod(dir, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = os.Chmod(dir, 0o755) })
+}
+
+// wantUnsearchableNoRepo asserts the "no repository" frames of git.info, git.status
+// and git.list_branches on path, and that each of their git calls in path carries
+// GIT_DIR=<null device>.
+func wantUnsearchableNoRepo(t *testing.T, log, path string) {
+	t.Helper()
+	for _, c := range []struct {
+		method string
+		params map[string]any
+		want   string
+	}{
+		{"git.info", map[string]any{"path": path},
+			`{"jsonrpc":"2.0","id":1,"result":{"isRepo":false,"repoSlug":"","defaultBranch":""}}`},
+		{"git.status", map[string]any{"path": path, "baseRepo": path},
+			`{"jsonrpc":"2.0","id":1,"result":{"isRepo":false,"clean":false}}`},
+		{"git.list_branches", map[string]any{"path": path},
+			`{"jsonrpc":"2.0","id":1,"result":{"isRepo":false,"branches":[]}}`},
+	} {
+		if err := os.WriteFile(log, nil, 0o644); err != nil {
+			t.Fatal(err)
+		}
+		if got := dispatchRaw(t, newTestServer(t), rpcLine(t, c.method, c.params)); got != c.want {
+			t.Errorf("%s = %s\nwant %s", c.method, got, c.want)
+		}
+		for _, call := range readEnvCalls(t, log) {
+			if v, _ := envValue(call.env, "GIT_DIR"); call.cwd == path && v != os.DevNull {
+				t.Errorf("%s: git %q in %s has GIT_DIR=%q, want %s", c.method, call.argv, path, v, os.DevNull)
+			}
+		}
+	}
+}
+
+// A git directory that the daemon cannot search is no repository on git.info,
+// git.status and git.list_branches, and each git call in the folder carries
+// GIT_DIR=<null device>. For a daemon GIT_DIR that names a folder of mode 0600,
+// git.info and git.status answer so (measured on Linux). A `.git` file that names
+// such a folder, a linked-worktree entry and git.list_branches are claustrum's own,
+// not measured. Mutations: return t unchanged from readGitDirTrust, drop the test
+// of the GIT_DIR branch of gitDirTrustFor, call requestGitDirTrust in
+// gitListBranches, or drop the noRepoPin answer of commonDirPinEnv.
+func TestGitDirUnsearchableIsNoRepository(t *testing.T) {
+	t.Run("daemon GIT_DIR", func(t *testing.T) {
+		log := unsearchableFixture(t)
+		base := realTempDir(t)
+		g := filepath.Join(base, "G")
+		work := filepath.Join(base, "w")
+		for _, d := range []string{g, work} {
+			if err := os.Mkdir(d, 0o755); err != nil {
+				t.Fatal(err)
+			}
+		}
+		t.Setenv("GIT_DIR", g)
+		noSearch(t, g)
+		wantUnsearchableNoRepo(t, log, work)
+	})
+	t.Run("git file", func(t *testing.T) {
+		log := unsearchableFixture(t)
+		base := realTempDir(t)
+		g := filepath.Join(base, "G")
+		if err := os.Mkdir(g, 0o755); err != nil {
+			t.Fatal(err)
+		}
+		work := filepath.Join(base, "w")
+		writeFile(t, filepath.Join(work, ".git"), "gitdir: "+g+"\n", 0o644)
+		noSearch(t, g)
+		wantUnsearchableNoRepo(t, log, work)
+	})
+	t.Run("entry", func(t *testing.T) {
+		log := unsearchableFixture(t)
+		r := newTrustRepo(t)
+		noSearch(t, filepath.Join(r.T, ".git", "worktrees", filepath.Base(r.TW)))
+		wantUnsearchableNoRepo(t, log, r.TW)
+	})
+}
+
+// With a daemon GIT_COMMON_DIR, no git call could carry GIT_DIR=<null device>, so a
+// git directory that the daemon cannot search keeps the trust refusal on git.status,
+// and no git call runs in the folder (claustrum's own, not measured). Mutation:
+// drop the daemonCommonDirSet test of readGitDirTrust.
+func TestGitDirUnsearchableWithDaemonCommonDir(t *testing.T) {
+	log := unsearchableFixture(t)
+	base := realTempDir(t)
+	g := filepath.Join(base, "G")
+	if err := os.Mkdir(g, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	work := filepath.Join(base, "w")
+	writeFile(t, filepath.Join(work, ".git"), "gitdir: "+g+"\n", 0o644)
+	t.Setenv("GIT_COMMON_DIR", g)
+	noSearch(t, g)
+	wantErrorFrame(t, "git.status", map[string]any{"path": work, "baseRepo": work},
+		"config-defined hooks could not be pinned off; git not run: this repository's git directory "+
+			"could not be examined (permission denied); if .git is a file, check the path written in it")
+	for _, call := range readEnvCalls(t, log) {
+		if call.cwd == work {
+			t.Errorf("git %q ran in %s", call.argv, work)
+		}
+	}
+}
+
+// A failed Lstat of `<G>/commondir` that is no search-permission case gets the
+// could-not-be-examined text with the OS error without its path. Only "file name too
+// long" is measured (683cc6a9, Linux). "not a directory" is claustrum's own, not
+// measured. On Linux and macOS a G that is a file is no repository before this step
+// (nonDirGitDirIsNoRepo), so the judge is called directly. Mutation: return false
+// from unexaminedGitDir for each error but ENAMETOOLONG.
+func TestGitDirUnexaminedNotADirectory(t *testing.T) {
+	want := "config-defined hooks could not be pinned off; git not run: this repository's git directory " +
+		"could not be examined (not a directory); if .git is a file, check the path written in it"
+	g := filepath.Join(t.TempDir(), "G")
+	writeFile(t, g, "", 0o644)
+	got, refused := judgeStrayCommondir(g, filepath.Join(g, "commondir"))
+	if !refused || got.verdict != gitDirRefused || got.refusal != want {
+		t.Errorf("refused %v, verdict %v, refusal %q, want %q", refused, got.verdict, got.refusal, want)
 	}
 }

@@ -188,7 +188,18 @@ not run: the worktree entry this folder's .git names no longer exists`.
 On Linux, for a G of 4086 or 4087 bytes, the Lstat of `<G>/commondir` fails with `file name too long`.
 The answer is `config-defined hooks could not be pinned off; git not run: this repository's git
 directory could not be examined (file name too long); if .git is a file, check the path
-written in it` (`683cc6a9`, measured on Linux). Another failed Lstat, macOS and Windows are claustrum's own, not measured.
+written in it` (`683cc6a9`, measured on Linux). In a git directory that the walk accepted, each
+other failed Lstat of `<G>/commondir` but "does not exist" gets that text with the OS error and no
+path, as does a failed Stat of an entry G with no `commondir` (claustrum's own, not measured, as
+are macOS and Windows).
+
+### A git directory that the daemon cannot search
+
+`git.info`, `git.status` and `git.list_branches` first answer "no repository" for a G that the
+daemon cannot search. For a daemon `GIT_DIR` that names a folder of mode 0600, `git.info` and
+`git.status` answer so (measured on Linux). A `.git` file that names such a G, `git.list_branches`,
+macOS and Windows are claustrum's own, not measured. The create and the remove refuse it
+(claustrum's own).
 
 ### Frames
 

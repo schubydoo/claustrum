@@ -621,7 +621,7 @@ var docWordLimits = map[string]int{
 	"docs/PROTOCOL.md":                         2826, // TASK-231: one sentence on the close line. TASK-230: one sentence on a failed write. TASK-202: the error texts, stream frames and flags moved to their own pages
 	"docs/STYLE.md":                            1293, // task-203b: the page rewrite
 	"docs/TOUR.md":                             850,  // a new page: its word count plus about 200
-	"docs/UPSTREAM-TRACKING.md":                6224, // decision-040: words moved from PROTOCOL.md, net down in the same PR
+	"docs/UPSTREAM-TRACKING.md":                6228, // the could-not-be-examined text. 6224: decision-040: words moved from PROTOCOL.md, net down in the same PR
 	"docs/index.md":                            316,  // the reader router of TASK-201
 	"docs/protocol/errors.md":                  1912, // TASK-245: the .probe text, 41 words of a new row
 	"docs/protocol/files-extract-tar.md":       2420, // the .synced rules of 683cc6a9
@@ -634,10 +634,10 @@ var docWordLimits = map[string]int{
 	"docs/protocol/git-rules-calls.md":         5121, // TASK-202: moved from PROTOCOL.md
 	"docs/protocol/git-rules-config.md":        2884, // TASK-202: moved from PROTOCOL.md
 	"docs/protocol/git-rules-settings-copy.md": 3300, // TASK-260: the third run of the call about the repository. TASK-245: the folder .probe, new rules
-	"docs/protocol/git-rules-trust.md":         4493, // TASK-202: moved from PROTOCOL.md
+	"docs/protocol/git-rules-trust.md":         4601, // the unsearchable git directory and the could-not-be-examined text. 4493: TASK-202: moved from PROTOCOL.md
 	"docs/protocol/git-list-branches.md":       997,  // task-203b: the page rewrite
 	"docs/protocol/git-status.md":              3185, // decision-040: a move between pages, net down in the same PR
-	"docs/protocol/git-worktree-create.md":     6951, // task-205: rewrite to the page template
+	"docs/protocol/git-worktree-create.md":     6996, // the 2.2 s settle wait (claustrum's own). 6951: task-205: rewrite to the page template
 	"docs/protocol/git-worktree-remove.md":     4112, // task-206: rewrite to the page template
 	"docs/protocol/launcher-resolve.md":        1620, // task-204: rewrite to the page template
 	"docs/protocol/plugins-prune.md":           1084, // task-203b: the page rewrite

@@ -208,7 +208,7 @@ func gitInfo(req *request) response {
 	// daemon's own GIT_CONFIG_COUNT comes after a trust refusal and before the "no
 	// repository" answer (docs/protocol/git-rules-calls.md → "Where each method answers the
 	// refusal").
-	t := requestGitDirTrust(p.Path, true)
+	t := readGitDirTrust(p.Path, true)
 	if t.verdict == gitDirRefused {
 		return errResult(req.ID, codeInternal, t.refusal)
 	}
@@ -697,7 +697,7 @@ func gitStatus(req *request) response {
 	// The git-directory trust check runs on baseRepo, not on path (gitdirtrust.go).
 	// The count check comes after a trust refusal and before the "no repository"
 	// answer.
-	t := requestGitDirTrust(p.BaseRepo, false)
+	t := readGitDirTrust(p.BaseRepo, false)
 	if t.verdict == gitDirRefused {
 		return errResult(req.ID, codeInternal, t.refusal)
 	}
@@ -829,7 +829,7 @@ func gitListBranches(req *request) response {
 	// daemon's own GIT_CONFIG_COUNT comes after a trust refusal and before the "no
 	// repository" answer (docs/protocol/git-rules-calls.md → "Where each method answers the
 	// refusal").
-	t := requestGitDirTrust(p.Path, true)
+	t := readGitDirTrust(p.Path, true)
 	if t.verdict == gitDirRefused {
 		return errResult(req.ID, codeInternal, t.refusal)
 	}

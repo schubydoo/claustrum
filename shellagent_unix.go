@@ -154,11 +154,12 @@ func (s *agentHandOff) failureNoteLocked() string {
 
 // stopForGoodLocked stops the hand-off for good after a dial that had not
 // returned within agentDialBound: the socket is dropped and the failure budget is spent, so no later
-// spawn dials it or runs the login shell again.
+// spawn dials it or runs the login shell again. The words "A check of" in the log
+// line are claustrum's own, not measured.
 func (s *agentHandOff) stopForGoodLocked(sock string) {
 	s.sock = ""
 	s.failures = agentMaxFailures
-	logWarnf("[shellenv] A connection attempt to %s=%s never returned (a hung filesystem?); "+
+	logWarnf("[shellenv] A check of %s=%s never returned (a hung filesystem?); "+
 		"not using it or asking the login shell again for this daemon's lifetime", agentSockVar, sock)
 }
 

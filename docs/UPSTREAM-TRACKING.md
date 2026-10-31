@@ -413,7 +413,7 @@ the linked pages.
   answers of [The settings copy](protocol/git-rules-settings-copy.md#the-settings-copy) come first.
   Against `f6010b97` these differences are not drift:
   - `server.capabilities` carries `git.info.discovered_root`.
-  - A stray `commondir` gets S1 to S3 (S1 and S2: `683cc6a9`, S3 and M6: `52d82f0a`), and a dangling relative
+  - A stray `commondir` gets S1 to S3 (S1 and S2: `683cc6a9`, S3 and M6: `52d82f0a`) or the could-not-be-examined text, and a dangling relative
     `commondir` symlink in a valid git directory counts as none. `f6010b97` gives
     one older text and refuses that remove.
   - A listing error is in English under a German daemon locale.

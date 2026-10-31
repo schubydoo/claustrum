@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"slices"
 	"strconv"
@@ -164,6 +165,7 @@ func TestWorktreeCreateSettleWaitsAfterExit1(t *testing.T) {
 	f, s, log := settleFixture(t, 1, 0)
 	const wait = 5 * time.Second
 	setDuration(t, &settleWait, wait)
+	setDuration(t, &settleWaitWhole, wait)
 	raw, took := f.create(t, s, "w1", "", 0)
 	f.wantSettledCreate(t, raw)
 	if n := len(diffFilesCalls(readSettleCalls(t, log))); n != 1 {
@@ -219,7 +221,9 @@ func TestWorktreeCreateSettleStopKeepsTheCreate(t *testing.T) {
 // The limit of the call: none under the margin, the time over the margin, and at
 // least settleMinLimit (timeoutMs 10000, 11500 and 15000, Linux). With no
 // deadline it is the limit of the other calls of the request: the wide limit
-// while a "shadowDirOff":true request runs.
+// while a "shadowDirOff":true request runs. With much time left it is no more than
+// that default (claustrum's own, not measured). Mutation: drop the min with the
+// default in settleLimit.
 func TestSettleLimit(t *testing.T) {
 	wide := &atomic.Int32{}
 	for _, c := range []struct {
@@ -245,6 +249,7 @@ func TestSettleLimit(t *testing.T) {
 		{9300 * time.Millisecond, false, 0, 0},
 		{10600 * time.Millisecond, true, settleMinLimit, settleMinLimit},
 		{14 * time.Second, true, 3500 * time.Millisecond, 4 * time.Second},
+		{gitCallLimit + time.Minute, true, gitCallLimit, gitCallLimit},
 	} {
 		ctx, cancel := context.WithTimeout(context.Background(), c.left)
 		got, ok := settleLimit(ctx, nil)
@@ -287,5 +292,115 @@ func TestGitStatusKeepsTheRegistrationIndexTime(t *testing.T) {
 		if c.index != "" {
 			t.Errorf("git call %q has GIT_INDEX_FILE=%s, want none", c.argv, c.index)
 		}
+	}
+}
+
+// The wait after exit 1 is settleWait when `.git` in the leaf has an mtime with
+// nanoseconds, and settleWaitWhole when its mtime is a whole second or the Lstat
+// fails (claustrum's own, not measured). Mutation: return settleWait from
+// settleWaitFor for a whole second, or for a failed Lstat.
+func TestSettleWaitFor(t *testing.T) {
+	leaf := t.TempDir()
+	gitFile := filepath.Join(leaf, ".git")
+	if err := os.WriteFile(gitFile, []byte("gitdir: x\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	for _, c := range []struct {
+		name string
+		ns   int
+		want time.Duration
+	}{
+		{"nanoseconds", 123456789, settleWait},
+		{"whole second", 0, settleWaitWhole},
+	} {
+		mtime := time.Date(2026, 10, 31, 12, 0, 0, c.ns, time.UTC)
+		if err := os.Chtimes(gitFile, mtime, mtime); err != nil {
+			t.Fatal(err)
+		}
+		fi, err := os.Lstat(gitFile)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if c.ns != 0 && fi.ModTime().Nanosecond() == 0 {
+			t.Skip("the file system keeps no nanoseconds")
+		}
+		if got := settleWaitFor(leaf); got != c.want {
+			t.Errorf("%s: wait %v, want %v", c.name, got, c.want)
+		}
+	}
+	if got := settleWaitFor(filepath.Join(leaf, "missing")); got != settleWaitWhole {
+		t.Errorf("failed Lstat: wait %v, want %v", got, settleWaitWhole)
+	}
+}
+
+// The wait ends when the context of the request ends (claustrum's own, not
+// measured). Mutation: replace settleSleep with a time.Sleep.
+func TestSettleSleepStopsWithTheContext(t *testing.T) {
+	ctx, cancel := context.WithTimeout(context.Background(), 50*time.Millisecond)
+	defer cancel()
+	start := time.Now()
+	settleSleep(ctx, start.Add(5*time.Second))
+	if took := time.Since(start); took >= 2*time.Second {
+		t.Errorf("the wait took %v after the context ended", took)
+	}
+}
+
+// setSettleWaitFor makes settleWaitFor answer d and record its leaf in *leaf until
+// the test ends.
+func setSettleWaitFor(t *testing.T, d time.Duration, leaf *string) {
+	t.Helper()
+	old := settleWaitFor
+	settleWaitFor = func(l string) time.Duration {
+		*leaf = l
+		return d
+	}
+	t.Cleanup(func() { settleWaitFor = old })
+}
+
+// After exit 1 the create waits the wait that settleWaitFor gives for the new
+// worktree leaf, not settleWait (claustrum's own, not measured). Mutation: use
+// settleWait in place of settleWaitFor(leaf) in settleCheckout.
+func TestWorktreeCreateSettleUsesTheLeafWait(t *testing.T) {
+	f, s, _ := settleFixture(t, 1, 0)
+	const wait = 5 * time.Second
+	setDuration(t, &settleWait, 0)
+	var leaf string
+	setSettleWaitFor(t, wait, &leaf)
+	raw, took := f.create(t, s, "w1", "", 0)
+	f.wantSettledCreate(t, raw)
+	if !sameDir(leaf, f.leaf()) {
+		t.Errorf("settleWaitFor got leaf %q, want %q", leaf, f.leaf())
+	}
+	if took < wait {
+		t.Errorf("the create took %v, want at least the leaf wait %v", took, wait)
+	}
+}
+
+// settleCheckout stops its wait when the context of the request ends (claustrum's
+// own, not measured). Mutation: pass context.Background() to settleSleep in
+// settleCheckout.
+func TestSettleCheckoutStopsWithTheContext(t *testing.T) {
+	realGit, err := exec.LookPath("git")
+	if err != nil {
+		t.Skip("git not found in PATH")
+	}
+	installGitSlowStub(t, realGit)
+	setAttrSource(t, true)
+	slowGit(t, "diff-files", "fail", 0, "", "")
+	t.Setenv("CLAUSTRUM_GITSTUB_EXIT", "1")
+	var leaf string
+	setSettleWaitFor(t, 20*time.Second, &leaf)
+	dir := t.TempDir()
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	start := time.Now()
+	stop := time.AfterFunc(100*time.Millisecond, cancel)
+	defer stop.Stop()
+	settleCheckout(ctx, gitUse{}, dir, dir, filepath.Join(dir, "g"), filepath.Join(dir, "index"), nil, start)
+	if leaf != dir {
+		t.Fatalf("settleWaitFor got leaf %q, want %q: the wait did not run", leaf, dir)
+	}
+	if took := time.Since(start); took >= 10*time.Second {
+		t.Errorf("settleCheckout took %v after the context ended", took)
 	}
 }
