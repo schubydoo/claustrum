@@ -20,6 +20,9 @@ func makeJunction(t *testing.T, link, target string) {
 		t.Fatal(err)
 	}
 	if out, err := exec.Command("cmd", "/c", "mklink", "/J", link, target).CombinedOutput(); err != nil {
+		if os.Getenv("CI") != "" {
+			t.Fatalf("mklink /J %s %s: %v\n%s", link, target, err, out)
+		}
 		t.Skipf("mklink /J %s %s: %v\n%s", link, target, err, out)
 	}
 }

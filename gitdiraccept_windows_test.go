@@ -36,6 +36,9 @@ func linkAt(t *testing.T, link, target string) {
 func makeDirSymlink(t *testing.T, link, target string) {
 	t.Helper()
 	if out, err := exec.Command("cmd", "/c", "mklink", "/D", link, target).CombinedOutput(); err != nil {
+		if os.Getenv("CI") != "" {
+			t.Fatalf("mklink /D %s %s: %v\n%s", link, target, err, out)
+		}
 		t.Skipf("this process cannot make a directory symbolic link: mklink /D %s %s: %v\n%s", link, target, err, out)
 	}
 }

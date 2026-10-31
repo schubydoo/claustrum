@@ -302,7 +302,7 @@ removed a method.
 | `server.ping` | none → `{"pong":true}` | [server.*](protocol/server.md#serverping) |
 | `server.capabilities` | none → `{"version","methods":[…20…],"instanceId","startedAt","features":[…],"peerCheck"[,"peerCheckBy"]}` | [server.*](protocol/server.md#servercapabilities) |
 | `server.shutdown` | none → `{"ok":true}`, when the reply wins the race with the close | [server.*](protocol/server.md#servershutdown) |
-| `files.list` | `{path[,includeDotNames]}` → `{"entries":[{"name","path","isDir"},…]}` (name-sorted) | [files.list](protocol/files-list.md) |
+| `files.list` | `{path[,includeDotNames,junctionsAsDirs]}` → `{"entries":[{"name","path","isDir"},…]}` (name-sorted) | [files.list](protocol/files-list.md) |
 | `files.validate` | `{path}` → `{"valid":bool,"isDir":bool[,"error"]}` | [files.validate](protocol/files-validate.md) |
 | `files.stat` | `{path}` → `{"exists","isDir","size","mode":"-rw-r--r--"}` | [files.stat](protocol/files-stat.md) |
 | `files.read` | `{path[,maxBytes][,real]}` → `{"content":"<raw text>","exists":true[,"real":"<path>"]}` | [files.read](protocol/files-read.md) |

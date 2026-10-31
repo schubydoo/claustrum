@@ -1428,3 +1428,52 @@ func TestFilesListIncludeDotNames(t *testing.T) {
 		t.Errorf("string value: got %s, want -32602", got)
 	}
 }
+
+// junctionsAsDirs of files.list follows the decode rules of includeDotNames. On
+// Linux and macOS it changes no isDir: a link to a folder is true, and a link to
+// a file, a dangling link and a link loop are false, with and without the member
+// (build 683cc6a9). The wrong-type answer is claustrum's own, not measured.
+func TestFilesListJunctionsAsDirsMember(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("the Windows rules are in fileslist_windows_test.go")
+	}
+	s := newTestServer(t)
+	dir := t.TempDir()
+	for _, d := range []string{"real", "list"} {
+		if err := os.Mkdir(filepath.Join(dir, d), 0o755); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := os.WriteFile(filepath.Join(dir, "file"), []byte("x"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	list := filepath.Join(dir, "list")
+	for name, target := range map[string]string{
+		"tofolder": filepath.Join(dir, "real"),
+		"tofile":   filepath.Join(dir, "file"),
+		"dangling": filepath.Join(dir, "none"),
+		"loop":     filepath.Join(list, "loop"),
+	} {
+		if err := os.Symlink(target, filepath.Join(list, name)); err != nil {
+			t.Skipf("no symbolic link: %v", err)
+		}
+	}
+	want := func(p string) string { return filepath.Join(list, p) }
+	frame := fmt.Sprintf(`{"jsonrpc":"2.0","id":1,"result":{"entries":[`+
+		`{"name":"dangling","path":%q,"isDir":false},{"name":"loop","path":%q,"isDir":false},`+
+		`{"name":"tofile","path":%q,"isDir":false},{"name":"tofolder","path":%q,"isDir":true}]}}`,
+		want("dangling"), want("loop"), want("tofile"), want("tofolder"))
+	for _, v := range []any{nil, true, false} {
+		params := map[string]any{"path": list}
+		if v != nil {
+			params["junctionsAsDirs"] = v
+		}
+		if got := dispatchRaw(t, s, rpcLine(t, "files.list", params)); got != frame {
+			t.Errorf("junctionsAsDirs %v: got %s, want %s", v, got, frame)
+		}
+	}
+	got := dispatchRaw(t, s, rpcLine(t, "files.list", map[string]any{"path": list, "junctionsAsDirs": "yes"}))
+	if !strings.Contains(got, `"code":-32602`) {
+		t.Errorf("string value: got %s, want -32602", got)
+	}
+}
