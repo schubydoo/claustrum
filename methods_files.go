@@ -997,10 +997,10 @@ func entryNameStaysInside(name string) bool {
 // a normal run finds no entry of the archive there (from the code). Do not build
 // the name from a parameter or from the archive.
 func writeSyncedMarker(destRoot *os.Root) error {
-	if err := destRoot.RemoveAll(".synced"); err != nil {
+	if err := destRoot.RemoveAll(syncedName); err != nil {
 		return err
 	}
-	marker, err := destRoot.OpenFile(".synced", os.O_CREATE|os.O_EXCL|os.O_WRONLY, 0o600)
+	marker, err := destRoot.OpenFile(syncedName, os.O_CREATE|os.O_EXCL|os.O_WRONLY, 0o600)
 	if err != nil {
 		return err
 	}
