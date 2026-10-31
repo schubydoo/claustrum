@@ -31,7 +31,7 @@ func removeUnreadableDestEntry(parent *os.Root, cleanedDest, destName string, vi
 		return false
 	}
 	byPath, err := lstatDestByPath(cleanedDest)
-	if err != nil || byPath.Mode().Type() != fs.ModeDir && !byPath.Mode().IsRegular() || destEntryHoldsHome(cleanedDest, byPath) {
+	if err != nil || (byPath.Mode().Type() != fs.ModeDir && !byPath.Mode().IsRegular()) || destEntryHoldsHome(cleanedDest, byPath) {
 		return false
 	}
 	return parent.Remove(destName) == nil
