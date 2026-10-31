@@ -160,7 +160,9 @@ Guards, in order: `wipesHomeDir` on `destDir` before any step. Then `destEntryHo
 the handle and the cleaned path must name one entry, or nothing is deleted. On Windows, if
 the two views of a name with a dot or a space differ, the entry goes with a plain
 `os.Root.Remove`. No remove runs after a home refusal. The identity, view and open tests
-are claustrum's own (D2).
+are claustrum's own (D2). After these guards, an old `destDir` folder loses the fixed name `.synced` as a tree
+through its own tested handle (`prepareOldDestDir`), before the wipe. If that folder cannot
+be opened, one plain remove through the parent handle takes it only if it is empty.
 
 Never widen: This delete path is approved by the maintainer. Do not widen it.
 
@@ -349,9 +351,10 @@ After the entries, `files.extract_tar` removes the fixed name `.synced` at the t
 `destDir` as a tree (`writeSyncedMarker`) and creates the empty marker file. The remove is
 one `os.Root.RemoveAll` and the create is exclusive, both through a handle of `destDir`.
 After the open, `extractTarGz` tests the handle against the folder that `wipesHomeDir`
-judged. If it differs, the request fails before any entry and before the remove
+judged. If it differs, the request fails before any entry and the remove
 (claustrum's own, D2). A second file entry with the name of an earlier one removes that
-one regular file with a plain `os.Root.Remove`. The marker remove acts inside the first of
+one regular file with a plain `os.Root.Remove`. After a failure past the handle test, `.synced`
+goes as a tree through the handle of `destDir` too. The marker remove acts inside the first of
 the five paths ([What the request
 does](docs/protocol/files-extract-tar.md#what-the-request-does)).
 

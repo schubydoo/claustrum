@@ -14,6 +14,7 @@ import (
 	"runtime"
 	"sort"
 	"strings"
+	"unicode"
 )
 
 func (s *server) handleFiles(req *request) response {
@@ -287,6 +288,11 @@ type extractTarParams struct {
 // Production never reassigns it.
 var wipeDestDir = func(parent *os.Root, name string) error { return parent.RemoveAll(name) }
 
+// beforeOldDestDirOpen runs between the view test of the old destDir and its
+// open, behind a seam. A test swaps the name for a link there, to show that the
+// handle test refuses it. Production never reassigns it, and it does nothing.
+var beforeOldDestDirOpen = func() {}
+
 // afterDestDirMkdir runs between the mkdir of destDir and its open, behind a
 // seam. A test swaps destDir for a link there, to show that the swapped folder is
 // refused. Production never reassigns it, and it does nothing.
@@ -444,6 +450,9 @@ func filesExtractTar(req *request) response {
 		return okResult(req.ID, extractResult{Error: errDestDirHoldsHome(p.DestDir).Error()})
 	}
 	count, err := extractTarGz(p.ArchivePath, p.DestDir)
+	if errors.Is(err, errAlreadyComplete) {
+		return okResult(req.ID, extractResult{Success: true, AlreadyComplete: true})
+	}
 	if err != nil {
 		return okResult(req.ID, extractResult{Success: false, FileCount: count, Error: err.Error()})
 	}
@@ -498,7 +507,17 @@ func cappedCopy(out io.Writer, tr io.Reader, totalWritten int64) (int64, error) 
 	return io.Copy(out, io.LimitReader(tr, bound))
 }
 
-func extractTarGz(archivePath, destDir string) (int, error) {
+// errAlreadyComplete is the answer of extractTarGz for a plugin folder that
+// already has its marker. filesExtractTar turns it into success with
+// alreadyComplete true.
+var errAlreadyComplete = errors.New("destDir already has its .synced marker")
+
+// syncedName is the fixed name of the marker at the top of destDir. Every
+// remove of the marker takes this name, never a name from a parameter or from
+// the archive.
+const syncedName = ".synced"
+
+func extractTarGz(archivePath, destDir string) (n int, err error) {
 	f, err := os.Open(archivePath)
 	if err != nil {
 		// The reference prefixes this one open failure with "open archive: ",
@@ -535,13 +554,17 @@ func extractTarGz(archivePath, destDir string) (int, error) {
 	//  2. The parent folder of destDir is opened as a handle. A failure answers
 	//     "open parent: open <parent>: <reason>", and destDir stays as it is
 	//     (parent modes 0300, 0100 and 0000, Linux and macOS VMs).
-	//  3. The wipe removes the last name of destDir through that handle, as a
+	//  3. An old destDir that is a real folder goes to prepareOldDestDir. It
+	//     answers alreadyComplete for a complete plugin folder, or it removes
+	//     .synced first (683cc6a9). It runs after the gzip test (claustrum's own,
+	//     not measured).
+	//  4. The wipe removes the last name of destDir through that handle, as a
 	//     tree. A failure answers "clean destDir: RemoveAll <name>: <reason>"
 	//     (Linux, macOS and Windows VMs). The entries that can go are gone then.
-	//  4. A new folder with that name is made through the handle, with mode 0700.
+	//  5. A new folder with that name is made through the handle, with mode 0700.
 	//     A failure answers "mkdir destDir: mkdirat <name>: <reason>" (parent
 	//     mode 0500, Linux and macOS VMs).
-	//  5. destDir is opened through the handle and tested (below).
+	//  6. destDir is opened through the handle and tested (below).
 	//
 	// filesExtractTar refused a file system root, so the cleaned destDir has a
 	// parent and a last name. filepath.Clean leaves no "." and no ".." as the
@@ -579,6 +602,17 @@ func extractTarGz(archivePath, destDir string) (int, error) {
 	}
 	if viewErr != nil {
 		return 0, destViewFailure("clean destDir", viewErr)
+	}
+	if entry != nil && entry.IsDir() {
+		done, err := prepareOldDestDir(parentRoot, destName, entry)
+		if err != nil {
+			return 0, err
+		}
+		if done {
+			// The text is that of 683cc6a9. The INFO level is claustrum's own.
+			logInfof("[Files] extract_tar: plugin dir %s already has its .synced marker, so the archive was not unpacked", destName)
+			return 0, errAlreadyComplete
+		}
 	}
 	if err := wipeDestDir(parentRoot, destName); err != nil {
 		return 0, fmt.Errorf("clean destDir: %v", err)
@@ -640,8 +674,20 @@ func extractTarGz(archivePath, destDir string) (int, error) {
 	if judged, err := os.Lstat(cleanedDest); err != nil || !judged.IsDir() || !os.SameFile(judged, opened) {
 		return 0, fmt.Errorf("open destDir: %q changed while it was opened", destName)
 	}
+	// After a failure from here on, a .synced that appeared in destDir during the
+	// request goes before the reply, as a tree, through the handle of destDir.
+	// 683cc6a9 removes it after an unsafe path (Linux, macOS and Windows VMs), a
+	// cut archive and a full disk (Linux VM). Other failures are claustrum's own.
+	// A failure before this point removes nothing here (claustrum's own, not
+	// measured).
+	defer func() {
+		if err != nil {
+			_ = destRoot.RemoveAll(syncedName)
+		}
+	}()
 	tr := tar.NewReader(gz)
 	count := 0
+	skipped := 0
 	var totalWritten int64
 
 	// Zip-slip guard operands, hoisted: both are loop-invariant, and computing
@@ -733,8 +779,19 @@ func extractTarGz(archivePath, destDir string) (int, error) {
 		if target != cleanedDest {
 			inDest = strings.TrimPrefix(target, destPrefix)
 		}
+		// An entry whose top-level name reads as .synced is not unpacked. A file
+		// there still counts in fileCount, and a folder does not. On 683cc6a9 an
+		// archive with 7 regular files, 5 of them skipped, and 8 skipped entries in
+		// all answers fileCount 7 (Linux, macOS and Windows VMs). The order of this
+		// test after the unsafe-path tests and for the other entry types is
+		// claustrum's own, not measured.
+		skip := readsAsSynced(inDest)
 		switch hdr.Typeflag {
 		case tar.TypeDir:
+			if skip {
+				skipped++
+				continue
+			}
 			if inDest != "." {
 				if err := destRoot.MkdirAll(inDest, 0o700); err != nil {
 					// "mkdir <entry>: <text>" with fileCount 0, also when an earlier
@@ -749,6 +806,11 @@ func extractTarGz(archivePath, destDir string) (int, error) {
 				}
 			}
 		case tar.TypeReg:
+			if skip {
+				skipped++
+				count++
+				continue
+			}
 			if parent := filepath.Dir(inDest); parent != "." {
 				if err := destRoot.MkdirAll(parent, 0o700); err != nil {
 					// "mkdir parent <entry>: <text>" with fileCount 0, also when an
@@ -828,12 +890,87 @@ func extractTarGz(archivePath, destDir string) (int, error) {
 			return 0, fmt.Errorf("unsupported tar entry type %c: %s", hdr.Typeflag, hdr.Name)
 		}
 	}
+	if skipped > 0 {
+		// The text after the prefix is that of 683cc6a9 (Linux and macOS VMs, its
+		// start on a Windows VM). The [Files] prefix, the WARN level and one line
+		// per request are claustrum's own, not measured.
+		logWarnf("[Files] extract_tar: %d entries in the archive for %q were not unpacked: their top-level name reads as .synced, which only the helper may write; rename them in the plugin to have them copied", skipped, destName)
+	}
 	if err := writeSyncedMarker(destRoot); err != nil {
 		// A marker that cannot be written is not measured on a reference build,
 		// and neither is an entry at .synced that cannot be removed.
 		return count, fmt.Errorf("write .synced: %v", err)
 	}
 	return count, nil
+}
+
+// prepareOldDestDir acts on an old destDir that is a real folder, before the
+// wipe. It holds the folder by a handle through the parent handle, and tests
+// that the handle is the entry that the guards judged. A link, a file or a
+// FIFO at the name takes no step here: the wipe removes that entry itself, and
+// the target of a link stays (683cc6a9, Linux VM). An open of a FIFO blocks
+// until a writer comes, so the gate on a real folder also keeps the request
+// from a hang (from the code).
+//
+// A last name of 16 lower-case hex characters with a regular file .synced is
+// a plugin folder that is complete. The answer is true, and nothing is deleted
+// (683cc6a9, Linux, macOS and Windows VMs). Otherwise .synced goes first, as a
+// tree, through the handle. On 683cc6a9 a failure answers "remove destDir's old
+// .synced: RemoveAll .synced: <reason>", and the rest of destDir stays (Linux
+// and macOS VMs).
+//
+// A folder that cannot be opened gets one plain remove of its name through the
+// parent handle, so an empty folder goes. If that remove fails too, the answer
+// is "open the old destDir: <reason>" and nothing is wiped (683cc6a9, a folder
+// of mode 0000, Linux and macOS VMs).
+func prepareOldDestDir(parent *os.Root, name string, entry os.FileInfo) (bool, error) {
+	beforeOldDestDirOpen()
+	old, err := parent.OpenRoot(name)
+	if err != nil {
+		if parent.Remove(name) == nil {
+			return false, nil
+		}
+		return false, fmt.Errorf("open the old destDir: %v", err)
+	}
+	defer old.Close()
+	// The handle follows a link that stays inside the parent. A folder that is
+	// not the judged entry is refused, and nothing is deleted. This test and its
+	// text are claustrum's own, not measured.
+	if held, err := old.Stat("."); err != nil || !os.SameFile(held, entry) {
+		return false, fmt.Errorf("open the old destDir: %q changed while it was opened", name)
+	}
+	if pluginHashRE.MatchString(name) {
+		if fi, err := old.Lstat(syncedName); err == nil && fi.Mode().IsRegular() {
+			return true, nil
+		}
+	}
+	if err := old.RemoveAll(syncedName); err != nil {
+		return false, fmt.Errorf("remove destDir's old .synced: %v", err)
+	}
+	return false, nil
+}
+
+// readsAsSynced reports whether the top-level name of an archive entry reads as
+// .synced. inDest is the clean place of the entry below destDir. On 683cc6a9
+// `.SYNCED`, `.synced.` and `.synced` with a zero-width joiner read so on every
+// system (Linux, macOS and Windows VMs). The drop of other format characters
+// and of trailing spaces is claustrum's own, not measured. The case fold is
+// ASCII only, so `.ſynced` does not read as .synced (claustrum's own).
+func readsAsSynced(inDest string) bool {
+	top, _, _ := strings.Cut(inDest, string(filepath.Separator))
+	top = strings.Map(func(r rune) rune {
+		if unicode.Is(unicode.Cf, r) {
+			return -1
+		}
+		return r
+	}, top)
+	top = strings.Map(func(r rune) rune {
+		if 'A' <= r && r <= 'Z' {
+			return r + ('a' - 'A')
+		}
+		return r
+	}, strings.TrimRight(top, ". "))
+	return top == syncedName
 }
 
 // entryNameStaysInside reports whether the name of an archive entry stays inside
@@ -856,13 +993,14 @@ func entryNameStaysInside(name string) bool {
 // The remove is a recursive delete of the fixed name .synced, and the write is an
 // exclusive create of that name. Both go through the handle of destDir, so neither
 // follows a link out of destDir. extractTarGz tested that handle against the
-// folder that wipesHomeDir judged. In a normal run the remove takes the entry of
-// this archive. Do not build the name from a parameter or from the archive.
+// folder that wipesHomeDir judged. Entries that read as .synced are skipped, so
+// a normal run finds no entry of the archive there (from the code). Do not build
+// the name from a parameter or from the archive.
 func writeSyncedMarker(destRoot *os.Root) error {
-	if err := destRoot.RemoveAll(".synced"); err != nil {
+	if err := destRoot.RemoveAll(syncedName); err != nil {
 		return err
 	}
-	marker, err := destRoot.OpenFile(".synced", os.O_CREATE|os.O_EXCL|os.O_WRONLY, 0o600)
+	marker, err := destRoot.OpenFile(syncedName, os.O_CREATE|os.O_EXCL|os.O_WRONLY, 0o600)
 	if err != nil {
 		return err
 	}
