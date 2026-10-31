@@ -77,7 +77,7 @@ One failure ends another process first: a session spawn whose command exists and
 
 ### What the child gets
 
-- **Streams.** The stdin, stdout and stderr of the child are pipes of the daemon. The daemon sends what it reads as stream frames to the spawning connection and stores them.
+- **Streams.** The child's stdin, stdout and stderr are daemon pipes, which send what they read as stream frames to the spawning connection and store them.
 - **The life of the process.** A close of its connection does not end the process. A graceful shutdown (`-stop`, `server.shutdown`, `SIGTERM`, `SIGINT`, the self-exit) ends the processes of the table. With `-keep-children` it leaves them alive ([CT-2](../DIVERGENCES.md#ct-2)).
 
 ### The environment of the child
@@ -89,7 +89,7 @@ The child gets the environment of the daemon with the `env` of the request merge
 3. `SSH_AUTH_SOCK` from [the hand-off](#the-ssh-agent-hand-off-linux-and-macos). Without that step there is no entry here.
 4. `CLAUDE_SSH_RUN_DIR` and then `CLAUDE_SSH_CHILD`, the two [identity markers](#the-identity-markers-linux-and-macos). A caller value of either does not reach the child.
 
-After a good read, the `PATH` entry of the child is the login-shell `PATH` of the user. A `PATH` in `env` wins over it. See [The login-shell PATH](#the-login-shell-path-linux-and-macos).
+After a good read, the child gets the login-shell `PATH` of the user. A `PATH` in `env` wins over it. See [The login-shell PATH](#the-login-shell-path-linux-and-macos). The value never changes how the daemon looks up `command`.
 
 The daemon removes these names:
 

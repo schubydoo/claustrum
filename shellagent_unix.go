@@ -304,7 +304,7 @@ func dialAgentSocket(path string) (live, hung bool) {
 	}
 	// The stat and the dial share one bound, because a stuck filesystem can
 	// hang either. The seams are read once: the goroutine can outlive this call.
-	statFn, dialFn, timeout := statAgent, dialUnix, agentDialTimeout
+	statFn, dialFn, timeout, now := statAgent, dialUnix, agentDialTimeout, agentLiveNow
 	type result struct {
 		live, cached bool
 		key          agentLiveKey
@@ -319,7 +319,7 @@ func dialAgentSocket(path string) (live, hung bool) {
 			key.dev, key.ino = uint64(st.Dev), uint64(st.Ino) //nolint:unconvert // the field types differ by system
 		}
 		agentLive.Lock()
-		cached := agentLive.present && agentLive.key == key && agentLiveNow().Before(agentLive.until)
+		cached := agentLive.present && agentLive.key == key && now().Before(agentLive.until)
 		agentLive.Unlock()
 		if cached {
 			return result{live: true, cached: true}
@@ -336,7 +336,7 @@ func dialAgentSocket(path string) (live, hung bool) {
 	}
 	if res.live && !res.cached {
 		agentLive.Lock()
-		agentLive.key, agentLive.until, agentLive.present = res.key, agentLiveNow().Add(agentLiveTTL), true
+		agentLive.key, agentLive.until, agentLive.present = res.key, now().Add(agentLiveTTL), true
 		agentLive.Unlock()
 	}
 	return res.live, false
