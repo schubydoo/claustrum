@@ -119,6 +119,10 @@ func TestWipeDestDirCannotTakeTheParent(t *testing.T) {
 // two views differ, as a Windows path with the `\\?\` prefix and a dot after its
 // last name does. Both reference builds extract for such a path (Windows VM).
 //
+// The step for an unreadable empty destDir is on in every row, also off
+// Windows. A view test that fails for another reason than a permission error
+// does not start it, so an empty folder that the path does not name stays.
+//
 // The test is safe on a tree with no such test: each folder is in a temp folder
 // of this test.
 func TestFilesExtractTarWipeNeedsOneEntryInBothViews(t *testing.T) {
@@ -126,18 +130,24 @@ func TestFilesExtractTarWipeNeedsOneEntryInBothViews(t *testing.T) {
 	for _, tc := range []struct {
 		name       string
 		destExists bool
+		emptyDest  bool
 		byPath     func(sibling string) func(string) (os.FileInfo, error)
 		wantText   string
 	}{
-		{"the path names no entry and the handle names a folder", true,
+		{"the path names no entry and the handle names a folder", true, false,
 			func(string) func(string) (os.FileInfo, error) { return notExist },
 			`clean destDir: "dest" is not the entry that the path names`},
-		{"the path and the handle name two folders", true,
+		{"the path and the handle name two folders", true, false,
 			func(sibling string) func(string) (os.FileInfo, error) {
 				return func(string) (os.FileInfo, error) { return os.Lstat(sibling) }
 			},
 			`clean destDir: "dest" is not the entry that the path names`},
-		{"the mkdir makes a folder that the path does not name", false,
+		{"the path and the handle name two folders, and the handle folder is empty", true, true,
+			func(sibling string) func(string) (os.FileInfo, error) {
+				return func(string) (os.FileInfo, error) { return os.Lstat(sibling) }
+			},
+			`clean destDir: "dest" is not the entry that the path names`},
+		{"the mkdir makes a folder that the path does not name", false, false,
 			func(string) func(string) (os.FileInfo, error) { return notExist },
 			`mkdir destDir: "dest" is not the entry that the path names`},
 	} {
@@ -146,8 +156,13 @@ func TestFilesExtractTarWipeNeedsOneEntryInBothViews(t *testing.T) {
 			dest := filepath.Join(parent, "dest")
 			sibling := filepath.Join(parent, "sibling")
 			keep := []string{filepath.Join(sibling, "keep.txt")}
-			if tc.destExists {
+			if tc.destExists && !tc.emptyDest {
 				keep = append(keep, filepath.Join(dest, "keep.txt"))
+			}
+			if tc.emptyDest {
+				if err := os.Mkdir(dest, 0o700); err != nil {
+					t.Fatal(err)
+				}
 			}
 			for _, k := range keep {
 				if err := os.MkdirAll(filepath.Dir(k), 0o700); err != nil {
@@ -157,8 +172,9 @@ func TestFilesExtractTarWipeNeedsOneEntryInBothViews(t *testing.T) {
 					t.Fatal(err)
 				}
 			}
-			t.Cleanup(func() { lstatDestByPath = os.Lstat })
-			lstatDestByPath = tc.byPath(sibling)
+			goes := unreadableDestDirGoes
+			t.Cleanup(func() { lstatDestByPath, unreadableDestDirGoes = os.Lstat, goes })
+			lstatDestByPath, unreadableDestDirGoes = tc.byPath(sibling), true
 
 			n, err := extractTarGz(oneFileArchive(t), dest)
 			if err == nil || err.Error() != tc.wantText {

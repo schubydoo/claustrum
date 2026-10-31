@@ -557,7 +557,9 @@ func extractTarGz(archivePath, destDir string) (n int, err error) {
 	//  3. An old destDir that is a real folder goes to prepareOldDestDir. It
 	//     answers alreadyComplete for a complete plugin folder, or it removes
 	//     .synced first (683cc6a9). It runs after the gzip test (claustrum's own,
-	//     not measured).
+	//     not measured). On Windows an empty old destDir that the handle cannot
+	//     read goes by removeUnreadableEmptyDestDir instead, and step 4 does not
+	//     run then (683cc6a9, a deny ACE for read and execute).
 	//  4. The wipe removes the last name of destDir through that handle, as a
 	//     tree. A failure answers "clean destDir: RemoveAll <name>: <reason>"
 	//     (Linux, macOS and Windows VMs). The entries that can go are gone then.
@@ -600,22 +602,27 @@ func extractTarGz(archivePath, destDir string) (n int, err error) {
 	if destEntryHoldsHome(cleanedDest, entry) {
 		return 0, errDestDirHoldsHome(destDir)
 	}
+	// After the remove of an unreadable empty destDir, no wipe runs: the
+	// exclusive mkdir below and the view test after it come next.
 	if viewErr != nil {
-		return 0, destViewFailure("clean destDir", viewErr)
-	}
-	if entry != nil && entry.IsDir() {
-		done, err := prepareOldDestDir(parentRoot, destName, entry)
-		if err != nil {
-			return 0, err
+		if !removeUnreadableEmptyDestDir(parentRoot, cleanedDest, destName, viewErr) {
+			return 0, destViewFailure("clean destDir", viewErr)
 		}
-		if done {
-			// The text is that of 683cc6a9. The INFO level is claustrum's own.
-			logInfof("[Files] extract_tar: plugin dir %s already has its .synced marker, so the archive was not unpacked", destName)
-			return 0, errAlreadyComplete
+	} else {
+		if entry != nil && entry.IsDir() {
+			done, err := prepareOldDestDir(parentRoot, destName, entry)
+			if err != nil {
+				return 0, err
+			}
+			if done {
+				// The text is that of 683cc6a9. The INFO level is claustrum's own.
+				logInfof("[Files] extract_tar: plugin dir %s already has its .synced marker, so the archive was not unpacked", destName)
+				return 0, errAlreadyComplete
+			}
 		}
-	}
-	if err := wipeDestDir(parentRoot, destName); err != nil {
-		return 0, fmt.Errorf("clean destDir: %v", err)
+		if err := wipeDestDir(parentRoot, destName); err != nil {
+			return 0, fmt.Errorf("clean destDir: %v", err)
+		}
 	}
 	if err := parentRoot.Mkdir(destName, 0o700); err != nil {
 		return 0, fmt.Errorf("mkdir destDir: %v", err)

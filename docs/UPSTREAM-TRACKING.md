@@ -308,7 +308,7 @@ the linked pages.
   - the last entry of a file that the archive names twice
   - the `error` texts of the entry and `destDir` steps.
 
-  A `destDir` the daemon cannot search or open gets the `open destDir:`
+  On `5fd08069` a `destDir` the daemon cannot search or open gets the `open destDir:`
   refusal, where `89cb6289` fails later or extracts. On Linux and macOS, a parent
   folder of mode `0300` with no `destDir` gets the `open parent:` refusal, where
   `89cb6289` extracts. The two Windows last-name bullets of
