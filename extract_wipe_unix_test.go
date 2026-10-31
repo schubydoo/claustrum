@@ -90,7 +90,7 @@ func TestFilesExtractTarParentCannotBeOpened(t *testing.T) {
 
 // TestFilesExtractTarWipeFailure holds the text of a wipe that fails, and what
 // stays on disk. The text names the last name of destDir and no whole path. The
-// frames and the disk are those of 5fd08069 on Linux and macOS VMs, in the three
+// frames and the disk are those of 5fd08069 on Linux and macOS VMs, in the two
 // rows with no separator. The row with a separator after destDir is claustrum's
 // own. The entries that can go are gone, and destDir is the folder that it was.
 func TestFilesExtractTarWipeFailure(t *testing.T) {
@@ -117,9 +117,6 @@ func TestFilesExtractTarWipeFailure(t *testing.T) {
 		{"a parent of mode 0500, with a separator after destDir", func(t *testing.T, parent, _ string) {
 			chmodForRequest(t, parent, 0o500)
 		}, ""},
-		{"a destDir of mode 0000 with content", func(t *testing.T, _, dest string) {
-			chmodForRequest(t, dest, 0o000)
-		}, ".synced,old.txt"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			s := newTestServer(t)

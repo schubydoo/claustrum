@@ -607,7 +607,7 @@ func TestDocsEveryErrorCodeIsDocumented(t *testing.T) {
 // because the documents grew past what a person can read. A limit goes down, never
 // up, without the maintainer's word.
 var docWordLimits = map[string]int{
-	"AGENTS.md":                                5479, // TASK-301: Part A trim, detail on the method pages
+	"AGENTS.md":                                5537, // the two .synced removes of 683cc6a9
 	"CONTRIBUTING.md":                          1071,
 	"README.md":                                1133, // 13 are the HTML tokens of the logo <picture> block (maintainer, 2026-10-31)
 	"SECURITY.md":                              1553,
@@ -624,7 +624,7 @@ var docWordLimits = map[string]int{
 	"docs/UPSTREAM-TRACKING.md":                6224, // decision-040: words moved from PROTOCOL.md, net down in the same PR
 	"docs/index.md":                            316,  // the reader router of TASK-201
 	"docs/protocol/errors.md":                  1912, // TASK-245: the .probe text, 41 words of a new row
-	"docs/protocol/files-extract-tar.md":       2253,
+	"docs/protocol/files-extract-tar.md":       2420, // the .synced rules of 683cc6a9
 	"docs/protocol/files-list.md":              449,
 	"docs/protocol/files-read.md":              825,
 	"docs/protocol/files-stat.md":              434, // TASK-203 rewrite

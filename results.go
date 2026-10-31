@@ -75,9 +75,10 @@ type validateResult struct {
 }
 
 type extractResult struct {
-	Success   bool   `json:"success"`
-	FileCount int    `json:"fileCount"`
-	Error     string `json:"error,omitempty"`
+	Success         bool   `json:"success"`
+	FileCount       int    `json:"fileCount"`
+	AlreadyComplete bool   `json:"alreadyComplete,omitempty"`
+	Error           string `json:"error,omitempty"`
 }
 
 type successResult struct {
