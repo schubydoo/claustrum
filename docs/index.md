@@ -1,6 +1,6 @@
 # claustrum
 
-claustrum is a tiny, dependency-light Go daemon. It reimplements, clean-room, the small daemon that hosts a remote Claude Code session over SSH. Wire-level [probes](GLOSSARY.md#probe) of the [reference](GLOSSARY.md#reference) binary gave the contract. The project copied no code (see [`NOTICE`](https://github.com/schubydoo/claustrum/blob/main/NOTICE)) and sends no telemetry. One binary holds a local CLI-version manager, a process supervisor, and a JSON-RPC multiplexer with a replay buffer over an `AF_UNIX` socket. The daemon supplies 20 methods across the `server.*`, `files.*`, `git.*`, `launcher.*`, `process.*`, and `plugins.*` namespaces.
+claustrum is a tiny, dependency-light Go daemon. It reimplements, clean-room, the small daemon that hosts a remote Claude Code session over SSH. Wire-level [probes](GLOSSARY.md#probe) of the [reference](GLOSSARY.md#reference) binary gave the contract. The project copied no code (see [`NOTICE`](https://github.com/schubydoo/claustrum/blob/main/NOTICE)) and sends no telemetry. One binary holds a local CLI-version manager, a process supervisor, and a JSON-RPC multiplexer with a replay buffer over an `AF_UNIX` socket. The daemon supplies 21 methods across the `server.*`, `files.*`, `git.*`, `launcher.*`, `process.*`, and `plugins.*` namespaces.
 
 !!! note "The one hard rule"
     Stay byte-identical to the JSON-RPC frames of the reference daemon. The

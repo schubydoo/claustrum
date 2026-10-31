@@ -131,8 +131,6 @@ var docNotMethods = map[string]string{
 	"server.go":      "a source file",
 	"process.go":     "a source file",
 	"git.exe":        "the Windows git program, inside an error text",
-	// Built, but server.capabilities does not list it until the capabilities change. Delete both entries then.
-	"files.realpath": "a method that the daemon answers and does not advertise yet",
 	// The terminal of 52d82f0a, which claustrum does not build.
 	"process.resize":    "a method of the reference build 52d82f0a that claustrum lacks",
 	"process.spawn.pty": "a feature of the reference build 52d82f0a that claustrum lacks",
@@ -148,8 +146,9 @@ func TestDocsNoPhantomMethod(t *testing.T) {
 	for _, f := range capabilityFeatures {
 		known[f] = true
 	}
-	// capabilityFeatures lists this one on unix only, and the test must pass on Windows.
+	// capabilityFeatures lists these on unix only, and the test must pass on Windows.
 	known["git.worktree.external_root"] = true
+	known["process.spawn.link_bound"] = true
 	// featuresFor adds this one on a daemon with jobs on (Windows).
 	known[jobFeature] = true
 	for _, f := range docFiles(t) {
@@ -184,8 +183,6 @@ var docGoNameRE = regexp.MustCompile(`\b(?:server|files|git|launcher|process|plu
 // A word that ends in ".go", ".exe" or "*", or holds ".log", is a file name or a
 // glob and needs no entry.
 var docGoNotMethods = map[string]string{
-	"files.realpath":                 "a method that the daemon answers and does not advertise yet",
-	"files.read.real":                "a feature that the daemon answers and does not advertise yet",
 	"git.list_branch":                "a deliberate typo that a comment of shutdown_auth_test.go gives as an example",
 	"server.capabilities.instanceId": "the instanceId member of the server.capabilities result, named in a comment of pipetransport.go",
 	"server.run":                     "the run method of the server type, named in comments of pipetransport_other.go and pipetransport_windows.go",
@@ -197,7 +194,7 @@ var docGoNotMethods = map[string]string{
 // its first `//` to the end. It reads no other text of a test file, because a
 // test frame may use any method name.
 func TestDocsNoPhantomMethodInGoText(t *testing.T) {
-	known := map[string]bool{"git.worktree.external_root": true}
+	known := map[string]bool{"git.worktree.external_root": true, "process.spawn.link_bound": true}
 	for _, m := range capabilityMethods {
 		known[m] = true
 	}
@@ -484,9 +481,9 @@ func TestDocsPinnedBuild(t *testing.T) {
 
 // TestDocsCapabilityFeatures: the features array in the server.capabilities example
 // of the server page under docs/protocol equals capabilityFeatures, name for name and in order. The
-// document shows the unix list. On Windows externalRootCapabilityFeatures is empty,
-// so the test puts git.worktree.external_root back where methods_server.go appends
-// it (from the code: after the fixed names, before server.instance_id).
+// document shows the unix list. On Windows osCapabilityFeatures is empty, so the
+// test puts git.worktree.external_root and process.spawn.link_bound back where
+// methods_server.go appends them (after the fixed names, before server.instance_id).
 func TestDocsCapabilityFeatures(t *testing.T) {
 	const ext = "git.worktree.external_root"
 	m := regexp.MustCompile(`"features":\s*\[([^\]]*)\]`).FindStringSubmatch(docRead(t, "docs", "protocol", "server.md"))
@@ -504,7 +501,7 @@ func TestDocsCapabilityFeatures(t *testing.T) {
 	}
 	if !hasExt {
 		last := len(want) - 1
-		want = append(want[:last:last], ext, want[last])
+		want = append(want[:last:last], ext, "process.spawn.link_bound", want[last])
 	}
 	if strings.Join(doc, " ") != strings.Join(want, " ") {
 		t.Errorf("the features array of docs/protocol/server.md differs from capabilityFeatures in methods_server.go: make the array in the server.capabilities example read\n%s\nit reads\n%s", strings.Join(want, ", "), strings.Join(doc, ", "))
@@ -618,10 +615,10 @@ var docWordLimits = map[string]int{
 	"docs/GLOSSARY.md":                         1297,
 	"docs/IMPROVEMENTS.md":                     1590,
 	"docs/INSTALL.md":                          5307, // task-207: page rewrite
-	"docs/PROTOCOL.md":                         2826, // TASK-231: one sentence on the close line. TASK-230: one sentence on a failed write. TASK-202: the error texts, stream frames and flags moved to their own pages
+	"docs/PROTOCOL.md":                         2835, // the files.realpath row and count. 2826: TASK-231: one sentence on the close line. TASK-230: one sentence on a failed write. TASK-202: the error texts, stream frames and flags moved to their own pages
 	"docs/STYLE.md":                            1293, // task-203b: the page rewrite
 	"docs/TOUR.md":                             850,  // a new page: its word count plus about 200
-	"docs/UPSTREAM-TRACKING.md":                6230, // the build of the open destDir refusal. 6228: the could-not-be-examined text. 6224: decision-040: words moved from PROTOCOL.md, net down in the same PR
+	"docs/UPSTREAM-TRACKING.md":                6232, // the terminal of 683cc6a9. 6230: the build of the open destDir refusal. 6228: the could-not-be-examined text. 6224: decision-040: words moved from PROTOCOL.md, net down in the same PR
 	"docs/index.md":                            316,  // the reader router of TASK-201
 	"docs/protocol/errors.md":                  1912, // TASK-245: the .probe text, 41 words of a new row
 	"docs/protocol/files-extract-tar.md":       2457, // the empty folder that Windows cannot read. 2420: the .synced rules of 683cc6a9
@@ -647,7 +644,7 @@ var docWordLimits = map[string]int{
 	"docs/protocol/process-reattach.md":        1046, // TASK-229: attach, fresh and proof
 	"docs/protocol/process-spawn.md":           3508, // the temp-folder test of 683cc6a9. 3474: task-204: rewrite to the page template
 	"docs/protocol/process-stdin.md":           929,  // TASK-229: attach
-	"docs/protocol/server.md":                  1496, // TASK-267: four feature names in the example and the job name. task-203b: the page rewrite
+	"docs/protocol/server.md":                  1535, // the lists of 683cc6a9. 1496: TASK-267: four feature names in the example and the job name. task-203b: the page rewrite
 	"docs/protocol/streams.md":                 584,  // TASK-202: moved from PROTOCOL.md
 }
 

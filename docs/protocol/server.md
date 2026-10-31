@@ -32,7 +32,7 @@ The reply is always this result.
   "methods": ["server.ping", "server.capabilities", "server.shutdown", "…"],
   "instanceId": "<32 hex characters>",
   "startedAt": 1760000000000,
-  "features": ["process.stdin.offset", "process.kill.farewell", "files.extract_tar.execBit", "files.list.includeDotNames", "git.status.baseRepo", "git.info.discovered_root", "git.worktree_create.timeoutMs", "git.worktree_create.existingBranch", "git.worktree_remove.unpushedGuard", "process.spawn.shellAgentSocket", "process.spawn.failure_reason", "server.line_end", "launcher.managed", "server.peer_check", "git.shadow_dir", "git.worktree.external_root", "server.instance_id"],
+  "features": ["process.stdin.offset", "process.kill.farewell", "files.extract_tar.execBit", "files.list.includeDotNames", "files.list.junctionsAsDirs", "git.status.baseRepo", "git.info.discovered_root", "git.worktree_create.timeoutMs", "git.worktree_create.existingBranch", "git.worktree_remove.unpushedGuard", "process.spawn.shellAgentSocket", "process.spawn.failure_reason", "server.line_end", "launcher.managed", "server.peer_check", "git.shadow_dir", "files.read.real", "git.worktree.external_root", "process.spawn.link_bound", "server.instance_id"],
   "peerCheck": "off"
 }
 ```
@@ -42,7 +42,7 @@ The members come in this order:
 | Member | Meaning |
 |---|---|
 | `version` | The version of the daemon. |
-| `methods` | The 20 methods, in the order of [Methods](../PROTOCOL.md#methods-20). `plugins.prune` is last on every system. |
+| `methods` | The 21 methods, in the order of [Methods](../PROTOCOL.md#methods-21). `files.realpath` is last on every system (`683cc6a9`). |
 | `instanceId` | 32 hexadecimal characters, new at each start of the daemon. claustrum makes it from 16 random bytes (claustrum's own). On Linux and macOS the owner record of `daemon.lock` holds the same value. The banner of the [daemon log](../DAEMON.md#daemon-log-remote-serverlog) holds it too (measured on `89cb6289`). |
 | `startedAt` | The start time of the daemon in unix milliseconds. claustrum sets it after its start steps and the bind of the socket (from the code). |
 | `features` | The optional extensions that this build supports. See [Features](#features). |
@@ -53,7 +53,7 @@ A request for `server.capabilities` does not count as activity for the idle exit
 
 ### Features
 
-The `features` array is always present. The example above shows the members in the order of `52d82f0a` on Linux and macOS, less `process.spawn.pty`. Windows sends no `git.worktree.external_root`, and with jobs on adds `process.spawn.job` last (`52d82f0a`).
+The `features` array is always present. The example above shows the members in the order of `683cc6a9` on Linux and macOS, less `process.spawn.pty`. Windows sends no `git.worktree.external_root` and no `process.spawn.link_bound` (`683cc6a9`), and with jobs on adds `process.spawn.job` last (`52d82f0a`). On Linux with a `/proc` that holds only `self`, `683cc6a9` drops `files.read.real`. claustrum drops it after a failed start test, whose exact steps are claustrum's own.
 
 `CLAUDE_SSH_MANAGED_LAUNCHER` does not change the list (measured on macOS). Windows lists `launcher.managed` too, although a Windows `process.spawn` refuses every launcher. The peer check changes only the `peerCheck` and `peerCheckBy` members.
 
@@ -157,4 +157,4 @@ A handler panic in `server.shutdown` writes no frame (claustrum's own). See [Han
 
 ## Differences from the reference
 
-`-keep-children` is claustrum's own flag ([CT-2](../DIVERGENCES.md#ct-2)). The peer check follows the reference. claustrum lacks the terminal of the pinned build `52d82f0a`, so it lists no `process.resize` and no `process.spawn.pty` ([open items](../REFERENCE-BUILDS.md#52d82f0a28317830ccacea80f6f4aac1d7563353-2026-10-09-built)).
+`-keep-children` is claustrum's own flag ([CT-2](../DIVERGENCES.md#ct-2)). The peer check follows the reference. claustrum lacks the terminal of the pinned build `52d82f0a` and of `683cc6a9`. So it lists no `process.resize`, and on Linux and macOS no `process.spawn.pty` ([open items](../REFERENCE-BUILDS.md#52d82f0a28317830ccacea80f6f4aac1d7563353-2026-10-09-built)).

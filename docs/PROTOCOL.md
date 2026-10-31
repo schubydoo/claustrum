@@ -1,11 +1,11 @@
 # claustrum protocol reference
 
-This page gives the rules that more than one method shares: the transport, the authentication, the message shapes, the error codes and the path handling. It lists the 20 methods with the page of each, and it links the pages for the error texts, the stream frames, the flags and the shared git rules.
+This page gives the rules that more than one method shares: the transport, the authentication, the message shapes, the error codes and the path handling. It lists the 21 methods with the page of each, and it links the pages for the error texts, the stream frames, the flags and the shared git rules.
 
 An untagged rule on this page matches build `5fd08069` or an earlier build. A section that names its systems or its build keeps that scope.
 
 claustrum uses newline-delimited JSON-RPC 2.0 over an `AF_UNIX`
-`SOCK_STREAM` socket. [Methods (20)](#methods-20) lists the page of each method.
+`SOCK_STREAM` socket. [Methods (21)](#methods-21) lists the page of each method.
 The three `server.*` methods share one page. This
 document holds the rules that more than one method shares. The [error texts](protocol/errors.md),
 the [stream frames](protocol/streams.md) and the [flags](protocol/flags.md) have their own pages. The shared
@@ -291,7 +291,7 @@ other two stat it:
   path). For `files.read`, `5fd08069` gives these three with `open` on Linux and
   macOS.
 
-## Methods (20)
+## Methods (21)
 
 `server.capabilities` lists the methods in the order of this table. The
 [reference build history](REFERENCE-BUILDS.md) records the builds that added or
@@ -300,7 +300,7 @@ removed a method.
 | Method | Params → result | Page |
 |---|---|---|
 | `server.ping` | none → `{"pong":true}` | [server.*](protocol/server.md#serverping) |
-| `server.capabilities` | none → `{"version","methods":[…20…],"instanceId","startedAt","features":[…],"peerCheck"[,"peerCheckBy"]}` | [server.*](protocol/server.md#servercapabilities) |
+| `server.capabilities` | none → `{"version","methods":[…21…],"instanceId","startedAt","features":[…],"peerCheck"[,"peerCheckBy"]}` | [server.*](protocol/server.md#servercapabilities) |
 | `server.shutdown` | none → `{"ok":true}`, when the reply wins the race with the close | [server.*](protocol/server.md#servershutdown) |
 | `files.list` | `{path[,includeDotNames,junctionsAsDirs]}` → `{"entries":[{"name","path","isDir"},…]}` (name-sorted) | [files.list](protocol/files-list.md) |
 | `files.validate` | `{path}` → `{"valid":bool,"isDir":bool[,"error"]}` | [files.validate](protocol/files-validate.md) |
@@ -319,6 +319,7 @@ removed a method.
 | `process.killAndWait` | `{id[,signal][,timeoutMs][,escalate][,farewell,graceMs]}` → `{"found":<bool>,"died":<bool>[,"alreadyExited":true][,"escalated":true][,"farewellEnd":<end>]}` | [process.killAndWait](protocol/process-killandwait.md) |
 | `process.reattach` | `{id,fromSeq[,wantPid]}` → `{"found","running","firstSeq","lastSeq","stdinApplied"}` | [process.reattach](protocol/process-reattach.md) |
 | `plugins.prune` | `{[keep],[minAgeDays]}` → `{"root":"<per-install root>","pruned":[…],"prunedLegacy":[…],"staleArchives":0,"kept":0,"live":<n>,"young":<n>,"legacy":"<state>","minAgeDays":<clamped>}` | [plugins.prune](protocol/plugins-prune.md) |
+| `files.realpath` | `{path[,missingLeaf]}` → `{"exists":<bool>[,"real"][,"wouldBe"][,"dangling":true]}` | [files.realpath](protocol/files-realpath.md) |
 
 ## Shared rules of the git methods
 

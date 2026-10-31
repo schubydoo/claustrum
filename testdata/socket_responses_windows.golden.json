@@ -47,7 +47,8 @@
         "process.kill",
         "process.killAndWait",
         "process.reattach",
-        "plugins.prune"
+        "plugins.prune",
+        "files.realpath"
       ],
       "instanceId": "<IID>",
       "startedAt": "<T>",
@@ -56,6 +57,7 @@
         "process.kill.farewell",
         "files.extract_tar.execBit",
         "files.list.includeDotNames",
+        "files.list.junctionsAsDirs",
         "git.status.baseRepo",
         "git.info.discovered_root",
         "git.worktree_create.timeoutMs",
@@ -67,6 +69,7 @@
         "launcher.managed",
         "server.peer_check",
         "git.shadow_dir",
+        "files.read.real",
         "server.instance_id"
       ],
       "peerCheck": "off"
