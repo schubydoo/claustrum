@@ -13,13 +13,14 @@ The error texts of this page match the reference as measured on `7d193f89`.
 | Parameter | Required | Meaning |
 |---|---|---|
 | `includeDotNames` | no | `true` lists dot names, and `false` or no member keeps them out (build `52d82f0a`, measured on Linux, macOS and Windows). Another type gets `-32602` (claustrum's own, not measured). |
-| `junctionsAsDirs` | no | On Windows only, `true` makes a junction a directory (build `683cc6a9`). Another type gets `-32602` (claustrum's own, not measured). |
+| `junctionsAsDirs` | no | `true` makes a Windows junction a directory (build `683cc6a9`). Another type gets `-32602` (claustrum's own, not measured). |
 | `path` | yes | The directory to list. The daemon follows a symbolic link at `path`. See [Path handling](../PROTOCOL.md#path-handling). |
 
 ## Response
 
 ```json
 {"entries": [
+  {"name": "README.md", "path": "/repo/README.md", "isDir": false},
   {"name": "docs", "path": "/repo/docs", "isDir": true}
 ]}
 ```
@@ -28,7 +29,7 @@ The error texts of this page match the reference as measured on `7d193f89`.
 |---|---|
 | `name` | The name of the entry. |
 | `path` | `path` of the request after the `~` expansion, joined with the name. The daemon cleans the result: it removes a doubled or trailing separator and resolves `.` and `..` as text. |
-| `isDir` | If the entry is a directory or a symbolic link to a directory, `true`. |
+| `isDir` | `true` for a directory, or for a symbolic link to one. Windows differs (platform notes). |
 
 ## Errors
 
@@ -55,7 +56,7 @@ The `-32603` texts come from the operating system and hold `path` after the `~` 
 
 On Windows each entry `path` uses `\` separators, and the `-32603` texts differ.
 
-On Windows (build `683cc6a9`) a file link, a link to `\\localhost\c$` and a chain over 31 links give `false`, and a junction needs `junctionsAsDirs`.
+There (build `683cc6a9`), a file link, a link to `\\localhost\c$` and a chain over 31 links give `false`, and a junction needs `junctionsAsDirs`.
 
 ## Differences from the reference
 

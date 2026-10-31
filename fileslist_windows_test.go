@@ -11,18 +11,28 @@ import (
 	"testing"
 )
 
-// listIsDirOf lists dir and returns the isDir value of each entry by name.
-func listIsDirOf(t *testing.T, dir string, extra map[string]any) map[string]bool {
+// listIsDirOf lists dir and returns the isDir value of each entry by name. It
+// fails on an error frame, and when a name in want is not listed, so a false
+// expectation cannot pass on an empty listing.
+func listIsDirOf(t *testing.T, dir string, extra map[string]any, want ...string) map[string]bool {
 	t.Helper()
 	params := map[string]any{"path": dir}
 	for k, v := range extra {
 		params[k] = v
 	}
 	got := dispatchRaw(t, newTestServer(t), rpcLine(t, "files.list", params))
+	if strings.Contains(got, `"error":`) {
+		t.Fatalf("files.list %s: %s", dir, got)
+	}
 	out := map[string]bool{}
 	for _, part := range strings.Split(got, `{"name":"`)[1:] {
 		name := part[:strings.Index(part, `"`)]
 		out[name] = strings.Contains(part, `"isDir":true`)
+	}
+	for _, name := range want {
+		if _, ok := out[name]; !ok {
+			t.Fatalf("files.list %s: %q is not listed: %s", dir, name, got)
+		}
 	}
 	return out
 }
@@ -57,7 +67,7 @@ func TestFilesListWindowsLinks(t *testing.T) {
 		{"false", map[string]any{"junctionsAsDirs": false}, false},
 		{"true", map[string]any{"junctionsAsDirs": true}, true},
 	} {
-		got := listIsDirOf(t, list, tc.extra)
+		got := listIsDirOf(t, list, tc.extra, "junc", "dlink")
 		if _, ok := got["flink"]; !ok && os.Getenv("CI") != "" {
 			t.Fatalf("%s: flink is not in the listing: %v", tc.name, got)
 		}
@@ -91,7 +101,7 @@ func TestFilesListWindowsLinkChain(t *testing.T) {
 		}
 		makeDirSymlink(t, filepath.Join(list, "head"), prev)
 		makeDirSymlink(t, filepath.Join(list, "dangling"), filepath.Join(dir, "missing"))
-		got := listIsDirOf(t, list, map[string]any{"junctionsAsDirs": true})
+		got := listIsDirOf(t, list, map[string]any{"junctionsAsDirs": true}, "head", "dangling")
 		if got["head"] != tc.want || got["dangling"] {
 			t.Errorf("k=%d: got %v, want head %t, dangling false", tc.k, got, tc.want)
 		}
@@ -102,7 +112,7 @@ func TestFilesListWindowsLinkChain(t *testing.T) {
 func TestFilesListWindowsShareLink(t *testing.T) {
 	list := t.TempDir()
 	makeDirSymlink(t, filepath.Join(list, "share"), `\\localhost\c$`)
-	if got := listIsDirOf(t, list, nil); got["share"] {
+	if got := listIsDirOf(t, list, nil, "share"); got["share"] {
 		t.Errorf("share link isDir = true, want false")
 	}
 }
