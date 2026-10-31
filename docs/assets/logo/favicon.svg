@@ -1,0 +1,7 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16" width="16" height="16" role="img" aria-label="claustrum">
+  <title>claustrum</title>
+  <g transform="scale(0.25)">
+    <path d="M8,14 C17,14 22,18 30.4,19 M6,32 H30.2 M8,50 C17,50 22,46 30.4,45 M56,14 C47,14 42,18 33.6,19 M58,32 H33.8 M56,50 C47,50 42,46 33.6,45" fill="none" stroke="#7986CB" stroke-width="5.5" stroke-linecap="round" stroke-opacity="1.0"/>
+    <path d="M32,6 C35.6,18 35.6,46 32,58 C28.4,46 28.4,18 32,6 Z" fill="#3F51B5" stroke="#3F51B5" stroke-width="2.5" stroke-linejoin="round"/>
+  </g>
+</svg>
