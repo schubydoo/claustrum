@@ -502,8 +502,8 @@ and the startup lines against `f6010b97` and `89cb6289`. A rule that names one
 system was measured on that system, and an unmarked rule on Linux and macOS.
 
 At each start the launcher renames an existing `remote-server.log` in the
-socket's directory to `remote-server.log.old`. Then it creates a fresh log there
-with mode `0600`. It sends the stdout and stderr of the daemonized child into that file. claustrum does not remove the log at shutdown (from the code), unlike the socket and `daemon.token`.
+socket's directory to `remote-server.log.old` and creates a fresh one
+with mode `0600`. The daemonized child writes its stdout and stderr there. claustrum keeps the log at shutdown (from the code), unlike the socket and `daemon.token`. The name and location are fixed, not configurable.
 
 claustrum writes a level tag before each line of its logger. The banner and a
 start error that begins `claustrum:` have none. The reference writes no tag. `CLAUSTRUM_LOG_LEVEL=warn` drops the INFO lines.

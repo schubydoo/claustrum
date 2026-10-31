@@ -77,7 +77,7 @@ The daemon follows a symbolic link.
 ## Rare states
 
 ??? note "Size 0, growth and FIFO"
-    The daemon compares the limit with the size that the operating system reports for the open file, before the read. That size is `0` for some regular files, for example a file under `/proc`, so the limit does not apply to them. If a file grows after the comparison, the daemon reads all of it.
+    Before the read, the daemon compares the limit with the size that the system reports for the open file. That size is `0` for some regular files, for example a file under `/proc`. A file that grows after the comparison is read whole. So in both cases `content` can be larger than the limit.
 
     The open does not wait for the writer of a FIFO, so the refusal comes at once. A writer that waits in its own open of the FIFO sees the open, and that open returns.
 
