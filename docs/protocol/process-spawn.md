@@ -110,7 +110,7 @@ The Go runtime variables `GODEBUG`, `GOGC`, `GOMAXPROCS`, `GOMEMLIMIT` and `GOTR
 
 ### A temp folder that takes no file (build `683cc6a9`)
 
-On Linux and macOS a daemon value of `TMPDIR`, `TEMP` or `CLAUDE_CODE_TMPDIR` does not reach a child if its folder cannot take a new file `.claude-ssh-<n>`. A missing folder stays. On Linux a relative value stays too, and spawns at once share one test, which removes the file. The 2 s wait limit per spawn and the untested `TMP` are claustrum's own.
+On Linux and macOS a daemon value of `CLAUDE_CODE_TMPDIR`, `TMPDIR`, `TMP` or `TEMP` does not reach a child if its folder cannot take a new file `.claude-ssh-<n>`. For a missing folder the nearest existing parent folder takes the test. A missing folder under a folder that takes the file stays. On Linux a relative value stays too, and spawns at once share one test, which removes the file. `TMP`, the order of the names and the test of the parent are claustrum's own, not measured. So is the wait of at most 2 s per test.
 
 ### The managed launcher
 

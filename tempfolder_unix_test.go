@@ -46,7 +46,7 @@ func countTempProbes(t *testing.T, dir string, hold func(path string)) *atomic.I
 // host does not start a test. A test sets its own names after it.
 func isolateTempEnv(t *testing.T) {
 	t.Helper()
-	for _, name := range append([]string{"TMP"}, tempFolderNames...) {
+	for _, name := range tempFolderNames {
 		t.Setenv(name, "")
 	}
 }
@@ -71,13 +71,8 @@ func TestTempFolderThatTakesNoFileIsNotHandedOn(t *testing.T) {
 	if os.Geteuid() == 0 {
 		t.Skip("root can write a 0555 folder")
 	}
-	root := t.TempDir()
-	ok := filepath.Join(root, "ok")
-	sub := filepath.Join(root, "ro", "sub")
+	sub := filepath.Join(t.TempDir(), "ro", "sub")
 	if err := os.MkdirAll(sub, 0o755); err != nil {
-		t.Fatal(err)
-	}
-	if err := os.Mkdir(ok, 0o755); err != nil {
 		t.Fatal(err)
 	}
 	for _, d := range []string{sub, filepath.Dir(sub)} {
@@ -89,26 +84,58 @@ func TestTempFolderThatTakesNoFileIsNotHandedOn(t *testing.T) {
 		_ = os.Chmod(filepath.Dir(sub), 0o755)
 		_ = os.Chmod(sub, 0o755)
 	})
-	for _, name := range tempFolderNames {
+	dropped := []string{"CLAUDE_CODE_TMPDIR", "TMPDIR", "TMP", "TEMP"}
+	for _, name := range dropped {
 		t.Setenv(name, sub)
 	}
-	t.Setenv("TMP", ok)
 	buf := captureLogBuf(t)
 
 	env := buildSpawnEnv(nil, false)
-	for _, name := range tempFolderNames {
+	at := -1
+	for _, name := range dropped {
 		if envHas(env, name) {
 			t.Errorf("the child env holds %s, want it not handed on", name)
 		}
 		re := regexp.MustCompile(`(?m)^WARN  \[process\.Manager\] the inherited ` + name + `=` +
 			regexp.QuoteMeta(sub) + ` is not handed on to a child: open ` +
 			regexp.QuoteMeta(sub) + `/\.claude-ssh-[0-9]+: permission denied$`)
-		if !re.MatchString(buf.String()) {
+		loc := re.FindStringIndex(buf.String())
+		if loc == nil {
 			t.Errorf("no log line for %s, log:\n%s", name, buf.String())
+			continue
 		}
+		// The lines come in the order of the names.
+		if loc[0] < at {
+			t.Errorf("the log line for %s comes before the line of the name ahead of it, log:\n%s", name, buf.String())
+		}
+		at = loc[0]
 	}
-	if !envHas(env, "TMP") {
-		t.Error("the child env lost TMP, want it kept")
+}
+
+func TestTempFolderMissingUnderAFolderThatTakesNoFileIsNotHandedOn(t *testing.T) {
+	if os.Geteuid() == 0 {
+		t.Skip("root can write a 0555 folder")
+	}
+	ro := filepath.Join(t.TempDir(), "ro")
+	if err := os.Mkdir(ro, 0o555); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = os.Chmod(ro, 0o755) })
+	isolateTempEnv(t)
+	sub := filepath.Join(ro, "sub")
+	t.Setenv("TMPDIR", sub)
+	buf := captureLogBuf(t)
+
+	env := buildSpawnEnv(nil, false)
+	if envHas(env, "TMPDIR") {
+		t.Error("the child env holds TMPDIR, want it not handed on")
+	}
+	// The create in the nearest existing folder fails, and the line names that file.
+	re := regexp.MustCompile(`(?m)^WARN  \[process\.Manager\] the inherited TMPDIR=` +
+		regexp.QuoteMeta(sub) + ` is not handed on to a child: open ` +
+		regexp.QuoteMeta(ro) + `/\.claude-ssh-[0-9]+: permission denied$`)
+	if !re.MatchString(buf.String()) {
+		t.Errorf("no log line that names the file in %s, log:\n%s", ro, buf.String())
 	}
 }
 
@@ -129,30 +156,54 @@ func TestTempFolderThatTakesAFileStaysAndKeepsNoFile(t *testing.T) {
 	}
 }
 
-func TestTempFolderRelativeOrMissingIsNotTested(t *testing.T) {
+func TestTempFolderRelativeIsNotTested(t *testing.T) {
 	root := t.TempDir()
 	isolateTempEnv(t)
-	missing := filepath.Join(root, "missing", "sub")
 	// The relative folder exists from the working folder of the test.
 	if err := os.MkdirAll(filepath.Join(root, "rel", "dir"), 0o755); err != nil {
 		t.Fatal(err)
 	}
 	t.Chdir(root)
 	t.Setenv("TMPDIR", "rel/dir")
-	t.Setenv("TEMP", missing)
 	n := countTempProbes(t, "", nil)
 	buf := captureLogBuf(t)
 	env := buildSpawnEnv(nil, false)
-	for _, name := range []string{"TMPDIR", "TEMP"} {
-		if !envHas(env, name) {
-			t.Errorf("the child env lost %s, want it kept", name)
-		}
-		if strings.Contains(buf.String(), "the inherited "+name+"=") {
-			t.Errorf("a log line for %s, want none:\n%s", name, buf.String())
-		}
+	if !envHas(env, "TMPDIR") {
+		t.Error("the child env lost TMPDIR, want it kept")
+	}
+	if strings.Contains(buf.String(), "the inherited TMPDIR=rel/dir") {
+		t.Errorf("a log line for TMPDIR, want none:\n%s", buf.String())
 	}
 	if n.Load() != 0 {
-		t.Error("a test file was made, want no test of a relative or missing folder")
+		t.Error("a test file was made, want no test of a relative folder")
+	}
+}
+
+func TestTempFolderMissingIsTestedInTheNearestFolder(t *testing.T) {
+	w := filepath.Join(t.TempDir(), "w")
+	if err := os.Mkdir(w, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	isolateTempEnv(t)
+	missing := filepath.Join(w, "miss", "sub")
+	t.Setenv("TEMP", missing)
+	n := countTempProbes(t, w, nil)
+	buf := captureLogBuf(t)
+	env := buildSpawnEnv(nil, false)
+	if !envHas(env, "TEMP") {
+		t.Error("the child env lost TEMP, want it kept")
+	}
+	if strings.Contains(buf.String(), "the inherited TEMP="+missing) {
+		t.Errorf("a log line for TEMP, want none:\n%s", buf.String())
+	}
+	if n.Load() != 1 {
+		t.Errorf("%d test files made in %s, want 1", n.Load(), w)
+	}
+	if left := probeFiles(t, w); len(left) != 0 {
+		t.Errorf("the folder still holds %v, want the test file removed", left)
+	}
+	if _, err := os.Lstat(filepath.Join(w, "miss")); err == nil {
+		t.Error("the missing folder exists after the test, want nothing made")
 	}
 }
 
@@ -266,14 +317,119 @@ func TestTempFolderOneWaitForAllNames(t *testing.T) {
 
 	start := time.Now()
 	env := buildSpawnEnv(nil, false)
-	// One wait per name takes three times the limit.
+	// One wait per name takes four times the limit.
 	if took := time.Since(start); took >= 2*tempProbeWait {
-		t.Errorf("the spawn waited %v for three names on one held folder, want at most about %v", took, tempProbeWait)
+		t.Errorf("the spawn waited %v for four names on one held folder, want at most about %v", took, tempProbeWait)
 	}
 	for _, name := range tempFolderNames {
 		if !envHas(env, name) {
 			t.Errorf("the child env lost %s after the wait, want it kept", name)
 		}
+	}
+}
+
+func TestTempFolderSlowTestLogsOnceAndALateSpawnDoesNotWait(t *testing.T) {
+	dir := t.TempDir()
+	isolateTempEnv(t)
+	t.Setenv("TMPDIR", dir)
+	release := make(chan struct{})
+	countTempProbes(t, dir, func(string) { <-release })
+	old := tempProbeWait
+	tempProbeWait = 300 * time.Millisecond
+	t.Cleanup(func() { tempProbeWait = old })
+	defer waitTempProbeEnd(t, dir, release)
+	buf := captureLogBuf(t)
+	line := "WARN  [process.Manager] the temporary folder " + dir + " has not answered in " +
+		tempProbeWait.String() + ": children keep it until it does\n"
+
+	if !envHas(buildSpawnEnv(nil, false), "TMPDIR") {
+		t.Error("the first spawn lost TMPDIR after the wait, want it kept")
+	}
+	if got := strings.Count(buf.String(), line); got != 1 {
+		t.Errorf("%d lines %q after the first spawn, want 1, log:\n%s", got, line, buf.String())
+	}
+	// The test still runs and is older than tempProbeWait. A spawn that joins it
+	// does not wait and logs nothing.
+	start := time.Now()
+	if !envHas(buildSpawnEnv(nil, false), "TMPDIR") {
+		t.Error("the late spawn lost TMPDIR, want it kept")
+	}
+	if took := time.Since(start); took >= tempProbeWait/2 {
+		t.Errorf("the late spawn waited %v on a test older than %v, want no wait", took, tempProbeWait)
+	}
+	if got := strings.Count(buf.String(), line); got != 1 {
+		t.Errorf("%d lines %q after the late spawn, want 1, log:\n%s", got, line, buf.String())
+	}
+}
+
+func TestTempFolderAnsweredTestCountsAfterAnotherWaitRanOut(t *testing.T) {
+	if os.Geteuid() == 0 {
+		t.Skip("root can write a 0555 folder")
+	}
+	root := t.TempDir()
+	held := filepath.Join(root, "held")
+	ro := filepath.Join(root, "ro")
+	if err := os.Mkdir(held, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Mkdir(ro, 0o555); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = os.Chmod(ro, 0o755) })
+	isolateTempEnv(t)
+	// The test of the first name hangs past the wait. The test of the second name
+	// fails at once, and its answer counts after the first wait ran out.
+	t.Setenv("CLAUDE_CODE_TMPDIR", held)
+	t.Setenv("TMPDIR", ro)
+	release := make(chan struct{})
+	countTempProbes(t, held, func(string) { <-release })
+	old := tempProbeWait
+	tempProbeWait = 200 * time.Millisecond
+	t.Cleanup(func() { tempProbeWait = old })
+	defer waitTempProbeEnd(t, held, release)
+	buf := captureLogBuf(t)
+
+	env := buildSpawnEnv(nil, false)
+	if !envHas(env, "CLAUDE_CODE_TMPDIR") {
+		t.Error("the child env lost CLAUDE_CODE_TMPDIR after the wait, want it kept")
+	}
+	if envHas(env, "TMPDIR") {
+		t.Error("the child env holds TMPDIR, want it not handed on")
+	}
+	if !strings.Contains(buf.String(), "the inherited TMPDIR="+ro+" is not handed on") {
+		t.Errorf("no drop line for TMPDIR, log:\n%s", buf.String())
+	}
+	if strings.Contains(buf.String(), "the temporary folder "+ro+" ") {
+		t.Errorf("a slow line for %s, want none, log:\n%s", ro, buf.String())
+	}
+}
+
+// A symbolic link to nothing as the folder ends the test with the error of the
+// create, because the Lstat finds the link. The parent takes no test (claustrum's own,
+// not measured).
+func TestTempFolderDanglingLinkIsNotHandedOn(t *testing.T) {
+	root := t.TempDir()
+	link := filepath.Join(root, "link")
+	if err := os.Symlink(filepath.Join(root, "gone"), link); err != nil {
+		t.Fatal(err)
+	}
+	isolateTempEnv(t)
+	t.Setenv("TMPDIR", link)
+	n := countTempProbes(t, "", nil)
+	buf := captureLogBuf(t)
+
+	env := buildSpawnEnv(nil, false)
+	if envHas(env, "TMPDIR") {
+		t.Error("the child env holds TMPDIR, want it not handed on")
+	}
+	re := regexp.MustCompile(`(?m)^WARN  \[process\.Manager\] the inherited TMPDIR=` +
+		regexp.QuoteMeta(link) + ` is not handed on to a child: open ` +
+		regexp.QuoteMeta(link) + `/\.claude-ssh-[0-9]+: no such file or directory$`)
+	if !re.MatchString(buf.String()) {
+		t.Errorf("no log line with the error of the create, log:\n%s", buf.String())
+	}
+	if n.Load() != 0 {
+		t.Errorf("%d test files made, want none in the parent of the link", n.Load())
 	}
 }
 

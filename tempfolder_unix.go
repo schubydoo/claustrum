@@ -11,14 +11,14 @@ import (
 	"time"
 )
 
-// tempFolderNames are the inherited names whose folder a spawn tests. TMP is not
-// one of them (claustrum's own, not measured).
-var tempFolderNames = []string{"TMPDIR", "TEMP", "CLAUDE_CODE_TMPDIR"}
+// tempFolderNames are the inherited names whose folder a spawn tests, in the order
+// of the tests and of the log lines (claustrum's own, not measured).
+var tempFolderNames = []string{"CLAUDE_CODE_TMPDIR", "TMPDIR", "TMP", "TEMP"}
 
-// tempProbeWait is the longest time that a spawn waits for the tests of all its
-// folders. After it each name whose test has not ended stays. A test of 683cc6a9
-// held the remove 3 s, and the replies came at 2.17 s with the name kept. The 2 s
-// bound per spawn is claustrum's own, not measured. A variable for the tests.
+// tempProbeWait is the longest time that a spawn waits for one test, counted from
+// the start of that test. After it the name stays. A test of 683cc6a9 held the
+// remove 3 s, and the replies came at 2.17 s with the name kept. The bound of 2 s
+// per test is claustrum's own, not measured. A variable for the tests.
 var tempProbeWait = 2 * time.Second
 
 // afterTempProbeCreate runs between the create and the remove of the test file. It
@@ -27,6 +27,7 @@ var afterTempProbeCreate = func(path string) {}
 
 // tempProbe is one test of one folder. Spawns that ask while it runs share it.
 type tempProbe struct {
+	start   time.Time
 	done    chan struct{}
 	err     error
 	waiters int // for the tests
@@ -38,16 +39,18 @@ var tempProbes = struct {
 }{inFlight: map[string]*tempProbe{}}
 
 // dropUnusableTempVars removes from env each name of tempFolderNames whose
-// inherited folder cannot take a file, and logs one line for each. A folder that
-// does not exist is not tested and stays (683cc6a9, measured on Linux and macOS). A
-// relative value is not tested and stays too (measured on Linux).
+// inherited folder cannot take a file, and logs one line for each. A relative value
+// is not tested and stays (measured on Linux).
 //
-// The tests of all names start first and share one deadline, so a spawn waits at
-// most tempProbeWait in all (claustrum's own, not measured).
+// The tests of all names start first. Then a spawn waits for each test until
+// tempProbeWait after the start of that test, and keeps the name after it. A spawn
+// that joins a test older than tempProbeWait does not wait. The spawn that started a test logs one
+// line when its wait ends first (claustrum's own, not measured).
 func dropUnusableTempVars(env []string) []string {
 	type tested struct {
 		name, dir string
 		p         *tempProbe
+		started   bool
 	}
 	var runs []tested
 	for _, name := range tempFolderNames {
@@ -55,27 +58,14 @@ func dropUnusableTempVars(env []string) []string {
 		if !ok || !filepath.IsAbs(dir) {
 			continue
 		}
-		// A stat error other than "does not exist" leaves the test to the create
-		// (claustrum's own, not measured).
-		if _, err := os.Stat(dir); errors.Is(err, fs.ErrNotExist) {
-			continue
-		}
-		runs = append(runs, tested{name, dir, startTempProbe(dir)})
+		p, started := startTempProbe(dir)
+		runs = append(runs, tested{name, dir, p, started})
 	}
-	if len(runs) == 0 {
-		return env
-	}
-	t := time.NewTimer(tempProbeWait)
-	defer t.Stop()
-	expired := false
 	for _, r := range runs {
-		if expired {
-			break
-		}
-		select {
-		case <-r.p.done:
-		case <-t.C:
-			expired = true
+		if !waitTempProbe(r.p) {
+			if r.started {
+				logWarnf("[process.Manager] the temporary folder %s has not answered in %v: children keep it until it does", r.dir, tempProbeWait)
+			}
 			continue
 		}
 		if r.p.err != nil {
@@ -86,17 +76,40 @@ func dropUnusableTempVars(env []string) []string {
 	return env
 }
 
-// startTempProbe starts one test of dir, or joins the one that runs. A spawn that
-// stops waiting first keeps the name.
-func startTempProbe(dir string) *tempProbe {
+// waitTempProbe waits until p ends or until tempProbeWait after its start, and
+// reports whether it ended.
+func waitTempProbe(p *tempProbe) bool {
+	select {
+	case <-p.done:
+		return true
+	default:
+	}
+	left := time.Until(p.start.Add(tempProbeWait))
+	if left <= 0 {
+		return false
+	}
+	t := time.NewTimer(left)
+	defer t.Stop()
+	select {
+	case <-p.done:
+		return true
+	case <-t.C:
+		return false
+	}
+}
+
+// startTempProbe starts one test of dir, or joins the one that runs. It reports
+// whether this call started it.
+func startTempProbe(dir string) (*tempProbe, bool) {
 	tempProbes.mu.Lock()
 	defer tempProbes.mu.Unlock()
 	p := tempProbes.inFlight[dir]
-	if p == nil {
-		p = &tempProbe{done: make(chan struct{})}
+	started := p == nil
+	if started {
+		p = &tempProbe{start: time.Now(), done: make(chan struct{})}
 		tempProbes.inFlight[dir] = p
 		go func() {
-			p.err = createAndRemoveTempProbe(dir)
+			p.err = probeNearestFolder(dir)
 			tempProbes.mu.Lock()
 			delete(tempProbes.inFlight, dir)
 			tempProbes.mu.Unlock()
@@ -104,7 +117,28 @@ func startTempProbe(dir string) *tempProbe {
 		}()
 	}
 	p.waiters++
-	return p
+	return p, started
+}
+
+// probeNearestFolder tests dir, or the nearest folder above it that exists. After a
+// failed create, a dir that does not exist passes the test to its parent. Any other
+// result of the Lstat ends the test with the error of the create. The file is thus
+// made and removed in the nearest existing folder (claustrum's own, not measured).
+func probeNearestFolder(dir string) error {
+	for {
+		err := createAndRemoveTempProbe(dir)
+		if err == nil {
+			return nil
+		}
+		if _, lerr := os.Lstat(dir); !errors.Is(lerr, fs.ErrNotExist) {
+			return err
+		}
+		parent := filepath.Dir(dir)
+		if parent == dir {
+			return err
+		}
+		dir = parent
+	}
 }
 
 // createAndRemoveTempProbe makes one new file .claude-ssh-<random> in dir, with
