@@ -4,6 +4,28 @@ All notable changes to claustrum are documented here. The format is based on
 [Keep a Changelog](https://keepachangelog.com/), and this project adheres to
 [Semantic Versioning](https://semver.org/).
 
+## 1.16.0 (2026-10-31)
+
+[Compare with 1.15.0](https://github.com/schubydoo/claustrum/compare/v1.15.0...v1.16.0)
+
+### Features
+
+- files.extract_tar answers alreadyComplete for a plugin folder that has its .synced marker, skips archive entries named like .synced, and removes .synced before the wipe and after a failed request. ([#797](https://github.com/schubydoo/claustrum/pull/797))
+- files.list on Windows counts a link as a folder only if the link has the folder attribute, a junction only with junctionsAsDirs, and gives false for a share or a chain over 31 links. ([#796](https://github.com/schubydoo/claustrum/pull/796))
+- Add the real member to the files.read result, which gives the real name of the file when the request has real set to true. ([#793](https://github.com/schubydoo/claustrum/pull/793))
+- Add the files.realpath method, which resolves the links of a path and can name a missing last entry. ([#789](https://github.com/schubydoo/claustrum/pull/789))
+- `process.spawn` takes `linkBound`, which binds the process to its connection and ends it after a set time once that connection is gone. ([#792](https://github.com/schubydoo/claustrum/pull/792))
+- `git.worktree_create` in the state `shadow` runs `git diff-files` after the checkout, and when files read as changed the reply comes no sooner than 1.1 s after the checkout. ([#788](https://github.com/schubydoo/claustrum/pull/788))
+
+### Fixes
+
+- The SSH agent hand-off drops a path that is not a socket with no connect and reuses a live answer for 10 minutes while the socket file is unchanged. ([#791](https://github.com/schubydoo/claustrum/pull/791))
+- With no core.excludesFile set, each git call looks up the default excludes file again, so a file made or removed while the daemon runs takes effect. ([#787](https://github.com/schubydoo/claustrum/pull/787))
+- The stray `commondir` refusals of the git methods no longer quote the file content or the operation and path of the OS error, and a git directory path that is too long gives, on Linux, the "could not be examined" refusal. ([#786](https://github.com/schubydoo/claustrum/pull/786))
+- The settle wait of git.worktree_create is 2.2 s after a whole-second .git time, and it ends with the request. git.info, git.status and git.list_branches answer no repository for a git directory that the daemon cannot search, named by a .git file or by GIT_DIR. The hung agent-socket log line starts "A check of". ([#799](https://github.com/schubydoo/claustrum/pull/799))
+- On Linux and macOS a child no longer inherits a CLAUDE_CODE_TMPDIR, TMPDIR, TMP or TEMP whose folder cannot take a file. A missing folder is tested in its nearest existing parent, and the daemon logs one line for each drop. ([#790](https://github.com/schubydoo/claustrum/pull/790))
+- A connection that closes without a byte no longer logs the "never showed the token" line or raises its count. ([#784](https://github.com/schubydoo/claustrum/pull/784))
+
 ## 1.15.0 (2026-10-30)
 
 [Compare with 1.14.0](https://github.com/schubydoo/claustrum/compare/v1.14.0...v1.15.0)
