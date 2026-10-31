@@ -201,7 +201,7 @@ first rollback runs no git call and removes the leaf only if it is an empty dire
 a good add, the second rollback deletes the entries of the leaf in directory-read order,
 stops at the first failure, deletes the registration, runs the branch step, and removes the
 empty leaf ([When a rollback leaves
-something](docs/protocol/git-worktree-create.md#after-a-failure)). The second rollback runs when `timeoutMs` expired during the add, the checkout or the
+something](docs/protocol/git-worktree-create.md#after-a-failure)). The second rollback runs when `timeoutMs` expired by the end of the add, during the checkout or the
 copy step, after a post-checkout drain that exceeded that `timeoutMs`, a failed checkout, `config.worktree` copy or index placement, and a
 refusal of the filter rule (`gitfilter.go`, [Git
 filters](docs/protocol/git-worktree-create.md#git-filters)).

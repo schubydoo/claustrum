@@ -144,7 +144,11 @@ func gitStdoutErr(dir string, args ...string) (string, error) {
 // caller is base plus the caller's timeoutMs (4534d86 parity). The read-tree
 // checkout runs under caller, so the caller's deadline kills the checkout. The
 // daemon also tests caller after the add and after the copy step. When timeoutMs
-// is 0 or less, caller is base itself.
+// is 0 or less, caller is base itself. The deadline counts from arrival, the time
+// when the create holds its lock. The stop of the settle call that follows from it
+// is measured on Linux (683cc6a9). The other three tests of timeoutMs, before,
+// during and after the checkout, count from arrival too (claustrum's own, not
+// measured). A deadline that passed already gives a caller that is done.
 //
 // errCallerTimeoutMs is the cause stamped on the caller's deadline
 // (callerTimeoutFired).
@@ -156,12 +160,12 @@ var callerDeadline = func(base context.Context, d time.Duration) (context.Contex
 	return context.WithTimeoutCause(base, d, errCallerTimeoutMs)
 }
 
-func worktreeCreateCtx(s *gitStop, timeoutMs int) (base, caller context.Context, cancel context.CancelFunc) {
+func worktreeCreateCtx(s *gitStop, timeoutMs int, arrival time.Time) (base, caller context.Context, cancel context.CancelFunc) {
 	base = s.context()
 	if timeoutMs <= 0 {
 		return base, base, func() {}
 	}
-	ctx, c := callerDeadline(base, time.Duration(timeoutMs)*time.Millisecond)
+	ctx, c := callerDeadline(base, time.Duration(timeoutMs)*time.Millisecond-time.Since(arrival))
 	return base, ctx, c
 }
 
@@ -945,11 +949,15 @@ func gitWorktreeCreate(req *request) response {
 	repo := p.repoDir()
 	defer req.runAtReply()
 	return withWorktreeCreateLock(repo, func() response {
-		return gitWorktreeCreateLocked(req, &p, repo)
+		// The start of the deadline of timeoutMs (worktreeCreateCtx), before any
+		// git call. A wait for the create lock does not count (claustrum's own, not
+		// measured).
+		arrival := time.Now()
+		return gitWorktreeCreateLocked(req, &p, repo, arrival)
 	})
 }
 
-func gitWorktreeCreateLocked(req *request, p *gitParams, repo string) response {
+func gitWorktreeCreateLocked(req *request, p *gitParams, repo string, arrival time.Time) response {
 	// 7d193f89 refuses a baseRepo that sits inside a managed worktrees tree as an
 	// invalid trust root, before the repo check. Measured against 7d193f89 on an
 	// ephemeral VM. A session worktree must be created from a real top-level repo,
@@ -1464,8 +1472,8 @@ func gitWorktreeCreateLocked(req *request, p *gitParams, repo string) response {
 	}
 	// A caller-supplied timeoutMs (4534d86) bounds the checkout, and the daemon
 	// tests it after the add and after the copy step. At timeoutMs 0 both
-	// contexts are the context of the request.
-	baseCtx, callerCtx, cancelCtx := worktreeCreateCtx(req.stop, p.TimeoutMs)
+	// contexts are the context of the request. The deadline counts from arrival.
+	baseCtx, callerCtx, cancelCtx := worktreeCreateCtx(req.stop, p.TimeoutMs, arrival)
 	defer cancelCtx()
 	if (req.use.shadow() || bool(p.ShadowDirOff)) && !staleMatched {
 		pairBeforeAdd(req, gitDir, repo)
@@ -1906,7 +1914,7 @@ func gitWorktreeCreateLocked(req *request, p *gitParams, repo string) response {
 		}
 	}
 	dropConfigDir()
-	// If the caller's deadline expired during the add, the request
+	// If the caller's deadline expired by the end of the add, the request
 	// answers timeout "before the checkout started" and rolls back. errorCode
 	// "timeout" is reserved for the caller's own deadline.
 	// Every rollback below appends an undo text when one of its steps fails.
