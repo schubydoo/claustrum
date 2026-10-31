@@ -124,25 +124,27 @@ func TestFilesExtractTarKeepsUnreadableDestDirWithContent(t *testing.T) {
 	}
 }
 
-// TestFilesExtractTarKeepsUnreadableFileAtDestDir: a regular file at the name of
-// destDir with the same deny ACE. The remove of an unreadable empty folder does
-// not take a file, so the request fails and the file stays (claustrum's own, not
-// measured).
-func TestFilesExtractTarKeepsUnreadableFileAtDestDir(t *testing.T) {
+// TestFilesExtractTarRemovesUnreadableFileAtDestDir: a regular file at the name
+// of destDir with the same deny ACE goes, and the archive is unpacked into a new
+// folder. 683cc6a9 answers success with fileCount 1 there, and the new folder has
+// no deny ACE (Windows VM).
+func TestFilesExtractTarRemovesUnreadableFileAtDestDir(t *testing.T) {
 	s := newTestServer(t)
 	parent := t.TempDir()
 	dest := filepath.Join(parent, "0123456789abcdef")
-	if err := os.WriteFile(dest, []byte("k"), 0o644); err != nil {
+	if err := os.WriteFile(dest, []byte("file"), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	restore := denyReadAndExecute(t, dest)
+	denyReadAndExecute(t, dest)
 
 	got := dispatchRaw(t, s, rpcLine(t, "files.extract_tar", map[string]any{"archivePath": oneFileArchive(t), "destDir": dest}))
-	if want := `{"jsonrpc":"2.0","id":1,"result":{"success":false,"fileCount":0,"error":"clean destDir: RemoveAll 0123456789abcdef: Access is denied."}}`; got != want {
+	if want := `{"jsonrpc":"2.0","id":1,"result":{"success":true,"fileCount":1}}`; got != want {
 		t.Errorf("frame = %s, want %s", got, want)
 	}
-	restore()
-	if b, err := os.ReadFile(dest); err != nil || string(b) != "k" {
-		t.Errorf("the file at destDir = %q (err %v), want it unchanged", b, err)
+	if got := namesIn(t, parent); got != "0123456789abcdef" {
+		t.Errorf("the parent holds %q, want destDir alone", got)
+	}
+	if got := namesIn(t, dest); got != ".synced,a.txt" {
+		t.Errorf("destDir holds %q, want the marker and a.txt", got)
 	}
 }

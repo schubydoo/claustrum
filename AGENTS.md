@@ -157,14 +157,14 @@ alone too.
 
 Guards, in order: `wipesHomeDir` on `destDir` before any step. Then `destEntryHoldsHome`
 (identity, through `folderHoldsHome`) before the wipe. Then `checkDestViews`: the name in
-the handle and the cleaned path must name one entry, or nothing is deleted but the empty folder below. On Windows, if
-the two views of a name with a dot or a space differ, the entry goes with a plain
-`os.Root.Remove`. No remove runs after a home refusal. The identity, view and open tests
+the handle and the cleaned path must name one entry, or nothing is deleted, with one exception:
+on Windows an empty folder or a regular file at `destDir` that the parent handle cannot read
+for a permission error goes by one plain remove through that handle (approved by the
+maintainer). On Windows, if the two views of a name with a dot or a space differ, the entry
+goes with a plain `os.Root.Remove`. No remove runs after a home refusal. The identity, view and open tests
 are claustrum's own (D2). After these guards, an old `destDir` folder loses the fixed name `.synced` as a tree
 through its own tested handle (`prepareOldDestDir`), before the wipe. If that folder cannot
-be opened, one plain remove through the parent handle takes it only if it is empty. On
-Windows an empty `destDir` folder that the parent handle cannot read goes by that plain
-remove too (approved by the maintainer).
+be opened, one plain remove through the parent handle takes it only if it is empty.
 
 Never widen: This delete path is approved by the maintainer. Do not widen it.
 

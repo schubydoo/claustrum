@@ -557,9 +557,10 @@ func extractTarGz(archivePath, destDir string) (n int, err error) {
 	//  3. An old destDir that is a real folder goes to prepareOldDestDir. It
 	//     answers alreadyComplete for a complete plugin folder, or it removes
 	//     .synced first (683cc6a9). It runs after the gzip test (claustrum's own,
-	//     not measured). On Windows an empty old destDir that the handle cannot
-	//     read goes by removeUnreadableEmptyDestDir instead, and step 4 does not
-	//     run then (683cc6a9, a deny ACE for read and execute).
+	//     not measured). On Windows an empty old destDir folder or a regular
+	//     file there that the handle cannot read goes by removeUnreadableDestEntry
+	//     instead, and step 4 does not run then (683cc6a9, a deny ACE for read and
+	//     execute).
 	//  4. The wipe removes the last name of destDir through that handle, as a
 	//     tree. A failure answers "clean destDir: RemoveAll <name>: <reason>"
 	//     (Linux, macOS and Windows VMs). The entries that can go are gone then.
@@ -602,10 +603,10 @@ func extractTarGz(archivePath, destDir string) (n int, err error) {
 	if destEntryHoldsHome(cleanedDest, entry) {
 		return 0, errDestDirHoldsHome(destDir)
 	}
-	// After the remove of an unreadable empty destDir, no wipe runs: the
+	// After the remove of an unreadable destDir entry, no wipe runs: the
 	// exclusive mkdir below and the view test after it come next.
 	if viewErr != nil {
-		if !removeUnreadableEmptyDestDir(parentRoot, cleanedDest, destName, viewErr) {
+		if !removeUnreadableDestEntry(parentRoot, cleanedDest, destName, viewErr) {
 			return 0, destViewFailure("clean destDir", viewErr)
 		}
 	} else {
