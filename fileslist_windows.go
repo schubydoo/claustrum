@@ -18,9 +18,10 @@ const maxListLinks = 31
 // A link counts as a directory only if the link itself has the directory
 // attribute, so a file link to a folder is false. A junction counts only with
 // junctionsAsDirs. A chain of more than 31 links is false, and so is a hop to
-// a network share (only a direct link to `\\localhost\c$` was measured).
-// Other network and redirected-device cases, a junction inside a chain and a
-// name that ends in a dot or a space are claustrum's own, not measured.
+// a network place (onNetwork). A direct link to `\\localhost\c$`, to
+// `\\?\UNC\localhost\c$\o\real` and to a folder of a mapped network drive was
+// measured. Other network and redirected-device cases, a junction inside a chain
+// and a name that ends in a dot or a space are claustrum's own, not measured.
 func listIsDir(full string, junctionsAsDirs bool) bool {
 	cur := full
 	for links := 0; ; {
@@ -52,7 +53,7 @@ func listIsDir(full string, junctionsAsDirs bool) bool {
 		if links > maxListLinks {
 			return false
 		}
-		if strings.HasPrefix(filepath.VolumeName(target), `\\`) && !isLocalDevicePath(target) {
+		if onNetwork(target) {
 			return false
 		}
 		if !filepath.IsAbs(target) {

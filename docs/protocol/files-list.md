@@ -56,7 +56,7 @@ The `-32603` texts come from the operating system and hold `path` after the `~` 
 
 On Windows each entry `path` uses `\` separators, and the `-32603` texts differ.
 
-There (build `683cc6a9`), a file link, a link to `\\localhost\c$` and a chain over 31 links give `false`, and a junction needs `junctionsAsDirs`.
+There (build `683cc6a9`), a file link, a link to `\\localhost\c$` and a chain over 31 links give `false`, and a junction needs `junctionsAsDirs`. A link to `\\?\UNC\localhost\c$\o\real` or to a folder of a mapped network drive gives `false` too (measured on Windows).
 
 ## Differences from the reference
 
