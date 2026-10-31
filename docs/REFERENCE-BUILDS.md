@@ -21,6 +21,7 @@ release.
 
 | Reference SHA | Built (UTC) | Wire changes | Reconciled in |
 |---|---|---|---|
+| `683cc6a9…` | 2026-10-14 (built) | the `files.realpath` method, the `real` member of `files.read`, `junctionsAsDirs`, `alreadyComplete`, `linkBound`, a settle step after the checkout, new git trust texts and new features. See below | [PRs 784, 786–793, 796–805](https://github.com/schubydoo/claustrum/pull/805) |
 | `52d82f0a…` | 2026-10-09 (built) | the `end` member, spawn refusal reasons, `includeDotNames`, the kill farewell, Windows jobs, new git trust rules, a third owner probe and new features. See below | [PRs 767, 769, 771–773, 775–781](https://github.com/schubydoo/claustrum/pull/781) |
 | `c8e2f083…` | 2026-10-06 (built) | new `process.stdin` and `process.reattach` members, a second owner probe, new `-32603` texts in a folder with no repository, new `git.worktree_remove` deletes, and the terminal: `process.resize` and `process.spawn.pty`, which claustrum does not build. See below | [PRs 747, 749–757, 759, 760](https://github.com/schubydoo/claustrum/pull/760) |
 | `5fd08069…` | 2026-10-05 (built) | the `settingsControl` member, new `server.capabilities` members and features, the `-32006` refusal, and new `git.*` and `files.*` texts. See below | [PRs 502–596](https://github.com/schubydoo/claustrum/pull/596) |
@@ -66,6 +67,72 @@ single measurements that fit no label above. **Divergences** names the entries o
 in** names the PRs. The baseline section has the header facts only. The forensics
 stay outside the committed tree. Correction of 2026-10-23: this paragraph said
 that each per-build section has three parts.
+
+### `683cc6a9cd1d99430efd762587e02dd076fd5ada` — 2026-10-14 (built)
+
+Its `-version` prints
+`claude-ssh 683cc6a9cd1d99430efd762587e02dd076fd5ada (built 2026-10-14T17:54:55Z)`.
+Issue 544 reported the build, pinned by Claude Desktop 2.42304.0 for Windows. It
+carries a `go1.25.14` stamp (`go version` on the binary). The rules are on the pages of
+the methods and in [PROTOCOL.md](PROTOCOL.md).
+
+**Wire delta.**
+
+- The new method [files.realpath](protocol/files-realpath.md) gives the real name of a
+  path (PRs 789 and 801). On Windows a link to a mapped network drive or a `\\?\UNC\`
+  path gives `no_usable_name` (measured on Windows).
+- `files.read` gives `real` with `"real":true` (PR 793). Without it the member is absent
+  (Linux, macOS and Windows).
+- On Windows `files.list` gives `isDir` of a link by the link. A junction is a directory
+  only with `junctionsAsDirs` (PRs 796 and 801, measured on Windows).
+- `files.extract_tar` answers `alreadyComplete` for a 16-hex `destDir` with a regular
+  `.synced`, and skips top-level entries that read as `.synced` (PR 797, Linux, macOS and
+  Windows).
+- `files.extract_tar` removes `.synced` from an old `destDir` before the wipe, with two
+  new texts (PR 797, Linux and macOS). A `.synced` that appeared during a request that
+  then failed goes too (Linux, macOS and Windows for an unsafe path).
+- On Windows `files.extract_tar` replaces an empty `destDir` folder or a regular file
+  that it cannot read (PRs 802 and 804, measured on Windows, approved by the maintainer).
+- `process.spawn` takes [`linkBound`](protocol/process-link-bound.md), with two new
+  `-32602` texts (PR 792, measured on Linux).
+- Two stray `commondir` texts no longer quote the content or the operation and path of
+  the OS error (PR 786, measured on Linux).
+- On Linux a git directory path that is too long gives the "could not be examined"
+  refusal (PR 786, measured on Linux).
+- A `.git` file that names a git directory that the daemon cannot search gets "no
+  repository" on `git.info`, `git.status`, `git.list_branches` and `git.worktree_create`
+  (PRs 799 and 800, measured on Linux). The create answers `not_a_repo`. The remove
+  refuses it and deletes nothing.
+- With no `core.excludesFile` set, each git call looks up the default excludes file
+  again (PR 787, measured with `git.status` on Linux and macOS).
+- In the state `shadow` a good checkout of `git.worktree_create` gets a [settle
+  step](protocol/git-worktree-create.md#the-settle-step) (PRs 788 and 799, Linux, macOS
+  and Windows). Its wait times are claustrum's own. With `timeoutMs` the settle call
+  stops `timeoutMs` less 10 s after the request (PR 805, measured on Linux).
+- `server.capabilities` lists `files.realpath` last, and the features
+  `files.list.junctionsAsDirs`, `files.read.real` and, on Linux and macOS,
+  `process.spawn.link_bound` (PR 803).
+
+**Off-wire churn.** A connection with no token is counted and logged only if it sent a
+byte (PR 784, measured on Linux). On Linux the daemon logs a start line about
+`files.realpath` (PR 793, measured on Linux). On Linux and macOS a child gets no
+inherited temp folder variable whose folder cannot take a file (PRs 790 and 798). The log
+line of that drop is measured on macOS. The SSH agent hand-off tests the socket by stat
+first and keeps a live answer (PR 791, measured on Linux).
+
+**How it was bounded.** Each item above was measured side by side with claustrum on
+the systems named. Then the frame battery ran claustrum beside this build on Linux,
+macOS and Windows VMs. It differed only in the `server.capabilities` lists, which PR
+803 follows, and in the terminal names below.
+
+These items stay open:
+
+- claustrum does not build the terminal: the `pty` member of `process.spawn` and the
+  method `process.resize`. So its `server.capabilities` reply lacks `process.resize`, and
+  on Linux and macOS `process.spawn.pty`. The maintainer holds the terminal until a
+  Claude Desktop build calls it.
+- `linkBound` on macOS and Windows is not measured.
+- The pages of the methods mark each case that is claustrum's own or not measured.
 
 ### `52d82f0a28317830ccacea80f6f4aac1d7563353` — 2026-10-09 (built)
 
@@ -148,8 +215,8 @@ These items stay open:
   `process.spawn` with `pty` with `-32602`, and claustrum runs the command
   (Windows VM).
 - `plugins.prune` on Windows: for the run folder of the battery this build
-  answered with the skip reply, and claustrum found its roots (Windows VM).
-  Whether `c8e2f083` does the same is not measured.
+  answered with the skip reply, and claustrum found its roots (Windows VM). PR 783
+  follows it. Whether `c8e2f083` does the same is not measured.
 - After a client kill of a child that runs through `sudo` on Linux, the `exit`
   frame of this build has no `killedBy` member (Linux VM). On macOS it has
   `"killedBy":"client"`, as claustrum sends (from the code). The cause is not known.

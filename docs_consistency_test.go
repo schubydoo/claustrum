@@ -131,9 +131,9 @@ var docNotMethods = map[string]string{
 	"server.go":      "a source file",
 	"process.go":     "a source file",
 	"git.exe":        "the Windows git program, inside an error text",
-	// The terminal of 52d82f0a, which claustrum does not build.
-	"process.resize":    "a method of the reference build 52d82f0a that claustrum lacks",
-	"process.spawn.pty": "a feature of the reference build 52d82f0a that claustrum lacks",
+	// The terminal of 683cc6a9, which claustrum does not build.
+	"process.resize":    "a method of the reference build 683cc6a9 that claustrum lacks",
+	"process.spawn.pty": "a feature of the reference build 683cc6a9 that claustrum lacks",
 }
 
 // TestDocsNoPhantomMethod: a span like `git.<name>` in the documents is a method, an
@@ -618,7 +618,7 @@ var docWordLimits = map[string]int{
 	"docs/PROTOCOL.md":                         2835, // the files.realpath row and count. 2826: TASK-231: one sentence on the close line. TASK-230: one sentence on a failed write. TASK-202: the error texts, stream frames and flags moved to their own pages
 	"docs/STYLE.md":                            1293, // task-203b: the page rewrite
 	"docs/TOUR.md":                             850,  // a new page: its word count plus about 200
-	"docs/UPSTREAM-TRACKING.md":                6232, // the terminal of 683cc6a9. 6230: the build of the open destDir refusal. 6228: the could-not-be-examined text. 6224: decision-040: words moved from PROTOCOL.md, net down in the same PR
+	"docs/UPSTREAM-TRACKING.md":                6234, // the pin of 683cc6a9. 6232: the terminal of 683cc6a9. 6230: the build of the open destDir refusal. 6228: the could-not-be-examined text. 6224: decision-040: words moved from PROTOCOL.md, net down in the same PR
 	"docs/index.md":                            316,  // the reader router of TASK-201
 	"docs/protocol/errors.md":                  1912, // TASK-245: the .probe text, 41 words of a new row
 	"docs/protocol/files-extract-tar.md":       2463, // the file that Windows cannot read. 2457: the empty folder that Windows cannot read. 2420: the .synced rules of 683cc6a9

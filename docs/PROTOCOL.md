@@ -11,7 +11,7 @@ document holds the rules that more than one method shares. The [error texts](pro
 the [stream frames](protocol/streams.md) and the [flags](protocol/flags.md) have their own pages. The shared
 git rules have their own pages: see [Shared rules of the git methods](#shared-rules-of-the-git-methods). The life
 of the daemon off the wire is on [Running the daemon](DAEMON.md). The pinned
-reference build is `52d82f0a`.
+reference build is `683cc6a9`.
 A rule marked "claustrum's own" is not a parity claim: the reference has
 no such rule, or it does something else. A D-number marks a deliberate
 divergence, not the reference. A rule marked "not measured" or "from the code"
