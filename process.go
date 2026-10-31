@@ -1037,6 +1037,16 @@ func (m *procManager) spawnVia(c *conn, id, command string, args []string, cwd s
 	// still reach its own connection, under the same processId (89cb6289, Linux:
 	// frames seq 2 to 9 and the exit frame seq 10 of the first process came on
 	// connection 1 after the replace). Its seq numbers go on from its own count.
+	//
+	// A link-bound record, or a spent id, is not replaced. A spawn that passed the
+	// id test before a link-bound spawn of that id put its record here ends its own
+	// child and gets the spent-id refusal (claustrum's own, not measured).
+	if old := m.procs[id]; (old != nil && old != p && old.linked) || m.spentLocked(id) {
+		m.mu.Unlock()
+		logErrorf("[process.Manager] Failed to start process %s: %v", id, errSpentID)
+		endUnstarted()
+		return nil, errSpentID
+	}
 	m.procs[id] = p
 	m.mu.Unlock()
 	// A link whose connection is already gone makes the process detached at once,

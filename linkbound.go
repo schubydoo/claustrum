@@ -74,7 +74,7 @@ func (p *managedProc) takesFrom(c *conn) bool {
 // idTakenLocked reports whether a spawn of id is refused: the id is spent, or a
 // link-bound process of that id is in the table. The caller holds m.mu.
 func (m *procManager) idTakenLocked(id string) bool {
-	if _, ok := m.spent[id]; ok {
+	if m.spentLocked(id) {
 		return true
 	}
 	if _, ok := m.linkStarting[id]; ok {
@@ -82,6 +82,12 @@ func (m *procManager) idTakenLocked(id string) bool {
 	}
 	p := m.procs[id]
 	return p != nil && p.linked
+}
+
+// spentLocked reports whether id is spent. The caller holds m.mu.
+func (m *procManager) spentLocked(id string) bool {
+	_, ok := m.spent[id]
+	return ok
 }
 
 // pruneSpentLocked drops the spent ids older than spentAge. The caller holds m.mu.

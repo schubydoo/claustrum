@@ -392,3 +392,66 @@ func TestLinkBoundOtherConnCloseKeepsClock(t *testing.T) {
 		t.Error("the close of the link started no clock")
 	}
 }
+
+// TestPlainSpawnDoesNotReplaceLinkBound: a plain spawn that passed its id test
+// before a link-bound spawn of that id put its record in the table ends its own
+// child, gets the spent-id refusal and leaves the link-bound record in place.
+func TestPlainSpawnDoesNotReplaceLinkBound(t *testing.T) {
+	m := newTestProcManager(t)
+	t.Cleanup(m.killAll)
+	exe, env := helperCommand(t, "sleep")
+	paused, release := make(chan struct{}), make(chan struct{})
+	var first atomic.Bool
+	oldBefore, oldAfter, oldSignal := beforeChildStart, afterChildStart, signalGroup
+	var mu sync.Mutex
+	var pids []int
+	kills := map[int]int{}
+	beforeChildStart = func(id string) {
+		if id == "race" && first.CompareAndSwap(false, true) {
+			close(paused)
+			<-release
+		}
+	}
+	afterChildStart = func(id string, pid int) {
+		if id == "race" {
+			mu.Lock()
+			pids = append(pids, pid)
+			mu.Unlock()
+		}
+	}
+	signalGroup = func(g *procGroup, proc *os.Process, signame string) error {
+		mu.Lock()
+		if signame == "KILL" {
+			kills[proc.Pid]++
+		}
+		mu.Unlock()
+		return oldSignal(g, proc, signame)
+	}
+	t.Cleanup(func() { beforeChildStart, afterChildStart, signalGroup = oldBefore, oldAfter, oldSignal })
+	plainErr := make(chan error, 1)
+	go func() {
+		_, err := m.spawnVia(nil, "race", exe, []string{"60"}, "", env, false, nil, 0)
+		plainErr <- err
+	}()
+	<-paused
+	c, _ := pipeConn(t)
+	linked, err := m.spawnVia(c, "race", exe, []string{"60"}, "", env, false, nil, time.Minute)
+	if err != nil {
+		t.Fatal(err)
+	}
+	close(release)
+	if err := <-plainErr; err != errSpentID {
+		t.Errorf("plain spawn = %v, want the spent-id refusal", err)
+	}
+	if got := m.get("race"); got != linked {
+		t.Error("the plain spawn replaced the link-bound record")
+	}
+	mu.Lock()
+	defer mu.Unlock()
+	if len(pids) != 2 || pids[0] != linked.pid {
+		t.Fatalf("started pids = %v, want the link-bound child and then the plain one", pids)
+	}
+	if kills[pids[1]] == 0 {
+		t.Errorf("the child of the refused plain spawn got no KILL")
+	}
+}
