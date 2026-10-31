@@ -267,6 +267,8 @@ component_management:
         - odirectory_windows.go
         - filesread_unix.go
         - filesread_windows.go
+        - fileslist_unix.go
+        - fileslist_windows.go
         - realpath.go
         - realpath_unix.go
         - realpath_windows.go

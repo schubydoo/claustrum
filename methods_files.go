@@ -52,9 +52,12 @@ type pathParams struct {
 // lists the names that start with a dot (measured on Linux, macOS and Windows,
 // build 52d82f0a). False and absent skip them. Null counts as absent, and a value
 // that is not a bool fails the decode with -32602 (claustrum's own, not measured).
+// JunctionsAsDirs changes isDir on Windows only (build 683cc6a9): see listIsDir.
+// The same decode rules hold for it (claustrum's own, not measured).
 type listParams struct {
 	Path            string `json:"path"`
 	IncludeDotNames bool   `json:"includeDotNames"`
+	JunctionsAsDirs bool   `json:"junctionsAsDirs"`
 }
 
 func (p *listParams) expandPaths() { p.Path = expandPath(p.Path) }
@@ -152,13 +155,8 @@ func filesList(req *request) response {
 			continue
 		}
 		full := filepath.Join(p.Path, e.Name())
-		// isDir comes from Stat, which FOLLOWS symlinks, not from the raw dirent
-		// type. The reference output matches: a symlink to a directory reports
-		// isDir:true, and a dangling symlink (Stat fails) reports isDir:false.
-		isDir := false
-		if fi, err := os.Stat(full); err == nil {
-			isDir = fi.IsDir()
-		}
+		// listIsDir has the rules of each system.
+		isDir := listIsDir(full, p.JunctionsAsDirs)
 		out = append(out, listEntry{Name: e.Name(), Path: full, IsDir: isDir})
 	}
 	return okResult(req.ID, listResult{Entries: out})
