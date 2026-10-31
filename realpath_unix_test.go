@@ -75,6 +75,7 @@ func TestSocketFilesRealpathDanglingRealFolder(t *testing.T) {
 		}
 	}
 	links := map[string]string{
+		"dl":           "gone",
 		"real/y":       "gone",
 		"a/L":          filepath.Join(root, "real", "dir"),
 		"real/dir/y":   "../gone",
@@ -92,10 +93,13 @@ func TestSocketFilesRealpathDanglingRealFolder(t *testing.T) {
 		// A ".." after a link in the request: the kernel finds the link real/y.
 		{"path": root + "/a/L/../y", "missingLeaf": true},
 		{"path": root + "/a/L/../new", "missingLeaf": true},
+		// A trailing separator does not make the kernel follow the final link.
+		{"path": root + "/dl/", "missingLeaf": true},
+		{"path": root + "/dl//", "missingLeaf": true},
 	})
-	for i, want := range []string{"real/gone", "other/gone", "real/gone", "real/new"} {
+	for i, want := range []string{"real/gone", "other/gone", "real/gone", "real/new", "gone", "gone"} {
 		w := `"wouldBe":"<DIR>/` + want + `"`
-		if i < 3 {
+		if i != 3 {
 			w += `,"dangling":true`
 		}
 		if !strings.Contains(string(got[i]), w) {

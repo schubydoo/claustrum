@@ -142,7 +142,7 @@ func resolveDangling(path string) realpathResult {
 		folder, _ := splitLast(path)
 		var dir string
 		dir, err = filepath.EvalSymlinks(folder)
-		target = dir + string(filepath.Separator) + target
+		target = realpathJoin(dir, target)
 	}
 	target = realpathClean(target)
 	if err == nil {

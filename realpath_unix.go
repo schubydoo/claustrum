@@ -4,6 +4,7 @@ package main
 
 import (
 	"path/filepath"
+	"strings"
 	"syscall"
 )
 
@@ -19,6 +20,16 @@ func realpathPathRefusal(path string) string {
 	return ""
 }
 
-// realpathClean leaves the text as it is: the kernel applies a ".." after a link
-// to the link target.
-func realpathClean(p string) string { return p }
+// realpathClean drops the trailing separators, but keeps a lone "/". With one,
+// the kernel follows a final link, so Lstat, Stat and the split must all see the
+// same text. It cleans nothing else: the kernel applies a ".." after a link to
+// the link target.
+func realpathClean(p string) string {
+	if t := strings.TrimRight(p, "/"); t != "" {
+		return t
+	}
+	return p
+}
+
+// realpathJoin reads a relative link target from the folder of the link.
+func realpathJoin(dir, target string) string { return dir + "/" + target }

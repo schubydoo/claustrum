@@ -3,6 +3,7 @@
 package main
 
 import (
+	"os"
 	"path/filepath"
 	"strings"
 	"syscall"
@@ -39,5 +40,16 @@ func isDriveLetter(c byte) bool { return c >= 'a' && c <= 'z' || c >= 'A' && c <
 
 // realpathClean cleans the text as Win32 does before it opens a path: a ".." after
 // a link removes the link name and not a folder of its target. Claustrum's own,
-// not measured.
+// not measured. A ".." inside a link target is resolved after the next link, not
+// by text (claustrum's own, not covered).
 func realpathClean(p string) string { return filepath.Clean(p) }
+
+// realpathJoin reads a relative link target from the folder of the link. A target
+// with a root and no drive, such as `\gone`, takes the drive of the folder
+// (claustrum's own, not measured).
+func realpathJoin(dir, target string) string {
+	if target != "" && os.IsPathSeparator(target[0]) {
+		return filepath.VolumeName(dir) + target
+	}
+	return dir + `\` + target
+}
