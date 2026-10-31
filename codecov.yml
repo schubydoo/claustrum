@@ -272,6 +272,7 @@ component_management:
         - realpath.go
         - realpath_unix.go
         - realpath_windows.go
+        - netpath_windows.go
         - filesreadreal_linux.go
         - filesreadreal_other.go
     - component_id: process

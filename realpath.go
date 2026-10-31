@@ -54,7 +54,7 @@ func uncleanTilde(p string) bool {
 
 // filesRealpath answers files.realpath on build 683cc6a9. It makes no write and
 // no delete. The kernel decides the link limit, through os.Stat. The real name
-// comes from filepath.EvalSymlinks (claustrum's own).
+// comes from realpathEval (claustrum's own).
 func filesRealpath(req *request) response {
 	var p realpathParams
 	if bad := bindParams(req, &p); bad != nil {
@@ -89,7 +89,7 @@ func resolveRealpath(path string, missingLeaf bool) (realpathResult, error) {
 	_, err := os.Stat(path)
 	var real string
 	if err == nil {
-		real, err = filepath.EvalSymlinks(path)
+		real, err = realpathEval(path)
 	}
 	if err == nil {
 		return realpathResult{Exists: true, Real: filepath.ToSlash(real)}, nil
@@ -141,7 +141,7 @@ func resolveDangling(path string) realpathResult {
 		// (realpathClean). Claustrum's own, not measured.
 		folder, _ := splitLast(path)
 		var dir string
-		dir, err = filepath.EvalSymlinks(folder)
+		dir, err = realpathEval(folder)
 		target = realpathJoin(dir, target)
 	}
 	target = realpathClean(target)
@@ -155,20 +155,37 @@ func resolveDangling(path string) realpathResult {
 // false when the parent cannot be resolved. The caller tested the path first, so
 // only a missing parent (or a race) gets here. The last name is never "." or
 // "..": the path does not exist, and a path that ends in one of them names its
-// parent, so a parent that resolves would make the path exist.
+// parent, so a parent that resolves would make the path exist. On Windows a
+// parent behind a link to a network place gives ok false, so a missing name
+// there gets plain exists:false (claustrum's own, not measured).
 func wouldBeUnder(path string) (string, bool) {
 	parent, last := splitLast(path)
-	real, err := filepath.EvalSymlinks(parent)
+	real, err := realpathEval(parent)
 	if err != nil {
 		return "", false
 	}
 	return filepath.ToSlash(filepath.Join(real, last)), true
 }
 
-// realpathFailure maps a failed call to the -32603 reply. The no_usable_name
-// reason is not built, and Windows no_permission is not measured. An error with
-// no errno gets reason other and errno 0 (claustrum's own, not measured).
+// realpathReasonData is the data member of the no_usable_name reply, which has
+// no errno.
+type realpathReasonData struct {
+	Reason string `json:"reason"`
+}
+
+// errNoUsableName is the answer of realpathEval on Windows for a link to a
+// mapped network drive or a `\\?\UNC\` path (build 683cc6a9). Other network
+// targets are claustrum's own, not measured.
+var errNoUsableName = errors.New("no verified path for the target (it may be deleted or moved, or on Windows on a network share)")
+
+// realpathFailure maps a failed call to the -32603 reply. Windows no_permission
+// is not measured. An error with no errno gets reason other and errno 0
+// (claustrum's own, not measured).
 func realpathFailure(id interface{}, err error) response {
+	if errors.Is(err, errNoUsableName) {
+		return errResultData(id, codeInternal, "files.realpath: "+err.Error(),
+			realpathReasonData{Reason: "no_usable_name"})
+	}
 	var en syscall.Errno
 	if !errors.As(err, &en) {
 		return errResultData(id, codeInternal, "files.realpath: "+err.Error(),

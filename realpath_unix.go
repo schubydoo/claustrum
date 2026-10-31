@@ -33,3 +33,6 @@ func realpathClean(p string) string {
 
 // realpathJoin reads a relative link target from the folder of the link.
 func realpathJoin(dir, target string) string { return dir + "/" + target }
+
+// realpathEval resolves every link of p.
+func realpathEval(p string) (string, error) { return filepath.EvalSymlinks(p) }
