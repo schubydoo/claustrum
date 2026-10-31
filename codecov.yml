@@ -282,6 +282,10 @@ component_management:
         # empty on Windows (parity).
         - process_signal_unix.go
         - process_signal_windows.go
+        # 683cc6a9 temp-folder test of a spawn: an inherited temp-folder name whose
+        # folder cannot take a file is not handed on (Linux and macOS).
+        - tempfolder_unix.go
+        - tempfolder_windows.go
         # 52d82f0a farewell of process.kill and process.killAndWait: the member rules,
         # the stdin write and the grace before the signal.
         - farewell.go

@@ -144,9 +144,8 @@ The eviction fires only against our own `-serve` daemon for this socket, on this
 machine. If the first test of the holder fails, the daemon signals nothing and
 serves without the lock. It logs a refusal line and, except for an unusable
 record, the summary `survivor`. claustrum refuses a holder on another machine or container that shares the folder, a holder with an unknown machine identity, and a holder that is not its serve process for this socket.
-For these three refusals both texts are claustrum's own, not measured. A holder
-that survives `SIGKILL` stays, with the summary `survivor` (from the code, not
-measured).
+For these three refusals both texts are claustrum's own. A holder
+that survives `SIGKILL` stays, with the summary `survivor` (from the code).
 
 If the second test of the holder fails, right before the `SIGKILL`, the daemon
 treats the holder as gone. It logs
@@ -274,7 +273,7 @@ Each run has a command deadline, and the cleaner gives up on a run that outlives
 | `lsof` outcome | busy read of a daemon | lock read of a run dir |
 |---|---|---|
 | the command does not start, or the run writes to stderr and exits 1 | the daemon gets no SIGTERM | a dir with a lock file stays |
-| the cleaner gives up on the run | no SIGTERM, the `was not retired` line and no `left alone` line (`5fd08069`) | kept (claustrum's own, not measured) |
+| the cleaner gives up on the run | no SIGTERM, the `was not retired` line and no `left alone` line (`5fd08069`) | kept (claustrum's own) |
 | the deadline ends the run | no SIGTERM (`5fd08069`) | kept (`5fd08069`) |
 | the run completes with nothing on stderr | the output decides | the output decides |
 
@@ -290,7 +289,7 @@ every run dir line:
 [hostclean] run dir "<dir>" unused for <n> days: its daemon (pid <pid>) was not retired: a connection is attached to it right now, or that could not be read: in use after all
 ```
 
-The first line goes only to a daemon that is past claustrum's own age of 5 minutes and serves an idle run dir, once for each such daemon. With more than 4096 processes claustrum prints no such line (from the code, not measured). On Linux and macOS the second
+The first line goes only to a daemon that is past claustrum's own age of 5 minutes and serves an idle run dir, once for each such daemon. With more than 4096 processes claustrum prints no such line (from the code). On Linux and macOS the second
 line also comes for a daemon that still has a client (measured against
 `f6010b97`). On Linux it also comes for a daemon whose connections could not be
 read (from the code).
@@ -410,7 +409,7 @@ The launcher connects to the socket path every 50 ms, for 12 s at most. It close
 the connect does not end the wait. A killed daemon leaves such a file. A folder
 with content at the path does not end the wait either. The daemon cannot remove
 it, so it never binds (measured on Linux and Windows). An empty folder there is
-removed as an old socket file is (from the code, not measured).
+removed as an old socket file is (from the code).
 
 - The predecessor is the daemon that answered on the path before the start. On
   Linux and macOS, a daemon that answers and is not the predecessor ends the wait
@@ -457,7 +456,7 @@ The record is one JSON object with the members in this order:
 {"pid":<int>,"node":"<boot-id>/pid:[<inode>]","host":"machine-id:<hex>","instance":"<daemon instance id>","daemonPid":<int>,"daemonStart":"<start>","argv0":"<child argv0>","start":"<start>","at":<epoch-ms>}
 ```
 
-`daemonStart` and `start` are strings. They hold clock ticks on Linux and the date text of `CLAUDE_SSH_CHILD` on macOS. On macOS the node is the boot-session UUID, and the host is the hostname. With a `launcher`, `argv0` is the launcher, and a `program` member after `argv0` holds the command. claustrum writes no `program` without a launcher (not measured on the reference).
+`daemonStart` and `start` are strings. They hold clock ticks on Linux and the date text of `CLAUDE_SSH_CHILD` on macOS. On macOS the node is the boot-session UUID, and the host is the hostname. With a `launcher`, `argv0` is the launcher, and a `program` member after `argv0` holds the command. claustrum writes no `program` without a launcher (not measured).
 
 - The daemon writes a record through a temp file `children/.rec-<pid>.json.<12 characters>` and a rename. The source of the 12 characters is claustrum's own.
 - The end of the child removes its record, before the pipe drain.
@@ -523,7 +522,7 @@ Claustrum remote server listening on /run/user/1000/claude/rpc.sock (pid 4711, i
 2026/07/31 00:17:30 INFO  [daemon] host cleaning off: socket path "/run/user/1000/claude/rpc.sock" is not <root>/run/<id>/rpc.sock
 ```
 
-A failed raise writes no line (claustrum's own, not measured). The banner ends
+A failed raise writes no line (claustrum's own). The banner ends
 with the daemon's pid and the `instanceId` of
 `server.capabilities`. The name `Claustrum` is claustrum's own, and the
 reference prints `Claude` there.
@@ -591,10 +590,11 @@ These lines tell of [process.spawn](protocol/process-spawn.md) children and thei
 
 - A start (INFO): `[process.Manager] Process <id> started, PID=<n>, command=<command>` (from the code). With a launcher, ` via launcher <argv0>` follows.
 - A failed start (ERROR): `[process.Manager] Failed to start process <id>: <message>`, with the text of the error frame
-- An exit (INFO): `[process.Manager] Process <id> exited with code <n>`, then `, terminated by <signal>` for a signal and `, asked to end by this daemon (<label>)` for a daemon kill (build `52d82f0a`, measured on Linux and macOS for `client`)
+- An exit (INFO): `[process.Manager] Process <id> exited with code <n>`, then `, terminated by <signal>` for a signal and `, asked to end by this daemon (<label>)` for a daemon kill (`52d82f0a`, measured on Linux and macOS for `client`)
 - A bad `process.kill` farewell (INFO): `[process] kill <id>: its farewell is not said: <rule>` (same build and systems)
 - A refused `process.killAndWait` (WARN): `[process.Manager] KillAndWait <id>: signal terminated failed: <error>`, `group kill failed: <error>` and `still running 7s after SIGKILL (D-state?)` (`52d82f0a`, measured on Linux and macOS)
 - The drain limit (WARN): `[process.Manager] Process <id>: pipe drain grace expired (grandchild holding stdio?); force-closing`
+- Temp name dropped (WARN): `[process.Manager] the inherited <name>=<value> is not handed on to a child: open <value>/.claude-ssh-<n>: <reason>` (`683cc6a9`, measured on macOS)
 - A supersede (INFO): `[process.Manager] process <new id> supersedes <old id> for session <key>: died=<bool> escalated=<bool> alreadyExited=<bool>` (from the code), after the exit line of the old process
 - `children` not a folder (ERROR): `[process.Registry] <run dir>/children is not a directory; recording nothing`, or `reaping nothing` at a start
 - A record write fails (ERROR): `[process.Registry] cannot record child <pid>: <error>`
@@ -608,7 +608,7 @@ These lines tell of [process.spawn](protocol/process-spawn.md) children and thei
 - A group fails the test (INFO): `[process.Registry] group <pgid> no longer verifies (<reason>); nothing more is sent to it`
 - The reap summary (INFO): `[daemon] serve: predecessor's children — <n> orphaned group(s): <a> ended on SIGTERM, <b> on SIGKILL, <c> survived; <d> stale record(s) dropped, <e> kept`
 
-At a shutdown the exit line can be missing, on the reference and on claustrum. A reap that sent no `SIGTERM` and kept no record writes no summary.
+At a shutdown the exit line can be missing. A reap that sent no `SIGTERM` and kept no record writes no summary.
 
 The main `<reason>` texts of a dropped record and of a group that fails the test are these:
 

@@ -27,9 +27,7 @@ daemon. The wire surface is the product.
   below 1.27. The default `jsonv2` in 1.27 moves inherited wire bytes, so build
   and CI resolve Go from `go.mod`, never from `go-version: stable`. See
   [`docs/UPSTREAM-TRACKING.md`](docs/UPSTREAM-TRACKING.md) → toolchain-induced
-  drift. Every build has `github.com/klauspost/compress` (zstd) and
-  `golang.org/x/sys` (its `unix` or `windows` package).
-  `github.com/Microsoft/go-winio` is Windows-only.
+  drift.
 - Tests cover the wire surface with fast unit tests and a socket-integration suite
   (`harness_test.go` + `integration*_test.go`). The suite boots the daemon on a temp
   `AF_UNIX` socket and asserts the frames of every method against golden fixtures
@@ -272,7 +270,7 @@ name the held git directory, or the create is refused and nothing is removed or 
 Entries are read with `Lstat` through that root. The name must start with the prefix with
 the dash, and the write time must be 1 hour old or more. `wipesHomeDir` refuses an entry
 that is home or holds it. A failed removal logs one line, and the create goes on (not measured). `git.info` and
-`git.status` remove no entry. From the code, not measured: a failed add, a
+`git.status` remove no entry. From the code: a failed add, a
 `"shadowDirOff":true` request (or one that starts while such a request runs and takes no
 later gate), and the state `fallback-git` run no cleanup. A request with a later gate runs it.
 
@@ -359,6 +357,13 @@ does](docs/protocol/files-extract-tar.md#what-the-request-does)).
 
 Never widen: This step is approved by the maintainer. Do not widen it. Do not build that
 name from a parameter or from the archive.
+
+### The temp-folder test
+
+On Linux and macOS a spawn tests the folder of an inherited `TMPDIR`, `TEMP` or
+`CLAUDE_CODE_TMPDIR` (`tempfolder_unix.go`). It removes one file, `.claude-ssh-<n>`, by
+name with a plain `os.Remove`, only after its own exclusive create. A failed create removes
+nothing (from the code).
 
 ### The held git directory
 
@@ -517,11 +522,7 @@ the rules, the cost and the reopen trigger of each.
 The three caps and bounds D3, D10 and D12 default off. That is the parity
 position: a non-off default fails an operation that the reference completes.
 Claude Desktop owns the `-serve` / `-install` argv, so the `claustrum.conf`
-key is the reachable knob, not the flag. Each disabled state bypasses its
-limiter entirely, by the "never simplify" rule of Part A. Per-method wire
-frames → [`docs/PROTOCOL.md`](docs/PROTOCOL.md). Driver-claim provenance
-("Desktop owns the argv", `cliError` classification, libc selection) →
-[`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md).
+key is the reachable knob, not the flag.
 
 ## Where detail lives
 

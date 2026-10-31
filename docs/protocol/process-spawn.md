@@ -29,9 +29,9 @@ An untagged rule on this page is measured against build `89cb6289`. The removal 
 {"success": true}
 ```
 
-With `"wantPid": true` the result is `{"success":true,"pid":<int>,"startTime":<number>}`. `pid` is the OS pid of the child. `startTime` is the wall clock of the daemon at the spawn, in epoch seconds. `process.reattach` with `wantPid` returns the same value for the same process.
+With `"wantPid": true` the result is `{"success":true,"pid":<int>,"startTime":<number>}`. `pid` is the OS pid of the child. `startTime` is the wall clock of the daemon at the spawn, in epoch seconds.
 
-Use `startTime` as an opaque token to detect a reused pid. It does not equal a start time that the OS reports.
+`startTime` is an opaque token that detects a reused pid, not an OS start time.
 
 After the result, the output comes as [stream notifications](streams.md#stream-notifications) with the `id` as `processId`. The last one is the `exit` frame.
 
@@ -58,7 +58,7 @@ A failure starts no child and makes no record. It logs the failed-start line of 
 
 ### The reason member (build `52d82f0a`)
 
-A start refusal adds `data` after `message`: `{"reason":"<reason>"}`. `Invalid params`, `Command is required` and `Process ID is required` (claustrum's own, not measured) carry none.
+A start refusal adds `data` after `message`: `{"reason":"<reason>"}`. `Invalid params`, `Command is required` and `Process ID is required` (claustrum's own) carry none.
 
 | Reason | Linux | Windows |
 |---|---|---|
@@ -69,7 +69,7 @@ A start refusal adds `data` after `message`: `{"reason":"<reason>"}`. `Invalid p
 | `launcher` | missing (`-32004`) | any `launcher` |
 | `other` | a relative `command` with a `launcher` | not a program |
 
-On macOS only `cwd_unusable` is measured. The rest follows Linux, as do the other `-32004` refusals and `-32005` (`launcher`) and other errors (`other`) (claustrum's own, not measured).
+On macOS only `cwd_unusable` is measured. The rest follows Linux, as do the other `-32004` refusals and `-32005` (`launcher`) and other errors (`other`) (claustrum's own).
 
 One failure ends another process first: a session spawn whose command exists and does not start. See [Session supersede](#session-supersede).
 
@@ -98,10 +98,14 @@ The daemon removes these names:
 | `CLAUDE_RPC_TOKEN`, `CLAUDE_SSH_NO_JOBS` (`52d82f0a`, measured on Linux, macOS and Windows) | The daemon value, for every child. A value in the `env` of the request reaches the child (claustrum's own for `CLAUDE_SSH_NO_JOBS`). |
 | `CLAUDE_SSH_MANAGED_LAUNCHER`, `CLAUDE_SSH_E2E_MANAGED_SETTINGS_DIR` | Every child. The removal covers the `env` of the request too (measured on Linux and macOS). The removal on Windows (claustrum's own). |
 | `CLAUDE_CODE_PROCESS_WRAPPER` | A child with a `launcher`, also from the `env` of the request. A child without one keeps it (measured on Linux and macOS, claustrum's own on Windows). |
-| `CLAUDE_SSH_NO_LOGIN_PATH_WARM` | The daemon value, for every child (claustrum's own on Windows). A value in `env` reaches the child (claustrum's own, not measured). |
+| `CLAUDE_SSH_NO_LOGIN_PATH_WARM` | The daemon value, for every child (claustrum's own on Windows). A value in `env` reaches the child (claustrum's own). |
 | `CLAUDE_SSH_PEER_CHECK` | The daemon environment, at its start. On Windows that covers any letter case. A value in `env` reaches the child. These three are measured on Linux, macOS and Windows. If the removal fails, claustrum logs one WARN line of its own, and the children inherit it. |
 
 The Go runtime variables `GODEBUG`, `GOGC`, `GOMAXPROCS`, `GOMEMLIMIT` and `GOTRACEBACK` reach the child unchanged. `GOGC` and `GOMAXPROCS` are measured on Linux, the other three are not measured.
+
+### A temp folder that takes no file (build `683cc6a9`)
+
+On Linux and macOS a daemon value of `TMPDIR`, `TEMP` or `CLAUDE_CODE_TMPDIR` does not reach a child if its folder cannot take a new file `.claude-ssh-<n>`. A missing folder stays. On Linux a relative value stays too, and spawns at once share one test, which removes the file. The 2 s wait limit per spawn and the untested `TMP` are claustrum's own.
 
 ### The managed launcher
 
@@ -116,7 +120,7 @@ The checks run in this order. Step 1 is the Windows rule. The other steps are me
 5. A `command` that is missing, a folder or not executable gets `fork/exec <command>: <reason>`, as without a launcher. The launcher does not run.
 6. A launcher that does not start gets `-32005`. A missing `#!` interpreter, or a script with Windows CRLF line ends, gives the reason `its interpreter was not found (the program on its #! line, or the loader of an ELF binary; a script saved with Windows CRLF line endings fails this way)`. A 0755 text file with no `#!` gives `exec format error`.
 
-Step 1 comes before step 2 (claustrum's own) (not measured on the reference). Step 5 comes before the launcher starts (claustrum's own) (not measured on the reference). A start failure other than those two gives its errno text (claustrum's own). The step 6 frames of claustrum are tested, not measured.
+Step 1 comes before step 2, and step 5 before the launcher starts (claustrum's own). A start failure other than those two gives its errno text (claustrum's own). The step 6 frames of claustrum are tested, not measured.
 
 A started launcher logs the start line of [Lines of child processes](../DAEMON.md#lines-of-child-processes), which names the first element of `launcher` only. A refusal writes no `[LauncherHandler]` line.
 
@@ -141,8 +145,8 @@ A tag wins over the top line.
 
     - There is no SSH agent hand-off and no identity marker. The capability and the parameter exist.
     - The block of the child is in name order ([D23](../DIVERGENCES.md#d23)).
-    - The child gets the `PATH` of the daemon as an entry named exactly `PATH`. claustrum reads it once, at its start (claustrum's own, not measured). An entry named `PATH` is replaced in place, else `PATH` is added. Then the `env` of the request comes.
-    - Of the entries whose names differ only in letter case, the child gets the last one (from the code, Go's `os/exec`). So a daemon `Path` reaches the child as `PATH`, and a caller `Path` value is lost. A caller `PATH` or `path` value keeps its own name.
+    - The child gets the `PATH` of the daemon as an entry named exactly `PATH`. claustrum reads it once, at its start (claustrum's own). An entry named `PATH` is replaced in place, else `PATH` is added. Then the `env` of the request comes.
+    - Of the entries whose names differ only in letter case, the child gets the last one (from the code). So a daemon `Path` reaches the child as `PATH`, and a caller `Path` value is lost. A caller `PATH` or `path` value keeps its own name.
     - A daemon with no path entry, or a `Path` with an empty value, gives the child no `PATH` entry.
 
 ### The login-shell PATH (Linux and macOS)
@@ -157,7 +161,7 @@ The read starts in the background with the daemon. These rules are measured agai
 - The `PATH` is the line after a fresh sentinel line, on stdout or on stderr, with a final newline and an absolute directory.
 - 2 MiB on stdout fails the read, and a full stderr does not. A shell that leaves a process on its stdout still gives its PATH, about 500 ms after it ends. The log holds no shell output.
 - The shell gets `HOME`, `PATH`, `SHELL`, `TERM` and `USER` of the daemon, with `TERM` empty if the daemon has none, plus `DISABLE_AUTO_UPDATE=true`, `ZSH_DISABLE_COMPFIX=true` and `CLAUDE_DESKTOP_RESOLVING_ENVIRONMENT=1`.
-- claustrum's own (not measured): a 30 s limit per read, the stream order, the doubling after 2m0s, no try after 16 failures, and no wait after 5.
+- claustrum's own: a 30 s limit per read, the stream order, the doubling after 2m0s, no try after 16 failures, and no wait after 5.
 
 ### The identity markers (Linux and macOS)
 
@@ -169,7 +173,7 @@ The daemon starts the child through a short re-exec of its own binary, the exec-
 The trampoline adds no frame. A command that does not resolve to a runnable file gets the same error frame as without it.
 
 ??? note "The trampoline does not start"
-    If the trampoline itself does not start, the daemon logs `[process.Manager] exec trampoline failed for <id> (<error>); starting it directly — a successor daemon will not be able to reap it` and starts the command directly (measured on Linux). The frame then names the command, for example `fork/exec <command>: permission denied` for a `cwd` that the daemon cannot enter. If that direct start works, the reply is success (from the code) (not measured). The child then gets `CLAUDE_SSH_RUN_DIR` and no `CLAUDE_SSH_CHILD` (from the code) (not measured).
+    If the trampoline itself does not start, the daemon logs `[process.Manager] exec trampoline failed for <id> (<error>); starting it directly — a successor daemon will not be able to reap it` and starts the command directly (measured on Linux). The frame then names the command, for example `fork/exec <command>: permission denied` for a `cwd` that the daemon cannot enter. If that direct start works, the reply is success (from the code). The child then gets `CLAUDE_SSH_RUN_DIR` and no `CLAUDE_SSH_CHILD` (from the code).
 
 ??? note "A later daemon start"
     On Linux and macOS a daemon that holds the [run-dir lock](../DAEMON.md#run-dir-lock-daemonlock) records each child in its run dir. A later daemon start on the same socket reads the records of a daemon that is gone. It ends each child whose process still matches its record, with `SIGTERM` and then `SIGKILL`. [Child records and the reap](../DAEMON.md#child-records-and-the-reap-linux-and-macos) has the rules. Windows records no child. A record that cannot be written does not fail the spawn, and the child still gets both identity markers.
@@ -191,7 +195,7 @@ The daemon advertises it as the feature `process.spawn.shellAgentSocket`. If the
 A spawn with the `id` of a process that still runs succeeds and replaces its table entry. The first process gets no signal and keeps running. Then:
 
 - `process.kill`, `process.stdin` and `process.reattach` of that `id` reach the second process only.
-- `-stop` and `server.shutdown` end only the processes of the table, so the first process outlives the daemon, except on Windows with jobs on and no `-keep-children` (claustrum's own, not measured). On Linux and macOS its record stays, and the next start ends it.
+- `-stop` and `server.shutdown` end only the processes of the table, so the first process outlives the daemon, except on Windows with jobs on and no `-keep-children` (claustrum's own). On Linux and macOS its record stays, and the next start ends it.
 - Each process keeps the connection that spawned it, under the same `processId`, and each counts its own `seq`. So a connection that sent both spawns gets two streams under one `processId`, with two `exit` frames (measured on Linux).
 - A `process.reattach` moves the stream of the second process and closes the connection that had it. A connection that gets the frames of the first process keeps getting them (measured on Linux).
 
@@ -206,7 +210,7 @@ The argument after a bare `--session-id` or `--resume` is its value. The id has 
 
 #### How the old process ends
 
-The daemon sends `SIGTERM` to the direct child of the old process and waits. After 3 s it sends `SIGKILL` to the group. The `exit` frame of the old process reaches its client with `"killedBy":"client"`. The pipe drain of that frame takes up to 5 s. Then the new process starts, and its reply comes after that `exit` frame. On Windows the old job ends at once (claustrum's own, not measured). claustrum also runs two spawns of one session one after the other (claustrum's own).
+The daemon sends `SIGTERM` to the direct child of the old process and waits. After 3 s it sends `SIGKILL` to the group. The `exit` frame of the old process reaches its client with `"killedBy":"client"`. The pipe drain of that frame takes up to 5 s. Then the new process starts, and its reply comes after that `exit` frame. On Windows the old job ends at once (claustrum's own). Two spawns of one session run one after the other (claustrum's own).
 
 A spawn with the `id` and the session of a running process only replaces it, as [the `id` in use](#a-spawn-with-an-id-that-is-in-use) says.
 
@@ -220,7 +224,7 @@ A spawn with the `id` and the session of a running process only replaces it, as 
     - A missing or wrong `cwd` answers its own error first.
     - A command that exists and does not start passes the test. A file of mode 0644, a folder and a script with a missing interpreter each end the old process first, and then the error comes.
     - With a `launcher`, step 5 of [the launcher checks](#the-managed-launcher) is the test. So a missing, folder or not executable command ends no old process. A launcher that does not start ends the old process first, and then `-32005` comes.
-    - On Windows the lookup answers first. Then the daemon runs one `stat` of an absolute `command` only. A missing path that ends in `.exe` answers `fork/exec <path>: The system cannot find the file specified.` A relative path gets no `stat` (not measured on the reference).
+    - On Windows the lookup answers first. Then the daemon runs one `stat` of an absolute `command` only. A missing path that ends in `.exe` answers `fork/exec <path>: The system cannot find the file specified.` A relative path gets no `stat` (not measured).
 
 ??? note "A -stop during the wait"
     A `-stop` can come while a spawn waits for the old process (measured on Linux and macOS). The spawn then gets no reply, and the new process never starts. The daemon sends `SIGKILL` to the group of the old process, and no connection gets its `exit` frame.
@@ -238,4 +242,4 @@ A spawn that reaches the start of its child after the shutdown began gets no rep
 - [D20](../DIVERGENCES.md#d20): the 50 ms wait in the reap before the `SIGKILL` of a group whose leader reads as gone.
 - [D23](../DIVERGENCES.md#d23): on Windows the environment block of a child is in name order.
 
-claustrum also removes the launcher variables on Windows, which is not measured on the reference. claustrum lacks the terminal of the pinned `52d82f0a` and ignores its `pty` member. On Windows `c8e2f083` refuses `pty` with `-32602`, and claustrum runs the command (measured on Windows, [open items](../REFERENCE-BUILDS.md#52d82f0a28317830ccacea80f6f4aac1d7563353-2026-10-09-built)).
+claustrum lacks the terminal of the pinned `52d82f0a` and ignores its `pty` member. On Windows `c8e2f083` refuses `pty` with `-32602`, and claustrum runs the command (measured on Windows, [open items](../REFERENCE-BUILDS.md#52d82f0a28317830ccacea80f6f4aac1d7563353-2026-10-09-built)).
