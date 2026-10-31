@@ -17,11 +17,11 @@ import (
 var (
 	// settleMargin is the time that must still be left before the deadline of
 	// timeoutMs for the call to run. The call then gets that time less the
-	// margin, and at least settleMinLimit. With timeoutMs 10000 683cc6a9 makes no
-	// call. With 11500 the call gets SIGTERM 0.983 s after its start. With 15000,
-	// 19999 and 20000 a call of 3 s runs to its end (Linux VM). The exact limit
-	// between 11500 and 15000 is not measured. The 10 s margin and the 1 s minimum
-	// are claustrum's own.
+	// margin, and at least settleMinLimit. The deadline starts before the first git
+	// call (worktreeCreateCtx). 683cc6a9 on a Linux VM: with timeoutMs 10700 no call
+	// runs. From 12500 to 20000 SIGTERM comes timeoutMs less 10 s after the send of
+	// the request. With 11500 and 12000 it can come 1 s after the start of the
+	// call. With 15000, 19999 and 20000 a call of 3 s runs to its end.
 	settleMargin   = 10 * time.Second
 	settleMinLimit = time.Second
 	// settleWait is the time after the end of the read-tree call before which the
@@ -66,7 +66,8 @@ func settleSleep(ctx context.Context, until time.Time) {
 // default limit is that of the other calls of the request (s.limit), so the wide
 // limit holds while a "shadowDirOff":true request runs. A nil s gives gitCallLimit.
 // With timeoutMs the limit is the lower of the default and the time left less the
-// margin, and at least settleMinLimit (claustrum's own, not measured).
+// margin, and at least settleMinLimit (683cc6a9, measured on Linux). The lower of
+// the default is claustrum's own, not measured.
 func settleLimit(ctx context.Context, s *gitStop) (limit time.Duration, ok bool) {
 	def := gitCallLimit
 	if s != nil {
@@ -108,12 +109,14 @@ func settleLimit(ctx context.Context, s *gitStop) (limit time.Duration, ok bool)
 // a filter child of git that outlives the call does not hold the reply. Such a child
 // gets no signal, as a child of the other calls gets none (claustrum's own).
 func settleCheckout(callerCtx context.Context, u gitUse, leaf, workTree, gitDir, indexFile string, pin []string, readEnd time.Time) {
-	limit, ok := settleLimit(callerCtx, u.stop)
-	if !ok {
-		return
-	}
 	attr := attrSourceArgs()
 	if attr == nil {
+		return
+	}
+	// The time left is read after the probe of attrSourceArgs, right before the
+	// call (claustrum's own).
+	limit, ok := settleLimit(callerCtx, u.stop)
+	if !ok {
 		return
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), limit)

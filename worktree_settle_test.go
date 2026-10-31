@@ -8,6 +8,7 @@ import (
 	"slices"
 	"strconv"
 	"strings"
+	"sync"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -402,5 +403,160 @@ func TestSettleCheckoutStopsWithTheContext(t *testing.T) {
 	}
 	if took := time.Since(start); took >= 10*time.Second {
 		t.Errorf("settleCheckout took %v after the context ended", took)
+	}
+}
+
+// The settle call stops timeoutMs less 10 s after the send, and at least 1 s after
+// its start (683cc6a9, Linux VM). Mutation: drop the time.Since(arrival) in
+// worktreeCreateCtx.
+func TestWorktreeCreateCtxCountsFromArrival(t *testing.T) {
+	now := time.Now()
+	_, caller, cancel := worktreeCreateCtx(nil, 12000, now.Add(-3*time.Second))
+	d, set := caller.Deadline()
+	cancel()
+	if want := now.Add(9 * time.Second); !set || d.Before(want.Add(-time.Second)) || d.After(want.Add(500*time.Millisecond)) {
+		t.Errorf("deadline %v after now (set %v), want about 9s: 12 s from an arrival 3 s ago", d.Sub(now), set)
+	}
+	_, caller, cancel = worktreeCreateCtx(nil, 12000, now.Add(-20*time.Second))
+	if caller.Err() == nil || !callerTimeoutFired(caller) {
+		t.Errorf("a deadline that passed before the context: err %v, want the caller's deadline", caller.Err())
+	}
+	cancel()
+	for _, c := range []struct {
+		ms     int
+		since  time.Duration
+		ok     bool
+		lo, hi time.Duration
+	}{
+		{10700, 830 * time.Millisecond, false, 0, 0},
+		{12000, 830 * time.Millisecond, true, 900 * time.Millisecond, 1170 * time.Millisecond},
+		{11500, 1300 * time.Millisecond, true, settleMinLimit, settleMinLimit},
+		{20000, 816 * time.Millisecond, true, 8500 * time.Millisecond, 9184 * time.Millisecond},
+	} {
+		_, caller, cancel := worktreeCreateCtx(nil, c.ms, time.Now().Add(-c.since))
+		got, ok := settleLimit(caller, nil)
+		cancel()
+		if ok != c.ok || got < c.lo || got > c.hi {
+			t.Errorf("timeoutMs %d after %v: %v %v, want %v in [%v, %v]", c.ms, c.since, got, ok, c.ok, c.lo, c.hi)
+		}
+	}
+}
+
+// A slow git call before the deadline is made does not move its end: the settle
+// call stops timeoutMs less 10 s after the send (683cc6a9, Linux VM). Mutation:
+// drop the time.Since(arrival) in worktreeCreateCtx.
+func TestWorktreeCreateDeadlineCountsFromTheRequest(t *testing.T) {
+	const delay = 1500 * time.Millisecond
+	f, s, _ := settleFixture(t, 0, 0)
+	t.Setenv("CLAUSTRUM_GITSTUB_MATCH2", "--absolute-git-dir")
+	t.Setenv("CLAUSTRUM_GITSTUB_MS2", strconv.FormatInt(delay.Milliseconds(), 10))
+	old := callerDeadline
+	t.Cleanup(func() { callerDeadline = old })
+	var deadline time.Time
+	callerDeadline = func(base context.Context, d time.Duration) (context.Context, context.CancelFunc) {
+		ctx, cancel := old(base, d)
+		deadline, _ = ctx.Deadline()
+		return ctx, cancel
+	}
+	start := time.Now()
+	raw, took := f.create(t, s, "w1", "", markerTimeoutMs)
+	f.wantSettledCreate(t, raw)
+	if took < delay {
+		t.Fatalf("the create took %v, want at least the delay %v of the git stub", took, delay)
+	}
+	if deadline.IsZero() {
+		t.Fatal("the create made no deadline")
+	}
+	if got, limit := deadline.Sub(start), time.Duration(markerTimeoutMs)*time.Millisecond; got > limit+delay/2 {
+		t.Errorf("the deadline ends %v after the request, want %v: the slow call moved it", got, limit)
+	}
+}
+
+// A wait for the create lock of the repository does not count toward timeoutMs:
+// the deadline starts once the create holds the lock (claustrum's own, not
+// measured). Mutation: take arrival in gitWorktreeCreate before
+// withWorktreeCreateLock.
+func TestWorktreeCreateDeadlineStartsAfterTheLock(t *testing.T) {
+	const wait = 1500 * time.Millisecond
+	f, s, _ := settleFixture(t, 0, 0)
+	old := callerDeadline
+	t.Cleanup(func() { callerDeadline = old })
+	var mu sync.Mutex
+	var deadline time.Time
+	callerDeadline = func(base context.Context, d time.Duration) (context.Context, context.CancelFunc) {
+		ctx, cancel := old(base, d)
+		mu.Lock()
+		deadline, _ = ctx.Deadline()
+		mu.Unlock()
+		return ctx, cancel
+	}
+	held, release := make(chan struct{}), make(chan struct{})
+	lockDone := make(chan struct{})
+	go func() {
+		defer close(lockDone)
+		withWorktreeCreateLock(f.base, func() response {
+			close(held)
+			<-release
+			return response{}
+		})
+	}()
+	<-held
+	var released time.Time
+	stop := time.AfterFunc(wait, func() {
+		mu.Lock()
+		released = time.Now()
+		mu.Unlock()
+		close(release)
+	})
+	defer stop.Stop()
+	raw, _ := f.create(t, s, "w1", "", markerTimeoutMs)
+	<-lockDone
+	f.wantSettledCreate(t, raw)
+	mu.Lock()
+	defer mu.Unlock()
+	if deadline.IsZero() || released.IsZero() {
+		t.Fatalf("deadline %v, release %v: want both", deadline, released)
+	}
+	if got, limit := deadline.Sub(released), time.Duration(markerTimeoutMs)*time.Millisecond; got < limit {
+		t.Errorf("the deadline ends %v after the lock was free, want at least %v: the wait counted", got, limit)
+	}
+}
+
+// A slow --attr-source probe before the settle call does not move its stop: the
+// limit is read after the probe, so the call stops the margin before the deadline
+// (claustrum's own). Mutation: call settleLimit before attrSourceArgs in
+// settleCheckout.
+func TestSettleCheckoutReadsTheLimitAfterTheProbe(t *testing.T) {
+	realGit, err := exec.LookPath("git")
+	if err != nil {
+		t.Skip("git not found in PATH")
+	}
+	const probe = time.Second
+	installGitSlowStub(t, realGit)
+	clearAttrSource()
+	t.Cleanup(clearAttrSource)
+	t.Setenv("CLAUSTRUM_GITSTUB_MATCH2", "version")
+	t.Setenv("CLAUSTRUM_GITSTUB_MS2", strconv.FormatInt(probe.Milliseconds(), 10))
+	slowGit(t, "diff-files", "fail", 30*time.Second, "", "")
+	setDuration(t, &settleMargin, time.Second)
+	setDuration(t, &settleMinLimit, 10*time.Millisecond)
+	dir := t.TempDir()
+	start := time.Now()
+	deadline := start.Add(probe + 1500*time.Millisecond)
+	ctx, cancel := context.WithDeadline(context.Background(), deadline)
+	defer cancel()
+	settleCheckout(ctx, gitUse{}, dir, dir, filepath.Join(dir, "g"), filepath.Join(dir, "index"), nil, start)
+	took := time.Since(start)
+	attrSourceMu.Lock()
+	ok := attrSourceOK
+	attrSourceMu.Unlock()
+	if !ok {
+		t.Skip("the host git has no --attr-source: no settle call runs")
+	}
+	if took < probe {
+		t.Fatalf("settleCheckout took %v, want at least the probe delay %v", took, probe)
+	}
+	if want := deadline.Add(-settleMargin).Sub(start); took > want+600*time.Millisecond {
+		t.Errorf("the call stopped %v after the start, want about %v: the probe moved the stop", took, want)
 	}
 }

@@ -604,7 +604,7 @@ func TestDocsEveryErrorCodeIsDocumented(t *testing.T) {
 // because the documents grew past what a person can read. A limit goes down, never
 // up, without the maintainer's word.
 var docWordLimits = map[string]int{
-	"AGENTS.md":                                5628, // the file that Windows cannot read. 5619: the empty folder that Windows cannot read. 5592: the temp-folder test of 683cc6a9. 5537: the two .synced removes of 683cc6a9
+	"AGENTS.md":                                5632, // the deadline of timeoutMs by the end of the add. 5628: the file that Windows cannot read. 5619: the empty folder that Windows cannot read. 5592: the temp-folder test of 683cc6a9. 5537: the two .synced removes of 683cc6a9
 	"CONTRIBUTING.md":                          1071,
 	"README.md":                                1133, // 13 are the HTML tokens of the logo <picture> block (maintainer, 2026-10-31)
 	"SECURITY.md":                              1553,
@@ -634,7 +634,7 @@ var docWordLimits = map[string]int{
 	"docs/protocol/git-rules-trust.md":         4637, // TASK-313: the not_a_repo answer of the create. 4601: the unsearchable git directory and the could-not-be-examined text. 4493: TASK-202: moved from PROTOCOL.md
 	"docs/protocol/git-list-branches.md":       997,  // task-203b: the page rewrite
 	"docs/protocol/git-status.md":              3185, // decision-040: a move between pages, net down in the same PR
-	"docs/protocol/git-worktree-create.md":     6996, // the 2.2 s settle wait (claustrum's own). 6951: task-205: rewrite to the page template
+	"docs/protocol/git-worktree-create.md":     7018, // the start of timeoutMs. 6996: the 2.2 s settle wait (claustrum's own). 6951: task-205: rewrite to the page template
 	"docs/protocol/git-worktree-remove.md":     4112, // task-206: rewrite to the page template
 	"docs/protocol/launcher-resolve.md":        1620, // task-204: rewrite to the page template
 	"docs/protocol/plugins-prune.md":           1084, // task-203b: the page rewrite

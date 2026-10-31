@@ -18,7 +18,7 @@ An untagged rule on this page matches the reference as measured on `5fd08069` or
 | `sourceBranch` | no | The name that the new branch starts from. The default is the current branch. An attach does not use it. |
 | `existingBranch` | no | A local branch to attach to. If it names no local branch, or the attach fails, the daemon creates `branchName` instead. |
 | `worktreeRoot` | no | A location outside the repository. Windows refuses it with `unsafe_path`. |
-| `timeoutMs` | no | A deadline that starts at the add. It stops the read-tree call. The daemon tests it after the add and the copy step. No value or `0` sets none. |
+| `timeoutMs` | no | A deadline that starts before the first git call. It stops the read-tree call. The daemon tests it after the add and the copy step. The stop of the settle step from that start is measured (`683cc6a9`, Linux). For the other tests that start is claustrum's own, not measured. A wait behind another create of the repository does not count (claustrum's own). No value or `0` sets none. |
 | `shadowDirOff` | no | `true` turns off, for this request, the filter rule of the checkout, the daemon's own read of the repository's git config, and the settings copy. Git requests that start meanwhile get the same. A command that starts meanwhile gets no copy (measured on Linux). Other values do nothing. |
 
 Where the worktree can go:
@@ -170,7 +170,7 @@ In the state `fallback-git` git runs the filters, and this section does not appl
 In the state `shadow` a good checkout gets one more call: `git diff-files --quiet --ignore-submodules=all` (`683cc6a9`, Linux, macOS and Windows).
 
 - After exit 1 the reply waits until 1.1 s after the checkout (claustrum's own). `683cc6a9` answers 0.39 s to 0.98 s after the call.
-- With `timeoutMs` 10000 or less no call runs, and at 11500 the call stops about 1 s after its start and the create still succeeds (measured on Linux). claustrum's rule is: the call runs only with 10 s or more left, it stops 10 s before the deadline after 1 s at least, a stop changes nothing, and with no `timeoutMs` the limit is that of the other calls of the request (claustrum's own).
+- The call runs only with 10 s or more left. It stops 10 s before the deadline, after 1 s at least, and a stop changes nothing (measured on Linux). The time left is read right before the call (claustrum's own). With no `timeoutMs` the limit is that of the other calls of the request (claustrum's own).
 - The 1.1 s become 2.2 s if the Lstat of `.git` in the new worktree fails or its mtime has no nanoseconds. The wait ends with the request, and the call limit is at most that of the other calls (claustrum's own, not measured).
 - A git without `--attr-source` gets no call (measured on Linux).
 
