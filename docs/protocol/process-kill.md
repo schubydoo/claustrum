@@ -12,7 +12,7 @@ An untagged rule on this page matches build `89cb6289`.
 
 | Parameter | Required | Meaning |
 |---|---|---|
-| `id` | no | The id of the process, as given to `process.spawn`. An absent, empty or unknown `id` signals nothing. |
+| `id` | no | The id of the process, as given to `process.spawn`. An absent, empty, unknown or [spent](process-link-bound.md#the-spent-id) `id` signals nothing. |
 | `signal` | no | `TERM`, `KILL`, `INT` or `HUP`, with or without the prefix `SIG`. The default is `TERM`. The names are case-sensitive, and each other value means `TERM`. So `quit` and `int` send `SIGTERM`. On Windows the daemon ignores the name: see [Differences by system](#differences-by-system). |
 | `farewell`, `graceMs` | no | The [farewell](process-farewell.md) for the stdin of the child, and the wait before the signal. |
 
@@ -40,7 +40,7 @@ This method has no `errorCode` member. A failure is a JSON-RPC error.
 On Linux and macOS, each child runs in its own process group. Two cases:
 
 - `KILL` goes to the whole process group of the child. So the processes that the child started end too, unless one left the group.
-- Each other signal goes to the direct child only. A process that the child started in the background keeps running. A graceful `process.kill` does not end the tree. Use `"signal": "KILL"` for that.
+- Each other signal goes to the direct child only. A process that the child started in the background keeps running. Use `"signal": "KILL"` to end the tree.
 
 `52d82f0a` keeps both, also in `process.killAndWait`, and no signal reaches another session (Linux and macOS, measured).
 

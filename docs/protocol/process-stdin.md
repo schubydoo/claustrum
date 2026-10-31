@@ -41,12 +41,12 @@ This method has no `errorCode` member. A failure is a JSON-RPC error. The daemon
 |---|---|---|
 | `-32602` | `Invalid params` | The request has no `params` member, or `params` or a member that it reads has the wrong type. A negative `offset` gets this error too. See [the rules for `params`](../PROTOCOL.md#params-presence-and-typing). |
 | `-32602` | `Invalid base64 data` | `data` is not valid base64. This test comes before the test of `id`. |
-| `-32602` | `Process not found` | The daemon has no process with this `id`, or `attach` is set. |
+| `-32602` | `Process not found` | No process has this `id`, `attach` is set, or the sender is not its [link](process-link-bound.md#the-link). |
 | `-32003` | `stdin offset gap: offset ahead of applied bytes` | `offset` is above `applied`. |
 | `-32602` | `Process not running` | The process exited, and the request is not a gap and not a duplicate. A request with no bytes and no `offset` gets this error too (measured on Linux and macOS) (not measured on Windows). The answer can come before the `exit` frame of the process. |
 | `-32002` | `stdin backpressure: queue full` | The queue of the process holds bytes that the child did not read yet. This request does not fit in the limit of 16 MiB. The daemon accepts nothing, and `applied` does not change. Send the request again later. After the child closes its input, a retry fails: see [Rare states](#rare-states). |
 
-The daemon never holds a request back because the queue is full. It answers `-32002` at once.
+The daemon answers `-32002` at once, and never waits for room.
 
 The tests for `offset` come before the test for a process that exited. So for a process that exited, a request with a gap still gets `-32003`. A request with only old bytes still gets `"duplicate": true`. That holds until the daemon forgets the process. Then each request gets `Process not found`.
 
@@ -61,7 +61,7 @@ The daemon compares `offset` with `applied`, the count before this request:
 | `offset` given and all of `data` at or before `applied` | It accepts nothing and answers a result with `"duplicate": true`. `applied` does not change. |
 | `data` starts before `applied` and ends after it | It accepts only the bytes from `applied` on. `applied` moves to the end of `data`. The result has no `duplicate` member. |
 
-After a reconnect, read the count from the `stdinApplied` member of `process.reattach` and send from that position. A caller that never sends `offset` always appends. The daemon handles the `process.stdin` requests of one connection in the order of their arrival.
+After a reconnect, read the count from the `stdinApplied` member of `process.reattach` and send from that position. The daemon handles the `process.stdin` requests of one connection in the order of their arrival.
 
 The daemon advertises this behavior as the feature `process.stdin.offset` in `server.capabilities`.
 

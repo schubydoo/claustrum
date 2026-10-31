@@ -206,6 +206,15 @@ type managedProc struct {
 	// applyStdin). Guarded by stdinMu; surfaced on the wire as process.stdin's
 	// "applied" and process.reattach's "stdinApplied".
 	stdinApplied uint64
+
+	// linked marks a link-bound spawn, and link is its connection. Both are set
+	// once at spawn and never mutated. detachedAt is the moment the link went, and
+	// zero while it is there. Read and written under p.mu. onExit runs once after
+	// the exit frame. See linkbound.go.
+	linked     bool
+	link       *conn
+	detachedAt time.Time
+	onExit     func()
 }
 
 type procManager struct {
@@ -228,6 +237,13 @@ type procManager struct {
 	// construction for the same reason as the two values above: a spawn request
 	// outlives its test.
 	supersedeGrace time.Duration
+	// spent holds the exit time of each link-bound process whose id is spent, and
+	// spentAge is linkSpentAge, copied at construction. Guarded by mu.
+	spent    map[string]time.Time
+	spentAge time.Duration
+	// linkStarting holds the id of each link-bound spawn from its id test until
+	// spawnVia returns, so no other spawn of that id starts. Guarded by mu.
+	linkStarting map[string]struct{}
 
 	// spawnLocks holds a per-session-key mutex so concurrent spawns of the SAME CLI
 	// session serialize (a new session process must fully register before the next
@@ -319,6 +335,9 @@ func newProcManager() *procManager {
 		pruneInterval:  procPruneInterval,
 		supersedeGrace: time.Duration(defaultKillWaitMs) * time.Millisecond,
 		spawnLocks:     make(map[string]*sessionSpawnLock),
+		spent:          make(map[string]time.Time),
+		spentAge:       linkSpentAge,
+		linkStarting:   make(map[string]struct{}),
 	}
 	go m.pruneLoop()
 	return m
@@ -386,9 +405,11 @@ func (m *procManager) close() {
 // reattach reports found:false and kill reports success:true, so no caller sees
 // a new error.
 func (m *procManager) pruneExited() {
-	cutoff := time.Now().Add(-m.pruneAge)
+	now := time.Now()
+	cutoff := now.Add(-m.pruneAge)
 	m.mu.Lock()
 	defer m.mu.Unlock()
+	m.pruneSpentLocked(now)
 	for id, p := range m.procs {
 		p.mu.Lock()
 		// exitedAt is zero until the exit frame goes out, which covers both a
@@ -674,15 +695,16 @@ func (p *managedProc) emit(f streamFrame) {
 // returns the managedProc so the caller can read its (immutable) pid/startTime
 // for the CT-1 opt-in; the wire reply is otherwise unaffected.
 func (m *procManager) spawn(c *conn, id, command string, args []string, cwd string, env map[string]string, noShellAgent bool) (*managedProc, error) {
-	return m.spawnVia(c, id, command, args, cwd, env, noShellAgent, nil)
+	return m.spawnVia(c, id, command, args, cwd, env, noShellAgent, nil, 0)
 }
 
 // spawnVia is spawn with the process.spawn launcher param (89cb6289). A nil launcher
 // (the param absent or null) spawns the command itself. A non-nil launcher, an
 // empty one too, goes through refuseManagedLauncher before anything else. When it
 // passes, the child argv is the launcher argv, then the command, then the args. The
-// launcher is then the process, and its stream frames are its own.
-func (m *procManager) spawnVia(c *conn, id, command string, args []string, cwd string, env map[string]string, noShellAgent bool, launcher *[]string) (*managedProc, error) {
+// launcher is then the process, and its stream frames are its own. A linkTTL above
+// 0 makes a link-bound process with that unattended time (linkbound.go).
+func (m *procManager) spawnVia(c *conn, id, command string, args []string, cwd string, env map[string]string, noShellAgent bool, launcher *[]string, linkTTL time.Duration) (*managedProc, error) {
 	path, argv := command, args
 	if launcher != nil {
 		if err := refuseManagedLauncher(*launcher, command); err != nil {
@@ -698,6 +720,7 @@ func (m *procManager) spawnVia(c *conn, id, command string, args []string, cwd s
 	// test that shrinks it. macOS CI caught exactly that; the same confinement is
 	// why procManager copies its prune tunables at construction.
 	grace := exitDrainGrace
+	endGrace := unattendedEndGrace
 	// A stream-json session spawn serializes against other spawns of the same
 	// session (so a new session process fully registers before the next same-key
 	// spawn supersedes it). Before it starts its process, it ends the prior process
@@ -710,6 +733,25 @@ func (m *procManager) spawnVia(c *conn, id, command string, args []string, cwd s
 	// claustrum prunes inline here as well as on its timer, so a busy daemon sheds
 	// long-dead entries without waiting for the next sweep.
 	m.pruneExited()
+	// The command of a spent id does not run (683cc6a9, measured on Linux). The
+	// place of this test after the launcher tests and before the cwd test is
+	// claustrum's own, not measured. So is the Failed to start line. A link-bound
+	// spawn holds its id in linkStarting until its table entry is there.
+	m.mu.Lock()
+	taken := m.idTakenLocked(id)
+	if !taken && linkTTL > 0 {
+		m.linkStarting[id] = struct{}{}
+		defer func() {
+			m.mu.Lock()
+			delete(m.linkStarting, id)
+			m.mu.Unlock()
+		}()
+	}
+	m.mu.Unlock()
+	if taken {
+		logErrorf("[process.Manager] Failed to start process %s: %v", id, errSpentID)
+		return nil, errSpentID
+	}
 	cmd := exec.Command(path, argv...)
 	if cwd != "" {
 		// Stat the cwd before exec so an unusable one names the directory at
@@ -971,6 +1013,11 @@ func (m *procManager) spawnVia(c *conn, id, command string, args []string, cwd s
 		done:       make(chan struct{}),
 		recordDone: make(chan struct{}),
 	}
+	if linkTTL > 0 {
+		p.linked, p.link = true, c
+		p.bufCap = linkReplayCap
+		p.onExit = func() { m.forgetLinked(p) }
+	}
 	// The end of the child removes its registry record (linux and darwin, a no-op
 	// on windows). The pid is copied here, so the exit goroutine needs no lock.
 	childPid := cmd.Process.Pid
@@ -992,6 +1039,17 @@ func (m *procManager) spawnVia(c *conn, id, command string, args []string, cwd s
 	// connection 1 after the replace). Its seq numbers go on from its own count.
 	m.procs[id] = p
 	m.mu.Unlock()
+	// A link whose connection is already gone makes the process detached at once,
+	// so its clock starts at the spawn. detachConn runs after the connection is
+	// marked closed, so one of the two marks it.
+	if linkTTL > 0 {
+		if connGone(c) {
+			p.mu.Lock()
+			p.markDetachedLocked(time.Now())
+			p.mu.Unlock()
+		}
+		go m.watchUnattended(p, linkTTL, unattendedTick(linkTTL), endGrace)
+	}
 
 	// Record the spawned child in the orphan registry, so a later daemon can reap it if
 	// this daemon exits leaving it behind. That holds on linux and darwin, on every
@@ -1095,6 +1153,9 @@ func (p *managedProc) waitReapAndDrain(wg *sync.WaitGroup, stdoutR, stderrR *os.
 	logInfof(fmtProcExited, p.id, code, exitLogSuffix(sigName, killedBy))
 	met.processExits.Add(1)
 	p.emit(streamFrame{Stream: "exit", ExitCode: &code, Signal: sigName, KilledBy: killedBy})
+	if p.onExit != nil {
+		p.onExit()
+	}
 	// Signal any killAndWait waiter now the child is fully reaped.
 	close(p.done)
 }
@@ -1504,6 +1565,11 @@ func (m *procManager) killAndWait(id, signal string, grace time.Duration, escala
 // original no signal) cannot redirect the kill
 // onto the innocent replacement. Do NOT re-resolve p by id here.
 func (m *procManager) killAndWaitProc(p *managedProc, signal string, grace time.Duration, escalate bool) (found, died, alreadyExited, escalated bool) {
+	return m.killAndWaitAs(p, signal, "client", grace, escalate)
+}
+
+// killAndWaitAs is killAndWaitProc with the killedBy label of the signal.
+func (m *procManager) killAndWaitAs(p *managedProc, signal, label string, grace time.Duration, escalate bool) (found, died, alreadyExited, escalated bool) {
 	if !p.isRunning() {
 		return true, true, true, false
 	}
@@ -1516,13 +1582,18 @@ func (m *procManager) killAndWaitProc(p *managedProc, signal string, grace time.
 		p.waiting--
 		p.mu.Unlock()
 	}()
-	return m.signalAndWait(p, signal, grace, escalate)
+	return m.signalAndWaitAs(p, signal, label, grace, escalate)
 }
 
 // signalAndWait is the signal and the wait of killAndWaitProc. The caller holds
 // the waiting count. killAndWaitFarewell runs it at the end of the grace.
 func (m *procManager) signalAndWait(p *managedProc, signal string, grace time.Duration, escalate bool) (found, died, alreadyExited, escalated bool) {
-	live, err := p.signalIfLiveErr(signal, "client")
+	return m.signalAndWaitAs(p, signal, "client", grace, escalate)
+}
+
+// signalAndWaitAs is signalAndWait with the killedBy label of the signal.
+func (m *procManager) signalAndWaitAs(p *managedProc, signal, label string, grace time.Duration, escalate bool) (found, died, alreadyExited, escalated bool) {
+	live, err := p.signalIfLiveErr(signal, label)
 	var failed *signalFailed
 	if errors.As(err, &failed) {
 		// The wait and the force go on (52d82f0a, measured on Linux and macOS).
@@ -1631,14 +1702,23 @@ func (m *procManager) reattach(c *conn, id string, fromSeq uint64) (p *managedPr
 	// finished instead of holding one that will never carry another frame. The
 	// superseded set is collected here and acted on after p.mu is dropped, because
 	// supersede logs and closes a socket and neither belongs under this lock.
-	superseded := make([]*conn, 0, len(p.subs))
-	for old := range p.subs {
-		if old != c {
-			superseded = append(superseded, old)
+	//
+	// A reattach of a link-bound process from another connection gets found true
+	// with the firstSeq and lastSeq of the link (683cc6a9, measured on Linux). That
+	// the stream stays on the link, that this connection gets the replay and no live
+	// frame, and that the link stays open, is claustrum's own, not measured.
+	var superseded []*conn
+	attached := true
+	if p.takesFrom(c) {
+		superseded = make([]*conn, 0, len(p.subs))
+		for old := range p.subs {
+			if old != c {
+				superseded = append(superseded, old)
+			}
 		}
+		_, attached = p.subs[c]
+		p.subs = map[*conn]struct{}{c: {}}
 	}
-	_, attached := p.subs[c]
-	p.subs = map[*conn]struct{}{c: {}}
 	// On 90fca6e6 a reattach inside the exit drain answers running:false
 	// (measured). The process was already waited on, so it is not resumable.
 	running = p.running && !p.reaped
@@ -1708,9 +1788,13 @@ func (m *procManager) detachConn(c *conn) {
 		procs = append(procs, p)
 	}
 	m.mu.Unlock()
+	now := time.Now()
 	for _, p := range procs {
 		p.mu.Lock()
 		delete(p.subs, c)
+		if p.linked && p.link == c {
+			p.markDetachedLocked(now)
+		}
 		p.mu.Unlock()
 	}
 }

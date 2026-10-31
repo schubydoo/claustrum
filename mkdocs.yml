@@ -127,6 +127,7 @@ nav:
               - process.kill (signal): protocol/process-kill.md
               - process.killAndWait (stop and wait): protocol/process-killandwait.md
               - The farewell of a kill: protocol/process-farewell.md
+              - Link-bound processes: protocol/process-link-bound.md
               - process.reattach (catch up): protocol/process-reattach.md
           - plugins.prune (clean up plugins): protocol/plugins-prune.md
   - Run the daemon:

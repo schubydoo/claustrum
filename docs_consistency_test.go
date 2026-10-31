@@ -642,6 +642,7 @@ var docWordLimits = map[string]int{
 	"docs/protocol/plugins-prune.md":           1084, // task-203b: the page rewrite
 	"docs/protocol/process-kill.md":            931,  // TASK-203c: the page template
 	"docs/protocol/process-killandwait.md":     977,  // TASK-203c: the page template
+	"docs/protocol/process-link-bound.md":      740,
 	"docs/protocol/process-reattach.md":        1046, // TASK-229: attach, fresh and proof
 	"docs/protocol/process-spawn.md":           3474, // task-204: rewrite to the page template
 	"docs/protocol/process-stdin.md":           929,  // TASK-229: attach

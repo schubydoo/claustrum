@@ -21,6 +21,7 @@ An untagged rule on this page is measured against build `89cb6289`. The removal 
 | `env` | no | An object of string values, merged over the daemon environment. See [The environment of the child](#the-environment-of-the-child). |
 | `disableShellAgentSocket` | no | `true` skips the SSH agent hand-off for this spawn. `null` counts as `false`. |
 | `launcher` | no | An array of strings that names a managed launcher. See [The managed launcher](#the-managed-launcher). Absent or `null` means no launcher. |
+| `linkBound` | no | See [its page](process-link-bound.md). |
 | `wantPid` | no | `true` adds `pid` and `startTime` to the result. An addition of claustrum, see [CT-1](../DIVERGENCES.md#ct-1). Any other value counts as absent. |
 
 ## Response
@@ -46,6 +47,8 @@ A failure is a JSON-RPC error. There is no `errorCode` member.
 | `-32602` | `Command is required` | `command` is absent or empty. |
 | `-32004` | `the managed launcher cannot be used: <reason>` | The launcher checks refuse `launcher`. On Windows every `launcher` gets this, with the reason `a launcher cannot be applied on a Windows host`. |
 | `-32602` | `command must be an absolute path when a launcher is given` | A relative `command` with a `launcher`. |
+| `-32602` | `linkBound cannot be combined with pty or launcher` | With `launcher` (`683cc6a9`). |
+| `-32602` | `this id is in use, or was a terminal's or a link-bound process's: take a fresh one` | A [spent](process-link-bound.md#the-spent-id) `id` (`683cc6a9`). |
 | `-32603` | `chdir <cwd>: stat <cwd>: no such file or directory` | `cwd` does not exist. |
 | `-32603` | `chdir <cwd>: not a directory` | `cwd` is not a folder. |
 | `-32603` | `exec: "<name>": executable file not found in $PATH` | A bare name that the lookup does not find, and on Windows also a path with no extension. On Windows the text ends in `%PATH%`. |
@@ -54,7 +57,9 @@ A failure is a JSON-RPC error. There is no `errorCode` member.
 
 `<cwd>` is the value after the tilde expansion. `<command>` is the path of the start: the value of the request, or for a bare name the path that the lookup found on `PATH`.
 
-A failure starts no child and makes no record. It logs the failed-start line of [Lines of child processes](../DAEMON.md#lines-of-child-processes). An `Invalid params`, `Process ID is required` or `Command is required` error writes no line.
+### After a failure
+
+A failure starts no child and makes no record. It logs the failed-start line of [Lines of child processes](../DAEMON.md#lines-of-child-processes). An `Invalid params`, `Process ID is required`, `Command is required` or `linkBound cannot be combined with pty or launcher` error writes no line.
 
 ### The reason member (build `52d82f0a`)
 
@@ -78,7 +83,7 @@ One failure ends another process first: a session spawn whose command exists and
 ### What the child gets
 
 - **Streams.** The child's stdin, stdout and stderr are daemon pipes, which send what they read as stream frames to the spawning connection and store them.
-- **The life of the process.** A close of its connection does not end the process. A graceful shutdown (`-stop`, `server.shutdown`, `SIGTERM`, `SIGINT`, the self-exit) ends the processes of the table. With `-keep-children` it leaves them alive ([CT-2](../DIVERGENCES.md#ct-2)).
+- **The life of the process.** A close of its connection ends only a [link-bound](process-link-bound.md) process. A graceful shutdown ends the processes of the table, except with `-keep-children` ([CT-2](../DIVERGENCES.md#ct-2)).
 
 ### The environment of the child
 
@@ -125,8 +130,6 @@ claustrum's own: step 1 comes before step 2, step 5 before the launcher starts, 
 A started launcher logs the start line of [Lines of child processes](../DAEMON.md#lines-of-child-processes), which names the first element of `launcher` only. A refusal writes no `[LauncherHandler]` line.
 
 ## Platform notes
-
-A tag wins over the top line.
 
 === "Linux and macOS"
 
@@ -176,7 +179,7 @@ The trampoline adds no frame.
     If the trampoline does not start, the daemon logs `[process.Manager] exec trampoline failed for <id> (<error>); starting it directly — a successor daemon will not be able to reap it` and starts the command directly (measured on Linux). The frame then names the command, for example `fork/exec <command>: permission denied` for a `cwd` that the daemon cannot enter. From the code: if that direct start works, the reply is success, and the child gets `CLAUDE_SSH_RUN_DIR` and no `CLAUDE_SSH_CHILD`.
 
 ??? note "A later daemon start"
-    On Linux and macOS a daemon that holds the [run-dir lock](../DAEMON.md#run-dir-lock-daemonlock) records each child in its run dir. A later daemon start on the same socket reads the records of a daemon that is gone. It ends each child whose process still matches its record, with `SIGTERM` and then `SIGKILL`. [Child records and the reap](../DAEMON.md#child-records-and-the-reap-linux-and-macos) has the rules. Windows records no child. A record that cannot be written does not fail the spawn, and the child still gets both identity markers.
+    A later daemon start ends a child of a gone daemon that still matches its record, with `SIGTERM` and then `SIGKILL` ([Child records and the reap](../DAEMON.md#child-records-and-the-reap-linux-and-macos)). A record that cannot be written does not fail the spawn, and the child still gets both identity markers.
 
 ### The SSH agent hand-off (Linux and macOS)
 
@@ -196,7 +199,7 @@ The daemon advertises it as the feature `process.spawn.shellAgentSocket`. A chil
 A spawn with the `id` of a process that still runs succeeds and replaces its table entry. The first process gets no signal and keeps running. Then:
 
 - `process.kill`, `process.stdin` and `process.reattach` of that `id` reach the second process only.
-- `-stop` and `server.shutdown` end only the processes of the table, so the first process outlives the daemon, except on Windows with jobs on and no `-keep-children` (claustrum's own). On Linux and macOS its record stays, and the next start ends it.
+- `-stop` and `server.shutdown` end only the processes of the table, so the first process outlives the daemon, except on Windows with jobs on and no `-keep-children` (claustrum's own).
 - Each process keeps the connection that spawned it, under the same `processId`, and each counts its own `seq`. So a connection that sent both spawns gets two streams under one `processId`, with two `exit` frames (measured on Linux).
 - A `process.reattach` moves the stream of the second process and closes the connection that had it. A connection that gets the frames of the first process keeps getting them (measured on Linux).
 
@@ -243,4 +246,4 @@ A spawn that reaches the start of its child after the shutdown began gets no rep
 - [D20](../DIVERGENCES.md#d20): the 50 ms wait in the reap before the `SIGKILL` of a group whose leader reads as gone.
 - [D23](../DIVERGENCES.md#d23): on Windows the environment block of a child is in name order.
 
-claustrum lacks the terminal of the pinned `52d82f0a` and ignores its `pty` member. On Windows `c8e2f083` refuses `pty` with `-32602`, and claustrum runs the command (measured on Windows, [open items](../REFERENCE-BUILDS.md#52d82f0a28317830ccacea80f6f4aac1d7563353-2026-10-09-built)).
+claustrum lacks the terminal of the pinned `52d82f0a` and ignores its `pty` member without `linkBound`. On Windows `c8e2f083` refuses `pty` with `-32602`, and claustrum runs the command (measured on Windows, [open items](../REFERENCE-BUILDS.md#52d82f0a28317830ccacea80f6f4aac1d7563353-2026-10-09-built)).

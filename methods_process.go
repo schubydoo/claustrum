@@ -20,7 +20,7 @@ func (s *server) handleProcess(c *conn, req *request) response {
 	case "process.spawn":
 		return s.processSpawn(c, req)
 	case "process.stdin":
-		return s.processStdin(req)
+		return s.processStdin(c, req)
 	case "process.kill":
 		return s.processKill(req)
 	case "process.killAndWait":
@@ -51,6 +51,13 @@ type spawnParams struct {
 	// non-string element fails the decode (-32602 Invalid params). A null element
 	// decodes to an empty arg (all measured).
 	Launcher *[]string `json:"launcher"`
+	// LinkBound binds the process to the connection of the spawn (683cc6a9, see
+	// linkbound.go). A pointer, so absent or null is a plain spawn. A value that is
+	// no object, or an unattendedSeconds that is no integer, gets Invalid params
+	// (claustrum's own, not measured: before, the member was ignored). Pty is read
+	// only for the refusal below, and a value other than true counts as absent.
+	LinkBound *linkBoundParams `json:"linkBound"`
+	Pty       jsonTrueSwitch   `json:"pty"`
 }
 
 func (s *server) processSpawn(c *conn, req *request) response {
@@ -64,7 +71,20 @@ func (s *server) processSpawn(c *conn, req *request) response {
 	if p.Command == "" {
 		return errResult(req.ID, codeInvalidParam, "Command is required")
 	}
-	mp, err := s.procs.spawnVia(c, p.ID, p.Command, p.Args, p.Cwd, p.Env, p.DisableShellAgentSocket, p.Launcher)
+	// 683cc6a9 refuses linkBound with a launcher by this text and with "pty":true by
+	// plain Invalid params (measured on Linux). The order of the two tests and their
+	// place after the id and command tests are claustrum's own, not measured.
+	var linkTTL time.Duration
+	if p.LinkBound != nil {
+		if p.Launcher != nil {
+			return errResultData(req.ID, codeInvalidParam, "linkBound cannot be combined with pty or launcher", spawnReason{"other"})
+		}
+		if p.Pty {
+			return errResult(req.ID, codeInvalidParam, "Invalid params")
+		}
+		linkTTL = unattendedTTL(p.LinkBound.UnattendedSeconds)
+	}
+	mp, err := s.procs.spawnVia(c, p.ID, p.Command, p.Args, p.Cwd, p.Env, p.DisableShellAgentSocket, p.Launcher, linkTTL)
 	if errors.Is(err, errStartsStopped) {
 		// No frame. The teardown closes the connection (round task003-01).
 		return response{noFrame: true}
@@ -102,7 +122,7 @@ type stdinParams struct {
 	Attach *uint64 `json:"attach"`
 }
 
-func (s *server) processStdin(req *request) response {
+func (s *server) processStdin(c *conn, req *request) response {
 	var p stdinParams
 	if bad := bindParams(req, &p); bad != nil {
 		return *bad
@@ -124,8 +144,10 @@ func (s *server) processStdin(req *request) response {
 	// here, and the type test of the decode comes before it. The order against the
 	// offset and running tests needs no choice, because this reply writes nothing
 	// and ends the request.
+	// A link-bound process takes stdin from its link only. Another connection gets
+	// "Process not found" (683cc6a9, measured on Linux).
 	mp := s.procs.get(p.ID)
-	if mp == nil || p.Attach != nil {
+	if mp == nil || p.Attach != nil || !mp.takesFrom(c) {
 		return errResult(req.ID, codeInvalidParam, "Process not found")
 	}
 	// isLive, not isRunning: 90fca6e6 refuses a write inside the exit drain, after

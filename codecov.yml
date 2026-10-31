@@ -289,6 +289,8 @@ component_management:
         # 52d82f0a farewell of process.kill and process.killAndWait: the member rules,
         # the stdin write and the grace before the signal.
         - farewell.go
+        # 683cc6a9 link-bound processes: the link, the unattended end and the spent ids.
+        - linkbound.go
         # 4534d86 session supersede: the argv rule that keys a spawn to a CLI session, the
         # per-key spawn lock, and the eviction of the prior same-session process.
         - sessionsupersede.go
