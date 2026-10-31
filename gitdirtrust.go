@@ -297,15 +297,17 @@ func gitDirUnsearchable(g string) bool {
 	return errors.Is(err, fs.ErrPermission)
 }
 
-// readGitDirTrust is requestGitDirTrust for git.info, git.status and
-// git.list_branches. A git directory that the daemon cannot search counts as no
-// repository there first, before any trust refusal. For a daemon GIT_DIR that
-// names a folder of mode 0600, git.info and git.status answer so (measured on
-// Linux). A `.git` file that names such a folder, git.list_branches, macOS and
-// Windows are claustrum's own, not measured. With a daemon GIT_COMMON_DIR the
-// verdict stays, because no git call could carry the pin of noRepoPin then
-// (noRepoPinned). The create and the remove keep the refusal of the trust check
-// (claustrum's own).
+// readGitDirTrust is requestGitDirTrust for git.info, git.status,
+// git.list_branches and git.worktree_create. A git directory that the daemon
+// cannot search counts as no repository there first, before any trust refusal.
+// For a daemon GIT_DIR that names a folder of mode 0600, git.info and git.status
+// answer so (measured on Linux). For a `.git` file that names such a folder, all
+// four answer so (683cc6a9, measured on Linux). The create answers not_a_repo
+// there, with and without worktreeRoot. A daemon GIT_DIR on git.list_branches
+// and the create, a linked-worktree entry, macOS and Windows are claustrum's own,
+// not measured. With a daemon GIT_COMMON_DIR the verdict stays, because no git
+// call could carry the pin of noRepoPin then (noRepoPinned). The remove keeps the
+// refusal of the trust check and deletes nothing (683cc6a9, measured on Linux).
 func readGitDirTrust(dir string, readMethod bool) gitDirTrust {
 	t := requestGitDirTrust(dir, readMethod)
 	if t.unsearchable && !daemonCommonDirSet() {

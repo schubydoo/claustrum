@@ -195,11 +195,13 @@ are macOS and Windows).
 
 ### A git directory that the daemon cannot search
 
-`git.info`, `git.status` and `git.list_branches` first answer "no repository" for a G that the
-daemon cannot search. For a daemon `GIT_DIR` that names a folder of mode 0600, `git.info` and
-`git.status` answer so (measured on Linux). A `.git` file that names such a G, `git.list_branches`,
-macOS and Windows are claustrum's own, not measured. The create and the remove refuse it
-(claustrum's own).
+`git.info`, `git.status`, `git.list_branches` and `git.worktree_create` first answer "no
+repository" for a G that the daemon cannot search, unless the daemon sets `GIT_COMMON_DIR`. For a
+daemon `GIT_DIR` that names a folder of mode 0600, `git.info` and `git.status` answer so (measured
+on Linux). For a `.git` file that names such a G, all four answer so (`683cc6a9`, measured on
+Linux). The create answers `not_a_repo` there, with and without `worktreeRoot`. The remove refuses
+it and deletes nothing (`683cc6a9`, measured on Linux). A daemon `GIT_DIR` on `git.list_branches`
+and the create, a linked-worktree entry, macOS and Windows are claustrum's own, not measured.
 
 ### Frames
 
