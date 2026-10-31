@@ -270,6 +270,8 @@ component_management:
         - realpath.go
         - realpath_unix.go
         - realpath_windows.go
+        - filesreadreal_linux.go
+        - filesreadreal_other.go
     - component_id: process
       name: process supervisor
       paths:

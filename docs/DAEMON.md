@@ -400,15 +400,13 @@ The launcher is the `-serve` process that the operator starts. It re-execs its o
 binary as the detached daemon and waits for it. On Linux a launcher that cannot
 read `/proc/self/exe` prints `claustrum: locate self: <error>` and exits `1` before
 any write. macOS and Windows re-exec `os.Args[0]` instead (not measured). The
-launcher creates a missing socket folder with mode `0700`. It sends the stdout and
-stderr of the daemon to the [daemon log](#daemon-log-remote-serverlog).
+launcher creates a missing socket folder with mode `0700`.
 
 ### The launcher wait
 
-The launcher connects to the socket path every 50 ms, for 12 s at most. It closes each connection at once, so the log of the answering daemon holds a `New connection from: @` / `Connection closed: @` pair. Claustrum logs neither line for it ([Lines of connections](#lines-of-connections)). A socket file that refuses
-the connect does not end the wait. A killed daemon leaves such a file. A folder
-with content at the path does not end the wait either. The daemon cannot remove
-it, so it never binds (measured on Linux and Windows). An empty folder there is
+The launcher connects to the socket path every 50 ms, for 12 s at most. It closes each at once, so the daemon logs a `New connection from: @` / `Connection closed: @` pair. Claustrum logs neither line for it ([Lines of connections](#lines-of-connections)). A socket file that refuses
+the connect does not end the wait. A folder
+with content at the path does not end the wait either. The daemon does not remove it, so it never binds (measured on Linux and Windows). An empty folder there is
 removed as an old socket file is (from the code).
 
 - The predecessor is the daemon that answered on the path before the start. On
@@ -416,7 +414,7 @@ removed as an old socket file is (from the code).
   with exit `0`.
 - On Windows the first connect that works ends the wait, also one that the
   predecessor answers.
-- At 12 s the launcher gives up with exit `1` and prints one of two lines to
+- At 12 s the launcher exits `1` and prints one of two lines to
   stderr. A connect that reached the predecessor gives
   `claustrum: daemon did not take over <socket> (predecessor still owns it)`. Any
   other wait gives `claustrum: timeout waiting for daemon to accept on <socket>`.
@@ -504,9 +502,8 @@ and the startup lines against `f6010b97` and `89cb6289`. A rule that names one
 system was measured on that system, and an unmarked rule on Linux and macOS.
 
 At each start the launcher renames an existing `remote-server.log` in the
-socket's directory to `remote-server.log.old`. Then it creates a fresh log there
-with mode `0600`. It sends the stdout and stderr of the daemonized child into that file, so its own streams stay empty, except for the launcher's own failures. Those are under [Daemon startup](#daemon-startup-serve) and
-[The token source](protocol/flags.md#the-token-source). claustrum does not remove the log at shutdown (from the code), unlike the socket and `daemon.token`. The fixed name and location are the deployment contract, and are not configurable.
+socket's directory to `remote-server.log.old` and creates a fresh one
+with mode `0600`. The daemonized child writes its stdout and stderr there. claustrum keeps the log at shutdown (from the code), unlike the socket and `daemon.token`. The name and location are fixed, not configurable.
 
 claustrum writes a level tag before each line of its logger. The banner and a
 start error that begins `claustrum:` have none. The reference writes no tag. `CLAUSTRUM_LOG_LEVEL=warn` drops the INFO lines.
@@ -522,9 +519,7 @@ Claustrum remote server listening on /run/user/1000/claude/rpc.sock (pid 4711, i
 2026/07/31 00:17:30 INFO  [daemon] host cleaning off: socket path "/run/user/1000/claude/rpc.sock" is not <root>/run/<id>/rpc.sock
 ```
 
-A failed raise writes no line (claustrum's own). The banner ends
-with the daemon's pid and the `instanceId` of
-`server.capabilities`. The name `Claustrum` is claustrum's own, and the
+A failed raise writes no line (claustrum's own). The name `Claustrum` is claustrum's own, and the
 reference prints `Claude` there.
 
 A start with `CLAUDE_SSH_PEER_CHECK=1` writes one more line before the banner.
@@ -545,6 +540,13 @@ measured:
 
 A Linux kernel that names no namespace gets that line too (claustrum's own, not
 measured).
+
+At start on Linux, the daemon logs one of these lines once, before the first connection line (measured on Linux, `683cc6a9`). The level tag, and the place and count of line two, are claustrum's own, not measured:
+
+```
+[FilesHandler] files.realpath: using the OS's path for the open handle
+[FilesHandler] files.realpath: cannot read /proc/self/fd or mnt_id in /proc/self/fdinfo; falling back to filepath.EvalSymlinks, checked against the opened file; files.read will not return real
+```
 
 If the fresh create fails, the launcher judges the entry at the path without
 following it, and it opens no FIFO:

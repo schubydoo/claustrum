@@ -1,0 +1,27 @@
+[
+  {
+    "jsonrpc": "2.0",
+    "id": 1,
+    "result": {
+      "content": "hello\n",
+      "exists": true,
+      "real": "<DIR>/d/real/f"
+    }
+  },
+  {
+    "jsonrpc": "2.0",
+    "id": 2,
+    "result": {
+      "content": "hello\n",
+      "exists": true
+    }
+  },
+  {
+    "jsonrpc": "2.0",
+    "id": 3,
+    "result": {
+      "content": "hello\n",
+      "exists": true
+    }
+  }
+]

@@ -56,6 +56,7 @@ type listResult struct {
 type readResult struct {
 	Content string `json:"content"`
 	Exists  bool   `json:"exists"`
+	Real    string `json:"real,omitempty"`
 }
 
 // realpathResult is the files.realpath result. Real and WouldBe are never both
