@@ -196,7 +196,7 @@ func TestHandOffHungSocketEndsTheHandOff(t *testing.T) {
 	if got := f.socket(); got != "" || f.probes != 1 {
 		t.Fatalf("after a hang: got %q, probes %d; want no further probe", got, f.probes)
 	}
-	want := "WARN  [shellenv] A connection attempt to SSH_AUTH_SOCK=/tmp/hung.sock never returned (a hung filesystem?); " +
+	want := "WARN  [shellenv] A check of SSH_AUTH_SOCK=/tmp/hung.sock never returned (a hung filesystem?); " +
 		"not using it or asking the login shell again for this daemon's lifetime\n"
 	if logs.String() != want {
 		t.Errorf("log = %q\nwant  %q", logs.String(), want)

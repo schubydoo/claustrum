@@ -3,7 +3,9 @@ package main
 import (
 	"context"
 	"errors"
+	"os"
 	"os/exec"
+	"path/filepath"
 	"time"
 )
 
@@ -30,27 +32,55 @@ var (
 	// that is fixed before the call, not after it. The anchor at the end of the
 	// read-tree call and the 1.1 s are claustrum's own, not measured.
 	settleWait = 1100 * time.Millisecond
+	// settleWaitWhole takes the place of settleWait when the Lstat of `.git` in the
+	// leaf fails or its mtime has no nanoseconds (settleWaitFor). The rule and the
+	// 2.2 s are claustrum's own, not measured.
+	settleWaitWhole = 2200 * time.Millisecond
 )
 
+// settleWaitFor is the wait for the new worktree leaf: settleWait when an Lstat of
+// `<leaf>/.git` succeeds and its mtime has a nanosecond part other than 0, else
+// settleWaitWhole. The Lstat follows no link at `.git` (claustrum's own, not
+// measured). A variable, so a test can set the wait of a create.
+var settleWaitFor = func(leaf string) time.Duration {
+	fi, err := os.Lstat(filepath.Join(leaf, ".git"))
+	if err != nil || fi.ModTime().Nanosecond() == 0 {
+		return settleWaitWhole
+	}
+	return settleWait
+}
+
+// settleSleep waits until the time until, or until ctx ends, which comes first
+// (claustrum's own, not measured).
+func settleSleep(ctx context.Context, until time.Time) {
+	t := time.NewTimer(time.Until(until))
+	defer t.Stop()
+	select {
+	case <-ctx.Done():
+	case <-t.C:
+	}
+}
+
 // settleLimit is the time limit of the settle call under ctx, the deadline of the
-// caller. ok is false when less than settleMargin is left: no call runs then. With no
-// timeoutMs the limit is that of the other calls of the request (s.limit),
-// so the wide limit holds while a "shadowDirOff":true request runs. A nil s gives
-// gitCallLimit (claustrum's own, not measured).
+// caller. ok is false when less than settleMargin is left: no call runs then. The
+// default limit is that of the other calls of the request (s.limit), so the wide
+// limit holds while a "shadowDirOff":true request runs. A nil s gives gitCallLimit.
+// With timeoutMs the limit is the lower of the default and the time left less the
+// margin, and at least settleMinLimit (claustrum's own, not measured).
 func settleLimit(ctx context.Context, s *gitStop) (limit time.Duration, ok bool) {
+	def := gitCallLimit
+	if s != nil {
+		def, _ = s.limit(callLimit)
+	}
 	deadline, set := ctx.Deadline()
 	if !set {
-		if s == nil {
-			return gitCallLimit, true
-		}
-		limit, _ := s.limit(callLimit)
-		return limit, true
+		return def, true
 	}
 	left := time.Until(deadline)
 	if left < settleMargin {
 		return 0, false
 	}
-	return max(left-settleMargin, settleMinLimit), true
+	return max(min(def, left-settleMargin), settleMinLimit), true
 }
 
 // settleCheckout runs the settle step after a good checkout, before the index goes
@@ -100,5 +130,5 @@ func settleCheckout(callerCtx context.Context, u gitUse, leaf, workTree, gitDir,
 	if ctx.Err() != nil || !errors.As(err, &exit) || exit.ExitCode() != 1 {
 		return
 	}
-	time.Sleep(time.Until(readEnd.Add(settleWait)))
+	settleSleep(callerCtx, readEnd.Add(settleWaitFor(leaf)))
 }

@@ -11,8 +11,8 @@ import (
 
 // A git directory of 4086 bytes, so `commondir` in it is a path of 4096 bytes and its Lstat
 // fails with "file name too long", is refused with the hooks prefix and the could-not-be-
-// examined text (build 683cc6a9, measured on Linux). Mutation: remove the ENAMETOOLONG
-// branch in judgeStrayCommondir.
+// examined text (build 683cc6a9, measured on Linux). Mutation: return false from
+// unexaminedGitDir.
 func TestStrayCommondirNameTooLong(t *testing.T) {
 	base := t.TempDir()
 	deep := base

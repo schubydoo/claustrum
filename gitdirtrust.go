@@ -9,7 +9,6 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
-	"syscall"
 )
 
 // The git-directory trust check that every git.* method applies to the directory it
@@ -70,6 +69,10 @@ type gitDirTrust struct {
 	// method. The rows that measure it are removals (see noRepoPin). It is nil when no
 	// row gives a value.
 	noRepoEnv []string
+	// unsearchable is true when the walk found the git directory and the daemon
+	// cannot search it (gitDirUnsearchable). readGitDirTrust answers "no repository"
+	// then.
+	unsearchable bool
 	// worktreeEntry is the git directory of a trusted linked worktree: the entry
 	// under <repository git directory>/worktrees. It is empty for every other git
 	// directory. The config read tests the config.worktree file there
@@ -233,6 +236,11 @@ func commonDirPinEnv(dir string) []string {
 		return nil
 	}
 	t := gitDirTrustFor(dir)
+	// A git directory that the daemon cannot search gets the pin of "no
+	// repository", as readGitDirTrust answers there (claustrum's own, not measured).
+	if t.unsearchable {
+		return noRepoPin()
+	}
 	if t.verdict == gitDirTrusted && t.pinCommonDir != "" {
 		return []string{"GIT_COMMON_DIR=" + t.pinCommonDir}
 	}
@@ -265,13 +273,45 @@ func gitDirTrustFor(dir string) gitDirTrust {
 		if !filepath.IsAbs(gd) {
 			gd = filepath.Join(start, gd)
 		}
-		return judgeGitDir(gd, true)
+		t := judgeGitDir(gd, true)
+		t.unsearchable = gitDirUnsearchable(gd)
+		return t
 	}
 	g, _, ok := findGitDir(start)
 	if !ok {
 		return gitDirTrust{verdict: gitDirNoRepo, noRepoEnv: noRepoPin()}
 	}
-	return judgeGitDir(g, false)
+	t := judgeGitDir(g, false)
+	t.unsearchable = gitDirUnsearchable(g)
+	return t
+}
+
+// gitDirUnsearchable reports whether g is a folder that the daemon has no
+// permission to search. The test is an Lstat of `<g>/.`, which needs that
+// permission.
+func gitDirUnsearchable(g string) bool {
+	if fi, err := os.Stat(g); err != nil || !fi.IsDir() {
+		return false
+	}
+	_, err := os.Lstat(g + string(filepath.Separator) + ".")
+	return errors.Is(err, fs.ErrPermission)
+}
+
+// readGitDirTrust is requestGitDirTrust for git.info, git.status and
+// git.list_branches. A git directory that the daemon cannot search counts as no
+// repository there first, before any trust refusal. For a daemon GIT_DIR that
+// names a folder of mode 0600, git.info and git.status answer so (measured on
+// Linux). A `.git` file that names such a folder, git.list_branches, macOS and
+// Windows are claustrum's own, not measured. With a daemon GIT_COMMON_DIR the
+// verdict stays, because no git call could carry the pin of noRepoPin then
+// (noRepoPinned). The create and the remove keep the refusal of the trust check
+// (claustrum's own).
+func readGitDirTrust(dir string, readMethod bool) gitDirTrust {
+	t := requestGitDirTrust(dir, readMethod)
+	if t.unsearchable && !daemonCommonDirSet() {
+		return gitDirTrust{verdict: gitDirNoRepo, noRepoEnv: noRepoPin()}
+	}
+	return t
 }
 
 // resolveWalkLinks is filepath.EvalSymlinks behind a seam, so a test on any system can
@@ -502,10 +542,20 @@ func judgeGitDir(g string, fromEnv bool) gitDirTrust {
 		return gitDirTrust{pinCommonDir: g}
 	}
 	repo := filepath.Dir(filepath.Dir(g))
-	content, reason, present := readCommondir(g)
-	if !present {
+	_, err = os.Lstat(cd)
+	if t, refused := unexaminedGitDir(err); refused {
+		return t
+	}
+	if err != nil {
+		// No commondir: a failed Stat of the entry other than "does not exist" gets
+		// the could-not-be-examined text too (claustrum's own, not measured).
+		_, err := os.Stat(g)
+		if t, refused := unexaminedGitDir(err); refused {
+			return t
+		}
 		return refuseMissingCommondir(g)
 	}
+	content, reason, _, _ := readCommondirAt(g)
 	if reason != "" {
 		return refuseUnreadableCommondir(cd, reason)
 	}
@@ -559,6 +609,10 @@ func judgeDamagedRepository(g string) (gitDirTrust, bool) {
 	// whose `objects` or `refs` is a file, gets the missing-commondir refusal, as
 	// the existence test gave before (claustrum's own, not measured).
 	if _, err := os.Lstat(filepath.Join(g, "commondir")); errors.Is(err, fs.ErrNotExist) {
+		_, err := os.Stat(g)
+		if t, refused := unexaminedGitDir(err); refused {
+			return t, true
+		}
 		if partsExist(repo) && headLooksValid(filepath.Join(repo, "HEAD")) {
 			return refuseMissingCommondir(g), true
 		}
@@ -613,12 +667,8 @@ func isWorktreeEntry(g string) bool {
 func judgeStrayCommondir(g, cd string) (gitDirTrust, bool) {
 	if _, err := os.Lstat(cd); errors.Is(err, fs.ErrNotExist) {
 		return gitDirTrust{}, false
-	} else if errors.Is(err, syscall.ENAMETOOLONG) {
-		// Measured on Linux with a git directory of 4086 and 4087 bytes. Any other
-		// failed Lstat is claustrum's own, not measured: it keeps the read below.
-		return gitDirTrust{verdict: gitDirRefused, refusal: hooksPinPrefix +
-			"this repository's git directory could not be examined (" + syscall.ENAMETOOLONG.Error() +
-			"); if .git is a file, check the path written in it"}, true
+	} else if t, refused := unexaminedGitDir(err); refused {
+		return t, true
 	}
 	content, reason, openErr, osErr := readCommondirAt(g)
 	switch {
@@ -648,21 +698,33 @@ func judgeStrayCommondir(g, cd string) (gitDirTrust, bool) {
 	return gitDirTrust{}, false
 }
 
-// readCommondir reads <entry>/commondir. present is false when there is no commondir
-// entry at all. A non-empty reason means the file is not a small plain file. It must be
-// a regular file of at most commondirMaxBytes. A symlink is followed only when the link
-// is relative and stays inside the entry directory.
-func readCommondir(entry string) (content, reason string, present bool) {
-	if _, err := os.Lstat(filepath.Join(entry, "commondir")); errors.Is(err, fs.ErrNotExist) {
-		return "", "", false
+// unexaminedGitDir is the refusal for err, a failed Lstat of <G>/commondir, or a failed
+// Stat of an entry-shaped G whose commondir is missing. It is false for no error and
+// for "does not exist". The text carries the OS error without its operation and path.
+// For "file name too long" of the Lstat it is that of 683cc6a9 (measured on Linux with
+// a G of 4086 and 4087 bytes). Each other error, the Stat, macOS and Windows are
+// claustrum's own, not measured. On git.info, git.status and git.list_branches a G
+// that the walk found and the daemon cannot search is no repository first
+// (readGitDirTrust).
+func unexaminedGitDir(err error) (gitDirTrust, bool) {
+	if err == nil || errors.Is(err, fs.ErrNotExist) {
+		return gitDirTrust{}, false
 	}
-	content, reason, _, _ = readCommondirAt(entry)
-	return content, reason, true
+	text := err.Error()
+	var pe *fs.PathError
+	if errors.As(err, &pe) {
+		text = pe.Err.Error()
+	}
+	return gitDirTrust{verdict: gitDirRefused, refusal: hooksPinPrefix +
+		"this repository's git directory could not be examined (" + text +
+		"); if .git is a file, check the path written in it"}, true
 }
 
-// readCommondirAt is readCommondir without the first test. openErr is the error of
-// the open of the file, so a caller can tell a dangling symlink apart. osErr is the OS
-// error behind a reason, or nil when the reason is not an OS error.
+// readCommondirAt reads <dir>/commondir. A non-empty reason means the file is not a
+// small plain file. It must be a regular file of at most commondirMaxBytes. A symlink
+// is followed only when the link is relative and stays inside dir. openErr is the
+// error of the open of the file, so a caller can tell a dangling symlink apart. osErr
+// is the OS error behind a reason, or nil when the reason is not an OS error.
 func readCommondirAt(dir string) (content, reason string, openErr, osErr error) {
 	root, err := os.OpenRoot(dir)
 	if err != nil {

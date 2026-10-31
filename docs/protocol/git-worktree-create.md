@@ -171,6 +171,7 @@ In the state `shadow` a good checkout gets one more call: `git diff-files --quie
 
 - After exit 1 the reply waits until 1.1 s after the checkout (claustrum's own). `683cc6a9` answers 0.39 s to 0.98 s after the call.
 - With `timeoutMs` 10000 or less no call runs, and at 11500 the call stops about 1 s after its start and the create still succeeds (measured on Linux). claustrum's rule is: the call runs only with 10 s or more left, it stops 10 s before the deadline after 1 s at least, a stop changes nothing, and with no `timeoutMs` the limit is that of the other calls of the request (claustrum's own).
+- The 1.1 s become 2.2 s if the Lstat of `.git` in the new worktree fails or its mtime has no nanoseconds. The wait ends with the request, and the call limit is at most that of the other calls (claustrum's own, not measured).
 - A git without `--attr-source` gets no call (measured on Linux).
 
 ## The copy of ignored files
