@@ -204,8 +204,9 @@ const sshOffEntry = "GIT_SSH_COMMAND=false"
 
 // withSSHOff is profile with sshOffEntry at its end, when off is true and the
 // profile holds GIT_NO_LAZY_FETCH=1 and GIT_ASKPASS=. Else it is profile.
-// be1c1ca5 puts that entry after GIT_ASKPASS= and before the folder variables
-// (measured on Linux). On Windows it ends the environment of such a call there
+// be1c1ca5 puts that entry after GIT_ASKPASS= (measured on Linux). A hardened
+// call and a listing have it before the folder variables, and the branch step
+// at its end. On Windows it ends the environment of such a call there
 // (measured on Windows), and Go sorts the block of a child by name (D23). The
 // calls with no GIT_ASKPASS= keep the daemon's own GIT_SSH_COMMAND (measured
 // on Linux). macOS is not measured: it follows Linux.

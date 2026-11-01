@@ -628,7 +628,7 @@ var docWordLimits = map[string]int{
 	"docs/protocol/files-validate.md":          365,
 	"docs/protocol/flags.md":                   2639, // the prune after a good install. 2633: TASK-202: moved from PROTOCOL.md
 	"docs/protocol/git-info.md":                1850, // task-203b: the page rewrite
-	"docs/protocol/git-rules-calls.md":         5278, // TASK-292: the trace and ssh entries. 5145: TASK-291: the core.hooksPath value. 5121: TASK-202: moved from PROTOCOL.md
+	"docs/protocol/git-rules-calls.md":         5276, // TASK-292: the trace and ssh entries. 5145: TASK-291: the core.hooksPath value. 5121: TASK-202: moved from PROTOCOL.md
 	"docs/protocol/git-rules-config.md":        2884, // TASK-202: moved from PROTOCOL.md
 	"docs/protocol/git-rules-settings-copy.md": 3300, // TASK-260: the third run of the call about the repository. TASK-245: the folder .probe, new rules
 	"docs/protocol/git-rules-trust.md":         4637, // TASK-313: the not_a_repo answer of the create. 4601: the unsearchable git directory and the could-not-be-examined text. 4493: TASK-202: moved from PROTOCOL.md

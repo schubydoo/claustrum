@@ -170,8 +170,7 @@ The repository calls are the configuration listings, the hardened calls,
   Windows, macOS not measured). The calls of the start test get them too (measured
   on Linux, the count per call not measured).
 - A call with `GIT_NO_LAZY_FETCH=1` and `GIT_ASKPASS=` gets `GIT_SSH_COMMAND=false`
-  in place of the daemon's value. On Linux it follows the profile, before the folder
-  variables. A call with no `GIT_ASKPASS=` keeps the daemon's value (`be1c1ca5`,
+  in place of the daemon's value. On Linux it comes after `GIT_ASKPASS=`. A call with no `GIT_ASKPASS=` keeps the daemon's value (`be1c1ca5`,
   measured on Linux and Windows, macOS not measured). With `"shadowDirOff":true` a
   call of `git.worktree_create` or `git.worktree_remove` that names no copy keeps
   the daemon's value (measured on Linux). The state `fallback-git` is from the code.
