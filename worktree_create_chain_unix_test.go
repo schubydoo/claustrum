@@ -729,7 +729,7 @@ func TestWorktreeCreateInRepoClaudeLoop(t *testing.T) {
 	wp := filepath.Join(claude, "worktrees", "w1")
 	raw := dispatchRaw(t, newTestServer(t), rpcLine(t, "git.worktree_create",
 		map[string]any{"baseRepo": repo, "branchName": "b", "worktreePath": wp}))
-	text := "refusing to create worktree: " + claude + " is a symbolic link; a symlinked .claude or " +
+	text := "refusing to create worktree: `" + claude + "` is a symbolic link; a symlinked .claude or " +
 		".claude/worktrees inside the repository is not supported for SSH sessions, because a " +
 		"repository can plant such a link and a planted one cannot reliably be told apart from " +
 		"your own. Replace it with a real directory (or delete it and it will be recreated)"

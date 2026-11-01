@@ -747,7 +747,9 @@ func readCommondirAt(dir string) (content, reason string, openErr, osErr error) 
 	if !fi.Mode().IsRegular() {
 		return "", "commondir is not a regular file", nil, nil
 	}
-	tooLarge := fmt.Sprintf("commondir is larger than %d bytes", commondirMaxBytes)
+	// be1c1ca5 names the file in quotes and the bound as 1 MiB, in a worktree entry
+	// and in a stray commondir. 1048576 bytes passes (measured on Linux).
+	const tooLarge = `"commondir" is larger than 1 MiB`
 	if fi.Size() > commondirMaxBytes {
 		return "", tooLarge, nil, nil
 	}

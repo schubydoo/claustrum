@@ -13,6 +13,14 @@ import (
 // D1K of round tier3-05, Windows VM, 3 runs each).
 const staleStepAfterGitDir = true
 
+// unlockQuote quotes the path of a `git worktree unlock` hint. Windows uses double
+// quotes (be1c1ca5, measured on Windows).
+const unlockQuote = `"`
+
+// genericHintChars are the characters of a leaf path that give the unlock hint with
+// no path: `$` (measured on Windows) and `'` (not measured on Windows).
+const genericHintChars = "$'"
+
 // dropStaleWorktreeRegistration removes the repo's worktree registration for
 // worktreePath when that path is registered but missing on disk — a "prunable"
 // registration left when a session folder is deleted out from under git. Without

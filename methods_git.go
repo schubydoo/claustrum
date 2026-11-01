@@ -1544,6 +1544,21 @@ func gitWorktreeCreateLocked(req *request, p *gitParams, repo string, arrival ti
 			entriesBefore, entriesListed = registrationNames(entriesDir)
 		}
 	}
+	// A leaf that an entry of the registrations folder still names is refused
+	// before the add, with the rollback of a failed add. No git call makes a
+	// branch then. be1c1ca5 answers so, measured on Linux, macOS and Windows.
+	// The stale step has run before this test. A daemon GIT_COMMON_DIR makes git
+	// register in another folder, so the test does not run then, and git decides
+	// as before (claustrum's own, not measured).
+	if !daemonCommonDirSet() {
+		regDir := verifyGitDir(repo)
+		if gitAnswered {
+			regDir = filepath.Dir(gitDirRegistryDir(gitDir))
+		}
+		if msg := registeredLeafRefusal(regDir, p.WorktreePath); msg != "" {
+			return refuseAdd(msg)
+		}
+	}
 	listEntriesBefore()
 	addStderr, addErr := worktreeAdd(baseCtx, req.use, repo, p.WorktreePath, checkpoint, offMember, addArgs...)
 	added = addErr == nil
@@ -2550,7 +2565,7 @@ func gitWorktreeRemoveLocked(req *request, p *gitParams, repo string) response {
 		named = gitDir
 	}
 	if msg := baseRepoLockRefusal(repo, commonDir, named, target.path, p.WorktreePath, sp,
-		lockedWorktreeRefusal(p.WorktreePath)); msg != "" {
+		lockedWorktreeRefusal); msg != "" {
 		return refuse(msg)
 	}
 	entry := ""
@@ -2611,12 +2626,12 @@ func gitWorktreeRemoveLocked(req *request, p *gitParams, repo string) response {
 			return refuse(unreadableRepoLockCheckRefusal(p.WorktreePath, repo))
 		}
 		probe.pairIfWorktreesDir(commonDir)
-		locked, readable, _ := worktreeLockedByPath(commonDir, sp)
+		lock, readable, _ := worktreeLockedByPath(commonDir, sp)
 		if !readable {
 			return refuse(lockCheckRefusal(p.WorktreePath))
 		}
-		if locked {
-			return refuse(lockedWorktreeRefusal(p.WorktreePath))
+		if lock != notLocked {
+			return refuse(lockedWorktreeRefusal(p.WorktreePath, lock))
 		}
 		lockChecked = true
 		if target.parent.Remove(target.leaf) == nil {
@@ -2646,17 +2661,17 @@ func gitWorktreeRemoveLocked(req *request, p *gitParams, repo string) response {
 	// any kind, a dangling symbolic link included (row L04). Without a verified entry
 	// every registration that names the worktree is checked (rows R05 and L02).
 	if entry != "" {
-		if verifiedEntryLocked(commonDir, entry) {
-			return refuse(lockedWorktreeRefusal(p.WorktreePath))
+		if lock := verifiedEntryLocked(commonDir, entry); lock != notLocked {
+			return refuse(lockedWorktreeRefusal(p.WorktreePath, lock))
 		}
 	} else if !lockChecked {
 		probe.pairIfWorktreesDir(commonDir)
-		locked, readable, n := worktreeLockedByPath(commonDir, sp)
+		lock, readable, n := worktreeLockedByPath(commonDir, sp)
 		if !readable {
 			return refuse(lockCheckRefusal(p.WorktreePath))
 		}
-		if locked {
-			return refuse(lockedWorktreeRefusal(p.WorktreePath))
+		if lock != notLocked {
+			return refuse(lockedWorktreeRefusal(p.WorktreePath, lock))
 		}
 		matches = n
 	}
@@ -2827,12 +2842,10 @@ func removeGoneWorktree(req *request, p *gitParams, repo, path string) response 
 			}
 		}
 		sp := newWorktreePathSet(path, p.WorktreePath, underBase)
-		goneLocked := "refusing to remove worktree: " + p.WorktreePath + " is gone but its " +
-			"registration is locked (git worktree lock); unlock it to remove the registration and branch"
 		// D22: a locked entry in the `.git` folder of baseRepo is refused too, with and
 		// without worktreeRoot. 89cb6289 answers success there and deletes nothing (row
 		// p6f on Linux, macOS and Windows VMs, row q4 with worktreeRoot on Linux).
-		if msg := baseRepoLockRefusal(repo, commonDir, "", path, p.WorktreePath, sp, goneLocked); msg != "" {
+		if msg := baseRepoLockRefusal(repo, commonDir, "", path, p.WorktreePath, sp, goneLockedWorktreeRefusal); msg != "" {
 			return refuse(msg)
 		}
 		// A worktrees directory that cannot be read does not stop a gone remove. The
@@ -2842,9 +2855,9 @@ func removeGoneWorktree(req *request, p *gitParams, repo, path string) response 
 		// (openRegistrationsFolder), and the remove goes on. With a locked entry
 		// behind the link, 5fd08069 answers success and deletes the branch, and
 		// the registration stays (cell L1 of round tier0-26, Linux VM).
-		locked, _, matches := worktreeLockedByPath(commonDir, sp)
-		if locked {
-			return refuse(goneLocked)
+		lock, _, matches := worktreeLockedByPath(commonDir, sp)
+		if lock != notLocked {
+			return refuse(goneLockedWorktreeRefusal(p.WorktreePath, lock))
 		}
 		if matches == 0 {
 			probe.pairIfWorktreesDir(commonDir)

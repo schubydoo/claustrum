@@ -111,7 +111,7 @@ func TestStrayCommondirNotAPlainFile(t *testing.T) {
 		r := newTrustRepo(t)
 		cd := filepath.Join(r.T, ".git", "commondir")
 		writeFile(t, cd, strings.Repeat("a", 1<<20+1), 0o644)
-		wantRPCError(t, "info(T)", info(t, r.T), wantTP(cd, "commondir is larger than 1048576 bytes"))
+		wantRPCError(t, "info(T)", info(t, r.T), wantTP(cd, `"commondir" is larger than 1 MiB`))
 	})
 }
 

@@ -213,7 +213,7 @@ func TestWorktreeRemoveExternalUnverified(t *testing.T) {
 		f := newExtFixture(t)
 		runGit(t, f.repo, "worktree", "lock", f.e0)
 		writeFile(t, filepath.Join(f.e0, ".git"), "garbage\n", 0o644)
-		wantRemoveError(t, f.remove(t, f.e0, "e0"), lockedWorktreeRefusal(f.e0))
+		wantRemoveError(t, f.remove(t, f.e0, "e0"), lockedWorktreeRefusal(f.e0, lockedPlain))
 		mustExist(t, filepath.Join(f.e0, ".git"))
 	})
 	t.Run("unreadable entry", func(t *testing.T) {
@@ -230,7 +230,7 @@ func TestWorktreeRemoveExternalUnverified(t *testing.T) {
 		if err := os.RemoveAll(f.e0); err != nil {
 			t.Fatal(err)
 		}
-		wantRemoveError(t, f.remove(t, f.e0, "e0"), "refusing to remove worktree: "+f.e0+" is gone but its "+
+		wantRemoveError(t, f.remove(t, f.e0, "e0"), "refusing to remove worktree: `"+f.e0+"` is gone but its "+
 			"registration is locked (git worktree lock); unlock it to remove the registration and branch")
 		mustExist(t, f.e0Entry())
 	})

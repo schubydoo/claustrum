@@ -111,7 +111,7 @@ func TestWorktreeRemoveGoneLockedShortBase(t *testing.T) {
 	short := shortPathOf(t, repo)
 	wp := filepath.Join(short, ".claude", "worktrees", "wt1")
 	raw := removeFrame(t, map[string]any{"baseRepo": short, "worktreePath": wp, "branchName": "wt1"})
-	wantRemoveError(t, raw, "refusing to remove worktree: "+wp+" is gone but its registration is "+
+	wantRemoveError(t, raw, "refusing to remove worktree: `"+wp+"` is gone but its registration is "+
 		"locked (git worktree lock); unlock it to remove the registration and branch")
 	mustExist(t, filepath.Join(repo, ".git", "worktrees", "wt1", "locked"))
 	if !gitExitOK(repo, "show-ref", "--verify", "--quiet", "refs/heads/wt1") {

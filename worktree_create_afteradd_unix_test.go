@@ -447,7 +447,8 @@ func TestWorktreeCreateLeafReplaced(t *testing.T) {
 //     the create succeeds.
 //   - V9c: baseRepo is the main repository. The same.
 //   - The entry holds a `locked` file (the rule that stays, not measured in this
-//     round): it stays with every file, and the add fails with the text of git.
+//     round): it stays with every file, and the add fails with the text of
+//     registeredLeafRefusal (be1c1ca5, measured on Linux).
 //
 // Branch oldb stays in every case.
 func TestWorktreeCreateStaleEntryOfMainRepository(t *testing.T) {
@@ -480,8 +481,8 @@ func TestWorktreeCreateStaleEntryOfMainRepository(t *testing.T) {
 				wantRegs = []string{"LW", "w1"}
 			}
 			if tc.locked {
-				if !strings.Contains(raw, `"error":"git worktree add failed: `) || !strings.Contains(raw, `"errorCode":"worktree_add_failed"`) {
-					t.Errorf("reply = %s\nwant the failed add of git", raw)
+				if !strings.Contains(raw, `"error":"cannot add a worktree: `) || !strings.Contains(raw, `"errorCode":"worktree_add_failed"`) {
+					t.Errorf("reply = %s\nwant the refusal of a registered leaf", raw)
 				}
 				if got := regFiles(t, old); !slices.Equal(got, before) {
 					t.Errorf("the locked entry = %q\nwant %q", got, before)

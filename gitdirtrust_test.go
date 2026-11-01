@@ -515,7 +515,7 @@ func TestGitDirTrustCommondirMustBeASmallPlainFile(t *testing.T) {
 		cd := filepath.Join(r.entry(), "commondir")
 		body := "../.." + strings.Repeat(" ", 1<<20-len("../..")) + "\n"
 		writeFile(t, cd, body, 0o644)
-		m4 := wantM4(cd, "commondir is larger than 1048576 bytes")
+		m4 := wantM4(cd, `"commondir" is larger than 1 MiB`)
 		wantRPCError(t, "info(TW)", info(t, r.TW), m4)
 		wantCreateRefused(t, r.TW, r.T, m4)
 		wantRemoveRefused(t, r.TW, r.SWW, "s1", r.T)

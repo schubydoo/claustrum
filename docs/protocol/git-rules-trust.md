@@ -180,7 +180,7 @@ UTF-8 byte stays a byte and prints as `\xff`. The rest of the text is never cut.
 `\u003cname\u003e`.
 
 The M4 and S2 reasons are `commondir is not a regular file`,
-`commondir is larger than 1048576 bytes` or an OS error. S2 drops its operation and path: `path escapes from parent` (`683cc6a9`, measured on Linux). Other OS errors are claustrum's own, not measured. M4 keeps them.
+`"commondir" is larger than 1 MiB` (build `be1c1ca5`, measured on Linux) or an OS error. S2 drops its operation and path: `path escapes from parent` (`683cc6a9`, measured on Linux). Other OS errors are claustrum's own, not measured. M4 keeps them.
 
 M5 has no common prefix. It is `config-defined hooks could not be pinned off; git
 not run: the worktree entry this folder's .git names no longer exists`.

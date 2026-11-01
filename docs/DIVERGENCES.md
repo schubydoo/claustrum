@@ -497,8 +497,8 @@ have no flag and no key.
     of S with `"branchKept":true` (Linux and macOS). This state is not measured
     on Windows: both sides refuse that `baseRepo` there
   - the `GIT_DIR` and `GIT_COMMON_DIR` state with the folder of S gone: it
-    deletes nothing (Linux, macOS and Windows). claustrum answers the "is gone
-    but its registration is locked" refusal
+    deletes nothing (Linux, macOS and Windows). claustrum answers a
+    gone-worktree lock refusal
 
   On Linux, with `worktreeRoot` in the `GIT_DIR` states, `89cb6289` answers the
   `could not verify` text, or success with the folder gone. It deletes nothing,

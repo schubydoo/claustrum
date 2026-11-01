@@ -75,7 +75,8 @@ func staleEntry(t *testing.T, f wtFixture, name, record string) string {
 //     ../../../<repo>/.claude/worktrees/w1/.git. It counts from the entry folder,
 //     and the entry goes.
 //   - S1L and S1T (Linux, macOS and Windows VMs): an entry with a `locked` file, and two
-//     stale entries. Every entry stays, and the add fails with the text of git.
+//     stale entries. Every entry stays, and the add fails. be1c1ca5 answers the
+//     text of registeredLeafRefusal there (measured on Linux, macOS and Windows).
 //
 // Each cell runs with no settings control and in the state shadow, where the
 // step goes through the held git directory.
@@ -128,8 +129,8 @@ func TestWorktreeCreateStaleEntryOfCommonGitDir(t *testing.T) {
 					t.Errorf("the step ran with a held git directory: %v, want %v", held, want)
 				}
 				if !tc.goes {
-					if !strings.Contains(raw, `"error":"git worktree add failed: `) || !strings.Contains(raw, `"errorCode":"worktree_add_failed"`) {
-						t.Errorf("reply = %s\nwant the failed add of git", raw)
+					if !strings.Contains(raw, `"error":"cannot add a worktree: `) || !strings.Contains(raw, `"errorCode":"worktree_add_failed"`) {
+						t.Errorf("reply = %s\nwant the refusal of a registered leaf", raw)
 					}
 					for i, e := range entries {
 						if got := regFiles(t, e); !slices.Equal(got, before[i]) {
