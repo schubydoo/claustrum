@@ -373,7 +373,7 @@ func TestPruneDoesNotRunAfterTheHomeGuardRefusal(t *testing.T) {
 	if !isRegularFile(keep) {
 		t.Error("the file in the home folder is gone")
 	}
-	want := []string{vf("1.2.0"), version}
+	want := []string{vf("1.2.0"), filepath.Base(home)}
 	sort.Strings(want)
 	if got := pruneNames(t, dir); strings.Join(got, " ") != strings.Join(want, " ") {
 		t.Errorf("the cli-dir holds %q, want %q: nothing is removed after the refusal", got, want)
