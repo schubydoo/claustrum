@@ -562,7 +562,9 @@ have no flag and no key.
   On Windows, after a swap of `.git` to a file that names a second repository,
   claustrum runs no git call and changes nothing there. Its undo text says that
   the branch still exists. On Linux and macOS, after a link at `.git` right
-  before the add, the branch that git made through it stays. On Windows a `locked` file that
+  before the add, the branch that git made through it stays. After the staged
+  add moved the hold, the branch step deletes only a branch with the tip that
+  this call made (`be1c1ca5` not measured in this state). On Windows a `locked` file that
   cannot be removed keeps the whole entry (the maintainer's choice of
   2026-11-01).
 - **Reference.** A process renames the new registration and puts another folder

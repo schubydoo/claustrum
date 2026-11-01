@@ -610,7 +610,7 @@ var docWordLimits = map[string]int{
 	"SECURITY.md":                              1609, // the ssh door of be1c1ca5. 1553 before
 	"docs/ARCHITECTURE.md":                     2682, // gitsshdoor.go. 2674: TASK-294: socketroute*.go. 2673: the sweep on Linux and macOS of be1c1ca5. 2667 before
 	"docs/DAEMON.md":                           8137, // the signals at a long root, measured. 8115: the not-measured parts of a long run root. 8090: the long run root of the host cleaner. 7940: TASK-294: the long socket path. 7616: TASK-297: the start-time line. 7541: the temp-folder lines of 683cc6a9. 7493: TASK-231: the new section Lines of connections. 7175: a new page, its words moved from PROTOCOL.md and ARCHITECTURE.md
-	"docs/DIVERGENCES.md":                      7881, // the staged add of be1c1ca5. 7778: the cap that skips the prune after a full disk. 7764: TASK-208 summary table
+	"docs/DIVERGENCES.md":                      7908, // the staged add of be1c1ca5. 7778: the cap that skips the prune after a full disk. 7764: TASK-208 summary table
 	"docs/EXAMPLES.md":                         1025,
 	"docs/GLOSSARY.md":                         1297,
 	"docs/IMPROVEMENTS.md":                     1590,
@@ -634,7 +634,7 @@ var docWordLimits = map[string]int{
 	"docs/protocol/git-rules-trust.md":         4642, // the 1 MiB commondir reason of be1c1ca5. 4637: TASK-313: the not_a_repo answer of the create. 4601: the unsearchable git directory and the could-not-be-examined text. 4493: TASK-202: moved from PROTOCOL.md
 	"docs/protocol/git-list-branches.md":       997,  // task-203b: the page rewrite
 	"docs/protocol/git-status.md":              3185, // decision-040: a move between pages, net down in the same PR
-	"docs/protocol/git-worktree-create.md":     8606, // the staged add of be1c1ca5. 7829: the ssh door of be1c1ca5. 7375: the sweep on Linux and macOS of be1c1ca5. 7335: the refusal texts of be1c1ca5. 7018: the start of timeoutMs. 6996: the 2.2 s settle wait (claustrum's own). 6951: task-205: rewrite to the page template
+	"docs/protocol/git-worktree-create.md":     8643, // the staged add of be1c1ca5. 7829: the ssh door of be1c1ca5. 7375: the sweep on Linux and macOS of be1c1ca5. 7335: the refusal texts of be1c1ca5. 7018: the start of timeoutMs. 6996: the 2.2 s settle wait (claustrum's own). 6951: task-205: rewrite to the page template
 	"docs/protocol/git-worktree-remove.md":     4325, // the lock texts of be1c1ca5. 4112: task-206: rewrite to the page template
 	"docs/protocol/launcher-resolve.md":        1620, // task-204: rewrite to the page template
 	"docs/protocol/plugins-prune.md":           1199, // the not-measured dial failures. 1186: a sibling at a long socket path. 1084: task-203b: the page rewrite

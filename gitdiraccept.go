@@ -64,6 +64,9 @@ type acceptedGitDir struct {
 	// staged is the registration that the staging step moved into
 	// `worktrees` (addStage.move), or the zero value.
 	staged stagedEntry
+	// addBranch is the branch that the staged add made (`-b`), and addTip its
+	// tip in the held folder right after the add, or "" (addStage.finish).
+	addBranch, addTip string
 }
 
 // stagedEntry is the name of a registration that the staging step moved into
@@ -341,7 +344,9 @@ func (a *acceptedGitDir) adopt(next *acceptedGitDir) {
 	if a.root != nil {
 		_ = a.root.Close()
 	}
+	branch, tip := a.addBranch, a.addTip
 	*a = *next
+	a.addBranch, a.addTip = branch, tip
 }
 
 // takeOver is the hold on the real directory gitDir, whose identity before the

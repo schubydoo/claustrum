@@ -194,6 +194,13 @@ func checkAndDeleteBranch(u gitUse, repo, branch string) branchStepResult {
 		}
 		return branchStepResult{kind: branchUnchecked, err: err}
 	}
+	// A branch whose tip is not the one that the staged add of this create
+	// made is another branch of that name, for example in a second repository
+	// at `.git`. It stays, and the reply gets no text (claustrum's own, not
+	// measured on be1c1ca5).
+	if want := u.addedBranchTip(branch); want != "" && tip != want {
+		return branchStepResult{kind: branchBehindSwap}
+	}
 	out, _, err = branchCheckGit(ctx, u, repo, strings.NewReader(branchStdin(recs, target)),
 		"-c", "core.commitGraph=false", "rev-list", "-n", "1", tip, "--not", "--remotes", "--not", "--stdin", "--")
 	if err != nil {

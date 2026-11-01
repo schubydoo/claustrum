@@ -220,6 +220,8 @@ type addStage struct {
 	// leafName is the last name of the new worktree, and of its folder in
 	// `<dir>/leaf`.
 	leafName string
+	// branch is the branch that the call makes with `-b`, or "".
+	branch string
 }
 
 // stagedLeafFolder is the folder of `.s<n>` that holds the path of the add.
@@ -541,6 +543,11 @@ func runAddStaged(ctx context.Context, u gitUse, cmd *exec.Cmd, leaf string, cp 
 	defer st.close()
 	cmd.Env = withAddCopy(cmd.Env, u.repoDir, st.dir)
 	st.leafName = filepath.Base(filepath.Clean(leaf))
+	for i, a := range cmd.Args {
+		if a == "-b" && i+1 < len(cmd.Args) {
+			st.branch = cmd.Args[i+1]
+		}
+	}
 	staged := filepath.Join(st.dir, stagedLeafFolder, st.leafName)
 	for i, a := range cmd.Args {
 		if i > 0 && a == leaf {
@@ -592,6 +599,7 @@ func runAddStaged(ctx context.Context, u gitUse, cmd *exec.Cmd, leaf string, cp 
 // that no row measured fail it too: the leaf has no `.git` file before the
 // move ends (claustrum's own).
 func (st *addStage) finish(leaf string, cp worktreeCheckpoint) error {
+	st.recordBranchTip()
 	replaced := false
 	if st.u.swapped("staged") {
 		var next *acceptedGitDir
@@ -622,6 +630,31 @@ func (st *addStage) finish(leaf string, cp worktreeCheckpoint) error {
 		return &addIncomplete{text: err.Error()}
 	}
 	return nil
+}
+
+// recordBranchTip reads the tip of the branch that the call made, through
+// the held folder, before any step can move the hold. A rollback deletes
+// that branch only while it still has this tip (addedBranchTip). A packed
+// ref or a ref that cannot be read records no tip, and the branch step then
+// runs as before. The guard is claustrum's own: be1c1ca5 is not measured with
+// a branch of the same name in a second repository at `.git`.
+func (st *addStage) recordBranchTip() {
+	if st.u.accepted == nil || st.branch == "" {
+		return
+	}
+	st.u.accepted.addBranch, st.u.accepted.addTip = st.branch, ""
+	if b, ok := readRootFile(st.git, filepath.Join("refs", "heads", filepath.FromSlash(st.branch)), 1024); ok {
+		st.u.accepted.addTip = strings.TrimSpace(string(b))
+	}
+}
+
+// addedBranchTip is the tip that the staged add of this create recorded for
+// branch, or "".
+func (u gitUse) addedBranchTip(branch string) string {
+	if u.accepted == nil || u.accepted.addBranch != branch {
+		return ""
+	}
+	return u.accepted.addTip
 }
 
 // stagingRename renames the staging folder of a create through root, the root
