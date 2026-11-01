@@ -5,6 +5,7 @@ import (
 	"encoding/hex"
 	"errors"
 	"fmt"
+	"math"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -392,4 +393,24 @@ func TestInstallFullDiskSkipsTheNamedVersion(t *testing.T) {
 		t.Errorf("cliRemoved = %d, want 2 (cliError %q)", got.CliRemoved, got.CliError)
 	}
 	wantDir(t, "the named version after a full disk", f.cliDir, names[2], filepath.Base(named))
+}
+
+// The lowest int as -cli-keep keeps one file in the prune before the fetch,
+// as a negative keep does, and does not wrap (claustrum's own). runInstall
+// runs directly here, because the capture helpers map that value to 0.
+func TestInstallPruneBeforeTheFetchLowestKeep(t *testing.T) {
+	f := newStubFixture(t)
+	t.Setenv(homeEnvVar(), f.root)
+	names := putVersions(t, f.cliDir, "1.0.1", "1.0.2", "1.0.3")
+	out, err := os.Create(filepath.Join(f.root, "stdout"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	old := os.Stdout
+	os.Stdout = out
+	runInstall(installOpts{cliDir: f.cliDir, cliVersion: "2.0.0", cliKeep: math.MinInt})
+	os.Stdout = old
+	_ = out.Close()
+
+	wantDir(t, "the lowest keep", f.cliDir, names[2])
 }

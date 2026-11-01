@@ -175,7 +175,7 @@ func runInstall(o installOpts) {
 				// A version that D6 refuses skips it, so the refusal still
 				// comes first.
 				if validateCLIVersion(o.cliVersion) == nil {
-					pruneCLI(o.cliDir, max(o.cliKeep-1, 1), filepath.Base(f.CliPath), false, blob)
+					pruneCLI(o.cliDir, max(o.cliKeep, 2)-1, filepath.Base(f.CliPath), false, blob)
 				}
 				err = ensureCLI(o, f.CliPath)
 			}
