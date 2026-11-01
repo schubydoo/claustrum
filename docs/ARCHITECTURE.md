@@ -51,7 +51,7 @@ The five `git.*` methods start in `methods_git.go`, and their params in
   `worktree add` steps. `worktreeverify.go` holds the tests after the add and
   the rollback steps. `githarden_index_*.go` places the index. For a create
   that holds no git directory, it deletes the registration of a rollback.
-  `worktreestaging.go` is the Windows staging step and the sweep of old staging entries. The copy steps
+  `worktreestaging.go` is the staged add and the sweep of old staging entries. The copy steps
   are `worktreecopy.go`, `worktreeinclude*.go` and `worktreeclaude.go`. The
   other steps are `worktreemkdir_*.go`, `worktreestale*.go` and
   `worktreesource.go`.

@@ -30,10 +30,12 @@ import (
 //
 //   - The stale registration before the add: dropStaleRegistration on Windows,
 //     and dropStaleWorktreeRegistration with deleteRoot on Linux and macOS.
-//   - The folder `worktrees`: makeWorktreesFolder, and openAddStage on Windows.
-//   - The Windows staging steps: openAddStage, addStage.move,
+//   - The folder `worktrees`: makeWorktreesFolder, openAddStage, and the mkdir
+//     of addStage.finish in a folder that the staging step took the hold on.
+//   - The staging steps: openAddStage, addStage.move with
+//     addStage.writeStagedRecord, stagedEntryModes and removeLockedFile, then
 //     addStage.removeOwnStaging and addStage.removeMoved. The sweep of old
-//     staging entries on every system: sweepOldStaging.
+//     staging entries: sweepOldStaging.
 //   - The `config.worktree` file of the registration: writeWorktreeConfig.
 //   - The index: installTestedWorktreeIndex with registrationsRoot, and
 //     installIndex for a create with no tested registration.
@@ -63,8 +65,9 @@ import (
 // right after `rev-parse --absolute-git-dir`, when git answered another real
 // directory that passes the gate (acceptedGitDir.movedTo). The second is right
 // after a good `worktree add`, when a new real directory at the path passes
-// the gate (acceptedGitDir.replacedAtPath, cell C6 of round tier0-24). The
-// steps above then act through that folder.
+// the gate (acceptedGitDir.replacedAtPath, cell C6 of round tier0-24). In a
+// staged add addStage.finish takes it before the move (adopt). The steps above
+// then act through that folder.
 //
 // No VM row has a swap between the test of a
 // step and one of these acts. In the swap cells of val-s3p2b2-12-windows the

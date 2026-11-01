@@ -227,7 +227,14 @@ func undoFailedCheckout(u gitUse, repo, worktreePath, branch string, cp worktree
 		}
 	}
 	testHeld("undo")
+	// After the staging step took the hold on a new real directory at the path
+	// (acceptedGitDir.replaced), no registration goes, and the branch step
+	// does not run. On Linux be1c1ca5 removes the registration in that folder
+	// after a failed checkout and keeps the branch in the old one. claustrum
+	// deletes nothing there (claustrum's own).
+	replaced := keepRegistrationAfterReplacement && u.accepted != nil && u.accepted.replaced
 	switch {
+	case replaced:
 	case tested.noRegistration:
 	case held:
 	case tested.path != "":
@@ -257,6 +264,8 @@ func undoFailedCheckout(u gitUse, repo, worktreePath, branch string, cp worktree
 	var res branchStepResult
 	var regErr error
 	switch {
+	case replaced:
+		regErr = errors.New(replacedGitDirText)
 	case tested.noRegistration:
 	case held:
 		regErr = heldErr
@@ -296,6 +305,15 @@ func undoFailedCheckout(u gitUse, repo, worktreePath, branch string, cp worktree
 	}
 	return "; and the undo could not finish for " + worktreePath + ": " + strings.Join(parts, "; "), res.kind == branchUnique
 }
+
+// keepRegistrationAfterReplacement turns on the rule above: after the staging
+// step took the hold on a new directory, a rollback deletes no registration.
+// The maintainer has the rule open. Setting it false drops it.
+const keepRegistrationAfterReplacement = true
+
+// replacedGitDirText is the cause in the undo text of a rollback after the
+// staging step took the hold on a new directory at the path (claustrum's own).
+const replacedGitDirText = "the repository's git directory was replaced while the worktree was being made"
 
 // clearWorktreeLeaf is step A of undoFailedCheckout. It deletes each entry at the top
 // of leaf in the order that the directory read returns them, and stops at the first

@@ -100,7 +100,7 @@ func TestCreateWithAJunctionAtTheGitDirOnWindows(t *testing.T) {
 		{"X1c-09", "prepare", func(link, _ string) string {
 			return "git worktree add failed: cannot prepare the repository's worktrees directory: " + link
 		}},
-		{"X1c-10", "added", func(link, leaf string) string {
+		{"X1c-10", "staged", func(link, leaf string) string {
 			return "git worktree add failed (completing the new worktree's git files): " + realDir +
 				"; and the undo could not finish for " + leaf + ": branch w1 still exists; delete it by hand " +
 				"(for example: git branch -d w1, which git refuses if that would lose commits) before retrying " +
@@ -523,13 +523,13 @@ func TestCreateWithAFileAtTheGitDirOnWindows(t *testing.T) {
 		after int
 		want  func(link, leaf string) string
 	}{
-		{"X1b", "added", false, 0, func(link, leaf string) string {
+		{"X1b", "staged", false, 0, func(link, leaf string) string {
 			return "git worktree add failed (completing the new worktree's git files): " + realDir +
 				"; and the undo could not finish for " + leaf + ": branch w1 still exists; delete it by hand " +
 				"(for example: git branch -d w1, which git refuses if that would lose commits) before retrying " +
 				"this branch name: could not check whether another branch or remote-tracking ref reaches its commits (" + link + ")"
 		}},
-		{"X1c", "added", true, 0, func(link, leaf string) string {
+		{"X1c", "staged", true, 0, func(link, leaf string) string {
 			return "git worktree add failed (completing the new worktree's git files): " + realDir +
 				"; and the undo could not finish for " + leaf + ": branch w1 still exists; delete it by hand " +
 				"(for example: git branch -d w1, which git refuses if that would lose commits) before retrying " +

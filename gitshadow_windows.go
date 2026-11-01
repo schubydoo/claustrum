@@ -53,12 +53,12 @@ func openHeldGitDir(path string) (*os.Root, error) {
 // and cell 22 of s3p2b-edges, Windows VM).
 const shadowLinksWorktrees = false
 
-// shadowStagesAdd is true on Windows. The `worktree add` of a create gets a
-// folder `.s<n>` of its own there in the state shadow, and the registration
-// goes into the git directory by a staging folder and a rename
-// (worktreeAddStaged). 5fd08069 does so on a Windows VM (cells 44 of
-// s3p2b-edges2-windows and 47 to 49 of s3p2b-edges3-windows).
-const shadowStagesAdd = true
+// stagedAddWindowsSteps is true on Windows. The `worktree add` of a create gets a
+// folder `.s<n>` of its own there in the state shadow at once, with the steps
+// and the texts of Windows (worktreeAddStaged). 5fd08069 does so on a Windows
+// VM (cells 44 of s3p2b-edges2-windows and 47 to 49 of s3p2b-edges3-windows).
+// Linux and macOS stage the add too, with their own steps first.
+const stagedAddWindowsSteps = true
 
 // gitDirMustBeReal is true on Windows. A git directory that is a junction or
 // a directory symbolic link is refused there, and a create tests at each of its steps that the

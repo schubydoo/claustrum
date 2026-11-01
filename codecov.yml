@@ -232,6 +232,10 @@ component_management:
         - gitshadow_windows.go
         # the folder of one `worktree add` and the staging step of a create on Windows (5fd08069).
         - worktreestaging.go
+        - worktreestaging_modes_darwin.go
+        - worktreestaging_modes_linux.go
+        - worktreestaging_modes_unix.go
+        - worktreestaging_modes_windows.go
         # the retry of a held rename on Windows: the copy write and the staging move (5fd08069).
         - renameretry.go
         - renameretry_other.go

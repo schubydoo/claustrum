@@ -213,20 +213,14 @@ func (u gitUse) shadow() bool {
 // worktree, and cp is the checkpoint of the create, which holds that folder
 // open.
 //
-// In the state shadow on Linux and macOS the call and its listing carry
+// In the state shadow the call gets a folder `.s<n>` of its own, and other
+// steps follow it (runAddStaged). On Linux and macOS its listing carries
 // GIT_COMMON_DIR=<copy>, as on 5fd08069 (val-s3p2b1-linux cell A3-create-plain,
-// val-s3p2b1-macos row N1). Git then writes the registration through the link
-// `worktrees` of the copy. Two steps of 5fd08069 go with that (cells N1 and N2
-// of val-s3p2b2-3-linux and val-s3p2b2-3-macos):
-//
-//   - After the listing and before the add, the daemon makes the folder
-//     `worktrees` of the git directory when it is not there (makeWorktreesFolder).
-//   - After the add ended, the daemon looks at the `.git` file of the new
-//     worktree (repointLeaf). claustrum does that after its tests of the new
-//     registration and before its next git call.
-//
-// On Windows the copy has no link `worktrees`. There the call gets a folder of
-// its own in the state shadow, and other steps follow it (worktreeAddStaged).
+// val-s3p2b1-macos row N1). There, after the listing and before the add, the
+// daemon makes the folder `worktrees` of the git directory when it is not
+// there (makeWorktreesFolder), as 5fd08069 does (cells N1 and N2 of
+// val-s3p2b2-3-linux and val-s3p2b2-3-macos). be1c1ca5 stages the add on Linux
+// and macOS. On Windows the staged add starts at once (worktreeAddStaged).
 // With the member and in the state fallback-git the call names no copy, on
 // every system: on a Windows VM the add of 5fd08069 carries
 // GIT_COMMON_DIR=<git directory> in the state fallback-git, and it names no
@@ -261,7 +255,7 @@ func worktreeAdd(ctx context.Context, u gitUse, repo, leaf string, cp worktreeCh
 	defer lockWorktreeAddStep(repo)()
 	f, off := u.fixedForm(true)
 	_, named := f.names(repo)
-	if named && shadowStagesAdd {
+	if named && stagedAddWindowsSteps {
 		stderr, err := worktreeAddStaged(ctx, f, repo, leaf, cp, args...)
 		if err == nil && f.accepted != nil {
 			f.accepted.moved = true
@@ -294,19 +288,20 @@ func worktreeAdd(ctx context.Context, u gitUse, repo, leaf string, cp worktreeCh
 			return "", &addNotPrepared{text: text}
 		}
 	}
+	// On Linux and macOS an add that names the copy is staged as on Windows,
+	// after the steps above (runAddStaged). be1c1ca5 does so on Linux and macOS.
+	if named {
+		stderr, err := runAddStaged(ctx, f, cmd, leaf, cp)
+		if err == nil && f.accepted != nil {
+			f.accepted.moved = true
+		}
+		return stderr, err
+	}
 	var errBuf bytes.Buffer
 	cmd.Stderr = &errBuf
 	err := gitRun(ctx, cmd)
 	if err == nil && f.accepted != nil {
 		f.accepted.moved = true
-	}
-	// On Linux and macOS a good add that names the copy removes the old
-	// staging entries of the held git directory, as on Windows (sweepOldStaging).
-	// be1c1ca5 does so on Linux and macOS. Two states get no sweep (claustrum's
-	// own, not measured): a path that no longer names the held folder, and a
-	// hold that moved to another folder (acceptedGitDir.movedTo).
-	if err == nil && named && f.accepted != nil && f.accepted.isAt(f.gitDir) && !f.swapped("sweep") {
-		sweepOldStaging(f.accepted.root, f.heldGitDir(), stagingClock())
 	}
 	return errBuf.String(), err
 }
@@ -346,7 +341,7 @@ func offLinkListing(ctx context.Context, u gitUse, repo string) {
 // X1p-09 of val-s3p2b2-7-windows, Windows VM).
 func plainAddRefusal(gitDir string, named bool) string {
 	switch {
-	case shadowStagesAdd:
+	case stagedAddWindowsSteps:
 		return prepareWorktreesPrefix + repoConfigPrefix + gitDirLinkText(gitDir)
 	case named:
 		return prepareWorktreesPrefix + realDirText(gitDir)
@@ -508,6 +503,12 @@ func makeWorktreesFolderIn(root *os.Root, shared sharedRepository) {
 // is no longer the held folder (cell swb-wtadd of val-s3p2b2-13-linux2, Linux
 // VM, 2 runs). Not measured: the order of this step and the test of the leaf
 // identity (cell V8 has one result for both orders).
+//
+// Since the add of the state shadow is staged (runAddStaged), git writes no
+// `.git` file into the leaf, and the staging step writes one that names the
+// git directory. So no file names the copy, and this step changes nothing.
+// It stays as the guard of an add that names the copy without the staging
+// step (from the code).
 func (u gitUse) repointLeaf(repo, leaf string, cp worktreeCheckpoint) {
 	if u.shadow() && shadowLinksWorktrees {
 		repointWorktreeGitFile(u, leaf, cp)

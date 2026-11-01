@@ -21,13 +21,10 @@ func linkAt(t *testing.T, link, target string) {
 }
 
 // TestStagedAddWithAFolderThatTakesNoEntry: the folder of the daemon takes no
-// new entry. On 5fd08069 the create answers `git worktree add failed: cannot
-// prepare the repository's worktrees directory: mkdir
-// C:\o\w\run\git-shadow\<S>\.s<n>: Access is denied.` (tables W3 and F1 of
-// val-s3p2b2-7-windows, Windows VM, with the two privileges off). The staged
-// add runs on Windows only. This test calls it on Linux and macOS, where the
-// error of the system reads `permission denied`. Without the words of the step
-// the text starts with claustrum's own words.
+// new entry. On Linux be1c1ca5 answers privateCopyText and `mkdir
+// <S>/.s<n>: permission denied` (a folder git-shadow of mode 555). Windows
+// keeps the text of 5fd08069, with prepareWorktreesPrefix. Without
+// requestDirError the text starts with prepareWorktreesPrefix.
 func TestStagedAddWithAFolderThatTakesNoEntry(t *testing.T) {
 	if os.Getuid() == 0 {
 		t.Skip("the root user makes an entry in a folder of mode 0500")
@@ -40,7 +37,7 @@ func TestStagedAddWithAFolderThatTakesNoEntry(t *testing.T) {
 	}
 	t.Cleanup(func() { _ = os.Chmod(u.folder, 0o700) })
 	_, stderr, err := stagedAdd(t, f, u)
-	want := regexp.MustCompile(`^cannot prepare the repository's worktrees directory: mkdir ` +
+	want := regexp.MustCompile(`^` + regexp.QuoteMeta(privateCopyText) + `mkdir ` +
 		regexp.QuoteMeta(filepath.Join(u.folder, ".s")) + `[0-9]{1,10}: permission denied$`)
 	if err == nil || !want.MatchString(err.Error()) || stderr != "" {
 		t.Errorf("the add = %v, %q\nwant %s", err, stderr, want)
@@ -457,19 +454,14 @@ func TestCreateGoesOnInTheGitDirThatGitAnswers(t *testing.T) {
 }
 
 // TestCreateWithAGitDirThatChangedAtTheAdd: right after a good `worktree add`
-// the path of the git directory no longer names the held folder. 5fd08069
-// answers `refusing to create worktree: <leaf> was not populated by git
-// worktree add` with `unsafe_path`, makes no other call and rolls nothing back
-// (cell swb-wtadd of val-s3p2b2-10-linux2, Linux VM, and cells b-postadd and
-// b-precfg of val-s3p2b2-10-macos, macOS VM). The real git directory keeps
-// the registration and the branch, and T gets nothing. Without the test after
-// the add the text is that of a `.git` file that names no registration.
-//
-// The `.git` file of the leaf keeps the text that names the copy of the
-// daemon, as on 5fd08069 (cell swb-wtadd of val-s3p2b2-13-linux2, Linux VM).
-// The test writes that text itself at the step, because git 2.50.1 writes the
-// path of the repository there. claustrum writes that file again only after
-// this test and the tests of the registration.
+// the path of the git directory is a symbolic link to a copy T. be1c1ca5
+// answers `git worktree add failed (completing the new worktree's git files):
+// ".git" is a link or a file where Claude needs a real directory; put the
+// directory itself in its place` with worktree_add_failed, removes the leaf
+// and keeps the branch in the old folder (measured on Linux). claustrum gives
+// the same reply, and no folder gets a registration. Without the test after
+// the add the registration goes into the held folder and the create succeeds
+// there.
 func TestCreateWithAGitDirThatChangedAtTheAdd(t *testing.T) {
 	f := newSeededShadowFixture(t)
 	copied := filepath.Join(resolveTestRoot(t, t.TempDir()), "copy")
@@ -480,36 +472,29 @@ func TestCreateWithAGitDirThatChangedAtTheAdd(t *testing.T) {
 		t.Fatalf("git.info = %s", raw)
 	}
 	leaf := filepath.Join(f.repo, ".claude", "worktrees", "w1")
-	named := "gitdir: " + filepath.Join(daemonFolder(t, f.run), shadowRepoName(f.gitDir), "worktrees", "w1") + "\n"
-	atStep(t, "added", func() {
-		if err := os.WriteFile(filepath.Join(leaf, ".git"), []byte(named), 0o644); err != nil {
-			t.Errorf("the .git file of the leaf: %v", err)
-		}
+	atStep(t, "staged", func() {
 		if err := os.Rename(f.gitDir, f.gitDir+"-real"); err != nil {
 			t.Errorf("the rename of the git directory: %v", err)
 			return
 		}
 		linkAt(t, f.gitDir, copied)
 	})
-	raw, calls := f.call(t, "git.worktree_create", map[string]any{"baseRepo": f.repo, "branchName": "w1", "worktreePath": leaf})
-	if got := mustRead(t, filepath.Join(leaf, ".git")); got != named {
-		t.Errorf("the .git file of the leaf = %q, want %q", got, named)
-	}
-	if got, want := createError(t, raw), "refusing to create worktree: "+leaf+" was not populated by git worktree add"; got != want {
+	raw, _ := f.call(t, "git.worktree_create", map[string]any{"baseRepo": f.repo, "branchName": "w1", "worktreePath": leaf})
+	if got, want := createError(t, raw), completingAddPrefix+realDirText(f.gitDir); got != want {
 		t.Errorf("the error = %s\n    want %s", got, want)
 	}
-	if !strings.Contains(raw, `"errorCode":"unsafe_path"`) {
-		t.Errorf("the reply = %s, want the code unsafe_path", raw)
+	if !strings.Contains(raw, `"errorCode":"worktree_add_failed"`) {
+		t.Errorf("the reply = %s, want the code worktree_add_failed", raw)
 	}
-	if last := calls[len(calls)-1]; !slices.Contains(last.argv, "worktree") || !slices.Contains(last.argv, "add") {
-		t.Errorf("the last call = %q, want the worktree add", last.argv)
+	if _, err := os.Lstat(leaf); !os.IsNotExist(err) {
+		t.Errorf("the leaf: %v, want it gone", err)
 	}
-	for _, name := range []string{filepath.Join("worktrees", "w1", "HEAD"), filepath.Join("refs", "heads", "w1")} {
-		if _, err := os.Lstat(filepath.Join(f.gitDir+"-real", name)); err != nil {
-			t.Errorf("%s in the real git directory: %v, want it kept", name, err)
-		}
-		if _, err := os.Lstat(filepath.Join(copied, name)); !os.IsNotExist(err) {
-			t.Errorf("%s in the copy: %v, want none", name, err)
+	if _, err := os.Lstat(filepath.Join(f.gitDir+"-real", "refs", "heads", "w1")); err != nil {
+		t.Errorf("the branch in the real git directory: %v, want it kept", err)
+	}
+	for _, dir := range []string{f.gitDir + "-real", copied} {
+		if _, err := os.Lstat(filepath.Join(dir, "worktrees", "w1")); !os.IsNotExist(err) {
+			t.Errorf("the registration in %s: %v, want none", dir, err)
 		}
 	}
 }

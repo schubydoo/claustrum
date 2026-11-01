@@ -2,6 +2,7 @@ package main
 
 import (
 	"errors"
+	"io/fs"
 	"os"
 	"path/filepath"
 	"strconv"
@@ -66,7 +67,7 @@ func incompleteText(err error) string {
 // directory. Without the count the move takes no name and logs a line.
 func TestStagedMoveWithTwoNewNames(t *testing.T) {
 	f := newStepFixture(t)
-	atStep(t, "added", func() {
+	atStep(t, "staged", func() {
 		mustWrite(t, filepath.Join(stagedWorktrees(t, f.u), "w9", "HEAD"), "ref: refs/heads/main\n")
 	})
 	_, _, err := stagedAdd(t, f.repoFolderFixture, f.u)
@@ -77,14 +78,17 @@ func TestStagedMoveWithTwoNewNames(t *testing.T) {
 }
 
 // TestStagedMoveWithALeafOfAnotherEntry pins step 2 (cell S2): a `.git` file of
-// the leaf that names another entry of `.s<n>` refuses the move with
+// the staged leaf that names another entry of `.s<n>` refuses the move with
 // otherEntryRefusal, before anything is made in the git directory. Without the
-// test the move goes on and the file keeps its text.
+// test the move goes on.
 func TestStagedMoveWithALeafOfAnotherEntry(t *testing.T) {
 	f := newStepFixture(t)
 	leaf := filepath.Join(f.repo, ".claude", "worktrees", "w1")
-	atStep(t, "added", func() {
-		mustWrite(t, filepath.Join(leaf, ".git"), "gitdir: "+filepath.ToSlash(filepath.Join(stagedWorktrees(t, f.u), "w9"))+"\n")
+	atStep(t, "staged", func() {
+		staged := filepath.Join(filepath.Dir(stagedWorktrees(t, f.u)), stagedLeafFolder, "w1", ".git")
+		if err := os.WriteFile(staged, []byte("gitdir: "+filepath.ToSlash(filepath.Join(stagedWorktrees(t, f.u), "w9"))+"\n"), 0o644); err != nil {
+			t.Fatal(err)
+		}
 	})
 	_, _, err := stagedAdd(t, f.repoFolderFixture, f.u)
 	var refused *addRefused
@@ -94,12 +98,68 @@ func TestStagedMoveWithALeafOfAnotherEntry(t *testing.T) {
 	f.nothingMade(t)
 }
 
+// TestStagedMoveWithAPlantedGitFile pins step 3: a `.git` put into the leaf
+// after the add refuses the create with plantedGitFileText before the staging
+// folder is made. be1c1ca5 answers that text with unsafe_path (measured on
+// Linux). Without the test the move renames a staging folder first.
+func TestStagedMoveWithAPlantedGitFile(t *testing.T) {
+	f := newStepFixture(t)
+	leaf := filepath.Join(f.repo, ".claude", "worktrees", "w1")
+	atStep(t, "staged", func() { mustWrite(t, filepath.Join(leaf, ".git"), "gitdir: /planted\n") })
+	renames := 0
+	old := stagingRename
+	t.Cleanup(func() { stagingRename = old })
+	stagingRename = func(root *os.Root, oldName, newName string) error {
+		renames++
+		return old(root, oldName, newName)
+	}
+	_, _, err := stagedAdd(t, f.repoFolderFixture, f.u)
+	var refused *addRefused
+	if !errors.As(err, &refused) || refused.text != plantedGitFileText(leaf) {
+		t.Errorf("the add = %v, want the refusal %s", err, plantedGitFileText(leaf))
+	}
+	if renames != 0 {
+		t.Errorf("%d renames of a staging folder, want none", renames)
+	}
+	f.nothingMade(t)
+	if got := mustRead(t, filepath.Join(leaf, ".git")); got != "gitdir: /planted\n" {
+		t.Errorf("the planted .git = %q, want it as it was", got)
+	}
+}
+
+// TestStagedMoveWithAGitFilePlantedAfterTheRename pins step 8: a `.git` put
+// into the leaf right after the rename refuses the create with
+// plantedGitFileText, and the moved registration goes again. Without the
+// exclusive create the planted file gets the new text.
+func TestStagedMoveWithAGitFilePlantedAfterTheRename(t *testing.T) {
+	f := newStepFixture(t)
+	leaf := filepath.Join(f.repo, ".claude", "worktrees", "w1")
+	old := stagingRename
+	t.Cleanup(func() { stagingRename = old })
+	stagingRename = func(root *os.Root, oldName, newName string) error {
+		if err := old(root, oldName, newName); err != nil {
+			return err
+		}
+		mustWrite(t, filepath.Join(leaf, ".git"), "gitdir: /planted\n")
+		return nil
+	}
+	_, _, err := stagedAdd(t, f.repoFolderFixture, f.u)
+	var refused *addRefused
+	if !errors.As(err, &refused) || refused.text != plantedGitFileText(leaf) {
+		t.Errorf("the add = %v, want the refusal %s", err, plantedGitFileText(leaf))
+	}
+	f.nothingMade(t)
+	if got := mustRead(t, filepath.Join(leaf, ".git")); got != "gitdir: /planted\n" {
+		t.Errorf("the planted .git = %q, want it as it was", got)
+	}
+}
+
 // TestStagedMoveCopiesTheTree pins step 3 (cell S3): a file in a sub folder of
 // the staged registration is in the moved registration. The move records the
 // moved entry. Without the copy of the tree the sub folder is empty.
 func TestStagedMoveCopiesTheTree(t *testing.T) {
 	f := newStepFixture(t)
-	atStep(t, "added", func() {
+	atStep(t, "staged", func() {
 		mustWrite(t, filepath.Join(stagedWorktrees(t, f.u), "w1", "sub", "f.txt"), "x\n")
 	})
 	if _, stderr, err := stagedAdd(t, f.repoFolderFixture, f.u); err != nil {
@@ -128,7 +188,7 @@ func TestStagedMoveFailsAtALink(t *testing.T) {
 	f := newStepFixture(t)
 	tgt := t.TempDir()
 	mustWrite(t, filepath.Join(tgt, "keep.txt"), "keep\n")
-	atStep(t, "added", func() {
+	atStep(t, "staged", func() {
 		if err := os.Symlink(tgt, filepath.Join(stagedWorktrees(t, f.u), "w1", "j")); err != nil {
 			t.Error(err)
 		}
@@ -153,7 +213,7 @@ func TestStagedMoveWithAHundredNames(t *testing.T) {
 	for i := 1; i < 100; i++ {
 		names = append(names, "w1"+strconv.Itoa(i))
 	}
-	atStep(t, "added", func() {
+	atStep(t, "staged", func() {
 		for _, n := range names {
 			mustWrite(t, filepath.Join(f.gitDir, "worktrees", n, "f.txt"), "x\n")
 		}
@@ -265,55 +325,63 @@ func TestCopyRegistrationTreeStopsAtAnEntryThatIsThere(t *testing.T) {
 	})
 }
 
-// TestLeafGitFileGuards pins the guards of the read and the rewrite of the
+// TestLeafGitFileGuards pins the guards of the test and the write of the
 // `.git` file of the leaf: no checkpoint, a leaf that is gone, a leaf that is
-// another folder than the checkpoint, and a `.git` that is no regular file. In
-// each case the rewrite changes nothing.
+// another folder than the checkpoint, and a `.git` that is there. In each
+// case the write changes nothing, and a `.git` there gets the refusal of
+// plantedGitFileText.
 func TestLeafGitFileGuards(t *testing.T) {
 	base := t.TempDir()
 	leaf := filepath.Join(base, "w1")
-	mustWrite(t, filepath.Join(leaf, ".git"), "gitdir: old\n")
+	if err := os.MkdirAll(leaf, 0o755); err != nil {
+		t.Fatal(err)
+	}
 	cp := checkpointCreatedWorktree(leaf)
 	t.Cleanup(cp.release)
 	other := filepath.Join(base, "w2")
 	mustWrite(t, filepath.Join(other, ".git"), "gitdir: other\n")
-	dirGit := filepath.Join(base, "w3")
-	if err := os.MkdirAll(filepath.Join(dirGit, ".git"), 0o755); err != nil {
-		t.Fatal(err)
-	}
-	cp3 := checkpointCreatedWorktree(dirGit)
+	planted := filepath.Join(base, "w3")
+	mustWrite(t, filepath.Join(planted, ".git"), "gitdir: /planted\n")
+	cp3 := checkpointCreatedWorktree(planted)
 	t.Cleanup(cp3.release)
 	for _, row := range []struct {
 		name, leaf string
 		cp         worktreeCheckpoint
-		read       string
-		write      string
+		want       string
 	}{
-		{"no checkpoint", leaf, worktreeCheckpoint{}, "the create holds no checkpoint of the new worktree", "the create holds no checkpoint of the new worktree"},
-		{"another folder", other, cp, "the new worktree is no longer the folder of the create", "the new worktree is no longer the folder of the create"},
-		{"a folder at .git", dirGit, cp3, "the .git file of the new worktree cannot be read", ""},
+		{"no checkpoint", leaf, worktreeCheckpoint{}, "the create holds no checkpoint of the new worktree"},
+		{"another folder", other, cp, "the new worktree is no longer the folder of the create"},
+		{"a planted .git", planted, cp3, plantedGitFileText(planted)},
 	} {
 		t.Run(row.name, func(t *testing.T) {
-			if _, err := readLeafGitFile(row.leaf, row.cp); err == nil || err.Error() != row.read {
-				t.Errorf("the read = %v, want %q", err, row.read)
+			if err := leafHoldsNoGitFile(row.leaf, row.cp); err == nil || err.Error() != row.want {
+				t.Errorf("the test = %v, want %q", err, row.want)
 			}
-			if row.write == "" {
-				return
-			}
-			if err := rewriteLeafGitFile(row.leaf, row.cp, "gitdir: new\n"); err == nil || err.Error() != row.write {
-				t.Errorf("the rewrite = %v, want %q", err, row.write)
+			err := writeLeafGitFile(row.leaf, row.cp, "gitdir: new\n")
+			if row.leaf == planted {
+				if !errors.Is(err, fs.ErrExist) {
+					t.Errorf("the write = %v, want fs.ErrExist", err)
+				}
+			} else if err == nil || err.Error() != row.want {
+				t.Errorf("the write = %v, want %q", err, row.want)
 			}
 		})
 	}
 	if got := mustRead(t, filepath.Join(other, ".git")); got != "gitdir: other\n" {
 		t.Errorf("the .git file of the other folder = %q", got)
 	}
-	gone := filepath.Join(base, "gone")
-	if _, err := readLeafGitFile(gone, cp); !errors.Is(err, os.ErrNotExist) {
-		t.Errorf("the read of a gone leaf = %v", err)
+	if got := mustRead(t, filepath.Join(planted, ".git")); got != "gitdir: /planted\n" {
+		t.Errorf("the planted .git file = %q", got)
 	}
-	if err := rewriteLeafGitFile(gone, cp, "gitdir: new\n"); !errors.Is(err, os.ErrNotExist) {
-		t.Errorf("the rewrite of a gone leaf = %v", err)
+	if err := leafHoldsNoGitFile(leaf, cp); err != nil {
+		t.Errorf("the test of an empty leaf = %v", err)
+	}
+	gone := filepath.Join(base, "gone")
+	if err := leafHoldsNoGitFile(gone, cp); !errors.Is(err, os.ErrNotExist) {
+		t.Errorf("the test of a gone leaf = %v", err)
+	}
+	if err := writeLeafGitFile(gone, cp, "gitdir: new\n"); !errors.Is(err, os.ErrNotExist) {
+		t.Errorf("the write of a gone leaf = %v", err)
 	}
 	if got := (&addRefused{text: "refused"}).Error(); got != "refused" {
 		t.Errorf("addRefused.Error = %q", got)

@@ -174,7 +174,7 @@ means that a probe which reaches the path shows it. The battery never drives
 | [D20](DIVERGENCES.md#d20) | Always-on, Linux and macOS | No, off the wire | The group `SIGKILL` of a gone leader comes about 50 ms later, or not at all |
 | [D22](DIVERGENCES.md#d22) | Always-on | Maybe | `git.worktree_remove` refuses a locked worktree where `89cb6289` answers success (four states), and with `worktreeRoot` the frame differs in three more |
 | [D23](DIVERGENCES.md#d23) | Always-on, Windows | Maybe, in stream frames | The environment block of a child is in name order |
-| [D24](DIVERGENCES.md#d24) | Always-on | No for a replaced folder: the disk differs. Yes at the index placement (not measured), and after a `.git` file swap on Windows | A create rollback keeps a folder that replaced the registration. On Windows it runs no git call after a `.git` file swap |
+| [D24](DIVERGENCES.md#d24) | Always-on | No for a replaced folder: the disk differs. Yes at the index placement (not measured), after a `.git` file swap on Windows, and after a staged swap on Linux and macOS | A create rollback keeps a folder that replaced the registration. On Windows it runs no git call after a `.git` file swap. On Linux and macOS a staged swap of `.git` keeps a registration or a branch |
 | [D27](DIVERGENCES.md#d27) | Always-on, Windows | Yes, in a case-sensitive folder | The stale step keeps an entry whose record path exists |
 | [CT-1](DIVERGENCES.md#ct-1) | Opt-in | Yes, on request | `pid` and `startTime` on spawn and reattach |
 | [CT-2](DIVERGENCES.md#ct-2) | Opt-in | No | Children survive shutdown |
@@ -388,6 +388,10 @@ the linked pages.
   text and `commondir is larger than 1048576 bytes`, and keeps the old staging entries on Linux and macOS: a build split, not drift.
   See [git.worktree_create](protocol/git-worktree-create.md#error-texts) and, for the sweep,
   [After a failure](protocol/git-worktree-create.md#after-a-failure).
+- The staged add of a create follows `be1c1ca5`: the add with `<S>/.s<n>` (measured on
+  Linux), the staged leaf (measured on Linux and Windows), `locked` and the new texts. `683cc6a9` adds at the
+  leaf through the copy: a build split, not drift. See [The staged
+  add](protocol/git-worktree-create.md#the-staged-add).
 - The `worktreeRoot` location rules follow `5fd08069` (measured on Linux and
   macOS). `89cb6289` is not measured there.
 - A remove behind a linked `<git dir>/worktrees` follows `5fd08069` (measured on

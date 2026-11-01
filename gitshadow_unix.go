@@ -13,11 +13,10 @@ import (
 // A3, s3-macos cell A3).
 const shadowLinksWorktrees = true
 
-// shadowStagesAdd is false on Linux and macOS. On a Linux VM 5fd08069 makes no
-// `.s<n>` folder or `.claude-new-worktree-*` entry. A good
-// add there still removes the old staging entries (worktreeAdd), as be1c1ca5
-// does on Linux and macOS.
-const shadowStagesAdd = false
+// stagedAddWindowsSteps is false on Linux and macOS. An add that names the copy
+// is staged there too, as be1c1ca5 does, but after the steps of worktreeAdd
+// before the add, and with the texts of Linux and macOS (runAddStaged).
+const stagedAddWindowsSteps = false
 
 // gitDirMustBeReal is true on Linux and macOS. A create holds the git directory
 // that its gate accepted, and tests at its steps that the path still names it

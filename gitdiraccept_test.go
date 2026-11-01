@@ -318,7 +318,7 @@ func TestStagedAddWithASwappedGitDir(t *testing.T) {
 	})
 	t.Run("after the call", func(t *testing.T) {
 		f := newStagedSwapFixture(t)
-		swapAt(t, "added", f.gitDir, f.target.dir)
+		swapAt(t, "staged", f.gitDir, f.target.dir)
 		_, stderr, err := stagedAdd(t, f.repoFolderFixture, f.u)
 		var incomplete *addIncomplete
 		const want = `".git" is a link or a file where Claude needs a real directory; put the directory itself in its place`

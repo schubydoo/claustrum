@@ -56,7 +56,7 @@ modes and the OS splits is in
 | `worktreeremove.go` | the deletes of `git.worktree_remove` |
 | `worktreeverify.go` | the tests after the `worktree add` and both rollbacks of `git.worktree_create` |
 | `worktreestale*.go` | the stale registration step before the add |
-| `worktreestaging.go` | the Windows staging folder, its move, and the cleanup of old staging entries on every system |
+| `worktreestaging.go` | the staged add: its folder `.s<n>`, the staging folder and its move, and the cleanup of old staging entries |
 | `gitdirheld.go` | the held git directory and the list of the steps that act through it |
 | `githarden_index_*.go` | the placement of the index of a new worktree, and the registration delete of the second rollback (`removeCreatedRegistration`) |
 | `install.go` | the CLI path delete, the sweeps, the prune and the blob remove of `-install` |
@@ -131,7 +131,7 @@ from the socket, as in `plugins.prune`.
 |------|-----------------|--------------|-------|-------------|
 | `files.extract_tar` | the last name of `destDir` | the caller (RPC) | `wipesHomeDir`, `destEntryHoldsHome`, `checkDestViews` | [files.extract_tar](docs/protocol/files-extract-tar.md) |
 | `git.worktree_remove` | `worktreePath`, its registration | the caller (RPC) | `wipesHomeDir` on `worktreePath`, containment | [git.worktree_remove](docs/protocol/git-worktree-remove.md) |
-| `git.worktree_create` rollback | `worktreePath`, its registration, one stale entry, two Windows staging removes | the caller (RPC) | `wipesHomeDir` (D2), identity tests, one exception (see Registration and index) | [git.worktree_create](docs/protocol/git-worktree-create.md#after-a-failure) |
+| `git.worktree_create` rollback | `worktreePath`, its registration, one stale entry, two staging removes | the caller (RPC) | `wipesHomeDir` (D2), identity tests, one exception (see Registration and index) | [git.worktree_create](docs/protocol/git-worktree-create.md#after-a-failure) |
 | `git.worktree_create` staging sweep | old staging entries of the `baseRepo` git directory | the caller (RPC): a good add in `shadow` | prefix, age, `wipesHomeDir` | [git.worktree_create](docs/protocol/git-worktree-create.md#after-a-failure) |
 | `-install` | the CLI path | the operator | D6, `folderHoldsHome` | [-install](docs/INSTALL.md#staging-and-cleanup) |
 
@@ -205,7 +205,10 @@ empty leaf ([When a rollback leaves
 something](docs/protocol/git-worktree-create.md#after-a-failure)). The second rollback runs when `timeoutMs` expired by the end of the add, during the checkout or the
 copy step, after a post-checkout drain that exceeded that `timeoutMs`, a failed checkout, `config.worktree` copy or index placement, and a
 refusal of the filter rule (`gitfilter.go`, [Git
-filters](docs/protocol/git-worktree-create.md#git-filters)).
+filters](docs/protocol/git-worktree-create.md#git-filters)). It runs after three failures of
+the staging step too (`be1c1ca5`, measured on Linux): a `.git` that something put in the leaf,
+which goes with the leaf, an entry replaced right after its rename, and a `locked` file that
+cannot be removed. The last two delete no registration (D24, and the maintainer's choice).
 
 ##### Leaf, stale entry and refusals
 
@@ -241,7 +244,7 @@ filters](docs/protocol/git-worktree-create.md#git-filters)).
   identity comes from a stat of the path (not measured). A folder that is not the accepted
   one stays (D24).
 - **Held, or no answer of git.** A create that holds its git directory deletes the
-  registration by name through the held folder (the moved entry on Windows), and none if
+  registration by name through the held folder (the moved entry), and none if
   `.git` is no longer that folder. Otherwise, with no answer or on Windows, the folder is
   the one that the `.git` file names. It goes only if its `gitdir` record names the leaf and
   it resolves strictly inside the registrations directory. That delete runs no
@@ -271,8 +274,10 @@ as a tree, by one `os.Root.RemoveAll`. A file, a link and a junction go with one
 `os.Root.Remove`, so the target of a junction stays.
 
 Guards, in order: it runs in the state `shadow` only, after a good add. The path must still
-name the held git directory. Otherwise nothing is removed, and on Windows the create is
-refused and nothing is made (Linux and macOS: claustrum's own).
+name the held git directory. Otherwise nothing is removed. On Windows the create is then
+refused and nothing is made. On Linux and macOS a new real directory there that passes the
+gate takes the hold, and the move goes into it with no sweep. Any other swap there refuses
+the create (claustrum's own).
 Entries are read with `Lstat` through that root. The name must start with the prefix with
 the dash, and the write time must be 1 hour old or more. `wipesHomeDir` refuses an entry
 that is home or holds it. A failed removal logs one line, and the create goes on (not measured). `git.info` and
@@ -406,43 +411,50 @@ Two steps take a new folder from the path, on Linux and macOS. After `rev-parse
 --absolute-git-dir`, a path that leads to another git directory which passes the
 gate becomes the held folder (`acceptedGitDir.movedTo`). After a good `worktree
 add`, a new real directory at the path that passes the gate does too
-(`replacedAtPath`, approved by the maintainer). Another git directory is not
-measured. Add no other step that resolves the path of the git directory again,
+(`replacedAtPath`, approved by the maintainer). In a staged add the staging step takes it
+before the move, and the registration goes into it (`be1c1ca5` moves it into a copy and into
+a second repository, measured on Linux). Add no other step that resolves the path of the git directory again,
 and never widen a delete of these steps. A rollback after the first move is not
-measured. After the first move the staging sweep is skipped (claustrum's own). After the second, the rollback acts through that new folder ([Rare
+measured. After the first move the staging sweep is skipped (claustrum's own). After the
+staging step takes the hold, the sweep is skipped and the rollback deletes no registration
+(claustrum's own, `be1c1ca5` removes it). A held create whose add names no copy takes the
+second step after the add, and its rollback acts through the new folder ([Rare
 states](docs/protocol/git-worktree-create.md#rare-states)).
 
 
 ### What `git.worktree_create` writes
 
 In the state `shadow` the create writes into the git directory of `baseRepo` and into the
-new worktree. Only the sweep of old staging entries and the two removes of the Windows staging step are tree deletes. Each write
+new worktree. Only the sweep of old staging entries and the two removes of the staging step are tree deletes. Each write
 goes through an `os.Root`, with a fixed name, a name that the daemon read through that root,
 or a name that it made ([The settings
 copy](docs/protocol/git-worktree-create.md#the-settings-copy)).
 
-- `<git dir>/worktrees`, made before the add. On Linux and macOS a last
+- `<git dir>/worktrees`, made before the add, and by one `os.Root.Mkdir` in a folder that the
+  staging step took the hold on. On Linux and macOS a last
   `core.sharedrepository` copy line other than `umask` sets its mode by one `os.Root.Chmod`, with the set-group-ID bit,
   only on a folder that this call made. macOS is not measured.
-- Linux and macOS: the `.git` file of the new worktree (`replaceWorktreeGitFile`), by one
-  `os.Root.Remove` of the fixed name `.git` and one exclusive create with mode 0666 through a root at the
-  leaf. The leaf must be the folder of the checkpoint, `.git` a regular file of at most 8192
-  bytes, and its text `gitdir: `, the folder of the copy, `/worktrees/`, one name with no separator and a
-  newline. Each other text stays as it is.
+- The `.git` file of the new worktree (`writeLeafGitFile`), by one exclusive create with
+  mode 0666 through a root at the leaf, which must be the folder of the checkpoint. A `.git`
+  entry there refuses the create, and nothing is written through it.
 - `config.worktree` of the registration (`writeWorktreeConfig`), through the held folder
   and a root at the registration. That must be a real direct entry of `<git dir>/worktrees`
-  and the accepted one by identity (on Windows the moved one). After an empty answer of git, its `gitdir` record must
+  and the accepted one by identity (the moved one). After an empty answer of git, its `gitdir` record must
   name the leaf. An entry there goes first by one plain `os.Root.Remove` (Linux and macOS,
   claustrum's own), and the create is exclusive. On Windows a folder there fails and a file
   there gets the new text. Before it the daemon runs `git config --file <its own file> --unset-all`
   on a file in `.config-<n>`.
-- Windows: the staging folder `<git dir>\.claude-new-worktree-<16 hex>` and one
+- The staging folder `<git dir>/.claude-new-worktree-<16 hex>` and one
   `os.Root.Rename` of it into `worktrees` (`addStage.move`). The folder and its files are
-  new, made with exclusive creates through the held root, and the `.git` file of the leaf
-  must name the staged entry first. A failed step after its mkdir
+  new, made with exclusive creates through the held root, and the `.git` file of the staged
+  leaf must name the staged entry first. Its file `locked` is new too. Its `gitdir` record
+  that names the staged leaf goes by one `os.Root.Remove` and comes back by one exclusive
+  create that names the leaf. Linux and macOS give its entries modes, and Linux a group, by one `os.Root.Chmod`
+  or `os.Root.Lchown` each. A failed step after its mkdir
   removes it as a tree through the held root, by the name that this call made, after
-  `wipesHomeDir`. If the `.git` file cannot be replaced, the moved registration goes too,
-  by its name. Its identity test against the held staging folder is claustrum's own. The index is a
+  `wipesHomeDir`. If the `.git` file of the leaf cannot be made, the moved registration goes too,
+  by its name. Its identity test against the held staging folder is claustrum's own. `locked`
+  then goes by one plain `os.Root.Remove` through a root at the moved entry. The index is a
   new file of the moved registration. With none it is `index.tmp-<n>` and a rename.
 
 ### Auth and token
@@ -525,7 +537,7 @@ the rules, the cost and the reopen trigger of each.
 | [D20](docs/DIVERGENCES.md#d20) | Wait 50 ms and read again before the group `SIGKILL` of a child-group leader that reads as gone, at the reap of a `-serve` start | always-on | Linux, macOS |
 | [D22](docs/DIVERGENCES.md#d22) | `git.worktree_remove` refuses a worktree locked in the `.git` folder of `baseRepo`. Part A names the one exception | always-on | all |
 | [D23](docs/DIVERGENCES.md#d23) | The environment block of a child is in name order | always-on | Windows |
-| [D24](docs/DIVERGENCES.md#d24) | The rollback of `git.worktree_create` keeps a folder that replaced the new registration. On Windows a rollback after `.git` became a file that names a second repository runs no git call | always-on | all |
+| [D24](docs/DIVERGENCES.md#d24) | The rollback of `git.worktree_create` keeps a folder that replaced the new registration. On Windows a rollback after `.git` became a file that names a second repository runs no git call. On Linux and macOS a rollback after a swap of `.git` during the staged add deletes no registration in the new folder and no branch through a link | always-on | all |
 | [D27](docs/DIVERGENCES.md#d27) | The stale step of `git.worktree_create` keeps an entry whose `gitdir` record names a path that exists | always-on | Windows |
 | [CT-1](docs/DIVERGENCES.md#ct-1) | Opt-in `wantPid` adds `pid` and `startTime` on spawn and reattach | off (the caller asks) | all |
 | [CT-2](docs/DIVERGENCES.md#ct-2) | `-keep-children` leaves the child tree running on shutdown | off | all |

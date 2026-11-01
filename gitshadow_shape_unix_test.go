@@ -149,6 +149,7 @@ func (f shapeFixture) request(t *testing.T, method string, params map[string]any
 
 var (
 	shapeNumber = regexp.MustCompile(`-[0-9]{6,}`)
+	shapeAddDir = regexp.MustCompile(`/\.s[0-9]{1,10}\b`)
 	shapeCommit = regexp.MustCompile(`\b[0-9a-f]{40}\b`)
 )
 
@@ -211,6 +212,7 @@ func (f shapeFixture) line(t *testing.T, c envCall) string {
 		filepath.Clean(resolveTestRoot(t, os.TempDir())), "<tmp>", filepath.Clean(os.TempDir()), "<tmp>")
 	text = strings.NewReplacer(masks...).Replace(text)
 	text = shapeNumber.ReplaceAllString(text, "-<n>")
+	text = shapeAddDir.ReplaceAllString(text, "/.s<n>")
 	text = shapeCommit.ReplaceAllString(text, "<id>")
 	return strings.NewReplacer(shapeA, "{A}", shapeA2, "{A2}", shapeC, "{C}", shapeD, "{D}", shapeW, "{W}",
 		shapeG, "{G}", shapeH, "{H}", shapeL, "{L}").Replace(text)
@@ -354,7 +356,7 @@ func createRows() []shapeRow {
 			{list: "none", argv: "--git-dir=<repo>/.git config -z --list", cwd: "<repo>/.git", shadow: "{A} {D} {L}", off: "{A} {G} {L}"},
 			{list: "P28", argv: "--git-dir=<repo>/.git --work-tree=<repo> rev-parse --show-toplevel", cwd: "<repo>/.git", shadow: "{A} {D} {H}", off: "{A} {G} {H}"},
 		},
-		light("worktree add --no-track --no-checkout -b w1 <leaf>"),
+		addRows("worktree add --no-track --no-checkout -b w1 <leaf>"),
 		[]shapeRow{
 			same("none", "--git-dir=<repo>/.git config -z --list", leaf, "{C} {D} {L}", "{C} {G} {L}"),
 			{list: "none", argv: "--git-dir=<repo>/.git config -z --list", cwd: leaf,
@@ -371,6 +373,28 @@ func createRows() []shapeRow {
 				shadow: "{C} {D} {H}" + index[true]},
 		},
 	)
+}
+
+// addRows is the pair of a `worktree add` with argv. In the state shadow the
+// call names `<S>/.s<n>/leaf/w1` in the place of the leaf and carries
+// GIT_COMMON_DIR=<S>/.s<n> (be1c1ca5, measured on Linux). Its listing keeps
+// the copy.
+func addRows(argv string) []shapeRow {
+	out := pair("P20", argv, "<repo>", "{A2} {D} {W}", "{C} {G}")
+	out[0].fallback, out[1].fallback = "{A2} {G} {L}", "{A2} {G} {H}"
+	out[1].shadow = ""
+	staged := out[1]
+	staged.argv = strings.Replace(argv, "<leaf>", "<S>/.s<n>/leaf/w1", 1)
+	staged.shadow, staged.off, staged.fallback = "{A2} GIT_COMMON_DIR=<S>/.s<n> GIT_OBJECT_DIRECTORY=<repo>/.git/objects {W} {H}", "", ""
+	return []shapeRow{out[0], staged, out[1]}
+}
+
+// probeAfterCreate is the call about the repository that the first request
+// after a staged create makes in the state shadow. The staging folder was a
+// new entry of `.git`, so the kept answer is stale (keptProbe.fresh).
+func probeAfterCreate() []shapeRow {
+	return []shapeRow{{list: "?core.hooksPath=/dev/null core.fsmonitor=", argv: "rev-parse --git-dir", cwd: "<repo>",
+		shadow: "GIT_COMMON_DIR=<S>/.probe GIT_OBJECT_DIRECTORY=<S>/.probe/objects GIT_ALLOW_PROTOCOL=denied_by_claude_ssh GIT_NO_LAZY_FETCH=1 GIT_TERMINAL_PROMPT=0 {L}"}}
 }
 
 // The 8 calls of a git.worktree_remove with branchName (cell 45 of
@@ -440,7 +464,7 @@ func TestGitCallShapePerState(t *testing.T) {
 			if raw != removeOK {
 				t.Fatalf("git.worktree_remove = %s", raw)
 			}
-			f.check(t, "git.worktree_remove", got, removeRows())
+			f.check(t, "git.worktree_remove", got, rows(probeAfterCreate(), removeRows()))
 		})
 	}
 }
@@ -585,10 +609,9 @@ func TestShadowTopLevelPairOfARemove(t *testing.T) {
 
 // TestShadowBothAddsNameTheCopy pins the variables of the two `worktree
 // add` calls of a create with existingBranch whose attach add fails. In the
-// state shadow both carry GIT_COMMON_DIR=<R> with the three other folder
-// variables, as on 5fd08069 on a Linux VM (val-s3p2b1-linux cell
-// B2-create-existing-checked-out), and the new worktree names its registration
-// in the repository.
+// state shadow both are staged: each carries GIT_COMMON_DIR=<S>/.s<n> and the
+// staged leaf (be1c1ca5, measured on Linux), and the new worktree names its
+// registration in the repository.
 func TestShadowBothAddsNameTheCopy(t *testing.T) {
 	f := newShapeFixture(t, stateShadow)
 	if raw, _ := f.request(t, "git.info", map[string]any{"path": f.repo}); !strings.Contains(raw, `"isRepo":true`) {
@@ -601,10 +624,10 @@ func TestShadowBothAddsNameTheCopy(t *testing.T) {
 	if !strings.Contains(raw, `"success":true`) || !strings.Contains(raw, `"branch":"w1"`) {
 		t.Fatalf("git.worktree_create = %s", raw)
 	}
-	const vars = "{A2} {D} {W} {H}"
+	const vars = "{A2} GIT_COMMON_DIR=<S>/.s<n> GIT_OBJECT_DIRECTORY=<repo>/.git/objects {W} {H}"
 	want := []string{
-		"P20 | worktree add --no-checkout <leaf> wr | <repo> | " + vars,
-		"P20 | worktree add --no-track --no-checkout -b w1 <leaf> | <repo> | " + vars,
+		"P20 | worktree add --no-checkout <S>/.s<n>/leaf/w1 wr | <repo> | " + vars,
+		"P20 | worktree add --no-track --no-checkout -b w1 <S>/.s<n>/leaf/w1 | <repo> | " + vars,
 	}
 	var adds []string
 	for _, line := range got {
@@ -625,6 +648,7 @@ func TestShadowBothAddsNameTheCopy(t *testing.T) {
 // git.worktree_remove with worktreeRoot in the state shadow. They carry the
 // four folder variables, and the light calls carry the six values, as on
 // 5fd08069 (cell N3 of val-s3p2b2-3-linux2, Linux VM: the table of the remove).
+// The call about the repository comes first, after the staged create.
 func TestShadowRemoveWithWorktreeRootNamesTheCopy(t *testing.T) {
 	f := newShapeFixture(t, stateShadow)
 	if raw, _ := f.request(t, "git.info", map[string]any{"path": f.repo}); !strings.Contains(raw, `"isRepo":true`) {
@@ -644,5 +668,5 @@ func TestShadowRemoveWithWorktreeRootNamesTheCopy(t *testing.T) {
 	light := func(argv string) []shapeRow { return pair("P20", argv, "<repo>", "{A2} {D} {W}", "") }
 	heavy := pair("P28", "rev-parse --absolute-git-dir", "<repo>", "{A} {D} {W}", "")
 	f.check(t, "git.worktree_remove with worktreeRoot", got,
-		rows(light("rev-parse --show-toplevel"), heavy, light("worktree list --porcelain -z"), heavy))
+		rows(probeAfterCreate(), light("rev-parse --show-toplevel"), heavy, light("worktree list --porcelain -z"), heavy))
 }

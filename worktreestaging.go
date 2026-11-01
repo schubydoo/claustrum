@@ -11,6 +11,7 @@ import (
 	"io"
 	"io/fs"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"slices"
 	"strconv"
@@ -18,10 +19,9 @@ import (
 	"time"
 )
 
-// The `worktree add` of git.worktree_create on Windows in the state shadow, as
-// 5fd08069 runs it on a Windows VM. The copy of a repository has no `worktrees`
-// entry there (shadowLinksWorktrees), so that build gives the call a folder of
-// its own:
+// The staged `worktree add` of git.worktree_create in the state shadow, as
+// 5fd08069 runs it on a Windows VM and be1c1ca5 runs it on Linux, macOS and
+// Windows. The call gets a folder of its own:
 //
 //  1. Before the call it makes `<S>\.s<n>` with a copy of the settings and of
 //     each registration of the repository (addCopyEntries). The call carries
@@ -31,13 +31,14 @@ import (
 //  3. It copies the new registration into a new folder
 //     `<git directory>\.claude-new-worktree-<16 hex>` and renames that folder to
 //     `<git directory>\worktrees\<name>`.
-//  4. It gives the `.git` file of the new worktree the text that names that
-//     folder, and removes `.s<n>`.
+//  4. It gives the new worktree a `.git` file that names that folder, and
+//     removes `.s<n>`. be1c1ca5 adds at `<S>/.s<n>/leaf/<name>`, so git writes
+//     no file into the new worktree itself.
 //
 // The rows are cells 44a to 44f of s3p2b-edges2-windows and cells 47 to 49 of
 // s3p2b-edges3-windows (Windows VM, Git for Windows 2.55.0). On Linux 5fd08069
-// makes no such folder or entry. On Linux and macOS only step 2 runs
-// (shadowStagesAdd, worktreeAdd).
+// makes no such folder or entry. The steps of be1c1ca5 are measured on Linux,
+// macOS and Windows.
 //
 // The decisions are plain functions of their inputs, so that every system
 // tests them. Every step in the git directory goes through one os.Root
@@ -216,7 +217,33 @@ type addStage struct {
 	removeDir func()
 	// copied has the names of the registrations that went into dir.
 	copied []string
+	// leafName is the last name of the new worktree, and of its folder in
+	// `<dir>/leaf`.
+	leafName string
 }
+
+// stagedLeafFolder is the folder of `.s<n>` that holds the path of the add.
+const stagedLeafFolder = "leaf"
+
+// privateCopyText starts the text of a create whose folder `.s<n>` cannot be
+// made on Linux and macOS. be1c1ca5 answers it with `mkdir <S>/.s<n>:
+// permission denied` after it, with errorCode worktree_add_failed and no
+// other words, on Linux (a folder git-shadow of mode 555).
+const privateCopyText = "cannot add a worktree: Claude could not prepare its own files on the remote machine: " +
+	"cannot make Claude's private copy of this repository's git directory: "
+
+// requestDirError is the error of a folder `.s<n>` that cannot be made.
+type requestDirError struct{ err error }
+
+func (e *requestDirError) Error() string { return e.err.Error() }
+func (e *requestDirError) Unwrap() error { return e.err }
+
+// addOwnFiles is the error of a `worktree add` that did not run, because a
+// file of the daemon cannot be made. The create answers its text alone,
+// with errorCode worktree_add_failed and the rollback of a failed add.
+type addOwnFiles struct{ text string }
+
+func (e *addOwnFiles) Error() string { return e.text }
 
 // openAddStage makes the folder `.s<n>` for one `worktree add` of the request
 // u. The steps and their order are those of cell 49b: the listing of the call
@@ -283,6 +310,9 @@ func openAddStage(u gitUse) (*addStage, error) {
 	}
 	if err == nil {
 		st.dir, st.removeDir, err = u.requestDir(addCopyPrefix, "")
+		if err != nil {
+			err = &requestDirError{err: err}
+		}
 	}
 	if err == nil {
 		err = st.fill(regs)
@@ -397,7 +427,10 @@ func (st *addStage) fill(regs []registrationCopy) error {
 	for _, reg := range regs {
 		st.copied = append(st.copied, reg.name)
 	}
-	return writeCopyEntries(dir, "", addCopyEntries(head, config, exclude, hasExclude, regs), 0o700, 0o600)
+	if err := writeCopyEntries(dir, "", addCopyEntries(head, config, exclude, hasExclude, regs), 0o700, 0o600); err != nil {
+		return err
+	}
+	return dir.Mkdir(stagedLeafFolder, 0o700)
 }
 
 // writeCopyEntries makes entries below the folder base of root, as new folders
@@ -427,10 +460,14 @@ func writeCopyEntries(root *os.Root, base string, entries []copyEntry, dirMode, 
 }
 
 // addIncomplete is the error of a `worktree add` call that git ended well and
-// whose steps after it did not run: the git directory is no longer the folder
-// that the create holds. The create answers it with completingAddPrefix and
-// rolls back.
-type addIncomplete struct{ text string }
+// whose steps after it did not run or failed. The create answers it with
+// completingAddPrefix and rolls back. keepRegistration marks a moved
+// registration that the rollback keeps (a `locked` file that cannot be
+// removed).
+type addIncomplete struct {
+	text             string
+	keepRegistration bool
+}
 
 func (e *addIncomplete) Error() string { return e.text }
 
@@ -468,7 +505,22 @@ func (e *addNotPrepared) Error() string { return e.text }
 // and git does not run (openAddStage). The listing comes before those steps:
 // 5fd08069 makes it and then stops (table W3).
 func worktreeAddStaged(ctx context.Context, u gitUse, repo, leaf string, cp worktreeCheckpoint, args ...string) (string, error) {
-	cmd := hardenedGitCmd(ctx, u, repo, false, nil, args...)
+	return runAddStaged(ctx, u, hardenedGitCmd(ctx, u, repo, false, nil, args...), leaf, cp)
+}
+
+// runAddStaged runs the `worktree add` call cmd of the request u with the
+// folder `.s<n>`, and the steps after a good call. On Linux and macOS
+// worktreeAdd calls it after its own steps before the add.
+//
+// The call gets the path `<S>/.s<n>/leaf/<name>` in the place of leaf, where
+// <name> is the last name of leaf. be1c1ca5 does so on Linux and Windows. Git
+// then writes the `.git` file into that folder and not into leaf. The folder
+// goes with `.s<n>`.
+//
+// A `.s<n>` that cannot be made answers privateCopyText on Linux and macOS, as
+// be1c1ca5 does on Linux. Windows keeps the text of 5fd08069 (the maintainer's
+// choice, not measured on be1c1ca5).
+func runAddStaged(ctx context.Context, u gitUse, cmd *exec.Cmd, leaf string, cp worktreeCheckpoint) (string, error) {
 	// The staging folder is filled from the copy, so it holds the folder of
 	// the copy until it goes (from the code).
 	drop, err := u.holdCopy(cmd.Args)
@@ -478,10 +530,21 @@ func worktreeAddStaged(ctx context.Context, u gitUse, repo, leaf string, cp work
 	defer drop()
 	st, err := openAddStage(u)
 	if err != nil {
+		var dirErr *requestDirError
+		if !stagedAddWindowsSteps && errors.As(err, &dirErr) {
+			return "", &addOwnFiles{text: privateCopyText + dirErr.err.Error()}
+		}
 		return "", &addNotPrepared{text: prepareWorktreesPrefix + err.Error()}
 	}
 	defer st.close()
 	cmd.Env = withAddCopy(cmd.Env, u.repoDir, st.dir)
+	st.leafName = filepath.Base(filepath.Clean(leaf))
+	staged := filepath.Join(st.dir, stagedLeafFolder, st.leafName)
+	for i, a := range cmd.Args {
+		if i > 0 && a == leaf {
+			cmd.Args[i] = staged
+		}
+	}
 	var errBuf bytes.Buffer
 	cmd.Stderr = &errBuf
 	err = gitRun(ctx, cmd)
@@ -502,29 +565,57 @@ func worktreeAddStaged(ctx context.Context, u gitUse, repo, leaf string, cp work
 // is a link or a file where Claude needs a real directory; …` and rolls back.
 // An old entry in the target of the junction stays, and the target gets no
 // registration (cells X1c-10 and X1p-10 of val-s3p2b2-7-windows, Windows VM).
+// be1c1ca5 answers the same text on Linux for a symbolic link at `.git` that
+// was put there right after the add or right before it, and removes the leaf.
+// After a link right after the add the branch stays. After a link right
+// before it, be1c1ca5 deletes the branch through the link, and claustrum keeps
+// it (runBranchStep, D24).
+//
+// On Linux and macOS a new real directory at the path that passes the gate
+// takes the hold first (acceptedGitDir.replacedAtPath), and the move goes
+// into it. be1c1ca5 moves the registration into a copy of `.git` made right
+// after the add or right before it, and the create succeeds there (measured
+// on Linux). The sweep is skipped then (claustrum's own). A rollback after
+// that step deletes no registration (undoFailedCheckout, claustrum's own).
+//
 // Both steps act through the held folder, so a folder that is put at the path
 // after this test gets nothing either (from the code: no row has a swap at
-// that moment).
+// that moment). A path that no longer names the held folder at the sweep, or
+// a hold that moved before the add, gets no sweep (claustrum's own).
 //
-// A failure of a measured step of the move fails the create (addIncomplete or
-// addRefused), with no log line (rounds task009-01 and task087-01, Windows VM).
-// Other failures before the mkdir of the staging folder, such as a
-// registration that is no folder and a staging folder that cannot be made,
-// are not measured. The daemon logs one line and goes on.
-// The `.git` file of the new worktree then names no registration of the
-// repository.
+// A failed step of the move fails the create (addIncomplete or addRefused),
+// with no log line (rounds task009-01 and task087-01, Windows VM). The steps
+// that no row measured fail it too: the leaf has no `.git` file before the
+// move ends (claustrum's own).
 func (st *addStage) finish(leaf string, cp worktreeCheckpoint) error {
-	if st.u.swapped("added") {
-		return &addIncomplete{text: realDirText(st.u.gitDir)}
+	replaced := false
+	if st.u.swapped("staged") {
+		var next *acceptedGitDir
+		if !stagedAddWindowsSteps && st.u.accepted != nil {
+			next = st.u.accepted.replacedAtPath(st.u.accepted.dir)
+		}
+		if next == nil {
+			return &addIncomplete{text: realDirText(st.u.gitDir)}
+		}
+		st.u.accepted.adopt(next)
+		st.git, replaced = st.u.accepted.root, true
+		// The new folder gets `worktrees` when it has none, as the folder of
+		// the gate did before the add (makeWorktreesFolder). be1c1ca5 makes the
+		// registration in a second repository there (measured on Linux).
+		if err := st.git.Mkdir(worktreesSubdir, 0o755); err != nil && !errors.Is(err, fs.ErrExist) {
+			return &addIncomplete{text: err.Error()}
+		}
 	}
-	sweepOldStaging(st.git, st.u.gitDir, stagingClock())
+	if !replaced && (st.u.accepted == nil || st.u.accepted.isAt(st.u.gitDir)) && !st.u.swapped("sweep") {
+		sweepOldStaging(st.git, st.u.heldGitDir(), stagingClock())
+	}
 	if err := st.move(leaf, cp); err != nil {
 		var incomplete *addIncomplete
 		var refused *addRefused
 		if errors.As(err, &incomplete) || errors.As(err, &refused) {
 			return err
 		}
-		logWarnf("[GitHandler] the registration of the new worktree did not move into the git folder: %v", err)
+		return &addIncomplete{text: err.Error()}
 	}
 	return nil
 }
@@ -617,7 +708,7 @@ func sweepOldStaging(git *os.Root, gitDir string, now time.Time) {
 }
 
 // move brings the registration that git wrote into `.s<n>` to the git
-// directory, and points the `.git` file of the new worktree leaf at it.
+// directory, and gives the new worktree leaf its `.git` file.
 //
 // On 5fd08069 the daemon makes `<git directory>\.claude-new-worktree-<16 hex>`
 // and fills it in place with new files: `HEAD` (19 bytes there), `commondir`
@@ -625,27 +716,37 @@ func sweepOldStaging(git *os.Root, gitDir string, now time.Time) {
 // `<git directory>\worktrees\<name>`: the folder and its files keep their file
 // ids, in 9 of 9 runs (cell 47). After the move the `.git` file of the
 // worktree has the text of worktreeGitFileText (cells 49a to 49f). The steps
-// and their failures are those of round task087-01 (Windows VM):
+// and their failures are those of round task087-01 (Windows VM), with the
+// steps of be1c1ca5 (measured on Linux, macOS and Windows):
 //
 //  1. `.s<n>\worktrees` must hold one new name. Else the text is `git
 //     registered <n> worktrees where one was expected; try again` (cell S1).
-//  2. The `.git` file of the leaf must name that entry of `.s<n>`. Else the
-//     create is refused with otherEntryRefusal (cell S2). Both tests come
+//  2. The `.git` file of the staged leaf must name that entry of `.s<n>`.
+//     Else the create is refused with otherEntryRefusal (cell S2).
+//  3. The leaf must hold no `.git` entry. Else the create is refused with
+//     plantedGitFileText (be1c1ca5, measured on Linux). These tests come
 //     before the staging folder is made.
-//  3. The staging folder gets a copy of the whole tree of the registration
-//     (copyRegistrationTree, cells S3 and S4).
-//  4. The target is the first free name of registrationTarget (cells S5 and
+//  4. The staging folder gets a copy of the whole tree of the registration
+//     (copyRegistrationTree, cells S3 and S4), the modes of stagedEntryModes,
+//     a `gitdir` record that names the leaf (stagedRecordText), and the file
+//     `locked` with `initializing` and a newline (be1c1ca5, measured on Linux,
+//     macOS and Windows).
+//  5. The target is the first free name of registrationTarget (cells S5 and
 //     S6v, and C4d of round task007-01).
-//  5. The rename gets the retry of retryRename (cells W3a to W3c of round
+//  6. The rename gets the retry of retryRename (cells W3a to W3c of round
 //     task009-01). A rename that still fails ends the move.
-//  6. The `.git` file of the leaf gets the text that names the target. A
-//     failure there removes the moved registration again (cell S8v).
+//  7. The entry at the target must still be the staging folder. Else the text
+//     is replacedEntryText, and nothing is removed (D24).
+//  8. The leaf gets a new `.git` file that names the target. A `.git` there
+//     refuses the create with plantedGitFileText. A failure there removes the
+//     moved registration again (cell S8v).
+//  9. `locked` goes by one plain remove (removeLockedFile).
 //
-// Each failure after the staging folder was made removes that folder, by the
-// name that this call made, through the held git directory. The step records
-// the moved registration and its identity in the held git directory
-// (acceptedGitDir.staged). A rollback removes that entry, and the index goes
-// into it.
+// Each failure after the staging folder was made and before the rename
+// removes that folder, by the name that this call made, through the held git
+// directory. The step records the moved registration and its identity in the
+// held git directory (acceptedGitDir.staged). A rollback removes that entry,
+// and the index goes into it.
 func (st *addStage) move(leaf string, cp worktreeCheckpoint) error {
 	dir, err := os.OpenRoot(st.dir)
 	if err != nil {
@@ -663,8 +764,11 @@ func (st *addStage) move(leaf string, cp worktreeCheckpoint) error {
 	if !ok {
 		return errors.New("git left no single new registration")
 	}
-	if !leafNamesStagedEntry(leaf, cp, filepath.Base(st.dir), name, st.u.gitDir) {
+	if !stagedLeafNamesEntry(dir, st.leafName, filepath.Base(st.dir), name, st.u.gitDir) {
 		return &addRefused{text: otherEntryRefusal(leaf)}
+	}
+	if err := leafHoldsNoGitFile(leaf, cp); err != nil {
+		return err
 	}
 	source := filepath.Join(worktreesSubdir, name)
 	if fi, err := dir.Lstat(source); err != nil || !goesAsTree(fi.Mode()) {
@@ -715,6 +819,13 @@ func (st *addStage) move(leaf string, cp worktreeCheckpoint) error {
 	if err := copyRegistrationTree(reg, st.git, staging, ""); err != nil {
 		return fail(err)
 	}
+	if err := st.writeStagedRecord(reg, staging, leaf); err != nil {
+		return fail(err)
+	}
+	if err := writeCopyEntries(st.git, staging, []copyEntry{{path: "locked", data: []byte(initializingLock)}}, 0o755, 0o644); err != nil {
+		return fail(err)
+	}
+	stagedEntryModes(reg, st.git, staging)
 	targetName, ok := registrationTarget(st.git, name)
 	if !ok {
 		return fail(fmt.Errorf("the repository already has a hundred worktrees called %q; remove some (git worktree prune, git worktree remove)", name))
@@ -723,12 +834,135 @@ func (st *addStage) move(leaf string, cp worktreeCheckpoint) error {
 	if err := retryRename(func() error { return stagingRename(st.git, staging, target) }); err != nil {
 		return fail(err)
 	}
-	if err := rewriteLeafGitFile(leaf, cp, worktreeGitFileText(st.u.gitDir, targetName)); err != nil {
+	// The staging folder stays open through the identity test, so no other
+	// folder can take its identity before the test.
+	entry, err := st.git.OpenRoot(target)
+	if err == nil {
+		fi, statErr := entry.Stat(".")
+		if statErr != nil || !os.SameFile(fi, heldInfo) {
+			_ = entry.Close()
+			err = errors.New(replacedEntryText)
+		}
+	}
+	closeHeld()
+	if err != nil {
+		return &addIncomplete{text: replacedEntryText}
+	}
+	defer func() { _ = entry.Close() }()
+	if err := writeLeafGitFile(leaf, cp, worktreeGitFileText(st.u.heldGitDir(), targetName)); err != nil {
 		st.removeMoved(target, heldInfo)
+		if errors.Is(err, fs.ErrExist) {
+			return &addRefused{text: plantedGitFileText(leaf)}
+		}
 		return &addIncomplete{text: err.Error()}
+	}
+	if err := removeLockedFile(entry); err != nil {
+		return &addIncomplete{text: err.Error() + "; try again", keepRegistration: true}
 	}
 	if st.u.accepted != nil {
 		st.u.accepted.staged = stagedEntry{name: targetName, info: heldInfo}
+	}
+	return nil
+}
+
+// initializingLock is the text of the file `locked` of a registration while
+// the staging step completes it. be1c1ca5 writes `initializing` and a newline,
+// 13 bytes (measured on Linux, macOS and Windows).
+const initializingLock = "initializing\n"
+
+// replacedEntryText is the cause of a create whose moved registration was
+// replaced right after the rename. be1c1ca5 answers it after
+// completingAddPrefix, with errorCode worktree_add_failed (measured on Linux).
+// It then removes the replacing entry by its name. claustrum keeps that entry
+// and the moved folder, because neither is the folder that it holds (D24).
+const replacedEntryText = "the new worktree's entry was replaced while it was being moved into place; try again"
+
+// plantedGitFileText is the refusal of a create whose leaf holds a `.git`
+// entry that the daemon did not make. be1c1ca5 answers it with errorCode
+// unsafe_path, and the leaf and the new branch go (measured on Linux). The
+// path is in the form of tickPath.
+func plantedGitFileText(leaf string) string {
+	return "refusing to create worktree: " + tickPath(filepath.Join(leaf, ".git")) +
+		" was put there by something else while the worktree was being made; nothing was written through it; try again"
+}
+
+// removeLockedFile removes the file `locked` of the moved registration by one
+// plain remove through entry, the root at that registration. On Windows a
+// held file gets the retry of retryWhile for renameRetryBound. be1c1ca5
+// succeeds with the file held for 1 s and fails with it held for 3 s
+// (measured on Windows). The error has the form `removeat locked: <cause>`, as
+// be1c1ca5 answers it on Linux, macOS and Windows. A test replaces it.
+var removeLockedFile = func(entry *os.Root) error {
+	return retryWhile(renameRetryBound, renameHeld, func() error { return entry.Remove("locked") })
+}
+
+// writeStagedRecord gives the staging folder a `gitdir` record that names
+// the `.git` file of leaf, when git wrote one that names the staged leaf.
+// be1c1ca5 has `<leaf>/.git` and a newline there, with the links of the
+// path resolved and a trailing blank kept (measured on Linux). Who writes
+// it is not measured. A record of another form stays as git wrote it.
+func (st *addStage) writeStagedRecord(reg *os.Root, staging, leaf string) error {
+	old, ok := readRootFile(reg, "gitdir", registrationFileMaxBytes)
+	if !ok {
+		return nil
+	}
+	stagedGit := filepath.Join(st.dir, stagedLeafFolder, st.leafName, ".git")
+	rec := strings.TrimSuffix(string(old), "\n")
+	if filepath.Clean(filepath.FromSlash(rec)) != filepath.Clean(stagedGit) && !sameGitDirPath(resolveAsFarAsExists(filepath.FromSlash(rec)), resolveAsFarAsExists(stagedGit)) {
+		return nil
+	}
+	path := filepath.Join(staging, "gitdir")
+	fi, err := st.git.Lstat(path)
+	if err != nil {
+		return err
+	}
+	if err := st.git.Remove(path); err != nil {
+		return err
+	}
+	if err := writeRootFile(st.git, path, []byte(stagedRecordText(leaf)), fi.Mode().Perm()); err != nil {
+		return err
+	}
+	return st.git.Chmod(path, fi.Mode().Perm())
+}
+
+// stagedRecordText is the `gitdir` record of the new worktree leaf: the
+// resolved path of leaf with forward slashes, `/.git` and a newline.
+func stagedRecordText(leaf string) string {
+	p := resolveAsFarAsExists(filepath.Clean(leaf))
+	return filepath.ToSlash(p) + "/.git\n"
+}
+
+// stagedLeafNamesEntry reports whether the `.git` file of the staged leaf
+// name in dir, the root at `.s<n>`, names the entry entry in the folder
+// addName (stagedGitFileText).
+func stagedLeafNamesEntry(dir *os.Root, name, addName, entry, gitDir string) bool {
+	old, ok := readRootFile(dir, filepath.Join(stagedLeafFolder, name, ".git"), repointMaxBytes)
+	if !ok {
+		return false
+	}
+	_, ok = stagedGitFileText(string(old), addName, entry, gitDir)
+	return ok
+}
+
+// leafHoldsNoGitFile tests that leaf is still the folder of the checkpoint cp
+// and holds no `.git` entry. A `.git` there gives addRefused with
+// plantedGitFileText.
+func leafHoldsNoGitFile(leaf string, cp worktreeCheckpoint) error {
+	if cp.info == nil {
+		return errors.New("the create holds no checkpoint of the new worktree")
+	}
+	root, err := os.OpenRoot(leaf)
+	if err != nil {
+		return err
+	}
+	defer func() { _ = root.Close() }()
+	if fi, err := root.Stat("."); err != nil || !os.SameFile(fi, cp.info) {
+		return errors.New("the new worktree is no longer the folder of the create")
+	}
+	if _, err := root.Lstat(".git"); err == nil {
+		return &addRefused{text: plantedGitFileText(leaf)}
+	} else if !errors.Is(err, fs.ErrNotExist) {
+		return err
 	}
 	return nil
 }
@@ -820,47 +1054,11 @@ func readRegistrationFile(root *os.Root, path string) ([]byte, error) {
 	return data, nil
 }
 
-// leafNamesStagedEntry reports whether the `.git` file of the leaf names the
-// entry name in the folder addName (stagedGitFileText). leaf must still be the
-// folder of the checkpoint cp, and `.git` a regular file of at most
-// repointMaxBytes.
-func leafNamesStagedEntry(leaf string, cp worktreeCheckpoint, addName, name, gitDir string) bool {
-	old, err := readLeafGitFile(leaf, cp)
-	if err != nil {
-		return false
-	}
-	_, ok := stagedGitFileText(old, addName, name, gitDir)
-	return ok
-}
-
-// readLeafGitFile reads the `.git` file of leaf through a root at leaf, which
-// must be the folder of the checkpoint cp.
-func readLeafGitFile(leaf string, cp worktreeCheckpoint) (string, error) {
-	if cp.info == nil {
-		return "", errors.New("the create holds no checkpoint of the new worktree")
-	}
-	root, err := os.OpenRoot(leaf)
-	if err != nil {
-		return "", err
-	}
-	defer func() { _ = root.Close() }()
-	if fi, err := root.Stat("."); err != nil || !os.SameFile(fi, cp.info) {
-		return "", errors.New("the new worktree is no longer the folder of the create")
-	}
-	if fi, err := root.Lstat(".git"); err != nil || !fi.Mode().IsRegular() || fi.Size() > repointMaxBytes {
-		return "", errors.New("the .git file of the new worktree cannot be read")
-	}
-	b, err := root.ReadFile(".git")
-	return string(b), err
-}
-
-// rewriteLeafGitFile replaces the `.git` file of leaf with text: one remove of
-// the fixed name `.git` and one exclusive create with mode 0666, through a root
-// at leaf, which must be the folder of the checkpoint cp. The error of a
-// failed step goes back. On 5fd08069 a `.git` file that cannot be removed
-// gives `removeat .git: Access is denied.` (cell S8v of round task087-01,
-// Windows VM).
-func rewriteLeafGitFile(leaf string, cp worktreeCheckpoint, text string) error {
+// writeLeafGitFile gives leaf a new `.git` file with text: one exclusive
+// create with mode 0666, through a root at leaf, which must be the folder of
+// the checkpoint cp. A `.git` entry there fails the create with fs.ErrExist,
+// and nothing is written through it. The error of a failed step goes back.
+func writeLeafGitFile(leaf string, cp worktreeCheckpoint, text string) error {
 	if cp.info == nil {
 		return errors.New("the create holds no checkpoint of the new worktree")
 	}
@@ -872,21 +1070,18 @@ func rewriteLeafGitFile(leaf string, cp worktreeCheckpoint, text string) error {
 	if fi, err := root.Stat("."); err != nil || !os.SameFile(fi, cp.info) {
 		return errors.New("the new worktree is no longer the folder of the create")
 	}
-	if err := root.Remove(".git"); err != nil {
-		return err
-	}
 	return writeRootFile(root, ".git", []byte(text), 0o666)
 }
 
 // removeMoved removes the registration target that move renamed into place,
-// after a failed rewrite of the `.git` file of the leaf. It goes as a tree
+// after a failed write of the `.git` file of the leaf. It goes as a tree
 // through the held root. On 5fd08069 the registration is gone 5 ms after the
 // move (cell S8v of round task087-01, Windows VM). The remove runs only while
-// the entry is the staging folder that move holds open (moved), by
-// identity. That test is claustrum's own.
+// the entry has the identity of the staging folder (moved), which move took
+// before the rename. That test is claustrum's own.
 func (st *addStage) removeMoved(target string, moved os.FileInfo) {
 	now, err := st.git.Lstat(target)
-	if err != nil || moved == nil || !os.SameFile(now, moved) || wipesHomeDir(filepath.Join(st.u.gitDir, target)) {
+	if err != nil || moved == nil || !os.SameFile(now, moved) || wipesHomeDir(filepath.Join(st.u.heldGitDir(), target)) {
 		return
 	}
 	_ = removeHeldEntry(st.git, target)
@@ -896,7 +1091,7 @@ func (st *addStage) removeMoved(target string, moved os.FileInfo) {
 // directory. It goes as a tree through the held root. wipesHomeDir runs first
 // as defense in depth. A remove that fails logs one line (not measured).
 func (st *addStage) removeOwnStaging(name string) {
-	if wipesHomeDir(filepath.Join(st.u.gitDir, name)) {
+	if wipesHomeDir(filepath.Join(st.u.heldGitDir(), name)) {
 		logWarnf("[GitHandler] refusing to remove the staging folder %s of the git folder: it holds the home folder", name)
 		return
 	}

@@ -29,7 +29,7 @@ func TestCreateWithAFolderAtConfigWorktreeOnWindows(t *testing.T) {
 		t.Run(row.cell, func(t *testing.T) {
 			f := newConfigStepFixture(t, "[core]\n\tfilemode = false\n")
 			s := stepCreate{shadowFixture: f.shadowFixture, leaf: f.leaf}
-			atStep(t, "added", func() {
+			atStep(t, "staged", func() {
 				at := filepath.Join(s.staged(t), "w1", worktreeConfigName)
 				if err := os.Mkdir(at, 0o755); err != nil {
 					t.Error(err)

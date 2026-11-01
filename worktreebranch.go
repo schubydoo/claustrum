@@ -56,6 +56,10 @@ const (
 	branchUnchecked
 	// branchUpdateRefFailed: update-ref failed or was stopped. err is its process error.
 	branchUpdateRefFailed
+	// branchBehindSwap: the path of the git directory leads to another folder
+	// than the held one, so no call ran and the branch stays. The undo text
+	// gets no part for it.
+	branchBehindSwap
 )
 
 // branchStepResult is the outcome of the branch step and the process error that
@@ -98,6 +102,14 @@ func runBranchStep(u gitUse, repo, branch string) branchStepResult {
 	// val-s3p2b2-7-windows, Windows VM).
 	if msg := u.swapRefusal("branch", repo); msg != "" {
 		return branchStepResult{kind: branchUnchecked, err: errors.New(msg)}
+	}
+	// On Linux and macOS a path that still leads to another folder than the
+	// held one deletes no branch: the step runs git by the path. On Linux
+	// be1c1ca5 deletes the branch through a symbolic link at `.git` that was
+	// put there right before the add. claustrum keeps the branch and adds no
+	// text (claustrum's own). Windows runs the step as before.
+	if !stagedAddWindowsSteps && u.swapped("branch step") {
+		return branchStepResult{kind: branchBehindSwap}
 	}
 	// After a failed step of the `config.worktree` file the config is read
 	// again. 5fd08069 keeps the branch with that refusal as the cause for a FIFO
