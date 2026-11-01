@@ -55,11 +55,15 @@ func worktreePathRefusal(repo, worktreePath, verb string) string {
 // is confirmed byte-for-byte against 7d193f89. A symlinked LEAF
 // is not caught here. Create refuses it as "already exists" (measured). Remove
 // refuses it as "is a symbolic link, not a worktree directory" (f6010b97, measured
-// on a macOS VM).
+// on a macOS VM). A create shows the path in backticks (tickPath, be1c1ca5,
+// measured on Linux, macOS and Windows). A remove shows it as it is (not measured).
 func worktreeSymlinkRefusal(repo, worktreePath, verb string) string {
 	link := symlinkedComponent(repo, worktreePath)
 	if link == "" {
 		return ""
+	}
+	if verb == "create" {
+		link = tickPath(link)
 	}
 	return fmt.Sprintf("refusing to %s worktree: %s is a symbolic link; a symlinked "+
 		".claude or .claude/worktrees inside the repository is not supported for SSH "+

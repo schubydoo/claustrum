@@ -15,6 +15,15 @@ import (
 // stale step before it makes the parent folders and the leaf.
 const staleStepAfterGitDir = false
 
+// unlockQuote quotes the path of a `git worktree unlock` hint. Linux and macOS
+// use single quotes (be1c1ca5, measured on Linux and macOS).
+const unlockQuote = "'"
+
+// genericHintChars are the characters of a leaf path that give the unlock hint with
+// no path: `$` (measured on Linux and macOS), `'` and a backslash (measured on
+// Linux).
+const genericHintChars = "$'\\"
+
 // dropStaleWorktreeRegistration is the step of git.worktree_create before `git
 // worktree add`, on Linux and macOS. It works on the folder `worktrees` of the
 // common git directory of repo (staleRegistryDir). An entry of that folder is stale for

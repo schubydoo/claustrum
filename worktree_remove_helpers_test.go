@@ -106,8 +106,8 @@ func TestLoadEntryRecordShapes(t *testing.T) {
 // missing directory.
 func TestWorktreeEntryHelpersWithoutWorktreesDir(t *testing.T) {
 	common := filepath.Join(t.TempDir(), ".git")
-	if verifiedEntryLocked(common, "w") {
-		t.Error("verifiedEntryLocked(no worktrees dir) = true")
+	if verifiedEntryLocked(common, "w") != notLocked {
+		t.Error("verifiedEntryLocked(no worktrees dir) is locked")
 	}
 	if err := dropWorktreeEntry(common, "w"); !errors.Is(err, fs.ErrNotExist) {
 		t.Errorf("dropWorktreeEntry(no worktrees dir) = %v, want not-exist", err)
