@@ -604,11 +604,11 @@ func TestDocsEveryErrorCodeIsDocumented(t *testing.T) {
 // because the documents grew past what a person can read. A limit goes down, never
 // up, without the maintainer's word.
 var docWordLimits = map[string]int{
-	"AGENTS.md":                                5671, // the build of the new prunes. 5670: the prune before the fetch of -install. 5632: the deadline of timeoutMs by the end of the add. 5628: the file that Windows cannot read. 5619: the empty folder that Windows cannot read. 5592: the temp-folder test of 683cc6a9. 5537: the two .synced removes of 683cc6a9
+	"AGENTS.md":                                5706, // the sweep on Linux and macOS of be1c1ca5. 5671: the build of the new prunes. 5670: the prune before the fetch of -install. 5632: the deadline of timeoutMs by the end of the add. 5628: the file that Windows cannot read. 5619: the empty folder that Windows cannot read. 5592: the temp-folder test of 683cc6a9. 5537: the two .synced removes of 683cc6a9
 	"CONTRIBUTING.md":                          1071,
 	"README.md":                                1133, // 13 are the HTML tokens of the logo <picture> block (maintainer, 2026-10-31)
 	"SECURITY.md":                              1553,
-	"docs/ARCHITECTURE.md":                     2667,
+	"docs/ARCHITECTURE.md":                     2673, // the sweep on Linux and macOS of be1c1ca5. 2667 before
 	"docs/DAEMON.md":                           7616, // TASK-297: the start-time line. 7541: the temp-folder lines of 683cc6a9. 7493: TASK-231: the new section Lines of connections. 7175: a new page, its words moved from PROTOCOL.md and ARCHITECTURE.md
 	"docs/DIVERGENCES.md":                      7778, // the cap that skips the prune after a full disk. 7764: TASK-208 summary table
 	"docs/EXAMPLES.md":                         1025,
@@ -618,7 +618,7 @@ var docWordLimits = map[string]int{
 	"docs/PROTOCOL.md":                         2835, // the files.realpath row and count. 2826: TASK-231: one sentence on the close line. TASK-230: one sentence on a failed write. TASK-202: the error texts, stream frames and flags moved to their own pages
 	"docs/STYLE.md":                            1293, // task-203b: the page rewrite
 	"docs/TOUR.md":                             850,  // a new page: its word count plus about 200
-	"docs/UPSTREAM-TRACKING.md":                6329, // TASK-292: the git env bullet. 6300: the worktree texts of be1c1ca5. 6250: the build of the new prunes. 6234: the pin of 683cc6a9. 6232: the terminal of 683cc6a9. 6230: the build of the open destDir refusal. 6228: the could-not-be-examined text. 6224: decision-040: words moved from PROTOCOL.md, net down in the same PR
+	"docs/UPSTREAM-TRACKING.md":                6356, // the sweep on Linux and macOS of be1c1ca5. 6329: TASK-292: the git env bullet. 6300: the worktree texts of be1c1ca5. 6250: the build of the new prunes. 6234: the pin of 683cc6a9. 6232: the terminal of 683cc6a9. 6230: the build of the open destDir refusal. 6228: the could-not-be-examined text. 6224: decision-040: words moved from PROTOCOL.md, net down in the same PR
 	"docs/index.md":                            316,  // the reader router of TASK-201
 	"docs/protocol/errors.md":                  1912, // TASK-245: the .probe text, 41 words of a new row
 	"docs/protocol/files-extract-tar.md":       2463, // the file that Windows cannot read. 2457: the empty folder that Windows cannot read. 2420: the .synced rules of 683cc6a9
@@ -634,7 +634,7 @@ var docWordLimits = map[string]int{
 	"docs/protocol/git-rules-trust.md":         4642, // the 1 MiB commondir reason of be1c1ca5. 4637: TASK-313: the not_a_repo answer of the create. 4601: the unsearchable git directory and the could-not-be-examined text. 4493: TASK-202: moved from PROTOCOL.md
 	"docs/protocol/git-list-branches.md":       997,  // task-203b: the page rewrite
 	"docs/protocol/git-status.md":              3185, // decision-040: a move between pages, net down in the same PR
-	"docs/protocol/git-worktree-create.md":     7335, // the refusal texts of be1c1ca5. 7018: the start of timeoutMs. 6996: the 2.2 s settle wait (claustrum's own). 6951: task-205: rewrite to the page template
+	"docs/protocol/git-worktree-create.md":     7375, // the sweep on Linux and macOS of be1c1ca5. 7335: the refusal texts of be1c1ca5. 7018: the start of timeoutMs. 6996: the 2.2 s settle wait (claustrum's own). 6951: task-205: rewrite to the page template
 	"docs/protocol/git-worktree-remove.md":     4325, // the lock texts of be1c1ca5. 4112: task-206: rewrite to the page template
 	"docs/protocol/launcher-resolve.md":        1620, // task-204: rewrite to the page template
 	"docs/protocol/plugins-prune.md":           1084, // task-203b: the page rewrite
@@ -717,7 +717,7 @@ var docSectionRunLimits = map[string]int{
 	"docs/INSTALL.md":                          736,
 	"docs/PROTOCOL.md":                         627,
 	"docs/STYLE.md":                            343,
-	"docs/UPSTREAM-TRACKING.md":                3034, // TASK-292: the git env bullet. 3005: the worktree texts of be1c1ca5. 2960 before
+	"docs/UPSTREAM-TRACKING.md":                3061, // the sweep on Linux and macOS of be1c1ca5. 3034: TASK-292: the git env bullet. 3005: the worktree texts of be1c1ca5. 2960 before
 	"docs/index.md":                            314,
 	"docs/protocol/errors.md":                  1850,
 	"docs/protocol/files-extract-tar.md":       388,

@@ -300,6 +300,14 @@ func worktreeAdd(ctx context.Context, u gitUse, repo, leaf string, cp worktreeCh
 	if err == nil && f.accepted != nil {
 		f.accepted.moved = true
 	}
+	// On Linux and macOS a good add that names the copy removes the old
+	// staging entries of the held git directory, as on Windows (sweepOldStaging).
+	// be1c1ca5 does so on Linux and macOS. Two states get no sweep (claustrum's
+	// own, not measured): a path that no longer names the held folder, and a
+	// hold that moved to another folder (acceptedGitDir.movedTo).
+	if err == nil && named && f.accepted != nil && f.accepted.isAt(f.gitDir) && !f.swapped("sweep") {
+		sweepOldStaging(f.accepted.root, f.heldGitDir(), stagingClock())
+	}
 	return errBuf.String(), err
 }
 

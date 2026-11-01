@@ -180,8 +180,8 @@ have no flag and no key.
     step before the add. It is defense in depth and emits no frame. The
     exception is the registration delete of a create that holds no git
     directory and accepted no registration. That delete tests the `gitdir` record and the registrations
-    directory instead. On Windows the guard also runs before the cleanup of old
-    `.claude-new-worktree-*` entries and before the two staging removes. A
+    directory instead. The guard also runs before the cleanup of old
+    `.claude-new-worktree-*` entries, and on Windows before the two staging removes. A
     refused entry stays.
   - The deletes inside the folder `git-shadow` of the daemon.
   - `-install`, before the tree delete of a folder at the CLI path. The reply is
@@ -198,7 +198,7 @@ have no flag and no key.
   and `5fd08069` answer `clean destDir: RemoveAll ...: invalid argument` on
   Windows, which is parity. No measured staging entry of the reference held home, so that guard
   is claustrum's own.
-- **Systems and switch.** Linux, macOS and Windows, with the staging removes
+- **Systems and switch.** Linux, macOS and Windows, with the two staging removes
   on Windows only. Always on, no switch.
 - **Cost.** A caller that names home, or a folder that holds it, gets a refusal.
   On Windows claustrum refuses a `destDir` with the `\\?\` prefix and a dot or a

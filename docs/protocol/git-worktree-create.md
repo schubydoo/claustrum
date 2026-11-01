@@ -201,6 +201,8 @@ A request can create four things outside the worktree, and no failure removes th
 
 Before the add, a request can remove one stale registration in the common git directory of `baseRepo`. A stale registration is one whose `gitdir` record names the `.git` of the new worktree. If it is the one stale entry and has no `locked` file, it goes. Otherwise none goes. Nothing behind a symbolic link or a junction at `worktrees` goes (measured on Windows with `"shadowDirOff": true`, claustrum's own elsewhere). Two creates through a repository and its linked worktree add in turn.
 
+After a good add in the state `shadow`, a create removes old staging entries of the git directory. Their name starts with `.claude-new-worktree-`, and their write time is 1 hour or more. A real folder goes as a tree. A link or a junction goes as a link, and its target stays. This is measured on Linux, macOS and Windows, on Linux and macOS since `be1c1ca5`. The 1 hour edge and the name rule are measured on Linux.
+
 | Failure | What stays of the worktree |
 |---|---|
 | A refusal of the request or of a path (`not_a_repo`, `nested_base_repo`, `symlinked_component`, and `unsafe_path` for a path) | Nothing, except the folder of a gone worktree above. |
@@ -228,7 +230,6 @@ Before the add, a request can remove one stale registration in the common git di
     - A junction between `baseRepo` and the worktree is refused with `mkdir_failed`.
     - The stale registration goes by the same rule, after `rev-parse --absolute-git-dir`. The compare ignores letter case, measured for a create that holds its git directory. An entry whose record names a path that exists stays ([D27](../DIVERGENCES.md#d27)).
     - In the state `shadow`, git writes the registration into a short-lived folder of the daemon. The daemon copies it into `<git dir>\.claude-new-worktree-<16 hex>` and renames that folder to the first free name of `<name>`, `<name>1` to `<name>99` in `<git dir>\worktrees`. A held folder gets 2 s of retries, also past `timeoutMs`. A rename that still fails gives `worktree_add_failed`, and the rollback removes the staging folder. A failed write of the `.git` file of the worktree, and a rollback, remove the moved registration by its name. `config.worktree` and the index are new files there.
-    - Before that step, a create removes old staging entries of the git directory. Their name starts with `.claude-new-worktree-`, and their write time is 1 hour or more. A junction goes as a junction, and its target stays.
 
 ## Rare states
 

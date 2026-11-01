@@ -31,8 +31,9 @@ import (
 //   - The stale registration before the add: dropStaleRegistration on Windows,
 //     and dropStaleWorktreeRegistration with deleteRoot on Linux and macOS.
 //   - The folder `worktrees`: makeWorktreesFolder, and openAddStage on Windows.
-//   - The Windows staging steps: openAddStage, sweepOldStaging, addStage.move,
-//     addStage.removeOwnStaging and addStage.removeMoved.
+//   - The Windows staging steps: openAddStage, addStage.move,
+//     addStage.removeOwnStaging and addStage.removeMoved. The sweep of old
+//     staging entries on every system: sweepOldStaging.
 //   - The `config.worktree` file of the registration: writeWorktreeConfig.
 //   - The index: installTestedWorktreeIndex with registrationsRoot, and
 //     installIndex for a create with no tested registration.
