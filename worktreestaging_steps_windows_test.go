@@ -10,6 +10,7 @@ import (
 	"strconv"
 	"strings"
 	"testing"
+	"time"
 )
 
 // The Windows frames of the staging step of git.worktree_create, as on
@@ -82,20 +83,23 @@ func (f stepCreate) fullUndo(t *testing.T) {
 // in `.s<n>\worktrees` fails the create. Without step 1 the create succeeds.
 func TestCreateWithTwoStagedNamesOnWindows(t *testing.T) {
 	f := newStepCreate(t)
-	atStep(t, "added", func() { mustWrite(t, filepath.Join(f.staged(t), "w9", "HEAD"), "ref: refs/heads/main\n") })
+	atStep(t, "staged", func() { mustWrite(t, filepath.Join(f.staged(t), "w9", "HEAD"), "ref: refs/heads/main\n") })
 	raw, _ := f.create(t)
 	wantFailed(t, raw, completingAddPrefix+"git registered 2 worktrees where one was expected; try again", "worktree_add_failed")
 	f.fullUndo(t)
 }
 
 // TestCreateWithALeafOfAnotherEntryOnWindows must match cell S2: a `.git` file
-// of the leaf that names another entry of `.s<n>` refuses the create with
-// unsafe_path, and the leaf and the branch go. Without step 2 the create
+// of the staged leaf that names another entry of `.s<n>` refuses the create
+// with unsafe_path, and the leaf and the branch go. Without step 2 the create
 // succeeds.
 func TestCreateWithALeafOfAnotherEntryOnWindows(t *testing.T) {
 	f := newStepCreate(t)
-	atStep(t, "added", func() {
-		mustWrite(t, filepath.Join(f.leaf, ".git"), "gitdir: "+filepath.Join(f.staged(t), "w9")+"\n")
+	atStep(t, "staged", func() {
+		staged := filepath.Join(filepath.Dir(f.staged(t)), stagedLeafFolder, "w1", ".git")
+		if err := os.WriteFile(staged, []byte("gitdir: "+filepath.Join(f.staged(t), "w9")+"\n"), 0o644); err != nil {
+			t.Error(err)
+		}
 	})
 	raw, _ := f.create(t)
 	wantFailed(t, raw, otherEntryRefusal(f.leaf), "unsafe_path")
@@ -107,7 +111,7 @@ func TestCreateWithALeafOfAnotherEntryOnWindows(t *testing.T) {
 // of the tree the sub folder is empty.
 func TestCreateCopiesTheStagedTreeOnWindows(t *testing.T) {
 	f := newStepCreate(t)
-	atStep(t, "added", func() { mustWrite(t, filepath.Join(f.staged(t), "w1", "sub", "f.txt"), "x\n") })
+	atStep(t, "staged", func() { mustWrite(t, filepath.Join(f.staged(t), "w1", "sub", "f.txt"), "x\n") })
 	raw, _ := f.create(t)
 	if !strings.Contains(raw, `"result":{"success":true,`) {
 		t.Fatalf("git.worktree_create = %s", raw)
@@ -124,7 +128,7 @@ func TestCreateCopiesTheStagedTreeOnWindows(t *testing.T) {
 func TestCreateWithAJunctionInTheStagedEntryOnWindows(t *testing.T) {
 	f := newStepCreate(t)
 	tgt := filepath.Join(t.TempDir(), "tgt")
-	atStep(t, "added", func() {
+	atStep(t, "staged", func() {
 		makeJunction(t, filepath.Join(f.staged(t), "w1", "j"), tgt)
 		mustWrite(t, filepath.Join(tgt, "keep.txt"), "keep\n")
 	})
@@ -145,7 +149,7 @@ func TestCreateWithAJunctionInTheStagedEntryOnWindows(t *testing.T) {
 func TestCreateTakesTheNextNameOnWindows(t *testing.T) {
 	f := newStepCreate(t)
 	other := filepath.Join(f.gitDir, "worktrees", "w1", worktreeConfigName)
-	atStep(t, "added", func() { mustWrite(t, other, "x\n") })
+	atStep(t, "staged", func() { mustWrite(t, other, "x\n") })
 	raw, calls := f.create(t)
 	wantFailed(t, raw, otherEntryRefusal(f.leaf), "unsafe_path")
 	if got := mustRead(t, filepath.Join(f.leaf, ".git")); got != worktreeGitFileText(f.gitDir, "w11") {
@@ -177,7 +181,7 @@ func TestCreateWithAHundredNamesOnWindows(t *testing.T) {
 	for i := 1; i < 100; i++ {
 		names = append(names, "w1"+strconv.Itoa(i))
 	}
-	atStep(t, "added", func() {
+	atStep(t, "staged", func() {
 		for _, n := range names {
 			mustWrite(t, filepath.Join(f.gitDir, "worktrees", n, "f.txt"), "x\n")
 		}
@@ -195,35 +199,67 @@ func TestCreateWithAHundredNamesOnWindows(t *testing.T) {
 	}
 }
 
-// TestCreateWithAHeldLeafGitFileOnWindows follows cell S8v: the `.git` file of
-// the leaf cannot be removed. Here a handle without delete sharing holds it,
-// so the cause is a sharing violation where the cell has "Access is denied.".
-// The create fails with the error of the remove and the undo clause. The moved
-// registration is gone, and the branch and the leaf with its `.git` file stay.
-// Without the remove of the moved registration it stays.
-func TestCreateWithAHeldLeafGitFileOnWindows(t *testing.T) {
+// TestCreateWithAPlantedLeafGitFileOnWindows: a `.git` put into the leaf
+// after the add refuses the create with plantedGitFileText, and the leaf with
+// that file and the branch go. be1c1ca5 answers so on Linux. Windows is
+// claustrum's own, not measured. Without the test the create succeeds.
+func TestCreateWithAPlantedLeafGitFileOnWindows(t *testing.T) {
 	f := newStepCreate(t)
-	atStep(t, "added", func() {
-		release, err := holdOpenErr(filepath.Join(f.leaf, ".git"), false)
-		if err != nil {
-			t.Errorf("the hold of the .git file: %v", err)
-			return
-		}
-		t.Cleanup(release)
-	})
+	atStep(t, "staged", func() { mustWrite(t, filepath.Join(f.leaf, ".git"), "gitdir: C:/planted\n") })
 	raw, _ := f.create(t)
-	want := regexp.MustCompile(`"result":\{"success":false,"error":"git worktree add failed \(completing the new worktree's git files\): removeat \.git: [^"]+; and the undo could not finish for ` +
-		regexp.QuoteMeta(jsonText(t, f.leaf)) + `: the worktree directory, its registration, and the branch all remain; remove them by hand before retrying \(RemoveAll \.git: [^"]+\)","errorCode":"worktree_add_failed"\}\}$`)
-	if !want.MatchString(raw) {
-		t.Errorf("git.worktree_create = %s\nwant a match of %s", raw, want)
+	wantFailed(t, raw, plantedGitFileText(f.leaf), "unsafe_path")
+	f.fullUndo(t)
+}
+
+// TestCreateWithAHeldLockedFileOnWindows: a handle without delete sharing
+// holds `locked` of the moved registration. A hold that ends inside the retry
+// bound passes. A hold past it fails the create with `removeat locked: <cause>;
+// try again`, and the entry stays. be1c1ca5 passes a 1 s hold and fails a 3 s
+// hold (measured on Windows). Without the retry the short hold fails.
+func TestCreateWithAHeldLockedFileOnWindows(t *testing.T) {
+	hold := func(t *testing.T, f stepCreate, keep time.Duration) {
+		old := stagingRename
+		t.Cleanup(func() { stagingRename = old })
+		stagingRename = func(root *os.Root, oldName, newName string) error {
+			if err := old(root, oldName, newName); err != nil {
+				return err
+			}
+			release, err := holdOpenErr(filepath.Join(f.gitDir, "worktrees", "w1", "locked"), false)
+			if err != nil {
+				return err
+			}
+			if keep == 0 {
+				t.Cleanup(release)
+				return nil
+			}
+			time.AfterFunc(keep, release)
+			return nil
+		}
 	}
-	gone(t, filepath.Join(f.gitDir, "worktrees", "w1"))
-	if _, err := os.Lstat(filepath.Join(f.gitDir, "refs", "heads", "w1")); err != nil {
-		t.Errorf("the branch w1: %v, want it kept", err)
-	}
-	if got := entryNames(t, f.leaf); !slices.Equal(got, []string{".git"}) {
-		t.Errorf("the leaf holds %q, want .git only", got)
-	}
+	t.Run("a short hold", func(t *testing.T) {
+		f := newStepCreate(t)
+		setRenameRetryBound(t, 2*time.Second)
+		hold(t, f, 200*time.Millisecond)
+		raw, _ := f.create(t)
+		if !strings.Contains(raw, `"success":true`) {
+			t.Errorf("git.worktree_create = %s, want success", raw)
+		}
+		gone(t, filepath.Join(f.gitDir, "worktrees", "w1", "locked"))
+	})
+	t.Run("a hold past the bound", func(t *testing.T) {
+		f := newStepCreate(t)
+		setRenameRetryBound(t, 100*time.Millisecond)
+		hold(t, f, 0)
+		raw, _ := f.create(t)
+		want := regexp.MustCompile(`"result":\{"success":false,"error":"git worktree add failed \(completing the new worktree's git files\): removeat locked: [^"]+; try again","errorCode":"worktree_add_failed"\}\}$`)
+		if !want.MatchString(raw) {
+			t.Errorf("git.worktree_create = %s\nwant a match of %s", raw, want)
+		}
+		if _, err := os.Lstat(filepath.Join(f.gitDir, "worktrees", "w1", "locked")); err != nil {
+			t.Errorf("locked of the entry: %v, want it kept", err)
+		}
+		gone(t, f.leaf)
+	})
 }
 
 // TestRollbackRemovesTheMovedRegistrationOnWindows must match cell S14a: the
@@ -255,7 +291,7 @@ func TestRollbackRemovesTheMovedRegistrationOnWindows(t *testing.T) {
 // stay. No read-tree runs. Without the record test the create succeeds.
 func TestCreateWithARelativeRecordOnWindows(t *testing.T) {
 	f := newStepCreate(t)
-	atStep(t, "added", func() {
+	atStep(t, "staged", func() {
 		reg := filepath.Join(f.staged(t), "w1")
 		rel, err := filepath.Rel(reg, filepath.Join(f.leaf, ".git"))
 		if err != nil {

@@ -135,7 +135,7 @@ an open handle with no sharing.
 - One request also keeps short-lived entries in the folder of the daemon:
   `.gitdir-<n>` for a `git.status`, and `.index-<n>` and `.worktreeinclude-<n>` for a
   create. Also `.config-<n>` for a create in a repository with a `config.worktree`
-  file, and `.s<n>` on Windows. In the state `fallback-git` the first three are there
+  file, and `.s<n>`. In the state `fallback-git` the first three are there
   too (`.gitdir-<n>` on Linux and macOS, `.index-<n>` on Windows, and
   `.worktreeinclude-<n>` from the code). With `"shadowDirOff":true` the first three
   are in the temporary folder, as `claude-ssh-gitdir-<n>`, `claude-ssh-index-<n>` and

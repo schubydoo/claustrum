@@ -522,6 +522,7 @@ func TestOpenAddStage(t *testing.T) {
 		"config = " + mustRead(t, filepath.Join(u.repoDir, "config")),
 		"info",
 		"info/exclude = " + mustRead(t, filepath.Join(f.gitDir, "info", "exclude")),
+		"leaf",
 		"objects",
 		"refs",
 		"worktrees",
@@ -574,7 +575,7 @@ func TestOpenAddStageWithNoRegistration(t *testing.T) {
 	if len(st.copied) != 0 {
 		t.Errorf("the copied registrations = %q, want none", st.copied)
 	}
-	if got, want := listTree(t, st.dir)[2:], []string{"info", "objects", "refs"}; !slices.Equal(got, want) {
+	if got, want := listTree(t, st.dir)[2:], []string{"info", "leaf", "objects", "refs"}; !slices.Equal(got, want) {
 		t.Errorf("the folder holds %q after HEAD and config, want %q", got, want)
 	}
 }
@@ -810,9 +811,9 @@ func TestRegistrationTarget(t *testing.T) {
 }
 
 // TestWorktreeAddStagedWithNoCheckpoint: with no checkpoint of the leaf the
-// .git file of the leaf cannot be tested. So the add is refused before it
-// makes anything in the git directory (rule 2 of the move). That case is not
-// measured. Without the test the add succeeds.
+// leaf cannot be tested. So the add fails before it makes anything in the git
+// directory (step 3 of the move). That case is not measured. Without the test
+// the add succeeds.
 func TestWorktreeAddStagedWithNoCheckpoint(t *testing.T) {
 	f := newRepoFolderFixture(t)
 	clearFolderEnv(t)
@@ -824,18 +825,14 @@ func TestWorktreeAddStagedWithNoCheckpoint(t *testing.T) {
 	}
 	_, err := worktreeAddStaged(context.Background(), u, f.repo, leaf, worktreeCheckpoint{},
 		"worktree", "add", "--no-track", "--no-checkout", "-b", "w1", leaf)
-	var refused *addRefused
-	if !errors.As(err, &refused) || refused.text != otherEntryRefusal(leaf) {
-		t.Fatalf("the add = %v, want the refusal %s", err, otherEntryRefusal(leaf))
+	if got, want := incompleteText(err), "the create holds no checkpoint of the new worktree"; got != want {
+		t.Fatalf("the add = %v, want the text %q", err, want)
 	}
-	if got := mustRead(t, filepath.Join(leaf, ".git")); got == worktreeGitFileText(f.gitDir, "w1") {
-		t.Errorf("the .git file was written with no checkpoint: %q", got)
+	if _, err := os.Lstat(filepath.Join(leaf, ".git")); !os.IsNotExist(err) {
+		t.Errorf("the .git file of the leaf: %v, want none", err)
 	}
 	if _, err := os.Lstat(filepath.Join(f.gitDir, "worktrees", "w1")); !os.IsNotExist(err) {
 		t.Errorf("the registration w1: %v, want none", err)
-	}
-	if got := stagingEntries(t, f.gitDir); len(got) != 0 {
-		t.Errorf("the staging entries of the git directory = %q, want none", got)
 	}
 }
 

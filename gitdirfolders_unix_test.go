@@ -337,8 +337,10 @@ func TestCreateWithAnUnreadableParentOfTheGitDir(t *testing.T) {
 	}
 	reg := filepath.Join(gitDir, "worktrees", "w1")
 	wantPaths(t, true, filepath.Join(f.leaf(), "README"), filepath.Join(reg, "HEAD"), filepath.Join(reg, "commondir"),
-		filepath.Join(reg, "gitdir"), filepath.Join(reg, "index"), filepath.Join(reg, "logs", "HEAD"),
-		filepath.Join(gitDir, "refs", "heads", "b1"))
+		filepath.Join(reg, "gitdir"), filepath.Join(reg, "index"), filepath.Join(gitDir, "refs", "heads", "b1"))
+	// be1c1ca5 makes no `logs` folder in the new entry (measured on Linux and
+	// macOS).
+	wantPaths(t, false, filepath.Join(reg, "logs"))
 }
 
 // lockedLinkedWorktree makes the worktree leaf of branch b1 with git, locks it,
@@ -417,17 +419,17 @@ func TestRemoveOfALockedWorktreeBehindALink(t *testing.T) {
 	})
 }
 
-// TestCreateAfterACopiedGitDir: cells L4 and L5 of round tier0-26 (Linux VM).
-// The git directory of R is renamed and a real copy is put at its path.
+// TestCreateAfterACopiedGitDir: the git directory of R is renamed and a real
+// copy is put at its path. The staging step takes the hold on the copy and
+// moves the registration into it (acceptedGitDir.replacedAtPath). be1c1ca5
+// moves it into a copy made right before the add or right after it (measured
+// on Linux).
 //
-//   - L4: the copy goes in right before the real `worktree add`, as in C6, and
-//     the read-tree call fails. 5fd08069 rolls back in the copy: the leaf goes,
-//     the copy keeps an empty `worktrees` folder and no b1, and the old folder
-//     is unchanged.
-//   - L5: a copy made before the add goes in right after it, so it holds no
-//     registration. 5fd08069 refuses with unsafe_path and rolls nothing back.
-//     The leaf keeps its `.git` file, and the old folder keeps the
-//     registration and b1.
+//   - L4: the copy goes in right before the real `worktree add`, and the
+//     read-tree call fails. The rollback runs in the copy: the leaf, the moved
+//     registration and b1 go. The old folder is unchanged.
+//   - L5: a copy made before the add goes in right after it. The create
+//     succeeds in the copy, and the old folder keeps b1 and no registration.
 func TestCreateAfterACopiedGitDir(t *testing.T) {
 	t.Run("L4 a failed read-tree after the move", func(t *testing.T) {
 		f := newCellFixture(t)
@@ -455,7 +457,7 @@ func TestCreateAfterACopiedGitDir(t *testing.T) {
 			t.Errorf("the old git directory changed:\n%q\nwant\n%q", after, before)
 		}
 	})
-	t.Run("L5 a copy with no registration", func(t *testing.T) {
+	t.Run("L5 a copy made before the add", func(t *testing.T) {
 		f := newCellFixture(t)
 		copied := f.gitDir + ".copy"
 		if err := os.CopyFS(copied, os.DirFS(f.gitDir)); err != nil {
@@ -469,13 +471,11 @@ func TestCreateAfterACopiedGitDir(t *testing.T) {
 		t.Setenv("CLAUSTRUM_GITSTUB_VALUE", "rename\x1f"+f.gitDir+"\x1f"+old+"\x1erename\x1f"+copied+"\x1f"+f.gitDir)
 		slowGit(t, "worktree,add", "post", 0, "", "")
 		raw, _ := f.create(t, nil)
-		wantFrame(t, raw, frame(`{"success":false,"error":"refusing to create worktree: `+f.leaf()+
-			` carries a .git file that does not name this repository's own worktree admin directory","errorCode":"unsafe_path"}`))
-		if got := pathsBelow(t, f.leaf()); !slices.Equal(got, []string{".git"}) {
-			t.Errorf("the leaf holds %q, want .git only", got)
+		wantFrame(t, raw, frame(`{"success":true,"path":"`+f.leaf()+`","sourceBranch":"main","branch":"b1"}`))
+		if got, want := mustRead(t, filepath.Join(f.leaf(), ".git")), worktreeGitFileText(f.gitDir, "w1"); got != want {
+			t.Errorf("the .git file of the leaf = %q, want %q", got, want)
 		}
-		wantPaths(t, true, filepath.Join(old, "worktrees", "w1", "HEAD"), filepath.Join(old, "refs", "heads", "b1"),
-			filepath.Join(f.gitDir, "worktrees"))
-		wantPaths(t, false, filepath.Join(f.gitDir, "worktrees", "w1"), filepath.Join(f.gitDir, "refs", "heads", "b1"))
+		wantPaths(t, true, filepath.Join(f.gitDir, "worktrees", "w1", "HEAD"), filepath.Join(old, "refs", "heads", "b1"))
+		wantPaths(t, false, filepath.Join(old, "worktrees", "w1"))
 	})
 }

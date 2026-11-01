@@ -760,27 +760,29 @@ func TestWorktreeCreateThroughLinkedWorktreeWaits(t *testing.T) {
 	}
 }
 
-// TestWorktreeCreateRefusalKeepsLeafGitFile pins that the tests after the add
-// come before the daemon writes the .git file of the leaf again, in the state
-// shadow. After the refusals of cells V5c and V2 of round tier0-10 the file
-// still names the copy on 5fd08069 (round tier0-10, Linux VM, 1 run each). The stub writes that text after the add, because git 2.50 writes the
-// path of the repository there. The last row is the control: a create with no
-// refusal ends with the path of the git directory in the file.
+// TestWorktreeCreateRefusalKeepsLeafGitFile pins two refusals of the tests
+// after the add, in the state shadow, with the staged add: cells V5c and V2 of
+// round tier0-10 (Linux VM). The staging step has written the `.git` file of
+// the leaf before the tests, and a refusal keeps it and the registration.
+// The last row is the control: a create with no refusal.
 func TestWorktreeCreateRefusalKeepsLeafGitFile(t *testing.T) {
 	for _, tc := range []struct {
-		name  string
-		steps func(regs, other string) [][]string
-		text  func(leaf string) string
+		name string
+		step func(t *testing.T, regs, other string)
+		text func(leaf string) string
 	}{
-		{"V5c", func(regs, other string) [][]string {
-			return [][]string{{"write", filepath.Join(regs, "w1", "gitdir"), other + "\n"}}
+		{"V5c", func(t *testing.T, regs, other string) {
+			writeIn(t, filepath.Join(regs, "w1", "gitdir"), other+"\n")
 		}, differentWorktreeText},
-		{"V2", func(regs, _ string) [][]string { return [][]string{{"mkdir", filepath.Join(regs, "w1b")}} },
-			func(leaf string) string {
-				return "refusing to create worktree: " + namedLeaf(leaf) +
-					" carries a .git file naming an admin entry other than the one just created for it"
-			}},
-		{"no refusal", func(_, _ string) [][]string { return nil }, nil},
+		{"V2", func(t *testing.T, regs, _ string) {
+			if err := os.Mkdir(filepath.Join(regs, "w1b"), 0o755); err != nil {
+				t.Error(err)
+			}
+		}, func(leaf string) string {
+			return "refusing to create worktree: " + namedLeaf(leaf) +
+				" carries a .git file naming an admin entry other than the one just created for it"
+		}},
+		{"no refusal", func(*testing.T, string, string) {}, nil},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			f := newSeededShadowFixture(t)
@@ -789,25 +791,19 @@ func TestWorktreeCreateRefusalKeepsLeafGitFile(t *testing.T) {
 			}
 			leaf := filepath.Join(f.repo, ".claude", "worktrees", "w1")
 			regs := filepath.Join(f.gitDir, "worktrees")
-			named := "gitdir: " + filepath.Join(daemonFolder(t, f.run), shadowRepoName(f.gitDir), "worktrees", "w1") + "\n"
-			steps := append([][]string{{"write", filepath.Join(leaf, ".git"), named}},
-				tc.steps(regs, filepath.Join(filepath.Dir(f.repo), "elsewhere", "w", ".git"))...)
-			afterAddSteps(t, steps...)
+			atStep(t, "added", func() { tc.step(t, regs, filepath.Join(filepath.Dir(f.repo), "elsewhere", "w", ".git")) })
 			raw, _ := f.call(t, "git.worktree_create", map[string]any{"baseRepo": f.repo, "branchName": "w1", "worktreePath": leaf})
 			got := mustRead(t, filepath.Join(leaf, ".git"))
+			if want := "gitdir: " + filepath.Join(regs, "w1") + "\n"; got != want {
+				t.Errorf("the .git file of the leaf = %q, want %q", got, want)
+			}
 			if tc.text == nil {
 				if !strings.Contains(raw, `"success":true`) {
 					t.Fatalf("reply = %s\nwant success", raw)
 				}
-				if want := "gitdir: " + filepath.Join(regs, "w1") + "\n"; got != want {
-					t.Errorf("the .git file of the leaf = %q, want %q", got, want)
-				}
 				return
 			}
 			wantError(t, raw, tc.text(leaf), "unsafe_path")
-			if got != named {
-				t.Errorf("the .git file of the leaf = %q\nwant %q, the text before the refusal", got, named)
-			}
 			if _, err := os.Stat(filepath.Join(regs, "w1", "HEAD")); err != nil {
 				t.Errorf("the registration w1 lost its HEAD: %v", err)
 			}
@@ -913,10 +909,11 @@ func TestWorktreeCreateSpellingCallRollbackKeepsSwappedEntry(t *testing.T) {
 	}
 }
 
-// TestWorktreeCreateRepointsBeforeConfigCalls pins that the daemon writes the
-// .git file of the leaf again before the `git config` calls of the
-// `config.worktree` step (newWorktreeConfig), in the state shadow. The stub
-// copies the .git file of the leaf at the first `git config` call after the add.
+// TestWorktreeCreateRepointsBeforeConfigCalls pins that the `.git` file of the
+// leaf names the registration before the `git config` calls of the
+// `config.worktree` step (newWorktreeConfig), in the state shadow. The staging
+// step writes it. The stub copies the .git file of the leaf at the first `git
+// config` call after the add.
 func TestWorktreeCreateRepointsBeforeConfigCalls(t *testing.T) {
 	f := newSeededShadowFixture(t)
 	dropFixtureWorktree(t, f)
@@ -926,8 +923,6 @@ func TestWorktreeCreateRepointsBeforeConfigCalls(t *testing.T) {
 	}
 	leaf := filepath.Join(f.repo, ".claude", "worktrees", "w1")
 	regs := filepath.Join(f.gitDir, "worktrees")
-	named := "gitdir: " + filepath.Join(daemonFolder(t, f.run), shadowRepoName(f.gitDir), "worktrees", "w1") + "\n"
-	afterAddSteps(t, []string{"write", filepath.Join(leaf, ".git"), named})
 	snap := filepath.Join(t.TempDir(), "git-file")
 	duringCallSteps(t, "config", "", []string{"snap", filepath.Join(leaf, ".git"), snap})
 	raw, _ := f.call(t, "git.worktree_create", map[string]any{"baseRepo": f.repo, "branchName": "w1", "worktreePath": leaf})

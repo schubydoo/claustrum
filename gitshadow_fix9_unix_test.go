@@ -98,11 +98,10 @@ func TestNoRepositoryCallsWithAnUnreadableHead(t *testing.T) {
 }
 
 // TestDaemonFolderThatTakesNoNewEntry: the folder of the daemon has mode 0500
-// after the first request. git.status then answers isRepo:false, and a create
-// answers the error of the mkdir with the full path of its index folder. On
-// 5fd08069 the lines are `{"isRepo":false,"clean":false}` and `git worktree add
-// failed (checkout): mkdir <S>/.index-<n>: permission denied` (cell f1-0500 of
-// val-s3p2b2-7-linux2, Linux VM).
+// after the first request. git.status then answers isRepo:false, as on
+// 5fd08069 (cell f1-0500 of val-s3p2b2-7-linux2, Linux VM). A create answers
+// privateCopyText with the error of the mkdir of `.s<n>`, as be1c1ca5 does on
+// Linux, and the empty leaf goes.
 func TestDaemonFolderThatTakesNoNewEntry(t *testing.T) {
 	if os.Getuid() == 0 {
 		t.Skip("the root user makes an entry in a folder of mode 0500")
@@ -122,12 +121,15 @@ func TestDaemonFolderThatTakesNoNewEntry(t *testing.T) {
 	}
 	leaf := filepath.Join(f.repo, ".claude", "worktrees", "w1")
 	raw, _ := f.call(t, "git.worktree_create", map[string]any{"baseRepo": f.repo, "branchName": "w1", "worktreePath": leaf})
-	start := `{"jsonrpc":"2.0","id":1,"result":{"success":false,"error":"git worktree add failed (checkout): mkdir ` +
-		strings.Trim(jsonQuoted(t, filepath.Join(dir, shadowIndexDirPrefix)), `"`)
+	start := `{"jsonrpc":"2.0","id":1,"result":{"success":false,"error":"` + strings.Trim(jsonQuoted(t, privateCopyText), `"`) + `mkdir ` +
+		strings.Trim(jsonQuoted(t, filepath.Join(dir, addCopyPrefix)), `"`)
 	rest, ok := strings.CutPrefix(raw, start)
 	n, tail, _ := strings.Cut(rest, ":")
 	if !ok || n == "" || strings.Trim(n, "0123456789") != "" || tail != ` permission denied","errorCode":"worktree_add_failed"}}` {
 		t.Errorf("git.worktree_create = %s\nwant it to start %s<n>: permission denied", raw, start)
+	}
+	if _, err := os.Lstat(leaf); !os.IsNotExist(err) {
+		t.Errorf("the leaf: %v, want it gone", err)
 	}
 }
 
@@ -217,9 +219,12 @@ func TestDaemonGitDirAndCommonDir(t *testing.T) {
 				// The pair of a remove carries the copy: on 5fd08069 the
 				// calls 3 to 6 of a second remove do (cell N-g of
 				// val-s3p2b2-8-linux2, Linux VM).
+				// The staged add carries GIT_COMMON_DIR=<S>/.s<n> (be1c1ca5).
 				switch {
 				case common == copyOf:
 					line += " [copy]"
+				case filepath.Dir(common) == filepath.Dir(copyOf) && strings.HasPrefix(filepath.Base(common), addCopyPrefix):
+					line += " [add]"
 				case strings.Contains(common, ".check-"), common == "" || c.configRead() || c.excludesRead():
 				default:
 					t.Errorf("%s: the call %q has GIT_COMMON_DIR=%s, want the copy %s", m.method, c.argv[len(c.argv)-2:], common, copyOf)

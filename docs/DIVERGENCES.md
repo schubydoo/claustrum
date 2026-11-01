@@ -181,7 +181,7 @@ have no flag and no key.
     exception is the registration delete of a create that holds no git
     directory and accepted no registration. That delete tests the `gitdir` record and the registrations
     directory instead. The guard also runs before the cleanup of old
-    `.claude-new-worktree-*` entries, and on Windows before the two staging removes. A
+    `.claude-new-worktree-*` entries and before the two staging removes. A
     refused entry stays.
   - The deletes inside the folder `git-shadow` of the daemon.
   - `-install`, before the tree delete of a folder at the CLI path. The reply is
@@ -198,8 +198,7 @@ have no flag and no key.
   and `5fd08069` answer `clean destDir: RemoveAll ...: invalid argument` on
   Windows, which is parity. No measured staging entry of the reference held home, so that guard
   is claustrum's own.
-- **Systems and switch.** Linux, macOS and Windows, with the two staging removes
-  on Windows only. Always on, no switch.
+- **Systems and switch.** Linux, macOS and Windows. Always on, no switch.
 - **Cost.** A caller that names home, or a folder that holds it, gets a refusal.
   On Windows claustrum refuses a `destDir` with the `\\?\` prefix and a dot or a
   space after its last name. There `5fd08069` extracts into the folder with no
@@ -543,8 +542,10 @@ have no flag and no key.
   worktree. Then `git.worktree_create` takes the identity of that folder and
   holds it open until it answers. While that handle is open, a new folder cannot
   get that identity. If the open fails, the identity comes from a stat of the
-  path (not measured). On Windows the identity is that of the staging folder,
-  held open from its mkdir to the end of the move.
+  path (not measured). With a staged add the identity is that of the staging
+  folder, held open from its mkdir to the rename.
+  - A folder that takes the name of the entry right after the rename fails the
+    create, and it and the moved folder stay.
   - A rollback deletes the registration in one case only: the folder at the path
     still has that identity. The test runs through the root that the delete
     opened. It adds no text, and the branch step runs.
@@ -560,7 +561,12 @@ have no flag and no key.
 
   On Windows, after a swap of `.git` to a file that names a second repository,
   claustrum runs no git call and changes nothing there. Its undo text says that
-  the branch still exists.
+  the branch still exists. On Linux and macOS, after a link at `.git` right
+  before the add, the branch that git made through it stays. After the staged
+  add moved the hold, the branch step deletes only a branch with the tip that
+  this call made (`be1c1ca5` not measured in this state). On Windows a `locked` file that
+  cannot be removed keeps the whole entry (the maintainer's choice of
+  2026-11-01).
 - **Reference.** A process renames the new registration and puts another folder
   at its name before the rollback. On Linux and macOS `89cb6289` removes that
   folder, which can be the registration of a live sibling worktree. On Windows
@@ -568,9 +574,12 @@ have no flag and no key.
   leaf and the branch go on both sides. On Windows, after the `.git`
   swap, `5fd08069` runs the branch step in the second repository. It deletes a
   branch of the same name there that `main` reaches, or keeps it with
-  `branchKept`. The frames differ.
-- **Systems and switch.** Linux, macOS and Windows, with the `.git` swap on
-  Windows only. Always on, no switch.
+  `branchKept`. The frames differ. `be1c1ca5` removes the folder that replaced
+  a moved entry, and the branch behind the link, with equal frames. On Windows
+  it keeps only `locked` (measured on Linux and Windows).
+- **Systems and switch.** Linux, macOS and Windows. The `.git` file swap is
+  Windows only, and the link at `.git` is Linux and macOS only. Always on,
+  no switch.
 - **Cost.** A replaced folder stays that the reference removes, and no frame
   differs. The registrations folder must change between the add and the
   rollback to reach the guard. After a `.git` swap the frame differs, and a branch can stay that
@@ -579,7 +588,8 @@ have no flag and no key.
 - **Rule.** Rule 4, by the maintainer's decision of 2026-10-07: the guard
   refuses the loss of the registration of another worktree. The decision of
   2026-10-19 adds the `.git` swap, where the harm is a branch deleted in the
-  repository that the file names.
+  repository that the file names. On 2026-10-28 the maintainer approved
+  following the reference for the staged add, with these guards kept.
 - **Reopen trigger.** A measurement that shows the reference keeping such a
   folder. Or a decision to match its disk for a replaced folder. Or a decision to
   run the branch step in the repository that the `.git` file names.

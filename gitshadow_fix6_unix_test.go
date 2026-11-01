@@ -125,7 +125,9 @@ func TestRemoveReadsARefusedConfigTwice(t *testing.T) {
 // next four rows are cells H1 of tier0-15, S1 and S2 of tier0-16 and C2 of
 // tier0-14 (Linux VM). C2 has nine values in its config. The last eight rows
 // are cells Q1 to Q7 and Q10 of tier0-18 (Linux VM). Q10 has its value in
-// `config.worktree` only.
+// `config.worktree` only. The registration is now staged, and it takes the
+// mode that git gave it in `.s<n>` (stagedEntryModes). For Q10 that is 2775,
+// where 5fd08069 gives 775 (claustrum's own, not measured on be1c1ca5).
 func TestWorktreesFolderOfASharedRepository(t *testing.T) {
 	if runtime.GOOS != "linux" {
 		t.Skip("the rows are Linux cells")
@@ -161,7 +163,7 @@ func TestWorktreesFolderOfASharedRepository(t *testing.T) {
 		{"1660", 0o002, 0o2770, 0o2775, "", ""},
 		{"00660", 0o002, 0o2770, 0o2775, "", ""},
 		{"0771", 0o002, 0o2770, 0o2775, "", ""},
-		{"Q10", 0o002, 0o775, 0o775, "[core]\n\trepositoryformatversion = 1\n[extensions]\n\tworktreeConfig = true\n",
+		{"Q10", 0o002, 0o775, 0o2775, "[core]\n\trepositoryformatversion = 1\n[extensions]\n\tworktreeConfig = true\n",
 			"[core]\n\tsharedRepository = group\n"},
 	} {
 		t.Run(row.value+" umask "+strconv.FormatInt(int64(row.umask), 8), func(t *testing.T) {

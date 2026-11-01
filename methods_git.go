@@ -1451,9 +1451,9 @@ func gitWorktreeCreateLocked(req *request, p *gitParams, repo string, arrival ti
 	//     that directory (acceptedGitDir.movedTo).
 	if gitAnswered && req.use.swapped("answered") {
 		switch {
-		case shadowStagesAdd && answeredElsewhere(req.use, gitDir):
+		case stagedAddWindowsSteps && answeredElsewhere(req.use, gitDir):
 			// No refusal here: the step of the add comes next.
-		case shadowStagesAdd:
+		case stagedAddWindowsSteps:
 			return refuseAdd("git worktree add failed: " + listEntriesPrefix + realDirText(req.use.gitDir))
 		default:
 			if _, err := os.Lstat(filepath.Join(gitDir, "commondir")); err != nil && !errors.Is(err, fs.ErrNotExist) {
@@ -1498,9 +1498,10 @@ func gitWorktreeCreateLocked(req *request, p *gitParams, repo string, arrival ti
 	// 5fd08069 the leaf is gone and the new branch stays, with the text of the
 	// branch step (cells X1c-10 and X1p-10).
 	//
-	// A refusal of the Windows staging step (addRefused) answers unsafe_path with
-	// the same rollback. On 5fd08069 the leaf and the new branch are gone (cell
-	// S2 of round task087-01, Windows VM).
+	// A refusal of the staging step (addRefused) answers unsafe_path with the
+	// same rollback. On 5fd08069 the leaf and the new branch are gone (cell S2
+	// of round task087-01, Windows VM), and so are they on be1c1ca5 after a
+	// `.git` planted in the leaf (measured on Linux).
 	incompleteAdd := func(err error, branch string) (response, bool) {
 		var incomplete *addIncomplete
 		var refused *addRefused
@@ -1514,11 +1515,19 @@ func gitWorktreeCreateLocked(req *request, p *gitParams, repo string, arrival ti
 			return response{}, false
 		}
 		reg := testedRegistration{}
+		if incomplete != nil && incomplete.keepRegistration {
+			// A `locked` file that cannot be removed keeps the moved
+			// registration. be1c1ca5 keeps it whole on Linux and macOS, and the
+			// leaf and the new branch go (the maintainer's choice for every
+			// system: on Windows be1c1ca5 keeps `locked` alone).
+			reg.noRegistration = true
+		}
 		if refused != nil {
-			// The refusal comes before the staging folder is made, so the
-			// rollback deletes no registration. It does not follow the
-			// `.git` file of the leaf. On 5fd08069 the leaf and the branch go
-			// (cell S2 of round task087-01, Windows VM).
+			// The refusal comes before the staging folder is made, or the
+			// move removed the moved registration again, so the rollback
+			// deletes no registration. It does not follow the `.git` file of
+			// the leaf. On 5fd08069 the leaf and the branch go (cell S2 of
+			// round task087-01, Windows VM).
 			reg.noRegistration = true
 		}
 		undo, kept := undoFailedCheckout(req.use, repo, p.WorktreePath, branch, checkpoint, reg)
@@ -1539,7 +1548,7 @@ func gitWorktreeCreateLocked(req *request, p *gitParams, repo string, arrival ti
 	var entriesBefore []string
 	entriesDir, entriesListed := "", false
 	listEntriesBefore := func() {
-		if (adminRecordChecked || shadowStagesAdd) && gitAnswered {
+		if (adminRecordChecked || stagedAddWindowsSteps) && gitAnswered {
 			entriesDir = gitDirRegistryDir(gitDir)
 			entriesBefore, entriesListed = registrationNames(entriesDir)
 		}
@@ -1567,7 +1576,10 @@ func gitWorktreeCreateLocked(req *request, p *gitParams, repo string, arrival ti
 	}
 	// An add whose repository folder went gets the rollback of a failed add,
 	// with the text alone and no fallback add (from the code, not measured).
-	if copyGone(addErr) {
+	// So does an add whose folder `.s<n>` cannot be made on Linux and macOS
+	// (addOwnFiles, be1c1ca5 on Linux).
+	var ownFiles *addOwnFiles
+	if copyGone(addErr) || errors.As(addErr, &ownFiles) {
 		return refuseAdd(addErr.Error())
 	}
 	// A stopped attach add gets no fallback, so one add runs, as on 5fd08069
@@ -1657,13 +1669,14 @@ func gitWorktreeCreateLocked(req *request, p *gitParams, repo string, arrival ti
 	// branch. In cell b-precfg of val-s3p2b2-10-macos the link to a copy T is
 	// put there while a wrapper holds the call before git runs, and git makes
 	// the registration and the branch in T. How 5fd08069 finds that state is
-	// not measured. On Windows the staged add has its own test.
+	// not measured. A staged add has its own test (addStage.finish), so on
+	// Linux and macOS this test runs only for an add that names no copy.
 	//
 	// A real directory at the path of the git directory that passes the gate is
 	// the exception: the create goes on in it (acceptedGitDir.replacedAtPath).
 	// That is cell C6 of round tier0-24 (Linux VM), by the maintainer's decision
 	// of 2026-10-14.
-	if !shadowStagesAdd && req.use.swapped("added") {
+	if !stagedAddWindowsSteps && req.use.swapped("added") {
 		next := req.use.accepted.replacedAtPath(repo)
 		if next == nil {
 			return okResult(req.ID, worktreeResult{
@@ -1765,8 +1778,8 @@ func gitWorktreeCreateLocked(req *request, p *gitParams, repo string, arrival ti
 			defer created.release()
 		}
 	}
-	// On Windows the registration of the staging step is the one that gets the
-	// index and that a rollback removes, by its identity (stagedRegistration).
+	// The registration of the staging step is the one that gets the index and
+	// that a rollback removes, by its identity (stagedRegistration).
 	// A create whose rev-parse gave no answer (gitAnswered false) has no
 	// listing before the add, so it gets the refusal of otherEntryRefusal. That
 	// is claustrum's own, not measured.

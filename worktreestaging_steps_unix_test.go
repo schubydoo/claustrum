@@ -25,7 +25,7 @@ func skipAsRoot(t *testing.T) {
 func lockLeafAfterTheAdd(t *testing.T, f stepFixture) {
 	t.Helper()
 	leaf := filepath.Join(f.repo, ".claude", "worktrees", "w1")
-	atStep(t, "added", func() {
+	atStep(t, "staged", func() {
 		if err := os.Chmod(leaf, 0o555); err != nil {
 			t.Error(err)
 		}
@@ -53,17 +53,17 @@ func swapAfterTheRename(t *testing.T, f stepFixture) {
 	}
 }
 
-// TestStagedMoveWithALeafThatKeepsItsGitFile pins the failure of step 6 (cell
-// S8v): the `.git` file of the leaf cannot be removed, so the move fails with
-// the error of that remove and removes the moved registration again. Here the
-// leaf folder takes no change of its entries. Without the remove the moved
-// registration stays.
-func TestStagedMoveWithALeafThatKeepsItsGitFile(t *testing.T) {
+// TestStagedMoveWithALeafThatTakesNoGitFile pins the failure of step 8 (cell
+// S8v): the `.git` file of the leaf cannot be made, so the move fails with
+// the error of that create and removes the moved registration again. Here the
+// leaf folder takes no new entry. Without the remove the moved registration
+// stays.
+func TestStagedMoveWithALeafThatTakesNoGitFile(t *testing.T) {
 	skipAsRoot(t)
 	f := newStepFixture(t)
 	lockLeafAfterTheAdd(t, f)
 	_, _, err := stagedAdd(t, f.repoFolderFixture, f.u)
-	if got, want := incompleteText(err), "removeat .git: permission denied"; got != want {
+	if got, want := incompleteText(err), "openat .git: permission denied"; got != want {
 		t.Errorf("the add = %v, want the text %q", err, want)
 	}
 	f.nothingMade(t)
@@ -72,20 +72,17 @@ func TestStagedMoveWithALeafThatKeepsItsGitFile(t *testing.T) {
 	}
 }
 
-// TestStagedMoveKeepsAFolderSwappedInAfterTheRename: the moved registration
-// is renamed away right after the move, and a new folder w1 takes its place.
-// Then the `.git` file of the leaf cannot be replaced. removeMoved deletes
-// nothing, because the new folder is not the staging folder that the create
-// holds open. Without the held identity, a stat after the rename gives the
-// identity of the new folder, and it goes.
+// TestStagedMoveKeepsAFolderSwappedInAfterTheRename pins step 7: the moved
+// registration is renamed away right after the move, and a new folder w1
+// takes its place. be1c1ca5 answers replacedEntryText (measured on Linux).
+// claustrum removes neither folder (D24), and the leaf gets no `.git` file.
+// Without the identity test the leaf names the new folder.
 func TestStagedMoveKeepsAFolderSwappedInAfterTheRename(t *testing.T) {
-	skipAsRoot(t)
 	f := newStepFixture(t)
-	lockLeafAfterTheAdd(t, f)
 	swapAfterTheRename(t, f)
-	_, _, err := stagedAdd(t, f.repoFolderFixture, f.u)
-	if got, want := incompleteText(err), "removeat .git: permission denied"; got != want {
-		t.Errorf("the add = %v, want the text %q", err, want)
+	leaf, _, err := stagedAdd(t, f.repoFolderFixture, f.u)
+	if got := incompleteText(err); got != replacedEntryText {
+		t.Errorf("the add = %v, want the text %q", err, replacedEntryText)
 	}
 	if got := mustRead(t, filepath.Join(f.gitDir, "worktrees", "w1", "f.txt")); got != "other\n" {
 		t.Errorf("the folder at w1 = %q, want the swapped folder kept", got)
@@ -93,16 +90,18 @@ func TestStagedMoveKeepsAFolderSwappedInAfterTheRename(t *testing.T) {
 	if _, err := os.Lstat(filepath.Join(f.gitDir, "worktrees", "w1x", "HEAD")); err != nil {
 		t.Errorf("the moved registration at w1x: %v, want it kept", err)
 	}
+	if _, err := os.Lstat(filepath.Join(leaf, ".git")); !os.IsNotExist(err) {
+		t.Errorf("the .git file of the leaf: %v, want none", err)
+	}
 }
 
 // TestStagedRegistrationHasTheHeldIdentity: after a good move, the moved
 // entry has the identity of the staging folder that the create held open. A
-// folder that took its place after the rename is not that entry, so the
-// rollback and the index placement leave it (replacedIn). Without the held
-// identity the new folder counts as the moved one.
+// folder that took its place later is not that entry, so the rollback and the
+// index placement leave it (replacedIn). Without the held identity the new
+// folder counts as the moved one.
 func TestStagedRegistrationHasTheHeldIdentity(t *testing.T) {
 	f := newStepFixture(t)
-	swapAfterTheRename(t, f)
 	if _, stderr, err := stagedAdd(t, f.repoFolderFixture, f.u); err != nil {
 		t.Fatalf("the add failed: %v, %s", err, stderr)
 	}
@@ -110,6 +109,11 @@ func TestStagedRegistrationHasTheHeldIdentity(t *testing.T) {
 	if moved.path != filepath.Join(f.gitDir, "worktrees", "w1") || moved.info == nil {
 		t.Fatalf("the moved entry = %+v", moved)
 	}
+	reg := filepath.Join(f.gitDir, "worktrees", "w1")
+	if err := os.Rename(reg, reg+"x"); err != nil {
+		t.Fatal(err)
+	}
+	mustWrite(t, filepath.Join(reg, "f.txt"), "other\n")
 	root, err := os.OpenRoot(filepath.Join(f.gitDir, "worktrees"))
 	if err != nil {
 		t.Fatal(err)
@@ -171,5 +175,30 @@ func TestRemoveOwnStagingLogsAFailedRemove(t *testing.T) {
 	}
 	if !strings.Contains(logs.String(), "the staging folder "+name+" of the git folder was not removed") {
 		t.Errorf("no log line for the failed remove: %q", logs.String())
+	}
+}
+
+// TestRemoveMovedKeepsASwappedFolder: removeMoved removes the moved entry
+// only while it is the staging folder that the move held. A folder that took
+// its name stays (D24). Without the identity test it goes.
+func TestRemoveMovedKeepsASwappedFolder(t *testing.T) {
+	gitDir := t.TempDir()
+	reg := filepath.Join(gitDir, "worktrees", "w1")
+	mustWrite(t, filepath.Join(reg, "HEAD"), "ref: refs/heads/w1\n")
+	moved, err := os.Stat(reg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Rename(reg, reg+"x"); err != nil {
+		t.Fatal(err)
+	}
+	mustWrite(t, filepath.Join(reg, "f.txt"), "other\n")
+	st := &addStage{u: gitUse{gitDir: gitDir}, git: openTestRoot(t, gitDir)}
+	st.removeMoved(filepath.Join("worktrees", "w1"), moved)
+	if got := mustRead(t, filepath.Join(reg, "f.txt")); got != "other\n" {
+		t.Errorf("the folder at w1 = %q, want it kept", got)
+	}
+	if _, err := os.Lstat(filepath.Join(reg+"x", "HEAD")); err != nil {
+		t.Errorf("the moved folder at w1x: %v, want it kept", err)
 	}
 }

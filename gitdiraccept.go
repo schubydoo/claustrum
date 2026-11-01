@@ -61,9 +61,12 @@ type acceptedGitDir struct {
 	// moved is true after a good `worktree add`: the repository then has the
 	// registration of the new worktree.
 	moved bool
-	// staged is the registration that the Windows staging step moved into
+	// staged is the registration that the staging step moved into
 	// `worktrees` (addStage.move), or the zero value.
 	staged stagedEntry
+	// addBranch is the branch that the staged add made (`-b`), and addTip its
+	// tip in the held folder right after the add, or "" (addStage.finish).
+	addBranch, addTip string
 }
 
 // stagedEntry is the name of a registration that the staging step moved into
@@ -334,6 +337,18 @@ func (a *acceptedGitDir) replacedAtPath(repo string) *acceptedGitDir {
 	return next
 }
 
+// adopt makes a the hold that next holds, and closes the folder that a held,
+// so that every user of a acts through the new folder. The staging step of a
+// create calls it after replacedAtPath. next is not released on its own.
+func (a *acceptedGitDir) adopt(next *acceptedGitDir) {
+	if a.root != nil {
+		_ = a.root.Close()
+	}
+	branch, tip := a.addBranch, a.addTip
+	*a = *next
+	a.addBranch, a.addTip = branch, tip
+}
+
 // takeOver is the hold on the real directory gitDir, whose identity before the
 // open is before, when the trust check of repo pins it and its config passes
 // the gate. The new hold keeps the trust verdict of the first gate.
@@ -415,7 +430,7 @@ func (u gitUse) swapRefusal(step, dir string) string {
 	if !u.shadow() || daemonCommonDirStays() || t.verdict != gitDirTrusted || t.pinCommonDir == "" {
 		return ""
 	}
-	if shadowStagesAdd && step != "add" && !sameGitDirPath(t.pinCommonDir, u.gitDir) {
+	if stagedAddWindowsSteps && step != "add" && !sameGitDirPath(t.pinCommonDir, u.gitDir) {
 		return repoConfigPrefix + gitDirLinkText(u.gitDir)
 	}
 	if u.host != nil && u.host.asksGit(t, false) && u.host.askGit(t, dir).bad() {
