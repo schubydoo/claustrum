@@ -446,7 +446,7 @@ claustrum puts its level tag before it:
 
 ### Child records and the reap (Linux and macOS)
 
-A daemon that holds the [run-dir lock](#run-dir-lock-daemonlock) records each [process.spawn](protocol/process-spawn.md) child in `<run dir>/children/<pid>.json`, on every socket shape. The run dir is the socket path's folder. The child needs a pid of 2 or more and a start time that the daemon can read. Windows writes no record and reaps none (measured on Windows). Unless a rule says otherwise, the rules below are measured against `89cb6289` on Linux, and a rule that names macOS on macOS.
+A daemon that holds the [run-dir lock](#run-dir-lock-daemonlock) records each [process.spawn](protocol/process-spawn.md) child in `<run dir>/children/<pid>.json`, on every socket shape. The run dir is the socket path's folder. The child needs a pid of 2 or more and a start time that the daemon can read. With no usable `/proc`, the daemon on Linux logs one line, writes no record and makes no `children` folder (`be1c1ca5`, measured on Linux). Windows writes no record and reaps none (measured on Windows). Unless a rule says otherwise, the rules below are measured against `89cb6289` on Linux, and a rule that names macOS on macOS.
 
 The record is one JSON object with the members in this order:
 
@@ -600,6 +600,7 @@ These lines tell of [process.spawn](protocol/process-spawn.md) children and thei
 - A slow temp folder (WARN): `[process.Manager] the temporary folder <value> has not answered in 2s: children keep it until it does`, once from the spawn that started the test (claustrum's own, not measured)
 - A supersede (INFO): `[process.Manager] process <new id> supersedes <old id> for session <key>: died=<bool> escalated=<bool> alreadyExited=<bool>` (from the code), after the exit line of the old process
 - `children` not a folder (ERROR): `[process.Registry] <run dir>/children is not a directory; recording nothing`, or `reaping nothing` at a start
+- No start time (WARN): `[process.Manager] cannot read the start time of pid <n> (no /proc and no ps on this platform): a successor daemon will not be able to reap it` (`be1c1ca5`, measured on Linux with a `/proc` that holds only `self/exe`). If `/proc/self/stat` is missing, claustrum logs it (claustrum's own)
 - A record write fails (ERROR): `[process.Registry] cannot record child <pid>: <error>`
 - A record remove fails (WARN): `[process.Registry] cannot remove record of child <pid>: <error>`
 - Over 128 records (WARN): `[process.Registry] more than 128 records in <run dir>/children; leaving the rest for the next start`

@@ -609,7 +609,7 @@ var docWordLimits = map[string]int{
 	"README.md":                                1133, // 13 are the HTML tokens of the logo <picture> block (maintainer, 2026-10-31)
 	"SECURITY.md":                              1553,
 	"docs/ARCHITECTURE.md":                     2667,
-	"docs/DAEMON.md":                           7541, // the temp-folder lines of 683cc6a9. 7493: TASK-231: the new section Lines of connections. 7175: a new page, its words moved from PROTOCOL.md and ARCHITECTURE.md
+	"docs/DAEMON.md":                           7616, // TASK-297: the start-time line. 7541: the temp-folder lines of 683cc6a9. 7493: TASK-231: the new section Lines of connections. 7175: a new page, its words moved from PROTOCOL.md and ARCHITECTURE.md
 	"docs/DIVERGENCES.md":                      7778, // the cap that skips the prune after a full disk. 7764: TASK-208 summary table
 	"docs/EXAMPLES.md":                         1025,
 	"docs/GLOSSARY.md":                         1297,
@@ -711,7 +711,7 @@ var docSectionRunLimits = map[string]int{
 	"CONTRIBUTING.md":                          402,
 	"SECURITY.md":                              559,
 	"docs/ARCHITECTURE.md":                     496,
-	"docs/DAEMON.md":                           889,
+	"docs/DAEMON.md":                           909, // TASK-297: the start-time rule of the child records
 	"docs/DIVERGENCES.md":                      709,
 	"docs/IMPROVEMENTS.md":                     1484,
 	"docs/INSTALL.md":                          736,

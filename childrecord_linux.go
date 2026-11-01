@@ -20,7 +20,9 @@ var machineIDPaths = []string{"/etc/machine-id", "/var/lib/dbus/machine-id"}
 // failure is logged, never fatal. It is a no-op when the manager has no run dir
 // (no socket), when pid < 2, or when the child's start-time
 // cannot be read. Without a pid-reuse-safe start-time, the record cannot identify the
-// child later.
+// child later. With no usable /proc it logs one line and makes no children folder
+// (be1c1ca5, measured on Linux). A start time that cannot be read while /proc works
+// logs nothing, as before: that case is not measured.
 // The record's identity (node, host, instance, the daemon's pid and start-time) is
 // what a later daemon uses to decide whether a leftover child of a since-exited
 // daemon is an orphan to reap. Reaping itself is a separate slice.
@@ -30,6 +32,9 @@ func (m *procManager) recordChild(pid int, argv0, program string) {
 	}
 	start := procStartTicks(pid)
 	if start == 0 {
+		if !procUsable() {
+			logWarnf("[process.Manager] cannot read the start time of pid %d (no /proc and no ps on this platform): a successor daemon will not be able to reap it", pid)
+		}
 		return
 	}
 	m.writeRecord(childRecord{
@@ -65,9 +70,16 @@ func machineID() string {
 // shares its field-22 parser. Returns 0 when the process is gone or stat cannot be
 // parsed.
 func procStartTicks(pid int) int64 {
-	b, err := os.ReadFile("/proc/" + strconv.Itoa(pid) + "/stat")
+	b, err := os.ReadFile(procRoot + "/" + strconv.Itoa(pid) + "/stat")
 	if err != nil {
 		return 0
 	}
 	return parseStartTicks(string(b))
+}
+
+// procUsable reports whether procRoot answers for this process. A /proc with no
+// self/stat counts as no /proc (from the code).
+func procUsable() bool {
+	_, err := os.Stat(procRoot + "/self/stat")
+	return err == nil
 }

@@ -195,3 +195,49 @@ func TestSocketSpawnWritesChildRecord(t *testing.T) {
 		t.Errorf("record argv0 = %q, want the spawned command %q", rec.Argv0, exe)
 	}
 }
+
+// TestRecordChildNoProcLogsAndWritesNothing pins the spawn with no usable /proc: a
+// stand-in /proc that holds only self/exe gives one WARN start-time line for a live
+// pid, and no children folder. With the real /proc a pid that cannot be read logs nothing, and
+// a readable pid gets its record and no line.
+func TestRecordChildNoProcLogsAndWritesNothing(t *testing.T) {
+	standIn := t.TempDir()
+	if err := os.MkdirAll(filepath.Join(standIn, "self"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(standIn, "self", "exe"), nil, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	self, bogus := os.Getpid(), 1<<30
+	line := "WARN  [process.Manager] cannot read the start time of pid " + strconv.Itoa(self) +
+		" (no /proc and no ps on this platform): a successor daemon will not be able to reap it\n"
+
+	runDir := t.TempDir()
+	m := newTestProcManager(t)
+	m.runDir = runDir
+	m.instanceID = "x"
+
+	oldRoot := procRoot
+	t.Cleanup(func() { procRoot = oldRoot })
+	procRoot = standIn
+	out := captureLog(t, func() { m.recordChild(self, "/bin/sleep", "") })
+	if !strings.Contains(out, line) {
+		t.Errorf("log = %q, want the line %q", out, line)
+	}
+	if _, err := os.Lstat(filepath.Join(runDir, "children")); !os.IsNotExist(err) {
+		t.Errorf("children folder: err = %v, want none made", err)
+	}
+
+	procRoot = oldRoot
+	out = captureLog(t, func() { m.recordChild(bogus, "/bin/sleep", "") })
+	if strings.Contains(out, "start time of pid "+strconv.Itoa(bogus)+" ") {
+		t.Errorf("log = %q, want no start-time line while /proc works", out)
+	}
+	out = captureLog(t, func() { m.recordChild(self, "/bin/sleep", "") })
+	if strings.Contains(out, "start time of pid "+strconv.Itoa(self)+" ") {
+		t.Errorf("log = %q, want no start-time line for a readable pid", out)
+	}
+	if _, err := os.Stat(filepath.Join(runDir, "children", strconv.Itoa(self)+".json")); err != nil {
+		t.Errorf("record of a readable pid: %v", err)
+	}
+}
