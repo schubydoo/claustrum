@@ -14,7 +14,8 @@ import (
 // methods, in the state shadow and with "shadowDirOff":true. A call with
 // GIT_NO_LAZY_FETCH=1 and GIT_ASKPASS= gets GIT_SSH_COMMAND=false, except a
 // call of a create or a remove with the member, which keeps the daemon's
-// value. Every other call keeps the daemon's value too. be1c1ca5 does so on
+// value. In the state shadow the read-tree call of a create gets the ssh
+// door. Every other call keeps the daemon's value too. be1c1ca5 does so on
 // Linux. Each call has the three trace entries with the value 0.
 func TestGitCallSSHAndTracePerState(t *testing.T) {
 	requireGit(t)
@@ -59,6 +60,10 @@ func TestGitCallSSHAndTracePerState(t *testing.T) {
 						if !keeps {
 							want = sshOffEntry
 						}
+					}
+					if state == stateShadow && slices.Contains(call.argv, "read-tree") {
+						// The ssh door of be1c1ca5 (gitsshdoor.go).
+						want = "GIT_SSH_COMMAND=" + sshDoorScript
 					}
 					if !slices.Equal(ssh, []string{want}) {
 						t.Errorf("%s (%d): %q, want %q", what, i+1, ssh, want)

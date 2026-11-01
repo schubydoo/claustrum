@@ -2051,6 +2051,17 @@ func gitWorktreeCreateLocked(req *request, p *gitParams, repo string, arrival ti
 				ErrorCode:  "timeout",
 				BranchKept: kept,
 			})
+		case rtErr != nil && strings.Contains(rtStderr, sshDoorMark()):
+			// The ssh door refused a Git LFS request and wrote its mark to
+			// stderr (gitsshdoor.go). be1c1ca5 answers the fixed text (Linux and
+			// macOS VMs). Its place before the filter arm is claustrum's own.
+			undo, kept := undoFailedCheckout(req.use, repo, p.WorktreePath, createdBranch, checkpoint, tested)
+			return okResult(req.ID, worktreeResult{
+				Success:    false,
+				Error:      "git worktree add failed (checkout): " + sshDoorRefusedText + undo,
+				ErrorCode:  "worktree_add_failed",
+				BranchKept: kept,
+			})
 		case rtErr != nil && filterRefused:
 			// git failed at a path that uses a filter with the three pairs. The text
 			// names that filter (cells A1 and N1 to N4, Linux VM, and cells A1, N1

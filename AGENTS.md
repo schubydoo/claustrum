@@ -324,6 +324,12 @@ deletes `<socket-derived-root>/<hash>`. The root comes from the socket layout of
 and the leaf must match `^[0-9a-f]{16}$` (`pluginHashRE`). The path is never
 caller-supplied and never `~`-expanded, so it needs no `wipesHomeDir` guard.
 
+On Linux the legacy sweep of `plugins.prune` and the host cleaner dial a socket path over
+107 bytes through `/proc` (`dialSiblingSocket`, `hcDial`), as `be1c1ca5` does (measured on
+Linux). So the legacy sweep, the run-dir delete of the cleaner and its signals can act at a
+long root, with their guards unchanged (measured on Linux). The maintainer approved this on
+2026-11-01. macOS at a long root is not measured ([A long run root](docs/DAEMON.md#a-long-run-root)).
+
 ### The `git-shadow` folder
 
 The folder `git-shadow` of the settings copy is a further recursive delete site, and it is

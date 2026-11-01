@@ -34,7 +34,8 @@ The five `git.*` methods start in `methods_git.go`, and their params in
 - **Each git call.** `gitenv.go`, `gitchildenv*.go` and `githarden.go` build the
   environment of a git child. `gitstop.go` holds the time limits.
   `gitlive_*.go` tests whether a git process still runs. `gitworktreeconfig*.go`
-  holds the `config.worktree` items, and the file of a new worktree.
+  holds the `config.worktree` items, and the file of a new worktree. `gitsshdoor.go`
+  holds the ssh door of the checkout.
 - **Trust of a repository.** `gitdirtrust*.go`, `gitlisting.go`,
   `gitrepoconfig*.go`, `gitfilter.go` and `gitplainfile_*.go` hold the checks
   before git runs. They also read the `.git` files.

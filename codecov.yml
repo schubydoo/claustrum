@@ -216,6 +216,8 @@ component_management:
         - gitlisting.go
         # the filter rule of the git.worktree_create checkout (5fd08069).
         - gitfilter.go
+        # the ssh door of the git.worktree_create checkout (be1c1ca5).
+        - gitsshdoor.go
         # the daemon's own read of the repository's config and its refusals (5fd08069).
         - gitrepoconfig.go
         - gitrepoconfig_unix.go

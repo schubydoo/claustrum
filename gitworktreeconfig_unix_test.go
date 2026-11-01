@@ -253,7 +253,8 @@ func checkFront(t *testing.T, what, dir string, calls []envCall, want []string) 
 		switch {
 		case len(values) == 0:
 			if !c.listing() && !c.configRead() && !c.excludesRead() && !slices.Contains(c.argv, "version") &&
-				!slices.Contains(c.argv, "--show-scope") && !slices.Contains(c.argv, "--unset-all") {
+				!slices.Contains(c.argv, "--show-scope") && !slices.Contains(c.argv, "--unset-all") &&
+				!slices.Contains(c.argv, "--get-regexp") {
 				t.Errorf("%s: the call %q has no option list", what, line)
 			}
 		case c.isProbe():

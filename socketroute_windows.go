@@ -16,3 +16,7 @@ func dialUnixPath(path string, timeout time.Duration) (net.Conn, error) {
 func dialSocketInDaemon(path string, timeout time.Duration) (net.Conn, error) {
 	return net.DialTimeout("unix", path, timeout)
 }
+
+func dialSiblingSocket(path string, timeout time.Duration) (net.Conn, error) {
+	return net.DialTimeout("unix", path, timeout)
+}

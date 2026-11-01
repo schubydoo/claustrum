@@ -256,9 +256,10 @@ func TestDaemonGitDirAndCommonDir(t *testing.T) {
 	// 5fd08069 makes 20, 2, 4 and 11 calls in the first four requests of both
 	// cells. The git directory of the daemon has no registrations folder, so
 	// the create runs no pair before the add (pairBeforeAdd). 683cc6a9 adds the
-	// settle call after the checkout, so the create makes 12 (worktreesettle.go).
-	if got := []int{len(both[0]), len(both[1]), len(both[2]), len(both[3])}; !slices.Equal(got, []int{20, 2, 4, 12}) {
-		t.Errorf("the first four requests made %v calls, want 20, 2, 4 and 12", got)
+	// settle call after the checkout (worktreesettle.go). be1c1ca5 adds the
+	// config read of the ssh door before it, so the create makes 13 (gitsshdoor.go).
+	if got := []int{len(both[0]), len(both[1]), len(both[2]), len(both[3])}; !slices.Equal(got, []int{20, 2, 4, 13}) {
+		t.Errorf("the first four requests made %v calls, want 20, 2, 4 and 13", got)
 	}
 }
 

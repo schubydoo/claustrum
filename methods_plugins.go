@@ -4,7 +4,6 @@ import (
 	"encoding/json"
 	"errors"
 	"io/fs"
-	"net"
 	"os"
 	"path"
 	"path/filepath"
@@ -205,7 +204,7 @@ func siblingDaemonAlive(base, own string) string {
 			}
 			return "cannot inspect " + sock + ": " + serr.Error()
 		}
-		c, derr := net.DialTimeout("unix", sock, 300*time.Millisecond)
+		c, derr := dialSiblingSocket(sock, 300*time.Millisecond)
 		if derr == nil {
 			_ = c.Close()
 			return rel + " answers"

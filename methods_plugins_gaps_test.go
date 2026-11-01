@@ -156,10 +156,13 @@ func TestSiblingDaemonAliveDialArms(t *testing.T) {
 
 	t.Run("an undialable socket is reported", func(t *testing.T) {
 		// A path longer than sun_path (108 bytes on linux and Windows, 104 on macOS): the
-		// file stats fine, but the connect fails with EINVAL, which does not mean nobody is
-		// listening. A mutant that treated every dial failure as "gone" would sweep the
-		// shared root while that daemon is alive. The length comes from the entry name, since
-		// a directory name may be 255 bytes and sun_path may not.
+		// file stats fine, but the connect fails (EINVAL on Windows, the too-long error on
+		// Linux and macOS), which does not mean nobody is listening. A mutant that treated
+		// every dial failure as "gone" would sweep the shared root while that daemon is alive.
+		// The length comes from the entry name, since a directory name may be 255 bytes and
+		// sun_path may not. Linux reaches a long path through /proc, so the test takes that
+		// route away (noFolderHandle).
+		noFolderHandle(t)
 		sib := strings.Repeat("d", 120)
 		base, sibRun := mkSiblingRunDir(t, sib)
 		sock := filepath.Join(sibRun, "rpc.sock")

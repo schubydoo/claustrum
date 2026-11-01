@@ -76,6 +76,11 @@ token did not already give. See
   `-cli-checksum`. Without one, the blob is trusted. The reference does the same.
 - In `-serve` mode the daemon makes no outbound network connections. Every dial
   it makes is to a local `AF_UNIX` socket.
+- A `git.worktree_create` with a settings copy starts ssh in its checkout only
+  through the daemon's door. The ssh command of a repository's own git config is
+  never used there. The user's own config and the daemon's environment name it
+  ([The ssh door](docs/protocol/git-worktree-create.md#the-ssh-door)). A create
+  with no settings copy gets no door (claustrum's own, not measured).
 
 ### Caller-supplied paths
 
