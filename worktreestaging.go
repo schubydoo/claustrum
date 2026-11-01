@@ -588,9 +588,11 @@ var removeStagingEntry = func(root *os.Root, name string, tree bool) error {
 // succeeded, also where an entry went.
 //
 // Only git.worktree_create comes here, after a good `worktree add` in the
-// state shadow. On Linux and macOS be1c1ca5 removes old folders and links the
-// same way (worktreeAdd, measured on Linux and macOS). git.info and git.status leave every entry (120 cells). A create that fails, a request with the member and the state
-// fallback-git are not measured, and they run no cleanup.
+// state shadow. On Windows git.info and git.status leave every entry (120
+// cells). On Linux and macOS be1c1ca5 removes old folders and links the same
+// way (worktreeAdd, measured on Linux and macOS). A create that fails, a
+// request with the member and the state fallback-git are not measured, and
+// they run no cleanup.
 func sweepOldStaging(git *os.Root, gitDir string, now time.Time) {
 	names, err := rootDirNames(git, ".")
 	if err != nil {
