@@ -59,6 +59,10 @@ type server struct {
 	ln    net.Listener
 	procs *procManager
 
+	// socket is the path that ln was bound for. A long path is bound by a shorter
+	// name (socketroute_unix.go), so ln.Addr() can differ from it.
+	socket string
+
 	// instanceID is a per-boot 32-hex identity and startedAt is the boot time in
 	// unix milliseconds. Both are stamped once at construction and echoed on the
 	// server.capabilities reply (instanceId / startedAt), matching the reference
@@ -602,7 +606,7 @@ func newServerOnSocket(socket, token, metricsAddr string, wlopt wireLogOptions, 
 	}
 
 	_ = os.Remove(socket) // clear a stale socket
-	ln, err := net.Listen("unix", socket)
+	ln, err := listenSocket(socket)
 	if err != nil {
 		return nil, fmt.Errorf("listen unix: %v", err)
 	}
@@ -652,6 +656,7 @@ func newServerOnSocket(socket, token, metricsAddr string, wlopt wireLogOptions, 
 	s := &server{
 		token:         token,
 		ln:            ln,
+		socket:        socket,
 		procs:         procs,
 		conns:         make(map[*conn]struct{}),
 		shutdown:      make(chan struct{}),
@@ -929,7 +934,7 @@ var daemonPeerPID = connPeerPID
 func waitForDaemonAccept(socket string, predPID int) (accepted, sawPredecessor bool) {
 	deadline := time.Now().Add(daemonStartTimeout)
 	for {
-		c, err := net.DialTimeout("unix", socket, max(time.Until(deadline), time.Millisecond))
+		c, err := dialUnixPath(socket, max(time.Until(deadline), time.Millisecond))
 		if err == nil {
 			pid := daemonPeerPID(c)
 			_ = c.Close()

@@ -57,19 +57,25 @@ func fakeCapServerReplying(t *testing.T, path, reply string) *int64 {
 	return &count
 }
 
+// reachesUs is the reached result of pathReachesUs.
+func reachesUs(s *server, socket string) bool {
+	reached, _ := s.pathReachesUs(socket)
+	return reached
+}
+
 func TestPathReachesUsInstanceIDMismatch(t *testing.T) {
 	s, sock := bootOrphanServer(t)
 	dir := filepath.Dir(sock)
 	// A different daemon (foreign instanceId) answering on another path: not us.
 	other := filepath.Join(dir, "other.sock")
 	fakeCapServer(t, other, "ffffffffffffffffffffffffffffffff")
-	if s.pathReachesUs(other) {
+	if reachesUs(s, other) {
 		t.Error("pathReachesUs must be false when the reply instanceId is not ours")
 	}
 	// A server that echoes OUR instanceId: reaches us.
 	mine := filepath.Join(dir, "mine.sock")
 	fakeCapServer(t, mine, s.instanceID)
-	if !s.pathReachesUs(mine) {
+	if !reachesUs(s, mine) {
 		t.Error("pathReachesUs must be true when the reply instanceId matches ours")
 	}
 }
@@ -200,10 +206,10 @@ func TestSocketLooksOrphaned(t *testing.T) {
 
 func TestPathReachesUs(t *testing.T) {
 	s, sock := bootOrphanServer(t)
-	if !s.pathReachesUs(sock) {
+	if !reachesUs(s, sock) {
 		t.Error("pathReachesUs must be true against our own live socket")
 	}
-	if s.pathReachesUs(sock + ".nope") {
+	if reachesUs(s, sock+".nope") {
 		t.Error("pathReachesUs must be false when the dial fails")
 	}
 }
@@ -217,12 +223,12 @@ func TestPathReachesUsMalformedReplies(t *testing.T) {
 
 	eof := filepath.Join(dir, "eof.sock")
 	fakeCapServerReplying(t, eof, "") // consumes the request, then closes
-	if s.pathReachesUs(eof) {
+	if reachesUs(s, eof) {
 		t.Error("pathReachesUs must be false when the peer closes without replying")
 	}
 	bad := filepath.Join(dir, "bad.sock")
 	fakeCapServerReplying(t, bad, "not-json\n")
-	if s.pathReachesUs(bad) {
+	if reachesUs(s, bad) {
 		t.Error("pathReachesUs must be false when the reply line is not JSON")
 	}
 }

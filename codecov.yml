@@ -106,6 +106,12 @@ component_management:
         - livepred_windows.go
         - peerpid_linuxdarwin.go
         - peerpid_other.go
+        # The listen and dial of a socket path over the limit of the system (OS-split).
+        - socketroute.go
+        - socketroute_unix.go
+        - socketroute_linux.go
+        - socketroute_darwin.go
+        - socketroute_windows.go
         - idleconn.go
         - connlog.go
         # 4534d86 lifecycle additions: the run-dir lock (daemon.lock + owner record,

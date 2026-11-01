@@ -236,9 +236,14 @@ func isNobodyListening(err error) bool {
 
 // socketPath returns the filesystem path of the daemon's AF_UNIX listener, or ""
 // when there is no path-based listener (an abstract socket, a pipe, or no listener).
+// It is the path of the start (s.socket) when set: the listener of a long path holds
+// the shorter name that it was bound by.
 func (s *server) socketPath() string {
 	if s.ln == nil {
 		return ""
+	}
+	if s.socket != "" {
+		return s.socket
 	}
 	addr := s.ln.Addr()
 	if addr == nil || addr.Network() != "unix" {

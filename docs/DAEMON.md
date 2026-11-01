@@ -234,7 +234,7 @@ A pass acts on the root as the socket path gives it and on its resolved form, th
 
 ### Signals of the cleaner
 
-A stranded daemon is a daemon whose socket path no longer leads to it. On Linux and macOS the cleaner sends no signal to it or to its children. It ends by itself, see [Orphan-exit self-probe](#orphan-exit-self-probe).
+A stranded daemon is a daemon whose socket path no longer leads to it. On Linux and macOS the cleaner sends no signal to it or to its children. It ends by itself, except at a long socket path, see [Orphan-exit self-probe](#orphan-exit-self-probe).
 
 The cleaner retires an abandoned daemon with `SIGTERM`: a daemon on a run dir that is idle past the threshold, or whose name carries `.removing-` from an earlier removal. A listener that is not the daemon binary, or that serves another
 socket, gets no signal. On macOS the first case is measured, and the second is
@@ -432,6 +432,18 @@ wait about 2 s. The reap is under [Child records](#child-records-and-the-reap-li
 
 On Windows the daemon also removes the old socket file before it binds and runs no
 reap there.
+
+### A long socket path (Linux and macOS)
+
+A socket address holds a path of 107 bytes on Linux and 103 on macOS. `be1c1ca5` serves at 120 bytes on Linux and 110 on macOS, and `-bridge` and `-stop` reach it (measured). claustrum does the same:
+
+- Linux binds and dials by the name `/proc/self/fd/<n>/<last element>` of a handle of the socket folder (measured on Linux).
+- With no usable `/proc`, it changes to the socket folder, uses the last element and changes back. Linux does so with a stand-in `/proc`, and macOS always (measured).
+- On Linux a last element of about 91 to 107 bytes is too long for the `/proc` name. It takes the change of folder (from the code).
+- A last element over the limit fails with `listen unix <path>: the socket path is longer than the 107 bytes that this system allows` (`103 bytes` on macOS, measured).
+- SIGTERM and `-stop` remove `rpc.sock` and `daemon.token` as at a short path (measured on Linux).
+
+claustrum's own: the identity test of the `/proc` name, and the error after a failed change back.
 
 ### The job of the launcher (Windows)
 
@@ -640,7 +652,7 @@ not measured. If the path is gone or another inode, a
 that sees a client starts the clock again and writes no line. So the first line
 below does not come after that client leaves, as on `5fd08069` (measured on Linux
 and macOS). After the grace with nobody connected, the daemon dials its socket
-and compares the `instanceId` of the reply to its own. A probe that reaches itself
+(except at a long socket path, see below) and compares the `instanceId` of the reply to its own. A probe that reaches itself
 resets the clock. Two failed probes, 60 seconds apart, start a graceful shutdown.
 It closes listeners, drops clients, and stops child process groups unless
 `-keep-children` is set. `89cb6289` and claustrum exit with code 0, with no
@@ -665,6 +677,14 @@ third one minute later (measured on Linux). The reference logs `orphaned for
 Linux), and the code prints `11m0s` at exact ticks. The cause of that minute is
 not measured. At the self-exit `89cb6289` ends the children with `SIGKILL`, and
 claustrum ends them too (measured on Linux).
+
+Take a [long socket path](#a-long-socket-path-linux-and-macos) on Linux with a plain file of the bound mtime at it. `be1c1ca5` ends there after `11m0s` with its children (measured on Linux). claustrum's probe dials through `/proc` there. On macOS `be1c1ca5` cannot dial such a path. A file with the bound mtime gives this line, and the daemon and its children stay (measured on macOS):
+
+```
+[Server] socket path <socket> is too long for this daemon to dial, but its file is unmodified since this daemon bound it; not orphaned
+```
+
+Another mtime counts as a failed probe (measured on macOS). claustrum's own, not measured: a gone file counts as one too, the grace starts again after the line, and Linux with no usable `/proc` follows the macOS rule.
 
 A check with no client also ends a daemon after 30 days with no counted request,
 on the monotonic clock. Each request past auth counts, except

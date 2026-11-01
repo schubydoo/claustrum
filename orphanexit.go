@@ -3,7 +3,7 @@ package main
 import (
 	"bufio"
 	"encoding/json"
-	"net"
+	"errors"
 	"os"
 	"time"
 )
@@ -134,8 +134,19 @@ func (s *server) selfExitCheck(socket string, w *selfExitWatch, now time.Duratio
 		return false
 	}
 	// Grace elapsed with no client connected: probe whether the path still reaches us.
-	if s.pathReachesUs(socket) {
+	reached, cannotDial := s.pathReachesUs(socket)
+	if reached {
 		logInfof("[Server] socket %s still reaches this daemon despite a changed file identity; not orphaned", socket)
+		*w = selfExitWatch{}
+		return false
+	}
+	// A path that this daemon cannot dial without a change of folder: a file with the
+	// mtime of the bound socket is not orphaned. The text and the outcome are those of
+	// `be1c1ca5` on macOS, for a plain file with that mtime (measured). Another mtime
+	// counts as a failed probe there (measured on macOS). A gone file counts as one too,
+	// and the grace starts again after this line (claustrum's own, not measured).
+	if cannotDial && s.socketFileUnmodified(socket) {
+		logInfof("[Server] socket path %s is too long for this daemon to dial, but its file is unmodified since this daemon bound it; not orphaned", socket)
 		*w = selfExitWatch{}
 		return false
 	}
@@ -171,13 +182,25 @@ func (s *server) socketLooksOrphaned(socket string) bool {
 	return !os.SameFile(cur, s.sockInfo)
 }
 
-// pathReachesUs dials the socket path and asks server.capabilities, returning true only
+// socketFileUnmodified reports whether the file at the socket path has the mtime of
+// the socket that this daemon bound.
+func (s *server) socketFileUnmodified(socket string) bool {
+	cur, err := os.Stat(socket)
+	return err == nil && cur.ModTime().Equal(s.sockInfo.ModTime())
+}
+
+// pathReachesUs dials the socket path and asks server.capabilities. reached is true only
 // when the reply's instanceId is our own — the path still leads back to THIS daemon. Any
-// dial, write, read, or parse failure, or a different instanceId, returns false.
-func (s *server) pathReachesUs(socket string) bool {
-	c, err := net.DialTimeout("unix", socket, orphanProbeTimeout)
+// dial, write, read, or parse failure, or a different instanceId, gives false.
+// cannotDial is true when the path is too long to dial without a change of folder
+// (dialSocketInDaemon). On Linux `be1c1ca5` ends the daemon at a long path when a
+// plain file with the bound mtime is there (measured on Linux). This probe dials
+// through /proc there.
+func (s *server) pathReachesUs(socket string) (reached, cannotDial bool) {
+	c, err := dialSocketInDaemon(socket, orphanProbeTimeout)
 	if err != nil {
-		return false
+		var tooLong *socketTooLongError
+		return false, errors.As(err, &tooLong)
 	}
 	defer c.Close()
 	_ = c.SetDeadline(time.Now().Add(orphanProbeTimeout))
@@ -189,14 +212,14 @@ func (s *server) pathReachesUs(socket string) bool {
 		"auth":    s.token,
 	})
 	if err != nil {
-		return false
+		return false, false
 	}
 	if _, err := c.Write(append(line, '\n')); err != nil {
-		return false
+		return false, false
 	}
 	reply, err := bufio.NewReader(c).ReadBytes('\n')
 	if err != nil && len(reply) == 0 {
-		return false
+		return false, false
 	}
 	var parsed struct {
 		Result struct {
@@ -204,7 +227,7 @@ func (s *server) pathReachesUs(socket string) bool {
 		} `json:"result"`
 	}
 	if json.Unmarshal(reply, &parsed) != nil {
-		return false
+		return false, false
 	}
-	return parsed.Result.InstanceID != "" && parsed.Result.InstanceID == s.instanceID
+	return parsed.Result.InstanceID != "" && parsed.Result.InstanceID == s.instanceID, false
 }
