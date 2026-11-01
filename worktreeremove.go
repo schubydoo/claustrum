@@ -931,9 +931,9 @@ func goneLockedWorktreeRefusal(worktreePath string, lock worktreeLock) string {
 const tickPathMaxBytes = 300
 
 // tickPath shows path p in backticks, cut to its first tickPathMaxBytes bytes. A path
-// that holds a backtick is quoted with Go %q instead (measured on Linux, macOS and Windows). Not
-// measured: the cut of a path with a backtick, and a cut inside a character of more
-// than one byte.
+// that holds a backtick is quoted with Go %q instead (measured on Linux, macOS and
+// Windows). Not measured: the cut in each text but the plain lock text, the cut of a
+// path with a backtick, and a cut inside a character of more than one byte.
 func tickPath(p string) string {
 	if len(p) > tickPathMaxBytes {
 		p = p[:tickPathMaxBytes]
