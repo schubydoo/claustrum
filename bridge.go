@@ -27,7 +27,7 @@ import (
 // (bridgeStdout). That follows the measured outcome of build 52d82f0a: exit 0
 // after a write to a closed stdout. The claustrum bridge itself was not measured.
 func runBridge(socket string) error {
-	nc, err := net.Dial("unix", socket)
+	nc, err := dialUnixPath(socket, 0)
 	if err != nil {
 		return fmt.Errorf("dial server: %w", err)
 	}
@@ -102,7 +102,7 @@ func runStop(socket string, stdout io.Writer) {
 // directory. It keeps a non-empty directory and a path in a directory that
 // this user cannot write. The references do the same (measured).
 func stopDaemon(socket string) string {
-	nc, err := net.Dial("unix", socket)
+	nc, err := dialUnixPath(socket, 0)
 	if err != nil {
 		// Remove while the lock is still held, then release it (see stopRunDirHolder).
 		word, release := stopRunDirHolder(socket)

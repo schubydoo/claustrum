@@ -13,9 +13,11 @@ import (
 // socket path, or 0 when no connect works or the pid cannot be read. The launcher
 // runs it before it starts the child, so waitForDaemonAccept can tell a connect to
 // that daemon from a connect to the new one. The 200 ms bound of that connect and
-// the 0 result are not measured.
+// the 0 result are not measured. A connect that could not change back to the
+// working folder ends the launcher with exit 1 (claustrum's own, not measured).
 func livePredecessorPID(socket string) int {
-	c, err := net.DialTimeout("unix", socket, 200*time.Millisecond)
+	c, err := dialUnixPath(socket, 200*time.Millisecond)
+	exitOnChangeBack(err)
 	if err != nil {
 		return 0
 	}
