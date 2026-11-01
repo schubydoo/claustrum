@@ -395,7 +395,7 @@ func TestHTTPGetTruncatedBody(t *testing.T) {
 // pruneCLI is best-effort: an unlistable cliDir is a silent no-op, and a
 // subdirectory with content stays, also past the keep value.
 func TestPruneCLIEdges(t *testing.T) {
-	pruneCLI(filepath.Join(t.TempDir(), "absent"), 1, "") // must not panic
+	pruneCLI(filepath.Join(t.TempDir(), "absent"), 1, "", true, nil) // must not panic
 
 	dir := t.TempDir()
 	sub := filepath.Join(dir, "not-a-cli")
@@ -421,7 +421,7 @@ func TestPruneCLIEdges(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	pruneCLI(dir, 1, "")
+	pruneCLI(dir, 1, "", true, nil)
 	if !isRegularFile(filepath.Join(sub, "inner")) {
 		t.Error("pruneCLI removed a subdirectory with content")
 	}

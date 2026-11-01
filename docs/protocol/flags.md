@@ -32,7 +32,7 @@ the precedence of a flag and its key, and the bypass rule.
 | `-cli-probe-timeout <dur>` | `cli-probe-timeout` | none | deprecated. It sets nothing and logs one warning. The direct `<cli> --version` run always has its 30 s and 120 s bounds (retired D11) | -install |
 | `-cli-download-timeout <dur>` | `cli-download-timeout` | `0` | download deadline (D12) | -install |
 | `-libc-probe-timeout <dur>` | `libc-probe-timeout` | none | deprecated. It sets nothing and logs one warning. The `ldd` probe always has its 5 s bound (retired D14) | -install |
-| `-cli-keep <n>` | none | `3` | version files of the cli-dir to retain on prune, the new CLI among them. The new CLI always stays. `0` and a negative value remove every version file but the new CLI | -install |
+| `-cli-keep <n>` | none | `3` | version files of the cli-dir to retain on the prune after a good install, the new CLI among them ([other prunes](../INSTALL.md#the-prune-of-a-cache-miss)). The new CLI always stays. `0` and a negative value remove every version file but the new CLI | -install |
 | none (config only) | `version-override` | none | `-version` stdout rebrand (CT-3) | -version |
 
 Bool keys accept `true/1/yes/on` and `false/0/no/off`. Any other bool value, and a

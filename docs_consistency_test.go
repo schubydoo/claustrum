@@ -604,21 +604,21 @@ func TestDocsEveryErrorCodeIsDocumented(t *testing.T) {
 // because the documents grew past what a person can read. A limit goes down, never
 // up, without the maintainer's word.
 var docWordLimits = map[string]int{
-	"AGENTS.md":                                5632, // the deadline of timeoutMs by the end of the add. 5628: the file that Windows cannot read. 5619: the empty folder that Windows cannot read. 5592: the temp-folder test of 683cc6a9. 5537: the two .synced removes of 683cc6a9
+	"AGENTS.md":                                5671, // the build of the new prunes. 5670: the prune before the fetch of -install. 5632: the deadline of timeoutMs by the end of the add. 5628: the file that Windows cannot read. 5619: the empty folder that Windows cannot read. 5592: the temp-folder test of 683cc6a9. 5537: the two .synced removes of 683cc6a9
 	"CONTRIBUTING.md":                          1071,
 	"README.md":                                1133, // 13 are the HTML tokens of the logo <picture> block (maintainer, 2026-10-31)
 	"SECURITY.md":                              1553,
 	"docs/ARCHITECTURE.md":                     2667,
 	"docs/DAEMON.md":                           7541, // the temp-folder lines of 683cc6a9. 7493: TASK-231: the new section Lines of connections. 7175: a new page, its words moved from PROTOCOL.md and ARCHITECTURE.md
-	"docs/DIVERGENCES.md":                      7764, // TASK-208 summary table
+	"docs/DIVERGENCES.md":                      7778, // the cap that skips the prune after a full disk. 7764: TASK-208 summary table
 	"docs/EXAMPLES.md":                         1025,
 	"docs/GLOSSARY.md":                         1297,
 	"docs/IMPROVEMENTS.md":                     1590,
-	"docs/INSTALL.md":                          5307, // task-207: page rewrite
+	"docs/INSTALL.md":                          5539, // the blob guard of the new prunes. 5531: the round 8 rows of the prune. 5508: the prune before the fetch of -install. 5307: task-207: page rewrite
 	"docs/PROTOCOL.md":                         2835, // the files.realpath row and count. 2826: TASK-231: one sentence on the close line. TASK-230: one sentence on a failed write. TASK-202: the error texts, stream frames and flags moved to their own pages
 	"docs/STYLE.md":                            1293, // task-203b: the page rewrite
 	"docs/TOUR.md":                             850,  // a new page: its word count plus about 200
-	"docs/UPSTREAM-TRACKING.md":                6234, // the pin of 683cc6a9. 6232: the terminal of 683cc6a9. 6230: the build of the open destDir refusal. 6228: the could-not-be-examined text. 6224: decision-040: words moved from PROTOCOL.md, net down in the same PR
+	"docs/UPSTREAM-TRACKING.md":                6250, // the build of the new prunes. 6234: the pin of 683cc6a9. 6232: the terminal of 683cc6a9. 6230: the build of the open destDir refusal. 6228: the could-not-be-examined text. 6224: decision-040: words moved from PROTOCOL.md, net down in the same PR
 	"docs/index.md":                            316,  // the reader router of TASK-201
 	"docs/protocol/errors.md":                  1912, // TASK-245: the .probe text, 41 words of a new row
 	"docs/protocol/files-extract-tar.md":       2463, // the file that Windows cannot read. 2457: the empty folder that Windows cannot read. 2420: the .synced rules of 683cc6a9
@@ -626,7 +626,7 @@ var docWordLimits = map[string]int{
 	"docs/protocol/files-read.md":              825,
 	"docs/protocol/files-stat.md":              434, // TASK-203 rewrite
 	"docs/protocol/files-validate.md":          365,
-	"docs/protocol/flags.md":                   2633, // TASK-202: moved from PROTOCOL.md
+	"docs/protocol/flags.md":                   2639, // the prune after a good install. 2633: TASK-202: moved from PROTOCOL.md
 	"docs/protocol/git-info.md":                1850, // task-203b: the page rewrite
 	"docs/protocol/git-rules-calls.md":         5145, // TASK-291: the core.hooksPath value. 5121: TASK-202: moved from PROTOCOL.md
 	"docs/protocol/git-rules-config.md":        2884, // TASK-202: moved from PROTOCOL.md

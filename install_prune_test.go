@@ -211,7 +211,7 @@ func TestPruneTieKeepsNameOrder(t *testing.T) {
 			want = append(want, name)
 		}
 	}
-	pruneCLI(dir, 20, "")
+	pruneCLI(dir, 20, "", true, nil)
 	if got := pruneNames(t, dir); strings.Join(got, " ") != strings.Join(want, " ") {
 		t.Errorf("the cli-dir holds %q, want %q", got, want)
 	}
@@ -259,7 +259,7 @@ func TestPruneNeverRemovesContentOrLeavesTheCLIDir(t *testing.T) {
 	}
 	sort.Strings(want)
 
-	pruneCLI(dir, 0, "")
+	pruneCLI(dir, 0, "", true, nil)
 
 	if got := pruneNames(t, dir); strings.Join(got, " ") != strings.Join(want, " ") {
 		t.Errorf("the cli-dir holds %q, want %q", got, want)
@@ -335,10 +335,11 @@ func pruneNames(t *testing.T, dir string) []string {
 	return names
 }
 
-// The home guard of the tree delete refuses before the prune can run. The
-// cli-dir is the parent of the home folder and the version is its leaf name, so
-// the CLI path is the home folder. The install fails, and a failed install does
-// not prune. So no version file in the cli-dir goes, with a keep of 0.
+// The home guard of the tree delete refuses after the prune before the fetch.
+// The cli-dir is the parent of the home folder and the version is its leaf
+// name, so the CLI path is the home folder. With a keep of 0 the prune before
+// the fetch keeps the newest version file. The install fails, and nothing more
+// goes after the refusal.
 //
 // SAFETY: every path is under t.TempDir, and the home variable names a fixture
 // folder there. Without the guard the test deletes only that fixture.
@@ -359,7 +360,6 @@ func TestPruneDoesNotRunAfterTheHomeGuardRefusal(t *testing.T) {
 	for i, v := range []string{"1.0.0", "1.1.0", "1.2.0"} {
 		makePruneFixture(t, dir, root, pruneFixture{vf(v), pruneFile, time.Duration(3-i) * pruneHour}, start)
 	}
-	before := pruneNames(t, dir)
 	blob := filepath.Join(root, "blob.zst")
 	if err := os.WriteFile(blob, zstdOf(t, []byte("#\n")), 0o600); err != nil {
 		t.Fatal(err)
@@ -373,8 +373,10 @@ func TestPruneDoesNotRunAfterTheHomeGuardRefusal(t *testing.T) {
 	if !isRegularFile(keep) {
 		t.Error("the file in the home folder is gone")
 	}
-	if got := pruneNames(t, dir); strings.Join(got, " ") != strings.Join(before, " ") {
-		t.Errorf("the cli-dir holds %q, want %q: nothing is removed after the refusal", got, before)
+	want := []string{vf("1.2.0"), version}
+	sort.Strings(want)
+	if got := pruneNames(t, dir); strings.Join(got, " ") != strings.Join(want, " ") {
+		t.Errorf("the cli-dir holds %q, want %q: nothing is removed after the refusal", got, want)
 	}
 	if !isRegularFile(blob) {
 		t.Error("the blob was consumed")

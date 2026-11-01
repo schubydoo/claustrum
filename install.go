@@ -56,6 +56,11 @@ type installFacts struct {
 	CliPath       string `json:"cliPath"`
 	CliWasPresent bool   `json:"cliWasPresent"`
 	CliError      string `json:"cliError,omitempty"`
+	// cliRemoved is the count of version files that the prune after a full
+	// disk removed (be1c1ca5, measured on Linux, macOS and Windows). It comes
+	// right after cliError. A count of 0 omits it. No run printed it beside
+	// cliUnresponsive, so that order is not measured.
+	CliRemoved int `json:"cliRemoved,omitempty"`
 	// cliUnresponsive comes right after cliError. It is true for a --version run
 	// that its bound stopped (89cb6289). A direct run is measured on Linux, macOS
 	// and Windows. A launcher run is measured on Linux and macOS.
@@ -157,11 +162,33 @@ func runInstall(o installOpts) {
 			f.CliWasPresent = true
 		} else {
 			err := dirErr
+			// The -cli-zst blob of the run. Both prunes of a cache miss
+			// skip it, as the sweeps do (claustrum's own guard).
+			var blob os.FileInfo
+			if o.cliZst != "" {
+				blob, _ = os.Lstat(o.cliZst)
+			}
 			if err == nil {
+				// A cache miss prunes before the fetch, so a failed install
+				// prunes too. It keeps the newest keep-1 version files, and at
+				// least one (be1c1ca5, measured on Linux, macOS and Windows).
+				// A version that D6 refuses skips it, so the refusal still
+				// comes first.
+				if validateCLIVersion(o.cliVersion) == nil {
+					pruneCLI(o.cliDir, max(o.cliKeep-1, 1), filepath.Base(f.CliPath), false, blob)
+				}
 				err = ensureCLI(o, f.CliPath)
 			}
 			if err != nil {
 				f.CliError = err.Error()
+				// After a full disk a second prune keeps one version file,
+				// whatever -cli-keep says, and cliRemoved counts its removes.
+				// be1c1ca5, measured on Linux, macOS and Windows. Only the
+				// texts of the errors are measured, not their numbers
+				// (isDiskFull).
+				if isDiskFull(err) {
+					f.CliRemoved = pruneCLI(o.cliDir, 1, filepath.Base(f.CliPath), false, blob)
+				}
 				f.CliUnresponsive = errors.As(err, &stopped)
 				// A cli folder that cannot be made answers an empty cliPath
 				// (row E10, Linux VM, 89cb6289).
@@ -174,7 +201,9 @@ func runInstall(o installOpts) {
 				}
 			}
 			// The sweep runs once per attempted install, whether or not the
-			// install succeeded. The prune runs only when it succeeded.
+			// install succeeded. The prune of -cli-keep runs only when it
+			// succeeded. The prunes before the fetch and after a full disk
+			// are not in this table.
 			//
 			//	scenario                       sweep            prune
 			//	cache hit, good run            no               no
@@ -194,7 +223,7 @@ func runInstall(o installOpts) {
 				// A negative keep counts as 0. On 5fd08069 the result line
 				// follows with exit 0 and an empty stderr. The older version
 				// files go (cells L6, M2b and W4b, Linux, macOS and Windows).
-				pruneCLI(o.cliDir, o.cliKeep, filepath.Base(f.CliPath))
+				pruneCLI(o.cliDir, o.cliKeep, filepath.Base(f.CliPath), true, nil)
 			}
 		}
 	}
@@ -389,7 +418,7 @@ func stageBlob(blob, checksum, dir string) (string, error) {
 	}
 	if err := zstdDecompress(blob, tmp); err != nil {
 		_ = os.Remove(tmp)
-		return "", fmt.Errorf("decompressing: %v", err)
+		return "", fmt.Errorf("decompressing: %w", err)
 	}
 	if checksum != "" {
 		sum, err := hashBlobFile(blob)
@@ -1360,8 +1389,14 @@ func cliEntryHoldsHome(p string, fi os.FileInfo) bool {
 	return wipesHomeDir(p)
 }
 
-// pruneCLI is the -cli-keep prune. It runs after a good install only. newCLI is
-// the file name of the CLI that this run put in place. The rules are those of
+// pruneCLI is the -cli-keep prune. It runs after a good install. runInstall
+// also runs it before the fetch of a cache miss and after a full disk, with
+// its own keep values. newCLI is the file name of the CLI of this run, and
+// it never goes. With newCounts false it takes no keep place either. For the
+// prune before the fetch that is measured on be1c1ca5 (Linux). For the prune
+// after a full disk it is not measured. A file that is the blob stays and
+// takes no keep place (claustrum's own guard). The prune returns the count
+// of the files that it removed. The rules are those of
 // 5fd08069 (cells L4 to L6, M1, M2a, M2b, W3, W4a and W4b, Linux, macOS and
 // Windows VMs):
 //
@@ -1385,10 +1420,10 @@ func cliEntryHoldsHome(p string, fi os.FileInfo) bool {
 //
 // An entry that is the home folder or holds it is counted and never removed.
 // See cliEntryHoldsHome.
-func pruneCLI(cliDir string, keep int, newCLI string) {
+func pruneCLI(cliDir string, keep int, newCLI string, newCounts bool, blob os.FileInfo) int {
 	ents, err := os.ReadDir(cliDir)
 	if err != nil {
-		return
+		return 0
 	}
 	keep = max(keep, 0)
 	type ver struct {
@@ -1398,12 +1433,19 @@ func pruneCLI(cliDir string, keep int, newCLI string) {
 	var vs []ver
 	for _, e := range ents {
 		fi, err := os.Lstat(filepath.Join(cliDir, e.Name()))
+		if !newCounts && e.Name() == newCLI {
+			continue
+		}
+		if err == nil && blob != nil && os.SameFile(fi, blob) {
+			continue
+		}
 		if err == nil && fi.Mode().IsRegular() && isCLIVersionFile(e.Name(), fi.Mode()) {
 			vs = append(vs, ver{e.Name(), fi.ModTime().UnixNano()})
 		}
 	}
 	// os.ReadDir gives the entries in name order, and the sort is stable.
 	sort.SliceStable(vs, func(i, j int) bool { return vs[i].mod > vs[j].mod })
+	removed := 0
 	for i := keep; i < len(vs); i++ {
 		if vs[i].name == newCLI {
 			continue
@@ -1415,8 +1457,11 @@ func pruneCLI(cliDir string, keep int, newCLI string) {
 		if fi, err := os.Lstat(p); err == nil && cliEntryHoldsHome(p, fi) {
 			continue
 		}
-		_ = os.Remove(p)
+		if os.Remove(p) == nil {
+			removed++
+		}
 	}
+	return removed
 }
 
 // isCLIVersionFile reports whether a regular file of the cli-dir counts in the

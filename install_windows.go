@@ -7,6 +7,8 @@ import (
 	"io/fs"
 	"os"
 	"syscall"
+
+	"golang.org/x/sys/windows"
 )
 
 // cliExeSuffix is the suffix that installCLIPath adds to the version. On Windows
@@ -38,3 +40,18 @@ func renameDenied(err error) bool { return errors.Is(err, syscall.ERROR_ACCESS_D
 // miss only. 5fd08069 makes nothing for C:\D\sub\.. there, also with sub a file
 // (cells W-HS10b and W-V1 of round tier3-01, Windows VM).
 const rawCLIDirStep = false
+
+// diskFullErrors are the error numbers of a full disk. be1c1ca5 answers
+// "There is not enough space on the disk." for a full disk and for an NTFS
+// user quota (measured on Windows). That is the text of ERROR_DISK_FULL.
+var diskFullErrors = []error{windows.ERROR_DISK_FULL}
+
+// isDiskFull reports an install error that a full disk caused.
+func isDiskFull(err error) bool {
+	for _, e := range diskFullErrors {
+		if errors.Is(err, e) {
+			return true
+		}
+	}
+	return false
+}

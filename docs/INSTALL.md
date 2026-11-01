@@ -19,7 +19,7 @@ An untagged rule on this page matches the reference as measured on build `5fd080
 ### Keep N versions
 
 1. Add `-cli-keep <n>` to the install run.
-2. Expect a prune after a good install only ([rules](#sweeps-and-prune)).
+2. Expect a prune on a cache miss and after a good install ([rules](#sweeps-and-prune)).
 
 ### Read the facts line
 
@@ -75,7 +75,7 @@ form a driver sees:
 - `cli unresponsive: the installed Claude Code binary started but did not answer --version within 30s (120s for a first run) and was stopped; the host is not letting it run (endpoint security software or a stalled network home are the usual causes)`: a direct `--version` run that its bound stopped. Always-on, parity (see [The direct `--version` run](#the-direct-version-run))
 - `checksum mismatch: expected=<x>, actual=<y>`: `-cli-checksum` verify failed (see [Checksum and verify ordering](#checksum-and-verify-ordering))
 - `opening input: <err>`: `-cli-zst` open error
-- `decompressing: <err>`: bad zstd blob or body, for example `invalid input: magic number mismatch`. A `-cli-zst` folder gives `read <p>: is a directory` (Linux)
+- `decompressing: <err>`: bad zstd blob or body, for example `invalid input: magic number mismatch`. A `-cli-zst` folder gives `read <p>: is a directory` (Linux). A full disk gives `write <cli-dir>/.fetch-<n>: <text>` (`\` on Windows). The text is `no space left on device` (Linux, macOS) or `There is not enough space on the disk.` (Windows)
 - `decompressing: decompressed CLI exceeds <n> bytes`: D10 cap, opt-in
 - `staging cli: <err>`: no staging file can be made in the cli-dir (claustrum's own, not measured)
 - `download failed with status <n>`: the server answered a status other than 200. The text has no URL and no reason phrase
@@ -324,8 +324,8 @@ The hardening of `-cli-version` is [D6](DIVERGENCES.md#d6):
   final path. That is one code path for `-cli-url` and `-cli-zst`. A download is
   decompressed into that file as it arrives, and no other file is made.
 - An install puts the new CLI at its final path, removes the `-cli-zst` blob and
-  runs the 10 minute sweep. Then `<final path> --version` runs. The prune follows a
-  good run only. A direct run that does not start or exits non-zero removes the new CLI again with one plain
+  runs the 10 minute sweep. Then `<final path> --version` runs. The `-cli-keep` prune needs a
+  good run. A direct run that does not start or exits non-zero removes the new CLI again with one plain
   remove. A stopped run keeps the new CLI. On Windows claustrum can leave that file
   when the exited CLI holds it (claustrum's own).
 - What is at the final path goes before the new CLI runs. A folder there is removed
@@ -391,7 +391,24 @@ The `-cli-keep` prune:
   order of the name, so the later name goes. The new CLI takes its place in the
   order and always stays. `-cli-keep 0` and a negative value remove every
   version file but the new CLI, and the result line follows with exit `0` and an empty stderr.
-- A failed install, a stopped run and a cache hit do not prune.
+- A failed install, a stopped run and a cache hit take no `-cli-keep` prune.
+
+### The prune of a cache miss
+
+A cache miss prunes before the fetch, with the same rules (`be1c1ca5`, measured on Linux,
+macOS and Windows).
+
+- It keeps the newest `-cli-keep` minus 1 version files, and at least one. A failed
+  install prunes too: no source, a refused download and a checksum mismatch.
+- After a full disk a second prune keeps one version file, whatever `-cli-keep` says.
+  `cliRemoved` counts its removes, and a count of 0 omits it. The blob stays.
+- A user quota counts as a full disk. Linux gives `disk quota exceeded`. Windows gives the
+  text of a full disk. macOS is not measured.
+- claustrum reads a full disk from the error number: `ENOSPC` on Linux and macOS, also
+  `EDQUOT` on Linux, `ERROR_DISK_FULL` on Windows. Only the texts are measured.
+- A file of the named version in the cli-dir stays and takes no keep place (Linux). After a
+  full disk that is claustrum's own, not measured.
+- Both prunes skip the `-cli-zst` blob, also under a version name (claustrum's own).
 
 Two sweeps remove old regular files of the cli-dir with one plain remove each,
 never as a tree. A folder and a link stay (from the code for a link). A
@@ -442,6 +459,8 @@ none with a home folder).
   "cliWasPresent": false,     // true only if it existed AND answered --version within 30 s,
                               // without CLAUDE_SSH_MANAGED_LAUNCHER=1 (see the managed launcher)
   "cliError": "…",            // omitted on success
+  "cliRemoved": 2,            // the removes of the prune after a full disk. Omitted at 0.
+                              // Its place before cliUnresponsive is not measured
   "cliUnresponsive": true,    // a --version run that its bound stopped. Omitted when it
                               // does not apply.
   // The launcher* fields appear only with CLAUDE_SSH_MANAGED_LAUNCHER=1,

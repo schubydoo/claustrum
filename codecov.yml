@@ -378,6 +378,9 @@ component_management:
         # Windows-only file test of -probe-cli.
         - install_other.go
         - install_windows.go
+        # The error numbers that start the prune after a full disk.
+        - install_diskfull_linux.go
+        - install_diskfull_unix.go
         # 4534d86 -install download: __INSTALL_PROGRESS__ ticker + 60 s read-idle abort.
         - installfetch.go
         # 5fd08069 file test of a cache hit with the launcher gate (Linux).
