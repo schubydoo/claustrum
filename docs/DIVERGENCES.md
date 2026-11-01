@@ -561,11 +561,8 @@ have no flag and no key.
 
   On Windows, after a swap of `.git` to a file that names a second repository,
   claustrum runs no git call and changes nothing there. Its undo text says that
-  the branch still exists. On Linux and macOS, after a second repository at
-  `.git` right after the add, the rollback deletes no registration in it and
-  adds the clause `(the repository's git directory was replaced while the
-  worktree was being made)`. After a link at `.git` right before the add, the
-  branch that git made through it stays. On Windows a `locked` file that
+  the branch still exists. On Linux and macOS, after a link at `.git` right
+  before the add, the branch that git made through it stays. On Windows a `locked` file that
   cannot be removed keeps the whole entry (the maintainer's choice of
   2026-11-01).
 - **Reference.** A process renames the new registration and puts another folder
@@ -576,11 +573,10 @@ have no flag and no key.
   swap, `5fd08069` runs the branch step in the second repository. It deletes a
   branch of the same name there that `main` reaches, or keeps it with
   `branchKept`. The frames differ. `be1c1ca5` removes the folder that replaced
-  a moved entry, the registration in the second repository (the frame lacks
-  the clause), and the branch behind the link (an equal frame). On Windows it
-  keeps only `locked` (measured on Linux and Windows).
+  a moved entry, and the branch behind the link, with equal frames. On Windows
+  it keeps only `locked` (measured on Linux and Windows).
 - **Systems and switch.** Linux, macOS and Windows. The `.git` file swap is
-  Windows only, and the two staged swaps are Linux and macOS only. Always on,
+  Windows only, and the link at `.git` is Linux and macOS only. Always on,
   no switch.
 - **Cost.** A replaced folder stays that the reference removes, and no frame
   differs. The registrations folder must change between the add and the

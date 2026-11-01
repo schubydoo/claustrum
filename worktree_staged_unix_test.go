@@ -33,10 +33,10 @@ func secondRepoGitDir(t *testing.T) string {
 // `.git` of a second repository is put at the path. The staging step takes
 // the hold on it and moves the registration there. The checkout then fails,
 // because that repository has no branch w1. be1c1ca5 answers git's text and
-// removes the registration in that folder (measured on Linux). claustrum
-// deletes nothing there and says so, the leaf goes, and the branch stays in
-// the old folder. Without the rule of acceptedGitDir.replaced the rollback
-// removes the registration in the second repository.
+// removes the registration in that folder (measured on Linux), and so does
+// claustrum, by the identity of the moved entry. The leaf goes, and the
+// branch stays in the old folder. Without the moved registration in the
+// rollback the registration stays.
 func TestStagedCreateWithAnotherRepositoryAfterTheAdd(t *testing.T) {
 	f := newSeededShadowFixture(t)
 	other := secondRepoGitDir(t)
@@ -55,13 +55,11 @@ func TestStagedCreateWithAnotherRepositoryAfterTheAdd(t *testing.T) {
 	})
 	raw, _ := f.call(t, "git.worktree_create", map[string]any{"baseRepo": f.repo, "branchName": "w1", "worktreePath": leaf})
 	got := createError(t, raw)
-	tail := "; and the undo could not finish for " + leaf + ": the worktree registration and the branch remain; " +
-		"remove them by hand before retrying (" + replacedGitDirText + ")"
-	if !strings.HasPrefix(got, "git worktree add failed (checkout): ") || !strings.HasSuffix(got, tail) {
-		t.Errorf("the error = %s\nwant the checkout text and %s", got, tail)
+	if !strings.HasPrefix(got, "git worktree add failed (checkout): ") || strings.Contains(got, "undo could not finish") {
+		t.Errorf("the error = %s\nwant the checkout text alone", got)
 	}
-	if _, err := os.Lstat(filepath.Join(f.gitDir, "worktrees", "w1", "HEAD")); err != nil {
-		t.Errorf("the registration in the second repository: %v, want it kept", err)
+	if _, err := os.Lstat(filepath.Join(f.gitDir, "worktrees", "w1")); !os.IsNotExist(err) {
+		t.Errorf("the registration in the second repository: %v, want it gone", err)
 	}
 	if _, err := os.Lstat(filepath.Join(f.gitDir+"-real", "refs", "heads", "w1")); err != nil {
 		t.Errorf("the branch in the old folder: %v, want it kept", err)

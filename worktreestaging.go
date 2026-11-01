@@ -578,7 +578,9 @@ func runAddStaged(ctx context.Context, u gitUse, cmd *exec.Cmd, leaf string, cp 
 // into it. be1c1ca5 moves the registration into a copy of `.git` made right
 // after the add or right before it, and the create succeeds there (measured
 // on Linux). The sweep is skipped then (claustrum's own). A rollback after
-// that step deletes no registration (undoFailedCheckout, claustrum's own).
+// that step deletes the moved registration by its identity through the new
+// folder, as be1c1ca5 does after a failed checkout (measured on Linux, the
+// maintainer's approval of 2026-11-01).
 //
 // Both steps act through the held folder, so a folder that is put at the path
 // after this test gets nothing either (from the code: no row has a swap at

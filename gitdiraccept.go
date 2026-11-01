@@ -64,10 +64,6 @@ type acceptedGitDir struct {
 	// staged is the registration that the staging step moved into
 	// `worktrees` (addStage.move), or the zero value.
 	staged stagedEntry
-	// replaced is true after the staging step took the hold on a new real
-	// directory at the path (addStage.finish). A rollback then deletes no
-	// registration (claustrum's own, be1c1ca5 removes it, measured on Linux).
-	replaced bool
 }
 
 // stagedEntry is the name of a registration that the staging step moved into
@@ -346,7 +342,6 @@ func (a *acceptedGitDir) adopt(next *acceptedGitDir) {
 		_ = a.root.Close()
 	}
 	*a = *next
-	a.replaced = true
 }
 
 // takeOver is the hold on the real directory gitDir, whose identity before the

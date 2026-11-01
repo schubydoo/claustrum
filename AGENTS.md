@@ -422,8 +422,9 @@ before the move, and the registration goes into it (`be1c1ca5` moves it into a c
 a second repository, measured on Linux). Add no other step that resolves the path of the git directory again,
 and never widen a delete of these steps. A rollback after the first move is not
 measured. After the first move the staging sweep is skipped (claustrum's own). After the
-staging step takes the hold, the sweep is skipped and the rollback deletes no registration
-(claustrum's own, `be1c1ca5` removes it). A held create whose add names no copy takes the
+staging step takes the hold, the sweep is skipped (claustrum's own), and the rollback deletes
+the registration that this create made, by identity through the new folder, as `be1c1ca5`
+does (measured on Linux). The maintainer approved this exception on 2026-11-01. A held create whose add names no copy takes the
 second step after the add, and its rollback acts through the new folder ([Rare
 states](docs/protocol/git-worktree-create.md#rare-states)).
 
@@ -543,7 +544,7 @@ the rules, the cost and the reopen trigger of each.
 | [D20](docs/DIVERGENCES.md#d20) | Wait 50 ms and read again before the group `SIGKILL` of a child-group leader that reads as gone, at the reap of a `-serve` start | always-on | Linux, macOS |
 | [D22](docs/DIVERGENCES.md#d22) | `git.worktree_remove` refuses a worktree locked in the `.git` folder of `baseRepo`. Part A names the one exception | always-on | all |
 | [D23](docs/DIVERGENCES.md#d23) | The environment block of a child is in name order | always-on | Windows |
-| [D24](docs/DIVERGENCES.md#d24) | The rollback of `git.worktree_create` keeps a folder that replaced the new registration. On Windows a rollback after `.git` became a file that names a second repository runs no git call. On Linux and macOS a rollback after a swap of `.git` during the staged add deletes no registration in the new folder and no branch through a link | always-on | all |
+| [D24](docs/DIVERGENCES.md#d24) | The rollback of `git.worktree_create` keeps a folder that replaced the new registration. On Windows a rollback after `.git` became a file that names a second repository runs no git call. On Linux and macOS a rollback after a link at `.git` during the staged add deletes no branch through it | always-on | all |
 | [D27](docs/DIVERGENCES.md#d27) | The stale step of `git.worktree_create` keeps an entry whose `gitdir` record names a path that exists | always-on | Windows |
 | [CT-1](docs/DIVERGENCES.md#ct-1) | Opt-in `wantPid` adds `pid` and `startTime` on spawn and reattach | off (the caller asks) | all |
 | [CT-2](docs/DIVERGENCES.md#ct-2) | `-keep-children` leaves the child tree running on shutdown | off | all |

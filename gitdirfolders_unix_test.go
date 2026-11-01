@@ -426,8 +426,8 @@ func TestRemoveOfALockedWorktreeBehindALink(t *testing.T) {
 // on Linux).
 //
 //   - L4: the copy goes in right before the real `worktree add`, and the
-//     read-tree call fails. The leaf goes. The rollback deletes nothing in the
-//     copy and says so (claustrum's own), and the old folder is unchanged.
+//     read-tree call fails. The rollback runs in the copy: the leaf, the moved
+//     registration and b1 go. The old folder is unchanged.
 //   - L5: a copy made before the add goes in right after it. The create
 //     succeeds in the copy, and the old folder keeps b1 and no registration.
 func TestCreateAfterACopiedGitDir(t *testing.T) {
@@ -449,11 +449,10 @@ func TestCreateAfterACopiedGitDir(t *testing.T) {
 		t.Setenv("CLAUSTRUM_GITSTUB_EXIT2", "1")
 		t.Setenv("CLAUSTRUM_GITSTUB_STDERR2", "fatal: forced failure by the wrapper\n")
 		raw, _ := f.create(t, nil)
-		wantFrame(t, raw, frame(`{"success":false,"error":"git worktree add failed (checkout): fatal: forced failure by the wrapper; `+
-			`and the undo could not finish for `+f.leaf()+`: the worktree registration and the branch remain; remove them by hand before retrying (`+
-			replacedGitDirText+`)","errorCode":"worktree_add_failed"}`))
-		wantPaths(t, false, f.leaf(), filepath.Join(old, "worktrees", "w1"), filepath.Join(old, "refs", "heads", "b1"))
-		wantPaths(t, true, filepath.Join(f.gitDir, "worktrees", "w1", "HEAD"), filepath.Join(f.gitDir, "refs", "heads", "b1"))
+		wantFrame(t, raw, frame(`{"success":false,"error":"git worktree add failed (checkout): fatal: forced failure by the wrapper","errorCode":"worktree_add_failed"}`))
+		wantPaths(t, false, f.leaf(), filepath.Join(f.gitDir, "worktrees", "w1"), filepath.Join(f.gitDir, "refs", "heads", "b1"),
+			filepath.Join(old, "worktrees", "w1"), filepath.Join(old, "refs", "heads", "b1"))
+		wantPaths(t, true, filepath.Join(f.gitDir, "worktrees"))
 		if after := fileDigests(t, old); !slices.Equal(after, before) {
 			t.Errorf("the old git directory changed:\n%q\nwant\n%q", after, before)
 		}
