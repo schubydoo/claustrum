@@ -232,6 +232,9 @@ cannot be removed. The last two delete no registration (D24, and the maintainer'
   --show-toplevel` fails by itself, and the folder has one new name. The second rollback
   then acts on that name, never on the name in the `.git` file. A show-toplevel call that a time limit stopped starts no rollback
   (claustrum's own, not measured).
+- **After the checkout** (`be1c1ca5`, measured on Linux. macOS not measured). A leaf with no
+  `.git` entry after a good checkout is refused. The leaf goes by the steps and guards of the
+  second rollback (`removeCreatedLeaf`). The registration and the branch stay.
 
 ##### Registration and index
 

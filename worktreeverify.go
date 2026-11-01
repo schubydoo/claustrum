@@ -238,9 +238,7 @@ func undoFailedCheckout(u gitUse, repo, worktreePath, branch string, cp worktree
 	default:
 		registration = createdWorktreeAdminDir(repo, worktreePath)
 	}
-	leafSafe := func() bool {
-		return worktreePath != "" && !wipesHomeDir(worktreePath) && verifyCreatedWorktree(worktreePath, cp) == ""
-	}
+	leafSafe := func() bool { return leafSafeToRemove(worktreePath, cp) }
 	touchLeaf := leafSafe()
 	if touchLeaf {
 		if detail := clearWorktreeLeaf(worktreePath); detail != "" {
@@ -295,6 +293,41 @@ func undoFailedCheckout(u gitUse, repo, worktreePath, branch string, cp worktree
 		return "", false
 	}
 	return "; and the undo could not finish for " + worktreePath + ": " + strings.Join(parts, "; "), res.kind == branchUnique
+}
+
+// leafSafeToRemove is the guard of each delete of the leaf in a rollback after a
+// good add: the home guard (D2) and the checkpoint identity of the leaf.
+func leafSafeToRemove(worktreePath string, cp worktreeCheckpoint) bool {
+	return worktreePath != "" && !wipesHomeDir(worktreePath) && verifyCreatedWorktree(worktreePath, cp) == ""
+}
+
+// removeCreatedLeaf removes the leaf of a create as steps A and C of
+// undoFailedCheckout do, each after leafSafeToRemove. It deletes no
+// registration and runs no branch step. A step that fails or a guard that
+// refuses ends it, and nothing is reported.
+func removeCreatedLeaf(worktreePath string, cp worktreeCheckpoint) {
+	if !leafSafeToRemove(worktreePath, cp) || clearWorktreeLeaf(worktreePath) != "" || !leafSafeToRemove(worktreePath, cp) {
+		return
+	}
+	_ = removeEmptyLeaf(worktreePath)
+}
+
+// leafGitFileGone reports whether the leaf is a folder with no `.git` entry at
+// all. A leaf that is gone keeps the earlier answer (claustrum's own, not
+// measured).
+func leafGitFileGone(worktreePath string) bool {
+	if fi, err := os.Stat(worktreePath); err != nil || !fi.IsDir() {
+		return false
+	}
+	_, err := os.Lstat(filepath.Join(worktreePath, ".git"))
+	return errors.Is(err, fs.ErrNotExist)
+}
+
+// gitFileGoneText is the refusal of a create whose leaf lost its `.git` file
+// during the checkout (be1c1ca5, measured on Linux). The path is in the form of
+// tickPath. Its spelling for a leaf under a symbolic link is not measured.
+func gitFileGoneText(worktreePath string) string {
+	return "refusing to create worktree: " + tickPath(worktreePath) + " does not hold the .git file made for it"
 }
 
 // clearWorktreeLeaf is step A of undoFailedCheckout. It deletes each entry at the top
