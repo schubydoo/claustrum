@@ -55,10 +55,9 @@ import (
 //
 // The core.excludesFile entry is a placeholder. profileArgsWithExcludes puts the
 // user's excludes file there (userExcludesFile). On the Windows VM 5fd08069 sends
-// the user's ignore file there (cell 50). core.hooksPath stays /dev/null on that
-// VM (cell B1 of s3-windows).
+// the user's ignore file there (cell 50). core.hooksPath is hooksNullDevice.
 var gitHardenLight = []string{
-	"core.hooksPath=/dev/null",
+	"core.hooksPath=" + hooksNullDevice,
 	"core.fsmonitor=",
 	"branch.autoSetupMerge=false",
 	"fetch.bundleURI=",
@@ -86,13 +85,13 @@ var gitHardenLight = []string{
 // is empty (claustrum's own, not measured). s3-linux cells B0 and B1 show it
 // on a Linux VM. Cell B1 of s3-macos and of s3-windows shows it for git.info and
 // git.list_branches on macOS and Windows VMs, with "shadowDirOff":true. On the
-// Windows VM 5fd08069 sends /dev/null in the two items before core.excludesFile
-// (cell B1 of s3-windows). 89cb6289 sends 13 items for git.info and
+// Windows VM 5fd08069 sends /dev/null in core.attributesFile (cell B1 of
+// s3-windows). core.hooksPath is hooksNullDevice. 89cb6289 sends 13 items for git.info and
 // git.list_branches, and 23 for git.status apart from its `rev-parse
 // --show-toplevel` pair.
 var gitHardenHeavy = []string{
 	"core.fsmonitor=",
-	"core.hooksPath=/dev/null",
+	"core.hooksPath=" + hooksNullDevice,
 	"core.attributesFile=/dev/null",
 	"core.excludesFile=/dev/null", // placeholder, see profileArgsWithExcludes
 	"core.longpaths=true",

@@ -32,7 +32,7 @@ The reply is always this result.
   "methods": ["server.ping", "server.capabilities", "server.shutdown", "…"],
   "instanceId": "<32 hex characters>",
   "startedAt": 1760000000000,
-  "features": ["process.stdin.offset", "process.kill.farewell", "files.extract_tar.execBit", "files.list.includeDotNames", "files.list.junctionsAsDirs", "git.status.baseRepo", "git.info.discovered_root", "git.worktree_create.timeoutMs", "git.worktree_create.existingBranch", "git.worktree_remove.unpushedGuard", "process.spawn.shellAgentSocket", "process.spawn.failure_reason", "server.line_end", "launcher.managed", "server.peer_check", "git.shadow_dir", "files.read.real", "git.worktree.external_root", "process.spawn.link_bound", "server.instance_id"],
+  "features": ["process.stdin.offset", "process.kill.farewell", "files.extract_tar.execBit", "files.list.includeDotNames", "files.list.junctionsAsDirs", "git.status.baseRepo", "git.info.discovered_root", "git.worktree_create.timeoutMs", "git.worktree_create.existingBranch", "git.worktree_remove.unpushedGuard", "process.spawn.shellAgentSocket", "process.spawn.failure_reason", "server.line_end", "launcher.managed", "server.peer_check", "git.shadow_dir", "git.hooks_null_device", "files.read.real", "git.worktree.external_root", "process.spawn.link_bound", "server.instance_id"],
   "peerCheck": "off"
 }
 ```
@@ -53,7 +53,7 @@ A request for `server.capabilities` does not count as activity for the idle exit
 
 ### Features
 
-The `features` array is always present. The example above shows the members in the order of `683cc6a9` on Linux and macOS, less `process.spawn.pty`. Windows sends no `git.worktree.external_root` and no `process.spawn.link_bound` (`683cc6a9`), and with jobs on adds `process.spawn.job` last (`52d82f0a`). On Linux with a `/proc` that holds only `self`, `683cc6a9` drops `files.read.real`. claustrum drops it after a failed start test, whose exact steps are claustrum's own.
+The `features` array is always present. The example above shows the members in the order of `683cc6a9` on Linux and macOS, less `process.spawn.pty`. `be1c1ca5` adds `git.hooks_null_device` after `git.shadow_dir` on Linux, macOS and Windows. Windows sends no `git.worktree.external_root` and no `process.spawn.link_bound` (`683cc6a9`), and with jobs on adds `process.spawn.job` last (`52d82f0a`). On Linux with a `/proc` that holds only `self`, `683cc6a9` drops `files.read.real`. claustrum drops it after a failed start test, whose exact steps are claustrum's own.
 
 `CLAUDE_SSH_MANAGED_LAUNCHER` does not change the list (measured on macOS). Windows lists `launcher.managed` too, although a Windows `process.spawn` refuses every launcher. The peer check changes only the `peerCheck` and `peerCheckBy` members.
 

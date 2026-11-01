@@ -120,7 +120,7 @@ func TestCapabilitiesAdvertisesNewSurface(t *testing.T) {
 	if !strings.Contains(joined, "git.worktree_remove,launcher.resolve,process.spawn") {
 		t.Errorf("methods missing launcher.resolve between git.worktree_remove and process.spawn: %v", got.Methods)
 	}
-	wantFeatures := []string{"process.stdin.offset", "process.kill.farewell", "files.extract_tar.execBit", "files.list.includeDotNames", "files.list.junctionsAsDirs", "git.status.baseRepo", "git.info.discovered_root", "git.worktree_create.timeoutMs", "git.worktree_create.existingBranch", "git.worktree_remove.unpushedGuard", "process.spawn.shellAgentSocket", "process.spawn.failure_reason", "server.line_end", "launcher.managed", "server.peer_check", "git.shadow_dir", "files.read.real", "git.worktree.external_root", "process.spawn.link_bound", "server.instance_id"}
+	wantFeatures := []string{"process.stdin.offset", "process.kill.farewell", "files.extract_tar.execBit", "files.list.includeDotNames", "files.list.junctionsAsDirs", "git.status.baseRepo", "git.info.discovered_root", "git.worktree_create.timeoutMs", "git.worktree_create.existingBranch", "git.worktree_remove.unpushedGuard", "process.spawn.shellAgentSocket", "process.spawn.failure_reason", "server.line_end", "launcher.managed", "server.peer_check", "git.shadow_dir", "git.hooks_null_device", "files.read.real", "git.worktree.external_root", "process.spawn.link_bound", "server.instance_id"}
 	if runtime.GOOS == "windows" {
 		// external_root is gated off on Windows (capfeatures_windows.go), matching the
 		// reference, which drops the feature from its Windows capabilities frame.
@@ -128,7 +128,7 @@ func TestCapabilitiesAdvertisesNewSurface(t *testing.T) {
 		// process.spawn.shellAgentSocket and launcher.managed are present on every OS
 		// (89cb6289 lists launcher.managed on Windows too);
 		// server.instance_id is always last.
-		wantFeatures = []string{"process.stdin.offset", "process.kill.farewell", "files.extract_tar.execBit", "files.list.includeDotNames", "files.list.junctionsAsDirs", "git.status.baseRepo", "git.info.discovered_root", "git.worktree_create.timeoutMs", "git.worktree_create.existingBranch", "git.worktree_remove.unpushedGuard", "process.spawn.shellAgentSocket", "process.spawn.failure_reason", "server.line_end", "launcher.managed", "server.peer_check", "git.shadow_dir", "files.read.real", "server.instance_id"}
+		wantFeatures = []string{"process.stdin.offset", "process.kill.farewell", "files.extract_tar.execBit", "files.list.includeDotNames", "files.list.junctionsAsDirs", "git.status.baseRepo", "git.info.discovered_root", "git.worktree_create.timeoutMs", "git.worktree_create.existingBranch", "git.worktree_remove.unpushedGuard", "process.spawn.shellAgentSocket", "process.spawn.failure_reason", "server.line_end", "launcher.managed", "server.peer_check", "git.shadow_dir", "git.hooks_null_device", "files.read.real", "server.instance_id"}
 	}
 	if strings.Join(got.Features, ",") != strings.Join(wantFeatures, ",") {
 		t.Errorf("features = %v, want %v", got.Features, wantFeatures)

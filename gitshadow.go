@@ -578,12 +578,11 @@ func (r shadowRun) exited() bool {
 	return errors.As(r.err, &exit) && exit.Exited()
 }
 
-// shadowTestPrefix is the option list of every call of the test. On a Windows
-// VM the first item is core.hooksPath=NUL (s3p2-linux and s3p2-windows cells
-// B3a).
+// shadowTestPrefix is the option list of every call of the test. The first item
+// is core.hooksPath with hooksNullDevice (be1c1ca5, Linux and Windows VMs).
 func shadowTestPrefix() []string {
 	return []string{
-		"-c", "core.hooksPath=" + os.DevNull,
+		"-c", "core.hooksPath=" + hooksNullDevice,
 		"-c", "gc.auto=0",
 		"-c", "maintenance.auto=false",
 		"-c", "commit.gpgsign=false",

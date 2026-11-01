@@ -69,6 +69,7 @@
         "launcher.managed",
         "server.peer_check",
         "git.shadow_dir",
+        "git.hooks_null_device",
         "files.read.real",
         "server.instance_id"
       ],

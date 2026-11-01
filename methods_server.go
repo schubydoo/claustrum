@@ -54,7 +54,8 @@ var capabilityMethods = []string{
 // macOS and Windows VMs). 683cc6a9 inserted files.list.junctionsAsDirs after
 // files.list.includeDotNames, and files.read.real after git.shadow_dir (Linux, macOS
 // and Windows VMs). It also lists process.spawn.link_bound after external_root, on
-// Linux and macOS only (osCapabilityFeatures). The array is always emitted.
+// Linux and macOS only (osCapabilityFeatures). be1c1ca5 inserted git.hooks_null_device
+// after git.shadow_dir (Linux, macOS and Windows VMs). The array is always emitted.
 var capabilityFeatures = append(append([]string{
 	"process.stdin.offset",
 	"process.kill.farewell",
@@ -72,6 +73,7 @@ var capabilityFeatures = append(append([]string{
 	"launcher.managed",
 	"server.peer_check",
 	"git.shadow_dir",
+	"git.hooks_null_device",
 	filesReadRealFeature,
 }, osCapabilityFeatures...), "server.instance_id")
 
