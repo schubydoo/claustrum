@@ -186,8 +186,8 @@ have no flag and no key.
   - The deletes inside the folder `git-shadow` of the daemon.
   - `-install`, before the tree delete of a folder at the CLI path. The reply is
     `cli path must not be or contain the home directory: "<path>"`. The folder
-    test is by identity too (`folderHoldsHome`). The sweeps and the `-cli-keep`
-    prune skip such an entry (`cliEntryHoldsHome`). `89cb6289` removed an empty
+    test is by identity too (`folderHoldsHome`). The sweeps and the prunes
+    skip such an entry (`cliEntryHoldsHome`). `89cb6289` removed an empty
     home folder there.
 - **Reference.** It wipes home for `"destDir":"~"` and answers
   `{"success":true}` (measured on `7d193f89`). `-install` removes home as a tree
@@ -320,7 +320,8 @@ have no flag and no key.
 - **Cost.** A cap below the free space replaces a disk-full report with the
   cap's own message, so the user loses the free-space hint. That cost turns on
   the `cliError` driver claim
-  ([ARCHITECTURE.md](ARCHITECTURE.md#driver-claims-and-their-provenance)).
+  ([ARCHITECTURE.md](ARCHITECTURE.md#driver-claims-and-their-provenance)). A cap that
+  fires before the disk fills also skips the second prune and `cliRemoved`.
 - **Rule.** Rule 4. The reference answers a frame, not an unbounded wait, and
   Desktop owns the argv.
 - **Reopen trigger.** Desktop stops treating a disk-full message as terminal,

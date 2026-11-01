@@ -296,7 +296,9 @@ does not test which folder that child is. Right before the tree delete, `folderH
 refuses a CLI path that is home or holds it. It runs `wipesHomeDir` and compares the folder at the CLI path with home and each parent of
 home by identity (`os.SameFile`), for the given and the resolved home path (D2). The
 prune and the sweeps skip an entry that is home or holds it (`cliEntryHoldsHome`, claustrum's
-own, D2). `clearNonFolderCLIDir` removes two paths with a plain `os.Remove`, never as a
+own, D2). The prune runs after a good install, before the fetch of a cache miss and after a
+full disk (`be1c1ca5`). Each run removes version files only, each by one plain `os.Remove`, and never the
+file of the named version. `clearNonFolderCLIDir` removes two paths with a plain `os.Remove`, never as a
 tree: a cli-dir entry that is a regular file, a symlink to a regular file or a FIFO, and
 the regular file `ccd-cli-version` in its parent folder. The sweeps remove regular files
 by name with a plain `os.Remove`. The `-cli-zst` blob goes with one plain `os.Remove`

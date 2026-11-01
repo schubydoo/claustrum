@@ -259,7 +259,7 @@ open of claustrum (from the code, not measured). See
 These are the traps that matter for telling drift from expected. In the git and
 files methods, claustrum follows `683cc6a9`, the build that `scripts/UPSTREAM_SHA`
 names. The exceptions are the D-entries above, and the places where an item below
-or the linked page names an older build. A probe against an older build
+or the linked page names another build. A probe against an older build
 shows the differences of each item as a build split, not drift. The rules are on
 the linked pages.
 
@@ -319,6 +319,8 @@ the linked pages.
 - The `-install` prune and sweeps follow `5fd08069`, and so do the blob timing,
   the Windows `rename: ` prefix, the Windows rename retry and the Linux file test of a
   cache hit.
+- The `-install` prunes of a cache miss and `cliRemoved` follow `be1c1ca5`, a build split
+  against `683cc6a9`.
 - The git filters of the `git.worktree_create` checkout follow `5fd08069`. Against
   `89cb6289` the refusal `repository_only_filter` is new. So are the texts for a
   name over 200 bytes and for more than 64 filters (`89cb6289` not run for 64

@@ -692,7 +692,7 @@ func TestPruneCLI(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	pruneCLI(dir, 2, "") // keep the 2 newest
+	pruneCLI(dir, 2, "", true, nil) // keep the 2 newest
 	for _, n := range names[:2] {
 		if isRegularFile(filepath.Join(dir, n)) {
 			t.Errorf("%s should have been pruned", n)

@@ -201,6 +201,13 @@ func oldVersionFiles() []string {
 	return out
 }
 
+// newestOldVersion is the file name of the newest of stubOldVersions. On
+// be1c1ca5 a cache miss with -cli-keep 1 or 2 prunes the older version files
+// before the fetch, so only this one stays (measured on Linux).
+func newestOldVersion() string {
+	return stubOldVersions[len(stubOldVersions)-1] + cliExeSuffix
+}
+
 // stubLogLine returns the first line of the stub log with the given prefix. The
 // second result is how many such lines the log holds.
 func (f *stubFixture) stubLogLine(t *testing.T, prefix string) (string, int) {
@@ -359,7 +366,8 @@ func TestInstallFirstRunHasItsOwnBound(t *testing.T) {
 
 // Rows F05, F07, F15. A new CLI that does not answer is stopped
 // at the first-run bound, with the same text. The new CLI stays at its final name,
-// the -cli-zst blob is consumed, the old swept pair is gone and nothing is pruned.
+// the -cli-zst blob is consumed and the old swept pair is gone. Only the prune
+// before the fetch ran.
 func TestInstallStopsANewCLIAtTheFirstRunBound(t *testing.T) {
 	f := newStubFixture(t)
 	f.litter(t)
@@ -377,7 +385,7 @@ func TestInstallStopsANewCLIAtTheFirstRunBound(t *testing.T) {
 	if want := factsHead(t, f.cli) + stoppedTail + "}\n"; out != want {
 		t.Errorf("stdout\n got %q\nwant %q", out, want)
 	}
-	f.wantNames(t, "F05", append(oldVersionFiles(), ".fetch-12", "1.0.8.zst", filepath.Base(f.cli))...)
+	f.wantNames(t, "F05", newestOldVersion(), ".fetch-12", "1.0.8.zst", filepath.Base(f.cli))
 	if !isRegularFile(f.cli) {
 		t.Error("F05: the new CLI must stay at its final name")
 	}
@@ -430,7 +438,7 @@ func TestInstallGateWithoutPolicyUsesTheDirectBounds(t *testing.T) {
 	if want := factsHead(t, g2.cli) + stoppedTail + `,"launcherStatus":"none"}` + "\n"; out != want {
 		t.Errorf("L07: stdout\n got %q\nwant %q", out, want)
 	}
-	g2.wantNames(t, "L07", append(oldVersionFiles(), ".fetch-12", "1.0.8.zst", filepath.Base(g2.cli))...)
+	g2.wantNames(t, "L07", newestOldVersion(), ".fetch-12", "1.0.8.zst", filepath.Base(g2.cli))
 }
 
 // Row F14. A file that does not run sits at the final name, and the blob
@@ -715,7 +723,7 @@ func TestInstallNewCLIRunsAtItsFinalName(t *testing.T) {
 				t.Errorf("stub START lines: %d, first %q, want one run with argv[0] %s", n, start, f.cli)
 			}
 			dir, _ := f.stubLogLine(t, "DIR ")
-			wantDir := append(oldVersionFiles(), ".fetch-12", "1.0.8.zst", filepath.Base(f.cli))
+			wantDir := []string{newestOldVersion(), ".fetch-12", "1.0.8.zst", filepath.Base(f.cli)}
 			slices.Sort(wantDir)
 			if want := "DIR " + strings.Join(wantDir, ","); dir != want {
 				t.Errorf("the folder at the --version run\n got %q\nwant %q", dir, want)
@@ -728,7 +736,7 @@ func TestInstallNewCLIRunsAtItsFinalName(t *testing.T) {
 
 // Rows F12, G05. A new CLI that exits non-zero is at its final name when
 // it runs, and it is gone after the run. The text names the final path. The blob
-// is consumed, the old swept pair is gone and nothing is pruned.
+// is consumed and the old swept pair is gone. Only the prune before the fetch ran.
 func TestInstallRemovesANewCLIThatDoesNotRun(t *testing.T) {
 	f := newStubFixture(t)
 	f.litter(t)
@@ -744,7 +752,7 @@ func TestInstallRemovesANewCLIThatDoesNotRun(t *testing.T) {
 	if n != 1 || !strings.HasPrefix(start, "START argv0="+f.cli+" ") {
 		t.Errorf("stub START lines: %d, first %q, want one run with argv[0] %s", n, start, f.cli)
 	}
-	f.wantNamesAfterFailedRun(t, "F12", append(oldVersionFiles(), ".fetch-12", "1.0.8.zst")...)
+	f.wantNamesAfterFailedRun(t, "F12", newestOldVersion(), ".fetch-12", "1.0.8.zst")
 	if _, err := os.Lstat(blob); !os.IsNotExist(err) {
 		t.Errorf("F12: the blob must be consumed, Lstat err = %v", err)
 	}
@@ -833,14 +841,15 @@ func TestInstallSweepsOnceBeforeTheRun(t *testing.T) {
 }
 
 // Rows E01, B12. A cache miss with no source answers "missing" and still
-// sweeps: the old swept pair goes, and the fresh pair and the old versions stay.
-// The same holds when a file that does not run sits at the final name.
+// sweeps: the old swept pair goes, and the fresh pair stays. The prune before
+// the fetch keeps the newest old version. The same holds when a file that does
+// not run sits at the final name.
 func TestInstallSweepsAfterAnAttemptWithNoSource(t *testing.T) {
 	for _, row := range []string{"E01", "B12"} {
 		t.Run(row, func(t *testing.T) {
 			f := newStubFixture(t)
 			f.litter(t)
-			want := append(oldVersionFiles(), ".fetch-12", "1.0.8.zst")
+			want := []string{newestOldVersion(), ".fetch-12", "1.0.8.zst"}
 			if row == "B12" {
 				if err := os.WriteFile(f.cli, []byte("not a cli"), 0o755); err != nil {
 					t.Fatal(err)
@@ -1256,7 +1265,7 @@ func TestInstallExeNameRule(t *testing.T) {
 		if want := factsHead(t, f.cli) + "false}\n"; out != want {
 			t.Errorf("stdout\n got %q\nwant %q", out, want)
 		}
-		if dir, want := mustLogLine(t, f, "DIR "), "DIR 1.0.0,1.0.0.exe,1.1.0,1.1.0.exe,1.2.0.exe,9.9.9.exe"; dir != want {
+		if dir, want := mustLogLine(t, f, "DIR "), "DIR 1.0.0,1.1.0,1.2.0.exe,9.9.9.exe"; dir != want {
 			t.Errorf("the folder at the --version run: %q, want %q", dir, want)
 		}
 		f.wantNames(t, "W3", "1.0.0", "1.1.0", "9.9.9.exe")
