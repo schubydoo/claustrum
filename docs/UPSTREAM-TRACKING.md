@@ -377,6 +377,11 @@ the linked pages.
   on Linux and macOS in the state `shadow`. On Windows the variables and the
   names are measured in the state `fallback-git`. `githarden.go` holds the
   lists. See [Hardened git calls](protocol/git-rules-calls.md#hardened-git-calls).
+- The remove lock texts (backticks, the `initializing` pair), the create symlink
+  refusal, the registered-leaf refusal before the add (no branch) and the 1 MiB
+  `commondir` reason follow `be1c1ca5`. `683cc6a9` gives raw paths, git's own
+  text and `commondir is larger than 1048576 bytes`: a build split, not drift.
+  See [git.worktree_create](protocol/git-worktree-create.md#error-texts).
 - The `worktreeRoot` location rules follow `5fd08069` (measured on Linux and
   macOS). `89cb6289` is not measured there.
 - A remove behind a linked `<git dir>/worktrees` follows `5fd08069` (measured on

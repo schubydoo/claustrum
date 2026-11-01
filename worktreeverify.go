@@ -3,6 +3,7 @@ package main
 import (
 	"errors"
 	"fmt"
+	"io"
 	"io/fs"
 	"os"
 	"path/filepath"
@@ -1036,4 +1037,46 @@ func parentResolvedPath(path string) string {
 		return path
 	}
 	return filepath.Join(parent, filepath.Base(path))
+}
+
+// registeredLeafRefusal answers a create at a leaf that an entry of
+// <commonDir>/worktrees still names, or "" when no entry names it. The leaf must be
+// gone or an empty folder, the two states in which git refuses a registered path.
+// The texts are those of be1c1ca5, measured on Linux, macOS and Windows. A path
+// with a character of genericHintChars gets the hint with no path. Not measured: a
+// `'` on Windows, and every other character in the hint.
+func registeredLeafRefusal(commonDir, worktreePath string) string {
+	if fi, err := os.Lstat(worktreePath); err == nil {
+		if !fi.IsDir() || !emptyFolder(worktreePath) {
+			return ""
+		}
+	} else if !errors.Is(err, fs.ErrNotExist) {
+		return ""
+	}
+	name, lock := registeredLeafEntry(commonDir, newWorktreePathSet(worktreePath, parentResolvedPath(worktreePath)))
+	if name == "" {
+		return ""
+	}
+	head := "cannot add a worktree: " + tickPath(worktreePath) + " is still registered in this repository as "
+	switch {
+	case lock == notLocked:
+		return head + `a worktree (entry "` + name + `"); clear the stale registration first (git worktree prune), then try again`
+	case strings.ContainsAny(worktreePath, genericHintChars):
+		return head + `a locked worktree (entry "` + name + `"); unlock it with git worktree unlock, giving the folder's ` +
+			`path (git worktree list shows it), then git worktree prune, or use another folder`
+	default:
+		return head + `a locked worktree (entry "` + name + `"); unlock it first (` + unlockCommand(worktreePath) +
+			`, then git worktree prune), or use another folder`
+	}
+}
+
+// emptyFolder reports whether the folder dir holds no entry.
+func emptyFolder(dir string) bool {
+	f, err := os.Open(dir)
+	if err != nil {
+		return false
+	}
+	defer func() { _ = f.Close() }()
+	_, err = f.Readdirnames(1)
+	return errors.Is(err, io.EOF)
 }

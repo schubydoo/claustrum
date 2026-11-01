@@ -158,7 +158,7 @@ func TestWorktreeRemoveGoneWorktree(t *testing.T) {
 			t.Fatal(err)
 		}
 		raw := removeFrame(t, map[string]any{"baseRepo": f.repo, "worktreePath": f.wt, "branchName": "wt1"})
-		wantRemoveError(t, raw, "refusing to remove worktree: "+f.wt+" is gone but its registration is "+
+		wantRemoveError(t, raw, "refusing to remove worktree: `"+f.wt+"` is gone but its registration is "+
 			"locked (git worktree lock); unlock it to remove the registration and branch")
 		mustExist(t, filepath.Join(f.entry(), "locked"))
 		if !f.hasBranch("wt1") {
@@ -274,7 +274,7 @@ func TestWorktreeRemoveDanglingLockMarker(t *testing.T) {
 		t.Skipf("symlinks unsupported: %v", err)
 	}
 	raw := removeFrame(t, map[string]any{"baseRepo": f.repo, "worktreePath": f.wt, "branchName": "wt1"})
-	wantRemoveError(t, raw, lockedWorktreeRefusal(f.wt))
+	wantRemoveError(t, raw, lockedWorktreeRefusal(f.wt, lockedPlain))
 	mustExist(t, filepath.Join(f.wt, ".git"))
 	if !f.hasBranch("wt1") {
 		t.Error("branch wt1 was deleted")

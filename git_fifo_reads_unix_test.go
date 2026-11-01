@@ -310,7 +310,7 @@ func TestFifoCommondirOfLockedWorktreeIsLockedRefusal(t *testing.T) {
 	runGit(t, T, "worktree", "lock", wt)
 	fifoInPlaceOf(t, filepath.Join(entry, "commondir"))
 	wantFifoFrame(t, "remove(w1)", frameWithin(t, "git.worktree_remove", createParams(T, wt, "w1")),
-		removeRefused(lockedWorktreeRefusal(wt)))
+		removeRefused(lockedWorktreeRefusal(wt, lockedPlain)))
 	wantFileContent(t, filepath.Join(wt, "t.txt"), "t\n")
 	wantFifo(t, filepath.Join(entry, "commondir"))
 	mustExist(t, filepath.Join(entry, "locked"))

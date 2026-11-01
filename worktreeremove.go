@@ -401,17 +401,53 @@ func entryLockPresent(root *os.Root, name string) bool {
 	return !errors.Is(err, fs.ErrNotExist)
 }
 
+// worktreeLock is the kind of `locked` marker of an entry. It picks the text of a
+// refusal only.
+type worktreeLock int
+
+const (
+	notLocked worktreeLock = iota
+	// lockedPlain is every marker but the one of lockedByCreate.
+	lockedPlain
+	// lockedByCreate is a marker that holds `initializing`, the reason of a create
+	// that did not finish (be1c1ca5, measured on Linux, macOS and Windows).
+	lockedByCreate
+)
+
+// lockReasonByCreate is the text of a `locked` marker that a create left.
+const lockReasonByCreate = "initializing"
+
+// entryLock reads the kind of the `locked` marker of the entry name. A marker that
+// is not a small regular file, or that cannot be read, is lockedPlain. A marker of
+// 1048577 bytes gives the plain text (be1c1ca5, measured on Linux). Not measured: a
+// marker with `initializing` and more than one line end, or with "\r\n".
+func entryLock(root *os.Root, name string) worktreeLock {
+	if !entryLockPresent(root, name) {
+		return notLocked
+	}
+	marker := filepath.Join(name, "locked")
+	fi, err := root.Lstat(marker)
+	if err != nil || !fi.Mode().IsRegular() || fi.Size() > int64(len(lockReasonByCreate)+2) {
+		return lockedPlain
+	}
+	b, err := readGitPlainFileIn(root, marker)
+	if err != nil || strings.TrimRight(string(b), "\r\n") != lockReasonByCreate {
+		return lockedPlain
+	}
+	return lockedByCreate
+}
+
 // worktreeLockedByPath looks for a locked entry whose record names the worktree.
 // readable is false when <commonDir>/worktrees exists but cannot be read (row L02).
 // matches is the count of entries whose record names the worktree. It is not complete
-// when locked is true.
-func worktreeLockedByPath(commonDir string, sp worktreePathSet) (locked, readable bool, matches int) {
+// when lock is not notLocked.
+func worktreeLockedByPath(commonDir string, sp worktreePathSet) (lock worktreeLock, readable bool, matches int) {
 	root, recs, ok := listEntryRecords(commonDir)
 	if !ok {
-		return false, false, 0
+		return notLocked, false, 0
 	}
 	if root == nil {
-		return false, true, 0
+		return notLocked, true, 0
 	}
 	defer func() { _ = root.Close() }()
 	for _, r := range recs {
@@ -419,11 +455,37 @@ func worktreeLockedByPath(commonDir string, sp worktreePathSet) (locked, readabl
 			continue
 		}
 		matches++
-		if entryLockPresent(root, r.name) {
-			return true, true, matches
+		if l := entryLock(root, r.name); l != notLocked {
+			return l, true, matches
 		}
 	}
-	return false, true, matches
+	return notLocked, true, matches
+}
+
+// registeredLeafEntry returns the first entry, in name order, whose record names
+// the worktree, and the kind of its marker. name is "" when no entry names it or
+// <commonDir>/worktrees cannot be read. The first by name counts (not measured).
+// An entry whose recorded folder holds an entry does not count. That keeps the
+// frame of D27 on Windows, where a live worktree differs from the leaf in letter
+// case only (claustrum's own, not measured).
+func registeredLeafEntry(commonDir string, sp worktreePathSet) (name string, lock worktreeLock) {
+	root, recs, ok := listEntryRecords(commonDir)
+	if !ok || root == nil {
+		return "", notLocked
+	}
+	defer func() { _ = root.Close() }()
+	for _, r := range recs {
+		if sp.has(r.path) && !folderHoldsEntry(r.path) {
+			return r.name, entryLock(root, r.name)
+		}
+	}
+	return "", notLocked
+}
+
+// folderHoldsEntry reports whether dir is a folder that holds at least one entry.
+func folderHoldsEntry(dir string) bool {
+	fi, err := os.Lstat(dir)
+	return err == nil && fi.IsDir() && !emptyFolder(dir)
 }
 
 // registrationGitDir is the git directory whose `worktrees` directory a removal
@@ -485,35 +547,36 @@ func baseRepoGitFileEndsInSpace(repo string) bool {
 // p6e). With worktreeRoot it deletes nothing (rows q2 to q4 on a Linux VM). A
 // `<repo>/.git/worktrees` that is a symbolic link counts as not readable, so the
 // remove answers the lock-check refusal (openRegistrationsFolder, not measured).
-func lockedInBaseRepo(repo, commonDir, gitDir, path string, sp worktreePathSet) (locked, readable bool) {
+func lockedInBaseRepo(repo, commonDir, gitDir, path string, sp worktreePathSet) (lock worktreeLock, readable bool) {
 	base := filepath.Join(repo, ".git")
 	if canonicalPath(base) == canonicalPath(commonDir) {
-		return false, true
+		return notLocked, true
 	}
 	// A `.git` that is a file, as in a linked worktree or a submodule, holds no
 	// worktrees directory.
 	if fi, err := os.Stat(base); err != nil || !fi.IsDir() {
-		return false, true
+		return notLocked, true
 	}
 	if gitDir != "" {
 		if name, err := verifiedWorktreeEntry(gitDir, base, "", path, sp, nil); err == nil {
 			return verifiedEntryLocked(base, name), true
 		}
 	}
-	locked, readable, _ = worktreeLockedByPath(base, sp)
-	return locked, readable
+	lock, readable, _ = worktreeLockedByPath(base, sp)
+	return lock, readable
 }
 
 // baseRepoLockRefusal answers the D22 refusal of lockedInBaseRepo, or "" when the
 // removal goes on. An entry that cannot be read gets the lock-check refusal, and a
-// locked entry gets lockedText.
-func baseRepoLockRefusal(repo, commonDir, gitDir, path, worktreePath string, sp worktreePathSet, lockedText string) string {
-	locked, readable := lockedInBaseRepo(repo, commonDir, gitDir, path, sp)
+// locked entry gets the text of lockedText for its marker.
+func baseRepoLockRefusal(repo, commonDir, gitDir, path, worktreePath string, sp worktreePathSet,
+	lockedText func(string, worktreeLock) string) string {
+	lock, readable := lockedInBaseRepo(repo, commonDir, gitDir, path, sp)
 	if !readable {
 		return lockCheckRefusal(worktreePath)
 	}
-	if locked {
-		return lockedText
+	if lock != notLocked {
+		return lockedText(worktreePath, lock)
 	}
 	return ""
 }
@@ -744,19 +807,19 @@ func verifiedWorktreeEntry(gitDir, commonDir, answered, path string, sp worktree
 	return name, nil
 }
 
-// verifiedEntryLocked reports whether the verified entry name is locked. A worktrees
-// directory that exists but cannot be opened counts as locked. Only a race reaches
-// that case after the entry was verified, and no row measures it.
-func verifiedEntryLocked(commonDir, name string) bool {
+// verifiedEntryLocked reports the marker of the verified entry name. A worktrees
+// directory that exists but cannot be opened counts as lockedPlain. Only a race
+// reaches that case after the entry was verified, and no row measures it.
+func verifiedEntryLocked(commonDir, name string) worktreeLock {
 	root, err := openRegistrationsFolder(filepath.Join(commonDir, worktreesSubdir), os.OpenRoot)
 	if errors.Is(err, fs.ErrNotExist) {
-		return false
+		return notLocked
 	}
 	if err != nil {
-		return true
+		return lockedPlain
 	}
 	defer func() { _ = root.Close() }()
-	return entryLockPresent(root, name)
+	return entryLock(root, name)
 }
 
 // dropWorktreeEntry deletes the verified entry name. The worktrees directory itself
@@ -838,8 +901,51 @@ func readRootDir(root *os.Root) ([]fs.DirEntry, error) {
 	return dir.ReadDir(-1)
 }
 
-// lockedWorktreeRefusal answers a worktree whose entry is locked.
-func lockedWorktreeRefusal(worktreePath string) string {
-	return "refusing to remove worktree: " + worktreePath +
+// lockedWorktreeRefusal answers a worktree folder whose entry is locked. The path is
+// in backticks (be1c1ca5, measured on Linux, macOS and Windows).
+func lockedWorktreeRefusal(worktreePath string, lock worktreeLock) string {
+	if lock == lockedByCreate {
+		return "refusing to remove worktree: " + tickPath(worktreePath) +
+			" was left locked by a create that did not finish; unlock it first (" +
+			unlockCommand(worktreePath) + ", then remove it again)"
+	}
+	return "refusing to remove worktree: " + tickPath(worktreePath) +
 		" is locked (git worktree lock); unlock it to remove it"
+}
+
+// goneLockedWorktreeRefusal answers a gone worktree folder whose entry is locked
+// (be1c1ca5, measured on Linux, macOS and Windows).
+func goneLockedWorktreeRefusal(worktreePath string, lock worktreeLock) string {
+	if lock == lockedByCreate {
+		return "refusing to remove worktree: " + tickPath(worktreePath) +
+			" is gone but a create that did not finish left its registration locked; unlock it first (" +
+			unlockCommand(worktreePath) + ", then remove it again) to drop the registration and branch"
+	}
+	return "refusing to remove worktree: " + tickPath(worktreePath) +
+		" is gone but its registration is locked (git worktree lock); unlock it to remove the registration and branch"
+}
+
+// tickPathMaxBytes is the byte count at which tickPath cuts a path. A path of 399
+// bytes shows its first 300 bytes and no ellipsis (be1c1ca5, measured on
+// Linux).
+const tickPathMaxBytes = 300
+
+// tickPath shows path p in backticks, cut to its first tickPathMaxBytes bytes. A path
+// that holds a backtick is quoted with Go %q instead (measured on Linux, macOS and Windows). Not
+// measured: the cut of a path with a backtick, and a cut inside a character of more
+// than one byte.
+func tickPath(p string) string {
+	if len(p) > tickPathMaxBytes {
+		p = p[:tickPathMaxBytes]
+	}
+	if strings.Contains(p, "`") {
+		return fmt.Sprintf("%q", p)
+	}
+	return "`" + p + "`"
+}
+
+// unlockCommand is the `git worktree unlock` hint for path p, with p in the quotes
+// of unlockQuote. The hint keeps p whole (not measured for a long path).
+func unlockCommand(p string) string {
+	return "git worktree unlock " + unlockQuote + p + unlockQuote
 }
