@@ -35,9 +35,9 @@ import (
 //     folder, and removes `.s<n>`.
 //
 // The rows are cells 44a to 44f of s3p2b-edges2-windows and cells 47 to 49 of
-// s3p2b-edges3-windows (Windows VM, Git for Windows 2.55.0). On Linux and macOS
-// VMs no daemon makes such a folder or such an entry (s3p2-linux cell H1), and
-// no step of this file runs there (shadowStagesAdd).
+// s3p2b-edges3-windows (Windows VM, Git for Windows 2.55.0). On Linux 5fd08069
+// makes no such folder or entry. On Linux and macOS only step 2 runs
+// (shadowStagesAdd, worktreeAdd).
 //
 // The decisions are plain functions of their inputs, so that every system
 // tests them. Every step in the git directory goes through one os.Root
@@ -549,17 +549,20 @@ var removeStagingEntry = func(root *os.Root, name string, tree bool) error {
 }
 
 // sweepOldStaging removes the old staging entries of the git directory gitDir.
-// git is the root at that directory. In a create it is the folder that the gate
-// of the request accepted and holds open, and finish tests before this step
-// that the path of the git directory still names it.
+// git is the root at that directory: the folder that the gate of the create
+// accepted and holds open. It has two callers. On Windows addStage.finish
+// calls it, and on Linux and macOS worktreeAdd does. Each tests before this
+// step that the path of the git directory still names the held folder.
 // now is the time after that call ended.
 //
 // THIS DELETES ENTRIES THAT THE DAEMON DID NOT MAKE. On 5fd08069 a create
 // removes each direct entry of the git directory whose name starts with
 // `.claude-new-worktree-` and whose own write time is 1 hour old or more: a
 // folder with its file, an empty folder, a plain file and a junction (cell 48 of
-// s3p2b-edges3-windows, 248 cells on a Windows VM). claustrum does the same by
-// the maintainer's decision of 2026-10-11. gitDir comes from the `baseRepo` of
+// s3p2b-edges3-windows, 248 cells on a Windows VM). claustrum does the same on
+// Windows by the maintainer's decision of 2026-10-11. On Linux and macOS the
+// maintainer approved following be1c1ca5, with these guards, on 2026-10-28.
+// gitDir comes from the `baseRepo` of
 // the request through the trust check, so every guard is here, in this order:
 //
 //  1. The entries are listed through the root, and every step below acts
@@ -585,8 +588,8 @@ var removeStagingEntry = func(root *os.Root, name string, tree bool) error {
 // succeeded, also where an entry went.
 //
 // Only git.worktree_create comes here, after a good `worktree add` in the
-// state shadow on Windows. git.info and git.status leave every entry (120
-// cells). A create that fails, a request with the member and the state
+// state shadow. On Linux and macOS be1c1ca5 removes old folders and links the
+// same way (worktreeAdd, measured on Linux and macOS). git.info and git.status leave every entry (120 cells). A create that fails, a request with the member and the state
 // fallback-git are not measured, and they run no cleanup.
 func sweepOldStaging(git *os.Root, gitDir string, now time.Time) {
 	names, err := rootDirNames(git, ".")

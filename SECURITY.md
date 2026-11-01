@@ -103,7 +103,7 @@ privileged as the daemon's user. Four of those paths reach a recursive delete
   `gitdir` record and the registrations directory. After a failed add, the daemon
   removes the worktree path only as an empty directory. See
   [git.worktree_create](docs/protocol/git-worktree-create.md#after-a-failure).
-- On Windows, in the state `shadow` and after a good `git worktree add`,
+- In the state `shadow` and after a good `git worktree add`,
   `git.worktree_create` removes old staging entries from the git directory of
   `baseRepo`, through its held handle of that folder. Their names start with `.claude-new-worktree-`, and
   their own write time is 1 hour old or more. Only a real folder goes as a tree.

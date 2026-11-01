@@ -15,12 +15,18 @@ import (
 // fixture, with a write time that is age old.
 func plantStagingEntry(t *testing.T, gitDir, name string, age time.Duration) string {
 	t.Helper()
+	return plantStagingEntryAt(t, gitDir, name, time.Now().Add(-age))
+}
+
+// plantStagingEntryAt makes a folder with one file in the git directory of the
+// fixture, with the write time at.
+func plantStagingEntryAt(t *testing.T, gitDir, name string, at time.Time) string {
+	t.Helper()
 	p := filepath.Join(gitDir, name)
 	if err := os.Mkdir(p, 0o755); err != nil {
 		t.Fatal(err)
 	}
 	mustWrite(t, filepath.Join(p, "f.txt"), "f\n")
-	at := time.Now().Add(-age)
 	if err := os.Chtimes(p, at, at); err != nil {
 		t.Fatal(err)
 	}
@@ -49,15 +55,14 @@ func commonDirOf(t *testing.T, calls []envCall, words ...string) string {
 //
 // On Windows a run must match cells 44a and 49a of the Windows VM rounds, and
 // control M1 of cell 48: the `worktree add` call carries
-// GIT_COMMON_DIR=<S>\.s<n>, and the old entry `.claude-new-worktree-old1` is
-// gone with its file. On Linux and macOS the call carries the copy of the
-// repository, and the old entry stays (s3p2-linux cells H1 and H2, Linux VM).
-// On every system the `read-tree` carries the copy, the young entry stays, no
-// `.s<n>` folder is left, and the `.git` file of the new worktree names the
-// registration in the git directory.
+// GIT_COMMON_DIR=<S>\.s<n>. On Linux and macOS the call carries the copy of
+// the repository. On every system the old entry `.claude-new-worktree-old1` is
+// gone with its file (be1c1ca5 on Linux and macOS), the `read-tree` carries the
+// copy, the young entry stays, no `.s<n>` folder is left, and the `.git` file
+// of the new worktree names the registration in the git directory.
 //
-// On Linux a build with shadowStagesAdd set fails here: the old entry goes and
-// the call carries `.s<n>`. Only a Windows run checks the Windows side.
+// On Linux a build with shadowStagesAdd set fails here: the call carries
+// `.s<n>`. Only a Windows run checks the Windows side.
 func TestCreateStagesTheAddOnWindowsOnly(t *testing.T) {
 	f := newSeededShadowFixture(t)
 	if raw, _ := f.info(t, f.repo, nil); !strings.Contains(raw, `"settingsControl":"shadow"`) {
@@ -84,17 +89,12 @@ func TestCreateStagesTheAddOnWindowsOnly(t *testing.T) {
 		if dir, name := filepath.Split(add); filepath.Clean(dir) != folder || !regexp.MustCompile(`^\.s[0-9]{1,10}$`).MatchString(name) {
 			t.Errorf("the add call has GIT_COMMON_DIR=%s, want .s<n> in %s", add, folder)
 		}
-		if !os.IsNotExist(oldErr) {
-			t.Errorf("the old staging entry: %v, want it gone", oldErr)
-		}
 		wantText = worktreeGitFileText(f.gitDir, "w1")
-	} else {
-		if add != copyDir {
-			t.Errorf("the add call has GIT_COMMON_DIR=%s, want the copy %s", add, copyDir)
-		}
-		if oldErr != nil {
-			t.Errorf("the old staging entry: %v, want it kept", oldErr)
-		}
+	} else if add != copyDir {
+		t.Errorf("the add call has GIT_COMMON_DIR=%s, want the copy %s", add, copyDir)
+	}
+	if !os.IsNotExist(oldErr) {
+		t.Errorf("the old staging entry: %v, want it gone", oldErr)
 	}
 	if got := commonDirOf(t, calls, "read-tree"); got != copyDir {
 		t.Errorf("the read-tree call has GIT_COMMON_DIR=%s, want the copy %s", got, copyDir)

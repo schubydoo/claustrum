@@ -56,7 +56,7 @@ modes and the OS splits is in
 | `worktreeremove.go` | the deletes of `git.worktree_remove` |
 | `worktreeverify.go` | the tests after the `worktree add` and both rollbacks of `git.worktree_create` |
 | `worktreestale*.go` | the stale registration step before the add |
-| `worktreestaging.go` | the Windows staging folder, its move and the cleanup of old staging entries |
+| `worktreestaging.go` | the Windows staging folder, its move, and the cleanup of old staging entries on every system |
 | `gitdirheld.go` | the held git directory and the list of the steps that act through it |
 | `githarden_index_*.go` | the placement of the index of a new worktree, and the registration delete of the second rollback (`removeCreatedRegistration`) |
 | `install.go` | the CLI path delete, the sweeps, the prune and the blob remove of `-install` |
@@ -132,7 +132,7 @@ from the socket, as in `plugins.prune`.
 | `files.extract_tar` | the last name of `destDir` | the caller (RPC) | `wipesHomeDir`, `destEntryHoldsHome`, `checkDestViews` | [files.extract_tar](docs/protocol/files-extract-tar.md) |
 | `git.worktree_remove` | `worktreePath`, its registration | the caller (RPC) | `wipesHomeDir` on `worktreePath`, containment | [git.worktree_remove](docs/protocol/git-worktree-remove.md) |
 | `git.worktree_create` rollback | `worktreePath`, its registration, one stale entry, two Windows staging removes | the caller (RPC) | `wipesHomeDir` (D2), identity tests, one exception (see Registration and index) | [git.worktree_create](docs/protocol/git-worktree-create.md#after-a-failure) |
-| `git.worktree_create` staging (Windows) | old staging entries of the `baseRepo` git directory | the caller (RPC): a good add in `shadow` | prefix, age, `wipesHomeDir` | [git.worktree_create](docs/protocol/git-worktree-create.md#differences-by-system) |
+| `git.worktree_create` staging sweep | old staging entries of the `baseRepo` git directory | the caller (RPC): a good add in `shadow` | prefix, age, `wipesHomeDir` | [git.worktree_create](docs/protocol/git-worktree-create.md#after-a-failure) |
 | `-install` | the CLI path | the operator | D6, `folderHoldsHome` | [-install](docs/INSTALL.md#staging-and-cleanup) |
 
 #### The home guard
@@ -261,16 +261,17 @@ the hold](#two-steps-that-move-the-hold).
 
 Detail: [git.worktree_create](docs/protocol/git-worktree-create.md#after-a-failure).
 
-#### Path 4: the `git.worktree_create` staging sweep (Windows)
+#### Path 4: the `git.worktree_create` staging sweep
 
-On Windows `git.worktree_create` removes old staging entries of the git directory of
+On every system (Linux and macOS since `be1c1ca5`) `git.worktree_create` removes old staging entries of the git directory of
 `baseRepo`, which the caller names (`sweepOldStaging`, `worktreestaging.go`). Their names
 start with `.claude-new-worktree-`, and the daemon did not make them. A real folder goes
 as a tree, by one `os.Root.RemoveAll`. A file, a link and a junction go with one plain
 `os.Root.Remove`, so the target of a junction stays.
 
 Guards, in order: it runs in the state `shadow` only, after a good add. The path must still
-name the held git directory, or the create is refused and nothing is removed or made.
+name the held git directory. Otherwise nothing is removed, and on Windows the create is
+refused and nothing is made (Linux and macOS: claustrum's own).
 Entries are read with `Lstat` through that root. The name must start with the prefix with
 the dash, and the write time must be 1 hour old or more. `wipesHomeDir` refuses an entry
 that is home or holds it. A failed removal logs one line, and the create goes on (not measured). `git.info` and
@@ -281,7 +282,7 @@ later gate), and the state `fallback-git` run no cleanup. A request with a later
 Never widen: This step is approved by the maintainer. Do not widen the prefix, the kinds
 or the folder of this delete.
 
-Detail: [git.worktree_create](docs/protocol/git-worktree-create.md#differences-by-system).
+Detail: [git.worktree_create](docs/protocol/git-worktree-create.md#after-a-failure).
 
 #### Path 5: `-install`
 
@@ -407,14 +408,14 @@ add`, a new real directory at the path that passes the gate does too
 (`replacedAtPath`, approved by the maintainer). Another git directory is not
 measured. Add no other step that resolves the path of the git directory again,
 and never widen a delete of these steps. A rollback after the first move is not
-measured. After the second, the rollback acts through that new folder ([Rare
+measured. After the first move the staging sweep is skipped (claustrum's own). After the second, the rollback acts through that new folder ([Rare
 states](docs/protocol/git-worktree-create.md#rare-states)).
 
 
 ### What `git.worktree_create` writes
 
 In the state `shadow` the create writes into the git directory of `baseRepo` and into the
-new worktree. Only the two removes of the Windows staging step are tree deletes. Each write
+new worktree. Only the sweep of old staging entries and the two removes of the Windows staging step are tree deletes. Each write
 goes through an `os.Root`, with a fixed name, a name that the daemon read through that root,
 or a name that it made ([The settings
 copy](docs/protocol/git-worktree-create.md#the-settings-copy)).

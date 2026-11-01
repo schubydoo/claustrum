@@ -381,10 +381,11 @@ the linked pages.
   names are measured in the state `fallback-git`. `githarden.go` holds the
   lists. See [Hardened git calls](protocol/git-rules-calls.md#hardened-git-calls).
 - The remove lock texts (backticks, the `initializing` pair), the create symlink
-  refusal, the registered-leaf refusal before the add (no branch) and the 1 MiB
-  `commondir` reason follow `be1c1ca5`. `683cc6a9` gives raw paths, git's own
-  text and `commondir is larger than 1048576 bytes`: a build split, not drift.
-  See [git.worktree_create](protocol/git-worktree-create.md#error-texts).
+  refusal, the registered-leaf refusal before the add (no branch), the 1 MiB
+  `commondir` reason and the staging sweep on Linux and macOS follow `be1c1ca5`. `683cc6a9` gives raw paths, git's own
+  text and `commondir is larger than 1048576 bytes`, and keeps the old staging entries on Linux and macOS: a build split, not drift.
+  See [git.worktree_create](protocol/git-worktree-create.md#error-texts) and, for the sweep,
+  [After a failure](protocol/git-worktree-create.md#after-a-failure).
 - The `worktreeRoot` location rules follow `5fd08069` (measured on Linux and
   macOS). `89cb6289` is not measured there.
 - A remove behind a linked `<git dir>/worktrees` follows `5fd08069` (measured on
@@ -394,8 +395,8 @@ the linked pages.
   `git.info` member `settingsControl`, the folder `git-shadow` in the run folder,
   12 more git calls in a first git request, and new refusal texts. On Windows
   each git method refuses a junction or a directory symbolic link at `.git`
-  without `"shadowDirOff":true`. On Windows a create removes old
-  `.claude-new-worktree-*` entries of the git directory. A config value that git
+  without `"shadowDirOff":true`. A create removes old
+  `.claude-new-worktree-*` entries of the git directory (Linux and macOS since `be1c1ca5`). A config value that git
   refuses gets a normal answer where the copy leaves it out. Against `5fd08069`
   the config reads above differ. Two reply texts differ too, for a Windows
   create whose `.git` becomes a file `gitdir: <X>` while it runs (measured on

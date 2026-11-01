@@ -16,7 +16,7 @@ import (
 // (methods_files.go), git.worktree_remove deletes worktreePath itself
 // (worktreeremove.go; a worktree locked in the .git folder of baseRepo is
 // refused, not deleted), the rollback of git.worktree_create deletes the worktree it created (worktreeverify.go),
-// and on Windows git.worktree_create removes old staging entries of the git
+// and git.worktree_create removes old staging entries of the git
 // directory of baseRepo (worktreestaging.go, sweepOldStaging).
 // -install is a fifth caller of this guard: it deletes a folder at the CLI path
 // (install.go, stageAndInstall). Its sweep and its prune call the guard for
