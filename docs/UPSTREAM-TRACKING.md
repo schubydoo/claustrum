@@ -324,8 +324,11 @@ the linked pages.
 - The `GIT_TRACE2*=0` and `GIT_SSH_COMMAND=false` entries of the git calls and the null-device
   `core.hooksPath` follow `be1c1ca5`, a build split against `683cc6a9`
   ([Variables that the git calls keep or drop](protocol/git-rules-calls.md#variables-that-the-git-calls-keep-or-drop)).
-- The long socket path, its error texts and the orphan line follow `be1c1ca5`, a build split
-  against `683cc6a9` ([A long socket path](DAEMON.md#a-long-socket-path-linux-and-macos)).
+- The long socket path, its error texts, the orphan line, the long sibling of
+  `plugins.prune` and the run-dir verdicts of the host cleaner at a long root follow
+  `be1c1ca5`, a build split against `683cc6a9` ([A long socket
+  path](DAEMON.md#a-long-socket-path-linux-and-macos), [A long run
+  root](DAEMON.md#a-long-run-root), [plugins.prune](protocol/plugins-prune.md#differences-by-system)).
 - The git filters of the `git.worktree_create` checkout follow `5fd08069`. Against
   `89cb6289` the refusal `repository_only_filter` is new. So are the texts for a
   name over 200 bytes and for more than 64 filters (`89cb6289` not run for 64

@@ -232,6 +232,18 @@ path, the binary test does not run (not measured).
 
 A pass acts on the root as the socket path gives it and on its resolved form, the same folder under its real path. It never acts on the root of the binary. If the resolution fails, it acts on the root as given only (not measured). A pass lists each run folder once, and its lines name each in the spelling of the socket as given.
 
+### A long run root
+
+On Linux the cleaner dials a socket path over 107 bytes through `/proc`, as the daemon does ([A long socket path](#a-long-socket-path-linux-and-macos)). So the pass runs at a long root, with the guards of a short one. `be1c1ca5` at a 120-byte socket path on Linux (measured):
+
+- A live peer in a run dir 40 days old stays (`too young to judge`) and gets no signal.
+- A dead run dir stays if a process holds its `daemon.lock` or if it is 10 days old.
+- A free dead run dir 40 days old goes, with the `removed run dir` line.
+- Orphaned groups end as at a short root: `SIGTERM`, then `SIGKILL` after 3 s for a group that ignores it.
+- An idle sibling daemon in a run dir 40 days old gets `SIGTERM` through a pid descriptor, and its run dir goes.
+
+A long sibling socket under a short root gets the same verdicts (from the code). With no usable `/proc`, and on macOS, a long socket reads as inconclusive, and a long own socket stops the pass (claustrum's own, not measured). macOS at a long path is not measured.
+
 ### Signals of the cleaner
 
 A stranded daemon is a daemon whose socket path no longer leads to it. On Linux and macOS the cleaner sends no signal to it or to its children. It ends by itself, except at a long socket path, see [Orphan-exit self-probe](#orphan-exit-self-probe).

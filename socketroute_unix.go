@@ -3,6 +3,7 @@
 package main
 
 import (
+	"errors"
 	"io"
 	"net"
 	"os"
@@ -113,6 +114,21 @@ func dialUnixPath(path string, timeout time.Duration) (net.Conn, error) {
 // folder. Where only that route is left, it fails with socketTooLong.
 func dialSocketInDaemon(path string, timeout time.Duration) (net.Conn, error) {
 	return viaShortSocketName("dial", path, false, dialName(timeout))
+}
+
+// dialSiblingSocket is dialSocketInDaemon for the sibling test of plugins.prune. A
+// failed dial by a shorter name gives "dial unix <path>: the socket path is longer
+// than ...; no shorter name for it worked: <error of that dial>". `be1c1ca5` gives
+// that text for a sibling socket of mode 000 at 120 bytes (measured on Linux). Other
+// failures of that dial: claustrum's own, not measured. The error still unwraps to the
+// error of that dial.
+func dialSiblingSocket(path string, timeout time.Duration) (net.Conn, error) {
+	c, err := dialSocketInDaemon(path, timeout)
+	var op *net.OpError
+	if err != nil && errors.As(err, &op) && op.Addr != nil && op.Addr.String() != path {
+		return nil, &net.OpError{Op: "dial", Net: "unix", Addr: &net.UnixAddr{Name: path, Net: "unix"}, Err: &socketTooLongError{limit: maxSocketPath, cause: err}}
+	}
+	return c, err
 }
 
 func dialName(timeout time.Duration) func(name string) (net.Conn, error) {
