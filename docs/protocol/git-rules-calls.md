@@ -200,7 +200,8 @@ each daemon process is claustrum's own.
   (Linux and Windows). Another name, such as `logssh.cmd`, gets none (Windows).
   With `ssh.variant=simple` there is none either (Linux). Other values of
   `ssh.variant` act the same, and `tortoiseplink` gets `tortoiseplink`
-  (claustrum's own).
+  (claustrum's own). A daemon `GIT_SSH_VARIANT` gives way to the value of the
+  door (claustrum's own, not measured).
 - Each source of the person's command is measured alone. The order of several
   sources follows git (not measured).
 - A bare program name in the daemon's `GIT_SSH` reaches the door. A relative path

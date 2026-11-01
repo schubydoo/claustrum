@@ -148,7 +148,8 @@ func readSSHDoorSettings(u gitUse, leaf, gitDir string, env []string) (sshDoorSe
 // measured order: GIT_SSH_COMMAND, CLAUDE_SSH_PERSONS_SSH,
 // CLAUDE_SSH_PERSONS_ENV, CLAUDE_SSH_DOOR_MARK and GIT_SSH_VARIANT, right after
 // LANGUAGE=C (measured on Linux). The daemon's GIT_SSH_COMMAND goes, and so
-// does its GIT_SSH_VARIANT when the door sets one. CLAUDE_SSH_PERSONS_ENV is
+// does its GIT_SSH_VARIANT when the door sets one (claustrum's own, not
+// measured: in git that variable beats the program name). CLAUDE_SSH_PERSONS_ENV is
 // 1 when the person's command is the daemon's GIT_SSH_COMMAND, else empty
 // (measured on Linux and Windows). With `ssh.variant=simple` there is no
 // GIT_SSH_VARIANT (measured on Linux). Other values of `ssh.variant` act the
