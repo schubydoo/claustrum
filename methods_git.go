@@ -935,7 +935,7 @@ func pairBeforeAdd(req *request, gitDir, repo string) {
 		return
 	}
 	u := req.use.atGitDirCommand()
-	_, _ = gitDirWorkTreeToplevel(req.stop, gitDir, repo, u.gitDirPin(repo), u.gitDirFront())
+	_, _ = gitDirWorkTreeToplevel(req.stop, u.sshOff(), gitDir, repo, u.gitDirPin(repo), u.gitDirFront())
 }
 
 func gitWorktreeCreate(req *request) response {
@@ -947,6 +947,7 @@ func gitWorktreeCreate(req *request) response {
 		return errResult(req.ID, codeInvalidParam, "branchName is required")
 	}
 	repo := p.repoDir()
+	req.use.sshKept = req.offLive
 	defer req.runAtReply()
 	return withWorktreeCreateLock(repo, func() response {
 		// The start of the deadline of timeoutMs (worktreeCreateCtx), before any
@@ -1802,7 +1803,7 @@ func gitWorktreeCreateLocked(req *request, p *gitParams, repo string, arrival ti
 	// rev-parse --absolute-git-dir the record compare is as before (not measured).
 	if adminRecordMismatch(indexDir, p.WorktreePath, gitAnswered) {
 		pairUse := req.use.atGitDirCommand()
-		_, err := gitDirWorkTreeToplevelIn(req.stop.context(), gitDir, repo, pairUse.gitDirPin(repo), pairUse.gitDirFront())
+		_, err := gitDirWorkTreeToplevelIn(req.stop.context(), pairUse.sshOff(), gitDir, repo, pairUse.gitDirPin(repo), pairUse.gitDirFront())
 		// A call whose repository folder went answers its text, with the same
 		// rollback (from the code, not measured).
 		if copyGone(err) {
@@ -2196,6 +2197,7 @@ func gitWorktreeRemove(req *request) response {
 		return *bad
 	}
 	repo := p.repoDir()
+	req.use.sshKept = req.offLive
 	return withWorktreeRepoLock(repo, func() response {
 		return gitWorktreeRemoveLocked(req, &p, repo)
 	})

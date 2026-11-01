@@ -42,7 +42,7 @@ func gitInfoRoot(s *gitStop, walkRoot, walkGitDir, copyOf string, pin, front []s
 	case len(pin) > 0:
 		gitDir = strings.TrimPrefix(pin[0], "GIT_COMMON_DIR=")
 	}
-	out, err := gitDirWorkTreeToplevel(s, gitDir, walkRoot, pin, front)
+	out, err := gitDirWorkTreeToplevel(s, true, gitDir, walkRoot, pin, front)
 	if err == nil && filepath.IsAbs(out) && sharesFileIdentity(out, walkRoot) {
 		return out
 	}

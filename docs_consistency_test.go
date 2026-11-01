@@ -618,7 +618,7 @@ var docWordLimits = map[string]int{
 	"docs/PROTOCOL.md":                         2835, // the files.realpath row and count. 2826: TASK-231: one sentence on the close line. TASK-230: one sentence on a failed write. TASK-202: the error texts, stream frames and flags moved to their own pages
 	"docs/STYLE.md":                            1293, // task-203b: the page rewrite
 	"docs/TOUR.md":                             850,  // a new page: its word count plus about 200
-	"docs/UPSTREAM-TRACKING.md":                6250, // the build of the new prunes. 6234: the pin of 683cc6a9. 6232: the terminal of 683cc6a9. 6230: the build of the open destDir refusal. 6228: the could-not-be-examined text. 6224: decision-040: words moved from PROTOCOL.md, net down in the same PR
+	"docs/UPSTREAM-TRACKING.md":                6279, // TASK-292: the git env bullet. 6250: the build of the new prunes. 6234: the pin of 683cc6a9. 6232: the terminal of 683cc6a9. 6230: the build of the open destDir refusal. 6228: the could-not-be-examined text. 6224: decision-040: words moved from PROTOCOL.md, net down in the same PR
 	"docs/index.md":                            316,  // the reader router of TASK-201
 	"docs/protocol/errors.md":                  1912, // TASK-245: the .probe text, 41 words of a new row
 	"docs/protocol/files-extract-tar.md":       2463, // the file that Windows cannot read. 2457: the empty folder that Windows cannot read. 2420: the .synced rules of 683cc6a9
@@ -628,7 +628,7 @@ var docWordLimits = map[string]int{
 	"docs/protocol/files-validate.md":          365,
 	"docs/protocol/flags.md":                   2639, // the prune after a good install. 2633: TASK-202: moved from PROTOCOL.md
 	"docs/protocol/git-info.md":                1850, // task-203b: the page rewrite
-	"docs/protocol/git-rules-calls.md":         5145, // TASK-291: the core.hooksPath value. 5121: TASK-202: moved from PROTOCOL.md
+	"docs/protocol/git-rules-calls.md":         5278, // TASK-292: the trace and ssh entries. 5145: TASK-291: the core.hooksPath value. 5121: TASK-202: moved from PROTOCOL.md
 	"docs/protocol/git-rules-config.md":        2884, // TASK-202: moved from PROTOCOL.md
 	"docs/protocol/git-rules-settings-copy.md": 3300, // TASK-260: the third run of the call about the repository. TASK-245: the folder .probe, new rules
 	"docs/protocol/git-rules-trust.md":         4637, // TASK-313: the not_a_repo answer of the create. 4601: the unsearchable git directory and the could-not-be-examined text. 4493: TASK-202: moved from PROTOCOL.md
@@ -717,7 +717,7 @@ var docSectionRunLimits = map[string]int{
 	"docs/INSTALL.md":                          736,
 	"docs/PROTOCOL.md":                         627,
 	"docs/STYLE.md":                            343,
-	"docs/UPSTREAM-TRACKING.md":                2960,
+	"docs/UPSTREAM-TRACKING.md":                2984, // TASK-292: the git env bullet. 2960 before
 	"docs/index.md":                            314,
 	"docs/protocol/errors.md":                  1850,
 	"docs/protocol/files-extract-tar.md":       388,

@@ -411,7 +411,8 @@ func noRepoCreateCalls(t gitDirTrust, s *gitStop, six, off bool, dir string) str
 func gitVersionRun(u gitUse, heavy bool) listingRun {
 	cmd := exec.Command("git", "version")
 	cmd.Dir = gitVersionDir
-	cmd.Env = gitVersionEnv(append(listingEnvBase(), u.profileEnv(heavy)...))
+	profile := u.profileEnv(heavy)
+	cmd.Env = gitVersionEnv(append(withoutDaemonSSH(listingEnvBase(), profile), profile...))
 	var errBuf bytes.Buffer
 	cmd.Stderr = &errBuf
 	err := gitRun(u.stop.context(), cmd)
