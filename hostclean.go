@@ -400,9 +400,13 @@ func hcIsNoSuchProcess(err error) bool {
 }
 
 // hcDial dials a unix socket with the probe timeout. A seam so a test can drive each
-// probeSocket state without a real socket.
+// probeSocket state without a real socket. It dials a long socket path as the daemon
+// does (dialSocketInDaemon), so on Linux a long run root gets the verdicts, the retire
+// and the signals of a short one (`be1c1ca5`, measured on Linux). macOS at a long root
+// is not measured. Where no shorter name works, the probe reads the socket as unknown,
+// as before.
 var hcDial = func(addr string) (net.Conn, error) {
-	return net.DialTimeout("unix", addr, hcDialTimeout)
+	return dialSocketInDaemon(addr, hcDialTimeout)
 }
 
 // socket-probe states.

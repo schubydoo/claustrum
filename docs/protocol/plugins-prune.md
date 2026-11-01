@@ -83,7 +83,13 @@ The daemon always goes through the root of this install. If a daemon of another 
 
 ## Differences by system
 
-The paths and the `<error>` texts in `legacy` and `errors` are those of the operating system. `<rel>` has `/` separators on each system. On Windows, the named-pipe transport of `-listen-pipe` does not change the roots: the daemon still has its socket, and the roots come from that path.
+The paths and the `<error>` texts in `legacy` and `errors` are those of the operating system, except the texts below. `<rel>` has `/` separators on each system. On Windows, the named-pipe transport of `-listen-pipe` does not change the roots: the daemon still has its socket, and the roots come from that path.
+
+A sibling socket path over 107 bytes on Linux or 103 on macOS goes as follows (`be1c1ca5`, measured on Linux and macOS):
+
+- Linux dials it through `/proc`, as at a [long socket path](../DAEMON.md#a-long-socket-path-linux-and-macos). A dead sibling counts as gone.
+- Where no shorter name reaches it, `<error>` is `dial unix <socket path>: the socket path is longer than the 107 bytes that this system allows` (`103 bytes` on macOS).
+- If the shorter name fails otherwise, `; no shorter name for it worked: <error of that dial>` follows the limit text. A sibling socket of mode 000 on Linux gives it. Other failures of that dial: claustrum's own, not measured.
 
 ## Differences from the reference
 
