@@ -189,9 +189,48 @@ func profileEnv(heavy bool) []string {
 // pin is the GIT_COMMON_DIR pin of the git-directory trust check (commonDirPinEnv),
 // or nil. gitUse.precursorEnv is this function with the profile of one request.
 func precursorEnv(heavy bool, pin []string) []string {
-	env := append(listingEnvBase(), profileEnv(heavy)...)
+	return precursorEnvWith(withSSHOff(profileEnv(heavy), true), pin)
+}
+
+// precursorEnvWith is precursorEnv with the profile given by the caller.
+func precursorEnvWith(profile, pin []string) []string {
+	env := append(withoutDaemonSSH(listingEnvBase(), profile), profile...)
 	env = append(env, pin...)
 	return append(env, "LC_ALL=C", "LANGUAGE=C")
+}
+
+// sshOffEntry ends a profile that turns off the ssh command of git.
+const sshOffEntry = "GIT_SSH_COMMAND=false"
+
+// withSSHOff is profile with sshOffEntry at its end, when off is true and the
+// profile holds GIT_NO_LAZY_FETCH=1 and GIT_ASKPASS=. Else it is profile.
+// be1c1ca5 puts that entry after GIT_ASKPASS= (measured on Linux). A hardened
+// call and a listing have it before the folder variables, and the branch step
+// at its end. On Windows it ends the environment of such a call there
+// (measured on Windows), and Go sorts the block of a child by name (D23). The
+// calls with no GIT_ASKPASS= keep the daemon's own GIT_SSH_COMMAND (measured
+// on Linux). macOS is not measured: it follows Linux.
+func withSSHOff(profile []string, off bool) []string {
+	if !off || !slices.Contains(profile, "GIT_NO_LAZY_FETCH=1") || !slices.Contains(profile, "GIT_ASKPASS=") {
+		return profile
+	}
+	return append(slices.Clone(profile), sshOffEntry)
+}
+
+// withoutDaemonSSH is daemon without its GIT_SSH_COMMAND entries when profile
+// holds sshOffEntry, so that a call has one entry of that name. On Windows the
+// name matches in any letter case (claustrum's own, not measured).
+func withoutDaemonSSH(daemon, profile []string) []string {
+	if !slices.Contains(profile, sshOffEntry) {
+		return daemon
+	}
+	return slices.DeleteFunc(slices.Clone(daemon), func(kv string) bool {
+		name := envName(kv)
+		if gitEnvHere.windows {
+			name = strings.ToUpper(name)
+		}
+		return name == "GIT_SSH_COMMAND"
+	})
 }
 
 // hardenedGitEnv builds the environment for a hardened git command: the daemon's
@@ -213,12 +252,12 @@ func hardenedGitEnv(heavy bool, pin, hooks []string) []string {
 // light profile's GIT_ALLOW_PROTOCOL still comes from the process environment
 // (lightAllowProtocol), not from daemon.
 func hardenedEnvFrom(daemon []string, heavy bool, pin, hooks []string) []string {
-	return hardenedEnvWith(daemon, profileEnv(heavy), pin, hooks)
+	return hardenedEnvWith(daemon, withSSHOff(profileEnv(heavy), true), pin, hooks)
 }
 
 // hardenedEnvWith is hardenedEnvFrom with the profile part given by the caller.
 func hardenedEnvWith(daemon, profile, pin, hooks []string) []string {
-	base := dropConfigOverrides(daemon)
+	base := dropConfigOverrides(withoutDaemonSSH(daemon, profile))
 	// A refused count gives 0 here.
 	count, _ := inheritedConfigProblem(base)
 	env := append(withoutConfigCountSet(base), profile...)
@@ -231,15 +270,16 @@ func hardenedEnvWith(daemon, profile, pin, hooks []string) []string {
 // GIT_ALLOW_PROTOCOL entry, pin, the count, the inherited pairs and the hook pins of
 // hooks. Then come GIT_NO_LAZY_FETCH=1, GIT_ALLOW_PROTOCOL=denied_by_claude_ssh and
 // GIT_ASKPASS=. 89cb6289 has that order on Linux, macOS and Windows VMs (row R01).
-func branchStepEnv(pin, hooks []string) []string {
+// sshOff adds GIT_SSH_COMMAND=false at the end (withSSHOff, gitUse.sshOff).
+func branchStepEnv(pin, hooks []string, sshOff bool) []string {
 	var profile []string
 	for _, kv := range profileEnv(false) {
 		if !strings.HasPrefix(kv, "GIT_ALLOW_PROTOCOL=") {
 			profile = append(profile, kv)
 		}
 	}
-	return append(hardenedEnvWith(gitChildEnv(), profile, pin, hooks),
-		"GIT_NO_LAZY_FETCH=1", "GIT_ALLOW_PROTOCOL=denied_by_claude_ssh", "GIT_ASKPASS=")
+	tail := withSSHOff([]string{"GIT_NO_LAZY_FETCH=1", "GIT_ALLOW_PROTOCOL=denied_by_claude_ssh", "GIT_ASKPASS="}, sshOff)
+	return append(hardenedEnvWith(withoutDaemonSSH(gitChildEnv(), tail), profile, pin, hooks), tail...)
 }
 
 // hardenedProfileArgs puts the profile's `-c` overrides before the git subcommand.
@@ -355,19 +395,21 @@ func hardenedGitFirst(u gitUse, dir string, heavy bool, l configListing, args ..
 //
 // front are the `-c` items that come before the 28 items of the second call
 // (gitUse.gitDirFront), or nil. s holds the time limits of the request, or is nil.
-func gitDirWorkTreeToplevel(s *gitStop, gitDir, workTree string, pin, front []string) (string, error) {
-	return gitDirWorkTreeToplevelIn(s.context(), gitDir, workTree, pin, front)
+// sshOff is gitUse.sshOff of the request.
+func gitDirWorkTreeToplevel(s *gitStop, sshOff bool, gitDir, workTree string, pin, front []string) (string, error) {
+	return gitDirWorkTreeToplevelIn(s.context(), sshOff, gitDir, workTree, pin, front)
 }
 
 // gitDirWorkTreeToplevelIn is gitDirWorkTreeToplevel under ctx, the context of
 // the request.
-func gitDirWorkTreeToplevelIn(ctx context.Context, gitDir, workTree string, pin, front []string) (string, error) {
+func gitDirWorkTreeToplevelIn(ctx context.Context, sshOff bool, gitDir, workTree string, pin, front []string) (string, error) {
 	userExcludesFile()
-	hooks := runListing(ctx, gitDir, gitDir, precursorEnv(true, pin)).hooks()
+	profile := withSSHOff(profileEnv(true), sshOff)
+	hooks := runListing(ctx, gitDir, gitDir, precursorEnvWith(profile, pin)).hooks()
 	cmd := exec.CommandContext(ctx, "git", withFront(front, hardenedProfileArgs(true,
 		"--git-dir="+gitDir, "--work-tree="+workTree, "rev-parse", "--show-toplevel"))...)
 	cmd.Dir = gitDir
-	cmd.Env = hardenedGitEnv(true, pin, hooks)
+	cmd.Env = hardenedEnvWith(gitChildEnv(), profile, pin, hooks)
 	out, err := gitOutput(ctx, cmd)
 	return strings.TrimRight(string(out), "\r\n"), err
 }

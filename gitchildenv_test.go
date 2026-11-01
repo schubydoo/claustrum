@@ -331,7 +331,7 @@ func TestGitChildEnvReachesTheBuilders(t *testing.T) {
 	}{
 		{"hardenedGitEnv", hardenedGitEnv(true, nil, nil)},
 		{"gitUse.hardenedGitEnv", gitUse{}.hardenedGitEnv(false, nil, nil)},
-		{"branchStepEnv", branchStepEnv(nil, nil)},
+		{"branchStepEnv", branchStepEnv(nil, nil, true)},
 		{"precursorEnv", precursorEnv(false, nil)},
 		{"gitUse.precursorEnv", gitUse{}.precursorEnv(true, nil)},
 		{"repoConfigListEnv", repoConfigListEnv()},
@@ -490,5 +490,144 @@ func TestStatusEntryConfigReadWithMember(t *testing.T) {
 	}
 	if !seen {
 		t.Fatal("git.status made no config.worktree read")
+	}
+}
+
+// The daemon's trace entries go, and the three names come back with the value
+// 0 at the end. On Windows a name in lower case goes too.
+func TestWithTraceOff(t *testing.T) {
+	env := []string{"A=1", "GIT_TRACE2=/t/a", "git_trace2_perf=/t/b", "GIT_TRACE2_EVENT=/t/c", "GIT_TRACE2_PERF=/t/d", "B=2"}
+	tail := []string{"GIT_TRACE2=0", "GIT_TRACE2_EVENT=0", "GIT_TRACE2_PERF=0"}
+	for _, c := range []struct {
+		form gitEnvForm
+		want []string
+	}{
+		{gitEnvForm{}, slices.Concat([]string{"A=1", "git_trace2_perf=/t/b", "B=2"}, tail)},
+		{gitEnvForm{windows: true}, slices.Concat([]string{"A=1", "B=2"}, tail)},
+	} {
+		if got := withTraceOff(env, c.form); !slices.Equal(got, c.want) {
+			t.Errorf("form %+v: got %q, want %q", c.form, got, c.want)
+		}
+	}
+}
+
+// Every builder of a git environment carries the three trace entries once,
+// with the value 0, the calls of the start test too.
+func TestGitChildEnvTurnsTraceOff(t *testing.T) {
+	for _, n := range gitTraceNames {
+		t.Setenv(n, filepath.Join(t.TempDir(), "trace"))
+	}
+	for _, b := range []struct {
+		name string
+		env  []string
+	}{
+		{"gitChildEnv", gitChildEnv()},
+		{"hardenedGitEnv", hardenedGitEnv(true, nil, nil)},
+		{"branchStepEnv", branchStepEnv(nil, nil, true)},
+		{"precursorEnv", precursorEnv(false, nil)},
+		{"repoConfigListEnv", repoConfigListEnv()},
+		{"probeEnv", probeEnv(t.TempDir(), filepath.Join(t.TempDir(), "repo"))},
+		{"gitVersionEnv", gitVersionEnv(nil)},
+		{"shadowTestEnv", shadowTestEnv()},
+	} {
+		for _, n := range gitTraceNames {
+			var vals []string
+			for _, kv := range b.env {
+				if k, v, _ := strings.Cut(kv, "="); k == n {
+					vals = append(vals, v)
+				}
+			}
+			if !slices.Equal(vals, []string{"0"}) {
+				t.Errorf("%s: %s = %q, want one entry 0", b.name, n, vals)
+			}
+		}
+	}
+}
+
+// indexOf is the last place of kv in env, or -1. The host of a test can set a
+// name of the profile too, and the profile comes after its entry.
+func indexOf(env []string, kv string) int {
+	for i := len(env) - 1; i >= 0; i-- {
+		if env[i] == kv {
+			return i
+		}
+	}
+	return -1
+}
+
+// The heavy profile and the six light values end with GIT_SSH_COMMAND=false,
+// before the folder variables. The daemon's own value goes. The trace entries
+// sit after the daemon's part, before the profile.
+func TestSSHOffPlaceInHardenedEnv(t *testing.T) {
+	t.Setenv("GIT_SSH_COMMAND", "daemon-ssh")
+	pin := []string{"GIT_COMMON_DIR=/p"}
+	for _, c := range []struct {
+		name, first, before string
+		env                 []string
+	}{
+		{"heavy", "GIT_NO_LAZY_FETCH=1", "GIT_TERMINAL_PROMPT=0", hardenedGitEnv(true, pin, nil)},
+		{"light six", "GIT_ALLOW_PROTOCOL=denied_by_claude_ssh", "GIT_ASKPASS=", gitUse{folder: "/s"}.hardenedGitEnv(false, pin, nil)},
+		{"heavy listing", "GIT_NO_LAZY_FETCH=1", "GIT_TERMINAL_PROMPT=0", precursorEnv(true, pin)},
+	} {
+		at := indexOf(c.env, sshOffEntry)
+		if at < 0 || indexOf(c.env, c.before) != at-1 || indexOf(c.env, pin[0]) != at+1 {
+			t.Errorf("%s: %s at %d, want right after %s and before %s", c.name, sshOffEntry, at, c.before, pin[0])
+		}
+		if indexOf(c.env, "GIT_SSH_COMMAND=daemon-ssh") >= 0 {
+			t.Errorf("%s keeps the daemon's GIT_SSH_COMMAND", c.name)
+		}
+		if p := indexOf(c.env, "GIT_TRACE2_PERF=0"); p < 0 || indexOf(c.env, c.first) != p+1 {
+			t.Errorf("%s: the trace entries end at %d, want right before %s", c.name, p, c.first)
+		}
+	}
+}
+
+// A call with no GIT_NO_LAZY_FETCH=1 and GIT_ASKPASS= keeps the daemon's own
+// GIT_SSH_COMMAND. The branch step ends with false. A create or a remove that
+// the off switch holds keeps the daemon's value, unless the call names the copy.
+func TestSSHOffNeedsTheNoNetworkPair(t *testing.T) {
+	t.Setenv("GIT_SSH_COMMAND", "daemon-ssh")
+	kept := func() bool { return true }
+	notKept := func() bool { return false }
+	for _, c := range []struct {
+		name string
+		env  []string
+		off  bool
+	}{
+		{"light hardened", hardenedGitEnv(false, nil, nil), false},
+		{"light listing", precursorEnv(false, nil), false},
+		{"repoConfigListEnv", repoConfigListEnv(), false},
+		{"heavy", hardenedGitEnv(true, nil, nil), true},
+		{"heavy, off switch of a create", gitUse{sshKept: kept}.hardenedGitEnv(true, nil, nil), false},
+		{"heavy listing, off switch of a create", gitUse{sshKept: kept}.precursorEnv(true, nil), false},
+		{"heavy, create with no off switch", gitUse{sshKept: notKept}.hardenedGitEnv(true, nil, nil), true},
+		{"heavy, off switch, the copy", gitUse{sshKept: kept, repoDir: "/r"}.hardenedGitEnv(true, nil, nil), true},
+		{"branch step", branchStepEnv(nil, nil, true), true},
+		{"branch step, off switch of a create", branchStepEnv(nil, nil, false), false},
+	} {
+		want := "GIT_SSH_COMMAND=daemon-ssh"
+		if c.off {
+			want = sshOffEntry
+		}
+		var got []string
+		for _, kv := range c.env {
+			if envName(kv) == "GIT_SSH_COMMAND" {
+				got = append(got, kv)
+			}
+		}
+		if !slices.Equal(got, []string{want}) {
+			t.Errorf("%s: %q, want %q", c.name, got, want)
+		}
+	}
+	if b := branchStepEnv(nil, nil, true); b[len(b)-1] != sshOffEntry {
+		t.Errorf("the branch step ends with %q, want %q", b[len(b)-1], sshOffEntry)
+	}
+}
+
+// The form that the off switch gives keeps the mark of a create or a remove.
+func TestOffFormKeepsTheSSHMark(t *testing.T) {
+	u := gitUse{sshKept: func() bool { return true }, live: &liveSwitch{off: func() bool { return true }}}
+	if f := u.atCommand(); f.sshKept == nil || f.sshOff() {
+		t.Error("the off form lost the mark of a create or a remove")
 	}
 }

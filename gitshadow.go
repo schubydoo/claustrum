@@ -634,12 +634,14 @@ var shadowCheckDropped = []string{"GIT_NAMESPACE", "GIT_INDEX_FILE"}
 // The daemon's part is cleaned as for every git child (gitChildEnv) and has no
 // GIT_ name (withoutGitNames). 5fd08069 does both on the nine calls of the test
 // (rounds task004-01 and task004-02, Linux, macOS and Windows VMs). The rules of
-// the cleaning are claustrum's own, not measured.
+// the cleaning are claustrum's own, not measured. The trace entries of
+// withTraceOff end it. be1c1ca5 has them on the test calls (measured on Linux).
+// Their place and their count per call there are not measured.
 func shadowTestEnv() []string {
 	daemon := slices.DeleteFunc(cleanGitChildEnv(shadowDaemonEnv(), gitEnvHere), func(kv string) bool {
 		return slices.Contains(shadowCheckDropped, envName(kv))
 	})
-	daemon = withoutGitNames(daemon)
+	daemon = withTraceOff(withoutGitNames(daemon), gitEnvHere)
 	return append([]string{
 		"GIT_CONFIG_NOSYSTEM=1",
 		"GIT_CONFIG_GLOBAL=/dev/null",
@@ -1146,7 +1148,9 @@ func (req *request) settingsGate(t gitDirTrust, off jsonTrueSwitch, dir string, 
 		// The state fallback-git: the request has no copy, and its short-lived
 		// folders are in the folder of the daemon (gitUse.inFolder).
 		if !off && t.verdict == gitDirTrusted {
+			kept := req.use.sshKept
 			req.use = req.shadow.folderUse()
+			req.use.sshKept = kept
 			req.use.atReply = &req.atReply
 			req.use.stop = req.stop
 		}
@@ -1173,6 +1177,7 @@ func (req *request) settingsGate(t gitDirTrust, off jsonTrueSwitch, dir string, 
 	if err != nil {
 		return shadowRepoFailureText(err), false
 	}
+	use.sshKept = req.use.sshKept
 	req.use = use
 	req.use.atReply = &req.atReply
 	req.use.stop = req.stop

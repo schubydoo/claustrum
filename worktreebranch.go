@@ -219,7 +219,7 @@ func branchStepCmd(ctx context.Context, u gitUse, repo string, hooks []string, a
 	// As in hardenedGitCmd, the listing before the call was its build: a folder
 	// of the copy that went since then is not made again (from the code).
 	u.noRenew = true
-	cmd.Env = branchStepEnv(u.pin(repo), hooks)
+	cmd.Env = branchStepEnv(u.pin(repo), hooks, u.sshOff())
 	return cmd
 }
 

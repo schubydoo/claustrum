@@ -96,9 +96,37 @@ var gitChildProgramNames = []string{
 }
 
 // gitChildEnv is the daemon's own environment as a git child of the git methods
-// gets it, before the names that the call adds.
+// gets it, before the names that the call adds. The trace entries of
+// withTraceOff end it.
 func gitChildEnv() []string {
-	return cleanGitChildEnv(os.Environ(), gitEnvHere)
+	return withTraceOff(cleanGitChildEnv(os.Environ(), gitEnvHere), gitEnvHere)
+}
+
+// gitTraceNames are the trace names of git. A git child gets each one with the
+// value 0, and the daemon's own entries of these names go. be1c1ca5 does so on
+// every git call (measured on Linux and Windows), and on the calls of the start
+// test (measured on Linux). On Windows a lower-case name goes too (measured on
+// Windows).
+var gitTraceNames = []string{"GIT_TRACE2", "GIT_TRACE2_EVENT", "GIT_TRACE2_PERF"}
+
+// withTraceOff is env without the entries of gitTraceNames, and with those
+// names set to 0 at its end. On Linux the three entries sit after the daemon's
+// own part and before the names that the call adds (measured on Linux). On
+// Windows the names match in any letter case. Only the lower-case names are
+// measured, and other mixes are claustrum's own, not measured. Their place on
+// Windows and the calls on macOS are not measured: they follow Linux.
+func withTraceOff(env []string, form gitEnvForm) []string {
+	out := slices.DeleteFunc(slices.Clone(env), func(kv string) bool {
+		name := envName(kv)
+		if form.windows {
+			name = strings.ToUpper(name)
+		}
+		return slices.Contains(gitTraceNames, name)
+	})
+	for _, n := range gitTraceNames {
+		out = append(out, n+"=0")
+	}
+	return out
 }
 
 // cleanGitChildEnv applies the rules above to env. form selects the rules of one

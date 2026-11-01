@@ -124,7 +124,8 @@ func TestGitUseFolderVariables(t *testing.T) {
 // TestGitUseProfile pins the variables of the light profile per state. In the
 // state shadow they are the six values in the order of the Linux call log of
 // 5fd08069 (val-s3p2b1-linux row N1). With no copy they are the four of the
-// light profile. The heavy profile is the same in both.
+// light profile. The heavy profile is the same in both. The six values and the
+// heavy profile end with GIT_SSH_COMMAND=false.
 func TestGitUseProfile(t *testing.T) {
 	t.Setenv("GIT_ALLOW_PROTOCOL", "")
 	if err := os.Unsetenv("GIT_ALLOW_PROTOCOL"); err != nil {
@@ -132,7 +133,7 @@ func TestGitUseProfile(t *testing.T) {
 	}
 	shadow := gitUse{folder: "s", repoDir: "r", gitDir: "g"}
 	six := []string{"GIT_ALLOW_PROTOCOL=denied_by_claude_ssh", "GIT_TERMINAL_PROMPT=0", "GIT_NO_REPLACE_OBJECTS=1",
-		"GIT_GRAFT_FILE=" + os.DevNull, "GIT_NO_LAZY_FETCH=1", "GIT_ASKPASS="}
+		"GIT_GRAFT_FILE=" + os.DevNull, "GIT_NO_LAZY_FETCH=1", "GIT_ASKPASS=", sshOffEntry}
 	if got := shadow.profileEnv(false); !slices.Equal(got, six) {
 		t.Errorf("light profile in the state shadow = %q\nwant %q", got, six)
 	}
@@ -144,8 +145,9 @@ func TestGitUseProfile(t *testing.T) {
 	if got := (gitUse{}).profileEnv(false); !slices.Equal(got, four) {
 		t.Errorf("light profile with no copy = %q\nwant %q", got, four)
 	}
-	if a, b := shadow.profileEnv(true), (gitUse{}).profileEnv(true); !slices.Equal(a, b) || !slices.Equal(a, profileEnv(true)) {
-		t.Errorf("heavy profile = %q and %q, want %q in both", a, b, profileEnv(true))
+	heavy := append(profileEnv(true), sshOffEntry)
+	if a, b := shadow.profileEnv(true), (gitUse{}).profileEnv(true); !slices.Equal(a, b) || !slices.Equal(a, heavy) {
+		t.Errorf("heavy profile = %q and %q, want %q in both", a, b, heavy)
 	}
 }
 

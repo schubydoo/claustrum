@@ -141,7 +141,7 @@ The repository calls are the configuration listings, the hardened calls,
     - Six program names, such as `GIT_SSH` and `SSH_ASKPASS`, go when they are a
       relative path. `SSH_SK_PROVIDER` also needs `internal` or an absolute path on
       macOS and Windows.
-    - Every other entry stays.
+    - Every other entry stays, except the entries named below.
 - `GIT_CONFIG` and `GIT_CONFIG_PARAMETERS` do not reach a repository call. The read of config text keeps them
   (claustrum's own, not measured). The names match exactly, in upper case. So on Windows `git_config` and
   `Git_Config_Parameters` reach git.
@@ -164,6 +164,16 @@ The repository calls are the configuration listings, the hardened calls,
   no trim. With no entry left, it is `denied_by_claude_ssh`. The heavy value stays
   `denied_by_claude_ssh`. On Windows a lower-case `git_allow_protocol` sets it
   too.
+- Every git call gets `GIT_TRACE2=0`, `GIT_TRACE2_EVENT=0` and `GIT_TRACE2_PERF=0`.
+  The daemon's own entries of these names go, on Windows a lower-case name too. On
+  Linux the three entries end the daemon's part (`be1c1ca5`, measured on Linux and
+  Windows, macOS not measured). The calls of the start test get them too (measured
+  on Linux, the count per call not measured).
+- A call with `GIT_NO_LAZY_FETCH=1` and `GIT_ASKPASS=` gets `GIT_SSH_COMMAND=false`
+  in place of the daemon's value. On Linux it comes after `GIT_ASKPASS=`. A call with no `GIT_ASKPASS=` keeps the daemon's value (`be1c1ca5`,
+  measured on Linux and Windows, macOS not measured). With `"shadowDirOff":true` a
+  call of `git.worktree_create` or `git.worktree_remove` that names no copy keeps
+  the daemon's value (measured on Linux). The state `fallback-git` is from the code.
 
 The daemon parses each value from the standard output of git (from
 the code). The reference does so for the branch of `git.info` and the repository
