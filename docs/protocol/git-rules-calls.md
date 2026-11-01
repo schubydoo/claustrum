@@ -170,17 +170,41 @@ The repository calls are the configuration listings, the hardened calls,
   Windows, macOS not measured). The calls of the start test get them too (measured
   on Linux, the count per call not measured).
 - A call with `GIT_NO_LAZY_FETCH=1` and `GIT_ASKPASS=` gets `GIT_SSH_COMMAND=false`
-  in place of the daemon's value. On Linux it comes after `GIT_ASKPASS=`. A call with no `GIT_ASKPASS=` keeps the daemon's value (`be1c1ca5`,
+  in place of the daemon's value. On Linux it comes after `GIT_ASKPASS=`. A call with no `GIT_ASKPASS=` keeps the daemon's value, except the read-tree call of a shadow create (the ssh door) (`be1c1ca5`,
   measured on Linux and Windows, macOS not measured). With `"shadowDirOff":true` a
   call of `git.worktree_create` or `git.worktree_remove` that names no copy keeps
   the daemon's value (measured on Linux). The state `fallback-git` is from the code.
-
 The daemon parses each value from the standard output of git (from
 the code). The reference does so for the branch of `git.info` and the repository
 test of a create (measured on Linux).
 
 [Git-directory trust check](git-rules-trust.md#git-directory-trust-check) gives the `GIT_DIR` of the
 listing in a folder with no repository, and its frames.
+
+### Variables of the ssh door
+
+In the state `shadow` the read-tree call of a create gets five entries right
+after `LANGUAGE=C`, in this order (`be1c1ca5`, measured on Linux). `GIT_SSH_COMMAND`
+is the [ssh door](git-worktree-create.md#the-ssh-door). `CLAUDE_SSH_PERSONS_SSH`
+is the person's ssh command. Then come `CLAUDE_SSH_PERSONS_ENV`,
+`CLAUDE_SSH_DOOR_MARK` with 16 hex digits, and `GIT_SSH_VARIANT`. One mark for
+each daemon process is claustrum's own.
+
+- With no ssh setting the person's command is `'ssh'`, with the single quotes
+  (Linux and Windows). The daemon's `GIT_SSH` gets single quotes too, such as
+  `'plink.exe'` (Windows). The daemon's `GIT_SSH_COMMAND` and `core.sshCommand` of
+  the user's own config stay as they are (Linux and Windows).
+- `CLAUDE_SSH_PERSONS_ENV` is `1` when the person's command is the daemon's
+  `GIT_SSH_COMMAND`, and empty otherwise (Linux and Windows).
+- `GIT_SSH_VARIANT` is `ssh` for a program named `ssh` and `putty` for `plink.exe`
+  (Linux and Windows). Another name, such as `logssh.cmd`, gets none (Windows).
+  With `ssh.variant=simple` there is none either (Linux). Other values of
+  `ssh.variant` act the same, and `tortoiseplink` gets `tortoiseplink`
+  (claustrum's own).
+- Each source of the person's command is measured alone. The order of several
+  sources follows git (not measured).
+- A bare program name in the daemon's `GIT_SSH` reaches the door. A relative path
+  with a separator is dropped first, as for every git call (claustrum's own).
 
 ### Calls outside a repository
 

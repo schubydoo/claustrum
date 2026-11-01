@@ -329,6 +329,8 @@ the linked pages.
   `be1c1ca5`, a build split against `683cc6a9` ([A long socket
   path](DAEMON.md#a-long-socket-path-linux-and-macos), [A long run
   root](DAEMON.md#a-long-run-root), [plugins.prune](protocol/plugins-prune.md#differences-by-system)).
+- The ssh door of the `git.worktree_create` checkout follows `be1c1ca5`, a build split
+  against `683cc6a9` ([The ssh door](protocol/git-worktree-create.md#the-ssh-door)).
 - The git filters of the `git.worktree_create` checkout follow `5fd08069`. Against
   `89cb6289` the refusal `repository_only_filter` is new. So are the texts for a
   name over 200 bytes and for more than 64 filters (`89cb6289` not run for 64

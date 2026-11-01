@@ -359,6 +359,10 @@ func createRows() []shapeRow {
 			same("none", "--git-dir=<repo>/.git config -z --list", leaf, "{C} {D} {L}", "{C} {G} {L}"),
 			{list: "none", argv: "--git-dir=<repo>/.git config -z --list", cwd: leaf,
 				shadow: "{C} {D} {H}" + index[true] + " LANGUAGE=C"},
+			// The config read of the ssh door of be1c1ca5 (gitsshdoor.go), in the
+			// state shadow only.
+			{list: "none", argv: `--git-dir=<repo>/.git config -z --get-regexp ^(core\.sshcommand|ssh\.variant)$`, cwd: leaf,
+				shadow: "{C} {D} {H}" + index[true] + " LANGUAGE=C"},
 			{list: "lfs.storage=<repo>/.git/lfs+P22", cwd: leaf,
 				argv:   "--git-dir=<repo>/.git --work-tree=<leaf> read-tree -u --reset --no-recurse-submodules refs/heads/w1",
 				shadow: "{C} {D} {H}" + index[true] + " LANGUAGE=C"},

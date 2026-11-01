@@ -208,8 +208,8 @@ const sshOffEntry = "GIT_SSH_COMMAND=false"
 // call and a listing have it before the folder variables, and the branch step
 // at its end. On Windows it ends the environment of such a call there
 // (measured on Windows), and Go sorts the block of a child by name (D23). The
-// calls with no GIT_ASKPASS= keep the daemon's own GIT_SSH_COMMAND (measured
-// on Linux). macOS is not measured: it follows Linux.
+// calls with no GIT_ASKPASS= keep the daemon's own GIT_SSH_COMMAND, except
+// the read-tree call of a shadow create (the ssh door) (measured on Linux). macOS is not measured: it follows Linux.
 func withSSHOff(profile []string, off bool) []string {
 	if !off || !slices.Contains(profile, "GIT_NO_LAZY_FETCH=1") || !slices.Contains(profile, "GIT_ASKPASS=") {
 		return profile
@@ -490,7 +490,8 @@ var worktreeCreateDrainCap = 5 * time.Second
 //     worktree the value is not measured: claustrum names the git directory of
 //     the repository. A user config that sets lfs.storage removes the item
 //     (round task008-01, cell C12, Linux, macOS and Windows VMs).
-//   - The read-tree call has LANGUAGE=C as its last variable.
+//   - The read-tree call has LANGUAGE=C, and then the five entries of the
+//     ssh door (sshDoorEnv, measured on Linux).
 //
 // Both calls keep the four values of the light profile in that state.
 //
@@ -597,6 +598,17 @@ func hardenedGitCheckout(ctx context.Context, u gitUse, leaf, gitDir, indexFile 
 		// The items of the `config.worktree` file come after that item and
 		// before the list of the profile (gitUse.checkoutFront).
 		list = append(list, u.checkoutFront(gitDir)...)
+		// The config read of the ssh door, and the door in the env of the
+		// read-tree call (gitsshdoor.go). Its place after the refusals above
+		// is claustrum's own (not measured).
+		door, text := readSSHDoorSettings(u, leaf, gitDir, env)
+		if err := u.stop.halted(); err != nil {
+			return "", false, err
+		}
+		if text != "" {
+			return "", false, checkoutRefusal(text)
+		}
+		env = sshDoorEnv(env, door)
 	}
 	cmd := exec.CommandContext(ctx, "git", append(list, hardenedProfileArgs(false, args...)...)...)
 	cmd.Dir = leaf
