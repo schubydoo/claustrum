@@ -464,6 +464,89 @@ func TestWorktreeCreateRecordGoneAfterCheckout(t *testing.T) {
 	})
 }
 
+// TestWorktreeCreateGitFileGoneAfterCheckout pins be1c1ca5 on Linux: the stub runs
+// the real read-tree and then removes the .git file of the leaf. The create answers
+// that the leaf does not hold its .git file, with unsafe_path. The leaf goes, with
+// the files of the checkout. The registration w1 and branch w1 stay.
+func TestWorktreeCreateGitFileGoneAfterCheckout(t *testing.T) {
+	f, s := postAddFixture(t)
+	stubSteps(t, []string{"rm", filepath.Join(f.leaf(), ".git")})
+	slowGit(t, "read-tree", "post", 0, "", "")
+
+	raw, _ := f.create(t, s, "w1", "", 0)
+	f.wantGitFileGoneFrame(t, raw)
+	if got := f.leafEntries(t); got != nil {
+		t.Errorf("leaf entries = %q, want the leaf removed", got)
+	}
+	if got := f.regs(t); !slices.Equal(got, []string{"w1"}) {
+		t.Errorf("registrations = %q, want w1 kept", got)
+	}
+	if !f.hasRef(t, "w1") {
+		t.Error("refs/heads/w1 is gone, want it kept")
+	}
+}
+
+// wantGitFileGoneFrame fails the test unless raw is the refusal of a leaf with no
+// .git file, written out as a literal.
+func (f wtFixture) wantGitFileGoneFrame(t *testing.T, raw string) {
+	t.Helper()
+	want := `{"jsonrpc":"2.0","id":1,"result":{"success":false,"error":` +
+		jsonString(t, "refusing to create worktree: `"+f.leaf()+"` does not hold the .git file made for it") +
+		`,"errorCode":"unsafe_path"}}`
+	if raw != want {
+		t.Fatalf("reply = %s\nwant %s", raw, want)
+	}
+}
+
+// TestWorktreeCreateLeafReplacedInCheckout pins claustrum's own answer on Linux
+// and macOS: the stub runs the real read-tree, then renames the leaf to w1x and
+// makes a new empty folder w1. The create answers the refusal of a gone .git
+// file. The identity guard keeps the new folder, so nothing is deleted: w1x
+// keeps the files of the checkout, and the registration w1 and branch w1 stay.
+func TestWorktreeCreateLeafReplacedInCheckout(t *testing.T) {
+	f, s := postAddFixture(t)
+	moved := f.leaf() + "x"
+	stubSteps(t, []string{"rename", f.leaf(), moved}, []string{"mkdir", f.leaf()})
+	slowGit(t, "read-tree", "post", 0, "", "")
+
+	raw, _ := f.create(t, s, "w1", "", 0)
+	f.wantGitFileGoneFrame(t, raw)
+	if got := f.leafEntries(t); got == nil || len(got) != 0 {
+		t.Errorf("leaf entries = %q, want the new empty folder kept", got)
+	}
+	for _, name := range []string{".git", "t.txt"} {
+		if _, err := os.Lstat(filepath.Join(moved, name)); err != nil {
+			t.Errorf("the moved leaf lost %s: %v", name, err)
+		}
+	}
+	if got := f.regs(t); !slices.Equal(got, []string{"w1"}) {
+		t.Errorf("registrations = %q, want w1 kept", got)
+	}
+	if !f.hasRef(t, "w1") {
+		t.Error("refs/heads/w1 is gone, want it kept")
+	}
+}
+
+// TestRemoveCreatedLeafKeepsAReplacedLeaf pins the identity guard of
+// removeCreatedLeaf: a folder that replaced the leaf of the checkpoint keeps its
+// files.
+func TestRemoveCreatedLeafKeepsAReplacedLeaf(t *testing.T) {
+	leaf := filepath.Join(t.TempDir(), "w1")
+	if err := os.Mkdir(leaf, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	cp := checkpointCreatedWorktree(leaf)
+	defer cp.release()
+	if err := os.Rename(leaf, leaf+"x"); err != nil {
+		t.Fatal(err)
+	}
+	writeFile(t, filepath.Join(leaf, "keep.txt"), "x", 0o644)
+	removeCreatedLeaf(leaf, cp)
+	if _, err := os.Stat(filepath.Join(leaf, "keep.txt")); err != nil {
+		t.Errorf("the replacing folder lost its file: %v", err)
+	}
+}
+
 // TestWorktreeCreateRollbackKeepsReplacedRegistration pins claustrum's own identity
 // guard of the rollback (D24). The stub changes the registrations folder and then
 // fails the read-tree. claustrum removes no folder of it. The frame is the plain

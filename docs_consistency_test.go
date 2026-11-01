@@ -604,7 +604,7 @@ func TestDocsEveryErrorCodeIsDocumented(t *testing.T) {
 // because the documents grew past what a person can read. A limit goes down, never
 // up, without the maintainer's word.
 var docWordLimits = map[string]int{
-	"AGENTS.md":                                6018, // the staged add of be1c1ca5. 5794: the signals at a long root, measured. 5792: the approval of the long-path dials. 5767: the long-path dials of the host cleaner and plugins.prune. 5722: TASK-294: the daemon dial of a long socket path. 5706: the sweep on Linux and macOS of be1c1ca5. 5671: the build of the new prunes. 5670: the prune before the fetch of -install. 5632: the deadline of timeoutMs by the end of the add. 5628: the file that Windows cannot read. 5619: the empty folder that Windows cannot read. 5592: the temp-folder test of 683cc6a9. 5537: the two .synced removes of 683cc6a9
+	"AGENTS.md":                                6060, // the .git file gone after the checkout of be1c1ca5. 6018: the staged add of be1c1ca5. 5794: the signals at a long root, measured. 5792: the approval of the long-path dials. 5767: the long-path dials of the host cleaner and plugins.prune. 5722: TASK-294: the daemon dial of a long socket path. 5706: the sweep on Linux and macOS of be1c1ca5. 5671: the build of the new prunes. 5670: the prune before the fetch of -install. 5632: the deadline of timeoutMs by the end of the add. 5628: the file that Windows cannot read. 5619: the empty folder that Windows cannot read. 5592: the temp-folder test of 683cc6a9. 5537: the two .synced removes of 683cc6a9
 	"CONTRIBUTING.md":                          1071,
 	"README.md":                                1133, // 13 are the HTML tokens of the logo <picture> block (maintainer, 2026-10-31)
 	"SECURITY.md":                              1609, // the ssh door of be1c1ca5. 1553 before
@@ -634,7 +634,7 @@ var docWordLimits = map[string]int{
 	"docs/protocol/git-rules-trust.md":         4642, // the 1 MiB commondir reason of be1c1ca5. 4637: TASK-313: the not_a_repo answer of the create. 4601: the unsearchable git directory and the could-not-be-examined text. 4493: TASK-202: moved from PROTOCOL.md
 	"docs/protocol/git-list-branches.md":       997,  // task-203b: the page rewrite
 	"docs/protocol/git-status.md":              3185, // decision-040: a move between pages, net down in the same PR
-	"docs/protocol/git-worktree-create.md":     8643, // the staged add of be1c1ca5. 7829: the ssh door of be1c1ca5. 7375: the sweep on Linux and macOS of be1c1ca5. 7335: the refusal texts of be1c1ca5. 7018: the start of timeoutMs. 6996: the 2.2 s settle wait (claustrum's own). 6951: task-205: rewrite to the page template
+	"docs/protocol/git-worktree-create.md":     8751, // the .git file gone after the checkout of be1c1ca5. 8643: the staged add of be1c1ca5. 7829: the ssh door of be1c1ca5. 7375: the sweep on Linux and macOS of be1c1ca5. 7335: the refusal texts of be1c1ca5. 7018: the start of timeoutMs. 6996: the 2.2 s settle wait (claustrum's own). 6951: task-205: rewrite to the page template
 	"docs/protocol/git-worktree-remove.md":     4325, // the lock texts of be1c1ca5. 4112: task-206: rewrite to the page template
 	"docs/protocol/launcher-resolve.md":        1620, // task-204: rewrite to the page template
 	"docs/protocol/plugins-prune.md":           1199, // the not-measured dial failures. 1186: a sibling at a long socket path. 1084: task-203b: the page rewrite
@@ -729,7 +729,7 @@ var docSectionRunLimits = map[string]int{
 	"docs/protocol/git-rules-settings-copy.md": 891,
 	"docs/protocol/git-rules-trust.md":         659,
 	"docs/protocol/git-status.md":              414,
-	"docs/protocol/git-worktree-create.md":     2410, // the rows of be1c1ca5. 2389 before
+	"docs/protocol/git-worktree-create.md":     2467, // the .git file row of be1c1ca5. 2410: the rows of be1c1ca5. 2389 before
 	"docs/protocol/git-worktree-remove.md":     1721,
 	"docs/protocol/launcher-resolve.md":        293,
 	"docs/protocol/plugins-prune.md":           258,

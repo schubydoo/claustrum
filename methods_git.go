@@ -2111,6 +2111,21 @@ func gitWorktreeCreateLocked(req *request, p *gitParams, repo string, arrival ti
 				BranchKept: kept,
 			})
 		}
+		// After a good checkout on Linux and macOS, a leaf with no `.git` entry
+		// refuses the create. The leaf goes (removeCreatedLeaf). The registration
+		// and the branch stay. be1c1ca5 answers this text with unsafe_path when a
+		// wrapper deletes the `.git` file at the read-tree call (measured on
+		// Linux). Not measured: macOS (it follows Linux), Windows (it keeps the
+		// earlier answer), a `.git` entry of another kind, and a leaf that cannot
+		// be removed (the text stays alone). The order before the copy step and
+		// the deadline test is claustrum's own, not measured: a good checkout
+		// whose timeoutMs expired gets this answer, and only the leaf goes. A
+		// folder that replaced the leaf gets it too, and the identity guard keeps
+		// that folder.
+		if runtime.GOOS != "windows" && leafGitFileGone(p.WorktreePath) {
+			removeCreatedLeaf(p.WorktreePath, checkpoint)
+			return refuseUnsafe(gitFileGoneText(p.WorktreePath))
+		}
 	}
 	// Post-condition: the add must have populated the directory claustrum created, not
 	// one swapped in during the add. claustrum's own guard; empty on an unraced create.
