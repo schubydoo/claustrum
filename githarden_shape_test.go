@@ -56,7 +56,7 @@ func (c shapeCall) listing() bool {
 }
 
 func (c shapeCall) hardened() bool {
-	return slices.Contains(c.argv, "core.hooksPath=/dev/null")
+	return slices.Contains(c.argv, "core.hooksPath="+hooksNullDevice)
 }
 
 func (c shapeCall) heavy() bool {
@@ -99,13 +99,13 @@ var (
 	shapePins = []string{"GIT_CONFIG_COUNT=2", "GIT_CONFIG_KEY_0=hook.enabled",
 		"GIT_CONFIG_VALUE_0=false", "GIT_CONFIG_KEY_1=hook.event", "GIT_CONFIG_VALUE_1="}
 	// shapeList20 and shapeList28 hold "%s" where the excludes file goes.
-	shapeList20 = []string{"core.hooksPath=/dev/null", "core.fsmonitor=", "branch.autoSetupMerge=false",
+	shapeList20 = []string{"core.hooksPath=" + hooksNullDevice, "core.fsmonitor=", "branch.autoSetupMerge=false",
 		"fetch.bundleURI=", "http.saveCookies=false", "core.alternateRefsCommand=", "alias.remote-https=",
 		"alias.remote-http=", "alias.remote-ssh=", "alias.remote-denied_by_claude_ssh.command=",
 		"help.autocorrect=0", "core.excludesFile=%s", "submodule.recurse=false", "fetch.recurseSubmodules=false",
 		"push.recurseSubmodules=false", "gc.auto=0", "maintenance.auto=false", "advice.graftFileDeprecated=false",
 		"worktree.useRelativePaths=false", "core.longpaths=true"}
-	shapeList28 = []string{"core.fsmonitor=", "core.hooksPath=/dev/null", "core.attributesFile=/dev/null",
+	shapeList28 = []string{"core.fsmonitor=", "core.hooksPath=" + hooksNullDevice, "core.attributesFile=/dev/null",
 		"core.excludesFile=%s", "core.longpaths=true", "protocol.allow=never", "protocol.ext.allow=never",
 		"protocol.fd.allow=never", "protocol.file.allow=never", "protocol.git.allow=never",
 		"protocol.ssh.allow=never", "protocol.http.allow=never", "protocol.https.allow=never",

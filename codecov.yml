@@ -194,6 +194,9 @@ component_management:
         # sourceBranch start-commit choice for git.worktree_create.
         - worktreesource.go
         - githarden.go
+        # the core.hooksPath value of each git call that sets it (be1c1ca5).
+        - hooksdevice_unix.go
+        - hooksdevice_windows.go
         # the time limits of the git calls (5fd08069).
         - gitstop.go
         # the test that a git call still runs, at the bound of the second checkout listing.

@@ -56,7 +56,7 @@ func (c envCall) configRead() bool { return slices.Contains(c.argv, "--no-includ
 
 func (c envCall) version() bool { return slices.Equal(c.argv, []string{"version"}) }
 
-func (c envCall) hardened() bool { return slices.Contains(c.argv, "core.hooksPath=/dev/null") }
+func (c envCall) hardened() bool { return slices.Contains(c.argv, "core.hooksPath="+hooksNullDevice) }
 
 // pins returns the KEY=VALUE pairs of the call's GIT_CONFIG_COUNT set, in index order.
 func (c envCall) pins(t *testing.T) []string {

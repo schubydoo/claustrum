@@ -48,6 +48,8 @@ A client sees the hardening here:
   ([Calls outside a repository](#calls-outside-a-repository)). On Windows the `status`,
   `ls-files` and `diff-index` calls of `git.status` pass `/dev/null` where the value is the null device (claustrum's
   own, [D16](../DIVERGENCES.md#d16)).
+- Each call that sets `core.hooksPath` passes `\\.\NUL` on Windows and `/dev/null` on Linux and macOS
+  (`be1c1ca5`, measured on Linux and Windows, macOS not measured).
 - The config listings run with `LC_ALL=C` and `LANGUAGE=C`. git then writes its
   listing errors in English (measured on Linux). The one exception is the second
   listing before the checkout of a create in the state `shadow`, which adds

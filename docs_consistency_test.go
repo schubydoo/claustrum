@@ -628,7 +628,7 @@ var docWordLimits = map[string]int{
 	"docs/protocol/files-validate.md":          365,
 	"docs/protocol/flags.md":                   2633, // TASK-202: moved from PROTOCOL.md
 	"docs/protocol/git-info.md":                1850, // task-203b: the page rewrite
-	"docs/protocol/git-rules-calls.md":         5121, // TASK-202: moved from PROTOCOL.md
+	"docs/protocol/git-rules-calls.md":         5145, // TASK-291: the core.hooksPath value. 5121: TASK-202: moved from PROTOCOL.md
 	"docs/protocol/git-rules-config.md":        2884, // TASK-202: moved from PROTOCOL.md
 	"docs/protocol/git-rules-settings-copy.md": 3300, // TASK-260: the third run of the call about the repository. TASK-245: the folder .probe, new rules
 	"docs/protocol/git-rules-trust.md":         4637, // TASK-313: the not_a_repo answer of the create. 4601: the unsearchable git directory and the could-not-be-examined text. 4493: TASK-202: moved from PROTOCOL.md
@@ -644,7 +644,7 @@ var docWordLimits = map[string]int{
 	"docs/protocol/process-reattach.md":        1046, // TASK-229: attach, fresh and proof
 	"docs/protocol/process-spawn.md":           3508, // the temp-folder test of 683cc6a9. 3474: task-204: rewrite to the page template
 	"docs/protocol/process-stdin.md":           929,  // TASK-229: attach
-	"docs/protocol/server.md":                  1535, // the lists of 683cc6a9. 1496: TASK-267: four feature names in the example and the job name. task-203b: the page rewrite
+	"docs/protocol/server.md":                  1546, // TASK-291: git.hooks_null_device. 1535: the lists of 683cc6a9. 1496: TASK-267: four feature names in the example and the job name. task-203b: the page rewrite
 	"docs/protocol/streams.md":                 584,  // TASK-202: moved from PROTOCOL.md
 }
 

@@ -106,7 +106,7 @@ func TestGoneGitFileInfoCalls(t *testing.T) {
 					switch {
 					case c.listing():
 						steps = append(steps, "list")
-					case argvEndsWith(c.argv, []string{"rev-parse", "--git-dir"}) && slices.Contains(c.argv, "core.hooksPath="+os.DevNull):
+					case argvEndsWith(c.argv, []string{"rev-parse", "--git-dir"}) && slices.Contains(c.argv, "core.hooksPath="+hooksNullDevice):
 						steps = append(steps, "git-dir")
 					}
 				}

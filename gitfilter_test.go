@@ -455,7 +455,7 @@ func wantFirstPairs(t *testing.T, argv []string, pairs ...string) {
 	for _, p := range pairs {
 		want = append(want, "-c", p)
 	}
-	want = append(want, "-c", "core.hooksPath=/dev/null")
+	want = append(want, "-c", "core.hooksPath="+hooksNullDevice)
 	if len(argv) < len(want) || !slices.Equal(argv[:len(want)], want) {
 		t.Fatalf("read-tree argv = %q\nwant it to start with %q", argv, want)
 	}
