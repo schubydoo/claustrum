@@ -108,8 +108,8 @@ Every OS serves the same JSON-RPC methods.
 
 ## Gotchas — Part A: always-on safety (hold these before touching code)
 
-Unmarked behavior follows the reference, pinned at `52d82f0a`, except its
-terminal. It was measured there, on `c8e2f083` or on an earlier build. A D-number,
+Unmarked behavior follows the reference, pinned at `683cc6a9`, except its
+terminal. It was measured there, on `52d82f0a` or on an earlier build. A D-number,
 "claustrum's own", "from the code" and "not measured" mark the exceptions. A
 rule that names another build follows that build. A file, function or Go API
 name describes claustrum's code, not a measurement.

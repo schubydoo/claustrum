@@ -119,7 +119,7 @@ of the real desktop client:
   token and host paths. Never commit one.
 
 The last capture ran against `8de85faa`, a build well behind the current
-baseline, `52d82f0a`. Its result is in
+baseline, `683cc6a9`. Its result is in
 [REFERENCE-BUILDS.md](REFERENCE-BUILDS.md#8de85faaa11694321e937499a18c7ab88f37c76c-2026-05-21).
 Use a capture as a periodic spot-check. Use it again for a build that changes
 `process.*` behavior that the synthetic battery cannot fully model (real
@@ -257,7 +257,7 @@ open of claustrum (from the code, not measured). See
 ### Triage gotchas: when a probe result is misleading
 
 These are the traps that matter for telling drift from expected. In the git and
-files methods, claustrum follows `52d82f0a`, the build that `scripts/UPSTREAM_SHA`
+files methods, claustrum follows `683cc6a9`, the build that `scripts/UPSTREAM_SHA`
 names. The exceptions are the D-entries above, and the places where an item below
 or the linked page names an older build. A probe against an older build
 shows the differences of each item as a build split, not drift. The rules are on
@@ -552,10 +552,10 @@ the reference stays the same.
 Go 1.27 does that. It turns on the `jsonv2` GOEXPERIMENT by default, and the v2
 `Marshal` renders an invalid UTF-8 byte as the literal U+FFFD character (bytes
 `EF BF BD`). Go 1.26 and earlier emit the six-ASCII `\ufffd` escape. The build
-pinned today, `52d82f0a`, carries a go1.25.14 stamp (`go version` on the binary), as
-`5fd08069` does. So it emits the same escape. `files.read` puts raw file bytes
-into `content`, so under Go 1.27 every read of a file with a non-UTF-8 byte
-diverges from the reference. `TestInheritedInvalidUTF8BecomesReplacementChar` and
+pinned today, `683cc6a9`, carries a go1.25.14 stamp (`go version` on the binary), as
+`52d82f0a` and `5fd08069` do. So it emits the
+same escape. `files.read` puts raw file bytes into `content`, so under Go 1.27
+every read of a file with a non-UTF-8 byte diverges from the reference. `TestInheritedInvalidUTF8BecomesReplacementChar` and
 `TestInheritedLoneSurrogateBecomesThreeReplacements` fail under 1.27 for this
 reason. That is the guard working, not a stale expectation.
 
