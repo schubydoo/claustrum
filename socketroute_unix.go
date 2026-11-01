@@ -61,17 +61,6 @@ func socketTooLong(op, path string, limit int) error {
 	return &net.OpError{Op: op, Net: "unix", Addr: &net.UnixAddr{Name: path, Net: "unix"}, Err: &socketTooLongError{limit: limit}}
 }
 
-// changeBackError is the error of a change of folder that could not return to the
-// old working folder. Its text is claustrum's own. The line of `be1c1ca5` after a
-// failed change back is not measured.
-type changeBackError struct{ err error }
-
-func (e *changeBackError) Error() string {
-	return "change back to the working folder: " + e.err.Error()
-}
-
-func (e *changeBackError) Unwrap() error { return e.err }
-
 // changeBack returns to the folder of back. A var so a test can make it fail.
 var changeBack = func(back *os.File) error { return back.Chdir() }
 

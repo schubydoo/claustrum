@@ -3,7 +3,6 @@
 package main
 
 import (
-	"errors"
 	"fmt"
 	"net"
 	"os"
@@ -18,12 +17,7 @@ import (
 // working folder ends the launcher with exit 1 (claustrum's own, not measured).
 func livePredecessorPID(socket string) int {
 	c, err := dialUnixPath(socket, 200*time.Millisecond)
-	var back *changeBackError
-	if errors.As(err, &back) {
-		fmt.Fprintf(os.Stderr, "claustrum: %v\n", err)
-		osExit(1)
-		return 0
-	}
+	exitOnChangeBack(err)
 	if err != nil {
 		return 0
 	}

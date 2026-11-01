@@ -935,6 +935,7 @@ func waitForDaemonAccept(socket string, predPID int) (accepted, sawPredecessor b
 	deadline := time.Now().Add(daemonStartTimeout)
 	for {
 		c, err := dialUnixPath(socket, max(time.Until(deadline), time.Millisecond))
+		exitOnChangeBack(err)
 		if err == nil {
 			pid := daemonPeerPID(c)
 			_ = c.Close()

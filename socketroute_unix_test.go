@@ -301,3 +301,20 @@ func TestLivePredecessorPIDChangeBackFails(t *testing.T) {
 		t.Errorf("exited=%v code=%d, want exit 1", exited, code)
 	}
 }
+
+// The launcher wait ends with exit 1 too when its connect cannot change back.
+func TestWaitForDaemonAcceptChangeBackFails(t *testing.T) {
+	noFolderHandle(t)
+	sock := longSocketPath(t, 120, "rpc.sock")
+	old := changeBack
+	changeBack = func(back *os.File) error {
+		_ = back.Chdir() // keep the test process in its folder
+		return errors.New("stub")
+	}
+	t.Cleanup(func() { changeBack = old })
+	stubOsExit(t)
+	code, exited := catchExit(func() { waitForDaemonAccept(sock, 0) })
+	if !exited || code != 1 {
+		t.Errorf("exited=%v code=%d, want exit 1", exited, code)
+	}
+}
