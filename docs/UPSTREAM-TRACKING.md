@@ -321,6 +321,9 @@ the linked pages.
   cache hit.
 - The `-install` prunes of a cache miss and `cliRemoved` follow `be1c1ca5`, a build split
   against `683cc6a9`.
+- The `GIT_TRACE2*=0` and `GIT_SSH_COMMAND=false` entries of the git calls and the null-device
+  `core.hooksPath` follow `be1c1ca5`, a build split against `683cc6a9`
+  ([Variables that the git calls keep or drop](protocol/git-rules-calls.md#variables-that-the-git-calls-keep-or-drop)).
 - The git filters of the `git.worktree_create` checkout follow `5fd08069`. Against
   `89cb6289` the refusal `repository_only_filter` is new. So are the texts for a
   name over 200 bytes and for more than 64 filters (`89cb6289` not run for 64

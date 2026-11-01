@@ -286,7 +286,7 @@ func TestHardenedGitEnvOrder(t *testing.T) {
 				"GIT_NO_REPLACE_OBJECTS=1", "GIT_GRAFT_FILE=" + os.DevNull}, tc.tail)
 			heavy := slices.Concat(head, []string{"GIT_NO_LAZY_FETCH=1", "GIT_NO_REPLACE_OBJECTS=1",
 				"GIT_GRAFT_FILE=" + os.DevNull, "GIT_ALLOW_PROTOCOL=denied_by_claude_ssh",
-				"GIT_ASKPASS=", "GIT_TERMINAL_PROMPT=0"}, tc.tail)
+				"GIT_ASKPASS=", "GIT_TERMINAL_PROMPT=0", sshOffEntry}, tc.tail)
 			if got := hardenedEnvFrom(tc.daemon, false, pin, nil); !slices.Equal(got, light) {
 				t.Errorf("light hardened env\n got %q\nwant %q", got, light)
 			}

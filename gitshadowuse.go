@@ -66,6 +66,10 @@ type gitUse struct {
 	// live is the off switch of a git request after its gate (atCommand), or
 	// nil.
 	live *liveSwitch
+	// sshKept is set in a git.worktree_create and a git.worktree_remove. It
+	// reports whether the off switch holds the daemon now (request.offLive).
+	// It is nil in every other request (gitUse.sshOff).
+	sshKept func() bool
 }
 
 // liveSwitch lets the later git commands of a request follow the off switch.
@@ -139,7 +143,7 @@ func (u gitUse) formNow(ask bool) (f gitUse, off bool) {
 		return u, false
 	}
 	if l.off() {
-		return gitUse{stop: l.stop, live: l}, true
+		return gitUse{stop: l.stop, live: l, sshKept: u.sshKept}, true
 	}
 	if l.pending {
 		l.pending = false
@@ -717,25 +721,37 @@ func (u gitUse) gitDirPin(dir string) []string {
 //
 // The listings and the read-tree in the new worktree keep the four values in
 // both forms (rows N3 and N4). They do not come here.
+//
+// The profile ends with GIT_SSH_COMMAND=false when sshOff allows it
+// (withSSHOff).
 func (u gitUse) profileEnv(heavy bool) []string {
 	if heavy || (!u.inFolder() && !u.lightSix) {
-		return profileEnv(heavy)
+		return withSSHOff(profileEnv(heavy), u.sshOff())
 	}
-	return []string{
+	return withSSHOff([]string{
 		"GIT_ALLOW_PROTOCOL=denied_by_claude_ssh",
 		"GIT_TERMINAL_PROMPT=0",
 		"GIT_NO_REPLACE_OBJECTS=1",
 		"GIT_GRAFT_FILE=" + os.DevNull,
 		"GIT_NO_LAZY_FETCH=1",
 		"GIT_ASKPASS=",
-	}
+	}, u.sshOff())
+}
+
+// sshOff reports whether a call of this request with GIT_NO_LAZY_FETCH=1 and
+// GIT_ASKPASS= gets GIT_SSH_COMMAND=false. be1c1ca5 gives it to every such
+// call of the five git methods in the state shadow. With "shadowDirOff":true
+// git.info, git.status and git.list_branches keep it. The calls of a create
+// and a remove that name no copy then keep the daemon's own value (measured
+// on Linux). A call that names the copy gets it always, and so do the calls
+// in the state fallback-git (from the code, not measured).
+func (u gitUse) sshOff() bool {
+	return u.shadow() || u.sshKept == nil || !u.sshKept()
 }
 
 // precursorEnv is precursorEnv with the profile of this request.
 func (u gitUse) precursorEnv(heavy bool, pin []string) []string {
-	env := append(listingEnvBase(), u.profileEnv(heavy)...)
-	env = append(env, pin...)
-	return append(env, "LC_ALL=C", "LANGUAGE=C")
+	return precursorEnvWith(u.profileEnv(heavy), pin)
 }
 
 // hardenedGitEnv is hardenedGitEnv with the profile of this request.

@@ -180,7 +180,8 @@ func TestIncludeVersionExitAndSearch(t *testing.T) {
 }
 
 // TestGitVersionEnvUnchanged covers item 17: `git version` gets the daemon's
-// environment unchanged, with none of the hardened GIT_* variables.
+// environment unchanged, with none of the hardened GIT_* variables. The trace
+// entries of withTraceOff are the one change.
 func TestGitVersionEnvUnchanged(t *testing.T) {
 	requireGit(t)
 	isolateGitConfig(t)
@@ -190,7 +191,7 @@ func TestGitVersionEnvUnchanged(t *testing.T) {
 		t.Fatal("git version 2.32.0 selects the old scan")
 	}
 	var want []string
-	for _, kv := range os.Environ() {
+	for _, kv := range withTraceOff(os.Environ(), gitEnvHere) {
 		if strings.HasPrefix(kv, "GIT_") {
 			want = append(want, kv)
 		}
