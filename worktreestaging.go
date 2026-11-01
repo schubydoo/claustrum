@@ -472,7 +472,9 @@ type addIncomplete struct {
 func (e *addIncomplete) Error() string { return e.text }
 
 // addRefused is the error of a `worktree add` call that git ended well, whose
-// new worktree the daemon refuses before the staging folder is made. The create answers it with unsafe_path, and its rollback
+// new worktree the daemon refuses before the staging folder is made, or after
+// the move when the move removed the moved registration again. The create
+// answers it with unsafe_path, and its rollback
 // removes the leaf and the branch and no registration.
 type addRefused struct{ text string }
 
@@ -641,9 +643,9 @@ var removeStagingEntry = func(root *os.Root, name string, tree bool) error {
 
 // sweepOldStaging removes the old staging entries of the git directory gitDir.
 // git is the root at that directory: the folder that the gate of the create
-// accepted and holds open. It has two callers. On Windows addStage.finish
-// calls it, and on Linux and macOS worktreeAdd does. Each tests before this
-// step that the path of the git directory still names the held folder.
+// accepted and holds open. addStage.finish calls it on every system, after
+// its test that the path of the git directory still names the held folder.
+// It skips the sweep after acceptedGitDir.replacedAtPath.
 // now is the time after that call ended.
 //
 // THIS DELETES ENTRIES THAT THE DAEMON DID NOT MAKE. On 5fd08069 a create
@@ -681,7 +683,7 @@ var removeStagingEntry = func(root *os.Root, name string, tree bool) error {
 // Only git.worktree_create comes here, after a good `worktree add` in the
 // state shadow. On Windows git.info and git.status leave every entry (120
 // cells). On Linux and macOS be1c1ca5 removes old folders and links the same
-// way (worktreeAdd, measured on Linux and macOS). A create that fails, a
+// way (addStage.finish, measured on Linux and macOS). A create that fails, a
 // request with the member and the state fallback-git are not measured, and
 // they run no cleanup.
 func sweepOldStaging(git *os.Root, gitDir string, now time.Time) {
