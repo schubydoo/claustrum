@@ -18,13 +18,13 @@ the same JSON-RPC methods.
 |---|---|---|
 | Modes | `main.go`, `config.go`, `buildstamp.go`, `bridge.go`, `selflocate_*.go`, `ignorepipe*.go` | The flags and the mode switch. `claustrum.conf`. The version stamp. `-bridge` and `-stop`. The self-locate test of `-serve`. No exit on SIGPIPE in `-install`, `-probe-cli` and `-bridge`. |
 | Transport | `server.go`, `idleconn.go`, `detach_*.go`, `dahandoff.go`, `livepred_*.go`, `peerpid_*.go`, `peercheck*.go`, `pipetransport*.go`, `raiselimit_*.go`, `socketroute*.go` | The `AF_UNIX` listener and the connection loop. The idle close of a connection. The self-daemonize. The socket handoff between two daemons. The peer check. The opt-in Windows named pipe. The open-file limit that children inherit. |
-| Dispatch | `rpc.go`, `internal/rpc/`, `compat_rpc.go`, `methods_*.go`, `capfeatures_*.go`, `expandpath.go`, `homeguard.go`, `filesread_*.go`, `fileslist_*.go`, `odirectory_*.go`, `pluginsibling_*.go`, `handlers/prune.go` | The request and response types, the error codes, the dispatch order and the params gate. Result structs, whose field order is wire contract. `methods_*.go` has the 21 method handlers. The `server.capabilities` features. The `~` expansion. `wipesHomeDir`. OS parts of `files.*` and `plugins.prune`. `methods_launcher.go` also holds the settings reader, the `process.spawn` launcher checks and the child env strip. |
+| Dispatch | `rpc.go`, `internal/rpc/`, `compat_rpc.go`, `methods_*.go`, `capfeatures_*.go`, `expandpaths.go`, `internal/homeguard/`, `compat_homeguard.go`, `filesread_*.go`, `fileslist_*.go`, `odirectory_*.go`, `pluginsibling_*.go`, `handlers/prune.go` | The request and response types, the error codes, the dispatch order and the params gate. Result structs, whose field order is wire contract. `methods_*.go` has the 21 method handlers. The `server.capabilities` features. `ExpandPaths`. `wipesHomeDir`. OS parts of `files.*` and `plugins.prune`. `methods_launcher.go` also holds the settings reader, the `process.spawn` launcher checks and the child env strip. |
 | Process | `process.go`, `internal/sysproc/`, `*sysproc*.go`, `childjobs*.go`, `execchild*.go`, `sessionsupersede.go`, `shellenv*.go`, `shellagent*.go` | The registry, seq, replay buffer and subscribers. The signal names. The kill of a child and its Windows job. The exec-child trampoline. The supersede of a session spawn. The login-shell PATH. The SSH agent hand-off. |
 | Git | `git*.go`, `worktree*.go`, `externalunsupported_*.go`, `spelling_*.go` | See [The git subsystem](#the-git-subsystem). |
 | Install | `install*.go`, `libc_*.go`, `managedlauncher*.go` | `-install` and `-probe-cli`. The download. The file test of a cache hit. The libc probe. The managed launcher. |
 | Host and lock | `daemon_runlock_*.go`, `tokenpersist.go`, `childrecord*.go`, `childreap*.go`, `hostclean*.go`, `orphanexit.go`, `selfexit_*.go` | The run-dir lock. `daemon.token`. The child records and their reap. The host cleaner. The orphan exit and the idle exit. |
 | Logs | `internal/logging/`, `internal/metrics/`, `internal/wirelog/`, `compat_logging.go`, `compat_metrics.go`, `compat_wirelog.go` | The leveled stderr logger. The opt-in `/metrics` counters. The opt-in `-wire-log` capture. |
-| Shared | `internal/renameretry/`, `pathcanon_*.go` | The retry of a rename on Windows. The canonical form of a path. |
+| Shared | `internal/renameretry/`, `internal/pathcanon/`, `compat_pathcanon*.go` | The Windows rename retry. The canonical form and `~` expansion of a path. |
 
 ## The git subsystem
 
@@ -237,7 +237,7 @@ measured it.
 | `chdir <p>: stat <p>: no such file or directory` | error messages built from `err.Error()` | `os` `*PathError` (`op + " " + path + ": " + errno`) | inherited |
 | Frame `data` alphabet and `=` padding | `process.*` stdout/stderr frames | `base64.StdEncoding` | inherited |
 | Result field ORDER | `internal/rpc/results.go` | `encoding/json` emits struct fields in declaration order | **deliberate**. Order is chosen to match, and results are structs, never maps, precisely because maps sort |
-| Path cleaning for `~`-prefixed paths | `expandpath.go` | `filepath.Join`/`Clean` | **deliberate**. The lexical clean was measured and matched (PR 205) |
+| Path cleaning for `~`-prefixed paths | `internal/pathcanon/expandpath.go` | `filepath.Join`/`Clean` | **deliberate**. The lexical clean was measured and matched (PR 205) |
 
 The decode-side row is the one row with a user-visible consequence: a file
 whose name is not valid UTF-8 cannot be addressed through the protocol at all,

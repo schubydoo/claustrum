@@ -158,7 +158,7 @@ func Bind(req *Request, v PathExpander) *Response {
 //
 // A type assertion inside Bind was the obvious design and is the wrong
 // one: a new path-bearing struct that forgot the method would fail the assertion
-// silently and keep the literal-"~" behavior that expandpath.go exists to remove. The
+// silently and keep the literal-"~" behavior that pathcanon.ExpandTilde exists to remove. The
 // failure mode of that bug is not an error — it is a request quietly operating
 // on a path named "~", which is how claustrum came to create a literal `~`
 // directory inside a user's repo.

@@ -17,7 +17,7 @@ import (
 // letter's ":" (C:) is not flagged, and both "\" and "/" are treated as separators (Go
 // path semantics; the reference's backslash refusals were measured byte-for-byte on
 // Windows). A var so a test on the linux coverage cell can stub it to exercise
-// worktreePathRefusal's spelling branch (cf. homeguard.go's pathsAreCaseInsensitive) —
+// worktreePathRefusal's spelling branch (cf. internal/homeguard/homeguard.go's pathsAreCaseInsensitive) —
 // the real check needs Windows filepath semantics.
 var windowsPathSpellingHazard = func(p string) bool {
 	rest := p[len(filepath.VolumeName(p)):]

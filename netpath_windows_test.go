@@ -9,20 +9,22 @@ import (
 	"testing"
 
 	"golang.org/x/sys/windows"
+
+	"github.com/schubydoo/claustrum/internal/pathcanon"
 )
 
-// fakeDriveTypes makes driveType answer from types, by drive root, for the
+// fakeDriveTypes makes pathcanon.DriveType answer from types, by drive root, for the
 // rest of the test. A root that types does not name gets DRIVE_FIXED.
 func fakeDriveTypes(t *testing.T, types map[string]uint32) {
 	t.Helper()
-	old := driveType
-	driveType = func(root string) uint32 {
+	old := pathcanon.DriveType
+	pathcanon.DriveType = func(root string) uint32 {
 		if d, ok := types[root]; ok {
 			return d
 		}
 		return windows.DRIVE_FIXED
 	}
-	t.Cleanup(func() { driveType = old })
+	t.Cleanup(func() { pathcanon.DriveType = old })
 }
 
 // A UNC path and a path on a drive that GetDriveType calls DRIVE_REMOTE are

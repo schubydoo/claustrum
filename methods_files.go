@@ -397,35 +397,6 @@ func checkDestViews(parent *os.Root, cleanedDest, destName string) (os.FileInfo,
 	return byHandle, fmt.Errorf("%q %w", destName, errDestViewsDiffer)
 }
 
-// isFilesystemRoot reports whether p names a filesystem root, on any platform.
-//
-// The gate this backs matters because filesExtractTar WIPES destDir before
-// extracting. The wipe removes the last name of destDir as a tree, through a
-// handle of the parent folder. A root has no parent and no last name.
-//
-// Whether the reference refuses a root destDir is NOT measured — an earlier
-// version of this comment asserted "the reference has no such guard", which is
-// an absence claim with no probe behind it, and
-// docs/protocol/files-extract-tar.md files the refusal as neither parity nor
-// divergence. What is certain is the consequence
-// here: the steps after this guard take a parent folder and a last name from
-// destDir, so the guard must not have a platform-shaped hole whatever the
-// reference does.
-//
-// It used to compare `filepath.Clean(destDir) == "/"`. That is a Unix-only
-// notion of root: a Windows volume root cleans to `C:\`, never the string "/",
-// and filepath.IsAbs accepts it — so `C:\` (and a UNC share root) passed the
-// gate and reached the RemoveAll. Raised in review on #224 as pre-existing.
-//
-// `filepath.Dir(x) == x` is the platform's own definition of "has no parent",
-// true for "/" on Unix and for a drive or UNC root on Windows, and it needs no
-// separate spelling per platform. Clean first so a trailing separator ("/" vs
-// "//", `C:\` vs `C:\\`) cannot slip past by shape.
-func isFilesystemRoot(p string) bool {
-	c := filepath.Clean(p)
-	return filepath.Dir(c) == c
-}
-
 func filesExtractTar(req *request) response {
 	var p extractTarParams
 	if bad := bindParams(req, &p); bad != nil {
@@ -442,7 +413,7 @@ func filesExtractTar(req *request) response {
 	// before this function is entered, which is how an in-repo fuzzer deleted the
 	// maintainer's home directory on 2026-08-02. Refused here, alongside the root
 	// check, so neither reaches extractTarGz: both errors precede the archive
-	// open, so the archive is not consumed either. See homeguard.go for why
+	// open, so the archive is not consumed either. See internal/homeguard/homeguard.go for why
 	// containment is the test and why ~/... stays allowed.
 	if wipesHomeDir(p.DestDir) {
 		return okResult(req.ID, extractResult{Error: errDestDirHoldsHome(p.DestDir).Error()})

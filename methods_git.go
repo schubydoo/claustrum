@@ -2866,7 +2866,7 @@ func removeGoneWorktree(req *request, p *gitParams, repo, path string) response 
 
 // worktreeRemoveHomeRefusal is the home guard of git.worktree_remove (D2). It refuses a
 // worktreePath that is the home directory or holds it, before anything is deleted.
-// worktreePath is `~`-expanded first (expandpath.go), and at 5db5e4a the reference
+// worktreePath is `~`-expanded first (internal/pathcanon/expandpath.go), and at 5db5e4a the reference
 // answered {"success":true} to "worktreePath":"~" and deleted the home directory. The
 // containment checks refuse that input first today, so this guard is defense in depth.
 // It is the same defect that destroyed the maintainer's home directory through
@@ -2965,26 +2965,4 @@ func adminRecordNames(adminDir string, b []byte, worktreePath string) bool {
 	// where the reference deletes the entry.
 	return sameCanonicalPath(canonicalPathOfGone(record),
 		canonicalPathOfGone(filepath.Join(worktreePath, ".git")))
-}
-
-// canonicalPathOfGone is canonicalPath for a path that possibly no longer exists. It resolves
-// the nearest existing ancestor and joins the missing rest back on. After a delete
-// the worktree is gone, but its parent still resolves. A remove named through a
-// symlinked root (macOS /tmp -> /private/tmp) then still matches the path in the
-// entry, where git records the resolved path. Measured against f6010b97 on macOS, where the
-// reference deletes the entry.
-func canonicalPathOfGone(p string) string {
-	p = filepath.Clean(p)
-	var missing []string
-	for cur := p; ; {
-		if _, err := os.Lstat(cur); err == nil {
-			return filepath.Join(append([]string{canonicalPath(cur)}, missing...)...)
-		}
-		parent := filepath.Dir(cur)
-		if parent == cur {
-			return p
-		}
-		missing = append([]string{filepath.Base(cur)}, missing...)
-		cur = parent
-	}
 }

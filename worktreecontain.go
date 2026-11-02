@@ -31,7 +31,7 @@ import (
 //
 // This containment is also why it subsumes the D2 home-wipe guard: a "~"-expanded
 // home path is not strictly under a repo, so it is refused here — with the
-// reference's own wording — before wipesHomeDir (homeguard.go) is ever reached.
+// reference's own wording — before wipesHomeDir (internal/homeguard/homeguard.go) is ever reached.
 //
 // Empty worktreePath is NOT judged here. Both callers answer "" with a "does not
 // name a directory" text before they call this.

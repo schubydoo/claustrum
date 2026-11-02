@@ -15,15 +15,15 @@ import (
 // 2026-07-30 and claimed it covered "~/" and "~//f". It did not. That probe
 // asserted with files.validate, whose reply is {valid,isDir} and echoes no path,
 // so it could not have distinguished <home>/f.txt from <home>//f.txt. The two
-// rows it recorded were inferred, and both were wrong — see expandpath.go.
+// rows it recorded were inferred, and both were wrong — see internal/pathcanon/expandpath.go.
 func TestExpandPath(t *testing.T) {
 	if runtime.GOOS == "windows" {
-		// Not because Windows is unmeasured — it is, see expandpath.go. The
+		// Not because Windows is unmeasured — it is, see internal/pathcanon/expandpath.go. The
 		// expectations below are written in Unix spelling ("~/f.txt" -> home +
 		// "/f.txt"), and the reference rewrites "/" to "\" there, so this table
 		// pins the Unix form only. TestExpandPathBareTildeIsNotCleaned covers
 		// the one row whose behaviour is spelling-independent.
-		t.Skip("this table is written in Unix path spelling; Windows is pinned in expandpath.go")
+		t.Skip("this table is written in Unix path spelling; Windows is pinned in internal/pathcanon/expandpath.go")
 	}
 	home := t.TempDir()
 	t.Setenv("HOME", home)
@@ -138,12 +138,12 @@ func TestExpandPathWithoutHome(t *testing.T) {
 // which the compile-time interface cannot catch.
 func TestExpandPathsCoversEveryPathField(t *testing.T) {
 	if runtime.GOOS == "windows" {
-		// Not because Windows is unmeasured — it is, see expandpath.go. The
+		// Not because Windows is unmeasured — it is, see internal/pathcanon/expandpath.go. The
 		// expectations below are written in Unix spelling ("~/f.txt" -> home +
 		// "/f.txt"), and the reference rewrites "/" to "\" there, so this table
 		// pins the Unix form only. TestExpandPathBareTildeIsNotCleaned covers
 		// the one row whose behaviour is spelling-independent.
-		t.Skip("this table is written in Unix path spelling; Windows is pinned in expandpath.go")
+		t.Skip("this table is written in Unix path spelling; Windows is pinned in internal/pathcanon/expandpath.go")
 	}
 	home := t.TempDir()
 	t.Setenv("HOME", home)

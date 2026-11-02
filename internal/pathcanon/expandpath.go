@@ -1,4 +1,4 @@
-package main
+package pathcanon
 
 import (
 	"os"
@@ -6,7 +6,7 @@ import (
 	"strings"
 )
 
-// expandPath resolves a leading `~` against the daemon user's home directory,
+// ExpandTilde resolves a leading `~` against the daemon user's home directory,
 // matching the reference daemon.
 //
 // The rule is deliberately narrow. Every clause below was probe-measured against
@@ -61,7 +61,7 @@ import (
 // A home directory that cannot be resolved leaves the path untouched rather than
 // failing the request, so a daemon running without HOME behaves as it did before
 // expansion existed.
-func expandPath(p string) string {
+func ExpandTilde(p string) string {
 	if p != "~" && !strings.HasPrefix(p, "~/") {
 		return p
 	}
@@ -90,28 +90,3 @@ func expandPath(p string) string {
 	// form keeps OS resolution on both daemons. Same request, different file.
 	return filepath.Join(home, p[2:])
 }
-
-// Each params struct has an ExpandPaths method, so it implements
-// rpc.PathExpander, the parameter type of rpc.Bind.
-func (p *pathParams) ExpandPaths()     { p.Path = expandPath(p.Path) }
-func (p *fileReadParams) ExpandPaths() { p.Path = expandPath(p.Path) }
-func (p *extractTarParams) ExpandPaths() {
-	p.ArchivePath = expandPath(p.ArchivePath)
-	p.DestDir = expandPath(p.DestDir)
-}
-func (p *gitParams) ExpandPaths() {
-	p.Path = expandPath(p.Path)
-	p.BaseRepo = expandPath(p.BaseRepo)
-	p.WorktreePath = expandPath(p.WorktreePath)
-	p.WorktreeRoot = expandPath(p.WorktreeRoot)
-	// BranchName and SourceBranch are refs, not paths — never expanded.
-}
-func (p *spawnParams) ExpandPaths() { p.Cwd = expandPath(p.Cwd) }
-
-// The process-control params address a process by id and carry no filesystem
-// paths, so expansion is a no-op. Declared explicitly rather than omitted: the
-// interface is what forces that judgement to be made for every params type.
-func (p *stdinParams) ExpandPaths()       {}
-func (p *killParams) ExpandPaths()        {}
-func (p *killAndWaitParams) ExpandPaths() {}
-func (p *reattachParams) ExpandPaths()    {}
