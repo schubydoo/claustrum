@@ -25,8 +25,8 @@ func TestReapOrphansRefusesRecordSwappedAfterTypeTest(t *testing.T) {
 	if node, _ := ownReapIdentity(); node == "" {
 		t.Skip("no node identity on this host")
 	}
-	// The helper leads its own group (newSysProcAttr sets Setpgid), so a signal to
-	// its group reaches nothing but this child.
+	// The helper leads its own group (newSysProcAttr sets Setpgid) and starts no child.
+	// Each signal goes through cmd.Process, which sends nothing once the helper is reaped.
 	exe, env := helperCommand(t, "sleep")
 	cmd := exec.Command(exe, "60")
 	cmd.Env = buildEnv(env)
@@ -38,7 +38,7 @@ func TestReapOrphansRefusesRecordSwappedAfterTypeTest(t *testing.T) {
 	exited := make(chan struct{})
 	go func() { _, _ = cmd.Process.Wait(); close(exited) }()
 	t.Cleanup(func() {
-		_ = syscall.Kill(-helper, syscall.SIGKILL)
+		_ = cmd.Process.Kill()
 		<-exited
 	})
 
@@ -55,13 +55,13 @@ func TestReapOrphansRefusesRecordSwappedAfterTypeTest(t *testing.T) {
 
 	sim := newProcSim(t)
 	sim.addVerified(helper, "9000", runDir)
-	// A kill reaches the real group of the helper only, and every other pid gets none.
+	// A kill reaches the real helper only, and every other pid gets none.
 	killGroup = func(pid int, sig syscall.Signal) error {
 		sim.kills = append(sim.kills, killRec{pid, sig})
 		if pid != helper {
 			return nil
 		}
-		return syscall.Kill(-pid, sig)
+		return cmd.Process.Signal(sig)
 	}
 
 	swaps := 0
