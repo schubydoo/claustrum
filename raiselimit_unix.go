@@ -25,7 +25,7 @@ var (
 // Only after a raise that works, it writes one INFO line to the daemon log with
 // the limit it set. CLAUSTRUM_LOG_LEVEL=warn drops that line. f6010b97 writes the
 // same `[daemon]` line, without a level tag, as the first line of its log. That
-// is before the "listening" line. Linux and macOS measured this, with the
+// is before the "listening" line. This was measured on Linux and macOS, with the
 // value 65536. The line was not seen on Windows. A failed raise writes no line. That
 // path was not measured.
 func raiseInheritedFileLimit() {

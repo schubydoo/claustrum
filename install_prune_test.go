@@ -51,7 +51,7 @@ func vf(v string) string { return v + cliExeSuffix }
 // TestPruneRows runs one -install for each measured prune case of 5fd08069 and
 // compares the names that are left in the cli-dir. The cases ran on Linux,
 // macOS and Windows. The names of a version file carry ".exe" on Windows, as
-// in the W cells. The CLI is this test binary in the "cli-stub" helper mode.
+// in the Windows cases. The CLI is this test binary in the "cli-stub" helper mode.
 //
 // SAFETY: every path is under t.TempDir, and the home variable names a folder
 // there.

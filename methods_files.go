@@ -43,7 +43,7 @@ func (s *server) handleFiles(req *request) response {
 
 // pathParams holds the one member that files.stat, files.list and
 // files.validate read. A maxBytes member of any type is ignored there, as on
-// 5fd08069 (measured on Linux, macOS and Windows).
+// 5fd08069 (measured on Linux, and one type on macOS and Windows).
 type pathParams struct {
 	Path string `json:"path"`
 }

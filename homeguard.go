@@ -86,7 +86,7 @@ func wipesHomeDir(p string) bool {
 	// no such guard for "..". Measured: unguarded, that spelling really does
 	// delete the home directory. Raised in review on #231.
 	//
-	// filepath.Abs resolves against os.Getwd, which is exactly the root
+	// filepath.Abs resolves against os.Getwd(), which is exactly the root
 	// os.RemoveAll will use, so the guard judges the path the delete actually
 	// hits. files.extract_tar sends an absolute path here. On Windows
 	// filepath.Abs still resolves such a path: a dot or a space after a name

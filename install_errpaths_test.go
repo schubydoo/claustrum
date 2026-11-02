@@ -303,7 +303,7 @@ func TestEnsureCLIInstallsSweptVersionNames(t *testing.T) {
 	}
 }
 
-// The name rules of the two sweeps (`5fd08069`, measured), and the
+// The name rules of the two sweeps (`5fd08069`, measured on Linux, macOS and Windows), and the
 // validator's acceptance of every name they claim.
 func TestSweptNameRule(t *testing.T) {
 	for _, name := range []string{".fetch-1", ".fetch-123", "1.0.0.zst", "10.2.33.zst"} {
@@ -475,7 +475,7 @@ func TestEnsureCLIRenameFailureCleansUpStaging(t *testing.T) {
 	if !strings.HasPrefix(err.Error(), "rename: rename ") {
 		t.Errorf("error = %q, want the prefix \"rename: rename \"", err)
 	}
-	// A failed rename keeps the -cli-zst blob (`5fd08069`, measured).
+	// A failed rename keeps the -cli-zst blob (`5fd08069`, measured on Windows).
 	if !isRegularFile(zstPath) {
 		t.Error("the -cli-zst blob was consumed by an install that failed at the rename")
 	}

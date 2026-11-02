@@ -534,8 +534,8 @@ func TestFilesExtractTarZipSlipShapes(t *testing.T) {
 			// Four levels up from here is still inside root, so the escape is
 			// observable and the litter stays in the temp tree.
 			dest := filepath.Join(root, "a", "b", "c", "d", "sub")
-			// Assert the depth rather than trust the comment above it. A
-			// measurement is observable only while four ".." from dest stay inside
+			// Assert the depth rather than trust the comment above it. Row 2
+			// is observable only while four ".." from dest stay inside
 			// the walked root; there is exactly one level of slack. Shortening
 			// dest must fail HERE, loudly, rather than silently turning that row
 			// back into one that can never fail.
@@ -570,8 +570,8 @@ func TestFilesExtractTarZipSlipShapes(t *testing.T) {
 // A name that leaves destDir and comes back is unsafe, although it resolves
 // inside. The rows are those of 5fd08069 on Linux, macOS and Windows. 89cb6289 extracts the three other
 // names. For `sub/../../dest` it answers a `create …: is a directory` text. The entry must name the last
-// part of destDir to come back, so destDir is "dest" here as in the cells. The names that stay inside are
-// the controls of the same rounds.
+// part of destDir to come back, so destDir is "dest" here. The names that stay inside are
+// the controls.
 func TestFilesExtractTarUpThenBackIn(t *testing.T) {
 	file := func(name string) tgzEntry { return tgzEntry{name: name, body: "x\n"} }
 	dir := func(name string) tgzEntry { return tgzEntry{name: name, dir: true} }
@@ -1278,7 +1278,7 @@ func TestExtractTarGzMissingArchive(t *testing.T) {
 	}
 }
 
-// extractTarGz: valid gzip wrapping non-tar content causes tr.Next to return a
+// extractTarGz: valid gzip wrapping non-tar content causes tr.Next() to return a
 // non-EOF error, which gets the "tar read: " prefix of 89cb6289.
 func TestExtractTarGzCorruptTar(t *testing.T) {
 	archive := filepath.Join(t.TempDir(), "bad.tar.gz")

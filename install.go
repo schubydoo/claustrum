@@ -124,13 +124,13 @@ func runInstall(o installOpts) {
 
 		// An old "<version>.zst.part" file goes before the CLI runs, on every
 		// path. On a good cache hit only this sweep runs (`5fd08069`,
-		// measured).
+		// measured on Linux).
 		sweepZstParts(o.cliDir, time.Now())
 
 		// "present" requires the file to exist AND be runnable (real binary checks
 		// `<cli> --version`). A freshly downloaded CLI leaves cliWasPresent false.
 		// On Windows only <version>.exe counts. A file with the bare name counts
-		// for nothing (measured).
+		// for nothing (measured on Windows).
 		//
 		// With the launcher gate on, a file that is no program of this machine
 		// does not run, and the install runs over it (cliFileLooksRunnable).
@@ -483,11 +483,11 @@ const cliVersionMarker = "ccd-cli-version"
 
 // clearNonFolderCLIDir makes room for the cli folder when the cli-dir path names
 // something that is not a folder. Measured against f6010b97 and 89cb6289, one
-// run for each case, on Linux, macOS and Windows.
+// run for each case: 14 cases on Linux and macOS, 13 on Windows.
 //
 //   - The trigger is an existing entry of one of three kinds. They are a regular
-//     file (cells a, b, g, h, j, l, m), a symlink to a regular file (d) and a
-//     FIFO (k). The reference then removes that entry. For a symlink it removes
+//     file (seven cases), a symlink to a regular file (one case) and a
+//     FIFO (one case). The reference then removes that entry. For a symlink it removes
 //     the link and keeps the target.
 //   - It also removes the file named exactly "ccd-cli-version" in the parent
 //     folder of the cli-dir. A file named other-version, ccd-cli-version.bak or
@@ -551,8 +551,8 @@ var errStagingVanished = errors.New("staging file vanished")
 //     (measured).
 //
 // Every failure before step 2 keeps the -cli-zst blob. On 5fd08069 it stays
-// after an archive that is no zstd (measured) and a folder that cannot be
-// cleared. It stays after a failed rename (measured). claustrum keeps it after
+// after an archive that is no zstd (measured on Linux) and a folder that cannot be
+// cleared (measured on Linux and macOS). It stays after a failed rename (measured on Windows). claustrum keeps it after
 // a failed chmod too (claustrum's own, not measured).
 //
 // The delete of step 1 is an os.RemoveAll of cliPath. The delete of step 4 is
@@ -630,7 +630,7 @@ func stageAndInstall(cliPath string, stage func(dir string) (string, error), blo
 // cliRenameBound is the time from the first try in which a denied rename of
 // the new CLI is tried again (Windows). On 5fd08069 a running old CLI with
 // other bytes keeps the staging file 0.26 to 0.53 s (measured on Windows).
-// With this bound the staging file of claustrum lived 0.35 to 0.48 s, inside
+// With this bound the staging file of claustrum lived 0.35 to 0.48 s (measured on Windows), inside
 // that range. The pauses of retryWhile are claustrum's own. A test replaces
 // the bound.
 var cliRenameBound = 200 * time.Millisecond
@@ -931,8 +931,8 @@ const (
 )
 
 // probeCLITimeout is the fixed wall-clock bound the -probe-cli mode puts on the
-// `<cli> --version` probe. Measured on 89cb6289 (measured on Linux, macOS and
-// Windows): a CLI that answers at 28 s passes, and one that answers at 33 s gives
+// `<cli> --version` probe. Measured on 89cb6289 on Linux, macOS and
+// Windows: a CLI that answers at 28 s passes, and one that answers at 33 s gives
 // __CLI_HUNG__ at 30.0 s. -probe-cli is a standalone mode Claude Desktop drives to
 // classify a CLI binary, and the reference always bounds it. It is a var, not a
 // const, only so tests can shrink it (same idiom as stdinQueueCap in process.go).
@@ -1259,8 +1259,8 @@ const sweepMinAge = 10 * time.Minute
 // treats it as not old.
 const zstPartMinAge = 7 * 24 * time.Hour
 
-// The names of the sweeps and of the prune, measured on 5fd08069 (measured on
-// Linux, macOS and Windows). claustrum counts a name of three runs of digits
+// The names of the sweeps and of the prune, measured on 5fd08069 on
+// Linux, macOS and Windows. claustrum counts a name of three runs of digits
 // with dots between them, such as 1.0.0. Other names are not measured.
 //
 //	sweep of 10 minutes   .fetch-<digits>, <version>.zst      .fetch-123, 1.0.0.zst go
@@ -1336,7 +1336,7 @@ func sweepZstParts(cliDir string, now time.Time) {
 //   - A future mtime is not old, so it stays.
 //
 // Only a regular file goes. An empty folder ".fetch-9" stays, and so does a
-// folder ".fetch-e" with a file in it (`5fd08069`, measured).
+// folder ".fetch-e" with a file in it (`5fd08069`, measured on Linux, macOS and Windows).
 //
 // A concurrent install's staging file is fresh, so the age gate keeps it.
 // stageAndInstall's retry still covers a staging file that outlives the gate.
@@ -1468,9 +1468,9 @@ func pruneCLI(cliDir string, keep int, newCLI string, newCounts bool, blob os.Fi
 
 // isCLIVersionFile reports whether a regular file of the cli-dir counts in the
 // prune. On Linux and macOS it is a version name with an exec bit. On
-// 5fd08069 "1.1.0" with mode 0644 does not count (measured). On Windows it is
+// 5fd08069 "1.1.0" with mode 0644 does not count (measured on Linux and macOS). On Windows it is
 // "<version>.exe" at any mode: a bare "1.1.0" and "README.exe" do not count
-// (measured).
+// (measured on Windows).
 func isCLIVersionFile(name string, mode os.FileMode) bool {
 	if cliExeSuffix != "" {
 		v, ok := strings.CutSuffix(name, cliExeSuffix)

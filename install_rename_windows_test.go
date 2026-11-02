@@ -80,7 +80,7 @@ func TestPlaceStagedCLIFailsAfterTheBound(t *testing.T) {
 }
 
 // A denied rename onto a file with the same bytes counts as done, and the
-// staging file goes (measured).
+// staging file goes (measured on Windows).
 func TestPlaceStagedCLICountsSameBytesAsDone(t *testing.T) {
 	setCLIRenameBound(t, 20*time.Millisecond)
 	tmp, cli := renameFixture(t, "same", "same")
@@ -93,7 +93,7 @@ func TestPlaceStagedCLICountsSameBytesAsDone(t *testing.T) {
 	}
 }
 
-// A denied rename of an -install keeps the -cli-zst blob (measured).
+// A denied rename of an -install keeps the -cli-zst blob (measured on Windows).
 func TestInstallKeepsTheBlobWhenTheRenameIsDenied(t *testing.T) {
 	setCLIRenameBound(t, 20*time.Millisecond)
 	f := newStubFixture(t)

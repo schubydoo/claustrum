@@ -104,7 +104,7 @@ func TestPluginsPruneWithoutParams(t *testing.T) {
 // TestSocketWorktreeUnreadMembersIgnored: git.worktree_create with "path":123 makes
 // the worktree, and git.worktree_remove with "timeoutMs":"x", "path":123 and
 // "existingBranch":5 removes it, its registration and its branch. 5fd08069 does so
-// (measured on Linux, macOS and Windows).
+// (measured on Linux, and one case on macOS and Windows).
 func TestSocketWorktreeUnreadMembersIgnored(t *testing.T) {
 	requireGit(t)
 	root := resolveTestRoot(t, t.TempDir())

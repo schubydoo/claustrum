@@ -529,7 +529,7 @@ func TestInstallKeepsTheDownloadConnectionOpenDuringTheRun(t *testing.T) {
 
 // The home guard of the tree delete at the final name (D2). The reference removes
 // a folder at <cli-dir>/<version> as a tree, also when it is the home folder
-// (measured) or contains it. claustrum refuses both: the folder is not removed,
+// or contains it (measured). claustrum refuses both: the folder is not removed,
 // the blob stays and no CLI runs. With the home folder elsewhere the same folder
 // is replaced, as before (measured). The cell names are the Linux ones. macOS and
 // Windows have their own cells.

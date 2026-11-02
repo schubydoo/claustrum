@@ -88,7 +88,7 @@ func sha256Hex(b []byte) string {
 }
 
 // sameFileBytes compares two files by SHA-256. A file that cannot be read is
-// not the same. placeStagedCLI uses it on Windows only (`5fd08069`, measured).
+// not the same. placeStagedCLI uses it on Windows only (`5fd08069`, measured on Windows).
 func TestSameFileBytes(t *testing.T) {
 	dir := t.TempDir()
 	put := func(name, body string) string {

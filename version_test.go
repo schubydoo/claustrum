@@ -20,7 +20,7 @@ func TestResolveVersionFromBuildInfo(t *testing.T) {
 	oldV, oldT := Version, BuildTime
 	defer func() { Version, BuildTime = oldV, oldT }()
 	Version = "claustrum-dev"
-	// Reads debug.ReadBuildInfo; vcs.* settings may be absent under `go test`,
+	// Reads debug.ReadBuildInfo(); vcs.* settings may be absent under `go test`,
 	// in which case Version stays "claustrum-dev" — either way it must execute
 	// without panicking and leave a non-empty version.
 	resolveVersion()

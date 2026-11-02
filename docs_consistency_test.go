@@ -333,7 +333,7 @@ var (
 
 // TestDocsDivergenceIDsExist: every D<n> and CT-<n> that a document cites is a live
 // or retired entry of docs/DIVERGENCES.md. The pattern skips the cells of the
-// measurement tables that carry a letter or a leading zero.
+// measurement tables that carry a letter, a leading zero or a dash after the D.
 // A bare cell such as row D1 of a table is read as the entry D1 and passes when
 // that entry exists, so this test is blind to a measurement cell with a number
 // that an entry also has.

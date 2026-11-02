@@ -25,7 +25,7 @@ import (
 // first sibling) would fail one of the two arms, and a mutant that dropped the
 // "answers" suffix would fail the live arm.
 func TestSiblingDaemonAlive(t *testing.T) {
-	// A short temp root, not t.TempDir: the full AF_UNIX socket path must stay
+	// A short temp root, not t.TempDir(): the full AF_UNIX socket path must stay
 	// under the macOS sockaddr_un limit (~104 bytes), the same reason the socket
 	// harness uses os.MkdirTemp("", "cl").
 	base, err := os.MkdirTemp("", "cl")
@@ -212,7 +212,7 @@ func TestPluginsPruneClientIDShape(t *testing.T) {
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
-			// A short temp root, not t.TempDir: the socket path must stay under the
+			// A short temp root, not t.TempDir(): the socket path must stay under the
 			// macOS sockaddr_un limit (~104 bytes).
 			base, err := os.MkdirTemp("", "cl")
 			if err != nil {
@@ -372,7 +372,7 @@ func TestSocketPluginsPrune(t *testing.T) {
 // This test seeds no .synced marker, so it does not exercise the max(dir, .synced)
 // last-used rule — TestPrunePluginRootClassification covers that.
 func TestPluginsPruneSweepsRealRoot(t *testing.T) {
-	// A short temp root, not t.TempDir: the AF_UNIX socket path lives under it and
+	// A short temp root, not t.TempDir(): the AF_UNIX socket path lives under it and
 	// must stay under the macOS sockaddr_un limit (~104 bytes).
 	base, err := os.MkdirTemp("", "cl")
 	if err != nil {

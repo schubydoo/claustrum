@@ -709,7 +709,7 @@ func TestPruneCLI(t *testing.T) {
 // A cache-hit run neither sweeps orphans nor prunes, and a FAILED
 // install sweeps but does not prune (probe-measured at 5db5e4a). A keep of 0
 // prunes every older version file, and the new CLI stays (`5fd08069`,
-// measured).
+// measured on Linux, macOS and Windows).
 //
 // This test previously drove runInstall with an already-present CLI and asserted
 // that it pruned — encoding claustrum's divergence. It now exercises the guard on
@@ -797,7 +797,7 @@ func TestRunInstallHonorsCliKeepGuard(t *testing.T) {
 //   - A swept name goes only when its mtime is more than 600 s old. 599 s stays,
 //     601 s goes, and a future mtime stays (Linux, 4534d86 through f6010b97).
 //   - Only a regular file goes. An empty folder ".fetch-9" and a folder
-//     ".fetch-e" with content stay (`5fd08069`, measured).
+//     ".fetch-e" with content stay (`5fd08069`, measured on Linux, macOS and Windows).
 //   - The names are ".fetch-<digits>" and "<version>.zst", case-sensitive
 //     (`5fd08069`, measured).
 func TestSweepFetchTemps(t *testing.T) {
@@ -1245,7 +1245,7 @@ func TestRunInstallFacts(t *testing.T) {
 }
 
 // keepZero is a -cli-keep of 0 for the two capture helpers. A keep of 0 prunes
-// every older version file (measured). A test that leaves cliKeep unset wants
+// every older version file (measured on Linux, macOS and Windows). A test that leaves cliKeep unset wants
 // no prune, so testKeep turns the unset value into the largest count, with
 // which the prune removes nothing. A negative value counts as 0.
 const keepZero = math.MinInt
@@ -1452,7 +1452,7 @@ func TestEnsureCLIConsumesBlobWhenExtractedCLIIsNotRunnable(t *testing.T) {
 }
 
 // A failed chmod of the staging file keeps the -cli-zst blob. On 5fd08069 every
-// failure before the new CLI is in place keeps it (measured). The chmod failure
+// failure before the new CLI is in place keeps it (measured on Linux, macOS and Windows). The chmod failure
 // itself is claustrum's own (not measured). The failure is injected through the
 // chmodStaged seam, so the test is identical on every OS.
 func TestEnsureCLIKeepsBlobWhenChmodFails(t *testing.T) {

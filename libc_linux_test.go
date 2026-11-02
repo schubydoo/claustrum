@@ -11,7 +11,7 @@ import (
 )
 
 // TestDetectLibcHonoursThePackageVar is the ONE test that drives the production
-// path: detectLibc itself, resolving a real `ldd` through PATH, with nothing
+// path: detectLibc() itself, resolving a real `ldd` through PATH, with nothing
 // injected. Every other ldd-bound test calls detectLibcWith directly and hands it
 // a timeout, so all of them stay green if the single production call site stops
 // reading lddProbeTimeout.

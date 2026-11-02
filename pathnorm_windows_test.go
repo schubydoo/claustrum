@@ -9,7 +9,7 @@ import (
 	"golang.org/x/sys/windows"
 )
 
-// resolveTestRoot canonicalizes a t.TempDir root to the spelling the daemon
+// resolveTestRoot canonicalizes a t.TempDir() root to the spelling the daemon
 // will report for paths under it. On the GitHub Windows runners TEMP uses an
 // 8.3 short name (C:\Users\RUNNER~1\...), while git rev-parse --show-toplevel
 // reports the expanded long path — so expand it here before building fixtures.
