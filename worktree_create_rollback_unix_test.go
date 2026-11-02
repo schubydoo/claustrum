@@ -14,7 +14,7 @@ import (
 // These tests pin three parts of git.worktree_create on Linux and macOS: the step
 // that removes a stale registration before the add, the refusal for a stale entry
 // that stayed, and the registration that a rollback removes. The measured cases
-// are those of 89cb6289 on Linux and macOS, 2 runs each. Every fixture is under
+// are those of 89cb6289 on Linux and macOS, 2 runs each for two of them. Every fixture is under
 // t.TempDir, and no test gives a path outside it to a delete.
 
 // staleRegFiles are the files of the old registration of the A cells, in the order

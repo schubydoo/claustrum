@@ -309,7 +309,7 @@ func TestWorktreeRemoveMissingBaseRepoKeepsEntry(t *testing.T) {
 	wantRemoveCalls(t, "row 7c", calls, 1, []string{callExcludes})
 }
 
-// Measured: the baseRepo with S locked in T. claustrum refuses, and 89cb6289 deletes S. That
+// Measured on Linux and macOS: the baseRepo with S locked in T. claustrum refuses, and 89cb6289 deletes S. That
 // is divergence D22.
 func TestWorktreeRemoveMissingBaseRepoLockedStillRefused(t *testing.T) {
 	f := newRegFixture(t)
@@ -636,7 +636,7 @@ func TestWorktreeRemoveExternalNoRepositoryCalls(t *testing.T) {
 		"<fx>/N|L|config -z --list"+pinNoRepo, "<fx>/N|L|rev-parse --show-toplevel"+pinNoRepo)
 }
 
-// Battery rows LNKb-g and LNKr-g (Linux, LNKb-g on macOS): baseRepo is the head of a
+// Rows LNKb-g and LNKr-g (Linux, LNKb-g on macOS): baseRepo is the head of a
 // chain of 45 symlinks. The one git call is the read of the user excludes.
 func TestWorktreeRemoveExternalSymlinkChainCalls(t *testing.T) {
 	f := newRegFixture(t)
@@ -705,7 +705,7 @@ func TestWorktreeRemoveExternalMissingBaseRepoFrame(t *testing.T) {
 	wantAllCalls(t, "DG1c-g", calls, callExcludes)
 }
 
-// Measured: no git on PATH, and a baseRepo that does not exist as sent. The answer is
+// Measured on Linux and macOS: no git on PATH, and a baseRepo that does not exist as sent. The answer is
 // the lock-check refusal, nothing is deleted, and no git call starts.
 func TestWorktreeRemoveMissingBaseRepoWithoutGitRefuses(t *testing.T) {
 	for _, c := range []struct{ name, base string }{
@@ -734,7 +734,7 @@ func TestWorktreeRemoveMissingBaseRepoWithoutGitRefuses(t *testing.T) {
 	}
 }
 
-// Measured: baseRepo holds an empty `.git` folder and lies in an outer repository O. The
+// Measured on Linux and macOS: baseRepo holds an empty `.git` folder and lies in an outer repository O. The
 // worktree folder is gone. The branch s0 of O stays, and the request makes 5 calls, each
 // with GIT_DIR=/dev/null.
 func TestWorktreeRemoveEmptyGitDirKeepsOuterBranch(t *testing.T) {

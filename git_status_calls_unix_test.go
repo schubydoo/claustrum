@@ -245,7 +245,7 @@ func TestGitStatusGateCalls(t *testing.T) {
 		}
 		wantStatusCalls(t, "n18", calls, gate[:3])
 	})
-	// Measured: a symlink as the last component of a path inside baseRepo stops
+	// Measured on Linux: a symlink as the last component of a path inside baseRepo stops
 	// before the fourth call.
 	t.Run("v4", func(t *testing.T) {
 		l := filepath.Join(f.T, ".claude", "worktrees", "lnk")
@@ -256,7 +256,7 @@ func TestGitStatusGateCalls(t *testing.T) {
 		}
 		wantStatusCalls(t, "v4", calls, gate[:3])
 	})
-	// Measured: W/missing/.. passes the gate cleaned. git then does not start in
+	// Measured on Linux and macOS: W/missing/.. passes the gate cleaned. git then does not start in
 	// the path as sent, and no `git version` follows the refusal.
 	t.Run("y1", func(t *testing.T) {
 		sent := f.W + "/missing/.."
@@ -401,7 +401,7 @@ func TestGitStatusExcludesReadBeforeTrustRefusal(t *testing.T) {
 	wantStatusCalls(t, "o21", calls, statusGateCalls("")[:1])
 }
 
-// Measured: the daemon's own environment sets GIT_COMMON_DIR. The calls with
+// Measured on Linux and macOS: the daemon's own environment sets GIT_COMMON_DIR. The calls with
 // --git-dir=<common> keep the daemon's value. The calls in the temporary folder
 // get GIT_COMMON_DIR=<T>/.git.
 func TestGitStatusDaemonCommonDirCalls(t *testing.T) {

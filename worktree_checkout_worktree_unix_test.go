@@ -11,7 +11,7 @@ import (
 
 // The read-tree checkout of git.worktree_create names the leaf with its symlinks
 // resolved in --work-tree. f6010b97 and 89cb6289 do so on Linux for a baseRepo sent
-// through a symlink (row CSc). Mutation: pass the leaf as sent.
+// through a symlink (measured). Mutation: pass the leaf as sent.
 func TestWorktreeCheckoutWorkTreeIsResolved(t *testing.T) {
 	f := newListingFixture(t)
 	link := filepath.Join(filepath.Dir(f.top), "lnk")

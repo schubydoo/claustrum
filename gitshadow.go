@@ -826,7 +826,7 @@ func shadowTestCalls(dir, check string) (state, cause string) {
 	}
 	// Call 7 ends at the bound of a test call, counted from its start, and then
 	// reads its pipes for up to startBoundDrain (runStartBound). The rows are
-	// measured on Linux, 2 of 2 runs:
+	// measured on Linux, 2 of 2 runs each:
 	//
 	//   - A child holds the pipes for 5 s after the call ended: 5fd08069 starts
 	//     the next call at 5.345 s and 5.189 s, and the test passes.

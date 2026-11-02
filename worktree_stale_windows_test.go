@@ -12,7 +12,7 @@ import (
 // The stale step on Windows compares the record with the leaf without regard
 // to letter case. 5fd08069 removes the entry `old` whose record differs from
 // the leaf in one name or in the whole path (measured on Windows, 3 of 3
-// runs), and with the exact case too. A record of another path stays.
+// runs each), and with the exact case too. A record of another path stays.
 func staleCaseRecords(leaf string) map[string]string {
 	slashed := filepath.ToSlash(leaf)
 	dir, name := filepath.Dir(slashed), filepath.Base(slashed)

@@ -10,7 +10,7 @@ import (
 )
 
 // git.worktree_remove with a folder level that the daemon cannot read or search. The
-// rows are measured on 89cb6289 on Linux and macOS, and in later checks. This file
+// rows are measured on 89cb6289 on Linux and macOS (one row on macOS only), and in later checks. This file
 // is unix only: chmod denies nothing on Windows, and Windows refuses a worktreeRoot.
 
 // restrictLevel sets the mode of dir for one request. The returned function puts 0755

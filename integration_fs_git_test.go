@@ -15,8 +15,8 @@ import (
 )
 
 // Increment B: hermetic coverage of the env-dependent namespaces (files.* and
-// git.*). Each test builds a throwaway fixture under t.TempDir, drives the
-// methods over the real socket (serialized via call so repo-mutating ops are
+// git.*). Each test builds a throwaway fixture under t.TempDir(), drives the
+// methods over the real socket (serialized via call() so repo-mutating ops are
 // deterministic), normalizes the tmp-root absolute paths to <DIR>, and locks
 // the result against a committed golden.
 
@@ -544,7 +544,7 @@ func TestSocketTildeExpansion(t *testing.T) {
 	// git echoes the worktree path verbatim into that message — measured
 	// 2026-08-02 on git 2.47.3 (this host) and 2.50.1 (darwin), where "…/wt2/"
 	// and "…//wt2" both survive unchanged, and checked against git's own
-	// builtin/worktree.c, where the path reaches die uncanonicalized. The CI
+	// builtin/worktree.c, where the path reaches die() uncanonicalized. The CI
 	// runners are newer still, which is why the NEGATIVE check carries the
 	// weight: if some future git normalizes the path away, that check fails
 	// loudly instead of the positive one silently ceasing to discriminate.

@@ -236,7 +236,7 @@ func (u gitUse) shadow() bool {
 // offMember is true for a create with "shadowDirOff":true and no copy. Its add
 // gets the same test after the listing. On 5fd08069 that listing comes after
 // `rev-parse --absolute-git-dir` and is the last call (measured on Linux,
-// macOS and Windows). C2offK, a real folder, is the control.
+// macOS and Windows). A real folder there is the control case.
 //
 // The call holds the lock of the add step (lockWorktreeAddStep), so a remove in
 // the same git directory deletes no registration while it runs. On Windows the

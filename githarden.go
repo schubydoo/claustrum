@@ -37,7 +37,7 @@ import (
 // --is-inside-work-tree`, `rev-parse --abbrev-ref HEAD`, `worktree add`,
 // `read-tree`, `for-each-ref --count=10001`, `rev-list` and `update-ref`.
 // `read-tree` and `rev-list` add their own items after the list. The last three
-// calls are measured on Linux and in one more case. With "shadowDirOff":true, a
+// calls are measured on Linux, macOS and Windows. With "shadowDirOff":true, a
 // measurement shows the list on the calls of existingBranch, of sourceBranch and
 // of the .worktreeinclude step (measured on Linux, macOS and Windows). A
 // measurement shows it on the calls of worktreeRoot (measured on Linux and
@@ -614,7 +614,7 @@ func hardenedGitCheckout(ctx context.Context, u gitUse, leaf, gitDir, indexFile 
 		// process exit), reproducing the reference's fixed post-exit cap.
 		cmd.WaitDelay = worktreeCreateDrainCap
 		// When the deadline fires, kill git immediately and, on Unix, tear down its whole
-		// process group so a descendant is reaped too. cmd.Process.Kill is what makes the
+		// process group so a descendant is reaped too. cmd.Process.Kill() is what makes the
 		// interrupt land on every OS: reapProcessGroup is a no-op on Windows, so without the
 		// direct kill a Windows deadline would leave git running until the WaitDelay fallback
 		// and answer the caller ~worktreeCreateDrainCap late. WaitDelay still bounds any

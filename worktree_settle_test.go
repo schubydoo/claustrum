@@ -378,7 +378,7 @@ func TestWorktreeCreateSettleUsesTheLeafWait(t *testing.T) {
 }
 
 // settleCheckout stops its wait when the context of the request ends (claustrum's
-// own, not measured). Mutation: pass context.Background to settleSleep in
+// own, not measured). Mutation: pass context.Background() to settleSleep in
 // settleCheckout.
 func TestSettleCheckoutStopsWithTheContext(t *testing.T) {
 	realGit, err := exec.LookPath("git")

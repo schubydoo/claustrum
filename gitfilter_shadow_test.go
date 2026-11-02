@@ -120,7 +120,7 @@ func TestShadowFilterRuleFailsClosed(t *testing.T) {
 			setIncludeFile(t, f.gitDir, "f.cfg", f.section(t, "m", "smudge"))
 			f.addConfig(t, "[includeIf \"gitdir:"+filepath.ToSlash(top)+"/\"]\n\tpath = f.cfg\n")
 		}, "m", false},
-		// Measured: a later `smudge = cat` in the repository config after the
+		// Measured on Linux (3 of 3 runs): a later `smudge = cat` in the repository config after the
 		// includeIf line. Each value of the filter comes from a file of the
 		// repository, and 5fd08069 answers repository_only_filter with the three
 		// items and the rollback.
@@ -137,7 +137,7 @@ func TestShadowFilterRuleFailsClosed(t *testing.T) {
 		{"Q8 a command and then cat in the repository config", "a.txt filter=m\n", func(t *testing.T, f shadowFilterFixture) {
 			f.addConfig(t, f.section(t, "m", "smudge")+"[filter \"m\"]\n\tsmudge = cat\n")
 		}, "", false},
-		// Measured: an includeIf file with `smudge = cat` and a command in
+		// Measured on Linux (3 of 3 runs): an includeIf file with `smudge = cat` and a command in
 		// .git/config, in either order. 5fd08069 refuses, whatever the order.
 		{"F1g cat in an includeIf file, then a command", "a.txt filter=m\n", func(t *testing.T, f shadowFilterFixture) {
 			setIncludeFile(t, f.gitDir, "c.cfg", "[filter \"m\"]\n\tsmudge = cat\n")
@@ -310,7 +310,7 @@ func sameDir(a, b string) bool {
 	return errA == nil && errB == nil && os.SameFile(fa, fb)
 }
 
-// Measured: the repository config has only `smudge = cat` for the filter.
+// Measured on Linux (3 of 3 runs): the repository config has only `smudge = cat` for the filter.
 // With a settings copy the read-tree call gets no item for it, as on
 // 5fd08069, and the create succeeds.
 func TestShadowAllCatFilterGetsNoItem(t *testing.T) {
@@ -375,7 +375,7 @@ func TestShadowFilterRulesOfRoundTask073(t *testing.T) {
 			outside(t, sectionTo(t, "x", "smudge", user)+"\tprocess = cat\n")
 			f.addConfig(t, "[filter \"x\"]\n\trequired = true\n")
 		}, false, nil, false},
-		// Measured: a bare smudge line in .git/config refuses beside smudge =
+		// Measured on macOS: a bare smudge line in .git/config refuses beside smudge =
 		// cat in an includeIf file of the repository, in either order.
 		{"G5a an includeIf file with smudge = cat, then a bare smudge line", func(t *testing.T, f shadowFilterFixture, _, _ string) {
 			setIncludeFile(t, f.gitDir, "inc.cfg", "[filter \"x\"]\n\tsmudge = cat\n")
@@ -430,7 +430,7 @@ func TestShadowFilterRulesOfRoundTask073(t *testing.T) {
 // the bytes that are not valid UTF-8 dropped. On Windows a command line cannot
 // carry the raw name, so the items name another filter. git does not see the
 // filter in the copy, and the create succeeds with no filter run, as 5fd08069
-// does of round val20-windows (measured on Windows).
+// does (measured on Windows).
 func TestShadowFilterNameThatIsNotUTF8(t *testing.T) {
 	for _, row := range []struct{ name, windowsName, text string }{
 		// windowsName is the name as git gets it on Windows: one U+FFFD for each

@@ -11,7 +11,7 @@ import (
 // (gitInfoRoot) to the git directory. On 5fd08069 only the first config listing
 // and `rev-parse --git-dir` keep the copy. Both calls of the pair name the git
 // directory (measured on Windows). Mutation: in gitInfo, take copyOf, front and
-// the pin from req.use in place of req.use.atCommand. Both calls of the pair
+// the pin from req.use in place of req.use.atCommand(). Both calls of the pair
 // then name the copy in GIT_COMMON_DIR.
 func TestShadowOffHoldThatStartsInARequestMovesTheRootPair(t *testing.T) {
 	h := newLiveFixture(t)

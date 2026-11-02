@@ -455,9 +455,9 @@ const checkoutFailedHead = `{"jsonrpc":"2.0","id":1,"result":{"success":false,"e
 //
 //   - Measured on Linux and macOS:
 //     the leaf is deleted. Branch w1 stays, although main reaches its tip.
-//   - Measured: in attach mode the text names the registration alone.
+//   - Measured on Linux and macOS: in attach mode the text names the registration alone.
 //     The attached branch stays.
-//   - Measured: the parent of the leaf is read-only too, so the empty leaf
+//   - Measured on Linux: the parent of the leaf is read-only too, so the empty leaf
 //     stays. The frame carries the registration text alone.
 func TestWorktreeCreateIndexInstallFails(t *testing.T) {
 	const both = "the worktree registration and the branch remain; remove them by hand before retrying (RemoveAll w1: permission denied)"
@@ -544,12 +544,12 @@ func TestWorktreeCreateTempIndexGone(t *testing.T) {
 // 89cb6289 that hold an entry at the index: the exclusive create first, then one
 // plain remove on "file exists", then the create again.
 //
-//   - Measured: a file, registration 0500: the remove fails.
-//   - Measured: a folder that holds a file: the remove fails.
-//   - Measured: a file, registrations directory 0600: the create fails first, so
+//   - Measured on Linux: a file, registration 0500: the remove fails.
+//   - Measured on Linux: a folder that holds a file: the remove fails.
+//   - Measured on macOS: a file, registrations directory 0600: the create fails first, so
 //     the text is the openat one.
-//   - Measured: an empty folder is replaced by the index.
-//   - Measured: a symlink goes, its target stays, and the index is a file.
+//   - Measured on macOS: an empty folder is replaced by the index.
+//   - Measured on macOS: a symlink goes, its target stays, and the index is a file.
 //
 // Measurements have their own tests above.
 func TestInstallWorktreeIndexOrder(t *testing.T) {

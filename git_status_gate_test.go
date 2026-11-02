@@ -132,7 +132,7 @@ func TestGitStatusEntryGate(t *testing.T) {
 		}, statusNotRepo},
 		// No row: an empty gitdir names no folder.
 		{"empty gitdir", func(t *testing.T, f statusFixture) { f.write(t, "gitdir", "\n") }, statusNotRepo},
-		// Measured: a second entry whose gitdir is a directory is passed over.
+		// Measured on Linux: a second entry whose gitdir is a directory is passed over.
 		{"v2 second entry with a gitdir folder", func(t *testing.T, f statusFixture) {
 			if err := os.MkdirAll(filepath.Join(filepath.Dir(f.entry), "other", "gitdir"), 0o755); err != nil {
 				t.Fatal(err)
@@ -145,7 +145,7 @@ func TestGitStatusEntryGate(t *testing.T) {
 				t.Fatal(err)
 			}
 		}, statusNotRepo},
-		// Measured: another letter case in the gitdir file does not match. On
+		// Measured on macOS: another letter case in the gitdir file does not match. On
 		// Windows it matches (measured on Windows).
 		{"C10 gitdir in another case", func(t *testing.T, f statusFixture) {
 			f.write(t, "gitdir", filepath.Join(f.root, "w", ".git")+"\n")
@@ -404,7 +404,7 @@ func TestGitStatusIndexSizeBound(t *testing.T) {
 	if got := f.status(t); got != statusClean {
 		t.Errorf("o15e index at the bound = %s\nwant %s", got, statusClean)
 	}
-	// Measured: an index at the bound beside a sharedindex.x over it refuses. On 5fd08069
+	// Measured on Linux (`89cb6289`): an index at the bound beside a sharedindex.x over it refuses. On 5fd08069
 	// the index counts in the sum (measured on Linux).
 	f.write(t, "sharedindex.x", string(bytes.Repeat([]byte{0}, len(index)+1)))
 	if got := f.status(t); got != statusNotRepo {
@@ -555,7 +555,7 @@ func TestStatusHeadValid(t *testing.T) {
 	}
 }
 
-// Measured: a marker inside baseRepo itself is ignored.
+// Measured on Linux: a marker inside baseRepo itself is ignored.
 func TestGitStatusMarkerInsideBaseRepo(t *testing.T) {
 	f := newStatusFixture(t)
 	writeFile(t, filepath.Join(f.T, managedWorktreesMarker), "", 0o644)
@@ -564,7 +564,7 @@ func TestGitStatusMarkerInsideBaseRepo(t *testing.T) {
 	}
 }
 
-// Measured: a SHA-256 repository. The --attr-source value is the empty tree id of
+// Measured on Linux: a SHA-256 repository. The --attr-source value is the empty tree id of
 // that object format, so status runs.
 func TestGitStatusSHA256Repository(t *testing.T) {
 	f := newStatusFixtureInit(t, "status-sha256", "--object-format=sha256")
@@ -578,7 +578,7 @@ func TestGitStatusSHA256Repository(t *testing.T) {
 	}
 }
 
-// Measured: a repository with the reftable format. git takes
+// Measured on macOS: a repository with the reftable format. git takes
 // `--ref-format=reftable` since 2.45, and the test is skipped on an older one.
 func TestGitStatusReftableRepository(t *testing.T) {
 	f := newStatusFixtureInit(t, "status-reftable", "--ref-format=reftable")
@@ -608,7 +608,7 @@ func TestGitStatusReftableRepository(t *testing.T) {
 	}
 }
 
-// Measured: the reftable files of the temporary git folder. Every regular file of
+// Measured on macOS: the reftable files of the temporary git folder. Every regular file of
 // the folder is copied, also a table that the list does not name.
 func TestStatusGitDirReftableContents(t *testing.T) {
 	entry, common := t.TempDir(), t.TempDir()

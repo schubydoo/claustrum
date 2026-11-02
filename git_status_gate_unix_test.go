@@ -200,7 +200,7 @@ func TestGitStatusDotDotRows(t *testing.T) {
 	}
 }
 
-// Measured: the reftable rows that need a FIFO or a symlink.
+// Measured on macOS: the reftable rows that need a FIFO or a symlink.
 func TestGitStatusReftableLinkRows(t *testing.T) {
 	// Measured: a table that is a symlink answers
 	// isRepo:false.
@@ -244,7 +244,7 @@ func TestGitStatusReftableLinkRows(t *testing.T) {
 	})
 }
 
-// Measured: in a plain repository an entry `reftable` that is a symlink out of
+// Measured on Linux and macOS: in a plain repository an entry `reftable` that is a symlink out of
 // the entry, or a regular file, counts as no folder. The answer is the clean
 // status.
 func TestGitStatusReftableNotAFolder(t *testing.T) {
@@ -264,7 +264,7 @@ func TestGitStatusReftableNotAFolder(t *testing.T) {
 			t.Errorf("git.status = %s\nwant %s", got, statusClean)
 		}
 	})
-	// Measured: in a reftable repository the folder is moved out and a symlink
+	// Measured on macOS: in a reftable repository the folder is moved out and a symlink
 	// takes its place. Nothing of it is copied and the gate passes. git decides
 	// the frame: in the measurement it showed every tracked file as added.
 	for name, keepList := range map[string]bool{"w1 moved out": true, "w1b moved out, no list": false} {

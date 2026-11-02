@@ -120,9 +120,9 @@ func (f wtFixture) wantCreated(t *testing.T, raw, gitFile, reg string) {
 //   - Measured on macOS and Linux: the
 //     resolved path lies in a folder named WTREG or WORKTREES. The create is
 //     refused, and nothing is rolled back.
-//   - Measured: the resolved path lies in a folder named worktrees. The create
+//   - Measured on macOS: the resolved path lies in a folder named worktrees. The create
 //     succeeds. D-3 against D-4 straddles the name.
-//   - Measured: the path through the link. The create succeeds, and the index is
+//   - Measured on Linux: the path through the link. The create succeeds, and the index is
 //     in the link target.
 func TestWorktreeCreateRegistrationName(t *testing.T) {
 	for _, tc := range []struct {
@@ -242,7 +242,7 @@ func TestWorktreeCreateRegistrationTestOrder(t *testing.T) {
 }
 
 // TestWorktreeCreateRegistrationInOtherRepository pins measured cases (on Linux
-// and macOS, 10 of 10 runs). The daemon has GIT_COMMON_DIR of another repository X
+// and macOS, 10 of 10 runs each). The daemon has GIT_COMMON_DIR of another repository X
 // in its environment, and T and X hold a commit with the same id. git then makes
 // the registration in X, and T has none. The create is refused with the "was not
 // populated" text, and nothing is rolled back. In B-E3, X also has a branch main.

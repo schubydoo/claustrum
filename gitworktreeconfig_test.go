@@ -50,7 +50,7 @@ func TestWorktreeConfigItems(t *testing.T) {
 			[]repoSetting{set("core.filemode", "false"), set("core.filemode", "maybe")}, []string{"-c", "core.filemode=false"}},
 		{"a key with a subsection (not measured)", []repoSetting{set("remote.origin.url", "https://example.invalid/o/r")}, nil},
 		{"the format version and an extension", []repoSetting{set("core.repositoryformatversion", "1"), set("extensions.noop", "true")}, nil},
-		// Measured: rewritten values, one item per key, sorted.
+		// Measured on Linux: rewritten values, one item per key, sorted.
 		{"C3a", []repoSetting{set("core.quotepath", "off"), set("core.filemode", "no"), set("core.trustctime", "false"), set("core.bare", "true"), set("core.bare", "false")},
 			[]string{"-c", "core.filemode=false", "-c", "core.quotepath=false", "-c", "core.trustctime=false"}},
 		{"no file", nil, nil},

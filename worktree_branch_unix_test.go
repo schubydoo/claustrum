@@ -10,7 +10,7 @@ import (
 	"time"
 )
 
-// Measured: an update-ref that ignores the SIGTERM at updateRefStop is killed
+// Measured on Linux and macOS: an update-ref that ignores the SIGTERM at updateRefStop is killed
 // updateRefKillAfter later, and the branch stays. The reply therefore comes
 // after both waits, not at the first one.
 func TestWorktreeRemoveUpdateRefKilledAfterTerm(t *testing.T) {
@@ -34,7 +34,7 @@ func TestWorktreeRemoveUpdateRefKilledAfterTerm(t *testing.T) {
 	}
 }
 
-// Measured: the entry cannot be dropped, the branch step still runs, and it keeps
+// Measured on Linux: the entry cannot be dropped, the branch step still runs, and it keeps
 // a branch that no other ref reaches. The member follows the error.
 func TestWorktreeRemoveEntryDropFailureKeepsBranch(t *testing.T) {
 	skipIfRoot(t)
@@ -55,7 +55,7 @@ func TestWorktreeRemoveEntryDropFailureKeepsBranch(t *testing.T) {
 	}
 }
 
-// Measured on Linux. First case: the leaf rmdir fails and the branch holds a
+// Measured on Linux. C05: the leaf rmdir fails and the branch holds a
 // commit that no other ref reaches. The branch part follows the leaf part after
 // "; ", without "the worktree itself was removed, but ", and the member is set.
 // C08b: in attach mode the leaf clear fails, and the text names no branch,

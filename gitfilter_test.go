@@ -223,7 +223,7 @@ func TestWorktreeCreateRefusesFilterThatNoPairReplaces(t *testing.T) {
 	f.assertRolledBack(t, []string{}, false)
 }
 
-// Measured: on 5fd08069 a cat first on PATH does not run. With smudge = cat the
+// Measured on Linux: on 5fd08069 a cat first on PATH does not run. With smudge = cat the
 // create succeeds and no cat program starts. The required = true of this
 // fixture is in no cell: it is from the development host. The read-tree call
 // gets three pairs that turn the filter off. A stand-in cat is first on PATH:
@@ -346,7 +346,7 @@ func TestWorktreeCreateFilterOfConditionalInclude(t *testing.T) {
 
 // A timeoutMs of the caller that expires during the listing before the
 // read-tree call answers the timeout frame. The repository has no filter. The
-// frame is the one (measured on Linux). The deadline does not end that
+// frame is the one measured on Linux. The deadline does not end that
 // listing: it runs to its end, as on 5fd08069 (measured on Linux and macOS).
 //
 // The stub holds that listing and no other call: its log has one "held" line.

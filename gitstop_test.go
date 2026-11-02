@@ -156,7 +156,7 @@ func errorFrame(t *testing.T, text string) string {
 }
 
 // The read methods answer -32603 with the stop text, and no git call follows the
-// stopped call (measured on Linux, macOS and Windows). git.info is the case that needs gitStop.reply: its failed `rev-parse --git-dir`
+// stopped call (measured on Linux, macOS and Windows, one case on Linux only). git.info is the case that needs gitStop.reply: its failed `rev-parse --git-dir`
 // answers "no repository" by itself.
 func TestGitReadMethodsStopAtTheCallLimit(t *testing.T) {
 	t.Run("git.list_branches stops for-each-ref (T1)", func(t *testing.T) {
@@ -195,8 +195,8 @@ func TestGitReadMethodsStopAtTheCallLimit(t *testing.T) {
 // A held `worktree add` gets the stop. The create answers worktree_add_failed with
 // the stop text, the leaf, the registration and the new branch are gone, and no
 // git call follows (measured on Linux, macOS and Windows). The timeoutMs of the
-// caller does not end the add. In attach mode one add runs, and the branch
-// stays.
+// caller does not end the add (measured on Linux and macOS). In attach mode one
+// add runs, and the branch stays (measured on Linux).
 func TestWorktreeCreateAddStopsAtTheCallLimit(t *testing.T) {
 	want := "git worktree add failed: " + stopText("worktree")
 	for _, c := range []struct {
@@ -238,7 +238,7 @@ func TestWorktreeCreateAddStopsAtTheCallLimit(t *testing.T) {
 // The wide limit holds while any request of the daemon with "shadowDirOff":true
 // runs, also for a request without it on another repository. When the last such
 // request answered, the limit of a call is back (measured on Linux, macOS and
-// Windows). The hold is 2 s and the limit of a call 1 s.
+// Windows, one case on Linux only). The hold is 2 s and the limit of a call 1 s.
 func TestGitWideLimitWhileAnOffRequestRuns(t *testing.T) {
 	f := newWTFixture(t, false)
 	installGitSlowStub(t, f.realGit)

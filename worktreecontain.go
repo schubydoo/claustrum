@@ -148,7 +148,7 @@ func baseRepoUnderManagedWorktrees(repo string) bool {
 //
 // A missing path skips the test. That is measured on Linux, macOS and
 // Windows. On Windows, other measured cases stat and walk, and pass.
-// repo is repoDir: the baseRepo after the ~ expansion, or "." when it is
+// repo is repoDir(): the baseRepo after the ~ expansion, or "." when it is
 // absent.
 //
 // On Windows, after its walk, filepath.EvalSymlinks looks up each component of the

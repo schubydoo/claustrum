@@ -929,7 +929,7 @@ func TestWorktreeRemoveExternalDeepSymlinkChainBase(t *testing.T) {
 	}
 }
 
-// Measured: the repository has a good HEAD, and its `.git/commondir` is a dangling
+// Measured on Linux (`89cb6289`): the repository has a good HEAD, and its `.git/commondir` is a dangling
 // relative symlink that stays in `.git`. The trust check passes it, and git then fails
 // each `worktree list`. The removal is refused, and the worktree, its `.git` file and
 // its entry stay. The fixture lives in the test's temporary directory only. Mutation:

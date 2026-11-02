@@ -134,7 +134,7 @@ func settingsControlOf(t *testing.T, result json.RawMessage) string {
 // repository B without the member answers "settingsControl":"off-switch"
 // (measured on Linux). After the first request answered, the next git.info on B
 // answers "shadow" again (measured). The reply reads the hold when it is made
-// (measured). Mutation: read req.offOwn in place of req.offLive at the reply of
+// (measured). Mutation: read req.offOwn in place of req.offLive() at the reply of
 // gitInfo.
 func TestOffSwitchHoldsTheDaemonWhileARequestRuns(t *testing.T) {
 	h := newOffHoldFixture(t, "remote,get-url")

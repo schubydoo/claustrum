@@ -41,8 +41,7 @@ func unsetCalls(calls []envCall) []envCall {
 // The second is the calls that take keys out of it. The third is the reply of
 // a git.status on the new worktree.
 //
-// The rows are measured on Linux. Parts of the report of the second
-// round have the file sizes and the replies. On 5fd08069 the file holds
+// The rows are measured on Linux. On 5fd08069 the file holds
 // the text of the file of the repository without `core.bare` and
 // `core.worktree`: 48 bytes, 25 bytes or 0 bytes.
 //
@@ -623,7 +622,7 @@ func TestWriteWorktreeConfigGuards(t *testing.T) {
 			t.Errorf("the file = %q", got)
 		}
 	})
-	// Measured: a file and an empty folder at the name are replaced, and a
+	// Measured on Linux and macOS: a file and an empty folder at the name are replaced, and a
 	// folder with content stays.
 	t.Run("a file that is there is replaced", func(t *testing.T) {
 		f := newReg(t)

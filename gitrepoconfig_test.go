@@ -559,7 +559,7 @@ func TestRepoConfigSettingsCost(t *testing.T) {
 		{"extensions.noop = true", repeat("[extensions]\n\tnoop = true\n"), 200000, true},
 		{"include.path of a missing file", repeat("[include]\n\tpath = nosuchfile.cfg\n"), 200000, true},
 		{"branch.main.remote = abcd", repeat("[branch \"main\"]\n\tremote = abcd\n"), 200000, true},
-		// Measured: seven more counted sections. The 200000 `includeIf` lines name
+		// Measured on Linux: seven more counted sections. The 200000 `includeIf` lines name
 		// a missing file, and the answer is this text, not the include limit.
 		{"lfs.url = abcd", repeat("[lfs]\n\turl = abcd\n"), 200000, true},
 		{"index.version = 4", repeat("[index]\n\tversion = 4\n"), 200000, true},

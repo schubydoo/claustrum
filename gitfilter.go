@@ -291,7 +291,7 @@ func (f *filterPlan) pairs(name string, values [len(filterKeys)]string, keys ...
 // a filter that only the repository defines, with a value that does not pass,
 // gets its three pairs with the raw name. Its name is not in refused, so a failure at it answers git's text with
 // the bytes that are not valid UTF-8 dropped (measured on Linux). On Windows the create succeeds and no filter
-// runs, as 5fd08069 does of round val20-windows (measured on Windows). With no settings copy such a filter gets
+// runs, as 5fd08069 does (measured on Windows). With no settings copy such a filter gets
 // unreplaceableFilterText (claustrum's own, not measured).
 //
 // own holds the repository's own records. shadow is true in the state shadow

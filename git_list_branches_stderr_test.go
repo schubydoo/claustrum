@@ -85,15 +85,15 @@ func TestGitListBranchesIgnoresGitStderr(t *testing.T) {
 	}
 }
 
-// The split between git and gitStdoutErr is a per-caller decision, so pin that
-// git still returns COMBINED output.
+// The split between git() and gitStdoutErr is a per-caller decision, so pin that
+// git() still returns COMBINED output.
 func TestGitHelperStillReadsCombinedOutput(t *testing.T) {
 	if _, err := exec.LookPath("git"); err != nil {
 		t.Skip("git not installed")
 	}
 	dir := t.TempDir()
 	// `git -C <dir> status` in a non-repo writes its fatal to stderr and exits
-	// non-zero. git must still hand that text back; gitStdoutErr must not.
+	// non-zero. git() must still hand that text back; gitStdoutErr must not.
 	combined, okCombined := git(dir, "status", "--porcelain")
 	stdoutOnly, errStdout := gitStdoutErr(dir, "status", "--porcelain")
 
@@ -112,7 +112,7 @@ func TestGitHelperStillReadsCombinedOutput(t *testing.T) {
 // the line that actually puts the string on the wire.
 //
 // They are not interchangeable, and the distinction cost a round: with only the
-// helper test present, reverting gitListBranches to git left the entire suite
+// helper test present, reverting gitListBranches to git() left the entire suite
 // green while shipping the defect verbatim. A test that exercises a helper says
 // nothing about whether the helper is reached.
 //

@@ -20,8 +20,8 @@ import (
 // The daemon's own read of a repository's config, and its tests of three files of
 // the git directory. 5fd08069 refuses a git method when it does not accept one of
 // them. docs/protocol/git-rules-config.md, "Repository config refusals", gives the rules.
-// A Linux with git 2.43.0 ran every cell that a comment names here, unless the comment
-// names another system. The X cells are those of the edge round.
+// A Linux system with git 2.43.0 ran every measurement that a comment names here,
+// unless the comment names another system.
 
 const (
 	// repoConfigPrefix starts a refusal of the config, and repoFilePrefix one of

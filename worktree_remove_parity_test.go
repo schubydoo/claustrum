@@ -9,7 +9,7 @@ import (
 )
 
 // The git.worktree_remove rows measured side by side against f6010b97 on macOS. Each
-// test names its rows. Every fixture lives under t.TempDir.
+// test names its rows. Every fixture lives under t.TempDir().
 
 // rmFixture is a repository with one registered worktree, wt1 on branch wt1, under
 // <repo>/.claude/worktrees.

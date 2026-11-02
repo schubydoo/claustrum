@@ -833,7 +833,7 @@ func gitDirRegistryDir(gitDir string) string {
 //
 // Attach mode and a worktreeRoot take the same tests. On macOS with git 2.50,
 // 89cb6289 answers the "does not name" text there too, with a registrations
-// directory that is a symlink to <F>/WTREG (measured). On Linux with git 2.43 both
+// directory that is a symlink to <F>/WTREG (measured on macOS). On Linux with git 2.43 both
 // cells succeed: git writes the path through the link. 89cb6289 answers that text
 // also for /elsewhere/WTREG/w1, a path that does not exist (measured on Linux and
 // macOS). A baseRepo that is a linked worktree creates, with the registration and
@@ -966,7 +966,7 @@ func compareAdminRecord(admin, worktreePath string, cleaned bool) adminRecord {
 // on both references and on claustrum.
 //
 // The record is that of the entry in the registrations directory of baseRepo, not that of the folder that the .git file
-// names. Cell P-c shows it (89cb6289, Linux with git 2.43 and macOS with git 2.50). There the daemon has GIT_COMMON_DIR of
+// names. A measurement shows it (89cb6289, Linux with git 2.43 and macOS with git 2.50). There the daemon has GIT_COMMON_DIR of
 // another repository X, and git makes the registration in X. Its record names the new leaf. baseRepo holds an old entry of
 // the same name, and the record of that entry names another worktree. 89cb6289 refuses with the text of adminRecordRefusal
 // and changes nothing: the index of the old entry keeps its bytes. With no worktrees folder in baseRepo, the answer is the

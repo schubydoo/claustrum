@@ -10,7 +10,7 @@ import (
 	"time"
 )
 
-// stubLingeringGit puts this test binary on PATH as `git` (a symlink, so os.Executable still
+// stubLingeringGit puts this test binary on PATH as `git` (a symlink, so os.Executable() still
 // resolves to the real binary) running in the "git-lingering" helper mode. exit0 chooses whether
 // the read-tree checkout git EXITS 0 while a descendant keeps holding one of the daemon's output
 // pipes (the P1 git-exit-0 case) or blocks past the deadline (the killed-during-checkout case).

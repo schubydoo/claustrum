@@ -11,7 +11,7 @@ import (
 // git.worktree_remove lists the configuration again once when its first plain
 // listing fails. These are measured on macOS and Linux on 5fd08069.
 
-// relistFixture is a listing fixture with the worktree w1 at f.wt.
+// relistFixture is a listing fixture with the worktree w1 at f.wt().
 func relistFixture(t *testing.T) listingFixture {
 	t.Helper()
 	f := newListingFixture(t)

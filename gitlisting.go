@@ -242,7 +242,7 @@ func (r listingRun) detail() string {
 	// failure frames. f6010b97 applies the whole rule in this frame. A stub git on
 	// Windows gave multi-line, CRLF, over-512-byte, invalid UTF-8 and control byte
 	// payloads. 40 newlines and 40 spaces before a long text showed that the cap comes
-	// before the trim (row HK_leadlong).
+	// before the trim (measured).
 	d := r.err.Error()
 	if text := worktreeGitText(stderr, nil); text != "" {
 		d += ": " + text
@@ -261,7 +261,7 @@ func listingEnvBase() []string {
 }
 
 // listingEnvOf is listingEnvBase with daemon as the daemon's environment.
-// shadowDaemonEnv gives it os.Environ, with no cleaning.
+// shadowDaemonEnv gives it os.Environ(), with no cleaning.
 func listingEnvOf(daemon []string) []string {
 	env := dropConfigOverrides(daemon)
 	out := env[:0]
@@ -290,7 +290,7 @@ func listingEnvOf(daemon []string) []string {
 // on a repository, and its call log shows no listing. That holds with and without a
 // broken GIT_CONFIG_KEY_0 (measured on Linux and macOS). On Windows that GIT_DIR does
 // not come here: the trust check pins it, and the daemon's own read of the config
-// refuses it (readRepoConfig, cell V-Wd). The other states are a daemon GIT_COMMON_DIR
+// refuses it (readRepoConfig, measured). The other states are a daemon GIT_COMMON_DIR
 // and a `.git` file that names a regular file. Both are not measured. A `.git` file
 // that names a git dir that is gone gets the listing. With git older than 2.56, git
 // answers "not a git repository" there, so the frame stays (measured on Linux and

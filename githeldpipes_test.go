@@ -173,7 +173,7 @@ func TestWorktreeCreateFilterListingWaitsForHeldPipes(t *testing.T) {
 // of the listing. The bound ends only a git that still runs, so the create
 // succeeds (measured on Linux). A listing that exits 1 at once counts by that exit status (claustrum's own, not
 // measured). The seam shrinks the bound of 30 s to heldPipe, and the child holds the pipes 2*heldPipe. Mutation: in
-// ownConfigListing, end the listing by exec.CommandContext again (measured), or count it as stopped whenever the bound
+// ownConfigListing, end the listing by exec.CommandContext again (both rows), or count it as stopped whenever the bound
 // fired (the row "holdfail").
 func TestWorktreeCreateFilterListingHeldPastBound(t *testing.T) {
 	for _, mode := range []string{"hold", "holdfail"} {

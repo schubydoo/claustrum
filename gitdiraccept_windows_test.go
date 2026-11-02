@@ -497,7 +497,7 @@ func TestKeptProbeWithAJunctionAtTheGitDirOnWindows(t *testing.T) {
 }
 
 // TestCreateWithAFileAtTheGitDirOnWindows must match the measured cases (on
-// Windows, 2 of 2 runs). At one step of the create, `repo\.git` goes to
+// Windows, 2 of 2 runs each). At one step of the create, `repo\.git` goes to
 // `repo\.git-real`, and a regular file `gitdir: <path>` takes its place.
 //
 //   - X1b and X1c: the file comes right after the add and names the git

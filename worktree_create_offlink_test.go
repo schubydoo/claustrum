@@ -17,9 +17,9 @@ type offLinkKind struct {
 	stage func(t *testing.T, at, target string)
 }
 
-// TestOffCreateWithALinkedRegistrationsFolder pins these cells: C2off
-// (measured on Linux, macOS and Windows), C2offA (Linux and macOS), C2offF
-// (Linux) and C2offJ (Windows). The attach rows on Windows are not measured. A
+// TestOffCreateWithALinkedRegistrationsFolder pins four measured cases: one on
+// Linux, macOS and Windows, one on Linux and macOS, one on Linux and one on
+// Windows. The attach rows on Windows are not measured. A
 // create with "shadowDirOff":true finds a link or a file at the registrations
 // folder. 5fd08069 runs `rev-parse --absolute-git-dir`, then one listing in
 // the repository (two in attach mode), and then refuses. It answers the text

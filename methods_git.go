@@ -101,8 +101,8 @@ func git(dir string, args ...string) (string, bool) {
 	return gitContext(context.Background(), dir, args...)
 }
 
-// gitContext is git with an explicit context, so the timeout/cancel path is
-// testable without waiting on a real wedged git. Combined output — see git.
+// gitContext is git() with an explicit context, so the timeout/cancel path is
+// testable without waiting on a real wedged git. Combined output — see git().
 func gitContext(ctx context.Context, dir string, args ...string) (string, bool) {
 	full := append([]string{"-C", dir}, args...)
 	cmd := exec.CommandContext(ctx, "git", full...)
@@ -124,7 +124,7 @@ func gitContext(ctx context.Context, dir string, args ...string) (string, bool) 
 // warnings into porcelain entries. Measured against 5db5e4a with a repo whose
 // core.excludesFile is unreadable — the reference answers {"isRepo":true,
 // "clean":true} while claustrum reported the warning text as a change. The error
-// path is unaffected: the caller reports err.Error, which for an ExitError is
+// path is unaffected: the caller reports err.Error(), which for an ExitError is
 // "exit status N" and never includes stderr.
 func gitStdoutErr(dir string, args ...string) (string, error) {
 	full := append([]string{"-C", dir}, args...)

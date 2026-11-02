@@ -45,7 +45,7 @@ func treeOf(t *testing.T, root string) []string {
 // alone.
 //
 // runGit already isolates the commands the TEST runs, but hardenedGitEnv builds on
-// os.Environ, so the daemon-side `--exclude-standard` reads whatever global
+// os.Environ(), so the daemon-side `--exclude-standard` reads whatever global
 // excludes the machine has. That is correct in production and reproduces the
 // reference. In a test it makes the result depend on the machine: a developer
 // whose global ignore names `.claude` silently turns a "not ignored" fixture into

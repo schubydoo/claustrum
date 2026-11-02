@@ -277,7 +277,7 @@ func answeredElsewhere(u gitUse, gitDir string) bool {
 // the gate. It is nil in every other case. repo is the baseRepo of the create.
 // The caller releases the new hold.
 //
-// The rows are measured on Linux and macOS, 2 of 2 runs. A symbolic link to a
+// The rows are measured on Linux and macOS (2 of 2 runs on macOS). A symbolic link to a
 // copy T of the git directory is put at `.git` before `rev-parse
 // --absolute-git-dir`. Git then answers T. 5fd08069 reads the config again,
 // goes on in T and answers success: T has the registration, the branch and the

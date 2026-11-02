@@ -45,7 +45,7 @@ func stubAnswer(t *testing.T, match string, code int, stdout string) {
 // resetAttrSourceForTest clears the stored --attr-source probe so it re-runs
 // under a controlled PATH. Direct assignment is safe in a test that is not parallel
 // and has no parallel parent: nothing else probes at that time. A top-level test
-// with t.Parallel starts after every sequential top-level test ended. Parallel rows
+// with t.Parallel() starts after every sequential top-level test ended. Parallel rows
 // end before their own top-level test does. Each test that resets the probe also
 // calls t.Setenv, and Go refuses t.Setenv in a parallel test.
 func resetAttrSourceForTest() {

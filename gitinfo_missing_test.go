@@ -14,7 +14,7 @@ import (
 // process starts: the error is that of the folder test of os.StartProcess,
 // "chdir", not the "fork/exec" error of a start that failed. 5fd08069 starts no
 // process there (measured on Linux). Mutation: in runListing, set
-// cmd.SysProcAttr = newSysProcAttr. The start then forks on Linux and macOS,
+// cmd.SysProcAttr = newSysProcAttr(). The start then forks on Linux and macOS,
 // and the error is "fork/exec". On Windows the error is a "fork/exec" error
 // too, and not ErrNotExist (from the code of Go).
 func TestMissingPathListingStartsNoProcess(t *testing.T) {
@@ -34,7 +34,7 @@ func TestMissingPathListingStartsNoProcess(t *testing.T) {
 // makes the folder at the second resolve of the path: the first one is the trust
 // check, the second the pin of the listing. The listing then starts in it, and
 // the reply stays the "no repository" answer. Mutation: in gitInfo, return
-// notRepo with no call of missingPathListing. No listing then runs.
+// notRepo() with no call of missingPathListing. No listing then runs.
 func TestMissingPathInfoReachesTheListingStart(t *testing.T) {
 	f := newShadowFixture(t)
 	dir, resolves := appearAtSecondResolve(t)

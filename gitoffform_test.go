@@ -226,7 +226,7 @@ func TestShadowStatusFollowsAHoldThatEnds(t *testing.T) {
 // before the read-tree (measured on Linux). Mutation: drop the call of
 // req.keepLiveForm in gitWorktreeCreateLocked. Every call then names the copy,
 // with two listings and the index in `.index-<n>`. A second mutation gives the
-// add the use u in place of u.fixedForm in worktreeAdd: the add then keeps the
+// add the use u in place of u.fixedForm() in worktreeAdd: the add then keeps the
 // copy.
 func TestShadowCreateFollowsAHoldThatStartsBeforeTheAdd(t *testing.T) {
 	h := newLiveFixture(t)
@@ -250,7 +250,7 @@ func TestShadowCreateFollowsAHoldThatStartsBeforeTheAdd(t *testing.T) {
 // git runs. The add keeps the copy, and the read-tree uses the git directory
 // itself with the index in the temporary folder and one listing (measured on
 // Linux). Mutation: in gitWorktreeCreateLocked, give the checkout req.use in
-// place of req.use.fixedForm. The read-tree then names the copy, with two
+// place of req.use.fixedForm(). The read-tree then names the copy, with two
 // listings.
 func TestShadowCreateFollowsAHoldThatStartsAtTheAdd(t *testing.T) {
 	h := newLiveFixture(t)
@@ -350,7 +350,7 @@ func (h liveFixture) wantRemoved(t *testing.T, cell string) {
 // runs. rev-list and update-ref use the git directory itself, and the branch
 // goes (measured on Linux). Mutation: drop the call of req.keepLiveForm in
 // removeGate. rev-list and update-ref then name the copy. Two more mutations
-// drop the u.atCommand of branchCheckGit, or that of deleteBranchRef.
+// drop the u.atCommand() of branchCheckGit, or that of deleteBranchRef.
 func TestShadowRemoveFollowsAHoldThatStarts(t *testing.T) {
 	h := newLiveFixture(t)
 	h.warm(t)

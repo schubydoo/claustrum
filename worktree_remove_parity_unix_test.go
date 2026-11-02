@@ -12,7 +12,7 @@ import (
 
 // The git.worktree_remove rows that need a permission deny, or a worktreeRoot (refused
 // on Windows before any git call). Measured side by side against f6010b97 on macOS.
-// Every fixture lives under t.TempDir, and every chmod is undone in a cleanup.
+// Every fixture lives under t.TempDir(), and every chmod is undone in a cleanup.
 
 func chmodFor(t *testing.T, p string, mode os.FileMode) {
 	t.Helper()

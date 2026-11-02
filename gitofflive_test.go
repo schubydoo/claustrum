@@ -318,7 +318,7 @@ func TestShadowOffHoldThatStartsInARequest(t *testing.T) {
 // A git.info on a missing path that comes while the start test runs waits for
 // that test, and then answers "shadow". 5fd08069 does so (measured on Linux, 5
 // of 5 runs). Mutation: in gitInfo, answer a missing path with
-// req.shadow.control(req.offLive) in place of notRepo. The reply then comes
+// req.shadow.control(req.offLive()) in place of notRepo(). The reply then comes
 // before the test ends, with no member.
 func TestShadowMissingPathInfoWaitsForARunningStartTest(t *testing.T) {
 	h := newLiveFixture(t)

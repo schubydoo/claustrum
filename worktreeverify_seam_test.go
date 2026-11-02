@@ -15,7 +15,7 @@ import (
 // the evalSymlinks seam so the later arm is observed rather than assumed.
 //
 // checkpointCreatedWorktree itself only stats and resolves; it deletes nothing, so
-// this test cannot reach a recursive delete. The leaf is a t.TempDir the test
+// this test cannot reach a recursive delete. The leaf is a t.TempDir() the test
 // never hands to a caller that would remove it.
 func TestCheckpointCreatedWorktreeYieldsEmptyCheckpointWhenResolveFails(t *testing.T) {
 	sentinel := errors.New("evalSymlinks refused")

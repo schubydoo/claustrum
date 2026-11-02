@@ -46,7 +46,7 @@ const (
 	gitlinkMode = "160000"
 
 	// The three texts of a submodule entry, as the frames of 89cb6289 show them
-	// (measured on Linux, macOS and Windows).
+	// (measured on Linux, one of them also on macOS and Windows).
 	submodulePresentText   = " (submodule present; contents not inspected)"
 	submoduleStagedText    = " (submodule change staged; contents not inspected)"
 	submoduleUnreadText    = " (submodule; could not be inspected)"
@@ -898,7 +898,7 @@ func (r *statusRun) at() {
 // A Windows test has the same two reads, as calls 5 and 9 of 23, for
 // `sparsecheckoutcone` and for `sparsecheckout = true` (measured). With a file
 // of 0 bytes 5fd08069 makes no second read: its git.status has 22 calls with
-// one read (the call record of the Linux round).
+// one read (measured on Linux).
 //
 // The file of that cell is a copy of the file of the repository. So which file
 // 5fd08069 reads there is not measured: claustrum lists the text that the test

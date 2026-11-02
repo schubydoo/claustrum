@@ -129,7 +129,7 @@ var gitVersionDir = func() string {
 
 // nonFolderStartRefuses is true on Windows. A configuration listing that cannot start
 // in a path that exists and is not a folder is a refusal there, as on 89cb6289
-// (Windows, A-14 and Wc). See unenterableDir.
+// (measured on Windows). See unenterableDir.
 var nonFolderStartRefuses = true
 
 // walkStartsAsSpelled is true on Windows. A directory that filepath.EvalSymlinks cannot

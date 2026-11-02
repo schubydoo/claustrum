@@ -181,8 +181,8 @@ func (f noRepoFixture) noRepoRows(t *testing.T, text, rootCell string) {
 }
 
 // With a broken pair, the five git methods refuse in a plain folder with the hooks
-// refusal of the failed listing. The rows are measured on Linux, macOS and
-// Windows. One create ran with a branchName on Linux and without one on macOS. The
+// refusal of the failed listing. The rows are measured on Linux and macOS, and
+// most of them on Windows too. Two rows have no Windows case. One create ran with a branchName on Linux and without one on macOS. The
 // Windows remove ran with no branchName. The text after "exit status 128: " is the
 // stderr of the listing of the git on this host. Mutations: answer "no repository"
 // before the listing in each method.
