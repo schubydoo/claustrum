@@ -29,6 +29,41 @@ func docRead(t *testing.T, elem ...string) string {
 	return strings.ReplaceAll(string(b), "\r\n", "\n")
 }
 
+// goSourceFiles returns the .go files of the package directory and of each
+// package under internal/, test files too. A testdata folder is skipped.
+func goSourceFiles(t *testing.T) []string {
+	t.Helper()
+	files, err := filepath.Glob("*.go")
+	if err != nil || len(files) == 0 {
+		t.Fatalf("no .go files found in the package directory: %v", err)
+	}
+	err = filepath.WalkDir("internal", func(path string, d os.DirEntry, err error) error {
+		if err != nil {
+			return err
+		}
+		if d.IsDir() && d.Name() == "testdata" {
+			return filepath.SkipDir
+		}
+		if !d.IsDir() && strings.HasSuffix(path, ".go") {
+			files = append(files, path)
+		}
+		return nil
+	})
+	if err != nil {
+		t.Fatalf("cannot walk internal: %v", err)
+	}
+	return files
+}
+
+// TestDocsGoSourceFilesSeeInternal: the doc tests read the files under internal/ too,
+// so a method name or an error code in a moved file stays checked.
+func TestDocsGoSourceFilesSeeInternal(t *testing.T) {
+	want := filepath.Join("internal", "renameretry", "renameretry.go")
+	if !slices.Contains(goSourceFiles(t), want) {
+		t.Errorf("goSourceFiles misses %s", want)
+	}
+}
+
 // docFlat folds every run of white space into one space, so that a sentence that
 // the document wraps over several lines matches one pattern.
 func docFlat(s string) string {
@@ -202,10 +237,7 @@ func TestDocsNoPhantomMethodInGoText(t *testing.T) {
 		known[f] = true
 	}
 	known[jobFeature] = true
-	files, err := filepath.Glob("*.go")
-	if err != nil || len(files) == 0 {
-		t.Fatalf("no .go files found in the package directory: %v", err)
-	}
+	files := goSourceFiles(t)
 	flagDefRE := regexp.MustCompile(`flag\.[A-Za-z0-9]+\(`)
 	check := func(file string, n int, text string) {
 		for _, name := range docGoNameRE.FindAllString(text, -1) {
@@ -522,10 +554,7 @@ var (
 // return a "code string" result (worktreeexternal_unix.go), which feeds the field.
 func sendableErrorCodes(t *testing.T) map[string]string {
 	t.Helper()
-	files, err := filepath.Glob("*.go")
-	if err != nil || len(files) == 0 {
-		t.Fatalf("no .go files found in the package directory: %v", err)
-	}
+	files := goSourceFiles(t)
 	codes := map[string]string{}
 	for _, file := range files {
 		if strings.HasSuffix(file, "_test.go") {

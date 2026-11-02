@@ -6,19 +6,8 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
-	"syscall"
 	"testing"
 )
-
-// TestRenameHeldIsWindowsOnly: on Linux and macOS no rename error is tried
-// again, also not a denied one.
-func TestRenameHeldIsWindowsOnly(t *testing.T) {
-	for _, err := range []error{syscall.EACCES, syscall.EBUSY, syscall.EPERM} {
-		if renameHeld(&os.LinkError{Op: "renameat", Old: "a", New: "b", Err: err}) {
-			t.Errorf("renameHeld(%v) = true, want false", err)
-		}
-	}
-}
 
 // TestShadowCopyRenameTextOnLinuxAndMacOS: a failed rename of the copy write
 // keeps the text of the root on Linux and macOS, `renameat .tmp-<n> HEAD:

@@ -74,10 +74,11 @@ comment:
 
 # Per-area coverage breakdown in the dashboard + PR comment. No `statuses` are
 # defined, so components add VISIBILITY only — they do NOT create extra
-# per-component PR status checks. claustrum is a single flat `package main` at the
-# repo root, so paths are single files (mirrors the Architecture section of
-# CLAUDE.md). Every production .go file must appear here exactly once;
-# scripts/lint_codecov_components.py enforces that in CI.
+# per-component PR status checks. Paths are single files: a root file by its name,
+# a file under `internal/` or `handlers/` by its path from the repo root. Every
+# production .go file must appear here exactly once.
+# scripts/lint_codecov_components.py enforces that in CI for the root and
+# `internal/`. It does not check `handlers/prune.go`.
 component_management:
   individual_components:
     - component_id: rpc_dispatch
@@ -239,9 +240,9 @@ component_management:
         - worktreestaging_modes_unix.go
         - worktreestaging_modes_windows.go
         # the retry of a held rename on Windows: the copy write and the staging move (5fd08069).
-        - renameretry.go
-        - renameretry_other.go
-        - renameretry_windows.go
+        - internal/renameretry/renameretry.go
+        - internal/renameretry/renameretry_other.go
+        - internal/renameretry/renameretry_windows.go
         # the held git directory of a create, and its steps through that folder (5fd08069).
         - gitdiraccept.go
         - gitdirheld.go

@@ -13,6 +13,8 @@ import (
 	"strconv"
 	"strings"
 	"syscall"
+
+	"github.com/schubydoo/claustrum/internal/renameretry"
 )
 
 // The folder of one repository in the folder of the daemon, as 5fd08069 keeps
@@ -470,8 +472,8 @@ func shadowLink(root *os.Root, target, name string) error {
 // none. The copy is a new file each time (writeNewFile). A temporary file that
 // is left after an error goes through removeEntry.
 //
-// On Windows a held copy gets the retry of retryRename, and a failed rename
-// names both full paths (copyRenameError). On 5fd08069 a copy held 1 s gets
+// On Windows a held copy gets the retry of renameretry.Retry, and a failed rename
+// names both full paths (renameretry.CopyError). On 5fd08069 a copy held 1 s gets
 // the new bytes. One held 3 s fails at about 2.1 s, and the old copy stays
 // (measured on Windows).
 func (h *shadowHost) writeCopy(st *shadowRepo, root *os.Root, rel, file string, data []byte) error {
@@ -486,7 +488,7 @@ func (h *shadowHost) writeCopy(st *shadowRepo, root *os.Root, rel, file string, 
 		}
 	}
 	rename := func(oldName, newName string) error {
-		return copyRenameError(root, retryRename(func() error { return root.Rename(oldName, newName) }))
+		return renameretry.CopyError(root, renameretry.Retry(func() error { return root.Rename(oldName, newName) }))
 	}
 	if left, err := writeNewFileBy(root, path, data, rename); err != nil {
 		if left != "" {

@@ -18,7 +18,7 @@ daemon. The wire surface is the product.
 |------|---------|
 | Build the binary | `make build`. The build uses `-trimpath`, and the binary is stripped. Output: `./claustrum` |
 | Cross-build all 6 targets | `make all`. Targets: linux/darwin/windows × amd64/arm64 → `dist/` |
-| Format | `make fmt` runs `gofmt -l -w *.go`, so it skips `handlers/`. `gofmt -l .` must be empty |
+| Format | `make fmt` runs `gofmt -l -w *.go handlers internal`. `gofmt -l .` must be empty |
 | Vet | `make vet` (`go vet ./...`) |
 | Lint | `golangci-lint run ./...`. The configuration is `.golangci.yml` (v2) |
 | Tests | `make test` (`go test -race -timeout 20m ./...`). This runs the unit suites and the socket-integration suites. The time limit is explicit, because a race run took more than 9 minutes, near the 10 minute default of `go test` |
@@ -41,7 +41,7 @@ There is one binary. A flag selects the mode (`main.go`): `-serve`, `-bridge`,
 
 The table names the files that an agent must not break. The file map of the
 modes and the OS splits is in
-[`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md#source-layout-flat-package-main).
+[`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md#source-layout).
 
 | File | Role |
 |------|------|

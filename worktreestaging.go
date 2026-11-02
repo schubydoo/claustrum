@@ -17,6 +17,8 @@ import (
 	"strconv"
 	"strings"
 	"time"
+
+	"github.com/schubydoo/claustrum/internal/renameretry"
 )
 
 // The staged `worktree add` of git.worktree_create in the state shadow, as
@@ -767,7 +769,7 @@ func sweepOldStaging(git *os.Root, gitDir string, now time.Time) {
 //     `initializing` and a newline (be1c1ca5, measured on Linux, macOS and
 //     Windows).
 //  5. The target is the first free name of registrationTarget (measured).
-//  6. The rename gets the retry of retryRename (measured). A rename that
+//  6. The rename gets the retry of renameretry.Retry (measured). A rename that
 //     still fails ends the move.
 //  7. The entry at the target must still be the staging folder. Else the text
 //     is replacedEntryText, and nothing is removed (D24).
@@ -865,7 +867,7 @@ func (st *addStage) move(leaf string, cp worktreeCheckpoint) error {
 		return fail(fmt.Errorf("the repository already has a hundred worktrees called %q; remove some (git worktree prune, git worktree remove)", name))
 	}
 	target := filepath.Join(worktreesSubdir, targetName)
-	if err := retryRename(func() error { return stagingRename(st.git, staging, target) }); err != nil {
+	if err := renameretry.Retry(func() error { return stagingRename(st.git, staging, target) }); err != nil {
 		return fail(err)
 	}
 	// The staging folder stays open through the identity test, so no other
@@ -922,12 +924,12 @@ func plantedGitFileText(leaf string) string {
 
 // removeLockedFile removes the file `locked` of the moved registration by one
 // plain remove through entry, the root at that registration. On Windows a
-// held file gets the retry of retryWhile for renameRetryBound. be1c1ca5
+// held file gets the retry of renameretry.While for renameretry.Bound. be1c1ca5
 // succeeds with the file held for 1 s and fails with it held for 3 s
 // (measured on Windows). The error has the form `removeat locked: <cause>`, as
 // be1c1ca5 answers it on Linux, macOS and Windows. A test replaces it.
 var removeLockedFile = func(entry *os.Root) error {
-	return retryWhile(renameRetryBound, renameHeld, func() error { return entry.Remove("locked") })
+	return renameretry.While(renameretry.Bound, renameretry.Held, func() error { return entry.Remove("locked") })
 }
 
 // writeStagedRecord gives the staging folder a `gitdir` record that names

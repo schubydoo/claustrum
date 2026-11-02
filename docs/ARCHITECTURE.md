@@ -6,9 +6,9 @@ Claustrum is one Go binary. A flag selects the mode. The build is static
 more dependency goes into Windows builds only. It is
 `github.com/Microsoft/go-winio` (the opt-in `-listen-pipe` named-pipe transport).
 
-## Source layout (flat `package main`)
+## Source layout
 
-All code is in `package main`, except `handlers/prune.go`. That package holds
+All code is in `package main`, except `handlers/` and `internal/`. `handlers/prune.go` holds
 `handlers.PruneParams`, so the `-32602` text of `plugins.prune` names the type
 of the reference byte for byte. A suffix such as `_unix` or `_windows`, or a
 build tag alone, marks the part of a group for one OS. Every OS serves
@@ -24,7 +24,7 @@ the same JSON-RPC methods.
 | Install | `install*.go`, `libc_*.go`, `managedlauncher*.go` | `-install` and `-probe-cli`. The download. The file test of a cache hit. The libc probe. The managed launcher. |
 | Host and lock | `daemon_runlock_*.go`, `tokenpersist.go`, `childrecord*.go`, `childreap*.go`, `hostclean*.go`, `orphanexit.go`, `selfexit_*.go` | The run-dir lock. `daemon.token`. The child records and their reap. The host cleaner. The orphan exit and the idle exit. |
 | Logs | `logging.go`, `metrics.go`, `wirelog.go` | The leveled stderr logger. The opt-in `/metrics` counters. The opt-in `-wire-log` capture. |
-| Shared | `renameretry*.go`, `pathcanon_*.go` | The retry of a rename on Windows. The canonical form of a path. |
+| Shared | `internal/renameretry/`, `pathcanon_*.go` | The retry of a rename on Windows. The canonical form of a path. |
 
 ## The git subsystem
 

@@ -1,17 +1,18 @@
 #!/usr/bin/env python3
 """Lint ``codecov.yml`` so every production ``.go`` file sits in exactly one component.
 
-claustrum is a single flat ``package main`` at the repo root, so the
-``component_management`` map in ``codecov.yml`` lists files one by one. A production
+The ``component_management`` map in ``codecov.yml`` lists files one by one. A production
 file that is not listed still counts toward the project total (when the single Linux
 coverage cell compiles it), but its lines show under no component in the PR comment
 and the dashboard, and nothing reports the gap.
 The 4534d86 reconciliation added nine production files over #314-#335 and none of
 them reached the map until #336. This lint fails the PR that introduces the tenth.
 
-Rule: the set of ``*.go`` files at the repo root that are not ``_test.go`` files must
-equal the set of ``.go`` paths listed under ``component_management``, with no path
-listed twice. Test files never appear in a Go coverage profile, so they are not
+Rule: the set of ``*.go`` files that are not ``_test.go`` files, at the repo root and
+under ``internal/``, must equal the set of ``.go`` paths listed under
+``component_management``, with no path listed twice. A root file is listed by its name,
+a file under ``internal/`` by its path from the repo root. The lint does not check
+``handlers/prune.go``. Test files never appear in a Go coverage profile, so they are not
 listed and not checked.
 
 Exit 0 when the two sets match, 1 (with the offending file names) otherwise. Stdlib
@@ -30,8 +31,9 @@ import sys
 
 _CODECOV_YML = "codecov.yml"
 
-# A component path entry: `        - server.go` (any indent, one file, nothing else).
-_PATH_ENTRY = re.compile(r"^\s*-\s+([A-Za-z0-9_]+\.go)\s*$")
+# A component path entry: `        - server.go` or `        - internal/pkg/file.go`, at
+# any depth under internal/ (any indent, one file, nothing else).
+_PATH_ENTRY = re.compile(r"^\s*-\s+((?:internal(?:/[A-Za-z0-9_]+)+/)?[A-Za-z0-9_]+\.go)\s*$")
 
 
 def _listed_paths(text: str) -> list[str]:
@@ -53,12 +55,24 @@ def _listed_paths(text: str) -> list[str]:
 
 
 def _production_files(root: str) -> set[str]:
-    """Return the root-level production `.go` files (everything but `_test.go`)."""
-    return {
+    """Return the production `.go` files (everything but `_test.go`).
+
+    Root files are named by their base name, files under ``internal/`` by their
+    slash path from ``root``.
+    """
+    files = {
         os.path.basename(p)
         for p in glob.glob(os.path.join(root, "*.go"))
         if not p.endswith("_test.go")
     }
+    internal = os.path.join(root, "internal")
+    for dirpath, dirnames, filenames in os.walk(internal):
+        rel_dir = os.path.relpath(dirpath, root).replace(os.sep, "/")
+        dirnames[:] = sorted(d for d in dirnames if d != "testdata")
+        for name in filenames:
+            if name.endswith(".go") and not name.endswith("_test.go"):
+                files.add(f"{rel_dir}/{name}")
+    return files
 
 
 def lint(root: str) -> list[str]:

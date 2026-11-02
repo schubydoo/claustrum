@@ -1,4 +1,4 @@
-package main
+package renameretry
 
 import (
 	"errors"
@@ -10,11 +10,11 @@ import (
 // TestRenameRetryBoundIsTwoSeconds pins the production bound of the retry
 // (measured on Windows) and claustrum's own longest pause.
 func TestRenameRetryBoundIsTwoSeconds(t *testing.T) {
-	if renameRetryBound != 2*time.Second {
-		t.Errorf("renameRetryBound = %v, want 2s", renameRetryBound)
+	if Bound != 2*time.Second {
+		t.Errorf("Bound = %v, want 2s", Bound)
 	}
-	if renameRetryMaxPause != 50*time.Millisecond {
-		t.Errorf("renameRetryMaxPause = %v, want 50ms", renameRetryMaxPause)
+	if MaxPause != 50*time.Millisecond {
+		t.Errorf("MaxPause = %v, want 50ms", MaxPause)
 	}
 }
 
@@ -27,22 +27,22 @@ func TestRetryWhile(t *testing.T) {
 
 	t.Run("released", func(t *testing.T) {
 		calls := 0
-		err := retryWhile(time.Second, held, func() error {
+		err := While(time.Second, held, func() error {
 			if calls++; calls < 4 {
 				return errHeld
 			}
 			return nil
 		})
 		if err != nil || calls != 4 {
-			t.Errorf("retryWhile = %v after %d calls, want nil after 4", err, calls)
+			t.Errorf("While = %v after %d calls, want nil after 4", err, calls)
 		}
 	})
 	t.Run("another error", func(t *testing.T) {
 		other := errors.New("other")
 		calls := 0
-		err := retryWhile(time.Second, held, func() error { calls++; return other })
+		err := While(time.Second, held, func() error { calls++; return other })
 		if err != other || calls != 1 {
-			t.Errorf("retryWhile = %v after %d calls, want the error after 1", err, calls)
+			t.Errorf("While = %v after %d calls, want the error after 1", err, calls)
 		}
 	})
 	t.Run("held past the bound", func(t *testing.T) {
@@ -50,7 +50,7 @@ func TestRetryWhile(t *testing.T) {
 		var last error
 		calls := 0
 		start := time.Now()
-		err := retryWhile(bound, held, func() error {
+		err := While(bound, held, func() error {
 			calls++
 			if calls > 10000 {
 				return nil
@@ -60,10 +60,10 @@ func TestRetryWhile(t *testing.T) {
 		})
 		took := time.Since(start)
 		if err == nil || err != last || calls < 3 {
-			t.Errorf("retryWhile = %v after %d calls, want the last held error after some tries", err, calls)
+			t.Errorf("While = %v after %d calls, want the last held error after some tries", err, calls)
 		}
 		if took < bound || took > bound+time.Second {
-			t.Errorf("retryWhile took %v, want about %v", took, bound)
+			t.Errorf("While took %v, want about %v", took, bound)
 		}
 	})
 }

@@ -20,6 +20,8 @@ import (
 	"time"
 
 	"github.com/klauspost/compress/zstd"
+
+	"github.com/schubydoo/claustrum/internal/renameretry"
 )
 
 type installOpts struct {
@@ -631,7 +633,7 @@ func stageAndInstall(cliPath string, stage func(dir string) (string, error), blo
 // the new CLI is tried again (Windows). On 5fd08069 a running old CLI with
 // other bytes keeps the staging file 0.26 to 0.53 s (measured on Windows).
 // With this bound the staging file of claustrum lived 0.35 to 0.48 s (measured on Windows), inside
-// that range. The pauses of retryWhile are claustrum's own. A test replaces
+// that range. The pauses of renameretry.While are claustrum's own. A test replaces
 // the bound.
 var cliRenameBound = 200 * time.Millisecond
 
@@ -646,7 +648,7 @@ var cliRenameBound = 200 * time.Millisecond
 // 5fd08069 a running old CLI with the same bytes gives no cliError, and the
 // blob goes (measured on Windows).
 func placeStagedCLI(tmp, cliPath string) error {
-	err := retryWhile(cliRenameBound, renameDenied, func() error { return os.Rename(tmp, cliPath) })
+	err := renameretry.While(cliRenameBound, renameDenied, func() error { return os.Rename(tmp, cliPath) })
 	if err == nil {
 		return nil
 	}
