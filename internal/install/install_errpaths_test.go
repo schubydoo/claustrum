@@ -217,9 +217,13 @@ func symlinkOrFailOnCI(t *testing.T, target, link string) {
 }
 
 // A version that IS a symlink, as the final component, stays safe and is not
-// refused: os.RemoveAll unlinks a symlink rather than following it, so the
-// link's target keeps its contents and only the link is replaced.
+// refused. stageAndInstall reads the CLI path with os.Lstat, so a link to a
+// folder is not a folder: no RemoveAll and no home guard run, and the rename
+// replaces the link itself, so the target keeps its contents.
 func TestEnsureCLIFinalComponentSymlinkIsSafe(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("a directory link at the CLI path: the rename onto it is refused on Windows (from the code, not measured)")
+	}
 	root := t.TempDir()
 	cliDir := filepath.Join(root, "clidir")
 	target := filepath.Join(root, "target")

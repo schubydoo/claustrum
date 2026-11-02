@@ -446,7 +446,12 @@ func TestInstallGateWithoutPolicyUsesTheDirectBounds(t *testing.T) {
 		g.litter(t)
 		stubDelay(t, 20*time.Second)
 		setCLIRunBounds(t, time.Minute, 500*time.Millisecond)
+		start := time.Now()
 		out := captureInstallOutput(t, installOpts{cliDir: g.cliDir, cliVersion: "9.9.9", cliZst: g.stubBlob(t), cliKeep: 2})
+		// A stop hold that outlived L02 waits its full 10 s here.
+		if d := time.Since(start); d > 8*time.Second {
+			t.Errorf("L07: the run took %v, want about the 500ms bound", d)
+		}
 		if want := factsHead(t, g.cli) + stoppedTail + `,"launcherStatus":"none"}` + "\n"; out != want {
 			t.Errorf("L07: stdout\n got %q\nwant %q", out, want)
 		}
