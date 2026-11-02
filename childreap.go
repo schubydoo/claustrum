@@ -923,6 +923,9 @@ func reapGoneLeader(c *reapCtx, t reapTarget, reapedCounter *int) {
 	c.forgetLater(t.name)
 }
 
+// recordTypeTested runs in read between the Lstat and the open. A test seam: production never reassigns it.
+var recordTypeTested = func() {}
+
 // read reads and parses the record name in the children folder. It returns the record
 // and true on success, and false when the entry is unreadable, is not a regular file,
 // or is not valid JSON, in which case the reap forgets the record.
@@ -937,6 +940,7 @@ func (c *reapCtx) read(name string) (childRecord, bool) {
 	if err != nil || !entry.Mode().IsRegular() {
 		return childRecord{}, false
 	}
+	recordTypeTested()
 	f, err := c.dir.OpenFile(name, os.O_RDONLY|syscall.O_NOFOLLOW|syscall.O_NONBLOCK, 0)
 	if err != nil {
 		return childRecord{}, false
