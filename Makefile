@@ -23,7 +23,7 @@ all: clean
 	@echo "--- artifacts ---"; ls -l $(DIST)
 
 fmt:
-	gofmt -l -w *.go
+	gofmt -l -w *.go handlers internal
 
 vet:
 	go vet ./...

@@ -4,17 +4,17 @@ package main
 
 import (
 	"encoding/json"
-	"errors"
 	"os"
 	"path/filepath"
 	"regexp"
 	"strings"
 	"sync"
-	"syscall"
 	"testing"
 	"time"
 
 	"golang.org/x/sys/windows"
+
+	"github.com/schubydoo/claustrum/internal/renameretry"
 )
 
 // The Windows side of the retry of a held rename (measured on Windows). No
@@ -51,12 +51,12 @@ func holdOpenErr(path string, dir bool) (release func(), err error) {
 	return func() { once.Do(func() { _ = windows.CloseHandle(h) }) }, nil
 }
 
-// setRenameRetryBound sets renameRetryBound until the test ends.
+// setRenameRetryBound sets renameretry.Bound until the test ends.
 func setRenameRetryBound(t *testing.T, d time.Duration) {
 	t.Helper()
-	old := renameRetryBound
-	renameRetryBound = d
-	t.Cleanup(func() { renameRetryBound = old })
+	old := renameretry.Bound
+	renameretry.Bound = d
+	t.Cleanup(func() { renameretry.Bound = old })
 }
 
 // jsonText is s as it is inside a JSON string.
@@ -69,51 +69,12 @@ func jsonText(t *testing.T, s string) string {
 	return string(b[1 : len(b)-1])
 }
 
-// TestRenameHeldOnWindows pins the two errors that the retry tries again:
-// access denied and a sharing violation. Another error fails at once.
-func TestRenameHeldOnWindows(t *testing.T) {
-	for _, row := range []struct {
-		err  syscall.Errno
-		want bool
-	}{
-		{syscall.ERROR_ACCESS_DENIED, true},
-		{windows.ERROR_SHARING_VIOLATION, true},
-		{syscall.ERROR_FILE_NOT_FOUND, false},
-		{syscall.ERROR_ALREADY_EXISTS, false},
-		{windows.ERROR_DIR_NOT_EMPTY, false},
-	} {
-		if got := renameHeld(&os.LinkError{Op: "renameat", Old: "a", New: "b", Err: row.err}); got != row.want {
-			t.Errorf("renameHeld(%v) = %v, want %v", row.err, got, row.want)
-		}
-	}
-}
-
-// TestCopyRenameErrorOnWindows pins the text form: `rename <full path of the
-// temp file> <full path of the copy>: Access is denied.`.
-func TestCopyRenameErrorOnWindows(t *testing.T) {
-	dir := t.TempDir()
-	root, err := os.OpenRoot(dir)
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer func() { _ = root.Close() }()
-	err = copyRenameError(root, &os.LinkError{Op: "renameat", Old: ".tmp-1", New: "HEAD", Err: syscall.ERROR_ACCESS_DENIED})
-	want := "rename " + filepath.Join(dir, ".tmp-1") + " " + filepath.Join(dir, "HEAD") + ": Access is denied."
-	if err == nil || err.Error() != want || !errors.Is(err, syscall.ERROR_ACCESS_DENIED) {
-		t.Errorf("copyRenameError = %v, want %s", err, want)
-	}
-	other := errors.New("other")
-	if got := copyRenameError(root, other); got != other {
-		t.Errorf("copyRenameError of another error = %v, want it unchanged", got)
-	}
-}
-
 // TestShadowCopyHeldOnWindows must match the measured cases: the copy of HEAD
 // is held open while git.info writes a new copy. Released after 300 ms, the
 // reply is the normal result and the copy has the new bytes. Held past the
 // bound, the reply names both full paths, the old copy stays and no temp file
 // is left. Without the retry the first case fails at once. Without
-// copyRenameError the text says `renameat .tmp-<n> HEAD`.
+// renameretry.CopyError the text says `renameat .tmp-<n> HEAD`.
 func TestShadowCopyHeldOnWindows(t *testing.T) {
 	prepare := func(t *testing.T) (shadowFixture, string) {
 		f := newSeededShadowFixture(t)

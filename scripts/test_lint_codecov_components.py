@@ -51,7 +51,9 @@ class LintCodecovComponentsTest(unittest.TestCase):
 
     def _write_repo(self, go_files: list[str], yml: str) -> None:
         for name in go_files:
-            with open(os.path.join(self.root, name), "w", encoding="utf-8") as fh:
+            path = os.path.join(self.root, *name.split("/"))
+            os.makedirs(os.path.dirname(path), exist_ok=True)
+            with open(path, "w", encoding="utf-8") as fh:
                 fh.write("package main\n")
         with open(os.path.join(self.root, "codecov.yml"), "w", encoding="utf-8") as fh:
             fh.write(yml)
@@ -96,12 +98,43 @@ class LintCodecovComponentsTest(unittest.TestCase):
         )
 
     def test_entry_regex_is_strict(self) -> None:
-        # A glob, a nested path or a trailing comment is not an entry the lint accepts,
-        # so the real file behind it reads as missing rather than silently matching.
-        yml = _HEADER + "        - '*.go'\n        - sub/a.go\n        - a.go # note\n" + _TRAILER
-        self._write_repo(["a.go"], yml)
+        # A glob, a nested path outside internal/ or a trailing comment is not an entry
+        # the lint accepts, so the real file behind it reads as missing rather than
+        # silently matching. A path of one package under internal/ is an entry.
+        yml = (
+            _HEADER
+            + "        - '*.go'\n        - sub/a.go\n        - a.go # note\n"
+            + "        - 'internal/x/*.go'\n        - internal/x/b.go # note\n"
+            + "        - internal/x/a.go\n"
+            + _TRAILER
+        )
+        self._write_repo(["a.go", "internal/x/a.go", "internal/x/b.go"], yml)
         problems = lint.lint(self.root)
-        self.assertEqual([p.split(":")[0] for p in problems], ["a.go"], problems)
+        self.assertEqual([p.split(":")[0] for p in problems], ["a.go", "internal/x/b.go"], problems)
+
+    def test_internal_files_are_checked(self) -> None:
+        # A production file under internal/ that is not listed is missing. Its test file,
+        # the testdata folder and internal/testhelper/ are not checked.
+        self._write_repo(
+            [
+                "a.go",
+                "internal/x/a.go",
+                "internal/x/b.go",
+                "internal/x/a_test.go",
+                "internal/x/testdata/c.go",
+                "internal/testhelper/h.go",
+            ],
+            _HEADER + _entries("a.go", "internal/x/a.go") + _TRAILER,
+        )
+        problems = lint.lint(self.root)
+        self.assertEqual(len(problems), 1, problems)
+        self.assertTrue(problems[0].startswith("internal/x/b.go: production file missing"), problems)
+
+    def test_internal_stale_entry_is_reported(self) -> None:
+        self._write_repo(["a.go"], _HEADER + _entries("a.go", "internal/x/gone.go") + _TRAILER)
+        problems = lint.lint(self.root)
+        self.assertEqual(len(problems), 1, problems)
+        self.assertTrue(problems[0].startswith("internal/x/gone.go: listed in codecov.yml but no such"), problems)
 
     def test_unreadable_yml_is_a_problem(self) -> None:
         self._write_repo(["a.go"], "")
