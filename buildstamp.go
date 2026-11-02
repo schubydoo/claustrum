@@ -17,6 +17,6 @@ package main
 // than the previous release's. Empty means "no stamp", never a guess: that is
 // the state until the first release prepared after this file landed.
 const (
-	releaseVersion = "1.16.0"
-	releaseTime    = "2026-11-01T00:31:50Z"
+	releaseVersion = "1.17.0"
+	releaseTime    = "2026-11-02T02:29:38Z"
 )
