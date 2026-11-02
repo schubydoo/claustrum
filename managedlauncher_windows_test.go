@@ -84,7 +84,7 @@ func managedWindowsFixture(t *testing.T) {
 	}
 }
 
-// TestLauncherResolveNoneOnWindows pins RES-30: Windows answers none, also for a
+// TestLauncherResolveNoneOnWindows pins a measured rule: Windows answers none, also for a
 // settings file in the E2E variable's folder, with or without the gate.
 func TestLauncherResolveNoneOnWindows(t *testing.T) {
 	managedWindowsFixture(t)
@@ -101,7 +101,7 @@ func TestLauncherResolveNoneOnWindows(t *testing.T) {
 	}
 }
 
-// TestInstallAndProbeOnWindowsWithGate pins INS-15 and PRB-7: with the gate,
+// TestInstallAndProbeOnWindowsWithGate pins measured rules: with the gate,
 // -install appends "launcherStatus":"none" last and runs the CLI directly, and
 // -probe-cli shows no difference.
 func TestInstallAndProbeOnWindowsWithGate(t *testing.T) {

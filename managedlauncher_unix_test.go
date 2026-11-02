@@ -303,7 +303,7 @@ func TestLauncherResolveDropIns(t *testing.T) {
 	checkResolve(t, s, "R12g", "/opt/claude/cli", usableFrame(base, w, "a"))
 }
 
-// TestLauncherResolveEscapesAndRawBytes pins RES-25 on the wire: R9g escapes `<`, `&`, `>` and
+// TestLauncherResolveEscapesAndRawBytes pins a measured rule on the wire: the reply escapes `<`, `&`, `>` and
 // U+2028; R10i keeps U+FFFD raw (ef bf bd); R10g-0085 keeps U+0085 raw (c2 85) inside the
 // managedNotExecutable reason, and the em dash of a measured case stays raw.
 func TestLauncherResolveEscapesAndRawBytes(t *testing.T) {

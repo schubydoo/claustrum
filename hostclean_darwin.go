@@ -496,7 +496,7 @@ var hcStoppedIsUninspected = false
 // answer. The reference then kept each run dir that had a lock file: for a command that did
 // not start (measured) and for a run that wrote to stderr, 3 of 3 each. The pid of this
 // process is no holder: the reference removed a run dir whose lock only the cleaner itself
-// held open (measured). A child of the cleaner that holds the lock is a holder (row D3, 3 of
+// held open (measured). A child of the cleaner that holds the lock is a holder (measured, 3 of
 // 3).
 //
 // asked is false too when the deadline of claustrum ended the run. `5fd08069` keeps the

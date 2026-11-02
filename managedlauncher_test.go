@@ -155,7 +155,7 @@ func TestLauncherResolveParams(t *testing.T) {
 	}
 }
 
-// TestManagedLauncherEnvStrip pins ENV-1 and ENV-2: every child loses the gate and
+// TestManagedLauncherEnvStrip pins a measured rule: every child loses the gate and
 // the E2E variable, and a launched child also loses CLAUDE_CODE_PROCESS_WRAPPER.
 func TestManagedLauncherEnvStrip(t *testing.T) {
 	env := []string{"A=1", "CLAUDE_SSH_MANAGED_LAUNCHER=1", "CLAUDE_SSH_E2E_MANAGED_SETTINGS_DIR=x", "CLAUDE_CODE_PROCESS_WRAPPER=y", "B=2"}
@@ -185,9 +185,9 @@ func TestSpawnLauncherDecodeErrors(t *testing.T) {
 	}
 }
 
-// TestCappedTextKeepsHeadAndCounts pins INS-12: 10000 bytes of stderr keep 8192,
-// then "\n[\u2026 1808 more bytes]". The kept part is the head: claustrum's choice
-// (all 10000 measured bytes were E, so head and tail looked the same).
+// TestCappedTextKeepsHeadAndCounts pins a measured rule: 10000 bytes of stderr keep 8192,
+// then "\n[\u2026 1808 more bytes]". The kept part is the head: claustrum's choice (all
+// 10000 measured bytes were E, so head and tail looked the same).
 func TestCappedTextKeepsHeadAndCounts(t *testing.T) {
 	c := &cappedText{max: managedRunStderrCap}
 	_, _ = c.Write(bytes.Repeat([]byte("E"), 5000))

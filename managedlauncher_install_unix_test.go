@@ -171,7 +171,7 @@ func TestInstallThroughLauncher(t *testing.T) {
 	}
 }
 
-// TestInstallRefusedLauncherRunsNothing pins I3 and I4 (and INS-14): an unusable or
+// TestInstallRefusedLauncherRunsNothing pins measured rules: an unusable or
 // unreadable answer runs neither the CLI nor the launcher, keeps cliWasPresent true
 // and adds no cliError, and -install logs no [LauncherHandler] line.
 func TestInstallRefusedLauncherRunsNothing(t *testing.T) {
