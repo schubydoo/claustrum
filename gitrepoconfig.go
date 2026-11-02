@@ -154,11 +154,6 @@ func runConfigText(ctx context.Context, cmd *exec.Cmd, text []byte) error {
 // gives heldStderrExit.
 func runStartBound(cmd *exec.Cmd, stdin []byte, bound time.Duration) (bool, error) {
 	var files []*os.File
-	closeAll := func(fs ...*os.File) {
-		for _, f := range fs {
-			_ = f.Close()
-		}
-	}
 	for range 3 {
 		r, w, err := os.Pipe()
 		if err != nil {

@@ -1529,7 +1529,8 @@ var confineProc = confineProcess
 // closeAll closes every file, ignoring errors. Used on the spawn error paths and
 // to force a stalled drain to end. Closing an *os.File twice is safe — the second
 // call returns ErrClosed without touching the descriptor — so callers may close
-// defensively without tracking whether a pump got there first.
+// defensively without tracking whether a pump got there first. A nil file is safe
+// too: Close of a nil *os.File returns ErrInvalid.
 func closeAll(fs ...*os.File) {
 	for _, f := range fs {
 		_ = f.Close()

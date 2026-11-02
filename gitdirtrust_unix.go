@@ -3,7 +3,6 @@
 package main
 
 import (
-	"path/filepath"
 	"syscall"
 
 	"golang.org/x/sys/unix"
@@ -46,12 +45,9 @@ func sameGitDirPath(a, b string) bool {
 }
 
 // resolveGitDirLinks resolves the symlinks in the git directory g before the check
-// judges it. A refusal then names the resolved path.
+// judges it, as canonicalPath does. A refusal then names the resolved path.
 func resolveGitDirLinks(g string) string {
-	if r, err := filepath.EvalSymlinks(g); err == nil {
-		return r
-	}
-	return g
+	return canonicalPath(g)
 }
 
 // gitVersionDir is the working folder of the git calls outside a repository: the

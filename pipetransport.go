@@ -79,18 +79,8 @@ func pipeNameFileIdentity(socket string) os.FileInfo {
 // served this boot) is a no-op; the unconditional removePipeNameFile above is used for
 // the startup stale-clear, where there is no successor to protect.
 func removePipeNameFileIfOwned(socket string, owned os.FileInfo) {
-	if owned == nil {
-		return
-	}
-	path := pipeNameFilePath(socket)
-	cur, err := os.Stat(path)
-	if err != nil {
-		return
-	}
-	if os.SameFile(cur, owned) {
-		if err := os.Remove(path); err != nil {
-			logErrorf("[Server] failed to remove pipe-name file: %v", err)
-		}
+	if err := removeIfStillOurs(pipeNameFilePath(socket), owned); err != nil {
+		logErrorf("[Server] failed to remove pipe-name file: %v", err)
 	}
 }
 
