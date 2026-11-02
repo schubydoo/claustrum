@@ -38,7 +38,7 @@ func TestMain(m *testing.M) {
 	// matter how trivial the fixture is. The suite spawns dozens of them
 	// (TestWorktreeCreateLingeringDescendant alone spawns ~30 stub gits), which
 	// measured as 48s of the 109s `go test -race ./...` run. Publishing the knob
-	// here hands it to every child through buildEnv's os.Environ base, and
+	// here hands it to every child through buildEnv's os.Environ() base, and
 	// leaves the parent's own tsan settings untouched (tsan parses GORACE at
 	// startup, and we are already past it). The children run a dozen lines of
 	// fixture code and hold no threads at exit, so the sleep buys no detection.
@@ -50,7 +50,7 @@ func TestMain(m *testing.M) {
 	mode := os.Getenv("CLAUSTRUM_TEST_HELPER")
 
 	// A re-exec'd daemon child must never run the suite. runServe's parent half
-	// re-execs os.Executable with daemonChildEnv=1 — and under `go test` that
+	// re-execs os.Executable() with daemonChildEnv=1 — and under `go test` that
 	// executable IS this binary. So a test which reaches the parent path without
 	// steering the child into a helper mode forks a detached copy of the whole
 	// suite, which reaches the same test and forks again. The copies are
@@ -137,8 +137,8 @@ func runGitLingering(args []string) int {
 		// The registration exists in the repository, as after a real add: the create
 		// tests it, and the index has a place. The add runs in the repository.
 		// The record names the leaf with its symlinks resolved, as git writes it: the
-		// create compares it with the resolved path. On macOS t.TempDir is under /var, a
-		// symlink.
+		// create compares it with the resolved path. On macOS t.TempDir() is under
+		// /var, a symlink.
 		last := args[len(args)-1]
 		resolved := last
 		if r, err := filepath.EvalSymlinks(last); err == nil {
@@ -921,7 +921,7 @@ func appendLine(path, line string) {
 
 // helperCommand returns this test binary's path plus the env overlay that
 // makes a spawned child run it in the given helper mode. The overlay rides
-// process.spawn's env-merge (request env layered over os.Environ).
+// process.spawn's env-merge (request env layered over os.Environ()).
 func helperCommand(t *testing.T, mode string) (string, map[string]string) {
 	t.Helper()
 	exe, err := os.Executable()

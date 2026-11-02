@@ -133,7 +133,7 @@ func TestStopAfterReplyTakesTheLockThatComesFree(t *testing.T) {
 // A daemon of this socket that still holds the lock after the tries gets SIGTERM.
 // The word is "terminated", and -stop removes the socket and daemon.token (measured).
 // Only after the signal does -stop write its own record, and release empties the file
-// (measured on Linux and macOS).
+// (measured on Linux, and on macOS for "killed").
 func TestStopAfterReplyTerminatesTheHolder(t *testing.T) {
 	requireNodeID(t)
 	setStopLockWait(t, 200*time.Millisecond)

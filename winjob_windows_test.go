@@ -133,7 +133,7 @@ func TestDaemonChildLeavesTheLauncherJob(t *testing.T) {
 // TestDaemonChildStartsInAJobWithoutBreakaway: a job that does not allow breakaway refuses a
 // start with CREATE_BREAKAWAY_FROM_JOB. The start then runs again without the flag, so the
 // launcher still starts its child, inside the job, and prints one line on its stderr.
-// Measured on Windows against 89cb6289 (row JB, a job with the limit flags 0x2000): the
+// Measured on Windows against 89cb6289 (a job with the limit flags 0x2000): the
 // serving process stays in the job, and the launcher prints that line.
 func TestDaemonChildStartsInAJobWithoutBreakaway(t *testing.T) {
 	job := newTestJob(t, windows.JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE)

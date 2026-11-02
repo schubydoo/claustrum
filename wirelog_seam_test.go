@@ -14,7 +14,7 @@ import (
 // fixture reaches the arm (the file was just created by this process, so it owns
 // it), and the host fixtures that do refuse it are a shared device a CAP_FOWNER
 // process would really re-mode (/dev/null) or a file owned by a second user CI does
-// not have. The seam fails on a t.TempDir file instead.
+// not have. The seam fails on a t.TempDir() file instead.
 //
 // The assertions are on the outcome: no error, a usable log that records a frame,
 // and the exact warning naming the path and the reason. A mutant that makes the arm

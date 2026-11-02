@@ -395,7 +395,7 @@ func TestDaemonizeFailsWhenLogUnopenable(t *testing.T) {
 
 // The full detached-child lifecycle, end to end and in-process: runServe boots
 // off a -token-file, serves an authenticated ping, then a SIGTERM rides
-// run's signal goroutine into teardown, which retracts the socket and
+// run()'s signal goroutine into teardown, which retracts the socket and
 // daemon.token and exits 0.
 func TestRunServeChildFullLifecycle(t *testing.T) {
 	stubOsExit(t)

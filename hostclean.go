@@ -76,14 +76,14 @@ const (
 //
 // The two error texts are the reasons of the "host cleaning off" line (startHostCleaner). The
 // executable text names the srv of the root as given. The decisions of the gate and both texts
-// equal those of 89cb6289 in the rows of Linux. The start rows hold nine socket shapes in the
-// install layout and in the plain layout, and six places of the executable. Rows KREL, KXB,
-// KS-i-j, KS-i-k, KS-m-e, KS-q-e and KS-u-e ran with staged fixtures. A relative socket is "not
+// equal those of 89cb6289, measured on Linux. The start rows hold nine socket shapes in the
+// install layout and in the plain layout, and six places of the executable. Some rows ran with
+// staged fixtures. A relative socket is "not
 // <root>/run/<id>/rpc.sock" in both layouts. A socket path through a symlink to the root keeps the
 // cleaner on (measured). So does a symlink one level above the root.
 //
 // Not measured: a root whose resolution fails and an unreadable own executable (haveExe
-// false). A macOS test measured nine gate shapes against 89cb6289 (rows GSa to GSg3).
+// false). A macOS test measured nine gate shapes against 89cb6289.
 func deriveRoots(socket, exe string, haveExe bool) (*hostRoots, error) {
 	socketShape := fmt.Errorf("socket path %q is not <root>/run/<id>/rpc.sock", socket)
 	socket = filepath.Clean(socket)

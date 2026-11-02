@@ -118,7 +118,7 @@ type managedProc struct {
 	// daemon value against a later daemon value for the same id. Do NOT compare it
 	// against an independently-read OS process start time (e.g. psutil
 	// create_time) — the daemon's spawn-moment wall clock differs from the kernel's
-	// process-creation time by the fork→time.Now delta and a different clock
+	// process-creation time by the fork→time.Now() delta and a different clock
 	// derivation, so an equality check would spuriously fail.
 	pid       int
 	startTime float64
@@ -139,7 +139,7 @@ type managedProc struct {
 	// to exitDrainGrace before running clears, which is why the two fields exist
 	// separately: running is the client's view, reaped is signal safety. The gap
 	// is reachable exactly when a grandchild holds the pipe open, and a
-	// grandchild that calls setsid (which is what daemonizing means) leaves the
+	// grandchild that calls setsid() (which is what daemonizing means) leaves the
 	// group, so the group really can empty and its id be reused mid-drain. Read
 	// only under p.mu, by signalIfLive, by isLive, and by reattach.
 	reaped bool
@@ -219,8 +219,8 @@ type managedProc struct {
 type procManager struct {
 	mu    sync.Mutex
 	procs map[string]*managedProc
-	// stop ends the background prune sweep; stopOnce keeps close idempotent so a
-	// double shutdown cannot panic on a second close of the channel.
+	// stop ends the background prune sweep; stopOnce keeps close() idempotent so
+	// a double shutdown cannot panic on a second close of the channel.
 	stop     chan struct{}
 	stopOnce sync.Once
 	// pruneAge/pruneInterval are COPIED from the package vars at construction
@@ -1178,10 +1178,10 @@ func (p *managedProc) waitReapAndDrain(wg *sync.WaitGroup, stdoutR, stderrR *os.
 // client request" (measured). A SIGKILL from outside the daemon gives ", terminated
 // by SIGKILL" (measured). A plain exit gives no suffix (measured). A line with both
 // parts has the signal first: 89cb6289 printed ", terminated by SIGKILL, signalled
-// at shutdown request" in row STb, a server.shutdown request with two children.
+// at shutdown request" in a measurement, a server.shutdown request with two children.
 //
 // That shutdown line is a race on the reference, not a rule. 89cb6289 printed it in
-// row STb, and printed no exited line in two runs. claustrum prints it when the
+// that measurement, and printed no exited line in two runs. claustrum prints it when the
 // exit goroutine reaches the line before the daemon exits. The shutdown wait
 // (shutdownRecordWait) ends earlier, at the removal of the record.
 func exitLogSuffix(sigName, killedBy string) string {
@@ -1304,7 +1304,7 @@ func (p *managedProc) enqueueStdinLocked(data []byte) (full bool) {
 // vs applied and is answered BEFORE the running check, matching the reference: on
 // an exited process a gap still returns gap=true and a wholly-duplicate write
 // still returns duplicate=true. Only a write that would enqueue FRESH bytes needs
-// a live process — for that case running is consulted and notRunning=true is
+// a live process — for that case running() is consulted and notRunning=true is
 // returned when it is false. running is passed in (mp.isRunning) so the verdict
 // and the running check stay under one stdinMu hold; no path nests mu inside
 // stdinMu the other way, so the ordering is deadlock-free. On that same
@@ -1479,7 +1479,7 @@ var maxKillWaitMs = 30000 // 30s
 // pipe-holding grandchild does NOT produce: the exit drain ends at 5s on both
 // binaries and the reply lands at 5.01s either way, so that route
 // proves nothing. The fixture that works is real uninterruptible sleep — a read
-// against a dm-delay device. With timeoutMs 500:
+// against a dm-delay device on Linux. With timeoutMs 500:
 //
 //	reference        : reply at 7.51s  -> 7s grace
 //	claustrum (was)  : reply at 5.51s  -> 5s grace

@@ -538,7 +538,7 @@ func programMatches(recorded, live string) bool {
 // An argument does not match by its base name, by a cleaned path, or as a part of a
 // longer argument (measured). An empty program adds nothing (measured). The caller
 // refuses an empty argv0 before it comes here, whatever program holds (measured).
-// f6010b97 sends no signal. On macOS measurements show the command text rule of
+// f6010b97 sends no signal in these cases (measured). On macOS measurements show the command text rule of
 // runsProgram.
 func recordMatchesLive(rec childRecord, lp liveProc) bool {
 	if runsProgram(rec.Argv0, lp) {
@@ -866,7 +866,7 @@ func (c *reapCtx) check(t reapTarget, full bool) (int, string) {
 // not counted reaped and its group gets no signal here.
 //
 // The pause is the guard of the group SIGKILL in reapGoneLeader. A read can take a live
-// leader for gone. Seen on the development host, not in a measurement: the stat of a Go
+// leader for gone. Seen on the development host only: the stat of a Go
 // program that replaces its program shows state Z and a vsize of 0 for a moment, on
 // two reads in a row, while the group still answers a signal 0. A group SIGKILL in
 // that moment ends a live child that no longer runs the recorded program. Measured on

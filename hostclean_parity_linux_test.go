@@ -29,7 +29,7 @@ func hcRetire(c *hostCleaner, pid int, socket string) bool {
 	return ok
 }
 
-// hcEntry makes the run dir <runRoot>/<name>, sets its mtime idle before hcClock, and
+// hcEntry makes the run dir <runRoot>/<name>, sets its mtime idle before hcClock(), and
 // returns the entry runDirs would list for it.
 func hcEntry(t *testing.T, runRoot string, root *os.Root, name string, idle time.Duration) runDirEntry {
 	t.Helper()
@@ -55,7 +55,7 @@ func hcPipeStdio(link func(int, string, string), pid int) {
 	link(pid, "fd/2", "pipe:[3]")
 }
 
-// hcBackdate sets path's mtime idle before hcClock.
+// hcBackdate sets path's mtime idle before hcClock().
 func hcBackdate(t *testing.T, path string, idle time.Duration) {
 	t.Helper()
 	at := hcClock().Add(-idle)

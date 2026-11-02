@@ -745,7 +745,7 @@ func TestHostcleanLivePrimitivesDarwin(t *testing.T) {
 	if bin == "" {
 		t.Fatal("CLAUSTRUM_BIN not set")
 	}
-	// A short /tmp base: a macOS unix socket path must fit in ~104 bytes, which t.TempDir
+	// A short /tmp base: a macOS unix socket path must fit in ~104 bytes, which t.TempDir()
 	// (under /var/folders/...) blows past.
 	base := "/tmp/hcl" + strconv.Itoa(os.Getpid())
 	_ = os.RemoveAll(base)

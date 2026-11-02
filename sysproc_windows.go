@@ -119,7 +119,7 @@ func spawnSysProcAttr(jobs childJobs) *syscall.SysProcAttr {
 
 // confineProcess opens the kill handle of the just-started child and, with jobs on,
 // puts the child in a new job. It always returns a non-nil *procGroup. If the open
-// fails, the group has a zero handle, and signal falls back to proc.Kill. If the job
+// fails, the group has a zero handle, and signal() falls back to proc.Kill. If the job
 // cannot be made or joined, the group has no job, and a kill ends the direct child
 // only (claustrum's own, not measured). Neither fails the spawn. os.Process keeps its
 // own handle privately, so the process is opened again by pid. That pid cannot be

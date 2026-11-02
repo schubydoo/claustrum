@@ -247,7 +247,7 @@ func TestSocketProcessKillAndWait(t *testing.T) {
 	}
 
 	// live process: the sleep helper responds to the default SIGTERM and dies well
-	// within the grace window, so no escalation. call waits for the spawn reply
+	// within the grace window, so no escalation. call() waits for the spawn reply
 	// before we kill, so the process is registered.
 	cl.call(spawnReqArgs(t, 5, "SL", "sleep", "30"))
 	kw = killAndWaitResult{}

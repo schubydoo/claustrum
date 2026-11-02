@@ -16,8 +16,8 @@ import (
 )
 
 // runlockHoldEmptyFixture is the "runlock-hold-empty" helper mode. It holds the flock
-// on an empty daemon.lock, as the holder did: a process that is not a daemon. It lets
-// go and exits 0 when the file args[2] appears.
+// on an empty daemon.lock, as the holder in the 5fd08069 measurement did: a process
+// that is not a daemon. It lets go and exits 0 when the file args[2] appears.
 func runlockHoldEmptyFixture(args []string) int {
 	lockPath, readyPath, letGoPath := args[0], args[1], args[2]
 	fd, err := syscall.Open(lockPath, syscall.O_RDWR|syscall.O_CREAT|syscall.O_CLOEXEC, 0o600)

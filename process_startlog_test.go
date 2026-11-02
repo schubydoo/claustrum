@@ -39,8 +39,8 @@ func TestSpawnChdirFailureIsLogged(t *testing.T) {
 }
 
 // TestExitLogSuffix pins the tail of the exited line for each pair of facts that the
-// exit frame holds. The first three rows are measured against 89cb6289 on Linux (rows
-// measured, and the signal part of the rows). The part with the daemon as the
+// exit frame holds. The first three rows are measured against 89cb6289 on Linux.
+// The part with the daemon as the
 // signaller follows build 52d82f0a, measured on Linux and macOS for SIGTERM at a
 // client kill and for code 0 after a farewell. The shutdown label is not measured.
 func TestExitLogSuffix(t *testing.T) {

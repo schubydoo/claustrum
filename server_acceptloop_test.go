@@ -15,7 +15,7 @@ import (
 // listener present (a second AF_UNIX listener stands in for the Windows pipe,
 // since the extracted seam is listener-agnostic), and asserts both listeners serve
 // the same dispatch — covering the `s.pipeLn != nil` second-loop branch without
-// run's blocking shutdown wait + os.Exit.
+// run()'s blocking shutdown wait + os.Exit.
 func TestStartAcceptLoopsServesBothListeners(t *testing.T) {
 	dir, err := os.MkdirTemp("", "cl")
 	if err != nil {

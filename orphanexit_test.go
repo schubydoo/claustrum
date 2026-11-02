@@ -412,9 +412,9 @@ func TestIdleExitWinsOverOrphanExit(t *testing.T) {
 	}
 }
 
-// Measured: after a client that was connected while the socket was orphaned leaves, no
-// "no longer leads" line comes. Here a check that sees the client starts the grace
-// again. This runs with the production grace. The exact minutes and "11m0s" below pin
+// Measured on Linux and macOS: after a client that was connected while the socket was
+// orphaned leaves, no "no longer leads" line comes. Here a check that sees the client
+// starts the grace again. This runs with the production grace. The exact minutes and "11m0s" below pin
 // claustrum's own tick model with exact 60 s checks. They are not the measured timing.
 func TestOrphanGraceCountsFromLastClientCheck(t *testing.T) {
 	s, sock := bootOrphanServer(t)

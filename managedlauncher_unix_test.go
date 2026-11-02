@@ -521,7 +521,7 @@ func TestLauncherResolveNoCacheRunsNothing(t *testing.T) {
 }
 
 // TestLauncherResolveLogDedup pins a measured rule on one daemon: asks 1-3 unusable (measured), ask 4
-// usable, ask 5 T8 again, ask 6 unreadable JSON, ask 7 permission denied. Lines appear on asks 1, 5,
+// usable, ask 5 unusable again, ask 6 unreadable JSON, ask 7 permission denied. Lines appear on asks 1, 5,
 // 6 and 7.
 func TestLauncherResolveLogDedup(t *testing.T) {
 	logs := captureLogBuf(t)

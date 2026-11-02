@@ -118,7 +118,7 @@ func procArgs2Buf(argv, env []string) []byte {
 
 // TestParseProcArgs2Env confirms the NUL-delimited read keeps a marker value intact even when
 // it contains spaces, '=', and a " NAME=" pattern all at once — the case a space-joined `ps -E`
-// line cannot disambiguate and the reference nonetheless reaps (measured).
+// line cannot disambiguate and the reference nonetheless reaps (measured on macOS).
 func TestParseProcArgs2Env(t *testing.T) {
 	env := []string{
 		"PATH=/usr/bin",

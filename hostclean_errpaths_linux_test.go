@@ -226,7 +226,7 @@ func TestPeerOfErrorArms(t *testing.T) {
 	}
 }
 
-// hcFakeFileInfo is an os.FileInfo whose Sys the test controls, which is the only way to
+// hcFakeFileInfo is an os.FileInfo whose Sys() the test controls, which is the only way to
 // reach lockFileHeld's two device arms: a real stat always yields a *syscall.Stat_t, and the
 // anonymous-filesystem case needs st_dev major 0, which a temp file does not have.
 type hcFakeFileInfo struct{ sys any }
@@ -250,7 +250,7 @@ func TestLockFileHeldDeviceArms(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	// Sys is not a *syscall.Stat_t: without the type-assertion guard the nil st is
+	// Sys() is not a *syscall.Stat_t: without the type-assertion guard the nil st is
 	// dereferenced when the device is encoded below the locks read.
 	if held, _ := lockFileHeld(hcFakeFileInfo{sys: nil}); held {
 		t.Error("lockFileHeld reported held for a FileInfo with no stat")

@@ -15,5 +15,5 @@ func managedSettingsDir() (dir string, ignoredVar bool) { return "", false }
 func managedIgnoredVarLine() string { return "" }
 
 // managedLauncherHostRefusal is the reason every Windows spawn with a launcher is
-// refused, an empty launcher too (measured).
+// refused, an empty launcher too (measured on Windows).
 func managedLauncherHostRefusal() string { return "a launcher cannot be applied on a Windows host" }

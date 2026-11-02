@@ -179,19 +179,19 @@ func mustMkfifo(t *testing.T, path string) {
 // so the answer is -32603 with the text of the open and not the -32602 of the
 // kind test. 89cb6289 and 5fd08069 answer the same (measured on Linux).
 //
-// Linux-only, for the same reason TestSocketListNonDirErrorText is: open on a
+// Linux-only, for the same reason TestSocketListNonDirErrorText is: open() on a
 // socket returns a different errno per kernel — ENXIO "no such device or address"
 // on linux, EOPNOTSUPP "operation not supported on socket" on Darwin (measured on
 // macOS 26.5). What is pinned is that the open comes before the kind test.
 //
 // ⚠️ The socket binds under os.MkdirTemp, NOT t.TempDir. Measured on macOS:
-// t.TempDir for a test of this name is 99 bytes, resolveTestRoot's /private prefix
-// takes it to 107, and "/a.sock" to 114 — against Darwin's 104-byte sun_path.
-// Binding under t.TempDir made net.Listen fail there, and the t.Skipf that
-// followed dropped EVERY row of the default golden on the macOS leg while the run
-// stayed green — the socket row was one of them, which is why it lives here now.
-// (That arrangement was never committed, so no golden in this repo's history shows
-// it; the count is deliberately left unstated.) Same reasoning as
+// t.TempDir() for a test of this name is 99 bytes, resolveTestRoot's /private
+// prefix takes it to 107, and "/a.sock" to 114 — against Darwin's 104-byte
+// sun_path. Binding under t.TempDir() made net.Listen fail there, and the t.Skipf
+// that followed dropped EVERY row of the default golden on the macOS leg while the
+// run stayed green — the socket row was one of them, which is why it lives here
+// now. (That arrangement was never committed, so no golden in this repo's history
+// shows it; the count is deliberately left unstated.) Same reasoning as
 // harness_test.go's own socket dir, and the same silent-skip shape mustMkfifo
 // exists to prevent — which is why the bind failure is now fatal.
 //

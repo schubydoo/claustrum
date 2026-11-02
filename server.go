@@ -60,7 +60,7 @@ type server struct {
 	procs *procManager
 
 	// socket is the path that ln was bound for. A long path is bound by a shorter
-	// name (socketroute_unix.go), so ln.Addr can differ from it.
+	// name (socketroute_unix.go), so ln.Addr() can differ from it.
 	socket string
 
 	// instanceID is a per-boot 32-hex identity and startedAt is the boot time in
@@ -520,7 +520,7 @@ func childToken(tokenFile string) (string, error) {
 	}
 	_ = os.Unsetenv("CLAUDE_RPC_TOKEN") // prevent token propagation through daemonize → os.Environ()
 	// Drop our internal re-exec sentinel now that we have consumed it: buildEnv
-	// bases process.spawn children on os.Environ, and the reference daemon's
+	// bases process.spawn children on os.Environ(), and the reference daemon's
 	// environ has no CLAUSTRUM_DAEMON_CHILD — leaking it would be a (detectable)
 	// divergence. The reference-parity marker (daemonChildMarker) stays set.
 	_ = os.Unsetenv(daemonChildEnv)
@@ -1007,7 +1007,7 @@ func (s *server) run(socket string) {
 	// Block here until shutdown, then tear down synchronously on the main
 	// goroutine. teardown closes the listener (unblocking acceptLoop's Accept), and
 	// closeAll has the order of the steps after that. Running it inline — not
-	// in a goroutine racing the accept loop's return out of run/main — guarantees
+	// in a goroutine racing the accept loop's return out of run()/main — guarantees
 	// the kill-or-keep decision (and its log line) actually completes: previously
 	// the accept loop returned the moment the listener closed and main exited the
 	// process first, skipping the child teardown entirely.
@@ -1177,8 +1177,8 @@ func (s *server) serveConn(c *conn) {
 	// closeAll drops every client connection on the graceful-shutdown path, and
 	// counting that as an error made claustrum log one ERROR line per connected
 	// client where the reference's log carries none (measured, both binaries, on
-	// a server.shutdown with two connections open). sc.Err is nil on a clean EOF,
-	// so an ordinary client disconnect stays quiet on both. The predicate is
+	// a server.shutdown with two connections open). sc.Err() is nil on a clean
+	// EOF, so an ordinary client disconnect stays quiet on both. The predicate is
 	// per-OS because the -listen-pipe transport's conns are served by this same
 	// serveConn but do not report a close as net.ErrClosed.
 	//

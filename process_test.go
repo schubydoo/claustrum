@@ -719,7 +719,7 @@ func TestKillAllTerminatesLiveProcess(t *testing.T) {
 
 // process.spawn with the id of a process that still runs replaces the table entry
 // (both spawns succeed) and sends the old process no signal. Measured against
-// 89cb6289 on Linux and macOS and on Windows (row EV). The shutdown kill then
+// 89cb6289 on Linux and macOS and on Windows (measured). The shutdown kill then
 // reaches only the process of the table, so the old process stays alive (measured).
 func TestSpawnDuplicateIDReplacesAndKeepsOld(t *testing.T) {
 	m := newTestProcManager(t)
@@ -1235,7 +1235,7 @@ func TestKillAndWaitProcReportsUnreapedAfterKillGrace(t *testing.T) {
 // TestSignalIsAtomicWithTheReapedCheck pins that the check and the delivery
 // happen under one acquisition of p.mu.
 //
-// Checking isReaped and then signalling leaves a gap the exit goroutine can
+// Checking isReaped() and then signalling leaves a gap the exit goroutine can
 // reap in, which defeats the guard entirely for exactly the concurrent case it
 // exists to handle — the check would pass, the process would be reaped, and the
 // signal would go to whatever now owns the pgid. TryLock from inside the

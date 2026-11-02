@@ -16,10 +16,10 @@ import (
 	"time"
 )
 
-// The cleaner lines and the retire call that Linux measured against f6010b97 and 89cb6289
-// (slice E of the 89cb6289 reconciliation). Each test names its rows. Every signal in this
-// file goes through a recording seam, with one exception. The pidfd test sends a real
-// signal to a helper process that it started itself.
+// The cleaner lines and the retire call that Linux measured against f6010b97 and 89cb6289.
+// Each test names its rows. Every signal in this file goes through a recording seam, with
+// one exception. The pidfd test sends a real signal to a helper process that it started
+// itself.
 
 // TestPassLogsTheProcessLimit: with more than 4096 processes of this user the pass prints
 // one line and tidies no run dir (measured). At 4096 it prints no line and the tidy runs.
@@ -454,8 +454,8 @@ func TestHostCleaningOffLines(t *testing.T) {
 // rows that Linux measured against 89cb6289. Nine socket shapes (a to i) run in the install layout and
 // in the plain layout, and six more rows move the executable. Each row gives the reason of the "host
 // cleaning off" line, or no reason when the cleaner runs. When it runs, its root is the root of the
-// socket. In two rows an older gate ran a pass that the reference does not run: KREL (install layout,
-// relative socket) and KXB (executable under the srv of another root).
+// socket. In two rows an older gate ran a pass that the reference does not run: the install layout
+// with a relative socket, and KXB (executable under the srv of another root).
 //
 // The executable here is what /proc/self/exe names, so rows l and u give the resolved path.
 func TestHostCleaningStartRows(t *testing.T) {

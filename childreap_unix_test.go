@@ -380,7 +380,7 @@ func simTarget(t *testing.T) (*procSim, string, reapTarget) {
 // as reaped, and the line holds the reference's reason text. The first case is measured
 // on Linux against 89cb6289: the child replaced itself with another program on the
 // SIGTERM, and the reference logged the line 0.2 s after its start. The other reason
-// texts come (the unreadable environment). A group that still passes gets the SIGKILL
+// texts are measured too, the unreadable environment among them. A group that still passes gets the SIGKILL
 // at the end of the grace, as the control.
 func TestReapWaitDropsGroupThatNoLongerVerifies(t *testing.T) {
 	const line = "[process.Registry] group 1001 no longer verifies (%s); nothing more is sent to it\n"

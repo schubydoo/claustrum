@@ -490,7 +490,7 @@ var stopForeignWait = 500 * time.Millisecond
 //   - A lock still held by a daemon of this socket gets the ladder of stopSignalHolder.
 //     The words are "terminated" (measured) and "killed".
 //   - Only after that signal does it write its own record with role "stop" into the
-//     lock, and empty the file before the word (measured on Linux and macOS).
+//     lock, and empty the file before the word (measured on Linux, and on macOS for "killed").
 //   - A holder whose record names no daemon role gets no signal, and the word is
 //     "survivor" (measured). That word comes after stopForeignWait more of lock
 //     tries.

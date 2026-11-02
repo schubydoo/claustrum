@@ -7,8 +7,8 @@ package main
 // for mutual exclusion, where a second -serve leaves the incumbent alive. claustrum matches: it
 // writes nothing here. Both funcs of the returned claim are no-ops.
 //
-// It prints one line. On the reference that line is the first log line of every start. A
-// Windows measured it against f6010b97 and 89cb6289 (in every daemon start that was measured).
+// It prints one line. On the reference that line is the first log line of every start.
+// Measured on Windows against f6010b97 and 89cb6289, in every measured start.
 func lockRunFolder(socket, role string) runDirClaim {
 	logInfof("%s", runDirNotHolderLine)
 	return runDirClaim{release: func() {}, complete: func(string, int64) {}, stopLate: func() {}}
