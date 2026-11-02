@@ -4,6 +4,28 @@ All notable changes to claustrum are documented here. The format is based on
 [Keep a Changelog](https://keepachangelog.com/), and this project adheres to
 [Semantic Versioning](https://semver.org/).
 
+## 1.17.0 (2026-11-02)
+
+[Compare with 1.16.0](https://github.com/schubydoo/claustrum/compare/v1.16.0...v1.17.0)
+
+### Features
+
+- Each git call sets GIT_TRACE2, GIT_TRACE2_EVENT and GIT_TRACE2_PERF to 0. A call with GIT_NO_LAZY_FETCH=1 and an empty GIT_ASKPASS gets GIT_SSH_COMMAND=false, except a create or remove call with shadowDirOff that names no copy. That exception is measured on Linux. ([#810](https://github.com/schubydoo/claustrum/pull/810))
+- On Linux and macOS, git.worktree_create refuses a new worktree whose .git file is gone after the checkout, with unsafe_path. The worktree folder goes, and the registration and the branch stay. ([#817](https://github.com/schubydoo/claustrum/pull/817))
+- On Windows each git call that sets core.hooksPath passes `\\.\NUL`, and server.capabilities lists git.hooks_null_device after git.shadow_dir on every system. ([#807](https://github.com/schubydoo/claustrum/pull/807))
+- `-install` prunes older CLI version files before the fetch of a cache miss, also when the install then fails. After a full disk it keeps one version file and reports the removes of that prune as `cliRemoved`. ([#808](https://github.com/schubydoo/claustrum/pull/808))
+- A git.worktree_create with a settings copy starts ssh in its checkout through a door that refuses an odd Git LFS host or path. A repository's own core.sshCommand is never used there. ([#816](https://github.com/schubydoo/claustrum/pull/816))
+- On Linux `plugins.prune` and the host cleaner reach a socket path over 107 bytes. A dead daemon there no longer stops the legacy sweep, and its old run dir can go. A long sibling that cannot be reached gives the limit text in place of `connect: invalid argument`. ([#815](https://github.com/schubydoo/claustrum/pull/815))
+- On Linux and macOS `-serve`, `-bridge` and `-stop` work at a socket path over the limit of the system. A last element over that limit fails with its own text. ([#813](https://github.com/schubydoo/claustrum/pull/813))
+- On Linux and macOS git.worktree_create in the state shadow stages the add in the daemon folder and moves the registration into the git directory, as on Windows. ([#814](https://github.com/schubydoo/claustrum/pull/814))
+- On Linux and macOS a good git.worktree_create in the state shadow removes old `.claude-new-worktree-` entries of the git directory, as on Windows. ([#812](https://github.com/schubydoo/claustrum/pull/812))
+- On Linux a spawn logs one line when it cannot read the start time of its child because no usable `/proc` exists. ([#811](https://github.com/schubydoo/claustrum/pull/811))
+
+### Fixes
+
+- The "is not inside the repository" refusal of git.worktree_create and git.worktree_remove shows the worktree path in backticks. ([#818](https://github.com/schubydoo/claustrum/pull/818))
+- A create at a leaf that a registration still names is refused before the add, with its own text. The lock refusals of git.worktree_remove show the path in backticks and name a lock that an unfinished create left. ([#809](https://github.com/schubydoo/claustrum/pull/809))
+
 ## 1.16.0 (2026-11-01)
 
 [Compare with 1.15.0](https://github.com/schubydoo/claustrum/compare/v1.15.0...v1.16.0)
