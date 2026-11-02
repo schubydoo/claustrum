@@ -9,21 +9,23 @@ import (
 	"syscall"
 	"testing"
 	"time"
+
+	"github.com/schubydoo/claustrum/internal/sysproc"
 )
 
 // refusingSignals makes every signal of a child fail with err. Both seams take the
-// call, so no signal goes out: signalOne for TERM, INT and HUP, and killChildGroup
-// for KILL. It returns the record of the calls, "one <sig>" or "group".
+// call, so no signal goes out: sysproc.SignalOne for TERM, INT and HUP, and
+// sysproc.KillChildGroup for KILL. It returns the record of the calls, "one <sig>" or "group".
 func refusingSignals(t *testing.T, err error) *[]string {
 	t.Helper()
-	oldOne, oldGroup := signalOne, killChildGroup
-	t.Cleanup(func() { signalOne, killChildGroup = oldOne, oldGroup })
+	oldOne, oldGroup := sysproc.SignalOne, sysproc.KillChildGroup
+	t.Cleanup(func() { sysproc.SignalOne, sysproc.KillChildGroup = oldOne, oldGroup })
 	var calls []string
-	signalOne = func(_ *os.Process, sig syscall.Signal) error {
+	sysproc.SignalOne = func(_ *os.Process, sig syscall.Signal) error {
 		calls = append(calls, "one "+sig.String())
 		return err
 	}
-	killChildGroup = func(pgid int) error {
+	sysproc.KillChildGroup = func(pgid int) error {
 		calls = append(calls, "group")
 		return err
 	}

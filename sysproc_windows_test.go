@@ -23,16 +23,6 @@ import (
 // CLAUDE_SSH_NO_JOBS=1. A kill then ends the direct child only, so every test ends the
 // grandchild that it started by its recorded pid. childjobs_windows_test.go has the jobs.
 
-func TestNewSysProcAttrNewProcessGroup(t *testing.T) {
-	attr := newSysProcAttr()
-	if attr == nil {
-		t.Fatal("newSysProcAttr returned nil")
-	}
-	if attr.CreationFlags&syscall.CREATE_NEW_PROCESS_GROUP == 0 {
-		t.Errorf("CreationFlags = %#x, want CREATE_NEW_PROCESS_GROUP set", attr.CreationFlags)
-	}
-}
-
 func TestDetachSysProcAttrFlags(t *testing.T) {
 	attr := detachSysProcAttr()
 	if attr == nil {

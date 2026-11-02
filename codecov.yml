@@ -303,12 +303,17 @@ component_management:
         - process.go
         - sysproc_unix.go
         - sysproc_windows.go
+        - compat_sysproc.go
+        # The process group, the reap, the env and close helpers and the capped text.
+        - internal/sysproc/sysproc.go
+        - internal/sysproc/sysproc_unix.go
+        - internal/sysproc/sysproc_windows.go
         - childjobs.go
         - childjobs_windows.go
         # 4534d86 exit-frame `signal` name: read from the wait status on unix, always
         # empty on Windows (parity).
-        - process_signal_unix.go
-        - process_signal_windows.go
+        - internal/sysproc/process_signal_unix.go
+        - internal/sysproc/process_signal_windows.go
         # 683cc6a9 temp-folder test of a spawn: an inherited temp-folder name whose
         # folder cannot take a file is not handed on (Linux and macOS).
         - tempfolder_unix.go

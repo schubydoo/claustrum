@@ -7,13 +7,9 @@ import (
 	"os"
 	"strings"
 	"syscall"
-)
 
-// newSysProcAttr puts a spawned child in its own process group so the whole
-// subtree can be signalled together.
-func newSysProcAttr() *syscall.SysProcAttr {
-	return &syscall.SysProcAttr{Setpgid: true}
-}
+	"github.com/schubydoo/claustrum/internal/sysproc"
+)
 
 // statSpawnCommand is the stat of missingCommandError: one plain stat of the command
 // path.
@@ -22,23 +18,8 @@ func statSpawnCommand(path string) error {
 	return err
 }
 
-// reapProcessGroup SIGKILLs the whole process group led by proc — kill(-pgid) —
-// reaping any descendant proc left behind. It is how git.worktree_create's checkout
-// tears down a smudge/hook orphan that outlived git and kept the daemon's output
-// pipe open past the drain cap, matching 4534d86's observed descendant reap. The command must
-// have been started with newSysProcAttr (Setpgid), so proc is its group's leader
-// and its pid equals the pgid. Best-effort and nil-safe: a nil or already-reaped
-// process is a no-op. (The pgid stays reserved while any group member is alive, so
-// this is safe to call after proc itself has been waited on.)
-func reapProcessGroup(proc *os.Process) {
-	if proc == nil {
-		return
-	}
-	_ = syscall.Kill(-proc.Pid, syscall.SIGKILL)
-}
-
 // procGroup is the per-process kill handle. On Unix the child already lives in
-// its own process group (Setpgid, above), so there is no extra OS state to
+// its own process group (Setpgid, newSysProcAttr), so there is no extra OS state to
 // hold. The type exists only so the cross-platform caller can treat every OS
 // uniformly. On Windows it wraps a process handle of the direct child and its job.
 type procGroup struct{}
@@ -99,9 +80,9 @@ func (*procGroup) close() {}
 // different operation. SIGKILL keeps the group form deliberately — that is the
 // whole-tree teardown, and it is what the reference does too.
 //
-// The signal to the one process goes through its process handle (signalOne). On
-// Linux that is pidfd_send_signal, on the descriptor that the start of the child
-// gave. Measured on Linux with strace against 89cb6289: the SIGTERM of process.kill,
+// The signal to the one process goes through its process handle
+// (sysproc.SignalOne). On Linux that is pidfd_send_signal, on the descriptor that
+// the start of the child gave. Measured on Linux with strace against 89cb6289: the SIGTERM of process.kill,
 // of process.killAndWait and of the supersede is pidfd_send_signal(<fd>, SIGTERM,
 // NULL, 0), and a SIGKILL is kill(-<pid>, SIGKILL). macOS has no such call, and the
 // handle sends kill(pid, sig) there.
@@ -112,21 +93,10 @@ func (*procGroup) close() {}
 func signalProcessGroup(proc *os.Process, signame string) error {
 	sig := parseSignal(signame)
 	if sig == syscall.SIGKILL {
-		return killChildGroup(proc.Pid)
+		return sysproc.KillChildGroup(proc.Pid)
 	}
-	return signalOne(proc, sig)
+	return sysproc.SignalOne(proc, sig)
 }
-
-// killChildGroup sends SIGKILL to the process group pgid. A var so a test can see the
-// call and give it an error.
-var killChildGroup = func(pgid int) error { return syscall.Kill(-pgid, syscall.SIGKILL) }
-
-// signalOne sends sig to the single process proc through its process handle. On a
-// Linux kernel with pid file descriptors, the handle of a child that this daemon
-// started holds one, and the standard library sends pidfd_send_signal on it. On a
-// kernel without them, and on macOS, it sends kill(pid, sig). A handle whose process
-// was waited for already sends nothing. A var so a test can see the call.
-var signalOne = func(proc *os.Process, sig syscall.Signal) error { return proc.Signal(sig) }
 
 // parseSignal maps a signal NAME to a signal, reproducing the reference exactly.
 // Both properties below are measured, by trapping each signal in the child and

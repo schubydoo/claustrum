@@ -1,6 +1,6 @@
 //go:build unix
 
-package main
+package sysproc
 
 import (
 	"errors"
@@ -8,12 +8,12 @@ import (
 	"syscall"
 )
 
-// exitSignalName returns the SIG-prefixed name of the signal that terminated the
+// ExitSignalName returns the SIG-prefixed name of the signal that terminated the
 // process, read from its wait status, or "" if it exited normally. The reference
 // daemon emits this on the process exit stream frame since 4534d86 (measured:
 // SIGTERM on a process.kill TERM, SIGKILL on a process.kill KILL). Windows has no
 // signal on the wait path, so its build returns "" and the field is omitted.
-func exitSignalName(waitErr error) string {
+func ExitSignalName(waitErr error) string {
 	var ee *exec.ExitError
 	if !errors.As(waitErr, &ee) {
 		return ""
@@ -28,11 +28,11 @@ func exitSignalName(waitErr error) string {
 // signalName maps a signal to its SIG-prefixed name. The map is keyed by the
 // portable syscall.SIG* constants — their numeric values differ across unix
 // variants but the constants do not, so it is correct on linux and darwin alike.
-// It covers every signal a client kill can request (parseSignal collapses input
-// to KILL/INT/HUP/TERM) plus the common crash signals a spawned process hits. An
-// exotic externally-delivered signal (e.g. SIGXCPU) is unmapped and returns ""
-// (the field is then omitted); the reference's output for those is unmeasured, so
-// this is not widened on a guess.
+// It covers every signal a client kill can request (parseSignal of package main
+// collapses input to KILL/INT/HUP/TERM) plus the common crash signals a spawned
+// process hits. An exotic externally-delivered signal (e.g. SIGXCPU) is unmapped
+// and returns "" (the field is then omitted); the reference's output for those is
+// unmeasured, so this is not widened on a guess.
 func signalName(sig syscall.Signal) string {
 	return signalNames[sig]
 }

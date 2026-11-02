@@ -19,26 +19,6 @@ import (
 // silently: no wire frame mentions the marker, but downstream tooling can detect
 // the absence by inspecting its own environment.
 
-func TestReplaceOrAppendEnv(t *testing.T) {
-	// Existing key is replaced in place.
-	got := replaceOrAppendEnv([]string{"A=1", "B=2"}, "A", "9")
-	if want := []string{"A=9", "B=2"}; !slices.Equal(got, want) {
-		t.Errorf("replace: got %v, want %v", got, want)
-	}
-
-	// New key is appended.
-	got = replaceOrAppendEnv([]string{"A=1"}, "C", "3")
-	if want := []string{"A=1", "C=3"}; !slices.Equal(got, want) {
-		t.Errorf("append: got %v, want %v", got, want)
-	}
-
-	// Prefix match must be exact ("A=" not a prefix of "AB=").
-	got = replaceOrAppendEnv([]string{"AB=2"}, "A", "1")
-	if want := []string{"AB=2", "A=1"}; !slices.Equal(got, want) {
-		t.Errorf("prefix safety: got %v, want %v", got, want)
-	}
-}
-
 func TestBuildEnvMergesOverEnviron(t *testing.T) {
 	t.Setenv("CLAUSTRUM_TEST_KEEP", "base")
 	t.Setenv("CLAUSTRUM_TEST_OVERRIDE", "old")
