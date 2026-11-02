@@ -149,7 +149,7 @@ func (w *Log) Record(connID uint64, dir string, b []byte) {
 			// Reconstruct mode: nothing is truncated, so keep the frame verbatim
 			// (credential values masked) as raw. Unlike the decoded body it
 			// preserves field order and number formatting — which for this daemon
-			// IS the wire contract a capture exists to check (results.go).
+			// IS the wire contract a capture exists to check (internal/rpc/results.go).
 			rec["raw"] = redactRawSecrets(string(frame))
 		} else {
 			// Shape mode: a per-value-truncated, by-key-redacted decode. json.Marshal

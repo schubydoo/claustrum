@@ -1,4 +1,4 @@
-package main
+package rpc
 
 // Result structs with fields in the exact order the real binary emits them, so
 // serialized frames are byte-compatible (Go marshals struct fields in declaration
@@ -10,11 +10,11 @@ package main
 // docs/ARCHITECTURE.md → "Inherited wire bytes" for the register, and
 // inherited_encoding_test.go for the assertions that keep it from drifting.
 
-type pongResult struct {
+type PongResult struct {
 	Pong bool `json:"pong"`
 }
 
-type capabilitiesResult struct {
+type CapabilitiesResult struct {
 	Version string   `json:"version"`
 	Methods []string `json:"methods"`
 	// InstanceID and StartedAt were added by the reference daemon in 4534d86 and
@@ -36,74 +36,74 @@ type capabilitiesResult struct {
 	PeerCheckBy []string `json:"peerCheckBy,omitempty"`
 }
 
-type statResult struct {
+type StatResult struct {
 	Exists bool   `json:"exists"`
 	IsDir  bool   `json:"isDir"`
 	Size   int64  `json:"size"`
 	Mode   string `json:"mode"`
 }
 
-type listEntry struct {
+type ListEntry struct {
 	Name  string `json:"name"`
 	Path  string `json:"path"`
 	IsDir bool   `json:"isDir"`
 }
 
-type listResult struct {
-	Entries []listEntry `json:"entries"`
+type ListResult struct {
+	Entries []ListEntry `json:"entries"`
 }
 
-type readResult struct {
+type ReadResult struct {
 	Content string `json:"content"`
 	Exists  bool   `json:"exists"`
 	Real    string `json:"real,omitempty"`
 }
 
-// realpathResult is the files.realpath result. Real and WouldBe are never both
+// RealpathResult is the files.realpath result. Real and WouldBe are never both
 // set. Measured on build 683cc6a9 (measured on Linux, macOS and Windows).
-type realpathResult struct {
+type RealpathResult struct {
 	Exists   bool   `json:"exists"`
 	Real     string `json:"real,omitempty"`
 	WouldBe  string `json:"wouldBe,omitempty"`
 	Dangling bool   `json:"dangling,omitempty"`
 }
 
-type validateResult struct {
+type ValidateResult struct {
 	Valid bool   `json:"valid"`
 	IsDir bool   `json:"isDir"`
 	Error string `json:"error,omitempty"`
 }
 
-type extractResult struct {
+type ExtractResult struct {
 	Success         bool   `json:"success"`
 	FileCount       int    `json:"fileCount"`
 	AlreadyComplete bool   `json:"alreadyComplete,omitempty"`
 	Error           string `json:"error,omitempty"`
 }
 
-type successResult struct {
+type SuccessResult struct {
 	Success bool `json:"success"`
 }
 
-// shutdownResult is server.shutdown's reply. See the methodShutdown case in methods_server.go.
-type shutdownResult struct {
+// ShutdownResult is server.shutdown's reply. See the methodShutdown case in methods_server.go.
+type ShutdownResult struct {
 	OK bool `json:"ok"`
 }
 
-// spawnResult is process.spawn's reply. It is deliberately distinct from the
-// successResult of process.stdin and the killResult: the CT-1 opt-in
+// SpawnResult is process.spawn's reply. It is deliberately distinct from the
+// StdinResult of process.stdin and the KillResult: the CT-1 opt-in
 // ("wantPid":true) adds pid + startTime here only, so those fields can never
 // leak into a stdin/kill reply. Both are omitempty, so without the opt-in the
 // frame is byte-identical to the old {"success":true}. startTime is an opaque
 // daemon token (epoch seconds), not an OS-comparable start time — see
 // managedProc.startTime.
-type spawnResult struct {
+type SpawnResult struct {
 	Success   bool    `json:"success"`
 	Pid       int     `json:"pid,omitempty"`
 	StartTime float64 `json:"startTime,omitempty"`
 }
 
-type gitInfoResult struct {
+type GitInfoResult struct {
 	IsRepo bool `json:"isRepo"`
 	// Repo is the base name of Root. It is omitted when that name starts with "-" or
 	// "+" (infoRepoName).
@@ -134,13 +134,13 @@ type gitInfoResult struct {
 	SettingsControl string `json:"settingsControl,omitempty"`
 }
 
-type gitStatusResult struct {
+type GitStatusResult struct {
 	IsRepo  bool     `json:"isRepo"`
 	Clean   bool     `json:"clean"`
 	Changes []string `json:"changes,omitempty"`
 }
 
-type branchesResult struct {
+type BranchesResult struct {
 	IsRepo   bool     `json:"isRepo"`
 	Branches []string `json:"branches"`
 }
@@ -148,7 +148,7 @@ type branchesResult struct {
 // Field order: success, path, error, errorCode, sourceBranch. No input populates
 // sourceBranch together with error/errorCode, so the order of those two groups is
 // claustrum's own, not probe-measured.
-// worktreeRemoveResult is git.worktree_remove's reply. On some failures the
+// WorktreeRemoveResult is git.worktree_remove's reply. On some failures the
 // reference emits an `error` field beside `success`. The lenient cases still
 // answer a bare {"success":true}: removing a nonexistent worktree, or naming a
 // branch that the branch step finds absent. A kept branch adds "branchKept":true.
@@ -168,7 +168,7 @@ type branchesResult struct {
 // populates error. What the goldens
 // pin is the bare {"success":true} on the inputs the battery exercises — not a
 // property of every reachable input.
-type worktreeRemoveResult struct {
+type WorktreeRemoveResult struct {
 	Success bool   `json:"success"`
 	Error   string `json:"error,omitempty"`
 	// BranchKept is true when the branch step kept the branch (89cb6289). That is
@@ -178,7 +178,7 @@ type worktreeRemoveResult struct {
 	BranchKept bool `json:"branchKept,omitempty"`
 }
 
-type worktreeResult struct {
+type WorktreeResult struct {
 	Success      bool   `json:"success"`
 	Path         string `json:"path,omitempty"`
 	Error        string `json:"error,omitempty"`
@@ -196,7 +196,7 @@ type worktreeResult struct {
 	BranchKept bool `json:"branchKept,omitempty"`
 }
 
-type reattachResult struct {
+type ReattachResult struct {
 	Found    bool   `json:"found"`
 	Running  bool   `json:"running"`
 	FirstSeq uint64 `json:"firstSeq"`
@@ -214,25 +214,25 @@ type reattachResult struct {
 	StartTime float64 `json:"startTime,omitempty"`
 }
 
-// stdinResult is process.stdin's reply. Before 7c2f88d it was the bare
+// StdinResult is process.stdin's reply. Before 7c2f88d it was the bare
 // {"success":true}; the reference now always reports the cumulative applied byte
 // count, and flags a wholly-duplicate write (offset already covered) so an
 // idempotent client can resume stdin across reconnects. Applied is never
 // omitempty (the reference emits it unconditionally, even at 0); Duplicate is
 // dropped when false.
-type stdinResult struct {
+type StdinResult struct {
 	Success   bool   `json:"success"`
 	Applied   uint64 `json:"applied"`
 	Duplicate bool   `json:"duplicate,omitempty"`
 }
 
-// killAndWaitResult is process.killAndWait's reply. Found reports whether the id
+// KillAndWaitResult is process.killAndWait's reply. Found reports whether the id
 // was known; Died whether the process is now gone. AlreadyExited flags a process
 // that had already exited before the signal (no kill needed); Escalated flags one
 // that ignored the graceful signal and had to be SIGKILL'd after the grace
 // window. Both bools are omitempty, so a plain running-process kill is
 // {"found":true,"died":true} and an unknown id is {"found":false,"died":false}.
-type killAndWaitResult struct {
+type KillAndWaitResult struct {
 	Found         bool `json:"found"`
 	Died          bool `json:"died"`
 	AlreadyExited bool `json:"alreadyExited,omitempty"`
@@ -242,29 +242,29 @@ type killAndWaitResult struct {
 	FarewellEnd string `json:"farewellEnd,omitempty"`
 }
 
-// killResult is process.kill's reply: success, then farewellEnd (measured on
+// KillResult is process.kill's reply: success, then farewellEnd (measured on
 // Linux, build 52d82f0a). Without a farewell it is {"success":true}.
-type killResult struct {
+type KillResult struct {
 	Success     bool   `json:"success"`
 	FarewellEnd string `json:"farewellEnd,omitempty"`
 }
 
-// notRepoResult is the git.info body for non-repository paths. Since 7c2f88d the
+// NotRepoResult is the git.info body for non-repository paths. Since 7c2f88d the
 // reference emits {"isRepo":false,"repoSlug":"","defaultBranch":""} — the two new
-// fields are always present (empty for a non-repo) just as in gitInfoResult.
+// fields are always present (empty for a non-repo) just as in GitInfoResult.
 //
-// SettingsControl is the last member, as in gitInfoResult. 5fd08069 sends
+// SettingsControl is the last member, as in GitInfoResult. 5fd08069 sends
 // {"isRepo":false,"repoSlug":"","defaultBranch":"","settingsControl":"shadow"}
 // after its start test (measured on Linux, macOS and Windows), and no such
 // member before it.
-type notRepoResult struct {
+type NotRepoResult struct {
 	IsRepo          bool   `json:"isRepo"`
 	RepoSlug        string `json:"repoSlug"`
 	DefaultBranch   string `json:"defaultBranch"`
 	SettingsControl string `json:"settingsControl,omitempty"`
 }
 
-// managedLauncherResult is the launcher.resolve reply (89cb6289). One struct makes
+// ManagedLauncherResult is the launcher.resolve reply (89cb6289). One struct makes
 // all four shapes, because each shape keeps the fields in this order and drops the
 // empty ones. Measured on Linux and macOS:
 //
@@ -272,7 +272,7 @@ type notRepoResult struct {
 //	{"status":"usable","argv":[…],"source":"<file>"}
 //	{"status":"unusable","source":"<file>","reason":"<text>"}
 //	{"status":"unreadable","reason":"<text>","path":"<file or folder>"}
-type managedLauncherResult struct {
+type ManagedLauncherResult struct {
 	Status string   `json:"status"`
 	Argv   []string `json:"argv,omitempty"`
 	Source string   `json:"source,omitempty"`

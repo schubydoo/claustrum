@@ -91,44 +91,27 @@ func expandPath(p string) string {
 	return filepath.Join(home, p[2:])
 }
 
-// pathExpander is implemented by EVERY params struct, not just those carrying
-// paths, and bindParams takes it as its parameter type rather than `any`. That
-// makes expansion a compile-time obligation: a new params struct does not build
-// until its author writes expandPaths and, in doing so, decides whether it has
-// paths to expand.
-//
-// A type assertion inside bindParams was the obvious design and is the wrong
-// one: a new path-bearing struct that forgot the method would fail the assertion
-// silently and keep the literal-"~" behavior this file exists to remove. The
-// failure mode of that bug is not an error — it is a request quietly operating
-// on a path named "~", which is how claustrum came to create a literal `~`
-// directory inside a user's repo.
-//
-// Structs with no path fields implement it as a no-op, which doubles as the
-// declaration that they were considered.
-type pathExpander interface {
-	expandPaths()
-}
-
-func (p *pathParams) expandPaths()     { p.Path = expandPath(p.Path) }
-func (p *fileReadParams) expandPaths() { p.Path = expandPath(p.Path) }
-func (p *extractTarParams) expandPaths() {
+// Each params struct has an ExpandPaths method, so it implements
+// rpc.PathExpander, the parameter type of rpc.Bind.
+func (p *pathParams) ExpandPaths()     { p.Path = expandPath(p.Path) }
+func (p *fileReadParams) ExpandPaths() { p.Path = expandPath(p.Path) }
+func (p *extractTarParams) ExpandPaths() {
 	p.ArchivePath = expandPath(p.ArchivePath)
 	p.DestDir = expandPath(p.DestDir)
 }
-func (p *gitParams) expandPaths() {
+func (p *gitParams) ExpandPaths() {
 	p.Path = expandPath(p.Path)
 	p.BaseRepo = expandPath(p.BaseRepo)
 	p.WorktreePath = expandPath(p.WorktreePath)
 	p.WorktreeRoot = expandPath(p.WorktreeRoot)
 	// BranchName and SourceBranch are refs, not paths — never expanded.
 }
-func (p *spawnParams) expandPaths() { p.Cwd = expandPath(p.Cwd) }
+func (p *spawnParams) ExpandPaths() { p.Cwd = expandPath(p.Cwd) }
 
 // The process-control params address a process by id and carry no filesystem
 // paths, so expansion is a no-op. Declared explicitly rather than omitted: the
 // interface is what forces that judgement to be made for every params type.
-func (p *stdinParams) expandPaths()       {}
-func (p *killParams) expandPaths()        {}
-func (p *killAndWaitParams) expandPaths() {}
-func (p *reattachParams) expandPaths()    {}
+func (p *stdinParams) ExpandPaths()       {}
+func (p *killParams) ExpandPaths()        {}
+func (p *killAndWaitParams) ExpandPaths() {}
+func (p *reattachParams) ExpandPaths()    {}

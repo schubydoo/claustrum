@@ -134,7 +134,7 @@ func TestExpandPathWithoutHome(t *testing.T) {
 }
 
 // TestExpandPathsCoversEveryPathField guards the per-struct wiring: a params
-// struct can implement expandPaths and still miss one of its own path fields,
+// struct can implement ExpandPaths and still miss one of its own path fields,
 // which the compile-time interface cannot catch.
 func TestExpandPathsCoversEveryPathField(t *testing.T) {
 	if runtime.GOOS == "windows" {
@@ -150,31 +150,31 @@ func TestExpandPathsCoversEveryPathField(t *testing.T) {
 	under := func(rest string) string { return filepath.Join(home, rest) }
 
 	pp := &pathParams{Path: "~/p"}
-	pp.expandPaths()
+	pp.ExpandPaths()
 	if pp.Path != under("p") {
 		t.Errorf("pathParams.Path = %q", pp.Path)
 	}
 
 	lp := &listParams{Path: "~/l"}
-	lp.expandPaths()
+	lp.ExpandPaths()
 	if lp.Path != under("l") {
 		t.Errorf("listParams.Path = %q", lp.Path)
 	}
 
 	rp := &fileReadParams{Path: "~/r"}
-	rp.expandPaths()
+	rp.ExpandPaths()
 	if rp.Path != under("r") {
 		t.Errorf("fileReadParams.Path = %q", rp.Path)
 	}
 
 	et := &extractTarParams{ArchivePath: "~/a.tgz", DestDir: "~/d"}
-	et.expandPaths()
+	et.ExpandPaths()
 	if et.ArchivePath != under("a.tgz") || et.DestDir != under("d") {
 		t.Errorf("extractTarParams = %+v", et)
 	}
 
 	gp := &gitParams{Path: "~/g", BaseRepo: "~/b", WorktreePath: "~/w", BranchName: "~keep", SourceBranch: "~keep2"}
-	gp.expandPaths()
+	gp.ExpandPaths()
 	if gp.Path != under("g") || gp.BaseRepo != under("b") || gp.WorktreePath != under("w") {
 		t.Errorf("gitParams paths = %+v", gp)
 	}
@@ -185,7 +185,7 @@ func TestExpandPathsCoversEveryPathField(t *testing.T) {
 	}
 
 	sp := &spawnParams{Cwd: "~/c", Command: "~/not-a-path", ID: "~id"}
-	sp.expandPaths()
+	sp.ExpandPaths()
 	if sp.Cwd != under("c") {
 		t.Errorf("spawnParams.Cwd = %q", sp.Cwd)
 	}
@@ -195,28 +195,28 @@ func TestExpandPathsCoversEveryPathField(t *testing.T) {
 	}
 }
 
-// The process-control params carry no filesystem paths; their expandPaths is an
+// The process-control params carry no filesystem paths; their ExpandPaths is an
 // explicit no-op. Pin that nothing — not even a "~"-shaped id — is rewritten.
 func TestExpandPathsProcessControlParamsAreNoOps(t *testing.T) {
 	t.Setenv("HOME", t.TempDir())
 
 	st := &stdinParams{ID: "~id", Data: "~/data"}
-	st.expandPaths()
+	st.ExpandPaths()
 	if st.ID != "~id" || st.Data != "~/data" {
 		t.Errorf("stdinParams mutated: %+v", st)
 	}
 	k := &killParams{ID: "~id", Signal: "~/TERM"}
-	k.expandPaths()
+	k.ExpandPaths()
 	if k.ID != "~id" || k.Signal != "~/TERM" {
 		t.Errorf("killParams mutated: %+v", k)
 	}
 	kw := &killAndWaitParams{ID: "~id", Signal: "~/TERM"}
-	kw.expandPaths()
+	kw.ExpandPaths()
 	if kw.ID != "~id" || kw.Signal != "~/TERM" {
 		t.Errorf("killAndWaitParams mutated: %+v", kw)
 	}
 	r := &reattachParams{ID: "~id", FromSeq: 7}
-	r.expandPaths()
+	r.ExpandPaths()
 	if r.ID != "~id" || r.FromSeq != 7 {
 		t.Errorf("reattachParams mutated: %+v", r)
 	}

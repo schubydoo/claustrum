@@ -636,7 +636,7 @@ have no flag and no key.
 - **Reopen trigger.** None.
 - **Pointers.** [process.spawn](protocol/process-spawn.md#response) has what
   `startTime` means. Also [process.reattach](protocol/process-reattach.md) and
-  `results.go`.
+  `internal/rpc/results.go`.
 
 ### CT-2 · Opt-in `-keep-children` serve flag { #ct-2 }
 

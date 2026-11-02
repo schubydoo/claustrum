@@ -7,36 +7,6 @@ import (
 	"sync/atomic"
 )
 
-// JSON-RPC error codes (probe-verified against the real binary).
-const (
-	codeParse        = -32700 // malformed JSON line; response id is null
-	codeInvalidReq   = -32600 // jsonrpc != "2.0" or field absent
-	codeMethod       = -32601 // unknown method / unknown namespace
-	codeInvalidParam = -32602 // bad / missing params
-	codeInternal     = -32603 // internal error
-	codeUnauthorized = -32001 // bad or missing auth token
-	// codeStdinOffsetGap is returned by process.stdin when a caller's offset is
-	// ahead of the bytes applied so far — a gap that would drop input. Added by the
-	// reference daemon in 7c2f88d with the stdin-offset idempotency contract.
-	codeStdinOffsetGap = -32003 // stdin offset ahead of applied bytes
-	// codeStdinBackpressure is the code the reference emits from process.stdin when
-	// the per-process async stdin queue is already full: it rejects the write with
-	// this frame rather than blocking the request. Measured against 4534d86 — a
-	// producer that outruns a non-reading child gets an error frame once ~16 MiB is
-	// queued (measured).
-	codeStdinBackpressure = -32002 // stdin queue full (backpressure)
-	// codeLauncherUnusable is the process.spawn code for a launcher that the
-	// checks refuse, and for any launcher on a Windows host. codeLauncherStart is
-	// the code for a launcher that passes the checks but does not start. 89cb6289
-	// added both with the managed launcher. -32004 is measured on Linux, macOS
-	// and Windows, and -32005 on Linux and macOS.
-	codeLauncherUnusable = -32004
-	codeLauncherStart    = -32005
-	// codePeerRefused is the code of the frame of a caller that the peer check
-	// refuses (peercheck.go). 5fd08069 sends it on Linux (measured).
-	codePeerRefused = -32006
-)
-
 // request is one inbound JSON-RPC line.
 //
 // id is decoded into an interface{}, NOT a json.RawMessage, so the reply carries
@@ -110,60 +80,6 @@ func (req *request) runAtReply() {
 	req.atReply = nil
 }
 
-type response struct {
-	JSONRPC string      `json:"jsonrpc"`
-	ID      interface{} `json:"id"`
-	Result  interface{} `json:"result,omitempty"`
-	Error   *rpcError   `json:"error,omitempty"`
-	// noFrame marks a request that gets no reply. route then returns nil. It is
-	// unexported, so it is never in a frame.
-	noFrame bool
-}
-
-type rpcError struct {
-	Code    int    `json:"code"`
-	Message string `json:"message"`
-	// Data is absent, not null, when nil, so a frame without it stays as it was.
-	Data interface{} `json:"data,omitempty"`
-}
-
-// idForLog renders an id the way the log line always has: as the JSON text that
-// will appear on the wire, so `id=1` and `id="abc"` keep their existing shape now
-// that ID is a decoded interface{} rather than the raw bytes. An absent id stays
-// empty rather than becoming "null", which is what the previous string(req.ID)
-// produced for a nil RawMessage.
-//
-// The marshal error is discarded rather than branched on. id came out of
-// json.Unmarshal into an interface{}, so it is a string, float64, bool, nil,
-// []interface{} or map[string]interface{} — none of which json.Marshal can fail
-// on. Only cycles, channels, funcs and NaN/Inf can, and a decoded JSON document
-// produces none of them. On that impossible error b is nil, which renders as the
-// same empty string the nil case above returns, so the branch would have been
-// unreachable code that says nothing.
-func idForLog(id interface{}) string {
-	if id == nil {
-		return ""
-	}
-	b, _ := json.Marshal(id)
-	return string(b)
-}
-
-// errResult builds an error reply. A nil id marshals to null on its own now that
-// ID is an interface{}, so the parse-error path needs no special case — but the
-// field must stay free of omitempty, or a null id would vanish from the frame.
-func errResult(id interface{}, code int, msg string) response {
-	return response{JSONRPC: "2.0", ID: id, Error: &rpcError{Code: code, Message: msg}}
-}
-
-// errResultData is errResult with an error data member.
-func errResultData(id interface{}, code int, msg string, data interface{}) response {
-	return response{JSONRPC: "2.0", ID: id, Error: &rpcError{Code: code, Message: msg, Data: data}}
-}
-
-func okResult(id interface{}, result interface{}) response {
-	return response{JSONRPC: "2.0", ID: id, Result: result}
-}
-
 // methodShutdown is the one method exempt from the auth gate — see gate.
 //
 // The value is also ON THE WIRE: capabilityMethods embeds it, so it is emitted
@@ -212,7 +128,7 @@ func (s *server) route(c *conn, req request) *response {
 		return ptr(s.handleGit(&req))
 	case "process":
 		r := s.handleProcess(c, &req)
-		if r.noFrame {
+		if r.NoFrame {
 			return nil
 		}
 		return &r
@@ -296,46 +212,4 @@ func (s *server) gate(c *conn, raw []byte) (request, *response) {
 		s.noteCountedRequest()
 	}
 	return req, nil
-}
-
-func ptr(r response) *response { return &r }
-
-// needParams enforces that a known method was given a params OBJECT. The real
-// daemon rejects an ABSENT params field with -32602 "Invalid params" (an empty
-// {} is accepted) — and only after confirming the method exists.
-func needParams(req *request) *response {
-	if len(req.Params) == 0 {
-		return ptr(errResult(req.ID, codeInvalidParam, "Invalid params"))
-	}
-	return nil
-}
-
-func unknownMethod(req *request) response {
-	return errResult(req.ID, codeMethod, "Unknown method: "+req.Method)
-}
-
-// decodeParams unmarshals req.Params into v. Empty params is treated as {}.
-func decodeParams(req *request, v interface{}) error {
-	if len(req.Params) == 0 {
-		return nil
-	}
-	return json.Unmarshal(req.Params, v)
-}
-
-// bindParams decodes req.Params into v, returning an Invalid-params response when
-// the body is present but mistyped (e.g. a string where a number is expected, or
-// a non-object params value). The reference rejects such requests with -32602
-// even though encoding/json could partially decode them — matching that, any
-// unmarshal error becomes "Invalid params". Absent params is gated earlier by
-// needParams; unknown fields are ignored by both daemons. Returns nil on success.
-// bindParams decodes params and expands any leading `~` before the method sees
-// them. The parameter type is pathExpander, not `any`, so a params struct that
-// has not declared its expansion behavior does not compile — see expandpath.go
-// for why a type assertion here would have been the wrong design.
-func bindParams(req *request, v pathExpander) *response {
-	if err := decodeParams(req, v); err != nil {
-		return ptr(errResult(req.ID, codeInvalidParam, "Invalid params"))
-	}
-	v.expandPaths()
-	return nil
 }

@@ -22,7 +22,7 @@ import (
 // (install.go, stageAndInstall). Its sweep and its prune call the guard for
 // each entry that they remove (cliEntryHoldsHome). The RPC
 // paths are `~`-expanded first — bindParams
-// calls expandPaths on EVERY request (rpc.go), and expandPath returns the home
+// calls ExpandPaths on EVERY request (rpc.Bind), and expandPath returns the home
 // directory verbatim for a bare "~" (expandpath.go). So `"destDir":"~"` names
 // the home folder as the target of the recursive delete.
 //

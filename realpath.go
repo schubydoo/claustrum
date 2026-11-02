@@ -11,7 +11,7 @@ import (
 	"syscall"
 )
 
-// realpathParams holds the members that files.realpath reads. expandPaths does
+// realpathParams holds the members that files.realpath reads. ExpandPaths does
 // nothing: the handler tests the raw path for an unclean "~/" form first, and
 // then calls expandPath itself.
 type realpathParams struct {
@@ -19,7 +19,7 @@ type realpathParams struct {
 	MissingLeaf bool   `json:"missingLeaf"`
 }
 
-func (p *realpathParams) expandPaths() {}
+func (p *realpathParams) ExpandPaths() {}
 
 // realpathErrData is the data member of a -32603 reply of files.realpath.
 type realpathErrData struct {

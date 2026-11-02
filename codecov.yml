@@ -85,7 +85,9 @@ component_management:
       name: rpc & dispatch
       paths:
         - rpc.go
-        - results.go
+        - compat_rpc.go
+        - internal/rpc/rpc.go
+        - internal/rpc/results.go
     - component_id: server
       name: server & lifecycle
       paths:
