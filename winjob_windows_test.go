@@ -124,8 +124,7 @@ func TestDaemonChildLeavesTheLauncherJob(t *testing.T) {
 	// The session ends: the job closes and ends every process in it.
 	_ = windows.CloseHandle(job)
 	closed = true
-	time.Sleep(time.Second)
-	if !processAlive(t, pid) {
+	if waitProcessGone(pid, time.Second) || !processAlive(t, pid) {
 		t.Errorf("the detached process %d ended with the job of its launcher", pid)
 	}
 }
@@ -267,17 +266,18 @@ func TestKillEndsOnlyTheDirectChild(t *testing.T) {
 			}
 		})
 	}
-	// One wait of 1 s for all rows. The last row ended its child last, so each
-	// grandchild is checked at least 1 s after the end of its direct child. A
-	// grandchild of the "tree" helper ends by itself after 60 s, so all rows
-	// and this wait must end well inside 60 s.
-	time.Sleep(time.Second)
+	// One window of 1 s for all rows. The last row ended its child last, so each
+	// grandchild is checked at least 1 s after the end of its direct child. A poll
+	// fails at once when a grandchild ends. A grandchild that the window left is
+	// checked once at its end. A grandchild of the "tree" helper ends by itself
+	// after 60 s, so all rows and this window must end well inside 60 s.
+	deadline := time.Now().Add(time.Second)
 	for _, tc := range actions {
 		gpid, ok := gpids[tc.id]
 		if !ok {
 			continue // The row did not run, or it failed before its grandchild started and said so.
 		}
-		if !processAlive(t, gpid) {
+		if waitProcessGone(gpid, time.Until(deadline)) || !processAlive(t, gpid) {
 			t.Errorf("%s: grandchild %d ended with the direct child", tc.id, gpid)
 		}
 	}
@@ -529,8 +529,7 @@ func TestChildSurvivesAKilledDaemon(t *testing.T) {
 		t.Fatalf("kill the owner: %v", err)
 	}
 	_ = daemon.Wait()
-	time.Sleep(time.Second)
-	if !processAlive(t, pid) {
+	if waitProcessGone(pid, time.Second) || !processAlive(t, pid) {
 		t.Errorf("child %d ended with its killed owner", pid)
 	}
 }
