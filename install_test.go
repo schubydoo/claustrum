@@ -317,10 +317,10 @@ func TestCLISizeCapDefaultsOff(t *testing.T) {
 // zstdDecompress must reject a blob that decompresses beyond the cap. Without
 // this guard a tiny .zst file expands unbounded on disk (a zstd bomb): the
 // reference was measured writing past 200 MB from a small blob and still going
-// when the probe was stopped — S6.
+// when the probe was stopped (measured).
 //
-// The comment used to say "hundreds of GB". Nothing measured that; the probe was
-// stopped at 200 MB. The unbounded direction is what S6 supports, not a figure.
+// The comment used to say "hundreds of GB". Nothing measured that; the probe was stopped at
+// 200 MB. The unbounded direction is what that measurement supports, not a figure.
 func TestZstdDecompressSizeLimit(t *testing.T) {
 	old := maxCLIBytes
 	maxCLIBytes = 1024
@@ -890,7 +890,7 @@ func TestSweepFetchTemps(t *testing.T) {
 	}
 }
 
-// TestPruneBudgetIgnoresOrphans is the regression for the bug behind F3: orphan
+// TestPruneBudgetIgnoresOrphans is the regression for an earlier prune bug: orphan
 // temps counted as CLI *versions*, so they consumed the -cli-keep budget. With
 // three orphans, four versions and keep=3, every real version was evicted —
 // including the one just installed.

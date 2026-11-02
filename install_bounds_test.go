@@ -904,9 +904,9 @@ func TestInstallClearsTheFinalNameBeforeTheNewCLIRuns(t *testing.T) {
 	}
 }
 
-// An occupied final name. A new CLI that exits non-zero leaves no CLI
-// at the final name, whatever was there before: the F12 shape. The reference
-// side of this exact case is not measured.
+// An occupied final name. A new CLI that exits non-zero leaves no CLI at the final name,
+// whatever was there before, as in the failed run above. The reference side of this exact
+// case is not measured.
 func TestInstallLeavesNoCLIAfterANewCLIThatDoesNotRun(t *testing.T) {
 	for _, shape := range []string{"a folder", "a file"} {
 		t.Run(shape, func(t *testing.T) {
