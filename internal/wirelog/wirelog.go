@@ -1,4 +1,4 @@
-package main
+package wirelog
 
 import (
 	"encoding/json"
@@ -11,9 +11,11 @@ import (
 	"sync/atomic"
 	"time"
 	"unicode/utf8"
+
+	"github.com/schubydoo/claustrum/internal/logging"
 )
 
-// wireLog is the opt-in JSON-RPC frame recorder behind -wire-log. It is a pure
+// Log is the opt-in JSON-RPC frame recorder behind -wire-log. It is a pure
 // side channel: it observes frames that have ALREADY been marshaled (outbound) or
 // read (inbound) and never touches the bytes on the socket, so a daemon with
 // logging on emits frames byte-identical to one without it. That is the whole
@@ -25,7 +27,7 @@ import (
 //
 // The record is one JSON object per line (JSONL), so a capture is greppable and
 // streamable without a parser holding the whole file.
-type wireLog struct {
+type Log struct {
 	mu     sync.Mutex
 	f      *os.File
 	maxStr int // longest string value kept verbatim; longer ones are summarized
@@ -43,7 +45,7 @@ type wireLog struct {
 	dropped atomic.Uint64 // frames a write error lost, reported once at Close
 }
 
-// wireLogMaxString is the DEFAULT bound on a single string value in a logged
+// MaxString is the DEFAULT bound on a single string value in a logged
 // frame. Stream frames carry base64 stdout/stderr, so without a bound the capture
 // is ~95% payload and the method-level shape is buried. The full length is kept in
 // the summary, so nothing about SIZE is lost — only the bytes themselves.
@@ -52,17 +54,17 @@ type wireLog struct {
 // a session: Claude Desktop drives the remote CLI through process.spawn, so the
 // CLI's whole stdio protocol rides inside those truncated strings. Set
 // -wire-log-max-string=0 for an untruncated capture when the payload is the point.
-const wireLogMaxString = 512
+const MaxString = 512
 
-// wireLogOptions carries the -wire-log settings as one value, so enabling a
+// Options carries the -wire-log settings as one value, so enabling a
 // capture does not add a parameter per knob to the server constructor.
-type wireLogOptions struct {
-	// path is the capture file; "" means logging is off.
-	path string
-	// maxString bounds one string value. 0 means unlimited — deliberately NOT
+type Options struct {
+	// Path is the capture file; "" means logging is off.
+	Path string
+	// MaxString bounds one string value. 0 means unlimited — deliberately NOT
 	// "some huge number", so the unlimited path skips the clamp entirely rather
 	// than imposing a different, larger, still-observable bound.
-	maxString int
+	MaxString int
 }
 
 // chmodWireLog is (*os.File).Chmod behind a seam: newWireLog's non-fatal chmod arm
@@ -85,31 +87,31 @@ var chmodWireLog = (*os.File).Chmod
 // load-bearing, not tidiness. Chmod re-asserts it on every open, non-fatal like the
 // socket's chmod (and, like the socket, POSIX-only — not an owner-only DACL on
 // Windows).
-func newWireLog(path string, maxString int) (*wireLog, error) {
+func newWireLog(path string, maxString int) (*Log, error) {
 	f, err := os.OpenFile(path, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0600)
 	if err != nil {
 		return nil, err
 	}
 	if err := chmodWireLog(f, 0o600); err != nil {
-		logWarnf("[WireLog] chmod %s 0600: %v", path, err)
+		logging.Warnf("[WireLog] chmod %s 0600: %v", path, err)
 	}
 	if maxString < 0 {
 		maxString = 0
 	}
-	return &wireLog{f: f, maxStr: maxString, pid: os.Getpid()}, nil
+	return &Log{f: f, maxStr: maxString, pid: os.Getpid()}, nil
 }
 
-// record writes one frame. dir is "in" for a client request and "out" for
+// Record writes one frame. dir is "in" for a client request and "out" for
 // anything the daemon sends (replies, stream notifications, replay frames).
 //
 // b is NOT retained or modified: redaction works on a decoded copy. A nil
 // receiver is a no-op so every call site can be an unconditional method call
 // rather than a nil check.
-func (w *wireLog) record(connID uint64, dir string, b []byte) {
+func (w *Log) Record(connID uint64, dir string, b []byte) {
 	if w == nil {
 		return
 	}
-	// Outbound frames reach record with the framing '\n' appended; inbound do not.
+	// Outbound frames reach Record with the framing '\n' appended; inbound do not.
 	// Strip one so n and the recorded frame mean the same in both directions.
 	frame := b
 	if n := len(frame); n > 0 && frame[n-1] == '\n' {
@@ -216,7 +218,7 @@ func isSecretKey(k string) bool {
 //
 // The value arm closes on either the terminating quote OR end-of-frame (`\\?$`),
 // so a value truncated mid-write — the read loop hands an unterminated final token
-// to record before anything validates it — is masked too, whether it ends bare or
+// to Record before anything validates it — is masked too, whether it ends bare or
 // on a lone backslash. A terminated value cannot reach the $ branch because
 // `[^"\\]` stops at its closing quote first, so a single pass covers both.
 //
@@ -244,7 +246,7 @@ func redactRawSecrets(s string) string {
 // free-form string — a process.stdin payload, a --settings JSON blob — is not
 // caught, because finding it would mean scanning every byte of every stream frame.
 // A capture is therefore still sensitive: treat it as such rather than as scrubbed.
-func (w *wireLog) redact(v interface{}) interface{} {
+func (w *Log) redact(v interface{}) interface{} {
 	switch t := v.(type) {
 	case map[string]interface{}:
 		out := make(map[string]interface{}, len(t))
@@ -275,7 +277,7 @@ func (w *wireLog) redact(v interface{}) interface{} {
 // clampString keeps short strings verbatim and replaces a long one with a prefix
 // plus its true length. The length is the point: stream-frame sizes are how you
 // read throughput out of a capture.
-func (w *wireLog) clampString(s string) string {
+func (w *Log) clampString(s string) string {
 	limit := w.maxStr
 	if limit <= 0 || len(s) <= limit {
 		return s
@@ -289,7 +291,7 @@ func (w *wireLog) clampString(s string) string {
 }
 
 // Close flushes and reports any frames lost to write errors. Safe on nil.
-func (w *wireLog) Close() {
+func (w *Log) Close() {
 	if w == nil {
 		return
 	}
@@ -299,33 +301,33 @@ func (w *wireLog) Close() {
 		return
 	}
 	if n := w.dropped.Load(); n > 0 {
-		logWarnf("[WireLog] %d frame(s) dropped on write error", n)
+		logging.Warnf("[WireLog] %d frame(s) dropped on write error", n)
 	}
 	if err := w.f.Close(); err != nil {
-		logWarnf("[WireLog] close: %v", err)
+		logging.Warnf("[WireLog] close: %v", err)
 	}
 	w.f = nil
 }
 
-// openWireLog resolves the -wire-log setting into a logger, or nil when off.
+// Open resolves the -wire-log setting into a logger, or nil when off.
 // A path that cannot be opened is fatal rather than silently ignored: an operator
 // who asked for a capture and got none would read the empty result as "the client
 // sent nothing", which is the worst possible failure for a diagnostic tool.
-func openWireLog(opt wireLogOptions) (*wireLog, error) {
-	if opt.path == "" {
+func Open(opt Options) (*Log, error) {
+	if opt.Path == "" {
 		return nil, nil
 	}
-	w, err := newWireLog(opt.path, opt.maxString)
+	w, err := newWireLog(opt.Path, opt.MaxString)
 	if err != nil {
-		return nil, fmt.Errorf("wire log %s: %w", opt.path, err)
+		return nil, fmt.Errorf("wire log %s: %w", opt.Path, err)
 	}
-	// Log against the normalised bound (w.maxStr), not opt.maxString: newWireLog
+	// Log against the normalised bound (w.maxStr), not opt.MaxString: newWireLog
 	// clamps a negative to 0 (unlimited), so a negative CLI value must read as
 	// "untruncated" rather than "strings over -5 bytes truncated".
 	if w.maxStr == 0 {
-		logInfof("[WireLog] recording JSON-RPC frames to %s (untruncated)", opt.path)
+		logging.Infof("[WireLog] recording JSON-RPC frames to %s (untruncated)", opt.Path)
 	} else {
-		logInfof("[WireLog] recording JSON-RPC frames to %s (strings over %d bytes truncated)", opt.path, w.maxStr)
+		logging.Infof("[WireLog] recording JSON-RPC frames to %s (strings over %d bytes truncated)", opt.Path, w.maxStr)
 	}
 	return w, nil
 }

@@ -265,8 +265,8 @@ func main() {
 		runServe(resolveSocket(), *tokenFile, *tokenFd,
 			cfg.effectiveMetricsAddr(*metricsAddr, cliSet["metrics-addr"]),
 			wireLogOptions{
-				path:      cfg.effectiveWireLog(*wireLogPath, cliSet["wire-log"]),
-				maxString: int(cfg.effectiveWireLogMaxString(*wireLogMax, cliSet["wire-log-max-string"])),
+				Path:      cfg.effectiveWireLog(*wireLogPath, cliSet["wire-log"]),
+				MaxString: int(cfg.effectiveWireLogMaxString(*wireLogMax, cliSet["wire-log-max-string"])),
 			},
 			cfg.effectiveKeepChildren(*keepChildren, cliSet["keep-children"]),
 			cfg.effectiveListenPipe(*listenPipe, cliSet["listen-pipe"]))

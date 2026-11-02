@@ -485,7 +485,7 @@ func TestWriteStdinRejectsWhenFull(t *testing.T) {
 	p.enqueueStdin([]byte("X"))
 	waitStdinQueueEmpty(t, p)
 
-	before := met.stdinBytes.Load()
+	before := met.StdinBytes.Load()
 	accepted, rejected := 0, false
 	for i := 0; i < 100; i++ { // 200 bytes >> 8-byte cap → one must be rejected
 		if m.writeStdin("wf", []byte("ab")) {
@@ -499,7 +499,7 @@ func TestWriteStdinRejectsWhenFull(t *testing.T) {
 		t.Fatal("writeStdin never returned false despite an 8-byte cap — backpressure not propagated")
 	}
 	// The rejected write enqueued nothing, so only the accepted 2-byte writes count.
-	if got, want := met.stdinBytes.Load()-before, int64(accepted*2); got != want {
+	if got, want := met.StdinBytes.Load()-before, int64(accepted*2); got != want {
 		t.Fatalf("stdinBytes delta = %d, want %d (a rejected write must not count)", got, want)
 	}
 }
@@ -895,11 +895,11 @@ func TestEmitFanOutSurvivesDeadSubscriber(t *testing.T) {
 // process-wide registry (counting is always-on); exits and stream bytes use ≥
 // because exit goroutines from earlier tests may still be landing.
 func TestMetricsCountProcessOps(t *testing.T) {
-	spawns0 := met.spawns.Load()
-	exits0 := met.processExits.Load()
-	stream0 := met.streamBytes.Load()
-	stdin0 := met.stdinBytes.Load()
-	reatt0 := met.reattaches.Load()
+	spawns0 := met.Spawns.Load()
+	exits0 := met.ProcessExits.Load()
+	stream0 := met.StreamBytes.Load()
+	stdin0 := met.StdinBytes.Load()
+	reatt0 := met.Reattaches.Load()
 
 	m := newTestProcManager(t)
 	t.Cleanup(m.killAll)
@@ -934,19 +934,19 @@ func TestMetricsCountProcessOps(t *testing.T) {
 		}
 	}
 
-	if d := met.spawns.Load() - spawns0; d != 1 {
+	if d := met.Spawns.Load() - spawns0; d != 1 {
 		t.Errorf("spawns delta = %d, want 1", d)
 	}
-	if d := met.stdinBytes.Load() - stdin0; d != 6 {
+	if d := met.StdinBytes.Load() - stdin0; d != 6 {
 		t.Errorf("stdinBytes delta = %d, want 6 (len of hello\\n)", d)
 	}
-	if d := met.streamBytes.Load() - stream0; d < 6 {
+	if d := met.StreamBytes.Load() - stream0; d < 6 {
 		t.Errorf("streamBytes delta = %d, want ≥ 6 (the echoed hello\\n)", d)
 	}
-	if d := met.reattaches.Load() - reatt0; d != 1 {
+	if d := met.Reattaches.Load() - reatt0; d != 1 {
 		t.Errorf("reattaches delta = %d, want 1 (a missing-process reattach must not count)", d)
 	}
-	if d := met.processExits.Load() - exits0; d < 1 {
+	if d := met.ProcessExits.Load() - exits0; d < 1 {
 		t.Errorf("processExits delta = %d, want ≥ 1", d)
 	}
 }

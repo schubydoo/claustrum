@@ -8,6 +8,8 @@ import (
 	"strings"
 	"syscall"
 	"testing"
+
+	"github.com/schubydoo/claustrum/internal/logging"
 )
 
 // nofileTarget returns the soft limit raiseInheritedFileLimit aims for, or skips
@@ -130,9 +132,9 @@ func TestRaiseInheritedFileLimitLogsLimit(t *testing.T) {
 	origGet, origSet := getRlimit, setRlimit
 	t.Cleanup(func() { getRlimit, setRlimit = origGet, origSet })
 	buf := captureLogBuf(t)
-	oldLevel := logThreshold.Load()
-	logThreshold.Store(int32(logLevelDebug))
-	t.Cleanup(func() { logThreshold.Store(oldLevel) })
+	oldLevel := logging.Threshold.Load()
+	logging.Threshold.Store(int32(logging.LevelDebug))
+	t.Cleanup(func() { logging.Threshold.Store(oldLevel) })
 
 	for _, c := range []struct {
 		name    string

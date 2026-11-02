@@ -317,7 +317,7 @@ func (c *conn) writeLineLocked(b []byte) error {
 	// in another, and would log a frame the closed check then drops. A frame
 	// fanned out to N subscribers is recorded once per conn: a per-connection view.
 	b = stampEnd(b, c.sent)
-	c.wlog.record(c.id, "out", b)
+	c.wlog.Record(c.id, "out", b)
 	n, err := c.nc.Write(b)
 	c.sent += int64(n)
 	return err
@@ -349,7 +349,7 @@ func (c *conn) writeResponse(v interface{}) (failed bool) {
 	// capture is exactly what goes on the wire — in wire order, and never a frame
 	// the closed check dropped. record neither retains nor mutates b.
 	b = stampEnd(b, c.sent)
-	c.wlog.record(c.id, "out", b)
+	c.wlog.Record(c.id, "out", b)
 	n, err := c.nc.Write(b)
 	c.sent += int64(n)
 	if err != nil {
@@ -1055,7 +1055,7 @@ func (s *server) acceptLoop(ln net.Listener) {
 		// read/write. The reference closes a connection idle for 5 minutes (f6010b97).
 		ac := newActivityConn(nc)
 		c := &conn{nc: ac, ac: ac, id: s.connSeq.Add(1), wlog: s.wlog, done: make(chan struct{}), down: s.shutdown}
-		met.connections.Add(1)
+		met.Connections.Add(1)
 		// The New connection line waits for the first request that shows the token
 		// (conn.showToken, claustrum's own, not measured).
 		s.mu.Lock()
@@ -1135,7 +1135,7 @@ func (s *server) serveConn(c *conn) {
 		// ORDER. Recording inside handleRequest would order frames by goroutine
 		// scheduling instead, which is exactly the property a capture is used to
 		// study (see the stdin-ticket note above).
-		c.wlog.record(c.id, "in", raw)
+		c.wlog.Record(c.id, "in", raw)
 		// A line that fails the parse check or the auth check gets its reply
 		// here, on the read path, before the next read. A final newline does
 		// not change this. Measured against f6010b97 and 90fca6e6 on Linux,

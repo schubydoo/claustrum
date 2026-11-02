@@ -1,4 +1,4 @@
-package main
+package logging
 
 import (
 	"log"
@@ -16,58 +16,58 @@ import (
 // Output still flows through the stdlib default logger (log.Printf), so the
 // standard timestamp prefix and log.SetOutput (used by tests) behave as before.
 
-type logLevel int32
+type Level int32
 
 const (
-	logLevelDebug logLevel = iota
-	logLevelInfo
-	logLevelWarn
-	logLevelError
+	LevelDebug Level = iota
+	LevelInfo
+	LevelWarn
+	LevelError
 )
 
 // logLevelTag is the fixed-width label printed ahead of each message. Padding
 // keeps the "[Component]" prefixes column-aligned across levels.
 var logLevelTag = [...]string{
-	logLevelDebug: "DEBUG",
-	logLevelInfo:  "INFO ",
-	logLevelWarn:  "WARN ",
-	logLevelError: "ERROR",
+	LevelDebug: "DEBUG",
+	LevelInfo:  "INFO ",
+	LevelWarn:  "WARN ",
+	LevelError: "ERROR",
 }
 
-// logThreshold is the minimum level that gets emitted. Stored atomically so it
+// Threshold is the minimum level that gets emitted. Stored atomically so it
 // can be read from any goroutine (it's only written once, at startup, today).
 // It defaults to debug so the daemon stays as verbose as it was before levels
 // existed; raising it drops everything below the chosen level.
-var logThreshold atomic.Int32
+var Threshold atomic.Int32
 
 func init() {
-	logThreshold.Store(int32(parseLogLevel(os.Getenv("CLAUSTRUM_LOG_LEVEL"))))
+	Threshold.Store(int32(ParseLevel(os.Getenv("CLAUSTRUM_LOG_LEVEL"))))
 }
 
-// parseLogLevel maps an env value to a level. Empty, "debug", or any
+// ParseLevel maps an env value to a level. Empty, "debug", or any
 // unrecognized value means "emit everything", so a typo never silently hides
 // logs.
-func parseLogLevel(s string) logLevel {
+func ParseLevel(s string) Level {
 	switch strings.ToLower(strings.TrimSpace(s)) {
 	case "info":
-		return logLevelInfo
+		return LevelInfo
 	case "warn", "warning":
-		return logLevelWarn
+		return LevelWarn
 	case "error":
-		return logLevelError
+		return LevelError
 	default: // "", "debug", or unknown
-		return logLevelDebug
+		return LevelDebug
 	}
 }
 
-func logEmit(level logLevel, format string, args ...any) {
-	if level < logLevel(logThreshold.Load()) {
+func logEmit(level Level, format string, args ...any) {
+	if level < Level(Threshold.Load()) {
 		return
 	}
 	log.Printf(logLevelTag[level]+" "+format, args...)
 }
 
-func logDebugf(format string, args ...any) { logEmit(logLevelDebug, format, args...) }
-func logInfof(format string, args ...any)  { logEmit(logLevelInfo, format, args...) }
-func logWarnf(format string, args ...any)  { logEmit(logLevelWarn, format, args...) }
-func logErrorf(format string, args ...any) { logEmit(logLevelError, format, args...) }
+func Debugf(format string, args ...any) { logEmit(LevelDebug, format, args...) }
+func Infof(format string, args ...any)  { logEmit(LevelInfo, format, args...) }
+func Warnf(format string, args ...any)  { logEmit(LevelWarn, format, args...) }
+func Errorf(format string, args ...any) { logEmit(LevelError, format, args...) }
