@@ -618,7 +618,7 @@ var docWordLimits = map[string]int{
 	"docs/PROTOCOL.md":                         2835, // the files.realpath row and count. 2826: TASK-231: one sentence on the close line. TASK-230: one sentence on a failed write. TASK-202: the error texts, stream frames and flags moved to their own pages
 	"docs/STYLE.md":                            1293, // task-203b: the page rewrite
 	"docs/TOUR.md":                             850,  // a new page: its word count plus about 200
-	"docs/UPSTREAM-TRACKING.md":                6480, // the staged add of be1c1ca5. 6418: the ssh door of be1c1ca5. 6400: the links of the long-path dials. 6392: the long-path dials of the host cleaner and plugins.prune. 6379: TASK-294: the long socket path. 6356: the sweep on Linux and macOS of be1c1ca5. 6329: TASK-292: the git env bullet. 6300: the worktree texts of be1c1ca5. 6250: the build of the new prunes. 6234: the pin of 683cc6a9. 6232: the terminal of 683cc6a9. 6230: the build of the open destDir refusal. 6228: the could-not-be-examined text. 6224: decision-040: words moved from PROTOCOL.md, net down in the same PR
+	"docs/UPSTREAM-TRACKING.md":                6285, // the pin of be1c1ca5: six triage items cut, three pin sentences added. 6480: the staged add of be1c1ca5. 6418: the ssh door of be1c1ca5. 6400: the links of the long-path dials. 6392: the long-path dials of the host cleaner and plugins.prune. 6379: TASK-294: the long socket path. 6356: the sweep on Linux and macOS of be1c1ca5. 6329: TASK-292: the git env bullet. 6300: the worktree texts of be1c1ca5. 6250: the build of the new prunes. 6234: the pin of 683cc6a9. 6232: the terminal of 683cc6a9. 6230: the build of the open destDir refusal. 6228: the could-not-be-examined text. 6224: decision-040: words moved from PROTOCOL.md, net down in the same PR
 	"docs/index.md":                            316,  // the reader router of TASK-201
 	"docs/protocol/errors.md":                  1912, // TASK-245: the .probe text, 41 words of a new row
 	"docs/protocol/files-extract-tar.md":       2463, // the file that Windows cannot read. 2457: the empty folder that Windows cannot read. 2420: the .synced rules of 683cc6a9
@@ -634,8 +634,8 @@ var docWordLimits = map[string]int{
 	"docs/protocol/git-rules-trust.md":         4642, // the 1 MiB commondir reason of be1c1ca5. 4637: TASK-313: the not_a_repo answer of the create. 4601: the unsearchable git directory and the could-not-be-examined text. 4493: TASK-202: moved from PROTOCOL.md
 	"docs/protocol/git-list-branches.md":       997,  // task-203b: the page rewrite
 	"docs/protocol/git-status.md":              3185, // decision-040: a move between pages, net down in the same PR
-	"docs/protocol/git-worktree-create.md":     8810, // the backticks of the containment refusal of be1c1ca5. 8768: the .git file gone after the checkout of be1c1ca5. 8643: the staged add of be1c1ca5. 7829: the ssh door of be1c1ca5. 7375: the sweep on Linux and macOS of be1c1ca5. 7335: the refusal texts of be1c1ca5. 7018: the start of timeoutMs. 6996: the 2.2 s settle wait (claustrum's own). 6951: task-205: rewrite to the page template
-	"docs/protocol/git-worktree-remove.md":     4367, // the backticks of the containment refusal of be1c1ca5. 4325: the lock texts of be1c1ca5. 4112: task-206: rewrite to the page template
+	"docs/protocol/git-worktree-create.md":     8812, // macOS for the containment backticks. 8810: the backticks of the containment refusal of be1c1ca5. 8768: the .git file gone after the checkout of be1c1ca5. 8643: the staged add of be1c1ca5. 7829: the ssh door of be1c1ca5. 7375: the sweep on Linux and macOS of be1c1ca5. 7335: the refusal texts of be1c1ca5. 7018: the start of timeoutMs. 6996: the 2.2 s settle wait (claustrum's own). 6951: task-205: rewrite to the page template
+	"docs/protocol/git-worktree-remove.md":     4369, // macOS for the containment backticks. 4367: the backticks of the containment refusal of be1c1ca5. 4325: the lock texts of be1c1ca5. 4112: task-206: rewrite to the page template
 	"docs/protocol/launcher-resolve.md":        1620, // task-204: rewrite to the page template
 	"docs/protocol/plugins-prune.md":           1199, // the not-measured dial failures. 1186: a sibling at a long socket path. 1084: task-203b: the page rewrite
 	"docs/protocol/process-kill.md":            931,  // TASK-203c: the page template
@@ -644,7 +644,7 @@ var docWordLimits = map[string]int{
 	"docs/protocol/process-reattach.md":        1046, // TASK-229: attach, fresh and proof
 	"docs/protocol/process-spawn.md":           3508, // the temp-folder test of 683cc6a9. 3474: task-204: rewrite to the page template
 	"docs/protocol/process-stdin.md":           929,  // TASK-229: attach
-	"docs/protocol/server.md":                  1546, // TASK-291: git.hooks_null_device. 1535: the lists of 683cc6a9. 1496: TASK-267: four feature names in the example and the job name. task-203b: the page rewrite
+	"docs/protocol/server.md":                  1548, // the pin of be1c1ca5. 1546: TASK-291: git.hooks_null_device. 1535: the lists of 683cc6a9. 1496: TASK-267: four feature names in the example and the job name. task-203b: the page rewrite
 	"docs/protocol/streams.md":                 584,  // TASK-202: moved from PROTOCOL.md
 }
 
@@ -717,7 +717,7 @@ var docSectionRunLimits = map[string]int{
 	"docs/INSTALL.md":                          736,
 	"docs/PROTOCOL.md":                         627,
 	"docs/STYLE.md":                            343,
-	"docs/UPSTREAM-TRACKING.md":                3169, // the staged add of be1c1ca5. 3123: the ssh door of be1c1ca5. 3105: the links of the long-path dials. 3097: the long-path dials of the host cleaner and plugins.prune. 3084: TASK-294: the long socket path. 3061: the sweep on Linux and macOS of be1c1ca5. 3034: TASK-292: the git env bullet. 3005: the worktree texts of be1c1ca5. 2960 before
+	"docs/UPSTREAM-TRACKING.md":                2968, // the pin of be1c1ca5: six triage items cut, two pin sentences added. 3169: the staged add of be1c1ca5. 3123: the ssh door of be1c1ca5. 3105: the links of the long-path dials. 3097: the long-path dials of the host cleaner and plugins.prune. 3084: TASK-294: the long socket path. 3061: the sweep on Linux and macOS of be1c1ca5. 3034: TASK-292: the git env bullet. 3005: the worktree texts of be1c1ca5. 2960 before
 	"docs/index.md":                            314,
 	"docs/protocol/errors.md":                  1850,
 	"docs/protocol/files-extract-tar.md":       388,
@@ -729,7 +729,7 @@ var docSectionRunLimits = map[string]int{
 	"docs/protocol/git-rules-settings-copy.md": 891,
 	"docs/protocol/git-rules-trust.md":         659,
 	"docs/protocol/git-status.md":              414,
-	"docs/protocol/git-worktree-create.md":     2509, // the backticks of the containment refusal of be1c1ca5. 2467: the .git file row of be1c1ca5. 2410: the rows of be1c1ca5. 2389 before
+	"docs/protocol/git-worktree-create.md":     2511, // macOS for the containment backticks. 2509: the backticks of the containment refusal of be1c1ca5. 2467: the .git file row of be1c1ca5. 2410: the rows of be1c1ca5. 2389 before
 	"docs/protocol/git-worktree-remove.md":     1721,
 	"docs/protocol/launcher-resolve.md":        293,
 	"docs/protocol/plugins-prune.md":           258,

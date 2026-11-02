@@ -119,7 +119,7 @@ of the real desktop client:
   token and host paths. Never commit one.
 
 The last capture ran against `8de85faa`, a build well behind the current
-baseline, `683cc6a9`. Its result is in
+baseline, `be1c1ca5`. Its result is in
 [REFERENCE-BUILDS.md](REFERENCE-BUILDS.md#8de85faaa11694321e937499a18c7ab88f37c76c-2026-05-21).
 Use a capture as a periodic spot-check. Use it again for a build that changes
 `process.*` behavior that the synthetic battery cannot fully model (real
@@ -201,7 +201,7 @@ So is a rule of `process.killAndWait`. For a signal other than `KILL` it sends n
 first signal during the exit drain. On Linux and macOS `KILL` goes to the group at
 once, as on the reference
 ([A request during the exit drain](protocol/process-killandwait.md#a-request-during-the-exit-drain)).
-claustrum lacks the terminal of `52d82f0a` and `683cc6a9`, so `server.capabilities` lacks
+claustrum lacks the terminal of `52d82f0a` and `683cc6a9`, and of the pinned `be1c1ca5`, so `server.capabilities` lacks
 `process.resize`, and on Linux and macOS `process.spawn.pty`. A `process.resize`
 gets `-32601`, and on Windows a `process.spawn` with `pty` runs its command
 (measured on macOS and Windows). Check those
@@ -257,7 +257,7 @@ open of claustrum (from the code, not measured). See
 ### Triage gotchas: when a probe result is misleading
 
 These are the traps that matter for telling drift from expected. In the git and
-files methods, claustrum follows `683cc6a9`, the build that `scripts/UPSTREAM_SHA`
+files methods, claustrum follows `be1c1ca5`, the build that `scripts/UPSTREAM_SHA`
 names. The exceptions are the D-entries above, and the places where an item below
 or the linked page names another build. A probe against an older build
 shows the differences of each item as a build split, not drift. The rules are on
@@ -318,19 +318,7 @@ the linked pages.
   is the home folder by identity gets the home refusal (D2).
 - The `-install` prune and sweeps follow `5fd08069`, and so do the blob timing,
   the Windows `rename: ` prefix, the Windows rename retry and the Linux file test of a
-  cache hit.
-- The `-install` prunes of a cache miss and `cliRemoved` follow `be1c1ca5`, a build split
-  against `683cc6a9`.
-- The `GIT_TRACE2*=0` and `GIT_SSH_COMMAND=false` entries of the git calls and the null-device
-  `core.hooksPath` follow `be1c1ca5`, a build split against `683cc6a9`
-  ([Variables that the git calls keep or drop](protocol/git-rules-calls.md#variables-that-the-git-calls-keep-or-drop)).
-- The long socket path, its error texts, the orphan line, the long sibling of
-  `plugins.prune` and the run-dir verdicts of the host cleaner at a long root follow
-  `be1c1ca5`, a build split against `683cc6a9` ([A long socket
-  path](DAEMON.md#a-long-socket-path-linux-and-macos), [A long run
-  root](DAEMON.md#a-long-run-root), [plugins.prune](protocol/plugins-prune.md#differences-by-system)).
-- The ssh door of the `git.worktree_create` checkout follows `be1c1ca5`, a build split
-  against `683cc6a9` ([The ssh door](protocol/git-worktree-create.md#the-ssh-door)).
+  cache hit. The prune of a cache miss and `cliRemoved` follow the pin.
 - The git filters of the `git.worktree_create` checkout follow `5fd08069`. Against
   `89cb6289` the refusal `repository_only_filter` is new. So are the texts for a
   name over 200 bytes and for more than 64 filters (`89cb6289` not run for 64
@@ -387,16 +375,8 @@ the linked pages.
   on Linux and macOS in the state `shadow`. On Windows the variables and the
   names are measured in the state `fallback-git`. `githarden.go` holds the
   lists. See [Hardened git calls](protocol/git-rules-calls.md#hardened-git-calls).
-- The remove lock texts (backticks, the `initializing` pair), the create symlink
-  refusal, the registered-leaf refusal before the add (no branch), the 1 MiB
-  `commondir` reason and the staging sweep on Linux and macOS follow `be1c1ca5`. `683cc6a9` gives raw paths, git's own
-  text and `commondir is larger than 1048576 bytes`, and keeps the old staging entries on Linux and macOS: a build split, not drift.
-  See [git.worktree_create](protocol/git-worktree-create.md#error-texts) and, for the sweep,
-  [After a failure](protocol/git-worktree-create.md#after-a-failure).
-- The staged add of a create follows `be1c1ca5`: the add with `<S>/.s<n>` (measured on
-  Linux), the staged leaf (measured on Linux and Windows), `locked` and the new texts. `683cc6a9` adds at the
-  leaf through the copy: a build split, not drift. See [The staged
-  add](protocol/git-worktree-create.md#the-staged-add).
+  The `GIT_TRACE2*=0` and `GIT_SSH_COMMAND=false` entries and the config call of the ssh
+  door follow the pin.
 - The `worktreeRoot` location rules follow `5fd08069` (measured on Linux and
   macOS). `89cb6289` is not measured there.
 - A remove behind a linked `<git dir>/worktrees` follows `5fd08069` (measured on
@@ -574,8 +554,8 @@ the reference stays the same.
 Go 1.27 does that. It turns on the `jsonv2` GOEXPERIMENT by default, and the v2
 `Marshal` renders an invalid UTF-8 byte as the literal U+FFFD character (bytes
 `EF BF BD`). Go 1.26 and earlier emit the six-ASCII `\ufffd` escape. The build
-pinned today, `683cc6a9`, carries a go1.25.14 stamp (`go version` on the binary), as
-`52d82f0a` and `5fd08069` do. So it emits the
+pinned today, `be1c1ca5`, carries a go1.25.14 stamp (`go version` on the binary), as
+`683cc6a9`, `52d82f0a` and `5fd08069` do. So it emits the
 same escape. `files.read` puts raw file bytes into `content`, so under Go 1.27
 every read of a file with a non-UTF-8 byte diverges from the reference. `TestInheritedInvalidUTF8BecomesReplacementChar` and
 `TestInheritedLoneSurrogateBecomesThreeReplacements` fail under 1.27 for this

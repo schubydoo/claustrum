@@ -21,6 +21,7 @@ release.
 
 | Reference SHA | Built (UTC) | Wire changes | Reconciled in |
 |---|---|---|---|
+| `be1c1ca5…` | 2026-10-19 (built) | the staged worktree add on every system, the ssh door of the checkout, new worktree texts, the null-device hook path on Windows, new git child variables, a long socket path, `cliRemoved` and a new feature. See below | [PRs 807–818](https://github.com/schubydoo/claustrum/pull/818) |
 | `683cc6a9…` | 2026-10-14 (built) | the `files.realpath` method, the `real` member of `files.read`, `junctionsAsDirs`, `alreadyComplete`, `linkBound`, a settle step after the checkout, new git trust texts and new features. See below | [PRs 784, 786–793, 796–805](https://github.com/schubydoo/claustrum/pull/805) |
 | `52d82f0a…` | 2026-10-09 (built) | the `end` member, spawn refusal reasons, `includeDotNames`, the kill farewell, Windows jobs, new git trust rules, a third owner probe and new features. See below | [PRs 767, 769, 771–773, 775–781](https://github.com/schubydoo/claustrum/pull/781) |
 | `c8e2f083…` | 2026-10-06 (built) | new `process.stdin` and `process.reattach` members, a second owner probe, new `-32603` texts in a folder with no repository, new `git.worktree_remove` deletes, and the terminal: `process.resize` and `process.spawn.pty`, which claustrum does not build. See below | [PRs 747, 749–757, 759, 760](https://github.com/schubydoo/claustrum/pull/760) |
@@ -40,6 +41,7 @@ release.
 
 | Reference SHA | Divergences opened | Divergences retired | Other divergence notes |
 |---|---|---|---|
+| `be1c1ca5…` | | | D2 and D24 cover the staged add. A D10 cap that fires before the disk fills skips the second prune |
 | `52d82f0a…` | | | CT-2 covers a pending farewell and a killed Windows daemon |
 | `5fd08069…` | D27 | D4, D5, D9, D13, D17, D18, D21, D25 | |
 | `89cb6289…` | D20, D21, D22, D23, D24 | D11 | D2 gained its `-install` refusal of a home folder |
@@ -67,6 +69,67 @@ single measurements that fit no label above. **Divergences** names the entries o
 in** names the PRs. The baseline section has the header facts only. The forensics
 stay outside the committed tree. Correction of 2026-10-23: this paragraph said
 that each per-build section has three parts.
+
+### `be1c1ca50b7b27c5f9341e4cbabc2039588fe597` — 2026-10-19 (built)
+
+Its `-version` prints
+`claude-ssh be1c1ca50b7b27c5f9341e4cbabc2039588fe597 (built 2026-10-19T22:28:44Z)`.
+Issue 581 reported the build, pinned by Claude Desktop 3.1623.0 for Windows. Claude
+Desktop 4.29.0 pins it too. It carries a `go1.25.14` stamp (`go version` on the binary).
+The rules are on the pages of the methods and in [PROTOCOL.md](PROTOCOL.md).
+
+**Wire delta.**
+
+- In the state `shadow` `git.worktree_create` adds the worktree in a folder of the
+  daemon and moves the registration into the git directory. Windows did so before. See
+  [The staged add](protocol/git-worktree-create.md#the-staged-add) (PR 814, measured on
+  Linux, macOS and Windows). New texts come with it.
+- On Linux and macOS a good create removes old `.claude-new-worktree-` entries of the git
+  directory, as on Windows (PR 812, measured on Linux and macOS).
+- After a good checkout a create whose `.git` file is gone answers `unsafe_path` (PR 817,
+  measured on Linux).
+- The checkout starts ssh through a [door](protocol/git-worktree-create.md#the-ssh-door)
+  of the daemon, with one more config call (PR 816, measured on Linux, macOS and
+  Windows). Its new Git LFS text is measured on Linux and macOS. The ssh command of the repository's own config never runs
+  (measured on Linux).
+- The lock refusals of `git.worktree_remove` and the symlink refusal of the create show
+  the path in backticks (measured on Linux, macOS and Windows). So does the containment
+  refusal of both methods (PR 818, measured on Linux and macOS). A leaf that a
+  registration still names is refused before the add. A `commondir` over 1 MiB gets its
+  own reason (PR 809, measured on Linux).
+- On Windows each git call that sets `core.hooksPath` passes `\\.\NUL`.
+  `server.capabilities` lists `git.hooks_null_device` after `git.shadow_dir` (PR 807).
+- Every git call gets `GIT_TRACE2=0`, `GIT_TRACE2_EVENT=0` and `GIT_TRACE2_PERF=0`. A
+  call with `GIT_NO_LAZY_FETCH=1` and an empty `GIT_ASKPASS` gets `GIT_SSH_COMMAND=false`
+  (PR 810, measured on Linux and Windows).
+- `-serve`, `-bridge` and `-stop` work at a socket path over the limit of the system
+  ([A long socket path](DAEMON.md#a-long-socket-path-linux-and-macos), PR 813, measured
+  on Linux and macOS). `plugins.prune` gives a new text for a long sibling that it cannot
+  reach (PR 815, measured on Linux and macOS).
+- `-install` prunes before the fetch of a cache miss (measured on Linux, macOS and
+  Windows). After a full disk a second prune runs, and `cliRemoved` counts its removes
+  (PR 808).
+
+**Off-wire churn.** On Linux the host cleaner works at a long run root (PR 815, measured
+on Linux). The orphan probe at a long socket path ends the daemon after `11m0s` on Linux
+and keeps it on macOS (PR 813, measured on Linux and macOS). On Linux a spawn with no
+usable `/proc` logs one start-time line and writes no child record (PR 811, measured on
+Linux).
+
+**How it was bounded.** Each item above was measured side by side with `683cc6a9` on the
+systems named. A validation round on Linux, macOS and Windows compared claustrum with
+`be1c1ca5`.
+
+**Divergences.** D2 and D24 cover the staged add. A D10 cap that fires before the disk
+fills skips the second prune.
+
+These items stay open:
+
+- claustrum does not build the terminal: the `pty` member of `process.spawn` and the
+  method `process.resize`. The maintainer holds the terminal until a Claude Desktop build
+  calls it.
+- The Windows `server.shutdown` reply.
+- The pages of the methods mark each case that is claustrum's own or not measured.
 
 ### `683cc6a9cd1d99430efd762587e02dd076fd5ada` — 2026-10-14 (built)
 
