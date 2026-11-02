@@ -76,22 +76,6 @@ func readPIDFile(t *testing.T, path string) int {
 // (STILL_ACTIVE = STATUS_PENDING = 259; x/sys/windows exports no constant).
 const stillActive = 259
 
-// processAlive reports whether pid is a live process: its exit code (via a
-// query-only handle) is still STILL_ACTIVE.
-func processAlive(t *testing.T, pid int) bool {
-	t.Helper()
-	h, err := windows.OpenProcess(windows.PROCESS_QUERY_LIMITED_INFORMATION, false, uint32(pid))
-	if err != nil {
-		return false
-	}
-	defer func() { _ = windows.CloseHandle(h) }()
-	var code uint32
-	if err := windows.GetExitCodeProcess(h, &code); err != nil {
-		return false
-	}
-	return code == stillActive
-}
-
 // waitProcessGone polls until the pid no longer names a live process.
 func waitProcessGone(pid int, d time.Duration) bool {
 	deadline := time.Now().Add(d)
