@@ -54,7 +54,7 @@ func TestWorktreeCreateRefusesJunctionParent(t *testing.T) {
 			outside := filepath.Join(base, "outside")
 			makeJunction(t, filepath.Join(repo, c.junction), outside)
 			wp := filepath.Join(repo, ".claude", "worktrees", "wt1")
-			raw := dispatchRaw(t, newTestServer(t), rpcLine(t, "git.worktree_create",
+			raw := gitDispatch(t, newTestGitDeps(), rpcLine(t, "git.worktree_create",
 				map[string]any{"baseRepo": repo, "branchName": "wt1", "worktreePath": wp}))
 			want := "failed to create parent directory: " + filepath.Join(repo, c.junction) + " is not a directory"
 			if got := removeErrorField(t, raw); got != want || !strings.Contains(raw, `"errorCode":"mkdir_failed"`) {

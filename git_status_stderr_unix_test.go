@@ -77,8 +77,8 @@ func TestGitStatusIgnoresGitStderr(t *testing.T) {
 		t.Skipf("this git build emits no warning for an unreadable excludesFile (stderr=%q)", errBuf.String())
 	}
 
-	s := newTestServer(t)
-	raw := dispatchRaw(t, s, rpcLine(t, "git.status", map[string]any{"path": wt, "baseRepo": dir}))
+	h := newTestGitDeps()
+	raw := gitDispatch(t, h, rpcLine(t, "git.status", map[string]any{"path": wt, "baseRepo": dir}))
 	var got gitStatusResult
 	decodeReply(t, []byte(raw), &got)
 

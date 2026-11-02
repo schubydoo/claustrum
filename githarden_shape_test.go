@@ -292,7 +292,7 @@ func TestHardenedGitCallShape(t *testing.T) {
 	}
 	installGitSlowStub(t, realGit)
 	f := newWTFixture(t, false)
-	s := newTestServer(t)
+	h := newTestGitDeps()
 
 	// No global excludes anywhere, so the resolver answers the null device.
 	empty := t.TempDir()
@@ -332,7 +332,7 @@ func TestHardenedGitCallShape(t *testing.T) {
 		if err := os.WriteFile(ctxlog, nil, 0o644); err != nil {
 			t.Fatal(err)
 		}
-		raw := dispatchRaw(t, s, rpcLine(t, method, params))
+		raw := gitDispatch(t, h, rpcLine(t, method, params))
 		configReads = 0
 		var calls []shapeCall
 		for _, c := range readShapeCalls(t, ctxlog) {

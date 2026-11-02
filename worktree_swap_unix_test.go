@@ -54,8 +54,8 @@ func TestWorktreeCreateRefusesSwappedLeaf(t *testing.T) {
 	}
 	t.Setenv("PATH", bin+string(os.PathListSeparator)+os.Getenv("PATH"))
 
-	s := newTestServer(t)
-	raw := dispatchRaw(t, s, rpcLine(t, "git.worktree_create",
+	h := newTestGitDeps()
+	raw := gitDispatch(t, h, rpcLine(t, "git.worktree_create",
 		map[string]any{"baseRepo": repo, "branchName": "b", "worktreePath": wt}))
 	wantError(t, raw, "refusing to create worktree: "+namedLeaf(wt)+" has no .git file", "unsafe_path")
 	if _, err := os.Lstat(wt); !os.IsNotExist(err) {

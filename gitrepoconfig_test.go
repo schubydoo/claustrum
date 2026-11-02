@@ -735,7 +735,7 @@ func TestRepoConfigSyntaxError(t *testing.T) {
 	}
 	quoted, _ := json.Marshal(repoConfigPrefix + detail)
 	want := `"error":{"code":-32603,"message":` + string(quoted) + `}`
-	if raw := dispatchRaw(t, newTestServer(t), rpcLine(t, "git.info", map[string]any{"path": repo})); !strings.Contains(raw, want) {
+	if raw := gitDispatch(t, newTestGitDeps(), rpcLine(t, "git.info", map[string]any{"path": repo})); !strings.Contains(raw, want) {
 		t.Errorf("git.info with a syntax error = %s, want %s", raw, want)
 	}
 	// An included file with a syntax error gets the same text, with its own path
@@ -824,7 +824,7 @@ func (f refusalFixture) noRepositoryAnswers() []string {
 func TestRepoConfigRefusalShapes(t *testing.T) {
 	f := newRefusalFixture(t)
 	setRepoConfig(t, f.gitDir, versionConfig("repositoryformatversion = 2"))
-	s := newTestServer(t)
+	h := newTestGitDeps()
 	text := repoConfigPrefix + versionDetail("2")
 	quoted, _ := json.Marshal(text)
 	wantError := `"error":{"code":-32603,"message":` + string(quoted) + `}`
@@ -833,12 +833,12 @@ func TestRepoConfigRefusalShapes(t *testing.T) {
 		`"result":{"success":false,"error":` + string(quoted) + `,"errorCode":"worktree_add_failed"}`,
 		`"result":{"success":false,"error":` + string(removeText) + `}`}
 	for i, m := range f.fiveRequests(nil) {
-		if raw := dispatchRaw(t, s, rpcLine(t, m.method, m.params)); !strings.Contains(raw, want[i]) {
+		if raw := gitDispatch(t, h, rpcLine(t, m.method, m.params)); !strings.Contains(raw, want[i]) {
 			t.Errorf("%s = %s, want %s", m.method, raw, want[i])
 		}
 	}
 	// A linked worktree as the path gets the refusal of the config too (measured).
-	if raw := dispatchRaw(t, s, rpcLine(t, "git.info", map[string]any{"path": f.wt})); !strings.Contains(raw, wantError) {
+	if raw := gitDispatch(t, h, rpcLine(t, "git.info", map[string]any{"path": f.wt})); !strings.Contains(raw, wantError) {
 		t.Errorf("git.info on the linked worktree = %s, want %s", raw, wantError)
 	}
 	if leaf := filepath.Join(f.repo, ".claude", "worktrees", "w1"); !missing(leaf) {
@@ -864,18 +864,18 @@ func missing(path string) bool {
 func TestRepoConfigSwitchTurnsTheReadOff(t *testing.T) {
 	f := newRefusalFixture(t)
 	setRepoConfig(t, f.gitDir, versionConfig("repositoryformatversion = 2"))
-	s := newTestServer(t)
+	h := newTestGitDeps()
 	want := f.noRepositoryAnswers()
 	for _, name := range []string{"shadowDirOff", "SHADOWDIROFF"} {
 		for i, m := range f.fiveRequests(map[string]any{name: true}) {
-			if raw := dispatchRaw(t, s, rpcLine(t, m.method, m.params)); !strings.Contains(raw, want[i]) {
+			if raw := gitDispatch(t, h, rpcLine(t, m.method, m.params)); !strings.Contains(raw, want[i]) {
 				t.Errorf("%s with %s true = %s, want %s", m.method, name, raw, want[i])
 			}
 		}
 	}
 	for _, v := range []any{"true", 1, nil, false} {
 		for _, m := range f.fiveRequests(map[string]any{"shadowDirOff": v}) {
-			if raw := dispatchRaw(t, s, rpcLine(t, m.method, m.params)); !strings.Contains(raw, "the repository uses format version") {
+			if raw := gitDispatch(t, h, rpcLine(t, m.method, m.params)); !strings.Contains(raw, "the repository uses format version") {
 				t.Errorf("%s with shadowDirOff %#v = %s, want the version refusal", m.method, v, raw)
 			}
 		}
@@ -890,11 +890,11 @@ func TestGitDirFileRefusalShape(t *testing.T) {
 	if err := os.WriteFile(path, []byte("this line is not an object id\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	s := newTestServer(t)
+	h := newTestGitDeps()
 	quoted, _ := json.Marshal(repoFilePrefix + strconv.Quote(path) + " holds something other than object ids")
 	want := `"error":{"code":-32603,"message":` + string(quoted) + `}`
 	for _, m := range f.fiveRequests(nil)[:2] {
-		if raw := dispatchRaw(t, s, rpcLine(t, m.method, m.params)); !strings.Contains(raw, want) {
+		if raw := gitDispatch(t, h, rpcLine(t, m.method, m.params)); !strings.Contains(raw, want) {
 			t.Errorf("%s = %s, want %s", m.method, raw, want)
 		}
 	}
@@ -909,10 +909,10 @@ func TestRepoConfigBadHeadKeepsItsAnswers(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(f.gitDir, "HEAD"), []byte("garbage\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	s := newTestServer(t)
+	h := newTestGitDeps()
 	want := f.noRepositoryAnswers()
 	for i, m := range f.fiveRequests(nil) {
-		if raw := dispatchRaw(t, s, rpcLine(t, m.method, m.params)); !strings.Contains(raw, want[i]) {
+		if raw := gitDispatch(t, h, rpcLine(t, m.method, m.params)); !strings.Contains(raw, want[i]) {
 			t.Errorf("%s with a HEAD that is no ref = %s, want %s", m.method, raw, want[i])
 		}
 	}
@@ -940,13 +940,13 @@ func TestRepoConfigWorktreeFile(t *testing.T) {
 	}
 	setIncludeFile(t, f.gitDir, "config.worktree", "[core]\n\tfilemode = false\n")
 	setIncludeFile(t, entry, "config.worktree", big)
-	s := newTestServer(t)
+	h := newTestGitDeps()
 	quoted, _ := json.Marshal(repoConfigPrefix + strconv.Quote(filepath.Join(entry, "config.worktree")) + " is larger than 8 MiB")
 	want := `"error":{"code":-32603,"message":` + string(quoted) + `}`
-	if raw := dispatchRaw(t, s, rpcLine(t, "git.info", map[string]any{"path": f.wt})); !strings.Contains(raw, want) {
+	if raw := gitDispatch(t, h, rpcLine(t, "git.info", map[string]any{"path": f.wt})); !strings.Contains(raw, want) {
 		t.Errorf("git.info on the linked worktree = %s, want %s", raw, want)
 	}
-	if raw := dispatchRaw(t, s, rpcLine(t, "git.info", map[string]any{"path": f.repo})); !strings.Contains(raw, `"result":{"isRepo":true,`) {
+	if raw := gitDispatch(t, h, rpcLine(t, "git.info", map[string]any{"path": f.repo})); !strings.Contains(raw, `"result":{"isRepo":true,`) {
 		t.Errorf("git.info on the repository = %s, want a repository", raw)
 	}
 	// The extension starts the test as `yes`, `1`, `TRUE` and with no value too
@@ -1108,7 +1108,7 @@ func stubGitWithLog(t *testing.T) string {
 func TestRepoVerdictIsKept(t *testing.T) {
 	repo, gitDir := configRepo(t)
 	log := stubGitWithLog(t)
-	s := newTestServer(t)
+	h := newTestGitDeps()
 	reads := 0
 	grew := func(name string, want int) {
 		t.Helper()
@@ -1122,7 +1122,7 @@ func TestRepoVerdictIsKept(t *testing.T) {
 		name string
 		want int
 	}{{"first git.info", 1}, {"second git.info", 0}} {
-		if raw := dispatchRaw(t, s, rpcLine(t, "git.info", map[string]any{"path": repo})); !strings.Contains(raw, `"result":{"isRepo":true,`) {
+		if raw := gitDispatch(t, h, rpcLine(t, "git.info", map[string]any{"path": repo})); !strings.Contains(raw, `"result":{"isRepo":true,`) {
 			t.Errorf("%s = %s, want a repository", c.name, raw)
 		}
 		grew(c.name, c.want)
@@ -1260,9 +1260,9 @@ func TestRepoConfigRefusalOnAGoneWorktree(t *testing.T) {
 	runGit(t, f.repo, "branch", "spare")
 	ref := filepath.Join(f.gitDir, "refs", "heads", "spare")
 	gone := filepath.Join(f.repo, ".claude", "worktrees", "nope")
-	s := newTestServer(t)
+	h := newTestGitDeps()
 	remove := func() string {
-		return dispatchRaw(t, s, rpcLine(t, "git.worktree_remove",
+		return gitDispatch(t, h, rpcLine(t, "git.worktree_remove",
 			map[string]any{"baseRepo": f.repo, "worktreePath": gone, "branchName": "spare"}))
 	}
 	exclude := filepath.Join(f.gitDir, "info", "exclude")

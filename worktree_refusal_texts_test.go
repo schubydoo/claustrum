@@ -87,7 +87,7 @@ func TestWorktreeCreateRegisteredLockedLeaf(t *testing.T) {
 				t.Fatal(err)
 			}
 			entry := onlyEntry(t, f.repo, "wt1")
-			raw := dispatchRaw(t, newTestServer(t), rpcLine(t, "git.worktree_create",
+			raw := gitDispatch(t, newTestGitDeps(), rpcLine(t, "git.worktree_create",
 				map[string]any{"baseRepo": f.repo, "branchName": "b", "worktreePath": leaf}))
 			hint := "unlock it first (git worktree unlock " + unlockQuote + leaf + unlockQuote +
 				", then git worktree prune), or use another folder"

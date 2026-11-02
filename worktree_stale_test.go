@@ -17,11 +17,11 @@ func TestWorktreeCreateDropsStaleRegistration(t *testing.T) {
 	repo := t.TempDir()
 	runGit(t, repo, "init", "-q")
 	runGit(t, repo, "commit", "-q", "--allow-empty", "-m", "init")
-	s := newTestServer(t)
+	h := newTestGitDeps()
 
 	mk := func(branch, name string) string {
 		wp := filepath.Join(repo, ".claude", "worktrees", name)
-		return dispatchRaw(t, s, rpcLine(t, "git.worktree_create",
+		return gitDispatch(t, h, rpcLine(t, "git.worktree_create",
 			map[string]any{"baseRepo": repo, "branchName": branch, "worktreePath": wp}))
 	}
 

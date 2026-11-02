@@ -36,18 +36,18 @@ func TestBaseRepoUnderManagedWorktreesRefused(t *testing.T) {
 	runGit(t, markRepo, "init", "-q")
 	runGit(t, markRepo, "commit", "-q", "--allow-empty", "-m", "init")
 
-	s := newTestServer(t)
+	h := newTestGitDeps()
 	for _, repo := range []string{nested, markRepo} {
-		lb := dispatchRaw(t, s, rpcLine(t, "git.list_branches", map[string]any{"path": repo, "baseRepo": repo}))
+		lb := gitDispatch(t, h, rpcLine(t, "git.list_branches", map[string]any{"path": repo, "baseRepo": repo}))
 		if !strings.Contains(lb, `"isRepo":false`) || strings.Contains(lb, `"master"`) {
 			t.Errorf("list_branches(%s) = %s, want isRepo:false + empty branches", repo, lb)
 		}
-		wc := dispatchRaw(t, s, rpcLine(t, "git.worktree_create",
+		wc := gitDispatch(t, h, rpcLine(t, "git.worktree_create",
 			map[string]any{"baseRepo": repo, "branchName": "x", "worktreePath": filepath.Join(repo, ".claude", "worktrees", "x")}))
 		if !strings.Contains(wc, `"errorCode":"nested_base_repo"`) || !strings.Contains(wc, refusal) {
 			t.Errorf("worktree_create(%s) = %s, want nested_base_repo refusal", repo, wc)
 		}
-		wr := dispatchRaw(t, s, rpcLine(t, "git.worktree_remove",
+		wr := gitDispatch(t, h, rpcLine(t, "git.worktree_remove",
 			map[string]any{"baseRepo": repo, "worktreePath": filepath.Join(repo, ".claude", "worktrees", "x")}))
 		if !strings.Contains(wr, `"success":false`) || !strings.Contains(wr, refusal) || strings.Contains(wr, `"errorCode"`) {
 			t.Errorf("worktree_remove(%s) = %s, want the refusal with no errorCode", repo, wr)
@@ -59,7 +59,7 @@ func TestBaseRepoUnderManagedWorktreesRefused(t *testing.T) {
 	runGit(t, normal, "init", "-q")
 	runGit(t, normal, "commit", "-q", "--allow-empty", "-m", "init")
 	runGit(t, normal, "branch", "-M", "main")
-	lb := dispatchRaw(t, s, rpcLine(t, "git.list_branches", map[string]any{"path": normal, "baseRepo": normal}))
+	lb := gitDispatch(t, h, rpcLine(t, "git.list_branches", map[string]any{"path": normal, "baseRepo": normal}))
 	if !strings.Contains(lb, `"isRepo":true`) || !strings.Contains(lb, `"main"`) {
 		t.Errorf("list_branches(normal) = %s, want isRepo:true with the branch", lb)
 	}

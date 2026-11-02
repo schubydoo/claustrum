@@ -210,7 +210,7 @@ func wantUnsearchableNoRepo(t *testing.T, log, path string) {
 		if err := os.WriteFile(log, nil, 0o644); err != nil {
 			t.Fatal(err)
 		}
-		if got := dispatchRaw(t, newTestServer(t), rpcLine(t, c.method, c.params)); got != c.want {
+		if got := gitDispatch(t, newTestGitDeps(), rpcLine(t, c.method, c.params)); got != c.want {
 			t.Errorf("%s = %s\nwant %s", c.method, got, c.want)
 		}
 		for _, call := range readEnvCalls(t, log) {

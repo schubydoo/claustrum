@@ -45,8 +45,8 @@ func TestWorktreeCreateTimeoutMsFiresDuringCheckout(t *testing.T) {
 	base := t.TempDir()
 	shapeAsGitRepo(t, base)
 	wt := filepath.Join(base, ".claude", "worktrees", "wt")
-	s := newTestServer(t)
-	raw := dispatchRaw(t, s, rpcLine(t, "git.worktree_create",
+	h := newTestGitDeps()
+	raw := gitDispatch(t, h, rpcLine(t, "git.worktree_create",
 		map[string]any{"baseRepo": base, "branchName": "b", "worktreePath": wt, "timeoutMs": 300}))
 
 	if !strings.Contains(raw, `"errorCode":"timeout"`) {

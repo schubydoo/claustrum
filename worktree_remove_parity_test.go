@@ -42,7 +42,7 @@ func newRmFixture(t *testing.T) rmFixture {
 // removeFrame sends one git.worktree_remove and returns the raw frame.
 func removeFrame(t *testing.T, params map[string]any) string {
 	t.Helper()
-	return dispatchRaw(t, newTestServer(t), rpcLine(t, "git.worktree_remove", params))
+	return gitDispatch(t, newTestGitDeps(), rpcLine(t, "git.worktree_remove", params))
 }
 
 const removeOK = `{"jsonrpc":"2.0","id":1,"result":{"success":true}}`

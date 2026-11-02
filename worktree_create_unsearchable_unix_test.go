@@ -49,7 +49,7 @@ func TestWorktreeCreateUnsearchableGitFile(t *testing.T) {
 				t.Fatal(err)
 			}
 			noSearch(t, g)
-			got := dispatchRaw(t, newTestServer(t), rpcLine(t, "git.worktree_create", params))
+			got := gitDispatch(t, newTestGitDeps(), rpcLine(t, "git.worktree_create", params))
 			wantFrame(t, got, `{"jsonrpc":"2.0","id":1,"result":{"success":false,`+
 				`"error":"not a git repository","errorCode":"not_a_repo"}}`)
 			inRepo := 0

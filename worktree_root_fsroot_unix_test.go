@@ -59,7 +59,7 @@ func TestWorktreeCreateRootIsFileSystemRoot(t *testing.T) {
 	f := newAncFixture(t)
 	before := r0cState(t, &r0Fixture{T: f.T})
 	calls := logGitArgv(t)
-	got := dispatchRaw(t, newTestServer(t), rpcLine(t, "git.worktree_create", map[string]any{
+	got := gitDispatch(t, newTestGitDeps(), rpcLine(t, "git.worktree_create", map[string]any{
 		"baseRepo": f.T, "branchName": "w1", "worktreePath": leaf, "worktreeRoot": "/"}))
 	wantFrame(t, got, `{"jsonrpc":"2.0","id":1,"result":{"success":false,"error":"refusing to create worktree: / is a filesystem root; choose the worktree location by its absolute path, without \"..\", beneath the filesystem root","errorCode":"unsafe_path"}}`)
 	if got, want := r0cCalls(calls()), r0cCreateCalls[:3]; strings.Join(got, "\n") != strings.Join(want, "\n") {
@@ -80,7 +80,7 @@ func TestWorktreeRemoveRootIsFileSystemRoot(t *testing.T) {
 	f := newAncFixture(t)
 	before := r0cState(t, &r0Fixture{T: f.T})
 	calls := logGitArgv(t)
-	got := dispatchRaw(t, newTestServer(t), rpcLine(t, "git.worktree_remove", map[string]any{
+	got := gitDispatch(t, newTestGitDeps(), rpcLine(t, "git.worktree_remove", map[string]any{
 		"baseRepo": f.T, "branchName": "w1", "worktreePath": leaf, "worktreeRoot": "/"}))
 	wantFrame(t, got, `{"jsonrpc":"2.0","id":1,"result":{"success":false,"error":"refusing to remove worktree: / is a filesystem root; choose the worktree location by its absolute path, without \"..\", beneath the filesystem root"}}`)
 	if got := strings.Join(r0cCalls(calls()), "\n"); got != "" {

@@ -419,7 +419,7 @@ func installEnvStub(t *testing.T) func(method string, params map[string]any) (st
 	}
 	resetAttr()
 	t.Cleanup(resetAttr)
-	s := newTestServer(t)
+	h := newTestGitDeps()
 	ctxlog := filepath.Join(t.TempDir(), "ctx.log")
 	t.Setenv("CLAUSTRUM_GITSTUB_CTXLOG", ctxlog)
 	return func(method string, params map[string]any) (string, []stubCall) {
@@ -427,7 +427,7 @@ func installEnvStub(t *testing.T) func(method string, params map[string]any) (st
 		if err := os.WriteFile(ctxlog, nil, 0o644); err != nil {
 			t.Fatal(err)
 		}
-		raw := dispatchRaw(t, s, rpcLine(t, method, params))
+		raw := gitDispatch(t, h, rpcLine(t, method, params))
 		return raw, readStubCalls(t, ctxlog)
 	}
 }
@@ -563,7 +563,7 @@ func TestInheritedCountRefusalRunsOnlyTheExcludesRead(t *testing.T) {
 	}
 }
 
-// TestInheritedCountRefusalPlacement runs measured cases through dispatch. With a
+// TestInheritedCountRefusalPlacement runs measured cases through gitDispatch. With a
 // refused count, these rows refuse, except git.list_branches on a missing dir. P0 is
 // the control with nothing planted.
 func TestInheritedCountRefusalPlacement(t *testing.T) {
@@ -574,7 +574,7 @@ func TestInheritedCountRefusalPlacement(t *testing.T) {
 	n := filepath.Join(base, "N")
 	writeFile(t, filepath.Join(n, "n.txt"), "n\n", 0o644)
 	missing := filepath.Join(base, "missing")
-	s := newTestServer(t)
+	h := newTestGitDeps()
 
 	const pre = "config-defined hooks could not be pinned off; git not run: "
 	errFrameOf := func(msg string) string {
@@ -656,7 +656,7 @@ func TestInheritedCountRefusalPlacement(t *testing.T) {
 				if phase.text != "" && r.shape != nil {
 					want = r.shape(pre + phase.text)
 				}
-				if got := dispatchRaw(t, s, rpcLine(t, r.method, r.params)); got != want {
+				if got := gitDispatch(t, h, rpcLine(t, r.method, r.params)); got != want {
 					t.Errorf("round3 %s %s\n got %s\nwant %s", phase.name, r.name, got, want)
 				}
 			}
@@ -671,7 +671,7 @@ func TestInheritedCountRefusalPlacement(t *testing.T) {
 func TestInheritedCountRefusalOnRemove(t *testing.T) {
 	f := newWTFixture(t, false)
 	resetUserExcludesCache(t)
-	s := newTestServer(t)
+	h := newTestGitDeps()
 	clearDaemonConfigEnv(t)
 	t.Setenv(configCountName, "x")
 	const refusal = `config-defined hooks could not be pinned off; git not run: inherited GIT_CONFIG_COUNT "x" is not a count`
@@ -683,7 +683,7 @@ func TestInheritedCountRefusalOnRemove(t *testing.T) {
 		want := `{"jsonrpc":"2.0","id":1,"result":{"success":false,"error":` +
 			jsonString(t, "failed to remove worktree: could not check whether "+f.leaf()+
 				" is locked (its registrations could not be examined); retry") + `}}`
-		got := dispatchRaw(t, s, rpcLine(t, "git.worktree_remove", map[string]any{"baseRepo": f.top, "worktreePath": f.leaf()}))
+		got := gitDispatch(t, h, rpcLine(t, "git.worktree_remove", map[string]any{"baseRepo": f.top, "worktreePath": f.leaf()}))
 		if got != want {
 			t.Errorf("got  %s\nwant %s", got, want)
 		}
@@ -697,7 +697,7 @@ func TestInheritedCountRefusalOnRemove(t *testing.T) {
 			text = msg
 		}
 		want := `{"jsonrpc":"2.0","id":1,"result":{"success":false,"error":` + jsonString(t, text) + `}}`
-		got := dispatchRaw(t, s, rpcLine(t, "git.worktree_remove",
+		got := gitDispatch(t, h, rpcLine(t, "git.worktree_remove",
 			map[string]any{"baseRepo": f.top, "worktreePath": ext, "worktreeRoot": root}))
 		if got != want {
 			t.Errorf("got  %s\nwant %s", got, want)
@@ -705,7 +705,7 @@ func TestInheritedCountRefusalOnRemove(t *testing.T) {
 	})
 }
 
-// TestInheritedCountRefusalRound4 runs further measured cases through dispatch, with
+// TestInheritedCountRefusalRound4 runs further measured cases through gitDispatch, with
 // nothing planted and with GIT_CONFIG_COUNT=x. On Windows a row with a
 // worktreeRoot answers the worktreeRoot refusal in both phases (windows R1d to R1g,
 // N2a, N2b).
@@ -728,7 +728,7 @@ func TestInheritedCountRefusalRound4(t *testing.T) {
 	if err := os.MkdirAll(x, 0o755); err != nil {
 		t.Fatal(err)
 	}
-	s := newTestServer(t)
+	h := newTestGitDeps()
 
 	const refusal = `config-defined hooks could not be pinned off; git not run: inherited GIT_CONFIG_COUNT "x" is not a count`
 	removeFrame := func(msg string) string {
@@ -835,7 +835,7 @@ func TestInheritedCountRefusalRound4(t *testing.T) {
 						want, gone = removeFrame(msg), false
 					}
 				}
-				if got := dispatchRaw(t, s, rpcLine(t, r.method, r.params)); got != want {
+				if got := gitDispatch(t, h, rpcLine(t, r.method, r.params)); got != want {
 					t.Errorf("%s %s\n got %s\nwant %s", phase.name, r.name, got, want)
 				}
 				if r.leaf == leafAbsent {
@@ -1176,7 +1176,7 @@ func TestCreateNestedBaseBeforeCountRefusal(t *testing.T) {
 	runGit(t, f.top, "worktree", "add", "-q", "-b", "lw", lw)
 	writeFile(t, filepath.Join(f.leaf(), "a.txt"), "a\n", 0o644)
 	resetUserExcludesCache(t)
-	s := newTestServer(t)
+	h := newTestGitDeps()
 	sep := string(filepath.Separator)
 	dotdot := f.top + sep + ".claude" + sep + "worktrees" + sep + ".." + sep + ".." + sep + "x"
 	outside := filepath.Join(filepath.Dir(f.top), "X", "w1")
@@ -1222,7 +1222,7 @@ func TestCreateNestedBaseBeforeCountRefusal(t *testing.T) {
 				if phase.plant != nil {
 					want = r.p1
 				}
-				got := dispatchRaw(t, s, rpcLine(t, "git.worktree_create",
+				got := gitDispatch(t, h, rpcLine(t, "git.worktree_create",
 					map[string]any{"baseRepo": r.base, "worktreePath": r.wt, "branchName": "y3"}))
 				if got != want {
 					t.Errorf("%s\n got %s\nwant %s", r.row, got, want)

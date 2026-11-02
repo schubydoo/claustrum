@@ -114,7 +114,7 @@ func TestWorktreeCreateParentFailureTextsInRepo(t *testing.T) {
 			_, repo := createModesRepo(t)
 			c.setup(t, repo)
 			wp := filepath.Join(repo, ".claude", "worktrees", "wt")
-			raw := dispatchRaw(t, newTestServer(t), rpcLine(t, "git.worktree_create",
+			raw := gitDispatch(t, newTestGitDeps(), rpcLine(t, "git.worktree_create",
 				map[string]any{"baseRepo": repo, "branchName": "b", "worktreePath": wp}))
 			if want := mkdirFailedFrame(t, c.text(repo)); raw != want {
 				t.Errorf("create frame\n got %s\nwant %s", raw, want)
@@ -200,7 +200,7 @@ func TestWorktreeCreateParentFailureTextsExternal(t *testing.T) {
 			c.setup(t, f)
 			root := filepath.Join(f, c.rootRel)
 			wp := filepath.Join(root, "cp", "w1")
-			raw := dispatchRaw(t, newTestServer(t), rpcLine(t, "git.worktree_create",
+			raw := gitDispatch(t, newTestGitDeps(), rpcLine(t, "git.worktree_create",
 				map[string]any{"baseRepo": repo, "branchName": "b", "worktreePath": wp, "worktreeRoot": root}))
 			if want := mkdirFailedFrame(t, c.text(f)); raw != want {
 				t.Errorf("create frame\n got %s\nwant %s", raw, want)
@@ -235,7 +235,7 @@ func TestWorktreeCreateDirModes(t *testing.T) {
 
 	t.Run("in_repo", func(t *testing.T) {
 		wp := filepath.Join(repo, ".claude", "worktrees", "wt")
-		raw := dispatchRaw(t, newTestServer(t), rpcLine(t, "git.worktree_create",
+		raw := gitDispatch(t, newTestGitDeps(), rpcLine(t, "git.worktree_create",
 			map[string]any{"baseRepo": repo, "branchName": "m1", "worktreePath": wp}))
 		if !strings.Contains(raw, `"success":true`) {
 			t.Fatalf("create = %s, want success", raw)
@@ -259,7 +259,7 @@ func TestWorktreeCreateDirModes(t *testing.T) {
 		}
 		root := filepath.Join(kept, "x", "R")
 		wp := filepath.Join(root, "cp", "w1")
-		raw := dispatchRaw(t, newTestServer(t), rpcLine(t, "git.worktree_create",
+		raw := gitDispatch(t, newTestGitDeps(), rpcLine(t, "git.worktree_create",
 			map[string]any{"baseRepo": repo, "branchName": "m2", "worktreePath": wp, "worktreeRoot": root}))
 		if !strings.Contains(raw, `"success":true`) {
 			t.Fatalf("create = %s, want success", raw)
@@ -291,7 +291,7 @@ func TestWorktreeCreateKeepsExistingMarker(t *testing.T) {
 		t.Fatal(err)
 	}
 	wp := filepath.Join(root, "d", "wt")
-	raw := dispatchRaw(t, newTestServer(t), rpcLine(t, "git.worktree_create",
+	raw := gitDispatch(t, newTestGitDeps(), rpcLine(t, "git.worktree_create",
 		map[string]any{"baseRepo": repo, "branchName": "k", "worktreePath": wp, "worktreeRoot": root}))
 	if !strings.Contains(raw, `"success":true`) {
 		t.Fatalf("create = %s, want success", raw)

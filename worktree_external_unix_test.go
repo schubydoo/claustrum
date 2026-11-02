@@ -34,8 +34,8 @@ func TestWorktreeCreateExternalWorldWritable(t *testing.T) {
 	if err := os.Chmod(root, 0o777); err != nil {
 		t.Fatal(err)
 	}
-	s := newTestServer(t)
-	raw := dispatchRaw(t, s, rpcLine(t, "git.worktree_create",
+	h := newTestGitDeps()
+	raw := gitDispatch(t, h, rpcLine(t, "git.worktree_create",
 		map[string]any{"baseRepo": repo, "branchName": "w",
 			"worktreePath": filepath.Join(root, "d", "wt"), "worktreeRoot": root}))
 	if !strings.Contains(raw, `"errorCode":"unsafe_path"`) ||
@@ -89,8 +89,8 @@ func TestWorktreeRemoveExternalDirSymlink(t *testing.T) {
 	if err := os.Symlink(filepath.Join(base, "outside"), filepath.Join(root, "dlink")); err != nil {
 		t.Skipf("symlinks unsupported: %v", err)
 	}
-	s := newTestServer(t)
-	raw := dispatchRaw(t, s, rpcLine(t, "git.worktree_remove",
+	h := newTestGitDeps()
+	raw := gitDispatch(t, h, rpcLine(t, "git.worktree_remove",
 		map[string]any{"baseRepo": repo, "worktreePath": filepath.Join(root, "dlink", "wt"), "worktreeRoot": root}))
 	if !strings.Contains(worktreeErrorField(t, raw), "is a symbolic link; the directory under the worktree location must be a real directory") {
 		t.Errorf("remove through a symlinked <dir> = %s, want the symlink refusal", raw)
@@ -129,10 +129,10 @@ func TestWorktreeExternalTrailingSlash(t *testing.T) {
 	if err := os.Chmod(root, 0o755); err != nil {
 		t.Fatal(err)
 	}
-	s := newTestServer(t)
+	h := newTestGitDeps()
 	create := func(wp string) string {
 		t.Helper()
-		return dispatchRaw(t, s, rpcLine(t, "git.worktree_create",
+		return gitDispatch(t, h, rpcLine(t, "git.worktree_create",
 			map[string]any{"baseRepo": repo, "branchName": "w1", "worktreePath": wp, "worktreeRoot": root}))
 	}
 	notEmpty := "refusing to create worktree: " + proj + " already exists, is not marked as a " +
@@ -176,7 +176,7 @@ func TestWorktreeExternalTrailingSlash(t *testing.T) {
 		if _, err := os.Lstat(filepath.Join(outside, "w1")); !os.IsNotExist(err) {
 			t.Errorf("the create followed the symlink out of the root (err=%v)", err)
 		}
-		rm := dispatchRaw(t, s, rpcLine(t, "git.worktree_remove",
+		rm := gitDispatch(t, h, rpcLine(t, "git.worktree_remove",
 			map[string]any{"baseRepo": repo, "worktreePath": dlink + "/wt/", "worktreeRoot": root}))
 		if got := worktreeErrorField(t, rm); got != "refusing to remove worktree: "+dlink+tail {
 			t.Errorf("remove through a symlinked <dir> = %s, want the symlink refusal", rm)

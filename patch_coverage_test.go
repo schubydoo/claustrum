@@ -13,20 +13,20 @@ import (
 // NON-repository path. Both match 7d193f89.
 func TestGitStatusRejectsNonWorktreePaths(t *testing.T) {
 	requireGit(t)
-	s := newTestServer(t)
+	h := newTestGitDeps()
 
 	repo := t.TempDir()
 	runGit(t, repo, "init", "-q")
 	writeFile(t, filepath.Join(repo, "a.txt"), "hi\n", 0o644)
 	runGit(t, repo, "add", ".")
 	runGit(t, repo, "commit", "-q", "-m", "init")
-	if got := dispatchRaw(t, s, rpcLine(t, "git.status",
+	if got := gitDispatch(t, h, rpcLine(t, "git.status",
 		map[string]any{"path": repo, "baseRepo": repo})); !strings.Contains(got, `"isRepo":false`) {
 		t.Errorf("git.status on the main checkout = %s, want isRepo:false", got)
 	}
 
 	nonRepo := t.TempDir()
-	if got := dispatchRaw(t, s, rpcLine(t, "git.status",
+	if got := gitDispatch(t, h, rpcLine(t, "git.status",
 		map[string]any{"path": nonRepo, "baseRepo": nonRepo})); !strings.Contains(got, `"isRepo":false`) {
 		t.Errorf("git.status on a non-repository = %s, want isRepo:false", got)
 	}
@@ -42,7 +42,7 @@ func TestGitWorktreeCreateLocationRefusals(t *testing.T) {
 	runGit(t, repo, "init", "-q")
 	runGit(t, repo, "commit", "-q", "--allow-empty", "-m", "init")
 	writeFile(t, filepath.Join(repo, "afile"), "x\n", 0o644)
-	s := newTestServer(t)
+	h := newTestGitDeps()
 
 	cases := []struct {
 		name, worktreePath, wantCode string
@@ -56,7 +56,7 @@ func TestGitWorktreeCreateLocationRefusals(t *testing.T) {
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			got := dispatchRaw(t, s, rpcLine(t, "git.worktree_create",
+			got := gitDispatch(t, h, rpcLine(t, "git.worktree_create",
 				map[string]any{"baseRepo": repo, "branchName": "b", "worktreePath": tc.worktreePath}))
 			if !strings.Contains(got, `"success":false`) || !strings.Contains(got, tc.wantCode) {
 				t.Errorf("create %s = %s, want success:false with %s", tc.name, got, tc.wantCode)
@@ -117,8 +117,8 @@ func TestWorktreeRemoveForgedGitdirDoesNotDeleteRepoData(t *testing.T) {
 	}
 	writeFile(t, filepath.Join(wt, ".git"), "gitdir: "+filepath.Join(repo, "src")+"\n", 0o644)
 
-	s := newTestServer(t)
-	raw := dispatchRaw(t, s, rpcLine(t, "git.worktree_remove",
+	h := newTestGitDeps()
+	raw := gitDispatch(t, h, rpcLine(t, "git.worktree_remove",
 		map[string]any{"baseRepo": repo, "worktreePath": wt}))
 	if !strings.Contains(raw, `"success":true`) {
 		t.Errorf("remove of a forged worktree = %s, want success:true (parity)", raw)

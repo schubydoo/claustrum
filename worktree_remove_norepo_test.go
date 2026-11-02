@@ -33,7 +33,7 @@ func TestWorktreeRemoveRefusesWhenBaseRepoHoldsNoRepository(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	s := newTestServer(t)
+	h := newTestGitDeps()
 	for _, base := range []string{plain, broken} {
 		target := filepath.Join(base, ".claude", "worktrees", "s0")
 		keep := filepath.Join(target, "keep.txt")
@@ -43,7 +43,7 @@ func TestWorktreeRemoveRefusesWhenBaseRepoHoldsNoRepository(t *testing.T) {
 		if err := os.WriteFile(keep, []byte("k\n"), 0o644); err != nil {
 			t.Fatal(err)
 		}
-		got := dispatchRaw(t, s, rpcLine(t, "git.worktree_remove",
+		got := gitDispatch(t, h, rpcLine(t, "git.worktree_remove",
 			map[string]any{"baseRepo": base, "worktreePath": target}))
 		want := `{"jsonrpc":"2.0","id":1,"result":{"success":false,"error":` +
 			`"failed to remove worktree: could not check whether ` + jsonEscape(t, target) +

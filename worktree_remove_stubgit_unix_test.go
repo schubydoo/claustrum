@@ -24,8 +24,8 @@ func TestWorktreeRemoveLockedByMarkerNotStderr(t *testing.T) {
 	}
 	t.Setenv("PATH", bin+string(os.PathListSeparator)+os.Getenv("PATH"))
 
-	s := newTestServer(t)
-	raw := dispatchRaw(t, s, rpcLine(t, "git.worktree_remove",
+	h := newTestGitDeps()
+	raw := gitDispatch(t, h, rpcLine(t, "git.worktree_remove",
 		map[string]any{"baseRepo": repo, "worktreePath": wt}))
 	if !strings.Contains(raw, "is locked (git worktree lock); unlock it to remove it") {
 		t.Errorf("reply = %s, want the marker-file locked refusal (stub git exits 0, so only the file check can refuse)", raw)
@@ -51,8 +51,8 @@ func TestWorktreeRemovePrunesLeftoverAdminDir(t *testing.T) {
 	}
 	t.Setenv("PATH", bin+string(os.PathListSeparator)+os.Getenv("PATH"))
 
-	s := newTestServer(t)
-	raw := dispatchRaw(t, s, rpcLine(t, "git.worktree_remove",
+	h := newTestGitDeps()
+	raw := gitDispatch(t, h, rpcLine(t, "git.worktree_remove",
 		map[string]any{"baseRepo": repo, "worktreePath": wt}))
 	if !strings.Contains(raw, `"success":true`) {
 		t.Errorf("reply = %s, want success:true", raw)
@@ -98,13 +98,13 @@ func TestWorktreeSymlinkedComponentRefused(t *testing.T) {
 		"link and a planted one cannot reliably be told apart from your own. Replace it with a " +
 		"real directory (or delete it and it will be recreated)"
 
-	s := newTestServer(t)
-	got := dispatchRaw(t, s, rpcLine(t, "git.worktree_create",
+	h := newTestGitDeps()
+	got := gitDispatch(t, h, rpcLine(t, "git.worktree_create",
 		map[string]any{"baseRepo": repo, "branchName": "b", "worktreePath": wt}))
 	if !strings.Contains(got, want) || !strings.Contains(got, `"errorCode":"symlinked_component"`) {
 		t.Errorf("create = %s, want the symlinked_component refusal", got)
 	}
-	got = dispatchRaw(t, s, rpcLine(t, "git.worktree_remove",
+	got = gitDispatch(t, h, rpcLine(t, "git.worktree_remove",
 		map[string]any{"baseRepo": repo, "worktreePath": wt}))
 	if !strings.Contains(got, want) || strings.Contains(got, `"errorCode"`) {
 		t.Errorf("remove = %s, want the symlinked_component refusal with no errorCode", got)
