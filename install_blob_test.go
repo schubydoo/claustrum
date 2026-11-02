@@ -13,9 +13,9 @@ import (
 )
 
 // The -cli-zst blob goes right after the new CLI is in place, before the CLI
-// runs --version. On 5fd08069 the stub sees no blob at its run (cells L11, M4
-// and W7, Linux, macOS and Windows VMs). The blob lies in the cli folder here,
-// so the folder list of the stub shows it.
+// runs --version. On 5fd08069 the stub sees no blob at its run (measured on
+// Linux, macOS and Windows). The blob lies in the cli folder here, so the
+// folder list of the stub shows it.
 func TestInstallBlobIsGoneWhenTheNewCLIRuns(t *testing.T) {
 	f := newStubFixture(t)
 	blob := filepath.Join(f.cliDir, "in.zst")
@@ -33,7 +33,7 @@ func TestInstallBlobIsGoneWhenTheNewCLIRuns(t *testing.T) {
 
 // A -cli-zst blob in the cli folder with a name of the sweep stays after a
 // failed install. On 5fd08069 a blob C/1.0.0.zst that is 20 minutes old and no
-// zstd archive stays, with the decoder text (cell L3, Linux VM).
+// zstd archive stays, with the decoder text (measured on Linux).
 func TestInstallKeepsABadBlobWithASweepName(t *testing.T) {
 	f := newStubFixture(t)
 	blob := filepath.Join(f.cliDir, "1.0.0.zst")
@@ -54,8 +54,7 @@ func TestInstallKeepsABadBlobWithASweepName(t *testing.T) {
 // A -cli-url body that is no zstd archive answers the decoder text, with the
 // right and with a wrong checksum. fetch.bytes is the count that the decoder
 // read, and only the leading progress line is printed. On 5fd08069 that is
-// "fetch":{"bytes":4,…} for a body of 4096 bytes (cells L15a and L15b, Linux
-// VM).
+// "fetch":{"bytes":4,…} for a body of 4096 bytes (measured on Linux).
 func TestInstallURLBodyThatIsNoArchive(t *testing.T) {
 	body := []byte(strings.Repeat("not a zstd archive. ", 205))[:4096]
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
@@ -89,7 +88,7 @@ func sha256Hex(b []byte) string {
 }
 
 // sameFileBytes compares two files by SHA-256. A file that cannot be read is
-// not the same. placeStagedCLI uses it on Windows only (cells W2 of 5fd08069).
+// not the same. placeStagedCLI uses it on Windows only (`5fd08069`, measured).
 func TestSameFileBytes(t *testing.T) {
 	dir := t.TempDir()
 	put := func(name, body string) string {

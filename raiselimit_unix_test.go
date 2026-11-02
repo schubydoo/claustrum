@@ -124,7 +124,7 @@ func TestRaiseInheritedFileLimitErrors(t *testing.T) {
 
 // TestRaiseInheritedFileLimitLogsLimit pins the daemon log line. f6010b97 writes
 // `[daemon] child processes will start with an open-files limit of 65536` on
-// Linux and macOS VMs. Claustrum writes the same text with its INFO tag, and the
+// Linux and macOS. Claustrum writes the same text with its INFO tag, and the
 // value is the soft limit it set. A failed raise writes no line.
 func TestRaiseInheritedFileLimitLogsLimit(t *testing.T) {
 	origGet, origSet := getRlimit, setRlimit

@@ -251,10 +251,10 @@ func TestEnsureCLIFinalComponentSymlinkIsSafe(t *testing.T) {
 }
 
 // A version whose name the sweep claims INSTALLS, as on the reference. Measured
-// on a Linux VM against 4534d86 through f6010b97: the install succeeds and the
-// same run keeps the fresh CLI, a cache hit keeps it at any age, and a later
-// install sweeps it once its mtime is more than 10 minutes old. claustrum refused
-// these versions before (the retired D7).
+// on Linux against 4534d86 through f6010b97: the install succeeds and the same
+// run keeps the fresh CLI, a cache hit keeps it at any age, and a later install
+// sweeps it once its mtime is more than 10 minutes old. claustrum refused these
+// versions before (the retired D7).
 func TestEnsureCLIInstallsSweptVersionNames(t *testing.T) {
 	for _, v := range []string{".fetch-1", "1.0.0.zst"} {
 		t.Run(v, func(t *testing.T) {
@@ -303,7 +303,7 @@ func TestEnsureCLIInstallsSweptVersionNames(t *testing.T) {
 	}
 }
 
-// The name rules of the two sweeps (5fd08069, cells L8, M3a and W5), and the
+// The name rules of the two sweeps (`5fd08069`, measured), and the
 // validator's acceptance of every name they claim.
 func TestSweptNameRule(t *testing.T) {
 	for _, name := range []string{".fetch-1", ".fetch-123", "1.0.0.zst", "10.2.33.zst"} {
@@ -470,12 +470,12 @@ func TestEnsureCLIRenameFailureCleansUpStaging(t *testing.T) {
 		t.Errorf("error = %q, but the staging file was present", err)
 	}
 	// Every rename error has the prefix "rename: ". On 5fd08069 the text is
-	// "rename: rename <tmp> <cli>: Access is denied." (cells W1 and W6, Windows
-	// VM). The prefix on Linux and macOS is claustrum's own.
+	// "rename: rename <tmp> <cli>: Access is denied." (measured on Windows).
+	// The prefix on Linux and macOS is claustrum's own.
 	if !strings.HasPrefix(err.Error(), "rename: rename ") {
 		t.Errorf("error = %q, want the prefix \"rename: rename \"", err)
 	}
-	// A failed rename keeps the -cli-zst blob (cells W1 and W6 of 5fd08069).
+	// A failed rename keeps the -cli-zst blob (`5fd08069`, measured).
 	if !isRegularFile(zstPath) {
 		t.Error("the -cli-zst blob was consumed by an install that failed at the rename")
 	}

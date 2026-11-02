@@ -71,7 +71,7 @@ func TestWipesHomeDir(t *testing.T) {
 //
 // The assertion is on a path the guard WOULD refuse with a home resolved, and
 // the precondition proves it. An earlier version asserted on an unrelated
-// t.TempDir() path, which passes whether or not the fail-open branch exists —
+// t.TempDir path, which passes whether or not the fail-open branch exists —
 // delete that branch and `home` becomes "", Clean("") is ".", and "." is not a
 // prefix of the path either, so the test answered true by a different route and
 // could not fail. Raised in review on #231.
@@ -174,12 +174,11 @@ func TestWipesHomeDirCaseFolding(t *testing.T) {
 // directory, BEFORE any filesystem effect.
 //
 // Safe to run against the unfixed tree, twice over: the wipe is stubbed, so the
-// recursive delete cannot fire, and the home the rows name is a t.TempDir() rather
-// than the developer's real one. That is this repo's rule for guard tests — a
-// test whose failure mode is destroying the machine is not a test — and it is
-// also how the incident this guards against would have been caught: the fuzzer
-// that fired it ran unstubbed, against a live daemon, with the real home
-// reachable.
+// recursive delete cannot fire, and the home the rows name is a t.TempDir rather
+// than the developer's real one. That is this repo's rule for guard tests — a test
+// whose failure mode is destroying the machine is not a test — and it is also how
+// the incident this guards against would have been caught: the fuzzer that fired
+// it ran unstubbed, against a live daemon, with the real home reachable.
 //
 // The archive is DELIBERATELY nonexistent on every refused row. The guard runs
 // before the archive is opened, so with it holding the row is unaffected; if it
@@ -251,14 +250,14 @@ func TestFilesExtractTarRefusesHomeDir(t *testing.T) {
 // Today the remove runs no such git call.)
 //
 // Unlike the extract_tar wipe there is no seam on that delete, so safety here
-// comes from the home being a t.TempDir(): against the unfixed tree this test
+// comes from the home being a t.TempDir: against the unfixed tree this test
 // fails by deleting a temporary directory, never a real one. KEEP.txt is the
-// assertion, because it is the thing that would actually be gone.
-// A TABLE, not a single row, and the ancestor row is the load-bearing one: on
-// this method wipesHomeDir is the ONLY gate, where filesExtractTar still has
-// IsAbs and isFilesystemRoot behind it. If the predicate ever narrows to "the
-// home directory itself", extract_tar's ancestor case is caught by its root
-// check and this one is not. Raised in review on #231.
+// assertion, because it is the thing that would actually be gone. A TABLE,
+// not a single row, and the ancestor row is the load-bearing one: on this
+// method wipesHomeDir is the ONLY gate, where filesExtractTar still has IsAbs
+// and isFilesystemRoot behind it. If the predicate ever narrows to "the home
+// directory itself", extract_tar's ancestor case is caught by its root check
+// and this one is not. Raised in review on #231.
 func TestWorktreeRemoveRefusesHomeDir(t *testing.T) {
 	home := filepath.Join(t.TempDir(), "home", "someone")
 	if err := os.MkdirAll(home, 0o700); err != nil {

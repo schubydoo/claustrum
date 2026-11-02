@@ -20,11 +20,11 @@ const createBreakawayFromJob = 0x01000000
 // detachSysProcAttr starts the daemonized child detached, in a new process group and
 // outside the job of the launcher.
 //
-// Measured on a Windows VM against f6010b97 and 89cb6289 (rows WJ01 to WJ07, and WJ08 on
-// 89cb6289). The SSH server puts a session in a job that ends its processes when the
-// session ends. Its limit flags are 0x2800: kill on job close, breakaway allowed. The
-// serving process of the reference is outside that job and lives on after the session.
-// The launcher is inside it.
+// Measured on Windows against f6010b97 and 89cb6289 (`89cb6289`, measured). The SSH
+// server puts a session in a job that ends its processes when the session ends. Its
+// limit flags are 0x2800: kill on job close, breakaway allowed. The serving process of
+// the reference is outside that job and lives on after the session. The launcher is
+// inside it.
 //
 // Not measured: how the reference leaves the job. The rows show only the membership.
 // CREATE_BREAKAWAY_FROM_JOB is claustrum's own choice. A process that is in no job ignores
@@ -36,7 +36,7 @@ func detachSysProcAttr() *syscall.SysProcAttr {
 // startDetached starts the daemonized child. A job that does not allow breakaway refuses
 // the start with ERROR_ACCESS_DENIED. The start then runs once more without the breakaway
 // flag, so the daemon starts inside the job, as it did before claustrum set the flag.
-// 89cb6289 does the same and serves from inside the job (Windows VM, row JB).
+// 89cb6289 does the same and serves from inside the job (Windows, row JB).
 //
 // An exec.Cmd refuses a second Start, so the second try runs a copy of cmd. On success
 // cmd.Process names the started process, as after a plain Start.
@@ -46,8 +46,8 @@ func startDetached(cmd *exec.Cmd) error {
 		cmd.SysProcAttr == nil || cmd.SysProcAttr.CreationFlags&createBreakawayFromJob == 0 {
 		return err
 	}
-	// The line is the reference's, on the stderr of the launcher. Measured on a Windows
-	// VM against 89cb6289 (row JB, a job with the limit flags 0x2000).
+	// The line is the reference's, on the stderr of the launcher. Measured on Windows
+	// against 89cb6289 (row JB, a job with the limit flags 0x2000).
 	logWarnf("[daemon] detached spawn failed (%v); retrying without breakaway", err)
 	attr := *cmd.SysProcAttr
 	attr.CreationFlags &^= createBreakawayFromJob
@@ -64,18 +64,18 @@ func startDetached(cmd *exec.Cmd) error {
 }
 
 // daemonLogAppend is 0 on Windows: each daemon writes at the offset of its own handle.
-// 5fd08069 does so (cell W1 of round task015-01, Windows VM). A first daemon that writes
-// on after a second one truncated the file leaves a block of NUL bytes, as there.
+// 5fd08069 does so (measured on Windows). A first daemon that writes on after a second
+// one truncated the file leaves a block of NUL bytes, as there.
 const daemonLogAppend = 0
 
 // openHeldDaemonLog opens the existing remote-server.log for write and truncates it.
 // openDaemonLog calls it after the rotate and the fresh create failed. On Windows that is
 // the case of a second daemon on a live socket, or of another process that holds the log
 // open with no delete share: the rename fails. 5fd08069 truncates the file in both cases,
-// and the earlier lines are lost. .old stays as it was (cells W1 and W3 of round
-// task015-01, Windows VM). A link fails with "permission denied", because this code has
-// no owner test. 5fd08069 writes through it (D8, cell W2 of round task015-04, Windows
-// VM). An open that fails keeps the stdio of the launcher, as before.
+// and the earlier lines are lost. .old stays as it was (measured on Windows). A link
+// fails with "permission denied", because this code has no owner test. 5fd08069 writes
+// through it (D8, Windows). An open that fails keeps the stdio of the launcher, as
+// before.
 func openHeldDaemonLog(path string, fi os.FileInfo) (*os.File, error) {
 	if !fi.Mode().IsRegular() {
 		return nil, &os.PathError{Op: "open", Path: path, Err: syscall.EACCES}

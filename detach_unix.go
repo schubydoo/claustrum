@@ -30,14 +30,13 @@ var daemonLogOwned = func(fi os.FileInfo) bool {
 
 // openHeldDaemonLog opens the regular file or the link at the log path that the rotate
 // cannot move, and truncates the file. fi is its Lstat. The lines then go there with
-// the mode kept, as on 5fd08069 (cell E1 of rounds task015-03 and task015-04, Linux and
-// macOS VMs). A file of another user fails with "permission denied" and stays unchanged
-// (D8, cell S4 of round task015-04).
+// the mode kept, as on 5fd08069 (measured on Linux and macOS). A file of another user
+// fails with "permission denied" and stays unchanged (D8).
 //
 // A link must belong to the user of the daemon, and it is opened through, as on
-// 5fd08069 (cell E5 of round task015-04, Linux VM). Its target must be a regular file
-// of that user with one link (claustrum's own, not measured). Another link fails with
-// "permission denied" (D8, cells S1 and S2).
+// 5fd08069 (measured on Linux). Its target must be a regular file of that user with
+// one link (claustrum's own, not measured). Another link fails with "permission
+// denied" (D8).
 //
 // A file with more than one link is refused the same way, so no other name is truncated
 // (not measured, claustrum's own). The open does not block on a FIFO. It then tests

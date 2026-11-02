@@ -5,8 +5,8 @@ package main
 import "errors"
 
 // cliExeSuffix is the suffix that installCLIPath adds to the version. It is empty
-// off Windows: the CLI file is <cli-dir>/<version> (Linux and macOS VMs,
-// 89cb6289). A var only so a test on any system can run the Windows name rule.
+// off Windows: the CLI file is <cli-dir>/<version> (`89cb6289`, measured on Linux
+// and macOS). A var only so a test on any system can run the Windows name rule.
 var cliExeSuffix = ""
 
 // probeCLIPathMissing is the Windows-only file test of -probe-cli. Off Windows
@@ -17,7 +17,7 @@ func probeCLIPathMissing(string) bool { return false }
 func renameDenied(error) bool { return false }
 
 // rawCLIDirStep turns on the folder step of makeCLIDir. Linux and macOS make the
-// folders of the raw -cli-dir text (cells L-HS10b, L-V1, L-V2, L-V3 and M-HS10b of round tier3-01).
+// folders of the raw -cli-dir text (measured).
 const rawCLIDirStep = true
 
 // isDiskFull reports an install error that a full disk caused.

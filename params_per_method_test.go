@@ -10,8 +10,8 @@ import (
 // TestParamsUnreadMemberIgnored: a member that another method of the namespace
 // reads is ignored, whatever its type, and a wrong-typed wantPid counts as absent.
 // The reply is the reply to the request without that member. 5fd08069 answers so
-// in cells F1 to F3, G1 to G3, G4b, P1 and P2 of round task015-01 (Linux VM). A
-// files or git method that decodes the struct of another one fails here.
+// (measured on Linux). A files or git method that decodes the struct of another
+// one fails here.
 func TestParamsUnreadMemberIgnored(t *testing.T) {
 	requireGit(t)
 	s := newTestServer(t)
@@ -56,9 +56,9 @@ func TestParamsUnreadMemberIgnored(t *testing.T) {
 }
 
 // TestParamsReadMemberWrongType: a wrong type in a member that the method reads
-// stays -32602 "Invalid params". 5fd08069 answers so in cells F4 and G5 of round
-// task015-01 (Linux, macOS VMs). Each member of each git struct is here once, so
-// a struct that loses a member fails.
+// stays -32602 "Invalid params". 5fd08069 answers so (measured on Linux and
+// macOS). Each member of each git struct is here once, so a struct that loses a
+// member fails.
 func TestParamsReadMemberWrongType(t *testing.T) {
 	s := newTestServer(t)
 	const want = `{"jsonrpc":"2.0","id":1,"error":{"code":-32602,"message":"Invalid params"}}`
@@ -90,8 +90,8 @@ func TestParamsReadMemberWrongType(t *testing.T) {
 }
 
 // TestPluginsPruneWithoutParams: plugins.prune with no params member answers the
-// decode error of an empty input, as 5fd08069 does (cell P0 of round task015-01,
-// Linux VM). It prunes nothing.
+// decode error of an empty input, as 5fd08069 does (measured on Linux). It
+// prunes nothing.
 func TestPluginsPruneWithoutParams(t *testing.T) {
 	s := newTestServer(t)
 	line := `{"jsonrpc":"2.0","id":1,"method":"plugins.prune","auth":"` + testToken + `"}`
@@ -104,7 +104,7 @@ func TestPluginsPruneWithoutParams(t *testing.T) {
 // TestSocketWorktreeUnreadMembersIgnored: git.worktree_create with "path":123 makes
 // the worktree, and git.worktree_remove with "timeoutMs":"x", "path":123 and
 // "existingBranch":5 removes it, its registration and its branch. 5fd08069 does so
-// in cells G6 to G8 of round task015-01 (Linux VM, and G6 on macOS and Windows VMs).
+// (measured on Linux, macOS and Windows).
 func TestSocketWorktreeUnreadMembersIgnored(t *testing.T) {
 	requireGit(t)
 	root := resolveTestRoot(t, t.TempDir())

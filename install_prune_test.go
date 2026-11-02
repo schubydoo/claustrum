@@ -48,11 +48,10 @@ const (
 // vf is the file name of the CLI of version v on this system.
 func vf(v string) string { return v + cliExeSuffix }
 
-// TestPruneRows runs one -install for each prune cell of 5fd08069 and compares
-// the names that are left in the cli-dir. Cells L4 to L6 ran on a Linux VM, M1
-// to M2b on a macOS VM and W3 to W4b on a Windows VM. The names of a version file
-// carry ".exe" on Windows, as in the W cells. The CLI is this test binary in the
-// "cli-stub" helper mode.
+// TestPruneRows runs one -install for each measured prune case of 5fd08069 and
+// compares the names that are left in the cli-dir. The cases ran on Linux,
+// macOS and Windows. The names of a version file carry ".exe" on Windows, as
+// in the W cells. The CLI is this test binary in the "cli-stub" helper mode.
 //
 // SAFETY: every path is under t.TempDir, and the home variable names a folder
 // there.
@@ -159,8 +158,7 @@ func TestPruneRows(t *testing.T) {
 
 // A negative -cli-keep after a good install counts as 0. On 5fd08069 the run
 // exits 0 with the result line and an empty stderr. The older version file
-// goes and the new CLI stays (cells L6, M2b and W4b, Linux, macOS and Windows
-// VMs).
+// goes and the new CLI stays (measured on Linux, macOS and Windows).
 func TestInstallNegativeKeep(t *testing.T) {
 	f := newStubFixture(t)
 	t.Setenv(homeEnvVar(), f.root)
@@ -427,9 +425,9 @@ func TestCLIEntryHoldsHome(t *testing.T) {
 	}
 }
 
-// TestSweepRows runs the sweep cells of 5fd08069 (L8, L9, M3a and W5, Linux,
-// macOS and Windows VMs). The keep value is 20, so the prune removes nothing,
-// as in the cells. Only a regular file with a sweep name goes.
+// TestSweepRows runs the sweep cells of 5fd08069 (measured on Linux, macOS
+// and Windows). The keep value is 20, so the prune removes nothing, as in the
+// cells. Only a regular file with a sweep name goes.
 func TestSweepRows(t *testing.T) {
 	cells := []pruneFixture{
 		{"p.zst.part", pruneFile, 8 * pruneDay}, {"1.0.0.zst.part", pruneFile, 8 * pruneDay},
@@ -490,7 +488,7 @@ func TestSweepRows(t *testing.T) {
 }
 
 // The bound of the sweep of 7 days. 7 days and 5 s go, and 7 days less 5 s
-// stay (cells L10 and M3b of 5fd08069, Linux and macOS VMs).
+// stay (`5fd08069`, measured on Linux and macOS).
 func TestSweepZstPartsBound(t *testing.T) {
 	dir := t.TempDir()
 	now := time.Now()

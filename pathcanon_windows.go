@@ -33,8 +33,8 @@ func canonicalPath(p string) string {
 // pathAsRecorded is the spelling of a worktree path that git.worktree_remove compares
 // with the path git recorded in an entry. On Windows it is the cleaned path as given.
 // An 8.3 short name is not expanded, so a leaf sent as LONGWO~1 does not match the
-// recorded long name, and the entry stays. Measured against f6010b97 on a Windows VM
-// (rows N83_leaf and N83_base). Letter case still does not matter (rows C01 and C02).
+// recorded long name, and the entry stays. Measured against f6010b97 on Windows.
+// Letter case still does not matter (measured).
 func pathAsRecorded(p string) string {
 	return filepath.Clean(p)
 }
@@ -43,8 +43,8 @@ func pathAsRecorded(p string) string {
 // link and 8.3 short name resolved, as the file system reports it. It falls back to
 // canonicalPath when p cannot be opened. git.worktree_remove uses it for the
 // baseRepo part of a gone worktree's path, so a baseRepo sent in 8.3 form or through
-// a junction still finds a locked registration. Measured against f6010b97 on a
-// Windows VM (rows GL1 and GL2).
+// a junction still finds a locked registration. Measured against f6010b97 on
+// Windows.
 func finalDirPath(p string) string {
 	pp, err := windows.UTF16PtrFromString(p)
 	if err != nil {

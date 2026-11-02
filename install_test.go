@@ -148,8 +148,8 @@ func isRunnable(path string) bool { return runCLIVersion(path, time.Minute) == c
 
 // The shipped bounds of the direct `<cli> --version` run are the reference's.
 // They are 30 s on a cache hit and 120 s after an install in the same run. Measured on
-// f6010b97 and 89cb6289 (rows B03, B04, B15, F04, F05, F15). The tests shrink the
-// two vars, so this pins the values a user gets.
+// f6010b97 and 89cb6289. The tests shrink the two vars, so this pins the values a user
+// gets.
 func TestCLIRunBoundsAreTheReferenceValues(t *testing.T) {
 	if cliRunBound != 30*time.Second {
 		t.Errorf("cliRunBound = %s, want 30s", cliRunBound)
@@ -557,8 +557,8 @@ func TestDetectLibcWithTimeout(t *testing.T) {
 	}
 }
 
-// The shipped bound is the reference's 5 s. Measured on a Linux VM from 19f30c46
-// on: a 4.9 s stall answers, and a 5.1 s stall is cut at 5.0 s.
+// The shipped bound is the reference's 5 s. Measured on Linux from 19f30c46 on:
+// a 4.9 s stall answers, and a 5.1 s stall is cut at 5.0 s.
 func TestLddProbeTimeoutIsFiveSeconds(t *testing.T) {
 	if lddProbeTimeout != 5*time.Second {
 		t.Errorf("lddProbeTimeout = %s, want 5s, the reference's measured bound", lddProbeTimeout)
@@ -708,8 +708,8 @@ func TestPruneCLI(t *testing.T) {
 // runInstall's prune step is gated on an install having actually succeeded.
 // A cache-hit run neither sweeps orphans nor prunes, and a FAILED
 // install sweeps but does not prune (probe-measured at 5db5e4a). A keep of 0
-// prunes every older version file, and the new CLI stays (cells L5, M2a and
-// W4a, 5fd08069).
+// prunes every older version file, and the new CLI stays (`5fd08069`,
+// measured).
 //
 // This test previously drove runInstall with an already-present CLI and asserted
 // that it pruned — encoding claustrum's divergence. It now exercises the guard on
@@ -795,11 +795,11 @@ func TestRunInstallHonorsCliKeepGuard(t *testing.T) {
 // TestSweepFetchTemps pins the orphan sweep against a fixed "now", so the ages
 // are exact and no test sleeps. The rules:
 //   - A swept name goes only when its mtime is more than 600 s old. 599 s stays,
-//     601 s goes, and a future mtime stays (Linux VM, 4534d86 through f6010b97).
+//     601 s goes, and a future mtime stays (Linux, 4534d86 through f6010b97).
 //   - Only a regular file goes. An empty folder ".fetch-9" and a folder
-//     ".fetch-e" with content stay (5fd08069, cells L8, M3a and W5).
+//     ".fetch-e" with content stay (`5fd08069`, measured).
 //   - The names are ".fetch-<digits>" and "<version>.zst", case-sensitive
-//     (5fd08069, the same cells).
+//     (`5fd08069`, measured).
 func TestSweepFetchTemps(t *testing.T) {
 	dir := t.TempDir()
 	now := time.Now()
@@ -991,7 +991,7 @@ func TestEnsureCLIFromURL(t *testing.T) {
 // The -cli-zst (SFTP) path verifies -cli-checksum WHEN one is supplied, as the
 // reference does since 7d193f89: a wrong checksum is rejected like the -cli-url
 // path, and the source blob is left intact. An ABSENT/empty checksum verifies
-// nothing. The compare is case-sensitive, measured on a Linux VM.
+// nothing. The compare is case-sensitive, measured on Linux.
 func TestEnsureCLIZstVerifiesChecksumWhenSupplied(t *testing.T) {
 	mkZst := func(t *testing.T) (dir, zstFile string) {
 		dir = t.TempDir()
@@ -1017,8 +1017,8 @@ func TestEnsureCLIZstVerifiesChecksumWhenSupplied(t *testing.T) {
 	})
 
 	// The reference compares case-sensitively, so the RIGHT digest in upper case
-	// fails, and the message carries both spellings. Measured on a Linux VM
-	// against 7d193f89 through f6010b97. strings.EqualFold installed here.
+	// fails, and the message carries both spellings. Measured on Linux against
+	// 7d193f89 through f6010b97. strings.EqualFold installed here.
 	t.Run("upper-case right checksum is rejected", func(t *testing.T) {
 		dir, zstFile := mkZst(t)
 		zst, _ := os.ReadFile(zstFile)
@@ -1067,8 +1067,8 @@ func TestEnsureCLIZstVerifiesChecksumWhenSupplied(t *testing.T) {
 
 // The -cli-zst path creates the cli-dir, mode 0700 with its parents, BEFORE it
 // opens the blob. So a failed attempt past the version check leaves the cli-dir,
-// empty if it was new. Measured on a Linux VM against 5db5e4a through f6010b97,
-// a missing blob included, and with absent parents. claustrum created it only at
+// empty if it was new. Measured on Linux against 5db5e4a through f6010b97, a
+// missing blob included, and with absent parents. claustrum created it only at
 // the decompress step.
 func TestEnsureCLIZstCreatesTheCliDirFirst(t *testing.T) {
 	for _, tc := range []struct{ name, blob, checksum, wantPrefix string }{
@@ -1168,8 +1168,8 @@ func TestEnsureCLIErrorWrapping(t *testing.T) {
 		t.Error("a blob that failed to decompress was consumed; it must be kept")
 	}
 	// A DIRECTORY at -cli-zst opens, and its read error comes from the decoder.
-	// On 5fd08069 the text is "decompressing: read <p>: is a directory" (cell
-	// L13, Linux VM). Other systems get a prefix check only.
+	// On 5fd08069 the text is "decompressing: read <p>: is a directory"
+	// (measured on Linux). Other systems get a prefix check only.
 	asDir := filepath.Join(dir, "adir.zst")
 	if err := os.Mkdir(asDir, 0o755); err != nil {
 		t.Fatal(err)
@@ -1245,9 +1245,9 @@ func TestRunInstallFacts(t *testing.T) {
 }
 
 // keepZero is a -cli-keep of 0 for the two capture helpers. A keep of 0 prunes
-// every older version file (cells L5, M2a and W4a). A test that leaves cliKeep
-// unset wants no prune, so testKeep turns the unset value into the largest
-// count, with which the prune removes nothing. A negative value counts as 0.
+// every older version file (measured). A test that leaves cliKeep unset wants
+// no prune, so testKeep turns the unset value into the largest count, with
+// which the prune removes nothing. A negative value counts as 0.
 const keepZero = math.MinInt
 
 func testKeep(o installOpts) installOpts {
@@ -1347,8 +1347,7 @@ func TestDownloadStatusErrorWording(t *testing.T) {
 // bare wording — "download stalled: no data for Ns after G/T bytes" — and is NOT
 // prefixed "download failed: ". ensureCLI wrapped every non-status fetch error, so
 // the stall used to reach __INSTALL_RESULT__ as "download failed: download stalled:
-// …", changing the Desktop-facing bytes. Measured bare against 4534d86
-// (scratch/probe/install-frames-4534d86.md).
+// …", changing the Desktop-facing bytes. Measured bare against 4534d86.
 func TestDownloadStallErrorWording(t *testing.T) {
 	oldIdle := installIdleTimeout
 	installIdleTimeout = time.Second
@@ -1453,10 +1452,9 @@ func TestEnsureCLIConsumesBlobWhenExtractedCLIIsNotRunnable(t *testing.T) {
 }
 
 // A failed chmod of the staging file keeps the -cli-zst blob. On 5fd08069 every
-// failure before the new CLI is in place keeps it (cells L3, L12, M5, W1 and
-// W6). The chmod failure itself is claustrum's own (not measured). The failure
-// is injected through the chmodStaged seam, so the test is identical on every
-// OS.
+// failure before the new CLI is in place keeps it (measured). The chmod failure
+// itself is claustrum's own (not measured). The failure is injected through the
+// chmodStaged seam, so the test is identical on every OS.
 func TestEnsureCLIKeepsBlobWhenChmodFails(t *testing.T) {
 	old := chmodStaged
 	chmodStaged = func(string, os.FileMode) error { return errors.New("chmod refused") }
@@ -1499,12 +1497,12 @@ func captureInstallOutput(t *testing.T, o installOpts) string {
 	return out
 }
 
-// The prune never counts a name the sweep claims, at any age. Measured on a Linux
-// VM against f6010b97 with three real CLIs (72 h, 48 h, 24 h old), a ".fetch-o"
-// and an "x.zst", and one install of 2.0.0 with -cli-keep 3. With the litter
-// fresh, the reference keeps 1.1.0, 1.2.0, 2.0.0 and the litter. With the litter
-// 601 s old (the control), the sweep takes it and the same three CLIs stay. The
-// litter names here are those that the sweep of 5fd08069 claims.
+// The prune never counts a name the sweep claims, at any age. Measured on Linux
+// against f6010b97 with three real CLIs (72 h, 48 h, 24 h old), a ".fetch-o" and
+// an "x.zst", and one install of 2.0.0 with -cli-keep 3. With the litter fresh,
+// the reference keeps 1.1.0, 1.2.0, 2.0.0 and the litter. With the litter 601 s
+// old (the control), the sweep takes it and the same three CLIs stay. The litter
+// names here are those that the sweep of 5fd08069 claims.
 func TestPruneIgnoresFreshSweepLitter(t *testing.T) {
 	for _, tc := range []struct {
 		name string
@@ -1561,7 +1559,7 @@ func TestPruneIgnoresFreshSweepLitter(t *testing.T) {
 }
 
 // The -cli-url path creates the cli-dir (0700, with parents) before any network
-// access, and every failure leaves it empty. Measured on a Linux VM against
+// access, and every failure leaves it empty. Measured on Linux against
 // f6010b97: a checksum mismatch, a 404 and a refused connection each leave an
 // empty 0700 cli-dir, and the cli-dir exists before the server sends headers.
 func TestEnsureCLIURLCreatesTheCliDirFirst(t *testing.T) {
@@ -1634,7 +1632,7 @@ func TestEnsureCLIURLCreatesTheCliDirFirst(t *testing.T) {
 }
 
 // The final __INSTALL_PROGRESS__ line comes only after the checksum passes, and
-// the leading bytes:0 line always comes first. Measured on a Linux VM against
+// the leading bytes:0 line always comes first. Measured on Linux against
 // f6010b97, 5 of 5 runs per row: a good 57-byte download prints bytes:0 then
 // bytes:57, and a mismatch or an empty checksum prints bytes:0 only.
 func TestInstallProgressLinesFollowTheChecksum(t *testing.T) {
@@ -1680,7 +1678,7 @@ func TestInstallProgressLinesFollowTheChecksum(t *testing.T) {
 }
 
 // A cache miss with no source flag still creates the cli-dir (0700, with its
-// parents) before the source check, and leaves it empty. Measured on a Linux VM
+// parents) before the source check, and leaves it empty. Measured on Linux
 // against f6010b97, two runs: the answer is the same text on both binaries, and
 // the reference leaves an empty 0700 cli-dir.
 func TestInstallCacheMissWithNoSourceCreatesTheCliDir(t *testing.T) {

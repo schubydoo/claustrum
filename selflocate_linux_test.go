@@ -10,10 +10,10 @@ import (
 	"testing"
 )
 
-// TestServeLauncherStopsWithoutSelfExe pins the rule of round tier3-02
-// (Linux VM). With no readable /proc/self/exe the -serve launcher prints one
-// line, exits 1 and makes nothing in the socket folder. The token file stays.
-// The os.Executable error is the one that Go returns on Linux for that state.
+// TestServeLauncherStopsWithoutSelfExe pins the rule (measured on Linux).
+// With no readable /proc/self/exe the -serve launcher prints one line, exits
+// 1 and makes nothing in the socket folder. The token file stays. The
+// os.Executable error is the one that Go returns on Linux for that state.
 func TestServeLauncherStopsWithoutSelfExe(t *testing.T) {
 	for _, tc := range []struct {
 		name    string

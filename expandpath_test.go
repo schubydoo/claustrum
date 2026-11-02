@@ -75,7 +75,7 @@ func TestExpandPath(t *testing.T) {
 // sent in the same daemon run so the pair is its own control.
 //
 // This needs a deliberately unclean HOME to be visible at all: with the tidy
-// t.TempDir() that TestExpandPath uses, cleaned and uncleaned agree, which is why
+// t.TempDir that TestExpandPath uses, cleaned and uncleaned agree, which is why
 // that test's "bare tilde" row passes either way and cannot catch a regression
 // here.
 func TestExpandPathBareTildeIsNotCleaned(t *testing.T) {
@@ -91,7 +91,7 @@ func TestExpandPathBareTildeIsNotCleaned(t *testing.T) {
 	}
 	sep := string(filepath.Separator)
 	base := t.TempDir()
-	// Subtests are named for the SHAPE, not the path. The path embeds t.TempDir(),
+	// Subtests are named for the SHAPE, not the path. The path embeds t.TempDir,
 	// so a path-named subtest is unique per run: CI uploads its JUnit XML to
 	// Codecov Test Analytics from all three legs, which keys on test name, so
 	// per-run names can never accumulate flake history and the catalogue grows

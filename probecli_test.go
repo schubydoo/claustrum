@@ -23,7 +23,7 @@ func setProbeCLITimeout(t *testing.T, d time.Duration) {
 // non-zero or is missing is "bad", and one the deadline has to kill is "hung". The
 // runs/bad tokens were measured byte-for-byte against 19f30c46; the deadline-kill
 // path is exercised here with a shrunk bound. A mutant that returned probeCLIBad for
-// a timeout (dropping the ctx.Err() check) fails the hung arm; one that returned
+// a timeout (dropping the ctx.Err check) fails the hung arm; one that returned
 // probeCLIRuns on any error fails the bad arms.
 func TestProbeCLIRunnableClassifies(t *testing.T) {
 	dir := t.TempDir()
@@ -84,7 +84,7 @@ func TestWriteProbeCLIResult(t *testing.T) {
 	}
 }
 
-// TestProbeCLIDispatchUnsetsTokenAndReturns drives main()'s -probe-cli arm. It must
+// TestProbeCLIDispatchUnsetsTokenAndReturns drives main's -probe-cli arm. It must
 // route to the probe (not fall through to -install/-serve), unset CLAUDE_RPC_TOKEN
 // so the probed child never inherits it (reference parity), and return rather than
 // exit. runMain parks stdout on /dev/null, so the token bytes are asserted by

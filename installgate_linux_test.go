@@ -30,8 +30,8 @@ func otherMachine() elf.Machine {
 	return elf.EM_AARCH64
 }
 
-// Rows L14a and L14b of 5fd08069 (Linux VM). With the launcher gate on, a cache
-// hit on a CLI file that is no program of this machine runs nothing. The install
+// A rule of 5fd08069 (measured on Linux). With the launcher gate on, a cache hit
+// on a CLI file that is no program of this machine runs nothing. The install
 // runs over the file, the blob is used, and the launcher runs the new CLI once.
 // The facts say cliWasPresent false and launcherStatus usable.
 func TestInstallGateReplacesAFileThatIsNoProgram(t *testing.T) {

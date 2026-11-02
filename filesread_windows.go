@@ -8,5 +8,5 @@ import "io/fs"
 const readOpenFlag = 0
 
 // isNullDevice is false on Windows. 5fd08069 refuses NUL in each spelling that
-// was measured (Windows VM).
+// was measured on Windows.
 func isNullDevice(fs.FileInfo) bool { return false }

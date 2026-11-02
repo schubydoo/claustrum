@@ -55,10 +55,9 @@ import (
 // ACKNOWLEDGED LIMITATIONS. The list is not complete. The compare is on text,
 // so each other spelling that the system resolves to the home folder passes it
 // too. On Windows a path with the `\\?\` prefix and the short 8.3 name of home
-// pass it (Windows VM, the test binary). Two callers add a compare by identity for the folder that they delete:
-// -install (folderHoldsHome) and the wipe of files.extract_tar
-// (destEntryHoldsHome, for the folder at the last name of destDir). The other
-// callers have the text compare alone.
+// pass it (Windows, the test binary). Two callers add a compare by identity for the folder that they delete:
+// -install (folderHoldsHome) and the wipe of files.extract_tar (destEntryHoldsHome, for the folder at the last
+// name of destDir). The other callers have the text compare alone.
 //
 //  1. Symlinks are not resolved. A path that reaches home through a symlink is
 //     accepted. Closing it would mean an EvalSymlinks on every request, whose
@@ -87,14 +86,14 @@ func wipesHomeDir(p string) bool {
 	// no such guard for "..". Measured: unguarded, that spelling really does
 	// delete the home directory. Raised in review on #231.
 	//
-	// filepath.Abs resolves against os.Getwd(), which is exactly the root
+	// filepath.Abs resolves against os.Getwd, which is exactly the root
 	// os.RemoveAll will use, so the guard judges the path the delete actually
 	// hits. files.extract_tar sends an absolute path here. On Windows
 	// filepath.Abs still resolves such a path: a dot or a space after a name
-	// goes, so home with a dot after it is refused here (Windows VM, the test
-	// binary). A path with the `\\?\` prefix stays as it is.
-	// If Getwd fails the path stays relative and the guard fails open, matching
-	// the unresolvable-home branch above.
+	// goes, so home with a dot after it is refused here (Windows, the test
+	// binary). A path with the `\\?\` prefix stays as it is. If Getwd fails the
+	// path stays relative and the guard fails open, matching the
+	// unresolvable-home branch above.
 	if abs, err := filepath.Abs(p); err == nil {
 		p = abs
 	}

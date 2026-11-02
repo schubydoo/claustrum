@@ -170,7 +170,7 @@ func TestOversizeRequestLogsScannerError(t *testing.T) {
 	}
 }
 
-// The counterpart: sc.Err() is nil on a clean EOF, so an ordinary disconnect
+// The counterpart: sc.Err is nil on a clean EOF, so an ordinary disconnect
 // stays as quiet as it was before the check existed.
 func TestCleanDisconnectLogsNoScannerError(t *testing.T) {
 	out := serveConnOnPipe(t, func(cli net.Conn) { showTokenOn(t, cli) })
@@ -189,7 +189,7 @@ func TestCleanDisconnectLogsNoScannerError(t *testing.T) {
 // DAEMON closes the connection — which closeAll does to every client on the
 // graceful-shutdown path — the pending read fails with net.ErrClosed. Measured
 // on a server.shutdown with two connections open, the reference's log carries no
-// scanner-error line; an unfiltered sc.Err() check made claustrum emit one per
+// scanner-error line; an unfiltered sc.Err check made claustrum emit one per
 // connected client. It needs a real socket, because a net.Pipe close reports
 // io.ErrClosedPipe instead.
 func TestServerInitiatedCloseLogsNoScannerError(t *testing.T) {

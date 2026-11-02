@@ -21,12 +21,11 @@ import (
 	"time"
 )
 
-// Tests for the rules of the 89cb6289 -install measurement (Linux, macOS and
-// Windows VMs). They cover the 30 s and 120 s bounds of the direct
-// `--version` run and the disk state after a stop. They also cover the order of
-// the steps of a first install and the default cli folder. The stand-in CLI is this test binary in the "cli-stub"
-// helper mode (helperproc_test.go). No test waits for a production bound: each
-// one shrinks cliRunBound and cliFirstRunBound.
+// Tests for the rules of the 89cb6289 -install measurement (measured on Linux, macOS and Windows). They cover the
+// 30 s and 120 s bounds of the direct `--version` run and the disk state after a stop. They also cover the order
+// of the steps of a first install and the default cli folder. The stand-in CLI is this test binary in the
+// "cli-stub" helper mode (helperproc_test.go). No test waits for a production bound: each one shrinks cliRunBound
+// and cliFirstRunBound.
 
 // stubFixture is one cell: a root folder, a cli folder in it and the stub log.
 type stubFixture struct {
@@ -131,7 +130,7 @@ func (f *stubFixture) stubBlob(t *testing.T) string {
 // stubOldVersions are the four older CLI files of a cell, oldest first.
 var stubOldVersions = []string{"1.0.0", "1.1.0", "1.2.0", "1.3.0"}
 
-// litter fills the cli folder as the VM cells do. It makes an old pair of swept
+// litter fills the cli folder as the measured cases do. It makes an old pair of swept
 // names (11 minutes old), a new pair (fresh) and four old versions.
 func (f *stubFixture) litter(t *testing.T) {
 	t.Helper()
@@ -275,11 +274,11 @@ func factsHead(t *testing.T, cliPath string) string {
 // stoppedTail is the end of the facts line of a stopped direct run.
 const stoppedTail = `false,"cliError":"cli unresponsive: the installed Claude Code binary started but did not answer --version within 30s (120s for a first run) and was stopped; the host is not letting it run (endpoint security software or a stalled network home are the usual causes)","cliUnresponsive":true`
 
-// Rows B04, B05, B10, B15. A present CLI that does not answer
-// is stopped at the cache-hit bound. The whole stdout is one facts line with
-// cliWasPresent false, the fixed text and cliUnresponsive. Then only the old
-// swept pair is gone. The CLI, the fresh pair, the old versions and the -cli-zst
-// blob all stay, and -cli-keep prunes nothing.
+// Measured. A present CLI that does not answer is stopped at the cache-hit
+// bound. The whole stdout is one facts line with cliWasPresent false, the fixed
+// text and cliUnresponsive. Then only the old swept pair is gone. The CLI, the
+// fresh pair, the old versions and the -cli-zst blob all stay, and -cli-keep
+// prunes nothing.
 func TestInstallStopsAPresentCLIAtTheCacheHitBound(t *testing.T) {
 	f := newStubFixture(t)
 	f.litter(t)
@@ -304,7 +303,7 @@ func TestInstallStopsAPresentCLIAtTheCacheHitBound(t *testing.T) {
 	}
 }
 
-// Row B11. A stopped cache hit sends no request to the -cli-url server.
+// Measured. A stopped cache hit sends no request to the -cli-url server.
 func TestInstallStoppedCacheHitDownloadsNothing(t *testing.T) {
 	f := newStubFixture(t)
 	placeStub(t, f.cli)
@@ -326,8 +325,8 @@ func TestInstallStoppedCacheHitDownloadsNothing(t *testing.T) {
 	}
 }
 
-// The passing side (row B03). A present CLI that answers under the bound is
-// present, and a good cache hit sweeps nothing.
+// The passing side (measured). A present CLI that answers under the bound
+// is present, and a good cache hit sweeps nothing.
 func TestInstallPresentCLIUnderTheBoundIsPresent(t *testing.T) {
 	f := newStubFixture(t)
 	f.litter(t)
@@ -342,9 +341,9 @@ func TestInstallPresentCLIUnderTheBoundIsPresent(t *testing.T) {
 	f.wantNames(t, "B03", append(oldVersionFiles(), ".fetch-12", ".fetch-11", "1.0.8.zst", "1.0.9.zst", filepath.Base(f.cli))...)
 }
 
-// Rows F04, F05, F15. The two bounds are two values. A CLI that answers
-// between them passes right after its install and is stopped on the cache hit of
-// the next run.
+// Measured. The two bounds are two values. A CLI that answers between them
+// passes right after its install and is stopped on the cache hit of the next
+// run.
 func TestInstallFirstRunHasItsOwnBound(t *testing.T) {
 	f := newStubFixture(t)
 	stubDelay(t, 2*time.Second)
@@ -364,10 +363,9 @@ func TestInstallFirstRunHasItsOwnBound(t *testing.T) {
 	}
 }
 
-// Rows F05, F07, F15. A new CLI that does not answer is stopped
-// at the first-run bound, with the same text. The new CLI stays at its final name,
-// the -cli-zst blob is consumed and the old swept pair is gone. Only the prune
-// before the fetch ran.
+// Measured. A new CLI that does not answer is stopped at the first-run bound, with
+// the same text. The new CLI stays at its final name, the -cli-zst blob is
+// consumed and the old swept pair is gone. Only the prune before the fetch ran.
 func TestInstallStopsANewCLIAtTheFirstRunBound(t *testing.T) {
 	f := newStubFixture(t)
 	f.litter(t)
@@ -406,9 +404,9 @@ func newNoPolicyGateFixture(t *testing.T) *stubFixture {
 	return f
 }
 
-// Rows L02, L07. With the gate set and no policy the CLI runs directly,
-// under the direct bounds and with the direct text. launcherStatus none is the
-// last key, and the CLI keeps the gate variable.
+// Measured. With the gate set and no policy the CLI runs directly, under the
+// direct bounds and with the direct text. launcherStatus none is the last key,
+// and the CLI keeps the gate variable.
 func TestInstallGateWithoutPolicyUsesTheDirectBounds(t *testing.T) {
 	g := newNoPolicyGateFixture(t)
 	g.litter(t)
@@ -441,9 +439,9 @@ func TestInstallGateWithoutPolicyUsesTheDirectBounds(t *testing.T) {
 	g2.wantNames(t, "L07", newestOldVersion(), ".fetch-12", "1.0.8.zst", filepath.Base(g2.cli))
 }
 
-// Row F14. A file that does not run sits at the final name, and the blob
-// holds a slow CLI. The run of the new CLI gets the first-run bound. The class of
-// the bound follows the install in this run, not a file that was there before.
+// Measured. A file that does not run sits at the final name, and the blob holds a
+// slow CLI. The run of the new CLI gets the first-run bound. The class of the
+// bound follows the install in this run, not a file that was there before.
 func TestInstallOverAFailingFileUsesTheFirstRunBound(t *testing.T) {
 	f := newStubFixture(t)
 	if err := os.WriteFile(f.cli, []byte("not a cli"), 0o755); err != nil {
@@ -462,11 +460,11 @@ func TestInstallOverAFailingFileUsesTheFirstRunBound(t *testing.T) {
 }
 
 // The clock of the bound starts before the process start call. Measured
-// on a Windows VM against 89cb6289: the wall time of a stopped run is 30.01 to
-// 30.06 s whatever the start delay of the CLI is. The seam makes the start call
-// take 3 s. With a 4 s bound the stop comes about 4 s after the call, not 7 s.
-// The real start of the stub counts toward the bound too, so the window leaves
-// 2.9 s for it and for the stop.
+// on Windows against 89cb6289: the wall time of a stopped run is 30.01 to 30.06
+// s whatever the start delay of the CLI is. The seam makes the start call take
+// 3 s. With a 4 s bound the stop comes about 4 s after the call, not 7 s. The
+// real start of the stub counts toward the bound too, so the window leaves 2.9
+// s for it and for the stop.
 func TestRunCLIVersionClockStartsBeforeTheStartCall(t *testing.T) {
 	f := newStubFixture(t)
 	placeStub(t, f.cli)
@@ -492,9 +490,9 @@ func TestRunCLIVersionClockStartsBeforeTheStartCall(t *testing.T) {
 
 // claustrum does not close its idle connections after the download, so the
 // connection stays open after the body until the transport's 90 s idle limit.
-// On a macOS VM 89cb6289 and claustrum both close it 90.0 to 90.1 s after the
-// last body byte (cells F08b, L08b, L09b). The CLI of this test runs for 1 s, so
-// the test server sees no closed connection until the install step has returned.
+// On macOS 89cb6289 and claustrum both close it 90.0 to 90.1 s after the last
+// body byte (measured). The CLI of this test runs for 1 s, so the test server
+// sees no closed connection until the install step has returned.
 func TestInstallKeepsTheDownloadConnectionOpenDuringTheRun(t *testing.T) {
 	f := newStubFixture(t)
 	stubDelay(t, time.Second)
@@ -531,10 +529,10 @@ func TestInstallKeepsTheDownloadConnectionOpenDuringTheRun(t *testing.T) {
 
 // The home guard of the tree delete at the final name (D2). The reference removes
 // a folder at <cli-dir>/<version> as a tree, also when it is the home folder
-// (cell H1) or contains it (cell H5). claustrum refuses both: the folder is not
-// removed, the blob stays and no CLI runs. With the home folder elsewhere the
-// same folder is replaced, as before (cell H3). The cell names are the Linux
-// ones. macOS and Windows have their own cells.
+// (measured) or contains it. claustrum refuses both: the folder is not removed,
+// the blob stays and no CLI runs. With the home folder elsewhere the same folder
+// is replaced, as before (measured). The cell names are the Linux ones. macOS and
+// Windows have their own cells.
 //
 // SAFETY: every path is under t.TempDir, and the home variable names a fixture
 // folder there. Without the guard the test deletes only that fixture.
@@ -613,11 +611,11 @@ func TestInstallRefusesToReplaceTheHomeFolder(t *testing.T) {
 	}
 }
 
-// Row F13. A download before the run is outside the bound, so a download
-// that takes longer than the bound does not use it up. The bound leaves the
-// first start of the new stub 2.5 s on Linux. macOS gets 5.5 s, because a first
-// start is slow on a loaded macOS runner. Windows gets 9.5 s: a Windows runner
-// took more than 4.5 s.
+// Measured. A download before the run is outside the bound, so a download that
+// takes longer than the bound does not use it up. The bound leaves the first
+// start of the new stub 2.5 s on Linux. macOS gets 5.5 s, because a first start
+// is slow on a loaded macOS runner. Windows gets 9.5 s: a Windows runner took
+// more than 4.5 s.
 func TestInstallDownloadTimeIsOutsideTheBound(t *testing.T) {
 	f := newStubFixture(t)
 	stubDelay(t, 100*time.Millisecond)
@@ -654,7 +652,7 @@ func TestInstallDownloadTimeIsOutsideTheBound(t *testing.T) {
 	}
 }
 
-// Row B14. A CLI that exits 0 and leaves a process that holds its stdout
+// Measured. A CLI that exits 0 and leaves a process that holds its stdout
 // and stderr answers at once. The run waits for the CLI, not for its output.
 func TestInstallDoesNotWaitForAHolderOfTheCLIOutput(t *testing.T) {
 	f := newStubFixture(t)
@@ -691,10 +689,10 @@ func killStubChild(pidFile string) {
 	}
 }
 
-// Rows F01, F02. With nothing at the final name, the new CLI
-// runs at its final path. At that run its folder holds the CLI, the fresh pair
-// and the old versions. It holds no `.fetch-` temp of this install, no download
-// blob and no old swept pair. The prune follows the good run.
+// Measured. With nothing at the final name, the new CLI runs at its final path.
+// At that run its folder holds the CLI, the fresh pair and the old versions. It
+// holds no `.fetch-` temp of this install, no download blob and no old swept
+// pair. The prune follows the good run.
 func TestInstallNewCLIRunsAtItsFinalName(t *testing.T) {
 	zst := stubZst(t)
 	sum := sha256.Sum256(zst)
@@ -734,9 +732,9 @@ func TestInstallNewCLIRunsAtItsFinalName(t *testing.T) {
 	}
 }
 
-// Rows F12, G05. A new CLI that exits non-zero is at its final name when
-// it runs, and it is gone after the run. The text names the final path. The blob
-// is consumed and the old swept pair is gone. Only the prune before the fetch ran.
+// Measured. A new CLI that exits non-zero is at its final name when it runs, and
+// it is gone after the run. The text names the final path. The blob is consumed
+// and the old swept pair is gone. Only the prune before the fetch ran.
 func TestInstallRemovesANewCLIThatDoesNotRun(t *testing.T) {
 	f := newStubFixture(t)
 	f.litter(t)
@@ -840,10 +838,10 @@ func TestInstallSweepsOnceBeforeTheRun(t *testing.T) {
 	f.wantNames(t, "one sweep", ".fetch-13", filepath.Base(f.cli))
 }
 
-// Rows E01, B12. A cache miss with no source answers "missing" and still
-// sweeps: the old swept pair goes, and the fresh pair stays. The prune before
-// the fetch keeps the newest old version. The same holds when a file that does
-// not run sits at the final name.
+// Measured. A cache miss with no source answers "missing" and still sweeps:
+// the old swept pair goes, and the fresh pair stays. The prune before the
+// fetch keeps the newest old version. The same holds when a file that does not
+// run sits at the final name.
 func TestInstallSweepsAfterAnAttemptWithNoSource(t *testing.T) {
 	for _, row := range []string{"E01", "B12"} {
 		t.Run(row, func(t *testing.T) {
@@ -866,11 +864,10 @@ func TestInstallSweepsAfterAnAttemptWithNoSource(t *testing.T) {
 	}
 }
 
-// An occupied final name (rows E11, E11b, F14). What is at
-// the final name goes before the new CLI runs. A folder there is removed with
-// the file in it, and a file there is replaced. At its --version run the new CLI
-// is at the final path: its argv[0] is that path, and its folder holds the CLI
-// file only.
+// An occupied final name (measured). What is at the final name goes before the
+// new CLI runs. A folder there is removed with the file in it, and a file there
+// is replaced. At its --version run the new CLI is at the final path: its
+// argv[0] is that path, and its folder holds the CLI file only.
 func TestInstallClearsTheFinalNameBeforeTheNewCLIRuns(t *testing.T) {
 	for _, shape := range []string{"a folder (E11)", "a file that does not run (F14)"} {
 		t.Run(shape, func(t *testing.T) {
@@ -1018,7 +1015,7 @@ func TestEnsureCLIReportsAVanishedStagingFileAtAnEmptyFinalName(t *testing.T) {
 	}
 }
 
-// Row F08. A stopped -cli-url first install prints cliUnresponsive before
+// Measured. A stopped -cli-url first install prints cliUnresponsive before
 // fetch. The download blob is gone before the run, and the new CLI stays.
 func TestInstallStoppedDownloadPutsFetchAfterCliUnresponsive(t *testing.T) {
 	f := newStubFixture(t)
@@ -1057,9 +1054,9 @@ func mustLogLine(t *testing.T, f *stubFixture, prefix string) string {
 	return l
 }
 
-// Rows H01, H03, H05. With -cli-version and no -cli-dir, or an empty one,
-// the cli folder is <home>/.claude/remote/ccd-cli. A run with no source answers
-// "missing" with that cliPath and makes the folder chain. A blob installs there.
+// Measured. With -cli-version and no -cli-dir, or an empty one, the cli folder
+// is <home>/.claude/remote/ccd-cli. A run with no source answers "missing" with
+// that cliPath and makes the folder chain. A blob installs there.
 func TestInstallDefaultCLIDir(t *testing.T) {
 	f := newStubFixture(t)
 	home := filepath.Join(f.root, "home")
@@ -1124,7 +1121,7 @@ func TestInstallDefaultCLIDirKeepsTheVersionGuard(t *testing.T) {
 	}
 }
 
-// Row H06. With no -cli-version the cliPath is empty, nothing runs and no
+// Measured. With no -cli-version the cliPath is empty, nothing runs and no
 // folder is made, with or without -cli-dir. The default folder does not apply.
 func TestInstallWithoutVersionMakesNoFolder(t *testing.T) {
 	f := newStubFixture(t)
@@ -1150,7 +1147,7 @@ func TestInstallWithoutVersionMakesNoFolder(t *testing.T) {
 	}
 }
 
-// Row E10. A cli folder that cannot be made answers an empty cliPath with
+// Measured. A cli folder that cannot be made answers an empty cliPath with
 // the "mkdir cli dir: " text. The blob stays.
 func TestInstallAnswersAnEmptyCliPathWhenTheFolderCannotBeMade(t *testing.T) {
 	f := newStubFixture(t)
@@ -1172,11 +1169,11 @@ func TestInstallAnswersAnEmptyCliPathWhenTheFolderCannotBeMade(t *testing.T) {
 	}
 }
 
-// The Windows name rule (rows W02 to W07, E11a, E11b), run with the suffix seam so
-// that it runs on every system. The CLI file is <version>.exe. Only that name
-// counts as present. A version that ends in ".exe" gets the suffix too. The prune
-// counts only <version>.exe files (cell W3 of 5fd08069). A folder at the bare
-// name stays, and a folder at the .exe name is replaced.
+// The Windows name rule (measured), run with the suffix seam so that it runs on
+// every system. The CLI file is <version>.exe. Only that name counts as present. A
+// version that ends in ".exe" gets the suffix too. The prune counts only
+// <version>.exe files (`5fd08069`, measured). A folder at the bare name stays, and
+// a folder at the .exe name is replaced.
 func TestInstallExeNameRule(t *testing.T) {
 	old := cliExeSuffix
 	cliExeSuffix = ".exe"
