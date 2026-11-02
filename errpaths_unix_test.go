@@ -40,7 +40,8 @@ func TestFilesReadUnreadableFile(t *testing.T) {
 // The open of files.read comes before the directory test and before the size
 // test. A directory of mode 0000 answers the open error, not "path is a
 // directory". A file of mode 0000 over maxBytes answers the open error, not
-// "file exceeds maxBytes". 5fd08069 answers the same (Linux and macOS VMs).
+// "file exceeds maxBytes". 5fd08069 answers the same (measured on Linux and
+// macOS).
 func TestFilesReadOpenErrorComesBeforeKindAndSize(t *testing.T) {
 	skipIfRoot(t)
 	root := t.TempDir()

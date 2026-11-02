@@ -17,7 +17,7 @@ import (
 
 // The login-shell SSH agent hand-off (reference f6010b97). Every value below
 // is reference behavior, so it is parity and always on, not a tunable. Each was
-// measured on macOS or Linux VMs, side by side with the reference unless noted:
+// measured on macOS or Linux, side by side with the reference unless noted:
 //
 //	agentProbeTimeout   4s    a login shell that does not exit fails at 4.0-4.2 s
 //	agentProbeWaitDelay 0.5s  a grandchild holding stdout after a good line

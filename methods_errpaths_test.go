@@ -120,8 +120,8 @@ func TestGitStatusCleanRepo(t *testing.T) {
 //     mutant's fresh index copy is unambiguously newer (no sub-second tie).
 //
 // Cross-platform (no build tag): only os/filepath/time and the in-process harness — no
-// POSIX shell, /bin path, symlink or geteuid. The osparity id92 fixture (scratch/osparity)
-// remains the cross-binary oracle, run at each pin bump.
+// POSIX shell, /bin path, symlink or geteuid. A separate cross-binary check runs at
+// each pin bump.
 func TestGitStatusDetectsSameSizeModification(t *testing.T) {
 	requireGit(t)
 	dir := t.TempDir()
@@ -182,7 +182,7 @@ func TestGitStatusDetectsSameSizeModification(t *testing.T) {
 // untracked directory is listed individually ("?? sub/u.txt") rather than as the
 // directory ("?? sub/"). Plain `git status --porcelain` reports the directory, so
 // this is a wire change the frame battery (top-level untracked only) did not
-// cover. Measured against the reference on an ephemeral VM.
+// cover. Measured against the reference.
 func TestGitStatusUntrackedSubdirListsFiles(t *testing.T) {
 	requireGit(t)
 	dir := t.TempDir()

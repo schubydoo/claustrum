@@ -12,7 +12,7 @@ import (
 )
 
 // errnoCantResolve is error 1921, the answer of a link loop or a chain over the
-// limit (build 683cc6a9, Windows VM).
+// limit (build 683cc6a9, Windows).
 const errnoCantResolve syscall.Errno = 1921
 
 func isLinkLoopErrno(en syscall.Errno) bool { return en == errnoCantResolve }

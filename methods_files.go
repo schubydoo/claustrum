@@ -43,8 +43,7 @@ func (s *server) handleFiles(req *request) response {
 
 // pathParams holds the one member that files.stat, files.list and
 // files.validate read. A maxBytes member of any type is ignored there, as on
-// 5fd08069 (cells F1 to F3 of round task015-01, Linux VM, and F1 on macOS and
-// Windows VMs).
+// 5fd08069 (measured on Linux, and one type on macOS and Windows).
 type pathParams struct {
 	Path string `json:"path"`
 }
@@ -64,7 +63,7 @@ type listParams struct {
 func (p *listParams) expandPaths() { p.Path = expandPath(p.Path) }
 
 // fileReadParams holds the members that files.read reads. A wrong type there is
-// -32602 "Invalid params" (cell F4).
+// -32602 "Invalid params" (measured).
 type fileReadParams struct {
 	Path     string `json:"path"`
 	MaxBytes int64  `json:"maxBytes"`
@@ -164,13 +163,11 @@ func filesList(req *request) response {
 }
 
 // filesRead opens the path first and tests the kind of the open file after it.
-// 5fd08069 gives the same answers in the same order (Linux, macOS and Windows
-// VMs): a path that cannot be
-// opened keeps its `open <path>: ...` text. A FIFO writer that waits in its
-// open returns at the request (Linux and macOS VMs). A file that is not regular and not a directory
-// gets -32602 "files.read: not a regular file". On Linux and macOS the null
-// device itself reads as empty content (isNullDevice). The open does not wait
-// for a FIFO writer (readOpenFlag).
+// 5fd08069 gives the same answers in the same order (measured on Linux, macOS and Windows): a path
+// that cannot be opened keeps its `open <path>: ...` text. A FIFO writer that waits in its open
+// returns at the request (measured on Linux and macOS). A file that is not regular and not a
+// directory gets -32602 "files.read: not a regular file". On Linux and macOS the null device itself
+// reads as empty content (isNullDevice). The open does not wait for a FIFO writer (readOpenFlag).
 func filesRead(req *request) response {
 	var p fileReadParams
 	if bad := bindParams(req, &p); bad != nil {
@@ -316,7 +313,7 @@ func errDestDirHoldsHome(destDir string) error {
 // the spelling of the path does not matter. On Linux and macOS that covers a
 // path through a link above the last name. On Windows it covers a path with
 // the `\\?\` prefix and the short 8.3 name of home, which the text compare of
-// wipesHomeDir lets pass (Windows VM, the test binary).
+// wipesHomeDir lets pass (Windows, the test binary).
 //
 // A link or a junction at the name is not followed: the wipe removes the link
 // itself, and its target stays.
@@ -359,17 +356,18 @@ var errDestViewsDiffer = errors.New("is not the entry that the path names")
 // itself, in both views. A path view that cannot be read counts as no agreement.
 //
 // A name that the handle cannot read gets the text of a remove of that name
-// through the handle, and no remove runs. On a Windows VM 5fd08069 answers
-// "clean destDir: RemoveAll NUL: path escapes from parent" for the last name
-// NUL, and "RemoveAll dest?: The filename, directory name, or volume label
-// syntax is incorrect." for dest?. For a last name of dots and spaces alone,
-// such as "...", it answers "RemoveAll ...: invalid argument". destDir does
-// not change there.
+// through the handle, and no remove runs. On Windows 5fd08069 answers "clean
+// destDir: RemoveAll NUL: path escapes from parent" for the last name NUL,
+// and "RemoveAll dest?: The filename, directory name, or volume label syntax
+// is incorrect." for dest?. For a last name of dots and spaces alone, such
+// as "...", it answers "RemoveAll ...: invalid argument". destDir does not
+// change there.
 //
 // A parent folder that the daemon opened and cannot search gives a permission
 // error at that lstat. The answer is then the text of a parent that cannot be
 // opened. 5fd08069 answers "open parent: open <parent>: permission denied" for
-// a parent of mode 0400 or 0600, and changes nothing (Linux and macOS VMs).
+// a parent of mode 0400 or 0600, and changes nothing (measured on Linux and
+// macOS).
 //
 // The first result is the entry at the name in the handle, or nil if the handle
 // has none or cannot read it.
@@ -537,23 +535,22 @@ func extractTarGz(archivePath, destDir string) (n int, err error) {
 	}
 	defer gz.Close()
 	// The preparation of destDir answers as 5fd08069 does in each measured row.
-	// The order of its failure texts rests on Linux and macOS VM rows. The
-	// steps below are claustrum's. Each step runs
-	// only AFTER the gzip header validates above, so a missing archive or a file
-	// that is not gzip leaves an old destDir as it is (89cb6289 and 5fd08069,
-	// Linux, macOS and Windows VMs). filesExtractTar ran the root test and
-	// wipesHomeDir on destDir before this function, so no step runs for a
-	// destDir that they refuse.
+	// The order of its failure texts rests on Linux and macOS rows. The steps
+	// below are claustrum's. Each step runs only AFTER the gzip header validates
+	// above, so a missing archive or a file that is not gzip leaves an old
+	// destDir as it is (`89cb6289`, `5fd08069`, measured on Linux, macOS and
+	// Windows). filesExtractTar ran the root test and wipesHomeDir on destDir
+	// before this function, so no step runs for a destDir that they refuse.
 	//
 	//  1. The missing folders above destDir are made, each with mode 0700 less
 	//     the umask. A failure answers "mkdir parent: mkdir <path>: <reason>",
-	//     with the whole path of the folder that fails (89cb6289 and 5fd08069,
-	//     Linux and macOS VMs). The folders made before it stay (from the
-	//     code). The older text "mkdir parent
-	//     <entry>: " in the entry loop has the name of an archive entry.
+	//     with the whole path of the folder that fails (`89cb6289`,
+	//     `5fd08069`, measured on Linux and macOS). The folders made before it
+	//     stay (from the code). The older text "mkdir parent <entry>: " in the
+	//     entry loop has the name of an archive entry.
 	//  2. The parent folder of destDir is opened as a handle. A failure answers
 	//     "open parent: open <parent>: <reason>", and destDir stays as it is
-	//     (parent modes 0300, 0100 and 0000, Linux and macOS VMs).
+	//     (parent modes 0300, 0100 and 0000, Linux and macOS).
 	//  3. An old destDir that is a real folder goes to prepareOldDestDir. It
 	//     answers alreadyComplete for a complete plugin folder, or it removes
 	//     .synced first (683cc6a9). It runs after the gzip test (claustrum's own,
@@ -563,10 +560,11 @@ func extractTarGz(archivePath, destDir string) (n int, err error) {
 	//     execute).
 	//  4. The wipe removes the last name of destDir through that handle, as a
 	//     tree. A failure answers "clean destDir: RemoveAll <name>: <reason>"
-	//     (Linux, macOS and Windows VMs). The entries that can go are gone then.
+	//     (measured on Linux, macOS and Windows). The entries that can go are
+	//     gone then.
 	//  5. A new folder with that name is made through the handle, with mode 0700.
 	//     A failure answers "mkdir destDir: mkdirat <name>: <reason>" (parent
-	//     mode 0500, Linux and macOS VMs).
+	//     mode 0500, Linux and macOS).
 	//  6. destDir is opened through the handle and tested (below).
 	//
 	// filesExtractTar refused a file system root, so the cleaned destDir has a
@@ -594,7 +592,7 @@ func extractTarGz(archivePath, destDir string) (n int, err error) {
 	// are compared before the wipe. If they differ, nothing is deleted, and no
 	// destDir is made. The folders above destDir from the first step stay. This
 	// test and its text are claustrum's own. Both reference builds extract
-	// there (Windows VM).
+	// there (measured on Windows).
 	//
 	// The entry at the name gets the home guard by identity first. A folder that
 	// is the home folder, or a parent folder of it, gets the home refusal of
@@ -648,14 +646,13 @@ func extractTarGz(archivePath, destDir string) (n int, err error) {
 	// path.
 	//
 	// A destDir that cannot be searched gets the answer of 5fd08069 here, before
-	// the first entry. Cell 2a1-modes-u0100 (Linux VM) and cell 2a-modes-u100
-	// (macOS VM) run the daemon with umask 0100, so destDir gets mode 0600.
-	// 5fd08069 answers there:
+	// the first entry. Measurements on Linux and macOS run the daemon with umask
+	// 0100, so destDir gets mode 0600. 5fd08069 answers there:
 	//
 	//	open destDir: "dest" could not be examined (statat .: permission denied)
 	//
 	// With a daemon umask of 0400 the new destDir has mode 0300, and 5fd08069
-	// answers (Linux and macOS VMs):
+	// answers (measured on Linux and macOS):
 	//
 	//	open destDir: openat dest: permission denied
 	destRoot, err := parentRoot.OpenRoot(destName)
@@ -684,10 +681,10 @@ func extractTarGz(archivePath, destDir string) (n int, err error) {
 	}
 	// After a failure from here on, a .synced that appeared in destDir during the
 	// request goes before the reply, as a tree, through the handle of destDir.
-	// 683cc6a9 removes it after an unsafe path (Linux, macOS and Windows VMs), a
-	// cut archive and a full disk (Linux VM). Other failures are claustrum's own.
-	// A failure before this point removes nothing here (claustrum's own, not
-	// measured).
+	// 683cc6a9 removes it after an unsafe path (measured on Linux, macOS and
+	// Windows), a cut archive and a full disk (measured on Linux). Other failures
+	// are claustrum's own. A failure before this point removes nothing here
+	// (claustrum's own, not measured).
 	defer func() {
 		if err != nil {
 			_ = destRoot.RemoveAll(syncedName)
@@ -726,8 +723,8 @@ func extractTarGz(archivePath, destDir string) (n int, err error) {
 		if err != nil {
 			// 89cb6289 answers "tar read: <text>" with fileCount 0 when the tar reader
 			// cannot read the next entry. For gzip data that is not a tar that is
-			// measured on Linux, macOS and Windows VMs. For a later entry, also after
-			// files were written, it is measured on a Linux VM.
+			// measured on Linux, macOS and Windows. For a later entry, also after
+			// files were written, it is measured on Linux.
 			return 0, fmt.Errorf("tar read: %v", err)
 		}
 		// Reject entries that would escape destDir ("zip slip"). filepath.Join
@@ -760,26 +757,27 @@ func extractTarGz(archivePath, destDir string) (n int, err error) {
 		// A name that leaves destDir and comes back is unsafe too, although it
 		// resolves inside. 5fd08069 answers the same text for `../dest/x.txt`,
 		// `sub/../../dest/y.txt`, the directory entry `../dest/dd/` and
-		// `sub/../../dest` (Linux, macOS and Windows VMs).
-		// 89cb6289 extracts the three first names. On a Windows VM both builds
-		// refuse the names `NUL` and `a:b` with this text.
+		// `sub/../../dest` (measured on Linux, macOS and Windows). 89cb6289
+		// extracts the three first names. On Windows both builds refuse the
+		// names `NUL` and `a:b` with this text.
 		//
 		// The rule is lexical: the name without its leading separators must be a
 		// local path (filepath.IsLocal). `a/../b.txt`, `./c.txt`, `.` and an
 		// absolute name pass, as on 5fd08069. A name of separators alone passes
-		// as the name `.` does. A directory entry `/` succeeds on 5fd08069 (Linux
-		// VM). A file entry `/` gets its `create /: openat .:` text there (Linux
-		// and Windows VMs).
+		// as the name `.` does. A directory entry `/` succeeds on 5fd08069
+		// (measured on Linux). A file entry `/` gets its `create /: openat .:`
+		// text there (measured on Linux and Windows).
 		if !entryNameStaysInside(hdr.Name) {
 			return 0, fmt.Errorf("unsafe path in archive: %s", hdr.Name)
 		}
 		// The modes are owner-only and fixed. A directory is 0700. A file is
 		// 0700 if its archive mode has the execute bit of the owner, and 0600 if
 		// it does not. 5fd08069 gives those modes for the archive modes 0644,
-		// 0600, 0444, 0755, 0700, 0111, 04755, 02755 and 01777 (Linux and macOS
-		// VMs). The modes 0010, 0001, 0011, 0654, 0645, 0610, 0601 and 0674 give
-		// 0600 there, and 0100 and 0744 give 0700 (Linux and macOS VMs). No
-		// setuid, setgid or sticky bit arrives. 89cb6289 gives each file 0600.
+		// 0600, 0444, 0755, 0700, 0111, 04755, 02755 and 01777 (measured on
+		// Linux and macOS). The modes 0010, 0001, 0011, 0654, 0645, 0610, 0601
+		// and 0674 give 0600 there, and 0100 and 0744 give 0700 (measured on
+		// Linux and macOS). No setuid, setgid or sticky bit arrives. 89cb6289
+		// gives each file 0600.
 		//
 		// inDest is the place of the entry below destDir. The zip-slip test above
 		// passed, so inDest is a clean relative path with no ".." part.
@@ -790,8 +788,8 @@ func extractTarGz(archivePath, destDir string) (n int, err error) {
 		// An entry whose top-level name reads as .synced is not unpacked. A file
 		// there still counts in fileCount, and a folder does not. On 683cc6a9 an
 		// archive with 7 regular files, 5 of them skipped, and 8 skipped entries in
-		// all answers fileCount 7 (Linux, macOS and Windows VMs). The order of this
-		// test after the unsafe-path tests and for the other entry types is
+		// all answers fileCount 7 (measured on Linux, macOS and Windows). The order
+		// of this test after the unsafe-path tests and for the other entry types is
 		// claustrum's own, not measured.
 		skip := readsAsSynced(inDest)
 		switch hdr.Typeflag {
@@ -806,8 +804,8 @@ func extractTarGz(archivePath, destDir string) (n int, err error) {
 					// entry is on disk. A file entry `a` and then a directory entry
 					// give on 5fd08069:
 					//
-					//	mkdir a/: mkdirat a: file exists           (Linux, macOS and Windows VMs)
-					//	mkdir a/b/: openat a: not a directory      (Linux and macOS VMs)
+					//	mkdir a/: mkdirat a: file exists           (Linux, macOS and Windows)
+					//	mkdir a/b/: openat a: not a directory      (Linux and macOS)
 					//
 					// 89cb6289 has the prefix and the fileCount 0 too.
 					return 0, fmt.Errorf("mkdir %s: %v", hdr.Name, err)
@@ -823,7 +821,8 @@ func extractTarGz(archivePath, destDir string) (n int, err error) {
 				if err := destRoot.MkdirAll(parent, 0o700); err != nil {
 					// "mkdir parent <entry>: <text>" with fileCount 0, also when an
 					// earlier entry is on disk. A file entry `a` and then an entry
-					// `a/b` give on 5fd08069 (Linux, macOS and Windows VMs):
+					// `a/b` give on 5fd08069 (measured on Linux, macOS and
+					// Windows):
 					//
 					//	mkdir parent a/b: mkdirat a: file exists
 					//
@@ -840,8 +839,8 @@ func extractTarGz(archivePath, destDir string) (n int, err error) {
 			// archive entry. A directory entry `d` and then a file entry `d` give
 			// on 5fd08069:
 			//
-			//	create d: openat d: file exists      (Linux and macOS VMs)
-			//	create d: openat d: is a directory   (Windows VM)
+			//	create d: openat d: file exists      (Linux and macOS)
+			//	create d: openat d: is a directory   (Windows)
 			//
 			// The exclusive create of claustrum through the handle gives both texts.
 			out, err := destRoot.OpenFile(inDest, os.O_CREATE|os.O_EXCL|os.O_WRONLY, perm)
@@ -849,8 +848,9 @@ func extractTarGz(archivePath, destDir string) (n int, err error) {
 				// A second file entry with the name of an earlier one replaces the
 				// file. The new file has the mode of this entry: on 5fd08069 the
 				// modes 0644 and then 0755 give 0700, and 0755 and then 0644 give
-				// 0600 (Linux and macOS VMs). It has the name of this entry too:
-				// `a.txt` and then `A.TXT` leave `A.TXT` on 5fd08069 (Windows VM).
+				// 0600 (measured on Linux and macOS). It has the name of this
+				// entry too: `a.txt` and then `A.TXT` leave `A.TXT` on 5fd08069
+				// (measured on Windows).
 				//
 				// The remove is a plain remove of one name through the handle of
 				// destDir, never a tree. It takes a regular file inside destDir
@@ -871,8 +871,9 @@ func extractTarGz(archivePath, destDir string) (n int, err error) {
 			if err != nil {
 				// 89cb6289 answers "write <entry>: <text>" with fileCount 0 when the
 				// content of a file cannot be copied, for example from an archive
-				// that is cut inside the file (Linux VM). A failed write of the
-				// extracted file takes this arm too, and that case is not measured.
+				// that is cut inside the file (measured on Linux). A failed write of
+				// the extracted file takes this arm too, and that case is not
+				// measured.
 				return 0, fmt.Errorf("write %s: %v", hdr.Name, err)
 			}
 			if maxExtractBytes > 0 && totalWritten > maxExtractBytes {
@@ -899,9 +900,9 @@ func extractTarGz(archivePath, destDir string) (n int, err error) {
 		}
 	}
 	if skipped > 0 {
-		// The text after the prefix is that of 683cc6a9 (Linux and macOS VMs, its
-		// start on a Windows VM). The [Files] prefix, the WARN level and one line
-		// per request are claustrum's own, not measured.
+		// The text after the prefix is that of 683cc6a9 (Linux and macOS, its
+		// start on Windows). The [Files] prefix, the WARN level and one line per
+		// request are claustrum's own, not measured.
 		logWarnf("[Files] extract_tar: %d entries in the archive for %q were not unpacked: their top-level name reads as .synced, which only the helper may write; rename them in the plugin to have them copied", skipped, destName)
 	}
 	if err := writeSyncedMarker(destRoot); err != nil {
@@ -916,21 +917,21 @@ func extractTarGz(archivePath, destDir string) (n int, err error) {
 // wipe. It holds the folder by a handle through the parent handle, and tests
 // that the handle is the entry that the guards judged. A link, a file or a
 // FIFO at the name takes no step here: the wipe removes that entry itself, and
-// the target of a link stays (683cc6a9, Linux VM). An open of a FIFO blocks
-// until a writer comes, so the gate on a real folder also keeps the request
-// from a hang (from the code).
+// the target of a link stays (`683cc6a9`, measured on Linux). An open of a
+// FIFO blocks until a writer comes, so the gate on a real folder also keeps
+// the request from a hang (from the code).
 //
 // A last name of 16 lower-case hex characters with a regular file .synced is
 // a plugin folder that is complete. The answer is true, and nothing is deleted
-// (683cc6a9, Linux, macOS and Windows VMs). Otherwise .synced goes first, as a
-// tree, through the handle. On 683cc6a9 a failure answers "remove destDir's old
-// .synced: RemoveAll .synced: <reason>", and the rest of destDir stays (Linux
-// and macOS VMs).
+// (`683cc6a9`, measured on Linux, macOS and Windows). Otherwise .synced goes
+// first, as a tree, through the handle. On 683cc6a9 a failure answers "remove
+// destDir's old .synced: RemoveAll .synced: <reason>", and the rest of destDir
+// stays (measured on Linux and macOS).
 //
 // A folder that cannot be opened gets one plain remove of its name through the
 // parent handle, so an empty folder goes. If that remove fails too, the answer
 // is "open the old destDir: <reason>" and nothing is wiped (683cc6a9, a folder
-// of mode 0000, Linux and macOS VMs).
+// of mode 0000, Linux and macOS).
 func prepareOldDestDir(parent *os.Root, name string, entry os.FileInfo) (bool, error) {
 	beforeOldDestDirOpen()
 	old, err := parent.OpenRoot(name)
@@ -961,9 +962,9 @@ func prepareOldDestDir(parent *os.Root, name string, entry os.FileInfo) (bool, e
 // readsAsSynced reports whether the top-level name of an archive entry reads as
 // .synced. inDest is the clean place of the entry below destDir. On 683cc6a9
 // `.SYNCED`, `.synced.` and `.synced` with a zero-width joiner read so on every
-// system (Linux, macOS and Windows VMs). The drop of other format characters
-// and of trailing spaces is claustrum's own, not measured. The case fold is
-// ASCII only, so `.ſynced` does not read as .synced (claustrum's own).
+// system (measured on Linux, macOS and Windows). The drop of other format
+// characters and of trailing spaces is claustrum's own, not measured. The case
+// fold is ASCII only, so `.ſynced` does not read as .synced (claustrum's own).
 func readsAsSynced(inDest string) bool {
 	top, _, _ := strings.Cut(inDest, string(filepath.Separator))
 	top = strings.Map(func(r rune) rune {
@@ -993,10 +994,10 @@ func entryNameStaysInside(name string) bool {
 // is not counted in fileCount.
 //
 // Whatever sits at that name goes first, as a tree. After the entries of the
-// archive, 89cb6289 and 5fd08069 leave an empty file there (Linux, macOS and
-// Windows VMs). That holds for a directory entry `.synced/` with files and
-// folders below it, and for a file entry with content. The file has mode 0600
-// (Linux and macOS VMs).
+// archive, 89cb6289 and 5fd08069 leave an empty file there (measured on
+// Linux, macOS and Windows). That holds for a directory entry `.synced/` with
+// files and folders below it, and for a file entry with content. The file has
+// mode 0600 (measured on Linux and macOS).
 //
 // The remove is a recursive delete of the fixed name .synced, and the write is an
 // exclusive create of that name. Both go through the handle of destDir, so neither

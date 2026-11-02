@@ -10,10 +10,10 @@ import (
 	"time"
 )
 
-// The Windows side of the rename of the new CLI (cells W1, W2 and W6 of
-// 5fd08069, Windows VM). Each test holds the target itself with holdOpen, open
-// with no delete sharing. So a rename onto it is denied, as for a running old
-// CLI. No test of this file ran on the host of the build.
+// The Windows side of the rename of the new CLI (`5fd08069`, measured on
+// Windows). Each test holds the target itself with holdOpen, open with no
+// delete sharing. So a rename onto it is denied, as for a running old CLI. No
+// test of this file ran on the host of the build.
 
 // setCLIRenameBound sets cliRenameBound until the test ends.
 func setCLIRenameBound(t *testing.T, d time.Duration) {
@@ -56,9 +56,9 @@ func TestPlaceStagedCLIRetriesADeniedRename(t *testing.T) {
 	}
 }
 
-// A rename that stays denied fails after the bound, with the text of cells W1
-// and W6: "rename: rename <tmp> <cli>: Access is denied.". The staging file
-// goes, and the old file stays.
+// A rename that stays denied fails after the bound, with the text: "rename:
+// rename <tmp> <cli>: Access is denied.". The staging file goes, and the old
+// file stays.
 func TestPlaceStagedCLIFailsAfterTheBound(t *testing.T) {
 	tmp, cli := renameFixture(t, "old", "new")
 	holdOpen(t, cli, false)
@@ -80,7 +80,7 @@ func TestPlaceStagedCLIFailsAfterTheBound(t *testing.T) {
 }
 
 // A denied rename onto a file with the same bytes counts as done, and the
-// staging file goes (cells W2).
+// staging file goes (measured on Windows).
 func TestPlaceStagedCLICountsSameBytesAsDone(t *testing.T) {
 	setCLIRenameBound(t, 20*time.Millisecond)
 	tmp, cli := renameFixture(t, "same", "same")
@@ -93,7 +93,7 @@ func TestPlaceStagedCLICountsSameBytesAsDone(t *testing.T) {
 	}
 }
 
-// A denied rename of an -install keeps the -cli-zst blob (cells W1 and W6).
+// A denied rename of an -install keeps the -cli-zst blob (measured on Windows).
 func TestInstallKeepsTheBlobWhenTheRenameIsDenied(t *testing.T) {
 	setCLIRenameBound(t, 20*time.Millisecond)
 	f := newStubFixture(t)

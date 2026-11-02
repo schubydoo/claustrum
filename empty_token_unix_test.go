@@ -12,8 +12,8 @@ import (
 // Unix-only. The fixture denies the unlink with a POSIX permission bit, and
 // os.Chmod on Windows only toggles the read-only attribute — it does not
 // restrict a directory, so the unlink SUCCEEDS there and the "failed to remove"
-// log never happens. The os.Geteuid() == 0 skip does not help: Geteuid returns
-// -1 on Windows, so it never fires.
+// log never happens. The os.Geteuid() == 0 skip does not help: Geteuid returns -1
+// on Windows, so it never fires.
 //
 // Same reason TestEnsureCLIReportsUnclearablePath and TestEnsureCLIStagingFailure
 // live in install_unix_test.go. The behaviour under test is portable; the way

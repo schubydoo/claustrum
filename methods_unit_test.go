@@ -534,11 +534,11 @@ func TestFilesExtractTarZipSlipShapes(t *testing.T) {
 			// Four levels up from here is still inside root, so the escape is
 			// observable and the litter stays in the temp tree.
 			dest := filepath.Join(root, "a", "b", "c", "d", "sub")
-			// Assert the depth rather than trust the comment above it. Row 2 is
-			// observable only while four ".." from dest stay inside the walked
-			// root; there is exactly one level of slack. Shortening dest must fail
-			// HERE, loudly, rather than silently turning that row back into one
-			// that can never fail.
+			// Assert the depth rather than trust the comment above it. Row 2
+			// is observable only while four ".." from dest stay inside
+			// the walked root; there is exactly one level of slack. Shortening
+			// dest must fail HERE, loudly, rather than silently turning that row
+			// back into one that can never fail.
 			if probe := filepath.Join(dest, "../../../../probe"); !strings.HasPrefix(probe, root+string(os.PathSeparator)) {
 				t.Fatalf("dest %q is too shallow: four levels up reaches %q, outside the walked root %q — "+
 					"the deep-traversal row would be unobservable", dest, probe, root)
@@ -568,11 +568,10 @@ func TestFilesExtractTarZipSlipShapes(t *testing.T) {
 }
 
 // A name that leaves destDir and comes back is unsafe, although it resolves
-// inside. The rows are those of 5fd08069 on Linux, macOS and Windows VMs.
-// 89cb6289 extracts the three other names. For `sub/../../dest` it answers a
-// `create …: is a directory` text. The entry must name the last part of destDir to come back, so destDir is
-// "dest" here as in the cells. The names that stay inside are the controls of the
-// same rounds.
+// inside. The rows are those of 5fd08069 on Linux, macOS and Windows. 89cb6289 extracts the three other
+// names. For `sub/../../dest` it answers a `create …: is a directory` text. The entry must name the last
+// part of destDir to come back, so destDir is "dest" here. The names that stay inside are
+// the controls.
 func TestFilesExtractTarUpThenBackIn(t *testing.T) {
 	file := func(name string) tgzEntry { return tgzEntry{name: name, body: "x\n"} }
 	dir := func(name string) tgzEntry { return tgzEntry{name: name, dir: true} }
@@ -597,14 +596,15 @@ func TestFilesExtractTarUpThenBackIn(t *testing.T) {
 		{"control directory .", []tgzEntry{dir("."), file("c.txt")}, "", 1, []string{"c.txt"}},
 		{"control directory ./", []tgzEntry{dir("./"), file("c.txt")}, "", 1, []string{"c.txt"}},
 		{"control absolute name", []tgzEntry{file("/abs/f.txt")}, "", 1, []string{"abs"}},
-		// Rows of 89cb6289 and 5fd08069 on a Linux VM.
+		// Rows of 89cb6289 and 5fd08069 on Linux.
 		{"absolute name that leaves", []tgzEntry{file("/abs/../../x.txt"), file("c.txt")}, "/abs/../../x.txt", 0, nil},
 		{"absolute name /../y.txt", []tgzEntry{file("/../y.txt"), file("c.txt")}, "/../y.txt", 0, nil},
 		{"control directory /", []tgzEntry{dir("/"), file("c.txt")}, "", 1, []string{"c.txt"}},
 		{"control a/./b/../c.txt", []tgzEntry{file("a/./b/../c.txt")}, "", 1, []string{"a"}},
 	}
 	if runtime.GOOS == "windows" {
-		// 89cb6289 and 5fd08069 answer these rows the same way (Windows VM).
+		// 89cb6289 and 5fd08069 answer these rows the same way (measured on
+		// Windows).
 		rows = append(rows,
 			row{"Windows NUL", []tgzEntry{file("ok.txt"), file("NUL"), file("z.txt")}, "NUL", 0, []string{"ok.txt"}},
 			row{"Windows a:b", []tgzEntry{file("ok.txt"), file("a:b"), file("z.txt")}, "a:b", 0, []string{"ok.txt"}},
@@ -684,7 +684,7 @@ func TestFilesExtractTarMkdirParentPrefix(t *testing.T) {
 // that succeeds ("!ok.txt" sorts before ".", 0x21 < 0x2E, so makeTarGz's sort
 // puts it first) and a second file entry that names destDir itself. 5fd08069
 // answers `create .: openat .: file exists` for a file entry `.` on Linux and
-// macOS VMs, and `create .: openat .: is a directory` on a Windows VM.
+// macOS, and `create .: openat .: is a directory` on Windows.
 //
 // The single-entry fixture above cannot see this: with nothing written first,
 // the partial count IS 0 and both spellings agree.
@@ -1278,8 +1278,8 @@ func TestExtractTarGzMissingArchive(t *testing.T) {
 	}
 }
 
-// extractTarGz: valid gzip wrapping non-tar content causes tr.Next() to return
-// a non-EOF error, which gets the "tar read: " prefix of 89cb6289.
+// extractTarGz: valid gzip wrapping non-tar content causes tr.Next() to return a
+// non-EOF error, which gets the "tar read: " prefix of 89cb6289.
 func TestExtractTarGzCorruptTar(t *testing.T) {
 	archive := filepath.Join(t.TempDir(), "bad.tar.gz")
 	var buf bytes.Buffer
@@ -1356,7 +1356,7 @@ func TestGitWorktreeCreateFailed(t *testing.T) {
 		t.Errorf("worktree_create with existing branch = %s, want worktree_add_failed", got)
 	}
 	// 4534d86 reports the git failure on a single line — it joins git's two stderr
-	// lines with a space, so the wire message carries no newline. (scratch/probe/wtfail)
+	// lines with a space, so the wire message carries no newline (measured).
 	if strings.Contains(got, `\n`) {
 		t.Errorf("worktree_add_failed error carries a newline, want single-line: %s", got)
 	}

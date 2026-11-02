@@ -13,8 +13,8 @@ import (
 // runs over it. The file must be a regular file with an exec bit that starts
 // with "#!" or with an ELF header for this machine. On 5fd08069 the new CLI
 // replaces a file with the text "hello" and an arm64 ELF on amd64. The launcher
-// runs only the new CLI (cells L14a and L14b, Linux VM). The test beyond those
-// two files is claustrum's own.
+// runs only the new CLI (measured on Linux). The test beyond those two files is
+// claustrum's own.
 func cliFileLooksRunnable(path string) bool {
 	fi, err := os.Stat(path)
 	if err != nil || !fi.Mode().IsRegular() || fi.Mode()&0o111 == 0 {

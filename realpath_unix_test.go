@@ -14,7 +14,7 @@ import (
 
 // TestSocketFilesRealpathErrnoFrames pins the -32603 frames of a link loop, a
 // chain over the link limit and a folder with mode 000 (build 683cc6a9, Linux
-// and macOS VMs). The errno comes from the platform.
+// and macOS). The errno comes from the platform.
 func TestSocketFilesRealpathErrnoFrames(t *testing.T) {
 	root := resolveTestRoot(t, t.TempDir())
 	if err := os.Symlink("b", filepath.Join(root, "loop")); err != nil {

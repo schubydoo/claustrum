@@ -104,7 +104,7 @@ func mustPrune(t *testing.T, s *server) pruneResult {
 const siblingOwnID = "aaaaaaaa"
 
 // mkSiblingRunDir builds <base>/run/{own,sib} and returns the base and the sibling's run dir.
-// The root is a short os.MkdirTemp, not t.TempDir(): a t.TempDir path is built from the test
+// The root is a short os.MkdirTemp, not t.TempDir(): a t.TempDir() path is built from the test
 // name, and on macOS that already exceeds sockaddr_un's 104-byte sun_path, so every dial under
 // it fails with EINVAL and the dial-classification arms can never be reached. The socket
 // harness and TestSiblingDaemonAlive use os.MkdirTemp("", "cl") for the same reason.

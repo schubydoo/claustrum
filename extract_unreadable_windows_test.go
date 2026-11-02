@@ -71,7 +71,7 @@ func denyReadAndExecute(t *testing.T, dir string) (restore func()) {
 // TestFilesExtractTarRemovesUnreadableEmptyDestDir: an empty destDir with a deny
 // ACE for read and execute goes, and the archive is unpacked into a new folder.
 // 683cc6a9 answers success with fileCount 1 there, and the new folder has no
-// deny ACE (Windows VM).
+// deny ACE (measured on Windows).
 func TestFilesExtractTarRemovesUnreadableEmptyDestDir(t *testing.T) {
 	s := newTestServer(t)
 	parent := t.TempDir()
@@ -95,7 +95,7 @@ func TestFilesExtractTarRemovesUnreadableEmptyDestDir(t *testing.T) {
 
 // TestFilesExtractTarKeepsUnreadableDestDirWithContent: the same deny ACE on a
 // destDir with content. 683cc6a9 answers the failure below, and the content and
-// the ACE stay (Windows VM).
+// the ACE stay (measured on Windows).
 func TestFilesExtractTarKeepsUnreadableDestDirWithContent(t *testing.T) {
 	s := newTestServer(t)
 	parent := t.TempDir()
@@ -127,7 +127,7 @@ func TestFilesExtractTarKeepsUnreadableDestDirWithContent(t *testing.T) {
 // TestFilesExtractTarRemovesUnreadableFileAtDestDir: a regular file at the name
 // of destDir with the same deny ACE goes, and the archive is unpacked into a new
 // folder. 683cc6a9 answers success with fileCount 1 there, and the new folder has
-// no deny ACE (Windows VM).
+// no deny ACE (measured on Windows).
 func TestFilesExtractTarRemovesUnreadableFileAtDestDir(t *testing.T) {
 	s := newTestServer(t)
 	parent := t.TempDir()
