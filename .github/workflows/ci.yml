@@ -134,7 +134,11 @@ jobs:
     if: ${{ !cancelled() && needs.changes.outputs.go != 'false' }}
     name: test (${{ matrix.os }}${{ matrix.shard && format(', {0}', matrix.shard) || '' }})
     runs-on: ${{ matrix.os }}
-    timeout-minutes: 15 # the windows legs are markedly slower than ubuntu/macos
+    # On Windows the setup and the compile take up to about 3.3 minutes. A hung
+    # test binary there reaches the 12 minute limit at about 15.3 minutes.
+    # So the Windows legs get a job limit of 17 minutes, and the stack of the
+    # hung test prints before the cancel. macOS and Linux keep 15 minutes.
+    timeout-minutes: ${{ matrix.os == 'windows-latest' && 17 || 15 }}
     strategy:
       fail-fast: false
       # Windows runs the suite in four shards, because the top-level tests run
@@ -283,7 +287,8 @@ jobs:
         # go build ignores a test flag in GOFLAGS.
         env:
           GOFLAGS: ${{ matrix.select }}
-        # The time limit is explicit, and 3 minutes below the 15 minutes of the job.
+        # The time limit is explicit, and 3 minutes below the 15 minutes of a macOS
+        # or Linux job (5 minutes below the 17 of a Windows job).
         # The default of go test is 10 minutes. Plain go test ends a run past it
         # with a panic and marks no test as failed (seen on a Linux host, not in CI).
         run: gotestsum --format standard-verbose --junitfile junit.xml -- -race -count=1 -timeout 12m ./...
