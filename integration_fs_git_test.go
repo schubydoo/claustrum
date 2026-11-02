@@ -425,12 +425,12 @@ func TestSocketListPermissionDeniedErrorText(t *testing.T) {
 func TestSocketTildeExpansion(t *testing.T) {
 	requireGit(t)
 	if runtime.GOOS == "windows" {
-		// Windows IS measured now (see expandpath.go): same tilde-only cleaning,
+		// Windows IS measured now (see internal/pathcanon/expandpath.go): same tilde-only cleaning,
 		// in Windows separator terms, with "~\" not a tilde form at all. What
 		// keeps this golden off Windows is the SPELLING — the reference rewrites
 		// "/" to "\" there, so every echoed path in the fixture would differ by
 		// separator. Pinning that needs its own golden, not a skip removal.
-		t.Skip("this golden pins the Unix spelling; Windows is pinned in expandpath.go")
+		t.Skip("this golden pins the Unix spelling; Windows is pinned in internal/pathcanon/expandpath.go")
 	}
 	// The temp root IS the home directory, so one token normalizes everything.
 	home := resolveTestRoot(t, t.TempDir())

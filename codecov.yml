@@ -276,11 +276,15 @@ component_management:
         # the daemon's own read of a .git file, a commondir file and a gitdir record.
         - gitplainfile_unix.go
         - gitplainfile_windows.go
-        - homeguard.go
+        - internal/homeguard/homeguard.go
+        - compat_homeguard.go
         # cross-platform fs primitives for the git/files methods: path canon (git
         # frame spelling) and the O_DIRECTORY guard used by files.list.
-        - pathcanon_unix.go
-        - pathcanon_windows.go
+        - internal/pathcanon/pathcanon.go
+        - internal/pathcanon/pathcanon_unix.go
+        - internal/pathcanon/pathcanon_windows.go
+        - compat_pathcanon.go
+        - compat_pathcanon_windows.go
         - odirectory_unix.go
         - odirectory_windows.go
         - filesread_unix.go
@@ -290,7 +294,7 @@ component_management:
         - realpath.go
         - realpath_unix.go
         - realpath_windows.go
-        - netpath_windows.go
+        - internal/pathcanon/netpath_windows.go
         - filesreadreal_linux.go
         - filesreadreal_other.go
         # files.extract_tar: the remove of a destDir entry that Windows cannot read.
@@ -413,7 +417,8 @@ component_management:
     - component_id: env_compat
       name: shell-env & cross-platform
       paths:
-        - expandpath.go
+        - internal/pathcanon/expandpath.go
+        - expandpaths.go
         - shellenv.go
         - shellenv_unix.go
         - shellenv_windows.go

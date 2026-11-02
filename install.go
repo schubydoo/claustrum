@@ -676,53 +676,6 @@ func sameFileBytes(a, b string) bool {
 	return err == nil && sa == sb
 }
 
-// folderHoldsHome is the home guard of the tree delete in stageAndInstall.
-// fi is the Lstat answer of the folder at cliPath. Two tests run, and one yes
-// refuses the delete:
-//
-//  1. wipesHomeDir, the lexical test of the RPC paths.
-//  2. The folder is the home folder or one of its parent folders, by identity
-//     (os.SameFile). The spelling of the two paths does not matter.
-//
-// Test 2 runs for the home path as given. It runs again for the path that
-// finalDirPath gives, when that differs: the parents of a path through a link
-// are not the parents of the folder it names.
-//
-// wipesHomeDir stays lexical because a destination that does not exist is legal
-// on the RPC paths. Here the folder exists: its Lstat just succeeded.
-func folderHoldsHome(cliPath string, fi os.FileInfo) bool {
-	if wipesHomeDir(cliPath) {
-		return true
-	}
-	home, err := os.UserHomeDir()
-	if err != nil || home == "" {
-		return false
-	}
-	if abs, err := filepath.Abs(home); err == nil {
-		home = abs
-	}
-	if folderIsAtOrAbove(fi, home) {
-		return true
-	}
-	final := finalDirPath(home)
-	return final != home && folderIsAtOrAbove(fi, final)
-}
-
-// folderIsAtOrAbove reports whether the folder of fi is p or a parent folder of
-// p. A step of p that Stat cannot read is skipped, and the walk goes on.
-func folderIsAtOrAbove(fi os.FileInfo, p string) bool {
-	for {
-		if pi, err := os.Stat(p); err == nil && os.SameFile(fi, pi) {
-			return true
-		}
-		parent := filepath.Dir(p)
-		if parent == p {
-			return false
-		}
-		p = parent
-	}
-}
-
 // validateCLIVersion rejects a -cli-version the install cannot honestly carry
 // out. The rule is claustrum-only: a SINGLE PATH COMPONENT (D6). cliPath is
 // installCLIPath(cliDir, cliVersion) and ensureCLI's os.RemoveAll deletes

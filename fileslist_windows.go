@@ -68,9 +68,3 @@ func listIsDir(full string, junctionsAsDirs bool) bool {
 		cur = target
 	}
 }
-
-// isLocalDevicePath is true for the `\\?\` and `\\.\` spellings of a local
-// path. They are not shares (claustrum's own, not measured).
-func isLocalDevicePath(p string) bool {
-	return strings.HasPrefix(p, `\\?\`) || strings.HasPrefix(p, `\\.\`)
-}

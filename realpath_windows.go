@@ -38,8 +38,6 @@ func realpathPathRefusal(path string) string {
 	return ""
 }
 
-func isDriveLetter(c byte) bool { return c >= 'a' && c <= 'z' || c >= 'A' && c <= 'Z' }
-
 // realpathClean cleans the text as Win32 does before it opens a path: a ".." after
 // a link removes the link name and not a folder of its target. Claustrum's own,
 // not measured.

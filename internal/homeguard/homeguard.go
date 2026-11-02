@@ -1,13 +1,15 @@
-package main
+package homeguard
 
 import (
 	"os"
 	"path/filepath"
 	"runtime"
 	"strings"
+
+	"github.com/schubydoo/claustrum/internal/pathcanon"
 )
 
-// wipesHomeDir reports whether a recursive delete of p would take the daemon
+// WipesHomeDir reports whether a recursive delete of p would take the daemon
 // user's home directory with it — true when p IS the home directory, and true
 // when p is an ANCESTOR of it ("/home", "/Users", a drive root).
 //
@@ -22,14 +24,14 @@ import (
 // (install.go, stageAndInstall). Its sweep and its prune call the guard for
 // each entry that they remove (cliEntryHoldsHome). The RPC
 // paths are `~`-expanded first — bindParams
-// calls ExpandPaths on EVERY request (rpc.Bind), and expandPath returns the home
-// directory verbatim for a bare "~" (expandpath.go). So `"destDir":"~"` names
+// calls ExpandPaths on EVERY request (rpc.Bind), and pathcanon.ExpandTilde returns the home
+// directory verbatim for a bare "~" (internal/pathcanon/expandpath.go). So `"destDir":"~"` names
 // the home folder as the target of the recursive delete.
 //
 // That is not hypothetical. On 2026-08-02 an in-repo fuzzer sent "~" as destDir
 // against a live daemon and destroyed the maintainer's home directory.
 //
-// The guard that was already there — `filepath.IsAbs(p) && !isFilesystemRoot(p)`
+// The guard that was already there — `filepath.IsAbs(p) && !IsFilesystemRoot(p)`
 // — could not catch it, and the reason is worth recording because it is the
 // general lesson: it was written to close a DIFFERENT hole (a Windows volume
 // root passing an `== "/"` test, PR #224). "Absolute and not a filesystem root"
@@ -56,7 +58,7 @@ import (
 // so each other spelling that the system resolves to the home folder passes it
 // too. On Windows a path with the `\\?\` prefix and the short 8.3 name of home
 // pass it (Windows, the test binary). Two callers add a compare by identity for the folder that they delete:
-// -install (folderHoldsHome) and the wipe of files.extract_tar (destEntryHoldsHome, for the folder at the last
+// -install (FolderHoldsHome) and the wipe of files.extract_tar (destEntryHoldsHome, for the folder at the last
 // name of destDir). The other callers have the text compare alone.
 //
 //  1. Symlinks are not resolved. A path that reaches home through a symlink is
@@ -67,7 +69,7 @@ import (
 //     the verdict on a relative path without knowing where the daemon started.
 //  3. Home is what os.UserHomeDir gives: HOME, or USERPROFILE on Windows. With
 //     that variable unset or empty the guard refuses nothing.
-func wipesHomeDir(p string) bool {
+func WipesHomeDir(p string) bool {
 	home, err := os.UserHomeDir()
 	if err != nil || home == "" {
 		// A daemon with no resolvable home behaves exactly as it did before this
@@ -106,7 +108,7 @@ func wipesHomeDir(p string) bool {
 	// "/home/claude". Clean leaves a root ("/" or `C:\`) already ending in the
 	// separator, so appending unconditionally would build "//" and match nothing.
 	//
-	// Do NOT justify this with "isFilesystemRoot rejects roots before we get
+	// Do NOT justify this with "IsFilesystemRoot rejects roots before we get
 	// here" — that holds only for files.extract_tar. git.worktree_remove has no
 	// root check at all, so THIS branch is the only thing refusing a root there,
 	// since every root contains the home directory.
@@ -140,4 +142,80 @@ func foldPath(p string) string {
 		return strings.ToLower(p)
 	}
 	return p
+}
+
+// IsFilesystemRoot reports whether p names a filesystem root, on any platform.
+//
+// The gate this backs matters because filesExtractTar WIPES destDir before
+// extracting. The wipe removes the last name of destDir as a tree, through a
+// handle of the parent folder. A root has no parent and no last name.
+//
+// Whether the reference refuses a root destDir is NOT measured — an earlier
+// version of this comment asserted "the reference has no such guard", which is
+// an absence claim with no probe behind it, and
+// docs/protocol/files-extract-tar.md files the refusal as neither parity nor
+// divergence. What is certain is the consequence
+// here: the steps after this guard take a parent folder and a last name from
+// destDir, so the guard must not have a platform-shaped hole whatever the
+// reference does.
+//
+// It used to compare `filepath.Clean(destDir) == "/"`. That is a Unix-only
+// notion of root: a Windows volume root cleans to `C:\`, never the string "/",
+// and filepath.IsAbs accepts it — so `C:\` (and a UNC share root) passed the
+// gate and reached the RemoveAll. Raised in review on #224 as pre-existing.
+//
+// `filepath.Dir(x) == x` is the platform's own definition of "has no parent",
+// true for "/" on Unix and for a drive or UNC root on Windows, and it needs no
+// separate spelling per platform. Clean first so a trailing separator ("/" vs
+// "//", `C:\` vs `C:\\`) cannot slip past by shape.
+func IsFilesystemRoot(p string) bool {
+	c := filepath.Clean(p)
+	return filepath.Dir(c) == c
+}
+
+// FolderHoldsHome is the home guard of the tree delete in stageAndInstall.
+// fi is the Lstat answer of the folder at cliPath. Two tests run, and one yes
+// refuses the delete:
+//
+//  1. WipesHomeDir, the lexical test of the RPC paths.
+//  2. The folder is the home folder or one of its parent folders, by identity
+//     (os.SameFile). The spelling of the two paths does not matter.
+//
+// Test 2 runs for the home path as given. It runs again for the path that
+// pathcanon.FinalDir gives, when that differs: the parents of a path through a link
+// are not the parents of the folder it names.
+//
+// WipesHomeDir stays lexical because a destination that does not exist is legal
+// on the RPC paths. Here the folder exists: its Lstat just succeeded.
+func FolderHoldsHome(cliPath string, fi os.FileInfo) bool {
+	if WipesHomeDir(cliPath) {
+		return true
+	}
+	home, err := os.UserHomeDir()
+	if err != nil || home == "" {
+		return false
+	}
+	if abs, err := filepath.Abs(home); err == nil {
+		home = abs
+	}
+	if folderIsAtOrAbove(fi, home) {
+		return true
+	}
+	final := pathcanon.FinalDir(home)
+	return final != home && folderIsAtOrAbove(fi, final)
+}
+
+// folderIsAtOrAbove reports whether the folder of fi is p or a parent folder of
+// p. A step of p that Stat cannot read is skipped, and the walk goes on.
+func folderIsAtOrAbove(fi os.FileInfo, p string) bool {
+	for {
+		if pi, err := os.Stat(p); err == nil && os.SameFile(fi, pi) {
+			return true
+		}
+		parent := filepath.Dir(p)
+		if parent == p {
+			return false
+		}
+		p = parent
+	}
 }

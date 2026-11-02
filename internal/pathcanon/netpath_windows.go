@@ -1,6 +1,6 @@
 //go:build windows
 
-package main
+package pathcanon
 
 import (
 	"os"
@@ -9,9 +9,9 @@ import (
 	"golang.org/x/sys/windows"
 )
 
-// driveType returns the GetDriveType answer for a drive root such as `Z:\`. It
+// DriveType returns the GetDriveType answer for a drive root such as `Z:\`. It
 // is a seam for the tests.
-var driveType = func(root string) uint32 {
+var DriveType = func(root string) uint32 {
 	name, err := windows.UTF16PtrFromString(root)
 	if err != nil {
 		return windows.DRIVE_UNKNOWN
@@ -19,26 +19,34 @@ var driveType = func(root string) uint32 {
 	return windows.GetDriveType(name)
 }
 
-// onNetwork is true for a UNC path and for a path on a network drive. A link
+// OnNetwork is true for a UNC path and for a path on a network drive. A link
 // onto a `net use` drive and a link to a `\\?\UNC\` path were measured. The
 // test of a drive by GetDriveType (DRIVE_REMOTE) is claustrum's own. A `\\?\`
 // or `\\.\` path with no UNC share and no drive letter is local (claustrum's
 // own, not measured).
-func onNetwork(p string) bool {
+func OnNetwork(p string) bool {
 	switch {
 	case hasPrefixFold(p, `\\?\UNC\`), hasPrefixFold(p, `\\.\UNC\`):
 		return true
-	case isLocalDevicePath(p):
+	case IsLocalDevicePath(p):
 		p = p[4:]
 	case len(p) >= 2 && os.IsPathSeparator(p[0]) && os.IsPathSeparator(p[1]):
 		return true
 	}
-	if len(p) < 2 || !isDriveLetter(p[0]) || p[1] != ':' {
+	if len(p) < 2 || !IsDriveLetter(p[0]) || p[1] != ':' {
 		return false
 	}
-	return driveType(strings.ToUpper(p[:2])+`\`) == windows.DRIVE_REMOTE
+	return DriveType(strings.ToUpper(p[:2])+`\`) == windows.DRIVE_REMOTE
 }
 
 func hasPrefixFold(s, prefix string) bool {
 	return len(s) >= len(prefix) && strings.EqualFold(s[:len(prefix)], prefix)
 }
+
+// IsLocalDevicePath is true for the `\\?\` and `\\.\` spellings of a local
+// path. They are not shares (claustrum's own, not measured).
+func IsLocalDevicePath(p string) bool {
+	return strings.HasPrefix(p, `\\?\`) || strings.HasPrefix(p, `\\.\`)
+}
+
+func IsDriveLetter(c byte) bool { return c >= 'a' && c <= 'z' || c >= 'A' && c <= 'Z' }

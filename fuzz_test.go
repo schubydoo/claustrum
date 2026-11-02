@@ -89,7 +89,7 @@ func FuzzBindParams(f *testing.F) {
 	}
 
 	// pathExpander, not interface{}: bindParams now takes the interface so a
-	// params struct cannot skip `~` expansion (see expandpath.go). Fuzzing
+	// params struct cannot skip `~` expansion (see expandpaths.go). Fuzzing
 	// through the same type keeps this exercising the real signature.
 	makers := []func() pathExpander{
 		func() pathExpander { return &pathParams{} },
