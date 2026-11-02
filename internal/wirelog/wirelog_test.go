@@ -189,7 +189,7 @@ func TestWireLogRedactsInsideArrays(t *testing.T) {
 	}
 }
 
-// openWireLog succeeds and logs the mode in both the truncated and untruncated
+// Open succeeds and logs the mode in both the truncated and untruncated
 // cases; a successful open returns a live logger.
 func TestOpenWireLogSuccessBothModes(t *testing.T) {
 	dir := t.TempDir()
@@ -218,7 +218,7 @@ func TestWireLogWriteErrorCountedAndReported(t *testing.T) {
 	w.Close() // reports the dropped count and the already-closed file's Close error
 }
 
-// record on a closed logger hits the f==nil guard rather than panicking.
+// Record on a closed logger hits the f==nil guard rather than panicking.
 func TestWireLogRecordAfterCloseIsNoop(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "wire.jsonl")
 	w, err := newWireLog(path, MaxString)
