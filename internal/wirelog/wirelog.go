@@ -33,7 +33,7 @@ type Log struct {
 	maxStr int // longest string value kept verbatim; longer ones are summarized
 
 	// pid stamps every record. Connection ids come from a per-process counter
-	// (server.go's connSeq), so they are unique only within one daemon — while
+	// (the connSeq counter of package main), so they are unique only within one daemon — while
 	// the capture is opened O_APPEND and outlives any restart. Two daemons, or
 	// one daemon restarted, therefore both number their connections from 1 into
 	// the same file. Without pid a reader cannot tell those apart, and anything
@@ -57,7 +57,7 @@ type Log struct {
 const MaxString = 512
 
 // Options carries the -wire-log settings as one value, so enabling a
-// capture does not add a parameter per knob to the server constructor.
+// capture does not add a parameter per knob to its caller.
 type Options struct {
 	// Path is the capture file; "" means logging is off.
 	Path string

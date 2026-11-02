@@ -347,7 +347,7 @@ func (c *conn) writeResponse(v interface{}) (failed bool) {
 	}
 	// Recorded under wmu, past the closed check, just before the write, so the
 	// capture is exactly what goes on the wire — in wire order, and never a frame
-	// the closed check dropped. record neither retains nor mutates b.
+	// the closed check dropped. Record neither retains nor mutates b.
 	b = stampEnd(b, c.sent)
 	c.wlog.Record(c.id, "out", b)
 	n, err := c.nc.Write(b)

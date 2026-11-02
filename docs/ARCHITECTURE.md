@@ -23,7 +23,7 @@ the same JSON-RPC methods.
 | Git | `git*.go`, `worktree*.go`, `externalunsupported_*.go`, `spelling_*.go` | See [The git subsystem](#the-git-subsystem). |
 | Install | `install*.go`, `libc_*.go`, `managedlauncher*.go` | `-install` and `-probe-cli`. The download. The file test of a cache hit. The libc probe. The managed launcher. |
 | Host and lock | `daemon_runlock_*.go`, `tokenpersist.go`, `childrecord*.go`, `childreap*.go`, `hostclean*.go`, `orphanexit.go`, `selfexit_*.go` | The run-dir lock. `daemon.token`. The child records and their reap. The host cleaner. The orphan exit and the idle exit. |
-| Logs | `internal/logging/`, `internal/metrics/`, `internal/wirelog/` | The leveled stderr logger. The opt-in `/metrics` counters. The opt-in `-wire-log` capture. |
+| Logs | `internal/logging/`, `internal/metrics/`, `internal/wirelog/`, `compat_logging.go`, `compat_metrics.go`, `compat_wirelog.go` | The leveled stderr logger. The opt-in `/metrics` counters. The opt-in `-wire-log` capture. |
 | Shared | `internal/renameretry/`, `pathcanon_*.go` | The retry of a rename on Windows. The canonical form of a path. |
 
 ## The git subsystem

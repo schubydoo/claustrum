@@ -96,7 +96,7 @@ func TestLogTagPrecedesPrefixIntact(t *testing.T) {
 	if line == "" {
 		t.Fatalf("component prefix not byte-intact: %q", out)
 	}
-	if !strings.HasPrefix(line, "INFO ") {
+	if !strings.HasPrefix(line, "INFO  [Server]") {
 		t.Errorf("level tag missing at line start: %q", line)
 	}
 }
