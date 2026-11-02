@@ -25,6 +25,10 @@ import (
 // equal to the repo itself is refused as "not inside", which is what keeps
 // git.worktree_remove's delete off the repository root.
 //
+// The "not inside" text shows worktreePath in backticks (tickPath) and the
+// repository as it is, on create and remove (be1c1ca5, measured on Linux). The
+// spelling texts before it keep the path as it is (not measured).
+//
 // This containment is also why it subsumes the D2 home-wipe guard: a "~"-expanded
 // home path is not strictly under a repo, so it is refused here — with the
 // reference's own wording — before wipesHomeDir (homeguard.go) is ever reached.
@@ -42,7 +46,7 @@ func worktreePathRefusal(repo, worktreePath, verb string) string {
 	}
 	if !pathStrictlyUnder(worktreePath, repo) {
 		return fmt.Sprintf("refusing to %s worktree: %s is not inside the repository %s; %s",
-			verb, worktreePath, repo, guidance)
+			verb, tickPath(worktreePath), repo, guidance)
 	}
 	return ""
 }
