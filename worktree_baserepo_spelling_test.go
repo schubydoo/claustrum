@@ -157,11 +157,11 @@ func TestWorktreeContainmentNamesAbsentBaseRepo(t *testing.T) {
 			for k, v := range r.base {
 				remove[k], create[k] = v, v
 			}
-			want := spellRemoveFrame(t, "refusing to remove worktree: "+f.leaf()+" is not inside the repository "+guidance)
+			want := spellRemoveFrame(t, "refusing to remove worktree: "+tickPath(f.leaf())+" is not inside the repository "+guidance)
 			if got := dispatchRaw(t, s, rpcLine(t, "git.worktree_remove", remove)); got != want {
 				t.Errorf("remove: got  %s\nwant %s", got, want)
 			}
-			want = spellCreateFrame(t, "refusing to create worktree: "+c1+" is not inside the repository "+guidance, "unsafe_path")
+			want = spellCreateFrame(t, "refusing to create worktree: "+tickPath(c1)+" is not inside the repository "+guidance, "unsafe_path")
 			if got := dispatchRaw(t, s, rpcLine(t, "git.worktree_create", create)); got != want {
 				t.Errorf("create: got  %s\nwant %s", got, want)
 			}

@@ -758,7 +758,7 @@ func TestInheritedCountRefusalRound4(t *testing.T) {
 	statusRefused := `{"jsonrpc":"2.0","id":1,"error":{"code":-32603,"message":` + jsonString(t, refusal) + `}}`
 	relative := removeFrame(`refusing to remove worktree: rel/w1 is a relative path; choose the session folder by its absolute path, without ".."`)
 	outside := func(p string) string {
-		return removeFrame("refusing to remove worktree: " + p + " is not inside the repository " + f.top +
+		return removeFrame("refusing to remove worktree: " + tickPath(p) + " is not inside the repository " + f.top +
 			"; session worktrees are only created and removed under <repository>/.claude/worktrees")
 	}
 	notWorktree := removeFrame("refusing to remove worktree: " + w9 + " is not a worktree of " + missing + " (" + w9 +
@@ -1201,7 +1201,7 @@ func TestCreateNestedBaseBeforeCountRefusal(t *testing.T) {
 	}{
 		{"val2 Y3a", f.top, dotdot, frame("refusing to create worktree: "+dotdot+
 			` contains a ".." component; choose the session folder by its absolute path, without ".."`, "unsafe_path"), counted},
-		{"val2 Y3b", f.top, outside, frame("refusing to create worktree: "+outside+" is not inside the repository "+f.top+
+		{"val2 Y3b", f.top, outside, frame("refusing to create worktree: "+tickPath(outside)+" is not inside the repository "+f.top+
 			"; session worktrees are only created and removed under <repository>/.claude/worktrees", "unsafe_path"), counted},
 		// The text names the leaf with the symlinks of its parent folder resolved, its last
 		// name kept and the path cleaned on Linux and macOS, and
