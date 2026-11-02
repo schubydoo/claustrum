@@ -11,8 +11,8 @@ import (
 )
 
 // The tests of the sweep of git-shadow and of the limit of repository folders.
-// The cells are those of round task075-01 (Linux VM). Each test stages its
-// entries in its own temp socket folder.
+// The cells are those (measured on Linux). Each test stages its entries in its
+// own temp socket folder.
 
 // deadFolderName is a name of a folder of this host whose daemon is gone.
 func deadFolderName() string {
@@ -74,8 +74,8 @@ func sweptThere(t *testing.T, path string) {
 	}
 }
 
-// Cell G1: the folder of a daemon that is gone goes at the first request that
-// makes the folder of this daemon, and not at the start of the daemon.
+// Measured: the folder of a daemon that is gone goes at the first request
+// that makes the folder of this daemon, and not at the start of the daemon.
 func TestShadowSweepRemovesDeadFolder(t *testing.T) {
 	f := newShadowFixture(t)
 	dead := plantFolder(t, f.run, deadFolderName(), true)
@@ -90,8 +90,8 @@ func TestShadowSweepRemovesDeadFolder(t *testing.T) {
 	}
 }
 
-// Cells G2 and G3: a folder whose lock is held stays. Here the test holds the
-// lock as a live daemon does.
+// Measured: a folder whose lock is held stays. Here the test holds the lock
+// as a live daemon does.
 func TestShadowSweepKeepsHeldFolder(t *testing.T) {
 	f := newShadowFixture(t)
 	live := plantFolder(t, f.run, deadFolderName(), false)
@@ -105,10 +105,9 @@ func TestShadowSweepKeepsHeldFolder(t *testing.T) {
 	sweptThere(t, filepath.Join(live, "f1"))
 }
 
-// Cells G7, G7b and G7c: a folder with another host form goes when it is 8
-// days old and stays at 6 days (the bound of 7 days is not measured). On Linux and macOS the age is read after the lock step:
-// a folder with no lock file gets one, so it is new then and stays. On Windows
-// the age is read before, and that folder goes (Windows VM).
+// Measured: a folder with another host form goes when it is 8 days old and stays at 6 days (the bound of 7 days is not
+// measured). On Linux and macOS the age is read after the lock step: a folder with no lock file gets one, so it is new then
+// and stays. On Windows the age is read before, and that folder goes (measured on Windows).
 func TestShadowSweepAgeOfOtherHosts(t *testing.T) {
 	f := newShadowFixture(t)
 	noLock := plantFolder(t, f.run, "otherhost-1-0123456789abcdef", false)
@@ -135,7 +134,7 @@ func TestShadowSweepAgeOfOtherHosts(t *testing.T) {
 	sweptThere(t, filepath.Join(young, "f1"))
 }
 
-// Cell G8: a regular file with a name of this host stays.
+// Measured: a regular file with a name of this host stays.
 func TestShadowSweepKeepsAFile(t *testing.T) {
 	f := newShadowFixture(t)
 	file := filepath.Join(f.run, shadowRootName, deadFolderName())
@@ -146,8 +145,8 @@ func TestShadowSweepKeepsAFile(t *testing.T) {
 	}
 }
 
-// Cell G9: a folder whose lock is a link stays, and the target of the link is
-// unchanged. The second folder has a link to a file inside git-shadow.
+// Measured: a folder whose lock is a link stays, and the target of the link
+// is unchanged. The second folder has a link to a file inside git-shadow.
 func TestShadowSweepKeepsALinkedLock(t *testing.T) {
 	f := newShadowFixture(t)
 	dead := plantFolder(t, f.run, deadFolderName(), false)
@@ -167,8 +166,8 @@ func TestShadowSweepKeepsALinkedLock(t *testing.T) {
 }
 
 // The prefix of this host: each character outside A-Z, a-z, 0-9 and "." is
-// "_". A "-" and a kept "." are measured (round task075-01). The other
-// characters are not measured.
+// "_". A "-" and a kept "." are measured. The other characters are not
+// measured.
 func TestHostFormRule(t *testing.T) {
 	old := shadowHostname
 	shadowHostname = func() (string, error) { return "Ab-9_c d+e.local", nil }
@@ -178,7 +177,7 @@ func TestHostFormRule(t *testing.T) {
 	}
 }
 
-// Cell G10: a link in git-shadow with a name of this host goes as a link. The
+// Measured: a link in git-shadow with a name of this host goes as a link. The
 // content of its target stays, and claustrum makes no lock file there (D8).
 func TestShadowSweepRemovesAPlantedLink(t *testing.T) {
 	f := newShadowFixture(t)
@@ -224,7 +223,7 @@ func TestShadowSweepKeepsHeldLinks(t *testing.T) {
 	sweptThere(t, toFile)
 }
 
-// Cell G11: with git-shadow a link to a folder, the folder of the daemon is in
+// Measured: with git-shadow a link to a folder, the folder of the daemon is in
 // that folder and the sweep removes a dead folder there.
 func TestShadowSweepThroughALinkedRoot(t *testing.T) {
 	f := newShadowFixture(t)
@@ -241,7 +240,7 @@ func TestShadowSweepThroughALinkedRoot(t *testing.T) {
 	sweptThere(t, filepath.Join(target, ownFolderName(f)))
 }
 
-// Cell G12: when the folder of the daemon is gone, the request that makes it
+// Measured: when the folder of the daemon is gone, the request that makes it
 // again sweeps again.
 func TestShadowSweepAgainAtANewFolder(t *testing.T) {
 	f := newShadowFixture(t)
@@ -265,7 +264,7 @@ func TestShadowSweepAgainAtANewFolder(t *testing.T) {
 
 // The sweep skips the folder of this daemon. A second daemon of
 // this host in the same socket folder keeps the folder of the first, whose
-// lock is held (cell G2).
+// lock is held (measured).
 func TestShadowSweepKeepsALiveDaemon(t *testing.T) {
 	f := newShadowFixture(t)
 	f.info(t, f.repo, nil)

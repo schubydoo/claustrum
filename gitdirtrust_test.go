@@ -14,9 +14,8 @@ import (
 )
 
 // The git-directory trust check (gitdirtrust.go). Every rule was measured side by side
-// against f6010b97 on a Linux VM, and on macOS and Windows VMs where the case can
-// exist. Each test below drives one rule through the RPC methods over real git
-// fixtures.
+// against f6010b97 on Linux, and on macOS and Windows where the case can exist. Each
+// test below drives one rule through the RPC methods over real git fixtures.
 
 // The texts, written out here independently of the implementation's constants.
 const (
@@ -34,8 +33,8 @@ func wantTR(cd, _ string) string {
 	return wantTrustPrefix + fmt.Sprintf("%q", cd) + ` holds something other than "." or "./"` + wantTRTail
 }
 
-// wantTP is the refusal of a stray commondir that is not a small plain file (rows T05
-// to T09).
+// wantTP is the refusal of a stray commondir that is not a small plain file
+// (measured).
 func wantTP(cd, reason string) string {
 	return wantTrustPrefix + fmt.Sprintf("%q", cd) + " is not a small plain file (" + reason + ")" + wantTPTail
 }
@@ -290,7 +289,7 @@ func TestGitDirTrustStrayCommondirInMainRepo(t *testing.T) {
 }
 
 // A commondir that is not a plain file is refused, and so is one that names the
-// git directory itself by its absolute path (89cb6289, rows T05 and T03g).
+// git directory itself by its absolute path (`89cb6289`, measured).
 func TestGitDirTrustStrayCommondirAnyType(t *testing.T) {
 	for _, tc := range []struct {
 		name string
@@ -413,9 +412,9 @@ func TestGitDirTrustEntryWithoutCommondir(t *testing.T) {
 // An entry directory that is gone, found through the worktree's `.git` file,
 // means no repository on every method. Git itself fails there too, so the old answer
 // was the hooks refusal carrying git's error. The frames are the same with git 2.56
-// and git 2.43 (cells c01 to c08 and c26 to c27 of rounds task039-01 and task039-02,
-// Linux and Windows VMs). With git 2.56 that holds also as the first git request and
-// with "shadowDirOff":true (round task039-03, Linux VM). So each runs here.
+// and git 2.43 (measured on Linux and Windows). With git 2.56 that holds also as the
+// first git request and with "shadowDirOff":true (measured on Linux). So each runs
+// here.
 func TestGitDirTrustEntryGoneMeansNoRepository(t *testing.T) {
 	r := newTrustRepo(t)
 	if err := os.RemoveAll(r.entry()); err != nil {
@@ -428,10 +427,9 @@ func TestGitDirTrustEntryGoneMeansNoRepository(t *testing.T) {
 }
 
 // wantEntryGoneEveryWay asserts the "no repository" answers on TW three ways. The
-// first is a daemon in the state shadow (F1, F3, F4). The second has
-// "shadowDirOff":true (cells c01off, c03off and c04off: F12, F3, F4). The third is
-// the first git request of a daemon (cells c01 first and c03 first: F11, F3). The
-// cells are of round task039-03 (Linux VM).
+// first is a daemon in the state shadow (measured). The second has
+// "shadowDirOff":true (measured). The third is the first git request of a daemon
+// (measured on Linux).
 func wantEntryGoneEveryWay(t *testing.T, r trustRepo) {
 	t.Helper()
 	s, _ := newSeededShadowServer(t)
@@ -480,11 +478,10 @@ func wantEntryGoneFrames(t *testing.T, s *server, r trustRepo, extra map[string]
 	}
 }
 
-// The state of the test above with a stub in place of git: each listing fails with the
-// text of git 2.56 for TW's `.git` file. So the test runs with any git. Every answer
-// is "no repository" (cells c01, c03 and c04 of round task039-01, and the cells of
-// wantEntryGoneEveryWay of round task039-03, Linux VM). Mutation: answer the listing
-// refusal for a gone entry in noRepoCalls, with or without the member.
+// The state of the test above with a stub in place of git: each listing fails with the text of git
+// 2.56 for TW's `.git` file. So the test runs with any git. Every answer is "no repository"
+// (measured on Linux, as for wantEntryGoneEveryWay). Mutation: answer the listing refusal for a gone
+// entry in noRepoCalls, with or without the member.
 func TestGitDirTrustEntryGoneGitFileText(t *testing.T) {
 	r := newTrustRepo(t)
 	if err := os.RemoveAll(r.entry()); err != nil {
@@ -857,15 +854,15 @@ func TestGitDirTrustDaemonGitDir(t *testing.T) {
 		wantResult(t, "info(T)", info(t, r.T), notRepoInfo)
 		wantResult(t, "list_branches(T)", listBranches(t, r.T), notRepoList)
 		// git still runs with GIT_COMMON_DIR pinned to that GIT_DIR, as f6010b97 pins
-		// it on Linux and Windows VMs (row E05).
+		// it on Linux and Windows (measured).
 		if got, want := commonDirPinEnv(r.T), []string{"GIT_COMMON_DIR=" + nope}; !slices.Equal(got, want) {
 			t.Errorf("pin = %q, want %q", got, want)
 		}
 	})
 	t.Run("relative, names nothing", func(t *testing.T) {
 		// A relative GIT_DIR that names nothing in the request directory is pinned
-		// joined to that directory, as f6010b97 pins it on Linux and Windows VMs
-		// (row E02, directory N).
+		// joined to that directory, as f6010b97 pins it on Linux and Windows (row
+		// E02, directory N).
 		r := newTrustRepo(t)
 		plain := filepath.Join(r.base, "N")
 		if err := os.Mkdir(plain, 0o755); err != nil {
@@ -968,12 +965,12 @@ func TestQuoteOperandInvalidUTF8(t *testing.T) {
 	}
 }
 
-// worktree_create runs git with replace objects and grafts off, so its
-// checkout carries the real blob. git.status runs with them off too, since its calls
-// carry GIT_NO_REPLACE_OBJECTS=1 as on 5fd08069 (s3-linux cell B1, Linux VM). For a
-// replaced HEAD commit 5fd08069 answers against the real commit, and 89cb6289
-// against the replacement. That is val-s3p2b1 cell B1 on Linux, macOS and Windows
-// VMs, with and without "shadowDirOff":true.
+// worktree_create runs git with replace objects and grafts off, so its checkout
+// carries the real blob. git.status runs with them off too, since its calls carry
+// GIT_NO_REPLACE_OBJECTS=1 as on 5fd08069 (measured on Linux). For a replaced HEAD
+// commit 5fd08069 answers against the real commit, and 89cb6289 against the
+// replacement. That is measured on Linux, macOS and Windows, with and without
+// "shadowDirOff":true.
 func TestGitDirTrustCreateIgnoresReplaceObjects(t *testing.T) {
 	r := newTrustRepo(t)
 	writeFile(t, filepath.Join(r.T, "v.txt"), "real\n", 0o644)
@@ -1006,8 +1003,8 @@ func TestGitDirTrustCreateIgnoresReplaceObjects(t *testing.T) {
 }
 
 // git.info omits `branch` when git cannot name it, instead of sending git's error text.
-// Measured side by side against 90fca6e6 and f6010b97 on a Linux VM (H15, H18, NH21,
-// NH22). A detached HEAD git can resolve still answers "detached:<sha>".
+// Measured side by side against 90fca6e6 and f6010b97 on Linux.
+// A detached HEAD git can resolve still answers "detached:<sha>".
 func TestGitInfoOmitsABranchGitCannotResolve(t *testing.T) {
 	junk := func(c string) string { return strings.Repeat(c, 300) }
 	for _, tc := range []struct {
@@ -1047,8 +1044,8 @@ func TestGitInfoOmitsABranchGitCannotResolve(t *testing.T) {
 	})
 }
 
-// Both profiles carry the replace and graft switches, as on 5fd08069 (s3-linux cell
-// B1, Linux VM). 89cb6289 has them on the light profile only.
+// Both profiles carry the replace and graft switches, as on 5fd08069 (measured on
+// Linux). 89cb6289 has them on the light profile only.
 func TestHardenedEnvReplaceAndGraftSwitches(t *testing.T) {
 	light := hardenedGitEnv(false, nil, nil)
 	heavy := hardenedGitEnv(true, nil, nil)

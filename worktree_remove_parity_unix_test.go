@@ -11,8 +11,8 @@ import (
 )
 
 // The git.worktree_remove rows that need a permission deny, or a worktreeRoot (refused
-// on Windows before any git call). Measured side by side against f6010b97 on a macOS
-// VM. Every fixture lives under t.TempDir(), and every chmod is undone in a cleanup.
+// on Windows before any git call). Measured side by side against f6010b97 on macOS.
+// Every fixture lives under t.TempDir, and every chmod is undone in a cleanup.
 
 func chmodFor(t *testing.T, p string, mode os.FileMode) {
 	t.Helper()
@@ -39,9 +39,9 @@ func dirOrder(t *testing.T, dir string) []string {
 
 // A delete that fails part-way stops at the first entry that fails, in the order of
 // the directory read. That entry, every entry after it, and `.git` stay. The entry and
-// the branch stay too, and the reply names the entry only (rows P01 to P05). Before,
-// `git worktree remove --force` deleted `.git` and the entry, and the reply quoted
-// git's text.
+// the branch stay too, and the reply names the entry only (measured). Before, `git
+// worktree remove --force` deleted `.git` and the entry, and the reply quoted git's
+// text.
 func TestWorktreeRemovePartialDeleteKeepsGit(t *testing.T) {
 	skipIfRoot(t)
 	f := newRmFixture(t)
@@ -73,8 +73,8 @@ func TestWorktreeRemovePartialDeleteKeepsGit(t *testing.T) {
 }
 
 // An entry that cannot be deleted after the tree is gone is reported with
-// success:false. The branch is still deleted (rows D01 and D03). Before, the reply
-// was success:true.
+// success:false. The branch is still deleted (measured). Before, the reply was
+// success:true.
 func TestWorktreeRemoveReportsEntryDropFailure(t *testing.T) {
 	skipIfRoot(t)
 	f := newRmFixture(t)
@@ -89,8 +89,9 @@ func TestWorktreeRemoveReportsEntryDropFailure(t *testing.T) {
 }
 
 // A worktrees directory that exists but cannot be read blocks the removal with the
-// lock-check text (row L02). An entry directory that cannot be read does not: the
-// tree and the branch go and the entry stays (row L01). Before, L02 deleted the tree.
+// lock-check text (measured). An entry directory that cannot be read does not: the
+// tree and the branch go and the entry stays (measured). Before, claustrum deleted the
+// tree.
 func TestWorktreeRemoveUnreadableRegistrations(t *testing.T) {
 	skipIfRoot(t)
 	t.Run("worktrees dir", func(t *testing.T) {
@@ -145,7 +146,7 @@ func (f extFixture) notAWorktree(wp, reason string) string {
 }
 
 // With a worktreeRoot, a leaf that is a symbolic link or a regular file gets its own
-// refusal, not the no-.git one (rows S03 and S04).
+// refusal, not the no-.git one (measured).
 func TestWorktreeRemoveExternalLeafKinds(t *testing.T) {
 	f := newExtFixture(t)
 	proj := filepath.Dir(f.e0)
@@ -162,9 +163,9 @@ func TestWorktreeRemoveExternalLeafKinds(t *testing.T) {
 	mustExist(t, filepath.Join(f.e0, ".git"))
 }
 
-// With a worktreeRoot, an empty plain directory is removed and its branch deleted (rows
-// E01 and E02). A plain directory that holds files is refused and left in place. The
-// first path is the one sent, trailing slash and all (rows X03 and X04).
+// With a worktreeRoot, an empty plain directory is removed and its branch deleted
+// (measured). A plain directory that holds files is refused and left in place. The
+// first path is the one sent, trailing slash and all (measured).
 func TestWorktreeRemoveExternalPlainDirectory(t *testing.T) {
 	f := newExtFixture(t)
 	proj := filepath.Dir(f.e0)
@@ -189,7 +190,7 @@ func TestWorktreeRemoveExternalPlainDirectory(t *testing.T) {
 }
 
 // With a worktreeRoot, a worktree of this repository whose whole worktrees directory
-// is gone is a stale worktree. It is deleted with its branch (row E04). Before, the
+// is gone is a stale worktree. It is deleted with its branch (measured). Before, the
 // reply was the transient "could not verify" text.
 func TestWorktreeRemoveExternalStaleWorktree(t *testing.T) {
 	f := newExtFixture(t)
@@ -206,8 +207,8 @@ func TestWorktreeRemoveExternalStaleWorktree(t *testing.T) {
 }
 
 // With a worktreeRoot, a worktree whose `.git` file is damaged but whose registration
-// by path is locked answers the locked refusal (row E06). An entry that cannot be read
-// gives the own-admin-directory reason (row L03).
+// by path is locked answers the locked refusal (measured). An entry that cannot be
+// read gives the own-admin-directory reason (measured).
 func TestWorktreeRemoveExternalUnverified(t *testing.T) {
 	t.Run("locked by path", func(t *testing.T) {
 		f := newExtFixture(t)

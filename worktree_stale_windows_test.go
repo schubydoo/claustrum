@@ -11,9 +11,8 @@ import (
 
 // The stale step on Windows compares the record with the leaf without regard
 // to letter case. 5fd08069 removes the entry `old` whose record differs from
-// the leaf in one name or in the whole path (cells R-Q4i and R-Q4i2 of round
-// task084-01, Windows VM, 3 of 3 runs each), and with the exact case too (cell
-// R-Q4i0). A record of another path stays.
+// the leaf in one name or in the whole path (measured on Windows, 3 of 3
+// runs), and with the exact case too. A record of another path stays.
 func staleCaseRecords(leaf string) map[string]string {
 	slashed := filepath.ToSlash(leaf)
 	dir, name := filepath.Dir(slashed), filepath.Base(slashed)
@@ -76,8 +75,8 @@ func TestHeldStaleStepIgnoresLetterCase(t *testing.T) {
 
 // D27: on Windows the stale step keeps an entry whose record names a `.git`
 // file that exists, in another letter case than the leaf. 5fd08069 deletes it
-// (cell W-CS of round task084-02, Windows VM). Both forms of the step run: by
-// the path, and through the held git directory.
+// (measured on Windows). Both forms of the step run: by the path, and through
+// the held git directory.
 func TestStaleStepKeepsALiveRecord(t *testing.T) {
 	t.Run("by the path", func(t *testing.T) {
 		repo := t.TempDir()
@@ -108,9 +107,8 @@ func TestStaleStepKeepsALiveRecord(t *testing.T) {
 
 // The Windows step works on `worktrees` of the separate git directory that the
 // .git file of repo names. 5fd08069 removes the stale entry gd\worktrees\old
-// there, and the create succeeds (cell S1 of round tier3-02, Windows VM, 3
-// runs). Both forms of the step run: by the path, and through the held git
-// directory.
+// there, and the create succeeds (measured on Windows). Both forms of the step
+// run: by the path, and through the held git directory.
 func TestStaleStepOfSeparateGitDir(t *testing.T) {
 	setup := func(t *testing.T) (repo, gd, leaf, old string) {
 		root := t.TempDir()
@@ -149,8 +147,7 @@ func TestStaleStepOfSeparateGitDir(t *testing.T) {
 
 // The step by the path keeps a stale entry with a `locked` file, and both of
 // two stale entries. 5fd08069 does so in the separate git directory gd, and
-// the add then fails with the text of git (cells S1L and S1T of round
-// tier3-05, Windows VM, 3 runs each).
+// the add then fails with the text of git (measured on Windows).
 func TestStaleStepByPathKeepsLockedAndTwinEntries(t *testing.T) {
 	setup := func(t *testing.T) (repo, gd, leaf string) {
 		root := t.TempDir()
@@ -188,10 +185,9 @@ func TestStaleStepByPathKeepsLockedAndTwinEntries(t *testing.T) {
 
 // With a junction or a directory symbolic link at `.git\worktrees` to a folder
 // T with a stale entry `old` and a file MARK, 5fd08069 changes nothing in T
-// with "shadowDirOff":true (cells D1J and D1S of round tier3-05, Windows VM, 3
-// runs each). The step by the path lists nothing behind the link. The step
-// through the held git directory, with T inside it, does the same. That case
-// is claustrum's own, not measured.
+// with "shadowDirOff":true (measured on Windows). The step by the path lists
+// nothing behind the link. The step through the held git directory, with T
+// inside it, does the same. That case is claustrum's own, not measured.
 func TestStaleStepActsNothingBehindALink(t *testing.T) {
 	for _, kind := range []struct {
 		cell string
@@ -236,8 +232,7 @@ func TestStaleStepActsNothingBehindALink(t *testing.T) {
 
 // On Windows the create runs the stale step after `rev-parse
 // --absolute-git-dir`, when the leaf folder is made. 5fd08069 removes the entry
-// there (cell S1 of round tier3-02 and cell D1K of round tier3-05, Windows VM).
-// The test reads the leaf when the step starts.
+// there (measured on Windows). The test reads the leaf when the step starts.
 func TestStaleStepRunsAfterTheLeafIsMade(t *testing.T) {
 	f := newWTFixture(t, false)
 	gone := filepath.Join(t.TempDir(), "old")

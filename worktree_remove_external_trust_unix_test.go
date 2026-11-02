@@ -17,7 +17,7 @@ import (
 // These tests cover git.worktree_remove with worktreeRoot on a baseRepo whose git
 // directory the trust check refuses, or in which there is no repository, plus the
 // linked-worktree baseRepo. Each row name is the row of the side-by-side run against
-// f6010b97 on a Linux VM (rows WR* and K*). worktreeRoot is unix-only.
+// f6010b97 on Linux (rows WR* and K*). worktreeRoot is unix-only.
 
 // wrFixture is the layout of those rows. T is a repository and TW its linked
 // worktree. X is a second repository. The worktree location is R. e0 is a worktree
@@ -123,8 +123,8 @@ func foreignText(cd, repo string) string {
 		repo + `"; restore the file to read ../.. or remove that worktree entry and add the worktree again`
 }
 
-// Rows WR01 to WR06 and WR08: a refused git directory of baseRepo answers the prefix
-// and the trust refusal text. Nothing is deleted.
+// Measured: a refused git directory of baseRepo answers the prefix and the trust
+// refusal text. Nothing is deleted.
 func TestWorktreeRemoveExternalRefusedGitDir(t *testing.T) {
 	for _, tc := range []struct {
 		name string
@@ -132,8 +132,8 @@ func TestWorktreeRemoveExternalRefusedGitDir(t *testing.T) {
 		// the expected error text.
 		plant func(t *testing.T, f *wrFixture) (base, target, branch, want string)
 	}{
-		// On f6010b97 WR01 planted "." and was refused. 89cb6289 trusts "." (row T01),
-		// so the row plants "x" here.
+		// On f6010b97 WR01 planted "." and was refused. 89cb6289 trusts "."
+		// (measured), so the row plants "x" here.
 		{"WR01_stray_commondir_x", func(t *testing.T, f *wrFixture) (string, string, string, string) {
 			cd := filepath.Join(f.T, ".git", "commondir")
 			wrWrite(t, cd, "x\n")
@@ -195,10 +195,10 @@ func TestWorktreeRemoveExternalRefusedGitDir(t *testing.T) {
 	})
 }
 
-// Rows WR10 to WR13: a baseRepo with no repository answers the prefix and
-// "exit status 128". Nothing is deleted. git 2.56 fails the listing of WR13 with its
-// gitfile text, and 5fd08069 gives the same frame (cell WR13 of round tier0-27, Linux
-// VM). So the frame is the same with git 2.43 and 2.56.
+// Measured: a baseRepo with no repository answers the prefix and "exit status 128".
+// Nothing is deleted. git 2.56 fails the listing of WR13 with its gitfile text, and
+// 5fd08069 gives the same frame (measured on Linux). So the frame is the same with
+// git 2.43 and 2.56.
 func TestWorktreeRemoveExternalNoRepositoryBase(t *testing.T) {
 	for _, tc := range []struct {
 		name  string
@@ -242,7 +242,7 @@ func TestWorktreeRemoveExternalNoRepositoryBase(t *testing.T) {
 	}
 }
 
-// Row WR15: a configuration that cannot be listed answers the prefix and the hooks
+// Measured: a configuration that cannot be listed answers the prefix and the hooks
 // refusal text. Nothing is deleted. The row had a syntax error in the config. The
 // daemon's own read answers that state first now (gitrepoconfig.go), so the config
 // of the test has an `include.path` with no value: the read gives no refusal for it,
@@ -267,8 +267,8 @@ func TestWorktreeRemoveExternalHooksRefusal(t *testing.T) {
 	}
 }
 
-// Rows WR07, WR14, K02 and K09: the removal resolves baseRepo to its repository git
-// directory and removes the worktree, its entry and its branch.
+// Measured: the removal resolves baseRepo to its repository git directory and
+// removes the worktree, its entry and its branch.
 func TestWorktreeRemoveExternalResolvesBaseRepository(t *testing.T) {
 	// WR07: a linked worktree as baseRepo.
 	t.Run("WR07_linked_base", func(t *testing.T) {
@@ -328,8 +328,8 @@ func TestWorktreeRemoveExternalResolvesBaseRepository(t *testing.T) {
 	})
 }
 
-// Rows K07 and K25: a baseRepo that is a git directory answers the prefix and
-// "exit status 128". Nothing is deleted.
+// Measured: a baseRepo that is a git directory answers the prefix and "exit
+// status 128". Nothing is deleted.
 func TestWorktreeRemoveExternalBaseIsGitDir(t *testing.T) {
 	t.Run("K07_bare_repo", func(t *testing.T) {
 		f := newWRFixture(t)
@@ -355,8 +355,8 @@ func TestWorktreeRemoveExternalBaseIsGitDir(t *testing.T) {
 	})
 }
 
-// Rows K12 and K15, a daemon GIT_DIR. K12: it names nothing, and git's repository
-// check fails with "exit status 128". K15: it names the repository X, so the
+// Measured cases with a daemon GIT_DIR. First, it names nothing, and git's repository
+// check fails with "exit status 128". Second, it names the repository X, so the
 // registration check reads X/.git/worktrees, which does not exist.
 func TestWorktreeRemoveExternalDaemonGitDir(t *testing.T) {
 	t.Run("K12_names_nothing", func(t *testing.T) {
@@ -401,7 +401,7 @@ func TestWorktreeRemoveExternalVerifyKeepsBaseSpelling(t *testing.T) {
 	}
 }
 
-// Row K03 with a target that is already gone: the no-repository answer comes before
+// Measured with a target that is already gone: the no-repository answer comes before
 // the "already gone" success.
 func TestWorktreeRemoveExternalNoRepositoryGoneTarget(t *testing.T) {
 	f := newWRFixture(t)
@@ -475,9 +475,9 @@ func TestWorktreeRemoveExternalLinkedBaseCannotRedirect(t *testing.T) {
 	})
 }
 
-// Rows K10, K11 and K14: a baseRepo that git cannot start in answers the work-tree
-// refusal with the hooks refusal and the start error of the configuration listing.
-// The error names the git that PATH resolves. Nothing is deleted.
+// Measured: a baseRepo that git cannot start in answers the work-tree refusal with
+// the hooks refusal and the start error of the configuration listing. The error
+// names the git that PATH resolves. Nothing is deleted.
 func TestWorktreeRemoveExternalUnenterableBase(t *testing.T) {
 	if os.Geteuid() == 0 {
 		t.Skip("root ignores the permission this test depends on")
@@ -532,18 +532,18 @@ func TestWorktreeRemoveExternalUnenterableBase(t *testing.T) {
 	})
 }
 
-// Row K16 (f6010b97) and row N04 (89cb6289): a `.git` file that names a path that is
-// gone and is not a worktree entry. git's configuration listing fails there with "not
-// a git repository", so the reason is "git finds no repository here: " and git's
-// text. The check also comes before the dir-symlink check. git 2.47 names the
-// missing path in its text, and a newer git prints "(null)" there. The daemon passes
-// git's text through, so the test accepts either. Mutation: keep the listing refusal
-// text for this class.
+// Measured on f6010b97 and 89cb6289: a `.git` file that names a path that is gone and
+// is not a worktree entry. git's configuration listing fails there with "not a git
+// repository", so the reason is "git finds no repository here: " and git's text. The
+// check also comes before the dir-symlink check. git 2.47 names the missing path in
+// its text, and a newer git prints "(null)" there. The daemon passes git's text
+// through, so the test accepts either. Mutation: keep the listing refusal text for
+// this class.
 //
 // git 2.56 prints "fatal: gitfile does not point to a valid repository: <G>/.git"
-// there. 5fd08069 then answers the error of its call about the repository (cell GF of
-// round tier0-27, Linux VM). The second request, through a symlinked level, is not
-// measured with git 2.56.
+// there. 5fd08069 then answers the error of its call about the repository (measured on
+// Linux). The second request, through a symlinked level, is not measured with git
+// 2.56.
 func TestWorktreeRemoveExternalGitFileToNowhere(t *testing.T) {
 	f := newWRFixture(t)
 	g := filepath.Join(f.base, "G")
@@ -607,7 +607,7 @@ func gitSaysGitFileNowhere(t *testing.T) bool {
 	return false
 }
 
-// Row K13: the worktrees directory of the repository cannot be read (mode 0000). A
+// Measured: the worktrees directory of the repository cannot be read (mode 0000). A
 // plain folder and a registered worktree both get the lock-check text, with the path
 // as given. A worktree that is already gone still answers success. Nothing is deleted.
 func TestWorktreeRemoveExternalRegistryUnreadable(t *testing.T) {
@@ -650,14 +650,14 @@ type wrRow struct {
 }
 
 // git.worktree_remove with worktreeRoot when PATH holds no git, and the twins with git
-// on PATH (89cb6289, Linux VM). Each row sends branchName w1.
+// on PATH (`89cb6289`, measured on Linux). Each row sends branchName w1.
 //
 // In the no-git rows where baseRepo exists, the answer is the work-tree refusal with
-// the exec error alone. That answer comes before the trust check (row L13t). A
+// the exec error alone. That answer comes before the trust check (measured). A
 // baseRepo that does not exist skips the work-tree check. A worktree folder that
 // holds a file, or is empty, then gets the lock-check text that names the repository.
-// So does one whose `.git` file names an entry of the missing repository (row DG1).
-// With git that folder is deleted, as on both references (row DG1-g). A gone one
+// So does one whose `.git` file names an entry of the missing repository (measured).
+// With git that folder is deleted, as on both references (measured). A gone one
 // answers as it does with git. Nothing is deleted with no git.
 //
 // Mutations for a baseRepo that exists: drop the no-git answer, or give it after the
@@ -683,7 +683,7 @@ func TestWorktreeRemoveExternalNoGitOnPath(t *testing.T) {
 		return leaf
 	}
 	// entryLeaf is a worktree folder whose `.git` file names an entry of the missing
-	// baseRepo, with two files in it (rows DG1 and DG1-g).
+	// baseRepo, with two files in it (measured).
 	entryLeaf := func(t *testing.T, f *wrFixture) string {
 		leaf := filepath.Join(f.R, "proj", "lx")
 		wrWrite(t, filepath.Join(leaf, ".git"), "gitdir: "+filepath.Join(nope(f), ".git", "worktrees", "x")+"\n")
@@ -836,8 +836,8 @@ func wrPlainFolder(t *testing.T, f *wrFixture) string {
 }
 
 // With git on PATH, a baseRepo that does not exist runs no `git version`. 89cb6289
-// runs only the one-time excludes read there (rows L13wa-g and L13wb-g on a Linux
-// VM). Mutation: run the configuration check for a baseRepo that does not exist.
+// runs only the one-time excludes read there (measured on Linux). Mutation: run
+// the configuration check for a baseRepo that does not exist.
 func TestWorktreeRemoveExternalMissingBaseRunsNoGitVersion(t *testing.T) {
 	f := newListingFixture(t)
 	root := filepath.Join(filepath.Dir(f.top), "ext")
@@ -871,11 +871,11 @@ func wrSymlinkChain(t *testing.T, target string, n int) string {
 	return filepath.Join(dir, name)
 }
 
-// Rows LNKb, LNKr and their twins with git (89cb6289 and f6010b97, Linux VM).
+// Rows LNKb, LNKr and their twins with git (`89cb6289`, `f6010b97`, measured on Linux).
 // baseRepo is the head of a chain of 45 relative symlinks to a repository. The kernel does not
 // follow that chain, so os.Stat fails, but the trust check resolves it. The removal is
-// refused, and the registered worktree and its entry stay. With no git on PATH the
-// reason is the exec error. With git it is the hooks refusal with the chdir error.
+// refused, and the registered worktree and its entry stay. With no git on PATH the reason is
+// the exec error. With git it is the hooks refusal with the chdir error.
 //
 // Mutations: skip the work-tree check for every baseRepo that fails os.Stat. The
 // removal then deletes the worktree of the bare repository. Another mutation leaves
@@ -929,12 +929,12 @@ func TestWorktreeRemoveExternalDeepSymlinkChainBase(t *testing.T) {
 	}
 }
 
-// Row DG2s-g (89cb6289, Linux VM): the repository has a good HEAD, and its
-// `.git/commondir` is a dangling relative symlink that stays in `.git`. The trust check
-// passes it, and git then fails each `worktree list`. The removal is refused, and the
-// worktree, its `.git` file and its entry stay. The fixture lives in the test's
-// temporary directory only. Mutation: go on after the failed `worktree list -z`. The
-// removal then deletes the worktree and its entry.
+// Measured: the repository has a good HEAD, and its `.git/commondir` is a dangling
+// relative symlink that stays in `.git`. The trust check passes it, and git then fails
+// each `worktree list`. The removal is refused, and the worktree, its `.git` file and
+// its entry stay. The fixture lives in the test's temporary directory only. Mutation:
+// go on after the failed `worktree list -z`. The removal then deletes the worktree and
+// its entry.
 func TestWorktreeRemoveExternalWorktreeListFails(t *testing.T) {
 	f := newWRFixture(t)
 	if err := os.Symlink("nothing-here", filepath.Join(f.T, ".git", "commondir")); err != nil {
@@ -950,10 +950,10 @@ func TestWorktreeRemoveExternalWorktreeListFails(t *testing.T) {
 	}
 }
 
-// Row DG2s-g, the git calls. After the failed `worktree list --porcelain -z`, the
-// daemon runs one more configuration listing. Then it runs `worktree list --porcelain`
-// with no -z. No git call follows the second failure. Mutation: answer after the
-// first failed call.
+// Measured, the git calls. After the failed `worktree list --porcelain -z`, the daemon
+// runs one more configuration listing. Then it runs `worktree list --porcelain` with
+// no -z. No git call follows the second failure. Mutation: answer after the first
+// failed call.
 func TestWorktreeRemoveExternalWorktreeListSecondCall(t *testing.T) {
 	f := newListingFixture(t)
 	root := filepath.Join(filepath.Dir(f.top), "ext")
@@ -986,13 +986,12 @@ func tailArgv(calls []envCall, n int) [][]string {
 	return out
 }
 
-// Rows DG2-g, DG2-info, DG2-status, DG2h-g and DG2i-g (89cb6289, Linux VM). The git
-// directory has a HEAD that reads "garbage". With a dangling relative commondir symlink
-// that stays in `.git`, the trust check refuses it with the shape text. That holds on
-// a remove with worktreeRoot, on git.info and on git.status. A remove without worktreeRoot
-// keeps the lock-check text. With the bad HEAD alone, the remove with worktreeRoot
-// answers "exit status 128". Nothing is deleted. Mutation: trust the dangling symlink
-// before the git-directory test.
+// Measured cases (`89cb6289`, measured on Linux). The git directory has a HEAD that reads
+// "garbage". With a dangling relative commondir symlink that stays in `.git`, the trust
+// check refuses it with the shape text. That holds on a remove with worktreeRoot, on
+// git.info and on git.status. A remove without worktreeRoot keeps the lock-check text.
+// With the bad HEAD alone, the remove with worktreeRoot answers "exit status 128". Nothing
+// is deleted. Mutation: trust the dangling symlink before the git-directory test.
 func TestGitDirTrustDanglingCommondirWithBadHead(t *testing.T) {
 	arm := func(t *testing.T, link bool) (f *wrFixture, inRepo, shape string) {
 		f = newWRFixture(t)

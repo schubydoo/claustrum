@@ -26,20 +26,18 @@ import (
 
 // shadowHeadMaxBytes is the cut of the copy of HEAD. On 5fd08069 a HEAD of 8191
 // or 8192 bytes is copied whole, and one of 8193 bytes or of 1 MiB gives a copy
-// of 8192 bytes (cells 17a to 17k of s3p2b-edges-linux, Linux VM).
+// of 8192 bytes (measured on Linux).
 const shadowHeadMaxBytes = 8192
 
 // shadowCopiedFiles are the files of the git directory that get a copy when
 // they exist, beside HEAD and the config. Each copy follows its file: it is
 // written again when the file has another text, and it goes when the file is
-// gone (cells 19a to 19e of s3p2b-edges-linux, Linux VM, and cell 15 of
-// s3p2b-edges2 on macOS and Windows VMs). `rebase-apply/head-name` ran on a
-// Linux VM only (cell 20a), and it is copied on every system here.
+// gone (measured on Linux, macOS and Windows). `rebase-apply/head-name` ran
+// on Linux only (measured), and it is copied on every system here.
 //
 // 5fd08069 makes no entry for packed-refs, MERGE_HEAD, CHERRY_PICK_HEAD,
 // REVERT_HEAD, sequencer, ORIG_HEAD, FETCH_HEAD, info/grafts,
-// info/sparse-checkout and objects/info/alternates (cells B3 of s3p2-linux and
-// 20b to 20i of s3p2b-edges-linux).
+// info/sparse-checkout and objects/info/alternates (measured).
 var shadowCopiedFiles = []string{
 	"info/exclude",
 	"info/attributes",
@@ -66,13 +64,12 @@ type shadowRepo struct {
 
 // shadowRepoLimit is the count of repository folders in the folder of the
 // daemon. 5fd08069 keeps 128, and the request of a new repository removes one
-// (cell G13 of round task075-01, Linux VM). A variable, so that a test can
-// lower it.
+// (measured on Linux). A variable, so that a test can lower it.
 var shadowRepoLimit = 128
 
 // repoLimitError is the refusal of a new repository folder when a git child
 // holds each of the shadowRepoLimit folders. 5fd08069 answers this text with
-// 128 (E2L cell 36 and E3L cell 55, Linux VM).
+// 128 (measured on Linux).
 type repoLimitError struct{ limit int }
 
 func (e repoLimitError) Error() string {
@@ -98,16 +95,14 @@ func isShadowRepoName(name string) bool {
 // daemon when shadowRepoLimit of them are there and the folder name is to be
 // made. base is a root at own. The caller holds repoMu.
 //
-// The folder that goes is the one with the oldest use. On 5fd08069 the
-// 129th repository removed the folder of the first, and a later request on the
-// first removed the folder of the second (cell G13 of round task075-01, Linux
-// VM). A folder that a git child holds stays (holdRepo, E2L cell 37, Linux VM).
-// With none free, the
-// error is repoLimitError. Two folders with the same use go by name order, and a
-// failed remove lets the request go on (both not measured). After a failed
-// remove the daemon still knows the copies that stay (forgetGoneCopies). A failed open or
-// read of own lets the request go on to its mkdir (not measured, claustrum's
-// own).
+// The folder that goes is the one with the oldest use. On 5fd08069 the 129th repository
+// removed the folder of the first, and a later request on the first removed the folder
+// of the second (measured on Linux). A folder that a git child holds stays (holdRepo,
+// measured on Linux). With none free, the error is repoLimitError. Two folders with the
+// same use go by name order, and a failed remove lets the request go on (both not
+// measured). After a failed remove the daemon still knows the copies that stay
+// (forgetGoneCopies). A failed open or read of own lets the request go on to its mkdir
+// (not measured, claustrum's own).
 func (h *shadowHost) evictOldRepoFolder(base *os.Root, own, name string) error {
 	f, err := base.Open(".")
 	if err != nil {
@@ -173,20 +168,17 @@ func (st *shadowRepo) forgetGoneCopies(base *os.Root, name string) {
 // directory gitDir: the first 32 hex digits of the sha256 of that path, with no
 // trailing separator.
 //
-// On 5fd08069 the path is `<repo>/.git` for a plain repository (s3p2-linux cell
-// B1, Linux VM, and TestShadowRepoName for the digits of that cell). A bare repository gives the path of the
-// repository itself (cell B3c). A request on a linked worktree gives the folder
-// of its repository (cell B3b). A `.git` file gives the git directory that it
-// names, and a submodule its folder under `modules` (cells 20j and 23a of
-// s3p2b-edges-linux). On Linux and macOS a symbolic link in the path is
-// resolved, and the letter case is as sent (s3p2-macos cells B1 and B2). On a
-// Windows VM the path has backslashes, a junction is not resolved and another
-// letter case gives the same name (s3p2-windows cells B1, B2 and D6j).
+// On 5fd08069 the path is `<repo>/.git` for a plain repository (measured on Linux, and TestShadowRepoName
+// for the digits). A bare repository gives the path of the repository itself (measured). A request on a
+// linked worktree gives the folder of its repository (measured). A `.git` file gives the git directory
+// that it names, and a submodule its folder under `modules` (measured). On Linux and macOS a symbolic link
+// in the path is resolved, and the letter case is as sent (measured). On Windows the path has backslashes,
+// a junction is not resolved and another letter case gives the same name (measured).
 //
 // gitDir is the git directory that the trust check pinned. That check resolves
 // the links of the request path on Linux and macOS, and on Windows it resolves
 // no junction and gives each name the letter case of the disk (walkStart). No
-// Windows or macOS VM ran claustrum with this name yet.
+// Windows or macOS ran claustrum with this name yet.
 func shadowRepoName(gitDir string) string {
 	sum := sha256.Sum256([]byte(filepath.Clean(gitDir)))
 	return hex.EncodeToString(sum[:])[:32]
@@ -237,20 +229,17 @@ const shadowHeadLinkPrefix = "refs/"
 // HEAD that is a symbolic link to `refs/heads/main` gives a regular file with
 // the text `ref: refs/heads/main` and a newline, 21 bytes: "ref: ", the target
 // of the link as it is written, and a newline. 5fd08069 writes that copy and
-// answers all five methods normally (cells N4-headlink of val-s3p2b2-3-linux2
-// and val-s3p2b2-3-macos, Linux and macOS VMs).
+// answers all five methods normally (measured on Linux and macOS).
 //
 // A link to `refs/remotes/origin/<name>` gets its copy the same way. 5fd08069
 // writes `ref: refs/remotes/origin/main` and a newline, 30 bytes, and goes on.
 // It does so for `refs/remotes/origin/nope` too, a ref that does not exist.
-// The methods then answer by what git says there (cell H1 of
-// val-s3p2b2-7-linux2, Linux VM, 1 run). A link to `refs/tags/v1` gives the
-// copy `ref: refs/tags/v1` and a newline, and a link to `refs/x` gives `ref:
-// refs/x` and a newline (cell N-e of val-s3p2b2-8-linux2, Linux VM, 1 run
-// each). A target that does
-// not start with `refs/`, such as an absolute path, is not measured. The trust
-// check finds no repository there, so such a HEAD does not come here. If it
-// does, it gets no copy and the request is refused.
+// The methods then answer by what git says there (measured on Linux). A link
+// to `refs/tags/v1` gives the copy `ref: refs/tags/v1` and a newline, and a
+// link to `refs/x` gives `ref: refs/x` and a newline (measured on Linux). A
+// target that does not start with `refs/`, such as an absolute path, is not
+// measured. The trust check finds no repository there, so such a HEAD does not
+// come here. If it does, it gets no copy and the request is refused.
 func readShadowHead(gitDir string) ([]byte, bool) {
 	path := filepath.Join(gitDir, "HEAD")
 	if fi, err := os.Lstat(path); err == nil && fi.Mode()&fs.ModeSymlink != 0 {
@@ -268,14 +257,13 @@ func readShadowHead(gitDir string) ([]byte, bool) {
 // read of the config of that repository.
 //
 // 5fd08069 makes the folder at the first request that accepts the repository.
-// git.info, git.status and git.worktree_create make it alike (s3-macos section
-// 1 and s3b-linux cell W1). git.list_branches and git.worktree_remove ran as
-// later requests only. They name the folder in their git calls, so they make
-// it here too (not measured as a first request). A refused config gives no
-// folder (s3p2-linux section 4).
+// git.info, git.status and git.worktree_create make it alike (measured).
+// git.list_branches and git.worktree_remove ran as later requests only. They
+// name the folder in their git calls, so they make it here too (not measured
+// as a first request). A refused config gives no folder (measured).
 //
-// The entries, with the modes of Linux and macOS (s3-linux cell A3, s3p2-linux
-// cells B3, Linux VM. Cell 24 of s3p2b-edges on macOS and Windows VMs):
+// The entries, with the modes of Linux and macOS (measured on Linux,
+// macOS and Windows):
 //
 //   - HEAD (0600): the first shadowHeadMaxBytes bytes of the HEAD of gitDir.
 //   - config (0600): the text of the read (shadowConfigText).
@@ -284,18 +272,17 @@ func readShadowHead(gitDir string) ([]byte, bool) {
 //     does not exist. Windows has no such entry (shadowLinksWorktrees).
 //   - the copies of shadowCopiedFiles (0600), in folders of 0700.
 //   - BISECT_LOG (0600): an empty file while the repository has that file.
-//   - reftable: a link to <gitDir>/reftable while that is a folder. A macOS VM
-//     with git 2.50.1 showed it (cell 25 of s3p2b-edges). Linux did not run it
-//     and gets the same link here. Windows gets none, as for worktrees (not
-//     measured).
+//   - reftable: a link to <gitDir>/reftable while that is a folder. A macOS
+//     test with git 2.50.1 showed it (measured). Linux did not run it and gets the
+//     same link here. Windows gets none, as for worktrees (not measured).
 //
 // A second request with nothing changed writes nothing: inode, times and size
-// of every entry stay (s3p2-linux cell B4). A copy is written again as a new
-// file, through a temporary file and a rename, when its text differs from the
-// text of the last write. The config is written again after each new read of
-// the repository's config (repoReadVerdict has the rule of a new read). A
-// `touch` of the config with the same text makes a new read. Whether 5fd08069
-// writes a new file then is not measured: claustrum does.
+// of every entry stay (measured). A copy is written again as a new file,
+// through a temporary file and a rename, when its text differs from the text
+// of the last write. The config is written again after each new read of the
+// repository's config (repoReadVerdict has the rule of a new read). A `touch`
+// of the config with the same text makes a new read. Whether 5fd08069 writes
+// a new file then is not measured: claustrum does.
 //
 // It returns how the git calls of the request name the repository: the folder
 // that it made or checked. An error leaves the folder as far as it got, and
@@ -357,14 +344,13 @@ func (h *shadowHost) syncRepoFolder(dir, name, gitDir string, read *repoVerdict)
 
 	// A folder that is not there is the first request, or a folder that went.
 	// The copies then come from what the daemon read before: the config is not
-	// read again for it (cell 54 of s3p2b-edges3-linux2, Linux VM).
+	// read again for it (measured on Linux).
 	//
 	// The error of a folder that cannot be made names its full path, as on
 	// 5fd08069: `mkdir <S>/<32 hex>: permission denied` under a folder of mode
 	// 0500, and `mkdir <S>/<32 hex>: not a directory` for a plain file of that
-	// name (cells N4 of val-s3p2b2-3-linux2 and val-s3p2b2-3-macos, Linux and
-	// macOS VMs). On a Windows VM the file gives `mkdir <path>: The system cannot
-	// find the path specified.` (cells N4 of val-s3p2b2-3-windows).
+	// name (measured on Linux and macOS). On Windows the file gives `mkdir
+	// <path>: The system cannot find the path specified.` (measured).
 	//
 	// The folder is made by its name through the root at the folder of the
 	// daemon, and never with its parents. A shutdown that removed the folder of
@@ -435,8 +421,7 @@ func (h *shadowHost) syncRepoFolder(dir, name, gitDir string, read *repoVerdict)
 		}
 	}
 	// BISECT_LOG is an empty file where the repository's file has 340 or 348
-	// bytes (cells B3i of s3p2-linux, and cell 24 i of s3p2b-edges on macOS and
-	// Windows VMs).
+	// bytes (measured on Linux, macOS and Windows).
 	if fi, err := os.Lstat(filepath.Join(gitDir, "BISECT_LOG")); err == nil && fi.Mode().IsRegular() {
 		return h.writeCopy(st, root, rel, "BISECT_LOG", nil)
 	}
@@ -488,7 +473,7 @@ func shadowLink(root *os.Root, target, name string) error {
 // On Windows a held copy gets the retry of retryRename, and a failed rename
 // names both full paths (copyRenameError). On 5fd08069 a copy held 1 s gets
 // the new bytes. One held 3 s fails at about 2.1 s, and the old copy stays
-// (cells F1a to F1c of round task009-01, Windows VM).
+// (measured on Windows).
 func (h *shadowHost) writeCopy(st *shadowRepo, root *os.Root, rel, file string, data []byte) error {
 	sum := sha256.Sum256(data)
 	if have, ok := st.copies[file]; ok && have == sum {
@@ -513,15 +498,14 @@ func (h *shadowHost) writeCopy(st *shadowRepo, root *os.Root, rel, file string, 
 	return nil
 }
 
-// writeNewFile makes the file path in root with the content data as a new
-// file: a temporary file `.tmp-<digits>` (mode 0600) in the folder of the file,
-// then a rename. 5fd08069 writes each copy so. A poll saw
-// `<S>/<32 hex>/.tmp-<digits>`, `<S>/<32 hex>/info/.tmp-<digits>`,
+// writeNewFile makes the file path in root with the content data as a new file:
+// a temporary file `.tmp-<digits>` (mode 0600) in the folder of the file, then
+// a rename. 5fd08069 writes each copy so. A poll saw `<S>/<32
+// hex>/.tmp-<digits>`, `<S>/<32 hex>/info/.tmp-<digits>`,
 // `<S>/.check-<n>/shadow/.tmp-<digits>` and `<S>/.probe/.tmp-<digits>` with
-// mode 0600 and 7 to 10 decimal digits (val-s3p2b2-3-macos row D7, macOS VM).
-// The copy has a new inode after each write (cells 18a, 18k and 19c of
-// s3p2b-edges-linux, and row D5 of val-s3p2b2-3-linux2 for the folder of the
-// start test, Linux VM).
+// mode 0600 and 7 to 10 decimal digits (measured on macOS). The copy has a new
+// inode after each write (measured on Linux, also for the folder of the start
+// test).
 //
 // After an error, left is the name of a temporary file that is still there, or
 // "".
@@ -557,8 +541,8 @@ func writeNewFileBy(root *os.Root, path string, data []byte, rename func(oldName
 // dropCopy removes the copy file of the repository folder rel, a path below
 // the folder of all daemons, when the daemon made one. The copy of a file in a
 // rebase folder goes with its folder: after `rebase-merge/head-name` went on
-// 5fd08069, the folder and the file are gone. `info` stays, empty (cells 19c
-// and 19d of s3p2b-edges-linux, Linux VM).
+// 5fd08069, the folder and the file are gone. `info` stays, empty (measured on
+// Linux).
 func (h *shadowHost) dropCopy(st *shadowRepo, rel, file string) error {
 	if _, ok := st.copies[file]; !ok {
 		return nil
@@ -578,10 +562,10 @@ func (h *shadowHost) dropCopy(st *shadowRepo, rel, file string) error {
 // worktree in a git.info request. On 5fd08069 a git.info on a linked worktree
 // lists that file with one git call in each request, when the repository has
 // the worktreeConfig switch and the file exists. Its settings are in no copy
-// (cell 1c of s3p2b-edges2-linux, Linux VM). git.status lists the file in its
-// own test of the entry (statusEntryConfig), and git.list_branches does not
-// list it (the same cell). The settings of the listing go to the calls of the
-// request on that worktree as `-c` items (gitUse.front).
+// (measured on Linux). git.status lists the file in its own test of the entry
+// (statusEntryConfig), and git.list_branches does not list it (measured). The
+// settings of the listing go to the calls of the request on that worktree as
+// `-c` items (gitUse.front).
 func (req *request) listEntryConfig(t gitDirTrust) {
 	if req.repoRead == nil || !req.repoRead.worktreeConfig || t.worktreeEntry == "" {
 		return

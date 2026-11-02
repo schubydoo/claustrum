@@ -10,9 +10,9 @@ import (
 	"time"
 )
 
-// Row R23b (Linux and macOS VMs): an update-ref that ignores the SIGTERM at
-// updateRefStop is killed updateRefKillAfter later, and the branch stays. The
-// reply therefore comes after both waits, not at the first one.
+// Measured: an update-ref that ignores the SIGTERM at updateRefStop is killed
+// updateRefKillAfter later, and the branch stays. The reply therefore comes
+// after both waits, not at the first one.
 func TestWorktreeRemoveUpdateRefKilledAfterTerm(t *testing.T) {
 	realGit := realGitPath(t)
 	f := newRmFixture(t)
@@ -34,8 +34,8 @@ func TestWorktreeRemoveUpdateRefKilledAfterTerm(t *testing.T) {
 	}
 }
 
-// Row R19 (Linux VM): the entry cannot be dropped, the branch step still runs, and
-// it keeps a branch that no other ref reaches. The member follows the error.
+// Measured: the entry cannot be dropped, the branch step still runs, and it keeps
+// a branch that no other ref reaches. The member follows the error.
 func TestWorktreeRemoveEntryDropFailureKeepsBranch(t *testing.T) {
 	skipIfRoot(t)
 	realGit := realGitPath(t)
@@ -55,11 +55,11 @@ func TestWorktreeRemoveEntryDropFailureKeepsBranch(t *testing.T) {
 	}
 }
 
-// Rows C05 and C08b (Linux VM). C05: the leaf rmdir fails and the branch holds a
+// Measured on Linux. First case: the leaf rmdir fails and the branch holds a
 // commit that no other ref reaches. The branch part follows the leaf part after
 // "; ", without "the worktree itself was removed, but ", and the member is set.
-// C08b: in attach mode the leaf clear fails, and the text names no branch, because
-// the call made none (f6010b97 and 89cb6289 agree there).
+// C08b: in attach mode the leaf clear fails, and the text names no branch,
+// because the call made none (f6010b97 and 89cb6289 agree there).
 func TestWorktreeCreateRollbackLeafAndBranchTexts(t *testing.T) {
 	skipIfRoot(t)
 	realGit := realGitPath(t)

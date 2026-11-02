@@ -18,23 +18,23 @@ import (
 // "The branch step" gives each rule.
 
 // branchListLimit is the --count of the for-each-ref call. A listing of that many
-// records keeps the branch, and no further call runs (rows R15a and R15c). With 10000
-// heads the whole check runs (row R15b).
+// records keeps the branch, and no further call runs (measured). With 10000 heads the
+// whole check runs (measured).
 const branchListLimit = 10001
 
 var (
 	// branchCheckBound bounds for-each-ref, rev-parse --verify and rev-list together.
-	// At the bound the running call is killed, and the branch is kept. Rows R22a,
-	// B2-01, B2-02 and B2-09a show about 60 s and no SIGTERM. The bound starts before
-	// the config listing of for-each-ref, and it covers rev-parse. Both are
-	// claustrum's choice (not measured).
+	// At the bound the running call is killed, and the branch is kept. Measurements
+	// show about 60 s and no SIGTERM. The bound starts before the config listing of
+	// for-each-ref, and it covers rev-parse. Both are claustrum's choice (not
+	// measured).
 	branchCheckBound = 60 * time.Second
 	// updateRefStop is when update-ref gets SIGTERM on Linux and macOS. On Windows
-	// the call is killed then (rows R23a, R23a1 and B2-09e). The time counts from the
-	// start of update-ref, after its config listing (row B2-09e).
+	// the call is killed then (measured). The time counts from the start of
+	// update-ref, after its config listing (measured).
 	updateRefStop = 5 * time.Second
 	// updateRefKillAfter is how long an update-ref that outlives the SIGTERM runs
-	// before it is killed (rows R23b and R23b1: gone at about 10 s).
+	// before it is killed (measured: gone at about 10 s).
 	updateRefKillAfter = 5 * time.Second
 )
 
@@ -71,20 +71,20 @@ type branchStepResult struct {
 
 // kept reports whether the step kept the branch. It is true unless the step deleted
 // the branch, found it absent, or ran no call. git.worktree_remove then adds
-// "branchKept":true to its reply (rows R02, R14, R15a, R16, R18 and R22a).
+// "branchKept":true to its reply (measured).
 func (r branchStepResult) kept() bool {
 	return r.kind == branchUnique || r.kind == branchUnchecked || r.kind == branchUpdateRefFailed
 }
 
 // skippedBranchName reports whether the branch step runs no call for branch. That is
-// an empty name, or one that starts with "-" or "+" (rows R12e, R12d and R12p).
+// an empty name, or one that starts with "-" or "+" (measured).
 func skippedBranchName(branch string) bool {
 	return branch == "" || branch[0] == '-' || branch[0] == '+'
 }
 
 // runBranchStep checks refs/heads/<branch> and deletes it when another ref reaches
-// its tip. The check and the delete run one at a time per common git dir (rows R21,
-// R21b and B2-12). Different repositories run at the same time (row B2-08).
+// its tip. The check and the delete run one at a time per common git dir
+// (measured). Different repositories run at the same time (measured).
 func runBranchStep(u gitUse, repo, branch string) branchStepResult {
 	if skippedBranchName(branch) {
 		return branchStepResult{kind: branchNotRun}
@@ -98,8 +98,7 @@ func runBranchStep(u gitUse, repo, branch string) branchStepResult {
 	// of the check when its gate refuses again. The refusal is the cause in
 	// the text of the branch: `… could not check whether another branch or
 	// remote-tracking ref reaches its commits (this repository's git config
-	// cannot be used: … a link …)` on 5fd08069 (cell X1c-10 of
-	// val-s3p2b2-7-windows, Windows VM).
+	// cannot be used: … a link …)` on 5fd08069 (measured on Windows).
 	if msg := u.swapRefusal("branch", repo); msg != "" {
 		return branchStepResult{kind: branchUnchecked, err: errors.New(msg)}
 	}
@@ -113,8 +112,7 @@ func runBranchStep(u gitUse, repo, branch string) branchStepResult {
 	}
 	// After a failed step of the `config.worktree` file the config is read
 	// again. 5fd08069 keeps the branch with that refusal as the cause for a FIFO
-	// and for a syntax error there (cells C9 and C11 of round task007-01, Linux
-	// and macOS VMs).
+	// and for a syntax error there (measured on Linux and macOS).
 	if u.branchGate != nil {
 		if msg := u.branchGate(); msg != "" {
 			return branchStepResult{kind: branchUnchecked, err: errors.New(msg)}
@@ -154,13 +152,13 @@ func parseBranchRecords(out string) ([]branchRecord, bool) {
 //
 //  1. for-each-ref fails or is stopped: keep.
 //  2. The listing holds branchListLimit records: keep.
-//  3. A listed refname differs from the target only in letter case: keep (rows R16
-//     and R16b). The fold is strings.EqualFold, which also folds letters beyond
+//  3. A listed refname differs from the target only in letter case: keep
+//     (measured). The fold is strings.EqualFold, which also folds letters beyond
 //     ASCII. That is claustrum's choice (not measured).
 //  4. The target is not listed: rev-parse --verify. Exit 1 means the branch is
-//     absent, and nothing else runs (rows R11 and B2-09d). A stopped call counts as a
-//     failure, also on Windows, where the kill gives exit code 1. Exit 0, or any
-//     failure, keeps the branch. That is claustrum's choice (not measured).
+//     absent, and nothing else runs (measured). A stopped call counts as a failure,
+//     also on Windows, where the kill gives exit code 1. Exit 0, or any failure,
+//     keeps the branch. That is claustrum's choice (not measured).
 //  5. rev-list, with one ^<refname> stdin line for each other listed record that is
 //     not a symref. A printed commit keeps the branch, and so does a failed or
 //     stopped rev-list.
@@ -216,9 +214,9 @@ func checkAndDeleteBranch(u gitUse, repo, branch string) branchStepResult {
 }
 
 // branchStdin is the stdin of rev-list: one "^<refname>" line for each listed record
-// in listing order. The target and a record with a symref target are left out (rows
-// R01, R04, R08, R21b and B2-05). The stdin is empty when the target is the only
-// listed branch (rows B2-04a and B2-04b).
+// in listing order. The target and a record with a symref target are left out
+// (measured). The stdin is empty when the target is the only listed branch
+// (measured).
 func branchStdin(recs []branchRecord, target string) string {
 	var b strings.Builder
 	for _, r := range recs {
@@ -247,15 +245,15 @@ func branchStepCmd(ctx context.Context, u gitUse, repo string, hooks []string, a
 // is killed. stopped is true when the bound had ended when the call returned. On
 // Windows the kill gives exit code 1, so exit 1 alone does not tell a stop from
 // git's answer. Only rev-list gets a stdin. The other calls get the
-// null device. 89cb6289 gives them a character device (macOS VM).
+// null device. 89cb6289 gives them a character device (measured on macOS).
 func branchCheckGit(ctx context.Context, u gitUse, repo string, stdin io.Reader, args ...string) (out string, stopped bool, err error) {
 	// The listing and the call take the form of the off switch at the listing
 	// (gitUse.atCommand). On 5fd08069 for-each-ref, rev-list and update-ref of
-	// a remove follow the hold (cells R1 and R2 of round task105-01, Linux VM).
+	// a remove follow the hold (measured on Linux).
 	u = u.atCommand()
 	// A listing that says "not a git repository" ends the step: the call does not run,
 	// and the listing's error stands for it. 89cb6289 runs no for-each-ref after such a
-	// listing (rows L14a, L14b, L14d, L14e and N01 to N04 on Linux and macOS VMs).
+	// listing (measured on Linux and macOS).
 	pre := hookPrecursor(ctx, u, repo, false)
 	if pre.saysNoRepository() {
 		return "", ctx.Err() != nil, pre.err
@@ -288,7 +286,7 @@ func deleteBranchRef(u gitUse, repo, target, tip string) error {
 }
 
 // branchLockPresent reports whether refs/heads/<branch>.lock exists in the common git
-// dir of repo. The rollback text of a failed delete names such a lock (row C07b).
+// dir of repo. The rollback text of a failed delete names such a lock (measured).
 // claustrum tests for the file after the failure. The rows do not tell whether the
 // references test the file or read git's stderr.
 func branchLockPresent(repo, branch string) bool {
@@ -300,17 +298,17 @@ func branchLockPresent(repo, branch string) bool {
 // step adds. It is "" when the branch went, was absent, or was never made. A branch
 // whose name the skip rule leaves alone gets a text too. leafLeft is true when the
 // leaf stays. Then the kept text drops its "the worktree itself was removed, but "
-// start. After a failed rmdir the leaf part comes first (row C05). A
-// leaf that the home or identity guard skipped stays too (claustrum's own path).
+// start. After a failed rmdir the leaf part comes first (measured). A leaf that the
+// home or identity guard skipped stays too (claustrum's own path).
 // docs/protocol/git-rules-calls.md → "The branch step" gives each text.
 func rollbackBranchText(repo, branch string, res branchStepResult, leafLeft bool) string {
 	switch res.kind {
 	case branchNotRun:
 		// A name that the skip rule leaves alone stays, with its own text. f6010b97
-		// and 89cb6289 both give it for "+x" (rows X1 and X2, Linux VM). A name that
-		// starts with "-" gets the same text: claustrum's choice (not measured). The
-		// create does not reach it, because git refuses `-b -<name>` (host git, not
-		// measured on a VM). In attach mode branch is "", so no text comes.
+		// and 89cb6289 both give it for "+x" (measured on Linux). A name that starts
+		// with "-" gets the same text: claustrum's choice (not measured). The create
+		// does not reach it, because git refuses `-b -<name>` (host git, not
+		// measured). In attach mode branch is "", so no text comes.
 		if branch == "" {
 			return ""
 		}

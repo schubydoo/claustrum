@@ -12,11 +12,11 @@ import (
 )
 
 // TestWorktreeCreateUndoOpenHandle pins the step A undo text with the cause
-// measured against f6010b97 and 90fca6e6 on a Windows VM: a handle open on
-// <leaf>\.git without delete sharing. The rollback of a failed checkout cannot
-// delete .git, so it stops there, keeps the registration and w1, and appends the
-// step A text with the OS error of the sharing violation. os.Open shares read and
-// write only, so the test's own handle is the holder.
+// measured against f6010b97 and 90fca6e6 on Windows: a handle open on <leaf>\.git
+// without delete sharing. The rollback of a failed checkout cannot delete .git,
+// so it stops there, keeps the registration and w1, and appends the step A text
+// with the OS error of the sharing violation. os.Open shares read and write only,
+// so the test's own handle is the holder.
 func TestWorktreeCreateUndoOpenHandle(t *testing.T) {
 	requireGit(t)
 	realGit, err := exec.LookPath("git")

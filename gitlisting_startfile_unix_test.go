@@ -7,9 +7,9 @@ import (
 	"testing"
 )
 
-// Cells CeP0 and CeP3 (Linux VM). On Linux and macOS a regular file keeps its frames:
-// the start error of the listing is no refusal there. 89cb6289 answers the same
-// frames with nothing set and with an empty GIT_CONFIG_KEY_0. Mutation: set
+// Measured on Linux. On Linux and macOS a regular file keeps its frames: the start
+// error of the listing is no refusal there. 89cb6289 answers the same frames with
+// nothing set and with an empty GIT_CONFIG_KEY_0. Mutation: set
 // nonFolderStartRefuses to true on Linux and macOS.
 func TestStartErrorInRegularFileKeepsFramesOnUnix(t *testing.T) {
 	for _, ph := range []struct {

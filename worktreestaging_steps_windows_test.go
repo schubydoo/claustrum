@@ -14,9 +14,9 @@ import (
 )
 
 // The Windows frames of the staging step of git.worktree_create, as on
-// 5fd08069 in round task087-01 (Windows VM). No test of this file ran on the
-// host of the build: a Windows run must match the cell that each test names.
-// The step hooks of the create (atStep) stand in for the wrapper of the round.
+// 5fd08069 (measured on Windows). No test of this file ran on the host of the
+// build: a Windows run must match the cell that each test names. The step
+// hooks of the create (atStep) stand in for the wrapper of the round.
 
 // stepCreate is a seeded shadow fixture after its first git.info, with the
 // leaf of a create of the branch w1.
@@ -79,7 +79,7 @@ func (f stepCreate) fullUndo(t *testing.T) {
 	}
 }
 
-// TestCreateWithTwoStagedNamesOnWindows must match cell S1: a second new name
+// TestCreateWithTwoStagedNamesOnWindows must match a measured case: a second new name
 // in `.s<n>\worktrees` fails the create. Without step 1 the create succeeds.
 func TestCreateWithTwoStagedNamesOnWindows(t *testing.T) {
 	f := newStepCreate(t)
@@ -89,10 +89,9 @@ func TestCreateWithTwoStagedNamesOnWindows(t *testing.T) {
 	f.fullUndo(t)
 }
 
-// TestCreateWithALeafOfAnotherEntryOnWindows must match cell S2: a `.git` file
-// of the staged leaf that names another entry of `.s<n>` refuses the create
-// with unsafe_path, and the leaf and the branch go. Without step 2 the create
-// succeeds.
+// TestCreateWithALeafOfAnotherEntryOnWindows must match a measured case: a `.git` file
+// of the staged leaf that names another entry of `.s<n>` refuses the create with
+// unsafe_path, and the leaf and the branch go. Without step 2 the create succeeds.
 func TestCreateWithALeafOfAnotherEntryOnWindows(t *testing.T) {
 	f := newStepCreate(t)
 	atStep(t, "staged", func() {
@@ -106,9 +105,9 @@ func TestCreateWithALeafOfAnotherEntryOnWindows(t *testing.T) {
 	f.fullUndo(t)
 }
 
-// TestCreateCopiesTheStagedTreeOnWindows must match cell S3: a file in a sub
-// folder of the staged registration is in the registration. Without the copy
-// of the tree the sub folder is empty.
+// TestCreateCopiesTheStagedTreeOnWindows must match a measured case: a file in a sub
+// folder of the staged registration is in the registration. Without the copy of the
+// tree the sub folder is empty.
 func TestCreateCopiesTheStagedTreeOnWindows(t *testing.T) {
 	f := newStepCreate(t)
 	atStep(t, "staged", func() { mustWrite(t, filepath.Join(f.staged(t), "w1", "sub", "f.txt"), "x\n") })
@@ -121,7 +120,7 @@ func TestCreateCopiesTheStagedTreeOnWindows(t *testing.T) {
 	}
 }
 
-// TestCreateWithAJunctionInTheStagedEntryOnWindows must match cell S4: a
+// TestCreateWithAJunctionInTheStagedEntryOnWindows must match a measured case: a
 // junction in the staged registration fails the create with `openat j: path
 // escapes from parent`. The target of the junction keeps its file. Without the
 // open of each entry the junction is passed over and the create succeeds.
@@ -140,12 +139,12 @@ func TestCreateWithAJunctionInTheStagedEntryOnWindows(t *testing.T) {
 	}
 }
 
-// TestCreateTakesTheNextNameOnWindows must match cell S5 (C4d of round
-// task007-01). A folder w1 that is made after the add sends the move to w11.
-// Then the create is refused with unsafe_path, with no rollback. The
-// leaf keeps only its `.git` file, which names w11. w1, w11 and the branch
-// stay. Without registrationTarget the move refuses w1 and the create
-// succeeds. Without step 5 the create succeeds with w11.
+// TestCreateTakesTheNextNameOnWindows must match a measured case. A folder
+// w1 that is made after the add sends the move to w11. Then the create is
+// refused with unsafe_path, with no rollback. The leaf keeps only its
+// `.git` file, which names w11. w1, w11 and the branch stay. Without
+// registrationTarget the move refuses w1 and the create succeeds. Without
+// step 5 the create succeeds with w11.
 func TestCreateTakesTheNextNameOnWindows(t *testing.T) {
 	f := newStepCreate(t)
 	other := filepath.Join(f.gitDir, "worktrees", "w1", worktreeConfigName)
@@ -171,10 +170,9 @@ func TestCreateTakesTheNextNameOnWindows(t *testing.T) {
 	}
 }
 
-// TestCreateWithAHundredNamesOnWindows must match cell S6v. With w1 and w11 to
-// w199 made after the add the create fails with the text of the hundred names.
-// The 100 folders keep their files. Without registrationTarget the create
-// succeeds.
+// TestCreateWithAHundredNamesOnWindows must match a measured case. With w1 and w11 to
+// w199 made after the add the create fails with the text of the hundred names. The
+// 100 folders keep their files. Without registrationTarget the create succeeds.
 func TestCreateWithAHundredNamesOnWindows(t *testing.T) {
 	f := newStepCreate(t)
 	names := []string{"w1"}
@@ -262,11 +260,11 @@ func TestCreateWithAHeldLockedFileOnWindows(t *testing.T) {
 	})
 }
 
-// TestRollbackRemovesTheMovedRegistrationOnWindows must match cell S14a: the
-// gitdir record of the registration names another path during a checkout
-// that fails. The rollback removes the registration that the move made, by
-// its identity, and the other path stays. Without the moved registration in
-// the rollback the registration stays.
+// TestRollbackRemovesTheMovedRegistrationOnWindows must match a measured case: the
+// gitdir record of the registration names another path during a checkout that
+// fails. The rollback removes the registration that the move made, by its
+// identity, and the other path stays. Without the moved registration in the
+// rollback the registration stays.
 func TestRollbackRemovesTheMovedRegistrationOnWindows(t *testing.T) {
 	f := newStepCreate(t)
 	other := filepath.Join(t.TempDir(), "other")
@@ -284,11 +282,11 @@ func TestRollbackRemovesTheMovedRegistrationOnWindows(t *testing.T) {
 	}
 }
 
-// TestCreateWithARelativeRecordOnWindows must match cells S14 and S14n: a
+// TestCreateWithARelativeRecordOnWindows must match the measured cases: a
 // relative gitdir record of the staged registration names another path after
-// the move. The create is refused with adminRecordRefusal and removes
-// nothing: the leaf keeps its `.git` file, and the registration and the branch
-// stay. No read-tree runs. Without the record test the create succeeds.
+// the move. The create is refused with adminRecordRefusal and removes nothing:
+// the leaf keeps its `.git` file, and the registration and the branch stay. No
+// read-tree runs. Without the record test the create succeeds.
 func TestCreateWithARelativeRecordOnWindows(t *testing.T) {
 	f := newStepCreate(t)
 	atStep(t, "staged", func() {
@@ -319,9 +317,9 @@ func TestCreateWithARelativeRecordOnWindows(t *testing.T) {
 // returns, the create holds no handle below `.git` but the held git directory,
 // which shares delete access. So another process can rename `.git` before the
 // reply. Here the rename and the rename back run at the step before the
-// `config.worktree` file, and the create succeeds. Round task087-03 (Windows
-// VM) saw "Access is denied." for that rename while the staging folder stayed
-// open until the reply.
+// `config.worktree` file, and the create succeeds. A measurement on Windows
+// saw "Access is denied." for that rename while the staging folder stayed open
+// until the reply.
 func TestGitDirRenamesAfterTheStagingMoveOnWindows(t *testing.T) {
 	f := newStepCreate(t)
 	atStep(t, "registration", func() {

@@ -20,7 +20,7 @@ import (
 )
 
 // These tests pin how git.worktree_create answers when the caller's timeoutMs
-// expires. The rules were measured against f6010b97 and 90fca6e6 on a macOS VM:
+// expires. The rules were measured against f6010b97 and 90fca6e6 on macOS:
 //
 //   - T1: the deadline does not kill `git worktree add`. The reply waits for git,
 //     then answers timeout "before the checkout started" and rolls back.
@@ -844,7 +844,7 @@ func TestWorktreeCreateCallerTimeout(t *testing.T) {
 	})
 	// Q5: the killed checkout's text drops invalid bytes anywhere, and a text with
 	// no printable rune falls back to the kill's exec error. The payloads and texts
-	// were measured against f6010b97 and 90fca6e6 on a macOS VM.
+	// were measured against f6010b97 and 90fca6e6 on macOS.
 	t.Run("Q5 killed checkout text", func(t *testing.T) {
 		for _, tc := range []struct{ name, stderr, want string }{
 			{"inval_mid", "abc\xffdef\n", "abcdef"},
@@ -983,7 +983,7 @@ func lastCallHolds(t *testing.T, log string, words ...string) bool {
 }
 
 // TestWorktreeCreateMeasuredRules pins the git.worktree_create rules measured
-// against f6010b97 and 90fca6e6 on macOS and Windows VMs, where both builds agree:
+// against f6010b97 and 90fca6e6 on macOS and Windows, where both builds agree:
 //
 //   - Q1: the attach fallback add gets the start point that sourceBranch resolved
 //     to, and the checkout reads it.
@@ -1043,8 +1043,8 @@ func TestWorktreeCreateMeasuredRules(t *testing.T) {
 	// its place. No fallback runs. The frame quotes the attach add alone, and the
 	// leaf is absent after. A leaf left as it was gets the fallback (control).
 	// "replparent" replaces the leaf's parent and makes a new empty leaf in it. The
-	// references keep that new leaf (Q2_replpfail, 20 of 20 runs on Linux and macOS
-	// VMs). f6010b97 also kept it in 10 of 10 runs on a Windows VM.
+	// references keep that new leaf (measured on Linux and macOS, 20 of 20 runs).
+	// f6010b97 also kept it in 10 of 10 runs on Windows.
 	t.Run("Q2 no fallback after the leaf changed", func(t *testing.T) {
 		for _, tc := range []struct {
 			action   string

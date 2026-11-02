@@ -15,7 +15,7 @@ import (
 )
 
 // The answer of git.status: the entries of `changes`. Each row is from the
-// side-by-side probe of 89cb6289 on a Linux VM, unless the comment names another.
+// side-by-side probe of 89cb6289 on Linux, unless the comment names another.
 
 const (
 	subPresent = ` S "gl"` + submodulePresentText
@@ -67,18 +67,20 @@ func (f statusFixture) commitGitlink(t *testing.T) {
 	runGit(t, f.W, "commit", "-q", "-m", "gl")
 }
 
-// Rows o1 and o2: the cut of a long entry and the stop at 10000 entries.
+// Measured: the cut of a long entry and the stop at 10000 entries.
 func TestPorcelainEntries(t *testing.T) {
 	long := "?? " + strings.Repeat("d", 600)
 	got := porcelainEntries([]byte(" M a1\n" + long + "\n"))
 	if len(got) != 2 || got[0] != " M a1" {
 		t.Fatalf("entries = %q, want 2 with the leading space kept", got)
 	}
-	// Row o1: 603 bytes become 512 bytes and a 3-byte "…".
+	// Measured: 603 bytes become 512 bytes and a 3-byte
+	// "…".
 	if want := long[:512] + "…"; got[1] != want || len(got[1]) != 515 {
 		t.Errorf("long entry = %d bytes %q\nwant 515 bytes %q", len(got[1]), got[1], want)
 	}
-	// Row o2: 10001 entries become 10000, and the last one is a plain entry.
+	// Measured: 10001 entries become 10000, and the last one is a plain
+	// entry.
 	var b strings.Builder
 	for i := range 10001 {
 		fmt.Fprintf(&b, "?? f%05d\n", i)
@@ -92,7 +94,7 @@ func TestPorcelainEntries(t *testing.T) {
 	}
 }
 
-// Row o11: the quoting and the cut of a submodule name.
+// Measured: the quoting and the cut of a submodule name.
 func TestSubmoduleEntryQuoting(t *testing.T) {
 	for name, want := range map[string]string{
 		strings.Repeat("L", 250): ` S "` + strings.Repeat("L", 200) + `…"` + submodulePresentText,
@@ -115,7 +117,7 @@ func TestGitStatusSubmoduleEntries(t *testing.T) {
 		edit func(t *testing.T, f statusFixture)
 		want []string
 	}{
-		// Rows o6d and n20e: no .git below the gitlink path gives no entry.
+		// Measured: no .git below the gitlink path gives no entry.
 		{"o6d folder with no .git", func(t *testing.T, f statusFixture) {
 			f.commitGitlink(t)
 			if err := os.Mkdir(filepath.Join(f.W, "gl"), 0o755); err != nil {
@@ -123,7 +125,7 @@ func TestGitStatusSubmoduleEntries(t *testing.T) {
 			}
 		}, nil},
 		{"n20e no folder", func(t *testing.T, f statusFixture) { f.commitGitlink(t) }, nil},
-		// Rows o6a and o6b: a .git file or folder is "present".
+		// Measured: a .git file or folder is "present".
 		{"o6a .git file", func(t *testing.T, f statusFixture) {
 			f.commitGitlink(t)
 			writeFile(t, filepath.Join(f.W, "gl", ".git"), "x\n", 0o644)
@@ -134,31 +136,33 @@ func TestGitStatusSubmoduleEntries(t *testing.T) {
 				t.Fatal(err)
 			}
 		}, []string{subPresent}},
-		// Row o4: the gitlink path is a regular file. On a Linux VM that gives the
-		// "could not be inspected" entry. On a Windows VM it gives no entry.
+		// Measured: the gitlink path is a regular file. On Linux that gives the
+		// "could not be inspected" entry. On Windows it gives no entry.
 		{"o4 gitlink path is a file", func(t *testing.T, f statusFixture) {
 			f.commitGitlink(t)
 			writeFile(t, filepath.Join(f.W, "gl"), "file\n", 0o644)
 		}, map[bool][]string{false: {subUnread}, true: nil}[runtime.GOOS == "windows"]},
-		// Rows o9b and o9c: a staged gitlink gives "change staged".
+		// Measured: a staged gitlink gives "change staged".
 		{"o9b staged gitlink", func(t *testing.T, f statusFixture) {
 			f.stageGitlink(t, "gl", other)
 			if err := os.Mkdir(filepath.Join(f.W, "gl"), 0o755); err != nil {
 				t.Fatal(err)
 			}
 		}, []string{subStaged}},
-		// Row o7: one gitlink gives both entries, the ls-files one first.
+		// Measured: one gitlink gives both entries, the ls-files one
+		// first.
 		{"o7 present and staged", func(t *testing.T, f statusFixture) {
 			f.commitGitlink(t)
 			writeFile(t, filepath.Join(f.W, "gl", ".git"), "x\n", 0o644)
 			f.stageGitlink(t, "gl", other)
 		}, []string{subPresent, subStaged}},
-		// Row o8: a gitlink removed from the index gives "change staged".
+		// Measured: a gitlink removed from the index gives "change
+		// staged".
 		{"o8 gitlink removed from the index", func(t *testing.T, f statusFixture) {
 			f.commitGitlink(t)
 			runGit(t, f.W, "rm", "--cached", "-q", "gl")
 		}, []string{subStaged}},
-		// Row o12: one entry for each index stage.
+		// Measured: one entry for each index stage.
 		{"o12 conflicted gitlink", func(t *testing.T, f statusFixture) {
 			writeFile(t, filepath.Join(f.W, "gl", ".git"), "x\n", 0o644)
 			id := statusGitOut(t, f.T, "", "rev-parse", "HEAD")
@@ -177,8 +181,8 @@ func TestGitStatusSubmoduleEntries(t *testing.T) {
 	}
 }
 
-// Rows n20d and o10: at most 100 submodule entries, then one entry with the count
-// of the rest.
+// Measured: at most 100 submodule entries, then one entry with the count of the
+// rest.
 func TestGitStatusSubmoduleOverflow(t *testing.T) {
 	f := newStatusFixture(t)
 	var info strings.Builder
@@ -198,7 +202,7 @@ func TestGitStatusSubmoduleOverflow(t *testing.T) {
 	}
 }
 
-// Rows o16b1 and o16b2: a worktree with a split index.
+// Measured: a worktree with a split index.
 func TestGitStatusSplitIndex(t *testing.T) {
 	f := newStatusFixture(t)
 	runGit(t, f.W, "update-index", "--split-index")
@@ -215,7 +219,7 @@ func TestGitStatusSplitIndex(t *testing.T) {
 	}
 }
 
-// Row o15d: an entry with no index passes, and git reads every file as deleted
+// Measured: an entry with no index passes, and git reads every file as deleted
 // from the index and untracked.
 func TestGitStatusMissingIndex(t *testing.T) {
 	f := newStatusFixture(t)
@@ -228,7 +232,7 @@ func TestGitStatusMissingIndex(t *testing.T) {
 	}
 }
 
-// Rows K1, n12, o17 and o16b1: the files of the temporary git folder.
+// Measured: the files of the temporary git folder.
 func TestStatusGitDirContents(t *testing.T) {
 	entry, common := t.TempDir(), t.TempDir()
 	shared := "sharedindex." + strings.Repeat("a", 40)
@@ -264,14 +268,15 @@ func TestStatusGitDirContents(t *testing.T) {
 		})
 		return names
 	}
-	// Row o17, with the sharedindex file of row o16b1.
+	// Measured, with the sharedindex file.
 	want := []string{"HEAD", "commondir", "config.worktree", "index", "info/sparse-checkout", shared}
 	full := statusEntryAt(t, entry)
 	full.shared, full.hasConfig = []string{shared}, true
 	if got := list(full); !slices.Equal(got, want) {
 		t.Errorf("temporary folder holds %q\nwant %q", got, want)
 	}
-	// Row K1: an entry with none of the three holds HEAD, commondir and index.
+	// Measured: an entry with none of the three holds HEAD, commondir and
+	// index.
 	for _, name := range []string{"config.worktree", "info/sparse-checkout", shared} {
 		if err := os.Remove(filepath.Join(entry, filepath.FromSlash(name))); err != nil {
 			t.Fatal(err)
@@ -304,7 +309,8 @@ func TestStagedSubmodules(t *testing.T) {
 }
 
 // A listing that fails in the temporary git folder. No row measured it. claustrum
-// answers the hooks refusal, as for the listing in the common directory (row o22).
+// answers the hooks refusal, as for the listing in the common directory
+// (measured).
 func TestGitStatusTempListingFailureIsARefusal(t *testing.T) {
 	f := newStatusFixture(t)
 	// git reads the configuration of the common directory for this listing.

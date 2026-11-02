@@ -9,9 +9,8 @@ import (
 )
 
 // The baseRepo spelling rules of git.worktree_create and git.worktree_remove, from
-// the f6010b97 rows of issue 429 S2. Linux and macOS VMs ran groups A, O, R and C.
-// Their validation round added group G and rows C7 to C10. A Windows VM ran round 1
-// (rows A, O, C, WR and WX) and round 2 (rows K, D, J, L, Q and S). None of these
+// the f6010b97 rows of issue 429. The groups ran on Linux and macOS, and a later
+// check added more rows. Windows ran its own two groups of rows. None of these
 // tests run in parallel: they change the working directory, the process environment
 // or the evalSymlinks seam.
 
@@ -33,7 +32,7 @@ const spellRemoveOK = `{"jsonrpc":"2.0","id":1,"result":{"success":true}}`
 // With a worktreeRoot, git.worktree_remove refuses a relative, absent or ".." baseRepo
 // with the texts of the worktreePath check, and names baseRepo as sent. The check
 // comes after the worktreeRoot and worktreePath checks and before the shape check.
-// A ".." baseRepo keeps its text under a refused daemon GIT_CONFIG_COUNT (row R1 P1).
+// A ".." baseRepo keeps its text under a refused daemon GIT_CONFIG_COUNT (measured).
 // An empty worktreePath reads as relative there. The rows are Linux and macOS rows of
 // group R. Linux ran R12 to R14 in the validation round only.
 //
@@ -41,9 +40,9 @@ const spellRemoveOK = `{"jsonrpc":"2.0","id":1,"result":{"success":true}}`
 // worktree. Only R13 and R14 reach the delete. R10 sends baseRepo T, where the row
 // sent <T>/missing/... R11 runs in the working directory B, where the row ran in T.
 //
-// On Windows the worktreeRoot refusal comes first (rows WR0, WR2, WR3 and WR4 on the
-// Windows VM). R10 is row WR2 there. A baseRepo whose walk fails gets the trust-root
-// refusal before it (round 1 row WR1).
+// On Windows the worktreeRoot refusal comes first (measured on Windows). R10 is row
+// WR2 there. A baseRepo whose walk fails gets the trust-root refusal before it
+// (measured).
 func TestWorktreeRemoveRootChecksBaseRepoSpelling(t *testing.T) {
 	f := newWTFixture(t, false)
 	b := filepath.Dir(f.top)
@@ -133,10 +132,10 @@ func TestWorktreeRemoveRootChecksBaseRepoSpelling(t *testing.T) {
 
 // Without worktreeRoot, the containment refusal names baseRepo as sent. An absent or
 // empty baseRepo reads "", so a space comes before the semicolon. The daemon's
-// working directory is the repository. Rows A12 and A12b are remove on Linux and
-// macOS, and A12 also ran on the Windows VM. Row C6 is create with an absent baseRepo
-// on Linux and macOS. No row measured create with an empty baseRepo, or create on
-// Windows. Those create answers are claustrum's own.
+// working directory is the repository. The measured remove ran on Linux and macOS,
+// and also on Windows. A measured create with an absent baseRepo ran on Linux and
+// macOS. No row measured create with an empty baseRepo, or create on Windows. Those
+// create answers are claustrum's own.
 func TestWorktreeContainmentNamesAbsentBaseRepo(t *testing.T) {
 	f := newWTFixture(t, false)
 	t.Chdir(f.top)
@@ -172,13 +171,11 @@ func TestWorktreeContainmentNamesAbsentBaseRepo(t *testing.T) {
 	}
 }
 
-// Without worktreeRoot, take a present worktree whose baseRepo does not exist, such as
-// <T>/missing/... Under a refused daemon GIT_CONFIG_COUNT it gets the plain lock-check
-// refusal, and nothing is deleted. Row A1 P1 sends <T>/missing/.. (Linux and macOS). Row A3 P1 sends
-// <B>/missing/../T (macOS). macOS row G3 P1 got the same text for <T>/dl/.., with dl
-// a dangling link. With nothing planted the remove succeeds (row A1 P0). On Windows
-// these baseRepos get the trust-root refusal (round 1 rows A1 P0, A1 P1 and A3 on the
-// Windows VM).
+// Without worktreeRoot, take a present worktree whose baseRepo does not exist, such as <T>/missing/...
+// Under a refused daemon GIT_CONFIG_COUNT it gets the plain lock-check refusal, and nothing is deleted.
+// One measurement sends <T>/missing/.. (Linux and macOS). Another sends <B>/missing/../T (macOS). macOS
+// got the same text for <T>/dl/.., with dl a dangling link. With nothing planted the remove succeeds
+// (measured). On Windows these baseRepos get the trust-root refusal (measured on Windows).
 func TestWorktreeRemoveCountRefusalUnresolvedBase(t *testing.T) {
 	f := newWTFixture(t, false)
 	runGit(t, f.top, "worktree", "add", "-q", "-b", "w1", f.leaf())
@@ -221,12 +218,11 @@ func TestWorktreeRemoveCountRefusalUnresolvedBase(t *testing.T) {
 }
 
 // A baseRepo that fails the trust-root test gets the managed-worktrees refusal on both
-// methods. It comes before the worktreePath checks (O1 to O4), the Windows
-// worktreeRoot refusal (WR1) and the count check (the P1 phases of A1 and C1).
-// Nothing is deleted or created. These are rows of round 1 on the Windows VM. The walk
-// failure is injected through the evalSymlinks seam for baseRepo only, so the rows run
-// on every OS. Each row has its own repository, so a row fails only on its own frame.
-// The last row, with the seam back, is the control.
+// methods. It comes before the worktreePath checks (measured), the Windows
+// worktreeRoot refusal and the count check. Nothing is deleted or created. These rows
+// are measured on Windows. The walk failure is injected through the evalSymlinks seam
+// for baseRepo only, so the rows run on every OS. Each row has its own repository, so
+// a row fails only on its own frame. The last row, with the seam back, is the control.
 func TestBaseRepoWalkFailureGetsTrustRootRefusal(t *testing.T) {
 	old := evalSymlinks
 	t.Cleanup(func() { evalSymlinks = old })
@@ -308,11 +304,10 @@ func TestBaseRepoWalkFailureGetsTrustRootRefusal(t *testing.T) {
 	})
 }
 
-// <T>\missing\.. stats on Windows while its walk fails, so the managed-worktrees
-// refusal comes first there (round 1 rows A2, O1 and C1). On Linux and macOS the
-// path does not stat, and the answers stay. They are success for a gone worktree
-// (row A2), the empty-path text (row O1) and not_a_repo (row C1). <T>/sub/.. stats and walks on
-// every OS and passes (row A4, here with the worktree gone).
+// <T>\missing\.. stats on Windows while its walk fails, so the managed-worktrees refusal comes
+// first there (measured). On Linux and macOS the path does not stat, and the answers stay. They
+// are success for a gone worktree (measured), the empty-path text and not_a_repo. <T>/sub/..
+// stats and walks on every OS and passes (measured, here with the worktree gone).
 func TestBaseRepoMissingDotDotWalk(t *testing.T) {
 	f := newWTFixture(t, false)
 	if err := os.MkdirAll(filepath.Join(f.top, "sub"), 0o755); err != nil {
@@ -354,11 +349,11 @@ func TestBaseRepoMissingDotDotWalk(t *testing.T) {
 
 // A baseRepo that os.Stat does not report as missing, and whose walk fails, gets the
 // managed-worktrees refusal on both methods. Nothing is deleted or created. On Linux
-// and macOS os.Stat fails there with ENOTDIR, ELOOP or EACCES. That is rows G1, G2 and
-// G4 on remove, and G1c, G2c and G4c on create. G1 uses the tracked file t.txt, where
-// the rows used a.txt. On Windows <T>\t.txt\.. stats and its walk fails (round 2 row
-// D1 on the Windows VM). G2 and G4 run on Linux and macOS only. G4 skips as root,
-// because root can search a directory with mode 000.
+// and macOS os.Stat fails there with ENOTDIR, ELOOP or EACCES. That is measured on
+// remove and on create. One case uses the tracked file t.txt, where the rows used
+// a.txt. On Windows <T>\t.txt\.. stats and its walk fails (measured on Windows). G2
+// and G4 run on Linux and macOS only. G4 skips as root, because root can search a
+// directory with mode 000.
 func TestBaseRepoStatErrorGetsTrustRootRefusal(t *testing.T) {
 	sep := string(filepath.Separator)
 	for _, r := range []struct {
@@ -426,11 +421,11 @@ func TestBaseRepoStatErrorGetsTrustRootRefusal(t *testing.T) {
 
 // With a worktreeRoot, git.worktree_create refuses a relative, absent or ".." baseRepo
 // with the texts of the worktreePath check and errorCode unsafe_path. Nothing is
-// created. Linux and macOS rows C7 (<T>/sub/..), C8 ("T" in the working directory B)
-// and C9 (absent, in the working directory T). Row C10 (<T>/.) is the control, and it
-// creates the worktree. Each row has its own repository. On Windows the worktreeRoot
-// refusal comes first. No Windows row measured create with these spellings, so that
-// answer is claustrum's own.
+// created. Measured on Linux and macOS: <T>/sub/.., "T" in the working directory B,
+// and absent in the working directory T. <T>/. is the control, and it creates the
+// worktree. Each row has its own repository. On Windows the worktreeRoot refusal comes
+// first. No Windows row measured create with these spellings, so that answer is
+// claustrum's own.
 func TestWorktreeCreateRootChecksBaseRepoSpelling(t *testing.T) {
 	sep := string(filepath.Separator)
 	rel := func(p string) string {

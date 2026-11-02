@@ -16,9 +16,9 @@ import (
 
 // These tests cover a worktreeRoot that leads into a checkout of the repository: the
 // main checkout, the checkout of baseRepo or a linked worktree. Each row name is a row
-// of the side-by-side runs against f6010b97 and 89cb6289 on Linux and macOS VMs. The
-// fixture of r0Fixture is extended here. <B>/W and <B>/X/o/w0 are linked worktrees
-// of <T>, made by plain git. worktreeRoot is unix-only.
+// of the side-by-side runs against f6010b97 and 89cb6289 on Linux and macOS. The
+// fixture of r0Fixture is extended here. <B>/W and <B>/X/o/w0 are linked worktrees of
+// <T>, made by plain git. worktreeRoot is unix-only.
 
 const (
 	r0cListing = "config -z --list"
@@ -212,11 +212,11 @@ func (r r0cRow) create(t *testing.T) {
 	}
 }
 
-// A root that leads into the main checkout, or into the checkout of baseRepo, is
-// refused on remove with the main form. The walk goes from the resolved root up, and
-// "(at ...)" names the outermost path that is the same file as one of the two. Before,
-// claustrum answered {"success":true} to rows E1, W1 and Y6. It deleted the dirty
-// leaf, its entry and its branch, or with E1 the branch of a live worktree.
+// A root that leads into the main checkout, or into the checkout of baseRepo, is refused on
+// remove with the main form. The walk goes from the resolved root up, and "(at ...)" names
+// the outermost path that is the same file as one of the two. Before, claustrum answered
+// {"success":true} to three measured cases. It deleted the dirty leaf, its entry and its
+// branch, or in one case the branch of a live worktree.
 func TestWorktreeRemoveRootInMainCheckout(t *testing.T) {
 	requireWorktreeListZ(t)
 	const w1 = "<T>/.claude/worktrees/w1"
@@ -262,7 +262,7 @@ func TestWorktreeRemoveRootInLinkedWorktree(t *testing.T) {
 	requireWorktreeListZ(t)
 	const w0 = "<B>/X/o/w0"
 	for _, r := range []r0cRow{
-		// W2 is also row Y2c: the gitdir file of w0 as git wrote it.
+		// W2 is also measured: the gitdir file of w0 as git wrote it.
 		{name: "W2", root: w0, wp: w0 + "/cp/w1", leaf: w0 + "/cp/w1", setup: withW0,
 			want: "refusing to remove worktree: <B>/X/o/w0 leads into <B>/X/o/w0, a worktree of the repository <T> (at <B>/X/o/w0)" + r0cLinkedTail},
 		{name: "Y1", base: "<T>/sub", root: w0, wp: w0 + "/cp/w1", leaf: w0 + "/cp/w1", setup: withW0,
@@ -289,13 +289,13 @@ func TestWorktreeRemoveRootInLinkedWorktree(t *testing.T) {
 	}
 }
 
-// A root that does not exist or does not resolve, and that leads into no checkout, is
-// refused on remove after `worktree list`. In row Y9 the linked worktree w0 was
-// deleted with the leaf inside it. In row T3 w0 is locked and was deleted. In row T4
-// two levels of the root are missing. In row T5 the root is a symlink to a path that
-// does not exist. Before, claustrum answered {"success":true} to rows Y9 and T3 to
-// T5. It deleted branch wt1, and in row Y9 also the entry of the leaf. In rows T3 to
-// T5 the live worktree w1 holds wt1.
+// A root that does not exist or does not resolve, and that leads into no checkout, is refused
+// on remove after `worktree list`. In a measurement, the linked worktree w0 was deleted with
+// the leaf inside it. In a measurement, w0 is locked and was deleted. In a measurement, two
+// levels of the root are missing. In a measurement, the root is a symlink to a path that does
+// not exist. Before, claustrum answered {"success":true} to these measured cases. It deleted
+// branch wt1, and also the entry of the leaf. In a measurement, the live worktree w1 holds
+// wt1.
 func TestWorktreeRemoveRootMissing(t *testing.T) {
 	const w0, w1 = "<B>/X/o/w0", "<T>/.claude/worktrees/w1"
 	gone := func(t *testing.T, f *r0Fixture) {
@@ -349,9 +349,9 @@ func stubGitCall(t *testing.T, call, cmd string) {
 
 // After any other failure of `worktree list --porcelain -z`, the daemon runs `worktree
 // list --porcelain` with its listing. If that call fails too, the removal is refused
-// and nothing is deleted. 89cb6289 answers so with exit status 128 (row DG2s-g on a
-// Linux VM). Here both calls exit 129, which is not measured. Mutation: go on after
-// the failed calls.
+// and nothing is deleted. 89cb6289 answers so with exit status 128 (measured on
+// Linux). Here both calls exit 129, which is not measured. Mutation: go on after the
+// failed calls.
 func TestWorktreeRemoveListFailsTwiceRefuses(t *testing.T) {
 	r := r0cRow{root: "<B>/X/o/w0", wp: "<B>/X/o/w0/cp/w1", leaf: "<B>/X/o/w0/cp/w1", setup: withW0,
 		after: func(t *testing.T, f *r0Fixture) { stubGitCall(t, "worktree list", "exit 129") },
@@ -373,8 +373,8 @@ func TestWorktreeRemoveListWithoutZIsRead(t *testing.T) {
 }
 
 // A root that no checkout test matches goes on, and the remove deletes the worktree, as
-// on f6010b97 and 89cb6289. In row Y2 git lists w0 through the symlink <B>/S to
-// <B>/X, and the listed spelling is not resolved. In row Y7 the root holds w0.
+// on f6010b97 and 89cb6289. In a measurement, git lists w0 through the symlink <B>/S to
+// <B>/X, and the listed spelling is not resolved. In a measurement, the root holds w0.
 func TestWorktreeRemoveRootBesideLinkedWorktree(t *testing.T) {
 	const w0 = "<B>/X/o/w0"
 	keptW0 := func(t *testing.T, f *r0Fixture) {
@@ -405,10 +405,11 @@ func TestWorktreeRemoveRootBesideLinkedWorktree(t *testing.T) {
 }
 
 // On a case-insensitive macOS file system a case variant of <T> is the same file as
-// <T>. Row E8: the root <B>/t/.claude matches the main checkout by identity, and
-// "(at ...)" keeps the spelling of the request. Row Y3: a case variant of the linked
-// worktree w0 does not match, because the linked form compares strings. It goes on to
-// the ownership refusal. Both rows are skipped on a case-sensitive file system.
+// <T>. Measured: the root <B>/t/.claude matches the main checkout by identity, and
+// "(at ...)" keeps the spelling of the request. Measured: a case variant of the
+// linked worktree w0 does not match, because the linked form compares strings. It
+// goes on to the ownership refusal. Both rows are skipped on a case-sensitive file
+// system.
 func TestWorktreeRemoveRootCaseVariant(t *testing.T) {
 	t.Run("E8", func(t *testing.T) {
 		r := r0cRow{root: "<B>/t/.claude", wp: "<B>/t/.claude/cp/w1", leaf: "<T>/.claude/cp/w1",
@@ -429,7 +430,7 @@ func TestWorktreeRemoveRootCaseVariant(t *testing.T) {
 // The create twins of the rows above get the same forms with errorCode unsafe_path,
 // and nothing is created. f6010b97 makes the same 9 git calls first. 89cb6289 also
 // makes 9 calls, in this order. Before, claustrum sent its "inside a git checkout"
-// text for rows E2, W3, W4, Y11a and Y11c.
+// text for these measured cases.
 func TestWorktreeCreateRootInCheckout(t *testing.T) {
 	requireWorktreeListZ(t)
 	const w0 = "<B>/X/o/w0"
@@ -459,12 +460,12 @@ func TestWorktreeCreateRootInCheckout(t *testing.T) {
 // On create, a stop of `rev-parse --show-toplevel` or `worktree list` at the time
 // limit of a call stops the create with the parent-step text and the stop text,
 // errorCode mkdir_failed. No git call runs after it, and nothing is created.
-// 5fd08069 answers so for the show-toplevel row (cell TB of round task010-02,
-// Linux VM). The worktree list row is claustrum's own (not measured). The limit
-// is shortened to 2 s here. The rows:
-//   - show-toplevel: the shape of row Y11b, baseRepo W/sub and the root in W.
-//   - worktree list: the shape of row W4, the root in the linked worktree w0. The
-//     killed -z call gets no second call.
+// 5fd08069 answers so for the show-toplevel row (measured on Linux). The worktree
+// list row is claustrum's own (not measured). The limit is shortened to 2 s here.
+// The rows:
+//   - show-toplevel: the shape, baseRepo W/sub and the root in W.
+//   - worktree list: the shape, the root in the linked worktree w0. The killed -z
+//     call gets no second call.
 func TestWorktreeCreateCheckoutCallKilled(t *testing.T) {
 	const w0 = "<B>/X/o/w0"
 	for name, r := range map[string]struct {

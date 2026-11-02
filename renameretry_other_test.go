@@ -22,9 +22,8 @@ func TestRenameHeldIsWindowsOnly(t *testing.T) {
 
 // TestShadowCopyRenameTextOnLinuxAndMacOS: a failed rename of the copy write
 // keeps the text of the root on Linux and macOS, `renameat .tmp-<n> HEAD:
-// <cause>`. The form with both full paths is measured on Windows only (cell
-// F1b of round task009-01). Here a folder with content is at the place of
-// the copy of HEAD.
+// <cause>`. The form with both full paths is measured on Windows only. Here
+// a folder with content is at the place of the copy of HEAD.
 func TestShadowCopyRenameTextOnLinuxAndMacOS(t *testing.T) {
 	f := newSeededShadowFixture(t)
 	if raw, _ := f.info(t, f.repo, nil); !regexp.MustCompile(`"settingsControl":"shadow"`).MatchString(raw) {

@@ -97,7 +97,7 @@ func versionCalls(t *testing.T, log string) int {
 // TestIncludeVersionGate covers R2 end to end, with the G02 fixture: `build/`
 // ignored and the manifest `*.txt`. The old scan copies `build/*`. The new scan
 // copies nothing. `git version` runs once when the manifest is a regular file,
-// and not at all without one (A00).
+// and not at all without one (measured).
 func TestIncludeVersionGate(t *testing.T) {
 	requireGit(t)
 	isolateGitConfig(t)
@@ -291,9 +291,9 @@ func TestIncludePrefixOpeningCopies(t *testing.T) {
 }
 
 // TestIncludeLinuxMeasuredCopies covers two opening rules end to end, with the
-// f6010b97 file sets measured on a Linux VM. `sub\/x/` opens `sub/x`, because
-// its first segment ends in a lone `\` and so matches any name. Git reads the
-// line as `sub/x/`. `build//a.txt` opens only `build`, and `*.txt` then copies
+// f6010b97 file sets measured on Linux. `sub\/x/` opens `sub/x`, because its
+// first segment ends in a lone `\` and so matches any name. Git reads the line
+// as `sub/x/`. `build//a.txt` opens only `build`, and `*.txt` then copies
 // `build/a.txt`. It does not open `sub/build` or `a/x/build`.
 func TestIncludeLinuxMeasuredCopies(t *testing.T) {
 	checkIncludeCases(t, []includeCase{
@@ -406,8 +406,8 @@ func TestBatchIncludePathspecs(t *testing.T) {
 
 // TestPlanIncludeScanBatchLayout covers item 10 with the batch fixtures. The
 // batch sizes depend on the length of the `--exclude-from` argument. It was 56
-// or 57 bytes on the Linux VM, and 100 or 101 bytes on the macOS VM. The want sizes are
-// the f6010b97 batch sizes with the same argument length.
+// or 57 bytes on Linux, and 100 or 101 bytes on macOS. The want sizes are the f6010b97
+// batch sizes with the same argument length.
 func TestPlanIncludeScanBatchLayout(t *testing.T) {
 	names := func(n int, format string) []string {
 		out := make([]string, n)
@@ -466,9 +466,9 @@ func TestPlanIncludeScanBatchLayout(t *testing.T) {
 }
 
 // TestClaudeDirPassCallShape covers the `.claude/` pass end to end with the
-// logged git argv. f6010b97 names each child of `.claude/` except `worktrees`
-// (I14b, C01), and it runs no call when `.claude/` holds only `worktrees`
-// (I14a). I15d shows that `Worktrees` is left out too. It runs on Linux only,
+// logged git argv. f6010b97 names each child of `.claude/` except `worktrees`,
+// and it runs no call when `.claude/` holds only `worktrees`. A measurement
+// shows that `Worktrees` is left out too. It runs on Linux only,
 // because it needs a case-sensitive file system.
 func TestClaudeDirPassCallShape(t *testing.T) {
 	requireGit(t)
@@ -646,20 +646,20 @@ func logIncludeScanCalls(t *testing.T) func() []string {
 
 // TestIncludeCheckIgnoreCallShape pins the pathspecs of the scan batches and the
 // stdin of each check-ignore call. The want lists are the f6010b97 calls from
-// the Linux and macOS VMs (close-out run of 30f09ef, and I15 of slice 4).
+// Linux and macOS (measured, also in a close-out run of 30f09ef).
 //
 //   - A path from a directory batch that is also a file candidate does not go to
-//     check-ignore. If no path is left, no check-ignore call runs (A03, A04).
+//     check-ignore. If no path is left, no check-ignore call runs (measured).
 //   - A runtime-state path and a nested repository (`vendor/lib/`) do not go
-//     either (C04, I15c, D16).
+//     either (measured).
 //   - An open root `.claude/` becomes its children in the directory batch, and
-//     `worktrees` is left out (C02, C03, C05, D23). `<claude>` stands for those
+//     `worktrees` is left out (measured). `<claude>` stands for those
 //     children in the order of the directory read.
 //   - The old scan drops runtime-state paths too (I15c_old).
 //
-// The want file sets are the f6010b97 sets. The I15c sets also hold the tracked
-// sub/t.md, which the checkout writes. The D16 want lists come from a macOS run
-// and a Linux run of f6010b97. The Linux run also covered the old scan.
+// The want file sets are the f6010b97 sets. The measured sets also hold the tracked
+// sub/t.md, which the checkout writes. The D16 want lists come from a macOS run and
+// a Linux run of f6010b97. The Linux run also covered the old scan.
 func TestIncludeCheckIgnoreCallShape(t *testing.T) {
 	requireGit(t)
 	isolateGitConfig(t)

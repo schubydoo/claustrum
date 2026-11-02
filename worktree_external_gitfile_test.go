@@ -28,7 +28,7 @@ func verifyWorktreeForTest(t *testing.T, repo, wp string) (string, error) {
 // The `.git` file of a worktree names its entry only when the entry is a directory under
 // the repository's own worktrees directory, its commondir leads back to that repository,
 // and its gitdir record names the worktree. Each refusal text was measured against
-// f6010b97 on a macOS VM (rows X03, E07, L03 and the forged-record rows).
+// f6010b97 on macOS (also the forged-record rows).
 func TestVerifiedWorktreeEntry(t *testing.T) {
 	requireGit(t)
 	base := resolveTestRoot(t, t.TempDir())
@@ -121,11 +121,11 @@ func TestVerifiedWorktreeEntry(t *testing.T) {
 	}
 }
 
-// E8, the part of probe row D-subst and battery rows J2, Q1 and Q2 (Windows VM) that
-// runs on every system. An entry whose record names another spelling of the worktree
-// is verified when respell gives that spelling. A `commondir` that leads to the git
-// directory that git answered passes too. respell is not called when the record
-// names the worktree as sent.
+// The part of the measured rules (on Windows) that runs on every system. An entry
+// whose record names another spelling of the worktree is verified when respell
+// gives that spelling. A `commondir` that leads to the git directory that git
+// answered passes too. respell is not called when the record names the worktree as
+// sent.
 func TestVerifiedWorktreeEntryRespell(t *testing.T) {
 	requireGit(t)
 	base := resolveTestRoot(t, t.TempDir())

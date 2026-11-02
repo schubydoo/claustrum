@@ -9,7 +9,7 @@ import (
 	"testing"
 )
 
-// Cell A-13. A folder with a full path of more than 260 characters holds no
+// Measured. A folder with a full path of more than 260 characters holds no
 // repository, and git cannot start in it. git.info answers the hooks refusal with the
 // start error of the listing. The path of the cell had 296 characters, and its text
 // ended with "The directory name is invalid.". The test compares the frame with the

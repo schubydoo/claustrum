@@ -14,8 +14,7 @@ import (
 // and of the `worktrees` folder that a create makes. Each test puts a symbolic
 // link to the folder T at the path of the git directory after the create took
 // its hold. No row of 5fd08069 has a swap at these steps. The rule is that of
-// the swap cells of val-s3p2b2-9-linux2 and val-s3p2b2-9-macos (Linux and
-// macOS VMs): T keeps every entry as it was.
+// the measured swaps (on Linux and macOS): T keeps every entry as it was.
 
 // heldWorktrees is the recorder of newHeldFixture set to the folder
 // `worktrees` of the held git directory: the steps of this file remove through
@@ -59,10 +58,10 @@ func TestStaleStepThroughTheHeldGitDir(t *testing.T) {
 //   - The request spells baseRepo through a symbolic link above it: the step
 //     goes through the held folder. With a compare of the path texts alone it
 //     goes by the path, into T.
-//   - The request and the record spell the leaf through that link, as in cell
-//     i-ctl of val-s3p2b2-11-macos (5fd08069, macOS VM): the step finds the
-//     entry, and it asks the held folder. Without the compare against the path
-//     as sent it asks for no removal.
+//   - The request and the record spell the leaf through that link, as in a
+//     measured case (`5fd08069`, measured on macOS): the step
+//     finds the entry, and it asks the held folder. Without the compare
+//     against the path as sent it asks for no removal.
 //
 // Two rows are controls. With no held folder the step goes by the path, so the
 // entry of T is one that the step finds. A spelling that named another folder
@@ -192,9 +191,9 @@ func TestWorktreesFolderThroughTheHeldGitDir(t *testing.T) {
 
 // TestRegistrationsRootOfALinkedWorktreesFolder: a `worktrees` entry of the
 // held git directory that is a symbolic link is opened by its path, as before.
-// 89cb6289 creates with such a link (rows D-1 and D-3 to D-5, Linux VM). In the
-// state shadow claustrum refuses that create before the add, as 5fd08069 does in
-// cell V1 of round tier0-10 (Linux VM).
+// 89cb6289 creates with such a link (measured on Linux). In the state shadow
+// claustrum refuses that create before the add, as 5fd08069 does (measured on
+// Linux).
 func TestRegistrationsRootOfALinkedWorktreesFolder(t *testing.T) {
 	f := newHeldFixture(t)
 	worktrees := filepath.Join(f.gitDir, "worktrees")

@@ -10,18 +10,18 @@ import (
 	"testing"
 )
 
-// A commondir in a git directory that is not a linked-worktree entry (rows T00 to T11
-// of 89cb6289). Each test names the mutation that turns it red.
+// A commondir in a git directory that is not a linked-worktree entry (`89cb6289`,
+// measured). Each test names the mutation that turns it red.
 
 // wantShapeRefusal is the refusal of a trusted commondir in a git directory that fails
-// the git-directory test (row T10a).
+// the git-directory test (measured).
 func wantShapeRefusal(cd string) string {
 	return wantTrustPrefix + fmt.Sprintf("%q", cd) + wantShapeTail
 }
 
 // "." and "./", with any run of trailing CR and LF, are trusted. All five
-// methods are served, and git runs with the main git directory pinned (rows T01 and
-// T02a to T02e). Mutation: keep refusing every commondir.
+// methods are served, and git runs with the main git directory pinned (measured).
+// Mutation: keep refusing every commondir.
 func TestStrayCommondirDotIsTrusted(t *testing.T) {
 	// A row sets no environment variable and no working folder, and it writes
 	// package state only through caches that hold a lock. So the rows run in
@@ -49,9 +49,9 @@ func TestStrayCommondirDotIsTrusted(t *testing.T) {
 }
 
 // Any other content is refused, with only the trailing CR and LF removed
-// before the compare (rows T03a to T03j). A lone LF reads as "". A backslash
-// is not a slash, on every OS (row T03h on a Windows VM). Mutations: trim spaces or
-// tabs, clean the path, map `\` to `/` before the compare.
+// before the compare (measured). A lone LF reads as "". A backslash is not a slash,
+// on every OS (measured on Windows). Mutations: trim spaces or tabs, clean the
+// path, map `\` to `/` before the compare.
 func TestStrayCommondirOtherContentIsRefused(t *testing.T) {
 	for _, tc := range []struct{ content string }{
 		{" ."},
@@ -94,8 +94,8 @@ func TestStrayCommondirQuotedValue(t *testing.T) {
 }
 
 // A commondir that is not a small plain file is refused with its reason
-// and the tail of the stray text, not the tail of an entry's text (rows T05 and T06a).
-// The FIFO, the symlink and the mode-000 rows are in gitdirtrust_stray_unix_test.go.
+// and the tail of the stray text, not the tail of an entry's text (measured). The
+// FIFO, the symlink and the mode-000 rows are in gitdirtrust_stray_unix_test.go.
 // Mutation: reuse the tail of the entry text.
 func TestStrayCommondirNotAPlainFile(t *testing.T) {
 	t.Run("folder", func(t *testing.T) {
@@ -116,7 +116,7 @@ func TestStrayCommondirNotAPlainFile(t *testing.T) {
 }
 
 // With a bad HEAD, "." gets S3, and "x" is still refused for its content: the content
-// test comes first (rows T10a and T10b). Mutation: test the shape before the content.
+// test comes first (measured). Mutation: test the shape before the content.
 func TestStrayCommondirBadHead(t *testing.T) {
 	for _, tc := range []struct {
 		content string
@@ -141,7 +141,7 @@ func TestStrayCommondirBadHead(t *testing.T) {
 
 // A bare repository with commondir "." is trusted and pinned to itself.
 // info finds no work tree, list_branches lists main, create answers not_a_repo, and
-// remove succeeds with no branchKept (row T11a). Mutation: pin nothing.
+// remove succeeds with no branchKept (measured). Mutation: pin nothing.
 func TestStrayCommondirBareRepository(t *testing.T) {
 	r := newTrustRepo(t)
 	b := filepath.Join(r.base, "B.git")
@@ -158,7 +158,7 @@ func TestStrayCommondirBareRepository(t *testing.T) {
 }
 
 // A submodule's git directory with commondir "." is trusted. The root is
-// the submodule's folder, and the pin is its git directory (row T11b). Mutation:
+// the submodule's folder, and the pin is its git directory (measured). Mutation:
 // treat .git/modules/<name> as a linked-worktree entry.
 func TestStrayCommondirSubmoduleGitDir(t *testing.T) {
 	r := newTrustRepo(t)

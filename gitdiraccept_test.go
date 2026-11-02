@@ -10,10 +10,9 @@ import (
 	"time"
 )
 
-// The tests of the held git directory of a create (gitdiraccept.go). The rows
-// are cells X1c and X1p and table W3 of val-s3p2b2-7-windows (Windows VM).
-// linkAt makes the link of a swap: a symbolic link on Linux and macOS, and a
-// junction on Windows.
+// The tests of the held git directory of a create (gitdiraccept.go). The
+// rows are measured on Windows. linkAt makes the link of a swap: a
+// symbolic link on Linux and macOS, and a junction on Windows.
 
 // setGitDirMustBeReal sets the switch of the steps for one test.
 func setGitDirMustBeReal(t *testing.T, on bool) {
@@ -160,9 +159,9 @@ func TestAcceptGitDir(t *testing.T) {
 // TestGitDirLinkDetail: a git directory that is a link is refused with the
 // text of its config, where the switch is set. On 5fd08069 the text is `…
 // "C:\\o\\w\\repo\\.git\\config": is, or is reached through, a link that
-// Claude does not follow here; replace the link with what it points to` (cells
-// X1c-01 to X1c-05). The read of the config gives it before any other test.
-// Without the test in readRepoConfig the read gives no refusal.
+// Claude does not follow here; replace the link with what it points to`
+// (measured). The read of the config gives it before any other test. Without
+// the test in readRepoConfig the read gives no refusal.
 func TestGitDirLinkDetail(t *testing.T) {
 	f := newRefusalFixture(t)
 	link := filepath.Join(resolveTestRoot(t, t.TempDir()), "linked")
@@ -192,8 +191,7 @@ func TestGitDirLinkDetail(t *testing.T) {
 // the folder that was read, so each file has the state of the kept read.
 // Without the link test before the kept read the gate gives no refusal. A
 // junction that is put at `.git` between two requests is not measured on
-// 5fd08069: the text is that of cells X1c-01 to X1c-05 of val-s3p2b2-7-windows
-// (Windows VM).
+// 5fd08069: the text is that (measured on Windows).
 func TestKeptReadAndALinkAtTheGitDir(t *testing.T) {
 	f := newRefusalFixture(t)
 	setGitDirMustBeReal(t, true)
@@ -252,9 +250,8 @@ func newStagedSwapFixture(t *testing.T) stagedSwapFixture {
 // one step of the staged add. T holds an old staging entry. The removal is a
 // recorder, so the test removes nothing with the guard or without it.
 //
-// The rows are those of 5fd08069 on a Windows VM: nothing in T goes, T gets
-// nothing, and the create is refused with the text of the step (cells X1c-09,
-// X1p-09, X1p-07, X1c-10 and X1p-10).
+// The rows are those of 5fd08069 on Windows: nothing in T goes, T gets
+// nothing, and the create is refused with the text of the step (measured).
 //
 // Without the test before the folder of the add, git runs and the reply is its
 // error. With a root that is opened by the path, T gets a folder `worktrees`.
@@ -282,11 +279,10 @@ func TestStagedAddWithASwappedGitDir(t *testing.T) {
 			t.Errorf("the folder of the daemon still holds %q", got)
 		}
 	})
-	// Part C and cells CX of val-s3p2b2-12-windows (Windows VM): a file
-	// `gitdir: <X>` is at the path. 5fd08069 answers the text of a git
-	// directory that is no real directory, and git does not run. Without the
-	// test of the kind of the entry the text is that of a config behind a
-	// link.
+	// Measured on Windows: a file `gitdir: <X>` is at the path. 5fd08069
+	// answers the text of a git directory that is no real directory, and git
+	// does not run. Without the test of the kind of the entry the text is
+	// that of a config behind a link.
 	t.Run("a file before the folder of the add", func(t *testing.T) {
 		f := newStagedSwapFixture(t)
 		atStep(t, "prepare", func() {
@@ -366,12 +362,11 @@ func TestStagedAddNeedsAHeldGitDir(t *testing.T) {
 	}
 }
 
-// TestStagedAddWithAFileAtWorktrees: `worktrees` of the git directory is a
-// file. On 5fd08069 the create answers `git worktree add failed: cannot prepare
-// the repository's worktrees directory: "C:\\o\\w\\repo\\.git\\worktrees" is not
-// a directory`, and the file is unchanged (table W3 of val-s3p2b2-7-windows,
-// Windows VM). Without the test of the entry the error is that of a failed
-// listing of the folder.
+// TestStagedAddWithAFileAtWorktrees: `worktrees` of the git directory is a file.
+// On 5fd08069 the create answers `git worktree add failed: cannot prepare the
+// repository's worktrees directory: "C:\\o\\w\\repo\\.git\\worktrees" is not a
+// directory`, and the file is unchanged (measured on Windows). Without the test
+// of the entry the error is that of a failed listing of the folder.
 func TestStagedAddWithAFileAtWorktrees(t *testing.T) {
 	f := newRepoFolderFixture(t)
 	clearFolderEnv(t)
@@ -386,8 +381,8 @@ func TestStagedAddWithAFileAtWorktrees(t *testing.T) {
 	if err == nil || err.Error() != want || stderr != "" {
 		t.Errorf("the add = %v, %q\nwant %s", err, stderr, want)
 	}
-	// The create in attach mode makes no second add after this error (table
-	// S9 of val-s3p2b2-12-windows).
+	// The create in attach mode makes no second add after this error
+	// (measured).
 	var notPrepared *addNotPrepared
 	if !errors.As(err, &notPrepared) {
 		t.Errorf("the add = %T, want the error of an add that did not run", err)
@@ -401,11 +396,11 @@ func TestStagedAddWithAFileAtWorktrees(t *testing.T) {
 }
 
 // TestAnsweredElsewhere pins the two states that get no refusal right after
-// `rev-parse --absolute-git-dir` on Windows (table of section 2 and part C of
-// val-s3p2b2-12-windows, Windows VM). A link at the path with an answer that
-// names the path keeps the refusal, and so does a path that still names the
-// held folder. Without the test of the answered directory the first row is
-// false, and without the test of the file the second one is.
+// `rev-parse --absolute-git-dir` on Windows (measured on Windows). A link
+// at the path with an answer that names the path keeps the refusal, and so
+// does a path that still names the held folder. Without the test of the
+// answered directory the first row is false, and without the test of the
+// file the second one is.
 func TestAnsweredElsewhere(t *testing.T) {
 	for _, row := range []struct {
 		name string

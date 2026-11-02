@@ -14,8 +14,8 @@ import (
 // goes to a temporary file beside the index. It is renamed into place only
 // after a full write. So a failed copy leaves no index, not a partial one.
 //
-// The file at src stays. The cell is V5i of val-s3p2b2-5-windows: a create with
-// a `.worktreeinclude` file, 4 runs per side, Windows VM. On 5fd08069 the file
+// The file at src stays. The measured case is a create with a
+// `.worktreeinclude` file, 4 runs per side, Windows. On 5fd08069 the file
 // `<S>\.index-<n>\index` (297 bytes) is there from the read-tree to the reply.
 // At the end `.git\worktrees\w1\index` has 297 bytes. The build before moved
 // the file: it was gone when the index of the registration appeared. The cell
@@ -64,12 +64,11 @@ func installWorktreeIndex(src, adminDir string) error {
 // error goes back, and the create answers it as a failed checkout.
 //
 // On 5fd08069 a folder `index` gives `git worktree add failed (checkout):
-// openat index: is a directory` (cell S12 of round task087-01, Windows VM). A
-// denied create gives `openat index: Access is denied.` (cell S11, and X6w of
-// round task009-01). The write time and the access time are equal, 7.8 to 9.1
-// ms before the creation time (cell S13, 5 runs). The text of a replaced
-// registration is claustrum's own. A registration with no held git directory
-// gets installWorktreeIndex (not measured).
+// openat index: is a directory` (measured on Windows). A denied create gives
+// `openat index: Access is denied.` (measured). The write time and the access
+// time are equal, 7.8 to 9.1 ms before the creation time (measured). The text
+// of a replaced registration is claustrum's own. A registration with no held
+// git directory gets installWorktreeIndex (not measured).
 func installTestedWorktreeIndex(src string, tested testedRegistration) error {
 	if tested.git == nil {
 		return installWorktreeIndex(src, tested.path)

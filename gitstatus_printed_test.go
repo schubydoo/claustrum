@@ -21,10 +21,9 @@ func linkedRepo(t *testing.T, repo string) string {
 // printed in another spelling. The request has the copy of the path through a
 // link, and git printed the real path. After the step the request names a
 // second folder, whose name is the sha256 of the printed path, and its git
-// directory is the printed path. That is cell D6j-junction of
-// val-s3p2b2-3-windows, where the link is a junction: a Windows run of
-// TestStatusThroughAJunction must match it. Only Windows calls the step
-// (statusFollowsPrintedGitDir).
+// directory is the printed path. That is measured on Windows, where the link
+// is a junction: a Windows run of TestStatusThroughAJunction must match it.
+// Only Windows calls the step (statusFollowsPrintedGitDir).
 //
 // The same spelling, a folder that is another repository and a request with no
 // copy change nothing. Without the identity test the second row changes the
@@ -74,7 +73,7 @@ func TestUsePrintedGitDir(t *testing.T) {
 
 // TestStatusPrintedRootSpelling pins the one more spelling of a `path` inside
 // baseRepo on Windows: the root that git printed, joined with the part of
-// `path` below baseRepo. In cell D6j-junction baseRepo is `C:\o\w\jrepo`, git
+// `path` below baseRepo. In a measurement, baseRepo is `C:\o\w\jrepo`, git
 // printed `C:/o/w/repo`, and the `gitdir` file names
 // `C:/o/w/repo/.claude/worktrees/ws/.git`. Here a symbolic link stands for the
 // junction.

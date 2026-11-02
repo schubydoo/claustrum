@@ -38,7 +38,7 @@ func infoFields(t *testing.T, r rpcReply) map[string]any {
 // On Linux and macOS git.info runs no `rev-parse --show-toplevel`. On a
 // plain repository it makes 9 calls: the excludes read, and four listings each
 // before rev-parse --git-dir, remote get-url, symbolic-ref and branch --show-current
-// (row L01). The daemon's own read of the config is one call more
+// (measured). The daemon's own read of the config is one call more
 // (gitrepoconfig.go). Mutation: keep the show-toplevel call.
 func TestInfoRunsNoShowToplevel(t *testing.T) {
 	if runtime.GOOS == "windows" {
@@ -65,7 +65,7 @@ func TestInfoRunsNoShowToplevel(t *testing.T) {
 
 // With the daemon's GIT_DIR naming a repository and a plain folder as
 // path, `rev-parse --git-dir` succeeds, but the walk from the folder finds nothing, so
-// the answer is the bare shape (row I04a). Mutation: take the root from git's
+// the answer is the bare shape (measured). Mutation: take the root from git's
 // environment.
 func TestInfoRootIgnoresDaemonGitDir(t *testing.T) {
 	f := newListingFixture(t)
@@ -81,10 +81,10 @@ func TestInfoRootIgnoresDaemonGitDir(t *testing.T) {
 	}
 }
 
-// core.worktree in the repository does not move the root (row I02). With
-// the daemon's GIT_DIR and GIT_WORK_TREE set and a plain folder as path, the answer is
-// the bare shape, where git itself names GIT_WORK_TREE (row I04b). Mutation: take the
-// root from git's --show-toplevel.
+// core.worktree in the repository does not move the root (measured). With the daemon's
+// GIT_DIR and GIT_WORK_TREE set and a plain folder as path, the answer is the bare
+// shape, where git itself names GIT_WORK_TREE (measured). Mutation: take the root from
+// git's --show-toplevel.
 func TestInfoRootIgnoresCoreWorktree(t *testing.T) {
 	r := newTrustRepo(t)
 	w := filepath.Join(r.base, "W")
@@ -108,8 +108,8 @@ func TestInfoRootIgnoresCoreWorktree(t *testing.T) {
 
 // The branch origin/HEAD names is verified as a commit. A dangling one and
 // one that names a blob give "", and so does a name that starts with "-", even when
-// it resolves (rows I10a to I10c). A valid one is kept. Mutations: skip the verify, or
-// verify the "-" name.
+// it resolves (measured). A valid one is kept. Mutations: skip the verify, or verify
+// the "-" name.
 func TestInfoDefaultBranchIsVerified(t *testing.T) {
 	r := newTrustRepo(t)
 	gitDir := filepath.Join(r.T, ".git")
@@ -136,8 +136,7 @@ func TestInfoDefaultBranchIsVerified(t *testing.T) {
 }
 
 // A root whose name starts with "-" or "+" leaves the repo member out, and
-// the other members keep their order (rows I11a and I11b). Mutation: always emit the
-// member.
+// the other members keep their order (measured). Mutation: always emit the member.
 func TestInfoRepoMemberLeftOutForDashAndPlus(t *testing.T) {
 	requireGit(t)
 	base := realTempDir(t)

@@ -17,7 +17,7 @@ import (
 // exactly <worktreeRoot>/<directory>/<name> — two components below the root. When
 // worktreeRoot is set the in-repo containment (worktreePathRefusal) is replaced by
 // the checks here. Every message and the marker bytes below were measured
-// byte-for-byte against 7d193f89 on an ephemeral VM.
+// byte-for-byte against 7d193f89.
 
 // worktreeExternalSpellingRefusal and worktreeExternalShapeRefusal report the
 // reference's refusal when an external worktreeRoot/worktreePath pair is not a valid
@@ -35,28 +35,27 @@ import (
 // worktreeExternalSpellingRefusal is steps 1 and 2. Both worktree methods check
 // baseRepo between steps 2 and 3. On git.worktree_create that order is not measured.
 //
-// claustrum also refuses, after step 2, a worktreeRoot that is the file system root.
-// For a root of "/" and a worktreePath of "/<name>", 89cb6289 sends the "is a filesystem
+// claustrum also refuses, after step 2, a worktreeRoot that is the file system root. For
+// a root of "/" and a worktreePath of "/<name>", 89cb6289 sends the "is a filesystem
 // root" text. The create sends it after 3 git calls, and the remove with no git call.
-// That holds with the folder present or gone, and for a daemon that runs as root (Linux
-// VM, cells R1n, R1u and R1r). On a macOS VM the create is cell R1a, and the remove is
-// cells R1a and R1b. The macOS cells have the folder gone and a normal user. Nothing
-// changes on disk. The calls place it before `rev-parse
-// --show-toplevel`. Not measured: its order against the baseRepo test and step 3. A
-// root with a ".." component that cleans to "/" gets the ".." text (from the code, not
+// That holds with the folder present or gone, and for a daemon that runs as root
+// (measured on Linux). On macOS the create and the remove are measured with the folder
+// gone and a normal user. Nothing changes on disk. The calls place it before `rev-parse
+// --show-toplevel`. Not measured: its order against the baseRepo test and step 3. A root
+// with a ".." component that cleans to "/" gets the ".." text (from the code, not
 // measured).
 //
-// More cells ran against 89cb6289 on Linux and macOS VMs. A root of "//" or "/." gets
-// the same text, with the root as sent (cells R2 and R3). So does a worktreePath of
-// "/<directory>/<name>" under a root of "/" (cell R6). A mount point that is not "/"
-// is not refused: the create and the remove succeed (cell R4).
+// More cells ran against 89cb6289 on Linux and macOS. A root of "//" or "/." gets the
+// same text, with the root as sent (measured). So does a worktreePath of
+// "/<directory>/<name>" under a root of "/" (measured). A mount point that is not "/"
+// is not refused: the create and the remove succeed (measured).
 //
 // On 5fd08069 a relative worktreePath wins over that text: a root of "/" with the
-// path "x/y" gets the relative-path text (cell C-W1 of round tier0-20, Linux VM). A
-// root with a component named .git or .claude-managed-worktrees, in any letter
-// case, is refused with the name as sent. The cells measure .git and .GIT (cells
-// C-W4, C-W4e and C-S2). A component .claude-managed-worktrees is refused the same
-// way (not measured). Its order against the worktreePath test is not measured.
+// path "x/y" gets the relative-path text (measured on Linux). A root with a
+// component named .git or .claude-managed-worktrees, in any letter case, is refused
+// with the name as sent. The cells measure .git and .GIT (measured). A component
+// .claude-managed-worktrees is refused the same way (not measured). Its order
+// against the worktreePath test is not measured.
 func worktreeExternalSpellingRefusal(worktreeRoot, worktreePath, verb string) string {
 	if !filepath.IsAbs(worktreeRoot) {
 		return fmt.Sprintf("refusing to %s worktree: %s is a relative path; choose the "+
@@ -95,12 +94,11 @@ func reservedLocationName(name string) bool {
 // worktreeExternalShapeRefusal is step 3 of the checks listed above
 // worktreeExternalSpellingRefusal. Callers run worktreeExternalSpellingRefusal first,
 // so worktreePath is absolute and has no ".." component here. The text quotes both
-// members as sent, with a "/./" or a final "/" kept (5fd08069, cell C-W2 of round
-// tier0-20, Linux VM).
+// members as sent, with a "/./" or a final "/" kept (`5fd08069`, measured on Linux).
 //
 // Then the <directory> or the <name> of the path is refused when it is a reserved
-// name, with the name as sent. The cells put it at the <directory> (cells C-W3 and
-// C-S1). A reserved <name>, and the <directory> tested first, are not measured.
+// name, with the name as sent. The cells put it at the <directory> (measured). A
+// reserved <name>, and the <directory> tested first, are not measured.
 func worktreeExternalShapeRefusal(worktreeRoot, worktreePath, verb string) string {
 	root := filepath.Clean(worktreeRoot)
 	wp := filepath.Clean(worktreePath)
@@ -121,9 +119,9 @@ func worktreeExternalShapeRefusal(worktreeRoot, worktreePath, verb string) strin
 // holds it, or answers "". The text names worktreeRoot, the <directory> level as the
 // path spells it, and baseRepo as sent. Without resolve the test compares the
 // cleaned paths. With resolve it compares them with their links followed. 5fd08069
-// refuses so with no git call in the remove (cells C-W5 and C-S3 of round tier0-20,
-// Linux VM). With a baseRepo through a link the create refuses after `worktree list`
-// (cell C-W6). The remove refuses there too, after `worktree list` (cell C-S8).
+// refuses so with no git call in the remove (measured on Linux). With a baseRepo
+// through a link the create refuses after `worktree list` (measured). The remove
+// refuses there too, after `worktree list` (measured).
 func repoFolderHoldsRepoRefusal(worktreeRoot, worktreePath, baseRepo, repo, verb string, resolve bool) string {
 	folder := filepath.Dir(filepath.Clean(worktreePath))
 	f, r := folder, filepath.Clean(repo)
@@ -139,10 +137,10 @@ func repoFolderHoldsRepoRefusal(worktreeRoot, worktreePath, baseRepo, repo, verb
 
 // repoFolderInWorktreeRefusal refuses a <directory> level that is a listed worktree
 // of the repository or lies inside one, or answers "". The test compares the cleaned
-// path with each listed path as git lists it. 5fd08069 refuses so (cells C-W19 and
-// C-S7 of round tier0-20, Linux VM). A bare entry is skipped, and so is a listed
-// folder that is gone. A remove then answers that the root is not reachable, as on
-// 89cb6289 (rows Y9 and T3). The main checkout counts (not measured).
+// path with each listed path as git lists it. 5fd08069 refuses so (measured on
+// Linux). A bare entry is skipped, and so is a listed folder that is gone. A remove
+// then answers that the root is not reachable, as on 89cb6289 (measured). The main
+// checkout counts (not measured).
 func repoFolderInWorktreeRefusal(worktreeRoot, worktreePath, baseRepo string, listed []listedWorktree, verb string) string {
 	folder := filepath.Dir(filepath.Clean(worktreePath))
 	for _, w := range listed {
@@ -163,13 +161,13 @@ func repoFolderInWorktreeRefusal(worktreeRoot, worktreePath, baseRepo string, li
 // beneath it, or "" when the root passes. The test cleans both paths and compares
 // whole components. It resolves no symlink and runs no git. The text names
 // worktreeRoot and baseRepo as sent. verb is "create" or "remove". f6010b97 and
-// 89cb6289 send the same frames on Linux and macOS VMs:
+// 89cb6289 send the same frames on Linux and macOS:
 //   - Refused: the repository T, T/.claude, T/.claude/ with its slash kept in the
-//     text, T/.claude/worktrees, T/sub and a missing T/missing. These are Linux rows
-//     Q1, Q7, Q8, Q8b, Q2s to Q5s and K1 to K3, and macOS rows MX3, MX4, MX11, MX13,
-//     MX14 and MX15.
-//   - Passed: a root that holds the repository, and B/Tx beside B/T (Linux rows
-//     Q15s, K6 and K7).
+//     text, T/.claude/worktrees, T/sub and a missing T/missing. These
+//     are measured on Linux and
+//     macOS.
+//   - Passed: a root that holds the repository, and B/Tx beside B/T (measured
+//     on Linux).
 func worktreeRootInRepoRefusal(worktreeRoot, baseRepo, verb string) string {
 	if !samePath(worktreeRoot, baseRepo) && !pathStrictlyUnder(worktreeRoot, baseRepo) {
 		return ""
@@ -189,9 +187,9 @@ type listedWorktree struct {
 // worktreeListTwice runs worktreeListCall with -z. After a failure it runs the call
 // once more without -z. It answers the entries in list order and the error of the
 // last call. git lists the main checkout first. 5fd08069 makes the second call in a
-// create (cell C-W17 of round tier0-20, Linux VM) and 89cb6289 in a remove (row
-// DG2s-g, Linux VM). After a call that its time limit stopped the second call does
-// not start, and its error is the stop (gitRun).
+// create (measured on Linux) and 89cb6289 in a remove (measured on Linux). After a
+// call that its time limit stopped the second call does not start, and its error is
+// the stop (gitRun).
 func worktreeListTwice(u gitUse, repo string) (listed []listedWorktree, err error) {
 	listed, err = worktreeListCall(u, repo, true)
 	if err == nil {
@@ -236,21 +234,21 @@ const worktreeListRefusalPrefix = "failed to remove worktree: cannot list the re
 // worktreeListForRemove is the `worktree list` step of git.worktree_remove with
 // worktreeRoot. It answers the entries, or a refusal, and then nothing is deleted.
 //
-// In row DG2s-g (Linux VM), `worktree list --porcelain -z` exits 128 on 89cb6289. It
-// then runs one more listing and `worktree list --porcelain` with no -z. That call
-// exits 128 too, and the answer is worktreeListRefusalPrefix with that exec error. The
-// worktree and its entry stay. The repository of that row has a valid HEAD, and its
-// `.git/commondir` is a dangling relative symlink. claustrum takes the same steps
-// after every failure of the first call.
+// In a measurement on Linux, `worktree list --porcelain -z` exits 128 on
+// 89cb6289. It then runs one more listing and `worktree list --porcelain` with no -z.
+// That call exits 128 too, and the answer is worktreeListRefusalPrefix with that exec
+// error. The worktree and its entry stay. The repository of that row has a valid HEAD,
+// and its `.git/commondir` is a dangling relative symlink. claustrum takes the same
+// steps after every failure of the first call.
 //
 // Not measured: a second call that succeeds. claustrum then reads its output line by line
 // and goes on. A path with a newline in it is not measured in that form. A git older
 // than 2.36, which has no `worktree list -z`, takes that path.
 //
-// A baseRepo that does not exist runs no call here, and the removal goes on. In rows
-// L13wa-g and L13wb-g (Linux VM) the excludes read is the only git call, on 89cb6289
-// and on claustrum. The later git calls of claustrum for that baseRepo do not start:
-// the working directory does not exist.
+// A baseRepo that does not exist runs no call here, and the removal goes on. In a
+// measurement, and L13wb-g (measured on Linux) the excludes read is the only git
+// call, on 89cb6289 and on claustrum. The later git calls of claustrum for that
+// baseRepo do not start: the working directory does not exist.
 func worktreeListForRemove(u gitUse, repo string) (listed []listedWorktree, refusal string) {
 	if _, err := os.Stat(repo); errors.Is(err, fs.ErrNotExist) {
 		return nil, ""
@@ -375,30 +373,30 @@ func makeGoneWorktreeFolder(g goneWorktree) {
 // the root passes. It resolves the root as canonicalPathOfGone does and tests each
 // folder of that path from "/" down with refusalAt. The first folder that fails
 // decides. The text names that folder, and worktreeRoot and baseRepo as sent.
-// f6010b97 and 89cb6289 send the same frames on Linux and macOS VMs:
-//   - A symlinked root, or one under a symlinked prefix that does not exist (Linux
-//     rows Q6s, Q17, Q18, K4, K8 and E1, macOS rows MX12 and E1).
-//   - A baseRepo below the top level, such as T/sub (Linux rows Q19, K9 and E2).
+// f6010b97 and 89cb6289 send the same frames on Linux and macOS:
+//   - A symlinked root, or one under a symlinked prefix that does not exist
+//     (measured on Linux and macOS).
+//   - A baseRepo below the top level, such as T/sub (measured on Linux).
 //   - A linked worktree W as baseRepo with the root in the main checkout T. The text
-//     names T (rows W1, W3, Y6 and Y11c). The root in W itself names W (row Y4).
-//   - A path that is the same file under another spelling: a bind mount (Linux row
-//     Y8), a firmlink (macOS row Y8m) and a case variant (macOS row E8). macOS /tmp
-//     gives "/private/tmp" (row E3). With baseRepo in a linked worktree, a bind
-//     mount (Linux row T1) or a case variant (macOS row T1m) of the main checkout
-//     matches too. The main checkout is the outer folder in row T2b.
-//   - The linked form: rows W2, W4, Y1, Y2c, Y5, Y11a and Y10. Of two nested
-//     worktrees, the outer one is named (row Y6n). It passes w0 listed through a
-//     symlinked spelling (row Y2), a case variant of w0 (macOS row Y3), a bind mount
-//     of w0 (Linux row Y8w) and a root that holds w0 (row Y7).
+//     names T (measured). The root in W itself names W (measured).
+//   - A path that is the same file under another spelling: a bind mount (measured
+//     on Linux), a firmlink (measured on macOS) and a case variant (measured on
+//     macOS). macOS /tmp gives "/private/tmp" (measured). With baseRepo in a linked
+//     worktree, a bind mount (measured on Linux) or a case variant (measured on
+//     macOS) of the main checkout matches too. The main checkout is the outer
+//     folder.
+//   - The linked form (measured). Of two nested
+//     worktrees, the outer one is named (measured). It passes w0 listed through a
+//     symlinked spelling (measured), a case variant of w0 (measured on macOS), a
+//     bind mount of w0 (measured on Linux) and a root that holds w0.
 //
 // 5fd08069 refuses a root in a separate git directory of the repository with the
-// repository form (cells C-W7 and C-S4 of round tier0-20, Linux VM). It names a
-// linked worktree that holds the main checkout before that checkout (cell C-W21).
-// In a create it refuses a root in a listed worktree whose folder is gone, and it
-// makes that folder first (cell C-W8). keepGone is true for a create, and gone is
-// then the folder to make (makeGoneWorktreeFolder). In a remove such a worktree
-// passes, as on 89cb6289 (rows Y9 and T3). Any other error of the lstat keeps the
-// entry (not measured).
+// repository form (measured on Linux). It names a linked worktree that holds the
+// main checkout before that checkout (measured). In a create it refuses a root in
+// a listed worktree whose folder is gone, and it makes that folder first
+// (measured). keepGone is true for a create, and gone is then the folder to make
+// (makeGoneWorktreeFolder). In a remove such a worktree passes, as on 89cb6289
+// (measured). Any other error of the lstat keeps the entry (not measured).
 func worktreeRootCheckoutRefusal(worktreeRoot string, c repoCheckouts, verb string, keepGone bool) (msg string, gone goneWorktree) {
 	var chain []string
 	for at := canonicalPathOfGone(worktreeRoot); ; at = filepath.Dir(at) {
@@ -420,17 +418,16 @@ func worktreeRootCheckoutRefusal(worktreeRoot string, c repoCheckouts, verb stri
 // worktreeRootCheckoutRefusal, before any later step of the removal, and nothing is
 // deleted. The first slot is worktreeRoot as sent. The reason:
 //   - A root with missing folders gets "<path> does not exist". 89cb6289 and
-//     f6010b97 send that for a deleted linked worktree (rows Y9 and T3) and for two
-//     missing levels (row T4). 5fd08069 follows the links of the existing prefix and
-//     drops a final slash (cells C-W22 and X3 on Linux VMs, M1 and M2 on a macOS VM,
-//     rounds tier0-20 and tier0-22).
-//   - A prefix that is not a folder: "<prefix>: not a directory" (5fd08069, cell
-//     C-W24). A root that is itself a file is not measured, and goes on.
+//     f6010b97 send that for a deleted linked worktree (measured) and for two
+//     missing levels. 5fd08069 follows the links of the existing prefix and drops a
+//     final slash (measured on Linux and macOS).
+//   - A prefix that is not a folder: "<prefix>: not a directory" (`5fd08069`,
+//     measured). A root that is itself a file is not measured, and goes on.
 //   - A symlink that does not resolve gives the error of filepath.EvalSymlinks, for
-//     example "lstat <target>: no such file or directory" (row T5).
+//     example "lstat <target>: no such file or directory" (measured).
 //
 // Any other error of the lstat keeps the old answer. For "permission denied" that
-// answer has the frame of the references (Linux row T6).
+// answer has the frame of the references (measured on Linux).
 func worktreeRootMissingRefusal(worktreeRoot string) string {
 	prefix := filepath.Clean(worktreeRoot)
 	var missing []string
@@ -486,8 +483,8 @@ func repoTopLevelCall(u gitUse, repo string, pre *configListing) (top string, er
 // with a .claude-managed-worktrees file, or below .claude/worktrees, decides. A
 // folder that exists gets the "leads into" text, and a missing one the "would be
 // made" text. Then a root that holds that file itself is refused. 5fd08069 refuses
-// so (cells C-W9, C-W10 and C-W11 of round tier0-20, Linux VM). A .claude/worktrees
-// folder above the root is not measured.
+// so (measured on Linux). A .claude/worktrees folder above the root is not
+// measured.
 func sessionLocationRefusal(worktreeRoot string) string {
 	const tail = "; beneath .claude/worktrees, or beneath a directory holding a .claude-managed-worktrees " +
 		"marker); a worktree location must be outside every session's worktree"
@@ -563,18 +560,18 @@ func worktreeExternalDirSymlinkRefusal(worktreePath, verb string) string {
 // baseRepo as given, so the transient text does not change.
 //
 // f6010b97 reads the worktrees directory of that repository git directory. Measured
-// on a Linux VM with worktreeRoot set:
+// on Linux with worktreeRoot set:
 //   - A linked worktree as baseRepo removes a worktree that the main repository
 //     registered. The worktree, its entry and its branch go, and the answer is
-//     {"success":true} (rows WR07 and K08).
-//   - The same holds when the main repository carries a stray commondir (row WR14).
+//     {"success":true} (measured).
+//   - The same holds when the main repository carries a stray commondir (measured).
 //     The check judges the git directory of baseRepo, which is the entry of the
-//     linked worktree. The main repository's git directory is only the pin, and
-//     the check does not judge it again.
+//     linked worktree. The main repository's git directory is only the pin, and the
+//     check does not judge it again.
 //   - A subdirectory of a repository and a submodule as baseRepo also remove a
-//     registered worktree (rows K02 and K09).
+//     registered worktree (measured).
 //   - With a daemon GIT_DIR that names another repository X, the transient text
-//     names X/.git/worktrees (row K15).
+//     names X/.git/worktrees (measured).
 func verifyGitDir(baseRepo string) string {
 	asGiven := filepath.Join(baseRepo, ".git")
 	g := pruneGitDir(baseRepo)
@@ -595,30 +592,29 @@ const workTreeUnknownPrefix = "failed to remove worktree: cannot determine the r
 // worktree gets the same answer. The reasons, in order:
 //
 //  1. Git cannot start in baseRepo (unenterableBaseListing). The reason is the hooks
-//     refusal with the start error (rows K10, K11 and K14).
+//     refusal with the start error (measured).
 //  2. The trust check refuses the git directory of baseRepo. The reason is the
-//     trust refusal text (rows WR01 to WR06, and WR08 with a plain folder).
-//  3. The trust check finds no repository. The reason is "exit status 128" (rows
-//     WR10 to WR13, K03 and K05). On Linux and macOS a listing that fails there
-//     gives its refusal text as the reason (89cb6289, rows A-N5b and A-N5c). A `.git`
-//     file with a gone target that is not an entry goes on to reason 4 (row K16).
+//     trust refusal text (measured, also with a plain folder).
+//  3. The trust check finds no repository. The reason is "exit status 128"
+//     (measured). On Linux and macOS a listing that fails there gives its refusal
+//     text as the reason (`89cb6289`, measured). A `.git` file with a gone target
+//     that is not an entry goes on to reason 4 (measured).
 //  4. The configuration cannot be listed. The reason is the refusal text of
-//     hostileConfigRefusal (rows WR15, K06 and K16). When the listing says git finds
-//     no repository, the reason is "git finds no repository here: " and git's text
-//     (89cb6289, row N04 on Linux and macOS VMs).
-//  5. baseRepo is itself a git directory. The reason is "exit status 128" (rows
-//     K07 and K25). A work tree whose own repository has core.bare set still passes
-//     (row K17).
+//     hostileConfigRefusal (measured). When the listing says git finds no
+//     repository, the reason is "git finds no repository here: " and git's text
+//     (`89cb6289`, measured on Linux and macOS).
+//  5. baseRepo is itself a git directory. The reason is "exit status 128"
+//     (measured). A work tree whose own repository has core.bare set still passes
+//     (measured).
 //  6. The hardened `git rev-parse --absolute-git-dir` fails in baseRepo. The reason
-//     is the exec error, for example "exit status 128" (rows K12, K18 and K21).
+//     is the exec error, for example "exit status 128" (measured).
 //
 // A baseRepo that does not exist skips every reason, and no git call runs here. That
-// holds with git on PATH and without it (89cb6289, rows L13wa, L13wb, L13wa-g and
-// L13wb-g on a Linux VM). The removal then goes on. A baseRepo that fails os.Stat
-// with any other error keeps every reason. Only the GIT_CONFIG_COUNT check does not
-// run for it. Every other row, and the order
-// against the containment and dir-symlink checks, was measured side by side against
-// f6010b97 on a Linux VM.
+// holds with git on PATH and without it (`89cb6289`, measured on Linux). The removal
+// then goes on. A baseRepo that fails os.Stat with any other error keeps every
+// reason. Only the GIT_CONFIG_COUNT check does not run for it. Every other row, and
+// the order against the containment and dir-symlink checks, was measured side by
+// side against f6010b97 on Linux.
 //
 // Before these reasons comes the check of the daemon's own GIT_CONFIG_COUNT, for a
 // baseRepo that os.Stat reads. When it refuses, the reason is the trust refusal text if the
@@ -628,12 +624,12 @@ const workTreeUnknownPrefix = "failed to remove worktree: cannot determine the r
 // Then, with no git on PATH, the reason is the exec error alone: `exec: "git":
 // executable file not found in $PATH`. It comes before the six reasons, so it also
 // answers a git directory that the trust check refuses. 89cb6289 and f6010b97 answer
-// so on a Linux VM in these rows:
-//   - a repository, with the worktree folder present and gone (L13xc and L13xd)
-//   - a regular file (L13u) and a repository folder of mode 0600 (L13v)
-//   - a `.git` file to nowhere (L13y) and a plain folder (L13z)
-//   - a git directory with a stray commondir that reads "x" (L13t)
-//   - a chain of 45 symlinks to a repository (LNKb and LNKr)
+// so on Linux in these rows:
+//   - a repository, with the worktree folder present and gone
+//   - a regular file and a repository folder of mode 0600
+//   - a `.git` file to nowhere and a plain folder
+//   - a git directory with a stray commondir that reads "x"
+//   - a chain of 45 symlinks to a repository
 //
 // Not measured with no git: the place of the GIT_CONFIG_COUNT check (claustrum keeps
 // it first when os.Stat reads baseRepo), other commondir contents, and the other
@@ -642,13 +638,12 @@ const workTreeUnknownPrefix = "failed to remove worktree: cannot determine the r
 // After reason 3 and before the listing of reason 4 comes the daemon's own read of
 // the repository's config (repoConfigGate). Its refusal text is the reason.
 // 5fd08069 answers so with format version `2` and with a config of 20 MiB, and
-// removes nothing (cells N14, Linux and macOS VMs). Each state ran for a worktree
+// removes nothing (measured on Linux and macOS). Each state ran for a worktree
 // that exists and for a folder that is missing. An info/exclude of 20 MiB and a
-// syntax error in the config get the same frame (cells P4, macOS VM). The place
-// of the read among the reasons is not measured: those cells have a repository
-// that passes reasons 1 to 3. off is the `shadowDirOff` member of the request.
-// With it and a config of 20 MiB, 5fd08069 removes the worktree (cell P4, macOS
-// VM).
+// syntax error in the config get the same frame (measured on macOS). The place of
+// the read among the reasons is not measured: those cells have a repository that
+// passes reasons 1 to 3. off is the `shadowDirOff` member of the request. With it
+// and a config of 20 MiB, 5fd08069 removes the worktree (measured on macOS).
 //
 // Its second answer is the git top level of baseRepo when the removal goes on, or ""
 // when git cannot give it. worktreeRootCheckoutRefusal uses it.
@@ -656,10 +651,9 @@ const workTreeUnknownPrefix = "failed to remove worktree: cannot determine the r
 // That read is a part of the settings gate of the request (settingsGateRefusal).
 // After the gate the calls of the request name the copy of the repository in the
 // state shadow. On 5fd08069 the 8 calls of a remove with worktreeRoot carry the
-// four folder variables there, and 14 with branchName (cell N3 of
-// val-s3p2b2-3-linux2, Linux VM). The calls before the gate have no copy. A
-// failed start test in a remove with worktreeRoot is not measured: its text is
-// the reason, as for a refused config.
+// four folder variables there, and 14 with branchName (measured on Linux). The
+// calls before the gate have no copy. A failed start test in a remove with
+// worktreeRoot is not measured: its text is the reason, as for a refused config.
 func externalWorkTreeRefusal(req *request, repo string, off jsonTrueSwitch) (string, string) {
 	u := gitUse{}
 	// Only "does not exist" skips the reasons. Any other stat error keeps them. A
@@ -692,15 +686,12 @@ func externalWorkTreeRefusal(req *request, repo string, off jsonTrueSwitch) (str
 		if !goneNonEntryGitFile(repo) {
 			// The call log of 89cb6289 shows a light listing and `rev-parse
 			// --show-toplevel` here, both with GIT_DIR=<null device>. The rev-parse
-			// exits 128 (rows L13z-g and DG2h-g on a Linux VM). claustrum makes the two
-			// calls and does not read the answer of the rev-parse. A listing that fails
-			// gives its refusal text as the reason (rows A-N5b and A-N5c on Linux and
-			// macOS VMs, row A-N5 on a Linux VM). Windows refuses a worktreeRoot before this check. Without the
-			// entry of t.noRepoPinned the reason stays "exit status 128", as before. A
-			// daemon GIT_DIR that names a regular file is such a state. Not measured here.
-			// git 2.56 fails the listing of a gone entry with its gitfile text. 5fd08069
-			// answers "exit status 128" there, as with older gits (cell WR13 of round
-			// tier0-27, Linux VM).
+			// exits 128 (measured on Linux). claustrum makes the two calls and does not read the answer of the
+			// rev-parse. A listing that fails gives its refusal text as the reason (measured on Linux and
+			// macOS). Windows refuses a worktreeRoot before this check. Without the entry of t.noRepoPinned the
+			// reason stays "exit status 128", as before. A daemon GIT_DIR that names a regular file is such a
+			// state. Not measured here. git 2.56 fails the listing of a gone entry with its gitfile text.
+			// 5fd08069 answers "exit status 128" there, as with older gits (measured on Linux).
 			c := hostileConfigRefusal(u, repo, false)
 			if c.refusal != "" && t.noRepoPinned() && c.gitFileText == "" {
 				return workTreeUnknownPrefix + c.refusal, ""
@@ -711,13 +702,11 @@ func externalWorkTreeRefusal(req *request, repo string, off jsonTrueSwitch) (str
 			return workTreeUnknownPrefix + "exit status 128", ""
 		}
 	}
-	// The daemon's own read of the repository's config (cells N14, Linux and macOS
-	// VMs). The
-	// call that it makes to git on a refusal is the light `rev-parse
-	// --show-toplevel` that follows the listing below.
-	// A bad answer of git about the repository is not measured with worktreeRoot.
-	// Its text is the reason, and git's own refusal gets the reason of a folder
-	// with no repository.
+	// The daemon's own read of the repository's config (measured on Linux and
+	// macOS). The call that it makes to git on a refusal is the light `rev-parse
+	// --show-toplevel` that follows the listing below. A bad answer of git about
+	// the repository is not measured with worktreeRoot. Its text is the reason,
+	// and git's own refusal gets the reason of a folder with no repository.
 	if msg, noRepo := req.settingsGateRefusal(t, off, repo); msg != "" {
 		return workTreeUnknownPrefix + msg, ""
 	} else if noRepo {
@@ -728,12 +717,12 @@ func externalWorkTreeRefusal(req *request, repo string, off jsonTrueSwitch) (str
 	req.keepLiveForm(bool(off), t, repo)
 	u = req.use
 	// This listing is light, and the rev-parse below runs its own heavy one. That is
-	// the order of the listings of f6010b97 here (Linux VM, rows WR00 to WR15).
+	// the order of the listings of f6010b97 here (measured on Linux).
 	c := hostileConfigRefusal(u, repo, false)
 	// With git 2.56 a `.git` file to a gone target fails the listing with the gitfile
-	// text. 5fd08069 then answers the error of its call about the repository (cells GF
-	// and N04 of round tier0-27, Linux VM). With "shadowDirOff":true it answers the
-	// listing refusal below (cell GFOFF of round task039-03, Linux VM).
+	// text. 5fd08069 then answers the error of its call about the repository (measured
+	// on Linux). With "shadowDirOff":true it answers the listing refusal below
+	// (measured on Linux).
 	if c.gitFileText != "" && !bool(off) {
 		return workTreeUnknownPrefix + c.gitFileText, ""
 	}
@@ -744,9 +733,8 @@ func externalWorkTreeRefusal(req *request, repo string, off jsonTrueSwitch) (str
 		return workTreeUnknownPrefix + noRepositoryHerePrefix + c.noRepoText, ""
 	}
 	// The call after that light listing is `rev-parse --show-toplevel` in baseRepo,
-	// on f6010b97 (Linux VM, rows WR00, WR07, WR09 and WR14). Its answer does not
-	// decide the reasons below. worktreeRootCheckoutRefusal compares the root with
-	// it.
+	// on f6010b97 (measured on Linux). Its answer does not decide the reasons
+	// below. worktreeRootCheckoutRefusal compares the root with it.
 	topLevel := repoTopLevel(u, repo, &c.listing)
 	if baseIsGitDir(repo) {
 		return workTreeUnknownPrefix + "exit status 128", ""
@@ -766,24 +754,23 @@ const noRepositoryHerePrefix = "git finds no repository here: "
 // the configuration listing with baseRepo as the working directory and returns the
 // refusal text with the start error. Go names the git that PATH resolves, for example
 // "fork/exec /usr/bin/git: permission denied" or "fork/exec /usr/bin/git: not a
-// directory". The frame matches f6010b97, measured side by side on a Linux VM (rows
-// K10, K11 and K14). It returns "" for every other baseRepo that os.Stat reads, and
-// runs nothing then.
+// directory". The frame matches f6010b97, measured side by side on Linux. It returns
+// "" for every other baseRepo that os.Stat reads, and runs nothing then.
 //
 // A third case is a baseRepo that os.Stat cannot follow and filepath.EvalSymlinks
 // resolves. For a chain of 45 relative symlinks, 89cb6289 and f6010b97 answer the
-// hooks refusal on a Linux VM. Its text ends with "chdir <baseRepo>: too many levels
-// of symbolic links". They delete nothing (rows LNKb-g and LNKr-g: a bare repository
+// hooks refusal on Linux. Its text ends with "chdir <baseRepo>: too many levels of
+// symbolic links". They delete nothing (rows LNKb-g and LNKr-g: a bare repository
 // and a work tree). Not measured: chain lengths other than 5 and 45, absolute link
 // targets, a chain to a plain folder and a chain to nothing. Nor are a chain with a
 // locked or marked worktree, and a path that is too long for the kernel.
 //
-// `git version` runs after the failed listing, as on 89cb6289 (rows L16a and L16b on
-// a Linux VM). When it fails too, the text starts with gitCannotRunPrefix (see
+// `git version` runs after the failed listing, as on 89cb6289 (measured on Linux).
+// When it fails too, the text starts with gitCannotRunPrefix (see
 // failedListingText). That case is not measured here. This `git version` gets the
-// light environment, as on 89cb6289 (rows L16a and L16b on a Linux VM). In the
-// symlink-chain rows LNKb-g and LNKr-g, the call log of 89cb6289 shows the read of
-// the user excludes and no `git version` (Linux VM). claustrum does the same.
+// light environment, as on 89cb6289 (measured on Linux). In the symlink-chain rows
+// LNKb-g and LNKr-g, the call log of 89cb6289 shows the read of the user excludes
+// and no `git version` (measured on Linux). claustrum does the same.
 //
 // The caller answers a PATH with no git before it calls this function.
 func unenterableBaseListing(repo string) string {
@@ -807,8 +794,8 @@ func unenterableBaseListing(repo string) string {
 	if r.err != nil && !errors.As(r.err, &ee) {
 		if err != nil {
 			// The symlink chain. The one git call of 89cb6289 is the read of the user
-			// excludes, and no `git version` runs (rows LNKb-g and LNKr-g on a Linux VM,
-			// LNKb-g on a macOS VM).
+			// excludes, and no `git version` runs (rows LNKb-g and LNKr-g on Linux,
+			// LNKb-g on macOS).
 			userExcludesFile()
 			return hooksRefusalPrefix + r.detail()
 		}
@@ -821,8 +808,8 @@ func unenterableBaseListing(repo string) string {
 // whose target is gone and is not shaped like a linked-worktree entry. The trust check
 // answers "no repository" there. f6010b97 instead runs git, whose configuration
 // listing fails, and answers the hooks refusal. A gone entry under .git/worktrees
-// still answers "exit status 128". Measured side by side against f6010b97 on a Linux
-// VM (rows K16 and WR13). A daemon GIT_DIR skips the walk, so it reports false then.
+// still answers "exit status 128". Measured side by side against f6010b97 on Linux. A
+// daemon GIT_DIR skips the walk, so it reports false then.
 func goneNonEntryGitFile(repo string) bool {
 	if os.Getenv("GIT_DIR") != "" {
 		return false
@@ -872,11 +859,11 @@ func baseIsGitDir(repo string) bool {
 //
 // The <directory> comes from the cleaned path. For "R/proj/w1/", filepath.Dir of
 // the raw path is "R/proj/w1", not "R/proj". f6010b97 and 90fca6e6 refuse that
-// create and name "R/proj" (measured on Linux and macOS VMs).
+// create and name "R/proj" (measured on Linux and macOS).
 //
 // The text names the <directory> through externalPathSpelling. With a worktreeRoot
-// behind a symlink, 89cb6289 names it with the link resolved (cell U3a, Linux and
-// macOS VMs).
+// behind a symlink, 89cb6289 names it with the link resolved (measured on Linux
+// and macOS).
 func externalWorktreeDirNotEmptyRefusal(worktreePath string) string {
 	dir := filepath.Dir(filepath.Clean(worktreePath))
 	entries, err := os.ReadDir(dir)
@@ -914,8 +901,8 @@ const managedWorktreesMarkerBody = "This directory holds Claude Code session wor
 // of any kind keeps its content and its mode, and a failed add keeps the marker.
 // Any other open error stops the create with "cannot mark <dir> as a worktree
 // location: openat .claude-managed-worktrees: <errno>". f6010b97 does the same on
-// Linux and macOS VMs. Not measured: a write or close that fails after the open.
-// The create goes on then.
+// Linux and macOS. Not measured: a write or close that fails after the open. The
+// create goes on then.
 func ensureManagedWorktreesMarker(dir string) error {
 	f, err := os.OpenFile(filepath.Join(dir, managedWorktreesMarker), os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0o644)
 	if errors.Is(err, fs.ErrExist) {

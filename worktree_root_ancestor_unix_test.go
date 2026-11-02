@@ -14,11 +14,10 @@ import (
 
 // These tests cover the ancestor test of git.worktree_create with a worktreeRoot. A
 // root is refused below a directory owned by a user other than you or uid 0. It is
-// also refused below a directory writable by a shared group or by every user,
-// without the sticky bit.
-// Row names come from the side-by-side VM runs (issue 442). In the texts, <B> is
-// the resolved temp dir of the test. A row named not_measured_ pins a choice that
-// no capture measured.
+// also refused below a directory writable by a shared group or by every user, without
+// the sticky bit. Row names come from the side-by-side measured runs (issue 442). In
+// the texts, <B> is the resolved temp dir of the test. A row named not_measured_ pins
+// a choice that no capture measured.
 
 const ancWriteTail = ", so they could replace what is beneath it; choose a location under " +
 	"directories only you (or the system) control, or remove the extra write permission (chmod go-w)"
@@ -36,7 +35,7 @@ func ancOwner(root, dir string, uid uint32) string {
 }
 
 // sharedGroup makes the egid of the test a shared group: the passwd fixture has no
-// line for the test user (row X1 of the root's own write test).
+// line for the test user (a measured case of the root's own write test).
 func sharedGroup(t *testing.T) {
 	t.Helper()
 	uid, gid := os.Geteuid(), os.Getegid()
@@ -45,7 +44,7 @@ func sharedGroup(t *testing.T) {
 }
 
 // privateGroup makes the egid of the test the private group of the test user, with
-// the files of row L1_L10_private of the root's own write test.
+// the files of the root's own write test.
 func privateGroup(t *testing.T) {
 	t.Helper()
 	uid, gid := os.Geteuid(), os.Getegid()
@@ -112,7 +111,7 @@ func wantAncestor(t *testing.T, root, want string) {
 }
 
 // The judgement of one directory: owner first, then the sticky bit, then the group
-// and other write bits. Rows P-M1 to P-M8 of the test list.
+// and other write bits. The measured cases of the test list.
 func TestRootAncestorFault(t *testing.T) {
 	euid, egid := os.Geteuid(), os.Getegid()
 	if u := uint32(euid); u == 65534 || u == 4294967294 {
@@ -134,34 +133,34 @@ func TestRootAncestorFault(t *testing.T) {
 		mode     fs.FileMode
 		want     string
 	}{
-		// P-M1 (G9, G10).
+		// Measured.
 		{name: "G9_root_owner", uid: 0, gid: 0, mode: 0o755},
 		{name: "G9_daemon_user", uid: me, gid: gid, mode: 0o755},
 		{name: "G10_foreign_linux", uid: 65534, gid: gid, mode: 0o755, want: owner(65534)},
 		{name: "G10_foreign_macos_unsigned", uid: 4294967294, gid: gid, mode: 0o755, want: owner(4294967294)},
-		// P-M1b (G31, G32): the owner test comes first, and the sticky bit does not clear it.
+		// The owner test comes first, and the sticky bit does not clear it.
 		{name: "G31_foreign_0777", uid: 65534, gid: gid, mode: 0o777, want: owner(65534)},
 		{name: "G32_foreign_1755", uid: 65534, gid: gid, mode: 0o755 | fs.ModeSticky, want: owner(65534)},
-		// P-M2 (G8, G28, G33a, G33b): uid 0 passes the owner test only.
+		// Measured: uid 0 passes the owner test only.
 		{name: "G8_root_0775", uid: 0, gid: 0, mode: 0o775, want: write("its group", "0775")},
 		{name: "G33a_root_0757", uid: 0, gid: 0, mode: 0o757, want: write("every user on this host", "0757")},
 		{name: "G33b_root_0777", uid: 0, gid: 0, mode: 0o777, want: write("its group and every user on this host", "0777")},
-		// P-M4 (G33c): the private-group pass does not depend on the owner.
+		// Measured: the private-group pass does not depend on the owner.
 		{name: "G33c_root_private_0775", private: true, uid: 0, gid: gid, mode: 0o775},
 		{name: "G1_private_0775", private: true, uid: me, gid: gid, mode: 0o775},
 		{name: "K1_shared_0775", uid: me, gid: gid, mode: 0o775, want: write("its group", "0775")},
-		// P-M5 (G2, G3).
+		// Measured.
 		{name: "G2_0757", private: true, uid: me, gid: gid, mode: 0o757, want: write("every user on this host", "0757")},
 		{name: "G3_linux_private_0777", private: true, uid: me, gid: gid, mode: 0o777, want: write("every user on this host", "0777")},
 		{name: "G3_macos_shared_0777", uid: me, gid: gid, mode: 0o777, want: write("its group and every user on this host", "0777")},
-		// M6 (G4, G5).
+		// Measured.
 		{name: "G4_1777", uid: me, gid: gid, mode: 0o777 | fs.ModeSticky},
 		{name: "G5_shared_1775", uid: me, gid: gid, mode: 0o775 | fs.ModeSticky},
-		// P-M8 (G7, G36a, G36b): the permission bits only, four digits.
+		// Measured: the permission bits only, four digits.
 		{name: "G7_setgid_2775", uid: me, gid: gid, mode: 0o775 | fs.ModeSetgid, want: write("its group", "0775")},
 		{name: "G36b_setuid_4775", uid: me, gid: gid, mode: 0o775 | fs.ModeSetuid, want: write("its group", "0775")},
 		{name: "G36a_0070", uid: me, gid: gid, mode: 0o070, want: write("its group", "0070")},
-		// M7 (G29, G38a, G38b).
+		// Measured.
 		{name: "G29_0111", uid: me, gid: gid, mode: 0o111},
 		{name: "G38b_0000", uid: me, gid: gid, mode: 0},
 	}
@@ -179,13 +178,13 @@ func TestRootAncestorFault(t *testing.T) {
 	}
 }
 
-// W-K0-control (K0, D3, M6): the stock chain of the host passes, "/" included. On
+// Measured control: the stock chain of the host passes, "/" included. On
 // Linux "/tmp" is 1777 and owned by root. A red result here is a fact of the host.
 func TestRootAncestorStockChain(t *testing.T) {
 	wantAncestor(t, filepath.Join(ancBase(t), "o"), "")
 }
 
-// W-M3-group (K1, G6): a shared group-writable directory refuses.
+// Measured: a shared group-writable directory refuses.
 func TestRootAncestorGroupWritable(t *testing.T) {
 	for _, mode := range []fs.FileMode{0o775, 0o770} {
 		t.Run(fmt.Sprintf("%04o", mode), func(t *testing.T) {
@@ -200,7 +199,7 @@ func TestRootAncestorGroupWritable(t *testing.T) {
 	}
 }
 
-// W-M4-private (G1): a group-writable directory of the private group passes.
+// Measured: a group-writable directory of the private group passes.
 func TestRootAncestorPrivateGroup(t *testing.T) {
 	privateGroup(t)
 	g := filepath.Join(ancBase(t), "G")
@@ -208,7 +207,7 @@ func TestRootAncestorPrivateGroup(t *testing.T) {
 	wantAncestor(t, filepath.Join(g, "o"), "")
 }
 
-// W-M5-world (G2, G3): the other-write bit refuses, and the group rule picks <who>.
+// Measured: the other-write bit refuses, and the group rule picks <who>.
 func TestRootAncestorWorldWritable(t *testing.T) {
 	for _, c := range []struct {
 		name    string
@@ -234,7 +233,7 @@ func TestRootAncestorWorldWritable(t *testing.T) {
 	}
 }
 
-// W-M6-sticky (G4, G5): the sticky bit clears both mode tests.
+// Measured: the sticky bit clears both mode tests.
 func TestRootAncestorSticky(t *testing.T) {
 	for _, mode := range []fs.FileMode{0o777 | fs.ModeSticky, 0o775 | fs.ModeSticky} {
 		t.Run(fmt.Sprintf("%v", mode), func(t *testing.T) {
@@ -246,10 +245,10 @@ func TestRootAncestorSticky(t *testing.T) {
 	}
 }
 
-// W-M7-no-write (G29, G38a): a directory with no write bit for others passes the
+// Measured: a directory with no write bit for others passes the
 // mode tests, even when its owner cannot search or read it. The root below it
 // exists. The .git test of the walk then answers the lstat error of a directory
-// that cannot be searched, as the root-chain step does in row G38a.
+// that cannot be searched, as the root-chain step does.
 func TestRootAncestorNoWriteBits(t *testing.T) {
 	for _, c := range []struct {
 		name  string
@@ -273,7 +272,7 @@ func TestRootAncestorNoWriteBits(t *testing.T) {
 	}
 }
 
-// W-D1-top-first (G11, G12, G35): the highest failing directory is named.
+// Measured: the highest failing directory is named.
 func TestRootAncestorTopFirst(t *testing.T) {
 	for _, c := range []struct {
 		name   string
@@ -297,7 +296,7 @@ func TestRootAncestorTopFirst(t *testing.T) {
 	}
 }
 
-// W-D1-mixed-kinds (G34a, G34b): the kind of failure plays no part in the choice. A
+// Measured: the kind of failure plays no part in the choice. A
 // foreign owner comes from the stat seam.
 func TestRootAncestorTopFirstMixedKinds(t *testing.T) {
 	if os.Geteuid() == 65534 {
@@ -324,7 +323,7 @@ func TestRootAncestorTopFirstMixedKinds(t *testing.T) {
 	})
 }
 
-// W-D2-root-excluded: the root itself is not in the walk. The root's own write test still sends
+// The root itself is not in the walk. The root's own write test still sends
 // its own text for a group-writable root. This rests on the older f6010b97
 // measurement of the root's own write test.
 func TestRootAncestorRootExcluded(t *testing.T) {
@@ -339,7 +338,7 @@ func TestRootAncestorRootExcluded(t *testing.T) {
 	}
 }
 
-// W-D5-missing (G13a, G13b): a missing level ends the walk, and every existing
+// Measured: a missing level ends the walk, and every existing
 // directory above it is judged. <root> is the absent root.
 func TestRootAncestorMissingLevels(t *testing.T) {
 	for _, c := range []struct{ name, root string }{{"G13a", "G/o"}, {"G13b", "G/n1/n2"}} {
@@ -354,7 +353,7 @@ func TestRootAncestorMissingLevels(t *testing.T) {
 	}
 }
 
-// W-D7-judge-first (G36a): a group-writable directory that its owner cannot search
+// Measured: a group-writable directory that its owner cannot search
 // is judged before the walk looks inside it.
 func TestRootAncestorJudgedBeforeSearch(t *testing.T) {
 	skipIfRoot(t)
@@ -366,7 +365,7 @@ func TestRootAncestorJudgedBeforeSearch(t *testing.T) {
 	wantAncestor(t, root, ancWrite(root, g, "its group", "0070"))
 }
 
-// W-G14-link-to-group (G14, G14c): a symlink is not judged itself. The directory it
+// Measured: a symlink is not judged itself. The directory it
 // names is judged and named. <root> keeps the link.
 func TestRootAncestorLinkToGroupDir(t *testing.T) {
 	for _, c := range []struct{ name, target string }{{"G14_absolute", ""}, {"G14c_relative", "G"}} {
@@ -386,7 +385,7 @@ func TestRootAncestorLinkToGroupDir(t *testing.T) {
 	}
 }
 
-// W-G14b-target-parent (G14b): the chain above a symlink target is judged.
+// Measured: the chain above a symlink target is judged.
 func TestRootAncestorLinkTargetParent(t *testing.T) {
 	sharedGroup(t)
 	b := ancBase(t)
@@ -398,7 +397,7 @@ func TestRootAncestorLinkTargetParent(t *testing.T) {
 	wantAncestor(t, root, ancWrite(root, g, "its group", "0775"))
 }
 
-// W-G14d-target (G14d): the symlink target itself is judged, in its resolved spelling.
+// Measured: the symlink target itself is judged, in its resolved spelling.
 func TestRootAncestorLinkTarget(t *testing.T) {
 	sharedGroup(t)
 	b := ancBase(t)
@@ -410,7 +409,7 @@ func TestRootAncestorLinkTarget(t *testing.T) {
 	wantAncestor(t, root, ancWrite(root, sub, "its group", "0775"))
 }
 
-// W-G15-lexical (G15): a lexical directory above a symlink is judged, even though the
+// Measured: a lexical directory above a symlink is judged, even though the
 // resolved root does not pass through it.
 func TestRootAncestorLexicalAboveLink(t *testing.T) {
 	sharedGroup(t)
@@ -423,7 +422,7 @@ func TestRootAncestorLexicalAboveLink(t *testing.T) {
 	wantAncestor(t, root, ancWrite(root, g, "its group", "0775"))
 }
 
-// W-G15b-target (G15b): a symlink below a safe directory leads to a group-writable one.
+// Measured: a symlink below a safe directory leads to a group-writable one.
 func TestRootAncestorLinkFromSafeDir(t *testing.T) {
 	sharedGroup(t)
 	b := ancBase(t)
@@ -435,7 +434,7 @@ func TestRootAncestorLinkFromSafeDir(t *testing.T) {
 	wantAncestor(t, root, ancWrite(root, g, "its group", "0775"))
 }
 
-// W-G27g-resolved-name (G27g): a directory reached through a symlink is named in its
+// Measured: a directory reached through a symlink is named in its
 // resolved spelling.
 func TestRootAncestorResolvedName(t *testing.T) {
 	sharedGroup(t)
@@ -449,7 +448,7 @@ func TestRootAncestorResolvedName(t *testing.T) {
 	wantAncestor(t, root, ancWrite(root, hg, "its group", "0775"))
 }
 
-// W-G30-root-as-sent (G30a to G30c): <root> is the root as sent, and <dir> is clean.
+// Measured: <root> is the root as sent, and <dir> is clean.
 func TestRootAncestorRootAsSent(t *testing.T) {
 	sharedGroup(t)
 	b := ancBase(t)
@@ -461,7 +460,7 @@ func TestRootAncestorRootAsSent(t *testing.T) {
 	}
 }
 
-// W-stop-on-resolve-error (G37b, G39): a failed resolve ends the walk with no
+// Measured: a failed resolve ends the walk with no
 // refusal. The root-chain step answers these rows.
 func TestRootAncestorResolveErrorEndsWalk(t *testing.T) {
 	sharedGroup(t)
@@ -473,7 +472,7 @@ func TestRootAncestorResolveErrorEndsWalk(t *testing.T) {
 	wantAncestor(t, filepath.Join(b, "L", "o"), "")
 }
 
-// G42 (Linux and macOS VMs, 89cb6289 only): a root that is itself a symlink. The
+// Measured on Linux and macOS (89cb6289 only): a root that is itself a symlink. The
 // chain above its target is judged. <root> is the symlink as sent, and <dir> the
 // failing resolved directory.
 func TestRootAncestorSymlinkedRoot(t *testing.T) {
@@ -502,7 +501,7 @@ func TestRootAncestorNotMeasured(t *testing.T) {
 		wantAncestor(t, root, ancWrite(root, h, "its group", "0775"))
 	})
 	// A group-writable regular file above the root is not judged. The root-chain step
-	// answers "not a directory" (5fd08069, cell C-W14 of round tier0-20, Linux VM).
+	// answers "not a directory" (`5fd08069`, measured on Linux).
 	t.Run("C-W14_group_writable_file", func(t *testing.T) {
 		sharedGroup(t)
 		b := ancBase(t)
@@ -569,7 +568,7 @@ func wantFrame(t *testing.T, got, want string) {
 	}
 }
 
-// D-K1-nothing-created and D-nine-calls (K1): the refusal comes after the 9 git
+// Measured: the refusal comes after the 9 git
 // calls, runs no `worktree add`, and creates nothing.
 func TestWorktreeCreateRootAncestorRefused(t *testing.T) {
 	sharedGroup(t)
@@ -592,7 +591,7 @@ func TestWorktreeCreateRootAncestorRefused(t *testing.T) {
 	}
 }
 
-// D-G16-before-root (G16): with both the ancestor and the root group-writable, the
+// Measured: with both the ancestor and the root group-writable, the
 // ancestor text wins over the text of the root's own write test.
 func TestWorktreeCreateRootAncestorBeforeRootTest(t *testing.T) {
 	sharedGroup(t)
@@ -604,7 +603,7 @@ func TestWorktreeCreateRootAncestorBeforeRootTest(t *testing.T) {
 		ancFrame(t, ancWrite(root, g, "its group", "0775"), "unsafe_path"))
 }
 
-// D-G18-G40-before-chain (G18, G40a, G40b): the ancestor text comes before the
+// Measured: the ancestor text comes before the
 // .git test of the root-chain step, even at the same level.
 func TestWorktreeCreateRootAncestorBeforeGitChain(t *testing.T) {
 	for _, c := range []struct {
@@ -628,10 +627,9 @@ func TestWorktreeCreateRootAncestorBeforeGitChain(t *testing.T) {
 	}
 }
 
-// Rows Y11d and T7 (see the comment above the call of worktreeRootAncestorRefusal
-// in methods_git.go): the ancestor text comes before the checkout tests. The root
-// leads into the repository <B>/G/T through the symlink <B>/L, and
-// <B>/G is group-writable.
+// Measured: the ancestor text comes before the checkout tests. The root leads
+// into the repository <B>/G/T through the symlink <B>/L, and <B>/G is
+// group-writable.
 func TestWorktreeCreateRootAncestorBeforeCheckout(t *testing.T) {
 	sharedGroup(t)
 	f := newAncFixture(t)
@@ -644,7 +642,7 @@ func TestWorktreeCreateRootAncestorBeforeCheckout(t *testing.T) {
 		ancFrame(t, ancWrite(root, g, "its group", "0775"), "unsafe_path"))
 }
 
-// D-G36a-before-chain (G36a): an unsearchable group-writable ancestor gets the
+// Measured: an unsearchable group-writable ancestor gets the
 // ancestor text, not the lstat text of the root-chain step.
 func TestWorktreeCreateRootAncestorUnsearchable(t *testing.T) {
 	skipIfRoot(t)
@@ -657,7 +655,7 @@ func TestWorktreeCreateRootAncestorUnsearchable(t *testing.T) {
 		ancFrame(t, ancWrite(root, g, "its group", "0070"), "unsafe_path"))
 }
 
-// D-chain-texts-kept (G37a, G37b, G38a, G39): with no failing ancestor, the
+// Measured: with no failing ancestor, the
 // root-chain step answers as before.
 func TestWorktreeCreateRootAncestorKeepsChainTexts(t *testing.T) {
 	for _, c := range []struct {
@@ -701,7 +699,7 @@ func TestWorktreeCreateRootAncestorKeepsChainTexts(t *testing.T) {
 	}
 }
 
-// D-G41-dotdot-first (G41a): the ".." refusal comes 6 git calls before the ancestor
+// Measured: the ".." refusal comes 6 git calls before the ancestor
 // test.
 func TestWorktreeCreateRootAncestorAfterDotDot(t *testing.T) {
 	sharedGroup(t)
@@ -713,7 +711,7 @@ func TestWorktreeCreateRootAncestorAfterDotDot(t *testing.T) {
 		"beneath the filesystem root", "unsafe_path"))
 }
 
-// D-G20-base-chain (G20): the chain of baseRepo is not walked.
+// Measured: the chain of baseRepo is not walked.
 func TestWorktreeCreateRootAncestorIgnoresRepoChain(t *testing.T) {
 	sharedGroup(t)
 	f := newAncFixture(t)
@@ -726,7 +724,7 @@ func TestWorktreeCreateRootAncestorIgnoresRepoChain(t *testing.T) {
 	wantFrame(t, f.create(t, repo, root, wp), ancSuccess(t, wp))
 }
 
-// D-G21-default (G21, G22): without a worktreeRoot no ancestor test runs, even with
+// Measured: without a worktreeRoot no ancestor test runs, even with
 // the repository and the directory above it group-writable.
 func TestWorktreeCreateDefaultSkipsRootAncestor(t *testing.T) {
 	sharedGroup(t)
@@ -739,7 +737,7 @@ func TestWorktreeCreateDefaultSkipsRootAncestor(t *testing.T) {
 	wantFrame(t, f.create(t, repo, "", wp), ancSuccess(t, wp))
 }
 
-// D-G25-remove (G25): git.worktree_remove runs no ancestor test.
+// Measured: git.worktree_remove runs no ancestor test.
 func TestWorktreeRemoveSkipsRootAncestor(t *testing.T) {
 	sharedGroup(t)
 	f := newAncFixture(t)

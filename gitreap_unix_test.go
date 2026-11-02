@@ -16,9 +16,8 @@ import (
 )
 
 // The reap of a git call whose stdout a child holds after git exited. 5fd08069
-// keeps git a zombie until its stdout closes (cells A1 and A3), or until the 30 s
-// bound of a config listing on standard input (cells B1 and B2). Rounds
-// task101-03 (Linux VM) and task082-02 (macOS VM).
+// keeps git a zombie until its stdout closes (measured), or until the 30 s bound
+// of a config listing on standard input. Measured on Linux and macOS.
 
 // procState is the state letter of the process pid, or "" when no such process
 // exists. On Linux it reads /proc. Elsewhere it runs ps.
@@ -101,8 +100,8 @@ func gitPid(t *testing.T, pids string) int {
 
 // TestHeldStdoutReapsGitAtPipeEnd: a call under untilPipeEOF exits 0 while its
 // child holds the stdout. git stays a zombie until the child ends, and it is
-// gone when the call returns (cells A1 and A3). Mutation: in
-// runToEOF, call cmd.Wait before the read of stdout.
+// gone when the call returns (measured). Mutation: in runToEOF, call cmd.Wait
+// before the read of stdout.
 func TestHeldStdoutReapsGitAtPipeEnd(t *testing.T) {
 	requireProcState(t)
 	const hold = 5
@@ -141,9 +140,9 @@ func TestHeldStdoutReapsGitAtPipeEnd(t *testing.T) {
 // TestHeldStdoutReapsGitAtStartBound: a config listing on standard input exits
 // 0 while its child holds the stdout past the bound. git stays a zombie until
 // the bound and is reaped then, and the call returns startBoundDrain later
-// (cells B1 and B2: reaped at about 30 s, the reply at about 31 s).
-// Mutation: in runStartBound, call cmd.Wait before the select, or wait for the
-// end of stdout alone there.
+// (measured: reaped at about 30 s, the reply at about 31 s). Mutation: in
+// runStartBound, call cmd.Wait before the select, or wait for the end of
+// stdout alone there.
 func TestHeldStdoutReapsGitAtStartBound(t *testing.T) {
 	requireProcState(t)
 	const bound, hold = 3 * time.Second, 8

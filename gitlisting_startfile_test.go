@@ -11,9 +11,9 @@ import (
 )
 
 // A git method on a path that exists and is not a folder. On Windows the start error
-// of the configuration listing is a refusal there. 89cb6289 was measured on a Windows
-// VM (cells A-01 to A-14). On Linux and macOS the method goes on. These tests set
-// package state and the daemon's environment, so none of them runs in parallel.
+// of the configuration listing is a refusal there. 89cb6289 was measured on Windows.
+// On Linux and macOS the method goes on. These tests set package state and the
+// daemon's environment, so none of them runs in parallel.
 
 // gitStartError is the error text of a git call that cannot start in dir. The test
 // starts the git of PATH there itself, so the text names that git. It is "" when the
@@ -53,10 +53,10 @@ func refuseNonFolderStart(t *testing.T) {
 
 // With nonFolderStartRefuses, the start error of the listing in a regular file is the
 // hooks refusal in git.info, git.list_branches, git.status (by baseRepo) and
-// git.worktree_create (cells A-01 to A-04, A-04b2 and A-06). git.status with the file
-// as path only, a path that does not exist, a path under the file and a plain folder
-// keep their frames (cells A-04b1, A-07m, A-07s and A-08). Nothing changes on disk.
-// Mutation: report a path that is not a folder as unenterable (unenterableDir).
+// git.worktree_create (measured). git.status with the file as path only, a path that
+// does not exist, a path under the file and a plain folder keep their frames
+// (measured). Nothing changes on disk. Mutation: report a path that is not a folder
+// as unenterable (unenterableDir).
 func TestStartErrorInRegularFileRefuses(t *testing.T) {
 	f := newNoRepoFixture(t)
 	refuseNonFolderStart(t)
@@ -104,7 +104,7 @@ func resultOf(result string) string {
 	return `{"jsonrpc":"2.0","id":1,"result":` + result + `}`
 }
 
-// Cell A-14. When `git version` fails too, the regular file gets the "cannot run" text
+// Measured. When `git version` fails too, the regular file gets the "cannot run" text
 // with the detail of the version call. Mutation: report a path that is not a folder
 // as unenterable (unenterableDir).
 func TestStartErrorInRegularFileWithFailingVersion(t *testing.T) {
@@ -118,7 +118,7 @@ func TestStartErrorInRegularFileWithFailingVersion(t *testing.T) {
 	}
 }
 
-// Cell A-10 (Windows VM). With nonFolderStartRefuses, a file symlink as path gets the
+// Measured on Windows. With nonFolderStartRefuses, a file symlink as path gets the
 // hooks refusal with the start error of the listing, as a regular file does. The test
 // skips when the user cannot make a symlink. Mutation: report a path that is not a
 // folder as unenterable (unenterableDir).

@@ -10,13 +10,12 @@ import (
 	"testing"
 )
 
-// The tests of the points that the validation round val-s3p2b2-3 found. Each
-// names its row.
+// The tests of the points that a validation run found.
 
 // pinnedInfo is the Lstat of path with its file identity read now. On Windows
 // os.SameFile reads the identity of a FileInfo from the path at the first
 // compare. Without this read, a compare after a replace sees the new file two
-// times and calls it the old file (val-s3p2b2-3-windows part C).
+// times and calls it the old file (measured on Windows).
 func pinnedInfo(t *testing.T, path string) os.FileInfo {
 	t.Helper()
 	fi, err := os.Lstat(path)
@@ -30,7 +29,7 @@ func pinnedInfo(t *testing.T, path string) os.FileInfo {
 // TestShadowConfigCarriesSha1AndNoopV1: the copy carries
 // `extensions.objectformat = sha1` and `extensions.noop-v1 = true`, with format
 // version 0 and 1 and in both letter cases of the key. The texts are those of
-// 5fd08069 in cells X8 of val-s3p2b2-3-linux2 (Linux VM): 192 and 187 bytes.
+// 5fd08069 (measured on Linux): 192 and 187 bytes.
 func TestShadowConfigCarriesSha1AndNoopV1(t *testing.T) {
 	requireGit(t)
 	home := resolveTestRoot(t, t.TempDir())
@@ -64,8 +63,7 @@ func TestShadowConfigCarriesSha1AndNoopV1(t *testing.T) {
 
 // TestWriteNewFile: a copy is written as a new file through a file
 // `.tmp-<digits>` of mode 0600 in the folder of the copy, and no such file is
-// left (val-s3p2b2-3-macos row D7, macOS VM, and val-s3p2b2-3-linux2 row D5,
-// Linux VM).
+// left (measured on Linux and macOS).
 func TestWriteNewFile(t *testing.T) {
 	dir := resolveTestRoot(t, t.TempDir())
 	if err := os.MkdirAll(filepath.Join(dir, "info"), 0o700); err != nil {
@@ -116,8 +114,8 @@ func TestWriteNewFile(t *testing.T) {
 }
 
 // TestShadowTestCopyIsWrittenAsNewFiles: the second texts of the folder
-// `shadow` of the start test are new files (val-s3p2b2-3-linux2 row D5: a new
-// inode number for config and HEAD in 14 of 14 cells, Linux VM).
+// `shadow` of the start test are new files (measured on Linux: a new
+// inode number for config and HEAD in 14 of 14 cases).
 func TestShadowTestCopyIsWrittenAsNewFiles(t *testing.T) {
 	base := resolveTestRoot(t, t.TempDir())
 	gitDir, shadowDir := filepath.Join(base, "real", ".git"), filepath.Join(base, "shadow")
@@ -155,9 +153,8 @@ func TestShadowTestCopyIsWrittenAsNewFiles(t *testing.T) {
 
 // TestShadowStateFilesNeedNoNewConfig: when `shallow`, `info/attributes` or
 // `info/exclude` comes, changes or goes, the copy follows and the config of the
-// copy stays the same file. 5fd08069 makes no read of the config then (cells
-// 19a to 19c of val-s3p2b2-3-linux, Linux VM. Cells 15-19a to 15-19c of
-// val-s3p2b2-3-macos. Cell E15b of val-s3p2b2-3-windows).
+// copy stays the same file. 5fd08069 makes no read of the config then (measured
+// on Linux, macOS and Windows).
 func TestShadowStateFilesNeedNoNewConfig(t *testing.T) {
 	f := newRepoFolderFixture(t)
 	dir := f.sync(t, f.repo)
@@ -206,8 +203,7 @@ func TestShadowStateFilesNeedNoNewConfig(t *testing.T) {
 // TestGitInfoAsksForTheGitDirWhereNoRepositoryIs: in a folder with no
 // repository git.info runs its listing and then the heavy `rev-parse
 // --git-dir`, both with GIT_DIR=<null device>. 5fd08069 makes that second call
-// (val-s3p2b2-3-macos cells S1-first-norepo, macOS VM. val-s3p2b2-3-windows row
-// D6, Windows VM). The reply is the "no repository" answer.
+// (measured on macOS and Windows). The reply is the "no repository" answer.
 func TestGitInfoAsksForTheGitDirWhereNoRepositoryIs(t *testing.T) {
 	f := newSeededShadowFixture(t)
 	plain := filepath.Join(resolveTestRoot(t, t.TempDir()), "norepo")
@@ -243,9 +239,9 @@ func TestGitInfoAsksForTheGitDirWhereNoRepositoryIs(t *testing.T) {
 }
 
 // TestGitInfoWithNoShortHead: when `rev-parse --short HEAD` fails, the reply
-// has no `branch` member. On a Windows VM 5fd08069 answers so for a files
-// repository with `extensions.refStorage = reftable` (cell V6-13d of
-// val-s3p2b2-3-windows). Here the stub fails that one call.
+// has no `branch` member. On Windows 5fd08069 answers so for a files
+// repository with `extensions.refStorage = reftable` (measured). Here the
+// stub fails that one call.
 func TestGitInfoWithNoShortHead(t *testing.T) {
 	f := newSeededShadowFixture(t)
 	runGit(t, f.repo, "checkout", "-q", "--detach")
@@ -264,8 +260,7 @@ func TestGitInfoWithNoShortHead(t *testing.T) {
 // TestShadowFallbackKeepsItsFoldersInTheDaemonFolder: in the state fallback-git
 // a git.status has its temporary git folder in the folder of the daemon, and a
 // create its index folder. With the member both are in the temporary folder
-// (val-s3p2b2-3-windows cell Q-S4c, Windows VM. val-s3p2b2-1-macos cell
-// S4-wt1-first-status, macOS VM).
+// (measured on macOS and Windows).
 func TestShadowFallbackKeepsItsFoldersInTheDaemonFolder(t *testing.T) {
 	f := newSeededShadowFixture(t)
 	h := f.s.gitShadow

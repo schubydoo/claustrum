@@ -15,18 +15,17 @@ import (
 // installWorktreeIndex puts the index that the checkout wrote at src into adminDir,
 // the registration of the new worktree, as the file "index". It makes a new file
 // there and copies the bytes, so the file equals the one of 89cb6289 in these facts
-// (Linux and macOS VMs, rows A1 to A13):
+// (measured on Linux and macOS):
 //
 //   - It is a new inode, not the temporary file moved.
-//   - Its group is the group that a new file gets in the registration (rows A1, A3,
-//     A5, A6, A8 and A9).
-//   - Its mode is 0666 less the umask of the daemon (row A12). It follows neither the
-//     mode of the temporary file nor core.sharedRepository (row A13).
+//   - Its group is the group that a new file gets in the registration (measured).
+//   - Its mode is 0666 less the umask of the daemon (measured). It follows neither
+//     the mode of the temporary file nor core.sharedRepository (measured).
 //   - Its mtime is the mtime of the temporary file, rounded up to a whole
 //     microsecond. The atime is not set: no row measures it.
 //
 // A temporary index that is gone is a failed placement. The error reads "open
-// <src>: no such file or directory", the text of cell X1 (Linux and macOS VMs).
+// <src>: no such file or directory", the text (measured on Linux and macOS).
 //
 // The file is made through a root at the parent of adminDir, the registrations
 // directory, so each error names "<name>/index". The order is claustrum's own, and
@@ -34,15 +33,14 @@ import (
 //
 //  1. Create the file, exclusively. Any error but "file exists" is the answer:
 //     "openat <name>/index: permission denied" for a registration of mode 0500
-//     (rows A14, A14f and A14b) and for a registrations directory of mode 0600,
-//     with or without a file at the index (cells Z11a and Z11b, macOS VM), and
-//     "openat <name>/index: no such file or directory" for a registration that is
-//     gone (cell Z10, macOS VM).
+//     (measured) and for a registrations directory of mode 0600, with or without
+//     a file at the index (measured on macOS), and "openat <name>/index: no such
+//     file or directory" for a registration that is gone (measured on macOS).
 //  2. On "file exists", remove the entry with one plain remove, never a tree. A
-//     file, a symlink and an empty folder go (cells X8, Z7b and Z7a). The target of
-//     the symlink stays. A failed remove is the answer: "removeat <name>/index:
-//     permission denied" in a registration of mode 0500 (cell Y3), and "removeat
-//     <name>/index: directory not empty" for a folder that holds a file (cell Y7).
+//     file, a symlink and an empty folder go (measured). The target of the symlink
+//     stays. A failed remove is the answer: "removeat <name>/index: permission
+//     denied" in a registration of mode 0500 (measured), and "removeat
+//     <name>/index: directory not empty" for a folder that holds a file.
 //  3. Create the file again, exclusively. An entry that another process made in
 //     between gives "openat <name>/index: file exists" (not measured). The open
 //     does not follow a link there.
@@ -60,7 +58,7 @@ func installWorktreeIndex(src, adminDir string) error {
 // before it makes the file, it tests through that root that the entry is still
 // the accepted folder (replacedIn, D24). If it is another folder, nothing is
 // placed, and the error is claustrum's own text. An entry whose stat fails takes
-// the placement itself, with the measured texts (cells Z10, Z11a and Z11b).
+// the placement itself, with the measured texts.
 func installTestedWorktreeIndex(src string, tested testedRegistration) error {
 	return installIndexInto(src, tested.path, tested)
 }
@@ -127,7 +125,7 @@ func installIndexInto(src, adminDir string, tested testedRegistration) error {
 // that replaced the directory after the check is refused at the open, and the
 // opened directory must have the identity that the check recorded (os.SameFile).
 // Else the delete is refused. The error of a failed delete reads "RemoveAll <name>: <OS
-// error>", the wording of row A14.
+// error>", the wording.
 //
 // A registration that is not a direct child of the registrations directory is
 // refused, and nothing is deleted. git writes each registration as a direct child.
@@ -137,9 +135,9 @@ func installIndexInto(src, adminDir string, tested testedRegistration) error {
 // A registration whose back-pointer the check cannot read for a permission
 // error is not deleted either, and that error is returned. The rollback then
 // keeps the branch and names the registration in the frame, as 89cb6289 does with
-// a registrations directory of mode 0600 (cells Z11a and Z11b, macOS VM). The error
-// reads "RemoveAll <name>: permission denied", as in that frame. No delete is
-// attempted: claustrum does not delete what it did not verify.
+// a registrations directory of mode 0600 (measured on macOS). The error reads
+// "RemoveAll <name>: permission denied", as in that frame. No delete is attempted:
+// claustrum does not delete what it did not verify.
 func removeCreatedRegistration(reg createdRegistration) error {
 	if reg.unreadable != nil {
 		return reg.unreadable

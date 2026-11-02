@@ -10,7 +10,7 @@ import (
 
 // A baseRepo the daemon can open but not search (mode 0600) answers with the
 // failed look at .claude, and nothing is deleted. Measured side by side against
-// f6010b97 on Linux and macOS VMs.
+// f6010b97 on Linux and macOS.
 func TestWorktreeRemoveUnsearchableBaseRepo(t *testing.T) {
 	requireGit(t)
 	if os.Geteuid() == 0 {
@@ -44,7 +44,7 @@ func TestWorktreeRemoveUnsearchableBaseRepo(t *testing.T) {
 
 // A baseRepo the daemon cannot open at all (mode 0000) answers with the open
 // error for baseRepo itself, and nothing is deleted. Measured against f6010b97 on
-// Linux and macOS VMs.
+// Linux and macOS.
 func TestWorktreeRemoveUnopenableBaseRepo(t *testing.T) {
 	requireGit(t)
 	if os.Geteuid() == 0 {
@@ -78,7 +78,7 @@ func TestWorktreeRemoveUnopenableBaseRepo(t *testing.T) {
 
 // A .claude that is a symlink, even to a directory outside the repository or to
 // nothing, does not stop the removal of a registered worktree outside .claude.
-// Measured against f6010b97 on Linux and macOS VMs.
+// Measured against f6010b97 on Linux and macOS.
 func TestWorktreeRemoveClaudeSymlinkDoesNotBlock(t *testing.T) {
 	requireGit(t)
 	for _, tc := range []struct{ name, link string }{
@@ -124,7 +124,7 @@ func TestWorktreeRemoveClaudeSymlinkDoesNotBlock(t *testing.T) {
 
 // With worktreeRoot, a search-only baseRepo (mode 0100) is not looked into for
 // .claude, so removing an external worktree that is already gone still answers
-// success, as on f6010b97 (measured side by side on a Linux VM). Without
+// success, as on f6010b97 (measured side by side on Linux). Without
 // worktreeRoot the same baseRepo answers the open error.
 func TestWorktreeRemoveExternalSearchOnlyBaseRepo(t *testing.T) {
 	requireGit(t)

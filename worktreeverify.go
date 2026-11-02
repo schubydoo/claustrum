@@ -46,8 +46,8 @@ var evalSymlinks = filepath.EvalSymlinks
 // identity from os.Stat of the path is read from the path only when os.SameFile
 // runs, so it read the replacement too, and a replaced leaf passed the check. The
 // references hold the leaf and its parent open during the create (measured in
-// /proc/<pid>/fd on a Linux VM and with handle64 on a Windows VM). The caller must
-// call release.
+// /proc/<pid>/fd on Linux and with handle64 on Windows). The caller must call
+// release.
 func checkpointCreatedWorktree(worktreePath string) worktreeCheckpoint {
 	var cp worktreeCheckpoint
 	var info os.FileInfo
@@ -81,9 +81,9 @@ func checkpointCreatedWorktree(worktreePath string) worktreeCheckpoint {
 // attach fallback is left to try. It runs no git call. It removes the leaf only if the
 // leaf is an empty directory. A registration or a branch that the failed add made
 // stays, and so does any content in the leaf. Measured against f6010b97 and 90fca6e6
-// on macOS and Windows VMs. A retry at the same path therefore succeeds after the
-// common failures (a branch that already exists, a ref lock), which leave the leaf
-// empty and unregistered.
+// on macOS and Windows. A retry at the same path therefore succeeds after the common
+// failures (a branch that already exists, a ref lock), which leave the leaf empty and
+// unregistered.
 //
 // The removal is an rmdir, so it can never delete a file or a directory with an
 // entry in it. It still keeps the always-on home guard (D2) and the part of the leaf
@@ -95,7 +95,7 @@ func checkpointCreatedWorktree(worktreePath string) worktreeCheckpoint {
 // The leaf's parent must also still be the directory that the checkpoint holds. If
 // the failed add replaced the parent and made a new empty leaf in it, the new leaf
 // stays. f6010b97 and 90fca6e6 keep it after a failed attach add, in 20 of 20 runs
-// on Linux and macOS VMs.
+// on Linux and macOS.
 func undoFailedAdd(worktreePath string, cp worktreeCheckpoint) {
 	if worktreePath == "" || wipesHomeDir(worktreePath) {
 		return
@@ -124,7 +124,7 @@ func undoFailedAdd(worktreePath string, cp worktreeCheckpoint) {
 // frame's error. The errorCode of the frame does not change. kept is true when the
 // branch step kept the branch because it holds commits that no other ref reaches.
 // The frame then carries "branchKept":true. The steps and the leaf texts were
-// measured against f6010b97 and 90fca6e6 on a Windows VM:
+// measured against f6010b97 and 90fca6e6 on Windows:
 //
 //   - Step A deletes the entries at the top of the leaf, one at a time, in the order
 //     that the directory read returns them, not sorted. It stops at the first entry
@@ -133,26 +133,26 @@ func undoFailedAdd(worktreePath string, cp worktreeCheckpoint) {
 //     registration, and the branch all remain; remove them by hand before retrying
 //     (RemoveAll <entry>: <OS error>)", and nothing else is undone. In attach mode
 //     the call made no branch, and the text reads "the worktree directory and its
-//     registration both remain" instead (f6010b97 and 89cb6289, row C08b).
+//     registration both remain" instead (`f6010b97`, `89cb6289`, measured).
 //
 //   - Step B deletes the worktree's registration, then runs the branch step
 //     (runBranchStep) on the branch that the call created. In attach mode branch is
 //     "", so no git call runs. After the attach fallback, the call created
-//     branchName. The caller's expired deadline does not stop the branch step (rows
-//     C04 and B2-10). If the registration cannot be deleted, the branch step does
-//     not run, step C still runs, and the text is "; and the undo could not finish
-//     for <leaf>: the worktree registration and the branch remain; remove them by
-//     hand before retrying (RemoveAll <registration name>: <OS error>)". 89cb6289
-//     gives it after a failed placement of the index, with the leaf gone (rows A14
-//     and A14f on a Linux VM, A14 and A14b on a macOS VM). In attach mode the text
-//     reads "the worktree registration remains; remove it by hand before retrying
-//     (...)" instead (cell X5, Linux and macOS VMs). A step C that fails too adds
-//     no text of its own (cell X11, Linux VM). A failed read-tree checkout and a
-//     timeout during the checkout give the same clause (cells Z5 and Z6, macOS VM).
-//     The same texts after the two other timeout frames are claustrum's choice (not
-//     measured). On Windows, for a create with no moved registration, a
-//     registration that cannot be deleted adds no text, and the branch step runs
-//     (removeCreatedRegistration): Windows is not measured.
+//     branchName. The caller's expired deadline does not stop the branch step
+//     (measured). If the registration cannot be deleted, the branch step does not
+//     run, step C still runs, and the text is "; and the undo could not finish for
+//     <leaf>: the worktree registration and the branch remain; remove them by hand
+//     before retrying (RemoveAll <registration name>: <OS error>)". 89cb6289 gives
+//     it after a failed placement of the index, with the leaf gone (measured on
+//     Linux and macOS). In attach mode the text reads "the worktree registration
+//     remains; remove it by hand before retrying (...)" instead (measured on Linux
+//     and macOS). A step C that fails too adds no text of its own (measured on
+//     Linux). A failed read-tree checkout and a timeout during the checkout give
+//     the same clause (measured on macOS). The same texts after the two other
+//     timeout frames are claustrum's choice (not measured). On Windows, for a
+//     create with no moved registration, a registration that cannot be deleted adds
+//     no text, and the branch step runs (removeCreatedRegistration): Windows is not
+//     measured.
 //
 //     Which registration goes depends on tested. With tested set (Linux and macOS,
 //     after the tests of createdRegistrationRefusal, and on Windows the moved
@@ -171,9 +171,9 @@ func undoFailedAdd(worktreePath string, cp worktreeCheckpoint) {
 //     <leaf base name>: <OS error>)".
 //
 // A branch that the branch step keeps adds its own part (rollbackBranchText) after
-// the leaf part, joined by "; " (row C05). A kept branch together with a failed rmdir
-// is the only pair that a row measured. Any other pair of the two parts uses the same
-// join. That is claustrum's choice (not measured).
+// the leaf part, joined by "; " (measured). A kept branch together with a failed
+// rmdir is the only pair that a row measured. Any other pair of the two parts uses
+// the same join. That is claustrum's choice (not measured).
 //
 // With a plain baseRepo, the registrations directory (<common git dir>/worktrees)
 // stays, empty when the call created it. With a linked-worktree baseRepo, the
@@ -194,10 +194,9 @@ func undoFailedCheckout(u gitUse, repo, worktreePath, branch string, cp worktree
 	// path no longer names that folder (acceptedGitDir). After a good add the
 	// repository has the registration, and the rollback then answers that it
 	// remains, with the text of a git directory that is no real directory. On
-	// 5fd08069 the registration stays and the leaf goes (cells X1c-11 and X1p-11
-	// of val-s3p2b2-7-windows, Windows VM). After an add that the daemon did not
-	// complete there is no registration to delete, and the branch step runs
-	// (cells X1c-10 and X1p-10).
+	// 5fd08069 the registration stays and the leaf goes (measured on Windows).
+	// After an add that the daemon did not complete there is no registration to
+	// delete, and the branch step runs (measured).
 	//
 	// With the path still on the held folder, the registration goes through
 	// that folder. With tested set, removeTestedRegistration opens the
@@ -206,14 +205,12 @@ func undoFailedCheckout(u gitUse, repo, worktreePath, branch string, cp worktree
 	// path that the `.git` file of the leaf names now. A path that changes
 	// after the tests leads the delete nowhere else.
 	//
-	// The path is tested two times: here, and again after step A. With a
-	// junction that is put at `repo\.git` while step A clears a leaf of 5000
-	// files, 5fd08069 keeps the registration and the branch and answers that
-	// they remain (table S2 of val-s3p2b2-12-windows, both forms of T, Windows
-	// VM, 2 of 2 runs), and so does claustrum (table S2 of
-	// val-s3p2b2-13-windows, 2 runs). With a symbolic link, 5fd08069 and claustrum do the
-	// same (cells k4 of val-s3p2b2-13-linux2, Linux VM, 7 of 7 runs, and of
-	// val-s3p2b2-13-macos, macOS VM, 21 of 21 runs).
+	// The path is tested two times: here, and again after step A. With a junction that
+	// is put at `repo\.git` while step A clears a leaf of 5000 files, 5fd08069 keeps
+	// the registration and the branch and answers that they remain (measured with both
+	// forms of T, Windows, 2 of 2 runs), and so does claustrum (measured, 2 runs). With
+	// a symbolic link, 5fd08069 and claustrum do the same (measured on Linux and macOS,
+	// 7 of 7 runs).
 	var heldErr error
 	var heldRegistration string
 	held := false
@@ -251,7 +248,7 @@ func undoFailedCheckout(u gitUse, repo, worktreePath, branch string, cp worktree
 	}
 	testHeld("leaf cleared")
 	// A registration that cannot be deleted stays, and then the branch step does not
-	// run: 89cb6289 runs no git call after it (row A14, Linux VM).
+	// run: 89cb6289 runs no git call after it (measured on Linux).
 	var res branchStepResult
 	var regErr error
 	switch {
@@ -279,7 +276,7 @@ func undoFailedCheckout(u gitUse, repo, worktreePath, branch string, cp worktree
 	}
 	if regErr != nil {
 		// The registration text stands alone, also when the leaf rmdir failed too
-		// (cell X11, Linux VM). In attach mode the call made no branch (cell X5).
+		// (measured on Linux). In attach mode the call made no branch (measured).
 		remain := "the worktree registration and the branch remain; remove them"
 		if branch == "" {
 			remain = "the worktree registration remains; remove it"
@@ -333,11 +330,10 @@ func gitFileGoneText(worktreePath string) string {
 // clearWorktreeLeaf is step A of undoFailedCheckout. It deletes each entry at the top
 // of leaf in the order that the directory read returns them, and stops at the first
 // failure. The names are not sorted: both references delete in that raw order
-// (measured on Linux ext4 and macOS APFS VMs), and the frame names the first entry
-// that fails. It returns "" on success, or
-// the text of the failure. The os.Root calls give the measured wording,
-// "RemoveAll <entry>: <OS error>", and they never follow a symlink out of the leaf.
-// A leaf that no longer exists has nothing to clear.
+// (measured on Linux ext4 and macOS APFS), and the frame names the first entry that
+// fails. It returns "" on success, or the text of the failure. The os.Root calls give
+// the measured wording, "RemoveAll <entry>: <OS error>", and they never follow a
+// symlink out of the leaf. A leaf that no longer exists has nothing to clear.
 func clearWorktreeLeaf(leaf string) string {
 	root, err := os.OpenRoot(leaf)
 	if err != nil {
@@ -472,18 +468,17 @@ func (r testedRegistration) release() {
 // it is. The test is on the opened root, not on a second lookup of the path: a
 // registrations folder that is a symlink can lead elsewhere at a second lookup.
 // A name whose stat fails is not "replaced": the placement or the delete then
-// runs and fails by itself, with the measured texts (cells Z10, Z11a and Z11b).
-// With no accepted identity, because the open and the stat of acceptRegistration
-// both failed, every folder at the name counts as replaced (not measured).
+// runs and fails by itself, with the measured texts. With no accepted identity,
+// because the open and the stat of acceptRegistration both failed, every folder at
+// the name counts as replaced (not measured).
 //
-// 89cb6289 removes the folder at that path in two cells of Linux and macOS VMs, 2
-// runs each.
-// In cell B6 a hook renames the new registration w1 to w1x and makes a new empty
-// folder w1, before a read-tree that fails. 89cb6289 removes the empty w1. In cell
-// B6b the hook renames w1 to w1x and the registration w9 of a live sibling
-// worktree to w1. 89cb6289 removes that folder with the files of the sibling.
-// claustrum removes nothing in both cells, and the frames are equal (Linux and
-// macOS VMs).
+// 89cb6289 removes the folder at that path in two cells of Linux and macOS, 2 runs
+// each. In a measurement, a hook renames the new registration w1 to w1x and makes
+// a new empty folder w1, before a read-tree that fails. 89cb6289 removes the empty
+// w1. In a measurement, the hook renames w1 to w1x and the registration w9 of a
+// live sibling worktree to w1. 89cb6289 removes that folder with the files of the
+// sibling. claustrum removes nothing in both cells, and the frames are equal
+// (measured on Linux and macOS).
 func (r testedRegistration) replacedIn(root *os.Root, name string) bool {
 	now, err := root.Stat(name)
 	return err == nil && (r.info == nil || !os.SameFile(r.info, now))
@@ -494,25 +489,24 @@ func (r testedRegistration) replacedIn(root *os.Root, name string) bool {
 // that entry in each of these states of a rollback, where the .git file of the leaf
 // or the record no longer leads to it:
 //
-//   - Cells Z16 and B0a: the record is rewritten to /nonexistent/.git. Cell B1: the
-//     record names a live sibling worktree.
-//   - Cells Z18, B0b and Z18r: the .git file of the leaf names a folder outside
-//     the repository.
-//   - Cells B2 and B3: the .git file of the leaf names the registration
-//     w9 of a sibling. w1 goes, and w9 stays. In B3 the record of w9 names the leaf.
-//   - Cell B5: the .git file of the leaf is removed.
-//   - Cells B7a and B7b: cell B0a in attach mode and with a worktreeRoot.
-//   - Cells B9 and B9b: the daemon has GIT_DIR of another repository X, in B9 with
+//   - Measured: the record is rewritten to /nonexistent/.git. Measured: the record
+//     names a live sibling worktree.
+//   - Measured: the .git file of the leaf names a folder outside the
+//     repository.
+//   - Measured: the .git file of the leaf names the registration w9 of a sibling. w1
+//     goes, and w9 stays. In one case the record of w9 names the leaf.
+//   - Measured: the .git file of the leaf is removed.
+//   - Measured: in attach mode and with a worktreeRoot.
+//   - Measured: the daemon has GIT_DIR of another repository X, in one case with
 //     GIT_COMMON_DIR of X too. The registration that git made in X is gone.
 //
-// Those cells ran on Linux and macOS VMs, apart from Z18r (Linux VM only).
+// Those cases ran on Linux and macOS, apart from one (Linux only).
 //
 // The delete is one os.Root.RemoveAll of the entry name, through a root at the
 // registrations folder. It follows no symlink out of that folder. A failed delete
 // returns "RemoveAll <name>: <OS error>", and the caller then keeps the branch
-// (cells Z5, Z6, Z9b, Z11a, Z11b, Z13, Z14, Z15 and Z17). In cell Z15 the record is
-// gone and the entry has mode 0500: logs/HEAD goes, and HEAD, commondir and logs
-// stay.
+// (measured). In a measurement, the record is gone and the entry has mode 0500:
+// logs/HEAD goes, and HEAD, commondir and logs stay.
 //
 // Two guards are claustrum's own. Each answers nil and deletes nothing, so the
 // frame gets no clause and the branch step runs. The home guard refuses an entry
@@ -569,11 +563,10 @@ func registrationNames(registry string) (names []string, listed bool) {
 //
 // 5fd08069 refuses a create whose add left two new entries, w1 and w1b, with the
 // text of otherEntryRefusal. Both entries and both branches stay, and the leaf
-// holds its .git file only (cell V2 of round tier0-10, Linux VM). With no new
-// entry, 89cb6289 answers that text too: the daemon has GIT_COMMON_DIR of another
-// repository, and baseRepo keeps an old entry of the name whose record names the
-// new leaf (cells A9 g, A9b g, A10 g, A13 g, A13b g, S1 g, S5 g and S6 g, Linux
-// and macOS VMs).
+// holds its .git file only (measured on Linux). With no new entry, 89cb6289 answers
+// that text too: the daemon has GIT_COMMON_DIR of another repository, and baseRepo
+// keeps an old entry of the name whose record names the new leaf (measured on Linux
+// and macOS).
 func createdEntryOnly(before, after []string, registration string) bool {
 	name, ok := newRegistrationName(before, after)
 	return ok && name == filepath.Base(registration)
@@ -590,20 +583,20 @@ func otherEntryRefusal(worktreePath string) string {
 // add, on Linux and macOS. adminDir is the path that the file names. refusal is
 // the answer of the create when the file names none, and noFile says that the
 // leaf has no .git entry at all. The texts are those of 5fd08069 in three cells
-// of round tier0-10 (Linux VM), where a hook changes the leaf after the add:
+// (measured on Linux), where a hook changes the leaf after the add:
 //
-//   - Cell V3a: the .git file is removed. "<leaf> has no .git file". The empty
+//   - Measured: the .git file is removed. "<leaf> has no .git file". The empty
 //     leaf is gone at the reply (the caller removes it, undoFailedAdd).
-//   - Cell V3b: a folder is at .git. "<leaf>/.git is not a regular file".
-//   - Cell V3c: the file holds `gitdir:<path>` with no blank after the colon.
+//   - Measured: a folder is at .git. "<leaf>/.git is not a regular file".
+//   - Measured: the file holds `gitdir:<path>` with no blank after the colon.
 //     "<leaf>/.git does not name a git dir".
 //
 // In each cell the registration and the branch stay. The texts name the leaf in
 // the spelling of parentResolvedPath.
 //
-// claustrum's own, not measured: an lstat that fails with another error than
-// "does not exist" gets the text of V3b, and a file that cannot be read or that
-// names an empty path gets the text of V3c.
+// claustrum's own, not measured: an lstat that fails with another error than "does not exist" gets the
+// "not a regular file" text, and a file that cannot be read or that names an empty path gets the "does
+// not name a git dir" text.
 func leafGitFileRefusal(worktreePath string) (adminDir, refusal string, noFile bool) {
 	leafText := parentResolvedPath(worktreePath)
 	gitFile := filepath.Join(worktreePath, ".git")
@@ -692,7 +685,7 @@ func createdWorktreeAdminDir(repo, worktreePath string) createdRegistration {
 	if under && errors.Is(readErr, fs.ErrPermission) {
 		// No delete is attempted: the registration is not verified. The error has the
 		// shape of a failed delete, because the frame of 89cb6289 in this state ends
-		// "(RemoveAll w1: permission denied)" (cells Z11a and Z11b, macOS VM).
+		// "(RemoveAll w1: permission denied)" (measured on macOS).
 		errno := readErr
 		var pe *fs.PathError
 		if errors.As(readErr, &pe) {
@@ -720,7 +713,7 @@ func createdWorktreeAdminDir(repo, worktreePath string) createdRegistration {
 // frame battery cannot exercise it and the exact errorCode was not measured); it
 // exists so a raced create fails loudly instead of reporting a false success.
 // On Linux and macOS the create also runs this test before the checkout, with
-// the text and the code of 5fd08069 in cell V8 of round tier0-10 (Linux VM).
+// the text and the code of 5fd08069 (measured on Linux).
 //
 // git worktree add populates the pre-created leaf in place, preserving its identity
 // (measured), so an unraced create always matches and passes.
@@ -770,68 +763,64 @@ func gitDirRegistryDir(gitDir string) string {
 // a refusal and with no adminDir. On Linux and macOS it is the entry of test 2: the
 // registration of gitDir with the last name of adminDir, not the path that adminDir
 // names. With a value that names a folder that does not exist, 89cb6289 answers
-// success. The registration that git made then holds the index (row D-12, Linux and
-// macOS VMs). For a value that git wrote with no daemon GIT_COMMON_DIR, the two are
+// success. The registration that git made then holds the index (measured on Linux
+// and macOS). For a value that git wrote with no daemon GIT_COMMON_DIR, the two are
 // the same folder. The folder comes from the one gitDirRegistryDir call of the
 // tests. So the commondir file of gitDir is read once, and the index folder is the
 // folder that test 3 saw. On Windows no test runs, and registration is the path
 // that adminDir names (absoluteAdminDir, not measured).
 //
 // claustrum runs four tests.
-// They fit the frames and the disk of 89cb6289 in these rows (Linux VM with git
-// 2.43, macOS VM with git 2.50):
+// They fit the frames and the disk of 89cb6289 in these rows (Linux with git
+// 2.43, macOS with git 2.50):
 //
 //  1. The folder that holds the named path has the name "worktrees". The path
-//     <F>/alt/worktrees/w1 passes (row D-3), and so does a path that starts
-//     elsewhere, /elsewhere/worktrees/w1 (row D-12). <F>/WTREG/w1 and
-//     <F>/alt/WORKTREES/w1 do not pass (rows D-1, D-4, D-5 and D-7 on macOS, row
-//     D-11 on Linux). The named path need not exist (row D-12).
+//     <F>/alt/worktrees/w1 passes (measured), and so does a path that starts
+//     elsewhere, /elsewhere/worktrees/w1. <F>/WTREG/w1 and <F>/alt/WORKTREES/w1
+//     do not pass (measured on Linux and macOS). The named path need not exist
+//     (measured).
 //
 //  2. The registrations directory of gitDir exists, and it holds an entry with the
-//     last name of the path. That entry is a real folder (cell V7 of round
-//     tier0-10). With GIT_COMMON_DIR of another repository in the
-//     daemon environment, git makes the registration in that repository, and
-//     baseRepo has none. Folder absent: baseRepo has no worktrees folder at all,
-//     and the answer is the "was not populated" text (rows B-E1 and B-E3 and cell
-//     D8e, and row D-8 on the macOS VM only: on the Linux VM the add of row D-8
-//     fails). Folder present, no entry of the name: 89cb6289 answers the "does
-//     not name" text (cell P-p, Linux and macOS VMs). The old entry of cell P-p
-//     is gone at the reply there. Its record names the .git of the new leaf with
-//     a slash at its end, so the step before the add removes it
-//     (dropStaleWorktreeRegistration). Not measured: a worktrees folder that
-//     holds entries of other names and none of this name. claustrum answers the
-//     "does not name" text there, from this rule. With GIT_DIR of that
-//     repository too, the create succeeds (probe row 2 of git.worktree_remove,
-//     89cb6289, Linux and macOS VMs). From the code: git answers that repository
-//     as the git directory.
+//     last name of the path. That entry is a real folder (measured). With
+//     GIT_COMMON_DIR of another repository in the daemon environment, git makes
+//     the registration in that repository, and baseRepo has none. Folder absent:
+//     baseRepo has no worktrees folder at all, and the answer is the "was not
+//     populated" text (measured, and on macOS only:
+//     on Linux the add fails). Folder present, no entry of the name: 89cb6289
+//     answers the "does not name" text (measured on Linux and macOS). The old
+//     entry of cell P-p is gone at the reply there. Its record names the .git of
+//     the new leaf with a slash at its end, so the step before the add removes it
+//     (dropStaleWorktreeRegistration). Not measured: a worktrees folder that holds
+//     entries of other names and none of this name. claustrum answers the "does
+//     not name" text there, from this rule. With GIT_DIR of that repository too,
+//     the create succeeds (measured with git.worktree_remove, 89cb6289, Linux and
+//     macOS). From the code: git answers that repository as the git directory.
 //
 //  3. The commondir file of that registration names the common git directory, by
-//     text. A file that holds "../../x" does not (row D-13), and neither does an
-//     absolute path through a symlink (cell V6 of round tier0-10). The path is
-//     joined as it is spelled. So a registrations directory that is a symlink
-//     passes with "../.." (rows D-1, D-3, D-4 and D-5 on the Linux VM). In
-//     the state shadow such a create is refused before the add
+//     text. A file that holds "../../x" does not (measured), and neither does an
+//     absolute path through a symlink. The path is joined as it is spelled. So a
+//     registrations directory that is a symlink passes with "../.." (measured on
+//     Linux). In the state shadow such a create is refused before the add
 //     (worktreesFolderRefusal), and so is one with "shadowDirOff":true
 //     (offWorktreesRefusal).
 //
 //  4. The gitdir record of that registration can be read as a file. A FIFO, a
-//     folder or no file in its place cannot (cells P-g, P-i and P-j). Cell P-h has a
-//     FIFO as the commondir file and a record of another worktree, and it gets this
-//     text, where cell P-c gets that of adminRecordRefusal. So test 3 comes before
-//     the record, and a commondir file that cannot be read fails test 3.
+//     folder or no file in its place cannot (measured). Cell P-h has a FIFO as the
+//     commondir file and a record of another worktree, and it gets this text, where
+//     cell P-c gets that of adminRecordRefusal. So test 3 comes before the record,
+//     and a commondir file that cannot be read fails test 3.
 //
 // Tests 1, 3 and 4 answer the "does not name" text. No read waits on a FIFO
 // (readGitPlainFile): 89cb6289 answers cells P-g and P-h in under 1 s. Cells P-g
-// to P-j are those of 89cb6289 on a Linux VM with git 2.43 and a macOS VM with git
-// 2.50. In each of them nothing changes after the add.
+// to P-j are those of 89cb6289 on Linux with git 2.43 and macOS with git 2.50. In
+// each of them nothing changes after the add.
 //
 // Three more cells start from the state of cell P-c, and 89cb6289 answers the "does
-// not name" text in each, with nothing changed after the add (Linux VM with git
-// 2.43, macOS VM with git 2.50). In cell P-n the commondir file of the old
-// registration is missing, which fails test 3. In cell P-o its gitdir record has
-// mode 0000, which fails test 4. In cell P-q the folder of the old registration has
-// mode 0000. Its stat still answers, so test 2 passes, and the commondir read
-// fails test 3.
+// not name" text in each, with nothing changed after the add (Linux with git 2.43,
+// macOS with git 2.50). In cell P-n the commondir file of the old registration is
+// missing, which fails test 3. In cell P-o its gitdir record has mode 0000, which
+// fails test 4. In cell P-q the folder of the old registration has mode 0000. Its
+// stat still answers, so test 2 passes, and the commondir read fails test 3.
 //
 // Not measured: a path that fails test 1 and test 2 together (claustrum runs test 1
 // first). Not measured either: a registrations directory or an entry whose stat
@@ -842,20 +831,19 @@ func gitDirRegistryDir(gitDir string) string {
 // code, not measured). The .git file of the leaf has its own tests first
 // (leafGitFileRefusal).
 //
-// Attach mode and a worktreeRoot take the same tests. On a macOS VM with git
-// 2.50, 89cb6289 answers the "does not name" text there too, with a registrations
-// directory that is a symlink to <F>/WTREG (cells P-a and P-b). On a Linux VM with
-// git 2.43 both cells succeed: git writes the path through the link. 89cb6289
-// answers that text also for /elsewhere/WTREG/w1, a path that does not exist
-// (cell P-d on Linux and macOS VMs, cell Pd2 on a Linux VM). A baseRepo that is a
-// linked worktree creates, with the registration and the index in the main
-// repository (cell P-e, Linux and macOS VMs). The test is off on Windows
-// (adminRecordChecked), which is not measured.
+// Attach mode and a worktreeRoot take the same tests. On macOS with git 2.50,
+// 89cb6289 answers the "does not name" text there too, with a registrations
+// directory that is a symlink to <F>/WTREG (measured). On Linux with git 2.43 both
+// cells succeed: git writes the path through the link. 89cb6289 answers that text
+// also for /elsewhere/WTREG/w1, a path that does not exist (measured on Linux and
+// macOS). A baseRepo that is a linked worktree creates, with the registration and
+// the index in the main repository (measured on Linux and macOS). The test is off
+// on Windows (adminRecordChecked), which is not measured.
 //
 // Three tests follow these four: adminRecordMismatch, then createdEntryOnly,
 // then the identity of the leaf. The four tests and adminRecordMismatch come
-// before the deadline test of the create (row D-9 on a macOS VM, cell P-f on
-// Linux and macOS VMs). From the code, the two last tests do too (not measured).
+// before the deadline test of the create (measured on Linux and macOS). From the
+// code, the two last tests do too (not measured).
 func createdRegistrationRefusal(gitDir, worktreePath, adminDir string) (registration, refusal string) {
 	if adminDir == "" {
 		return "", ""
@@ -879,7 +867,7 @@ func createdRegistrationRefusal(gitDir, worktreePath, adminDir string) (registra
 	}
 	// The entry must be a real folder. With a symbolic link there, to the folder
 	// that was the entry, 5fd08069 answers this text and removes nothing: the link
-	// and its target stay (cell V7 of round tier0-10, Linux VM, 3 of 3 runs).
+	// and its target stay (measured on Linux, 3 of 3 runs).
 	if fi, err := os.Lstat(registration); errors.Is(err, fs.ErrNotExist) || (err == nil && !fi.IsDir()) {
 		return "", notOurs
 	}
@@ -893,7 +881,7 @@ func createdRegistrationRefusal(gitDir, worktreePath, adminDir string) (registra
 	}
 	// claustrum compares by text. With an absolute path that reaches the git
 	// directory through a symbolic link, 5fd08069 answers this text and removes
-	// nothing (cell V6 of round tier0-10, Linux VM).
+	// nothing (measured on Linux).
 	if named != filepath.Dir(registry) {
 		return "", notOurs
 	}
@@ -924,19 +912,18 @@ const (
 //
 // With cleaned the blanks at both ends of the record are cut, and the path is
 // cleaned by text (filepath.Clean). 5fd08069 creates the worktree with the record
-// <leaf>/.git/ (cell V4 of round tier0-10, Linux VM), and with a blank at its
-// end, with <leaf>/./.git and with <leaf>//.git (cells R1, R2 and R3 of round
-// tier0-11, Linux VM). The record stays as written. claustrum's own, not
-// measured: a blank at the start, a tab, a CR and an "x/.." pair also name the
-// leaf. A record of another worktree
-// stays one (cell V5c of round tier0-10). The create sets cleaned only after an
-// answer of git to rev-parse --absolute-git-dir. Without that answer the compare
-// is as before (not measured).
+// <leaf>/.git/ (measured on Linux), and with a blank at its end, with
+// <leaf>/./.git and with <leaf>//.git (measured on Linux). The record stays as
+// written. claustrum's own, not measured: a blank at the start, a tab, a CR and
+// an "x/.." pair also name the leaf. A record of another worktree stays one
+// (measured). The create sets cleaned only after an answer of git to rev-parse
+// --absolute-git-dir. Without that answer the compare is as before (not
+// measured).
 //
 // A relative record counts from admin with its symlinks resolved. git writes one
-// with worktree.useRelativePaths, and 89cb6289 creates with such a record (cell
-// Z9a, macOS VM). A relative record of another worktree is a record of another
-// worktree (cell P-k), and so is an empty file (cell P-l). A record that is not a
+// with worktree.useRelativePaths, and 89cb6289 creates with such a record
+// (measured on macOS). A relative record of another worktree is a record of
+// another worktree (measured), and so is an empty file. A record that is not a
 // regular file fails at once (readGitPlainFile).
 func readAdminRecord(admin, worktreePath string) adminRecord {
 	return compareAdminRecord(admin, worktreePath, false)
@@ -972,46 +959,43 @@ func compareAdminRecord(admin, worktreePath string, cleaned bool) adminRecord {
 // was read and names another path than <worktreePath>/.git (readAdminRecord). The
 // caller gets admin from createdRegistrationRefusal, or from absoluteAdminDir if
 // rev-parse gave no answer: it is the folder that gets the index of the new worktree.
-// 89cb6289 and f6010b97 refuse such a create on a
-// macOS VM when the request spells the folder in Unicode NFD and git records it in
-// NFC (row I07a). They run no checkout and roll nothing back. The same request in NFC
-// for an NFD folder succeeds (row I07b). Row I07a is not measured on Linux. Cells P-c, P-f and
-// P-k to P-m measured this test there. On a Linux VM every create of rows CSa to CSd succeeded on both
-// references and on claustrum.
+// 89cb6289 and f6010b97 refuse such a create on macOS when the request spells the folder in Unicode
+// NFD and git records it in NFC (measured). They run no checkout and roll nothing back. The same
+// request in NFC for an NFD folder succeeds (measured). A measurement is not measured on Linux. Cells
+// P-c, P-f and P-k to P-m measured this test there. On Linux every create of rows CSa to CSd succeeded
+// on both references and on claustrum.
 //
-// The record is that of the entry in the registrations directory of baseRepo, not
-// that of the folder that the .git file names. Cell P-c shows it (89cb6289, Linux
-// VM with git 2.43 and macOS VM with git 2.50). There the daemon has GIT_COMMON_DIR of another repository X,
-// and git makes the registration in X. Its record names the new leaf. baseRepo
-// holds an old entry of the same name, and the record of that entry names another
-// worktree. 89cb6289 refuses with the text of adminRecordRefusal and changes
-// nothing: the index of the old entry keeps its bytes. With no worktrees folder in
-// baseRepo, the answer is the "was not populated" text (rows B-E1 and B-E3, and cell D8e).
-// The state of cell P-c with a timeoutMs that expired during the add gets the P-c
-// refusal, and the leaf and the branch stay (cell P-f, Linux and macOS VMs).
-// So the create runs this test before its deadline test.
+// The record is that of the entry in the registrations directory of baseRepo, not that of the folder that the .git file
+// names. Cell P-c shows it (89cb6289, Linux with git 2.43 and macOS with git 2.50). There the daemon has GIT_COMMON_DIR of
+// another repository X, and git makes the registration in X. Its record names the new leaf. baseRepo holds an old entry of
+// the same name, and the record of that entry names another worktree. 89cb6289 refuses with the text of adminRecordRefusal
+// and changes nothing: the index of the old entry keeps its bytes. With no worktrees folder in baseRepo, the answer is the
+// "was not populated" text (measured). A measured state with an old registration, with a timeoutMs that expired during the
+// add, gets the same refusal, and the leaf and the branch stay (measured on Linux and macOS). So the create runs this test
+// before its deadline test.
 //
-// Three more cells start from the state of cell P-c and get the same refusal, with
-// nothing changed (89cb6289, Linux and macOS VMs). In cell P-k the old record is the
-// relative path ../../../gone/w1/.git. In cell P-l it is an empty file. In cell P-m
-// the old entry also holds a `locked` file. A record that cannot be read as a file
-// gets the other text first (createdRegistrationRefusal, cells P-g, P-i and P-j).
+// Three more cases start from that state and get the same refusal, with nothing
+// changed (`89cb6289`, measured on Linux and macOS). In one the old record is the
+// relative path ../../../gone/w1/.git. In another it is an empty file. In cell
+// P-m the old entry also holds a `locked` file. A record that cannot be read as a
+// file gets the other text first (createdRegistrationRefusal, cells P-g, P-i and
+// P-j).
 //
 // Not measured: the raw bytes of the record (the NFC spelling was read from `git
-// worktree list`), whether the compare is bytewise (inferred from I07a and I07b
+// worktree list`), whether the compare is bytewise (inferred from two measured cases
 // together), and the resolution of symlinks before the compare. A symlinked path
-// such as /tmp on macOS creates as usual on both references (row I01e), so
-// claustrum resolves them. A worktreePath that is relative or does not resolve
-// gives no mismatch. The check is off on Windows (adminRecordChecked). That is
-// claustrum's choice.
+// such as /tmp on macOS creates as usual on both references (measured), so claustrum
+// resolves them. A worktreePath that is relative or does not resolve gives no
+// mismatch. The check is off on Windows (adminRecordChecked). That is claustrum's
+// choice.
 func adminRecordMismatch(admin, worktreePath string, cleaned bool) bool {
 	return adminRecordChecked && admin != "" && compareAdminRecord(admin, worktreePath, cleaned) == recordOfAnother
 }
 
 // adminRecordRefusal is the answer of git.worktree_create when adminRecordMismatch
 // reports a mismatch. It names worktreePath in the spelling of parentResolvedPath
-// (cells T2, T10, U2d and U3b, Linux and macOS VMs). A component that is not a symlink
-// keeps its spelling as sent, as in row I07a.
+// (measured on Linux and macOS). A component that is not a symlink keeps its spelling
+// as sent, as.
 func adminRecordRefusal(worktreePath string) string {
 	return fmt.Sprintf("refusing to create worktree: %s carries a .git file naming an admin directory "+
 		"whose own record is of a different worktree", parentResolvedPath(worktreePath))
@@ -1021,9 +1005,8 @@ func adminRecordRefusal(worktreePath string) string {
 // reports a mismatch and git then fails the `rev-parse --show-toplevel` call of
 // gitDirWorkTreeToplevel. registration is the entry that the tests accepted. The
 // code is worktree_add_failed. 5fd08069 answers this text and removes the leaf,
-// the registration w1 and the new branch (cell V5 of round tier0-10, Linux VM).
-// When the call works, it answers adminRecordRefusal and removes nothing (cell
-// V5c there).
+// the registration w1 and the new branch (measured on Linux). When the call
+// works, it answers adminRecordRefusal and removes nothing (measured there).
 func spellingRetryText(registration string) string {
 	return "git worktree add failed (verification): could not verify the worktree's registration: " +
 		"git did not report its spelling of the path (entry " + filepath.Base(registration) + "); retry"
@@ -1032,30 +1015,28 @@ func spellingRetryText(registration string) string {
 // parentResolvedPath is a path as some refusals of git.worktree_create name it
 // on Linux and macOS. The path is cleaned, the symlinks of its parent folder are
 // resolved, and its last name is kept as it is. The rule fits these cells of
-// 89cb6289 (Linux and macOS VMs):
+// 89cb6289 (measured on Linux and macOS):
 //
 //   - A baseRepo behind a symlink, with both request paths through the link. The
-//     link is resolved in the "does not name" text (cells T1, T5 and A12c g), the
-//     "different worktree" text (cells T2 and T10), the "other than the one just
-//     created" text (cell T3), the "was not populated" text (cell T4) and the
-//     "already exists" text (cell T9).
+//     link is resolved in the "does not name" text (measured), the
+//     "different worktree" text (measured), the "other than the one just created"
+//     text, the "was not populated" text and the "already exists" text.
 //   - A leaf that is a symlink to a folder or to a file, or a dangling symlink, in
 //     the "already exists" text. The last name stays, and the target is not named
-//     (cells U1a, U1b and U1d). A leaf that is a regular file: cell U1c.
+//     (measured). A leaf that is a regular file: measured.
 //   - A path that is not clean, with a slash at its end, a double slash or a "/./"
-//     part. The cleaned path is named (cells U2a to U2c for "already exists", cells
-//     U2d to U2g for the four other texts).
+//     part. The cleaned path is named (measured for "already exists" and
+//     for the four other texts).
 //   - A worktreeRoot behind a symlink. The link is resolved in the "already
-//     exists" text (cell U3a2), in the "different worktree" text (cell U3b) and
-//     in the "is not marked as a worktree directory" text, which names the folder
-//     that holds the leaf (cell U3a).
+//     exists" text (measured), in the "different worktree" text and in the "is
+//     not marked as a worktree directory" text, which names the folder that holds
+//     the leaf.
 //
-// 89cb6289 names the leaf as sent in the undo clause of a rollback (cells T6 and
-// T7), in the path of a success (cells T8, U2h and U3c), in the text of git (cell
-// T11b) and in the locked refusal of git.worktree_remove (cell T12b), on Linux
-// and macOS VMs. Those keep the path as sent. The "is not inside the repository"
-// text names the path as sent too (cell A12). Every other refusal of the create keeps
-// its spelling: no cell measured it.
+// 89cb6289 names the leaf as sent in the undo clause of a rollback (measured), in the
+// path of a success, in the text of git and in the locked refusal of
+// git.worktree_remove, on Linux and macOS. Those keep the path as sent. The "is not
+// inside the repository" text names the path as sent too (measured). Every other
+// refusal of the create keeps its spelling: no cell measured it.
 //
 // On Windows no create reaches this function: the four tests after the add do not
 // run there, and the other two texts have their own spelling (existingPathSpelling

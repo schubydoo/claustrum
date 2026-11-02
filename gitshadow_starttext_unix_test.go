@@ -11,7 +11,7 @@ import (
 // TestGitInfoGitFileThroughAFileRunsNoTest pins a `.git` file whose target cannot
 // be read for another reason than a missing path: a regular file stands where a
 // folder of the path belongs, so the stat fails with ENOTDIR. git.info keeps the
-// answer that it had before cell V3 there: no start test and no member
+// answer that it had before that measured rule there: no start test and no member
 // (claustrum's own, not measured). Mutation: set goneGitFile on any stat error in
 // judgeGitDir.
 func TestGitInfoGitFileThroughAFileRunsNoTest(t *testing.T) {

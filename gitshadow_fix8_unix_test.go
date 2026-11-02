@@ -24,7 +24,7 @@ func useUmask(t *testing.T, mask int) {
 // worktree with mode 0666 before the umask. They are the `config.worktree` file
 // of the registration and the `.git` file that replaces the one of git. On
 // 5fd08069 both are `f 0664` with a daemon umask of 002, and `f 0644` with 022
-// (section 0.2 item 5 of the report of val-s3p2b2-6-linux, Linux VM).
+// (measured on Linux).
 func TestNewWorktreeFilesTakeTheUmask(t *testing.T) {
 	for _, row := range []struct {
 		name  string
@@ -70,10 +70,9 @@ func TestNewWorktreeFilesTakeTheUmask(t *testing.T) {
 
 // TestIncludePatternsModeWithTheMember: in a create with "shadowDirOff":true
 // the copy of the manifest is `<tmp>/claude-ssh-worktreeinclude-<n>/patterns`
-// with mode 0644. On 5fd08069 it is `f 0644` in 9 of 9 such creates (section
-// 0.2 item 7 of the report of val-s3p2b2-6-linux, Linux VM). The stub holds
-// each `ls-files` call, and the test looks at the temporary folder in that
-// time.
+// with mode 0644. On 5fd08069 it is `f 0644` in 9 of 9 such creates (measured
+// on Linux). The stub holds each `ls-files` call, and the test looks at the
+// temporary folder in that time.
 func TestIncludePatternsModeWithTheMember(t *testing.T) {
 	useUmask(t, 0o022)
 	f := newSeededShadowFixture(t)

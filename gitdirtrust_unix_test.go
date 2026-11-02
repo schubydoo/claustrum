@@ -14,7 +14,7 @@ import (
 
 // The trust-check rules whose fixtures need a FIFO, a symlink, a permission bit or a
 // file name Windows cannot hold. Measured side by side against f6010b97 on Linux and
-// macOS VMs.
+// macOS.
 
 // fifoDeadline bounds each call that meets a FIFO.
 const fifoDeadline = 10 * time.Second
@@ -311,7 +311,7 @@ func TestGitDirTrustSymlinkedPaths(t *testing.T) {
 // A remove named through a symlinked root still deletes the entry. Git records the
 // worktree's resolved path in the entry, and the daemon resolves the path it was
 // given through its nearest existing parent. This is the
-// macOS /tmp -> /private/tmp case, measured against f6010b97 on a macOS VM, where the
+// macOS /tmp -> /private/tmp case, measured against f6010b97 on macOS, where the
 // reference deletes the entry.
 func TestGitDirTrustRemoveThroughSymlinkedRootPrunesEntry(t *testing.T) {
 	base := realTempDir(t)
@@ -337,12 +337,11 @@ func TestGitDirTrustRemoveThroughSymlinkedRootPrunesEntry(t *testing.T) {
 	}
 }
 
-// The hooks refusal reports git's error with a tab turned into a space, as 90fca6e6
-// did for C10 (measured on a Linux VM). The fixture makes git fail on an included
-// config file whose name holds a tab, which Windows cannot hold. That file has an
-// include.path with no value: git ends its listing there, and the daemon's own
-// read of the config gives no refusal for it. A syntax error there gets the text
-// of the read (TestRepoConfigSyntaxError).
+// The hooks refusal reports git's error with a tab turned into a space, as 90fca6e6 did for a remove from a
+// linked worktree (measured on Linux). The fixture makes git fail on an included config file whose name holds a
+// tab, which Windows cannot hold. That file has an include.path with no value: git ends its listing there, and
+// the daemon's own read of the config gives no refusal for it. A syntax error there gets the text of the read
+// (TestRepoConfigSyntaxError).
 func TestHostileConfigRefusalSpacesOutTabs(t *testing.T) {
 	r := newTrustRepo(t)
 	bad := filepath.Join(r.base, "x\ty.cfg")

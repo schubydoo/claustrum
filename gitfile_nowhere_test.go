@@ -47,19 +47,16 @@ func gitFileNowhereFrames(t *testing.T, g, text string, off bool) []methodFrame 
 	return rows
 }
 
-// The four methods on a `.git` file to nowhere, on a daemon in the state shadow, with
-// a stub in place of git that fails each listing with one of the two texts. So no git
-// 2.56 is needed. The text of git 2.56 gives the error of the call about the
-// repository (cells c09 to c12 of rounds task039-01 and task039-02, Linux VM, and
-// V-S2w of round task039-02, Windows VM). On a subfolder that error names the folder
-// that holds `.git` (cell c18 on both VMs). The older text keeps the "no repository"
-// frames (cells c13 to c16, Linux VM). As the first git request of a daemon the text of
-// git 2.56 gives the same error (cells c09 first to c12 first of round task039-03,
-// Linux VM, and F-S2w, Windows VM). With "shadowDirOff":true it gives the listing
-// refusal, and the older text keeps "no repository" (cells c09off to c12off and the
-// c09off control of round task039-02, Linux VM). On Windows git
-// spells its path with forward slashes, and the root in quotes keeps backslashes, as
-// in V-S2w. Mutations: answer the listing refusal in noRepoCalls, drop
+// The four methods on a `.git` file to nowhere, on a daemon in the state shadow, with a
+// stub in place of git that fails each listing with one of the two texts. So no git
+// 2.56 is needed. The text of git 2.56 gives the error of the call about the repository
+// (measured on Linux and Windows). On a subfolder that error names the folder that
+// holds `.git` (measured). The older text keeps the "no repository" frames (measured on
+// Linux). As the first git request of a daemon the text of git 2.56 gives the same
+// error (measured on Linux and Windows). With "shadowDirOff":true it gives the listing
+// refusal, and the older text keeps "no repository" (measured on Linux). On Windows git
+// spells its path with forward slashes, and the root in quotes keeps backslashes, as in
+// V-S2w. Mutations: answer the listing refusal in noRepoCalls, drop
 // statusGitFileNowhere, name dir in place of the folder that holds `.git` in
 // failedListingCheck, or key the rule on the state of the daemon.
 //

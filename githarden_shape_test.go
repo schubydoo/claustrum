@@ -87,9 +87,9 @@ func (c shapeCall) keysAndValues() []string {
 }
 
 // The profile variables and the two -c lists, written out here, not taken from
-// profileEnv, gitHardenLight and gitHardenHeavy. They are those of 5fd08069: s3-linux
-// cells B0 and B1 on a Linux VM, and cell 50 of s3p2b-edges on macOS and Windows VMs.
-// The null device is NUL on Windows, as 5fd08069 passes it on a Windows VM.
+// profileEnv, gitHardenLight and gitHardenHeavy. They are those of 5fd08069,
+// measured on Linux, macOS and Windows. The null device is NUL on Windows, as
+// 5fd08069 passes it on Windows.
 var (
 	shapeNull  = map[bool]string{false: "/dev/null", true: "NUL"}[runtime.GOOS == "windows"]
 	shapeLight = []string{"GIT_ALLOW_PROTOCOL=https:ssh", "GIT_TERMINAL_PROMPT=0",
@@ -148,11 +148,11 @@ func (c shapeCall) profileItems() []string {
 // The three other calls of this function are the `ls-files --others` of the copy
 // step, and the `rev-parse --show-toplevel` with no --git-dir and the `worktree
 // list` of a removal with worktreeRoot. With "shadowDirOff":true, 5fd08069 sends
-// the list of 20 items on the three. val-s3p2b1 cell A3 shows the `ls-files` calls
-// (Linux, macOS and Windows VMs). Cell A4 shows the two others (Linux and macOS
-// VMs). The calls of sourceBranch and show-ref are light too (cell A3, the same
-// VMs), and this test does not make them. A check-ignore call is light on
-// claustrum and has no row on 5fd08069 (not measured).
+// the list of 20 items on the three. A measurement shows the `ls-files` calls
+// (measured on Linux, macOS and Windows). A measurement shows the two others
+// (measured on Linux and macOS). The calls of sourceBranch and show-ref are light
+// too (measured), and this test does not make them. A check-ignore call is light
+// on claustrum and has no row on 5fd08069 (not measured).
 func (c shapeCall) lightVerb() bool {
 	if c.has("rev-parse", "--is-inside-work-tree") || c.has("rev-parse", "--abbrev-ref") ||
 		c.has("worktree", "add") || c.has("read-tree") || c.has("for-each-ref", "--count=10001") ||
@@ -267,7 +267,7 @@ func checkHardenedEnv(t *testing.T, what string, calls []shapeCall) {
 
 // TestHardenedGitCallShape pins the cwd, the argv and the env of the git calls that
 // the hardened helpers make, and their order, as f6010b97 makes them on Linux, macOS
-// and Windows VMs, with the lists and variables of 5fd08069:
+// and Windows, with the lists and variables of 5fd08069:
 //
 //   - Every hardened call and every config listing passes no -C.
 //   - One listing runs right before each hardened call. In git.info,
@@ -275,8 +275,8 @@ func checkHardenedEnv(t *testing.T, what string, calls []shapeCall) {
 //     refusal check is the listing of the first call, not an extra one.
 //   - A listing carries the profile variables of the call after it, and no hook pins.
 //   - Both profiles set GIT_NO_REPLACE_OBJECTS and GIT_GRAFT_FILE=<null device>, as
-//     5fd08069 does (s3-linux cell B1, Linux VM). The heavy profile is on every call
-//     of git.info, git.list_branches and git.status, and on `rev-parse
+//     5fd08069 does (measured on Linux). The heavy profile is on every call of
+//     git.info, git.list_branches and git.status, and on `rev-parse
 //     --absolute-git-dir`. GIT_OPTIONAL_LOCKS=0 is on the status, ls-files and
 //     diff-index calls of git.status only.
 //   - Each hardened call has the -c list of its kind: 28 items on the heavy profile
@@ -324,8 +324,8 @@ func TestHardenedGitCallShape(t *testing.T) {
 	// configReads counts the daemon's own reads of a config file in the last
 	// request (gitrepoconfig.go). That call is not one of f6010b97: 5fd08069 makes
 	// it. run checks its shape and leaves it out of the calls that it returns, so
-	// the lists below stay those of f6010b97. On a Linux VM the call of 5fd08069
-	// runs in the root directory with GIT_DIR=<null device>.
+	// the lists below stay those of f6010b97. On Linux the call of 5fd08069 runs
+	// in the root directory with GIT_DIR=<null device>.
 	configReads := 0
 	run := func(method string, params map[string]any) (string, []shapeCall) {
 		t.Helper()
@@ -538,11 +538,10 @@ func TestHardenedGitCallShape(t *testing.T) {
 		checkHardenedEnv(t, "worktree_remove", calls)
 	})
 
-	// The branch step of 89cb6289 (row R01 on Linux, macOS and Windows VMs, and rows
-	// R11 and B2-09d for a missing branch). Each call follows a light listing, runs
-	// in baseRepo, carries the list of 20 items, and has its own env. 5fd08069 sends
-	// that list and that env with "shadowDirOff":true (s3p2-linux2 cell L8, Linux VM).
-	// The env is: the light profile
+	// The branch step of 89cb6289 (measured on Linux, macOS and Windows, also for a
+	// missing branch). Each call follows a light listing, runs in baseRepo, carries
+	// the list of 20 items, and has its own env. 5fd08069 sends that list and that env
+	// with "shadowDirOff":true (measured on Linux). The env is: the light profile
 	// without GIT_ALLOW_PROTOCOL, the pin, the hook pins, then the three heavy
 	// variables. rev-list adds -c core.commitGraph=false. update-ref sends the old
 	// value.
@@ -605,7 +604,7 @@ func TestHardenedGitCallShape(t *testing.T) {
 
 	// With worktreeRoot, the refusal listing is light, and the heavy rev-parse
 	// --absolute-git-dir runs its own heavy listing: the order of f6010b97's listings
-	// on a Linux VM. Windows refuses a worktreeRoot before any git.
+	// on Linux. Windows refuses a worktreeRoot before any git.
 	t.Run("worktree_remove with worktreeRoot", func(t *testing.T) {
 		if runtime.GOOS == "windows" {
 			t.Skip("a worktreeRoot is refused on Windows before any git call")
@@ -656,13 +655,13 @@ func TestHardenedGitCallShape(t *testing.T) {
 
 	// When the refusal check of an in-repo remove fails, the check runs once more:
 	// a second listing, and a second rev-parse when that listing passes. f6010b97
-	// answers the lock-check text after a git directory that git cannot use (Linux
-	// and macOS VMs). A config with a bad line gets the refusal of the second
-	// listing, as on 5fd08069 (cell G08b of round tier3-17, Linux VM). That
-	// replaces the lock-check text of f6010b97 there. The worktree directory
-	// exists: a gone one answers from its own path.
-	// noRepo is true when the trust check finds no repository. Each listing then
-	// carries GIT_DIR=<null device> in the place of the GIT_COMMON_DIR pin.
+	// answers the lock-check text after a git directory that git cannot use
+	// (measured on Linux and macOS). A config with a bad line gets the refusal of
+	// the second listing, as on 5fd08069 (measured on Linux). That replaces the
+	// lock-check text of f6010b97 there. The worktree directory exists: a gone one
+	// answers from its own path. noRepo is true when the trust check finds no
+	// repository. Each listing then carries GIT_DIR=<null device> in the place of
+	// the GIT_COMMON_DIR pin.
 	checkTwice := func(t *testing.T, g wtFixture, wantHardened, noRepo bool) {
 		t.Helper()
 		if err := os.MkdirAll(g.leaf(), 0o755); err != nil {
@@ -677,9 +676,9 @@ func TestHardenedGitCallShape(t *testing.T) {
 			unit = 2
 		} else {
 			// Each failed listing is followed by `git version` in the root
-			// directory (89cb6289, row L10). 5fd08069 does the same after the exit
-			// 128 of a bad config line (cell G08b of round tier3-17, Linux VM). It is
-			// checked here and then left out of the count.
+			// directory (`89cb6289`, measured). 5fd08069 does the same after the exit
+			// 128 of a bad config line (measured on Linux). It is checked here and
+			// then left out of the count.
 			var kept []shapeCall
 			for i, c := range calls {
 				if !slices.Equal(c.argv, []string{"version"}) {
@@ -724,11 +723,11 @@ func TestHardenedGitCallShape(t *testing.T) {
 		checkTwice(t, g, false, false)
 	})
 	t.Run("worktree_remove refused twice, no usable git dir", func(t *testing.T) {
-		// .git/objects is a file, so git finds no repository (row H20). On Windows git
-		// accepts that layout, as f6010b97 does in row H20 on a Windows VM. On Linux
-		// and macOS that file fails the search test of the trust check, so the check
-		// finds no repository first (build 52d82f0a on git.info and git.status). The
-		// listings of a remove there are claustrum's own, not measured.
+		// .git/objects is a file, so git finds no repository (measured). On Windows
+		// git accepts that layout, as f6010b97 does on Windows. On Linux and macOS
+		// that file fails the search test of the trust check, so the check finds no
+		// repository first (build 52d82f0a on git.info and git.status). The listings
+		// of a remove there are claustrum's own, not measured.
 		if runtime.GOOS == "windows" {
 			t.Skip("git on Windows accepts a .git/objects file (row H20)")
 		}
@@ -742,10 +741,10 @@ func TestHardenedGitCallShape(t *testing.T) {
 	})
 
 	// A GIT_* variable of the daemon's own environment keeps its place, before the
-	// variables that the daemon adds, as on f6010b97 (Linux and macOS VMs).
+	// variables that the daemon adds, as on f6010b97 (measured on Linux and macOS).
 	// docs/protocol/git-rules-calls.md → "The daemon's own git environment" gives the exceptions.
-	// On Windows Go's os/exec sorts the environment block, and claustrum does not
-	// work around that (DIVERGENCES.md D23).
+	// On Windows Go's os/exec sorts the environment block, and claustrum does not work around
+	// that (DIVERGENCES.md D23).
 	t.Run("daemon env first", func(t *testing.T) {
 		if runtime.GOOS == "windows" {
 			t.Skip("Go sorts the environment block on Windows")
@@ -774,7 +773,7 @@ func TestHardenedGitCallShape(t *testing.T) {
 
 // TestGitTempPrefixLengths pins the lengths of the temp name prefixes. The
 // f6010b97 prefixes are 18 bytes (the status git dir) and 17 bytes (the checkout
-// index directory), measured on Linux, macOS and Windows VMs.
+// index directory), measured on Linux, macOS and Windows.
 func TestGitTempPrefixLengths(t *testing.T) {
 	if len(statusGitDirTempPrefix) != 18 || len(checkoutIndexTempPrefix) != 17 {
 		t.Errorf("len(%q) = %d, len(%q) = %d, want 18 and 17 (f6010b97)",

@@ -169,9 +169,8 @@ const (
 
 // TestSettingsControlMember pins the member settingsControl of git.info in each
 // reply where 5fd08069 has it, and its absence where that build has none: before
-// the start test (s3-linux cell A1), after it (cells A1 and D1), with the member
-// shadowDirOff (cells A1 and B1, s3p2a-edges cell X1) and for the values of that
-// member that are not the JSON true (cell B3). All on a Linux VM. It also pins
+// the start test (measured), after it, with the member shadowDirOff and for the
+// values of that member that are not the JSON true. All on Linux. It also pins
 // that no other method has the member, and the one log line of the state.
 func TestSettingsControlMember(t *testing.T) {
 	f := newShadowFixture(t)
@@ -271,8 +270,8 @@ func TestSettingsControlNeedsARunFolder(t *testing.T) {
 
 // TestShadowFolderName pins the name of the folder of a daemon: the host name
 // with each "-" as "_", the pid and 16 hex digits. On 5fd08069 a host name of
-// the form aa-bb gives aa_bb-17044-82053e1e2c228715 (s3-linux cell C6, Linux
-// VM), and a "." stays (macOS VM).
+// the form aa-bb gives aa_bb-17044-82053e1e2c228715 (measured on Linux), and
+// a "." stays (measured on macOS).
 func TestShadowFolderName(t *testing.T) {
 	f := newShadowFixture(t)
 	old := shadowHostname
@@ -289,16 +288,15 @@ func TestShadowFolderName(t *testing.T) {
 // TestShadowFolderLife pins the folder of one daemon over its life. It is made
 // at the first request without the switch and holds only the lock file after
 // the test. A folder that was removed is made again with another hex part and
-// with no second test (s3-linux cell B6, Linux VM). Two daemons in one run
-// folder each have their own, and the end of one leaves the other
-// (s3p2b-edges-linux2 cell 44, Linux VM). At the end the folder goes and the
-// empty git-shadow stays (s3p2-linux section 1).
+// with no second test (measured on Linux). Two daemons in one run folder each
+// have their own, and the end of one leaves the other (measured on Linux). At
+// the end the folder goes and the empty git-shadow stays (measured).
 func TestShadowFolderLife(t *testing.T) {
 	f := newShadowFixture(t)
 	f.info(t, f.repo, nil)
 	first := daemonFolder(t, f.run)
 	// The test folder is gone. The folder of the call about the repository
-	// and the folder of the repository are there (s3-linux cell A3, Linux VM).
+	// and the folder of the repository are there (measured on Linux).
 	if got, want := entryNames(t, first), []string{shadowProbeName, shadowRepoName(filepath.Join(f.repo, ".git")), shadowLockName}; !slices.Equal(got, want) {
 		t.Fatalf("folder of the daemon after the test holds %v, want %v", got, want)
 	}
@@ -358,7 +356,7 @@ func TestShadowFolderLife(t *testing.T) {
 }
 
 // failBothAdds makes the stub fail both `worktree add` calls of the test with
-// the line of the wrapper of s3p2b-edges-linux2 cell 26.
+// the line of the wrapper of a measured case.
 func failBothAdds(t *testing.T) {
 	t.Helper()
 	slowGit(t, "worktree,add", "fail", 0, "fatal: forced failure by the test wrapper\n", "")
@@ -367,11 +365,11 @@ func failBothAdds(t *testing.T) {
 // TestShadowTestFailureShapes pins the answer of each method to a failed start
 // test, as the first request of its own daemon. 5fd08069 gives the error object
 // on git.info, git.status and git.list_branches, and the result object on
-// git.worktree_create and git.worktree_remove (s3p2b-edges-linux2 cell 30, Linux
-// VM). The cause is the one of cell 26: both `worktree add` calls of the test
-// fail. The failure is kept: the same request again makes no git call. A request
-// with the switch works then (cell 32). Nothing is made or removed, the folder
-// of the daemon holds only the lock file, and no state line is logged.
+// git.worktree_create and git.worktree_remove (measured on Linux). The cause is
+// the one: both `worktree add` calls of the test fail. The failure is kept: the
+// same request again makes no git call. A request with the switch works then
+// (measured). Nothing is made or removed, the folder of the daemon holds only
+// the lock file, and no state line is logged.
 func TestShadowTestFailureShapes(t *testing.T) {
 	for i, method := range []string{"git.info", "git.status", "git.list_branches", "git.worktree_create", "git.worktree_remove"} {
 		t.Run(method, func(t *testing.T) {
@@ -424,7 +422,7 @@ func TestShadowTestFailureShapes(t *testing.T) {
 // kept, with the clock of the test. On 5fd08069 a request 9.90 s after the
 // reply made no call and one 10.00 s after it ran the test again. A repeat test
 // that fails starts a new 10 s. The failure holds after its cause is gone
-// (s3p2b-edges-linux2 cells 26 and 27 and s3p2-linux2 cell C1b, Linux VM).
+// (measured on Linux).
 func TestShadowTestFailureKeep(t *testing.T) {
 	f := newShadowFixture(t)
 	now := useShadowClock(t)
@@ -455,13 +453,13 @@ func TestShadowTestFailureKeep(t *testing.T) {
 }
 
 // TestShadowFallbackAfterFailedAdd pins the state fallback-git of a git whose
-// first test `worktree add` fails and whose second one works (s3p2b-edges-linux2
-// cell 29, Linux VM), its log line, and the repeat of the test after 10 minutes
-// (cell 28 and s3p2-oldgit cell O5: no test at 599.8 s, a test at 605.5 s). A
-// repeat with the same result logs no line. A repeat that passes changes the
-// state to shadow and logs the other line (cell O5). In the state fallback-git
-// the daemon reads no config of the repository: format version 2 gets the "no
-// repository" answer with the member (cell O4).
+// first test `worktree add` fails and whose second one works (measured on
+// Linux), its log line, and the repeat of the test after 10 minutes (measured:
+// no test at 599.8 s, a test at 605.5 s). A repeat with the same result logs no
+// line. A repeat that passes changes the state to shadow and logs the other line
+// (measured). In the state fallback-git the daemon reads no config of the
+// repository: format version 2 gets the "no repository" answer with the member
+// (measured).
 func TestShadowFallbackAfterFailedAdd(t *testing.T) {
 	f := newShadowFixture(t)
 	logs := captureLogBuf(t)
@@ -542,8 +540,8 @@ func TestShadowFallbackAfterFailedAdd(t *testing.T) {
 // TestShadowFallbackAfterQuietRevParse pins the other way into fallback-git:
 // `rev-parse --verify -q HEAD^{commit}` exits 1 with no output with the two
 // variables of the copy, and exits 0 without them. No `worktree add` runs then.
-// git 2.11.4 and 2.12.5 answer so on a Linux VM (s3p2-oldgit section 4), and the
-// wrapper rule of s3p2b-edges-linux2 cell 28 does.
+// git 2.11.4 and 2.12.5 answer so on Linux (measured), and the measured wrapper
+// rule does.
 func TestShadowFallbackAfterQuietRevParse(t *testing.T) {
 	f := newShadowFixture(t)
 	slowGit(t, "rev-parse,--verify", "fail", 0, "", "")
@@ -603,15 +601,13 @@ func TestShadowDeleteRefusesHome(t *testing.T) {
 }
 
 // TestShadowTestCopyTexts pins the two texts of HEAD and of the config in the
-// folder `shadow` of the start test, and the step of each. 5fd08069 writes
-// `ref: refs/heads/.invalid` and a config of 61 bytes first. Later it writes the
-// HEAD of `real` and the text of the copied settings with the helper.check
-// block. The rows are section 1.3 of val-s3p2b2-1-linux, D1 and D2 of
-// val-s3p2b2-1-macos and D3 of val-s3p2b2-1-windows. The first texts are there
-// at call 6. claustrum
-// has the second texts from call 8 on: the records fix only that they come
-// before the end of call 9. The folder `worktrees` of `real` is there before
-// call 10 on every system (the same rows).
+// folder `shadow` of the start test, and the step of each. 5fd08069 writes `ref:
+// refs/heads/.invalid` and a config of 61 bytes first. Later it writes the HEAD
+// of `real` and the text of the copied settings with the helper.check block. The
+// rows are measured on Linux, macOS and Windows. The first texts are there at
+// call 6. claustrum has the second texts from call 8 on: the records fix only
+// that they come before the end of call 9. The folder `worktrees` of `real` is
+// there before call 10 on every system (measured).
 func TestShadowTestCopyTexts(t *testing.T) {
 	f := newShadowFixture(t)
 	copyLog := filepath.Join(t.TempDir(), "copy.log")

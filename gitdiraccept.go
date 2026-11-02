@@ -9,17 +9,18 @@ import (
 // The git directory of one git.worktree_create, held from its gate to its
 // reply. It runs where gitDirMustBeReal is set: on every system.
 //
-// On Linux and macOS VMs a symbolic link takes the place of the junction. For
-// a link that is put there after `rev-parse --absolute-git-dir`, 5fd08069
-// refuses there too and leaves T as it is (the swap cells of
-// val-s3p2b2-9-linux2 and val-s3p2b2-9-macos, see plainAddRefusal).
+// On Linux and macOS a symbolic link takes the place of the junction. For a
+// link that is put there after `rev-parse --absolute-git-dir`, 5fd08069
+// refuses there too and leaves T as it is (measured on Linux and macOS, see
+// plainAddRefusal).
 //
-// The rows are cells X1c and X1p of val-s3p2b2-7-windows (Windows VM). While a
-// create runs, the driver renames `repo\.git` and puts a junction to another
-// folder T at that name. 5fd08069 then refuses the create at its next step. It
-// removes nothing in T and makes nothing in T, also where T is a copy of the
-// git directory with an old `.claude-new-worktree-x` entry. The texts of the
-// steps are at their places in gitWorktreeCreateLocked and worktreeAddStaged.
+// The rows are measured on
+// Windows. While a create runs, the driver renames `repo\.git` and puts a
+// junction to another folder T at that name. 5fd08069 then refuses the create
+// at its next step. It removes nothing in T and makes nothing in T, also where
+// T is a copy of the git directory with an old `.claude-new-worktree-x` entry.
+// The texts of the steps are at their places in gitWorktreeCreateLocked and
+// worktreeAddStaged.
 //
 // How 5fd08069 tests the folder is not measured. claustrum holds the folder
 // open and compares identities:
@@ -84,14 +85,13 @@ var createStepHook func(step string)
 // realDirTail ends the text of a git directory that is no real directory. The
 // name before it is quoted: 5fd08069 writes `".git" is a link or a file where
 // Claude needs a real directory; put the directory itself in its place` for
-// `C:\o\w\repo\.git` (cells X1c-06, X1c-10 and X1c-11). A git directory with
-// another name is not measured: it gets its last name.
+// `C:\o\w\repo\.git` (measured). A git directory with another name is not
+// measured: it gets its last name.
 const realDirTail = " is a link or a file where Claude needs a real directory; put the directory itself in its place"
 
-// The texts of three steps of a create on 5fd08069 (Windows VM): the step
-// after `rev-parse --absolute-git-dir` (cells X1c-06 and X1p-06), the step
-// before the `worktree add` call (cells X1c-09 and X1p-09, and table W3), and
-// the step after that call (cells X1c-10 and X1p-10).
+// The texts of three steps of a create on 5fd08069 (measured on Windows): the
+// step after `rev-parse --absolute-git-dir`, the step before the `worktree
+// add` call (measured), and the step after that call.
 const (
 	listEntriesPrefix      = "cannot list the repository's worktree entries: "
 	prepareWorktreesPrefix = "cannot prepare the repository's worktrees directory: "
@@ -116,13 +116,12 @@ func realDirText(gitDir string) string {
 // entry itself, with FILE_FLAG_OPEN_REPARSE_POINT, and follows no junction. So
 // the identity is that of the entry at the path at the second open. An entry
 // that is a junction to the held folder has its own identity, not that of the
-// folder. A path that changes between the two opens can therefore pass
-// stands only when the entry at the second open is the held folder itself.
-// That is sound for what the test decides: no act of the daemon inside the
-// git directory goes through the path (gitdirheld.go). On a Windows VM the
-// test sees the junction at points 1 to 11 of a create (the table of section
-// 2 of val-s3p2b2-12-windows), and after the read-tree call at point 12
-// (section 1.4 of val-s3p2b2-13-windows).
+// folder. A path that changes between the two opens can therefore pass stands
+// only when the entry at the second open is the held folder itself. That is
+// sound for what the test decides: no act of the daemon inside the git
+// directory goes through the path (gitdirheld.go). On Windows the test sees
+// the junction at points 1 to 11 of a create (measured), and after the
+// read-tree call at point 12 (measured).
 func gitDirIdentity(path string) os.FileInfo {
 	fi, err := os.Lstat(path)
 	if err != nil || !goesAsTree(fi.Mode()) {
@@ -141,9 +140,8 @@ func gitDirIdentity(path string) os.FileInfo {
 // junction at `repo\.git`, 5fd08069 answers `this repository's git config
 // cannot be used: "C:\\o\\w\\repo\\.git\\config": is, or is reached through, a
 // link that Claude does not follow here; replace the link with what it points
-// to` (cells X1c-01 to X1c-05, Windows VM). A link in a folder above the git
-// directory is not tested: a repository below a junction answers normally
-// (cell J1 of that round).
+// to` (measured on Windows). A link in a folder above the git directory is not
+// tested: a repository below a junction answers normally (measured).
 func gitDirLinkDetail(gitDir string) string {
 	if !gitDirMustBeReal {
 		return ""
@@ -226,11 +224,9 @@ func (a *acceptedGitDir) release() {
 // The spelling of the request is tested too (sent). On Linux and macOS a
 // `.git` that is a symbolic link before the request is resolved by the trust
 // check, so path is its target. A link that then leads to another folder is
-// seen through sent.
-// With such a change after `rev-parse --absolute-git-dir`, 5fd08069 fails the
-// create and leaves no branch, registration or folder of the new worktree
-// (cell dlink-swap of val-s3p2b2-10-linux2 and cell d-dswap of
-// val-s3p2b2-10-macos, Linux and macOS VMs).
+// seen through sent. With such a change after `rev-parse --absolute-git-dir`,
+// 5fd08069 fails the create and leaves no branch, registration or folder of
+// the new worktree (measured on Linux and macOS).
 func (a *acceptedGitDir) stands() bool {
 	fi := gitDirIdentity(a.path)
 	if fi == nil || !os.SameFile(fi, a.info) {
@@ -246,9 +242,8 @@ func (a *acceptedGitDir) stands() bool {
 // answeredElsewhere reports the two states in which a create on Windows gets
 // no refusal right after `rev-parse --absolute-git-dir`, although the path no
 // longer names the held folder. gitDir is the directory that git answered.
-// The rows are of 5fd08069 on a Windows VM (val-s3p2b2-12-windows, 2 or 3 runs
-// each). claustrum gives the same reply texts in them (table X1 and part C of
-// val-s3p2b2-13-windows, Windows VM, 2 runs each):
+// The rows are of 5fd08069 on Windows (2 or 3 runs each). claustrum gives the
+// same reply texts in them (measured on Windows, 2 runs each):
 //
 //   - Git answered another directory than the held one: a junction to a copy T
 //     of the git directory, or a directory symbolic link to the git directory
@@ -258,7 +253,7 @@ func (a *acceptedGitDir) stands() bool {
 //     section 2, point 5, and part C, the symbolic link at point 5). With the
 //     junction it makes three calls on T first: one read of the config of T, a
 //     listing with `--git-dir=<T>` and `rev-parse --show-toplevel` in T.
-//     claustrum makes none of them (section 1.7 of val-s3p2b2-13-windows).
+//     claustrum makes none of them (measured).
 //   - The path is a regular file now: a file `gitdir: <X>` was put at `.git`
 //     after the call. 5fd08069 goes on and refuses before the `worktree add`
 //     with the text of openAddStage (part C, the file at point 6). Its
@@ -282,14 +277,13 @@ func answeredElsewhere(u gitUse, gitDir string) bool {
 // the gate. It is nil in every other case. repo is the baseRepo of the create.
 // The caller releases the new hold.
 //
-// The rows are cells swb-first and swb-abbrev of val-s3p2b2-10-linux2 and
-// cells b-first and b-abbrev of val-s3p2b2-10-macos (Linux and macOS VMs, 2 of
-// 2 runs on macOS). A symbolic link to a copy T of the git directory is put at
-// `.git` before `rev-parse --absolute-git-dir`. Git then answers T. 5fd08069
-// reads the config again, goes on in T and answers success: T has the
-// registration, the branch and the index of the new worktree, and the `.git`
-// file of the leaf names `T/worktrees/<name>`. Its calls in baseRepo keep
-// GIT_DIR=<baseRepo>/.git, and its calls with --git-dir= name T.
+// The rows are measured on Linux and macOS, 2 of 2 runs. A symbolic link to a
+// copy T of the git directory is put at `.git` before `rev-parse
+// --absolute-git-dir`. Git then answers T. 5fd08069 reads the config again,
+// goes on in T and answers success: T has the registration, the branch and the
+// index of the new worktree, and the `.git` file of the leaf names
+// `T/worktrees/<name>`. Its calls in baseRepo keep GIT_DIR=<baseRepo>/.git,
+// and its calls with --git-dir= name T.
 //
 // The new hold keeps the trust verdict of the gate, so the calls in baseRepo
 // keep their variables. Not measured: a T that is the git directory of another
@@ -307,20 +301,20 @@ func (a *acceptedGitDir) movedTo(gitDir, repo string) *acceptedGitDir {
 // folder that fails the gate. repo is the baseRepo of the create. The caller
 // releases the new hold.
 //
-// The row is cell C6 of round tier0-24 (Linux VM, 2 runs) and of round
-// tier0-25m (macOS VM). While `worktree add` runs, `.git` is renamed and a
-// real copy of it is put at the path. Git makes the registration in the copy,
-// because the link `worktrees` of the folder of the daemon names the path.
-// 5fd08069 answers success: the copy has the registration with its index and
-// the branch, the worktree is checked out, and the old folder is unchanged.
-// The maintainer decided on 2026-10-14 to follow that outcome. The steps after
-// the add then act through the copy.
+// The row is measured on Linux and macOS. While
+// `worktree add` runs, `.git` is renamed and a real copy of it is put at the
+// path. Git makes the registration in the copy, because the link `worktrees`
+// of the folder of the daemon names the path. 5fd08069 answers success: the
+// copy has the registration with its index and the branch, the worktree is
+// checked out, and the old folder is unchanged. The maintainer decided on
+// 2026-10-14 to follow that outcome. The steps after the add then act through
+// the copy.
 //
 // After the move a failed read-tree rolls back in the copy, and the old folder
-// is unchanged (cell L4 of round tier0-26, Linux VM). A copy made before the
-// add holds no registration, and the tests of the registration refuse it with
-// unsafe_path (cell L5). Not measured: a swap at another moment, and a folder
-// of another repository. A link at the path keeps the refusal of the rows of
+// is unchanged (measured on Linux). A copy made before the add holds no
+// registration, and the tests of the registration refuse it with unsafe_path
+// (measured). Not measured: a swap at another moment, and a folder of another
+// repository. A link at the path keeps the refusal of the rows of
 // TestCreateWithAGitDirThatChangedAtTheAdd.
 func (a *acceptedGitDir) replacedAtPath(repo string) *acceptedGitDir {
 	if a == nil {
@@ -386,12 +380,11 @@ func (u gitUse) swapped(step string) bool {
 // (askGit), then the read of the config (repoConfigGate).
 //
 // With a junction to a copy of the git directory, 5fd08069 makes that one
-// call, which passes, and then answers the refusal of the config (cells X1c-01
-// to X1c-04, Windows VM. Cell X1c-05 makes more calls first). With a junction
-// to a folder that is no git directory
-// it makes no such call and goes on: its next calls carry GIT_DIR=NUL (cells
-// X1p-02 to X1p-06). A bad answer of the call at such a step is not measured:
-// the create goes on.
+// call, which passes, and then answers the refusal of the config (measured on
+// Windows. One measured case makes more calls first). With a junction to a
+// folder that is no git directory it makes no such call and goes on: its next
+// calls carry GIT_DIR=NUL (measured). A bad answer of the call at such a step
+// is not measured: the create goes on.
 //
 // The trust check can also pin another git directory than the held one: a
 // `.git` that became a file with `gitdir: <X>`, or on Linux and macOS a
@@ -403,25 +396,23 @@ func (u gitUse) swapped(step string) bool {
 //     passes gives no refusal. With a file `gitdir: <X>` at `.git` after
 //     `rev-parse --absolute-git-dir`, 5fd08069 makes the call about the
 //     repository, one read of a config and the listing of the add, and then
-//     refuses before the `worktree add` (part C of val-s3p2b2-12-windows, the
-//     file at point 6, Windows VM, 2 of 2 runs). That refusal is in
-//     openAddStage. Each other step refuses with the text of a git directory
-//     behind a link, and no call runs in X. The text is the one of the
-//     junction rows. For a file, 5fd08069 has another text at the `worktree
-//     add` (table C of val-s3p2b2-13-windows, Windows VM, 2 runs each). At
-//     the first listing of the checkout claustrum now runs the second listing
-//     for a file, as 5fd08069 does (gitUse.listedSwap, cell X2 of round
-//     task077-03). At the second listing and at the read-tree call the texts are equal. The
-//     step `branch` refuses so too, so no branch call runs with a `.git` file
-//     that names another repository.
+//     refuses before the `worktree add` (measured with the file
+//     at point 6, Windows, 2 of 2 runs). That refusal is in openAddStage. Each other
+//     step refuses with the text of a git directory behind a link, and no call runs in X.
+//     The text is the one of the junction rows. For a file, 5fd08069 has another text at
+//     the `worktree add` (measured on Windows, 2 runs each). At the
+//     first listing of the checkout claustrum now runs the second listing for a file, as
+//     5fd08069 does (gitUse.listedSwap). At the second listing and at the read-tree call
+//     the texts are equal. The step `branch` refuses so too, so no branch call runs with a
+//     `.git` file that names another repository.
 //   - On Linux and macOS the gate runs on that git directory, and a gate that
 //     passes gives no refusal here. With a symbolic link at `.git` to a copy
 //     of the git directory, put there after `rev-parse --absolute-git-dir`,
 //     5fd08069 makes the call about the repository and the read of the config,
 //     then the listing of the add, and refuses at the step before the add
-//     (cells swap-copy of val-s3p2b2-9-macos, macOS VM, 7 of 7 runs). The
-//     refusal is in worktreeAdd. With that link before the call, git answers
-//     the copy, and the create goes on in it (movedTo).
+//     (measured on macOS, 7 of 7 runs). The refusal
+//     is in worktreeAdd. With that link before the call, git answers the copy,
+//     and the create goes on in it (movedTo).
 func (u gitUse) swapRefusal(step, dir string) string {
 	if !u.swapped(step) {
 		return ""

@@ -59,11 +59,11 @@ const (
 	// of the manifest, with a request that has "shadowDirOff":true. The copy is
 	// the file `patterns` in it. 5fd08069 passes
 	// `--exclude-from=<tmp>/claude-ssh-worktreeinclude-<n>/patterns` there
-	// (val-s3p2b1-linux row D6, Linux VM). The prefix has 27 bytes, as the
-	// prefix in the measured f6010b97 argv has. The `--exclude-from` argument
-	// counts toward the batch budget, so its length moves the batch split
-	// point. os.MkdirTemp adds a random decimal suffix. gitshadowuse.go has
-	// the name in the state shadow.
+	// (measured on Linux). The prefix has 27 bytes, as the prefix in the
+	// measured f6010b97 argv has. The `--exclude-from` argument counts toward
+	// the batch budget, so its length moves the batch split point. os.MkdirTemp
+	// adds a random decimal suffix. gitshadowuse.go has the name in the state
+	// shadow.
 	includeTempPrefix = "claude-ssh-worktreeinclude-"
 )
 
@@ -124,14 +124,12 @@ func selectsIncludeScan(host *shadowHost) bool {
 // includeScan is gitSelectsIncludeScan with the answer kept for the life of
 // the daemon. On 5fd08069 the first create with a `.worktreeinclude` file runs
 // `git version`. The second create of the same daemon runs none. The counts
-// are 1 and 0 in 4 of 4 runs (cell v5-create of val-s3p2b2-5-linux2, Linux VM,
-// no member). The answer is one for the daemon, with or without the member. In
-// five creates with the member on the first, the second and the fifth, the
-// counts are 1, 0, 0, 0 and 0. With the member on the third of four they are
-// 1, 0, 0 and 0 (cells p3m-member and p3-include of val-s3p2b2-6-linux, Linux
-// VM, 2 of 2 and 3 of 3 runs, and cells P3 and F2 of val-s3p2b2-6-windows,
-// Windows VM, 2 runs each). A call that did not exit 0 is not measured: its
-// answer is not kept. The state fallback-git is not measured: it keeps the
+// are 1 and 0 in 4 of 4 runs (measured on Linux, no member). The answer is one
+// for the daemon, with or without the member. In five creates with the member
+// on the first, the second and the fifth, the counts are 1, 0, 0, 0 and 0.
+// With the member on the third of four they are 1, 0, 0 and 0 (measured on
+// Linux and Windows, 3 of 3 runs). A call that did not exit 0 is not measured:
+// its answer is not kept. The state fallback-git is not measured: it keeps the
 // answer too.
 func (h *shadowHost) includeScan() bool {
 	h.scanMu.Lock()
@@ -143,10 +141,10 @@ func (h *shadowHost) includeScan() bool {
 }
 
 // gitVersionCmd builds the `git version` call. Measured against f6010b97 on
-// Linux and macOS VMs, it has no `-c` options and no `-C`, and no other git
-// call runs before it. It runs in gitVersionDir with the filtered environment
-// of the daemon (gitChildEnv), and no name is added or removed
-// (claustrum's own, not measured).
+// Linux and macOS, it has no `-c` options and no `-C`, and no other git call
+// runs before it. It runs in gitVersionDir with the filtered environment of
+// the daemon (gitChildEnv), and no name is added or removed (claustrum's own,
+// not measured).
 func gitVersionCmd(ctx context.Context) *exec.Cmd {
 	cmd := exec.CommandContext(ctx, "git", "version")
 	cmd.Dir = gitVersionDir
@@ -710,11 +708,10 @@ func checkIgnored(u gitUse, repo string, paths []string) ([]string, bool) {
 // repository), and each runtime-state path (isClaudeRuntimeState).
 //
 // f6010b97 drops the same paths before its check-ignore call. If no path is
-// left, it makes no call. Linux and macOS VMs measured the skip rule in A03 to
-// A05, A14 and A16 to A18. They measured the runtime-state rule in C02 to C05
-// and I15c. They measured the `/` rule in D16, and the Linux VM measured it in
-// both scans. In the old scan, I15c and I15d show the runtime-state rule. The
-// old scan with every path dropped was not measured.
+// left, it makes no call. Linux and macOS measured the skip rule, the
+// runtime-state rule and the `/` rule. Linux measured the `/` rule in both
+// scans. In the old scan, measurements show the runtime-state rule. The old
+// scan with every path dropped was not measured.
 func checkIgnoreInput(paths, skip []string) []string {
 	skipSet := make(map[string]bool, len(skip))
 	for _, p := range skip {
@@ -737,8 +734,8 @@ func checkIgnoreInput(paths, skip []string) []string {
 //
 // The listing ends at includeScanLimit. stopped reports that stop, and then no
 // other call runs. On 5fd08069 a listing held for 610 s got SIGTERM at 600 s
-// (cell T13 of round task010-01, Linux and macOS VMs). One held for 130 s ran to
-// its end (cell T14, Linux VM).
+// (measured on Linux and macOS). One held for 130 s ran to its end (measured on
+// Linux).
 //
 // The file candidates are copied as the file batches name them. Only the paths
 // from the directory batches go to check-ignore, and a path that is also a file

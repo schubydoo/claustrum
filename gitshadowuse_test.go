@@ -41,13 +41,12 @@ func clearFolderEnv(t *testing.T) {
 }
 
 // TestGitUseFolderVariables pins the folder variables of a call in the state
-// shadow, per kind of folder. The values and the order are those of the call
-// logs of 5fd08069 on a Linux VM. A plain repository is in s3p2-linux cell B3a,
-// a linked worktree in cell B3b and a bare repository in cell B3c. A folder
-// inside the work tree is in s3p2-linux2 cell D7b. A call with --git-dir= in its argv
-// has the first two variables only (val-s3p2b1-linux cell A1). A request with
-// no copy, a folder of another repository and a daemon GIT_COMMON_DIR keep the
-// form of before.
+// shadow, per kind of folder. The values and the order are those of the call logs
+// of 5fd08069 on Linux. They cover a plain repository, a linked worktree, a bare
+// repository and a folder inside the work tree. A call with --git-dir= in its
+// argv has the first two variables only (measured). A request with no copy, a
+// folder of another repository and a daemon GIT_COMMON_DIR keep the form of
+// before.
 func TestGitUseFolderVariables(t *testing.T) {
 	clearFolderEnv(t)
 	f := newRepoFolderFixture(t)
@@ -112,8 +111,7 @@ func TestGitUseFolderVariables(t *testing.T) {
 	})
 	t.Run("daemon GIT_DIR", func(t *testing.T) {
 		// The daemon's own GIT_DIR stays at its place in the environment: the
-		// call gets the two first variables only (cell o1-gd-v2 of
-		// val-s3p2b2-7-linux2, Linux VM).
+		// call gets the two first variables only (measured on Linux).
 		t.Setenv("GIT_DIR", f.gitDir)
 		if got := u.pin(f.repo); !slices.Equal(got, common) {
 			t.Errorf("pin = %q\nwant %q", got, common)
@@ -123,9 +121,9 @@ func TestGitUseFolderVariables(t *testing.T) {
 
 // TestGitUseProfile pins the variables of the light profile per state. In the
 // state shadow they are the six values in the order of the Linux call log of
-// 5fd08069 (val-s3p2b1-linux row N1). With no copy they are the four of the
-// light profile. The heavy profile is the same in both. The six values and the
-// heavy profile end with GIT_SSH_COMMAND=false.
+// 5fd08069 (measured). With no copy they are the four of the light profile.
+// The heavy profile is the same in both. The six values and the heavy profile
+// end with GIT_SSH_COMMAND=false.
 func TestGitUseProfile(t *testing.T) {
 	t.Setenv("GIT_ALLOW_PROTOCOL", "")
 	if err := os.Unsetenv("GIT_ALLOW_PROTOCOL"); err != nil {
@@ -153,10 +151,9 @@ func TestGitUseProfile(t *testing.T) {
 
 // TestRequestDir pins the place, the name and the life of a short-lived folder
 // of one request. In the state shadow it is <S>/<prefix><decimal number> with
-// mode 0700 (the modes of val-s3p2b2-1-linux cell s3-first-create, Linux VM).
-// Its remove function takes it away, and so does the shutdown of the daemon
-// (s3p2-linux2 cell F3). With no copy it is a new folder of the temporary
-// folder with the other prefix.
+// mode 0700 (the measured modes, Linux). Its remove function takes it away,
+// and so does the shutdown of the daemon (measured). With no copy it is a new
+// folder of the temporary folder with the other prefix.
 func TestRequestDir(t *testing.T) {
 	clearFolderEnv(t)
 	f := newRepoFolderFixture(t)
@@ -224,8 +221,7 @@ func TestRequestDir(t *testing.T) {
 // TestRequestDirMakesTheAddCopyByPath pins how each short-lived folder of a
 // request is made in the folder of the daemon. On Windows it is a plain mkdir
 // by its full path. With the privileges on, the create of 5fd08069 succeeds
-// (cell X3 of rounds task077-03 and task077-05, Windows VM). On Linux and
-// macOS it goes through the root.
+// (measured on Windows). On Linux and macOS it goes through the root.
 func TestRequestDirMakesTheAddCopyByPath(t *testing.T) {
 	clearFolderEnv(t)
 	f := newRepoFolderFixture(t)
@@ -279,8 +275,8 @@ func TestRequestDirMakesTheAddCopyByPath(t *testing.T) {
 
 // TestGitTempNames pins the names of the short-lived entries. With
 // "shadowDirOff":true 5fd08069 has them in the temporary folder
-// (val-s3p2b1-linux section 1.2: rows D5 and D6, and the index name). Without
-// it they are in the folder of the daemon (row N11 and cell A3-create-plain).
+// (measured, also the index name). Without it they are in the folder
+// of the daemon (measured).
 func TestGitTempNames(t *testing.T) {
 	for got, want := range map[string]string{
 		statusGitDirTempPrefix:  "claude-ssh-gitdir-",
@@ -322,10 +318,9 @@ func TestShadowRepoFailureRefusesTheRequest(t *testing.T) {
 			m := f.fiveRequests(nil)[i]
 			raw, calls := f.call(t, m.method, m.params)
 			// The text of 5fd08069 for a plain file with the name of the folder
-			// (cells N4 of val-s3p2b2-3-linux2, val-s3p2b2-3-macos and
-			// val-s3p2b2-3-windows). The cause is `mkdir <path>: not a directory`
-			// on Linux and macOS, and `mkdir <path>: The system cannot find the
-			// path specified.` on Windows. That is syscall.ENOTDIR on each system.
+			// (measured). The cause is `mkdir <path>: not a directory` on Linux
+			// and macOS, and `mkdir <path>: The system cannot find the path
+			// specified.` on Windows. That is syscall.ENOTDIR on each system.
 			cause := (&os.PathError{Op: "mkdir", Path: blocked, Err: syscall.ENOTDIR}).Error()
 			if runtime.GOOS != "windows" && cause != "mkdir "+blocked+": not a directory" {
 				t.Fatalf("the cause of the test = %q", cause)
@@ -345,7 +340,7 @@ func TestShadowRepoFailureRefusesTheRequest(t *testing.T) {
 				t.Errorf("%s = %s\nwant it to start %s", method, raw, wantShape)
 			}
 			// The same request again gets the same line with no git call, and the
-			// file stays (the same cells).
+			// file stays (measured).
 			again, calls2 := f.call(t, m.method, m.params)
 			if again != raw || len(calls2) != 0 {
 				t.Errorf("%s again = %s with %d calls\nwant the same line and no call", method, again, len(calls2))
@@ -357,7 +352,7 @@ func TestShadowRepoFailureRefusesTheRequest(t *testing.T) {
 				t.Errorf("%s = %s, want the errorCode worktree_add_failed", method, raw)
 			}
 			// Request 1 makes two git calls on 5fd08069: the call about the
-			// repository and one read of the config (the same cells).
+			// repository and one read of the config (measured).
 			if n := len(calls); n != 3 || !calls[0].excludesRead() || !calls[1].isProbe() || !calls[2].configRead() {
 				t.Errorf("%s made %d calls, want the excludes read, the call about the repository and the config read", method, n)
 			}
@@ -403,8 +398,7 @@ func TestShadowRepoFailureInTheShutdown(t *testing.T) {
 // 5fd08069 answers git.info and git.status normally there. It carries
 // extensions.objectformat = sha256 in a sha1 repository, and git then finds no
 // repository. It carries core.bare = true, and both methods answer normally
-// (s3p2-linux cells A3, Linux VM, and the A3 cells of s3p2-macos and
-// s3p2-windows).
+// (measured on Linux).
 //
 // With "shadowDirOff":true git reads the repository's own config, and the
 // answers are those of before.
@@ -451,9 +445,9 @@ func TestShadowAnswersWhereGitRefusesAValue(t *testing.T) {
 // TestShadowCreateWithBareInConfigWorktree pins two answers in a repository
 // with the worktreeConfig switch and `core.bare = true` in its
 // `config.worktree` file. In the state shadow 5fd08069 creates the worktree.
-// A git.status on it then answers a clean worktree (cell 9a of
-// s3p2b-edges2-linux, Linux VM, requests 2 and 4). With "shadowDirOff":true
-// git reads that file, and the create answers "not a git repository" as before.
+// A git.status on it then answers a clean worktree (measured on Linux,
+// requests 2 and 4). With "shadowDirOff":true git reads that file, and the
+// create answers "not a git repository" as before.
 func TestShadowCreateWithBareInConfigWorktree(t *testing.T) {
 	clearFolderEnv(t)
 	f := newRefusalFixture(t)

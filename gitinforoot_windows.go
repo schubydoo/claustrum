@@ -13,27 +13,27 @@ import (
 // `--git-dir=<git dir> --work-tree=<walk root> rev-parse --show-toplevel`, both in
 // the git dir (gitDirWorkTreeToplevel). The git dir is the GIT_COMMON_DIR pin. When
 // git names the same directory as the walk root, the root is git's answer as printed,
-// with forward slashes. Else it is the walk root with forward slashes. Measured on a
-// Windows VM (rows W01 to W16 and D03).
+// with forward slashes. Else it is the walk root with forward slashes. Measured on
+// Windows.
 //
 // With no pin claustrum uses the git directory the walk found. One such state is
 // measured: with a daemon GIT_COMMON_DIR the pair and the root are equal to 89cb6289
-// in every call (cell B-13). The other states with no pin are not measured.
+// in every call. The other states with no pin are not measured.
 //
-// Not measured either: the spelling of the fallback walk root (W14 and W16 sent the
-// on-disk case), and how a relative answer is resolved (W16 only shows it is not
-// taken, so claustrum takes no relative answer). claustrum compares by file identity
-// (os.SameFile). Rows W08 (a subst drive) and W09 (a junction) answer git's spelling
-// while the walk root is spelled another way. A string compare does not give those
-// frames. No row isolates the compare.
+// Not measured either: the spelling of the fallback walk root (the measurements sent the on-disk
+// case), and how a relative answer is resolved (a measurement only shows it is not taken, so
+// claustrum takes no relative answer). claustrum compares by file identity (os.SameFile).
+// Measurements with a subst drive and with a junction answer git's spelling while the walk root
+// is spelled another way. A string compare does not give those frames. No row isolates the
+// compare.
 //
 // copyOf is the git directory whose copy the calls of the request name, or "".
 // With it, pin starts with the folder of the copy, and the pair names copyOf in
 // --git-dir= and runs there. 5fd08069 has `--git-dir=<gitdir>` and the working
-// directory `<gitdir>` on that pair in 330 git.info requests (val-s3p2b2-3-windows
-// row D5, Windows VM). front are the `-c` items before the list of the second
-// call (gitUse.gitDirFront): 5fd08069 has `core.filemode=true` first there, 29
-// items (cell N16c of that round).
+// directory `<gitdir>` on that pair in 330 git.info requests (measured on
+// Windows). front are the `-c` items before the list of the second call
+// (gitUse.gitDirFront): 5fd08069 has `core.filemode=true` first there, 29 items
+// (measured).
 func gitInfoRoot(s *gitStop, walkRoot, walkGitDir, copyOf string, pin, front []string) string {
 	gitDir := walkGitDir
 	switch {
@@ -71,7 +71,7 @@ func externalPathSpelling(p string) string {
 // git.worktree_create without worktreeRoot. Each component that exists is spelled with
 // its on-disk letter case, and the separators stay as sent. f6010b97 and 89cb6289
 // name <T>\.claude\worktrees\w1 for a request that spells the parent folders in
-// another letter case, on a Windows VM (row W15). Not measured: the volume name and an 8.3 short name
+// another letter case, on Windows (measured). Not measured: the volume name and an 8.3 short name
 // (claustrum keeps both as sent), and the case rule with worktreeRoot.
 func existingPathSpelling(p string) string {
 	vol := filepath.VolumeName(p)
@@ -126,14 +126,14 @@ func onDiskName(dir, name string) string {
 
 // checkoutWorkTree is the --work-tree value of the read-tree checkout of
 // git.worktree_create. On Windows it is the leaf as sent. The resolved leaf of the
-// references is measured on Linux and macOS VMs only.
+// references is measured on Linux and macOS only.
 func checkoutWorkTree(leaf, _ string) string {
 	return leaf
 }
 
 // adminRecordChecked reports whether git.worktree_create compares the new worktree's
 // admin record with worktreePath after symlink resolution (adminRecordMismatch). It
-// does not on Windows. The check was measured on a macOS VM only. On Windows git
-// records a path with forward slashes and resolved links, and a byte compare refuses
-// that. Leaving the check off there is claustrum's choice.
+// does not on Windows. The check was measured on macOS only. On Windows git records
+// a path with forward slashes and resolved links, and a byte compare refuses that.
+// Leaving the check off there is claustrum's choice.
 const adminRecordChecked = false

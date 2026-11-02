@@ -10,10 +10,8 @@ import (
 )
 
 // git.worktree_remove with a folder level that the daemon cannot read or search. The
-// rows are the mode rows of 89cb6289 on Linux and macOS VMs (B1 to B17d, and B18 on
-// the macOS VM), and cells U1, U13b, U14, U17a to U19, N6a and N6b of the rounds after them. This
-// file is
-// unix only: chmod denies nothing on Windows, and Windows refuses a worktreeRoot.
+// rows are measured on 89cb6289 on Linux and macOS, and in later checks. This file
+// is unix only: chmod denies nothing on Windows, and Windows refuses a worktreeRoot.
 
 // restrictLevel sets the mode of dir for one request. The returned function puts 0755
 // back and reports whether the request left the mode as set. The cleanup of chmodFor
@@ -45,10 +43,10 @@ func (f extFixture) keptExternal(t *testing.T) {
 	}
 }
 
-// Rows B3 and B4: a worktreeRoot of mode 0300 or 0100 is refused with the error of
-// its open, and nothing is deleted. Before, the reply was success, and the worktree,
-// its registration and its branch were deleted. Rows B5 and B6 (0000 and 0200) get the
-// same text. Before, their text was "lstat <R>/proj: permission denied".
+// Measured: a worktreeRoot of mode 0300 or 0100 is refused with the error of its open,
+// and nothing is deleted. Before, the reply was success, and the worktree, its
+// registration and its branch were deleted. The modes 0000 and 0200 get the same text
+// (measured). Before, their text was "lstat <R>/proj: permission denied".
 func TestWorktreeRemoveExternalRootWithoutReadBit(t *testing.T) {
 	skipIfRoot(t)
 	for _, mode := range []os.FileMode{0o300, 0o100, 0o000, 0o200} {
@@ -63,8 +61,8 @@ func TestWorktreeRemoveExternalRootWithoutReadBit(t *testing.T) {
 	}
 }
 
-// Row B18: the text names the resolved root, not the spelling of the request. The
-// request goes through a symbolic link to the root here. On the macOS VM it went
+// Measured: the text names the resolved root, not the spelling of the request.
+// The request goes through a symbolic link to the root here. On macOS it went
 // through /tmp, and the text named /private/tmp.
 func TestWorktreeRemoveExternalRootTextIsResolved(t *testing.T) {
 	skipIfRoot(t)
@@ -113,8 +111,8 @@ func TestWorktreeRemoveExternalLevelTexts(t *testing.T) {
 	}
 }
 
-// Row B7: a worktreeRoot of mode 0500 does not stop the removal. The worktree, its
-// registration and its branch go.
+// Measured: a worktreeRoot of mode 0500 does not stop the removal. The worktree,
+// its registration and its branch go.
 func TestWorktreeRemoveExternalReadOnlyRootIsRemoved(t *testing.T) {
 	skipIfRoot(t)
 	f := newExtFixture(t)
@@ -131,9 +129,9 @@ func TestWorktreeRemoveExternalReadOnlyRootIsRemoved(t *testing.T) {
 	}
 }
 
-// Rows B17a to B17d: without worktreeRoot, .claude and .claude/worktrees get the same
-// texts, each with the name of its own level. Nothing is deleted. Before, the texts
-// were "openat .claude/worktrees" and "statat wt1".
+// Measured: without worktreeRoot, .claude and .claude/worktrees get the same texts,
+// each with the name of its own level. Nothing is deleted. Before, the texts were
+// "openat .claude/worktrees" and "statat wt1".
 func TestWorktreeRemoveInRepoLevelTexts(t *testing.T) {
 	skipIfRoot(t)
 	for _, c := range []struct {
@@ -162,7 +160,7 @@ func TestWorktreeRemoveInRepoLevelTexts(t *testing.T) {
 	}
 }
 
-// Cell U13b: with a root of mode 0300, the error of its open comes before the symlink
+// Measured: with a root of mode 0300, the error of its open comes before the symlink
 // refusal of the <directory> level. Before, the reply was that refusal. With a root
 // that the daemon can read and search, the refusal stays.
 func TestWorktreeRemoveExternalRootOpenBeforeDirSymlink(t *testing.T) {
@@ -182,7 +180,7 @@ func TestWorktreeRemoveExternalRootOpenBeforeDirSymlink(t *testing.T) {
 	f.keptExternal(t)
 }
 
-// Cell U1: the worktree folder is gone and the root has mode 0300. The reply is the
+// Measured: the worktree folder is gone and the root has mode 0300. The reply is the
 // error of the open, and the registration and the branch stay. Before, the reply was
 // success, and both were deleted.
 func TestWorktreeRemoveExternalGoneLeafUnderUnreadableRoot(t *testing.T) {
@@ -201,7 +199,7 @@ func TestWorktreeRemoveExternalGoneLeafUnderUnreadableRoot(t *testing.T) {
 	}
 }
 
-// Cell U14: a worktree locked with `git worktree lock` under a root of mode 0300 gets
+// Measured: a worktree locked with `git worktree lock` under a root of mode 0300 gets
 // the error of the open, not the locked refusal.
 func TestWorktreeRemoveExternalLockedUnderUnreadableRoot(t *testing.T) {
 	skipIfRoot(t)
@@ -214,10 +212,10 @@ func TestWorktreeRemoveExternalLockedUnderUnreadableRoot(t *testing.T) {
 	f.keptExternal(t)
 }
 
-// Cells U17a to U19, N6a and N6b: a worktree in the repository outside .claude. A
-// restricted folder above it answers as the levels of .claude do. For a repository of
-// mode 0600, the text names the first component of the path below it. Before, it named
-// .claude. Nothing is deleted.
+// Measured: a worktree in the repository outside .claude. A restricted folder above it
+// answers as the levels of .claude do. For a repository of mode 0600, the text names
+// the first component of the path below it. Before, it named .claude. Nothing is
+// deleted.
 func TestWorktreeRemoveInRepoOtherLevelTexts(t *testing.T) {
 	skipIfRoot(t)
 	for _, c := range []struct {

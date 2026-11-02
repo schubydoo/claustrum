@@ -65,17 +65,17 @@ func staleEntry(t *testing.T, f wtFixture, name, record string) string {
 
 // TestWorktreeCreateStaleEntryOfCommonGitDir pins the folder of the stale entry
 // step for a baseRepo with a .git file. 5fd08069 works on `worktrees` of the
-// common git directory (round tier3-02, 3 runs each):
+// common git directory (measured):
 //
-//   - S1 (Linux, macOS and Windows VMs): a separate git directory gd. The one
-//     stale entry gd/worktrees/old goes, and the create succeeds.
-//   - S1M (Linux VM): a submodule. The entry of .git/modules/m/worktrees goes,
-//     and the create succeeds.
-//   - S1R (Linux VM): S1 with the relative record
+//   - S1 (measured on Linux, macOS and Windows): a separate git directory gd.
+//     The one stale entry gd/worktrees/old goes, and the create succeeds.
+//   - S1M (measured on Linux): a submodule. The entry of
+//     .git/modules/m/worktrees goes, and the create succeeds.
+//   - S1R (measured on Linux): S1 with the relative record
 //     ../../../<repo>/.claude/worktrees/w1/.git. It counts from the entry folder,
 //     and the entry goes.
-//   - S1L and S1T (Linux, macOS and Windows VMs): an entry with a `locked` file, and two
-//     stale entries. Every entry stays, and the add fails. be1c1ca5 answers the
+//   - S1L and S1T (measured on Linux, macOS and Windows): an entry with a `locked` file,
+//     and two stale entries. Every entry stays, and the add fails. be1c1ca5 answers the
 //     text of registeredLeafRefusal there (measured on Linux, macOS and Windows).
 //
 // Each cell runs with no settings control and in the state shadow, where the

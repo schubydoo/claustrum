@@ -22,11 +22,10 @@ import (
 // The hold stops no rename of the folder by another process. On Windows its
 // handle shares delete access for that (openHeldGitDir): on 5fd08069 a rename
 // of `repo\.git` passes during a create, except after its calls 7 and 8
-// (val-s3p2b2-9-windows, Windows VM). On claustrum it passes at each of the
-// 12 swap points (section 1.4 of val-s3p2b2-12-windows, 3 of 3 runs).
-// After a rename the acts below still go to the held folder, at its new name.
-// Not measured: a rename at the moment when a step has an entry of the folder
-// open.
+// (measured on Windows). On claustrum it passes at each of the 12 swap points
+// (measured, 3 of 3 runs). After a rename the acts below still go to the held
+// folder, at its new name. Not measured: a rename at the moment when a step
+// has an entry of the folder open.
 //
 //   - The stale registration before the add: dropStaleRegistration on Windows,
 //     and dropStaleWorktreeRegistration with deleteRoot on Linux and macOS.
@@ -65,13 +64,13 @@ import (
 // right after `rev-parse --absolute-git-dir`, when git answered another real
 // directory that passes the gate (acceptedGitDir.movedTo). The second is right
 // after a good `worktree add`, when a new real directory at the path passes
-// the gate (acceptedGitDir.replacedAtPath, cell C6 of round tier0-24). In a
-// staged add addStage.finish takes it before the move (adopt). The steps above
-// then act through that folder.
+// the gate (acceptedGitDir.replacedAtPath). In a staged add addStage.finish
+// takes it before the move (adopt). The steps above then act through that
+// folder.
 //
-// No VM row has a swap between the test of a
-// step and one of these acts. In the swap cells of val-s3p2b2-12-windows the
-// folder at the path is unchanged on claustrum (section 1.3, Windows VM).
+// No measurement has a swap between the test of a step and one of
+// these acts. In the measured swaps on Windows the folder at the path
+// is unchanged on claustrum (section 1.3, Windows).
 
 // removeHeldEntry removes the entry name with its content through root, the
 // held git directory. A test replaces it. Production never does.
@@ -210,11 +209,10 @@ func (a *acceptedGitDir) installIndex(src, adminDir string) {
 // Two cases are opened by the path (openRegistrationsRoot), as before the
 // hold. The first is a create that holds no git directory, or a dir of another
 // git directory. The second is a `worktrees` entry of the held folder that is
-// a symbolic link: 89cb6289 creates with such a link (rows D-1 and D-3 to D-5,
-// Linux VM). In the state shadow claustrum refuses that create before the add
-// (worktreesFolderRefusal), and with "shadowDirOff":true too (cells C1 and C2
-// of round tier0-24, Linux VM). The index keeps its identity test there
-// (replacedIn, D24).
+// a symbolic link: 89cb6289 creates with such a link (measured on Linux). In
+// the state shadow claustrum refuses that create before the add
+// (worktreesFolderRefusal), and with "shadowDirOff":true too (measured on
+// Linux). The index keeps its identity test there (replacedIn, D24).
 func (a *acceptedGitDir) registrationsRoot(dir string) (*os.Root, error) {
 	return a.openRegistrations(dir, false)
 }
@@ -222,8 +220,7 @@ func (a *acceptedGitDir) registrationsRoot(dir string) (*os.Root, error) {
 // deleteRoot is registrationsRoot for the deletes of a create: the stale step
 // and the rollback delete. A registrations folder that is a symbolic link is
 // refused there, and nothing is deleted (openRegistrationsFolder). The rule is
-// that of a remove in cell C3 of round tier0-24 (Linux VM). For a create it is
-// not measured.
+// that of a remove (measured on Linux). For a create it is not measured.
 func (a *acceptedGitDir) deleteRoot(dir string) (*os.Root, error) {
 	return a.openRegistrations(dir, true)
 }

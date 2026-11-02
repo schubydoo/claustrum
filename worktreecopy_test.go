@@ -45,7 +45,7 @@ func treeOf(t *testing.T, root string) []string {
 // alone.
 //
 // runGit already isolates the commands the TEST runs, but hardenedGitEnv builds on
-// os.Environ(), so the daemon-side `--exclude-standard` reads whatever global
+// os.Environ, so the daemon-side `--exclude-standard` reads whatever global
 // excludes the machine has. That is correct in production and reproduces the
 // reference. In a test it makes the result depend on the machine: a developer
 // whose global ignore names `.claude` silently turns a "not ignored" fixture into
@@ -188,10 +188,9 @@ func TestPopulateWorktree(t *testing.T) {
 // worktree with everything under it except `.claude/worktrees/`, and no
 // `.worktreeinclude` is involved.
 //
-// Measured on an ephemeral linux VM against 19f30c46 and 90fca6e6 alike
-// (scratch/probe/ref90-capture.md section C). claustrum copied none of this
-// before, which is why the fixture carries no manifest at all: without one, every
-// file below reaches the worktree through copyClaudeDir or not at all.
+// Measured on Linux against 19f30c46 and 90fca6e6 alike. claustrum copied none of
+// this before, which is why the fixture carries no manifest at all: without one,
+// every file below reaches the worktree through copyClaudeDir or not at all.
 func TestPopulateWorktreeCopiesIgnoredClaudeDir(t *testing.T) {
 	requireGit(t)
 	isolateGitConfig(t)
@@ -457,10 +456,9 @@ func TestSafeOverlayDest(t *testing.T) {
 // quote, a backslash or a non-ASCII byte, and the quoted display form names no
 // real file, so a line-delimited read drops it.
 //
-// This test used to assert the opposite, citing a probe. Re-measured on an
-// ephemeral linux VM against 19f30c46 AND 90fca6e6, all four shapes are copied
-// by both (scratch/probe/worktreecopy_probe.py, capture in
-// scratch/probe/ref90-capture.md section D).
+// This test used to assert the opposite, citing a probe. Re-measured on
+// Linux against 19f30c46 AND 90fca6e6, all four shapes are copied by
+// both.
 func TestWorktreeIncludeCopiesQuotedNames(t *testing.T) {
 	requireGit(t)
 	if runtime.GOOS == "windows" {

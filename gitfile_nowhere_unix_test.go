@@ -11,12 +11,12 @@ import (
 
 // The three call sites of gitFileText in git.worktree_remove, with a stub that fails
 // every listing with the text of git 2.56 for a `.git` file that names no valid
-// repository. So no git 2.56 is needed. The frames are those of 5fd08069 in cells
-// WR13, GF and N04 of round tier0-27 (Linux VM). The subfolder case is not measured.
-// With "shadowDirOff":true the listing refusal takes the place of that text in both
-// frames (cells GFOFF and N04OFF of round task039-03, Linux VM, frames X1 and X3).
-// Mutations: invert the gitFileText test at any of the three sites, name dir in place
-// of the folder that holds `.git`, or ignore the member at either remove site.
+// repository. So no git 2.56 is needed. The frames are those of 5fd08069, GF and N04
+// (measured on Linux). The subfolder case is not measured. With "shadowDirOff":true
+// the listing refusal takes the place of that text in both frames (measured on
+// Linux, two frames). Mutations: invert the gitFileText test at any of the three
+// sites, name dir in place of the folder that holds `.git`, or ignore the member at
+// either remove site.
 func TestWorktreeRemoveGitFileNowhereStub(t *testing.T) {
 	f := newWRFixture(t)
 	realGit, err := exec.LookPath("git")

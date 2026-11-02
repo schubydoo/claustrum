@@ -9,12 +9,12 @@ import (
 	"testing"
 )
 
-// These tests cover a worktreeRoot that is the file system root. The cells are R1n,
-// R1u and R1r of a Linux VM, and on a macOS VM R1a (both methods) and R1b (the
-// remove), each against 89cb6289.
-// Every request names a leaf under "/" that does not exist. No test writes under "/",
-// with or without the refusal: before, claustrum refused the create with another text
-// and answered success to the remove of a missing folder. worktreeRoot is unix-only.
+// These tests cover a worktreeRoot that is the file system root. The cases are
+// measured on Linux, and on macOS for both methods and for the remove, each against
+// 89cb6289. Every request names a leaf under "/" that does not exist. No test writes
+// under "/", with or without the refusal: before, claustrum refused the create with
+// another text and answered success to the remove of a missing folder. worktreeRoot
+// is unix-only.
 
 const fsRootTail = ` is a filesystem root; choose the worktree location by its absolute path, without "..", beneath the filesystem root`
 
@@ -28,8 +28,8 @@ func fsRootLeaf(t *testing.T) string {
 	return leaf
 }
 
-// The text of both verbs for a root of "/". Rows R2 and R3 are the cells of "//" and
-// "/." on Linux and macOS VMs: the same refusal, with the root as sent.
+// The text of both verbs for a root of "/". Measured with "//" and "/."
+// on Linux and macOS: the same refusal, with the root as sent.
 func TestWorktreeRootIsFileSystemRootText(t *testing.T) {
 	leaf := fsRootLeaf(t)
 	for _, c := range []struct{ name, root string }{
@@ -52,8 +52,8 @@ func TestWorktreeRootIsFileSystemRootText(t *testing.T) {
 	}
 }
 
-// The create frame of cells R1n, R1u, R1r and R1a, byte for byte. It comes after the repo
-// test, which is 3 git calls with the excludes read, and nothing is created.
+// The create frame, byte for byte. It comes after the repo test, which is 3 git calls
+// with the excludes read, and nothing is created.
 func TestWorktreeCreateRootIsFileSystemRoot(t *testing.T) {
 	leaf := fsRootLeaf(t)
 	f := newAncFixture(t)
@@ -73,8 +73,8 @@ func TestWorktreeCreateRootIsFileSystemRoot(t *testing.T) {
 	}
 }
 
-// The remove frame of cells R1n, R1r, R1a and R1b, byte for byte. No git call runs.
-// Before, claustrum answered {"success":true} here after 12 git calls.
+// The remove frame, byte for byte. No git call runs. Before, claustrum answered
+// {"success":true} here after 12 git calls.
 func TestWorktreeRemoveRootIsFileSystemRoot(t *testing.T) {
 	leaf := fsRootLeaf(t)
 	f := newAncFixture(t)

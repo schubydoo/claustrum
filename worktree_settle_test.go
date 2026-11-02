@@ -118,8 +118,8 @@ func argValue(argv []string, prefix string) string {
 }
 
 // The call after the read-tree call: the working directory and GIT_INDEX_FILE of
-// the checkout, the argv of 683cc6a9, and no wait after exit 0 (Linux, macOS and
-// Windows VMs).
+// the checkout, the argv of 683cc6a9, and no wait after exit 0 (measured on
+// Linux, macOS and Windows).
 func TestWorktreeCreateSettleCallAfterTheCheckout(t *testing.T) {
 	f, s, log := settleFixture(t, 0, 0)
 	setDuration(t, &settleWait, testHold)
@@ -159,9 +159,9 @@ func TestWorktreeCreateSettleCallAfterTheCheckout(t *testing.T) {
 	}
 }
 
-// Exit 1 makes the reply wait (Linux, macOS and Windows VMs). The wait ends
-// settleWait after the read-tree call, so the reply comes no sooner than that
-// after the request.
+// Exit 1 makes the reply wait (measured on Linux, macOS and Windows). The
+// wait ends settleWait after the read-tree call, so the reply comes no sooner
+// than that after the request.
 func TestWorktreeCreateSettleWaitsAfterExit1(t *testing.T) {
 	f, s, log := settleFixture(t, 1, 0)
 	const wait = 5 * time.Second
@@ -178,8 +178,8 @@ func TestWorktreeCreateSettleWaitsAfterExit1(t *testing.T) {
 }
 
 // With less than the margin left before the deadline of timeoutMs, no call runs
-// (timeoutMs 10000, Linux VM). A failed --attr-source probe runs no call either
-// (Linux VM). The create succeeds in both.
+// (timeoutMs 10000, Linux). A failed --attr-source probe runs no call either
+// (measured on Linux). The create succeeds in both.
 func TestWorktreeCreateSettleSkipped(t *testing.T) {
 	t.Run("margin", func(t *testing.T) {
 		f, s, log := settleFixture(t, 1, 0)
@@ -262,8 +262,8 @@ func TestSettleLimit(t *testing.T) {
 }
 
 // git.status of the new worktree does not change the mtime of the index of the
-// registration, and its git calls carry no GIT_INDEX_FILE (Linux VM). The frame
-// is {"isRepo":true,"clean":true}.
+// registration, and its git calls carry no GIT_INDEX_FILE (measured on Linux).
+// The frame is {"isRepo":true,"clean":true}.
 func TestGitStatusKeepsTheRegistrationIndexTime(t *testing.T) {
 	f, s, log := settleFixture(t, 0, 0)
 	raw, _ := f.create(t, s, "w1", "", 0)
@@ -378,7 +378,7 @@ func TestWorktreeCreateSettleUsesTheLeafWait(t *testing.T) {
 }
 
 // settleCheckout stops its wait when the context of the request ends (claustrum's
-// own, not measured). Mutation: pass context.Background() to settleSleep in
+// own, not measured). Mutation: pass context.Background to settleSleep in
 // settleCheckout.
 func TestSettleCheckoutStopsWithTheContext(t *testing.T) {
 	realGit, err := exec.LookPath("git")
@@ -407,8 +407,8 @@ func TestSettleCheckoutStopsWithTheContext(t *testing.T) {
 }
 
 // The settle call stops timeoutMs less 10 s after the send, and at least 1 s after
-// its start (683cc6a9, Linux VM). Mutation: drop the time.Since(arrival) in
-// worktreeCreateCtx.
+// its start (`683cc6a9`, measured on Linux). Mutation: drop the
+// time.Since(arrival) in worktreeCreateCtx.
 func TestWorktreeCreateCtxCountsFromArrival(t *testing.T) {
 	now := time.Now()
 	_, caller, cancel := worktreeCreateCtx(nil, 12000, now.Add(-3*time.Second))
@@ -443,8 +443,8 @@ func TestWorktreeCreateCtxCountsFromArrival(t *testing.T) {
 }
 
 // A slow git call before the deadline is made does not move its end: the settle
-// call stops timeoutMs less 10 s after the send (683cc6a9, Linux VM). Mutation:
-// drop the time.Since(arrival) in worktreeCreateCtx.
+// call stops timeoutMs less 10 s after the send (`683cc6a9`, measured on
+// Linux). Mutation: drop the time.Since(arrival) in worktreeCreateCtx.
 func TestWorktreeCreateDeadlineCountsFromTheRequest(t *testing.T) {
 	const delay = 1500 * time.Millisecond
 	f, s, _ := settleFixture(t, 0, 0)

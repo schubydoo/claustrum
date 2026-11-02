@@ -30,7 +30,7 @@ import (
 // git call at the folder of a repository.
 
 // The values of the member settingsControl of a git.info result. 5fd08069 sends
-// these three (s3-linux cells A1 and B1, s3p2-oldgit cell O1, Linux VM).
+// these three (measured on Linux).
 const (
 	controlShadow   = "shadow"
 	controlFallback = "fallback-git"
@@ -38,9 +38,8 @@ const (
 )
 
 // The two log lines of the state. 5fd08069 writes one at the first decision of
-// the state and one more at a change (s3p2-linux cell B3a, s3p2b-edges-linux2
-// cells 28 and 29, Linux VM). It writes none for a repeat test with the same
-// result, and none for a failed test (cell 32 of that round).
+// the state and one more at a change (measured on Linux). It writes none for a
+// repeat test with the same result, and none for a failed test (measured).
 const (
 	shadowStateLine   = "[GitHandler] this host's git works on Claude's own copy of a repository's settings (a shadow directory): a repository's own git config and hooks are not read"
 	fallbackStateLine = "[GitHandler] this host's git does not work on Claude's own copy of a repository's settings (fallback-git; older than about 2.13?): a repository's own git config is read, and only the -c overrides limit it"
@@ -58,21 +57,20 @@ var (
 	// shadowFailureKeep is how long a failed test is kept, from the end of that
 	// test. In that time a request gets the kept text with no git call. On
 	// 5fd08069 a request 9.90 s after the reply made no call, and one 10.00 s
-	// after it ran the test again (s3p2b-edges-linux2 cell 26, Linux VM. 9.904
-	// and 10.007 s on a macOS VM, 9.910 and 10.006 s on a Windows VM).
+	// after it ran the test again (measured on Linux. 9.904 and 10.007 s on
+	// macOS, 9.910 and 10.006 s on Windows).
 	shadowFailureKeep = 10 * time.Second
 	// shadowRetestAfter is the age of the last test after which a daemon in the
 	// state fallback-git tests again. On 5fd08069 a request at 599.8 s ran no
-	// test and one at 605.5 s ran it (s3p2-oldgit cell O5 and s3p2b-edges-linux2
-	// cell 28, Linux VM). The time between those two rows is not measured.
+	// test and one at 605.5 s ran it (measured on Linux). The time between those
+	// two rows is not measured.
 	shadowRetestAfter = 10 * time.Minute
 	// shadowCallBound ends one call of the test. shadowCallDrain is the wait for
 	// its output pipes after that. On 5fd08069 a call that its wrapper held for
 	// 29 s passed. For a call held for 32 s or 40 s the reply came 31.0 s after
-	// the start on a Linux VM, where the sleep child of the wrapper lived on
-	// (s3p2b-edges-linux2 cell 31). On a macOS VM the next call started at
-	// 30.04 s (section S4 of val-s3p2b2-1-macos). The 1 s wait is fitted from
-	// the Linux rows.
+	// the start on Linux, where the sleep child of the wrapper lived on
+	// (measured). On macOS the next call started at 30.04 s (measured). The 1 s
+	// wait is fitted from the Linux rows.
 	shadowCallBound = 30 * time.Second
 	shadowCallDrain = time.Second
 	// shadowClock is the clock of the two kept times.
@@ -146,11 +144,11 @@ type shadowHost struct {
 // absolute form in every path of the settings copy: the argv, the working
 // directory and the variables of the test calls, and the folder variables of
 // the later calls. Its replies, call lists and copied texts equal those of the
-// absolute socket path (cell R1 of val-s3p2b2-7-linux2, Linux VM). On a
-// Windows VM with `-socket s.sock` its folder `git-shadow` is under the
-// working directory, its test calls have absolute arguments, and its five
-// replies are normal (table R1 of val-s3p2b2-7-windows). A working directory
-// that the system does not give is not measured: the path stays as it is.
+// absolute socket path (measured on Linux). On Windows with `-socket s.sock`
+// its folder `git-shadow` is under the working directory, its test calls have
+// absolute arguments, and its five replies are normal (measured on Windows). A
+// working directory that the system does not give is not measured: the path
+// stays as it is.
 func newShadowHost(runDir string) *shadowHost {
 	if runDir != "" {
 		if abs, err := filepath.Abs(runDir); err == nil {
@@ -169,10 +167,9 @@ func (h *shadowHost) active() bool {
 // member of the request.
 //
 // A request with the member gets off-switch, also as the first request of a
-// daemon, in the "no repository" reply and while a failure is kept (s3-linux
-// cells A1 and B1, s3p2a-edges cell X1 and s3p2b-edges-linux2 cell 32, Linux VM).
-// A request without it gets the state of the daemon, and no member before the
-// first test passed (s3-linux cell A1, Linux VM).
+// daemon, in the "no repository" reply and while a failure is kept (measured on
+// Linux). A request without it gets the state of the daemon, and no member before
+// the first test passed (measured on Linux).
 func (h *shadowHost) control(off bool) string {
 	if !h.active() {
 		return ""
@@ -189,19 +186,16 @@ func (h *shadowHost) control(off bool) string {
 // A test reads it to know that a reply waits.
 var replyWaits atomic.Int64
 
-// replyControl is the settingsControl value of a git.info reply, read when the
-// reply is made. off reports the hold of the off switch (request.offLive). It is
-// read again after the wait, so a hold that starts during the wait counts (R4,
-// claustrum's own for this order, not measured).
-// Without a hold the reply waits for a start test that runs, and then has the state
-// that the test gave. 5fd08069 holds a git.info on a folder with no repository
-// until the test ends. It answers "shadow" after a good test, and no member
-// after a failed one or one that hit the 30 s bound of a call (cells T1 to T3
-// and T8 of round task103-01, Linux VM). It holds one on a missing path too
-// (cell T7, 4 of 5 runs, and 5 of 5 in round task103-03). In the fifth run of
-// round task103-01 it answered before the test started, with no member. On a
-// folder with no repository the other methods answer at once (cells T5 to
-// T6b).
+// replyControl is the settingsControl value of a git.info reply, read when the reply
+// is made. off reports the hold of the off switch (request.offLive). It is read again
+// after the wait, so a hold that starts during the wait counts (claustrum's own for
+// this order, not measured). Without a hold the reply waits for a start test that
+// runs, and then has the state that the test gave. 5fd08069 holds a git.info on a
+// folder with no repository until the test ends. It answers "shadow" after a good
+// test, and no member after a failed one or one that hit the 30 s bound of a call
+// (measured on Linux). It holds one on a missing path too (measured, 4 of 5 runs). In
+// the fifth run it answered before the test started, with no member. On a folder with
+// no repository the other methods answer at once (measured).
 func (h *shadowHost) replyControl(off func() bool) string {
 	if !h.active() || off() {
 		return h.control(true)
@@ -215,7 +209,7 @@ func (h *shadowHost) replyControl(off func() bool) string {
 // readsRepoConfig reports whether a request makes the daemon's own read of the
 // repository config. In the state fallback-git 5fd08069 makes no such read and
 // gives no config refusal: format version 2 gets the "no repository" answer
-// (s3p2-oldgit cell O4, Linux VM).
+// (measured on Linux).
 func (h *shadowHost) readsRepoConfig() bool {
 	return h.control(false) != controlFallback
 }
@@ -236,15 +230,15 @@ func (h *shadowHost) folderUse() gitUse {
 // check accepted, or for git.info on a `.git` file to a missing path (gitInfo).
 // It returns the text of a failed start test, or "".
 //
-// A request with the member runs no test and makes no folder (s3-linux cell B1,
-// Linux VM). Without it, the first such request of a daemon runs the test. A
+// A request with the member runs no test and makes no folder (measured on
+// Linux). Without it, the first such request of a daemon runs the test. A
 // failure is kept for shadowFailureKeep. In the state shadow no second test runs
-// (s3p2b-edges-linux2 cell 28: none at 590 s, 610 s and 720 s). In the state
-// fallback-git the test runs again after shadowRetestAfter.
+// (measured: none at 590 s, 610 s and 720 s). In the state fallback-git the test
+// runs again after shadowRetestAfter.
 //
 // Each method reads the user's excludes file before it comes here. With a run
 // folder that cannot take the folder, each of the five methods makes that one
-// git call on 5fd08069 (s3p2b-edges-linux2 cell 30, Linux VM).
+// git call on 5fd08069 (measured on Linux).
 func (h *shadowHost) gate(off bool) string {
 	if !h.active() || off {
 		return ""
@@ -266,9 +260,9 @@ func (h *shadowHost) gate(off bool) string {
 	h.mu.Lock()
 	defer h.mu.Unlock()
 	if cause != "" {
-		// The frame of every cause (s3p2b-edges-linux2 cells 26 and 30 to 32, Linux
-		// VM. Cell 33 of that round on macOS and Windows VMs). A cause with
-		// gitCannotRunPrefix is the whole text (cannotRunText).
+		// The frame of every cause (measured on Linux, and in part on
+		// macOS and Windows). A cause with gitCannotRunPrefix is the
+		// whole text (cannotRunText).
 		h.failure = cause
 		if !strings.HasPrefix(cause, gitCannotRunPrefix) {
 			h.failure = "Claude could not test git on the remote machine (" + cause + "). Check free disk space and quota there, then try again."
@@ -328,10 +322,10 @@ func (h *shadowHost) decided() (kept string, done bool) {
 
 // hostForm is the host name with each character outside A-Z, a-z, 0-9 and "."
 // written as "_". On 5fd08069 a host name of the form aa-bb gives aa_bb, and a
-// "." stays (s3-linux cell C6, Linux VM, and the macOS and Windows rounds).
-// On a macOS VM the ".local" end of the host name stays (round task075-01).
-// Other characters are claustrum's own (not measured). A host
-// name that the system does not give is not measured: the form is then empty.
+// "." stays (measured on Linux, macOS and Windows). On macOS the ".local" end
+// of the host name stays (measured). Other characters are claustrum's own (not
+// measured). A host name that the system does not give is not measured: the
+// form is then empty.
 func hostForm() string {
 	name, _ := shadowHostname()
 	return strings.Map(func(r rune) rune {
@@ -348,16 +342,15 @@ var shadowHostname = os.Hostname
 // makeFolder makes the folder of this daemon and takes its lock. The caller holds
 // mu. The steps and their order are those of 5fd08069. First comes the folder of
 // all daemons (0700), then the folder of this daemon (0700), then the lock file
-// (0600, 0 bytes). The rows are s3p2-oldgit section 5 and the tmpfs rows of
-// s3p2b-edges-linux2 cell 32 (Linux VM). The name is <host form>-<pid>-<16 hex>,
-// and the hex part is new each time (s3-linux cells C6 and B6).
+// (0600, 0 bytes). The rows are measured on Linux, also on tmpfs. The name is
+// <host form>-<pid>-<16 hex>, and the hex part is new each time (measured).
 //
 // The error of each step is the error of the system call with its path. 5fd08069
 // answers `mkdir <run>/git-shadow: permission denied`, `mkdir <S>: no space left
-// on device` and `open <S>/lock: no space left on device` (cells 30 and 32). On
-// a Windows VM a file named git-shadow gives `mkdir <path>: The system cannot
-// find the path specified.` (s3p2-windows cell C1), which is the text of
-// os.MkdirAll for a path that is no folder.
+// on device` and `open <S>/lock: no space left on device` (measured). On Windows
+// a file named git-shadow gives `mkdir <path>: The system cannot find the path
+// specified.` (measured), which is the text of os.MkdirAll for a path that is no
+// folder.
 //
 // After a lock file that cannot be made, 5fd08069 leaves no folder of the daemon
 // (the tmpfs row with 2 inodes). So the folder that this call made goes again
@@ -365,8 +358,7 @@ var shadowHostname = os.Hostname
 //
 // After the lock, the sweep removes the folders of daemons that are gone
 // (sweepOldFolders). 5fd08069 sweeps at the request that makes its folder, and
-// not at the start of the daemon (cells G1 and G12 of round task075-01, Linux
-// VM).
+// not at the start of the daemon (measured on Linux).
 //
 // The sweep of another daemon can take the new folder before its lock is held.
 // Then the folder is made once more with a new name (newOwnFolder). That step
@@ -398,7 +390,7 @@ var errOwnFolderLost = errors.New("the folder of the daemon in git-shadow went w
 // or the folder or the lock at the path is no longer the one made (by
 // identity). Nothing is removed then, because the folder is not this
 // daemon's any more. The test is claustrum's own (not measured). Another
-// failed lock step removes the folder, as on 5fd08069 (cell 32).
+// failed lock step removes the folder, as on 5fd08069 (measured).
 func (h *shadowHost) newOwnFolder(root string) (name string, lock *os.File, lost bool, err error) {
 	var salt [8]byte
 	if _, err := rand.Read(salt[:]); err != nil {
@@ -440,9 +432,8 @@ var openShadowLock = openShadowLockFile
 // remakeFolder makes the folder of this daemon again when it is gone. The caller
 // holds mu, and the state is decided. After the driver removed the folder,
 // 5fd08069 answered the next request normally and made the folder again, with
-// the same pid and another hex part (s3-linux cell B6, Linux VM, and s3-macos
-// cell B6). No test ran then. A folder that cannot be made again is not
-// measured: the request goes on.
+// the same pid and another hex part (measured on Linux). No test ran then. A
+// folder that cannot be made again is not measured: the request goes on.
 func (h *shadowHost) remakeFolder() {
 	if h.dir != "" {
 		if _, err := os.Lstat(h.dir); err == nil {
@@ -516,10 +507,9 @@ func (h *shadowHost) removeOneEntry(rel string) error {
 
 // close removes the folder of this daemon at a shutdown. 5fd08069 removes it at
 // -stop and at server.shutdown, and the empty folder of all daemons stays
-// (s3p2-linux section 1, Linux VM, and the macOS and Windows rounds). It removes
-// the folder also while a git call of a request runs (s3p2-linux2 cell F3, Linux
-// VM, and cell 48 of s3p2b-edges on macOS and Windows VMs). The folder of
-// another daemon stays (s3p2b-edges-linux2 cell 44, Linux VM).
+// (measured on Linux, macOS and Windows). It removes the folder also while a git
+// call of a request runs (measured on Linux, macOS and Windows). The folder of
+// another daemon stays (measured on Linux).
 //
 // The lock file is closed first: on Windows an open file cannot be removed.
 func (h *shadowHost) close() {
@@ -557,16 +547,15 @@ func (r shadowRun) detail() string {
 }
 
 // gitSaidNo reports whether a failed call of the loop of the start test is a
-// refusal by git itself: an exit error of a process that no signal ended,
-// inside the bound, whose error output does not hold `No space left`. Only
-// such a failure can give the state fallback-git (shadowTestCalls). 5fd08069
-// answers fallback-git after exit 128 with one error line and after exit 1
-// with no output (cells C1, C4 and N1-control of round tier0-5, Linux VM). It
-// fails the test after a call that signal 9 ended and after an error text
-// with `No space left on device` (cells N3, N1 and N2 of round tier0-5, all at
-// call 10). No other text is measured, so no other text counts. On Windows a
-// call that another process killed reads as an exit, so the signal rule holds
-// on Linux and macOS only (not measured on Windows).
+// refusal by git itself: an exit error of a process that no signal ended, inside
+// the bound, whose error output does not hold `No space left`. Only such a failure
+// can give the state fallback-git (shadowTestCalls). 5fd08069 answers fallback-git
+// after exit 128 with one error line and after exit 1 with no output (measured on
+// Linux). It fails the test after a call that signal 9 ended and after an error
+// text with `No space left on device` (measured, all at call 10). No other text is
+// measured, so no other text counts. On Windows a call that another process killed
+// reads as an exit, so the signal rule holds on Linux and macOS only (not measured
+// on Windows).
 func (r shadowRun) gitSaidNo() bool {
 	return r.exited() && !r.ended && !strings.Contains(r.stderr, "No space left")
 }
@@ -579,7 +568,8 @@ func (r shadowRun) exited() bool {
 }
 
 // shadowTestPrefix is the option list of every call of the test. The first item
-// is core.hooksPath with hooksNullDevice (be1c1ca5, Linux and Windows VMs).
+// is core.hooksPath with hooksNullDevice (`be1c1ca5`, measured on Linux and
+// Windows).
 func shadowTestPrefix() []string {
 	return []string{
 		"-c", "core.hooksPath=" + hooksNullDevice,
@@ -601,9 +591,9 @@ var shadowTestNames = []string{
 // pass to a test call. With GIT_DEFAULT_HASH=sha256 in the daemon, its test
 // repository is a SHA-1 repository and the test passes, and the later calls
 // have the variable. With GIT_CONFIG_SYSTEM in the daemon the same holds
-// (cells H1 and H3 of val-s3p2b2-15-linux2, Linux VM, one run each). With the
-// first one in a test call, `git init` makes a SHA-256 repository and the
-// fixed tree id of call 4 fails.
+// (measured on Linux, one run each). With the first one in a test call,
+// `git init` makes a SHA-256 repository and the fixed tree id of call 4
+// fails.
 var shadowTestDropped = []string{"GIT_DEFAULT_HASH", "GIT_CONFIG_SYSTEM"}
 
 // shadowDaemonEnv is the daemon's own environment as a test call gets it.
@@ -624,19 +614,19 @@ func shadowDaemonEnv() []string {
 // shadowCheckDropped are two more variables of the daemon that a call in the
 // folder `.check-<n>` does not get. With both in the daemon, the nine such
 // calls of 5fd08069 have neither, and call 7 and the excludes read have both.
-// Only these two names are measured (cell C8 of round tier0-5, Linux VM).
+// Only these two names are measured on Linux.
 var shadowCheckDropped = []string{"GIT_NAMESPACE", "GIT_INDEX_FILE"}
 
 // shadowTestEnv is the environment of a test call with no folder variable: the
 // nine variables of the test, then the daemon's own without shadowCheckDropped.
-// The call log of 5fd08069 has this order on a Linux VM (s3p2-linux cell B3a).
-// GIT_CONFIG_GLOBAL is /dev/null on a Windows VM too (s3p2-windows cell B3a).
-// The daemon's part is cleaned as for every git child (gitChildEnv) and has no
-// GIT_ name (withoutGitNames). 5fd08069 does both on the nine calls of the test
-// (rounds task004-01 and task004-02, Linux, macOS and Windows VMs). The rules of
-// the cleaning are claustrum's own, not measured. The trace entries of
-// withTraceOff end it. be1c1ca5 has them on the test calls (measured on Linux).
-// Their place and their count per call there are not measured.
+// The call log of 5fd08069 has this order on Linux (measured). GIT_CONFIG_GLOBAL
+// is /dev/null on Windows too (measured). The daemon's part is cleaned as for
+// every git child (gitChildEnv) and has no GIT_ name (withoutGitNames). 5fd08069
+// does both on the nine calls of the test (measured on Linux, macOS and
+// Windows). The rules of the cleaning are claustrum's own, not measured. The
+// trace entries of withTraceOff end it. be1c1ca5 has them on the test calls
+// (measured on Linux). Their place and their count per call there are not
+// measured.
 func shadowTestEnv() []string {
 	daemon := slices.DeleteFunc(cleanGitChildEnv(shadowDaemonEnv(), gitEnvHere), func(kv string) bool {
 		return slices.Contains(shadowCheckDropped, envName(kv))
@@ -661,9 +651,8 @@ func shadowTestEnv() []string {
 // also when a child keeps its output pipes open past the wait of
 // shadowCallDrain. With a child that holds the pipes of the `init` call for 5
 // s, 5fd08069 starts the next test call 1.02 s and 1.06 s after the `init`
-// ended, and the test passes (cell N-a of val-s3p2b2-8-linux2, Linux VM, 2 of
-// 2 runs). The eight other calls with that wait get the same rule (not
-// measured).
+// ended, and the test passes (measured on Linux, 2 of 2 runs). The eight
+// other calls with that wait get the same rule (not measured).
 func shadowGit(dir string, env []string, argv ...string) shadowRun {
 	return exitedInTime(boundedGit(shadowCallBound, dir, env, argv...))
 }
@@ -717,9 +706,9 @@ func boundedGitInput(bound time.Duration, dir string, env []string, stdin []byte
 // or the cause of a failed test.
 //
 // The name .check-<n> has a decimal number that differs per attempt. The folder
-// is gone at the reply, also after a failed test (s3p2-oldgit section 5 and
-// s3p2b-edges-linux2 cells 29 and 31, Linux VM). A folder that cannot be made
-// gives `mkdir <S>/.check-<n>: no space left on device` (cell 32).
+// is gone at the reply, also after a failed test (measured on Linux). A folder
+// that cannot be made gives `mkdir <S>/.check-<n>: no space left on device`
+// (measured).
 func (h *shadowHost) startTest() (state, cause string) {
 	h.mu.Lock()
 	if h.closed {
@@ -753,9 +742,8 @@ func (h *shadowHost) startTest() (state, cause string) {
 
 // shadowTestCalls runs the calls of the test. dir is the folder of the daemon and
 // check is the folder of this attempt. The argv, the working directory and the
-// variables of each call are those of the call log of 5fd08069 (s3p2-linux cell
-// B3a, Linux VM. s3p2-windows cell B3a, Windows VM. Cell 33 of s3p2b-edges lists
-// the same ten calls on a macOS VM).
+// variables of each call are those of the call log of 5fd08069 (measured on
+// Linux, Windows and macOS).
 //
 // The folder `shadow` has the form of the copy that the daemon keeps for a
 // repository. 5fd08069 writes its HEAD and its config two times
@@ -774,10 +762,9 @@ func shadowTestCalls(dir, check string) (state, cause string) {
 	// The cause of a failed call has every line of its error output, joined by
 	// one space, or the exec error when there is none. For a `mktree` that
 	// writes two lines 5fd08069 answers `git mktree failed under "<S>": error:
-	// first forced line fatal: second forced line (git version 2.43.0)` (cell C6
-	// of round tier0-5, Linux VM). A call 10 on a full disk has both lines of
-	// git too (cell N2 of round tier0-5). The other calls share this path: not
-	// measured.
+	// first forced line fatal: second forced line (git version 2.43.0)`
+	// (measured on Linux). A call 10 on a full disk has both lines of git too
+	// (measured). The other calls share this path: not measured.
 	failed := func(verb string, r shadowRun) (string, string) {
 		return "", fmt.Sprintf("git %s failed under %q: %s", verb, dir, r.allLines())
 	}
@@ -815,18 +802,16 @@ func shadowTestCalls(dir, check string) (state, cause string) {
 
 	// Call 6, the first `config --get` on the copy. A call that works and
 	// prints `real` gives the state fallback-git, and no other test call runs.
-	// 5fd08069 answers so with 6 test calls (cell C3b of round tier0-5, Linux
-	// VM). After a call 6 that exits 1 with no output, 5fd08069 runs all ten
-	// calls and the state is shadow (cell C3 of round tier0-5). Another failure
-	// of a call 6 that exited by itself goes on too. So does a call 6 that
-	// works with a text that is neither `real` nor `shadow`. Both are
-	// claustrum's own, not measured. A call 6 that the bound ended fails the
-	// test, as every ended test call but call 7. So does a call 6 that a signal
-	// ended, or that did not start. Both are claustrum's own, not measured. On
-	// Windows a call that another process killed reads as an exit, so it goes
-	// on there.
-	// Between call 6 and call 8 the daemon lists the config of `real` from
-	// standard input, as it does for a repository.
+	// 5fd08069 answers so with 6 test calls (measured on Linux). After a call 6
+	// that exits 1 with no output, 5fd08069 runs all ten calls and the state is
+	// shadow (measured). Another failure of a call 6 that exited by itself goes
+	// on too. So does a call 6 that works with a text that is neither `real`
+	// nor `shadow`. Both are claustrum's own, not measured. A call 6 that the
+	// bound ended fails the test, as every ended test call but call 7. So does
+	// a call 6 that a signal ended, or that did not start. Both are claustrum's
+	// own, not measured. On Windows a call that another process killed reads as
+	// an exit, so it goes on there. Between call 6 and call 8 the daemon lists
+	// the config of `real` from standard input, as it does for a repository.
 	get := []string{"config", "--get", "helper.check"}
 	first := run(shadowEnv, get...)
 	if first.err != nil && (first.ended || !first.exited()) {
@@ -840,8 +825,8 @@ func shadowTestCalls(dir, check string) (state, cause string) {
 		return "", err.Error()
 	}
 	// Call 7 ends at the bound of a test call, counted from its start, and then
-	// reads its pipes for up to startBoundDrain (runStartBound). The rows are cells
-	// N-b and N-c of val-s3p2b2-8-linux2 (Linux VM, 2 of 2 runs each):
+	// reads its pipes for up to startBoundDrain (runStartBound). The rows are
+	// measured on Linux, 2 of 2 runs:
 	//
 	//   - A child holds the pipes for 5 s after the call ended: 5fd08069 starts
 	//     the next call at 5.345 s and 5.189 s, and the test passes.
@@ -849,26 +834,23 @@ func shadowTestCalls(dir, check string) (state, cause string) {
 	//     ends it at 30 s, and the cause is the text of callSevenEnded.
 	//
 	//   - The call exits 0 at 0.2 s and a child holds the pipes for 35 s: 5fd08069
-	//     answers the text of callSevenEnded at 31.2 s (cell N-b of
-	//     val-s3p2b2-9-linux2, Linux VM, 1 run).
+	//     answers the text of callSevenEnded at 31.2 s (measured on Linux).
 	//   - The call sleeps 20 s, exits 0, and a child holds the pipes for 20 s:
 	//     5fd08069 answers that text about 31 s after call 7 started, 11 s
-	//     after its exit (cell B2 of rounds task101-01 and task101-02, Linux
-	//     VM). So the bound counts from the start.
+	//     after its exit (measured on Linux). So the bound counts from the
+	//     start.
 	//   - The call exits 0 and a child holds its stderr alone: 5fd08069 goes on
-	//     about 1.1 s after the exit, and the test passes (cell B2e of round
-	//     task111-03, Linux VM). Round task111-10 has equal replies on macOS.
-	//     A call 7 that exits 1 there gives the lines read before the cut
-	//     (claustrum's own, not measured).
+	//     about 1.1 s after the exit, and the test passes (measured on Linux).
+	//     A measurement has equal replies on macOS. A call 7 that exits 1 there
+	//     gives the lines read before the cut (claustrum's own, not measured).
 	//
 	// A call 7 that fails on its own is followed by one `git version` call
 	// (cannotRunText). If that call fails too, its text is the whole failure.
 	// Else the cause is repoConfigPrefix and the error lines of call 7. A call 7
 	// with exit 128 under a broken ~/.gitconfig gives the first form, and one
 	// with exit 1 and `boom` gives `this repository's git config cannot be
-	// used: boom` (cells E1 to E5 and E9 of round task083-01, Linux VM). A call
-	// 7 with no error text gives its exec error there (claustrum's own, not
-	// measured).
+	// used: boom` (measured on Linux). A call 7 with no error text gives its
+	// exec error there (claustrum's own, not measured).
 	cmd := configTextCmd(context.Background(), gitVersionDir, repoConfigListEnv())
 	var out, errOut bytes.Buffer
 	cmd.Stdout, cmd.Stderr = &out, &errOut
@@ -887,35 +869,34 @@ func shadowTestCalls(dir, check string) (state, cause string) {
 		return "", err.Error()
 	}
 	// In claustrum calls 8, 9 and 10 are the three steps of one loop, and one
-	// rule judges each of them. The replies and call logs of 5fd08069 in cells
-	// C1, C2, C4, C5, C9, N1, N2 and N3 of round tier0-5 (Linux VM) fit it:
+	// rule judges each of them. The replies and call logs of 5fd08069
+	// (measured on Linux) fit it:
 	//
 	//   - The call works and its answer passes: the next step. After the last
 	//     step the state is shadow.
 	//   - The call works and its answer does not pass: the state is
-	//     fallback-git, and no second call runs (cells C4, C2 and C5 of round
-	//     tier0-5, with 8, 9 and 10 test calls).
+	//     fallback-git, and no second call runs (measured, with 8, 9
+	//     and 10 test calls).
 	//   - The call fails: the second call runs, which is the same call on `real`
 	//     alone. If it works and git itself refused the first one (gitSaidNo),
-	//     the state is fallback-git (cells C4, C1 and N1-control of round
-	//     tier0-5). In every other case the test failed, and the cause names
-	//     the first call (cells C9, N1, N2 and N3 of round tier0-5).
+	//     the state is fallback-git (measured). In every other case the test
+	//     failed, and the cause names the first call (measured).
 	//
-	// Two failed calls are measured at call 9 only (cell C9 of round tier0-5).
-	// The `No space left` and signal rows are at call 10 only. The other steps
-	// share the path: not measured.
+	// Two failed calls are measured at call 9 only. The `No space left` and
+	// signal rows are at call 10 only. The other steps share the path: not
+	// measured.
 	//
 	// git 2.11.4 and 2.12.5 exit 1 with no output at call 9, and the second
-	// call works there: the state is fallback-git (s3p2-oldgit section 4, Linux
-	// VM). A call that the bound ended is no refusal by git, so the test failed
-	// with the text of that call also when the second call works. For an ended
-	// add 5fd08069 answers so on a Windows VM, with `exit status 1` as the text
-	// (val-s3p2b2-1-windows cell Q-S4h-hold32-worktree-add).
+	// call works there: the state is fallback-git (measured on Linux). A call
+	// that the bound ended is no refusal by git, so the test failed with the
+	// text of that call also when the second call works. For an ended add
+	// 5fd08069 answers so on Windows, with `exit status 1` as the text
+	// (measured).
 	//
 	// The answer test of call 10 is that the folder `wt` is there after the
-	// call. In cell C5 of round tier0-5 the call exits 0 and makes nothing. No
-	// cell has an add that exits 0 and makes a part of a worktree. The test for
-	// the folder is claustrum's own.
+	// call. In a measurement, the call exits 0 and makes nothing. No cell has
+	// an add that exits 0 and makes a part of a worktree. The test for the
+	// folder is claustrum's own.
 	verify := []string{"rev-parse", "--verify", "-q", "HEAD^{commit}"}
 	wt := filepath.Join(check, "wt")
 	add := func(leaf string) []string {
@@ -955,7 +936,7 @@ func shadowTestCalls(dir, check string) (state, cause string) {
 // not test git on the remote machine (this repository's git config cannot be
 // used: git did not finish reading "<S>/.check-<n>/real/.git/config" within
 // 30 seconds; try again). Check free disk space and quota there, then try
-// again.` (cell N-c of val-s3p2b2-8-linux2, Linux VM, 2 of 2 runs).
+// again.` (measured on Linux, 2 of 2 runs).
 func callSevenEnded(path string) string {
 	return repoConfigPrefix + readStopText(path)
 }
@@ -970,25 +951,22 @@ func readStopText(path string) string {
 // 1 to 5: the answer of `git version` in brackets. After a failed `init` or
 // `mktree`, 5fd08069 runs `git version` two times before the reply. After an
 // `init` that the bound ended its cause ends with ` (git version 2.43.0)`
-// (s3p2b-edges-linux2 cell 31, Linux VM). After an `init` that exits 1 with a
-// text it is `git init failed under "<S>": fatal: forced failure by the test
-// wrapper (git version 2.43.0)` (cell C2 of val-s3p2b2-7-linux2, Linux VM, 2
-// of 2 runs and the control). On a Windows VM the same cause ends with ` (git
-// version 2.55.0.windows.3)`, with the same four calls (table C2 of
-// val-s3p2b2-7-windows, 2 of 2 runs). After a `mktree` that exits 1 the cause
-// has the same end, and the request has 5 test calls (cell C6 of round
-// tier0-5, Linux VM). The first version call has no option list, the root
-// folder as its working directory and no added variable. The second has the
-// option list, the folder and the variables of a test call. Which of the two
-// gives the text is not measured.
+// (measured on Linux). After an `init` that exits 1 with a text it is `git
+// init failed under "<S>": fatal: forced failure by the test wrapper (git
+// version 2.43.0)` (measured on Linux, 2 of 2 runs and the control). On
+// Windows the same cause ends with ` (git version 2.55.0.windows.3)`, with
+// the same four calls (measured, 2 of 2 runs). After a `mktree` that exits 1
+// the cause has the same end, and the request has 5 test calls (measured on
+// Linux). The first version call has no option list, the root folder as its
+// working directory and no added variable. The second has the option list,
+// the folder and the variables of a test call. Which of the two gives the
+// text is not measured.
 //
 // The calls from call 6 on get no such end. Four rows have none: a failed
-// `worktree add` (cell 26 of s3p2b-edges-linux2 and cell N1 of round
-// tier0-5), an ended `rev-parse --verify` (cell 31 of s3p2b-edges-linux2) and an
-// ended `worktree add` (cell W8a of s3b-linux). No record has a failed
-// `config`, `commit-tree` or `update-ref` call of the calls 1 to 5. Those
-// three share the path of `init` and `mktree`: not measured (setupFailed in
-// shadowTestCalls).
+// `worktree add` (measured), an ended `rev-parse --verify` and an ended
+// `worktree add`. No record has a failed `config`, `commit-tree` or `update-ref`
+// call of the calls 1 to 5. Those three share the path of `init` and `mktree`:
+// not measured (setupFailed in shadowTestCalls).
 func shadowVersionNote(check string, env []string) string {
 	first := shadowGit(gitVersionDir, gitVersionEnv(nil), "version")
 	second := shadowGit(check, env, append(shadowTestPrefix(), "version")...)
@@ -1003,9 +981,8 @@ func shadowVersionNote(check string, env []string) string {
 }
 
 // The first texts of the folder `shadow` of the test, and the end of its config
-// in both texts. 5fd08069 writes these bytes on Linux, macOS and Windows VMs
-// (val-s3p2b2-1-linux section 1.3, val-s3p2b2-1-macos rows D1 and D2,
-// val-s3p2b2-1-windows row D3).
+// in both texts. 5fd08069 writes these bytes on Linux, macOS and Windows
+// (measured).
 const (
 	shadowTestFirstHead   = "ref: refs/heads/.invalid\n"
 	shadowTestFirstConfig = "[core]\n\trepositoryformatversion = 0\n" + shadowTestHelper
@@ -1018,13 +995,12 @@ const (
 // the repository. Where the system links (shadowLinksWorktrees), `shadow` gets
 // the link `worktrees` to it.
 //
-// A poll of 2 ms on a Linux VM saw all of these at one time, before call 6, on
+// A poll of 2 ms on Linux saw all of these at one time, before call 6, on
 // 5fd08069: HEAD with 25 bytes, config with 61 bytes, `info`, `objects`, `refs`
-// (0700), the link, and `real/.git/worktrees` with mode 0700
-// (val-s3p2b2-1-linux, cells s3-first-* and s6-*). The macOS VM shows the same
-// entries and modes. On a Windows VM `real\.git\worktrees` is there as an empty
-// folder before call 10, and the copy has no link (val-s3p2b2-1-windows row
-// D3).
+// (0700), the link, and `real/.git/worktrees` with mode 0700 (measured on
+// Linux). macOS shows the same entries and modes. On Windows
+// `real\.git\worktrees` is there as an empty folder before call 10, and the
+// copy has no link (measured).
 func makeShadowTestCopy(gitDir, shadowDir string) error {
 	if err := os.Mkdir(shadowDir, 0o700); err != nil {
 		return err
@@ -1051,13 +1027,13 @@ func makeShadowTestCopy(gitDir, shadowDir string) error {
 // test. HEAD gets the text of the HEAD of the repository at gitDir. The config
 // gets the text of the copied settings for listing, the listing of the config
 // of that repository (shadowConfigText), and then the helper.check block. On
-// 5fd08069 the second config has 181 bytes on a Linux VM and 237 on a Windows
-// VM, and the second HEAD is `ref: refs/heads/master` and a newline (the rows
-// of makeShadowTestCopy).
+// 5fd08069 the second config has 181 bytes on Linux and 237 on Windows, and
+// the second HEAD is `ref: refs/heads/master` and a newline (the rows of
+// makeShadowTestCopy).
 //
 // The step of this write is not fixed by a record. On gits 2.11.4 and 2.12.5
-// the test ends at call 9, and the poll saw both texts there
-// (val-s3p2b2-1-linux cells s6-*). So the write comes before the end of call
+// the test ends at call 9, and the poll saw both texts there (measured on
+// Linux). So the write comes before the end of call
 // 9. claustrum writes right after call 7, whose listing the text needs, and
 // before call 8. Each of the two files is a new file then, with a new inode
 // (writeShadowTestFiles).
@@ -1072,9 +1048,8 @@ func fillShadowTestCopy(gitDir, shadowDir string, listing []byte) error {
 
 // writeShadowTestFiles writes HEAD and config of the folder `shadow` of the
 // test as new files (writeNewFile). On 5fd08069 both files have a new inode
-// number in their second state, in 14 of 14 cells (val-s3p2b2-3-linux2 row D5,
-// Linux VM), and a poll saw `.check-<n>/shadow/.tmp-<digits>` (val-s3p2b2-3-macos
-// row D7, macOS VM).
+// number in their second state, in 14 of 14 cells (measured on Linux), and a poll
+// saw `.check-<n>/shadow/.tmp-<digits>` (measured on macOS).
 func writeShadowTestFiles(shadowDir string, head, config []byte) error {
 	root, err := os.OpenRoot(shadowDir)
 	if err != nil {
@@ -1095,13 +1070,13 @@ func writeShadowTestFiles(shadowDir string, head, config []byte) error {
 // repository (askGit), the daemon's own read of the config with its included
 // files, and then the folder of the repository. The call log of a first git.info
 // has the ten test calls, that one call, the reads and then the first listing
-// (s3p2-linux cell B3a and cell 1 of s3p2b-edges2-linux, Linux VM).
+// (measured on Linux).
 //
 // A bad answer of git ends the gate before the read: the request makes no
-// other git call, and the repository gets no folder (cell 39 of
-// s3p2b-edges-linux2). For git's own refusal of the repository the method gives
-// its "no repository" answer, and for every other bad answer the text. Each
-// method gives that text the shape of a failed start test (cells 38 and 39).
+// other git call, and the repository gets no folder (measured). For git's own
+// refusal of the repository the method gives its "no repository" answer, and
+// for every other bad answer the text. Each method gives that text the shape of
+// a failed start test (measured).
 //
 // The daemon makes no call of its own about the owner for a refused config,
 // and it uses no kept refused read: 5fd08069 reads the config again in each
@@ -1109,18 +1084,18 @@ func writeShadowTestFiles(shadowDir string, head, config []byte) error {
 // and it reads the config the same way.
 //
 // The test runs for a trusted git directory. A folder in which the daemon
-// finds no usable git folder starts no test and makes no folder (s3p2-linux
-// cell E5 and s3-linux cell A1, Linux VM). git.info on a `.git` file to a
-// missing path is the exception (gitInfo). Each method gives the text of a
-// failed test the shape that it gives a refused config: the error object on
-// git.info, git.status and git.list_branches, and the result object on
-// git.worktree_create and git.worktree_remove (s3p2b-edges-linux2 cell 30, Linux
-// VM). With worktreeRoot a remove gives it as the reason of its work-tree
-// refusal (externalWorkTreeRefusal): that shape is not measured.
+// finds no usable git folder starts no test and makes no folder (measured on
+// Linux). git.info on a `.git` file to a missing path is the exception
+// (gitInfo). Each method gives the text of a failed test the shape that it gives
+// a refused config: the error object on git.info, git.status and
+// git.list_branches, and the result object on git.worktree_create and
+// git.worktree_remove (measured on Linux). With worktreeRoot a remove gives it
+// as the reason of its work-tree refusal (externalWorkTreeRefusal): that shape
+// is not measured.
 //
 // In the state fallback-git the read of the config does not run
 // (readsRepoConfig), and the daemon keeps no folder of a repository: its own
-// folder holds the lock file only there (s3p2-oldgit section 5, Linux VM).
+// folder holds the lock file only there (measured on Linux).
 func (req *request) settingsGateRefusal(t gitDirTrust, off jsonTrueSwitch, dir string) (msg string, noRepo bool) {
 	return req.settingsGate(t, off, dir, true)
 }
@@ -1187,13 +1162,13 @@ func (req *request) settingsGate(t gitDirTrust, off jsonTrueSwitch, dir string, 
 // shadowRepoFailureText is the refusal of a request whose folder of the
 // repository cannot be made or brought up to date. 5fd08069 answers this text
 // for a folder that cannot be made, with the error of the mkdir as the cause
-// (syncRepoFolder has the three measured causes). The cells are N4 of
-// val-s3p2b2-3-linux2, val-s3p2b2-3-macos and val-s3p2b2-3-windows. The same
-// request again gets the same line with no git call, and the next request
-// after the cause is gone is normal, with no new read of the config. Both
-// follow here from the kept read and the kept answer of git: nothing of the
-// failure is kept. Every other failure of the step gets the same frame with
-// its own error text (not measured). A repoLimitError is the whole text.
+// (syncRepoFolder has the three measured causes). That is measured on Linux,
+// macOS and Windows. The same request again gets the same line with no git
+// call, and the next request after the cause is gone is normal, with no new
+// read of the config. Both follow here from the kept read and the kept answer
+// of git: nothing of the failure is kept. Every other failure of the step
+// gets the same frame with its own error text (not measured). A
+// repoLimitError is the whole text.
 func shadowRepoFailureText(err error) string {
 	var full repoLimitError
 	if errors.As(err, &full) {

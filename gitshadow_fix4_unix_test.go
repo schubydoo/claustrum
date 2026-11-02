@@ -44,9 +44,9 @@ func entriesWith(dir, prefix string) []string {
 // TestShadowIncludeStepEntries: during the include step of a create the
 // pattern file has mode 0644, and the index folder of the checkout is still
 // there. 5fd08069 keeps `.index-<n>` until the reply, and its `patterns` file
-// is `f 0644 11` (val-s3p2b2-3-linux2 rows D2 and D3, Linux VM, and
-// val-s3p2b2-3-macos rows D1 and D2, macOS VM). The stub holds each `ls-files`
-// call, and the test looks at the folder of the daemon in that time.
+// is `f 0644 11` (measured on Linux and macOS). The stub holds each
+// `ls-files` call, and the test looks at the folder of the daemon in that
+// time.
 func TestShadowIncludeStepEntries(t *testing.T) {
 	useUmask(t, 0o022)
 	f := newSeededShadowFixture(t)
@@ -90,7 +90,7 @@ func TestShadowIncludeStepEntries(t *testing.T) {
 
 // TestShadowStatusFolderComesBeforeTheVersionCall: the temporary git folder of
 // a first git.status is there while the one-time `--attr-source=… version`
-// call runs (val-s3p2b2-3-linux2 row D4: 6 of 6 on 5fd08069, Linux VM).
+// call runs (`5fd08069`, measured on Linux).
 func TestShadowStatusFolderComesBeforeTheVersionCall(t *testing.T) {
 	f := newSeededShadowFixture(t)
 	if raw, _ := f.info(t, f.repo, nil); !strings.Contains(raw, `"isRepo":true`) {
@@ -134,9 +134,8 @@ func TestShadowStatusFolderComesBeforeTheVersionCall(t *testing.T) {
 // TestShadowHeadThatIsALink: a HEAD that is a symbolic link to a branch ref
 // gets a copy that is a plain file with the text `ref: <target>` and a newline,
 // and the methods answer normally. 5fd08069 writes `ref: refs/heads/main`, 21
-// bytes, mode 0600 (cells N4-headlink of val-s3p2b2-3-linux2 and
-// val-s3p2b2-3-macos, Linux and macOS VMs). A link to a ref outside
-// `refs/heads/` gets the same form of copy (cell H1 of val-s3p2b2-7-linux2).
+// bytes, mode 0600 (measured on Linux and macOS). A link to a ref outside
+// `refs/heads/` gets the same form of copy (measured).
 func TestShadowHeadThatIsALink(t *testing.T) {
 	f := newSeededShadowFixture(t)
 	head := filepath.Join(f.gitDir, "HEAD")
@@ -163,8 +162,8 @@ func TestShadowHeadThatIsALink(t *testing.T) {
 	}
 
 	// A link to refs/remotes/origin/<name> gets its copy too, also when the ref
-	// does not exist (cell H1 of val-s3p2b2-7-linux2, Linux VM). git.info then
-	// has no `branch` member, and git.list_branches lists the branches.
+	// does not exist (measured on Linux). git.info then has no `branch` member,
+	// and git.list_branches lists the branches.
 	if err := os.MkdirAll(filepath.Join(f.gitDir, "refs", "remotes", "origin"), 0o755); err != nil {
 		t.Fatal(err)
 	}
@@ -204,9 +203,9 @@ func TestShadowHeadThatIsALink(t *testing.T) {
 // TestShadowAddMakesTheWorktreesFolder: in a repository with no `worktrees`
 // folder the daemon makes it, empty and with mode 0755, before the `worktree
 // add` call, and it stays after an add that fails. 5fd08069 does so in 6 of 6
-// runs (cell N2 of val-s3p2b2-3-linux, Linux VM, and of val-s3p2b2-3-macos,
-// macOS VM). The stub fails the add, so git never makes the folder here. With
-// the member no folder is made (89cb6289 and the build before make none).
+// runs (measured on Linux and macOS). The stub fails the add, so git never
+// makes the folder here. With the member no folder is made (89cb6289 and the
+// build before make none).
 func TestShadowAddMakesTheWorktreesFolder(t *testing.T) {
 	useUmask(t, 0o022)
 	f := newSeededShadowFixture(t)
@@ -249,8 +248,7 @@ func TestShadowAddMakesTheWorktreesFolder(t *testing.T) {
 // TestRepointWorktreeGitFile: the `.git` file of a new worktree is replaced by
 // a new file only when its text is one `gitdir:` line that names a
 // registration through the folder of the copy. 5fd08069 replaces that text on
-// a Linux VM and leaves the text of git 2.50.1 on a macOS VM (cells N1 of
-// val-s3p2b2-3-linux and val-s3p2b2-3-macos).
+// Linux and leaves the text of git 2.50.1 on macOS (measured).
 func TestRepointWorktreeGitFile(t *testing.T) {
 	base := resolveTestRoot(t, t.TempDir())
 	u := gitUse{folder: filepath.Join(base, "S"), repoDir: filepath.Join(base, "S", "R"), gitDir: filepath.Join(base, "repo", ".git")}

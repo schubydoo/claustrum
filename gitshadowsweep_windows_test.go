@@ -9,9 +9,9 @@ import (
 	"testing"
 )
 
-// Cell G10j: a junction in git-shadow with a name of this host goes as a
+// Measured: a junction in git-shadow with a name of this host goes as a
 // junction. The content of its target stays, and claustrum makes no lock file
-// there (D8, cell G10j of round task075-02, Windows VM).
+// there (D8, Windows).
 func TestShadowSweepRemovesAPlantedJunction(t *testing.T) {
 	f := newShadowFixture(t)
 	target := filepath.Join(resolveTestRoot(t, t.TempDir()), "F")
@@ -28,8 +28,9 @@ func TestShadowSweepRemovesAPlantedJunction(t *testing.T) {
 	}
 }
 
-// Cell G3 on Windows: a lock that another process holds open with no sharing
-// keeps its folder (Windows VM). The test holds the lock in that way.
+// Measured on Windows: a lock that another process holds open with no sharing
+// keeps its folder (measured on Windows). The test holds the lock in that
+// way.
 func TestShadowSweepKeepsANoShareLock(t *testing.T) {
 	f := newShadowFixture(t)
 	dead := plantFolder(t, f.run, deadFolderName(), true)

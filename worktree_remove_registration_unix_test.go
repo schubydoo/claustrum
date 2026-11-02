@@ -13,8 +13,8 @@ import (
 )
 
 // Which registration git.worktree_remove deletes, and its git calls, as on 89cb6289.
-// The rows are those of the remove probe on Linux and macOS VMs. This file is unix
-// only, because it compares working directories as text.
+// The rows are those of the remove probe on Linux and macOS. This file is unix only,
+// because it compares working directories as text.
 
 // removeCallLog puts the logging git stand-in on PATH and returns a function that
 // sends one request and gives its frame and its git calls. Each call is one line:
@@ -111,11 +111,11 @@ const callExcludes = "/|-|config --includes --path core.excludesFile D=/dev/null
 // row has one call more than the count of 89cb6289 in its comment.
 const callConfigRead = "/|-|config --no-includes --file - --list -z D=/dev/null"
 
-// daemonX is the daemon GIT_COMMON_DIR part of a call line in rows 1 to 5.
+// daemonX is the daemon GIT_COMMON_DIR part of a call line.
 const daemonX = " C=<fx>/X/.git"
 
 // The GIT_DIR and GIT_COMMON_DIR part of a call line: the pin of T, the daemon
-// environment of rows 1 to 4, and the value in a folder with no repository.
+// environment, and the value in a folder with no repository.
 const (
 	pinT      = " C=<fx>/T/.git"
 	pinX      = " D=<fx>/X/.git C=<fx>/X/.git"
@@ -128,8 +128,8 @@ func callsCheck(cwd, pin string) []string {
 }
 
 // callsPair is the pair of registrationProbe. 5fd08069 sends the heavy profile on
-// this pair in git.worktree_remove, with "shadowDirOff":true (val-s3p2b1 cell A6,
-// Linux, macOS and Windows VMs).
+// this pair in git.worktree_remove, with "shadowDirOff":true (measured on Linux,
+// macOS and Windows).
 func callsPair(gitDir, workTree, pin string) []string {
 	return []string{
 		gitDir + "|H|--git-dir=" + gitDir + " config -z --list" + pin,
@@ -155,9 +155,9 @@ func wantRemoveCalls(t *testing.T, what string, got []string, total int, head ..
 	}
 }
 
-// E1, probe row 1 (B-pre) on Linux, macOS and Windows VMs, and battery row E13 on
-// Linux and Windows VMs: the daemon has GIT_DIR and GIT_COMMON_DIR of X. The folder
-// goes. The entry s0 of T and the branch s0 of T stay. Row 1 makes 9 calls.
+// Measured on Linux, macOS and Windows: the daemon has GIT_DIR and
+// GIT_COMMON_DIR of X. The folder goes. The entry s0 of T and the branch s0 of
+// T stay. The case makes 9 calls.
 func TestWorktreeRemoveDaemonGitDirKeepsEntryOfBaseRepo(t *testing.T) {
 	f := newRegFixture(t)
 	run := removeCallLog(t, f.root)
@@ -178,9 +178,8 @@ func TestWorktreeRemoveDaemonGitDirKeepsEntryOfBaseRepo(t *testing.T) {
 	wantRemoveCalls(t, "row 1", calls, 10, []string{callExcludes + daemonX, callConfigRead + daemonX}, callsCheck("<fx>/T", pinX), callsCheck("<fx>/T", pinX))
 }
 
-// E2, probe row 2 (C-own): the same environment. The daemon creates w1, which git
-// registers in X, and then removes it. The entry w1 of X and the branch w1 of X go.
-// 8 calls.
+// Measured: the same environment. The daemon creates w1, which git registers in X,
+// and then removes it. The entry w1 of X and the branch w1 of X go. 8 calls.
 func TestWorktreeRemoveDaemonGitDirDropsOwnEntryInOtherRepo(t *testing.T) {
 	f := newRegFixture(t)
 	run := removeCallLog(t, f.root)
@@ -212,8 +211,8 @@ func TestWorktreeRemoveDaemonGitDirDropsOwnEntryInOtherRepo(t *testing.T) {
 	wantRemoveCalls(t, "row 2", calls, 9, []string{callConfigRead + daemonX}, callsCheck("<fx>/T", pinX))
 }
 
-// E3, probe row 3 (B-xrec): the same environment. X holds an entry zz whose record
-// names S. The entry zz of X goes and the entry s0 of T stays. 11 calls.
+// Measured: the same environment. X holds an entry zz whose record names
+// S. The entry zz of X goes and the entry s0 of T stays. 11 calls.
 func TestWorktreeRemoveDaemonGitDirDropsEntryByPathInOtherRepo(t *testing.T) {
 	f := newRegFixture(t)
 	zz := f.entry(f.X, "zz")
@@ -234,8 +233,8 @@ func TestWorktreeRemoveDaemonGitDirDropsEntryByPathInOtherRepo(t *testing.T) {
 		callsPair("<fx>/X/.git", "<fx>/T", pinX))
 }
 
-// E4, probe row 4 (B-xbranch): the same environment. X holds a merged branch s0. The
-// branch s0 of X goes. The entry s0 of T and the branch s0 of T stay. 11 calls.
+// Measured: the same environment. X holds a merged branch s0. The branch s0 of
+// X goes. The entry s0 of T and the branch s0 of T stay. 11 calls.
 func TestWorktreeRemoveDaemonGitDirBranchOfOtherRepo(t *testing.T) {
 	f := newRegFixture(t)
 	runGit(t, f.X, "branch", "s0")
@@ -257,9 +256,9 @@ func TestWorktreeRemoveDaemonGitDirBranchOfOtherRepo(t *testing.T) {
 	wantRemoveCalls(t, "row 4", calls, 12, []string{callExcludes + daemonX, callConfigRead + daemonX}, callsCheck("<fx>/T", pinX), callsCheck("<fx>/T", pinX))
 }
 
-// E5, probe row 5 (B-cd-only): the daemon has GIT_COMMON_DIR of X only. The entry s0
-// of T goes. In this fixture X does not hold the commit of T. The branch then stays,
-// and the request makes 7 calls. claustrum answered so before this rule too.
+// Measured: the daemon has GIT_COMMON_DIR of X only. The entry s0 of T goes. In this
+// fixture X does not hold the commit of T. The branch then stays, and the request
+// makes 7 calls. claustrum answered so before this rule too.
 func TestWorktreeRemoveDaemonCommonDirOnlyDropsEntryOfBaseRepo(t *testing.T) {
 	f := newRegFixture(t)
 	run := removeCallLog(t, f.root)
@@ -274,7 +273,7 @@ func TestWorktreeRemoveDaemonCommonDirOnlyDropsEntryOfBaseRepo(t *testing.T) {
 	wantRemoveCalls(t, "row 5", calls, 8, []string{callExcludes + daemonX, callConfigRead + daemonX}, callsCheck("<fx>/T", " C=<fx>/X/.git"))
 }
 
-// E6, probe row 6 (B-gd-only): the daemon has GIT_DIR of X only. The entry s0 of T
+// Measured: the daemon has GIT_DIR of X only. The entry s0 of T
 // stays. 9 calls: the listing and the rev-parse run twice.
 func TestWorktreeRemoveDaemonGitDirOnlyCalls(t *testing.T) {
 	f := newRegFixture(t)
@@ -290,9 +289,8 @@ func TestWorktreeRemoveDaemonGitDirOnlyCalls(t *testing.T) {
 	wantRemoveCalls(t, "row 6", calls, 10, []string{callExcludes, callConfigRead}, callsCheck("<fx>/T", pinX), callsCheck("<fx>/T", pinX))
 }
 
-// E7, probe row 7c and battery rows A1, A3 and G3: baseRepo is <T>/missing/.. with
-// no folder `missing`. The folder goes, the entry s0 stays, and the one git call is
-// the read of the user excludes.
+// Measured: baseRepo is <T>/missing/.. with no folder `missing`. The folder goes,
+// the entry s0 stays, and the one git call is the read of the user excludes.
 func TestWorktreeRemoveMissingBaseRepoKeepsEntry(t *testing.T) {
 	f := newRegFixture(t)
 	run := removeCallLog(t, f.root)
@@ -311,8 +309,8 @@ func TestWorktreeRemoveMissingBaseRepoKeepsEntry(t *testing.T) {
 	wantRemoveCalls(t, "row 7c", calls, 1, []string{callExcludes})
 }
 
-// Row p6d (Linux and macOS VMs): the baseRepo of row 7c with S locked in T. claustrum refuses,
-// and 89cb6289 deletes S. That is divergence D22.
+// Measured: the baseRepo with S locked in T. claustrum refuses, and 89cb6289 deletes S. That
+// is divergence D22.
 func TestWorktreeRemoveMissingBaseRepoLockedStillRefused(t *testing.T) {
 	f := newRegFixture(t)
 	runGit(t, f.T, "worktree", "lock", f.S)
@@ -388,8 +386,8 @@ func TestWorktreeRemoveRegistrationCallLogs(t *testing.T) {
 			}
 			return map[string]any{"baseRepo": plain, "worktreePath": filepath.Join(plain, ".claude", "worktrees", "s0"), "branchName": "s0"}
 		}, removeKept, 5, [][]string{callsCheck("<fx>/plain", pinNoRepo)}, []string{"s0"}},
-		// Battery rows W01 to W07-b, W14, W15 and W16 (Windows VM): the folder and its
-		// entry are gone, and the worktrees directory is empty. The pair runs twice.
+		// Measured on Windows: the folder and its entry are gone, and the
+		// worktrees directory is empty. The pair runs twice.
 		{"W01 gone, no entry", func(t *testing.T, f regFixture) map[string]any {
 			for _, p := range []string{f.S, f.entry(f.T, "s0")} {
 				if err := os.RemoveAll(p); err != nil {
@@ -429,8 +427,8 @@ func TestWorktreeRemoveRegistrationCallLogs(t *testing.T) {
 	}
 }
 
-// Battery row T6 (Linux VM): with a worktreeRoot below a folder of mode 000, the
-// answer comes after 7 calls. The second `rev-parse --absolute-git-dir` does not run.
+// Measured on Linux: with a worktreeRoot below a folder of mode 000, the answer
+// comes after 7 calls. The second `rev-parse --absolute-git-dir` does not run.
 func TestWorktreeRemoveExternalUnreadableRootCalls(t *testing.T) {
 	if os.Geteuid() == 0 {
 		t.Skip("root reads a directory of mode 000")
@@ -454,10 +452,10 @@ func TestWorktreeRemoveExternalUnreadableRootCalls(t *testing.T) {
 		[]string{"<fx>/T|L|config -z --list" + pinT, "<fx>/T|L|worktree list --porcelain -z" + pinT})
 }
 
-// Battery rows Q20, Q20b and Y8w (Linux VM): a worktree beneath a worktreeRoot whose
-// `.git` file names a git dir that is not a verified entry of baseRepo. Nothing is
-// deleted. The calls after the first 7 are those of 89cb6289. Rows Q20b and Y8w make
-// the pair, and row Q20 does not.
+// Measured on Linux: a worktree beneath a worktreeRoot whose `.git` file names a
+// git dir that is not a verified entry of baseRepo. Nothing is deleted. The calls
+// after the first 7 are those of 89cb6289. Two cases make the pair, and one does
+// not.
 func TestWorktreeRemoveExternalUnverifiedCalls(t *testing.T) {
 	check := callsCheck("<fx>/T", pinT)
 	for _, c := range []struct {
@@ -524,9 +522,9 @@ func wantAllCalls(t *testing.T, what string, got []string, want ...string) {
 
 const callForEachRef = "|R|for-each-ref --count=10001 --format=%(objectname)%00%(refname)%00%(symref) refs/heads/"
 
-// Probe row 16 and battery rows R18, R18b and N00 (Linux and macOS VMs): baseRepo is a
-// plain folder and the worktree folder is gone. Each call carries GIT_DIR=/dev/null,
-// the two calls of the branch step too.
+// Measured on Linux and macOS: baseRepo is a plain folder and the worktree
+// folder is gone. Each call carries GIT_DIR=/dev/null, the two calls of the
+// branch step too.
 func TestWorktreeRemoveNoRepositoryCallsCarryNullGitDir(t *testing.T) {
 	f := newRegFixture(t)
 	plain := filepath.Join(f.root, "plain")
@@ -546,14 +544,14 @@ func TestWorktreeRemoveNoRepositoryCallsCarryNullGitDir(t *testing.T) {
 		"<fx>/plain"+callForEachRef+pinNoRepo)
 }
 
-// Battery row N04 (Linux and macOS VMs): the `.git` file of baseRepo names a git dir
-// that is gone. The two listings of the removal fail and carry
-// GIT_COMMON_DIR=<that git dir>. With worktreeRoot the one listing carries it too.
+// Measured on Linux and macOS: the `.git` file of baseRepo names a git dir that is
+// gone. The two listings of the removal fail and carry GIT_COMMON_DIR=<that git
+// dir>. With worktreeRoot the one listing carries it too.
 //
 // With git 2.56 the listing fails with its gitfile text, and 5fd08069 refuses both
-// requests with the error of its call about the repository (cell N04 of round
-// tier0-27, Linux VM). Its calls differ from those of claustrum there, so that
-// branch compares the frames only.
+// requests with the error of its call about the repository (measured on Linux).
+// Its calls differ from those of claustrum there, so that branch compares the
+// frames only.
 func TestWorktreeRemoveGoneGitFileTargetCalls(t *testing.T) {
 	f := newRegFixture(t)
 	r := filepath.Join(f.root, "R")
@@ -598,10 +596,10 @@ func TestWorktreeRemoveGoneGitFileTargetCalls(t *testing.T) {
 	wantAllCalls(t, "N04 remove with worktreeRoot", calls, "<fx>/R|L|config -z --list"+pin)
 }
 
-// Battery row N05a (Linux and macOS VMs): the daemon GIT_DIR names the `.git` file of
-// a linked worktree. The folder is gone. The reply carries branchKept, and the request
-// makes no git call. In the row the read of the user excludes came with an earlier
-// request. Here the removal is the first request, and claustrum makes that read.
+// Measured on Linux and macOS: the daemon GIT_DIR names the `.git` file of a linked
+// worktree. The folder is gone. The reply carries branchKept, and the request makes no
+// git call. In the row the read of the user excludes came with an earlier request.
+// Here the removal is the first request, and claustrum makes that read.
 func TestWorktreeRemoveDaemonGitDirFileMakesNoCall(t *testing.T) {
 	f := newRegFixture(t)
 	twt := filepath.Join(f.root, "T_wt")
@@ -616,8 +614,8 @@ func TestWorktreeRemoveDaemonGitDirFileMakesNoCall(t *testing.T) {
 	wantAllCalls(t, "N05a", calls, callExcludes)
 }
 
-// Battery rows L13z-g and DG2h-g (Linux VM): with worktreeRoot and a baseRepo that
-// holds no repository, the request makes a light listing and `rev-parse
+// Measured on Linux: with worktreeRoot and a baseRepo that holds no
+// repository, the request makes a light listing and `rev-parse
 // --show-toplevel`, both with GIT_DIR=/dev/null.
 func TestWorktreeRemoveExternalNoRepositoryCalls(t *testing.T) {
 	f := newRegFixture(t)
@@ -638,8 +636,8 @@ func TestWorktreeRemoveExternalNoRepositoryCalls(t *testing.T) {
 		"<fx>/N|L|config -z --list"+pinNoRepo, "<fx>/N|L|rev-parse --show-toplevel"+pinNoRepo)
 }
 
-// Battery rows LNKb-g and LNKr-g (Linux VM, LNKb-g on a macOS VM): baseRepo is the
-// head of a chain of 45 symlinks. The one git call is the read of the user excludes.
+// Battery rows LNKb-g and LNKr-g (Linux, LNKb-g on macOS): baseRepo is the head of a
+// chain of 45 symlinks. The one git call is the read of the user excludes.
 func TestWorktreeRemoveExternalSymlinkChainCalls(t *testing.T) {
 	f := newRegFixture(t)
 	prev := f.T
@@ -662,9 +660,9 @@ func TestWorktreeRemoveExternalSymlinkChainCalls(t *testing.T) {
 	wantAllCalls(t, "LNKr-g", calls, callExcludes)
 }
 
-// Battery row DG2i-g (Linux VM): the HEAD of baseRepo reads "garbage" and its
-// commondir is a dangling symlink. The worktree folder is present. The one git call
-// is the read of the user excludes.
+// Measured on Linux: the HEAD of baseRepo reads "garbage" and its commondir is a
+// dangling symlink. The worktree folder is present. The one git call is the read
+// of the user excludes.
 func TestWorktreeRemoveRefusedGitDirReadsExcludes(t *testing.T) {
 	f := newRegFixture(t)
 	writeFile(t, filepath.Join(f.T, ".git", "HEAD"), "garbage\n", 0o644)
@@ -683,9 +681,9 @@ func TestWorktreeRemoveRefusedGitDirReadsExcludes(t *testing.T) {
 	wantAllCalls(t, "DG2i-g", calls, callExcludes)
 }
 
-// Battery row DG1c-g (Linux VM): with worktreeRoot, baseRepo does not exist and the
-// `.git` file of the leaf names an entry of another missing repository. The frame is
-// that of 89cb6289, and the one git call is the read of the user excludes.
+// Measured on Linux: with worktreeRoot, baseRepo does not exist and the `.git` file
+// of the leaf names an entry of another missing repository. The frame is that of
+// 89cb6289, and the one git call is the read of the user excludes.
 func TestWorktreeRemoveExternalMissingBaseRepoFrame(t *testing.T) {
 	f := newRegFixture(t)
 	gone := filepath.Join(f.root, "gone")
@@ -707,9 +705,8 @@ func TestWorktreeRemoveExternalMissingBaseRepoFrame(t *testing.T) {
 	wantAllCalls(t, "DG1c-g", calls, callExcludes)
 }
 
-// Rows p1 and p1b (Linux and macOS VMs): no git on PATH, and a baseRepo that does not
-// exist as sent. The answer is the lock-check refusal, nothing is deleted, and no git
-// call starts.
+// Measured: no git on PATH, and a baseRepo that does not exist as sent. The answer is
+// the lock-check refusal, nothing is deleted, and no git call starts.
 func TestWorktreeRemoveMissingBaseRepoWithoutGitRefuses(t *testing.T) {
 	for _, c := range []struct{ name, base string }{
 		{"p1 missing", "missing"},
@@ -737,9 +734,9 @@ func TestWorktreeRemoveMissingBaseRepoWithoutGitRefuses(t *testing.T) {
 	}
 }
 
-// Row p4 (Linux and macOS VMs): baseRepo holds an empty `.git` folder and lies in an outer
-// repository O. The worktree folder is gone. The branch s0 of O stays, and the request
-// makes 5 calls, each with GIT_DIR=/dev/null.
+// Measured: baseRepo holds an empty `.git` folder and lies in an outer repository O. The
+// worktree folder is gone. The branch s0 of O stays, and the request makes 5 calls, each
+// with GIT_DIR=/dev/null.
 func TestWorktreeRemoveEmptyGitDirKeepsOuterBranch(t *testing.T) {
 	requireGit(t)
 	root := resolveTestRoot(t, t.TempDir())
@@ -800,10 +797,10 @@ func TestWorktreeRemoveUnreadableBaseRepoEntriesRefused(t *testing.T) {
 	}
 }
 
-// Rows q2 and q4 (Linux VM), D22 with a worktreeRoot: the daemon has GIT_DIR of X
-// alone, and the worktree beneath the root is locked in T. claustrum answers the
-// locked refusal and deletes nothing. 89cb6289 deletes nothing either. Windows
-// refuses a worktreeRoot, so this test is in the unix file.
+// Measured on Linux, D22 with a worktreeRoot: the daemon has GIT_DIR of X alone,
+// and the worktree beneath the root is locked in T. claustrum answers the locked
+// refusal and deletes nothing. 89cb6289 deletes nothing either. Windows refuses a
+// worktreeRoot, so this test is in the unix file.
 func TestWorktreeRemoveExternalLockedInBaseRepoIsRefused(t *testing.T) {
 	for _, c := range []struct {
 		name string

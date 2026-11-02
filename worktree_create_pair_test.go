@@ -13,8 +13,8 @@ import (
 // The repository of the fixture has a linked worktree, so the folder of the
 // registrations exists and no entry names the new leaf.
 
-// Cell R-Q4e of round task084-01 (Linux VM). A pair whose second call fails
-// changes nothing: the create succeeds.
+// Measured on Linux. A pair whose second call fails changes nothing:
+// the create succeeds.
 func TestCreatePairThatFailsChangesNothing(t *testing.T) {
 	f := newCheckoutRuleFixture(t)
 	slowGit(t, "--show-toplevel,--work-tree="+f.repo, "fail", 0, "fatal: the stub fails the pair\n", "")
@@ -27,10 +27,10 @@ func TestCreatePairThatFailsChangesNothing(t *testing.T) {
 	}
 }
 
-// Cell R-Q4d of round task084-01 (Linux VM, 3 of 3 runs). The second call of
-// the pair is held past the timeoutMs of the caller. It gets no signal, the add
-// runs after it, and the create answers the timeout before the checkout with
-// the rollback: the leaf, the registration and the branch go.
+// Measured on Linux, 3 of 3 runs. The second call of the pair is held past the
+// timeoutMs of the caller. It gets no signal, the add runs after it, and the
+// create answers the timeout before the checkout with the rollback: the leaf,
+// the registration and the branch go.
 func TestCreatePairPastTheDeadline(t *testing.T) {
 	f := newCheckoutRuleFixture(t)
 	const hold = 2500 * time.Millisecond
@@ -59,10 +59,9 @@ func TestCreatePairPastTheDeadline(t *testing.T) {
 }
 
 // TestCreatePairCases is the portable table of the pair. It runs for an entry
-// of another worktree, in the state shadow (cell R-Q2b of round task084-01) and
-// with "shadowDirOff":true (cell 50a of s3p2b-edges-linux). It does not run for
-// a stale entry of the leaf (cell R-Q2c) or with no registrations folder (cell
-// R-Q2a with the member).
+// of another worktree, in the state shadow (measured) and with
+// "shadowDirOff":true. It does not run for a stale entry of the leaf (measured)
+// or with no registrations folder (measured with the member).
 func TestCreatePairCases(t *testing.T) {
 	stale := func(t *testing.T, f checkoutRuleFixture) {
 		old := filepath.Join(f.gitDir, worktreesSubdir, "old")

@@ -102,14 +102,14 @@ func TestWorktreeRemoveExternalDirSymlink(t *testing.T) {
 
 // A worktreePath that ends in a slash, with a worktreeRoot. The <directory> tests
 // read the cleaned path, so "R/proj/w1/" is judged at "R/proj", not at "R/proj/w1".
-// The frames were measured against f6010b97 and 90fca6e6 on Linux and macOS VMs
-// (rows XS_c_slash, XS_c_slash_exists, XS2_c_slash_twice). Without the clean, the
-// first case created the worktree in R/proj and wrote the marker there, and the
-// others named the wrong directory.
+// The frames were measured against f6010b97 and 90fca6e6 on Linux and macOS (rows
+// XS_c_slash, XS_c_slash_exists, XS2_c_slash_twice). Without the clean, the first
+// case created the worktree in R/proj and wrote the marker there, and the others
+// named the wrong directory.
 func TestWorktreeExternalTrailingSlash(t *testing.T) {
 	requireGit(t)
 	// The paths are resolved: two of the refusals name the path with the symlinks
-	// of its parent folder resolved (cells U3a and U3a2).
+	// of its parent folder resolved (measured).
 	base := realTempDir(t)
 	requireTempOutsideCheckout(t, base)
 	repo := filepath.Join(base, "T")
@@ -243,8 +243,8 @@ func groupRoot(t *testing.T, gid int, perm os.FileMode) string {
 // A group-writable worktreeRoot counts as private only when the flat passwd and
 // group files show the group as the daemon user's own. The fixture files carry the
 // euid and egid of the test, so the host's own files play no part. A row named
-// with an L, M, P, X or VR number follows that measured row (f6010b97, Linux and macOS
-// VMs). A row named not_measured_ pins a choice that no capture measured.
+// with an L, M, P, X or VR number follows that measured row (`f6010b97`, measured on
+// Linux and macOS). A row named not_measured_ pins a choice that no capture measured.
 func TestWorktreeRootShareRefusalGroupRule(t *testing.T) {
 	uid, gid := os.Geteuid(), os.Getegid()
 	me := fmt.Sprintf("sgme:x:%d:%d:me:/home/sgme:/bin/sh\n", uid, gid)

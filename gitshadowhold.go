@@ -11,26 +11,25 @@ import (
 // The hold of a repository folder <S>/<32 hex> by one git child.
 //
 // On 5fd08069 a folder that a git call of a request is using is never removed
-// (E2L cell 37, Linux VM). A folder goes between two git calls of its own
-// request, and never during one (E3L cell 54, Linux VM). A folder that went and
-// came back gets no second read of the repository config (E3L cell 54). The
-// mechanism below is from the code: a child whose GIT_COMMON_DIR names a
-// repository folder of this daemon holds that folder from just before its
-// start until the wait for it ends. That is its exit, plus up to 2 s for most
-// calls while its output pipes stay open. The build of a git call makes a
-// folder that went or that a failed build left incomplete whole again
-// (gitUse.renewCopy), except for a call right after its own config listing. A
-// refusal is the error of that one call. The request keeps no refusal, and its
-// next call is built and runs as any call.
+// (measured on Linux). A folder goes between two git calls of its own request,
+// and never during one (measured on Linux). A folder that went and came back
+// gets no second read of the repository config (measured). The mechanism below
+// is from the code: a child whose GIT_COMMON_DIR names a repository folder of
+// this daemon holds that folder from just before its start until the wait for
+// it ends. That is its exit, plus up to 2 s for most calls while its output
+// pipes stay open. The build of a git call makes a folder that went or that a
+// failed build left incomplete whole again (gitUse.renewCopy), except for a
+// call right after its own config listing. A refusal is the error of that one
+// call. The request keeps no refusal, and its next call is built and runs as
+// any call.
 
 // repoCopyGoneText is the refusal of a git child whose repository folder this
-// daemon no longer has a record of. 5fd08069 answers it in E3L cell 54 and EL2
-// cell 47 (Linux VM).
+// daemon no longer has a record of. 5fd08069 answers it (measured on Linux).
 const repoCopyGoneText = "Claude could not prepare its own files on the remote machine: its copy of this repository's settings was cleared away before git started; try again"
 
 // listingInForcePrefix starts the refusal of a refused config listing child.
-// 5fd08069 answers that text with no other prefix (E3L cell 54 and EL2 cell 47,
-// Linux VM, EW cell 46, Windows VM).
+// 5fd08069 answers that text with no other prefix (measured on Linux and
+// Windows).
 const listingInForcePrefix = "listing the configuration in force: "
 
 // repoCopyGone is the error of a git child that does not start, because its

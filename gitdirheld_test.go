@@ -15,9 +15,9 @@ import (
 // has a registration `wr` of its own, whose record names the same worktree, so
 // a step that goes through the path finds a match in T.
 //
-// No row of 5fd08069 has a swap at these steps. The rule is that of cells X1c
-// and X1p of val-s3p2b2-7-windows (Windows VM): nothing in T goes, and T gets
-// nothing. Every removal is a recorder, and each folder is below t.TempDir.
+// No row of 5fd08069 has a swap at these steps. The rule is that (measured on
+// Windows): nothing in T goes, and T gets nothing. Every removal is a
+// recorder, and each folder is below t.TempDir.
 
 // heldFixture is a repository with the linked worktree `wr`, a create that
 // holds its git directory, and the folder T.
@@ -162,12 +162,12 @@ func TestRollbackOfAHeldCreate(t *testing.T) {
 	}
 }
 
-// TestRollbackWithASwapWhileTheLeafGoes must match table S2 of
-// val-s3p2b2-12-windows (Windows VM): the link takes the place of the git
-// directory while the rollback clears the leaf. 5fd08069 then keeps the
-// registration and the branch and answers that they remain. The leaf is gone.
-// Without the second test of the held folder the recorder gets the delete of
-// the registration, and the branch step runs.
+// TestRollbackWithASwapWhileTheLeafGoes must match a measured case (on
+// Windows): the link takes the place of the git directory while the
+// rollback clears the leaf. 5fd08069 then keeps the registration and the
+// branch and answers that they remain. The leaf is gone. Without the second
+// test of the held folder the recorder gets the delete of the registration,
+// and the branch step runs.
 func TestRollbackWithASwapWhileTheLeafGoes(t *testing.T) {
 	f := newHeldFixture(t)
 	leaf, stderr, err := stagedAdd(t, f.repoFolderFixture, f.u)

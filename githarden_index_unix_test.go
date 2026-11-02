@@ -16,8 +16,8 @@ import (
 )
 
 // These tests pin the index file of a new worktree and the answer to a failed
-// placement. The rows are those of 89cb6289 on Linux and macOS VMs: A1 to A13 for the
-// file, and A14, A14f and A14b for the failure.
+// placement. The rows are those of 89cb6289 on Linux and macOS, for the file
+// and for the failure.
 
 // indexSource writes a temporary index of mode 0640 with an mtime that is not a
 // whole microsecond, and returns its path and its file info as read back.
@@ -31,7 +31,7 @@ func indexSource(t *testing.T) (string, os.FileInfo) {
 	if err := os.Chmod(src, 0o640); err != nil {
 		t.Fatal(err)
 	}
-	// The mtime of the temporary index of row A8, run 1 (Linux VM).
+	// The mtime of the temporary index, run 1 (measured on Linux).
 	when := time.Unix(1791348054, 843264033)
 	if err := os.Chtimes(src, when, when); err != nil {
 		t.Fatal(err)
@@ -44,10 +44,10 @@ func indexSource(t *testing.T) (string, os.FileInfo) {
 }
 
 // TestInstallWorktreeIndexNewFile pins the file that the placement leaves: a new
-// inode with the bytes of the temporary index, mode 0666 less the umask (rows A12a,
-// A12b and the 0022 rows), and the mtime of the temporary index rounded up to a
-// whole microsecond. The temporary file stays for its owner to remove. The umask is
-// process-wide, so this test does not run in parallel.
+// inode with the bytes of the temporary index, mode 0666 less the umask (measured),
+// and the mtime of the temporary index rounded up to a whole microsecond. The
+// temporary file stays for its owner to remove. The umask is process-wide, so this
+// test does not run in parallel.
 func TestInstallWorktreeIndexNewFile(t *testing.T) {
 	for _, tc := range []struct {
 		name  string
@@ -93,8 +93,8 @@ func TestInstallWorktreeIndexNewFile(t *testing.T) {
 }
 
 // TestRoundUpToMicrosecond pins the rounding of the index mtime. The first pair is
-// row A8, run 1 (Linux VM). A whole microsecond stays: claustrum's choice (not
-// measured).
+// from one measured run (on Linux). A whole microsecond stays: claustrum's choice
+// (not measured).
 func TestRoundUpToMicrosecond(t *testing.T) {
 	for _, tc := range []struct{ in, want int64 }{
 		{843264033, 843265000},
@@ -110,10 +110,10 @@ func TestRoundUpToMicrosecond(t *testing.T) {
 	}
 }
 
-// TestInstallWorktreeIndexReplacesFile pins cell X8 (Linux and macOS VMs). A file of
-// mode 0600 exists at the index before the placement. The index is then a new
-// inode, not that file and not the temporary file, with mode 0644 under umask 0022.
-// The umask is process-wide, so this test does not run in parallel.
+// TestInstallWorktreeIndexReplacesFile pins a measured case (on Linux and macOS). A
+// file of mode 0600 exists at the index before the placement. The index is then a
+// new inode, not that file and not the temporary file, with mode 0644 under
+// umask 0022. The umask is process-wide, so this test does not run in parallel.
 func TestInstallWorktreeIndexReplacesFile(t *testing.T) {
 	src, srcInfo := indexSource(t)
 	adminDir := filepath.Join(t.TempDir(), "worktrees", "w1")
@@ -281,8 +281,8 @@ func TestRelativeAdminDirThroughSymlink(t *testing.T) {
 
 // TestInstallWorktreeIndexCleanPathTexts pins that a clean admin dir, as git writes
 // it, is not resolved first. The errors then name the registration and the file,
-// relative to the registrations directory. 89cb6289 gives the first text in cell
-// Z10 and the second in cell Z11a (macOS VM). The third state is not measured.
+// relative to the registrations directory. 89cb6289 gives the first text and the
+// second (measured on macOS). The third state is not measured.
 func TestInstallWorktreeIndexCleanPathTexts(t *testing.T) {
 	if os.Geteuid() == 0 {
 		t.Skip("a mode without the search bit does not stop root")
@@ -317,8 +317,8 @@ func TestInstallWorktreeIndexCleanPathTexts(t *testing.T) {
 
 // TestInstallWorktreeIndexErrors pins the errors of a placement. A registration
 // without its write bit names the registration and the file, relative to the
-// registrations directory (rows A14, A14f and A14b). A temporary index that is gone
-// names its path (cell X1). A registrations directory that is gone fails too.
+// registrations directory (measured). A temporary index that is gone names its path
+// (measured). A registrations directory that is gone fails too.
 func TestInstallWorktreeIndexErrors(t *testing.T) {
 	if os.Geteuid() == 0 {
 		t.Skip("a read-only directory does not stop root")
@@ -342,14 +342,15 @@ func TestInstallWorktreeIndexErrors(t *testing.T) {
 
 // TestIndexInstallText pins the text of a failed placement: the stderr of the
 // checkout and the error with nothing between them, cut at 512 bytes as one text.
-// The cells are those of 89cb6289 on a Linux VM.
+// The cells are those of 89cb6289 on Linux.
 //
-//   - Rows A14 and A14f: a stderr that ends with one newline gives one space.
-//   - Cell Y2a: no final newline gives no space. Cell Y2b: two give two spaces.
-//   - Cell X2: no stderr gives the error alone.
-//   - Cells Y1b, Y1a and Y1c: a stderr of 478 bytes keeps the whole error, 500
-//     bytes keep 12 bytes of it, and 512 bytes keep none.
-//   - Cell X3: a stderr over 512 bytes gives its first 512 bytes and no error.
+//   - Measured: a stderr that ends with one newline gives one space.
+//   - Measured: no final newline gives no space. Measured: two give two spaces.
+//   - Measured: no stderr gives the error alone.
+//   - Measured: a stderr of 478 bytes keeps the whole error, 500 bytes keep 12
+//     bytes of it, and 512 bytes keep none.
+//   - Measured: a stderr over 512 bytes gives its first 512 bytes and no
+//     error.
 func TestIndexInstallText(t *testing.T) {
 	const text = "openat w1/index: permission denied"
 	err := errors.New(text)
@@ -371,13 +372,13 @@ func TestIndexInstallText(t *testing.T) {
 	}
 }
 
-// TestWorktreeCreateIndexIgnoresSharedRepository pins row A13. With
+// TestWorktreeCreateIndexIgnoresSharedRepository pins a measured case. With
 // core.sharedRepository group and umask 0022, git writes its temporary index with
 // mode 0664. The index of the new worktree is 0644 all the same. The umask is
 // process-wide, so this test does not run in parallel.
 //
 // The git stub records the mode of the temporary index. If that mode is not 0664,
-// the fixture does not stage row A13, and the test fails with that reason.
+// the fixture does not stage that case, and the test fails with that reason.
 func TestWorktreeCreateIndexIgnoresSharedRepository(t *testing.T) {
 	_, repo := createModesRepo(t)
 	runGit(t, repo, "config", "core.sharedRepository", "group")
@@ -452,12 +453,12 @@ const checkoutFailedHead = `{"jsonrpc":"2.0","id":1,"result":{"success":false,"e
 // The registration stays, and no branch step runs. The temporary index folder is
 // removed.
 //
-//   - Rows A14 and A14f (Linux VM), A14 and A14b (macOS VM): the leaf is deleted.
-//     Branch w1 stays, although main reaches its tip.
-//   - Cell X5 (Linux and macOS VMs): in attach mode the text names the
-//     registration alone. The attached branch stays.
-//   - Cell X11 (Linux VM): the parent of the leaf is read-only too, so the empty
-//     leaf stays. The frame carries the registration text alone.
+//   - Measured on Linux and macOS:
+//     the leaf is deleted. Branch w1 stays, although main reaches its tip.
+//   - Measured: in attach mode the text names the registration alone.
+//     The attached branch stays.
+//   - Measured: the parent of the leaf is read-only too, so the empty leaf
+//     stays. The frame carries the registration text alone.
 func TestWorktreeCreateIndexInstallFails(t *testing.T) {
 	const both = "the worktree registration and the branch remain; remove them by hand before retrying (RemoveAll w1: permission denied)"
 	const attach = "the worktree registration remains; remove it by hand before retrying (RemoveAll w1: permission denied)"
@@ -518,12 +519,12 @@ func TestWorktreeCreateIndexInstallFails(t *testing.T) {
 	}
 }
 
-// TestWorktreeCreateTempIndexGone pins cell X1 (Linux and macOS VMs). The git stub
-// runs the real read-tree and then deletes the temporary index. The request answers
-// worktree_add_failed "(checkout)" with the stderr of the checkout and the open
-// text, and the whole rollback runs: the leaf, the registration and branch w1 go.
-// The temporary folder in the text has the prefix of the cell, claude-ssh-index-,
-// and a decimal number after it.
+// TestWorktreeCreateTempIndexGone pins a measured case (on Linux and macOS). The
+// git stub runs the real read-tree and then deletes the temporary index. The
+// request answers worktree_add_failed "(checkout)" with the stderr of the checkout
+// and the open text, and the whole rollback runs: the leaf, the registration and
+// branch w1 go. The temporary folder in the text has the prefix of the cell,
+// claude-ssh-index-, and a decimal number after it.
 func TestWorktreeCreateTempIndexGone(t *testing.T) {
 	f, s, tmp := indexInstallFixture(t)
 	t.Setenv("CLAUSTRUM_GITSTUB_ACTION", "rmindex")
@@ -543,14 +544,14 @@ func TestWorktreeCreateTempIndexGone(t *testing.T) {
 // 89cb6289 that hold an entry at the index: the exclusive create first, then one
 // plain remove on "file exists", then the create again.
 //
-//   - Cell Y3 (Linux VM): a file, registration 0500: the remove fails.
-//   - Cell Y7 (Linux VM): a folder that holds a file: the remove fails.
-//   - Cell Z11b (macOS VM): a file, registrations directory 0600: the create fails
-//     first, so the text is the openat one.
-//   - Cell Z7a (macOS VM): an empty folder is replaced by the index.
-//   - Cell Z7b (macOS VM): a symlink goes, its target stays, and the index is a file.
+//   - Measured: a file, registration 0500: the remove fails.
+//   - Measured: a folder that holds a file: the remove fails.
+//   - Measured: a file, registrations directory 0600: the create fails first, so
+//     the text is the openat one.
+//   - Measured: an empty folder is replaced by the index.
+//   - Measured: a symlink goes, its target stays, and the index is a file.
 //
-// Rows A14, X8, Z10 and Z11a have their own tests above.
+// Measurements have their own tests above.
 func TestInstallWorktreeIndexOrder(t *testing.T) {
 	if os.Geteuid() == 0 {
 		t.Skip("a mode without the write or search bit does not stop root")
@@ -615,10 +616,10 @@ func TestInstallWorktreeIndexOrder(t *testing.T) {
 	}
 }
 
-// TestRelativeBackPointer pins cell Z9b (macOS VM). git wrote both records as
-// relative paths, and the worktree root is a symlink three levels deeper than its
-// target. The rollback check must find the registration, so that the rollback
-// takes the same path as in row A14. The two values are those of the cell.
+// TestRelativeBackPointer pins a measured case (on macOS). git wrote both
+// records as relative paths, and the worktree root is a symlink three levels
+// deeper than its target. The rollback check must find the registration, so that
+// the rollback takes the same path as. The two values are those of the cell.
 func TestRelativeBackPointer(t *testing.T) {
 	base := resolveTestRoot(t, t.TempDir())
 	repo := filepath.Join(base, "T")
@@ -642,15 +643,14 @@ func TestRelativeBackPointer(t *testing.T) {
 	}
 }
 
-// TestWorktreeCreateRegistrationsUnreadable pins the frame and the disk of cells
-// Z11a, Z11b and Z13 (macOS VM). The git stub runs the real read-tree
-// and then sets the registrations directory to mode 0600. The index cannot be
-// placed, and the rollback cannot delete the registration. The
-// frame carries the openat text and the registration clause, the leaf goes, and
-// the registration and the branch stay: no branch step runs. The text in the
-// parentheses is the error of the delete, as in the cells. In cell Z11b a file is
-// at the index first, and it keeps its bytes. Cell Z13 is cell Z11a in attach
-// mode, where the clause names the registration alone.
+// TestWorktreeCreateRegistrationsUnreadable pins the frame and the disk (measured
+// on macOS). The git stub runs the real read-tree and then sets the registrations
+// directory to mode 0600. The index cannot be placed, and the rollback cannot
+// delete the registration. The frame carries the openat text and the registration
+// clause, the leaf goes, and the registration and the branch stay: no branch step
+// runs. The text in the parentheses is the error of the delete, as in the cells.
+// In a measurement, a file is at the index first, and it keeps its bytes. One
+// measured case is in attach mode, where the clause names the registration alone.
 func TestWorktreeCreateRegistrationsUnreadable(t *testing.T) {
 	const both = "the worktree registration and the branch remain; remove them by hand before retrying (RemoveAll w1: permission denied)"
 	const attach = "the worktree registration remains; remove it by hand before retrying (RemoveAll w1: permission denied)"

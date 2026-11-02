@@ -26,7 +26,7 @@ func isSymlinkLoop(err error) bool {
 // worktreeRootShareRefusal. It returns the <directory> level with the symlinks of
 // the root resolved. When the create must stop, it also returns the error text and
 // the errorCode. claustrum takes these steps, and the texts they send match
-// f6010b97 on Linux and macOS VMs:
+// f6010b97 on Linux and macOS:
 //
 //  1. claustrum resolves the deepest existing prefix of the root with
 //     filepath.EvalSymlinks. A symlink loop refuses the create with unsafe_path,
@@ -103,9 +103,8 @@ func gitEntryRefusal(worktreeRoot, d string) (msg, code string) {
 // than the kernel follows, or one that resolves to the file system root. It answers
 // "" for any other root. The kernel limit counts: filepath.EvalSymlinks follows up to
 // 255 links. 5fd08069 refuses a chain of 45 links and a loop, for a create and for a
-// remove, and nothing is made or removed (cells C-W13, C-S5 and C-W23 of round
-// tier0-20, Linux VM). It refuses a link to "/" (cells C-W20 and C-S6). The exact
-// link limit is not measured. verb is "create" or "remove".
+// remove, and nothing is made or removed (measured on Linux). It refuses a link to
+// "/" (measured). The exact link limit is not measured. verb is "create" or "remove".
 func locationLinkRefusal(worktreeRoot, verb string) string {
 	prefix := filepath.Clean(worktreeRoot)
 	loop, missing := false, false
@@ -140,13 +139,13 @@ func locationLinkRefusal(worktreeRoot, verb string) string {
 
 // externalDirLevelCheck tests dir, the resolved <directory> level, when it exists.
 // It comes after worktreeRootShareRefusal and the <directory> symlink refusal, and
-// before the non-empty and "already exists" refusals. Linux and macOS VMs measured
-// the order against the symlink refusal. The texts match f6010b97 on both:
+// before the non-empty and "already exists" refusals. Linux and macOS measured the
+// order against the symlink refusal. The texts match f6010b97 on both:
 //   - A dir that is not a directory reads "<path> is not a directory".
 //   - A .git entry in it refuses the create with unsafe_path.
 //   - A failed lstat of that entry reads "statat <name>/.git: <errno>".
 //
-// The texts name the resolved path, as Linux and macOS VMs measured under a
+// The texts name the resolved path, as Linux and macOS measured under a
 // symlinked root.
 func externalDirLevelCheck(dir string) (msg, code string) {
 	fi, err := os.Stat(dir)
@@ -188,24 +187,22 @@ var rootAncestorStat = func(path string) (uid, gid uint32, mode fs.FileMode, err
 // rootAncestorFault judges one directory above a worktreeRoot. uid, gid and mode
 // are its owner, group and mode, and euid is the daemon user. It returns "" when
 // the directory passes. Otherwise it returns the part of the refusal after
-// "which is ". The rules match f6010b97 and 89cb6289 on Linux and macOS VMs:
+// "which is ". The rules match f6010b97 and 89cb6289 on Linux and macOS:
 //
 //   - The owner test comes first. uid 0 and the daemon user pass. Any other owner
-//     refuses, and the sticky bit does not clear it (rows G9, G10, G31 and G32).
-//     The uid prints as an unsigned number (4294967294 on macOS).
-//   - The sticky bit clears both mode tests (rows G4, G5 and G27).
+//     refuses, and the sticky bit does not clear it (measured). The uid prints as
+//     an unsigned number (4294967294 on macOS).
+//   - The sticky bit clears both mode tests (measured).
 //   - The group-write bit refuses unless the group is private, as in
-//     rootGroupIsPrivate (rows K1, G1, G6, G6b, G7, G8 and G33c). The other-write
-//     bit always refuses (rows G2 and G3). An owner of uid 0 gets no exemption
-//     here (rows G8, G28, G33a and G33b).
-//   - The mode prints the permission bits only, as four octal digits (rows G7,
-//     G36a and G36b).
+//     rootGroupIsPrivate (measured). The other-write bit always refuses
+//     (measured). An owner of uid 0 gets no exemption here (measured).
+//   - The mode prints the permission bits only, as four octal digits
+//     (measured).
 //
-// Rows G1, G32, G33a, G33c, G34b and G36b ran on Linux only. A macOS VM ran the
-// other round 2 rows against 89cb6289 only. Not measured: whether "you" is the
-// real or the effective uid. claustrum uses the effective uid, as the root's own
-// write test does. The private-group test on an ancestor is measured only for the
-// stock layouts.
+// Part of the rows ran on Linux only. A macOS test ran the others against
+// 89cb6289 only. Not measured: whether "you" is the real or the effective uid.
+// claustrum uses the effective uid, as the root's own write test does. The
+// private-group test on an ancestor is measured only for the stock layouts.
 func rootAncestorFault(uid, gid uint32, mode fs.FileMode, euid int) string {
 	if uid != 0 && int64(uid) != int64(euid) {
 		return fmt.Sprintf("owned by uid %d, neither you nor the system; "+
@@ -228,38 +225,34 @@ func rootAncestorFault(uid, gid uint32, mode fs.FileMode, euid int) string {
 // worktreeRootAncestorRefusal refuses a worktreeRoot below a directory owned by a
 // user other than you or uid 0. It also refuses one below a directory writable by
 // a shared group or by every user, without the sticky bit. It returns "" when the
-// root passes. Only git.worktree_create runs it, with a worktreeRoot (rows G21 to
-// G26). The text names worktreeRoot as sent and the failing directory with its
-// symlinks resolved.
-// The walk matches f6010b97 and 89cb6289 on Linux and macOS VMs:
+// root passes. Only git.worktree_create runs it, with a worktreeRoot (measured).
+// The text names worktreeRoot as sent and the failing directory with its symlinks
+// resolved. The walk matches f6010b97 and 89cb6289 on Linux and macOS:
 //
 //  1. It takes the directories above the cleaned root, top first. The root itself
 //     is not judged. Only the root's chain is walked, not the chain of baseRepo
-//     (row G20).
+//     (measured).
 //  2. It resolves each one with filepath.EvalSymlinks. A missing level ends the
 //     walk. Every level below it is missing too, so no existing level above the
-//     root is skipped for that reason (rows G13a and G13b). Any other failed resolve also
-//     ends the walk with "". The root-chain step then gives its own answer (rows
-//     G37b and G39).
+//     root is skipped for that reason (measured). Any other failed resolve also ends the
+//     walk with "". The root-chain step then gives its own answer (measured).
 //  3. It judges each directory from "/" down to that resolved path, with
 //     rootAncestorFault, and skips one it judged before. So a directory above a
 //     symlink target and a lexical directory above a symlink are both judged
-//     (rows G14 to G15b, G14b, G14d and G27g).
+//     (measured).
 //  4. Last it resolves the root itself. It judges each directory from "/" down to
 //     the parent of the resolved root, and skips one it judged before. So when the
-//     root is a symlink, the chain above its target is judged (row G42, Linux
-//     and macOS VMs, 89cb6289 only). A root that does not resolve ends the walk
-//     with "".
+//     root is a symlink, the chain above its target is judged (measured on Linux
+//     and macOS, 89cb6289 only). A root that does not resolve ends the walk with
+//     "".
 //  5. The first failing directory reached refuses the create. When the failing
-//     directories lie on one chain, that is the highest one (rows G11, G12, G34a,
-//     G34b and G35).
+//     directories lie on one chain, that is the highest one (measured).
 //
 // A directory is judged before the walk looks into it. So a failing directory above
-// the root is named even when its owner has no search access to it (row G36a).
+// the root is named even when its owner has no search access to it (measured).
 //
-// Rows G1, G32, G33a, G33c, G34b and G36b ran on Linux only. A macOS VM ran the
-// other round 2 rows and row G42 against 89cb6289 only. Not measured, and
-// claustrum's choice:
+// Part of the rows ran on Linux only. A macOS test ran the others
+// against 89cb6289 only. Not measured, and claustrum's choice:
 //   - Two failing directories on different branches of the resolution, where the
 //     first one reached is not the highest. claustrum names the first one reached.
 //   - A failing directory above a dangling link. The walk reaches the failing
@@ -274,20 +267,19 @@ func rootAncestorFault(uid, gid uint32, mode fs.FileMode, euid int) string {
 //   - A failed stat of a path that the walk just resolved. The walk returns "".
 //   - The target of a symlinked root is not judged itself, as the root is not.
 //
-// 5fd08069 adds these rules (round tier0-20, Linux VM):
+// 5fd08069 adds these rules (measured on Linux):
 //   - A folder above the root that is a symbolic link is judged by its owner. A
-//     link owned by another user than you or uid 0 refuses (cell C-W16). Its mode
+//     link owned by another user than you or uid 0 refuses (measured). Its mode
 //     is not judged (not measured).
 //   - A regular file is not judged. The walk ends, and the root-chain step answers
-//     "not a directory" (cell C-W14).
+//     "not a directory" (measured).
 //   - After its owner and mode, each directory gets the tests of c.refusalAt and then
 //     the .git test of the root-chain step. So a checkout higher up wins over a
-//     writable directory below it (cell C-W15). The order of these tests in one
+//     writable directory below it (measured). The order of these tests in one
 //     directory is not measured.
 //   - These tests also run on a folder above a link in the root that leads out of
 //     it. A root through a link out of a checkout, or out of the repository, is
-//     refused (cells X1 and X2 of round tier0-22, Linux VM, cell M3 of round tier0-22,
-//     macOS VM).
+//     refused (measured on Linux and macOS).
 //
 // The second answer is the errorCode: unsafe_path, or mkdir_failed for an lstat
 // error of a .git entry.
@@ -355,7 +347,7 @@ func worktreeRootAncestorRefusal(worktreeRoot string, c repoCheckouts) (msg, cod
 
 // worktreeRootShareRefusal reports 7d193f89's ownership/writability refusal for an
 // external worktreeRoot, or "" if the root is safe. Checks run in the reference's
-// order (measured byte-for-byte against 7d193f89 on an ephemeral VM):
+// order (measured byte-for-byte against 7d193f89):
 //
 //   - owned by another user -> "is owned by uid <N>, not by you (uid <M>); …"
 //   - writable by a shared group, or by every user on the host ->
@@ -404,21 +396,21 @@ var (
 // rootGroupIsPrivate reports whether gid is the private group of the daemon user
 // with uid. It reads only the flat files, never NSS or the macOS directory
 // service. All four tests must pass. Measured against f6010b97 on Linux and
-// macOS VMs:
+// macOS:
 //
 //   - gid is the gid of the daemon.
 //   - The passwd file has exactly one line with gid as its primary gid. That
-//     line must be the daemon user's line (P11, P12, both on Linux only).
+//     line must be the daemon user's line (measured on Linux only).
 //     Whether it is found by uid or by name is not measured.
 //   - At least one group file line has gid. Every such line has the name of
-//     that passwd line (P8, P9, X3, MP8, MP9, MX3).
+//     that passwd line (measured).
 //   - No such line lists a member other than that user.
 //
-// Both files skip a line whose first character is '#' (P1, P2, MP1, MP2). A
-// passwd line with 6, 7 or 8 fields is read (P4, P5, MP4, MP5). A passwd name
-// with a leading space does not match the user (P10, Linux only). A '+name' line
-// is not skipped (P7, MP7). A leading space and a trailing CR around a group
-// member are trimmed (P3, P6, MP3, MP6), and an empty member is ignored.
+// Both files skip a line whose first character is '#' (measured). A passwd line with
+// 6, 7 or 8 fields is read (measured). A passwd name with a leading space does not
+// match the user (measured on Linux only). A '+name' line is not skipped (measured). A
+// leading space and a trailing CR around a group member are trimmed (measured), and an
+// empty member is ignored.
 //
 // These choices are not measured. claustrum uses the effective gid, and no capture
 // told the real and the effective gid apart. A file that cannot be read makes the

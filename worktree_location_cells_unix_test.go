@@ -13,7 +13,7 @@ import (
 	"testing"
 )
 
-// These tests pin the cells of round tier0-20 (5fd08069 on a Linux VM) for a
+// These tests pin the cells (`5fd08069`, measured on Linux) for a
 // git.worktree_create or git.worktree_remove with a worktreeRoot. Each test stages
 // the cell as the round did, in a temp dir: <B> is that dir with its links
 // resolved, <T> the repository and <X> the folder of the cell (mode 0700). A link
@@ -156,7 +156,7 @@ func (r locCreateRow) run(t *testing.T) {
 	}
 }
 
-// The create cells of round tier0-20 that 5fd08069 refuses with nothing made.
+// The create cells that 5fd08069 refuses with nothing made.
 func TestLocationCellsCreateRefused(t *testing.T) {
 	requireWorktreeListZ(t)
 	setG := func(t *testing.T, c *locCell) {
@@ -252,9 +252,8 @@ func TestLocationCellsCreateRefused(t *testing.T) {
 	}
 }
 
-// locChain is the chain of the cells C-W13 and C-S5: <B>/cwl/l1 to l45 are 45 links,
-// and l45 leads to <X>/R13. The kernel follows at most 40 of them on Linux and 32
-// on macOS.
+// locChain is the chain: <B>/cwl/l1 to l45 are 45 links, and l45 leads to <X>/R13.
+// The kernel follows at most 40 of them on Linux and 32 on macOS.
 func locChain(t *testing.T, c *locCell) {
 	c.dir(t, "<X>/R13/loc/p/w1")
 	c.file(t, "<X>/R13/loc/p/keep")
@@ -443,9 +442,9 @@ func (r locRemoveRow) run(t *testing.T) {
 	}
 }
 
-// The remove cells of round tier0-20. 5fd08069 refuses each and removes nothing.
-// claustrum before this change removed the leaf in C-S1 to C-S8. Each row runs in
-// its temp dir only, so it is safe without the change too.
+// The remove cells. 5fd08069 refuses each and removes nothing. claustrum before
+// this change removed the leaf in C-S1 to C-S8. Each row runs in its temp dir
+// only, so it is safe without the change too.
 func TestLocationCellsRemoveRefused(t *testing.T) {
 	requireWorktreeListZ(t)
 	setG := func(t *testing.T, c *locCell) {
@@ -578,9 +577,9 @@ func TestLocationCellSeparateGitDirNotListed(t *testing.T) {
 	}
 }
 
-// X1 and X2 of round tier0-22 (Linux VM), and M3 of that round on a macOS VM: the root goes
-// through a link that leads out of a checkout or out of the repository. 5fd08069
-// refuses and makes nothing in the folder behind the link.
+// X1 and X2 (measured on Linux), and M3 of that round on macOS: the root goes through a
+// link that leads out of a checkout or out of the repository. 5fd08069 refuses and makes
+// nothing in the folder behind the link.
 func TestLocationCellLinkOutOfCheckout(t *testing.T) {
 	requireWorktreeListZ(t)
 	for _, r := range []locCreateRow{
@@ -607,9 +606,9 @@ func TestLocationCellLinkOutOfCheckout(t *testing.T) {
 	}
 }
 
-// X3 of round tier0-22 (Linux VM): a missing root with a final slash. The reason
-// names the path with the slash dropped. M1 and M2 on a macOS VM name the path with
-// its links followed, as C-W22 does.
+// Measured on Linux: a missing root with a final slash. The reason names the path
+// with the slash dropped. Measurements on macOS name the path with its links
+// followed, as C-W22 does.
 func TestLocationCellMissingRootSlash(t *testing.T) {
 	r := locRemoveRow{root: "<B>/gone22/", path: "<B>/gone22/p/w1",
 		text: "failed to remove worktree: the worktree location <B>/gone22/ is not reachable (<B>/gone22 does " +
@@ -617,7 +616,7 @@ func TestLocationCellMissingRootSlash(t *testing.T) {
 	r.run(t)
 }
 
-// The folder of a gone listed worktree (cell C-W8) is made through a root at the
+// The folder of a gone listed worktree (measured) is made through a root at the
 // parent that the checkout test saw. Here the parent <X> becomes a link to <B>/away
 // after the test. Nothing is made behind the link, and nothing in the old folder.
 func TestLocationGoneFolderParentSwapped(t *testing.T) {

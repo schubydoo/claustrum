@@ -9,9 +9,9 @@ import (
 
 // The cleaning of the daemon's own environment for the git children of the git
 // methods. The rules are claustrum's own, not measured.
-// They replace the older filter of 5fd08069 (rounds task004-01
-// and task004-02). The cleaning acts on the daemon's own entries only. The names
-// that claustrum adds or drops for a call stay as they were.
+// They replace the older filter of 5fd08069 (measured). The cleaning acts on the
+// daemon's own entries only. The names that claustrum adds or drops for a call
+// stay as they were.
 //
 // The calls outside a repository (gitoutsidecalls.go) start from this cleaned
 // environment too: the excludes read, the `--attr-source` probe, the version gate,
@@ -353,8 +353,7 @@ func windowsVolumeLen(p string) int {
 
 // withoutGitNames drops every entry whose name starts with GIT_. The calls of the
 // start test get the daemon's environment so: 5fd08069 passes none of the
-// daemon's GIT_ names to those nine calls (rounds task004-01 and task004-02,
-// Linux, macOS and Windows VMs).
+// daemon's GIT_ names to those nine calls (measured on Linux, macOS and Windows).
 func withoutGitNames(env []string) []string {
 	out := make([]string, 0, len(env))
 	for _, kv := range env {

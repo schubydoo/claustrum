@@ -16,9 +16,9 @@ import (
 )
 
 // These tests pin the steps of git.worktree_create from the stale entry step to
-// the start of the checkout, as 5fd08069 answers them in round tier0-10 (Linux
-// VM). In each cell a hook changes the disk right after `git worktree add`. Here
-// the git stub does that, with its "steps" action after the real add.
+// the start of the checkout, as 5fd08069 answers them (measured on Linux). In
+// each cell a hook changes the disk right after `git worktree add`. Here the git
+// stub does that, with its "steps" action after the real add.
 
 // afterAddSteps makes the stub run steps after the real `worktree add`.
 func afterAddSteps(t *testing.T, steps ...[]string) {
@@ -55,12 +55,11 @@ func (f wtFixture) wantKept(t *testing.T, leafWant, regsWant []string, branches 
 	}
 }
 
-// TestWorktreeCreateWorktreesIsLink pins cell V1 of round tier0-10 and cell E1
-// of round tier0-11: `<git dir>/worktrees` is a symbolic link to a folder, in
-// the state shadow. The create is refused before the add. No `worktree add`
-// runs, no leaf and no new branch stay, and the target of the link gets no new
-// entry. In cell E1 the request has an existingBranch that exists, and the
-// frame has the text one time.
+// TestWorktreeCreateWorktreesIsLink pins measured cases: `<git dir>/worktrees`
+// is a symbolic link to a folder, in the state shadow. The create is refused
+// before the add. No `worktree add` runs, no leaf and no new branch stay, and
+// the target of the link gets no new entry. In a measurement, the request has
+// an existingBranch that exists, and the frame has the text one time.
 func TestWorktreeCreateWorktreesIsLink(t *testing.T) {
 	for _, tc := range []struct{ name, existing string }{{"V1", ""}, {"E1", "eb"}} {
 		t.Run(tc.name, func(t *testing.T) {
@@ -107,12 +106,12 @@ func TestWorktreeCreateWorktreesIsLink(t *testing.T) {
 	}
 }
 
-// TestWorktreeCreateNoPairAtALinkedWorktrees pins cells C6, C6n and C6b of
-// round task105-06 (Linux VM): `<git dir>/worktrees` is a symbolic link to an
-// empty real folder. The create is refused with the text of cell V1, and no
-// call of the pair before the add runs. A broken link and a file at that name
-// give no pair either (claustrum's own, not measured). The control is a real
-// folder with the entry of another worktree: the pair runs (cell R-Q2b).
+// TestWorktreeCreateNoPairAtALinkedWorktrees pins measured cases (on
+// Linux): `<git dir>/worktrees` is a symbolic link to an empty real folder.
+// The create is refused with the text, and no call of the pair before the
+// add runs. A broken link and a file at that name give no pair either
+// (claustrum's own, not measured). The control is a real folder with the
+// entry of another worktree: the pair runs (measured).
 func TestWorktreeCreateNoPairAtALinkedWorktrees(t *testing.T) {
 	for _, row := range []struct {
 		name  string
@@ -156,14 +155,13 @@ func TestWorktreeCreateNoPairAtALinkedWorktrees(t *testing.T) {
 	}
 }
 
-// TestWorktreeCreateLinkedWorktreesUnderAHold pins cell C6b of rounds
-// task105-04 and task105-06 (Linux VM). `<git dir>/worktrees` is a symbolic
-// link to an empty real folder, and a hold starts while `rev-parse
-// --absolute-git-dir` of the create runs. The add is refused with the text of
-// offWorktreesRefusal. Its listing in the repository, in the form of the git
-// directory, is the last call, with no pair and no add. Mutation: in
-// worktreeAdd, test offWorktreesRefusal before hardenedGitCmd. The listing then
-// does not run.
+// TestWorktreeCreateLinkedWorktreesUnderAHold pins a measured case (on Linux).
+// `<git dir>/worktrees` is a symbolic link to an empty real folder, and a hold
+// starts while `rev-parse --absolute-git-dir` of the create runs. The add is
+// refused with the text of offWorktreesRefusal. Its listing in the repository,
+// in the form of the git directory, is the last call, with no pair and no add.
+// Mutation: in worktreeAdd, test offWorktreesRefusal before hardenedGitCmd. The
+// listing then does not run.
 func TestWorktreeCreateLinkedWorktreesUnderAHold(t *testing.T) {
 	h := newLiveFixture(t)
 	h.warm(t)
@@ -198,10 +196,10 @@ func TestWorktreeCreateLinkedWorktreesUnderAHold(t *testing.T) {
 	}
 }
 
-// TestWorktreeCreateTwoNewEntries pins cell V2 of round tier0-10: a
-// second add puts one more entry into the registrations folder before the first
-// add ends. The create is refused. Both entries and both branches stay, and the
-// leaf holds its .git file only.
+// TestWorktreeCreateTwoNewEntries pins a measured case: a second add puts one more
+// entry into the registrations folder before the first add ends. The create is
+// refused. Both entries and both branches stay, and the leaf holds its .git file
+// only.
 func TestWorktreeCreateTwoNewEntries(t *testing.T) {
 	f, s := postAddFixture(t)
 	second := filepath.Join(f.realRoot(t), "T", ".claude", "worktrees", "w1b")
@@ -215,9 +213,8 @@ func TestWorktreeCreateTwoNewEntries(t *testing.T) {
 	}
 }
 
-// TestWorktreeCreateLeafGitFile pins cells V3a, V3b and V3c of round tier0-10. After the add the leaf has no .git file, a folder at .git,
-// or a .git file with no blank after `gitdir:`. Each create is refused, with no
-// checkout. The registration and the branch stay. The empty leaf of V3a goes.
+// TestWorktreeCreateLeafGitFile pins measured cases. After the add the leaf has no .git file, a folder at .git, or a .git file with no blank
+// after `gitdir:`. Each create is refused, with no checkout. The registration and the branch stay. The empty leaf of the first case goes.
 func TestWorktreeCreateLeafGitFile(t *testing.T) {
 	for _, tc := range []struct {
 		name  string
@@ -249,11 +246,10 @@ func TestWorktreeCreateLeafGitFile(t *testing.T) {
 	}
 }
 
-// TestWorktreeCreateRecordWithSlash pins cell V4 of round tier0-10 and cells R1,
-// R2 and R3 of round tier0-11: after the add the gitdir record of the new entry
-// is <leaf>/.git/, <leaf>/.git with a blank at its end, <leaf>/./.git or
-// <leaf>//.git. The create succeeds with the files, and the record keeps its
-// text.
+// TestWorktreeCreateRecordWithSlash pins measured cases: after the add the
+// gitdir record of the new entry is <leaf>/.git/, <leaf>/.git with a blank at
+// its end, <leaf>/./.git or <leaf>//.git. The create succeeds with the files,
+// and the record keeps its text.
 func TestWorktreeCreateRecordWithSlash(t *testing.T) {
 	for _, tc := range []struct{ name, tail string }{
 		{"V4", "/.git/\n"}, {"R1", "/.git \n"}, {"R2", "/./.git\n"}, {"R3", "//.git\n"},
@@ -276,9 +272,9 @@ func TestWorktreeCreateRecordWithSlash(t *testing.T) {
 	}
 }
 
-// TestWorktreeCreateSpellingCallFails pins cells V5 and V5c of round
-// tier0-10. After the add the record of the new entry names another path. The
-// repository also holds a live sibling worktree w9 on branch w9.
+// TestWorktreeCreateSpellingCallFails pins measured cases. After the add the
+// record of the new entry names another path. The repository also holds a
+// live sibling worktree w9 on branch w9.
 //
 //   - V5: git fails the `rev-parse --show-toplevel` call. The create answers the
 //     retry frame, and the leaf, the registration w1 and branch w1 go. The
@@ -364,10 +360,10 @@ func TestWorktreeCreateSpellingCallFailsOnOldEntry(t *testing.T) {
 	}
 }
 
-// TestWorktreeCreateCommondirThroughLink pins cell V6 of round
-// tier0-10: after the add the commondir file of the new entry holds an absolute
-// path that reaches the git directory through a symbolic link. The create is
-// refused, and nothing is removed. The link and the git directory stay.
+// TestWorktreeCreateCommondirThroughLink pins a measured case: after the add the
+// commondir file of the new entry holds an absolute path that reaches the git
+// directory through a symbolic link. The create is refused, and nothing is
+// removed. The link and the git directory stay.
 func TestWorktreeCreateCommondirThroughLink(t *testing.T) {
 	f, s := postAddFixture(t)
 	root := f.realRoot(t)
@@ -392,10 +388,10 @@ func TestWorktreeCreateCommondirThroughLink(t *testing.T) {
 	}
 }
 
-// TestWorktreeCreateEntryIsLink pins cell V7 of round tier0-10: after
-// the add the new entry is moved away, and a symbolic link to it is put at its
-// name. The create is refused before the checkout, and nothing is removed: the
-// leaf, the link, the folder behind the link and the branch stay.
+// TestWorktreeCreateEntryIsLink pins a measured case: after the add the new entry is
+// moved away, and a symbolic link to it is put at its name. The create is refused
+// before the checkout, and nothing is removed: the leaf, the link, the folder behind
+// the link and the branch stay.
 func TestWorktreeCreateEntryIsLink(t *testing.T) {
 	f, s := postAddFixture(t)
 	reg, moved := filepath.Join(f.regDir, "w1"), filepath.Join(f.realRoot(t), "moved-w1")
@@ -417,10 +413,9 @@ func TestWorktreeCreateEntryIsLink(t *testing.T) {
 	}
 }
 
-// TestWorktreeCreateLeafReplaced pins cell V8 of round tier0-10: after
-// the add the leaf is renamed away, and a new folder with a copy of the .git file
-// is put at its path. The create is refused before the checkout. The new folder
-// holds .git only, and nothing is removed.
+// TestWorktreeCreateLeafReplaced pins a measured case: after the add the leaf is renamed
+// away, and a new folder with a copy of the .git file is put at its path. The create is
+// refused before the checkout. The new folder holds .git only, and nothing is removed.
 func TestWorktreeCreateLeafReplaced(t *testing.T) {
 	f, s := postAddFixture(t)
 	old := f.leaf() + ".old"
@@ -439,9 +434,8 @@ func TestWorktreeCreateLeafReplaced(t *testing.T) {
 	}
 }
 
-// TestWorktreeCreateStaleEntryOfMainRepository pins cells V9 and V9c of
-// round tier0-10. The main repository holds a stale entry `old` whose record
-// names the new leaf.
+// TestWorktreeCreateStaleEntryOfMainRepository pins measured cases. The main
+// repository holds a stale entry `old` whose record names the new leaf.
 //
 //   - V9: baseRepo is a linked worktree of that repository. The entry goes, and
 //     the create succeeds.
@@ -510,9 +504,9 @@ func TestWorktreeCreateStaleEntryOfMainRepository(t *testing.T) {
 
 // TestStaleRegistryDir pins the folder of the stale entry step: `worktrees` of
 // the common git directory of baseRepo. A linked worktree gets the folder of the
-// main repository (cell V9 of round tier0-10). A separate git directory gets its
-// own folder (cell S1 of round tier3-02, Linux, macOS and Windows VMs). The
-// last two rows are not measured: they follow the commondir rule of git.
+// main repository (measured). A separate git directory gets its own folder
+// (measured on Linux, macOS and Windows). The last two rows are not measured:
+// they follow the commondir rule of git.
 func TestStaleRegistryDir(t *testing.T) {
 	for _, tc := range []struct {
 		name      string
@@ -547,11 +541,11 @@ func TestStaleRegistryDir(t *testing.T) {
 
 // TestCompareAdminRecordSpellings pins which spellings of the gitdir record name
 // the leaf after the add. 5fd08069 creates the worktree with a slash at the end
-// (cell V4 of round tier0-10, Linux VM), and with a blank at the end, a "/./"
-// part and a double slash (cells R1, R2 and R3 of round tier0-11, Linux VM).
-// claustrum's clean also accepts a blank at the start and an "x/.." pair (not
-// measured). A record of another folder stays one of another worktree. Without
-// the clean, each spelling but the plain path is one of another worktree too.
+// (measured on Linux), and with a blank at the end, a "/./" part and a double
+// slash (measured on Linux). claustrum's clean also accepts a blank at the start
+// and an "x/.." pair (not measured). A record of another folder stays one of
+// another worktree. Without the clean, each spelling but the plain path is one
+// of another worktree too.
 func TestCompareAdminRecordSpellings(t *testing.T) {
 	root := realTempDir(t)
 	admin, leaf := filepath.Join(root, "worktrees", "w1"), filepath.Join(root, "leaf")
@@ -649,7 +643,7 @@ func TestWorktreeCreateListingsOfTwoFolders(t *testing.T) {
 
 // TestWorktreeCreateNoAnswerKeepsOldTests pins a create whose `rev-parse
 // --absolute-git-dir` gives an empty answer (not measured). It keeps two rules
-// that it had before round tier0-10.
+// that it had before that measured rule.
 //
 //   - The leaf is replaced after the add: the checkout runs, and the answer is the
 //     "was not populated" frame of the test after the checkout.
@@ -681,9 +675,9 @@ func TestWorktreeCreateNoAnswerKeepsOldTests(t *testing.T) {
 
 // TestWorktreeCreateSpellingCallEndedByDeadline pins that a stop does not
 // start the rollback after a failed spelling call (claustrum's own, not
-// measured). The state is that of cell V5 of round tier0-10, but the time limit
-// of a call (shortened to 2 s) stops the `rev-parse --show-toplevel` call. The
-// create keeps the "different worktree" refusal, and nothing is removed.
+// measured). The state is that, but the time limit of a call (shortened to 2 s)
+// stops the `rev-parse --show-toplevel` call. The create keeps the "different
+// worktree" refusal, and nothing is removed.
 func TestWorktreeCreateSpellingCallEndedByDeadline(t *testing.T) {
 	f, s := postAddFixture(t)
 	shortGitLimit(t, 2*time.Second)
@@ -701,14 +695,14 @@ func TestWorktreeCreateSpellingCallEndedByDeadline(t *testing.T) {
 	}
 }
 
-// TestWorktreeCreateThroughLinkedWorktreeWaits pins cell T1 of round tier0-11.
-// One daemon gets two creates: the first through the main repository, the
-// second through a linked worktree of it. The stub holds the first `worktree
-// add` after git made the registration. The second add must not run inside that
-// hold, so both creates succeed. At the start of the second add the stub copies
-// the checkout file of the first worktree, which is there only after the first
-// add ended. Without the lock by git directory the copy is missing, and the
-// first create sees two new entries and is refused.
+// TestWorktreeCreateThroughLinkedWorktreeWaits pins a measured case. One daemon gets
+// two creates: the first through the main repository, the second through a linked
+// worktree of it. The stub holds the first `worktree add` after git made the
+// registration. The second add must not run inside that hold, so both creates
+// succeed. At the start of the second add the stub copies the checkout file of the
+// first worktree, which is there only after the first add ended. Without the lock by
+// git directory the copy is missing, and the first create sees two new entries and
+// is refused.
 func TestWorktreeCreateThroughLinkedWorktreeWaits(t *testing.T) {
 	f := newWTFixture(t, true)
 	installGitSlowStub(t, f.realGit)
@@ -761,10 +755,10 @@ func TestWorktreeCreateThroughLinkedWorktreeWaits(t *testing.T) {
 }
 
 // TestWorktreeCreateRefusalKeepsLeafGitFile pins two refusals of the tests
-// after the add, in the state shadow, with the staged add: cells V5c and V2 of
-// round tier0-10 (Linux VM). The staging step has written the `.git` file of
-// the leaf before the tests, and a refusal keeps it and the registration.
-// The last row is the control: a create with no refusal.
+// after the add, in the state shadow, with the staged add (measured on Linux).
+// The staging step has written the `.git` file of the leaf before the tests,
+// and a refusal keeps it and the registration. The last row is the control: a
+// create with no refusal.
 func TestWorktreeCreateRefusalKeepsLeafGitFile(t *testing.T) {
 	for _, tc := range []struct {
 		name string
@@ -811,10 +805,10 @@ func TestWorktreeCreateRefusalKeepsLeafGitFile(t *testing.T) {
 	}
 }
 
-// TestWorktreeCreateSpellingCallFailsWithOldEntryNamed pins cells P1 and P1c of
-// round tier0-11. The repository holds the registration w1 of a live worktree
-// on branch ob, at <root>/x/other. git names the new registration w11. After
-// the add the .git file of the leaf names the old entry w1.
+// TestWorktreeCreateSpellingCallFailsWithOldEntryNamed pins measured cases.
+// The repository holds the registration w1 of a live worktree on branch ob, at
+// <root>/x/other. git names the new registration w11. After the add the .git
+// file of the leaf names the old entry w1.
 //
 //   - P1: git fails the `rev-parse --show-toplevel` call. The create answers the
 //     retry frame with "(entry w1)". The leaf, the entry w11 and branch w1 go.
@@ -877,11 +871,11 @@ func duringCallSteps(t *testing.T, match, exit string, steps ...[]string) {
 }
 
 // TestWorktreeCreateSpellingCallRollbackKeepsSwappedEntry pins claustrum's own
-// guard of the rollback in the state of cell P1 of round tier0-11 (not
-// measured). During the failed `rev-parse --show-toplevel` call the stub renames
-// the new entry w11 to w11x and the registration w9 of a live sibling worktree
-// to w11. The rollback takes the identity of w11 from the listing after the add,
-// so the folder now at w11 stays with all its files.
+// guard of the rollback in the state (not measured). During the failed
+// `rev-parse --show-toplevel` call the stub renames the new entry w11 to w11x
+// and the registration w9 of a live sibling worktree to w11. The rollback takes
+// the identity of w11 from the listing after the add, so the folder now at w11
+// stays with all its files.
 func TestWorktreeCreateSpellingCallRollbackKeepsSwappedEntry(t *testing.T) {
 	f, s := postAddFixture(t)
 	root := f.realRoot(t)

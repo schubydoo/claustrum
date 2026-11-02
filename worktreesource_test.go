@@ -11,8 +11,8 @@ import (
 
 // These tests pin how git.worktree_create picks the start commit for a
 // sourceBranch. Every expectation below was measured side by side against
-// f6010b97 on a Linux VM. Each fixture is a bare origin (O.git), a helper clone
-// that pushes to it (W), and a clone of it that is the baseRepo (T).
+// f6010b97 on Linux. Each fixture is a bare origin (O.git), a helper clone that
+// pushes to it (W), and a clone of it that is the baseRepo (T).
 
 type sourceFixture struct {
 	t       *testing.T

@@ -12,7 +12,7 @@ import (
 // `.claude-managed-worktrees` marker — as an invalid trust root. It applies on
 // git.list_branches (bare isRepo:false), git.worktree_create (errorCode
 // "nested_base_repo"), and git.worktree_remove (no errorCode). Measured byte-for-byte
-// against 7d193f89 on an ephemeral VM; git.info/git.status are NOT gated.
+// against 7d193f89; git.info/git.status are NOT gated.
 func TestBaseRepoUnderManagedWorktreesRefused(t *testing.T) {
 	requireGit(t)
 	const refusal = "baseRepo is inside a managed worktrees directory"

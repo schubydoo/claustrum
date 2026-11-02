@@ -53,11 +53,11 @@ func swapAfterTheRename(t *testing.T, f stepFixture) {
 	}
 }
 
-// TestStagedMoveWithALeafThatTakesNoGitFile pins the failure of step 8 (cell
-// S8v): the `.git` file of the leaf cannot be made, so the move fails with
-// the error of that create and removes the moved registration again. Here the
-// leaf folder takes no new entry. Without the remove the moved registration
-// stays.
+// TestStagedMoveWithALeafThatTakesNoGitFile pins the failure of step 8
+// (measured): the `.git` file of the leaf cannot be made, so the move fails
+// with the error of that create and removes the moved registration again.
+// Here the leaf folder takes no new entry. Without the remove the moved
+// registration stays.
 func TestStagedMoveWithALeafThatTakesNoGitFile(t *testing.T) {
 	skipAsRoot(t)
 	f := newStepFixture(t)
@@ -127,11 +127,11 @@ func TestStagedRegistrationHasTheHeldIdentity(t *testing.T) {
 	}
 }
 
-// TestRefusedCreateDeletesNoRegistration pins the rollback of addRefused (cell
-// S2 of round task087-01): the `.git` file of the leaf names a registration
-// whose record names the leaf, and the rollback still deletes no
-// registration. The leaf goes. Without noRegistration the rollback follows the
-// `.git` file and deletes that registration.
+// TestRefusedCreateDeletesNoRegistration pins the rollback of addRefused
+// (measured): the `.git` file of the leaf names a registration whose record
+// names the leaf, and the rollback still deletes no registration. The leaf
+// goes. Without noRegistration the rollback follows the `.git` file and
+// deletes that registration.
 func TestRefusedCreateDeletesNoRegistration(t *testing.T) {
 	f := newStepFixture(t)
 	leaf := filepath.Join(f.repo, ".claude", "worktrees", "w1")

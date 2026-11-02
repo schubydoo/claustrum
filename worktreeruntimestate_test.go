@@ -100,10 +100,10 @@ func claudeRuntimeStateFixture(t *testing.T) (repo, wt string) {
 
 	// The third boundary: the `.claude/` a runtime-state name sits under need not be
 	// the repo root's. Measured on both reference builds, where 19f30c46 copies the
-	// nested mailbox and 90fca6e6 drops it (scratch/probe/nestedclaude_probe.py).
-	// Only the manifest pass can reach a nested one, which is why this lives here.
-	// Its neighbour is the control: an ordinary file under the same nested `.claude/`
-	// must still be copied, so a mutant that drops the whole nested tree fails.
+	// nested mailbox and 90fca6e6 drops it. Only the manifest pass can reach a nested
+	// one, which is why this lives here. Its neighbour is the control: an ordinary
+	// file under the same nested `.claude/` must still be copied, so a mutant that
+	// drops the whole nested tree fails.
 	writeFile(t, filepath.Join(repo, "sub", ".claude", "mailbox", "m1.txt"), "m\n", 0o644)
 	writeFile(t, filepath.Join(repo, "sub", ".claude", "settings.json"), "{}\n", 0o644)
 

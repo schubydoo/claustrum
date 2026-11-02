@@ -11,10 +11,10 @@ import (
 	"time"
 )
 
-// The rules of round task008-01 for the checkout of git.worktree_create in the
-// state shadow. They are the cap on the filter names of the repository, the
-// second listing, the lfs.storage item and a filter that both configs define.
-// The git stub stands in for the wrapper of the round.
+// The rules for the checkout of git.worktree_create in the state shadow. They
+// are the cap on the filter names of the repository, the second listing, the
+// lfs.storage item and a filter that both configs define. The git stub stands
+// in for the wrapper of the round.
 
 // checkoutRuleFixture is a seeded shadow fixture with the paths of one create.
 type checkoutRuleFixture struct {
@@ -82,10 +82,9 @@ func readTreeArgs(calls []envCall) []string {
 
 // TestCheckoutFilterNameCap: more than 64 filter names in the repository's own
 // config refuse the create after the add. No read-tree call runs, and the
-// rollback removes everything. Cells C2 to C4 of round task008-01 show it on
-// Linux and macOS VMs, and C2 on a Windows VM too. 64 names pass, also with
-// more keys (cells C1 and C5a). "shadowDirOff":true turns the cap off (cell
-// C5b).
+// rollback removes everything. Measurements show it on Linux and macOS, and C2
+// on Windows too. 64 names pass, also with more keys (measured).
+// "shadowDirOff":true turns the cap off (measured).
 func TestCheckoutFilterNameCap(t *testing.T) {
 	const smudge = "\tsmudge = false\n"
 	refused := failedFrame(t, "git worktree add failed (checkout): this repository's git config cannot be used: it defines more than 64 filters")
@@ -144,8 +143,8 @@ func stubSecondListing(t *testing.T, d time.Duration) {
 
 // TestCheckoutOwnConfigListingFails: a second listing of the checkout that
 // exits 1 refuses the create with its exit status. No read-tree call runs, and
-// the rollback removes everything. Cell C10 of round task008-01 shows it on
-// Linux, macOS and Windows VMs.
+// the rollback removes everything. A measurement shows it on Linux, macOS and
+// Windows.
 func TestCheckoutOwnConfigListingFails(t *testing.T) {
 	f := newCheckoutRuleFixture(t)
 	stubSecondListing(t, 0)
@@ -163,11 +162,11 @@ func TestCheckoutOwnConfigListingFails(t *testing.T) {
 // after the first listing of the checkout (gitUse.listedSwap) on every
 // system, through the seam checkoutListedSwap. A changed git directory stops
 // the checkout before the second listing. A file at the path runs the second
-// listing first: its failure gives the text of ownConfigListing (cell X2 of
-// round task077-03, Windows VM). A second listing that passes gives the link
-// text and no read-tree call (claustrum's own, not measured). Mutations: drop
-// the return of `if changed` in hardenedGitCheckout (row changed), or the
-// return of `if fileSwap` (row file, listing passes).
+// listing first: its failure gives the text of ownConfigListing (measured on
+// Windows). A second listing that passes gives the link text and no read-tree
+// call (claustrum's own, not measured). Mutations: drop the return of `if
+// changed` in hardenedGitCheckout (row changed), or the return of `if
+// fileSwap` (row file, listing passes).
 func TestCheckoutListedSwapAnswers(t *testing.T) {
 	for _, row := range []struct {
 		name              string
@@ -208,9 +207,9 @@ func TestCheckoutListedSwapAnswers(t *testing.T) {
 }
 
 // TestCheckoutOwnConfigListingStops: the bound ends a second listing that does
-// not end, and the create is refused with the stop text. Cell C11 of round
-// task008-01 shows it on Linux and macOS VMs. The seam shrinks the bound of 30
-// s to 1 s. The stub sleeps 60 s, so a reply before that shows the end.
+// not end, and the create is refused with the stop text. A measurement shows
+// it on Linux and macOS. The seam shrinks the bound of 30 s to 1 s. The stub
+// sleeps 60 s, so a reply before that shows the end.
 func TestCheckoutOwnConfigListingStops(t *testing.T) {
 	f := newCheckoutRuleFixture(t)
 	old := ownConfigBound
@@ -234,9 +233,9 @@ func TestCheckoutOwnConfigListingStops(t *testing.T) {
 // TestCheckoutOwnConfigListingOutlivesDeadline: the `timeoutMs` of the caller
 // does not end the second listing. The stub holds it at a gate, and the
 // deadline fires there (deadlineAt). The gate opens 1 s later, and the stub
-// then runs git. After it, 65 names get the cap text (cell P1) and 64 names
-// get the timeout frame (cell P2). Round task008-05 shows both frames on a
-// Linux VM, with a timeoutMs of 2000.
+// then runs git. After it, 65 names get the cap text (measured) and 64 names
+// get the timeout frame. A measurement shows both frames on Linux, with a
+// timeoutMs of 2000.
 func TestCheckoutOwnConfigListingOutlivesDeadline(t *testing.T) {
 	for _, row := range []struct {
 		cell  string
@@ -271,7 +270,7 @@ func TestCheckoutOwnConfigListingOutlivesDeadline(t *testing.T) {
 }
 
 // TestOwnConfigBoundIs30Seconds pins the production bound of the second
-// listing (round task008-01, cells C11 and C11b, Linux and macOS VMs).
+// listing (measured on Linux and macOS).
 func TestOwnConfigBoundIs30Seconds(t *testing.T) {
 	if ownConfigBound != 30*time.Second {
 		t.Errorf("ownConfigBound = %v, want 30s", ownConfigBound)
@@ -280,7 +279,7 @@ func TestOwnConfigBoundIs30Seconds(t *testing.T) {
 
 // TestCheckoutUserLfsStorage: with lfs.storage in the user config the
 // read-tree call has no lfs.storage item. Without it the call has the item
-// (round task008-01, cell C12, Linux, macOS and Windows VMs).
+// (measured on Linux, macOS and Windows).
 func TestCheckoutUserLfsStorage(t *testing.T) {
 	for _, user := range []bool{false, true} {
 		t.Run(fmt.Sprint("user lfs.storage ", user), func(t *testing.T) {
@@ -305,9 +304,9 @@ func TestCheckoutUserLfsStorage(t *testing.T) {
 // a smudge command that fails, and .git/config sets only `required = true`.
 // The read-tree call gets only the pair filter.f.required=true. The command
 // of the user config runs, and its failure fails the create with git's text.
-// Cell C6 of round task008-01 shows it on Linux and macOS VMs. `required =
-// yes` and `required = 1` do the same (round task008-03, cells R1 and R2,
-// Linux VM). The command is this test binary in a helper mode that exits 5.
+// A measurement shows it on Linux and macOS. `required = yes` and `required =
+// 1` do the same (measured on Linux). The command is this test binary in a
+// helper mode that exits 5.
 func TestCheckoutRepositoryRequiresUserSmudge(t *testing.T) {
 	for _, value := range []string{"true", "yes", "1"} {
 		t.Run(value, func(t *testing.T) {
@@ -337,11 +336,10 @@ func TestCheckoutRepositoryRequiresUserSmudge(t *testing.T) {
 	}
 }
 
-// TestCheckoutRequiredUserSmudgeFallbackGit: the state of cell C6 in the
-// state fallback-git. The read-tree call gets no filter pair, git reads
-// `required = true` from the repository config, and the failure of the user
-// smudge fails the create (round task008-03, cell R7, Linux
-// VM).
+// TestCheckoutRequiredUserSmudgeFallbackGit: the state in the state
+// fallback-git. The read-tree call gets no filter pair, git reads `required
+// = true` from the repository config, and the failure of the user smudge
+// fails the create (measured on Linux).
 func TestCheckoutRequiredUserSmudgeFallbackGit(t *testing.T) {
 	f := newCheckoutRuleFixture(t)
 	h := f.s.gitShadow
@@ -372,8 +370,8 @@ func TestCheckoutRequiredUserSmudgeFallbackGit(t *testing.T) {
 // TestFallbackGitRunsTheRepositoryFilter: in the state fallback-git the filter
 // rule does not run (the maintainer's decision of 2026-10-18). The read-tree call has no filter item and
 // no lfs.storage item. git runs a filter that only the repository defines, and
-// the create succeeds (cell R-Q4f of round task084-01, Linux VM). A name with
-// "=" that no path uses is no refusal there (cell R-Q4g).
+// the create succeeds (measured on Linux). A name with "=" that no path uses is no refusal there
+// (measured).
 func TestFallbackGitRunsTheRepositoryFilter(t *testing.T) {
 	exe, err := os.Executable()
 	if err != nil {
@@ -418,10 +416,9 @@ func TestFallbackGitRunsTheRepositoryFilter(t *testing.T) {
 
 // TestCheckoutRefusalOrder: in the state shadow the second listing runs first,
 // then the cap, then a refusal of one name. With 65 names the cap text wins
-// over a name with "=" (cell R3) and over a name of 201 bytes (cell R4). A
-// failed second listing wins over the cap (cell R5). Round task008-03 shows
-// that on a Linux VM. One name with "=" still gets its own text, after the
-// second listing.
+// over a name with "=" (measured) and over a name of 201 bytes. A failed
+// second listing wins over the cap (measured). A measurement shows that on
+// Linux. One name with "=" still gets its own text, after the second listing.
 func TestCheckoutRefusalOrder(t *testing.T) {
 	const smudge = "\tsmudge = false\n"
 	const capText = "this repository's git config cannot be used: it defines more than 64 filters"
@@ -460,14 +457,11 @@ func TestCheckoutRefusalOrder(t *testing.T) {
 	}
 }
 
-// TestPlanForSharedFilter: the plan of a filter that both configs define. With
-// a settings copy only the state of cell C6 (round task008-01) gets a pair, the
-// one `required` pair, also with `yes` and `1` (round task008-03, cells R1 and
-// R2). The states next to it get no pair (cells F1 and F19 of round
-// task073-02). With no copy they get the pairs with the outside values
-// (claustrum's own). With no copy the C6 state gets no pair (claustrum's own,
-// following cell R7 of round task008-03 in the state fallback-git). A shared name with "=" is still
-// refused.
+// TestPlanForSharedFilter: the plan of a filter that both configs define. With a settings copy
+// only the state (measured) gets a pair, the one `required` pair, also with `yes` and `1`. The
+// states next to it get no pair (measured). With no copy they get the pairs with the outside
+// values (claustrum's own). With no copy the C6 state gets no pair (claustrum's own, following a
+// measured case in the state fallback-git). A shared name with "=" is still refused.
 func TestPlanForSharedFilter(t *testing.T) {
 	recs := func(r ...string) []byte { return []byte(strings.Join(r, "\x00") + "\x00") }
 	for _, row := range []struct {
@@ -514,10 +508,9 @@ func TestPlanForSharedFilter(t *testing.T) {
 	}
 }
 
-// TestPlanUserBareSmudge: cell F11 of round task073-02 (Linux VM). A user
-// `smudge` line with no "=" makes no definition outside. A repository `smudge`
-// command then gets the three pairs, and git fails at the user config with its
-// own text.
+// TestPlanUserBareSmudge: measured on Linux. A user `smudge` line with no "="
+// makes no definition outside. A repository `smudge` command then gets the
+// three pairs, and git fails at the user config with its own text.
 func TestPlanUserBareSmudge(t *testing.T) {
 	plan := planFromListings([]byte("filter.x.smudge\x00filter.x.smudge\nown\x00"), []byte("filter.x.smudge\x00"), true)
 	want := []string{"-c", "filter.x.process=", "-c", "filter.x.required=true", "-c", "filter.x.smudge=false"}

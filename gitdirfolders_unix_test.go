@@ -13,15 +13,13 @@ import (
 	"testing"
 )
 
-// The cells C1 to C8 of round tier0-24 (Linux VM, git 2.43.0) and L1 to L5
-// of round tier0-26 (Linux VM): the states of the git directory of baseRepo
-// for git.worktree_create and git.worktree_remove. Each test stages the cell
-// of the round, sends the request of the cell to a server in the state
-// shadow, and compares the whole frame with the frame of 5fd08069 in that
-// cell. The disk checks are those of the report of the round. H stands for
-// the home folder of the VM, a temp folder here. Cells C2, C3, C5 and C6 also
-// ran on a macOS VM (round tier0-25m). The other cells are not measured on
-// macOS.
+// The measured cases (Linux, git 2.43.0): the states of the git directory of
+// baseRepo for git.worktree_create and git.worktree_remove. Each test stages
+// the cell of the round, sends the request of the cell to a server in the
+// state shadow, and compares the whole frame with the frame of 5fd08069 in
+// that cell. The disk checks are those of the measurement. H stands for the
+// home folder of the test system, a temp folder here. Four cases also ran on
+// macOS (measured). The other cases are not measured on macOS.
 
 // cellFixture is a server in the state shadow with a plain repository R: the
 // linked worktree of newSeededShadowFixture is gone, and main has one commit
@@ -119,7 +117,7 @@ func (f cellFixture) linkRegistrationsTo(t *testing.T, dir string) {
 	linkAt(t, filepath.Join(f.gitDir, "worktrees"), dir)
 }
 
-// TestCreateWithALinkedRegistrationsFolder: cells C1 and C2. The registrations
+// TestCreateWithALinkedRegistrationsFolder: a measured case. The registrations
 // folder is a symbolic link to H/wt, which holds MARK. Both requests are refused
 // before `worktree add`. Only R/.claude/worktrees is made, and nothing is made
 // behind the link. Without offWorktreesRefusal, C2 answers success, and git
@@ -155,12 +153,12 @@ func TestCreateWithALinkedRegistrationsFolder(t *testing.T) {
 	}
 }
 
-// TestRemoveWithALinkedRegistrationsFolder: cell C3, a delete guard test.
-// The worktree w1 of branch b1 exists, and its registration is behind a
-// symbolic link at the registrations folder (H/wt2). 5fd08069 refuses the
-// remove and deletes nothing. Without the test of registrationsLinked and the
-// link refusal of openRegistrationsFolder, the remove answers success and
-// deletes the leaf, H/wt2/w1 and b1. All three are in temp folders.
+// TestRemoveWithALinkedRegistrationsFolder: a measured case, a delete guard test.
+// The worktree w1 of branch b1 exists, and its registration is behind a symbolic
+// link at the registrations folder (H/wt2). 5fd08069 refuses the remove and
+// deletes nothing. Without the test of registrationsLinked and the link refusal
+// of openRegistrationsFolder, the remove answers success and deletes the leaf,
+// H/wt2/w1 and b1. All three are in temp folders.
 func TestRemoveWithALinkedRegistrationsFolder(t *testing.T) {
 	f := newCellFixture(t)
 	runGit(t, f.repo, "worktree", "add", "-q", f.leaf(), "-b", "b1")
@@ -180,9 +178,8 @@ func TestRemoveWithALinkedRegistrationsFolder(t *testing.T) {
 	}
 }
 
-// TestCreateWithAFileAtTheRegistrationsFolder: cell C4. A regular file is at
-// the registrations folder. The create gets the text of C1, and the file
-// stays as it is.
+// TestCreateWithAFileAtTheRegistrationsFolder: a measured case. A regular file is at the registrations
+// folder. The create gets the text of the linked folder case, and the file stays as it is.
 func TestCreateWithAFileAtTheRegistrationsFolder(t *testing.T) {
 	f := newCellFixture(t)
 	file := filepath.Join(f.gitDir, "worktrees")
@@ -200,7 +197,7 @@ func TestCreateWithAFileAtTheRegistrationsFolder(t *testing.T) {
 	wantPaths(t, false, f.leaf(), filepath.Join(f.gitDir, "refs", "heads", "b1"))
 }
 
-// TestCreateWithARegistrationsFolderThatCannotBeListed: cell C5. The
+// TestCreateWithARegistrationsFolderThatCannotBeListed: a measured case. The
 // registrations folder has mode 0300. 5fd08069 refuses before `worktree add`.
 // No branch and no registration is made, and only R/.claude/worktrees stays.
 // Without worktreesOpenRefusal the add runs, and the create answers
@@ -231,14 +228,14 @@ func TestCreateWithARegistrationsFolderThatCannotBeListed(t *testing.T) {
 	wantPaths(t, false, f.leaf(), filepath.Join(dir, "w1"), filepath.Join(f.gitDir, "refs", "heads", "b1"))
 }
 
-// TestCreateWithAGitDirCopiedDuringTheAdd: cell C6, by the decision of
+// TestCreateWithAGitDirCopiedDuringTheAdd: a measured case, by the decision of
 // the maintainer of 2026-10-14. The git stub stands in for the wrapper of the
 // round: right before the real `git worktree add` runs, it renames the git
 // directory of R (the old folder) and puts a real copy of it at its path.
-// 5fd08069 answers success.
-// The copy has the registration with its index and b1, the leaf is checked
-// out, and the old folder is unchanged. Without replacedAtPath the create
-// answers `was not populated by git worktree add` with unsafe_path.
+// 5fd08069 answers success. The copy has the registration with its index and
+// b1, the leaf is checked out, and the old folder is unchanged. Without
+// replacedAtPath the create answers `was not populated by git worktree add`
+// with unsafe_path.
 func TestCreateWithAGitDirCopiedDuringTheAdd(t *testing.T) {
 	f := newCellFixture(t)
 	copied := f.gitDir + ".copy"
@@ -278,13 +275,13 @@ func TestCreateWithAGitDirCopiedDuringTheAdd(t *testing.T) {
 	}
 }
 
-// TestCreateFromALinkedWorktreeWithALinkedEntry: cell C7. baseRepo is the
-// linked worktree H/B, and its entry under the registrations folder is a
-// symbolic link to H/eB, with extensions.worktreeConfig set and a
-// `config.worktree` file in the entry. 5fd08069 answers the trust refusal of
-// H/eB after the words of a git directory that cannot be located, and
-// B/.claude/worktrees exists after the reply. The four files of the cell stay.
-// Without entryIsLink the reply has no such words and nothing is made.
+// TestCreateFromALinkedWorktreeWithALinkedEntry: a measured case. baseRepo is the
+// linked worktree H/B, and its entry under the registrations folder is a symbolic
+// link to H/eB, with extensions.worktreeConfig set and a `config.worktree` file
+// in the entry. 5fd08069 answers the trust refusal of H/eB after the words of a
+// git directory that cannot be located, and B/.claude/worktrees exists after the
+// reply. The four files of the cell stay. Without entryIsLink the reply has no
+// such words and nothing is made.
 func TestCreateFromALinkedWorktreeWithALinkedEntry(t *testing.T) {
 	f := newCellFixture(t)
 	b := filepath.Join(f.home, "B")
@@ -312,7 +309,7 @@ func TestCreateFromALinkedWorktreeWithALinkedEntry(t *testing.T) {
 	wantPaths(t, false, leaf, filepath.Join(f.gitDir, "refs", "heads", "b1"))
 }
 
-// TestCreateWithAnUnreadableParentOfTheGitDir: cell C8. The git directory is
+// TestCreateWithAnUnreadableParentOfTheGitDir: a measured case. The git directory is
 // H/p/R.git, R/.git is a file that names it, and H/p has mode 0300. The create
 // succeeds, as on 5fd08069.
 func TestCreateWithAnUnreadableParentOfTheGitDir(t *testing.T) {
@@ -358,9 +355,9 @@ func (f cellFixture) lockedLinkedWorktree(t *testing.T, leaf string) string {
 	return wt2
 }
 
-// TestRemoveOfALockedWorktreeBehindALink: cells L1 to L3 of round tier0-26
-// (Linux VM). The registration of w1 is locked and behind a symbolic link at
-// the registrations folder.
+// TestRemoveOfALockedWorktreeBehindALink: measured on Linux. The
+// registration of w1 is locked and behind a symbolic link at the
+// registrations folder.
 //
 //   - L1: the worktree folder is gone. 5fd08069 answers success and deletes
 //     b1. The locked registration behind the link stays.

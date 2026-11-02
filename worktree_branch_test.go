@@ -15,8 +15,8 @@ import (
 )
 
 // The branch step of git.worktree_remove and of the git.worktree_create rollbacks,
-// measured side by side against f6010b97 and 89cb6289 on Linux, macOS and Windows
-// VMs. Each test names its rows. A kept row checks that the branch survives with its
+// measured side by side against f6010b97 and 89cb6289 on Linux, macOS and Windows.
+// Each test names its rows. A kept row checks that the branch survives with its
 // commit. A deleted row checks that it is gone.
 
 // realGitPath returns the git on PATH before a test puts the stub there.
@@ -112,7 +112,7 @@ func killedText() string {
 }
 
 // stoppedText is the process error of an update-ref stopped at updateRefStop:
-// SIGTERM on Linux and macOS (row B2-09e), a kill on Windows (row R23a).
+// SIGTERM on Linux and macOS (measured), a kill on Windows.
 func stoppedText() string {
 	if runtime.GOOS == "windows" {
 		return "exit status 1"
@@ -148,7 +148,7 @@ func TestBranchStdin(t *testing.T) {
 	}
 }
 
-// A skipped name gets its own rollback text (rows X1 and X2 for "+x"). A name that
+// A skipped name gets its own rollback text (measured for "+x"). A name that
 // starts with "-" gets the same text: claustrum's choice (not measured). No branch
 // (attach mode) gets no text.
 func TestRollbackTextOfSkippedName(t *testing.T) {
@@ -364,7 +364,7 @@ func TestWorktreeRemoveBranchStepFailures(t *testing.T) {
 		}, kept: true},
 		// R23a: update-ref is stopped at updateRefStop, so git never deletes wt1.
 		// The update-ref stop counts from the start of update-ref, after its config
-		// listing (row B2-09e: SIGTERM 5 s after update-ref started). A slow listing
+		// listing (measured: SIGTERM 5 s after update-ref started). A slow listing
 		// therefore does not use up the stop, and the delete goes through. The stop
 		// is 1 s, because update-ref itself must finish inside it: at 200 ms a
 		// Windows host stopped a real update-ref in some runs (issue 463). Only the
@@ -427,13 +427,13 @@ func TestWorktreeRemoveBranchStepFailures(t *testing.T) {
 	}
 }
 
-// TestWorktreeRemoveBranchStepSerialized pins rows R21 and R21b. Branches a and b both
+// TestWorktreeRemoveBranchStepSerialized pins measured cases. Branches a and b both
 // hold a commit c2 that no other ref reaches. Two removes arrive together, one through
-// the repository and one through its linked worktree W3 (R21b) or the repository
-// again (R21). The branch steps run one after the other, so the first sees the other
-// branch at c2 and deletes its own. The second then keeps its branch. Exactly one
-// branch stays, and its reply carries the member. The stub delays each update-ref, so
-// that two steps at the same time would both list the other branch and both delete.
+// the repository and one through its linked worktree W3 or the repository again
+// (measured). The branch steps run one after the other, so the first sees the other branch
+// at c2 and deletes its own. The second then keeps its branch. Exactly one branch
+// stays, and its reply carries the member. The stub delays each update-ref, so that
+// two steps at the same time would both list the other branch and both delete.
 func TestWorktreeRemoveBranchStepSerialized(t *testing.T) {
 	realGit := realGitPath(t)
 	for _, viaLinked := range []bool{false, true} {
@@ -488,7 +488,7 @@ func TestWorktreeRemoveBranchStepSerialized(t *testing.T) {
 	}
 }
 
-// TestWorktreeRemoveBranchStepConcurrent pins row B2-08: the branch steps of two
+// TestWorktreeRemoveBranchStepConcurrent pins a measured case: the branch steps of two
 // different repositories run at the same time. Each step waits inside the lock until
 // the other one is inside too. One lock for all repositories would stop the second
 // step outside, and the first would wait in vain.
@@ -598,7 +598,8 @@ func TestWorktreeCreateRollbackBranchStep(t *testing.T) {
 	}{
 		{name: "C01 main at the tip"},
 		// X1 and X2: a name that the skip rule leaves alone stays, with its own text
-		// and no member, whatever reaches it (f6010b97 and 89cb6289, Linux VM).
+		// and no member, whatever reaches it (`f6010b97`, `89cb6289`, measured on
+		// Linux).
 		{name: "X1 a name that starts with +", branch: "+x",
 			undo: "branch +x left in place (its name is unsafe to pass to update-ref); delete it by hand", w1Stays: true},
 		{name: "X2 a name that starts with +, a commit no other ref reaches", branch: "+x", unique: true,
@@ -689,9 +690,9 @@ func TestWorktreeCreateRollbackBranchStep(t *testing.T) {
 	}
 }
 
-// TestWorktreeCreateTimeoutRollbackKeepsBranch pins row B2-10: the caller's deadline
-// expires during the add, before the checkout. The rollback still runs the whole
-// check, keeps w1 at the commit that no other ref reaches, and adds the member.
+// TestWorktreeCreateTimeoutRollbackKeepsBranch pins a measured case: the caller's deadline
+// expires during the add, before the checkout. The rollback still runs the whole check,
+// keeps w1 at the commit that no other ref reaches, and adds the member.
 func TestWorktreeCreateTimeoutRollbackKeepsBranch(t *testing.T) {
 	realGit := realGitPath(t)
 	f := newWTFixture(t, false)

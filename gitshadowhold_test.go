@@ -13,11 +13,10 @@ import (
 	"testing"
 )
 
-// The tests of the hold of a repository folder by one git child. The measured
-// rules are those of E2L cells 36 and 37, E3L cells 54 and 55 and EL2 cell 47
-// (Linux VM). The mechanism is from the code.
+// The tests of the hold of a repository folder by one git child. The
+// rules are measured on Linux. The mechanism is from the code.
 
-// textA and textB are the two refusals of a folder that went (E3L cell 54).
+// textA and textB are the two refusals of a folder that went (measured).
 const (
 	textA = "Claude could not prepare its own files on the remote machine: its copy of this repository's settings was cleared away before git started; try again"
 	textB = "listing the configuration in force: " + textA
@@ -43,8 +42,8 @@ func copyCmd(u gitUse, args ...string) *exec.Cmd {
 }
 
 // The hold spans one child only. During the child the only folder cannot go,
-// and a new repository gets the text of `repoLimitError` (E2L cells 36 and
-// 37). Between two children of one request it goes (E3L cell 54).
+// and a new repository gets the text of `repoLimitError` (measured). Between
+// two children of one request it goes (measured).
 func TestRepoHoldSpansOneChild(t *testing.T) {
 	lowerRepoLimit(t, 1)
 	f := newRepoFolderFixture(t)
@@ -75,7 +74,7 @@ func TestRepoHoldSpansOneChild(t *testing.T) {
 }
 
 // A folder that went is made again at the build of the next call, with no text
-// and no read of the config (E3L cell 54). The child then holds it.
+// and no read of the config (measured). The child then holds it.
 func TestRepoHoldRenewsAFolderThatWent(t *testing.T) {
 	lowerRepoLimit(t, 1)
 	f := newRepoFolderFixture(t)
@@ -489,7 +488,7 @@ func nthMatch(n int, match func(args []string) bool) func(args []string) bool {
 // Each refused call of git.status answers its text in the error object, byte
 // for byte, and no later call of the answer runs. A refused config listing
 // gives the listing form (`listingInForcePrefix` + `repoCopyGoneText`). The
-// refused child starts no process (E3L cell 54).
+// refused child starts no process (measured).
 func TestRepoHoldStatusFrames(t *testing.T) {
 	tempListing := func(args []string) bool {
 		return gitSubcommand(args) == "config" && slices.ContainsFunc(args, func(a string) bool {
@@ -564,12 +563,11 @@ func branchThere(t *testing.T, repo, name string) bool {
 	return exec.Command("git", "-C", repo, "show-ref", "--verify", "--quiet", "refs/heads/"+name).Run() == nil
 }
 
-// A refused call of git.worktree_create before the add answers its text in
-// the result object, byte for byte (the frame of the text of `repoLimitError`
-// in E3L cell 55). Nothing of the worktree stays. On Windows the add child
-// names the staging folder, so the row "add" drops the folder at the staging
-// hold (holdCopy), before the staging folder is made (from the code, not
-// measured).
+// A refused call of git.worktree_create before the add answers its text in the
+// result object, byte for byte (the frame of the text of `repoLimitError`,
+// measured). Nothing of the worktree stays. On Windows the add child names the
+// staging folder, so the row "add" drops the folder at the staging hold
+// (holdCopy), before the staging folder is made (from the code, not measured).
 func TestRepoHoldCreateFrames(t *testing.T) {
 	for _, c := range []struct {
 		name  string
@@ -634,7 +632,7 @@ func TestRepoHoldCreateCheckoutUndoes(t *testing.T) {
 // (`listingInForcePrefix` + `repoCopyGoneText`) after the words of the
 // checkout, with no other prefix, and the undo runs (from the code). The first
 // such listing is that of the pair before the add, whose failure changes
-// nothing (cell R-Q4e).
+// nothing (measured).
 func TestRepoHoldCreateCheckoutListings(t *testing.T) {
 	for _, c := range []struct {
 		name string
@@ -682,7 +680,7 @@ func TestRepoHoldCreateGoesOnAfterAnIgnoredCall(t *testing.T) {
 
 // A refused call of the lock check of git.worktree_remove answers its text
 // after the words of that check, with no errorCode (the frame of the text of
-// `repoLimitError` in E3L cell 55). Nothing is deleted.
+// `repoLimitError`, measured). Nothing is deleted.
 func TestRepoHoldRemoveFrames(t *testing.T) {
 	for _, c := range []struct {
 		name  string
@@ -725,7 +723,7 @@ func jsonInner(t *testing.T, s string) string {
 
 // A folder that goes between two git calls of git.status is made again at the
 // build of the next call. The reply is normal, and the request reads the
-// config no more often than without the loss (E3L cell 54).
+// config no more often than without the loss (measured).
 func TestRepoHoldStatusRenewsBetweenCalls(t *testing.T) {
 	lowerRepoLimit(t, 1)
 	f := newShadowFixture(t)
@@ -777,7 +775,7 @@ func TestRepoHoldStatusRenewsBetweenCalls(t *testing.T) {
 
 // A folder that goes between a listing and its call is not made again there:
 // the call is refused with `repoCopyGoneText`. On 5fd08069 the step of
-// `repoCopyGoneText` is a listing in 44 of 44 error lines (E3L cell 54).
+// `repoCopyGoneText` is a listing in 44 of 44 error lines (measured).
 func TestRepoHoldNoRenewAfterAListing(t *testing.T) {
 	lowerRepoLimit(t, 1)
 	f := newShadowFixture(t)

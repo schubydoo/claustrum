@@ -13,13 +13,12 @@ import (
 
 // These tests pin three parts of git.worktree_create on Linux and macOS: the step
 // that removes a stale registration before the add, the refusal for a stale entry
-// that stayed, and the registration that a rollback removes. Cells A and B are
-// those of 89cb6289 on Linux and macOS VMs, 2 runs each. Cells Z15, Z16 and
-// Z18 are those of 89cb6289 on Linux and macOS VMs. Every fixture is under
+// that stayed, and the registration that a rollback removes. The measured cases
+// are those of 89cb6289 on Linux and macOS, 2 runs each. Every fixture is under
 // t.TempDir, and no test gives a path outside it to a delete.
 
 // staleRegFiles are the files of the old registration of the A cells, in the order
-// of their removal in the system call trace of cell A1 (89cb6289, Linux VM).
+// of their removal in the system call trace (`89cb6289`, measured on Linux).
 var staleRegFiles = []string{"gitdir", "index", "logs/HEAD", "ORIG_HEAD", "commondir", "HEAD"}
 
 // pathsBelow lists every path below dir, sorted, or nil when dir is gone.
@@ -51,8 +50,8 @@ func pathsBelow(t *testing.T, dir string) []string {
 //   - Removed: A1 to A5c, A7 (a relative record), A8 (the entry has another name)
 //     and A12c (the request goes through a symlink, the record is real).
 //   - Removed on 5fd08069: i-ctl (the request and the record go through the same
-//     symlink) and its control h-ctl (both are real). Both are cells of
-//     val-s3p2b2-11-macos (macOS VM, 2 of 2 runs).
+//     symlink) and its control h-ctl (both are real). Both are measured
+//     on macOS, 2 of 2 runs.
 //   - Kept: A6 and A6b (no .git part), A11 (a live worktree at
 //     another path) and A12b (the record goes through a symlink, the request is
 //     real).
@@ -160,8 +159,8 @@ func TestDropStaleWorktreeRegistrationRecords(t *testing.T) {
 
 // TestCreatedEntryOnly pins the listing test of the create: the registration
 // must be the one new name of the registrations folder since the listing before
-// the add. Cell V2 (5fd08069, Linux VM) has two new names. The g
-// cells of 89cb6289 have none (Linux and macOS VMs).
+// the add. A measurement of `5fd08069` on Linux has two new names. The
+// measurements of 89cb6289 have none (on Linux and macOS).
 func TestCreatedEntryOnly(t *testing.T) {
 	for _, tc := range []struct {
 		name          string
@@ -185,9 +184,9 @@ func TestCreatedEntryOnly(t *testing.T) {
 	}
 }
 
-// TestWorktreeCreateStaleEntryOfSameName pins cells A9 g and A7 g (89cb6289, Linux
-// and macOS VMs). The state is that of cell P-c: the daemon has GIT_COMMON_DIR of repository
-// X, and T holds an old registration w1 with its own index. Here the record of the
+// TestWorktreeCreateStaleEntryOfSameName pins measured cases (`89cb6289`, measured on Linux and
+// macOS). The state is that of another measured case: the daemon has GIT_COMMON_DIR of
+// repository X, and T holds an old registration w1 with its own index. Here the record of the
 // old registration names the .git of the new leaf.
 //
 //   - A9 g: the record is <L>/.git/ and the entry holds an empty `locked` file. The
@@ -308,17 +307,22 @@ const forcedFailureFrame = `{"jsonrpc":"2.0","id":1,"result":{"success":false,"e
 
 // TestWorktreeCreateRollbackRemovesTestedRegistration pins which registration the
 // rollback removes after a read-tree that fails. The stub changes the disk and then
-// fails the read-tree. In every cell 89cb6289 answers the plain failed checkout,
+// fails the read-tree. In every case 89cb6289 answers the plain failed checkout,
 // removes the leaf, the registration w1 and branch w1, and keeps every other
 // folder. w9 is the registration of a live sibling worktree.
 //
-//   - Z16 (Linux and macOS VMs): the record of w1 is rewritten to /nonexistent/.git.
-//   - B1 (Linux and macOS VMs): the record of w1 names the .git of the sibling.
-//   - Z18 (Linux and macOS VMs): the .git file of the leaf names a folder outside
-//     the repository, whose record has mode 000. That folder stays.
-//   - B2 (Linux and macOS VMs): the .git file of the leaf names the registration w9.
-//   - B3 (Linux and macOS VMs): B2, and the record of w9 names the leaf.
-//   - B5 (Linux and macOS VMs): the .git file of the leaf is removed.
+//   - Z16 (measured on Linux and macOS): the record of w1 is rewritten to
+//     /nonexistent/.git.
+//   - B1 (measured on Linux and macOS): the record of w1 names the .git of the
+//     sibling.
+//   - Z18 (measured on Linux and macOS): the .git file of the leaf names a folder
+//     outside the repository, whose record has mode 000. That folder stays.
+//   - B2 (measured on Linux and macOS): the .git file of the leaf names the
+//     registration w9.
+//   - B3 (measured on Linux and macOS): B2, and the record of w9 names
+//     the leaf.
+//   - B5 (measured on Linux and macOS): the .git file of the leaf is
+//     removed.
 func TestWorktreeCreateRollbackRemovesTestedRegistration(t *testing.T) {
 	for _, tc := range []struct {
 		name    string
@@ -395,9 +399,9 @@ func TestWorktreeCreateRollbackRemovesTestedRegistration(t *testing.T) {
 	}
 }
 
-// TestWorktreeCreateRecordGoneAfterCheckout pins cells B4 and Z15
-// (Linux and macOS VMs) of 89cb6289. The stub runs the real read-tree and then
-// removes the gitdir record of the new registration.
+// TestWorktreeCreateRecordGoneAfterCheckout pins measured cases (on
+// Linux and macOS) of 89cb6289. The stub runs the real read-tree and
+// then removes the gitdir record of the new registration.
 //
 //   - B4: nothing else changes. The create succeeds, the registration holds the
 //     index, and branch w1 stays.
@@ -552,10 +556,10 @@ func TestRemoveCreatedLeafKeepsAReplacedLeaf(t *testing.T) {
 // fails the read-tree. claustrum removes no folder of it. The frame is the plain
 // failed checkout, and the leaf and branch w1 go, as on 89cb6289.
 //
-//   - B6 (Linux and macOS VMs): the hook renames the new registration w1 to w1x and makes a
-//     new empty folder w1. 89cb6289 removes the empty w1 and keeps w1x.
-//   - B6b (Linux and macOS VMs): the hook renames w1 to w1x, and the registration w9 of a live
-//     sibling worktree to w1. 89cb6289 removes that w1 with the files of the
+//   - B6 (measured on Linux and macOS): the hook renames the new registration w1 to w1x and
+//     makes a new empty folder w1. 89cb6289 removes the empty w1 and keeps w1x.
+//   - B6b (measured on Linux and macOS): the hook renames w1 to w1x, and the registration w9
+//     of a live sibling worktree to w1. 89cb6289 removes that w1 with the files of the
 //     sibling, and keeps w1x.
 func TestWorktreeCreateRollbackKeepsReplacedRegistration(t *testing.T) {
 	for _, tc := range []struct {
@@ -607,8 +611,8 @@ func TestWorktreeCreateRollbackKeepsReplacedRegistration(t *testing.T) {
 // TestTestedRegistrationGuards pins the guards of a tested registration at the
 // function level. No cell measured these states.
 //
-//   - The index goes into the tested registration with no gitdir record (the rule
-//     of cell B4).
+//   - The index goes into the tested registration with no gitdir record (the
+//     rule).
 //   - A folder that replaced the registration gets no index, and the rollback
 //     delete leaves it (D24).
 //   - A registration that holds HOME is not deleted (D2).
@@ -844,8 +848,8 @@ func TestDropStaleWorktreeRegistrationFolderGone(t *testing.T) {
 
 // TestDropStaleWorktreeRegistrationCount pins how many stale entries the step
 // before the add removes: one, and only if it is the only stale entry of the
-// folder. Cells A13 and A13b and the S cells are those of 89cb6289 on Linux and
-// macOS VMs. "stale" is the record <L>/.git/ of cell A1.
+// folder. The cases are measured on 89cb6289 on Linux and macOS. "stale" is
+// the record <L>/.git/ of a measured case.
 //
 //   - S1 (old8, old9 and w1 stale), S2 (old8 and old9 stale), A13 (old9 and w1
 //     stale) and S6 (two stale records in two spellings): every entry stays.
@@ -915,9 +919,9 @@ func TestDropStaleWorktreeRegistrationCount(t *testing.T) {
 }
 
 // TestWorktreeCreateStaleEntryCount pins a create with more than one old entry in
-// baseRepo, with the daemon GIT_COMMON_DIR of repository X (the g cells). The
-// state is that of cell P-c, and w1 holds its own index. Cell A13 is that of
-// 89cb6289 on Linux and macOS VMs, and so are the S cells.
+// baseRepo, with the daemon GIT_COMMON_DIR of repository X (measured). The state
+// is that of another measured case, and w1 holds its own index. The cases are
+// measured on 89cb6289 on Linux and macOS.
 //
 //   - S1 g: old8, old9 and w1 are stale. All stay, and the create is refused with
 //     the "other than the one just created" text.
@@ -995,8 +999,7 @@ func TestWorktreeCreateStaleEntryCount(t *testing.T) {
 // TestWorktreeCreateRefusalNamesResolvedLeaf pins the spelling of the leaf in five
 // refusals. baseRepo is behind a symlink, <F>/Tlink for <F>/T, and both request
 // paths go through the link. 89cb6289 names the leaf with the link resolved,
-// <F>/T/.claude/worktrees/w1. Cell A12c g and the T cells ran on Linux and macOS
-// VMs.
+// <F>/T/.claude/worktrees/w1. The cases ran on Linux and macOS.
 //
 //   - T1 and A12c g: the old entry w1 of T is stale and goes. The "does not name"
 //     text.
@@ -1122,10 +1125,9 @@ func TestDropStaleWorktreeRegistrationRetargetedRegistry(t *testing.T) {
 }
 
 // TestWorktreeCreateAlreadyExistsSpelling pins the path in the "already exists"
-// refusal without worktreeRoot (89cb6289, Linux and macOS VMs). The parent folder of the leaf
-// has its symlinks resolved, the last name stays, and the path is cleaned. "L" is
-// a request through <F>/Tlink, a symlink to <F>/T. "R" is a request with the real
-// path.
+// refusal without worktreeRoot (`89cb6289`, measured on Linux and macOS). The parent folder
+// of the leaf has its symlinks resolved, the last name stays, and the path is cleaned. "L" is
+// a request through <F>/Tlink, a symlink to <F>/T. "R" is a request with the real path.
 //
 //   - U1a L and R: the leaf is a symlink to a folder. The text names the leaf,
 //     not the target of the link.
@@ -1187,8 +1189,8 @@ func TestWorktreeCreateAlreadyExistsSpelling(t *testing.T) {
 }
 
 // TestWorktreeCreateRootBehindSymlinkSpelling pins the path in two refusals with a
-// worktreeRoot behind a symlink (89cb6289, Linux and macOS VMs). worktreeRoot is <F>/Rlink, a
-// symlink to <F>/pr/R, and worktreePath goes through the link. baseRepo is real.
+// worktreeRoot behind a symlink (`89cb6289`, measured on Linux and macOS). worktreeRoot is
+// <F>/Rlink, a symlink to <F>/pr/R, and worktreePath goes through the link. baseRepo is real.
 //
 //   - U3a: <F>/pr/R/cp holds the folder w1 and no marker. The "is not marked as a
 //     worktree directory" text names <F>/pr/R/cp.

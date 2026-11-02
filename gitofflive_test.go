@@ -175,10 +175,10 @@ func (h liveFixture) waitCalls(t *testing.T, n int) {
 
 // A git.info on a folder with no repository that comes while the start test
 // runs waits for that test. It then answers with the state that the test gave:
-// "shadow" after a good test, no member after a failed init (cells T2 and T3 of
-// round task103-01, Linux VM). With no running test it answers at once, with no
-// member before any test (cell T1). Mutation: in replyControl, drop the lock and
-// unlock of testMu. The reply then comes before the test ends, with no member.
+// "shadow" after a good test, no member after a failed init (measured on Linux).
+// With no running test it answers at once, with no member before any test
+// (measured). Mutation: in replyControl, drop the lock and unlock of testMu. The
+// reply then comes before the test ends, with no member.
 func TestShadowNoRepoInfoWaitsForARunningStartTest(t *testing.T) {
 	for _, row := range []struct {
 		name string
@@ -217,10 +217,10 @@ func TestShadowNoRepoInfoWaitsForARunningStartTest(t *testing.T) {
 }
 
 // git.status and git.list_branches on a folder with no repository answer while
-// the start test runs, with their normal frames (cells T5 and T5b of round
-// task103-01, Linux VM). Mutation: in gitStatus, call
-// req.shadow.replyControl(false) before the reply on a baseRepo with no
-// repository. That status then waits, and no reply comes before the gate opens.
+// the start test runs, with their normal frames (measured on Linux). Mutation:
+// in gitStatus, call req.shadow.replyControl(false) before the reply on a
+// baseRepo with no repository. That status then waits, and no reply comes
+// before the gate opens.
 func TestShadowNoRepoStatusAndBranchesDoNotWait(t *testing.T) {
 	h := newLiveFixture(t)
 	holdSecond(t, "init,-q,--template=", "", false)
@@ -243,9 +243,9 @@ func TestShadowNoRepoStatusAndBranchesDoNotWait(t *testing.T) {
 // member starts its first command while a git.info on B with the member runs.
 // That command keeps the git directory itself. After the reply on B, a later
 // command of A runs the start test and uses the copy, and A answers "shadow"
-// (cell O1 of round task103-02, Linux VM). Mutation: in bindGitParams and
-// keepLive, read the hold once at the start of the request (pending false, and
-// atCommand returns u). A then answers "off-switch" with no test.
+// (measured on Linux). Mutation: in bindGitParams and keepLive, read the hold
+// once at the start of the request (pending false, and atCommand returns u). A
+// then answers "off-switch" with no test.
 func TestShadowOffHoldThatEndsInARequest(t *testing.T) {
 	h := newLiveFixture(t)
 	slowGit(t, "remote,get-url", "gate", 10*time.Minute, "", "")
@@ -277,10 +277,9 @@ func TestShadowOffHoldThatEndsInARequest(t *testing.T) {
 // O2: a hold that starts while a request runs. A git.info on A without the
 // member passes its gate before the hold. Its config check and first call keep
 // the copy, its later commands use the git directory itself, and it answers "off-switch"
-// while the hold is live (cell O2 of round task103-02, Linux VM). Mutation: in
-// atCommand, return u when the hold is live. remote get-url then names the
-// copy. A second mutation reads replyControl(bool(p.ShadowDirOff)) at the
-// reply: A then answers "shadow".
+// while the hold is live (measured on Linux). Mutation: in atCommand, return u when the
+// hold is live. remote get-url then names the copy. A second mutation reads
+// replyControl(bool(p.ShadowDirOff)) at the reply: A then answers "shadow".
 func TestShadowOffHoldThatStartsInARequest(t *testing.T) {
 	h := newLiveFixture(t)
 	slowGit(t, "init,-q,--template=", "gate", 10*time.Minute, "", "")
@@ -317,10 +316,10 @@ func TestShadowOffHoldThatStartsInARequest(t *testing.T) {
 }
 
 // A git.info on a missing path that comes while the start test runs waits for
-// that test, and then answers "shadow". 5fd08069 does so in cell T7 of round
-// task103-03 (Linux VM, 5 of 5 runs). Mutation: in gitInfo, answer a missing
-// path with req.shadow.control(req.offLive()) in place of notRepo(). The reply
-// then comes before the test ends, with no member.
+// that test, and then answers "shadow". 5fd08069 does so (measured on Linux, 5
+// of 5 runs). Mutation: in gitInfo, answer a missing path with
+// req.shadow.control(req.offLive) in place of notRepo. The reply then comes
+// before the test ends, with no member.
 func TestShadowMissingPathInfoWaitsForARunningStartTest(t *testing.T) {
 	h := newLiveFixture(t)
 	holdSecond(t, "init,-q,--template=", "", false)
@@ -341,7 +340,7 @@ func TestShadowMissingPathInfoWaitsForARunningStartTest(t *testing.T) {
 }
 
 // A hold that starts while a git.info waits for the start test counts at the
-// reply: the git.info answers "off-switch" (R4 read at the reply, claustrum's own
+// reply: the git.info answers "off-switch" (read at the reply, claustrum's own
 // for this order, not measured). Mutation: in replyControl, return
 // h.control(false) after the wait. The reply then has "shadow".
 func TestShadowHoldThatStartsDuringTheWaitCountsAtTheReply(t *testing.T) {
@@ -429,10 +428,10 @@ func excludesReadsIn(t *testing.T, h liveFixture) int {
 
 // Two git requests sent together on a fresh daemon make two reads of the
 // user's excludes, one each, also while the first read still runs. 5fd08069
-// does so in rounds task103-01 and task103-03 (Linux VM). Mutation: in
-// userExcludesFile, hold the mutex during the read. The second request then
-// waits for the first read and makes none. A second mutation stores no result:
-// each later git command then reads again.
+// does so (measured on Linux). Mutation: in userExcludesFile, hold the mutex
+// during the read. The second request then waits for the first read and makes
+// none. A second mutation stores no result: each later git command then reads
+// again.
 func TestShadowExcludesReadOfEachRequestWithNoResult(t *testing.T) {
 	h := newLiveFixture(t)
 	holdSecond(t, "config,--includes,--path,core.excludesFile", "", false)
@@ -456,8 +455,8 @@ func TestShadowExcludesReadOfEachRequestWithNoResult(t *testing.T) {
 
 // Two git requests one after the other make one read of the user's excludes:
 // the second uses the stored result. 5fd08069 does so with requests 200 to
-// 500 ms apart (cells O of round task103-02, Linux VM). Mutation: in
-// userExcludesFile, store no result. Each git command then reads again.
+// 500 ms apart (measured on Linux). Mutation: in userExcludesFile, store no
+// result. Each git command then reads again.
 func TestShadowExcludesReadStoredForALaterRequest(t *testing.T) {
 	h := newLiveFixture(t)
 	h.send(t, 1, "git.info", map[string]any{"path": h.repo})

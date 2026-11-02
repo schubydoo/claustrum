@@ -17,13 +17,13 @@ import (
 // The Windows side of the staged `worktree add` and of git.status through a
 // junction. No test of this file ran on the host of the build: a Windows run
 // must match the cell that each test names. TestCreateStagesTheAddOnWindowsOnly
-// has the good create (cells 44a, 49a and control M1 of cell 48).
+// has the good create (measured, with a control).
 
-// TestCreateFailedAddOnWindows must match cells 44b and 44d of
-// s3p2b-edges2-windows: the wrapper answers exit 1 for the `worktree add`. The
-// reply is the failed add, `.s<n>` is gone, and the new worktree folder, the
-// branch and the registration do not exist. The cleanup is not measured for a
-// failed create: the old staging entry stays.
+// TestCreateFailedAddOnWindows must match the measured cases: the wrapper
+// answers exit 1 for the `worktree add`. The reply is the failed add, `.s<n>`
+// is gone, and the new worktree folder, the branch and the registration do
+// not exist. The cleanup is not measured for a failed create: the old staging
+// entry stays.
 func TestCreateFailedAddOnWindows(t *testing.T) {
 	f := newSeededShadowFixture(t)
 	if raw, _ := f.info(t, f.repo, nil); !strings.Contains(raw, `"settingsControl":"shadow"`) {
@@ -55,11 +55,11 @@ func TestCreateFailedAddOnWindows(t *testing.T) {
 	}
 }
 
-// TestCreateFailedReadTreeOnWindows must match cells 44c and 44e of
-// s3p2b-edges2-windows: the add is real and the wrapper answers exit 1 for the
-// `read-tree`. The reply is the failed checkout. The registration, the new
-// worktree folder, the branch, `.s<n>` and `.index-<n>` are gone, and no
-// staging folder is left.
+// TestCreateFailedReadTreeOnWindows must match the measured cases: the add
+// is real and the wrapper answers exit 1 for the `read-tree`. The reply is
+// the failed checkout. The registration, the new worktree folder, the
+// branch, `.s<n>` and `.index-<n>` are gone, and no staging folder is
+// left.
 func TestCreateFailedReadTreeOnWindows(t *testing.T) {
 	f := newSeededShadowFixture(t)
 	if raw, _ := f.info(t, f.repo, nil); !strings.Contains(raw, `"settingsControl":"shadow"`) {
@@ -93,11 +93,11 @@ func TestCreateFailedReadTreeOnWindows(t *testing.T) {
 	}
 }
 
-// TestSweepRemovesAJunctionAsALink must match the junction rows of cell 48 of
-// s3p2b-edges3-windows: an old junction with the name form goes, and its target
-// and the marker in the target stay. The junction is new and the clock of the
-// cleanup is two hours ahead, so the junction is old. The target has a write
-// time that is young for that clock: "junction old and target new: gone".
+// TestSweepRemovesAJunctionAsALink must match the junction rows: an old
+// junction with the name form goes, and its target and the marker in the target
+// stay. The junction is new and the clock of the cleanup is two hours ahead, so
+// the junction is old. The target has a write time that is young for that
+// clock: "junction old and target new: gone".
 func TestSweepRemovesAJunctionAsALink(t *testing.T) {
 	f := newStagingSweepFixture(t)
 	link := filepath.Join(f.dir, ".claude-new-worktree-0123456789abcdee")
@@ -118,13 +118,13 @@ func TestSweepRemovesAJunctionAsALink(t *testing.T) {
 	}
 }
 
-// TestStatusThroughAJunction must match cell D6j-junction of
-// val-s3p2b2-3-windows, request 2: a git.status whose `path` and `baseRepo` go
-// through a junction to the repository. The reply names a repository. The
-// daemon has two folders of a repository: the one of the junction path and the
-// one of the real path. Each call with --git-dir=<git directory> names the real
-// git directory and carries GIT_COMMON_DIR=<the folder of the real path> and
-// GIT_OBJECT_DIRECTORY=<real git directory>\objects.
+// TestStatusThroughAJunction must match a measured case, request 2: a
+// git.status whose `path` and `baseRepo` go through a junction to the
+// repository. The reply names a repository. The daemon has two folders of a
+// repository: the one of the junction path and the one of the real path. Each
+// call with --git-dir=<git directory> names the real git directory and carries
+// GIT_COMMON_DIR=<the folder of the real path> and GIT_OBJECT_DIRECTORY=<real
+// git directory>\objects.
 func TestStatusThroughAJunction(t *testing.T) {
 	f := newSeededShadowFixture(t)
 	jrepo := filepath.Join(resolveTestRoot(t, t.TempDir()), "jrepo")
@@ -180,10 +180,10 @@ func seamStagingRename(t *testing.T, rename func(root *os.Root, oldName, newName
 	return calls
 }
 
-// TestCreateHeldStagingFolderOnWindows must match cell W3a of round
-// task009-01: the staging folder is held, and released after 300 ms. The
-// create answers success, and the registration has its files and the index.
-// Without the retry the create fails at the first rename.
+// TestCreateHeldStagingFolderOnWindows must match a measured case: the staging
+// folder is held, and released after 300 ms. The create answers success, and
+// the registration has its files and the index. Without the retry the create
+// fails at the first rename.
 func TestCreateHeldStagingFolderOnWindows(t *testing.T) {
 	f := newSeededShadowFixture(t)
 	if raw, _ := f.info(t, f.repo, nil); !strings.Contains(raw, `"settingsControl":"shadow"`) {
@@ -220,12 +220,12 @@ func TestCreateHeldStagingFolderOnWindows(t *testing.T) {
 	}
 }
 
-// TestCreateStagingRenameFailsOnWindows must match cells W3b and W3c of round
-// task009-01: the rename of the staging folder stays denied. The create
-// answers the failure after the retry, also with timeoutMs, and no reply says
-// timeout. The leaf, the branch and the staging folder are gone,
-// `.git\worktrees` stays, and no line is logged. Without the failure of the
-// create the reply is success. Without the retry the rename runs once.
+// TestCreateStagingRenameFailsOnWindows must match the measured cases: the
+// rename of the staging folder stays denied. The create answers the failure
+// after the retry, also with timeoutMs, and no reply says timeout. The leaf,
+// the branch and the staging folder are gone, `.git\worktrees` stays, and no
+// line is logged. Without the failure of the create the reply is success.
+// Without the retry the rename runs once.
 func TestCreateStagingRenameFailsOnWindows(t *testing.T) {
 	for _, row := range []struct {
 		name   string

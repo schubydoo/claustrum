@@ -10,11 +10,11 @@ import (
 	"time"
 )
 
-// stubLingeringGit puts this test binary on PATH as `git` (a symlink, so os.Executable()
-// still resolves to the real binary) running in the "git-lingering" helper mode. exit0
-// chooses whether the read-tree checkout git EXITS 0 while a descendant keeps holding one of the
-// daemon's output pipes (the P1 git-exit-0 case) or blocks past the deadline (the
-// killed-during-checkout case). orphanSecs is how long that descendant holds the pipe.
+// stubLingeringGit puts this test binary on PATH as `git` (a symlink, so os.Executable still
+// resolves to the real binary) running in the "git-lingering" helper mode. exit0 chooses whether
+// the read-tree checkout git EXITS 0 while a descendant keeps holding one of the daemon's output
+// pipes (the P1 git-exit-0 case) or blocks past the deadline (the killed-during-checkout case).
+// orphanSecs is how long that descendant holds the pipe.
 func stubLingeringGit(t *testing.T, exit0 bool, orphanSecs string) {
 	t.Helper()
 	exe, err := os.Executable()
@@ -52,10 +52,10 @@ func runLingeringCreate(t *testing.T, base string, timeoutMs int) (string, time.
 // git.worktree_create must reproduce 4534d86's behaviour when the read-tree checkout
 // leaves a descendant holding one of the daemon's output pipes: the reference caps the
 // post-checkout drain at a FIXED ~5s from git's OWN exit (independent of timeoutMs),
-// reaps the descendant, and only THEN gates the frame on
-// timeoutMs — success (worktree kept) when timeoutMs exceeds the drain, else errorCode
-// "timeout" ("after the checkout finished", NO "signal: killed") with the worktree rolled
-// back (scratch/probe/wt-success-lingering-4534d86.md).
+// reaps the descendant, and only THEN gates the frame on timeoutMs — success (worktree
+// kept) when timeoutMs exceeds the drain, else errorCode "timeout" ("after the checkout
+// finished", NO "signal: killed") with the worktree rolled back (measured against
+// 4534d86).
 //
 // Every stub git is a full re-exec of the (race-instrumented) test binary, so absolute
 // wall-clock is unreliable. The test therefore MEASURES the per-command spawn cost first

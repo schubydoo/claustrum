@@ -13,9 +13,9 @@ import (
 
 // TestRepoConfigOpenTakesNoTerminal pins that the open of the config read gives
 // its process no controlling terminal. With a config that is a link to a pty
-// slave, 89cb6289 and 5fd08069 stay up when the pty master closes (cell V17,
-// Linux VM, 6 of 6 runs). A build without the flag took the pty as its
-// controlling terminal there, and it ended at that close.
+// slave, 89cb6289 and 5fd08069 stay up when the pty master closes (measured on
+// Linux, 6 of 6 runs). A build without the flag took the pty as its controlling
+// terminal there, and it ended at that close.
 //
 // The open runs in a child of the test binary that leads a new session, as the
 // daemon does. Such a process has no controlling terminal, and it gets one from

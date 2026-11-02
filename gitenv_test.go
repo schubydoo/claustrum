@@ -12,12 +12,11 @@ import (
 	"testing"
 )
 
-// The tests of the daemon's own git environment (gitenv.go). Each row label names
-// the f6010b97 capture row it comes from: rounds 1 to 4, validation 1 (V rows),
-// validation 2 (val2 rows), validation 3 (val3 rows) and validation 4 (val4 rows).
-// The control rows have no capture row. A "windows" or "macos" label names a row of
-// that VM only. None of these tests run in parallel: they set the process
-// environment.
+// The tests of the daemon's own git environment (gitenv.go). Each case
+// label names the f6010b97 measurement it comes from. The control
+// cases have no measurement. A "windows" or "macos" label names a case
+// of that system only. None of these tests run in parallel: they set
+// the process environment.
 
 // clearDaemonConfigEnv removes the GIT_CONFIG_COUNT family and GIT_ALLOW_PROTOCOL
 // from the test's environment for the rest of the test.
@@ -298,7 +297,7 @@ func TestHardenedGitEnvOrder(t *testing.T) {
 }
 
 func TestDropConfigOverrides(t *testing.T) {
-	// round1 C1 and windows C1w: the exact upper-case names go. git_config and
+	// Measured, also on Windows: the exact upper-case names go. git_config and
 	// Git_Config_Parameters stay, also on Windows. GIT_CONFIG_GLOBAL stays.
 	in := []string{"GIT_CONFIG=S4MARK_1", "git_config=S4MARK_2", "GIT_CONFIG_PARAMETERS=S4MARK_3",
 		"Git_Config_Parameters=S4MARK_4", "GIT_CONFIG_GLOBAL=S4MARK_5", "=C:=C:\\", "S4_PLAIN=S4MARK_6"}
@@ -433,13 +432,10 @@ func installEnvStub(t *testing.T) func(method string, params map[string]any) (st
 	}
 }
 
-// TestDaemonGitEnvPerCallKind checks, per call kind, where the daemon's own
-// GIT_CONFIG, GIT_CONFIG_PARAMETERS, GIT_CONFIG_COUNT set and GIT_ALLOW_PROTOCOL
-// reach git. The rows are round 1 C1, C3 and C4. The excludes read, the
-// --attr-source version probe and the read of config text keep them
-// (claustrum's own, not measured). Every listing drops the first two and keeps the count set. Every hardened call drops the first two and carries
-// the extended count set. The light profile filters GIT_ALLOW_PROTOCOL, and the
-// heavy one denies every protocol.
+// TestDaemonGitEnvPerCallKind checks, per call kind, where the daemon's own GIT_CONFIG, GIT_CONFIG_PARAMETERS, GIT_CONFIG_COUNT set and
+// GIT_ALLOW_PROTOCOL reach git (measured). The excludes read, the --attr-source version probe and the read of config text keep them (claustrum's
+// own, not measured). Every listing drops the first two and keeps the count set. Every hardened call drops the first two and carries the extended
+// count set. The light profile filters GIT_ALLOW_PROTOCOL, and the heavy one denies every protocol.
 func TestDaemonGitEnvPerCallKind(t *testing.T) {
 	run := installEnvStub(t)
 	f := newWTFixture(t, false)
@@ -488,8 +484,8 @@ func TestDaemonGitEnvPerCallKind(t *testing.T) {
 			}
 		case slices.Contains(c.argv, "--no-includes"):
 			// The daemon's own read of the config (gitrepoconfig.go). It carries no
-			// profile and keeps the first two (claustrum's own, not measured). This row is from
-			// the code, not from round 1.
+			// profile and keeps the first two (claustrum's own, not measured). This row is
+			// from the code, not measured.
 			kinds["config read"]++
 			if want := sorted(planted[:8]...); !slices.Equal(got, want) {
 				t.Errorf("config read %d %q = %q\nwant %q", i, c.argv, got, want)
@@ -529,8 +525,8 @@ func TestDaemonGitEnvPerCallKind(t *testing.T) {
 }
 
 // With a refused count, the excludes read is the one git call of the first
-// request. No later request runs git: no listing and no version probe (round 2
-// part C, round 3 P1 and P2 on a Linux VM).
+// request. No later request runs git: no listing and no version probe
+// (measured on Linux).
 func TestInheritedCountRefusalRunsOnlyTheExcludesRead(t *testing.T) {
 	run := installEnvStub(t)
 	f := newWTFixture(t, false)
@@ -567,7 +563,7 @@ func TestInheritedCountRefusalRunsOnlyTheExcludesRead(t *testing.T) {
 	}
 }
 
-// TestInheritedCountRefusalPlacement runs the round 3 rows through dispatch. With a
+// TestInheritedCountRefusalPlacement runs measured cases through dispatch. With a
 // refused count, these rows refuse, except git.list_branches on a missing dir. P0 is
 // the control with nothing planted.
 func TestInheritedCountRefusalPlacement(t *testing.T) {
@@ -601,7 +597,7 @@ func TestInheritedCountRefusalPlacement(t *testing.T) {
 	missLeaf := filepath.Join(missing, ".claude", "worktrees", "w1")
 	nope := filepath.Join(f.top, ".claude", "worktrees", "nope")
 	// With nothing planted, 89cb6289 on Windows answers Q3 with the start error of its
-	// listing (Windows VM, cell A-01), and so does claustrum. On Linux and macOS
+	// listing (measured on Windows), and so does claustrum. On Linux and macOS
 	// claustrum answers the normal frame.
 	q3 := `{"jsonrpc":"2.0","id":1,"result":{"isRepo":false,"repoSlug":"","defaultBranch":""}}`
 	if runtime.GOOS == "windows" {
@@ -709,10 +705,10 @@ func TestInheritedCountRefusalOnRemove(t *testing.T) {
 	})
 }
 
-// TestInheritedCountRefusalRound4 runs the round 4 rows and the val2 N2 rows through
-// dispatch, with nothing planted (P0) and with GIT_CONFIG_COUNT=x (P1). On Windows a
-// row with a worktreeRoot answers the worktreeRoot refusal in both phases (windows
-// R1d to R1g, N2a, N2b).
+// TestInheritedCountRefusalRound4 runs further measured cases through dispatch, with
+// nothing planted and with GIT_CONFIG_COUNT=x. On Windows a row with a
+// worktreeRoot answers the worktreeRoot refusal in both phases (windows R1d to R1g,
+// N2a, N2b).
 func TestInheritedCountRefusalRound4(t *testing.T) {
 	f := newWTFixture(t, false)
 	resetUserExcludesCache(t)
@@ -817,7 +813,7 @@ func TestInheritedCountRefusalRound4(t *testing.T) {
 				if err := os.RemoveAll(root); err != nil {
 					t.Fatal(err)
 				}
-				// The VM runs made R for every row. Without R, some rows get the "not
+				// The measured runs made R for every row. Without R, some rows get the "not
 				// reachable" refusal instead.
 				if err := os.MkdirAll(root, 0o755); err != nil {
 					t.Fatal(err)
@@ -859,9 +855,9 @@ func TestInheritedCountRefusalRound4(t *testing.T) {
 }
 
 // git.status answers a baseRepo that does not resolve with the bare shape, with no
-// git call, with nothing planted and with a refused count (val2 N1, X1, X1b and the
-// val3 S1 rows). In every row but N1, path is a worktree of T. The control rows are
-// spellings of T that resolve.
+// git call, with nothing planted and with a refused count (measured). In every row
+// but N1, path is a worktree of T. The control rows are spellings of T that
+// resolve.
 func TestStatusUnresolvableBaseRepo(t *testing.T) {
 	f := newWTFixture(t, false)
 	b := filepath.Dir(f.top)
@@ -1085,10 +1081,10 @@ func TestListBranchesEmptyPathCountRefusal(t *testing.T) {
 }
 
 // A trust refusal wins over the count refusal. The rows are val2 Y1 with a stray
-// commondir in T and val2 N3c with an entry whose commondir names another
-// repository (M2). The val3 Z3 rows remove R/cp/w9 with worktreeRoot R and baseRepo
-// the Y1 repository: Z3a with the leaf absent, Z3a2 with R/cp present, Z3b with an
-// empty leaf and Z3c with a file in the leaf. Nothing is deleted. On Windows the
+// commondir in T and val2 N3c with an entry whose commondir names another repository
+// (M2). The measured rows remove R/cp/w9 with worktreeRoot R and baseRepo the Y1
+// repository: Z3a with the leaf absent, Z3a2 with R/cp present, Z3b with an empty
+// leaf and Z3c with a file in the leaf. Nothing is deleted. On Windows the
 // worktreeRoot refusal comes first. P0 is the control with nothing planted.
 func TestTrustRefusalBeforeCountRefusal(t *testing.T) {
 	stray := newTrustRepo(t)

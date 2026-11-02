@@ -8,8 +8,8 @@ import (
 	"testing"
 )
 
-// The git.worktree_remove rows measured side by side against f6010b97 on a macOS VM.
-// Each test names its rows. Every fixture lives under t.TempDir().
+// The git.worktree_remove rows measured side by side against f6010b97 on macOS. Each
+// test names its rows. Every fixture lives under t.TempDir.
 
 // rmFixture is a repository with one registered worktree, wt1 on branch wt1, under
 // <repo>/.claude/worktrees.
@@ -47,7 +47,8 @@ func removeFrame(t *testing.T, params map[string]any) string {
 
 const removeOK = `{"jsonrpc":"2.0","id":1,"result":{"success":true}}`
 
-// removeKept is the reply of 89cb6289 when the branch step keeps the branch (row R02).
+// removeKept is the reply of 89cb6289 when the branch step keeps the branch
+// (measured).
 const removeKept = `{"jsonrpc":"2.0","id":1,"result":{"success":true,"branchKept":true}}`
 
 // removeErrorField decodes a git.worktree_remove frame and returns result.error.
@@ -87,7 +88,7 @@ func mustBeGone(t *testing.T, p string) {
 
 // A leaf that is a symbolic link is refused, and nothing is deleted. Before, a link
 // that pointed at a sibling worktree made the removal delete that sibling, its entry
-// and its branch (rows S01 and S05).
+// and its branch (measured).
 func TestWorktreeRemoveSymlinkLeafIsRefused(t *testing.T) {
 	f := newRmFixture(t)
 	lnk := filepath.Join(filepath.Dir(f.wt), "lnk")
@@ -104,7 +105,8 @@ func TestWorktreeRemoveSymlinkLeafIsRefused(t *testing.T) {
 	}
 }
 
-// A leaf that is a regular file is refused, and nothing is deleted (row S02).
+// A leaf that is a regular file is refused, and nothing is deleted
+// (measured).
 func TestWorktreeRemoveFileLeafIsRefused(t *testing.T) {
 	f := newRmFixture(t)
 	runGit(t, f.repo, "branch", "f0")
@@ -119,7 +121,7 @@ func TestWorktreeRemoveFileLeafIsRefused(t *testing.T) {
 }
 
 // A branchName that starts with "-" or "+" is not deleted. The removal still answers
-// success. A plain name is deleted (rows B01, B02, B03 and B05).
+// success. A plain name is deleted (measured).
 func TestWorktreeRemoveSkipsDashAndPlusBranch(t *testing.T) {
 	for _, name := range []string{"-x", "+x"} {
 		t.Run(name, func(t *testing.T) {
@@ -148,8 +150,8 @@ func TestWorktreeRemoveSkipsDashAndPlusBranch(t *testing.T) {
 }
 
 // A worktree whose directory is gone, with a locked registration, is refused with its
-// own text. The entry and the branch stay (row G01). An unlocked one drops its entry
-// by the recorded path and deletes the branch (row G03).
+// own text. The entry and the branch stay (measured). An unlocked one drops its entry
+// by the recorded path and deletes the branch (measured).
 func TestWorktreeRemoveGoneWorktree(t *testing.T) {
 	t.Run("locked", func(t *testing.T) {
 		f := newRmFixture(t)
@@ -183,9 +185,9 @@ func TestWorktreeRemoveGoneWorktree(t *testing.T) {
 }
 
 // A gone worktree under a baseRepo that holds no repository answers success. There are
-// no registrations to check (rows G05 and G05b). Before, the lock-check text answered.
-// Since 89cb6289 the branch step still runs there. Its for-each-ref fails, so the reply
-// adds "branchKept":true (rows R18 and R18b, Linux VM).
+// no registrations to check (measured). Before, the lock-check text answered. Since
+// 89cb6289 the branch step still runs there. Its for-each-ref fails, so the reply adds
+// "branchKept":true (measured on Linux).
 func TestWorktreeRemoveGoneWithoutRepository(t *testing.T) {
 	base := t.TempDir()
 	// Inside a checkout, git finds that repository instead, and the answer changes.
@@ -199,12 +201,12 @@ func TestWorktreeRemoveGoneWithoutRepository(t *testing.T) {
 	}
 }
 
-// A gone worktree under a repository whose config cannot be listed, or whose git
-// directory fails the trust check, is refused with the reason in the lock-check text
-// (rows G07 and T02). A present worktree answers the refusal of the second listing
-// after the lock-check words. The listing of this server reads the bad config, as
-// with "shadowDirOff":true on 5fd08069 (cell G08b of round tier3-17, Linux VM). The
-// test replaces row G08 of f6010b97, which answered the generic lock-check text.
+// A gone worktree under a repository whose config cannot be listed, or whose git directory
+// fails the trust check, is refused with the reason in the lock-check text (measured). A
+// present worktree answers the refusal of the second listing after the lock-check words.
+// The listing of this server reads the bad config, as with "shadowDirOff":true on 5fd08069
+// (measured on Linux). The test replaces a measured case of f6010b97, which answered the
+// generic lock-check text.
 func TestWorktreeRemoveGoneHostileRepository(t *testing.T) {
 	t.Run("bad config", func(t *testing.T) {
 		f := newRmFixture(t)
@@ -235,8 +237,8 @@ func TestWorktreeRemoveGoneHostileRepository(t *testing.T) {
 }
 
 // A worktree whose `.git` file is damaged still has its entry dropped, found by the
-// recorded path (row R01). Two entries that record the same path are both kept (row
-// R03). Before, the entry stayed in the first case.
+// recorded path (measured). Two entries that record the same path are both kept
+// (measured). Before, the entry stayed in the first case.
 func TestWorktreeRemoveDropsEntryByRecordedPath(t *testing.T) {
 	t.Run("one record", func(t *testing.T) {
 		f := newRmFixture(t)
@@ -266,8 +268,8 @@ func TestWorktreeRemoveDropsEntryByRecordedPath(t *testing.T) {
 	})
 }
 
-// A `locked` marker that is a dangling symbolic link still locks the worktree (row
-// L04). Before, only a marker that resolved to a file counted.
+// A `locked` marker that is a dangling symbolic link still locks the worktree
+// (measured). Before, only a marker that resolved to a file counted.
 func TestWorktreeRemoveDanglingLockMarker(t *testing.T) {
 	f := newRmFixture(t)
 	if err := os.Symlink(filepath.Join(f.repo, "nowhere"), filepath.Join(f.entry(), "locked")); err != nil {
@@ -282,7 +284,7 @@ func TestWorktreeRemoveDanglingLockMarker(t *testing.T) {
 }
 
 // A baseRepo under a managed worktrees directory that does not exist skips the
-// managed-worktrees refusal (row M01).
+// managed-worktrees refusal (measured).
 func TestWorktreeRemoveMissingManagedBase(t *testing.T) {
 	top := t.TempDir()
 	base := filepath.Join(top, ".claude", "worktrees", "nb")

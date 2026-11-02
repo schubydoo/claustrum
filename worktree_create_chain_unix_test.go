@@ -106,8 +106,7 @@ func parentText(s string) (string, string) {
 }
 
 // The external parent step of git.worktree_create: the chain check, the parent
-// mkdir and the marker. f6010b97 sends these texts on Linux and macOS VMs (F14, F16,
-// F17, P3, P4, P9, P10, P11, P13, S4).
+// mkdir and the marker. f6010b97 sends these texts on Linux and macOS.
 func TestWorktreeCreateExternalChain(t *testing.T) {
 	runChainCases(t, []chainCase{
 		{
@@ -206,8 +205,8 @@ func TestWorktreeCreateExternalChain(t *testing.T) {
 
 // A .git entry of any kind at or above the root refuses the create with
 // unsafe_path, and so does one in the <directory> level. Nothing is created.
-// f6010b97 sends these frames on Linux and macOS VMs (Q1 to Q7, Q10, S2, S3, S5,
-// S6, G1, G2). The two cases without a case name are not measured.
+// f6010b97 sends these frames on Linux and macOS. The two cases without a
+// case name are not measured.
 func TestWorktreeCreateExternalCheckoutRefusal(t *testing.T) {
 	rootRefusal := func(rootRel, dirRel string) func(f string) (string, string) {
 		return func(f string) (string, string) {
@@ -304,8 +303,8 @@ func TestWorktreeCreateExternalCheckoutRefusal(t *testing.T) {
 				mkdirForTest(t, filepath.Join(f, "co"))
 				runGit(t, filepath.Join(f, "co"), "init", "-q")
 			},
-			// The component .git of the root is reserved (5fd08069, cell C-W4e of round
-			// tier0-20, Linux VM).
+			// The component .git of the root is reserved (`5fd08069`, measured on
+			// Linux).
 			want: func(f string) (string, string) {
 				return "refusing to create worktree: " + filepath.Join(f, "co", ".git", "wl") +
 					" has a component named .git, which is reserved; choose the worktree location by its " +
@@ -362,7 +361,7 @@ func TestWorktreeCreateExternalCheckoutRefusal(t *testing.T) {
 }
 
 // A symlinked <directory> gets the symlink refusal before the <directory>-level
-// tests. f6010b97 has this order on Linux and macOS VMs (K1, K2, K4, K6).
+// tests. f6010b97 has this order on Linux and macOS.
 func TestWorktreeCreateExternalDirSymlinkFirst(t *testing.T) {
 	symlinkRefusal := func(f string) (string, string) {
 		return "refusing to create worktree: " + filepath.Join(f, "R", "cp") + " is a symbolic link; " +
@@ -408,8 +407,7 @@ func TestWorktreeCreateExternalDirSymlinkFirst(t *testing.T) {
 
 // The root-chain checkout test comes before the root refusals. The <directory>
 // .git test comes after them, and before the non-empty and "already exists"
-// refusals. f6010b97 has this order on Linux and macOS VMs (O1, O3, O4, O6, O8,
-// G4, G7).
+// refusals. f6010b97 has this order on Linux and macOS.
 func TestWorktreeCreateExternalCheckoutOrder(t *testing.T) {
 	gitInRoot := func(t *testing.T, f string) { mkdirForTest(t, filepath.Join(f, "R", ".git")) }
 	rootRefusal := func(f string) (string, string) {
@@ -485,7 +483,7 @@ func TestWorktreeCreateExternalCheckoutOrder(t *testing.T) {
 }
 
 // An existing marker entry of any kind is left as it is, and the create goes on.
-// f6010b97 does the same on Linux and macOS VMs (P14, P16, P17, F22).
+// f6010b97 does the same on Linux and macOS.
 func TestWorktreeCreateKeepsAnyMarkerEntry(t *testing.T) {
 	cases := []struct {
 		name  string
@@ -555,7 +553,7 @@ func TestWorktreeCreateKeepsAnyMarkerEntry(t *testing.T) {
 
 // The in-repo parent step: an existing directory without search permission reads
 // "statat .: <errno>", and texts name the resolved, cleaned repo path. f6010b97
-// sends these on Linux and macOS VMs (F18, P7, P8, F20, S7, S8).
+// sends these on Linux and macOS.
 func TestWorktreeCreateInRepoChainTexts(t *testing.T) {
 	cases := []struct {
 		name   string
@@ -640,8 +638,8 @@ func TestWorktreeCreateInRepoChainTexts(t *testing.T) {
 }
 
 // With umask 0277 a new directory has no write permission, so the next create in
-// it fails. The directory made first stays, as on f6010b97 (Linux and macOS VMs,
-// F15 and F15i). The umask is process-wide, so this test does not run in parallel.
+// it fails. The directory made first stays, as on f6010b97 (measured on Linux and
+// macOS). The umask is process-wide, so this test does not run in parallel.
 func TestWorktreeCreateKeepsDirsMadeBeforeAFailure(t *testing.T) {
 	if os.Geteuid() == 0 {
 		t.Skip("root ignores the permission bits this case relies on")
@@ -682,8 +680,7 @@ func TestWorktreeCreateKeepsDirsMadeBeforeAFailure(t *testing.T) {
 }
 
 // A symlink loop in the root chain refuses the create with unsafe_path. The text
-// names the cleaned root. f6010b97 sends it on Linux and macOS VMs (S1, S1b, S1c,
-// S1d).
+// names the cleaned root. f6010b97 sends it on Linux and macOS.
 func TestWorktreeCreateExternalSymlinkLoop(t *testing.T) {
 	loop := func(rootRel string) func(f string) (string, string) {
 		return func(f string) (string, string) {
@@ -721,7 +718,7 @@ func TestWorktreeCreateExternalSymlinkLoop(t *testing.T) {
 }
 
 // An in-repo .claude that loops gets the symlinked_component refusal. f6010b97
-// sends the same frame on Linux and macOS VMs (S1e).
+// sends the same frame on Linux and macOS.
 func TestWorktreeCreateInRepoClaudeLoop(t *testing.T) {
 	_, repo := createModesRepo(t)
 	claude := filepath.Join(repo, ".claude")

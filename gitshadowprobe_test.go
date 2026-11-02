@@ -87,9 +87,8 @@ func setProbeClock(t *testing.T) *time.Time {
 
 // TestProbeFolder: after the start test gave the state shadow, the folder of
 // the daemon holds `.probe` with HEAD (25 bytes), config (36 bytes) and the
-// empty folders info, objects and refs (s3-linux cell A3, Linux VM. s3-macos
-// cell A3. s3p2-windows cell B3). A folder of the daemon that is made again has
-// none (s3-linux cell B6).
+// empty folders info, objects and refs (measured on Linux). A folder of the
+// daemon that is made again has none (measured).
 func TestProbeFolder(t *testing.T) {
 	f := newShadowFixture(t)
 	if raw, _ := f.info(t, f.repo, nil); !strings.Contains(raw, `"settingsControl":"shadow"`) {
@@ -154,8 +153,8 @@ func TestProbeFolder(t *testing.T) {
 
 // An emptied config of the folder `.probe` is written again at
 // the next call about the repository. 5fd08069 has the 36 bytes again after a
-// git.info 6 s after the file was emptied (cell C10 of round tier0-5, Linux
-// VM). HEAD stays the file that it was.
+// git.info 6 s after the file was emptied (measured on Linux). HEAD stays the
+// file that it was.
 func TestProbeConfigIsWrittenAgain(t *testing.T) {
 	f := newShadowFixture(t)
 	now := setProbeClock(t)
@@ -231,13 +230,11 @@ func TestProbeFolderIsWholeBeforeTheCall(t *testing.T) {
 
 // TestProbeCallShape pins the call and its place in a first request. The argv,
 // the eight variables and their order are those of the call log of 5fd08069
-// (s3p2-linux cell B3a and val-s3p2b1-linux cell A1, Linux VM). The call comes
-// after the read of the excludes file and before the read of the config
-// (s3p2-linux cell B3a, and cell 1 of s3p2b-edges2-linux). Its working
-// directory is the root of the work tree and its ceiling the parent of that
-// root, per kind of path (s3p2-linux cells B3a, B3b and B3c, s3p2-linux2 cell
-// D7b). On Windows Go sorts the environment, so the order is not compared
-// there.
+// (measured on Linux). The call comes after the read of the excludes file and
+// before the read of the config (measured). Its working directory is the root
+// of the work tree and its ceiling the parent of that root, per kind of path
+// (measured). On Windows Go sorts the environment, so the order is not
+// compared there.
 func TestProbeCallShape(t *testing.T) {
 	for _, row := range []struct {
 		name string
@@ -314,8 +311,8 @@ var shapeProbeNames = []string{
 }
 
 // TestProbeCeilingReplacesTheDaemonValue: the call has its own
-// GIT_CEILING_DIRECTORIES, also when the daemon has one (s3p2-linux2 cell D5,
-// Linux VM: daemon `<W>/home/repo`, this call `<W>/home`).
+// GIT_CEILING_DIRECTORIES, also when the daemon has one (measured on
+// Linux: daemon `<W>/home/repo`, this call `<W>/home`).
 func TestProbeCeilingReplacesTheDaemonValue(t *testing.T) {
 	f := newSeededShadowFixture(t)
 	t.Setenv("GIT_CEILING_DIRECTORIES", f.repo)
@@ -337,8 +334,8 @@ func TestProbeCeilingReplacesTheDaemonValue(t *testing.T) {
 
 // TestProbeDropsFourNamesAndKeepsTheConfigCount: the call has none of the four
 // names of probeDropNames and keeps the daemon's GIT_CONFIG_COUNT and its pair.
-// The listing of the same request keeps all of them (cells C8, C8b, C8c and C8K
-// of round tier3-02, Linux, macOS and Windows VMs).
+// The listing of the same request keeps all of them (measured on Linux, macOS
+// and Windows).
 func TestProbeDropsFourNamesAndKeepsTheConfigCount(t *testing.T) {
 	f := newSeededShadowFixture(t)
 	alt := t.TempDir()
@@ -378,10 +375,9 @@ func TestProbeDropsFourNamesAndKeepsTheConfigCount(t *testing.T) {
 }
 
 // probeErrorShapes are the reply of each method of fiveRequests to the error
-// text of the call, in that order (cells 38 and 39 of s3p2b-edges-linux2, Linux
-// VM): the error object on git.info, git.status and git.list_branches, the
-// result object with worktree_add_failed on a create, and the lock-check text
-// on a remove.
+// text of the call, in that order (measured on Linux): the error object on
+// git.info, git.status and git.list_branches, the result object with
+// worktree_add_failed on a create, and the lock-check text on a remove.
 func probeErrorShapes(t *testing.T, f shadowFixture, text string) []string {
 	t.Helper()
 	q := strings.Trim(jsonQuoted(t, text), `"`)
@@ -394,12 +390,12 @@ func probeErrorShapes(t *testing.T, f shadowFixture, text string) []string {
 }
 
 // TestProbeAnswers pins what each answer of git leads to, per method. The rows
-// are the wrapper rows of cell 39 of s3p2b-edges-linux2 (Linux VM), where
-// 5fd08069 got each answer from a wrapper, and the owner row of that cell with
-// the text of git for a repository of another owner. A bad answer makes no
-// folder of the repository and no read of its config (the same cell). The
-// counts are the calls about the repository per request: one, two on a remove,
-// and twice that for an exit 128 or an answer that names another path.
+// are the wrapper rows (measured on Linux), where 5fd08069 got each answer
+// from a wrapper, and the owner row of that cell with the text of git for a
+// repository of another owner. A bad answer makes no folder of the repository
+// and no read of its config (measured). The counts are the calls about the
+// repository per request: one, two on a remove, and twice that for an exit 128
+// or an answer that names another path.
 func TestProbeAnswers(t *testing.T) {
 	type answer struct {
 		name           string
@@ -411,8 +407,8 @@ func TestProbeAnswers(t *testing.T) {
 		calls int
 		// version is true when one plain `git version` call follows the last
 		// call about the repository of each answer. On 5fd08069 the requests
-		// then have 13, 2, 2, 2 and 4 calls (cell 39 of val-s3p2b2-5-linux2,
-		// rows exit 1 and exit 128, Linux VM).
+		// then have 13, 2, 2, 2 and 4 calls (measured on Linux, exit 1 and
+		// exit 128).
 		version bool
 		// secondOK makes the second run of an exit 128 exit 0.
 		secondOK bool
@@ -421,8 +417,8 @@ func TestProbeAnswers(t *testing.T) {
 	// with forward slashes on Windows too, and the text shows it as printed.
 	// On 5fd08069 the answer `C:/o/w/other/.git` gives `git finds
 	// "C:/o/w/other/.git"`, and the answer with backslashes gives that path
-	// with its backslashes (table P2 of val-s3p2b2-7-windows, Windows VM). No
-	// test of the Windows rows ran on the host of the build.
+	// with its backslashes (measured on Windows). No test of the Windows rows
+	// ran on the host of the build.
 	elsewhere := "/elsewhere/.git"
 	var windowsRows []answer
 	if runtime.GOOS == "windows" {
@@ -435,13 +431,12 @@ func TestProbeAnswers(t *testing.T) {
 		{name: "exit 1, no text", exit: 1, calls: 1, version: true,
 			text: "git could not check this repository on the remote machine: at %[1]q: exit status 1"},
 		// Exit 1 with a text: the text of git stands in the place of the exec
-		// error (cells p3 of val-s3p2b2-7-linux2, Linux VM, 13 and 2 calls).
+		// error (measured on Linux, 13 and 2 calls).
 		{name: "p3: exit 1 with a text", exit: 1, calls: 1, version: true, stderr: "fatal: text of the wrapper for p3\n",
 			text: "git could not check this repository on the remote machine: at %[1]q: fatal: text of the wrapper for p3"},
 		// Two lines stand in the reply with one space between them, and exit 2
-		// with a text has the rule of exit 1 (cell N-f of val-s3p2b2-8-linux2,
-		// Linux VM, 13 and 2 calls). With the last line alone the first row
-		// starts with `hint:`.
+		// with a text has the rule of exit 1 (measured on Linux, 13 and 2
+		// calls). With the last line alone the first row starts with `hint:`.
 		{name: "N-f: exit 1 with two lines", exit: 1, calls: 1, version: true,
 			stderr: "fatal: line one of the wrapper for p3\nhint: line two of the wrapper for p3\n",
 			text:   "git could not check this repository on the remote machine: at %[1]q: fatal: line one of the wrapper for p3 hint: line two of the wrapper for p3"},
@@ -451,9 +446,8 @@ func TestProbeAnswers(t *testing.T) {
 		// Linux and Windows). With secondOK it exits 0, and the answer is "no
 		// repository". Else it fails as the first call did. The answer is then the
 		// error with the text of the first call, after one `git version` call (not
-		// measured for an exit code, only for the kill). The texts are
-		// those of 5fd08069 in cells D1 and D3 of s3p2-linux2 and round
-		// task073-03 (Linux VM), and W2-268 of round task073-01 (Windows VM).
+		// measured for an exit code, only for the kill). The texts are those of
+		// 5fd08069 (measured on Linux and Windows).
 		{name: "exit 128, no text", exit: 128, calls: 2, version: true,
 			text: "git could not check this repository on the remote machine: at %[1]q: exit status 128"},
 		{name: "exit 128, not a git repository", exit: 128, calls: exit128Runs(), secondOK: true,
@@ -533,11 +527,10 @@ func TestProbeAnswers(t *testing.T) {
 }
 
 // TestPrintedProbePath pins the path of git in the "disagree" text, with the
-// separator of Windows on every system. The rows are table P2 of
-// val-s3p2b2-7-windows (Windows VM): an answer with forward slashes and one
-// with backslashes are each shown as printed. An answer that is not clean is
-// not measured: it is shown cleaned. Without the compare the first row shows
-// backslashes.
+// separator of Windows on every system. The rows are measured on Windows: an
+// answer with forward slashes and one with backslashes are each shown as
+// printed. An answer that is not clean is not measured: it is shown cleaned.
+// Without the compare the first row shows backslashes.
 func TestPrintedProbePath(t *testing.T) {
 	for _, row := range []struct{ out, found, want string }{
 		{`C:/o/w/alt/.git`, `C:\o\w\alt\.git`, `C:/o/w/alt/.git`},
@@ -552,14 +545,14 @@ func TestPrintedProbePath(t *testing.T) {
 }
 
 // TestProbeGoodAnswerWithTheFullPath: an answer with the full path of the git
-// directory is good, and it is kept for the next methods (cell 39 of
-// s3p2b-edges-linux2, last wrapper row: 1, 0, 0, 0, 0 calls). After a bad
-// answer every request asks again, and a good answer then gives a normal reply
-// at once (cells 37 and 39). The test takes the first three methods: the loop
-// checks "isRepo":true, which the results of git.worktree_create and
-// git.worktree_remove do not have, and those two would change the fixture that
-// the later rows read. The clock of the kept answer stands still, so a
-// slow host cannot run past the kept time between the requests.
+// directory is good, and it is kept for the next methods (measured: 1, 0, 0,
+// 0, 0 calls). After a bad answer every request asks again, and a good answer
+// then gives a normal reply at once (measured). The test takes the first three
+// methods: the loop checks "isRepo":true, which the results of
+// git.worktree_create and git.worktree_remove do not have, and those two would
+// change the fixture that the later rows read. The clock of the kept answer
+// stands still, so a slow host cannot run past the kept time between the
+// requests.
 func TestProbeGoodAnswerWithTheFullPath(t *testing.T) {
 	f := newSeededShadowFixture(t)
 	setProbeClock(t)
@@ -587,8 +580,7 @@ func TestProbeGoodAnswerWithTheFullPath(t *testing.T) {
 
 // TestProbeKeep pins both sides of the kept time: 5 s from the END of the
 // call, with no new time from a request inside it. It also pins that the
-// answer is kept per work tree root (cell 34 of s3p2b-edges-linux2, Linux VM,
-// and s3p2-linux cell B3b with s3p2-linux2 cell D7b).
+// answer is kept per work tree root (measured on Linux).
 func TestProbeKeep(t *testing.T) {
 	f := newSeededShadowFixture(t)
 	now := setProbeClock(t)
@@ -630,10 +622,9 @@ func TestProbeKeep(t *testing.T) {
 
 // TestProbeAsksAgainAfterAChange: inside the kept time a new modification time
 // or a new identity of the root of the work tree or of its `.git` makes the
-// daemon ask again at once, and no other change does. The rows are those of
-// cell 35 of s3p2b-edges-linux2 (Linux VM), and cell 25 of s3p2b-edges2-macos
-// and s3p2b-edges2-windows for the first four and the config and HEAD rows. The
-// request after a new call makes none.
+// daemon ask again at once, and no other change does. The rows are those
+// (measured on Linux), and on macOS and Windows for the first four and the
+// config and HEAD rows. The request after a new call makes none.
 func TestProbeAsksAgainAfterAChange(t *testing.T) {
 	back := time.Now().Add(-100 * time.Second)
 	touch := func(path string) {
@@ -747,9 +738,8 @@ func replaceByCopy(root, gitDir string) {
 // state shadow makes no call of its own to git about the owner, and it reads
 // the config again in each request. On 5fd08069 request 1 has the call about
 // the repository and the read, and each later request the read alone
-// (val-s3p2b2-3-linux section 1.4 item 1, Linux VM. val-s3p2b2-3-macos row D3.
-// val-s3p2b2-3-windows row D7). No folder of the repository is made
-// (s3p2-linux section 4).
+// (measured on Linux, macOS and Windows). No folder of the repository is
+// made (measured).
 func TestRefusedConfigInTheStateShadow(t *testing.T) {
 	f := newSeededShadowFixture(t)
 	setRepoConfig(t, f.gitDir, "[core]\n\trepositoryformatversion = 2\n"+baseRepoConfig)
@@ -784,8 +774,8 @@ func TestRefusedConfigInTheStateShadow(t *testing.T) {
 }
 
 // TestNoProbeOutsideTheStateShadow: a request with the member and a daemon in
-// the state fallback-git make no call about the repository (s3-linux cell B1
-// and cell 29 of s3p2b-edges-linux2, Linux VM).
+// the state fallback-git make no call about the repository (measured on
+// Linux).
 func TestNoProbeOutsideTheStateShadow(t *testing.T) {
 	f := newSeededShadowFixture(t)
 	// A request without the member makes the folder of the daemon and asks. A
@@ -811,8 +801,8 @@ func TestNoProbeOutsideTheStateShadow(t *testing.T) {
 // TestProbeKeepCountsFromTheEnd: the kept time counts from the END of the call.
 // On 5fd08069 a request 4.50 s after the end of a call that its wrapper held
 // for 2 s made no call. That request came 6.50 s after the start of the call
-// (cell 34 of s3p2b-edges-linux2, Linux VM). Here the clock of the test moves 2
-// s forward when the stub has logged the call.
+// (measured on Linux). Here the clock of the test moves 2 s forward when the
+// stub has logged the call.
 func TestProbeKeepCountsFromTheEnd(t *testing.T) {
 	f := newSeededShadowFixture(t)
 	start := time.Now()
@@ -862,9 +852,9 @@ func holdProbeOutput(t *testing.T, git bool, hold time.Duration) {
 // TestProbeExitWithHeldPipes: the call about the repository exits 0 while a
 // child holds its pipes past the wait for them. The output read so far is the
 // answer, and no `git version` call follows. With the git directory there,
-// git.status answers as with no child (cells P1 and P2 of round task100-01,
-// Linux VM, 34 calls on 5fd08069 in both). With no output, the daemon asks a
-// second time and answers the "disagree" text (cell P3, 13 calls).
+// git.status answers as with no child (measured on Linux, 34 calls on
+// 5fd08069 in both). With no output, the daemon asks a second time and
+// answers the "disagree" text (measured, 13 calls).
 func TestProbeExitWithHeldPipes(t *testing.T) {
 	const hold = 5 * time.Second
 	status := func(t *testing.T, f shadowFixture) (string, []envCall) {

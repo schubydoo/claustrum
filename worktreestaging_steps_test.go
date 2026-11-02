@@ -11,8 +11,8 @@ import (
 )
 
 // The steps of the Windows staging move (addStage.move), on every system: the
-// staged add runs here directly. The rows are those of round task087-01
-// (Windows VM). The Windows frames of the create are in
+// staged add runs here directly. The rows are those (measured on Windows).
+// The Windows frames of the create are in
 // worktreestaging_steps_windows_test.go.
 
 // stepFixture is a fixture with a held git directory, so that the step hooks
@@ -62,8 +62,8 @@ func incompleteText(err error) string {
 	return ""
 }
 
-// TestStagedMoveWithTwoNewNames pins step 1 (cell S1): a second new name in
-// `.s<n>\worktrees` fails the move before anything is made in the git
+// TestStagedMoveWithTwoNewNames pins step 1 (measured): a second new name
+// in `.s<n>\worktrees` fails the move before anything is made in the git
 // directory. Without the count the move takes no name and logs a line.
 func TestStagedMoveWithTwoNewNames(t *testing.T) {
 	f := newStepFixture(t)
@@ -77,8 +77,8 @@ func TestStagedMoveWithTwoNewNames(t *testing.T) {
 	f.nothingMade(t)
 }
 
-// TestStagedMoveWithALeafOfAnotherEntry pins step 2 (cell S2): a `.git` file of
-// the staged leaf that names another entry of `.s<n>` refuses the move with
+// TestStagedMoveWithALeafOfAnotherEntry pins step 2 (measured): a `.git` file
+// of the staged leaf that names another entry of `.s<n>` refuses the move with
 // otherEntryRefusal, before anything is made in the git directory. Without the
 // test the move goes on.
 func TestStagedMoveWithALeafOfAnotherEntry(t *testing.T) {
@@ -154,9 +154,9 @@ func TestStagedMoveWithAGitFilePlantedAfterTheRename(t *testing.T) {
 	}
 }
 
-// TestStagedMoveCopiesTheTree pins step 3 (cell S3): a file in a sub folder of
-// the staged registration is in the moved registration. The move records the
-// moved entry. Without the copy of the tree the sub folder is empty.
+// TestStagedMoveCopiesTheTree pins step 3 (measured): a file in a sub folder
+// of the staged registration is in the moved registration. The move records
+// the moved entry. Without the copy of the tree the sub folder is empty.
 func TestStagedMoveCopiesTheTree(t *testing.T) {
 	f := newStepFixture(t)
 	atStep(t, "staged", func() {
@@ -176,11 +176,11 @@ func TestStagedMoveCopiesTheTree(t *testing.T) {
 	}
 }
 
-// TestStagedMoveFailsAtALink pins the failure of step 3 (cell S4): a link that
-// leads out of the staged registration fails the move with the error of its
-// open, `openat j: path escapes from parent`. The staging folder goes, and the
-// target of the link stays. Without the open of each entry the link is passed
-// over and the move succeeds.
+// TestStagedMoveFailsAtALink pins the failure of step 3 (measured): a link
+// that leads out of the staged registration fails the move with the error of
+// its open, `openat j: path escapes from parent`. The staging folder goes, and
+// the target of the link stays. Without the open of each entry the link is
+// passed over and the move succeeds.
 func TestStagedMoveFailsAtALink(t *testing.T) {
 	if os.Symlink(t.TempDir(), filepath.Join(t.TempDir(), "probe")) != nil {
 		t.Skip("this host makes no symbolic link for the test")
@@ -203,10 +203,10 @@ func TestStagedMoveFailsAtALink(t *testing.T) {
 	}
 }
 
-// TestStagedMoveWithAHundredNames pins the failure of step 4 (cell S6v). With
+// TestStagedMoveWithAHundredNames pins the failure of step 4 (measured). With
 // w1 and w11 to w199 in the git directory the move fails with the text of
-// 5fd08069. The 100 entries stay. Without registrationTarget the move
-// refuses the entry w1 with a log line.
+// 5fd08069. The 100 entries stay. Without registrationTarget the move refuses
+// the entry w1 with a log line.
 func TestStagedMoveWithAHundredNames(t *testing.T) {
 	f := newStepFixture(t)
 	names := []string{"w1"}
@@ -233,11 +233,10 @@ func TestStagedMoveWithAHundredNames(t *testing.T) {
 	}
 }
 
-// TestStagedRecordRefusal pins the record test after the move (cells S14 and
-// S14a). An absolute record of the leaf passes. A relative record that names
-// the leaf from `.s<n>` names another path from the moved registration, and a
-// record that cannot be read is refused too. Without the test every record
-// passes.
+// TestStagedRecordRefusal pins the record test after the move (measured). An
+// absolute record of the leaf passes. A relative record that names the leaf
+// from `.s<n>` names another path from the moved registration, and a record
+// that cannot be read is refused too. Without the test every record passes.
 func TestStagedRecordRefusal(t *testing.T) {
 	f := newStepFixture(t)
 	leaf := filepath.Join(f.repo, ".claude", "worktrees", "w1")

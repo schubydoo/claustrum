@@ -12,7 +12,7 @@ import (
 )
 
 // A plain folder of mode 0000 keeps its frame with a broken pair and with no
-// GIT_CONFIG_* entry (row A-X1). git cannot start there, so no listing answers.
+// GIT_CONFIG_* entry (measured). git cannot start there, so no listing answers.
 func TestBrokenConfigPairMode0000KeepsFrame(t *testing.T) {
 	if os.Getuid() == 0 {
 		t.Skip("root can enter a folder of mode 0000")
@@ -33,11 +33,10 @@ func TestBrokenConfigPairMode0000KeepsFrame(t *testing.T) {
 	}
 }
 
-// Phase P11, rows A-M2 and A-X1 (Linux and macOS VMs). With a `git version` that fails, git.info
-// on a regular file and on a folder of mode 0000 answers the "cannot run" text with
-// the detail of the version call. A path that does not exist keeps its frames (rows
-// A-M1 and A-M3 to A-M5). Mutation: do not read the answer of `git version` after a
-// listing that cannot start (failedListingCheck).
+// Measured on Linux and macOS. With a `git version` that fails, git.info on a regular file and
+// on a folder of mode 0000 answers the "cannot run" text with the detail of the version call. A
+// path that does not exist keeps its frames (measured). Mutation: do not read the answer of `git
+// version` after a listing that cannot start (failedListingCheck).
 func TestGitVersionFailsWhereGitCannotStart(t *testing.T) {
 	if os.Getuid() == 0 {
 		t.Skip("root can enter a folder of mode 0000")
@@ -74,10 +73,10 @@ func TestGitVersionFailsWhereGitCannotStart(t *testing.T) {
 	}
 }
 
-// Cells CfP0 and CfP3 (Linux and macOS VMs). The daemon's GIT_DIR names a regular file. git.info
-// answers the "no repository" frame on a plain folder and on a repository, with and
-// without an empty GIT_CONFIG_KEY_0, and no listing runs. Mutation: run the listing
-// in that state (noRepoCalls).
+// Measured on Linux and macOS. The daemon's GIT_DIR names a regular file. git.info answers
+// the "no repository" frame on a plain folder and on a repository, with and without an empty
+// GIT_CONFIG_KEY_0, and no listing runs. Mutation: run the listing in that state
+// (noRepoCalls).
 func TestDaemonGitDirFileRunsNoListing(t *testing.T) {
 	for _, ph := range []struct {
 		name string
@@ -105,24 +104,21 @@ func TestDaemonGitDirFileRunsNoListing(t *testing.T) {
 	}
 }
 
-// Cells CbP0 and CbP3 (Linux and macOS VMs). A `.git` file names a git dir that does not exist.
-// git.info answers the "no repository" frame, with and without an empty
-// GIT_CONFIG_KEY_0. In claustrum the empty key makes the second run of the call about
-// the repository fail, so git.info answers its error there (claustrum's own, not
-// measured). Those
-// cells ran a git older than 2.56. Cell V-S2w of round
-// task039-02 measures the state on a Windows VM with git 2.56 and no such key, and
-// TestGitFileNowhereFourMethodsStub covers it there. The empty key is not measured on
-// Windows, so this test does not run there.
+// Measured on Linux and macOS. A `.git` file names a git dir that does not exist. git.info
+// answers the "no repository" frame, with and without an empty GIT_CONFIG_KEY_0. In claustrum
+// the empty key makes the second run of the call about the repository fail, so git.info
+// answers its error there (claustrum's own, not measured). Those cells ran a git older than
+// 2.56. A measurement shows the state on Windows with git 2.56 and no such key, and
+// TestGitFileNowhereFourMethodsStub covers it there. The empty key is not measured on Windows,
+// so this test does not run there.
 //
 // git 2.56 fails the listing there with its gitfile text. In the state shadow the four
 // methods then answer the error of the call about the repository, as 5fd08069 does
-// (cells c09 to c12 of rounds task039-01 and task039-02, Linux VM). With git 2.43 the
-// four "no repository" frames stay (cells c13 to c16). So the requests run on a
-// daemon in that state. With git 2.56 the first git request of a daemon gets the same
-// error, and "shadowDirOff":true gets the listing refusal (round task039-03 and
-// cells c09off to c12off of round task039-02, Linux VM). The empty key is not measured
-// with git 2.56. The test decides by the text of the git on PATH.
+// (measured on Linux). With git 2.43 the four "no repository" frames stay (measured).
+// So the requests run on a daemon in that state. With git 2.56 the first git request
+// of a daemon gets the same error, and "shadowDirOff":true gets the listing refusal
+// (measured on Linux). The empty key is not measured with git 2.56. The test decides
+// by the text of the git on PATH.
 func TestGitFileToNowhereKeepsFrame(t *testing.T) {
 	newGit := gitSaysGitFileNowhere(t)
 	for _, ph := range []struct {
@@ -174,7 +170,7 @@ func TestGitFileToNowhereKeepsFrame(t *testing.T) {
 			}
 			for _, m := range want {
 				if m.method == "git.status" && ph.env != nil {
-					// git.status refuses the empty key on its own listing (row A-S1).
+					// git.status refuses the empty key on its own listing (measured).
 					continue
 				}
 				if got := f.frame(t, m.method, m.params); got != m.frame {

@@ -62,17 +62,17 @@ func createError(t *testing.T, raw string) string {
 // TestCreateWithASwappedGitDir runs git.worktree_create through the server
 // with the steps of a held git directory switched on, and puts a link to a
 // folder T that is no git directory at `.git` at one step. The texts are those
-// of 5fd08069 on a Windows VM (val-s3p2b2-7-windows). On Linux and macOS no
-// create runs these steps: the test sets the switch.
+// of 5fd08069 on Windows (measured). On Linux and macOS no create runs these
+// steps: the test sets the switch.
 //
 //   - Before `rev-parse --absolute-git-dir`: the call exits 128, and the create
 //     stops with `cannot locate the repository's git directory: exit status
-//     128` (cells W1c and X1p-02 to X1p-05). No `worktree add` runs.
+//     128` (measured). No `worktree add` runs.
 //   - After that call: `cannot list the repository's worktree entries: ".git"
-//     is a link or a file …` (cell X1p-06).
+//     is a link or a file …` (measured).
 //   - Before the read-tree call: the failed checkout with the refusal of the
 //     config, and a rollback that keeps the registration and the branch and
-//     removes the leaf (cell X1p-11).
+//     removes the leaf (measured).
 //
 // In each row T keeps its two entries and gets no other. Without the stop
 // after the failed call the reply is the error of `worktree add`. Without the
@@ -152,9 +152,8 @@ func TestCreateWithASwappedGitDir(t *testing.T) {
 // server, with the switch as the system has it. At one step the git directory
 // goes to `.git-real`, and the path gets another entry.
 //
-// Two rows are those of 5fd08069 on Linux and macOS VMs (val-s3p2b2-9-linux2
-// and val-s3p2b2-9-macos). The swap comes after `rev-parse
-// --absolute-git-dir`:
+// Two rows are those of 5fd08069 on Linux and macOS (measured). The swap
+// comes after `rev-parse --absolute-git-dir`:
 //
 //   - A symbolic link to a copy of the git directory. Three calls follow: the
 //     call about the repository, the read of the config, and the listing of
@@ -166,11 +165,10 @@ func TestCreateWithASwappedGitDir(t *testing.T) {
 //     GIT_DIR=/dev/null follows, and the text is `cannot list the repository's
 //     worktree entries: ".git" is a link or a file …`.
 //
-// Two more rows are cells swc-file and swc-link of val-s3p2b2-10-linux2 (Linux
-// VM, and cells c-cfile and c-clink of val-s3p2b2-10-macos). After the call,
-// a file with `gitdir: <X>` gives the `lstat … commondir: not a directory`
-// text with no call after it, and a link to X gives the text of the copy
-// after three calls. Without the lstat the file row gets the link text.
+// Two more rows are measured on Linux and macOS. After the call, a file with
+// `gitdir: <X>` gives the `lstat … commondir: not a directory` text with no
+// call after it, and a link to X gives the text of the copy after three calls.
+// Without the lstat the file row gets the link text.
 //
 // The other rows are not measured. A copy of the git directory as a real
 // directory and a swap before the add get the rule of the measured rows. A
@@ -327,10 +325,9 @@ func TestCreateStepsOfAHeldGitDir(t *testing.T) {
 // text below, removes the folder of the new worktree, and leaves the
 // registration with no index and the branch in the real git directory. It
 // makes no git call after the read-tree call, and the folder behind the link
-// is unchanged (cells swp-copy and swp-marker of val-s3p2b2-13-linux2, Linux
-// VM, 6 of 6 runs. Cells p-copy and p-marker of val-s3p2b2-13-macos, macOS VM,
-// 11 of 11 runs). Without the test after the read-tree call the create answers
-// success and the registration gets the index.
+// is unchanged (measured on Linux, 6 of 6 runs, and on macOS, 11 of 11 runs).
+// Without the test after the read-tree call the create answers success and
+// the registration gets the index.
 func TestCreateWithASwapAfterTheReadTree(t *testing.T) {
 	const realDir = `".git" is a link or a file where Claude needs a real directory; put the directory itself in its place`
 	for _, form := range []string{"a copy of the git directory", "a folder that is no git directory"} {
@@ -391,13 +388,12 @@ func TestCreateWithASwapAfterTheReadTree(t *testing.T) {
 
 // TestCreateGoesOnInTheGitDirThatGitAnswers: a symbolic link to another git
 // directory is put at `.git` before `rev-parse --absolute-git-dir`. Git then
-// answers that directory, and the create goes on in it, as on 5fd08069 (cells
-// swb-first and swb-abbrev of val-s3p2b2-10-linux2, Linux VM, and cells
-// b-first and b-abbrev of val-s3p2b2-10-macos, macOS VM). The copy T gets the
-// registration, the branch and the index. The `.git` file of the leaf names
-// `T/worktrees/w1`. The `worktree add` keeps GIT_DIR=<repo>/.git, and the
-// read-tree names T and its objects. The real git directory gets nothing.
-// Without the move of the hold the create is refused before its add.
+// answers that directory, and the create goes on in it, as on 5fd08069
+// (measured on Linux and macOS). The copy T gets the registration, the
+// branch and the index. The `.git` file of the leaf names `T/worktrees/w1`.
+// The `worktree add` keeps GIT_DIR=<repo>/.git, and the read-tree names T
+// and its objects. The real git directory gets nothing. Without the move of
+// the hold the create is refused before its add.
 //
 // The row with the git directory X of a second repository is not measured: it
 // gets the same rule.
@@ -500,15 +496,15 @@ func TestCreateWithAGitDirThatChangedAtTheAdd(t *testing.T) {
 }
 
 // TestCreateWithALinkedGitDirThatChanges: `.git` is a symbolic link to a real
-// git directory before the first request, and the daemon serves the
-// repository (cell D part 1 of val-s3p2b2-10-linux2). After `rev-parse
-// --absolute-git-dir` the link is replaced by a link to a copy T. The create
-// is refused before its `worktree add`, and no folder gets a branch, a
-// registration or a leaf. That end state is the one of 5fd08069 in cell
-// dlink-swap (Linux VM) and cell d-dswap (macOS VM). The text is that of the
-// nearest measured step, cell sw-copy: 5fd08069 answers another text there,
-// after a `worktree add` and a rollback. Without the test of the spelling of
-// the request the create answers success in the first git directory.
+// git directory before the first request, and the daemon serves the repository
+// (measured on Linux). After `rev-parse --absolute-git-dir` the link is
+// replaced by a link to a copy T. The create is refused before its `worktree
+// add`, and no folder gets a branch, a registration or a leaf. That end state
+// is the one of 5fd08069 in cell dlink-swap (measured on Linux) and a measured
+// case (on macOS). The text is that of the nearest measured step: 5fd08069
+// answers another text there, after a `worktree add` and a rollback. Without
+// the test of the spelling of the request the create answers success in the
+// first git directory.
 func TestCreateWithALinkedGitDirThatChanges(t *testing.T) {
 	f := newSeededShadowFixture(t)
 	realgd := filepath.Join(resolveTestRoot(t, t.TempDir()), "realgd")
@@ -555,15 +551,14 @@ func TestCreateWithALinkedGitDirThatChanges(t *testing.T) {
 // TestCreateOverAnOldRegistrationInTheSpellingOfTheRequest: the git directory
 // holds one old registration `w1` whose record names the `.git` of the new
 // leaf, and the leaf does not exist. The create removes that registration and
-// succeeds, as on 5fd08069 in two cells of val-s3p2b2-11-macos (macOS VM, 2 of
-// 2 runs).
+// succeeds, as on 5fd08069 in two measured cases (on macOS, 2 of 2 runs).
 //
 //   - i-ctl: baseRepo, worktreePath and the record go through a symbolic link
 //     above the repository. The reply has the path as sent. The `.git` file of
 //     the leaf and the new record have the real path.
 //   - h-ctl, the control: all three have the real path.
 //
-// Without the compare against the path as sent, the registration of row i-ctl
+// Without the compare against the path as sent, the registration of that measured case
 // stays, and git refuses the add of a registered worktree.
 func TestCreateOverAnOldRegistrationInTheSpellingOfTheRequest(t *testing.T) {
 	for _, row := range []struct {

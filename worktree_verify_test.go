@@ -118,7 +118,7 @@ func fakeRegistration(t *testing.T, repo, wt string) string {
 // undoFailedAdd is the rollback of an add that git reported as failed. It runs no git
 // call and removes the leaf only if the leaf is an empty directory (measured against
 // f6010b97 and 90fca6e6). Every path handed to it here, including the stand-in HOME,
-// is inside a t.TempDir().
+// is inside a t.TempDir.
 func TestUndoFailedAdd(t *testing.T) {
 	t.Run("removes_an_empty_leaf", func(t *testing.T) {
 		wt := filepath.Join(t.TempDir(), "wt")

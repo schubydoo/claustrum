@@ -51,10 +51,10 @@ func detailInTime(t *testing.T, gitDir string) string {
 	}
 }
 
-// TestRepoConfigNotRegular pins the kind test of the config (cells C4 and X10):
-// a FIFO, a symbolic link to the null device and a directory are refused. A
-// symbolic link to a regular file, a link to such a link and a dangling link
-// are not. No request waits on the FIFO.
+// TestRepoConfigNotRegular pins the kind test of the config (measured): a FIFO,
+// a symbolic link to the null device and a directory are refused. A symbolic
+// link to a regular file, a link to such a link and a dangling link are not. No
+// request waits on the FIFO.
 func TestRepoConfigNotRegular(t *testing.T) {
 	f := newRefusalFixture(t)
 	config := filepath.Join(f.gitDir, "config")
@@ -109,12 +109,12 @@ func mustRemove(t *testing.T, path string) {
 	}
 }
 
-// TestRepoConfigOpenErrors pins the text of a config file that the daemon
-// cannot open: the error of the open, with the path not in quotes. Cells X10
-// ran the config, and cells V7 an included file (mode 000 on Linux and macOS
-// VMs, a socket on a Linux VM). The socket rows are for Linux: the error text of
-// an open of a socket is another one on macOS. A path of 400 bytes is not cut in
-// this text (cells V12, Linux and macOS VMs).
+// TestRepoConfigOpenErrors pins the text of a config file that the daemon cannot
+// open: the error of the open, with the path not in quotes. Measurements ran the
+// config and an included file (mode 000 on Linux and macOS, a socket on Linux). The
+// socket rows are for Linux: the error text of an open of a socket is another one
+// on macOS. A path of 400 bytes is not cut in this text (measured on Linux and
+// macOS).
 func TestRepoConfigOpenErrors(t *testing.T) {
 	t.Run("mode 000", func(t *testing.T) {
 		skipIfRoot(t)
@@ -181,8 +181,8 @@ func TestRepoConfigOpenErrors(t *testing.T) {
 	})
 }
 
-// TestRepoConfigIncludeNotRegular pins the kind test of an included file (cells
-// E10 and X9): a FIFO and a directory are refused with the path of that file. A
+// TestRepoConfigIncludeNotRegular pins the kind test of an included file
+// (measured): a FIFO and a directory are refused with the path of that file. A
 // symbolic link to a FIFO is refused with the path of the link. The file of an
 // `includeIf "gitdir:<repo>/"` section that matches gets the test too.
 func TestRepoConfigIncludeNotRegular(t *testing.T) {
@@ -199,7 +199,7 @@ func TestRepoConfigIncludeNotRegular(t *testing.T) {
 		{"[include]\n\tpath = dir.cfg\n", dir},
 		{"[include]\n\tpath = " + link + "\n", link},
 		{"[includeIf \"gitdir:" + repo + "/\"]\n\tpath = fifo.cfg\n", fifo},
-		// A condition that does not match (cell V8, Linux and macOS VMs).
+		// A condition that does not match (measured on Linux and macOS).
 		{"[includeIf \"gitdir:/nonexistent/zz/\"]\n\tpath = fifo.cfg\n", fifo},
 	} {
 		setRepoConfig(t, gitDir, version0+c.section)
@@ -210,9 +210,9 @@ func TestRepoConfigIncludeNotRegular(t *testing.T) {
 }
 
 // TestGitDirInfoFilesKinds pins the kind test of info/attributes and
-// info/exclude (cells C5 and X10): a FIFO and a directory are refused. A
-// symbolic link to a file, one to the null device, a dangling one and a file of
-// mode 000 are not.
+// info/exclude (measured): a FIFO and a directory are refused. A symbolic link
+// to a file, one to the null device, a dangling one and a file of mode 000 are
+// not.
 func TestGitDirInfoFilesKinds(t *testing.T) {
 	f := newRefusalFixture(t)
 	s := newTestServer(t)
@@ -267,10 +267,10 @@ func TestGitDirInfoFilesKinds(t *testing.T) {
 	}
 }
 
-// TestGitDirShallowKinds pins the kind test of `shallow` (cells C5 and X10): a
-// FIFO, a directory and a symbolic link to the null device are refused as not
-// regular. A file of mode 000 gets the error of the open. A symbolic link to a
-// file and a dangling link are not refused.
+// TestGitDirShallowKinds pins the kind test of `shallow` (measured): a FIFO, a
+// directory and a symbolic link to the null device are refused as not regular.
+// A file of mode 000 gets the error of the open. A symbolic link to a file and
+// a dangling link are not refused.
 func TestGitDirShallowKinds(t *testing.T) {
 	f := newRefusalFixture(t)
 	s := newTestServer(t)
@@ -324,7 +324,7 @@ func TestGitDirShallowKinds(t *testing.T) {
 }
 
 // TestRepoConfigIncludeNotExpanded pins the refusal of `~user` and `%(prefix)`
-// (cells C3). The text names the file that holds the line.
+// (measured). The text names the file that holds the line.
 func TestRepoConfigIncludeNotExpanded(t *testing.T) {
 	_, gitDir := configRepo(t)
 	unexpanded := func(file, value string) string {
@@ -338,8 +338,8 @@ func TestRepoConfigIncludeNotExpanded(t *testing.T) {
 		}
 	}
 	// The value in the text is cut to its first 100 characters: 100 are whole and
-	// 101 are cut, also with characters of two bytes (cells V12, Linux and macOS
-	// VMs).
+	// 101 are cut, also with characters of two bytes (measured on Linux and
+	// macOS).
 	for _, fill := range []string{"v", "é"} {
 		for _, n := range []int{100, 101, 400} {
 			value := "~root/" + strings.Repeat(fill, n-len("~root/"))
@@ -376,7 +376,7 @@ func TestRepoConfigIncludeNotExpanded(t *testing.T) {
 
 // TestRepoConfigIncludePlaces pins that `~/x` with a home folder, an absolute
 // include and a relative include that leaves the git directory are followed
-// (cells C3 and X9).
+// (measured).
 func TestRepoConfigIncludePlaces(t *testing.T) {
 	repo, gitDir := configRepo(t)
 	home := filepath.Join(filepath.Dir(repo), "home")
@@ -389,7 +389,7 @@ func TestRepoConfigIncludePlaces(t *testing.T) {
 	}
 	t.Setenv("HOME", home)
 	// The path of a relative include is the folder of its file, a separator and
-	// the value as written. A Windows VM measured that form (cells V12c and V12d).
+	// the value as written. A Windows test measured that form.
 	for value, path := range map[string]string{"~/x": x, x: x, "../../home/x": gitDir + "/../../home/x"} {
 		setRepoConfig(t, gitDir, version0+"[include]\n\tpath = "+value+"\n")
 		if got, want := configDetail(t, gitDir), markerDetail(path); got != want {
@@ -397,7 +397,7 @@ func TestRepoConfigIncludePlaces(t *testing.T) {
 		}
 	}
 	// The folder of an included file stays as written for the files that it
-	// includes (cell N13-b, Linux and macOS VMs). The last file of that cell is a FIFO.
+	// includes (measured on Linux and macOS). The last file of that cell is a FIFO.
 	if err := os.MkdirAll(filepath.Join(gitDir, "a"), 0o755); err != nil {
 		t.Fatal(err)
 	}
@@ -407,7 +407,7 @@ func TestRepoConfigIncludePlaces(t *testing.T) {
 	if got, want := configDetail(t, gitDir), markerDetail(gitDir+"/a/../b/x.cfg"); got != want {
 		t.Errorf("include of an included file below a/../b: detail = %q, want %q", got, want)
 	}
-	// `include.path = ~` names the home folder itself (cell N13, Linux VM).
+	// `include.path = ~` names the home folder itself (measured on Linux).
 	setRepoConfig(t, gitDir, version0+"[include]\n\tpath = ~\n")
 	if got, want := configDetail(t, gitDir), notRegularDetail(home); got != want {
 		t.Errorf("include ~: detail = %q, want %q", got, want)
@@ -421,10 +421,9 @@ func TestRepoConfigIncludePlaces(t *testing.T) {
 // TestRepoConfigRefusalWithWorktreeRoot pins git.worktree_remove with
 // worktreeRoot in a repository that the daemon refuses. 5fd08069 answers the
 // "cannot determine the repository's work tree" text with the refusal of the
-// read, and removes nothing (cells N14, Linux and macOS VMs). The states of those cells are
-// format version 2 and a config of 20 MiB. Each ran for a worktree that exists
-// and for a folder that is missing. In a good repository the worktree is
-// removed.
+// read, and removes nothing (measured on Linux and macOS). The states of those cells are
+// format version 2 and a config of 20 MiB. Each ran for a worktree that exists and for a
+// folder that is missing. In a good repository the worktree is removed.
 func TestRepoConfigRefusalWithWorktreeRoot(t *testing.T) {
 	f := newWRFixture(t)
 	config := filepath.Join(f.T, ".git", "config")

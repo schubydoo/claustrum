@@ -10,8 +10,8 @@ import (
 	"testing"
 )
 
-// The Windows rules of the config read. 5fd08069 answered these texts on a
-// Windows VM (cells C3a to C3d and C4b).
+// The Windows rules of the config read. 5fd08069 answered these texts on
+// Windows (measured).
 
 // TestWindowsIncludeTexts pins the two include texts with the paths of the
 // cells. The values `~`, `/x`, `\x` and `C:x` are claustrum's own, not measured. The expected texts are the message of the reply, with the JSON
@@ -33,8 +33,8 @@ func TestWindowsIncludeTexts(t *testing.T) {
 			t.Errorf("relative include %s: detail = %q, want none", value, got)
 		}
 	}
-	// A value of 400 bytes is cut to its first 300 characters (cell V12b). Cells
-	// P7w have the pair 300 and 301.
+	// A value of 400 bytes is cut to its first 300 characters (measured).
+	// Measurements have the pair 300 and 301.
 	long := "~root/" + strings.Repeat("x", 394)
 	if got, want := includeValueDetail(config, long), notRelative(long[:300]); got != want {
 		t.Errorf("include value of 400 bytes: detail = %q, want %q", got, want)
@@ -80,7 +80,7 @@ func TestWindowsIncludeThroughTheRead(t *testing.T) {
 		t.Errorf("absolute include: detail = %q, want %q", got, want)
 	}
 
-	// A relative include inside the git directory is not refused (cell C3a).
+	// A relative include inside the git directory is not refused (measured).
 	// claustrum follows it.
 	setIncludeFile(t, gitDir, "inc.cfg", markerInclude)
 	setRepoConfig(t, gitDir, version0+"[include]\n\tpath = inc.cfg\n")
@@ -89,7 +89,7 @@ func TestWindowsIncludeThroughTheRead(t *testing.T) {
 	}
 
 	// The path of an included file is the folder of its file, one backslash and
-	// the value as written: the slash of `sub/inc.cfg` stays (cells V12c and V12d).
+	// the value as written: the slash of `sub/inc.cfg` stays (measured).
 	if err := os.Mkdir(filepath.Join(gitDir, "sub"), 0o755); err != nil {
 		t.Fatal(err)
 	}
@@ -103,8 +103,8 @@ func TestWindowsIncludeThroughTheRead(t *testing.T) {
 	}
 }
 
-// TestWindowsConfigLink pins the refusal of a config that is a file link (cell
-// C4b). A host that refuses to make a symbolic link skips the test.
+// TestWindowsConfigLink pins the refusal of a config that is a file link
+// (measured). A host that refuses to make a symbolic link skips the test.
 func TestWindowsConfigLink(t *testing.T) {
 	repo, gitDir := configRepo(t)
 	config := filepath.Join(gitDir, "config")

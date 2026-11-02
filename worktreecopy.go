@@ -29,11 +29,11 @@ const worktreesSubdir = "worktrees"
 // failed request.
 // The manifest copy runs first, then the `.claude/` copy.
 //
-// A scan that its time limit stopped ends the step: no other call of the step
-// runs, and nothing is copied. On 5fd08069 the stopped scan is the last git call
-// of the create, and the create succeeds (cell T13 of round task010-01, Linux
-// and macOS VMs). The skip of the `.claude/` pass is claustrum's own, not
-// measured: the repository of T13 had no .claude folder.
+// A scan that its time limit stopped ends the step: no other call of the step runs,
+// and nothing is copied. On 5fd08069 the stopped scan is the last git call of the
+// create, and the create succeeds (measured on Linux and macOS). The skip of the
+// `.claude/` pass is claustrum's own, not measured: the measured repository had no
+// .claude folder.
 //
 // host is the settings control of the daemon, or nil (selectsIncludeScan).
 func populateWorktree(u gitUse, host *shadowHost, repo, worktree string) {
@@ -51,8 +51,8 @@ func populateWorktree(u gitUse, host *shadowHost, repo, worktree string) {
 // `.claude/` is NOT part of this pass. It has its own, always-on pass with no
 // manifest involved: copyClaudeDir in worktreeclaude.go.
 //
-// The steps were measured against f6010b97 on a macOS VM. The version parse,
-// opening rules, counts, batches and error arms were re-checked on a Linux VM.
+// The steps were measured against f6010b97 on macOS. The version parse,
+// opening rules, counts, batches and error arms were re-checked on Linux.
 //
 //   - The manifest must be a regular file at the repo root. A symlink or a
 //     directory copies nothing and runs no git. An empty regular file still
@@ -78,15 +78,13 @@ func copyWorktreeIncludes(u gitUse, host *shadowHost, repo, worktree string) (st
 	if !ok {
 		return false
 	}
-	// The copy of the manifest is the file `patterns` in a new folder of this
-	// request (requestDir). 5fd08069 names
-	// <S>/.worktreeinclude-<n>/patterns without "shadowDirOff" and
-	// <tmp>/claude-ssh-worktreeinclude-<n>/patterns with it, and the entry is
-	// gone at the reply (val-s3p2b1-linux rows N11 and D6, Linux VM). The file
-	// has mode 0644 on 5fd08069. In the folder of the daemon the cells are V5 of
-	// val-s3p2b2-3-linux2 and val-s3p2b2-3-macos (Linux and macOS VMs). In the
-	// temporary folder they are the 9 creates with the member of groups P3 of
-	// val-s3p2b2-6-linux (Linux VM). The folder goes at the end of this step.
+	// The copy of the manifest is the file `patterns` in a new folder of this request
+	// (requestDir). 5fd08069 names <S>/.worktreeinclude-<n>/patterns without
+	// "shadowDirOff" and <tmp>/claude-ssh-worktreeinclude-<n>/patterns with it, and the
+	// entry is gone at the reply (measured on Linux). The file has mode 0644 on 5fd08069.
+	// In the folder of the daemon this is measured on Linux and macOS. In the temporary
+	// folder it is measured in 9 creates with the member (on Linux). The folder goes at
+	// the end of this step.
 	dir, removeDir, err := u.requestDir(shadowIncludeDirPrefix, includeTempPrefix)
 	if err != nil {
 		return false
@@ -145,7 +143,7 @@ func readWorktreeInclude(repo string) ([]byte, bool) {
 // match. The check honours the user's global excludes, so a file ignored only by
 // ~/.config/git/ignore is copied when the manifest names it. If either call
 // fails, nothing is copied. A runtime-state path does not go to check-ignore
-// (checkIgnoreInput), as in f6010b97 (I15c and I15d, Linux and macOS VMs).
+// (checkIgnoreInput), as in f6010b97 (measured on Linux and macOS).
 func oldWorktreeIncludeScan(u gitUse, repo, excludeFile string) []string {
 	named, err := hardenedGitStdout(u, repo, false, "--no-literal-pathspecs", "ls-files", "--others",
 		"--ignored", "--exclude-from="+excludeFile, "-z", "--", ":(exclude)"+claudeDirName+"/"+worktreesSubdir)

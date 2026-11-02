@@ -20,16 +20,14 @@ import (
 // stands, with the owner test of git and with no setting of the daemon's copy.
 //
 // A request with "shadowDirOff":true, the state fallback-git and a server with
-// no run folder make no such call (s3-linux cell B1 and cell 29 of
-// s3p2b-edges-linux2, Linux VM).
+// no run folder make no such call (measured on Linux).
 
 // shadowProbeName is the folder in the folder of the daemon that the call names
 // as its common directory. probeConfigText is its config. 5fd08069 has there
 // HEAD (25 bytes, the text of shadowTestFirstHead), config (36 bytes) and the
 // empty folders info, objects and refs, with equal texts on Linux, macOS and
-// Windows VMs (s3-linux cell A3, s3-macos cell A3, s3p2-windows cell B3). On
-// Linux and macOS every folder below the folder of the daemon has mode 0700 and
-// every file 0600 (the same cells).
+// Windows (measured). On Linux and macOS every folder below the folder of the
+// daemon has mode 0700 and every file 0600 (measured).
 const (
 	shadowProbeName = ".probe"
 	probeConfigText = "[core]\n\trepositoryformatversion = 0\n"
@@ -41,19 +39,17 @@ var (
 	// On 5fd08069 a request 4.90 s after the start of a short call made no
 	// call, and one at 4.95 s made it at 5.02 s. After a call that its wrapper
 	// held for 2 s, a request 4.50 s after its end made no call and one 5.50 s
-	// after its end made one (cell 34 of s3p2b-edges-linux2, Linux VM). On a
-	// Windows VM no call came 1.04 s after the end and one came 5.60 s after
-	// it, and on a macOS VM none at 2.84 s and one at 8.9 s (cell 25 of
-	// s3p2b-edges2-windows, cell 40 of s3p2b-edges-macos).
+	// after its end made one (measured on Linux). On Windows no call came 1.04
+	// s after the end and one came 5.60 s after it, and on macOS none at 2.84
+	// s and one at 8.9 s (measured).
 	probeKeep = 5 * time.Second
 	// probeCallBound ends the call. shadowCallDrain is the wait for its output
 	// pipes after that. On 5fd08069 a call held for 29 s gave a normal reply at
 	// 29.30 s. A call held for 31 s or 40 s gave the error at 31.16 s and 31.15
-	// s. The sleep child of the wrapper lived on in that round (cell 37 of
-	// s3p2b-edges-linux2, Linux VM). A macOS VM gave the error at 30.21 s and a
-	// Windows VM 29.98 s after the start of the call (cell 40 of
-	// s3p2b-edges-macos and of s3p2b-edges-windows). The split into the two
-	// times is fitted, as for a call of the start test.
+	// s. The sleep child of the wrapper lived on in that round (measured on
+	// Linux). A macOS test gave the error at 30.21 s and Windows 29.98 s after the
+	// start of the call (measured). The split into the two times is fitted, as
+	// for a call of the start test.
 	probeCallBound = 30 * time.Second
 	// probeSecondBound ends the second run of the call (secondProbe), counted
 	// from its own start. c8e2f083 killed a second run that did not end 30 s
@@ -88,20 +84,18 @@ func probeStat(path string) os.FileInfo {
 // probeGitStat is probeStat for the `.git` entry at path. A junction there is
 // read as the entry itself, not as the folder behind it.
 //
-// The rule is fitted to part Q of val-s3p2b2-9-windows (Windows VM, 2 forms, 2
-// of 2 runs). `repo\.git` is a junction before the daemon starts. The first
-// request of 5fd08069 makes the call about the repository, and its seven later
-// requests make no git call. The driver runs a plain `git status` in the
-// repository between two requests. With a real `.git` directory and the same
-// driver, each request of 5fd08069 makes the call again (control cell Qk). The
-// time and the identity of the junction entry are the same at every view of
-// the cell. On Windows Lstat gives ModeIrregular for a junction. A symbolic
-// link keeps the Stat rule, on every system. On 5fd08069 later requests make
-// no call with a directory symbolic link too (part D of
-// val-s3p2b2-12-windows). claustrum makes one call for each later request
-// with a link to a real git directory, and none with a link to the copy T of
-// cell DT-symd-late-to-T (section 1.8 of val-s3p2b2-13-windows, Windows VM, 2
-// of 2 runs).
+// The rule is fitted to measured cases (Windows, 2 forms, 2 of 2 runs).
+// `repo\.git` is a junction before the daemon starts. The first request of
+// 5fd08069 makes the call about the repository, and its seven later requests
+// make no git call. The driver runs a plain `git status` in the repository
+// between two requests. With a real `.git` directory and the same driver, each
+// request of 5fd08069 makes the call again (control cell Qk). The time and the
+// identity of the junction entry are the same at every view of the cell. On
+// Windows Lstat gives ModeIrregular for a junction. A symbolic link keeps the
+// Stat rule, on every system. On 5fd08069 later requests make no call with a
+// directory symbolic link too (measured). claustrum makes one call for each
+// later request with a link to a real git directory, and none with a link to
+// the copy T (measured on Windows, 2 of 2 runs).
 func probeGitStat(path string) os.FileInfo {
 	if fi, err := os.Lstat(path); err == nil && fi.Mode()&os.ModeIrregular != 0 {
 		os.SameFile(fi, fi)
@@ -125,9 +119,8 @@ func sameProbeFile(a, b os.FileInfo) bool {
 // identity and the modification time that they had after the call.
 //
 // The rule is fitted to these rows of 5fd08069, each one change 0.1 s after a
-// git.info and a second git.info 1.0 s after the call (cell 35 of
-// s3p2b-edges-linux2, Linux VM. Cell 25 of s3p2b-edges2-macos and of
-// s3p2b-edges2-windows). A new call: `touch <repo>`, `mkdir <repo>/x`, `touch
+// git.info and a second git.info 1.0 s after the call (measured on Linux,
+// macOS and Windows). A new call: `touch <repo>`, `mkdir <repo>/x`, `touch
 // <repo>/.git`, a new file in `.git`, and on Linux and macOS a modification
 // time of `.git` or of `<repo>` that is set 100 s back. A new call on Linux:
 // `.git` replaced by a copy with both old modification times. No new call: a
@@ -136,7 +129,7 @@ func sameProbeFile(a, b os.FileInfo) bool {
 // the parent folder, one more worktree by plain git, `chmod 700 .git` and
 // `chown nobody:nogroup .git`. The last six ran on Linux only. After that
 // change of the owner the answer stays kept, and 5fd08069 answers normally
-// until the time is over (cell 31 of s3p2b-edges2-linux, Linux VM).
+// until the time is over (measured on Linux).
 func (k keptProbe) fresh(root string) bool {
 	return !k.end.IsZero() && probeClock().Sub(k.end) < probeKeep &&
 		sameProbeFile(k.root, probeStat(root)) && sameProbeFile(k.git, probeGitStat(filepath.Join(root, ".git")))
@@ -175,21 +168,19 @@ var probeRebaseFolders = []string{"rebase-merge", "rebase-apply"}
 // probeLeftovers and probeRebaseFolders in it. Every other entry stays
 // (claustrum's own, not measured). A planted `keepme` stayed on 5fd08069 (measured on
 // Linux). The files are new
-// files through a temporary file, as the copies of a repository: a poll on a
-// macOS VM saw `.probe/.tmp-<digits>` (val-s3p2b2-3-macos row D7). A file that
-// holds its text already stays as it is. An unchanged config kept its inode
-// and its time on 5fd08069, and a folder at HEAD became the file (measured on
-// Linux). A failed temporary file goes.
+// files through a temporary file, as the copies of a repository: a poll on macOS saw
+// `.probe/.tmp-<digits>` (measured). A file that holds its text already stays as it
+// is. An unchanged config kept its inode and its time on 5fd08069, and a folder at
+// HEAD became the file (measured on Linux). A failed temporary file goes.
 //
-// 5fd08069 has the folder after a first good request (s3-linux cell A3). It has
-// none in the state fallback-git and after a failed test, where it makes no such
-// call (s3p2-oldgit section 5). A folder of the daemon that it made again after
-// the first one went had none after one git.status that answered normally
-// (s3-linux cell B6, Linux VM, and s3-macos cell B6). claustrum prepares the
-// folder right before each call (askGit). That fits those rows when the
-// git.status of cell B6 came inside the kept time of the answer, which the cell
-// does not record. Git needs the folder: without it the call answers "not a git
-// repository" (git 2.47.3 on the development host).
+// 5fd08069 has the folder after a first good request (measured). It has none in
+// the state fallback-git and after a failed test, where it makes no such call
+// (measured). A folder of the daemon that it made again after the first one went
+// had none after one git.status that answered normally (measured on Linux).
+// claustrum prepares the folder right before each call (askGit). That fits those
+// rows when the git.status came inside the kept time of the answer, which the
+// cell does not record. Git needs the folder: without it the call answers "not a
+// git repository" (git 2.47.3 on the development host).
 //
 // Each delete goes through removeEntry or removeOneEntry, with fixed names
 // below the folder of the daemon. An error names its full path
@@ -212,9 +203,9 @@ func (h *shadowHost) prepareProbeFolder(dir string) error {
 	defer func() { _ = root.Close() }()
 	// The order is `refs`, `objects`, `info`, then `config`, then `HEAD`. On
 	// 5fd08069 the birth times of the entries have that order in 14 of 14
-	// folders (row E2 of val-s3p2b2-5-macos, macOS VM). The write times of a
-	// Windows VM fit it: `objects` and `refs`, then `config` and `info`, then
-	// `HEAD` (val-s3p2b2-5-windows section 2, one polled run).
+	// folders (measured on macOS). The write times of Windows fit it:
+	// `objects` and `refs`, then `config` and `info`, then `HEAD` (measured,
+	// one polled run).
 	for _, name := range []string{"refs", "objects", "info"} {
 		if err := root.Mkdir(name, 0o700); err != nil && !errors.Is(err, os.ErrExist) {
 			return probePathError(probe, err)
@@ -272,9 +263,9 @@ func probePathError(dir string, err error) error {
 // and returns the refusal text of a failed step, or "". The step runs before
 // each call about the repository that no kept answer spares. 5fd08069 has the
 // 36 bytes of the config again after a git.info that came 6 s after the file
-// was emptied (cell C10 of round tier0-5, Linux VM). When `.probe` cannot be
-// prepared, 5fd08069 answers -32603 with this text and runs no git (measured on
-// Linux). It holds probeFolderMu from the look to the end of the make.
+// was emptied (measured on Linux). When `.probe` cannot be prepared, 5fd08069
+// answers -32603 with this text and runs no git (measured on Linux). It holds
+// probeFolderMu from the look to the end of the make.
 func (h *shadowHost) ensureProbeFolder(folder string) string {
 	h.probeFolderMu.Lock()
 	defer h.probeFolderMu.Unlock()
@@ -286,34 +277,31 @@ func (h *shadowHost) ensureProbeFolder(folder string) string {
 
 // probeNames are the variables that the call sets. The daemon's own entries of
 // these names do not go to the call. 5fd08069 replaces the daemon's
-// GIT_CEILING_DIRECTORIES for this call (s3p2-linux2 cell D5, Linux VM). The
-// call has no GIT_DIR and no GIT_WORK_TREE in the cells, where the daemon has
-// none.
+// GIT_CEILING_DIRECTORIES for this call (measured on Linux). The call has no
+// GIT_DIR and no GIT_WORK_TREE in the cells, where the daemon has none.
 var probeNames = []string{
 	"GIT_COMMON_DIR", "GIT_OBJECT_DIRECTORY", "GIT_CEILING_DIRECTORIES",
 	"GIT_ALLOW_PROTOCOL", "GIT_NO_LAZY_FETCH", "GIT_TERMINAL_PROMPT", "LC_ALL", "LANGUAGE",
 }
 
-// probeDropNames are the daemon's variables that the call does not get. The
-// call keeps the daemon's GIT_CONFIG_COUNT and its pairs. 5fd08069 does both on
-// Linux, macOS and Windows VMs (cells C8, C8b, C8c and C8K of round tier3-02).
-// The later calls of a request get these four names. Every GIT_CONFIG_KEY_<n>
-// and GIT_CONFIG_VALUE_<n> of the daemon passes, also one outside the count.
-// The hardened calls rebuild only the counted pairs (configPinEnv). Cell C8c
-// set a count of 1 with pair 0 only, so a name outside the count is not
-// measured.
+// probeDropNames are the daemon's variables that the call does not get. The call
+// keeps the daemon's GIT_CONFIG_COUNT and its pairs. 5fd08069 does both on Linux,
+// macOS and Windows (measured). The later calls of a request get these four names.
+// Every GIT_CONFIG_KEY_<n> and GIT_CONFIG_VALUE_<n> of the daemon passes, also one
+// outside the count. The hardened calls rebuild only the counted pairs
+// (configPinEnv). A measurement set a count of 1 with pair 0 only, so a name
+// outside the count is not measured.
 var probeDropNames = []string{
 	"GIT_NAMESPACE", "GIT_INDEX_FILE", "GIT_DISCOVERY_ACROSS_FILESYSTEM", "GIT_ALTERNATE_OBJECT_DIRECTORIES",
 }
 
 // probeEnv is the environment of the call for the work tree root in the folder
 // dir of the daemon. The eight variables and their order are those of the call
-// log of 5fd08069 on a Linux VM (s3p2-linux cell B3a and val-s3p2b1-linux cell
-// A1). The ceiling is the parent folder of the root: `<W>/home` for
-// `<W>/home/repo`, and `<repo>/.claude/worktrees` for a linked worktree there
-// (s3p2-linux cells B3a and B3b). A Windows VM has `C:\o\w` for `C:\o\w\repo`,
-// and a macOS VM `/private/tmp/o` (cell 40 of s3p2b-edges-windows, cell 50 of
-// s3p2b-edges-macos). A root with no parent folder is not measured.
+// log of 5fd08069 on Linux (measured). The ceiling is the parent folder of the
+// root: `<W>/home` for `<W>/home/repo`, and `<repo>/.claude/worktrees` for a
+// linked worktree there (measured). A Windows test has `C:\o\w` for `C:\o\w\repo`,
+// and macOS `/private/tmp/o` (measured). A root with no parent folder is not
+// measured.
 func probeEnv(dir, root string) []string {
 	env := slices.DeleteFunc(listingEnvBase(), func(kv string) bool {
 		return slices.Contains(probeNames, envName(kv)) || slices.Contains(probeDropNames, envName(kv))
@@ -342,13 +330,12 @@ func probeArgs() []string {
 //
 // The call runs in the root of the work tree. For a folder inside the work
 // tree that is the root of the repository, and for a linked worktree it is the
-// worktree (s3p2-linux2 cell D7b and s3p2-linux cell B3b, Linux VM). A bare
-// repository gets the call in the repository itself (s3p2-linux cell B3c). A
-// folder inside a git directory is not measured: the call runs in the git
-// directory.
+// worktree (measured on Linux). A bare repository gets the call in the
+// repository itself (measured). A folder inside a git directory is not
+// measured: the call runs in the git directory.
 //
-// The answers, as 5fd08069 reads them (cell 39 of s3p2b-edges-linux2, Linux
-// VM, where a wrapper answers the call itself):
+// The answers, as 5fd08069 reads them (measured on Linux, where a
+// wrapper answers the call itself):
 //
 //   - Exit 0 and the git directory of the repository: good. Git prints `.git`,
 //     and the full path is good too. A path that is not absolute is taken from
@@ -359,41 +346,36 @@ func probeArgs() []string {
 //   - Every other failure that probeCallBound did not stop: the error `git could not check this
 //     repository on the remote machine: at "<root>": exit status <n>`, after
 //     one `git version` call (cannotRunText). If that call fails, its text is
-//     the answer (cell P14x of round task073-03, Linux VM). After `fatal: bad
-//     config line 3 in file <home>/.gitconfig` that holds for each of the five
-//     methods (cell E8 of round task083-01 and cells E8s, E8l, E8c and E8r of
-//     round task083-02, Linux VM). Exit 1 with a text on the
-//     error output has that text in the place of the exec error: `… at
-//     "<root>": fatal: text of the wrapper for p3`, with the same call count
-//     (cells p3 of val-s3p2b2-7-linux2, Linux VM). A text of two lines stands
-//     there with one space between the lines (shadowRun.allLines, cell N-f of
-//     val-s3p2b2-8-linux2, Linux VM). Exit 2 with a text has the rule of exit 1,
-//     with 13 and 2 calls (the same cell). A SIGTERM (cell P13 of round
-//     task073-03) and a git that cannot start (cell W2-280 of round task073-01)
-//     have it too. Another exit code is not measured: it has the rule of exit 1.
+//     the answer (measured on Linux). After `fatal: bad config line 3 in file
+//     <home>/.gitconfig` that holds for each of the five methods (measured on Linux). Exit 1
+//     with a text on the error output has that text in the place of the exec error: `… at
+//     "<root>": fatal: text of the wrapper for p3`, with the same call count (measured on
+//     Linux). A text of two lines stands there with one space between the lines
+//     (shadowRun.allLines, measured on Linux). Exit 2 with a text has the
+//     rule of exit 1, with 13 and 2 calls (measured). A SIGTERM (measured) and a git that
+//     cannot start have it too. Another exit code is not measured: it has the rule of exit 1.
 //   - Exit 0 and another path, or no output: the call runs one more time. The
 //     same answer then gives the error `git and Claude disagree about which
 //     repository holds this folder: …`. With no output the path of git is the
 //     root.
 //   - A call that probeCallBound ended: the error `… it did not finish within
-//     30 seconds in "<root>"; try again` (cell 37 of that round, and cell 40 on
-//     macOS and Windows VMs).
+//     30 seconds in "<root>"; try again` (measured on macOS and Windows).
 //   - Exit 0 while a child keeps the output pipes past shadowCallDrain: the
 //     output read so far is the answer, as above, with no `git version` call.
-//     5fd08069 goes on about 1 s after the exit (cells P1 to P3 of round
-//     task100-01, Linux VM, git.status). The rest is not measured.
+//     5fd08069 goes on about 1 s after the exit (measured on Linux,
+//     git.status). The rest is not measured.
 //
 // Only a good answer is kept (keptProbe). After a bad answer each request asks
-// again (cells 37 and 39). On Windows git prints the path with forward slashes.
-// A path of git that names the same folder in another spelling counts as the
-// git directory (not measured).
+// again (measured). On Windows git prints the path with forward slashes. A path
+// of git that names the same folder in another spelling counts as the git
+// directory (not measured).
 //
 // The "disagree" text shows the path of git as git printed it. For the answer
 // `C:/o/w/other/.git` 5fd08069 writes `git finds "C:/o/w/other/.git"`. For
-// the same path with backslashes it writes the backslashes (table P2 of
-// val-s3p2b2-7-windows, Windows VM). The paths of the root and of the daemon
-// keep their backslashes in both rows. A printed path that is not clean, or
-// not absolute, is not measured: it is shown cleaned and from the root.
+// the same path with backslashes it writes the backslashes (measured on
+// Windows). The paths of the root and of the daemon keep their backslashes in
+// both rows. A printed path that is not clean, or not absolute, is not
+// measured: it is shown cleaned and from the root.
 func (h *shadowHost) askGit(t gitDirTrust, dir string) repoAnswer {
 	root, _ := gitWalkRoot(dir)
 	inGitDir := root == ""
@@ -567,10 +549,10 @@ func repoCheckFailedText(root, detail string) string {
 // lines are joined by one space. The call about the repository has that form.
 // For the two lines `fatal: line one of the wrapper for p3` and `hint: line two
 // of the wrapper for p3` 5fd08069 answers `… at "<root>": fatal: line one of
-// the wrapper for p3 hint: line two of the wrapper for p3` (cell N-f of
-// val-s3p2b2-8-linux2, Linux VM, `git.info` and `git.status`). An empty line
-// between two lines, and a line with spaces at its ends, are not measured:
-// claustrum drops the empty line and those spaces.
+// the wrapper for p3 hint: line two of the wrapper for p3` (measured on Linux,
+// `git.info` and `git.status`). An empty line between two lines, and a line
+// with spaces at its ends, are not measured: claustrum drops the empty line and
+// those spaces.
 func (r shadowRun) allLines() string {
 	if lines := stderrLines([]byte(r.stderr)); lines != "" {
 		return lines
@@ -596,15 +578,12 @@ func printedProbePath(out, found, sep string) string {
 //
 //   - after a failed call about the repository that is not a "no repository"
 //     answer. The requests have 13, 2, 2, 2 and 4 calls there. The build
-//     before had 12, 1, 1, 1 and 2 (cell 39 of val-s3p2b2-5-linux2, Linux VM).
-//     An exit 1 with a text has 13 and 2 calls (cells p3 of
-//     val-s3p2b2-7-linux2, Linux VM). Three answers have no such call: "no
-//     repository", an answer with another path, and an ended call (cell 39,
-//     and cells 37 and 38).
+//     before had 12, 1, 1, 1 and 2 (measured on Linux). An exit 1 with a text
+//     has 13 and 2 calls (measured on Linux). Three answers have no such call:
+//     "no repository", an answer with another path, and an ended call
+//     (measured).
 //   - after a read of the config that failed with a syntax error, in each
-//     request (cell x9-syntax-own of that round, the A5 cells of
-//     val-s3p2b2-5-linux and val-s3p2b2-5-macos, and PA5 of
-//     val-s3p2b2-5-windows).
+//     request (measured).
 //
 // The call has the bound of a call of the start test. Its environment is
 // gitVersionEnv(nil), also in the first `git version` call of shadowVersionNote
@@ -618,11 +597,10 @@ func versionAfterFailure() shadowRun {
 // the detail of the failed call, as in failedListingText. After a failed call 7
 // of the start test, 5fd08069 answers `git cannot run on this host; git not
 // run: exit status 128: fatal: bad config line 3 in file <home>/.gitconfig`
-// (cells E1 to E5 of round task083-01 on a Linux VM, E1 and E2 on macOS and
-// Windows VMs). askGit uses it too, and so does a create
-// after a failed first checkout listing (hardenedGitCheckout). A call that
-// exited 0 while a child kept its output pipes past shadowCallDrain works, as a
-// test call does (exitedInTime).
+// (measured on Linux, macOS and Windows). askGit uses it too, and so does a
+// create after a failed first checkout listing (hardenedGitCheckout). A call
+// that exited 0 while a child kept its output pipes past shadowCallDrain works,
+// as a test call does (exitedInTime).
 func cannotRunText() string {
 	v := exitedInTime(versionAfterFailure())
 	if v.err == nil {
@@ -674,15 +652,13 @@ func (h *shadowHost) asksGit(t gitDirTrust, off bool) bool {
 //
 // 5fd08069 tests the kept answer at more than one step of a request. A
 // git.info that came 4.95 s after the call made the next call as its fifth,
-// after `remote get-url origin` (cell 34 of s3p2b-edges-linux2, Linux VM). A
-// create in a repository with no `.claude` folder made it as its third call,
-// after `rev-parse --is-inside-work-tree` and before the next listing, where
-// the daemon had made that folder (cell 36 of that round). A create whose
-// `worktree add` moved the time of `.git` made no call after it: its later
-// calls have --git-dir= (the same cell, and cell 26 of s3p2b-edges2-macos and
-// of s3p2b-edges2-windows). The place before each such listing is fitted to
-// those rows. A bad answer at such a step is not measured: the request goes on,
-// and the next request asks again.
+// after `remote get-url origin` (measured on Linux). A create in a repository
+// with no `.claude` folder made it as its third call, after `rev-parse
+// --is-inside-work-tree` and before the next listing, where the daemon had made
+// that folder (measured). A create whose `worktree add` moved the time of
+// `.git` made no call after it: its later calls have --git-dir= (measured). The
+// place before each such listing is fitted to those rows. A bad answer at such
+// a step is not measured: the request goes on, and the next request asks again.
 func (u gitUse) recheck(dir string) {
 	if !u.shadow() || u.host == nil {
 		return

@@ -16,12 +16,12 @@ import (
 )
 
 // The decisions of the staged `worktree add` (worktreestaging.go). These tests
-// run on every system. The values are those of the Windows VM cells that each
-// test names. Each test says which change of the code turns it red.
+// run on every system. The values are those of Windows cells that each test
+// names. Each test says which change of the code turns it red.
 
-// TestIsStagingName pins the name test of the cleanup with the seven names of
-// cell 48 of s3p2b-edges3-windows. Without the dash in the prefix the two names
-// `.claude-new-worktree` and `.claude-new-worktreeX` go.
+// TestIsStagingName pins the name test of the cleanup with the seven names.
+// Without the dash in the prefix the two names `.claude-new-worktree` and
+// `.claude-new-worktreeX` go.
 func TestIsStagingName(t *testing.T) {
 	for name, want := range map[string]bool{
 		".claude-new-worktree-0123456789abcdef": true,
@@ -43,10 +43,10 @@ func TestIsStagingName(t *testing.T) {
 	}
 }
 
-// TestStagingEntryIsOld pins the age test with the ages of cell 48: the four
-// oldest entries that stay and the youngest that goes. The bound itself is not
-// in the cell: an age of one hour goes here. A test for `>` in place of `>=`
-// fails at that row, and another bound fails at the measured rows.
+// TestStagingEntryIsOld pins the age test with the ages: the four oldest
+// entries that stay and the youngest that goes. The bound itself is not in the
+// cell: an age of one hour goes here. A test for `>` in place of `>=` fails at
+// that row, and another bound fails at the measured rows.
 func TestStagingEntryIsOld(t *testing.T) {
 	now := time.Date(2026, 10, 11, 17, 0, 0, 0, time.UTC)
 	for _, row := range []struct {
@@ -92,7 +92,7 @@ func TestGoesAsTree(t *testing.T) {
 	}
 }
 
-// The texts of cell 49 of s3p2b-edges3-windows.
+// The texts.
 const (
 	cell49Head   = "ref: refs/heads/main\n"
 	cell49WsHead = "ref: refs/heads/ws\n"
@@ -114,11 +114,11 @@ func cell49Registration(name, head, gitdir string, locked *string) registrationC
 }
 
 // TestAddCopyEntries pins the entries of `.s<n>` per state of the repository,
-// with the six states of cell 49: one registration, none, two, a locked one, a
-// locked one with a reason, and one whose worktree folder is gone. Each entry
-// is a line `<path> <size>`, and a folder has the size `dir`. The sizes are
-// those of the cell. A `worktrees` folder that is always made fails the state
-// 49b, and a missing `locked` fails 49d and 49e.
+// with the six states: one registration, none, two, a locked one, a locked one
+// with a reason, and one whose worktree folder is gone. Each entry is a line
+// `<path> <size>`, and a folder has the size `dir`. The sizes are those of the
+// cell. A `worktrees` folder that is always made fails the state 49b, and a
+// missing `locked` fails 49d and 49e.
 func TestAddCopyEntries(t *testing.T) {
 	config := []byte(strings.Repeat("c", 212))
 	exclude := []byte(strings.Repeat("e", 240))
@@ -160,7 +160,7 @@ func TestAddCopyEntries(t *testing.T) {
 			t.Error("a repository with no info/exclude got that entry")
 		}
 	}
-	// The texts go in as they are: the locked text of cell 49e.
+	// The texts go in as they are: the locked text.
 	last := addCopyEntries([]byte(cell49Head), config, exclude, true,
 		[]registrationCopy{cell49Registration("ws", cell49WsHead, cell49WsDir, &reason)})
 	if e := last[len(last)-1]; e.path != "worktrees/ws/locked" || string(e.data) != reason {
@@ -168,8 +168,8 @@ func TestAddCopyEntries(t *testing.T) {
 	}
 }
 
-// TestRegistrationFiles pins the files of a registration that are copied. Cell
-// 49 shows these four, and no `index`, `ORIG_HEAD`, `logs` or `refs`.
+// TestRegistrationFiles pins the files of a registration that are copied. A
+// measurement shows these four, and no `index`, `ORIG_HEAD`, `logs` or `refs`.
 func TestRegistrationFiles(t *testing.T) {
 	if want := []string{"HEAD", "commondir", "gitdir", "locked"}; !slices.Equal(registrationFiles, want) {
 		t.Errorf("registrationFiles = %q, want %q", registrationFiles, want)
@@ -177,8 +177,8 @@ func TestRegistrationFiles(t *testing.T) {
 }
 
 // TestWorktreeGitFileText pins the text of the `.git` file of a new worktree
-// after the staging step: the 38 bytes of cells 44a and 49a to 49f. A text with
-// backslashes, or with no newline, fails here.
+// after the staging step: the 38 bytes. A text with backslashes, or with no
+// newline, fails here.
 func TestWorktreeGitFileText(t *testing.T) {
 	const want = "gitdir: C:/o/w/repo/.git/worktrees/w1\n"
 	got := worktreeGitFileText(`C:\o\w\repo\.git`, "w1")
@@ -188,9 +188,9 @@ func TestWorktreeGitFileText(t *testing.T) {
 }
 
 // TestStagedGitFileText pins which old text of the `.git` file is replaced. The
-// first row has the 94 bytes of cell 44a: the path of the registration in
-// `.s<n>` with forward slashes. Without the test of the end, the text of
-// another folder or of another name is replaced.
+// first row has the 94 bytes: the path of the registration in `.s<n>` with
+// forward slashes. Without the test of the end, the text of another folder or
+// of another name is replaced.
 func TestStagedGitFileText(t *testing.T) {
 	const gitDir = `C:\o\w\repo\.git`
 	const want = "gitdir: C:/o/w/repo/.git/worktrees/w1\n"
@@ -243,7 +243,7 @@ func TestNewRegistrationName(t *testing.T) {
 
 // TestWithAddCopy pins the folder variable of the `worktree add` call: the
 // folder `.s<n>` in the place of the copy of the repository, and the three
-// other folder variables as they are (cell 49b, the call log).
+// other folder variables as they are (measured, the call log).
 func TestWithAddCopy(t *testing.T) {
 	env := []string{"A=1", `GIT_COMMON_DIR=C:\S\0a83`, `GIT_OBJECT_DIRECTORY=C:\repo\.git\objects`, `GIT_DIR=C:\repo\.git`, `GIT_WORK_TREE=C:\repo`}
 	got := withAddCopy(env, `C:\S\0a83`, `C:\S\.s1314002893`)
@@ -257,9 +257,9 @@ func TestWithAddCopy(t *testing.T) {
 }
 
 // stagingSweepFixture is a folder that stands for a git directory, with the
-// entries of cell 48. Every entry is new. The cleanup of a test runs with a
-// clock that is two hours ahead, so an entry is old unless the test gave it a
-// write time that is 90 minutes ahead.
+// entries. Every entry is new. The cleanup of a test runs with a clock that
+// is two hours ahead, so an entry is old unless the test gave it a write time
+// that is 90 minutes ahead.
 type stagingSweepFixture struct {
 	dir    string
 	target string
@@ -348,9 +348,9 @@ func recordStagingRemovals(t *testing.T) *[]string {
 
 // TestSweepOldStagingGuards pins what the cleanup asks to remove, with the
 // removal replaced: the test removes nothing, also when a guard is gone. The
-// rows are those of cell 48. The names that go are the three old entries with
-// the name form and the link. A real folder goes as a tree, and a file and a
-// link go as one entry.
+// rows are those. The names that go are the three old entries with the name
+// form and the link. A real folder goes as a tree, and a file and a link go
+// as one entry.
 //
 // Without the name test the names with no dash and `worktrees` are asked for.
 // Without the age test the two young entries are. With Stat in place of Lstat
@@ -400,10 +400,10 @@ func TestSweepOldStagingRefusesHome(t *testing.T) {
 }
 
 // TestSweepOldStagingRemoves runs the cleanup with its real removal, on the
-// fixture of cell 48. The old entries with the name form are gone, the folder
-// with its file. The target of the link and its marker stay (30 of 30 junction
-// cells on 5fd08069). Every other entry stays. A removal that fails is logged
-// and does not stop the cleanup.
+// fixture. The old entries with the name form are gone, the folder with its
+// file. The target of the link and its marker stay (30 of 30 junction cells on
+// 5fd08069). Every other entry stays. A removal that fails is logged and does
+// not stop the cleanup.
 func TestSweepOldStagingRemoves(t *testing.T) {
 	f := newStagingSweepFixture(t)
 	linked := f.link(t)
@@ -485,13 +485,12 @@ func listTree(t *testing.T, dir string) []string {
 }
 
 // TestOpenAddStage pins the folder `.s<n>` before git runs, on a repository
-// with one registration (`wr`), which is the state of cells 44a and 49a. The
-// name is `.s` and a decimal number. HEAD, config and info/exclude have the
-// texts of the copy of the repository, `objects` and `refs` are empty, and the
-// registration has its three files and nothing else of the real one. A locked
-// registration gets its `locked` file with its text (cell 49e), and a link in
-// `worktrees` is no registration. After close the folder is gone (cells 44b and
-// 44d).
+// with one registration (`wr`), which is the state. The name is `.s` and a
+// decimal number. HEAD, config and info/exclude have the texts of the copy of
+// the repository, `objects` and `refs` are empty, and the registration has its
+// three files and nothing else of the real one. A locked registration gets its
+// `locked` file with its text (measured), and a link in `worktrees` is no
+// registration. After close the folder is gone (measured).
 //
 // Without the removal in close the folder stays. A copy of the whole
 // registration fails at `index`, `ORIG_HEAD` or `logs`.
@@ -545,11 +544,10 @@ func TestOpenAddStage(t *testing.T) {
 	}
 }
 
-// TestOpenAddStageWithNoRegistration pins cell 49b: a repository with no
+// TestOpenAddStageWithNoRegistration pins a measured case: a repository with no
 // registration gets no `worktrees` folder in `.s<n>`, and the folder
 // `worktrees` of its git directory is made before the call. The repository of
-// the test has no info/exclude either, which no cell has: `info` is then
-// empty.
+// the test has no info/exclude either, which no cell has: `info` is then empty.
 func TestOpenAddStageWithNoRegistration(t *testing.T) {
 	f := newRepoFolderFixture(t)
 	clearFolderEnv(t)
@@ -647,14 +645,14 @@ func addFolders(t *testing.T, folder string) []string {
 }
 
 // TestWorktreeAddStaged runs the staged add with the git of the host, and pins
-// the end state of cells 44a, 47 and 49a:
+// the end state:
 //
 //   - The registration is in `<git directory>/worktrees/w1` with HEAD,
 //     commondir, gitdir and the folder refs.
 //   - The `.git` file of the new worktree has the text of worktreeGitFileText.
 //   - `.s<n>` is gone, and no staging folder is left in the git directory.
 //   - The branch is in the repository itself, and git lists the new worktree.
-//   - An old staging entry is gone and a young one stays (cell 48, control M1).
+//   - An old staging entry is gone and a young one stays (measured, with a control).
 //
 // Without the move the registration is missing. Without the write of the
 // `.git` file its text names the folder that is gone. Without the cleanup the
@@ -711,8 +709,8 @@ func TestWorktreeAddStaged(t *testing.T) {
 	}
 }
 
-// TestWorktreeAddStagedFailedAdd pins a failed add (cells 44b and 44d): the
-// call returns the error of git, `.s<n>` is gone, the git directory has no new
+// TestWorktreeAddStagedFailedAdd pins a failed add (measured): the call
+// returns the error of git, `.s<n>` is gone, the git directory has no new
 // registration and no staging folder, and an old staging entry stays, because
 // the cleanup runs after a good call only. git refuses here because the branch
 // exists. Without the removal after a failed call `.s<n>` stays.
@@ -747,9 +745,8 @@ func TestWorktreeAddStagedFailedAdd(t *testing.T) {
 // TestWorktreeAddStagedTakesTheNextName pins rule 4 of the move. With a plain
 // file at the place of the registration, the move goes to w11. The file
 // stays, and the .git file of the leaf names w11. On 5fd08069 a folder w1 that
-// was made after the add sends the move to w11 (cell S5 of round task087-01,
-// Windows VM). Without registrationTarget the move keeps the old refusal and
-// logs a line.
+// was made after the add sends the move to w11 (measured on Windows). Without
+// registrationTarget the move keeps the old refusal and logs a line.
 func TestWorktreeAddStagedTakesTheNextName(t *testing.T) {
 	f := newRepoFolderFixture(t)
 	clearFolderEnv(t)
@@ -775,8 +772,8 @@ func TestWorktreeAddStagedTakesTheNextName(t *testing.T) {
 }
 
 // TestRegistrationTarget pins the names of rule 4. The name is the first free
-// one of w1 and w11 to w199. There is none when all 100 are there (cells S5
-// and S6v of round task087-01, Windows VM).
+// one of w1 and w11 to w199. There is none when all 100 are there (measured
+// on Windows).
 func TestRegistrationTarget(t *testing.T) {
 	dir := t.TempDir()
 	if err := os.Mkdir(filepath.Join(dir, "worktrees"), 0o755); err != nil {
@@ -841,10 +838,9 @@ func TestWorktreeAddStagedWithNoCheckpoint(t *testing.T) {
 // folder of the call is gone, no registration and no `.s<n>` are left, and no
 // line is logged. On 5fd08069 the create then answers `git worktree add failed
 // (completing the new worktree's git files): renameat
-// .claude-new-worktree-<hex> worktrees\<name>: Access is denied.` (cells W3b
-// and W3c of round task009-01, Windows VM). Without the failure of the create
-// the add succeeds and logs a line. Without the remove the staging folder
-// stays.
+// .claude-new-worktree-<hex> worktrees\<name>: Access is denied.` (measured on
+// Windows). Without the failure of the create the add succeeds and logs a line.
+// Without the remove the staging folder stays.
 func TestWorktreeAddStagedFailedMove(t *testing.T) {
 	f := newRepoFolderFixture(t)
 	clearFolderEnv(t)
