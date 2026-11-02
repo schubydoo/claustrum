@@ -136,6 +136,47 @@ func TestShutdownBySignalLines(t *testing.T) {
 	}
 }
 
+// TestSignalWatchHandlesOneSignal pins a rule of 89cb6289 (measured on Linux): of two SIGTERM in the
+// start, the daemon handles one. It logs one "received" line, and the attach of the server then logs
+// one "shutdown requested" line. The second signal stays unread.
+func TestSignalWatchHandlesOneSignal(t *testing.T) {
+	logs := captureLogBuf(t)
+	sigc := make(chan os.Signal, 2)
+	sigc <- syscall.SIGTERM
+	sigc <- syscall.SIGTERM
+	w := watchSignals(sigc, false)
+	fired := func() bool {
+		w.mu.Lock()
+		defer w.mu.Unlock()
+		return w.fired
+	}
+	deadline := time.Now().Add(10 * time.Second)
+	for !fired() {
+		if time.Now().After(deadline) {
+			t.Fatal("the watch handled no signal within 10 s")
+		}
+		time.Sleep(time.Millisecond)
+	}
+	s := &server{shutdown: make(chan struct{})}
+	w.attach(s)
+
+	select {
+	case <-s.shutdown:
+	default:
+		t.Error("the attach after a signal did not request the shutdown")
+	}
+	if n := len(sigc); n != 1 {
+		t.Errorf("%d signal(s) left unread, want 1", n)
+	}
+	out := logs.String()
+	if n := strings.Count(out, "[daemon] received terminated; shutting down (children will be killed)\n"); n != 1 {
+		t.Errorf("%d received line(s), want 1:\n%s", n, out)
+	}
+	if n := strings.Count(out, "[Server] shutdown requested\n"); n != 1 {
+		t.Errorf("%d shutdown line(s), want 1:\n%s", n, out)
+	}
+}
+
 // TestShutdownCountLeavesOutAnEndedChild: one child ended by itself before the shutdown,
 // and one still runs. The cleanup line counts the kill of the running child only.
 func TestShutdownCountLeavesOutAnEndedChild(t *testing.T) {
