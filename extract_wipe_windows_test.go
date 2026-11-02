@@ -11,8 +11,8 @@ import (
 
 // TestFilesExtractTarWindowsSpellingsOfDestDir holds three spellings of destDir
 // that name the folder dest. 5fd08069 removes the old content, makes a new
-// folder named dest and extracts (Windows VM). 89cb6289 keeps the old content
-// for a dot after the name, and it fails for a space after the name.
+// folder named dest and extracts (measured on Windows). 89cb6289 keeps the old
+// content for a dot after the name, and it fails for a space after the name.
 func TestFilesExtractTarWindowsSpellingsOfDestDir(t *testing.T) {
 	for _, suffix := range []string{".", " ", `\.`} {
 		t.Run("dest"+suffix, func(t *testing.T) {
@@ -42,8 +42,9 @@ func TestFilesExtractTarWindowsSpellingsOfDestDir(t *testing.T) {
 
 // TestFilesExtractTarWipeLeavesJunctionTarget is the Windows must-not-escape
 // test of the wipe. A junction in the old content goes as a link, and its
-// target keeps its content, as on 89cb6289 and 5fd08069 (Windows VM). The target
-// is a temp folder of this test, so a wrong wipe can reach nothing else.
+// target keeps its content, as on 89cb6289 and 5fd08069 (measured on Windows).
+// The target is a temp folder of this test, so a wrong wipe can reach nothing
+// else.
 func TestFilesExtractTarWipeLeavesJunctionTarget(t *testing.T) {
 	s := newTestServer(t)
 	base := t.TempDir()
@@ -81,7 +82,7 @@ func TestFilesExtractTarWipeLeavesJunctionTarget(t *testing.T) {
 // the parent reads that name as the sibling folder dest. The request fails, and
 // the sibling keeps its content. With no sibling the request fails too, and no
 // folder stays. 89cb6289 extracts into a folder with the exact name there, and
-// 5fd08069 into the folder dest (Windows VM). The sibling is a temp
+// 5fd08069 into the folder dest (measured on Windows). The sibling is a temp
 // folder of this test, so a wrong wipe can reach nothing else.
 func TestFilesExtractTarWipeLeavesSiblingOfPrefixedName(t *testing.T) {
 	for _, suffix := range []string{".", " "} {
@@ -138,7 +139,7 @@ func TestFilesExtractTarWipeLeavesSiblingOfPrefixedName(t *testing.T) {
 // which one. The text compare of wipesHomeDir answers a dot or a space after
 // home or after the folder above it, and the archive stays. The test of the
 // entry by identity answers a path with the `\\?\` prefix and the short name of
-// home, after the archive open, so the archive is gone. A Windows VM ran these
+// home, after the archive open, so the archive is gone. A Windows test ran these
 // rows with this test binary.
 //
 // The test is safe on a tree with no guard. The home is a temp folder, and the
@@ -208,7 +209,7 @@ func TestFilesExtractTarRefusesWindowsSpellingsOfHome(t *testing.T) {
 // TestWipesHomeDirWindowsSpellings holds what the text compare answers for
 // Windows spellings of a temp home folder. It refuses a dot or a space after
 // home, because the path is resolved first. It lets a path with the `\\?\` prefix
-// pass. A Windows VM ran these rows with this test binary.
+// pass. A Windows test ran these rows with this test binary.
 func TestWipesHomeDirWindowsSpellings(t *testing.T) {
 	home := filepath.Join(t.TempDir(), "users", "bob")
 	if err := os.MkdirAll(home, 0o755); err != nil {
@@ -237,8 +238,8 @@ func TestWipesHomeDirWindowsSpellings(t *testing.T) {
 // TestFilesExtractTarLastNameOfDotsAndSpaces sends a destDir whose last name is
 // dots and spaces alone. The handle of the parent refuses such a name, so the
 // request fails and the parent folder keeps its content. The frames are those
-// of 5fd08069 (Windows VM). 89cb6289 fails at the create of the first file
-// there.
+// of 5fd08069 (measured on Windows). 89cb6289 fails at the create of the first
+// file there.
 //
 // The wipe is the real one. The parent is a temp folder of this test, so a
 // wipe that took it can reach nothing else.

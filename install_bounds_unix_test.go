@@ -65,10 +65,9 @@ func goneWithin(pid int, d time.Duration) bool {
 	return true
 }
 
-// Rows B04, B07, B08, F09, F10. The direct CLI runs in a process group of
-// its own, in the session of the -install process and as its child. The stop at
-// the bound reaches a CLI that ignores SIGTERM, and it ends a child in the group
-// of the CLI.
+// Measured. The direct CLI runs in a process group of its own, in the session of
+// the -install process and as its child. The stop at the bound reaches a CLI
+// that ignores SIGTERM, and it ends a child in the group of the CLI.
 func TestInstallDirectRunStopsTheWholeGroup(t *testing.T) {
 	f := newStubFixture(t)
 	placeStub(t, f.cli)
@@ -174,7 +173,7 @@ func TestRunCLIVersionStopStepAfterTheRunEndedKillsNothing(t *testing.T) {
 	}
 }
 
-// Rows B09, F11. A child of the CLI in a new session survives the stop.
+// Measured. A child of the CLI in a new session survives the stop.
 func TestInstallDirectRunStopLeavesANewSessionChild(t *testing.T) {
 	f := newStubFixture(t)
 	placeStub(t, f.cli)
@@ -231,8 +230,8 @@ func (g *gateFixture) useLauncher(t *testing.T) {
 }
 
 // With the gate set and a cli folder that cannot be made, the facts line holds
-// an empty cliPath, the mkdir text and no launcher field (cell G1, Linux VM,
-// f6010b97 and 89cb6289).
+// an empty cliPath, the mkdir text and no launcher field (`f6010b97`,
+// `89cb6289`, measured on Linux).
 func TestInstallGatePrintsNoLauncherFieldBesideAnEmptyCliPath(t *testing.T) {
 	g := newGateFixture(t)
 	p := filepath.Join(g.root, "p")
@@ -246,10 +245,10 @@ func TestInstallGatePrintsNoLauncherFieldBesideAnEmptyCliPath(t *testing.T) {
 	}
 }
 
-// Rows L01, L06. With a usable launcher the direct bounds do not apply. A
-// CLI that is slower than the direct bound and faster than the launcher bound
-// passes, on a cache hit and right after an install. The launcher gets the final
-// path both times.
+// Measured. With a usable launcher the direct bounds do not apply. A CLI that is
+// slower than the direct bound and faster than the launcher bound passes, on a
+// cache hit and right after an install. The launcher gets the final path both
+// times.
 func TestInstallLauncherRunIgnoresTheDirectBounds(t *testing.T) {
 	g := newGateFixture(t)
 	g.useLauncher(t)
@@ -275,9 +274,9 @@ func TestInstallLauncherRunIgnoresTheDirectBounds(t *testing.T) {
 	}
 }
 
-// Rows L03, L05. A launcher run that is stopped on a cache hit removes the
-// old swept pair. The CLI, the fresh pair and the old versions stay, and nothing
-// is pruned.
+// Measured. A launcher run that is stopped on a cache hit removes the old swept
+// pair. The CLI, the fresh pair and the old versions stay, and nothing is
+// pruned.
 func TestInstallStoppedLauncherRunOnACacheHitSweeps(t *testing.T) {
 	g := newGateFixture(t)
 	g.useLauncher(t)
@@ -293,7 +292,7 @@ func TestInstallStoppedLauncherRunOnACacheHitSweeps(t *testing.T) {
 	g.wantNames(t, "L03", append(oldVersionFiles(), ".fetch-12", "1.0.8.zst", "9.9.9")...)
 }
 
-// Row L09 for the order of the keys, row L10 for the none status. With the
+// Measured, for the order of the keys and for the none status. With the
 // gate, fetch comes after cliUnresponsive and before launcherStatus.
 func TestInstallGateStoppedDownloadKeyOrder(t *testing.T) {
 	g := newGateFixture(t)
@@ -316,9 +315,9 @@ func TestInstallGateStoppedDownloadKeyOrder(t *testing.T) {
 	}
 }
 
-// Rows H01, H08, H09. The three new levels of the default cli folder get
-// mode 0700, with umask 000 too. A level that exists keeps its mode. The installed
-// CLI has mode 0755 (row H03).
+// Measured. The three new levels of the default cli folder get mode 0700, with
+// umask 000 too. A level that exists keeps its mode. The installed CLI has mode
+// 0755 (measured).
 func TestInstallDefaultCLIDirModes(t *testing.T) {
 	old := syscall.Umask(0)
 	t.Cleanup(func() { syscall.Umask(old) })

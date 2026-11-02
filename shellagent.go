@@ -19,10 +19,10 @@ var shellAgentSocket = defaultShellAgentSocket
 // that has no SSH_AUTH_SOCK entry at all, unless the spawn turned the hand-off
 // off. An entry that is already present wins even when its value is empty, so a
 // caller can opt a single spawn out with "SSH_AUTH_SOCK":"". Measured side by
-// side with the reference (f6010b97, macOS and Linux VMs): a daemon-env value, a
-// caller value, a caller empty value and disableShellAgentSocket:true each skip
-// the login shell on a fresh daemon, and the spawn never fails because of this
-// step.
+// side with the reference (`f6010b97`, measured on Linux and macOS): a
+// daemon-env value, a caller value, a caller empty value and
+// disableShellAgentSocket:true each skip the login shell on a fresh daemon, and
+// the spawn never fails because of this step.
 func addShellAgentSocket(env []string, disabled bool) []string {
 	if disabled || envContainsKey(env, agentSockVar) {
 		return env
