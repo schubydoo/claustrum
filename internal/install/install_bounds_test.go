@@ -263,6 +263,16 @@ func (f *stubFixture) stubStarted() bool {
 	return err == nil && strings.Contains(string(b), "START ")
 }
 
+// stubChildRecorded reports whether the stub wrote the pid of its child.
+func (f *stubFixture) stubChildRecorded() bool {
+	b, err := os.ReadFile(f.childPID)
+	if err != nil {
+		return false
+	}
+	pid, err := strconv.Atoi(strings.TrimSpace(string(b)))
+	return err == nil && pid > 1
+}
+
 // factsHead is the facts line up to and with `"cliWasPresent":`.
 func factsHead(t *testing.T, cliPath string) string {
 	t.Helper()
@@ -408,35 +418,40 @@ func newNoPolicyGateFixture(t *testing.T) *stubFixture {
 // direct bounds and with the direct text. launcherStatus none is the last key,
 // and the CLI keeps the gate variable.
 func TestInstallGateWithoutPolicyUsesTheDirectBounds(t *testing.T) {
-	g := newNoPolicyGateFixture(t)
-	g.litter(t)
-	placeStub(t, g.cli)
-	stubDelay(t, 20*time.Second)
-	setCLIRunBounds(t, time.Second, time.Minute)
-	ready := holdStopUntil(t, g.stubStarted)
+	// Each row is a subtest, so the stop hold of L02 ends with L02.
+	t.Run("L02", func(t *testing.T) {
+		g := newNoPolicyGateFixture(t)
+		g.litter(t)
+		placeStub(t, g.cli)
+		stubDelay(t, 20*time.Second)
+		setCLIRunBounds(t, time.Second, time.Minute)
+		ready := holdStopUntil(t, g.stubStarted)
 
-	out := captureInstallOutput(t, installOpts{cliDir: g.cliDir, cliVersion: "9.9.9", cliKeep: 2})
-	if want := factsHead(t, g.cli) + stoppedTail + `,"launcherStatus":"none"}` + "\n"; out != want {
-		t.Errorf("L02: stdout\n got %q\nwant %q", out, want)
-	}
-	if !ready.Load() {
-		t.Fatal("L02: the stub never became ready: it wrote no START line before the stop step, or no stop step ran")
-	}
-	if line := mustLogLine(t, g, "START "); !strings.HasSuffix(line, " gate=1") {
-		t.Errorf("L02: stub START %q, want the gate variable with the value 1", line)
-	}
-	g.wantNames(t, "L02", append(oldVersionFiles(), ".fetch-12", "1.0.8.zst", filepath.Base(g.cli))...)
+		out := captureInstallOutput(t, installOpts{cliDir: g.cliDir, cliVersion: "9.9.9", cliKeep: 2})
+		if want := factsHead(t, g.cli) + stoppedTail + `,"launcherStatus":"none"}` + "\n"; out != want {
+			t.Errorf("L02: stdout\n got %q\nwant %q", out, want)
+		}
+		if !ready.Load() {
+			t.Fatal("L02: the stub never became ready: it wrote no START line before the stop step, or no stop step ran")
+		}
+		if line := mustLogLine(t, g, "START "); !strings.HasSuffix(line, " gate=1") {
+			t.Errorf("L02: stub START %q, want the gate variable with the value 1", line)
+		}
+		g.wantNames(t, "L02", append(oldVersionFiles(), ".fetch-12", "1.0.8.zst", filepath.Base(g.cli))...)
+	})
 
 	// L07: a new CLI that does not answer, stopped at the first-run bound.
-	g2 := newNoPolicyGateFixture(t)
-	g2.litter(t)
-	stubDelay(t, 20*time.Second)
-	setCLIRunBounds(t, time.Minute, 500*time.Millisecond)
-	out = captureInstallOutput(t, installOpts{cliDir: g2.cliDir, cliVersion: "9.9.9", cliZst: g2.stubBlob(t), cliKeep: 2})
-	if want := factsHead(t, g2.cli) + stoppedTail + `,"launcherStatus":"none"}` + "\n"; out != want {
-		t.Errorf("L07: stdout\n got %q\nwant %q", out, want)
-	}
-	g2.wantNames(t, "L07", newestOldVersion(), ".fetch-12", "1.0.8.zst", filepath.Base(g2.cli))
+	t.Run("L07", func(t *testing.T) {
+		g := newNoPolicyGateFixture(t)
+		g.litter(t)
+		stubDelay(t, 20*time.Second)
+		setCLIRunBounds(t, time.Minute, 500*time.Millisecond)
+		out := captureInstallOutput(t, installOpts{cliDir: g.cliDir, cliVersion: "9.9.9", cliZst: g.stubBlob(t), cliKeep: 2})
+		if want := factsHead(t, g.cli) + stoppedTail + `,"launcherStatus":"none"}` + "\n"; out != want {
+			t.Errorf("L07: stdout\n got %q\nwant %q", out, want)
+		}
+		g.wantNames(t, "L07", newestOldVersion(), ".fetch-12", "1.0.8.zst", filepath.Base(g.cli))
+	})
 }
 
 // Measured. A file that does not run sits at the final name, and the blob holds a
