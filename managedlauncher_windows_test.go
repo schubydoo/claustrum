@@ -3,7 +3,6 @@
 package main
 
 import (
-	"bytes"
 	"encoding/json"
 	"os"
 	"path/filepath"
@@ -13,10 +12,6 @@ import (
 
 // The Windows rows of the 89cb6289 captures, with the Windows
 // recheck.
-
-// noManagedPolicy is a no-op on Windows: there is no settings folder, so no
-// policy applies (managedlauncher_windows.go).
-func noManagedPolicy(t *testing.T) { t.Helper() }
 
 // TestSpawnLauncherRefusedOnWindows pins SW: any non-null launcher, an empty one
 // too, is -32004 with the Windows text and the reason launcher (build 52d82f0a),
@@ -98,30 +93,5 @@ func TestLauncherResolveNoneOnWindows(t *testing.T) {
 				t.Errorf("gate %q, cliPath %s: %s, want %s", gate, cli, got, want)
 			}
 		}
-	}
-}
-
-// TestInstallAndProbeOnWindowsWithGate pins measured rules: with the gate,
-// -install appends "launcherStatus":"none" last and runs the CLI directly, and
-// -probe-cli shows no difference.
-func TestInstallAndProbeOnWindowsWithGate(t *testing.T) {
-	managedWindowsFixture(t)
-	t.Setenv(managedLauncherGateEnv, "1")
-	dir := filepath.Join(t.TempDir(), "cli")
-	if err := os.MkdirAll(dir, 0o755); err != nil {
-		t.Fatal(err)
-	}
-	cli := installCLIPath(dir, "9.9.9")
-	if err := os.WriteFile(cli, fakeCLI(t, 0), 0o755); err != nil {
-		t.Fatal(err)
-	}
-	out := captureInstallOutput(t, installOpts{cliDir: dir, cliVersion: "9.9.9"})
-	if !strings.HasSuffix(out, `"cliWasPresent":true,"launcherStatus":"none"}`+"\n") {
-		t.Errorf("IW: facts %q, want launcherStatus none last", out)
-	}
-	var o, e bytes.Buffer
-	runProbeCLI(&o, &e, cli)
-	if o.String() != "" || e.String() != "" {
-		t.Errorf("PRB-7: stdout %q stderr %q, want both empty", o.String(), e.String())
 	}
 }

@@ -186,7 +186,7 @@ have no flag and no key.
   - The deletes inside the folder `git-shadow` of the daemon.
   - `-install`, before the tree delete of a folder at the CLI path. The reply is
     `cli path must not be or contain the home directory: "<path>"`. The folder
-    test is by identity too (`folderHoldsHome`). The sweeps and the prunes
+    test is by identity too (`homeguard.FolderHoldsHome`). The sweeps and the prunes
     skip such an entry (`cliEntryHoldsHome`). `89cb6289` removed an empty
     home folder there.
 - **Reference.** It wipes home for `"destDir":"~"` and answers
@@ -220,7 +220,7 @@ have no flag and no key.
   [git.worktree_remove](protocol/git-worktree-remove.md#where-the-paths-can-be),
   [INSTALL.md → -install](INSTALL.md#-install-ensure-the-agent-cli),
   `internal/files/homeguard_test.go` (the `wipeDestDir` seam keeps the suite safe against an
-  unfixed tree) and `install.go` (`stageAndInstall`).
+  unfixed tree) and `internal/install/install.go` (`stageAndInstall`).
 
 ### D3 · Make the `files.extract_tar` size cap opt-in { #d3 }
 
@@ -264,7 +264,7 @@ have no flag and no key.
   a TOCTOU window.
 - **Reopen trigger.** Desktop passes a `-cli-version` that is not a single path
   component.
-- **Pointers.** `install.go`.
+- **Pointers.** `internal/install/install.go`.
 
 ### D8 · claustrum refuses a link, a FIFO or another user's `remote-server.log`, and the `git-shadow` sweep writes nothing through a link (always-on) { #d8 }
 
@@ -306,7 +306,7 @@ have no flag and no key.
 
 ### D10 · Make the `-install` CLI size cap opt-in { #d10 }
 
-- **Behavior.** `maxCLIBytes` caps the decompressed CLI
+- **Behavior.** `install.MaxCLIBytes` caps the decompressed CLI
   (`decompressing: decompressed CLI exceeds <n> bytes`) and the download body
   (`download failed: response exceeds <n> bytes`).
 - **Reference.** It takes a 600 MiB payload as far as the run test of the new
@@ -326,11 +326,11 @@ have no flag and no key.
 - **Reopen trigger.** Desktop stops treating a disk-full message as terminal,
   which removes the cost.
 - **Pointers.** [INSTALL.md → -install](INSTALL.md#-install-ensure-the-agent-cli)
-  and `install.go` (`fetchCLI`, `zstdDecompress`).
+  and `internal/install/install.go` (`fetchCLI`, `zstdDecompress`).
 
 ### D12 · Make the `-install` CLI download bound opt-in { #d12 }
 
-- **Behavior.** `http.Client{Timeout: cliDownloadTimeout}` bounds the whole
+- **Behavior.** `http.Client{Timeout: install.DownloadTimeout}` bounds the whole
   download, the body read too. So a real body that needs six minutes trips it,
   as a black hole does. With the bound off, the transport clocks of the
   [conventions](#conventions-for-opt-in-divergences) still apply, so a
@@ -348,7 +348,7 @@ have no flag and no key.
 - **Reopen trigger.** An operator with the bound set reports an honest slow
   download that it failed.
 - **Pointers.** [INSTALL.md → -install](INSTALL.md#-install-ensure-the-agent-cli)
-  and `install.go` (`fetchCLI`).
+  and `internal/install/install.go` (`fetchCLI`).
 
 ### D15 · Verify a run-dir lock holder is our serve process before signalling it (macOS) { #d15 }
 

@@ -263,9 +263,9 @@ jobs:
       # `x_test.go:7: …` line appears under `=== Failed`). It is not hiding
       # diagnostics.
       #
-      # What it does not do is STREAM. pkgname emits one line per package, and this
-      # repo is a single package, so nothing at all appears until the run finishes —
-      # and the summary only prints if the run finishes. That is the gap worth
+      # What it does not do is STREAM. pkgname emits one line per package, so
+      # nothing appears for a package until its run finishes — and the summary
+      # only prints if the run finishes. That is the gap worth
       # closing: a test that hangs until a runner or step deadline kills the job
       # leaves a log with no indication of which test was running. Verbose shows the
       # last `=== RUN` either way. A windows-latest leg on 2026-08-02 spent 30s in

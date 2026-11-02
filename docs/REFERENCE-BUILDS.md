@@ -674,7 +674,7 @@ reports `glibc`. The loader glob is consulted only after `ldd` produced no
 output. The exit code is not consulted. This value is off the JSON-RPC wire, and it
 appears only in the `__INSTALL_RESULT__` line. Claustrum still matches it, because
 the driver uses `libc` to choose which CLI build to download. See
-[DIVERGENCES.md](DIVERGENCES.md) D14 (now retired) and `install.go` `classifyLibc`.
+[DIVERGENCES.md](DIVERGENCES.md) D14 (now retired) and `internal/install/install.go` `classifyLibc`.
 
 **How it was bounded.** The static drift check passed. A function-inventory diff
 across all six platforms found exactly one changed function, the linux libc
@@ -961,7 +961,7 @@ divergence:
 
 - The `-install` path gained an HTTPS download and a SHA-256 verify.
   claustrum mirrors the substance:
-  `install.go` verifies SHA-256 with
+  `internal/install/install.go` verifies SHA-256 with
   `verifyChecksum`, unconditionally on the `-cli-url` path, and downloads with
   `fetchToFile`, which streams to a temp file. claustrum then uses a plain
   atomic `os.Rename`, which POSIX-replaces a target *file*. The reference

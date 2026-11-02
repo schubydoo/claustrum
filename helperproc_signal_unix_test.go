@@ -3,7 +3,6 @@
 package main
 
 import (
-	"fmt"
 	"os"
 	"os/exec"
 	"os/signal"
@@ -49,21 +48,6 @@ func ignoreSigterm() { signal.Ignore(syscall.SIGTERM) }
 // ignoreSighup makes the helper child ignore SIGHUP (see the "ignore-hup" helper
 // mode and TestLinkBoundUnattendedEndKillsAfterGrace).
 func ignoreSighup() { signal.Ignore(syscall.SIGHUP) }
-
-// stubProcIDs is the process group, the session and the parent of this helper
-// process, for the START line of the "cli-stub" mode.
-func stubProcIDs() string {
-	return fmt.Sprintf("pgid=%d sid=%d ppid=%d", syscall.Getpgrp(), ownSessionID(), os.Getppid())
-}
-
-// ownSessionID is getsid(0). The syscall package has no Getsid on Linux.
-func ownSessionID() int {
-	sid, _, _ := syscall.RawSyscall(syscall.SYS_GETSID, 0, 0, 0)
-	return int(sid)
-}
-
-// stubNewSession starts a child of the "cli-stub" mode in a new session.
-func stubNewSession(cmd *exec.Cmd) { cmd.SysProcAttr = &syscall.SysProcAttr{Setsid: true} }
 
 // exitZeroOnSigterm makes the helper child exit with code 0 when SIGTERM comes, the
 // shape of a child that ends cleanly on a process.kill (see the "term-exit0" helper

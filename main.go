@@ -15,6 +15,7 @@ import (
 	"runtime/debug"
 
 	"github.com/schubydoo/claustrum/internal/files"
+	cliinstall "github.com/schubydoo/claustrum/internal/install"
 )
 
 // Version is the daemon's self-reported version (the real binary reports its vcs
@@ -226,23 +227,24 @@ func main() {
 		// prints its progress/result to fd 1.
 		ignoreSigpipe()
 		// -install only: the cap governs the decompress and download reads, which
-		// no other mode performs. Set before runInstall because the value is read
-		// deep in those helpers, not carried through installOpts.
-		maxCLIBytes = cfg.effectiveMaxCLIBytes(*maxCLI, cliSet["max-cli-bytes"])
+		// no other mode performs. Set before cliinstall.Run because the value is read
+		// deep in those helpers, not carried through cliinstall.Options.
+		cliinstall.MaxCLIBytes = cfg.effectiveMaxCLIBytes(*maxCLI, cliSet["max-cli-bytes"])
 		// -cli-probe-timeout and its config key are deprecated no-ops. They set
 		// nothing, so the direct --version run keeps the reference's bounds
-		// (cliRunBound, cliFirstRunBound).
+		// (cliinstall.RunBound, cliinstall.FirstRunBound).
 		warnDeprecatedCLIProbe(cliSet["cli-probe-timeout"], cfg.cliProbeTimeoutSeen)
 		// -libc-probe-timeout and its config key are deprecated no-ops. They set
-		// nothing, so the ldd probe keeps its 5 s bound (lddProbeTimeout).
+		// nothing, so the ldd probe keeps its 5 s bound (cliinstall.LddProbeTimeout).
 		warnDeprecatedLibcProbe(cliSet["libc-probe-timeout"], cfg.libcProbeTimeoutSeen)
-		// Same reasoning: fetchCLI reads this deep in the download path rather
-		// than taking it through installOpts.
-		cliDownloadTimeout = cfg.effectiveCLIDownloadTimeout(*cliDownload, cliSet["cli-download-timeout"])
-		runInstall(installOpts{
-			cliDir: *cliDir, cliVersion: *cliVersion, cliURL: *cliURL,
-			cliChecksum: *cliChecksum, cliZst: *cliZst, cliKeep: *cliKeep,
-			home: home,
+		// Same reasoning: fetchCLI of internal/install reads this deep in the download path rather
+		// than taking it through cliinstall.Options.
+		cliinstall.DownloadTimeout = cfg.effectiveCLIDownloadTimeout(*cliDownload, cliSet["cli-download-timeout"])
+		cliinstall.Version = Version
+		runInstallArm(cliinstall.Options{
+			CLIDir: *cliDir, CLIVersion: *cliVersion, CLIURL: *cliURL,
+			CLIChecksum: *cliChecksum, CLIZst: *cliZst, CLIKeep: *cliKeep,
+			Home: home,
 		})
 		return
 	case *bridge:

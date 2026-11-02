@@ -6,12 +6,14 @@ import (
 	"log"
 	"os"
 	"path/filepath"
+	"reflect"
 	"runtime"
 	"strings"
 	"testing"
 	"time"
 
 	"github.com/schubydoo/claustrum/internal/files"
+	"github.com/schubydoo/claustrum/internal/install"
 )
 
 // lastMainFlagSet is the FlagSet the most recent runMain handed to main(), kept
@@ -26,7 +28,8 @@ var lastMainFlagSet *flag.FlagSet
 // -install output doesn't pollute the test log.
 //
 // The -install and -serve arms of main() also WRITE package globals
-// (cliDownloadTimeout, maxCLIBytes, files.MaxExtractBytes) and never restore them, so
+// (install.DownloadTimeout, install.MaxCLIBytes, install.Version,
+// files.MaxExtractBytes) and never restore them, so
 // without the save/restore below a `-install` run here leaks its resolved values
 // into every later test. Reproduced 2026-08-07 with the cli-probe-timeout key,
 // which is retired since. A claustrum.conf beside a pre-built test binary made 4
@@ -42,11 +45,11 @@ func runMain(t *testing.T, args ...string) (code int, exited bool) {
 	// t.Cleanup, NOT the defer below: the defer runs when runMain returns, which
 	// would put the globals back before the caller can assert on what main()
 	// actually resolved. t.Cleanup still contains the leak to this one test.
-	oldDownload := cliDownloadTimeout
-	oldMaxCLI, oldMaxExtract := maxCLIBytes, files.MaxExtractBytes
+	oldDownload, oldInstallVersion := install.DownloadTimeout, install.Version
+	oldMaxCLI, oldMaxExtract := install.MaxCLIBytes, files.MaxExtractBytes
 	t.Cleanup(func() {
-		cliDownloadTimeout = oldDownload
-		maxCLIBytes, files.MaxExtractBytes = oldMaxCLI, oldMaxExtract
+		install.DownloadTimeout, install.Version = oldDownload, oldInstallVersion
+		install.MaxCLIBytes, files.MaxExtractBytes = oldMaxCLI, oldMaxExtract
 	})
 	oldStdout := os.Stdout
 	devnull, err := os.OpenFile(os.DevNull, os.O_WRONLY, 0)
@@ -70,7 +73,7 @@ func runMain(t *testing.T, args ...string) (code int, exited bool) {
 }
 
 // The -install arm's flag-to-global wiring, which nothing else covers. Setting
-// the deadline directly (as the fetchCLI tests do) exercises the READ.
+// the deadline directly (as the fetchCLI tests of internal/install do) exercises the READ.
 // Asserting flag.DefValue covers the DECLARED default. The line that joins them
 // was unasserted: main() resolves each flag into its own global.
 //
@@ -87,22 +90,22 @@ func TestInstallArmWiresEachFlagToItsOwnGlobal(t *testing.T) {
 		"-cli-download-timeout", "42s", "-libc-probe-timeout", "23s"); exited {
 		t.Fatal("-install should return, not exit")
 	}
-	if cliDownloadTimeout != 42*time.Second {
-		t.Errorf("cliDownloadTimeout = %s, want 42s (-cli-download-timeout must reach it, and no other flag may)", cliDownloadTimeout)
+	if install.DownloadTimeout != 42*time.Second {
+		t.Errorf("install.DownloadTimeout = %s, want 42s (-cli-download-timeout must reach it, and no other flag may)", install.DownloadTimeout)
 	}
 	// ⚠️ The sharpest checks. The four bounds below are the reference's fixed
 	// values, and no flag reaches any of them.
-	if cliRunBound != 30*time.Second {
-		t.Errorf("cliRunBound = %s, want the fixed 30s (no flag may reach it)", cliRunBound)
+	if install.RunBound != 30*time.Second {
+		t.Errorf("install.RunBound = %s, want the fixed 30s (no flag may reach it)", install.RunBound)
 	}
-	if cliFirstRunBound != 120*time.Second {
-		t.Errorf("cliFirstRunBound = %s, want the fixed 120s (no flag may reach it)", cliFirstRunBound)
+	if install.FirstRunBound != 120*time.Second {
+		t.Errorf("install.FirstRunBound = %s, want the fixed 120s (no flag may reach it)", install.FirstRunBound)
 	}
-	if lddProbeTimeout != 5*time.Second {
-		t.Errorf("lddProbeTimeout = %s, want the fixed 5s (no flag may reach it)", lddProbeTimeout)
+	if install.LddProbeTimeout != 5*time.Second {
+		t.Errorf("install.LddProbeTimeout = %s, want the fixed 5s (no flag may reach it)", install.LddProbeTimeout)
 	}
-	if installHeaderTimeout != 60*time.Second {
-		t.Errorf("installHeaderTimeout = %s, want the fixed 60s (no flag may reach it)", installHeaderTimeout)
+	if install.HeaderTimeout != 60*time.Second {
+		t.Errorf("install.HeaderTimeout = %s, want the fixed 60s (no flag may reach it)", install.HeaderTimeout)
 	}
 	if n := strings.Count(buf.String(), "-libc-probe-timeout is deprecated and ignored"); n != 1 {
 		t.Errorf("-libc-probe-timeout deprecation warnings = %d, want exactly 1; log:\n%s", n, buf.String())
@@ -117,6 +120,41 @@ func TestInstallArmWiresEachFlagToItsOwnGlobal(t *testing.T) {
 	}
 	if n := strings.Count(buf.String(), "-cli-probe-timeout is deprecated and ignored"); n != 1 {
 		t.Errorf("-cli-probe-timeout deprecation warnings = %d, want exactly 1; log:\n%s", n, buf.String())
+	}
+}
+
+// The -install arm hands each path flag and the home folder to its own field of
+// install.Options. A crossed line compiles and passes every test of
+// internal/install: with -cli-dir and -cli-zst swapped, the blob remove names
+// the cli folder and the prune acts in the folder of the blob. The seam takes
+// the Options in place of the run, so nothing is installed or removed.
+// Distinct values on purpose: equal ones pass under a swap.
+//
+// The stub runs in a subtest, so its cleanup has run when the end of this test
+// checks that the seam is install.Run again.
+func TestInstallArmGivesEachPathFlagItsOwnOption(t *testing.T) {
+	t.Run("stub", func(t *testing.T) {
+		var got []install.Options
+		old := runInstallArm
+		runInstallArm = func(o install.Options) { got = append(got, o) }
+		t.Cleanup(func() { runInstallArm = old })
+		home := t.TempDir()
+		t.Setenv(homeEnvVar(), home)
+		if _, exited := runMain(t, "-install", "-cli-dir", "/x/dir", "-cli-version", "9.8.7",
+			"-cli-url", "https://example.invalid/cli.zst", "-cli-checksum", "abc123",
+			"-cli-zst", "/x/blob.zst", "-cli-keep", "5"); exited {
+			t.Fatal("-install should return, not exit")
+		}
+		want := install.Options{
+			CLIDir: "/x/dir", CLIVersion: "9.8.7", CLIURL: "https://example.invalid/cli.zst",
+			CLIChecksum: "abc123", CLIZst: "/x/blob.zst", CLIKeep: 5, Home: home,
+		}
+		if len(got) != 1 || got[0] != want {
+			t.Errorf("install.Run got %+v, want one call with %+v", got, want)
+		}
+	})
+	if reflect.ValueOf(runInstallArm).Pointer() != reflect.ValueOf(install.Run).Pointer() {
+		t.Error("runInstallArm is not install.Run after the test")
 	}
 }
 
@@ -207,13 +245,13 @@ func TestInstallWithoutDeprecatedFlagsLogsNoWarning(t *testing.T) {
 // Asserting it needs the cleanup to have RUN, so the call goes in a subtest and
 // the assertion follows it — t.Cleanup fires at the subtest's end.
 func TestRunMainRestoresInstallGlobals(t *testing.T) {
-	oldDownload := cliDownloadTimeout
-	oldMaxCLI, oldMaxExtract := maxCLIBytes, files.MaxExtractBytes
-	cliDownloadTimeout = 4 * time.Second
-	maxCLIBytes, files.MaxExtractBytes = 11, 22
+	oldDownload, oldInstallVersion := install.DownloadTimeout, install.Version
+	oldMaxCLI, oldMaxExtract := install.MaxCLIBytes, files.MaxExtractBytes
+	install.DownloadTimeout, install.Version = 4*time.Second, "before-runMain"
+	install.MaxCLIBytes, files.MaxExtractBytes = 11, 22
 	t.Cleanup(func() {
-		cliDownloadTimeout = oldDownload
-		maxCLIBytes, files.MaxExtractBytes = oldMaxCLI, oldMaxExtract
+		install.DownloadTimeout, install.Version = oldDownload, oldInstallVersion
+		install.MaxCLIBytes, files.MaxExtractBytes = oldMaxCLI, oldMaxExtract
 	})
 	t.Run("inner", func(t *testing.T) {
 		if _, exited := runMain(t, "-install",
@@ -226,8 +264,9 @@ func TestRunMainRestoresInstallGlobals(t *testing.T) {
 		got  any
 		want any
 	}{
-		{"cliDownloadTimeout", cliDownloadTimeout, 4 * time.Second},
-		{"maxCLIBytes", maxCLIBytes, int64(11)},
+		{"install.DownloadTimeout", install.DownloadTimeout, 4 * time.Second},
+		{"install.MaxCLIBytes", install.MaxCLIBytes, int64(11)},
+		{"install.Version", install.Version, "before-runMain"},
 		{"files.MaxExtractBytes", files.MaxExtractBytes, int64(22)},
 	} {
 		if c.got != c.want {
@@ -432,7 +471,7 @@ func TestInstallExitsTwoWithoutHomeForTheDefaultCLIDir(t *testing.T) {
 	}
 }
 
-// main hands the home folder to runInstall, so `-install -cli-version <v>` with no
+// main hands the home folder to install.Run, so `-install -cli-version <v>` with no
 // -cli-dir works in <home>/.claude/remote/ccd-cli. The run ends with the
 // "missing" answer and still makes the folder chain (measured).
 func TestInstallDefaultCLIDirComesFromTheHomeFolder(t *testing.T) {

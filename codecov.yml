@@ -161,11 +161,11 @@ component_management:
         # 89cb6289 managed launcher: launcher.resolve, the settings reader, the
         # process.spawn launcher checks and the child env strip, with its OS split.
         - methods_launcher.go
-        - managedsettings.go
-        - managedlauncher_unix.go
-        - managedlauncher_windows.go
-        - managedlauncherdir_darwin.go
-        - managedlauncherdir_other.go
+        - internal/install/managedsettings.go
+        - internal/install/managedlauncher_unix.go
+        - internal/install/managedlauncher_windows.go
+        - internal/install/managedlauncherdir_darwin.go
+        - internal/install/managedlauncherdir_other.go
         - worktreecopy.go
         # The .worktreeinclude directory scan: version gate, opening rules, caps.
         - worktreeinclude.go
@@ -399,23 +399,27 @@ component_management:
     - component_id: install
       name: install pipeline
       paths:
-        - install.go
+        - internal/install/install.go
         # The CLI file name per system (<version>.exe on Windows) and the
         # Windows-only file test of -probe-cli.
-        - install_other.go
-        - install_windows.go
+        - internal/install/install_other.go
+        - internal/install/install_windows.go
         # The error numbers that start the prune after a full disk.
-        - install_diskfull_linux.go
-        - install_diskfull_unix.go
+        - internal/install/install_diskfull_linux.go
+        - internal/install/install_diskfull_unix.go
         # 4534d86 -install download: __INSTALL_PROGRESS__ ticker + 60 s read-idle abort.
-        - installfetch.go
+        - internal/install/installfetch.go
         # 5fd08069 file test of a cache hit with the launcher gate (Linux).
-        - installgate_linux.go
-        - installgate_other.go
+        - internal/install/installgate_linux.go
+        - internal/install/installgate_other.go
         # 89cb6289 launcher runs of -install and -probe-cli behind the gate.
-        - managedlauncher_run.go
-        - libc_linux.go
-        - libc_other.go
+        - internal/install/managedlauncher_run.go
+        - internal/install/libc_linux.go
+        - internal/install/libc_other.go
+        # The test hooks of the settings reads, and the names of package main.
+        - internal/install/fortest.go
+        - internal/install/fortest_unix.go
+        - compat_install.go
     - component_id: env_compat
       name: shell-env & cross-platform
       paths:

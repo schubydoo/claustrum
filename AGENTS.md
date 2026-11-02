@@ -59,7 +59,7 @@ modes and the OS splits is in
 | `worktreestaging.go` | the staged add: its folder `.s<n>`, the staging folder and its move, and the cleanup of old staging entries |
 | `gitdirheld.go` | the held git directory and the list of the steps that act through it |
 | `githarden_index_*.go` | the placement of the index of a new worktree, and the registration delete of the second rollback (`removeCreatedRegistration`) |
-| `install.go` | the CLI path delete, the sweeps, the prune and the blob remove of `-install` |
+| `internal/install/install.go` | the CLI path delete, the sweeps, the prune and the blob remove of `-install` |
 | `gitshadow.go` (`removeEntry` and `removeLink`, which each delete there goes through) · `gitshadowsweep.go` · `gitshadowrepo.go` · `gitshadowuse.go` | the deletes in the folder `git-shadow` |
 
 Every OS serves the same JSON-RPC methods.
@@ -133,7 +133,7 @@ from the socket, as in `plugins.prune`.
 | `git.worktree_remove` | `worktreePath`, its registration | the caller (RPC) | `wipesHomeDir` on `worktreePath`, containment | [git.worktree_remove](docs/protocol/git-worktree-remove.md) |
 | `git.worktree_create` rollback | `worktreePath`, its registration, one stale entry, two staging removes | the caller (RPC) | `wipesHomeDir` (D2), identity tests, one exception (see Registration and index) | [git.worktree_create](docs/protocol/git-worktree-create.md#after-a-failure) |
 | `git.worktree_create` staging sweep | old staging entries of the `baseRepo` git directory | the caller (RPC): a good add in `shadow` | prefix, age, `wipesHomeDir` | [git.worktree_create](docs/protocol/git-worktree-create.md#after-a-failure) |
-| `-install` | the CLI path | the operator | D6, `folderHoldsHome` | [-install](docs/INSTALL.md#staging-and-cleanup) |
+| `-install` | the CLI path | the operator | D6, `homeguard.FolderHoldsHome` | [-install](docs/INSTALL.md#staging-and-cleanup) |
 
 #### The home guard
 
@@ -157,7 +157,7 @@ junction and refuses the names `.` and `..`. On Windows it refuses a last name o
 alone too.
 
 Guards, in order: `wipesHomeDir` on `destDir` before any step. Then `destEntryHoldsHome`
-(identity, through `folderHoldsHome`) before the wipe. Then `checkDestViews`: the name in
+(identity, through `homeguard.FolderHoldsHome`) before the wipe. Then `checkDestViews`: the name in
 the handle and the cleaned path must name one entry, or nothing is deleted, with one exception:
 on Windows an empty folder or a regular file at `destDir` that the parent handle cannot read
 for a permission error goes by one plain remove through that handle (approved by the
@@ -302,7 +302,7 @@ non-zero gets one plain remove, and a stopped run keeps it. On Windows the file 
 when the exited CLI holds it (claustrum's own, not measured).
 
 Guards, in order: D6 runs first, so the CLI path is a direct child of the cli-dir, but it
-does not test which folder that child is. Right before the tree delete, `folderHoldsHome`
+does not test which folder that child is. Right before the tree delete, `homeguard.FolderHoldsHome`
 refuses a CLI path that is home or holds it. It runs `wipesHomeDir` and compares the folder at the CLI path with home and each parent of
 home by identity (`os.SameFile`), for the given and the resolved home path (D2). The
 prune and the sweeps skip an entry that is home or holds it (`cliEntryHoldsHome`, claustrum's
@@ -502,7 +502,7 @@ Network](SECURITY.md#network)).
 
 ### Time bounds
 
-`lddProbeTimeout` is 5 s, `cliRunBound` 30 s and `cliFirstRunBound` 120 s
+`install.LddProbeTimeout` is 5 s, `install.RunBound` 30 s and `install.FirstRunBound` 120 s
 ([INSTALL.md](docs/INSTALL.md#the-direct---version-run)). The flags `-libc-probe-timeout`
 and `-cli-probe-timeout` are deprecated no-ops that log one warning. `-cli-download-timeout`
 sits beside them in the `-install` arm of `main`. A line that sets one of these bounds from

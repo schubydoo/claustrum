@@ -532,7 +532,7 @@ func childToken(tokenFile string) (string, error) {
 // not refuse chmod; without the seam the failure arm (socketChmodFailed) fires
 // only for a Linux abstract socket (-socket @name), which has no filesystem node
 // to chmod and is not a shape Desktop passes.
-// Distinct from install.go's chmodStaged, which seams the staged CLI binary.
+// Distinct from chmodStaged in internal/install/install.go, which seams the staged CLI binary.
 var chmodSocket = os.Chmod
 
 // newServerOnSocket performs the daemonized child's startup in its exact

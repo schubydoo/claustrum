@@ -21,7 +21,7 @@ import (
 // and git.worktree_create removes old staging entries of the git
 // directory of baseRepo (worktreestaging.go, sweepOldStaging).
 // -install is a fifth caller of this guard: it deletes a folder at the CLI path
-// (install.go, stageAndInstall). Its sweep and its prune call the guard for
+// (internal/install/install.go, stageAndInstall). Its sweep and its prune call the guard for
 // each entry that they remove (cliEntryHoldsHome). The RPC
 // paths are `~`-expanded first — bindParams
 // calls ExpandPaths on EVERY request (rpc.Bind), and pathcanon.ExpandTilde returns the home
