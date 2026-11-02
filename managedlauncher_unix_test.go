@@ -7,13 +7,14 @@ import (
 	"io/fs"
 	"os"
 	"path/filepath"
-	"runtime"
 	"strings"
 	"sync/atomic"
 	"syscall"
 	"testing"
 	"time"
 	"unicode/utf16"
+
+	"github.com/schubydoo/claustrum/internal/install"
 )
 
 // launcher.resolve and process.spawn rows of the 89cb6289 captures, on unix. The
@@ -22,6 +23,16 @@ import (
 // this test binary in a helper mode (helperproc_test.go), so no test depends on a
 // /bin program. An unreadable file or folder comes from a seam, not from a mode-000
 // fixture, which root reads anyway.
+
+// The texts of internal/install that the tests of this package use on Linux
+// and macOS, copied. TestManagedLauncherTexts in internal/install pins the same
+// values.
+const (
+	managedWrapperEnv      = "CLAUDE_CODE_PROCESS_WRAPPER"
+	managedSettingsDropIns = "managed-settings.d"
+	managedNoLauncher      = "the value is set but contains no launcher — unset it to run without one, or set it to the absolute path of your launcher"
+	managedNotAbsolute     = "the launcher must be an absolute path, not a bare name resolved via PATH"
+)
 
 // fifoWatchdog guards a resolve over a FIFO fixture. A guard regression opens the
 // FIFO and blocks the test for its whole deadline instead of failing. After 5 s the
@@ -55,7 +66,7 @@ func fifoWatchdog(t *testing.T, fifo string) (check func()) {
 }
 
 // tempManagedSettingsDir points the managed-settings folder at a fresh temp folder and returns it.
-// It also points the system folder at an absent path. managedSettingsDir reads the
+// It also points the system folder at an absent path. managedSettingsDir of internal/install reads the
 // system folder first, and a policy on the host there makes the resolve ignore the
 // variable.
 func tempManagedSettingsDir(t *testing.T) string {
@@ -64,14 +75,6 @@ func tempManagedSettingsDir(t *testing.T) string {
 	setManagedSystemDir(t, filepath.Join(t.TempDir(), "absent-system"))
 	t.Setenv(managedSettingsDirEnv, d)
 	return d
-}
-
-// noManagedPolicy makes sure that no managed policy applies for one test: the
-// user settings folder is an empty fixture folder and the system folder an absent
-// path (tempManagedSettingsDir).
-func noManagedPolicy(t *testing.T) {
-	t.Helper()
-	_ = tempManagedSettingsDir(t)
 }
 
 // writeFileMode writes b to p with exactly mode, creating the parent folders.
@@ -287,12 +290,11 @@ func TestLauncherResolveDropIns(t *testing.T) {
 	reset()
 	writeFileMode(t, base, []byte(pwSettings(t, w+" a")), 0o644)
 	writeFileMode(t, filepath.Join(dropDir, "10.json"), []byte(pwSettings(t, w+" b")), 0o644)
-	old := readManagedDropInDir
-	readManagedDropInDir = func(d string) ([]fs.DirEntry, error) {
+	restore := install.SetReadDropInDirForTest(func(d string) ([]fs.DirEntry, error) {
 		return nil, &fs.PathError{Op: "open", Path: d, Err: syscall.EACCES}
-	}
+	})
 	checkResolve(t, s, "R12f", "/opt/claude/cli", unreadableFrame(dropDir, "the drop-in directory could not be listed: permission denied"))
-	readManagedDropInDir = old
+	restore()
 
 	reset()
 	if err := os.RemoveAll(dropDir); err != nil {
@@ -305,7 +307,7 @@ func TestLauncherResolveDropIns(t *testing.T) {
 
 // TestLauncherResolveEscapesAndRawBytes pins a measured rule on the wire: the reply escapes `<`, `&`, `>` and
 // U+2028; R10i keeps U+FFFD raw (ef bf bd); R10g-0085 keeps U+0085 raw (c2 85) inside the
-// managedNotExecutable reason, and the em dash of a measured case stays raw.
+// managedNotExecutable reason of internal/install, and the em dash of a measured case stays raw.
 func TestLauncherResolveEscapesAndRawBytes(t *testing.T) {
 	s := newTestServer(t)
 	dir := tempManagedSettingsDir(t)
@@ -338,7 +340,7 @@ func TestLauncherResolveEscapesAndRawBytes(t *testing.T) {
 		unusableFrame(base, "the value contains an empty `\\\"\\\"` token \xe2\x80\x94 remove it, or fill in the value it was a placeholder for"))
 }
 
-// TestLauncherResolveLauncherChecks pins measured rules: the launcher texts, managedOwnPath (a string compare that runs
+// TestLauncherResolveLauncherChecks pins measured rules: the launcher texts of internal/install, managedOwnPath (a string compare that runs
 // before the absolute and existence checks), managedScript (case-sensitive), managedNotExecutable (missing, folder, 0644), a
 // symlink kept as its link path, and the long-path cut.
 func TestLauncherResolveLauncherChecks(t *testing.T) {
@@ -426,12 +428,11 @@ func TestLauncherResolveBaseFileChecks(t *testing.T) {
 	doc := pwSettings(t, w)
 
 	writeFileMode(t, base, []byte(doc), 0o644)
-	old := readManagedSettingsFile
-	readManagedSettingsFile = func(p string) ([]byte, error) {
+	restore := install.SetReadSettingsFileForTest(func(p string) ([]byte, error) {
 		return nil, &fs.PathError{Op: "open", Path: p, Err: syscall.EACCES}
-	}
+	})
 	checkResolve(t, s, "R12a", "/opt/claude/cli", unreadableFrame(base, "permission denied"))
-	readManagedSettingsFile = old
+	restore()
 
 	_ = os.Remove(base)
 	if err := os.Mkdir(base, 0o755); err != nil {
@@ -543,11 +544,9 @@ func TestLauncherResolveLogDedup(t *testing.T) {
 		{func() { writeFileMode(t, base, []byte(pwSettings(t, "wrap")), 0o644) }, 2},
 		{func() { writeFileMode(t, base, []byte("{"), 0o644) }, 3},
 		{func() {
-			old := readManagedSettingsFile
-			readManagedSettingsFile = func(p string) ([]byte, error) {
+			t.Cleanup(install.SetReadSettingsFileForTest(func(p string) ([]byte, error) {
 				return nil, &fs.PathError{Op: "open", Path: p, Err: syscall.EACCES}
-			}
-			t.Cleanup(func() { readManagedSettingsFile = old })
+			}))
 		}, 4},
 	}
 	for i, st := range steps {
@@ -839,9 +838,7 @@ func TestSpawnStripsLauncherEnv(t *testing.T) {
 // setManagedSystemDir points the system managed-settings folder at dir for one test.
 func setManagedSystemDir(t *testing.T, dir string) {
 	t.Helper()
-	old := managedSystemSettingsDir
-	managedSystemSettingsDir = dir
-	t.Cleanup(func() { managedSystemSettingsDir = old })
+	t.Cleanup(install.SetSystemSettingsDirForTest(dir))
 }
 
 // TestLauncherResolveSystemFolderFirst pins RX, RXe, RXs and RXd. RX: with the
@@ -906,20 +903,5 @@ func TestLauncherResolveSystemFolderFirst(t *testing.T) {
 	checkResolve(t, s3, "RXd2", "/opt/claude/cli", noneFrame)
 	if got := strings.Count(logs.String(), ignored); got != 3 {
 		t.Errorf("RXd2: the fresh daemon logs the line once more, got %d in:\n%s", got, logs.String())
-	}
-}
-
-// TestManagedIgnoredVarLineBytes pins the measured text of the RXs log line, with
-// the system folder of this OS (Linux and macOS texts both measured).
-func TestManagedIgnoredVarLineBytes(t *testing.T) {
-	want := map[string]string{
-		"linux":  "[launcher] CLAUDE_SSH_E2E_MANAGED_SETTINGS_DIR ignored: /etc/claude-code holds this host's policy",
-		"darwin": "[launcher] CLAUDE_SSH_E2E_MANAGED_SETTINGS_DIR ignored: /Library/Application Support/ClaudeCode holds this host's policy",
-	}[runtime.GOOS]
-	if want == "" {
-		t.Skip("no measured text for " + runtime.GOOS)
-	}
-	if got := managedIgnoredVarLine(); got != want {
-		t.Errorf("line = %q, want %q", got, want)
 	}
 }

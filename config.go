@@ -75,8 +75,8 @@ type config struct {
 	maxCLIBytes *int64
 	// cliProbeTimeoutSeen records that the file carries the deprecated
 	// cli-probe-timeout key. The value is ignored: the direct --version run of
-	// -install always uses the reference's bounds (cliRunBound,
-	// cliFirstRunBound). main logs one warning on -install.
+	// -install always uses the reference's bounds (install.RunBound,
+	// install.FirstRunBound). main logs one warning on -install.
 	cliProbeTimeoutSeen bool
 	// cliDownloadTimeout mirrors -cli-download-timeout; nil means "not set in the
 	// file". Same reachability argument as maxCLIBytes: it applies on -install,
@@ -88,7 +88,7 @@ type config struct {
 	gitTimeoutSeen bool
 	// libcProbeTimeoutSeen records that the file carries the deprecated
 	// libc-probe-timeout key. The value is ignored: the ldd probe always uses
-	// its 5 s bound (lddProbeTimeout). main logs one warning on -install.
+	// its 5 s bound (install.LddProbeTimeout). main logs one warning on -install.
 	libcProbeTimeoutSeen bool
 	// filesReadRegularOnlySeen records that the file carries the deprecated
 	// files-read-regular-only key. The value is ignored: files.read has one
@@ -330,8 +330,8 @@ func (cfg config) effectiveMaxExtractBytes(cliVal int64, cliSet bool) int64 {
 // same negative handling — the asymmetry fixed for max-extract-bytes would
 // otherwise be reintroduced here by its sibling.
 func (cfg config) effectiveMaxCLIBytes(cliVal int64, cliSet bool) int64 {
-	// [Install], not [Server]: this cap governs zstdDecompress and fetchCLI,
-	// and effectiveMaxCLIBytes is reached only from the -install arm.
+	// [Install], not [Server]: this cap governs zstdDecompress and fetchCLI of
+	// internal/install, and effectiveMaxCLIBytes is reached only from the -install arm.
 	return effectiveNumeric(cliVal, cliSet, cfg.maxCLIBytes, func() {
 		logWarnf("[Install] -max-cli-bytes %d is negative; treating it as 0 (cap disabled)", cliVal)
 	})
@@ -340,7 +340,7 @@ func (cfg config) effectiveMaxCLIBytes(cliVal int64, cliSet bool) int64 {
 // effectiveCLIDownloadTimeout applies the same precedence for
 // -cli-download-timeout, and the same negative handling as the size caps.
 func (cfg config) effectiveCLIDownloadTimeout(cliVal time.Duration, cliSet bool) time.Duration {
-	// [Install], not [Server]: fetchCLI is reached only from the -install arm.
+	// [Install], not [Server]: fetchCLI of internal/install is reached only from the -install arm.
 	return effectiveNumeric(cliVal, cliSet, cfg.cliDownloadTimeout, func() {
 		logWarnf("[Install] -cli-download-timeout %s is negative; treating it as 0 (no timeout)", cliVal)
 	})

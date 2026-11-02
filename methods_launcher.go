@@ -20,7 +20,7 @@ import (
 //   - process.spawn takes a `launcher` param and runs the child through it, or
 //     refuses the spawn (refuseManagedLauncher, spawnVia in process.go).
 //   - -install and -probe-cli run the CLI through the launcher, but only when
-//     CLAUDE_SSH_MANAGED_LAUNCHER=1 (managedlauncher_run.go).
+//     CLAUDE_SSH_MANAGED_LAUNCHER=1 (internal/install/managedlauncher_run.go).
 //
 // Every rule below is measured against 89cb6289 unless its comment says "claustrum's
 // choice (not measured)". Every text is copied byte for byte from a measured capture.

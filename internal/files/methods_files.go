@@ -324,7 +324,7 @@ func errDestDirHoldsHome(destDir string) error {
 // destEntryHoldsHome is the home guard of the entry that the wipe acts on. entry
 // is the lstat answer for the last name of destDir in the handle of its parent
 // folder, or nil for no entry. A real folder there is compared with the home
-// folder and with each parent folder of home by identity (folderHoldsHome), so
+// folder and with each parent folder of home by identity (homeguard.FolderHoldsHome), so
 // the spelling of the path does not matter. On Linux and macOS that covers a
 // path through a link above the last name. On Windows it covers a path with
 // the `\\?\` prefix and the short 8.3 name of home, which the text compare of

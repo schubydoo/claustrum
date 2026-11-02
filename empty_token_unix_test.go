@@ -16,7 +16,7 @@ import (
 // on Windows, so it never fires.
 //
 // Same reason TestEnsureCLIReportsUnclearablePath and TestEnsureCLIStagingFailure
-// live in install_unix_test.go. The behaviour under test is portable; the way
+// live in internal/install/install_unix_test.go. The behaviour under test is portable; the way
 // this test PROVOKES it is not.
 // The token file is supposed to be consumed. When the unlink fails the daemon
 // still starts — the token was read successfully — but it says so, because a

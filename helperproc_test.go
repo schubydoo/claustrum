@@ -838,66 +838,6 @@ func runWrapLauncher(args []string) int {
 	return 0
 }
 
-// runCLIStub implements the "cli-stub" helper mode, the shape of the stub of the
-// measured rows. Its environment steers it:
-//
-//   - CLAUSTRUM_TEST_STUB_LOG names a file. The stub appends a START line with
-//     its argv[0], its pid, the process ids of stubProcIDs and the launcher gate
-//     value. Then it appends a DIR line with the sorted names of the folder of
-//     argv[0], joined by commas.
-//   - CLAUSTRUM_TEST_STUB_CHILD starts a "sleep" child of this binary that lives
-//     30 s (a leak budget) and writes its pid to CLAUSTRUM_TEST_STUB_CHILDPID.
-//     "group" keeps the child in the process group of the stub. "session" puts it
-//     in a new session. "hold" does that too, and the child keeps the stdout and
-//     stderr of the stub.
-//   - CLAUSTRUM_TEST_STUB_IGNORETERM=1 makes the stub ignore SIGTERM.
-//   - CLAUSTRUM_TEST_STUB_MS is how long the stub sleeps, in milliseconds.
-//   - CLAUSTRUM_TEST_STUB_EXIT is its exit code, 0 when it is not set.
-func runCLIStub() int {
-	if os.Getenv("CLAUSTRUM_TEST_STUB_IGNORETERM") == "1" {
-		ignoreSigterm()
-	}
-	if log := os.Getenv("CLAUSTRUM_TEST_STUB_LOG"); log != "" {
-		appendLine(log, fmt.Sprintf("START argv0=%s pid=%d %s gate=%s", os.Args[0], os.Getpid(),
-			stubProcIDs(), os.Getenv("CLAUDE_SSH_MANAGED_LAUNCHER")))
-		var names []string
-		if ents, err := os.ReadDir(filepath.Dir(os.Args[0])); err == nil {
-			for _, e := range ents {
-				names = append(names, e.Name())
-			}
-		}
-		slices.Sort(names)
-		appendLine(log, "DIR "+strings.Join(names, ","))
-	}
-	if kind := os.Getenv("CLAUSTRUM_TEST_STUB_CHILD"); kind != "" {
-		exe, err := os.Executable()
-		if err != nil {
-			fmt.Fprintln(os.Stderr, err)
-			return 1
-		}
-		child := exec.Command(exe, "30")
-		child.Env = buildEnv(map[string]string{"CLAUSTRUM_TEST_HELPER": "sleep"})
-		if kind != "group" {
-			stubNewSession(child)
-		}
-		if kind == "hold" {
-			child.Stdout, child.Stderr = os.Stdout, os.Stderr
-		}
-		if err := child.Start(); err != nil {
-			fmt.Fprintln(os.Stderr, err)
-			return 1
-		}
-		if err := os.WriteFile(os.Getenv("CLAUSTRUM_TEST_STUB_CHILDPID"), []byte(strconv.Itoa(child.Process.Pid)), 0o644); err != nil {
-			fmt.Fprintln(os.Stderr, err)
-			return 1
-		}
-	}
-	ms, _ := strconv.Atoi(os.Getenv("CLAUSTRUM_TEST_STUB_MS"))
-	time.Sleep(time.Duration(ms) * time.Millisecond)
-	code, _ := strconv.Atoi(os.Getenv("CLAUSTRUM_TEST_STUB_EXIT"))
-	return code
-}
-
 // runGitSlowTimed runs runGitSlow. With CLAUSTRUM_GITSTUB_TIMELOG set, it logs
 // the start and the end of the call there. See runGitSlow.
 func runGitSlowTimed(args []string) int {
@@ -1239,35 +1179,6 @@ func runHelper(mode string, args []string) int {
 		// binary in another mode. When CLAUSTRUM_TEST_WRAP_LOG names a file, a "LAUNCH <args>"
 		// line is appended to it first, to prove the launcher ran.
 		return runWrapLauncher(args)
-	case "fail-launcher":
-		// A launcher that fails: it writes CLAUSTRUM_TEST_LAUNCH_STDERR to stderr and
-		// exits with CLAUSTRUM_TEST_LAUNCH_EXIT. It appends to CLAUSTRUM_TEST_WRAP_LOG
-		// like "wrap", and never runs its args.
-		if log := os.Getenv("CLAUSTRUM_TEST_WRAP_LOG"); log != "" {
-			appendLine(log, "LAUNCH "+strings.Join(args, " "))
-		}
-		fmt.Fprint(os.Stderr, os.Getenv("CLAUSTRUM_TEST_LAUNCH_STDERR"))
-		n, err := strconv.Atoi(os.Getenv("CLAUSTRUM_TEST_LAUNCH_EXIT"))
-		if err != nil {
-			return 1
-		}
-		return n
-	case "selfterm":
-		// A launcher that ends itself with SIGTERM (Unix. Windows has no such signal).
-		if p, err := os.FindProcess(os.Getpid()); err == nil {
-			_ = p.Signal(syscall.SIGTERM)
-		}
-		time.Sleep(10 * time.Second)
-		return 1
-	case "cli-log":
-		// A stand-in CLI that appends "CLI <args> gate=<value>" to
-		// CLAUSTRUM_TEST_CLI_LOG and exits 0, to prove that it ran, with which args,
-		// and whether CLAUDE_SSH_MANAGED_LAUNCHER reached it.
-		appendLine(os.Getenv("CLAUSTRUM_TEST_CLI_LOG"),
-			"CLI "+strings.Join(args, " ")+" gate="+os.Getenv("CLAUDE_SSH_MANAGED_LAUNCHER"))
-	case "cli-stub":
-		// A stand-in CLI for the -install bound and order tests. See runCLIStub.
-		return runCLIStub()
 	case "printenvs":
 		// print <name>=<value> for each arg, one per line, "" when absent.
 		for _, name := range args {
@@ -1388,18 +1299,6 @@ func runHelper(mode string, args []string) int {
 		_ = nc.SetReadDeadline(time.Now().Add(10 * time.Second))
 		_, _ = io.Copy(os.Stdout, nc)
 	default:
-		// "slow:N": sleep N seconds, then exit 0. This is the honest-but-slow CLI
-		// shape: correct output, correct exit code, just not fast. It is the
-		// Windows counterpart of the sh script that slowCLI writes elsewhere.
-		if secs, ok := strings.CutPrefix(mode, "slow:"); ok {
-			n, err := strconv.Atoi(secs)
-			if err != nil {
-				fmt.Fprintln(os.Stderr, err)
-				return 1
-			}
-			time.Sleep(time.Duration(n) * time.Second)
-			return 0
-		}
 		// "exit:N": exit with code N (a stand-in CLI for the -install tests,
 		// where the invocation is fixed at `<cli> --version`).
 		if code, ok := strings.CutPrefix(mode, "exit:"); ok {

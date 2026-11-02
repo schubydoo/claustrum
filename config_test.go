@@ -297,7 +297,7 @@ func TestPrecedenceMaxCLIBytes(t *testing.T) {
 		t.Errorf("empty config should leave the cap off, got %d", got)
 	}
 	// A negative flag normalises to disabled rather than reaching zstdDecompress /
-	// fetchCLI as a negative. effectiveNumeric centralises that for all the
+	// fetchCLI of internal/install as a negative. effectiveNumeric centralises that for all the
 	// numeric knobs. The sibling download-timeout test covers its own negative
 	// arm. This pins the arm of maxCLIBytes, which the precedence cases above
 	// did not exercise.
@@ -307,7 +307,7 @@ func TestPrecedenceMaxCLIBytes(t *testing.T) {
 }
 
 // The cli-probe-timeout key is deprecated: the reference bounds the direct
-// --version run of -install itself (cliRunBound, cliFirstRunBound), so D11 is
+// --version run of -install itself (install.RunBound, install.FirstRunBound), so D11 is
 // retired. The key is recognised, so main can warn, and it sets nothing, whatever
 // its value.
 func TestParseConfig_CLIProbeTimeoutKeyIsIgnored(t *testing.T) {
@@ -583,7 +583,7 @@ func TestParseConfig_GitTimeoutKeyIsIgnored(t *testing.T) {
 }
 
 // The libc-probe-timeout key is deprecated: the reference bounds the ldd probe
-// itself (lddProbeTimeout), so there is no divergence left to opt into. The key
+// itself (install.LddProbeTimeout), so there is no divergence left to opt into. The key
 // is recognised, so main can warn, and it sets no duration.
 func TestParseConfig_LibcProbeTimeoutKeyIsIgnored(t *testing.T) {
 	got := parse(t, "libc-probe-timeout = 20s")
