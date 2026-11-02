@@ -82,6 +82,6 @@ func bindGitParams(req *request, view gitMethodParams) (gitParams, *response) {
 	p := view.params()
 	req.offOwn = bool(p.ShadowDirOff)
 	p.ShadowDirOff = jsonTrueSwitch(req.offLive())
-	p.expandPaths()
+	p.ExpandPaths()
 	return p, nil
 }

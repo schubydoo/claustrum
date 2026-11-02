@@ -66,17 +66,6 @@ const (
 	tooManyFiltersText = "this repository's git config cannot be used: it defines more than 64 filters"
 )
 
-// jsonTrueSwitch is a request member that is on for the JSON value true and off for
-// every other value, with no error. On 5fd08069 a git.worktree_create with the
-// string "true", the number 1, null, false or {} refuses the filter as with no
-// member (measured on Linux, and four of them on Windows).
-type jsonTrueSwitch bool
-
-func (b *jsonTrueSwitch) UnmarshalJSON(data []byte) error {
-	*b = string(bytes.TrimSpace(data)) == "true"
-	return nil
-}
-
 // filterValues holds what one listing gives a filter name, by key (filterKeys).
 // has reports that the listing holds the key. last is its last value: git uses
 // the last value of a key (measured).

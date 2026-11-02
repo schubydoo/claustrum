@@ -541,9 +541,9 @@ type managedLauncherParams struct {
 	CliPath string `json:"cliPath"`
 }
 
-// expandPaths is a no-op. claustrum's choice (not measured): cliPath is not
+// ExpandPaths is a no-op. claustrum's choice (not measured): cliPath is not
 // `~`-expanded, so the own-path check compares the caller's text.
-func (p *managedLauncherParams) expandPaths() {}
+func (p *managedLauncherParams) ExpandPaths() {}
 
 // handleLauncher serves the launcher namespace. Its one method is launcher.resolve.
 // No params member, a non-object params or a non-string cliPath is -32602 "Invalid

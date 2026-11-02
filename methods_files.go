@@ -60,7 +60,7 @@ type listParams struct {
 	JunctionsAsDirs bool   `json:"junctionsAsDirs"`
 }
 
-func (p *listParams) expandPaths() { p.Path = expandPath(p.Path) }
+func (p *listParams) ExpandPaths() { p.Path = expandPath(p.Path) }
 
 // fileReadParams holds the members that files.read reads. A wrong type there is
 // -32602 "Invalid params" (measured).

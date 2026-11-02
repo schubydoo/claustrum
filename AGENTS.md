@@ -45,8 +45,8 @@ modes and the OS splits is in
 
 | File | Role |
 |------|------|
-| `rpc.go` | types, error codes, `gate` (read loop), `route` (`dispatchRequest`) |
-| `results.go` | result structs, with fields in the order of the reference. Never a map |
+| `rpc.go` | `request`, `gate` (read loop), `route` (`dispatchRequest`) |
+| `internal/rpc/` | error codes, reply types, result structs with fields in the order of the reference. Never a map |
 | `methods_*.go` | the 21 methods across `server.*` / `files.*` / `git.*` / `launcher.*` / `process.*` / `plugins.*` |
 | `process.go` | spawn, stream frames, stdin queue, replay buffer, `reattach` |
 | `handlers/prune.go` | the params type of `plugins.prune`, whose name is in its `-32602` text |
@@ -68,7 +68,7 @@ Every OS serves the same JSON-RPC methods.
 
 - Byte-identical wire frames are the contract. Results are ordered structs,
   not maps. Any change to `rpc.go` / `methods_*.go` / `process.go` /
-  `results.go` must keep the socket-integration suite and its golden
+  `internal/rpc/` must keep the socket-integration suite and its golden
   fixtures green (`make test`). An intentional
   divergence owes two things. Give it an entry with its decision rules in
   [`docs/DIVERGENCES.md`](docs/DIVERGENCES.md). Give it its wire frames in

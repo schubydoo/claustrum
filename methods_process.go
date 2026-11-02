@@ -87,7 +87,7 @@ func (s *server) processSpawn(c *conn, req *request) response {
 	mp, err := s.procs.spawnVia(c, p.ID, p.Command, p.Args, p.Cwd, p.Env, p.DisableShellAgentSocket, p.Launcher, linkTTL)
 	if errors.Is(err, errStartsStopped) {
 		// No frame. The teardown closes the connection (measured).
-		return response{noFrame: true}
+		return response{NoFrame: true}
 	}
 	if err != nil {
 		reason := spawnFailureReason(err, p.Cwd)
