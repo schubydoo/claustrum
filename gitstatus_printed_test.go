@@ -39,7 +39,7 @@ func TestUsePrintedGitDir(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	req := &request{shadow: f.h, use: viaLink}
+	req := &gitCall{request: &request{}, shadow: f.h, use: viaLink}
 	if msg := req.usePrintedGitDir(trust, f.gitDir); msg != "" {
 		t.Fatalf("the step refused: %s", msg)
 	}
@@ -56,16 +56,16 @@ func TestUsePrintedGitDir(t *testing.T) {
 		t.Error("the request has no read of the printed git directory")
 	}
 
-	same := &request{shadow: f.h, use: viaLink}
+	same := &gitCall{request: &request{}, shadow: f.h, use: viaLink}
 	if msg := same.usePrintedGitDir(trust, viaLink.gitDir); msg != "" || same.use.repoDir != viaLink.repoDir || same.repoRead != nil {
 		t.Errorf("the same spelling: %q, %s, read %v, want no change and no read", msg, same.use.repoDir, same.repoRead != nil)
 	}
 	_, otherGit := configRepo(t)
-	other := &request{shadow: f.h, use: viaLink}
+	other := &gitCall{request: &request{}, shadow: f.h, use: viaLink}
 	if msg := other.usePrintedGitDir(trust, otherGit); msg != "" || other.use.repoDir != viaLink.repoDir {
 		t.Errorf("another repository: %q, %s, want no change", msg, other.use.repoDir)
 	}
-	none := &request{shadow: f.h}
+	none := &gitCall{request: &request{}, shadow: f.h}
 	if msg := none.usePrintedGitDir(trust, f.gitDir); msg != "" || none.use.shadow() {
 		t.Errorf("a request with no copy: %q, %+v, want no change", msg, none.use)
 	}

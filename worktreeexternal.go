@@ -654,7 +654,7 @@ const workTreeUnknownPrefix = "failed to remove worktree: cannot determine the r
 // four folder variables there, and 14 with branchName (measured on Linux). The
 // calls before the gate have no copy. A failed start test in a remove with
 // worktreeRoot is not measured: its text is the reason, as for a refused config.
-func externalWorkTreeRefusal(req *request, repo string, off jsonTrueSwitch) (string, string) {
+func externalWorkTreeRefusal(req *gitCall, repo string, off jsonTrueSwitch) (string, string) {
 	u := gitUse{}
 	// Only "does not exist" skips the reasons. Any other stat error keeps them. A
 	// baseRepo behind a symlink chain that the kernel does not follow still resolves in

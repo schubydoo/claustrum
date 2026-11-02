@@ -799,7 +799,7 @@ func runWorktreeCheckout(ctx context.Context, u gitUse, leaf, workTree, gitDir, 
 		return "", false, err, nil
 	}
 	// In the folder of the daemon the index folder stays until the reply of the
-	// create (request.runAtReply). In the temporary folder the moment is not
+	// create (gitCall.runAtReply). In the temporary folder the moment is not
 	// measured: it goes at the end of this step, as before.
 	if u.inFolder() && u.atReply != nil {
 		*u.atReply = append(*u.atReply, removeIdxDir)

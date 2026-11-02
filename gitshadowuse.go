@@ -41,7 +41,7 @@ type gitUse struct {
 	read    *repoVerdict
 	noRenew bool
 	// atReply takes the removal of a short-lived folder that stays until the
-	// reply of the request (request.runAtReply), or it is nil.
+	// reply of the request (gitCall.runAtReply), or it is nil.
 	atReply *[]func()
 	// items are the `-c` items of the `config.worktree` file of the repository
 	// (worktreeConfigItems). entryItems are those of the file of the linked
@@ -67,7 +67,7 @@ type gitUse struct {
 	// nil.
 	live *liveSwitch
 	// sshKept is set in a git.worktree_create and a git.worktree_remove. It
-	// reports whether the off switch holds the daemon now (request.offLive).
+	// reports whether the off switch holds the daemon now (gitCall.offLive).
 	// It is nil in every other request (gitUse.sshOff).
 	sshKept func() bool
 }

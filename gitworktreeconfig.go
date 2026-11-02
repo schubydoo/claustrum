@@ -186,7 +186,7 @@ var worktreeConfigDropKeys = []string{"core.bare", "core.worktree"}
 // its new worktree is left to git. written is the write time of the file in
 // `.config-<n>` after the `--unset-all` calls. On Windows the new file gets it
 // (writeConfigFileIn).
-func (req *request) newWorktreeConfig(repo string, t gitDirTrust) (text []byte, ok bool, drop func(), cause string, written time.Time) {
+func (req *gitCall) newWorktreeConfig(repo string, t gitDirTrust) (text []byte, ok bool, drop func(), cause string, written time.Time) {
 	drop = func() {}
 	if req.repoRead == nil || !req.repoRead.worktreeConfig {
 		return nil, false, drop, "", written

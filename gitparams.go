@@ -74,9 +74,9 @@ type gitMethodParams interface {
 // gitParams, with each path `~`-expanded. A decode error is the reply of
 // bindParams: -32602 "Invalid params". The request's own member only takes and
 // releases the hold (handleGit). The member of the result is the hold at this
-// call, before the first git command of the method (request.offLive).
-func bindGitParams(req *request, view gitMethodParams) (gitParams, *response) {
-	if err := decodeParams(req, view); err != nil {
+// call, before the first git command of the method (gitCall.offLive).
+func bindGitParams(req *gitCall, view gitMethodParams) (gitParams, *response) {
+	if err := decodeParams(req.request, view); err != nil {
 		return gitParams{}, ptr(errResult(req.ID, codeInvalidParam, "Invalid params"))
 	}
 	p := view.params()
