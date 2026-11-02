@@ -1,4 +1,4 @@
-package main
+package wirelog
 
 import (
 	"errors"
@@ -26,10 +26,10 @@ func TestWireLogChmodFailureIsNonFatal(t *testing.T) {
 	chmodWireLog = func(*os.File, os.FileMode) error { return errChmod }
 
 	path := filepath.Join(t.TempDir(), "wire.log")
-	var w *wireLog
+	var w *Log
 	logs := captureLog(t, func() {
 		var err error
-		w, err = newWireLog(path, wireLogMaxString)
+		w, err = newWireLog(path, MaxString)
 		if err != nil {
 			t.Fatalf("newWireLog with a failing chmod = %v, want nil (the arm is non-fatal)", err)
 		}
@@ -42,7 +42,7 @@ func TestWireLogChmodFailureIsNonFatal(t *testing.T) {
 	if !strings.Contains(logs, want) {
 		t.Errorf("log missing %q\n--- got ---\n%s", want, logs)
 	}
-	w.record(1, "in", []byte(`{"jsonrpc":"2.0","id":1,"method":"server.capabilities"}`))
+	w.Record(1, "in", []byte(`{"jsonrpc":"2.0","id":1,"method":"server.capabilities"}`))
 	if recs := readWireLog(t, path); len(recs) != 1 {
 		t.Errorf("recorded %d frame(s) after the chmod warning, want 1", len(recs))
 	}

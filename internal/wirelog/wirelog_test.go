@@ -1,4 +1,4 @@
-package main
+package wirelog
 
 import (
 	"encoding/json"
@@ -36,12 +36,12 @@ func readWireLog(t *testing.T, path string) []map[string]interface{} {
 // property of wire logging that must never regress.
 func TestWireLogRedactsAuthToken(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "wire.jsonl")
-	w, err := newWireLog(path, wireLogMaxString)
+	w, err := newWireLog(path, MaxString)
 	if err != nil {
 		t.Fatalf("newWireLog: %v", err)
 	}
 	const secret = "SUPER-SECRET-TOKEN-do-not-log"
-	w.record(1, "in", []byte(`{"jsonrpc":"2.0","id":1,"method":"server.ping","auth":"`+secret+`"}`))
+	w.Record(1, "in", []byte(`{"jsonrpc":"2.0","id":1,"method":"server.ping","auth":"`+secret+`"}`))
 	w.Close()
 
 	raw, err := os.ReadFile(path)
@@ -69,12 +69,12 @@ func TestWireLogRedactsAuthToken(t *testing.T) {
 // throughput is read back out of a capture.
 func TestWireLogTruncatesLongStringsButKeepsLength(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "wire.jsonl")
-	w, err := newWireLog(path, wireLogMaxString)
+	w, err := newWireLog(path, MaxString)
 	if err != nil {
 		t.Fatalf("newWireLog: %v", err)
 	}
-	payload := strings.Repeat("A", wireLogMaxString*3)
-	w.record(2, "out", []byte(`{"method":"process.stream","params":{"data":"`+payload+`"}}`))
+	payload := strings.Repeat("A", MaxString*3)
+	w.Record(2, "out", []byte(`{"method":"process.stream","params":{"data":"`+payload+`"}}`))
 	w.Close()
 
 	recs := readWireLog(t, path)
@@ -103,11 +103,11 @@ func TestWireLogUnlimitedKeepsFullPayloadInOrder(t *testing.T) {
 	if err != nil {
 		t.Fatalf("newWireLog: %v", err)
 	}
-	payload := strings.Repeat("B", wireLogMaxString*4)
+	payload := strings.Repeat("B", MaxString*4)
 	// Keys deliberately out of alphabetical order — the map re-encoding would sort
 	// them, so this pins that raw preserves the bytes as sent.
 	frame := `{"method":"x","data":"` + payload + `","id":7}`
-	w.record(1, "out", []byte(frame))
+	w.Record(1, "out", []byte(frame))
 	w.Close()
 
 	recs := readWireLog(t, path)
@@ -140,31 +140,15 @@ func TestWireLogNegativeLimitMeansUnlimited(t *testing.T) {
 	}
 }
 
-// 0 in the config file is a real setting ("keep everything"), not "unset", so it
-// must win over the non-zero default — unlike the byte caps, where 0 means off.
-func TestEffectiveWireLogMaxStringZeroFromConfigWins(t *testing.T) {
-	zero := int64(0)
-	cfg := config{wireLogMaxString: &zero}
-	if got := cfg.effectiveWireLogMaxString(wireLogMaxString, false); got != 0 {
-		t.Errorf("config 0 with unset CLI: got %d, want 0 (keep everything)", got)
-	}
-	if got := cfg.effectiveWireLogMaxString(256, true); got != 256 {
-		t.Errorf("explicit CLI: got %d, want 256", got)
-	}
-	if got := (config{}).effectiveWireLogMaxString(wireLogMaxString, false); got != wireLogMaxString {
-		t.Errorf("neither set: got %d, want the %d default", got, wireLogMaxString)
-	}
-}
-
 // A frame that is not JSON is exactly what a capture exists to catch, so it must
 // be recorded rather than dropped.
 func TestWireLogRecordsNonJSONFrame(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "wire.jsonl")
-	w, err := newWireLog(path, wireLogMaxString)
+	w, err := newWireLog(path, MaxString)
 	if err != nil {
 		t.Fatalf("newWireLog: %v", err)
 	}
-	w.record(3, "in", []byte("this is not json"))
+	w.Record(3, "in", []byte("this is not json"))
 	w.Close()
 
 	recs := readWireLog(t, path)
@@ -183,11 +167,11 @@ func TestWireLogRecordsNonJSONFrame(t *testing.T) {
 // withheld and a plain array element is left verbatim.
 func TestWireLogRedactsInsideArrays(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "wire.jsonl")
-	w, err := newWireLog(path, wireLogMaxString)
+	w, err := newWireLog(path, MaxString)
 	if err != nil {
 		t.Fatalf("newWireLog: %v", err)
 	}
-	w.record(1, "in", []byte(`{"method":"x","params":["keep",{"token":"SECRET-do-not-log"}]}`))
+	w.Record(1, "in", []byte(`{"method":"x","params":["keep",{"token":"SECRET-do-not-log"}]}`))
 	w.Close()
 
 	if b, _ := os.ReadFile(path); strings.Contains(string(b), "SECRET-do-not-log") {
@@ -205,14 +189,14 @@ func TestWireLogRedactsInsideArrays(t *testing.T) {
 	}
 }
 
-// openWireLog succeeds and logs the mode in both the truncated and untruncated
+// Open succeeds and logs the mode in both the truncated and untruncated
 // cases; a successful open returns a live logger.
 func TestOpenWireLogSuccessBothModes(t *testing.T) {
 	dir := t.TempDir()
 	for _, max := range []int{0, 512} {
-		w, err := openWireLog(wireLogOptions{path: filepath.Join(dir, "w.jsonl"), maxString: max})
+		w, err := Open(Options{Path: filepath.Join(dir, "w.jsonl"), MaxString: max})
 		if err != nil || w == nil {
-			t.Fatalf("openWireLog(max=%d) = %v, %v; want a logger", max, w, err)
+			t.Fatalf("Open(max=%d) = %v, %v; want a logger", max, w, err)
 		}
 		w.Close()
 	}
@@ -222,72 +206,42 @@ func TestOpenWireLogSuccessBothModes(t *testing.T) {
 // and the count plus the file's own Close error are reported at Close.
 func TestWireLogWriteErrorCountedAndReported(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "wire.jsonl")
-	w, err := newWireLog(path, wireLogMaxString)
+	w, err := newWireLog(path, MaxString)
 	if err != nil {
 		t.Fatalf("newWireLog: %v", err)
 	}
 	w.f.Close() // close the fd out from under the logger; w.f stays non-nil
-	w.record(1, "in", []byte(`{"method":"x"}`))
+	w.Record(1, "in", []byte(`{"method":"x"}`))
 	if w.dropped.Load() == 0 {
 		t.Fatal("a failed write was not counted in dropped")
 	}
 	w.Close() // reports the dropped count and the already-closed file's Close error
 }
 
-// record on a closed logger hits the f==nil guard rather than panicking.
+// Record on a closed logger hits the f==nil guard rather than panicking.
 func TestWireLogRecordAfterCloseIsNoop(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "wire.jsonl")
-	w, err := newWireLog(path, wireLogMaxString)
+	w, err := newWireLog(path, MaxString)
 	if err != nil {
 		t.Fatalf("newWireLog: %v", err)
 	}
 	w.Close()
-	w.record(1, "in", []byte(`{"method":"x"}`)) // must be a no-op, not a panic
+	w.Record(1, "in", []byte(`{"method":"x"}`)) // must be a no-op, not a panic
 	w.Close()                                   // second Close hits the f==nil guard, also a no-op
 }
 
 // Off is the default, and off must mean no file and no work.
 func TestWireLogOffByDefault(t *testing.T) {
-	w, err := openWireLog(wireLogOptions{})
+	w, err := Open(Options{})
 	if err != nil {
-		t.Fatalf("openWireLog(\"\"): %v", err)
+		t.Fatalf("Open(\"\"): %v", err)
 	}
 	if w != nil {
-		t.Fatal("openWireLog(\"\") returned a logger; off must be nil")
+		t.Fatal("Open(\"\") returned a logger; off must be nil")
 	}
 	// Every call site calls unconditionally, so nil must be a safe receiver.
-	w.record(1, "in", []byte(`{"method":"x"}`))
+	w.Record(1, "in", []byte(`{"method":"x"}`))
 	w.Close()
-}
-
-// A path that cannot be opened must fail the boot. A daemon that serves happily
-// while recording nothing produces an empty capture, and an empty capture reads
-// as "the client sent nothing" — the worst failure mode for a diagnostic.
-func TestWireLogUnopenablePathIsFatalNotSilent(t *testing.T) {
-	bad := filepath.Join(t.TempDir(), "no-such-dir", "wire.jsonl")
-	if _, err := openWireLog(wireLogOptions{path: bad}); err == nil {
-		t.Fatal("openWireLog on an unopenable path returned nil error")
-	}
-	if _, err := newServerOnSocket(filepath.Join(t.TempDir(), "s.sock"), "tok", "", wireLogOptions{path: bad}, false, false); err == nil {
-		t.Fatal("newServerOnSocket accepted an unopenable -wire-log path")
-	}
-}
-
-// When -wire-log opens but a LATER boot step fails, the capture must not leak. The
-// daemon exits on such an error, but the in-process boot path (and any future
-// caller that recovers) must see the file closed. Here the wire-log path is valid
-// and the socket path is not, so newServerOnSocket fails past openWireLog.
-func TestWireLogClosedWhenBootFailsAfterOpen(t *testing.T) {
-	good := filepath.Join(t.TempDir(), "wire.jsonl")
-	badSocket := filepath.Join(t.TempDir(), "no-such-dir", "rpc.sock")
-	if _, err := newServerOnSocket(badSocket, "tok", "", wireLogOptions{path: good}, false, false); err == nil {
-		t.Fatal("newServerOnSocket accepted an unlistenable socket")
-	}
-	// The capture opened, then boot failed; the deferred Close must have run. A
-	// second Close is a no-op, so this asserts the file handle was released cleanly.
-	if _, err := os.Stat(good); err != nil {
-		t.Fatalf("capture file missing after failed boot: %v", err)
-	}
 }
 
 // The capture is created 0600: it contains the frames of both directions, which
@@ -297,7 +251,7 @@ func TestWireLogFileIsOwnerOnly(t *testing.T) {
 		t.Skip("POSIX mode bits are not an owner-only DACL on Windows")
 	}
 	path := filepath.Join(t.TempDir(), "wire.jsonl")
-	w, err := newWireLog(path, wireLogMaxString)
+	w, err := newWireLog(path, MaxString)
 	if err != nil {
 		t.Fatalf("newWireLog: %v", err)
 	}
@@ -323,7 +277,7 @@ func TestWireLogTightensPreExistingFileMode(t *testing.T) {
 	if err := os.WriteFile(path, []byte("{\"pre\":1}\n"), 0o644); err != nil {
 		t.Fatalf("pre-create: %v", err)
 	}
-	w, err := newWireLog(path, wireLogMaxString) // appends onto the existing path
+	w, err := newWireLog(path, MaxString) // appends onto the existing path
 	if err != nil {
 		t.Fatalf("newWireLog: %v", err)
 	}
@@ -337,25 +291,6 @@ func TestWireLogTightensPreExistingFileMode(t *testing.T) {
 	}
 }
 
-// Config precedence mirrors -metrics-addr: CLI wins when explicitly set,
-// otherwise the file value applies.
-func TestEffectiveWireLogPrecedence(t *testing.T) {
-	cfg := config{wireLog: "/from/file.jsonl"}
-	if got := cfg.effectiveWireLog("", false); got != "/from/file.jsonl" {
-		t.Errorf("unset CLI: got %q, want the config value", got)
-	}
-	if got := cfg.effectiveWireLog("/from/cli.jsonl", true); got != "/from/cli.jsonl" {
-		t.Errorf("explicit CLI: got %q, want the CLI value", got)
-	}
-	// An explicitly-empty CLI value must be able to turn it back off.
-	if got := cfg.effectiveWireLog("", true); got != "" {
-		t.Errorf("explicit empty CLI: got %q, want \"\" (off)", got)
-	}
-	if got := (config{}).effectiveWireLog("", false); got != "" {
-		t.Errorf("neither set: got %q, want \"\" (off)", got)
-	}
-}
-
 // Connection ids come from a per-process counter, while the capture is opened
 // O_APPEND and outlives a restart — so two daemons writing one file both number
 // their connections from 1. Without pid, a reader correlating a reply to its
@@ -364,19 +299,19 @@ func TestEffectiveWireLogPrecedence(t *testing.T) {
 func TestWireLogRecordsPIDSoConnIDsStaySeparable(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "wire.jsonl")
 
-	w1, err := newWireLog(path, wireLogMaxString)
+	w1, err := newWireLog(path, MaxString)
 	if err != nil {
 		t.Fatalf("newWireLog: %v", err)
 	}
-	w1.record(1, "in", []byte(`{"jsonrpc":"2.0","id":1,"method":"server.ping"}`))
+	w1.Record(1, "in", []byte(`{"jsonrpc":"2.0","id":1,"method":"server.ping"}`))
 
 	// A second writer on the same path, standing in for a restarted daemon: it
 	// reuses conn 1, which is precisely the collision pid exists to resolve.
-	w2, err := newWireLog(path, wireLogMaxString)
+	w2, err := newWireLog(path, MaxString)
 	if err != nil {
 		t.Fatalf("newWireLog (second writer): %v", err)
 	}
-	w2.record(1, "in", []byte(`{"jsonrpc":"2.0","id":1,"method":"server.ping"}`))
+	w2.Record(1, "in", []byte(`{"jsonrpc":"2.0","id":1,"method":"server.ping"}`))
 	w1.Close()
 	w2.Close()
 
@@ -414,11 +349,11 @@ const spawnEnvFrame = `{"jsonrpc":"2.0","id":60,"method":"process.spawn","params
 // (scopes, base URL) verbatim — over-redaction destroys what a capture is for.
 func TestWireLogRedactsSpawnEnvCredentials_ShapeMode(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "wire.jsonl")
-	w, err := newWireLog(path, wireLogMaxString)
+	w, err := newWireLog(path, MaxString)
 	if err != nil {
 		t.Fatalf("newWireLog: %v", err)
 	}
-	w.record(1, "in", []byte(spawnEnvFrame))
+	w.Record(1, "in", []byte(spawnEnvFrame))
 	w.Close()
 
 	if b, _ := os.ReadFile(path); strings.Contains(string(b), "oat01-EXAMPLE") || strings.Contains(string(b), "ak-EXAMPLE") {
@@ -453,7 +388,7 @@ func TestWireLogRedactsSpawnEnvCredentials_RawMode(t *testing.T) {
 	if err != nil {
 		t.Fatalf("newWireLog: %v", err)
 	}
-	w.record(1, "in", []byte(spawnEnvFrame))
+	w.Record(1, "in", []byte(spawnEnvFrame))
 	w.Close()
 
 	recs := readWireLog(t, path)
@@ -484,13 +419,13 @@ func TestWireLogRedactsSpawnEnvCredentials_RawMode(t *testing.T) {
 // branch a capture (switched on for a misbehaving client) is most likely to hold.
 func TestWireLogRawFallbackRedactsMalformedFrame(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "wire.jsonl")
-	w, err := newWireLog(path, wireLogMaxString)
+	w, err := newWireLog(path, MaxString)
 	if err != nil {
 		t.Fatalf("newWireLog: %v", err)
 	}
 	const token = "SECRET-TOKEN-do-not-log"
 	// The \x01 makes the frame unparseable; the auth member is otherwise intact.
-	w.record(1, "in", []byte("{\"auth\":\""+token+"\",\"method\":\"files.write\",\"x\":\"\x01\"}"))
+	w.Record(1, "in", []byte("{\"auth\":\""+token+"\",\"method\":\"files.write\",\"x\":\"\x01\"}"))
 	w.Close()
 
 	b, err := os.ReadFile(path)
@@ -513,11 +448,11 @@ func TestWireLogRawFallbackRedactsMalformedFrame(t *testing.T) {
 // capture is greppable for failures without decoding every body.
 func TestWireLogFlagsErrorFrames(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "wire.jsonl")
-	w, err := newWireLog(path, wireLogMaxString)
+	w, err := newWireLog(path, MaxString)
 	if err != nil {
 		t.Fatalf("newWireLog: %v", err)
 	}
-	w.record(1, "out", []byte(`{"jsonrpc":"2.0","id":3,"error":{"code":-32001,"message":"unauthorized"}}`))
+	w.Record(1, "out", []byte(`{"jsonrpc":"2.0","id":3,"error":{"code":-32001,"message":"unauthorized"}}`))
 	w.Close()
 
 	recs := readWireLog(t, path)
@@ -545,7 +480,7 @@ func TestWireLogRawFallbackRedactsNonWordKeys(t *testing.T) {
 			if err != nil {
 				t.Fatalf("newWireLog: %v", err)
 			}
-			w.record(1, "in", []byte(frame))
+			w.Record(1, "in", []byte(frame))
 			w.Close()
 			b, _ := os.ReadFile(path)
 			for _, secret := range []string{"HY-SECRET", "DOT-SECRET", "XP-SECRET", "AWS-SECRET"} {
@@ -570,11 +505,11 @@ func TestWireLogRawFallbackRedactsTruncatedValue(t *testing.T) {
 	for name, frame := range cases {
 		t.Run(name, func(t *testing.T) {
 			path := filepath.Join(t.TempDir(), "wire.jsonl")
-			w, err := newWireLog(path, wireLogMaxString)
+			w, err := newWireLog(path, MaxString)
 			if err != nil {
 				t.Fatalf("newWireLog: %v", err)
 			}
-			w.record(1, "in", []byte(frame))
+			w.Record(1, "in", []byte(frame))
 			w.Close()
 
 			b, err := os.ReadFile(path)
@@ -595,13 +530,13 @@ func TestWireLogRawFallbackRedactsTruncatedValue(t *testing.T) {
 // throughput read out of a capture is biased by one byte per outbound frame.
 func TestWireLogNExcludesFramingNewline(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "wire.jsonl")
-	w, err := newWireLog(path, wireLogMaxString)
+	w, err := newWireLog(path, MaxString)
 	if err != nil {
 		t.Fatalf("newWireLog: %v", err)
 	}
 	frame := `{"method":"server.ping"}`
-	w.record(1, "out", []byte(frame+"\n")) // outbound carries the framing newline
-	w.record(2, "in", []byte(frame))       // inbound does not
+	w.Record(1, "out", []byte(frame+"\n")) // outbound carries the framing newline
+	w.Record(2, "in", []byte(frame))       // inbound does not
 	w.Close()
 
 	recs := readWireLog(t, path)
@@ -616,7 +551,7 @@ func TestWireLogNExcludesFramingNewline(t *testing.T) {
 // exact leading bytes the client sent rather than a split rune json.Marshal would
 // rewrite to U+FFFD.
 func TestWireLogClampStringCutsOnRuneBoundary(t *testing.T) {
-	w := &wireLog{maxStr: 3}
+	w := &Log{maxStr: 3}
 	// "é" is 2 bytes (0xC3 0xA9); a byte-3 cut lands on a continuation byte, so the
 	// backoff must retreat to byte 2 and keep exactly one "é".
 	got := w.clampString("ééé")
@@ -657,7 +592,7 @@ func TestWireLogClampStringBoundary(t *testing.T) {
 		{"a negative maxStr is also unlimited", -1, "abcdefghij", "abcdefghij"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			w := &wireLog{maxStr: tc.maxStr}
+			w := &Log{maxStr: tc.maxStr}
 			if got := w.clampString(tc.in); got != tc.want {
 				t.Errorf("clampString(%q) at maxStr=%d = %q, want %q", tc.in, tc.maxStr, got, tc.want)
 			}

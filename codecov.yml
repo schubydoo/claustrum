@@ -416,6 +416,9 @@ component_management:
     - component_id: observability
       name: logging, metrics & wire log
       paths:
-        - logging.go
-        - metrics.go
-        - wirelog.go
+        - compat_logging.go
+        - compat_metrics.go
+        - compat_wirelog.go
+        - internal/logging/logging.go
+        - internal/metrics/metrics.go
+        - internal/wirelog/wirelog.go

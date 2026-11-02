@@ -995,7 +995,7 @@ func (m *procManager) spawnVia(c *conn, id, command string, args []string, cwd s
 	} else {
 		logInfof("[process.Manager] Process %s started, PID=%d, command=%s", id, cmd.Process.Pid, command)
 	}
-	met.spawns.Add(1)
+	met.Spawns.Add(1)
 
 	p := &managedProc{
 		id:         id,
@@ -1157,7 +1157,7 @@ func (p *managedProc) waitReapAndDrain(wg *sync.WaitGroup, stdoutR, stderrR *os.
 	p.group.close()
 	sigName := exitSignalName(err)
 	logInfof(fmtProcExited, p.id, code, exitLogSuffix(sigName, killedBy))
-	met.processExits.Add(1)
+	met.ProcessExits.Add(1)
 	p.emit(streamFrame{Stream: "exit", ExitCode: &code, Signal: sigName, KilledBy: killedBy})
 	if p.onExit != nil {
 		p.onExit()
@@ -1203,7 +1203,7 @@ func pumpStream(p *managedProc, name string, r io.Reader) {
 	for {
 		n, err := r.Read(buf)
 		if n > 0 {
-			met.streamBytes.Add(int64(n))
+			met.StreamBytes.Add(int64(n))
 			p.emit(streamFrame{
 				Stream: name,
 				Data:   base64.StdEncoding.EncodeToString(buf[:n]),
@@ -1238,7 +1238,7 @@ func (m *procManager) writeStdin(id string, data []byte) bool {
 	if p.enqueueStdin(data) {
 		return false // queue full (backpressure): nothing was enqueued
 	}
-	met.stdinBytes.Add(int64(len(data)))
+	met.StdinBytes.Add(int64(len(data)))
 	return true
 }
 
@@ -1344,7 +1344,7 @@ func (p *managedProc) applyStdin(data []byte, offset *uint64, running func() boo
 	p.stdinApplied += uint64(len(data))
 	applied = p.stdinApplied
 	p.stdinMu.Unlock()
-	met.stdinBytes.Add(int64(len(data)))
+	met.StdinBytes.Add(int64(len(data)))
 	return applied, false, false, false, false
 }
 
@@ -1680,7 +1680,7 @@ func (m *procManager) reattach(c *conn, id string, fromSeq uint64) (p *managedPr
 	if p == nil {
 		return nil, false, false, 0, 0, 0
 	}
-	met.reattaches.Add(1)
+	met.Reattaches.Add(1)
 	// The write lock of c comes first, so no wait on a socket write holds p.mu.
 	// It also comes first because applyStdin nests p.stdinMu over p.mu. No path
 	// holds p.mu or p.stdinMu and then takes a wmu.

@@ -1,4 +1,4 @@
-package main
+package metrics
 
 import (
 	"bytes"
@@ -12,10 +12,10 @@ import (
 // for every counter. Uses a local metrics value, not the global, so the assert
 // is deterministic regardless of what other tests have counted.
 func TestMetricsPrometheusFormat(t *testing.T) {
-	var m metrics
-	m.connections.Store(3)
-	m.spawns.Store(2)
-	m.streamBytes.Store(4096)
+	var m Metrics
+	m.Connections.Store(3)
+	m.Spawns.Store(2)
+	m.StreamBytes.Store(4096)
 
 	var buf bytes.Buffer
 	m.writePrometheus(&buf)
@@ -37,12 +37,12 @@ func TestMetricsPrometheusFormat(t *testing.T) {
 	}
 }
 
-// startMetricsServer must bind, serve /metrics with the Prometheus content type,
+// StartServer must bind, serve /metrics with the Prometheus content type,
 // and stop when the returned listener is closed.
 func TestMetricsServerServes(t *testing.T) {
-	ln, err := startMetricsServer("127.0.0.1:0") // :0 → an ephemeral free port
+	ln, err := StartServer("127.0.0.1:0") // :0 → an ephemeral free port
 	if err != nil {
-		t.Fatalf("startMetricsServer: %v", err)
+		t.Fatalf("StartServer: %v", err)
 	}
 	defer ln.Close()
 
@@ -66,9 +66,9 @@ func TestMetricsServerServes(t *testing.T) {
 
 // Closing the listener must stop the server (a subsequent request fails).
 func TestMetricsServerStopsOnClose(t *testing.T) {
-	ln, err := startMetricsServer("127.0.0.1:0")
+	ln, err := StartServer("127.0.0.1:0")
 	if err != nil {
-		t.Fatalf("startMetricsServer: %v", err)
+		t.Fatalf("StartServer: %v", err)
 	}
 	addr := ln.Addr().String()
 	if err := ln.Close(); err != nil {
