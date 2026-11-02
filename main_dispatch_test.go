@@ -6,6 +6,7 @@ import (
 	"log"
 	"os"
 	"path/filepath"
+	"reflect"
 	"runtime"
 	"strings"
 	"testing"
@@ -119,6 +120,41 @@ func TestInstallArmWiresEachFlagToItsOwnGlobal(t *testing.T) {
 	}
 	if n := strings.Count(buf.String(), "-cli-probe-timeout is deprecated and ignored"); n != 1 {
 		t.Errorf("-cli-probe-timeout deprecation warnings = %d, want exactly 1; log:\n%s", n, buf.String())
+	}
+}
+
+// The -install arm hands each path flag and the home folder to its own field of
+// install.Options. A crossed line compiles and passes every test of
+// internal/install: with -cli-dir and -cli-zst swapped, the blob remove names
+// the cli folder and the prune acts in the folder of the blob. The seam takes
+// the Options in place of the run, so nothing is installed or removed.
+// Distinct values on purpose: equal ones pass under a swap.
+//
+// The stub runs in a subtest, so its cleanup has run when the end of this test
+// checks that the seam is install.Run again.
+func TestInstallArmGivesEachPathFlagItsOwnOption(t *testing.T) {
+	t.Run("stub", func(t *testing.T) {
+		var got []install.Options
+		old := runInstallArm
+		runInstallArm = func(o install.Options) { got = append(got, o) }
+		t.Cleanup(func() { runInstallArm = old })
+		home := t.TempDir()
+		t.Setenv(homeEnvVar(), home)
+		if _, exited := runMain(t, "-install", "-cli-dir", "/x/dir", "-cli-version", "9.8.7",
+			"-cli-url", "https://example.invalid/cli.zst", "-cli-checksum", "abc123",
+			"-cli-zst", "/x/blob.zst", "-cli-keep", "5"); exited {
+			t.Fatal("-install should return, not exit")
+		}
+		want := install.Options{
+			CLIDir: "/x/dir", CLIVersion: "9.8.7", CLIURL: "https://example.invalid/cli.zst",
+			CLIChecksum: "abc123", CLIZst: "/x/blob.zst", CLIKeep: 5, Home: home,
+		}
+		if len(got) != 1 || got[0] != want {
+			t.Errorf("install.Run got %+v, want one call with %+v", got, want)
+		}
+	})
+	if reflect.ValueOf(runInstallArm).Pointer() != reflect.ValueOf(install.Run).Pointer() {
+		t.Error("runInstallArm is not install.Run after the test")
 	}
 }
 

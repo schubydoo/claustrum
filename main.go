@@ -241,7 +241,7 @@ func main() {
 		// than taking it through cliinstall.Options.
 		cliinstall.DownloadTimeout = cfg.effectiveCLIDownloadTimeout(*cliDownload, cliSet["cli-download-timeout"])
 		cliinstall.Version = Version
-		cliinstall.Run(cliinstall.Options{
+		runInstallArm(cliinstall.Options{
 			CLIDir: *cliDir, CLIVersion: *cliVersion, CLIURL: *cliURL,
 			CLIChecksum: *cliChecksum, CLIZst: *cliZst, CLIKeep: *cliKeep,
 			Home: home,
