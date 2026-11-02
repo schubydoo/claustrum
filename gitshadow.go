@@ -187,7 +187,7 @@ func (h *shadowHost) control(off bool) string {
 var replyWaits atomic.Int64
 
 // replyControl is the settingsControl value of a git.info reply, read when the reply
-// is made. off reports the hold of the off switch (request.offLive). It is read again
+// is made. off reports the hold of the off switch (gitCall.offLive). It is read again
 // after the wait, so a hold that starts during the wait counts (claustrum's own for
 // this order, not measured). Without a hold the reply waits for a start test that
 // runs, and then has the state that the test gave. 5fd08069 holds a git.info on a
@@ -1096,14 +1096,14 @@ func writeShadowTestFiles(shadowDir string, head, config []byte) error {
 // In the state fallback-git the read of the config does not run
 // (readsRepoConfig), and the daemon keeps no folder of a repository: its own
 // folder holds the lock file only there (measured on Linux).
-func (req *request) settingsGateRefusal(t gitDirTrust, off jsonTrueSwitch, dir string) (msg string, noRepo bool) {
+func (req *gitCall) settingsGateRefusal(t gitDirTrust, off jsonTrueSwitch, dir string) (msg string, noRepo bool) {
 	return req.settingsGate(t, off, dir, true)
 }
 
 // settingsGate is settingsGateRefusal. With ask false the gate makes no call
 // that asks git about the repository (askGit). keepLiveForm and keepLiveCreate
 // pass ask false only for a later gate at a call with --git-dir=.
-func (req *request) settingsGate(t gitDirTrust, off jsonTrueSwitch, dir string, ask bool) (msg string, noRepo bool) {
+func (req *gitCall) settingsGate(t gitDirTrust, off jsonTrueSwitch, dir string, ask bool) (msg string, noRepo bool) {
 	req.gitRefused, req.configRefused = false, false
 	// git.info and git.list_branches skip the trust check with a GIT_COMMON_DIR
 	// in the daemon environment (requestGitDirTrust). With a GIT_DIR there too,

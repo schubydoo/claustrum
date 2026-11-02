@@ -153,6 +153,7 @@ component_management:
         - compat_files.go
         - methods_git.go
         - gitparams.go
+        - gitcall.go
         - methods_process.go
         # The data.reason member of a refused process.spawn start, with its OS split.
         - spawnreason.go

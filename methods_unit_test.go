@@ -314,15 +314,19 @@ func TestRoutingUnknownMethodPerNamespace(t *testing.T) {
 }
 
 // Each namespace handler rejects a known method that arrives with no params
-// object via the shared needParams gate.
+// object via the shared needParams gate. The reply carries the id of the
+// request.
 func TestRoutingMissingParamsPerNamespace(t *testing.T) {
 	s := newTestServer(t)
 	auth := `"auth":"` + testToken + `"`
 	for _, m := range []string{"files.read", "git.info", "process.spawn"} {
-		line := `{"jsonrpc":"2.0","id":1,"method":"` + m + `",` + auth + `}`
+		line := `{"jsonrpc":"2.0","id":7,"method":"` + m + `",` + auth + `}`
 		got := dispatchRaw(t, s, line)
 		if !strings.Contains(got, "Invalid params") {
 			t.Errorf("dispatch %s without params = %s, want Invalid params", m, got)
+		}
+		if !strings.Contains(got, `"id":7,`) {
+			t.Errorf("dispatch %s without params = %s, want the id 7 of the request", m, got)
 		}
 	}
 }
