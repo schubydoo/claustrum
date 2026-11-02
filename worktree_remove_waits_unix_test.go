@@ -3,7 +3,6 @@
 package main
 
 import (
-	"encoding/json"
 	"os"
 	"path/filepath"
 	"strings"
@@ -23,16 +22,16 @@ import (
 //   - T3C: the create is held at its read-tree checkout, after the add. The
 //     remove answers during the hold.
 
-// dispatchAsync runs line through dispatch in a goroutine. The channel gets the
-// marshaled reply.
-func dispatchAsync(s *server, line string) <-chan string {
+// dispatchAsync runs line through gitDispatchErr with d in a goroutine. The channel
+// gets the marshaled reply, or the text of the error.
+func dispatchAsync(d *gitDeps, line string) <-chan string {
 	out := make(chan string, 1)
 	go func() {
-		var b []byte
-		if resp := s.dispatch(nil, []byte(line)); resp != nil {
-			b, _ = json.Marshal(*resp)
+		raw, err := gitDispatchErr(d, line)
+		if err != nil {
+			raw = err.Error()
 		}
-		out <- string(b)
+		out <- raw
 	}()
 	return out
 }
@@ -59,9 +58,9 @@ func receive(t *testing.T, what string, ch <-chan string) string {
 
 // heldRemoveFixture makes the fixture of the cells: r1 on branch rb inside
 // baseRepo, with baseRepo the linked worktree LW or the main repository T. The
-// stub holds the call that match picks at a gate file. It returns the server,
+// stub holds the call that match picks at a gate file. It returns the git state,
 // baseRepo, the leaf r1 and the gate.
-func heldRemoveFixture(t *testing.T, linked bool, match string) (wtFixture, *server, string, string, string) {
+func heldRemoveFixture(t *testing.T, linked bool, match string) (wtFixture, *gitDeps, string, string, string) {
 	t.Helper()
 	f := newWTFixture(t, true)
 	base := f.top
@@ -76,7 +75,7 @@ func heldRemoveFixture(t *testing.T, linked bool, match string) (wtFixture, *ser
 	// The gate opens at the end in every case, so a held create ends.
 	t.Cleanup(func() { _ = os.WriteFile(gate, nil, 0o644) })
 	slowGit(t, match, "gate", 60*time.Second, "", "")
-	return f, newTestServer(t), base, r1, gate
+	return f, newTestGitDeps(), base, r1, gate
 }
 
 func removeLine(t *testing.T, base, leaf, branch string) string {
@@ -95,11 +94,11 @@ func TestWorktreeRemoveWaitsForAddOfCreate(t *testing.T) {
 		linked bool
 	}{{"T3", true}, {"T3M", false}} {
 		t.Run(tc.name, func(t *testing.T) {
-			f, s, base, r1, gate := heldRemoveFixture(t, tc.linked, "worktree,add,w1")
+			f, h, base, r1, gate := heldRemoveFixture(t, tc.linked, "worktree,add,w1")
 			w1 := filepath.Join(f.top, ".claude", "worktrees", "w1")
-			created := dispatchAsync(s, rpcLine(t, "git.worktree_create", createParams(f.top, w1, "w1")))
+			created := dispatchAsync(h, rpcLine(t, "git.worktree_create", createParams(f.top, w1, "w1")))
 			waitFor(t, "the add of the create reached the gate", func() bool { return exists(gate + ".in") })
-			removed := dispatchAsync(s, removeLine(t, base, r1, "rb"))
+			removed := dispatchAsync(h, removeLine(t, base, r1, "rb"))
 			waitFor(t, "the remove deleted the leaf r1 during the held add", func() bool { return !exists(r1) })
 			if exists(gate + ".out") {
 				t.Fatal("the gate gave up before the remove deleted the leaf r1")
@@ -145,11 +144,11 @@ func TestWorktreeRemoveDoesNotWaitForCheckout(t *testing.T) {
 		linked bool
 	}{{"through LW", true}, {"through T", false}} {
 		t.Run(tc.name, func(t *testing.T) {
-			f, s, base, r1, gate := heldRemoveFixture(t, tc.linked, "read-tree")
+			f, h, base, r1, gate := heldRemoveFixture(t, tc.linked, "read-tree")
 			w1 := filepath.Join(f.top, ".claude", "worktrees", "w1")
-			created := dispatchAsync(s, rpcLine(t, "git.worktree_create", createParams(f.top, w1, "w1")))
+			created := dispatchAsync(h, rpcLine(t, "git.worktree_create", createParams(f.top, w1, "w1")))
 			waitFor(t, "the checkout of the create reached the gate", func() bool { return exists(gate + ".in") })
-			removed := dispatchAsync(s, removeLine(t, base, r1, "rb"))
+			removed := dispatchAsync(h, removeLine(t, base, r1, "rb"))
 			select {
 			case got := <-removed:
 				if !strings.Contains(got, `"success":true`) {

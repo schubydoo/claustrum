@@ -353,7 +353,7 @@ func TestWorktreeCreateRollbackRemovesTestedRegistration(t *testing.T) {
 		}},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			f, s := postAddFixture(t)
+			f, h := postAddFixture(t)
 			root, err := filepath.EvalSymlinks(filepath.Dir(f.top))
 			if err != nil {
 				t.Fatal(err)
@@ -373,7 +373,7 @@ func TestWorktreeCreateRollbackRemovesTestedRegistration(t *testing.T) {
 			stubSteps(t, tc.steps(f, reg, w9, live, outside, realLeaf)...)
 			slowGit(t, "read-tree", "fail", 0, `fatal: forced read-tree failure\n`, "")
 
-			raw, _ := f.create(t, s, "w1", "", 0)
+			raw, _ := f.create(t, h, "w1", "", 0)
 			if raw != forcedFailureFrame {
 				t.Errorf("reply = %s\nwant %s", raw, forcedFailureFrame)
 			}
@@ -411,11 +411,11 @@ func TestWorktreeCreateRollbackRemovesTestedRegistration(t *testing.T) {
 //     stay. It needs a user that is not root.
 func TestWorktreeCreateRecordGoneAfterCheckout(t *testing.T) {
 	t.Run("B4", func(t *testing.T) {
-		f, s := postAddFixture(t)
+		f, h := postAddFixture(t)
 		reg := filepath.Join(f.regDir, "w1")
 		stubSteps(t, []string{"rm", filepath.Join(reg, "gitdir")})
 		slowGit(t, "read-tree", "post", 0, "", "")
-		raw, _ := f.create(t, s, "w1", "", 0)
+		raw, _ := f.create(t, h, "w1", "", 0)
 		b, err := os.ReadFile(filepath.Join(f.leaf(), ".git"))
 		if err != nil {
 			t.Fatal(err)
@@ -429,13 +429,13 @@ func TestWorktreeCreateRecordGoneAfterCheckout(t *testing.T) {
 		}
 	})
 	t.Run("Z15", func(t *testing.T) {
-		f, s, tmp := indexInstallFixture(t)
+		f, h, tmp := indexInstallFixture(t)
 		reg := filepath.Join(f.regDir, "w1")
 		t.Cleanup(func() { _ = os.Chmod(reg, 0o755) })
 		stubSteps(t, []string{"rm", filepath.Join(reg, "gitdir")}, []string{"chmod", reg, "500"})
 		slowGit(t, "read-tree", "post", 0, `hint: synthetic\n`, "")
 
-		raw, _ := f.create(t, s, "w1", "", 0)
+		raw, _ := f.create(t, h, "w1", "", 0)
 		if err := os.Chmod(reg, 0o755); err != nil {
 			t.Fatal(err)
 		}
@@ -473,11 +473,11 @@ func TestWorktreeCreateRecordGoneAfterCheckout(t *testing.T) {
 // that the leaf does not hold its .git file, with unsafe_path. The leaf goes, with
 // the files of the checkout. The registration w1 and branch w1 stay.
 func TestWorktreeCreateGitFileGoneAfterCheckout(t *testing.T) {
-	f, s := postAddFixture(t)
+	f, h := postAddFixture(t)
 	stubSteps(t, []string{"rm", filepath.Join(f.leaf(), ".git")})
 	slowGit(t, "read-tree", "post", 0, "", "")
 
-	raw, _ := f.create(t, s, "w1", "", 0)
+	raw, _ := f.create(t, h, "w1", "", 0)
 	f.wantGitFileGoneFrame(t, raw)
 	if got := f.leafEntries(t); got != nil {
 		t.Errorf("leaf entries = %q, want the leaf removed", got)
@@ -508,12 +508,12 @@ func (f wtFixture) wantGitFileGoneFrame(t *testing.T, raw string) {
 // file. The identity guard keeps the new folder, so nothing is deleted: w1x
 // keeps the files of the checkout, and the registration w1 and branch w1 stay.
 func TestWorktreeCreateLeafReplacedInCheckout(t *testing.T) {
-	f, s := postAddFixture(t)
+	f, h := postAddFixture(t)
 	moved := f.leaf() + "x"
 	stubSteps(t, []string{"rename", f.leaf(), moved}, []string{"mkdir", f.leaf()})
 	slowGit(t, "read-tree", "post", 0, "", "")
 
-	raw, _ := f.create(t, s, "w1", "", 0)
+	raw, _ := f.create(t, h, "w1", "", 0)
 	f.wantGitFileGoneFrame(t, raw)
 	if got := f.leafEntries(t); got == nil || len(got) != 0 {
 		t.Errorf("leaf entries = %q, want the new empty folder kept", got)
@@ -567,7 +567,7 @@ func TestWorktreeCreateRollbackKeepsReplacedRegistration(t *testing.T) {
 		sibling bool
 	}{{"B6", false}, {"B6b", true}} {
 		t.Run(tc.name, func(t *testing.T) {
-			f, s := postAddFixture(t)
+			f, h := postAddFixture(t)
 			reg, moved, w9 := filepath.Join(f.regDir, "w1"), filepath.Join(f.regDir, "w1x"), filepath.Join(f.regDir, "w9")
 			live := filepath.Join(filepath.Dir(f.top), "live", "w9")
 			steps := [][]string{{"rename", reg, moved}, {"mkdir", reg}}
@@ -578,7 +578,7 @@ func TestWorktreeCreateRollbackKeepsReplacedRegistration(t *testing.T) {
 			stubSteps(t, steps...)
 			slowGit(t, "read-tree", "fail", 0, `fatal: forced read-tree failure\n`, "")
 
-			raw, _ := f.create(t, s, "w1", "", 0)
+			raw, _ := f.create(t, h, "w1", "", 0)
 			if raw != forcedFailureFrame {
 				t.Errorf("reply = %s\nwant %s", raw, forcedFailureFrame)
 			}
@@ -1216,7 +1216,7 @@ func TestWorktreeCreateRootBehindSymlinkSpelling(t *testing.T) {
 	}
 	create := func(t *testing.T, repo, link, name string) string {
 		t.Helper()
-		return dispatchRaw(t, newTestServer(t), rpcLine(t, "git.worktree_create", map[string]any{
+		return gitDispatch(t, newTestGitDeps(), rpcLine(t, "git.worktree_create", map[string]any{
 			"baseRepo": repo, "branchName": name, "worktreePath": filepath.Join(link, "cp", name), "worktreeRoot": link}))
 	}
 	t.Run("U3a", func(t *testing.T) {

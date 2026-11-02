@@ -20,14 +20,14 @@ import (
 // add, so both shapes are staged on any git of the host.
 
 // postAddFixture makes the fixture, then starts the git stub, and returns the
-// fixture and the server. The fixture comes first, so its realGit is the git of the
-// host and not the stub. D5 is off.
-func postAddFixture(t *testing.T) (wtFixture, *server) {
+// fixture and the git state. The fixture comes first, so its realGit is the git of
+// the host and not the stub. D5 is off.
+func postAddFixture(t *testing.T) (wtFixture, *gitDeps) {
 	t.Helper()
 	requireGit(t)
 	f := newWTFixture(t, false)
 	installGitSlowStub(t, f.realGit)
-	return f, newTestServer(t)
+	return f, newTestGitDeps()
 }
 
 // afterAdd makes the stub write content to file after the real add, and then
@@ -139,7 +139,7 @@ func TestWorktreeCreateRegistrationName(t *testing.T) {
 		{"D-5 through the link", "WTREG", "../../WTREG", false, false},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			f, s := postAddFixture(t)
+			f, h := postAddFixture(t)
 			target := filepath.Join(filepath.Dir(f.top), filepath.FromSlash(tc.target))
 			link := tc.link
 			if link == "" {
@@ -153,7 +153,7 @@ func TestWorktreeCreateRegistrationName(t *testing.T) {
 			gitFile := "gitdir: " + value + "\n"
 			afterAdd(t, filepath.Join(f.leaf(), ".git"), gitFile, 0)
 
-			raw, _ := f.create(t, s, "w1", "", 0)
+			raw, _ := f.create(t, h, "w1", "", 0)
 			reg := filepath.Join(target, "w1")
 			if !tc.refused {
 				f.wantCreated(t, raw, gitFile, reg)
@@ -175,10 +175,10 @@ func TestWorktreeCreateRegistrationName(t *testing.T) {
 //     the registration that git made holds the index.
 func TestWorktreeCreateRegistrationCommonDir(t *testing.T) {
 	t.Run("D-13", func(t *testing.T) {
-		f, s := postAddFixture(t)
+		f, h := postAddFixture(t)
 		reg := filepath.Join(f.regDir, "w1")
 		afterAdd(t, filepath.Join(reg, "commondir"), "../../x\n", 0)
-		raw, _ := f.create(t, s, "w1", "", 0)
+		raw, _ := f.create(t, h, "w1", "", 0)
 		wantError(t, raw, notOursText(f.leaf()), "unsafe_path")
 		b, err := os.ReadFile(filepath.Join(f.leaf(), ".git"))
 		if err != nil {
@@ -187,10 +187,10 @@ func TestWorktreeCreateRegistrationCommonDir(t *testing.T) {
 		f.wantNothingRolledBack(t, string(b), reg)
 	})
 	t.Run("D-12", func(t *testing.T) {
-		f, s := postAddFixture(t)
+		f, h := postAddFixture(t)
 		const gitFile = "gitdir: /elsewhere/worktrees/w1\n"
 		afterAdd(t, filepath.Join(f.leaf(), ".git"), gitFile, 0)
-		raw, _ := f.create(t, s, "w1", "", 0)
+		raw, _ := f.create(t, h, "w1", "", 0)
 		f.wantCreated(t, raw, gitFile, filepath.Join(f.regDir, "w1"))
 		if !f.hasRef(t, "w1") {
 			t.Error("refs/heads/w1 is gone, want it kept")
@@ -206,26 +206,26 @@ func TestWorktreeCreateRegistrationCommonDir(t *testing.T) {
 //   - Measured: a read-tree that fails. The answer is the refusal, and no
 //     read-tree runs.
 func TestWorktreeCreateRegistrationTestOrder(t *testing.T) {
-	stage := func(t *testing.T, d time.Duration) (wtFixture, *server, string, string) {
-		f, s := postAddFixture(t)
+	stage := func(t *testing.T, d time.Duration) (wtFixture, *gitDeps, string, string) {
+		f, h := postAddFixture(t)
 		target := filepath.Join(filepath.Dir(f.top), "WTREG")
 		f.linkRegistrations(t, target, target)
 		gitFile := "gitdir: " + filepath.Join(target, "w1") + "\n"
 		afterAdd(t, filepath.Join(f.leaf(), ".git"), gitFile, d)
-		return f, s, gitFile, filepath.Join(target, "w1")
+		return f, h, gitFile, filepath.Join(target, "w1")
 	}
 	t.Run("D-9", func(t *testing.T) {
-		f, s, gitFile, reg := stage(t, 300*time.Millisecond)
-		raw, _ := f.create(t, s, "w1", "", 1)
+		f, h, gitFile, reg := stage(t, 300*time.Millisecond)
+		raw, _ := f.create(t, h, "w1", "", 1)
 		wantError(t, raw, notOursText(f.leaf()), "unsafe_path")
 		f.wantNothingRolledBack(t, gitFile, reg)
 	})
 	t.Run("D-2", func(t *testing.T) {
-		f, s, gitFile, reg := stage(t, 0)
+		f, h, gitFile, reg := stage(t, 0)
 		log := filepath.Join(t.TempDir(), "calls.log")
 		t.Setenv("CLAUSTRUM_GITSTUB_LOG", log)
 		stubRule2(t, "read-tree", "", 0, "1", "", "")
-		raw, _ := f.create(t, s, "w1", "", 0)
+		raw, _ := f.create(t, h, "w1", "", 0)
 		wantError(t, raw, notOursText(f.leaf()), "unsafe_path")
 		f.wantNothingRolledBack(t, gitFile, reg)
 		b, err := os.ReadFile(log)
@@ -297,9 +297,9 @@ func TestWorktreeCreateRegistrationInOtherRepository(t *testing.T) {
 			if tc.otherEntry {
 				runGit(t, T, "worktree", "add", "-q", "-b", "other", filepath.Join(root, "other"))
 			}
-			s := newTestServer(t)
+			h := newTestGitDeps()
 			t.Setenv("GIT_COMMON_DIR", filepath.Join(X, ".git"))
-			raw := dispatchRaw(t, s, rpcLine(t, "git.worktree_create",
+			raw := gitDispatch(t, h, rpcLine(t, "git.worktree_create",
 				map[string]any{"baseRepo": T, "branchName": "w1", "worktreePath": leaf}))
 			wantText := "refusing to create worktree: " + namedLeaf(leaf) + " was not populated by git worktree add"
 			if tc.otherEntry {
@@ -346,7 +346,7 @@ func TestWorktreeCreateRegistrationInOtherRepository(t *testing.T) {
 // frame and the disk are those of claustrum before it had the registration tests.
 // The text of git after "(checkout): " is not pinned.
 func TestWorktreeCreateGitDirNotAnswered(t *testing.T) {
-	f, s := postAddFixture(t)
+	f, h := postAddFixture(t)
 	f.base = filepath.Join(f.top, "sub")
 	if err := os.Mkdir(f.base, 0o755); err != nil {
 		t.Fatal(err)
@@ -355,7 +355,7 @@ func TestWorktreeCreateGitDirNotAnswered(t *testing.T) {
 	t.Setenv("CLAUSTRUM_GITSTUB_LOG", log)
 	stubRule2(t, "rev-parse,--absolute-git-dir", "", 0, "1", "", "")
 
-	raw, _ := f.create(t, s, "w1", "", 0)
+	raw, _ := f.create(t, h, "w1", "", 0)
 	const head = `{"jsonrpc":"2.0","id":1,"result":{"success":false,"error":"git worktree add failed (checkout): `
 	if !strings.HasPrefix(raw, head) || !strings.HasSuffix(raw, `","errorCode":"worktree_add_failed"}}`) {
 		t.Errorf("reply = %s\nwant the failed checkout frame", raw)

@@ -141,11 +141,11 @@ func limitFixture(t *testing.T, match string) (wtFixture, string) {
 	return f, log
 }
 
-// dispatchTimed dispatches one request on s and returns its frame and time.
-func dispatchTimed(t *testing.T, s *server, method string, params map[string]any) (string, time.Duration) {
+// dispatchTimed dispatches one request with d and returns its frame and time.
+func dispatchTimed(t *testing.T, d *gitDeps, method string, params map[string]any) (string, time.Duration) {
 	t.Helper()
 	start := time.Now()
-	raw := dispatchRaw(t, s, rpcLine(t, method, params))
+	raw := gitDispatch(t, d, rpcLine(t, method, params))
 	return raw, time.Since(start)
 }
 
@@ -161,7 +161,7 @@ func errorFrame(t *testing.T, text string) string {
 func TestGitReadMethodsStopAtTheCallLimit(t *testing.T) {
 	t.Run("git.list_branches stops for-each-ref (T1)", func(t *testing.T) {
 		f, log := limitFixture(t, "for-each-ref")
-		raw, took := dispatchTimed(t, newTestServer(t), "git.list_branches", map[string]any{"path": f.top})
+		raw, took := dispatchTimed(t, newTestGitDeps(), "git.list_branches", map[string]any{"path": f.top})
 		if want := errorFrame(t, stopText("for-each-ref")); raw != want {
 			t.Fatalf("git.list_branches = %s\nwant %s", raw, want)
 		}
@@ -172,7 +172,7 @@ func TestGitReadMethodsStopAtTheCallLimit(t *testing.T) {
 	})
 	t.Run("git.info stops the hardened rev-parse --git-dir (T3)", func(t *testing.T) {
 		f, log := limitFixture(t, "protocol.allow=never,rev-parse,--git-dir")
-		raw, _ := dispatchTimed(t, newTestServer(t), "git.info", map[string]any{"path": f.top})
+		raw, _ := dispatchTimed(t, newTestGitDeps(), "git.info", map[string]any{"path": f.top})
 		if want := errorFrame(t, stopText("rev-parse")); raw != want {
 			t.Fatalf("git.info = %s\nwant %s", raw, want)
 		}
@@ -184,7 +184,7 @@ func TestGitReadMethodsStopAtTheCallLimit(t *testing.T) {
 		log := stubLog(t)
 		slowGit(t, "status,--porcelain", "pre", testHold, "", "")
 		shortGitLimit(t, testCallLimit)
-		raw, _ := dispatchTimed(t, newTestServer(t), "git.status", map[string]any{"path": f.W, "baseRepo": f.T})
+		raw, _ := dispatchTimed(t, newTestGitDeps(), "git.status", map[string]any{"path": f.W, "baseRepo": f.T})
 		if want := errorFrame(t, stopText("status")); raw != want {
 			t.Fatalf("git.status = %s\nwant %s", raw, want)
 		}
@@ -210,7 +210,7 @@ func TestWorktreeCreateAddStopsAtTheCallLimit(t *testing.T) {
 	} {
 		t.Run(c.name, func(t *testing.T) {
 			f, log := limitFixture(t, "worktree,add")
-			raw, took := f.createWith(t, newTestServer(t), "w1", c.timeoutMs, map[string]any{"existingBranch": c.existing})
+			raw, took := f.createWith(t, newTestGitDeps(), "w1", c.timeoutMs, map[string]any{"existingBranch": c.existing})
 			wantError(t, raw, want, "worktree_add_failed")
 			if took < testCallLimit || took > testFastCeiling {
 				t.Errorf("the reply took %v, want it at the stop of the add (%v)", took, testCallLimit)
@@ -244,29 +244,29 @@ func TestGitWideLimitWhileAnOffRequestRuns(t *testing.T) {
 	installGitSlowStub(t, f.realGit)
 	slowGit(t, "for-each-ref", "pre", 2*time.Second, "", "")
 	shortGitLimit(t, testCallLimit)
-	s := newTestServer(t)
+	h := newTestGitDeps()
 	ok := `{"jsonrpc":"2.0","id":1,"result":{"isRepo":true,"branches":["ex","main"]}}`
 	t.Run("a request with the switch (T8)", func(t *testing.T) {
-		raw, _ := dispatchTimed(t, s, "git.list_branches", map[string]any{"path": f.top, "shadowDirOff": true})
+		raw, _ := dispatchTimed(t, h, "git.list_branches", map[string]any{"path": f.top, "shadowDirOff": true})
 		if raw != ok {
 			t.Fatalf("git.list_branches = %s\nwant %s", raw, ok)
 		}
-		if n := s.offGitRequests.Load(); n != 0 {
+		if n := h.OffRequests.Load(); n != 0 {
 			t.Errorf("%d requests of the window after the answer, want 0", n)
 		}
 	})
 	t.Run("a request without it while one with it runs (T9 R2)", func(t *testing.T) {
 		// The other request is in flight: its count is what handleGit holds while it
 		// runs.
-		s.offGitRequests.Add(1)
-		defer s.offGitRequests.Add(-1)
-		raw, _ := dispatchTimed(t, s, "git.list_branches", map[string]any{"path": f.top})
+		h.OffRequests.Add(1)
+		defer h.OffRequests.Add(-1)
+		raw, _ := dispatchTimed(t, h, "git.list_branches", map[string]any{"path": f.top})
 		if raw != ok {
 			t.Fatalf("git.list_branches = %s\nwant %s", raw, ok)
 		}
 	})
 	t.Run("a request without it after the window (T9 R3)", func(t *testing.T) {
-		raw, _ := dispatchTimed(t, s, "git.list_branches", map[string]any{"path": f.top})
+		raw, _ := dispatchTimed(t, h, "git.list_branches", map[string]any{"path": f.top})
 		if want := errorFrame(t, stopText("for-each-ref")); raw != want {
 			t.Fatalf("git.list_branches = %s\nwant %s", raw, want)
 		}
@@ -280,7 +280,7 @@ func TestGitDrainEndsAfterTheExit(t *testing.T) {
 	installGitSlowStub(t, f.realGit)
 	endHeldDescendant(t)
 	slowGit(t, "for-each-ref", "hold", testDrainHold, "", "")
-	raw, took := dispatchTimed(t, newTestServer(t), "git.list_branches", map[string]any{"path": f.top})
+	raw, took := dispatchTimed(t, newTestGitDeps(), "git.list_branches", map[string]any{"path": f.top})
 	if want := `{"jsonrpc":"2.0","id":1,"result":{"isRepo":true,"branches":["ex","main"]}}`; raw != want {
 		t.Fatalf("git.list_branches = %s\nwant %s", raw, want)
 	}
@@ -298,7 +298,7 @@ func TestGitFirstListingStops(t *testing.T) {
 	log := stubLog(t)
 	t.Setenv("CLAUSTRUM_GITSTUB_FAIL_LISTING", "hold-other")
 	setDuration(t, &configListingLimit, testCallLimit)
-	raw, took := dispatchTimed(t, newTestServer(t), "git.list_branches", map[string]any{"path": f.top})
+	raw, took := dispatchTimed(t, newTestGitDeps(), "git.list_branches", map[string]any{"path": f.top})
 	want := "config-defined hooks could not be pinned off; git not run: listing the configuration in force: " +
 		"git took too long: Claude stopped git config after 30 seconds; try again"
 	if raw != errorFrame(t, want) {
@@ -319,7 +319,7 @@ func TestWorktreeCreateFirstListingStops(t *testing.T) {
 	installGitSlowStub(t, f.realGit)
 	t.Setenv("CLAUSTRUM_GITSTUB_FAIL_LISTING", "hold-other")
 	setDuration(t, &configListingLimit, testCallLimit)
-	raw, _ := f.create(t, newTestServer(t), "w1", "", 0)
+	raw, _ := f.create(t, newTestGitDeps(), "w1", "", 0)
 	wantError(t, raw, "config-defined hooks could not be pinned off; git not run: listing the configuration in force: "+
 		"git took too long: Claude stopped git config after 30 seconds; try again", "worktree_add_failed")
 	if got := f.leafEntries(t); got != nil {
@@ -339,7 +339,7 @@ func TestWorktreeCreateIncludeScanStops(t *testing.T) {
 	log := stubLog(t)
 	slowGit(t, "ls-files,--others,--ignored,--directory", "pre", testHold, "", "")
 	setDuration(t, &includeScanLimit, testCallLimit)
-	raw, took := f.create(t, newTestServer(t), "w1", "", 0)
+	raw, took := f.create(t, newTestGitDeps(), "w1", "", 0)
 	if !strings.Contains(raw, `"success":true`) {
 		t.Fatalf("git.worktree_create = %s, want success", raw)
 	}
@@ -364,7 +364,7 @@ func TestWorktreeCreateCheckoutListingOutlivesTimeoutMs(t *testing.T) {
 	log := stubLog(t)
 	slowGit(t, "config,-z,--list", "pre", hold, "", "")
 	t.Setenv("CLAUSTRUM_GITSTUB_ARGEND", string(os.PathSeparator)+".git")
-	raw, took := f.createWith(t, newTestServer(t), "w1", lateMs, map[string]any{"shadowDirOff": true})
+	raw, took := f.createWith(t, newTestGitDeps(), "w1", lateMs, map[string]any{"shadowDirOff": true})
 	want := `{"jsonrpc":"2.0","id":1,"result":{"success":false,"error":"git worktree add timed out after ` + strconv.Itoa(lateMs) +
 		`ms (deadline expired during the checkout): context deadline exceeded","errorCode":"timeout"}}`
 	if raw != want {
@@ -388,7 +388,7 @@ func TestWorktreeCreateCheckoutListingStops(t *testing.T) {
 	// The full listing with --git-dir is the one of the checkout here.
 	t.Setenv("CLAUSTRUM_GITSTUB_FAIL_LISTING", "hold-full")
 	setDuration(t, &configListingLimit, testCallLimit)
-	raw, took := f.create(t, newTestServer(t), "w1", "", 0)
+	raw, took := f.create(t, newTestGitDeps(), "w1", "", 0)
 	wantError(t, raw, "git worktree add failed (checkout): config-defined hooks could not be pinned off; git not run: "+
 		"listing the configuration in force: git took too long: Claude stopped git config after 30 seconds; try again", "worktree_add_failed")
 	if took > testFastCeiling {
@@ -430,7 +430,7 @@ func TestRepoConfigReadStops(t *testing.T) {
 	installGitSlowStub(t, realGitPath(t))
 	stubRule2(t, "config,--no-includes,--file,--list", "ignoreterm", testHold, "", "", "")
 	setDuration(t, &repoReadBound, testCallLimit)
-	raw, took := dispatchTimed(t, newTestServer(t), "git.status", map[string]any{"path": f.W, "baseRepo": f.T})
+	raw, took := dispatchTimed(t, newTestGitDeps(), "git.status", map[string]any{"path": f.W, "baseRepo": f.T})
 	want := repoConfigPrefix + readStopText(filepath.Join(f.T, ".git", "config"))
 	if raw != errorFrame(t, want) {
 		t.Fatalf("git.status = %s\nwant %s", raw, errorFrame(t, want))
@@ -459,7 +459,7 @@ func TestOffSwitchSet(t *testing.T) {
 // it is, with worktree_add_failed, and nothing is made (measured on Linux).
 func TestWorktreeCreateRepositoryTestStops(t *testing.T) {
 	f, log := limitFixture(t, "rev-parse,--is-inside-work-tree")
-	raw, _ := f.create(t, newTestServer(t), "w1", "", 0)
+	raw, _ := f.create(t, newTestGitDeps(), "w1", "", 0)
 	wantError(t, raw, stopText("rev-parse"), "worktree_add_failed")
 	if got := f.leafEntries(t); got != nil {
 		t.Errorf("the leaf holds %q, want none", got)
@@ -471,10 +471,10 @@ func TestWorktreeCreateRepositoryTestStops(t *testing.T) {
 }
 
 // worktreeConfigFixture is a repository with extensions.worktreeConfig and a
-// config.worktree file, as, and a server with a run folder. The stub holds the
-// nth listing of a config file for testHold. The listings before it are those
-// of the start test and of the read of the repository config.
-func worktreeConfigFixture(t *testing.T, nth int) (wtFixture, *server) {
+// config.worktree file, as, and the git state of a server with a run folder. The
+// stub holds the nth listing of a config file for testHold. The listings before it
+// are those of the start test and of the read of the repository config.
+func worktreeConfigFixture(t *testing.T, nth int) (wtFixture, *gitDeps) {
 	t.Helper()
 	f := newWTFixture(t, false)
 	runGit(t, f.top, "config", "extensions.worktreeConfig", "true")
@@ -485,15 +485,15 @@ func worktreeConfigFixture(t *testing.T, nth int) (wtFixture, *server) {
 	t.Setenv("CLAUSTRUM_GITSTUB_NTHFILE", filepath.Join(t.TempDir(), "nth"))
 	t.Setenv("CLAUSTRUM_GITSTUB_NTH", strconv.Itoa(nth))
 	setDuration(t, &repoReadBound, testCallLimit)
-	return f, s
+	return f, s.gitDeps()
 }
 
 // The listing of the config.worktree file after a good add ends at 30 s. The
 // create answers the text of 5fd08069 and rolls back: leaf, registration and
 // branch go (measured on Linux).
 func TestWorktreeCreateConfigWorktreeListingStops(t *testing.T) {
-	f, s := worktreeConfigFixture(t, 5)
-	raw, took := f.create(t, s, "w1", "", 0)
+	f, h := worktreeConfigFixture(t, 5)
+	raw, took := f.create(t, h, "w1", "", 0)
 	wantError(t, raw, "git worktree add failed (completing the new worktree's git files): this repository's git config "+
 		"cannot be used: git did not finish reading it within 30 seconds; try again", "worktree_add_failed")
 	if took > testFastCeiling {
@@ -506,11 +506,11 @@ func TestWorktreeCreateConfigWorktreeListingStops(t *testing.T) {
 // git.status. The frame stays {"isRepo":false,"clean":false} (measured on
 // Linux).
 func TestGitStatusConfigWorktreeListingStops(t *testing.T) {
-	f, s := worktreeConfigFixture(t, 5)
+	f, h := worktreeConfigFixture(t, 5)
 	lw := filepath.Join(filepath.Dir(f.top), "LW")
 	runGit(t, f.top, "worktree", "add", "-q", "-b", "lw", lw)
 	writeFile(t, filepath.Join(f.top, ".git", "worktrees", "LW", "config.worktree"), "[core]\n\tfilemode = false\n", 0o644)
-	raw, took := dispatchTimed(t, s, "git.status", map[string]any{"path": lw, "baseRepo": f.top})
+	raw, took := dispatchTimed(t, h, "git.status", map[string]any{"path": lw, "baseRepo": f.top})
 	if want := `{"jsonrpc":"2.0","id":1,"result":{"isRepo":false,"clean":false}}`; raw != want {
 		t.Fatalf("git.status = %s\nwant %s", raw, want)
 	}
@@ -523,11 +523,11 @@ func TestGitStatusConfigWorktreeListingStops(t *testing.T) {
 // the same bound. The request then goes on with no items of that file
 // (claustrum's own, not measured).
 func TestGitInfoConfigWorktreeListingStops(t *testing.T) {
-	f, s := worktreeConfigFixture(t, 5)
+	f, h := worktreeConfigFixture(t, 5)
 	lw := filepath.Join(filepath.Dir(f.top), "LW")
 	runGit(t, f.top, "worktree", "add", "-q", "-b", "lw", lw)
 	writeFile(t, filepath.Join(f.top, ".git", "worktrees", "LW", "config.worktree"), "[core]\n\tfilemode = false\n", 0o644)
-	raw, took := dispatchTimed(t, s, "git.info", map[string]any{"path": lw})
+	raw, took := dispatchTimed(t, h, "git.info", map[string]any{"path": lw})
 	if !strings.Contains(raw, `"isRepo":true`) {
 		t.Fatalf("git.info = %s, want a repository", raw)
 	}

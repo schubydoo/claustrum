@@ -3,7 +3,6 @@
 package main
 
 import (
-	"encoding/json"
 	"errors"
 	"io/fs"
 	"os"
@@ -201,10 +200,10 @@ func TestWorktreeCreateLinkedWorktreesUnderAHold(t *testing.T) {
 // refused. Both entries and both branches stay, and the leaf holds its .git file
 // only.
 func TestWorktreeCreateTwoNewEntries(t *testing.T) {
-	f, s := postAddFixture(t)
+	f, h := postAddFixture(t)
 	second := filepath.Join(f.realRoot(t), "T", ".claude", "worktrees", "w1b")
 	afterAddSteps(t, []string{"git", "worktree", "add", "--no-track", "--no-checkout", "-b", "w1b", second})
-	raw, _ := f.create(t, s, "w1", "", 0)
+	raw, _ := f.create(t, h, "w1", "", 0)
 	wantError(t, raw, "refusing to create worktree: "+namedLeaf(f.leaf())+
 		" carries a .git file naming an admin entry other than the one just created for it", "unsafe_path")
 	f.wantKept(t, []string{".git"}, []string{"w1", "w1b"}, "w1", "w1b")
@@ -230,10 +229,10 @@ func TestWorktreeCreateLeafGitFile(t *testing.T) {
 			func(l string) string { return l + "/.git does not name a git dir" }, []string{".git"}},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			f, s := postAddFixture(t)
+			f, h := postAddFixture(t)
 			reg := filepath.Join(f.realRoot(t), "T", ".git", "worktrees", "w1")
 			afterAddSteps(t, tc.steps(filepath.Join(f.leaf(), ".git"), reg)...)
-			raw, _ := f.create(t, s, "w1", "", 0)
+			raw, _ := f.create(t, h, "w1", "", 0)
 			wantError(t, raw, "refusing to create worktree: "+tc.text(namedLeaf(f.leaf())), "unsafe_path")
 			f.wantKept(t, tc.leaf, []string{"w1"}, "w1")
 			if _, err := os.Stat(filepath.Join(f.regDir, "w1", "HEAD")); err != nil {
@@ -255,11 +254,11 @@ func TestWorktreeCreateRecordWithSlash(t *testing.T) {
 		{"V4", "/.git/\n"}, {"R1", "/.git \n"}, {"R2", "/./.git\n"}, {"R3", "//.git\n"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			f, s := postAddFixture(t)
+			f, h := postAddFixture(t)
 			reg := filepath.Join(f.regDir, "w1")
 			record := filepath.Join(f.realRoot(t), "T", ".claude", "worktrees", "w1") + tc.tail
 			afterAddSteps(t, []string{"write", filepath.Join(reg, "gitdir"), record})
-			raw, _ := f.create(t, s, "w1", "", 0)
+			raw, _ := f.create(t, h, "w1", "", 0)
 			b, err := os.ReadFile(filepath.Join(f.leaf(), ".git"))
 			if err != nil {
 				t.Fatal(err)
@@ -287,7 +286,7 @@ func TestWorktreeCreateSpellingCallFails(t *testing.T) {
 		fails bool
 	}{{"V5", true}, {"V5c", false}} {
 		t.Run(tc.name, func(t *testing.T) {
-			f, s := postAddFixture(t)
+			f, h := postAddFixture(t)
 			root := f.realRoot(t)
 			live := filepath.Join(root, "live", "w9")
 			runGit(t, f.top, "worktree", "add", "-q", "-b", "w9", live)
@@ -296,7 +295,7 @@ func TestWorktreeCreateSpellingCallFails(t *testing.T) {
 			if tc.fails {
 				stubRule2(t, "rev-parse,--show-toplevel", "", 0, "128", "", "")
 			}
-			raw, _ := f.create(t, s, "w1", "", 0)
+			raw, _ := f.create(t, h, "w1", "", 0)
 			if tc.fails {
 				want := `{"jsonrpc":"2.0","id":1,"result":{"success":false,"error":"git worktree add failed (verification): ` +
 					`could not verify the worktree's registration: git did not report its spelling of the path (entry w1); retry",` +
@@ -365,12 +364,12 @@ func TestWorktreeCreateSpellingCallFailsOnOldEntry(t *testing.T) {
 // directory through a symbolic link. The create is refused, and nothing is
 // removed. The link and the git directory stay.
 func TestWorktreeCreateCommondirThroughLink(t *testing.T) {
-	f, s := postAddFixture(t)
+	f, h := postAddFixture(t)
 	root := f.realRoot(t)
 	link, reg := filepath.Join(root, "gl"), filepath.Join(f.regDir, "w1")
 	afterAddSteps(t, []string{"symlink", filepath.Join(root, "T", ".git"), link},
 		[]string{"write", filepath.Join(reg, "commondir"), link + "\n"})
-	raw, _ := f.create(t, s, "w1", "", 0)
+	raw, _ := f.create(t, h, "w1", "", 0)
 	wantError(t, raw, notOursText(f.leaf()), "unsafe_path")
 	b, err := os.ReadFile(filepath.Join(f.leaf(), ".git"))
 	if err != nil {
@@ -393,10 +392,10 @@ func TestWorktreeCreateCommondirThroughLink(t *testing.T) {
 // before the checkout, and nothing is removed: the leaf, the link, the folder behind
 // the link and the branch stay.
 func TestWorktreeCreateEntryIsLink(t *testing.T) {
-	f, s := postAddFixture(t)
+	f, h := postAddFixture(t)
 	reg, moved := filepath.Join(f.regDir, "w1"), filepath.Join(f.realRoot(t), "moved-w1")
 	afterAddSteps(t, []string{"rename", reg, moved}, []string{"symlink", moved, reg})
-	raw, _ := f.create(t, s, "w1", "", 0)
+	raw, _ := f.create(t, h, "w1", "", 0)
 	wantError(t, raw, notOursText(f.leaf()), "unsafe_path")
 	f.wantKept(t, []string{".git"}, []string{"w1"}, "w1")
 	if fi, err := os.Lstat(reg); err != nil || fi.Mode()&os.ModeSymlink == 0 {
@@ -417,12 +416,12 @@ func TestWorktreeCreateEntryIsLink(t *testing.T) {
 // away, and a new folder with a copy of the .git file is put at its path. The create is
 // refused before the checkout. The new folder holds .git only, and nothing is removed.
 func TestWorktreeCreateLeafReplaced(t *testing.T) {
-	f, s := postAddFixture(t)
+	f, h := postAddFixture(t)
 	old := f.leaf() + ".old"
 	gitFile := "gitdir: " + filepath.Join(f.realRoot(t), "T", ".git", "worktrees", "w1") + "\n"
 	afterAddSteps(t, []string{"rename", f.leaf(), old}, []string{"mkdir", f.leaf()},
 		[]string{"write", filepath.Join(f.leaf(), ".git"), gitFile})
-	raw, _ := f.create(t, s, "w1", "", 0)
+	raw, _ := f.create(t, h, "w1", "", 0)
 	wantError(t, raw, "refusing to create worktree: "+namedLeaf(f.leaf())+
 		" is no longer the directory that was created for the worktree", "unsafe_path")
 	f.wantNothingRolledBack(t, gitFile, filepath.Join(f.regDir, "w1"))
@@ -469,7 +468,7 @@ func TestWorktreeCreateStaleEntryOfMainRepository(t *testing.T) {
 				writeFile(t, filepath.Join(old, "locked"), "", 0o644)
 			}
 			before := regFiles(t, old)
-			raw, _ := f.create(t, newTestServer(t), "w1", "", 0)
+			raw, _ := f.create(t, newTestGitDeps(), "w1", "", 0)
 			wantRegs := []string{"w1"}
 			if tc.linked {
 				wantRegs = []string{"LW", "w1"}
@@ -591,7 +590,7 @@ func TestWorktreeCreateListingFails(t *testing.T) {
 		fails int // the listing that fails: 1 is before the add, 2 is after it
 	}{{"before the add", 1}, {"after the add", 2}} {
 		t.Run(tc.name, func(t *testing.T) {
-			f, s := postAddFixture(t)
+			f, h := postAddFixture(t)
 			old := readRegistrationsDir
 			t.Cleanup(func() { readRegistrationsDir = old })
 			calls := 0
@@ -601,7 +600,7 @@ func TestWorktreeCreateListingFails(t *testing.T) {
 				}
 				return old(name)
 			}
-			raw, _ := f.create(t, s, "w1", "", 0)
+			raw, _ := f.create(t, h, "w1", "", 0)
 			if calls != 2 {
 				t.Fatalf("the registrations folder was listed %d times, want 2: the test did not stage the state", calls)
 			}
@@ -622,14 +621,14 @@ func TestWorktreeCreateListingFails(t *testing.T) {
 // name against the first listing, which read the folder of the repository. The
 // create is refused, and the entry in X keeps its files.
 func TestWorktreeCreateListingsOfTwoFolders(t *testing.T) {
-	f, s := postAddFixture(t)
+	f, h := postAddFixture(t)
 	root := f.realRoot(t)
 	x := filepath.Join(root, "X")
 	other := filepath.Join(x, "worktrees", "w1")
 	writeFile(t, filepath.Join(other, "commondir"), "../..\n", 0o644)
 	writeFile(t, filepath.Join(other, "gitdir"), filepath.Join(root, "T", ".claude", "worktrees", "w1", ".git")+"\n", 0o644)
 	afterAddSteps(t, []string{"write", filepath.Join(root, "T", ".git", "commondir"), x + "\n"})
-	raw, _ := f.create(t, s, "w1", "", 0)
+	raw, _ := f.create(t, h, "w1", "", 0)
 	if err := os.Remove(filepath.Join(f.top, ".git", "commondir")); err != nil {
 		t.Fatalf("the commondir file of the git directory: %v: the test did not stage the state", err)
 	}
@@ -650,24 +649,24 @@ func TestWorktreeCreateListingsOfTwoFolders(t *testing.T) {
 //   - The record has a slash at its end: the "different worktree" refusal.
 func TestWorktreeCreateNoAnswerKeepsOldTests(t *testing.T) {
 	t.Run("the leaf is replaced", func(t *testing.T) {
-		f, s := postAddFixture(t)
+		f, h := postAddFixture(t)
 		gitFile := "gitdir: " + filepath.Join(f.realRoot(t), "T", ".git", "worktrees", "w1") + "\n"
 		afterAddSteps(t, []string{"rename", f.leaf(), f.leaf() + ".old"}, []string{"mkdir", f.leaf()},
 			[]string{"write", filepath.Join(f.leaf(), ".git"), gitFile})
 		stubRule2(t, "rev-parse,--absolute-git-dir", "", 0, "0", "", "")
-		raw, _ := f.create(t, s, "w1", "", 0)
+		raw, _ := f.create(t, h, "w1", "", 0)
 		wantError(t, raw, f.leaf()+" was not populated by git worktree add", "worktree_add_failed")
 		if _, err := os.Stat(filepath.Join(f.leaf(), "t.txt")); err != nil {
 			t.Errorf("the new folder holds no checkout: %v, want the checkout before the test", err)
 		}
 	})
 	t.Run("the record has a slash at its end", func(t *testing.T) {
-		f, s := postAddFixture(t)
+		f, h := postAddFixture(t)
 		reg := filepath.Join(f.regDir, "w1")
 		afterAddSteps(t, []string{"write", filepath.Join(reg, "gitdir"),
 			filepath.Join(f.realRoot(t), "T", ".claude", "worktrees", "w1", ".git") + "/\n"})
 		stubRule2(t, "rev-parse,--absolute-git-dir", "", 0, "0", "", "")
-		raw, _ := f.create(t, s, "w1", "", 0)
+		raw, _ := f.create(t, h, "w1", "", 0)
 		wantError(t, raw, differentWorktreeText(f.leaf()), "unsafe_path")
 		f.wantKept(t, []string{".git"}, []string{"w1"}, "w1")
 	})
@@ -679,12 +678,12 @@ func TestWorktreeCreateNoAnswerKeepsOldTests(t *testing.T) {
 // stops the `rev-parse --show-toplevel` call. The create keeps the "different
 // worktree" refusal, and nothing is removed.
 func TestWorktreeCreateSpellingCallEndedByDeadline(t *testing.T) {
-	f, s := postAddFixture(t)
+	f, h := postAddFixture(t)
 	shortGitLimit(t, 2*time.Second)
 	reg := filepath.Join(f.regDir, "w1")
 	afterAddSteps(t, []string{"write", filepath.Join(reg, "gitdir"), filepath.Join(f.realRoot(t), "elsewhere", "w", ".git") + "\n"})
 	stubRule2(t, "rev-parse,--show-toplevel", "", 60*time.Second, "", "", "")
-	raw, took := f.create(t, s, "w1", "", 0)
+	raw, took := f.create(t, h, "w1", "", 0)
 	if took > 30*time.Second {
 		t.Fatalf("the create took %v: the deadline did not end the call", took)
 	}
@@ -706,7 +705,7 @@ func TestWorktreeCreateSpellingCallEndedByDeadline(t *testing.T) {
 func TestWorktreeCreateThroughLinkedWorktreeWaits(t *testing.T) {
 	f := newWTFixture(t, true)
 	installGitSlowStub(t, f.realGit)
-	s := newTestServer(t)
+	h := newTestGitDeps()
 	// Only the add of the first create has the word w1.
 	slowGit(t, "worktree,add,w1", "post", 4*time.Second, "", "")
 	firstLeaf := filepath.Join(f.top, ".claude", "worktrees", "w1")
@@ -717,11 +716,11 @@ func TestWorktreeCreateThroughLinkedWorktreeWaits(t *testing.T) {
 	secondLine := rpcLine(t, "git.worktree_create", createParams(f.base, secondLeaf, "w2"))
 	first := make(chan string, 1)
 	go func() {
-		var b []byte
-		if resp := s.dispatch(nil, []byte(firstLine)); resp != nil {
-			b, _ = json.Marshal(*resp)
+		raw, err := gitDispatchErr(h, firstLine)
+		if err != nil {
+			raw = err.Error()
 		}
-		first <- string(b)
+		first <- raw
 	}()
 	// The second create starts when the first add made its registration.
 	deadline := time.Now().Add(60 * time.Second)
@@ -734,7 +733,7 @@ func TestWorktreeCreateThroughLinkedWorktreeWaits(t *testing.T) {
 		}
 		time.Sleep(10 * time.Millisecond)
 	}
-	second := dispatchRaw(t, s, secondLine)
+	second := gitDispatch(t, h, secondLine)
 	if _, err := os.Stat(snap); err != nil {
 		t.Errorf("the second add started before the first add ended: %v", err)
 	}
@@ -821,7 +820,7 @@ func TestWorktreeCreateSpellingCallFailsWithOldEntryNamed(t *testing.T) {
 		fails bool
 	}{{"P1", true}, {"P1c", false}} {
 		t.Run(tc.name, func(t *testing.T) {
-			f, s := postAddFixture(t)
+			f, h := postAddFixture(t)
 			root := f.realRoot(t)
 			made, other := filepath.Join(root, "x", "w1"), filepath.Join(root, "x", "other")
 			runGit(t, f.top, "worktree", "add", "-q", "-b", "ob", made)
@@ -832,7 +831,7 @@ func TestWorktreeCreateSpellingCallFailsWithOldEntryNamed(t *testing.T) {
 			if tc.fails {
 				stubRule2(t, "rev-parse,--show-toplevel", "", 0, "128", "", "")
 			}
-			raw, _ := f.create(t, s, "w1", "", 0)
+			raw, _ := f.create(t, h, "w1", "", 0)
 			if tc.fails {
 				want := `{"jsonrpc":"2.0","id":1,"result":{"success":false,"error":"git worktree add failed (verification): ` +
 					`could not verify the worktree's registration: git did not report its spelling of the path (entry w1); retry",` +
@@ -877,7 +876,7 @@ func duringCallSteps(t *testing.T, match, exit string, steps ...[]string) {
 // the identity of w11 from the listing after the add, so the folder now at w11
 // stays with all its files.
 func TestWorktreeCreateSpellingCallRollbackKeepsSwappedEntry(t *testing.T) {
-	f, s := postAddFixture(t)
+	f, h := postAddFixture(t)
 	root := f.realRoot(t)
 	made, other := filepath.Join(root, "x", "w1"), filepath.Join(root, "x", "other")
 	runGit(t, f.top, "worktree", "add", "-q", "-b", "ob", made)
@@ -888,7 +887,7 @@ func TestWorktreeCreateSpellingCallRollbackKeepsSwappedEntry(t *testing.T) {
 	before := regFiles(t, w9)
 	afterAddSteps(t, []string{"write", filepath.Join(f.leaf(), ".git"), "gitdir: " + filepath.Join(root, "T", ".git", "worktrees", "w1") + "\n"})
 	duringCallSteps(t, "rev-parse,--show-toplevel", "128", []string{"rename", w11, w11 + "x"}, []string{"rename", w9, w11})
-	raw, _ := f.create(t, s, "w1", "", 0)
+	raw, _ := f.create(t, h, "w1", "", 0)
 	if !strings.Contains(raw, "git did not report its spelling of the path (entry w1); retry") {
 		t.Errorf("reply = %s\nwant the retry frame", raw)
 	}

@@ -20,17 +20,24 @@ import (
 const fifoDeadline = 10 * time.Second
 
 // dispatchWithin sends one request and fails the test when the reply takes longer than
-// fifoDeadline. Only the daemon's dispatch runs on the other goroutine, so it never
-// touches t. Past the deadline the FIFO is opened for writing, without blocking, until
+// fifoDeadline. Only gitDispatchErr runs on the other goroutine, so it never touches
+// t. Past the deadline the FIFO is opened for writing, without blocking, until
 // the call returns. Each open releases one reader, and a method can open the FIFO
 // more than once. The test then fails.
 func dispatchWithin(t *testing.T, fifo, method string, params map[string]any) rpcReply {
 	t.Helper()
-	s := newTestServer(t)
-	line := []byte(rpcLine(t, method, params))
-	done := make(chan *response, 1)
-	go func() { done <- s.dispatch(nil, line) }()
-	var resp *response
+	h := newTestGitDeps()
+	line := rpcLine(t, method, params)
+	type reply struct {
+		raw string
+		err error
+	}
+	done := make(chan reply, 1)
+	go func() {
+		raw, err := gitDispatchErr(h, line)
+		done <- reply{raw, err}
+	}()
+	var resp reply
 	late := false
 	deadline := time.After(fifoDeadline)
 wait:
@@ -51,13 +58,10 @@ wait:
 	if late {
 		t.Fatalf("%s blocked on the FIFO %s for more than %s", method, fifo, fifoDeadline)
 	}
-	if resp == nil {
-		t.Fatalf("%s: no reply", method)
+	if resp.err != nil {
+		t.Fatalf("%s: %v", method, resp.err)
 	}
-	raw, err := json.Marshal(*resp)
-	if err != nil {
-		t.Fatalf("marshal response: %v", err)
-	}
+	raw := []byte(resp.raw)
 	var r rpcReply
 	if err := json.Unmarshal(raw, &r); err != nil {
 		t.Fatalf("%s: undecodable reply %s: %v", method, raw, err)

@@ -102,7 +102,7 @@ func TestWorktreeCreateRefusesRepositoryOnlyFilter(t *testing.T) {
 		t.Run(key, func(t *testing.T) {
 			f := newFilterFixture(t, "t.txt filter=m\n")
 			f.own(t, "filter.m."+key, f.marker(t, "local"))
-			raw, _ := f.create(t, newTestServer(t), "w1", "", 0)
+			raw, _ := f.create(t, newTestGitDeps(), "w1", "", 0)
 			if !strings.HasSuffix(raw, filterRefusalFrame) {
 				t.Fatalf("reply = %s\nwant the result %s", raw, filterRefusalFrame)
 			}
@@ -119,7 +119,7 @@ func TestWorktreeCreateRefusesRepositoryOnlyFilter(t *testing.T) {
 // the answer.
 func (f filterFixture) assertRetryFails(t *testing.T) {
 	t.Helper()
-	raw, _ := f.create(t, newTestServer(t), "w1", "", 0)
+	raw, _ := f.create(t, newTestGitDeps(), "w1", "", 0)
 	f.wantRefused(t, raw, "m")
 }
 
@@ -127,7 +127,7 @@ func (f filterFixture) assertRetryFails(t *testing.T) {
 func TestWorktreeCreateFilterRefusalQuotesTheName(t *testing.T) {
 	f := newFilterFixture(t, "t.txt filter=q\"t\n")
 	f.own(t, `filter.q"t.smudge`, f.marker(t, "local"))
-	raw, _ := f.create(t, newTestServer(t), "w1", "", 0)
+	raw, _ := f.create(t, newTestGitDeps(), "w1", "", 0)
 	want := `"error":"Claude doesn't run the \"q\\\"t\" git filter, because only this repository's own git config defines it. If you trust that filter, copy the [filter \"q\\\"t\"] section from that config (usually .git/config) into ~/.gitconfig on the remote machine, then try again.","errorCode":"repository_only_filter"`
 	if !strings.Contains(raw, want) {
 		t.Fatalf("reply = %s\nwant %s", raw, want)
@@ -165,7 +165,7 @@ func TestWorktreeCreateFilterStatesThatPass(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			f := newFilterFixture(t, "t.txt filter=m\n")
 			tc.setup(t, f)
-			raw, _ := f.create(t, newTestServer(t), "w1", "", 0)
+			raw, _ := f.create(t, newTestGitDeps(), "w1", "", 0)
 			f.wantCreatedLeaf(t, raw)
 			for _, name := range []string{"local", "home", "env"} {
 				if got, want := f.ran(name), slices.Contains(tc.ran, name); got != want {
@@ -196,7 +196,7 @@ func TestWorktreeCreateOutsideFilterWins(t *testing.T) {
 func TestWorktreeCreateRefusesFilterNameWithEquals(t *testing.T) {
 	f := newFilterFixture(t, "t.txt filter=a=b\n")
 	f.own(t, "filter.a=b.smudge", f.marker(t, "local"))
-	raw, _ := f.create(t, newTestServer(t), "w1", "", 0)
+	raw, _ := f.create(t, newTestGitDeps(), "w1", "", 0)
 	want := `"result":{"success":false,"error":"git worktree add failed (checkout): this repository's git config cannot be used: the filter \"a=b\" is defined only there, and Claude cannot handle \"=\" in a filter's name; define it in ~/.gitconfig on the remote machine, or rename it","errorCode":"worktree_add_failed"}}`
 	if !strings.HasSuffix(raw, want) {
 		t.Fatalf("reply = %s\nwant the result %s", raw, want)
@@ -215,7 +215,7 @@ func TestWorktreeCreateRefusesFilterThatNoPairReplaces(t *testing.T) {
 	f := newFilterFixture(t, "t.txt filter=m\n")
 	f.own(t, "filter.m.process", f.marker(t, "local"))
 	outside(t, "[filter \"m\"]\n\tsmudge = "+f.marker(t, "home")+"\n")
-	raw, _ := f.create(t, newTestServer(t), "w1", "", 0)
+	raw, _ := f.create(t, newTestGitDeps(), "w1", "", 0)
 	wantError(t, raw, "git worktree add failed (checkout): "+unreplaceableFilterText("m"), "worktree_add_failed")
 	if f.ran("local") || f.ran("home") {
 		t.Errorf("markers: local ran = %v, home ran = %v, want none", f.ran("local"), f.ran("home"))
@@ -250,7 +250,7 @@ func TestWorktreeCreateSmudgeCatStartsNoProgram(t *testing.T) {
 	t.Setenv("CLAUSTRUM_TEST_CAT_MARK", filepath.Join(f.marks, "cat"))
 	t.Setenv("CLAUSTRUM_TEST_HELPER", "cat-mark")
 	t.Setenv("PATH", bin+string(os.PathListSeparator)+os.Getenv("PATH"))
-	raw, _ := f.create(t, newTestServer(t), "w1", "", 0)
+	raw, _ := f.create(t, newTestGitDeps(), "w1", "", 0)
 	f.wantCreatedLeaf(t, raw)
 	if f.ran("cat") {
 		t.Error("a cat program ran")
@@ -270,7 +270,7 @@ func (f filterFixture) assertRetryWithRuleOffRunsCat(t *testing.T) {
 	t.Helper()
 	runGit(t, f.top, "worktree", "remove", "--force", f.leaf())
 	runGit(t, f.top, "branch", "-D", "w1")
-	raw, _ := f.createWith(t, newTestServer(t), "w1", 0, map[string]any{"shadowDirOff": true})
+	raw, _ := f.createWith(t, newTestGitDeps(), "w1", 0, map[string]any{"shadowDirOff": true})
 	f.wantCreatedLeaf(t, raw)
 	if runtime.GOOS == "windows" {
 		// Git for Windows puts its own /usr/bin before the PATH of the caller, so its
@@ -296,7 +296,7 @@ func TestWorktreeCreateRefusesFilterNameThatIsNotUTF8(t *testing.T) {
 		t.Fatal(err)
 	}
 	writeFile(t, cfg, string(old)+"[filter \"n\xffn\"]\n\tsmudge = "+f.marker(t, "local")+"\n", 0o644)
-	raw, _ := f.create(t, newTestServer(t), "w1", "", 0)
+	raw, _ := f.create(t, newTestGitDeps(), "w1", "", 0)
 	wantError(t, raw, "git worktree add failed (checkout): "+unreplaceableFilterText("n\xffn"), "worktree_add_failed")
 	if f.ran("local") {
 		t.Error("the filter of the repository ran")
@@ -318,7 +318,7 @@ func TestWorktreeCreateLastFilterValueCounts(t *testing.T) {
 	f := newFilterFixture(t, "t.txt filter=m\n")
 	f.own(t, "filter.m.smudge", "cat")
 	runGit(t, f.top, "config", "--add", "filter.m.smudge", f.marker(t, "local"))
-	raw, _ := f.create(t, newTestServer(t), "w1", "", 0)
+	raw, _ := f.create(t, newTestGitDeps(), "w1", "", 0)
 	f.wantRefused(t, raw, "m")
 	if f.ran("local") {
 		t.Error("the filter of the repository ran")
@@ -337,7 +337,7 @@ func TestWorktreeCreateFilterOfConditionalInclude(t *testing.T) {
 	inc := filepath.Join(t.TempDir(), "included")
 	writeFile(t, inc, "[filter \"m\"]\n\tsmudge = "+f.marker(t, "home")+"\n", 0o644)
 	outside(t, "[includeIf \"gitdir/i:"+filepath.ToSlash(top)+"/\"]\n\tpath = "+filepath.ToSlash(inc)+"\n")
-	raw, _ := f.create(t, newTestServer(t), "w1", "", 0)
+	raw, _ := f.create(t, newTestGitDeps(), "w1", "", 0)
 	f.wantCreatedLeaf(t, raw)
 	if !f.ran("home") {
 		t.Error("the filter of the included file did not run")
@@ -376,7 +376,7 @@ func TestWorktreeCreateDeadlineDuringFilterListing(t *testing.T) {
 	deadlineAt(t, func() bool { return logHas("held\x1ffull") }, func() {
 		endBefore.Store(logHas("held-end\x1ffull"))
 	})
-	raw, took := f.create(t, newTestServer(t), "w1", "", markerTimeoutMs)
+	raw, took := f.create(t, newTestGitDeps(), "w1", "", markerTimeoutMs)
 	wantError(t, raw, "git worktree add timed out after "+strconv.Itoa(markerTimeoutMs)+
 		"ms (deadline expired during the checkout): context deadline exceeded", "timeout")
 	f.assertRolledBack(t, []string{}, false)
@@ -399,7 +399,7 @@ func TestWorktreeCreateOutsideKeysThatDefineNothing(t *testing.T) {
 			f := newFilterFixture(t, "t.txt filter=m\n")
 			f.own(t, "filter.m.smudge", f.marker(t, "local"))
 			outside(t, "[filter \"m\"]\n\t"+line+"\n")
-			raw, _ := f.create(t, newTestServer(t), "w1", "", 0)
+			raw, _ := f.create(t, newTestGitDeps(), "w1", "", 0)
 			f.wantRefused(t, raw, "m")
 			if f.ran("local") {
 				t.Error("the filter of the repository ran")
@@ -421,7 +421,7 @@ func TestWorktreeCreateRefusedFilterValues(t *testing.T) {
 			t.Parallel()
 			f := buildFilterFixture(t, "t.txt filter="+tc.filter+"\n")
 			f.own(t, "filter."+tc.filter+".smudge", tc.value)
-			raw, _ := f.create(t, newTestServer(t), "w1", "", 0)
+			raw, _ := f.create(t, newTestGitDeps(), "w1", "", 0)
 			wantError(t, raw, repositoryOnlyFilterText(tc.filter), "repository_only_filter")
 			f.assertRolledBack(t, []string{}, false)
 		})
@@ -435,7 +435,7 @@ func (f filterFixture) readTreeArgv(t *testing.T, extra map[string]any) (string,
 	installGitSlowStub(t, f.realGit)
 	log := filepath.Join(t.TempDir(), "argv.log")
 	t.Setenv("CLAUSTRUM_GITSTUB_LOG", log)
-	raw, _ := f.createWith(t, newTestServer(t), "w1", 0, extra)
+	raw, _ := f.createWith(t, newTestGitDeps(), "w1", 0, extra)
 	calls := gitCalls(t, log, "read-tree")
 	if len(calls) != 1 {
 		t.Fatalf("read-tree calls = %q, want one", calls)
@@ -619,7 +619,7 @@ func TestWorktreeCreateFilterNameBound(t *testing.T) {
 	long := strings.Repeat("n", 300)
 	f := newFilterFixture(t, "t.txt filter="+long+"\n")
 	f.own(t, "filter."+long+".smudge", f.marker(t, "local"))
-	raw, _ := f.create(t, newTestServer(t), "w1", "", 0)
+	raw, _ := f.create(t, newTestGitDeps(), "w1", "", 0)
 	want := `"result":{"success":false,"error":"git worktree add failed (checkout): this repository's git config cannot be used: a filter defined only there has a name longer than 200 bytes (it starts \"nnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnn\"); define it in ~/.gitconfig on the remote machine, or rename it","errorCode":"worktree_add_failed"}}`
 	if !strings.HasSuffix(raw, want) {
 		t.Fatalf("reply = %s\nwant the result %s", raw, want)
@@ -661,14 +661,14 @@ func TestWorktreeCreateShadowDirOffRunsTheFilter(t *testing.T) {
 // member with false and with {} (measured on Linux).
 func TestShadowDirOffOtherValuesChangeNoFrame(t *testing.T) {
 	f := newFilterFixture(t, "t.txt filter=m\n")
-	s := newTestServer(t)
+	h := newTestGitDeps()
 	for _, method := range []string{"git.info", "git.status"} {
-		want := dispatchRaw(t, s, rpcLine(t, method, map[string]any{"path": f.top, "baseRepo": f.top}))
+		want := gitDispatch(t, h, rpcLine(t, method, map[string]any{"path": f.top, "baseRepo": f.top}))
 		if !strings.Contains(want, `"result"`) {
 			t.Fatalf("%s with no member = %s, want a result", method, want)
 		}
 		for _, v := range []any{"true", 1, nil, false, map[string]any{}} {
-			got := dispatchRaw(t, s, rpcLine(t, method, map[string]any{"path": f.top, "baseRepo": f.top, "shadowDirOff": v}))
+			got := gitDispatch(t, h, rpcLine(t, method, map[string]any{"path": f.top, "baseRepo": f.top, "shadowDirOff": v}))
 			if got != want {
 				t.Errorf("%s with shadowDirOff %#v = %s\nwant %s", method, v, got, want)
 			}
@@ -682,7 +682,7 @@ func TestWorktreeCreateShadowDirOffNeedsTrue(t *testing.T) {
 	for _, v := range []any{"true", 1} {
 		f := newFilterFixture(t, "t.txt filter=m\n")
 		f.own(t, "filter.m.smudge", f.marker(t, "local"))
-		raw, _ := f.createWith(t, newTestServer(t), "w1", 0, map[string]any{"shadowDirOff": v})
+		raw, _ := f.createWith(t, newTestGitDeps(), "w1", 0, map[string]any{"shadowDirOff": v})
 		f.wantRefused(t, raw, "m")
 		if f.ran("local") {
 			t.Errorf("shadowDirOff %#v: the filter of the repository ran", v)
@@ -706,7 +706,7 @@ func TestWorktreeCreateFilterRefusalReadsGitText(t *testing.T) {
 			installGitSlowStub(t, f.realGit)
 			t.Setenv("CLAUSTRUM_GITSTUB_EXIT", "128")
 			slowGit(t, "read-tree", "fail", 0, strings.ReplaceAll(tc.stderr, "\n", `\n`), "")
-			raw, _ := f.create(t, newTestServer(t), "w1", "", 0)
+			raw, _ := f.create(t, newTestGitDeps(), "w1", "", 0)
 			wantError(t, raw, tc.text, tc.code)
 			f.assertRolledBack(t, []string{}, false)
 		})

@@ -1,7 +1,6 @@
 package main
 
 import (
-	"encoding/json"
 	"fmt"
 	"os"
 	"os/exec"
@@ -458,8 +457,8 @@ func TestWorktreeRemoveBranchStepSerialized(t *testing.T) {
 
 			installGitSlowStub(t, realGit)
 			stubRule2(t, "update-ref", "", time.Second, "", "", "")
-			s := newTestServer(t)
-			raws := dispatchTogether(s, []string{
+			h := newTestGitDeps()
+			raws := dispatchTogether(h, []string{
 				rpcLine(t, "git.worktree_remove", map[string]any{"baseRepo": f.repo, "worktreePath": wa, "branchName": "a"}),
 				rpcLine(t, "git.worktree_remove", map[string]any{"baseRepo": base2, "worktreePath": wb, "branchName": "b"}),
 			})
@@ -515,7 +514,7 @@ func TestWorktreeRemoveBranchStepConcurrent(t *testing.T) {
 		runGit(t, f.wt, "commit", "-q", "--allow-empty", "-m", "c2")
 		lines = append(lines, rpcLine(t, "git.worktree_remove", map[string]any{"baseRepo": f.repo, "worktreePath": f.wt, "branchName": "wt1"}))
 	}
-	raws := dispatchTogether(newTestServer(t), lines)
+	raws := dispatchTogether(newTestGitDeps(), lines)
 	if n := inside.Load(); n != 2 {
 		t.Errorf("the branch step hook ran %d times, want 2", n)
 	}
@@ -532,25 +531,21 @@ func TestWorktreeRemoveBranchStepConcurrent(t *testing.T) {
 	}
 }
 
-// dispatchTogether dispatches each line on its own goroutine, as the read loop of one
-// connection does, and returns the replies in the order of lines.
-func dispatchTogether(s *server, lines []string) []string {
+// dispatchTogether dispatches each line with d on its own goroutine, as the read loop
+// of one connection does, and returns the replies in the order of lines.
+func dispatchTogether(d *gitDeps, lines []string) []string {
 	raws := make([]string, len(lines))
 	var wg sync.WaitGroup
 	for i, line := range lines {
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
-			resp := s.dispatch(nil, []byte(line))
-			if resp == nil {
-				return
-			}
-			b, err := json.Marshal(*resp)
+			raw, err := gitDispatchErr(d, line)
 			if err != nil {
-				raws[i] = "marshal: " + err.Error()
+				raws[i] = err.Error()
 				return
 			}
-			raws[i] = string(b)
+			raws[i] = raw
 		}()
 	}
 	wg.Wait()
@@ -660,9 +655,9 @@ func TestWorktreeCreateRollbackBranchStep(t *testing.T) {
 			if branch == "" {
 				branch = "w1"
 			}
-			s := newTestServer(t)
+			h := newTestGitDeps()
 			start := time.Now()
-			raw, _ := f.create(t, s, branch, "", 0)
+			raw, _ := f.create(t, h, branch, "", 0)
 			if elapsed := time.Since(start); tc.bounded && elapsed > stoppedCeiling {
 				t.Errorf("reply after %v, want the bound to stop the call before %v", elapsed, stoppedCeiling)
 			}
@@ -701,7 +696,7 @@ func TestWorktreeCreateTimeoutRollbackKeepsBranch(t *testing.T) {
 	c2 := f.out(t, f.top, "rev-parse", "HEAD")
 	installGitSlowStub(t, realGit)
 	slowGit(t, "worktree,add", "post", 1500*time.Millisecond, "", "")
-	raw, _ := f.create(t, newTestServer(t), "w1", "", 100)
+	raw, _ := f.create(t, newTestGitDeps(), "w1", "", 100)
 	errText := "git worktree add timed out after 100ms (deadline expired before the checkout started)" +
 		fmt.Sprintf(undoHead, f.leaf()) + "the worktree itself was removed, but " + undoKeptText
 	if want := createFrame(t, errText, "timeout", true); raw != want {

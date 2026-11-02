@@ -4,7 +4,6 @@ package main
 
 import (
 	"context"
-	"encoding/json"
 	"errors"
 	"os"
 	"os/exec"
@@ -44,18 +43,15 @@ func doneWithin(t *testing.T, what string, fn func()) {
 // daemon gives no answer in fifoAnswerLimit.
 func frameWithin(t *testing.T, method string, params map[string]any) string {
 	t.Helper()
-	s := newTestServer(t)
-	line := []byte(rpcLine(t, method, params))
-	var resp *response
-	doneWithin(t, method, func() { resp = s.dispatch(nil, line) })
-	if resp == nil {
-		t.Fatalf("%s: no reply", method)
-	}
-	raw, err := json.Marshal(*resp)
+	h := newTestGitDeps()
+	line := rpcLine(t, method, params)
+	var raw string
+	var err error
+	doneWithin(t, method, func() { raw, err = gitDispatchErr(h, line) })
 	if err != nil {
-		t.Fatalf("marshal response: %v", err)
+		t.Fatalf("%s: %v", method, err)
 	}
-	return string(raw)
+	return raw
 }
 
 // newFifoRepo makes dir a repository on branch main with one commit. It holds

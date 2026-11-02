@@ -44,11 +44,11 @@ func readSettleCalls(t *testing.T, log string) []settleCall {
 	return calls
 }
 
-// settleFixture is a repository, a server in the state shadow and the git stub
-// with its CTXLOG. The diff-files call exits with code after hold. The probe of
-// --attr-source counts as done with the answer supported, so the host git
+// settleFixture is a repository, the git state of a server in the state shadow and
+// the git stub with its CTXLOG. The diff-files call exits with code after hold. The
+// probe of --attr-source counts as done with the answer supported, so the host git
 // does not decide it.
-func settleFixture(t *testing.T, code int, hold time.Duration) (wtFixture, *server, string) {
+func settleFixture(t *testing.T, code int, hold time.Duration) (wtFixture, *gitDeps, string) {
 	t.Helper()
 	f := newWTFixture(t, false)
 	s, _ := newShadowServer(t)
@@ -58,7 +58,7 @@ func settleFixture(t *testing.T, code int, hold time.Duration) (wtFixture, *serv
 	t.Setenv("CLAUSTRUM_GITSTUB_CTXLOG", log)
 	slowGit(t, "diff-files", "fail", hold, "", "")
 	t.Setenv("CLAUSTRUM_GITSTUB_EXIT", strconv.Itoa(code))
-	return f, s, log
+	return f, s.gitDeps(), log
 }
 
 // setAttrSource makes the probe of attrSourceArgs count as done with the answer
@@ -121,9 +121,9 @@ func argValue(argv []string, prefix string) string {
 // the checkout, the argv of 683cc6a9, and no wait after exit 0 (measured on
 // Linux, macOS and Windows).
 func TestWorktreeCreateSettleCallAfterTheCheckout(t *testing.T) {
-	f, s, log := settleFixture(t, 0, 0)
+	f, h, log := settleFixture(t, 0, 0)
 	setDuration(t, &settleWait, testHold)
-	raw, took := f.create(t, s, "w1", "", 0)
+	raw, took := f.create(t, h, "w1", "", 0)
 	f.wantSettledCreate(t, raw)
 	if took >= testHold {
 		t.Errorf("the create took %v: the reply waited after exit 0", took)
@@ -163,11 +163,11 @@ func TestWorktreeCreateSettleCallAfterTheCheckout(t *testing.T) {
 // wait ends settleWait after the read-tree call, so the reply comes no sooner
 // than that after the request.
 func TestWorktreeCreateSettleWaitsAfterExit1(t *testing.T) {
-	f, s, log := settleFixture(t, 1, 0)
+	f, h, log := settleFixture(t, 1, 0)
 	const wait = 5 * time.Second
 	setDuration(t, &settleWait, wait)
 	setDuration(t, &settleWaitWhole, wait)
-	raw, took := f.create(t, s, "w1", "", 0)
+	raw, took := f.create(t, h, "w1", "", 0)
 	f.wantSettledCreate(t, raw)
 	if n := len(diffFilesCalls(readSettleCalls(t, log))); n != 1 {
 		t.Fatalf("diff-files calls = %d, want 1", n)
@@ -182,18 +182,18 @@ func TestWorktreeCreateSettleWaitsAfterExit1(t *testing.T) {
 // (measured on Linux). The create succeeds in both.
 func TestWorktreeCreateSettleSkipped(t *testing.T) {
 	t.Run("margin", func(t *testing.T) {
-		f, s, log := settleFixture(t, 1, 0)
+		f, h, log := settleFixture(t, 1, 0)
 		setDuration(t, &settleMargin, time.Hour)
-		raw, _ := f.create(t, s, "w1", "", markerTimeoutMs)
+		raw, _ := f.create(t, h, "w1", "", markerTimeoutMs)
 		f.wantSettledCreate(t, raw)
 		if n := len(diffFilesCalls(readSettleCalls(t, log))); n != 0 {
 			t.Errorf("diff-files calls = %d, want none", n)
 		}
 	})
 	t.Run("no attr-source", func(t *testing.T) {
-		f, s, log := settleFixture(t, 1, 0)
+		f, h, log := settleFixture(t, 1, 0)
 		setAttrSource(t, false)
-		raw, _ := f.create(t, s, "w1", "", 0)
+		raw, _ := f.create(t, h, "w1", "", 0)
 		f.wantSettledCreate(t, raw)
 		if n := len(diffFilesCalls(readSettleCalls(t, log))); n != 0 {
 			t.Errorf("diff-files calls = %d, want none", n)
@@ -207,9 +207,9 @@ func TestWorktreeCreateSettleSkipped(t *testing.T) {
 // and the call gets less than its hold.
 func TestWorktreeCreateSettleStopKeepsTheCreate(t *testing.T) {
 	const hold = 50 * time.Second
-	f, s, log := settleFixture(t, 1, hold)
+	f, h, log := settleFixture(t, 1, hold)
 	setDuration(t, &settleMargin, 45*time.Second)
-	raw, took := f.create(t, s, "w1", "", markerTimeoutMs)
+	raw, took := f.create(t, h, "w1", "", markerTimeoutMs)
 	f.wantSettledCreate(t, raw)
 	if n := len(diffFilesCalls(readSettleCalls(t, log))); n != 1 {
 		t.Fatalf("diff-files calls = %d, want 1", n)
@@ -265,8 +265,8 @@ func TestSettleLimit(t *testing.T) {
 // registration, and its git calls carry no GIT_INDEX_FILE (measured on Linux).
 // The frame is {"isRepo":true,"clean":true}.
 func TestGitStatusKeepsTheRegistrationIndexTime(t *testing.T) {
-	f, s, log := settleFixture(t, 0, 0)
-	raw, _ := f.create(t, s, "w1", "", 0)
+	f, h, log := settleFixture(t, 0, 0)
+	raw, _ := f.create(t, h, "w1", "", 0)
 	f.wantSettledCreate(t, raw)
 	idx := filepath.Join(f.regDir, "w1", "index")
 	before, err := os.Stat(idx)
@@ -278,7 +278,7 @@ func TestGitStatusKeepsTheRegistrationIndexTime(t *testing.T) {
 	}
 	// The status takes the answer of the host git.
 	clearAttrSource()
-	status, _ := dispatchTimed(t, s, "git.status", map[string]any{"path": f.leaf(), "baseRepo": f.base})
+	status, _ := dispatchTimed(t, h, "git.status", map[string]any{"path": f.leaf(), "baseRepo": f.base})
 	if want := `{"jsonrpc":"2.0","id":1,"result":{"isRepo":true,"clean":true}}`; status != want {
 		t.Fatalf("git.status = %s\nwant %s", status, want)
 	}
@@ -362,12 +362,12 @@ func setSettleWaitFor(t *testing.T, d time.Duration, leaf *string) {
 // worktree leaf, not settleWait (claustrum's own, not measured). Mutation: use
 // settleWait in place of settleWaitFor(leaf) in settleCheckout.
 func TestWorktreeCreateSettleUsesTheLeafWait(t *testing.T) {
-	f, s, _ := settleFixture(t, 1, 0)
+	f, h, _ := settleFixture(t, 1, 0)
 	const wait = 5 * time.Second
 	setDuration(t, &settleWait, 0)
 	var leaf string
 	setSettleWaitFor(t, wait, &leaf)
-	raw, took := f.create(t, s, "w1", "", 0)
+	raw, took := f.create(t, h, "w1", "", 0)
 	f.wantSettledCreate(t, raw)
 	if !sameDir(leaf, f.leaf()) {
 		t.Errorf("settleWaitFor got leaf %q, want %q", leaf, f.leaf())
@@ -447,7 +447,7 @@ func TestWorktreeCreateCtxCountsFromArrival(t *testing.T) {
 // Linux). Mutation: drop the time.Since(arrival) in worktreeCreateCtx.
 func TestWorktreeCreateDeadlineCountsFromTheRequest(t *testing.T) {
 	const delay = 1500 * time.Millisecond
-	f, s, _ := settleFixture(t, 0, 0)
+	f, h, _ := settleFixture(t, 0, 0)
 	t.Setenv("CLAUSTRUM_GITSTUB_MATCH2", "--absolute-git-dir")
 	t.Setenv("CLAUSTRUM_GITSTUB_MS2", strconv.FormatInt(delay.Milliseconds(), 10))
 	old := callerDeadline
@@ -459,7 +459,7 @@ func TestWorktreeCreateDeadlineCountsFromTheRequest(t *testing.T) {
 		return ctx, cancel
 	}
 	start := time.Now()
-	raw, took := f.create(t, s, "w1", "", markerTimeoutMs)
+	raw, took := f.create(t, h, "w1", "", markerTimeoutMs)
 	f.wantSettledCreate(t, raw)
 	if took < delay {
 		t.Fatalf("the create took %v, want at least the delay %v of the git stub", took, delay)
@@ -478,7 +478,7 @@ func TestWorktreeCreateDeadlineCountsFromTheRequest(t *testing.T) {
 // withWorktreeCreateLock.
 func TestWorktreeCreateDeadlineStartsAfterTheLock(t *testing.T) {
 	const wait = 1500 * time.Millisecond
-	f, s, _ := settleFixture(t, 0, 0)
+	f, h, _ := settleFixture(t, 0, 0)
 	old := callerDeadline
 	t.Cleanup(func() { callerDeadline = old })
 	var mu sync.Mutex
@@ -509,7 +509,7 @@ func TestWorktreeCreateDeadlineStartsAfterTheLock(t *testing.T) {
 		close(release)
 	})
 	defer stop.Stop()
-	raw, _ := f.create(t, s, "w1", "", markerTimeoutMs)
+	raw, _ := f.create(t, h, "w1", "", markerTimeoutMs)
 	<-lockDone
 	f.wantSettledCreate(t, raw)
 	mu.Lock()

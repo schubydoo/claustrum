@@ -2,6 +2,7 @@ package main
 
 import (
 	"encoding/json"
+	"fmt"
 	"strings"
 	"sync/atomic"
 	"testing"
@@ -20,22 +21,32 @@ func newTestGitDeps() *gitDeps {
 // only the server writes those replies.
 func gitDispatch(t *testing.T, d *gitDeps, line string) string {
 	t.Helper()
+	raw, err := gitDispatchErr(d, line)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return raw
+}
+
+// gitDispatchErr is gitDispatch for a goroutine that is not the test: it reports
+// a failure as an error and calls no method of t.
+func gitDispatchErr(d *gitDeps, line string) (string, error) {
 	var req request
 	if err := json.Unmarshal([]byte(line), &req); err != nil {
-		t.Fatalf("gitDispatch: line %s: %v", line, err)
+		return "", fmt.Errorf("gitDispatch: line %s: %w", line, err)
 	}
 	if req.Auth != testToken {
-		t.Fatalf("gitDispatch: line %s has no test token", line)
+		return "", fmt.Errorf("gitDispatch: line %s has no test token", line)
 	}
 	if req.JSONRPC != "2.0" {
-		t.Fatalf("gitDispatch: line %s is not JSON-RPC 2.0", line)
+		return "", fmt.Errorf("gitDispatch: line %s is not JSON-RPC 2.0", line)
 	}
 	if ns, _, ok := strings.Cut(req.Method, "."); !ok || ns != "git" {
-		t.Fatalf("gitDispatch: line %s names no git method", line)
+		return "", fmt.Errorf("gitDispatch: line %s names no git method", line)
 	}
 	b, err := json.Marshal(handleGit(d, &req))
 	if err != nil {
-		t.Fatalf("marshal response: %v", err)
+		return "", fmt.Errorf("marshal response: %w", err)
 	}
-	return string(b)
+	return string(b), nil
 }

@@ -44,7 +44,7 @@ func TestWorktreeRemoveRefusesHomeDir(t *testing.T) {
 		t.Fatal(err)
 	}
 	t.Setenv(homeEnvVar(), home)
-	s := newTestServer(t)
+	h := newTestGitDeps()
 
 	for _, tc := range []struct {
 		name, worktreePath string
@@ -82,7 +82,7 @@ func TestWorktreeRemoveRefusesHomeDir(t *testing.T) {
 			// the delete, or the wipesHomeDir guard is ever reached.
 			// Containment is what protects home here now; the guard remains as
 			// defense-in-depth (and as the primary guard for files.extract_tar).
-			got := dispatchRaw(t, s, rpcLine(t, "git.worktree_remove",
+			got := gitDispatch(t, h, rpcLine(t, "git.worktree_remove",
 				map[string]any{"baseRepo": t.TempDir(), "worktreePath": tc.worktreePath}))
 
 			if _, err := os.Stat(keep); err != nil {
@@ -119,8 +119,8 @@ func TestWorktreeRemoveEmptyPathFailsAsNonDirectory(t *testing.T) {
 	// The cwd is what made this bite once: an empty path resolved to it.
 	t.Chdir(home)
 
-	s := newTestServer(t)
-	got := dispatchRaw(t, s, rpcLine(t, "git.worktree_remove",
+	h := newTestGitDeps()
+	got := gitDispatch(t, h, rpcLine(t, "git.worktree_remove",
 		map[string]any{"baseRepo": t.TempDir(), "branchName": "b1"}))
 
 	if strings.Contains(got, "home directory") {

@@ -20,7 +20,7 @@ func TestGitStopTermThenKill(t *testing.T) {
 	t.Run("a call that dies by SIGTERM", func(t *testing.T) {
 		f, _ := limitFixture(t, "for-each-ref")
 		setDuration(t, &gitStopGrace, grace)
-		raw, took := dispatchTimed(t, newTestServer(t), "git.list_branches", map[string]any{"path": f.top})
+		raw, took := dispatchTimed(t, newTestGitDeps(), "git.list_branches", map[string]any{"path": f.top})
 		if want := errorFrame(t, stopText("for-each-ref")); raw != want {
 			t.Fatalf("git.list_branches = %s\nwant %s", raw, want)
 		}
@@ -32,7 +32,7 @@ func TestGitStopTermThenKill(t *testing.T) {
 		f, _ := limitFixture(t, "")
 		stubRule2(t, "for-each-ref", "ignoreterm", testHold, "", "", "")
 		setDuration(t, &gitStopGrace, grace)
-		raw, took := dispatchTimed(t, newTestServer(t), "git.list_branches", map[string]any{"path": f.top})
+		raw, took := dispatchTimed(t, newTestGitDeps(), "git.list_branches", map[string]any{"path": f.top})
 		if want := errorFrame(t, stopText("for-each-ref")); raw != want {
 			t.Fatalf("git.list_branches = %s\nwant %s", raw, want)
 		}
@@ -51,7 +51,7 @@ func TestWorktreeCreateCheckoutDrainWithoutTimeoutMs(t *testing.T) {
 	endHeldDescendant(t)
 	pidFile := os.Getenv("CLAUSTRUM_GITSTUB_HOLDPID")
 	slowGit(t, "read-tree", "hold", testDrainHold, "", "")
-	raw, took := f.create(t, newTestServer(t), "w1", "", 0)
+	raw, took := f.create(t, newTestGitDeps(), "w1", "", 0)
 	if !strings.Contains(raw, `"success":true`) {
 		t.Fatalf("git.worktree_create = %s, want success", raw)
 	}

@@ -116,15 +116,16 @@ func TestWorktreeCreateStaleEntryOfCommonGitDir(t *testing.T) {
 				for i, e := range entries {
 					before[i] = regFiles(t, e)
 				}
-				srv := newTestServer(t)
+				h := newTestGitDeps()
 				held := false
 				if state != "" {
-					srv, _ = newSeededShadowServer(t)
+					srv, _ := newSeededShadowServer(t)
+					h = srv.gitDeps()
 					old := createStepHook
 					t.Cleanup(func() { createStepHook = old })
 					createStepHook = func(at string) { held = held || at == "stale" }
 				}
-				raw, _ := f.create(t, srv, "w1", "", 0)
+				raw, _ := f.create(t, h, "w1", "", 0)
 				if want := state != ""; held != want {
 					t.Errorf("the step ran with a held git directory: %v, want %v", held, want)
 				}
