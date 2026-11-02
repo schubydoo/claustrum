@@ -124,7 +124,7 @@ func TestDaemonChildLeavesTheLauncherJob(t *testing.T) {
 	// The session ends: the job closes and ends every process in it.
 	_ = windows.CloseHandle(job)
 	closed = true
-	if waitProcessGone(pid, time.Second) {
+	if waitProcessGone(pid, time.Second) || !processAlive(t, pid) {
 		t.Errorf("the detached process %d ended with the job of its launcher", pid)
 	}
 }
@@ -529,7 +529,7 @@ func TestChildSurvivesAKilledDaemon(t *testing.T) {
 		t.Fatalf("kill the owner: %v", err)
 	}
 	_ = daemon.Wait()
-	if waitProcessGone(pid, time.Second) {
+	if waitProcessGone(pid, time.Second) || !processAlive(t, pid) {
 		t.Errorf("child %d ended with its killed owner", pid)
 	}
 }

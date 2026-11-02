@@ -128,7 +128,7 @@ func TestSignalEndsOnlyTheDirectChild(t *testing.T) {
 	if !waitProcessGone(cmd.Process.Pid, 5*time.Second) {
 		t.Errorf("parent %d survived the kill", cmd.Process.Pid)
 	}
-	if waitProcessGone(gpid, time.Second) {
+	if waitProcessGone(gpid, time.Second) || !processAlive(t, gpid) {
 		t.Errorf("grandchild %d ended with its parent: the kill reached more than the direct child", gpid)
 	}
 }
@@ -177,10 +177,10 @@ func TestCloseEndsNothing(t *testing.T) {
 	cmd, gpid, group := startConfinedTree(t)
 
 	group.close()
-	if waitProcessGone(gpid, time.Second) {
+	if waitProcessGone(gpid, time.Second) || !processAlive(t, gpid) {
 		t.Errorf("grandchild %d ended at close", gpid)
 	}
-	if waitProcessGone(cmd.Process.Pid, time.Second) {
+	if waitProcessGone(cmd.Process.Pid, time.Second) || !processAlive(t, cmd.Process.Pid) {
 		t.Errorf("parent %d ended at close", cmd.Process.Pid)
 	}
 }
