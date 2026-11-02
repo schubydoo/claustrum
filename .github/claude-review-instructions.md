@@ -35,6 +35,22 @@ factored and still be wrong. It moved a byte on the wire.
 
 Style, naming, and refactoring suggestions are always Nit at most.
 
+### What Important means here
+
+In this project the docs are part of the contract. Each of these is Important, never a
+Nit, even when the code is correct and the fix is one line:
+
+- A divergence or a claustrum-own behavior that the PR adds or names, but that is not
+  recorded in `docs/` (rule 2 of "Always check").
+- A doc, template or rule that now contradicts another doc in this repo, such as
+  `AGENTS.md`, `CONTRIBUTING.md`, `docs/PROTOCOL.md` or the PR template.
+- A statement credited to the wrong reference build, platform or measurement, or a rule
+  that lost or gained a "measured on" mark or a qualifier that limits its scope.
+- A doc claim that the code or another doc shows to be false.
+
+Do not lower one of these to a Nit because the impact looks small. A wrong doc reads as
+truth to the next person.
+
 ## Always check
 
 A change that breaks one of these is wrong. Passing tests do not make it right:
