@@ -158,7 +158,7 @@ func TestGitParamsViewsCopyEveryMember(t *testing.T) {
 		{&createViewParams{}, gitParams{BaseRepo: "b", BranchName: "n", WorktreePath: "w", SourceBranch: "s",
 			ExistingBranch: "e", WorktreeRoot: "r", TimeoutMs: 9, ShadowDirOff: true}},
 	} {
-		got, bad := bindGitParams(&request{Params: []byte(raw)}, tc.view)
+		got, bad := bindGitParams(&gitCall{request: &request{Params: []byte(raw)}}, tc.view)
 		if bad != nil || got != tc.want {
 			t.Errorf("%T: got %+v (reply %v), want %+v", tc.view, got, bad, tc.want)
 		}

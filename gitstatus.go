@@ -337,7 +337,7 @@ func statusWorkTreeProbe(s *gitStop, common, workTree string, pin, front []strin
 // The read is the read of the config gate, for the printed path. A refusal of
 // that read is not measured: the request answers it. A request with no copy
 // (the member, the state fallback-git) changes nothing here.
-func (req *request) usePrintedGitDir(t gitDirTrust, common string) string {
+func (req *gitCall) usePrintedGitDir(t gitDirTrust, common string) string {
 	u := req.use
 	if !u.shadow() || sameGitDirPath(filepath.Clean(common), filepath.Clean(u.gitDir)) || !sameProbeFolder(common, u.gitDir) {
 		return ""

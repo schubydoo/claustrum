@@ -13,8 +13,9 @@ import (
 	"time"
 )
 
-func (s *server) handleGit(req *request) response {
-	var fn func(*request) response
+func (s *server) handleGit(r *request) response {
+	req := &gitCall{request: r}
+	var fn func(*gitCall) response
 	switch req.Method {
 	case "git.info":
 		fn = gitInfo
@@ -27,9 +28,9 @@ func (s *server) handleGit(req *request) response {
 	case "git.worktree_remove":
 		fn = gitWorktreeRemove
 	default:
-		return unknownMethod(req)
+		return unknownMethod(req.request)
 	}
-	if bad := needParams(req); bad != nil {
+	if bad := needParams(req.request); bad != nil {
 		return *bad
 	}
 	req.shadow = s.gitShadow
@@ -40,7 +41,7 @@ func (s *server) handleGit(req *request) response {
 	}
 	// While a request with "shadowDirOff":true runs, every git request that
 	// starts, and each later git command of a request, run as with the member
-	// (measured on Linux). The count is read live (request.offLive).
+	// (measured on Linux). The count is read live (gitCall.offLive).
 	req.offHold = &s.offGitRequests
 	if !limitedGitMethod(req.Method) {
 		return fn(req)
@@ -185,11 +186,11 @@ func isRepo(u gitUse, dir string, l configListing) (bool, error) {
 // repository folder went: the text of that call alone, as for the text of
 // `repoLimitError` (from the code, not measured for `repoCopyGoneText` and its
 // listing form).
-func copyGoneResult(req *request, err error) response {
+func copyGoneResult(req *gitCall, err error) response {
 	return okResult(req.ID, worktreeResult{Success: false, Error: err.Error(), ErrorCode: "worktree_add_failed"})
 }
 
-func gitInfo(req *request) response {
+func gitInfo(req *gitCall) response {
 	p, bad := bindGitParams(req, &infoViewParams{})
 	if bad != nil {
 		return *bad
@@ -398,7 +399,7 @@ func gitInfo(req *request) response {
 // keepLive gives the later git commands of a git.info or a git.list_branches the
 // off switch of the moment (liveSwitch). off is the hold at the gate of the
 // request, and t and dir are the trust verdict and the folder of that gate.
-func (req *request) keepLive(off bool, t gitDirTrust, dir string) {
+func (req *gitCall) keepLive(off bool, t gitDirTrust, dir string) {
 	req.followSwitch(off, func(l *liveSwitch, _ bool) (gitUse, bool) {
 		msg, noRepo := req.settingsGateRefusal(t, false, dir)
 		if msg != "" || noRepo {
@@ -415,7 +416,7 @@ func (req *request) keepLive(off bool, t gitDirTrust, dir string) {
 // only the form of the git commands. The request keeps the use of its first
 // gate, with its read of the config and its short-lived folders, for every
 // step that is no git command.
-func (req *request) keepLiveForm(off bool, t gitDirTrust, dir string) {
+func (req *gitCall) keepLiveForm(off bool, t gitDirTrust, dir string) {
 	req.followSwitch(off, func(l *liveSwitch, ask bool) (gitUse, bool) {
 		use, read, gitRefused, configRefused := req.use, req.repoRead, req.gitRefused, req.configRefused
 		defer func() {
@@ -442,7 +443,7 @@ func (req *request) keepLiveForm(off bool, t gitDirTrust, dir string) {
 // directory that is no longer that real directory refuses the later gate, and
 // the form stays without a copy (claustrum's own, not measured). After the add
 // the later gate changes only the form, as in keepLiveForm (measured).
-func (req *request) keepLiveCreate(off bool, t gitDirTrust, repo string, added *bool, held **acceptedGitDir) {
+func (req *gitCall) keepLiveCreate(off bool, t gitDirTrust, repo string, added *bool, held **acceptedGitDir) {
 	req.followSwitch(off, func(l *liveSwitch, ask bool) (gitUse, bool) {
 		use, read, gitRefused, configRefused := req.use, req.repoRead, req.gitRefused, req.configRefused
 		keep := false
@@ -483,7 +484,7 @@ func (req *request) keepLiveCreate(off bool, t gitDirTrust, repo string, added *
 
 // followSwitch gives req.use the off switch of the request, with gate as its
 // later gate. off is the hold at the gate of the request.
-func (req *request) followSwitch(off bool, gate func(l *liveSwitch, ask bool) (gitUse, bool)) {
+func (req *gitCall) followSwitch(off bool, gate func(l *liveSwitch, ask bool) (gitUse, bool)) {
 	if !req.shadow.active() {
 		return
 	}
@@ -656,7 +657,7 @@ func gitDefaultBranch(u gitUse, dir string) string {
 	return name
 }
 
-func gitStatus(req *request) response {
+func gitStatus(req *gitCall) response {
 	p, bad := bindGitParams(req, &statusViewParams{})
 	if bad != nil {
 		return *bad
@@ -798,7 +799,7 @@ func samePath(a, b string) bool {
 	return filepath.Clean(a) == filepath.Clean(b)
 }
 
-func gitListBranches(req *request) response {
+func gitListBranches(req *gitCall) response {
 	p, bad := bindGitParams(req, &infoViewParams{})
 	if bad != nil {
 		return *bad
@@ -910,7 +911,7 @@ func gitListBranches(req *request) response {
 // add and answers the timeout before the checkout, with the rollback
 // (measured on Linux). The limits of the two calls are those of their kind
 // (gitstop.go). No cell measured a limit there: that is claustrum's own.
-func pairBeforeAdd(req *request, gitDir, repo string) {
+func pairBeforeAdd(req *gitCall, gitDir, repo string) {
 	if fi, err := os.Lstat(gitDirRegistryDir(gitDir)); err != nil || !fi.IsDir() {
 		return
 	}
@@ -918,7 +919,7 @@ func pairBeforeAdd(req *request, gitDir, repo string) {
 	_, _ = gitDirWorkTreeToplevel(req.stop, u.sshOff(), gitDir, repo, u.gitDirPin(repo), u.gitDirFront())
 }
 
-func gitWorktreeCreate(req *request) response {
+func gitWorktreeCreate(req *gitCall) response {
 	p, bad := bindGitParams(req, &createViewParams{})
 	if bad != nil {
 		return *bad
@@ -938,7 +939,7 @@ func gitWorktreeCreate(req *request) response {
 	})
 }
 
-func gitWorktreeCreateLocked(req *request, p *gitParams, repo string, arrival time.Time) response {
+func gitWorktreeCreateLocked(req *gitCall, p *gitParams, repo string, arrival time.Time) response {
 	// 7d193f89 refuses a baseRepo that sits inside a managed worktrees tree as an
 	// invalid trust root, before the repo check. Measured against 7d193f89. A
 	// session worktree must be created from a real top-level repo, never from
@@ -2193,7 +2194,7 @@ func makeRefusedLeafParents(p *gitParams, repo string) {
 // After a gate that passed, the later git commands follow the off switch
 // (measured on Linux). A later gate runs one time (claustrum's own, not
 // measured).
-func (req *request) removeGate(t gitDirTrust, off jsonTrueSwitch, repo string) (msg string, noRepo bool) {
+func (req *gitCall) removeGate(t gitDirTrust, off jsonTrueSwitch, repo string) (msg string, noRepo bool) {
 	msg, noRepo = req.settingsGateRefusal(t, off, repo)
 	if req.gitRefused || req.configRefused {
 		msg, noRepo = req.settingsGateRefusal(t, off, repo)
@@ -2204,7 +2205,7 @@ func (req *request) removeGate(t gitDirTrust, off jsonTrueSwitch, repo string) (
 	return msg, noRepo
 }
 
-func gitWorktreeRemove(req *request) response {
+func gitWorktreeRemove(req *gitCall) response {
 	p, bad := bindGitParams(req, &removeViewParams{})
 	if bad != nil {
 		return *bad
@@ -2218,13 +2219,13 @@ func gitWorktreeRemove(req *request) response {
 
 // removeRefusal gives the reply of a refused git.worktree_remove of req: success
 // false, with msg as its error.
-func removeRefusal(req *request) func(msg string) response {
+func removeRefusal(req *gitCall) func(msg string) response {
 	return func(msg string) response {
 		return okResult(req.ID, worktreeRemoveResult{Success: false, Error: msg})
 	}
 }
 
-func gitWorktreeRemoveLocked(req *request, p *gitParams, repo string) response {
+func gitWorktreeRemoveLocked(req *gitCall, p *gitParams, repo string) response {
 	refuse := removeRefusal(req)
 	// 7d193f89 refuses a baseRepo inside a managed worktrees tree as an invalid trust
 	// root (no errorCode on remove). A baseRepo that does not exist skips the check.
@@ -2711,7 +2712,7 @@ func gitWorktreeRemoveLocked(req *request, p *gitParams, repo string) response {
 // In the repo, a config that cannot be listed, or a git directory that fails the trust
 // check, is refused with its reason (measured). A baseRepo that holds no repository
 // skips the registration (measured). Measured on the reference, f6010b97, on macOS.
-func removeGoneWorktree(req *request, p *gitParams, repo, path string) response {
+func removeGoneWorktree(req *gitCall, p *gitParams, repo, path string) response {
 	refuse := removeRefusal(req)
 	lockCheck := func(reason string) response {
 		return refuse("failed to remove worktree: could not check whether " + p.WorktreePath +
