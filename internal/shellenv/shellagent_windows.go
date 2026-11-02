@@ -1,6 +1,6 @@
 //go:build windows
 
-package main
+package shellenv
 
 // defaultShellAgentSocket never probes on Windows. The capability and the
 // disableShellAgentSocket param exist on every OS, but claustrum's Windows spawn

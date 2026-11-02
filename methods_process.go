@@ -42,7 +42,7 @@ type spawnParams struct {
 	// starts the process (measured on Linux).
 	WantPid jsonTrueSwitch `json:"wantPid"`
 	// DisableShellAgentSocket turns off the login-shell SSH_AUTH_SOCK hand-off for
-	// this spawn (see shellagent.go). A non-bool value fails the decode, so it
+	// this spawn (see internal/shellenv/shellagent.go). A non-bool value fails the decode, so it
 	// answers -32602 like any other mistyped param; null is accepted as false.
 	DisableShellAgentSocket bool `json:"disableShellAgentSocket"`
 	// Launcher is the managed launcher param (89cb6289): the child runs as

@@ -13,6 +13,8 @@ import (
 	"syscall"
 	"testing"
 	"time"
+
+	"github.com/schubydoo/claustrum/internal/shellenv"
 )
 
 // These tests drive the real daemon-lifecycle shells — runServe,
@@ -240,7 +242,7 @@ func TestRunServeChildStartsTheLoginPATHRead(t *testing.T) {
 	stubOsExit(t)
 	t.Setenv(daemonChildEnv, "1")
 	t.Setenv(tokenPipeEnv, "")
-	t.Setenv(noLoginPATHWarmEnv, "0")
+	t.Setenv(shellenv.NoLoginPATHWarmEnv, "0")
 	dir := shortTempDir(t)
 	sock := filepath.Join(dir, "d.sock")
 	tf := filepath.Join(dir, "token")
@@ -255,8 +257,8 @@ func TestRunServeChildStartsTheLoginPATHRead(t *testing.T) {
 		done <- code
 	}()
 	r := startedRead(t, f)
-	if _, ok := os.LookupEnv(noLoginPATHWarmEnv); ok {
-		t.Errorf("%s is still in the daemon environment", noLoginPATHWarmEnv)
+	if _, ok := os.LookupEnv(shellenv.NoLoginPATHWarmEnv); ok {
+		t.Errorf("%s is still in the daemon environment", shellenv.NoLoginPATHWarmEnv)
 	}
 	f.answer <- pathAnswer{path: "/login/bin"}
 	awaitReadEnd(t, r)
@@ -520,7 +522,7 @@ func TestRunServeChildRejectsMissingTokenSource(t *testing.T) {
 	stubOsExit(t)
 	t.Setenv(daemonChildEnv, "1")
 	// No login-PATH stub here on purpose. An earlier version installed one, but
-	// the check under test exits before armLoginPATH is ever reached, so the
+	// the check under test exits before warmLoginPATHAtStart is ever reached, so the
 	// stub protected nothing and implied this path forks a login shell when it
 	// does not. The sibling arms that DO reach it still stub it.
 

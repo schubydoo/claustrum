@@ -420,12 +420,14 @@ component_management:
       paths:
         - internal/pathcanon/expandpath.go
         - expandpaths.go
-        - shellenv.go
-        - shellenv_unix.go
-        - shellenv_windows.go
-        - shellagent.go
-        - shellagent_unix.go
-        - shellagent_windows.go
+        - compat_shellenv.go
+        - internal/shellenv/fortest.go
+        - internal/shellenv/shellenv.go
+        - internal/shellenv/shellenv_unix.go
+        - internal/shellenv/shellenv_windows.go
+        - internal/shellenv/shellagent.go
+        - internal/shellenv/shellagent_unix.go
+        - internal/shellenv/shellagent_windows.go
     - component_id: observability
       name: logging, metrics & wire log
       paths:

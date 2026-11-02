@@ -1,6 +1,6 @@
 //go:build unix
 
-package main
+package shellenv
 
 import (
 	"context"
@@ -13,6 +13,9 @@ import (
 	"sync"
 	"syscall"
 	"time"
+
+	"github.com/schubydoo/claustrum/internal/logging"
+	"github.com/schubydoo/claustrum/internal/sysproc"
 )
 
 // The login-shell SSH agent hand-off (reference f6010b97). Every value below
@@ -105,7 +108,7 @@ func (s *agentHandOff) socket() string {
 		return ""
 	}
 	if s.sock != "" {
-		logWarnf("[shellenv] %s=%s no longer accepts connections; running the login shell again",
+		logging.Warnf("[shellenv] %s=%s no longer accepts connections; running the login shell again",
 			agentSockVar, s.sock)
 	}
 	// The gate goes free also when runShell panics.
@@ -116,14 +119,14 @@ func (s *agentHandOff) socket() string {
 	s.lastRun = s.clock()
 	if err != nil {
 		s.failures++
-		logWarnf("[shellenv] Could not read %s from the login shell (%s): %v",
+		logging.Warnf("[shellenv] Could not read %s from the login shell (%s): %v",
 			agentSockVar, s.failureNoteLocked(), err)
 		return ""
 	}
 	if sock == "" {
 		s.sock = ""
 		s.failures++
-		logInfof("[shellenv] The login shell exports no %s (%s)", agentSockVar, s.failureNoteLocked())
+		logging.Infof("[shellenv] The login shell exports no %s (%s)", agentSockVar, s.failureNoteLocked())
 		return ""
 	}
 	s.sock = sock
@@ -134,11 +137,11 @@ func (s *agentHandOff) socket() string {
 	}
 	if live {
 		s.failures = 0
-		logInfof("[shellenv] The login shell exports %s=%s", agentSockVar, sock)
+		logging.Infof("[shellenv] The login shell exports %s=%s", agentSockVar, sock)
 		return sock
 	}
 	s.failures++
-	logWarnf("[shellenv] The login shell exports %s=%s, which does not accept connections (%s)",
+	logging.Warnf("[shellenv] The login shell exports %s=%s, which does not accept connections (%s)",
 		agentSockVar, sock, s.failureNoteLocked())
 	return ""
 }
@@ -159,7 +162,7 @@ func (s *agentHandOff) failureNoteLocked() string {
 func (s *agentHandOff) stopForGoodLocked(sock string) {
 	s.sock = ""
 	s.failures = agentMaxFailures
-	logWarnf("[shellenv] A check of %s=%s never returned (a hung filesystem?); "+
+	logging.Warnf("[shellenv] A check of %s=%s never returned (a hung filesystem?); "+
 		"not using it or asking the login shell again for this daemon's lifetime", agentSockVar, sock)
 }
 
@@ -257,9 +260,9 @@ func probeShellEnv(base []string) []string {
 		}
 		out = append(out, e)
 	}
-	out = replaceOrAppendEnv(out, "DISABLE_AUTO_UPDATE", "true")
-	out = replaceOrAppendEnv(out, "ZSH_DISABLE_COMPFIX", "true")
-	return replaceOrAppendEnv(out, "CLAUDE_DESKTOP_RESOLVING_ENVIRONMENT", "1")
+	out = sysproc.ReplaceOrAppendEnv(out, "DISABLE_AUTO_UPDATE", "true")
+	out = sysproc.ReplaceOrAppendEnv(out, "ZSH_DISABLE_COMPFIX", "true")
+	return sysproc.ReplaceOrAppendEnv(out, "CLAUDE_DESKTOP_RESOLVING_ENVIRONMENT", "1")
 }
 
 // dialUnix is the dial dialAgentSocket makes. A seam, so a test can make it
