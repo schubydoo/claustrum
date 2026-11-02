@@ -26,8 +26,8 @@ import (
 // git.worktree_remove's delete off the repository root.
 //
 // The "not inside" text shows worktreePath in backticks (tickPath) and the
-// repository as it is, on create and remove (be1c1ca5, measured on Linux). The
-// spelling texts before it keep the path as it is (not measured).
+// repository as it is, on create and remove (be1c1ca5, measured on Linux and
+// macOS). The spelling texts before it keep the path as it is (not measured).
 //
 // This containment is also why it subsumes the D2 home-wipe guard: a "~"-expanded
 // home path is not strictly under a repo, so it is refused here — with the
