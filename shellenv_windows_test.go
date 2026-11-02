@@ -8,7 +8,13 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/schubydoo/claustrum/internal/shellenv"
 )
+
+// realLoginPATHExtractor is the extractor of production. The package initializes
+// it before TestMain puts the stub of the suite in its place.
+var realLoginPATHExtractor = shellenv.LoginPATHExtractor
 
 // setDaemonPathSpelledPath gives the test process one path entry, named exactly Path,
 // with the value val. The cleanup puts back the entry of the runner with its own name.
@@ -101,13 +107,13 @@ func TestSpawnChildGetsTheDaemonPATHOnWindows(t *testing.T) {
 	}
 	for _, tc := range cases {
 		t.Run(tc.row, func(t *testing.T) {
-			origExtractor := loginPATHExtractor
+			origExtractor := shellenv.LoginPATHExtractor
 			t.Cleanup(func() {
-				loginPATHExtractor = origExtractor
+				shellenv.LoginPATHExtractor = origExtractor
 				resetLoginPATHForTest()
 			})
 			resetLoginPATHForTest()
-			loginPATHExtractor = extractLoginPATH
+			shellenv.LoginPATHExtractor = realLoginPATHExtractor
 			setDaemonPathSpelledPath(t, sys)
 			armLoginPATH()
 
@@ -123,13 +129,13 @@ func TestSpawnChildGetsTheDaemonPATHOnWindows(t *testing.T) {
 // entry gives the child no path entry. Its result does not depend on the Windows read,
 // and it passes with or without the fix.
 func TestNoDaemonPATHGivesNoChildPATHOnWindows(t *testing.T) {
-	origExtractor := loginPATHExtractor
+	origExtractor := shellenv.LoginPATHExtractor
 	t.Cleanup(func() {
-		loginPATHExtractor = origExtractor
+		shellenv.LoginPATHExtractor = origExtractor
 		resetLoginPATHForTest()
 	})
 	resetLoginPATHForTest()
-	loginPATHExtractor = extractLoginPATH
+	shellenv.LoginPATHExtractor = realLoginPATHExtractor
 	setDaemonPathSpelledPath(t, "x")
 	_ = os.Unsetenv("PATH")
 	armLoginPATH()

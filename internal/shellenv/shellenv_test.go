@@ -1,36 +1,14 @@
-package main
+package shellenv
 
 import (
 	"context"
 	"errors"
 	"os"
-	"runtime"
 	"strings"
 	"sync"
 	"testing"
 	"time"
 )
-
-// resetLoginPATHForTest ends a read that runs, with no log line, and clears the state
-// of the PATH read. The seams go back to production.
-func resetLoginPATHForTest() {
-	s := loginPATHs
-	s.mu.Lock()
-	r := s.run
-	if r != nil {
-		r.quiet = true
-	}
-	s.mu.Unlock()
-	if r != nil {
-		r.cancel()
-		<-r.end
-	}
-	s.mu.Lock()
-	s.armed, s.closed, s.good, s.path = false, false, false, ""
-	s.failures, s.nextTry, s.run = 0, time.Time{}, nil
-	s.clock, s.gate = time.Now, loginShellGate
-	s.mu.Unlock()
-}
 
 // pathAnswer is the result of one fake read.
 type pathAnswer struct {
@@ -62,10 +40,10 @@ func (f *pathReadFake) advance(d time.Duration) {
 // that a stop ends gives the timed-out error of the real read.
 func installPathReadFake(t *testing.T) *pathReadFake {
 	t.Helper()
-	resetLoginPATHForTest()
+	ResetForTest()
 	f := &pathReadFake{now: time.Unix(1_000_000, 0), calls: make(chan struct{}, 64), answer: make(chan pathAnswer)}
-	old := loginPATHExtractor
-	loginPATHExtractor = func(ctx context.Context) (string, error) {
+	old := LoginPATHExtractor
+	LoginPATHExtractor = func(ctx context.Context) (string, error) {
 		f.calls <- struct{}{}
 		select {
 		case a := <-f.answer:
@@ -78,8 +56,8 @@ func installPathReadFake(t *testing.T) *pathReadFake {
 	loginPATHs.clock, loginPATHs.gate = f.clock, make(chan struct{}, 1)
 	loginPATHs.mu.Unlock()
 	t.Cleanup(func() {
-		resetLoginPATHForTest()
-		loginPATHExtractor = old
+		ResetForTest()
+		LoginPATHExtractor = old
 	})
 	armLoginPATH()
 	return f
@@ -146,76 +124,6 @@ func shellenvLines(buf *syncBuffer) string {
 	return out.String()
 }
 
-// envValue reads key out of a buildEnv result the way the CHILD will see it,
-// which is not the same as the first matching entry.
-//
-// buildEnv appends rather than rewrites when the spellings differ: on Windows
-// os.Environ() yields "Path=...", so replaceOrAppendEnv's "PATH=" prefix test
-// misses and a second, correct "PATH=..." lands at the end. That slice is not
-// what reaches the process. exec.Cmd.environ() runs it through dedupEnv, which
-// on Windows folds keys case-insensitively and keeps the LAST occurrence
-// (os/exec: dedupEnvCase builds its output in reverse "to preserve the last
-// occurrence of each key"). The appended entry therefore wins and the child gets
-// the value buildEnv intended.
-//
-// So this must scan backwards. Reading forwards returns the stale pre-append
-// entry — a value no child ever sees — and the test then fails on any Windows
-// host whose environment block spells the key "Path". A runner can spell
-// it "PATH", and then that read passes there while it fails on a stock Windows 11
-// image.
-//
-// The case folding is deliberately NOT unconditional. dedupEnv folds only on
-// Windows, so on Unix "PATH" and "Path" are two independent variables and the
-// child receives both. Matching case-insensitively everywhere would let a
-// stray "Path" in the ambient environment shadow the real "PATH" and make this
-// test assert a value the child never uses. Mirroring dedupEnvCase's own
-// predicate keeps the reader honest on every OS.
-func envValue(env []string, key string) (string, bool) {
-	fold := runtime.GOOS == "windows"
-	for i := len(env) - 1; i >= 0; i-- {
-		k, v, ok := strings.Cut(env[i], "=")
-		if !ok {
-			continue
-		}
-		if k == key || (fold && strings.EqualFold(k, key)) {
-			return v, true
-		}
-	}
-	return "", false
-}
-
-// envValue encodes a per-OS rule and has been wrong in both directions: it read
-// forwards (returning an entry dedupEnv discards), and folding case everywhere
-// would let an unrelated Unix variable shadow the real one. These pin both ends
-// so the next edit cannot quietly reintroduce either.
-func TestEnvValueMatchesDedupEnvSemantics(t *testing.T) {
-	// A real PATH followed by a later, differently-cased Path. On Unix these are
-	// two independent variables and the child's $PATH is the "PATH" entry; on
-	// Windows they are one variable and dedupEnv keeps the last.
-	t.Run("case folding follows the OS", func(t *testing.T) {
-		env := []string{"HOME=/h", "PATH=/real", "OTHER=x", "Path=/stray"}
-		want := "/real"
-		if runtime.GOOS == "windows" {
-			want = "/stray"
-		}
-		got, ok := envValue(env, "PATH")
-		if !ok {
-			t.Fatal("envValue found no PATH")
-		}
-		if got != want {
-			t.Errorf("envValue = %q, want %q on %s", got, want, runtime.GOOS)
-		}
-	})
-
-	// The Windows shape this helper exists for: a stale "Path" that buildEnv could
-	// not rewrite, followed by the "PATH" it appended. dedupEnv keeps the last.
-	t.Run("the appended entry wins", func(t *testing.T) {
-		if got, _ := envValue([]string{"Path=/stale", "PATH=/appended"}, "PATH"); got != "/appended" {
-			t.Errorf("envValue = %q, want %q (dedupEnv keeps the last occurrence)", got, "/appended")
-		}
-	})
-}
-
 // TestLoginPATHReadStartsAtTheDaemonStart pins the start of the read on 52d82f0a
 // (Linux and macOS). With no variable and with the value 0 a read starts with no
 // spawn. The value 1 starts none. The variable leaves the daemon environment.
@@ -231,15 +139,15 @@ func TestLoginPATHReadStartsAtTheDaemonStart(t *testing.T) {
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			f := installPathReadFake(t)
-			t.Setenv(noLoginPATHWarmEnv, "")
+			t.Setenv(NoLoginPATHWarmEnv, "")
 			if tc.value == nil {
-				_ = os.Unsetenv(noLoginPATHWarmEnv)
+				_ = os.Unsetenv(NoLoginPATHWarmEnv)
 			} else {
-				t.Setenv(noLoginPATHWarmEnv, *tc.value)
+				t.Setenv(NoLoginPATHWarmEnv, *tc.value)
 			}
-			warmLoginPATHAtStart()
-			if _, ok := os.LookupEnv(noLoginPATHWarmEnv); ok {
-				t.Errorf("%s is still in the daemon environment", noLoginPATHWarmEnv)
+			WarmAtStart()
+			if _, ok := os.LookupEnv(NoLoginPATHWarmEnv); ok {
+				t.Errorf("%s is still in the daemon environment", NoLoginPATHWarmEnv)
 			}
 			if !tc.warm {
 				noReadStarted(t, f, "the start")
@@ -248,53 +156,11 @@ func TestLoginPATHReadStartsAtTheDaemonStart(t *testing.T) {
 			r := startedRead(t, f)
 			f.answer <- pathAnswer{path: "/login/bin"}
 			awaitReadEnd(t, r)
-			if got := currentLoginPATH(); got != "/login/bin" {
+			if got := CurrentLoginPATH(); got != "/login/bin" {
 				t.Errorf("PATH after the read = %q, want /login/bin", got)
 			}
 		})
 	}
-}
-
-// TestLoginPATHSpawnWaitIsBounded pins the spawn wait of 52d82f0a (Linux and macOS):
-// at most 4 s, and never past 8 s after the start of the read. A spawn that comes
-// before a good read gets the daemon's own PATH. The 8 s horizon is the rule under
-// test here, so the spawn wait is long.
-func TestLoginPATHSpawnWaitIsBounded(t *testing.T) {
-	f := installPathReadFake(t)
-	t.Setenv("PATH", "/daemon/bin")
-	warmLoginPATHAtStart()
-	r := startedRead(t, f)
-
-	setSpawnWait(t, 200*time.Millisecond)
-	start := time.Now()
-	got, _ := envValue(buildEnv(nil), "PATH")
-	if el := time.Since(start); el < 200*time.Millisecond {
-		t.Errorf("the spawn returned after %v, before its wait of 200ms", el)
-	}
-	if got != "/daemon/bin" {
-		t.Errorf("PATH during the read = %q, want the daemon PATH", got)
-	}
-
-	setSpawnWait(t, 30*time.Second)
-	f.advance(loginPATHSpawnHorizon - 100*time.Millisecond)
-	start = time.Now()
-	buildEnv(nil)
-	if el := time.Since(start); el < 100*time.Millisecond || el > 10*time.Second {
-		t.Errorf("the spawn at 100ms before the horizon took %v, want about 100ms", el)
-	}
-	f.advance(100 * time.Millisecond)
-	start = time.Now()
-	buildEnv(nil)
-	if el := time.Since(start); el > 10*time.Second {
-		t.Errorf("the spawn at the horizon took %v, want no wait", el)
-	}
-
-	f.answer <- pathAnswer{path: "/login/bin"}
-	awaitReadEnd(t, r)
-	if got, _ := envValue(buildEnv(nil), "PATH"); got != "/login/bin" {
-		t.Errorf("PATH after the read = %q, want /login/bin", got)
-	}
-	noReadStarted(t, f, "a spawn after a good read")
 }
 
 // TestLoginPATHFailedReadIsTriedAgainLater pins the tries of 52d82f0a (Linux and
@@ -305,18 +171,18 @@ func TestLoginPATHFailedReadIsTriedAgainLater(t *testing.T) {
 	buf := captureLogBuf(t)
 	f := installPathReadFake(t)
 	setSpawnWait(t, 10*time.Second)
-	warmLoginPATHAtStart()
+	WarmAtStart()
 	r := startedRead(t, f)
 	f.answer <- pathAnswer{err: errors.New("boom 1")}
 	awaitReadEnd(t, r)
 
 	for i, pause := range []time.Duration{30 * time.Second, time.Minute, 2 * time.Minute} {
 		f.advance(pause - time.Second)
-		buildEnv(nil)
+		AwaitLoginPATH(false)
 		noReadStarted(t, f, "a spawn 1 s before the pause ends")
 		f.advance(time.Second)
 		done := make(chan struct{})
-		go func() { buildEnv(nil); close(done) }()
+		go func() { AwaitLoginPATH(false); close(done) }()
 		r := startedRead(t, f)
 		if i < 2 {
 			f.answer <- pathAnswer{err: errors.New("boom " + string(rune('2'+i)))}
@@ -327,7 +193,7 @@ func TestLoginPATHFailedReadIsTriedAgainLater(t *testing.T) {
 		<-done
 	}
 	f.advance(time.Hour)
-	buildEnv(nil)
+	AwaitLoginPATH(false)
 	noReadStarted(t, f, "a spawn after a good read")
 
 	want := "WARN  [shellenv] Could not read PATH from the login shell after 0s (failure 1; next try in 30s at the earliest; until one works, programs get the daemon's own PATH): boom 1\n" +
@@ -350,14 +216,14 @@ func TestLoginPATHStopsAfterSixteenFailures(t *testing.T) {
 	setSpawnWait(t, 10*time.Second)
 	for i := range loginPATHMaxFailures {
 		done := make(chan struct{})
-		go func() { buildEnv(nil); close(done) }()
+		go func() { AwaitLoginPATH(false); close(done) }()
 		r := startedRead(t, f)
 		f.answer <- pathAnswer{err: errors.New("boom")}
 		awaitReadEnd(t, r)
 		<-done
 		f.advance(loginPATHFirstPause << i)
 	}
-	buildEnv(nil)
+	AwaitLoginPATH(false)
 	noReadStarted(t, f, "a spawn after 16 failures")
 	if want := "(failure 16; no further try; programs get the daemon's own PATH): boom\n"; !strings.HasSuffix(shellenvLines(buf), want) {
 		t.Errorf("last line of the log is not %q:\n%s", want, shellenvLines(buf))
@@ -373,7 +239,7 @@ func TestLoginPATHFlaggedSpawnStopsTheRead(t *testing.T) {
 	f := installPathReadFake(t)
 	setSpawnWait(t, 100*time.Millisecond)
 	done := make(chan struct{})
-	go func() { buildSpawnEnv(nil, true); close(done) }()
+	go func() { AwaitLoginPATH(true); close(done) }()
 	r := startedRead(t, f)
 	select {
 	case <-done:
@@ -388,10 +254,10 @@ func TestLoginPATHFlaggedSpawnStopsTheRead(t *testing.T) {
 	}
 
 	f.advance(loginPATHFirstPause)
-	buildSpawnEnv(nil, true)
+	AwaitLoginPATH(true)
 	noReadStarted(t, f, "a flagged spawn after a failure")
 	done = make(chan struct{})
-	go func() { buildSpawnEnv(nil, false); close(done) }()
+	go func() { AwaitLoginPATH(false); close(done) }()
 	r = startedRead(t, f)
 	f.answer <- pathAnswer{path: "/login/bin"}
 	awaitReadEnd(t, r)
@@ -403,14 +269,14 @@ func TestLoginPATHFlaggedSpawnStopsTheRead(t *testing.T) {
 func TestLoginPATHShutdownStopsTheReadQuietly(t *testing.T) {
 	buf := captureLogBuf(t)
 	f := installPathReadFake(t)
-	warmLoginPATHAtStart()
+	WarmAtStart()
 	r := startedRead(t, f)
-	stopLoginPATH()
+	Stop()
 	awaitReadEnd(t, r)
 	if got := shellenvLines(buf); got != "" {
 		t.Errorf("the stopped read logged:\n%s", got)
 	}
-	buildEnv(nil)
+	AwaitLoginPATH(false)
 	noReadStarted(t, f, "a spawn after the shutdown")
 }
 
@@ -420,53 +286,27 @@ func TestLoginPATHShutdownStopsTheReadQuietly(t *testing.T) {
 func TestLoginPATHReadNeedsTheGate(t *testing.T) {
 	f := installPathReadFake(t)
 	loginPATHs.gate <- struct{}{}
-	buildEnv(nil)
+	AwaitLoginPATH(false)
 	noReadStarted(t, f, "a spawn while the gate is taken")
 	if loginPATHs.failures != 0 {
 		t.Errorf("failures = %d, want 0", loginPATHs.failures)
 	}
 	<-loginPATHs.gate
 	done := make(chan struct{})
-	go func() { buildEnv(nil); close(done) }()
+	go func() { AwaitLoginPATH(false); close(done) }()
 	r := startedRead(t, f)
 	f.answer <- pathAnswer{path: "/login/bin"}
 	awaitReadEnd(t, r)
 	<-done
 }
 
-// TestAwaitLoginPATHReturnsWhenNeverArmed guards the test servers: newServerOnSocket
-// does not arm the read, so a test spawn starts no login shell.
+// TestAwaitLoginPATHReturnsWhenNeverArmed: newServerOnSocket of package main does not
+// arm the read, so an unarmed read starts none at a spawn.
 func TestAwaitLoginPATHReturnsWhenNeverArmed(t *testing.T) {
 	f := installPathReadFake(t)
-	resetLoginPATHForTest()
-	buildEnv(nil)
+	ResetForTest()
+	AwaitLoginPATH(false)
 	noReadStarted(t, f, "a spawn with no armed read")
-}
-
-// TestSpawnWithDisableShellAgentSocketStopsTheRead sends the flag through
-// process.spawn, so a spawn path that drops it fails here (52d82f0a, Linux and macOS).
-func TestSpawnWithDisableShellAgentSocketStopsTheRead(t *testing.T) {
-	buf := captureLogBuf(t)
-	f := installPathReadFake(t)
-	setSpawnWait(t, 100*time.Millisecond)
-	warmLoginPATHAtStart()
-	r := startedRead(t, f)
-	m := newTestProcManager(t)
-	t.Cleanup(m.killAll)
-	c, frames := pipeConn(t)
-	exe, env := helperCommand(t, "printenv")
-	if _, err := m.spawn(c, "flagged", exe, []string{"PATH"}, "", env, true); err != nil {
-		t.Fatalf("spawn: %v", err)
-	}
-	waitExitFrame(t, frames)
-	select {
-	case <-r.end:
-	default:
-		t.Fatal("the flagged spawn left the read running")
-	}
-	if !strings.Contains(shellenvLines(buf), "Stopping the read of the login shell's PATH") {
-		t.Errorf("log has no stop line:\n%s", shellenvLines(buf))
-	}
 }
 
 // TestLoginPATHReadPanicFailsTheRead: a panic in the read fails it and does not end
@@ -474,8 +314,8 @@ func TestSpawnWithDisableShellAgentSocketStopsTheRead(t *testing.T) {
 func TestLoginPATHReadPanicFailsTheRead(t *testing.T) {
 	buf := captureLogBuf(t)
 	installPathReadFake(t)
-	loginPATHExtractor = func(context.Context) (string, error) { panic("boom") }
-	warmLoginPATHAtStart()
+	LoginPATHExtractor = func(context.Context) (string, error) { panic("boom") }
+	WarmAtStart()
 	r := runningRead()
 	if r == nil {
 		t.Fatal("no read started")

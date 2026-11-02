@@ -1,8 +1,9 @@
 //go:build unix
 
-package main
+package shellenv
 
 import (
+	"context"
 	"errors"
 	"log"
 	"net"
@@ -509,16 +510,19 @@ func TestDialAgentSocketHung(t *testing.T) {
 	}
 }
 
-// TestSuiteStubsShellAgentSocket guards TestMain's stub: without it, any test
-// that spawns a fixture runs the user's real login shell.
-func TestSuiteStubsShellAgentSocket(t *testing.T) {
+// TestSuiteStubsBothLoginShellSteps guards the stubs of TestMain: without them, a
+// test of this package that reaches either step runs the user's real login shell.
+func TestSuiteStubsBothLoginShellSteps(t *testing.T) {
 	ran := filepath.Join(t.TempDir(), "ran")
 	fakeLoginShell(t, `touch '`+ran+`'; SSH_AUTH_SOCK=/tmp/real.sock; export SSH_AUTH_SOCK; exec /bin/sh -c "$4"`)
-	if got := shellAgentSocket(); got != "" {
-		t.Errorf("shellAgentSocket() = %q, want the suite stub's empty answer", got)
+	if got := AgentSocket(); got != "" {
+		t.Errorf("AgentSocket() = %q, want the suite stub's empty answer", got)
+	}
+	if _, err := LoginPATHExtractor(context.Background()); err == nil {
+		t.Error("LoginPATHExtractor() gave a PATH, want the suite stub's error")
 	}
 	if _, err := os.Stat(ran); err == nil {
-		t.Error("a login shell ran: TestMain no longer stubs the lookup")
+		t.Error("a login shell ran: TestMain no longer stubs both steps")
 	}
 }
 
@@ -564,7 +568,7 @@ func TestPATHReadHoldsTheGateOfTheHandOff(t *testing.T) {
 	f := newFakeHandOff("/tmp/a.sock")
 	f.gate = loginPATHs.gate
 	f.live["/tmp/a.sock"] = true
-	warmLoginPATHAtStart()
+	WarmAtStart()
 	r := startedRead(t, p)
 	if got := f.socket(); got != "" || f.probes != 0 {
 		t.Fatalf("during the read: got %q, probes %d; want no shell", got, f.probes)

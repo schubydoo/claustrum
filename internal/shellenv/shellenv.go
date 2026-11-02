@@ -1,4 +1,4 @@
-package main
+package shellenv
 
 import (
 	"context"
@@ -6,6 +6,8 @@ import (
 	"os"
 	"sync"
 	"time"
+
+	"github.com/schubydoo/claustrum/internal/logging"
 )
 
 // The daemon reads the PATH of the login shell for its children. Measured on Linux
@@ -34,9 +36,9 @@ import (
 // (shellenv_windows.go). claustrum's own there, not measured: the read at the start
 // and the removal of the variable.
 
-// noLoginPATHWarmEnv names the variable whose value 1 keeps the read from starting
+// NoLoginPATHWarmEnv names the variable whose value 1 keeps the read from starting
 // at the start of the daemon.
-const noLoginPATHWarmEnv = "CLAUDE_SSH_NO_LOGIN_PATH_WARM"
+const NoLoginPATHWarmEnv = "CLAUDE_SSH_NO_LOGIN_PATH_WARM"
 
 // The bounds of the read and of the spawn wait. Variables so tests can shrink them.
 var (
@@ -60,9 +62,9 @@ const (
 	loginPATHMaxFailures = 16
 )
 
-// loginPATHExtractor runs one read. The context ends at a stop. Production uses the
+// LoginPATHExtractor runs one read. The context ends at a stop. Production uses the
 // per-platform extractLoginPATH. A seam for tests.
-var loginPATHExtractor = extractLoginPATH
+var LoginPATHExtractor = extractLoginPATH
 
 // loginShellGate lets one login shell run at a time: the PATH read or the run of the
 // SSH agent hand-off. A step that finds it taken runs no shell.
@@ -91,7 +93,7 @@ type loginPATHRun struct {
 // loginPATHState is the state of the PATH read of the daemon.
 type loginPATHState struct {
 	mu       sync.Mutex
-	armed    bool // only the daemon arms the read (runServe), never a test server
+	armed    bool // only the daemon arms the read (runServe of package main), never a test server of package main
 	closed   bool // the daemon shuts down, so no read starts
 	good     bool // a read gave a PATH, so no read runs again
 	path     string
@@ -106,26 +108,26 @@ type loginPATHState struct {
 
 var loginPATHs = &loginPATHState{clock: time.Now, gate: loginShellGate}
 
-// currentLoginPATH returns the PATH of the last good read, or "" before one.
-func currentLoginPATH() string {
+// CurrentLoginPATH returns the PATH of the last good read, or "" before one.
+func CurrentLoginPATH() string {
 	loginPATHs.mu.Lock()
 	defer loginPATHs.mu.Unlock()
 	return loginPATHs.path
 }
 
-// armLoginPATH lets the reads of the login-shell PATH run. A test server never arms
-// them, so it never starts a login shell.
+// armLoginPATH lets the reads of the login-shell PATH run. A test server of package
+// main never arms them, so it never starts a login shell.
 func armLoginPATH() {
 	loginPATHs.mu.Lock()
 	loginPATHs.armed = true
 	loginPATHs.mu.Unlock()
 }
 
-// warmLoginPATHAtStart arms the read and starts it, unless the variable of
-// noLoginPATHWarmEnv is 1. Either way the variable leaves the daemon environment.
-func warmLoginPATHAtStart() {
-	warm := os.Getenv(noLoginPATHWarmEnv) != "1"
-	_ = os.Unsetenv(noLoginPATHWarmEnv)
+// WarmAtStart arms the read and starts it, unless the variable of
+// NoLoginPATHWarmEnv is 1. Either way the variable leaves the daemon environment.
+func WarmAtStart() {
+	warm := os.Getenv(NoLoginPATHWarmEnv) != "1"
+	_ = os.Unsetenv(NoLoginPATHWarmEnv)
 	armLoginPATH()
 	if warm {
 		loginPATHs.mu.Lock()
@@ -134,10 +136,10 @@ func warmLoginPATHAtStart() {
 	}
 }
 
-// awaitLoginPATH runs at each spawn before its environment is built. It starts a
+// AwaitLoginPATH runs at each spawn before its environment is built. It starts a
 // read that is due and waits for a running read, within the bounds above. A spawn
 // with noShellAgent ends a read that still runs after that wait.
-func awaitLoginPATH(noShellAgent bool) {
+func AwaitLoginPATH(noShellAgent bool) {
 	s := loginPATHs
 	s.mu.Lock()
 	if !s.armed || s.good || s.closed {
@@ -199,11 +201,11 @@ func (s *loginPATHState) read(ctx context.Context, r *loginPATHRun) {
 	case err == nil:
 		s.good, s.path = true, path
 		if loginPATHFromShell {
-			logDebugf("[shellenv] Extracted shell PATH (%d chars) in %s, after %d failed read(s)", len(path), took, s.failures)
+			logging.Debugf("[shellenv] Extracted shell PATH (%d chars) in %s, after %d failed read(s)", len(path), took, s.failures)
 		}
 	default:
 		s.failures++
-		logWarnf("[shellenv] Could not read PATH from the login shell after %s (%s): %v", took, s.failureNoteLocked(), err)
+		logging.Warnf("[shellenv] Could not read PATH from the login shell after %s (%s): %v", took, s.failureNoteLocked(), err)
 	}
 	s.mu.Unlock()
 	close(r.end)
@@ -214,11 +216,11 @@ func (s *loginPATHState) read(ctx context.Context, r *loginPATHRun) {
 func (s *loginPATHState) extract(ctx context.Context) (path string, err error) {
 	defer func() {
 		if v := recover(); v != nil {
-			logErrorf("[shellenv] recovered panic in the read of the login-shell PATH: %v", v)
+			logging.Errorf("[shellenv] recovered panic in the read of the login-shell PATH: %v", v)
 			path, err = "", fmt.Errorf("recovered panic: %v", v)
 		}
 	}()
-	return loginPATHExtractor(ctx)
+	return LoginPATHExtractor(ctx)
 }
 
 // failureNoteLocked records when the next read can start, and renders the note of
@@ -246,7 +248,7 @@ func (s *loginPATHState) stop(r *loginPATHRun, shutdown bool) {
 	if shutdown {
 		r.quiet = true
 	} else if !r.stopped {
-		logInfof("[shellenv] Stopping the read of the login shell's PATH at the desktop's word " +
+		logging.Infof("[shellenv] Stopping the read of the login shell's PATH at the desktop's word " +
 			"(disableShellAgentSocket); spawns that carry it start no other after a failure")
 	}
 	r.stopped = true
@@ -255,9 +257,9 @@ func (s *loginPATHState) stop(r *loginPATHRun, shutdown bool) {
 	waitUpTo(r.end, loginPATHStopWait)
 }
 
-// stopLoginPATH ends a running read at the shutdown. No read starts after it. It
-// changes nothing when the read is not armed, as in a test server.
-func stopLoginPATH() {
+// Stop ends a running read at the shutdown. No read starts after it. It
+// changes nothing when the read is not armed, as in a test server of package main.
+func Stop() {
 	s := loginPATHs
 	s.mu.Lock()
 	if !s.armed {

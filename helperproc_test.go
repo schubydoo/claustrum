@@ -17,6 +17,8 @@ import (
 	"syscall"
 	"testing"
 	"time"
+
+	"github.com/schubydoo/claustrum/internal/shellenv"
 )
 
 // TestMain doubles the test binary as a tiny cross-platform fixture command
@@ -71,10 +73,10 @@ func TestMain(m *testing.M) {
 	if mode == "" {
 		// Spawning a fixture must not start the user's login shell to look for an
 		// SSH agent. The tests that cover the hand-off swap in their own stub.
-		shellAgentSocket = func() string { return "" }
+		shellenv.AgentSocket = func() string { return "" }
 		// A test that boots runServe starts no login shell for the PATH read either.
 		// The tests of the read set their own extractor.
-		loginPATHExtractor = func(context.Context) (string, error) {
+		shellenv.LoginPATHExtractor = func(context.Context) (string, error) {
 			return "", errors.New("the suite stubs the login-shell read")
 		}
 		if err := makeFixtureTemplateRoot(); err != nil {

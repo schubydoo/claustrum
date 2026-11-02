@@ -1,6 +1,6 @@
 //go:build unix
 
-package main
+package shellenv
 
 import (
 	"context"
@@ -14,6 +14,10 @@ import (
 	"testing"
 	"time"
 )
+
+// daemonChildMarker is the variable that package main sets in the environment of
+// a daemon child.
+const daemonChildMarker = "CLAUDE_SSH_DAEMON_CHILD"
 
 // markerOfPATHRead sets $m to the sentinel of the inner command in "$4". It uses
 // only the shell, no other program.
@@ -255,12 +259,12 @@ func startSleepingRead(t *testing.T, start func()) int {
 	t.Helper()
 	pidFile := filepath.Join(t.TempDir(), "pid")
 	t.Setenv("SHELL", writeFakeShell(t, `echo $$ > '`+pidFile+`'; `+helperInShell(t, "sleep", "30")))
-	resetLoginPATHForTest()
-	old := loginPATHExtractor
-	loginPATHExtractor = extractLoginPATH
+	ResetForTest()
+	old := LoginPATHExtractor
+	LoginPATHExtractor = extractLoginPATH
 	t.Cleanup(func() {
-		resetLoginPATHForTest()
-		loginPATHExtractor = old
+		ResetForTest()
+		LoginPATHExtractor = old
 	})
 	start()
 	deadline := time.Now().Add(10 * time.Second)
@@ -288,12 +292,12 @@ func startSleepingRead(t *testing.T, start func()) int {
 // line follows (Linux). The group holds only children of this test.
 func TestShutdownKillsTheShellGroupOfTheRead(t *testing.T) {
 	buf := captureLogBuf(t)
-	pid := startSleepingRead(t, warmLoginPATHAtStart)
+	pid := startSleepingRead(t, WarmAtStart)
 	if err := syscall.Kill(-pid, 0); err != nil {
 		t.Fatalf("the shell %d leads no process group: %v", pid, err)
 	}
 	r := runningRead()
-	stopLoginPATH()
+	Stop()
 	groupGone(t, pid)
 	awaitReadEnd(t, r)
 	if got := shellenvLines(buf); got != "" {
@@ -307,12 +311,12 @@ func TestShutdownKillsTheShellGroupOfTheRead(t *testing.T) {
 func TestFlaggedSpawnKillsTheShellGroupOfTheRead(t *testing.T) {
 	buf := captureLogBuf(t)
 	setSpawnWait(t, 100*time.Millisecond)
-	pid := startSleepingRead(t, warmLoginPATHAtStart)
+	pid := startSleepingRead(t, WarmAtStart)
 	if err := syscall.Kill(-pid, 0); err != nil {
 		t.Fatalf("the shell %d leads no process group: %v", pid, err)
 	}
 	r := runningRead()
-	buildSpawnEnv(nil, true)
+	AwaitLoginPATH(true)
 	groupGone(t, pid)
 	awaitReadEnd(t, r)
 	if got := shellenvLines(buf); !strings.Contains(got, "Stopping the read of the login shell's PATH") ||
@@ -483,19 +487,4 @@ func TestSafeLoginShellTakesTheFirstExecutableCandidate(t *testing.T) {
 	if got := safeLoginShell(); got != second {
 		t.Errorf("safeLoginShell() = %q, want %q after reordering the list", got, second)
 	}
-}
-
-// stubLoginPATHExtractor makes the read a stub that waits for its stop, for a test
-// that boots runServe. The cleanup ends a read that the start left running.
-func stubLoginPATHExtractor(t *testing.T) {
-	t.Helper()
-	old := loginPATHExtractor
-	loginPATHExtractor = func(ctx context.Context) (string, error) {
-		<-ctx.Done()
-		return "", ctx.Err()
-	}
-	t.Cleanup(func() {
-		resetLoginPATHForTest()
-		loginPATHExtractor = old
-	})
 }

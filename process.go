@@ -1831,7 +1831,7 @@ func buildEnv(env map[string]string) []string { return buildSpawnEnv(env, false)
 // of the request, which ends a read of the login-shell PATH that still runs.
 func buildSpawnEnv(env map[string]string, noShellAgent bool) []string {
 	// A spawn starts a read of the login-shell PATH that is due, and waits for a
-	// running read within its bounds (shellenv.go). A no-op after a good read, and
+	// running read within its bounds (internal/shellenv/shellenv.go). A no-op after a good read, and
 	// when the read is not armed (a test server).
 	awaitLoginPATH(noShellAgent)
 	base := removeEnvKey(os.Environ(), "CLAUDE_RPC_TOKEN")
@@ -1842,7 +1842,7 @@ func buildSpawnEnv(env map[string]string, noShellAgent bool) []string {
 	// The base holds no CLAUDE_SSH_PEER_CHECK: the daemon removed it from its own
 	// environment at its start (startPeerCheck). A caller key of that name passes.
 	// The login-shell PATH is applied HERE, to the child's environment, rather
-	// than being installed into the daemon's own — see loginPATHs in shellenv.go.
+	// than being installed into the daemon's own — see loginPATHs in internal/shellenv/shellenv.go.
 	// Applied before the caller's env so an explicit PATH in the spawn request
 	// still wins. On Windows the value is the daemon's own PATH, and the exact name
 	// PATH matters. A daemon entry named Path stays in the slice, and os/exec keeps
