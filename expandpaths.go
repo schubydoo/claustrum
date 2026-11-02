@@ -2,12 +2,6 @@ package main
 
 // Each params struct has an ExpandPaths method, so it implements
 // rpc.PathExpander, the parameter type of rpc.Bind.
-func (p *pathParams) ExpandPaths()     { p.Path = expandPath(p.Path) }
-func (p *fileReadParams) ExpandPaths() { p.Path = expandPath(p.Path) }
-func (p *extractTarParams) ExpandPaths() {
-	p.ArchivePath = expandPath(p.ArchivePath)
-	p.DestDir = expandPath(p.DestDir)
-}
 func (p *gitParams) ExpandPaths() {
 	p.Path = expandPath(p.Path)
 	p.BaseRepo = expandPath(p.BaseRepo)

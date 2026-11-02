@@ -1,0 +1,7 @@
+//go:build windows
+
+package files
+
+// unreadableDestDirGoes turns on removeUnreadableDestEntry. A test turns it
+// on off Windows to hold the gates of that step. Production never reassigns it.
+var unreadableDestDirGoes = true

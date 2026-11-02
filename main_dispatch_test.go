@@ -10,6 +10,8 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/schubydoo/claustrum/internal/files"
 )
 
 // lastMainFlagSet is the FlagSet the most recent runMain handed to main(), kept
@@ -24,7 +26,7 @@ var lastMainFlagSet *flag.FlagSet
 // -install output doesn't pollute the test log.
 //
 // The -install and -serve arms of main() also WRITE package globals
-// (cliDownloadTimeout, maxCLIBytes, maxExtractBytes) and never restore them, so
+// (cliDownloadTimeout, maxCLIBytes, files.MaxExtractBytes) and never restore them, so
 // without the save/restore below a `-install` run here leaks its resolved values
 // into every later test. Reproduced 2026-08-07 with the cli-probe-timeout key,
 // which is retired since. A claustrum.conf beside a pre-built test binary made 4
@@ -41,10 +43,10 @@ func runMain(t *testing.T, args ...string) (code int, exited bool) {
 	// would put the globals back before the caller can assert on what main()
 	// actually resolved. t.Cleanup still contains the leak to this one test.
 	oldDownload := cliDownloadTimeout
-	oldMaxCLI, oldMaxExtract := maxCLIBytes, maxExtractBytes
+	oldMaxCLI, oldMaxExtract := maxCLIBytes, files.MaxExtractBytes
 	t.Cleanup(func() {
 		cliDownloadTimeout = oldDownload
-		maxCLIBytes, maxExtractBytes = oldMaxCLI, oldMaxExtract
+		maxCLIBytes, files.MaxExtractBytes = oldMaxCLI, oldMaxExtract
 	})
 	oldStdout := os.Stdout
 	devnull, err := os.OpenFile(os.DevNull, os.O_WRONLY, 0)
@@ -206,12 +208,12 @@ func TestInstallWithoutDeprecatedFlagsLogsNoWarning(t *testing.T) {
 // the assertion follows it — t.Cleanup fires at the subtest's end.
 func TestRunMainRestoresInstallGlobals(t *testing.T) {
 	oldDownload := cliDownloadTimeout
-	oldMaxCLI, oldMaxExtract := maxCLIBytes, maxExtractBytes
+	oldMaxCLI, oldMaxExtract := maxCLIBytes, files.MaxExtractBytes
 	cliDownloadTimeout = 4 * time.Second
-	maxCLIBytes, maxExtractBytes = 11, 22
+	maxCLIBytes, files.MaxExtractBytes = 11, 22
 	t.Cleanup(func() {
 		cliDownloadTimeout = oldDownload
-		maxCLIBytes, maxExtractBytes = oldMaxCLI, oldMaxExtract
+		maxCLIBytes, files.MaxExtractBytes = oldMaxCLI, oldMaxExtract
 	})
 	t.Run("inner", func(t *testing.T) {
 		if _, exited := runMain(t, "-install",
@@ -226,7 +228,7 @@ func TestRunMainRestoresInstallGlobals(t *testing.T) {
 	}{
 		{"cliDownloadTimeout", cliDownloadTimeout, 4 * time.Second},
 		{"maxCLIBytes", maxCLIBytes, int64(11)},
-		{"maxExtractBytes", maxExtractBytes, int64(22)},
+		{"files.MaxExtractBytes", files.MaxExtractBytes, int64(22)},
 	} {
 		if c.got != c.want {
 			t.Errorf("%s = %v after runMain, want %v restored", c.name, c.got, c.want)
@@ -235,17 +237,17 @@ func TestRunMainRestoresInstallGlobals(t *testing.T) {
 }
 
 // The -serve half of the same contract, and it needs its own test rather than one
-// more row above: only an inner run that actually WRITES maxExtractBytes in the
+// more row above: only an inner run that actually WRITES files.MaxExtractBytes in the
 // -serve arm can detect a missing restore.
 func TestRunMainRestoresServeGlobals(t *testing.T) {
 	t.Setenv(daemonChildEnv, "1")
 	// Capture on entry rather than restoring the literal 0: writing the
 	// shipped default back by hand couples this cleanup to what that default
 	// happens to be, which is precisely the thing other tests exist to pin.
-	oldExtract := maxExtractBytes
-	maxExtractBytes = 33
+	oldExtract := files.MaxExtractBytes
+	files.MaxExtractBytes = 33
 	t.Cleanup(func() {
-		maxExtractBytes = oldExtract
+		files.MaxExtractBytes = oldExtract
 	})
 	t.Run("inner", func(t *testing.T) {
 		// Distinct from the seeds above on purpose: equal values would pass whether
@@ -261,7 +263,7 @@ func TestRunMainRestoresServeGlobals(t *testing.T) {
 		got  any
 		want any
 	}{
-		{"maxExtractBytes", maxExtractBytes, int64(33)},
+		{"files.MaxExtractBytes", files.MaxExtractBytes, int64(33)},
 	} {
 		if c.got != c.want {
 			t.Errorf("%s = %v after runMain, want %v restored", c.name, c.got, c.want)
@@ -352,8 +354,8 @@ func TestServeArmWiresExtractCapAndDeprecatedFlags(t *testing.T) {
 	if n := strings.Count(buf.String(), "-git-timeout is deprecated and ignored"); n != 1 {
 		t.Errorf("-git-timeout deprecation warnings = %d, want exactly 1; log:\n%s", n, buf.String())
 	}
-	if maxExtractBytes != 4096 {
-		t.Errorf("maxExtractBytes = %d, want 4096 — the two -serve knobs must not be crossed", maxExtractBytes)
+	if files.MaxExtractBytes != 4096 {
+		t.Errorf("files.MaxExtractBytes = %d, want 4096 — the two -serve knobs must not be crossed", files.MaxExtractBytes)
 	}
 	// -files-read-regular-only is a deprecated no-op (D4, retired). It logs its
 	// warning once.

@@ -12,13 +12,6 @@ type (
 
 	pongResult            = rpc.PongResult
 	capabilitiesResult    = rpc.CapabilitiesResult
-	statResult            = rpc.StatResult
-	listEntry             = rpc.ListEntry
-	listResult            = rpc.ListResult
-	readResult            = rpc.ReadResult
-	realpathResult        = rpc.RealpathResult
-	validateResult        = rpc.ValidateResult
-	extractResult         = rpc.ExtractResult
 	shutdownResult        = rpc.ShutdownResult
 	spawnResult           = rpc.SpawnResult
 	gitInfoResult         = rpc.GitInfoResult

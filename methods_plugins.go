@@ -36,9 +36,6 @@ import (
 // parity fields; their reference triggers are not pinned). Measured against
 // 19f30c46 and against a live Desktop session.
 
-// pluginHashRE matches a plugin content-hash directory name (16 lowercase hex).
-var pluginHashRE = regexp.MustCompile(`^[0-9a-f]{16}$`)
-
 // pruneResult is plugins.prune's reply. Field order is the reference's, so the
 // serialized frame is byte-compatible. pruned/prunedLegacy are never omitempty
 // (they emit [] when empty); skipped/errors are omitempty.

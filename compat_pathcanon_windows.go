@@ -8,5 +8,3 @@ import "github.com/schubydoo/claustrum/internal/pathcanon"
 // package main uses.
 
 func onNetwork(p string) bool { return pathcanon.OnNetwork(p) }
-
-func isDriveLetter(c byte) bool { return pathcanon.IsDriveLetter(c) }

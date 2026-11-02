@@ -47,9 +47,9 @@ in-progress commit, run `git commit --no-verify`.
   `.github/workflows/ci.yml` holds that floor. The suite currently sits near
   99%, so an untested change shows up as a drop.
 - Compatibility. If you touch the wire surface (`rpc.go`, `methods_*.go`,
-  `process.go`, `internal/rpc/`), the frames must stay byte-identical. A golden
-  fixture (`testdata/socket_*.golden.json`) changes only for a new reference
-  frame or a documented divergence. A change that diverges on
+  `process.go`, `internal/rpc/`, `internal/files/`), frames must stay
+  byte-identical. A golden fixture (`testdata/socket_*.golden.json`) changes
+  only for a new reference frame or a documented divergence. A change that diverges on
   purpose must say so in the PR. It must add an entry to the divergence catalog
   in [docs/DIVERGENCES.md](docs/DIVERGENCES.md). It must record its wire frames
   in [docs/PROTOCOL.md](docs/PROTOCOL.md), or in the page of its method under

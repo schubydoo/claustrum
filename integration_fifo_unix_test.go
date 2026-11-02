@@ -12,6 +12,8 @@ import (
 	"syscall"
 	"testing"
 	"time"
+
+	"github.com/schubydoo/claustrum/internal/files"
 )
 
 // TestSocketFilesReadNonRegular pins the rule of files.read for a path that is
@@ -123,7 +125,7 @@ func TestSocketFilesReadFifoWithWriter(t *testing.T) {
 // TestFilesReadNullDeviceIsOneFile pins that the null device test is the
 // identity of the file. 5fd08069 refuses a second device node with the numbers
 // of /dev/null (measured on Linux and macOS). A device node needs root, so
-// this test uses the nullDevicePath seam and two FIFOs. Both have the same
+// this test uses the files.NullDevicePath seam and two FIFOs. Both have the same
 // kind and the same device numbers. The one that the seam names reads as empty
 // content. The other is refused.
 func TestFilesReadNullDeviceIsOneFile(t *testing.T) {
@@ -131,9 +133,9 @@ func TestFilesReadNullDeviceIsOneFile(t *testing.T) {
 	named, other := filepath.Join(root, "named"), filepath.Join(root, "other")
 	mustMkfifo(t, named)
 	mustMkfifo(t, other)
-	old := nullDevicePath
-	t.Cleanup(func() { nullDevicePath = old })
-	nullDevicePath = named
+	old := files.NullDevicePath
+	t.Cleanup(func() { files.NullDevicePath = old })
+	files.NullDevicePath = named
 	defer releaseFifoReader(named)
 	defer releaseFifoReader(other)
 

@@ -1,7 +1,6 @@
 package main
 
 import (
-	"errors"
 	"runtime/debug"
 	"testing"
 )
@@ -187,11 +186,5 @@ func TestApplyModuleVersionAppliesReleaseStamp(t *testing.T) {
 	}
 	if BuildTime != releaseTime {
 		t.Errorf("BuildTime = %q, want the baked stamp %q", BuildTime, releaseTime)
-	}
-}
-
-func TestGzipErrPrefix(t *testing.T) {
-	if got := (gzipErr{errors.New("invalid header")}).Error(); got != "gzip: invalid header" {
-		t.Errorf("gzipErr.Error() = %q, want %q", got, "gzip: invalid header")
 	}
 }
