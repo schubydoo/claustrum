@@ -204,6 +204,27 @@ func TestInstallWarnsForTheDeprecatedCLIProbeConfigKey(t *testing.T) {
 }
 
 // The claustrum.conf key reaches the same warning as the flag. With
+// `libc-probe-timeout = 20s` in the file and no flag, -install logs the
+// -libc-probe-timeout warning once and no -cli-probe-timeout warning.
+func TestInstallWarnsForTheDeprecatedLibcProbeConfigKey(t *testing.T) {
+	dir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(dir, configFileName), []byte("libc-probe-timeout = 20s\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	stubOsExecutable(t, filepath.Join(dir, "claustrum"), nil)
+	buf := captureLogBuf(t)
+	if _, exited := runMain(t, "-install"); exited {
+		t.Fatal("-install should return, not exit")
+	}
+	if n := strings.Count(buf.String(), "-libc-probe-timeout is deprecated and ignored"); n != 1 {
+		t.Errorf("-libc-probe-timeout deprecation warnings = %d, want exactly 1; log:\n%s", n, buf.String())
+	}
+	if strings.Contains(buf.String(), "-cli-probe-timeout is deprecated") {
+		t.Errorf("the libc-probe-timeout key logged the -cli-probe-timeout warning:\n%s", buf.String())
+	}
+}
+
+// The claustrum.conf key reaches the same warning as the flag. With
 // `files-read-regular-only = true` in the file and no flag, -serve logs the
 // warning once. A plain -serve logs none.
 func TestServeWarnsForTheDeprecatedReadRegularOnlyConfigKey(t *testing.T) {
