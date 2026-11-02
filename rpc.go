@@ -77,7 +77,7 @@ func (s *server) route(c *conn, req request) *response {
 	case "files":
 		return ptr(s.handleFiles(&req))
 	case "git":
-		return ptr(s.handleGit(&req))
+		return ptr(handleGit(s.gitDeps(), &req))
 	case "process":
 		r := s.handleProcess(c, &req)
 		if r.NoFrame {

@@ -13,7 +13,8 @@ import (
 	"time"
 )
 
-func (s *server) handleGit(r *request) response {
+// handleGit answers a request of the five git methods with the daemon state in d.
+func handleGit(d *gitDeps, r *request) response {
 	req := &gitCall{request: r}
 	var fn func(*gitCall) response
 	switch req.Method {
@@ -33,20 +34,20 @@ func (s *server) handleGit(r *request) response {
 	if bad := needParams(req.request); bad != nil {
 		return *bad
 	}
-	req.shadow = s.gitShadow
+	req.shadow = d.Shadow
 	// The daemon-wide window of gitWideLimit counts this request while it runs.
 	if offSwitchSet(req.Params) {
-		s.offGitRequests.Add(1)
-		defer s.offGitRequests.Add(-1)
+		d.OffRequests.Add(1)
+		defer d.OffRequests.Add(-1)
 	}
 	// While a request with "shadowDirOff":true runs, every git request that
 	// starts, and each later git command of a request, run as with the member
 	// (measured on Linux). The count is read live (gitCall.offLive).
-	req.offHold = &s.offGitRequests
+	req.offHold = d.OffRequests
 	if !limitedGitMethod(req.Method) {
 		return fn(req)
 	}
-	req.stop = &gitStop{wide: &s.offGitRequests}
+	req.stop = &gitStop{wide: d.OffRequests}
 	req.use.stop = req.stop
 	return req.stop.reply(req, fn(req))
 }
