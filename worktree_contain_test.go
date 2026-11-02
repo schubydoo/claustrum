@@ -17,3 +17,19 @@ func TestPathStrictlyUnderRelError(t *testing.T) {
 		t.Error("the root itself must not be strictly under itself")
 	}
 }
+
+// TestWorktreePathRefusalTicksLeaf pins the "not inside" text of create and
+// remove: the leaf in backticks and the repository as it is (be1c1ca5, measured
+// on Linux).
+func TestWorktreePathRefusalTicksLeaf(t *testing.T) {
+	base := t.TempDir()
+	repo := filepath.Join(base, "repo")
+	leaf := filepath.Join(base, "wt1")
+	for _, verb := range []string{"create", "remove"} {
+		want := "refusing to " + verb + " worktree: `" + leaf + "` is not inside the repository " + repo +
+			"; session worktrees are only created and removed under <repository>/.claude/worktrees"
+		if got := worktreePathRefusal(repo, leaf, verb); got != want {
+			t.Errorf("%s: got  %q\nwant %q", verb, got, want)
+		}
+	}
+}
