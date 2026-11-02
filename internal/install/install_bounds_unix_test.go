@@ -43,16 +43,6 @@ func waitStubChild(t *testing.T, f *stubFixture) int {
 	return pid
 }
 
-// stubChildRecorded reports whether the stub wrote the pid of its child.
-func (f *stubFixture) stubChildRecorded() bool {
-	b, err := os.ReadFile(f.childPID)
-	if err != nil {
-		return false
-	}
-	pid, err := strconv.Atoi(strings.TrimSpace(string(b)))
-	return err == nil && pid > 1
-}
-
 // goneWithin reports whether pid stops existing within d.
 func goneWithin(pid int, d time.Duration) bool {
 	deadline := time.Now().Add(d)
