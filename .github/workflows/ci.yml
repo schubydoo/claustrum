@@ -134,6 +134,10 @@ jobs:
     if: ${{ !cancelled() && needs.changes.outputs.go != 'false' }}
     name: test (${{ matrix.os }}${{ matrix.shard && format(', {0}', matrix.shard) || '' }})
     runs-on: ${{ matrix.os }}
+    # On Windows the setup and the compile take up to about 3.3 minutes. A hung
+    # test binary there reaches the 12 minute limit at about 15.3 minutes.
+    # So the Windows legs get a job limit of 17 minutes, and the stack of the
+    # hung test prints before the cancel. macOS and Linux keep 15 minutes.
     timeout-minutes: ${{ matrix.os == 'windows-latest' && 17 || 15 }}
     strategy:
       fail-fast: false
@@ -146,10 +150,6 @@ jobs:
       # the TestShadow and the TestProbe tests, and the rest shard skips them.
       # The macOS rest shard ran 11 to 12 minutes on main with TestShadow and
       # TestProbe in it, and one added test passed the limit.
-      # On Windows the setup and the compile take up to about 3.3 minutes. A hung
-      # test binary there reaches the 12 minute limit at about 15.3 minutes.
-      # So the Windows legs get a job limit of 17 minutes, and the stack of the
-      # hung test prints before the cancel. macOS and Linux keep 15 minutes.
       # Linux runs the same two shards as macOS, so that the Linux legs end sooner.
       # The tests named TestRepoHold are tests of the settings copy too, so they
       # go with TestShadow in every shard set. The Windows rest shard passed its
