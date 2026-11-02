@@ -11,10 +11,10 @@ import (
 
 // The guard tests of the rule that no delete of a remove or of a create goes
 // behind a registrations folder that is a symbolic link (registrationsLinked,
-// openRegistrationsFolder, acceptedGitDir.deleteRoot). The rule follows cell C3
-// of round tier0-24 (Linux VM). For a create it is not measured. Each test
-// works in temp folders only: R/.git/worktrees is a link to T, and T holds the
-// entry w1 whose record names the leaf R/.claude/worktrees/w1.
+// openRegistrationsFolder, acceptedGitDir.deleteRoot). The rule is measured on
+// Linux. For a create it is not measured. Each test works in temp folders only:
+// R/.git/worktrees is a link to T, and T holds the entry w1 whose record names
+// the leaf R/.claude/worktrees/w1.
 
 // linkedRegistrations makes that state. It returns the repository, the leaf
 // and T.

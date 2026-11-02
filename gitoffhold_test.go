@@ -131,11 +131,11 @@ func settingsControlOf(t *testing.T, result json.RawMessage) string {
 }
 
 // While a git.info with "shadowDirOff":true on repository A runs, a git.info on
-// repository B without the member answers "settingsControl":"off-switch" (cell
-// H1 of round task073-02, Linux VM). After the first request answered, the next
-// git.info on B answers "shadow" again (cell H2). The reply reads the hold when
-// it is made (cell O2 of round task103-02). Mutation: read req.offOwn in place of
-// req.offLive() at the reply of gitInfo.
+// repository B without the member answers "settingsControl":"off-switch"
+// (measured on Linux). After the first request answered, the next git.info on B
+// answers "shadow" again (measured). The reply reads the hold when it is made
+// (measured). Mutation: read req.offOwn in place of req.offLive() at the reply of
+// gitInfo.
 func TestOffSwitchHoldsTheDaemonWhileARequestRuns(t *testing.T) {
 	h := newOffHoldFixture(t, "remote,get-url")
 	h.send(t, 1, "git.info", map[string]any{"path": h.repo, "shadowDirOff": true})
@@ -162,10 +162,10 @@ func TestOffSwitchHoldsTheDaemonWhileARequestRuns(t *testing.T) {
 
 // While a git.status with "shadowDirOff":true runs, a git.worktree_create on
 // another repository without the member runs as one with it. 5fd08069 answers
-// success on both, and no call of the create names a copy (cell H4 of round
-// task073-02, Linux VM). The hold stays live for the whole create here, so each
-// command of it has no copy (gitoffform_test.go has the changes of the hold).
-// Mutation: set p.ShadowDirOff from req.offOwn alone in bindGitParams.
+// success on both, and no call of the create names a copy (measured on Linux).
+// The hold stays live for the whole create here, so each command of it has no
+// copy (gitoffform_test.go has the changes of the hold). Mutation: set
+// p.ShadowDirOff from req.offOwn alone in bindGitParams.
 func TestOffSwitchHoldCoversACreate(t *testing.T) {
 	h := newOffHoldFixture(t, "status,--porcelain")
 	h.send(t, 1, "git.status", map[string]any{"path": h.wt, "baseRepo": h.repo, "shadowDirOff": true})

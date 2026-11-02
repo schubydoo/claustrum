@@ -61,9 +61,10 @@ func requireAbsent(t *testing.T, paths ...string) {
 	}
 }
 
-// The parent step of git.worktree_create fails with the texts of f6010b97 (Linux
-// and macOS VMs), and it creates nothing. In the repo, a component that is a file
-// reads "<path> is not a directory", and a denied create names only the component.
+// The parent step of git.worktree_create fails with the texts of f6010b97
+// (measured on Linux and macOS), and it creates nothing. In the repo, a component
+// that is a file reads "<path> is not a directory", and a denied create names only
+// the component.
 func TestWorktreeCreateParentFailureTextsInRepo(t *testing.T) {
 	cases := []struct {
 		name  string
@@ -129,7 +130,7 @@ func TestWorktreeCreateParentFailureTextsInRepo(t *testing.T) {
 
 // With a worktreeRoot, a root or a path above it that is a file reads "<path>: not
 // a directory". A denied create of the first missing directory names that
-// directory. Nothing is created. Measured against f6010b97 on Linux and macOS VMs.
+// directory. Nothing is created. Measured against f6010b97 on Linux and macOS.
 func TestWorktreeCreateParentFailureTextsExternal(t *testing.T) {
 	cases := []struct {
 		name string
@@ -278,7 +279,7 @@ func TestWorktreeCreateDirModes(t *testing.T) {
 }
 
 // An external create leaves an existing .claude-managed-worktrees marker as it
-// is, content and mode. f6010b97 does the same on Linux and macOS VMs.
+// is, content and mode. f6010b97 does the same on Linux and macOS.
 func TestWorktreeCreateKeepsExistingMarker(t *testing.T) {
 	base, repo := createModesRepo(t)
 	requireTempOutsideCheckout(t, base)

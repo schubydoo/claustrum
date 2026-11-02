@@ -11,9 +11,9 @@ import (
 
 // TestInstallWorktreeIndexCopy pins the copy of installWorktreeIndex on Windows.
 // The file of the checkout is never moved: it stays with its bytes, as on
-// 5fd08069 (cell V5i of val-s3p2b2-5-windows, Windows VM). A full copy lands at
-// dst. A write that fails partway leaves no dst and no temporary file, so git
-// never reads a partial index.
+// 5fd08069 (measured on Windows). A full copy lands at dst. A write that fails
+// partway leaves no dst and no temporary file, so git never reads a partial
+// index.
 func TestInstallWorktreeIndexCopy(t *testing.T) {
 	for _, tc := range []struct {
 		name     string

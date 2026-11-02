@@ -17,9 +17,9 @@ import (
 
 // TestShadowFolderModesAndLock pins the modes of the folder of one daemon and
 // the lock that the daemon holds. On 5fd08069 git-shadow and the folder of the
-// daemon have 0700, and the lock file has 0600 and 0 bytes (s3p2-oldgit section
-// 5 and s3-linux cell A3, Linux VM). The daemon holds an exclusive flock on the
-// file for its life (s3p2b-edges-linux2 cell 44: the FLOCK line of /proc/locks).
+// daemon have 0700, and the lock file has 0600 and 0 bytes (measured on Linux).
+// The daemon holds an exclusive flock on the file for its life (measured: the
+// FLOCK line of /proc/locks).
 func TestShadowFolderModesAndLock(t *testing.T) {
 	f := newShadowFixture(t)
 	f.info(t, f.repo, nil)
@@ -60,8 +60,8 @@ func TestShadowFolderModesAndLock(t *testing.T) {
 
 // TestShadowStartTestCalls pins the ten calls of the start test: the argv, the
 // working directory and the variables of each, in the order of the call log of
-// 5fd08069 (s3p2-linux cell B3a, Linux VM). The read of the user's excludes
-// file comes before them, and the calls of the method after them.
+// 5fd08069 (measured on Linux). The read of the user's excludes file comes
+// before them, and the calls of the method after them.
 func TestShadowStartTestCalls(t *testing.T) {
 	f := newShadowFixture(t)
 	raw, calls := f.info(t, f.repo, nil)
@@ -165,7 +165,7 @@ func lowerShadowBound(t *testing.T, bound, drain time.Duration) {
 // holds for longer is ended: the cause is `signal: killed`, with the answer of
 // `git version` in brackets after two version calls. A `rev-parse --verify`
 // that is ended is followed by the second rev-parse, and the cause names the
-// ended call (s3p2b-edges-linux2 cell 31, Linux VM: holds of 29 s and of 32 s).
+// ended call (measured on Linux: holds of 29 s and of 32 s).
 func TestShadowCallBound(t *testing.T) {
 	out, err := exec.Command("git", "version").Output()
 	if err != nil {
@@ -235,10 +235,9 @@ func TestShadowCallBound(t *testing.T) {
 // add` that the bound ended: the second add runs, and the test failed with the
 // text of the ended call, also when the second add works. The state is not
 // fallback-git, no state line is logged, and a request after the kept time
-// tests again. On a Windows VM 5fd08069 answers so in 4 of 4 runs
-// (val-s3p2b2-1-windows cell Q-S4h-hold32-worktree-add). The text of the ended
-// call is `exit status 1` there. On a macOS VM the cause ends with `signal:
-// killed` (val-s3p2b2-1-macos section S4), as here.
+// tests again. On Windows 5fd08069 answers so in 4 of 4 runs (measured). The
+// text of the ended call is `exit status 1` there. On macOS the cause ends
+// with `signal: killed` (measured), as here.
 func TestShadowEndedAddNeverGivesFallback(t *testing.T) {
 	f := newShadowFixture(t)
 	now := useShadowClock(t)
@@ -272,7 +271,7 @@ func TestShadowEndedAddNeverGivesFallback(t *testing.T) {
 
 // An add that signal 9 ended fails the test, also when the add of `wt2`
 // works. On 5fd08069 the cause ends with `signal: killed` after 11 test calls
-// (cell N3 of round tier0-5, Linux VM).
+// (measured on Linux).
 func TestShadowAddEndedByASignalFailsTheTest(t *testing.T) {
 	f := newShadowFixture(t)
 	stageGit(t, stagedCall{Match: stageAdd, Copy: "yes", Kill: true})
@@ -311,8 +310,8 @@ func TestShadowFirstGetEndedByASignalFailsTheTest(t *testing.T) {
 // cannot be made: the error of the system call with its path, and no quotes.
 // 5fd08069 answers `mkdir <run>/git-shadow: permission denied` for a run folder
 // with mode 0500, and `mkdir <S>: permission denied` for a git-shadow with that
-// mode (s3p2b-edges-linux2 cells 30 and 32, Linux VM). Each request makes one
-// git call, the read of the excludes file, and the text is kept.
+// mode (measured on Linux). Each request makes one git call, the read of the
+// excludes file, and the text is kept.
 func TestShadowFolderFailures(t *testing.T) {
 	if os.Geteuid() == 0 {
 		t.Skip("root passes a folder with mode 0500")
@@ -362,10 +361,11 @@ func TestShadowFolderFailures(t *testing.T) {
 		}
 	})
 	// The two rows below ran on a tmpfs with 2 and with 3 inodes on 5fd08069
-	// (cell 32): `open <S>/lock: no space left on device` with no folder of the
-	// daemon after it, and `mkdir <S>/.check-<n>: no space left on device` with
-	// the folder and its lock file after it. Here the lock step fails through
-	// its seam, and the folder of the daemon takes no entry after that step.
+	// (measured): `open <S>/lock: no space left on device` with no folder of
+	// the daemon after it, and `mkdir <S>/.check-<n>: no space left on device`
+	// with the folder and its lock file after it. Here the lock step fails
+	// through its seam, and the folder of the daemon takes no entry after that
+	// step.
 	t.Run("the lock file cannot be made", func(t *testing.T) {
 		f := newShadowFixture(t)
 		old := openShadowLock
@@ -401,8 +401,7 @@ func TestShadowFolderFailures(t *testing.T) {
 // TestServeDaemonRemovesItsShadowFolder pins the wiring of the -serve daemon:
 // its settings control has the folder of the socket as its run folder, and the
 // teardown removes the folder of the daemon and leaves the empty git-shadow.
-// 5fd08069 does so at -stop and at server.shutdown (s3p2-linux section 1, Linux
-// VM).
+// 5fd08069 does so at -stop and at server.shutdown (measured on Linux).
 func TestServeDaemonRemovesItsShadowFolder(t *testing.T) {
 	f := newShadowFixture(t)
 	run := resolveTestRoot(t, shortTempDir(t))

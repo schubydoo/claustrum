@@ -11,10 +11,10 @@ import (
 
 // TestShadowRelativeRunFolder: a daemon whose socket path is relative keeps the
 // absolute form of its run folder, and every git method works. The test calls
-// name absolute paths. On 5fd08069 the five methods answer as with the
-// absolute path, and its test calls have `init -q --template=
-// <cwd>/git-shadow/<S>/.check-<n>/real` (cell R1 of val-s3p2b2-7-linux2, Linux
-// VM, with `-socket s.sock` and `-socket rel/rpc.sock`).
+// name absolute paths. On 5fd08069 the five methods answer as with the absolute
+// path, and its test calls have `init -q --template=
+// <cwd>/git-shadow/<S>/.check-<n>/real` (measured on Linux, with `-socket
+// s.sock` and `-socket rel/rpc.sock`).
 func TestShadowRelativeRunFolder(t *testing.T) {
 	for _, sock := range []string{"s.sock", filepath.Join("rel", "rpc.sock")} {
 		t.Run(sock, func(t *testing.T) {
@@ -58,9 +58,8 @@ func TestShadowRelativeRunFolder(t *testing.T) {
 // git request of a daemon its reply has no settingsControl member. The next
 // request on a repository runs the start test. A later request on the path
 // makes no call. A path that is a file still gets its `git version` call. On
-// 5fd08069 the calls are 1, then 22, then 0 (cell F1 of val-s3p2b2-6-windows,
-// Windows VM, 2 of 2 runs). A Linux VM and a macOS VM have 1, 20 and 0 calls
-// (val-s3p2b2-9-linux2 and cell q1-missing of val-s3p2b2-9-macos).
+// 5fd08069 the calls are 1, then 22, then 0 (measured on Windows, 2 of 2 runs). A
+// Linux and macOS have 1, 20 and 0 calls (measured).
 func TestShadowInfoOnAPathThatDoesNotExist(t *testing.T) {
 	f := newShadowFixture(t)
 	gone := filepath.Join(filepath.Dir(f.repo), "no-such-folder")
@@ -97,8 +96,8 @@ func TestShadowInfoOnAPathThatDoesNotExist(t *testing.T) {
 			versions++
 		}
 	}
-	// The reply for a file is that of each system: the hooks refusal on a
-	// Windows VM, and the "no repository" answer here on Linux.
+	// The reply for a file is that of each system: the hooks refusal on
+	// Windows, and the "no repository" answer here on Linux.
 	if versions != 1 {
 		t.Errorf("git.info on a file = %s with %d version calls, want 1", raw, versions)
 	}
@@ -109,9 +108,8 @@ func TestShadowInfoOnAPathThatDoesNotExist(t *testing.T) {
 // repository and the read of its config, and the daemon then has `.probe` and
 // the copy. The next git.info on the repository makes neither call. On
 // 5fd08069 the two requests have 14 and 8 calls, and the two calls are calls
-// 12 and 13 of the first (row Q1 of val-s3p2b2-8-linux2, Linux VM). The reply
-// of the first request is that of each system. macOS and Windows are not
-// measured.
+// 12 and 13 of the first (measured on Linux). The reply of the first request
+// is that of each system. macOS and Windows are not measured.
 //
 // Without the gate for the folder of the file, the first request makes neither
 // call, and the second makes both.
@@ -151,9 +149,9 @@ func TestShadowInfoOnAFileInARepository(t *testing.T) {
 // start test: the request makes the excludes read and one `version` call, the
 // reply has no settingsControl member, and no folder `git-shadow` is made. The
 // next git.info on a repository runs the start test. On 5fd08069 the two
-// requests have 2 and 20 calls (cell q1-file of val-s3p2b2-8-macos, macOS VM,
-// 2 of 2 runs). The reply of the first request is that of each system. Linux
-// and Windows are not measured.
+// requests have 2 and 20 calls (measured on macOS, 2 of 2 runs). The reply of
+// the first request is that of each system. Linux and Windows are not
+// measured.
 //
 // With the gate of a path that names no folder, the first request runs the
 // start test and has the member.
@@ -183,9 +181,9 @@ func TestShadowInfoOnAFileOutsideARepository(t *testing.T) {
 // or GIT_CONFIG_SYSTEM in its environment passes the start test. No test call
 // has the variable, and the calls after the test have it. On 5fd08069 the
 // daemon answers normally there, with 9 test calls and the variable in the
-// later calls only (cells H1 and H3 of val-s3p2b2-15-linux2, Linux VM). With
-// GIT_DEFAULT_HASH in a test call, `git init` makes a SHA-256 repository and
-// the commit-tree call of the test fails.
+// later calls only (measured on Linux). With GIT_DEFAULT_HASH in a test call,
+// `git init` makes a SHA-256 repository and the commit-tree call of the test
+// fails.
 func TestStartTestWithoutTheDaemonHashDefault(t *testing.T) {
 	for _, kv := range [][2]string{
 		{"GIT_DEFAULT_HASH", "sha256"},

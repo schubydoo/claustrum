@@ -30,10 +30,10 @@ func holdProbe(t *testing.T, d time.Duration) {
 
 // TestProbeBound pins both sides of the bound of the call, with a lowered
 // bound. A call that the daemon ended gives the text with "30 seconds" in the
-// shape of each method, and a remove makes the call two times (cells 37 and 38
-// of s3p2b-edges-linux2, Linux VM. Cell 40 of s3p2b-edges-macos, macOS VM). The
-// answer is not kept: the next request asks again, and it is normal when the
-// call is quick then (cell 37). No worktree is made or removed (cell 38).
+// shape of each method, and a remove makes the call two times (measured on
+// Linux and macOS). The answer is not kept: the next request asks again, and
+// it is normal when the call is quick then (measured). No worktree is made or
+// removed (measured).
 func TestProbeBound(t *testing.T) {
 	for i, method := range []string{"git.info", "git.status", "git.list_branches", "git.worktree_create", "git.worktree_remove"} {
 		t.Run(method, func(t *testing.T) {
@@ -83,9 +83,8 @@ func TestProbeBound(t *testing.T) {
 // inside the request. On 5fd08069 that call is the third of the create, after
 // `rev-parse --is-inside-work-tree` and before the next listing, and the same
 // create again has it as its first call. A create in a repository that has
-// both folders makes none (cell 36 of s3p2b-edges-linux2, Linux VM: the rows
-// "no .claude folder, with warm-up" and ".claude/worktrees/w0 exists, with
-// warm-up").
+// both folders makes none (measured on Linux: the rows "no .claude folder,
+// with warm-up" and ".claude/worktrees/w0 exists, with warm-up").
 func TestProbeInsideACreate(t *testing.T) {
 	f := newSeededShadowFixture(t)
 	runGit(t, f.repo, "worktree", "remove", "--force", f.wt)

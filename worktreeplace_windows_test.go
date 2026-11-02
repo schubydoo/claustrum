@@ -12,15 +12,15 @@ import (
 )
 
 // The in-place files of a Windows create: `config.worktree` and the index of
-// the registration that the staging step moved (round task087-01, Windows VM).
-// No test of this file ran on the host of the build: a Windows run must match
-// the cell that each test names.
+// the registration that the staging step moved (measured on Windows). No test
+// of this file ran on the host of the build: a Windows run must match the cell
+// that each test names.
 
-// TestCreateWithAFolderAtConfigWorktreeOnWindows must match cells S9 and S9b
-// (C6 of round task007-02): a folder `config.worktree` in the staged
-// registration, empty or with a file, fails the create with `openat
-// config.worktree: is a directory`. Without the open in place an empty folder
-// is removed and the create succeeds.
+// TestCreateWithAFolderAtConfigWorktreeOnWindows must match the measured
+// cases: a folder `config.worktree` in the staged registration, empty or
+// with a file, fails the create with `openat config.worktree: is a
+// directory`. Without the open in place an empty folder is removed and the
+// create succeeds.
 func TestCreateWithAFolderAtConfigWorktreeOnWindows(t *testing.T) {
 	for _, row := range []struct {
 		cell string
@@ -58,11 +58,11 @@ func fileTimes(t *testing.T, path string) (created, accessed, written time.Time)
 	return time.Unix(0, d.CreationTime.Nanoseconds()), time.Unix(0, d.LastAccessTime.Nanoseconds()), time.Unix(0, d.LastWriteTime.Nanoseconds())
 }
 
-// wantEarlierTimes tests the time rule of cells S10 and S13: the access time
-// is the write time, and both are before the creation time. Without the set
-// of the times the write time is at or after the creation time. A write time
-// equal to the creation time passes too: the file clock of a CI runner can
-// give both steps the same tick.
+// wantEarlierTimes tests the time rule: the access time is the write time,
+// and both are before the creation time. Without the set of the times the
+// write time is at or after the creation time. A write time equal to the
+// creation time passes too: the file clock of a CI runner can give both
+// steps the same tick.
 func wantEarlierTimes(t *testing.T, path string) {
 	t.Helper()
 	created, accessed, written := fileTimes(t, path)
@@ -71,7 +71,7 @@ func wantEarlierTimes(t *testing.T, path string) {
 	}
 }
 
-// TestConfigWorktreeTimesOnWindows must match cell S10: the access time equals
+// TestConfigWorktreeTimesOnWindows must match a measured case: the access time equals
 // the write time, and both are before the creation time. That is the
 // `config.worktree` file of the registration.
 func TestConfigWorktreeTimesOnWindows(t *testing.T) {
@@ -83,10 +83,10 @@ func TestConfigWorktreeTimesOnWindows(t *testing.T) {
 	wantEarlierTimes(t, filepath.Join(f.reg, worktreeConfigName))
 }
 
-// TestCreateWithAFolderAtTheIndexOnWindows must match cell S12: a folder
-// `index` with a file in the registration fails the create with `openat
-// index: is a directory`, and the rollback is full. Without the error of the
-// placement the create succeeds with no index.
+// TestCreateWithAFolderAtTheIndexOnWindows must match a measured case: a folder
+// `index` with a file in the registration fails the create with `openat index:
+// is a directory`, and the rollback is full. Without the error of the placement
+// the create succeeds with no index.
 func TestCreateWithAFolderAtTheIndexOnWindows(t *testing.T) {
 	f := newStepCreate(t)
 	atStep(t, "index", func() { mustWrite(t, filepath.Join(f.gitDir, "worktrees", "w1", "index", "f.txt"), "x\n") })
@@ -95,7 +95,7 @@ func TestCreateWithAFolderAtTheIndexOnWindows(t *testing.T) {
 	f.fullUndo(t)
 }
 
-// TestIndexTimesOnWindows must match cell S13: the access time equals the
+// TestIndexTimesOnWindows must match a measured case: the access time equals the
 // write time, and both are before the creation time. That is the index of the
 // registration.
 func TestIndexTimesOnWindows(t *testing.T) {

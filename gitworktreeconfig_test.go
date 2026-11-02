@@ -5,19 +5,15 @@ import (
 	"testing"
 )
 
-// TestWorktreeConfigItems pins which settings of a `config.worktree` file go to
-// the git calls as `-c` items, and their form. 5fd08069 sends
-// `core.filemode=false` and `core.sparsecheckout=true` (cells 12a to 12c and
-// 12f of val-s3p2b2-3-linux, Linux VM). It sends `core.filemode=true` (cell
-// N16c of val-s3p2b2-3-windows, Windows VM) and `core.eol=lf` (cell 1c of
-// val-s3p2b2-3-linux). It sends no item for `core.bare` and `core.worktree`
-// (cells 12a, 12d, 12e and 9a). The six rows p2-K are the cells of
-// val-s3p2b2-6-linux with those names (Linux VM). Row U1 of val-s3p2b2-6-macos
-// has the four keys with an item on a macOS VM. The Windows extra rows are
-// those of section 0 item 4 of the report of val-s3p2b2-6-windows (Windows VM,
-// 1 run each). Four keys give an item, and
-// `core.hookspath` and `user.name` give none. Row C3a is cell C3a of
-// tier0-14 (Linux VM). The rows marked not measured follow copyKeyRules.
+// TestWorktreeConfigItems pins which settings of a `config.worktree` file go to the
+// git calls as `-c` items, and their form. 5fd08069 sends `core.filemode=false` and
+// `core.sparsecheckout=true` (measured on Linux). It sends `core.filemode=true`
+// (measured on Windows) and `core.eol=lf`. It sends no item for `core.bare` and
+// `core.worktree` (measured). The six rows of those names are measured on Linux. A
+// measurement has the four keys with an item on macOS. The Windows extra rows are
+// measured on Windows. Four keys give an item, and `core.hookspath` and `user.name`
+// give none. One more case is measured on Linux. The rows marked not measured follow
+// copyKeyRules.
 func TestWorktreeConfigItems(t *testing.T) {
 	set := func(key, value string) repoSetting { return repoSetting{key: key, value: value, hasValue: true} }
 	for _, row := range []struct {
@@ -54,7 +50,7 @@ func TestWorktreeConfigItems(t *testing.T) {
 			[]repoSetting{set("core.filemode", "false"), set("core.filemode", "maybe")}, []string{"-c", "core.filemode=false"}},
 		{"a key with a subsection (not measured)", []repoSetting{set("remote.origin.url", "https://example.invalid/o/r")}, nil},
 		{"the format version and an extension", []repoSetting{set("core.repositoryformatversion", "1"), set("extensions.noop", "true")}, nil},
-		// Cell C3a of tier0-14 (Linux VM): rewritten values, one item per key, sorted.
+		// Measured on Linux: rewritten values, one item per key, sorted.
 		{"C3a", []repoSetting{set("core.quotepath", "off"), set("core.filemode", "no"), set("core.trustctime", "false"), set("core.bare", "true"), set("core.bare", "false")},
 			[]string{"-c", "core.filemode=false", "-c", "core.quotepath=false", "-c", "core.trustctime=false"}},
 		{"no file", nil, nil},

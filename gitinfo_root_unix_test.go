@@ -11,7 +11,7 @@ import (
 
 // The walk resolves a symlink before a later ".." pops it. For
 // <T>/lnk/.. with lnk -> X/sub, the pin is X/.git, the root is X, and the slug is
-// X's (rows D01 and A03 on Linux and macOS VMs). Mutation: clean ".." before
+// X's (measured on Linux and macOS). Mutation: clean ".." before
 // filepath.EvalSymlinks.
 func TestInfoRootResolvesSymlinkBeforeDotDot(t *testing.T) {
 	r := newTrustRepo(t)

@@ -40,8 +40,7 @@ func mkdirExternalWorktreeParents(dir string) error {
 // as a directory or a symlink, so this refuses those too. The first
 // junction, in order from repo, is named as repo joined with its components. The
 // reference refuses a junctioned `.claude` and a junctioned `.claude\worktrees` this
-// way and creates nothing. Measured against f6010b97 on a Windows VM (rows JCR1 and
-// JCR2).
+// way and creates nothing. Measured against f6010b97 on Windows.
 func junctionParentRefusal(repo, worktreePath string) string {
 	rel, err := filepath.Rel(repo, filepath.Dir(filepath.Clean(worktreePath)))
 	if err != nil || !filepath.IsLocal(rel) {
@@ -79,11 +78,10 @@ func rmdirWorktreeLeaf(worktreePath string) error {
 //
 // The handle shares read, write and delete, so git and the rollback can still
 // rename or delete the leaf, and the parent can be deleted. Both references hold
-// the leaf and its parent open during a create on a Windows VM (handle64). Under
-// the handles of f6010b97 a rename of the leaf succeeded, a delete-access open of the parent
-// succeeded, and a rename of the parent failed with "Access is denied." while the
-// leaf was held inside it. After the leaf was moved out, the parent rename
-// succeeded.
+// the leaf and its parent open during a create on Windows (handle64). Under the handles of
+// f6010b97 a rename of the leaf succeeded, a delete-access open of the parent succeeded, and
+// a rename of the parent failed with "Access is denied." while the leaf was held inside it.
+// After the leaf was moved out, the parent rename succeeded.
 //
 // File.Stat of the returned handle reads the volume serial and the file index with
 // GetFileInformationByHandle when it is called. os.SameFile then compares that

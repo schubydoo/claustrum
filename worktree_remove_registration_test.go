@@ -73,8 +73,8 @@ func daemonGitEnv(t *testing.T, gitDir, commonDir string) {
 // lockedText is the refusal of a locked worktree whose folder is present.
 const lockedText = "is locked (git worktree lock); unlock it to remove it"
 
-// Probe row 1 (Linux, macOS and Windows VMs): the daemon has GIT_DIR and
-// GIT_COMMON_DIR of X. The folder goes. The entry s0 of T and the branch s0 of T stay.
+// Measured on Linux, macOS and Windows: the daemon has GIT_DIR and GIT_COMMON_DIR of
+// X. The folder goes. The entry s0 of T and the branch s0 of T stay.
 func TestWorktreeRemoveDaemonGitDirEndState(t *testing.T) {
 	f := newRegFixture(t)
 	daemonGitEnv(t, gitDirOf(f.X), gitDirOf(f.X))
@@ -92,9 +92,9 @@ func TestWorktreeRemoveDaemonGitDirEndState(t *testing.T) {
 	}
 }
 
-// Probe row 5 (Linux, macOS and Windows VMs): the daemon has GIT_COMMON_DIR of X
-// alone. The folder and the entry s0 of T go. X does not hold the commit of T here, so
-// the branch stays.
+// Measured on Linux, macOS and Windows: the daemon has GIT_COMMON_DIR of X alone. The
+// folder and the entry s0 of T go. X does not hold the commit of T here, so the
+// branch stays.
 func TestWorktreeRemoveDaemonCommonDirOnlyEndState(t *testing.T) {
 	f := newRegFixture(t)
 	daemonGitEnv(t, "", gitDirOf(f.X))
@@ -106,10 +106,10 @@ func TestWorktreeRemoveDaemonCommonDirOnlyEndState(t *testing.T) {
 	}
 }
 
-// Row p2b (Linux and macOS VMs): the daemon has GIT_COMMON_DIR of X alone, and
-// baseRepo is a subfolder of T. The folder and the entry of T go. X does not hold the
-// commit of T in this fixture, so the branch stays here. On the macOS VM the fixture
-// let 89cb6289 delete the branch.
+// Measured on Linux and macOS: the daemon has GIT_COMMON_DIR of X alone, and baseRepo is a subfolder of
+// T. The folder and the entry of T go. X does not hold the commit of T in this
+// fixture, so the branch stays here. On macOS the fixture let 89cb6289 delete the
+// branch.
 func TestWorktreeRemoveDaemonCommonDirOnlySubfolderBase(t *testing.T) {
 	f := newRegFixture(t)
 	sub := filepath.Join(f.T, "sub")
@@ -128,9 +128,8 @@ func TestWorktreeRemoveDaemonCommonDirOnlySubfolderBase(t *testing.T) {
 	}
 }
 
-// Row p3b (Linux, macOS and Windows VMs): the daemon has GIT_DIR of X and GIT_COMMON_DIR of a third
-// repository Y. X holds an entry zz whose record names S. The folder and the entry zz
-// of X go, and the entry s0 of T stays.
+// Measured on Linux, macOS and Windows: the daemon has GIT_DIR of X and GIT_COMMON_DIR of a third repository Y. X holds an
+// entry zz whose record names S. The folder and the entry zz of X go, and the entry s0 of T stays.
 func TestWorktreeRemoveDaemonGitDirAndOtherCommonDir(t *testing.T) {
 	f := newRegFixture(t)
 	y := filepath.Join(f.root, "Y")
@@ -150,9 +149,9 @@ func TestWorktreeRemoveDaemonGitDirAndOtherCommonDir(t *testing.T) {
 	}
 }
 
-// Row p6 (Linux, macOS and Windows VMs), divergence D22: the daemon has GIT_DIR and GIT_COMMON_DIR of X,
-// and S is locked in T. claustrum refuses and deletes nothing. 89cb6289 answers
-// success and deletes S.
+// Measured on Linux, macOS and Windows, divergence D22: the daemon has GIT_DIR and GIT_COMMON_DIR of
+// X, and S is locked in T. claustrum refuses and deletes nothing. 89cb6289 answers success and
+// deletes S.
 func TestWorktreeRemoveDaemonGitDirLockedInBaseRepoIsRefused(t *testing.T) {
 	f := newRegFixture(t)
 	runGit(t, f.T, "worktree", "lock", f.S)
@@ -166,7 +165,7 @@ func TestWorktreeRemoveDaemonGitDirLockedInBaseRepoIsRefused(t *testing.T) {
 	}
 }
 
-// Row p6f (Linux, macOS and Windows VMs), D22 for a folder that is gone: the same
+// Measured on Linux, macOS and Windows, D22 for a folder that is gone: the same
 // environment, S locked in T and its folder removed by hand. claustrum refuses.
 // 89cb6289 answers success and deletes nothing.
 func TestWorktreeRemoveDaemonGitDirGoneLockedInBaseRepoIsRefused(t *testing.T) {
@@ -185,8 +184,8 @@ func TestWorktreeRemoveDaemonGitDirGoneLockedInBaseRepoIsRefused(t *testing.T) {
 	}
 }
 
-// Row p6b (Linux, macOS and Windows VMs): the same environment, and the lock is on an entry of X whose
-// record names S. Both 89cb6289 and claustrum refuse and delete nothing.
+// Measured on Linux, macOS and Windows: the same environment, and the lock is on an entry of X whose record names S. Both 89cb6289
+// and claustrum refuse and delete nothing.
 func TestWorktreeRemoveDaemonGitDirLockedInOtherRepoIsRefused(t *testing.T) {
 	f := newRegFixture(t)
 	zz := f.entry(f.X, "zz")
@@ -202,8 +201,8 @@ func TestWorktreeRemoveDaemonGitDirLockedInOtherRepoIsRefused(t *testing.T) {
 	}
 }
 
-// Row p6e (Linux, macOS and Windows VMs), divergence D22: the daemon has GIT_DIR of X
-// alone, and S is locked in T. claustrum refuses and deletes nothing. 89cb6289
+// Measured on Linux, macOS and Windows, divergence D22: the daemon has GIT_DIR of
+// X alone, and S is locked in T. claustrum refuses and deletes nothing. 89cb6289
 // answers success and deletes S.
 func TestWorktreeRemoveDaemonGitDirOnlyLockedInBaseRepoIsRefused(t *testing.T) {
 	f := newRegFixture(t)

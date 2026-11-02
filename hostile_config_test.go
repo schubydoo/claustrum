@@ -8,11 +8,10 @@ import (
 
 // 7d193f89 refuses every git method when the repo's config cannot be enumerated (so
 // its config-defined hooks cannot be pinned off), for example an include.path with no
-// value. The
-// frame is method-specific: -32603 for the read methods, a worktreeResult under
-// errorCode worktree_add_failed for create, and a "could not check whether … is
-// locked" message for remove. The read methods and create were measured
-// byte-for-byte against 7d193f89 on a VM. The remove follows 5fd08069 (see below).
+// value. The frame is method-specific: -32603 for the read methods, a worktreeResult
+// under errorCode worktree_add_failed for create, and a "could not check whether … is
+// locked" message for remove. The read methods and create were measured byte-for-byte
+// against 7d193f89. The remove follows 5fd08069 (see below).
 func TestHostileConfigRefusal(t *testing.T) {
 	requireGit(t)
 	repo := t.TempDir()
@@ -51,9 +50,9 @@ func TestHostileConfigRefusal(t *testing.T) {
 
 	// The listing of this server reads the config of the repository, so the
 	// remove lists again and answers the refusal of the second listing. 5fd08069
-	// does so with "shadowDirOff":true (cell G08b of round tier3-17, Linux VM).
-	// Without the member it lists its settings copy and removes (cell G08a). This
-	// replaces the generic lock-check text of 7d193f89 and row G08 of f6010b97.
+	// does so with "shadowDirOff":true (measured on Linux). Without the member it
+	// lists its settings copy and removes (measured). This replaces the generic
+	// lock-check text of 7d193f89 and the measured text of f6010b97.
 	wr := dispatchRaw(t, s, rpcLine(t, "git.worktree_remove", map[string]any{"baseRepo": repo, "worktreePath": wt}))
 	if !strings.Contains(wr, "is locked: "+hostile) {
 		t.Errorf("worktree_remove on corrupt config = %s, want the hostile refusal of the second listing", wr)

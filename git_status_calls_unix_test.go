@@ -14,7 +14,7 @@ import (
 )
 
 // The git calls of git.status, in the order of 89cb6289. The rows are from Linux
-// and macOS VMs, whose call logs are equal line by line. This file is unix only,
+// and macOS, whose call logs are equal line by line. This file is unix only,
 // because it compares working directories as text.
 
 // statusCallLog puts the logging git stand-in on PATH, makes root the working
@@ -132,8 +132,8 @@ const (
 )
 
 // callRepoConfig is the daemon's own read of the config of baseRepo
-// (gitrepoconfig.go). It is not a call of 89cb6289: 5fd08069 makes it (cell C2a
-// of the config refusals).
+// (gitrepoconfig.go). It is not a call of 89cb6289: 5fd08069 makes it (measured
+// with the config refusals).
 const callRepoConfig = "/|-|config --no-includes --file - --list -z"
 
 // statusGateCalls are K1 calls 1 to 5, for a path outside baseRepo, with the read
@@ -157,7 +157,8 @@ func wantStatusCalls(t *testing.T, what string, got, want []string) {
 	}
 }
 
-// Row K1: the 22 calls of a request that answers, and the read of the config.
+// Measured: the 22 calls of a request that answers, and the read of the
+// config.
 func TestGitStatusCallOrder(t *testing.T) {
 	f := newStatusFixture(t)
 	run := statusCallLog(t, f.root)
@@ -200,27 +201,27 @@ func TestGitStatusGateCalls(t *testing.T) {
 		name, path, base string
 		want             []string
 	}{
-		// Rows n10 and n10b1: no git call.
+		// Measured: no git call.
 		{"n10", f.W, filepath.Join(plain, ".claude", "worktrees", "r"), nil},
 		{"n10b1", f.W, filepath.Join(plain, ".claude", "worktrees"), nil},
-		// Row n11c1: no git call.
+		// Measured: no git call.
 		{"n11c1", f.W, f.T + "/nosub/..", nil},
-		// Row o23: no git call.
+		// Measured: no git call.
 		{"o23", f.W, filepath.Join(f.root, "M", "X"), nil},
-		// Row n10b2: two calls with GIT_DIR=<null device> in a folder with no repository.
+		// Measured: two calls with GIT_DIR=<null device> in a folder with no repository.
 		{"n10b2", f.W, filepath.Join(plain, ".claude"), []string{
 			"<fx>/P/.claude|A|config -z --list +nodir",
 			"<fx>/P/.claude|A|rev-parse --absolute-git-dir +nodir"}},
-		// Rows n09 and n26b: the tests on path come before the fourth call.
+		// Measured: the tests on path come before the fourth call.
 		{"n09", filepath.Join(f.root, "F"), f.T, gate[:3]},
 		{"n26b", filepath.Join(f.root, "gone"), f.T, gate[:3]},
 		// Row KN: a plain folder gets the two calls in the common directory.
 		{"KN", plain, f.T, statusGateCalls("<fx>/P")[1:]},
-		// Rows A05a and n18b: for a path inside baseRepo, or baseRepo itself, the
+		// Measured: for a path inside baseRepo, or baseRepo itself, the
 		// --work-tree value is baseRepo.
 		{"A05a", inside, f.T, statusGateCalls("<fx>/T")[1:]},
 		{"n18b", f.T, f.T, statusGateCalls("<fx>/T")[1:]},
-		// Row n25d1: an empty path is ".".
+		// Measured: an empty path is ".".
 		{"n25d1", "", f.T, statusGateCalls(".")[1:]},
 	} {
 		raw, calls := run(c.path, c.base)
@@ -230,7 +231,7 @@ func TestGitStatusGateCalls(t *testing.T) {
 		wantStatusCalls(t, c.name, calls, c.want)
 	}
 
-	// Rows n18 and n18c: no worktrees folder, so two calls.
+	// Measured: no worktrees folder, so two calls.
 	t.Run("n18", func(t *testing.T) {
 		if err := os.Rename(filepath.Join(f.T, ".git", "worktrees"), filepath.Join(f.T, ".git", "wt.aside")); err != nil {
 			t.Fatal(err)
@@ -244,8 +245,8 @@ func TestGitStatusGateCalls(t *testing.T) {
 		}
 		wantStatusCalls(t, "n18", calls, gate[:3])
 	})
-	// Row v4 (Linux VM): a symlink as the last component of a path inside baseRepo
-	// stops before the fourth call.
+	// Measured on Linux: a symlink as the last component of a path inside baseRepo stops
+	// before the fourth call.
 	t.Run("v4", func(t *testing.T) {
 		l := filepath.Join(f.T, ".claude", "worktrees", "lnk")
 		mustSymlink(t, f.W, l)
@@ -255,8 +256,8 @@ func TestGitStatusGateCalls(t *testing.T) {
 		}
 		wantStatusCalls(t, "v4", calls, gate[:3])
 	})
-	// Row y1 (Linux and macOS VMs): W/missing/.. passes the gate cleaned. git then
-	// does not start in the path as sent, and no `git version` follows the refusal.
+	// Measured on Linux and macOS: W/missing/.. passes the gate cleaned. git then does not start in
+	// the path as sent, and no `git version` follows the refusal.
 	t.Run("y1", func(t *testing.T) {
 		sent := f.W + "/missing/.."
 		raw, calls := run(sent, f.T)
@@ -266,7 +267,8 @@ func TestGitStatusGateCalls(t *testing.T) {
 		}
 		wantStatusCalls(t, "y1", calls, append(slices.Clone(gate), callEmptyA, callEmptyB))
 	})
-	// Row n15: a bad HEAD stops after the two calls in the common directory.
+	// Measured: a bad HEAD stops after the two calls in the common
+	// directory.
 	t.Run("n15", func(t *testing.T) {
 		f.write(t, "HEAD", "garbage\n")
 		defer f.write(t, "HEAD", "ref: refs/heads/w\n")
@@ -276,7 +278,8 @@ func TestGitStatusGateCalls(t *testing.T) {
 		}
 		wantStatusCalls(t, "n15", calls, gate)
 	})
-	// Row n13: the config.worktree listing is the sixth call, in the daemon's cwd.
+	// Measured: the config.worktree listing is the sixth call, in the daemon's
+	// cwd.
 	cfg := "<fx>|-|config --no-includes --file - --list -z"
 	t.Run("n13", func(t *testing.T) {
 		f.write(t, "config.worktree", "[user]\n\tname = x\n")
@@ -286,7 +289,8 @@ func TestGitStatusGateCalls(t *testing.T) {
 		}
 		wantStatusCalls(t, "n13", calls, append(slices.Clone(gate), cfg))
 	})
-	// Row n12: a config.worktree that passes adds that one call.
+	// Measured: a config.worktree that passes adds that one
+	// call.
 	t.Run("n12", func(t *testing.T) {
 		f.write(t, "config.worktree", "[core]\n\tsparseCheckout = true\n")
 		defer func() { _ = os.Remove(filepath.Join(f.entry, "config.worktree")) }()
@@ -298,8 +302,8 @@ func TestGitStatusGateCalls(t *testing.T) {
 			t.Errorf("n12: %d calls, call 6 = %q\nwant 22 calls with %q sixth", len(calls), calls[min(5, len(calls)-1)], cfg)
 		}
 	})
-	// Rows n16, o13 and o14d: HEAD names no commit. The two calls of the empty tree
-	// run once more, and diff-index gets that id.
+	// Measured: HEAD names no commit. The two calls of the empty tree run once
+	// more, and diff-index gets that id.
 	t.Run("n16", func(t *testing.T) {
 		f.write(t, "HEAD", "ref: refs/heads/nosuch\n")
 		defer f.write(t, "HEAD", "ref: refs/heads/w\n")
@@ -315,8 +319,8 @@ func TestGitStatusGateCalls(t *testing.T) {
 		want = append(want, statusCommandCalls("<fx>/W", "<fx>/W", callDiffIndex+gitEmptyTree+" -- +locks")...)
 		wantStatusCalls(t, "n16", calls, want)
 	})
-	// Row n06: the --work-tree of the fifth call is the resolved path. The status
-	// calls get the path as sent.
+	// Measured: the --work-tree of the fifth call is the resolved path. The
+	// status calls get the path as sent.
 	t.Run("n06", func(t *testing.T) {
 		l := filepath.Join(f.root, "L")
 		mustSymlink(t, f.W, l)
@@ -331,7 +335,7 @@ func TestGitStatusGateCalls(t *testing.T) {
 			t.Errorf("n06 call 9 = %q\nwant %q", calls[8], want)
 		}
 	})
-	// Row n25c: a relative path passes the gate, git gets it as sent, and status
+	// Measured: a relative path passes the gate, git gets it as sent, and status
 	// exits 128.
 	t.Run("n25c", func(t *testing.T) {
 		raw, calls := run("W", f.T)
@@ -343,8 +347,8 @@ func TestGitStatusGateCalls(t *testing.T) {
 	})
 }
 
-// Rows n17 and n17b to n17f, and row o22: one failing git call each. Each count
-// is that of 89cb6289 and one more, for the read of the config of baseRepo.
+// Measured: one failing git call each. Each count is that of 89cb6289 and
+// one more, for the read of the config of baseRepo.
 func TestGitStatusFailingCalls(t *testing.T) {
 	f := newStatusFixture(t)
 	run := statusCallLog(t, f.root)
@@ -362,7 +366,8 @@ func TestGitStatusFailingCalls(t *testing.T) {
 		{"n17d ls-files", "ls-files,-s", exit1, 13},
 		{"n17e diff-index", "diff-index,--cached", exit1, 21},
 		{"n17f hash-object", "hash-object", statusClean, 21},
-		// Row o22: the listing with --git-dir=<common> fails. `git version` follows.
+		// Measured: the listing with --git-dir=<common> fails. `git version`
+		// follows.
 		{"o22 listing in the common directory", "--git-dir=" + filepath.Join(f.T, ".git") + ",--list",
 			`{"jsonrpc":"2.0","id":1,"error":{"code":-32603,"message":"config-defined hooks could not be pinned off; git not run: listing the configuration in force: exit status 1: boom"}}`, 5},
 	} {
@@ -383,8 +388,8 @@ func TestGitStatusFailingCalls(t *testing.T) {
 	}
 }
 
-// Rows o20 and o21: the read of the user's excludes runs before a trust refusal, so
-// a refused request makes that one call.
+// Measured: the read of the user's excludes runs before a trust refusal, so a
+// refused request makes that one call.
 func TestGitStatusExcludesReadBeforeTrustRefusal(t *testing.T) {
 	f := newStatusFixture(t)
 	run := statusCallLog(t, f.root)
@@ -396,9 +401,9 @@ func TestGitStatusExcludesReadBeforeTrustRefusal(t *testing.T) {
 	wantStatusCalls(t, "o21", calls, statusGateCalls("")[:1])
 }
 
-// Rows E07a and E07b (Linux and macOS VMs): the daemon's own environment sets
-// GIT_COMMON_DIR. The calls with --git-dir=<common> keep the daemon's value. The
-// calls in the temporary folder get GIT_COMMON_DIR=<T>/.git.
+// Measured on Linux and macOS: the daemon's own environment sets GIT_COMMON_DIR. The calls with
+// --git-dir=<common> keep the daemon's value. The calls in the temporary folder
+// get GIT_COMMON_DIR=<T>/.git.
 func TestGitStatusDaemonCommonDirCalls(t *testing.T) {
 	f := newStatusFixture(t)
 	x := filepath.Join(f.root, "X")

@@ -17,7 +17,7 @@ const (
 )
 
 // The root keeps the request's spelling. Folder Repo sent as rEPO answers
-// rEPO, and an NFC folder sent in NFD answers the NFD bytes (rows I08 and I07a).
+// rEPO, and an NFC folder sent in NFD answers the NFD bytes (measured).
 // Mutation: canonicalize the root.
 func TestInfoRootKeepsRequestSpellingDarwin(t *testing.T) {
 	requireGit(t)
@@ -40,7 +40,7 @@ func TestInfoRootKeepsRequestSpellingDarwin(t *testing.T) {
 
 // An NFC folder created through an NFD request is refused after `git worktree add`.
 // git records the worktree in NFC, and the record no longer names worktreePath after
-// symlink resolution. No checkout runs, so the new worktree has no index (row I07a).
+// symlink resolution. No checkout runs, so the new worktree has no index (measured).
 // The same request in NFC succeeds. Mutation: compare after Unicode normalization.
 func TestCreateAdminRecordSpellingDarwin(t *testing.T) {
 	requireGit(t)

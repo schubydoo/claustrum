@@ -9,9 +9,9 @@ import (
 )
 
 // TestShadowLockHasNoSharing pins the hold of the daemon on its lock file on
-// Windows. A Windows VM measured the lock file of a live 5fd08069 daemon. Every
+// Windows. A Windows test measured the lock file of a live 5fd08069 daemon. Every
 // open with data access fails there, with every share mode. The file cannot be
-// removed. An open for attributes works (val-s3p2b2-1-windows row D2).
+// removed. An open for attributes works (measured).
 //
 // A Windows run must show four things while the daemon holds the file.
 // os.OpenFile fails for a read and for a write. os.Remove fails. os.Lstat

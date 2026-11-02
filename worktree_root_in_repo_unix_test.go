@@ -12,11 +12,10 @@ import (
 )
 
 // These tests cover a worktreeRoot in the repository. Each row name is a row of the
-// side-by-side run against f6010b97 and 89cb6289 on a Linux VM. A macOS VM measured
-// the same texts in rows MX3, MX4 and MX10 to MX15. In the rows, <B> is
-// the temp dir and <T> the repository in it. <T2> is a second repository and <X> a
-// plain folder. <B>/L is a symlink to <T>, and <B>/M a symlink to <T>/sub.
-// worktreeRoot is unix-only.
+// side-by-side run against f6010b97 and 89cb6289 on Linux. A macOS test measured the
+// same texts. In the rows, <B> is the temp dir and <T> the repository in it. <T2>
+// is a second repository and <X> a plain folder. <B>/L is a symlink to <T>, and
+// <B>/M a symlink to <T>/sub. worktreeRoot is unix-only.
 
 type r0Fixture struct{ B, T, T2, X string }
 
@@ -169,9 +168,9 @@ func (r r0RemoveRow) run(t *testing.T, wantSteps []string) {
 // A worktreeRoot that is baseRepo or lies beneath it is refused on remove, with no
 // git call. Before, claustrum answered {"success":true} to each destructive row and
 // deleted the worktree with its files, its entry and branch wt1. With the leaf
-// absent it deleted wt1 while the live worktree had it checked out (rows Q8, Q5s).
-// Rows Q2, Q10 and Q16 pin the order: the shape and baseRepo checks come first, and
-// the <directory> symlink check comes after.
+// absent it deleted wt1 while the live worktree had it checked out (measured). Rows
+// Q2, Q10 and Q16 pin the order: the shape and baseRepo checks come first, and the
+// <directory> symlink check comes after.
 func TestWorktreeRemoveRootInRepo(t *testing.T) {
 	const w1 = "<T>/.claude/worktrees/w1"
 	for _, r := range []r0RemoveRow{
@@ -232,9 +231,9 @@ func TestWorktreeRemoveRootResolvesIntoRepo(t *testing.T) {
 	}
 }
 
-// A root that holds the repository is not refused (row Q15s). A root in a checkout
+// A root that holds the repository is not refused (measured). A root in a checkout
 // of another repository gets the ownership refusal when <T> has a linked worktree
-// (row Q20b). Both as on f6010b97 and 89cb6289.
+// (measured). Both as on f6010b97 and 89cb6289.
 func TestWorktreeRemoveRootOutsideRepo(t *testing.T) {
 	t.Run("Q15s", func(t *testing.T) {
 		f := newR0Fixture(t)
@@ -270,8 +269,8 @@ func TestWorktreeRemoveRootOutsideRepo(t *testing.T) {
 
 // A worktreeRoot in the repository is refused on create with errorCode unsafe_path,
 // before the root-chain step, and nothing is created. Before, claustrum sent its
-// "inside a git checkout" text for rows K1 to K4, K8 and K9. Row K10 keeps that
-// text, and rows K6 and K7 create.
+// "inside a git checkout" text for most of these measured cases. One keeps that
+// text, and two create.
 func TestWorktreeCreateRootInRepo(t *testing.T) {
 	const s7 = " is inside a git checkout (<T2> has a .git entry); a worktree location must be outside " +
 		"every checkout, so that no session working in one can reach it — choose a directory that is not part of any repository"

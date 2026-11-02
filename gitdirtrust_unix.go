@@ -14,18 +14,17 @@ const openNonBlocking = syscall.O_NONBLOCK
 
 // nonDirGitDirIsNoRepo is true on Linux and macOS. There a git directory that exists
 // but is not a directory answers "no repository". Examples are a linked-worktree entry
-// replaced by a file and a GIT_DIR that names a `.git` file. Measured against f6010b97 on a Linux VM.
+// replaced by a file and a GIT_DIR that names a `.git` file. Measured against f6010b97 on Linux.
 const nonDirGitDirIsNoRepo = true
 
 // registrationsLinkRefused is true on Linux and macOS. A registrations folder
 // (`<git dir>/worktrees`) that is a symbolic link then takes no delete. A remove
-// refuses it (cell C3 of round tier0-24, Linux VM, and of round tier0-25m,
-// macOS VM).
+// refuses it (measured on Linux and macOS).
 const registrationsLinkRefused = true
 
 // entryLinkRefusedLate is true on Linux and macOS. A create whose baseRepo is a
 // linked worktree with a symbolic link as its entry gets the trust refusal as a
-// failed add (cell C7 of round tier0-24, Linux VM). macOS is not measured.
+// failed add (measured on Linux). macOS is not measured.
 const entryLinkRefusedLate = true
 
 // gitDirPartUsable is the test of `objects` and `refs` in the git-directory test

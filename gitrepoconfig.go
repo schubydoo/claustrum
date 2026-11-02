@@ -20,9 +20,8 @@ import (
 // The daemon's own read of a repository's config, and its tests of three files of
 // the git directory. 5fd08069 refuses a git method when it does not accept one of
 // them. docs/protocol/git-rules-config.md, "Repository config refusals", gives the rules.
-// A Linux VM with git 2.43.0 ran
-// every cell that a comment names here, unless the comment names another system.
-// The X cells are those of the edge round.
+// A Linux system with git 2.43.0 ran every measurement that a comment names here,
+// unless the comment names another system.
 
 const (
 	// repoConfigPrefix starts a refusal of the config, and repoFilePrefix one of
@@ -31,43 +30,43 @@ const (
 	repoFilePrefix   = "a file in this repository's .git directory cannot be used: "
 
 	// repoConfigMaxIncludes is the most included files that the daemon reads. 16
-	// in a row pass, and 17 are refused (cells E10, Linux and macOS VMs).
+	// in a row pass, and 17 are refused (measured on Linux and macOS).
 	repoConfigMaxIncludes = 16
 	// repoConfigMaxDepth is the deepest include chain. config, d1, d2 and d3 pass,
-	// and a fourth level is refused (cells E10, Linux and macOS VMs).
+	// and a fourth level is refused (measured on Linux and macOS).
 	repoConfigMaxDepth = 3
 	// repoConfigMaxBytes bounds one config file. 8388608 bytes pass, and 8388609
-	// are refused (cells X6).
+	// are refused (measured).
 	repoConfigMaxBytes = 8 << 20
 	// repoGitFileMaxBytes bounds info/attributes, info/exclude and shallow. 4194304
-	// bytes pass, and 4194305 are refused (cells X6).
+	// bytes pass, and 4194305 are refused (measured).
 	repoGitFileMaxBytes = 4 << 20
 	// repoConfigKeyMaxBytes bounds the full name of a setting, with its section and
 	// subsection, in the sections of repoNameBoundSections. 1024 bytes pass, and
-	// 1025 are refused, in core and remote (cells X4).
+	// 1025 are refused, in core and remote (measured).
 	repoConfigKeyMaxBytes = 1024
 	// repoSettingCost and repoSettingsMaxCost make the "more settings" bound. The
 	// arithmetic is in docs/protocol/git-rules-config.md, "The count of settings". It is fitted to
-	// the measured pairs of cells X5. TestRepoConfigSettingsCost has each pair.
+	// the measured pairs. TestRepoConfigSettingsCost has each pair.
 	repoSettingCost     = 96
 	repoSettingsMaxCost = 8 << 20
 )
 
 // configLinkTail ends the detail of a config that the daemon reaches through a
-// link that it does not follow. 5fd08069 writes it on a Windows VM for a config
-// that is a file link (cell C4b, configLinkDetail) and for a git directory that
-// is a junction (cells X1c of val-s3p2b2-7-windows, gitDirLinkDetail).
+// link that it does not follow. 5fd08069 writes it on Windows for a config that
+// is a file link (configLinkDetail) and for a git directory that is a junction
+// (gitDirLinkDetail), measured on Windows.
 const configLinkTail = ": is, or is reached through, a link that Claude does not follow here; " +
 	"replace the link with what it points to"
 
 // repoNameBoundSections are the sections whose setting names have the bound of
-// repoConfigKeyMaxBytes. The exact pair is measured in core and remote (cells
-// X4), and in lfs, url, filter, extensions, include and includeif (cells V4).
-// Cells N6 measured the same pair in index, feature and checkout (Linux, macOS
-// and Windows VMs). A name of 1100 or 2200 bytes passes in
-// the sections user, alias, http, credential, safe, gc, diff, merge, x, abcde,
-// branch and submodule, and so does a section name of 1100 bytes. A subsection
-// of 1100 bytes passes in branch (cell V4). No other section was run.
+// repoConfigKeyMaxBytes. The exact pair is measured in core and remote, and in
+// lfs, url, filter, extensions, include and includeif. A measurement measured
+// the same pair in index, feature and checkout (measured on Linux, macOS and
+// Windows). A name of 1100 or 2200 bytes passes in the sections user, alias,
+// http, credential, safe, gc, diff, merge, x, abcde, branch and submodule, and
+// so does a section name of 1100 bytes. A subsection of 1100 bytes passes in
+// branch (measured). No other section was run.
 var repoNameBoundSections = map[string]bool{
 	"core": true, "extensions": true, "include": true, "includeif": true,
 	"lfs": true, "url": true, "filter": true, "remote": true,
@@ -75,9 +74,9 @@ var repoNameBoundSections = map[string]bool{
 }
 
 // repoCountedSections are the sections whose settings count toward
-// repoSettingsMaxCost (cells X5 and V5). The exact pairs are in core and remote.
-// For each other section here one cell of 200000 lines was refused. The sections
-// x and user do not count. No other section was run: add a measured one here.
+// repoSettingsMaxCost (measured). The exact pairs are in core and remote. For
+// each other section here one cell of 200000 lines was refused. The sections x
+// and user do not count. No other section was run: add a measured one here.
 var repoCountedSections = map[string]bool{
 	"core": true, "remote": true, "extensions": true, "include": true, "branch": true,
 	"lfs": true, "index": true, "url": true, "filter": true, "feature": true,
@@ -109,8 +108,7 @@ func configTextCmd(ctx context.Context, dir string, env []string) *exec.Cmd {
 }
 
 // errReadBound is the error of a listing of one config file that repoReadBound
-// ended. A create quotes it after repoConfigPrefix (cell TW of round
-// task010-04, Linux VM).
+// ended. A create quotes it after repoConfigPrefix (measured on Linux).
 var errReadBound = errors.New("git did not finish reading it within 30 seconds; try again")
 
 // runConfigText runs cmd with text as its standard input. In a request with
@@ -137,21 +135,17 @@ func runConfigText(ctx context.Context, cmd *exec.Cmd, text []byte) error {
 // 5fd08069 answers about 31 s after the start also when git exited 0 earlier
 // and only a child holds its stdout past the bound. The child gets no signal.
 // The repository config read of git.status and call
-// 7 of the start test then answer their refusal texts (cells B1 and B2 of
-// rounds task101-01 and task101-02, Linux VM). A call that the bound ended
-// stays refused when the pipes close inside the drain (claustrum's own, not
-// measured).
+// 7 of the start test then answer their refusal texts (measured on Linux). A
+// call that the bound ended stays refused when the pipes close inside the
+// drain (claustrum's own, not measured).
 //
-// git is reaped at the end of its stdout or at the bound, whichever comes
-// first. Until then a git that exited stays a zombie. 5fd08069 reaps it at
-// about 30 s in cells B1 and B2 (round task101-03, Linux VM, and round
-// task082-02, macOS VM). After the reap the copy of stderr gets at most
+// git is reaped at the end of its stdout or at the bound, whichever comes first.
+// Until then a git that exited stays a zombie. 5fd08069 reaps it at about 30 s
+// (measured on Linux and macOS). After the reap the copy of stderr gets at most
 // startBoundDrain. With a child that holds stderr alone, 5fd08069 goes on about
-// 1.1 to 1.4 s after the exit of git and uses the listing (cells B1-e of rounds
-// task111-01 and task111-02, Linux and macOS VMs, and round task111-14, Windows
-// VM, about 1.0 to 1.2 s there).
-// A call that exits non-zero while a child still holds stderr at that cut
-// gives heldStderrExit.
+// 1.1 to 1.4 s after the exit of git and uses the listing (measured on Linux and
+// macOS, and on Windows, about 1.0 to 1.2 s there). A call that exits non-zero
+// while a child still holds stderr at that cut gives heldStderrExit.
 func runStartBound(cmd *exec.Cmd, stdin []byte, bound time.Duration) (bool, error) {
 	var files []*os.File
 	for range 3 {
@@ -240,36 +234,32 @@ func (e heldStderrExit) Unwrap() error { return e.err }
 // repoListingMaxBytes bounds the listing that the read of the repository config
 // takes from git for one file. A listing names the whole key of each setting, so
 // a small file with a long subsection name and many keys lists as far more bytes
-// than it has. By arithmetic, the largest accepted files of cells X5 and X6 list
-// as no more than their own size. No cell measured a listing size. The bound is
-// claustrum's own, and 5fd08069 is not measured with a listing over it. A
-// variable, so that a test can lower it.
+// than it has. By arithmetic, the largest accepted files list as no more than
+// their own size. No cell measured a listing size. The bound is claustrum's own,
+// and 5fd08069 is not measured with a listing over it. A variable, so that a
+// test can lower it.
 var repoListingMaxBytes = 8 * repoConfigMaxBytes
 
 // repoReadBound ends each listing of one config file on standard input, in a
 // request with time limits (gitStop, runConfigText). The bound counts from the
-// start of the call. The process gets SIGKILL
-// with no SIGTERM before it. The read of the repository config then answers
-// readStopText after repoConfigPrefix. On 5fd08069 a git.status whose listing
-// of `.git/config` was held 35 s answered at 30.3 s so (cell T18 of round
-// task010-01, Linux VM). The listings of a `config.worktree` file end so too
-// (cells TW and TS of round task010-04, Linux VM). A git that exited 0 while a
-// child holds its pipes past the bound gets the same in the read of the
-// repository config, about 31 s after the start (cell B1 of rounds task101-01
-// and task101-02, Linux VM). In the
-// `config.worktree` listings and the entry test of git.status that is
-// claustrum's own, not measured. macOS is measured in rounds task082-02 and
-// task111-02. Windows, an included file and git.info are not measured: they
-// get the same (claustrum's own). A variable, so that a test can lower it.
+// start of the call. The process gets SIGKILL with no SIGTERM before it. The
+// read of the repository config then answers readStopText after
+// repoConfigPrefix. On 5fd08069 a git.status whose listing of `.git/config`
+// was held 35 s answered at 30.3 s so (measured on Linux). The listings of a
+// `config.worktree` file end so too (measured on Linux). A git that exited 0
+// while a child holds its pipes past the bound gets the same in the read of
+// the repository config, about 31 s after the start (measured on Linux). In
+// the `config.worktree` listings and the entry test of git.status that is
+// claustrum's own, not measured. macOS is measured. Windows, an included file
+// and git.info are not measured: they get the same (claustrum's own). A
+// variable, so that a test can lower it.
 var repoReadBound = 30 * time.Second
 
-// startBoundDrain is the time that runStartBound reads the pipes after its
-// bound. 5fd08069 answers B1 and B2 about 1 s after the 30 s bound (rounds
-// task101-01 and task101-02, Linux VM). It is also the time that the copy of
-// stderr gets after the reap. With a child that holds stderr alone, 5fd08069
-// goes on about 1.1 to 1.4 s after the exit of git (cells B1-e of rounds
-// task111-01 and task111-02, Linux and macOS VMs). The exact value of 1 s is
-// claustrum's own.
+// startBoundDrain is the time that runStartBound reads the pipes after its bound.
+// 5fd08069 answers two measured cases about 1 s after the 30 s bound (measured on
+// Linux). It is also the time that the copy of stderr gets after the reap. With a
+// child that holds stderr alone, 5fd08069 goes on about 1.1 to 1.4 s after the exit
+// of git (measured on Linux and macOS). The exact value of 1 s is claustrum's own.
 var startBoundDrain = time.Second
 
 // errListingTooLarge ends a listing that passes repoListingMaxBytes.
@@ -314,10 +304,10 @@ func listRepoConfigText(ctx context.Context, text []byte, dir string, env []stri
 
 // repoConfigListEnv is the environment of the listing of one config file: the
 // filtered environment of the daemon (gitChildEnv), then GIT_DIR=<null device>,
-// LC_ALL=C and LANGUAGE=C. The call log of 5fd08069 shows these three values on a
-// Linux VM, and GIT_DIR=NUL on a Windows VM. claustrum passes the
-// filtered environment whole (claustrum's own, not measured), so the daemon's
-// GIT_CONFIG and GIT_CONFIG_PARAMETERS stay. The call runs in gitVersionDir.
+// LC_ALL=C and LANGUAGE=C. The call log of 5fd08069 shows these three values on
+// Linux, and GIT_DIR=NUL on Windows. claustrum passes the filtered environment
+// whole (claustrum's own, not measured), so the daemon's GIT_CONFIG and
+// GIT_CONFIG_PARAMETERS stay. The call runs in gitVersionDir.
 func repoConfigListEnv() []string {
 	return append(gitChildEnv(), "GIT_DIR="+os.DevNull, "LC_ALL=C", "LANGUAGE=C")
 }
@@ -349,13 +339,13 @@ func stderrLines(errOut []byte) string {
 }
 
 // openRepoFile opens path for a read. The open does not wait, so a FIFO with no
-// writer is judged at once: 5fd08069 answers in under 350 ms there (cells C4, C5
-// and E10). A file that is missing, a dangling link included, gives nil and no
-// error (cells C3 and X10).
+// writer is judged at once: 5fd08069 answers in under 350 ms there (measured). A
+// file that is missing, a dangling link included, gives nil and no error
+// (measured).
 //
 // The open never makes the file the controlling terminal of the daemon
 // (openNoTerminal). With a config that is a link to a pty slave, 89cb6289 and
-// 5fd08069 stay up when the pty master closes (cell V17, Linux VM, 6 of 6 runs).
+// 5fd08069 stay up when the pty master closes (measured on Linux, 6 of 6 runs).
 func openRepoFile(path string) (*os.File, error) {
 	f, err := repoFileOpen(path, os.O_RDONLY|openNonBlocking|openNoTerminal, 0)
 	if errors.Is(err, fs.ErrNotExist) {
@@ -369,10 +359,10 @@ var repoFileOpen = os.OpenFile
 
 // repoFileKindDetail tests the open file f of path: it must be a regular file of
 // at most max bytes. A symbolic link to a regular file passes, and one to the
-// null device does not (cells C4 and C5). large is the end of the size refusal.
-// The path is quoted and cut as quoteOperand does it: the first 300 characters
-// stay, with no mark of the cut. Cells X12 measured that cut for ASCII paths in
-// the size text of the config, and cells V12 with characters of two bytes.
+// null device does not (measured). large is the end of the size refusal. The
+// path is quoted and cut as quoteOperand does it: the first 300 characters stay,
+// with no mark of the cut. Measurements show that cut for ASCII paths in the
+// size text of the config, and with characters of two bytes.
 func repoFileKindDetail(f *os.File, path string, max int64, large string) string {
 	fi, err := f.Stat()
 	switch {
@@ -417,8 +407,7 @@ type repoExtension struct {
 // name other than worktreeconfig that is not in copyKeyRules, or a value that
 // its value rule does not accept. 5fd08069 refuses `preciousobjects = 1234567890`,
 // `objectformat = sha512`, `refstorage` with no value and `partialclone = a/-b`
-// (cells R1 to R4 of tier0-14, Linux VM). Cells E9, X8 and V6 measured more
-// names and values.
+// (measured on Linux). A measurement measured more names and values.
 func (e repoExtension) refused() bool {
 	if e.name == "worktreeconfig" {
 		return false
@@ -507,8 +496,7 @@ type repoConfigRead struct {
 	// conditional are the settings of the files of `includeIf` sections, for
 	// the filter rule only. The copy does not carry them. 5fd08069 refuses a
 	// filter of such a file in the state shadow, also when its condition does
-	// not hold (cell F1b of round task084-02, cells F1c and F1d of round
-	// task084-04, Linux VM). claustrum follows no include in that file
+	// not hold (measured on Linux). claustrum follows no include in that file
 	// (claustrum's own, not measured).
 	conditional []repoSetting
 	// ruleSkip holds the indices of settings that the filter rule passes
@@ -539,52 +527,51 @@ type repoConfigRead struct {
 }
 
 // file reads the config file at path, depth levels below the config, and returns
-// the detail of a refusal, or "". Each file is one git call (cells E10: 17 such
+// the detail of a refusal, or "". Each file is one git call (measured: 17 such
 // calls for the config and 16 included files). An `include.path` setting is
 // followed where it stands. An empty value, and a setting with no value, name no
-// file (cells X9).
+// file (measured).
 //
-// Three tests are for the config itself, depth 0, and not for an included file:
-// the format version, the extensions and the worktreeConfig switch. A version
-// `2` and an `extensions.foo` in an included file are not refused (cells X7 and
-// X9). The name bound and the "more settings" bound hold in an included file
-// too, with the path of that file (cells V7, Linux, macOS and Windows VMs). The
-// count is one sum across the included files, and the config has its own sum.
-// Two included files of 40000 `core.filemode = true` lines each are refused,
-// and the text names the second file. The config with 40000 such lines and one
-// such included file passes (cells N5, Linux, macOS and Windows VMs). A Linux VM
-// ran that pair in both orders. A file below an included file adds to the same
-// sum: a chain of three files of 30000 such lines is refused, and the text names
-// the third file. A chain of two passes (cells P3, the same three systems).
+// Three tests are for the config itself, depth 0, and not for an included file: the
+// format version, the extensions and the worktreeConfig switch. A version `2` and an
+// `extensions.foo` in an included file are not refused (measured). The name bound
+// and the "more settings" bound hold in an included file too, with the path of that
+// file (measured on Linux, macOS and Windows). The count is one sum across the
+// included files, and the config has its own sum. Two included files of 40000
+// `core.filemode = true` lines each are refused, and the text names the second file.
+// The config with 40000 such lines and one such included file passes (measured on
+// Linux, macOS and Windows). A Linux test ran that pair in both orders. A file below
+// an included file adds to the same sum: a chain of three files of 30000 such lines
+// is refused, and the text names the third file. A chain of two passes (measured on
+// the same three systems).
 //
 // An open that fails is a refusal with the error text of the open and no quotes:
-// a socket and a file of mode 000, as the config (cells X10) and as an included
-// file (cells V7, Linux VM, and mode 000 on a macOS VM). A syntax error has the
-// text of git with the path in quotes, in the config (cell X10) and in an
-// included file (cells V7, Linux, macOS and Windows VMs).
+// a socket and a file of mode 000, as the config (measured) and as an included
+// file (measured on Linux, and mode 000 on macOS). A syntax error has the text of
+// git with the path in quotes, in the config (measured) and in an included file
+// (measured on Linux, macOS and Windows).
 //
 // Both bounds are tested on the whole file before an include of it is followed.
 // That order is fitted to two cells: 200000 `include.path` lines of a missing
-// file (cells X5), and 200000 such lines in an `includeIf` section (cell V5,
-// Linux VM). Both get the "more settings" text, not the include limit.
+// file (measured), and 200000 such lines in an `includeIf` section (measured on
+// Linux). Both get the "more settings" text, not the include limit.
 //
 // Each `include.path` setting with a value counts toward the 16 files, also when
-// its file is missing: 17 missing files are refused (cells V8, Linux, macOS and
-// Windows VMs), and 16 pass (cells V8, Linux VM, and P8w, Windows VM). The limits
-// come before the open of the file (not measured apart from the missing file).
+// its file is missing: 17 missing files are refused (measured on Linux, macOS and
+// Windows), and 16 pass (measured on Linux and Windows). The limits come before
+// the open of the file (not measured apart from the missing file).
 //
 // The file of an `includeIf` section counts toward the 16, and it gets the kind
 // test and the size test, whatever the condition is: `gitdir:` that matches or
-// not, `gitdir/i:`, `onbranch:` and `hasconfig:` (cells X9 and V8, Linux, macOS
-// and Windows VMs). The value tests of includeTarget run too: `~root/x` gets the
-// "expands neither" text in a matching section (cell V8) and in one that does
-// not match (cells N12, Linux VM). A missing file of such a section counts
-// toward the 16 (cells N7, Linux, macOS and Windows VMs). 5fd08069 lists such a
-// file with one more git call, with or without a match, and carries no setting
-// of it (cells 11a to 11f of s3p2b-edges-linux, Linux VM, and cell 11 of that
-// round on a macOS VM). claustrum makes that call. It keeps its answer only for
-// the filter rule (repoConfigRead.conditional). A file there that git cannot
-// list is not measured.
+// not, `gitdir/i:`, `onbranch:` and `hasconfig:` (measured on Linux, macOS and
+// Windows). The value tests of includeTarget run too: `~root/x` gets the
+// "expands neither" text in a matching section (measured) and in one that does
+// not match (measured on Linux). A missing file of such a section counts toward
+// the 16 (measured on Linux, macOS and Windows). 5fd08069 lists such a file with
+// one more git call, with or without a match, and carries no setting of it
+// (measured on Linux and macOS). claustrum makes that call. It keeps its answer
+// only for the filter rule (repoConfigRead.conditional). A file there that git
+// cannot list is not measured.
 func (r *repoConfigRead) file(path string, depth int) string {
 	r.log.note(path)
 	if d := configLinkDetail(path); d != "" {
@@ -633,10 +620,9 @@ func (r *repoConfigRead) file(path string, depth int) string {
 			}
 			// A listing that exits non-zero while a child holds its stderr is
 			// refused with the lines read up to the cut of the stderr copy, and
-			// one `git version` call follows. 5fd08069 answers so in cells
-			// B1e-x1 of rounds task111-09 and task111-10 (Linux and macOS VMs).
-			// A failed listing with no holder keeps the rule before it
-			// (claustrum's own, not measured).
+			// one `git version` call follows. 5fd08069 answers so (measured on
+			// Linux and macOS). A failed listing with no holder keeps the rule
+			// before it (claustrum's own, not measured).
 			if errors.As(err, new(heldStderrExit)) {
 				if d := stderrLines(errOut); d != "" {
 					versionAfterFailure()
@@ -672,9 +658,8 @@ func (r *repoConfigRead) file(path string, depth int) string {
 		case "extensions.worktreeconfig":
 			// The bool rule reads the switch. `true`, `yes`, `1`, `TRUE`, `on`,
 			// `ON`, `Yes`, `On` and `tRuE` turn it on, and `false`, `no` and `0`
-			// do not (cells X2, V14, N4 and P2, Linux, macOS and Windows VMs).
-			// `2` and `10` turn it on (cell C3c of tier0-14 and cell K1 of
-			// tier0-16, Linux VM).
+			// do not (measured on Linux, macOS and Windows). `2` and `10` turn
+			// it on (measured on Linux).
 			v, ok := readBoolWord(repoSetting{value: value, hasValue: hasValue})
 			r.worktreeConfig = ok && v == "true"
 		}
@@ -740,16 +725,13 @@ func isLastLineKey(key string) bool {
 		len(key) > len("filter..process") && strings.HasSuffix(key, ".process"))
 }
 
-// lastLinePerFile is settings, the settings of one file, with only the last
-// `smudge` and the last `process` line of each filter. The filter rule judges the last value of each
-// file. 5fd08069 passes `smudge = cat` after another value in .git/config,
-// and refuses the reverse order (cells Q8a and Q8b of round task084-07, Linux
-// VM). It refuses a value that does not pass in .git/config and `cat` in an
-// includeIf file, in either order (cells F1e and F1f of round task084-05, F1g
-// and F1h of round task084-06, Linux VM). The last value of an includeIf file,
-// of a plain include file and of config.worktree is claustrum's own, not
-// measured. For a `process` line it follows cells F6, F10 and F10b of round
-// task073-02 (not measured).
+// lastLinePerFile is settings, the settings of one file, with only the last `smudge` and the last
+// `process` line of each filter. The filter rule judges the last value of each file. 5fd08069 passes
+// `smudge = cat` after another value in .git/config, and refuses the reverse order (measured on
+// Linux). It refuses a value that does not pass in .git/config and `cat` in an includeIf file, in
+// either order (measured on Linux). The last value of an includeIf file, of a plain include file and
+// of config.worktree is claustrum's own, not measured. For a `process` line it follows measured
+// cases of another step (not measured here).
 func lastLinePerFile(settings []repoSetting) []repoSetting {
 	last := map[string]int{}
 	for i, s := range settings {
@@ -813,9 +795,9 @@ func isIncludeIfPath(key string) bool {
 // configFileTests are the kind test and the size test of a config file that the
 // daemon does not read: the file of an `includeIf` section, and a
 // `config.worktree` file. A FIFO there gets the "not a regular file" text, and a
-// file of 20 MiB the size text, each with the path of that file (cells X9, V8
-// and X2). A version `2` in such a file is not refused, and no other content of
-// it ran. An open error there is not measured: claustrum gives no refusal.
+// file of 20 MiB the size text, each with the path of that file (measured). A
+// version `2` in such a file is not refused, and no other content of it ran. An
+// open error there is not measured: claustrum gives no refusal.
 func configFileTests(path string, log *repoReadLog) string {
 	log.note(path)
 	if d := configLinkDetail(path); d != "" {
@@ -834,25 +816,24 @@ func configFileTests(path string, log *repoReadLog) string {
 
 // includeTarget is the path of the file that the `include.path` value of file
 // names, or the detail of a refusal. A relative value counts from the folder of
-// file, also when it leaves the git directory (cell X9), and `~/` is the `HOME`
-// folder of the daemon (cells C3). `~user` and `%(prefix)/` are refused (cells
-// C3, `~root/x` and `%(prefix)/x`). A `~/` value with an unset or relative
-// `HOME` gets the same refusal: the text says so, and no cell ran it. The
-// Windows rules come first (includeValueDetail and includePlaceDetail).
+// file, also when it leaves the git directory (measured), and `~/` is the `HOME`
+// folder of the daemon. `~user` and `%(prefix)/` are refused (measured with
+// `~root/x` and `%(prefix)/x`). A `~/` value with an unset or relative `HOME` gets
+// the same refusal: the text says so, and no cell ran it. The Windows rules come
+// first (includeValueDetail and includePlaceDetail).
 //
 // The value in the text is cut to its first 100 characters: a value of 100 is
-// whole, and one of 101 is cut, also with characters of two bytes (cells V12,
-// Linux and macOS VMs).
+// whole, and one of 101 is cut, also with characters of two bytes (measured
+// on Linux and macOS).
 //
 // The path of a relative include is the folder of file, one separator, and the
-// value as written. It is not cleaned: on a Windows VM `path = <dir>/inc.cfg`
-// gives `<git dir>\<dir>/inc.cfg` in a text (cells V12c and V12d). No cell on
-// Linux or macOS has a value that a clean changes. The folder of file stays as
-// written too: `include.path = a/../b/inc.cfg`, and in that file `path = x.cfg`,
-// gives `<git dir>/a/../b/x.cfg` in a text (cell N13-b, Linux and macOS VMs). The `~/` form
-// is joined and cleaned as before (not measured). `include.path = ~` names the
-// home folder itself, and gets the "not a regular file" text (cell N13, Linux
-// VM).
+// value as written. It is not cleaned: on Windows `path = <dir>/inc.cfg` gives `<git
+// dir>\<dir>/inc.cfg` in a text (measured). No cell on Linux or macOS has a value that a
+// clean changes. The folder of file stays as written too: `include.path = a/../b/inc.cfg`,
+// and in that file `path = x.cfg`, gives `<git dir>/a/../b/x.cfg` in a text (measured on
+// Linux and macOS). The `~/` form is joined and cleaned as before (not measured).
+// `include.path = ~` names the home folder itself, and gets the "not a regular file" text
+// (measured on Linux).
 func includeTarget(file, value, gitDir string) (target, detail string) {
 	if d := includeValueDetail(file, value); d != "" {
 		return "", d
@@ -905,27 +886,25 @@ const (
 // detail of a class 1 refusal, or "". entry is the git directory of a linked
 // worktree that the request names, or "".
 //
-// The format version is the last value of core.repositoryformatversion in the
-// config itself, as git lists it. It must be exactly the text 0 or 1 (cells C2,
-// E8 and X7). A config with no such setting is not refused (cell X7). Under
-// version 1, the first extension of the config itself that is refused gives its
-// name (repoExtension.refused). Under version 0 no extension is refused (cells
-// C2, A3 and X8). The version test comes before the extension test (not
-// measured). An extension in a config with no version key is not refused (cells
-// V6, `foo = true`, Linux, macOS and Windows VMs).
+// The format version is the last value of core.repositoryformatversion in the config
+// itself, as git lists it. It must be exactly the text 0 or 1 (measured). A config with
+// no such setting is not refused (measured). Under version 1, the first extension of the
+// config itself that is refused gives its name (repoExtension.refused). Under version 0
+// no extension is refused (measured). The version test comes before the extension test
+// (not measured). An extension in a config with no version key is not refused (measured
+// with `foo = true` on Linux, macOS and Windows).
 //
-// With `extensions.worktreeConfig` in the config, true by the bool rule, the
-// `config.worktree` file of entry gets the kind test and the size test. Cells X2 ran git.info with a linked
-// worktree as its path. Cells V14 ran git.status, git.list_branches and
-// git.worktree_create too (Linux and Windows VMs), and a remove (cell W14, Linux
-// VM). The `config.worktree` file of the main worktree gets its tests in
+// With `extensions.worktreeConfig` in the config, true by the bool rule, the `config.worktree` file of
+// entry gets the kind test and the size test. Measurements ran git.info with a linked worktree as its
+// path, and git.status, git.list_branches and git.worktree_create too (measured on Linux and Windows), and
+// a remove (measured on Linux). The `config.worktree` file of the main worktree gets its tests in
 // readRepoConfig (worktreeConfigFileDetail).
 //
 // The version value in its text is cut to its first 20 characters, with no mark
 // of the cut. The extension name is cut to its first 60. A value of 20
 // characters is whole, and one of 21 shows 20. A name of 60 is whole, and one of
-// 61 shows 60 (cells P1, Linux, macOS and Windows VMs). The cells have ASCII
-// text. claustrum counts characters, as for a path.
+// 61 shows 60 (measured on Linux, macOS and Windows). The cells have ASCII text.
+// claustrum counts characters, as for a path.
 func repoConfigDetail(ctx context.Context, gitDir, entry string, log *repoReadLog) string {
 	r, d := readRepoConfig(ctx, gitDir, log)
 	if d != "" || r.unlisted {
@@ -950,29 +929,27 @@ func entryConfigDetail(worktreeConfig bool, entry string, log *repoReadLog) stri
 // With the worktreeConfig switch and a `config.worktree` file in gitDir,
 // 5fd08069 lists that file two times, right after the config and its included
 // files. It does not list it when the switch is off or the file is missing
-// (cells 1a to 1e, 9a and 9k of s3p2b-edges2-linux, Linux VM). claustrum lists
-// it two times and takes the settings of the first listing. With an extension
-// refusal both list it once (cell Q11 of tier0-18, Linux VM). A syntax error
-// there is refused (cell C3b of tier0-14). Before any git call reads it the
-// file gets the kind test, the size test and the open of the config
+// (measured on Linux). claustrum lists it two times and takes the settings of
+// the first listing. With an extension refusal both list it once (measured on
+// Linux). A syntax error there is refused (measured). Before any git call reads
+// it the file gets the kind test, the size test and the open of the config
 // (worktreeConfigFileDetail). A file that git cannot list for another reason is
 // not measured: its settings are not used and nothing is refused.
 //
 // A file of 0 bytes is not listed. On 5fd08069 the first git.info then makes 21
-// calls, with no read of that file (cell p2-K-none-empty-file of
-// val-s3p2b2-6-linux, Linux VM). The create of that cell still lists the file
-// after its `worktree add` (newWorktreeConfig).
+// calls, with no read of that file (measured on Linux). The create of that cell
+// still lists the file after its `worktree add` (newWorktreeConfig).
 func readRepoConfig(ctx context.Context, gitDir string, log *repoReadLog) (*repoConfigRead, string) {
 	r := &repoConfigRead{ctx: ctx, gitDir: gitDir, log: log}
 	if d := gitDirLinkDetail(gitDir); d != "" {
 		return r, d
 	}
 	// A git directory that is a file with no `gitdir:` line is refused here, with
-	// the error of its open as a folder. 5fd08069 answers so on a Windows VM for a
-	// daemon GIT_DIR that names such a file, on the five methods (cell V-Wd of round
-	// task039-02 and V-Wd2 of round task039-03). A `.git` file of a linked worktree
-	// passes here and gets the class 2 refusal (gitDirFilesDetail). The `gitdir:`
-	// test that tells the two apart is claustrum's own choice.
+	// the error of its open as a folder. 5fd08069 answers so on Windows for a daemon
+	// GIT_DIR that names such a file, on the five methods (measured). A `.git` file
+	// of a linked worktree passes here and gets the class 2 refusal
+	// (gitDirFilesDetail). The `gitdir:` test that tells the two apart is
+	// claustrum's own choice.
 	if _, isGitFile := readGitFile(gitDir, filepath.Dir(gitDir)); !isGitFile {
 		if d := gitDirNotFolderDetail(gitDir); d != "" {
 			return r, d
@@ -992,12 +969,12 @@ func readRepoConfig(ctx context.Context, gitDir string, log *repoReadLog) (*repo
 	if r.worktreeConfig {
 		path := filepath.Join(gitDir, "config.worktree")
 		log.note(path)
-		// A syntax error there refuses the request with the text of git (cell C3b
-		// of tier0-14, Linux VM). It gets the `git version` call of a config with
-		// such an error. It comes before the extension test (cell E3 of tier0-16,
-		// Linux VM). Other failures of the listing are not measured. A good file
-		// gets its second listing after the extension test, so an extension
-		// refusal comes after one listing of that file (cell Q11 of tier0-18, Linux VM).
+		// A syntax error there refuses the request with the text of git (measured on
+		// Linux). It gets the `git version` call of a config with such an error. It
+		// comes before the extension test (measured on Linux). Other failures of the
+		// listing are not measured. A good file gets its second listing after the
+		// extension test, so an extension refusal comes after one listing of that file
+		// (measured on Linux).
 		if d := worktreeConfigFileDetail(path, log); d != "" {
 			return r, d
 		}
@@ -1030,18 +1007,17 @@ func readRepoConfig(ctx context.Context, gitDir string, log *repoReadLog) (*repo
 // worktreeConfigFileDetail tests the `config.worktree` file of the git
 // directory at path, with the switch on. The open does not wait (openRepoFile).
 // A missing file passes. 5fd08069 refuses these on git.worktree_create and
-// git.info, before any add (Linux and macOS VMs):
+// git.info, before any add (measured on Linux and macOS):
 //
 //   - A FIFO, an empty folder and a link to the null device: `"<path>" is not a
-//     regular file` (cells C8 of round task007-01, V2 of task007-02, R2 and R3
-//     of task007-03). A FIFO also on git.status and git.list_branches (cell V1
-//     of task007-02).
+//     regular file` (measured). A FIFO also on git.status and git.list_branches
+//     (measured).
 //   - A file that cannot be opened: the error of the open, `open <path>:
-//     permission denied` for mode 000 (cell R4 of task007-03).
-//   - A file over 8 MiB: the size text of a config (cell R7 of task007-03).
+//     permission denied` for mode 000 (measured).
+//   - A file over 8 MiB: the size text of a config (measured).
 //
 // Other kinds and the other methods get the same tests (from the code). A
-// dangling link passes, and so does a link to a file (cells R5 and R6).
+// dangling link passes, and so does a link to a file (measured).
 func worktreeConfigFileDetail(path string, log *repoReadLog) string {
 	f, err := openRepoFile(path)
 	if err != nil {
@@ -1058,16 +1034,16 @@ func worktreeConfigFileDetail(path string, log *repoReadLog) string {
 // gitDirFilesDetail tests shallow, info/attributes and info/exclude of the git
 // directory gitDir, in that order, and returns the detail of a class 2 refusal,
 // or "". With two refused files 5fd08069 names `shallow` before info/attributes
-// (cells V16, Linux, macOS and Windows VMs) and info/attributes before
-// info/exclude. Cells P6 ran that pair four ways on a Linux VM: a file of 20
-// MiB with a FIFO, two files of 20 MiB, two FIFOs, and a FIFO with a directory.
-// A refused config comes before each of them (cells V16).
+// (measured on Linux, macOS and Windows) and info/attributes before
+// info/exclude. Measurements ran that pair four ways on Linux: a file of 20 MiB
+// with a FIFO, two files of 20 MiB, two FIFOs, and a FIFO with a directory. A
+// refused config comes before each of them (measured).
 //
-// A git directory that is a file gets the error of its open as a folder first. On a
-// Windows VM 5fd08069 answers so for a daemon GIT_DIR=.git and a linked worktree, on
-// git.info, git.status, git.list_branches and git.worktree_create (cells c19 to c22
-// of round task039-01). git.worktree_remove gives it in its lock-check text (cell
-// V-RM of round task039-02). Other systems are not measured.
+// A git directory that is a file gets the error of its open as a folder first. On
+// Windows 5fd08069 answers so for a daemon GIT_DIR=.git and a linked worktree, on
+// git.info, git.status, git.list_branches and git.worktree_create (measured).
+// git.worktree_remove gives it in its lock-check text (measured). Other systems
+// are not measured.
 func gitDirFilesDetail(gitDir string, log *repoReadLog) string {
 	if d := gitDirNotFolderDetail(gitDir); d != "" {
 		return d
@@ -1110,11 +1086,11 @@ func gitDirFilesRefusal(gitDir string) string {
 }
 
 // infoFileDetail tests info/attributes or info/exclude at path. The daemon does
-// not open the file. A FIFO and a directory are refused as not regular (cells C5
-// and X10), and a regular file of more than repoGitFileMaxBytes too (cells E6 and
-// X6). A symbolic link passes, also one to the null device and a dangling one,
-// and so does a file of mode 000 (cells C5 and X10). A link to a FIFO or to a
-// large file is not measured: it passes here, as every link does.
+// not open the file. A FIFO and a directory are refused as not regular
+// (measured), and a regular file of more than repoGitFileMaxBytes too. A symbolic
+// link passes, also one to the null device and a dangling one, and so does a file
+// of mode 000 (measured). A link to a FIFO or to a large file is not measured: it
+// passes here, as every link does.
 func infoFileDetail(path string) string {
 	fi, err := os.Lstat(path)
 	switch {
@@ -1130,11 +1106,10 @@ func infoFileDetail(path string) string {
 
 // shallowFileDetail tests the `shallow` file at path. The daemon opens it and
 // follows a link: a FIFO, a directory and a link to the null device are refused
-// as not regular (cells C5 and X10). A file of mode 000 gets the error text of
-// the open, with no quotes (cell X10), and so does a socket (cell V10). Another
-// open error gets the same form (not measured). A dangling link and a missing
-// file pass.
-// The size text has no `: it` (cell X6). The file holds object ids and nothing
+// as not regular (measured). A file of mode 000 gets the error text of the
+// open, with no quotes (measured), and so does a socket. Another open error
+// gets the same form (not measured). A dangling link and a missing file pass.
+// The size text has no `: it` (measured). The file holds object ids and nothing
 // else (holdsObjectIDs).
 func shallowFileDetail(path string, log *repoReadLog) string {
 	const large = " is larger than 4 MiB"
@@ -1166,10 +1141,10 @@ func shallowFileDetail(path string, log *repoReadLog) string {
 // holdsObjectIDs reports whether each line of b is an object id: 40 or 64 hex
 // characters in lower case. An empty file passes, and so do a last line with no
 // newline and lines that end with CRLF. An id in upper case, and a blank line
-// before or after an id, are refused (cells E7, X10 and X11). So are a line of
-// 39, 41 or 63 hex characters, an id with a space after it, and a file that holds
-// one line end and nothing else, LF or CRLF (cells V10, Linux, macOS and Windows
-// VMs). This rule is fitted to those cells.
+// before or after an id, are refused (measured). So are a line of 39, 41 or 63
+// hex characters, an id with a space after it, and a file that holds one line end
+// and nothing else, LF or CRLF (measured on Linux, macOS and Windows). This rule
+// is fitted to those cells.
 func holdsObjectIDs(b []byte) bool {
 	if len(b) == 0 {
 		return true
@@ -1186,7 +1161,7 @@ func holdsObjectIDs(b []byte) bool {
 // repoVerdictKey names one read: the pinned git directory and the home folder of
 // the daemon, which a `~/` include uses. A request on a linked worktree uses the
 // read of its repository: on 5fd08069 such a request lists the config of the
-// repository no second time (cell 1c of s3p2b-edges2-linux, Linux VM).
+// repository no second time (measured on Linux).
 type repoVerdictKey struct {
 	gitDir, home string
 }
@@ -1264,23 +1239,21 @@ func keepRepoVerdict(k repoVerdictKey, v *repoVerdict) {
 // repoReadVerdict is the verdict for the repository of the trust verdict t, or
 // nil for a read with no verdict. It reads the config of the git directory that
 // the trust check pinned, so a linked worktree gets the config of its repository
-// (cells X2).
+// (measured).
 //
-// On 5fd08069 a second git.info on a repository with an accepted config starts
-// no git call for the read (cells B4 and V19). A request after a change of the
-// config starts one (cell B4). With a refused format version each later request
-// of that build makes the read again (cells N10 and P5, Linux, macOS and Windows
-// VMs). A kept read with a refusal is not used: claustrum reads again, too.
-// claustrum keeps the verdict of a read with the state of each file that
-// the read used. It reads again when one of them has another identity, size,
-// modification time or mode. It reads again when a file that was missing is
-// there. That rule is claustrum's own: cell
-// B4 ran one repeat and one changed config. A change that keeps all four values
-// is not seen. A read with no verdict is not kept. A read in which an open or a
-// read ended with an error is not kept either (repoReadLog.failed): its verdict
-// answers this request, and the next request reads again. So a refusal with an
-// `open <file>:` text is read again on each request. That rule is claustrum's
-// own.
+// On 5fd08069 a second git.info on a repository with an accepted config starts no
+// git call for the read (measured). A request after a change of the config starts
+// one (measured). With a refused format version each later request of that build
+// makes the read again (measured on Linux, macOS and Windows). A kept read with a
+// refusal is not used: claustrum reads again, too. claustrum keeps the verdict of a
+// read with the state of each file that the read used. It reads again when one of
+// them has another identity, size, modification time or mode. It reads again when a
+// file that was missing is there. That rule is claustrum's own: a measurement ran
+// one repeat and one changed config. A change that keeps all four values is not
+// seen. A read with no verdict is not kept. A read in which an open or a read ended
+// with an error is not kept either (repoReadLog.failed): its verdict answers this
+// request, and the next request reads again. So a refusal with an `open <file>:`
+// text is read again on each request. That rule is claustrum's own.
 //
 // s holds the time limits of the request, or is nil. With s the listing of each
 // config file ends at repoReadBound (repoConfigRead.file).
@@ -1288,8 +1261,7 @@ func repoReadVerdict(t gitDirTrust, s *gitStop) *repoVerdict {
 	// The link test of the git directory comes before a kept read. The kept
 	// read tests the state of each file, and a link to the same folder keeps
 	// those states. The refusal is not kept. A link that is there before the
-	// first request gets the same refusal on 5fd08069 (part Q and cells
-	// D-symd-start of val-s3p2b2-12-windows, Windows VM).
+	// first request gets the same refusal on 5fd08069 (measured on Windows).
 	if d := gitDirLinkDetail(t.pinCommonDir); d != "" {
 		return &repoVerdict{refusal: repoConfigPrefix + d}
 	}
@@ -1338,13 +1310,13 @@ func repoReadVerdict(t gitDirTrust, s *gitStop) *repoVerdict {
 // off is the `shadowDirOff` member of the request. With the JSON value true,
 // 5fd08069 gives no such refusal for that request. Format version 2 gets the
 // "not a repository" answers, and the files of 20 MiB get normal answers. A FIFO
-// as the config gets no answer in 10 s, as on 89cb6289. Cells X1 measured that on
-// git.info and git.status, and cells V2 on the three other methods (Linux and
-// macOS VMs, and Windows with no FIFO). So nothing is read then.
+// as the config gets no answer in 10 s, as on 89cb6289. Measurements show that
+// on all five methods (Linux and macOS, and Windows with no FIFO). So nothing is
+// read then.
 //
 // It runs for a trusted git directory only. A folder whose HEAD is no ref keeps
-// its "not a repository" answers, also with format version 2 (cells E5 and X3):
-// the trust check finds no repository there. With a daemon GIT_COMMON_DIR on
+// its "not a repository" answers, also with format version 2 (measured): the
+// trust check finds no repository there. With a daemon GIT_COMMON_DIR on
 // git.info and git.list_branches the trust check pins nothing, and nothing is
 // read (not measured).
 //
@@ -1356,10 +1328,9 @@ func repoReadVerdict(t gitDirTrust, s *gitStop) *repoVerdict {
 // On 5fd08069 a first request on a repository with a refused config makes the
 // call about the repository and the reads, and each later request makes the
 // reads again: 1 call in 19 cells, 4 with a chain of four included files and
-// 17 with seventeen. It makes no `rev-parse` call of its own there (cells of
-// group E and cells 10a to 10e of val-s3p2b2-3-linux, Linux VM. Rows D3 of
-// val-s3p2b2-3-macos and D7 of val-s3p2b2-3-windows). After a read with a
-// syntax error 5fd08069 makes one `git version` call (versionAfterFailure).
+// 17 with seventeen. It makes no `rev-parse` call of its own there (measured
+// on Linux, macOS and Windows). After a read with a syntax error 5fd08069
+// makes one `git version` call (versionAfterFailure).
 //
 // A server with no run folder has no state and no call of askGit. It reads the
 // config and answers its refusals the same way. No real daemon is such a
@@ -1392,8 +1363,7 @@ func requestRefusal(t gitDirTrust, v *repoVerdict) string {
 		// The tests of shallow, info/attributes and info/exclude run in each
 		// request and are no part of the kept read. On 5fd08069 a change of one of
 		// these files leads to no new read of the config and to no new copy of it
-		// (cells 19a to 19c of val-s3p2b2-3-linux, 15-19a to 15-19c of
-		// val-s3p2b2-3-macos and E15b of val-s3p2b2-3-windows).
+		// (measured).
 		refusal = gitDirFilesRefusal(t.pinCommonDir)
 	}
 	return refusal

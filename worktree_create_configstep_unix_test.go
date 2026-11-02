@@ -95,11 +95,11 @@ func writeIn(t *testing.T, p, text string) {
 
 // TestConfigStepFailureFailsTheCreate: a failure of the step of the
 // `config.worktree` file fails the create with the prefix and its cause. No
-// read-tree runs, and the undo of a failed checkout runs. The rows are cells
-// C2, C6, C7, C9, C10 and C11 of round task007-01 (Linux and macOS VMs). The
-// stub or the seam after the add stands in for the wrapper of the round. In
-// C9 and C11 the branch step reads the config again, gets its refusal and
-// keeps the branch. Row C1 is TestConfigStepUnsetAllFailureFailsTheCreate.
+// read-tree runs, and the undo of a failed checkout runs. The rows are cells C2,
+// C6, C7, C9, C10 and C11 (measured on Linux and macOS). The stub or the seam
+// after the add stands in for the wrapper of the measurement. In two measured cases the
+// branch step reads the config again, gets its refusal and keeps the branch.
+// Another case is TestConfigStepUnsetAllFailureFailsTheCreate.
 func TestConfigStepFailureFailsTheCreate(t *testing.T) {
 	const filemode = "[core]\n\tfilemode = false\n"
 	const bare = "[core]\n\tbare = false\n"
@@ -208,10 +208,9 @@ func itemOn(c envCall, item string) bool {
 
 // TestConfigStepOfALinkedBase: with a linked worktree as baseRepo the copy
 // comes from the file of the entry of that worktree. With no such file the
-// new worktree gets none (cells C12 and C12b of round task007-01, Linux and
-// macOS VMs). The `-c` items of the `worktree add` call and of the read-tree
-// come from that file too, and none from the file of the repository (cells
-// C12 and C12b of round task007-02, macOS VM).
+// new worktree gets none (measured on Linux and macOS). The `-c` items of
+// the `worktree add` call and of the read-tree come from that file too, and
+// none from the file of the repository (measured on macOS).
 func TestConfigStepOfALinkedBase(t *testing.T) {
 	for _, row := range []struct {
 		cell, main, own string
@@ -269,8 +268,8 @@ func TestConfigStepOfALinkedBase(t *testing.T) {
 
 // TestFIFOConfigWorktreeRefusedBeforeTheAdd: a FIFO at the `config.worktree`
 // file of the repository refuses the create before the add, and nothing is
-// made (cell C8 of round task007-01, Linux and macOS VMs). The deadline of the
-// test is short: without the refusal the request does not answer.
+// made (measured on Linux and macOS). The deadline of the test is short:
+// without the refusal the request does not answer.
 func TestFIFOConfigWorktreeRefusedBeforeTheAdd(t *testing.T) {
 	f := newConfigStepFixture(t, "[core]\n\tfilemode = false\n")
 	fifoAt(t, f.main)
@@ -294,8 +293,7 @@ func TestFIFOConfigWorktreeRefusedBeforeTheAdd(t *testing.T) {
 // TestGateRefusesAnUnusableConfigWorktree: a `config.worktree` file of the
 // repository that cannot be opened or is over 8 MiB is refused at the gate, on
 // git.worktree_create and on git.info. The create runs no add and makes no
-// folder `worktrees` (cells R4 and R7 of round task007-03, Linux and macOS
-// VMs).
+// folder `worktrees` (measured on Linux and macOS).
 func TestGateRefusesAnUnusableConfigWorktree(t *testing.T) {
 	for _, row := range []struct {
 		cell  string

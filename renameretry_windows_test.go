@@ -17,12 +17,12 @@ import (
 	"golang.org/x/sys/windows"
 )
 
-// The Windows side of the retry of a held rename (round task009-01, Windows
-// VM). No test of this file ran on the host of the build: a Windows run must
-// match the cell that each test names.
+// The Windows side of the retry of a held rename (measured on Windows). No
+// test of this file ran on the host of the build: a Windows run must match
+// the cell that each test names.
 
-// holdOpen opens path with no delete sharing, as the holder of cells F1a and
-// F1b does, and returns the release. A folder is opened with backup semantics.
+// holdOpen opens path with no delete sharing, as the holder does, and returns
+// the release. A folder is opened with backup semantics.
 func holdOpen(t *testing.T, path string, dir bool) (release func()) {
 	t.Helper()
 	release, err := holdOpenErr(path, dir)
@@ -88,8 +88,8 @@ func TestRenameHeldOnWindows(t *testing.T) {
 	}
 }
 
-// TestCopyRenameErrorOnWindows pins the text form of cell F1b: `rename <full
-// path of the temp file> <full path of the copy>: Access is denied.`.
+// TestCopyRenameErrorOnWindows pins the text form: `rename <full path of the
+// temp file> <full path of the copy>: Access is denied.`.
 func TestCopyRenameErrorOnWindows(t *testing.T) {
 	dir := t.TempDir()
 	root, err := os.OpenRoot(dir)
@@ -108,12 +108,12 @@ func TestCopyRenameErrorOnWindows(t *testing.T) {
 	}
 }
 
-// TestShadowCopyHeldOnWindows must match cells F1a, F1b and F1c of round
-// task009-01: the copy of HEAD is held open while git.info writes a new copy.
-// Released after 300 ms, the reply is the normal result and the copy has the
-// new bytes. Held past the bound, the reply names both full paths, the old copy
-// stays and no temp file is left. Without the retry the first case fails at
-// once. Without copyRenameError the text says `renameat .tmp-<n> HEAD`.
+// TestShadowCopyHeldOnWindows must match the measured cases: the copy of HEAD
+// is held open while git.info writes a new copy. Released after 300 ms, the
+// reply is the normal result and the copy has the new bytes. Held past the
+// bound, the reply names both full paths, the old copy stays and no temp file
+// is left. Without the retry the first case fails at once. Without
+// copyRenameError the text says `renameat .tmp-<n> HEAD`.
 func TestShadowCopyHeldOnWindows(t *testing.T) {
 	prepare := func(t *testing.T) (shadowFixture, string) {
 		f := newSeededShadowFixture(t)

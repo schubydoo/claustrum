@@ -17,8 +17,8 @@ import (
 
 // git.status as 89cb6289 answers it. The request passes a gate first, and then four
 // git commands build `changes`. docs/protocol/git-status.md gives the rules. The
-// comments below name the rows. The rows are from Linux, macOS and Windows VMs, side
-// by side against 89cb6289.
+// comments below name the rows. The rows are from Linux, macOS and Windows, side by
+// side against 89cb6289.
 //
 // The gate does not ask git inside `path`. It reads the worktree entries under the
 // common directory of baseRepo and looks for the one entry that names `path`. So a
@@ -27,27 +27,26 @@ import (
 
 const (
 	// statusFileMaxBytes bounds the `gitdir` and `commondir` files of an entry.
-	// Exactly 1 MiB passes, and one byte more fails (rows n05b, n05c and n19g). The
-	// bound of `HEAD` and `config.worktree` is not measured. claustrum uses the same
-	// value for them.
+	// Exactly 1 MiB passes, and one byte more fails (measured). The bound of `HEAD`
+	// and `config.worktree` is not measured. claustrum uses the same value for them.
 	statusFileMaxBytes = 1 << 20
 	// statusLineMaxBytes is the longest entry of the porcelain output. A longer one is
-	// cut to this many bytes, and "…" follows (row o1).
+	// cut to this many bytes, and "…" follows (measured).
 	statusLineMaxBytes = 512
 	// statusMaxLines is the most porcelain entries of one answer. No entry marks the
-	// cut (row o2).
+	// cut (measured).
 	statusMaxLines = 10000
 	// statusMaxSubmoduleEntries is the most submodule entries of one answer. One more
-	// entry then gives the count of the rest (rows o10 and n20d).
+	// entry then gives the count of the rest (measured).
 	statusMaxSubmoduleEntries = 100
 	// statusNameMaxBytes is the longest submodule name. A longer one is cut to this
-	// many bytes, and "…" follows inside the quotes (row o11).
+	// many bytes, and "…" follows inside the quotes (measured).
 	statusNameMaxBytes = 200
 
 	gitlinkMode = "160000"
 
-	// The three texts of a submodule entry, as the frames of 89cb6289 show them (rows
-	// o4 to o13 on a Linux VM, and n20 on Linux, macOS and Windows VMs).
+	// The three texts of a submodule entry, as the frames of 89cb6289 show them
+	// (measured on Linux, one of them also on macOS and Windows).
 	submodulePresentText   = " (submodule present; contents not inspected)"
 	submoduleStagedText    = " (submodule change staged; contents not inspected)"
 	submoduleUnreadText    = " (submodule; could not be inspected)"
@@ -55,20 +54,19 @@ const (
 	submoduleOverflowEnd   = " more submodule entries)"
 )
 
-// statusIndexMaxBytes bounds the `index` of an entry. Exactly 1 GiB is copied (row
-// o15e), and one byte more answers isRepo:false with no temporary folder (row o15c,
-// Linux VM).
-// The same bound holds for a regular file with a `sharedindex.` name of 40 hex digits
-// (cells R3K and R3f of rounds tier3-02 and tier3-04, Linux VM). For 64 hex digits,
+// statusIndexMaxBytes bounds the `index` of an entry. Exactly 1 GiB is copied
+// (measured), and one byte more answers isRepo:false with no temporary folder
+// (measured on Linux). The same bound holds for a regular file with a `sharedindex.`
+// name of 40 hex digits (measured on Linux). For 64 hex digits,
 // `info/sparse-checkout` and each reftable file it is claustrum's own, not measured.
 // (var, not const, so tests can shrink it.)
 var statusIndexMaxBytes int64 = 1 << 30
 
 // statusConfigKeys are the keys a `config.worktree` of an entry can hold. A file with
-// core.sparseCheckout or index.sparse passes (rows n12 and n12b), and so does one with
-// core.sparseCheckoutCone (rows o17 and v3a). A file with user.name or core.bare
-// answers isRepo:false (rows n13 and v3b). No other key is measured. claustrum answers
-// isRepo:false for each of them.
+// core.sparseCheckout or index.sparse passes (measured), and so does one with
+// core.sparseCheckoutCone. A file with user.name or core.bare answers isRepo:false
+// (measured). No other key is measured. claustrum answers isRepo:false for each of
+// them.
 var statusConfigKeys = []string{"core.sparsecheckout", "core.sparsecheckoutcone", "index.sparse"}
 
 // statusRefusal is a refusal text that goes on the wire as it is.
@@ -79,16 +77,16 @@ func (r statusRefusal) Error() string { return string(r) }
 // statusBaseInManagedTree reports whether baseRepo is refused before any git call.
 // Two cases answer isRepo:false with no git call:
 //
-//   - baseRepo has the components `.claude/worktrees` in it, or is that folder (rows
-//     n10, n10b1 and n10c1). `X/.claude` alone passes (rows n10b2 and n10c2).
+//   - baseRepo has the components `.claude/worktrees` in it, or is that
+//     folder (measured). `X/.claude` alone passes (measured).
 //   - A folder one or two levels above baseRepo holds an entry named
-//     `.claude-managed-worktrees` and no `.git` (rows o23, o23c and o23d, Linux VM).
-//     The entry can be a file or a directory. With a `.git` in that folder the request
-//     passes (row o23b). More levels are not measured. claustrum refuses them too.
+//     `.claude-managed-worktrees` and no `.git` (measured on Linux). The entry can be
+//     a file or a directory. With a `.git` in that folder the request passes
+//     (measured). More levels are not measured. claustrum refuses them too.
 //
-// A marker inside baseRepo itself is ignored (row v5, Linux VM). claustrum tests
-// baseRepo as sent and with its symlinks resolved. Not measured: a baseRepo that
-// reaches such a folder only through a symlink.
+// A marker inside baseRepo itself is ignored (measured on Linux). claustrum
+// tests baseRepo as sent and with its symlinks resolved. Not measured: a
+// baseRepo that reaches such a folder only through a symlink.
 func statusBaseInManagedTree(baseRepo string) bool {
 	for _, p := range []string{baseRepo, canonicalPath(baseRepo)} {
 		abs, err := filepath.Abs(p)
@@ -114,20 +112,20 @@ func statusBaseInManagedTree(baseRepo string) bool {
 	return false
 }
 
-// statusNoRepoCalls runs the two calls that 89cb6289 makes in a baseRepo where the
-// trust check finds no repository: the listing, then the heavy `rev-parse
-// --absolute-git-dir`. Both carry GIT_DIR=<null device> in place of the GIT_COMMON_DIR
-// pin, so git finds no repository either, and the answer is isRepo:false (row n10b2 on
-// Linux, macOS and Windows VMs). claustrum does not read the answer of the rev-parse.
+// statusNoRepoCalls runs the two calls that 89cb6289 makes in a baseRepo where the trust
+// check finds no repository: the listing, then the heavy `rev-parse --absolute-git-dir`.
+// Both carry GIT_DIR=<null device> in place of the GIT_COMMON_DIR pin, so git finds no
+// repository either, and the answer is isRepo:false (measured on Linux, macOS and Windows).
+// claustrum does not read the answer of the rev-parse.
 //
 // It returns the refusal text of a listing that fails, by the classes of
 // failedListingCheck, or "". 89cb6289 refuses there with a broken GIT_CONFIG_KEY_<n>
-// in the daemon's environment, and its call log shows no rev-parse (row A-S1 on Linux
-// and macOS VMs, cell P3-statN on a Windows VM). With noGit, a daemon GIT_DIR that
-// names a regular file, it reads no answer and returns "", as before. git.status is
-// not measured in that state. A listing that passes and exceeds a limit of
-// parseConfigListing is no refusal here: the answer stays isRepo:false. No row
-// measures that limit in such a folder.
+// in the daemon's environment, and its call log shows no rev-parse (measured on
+// Linux, macOS and Windows). With noGit, a daemon GIT_DIR that names a regular file,
+// it reads no answer and returns "", as before. git.status is not measured in that
+// state. A listing that passes and exceeds a limit of parseConfigListing is no
+// refusal here: the answer stays isRepo:false. No row measures that limit in such a
+// folder.
 //
 // A listing that exits 128 with the text of notARepoHead is no refusal here either.
 // The listing names GIT_DIR, so failedListingCheck gives it no "no repository" verdict.
@@ -153,15 +151,13 @@ func statusNoRepoCalls(s *gitStop, baseRepo string, noGit bool) string {
 	return ""
 }
 
-// statusGitFileNowhere is the refusal of git.status for a baseRepo whose `.git` file
-// names a gone git dir that is no entry under .git/worktrees, or "". It runs the
-// listing of the other methods there, with no GIT_DIR. git 2.56 fails it with its
-// gitfile text. 5fd08069 then answers the error of the call about the repository
-// (cell c10 of rounds task039-01 and task039-02, and c10 first of round task039-03,
-// Linux VM). With off, the "shadowDirOff":true member, it answers the listing refusal
-// and makes this listing (cell c10off of round task039-02, Linux VM). An older git
-// gives "" (cell c14). Without the member the listing is claustrum's own call.
-// 5fd08069 runs a `rev-parse --git-dir` there.
+// statusGitFileNowhere is the refusal of git.status for a baseRepo whose `.git` file names a
+// gone git dir that is no entry under .git/worktrees, or "". It runs the listing of the other
+// methods there, with no GIT_DIR. git 2.56 fails it with its gitfile text. 5fd08069 then
+// answers the error of the call about the repository (measured on Linux, also as the first
+// request). With off, the "shadowDirOff":true member, it answers the listing refusal and makes
+// this listing (measured on Linux). An older git gives "" (measured). Without the member the
+// listing is claustrum's own call. 5fd08069 runs a `rev-parse --git-dir` there.
 func statusGitFileNowhere(t gitDirTrust, s *gitStop, baseRepo string, off bool) string {
 	if !t.noRepoPinned() || !goneNonEntryGitFile(baseRepo) {
 		return ""
@@ -197,31 +193,30 @@ func resolvedDir(p string) string {
 // statusPathOf runs the tests on `path` that come before the next git call. Each
 // failure answers isRepo:false with 3 calls in total:
 //
-//   - `path` is not a directory: a regular file (row n09), or a folder that is gone
-//     (row n26b). An empty `path` is the working directory of the daemon (rows n25d1
-//     and n25d2 pass here and find no entry).
+//   - `path` is not a directory: a regular file (measured), or a folder that is
+//     gone. An empty `path` is the working directory of the daemon (measured: it
+//     passes here and finds no entry).
 //   - `path` lies inside baseRepo and one of its components below baseRepo is a
-//     symbolic link (rows n07 and n07L) or, on Windows, a junction (row n07-j). The
-//     same layout with no link passes (rows n07b and n08). A link at the last
-//     component fails too (row v4, Linux VM).
+//     symbolic link (measured) or, on Windows, a junction. The same layout with no
+//     link passes (measured). A link at the last component fails too (measured on
+//     Linux).
 //
-// The --work-tree value of the next call is `path` with its symlinks resolved (rows
-// n06 and C12). When `path` lies inside baseRepo, it is baseRepo, resolved the same
-// way (rows A04, A05a, N05a, N05b, n07b, n08 and K02b). A `path` that is baseRepo
-// gives the same value both ways (row n18b).
+// The --work-tree value of the next call is `path` with its symlinks resolved
+// (measured). When `path` lies inside baseRepo, it is baseRepo, resolved the same
+// way (measured). A `path` that is baseRepo gives the same value both ways
+// (measured).
 //
 // The `gitdir` file of an entry matches `path` as text in these spellings: as sent,
-// with its symlinks resolved (rows n06, C12, D8, D13, D14dot and D14sp), and on
-// Windows as the file system reports the open folder (rows D3, D4, D6 and D16: a
-// `subst` drive, a junction and a `\\?\` path). A relative `path` counts from the
-// working directory of the daemon (row n25c).
+// with its symlinks resolved (measured), and on Windows as the file system reports
+// the open folder (measured: a `subst` drive, a junction and a `\\?\` path). A
+// relative `path` counts from the working directory of the daemon (measured).
 //
 // For a `path` inside baseRepo the spellings are two: as sent, and the resolved
-// baseRepo joined with the part of `path` below baseRepo as sent. On a Windows VM a
-// `path` with 8.3 short names below a baseRepo in short names found no entry (row
-// K02b), and a worktree outside baseRepo named in short names found its entry (row
-// D13). Not measured: a `path` inside a baseRepo that lies below a symlink, where
-// the second spelling is claustrum's choice.
+// baseRepo joined with the part of `path` below baseRepo as sent. On Windows a
+// `path` with 8.3 short names below a baseRepo in short names found no entry
+// (measured), and a worktree outside baseRepo named in short names found its entry.
+// Not measured: a `path` inside a baseRepo that lies below a symlink, where the
+// second spelling is claustrum's choice.
 func statusPathOf(path, baseRepo string) (statusPath, bool) {
 	clean := filepath.Clean(path)
 	if fi, err := os.Stat(clean); err != nil || !fi.IsDir() {
@@ -237,7 +232,7 @@ func statusPathOf(path, baseRepo string) (statusPath, bool) {
 	}
 	sp := statusPath{spellings: []string{absPath}}
 	// A relative `path` is not taken as inside baseRepo. It goes to the next call as
-	// sent, and git answers for it (rows n25c and x5).
+	// sent, and git answers for it (measured).
 	if filepath.IsAbs(clean) && pathStrictlyUnder(absPath, absBase) {
 		if linkBelow(absBase, absPath) || statusSpellingRefused(path) {
 			return statusPath{}, false
@@ -262,17 +257,17 @@ func statusPathOf(path, baseRepo string) (statusPath, bool) {
 // statusSpellingRefused reports the spelling refusals of a `path` inside baseRepo.
 // Each answers isRepo:false with 3 calls in total:
 //
-//   - a `..` component in `path` as sent, with or without the folder before it (rows
-//     x4 and x4b on a Windows VM, rows y3, y4 and y5 on Linux and macOS VMs). A `.`
-//     component passes (row y10, Linux VM).
-//   - on Windows, a component that ends in a dot or a space (rows x1 and x2) or holds
-//     a colon (row x3). The measured component is the last one. The test reads
-//     `path` as sent and cleaned: the absolute form that Windows gives has lost a
-//     trailing dot or space.
+//   - a `..` component in `path` as sent, with or without the folder before it
+//     (measured on Linux, macOS and Windows). A `.` component passes (measured on
+//     Linux).
+//   - on Windows, a component that ends in a dot or a space (measured) or holds a
+//     colon. The measured component is the last one. The test reads `path` as sent
+//     and cleaned: the absolute form that Windows gives has lost a trailing dot or
+//     space.
 //
-// Outside baseRepo a `..` passes (row y2), and so does a trailing dot or space on
-// Windows (rows D14dot and D14sp). There `W/missing/..` passes the gate cleaned, and
-// git then fails to start in the path as sent (row y1, statusRun.git).
+// Outside baseRepo a `..` passes (measured), and so does a trailing dot or space on
+// Windows. There `W/missing/..` passes the gate cleaned, and git then fails to start
+// in the path as sent (measured, statusRun.git).
 func statusSpellingRefused(sent string) bool {
 	return pathHasDotDot(sent) || windowsPathSpellingHazard(filepath.Clean(sent))
 }
@@ -294,17 +289,16 @@ func linkBelow(base, p string) bool {
 	return false
 }
 
-// statusWorkTreeProbe runs the two calls in the common directory: `--git-dir=<common>
-// config -z --list`, then the heavy `--git-dir=<common> --work-tree=<workTree>
-// rev-parse --show-toplevel` (K1 calls 4 and 5). Both carry pin. 5fd08069 sends the
-// heavy profile on both (s3-linux cell B1, Linux VM). 89cb6289 sends the light one.
+// statusWorkTreeProbe runs the two calls in the common directory: `--git-dir=<common> config -z --list`,
+// then the heavy `--git-dir=<common> --work-tree=<workTree> rev-parse --show-toplevel` (calls 4 and 5 of
+// the measured call log). Both carry pin. 5fd08069 sends the heavy profile on both (measured on Linux).
+// 89cb6289 sends the light one.
 //
 // A listing that fails is a refusal: its text is the hooks refusal, and `git version`
-// runs after it (row o22, Linux VM). A `rev-parse` that fails answers isRepo:false
-// (row n17). top is the output of the `rev-parse`. On Linux and macOS claustrum
-// does not use it. On Windows it gives one more spelling of `path`
-// (statusPrintedRootSpelling). What 89cb6289 and 5fd08069 do with it is not
-// measured.
+// runs after it (measured on Linux). A `rev-parse` that fails answers isRepo:false
+// (measured). top is the output of the `rev-parse`. On Linux and macOS claustrum does
+// not use it. On Windows it gives one more spelling of `path`
+// (statusPrintedRootSpelling). What 89cb6289 and 5fd08069 do with it is not measured.
 //
 // front are the `-c` items that come before the 28 items of the `rev-parse`
 // call (gitUse.gitDirFront), or nil.
@@ -330,16 +324,15 @@ func statusWorkTreeProbe(s *gitStop, common, workTree string, pin, front []strin
 // the git directory of the request and both are one folder on disk. It returns
 // a refusal text, or "".
 //
-// On a Windows VM a git.status with a `baseRepo` through a junction gets the
-// real path from git: `C:/o/w/repo/.git` for the request path `C:\o\w\jrepo`.
+// On Windows a git.status with a `baseRepo` through a junction gets the real
+// path from git: `C:/o/w/repo/.git` for the request path `C:\o\w\jrepo`.
 // 5fd08069 then reads the config of that git directory with one more call,
 // makes a second folder whose name is the sha256 of the real path, and runs its
 // other calls with --git-dir=<real path>, GIT_COMMON_DIR=<that folder> and
-// GIT_OBJECT_DIRECTORY=<real path>\objects (cell D6j-junction of
-// val-s3p2b2-3-windows, request 2, 22 calls. s3p2-windows cell D6j has the two
-// folders). Another letter case of the same path gives no second folder (cell
-// D6c), so the compare of the two spellings ignores case there
-// (sameGitDirPath).
+// GIT_OBJECT_DIRECTORY=<real path>\objects (measured on Windows, request 2, 22
+// calls, also the two folders). Another letter case of the same path gives no
+// second folder (measured), so the compare of the two spellings ignores case
+// there (sameGitDirPath).
 //
 // The read is the read of the config gate, for the printed path. A refusal of
 // that read is not measured: the request answers it. A request with no copy
@@ -372,10 +365,9 @@ func (req *request) usePrintedGitDir(t gitDirTrust, common string) string {
 // Only Windows uses it (statusFollowsPrintedGitDir). There the `gitdir` file of
 // a worktree names the real path, and a `path` through a junction at baseRepo
 // has the junction in both spellings of statusPathOf. 89cb6289 and 5fd08069
-// answer isRepo:true for that request (s3p2-windows cell D6j and
-// val-s3p2b2-3-windows cell D6j-junction, Windows VM). In the second cell git
-// prints `C:/o/w/repo` for the same call of the claustrum build. Which value
-// those builds compare with the `gitdir` file is not in the rows: this
+// answer isRepo:true for that request (measured on Windows). In the second cell
+// git prints `C:/o/w/repo` for the same call of the claustrum build. Which
+// value those builds compare with the `gitdir` file is not in the rows: this
 // spelling is fitted to the one cell.
 func statusPrintedRootSpelling(path, baseRepo, top string) (string, bool) {
 	root := filepath.Clean(filepath.FromSlash(top))
@@ -405,10 +397,9 @@ func statusPrintedRootSpelling(path, baseRepo, top string) (string, bool) {
 var errNotRegularFile = errors.New("not a regular file")
 
 // statusOpenFile opens name inside the entry folder that root holds. The open does not
-// block, so a FIFO is judged at once and no read waits for a writer (rows n05a, C20a,
-// C20b, n14b and o15b). The file must be a regular file. A symbolic link is followed
-// only when it stays inside the entry folder: a relative link passes (rows n19e and
-// o15a), an absolute one fails (row n19f).
+// block, so a FIFO is judged at once and no read waits for a writer (measured). The
+// file must be a regular file. A symbolic link is followed only when it stays inside
+// the entry folder: a relative link passes (measured), an absolute one fails.
 func statusOpenFile(root *os.Root, name string) (*os.File, fs.FileInfo, error) {
 	f, err := root.OpenFile(name, os.O_RDONLY|openNonBlocking, 0)
 	if err != nil {
@@ -444,9 +435,9 @@ func statusReadFile(root *os.Root, name string, max int64) ([]byte, error) {
 }
 
 // entryPathValue is the path that an entry file holds: the content without the white
-// space at both ends, counted from the entry folder when relative, and cleaned (row
-// n03). On Windows the cleaning turns each forward slash into a
-// backslash (rows D11f and D11b).
+// space at both ends, counted from the entry folder when relative, and cleaned
+// (measured). On Windows the cleaning turns each forward slash into a backslash
+// (measured).
 func entryPathValue(entry string, content []byte) string {
 	v := strings.TrimSpace(string(content))
 	if filepath.IsAbs(v) {
@@ -456,17 +447,16 @@ func entryPathValue(entry string, content []byte) string {
 }
 
 // statusMatchEntry finds the one entry under <common>/worktrees whose `gitdir` file
-// names `path`. An entry is a real folder: a symlinked entry does not count (row
-// n02), and a real folder that a symlink also points at counts once (row n02b). The
-// last component of the value must be `.git` (row n04). The folder before it must
-// equal one of the spellings of `path` as text. Another letter case or Unicode form
-// does not match (rows C2, C3, C6, C9 and C10 on a macOS VM). Exactly one entry must
-// match (rows n01, n18b and n25).
+// names `path`. An entry is a real folder: a symlinked entry does not count
+// (measured), and a real folder that a symlink also points at counts once. The last
+// component of the value must be `.git` (measured). The folder before it must equal
+// one of the spellings of `path` as text. Another letter case or Unicode form does
+// not match (measured on macOS). Exactly one entry must match (measured).
 //
 // On Windows the compare of the folder ignores letter case: one folder name in
-// another case matches, in the `gitdir` file (row x6) and in `path` (row x8). The
-// `.git` name does not: `.GIT` fails (rows x7 and D9). An entry whose `gitdir` cannot be read is passed over: a
-// second entry whose `gitdir` is a directory changes no answer (row v2, Linux VM).
+// another case matches, in the `gitdir` file (measured) and in `path`. The `.git` name does not: `.GIT` fails
+// (measured). An entry whose `gitdir` cannot be read is passed over: a second entry whose `gitdir` is a
+// directory changes no answer (measured on Linux).
 //
 // Each entry folder is opened once, as an os.Root, and its `gitdir` is read through
 // that root. The root of the matched entry is returned open. Every later read of the
@@ -522,11 +512,10 @@ func statusGitdirNames(root *os.Root, entry string, spellings []string) bool {
 
 // statusEntryNamesCommon judges the `commondir` file of the matched entry. Its value
 // must equal the common directory as text, in the spelling that `rev-parse
-// --absolute-git-dir` gave. A missing file fails (row n19a), and so do a FIFO (rows
-// C20a and C20b), an absolute symlink (row n19f) and a file over the bound (row
-// n19g). On macOS a value under /tmp fails, because git answers /private/tmp (row
-// n19b.t). Another letter case fails, on Windows too (rows C11, D10, W04 and x9),
-// and so does a short name (rows K05a, K07a and K15a).
+// --absolute-git-dir` gave. A missing file fails (measured), and so do a FIFO, an
+// absolute symlink and a file over the bound. On macOS a value under /tmp fails,
+// because git answers /private/tmp (measured). Another letter case fails, on Windows
+// too (measured), and so does a short name (measured).
 //
 // The value is read as the trust check reads it (commondirValue). So `../..` with
 // two spaces gives isRepo false, and `../..` with a NUL and more bytes after it
@@ -540,9 +529,9 @@ func statusEntryNamesCommon(root *os.Root, entry, common string) bool {
 }
 
 // statusHeadValid judges the `HEAD` file of the matched entry. 40 or 64 hex
-// characters pass, and so does a `ref:` line under `refs/` (rows o14b, o14c, o14d and
-// o14f, n16 and n16b). `garbage`, 39 hex characters and `ref: x` fail (rows n15, o14a
-// and o14e). White space at both ends does not count (row o14f).
+// characters pass, and so does a `ref:` line under `refs/` (measured). `garbage`, 39
+// hex characters and `ref: x` fail (measured). White space at both ends does not
+// count (measured).
 func statusHeadValid(b []byte) bool {
 	s := strings.TrimSpace(string(b))
 	if rest, ok := strings.CutPrefix(s, "ref:"); ok {
@@ -554,37 +543,33 @@ func statusHeadValid(b []byte) bool {
 // statusIndexSumMaxBytes bounds the sum of the sizes of the `index` and the
 // `sharedindex.*` files of an entry, whatever their names. On 5fd08069 a sum of
 // exactly 2 GiB passes, and 2 GiB + 1 answers isRepo:false. The `index` and
-// `sharedindex.x` count (cells B, C, C1 and D of round tier3-20, Linux VM). The sum rule
-// also holds in cells R3b, R3c, R3g and R3h of rounds tier3-02 and tier3-04 (Linux VM).
-// On 89cb6289
-// an `index` of 1 GiB beside a `sharedindex.x` of 1 GiB + 1 answers isRepo:false (row
-// o16, Linux VM). The reftable files do not count (claustrum's own, not measured).
-// (var, not const, so tests can shrink it.)
+// `sharedindex.x` count (measured on Linux). The sum rule also holds (measured on
+// Linux). On 89cb6289 an `index` of 1 GiB beside a `sharedindex.x` of 1 GiB + 1
+// answers isRepo:false (measured on Linux). The reftable files do not count
+// (claustrum's own, not measured). (var, not const, so tests can shrink it.)
 var statusIndexSumMaxBytes int64 = 2 << 30
 
 // statusIndexFiles tests the `index` and each `sharedindex.*` file of the entry
 // before the temporary folder exists, and returns the names to copy. A file that is
-// missing passes (row o15d). An `index` that is a symlink to a regular file inside the
-// entry passes (row o15a). The sum of the sizes over statusIndexSumMaxBytes fails.
+// missing passes (measured). An `index` that is a symlink to a regular file inside the
+// entry passes (measured). The sum of the sizes over statusIndexSumMaxBytes fails.
 //
 // The `index` and a `sharedindex.` name with 40 or 64 hex digits of either case get
-// the bound of one file. An `index` that is not a regular file fails with no wait (row
-// o15b, a FIFO). One over statusIndexMaxBytes fails (row o15c, and cell R3f of round
-// tier3-04, Linux VM, 40 digits). Only the hex names are copied (cells R3K and R3d,
-// and cell A of round tier3-20, Linux VM). For 64 digits both steps are claustrum's
-// own, not measured.
+// the bound of one file. An `index` that is not a regular file fails with no wait
+// (measured with a FIFO). One over statusIndexMaxBytes fails (measured on Linux, 40
+// digits). Only the hex names are copied (measured on Linux). For 64 digits both
+// steps are claustrum's own, not measured.
 //
 // A hex name that Lstat does not read as a regular file is skipped in the copy and in
 // the sum. On 5fd08069 a 40-hex name that is a symlink passes and is not copied (cells F
-// and G, rounds tier3-20 and tier3-23, Linux VM). A hex FIFO is skipped too, and so is
-// a 64-hex symlink (claustrum's own, not measured).
+// and G, Linux). A hex FIFO is skipped too, and so is a 64-hex symlink (claustrum's own,
+// not measured).
 //
 // Any other `sharedindex.` name, as `sharedindex.x` or `sharedindex.ab`, of 1 GiB + 1
-// passes on 5fd08069 and is not copied (cells R3a and R3d of rounds tier3-02 and
-// tier3-04, Linux VM). It counts in the sum only. The case of the hex digits is
-// claustrum's own, not measured. Such a name that Stat cannot read as a regular file,
-// for example a dangling or escaping symbolic link, adds nothing to the sum
-// (claustrum's own, not measured).
+// passes on 5fd08069 and is not copied (measured on Linux). It counts in the sum
+// only. The case of the hex digits is claustrum's own, not measured. Such a name that
+// Stat cannot read as a regular file, for example a dangling or escaping symbolic
+// link, adds nothing to the sum (claustrum's own, not measured).
 func statusIndexFiles(root *os.Root) ([]string, bool) {
 	names, err := rootDirNames(root, ".")
 	if err != nil {
@@ -625,19 +610,17 @@ func statusIndexFiles(root *os.Root) ([]string, bool) {
 
 // statusEntryConfig judges the `config.worktree` file of the matched entry. present
 // is true when the entry has one. A missing file passes. A folder, a FIFO and a
-// syntax error fail, with no wait on the FIFO (rows n14, n14b and n14c).
+// syntax error fail, with no wait on the FIFO (measured).
 //
 // The daemon lists the file with `git config --no-includes --file - --list -z`, with
 // the file as its stdin. Every key must be one of statusConfigKeys.
 //
 // fileForm gives the call the form of the read of a config file: the working
 // directory gitVersionDir, and repoConfigListEnv with GIT_DIR=<null device>, LC_ALL=C
-// and LANGUAGE=C. 5fd08069 runs it so in the state shadow (cell 1c of
-// val-s3p2b2-5-linux, Linux VM) and with "shadowDirOff":true (cell V3 of round
-// task004-03, Linux, macOS and Windows VMs). In the state fallback-git without the
+// and LANGUAGE=C. 5fd08069 runs it so in the state shadow (measured on Linux) and with
+// "shadowDirOff":true (measured on Linux, macOS and Windows). In the state fallback-git without the
 // member that call is not measured. It keeps the form of 89cb6289 there: the working directory and the
-// environment of the daemon (rows n12, n12b, n13 and n14c), with the cleaning of
-// gitChildEnv (claustrum's own).
+// environment of the daemon (measured), with the cleaning of gitChildEnv (claustrum's own).
 //
 // text is the text of the file as this test read it, for a file that passed.
 func statusEntryConfig(s *gitStop, root *os.Root, fileForm bool) (text []byte, present, ok bool) {
@@ -724,16 +707,15 @@ var statusEntryMatched = func(string) {}
 
 // statusReftable judges the `reftable` folder of the matched entry and returns the
 // names of its files to copy. A repository with the reftable format keeps the HEAD
-// of a worktree there. The rows are from a macOS VM:
+// of a worktree there. The rows are from macOS:
 //
 //   - Every regular file of the folder is copied, also a table that `tables.list`
-//     does not name (row r1).
+//     does not name (measured).
 //   - An entry that is not a regular file is left out, with no wait. With a FIFO as
-//     `tables.list` the list is not copied and the request goes on (row r2).
-//   - A `tables.list` that is copied must name at least one table (row r4), and each
-//     name must be a file that is copied. Else the answer is isRepo:false: for a
-//     table that is missing (rows o19c and o19d) and for one that is a symlink (row
-//     r3).
+//     `tables.list` the list is not copied and the request goes on (measured).
+//   - A `tables.list` that is copied must name at least one table (measured), and
+//     each name must be a file that is copied. Else the answer is isRepo:false: for
+//     a table that is missing (measured) and for one that is a symlink.
 //
 // Not measured: a size bound of a table or of the list, a folder inside `reftable`,
 // and a symlink that the list does not name. claustrum bounds a table at statusIndexMaxBytes and the list at
@@ -741,9 +723,8 @@ var statusEntryMatched = func(string) {}
 //
 // A `reftable` that is not a real folder counts as none: nothing of it is copied,
 // and the request goes on. That is measured for a symlink to a folder outside the
-// entry (row w1 on Linux and macOS VMs, row w1b on a macOS VM) and for a regular file
-// (row w2 on Linux and macOS VMs). The test is on the entry root, with no link
-// followed.
+// entry (measured on Linux and macOS) and for a regular file (measured on Linux and
+// macOS). The test is on the entry root, with no link followed.
 func statusReftable(root *os.Root) (files []string, ok bool) {
 	if fi, err := root.Lstat("reftable"); err != nil || !fi.IsDir() {
 		return nil, true
@@ -817,15 +798,12 @@ func statusCopyFile(root *os.Root, name, dst string, max int64) error {
 	return chtimesStatusFile(dst, fi.ModTime(), fi.ModTime())
 }
 
-// buildStatusGitDir fills tmp, the temporary git folder of one request
-// (gitUse.requestDir). It holds copies of `HEAD` and `index` of the entry and a `commondir` file
-// that names the common directory (row K1). It also holds `config.worktree` when the
-// entry has one (rows n12 and o17), `info/sparse-checkout` (row o17) and each
-// `sharedindex.*` file that statusIndexFiles returned (rows o16b1 and o16b2). For a reftable repository it holds the
-// files that statusReftable returned (rows o19a and r1, macOS VM). A file that the
-// entry does not hold is left out
-// (row o15d). Any other failure is returned. The caller makes and removes the
-// folder.
+// buildStatusGitDir fills tmp, the temporary git folder of one request (gitUse.requestDir). It holds copies of
+// `HEAD` and `index` of the entry and a `commondir` file that names the common directory (measured). It also
+// holds `config.worktree` when the entry has one (measured), `info/sparse-checkout` and each `sharedindex.*`
+// file that statusIndexFiles returned (measured). For a reftable repository it holds the files that
+// statusReftable returned (measured on macOS). A file that the entry does not hold is left out (measured). Any
+// other failure is returned. The caller makes and removes the folder.
 //
 // git needs the `commondir` file to resolve a branch HEAD against the refs of the
 // repository. GIT_COMMON_DIR alone is not enough for that.
@@ -888,12 +866,12 @@ type statusRun struct {
 
 // at takes the form of a git command of the answer that starts now
 // (gitUse.atCommand), and the pins and items of that form. On 5fd08069 the
-// hold changes the form of the later commands of a git.status. In cell S1 of
-// round task105-01 the commands after a held `ls-files` carry
-// GIT_COMMON_DIR=<repo>/.git. In cell S2 the command after a held `status`
-// runs the start test, and the commands after it name the copy (Linux VM).
-// The temporary git folder stays where the request made it (claustrum's own,
-// not measured).
+// hold changes the form of the later commands of a git.status. In a
+// measurement, the commands after a held `ls-files` carry
+// GIT_COMMON_DIR=<repo>/.git. In a measurement, the command after a held
+// `status` runs the start test, and the commands after it name the copy
+// (measured on Linux). The temporary git folder stays where the request made
+// it (claustrum's own, not measured).
 func (r *statusRun) at() {
 	u := r.use.atGitDirCommand()
 	r.form = u
@@ -916,13 +894,11 @@ func (r *statusRun) at() {
 // form of the first read: the root folder, GIT_DIR=<null device>, LC_ALL=C and
 // LANGUAGE=C, and the 34 bytes of the file on standard input. The four calls
 // in the temporary folder then start with `-c core.sparsecheckoutcone=true`,
-// before the --attr-source option (cell p2-K-sparsecheckoutcone-true of
-// val-s3p2b2-6-linux, Linux VM, and row U2 of val-s3p2b2-6-macos, macOS VM, 2
-// of 2 runs). A Windows VM has the same two reads, as calls 5 and 9 of 23, for
-// `sparsecheckoutcone` and for `sparsecheckout = true` (cells P2-K4 and P2-X2
-// of val-s3p2b2-6-windows, 2 runs and 1 run). With a file of 0 bytes 5fd08069
-// makes no second read: its git.status has 22 calls with one read (the call
-// record of cell p2-K-none-empty-file of the Linux round).
+// before the --attr-source option (measured on Linux and macOS, 2 of 2 runs).
+// A Windows test has the same two reads, as calls 5 and 9 of 23, for
+// `sparsecheckoutcone` and for `sparsecheckout = true` (measured). With a file
+// of 0 bytes 5fd08069 makes no second read: its git.status has 22 calls with
+// one read (measured on Linux).
 //
 // The file of that cell is a copy of the file of the repository. So which file
 // 5fd08069 reads there is not measured: claustrum lists the text that the test
@@ -942,19 +918,18 @@ func (r *statusRun) entryItems() []string {
 	return r.tempFront
 }
 
-// statusCommonPin is the GIT_COMMON_DIR pin of the calls that carry
-// --git-dir=<common>: K1 calls 4 and 5, and the two calls of emptyTree. When the
-// daemon's own environment sets GIT_COMMON_DIR, those calls keep the daemon's value
-// and get no pin. The calls in the temporary folder always get
-// GIT_COMMON_DIR=<common> (rows E07a and E07b, Linux and macOS VMs). No other git
-// variable was in the daemon's environment in those rows.
+// statusCommonPin is the GIT_COMMON_DIR pin of the calls that carry --git-dir=<common>: calls 4 and 5
+// of the measured call log, and the two calls of emptyTree. When the daemon's own environment sets
+// GIT_COMMON_DIR, those calls keep the daemon's value and get no pin. The calls in the temporary
+// folder always get GIT_COMMON_DIR=<common> (measured on Linux and macOS). No other git variable was
+// in the daemon's environment in those rows.
 //
 // In the state shadow (u) those calls and the calls in the temporary folder
 // carry GIT_COMMON_DIR=<copy> and GIT_OBJECT_DIRECTORY=<git directory>/objects,
 // with no GIT_DIR and no GIT_WORK_TREE. 5fd08069 sends them so in all 19 calls
-// after the first two of a git.status (val-s3p2b1-linux cell A1, Linux VM). The
-// `commondir` file of the temporary folder still names the git directory of the
-// repository (cell 22 of s3p2b-edges, Windows VM).
+// after the first two of a git.status (measured on Linux). The `commondir` file
+// of the temporary folder still names the git directory of the repository
+// (measured on Windows).
 func statusCommonPin(u gitUse, common string) []string {
 	if u.shadow() && !daemonCommonDirStays() {
 		return u.commonVars()
@@ -965,11 +940,11 @@ func statusCommonPin(u gitUse, common string) []string {
 	return []string{"GIT_COMMON_DIR=" + common}
 }
 
-// emptyTree runs the two calls that give the id of the empty tree: `--git-dir=<common>
-// config -z --list`, then the heavy `--git-dir=<common> hash-object -t tree <null
-// device>`. Both run in the working directory of the daemon (K1 calls 7 and 8). A
-// `hash-object` that fails changes no answer (row n17f): the id is then gitEmptyTree.
-// A listing that fails here is not measured. claustrum goes on with the two base pins.
+// emptyTree runs the two calls that give the id of the empty tree: `--git-dir=<common> config -z
+// --list`, then the heavy `--git-dir=<common> hash-object -t tree <null device>`. Both run in the
+// working directory of the daemon (calls 7 and 8 of the measured call log). A `hash-object` that fails
+// changes no answer (measured): the id is then gitEmptyTree. A listing that fails here is not measured.
+// claustrum goes on with the two base pins.
 func (r *statusRun) emptyTree() string {
 	r.at()
 	r.form.renewCopy()
@@ -997,29 +972,28 @@ func isObjectID(s string) bool {
 	return true
 }
 
-// git runs one command of the answer. Three calls come before it: the two of
-// emptyTree, then `--git-dir=<temp> config -z --list` with `path` as its working
-// directory (K1 calls 7 to 9). The command runs in `path` with the --attr-source
-// option, the heavy profile, --git-dir=<temp> and --work-tree=<path as sent>. noLocks
-// adds GIT_OPTIONAL_LOCKS=0: without it a `git status` rewrites the index of the
-// worktree. excludes is the core.excludesFile value.
+// git runs one command of the answer. Three calls come before it: the two of emptyTree, then
+// `--git-dir=<temp> config -z --list` with `path` as its working directory (calls 7 to 9 of the
+// measured call log). The command runs in `path` with the --attr-source option, the heavy profile,
+// --git-dir=<temp> and --work-tree=<path as sent>. noLocks adds GIT_OPTIONAL_LOCKS=0: without it a
+// `git status` rewrites the index of the worktree. excludes is the core.excludesFile value.
 //
 // The --attr-source value is the id that emptyTree gave right before. In a SHA-256
-// repository it has 64 hex characters (rows v6a and v6b, Linux VM). The probe of
+// repository it has 64 hex characters (measured on Linux). The probe of
 // attrSourceArgs keeps the SHA-1 id there.
 //
-// A failing listing in the temporary folder is a refusal with the hooks text. That
-// follows row o22, where the listing with --git-dir=<common> failed. A failure of this
-// one listing is not measured.
+// A failing listing in the temporary folder is a refusal with the hooks text. That follows a
+// measured case, where the listing with --git-dir=<common> failed. A failure of this one
+// listing is not measured.
 func (r *statusRun) git(noLocks bool, excludes string, args ...string) ([]byte, error) {
 	// Calls 7 and 8 run before every command, whatever attrSource says.
 	id := r.emptyTree()
 	r.at()
-	// A command with no copy gets no items of the entry, as a request with
-	// the member gets none. A command that a later gate gave the copy gets none
-	// either. Cells S3 and S3n do not reach that state: a worktree with a
-	// `config.worktree` file answers isRepo:false before its status call (round
-	// task105-04, Linux VM).
+	// A command with no copy gets no items of the entry, as a request with the
+	// member gets none. A command that a later gate gave the copy gets none
+	// either. The measured cases do not reach that state: a worktree with a
+	// `config.worktree` file answers isRepo:false before its status call
+	// (measured on Linux).
 	var front []string
 	if r.form.shadow() {
 		front = r.entryItems()
@@ -1041,7 +1015,7 @@ func (r *statusRun) git(noLocks bool, excludes string, args ...string) ([]byte, 
 	default:
 		// git did not start, for example because `path` as sent does not open. The
 		// answer is the hooks refusal with the start error, and no `git version`
-		// follows the refusal (row y1, Linux and macOS VMs).
+		// follows the refusal (measured on Linux and macOS).
 		return nil, statusRefusal(hooksRefusalPrefix + l.detail())
 	}
 	full := withFront(front, append(attr, profileArgsWithExcludes(true, excludes,
@@ -1056,8 +1030,7 @@ func (r *statusRun) git(noLocks bool, excludes string, args ...string) ([]byte, 
 	switch args[0] {
 	case "status", "ls-files", "diff-index":
 		// The three scans read their output to the end. 5fd08069 does so for
-		// `status` (cell A3 of round task101-01, Linux VM). The other two are
-		// not measured.
+		// `status` (measured on Linux). The other two are not measured.
 		ctx = untilPipeEOF(ctx)
 	}
 	return gitOutput(ctx, cmd)
@@ -1066,21 +1039,18 @@ func (r *statusRun) git(noLocks bool, excludes string, args ...string) ([]byte, 
 // errStatusNoFolder is the error of statusChanges for a request whose folder
 // `.gitdir-<n>` cannot be made in the folder of the daemon. git.status then
 // answers isRepo:false. With a folder of the daemon of mode 0500, 5fd08069
-// answers `{"isRepo":false,"clean":false}` after 4 git calls (cell f1-0500 of
-// val-s3p2b2-7-linux2, Linux VM). Only mode 0500 ran there, one time. On a
-// Windows VM a deny entry for new entries on that folder gives the same line
-// after 4 calls (table F1 of val-s3p2b2-7-windows, with the two privileges of
-// that table off). A file system with no free inode gives the same line
-// after 4 calls (cell N-h of val-s3p2b2-8-linux2, Linux VM, 1 run). Every
-// other cause gets the same answer (not measured). With the
-// member the folder is in the
-// temporary folder, and a failure there keeps its error text (not measured on
-// 5fd08069).
+// answers `{"isRepo":false,"clean":false}` after 4 git calls (measured on
+// Linux). Only mode 0500 ran there, one time. On Windows a deny entry for new
+// entries on that folder gives the same line after 4 calls (measured, with
+// two privileges off). A file system with no free inode gives the same line
+// after 4 calls (measured on Linux). Every other cause gets the same answer
+// (not measured). With the member the folder is in the temporary folder, and
+// a failure there keeps its error text (not measured on 5fd08069).
 var errStatusNoFolder = errors.New("the temporary git folder cannot be made in the folder of the daemon")
 
-// statusChanges builds `changes` for the worktree at path, whose entry passed the
-// gate. It runs four commands in this order, each with cwd `path` (K1 calls 10, 14,
-// 18 and 22):
+// statusChanges builds `changes` for the worktree at path, whose entry passed the gate. It
+// runs four commands in this order, each with cwd `path` (calls 10, 14, 18 and 22 of the
+// measured call log):
 //
 //	status --porcelain --untracked-files=all --ignore-submodules=all
 //	ls-files -s -z
@@ -1088,9 +1058,9 @@ var errStatusNoFolder = errors.New("the temporary git folder cannot be made in t
 //	diff-index --cached --raw -z --ignore-submodules=none <HEAD or the empty tree id> --
 //
 // A `status`, `ls-files` or `diff-index` that fails gives the exec error, for example
-// "exit status 1" (rows n17c, n17d and n17e). When the `rev-parse` fails, HEAD names
-// no commit. The daemon then runs the two calls of emptyTree once more and passes
-// that id to `diff-index` (rows n16, o13 and o14d).
+// "exit status 1" (measured). When the `rev-parse` fails, HEAD names no commit. The
+// daemon then runs the two calls of emptyTree once more and passes that id to
+// `diff-index` (measured).
 //
 // The status runs in a temporary git folder, so it never writes the index of the
 // worktree. On Windows the three commands with GIT_OPTIONAL_LOCKS=0 get
@@ -1098,8 +1068,7 @@ var errStatusNoFolder = errors.New("the temporary git folder cannot be made in t
 func statusChanges(u gitUse, path, common string, e statusEntry) ([]string, error) {
 	// The folder comes before the one-time `--attr-source=… version` call of
 	// attrSourceArgs. On 5fd08069 a poll saw `.gitdir-<n>` before that call
-	// started in 6 of 6 first git.status requests (cells V5 of
-	// val-s3p2b2-3-linux2, Linux VM).
+	// started in 6 of 6 first git.status requests (measured on Linux).
 	tmp, removeTmp, err := u.requestDir(shadowStatusDirPrefix, statusGitDirTempPrefix)
 	if err != nil {
 		if u.inFolder() {
@@ -1155,9 +1124,9 @@ func statusChanges(u gitUse, path, common string, e statusEntry) ([]string, erro
 
 // porcelainEntries splits the output of `status --porcelain` into entries. Each line
 // passes as it is, with its leading space: the XY column is positional, so the space
-// of " M f" is data (rows K1, n21 and o25). An entry longer than statusLineMaxBytes
-// is cut to that many bytes of the whole line, and "…" follows (row o1). At most
-// statusMaxLines entries pass, and no entry marks the cut (row o2).
+// of " M f" is data (measured). An entry longer than statusLineMaxBytes is cut to
+// that many bytes of the whole line, and "…" follows (measured). At most
+// statusMaxLines entries pass, and no entry marks the cut (measured).
 func porcelainEntries(out []byte) []string {
 	var entries []string
 	for _, line := range strings.Split(strings.TrimRight(string(out), "\n"), "\n") {
@@ -1179,7 +1148,7 @@ func porcelainEntries(out []byte) []string {
 // submoduleEntry is one submodule entry: " S ", the quoted name and text. A name
 // longer than statusNameMaxBytes is cut to that many bytes, and "…" follows. The
 // quoting is that of Go: double quotes, `\"`, `\n`, `\t`, and `\xff` for a byte that
-// is not valid UTF-8. A printable character outside ASCII stays as it is (row o11).
+// is not valid UTF-8. A printable character outside ASCII stays as it is (measured).
 func submoduleEntry(name, text string) string {
 	if len(name) > statusNameMaxBytes {
 		name = name[:statusNameMaxBytes] + "…" // can split a character: quoted as \xNN
@@ -1191,16 +1160,16 @@ func submoduleEntry(name, text string) string {
 // entry of mode 160000. For each one the daemon looks at <name>/.git inside the work
 // tree, and follows no link out of the work tree:
 //
-//   - Not there: no entry (rows n20e and o6d).
-//   - There, as a file, a folder or a dangling symlink: the "present" text (rows n20,
-//     o6a, o6b and o6c). A gitlink path that is a symlink to a folder inside the work
-//     tree counts as present (row o5b).
+//   - Not there: no entry (measured).
+//   - There, as a file, a folder or a dangling symlink: the "present" text
+//     (measured). A gitlink path that is a symlink to a folder inside the work tree
+//     counts as present (measured).
 //   - It cannot be looked at: the "could not be inspected" text. Measured for a
 //     gitlink path that is a regular file, a symlink to a folder outside the work
-//     tree, and a folder of mode 000 (rows o4, o5 and o5c).
+//     tree, and a folder of mode 000.
 //
-// There is one entry for each index stage, so a conflicted gitlink gives three (row
-// o12). On a Windows VM a gitlink path that is a regular file gives no entry (row
+// There is one entry for each index stage, so a conflicted gitlink gives three
+// (measured). On Windows a gitlink path that is a regular file gives no entry (row
 // o4 there): Windows reports <name>/.git as not there.
 func presentSubmodules(workTree string, lsFiles []byte) []string {
 	var entries []string
@@ -1229,9 +1198,9 @@ func presentSubmodules(workTree string, lsFiles []byte) []string {
 
 // stagedSubmodules makes the entries from `diff-index --cached --raw -z`. Each record
 // is ":<old mode> <new mode> <old id> <new id> <status>", a NUL and the path. A record
-// whose old or new mode is 160000 gives the "change staged" text (rows o7, o8, o9,
-// o9b, o9c and o13). A rename or copy record has two paths. The command asks for no
-// rename detection, so no row has one, and claustrum names the first path.
+// whose old or new mode is 160000 gives the "change staged" text (measured). A rename
+// or copy record has two paths. The command asks for no rename detection, so no row
+// has one, and claustrum names the first path.
 func stagedSubmodules(diffIndex []byte) []string {
 	var entries []string
 	toks := bytes.Split(diffIndex, []byte{0})

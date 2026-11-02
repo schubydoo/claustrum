@@ -41,11 +41,9 @@ func unsetCalls(calls []envCall) []envCall {
 // The second is the calls that take keys out of it. The third is the reply of
 // a git.status on the new worktree.
 //
-// The rows are the cells 12a to 12f, 9a and 9k of val-s3p2b2-3-linux and of
-// val-s3p2b2-5-linux (Linux VM). Section 1.1 and section 2 item 1 of the
-// report of the second round have the file sizes and the replies. On 5fd08069
-// the file holds the text of the file of the repository without `core.bare`
-// and `core.worktree`: 48 bytes, 25 bytes or 0 bytes.
+// The rows are measured on Linux. On 5fd08069 the file holds
+// the text of the file of the repository without `core.bare` and
+// `core.worktree`: 48 bytes, 25 bytes or 0 bytes.
 //
 // The calls are `config --file <S>/.config-<n>/config.worktree --unset-all
 // <key>`. They run in the working directory of the daemon, with
@@ -157,10 +155,9 @@ func TestCreateGivesTheNewWorktreeItsConfigFile(t *testing.T) {
 // TestConfigFolderGoesBeforeTheNextGitCall: the folder `.config-<n>` of a
 // create is gone when the next git call of the create runs. On 5fd08069 a
 // listing each 2 ms saw it for 24 to 43 ms, the time of its `--unset-all`
-// calls, and a trace has its removes in the millisecond of its mkdir (section
-// 0.2 item 4 of the report of val-s3p2b2-6-linux, Linux VM). On a macOS VM it
-// goes before `.index-<n>` comes and before the read-tree (row U3 of
-// val-s3p2b2-6-macos). The stub holds the read-tree call, and the test looks
+// calls, and a trace has its removes in the millisecond of its mkdir (measured
+// on Linux). On macOS it goes before `.index-<n>` comes and before the
+// read-tree (measured). The stub holds the read-tree call, and the test looks
 // at the folder of the daemon in that time.
 func TestConfigFolderGoesBeforeTheNextGitCall(t *testing.T) {
 	f := newSeededShadowFixture(t)
@@ -201,8 +198,8 @@ func TestConfigFolderGoesBeforeTheNextGitCall(t *testing.T) {
 // TestCreateWithTheMemberLeavesTheConfigFileToGit: with "shadowDirOff":true the
 // calls name the git directory itself, and the file of the new worktree is
 // left to git. The daemon runs no `--unset-all` call and makes no `.config-<n>`
-// folder. 89cb6289 runs no such call (cells 12a to 12f of s3p2b-edges-linux,
-// Linux VM). 5fd08069 is not measured with the member in those cells.
+// folder. 89cb6289 runs no such call (measured on Linux). 5fd08069 is not
+// measured with the member in those cells.
 func TestCreateWithTheMemberLeavesTheConfigFileToGit(t *testing.T) {
 	f := newSeededShadowFixture(t)
 	dropFixtureWorktree(t, f)
@@ -303,11 +300,10 @@ func checkFront(t *testing.T, what, dir string, calls []envCall, want []string) 
 // The read-tree has them after its lfs.storage item. The four calls of a
 // git.status in the temporary git folder keep the plain list of 28. A listing
 // has none. The calls on a linked worktree with its own file start with the
-// items of that file, and they have none of the repository's. The cells are
-// 12a, A7b and 1c of val-s3p2b2-3-linux (Linux VM) and N16c of
-// val-s3p2b2-3-windows (Windows VM). With the member claustrum puts no item on
-// a call: git reads the file itself there. 5fd08069 is not measured with the
-// member in those cells.
+// items of that file, and they have none of the repository's. That is measured
+// on Linux and Windows. With the member claustrum puts no item on a call: git
+// reads the file itself there. 5fd08069 is not measured with the member in
+// those cells.
 //
 // The calls of a remove with its branch step have no row. They get the items
 // by the same rule.
@@ -386,9 +382,8 @@ func TestWorktreeConfigItemsOnTheCalls(t *testing.T) {
 // TestTopLevelPairCarriesTheFrontItems: the `rev-parse --show-toplevel` call of
 // the pair with --git-dir= starts with the items that its caller gives, and the
 // listing before it has none. On 5fd08069 that call of a git.info has
-// `core.filemode=true` first, 29 items (cell N16c of val-s3p2b2-3-windows,
-// Windows VM). Only Windows makes the pair in a git.info, so this test calls
-// the pair itself.
+// `core.filemode=true` first, 29 items (measured on Windows). Only Windows
+// makes the pair in a git.info, so this test calls the pair itself.
 func TestTopLevelPairCarriesTheFrontItems(t *testing.T) {
 	f := newSeededShadowFixture(t)
 	if err := os.WriteFile(f.log, nil, 0o644); err != nil {
@@ -418,9 +413,8 @@ func TestTopLevelPairCarriesTheFrontItems(t *testing.T) {
 // `config.worktree` file of its worktree with one git call. That call has the
 // form of the read of a config file. Its working directory is the root folder,
 // and it carries GIT_DIR=<null device>, LC_ALL=C and LANGUAGE=C. 5fd08069 runs
-// it so (cell 1c of val-s3p2b2-5-linux, call 5 of the git.status on w0, Linux
-// VM). With the member the call has the same form (cell V3 of round task004-03,
-// Linux, macOS and Windows VMs).
+// it so (measured on Linux, call 5 of the git.status on w0). With the member
+// the call has the same form (measured on Linux, macOS and Windows).
 func TestStatusEntryConfigReadInTheStateShadow(t *testing.T) {
 	f := newSeededShadowFixture(t)
 	enableWorktreeConfig(t, f, "[core]\n\tfilemode = false\n")
@@ -473,9 +467,8 @@ func TestStatusEntryConfigReadInTheStateShadow(t *testing.T) {
 // TestEmptyMainWorktreeConfigIsNotListed: the first git.info on a repository
 // with the worktreeConfig switch lists the `config.worktree` file of the git
 // directory two times, and a file of 0 bytes not at all. On 5fd08069 that
-// request makes 21 calls with the empty file and no read of it (cell
-// p2-K-none-empty-file of val-s3p2b2-6-linux, Linux VM). With a file of 34
-// bytes it lists the file two times (cell p2-K-sparsecheckoutcone-true).
+// request makes 21 calls with the empty file and no read of it (measured on
+// Linux). With a file of 34 bytes it lists the file two times (measured).
 func TestEmptyMainWorktreeConfigIsNotListed(t *testing.T) {
 	reads := func(t *testing.T, text string) int {
 		f := newSeededShadowFixture(t)
@@ -507,12 +500,10 @@ func TestEmptyMainWorktreeConfigIsNotListed(t *testing.T) {
 // listing in the temporary git folder. The four calls in that folder then
 // start with the item of the file, before the --attr-source option. On
 // 5fd08069 the read is call 9 of 23, with `-c core.sparsecheckoutcone=true` on
-// those four calls (cell p2-K-sparsecheckoutcone-true of val-s3p2b2-6-linux,
-// Linux VM, and row U2 of val-s3p2b2-6-macos, macOS VM). A Windows VM has it
-// for `sparsecheckout = true` too (cells P2-K4 and P2-X2 of
-// val-s3p2b2-6-windows). With a file of 0 bytes it makes one read and the calls keep the
-// plain list (cell p2-K-none-empty-file of that round). With the member the
-// second read is not measured: claustrum makes none.
+// those four calls (measured on Linux and macOS). A Windows test has it for `sparsecheckout =
+// true` too (measured). With a file of 0 bytes it makes one read and the calls keep the
+// plain list (measured). With the member the second read is not measured: claustrum
+// makes none.
 func TestStatusReadsTheEntryConfigASecondTime(t *testing.T) {
 	const cone = "[core]\n\tsparsecheckoutcone = true\n"
 	for _, row := range []struct {
@@ -631,8 +622,8 @@ func TestWriteWorktreeConfigGuards(t *testing.T) {
 			t.Errorf("the file = %q", got)
 		}
 	})
-	// Cells C4 to C6 of round task007-01 (Linux and macOS VMs): a file and an
-	// empty folder at the name are replaced, and a folder with content stays.
+	// Measured on Linux and macOS: a file and an empty folder at the name are replaced, and a
+	// folder with content stays.
 	t.Run("a file that is there is replaced", func(t *testing.T) {
 		f := newReg(t)
 		mustWrite(t, placed(f), "x\n")
@@ -772,8 +763,8 @@ func TestWriteWorktreeConfigGuards(t *testing.T) {
 
 // TestWorktreeConfigSourceKinds: the read of the source file of the step after
 // the add, for each kind of entry. A FIFO, a link out of the git directory and a
-// syntax error are cells C9 to C11 of round task007-01 (Linux and macOS VMs).
-// The other rows are claustrum's own.
+// syntax error are measured on Linux and macOS. The other rows are claustrum's
+// own.
 func TestWorktreeConfigSourceKinds(t *testing.T) {
 	const text = "[core]\n\tfilemode = false\n"
 	newGitDir := func(t *testing.T) (string, string) {

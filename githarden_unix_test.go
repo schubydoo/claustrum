@@ -118,8 +118,8 @@ func TestHostileConfigRefusalCannotChangeTo(t *testing.T) {
 // unenterable directory. The start also fails with a *fs.PathError, but dir can be
 // entered, so the refusal stays. The fixture is an executable git with no valid
 // format, so exec fails with ENOEXEC after the chdir. `git version` then fails to
-// start too, so the text says git cannot run (89cb6289, row L12 on Linux and macOS
-// VMs). Mutation: treating the start error as "no repository" gives no refusal.
+// start too, so the text says git cannot run (`89cb6289`, measured on Linux and
+// macOS). Mutation: treating the start error as "no repository" gives no refusal.
 func TestHostileConfigRefusalGitCannotStart(t *testing.T) {
 	bin := t.TempDir()
 	if err := os.WriteFile(filepath.Join(bin, "git"), []byte("not a program\x00\x01"), 0o755); err != nil {

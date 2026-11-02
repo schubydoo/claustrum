@@ -10,10 +10,9 @@ import (
 // O2 on Windows: a hold that starts while a git.info runs moves its root pair
 // (gitInfoRoot) to the git directory. On 5fd08069 only the first config listing
 // and `rev-parse --git-dir` keep the copy. Both calls of the pair name the git
-// directory (cell O2 of round task103-04, Windows VM). Mutation: in gitInfo,
-// take copyOf, front and the pin from req.use in place of
-// req.use.atCommand(). Both calls of the pair then name the copy in
-// GIT_COMMON_DIR.
+// directory (measured on Windows). Mutation: in gitInfo, take copyOf, front and
+// the pin from req.use in place of req.use.atCommand(). Both calls of the pair
+// then name the copy in GIT_COMMON_DIR.
 func TestShadowOffHoldThatStartsInARequestMovesTheRootPair(t *testing.T) {
 	h := newLiveFixture(t)
 	slowGit(t, "init,-q,--template=", "gate", 10*time.Minute, "", "")

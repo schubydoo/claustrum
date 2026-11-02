@@ -11,10 +11,9 @@ import (
 	"testing"
 )
 
-// git.info on a Windows path that goes through a junction (walkStart). The cells are
-// those of 89cb6289 on a Windows VM: B-01, B-03, B-04, B-05p, B-05r, B-06, B-07, B-08,
-// B-13, B-14, B-15, B-16 and B-17k. Cell B-17d is in gitinfo_junction_windows_test.go.
-// Each test names the mutation that turns it red.
+// git.info on a Windows path that goes through a junction (walkStart). The cases
+// are those of 89cb6289, measured on Windows. A Windows test is in
+// gitinfo_junction_windows_test.go. Each test names the mutation that turns it red.
 
 // junctionRepos is the fixture of those cells. P is a repository on branch main with
 // the origin p/p. R is a repository on branch rmain with the origin r/r and one more
@@ -143,7 +142,7 @@ func TestTrustWalkStartsAtSpelledPath(t *testing.T) {
 		t.Skip("the cells run on real junctions in TestInfoThroughJunctionWindows")
 	}
 	f := newJunctionRepos(t, junctionsLikeWindows(t))
-	// A real symlink, which the resolve follows on every system (cell B-06).
+	// A real symlink, which the resolve follows on every system (measured).
 	if err := os.Symlink(filepath.Join(f.R, "inner"), filepath.Join(f.P, "L")); err != nil {
 		t.Skipf("symlink: %v", err)
 	}
@@ -168,14 +167,14 @@ func TestTrustWalkStartsAtSpelledPath(t *testing.T) {
 			}
 		})
 	}
-	// A daemon GIT_DIR of R is the directory that the check judges and pins (cell B-14).
+	// A daemon GIT_DIR of R is the directory that the check judges and pins (measured).
 	t.Run("B-14 daemon GIT_DIR", func(t *testing.T) {
 		t.Setenv("GIT_DIR", dotGitOf(f.R))
 		if got, want := commonDirPinEnv(filepath.Join(f.J, "sub")), pinOf(f.R); !slices.Equal(got, want) {
 			t.Errorf("pin = %q, want %q", got, want)
 		}
 	})
-	// A daemon GIT_COMMON_DIR leaves the calls with no entry of the check (cell B-13).
+	// A daemon GIT_COMMON_DIR leaves the calls with no entry of the check (measured).
 	t.Run("B-13 daemon GIT_COMMON_DIR", func(t *testing.T) {
 		t.Setenv("GIT_COMMON_DIR", dotGitOf(f.R))
 		if got := commonDirPinEnv(filepath.Join(f.J, "sub")); got != nil {
@@ -228,8 +227,8 @@ func TestTrustWalkNeedsResolveOffWindows(t *testing.T) {
 	}
 }
 
-// checkJunctionInfoCells asserts the git.info result of each cell on the fixture f.
-// The frames are those of 89cb6289 on a Windows VM. Cells B-17k and B-17d are in
+// checkJunctionInfoCells asserts the git.info result of each cell on the fixture f. The
+// frames are those of 89cb6289 on Windows. The measured frames are checked in
 // TestInfoThroughJunctionWindows only. Off Windows the root is not git's answer, and
 // the file system takes the `..` after a symlink through its target.
 func checkJunctionInfoCells(t *testing.T, f junctionRepos) {
@@ -252,7 +251,7 @@ func checkJunctionInfoCells(t *testing.T, f junctionRepos) {
 		wantResult(t, "info", info(t, filepath.Join(f.QJ, "sub")), `{"isRepo":false,"repoSlug":"","defaultBranch":""}`)
 	})
 	// The hooks and fsmonitor settings of R are not in the configuration that git
-	// reads, so the frame stays (cell B-16).
+	// reads, so the frame stays (measured).
 	t.Run("B-16 hooks path in the config of R", func(t *testing.T) {
 		rCfg := filepath.Join(dotGitOf(f.R), "config")
 		before, err := os.ReadFile(rCfg)
@@ -275,10 +274,10 @@ func checkJunctionInfoCells(t *testing.T, f junctionRepos) {
 		wantResult(t, "info", info(t, sub), infoFrame(t, f.P, "rmain", "", ""))
 	})
 	// The listing reads the config of P, so a broken line there refuses the request
-	// (cell B-15). Cell B-15 had a syntax error in the config file. The daemon's
+	// (measured). A measurement had a syntax error in the config file. The daemon's
 	// own read now answers that state first (TestRepoConfigSyntaxError), so the
-	// line here is an include.path with no value, which the listing of git
-	// refuses and the read does not.
+	// line here is an include.path with no value, which the listing of git refuses
+	// and the read does not.
 	t.Run("B-15 broken config of P", func(t *testing.T) {
 		cfg := filepath.Join(dotGitOf(f.P), "config")
 		b, err := os.ReadFile(cfg)
@@ -300,9 +299,9 @@ func checkJunctionInfoCells(t *testing.T, f junctionRepos) {
 
 // With the walk of Windows and a symlink in the place of each junction, git.info
 // answers the frames of the cells: the root, the repo and the repoSlug of P and the
-// branch of R. The listing prints the origin of P, and the branch is that of R (cell
-// B-01). No reference build ran in this state off Windows. Mutation: in gitDirTrustFor,
-// call resolveWalkLinks in place of walkStart.
+// branch of R. The listing prints the origin of P, and the branch is that of R
+// (measured). No reference build ran in this state off Windows. Mutation: in
+// gitDirTrustFor, call resolveWalkLinks in place of walkStart.
 func TestInfoThroughSimulatedJunction(t *testing.T) {
 	if runtime.GOOS == "windows" {
 		t.Skip("the cells run on real junctions in TestInfoThroughJunctionWindows")

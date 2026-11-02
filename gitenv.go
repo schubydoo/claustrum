@@ -98,7 +98,7 @@ func withoutConfigCountSet(env []string) []string {
 // order, read by their canonical names. Then come the hook pins: hook.enabled=false
 // and an empty hook.event, then hook.<name>.enabled=false and an empty
 // hook.<name>.event for each name of hooks, in order. The count covers every pair.
-// 89cb6289 has that order on Linux, macOS and Windows VMs (rows L04 to L07).
+// 89cb6289 has that order on Linux, macOS and Windows (measured).
 func configPinEnv(env []string, count int, hooks []string) []string {
 	out := []string{configCountName + "=" + strconv.Itoa(count+2+2*len(hooks))}
 	for i := range count {

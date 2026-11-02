@@ -74,7 +74,7 @@ func entryTreeOf(t *testing.T, dir string) map[string]os.FileInfo {
 		}
 		// The identity is read now. On Windows os.SameFile reads it from the
 		// path at the first compare, and a compare after a replace then saw the
-		// new file two times (val-s3p2b2-3-windows part C).
+		// new file two times (measured on Windows).
 		os.SameFile(fi, fi)
 		rel, _ := filepath.Rel(dir, path)
 		tree[filepath.ToSlash(rel)] = fi
@@ -154,8 +154,7 @@ func laterTime(t *testing.T, path string) {
 
 // TestShadowRepoName: the name is the first 32 hex digits of the sha256 of the
 // path of the git directory. The rows are the digits that 5fd08069 used on
-// macOS and Windows VMs (s3p2-macos cell B2, s3p2-windows cells B1 and B2, and
-// cell 24 c of s3p2b-edges on both).
+// macOS and Windows (measured).
 func TestShadowRepoName(t *testing.T) {
 	sep := string(filepath.Separator)
 	for path, want := range map[string]string{
@@ -184,9 +183,8 @@ func TestShadowRepoName(t *testing.T) {
 
 // TestShadowRepoFolderPerKind: which git directory names the folder, per kind
 // of repository. A request on a linked worktree uses the folder of its
-// repository (s3p2-linux cell B3b). A bare repository uses its own path (cell
-// B3c). A `.git` file uses the git directory that it names (cell 20j of
-// s3p2b-edges-linux).
+// repository (measured). A bare repository uses its own path (measured). A
+// `.git` file uses the git directory that it names (measured).
 func TestShadowRepoFolderPerKind(t *testing.T) {
 	f := newRepoFolderFixture(t)
 	want := filepath.Join(f.h.dir, shadowRepoName(f.gitDir))
@@ -222,8 +220,8 @@ func TestShadowRepoFolderPerKind(t *testing.T) {
 }
 
 // TestShadowRepoEntries: the entries of the folder of a plain repository, and
-// their content (s3-linux cell A3 and s3p2-linux cell B3a, Linux VM. Cell 24
-// of s3p2b-edges on macOS and Windows VMs). Windows has no `worktrees` entry.
+// their content (measured on Linux, macOS and Windows). Windows has no
+// `worktrees` entry.
 func TestShadowRepoEntries(t *testing.T) {
 	f := newRepoFolderFixture(t)
 	setRepoConfig(t, f.gitDir, stdRepoConfig)
@@ -271,8 +269,7 @@ func mustReadlink(t *testing.T, path string) string {
 }
 
 // TestShadowRepoSecondRequestChangesNothing: a second request with nothing
-// changed changes no entry (s3p2-linux cell B4, Linux VM, and cell 24 B4 of
-// s3p2b-edges on macOS and Windows VMs).
+// changed changes no entry (measured on Linux, macOS and Windows).
 func TestShadowRepoSecondRequestChangesNothing(t *testing.T) {
 	f := newRepoFolderFixture(t)
 	mustWrite(t, filepath.Join(f.gitDir, "shallow"), strings.Repeat("a", 40)+"\n")
@@ -295,9 +292,8 @@ func TestShadowRepoSecondRequestChangesNothing(t *testing.T) {
 
 // TestShadowRepoConfigIsWrittenAgain: after a change of the repository's config
 // the copy is a new file with the new text, and every other entry stays
-// (s3p2-linux cell B4 and cell 18k of s3p2b-edges-linux, Linux VM). A change of
-// an included file alone gives a new copy too, also with the same size (cell
-// 21a of that round).
+// (measured on Linux). A change of an included file alone gives a new copy too,
+// also with the same size (measured).
 func TestShadowRepoConfigIsWrittenAgain(t *testing.T) {
 	f := newRepoFolderFixture(t)
 	setRepoConfig(t, f.gitDir, stdRepoConfig+"[include]\n\tpath = inc.cfg\n")
@@ -353,9 +349,8 @@ func TestShadowRepoConfigIsWrittenAgain(t *testing.T) {
 }
 
 // TestShadowRepoHead: the copy of HEAD follows the repository's HEAD as a new
-// file (cell 18a of s3p2b-edges-linux, Linux VM), and it holds the first 8192
-// bytes only (cells 17a to 17k of that round). The request of a linked
-// worktree gets the HEAD of the repository (s3p2-linux cell B3b).
+// file (measured on Linux), and it holds the first 8192 bytes only. The
+// request of a linked worktree gets the HEAD of the repository (measured).
 func TestShadowRepoHead(t *testing.T) {
 	f := newRepoFolderFixture(t)
 	dir := f.sync(t, f.repo)
@@ -386,10 +381,9 @@ func TestShadowRepoHead(t *testing.T) {
 }
 
 // TestShadowRepoCopiesFollowTheirFiles: each copied file appears, is written
-// again as a new file and goes with its file (cells 19a to 19e and 20a of
-// s3p2b-edges-linux, Linux VM. Cell 15 of s3p2b-edges2 on macOS and Windows
-// VMs). After info/exclude went, `info` stays empty. A rebase folder goes with
-// its file. BISECT_LOG is an empty file (s3p2-linux cell B3i).
+// again as a new file and goes with its file (measured on Linux, macOS and
+// Windows). After info/exclude went, `info` stays empty. A rebase folder
+// goes with its file. BISECT_LOG is an empty file (measured).
 func TestShadowRepoCopiesFollowTheirFiles(t *testing.T) {
 	f := newRepoFolderFixture(t)
 	if err := os.Remove(filepath.Join(f.gitDir, "info", "exclude")); err != nil {
@@ -461,8 +455,7 @@ func TestShadowRepoCopiesFollowTheirFiles(t *testing.T) {
 }
 
 // TestShadowRepoFilesWithNoCopy: the files of the git directory that 5fd08069
-// gives no entry (s3p2-linux cells B3f and B3h, and cells 20b to 20i of
-// s3p2b-edges-linux, Linux VM).
+// gives no entry (measured on Linux).
 func TestShadowRepoFilesWithNoCopy(t *testing.T) {
 	f := newRepoFolderFixture(t)
 	dir := f.sync(t, f.repo)
@@ -480,9 +473,9 @@ func TestShadowRepoFilesWithNoCopy(t *testing.T) {
 }
 
 // TestShadowRepoFolderComesBack: a folder of a repository that went is made
-// again from what the daemon read before, with no new read of the config (cell
-// 54 of s3p2b-edges3-linux2, Linux VM). A new folder of the daemon starts with
-// no folder of a repository.
+// again from what the daemon read before, with no new read of the config
+// (measured on Linux). A new folder of the daemon starts with no folder of a
+// repository.
 func TestShadowRepoFolderComesBack(t *testing.T) {
 	f := newRepoFolderFixture(t)
 	dir := f.sync(t, f.repo)
@@ -546,12 +539,11 @@ func newSeededShadowFixture(t *testing.T) shadowFixture {
 }
 
 // TestShadowConfigReadCalls: how many reads of a config file a request makes,
-// per fixture. The rows are the cells 1a to 1m of s3p2b-edges2-linux and 11a
-// to 11f of s3p2b-edges-linux (Linux VM): one read for the config, one for each
-// included file that exists, one for the file of an `includeIf` section, and
-// two for the `config.worktree` file of the repository when the switch is on
-// and the file exists. The reads follow each other. A second request makes
-// none.
+// per fixture. The rows are measured on Linux: one read for the config, one
+// for each included file that exists, one for the file of an `includeIf`
+// section, and two for the `config.worktree` file of the repository when the
+// switch is on and the file exists. The reads follow each other. A second
+// request makes none.
 func TestShadowConfigReadCalls(t *testing.T) {
 	ext := "[extensions]\n\tworktreeConfig = true\n"
 	inc := "[core]\n\tfilemode = false\n"
@@ -593,11 +585,11 @@ func TestShadowConfigReadCalls(t *testing.T) {
 }
 
 // TestShadowConfigReadsOfLaterRequests: the reads of the `config.worktree`
-// files in later requests (cells 1a, 1c and 1k of s3p2b-edges2-linux, Linux
-// VM). A git.info on a linked worktree reads the file of that worktree one
-// time in each request, and it does not read the config of the repository
-// again. git.list_branches reads nothing. A create reads the file of the
-// repository one time, right after its `worktree add`.
+// files in later requests (measured on Linux). A git.info on a linked
+// worktree reads the file of that worktree one time in each request, and it
+// does not read the config of the repository again. git.list_branches reads
+// nothing. A create reads the file of the repository one time, right after
+// its `worktree add`.
 func TestShadowConfigReadsOfLaterRequests(t *testing.T) {
 	f := newSeededShadowFixture(t)
 	setRepoConfig(t, f.gitDir, stdRepoConfig+"[extensions]\n\tworktreeConfig = true\n")
@@ -652,11 +644,10 @@ func TestShadowConfigReadsOfLaterRequests(t *testing.T) {
 
 // TestShadowRepoFolderPerState: which requests make the folder of a
 // repository. Each of the five methods makes it as the first request of a
-// daemon in the state shadow (git.info, git.status and git.worktree_create in
-// s3-macos section 1 and s3b-linux cell W1. The two others are claustrum's
-// choice). A request with the switch makes none (s3-linux cell B1), the state
-// fallback-git makes none (s3p2-oldgit section 5) and a refused config makes
-// none (s3p2-linux section 4).
+// daemon in the state shadow (git.info, git.status and
+// git.worktree_create are measured. The two others are claustrum's
+// choice). A request with the switch makes none (measured), the state
+// fallback-git makes none and a refused config makes none.
 func TestShadowRepoFolderPerState(t *testing.T) {
 	folders := func(t *testing.T, run string) []string {
 		t.Helper()

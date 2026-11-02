@@ -25,8 +25,8 @@ func syncInTime(done chan error) error {
 }
 
 // TestShadowRepoModes: on Linux and macOS every folder of the folder of a
-// repository has the mode 0700 and every file 0600 (s3-linux cell A3, Linux VM.
-// s3-macos cell A3 and cell 24 of s3p2b-edges, macOS VM).
+// repository has the mode 0700 and every file 0600 (measured on Linux and
+// macOS).
 func TestShadowRepoModes(t *testing.T) {
 	f := newRepoFolderFixture(t)
 	old := syscall.Umask(0)
@@ -56,9 +56,9 @@ func TestShadowRepoModes(t *testing.T) {
 }
 
 // TestShadowRepoLinks: the link `worktrees` is made also where its target does
-// not exist (s3p2-macos cell B3a, macOS VM), and for a bare repository it
-// points into the repository (s3p2-linux cell B3c). A repository with a
-// `reftable` folder gets a link to it (cell 25 of s3p2b-edges, macOS VM).
+// not exist (measured on macOS), and for a bare repository it points into the
+// repository. A repository with a `reftable` folder gets a link to it
+// (measured on macOS).
 func TestShadowRepoLinks(t *testing.T) {
 	f := newRepoFolderFixture(t)
 	base := filepath.Dir(f.repo)
@@ -88,8 +88,8 @@ func TestShadowRepoLinks(t *testing.T) {
 }
 
 // TestShadowRepoNameResolvesLinks: on Linux and macOS a request through a
-// symbolic link uses the folder of the resolved path (s3p2-macos cell B1,
-// macOS VM, and the Linux column of the per system table).
+// symbolic link uses the folder of the resolved path (measured on macOS
+// and Linux).
 func TestShadowRepoNameResolvesLinks(t *testing.T) {
 	f := newRepoFolderFixture(t)
 	link := filepath.Join(filepath.Dir(f.repo), "link")

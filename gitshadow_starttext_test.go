@@ -53,11 +53,10 @@ func versionsAfterCallSeven(t *testing.T, calls []envCall) int {
 // TestStartTestCallSevenWithAFailedVersion pins the text of a start test whose call
 // 7 fails while `git version` fails too. 5fd08069 runs one plain `git version` call
 // and answers its text alone, `git cannot run on this host; git not run: <exit>:
-// <line>`, in the frame of each method (cells E1 to E5 of round task083-01, Linux
-// VM, E1 and E2 on macOS and Windows VMs). git.worktree_remove deletes nothing there
-// (cell E5). The failure is kept: the same request again makes no git call (cell
-// E7). Mutation: drop the cannotRunText branch in shadowTestCalls, or wrap its text
-// in gate.
+// <line>`, in the frame of each method (measured on Linux, macOS and Windows).
+// git.worktree_remove deletes nothing there (measured). The failure is kept: the
+// same request again makes no git call (measured). Mutation: drop the cannotRunText
+// branch in shadowTestCalls, or wrap its text in gate.
 func TestStartTestCallSevenWithAFailedVersion(t *testing.T) {
 	line := "fatal: bad config line 3 in file /h/.gitconfig"
 	text := "git cannot run on this host; git not run: exit status 128: " + line
@@ -95,8 +94,8 @@ func TestStartTestCallSevenWithAFailedVersion(t *testing.T) {
 // call 7 fails while `git version` works. 5fd08069 answers `Claude could not test
 // git on the remote machine (this repository's git config cannot be used: boom).
 // Check free disk space and quota there, then try again.` after one `git version`
-// call (cells E9 and E9c of round task083-01, Linux VM). Mutation: name the exec
-// error in place of the error lines of call 7.
+// call (measured on Linux). Mutation: name the exec error in place of the error
+// lines of call 7.
 func TestStartTestCallSevenWithAWorkingVersion(t *testing.T) {
 	f := newShadowFixture(t)
 	failCallSeven(t, "boom\n")
@@ -121,12 +120,11 @@ func TestStartTestCallSevenWithAWorkingVersion(t *testing.T) {
 // fails, each method answers its text in its frame: -32603 on git.info,
 // git.status and git.list_branches, worktree_add_failed on git.worktree_create,
 // and the lock-check text on git.worktree_remove, with two such calls and no
-// delete (cell E8 of round task083-01 and cells E8s, E8l, E8c and E8r of round
-// task083-02, Linux VM). If it works, git.info answers the error of the call, as
-// 5fd08069 does for another text with exit 128 (cell P8 of round task073-03,
-// Linux VM). On c8e2f083 an exit 128 gets a second run (measured on Linux).
-// Here it fails as the first call did, so each request makes two calls about
-// the repository. Mutation: drop the cannotRunText branch in secondProbe.
+// delete (measured on Linux). If it works, git.info answers the error of the
+// call, as 5fd08069 does for another text with exit 128 (measured on Linux). On
+// c8e2f083 an exit 128 gets a second run (measured on Linux). Here it fails as
+// the first call did, so each request makes two calls about the repository.
+// Mutation: drop the cannotRunText branch in secondProbe.
 func TestProbeExit128WithABrokenConfig(t *testing.T) {
 	line := "fatal: bad config line 3 in file /h/.gitconfig"
 	text := "git cannot run on this host; git not run: exit status 128: " + line
@@ -183,11 +181,11 @@ func TestProbeExit128WithABrokenConfig(t *testing.T) {
 	})
 }
 
-// TestProbeFailureWithAFailedVersion pins cell P14x of round task073-03 (Linux
-// VM). The call about the repository exits 1 with `fatal: not a git repository`,
-// and the `git version` call after it exits 1 with `boom`. 5fd08069 answers the
-// text of that version call on git.info and on git.worktree_create. Mutation:
-// return repoCheckFailedText in askGit without the cannotRunText branch.
+// TestProbeFailureWithAFailedVersion pins a measured case (on Linux). The call
+// about the repository exits 1 with `fatal: not a git repository`, and the `git
+// version` call after it exits 1 with `boom`. 5fd08069 answers the text of that
+// version call on git.info and on git.worktree_create. Mutation: return
+// repoCheckFailedText in askGit without the cannotRunText branch.
 func TestProbeFailureWithAFailedVersion(t *testing.T) {
 	text := gitCannotRunPrefix + "exit status 1: boom"
 	// The index of git.info and of git.worktree_create in fiveRequests.
@@ -206,16 +204,15 @@ func TestProbeFailureWithAFailedVersion(t *testing.T) {
 
 // TestGitInfoGoneGitFileRunsTheStartTest pins git.info as the first git request of
 // a daemon on a folder whose `.git` file names a missing path. 5fd08069 runs the
-// start test there and answers "no repository" with "settingsControl":"shadow" (cell
-// V3 of round task083-01, Linux, macOS and Windows VMs). It does the same for a
-// missing entry under `worktrees` of a missing repository (cell V4g of round
-// task083-02, Linux VM). A missing entry under `worktrees` of an existing git
-// directory, a `.git` file with no gitdir line and a request with
-// "shadowDirOff":true run no test (cells V4, V2 and V7 of round task083-01). The
-// stub answers the listing in the folder with the text of an older git, so the
-// rows do not depend on the git of the host. Call 7 of the test stays real.
-// Mutation: set goneGitFile to false or true in judgeGitDir, test any stat error
-// in place of a missing path, or drop the gate call in gitInfo.
+// start test there and answers "no repository" with "settingsControl":"shadow"
+// (measured on Linux, macOS and Windows). It does the same for a missing entry under
+// `worktrees` of a missing repository (measured on Linux). A missing entry under
+// `worktrees` of an existing git directory, a `.git` file with no gitdir line and a
+// request with "shadowDirOff":true run no test (measured). The stub answers the
+// listing in the folder with the text of an older git, so the rows do not depend on
+// the git of the host. Call 7 of the test stays real. Mutation: set goneGitFile to
+// false or true in judgeGitDir, test any stat error in place of a missing path, or
+// drop the gate call in gitInfo.
 func TestGitInfoGoneGitFileRunsTheStartTest(t *testing.T) {
 	// The daemon passes GIT_COMMON_DIR as the `.git` file spells it, and the file
 	// has forward slashes on every system. So the suffixes have them too.

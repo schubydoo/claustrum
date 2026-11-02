@@ -20,7 +20,7 @@ import (
 // the underlying errno with the leaf name. (This file is `//go:build unix`, and
 // stdlib syscall.Mkdirat is linux-only, so this rewraps rather than issuing the
 // mkdirat syscall. The created directory and the errno are identical.) The leaf asks for mode 0777, and the umask applies. f6010b97 makes
-// its leaf with this mode on Linux and macOS VMs, both run at umask 0000.
+// its leaf with this mode on Linux and macOS, both run at umask 0000.
 func mkdirWorktreeLeaf(worktreePath string) error {
 	if err := os.Mkdir(worktreePath, 0o777); err != nil {
 		return mkdiratError(worktreePath, err)
@@ -41,7 +41,7 @@ func mkdiratError(path string, err error) error {
 // mkdirRepoWorktreeParents makes the missing directories between repo and dir, top
 // first, for a create without worktreeRoot. A new directory asks for mode 0755, and
 // the umask applies. An existing directory keeps its mode. The texts use repo with
-// its symlinks resolved. They match f6010b97 on Linux and macOS VMs:
+// its symlinks resolved. They match f6010b97 on Linux and macOS:
 //   - An existing component that is not a directory: "<path> is not a directory".
 //   - An existing directory without search permission: "statat .: <errno>". This
 //     includes the last directory when nothing is left to create.
@@ -82,9 +82,9 @@ func mkdirRepoWorktreeParents(repo, dir string) error {
 // <directory> level of a create with worktreeRoot. Each new directory asks for mode
 // 0700, and the umask applies. A failed create names the path relative to the
 // deepest directory that existed before the call, for example "mkdirat a/b:
-// <errno>". f6010b97 does the same on Linux and macOS VMs. Not measured: a root
-// made in this call, then a failed <directory>. It reads "mkdirat R/cp: <errno>" by
-// the same rule. A directory made before a later failure stays.
+// <errno>". f6010b97 does the same on Linux and macOS. Not measured: a root made in
+// this call, then a failed <directory>. It reads "mkdirat R/cp: <errno>" by the
+// same rule. A directory made before a later failure stays.
 func mkdirExternalWorktreeParents(dir string) error {
 	base := dir
 	var missing []string

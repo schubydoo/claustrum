@@ -14,11 +14,10 @@ import (
 // daemon after the `--unset-all` calls.
 //
 // On 5fd08069 a folder there, empty or with a file, gives `openat
-// config.worktree: is a directory` (cells S9 and S9b of round task087-01, and
-// C6 of round task007-02, Windows VM). A denied create gives `openat
-// config.worktree: Access is denied.` (cell S15). A file there gets the new
-// text (cell C4 of round task007-01). The write time and the access time are
-// equal, 0.5 to 2.3 ms before the creation time (cell S10, 5 runs).
+// config.worktree: is a directory` (measured on Windows). A denied create
+// gives `openat config.worktree: Access is denied.` (measured). A file there
+// gets the new text (measured). The write time and the access time are equal,
+// 0.5 to 2.3 ms before the creation time (measured).
 func writeConfigFileIn(entry *os.Root, text []byte, written time.Time) error {
 	f, err := createRegistrationFile(entry, worktreeConfigName)
 	if err != nil {
@@ -39,7 +38,7 @@ func writeConfigFileIn(entry *os.Root, text []byte, written time.Time) error {
 // link there never gets the new bytes.
 //
 //   - A folder at name, empty or not, fails with `openat <name>: is a
-//     directory`, the text of 5fd08069 (cells S9, S9b, C6 and S12).
+//     directory`, the text of 5fd08069 (measured).
 //   - Any other entry there goes first, with one plain remove, never as a
 //     tree. A link goes as a link.
 //   - Then the file is made with O_EXCL. If an entry is there again, it goes

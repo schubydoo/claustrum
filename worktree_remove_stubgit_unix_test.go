@@ -65,7 +65,7 @@ func TestWorktreeRemovePrunesLeftoverAdminDir(t *testing.T) {
 // 7d193f89 refuses a worktree whose path crosses a symlinked component under the
 // repo (.claude / .claude/worktrees or below) — a planted link could carry a
 // create outside the repo or point the removal at an external target. Create carries errorCode "symlinked_component"; remove carries
-// none. Measured against the reference on an ephemeral VM.
+// none. Measured against the reference.
 func TestWorktreeSymlinkedComponentRefused(t *testing.T) {
 	if _, err := exec.LookPath("git"); err != nil {
 		t.Skip("git not installed")

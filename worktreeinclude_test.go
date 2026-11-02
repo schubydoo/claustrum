@@ -11,12 +11,12 @@ import (
 	"testing"
 )
 
-// The scenarios below reproduce fixtures of the f6010b97 black-box matrix
-// (scratch/f6010b97/slice4-matrix.md, appendix). Each fixture follows the
-// probe: a tracked `.gitignore` that holds `.claude/worktrees/` plus the
-// scenario lines, a tracked `t.txt`, and a tracked manifest. Each untracked
-// file holds its own path and a newline. The new worktree is
-// `<repo>/.claude/worktrees/w`. The want lists are the f6010b97 file sets.
+// The scenarios below reproduce fixtures of the f6010b97 black-box matrix.
+// Each fixture follows the probe: a tracked `.gitignore` that holds
+// `.claude/worktrees/` plus the scenario lines, a tracked `t.txt`, and a
+// tracked manifest. Each untracked file holds its own path and a newline.
+// The new worktree is `<repo>/.claude/worktrees/w`. The want lists are the
+// f6010b97 file sets.
 
 // includeCase is one fixture of the matrix.
 type includeCase struct {
@@ -650,7 +650,7 @@ func TestVersionSelectsIncludeScan(t *testing.T) {
 
 // TestIncludeOpenerIgnoresCase covers the case rule of R4 without a
 // case-insensitive file system. `BUILD/` opens `build` and `build/` opens
-// `Build`, as measured on APFS (X09, X44). X09b shows the same opening with
+// `Build`, as measured on APFS. A measurement shows the same opening with
 // core.ignorecase=false.
 func TestIncludeOpenerIgnoresCase(t *testing.T) {
 	for _, c := range []struct {
@@ -727,7 +727,7 @@ func TestIncludeGlobSegments(t *testing.T) {
 }
 
 // TestTrimTrailingSpaces covers the space rule. Unescaped trailing spaces go
-// (X34, E11), a tab stays (A20) and a backslash keeps one space (A08).
+// (measured), a tab stays (measured) and a backslash keeps one space (measured).
 func TestTrimTrailingSpaces(t *testing.T) {
 	for in, want := range map[string]string{
 		"build/   ":  "build/",
@@ -764,7 +764,7 @@ func TestIncludeFilesOverLimit(t *testing.T) {
 // TestIncludeFallbackAboveOneMiB covers R11 end to end, with the M fixture:
 // `build/` ignored, the manifest `*.txt`, and ignored `*.pad` files as padding.
 // The manifest also names the last pad file, so the copy reaches the last
-// batch of the new scan (R17).
+// batch of the new scan (measured).
 func TestIncludeFallbackAboveOneMiB(t *testing.T) {
 	padNames := func(last int) []string {
 		names := make([]string, 0, 10181)
@@ -811,7 +811,7 @@ func TestGitVersionCmdArgv(t *testing.T) {
 	}
 }
 
-// e27 is the E27 pattern: 33 segments. git matches a.txt at any depth, but the
+// e27 is a measured pattern: 33 segments. git matches a.txt at any depth, but the
 // pattern opens nothing and sets no any-depth flag.
 var e27 = strings.Repeat("**/", 32) + "a.txt\n"
 
@@ -937,8 +937,7 @@ func TestPlanIncludeScanCounts(t *testing.T) {
 	}
 }
 
-// Fixtures of the interpretation matrix
-// (scratch/f6010b97/slice4-interpretations.md). The want lists are the
+// Fixtures of the interpretation matrix. The want lists are the
 // f6010b97 file sets, the same on Linux and macOS.
 var (
 	d4Ignore = lines("build/", "other/", ".envd/", "d/")
@@ -1016,7 +1015,7 @@ var yTreeDirs = []string{".bx", "a", "a/x", "a/x/build", "build", "sub", "sub/bu
 
 // TestIncludeAnchoredOneSegment covers the rule for a leading `/` on one
 // segment. The want lists are the f6010b97 directory batches of O2_anch and
-// O_anch, measured on a Windows VM. The Linux and macOS batches with a nested
+// O_anch, measured on Windows. The Linux and macOS batches with a nested
 // `build` are not measured.
 func TestIncludeAnchoredOneSegment(t *testing.T) {
 	for manifest, want := range map[string][]string{
@@ -1075,9 +1074,9 @@ var (
 // The prefix ends before the first `*`, `?`, `[` or `\`, and case does not
 // matter. It also covers a leading `/`, a `//` and a lone `\` in a longer
 // pattern. The want lists are the f6010b97 directory batches. The O2 and O3
-// rows were measured on Windows and macOS VMs. The rows whose names start with
-// `L` were measured on a Linux VM, and the other rows on a macOS VM. A row with
-// a `*.txt` line opens the dot directory `.bx` too.
+// rows were measured on Windows and macOS. The rows whose names start with `L`
+// were measured on Linux, and the other rows on macOS. A row with a `*.txt`
+// line opens the dot directory `.bx` too.
 func TestIncludePrefixOpening(t *testing.T) {
 	aAll := []string{"a  b", "a b", "a*", "a/ b", "a/b", "a/c", "aXb", `a\ b`, `a\`, `a\b`, "a_b", "ab", "ac"}
 	xAll := []string{"x  y", "x y", `x\ y`, `x\y`, "xy"}
@@ -1353,11 +1352,11 @@ func claudeChildren(n, size int, lead string) []string {
 }
 
 // TestClaudeDirPassBatches replays the batch layout of the f6010b97 `.claude/`
-// pass (scratch/f6010b97/slice4-claude-many.md). The Windows rows use the
-// Windows budget and the Linux rows use the Linux budget, so the test runs on
-// every OS. Each pathspec costs its length plus 3 bytes, and the fixed argv
-// costs 87. The bisection rows pin the split: a pathspec cost of 24 489 is one
-// call on Windows and 24 490 is two. On Linux the edge is 130 985 and 130 986.
+// pass. The Windows rows use the Windows budget and the Linux rows use the
+// Linux budget, so the test runs on every OS. Each pathspec costs its length
+// plus 3 bytes, and the fixed argv costs 87. The bisection rows pin the split:
+// a pathspec cost of 24 489 is one call on Windows and 24 490 is two. On Linux
+// the edge is 130 985 and 130 986.
 func TestClaudeDirPassBatches(t *testing.T) {
 	const windows, unix = 24576, 131072
 	if got := argvCost(claudeDirPassFixedArgs); got != 87 {
@@ -1370,7 +1369,7 @@ func TestClaudeDirPassBatches(t *testing.T) {
 		return append(claudeChildren(788, 20, "c"), claudeDirName+"/"+strings.Repeat("z", l))
 	}
 	// bisectL is the Lb row: one child of l bytes, then 1844 children of 60
-	// bytes. The long child sits in the first call, as on the Linux VM.
+	// bytes. The long child sits in the first call, as on Linux.
 	bisectL := func(l int) []string {
 		return append([]string{claudeDirName + "/" + strings.Repeat("z", l)}, claudeChildren(1844, 60, "c")...)
 	}
@@ -1422,7 +1421,7 @@ func TestClaudeDirPassBatches(t *testing.T) {
 // TestOpenIncludeDirsClaudeChildren covers the root `.claude/` in the directory
 // batch. When it opens, its children take its place, in the given order.
 // `.claude/worktrees` never opens. With no children, the root adds no pathspec.
-// f6010b97 does this on Linux, macOS and Windows VMs (C03, Cl_anydepth).
+// f6010b97 does this on Linux, macOS and Windows (measured).
 func TestOpenIncludeDirsClaudeChildren(t *testing.T) {
 	plan := parseIncludePlan([]byte("*.json\n"))
 	dirs := []string{".claude", ".claude/worktrees", "sub/.claude"}

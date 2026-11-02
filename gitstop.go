@@ -15,39 +15,38 @@ import (
 )
 
 // The time limits of the git calls of git.list_branches, git.info, git.status and
-// git.worktree_create. Round task010-01 measured them on 5fd08069 (Linux, macOS and
-// Windows VMs). git.worktree_remove gets none of these limits. Its first call has
-// the bound of 30 s of the call about the repository (cell TR of round
-// task010-02, Linux VM). The limits are always on. They are no limiter of an
-// opt-in divergence.
+// git.worktree_create. A measurement measured them on 5fd08069 (measured on Linux,
+// macOS and Windows). git.worktree_remove gets none of these limits. Its first call
+// has the bound of 30 s of the call about the repository (measured on Linux). The
+// limits are always on. They are no limiter of an opt-in divergence.
 var (
-	// gitCallLimit ends one git call of those four methods. Cells T1 to T7 show the
-	// stop at 120 s. The read-tree call of a create has no such limit (cell T17).
+	// gitCallLimit ends one git call of those four methods. Measurements show the
+	// stop at 120 s. The read-tree call of a create has no such limit (measured).
 	gitCallLimit = 120 * time.Second
 	// gitWideLimit takes the place of gitCallLimit while a request with
 	// "shadowDirOff":true runs in the daemon. No call of the daemon then stops at
-	// 2 minutes, also on another repository (cells T8 and T9). The 30 minutes,
-	// and the end of the window when the last such request answers, are
-	// claustrum's own (not measured).
+	// 2 minutes, also on another repository (measured). The 30 minutes, and the
+	// end of the window when the last such request answers, are claustrum's own
+	// (not measured).
 	gitWideLimit = 1800 * time.Second
 	// configListingLimit ends each config listing before a hardened call: the
-	// first one of a request (cells T10 and T11) and the listing before the
-	// checkout (cell TA of round task010-02, Linux VM). The --show-scope
-	// listing of a create with the filter rule and no settings copy is no such
-	// listing: it has the 2 minute limit and the timeoutMs (claustrum's own).
+	// first one of a request (measured) and the listing before the checkout
+	// (measured on Linux). The --show-scope listing of a create with the
+	// filter rule and no settings copy is no such listing: it has the 2
+	// minute limit and the timeoutMs (claustrum's own).
 	configListingLimit = 30 * time.Second
 	// includeScanLimit ends the scan of ignored files of the include step of a
-	// create (cells T13 and T14).
+	// create (measured).
 	includeScanLimit = 600 * time.Second
 	// gitStopGrace is the time from the SIGTERM of a stopped call to its SIGKILL
-	// on Linux and macOS (cell T2: 2.005 s).
+	// on Linux and macOS (measured: 2.005 s).
 	gitStopGrace = 2 * time.Second
 	// gitDrainWait is the time that a call waits for its output pipes after git
-	// exited (cells T15 and T16: 2.0 s). The child that holds them gets no
-	// signal. A call under untilPipeEOF waits so for stderr alone (runToEOF).
-	// There 5fd08069 goes on about 2.0 to 2.1 s after the exit (cells A1-e of
-	// rounds task111-01 and task111-02, Linux and macOS VMs). For that wait of
-	// stderr alone the exact value of 2 s is claustrum's own.
+	// exited (measured: 2.0 s). The child that holds them gets no signal. A
+	// call under untilPipeEOF waits so for stderr alone (runToEOF). There
+	// 5fd08069 goes on about 2.0 to 2.1 s after the exit (measured on Linux and
+	// macOS). For that wait of stderr alone the exact value of 2 s is
+	// claustrum's own.
 	gitDrainWait = 2 * time.Second
 )
 
@@ -67,12 +66,12 @@ const (
 
 // gitStopped is the error of a git call that its time limit stopped. The text is
 // that of 5fd08069, for example `git took too long: Claude stopped git
-// for-each-ref after 2 minutes; try again` (cell T1).
+// for-each-ref after 2 minutes; try again` (measured).
 type gitStopped struct {
 	sub   string
 	after string
 	// listing marks a stopped config listing. Its text starts with the hooks
-	// refusal (cells T10 and TA).
+	// refusal (measured).
 	listing bool
 }
 
@@ -140,9 +139,9 @@ func withGitLimit(ctx context.Context, kind gitLimit) context.Context {
 // untilPipeEOF is ctx for the calls whose output the daemon reads to its end.
 // Such a call goes on only when its stdout closes, also after git exited.
 // The child that holds it gets no signal. 5fd08069 does so for the config
-// listing before a hardened call (cells A1 and A2) and for the `status` scan of
-// git.status (cell A3 of round task101-01, Linux VM). The `ls-files` and
-// `diff-index` scans do the same (claustrum's own, not measured).
+// listing before a hardened call (measured) and for the `status` scan of
+// git.status (measured on Linux). The `ls-files` and `diff-index` scans do the
+// same (claustrum's own, not measured).
 func untilPipeEOF(ctx context.Context) context.Context {
 	return context.WithValue(ctx, pipeEOFKey{}, true)
 }
@@ -183,18 +182,16 @@ func (s *gitStop) limit(kind gitLimit) (time.Duration, string) {
 
 // gitRun runs cmd under the limits of ctx. With no limits in ctx it is cmd.Run.
 //
-// After a stopped call or listing of the request no call of gitRun starts, and
-// the error is that of the stopped call. Other calls, such as those of the
-// branch step of a rollback, still run (cell TA of round task010-02). At the limit the call gets the stop: on Linux and macOS
-// SIGTERM, and SIGKILL gitStopGrace later (cell T2). On Windows the process is
-// ended at once (cells T1, T3h and T5).
+// After a stopped call or listing of the request no call of gitRun starts, and the error is that of the
+// stopped call. Other calls, such as those of the branch step of a rollback, still run (measured). At the
+// limit the call gets the stop: on Linux and macOS SIGTERM, and SIGKILL gitStopGrace later (measured). On
+// Windows the process is ended at once (measured).
 //
 // The wait for the output pipes after git exited ends at gitDrainWait. A call
-// that exited 0 then counts as a call that exited 0 (cells T15 and T16). Under
+// that exited 0 then counts as a call that exited 0 (measured). Under
 // untilPipeEOF the wait for stdout has no end (runToEOF). A call that exited 0
 // gives its result when stdout closes, also past its limit. A call that the
-// limit stopped gives the stop text then (cells A1 and A2 of round task101-01,
-// Linux VM).
+// limit stopped gives the stop text then (measured on Linux).
 //
 // Each call runs under the hold of its repository folder (runHeld).
 func gitRun(ctx context.Context, cmd *exec.Cmd) error {
@@ -290,17 +287,14 @@ func stopThenKill(p *os.Process, mu *sync.Mutex, done *bool) (kill *time.Timer, 
 // It is for a call whose stdout the daemon reads to its end. It sets no time
 // limit of its own.
 //
-// When cmd.Stdout is a writer that is not a file, the daemon reads stdout
-// itself, through its own pipe, and reaps git only at the end of that pipe. exec.Cmd.Wait reaps first, and only then waits for the
-// copies of its pipes (from the code of Go). So git stays a zombie while a
-// child holds its stdout. 5fd08069 does so in cells A1 and A3 of rounds
-// task101-03 (Linux VM) and task082-02 (macOS VM).
+// When cmd.Stdout is a writer that is not a file, the daemon reads stdout itself, through its own pipe, and reaps git only at the
+// end of that pipe. exec.Cmd.Wait reaps first, and only then waits for the copies of its pipes (from the code of Go). So git stays
+// a zombie while a child holds its stdout. 5fd08069 does so (measured on Linux and macOS).
 //
 // After the reap the copy of stderr gets at most grace. Then the call goes on
 // with what it read, and an exit 0 counts as a success. With a child that holds
-// stderr alone, 5fd08069 goes on about 2 s after the exit of git (cells A1-e
-// of rounds task111-01 and task111-02, Linux and macOS VMs). Windows is not
-// measured.
+// stderr alone, 5fd08069 goes on about 2 s after the exit of git (measured on
+// Linux and macOS). Windows is not measured.
 func runToEOF(cmd *exec.Cmd, grace time.Duration, started func()) error {
 	// own takes a writer of cmd that os/exec copies in a goroutine.
 	own := func(w *io.Writer) (io.Writer, *os.File, *os.File, error) {
@@ -383,8 +377,7 @@ func gitOutput(ctx context.Context, cmd *exec.Cmd) ([]byte, error) {
 			cmd.Stdout = &out
 			// A call with no limits, as in git.worktree_remove, gets the same
 			// grace of stderr. 5fd08069 goes on about 2 s after the exit of a
-			// remove listing whose stderr a child holds (cell RMe of round
-			// task111-09 and cell RMex1 of round task111-11, Linux VM).
+			// remove listing whose stderr a child holds (measured on Linux).
 			err := runHeld(cmd, func() error { return runToEOF(cmd, gitDrainWait, func() {}) })
 			return out.Bytes(), err
 		}
@@ -404,7 +397,7 @@ func gitOutput(ctx context.Context, cmd *exec.Cmd) ([]byte, error) {
 
 // gitSubcommand is the git subcommand in the argv args: the first word after
 // "git" that is no option and no value of -c or -C. The stop text names it, for
-// example `worktree` for `worktree add` (cell T5).
+// example `worktree` for `worktree add` (measured).
 func gitSubcommand(args []string) string {
 	for i := 1; i < len(args); i++ {
 		switch a := args[i]; {
@@ -420,8 +413,8 @@ func gitSubcommand(args []string) string {
 
 // reply is the answer of a request whose call a limit stopped, or resp.
 // git.list_branches, git.info and git.status answer -32603 with the stop text
-// (cells T1, T3, T4 and T10). git.worktree_create keeps the frame of the step
-// whose call stopped, with the stop text as its cause (cells T5 and TB).
+// (measured). git.worktree_create keeps the frame of the step whose call
+// stopped, with the stop text as its cause (measured).
 func (s *gitStop) reply(req *request, resp response) response {
 	err := s.halted()
 	if err == nil || req.Method == "git.worktree_create" {

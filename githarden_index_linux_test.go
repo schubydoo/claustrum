@@ -9,9 +9,10 @@ import (
 	"testing"
 )
 
-// TestInstallWorktreeIndexSetgidGroup pins row A8 (Linux VM). The registration has a
-// second group of the user and the setgid bit, and the index gets that group. The
-// temporary index keeps the primary group, so a moved file does not pass.
+// TestInstallWorktreeIndexSetgidGroup pins a measured case (on Linux). The
+// registration has a second group of the user and the setgid bit, and the index gets
+// that group. The temporary index keeps the primary group, so a moved file does not
+// pass.
 func TestInstallWorktreeIndexSetgidGroup(t *testing.T) {
 	groups, err := os.Getgroups()
 	if err != nil {

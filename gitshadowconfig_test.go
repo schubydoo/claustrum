@@ -12,19 +12,17 @@ import (
 	"testing"
 )
 
-// shadowConfigCell is one cell of testdata/shadow_config_cells.json: the files
-// of the fixture, by their path below the git directory, and the text of the
-// copy that 5fd08069 wrote on a Linux VM with git 2.43.0. The file is made from
-// the records of the rounds s3p2-linux, s3p2b-edges-linux and
-// s3p2b-edges2-linux. Two things differ from the records. The path of the VM
-// work folder is written /vm/w. For cells 8a to 8g the records do not hold the
-// included files: they come from the report of the round.
+// shadowConfigCell is one cell of testdata/shadow_config_cells.json: the files of the
+// fixture, by their path below the git directory, and the text of the copy that 5fd08069
+// wrote on Linux with git 2.43.0. The file is made from the records. Two things differ from
+// the records. The path of the work folder of the test system is written /vm/w. For one
+// group of cases the records do not hold the included files: they come from the measurement
+// report.
 //
-// The cells of round tier0-14-linux have the copy texts, the `-c` items and
-// the refusal texts of the report of that round. The files are the inputs of
-// the round. Cell E3 of round tier0-16-linux has its refusal text. Items are the `-c` items of the `config.worktree`
-// file, tested in these cells only. Refusal is the message of the refusal, with {GITDIR} for the git
-// directory. A cell with a refusal has no copy.
+// The measured cells have the copy texts, the `-c` items and the measured refusal texts. The files
+// are the measured inputs. One case has its refusal text. Items are the `-c` items of the
+// `config.worktree` file, tested in these cells only. Refusal is the message of the refusal, with
+// {GITDIR} for the git directory. A cell with a refusal has no copy.
 type shadowConfigCell struct {
 	Round   string            `json:"round"`
 	Cell    string            `json:"cell"`
@@ -95,7 +93,7 @@ func TestShadowConfigCells(t *testing.T) {
 	for _, c := range cells {
 		// On Windows claustrum refuses an include with an absolute path or with
 		// `~/` (the rule of the config refusals), so these two Linux cells have
-		// no text there (val-s3p2b2-3-windows part C).
+		// no text there (measured on Windows).
 		if runtime.GOOS == "windows" && (c.Cell == "8a-absolute-path-outside-the-git-folder" || c.Cell == "8e-tilde-path") {
 			continue
 		}
@@ -147,14 +145,14 @@ func TestShadowConfigOtherSystems(t *testing.T) {
 		cell, config, want string
 	}{
 		{
-			// s3-macos cell A3 and cell 24 of s3p2b-edges on a macOS VM: 219 bytes.
+			// Measured on macOS: 219 bytes.
 			cell: "fresh repository, macOS",
 			config: "[core]\n\trepositoryformatversion = 0\n\tfilemode = true\n\tbare = false\n" +
 				"\tlogallrefupdates = true\n\tignorecase = true\n\tprecomposeunicode = true\n",
 			want: stdCopyBlocks + "[core]\n\tignorecase = \"true\"\n[core]\n\tprecomposeunicode = \"true\"\n" + shadowConfigTail,
 		},
 		{
-			// s3-windows cell A3 and cell 24 of s3p2b-edges on a Windows VM: 212 bytes.
+			// Measured on Windows: 212 bytes.
 			cell: "fresh repository, Windows",
 			config: "[core]\n\trepositoryformatversion = 0\n\tfilemode = false\n\tbare = false\n" +
 				"\tlogallrefupdates = true\n\tsymlinks = false\n\tignorecase = true\n",
@@ -162,7 +160,7 @@ func TestShadowConfigOtherSystems(t *testing.T) {
 				"[core]\n\tlogallrefupdates = \"true\"\n[core]\n\tsymlinks = \"false\"\n[core]\n\tignorecase = \"true\"\n" + shadowConfigTail,
 		},
 		{
-			// Cell F1 of s3p2b-edges-linux, remote u04: the byte is carried as it is.
+			// Measured: the byte is carried as it is.
 			cell:   "F1 byte 0xff in a URL",
 			config: stdRepoConfig + "[remote \"u04-byte-ff\"]\n\turl = \"https://example.invalid/o/a\xffb.git\"\n",
 			want:   stdCopyBlocks + "[remote \"u04-byte-ff\"]\n\turl = \"https://example.invalid/o/a\xffb.git\"\n" + shadowConfigTail,
@@ -269,9 +267,8 @@ func worktreesModeOf(s repoSetting) sharedRepository {
 
 // TestWorktreesChmodValues pins the values of `core.sharedRepository` that
 // start the mode call of the folder `worktrees`. Each value whose copy line is
-// not `umask` starts it: the 18 rows of group P5 of val-s3p2b2-6-linux, and
-// `yes`, `660` and `2` of cells H1 of tier0-15 and S1 and S2 of tier0-16 (Linux
-// VM). The rows `1`, `TRUE` and no value are not measured.
+// not `umask` starts it: 18 measured rows, and `yes`, `660` and `2` (measured
+// on Linux). The rows `1`, `TRUE` and no value are not measured.
 func TestWorktreesChmodValues(t *testing.T) {
 	for _, row := range []struct {
 		value    string
@@ -292,11 +289,9 @@ func TestWorktreesChmodValues(t *testing.T) {
 
 // TestSharedRepositoryValues pins the reading of each `core.sharedRepository`
 // value: the line of the copy, and the mode of the folder `worktrees` after a
-// mkdir with a daemon umask of 022 and of 002. The measured rows are the 18
-// rows of group P5 of val-s3p2b2-6-linux (Linux VM): section 0.2 item 6 of its
-// report has the table. The rows marked not measured follow sharedRepoLine for
-// the line and sharedRepositoryOf for the mode. The last rows are those of
-// cell C2 of tier0-14.
+// mkdir with a daemon umask of 022 and of 002. The measured rows are 18 rows
+// (measured on Linux). The rows marked not measured follow sharedRepoLine for
+// the line and sharedRepositoryOf for the mode. The last rows are those.
 func TestSharedRepositoryValues(t *testing.T) {
 	const none = os.FileMode(0)
 	for _, row := range []struct {
@@ -324,11 +319,10 @@ func TestSharedRepositoryValues(t *testing.T) {
 		{value: "Group", notMeasured: true},
 		{value: "maybe", notMeasured: true},
 		{value: "off", line: "umask", u022: none, u002: none, notMeasured: true},
-		// Cell C2 of tier0-14 (Linux VM) measured the lines of the copy. The
-		// mode follows the line. With umask 002 the modes of `yes` (cell H1 of
-		// tier0-15), `660` and `2` (cells S1 and S2 of tier0-16) and of the
-		// line `0666` (cell C2) are measured. The modes with umask 022, and
-		// those of `1`, `TRUE` and no value, are not measured.
+		// A measurement on Linux shows the lines of the copy. The mode follows
+		// the line. With umask 002 the modes of `yes` (measured), `660` and
+		// `2` and of the line `0666` are measured. The modes with umask 022,
+		// and those of `1`, `TRUE` and no value, are not measured.
 		{value: "660", line: "0660", u022: 0o2770, u002: 0o2770},
 		{value: "0777", line: "0666", u022: 0o2777, u002: 0o2777},
 		{value: "yes", line: "group", u022: 0o2775, u002: 0o2775},

@@ -289,7 +289,7 @@ func pinsOfHardened(t *testing.T, calls []envCall, want ...string) int {
 
 // A value with a LF and a key-like text, a value that reads like
 // a hook key, a key with no value and an empty value pin nothing. Only the real hook
-// is pinned, on every hardened call of all five methods (row L04). Mutations: parse
+// is pinned, on every hardened call of all five methods (measured). Mutations: parse
 // the output line by line, or treat a record without a LF as an error.
 func TestListingParsePinsOnlyRealHooks(t *testing.T) {
 	f := newListingFixture(t)
@@ -317,10 +317,10 @@ func TestListingParsePinsOnlyRealHooks(t *testing.T) {
 	}
 }
 
-// The hook names of row L05 are pinned in the order the listing
-// first shows them: the empty name, a name with a dot, a name in upper case, and a
-// name under two keys once. `hook.x` names none. Mutations: sort the names, lowercase
-// them, drop the empty name, or pin a name once per key.
+// The hook names are pinned in the order the listing first shows them: the empty
+// name, a name with a dot, a name in upper case, and a name under two keys once.
+// `hook.x` names none. Mutations: sort the names, lowercase them, drop the empty
+// name, or pin a name once per key.
 func TestListingHookPinOrder(t *testing.T) {
 	f := newListingFixture(t)
 	f.appendConfig(t, "[hook \"\"]\n\tcommand = x\n[hook \"a.b\"]\n\tcommand = y\n[HOOK \"Up\"]\n\tcommand = z\n"+
@@ -394,7 +394,7 @@ func TestParseConfigListingLimits(t *testing.T) {
 
 // Through git.info, a key of 1048576 bytes and a value of 2 MiB
 // answer normally. A key of 1048577 bytes refuses with the listing text, and no
-// hardened call runs (row L08c). The key is in the section x, which has no name
+// hardened call runs (measured). The key is in the section x, which has no name
 // bound in the daemon's own read of the config (TestRepoConfigKeyName).
 func TestListingKeyCapThroughInfo(t *testing.T) {
 	sub := func(n int) string { return strings.Repeat("s", n-4) }
@@ -430,7 +430,7 @@ func TestListingKeyCapThroughInfo(t *testing.T) {
 }
 
 // 1025 hook names refuse with the hooks prefix only, and no hardened call
-// runs (row L06b).
+// runs (measured).
 func TestListingTooManyHooksThroughInfo(t *testing.T) {
 	f := newListingFixture(t)
 	var b strings.Builder
@@ -575,7 +575,7 @@ func TestFailedListingGitFileText(t *testing.T) {
 }
 
 // Exit 1 with the same text is not that class. `git version` works, so
-// the answer is the listing refusal (row L14c). Mutation: ignore the exit code.
+// the answer is the listing refusal (measured). Mutation: ignore the exit code.
 func TestListingNotARepositoryNeedsExit128(t *testing.T) {
 	f := newListingFixture(t)
 	stubListing(t, 1, "fatal: not a git repository (stub)")
@@ -642,7 +642,7 @@ func versionDir(t *testing.T) string {
 }
 
 // When every command exits 1 with "boom", `git version` fails too, so all
-// five methods answer that git cannot run (row L11a). The listing and the version
+// five methods answer that git cannot run (measured). The listing and the version
 // call give the same detail here. The version call runs in the root directory
 // (Windows: the daemon's working directory). Mutation: skip the probe.
 func TestListingGitCannotRun(t *testing.T) {
@@ -678,10 +678,10 @@ func TestListingGitCannotRun(t *testing.T) {
 }
 
 // When only the listing fails, `git version` works and the
-// answer stays the listing refusal (row L10). The version call carries the env of the
-// failed listing without the GIT_COMMON_DIR pin, the two C entries and the
-// GIT_CONFIG_GLOBAL of the fixture (cell C-c, Linux and macOS VMs). Mutations: answer "cannot
-// run" whenever the listing fails, keep the pin.
+// answer stays the listing refusal (measured). The version call carries the env of the failed
+// listing without the GIT_COMMON_DIR pin, the two C entries and the GIT_CONFIG_GLOBAL of the
+// fixture (measured on Linux and macOS). Mutations: answer "cannot run" whenever the listing
+// fails, keep the pin.
 func TestListingFailsVersionWorks(t *testing.T) {
 	f := newListingFixture(t)
 	stubListing(t, 1, "boom")
@@ -708,9 +708,9 @@ func TestListingFailsVersionWorks(t *testing.T) {
 	}
 }
 
-// With no git on PATH, each method answers its "no repository" shape. Row L13
-// measured git.info on three VMs. A Linux VM measured the other methods. A remove of
-// a gone worktree keeps the branch (row L13xb). Mutation: let the exec error reach the
+// With no git on PATH, each method answers its "no repository" shape. git.info is
+// measured on Linux, macOS and Windows, and the other methods on Linux. A remove of a
+// gone worktree keeps the branch (measured). Mutation: let the exec error reach the
 // listing refusal. git.worktree_remove with worktreeRoot is not covered here
 // (TestWorktreeRemoveExternalNoGitOnPath).
 func TestListingNoGitOnPath(t *testing.T) {
@@ -723,7 +723,7 @@ func TestListingNoGitOnPath(t *testing.T) {
 	c, wt := create(t, f.top)
 	wantResult(t, "create", c, notRepoCreate)
 	wantResult(t, "remove, worktree gone", remove(t, f.top, wt, "w1"), `{"success":true,"branchKept":true}`)
-	// Row L13xa: a worktree folder that exists gets the lock-check refusal and stays.
+	// Measured: a worktree folder that exists gets the lock-check refusal and stays.
 	// Mutation: skip the configuration check of the remove when PATH holds no git.
 	keep := filepath.Join(wt, "keep.txt")
 	writeFile(t, keep, "k\n", 0o644)

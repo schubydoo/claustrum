@@ -50,7 +50,7 @@ func lockedWorktree(t *testing.T) (repo, wt string) {
 // 7d193f89 REFUSES a locked worktree removal: success:false with a fixed message,
 // leaving the directory in place. Before 7d193f89
 // the reference DELETED it and answered success:true; that older behavior is the
-// wire divergence this reconciles. Measured against 7d193f89 on an ephemeral VM,
+// wire divergence this reconciles. Measured against 7d193f89,
 // both binaries returning byte-identical frames.
 func TestWorktreeRemoveLockedWorktreeIsRefused(t *testing.T) {
 	repo, wt := lockedWorktree(t)
@@ -68,8 +68,8 @@ func TestWorktreeRemoveLockedWorktreeIsRefused(t *testing.T) {
 }
 
 // An ordinary non-worktree directory inside the repo is deleted and answers
-// success:true. 7d193f89 and f6010b97 do the same (measured on VMs, row K05). Only a
-// locked registration is refused.
+// success:true. 7d193f89 and f6010b97 do the same (measured). Only a locked
+// registration is refused.
 func TestWorktreeRemoveDeletesNonWorktreeDir(t *testing.T) {
 	requireGit(t)
 	repo := resolveTestRoot(t, t.TempDir())

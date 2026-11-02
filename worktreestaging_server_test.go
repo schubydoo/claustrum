@@ -52,14 +52,14 @@ func commonDirOf(t *testing.T, calls []envCall, words ...string) string {
 // through the server, with the git stub in front of the git of the host.
 //
 // The `worktree add` call carries GIT_COMMON_DIR=<S>/.s<n> on every system, as
-// 5fd08069 does on Windows (cells 44a and 49a) and be1c1ca5 does on Linux,
-// macOS and Windows. Its path is `<S>/.s<n>/leaf/w1` (be1c1ca5, measured on
-// Linux and Windows). The old entry `.claude-new-worktree-old1` is gone with
-// its file, the `read-tree` carries the copy, the young entry stays, and no
-// `.s<n>` folder is left. The `.git` file of the new worktree names the
-// registration in the git directory, the `gitdir` record names the `.git` of
-// the leaf, and the registration holds no `locked` file and no `logs` folder
-// (be1c1ca5, measured on Linux and macOS).
+// 5fd08069 does on Windows (measured) and be1c1ca5 does on Linux, macOS and
+// Windows. Its path is `<S>/.s<n>/leaf/w1` (be1c1ca5, measured on Linux and
+// Windows). The old entry `.claude-new-worktree-old1` is gone with its file,
+// the `read-tree` carries the copy, the young entry stays, and no `.s<n>`
+// folder is left. The `.git` file of the new worktree names the registration
+// in the git directory, the `gitdir` record names the `.git` of the leaf, and
+// the registration holds no `locked` file and no `logs` folder (be1c1ca5,
+// measured on Linux and macOS).
 func TestCreateStagesTheAdd(t *testing.T) {
 	f := newSeededShadowFixture(t)
 	if raw, _ := f.info(t, f.repo, nil); !strings.Contains(raw, `"settingsControl":"shadow"`) {

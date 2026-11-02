@@ -6,16 +6,16 @@ import (
 	"testing"
 )
 
-// The filter lfs in the state shadow with a settings copy, from the cells of
-// round task081-01 (Linux VM, git 2.43.0 and git-lfs 3.4.1). The stub fails the
-// read-tree call with a text of its own, so no row needs git-lfs. The rows test
-// the items of that call and the reply.
+// The filter lfs in the state shadow with a settings copy, from the cells
+// (Linux, git 2.43.0 and git-lfs 3.4.1). The stub fails the read-tree call with
+// a text of its own, so no row needs git-lfs. The rows test the items of that
+// call and the reply.
 
 // lfsKnownLines is the [filter "lfs"] section that `git lfs install` writes.
 const lfsKnownLines = "[filter \"lfs\"]\n\tclean = git-lfs clean -- %f\n\tsmudge = git-lfs smudge -- %f\n" +
 	"\tprocess = git-lfs filter-process\n\trequired = true\n"
 
-// lfsKnownItems are the four items of the known lines (F4 of the round).
+// lfsKnownItems are the four items of the known lines (measured).
 var lfsKnownItems = []string{
 	"filter.lfs.clean=git-lfs clean -- %f", "filter.lfs.process=git-lfs filter-process",
 	"filter.lfs.required=true", "filter.lfs.smudge=git-lfs smudge -- %f",
@@ -31,8 +31,7 @@ func failLfsCheckout(t *testing.T, stderr string) {
 }
 
 // TestShadowLfsFilterItemsOfRoundTask081: the items of the read-tree call and
-// the reply for each state of the filter lfs, from cells K1 to K6, L2 and K10
-// of round task081-01 (Linux VM).
+// the reply for each state of the filter lfs (measured on Linux).
 func TestShadowLfsFilterItemsOfRoundTask081(t *testing.T) {
 	const forced = "fatal: forced failure\n"
 	neutral := []string{"filter.lfs.process=", "filter.lfs.required=true", "filter.lfs.smudge=false"}
@@ -90,11 +89,11 @@ func TestShadowLfsFilterItemsOfRoundTask081(t *testing.T) {
 
 // TestShadowLfsDownloadNoteOfRoundTask081: with a settings copy a failed
 // checkout text that holds "smudge filter lfs failed" after the cut gets the
-// note after it (cells K6, K8 and L5). A text that the cut of 512 bytes
-// ends at "smudge filter lf" gets none (cells K5 and K7). With a program key of
-// the repository the answer is the same text, not the git-lfs program refusal
-// (cell L2). With "shadowDirOff":true there is no rule and no note (claustrum's
-// own, not measured).
+// note after it (measured). A text that the cut of 512 bytes ends at "smudge
+// filter lf" gets none (measured). With a program key of the repository the
+// answer is the same text, not the git-lfs program refusal (measured). With
+// "shadowDirOff":true there is no rule and no note (claustrum's own, not
+// measured).
 func TestShadowLfsDownloadNoteOfRoundTask081(t *testing.T) {
 	const failed = "fatal: a.txt: smudge filter lfs failed"
 	cut := strings.Repeat("x", stderrHeadCap-len("smudge filter lf")) + "smudge filter lfs failed\n"

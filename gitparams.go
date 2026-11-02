@@ -2,9 +2,9 @@ package main
 
 // Each git method decodes only the members that it reads. A member that the
 // method does not read takes no part in the decode, so a wrong type there is
-// ignored. 5fd08069 does the same in round task015-01: cells G1 to G3, G4b, G4d
-// and G6 to G8 (Linux VM), G1 and G6 (macOS and Windows VMs). A wrong type in a
-// member that the method reads stays -32602 "Invalid params" (cell G5).
+// ignored. 5fd08069 does the same (measured on Linux, and in part on macOS
+// and Windows). A wrong type in a member that the method reads stays -32602
+// "Invalid params" (measured).
 //
 // The methods then work on gitParams, which holds the members of all five.
 

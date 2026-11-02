@@ -34,7 +34,7 @@ func worktreeErrorField(t *testing.T, raw string) string {
 // External worktrees (7d193f89's "Worktree location" capability): with worktreeRoot
 // set, git.worktree_create/_remove place the session folder OUTSIDE the repo at
 // exactly <worktreeRoot>/<directory>/<name>. Frames measured byte-for-byte against
-// 7d193f89 on an ephemeral VM.
+// 7d193f89.
 func TestWorktreeCreateExternalRoot(t *testing.T) {
 	requireGit(t)
 	base := t.TempDir()

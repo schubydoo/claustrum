@@ -13,8 +13,8 @@ import (
 
 // Tests of the time limits of the git calls (gitstop.go). Every git call goes
 // through the "git-slow" stub, the test binary itself. A held call sleeps in the
-// stub before git runs, so a stop leaves no git work behind, as with the wrapper
-// of round task010-01.
+// stub before git runs, so a stop leaves no git work behind, as with the
+// wrapper.
 
 // testCallLimit is the limit of a call in these tests. It is long enough for the
 // fast calls of a request on a loaded host. testHold is the time that a held call
@@ -110,7 +110,7 @@ func TestGitTimeLimitValues(t *testing.T) {
 }
 
 // The stop text names the git subcommand: the first word that is no option and no
-// value of -c or -C (cells T1, T3, T4, T5 and T10).
+// value of -c or -C (measured).
 func TestGitSubcommand(t *testing.T) {
 	for _, c := range []struct {
 		args []string
@@ -156,9 +156,8 @@ func errorFrame(t *testing.T, text string) string {
 }
 
 // The read methods answer -32603 with the stop text, and no git call follows the
-// stopped call (round task010-01: cell T1 on Linux, macOS and Windows VMs, T3 on
-// Linux and macOS VMs and T3h on a Windows VM, T4 on a Linux VM). git.info is the case that needs gitStop.reply: its failed `rev-parse
-// --git-dir` answers "no repository" by itself.
+// stopped call (measured on Linux, macOS and Windows, one case on Linux only). git.info is the case that needs gitStop.reply: its failed `rev-parse --git-dir`
+// answers "no repository" by itself.
 func TestGitReadMethodsStopAtTheCallLimit(t *testing.T) {
 	t.Run("git.list_branches stops for-each-ref (T1)", func(t *testing.T) {
 		f, log := limitFixture(t, "for-each-ref")
@@ -195,9 +194,9 @@ func TestGitReadMethodsStopAtTheCallLimit(t *testing.T) {
 
 // A held `worktree add` gets the stop. The create answers worktree_add_failed with
 // the stop text, the leaf, the registration and the new branch are gone, and no
-// git call follows (round task010-01: cell T5 on Linux, macOS and Windows VMs, T6
-// on Linux and macOS VMs, T7 on a Linux VM). The timeoutMs of the caller does not
-// end the add (T6). In attach mode one add runs, and the branch stays (T7).
+// git call follows (measured on Linux, macOS and Windows). The timeoutMs of the
+// caller does not end the add (measured on Linux and macOS). In attach mode one
+// add runs, and the branch stays (measured on Linux).
 func TestWorktreeCreateAddStopsAtTheCallLimit(t *testing.T) {
 	want := "git worktree add failed: " + stopText("worktree")
 	for _, c := range []struct {
@@ -238,9 +237,8 @@ func TestWorktreeCreateAddStopsAtTheCallLimit(t *testing.T) {
 
 // The wide limit holds while any request of the daemon with "shadowDirOff":true
 // runs, also for a request without it on another repository. When the last such
-// request answered, the limit of a call is back (round task010-01: cell T8 on
-// Linux, macOS and Windows VMs, T9 on a Linux VM). The hold is 2 s and
-// the limit of a call 1 s.
+// request answered, the limit of a call is back (measured on Linux, macOS and
+// Windows, one case on Linux only). The hold is 2 s and the limit of a call 1 s.
 func TestGitWideLimitWhileAnOffRequestRuns(t *testing.T) {
 	f := newWTFixture(t, false)
 	installGitSlowStub(t, f.realGit)
@@ -276,8 +274,7 @@ func TestGitWideLimitWhileAnOffRequestRuns(t *testing.T) {
 }
 
 // A git call that exited while a descendant holds its output answers 2 s after the
-// exit (cell T15 of round task010-01, Linux, macOS and Windows VMs). The descendant
-// lives testDrainHold.
+// exit (measured on Linux, macOS and Windows). The descendant lives testDrainHold.
 func TestGitDrainEndsAfterTheExit(t *testing.T) {
 	f := newWTFixture(t, false)
 	installGitSlowStub(t, f.realGit)
@@ -293,8 +290,8 @@ func TestGitDrainEndsAfterTheExit(t *testing.T) {
 }
 
 // The first config listing of a request ends at 30 s. The request answers the
-// hooks refusal with the stop text, and no `git version` follows (cell T10 of
-// round task010-01, Linux and macOS VMs, and cell T10w on a Windows VM). The limit is shortened here.
+// hooks refusal with the stop text, and no `git version` follows (measured on Linux, macOS and
+// Windows). The limit is shortened here.
 func TestGitFirstListingStops(t *testing.T) {
 	f := newWTFixture(t, false)
 	installGitSlowStub(t, f.realGit)
@@ -331,8 +328,8 @@ func TestWorktreeCreateFirstListingStops(t *testing.T) {
 }
 
 // The scan of the include step ends at 600 s. The create succeeds, nothing is
-// copied, and no git call follows the scan (cell T13 of round task010-01, Linux
-// and macOS VMs). The limit is shortened here.
+// copied, and no git call follows the scan (measured on Linux and macOS). The
+// limit is shortened here.
 func TestWorktreeCreateIncludeScanStops(t *testing.T) {
 	f := newWTFixture(t, false)
 	writeFile(t, filepath.Join(f.top, ".worktreeinclude"), ".env\n", 0o644)
@@ -356,9 +353,9 @@ func TestWorktreeCreateIncludeScanStops(t *testing.T) {
 }
 
 // The timeoutMs of the caller does not end the listing before the checkout. The
-// listing runs to its end, and then the timeout frame comes (cell T12 of round
-// task010-01, Linux VM: the listing ran 10 s with a timeoutMs of 3000, with
-// "shadowDirOff":true). Here the deadline is 2 s, and the listing is held 4 s.
+// listing runs to its end, and then the timeout frame comes (measured on Linux:
+// the listing ran 10 s with a timeoutMs of 3000, with "shadowDirOff":true).
+// Here the deadline is 2 s, and the listing is held 4 s.
 func TestWorktreeCreateCheckoutListingOutlivesTimeoutMs(t *testing.T) {
 	f := newWTFixture(t, false)
 	installGitSlowStub(t, f.realGit)
@@ -382,8 +379,8 @@ func TestWorktreeCreateCheckoutListingOutlivesTimeoutMs(t *testing.T) {
 }
 
 // The listing before the checkout ends at 30 s, after a good add. The create
-// answers the checkout failure with the hooks refusal and rolls back (cell TA of
-// round task010-02, Linux VM). The limit is shortened here.
+// answers the checkout failure with the hooks refusal and rolls back (measured on
+// Linux). The limit is shortened here.
 func TestWorktreeCreateCheckoutListingStops(t *testing.T) {
 	f := newWTFixture(t, false)
 	installGitSlowStub(t, f.realGit)
@@ -425,9 +422,9 @@ func endHeldDescendant(t *testing.T) {
 }
 
 // The listing of the repository config ends at 30 s. The request answers the
-// refusal of the config with the read text (cell T18 of round task010-01, Linux
-// VM). The process is killed with no SIGTERM first, so a listing that ignores
-// SIGTERM ends at the bound too. The bound is shortened here.
+// refusal of the config with the read text (measured on Linux). The process is
+// killed with no SIGTERM first, so a listing that ignores SIGTERM ends at the
+// bound too. The bound is shortened here.
 func TestRepoConfigReadStops(t *testing.T) {
 	f := newStatusFixture(t)
 	installGitSlowStub(t, realGitPath(t))
@@ -459,8 +456,7 @@ func TestOffSwitchSet(t *testing.T) {
 }
 
 // A create whose repository test its time limit stopped answers the stop text as
-// it is, with worktree_add_failed, and nothing is made (cell TI of round
-// task010-04, Linux VM).
+// it is, with worktree_add_failed, and nothing is made (measured on Linux).
 func TestWorktreeCreateRepositoryTestStops(t *testing.T) {
 	f, log := limitFixture(t, "rev-parse,--is-inside-work-tree")
 	raw, _ := f.create(t, newTestServer(t), "w1", "", 0)
@@ -475,10 +471,9 @@ func TestWorktreeCreateRepositoryTestStops(t *testing.T) {
 }
 
 // worktreeConfigFixture is a repository with extensions.worktreeConfig and a
-// config.worktree file, as in round task010-04, and a server with a run folder.
-// The stub holds the nth listing of a config file for testHold. The listings
-// before it are those of the start test and of the read of the repository
-// config.
+// config.worktree file, as, and a server with a run folder. The stub holds the
+// nth listing of a config file for testHold. The listings before it are those
+// of the start test and of the read of the repository config.
 func worktreeConfigFixture(t *testing.T, nth int) (wtFixture, *server) {
 	t.Helper()
 	f := newWTFixture(t, false)
@@ -495,7 +490,7 @@ func worktreeConfigFixture(t *testing.T, nth int) (wtFixture, *server) {
 
 // The listing of the config.worktree file after a good add ends at 30 s. The
 // create answers the text of 5fd08069 and rolls back: leaf, registration and
-// branch go (cells TW35 and TW130 of round task010-04, Linux VM).
+// branch go (measured on Linux).
 func TestWorktreeCreateConfigWorktreeListingStops(t *testing.T) {
 	f, s := worktreeConfigFixture(t, 5)
 	raw, took := f.create(t, s, "w1", "", 0)
@@ -508,8 +503,8 @@ func TestWorktreeCreateConfigWorktreeListingStops(t *testing.T) {
 }
 
 // The listing of the config.worktree file of a linked worktree ends at 30 s in
-// git.status. The frame stays {"isRepo":false,"clean":false} (cell TS of round
-// task010-04, Linux VM).
+// git.status. The frame stays {"isRepo":false,"clean":false} (measured on
+// Linux).
 func TestGitStatusConfigWorktreeListingStops(t *testing.T) {
 	f, s := worktreeConfigFixture(t, 5)
 	lw := filepath.Join(filepath.Dir(f.top), "LW")

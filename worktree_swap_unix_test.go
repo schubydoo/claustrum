@@ -12,12 +12,12 @@ import (
 
 // A create whose leaf was swapped between mkdirWorktreeLeaf and the end of `git
 // worktree add` is refused before the checkout. The new leaf of this test is
-// empty. claustrum answers the text of cell V3a there, and the empty leaf goes.
-// The state is not measured. A new leaf with a .git file gets the identity test
-// (TestWorktreeCreateLeafReplaced). No honest input can
-// reach it, so the swap is staged by a `git` on PATH that delegates to the real git
-// and then replaces the leaf with a directory of its own — the RPC counterpart to
-// the seam-level TestVerifyCreatedWorktree.
+// empty. claustrum answers the text there, and the empty leaf goes. The state is
+// not measured. A new leaf with a .git file gets the identity test
+// (TestWorktreeCreateLeafReplaced). No honest input can reach it, so the swap is
+// staged by a `git` on PATH that delegates to the real git and then replaces the
+// leaf with a directory of its own — the RPC counterpart to the seam-level
+// TestVerifyCreatedWorktree.
 //
 // The replacement is created ALONGSIDE the original before the original is removed,
 // so it cannot reuse the freed inode and os.SameFile is deterministic (the same
@@ -65,12 +65,12 @@ func TestWorktreeCreateRefusesSwappedLeaf(t *testing.T) {
 
 // TestCheckpointHoldsLeafAndParent pins that, on unix, the create's checkpoint
 // holds the leaf and its parent open until release. The references hold open
-// descriptors on both during the create (measured in /proc/<pid>/fd on a Linux
-// VM). The held leaf keeps its inode allocated, so a directory made at the same
-// path after a delete gets a new inode number, and verifyCreatedWorktree reports
-// it. Without the hold, ext4 reused the number 4 times in 6 on a Linux VM, and the
-// replacement passed the check. A tmpfs did not reuse the number in local runs, so
-// this test checks the hold itself, then the refusal after many replacements.
+// descriptors on both during the create (measured in /proc/<pid>/fd on Linux). The
+// held leaf keeps its inode allocated, so a directory made at the same path after
+// a delete gets a new inode number, and verifyCreatedWorktree reports it. Without
+// the hold, ext4 reused the number 4 times in 6 on Linux, and the replacement
+// passed the check. A tmpfs did not reuse the number in local runs, so this test
+// checks the hold itself, then the refusal after many replacements.
 func TestCheckpointHoldsLeafAndParent(t *testing.T) {
 	parent := filepath.Join(t.TempDir(), "worktrees")
 	leaf := filepath.Join(parent, "w1")

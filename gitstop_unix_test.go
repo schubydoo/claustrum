@@ -12,9 +12,9 @@ import (
 )
 
 // A held call gets SIGTERM at the limit. A call that ignores it gets SIGKILL
-// gitStopGrace later, and the reply follows (cell T2 of round task010-01: TERM at
-// 120.2 s, KILL at 122.2 s, Linux and macOS VMs). A call that dies by the SIGTERM
-// answers before the grace ends. The grace is 3 s here, the limit 1 s.
+// gitStopGrace later, and the reply follows (measured on Linux and macOS: TERM at 120.2
+// s, KILL at 122.2 s). A call that dies by the SIGTERM answers before the grace ends.
+// The grace is 3 s here, the limit 1 s.
 func TestGitStopTermThenKill(t *testing.T) {
 	grace := 3 * time.Second
 	t.Run("a call that dies by SIGTERM", func(t *testing.T) {
@@ -43,8 +43,8 @@ func TestGitStopTermThenKill(t *testing.T) {
 }
 
 // The read-tree call of a create with no timeoutMs answers 2 s after git exited,
-// and the descendant that holds its output gets no signal (cell T16 of round
-// task010-01, Linux VM). The descendant lives testDrainHold.
+// and the descendant that holds its output gets no signal (measured on Linux).
+// The descendant lives testDrainHold.
 func TestWorktreeCreateCheckoutDrainWithoutTimeoutMs(t *testing.T) {
 	f := newWTFixture(t, false)
 	installGitSlowStub(t, f.realGit)

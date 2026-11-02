@@ -23,8 +23,8 @@ func stubToplevel(t *testing.T, answer string) {
 
 // Git's answer is the root only when it names the walk root's directory.
 // Another folder and a relative answer give the walk root with forward slashes. The
-// walk root in another letter case gives git's spelling (rows W14 to W16). Mutations:
-// always take git's answer, or never take it.
+// walk root in another letter case gives git's spelling (measured). Mutations: always
+// take git's answer, or never take it.
 func TestInfoRootWindows(t *testing.T) {
 	f := newListingFixture(t)
 	other := t.TempDir()
@@ -57,7 +57,7 @@ func TestInfoRootWindows(t *testing.T) {
 
 // The pair runs in the pinned git directory: `--git-dir=<pin> config -z
 // --list`, then `--git-dir=<pin> --work-tree=<walk root> rev-parse --show-toplevel`
-// (row W01). Mutation: keep the request directory as the working directory.
+// (measured). Mutation: keep the request directory as the working directory.
 func TestInfoRootPairWindows(t *testing.T) {
 	f := newListingFixture(t)
 	pins := commonDirPinEnv(f.top)
@@ -86,9 +86,9 @@ func TestInfoRootPairWindows(t *testing.T) {
 }
 
 // For <T>\lnk\.., a directory symlink lnk -> X\sub gives the root X, and a
-// junction gives the root T, because the walk resolves no junction (rows D03-symlink
-// and D03-junction). Mutations: resolve junctions in the walk, or give up the walk
-// when filepath.EvalSymlinks fails on the junction.
+// junction gives the root T, because the walk resolves no junction (measured).
+// Mutations: resolve junctions in the walk, or give up the walk when
+// filepath.EvalSymlinks fails on the junction.
 func TestInfoRootLinkThenDotDotWindows(t *testing.T) {
 	r := newTrustRepo(t)
 	x := filepath.Join(r.base, "X")
@@ -117,7 +117,7 @@ func TestInfoRootLinkThenDotDotWindows(t *testing.T) {
 }
 
 // A repository below a junction answers git's own spelling of the root, which names
-// the target of the junction (row W09). Mutation: give up the walk when
+// the target of the junction (measured). Mutation: give up the walk when
 // filepath.EvalSymlinks fails on the junction.
 func TestInfoRootBelowJunctionWindows(t *testing.T) {
 	requireGit(t)
@@ -136,8 +136,8 @@ func TestInfoRootBelowJunctionWindows(t *testing.T) {
 }
 
 // The `already exists` refusal of an in-repo create names the path with
-// the on-disk letter case of each existing component (row W15). Mutation: name the
-// path as sent.
+// the on-disk letter case of each existing component (measured). Mutation: name
+// the path as sent.
 func TestCreateExistsNamesOnDiskCaseWindows(t *testing.T) {
 	r := newTrustRepo(t)
 	leaf := filepath.Join(r.T, ".claude", "worktrees", "w1")

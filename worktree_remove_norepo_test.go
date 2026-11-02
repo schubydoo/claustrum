@@ -10,7 +10,7 @@ import (
 // A baseRepo that is an existing directory with no repository in it cannot have
 // its worktree registrations examined, so git.worktree_remove refuses with the
 // lock-check text and deletes nothing. Measured against f6010b97 on Linux, macOS
-// and Windows VMs, and 90fca6e6 answers the same: the directory is kept, where
+// and Windows, and 90fca6e6 answers the same: the directory is kept, where
 // claustrum answered {"success":true} and deleted it.
 func TestWorktreeRemoveRefusesWhenBaseRepoHoldsNoRepository(t *testing.T) {
 	requireGit(t)

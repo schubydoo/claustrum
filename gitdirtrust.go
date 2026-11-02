@@ -11,11 +11,10 @@ import (
 	"strings"
 )
 
-// The git-directory trust check that every git.* method applies to the directory it
-// runs git in, before git runs. It follows reference f6010b97. It was measured black
-// box, side by side against that build, on a Linux VM. Where a case can exist on macOS
-// or Windows, it was measured on those VMs too. docs/protocol/git-rules-trust.md → Git-directory trust
-// check describes it.
+// The git-directory trust check that every git.* method applies to the directory it runs git in, before
+// git runs. It follows reference f6010b97. It was measured black box, side by side against that build,
+// on Linux. Where a case can exist on macOS or Windows, it was measured on those systems too.
+// docs/protocol/git-rules-trust.md → Git-directory trust check describes it.
 //
 // The check finds the git directory, then judges it. A linked-worktree entry must carry
 // a `commondir` file that names its own repository. Any other git directory carries no
@@ -81,7 +80,7 @@ type gitDirTrust struct {
 	// noGit is true when verdict is gitDirNoRepo and git.worktree_remove makes no git
 	// call for a worktree folder that is gone. That is a daemon GIT_DIR that names a
 	// file. 89cb6289 answers {"success":true,"branchKept":true} there with no git call
-	// (row N05a on Linux and macOS VMs).
+	// (measured on Linux and macOS).
 	noGit bool
 	// goneGitFile is true when verdict is gitDirNoRepo for a `.git` file that the
 	// walk found and that names a missing path, which is not an entry under
@@ -92,12 +91,11 @@ type gitDirTrust struct {
 
 // noRepoPin is the environment entry of a git call in a folder where the trust check
 // finds no repository. The call logs of 89cb6289 show GIT_DIR=<null device> on each
-// call of a removal there, the calls of the branch step included (probe rows 16 and
-// A5, battery rows R18, R18b and N00 on Linux and macOS VMs, rows 16, A5 and N00 on a
-// Windows VM, and rows L13z-g and DG2h-g on a Linux VM with worktreeRoot). An empty
-// `.git` folder inside an outer repository gets it too, so the branch of the outer
-// repository stays (row p4 on Linux and macOS VMs). Not
-// measured: a `.git` file that names no git dir. claustrum sets the same value there.
+// call of a removal there, the calls of the branch step included (measured on Linux,
+// macOS and Windows, and on Linux with worktreeRoot). An empty `.git` folder inside
+// an outer repository gets it too, so the branch of the outer repository stays
+// (measured on Linux and macOS). Not measured: a `.git` file that names no git dir.
+// claustrum sets the same value there.
 func noRepoPin() []string {
 	return []string{"GIT_DIR=" + os.DevNull}
 }
@@ -135,8 +133,8 @@ func quoteCut(s string, n int) string {
 }
 
 // The refusals of a commondir in a git directory that is not a linked-worktree entry.
-// 89cb6289 answers them on Linux, macOS and Windows VMs (rows T03 to T10). The
-// `<name>` in each text is literal.
+// 89cb6289 answers them on Linux, macOS and Windows (measured). The `<name>` in each
+// text is literal.
 const (
 	strayContentTail = "; git writes that file only inside .git/worktrees/<name>/, and Claude Code's " +
 		"sandbox may leave one containing just \".\"; anything else sends git's configuration and hooks " +
@@ -211,9 +209,8 @@ func daemonCommonDirSet() bool {
 // With both variables in the daemon environment 5fd08069 makes the folder of
 // the repository and sends GIT_COMMON_DIR=<copy> on each call, as with GIT_DIR
 // alone. Its five requests have the same call counts in both cells: 20, 2, 4,
-// 11 and 2 (cells o1-gd-v2 and o1-gdcd-v2 of val-s3p2b2-7-linux2, Linux VM).
-// Both variables name one git directory there. Two values that differ are not
-// measured: they get the same rule.
+// 11 and 2 (measured on Linux). Both variables name one git directory there.
+// Two values that differ are not measured: they get the same rule.
 func daemonCommonDirStays() bool {
 	return daemonCommonDirSet() && os.Getenv("GIT_DIR") == ""
 }
@@ -328,17 +325,15 @@ var resolveWalkLinks = filepath.EvalSymlinks
 // starts the walk as it is spelled, cleaned. filepath.EvalSymlinks fails there for a
 // path with a junction before its last component, because Go reports a junction as an
 // irregular file, not a directory. So the walk resolves no junction, and it takes `..`
-// after one by text. 89cb6289 answers and pins so on a Windows VM. With a junction <P>\J into
-// another repository R, each git call of git.info on <P>\J\sub after the excludes
-// read carries GIT_COMMON_DIR=<P>\.git, and the root is P (cells B-01, B-02, B-07 to
-// B-09 and B-16). Two junctions in the path give the pin <KP>\.git, spelled through
-// the first one (cell B-17k), and <P>\J\..\J\sub gives the pin of P (cell B-17d). A
-// junction outside any repository gives GIT_DIR=NUL on each call (cell B-03).
-// <T>\lnk\.. with a junction lnk gives the root T (row D03-junction). A repository
-// below a junction gives git's own spelling of the root (row W09). A missing name
-// before `..` is another failure of the resolve for a directory that exists. The paths
-// <P>\missing\.. and <P>\missing\..\J\sub are equal to 89cb6289 in frame, disk and
-// every git call (cells J-a1 and J-a2).
+// after one by text. 89cb6289 answers and pins so on Windows. With a junction <P>\J into
+// another repository R, each git call of git.info on <P>\J\sub after the excludes read
+// carries GIT_COMMON_DIR=<P>\.git, and the root is P (measured). Two junctions in the path
+// give the pin <KP>\.git, spelled through the first one (measured), and <P>\J\..\J\sub gives
+// the pin of P. A junction outside any repository gives GIT_DIR=NUL on each call (measured).
+// <T>\lnk\.. with a junction lnk gives the root T (measured). A repository below a junction
+// gives git's own spelling of the root (measured). A missing name before `..` is another
+// failure of the resolve for a directory that exists. The paths <P>\missing\.. and
+// <P>\missing\..\J\sub are equal to 89cb6289 in frame, disk and every git call (measured).
 func walkStart(dir string) (string, error) {
 	start, err := resolveWalkLinks(dir)
 	if err == nil || !walkStartsAsSpelled {
@@ -355,11 +350,10 @@ func walkStart(dir string) (string, error) {
 // directory or `.git` file. It is spelled as the walk has it: dir after walkStart
 // (filepath.EvalSymlinks there) and filepath.Abs, then walked up. EvalSymlinks keeps the
 // spelling of every component that is not a symlink, so letter case and Unicode form
-// stay as sent (rows I07a, I07b and I08 on a macOS VM). The daemon's GIT_DIR and
-// GIT_WORK_TREE do not change it (rows I04a and I04b). It is "" when the walk found a
-// git directory with no work tree (a bare repository, a path inside .git) or nothing.
-// gitDir is the git directory the walk found. 89cb6289 takes its root so on Linux and
-// macOS VMs (rows I01 to I08, D01 and T11).
+// stay as sent (measured on macOS). The daemon's GIT_DIR and GIT_WORK_TREE do not change
+// it (measured). It is "" when the walk found a git directory with no work tree (a bare
+// repository, a path inside .git) or nothing. gitDir is the git directory the walk
+// found. 89cb6289 takes its root so on Linux and macOS (measured).
 //
 // Not measured: the spelling when one component is a symlink and another a case
 // variant.
@@ -497,10 +491,9 @@ func judgeGitDir(g string, fromEnv bool) gitDirTrust {
 	if err != nil {
 		// Gone. A GIT_DIR that names a gone linked-worktree entry is refused. Any other
 		// GIT_DIR is left to git, with GIT_COMMON_DIR pinned to its absolute form. A
-		// relative GIT_DIR is joined to the request directory first. f6010b97 pins
-		// that value on Linux and Windows VMs (rows E02 and E05, and E06 where
-		// GIT_DIR=/dev/null names nothing on Windows). A directory found by the walk
-		// means no repository.
+		// relative GIT_DIR is joined to the request directory first. f6010b97 pins that
+		// value on Linux and Windows (measured, also where GIT_DIR=/dev/null names
+		// nothing on Windows). A directory found by the walk means no repository.
 		if fromEnv {
 			if isWorktreeEntry(g) {
 				return gitDirTrust{verdict: gitDirRefused, refusal: gitDirEntryGoneRefusal}
@@ -508,11 +501,10 @@ func judgeGitDir(g string, fromEnv bool) gitDirTrust {
 			return gitDirTrust{pinCommonDir: g}
 		}
 		// A `.git` file that names a git dir which is gone. The calls of a removal
-		// carry GIT_COMMON_DIR=<that git dir> on 89cb6289 (row N04 on Linux and macOS
-		// VMs, with and without worktreeRoot).
-		// goneGitFile follows cells V3, V4 and V4g of rounds task083-01 and
-		// task083-02. Another stat error than a missing path is claustrum's own,
-		// not measured: it runs no test.
+		// carry GIT_COMMON_DIR=<that git dir> on 89cb6289 (measured on Linux and
+		// macOS, with and without worktreeRoot). goneGitFile follows the measured
+		// cases. Another stat error than a missing path is claustrum's own, not
+		// measured: it runs no test.
 		//
 		// A gone target with the shape of a linked-worktree entry gets the entry of
 		// noRepoPin in its place. On c8e2f083 and 5fd08069 git.info and git.status on
@@ -540,7 +532,7 @@ func judgeGitDir(g string, fromEnv bool) gitDirTrust {
 		// nonDirGitDirIsNoRepo), the daemon's own read of the git directory refuses
 		// it before git runs (readRepoConfig and gitDirFilesDetail), without
 		// "shadowDirOff":true (not measured with it), as 5fd08069
-		// does (cells c19 to c22 of round task039-01, V-Wd of round task039-02).
+		// does.
 		return gitDirTrust{pinCommonDir: g}
 	}
 	repo := filepath.Dir(filepath.Dir(g))
@@ -642,23 +634,22 @@ func isWorktreeEntry(g string) bool {
 // judgeStrayCommondir judges <g>/commondir, where g is a git directory that is not a
 // linked-worktree entry: a main `.git`, a bare repository, or a submodule's git
 // directory. Git writes no commondir there. 89cb6289 takes these steps on Linux, macOS
-// and Windows VMs (rows T00 to T11):
+// and Windows (measured):
 //
 //  1. No commondir: g is trusted. A dangling symlink whose target is relative and
-//     stays in g counts as none when g passes the git-directory test (row T07c,
+//     stays in g counts as none when g passes the git-directory test (measured with the
 //     target `nothing-here`). When g fails that test, the symlink is refused with the
-//     shape text of step 4. 89cb6289 answers so for a HEAD that reads "garbage" on a
-//     Linux VM (rows DG2-g, DG2-info and DG2-status).
-//  2. A commondir that is not a small plain file is refused with its reason (rows
-//     T05 to T09). A dangling symlink that is absolute, or that leaves g, is refused
-//     here with "path escapes from parent" (rows T07d and T07e on a Linux VM). Their
-//     targets were `/nonexistent` and `../nothing`. 683cc6a9 drops `openat commondir: `.
+//     shape text of step 4. 89cb6289 answers so for a HEAD that reads "garbage" on
+//     Linux (measured).
+//  2. A commondir that is not a small plain file is refused with its reason (measured).
+//     A dangling symlink that is absolute, or that leaves g, is refused here with "path
+//     escapes from parent" (measured on Linux). Their targets were `/nonexistent` and
+//     `../nothing`. 683cc6a9 drops `openat commondir: `.
 //  3. The content with every trailing CR and LF removed is exactly "." or "./". A space
 //     or a tab is not trimmed in the measured rows. Anything else is refused (quoted there, unquoted since 683cc6a9)
-//     (rows T01 to T04, T06b and T10b). The content test comes before the shape test.
-//     The value also ends at its first NUL (commondirValue). That cut is claustrum's
-//     own here, not measured.
-//  4. g then passes the git-directory test, or it is refused (row T10a).
+//     (measured). The content test comes before the shape test. The value also ends at its first NUL
+//     (commondirValue). That cut is claustrum's own here, not measured.
+//  4. g then passes the git-directory test, or it is refused (measured).
 //
 // It reports false when g is trusted. Not measured: leading CR or LF, a lone CR and
 // ".//". Nor are the order of a reason and a bad HEAD, and a dangling symlink in a git

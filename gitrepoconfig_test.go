@@ -18,8 +18,7 @@ import (
 )
 
 // The tests of the daemon's own read of a repository's config (gitrepoconfig.go).
-// The cell names are those of the VM rounds. 5fd08069
-// answered each text on a Linux VM, unless a comment names another system.
+// 5fd08069 answered each text on Linux, unless a comment names another system.
 
 // baseRepoConfig is the config that `git init` writes on Linux, without the
 // version line.
@@ -87,8 +86,8 @@ const includeLimitDetail = "its includes go past what Claude follows (16 files, 
 // own read gives no refusal for that setting, and git ends its listing with
 // "missing value for 'include.path'" and a "bad config line" text that names
 // the config. So the listing of the method answers with the hooks refusal, as
-// 89cb6289 does (cell X9-04, Linux VM). A syntax error gets the text of the
-// read, in the config and in an included file (TestRepoConfigSyntaxError).
+// 89cb6289 does (measured on Linux). A syntax error gets the text of the read,
+// in the config and in an included file (TestRepoConfigSyntaxError).
 func breakListing(t *testing.T, gitDir string) {
 	t.Helper()
 	cfg := filepath.Join(gitDir, "config")
@@ -113,8 +112,8 @@ func markerDetail(path string) string {
 		`nor ~ where no home directory is set; write that path out in full`
 }
 
-// TestRepoConfigFormatVersion pins the format version rule (cells C2, E8 and
-// X7). The value is the text that git lists, and the config itself decides.
+// TestRepoConfigFormatVersion pins the format version rule (measured). The
+// value is the text that git lists, and the config itself decides.
 func TestRepoConfigFormatVersion(t *testing.T) {
 	_, gitDir := configRepo(t)
 	setIncludeFile(t, gitDir, "inc.cfg", refusedInclude)
@@ -141,7 +140,8 @@ func TestRepoConfigFormatVersion(t *testing.T) {
 		{"0 then 2", versionConfig("repositoryformatversion = 0\n\trepositoryformatversion = 2"), versionDetail("2")},
 		{"2 then 0", versionConfig("repositoryformatversion = 2\n\trepositoryformatversion = 0"), ""},
 		{"no line", "[core]\n" + baseRepoConfig, ""},
-		// The version of an included file does not count (cell X7).
+		// The version of an included file does not count
+		// (measured).
 		{"0, and 2 in an included file", version0 + "[include]\n\tpath = inc.cfg\n", ""},
 	} {
 		setRepoConfig(t, gitDir, c.config)
@@ -150,8 +150,8 @@ func TestRepoConfigFormatVersion(t *testing.T) {
 		}
 	}
 	// The value in the text is cut to its first 20 characters, with no mark. Cells
-	// N11 ran 100, 101, 300, 301 and 1100 characters (Linux and Windows VMs). The
-	// pair 20 and 21 is from the code.
+	// Measurements ran 100, 101, 300, 301 and 1100 characters (measured on Linux and
+	// Windows). The pair 20 and 21 is from the code.
 	for _, n := range []int{20, 21, 100, 1100} {
 		v := strings.Repeat("7", n)
 		setRepoConfig(t, gitDir, versionConfig("repositoryformatversion = "+v))
@@ -161,9 +161,9 @@ func TestRepoConfigFormatVersion(t *testing.T) {
 	}
 }
 
-// TestRepoConfigExtensions pins the extension rule (cells C2, E9, A3, X8 and
-// X9). The name in the text is in lower case. A sha256 repository and a
-// reftable repository are not refused.
+// TestRepoConfigExtensions pins the extension rule (measured). The name in
+// the text is in lower case. A sha256 repository and a reftable repository
+// are not refused.
 func TestRepoConfigExtensions(t *testing.T) {
 	_, gitDir := configRepo(t)
 	setIncludeFile(t, gitDir, "inc.cfg", "[extensions]\n\tfoo = true\n")
@@ -190,7 +190,7 @@ func TestRepoConfigExtensions(t *testing.T) {
 		{"1", "noop = 2", ""},
 		{"1", "preciousObjects = true", ""},
 		{"1", "partialClone = origin", ""},
-		// Cells V6, on Linux, macOS and Windows VMs.
+		// Measured on Linux, macOS and Windows.
 		{"1", "bar = true", extensionDetail("bar")},
 		{"1", "noop2", extensionDetail("noop2")},
 		{"1", "relativeWorktrees = maybe", extensionDetail("relativeworktrees")},
@@ -216,19 +216,20 @@ func TestRepoConfigExtensions(t *testing.T) {
 			t.Errorf("version %s, extensions.%s: detail = %q, want %q", c.version, c.line, got, c.want)
 		}
 	}
-	// An extension of an included file does not count (cell X9).
+	// An extension of an included file does not count
+	// (measured).
 	setRepoConfig(t, gitDir, versionConfig("repositoryformatversion = 1")+"[include]\n\tpath = inc.cfg\n")
 	if got := configDetail(t, gitDir); got != "" {
 		t.Errorf("extensions.foo in an included file: detail = %q, want none", got)
 	}
-	// An extension in a section with a subsection has both in its name (cells V6).
+	// An extension in a section with a subsection has both in its name (measured).
 	setRepoConfig(t, gitDir, versionConfig("repositoryformatversion = 1")+"[extensions \"x\"]\n\tnoop = true\n")
 	if got, want := configDetail(t, gitDir), extensionDetail("x.noop"); got != want {
 		t.Errorf(`[extensions "x"] noop: detail = %q, want %q`, got, want)
 	}
 	// The name in the text is cut to its first 60 characters, with no mark. Cells
-	// N11 ran 100, 101, 300, 301 and 900 characters (Linux and Windows VMs). The
-	// pair 60 and 61 is from the code.
+	// Measurements ran 100, 101, 300, 301 and 900 characters (measured on Linux and
+	// Windows). The pair 60 and 61 is from the code.
 	for _, n := range []int{60, 61, 100, 900} {
 		name := strings.Repeat("z", n)
 		setRepoConfig(t, gitDir, versionConfig("repositoryformatversion = 1")+"[extensions]\n\t"+name+" = true\n")
@@ -236,7 +237,7 @@ func TestRepoConfigExtensions(t *testing.T) {
 			t.Errorf("extension name of %d characters: detail = %q, want %q", n, got, want)
 		}
 	}
-	// With no version key no extension is refused (cells V6).
+	// With no version key no extension is refused (measured).
 	setRepoConfig(t, gitDir, "[core]\n"+baseRepoConfig+"[extensions]\n\tfoo = true\n")
 	if got := configDetail(t, gitDir); got != "" {
 		t.Errorf("extensions.foo with no version key: detail = %q, want none", got)
@@ -244,8 +245,8 @@ func TestRepoConfigExtensions(t *testing.T) {
 }
 
 // TestRepoConfigIncludeRow pins the bound on the count of included files: 15 and
-// 16 in a row pass, and 17 are refused (cells E10). With 16 in a row, one more
-// file that the last one includes is refused too (cell X9).
+// 16 in a row pass, and 17 are refused (measured). With 16 in a row, one more
+// file that the last one includes is refused too (measured).
 func TestRepoConfigIncludeRow(t *testing.T) {
 	for _, c := range []struct {
 		n      int
@@ -271,11 +272,10 @@ func TestRepoConfigIncludeRow(t *testing.T) {
 	}
 }
 
-// TestRepoConfigIncludeCount pins what counts toward the 16 files (cells V8,
-// Linux, macOS and Windows VMs). A missing file counts: 17 missing files are
-// refused (the three systems), and 16 pass (cells V8, Linux VM, and P8w, Windows
-// VM). More than 16 are refused in the two orders with files that exist that
-// ran. The file of an
+// TestRepoConfigIncludeCount pins what counts toward the 16 files (measured on
+// Linux, macOS and Windows). A missing file counts: 17 missing files are refused
+// (the three systems), and 16 pass (measured on Linux and Windows). More than 16
+// are refused in the two orders with files that exist that ran. The file of an
 // `includeIf` section counts too: 15 files and one such file pass, and 16 and
 // one are refused.
 func TestRepoConfigIncludeCount(t *testing.T) {
@@ -308,9 +308,9 @@ func TestRepoConfigIncludeCount(t *testing.T) {
 }
 
 // TestRepoConfigIncludeChain pins the bound on the depth of a chain: config, d1,
-// d2 and d3 pass, and a fourth level is refused (cells E10). A loop of two files
-// (cell C3), a config that includes itself and an included file that includes
-// itself (cells X9) are refused too.
+// d2 and d3 pass, and a fourth level is refused (measured). A loop of two files
+// (measured), a config that includes itself and an included file that includes
+// itself are refused too.
 func TestRepoConfigIncludeChain(t *testing.T) {
 	for _, c := range []struct {
 		depth int
@@ -343,10 +343,10 @@ func TestRepoConfigIncludeChain(t *testing.T) {
 
 // TestRepoConfigIncludeFollowed pins which includes the read follows. A relative
 // include inside the git directory is followed. A missing file, an empty value
-// and a setting with no value are no refusal (cells C3 and X9). The file of an
+// and a setting with no value are no refusal (measured). The file of an
 // `includeIf` section is not read: a version `2` in it is not refused, with a
-// `gitdir:` condition that matches and with `onbranch:` (cells E10 and X9). An
-// include line in such a file is not followed (not measured).
+// `gitdir:` condition that matches and with `onbranch:` (measured). An include
+// line in such a file is not followed (not measured).
 func TestRepoConfigIncludeFollowed(t *testing.T) {
 	repo, gitDir := configRepo(t)
 	setIncludeFile(t, gitDir, "inc.cfg", markerInclude)
@@ -373,8 +373,8 @@ func TestRepoConfigIncludeFollowed(t *testing.T) {
 
 // TestRepoConfigIncludeIfFileTests pins that the file of an `includeIf` section
 // gets the size test, with its own path, whatever the condition is: `gitdir:`
-// that matches (cell X9) or not, `gitdir/i:`, `onbranch:` and `hasconfig:`
-// (cells V8, Linux, macOS and Windows VMs).
+// that matches (measured) or not, `gitdir/i:`, `onbranch:` and `hasconfig:`
+// (measured on Linux, macOS and Windows).
 func TestRepoConfigIncludeIfFileTests(t *testing.T) {
 	repo, gitDir := configRepo(t)
 	big := filepath.Join(gitDir, "im.cfg")
@@ -397,14 +397,14 @@ func keyNameDetail(gitDir, section string) string {
 		" whose name is longer than 1024 bytes"
 }
 
-// TestRepoConfigKeyName pins the bound on a setting name (cells E2, E3, X4, Y4
-// and V4). The full name with its section and subsection has 1024 bytes at the
-// last accepted cell and 1025 at the first refused one. That pair is measured in
-// core and remote, and in lfs, url, filter, extensions, include and includeif.
-// Cells N6 measured the same pair in index, feature and checkout (Linux, macOS
-// and Windows VMs). The bound
-// holds in the measured sections only, and the text names the section in lower
-// case. It holds in an included file too (cells V7).
+// TestRepoConfigKeyName pins the bound on a setting name (measured). The full
+// name with its section and subsection has 1024 bytes at the last accepted cell
+// and 1025 at the first refused one. That pair is measured in core and remote,
+// and in lfs, url, filter, extensions, include and includeif. A measurement
+// measured the same pair in index, feature and checkout (measured on Linux,
+// macOS and Windows). The bound holds in the measured sections only, and the
+// text names the section in lower case. It holds in an included file too
+// (measured).
 func TestRepoConfigKeyName(t *testing.T) {
 	_, gitDir := configRepo(t)
 	for _, c := range []struct {
@@ -425,7 +425,7 @@ func TestRepoConfigKeyName(t *testing.T) {
 		{`[url "u"]`, 1100, "url"},
 		{`[filter "f"]`, 1100, "filter"},
 		{`[includeIf "gitdir:/x/"]`, 1100, "includeif"},
-		// The exact pairs of cells V4: the full name has 1024 and 1025 bytes.
+		// The exact pairs: the full name has 1024 and 1025 bytes.
 		{"[lfs]", 1020, ""},
 		{"[lfs]", 1021, "lfs"},
 		{`[url "u"]`, 1018, ""},
@@ -441,7 +441,7 @@ func TestRepoConfigKeyName(t *testing.T) {
 		{"[index]", 1100, "index"},
 		{"[feature]", 1100, "feature"},
 		{"[checkout]", 1100, "checkout"},
-		// The exact pairs of cells N6.
+		// The exact pairs.
 		{"[index]", 1018, ""},
 		{"[index]", 1019, "index"},
 		{"[feature]", 1016, ""},
@@ -481,13 +481,13 @@ func TestRepoConfigKeyName(t *testing.T) {
 			t.Errorf("subsection of %d bytes: detail = %q, want %q", n, got, want)
 		}
 	}
-	// A value of 5000 bytes passes (cell C4).
+	// A value of 5000 bytes passes (measured).
 	setRepoConfig(t, gitDir, version0+"[core]\n\tk = "+strings.Repeat("v", 5000)+"\n")
 	if got := configDetail(t, gitDir); got != "" {
 		t.Errorf("value of 5000 bytes: detail = %q, want none", got)
 	}
-	// A long name in an included file is refused with the path of that file (cells
-	// V7, Linux, macOS and Windows VMs).
+	// A long name in an included file is refused with the path of that file
+	// (measured on Linux, macOS and Windows).
 	setIncludeFile(t, gitDir, "inc.cfg", "[core]\n\t"+strings.Repeat("k", 1100)+" = 1\n")
 	setRepoConfig(t, gitDir, version0+"[include]\n\tpath = inc.cfg\n")
 	want := strings.Replace(keyNameDetail(gitDir, "core"), strconv.Quote(filepath.Join(gitDir, "config")),
@@ -497,10 +497,10 @@ func TestRepoConfigKeyName(t *testing.T) {
 	}
 }
 
-// TestRepoConfigSettingsCost pins each measured pair of cells X5: the count of
-// lines after the four lines of a `git init` config, at the last accepted cell
-// and at the first refused one. The arithmetic of repoSettingCost is fitted to
-// these pairs.
+// TestRepoConfigSettingsCost pins each measured pair: the count of lines after
+// the four lines of a `git init` config, at the last accepted cell and at the
+// first refused one. The arithmetic of repoSettingCost is fitted to these
+// pairs.
 //
 // The test runs with the parallel tests: it has 22 large configs, and it uses no
 // state of the process beyond the real git.
@@ -559,9 +559,8 @@ func TestRepoConfigSettingsCost(t *testing.T) {
 		{"extensions.noop = true", repeat("[extensions]\n\tnoop = true\n"), 200000, true},
 		{"include.path of a missing file", repeat("[include]\n\tpath = nosuchfile.cfg\n"), 200000, true},
 		{"branch.main.remote = abcd", repeat("[branch \"main\"]\n\tremote = abcd\n"), 200000, true},
-		// Cells V5 (Linux VM): seven more counted sections. The 200000 `includeIf`
-		// lines name a missing file, and the answer is this text, not the include
-		// limit.
+		// Measured on Linux: seven more counted sections. The 200000 `includeIf` lines name
+		// a missing file, and the answer is this text, not the include limit.
 		{"lfs.url = abcd", repeat("[lfs]\n\turl = abcd\n"), 200000, true},
 		{"index.version = 4", repeat("[index]\n\tversion = 4\n"), 200000, true},
 		{"url.u.insteadof = abcd", repeat("[url \"u\"]\n\tinsteadof = abcd\n"), 200000, true},
@@ -584,11 +583,11 @@ func TestRepoConfigSettingsCost(t *testing.T) {
 			t.Errorf("%s, %d lines: detail = %q, want %q", c.name, c.n, got, want)
 		}
 	}
-	// The bound holds in an included file, with the path of that file (cells V7,
-	// Linux, macOS and Windows VMs). The included files have their own count: the
-	// pair of core.filemode holds there with no line of the config counted. The
-	// cells have 200000 lines in one file, so the pair in an included file is from
-	// the code.
+	// The bound holds in an included file, with the path of that file (measured on
+	// Linux, macOS and Windows). The included files have their own count: the pair
+	// of core.filemode holds there with no line of the config counted. The cells
+	// have 200000 lines in one file, so the pair in an included file is from the
+	// code.
 	setRepoConfig(t, gitDir, version0+"[include]\n\tpath = inc.cfg\n")
 	inc := filepath.Join(gitDir, "inc.cfg")
 	for n, refusedHere := range map[int]bool{74235: false, 74236: true, 200000: true} {
@@ -602,9 +601,9 @@ func TestRepoConfigSettingsCost(t *testing.T) {
 		}
 	}
 	// The count is one sum across the included files, and the config has its own
-	// (cells N5, Linux, macOS and Windows VMs). Each file has 40000 lines, which is
-	// under the bound alone. Two included files are refused, and the text names
-	// the second one. The config and one included file pass, in both orders.
+	// (measured on Linux, macOS and Windows). Each file has 40000 lines, which is
+	// under the bound alone. Two included files are refused, and the text names the
+	// second one. The config and one included file pass, in both orders.
 	half := "[core]\n" + strings.Repeat("\tfilemode = true\n", 40000)
 	setIncludeFile(t, gitDir, "i1.cfg", half)
 	setIncludeFile(t, gitDir, "i2.cfg", half)
@@ -623,7 +622,7 @@ func TestRepoConfigSettingsCost(t *testing.T) {
 }
 
 // TestRepoConfigSize pins the size bound of a config file: 8388608 bytes pass,
-// and 8388609 are refused (cells X6).
+// and 8388609 are refused (measured).
 func TestRepoConfigSize(t *testing.T) {
 	_, gitDir := configRepo(t)
 	for _, c := range []struct {
@@ -657,7 +656,7 @@ func objectIDLines(t *testing.T, size int) string {
 }
 
 // TestGitDirFilesSize pins the size bound of info/exclude, info/attributes and
-// shallow: 4194304 bytes pass, and 4194305 are refused (cells X6). The text of
+// shallow: 4194304 bytes pass, and 4194305 are refused (measured). The text of
 // `shallow` has no `: it`.
 func TestGitDirFilesSize(t *testing.T) {
 	_, gitDir := configRepo(t)
@@ -691,8 +690,8 @@ func TestGitDirFilesSize(t *testing.T) {
 	}
 }
 
-// TestGitDirShallowHoldsObjectIDs pins the test of `shallow` (cells B3 d, E7 and
-// X11).
+// TestGitDirShallowHoldsObjectIDs pins the test of `shallow`
+// (measured).
 func TestGitDirShallowHoldsObjectIDs(t *testing.T) {
 	_, gitDir := configRepo(t)
 	path := filepath.Join(gitDir, "shallow")
@@ -707,7 +706,7 @@ func TestGitDirShallowHoldsObjectIDs(t *testing.T) {
 		{strings.ToUpper(id) + "\n", refused},
 		{id + "\n\n", refused},
 		{"\n" + id + "\n", refused},
-		// Cells V10: a file that holds one line end and nothing else is refused, LF
+		// Measured: a file that holds one line end and nothing else is refused, LF
 		// or CRLF.
 		{"\n", refused},
 		{"\r\n", refused},
@@ -724,9 +723,9 @@ func TestGitDirShallowHoldsObjectIDs(t *testing.T) {
 }
 
 // TestRepoConfigSyntaxError pins the text of a syntax error in a config file: the
-// text of git with the path in quotes (cell X10, and cell W2 of
-// git.worktree_create on a Windows VM). A file with a NUL byte in
-// a value and an empty file are no refusal (cells X10).
+// text of git with the path in quotes (measured, also for git.worktree_create on
+// Windows). A file with a NUL byte in a value and an empty file are no refusal
+// (measured).
 func TestRepoConfigSyntaxError(t *testing.T) {
 	repo, gitDir := configRepo(t)
 	setRepoConfig(t, gitDir, "[core]\n\trepositoryformatversion = 0\n"+baseRepoConfig+"[x\n\tbroken\n = = =\n")
@@ -740,7 +739,7 @@ func TestRepoConfigSyntaxError(t *testing.T) {
 		t.Errorf("git.info with a syntax error = %s, want %s", raw, want)
 	}
 	// An included file with a syntax error gets the same text, with its own path
-	// and its own line number (cells V7, Linux, macOS and Windows VMs).
+	// and its own line number (measured on Linux, macOS and Windows).
 	setIncludeFile(t, gitDir, "inc.cfg", "[x\n\tbroken\n = = =\n")
 	setRepoConfig(t, gitDir, version0+"[include]\n\tpath = inc.cfg\n")
 	if got, want := configDetail(t, gitDir), "fatal: bad config line 1 in "+strconv.Quote(filepath.Join(gitDir, "inc.cfg")); got != want {
@@ -820,8 +819,8 @@ func (f refusalFixture) noRepositoryAnswers() []string {
 }
 
 // TestRepoConfigRefusalShapes pins the answer of each of the five methods for a
-// config that the daemon refuses, and that nothing is made or deleted (cells
-// C2, W7, E1 and X1).
+// config that the daemon refuses, and that nothing is made or deleted
+// (measured).
 func TestRepoConfigRefusalShapes(t *testing.T) {
 	f := newRefusalFixture(t)
 	setRepoConfig(t, f.gitDir, versionConfig("repositoryformatversion = 2"))
@@ -838,7 +837,7 @@ func TestRepoConfigRefusalShapes(t *testing.T) {
 			t.Errorf("%s = %s, want %s", m.method, raw, want[i])
 		}
 	}
-	// A linked worktree as the path gets the refusal of the config too (cells X2).
+	// A linked worktree as the path gets the refusal of the config too (measured).
 	if raw := dispatchRaw(t, s, rpcLine(t, "git.info", map[string]any{"path": f.wt})); !strings.Contains(raw, wantError) {
 		t.Errorf("git.info on the linked worktree = %s, want %s", raw, wantError)
 	}
@@ -857,12 +856,11 @@ func missing(path string) bool {
 	return os.IsNotExist(err)
 }
 
-// TestRepoConfigSwitchTurnsTheReadOff pins the `shadowDirOff` member: with the
-// JSON value true, format version 2 gets the "not a repository" answers of the
-// five methods. Cells X1 measured git.info and git.status, and cells V2 the
-// three other methods. The member name in upper case counts as the switch, and
-// a text, a number, null and false are as no member (cells V3, on git.info and
-// git.status). The cells ran on Linux, macOS and Windows VMs.
+// TestRepoConfigSwitchTurnsTheReadOff pins the `shadowDirOff` member: with the JSON
+// value true, format version 2 gets the "not a repository" answers of the five
+// methods. Measurements cover all five methods. The member name in upper case counts
+// as the switch, and a text, a number, null and false are as no member (measured on
+// git.info and git.status). The measurements ran on Linux, macOS and Windows.
 func TestRepoConfigSwitchTurnsTheReadOff(t *testing.T) {
 	f := newRefusalFixture(t)
 	setRepoConfig(t, f.gitDir, versionConfig("repositoryformatversion = 2"))
@@ -885,7 +883,7 @@ func TestRepoConfigSwitchTurnsTheReadOff(t *testing.T) {
 }
 
 // TestGitDirFileRefusalShape pins the class of a refused file of the git
-// directory on git.info and git.status (cell E7).
+// directory on git.info and git.status (measured).
 func TestGitDirFileRefusalShape(t *testing.T) {
 	f := newRefusalFixture(t)
 	path := filepath.Join(f.gitDir, "shallow")
@@ -902,9 +900,9 @@ func TestGitDirFileRefusalShape(t *testing.T) {
 	}
 }
 
-// TestRepoConfigBadHeadKeepsItsAnswers pins the order of result X3: a `HEAD`
-// that is no ref keeps the "not a repository" answers of the five methods, also
-// with format version 2 (cells E5 and X3).
+// TestRepoConfigBadHeadKeepsItsAnswers pins the order of a measured result: a `HEAD`
+// that is no ref keeps the "not a repository" answers of the five methods, also with
+// format version 2 (measured).
 func TestRepoConfigBadHeadKeepsItsAnswers(t *testing.T) {
 	f := newRefusalFixture(t)
 	setRepoConfig(t, f.gitDir, versionConfig("repositoryformatversion = 2"))
@@ -920,11 +918,11 @@ func TestRepoConfigBadHeadKeepsItsAnswers(t *testing.T) {
 	}
 }
 
-// TestRepoConfigWorktreeFile pins the tests of a `config.worktree` file (cells
-// X2). With extensions.worktreeConfig, the file of a linked worktree that is the
-// path of git.info gets the size test, with its own path. Its format version is
-// not tested. The `config.worktree` of the main worktree gets the size test too
-// (cell R7 of round task007-03, Linux and macOS VMs).
+// TestRepoConfigWorktreeFile pins the tests of a `config.worktree` file
+// (measured). With extensions.worktreeConfig, the file of a linked worktree that
+// is the path of git.info gets the size test, with its own path. Its format
+// version is not tested. The `config.worktree` of the main worktree gets the
+// size test too (measured on Linux and macOS).
 func TestRepoConfigWorktreeFile(t *testing.T) {
 	f := newRefusalFixture(t)
 	setRepoConfig(t, f.gitDir, version0+"[extensions]\n\tworktreeConfig = true\n")
@@ -952,8 +950,8 @@ func TestRepoConfigWorktreeFile(t *testing.T) {
 		t.Errorf("git.info on the repository = %s, want a repository", raw)
 	}
 	// The extension starts the test as `yes`, `1`, `TRUE` and with no value too
-	// (cells V14, Linux, macOS and Windows VMs), and as `on` and `ON` (cells N4,
-	// the same three systems). `false`, `no` and `0` start none (cells N4).
+	// (measured on Linux, macOS and Windows), and as `on` and `ON` (measured on
+	// the same three systems). `false`, `no` and `0` start none (measured).
 	large := strconv.Quote(filepath.Join(entry, "config.worktree")) + " is larger than 8 MiB"
 	for line, want := range map[string]string{
 		"worktreeConfig = true": large, "worktreeConfig = yes": large, "worktreeConfig = 1": large,
@@ -974,10 +972,10 @@ func TestRepoConfigWorktreeFile(t *testing.T) {
 }
 
 // TestGitDirFilesOrder pins which file a refusal names when two are refused
-// (cells V16). A refused config comes before a file of the git directory
-// (Linux, macOS and Windows VMs). `shallow` comes before info/attributes (the
-// same three systems), and info/attributes before info/exclude (cells P6, Linux
-// VM, four pairs of states).
+// (measured). A refused config comes before a file of the git directory
+// (measured on Linux, macOS and Windows). `shallow` comes before
+// info/attributes (the same three systems), and info/attributes before
+// info/exclude (measured on Linux, four pairs of states).
 func TestGitDirFilesOrder(t *testing.T) {
 	_, gitDir := configRepo(t)
 	big := objectIDLines(t, repoGitFileMaxBytes+1)
@@ -999,14 +997,12 @@ func TestGitDirFilesOrder(t *testing.T) {
 	}
 }
 
-// TestGitDirFilesOnAFile pins the refusal of a git directory that is a regular file:
-// the error of its open as a folder, with no quotes. A `.git` file of a linked
-// worktree gets it with the class 2 prefix (cells c19 to c22 of round task039-01, and
-// V-S3 and V-RM of round task039-02, Windows VM). A file with no `gitdir:` line gets it
-// with the config prefix, from the read of the config (cell V-Wd of round
-// task039-02, Windows VM). The tests run on every system. From the code: on Linux
-// and macOS the read of the config refuses a `.git` file first, and the trust check
-// sends no such git directory there. Mutations: drop the test in gitDirFilesDetail, drop the test in
+// TestGitDirFilesOnAFile pins the refusal of a git directory that is a regular file: the error of
+// its open as a folder, with no quotes. A `.git` file of a linked worktree gets it with the class 2
+// prefix (measured, also on Windows). A file with no `gitdir:` line gets it with the config prefix,
+// from the read of the config (measured on Windows). The tests run on every system. From the code:
+// on Linux and macOS the read of the config refuses a `.git` file first, and the trust check sends
+// no such git directory there. Mutations: drop the test in gitDirFilesDetail, drop the test in
 // readRepoConfig, or apply it to a `.git` file too.
 func TestGitDirFilesOnAFile(t *testing.T) {
 	dir := t.TempDir()
@@ -1032,7 +1028,7 @@ func TestGitDirFilesOnAFile(t *testing.T) {
 }
 
 // TestRepoConfigLongPathIsCut pins the cut of a path in quotes: its first 300
-// characters stay, with no mark of the cut (cells X12). A path of 300
+// characters stay, with no mark of the cut (measured). A path of 300
 // characters is whole, and the cut counts characters, not bytes.
 func TestRepoConfigLongPathIsCut(t *testing.T) {
 	root := resolveTestRoot(t, t.TempDir())
@@ -1105,11 +1101,10 @@ func stubGitWithLog(t *testing.T) string {
 // call for the read of the config, and that a changed file is read again. The
 // first two steps are git.info requests, and the others run the read alone.
 // With an accepted config, 5fd08069 makes no such call for a second git.info,
-// and one after a change of the config (cell B4, Linux VM). With a refused
-// format version it makes the read again at each request (cells N10 and P5,
-// Linux, macOS and Windows VMs), and claustrum does too. The rows for an included file are claustrum's
-// own: a changed one is read again, and so is one that was missing and is there
-// now.
+// and one after a change of the config (measured on Linux). With a refused format version it makes the
+// read again at each request (measured on Linux, macOS and Windows), and claustrum does too. The rows
+// for an included file are claustrum's own: a changed one is read again, and so is one that was
+// missing and is there now.
 func TestRepoVerdictIsKept(t *testing.T) {
 	repo, gitDir := configRepo(t)
 	log := stubGitWithLog(t)
@@ -1169,8 +1164,8 @@ func TestRepoVerdictIsKept(t *testing.T) {
 	step("a refusal, second request", 3, `"%(prefix)/x", and Claude expands neither`)
 
 	// A file of the git directory is no part of the read: its test runs in each
-	// request, and a change of it leads to no new read of the config (cells 19a
-	// to 19c of val-s3p2b2-3-linux, Linux VM).
+	// request, and a change of it leads to no new read of the config (measured
+	// on Linux).
 	setRepoConfig(t, gitDir, version0)
 	step("config with no include", 1, "")
 	writeFile(t, filepath.Join(gitDir, "shallow"), "this line is not an object id\n", 0o644)
@@ -1181,8 +1176,8 @@ func TestRepoVerdictIsKept(t *testing.T) {
 // TestWorktreeConfigListingsBeforeAnExtensionRefusal pins the count of the
 // listings of the read with a good `config.worktree` file and the worktreeConfig
 // switch. With a refused extension under format version 1, 5fd08069 makes two
-// listings (cell Q11 of tier0-18, Linux VM). With no refusal it makes three
-// (cell C3c of tier0-14, Linux VM).
+// listings (measured on Linux). With no refusal it makes three (measured on
+// Linux).
 func TestWorktreeConfigListingsBeforeAnExtensionRefusal(t *testing.T) {
 	_, gitDir := configRepo(t)
 	setIncludeFile(t, gitDir, "config.worktree", "[core]\n\tquotepath = off\n")
@@ -1256,10 +1251,10 @@ func TestRepoVerdictsBound(t *testing.T) {
 // TestRepoConfigRefusalOnAGoneWorktree pins git.worktree_remove for a worktree
 // folder that does not exist, in a repository that the daemon refuses. The
 // answer is the refusal of a folder that exists, and the branch stays. 5fd08069
-// answers so on a Windows VM, where 89cb6289 answers success. That build deletes
-// the branch with the files of 20 MiB and with the absolute include (cells G1a to
-// G1c), and keeps it with format version `2` (cells F1a, F2a and W6x). Without a
-// refused file the remove answers success and deletes the branch (cell G1z).
+// answers so on Windows, where 89cb6289 answers success. That build deletes the
+// branch with the files of 20 MiB and with the absolute include (measured), and
+// keeps it with format version `2`. Without a refused file the remove answers
+// success and deletes the branch (measured).
 func TestRepoConfigRefusalOnAGoneWorktree(t *testing.T) {
 	f := newRefusalFixture(t)
 	runGit(t, f.repo, "branch", "spare")

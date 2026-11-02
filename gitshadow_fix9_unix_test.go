@@ -32,9 +32,9 @@ func profileOf(c envCall) []string {
 // listing and the light `rev-parse --is-inside-work-tree`, both with the six
 // values of the state shadow in their order. Each call has
 // GIT_DIR=<null device>. On 5fd08069 the two requests make 2 calls each, and
-// the replies are the "no repository" answers (cell h1-mode000 of
-// val-s3p2b2-7-linux2, Linux VM). The daemon has no state in that cell. With
-// the member the create is not measured: its calls keep the four light values.
+// the replies are the "no repository" answers (measured on Linux). The daemon
+// has no state in that cell. With the member the create is not measured: its
+// calls keep the four light values.
 func TestNoRepositoryCallsWithAnUnreadableHead(t *testing.T) {
 	if os.Getuid() == 0 {
 		t.Skip("the root user reads a file of mode 000")
@@ -99,9 +99,9 @@ func TestNoRepositoryCallsWithAnUnreadableHead(t *testing.T) {
 
 // TestDaemonFolderThatTakesNoNewEntry: the folder of the daemon has mode 0500
 // after the first request. git.status then answers isRepo:false, as on
-// 5fd08069 (cell f1-0500 of val-s3p2b2-7-linux2, Linux VM). A create answers
-// privateCopyText with the error of the mkdir of `.s<n>`, as be1c1ca5 does on
-// Linux, and the empty leaf goes.
+// 5fd08069 (measured on Linux). A create answers privateCopyText with the
+// error of the mkdir of `.s<n>`, as be1c1ca5 does on Linux, and the empty
+// leaf goes.
 func TestDaemonFolderThatTakesNoNewEntry(t *testing.T) {
 	if os.Getuid() == 0 {
 		t.Skip("the root user makes an entry in a folder of mode 0500")
@@ -150,7 +150,7 @@ func folderVars(c envCall) []string {
 // in its environment. Each call that names the copy then has GIT_DIR, then
 // GIT_COMMON_DIR=<copy>, then GIT_OBJECT_DIRECTORY, and no GIT_WORK_TREE. The
 // copy is the one of the other repository. On 5fd08069 the 27 calls of the five
-// requests have that order (cell o1-gd-v2 of val-s3p2b2-7-linux2, Linux VM).
+// requests have that order (measured on Linux).
 func TestDaemonGitDirStaysFirst(t *testing.T) {
 	f := newShadowFixture(t)
 	_, otherGitDir := configRepo(t)
@@ -186,8 +186,7 @@ func TestDaemonGitDirStaysFirst(t *testing.T) {
 // that they make with GIT_DIR alone, and each call that names a copy has
 // GIT_COMMON_DIR=<copy> in the place of the value of the daemon. On 5fd08069
 // the call counts are 20, 2, 4, 11 and 2 in both cells, and the folder of the
-// repository is made (cells o1-gd-v2 and o1-gdcd-v2 of val-s3p2b2-7-linux2,
-// Linux VM).
+// repository is made (measured on Linux).
 func TestDaemonGitDirAndCommonDir(t *testing.T) {
 	run := func(t *testing.T, both bool) (lists [][]string, replies []string) {
 		f := newShadowFixture(t)
@@ -217,9 +216,8 @@ func TestDaemonGitDirAndCommonDir(t *testing.T) {
 				}
 				common, _ := lookupExact(c.env, "GIT_COMMON_DIR")
 				// The pair of a remove carries the copy: on 5fd08069 the
-				// calls 3 to 6 of a second remove do (cell N-g of
-				// val-s3p2b2-8-linux2, Linux VM).
-				// The staged add carries GIT_COMMON_DIR=<S>/.s<n> (be1c1ca5).
+				// calls 3 to 6 of a second remove do (measured on Linux). The
+				// staged add carries GIT_COMMON_DIR=<S>/.s<n> (be1c1ca5).
 				switch {
 				case common == copyOf:
 					line += " [copy]"
@@ -268,7 +266,7 @@ func TestDaemonGitDirAndCommonDir(t *testing.T) {
 // brackets, after two version calls: one in the root folder, and one with the
 // form of a test call. On 5fd08069 the text is `git init failed under "<S>":
 // fatal: forced failure by the test wrapper (git version 2.43.0)`, and the
-// request makes 4 git calls (cell C2 of val-s3p2b2-7-linux2, Linux VM).
+// request makes 4 git calls (measured on Linux).
 func TestFailedInitNamesTheGitVersion(t *testing.T) {
 	out, err := exec.Command("git", "version").Output()
 	if err != nil {

@@ -8,7 +8,7 @@ import (
 )
 
 // The tests of the limit of repository folders in the folder of the daemon.
-// The cell is G13 of round task075-01 (Linux VM).
+// Measured on Linux.
 
 // lowerRepoLimit sets shadowRepoLimit for one test.
 func lowerRepoLimit(t *testing.T, n int) {
@@ -18,17 +18,17 @@ func lowerRepoLimit(t *testing.T, n int) {
 	t.Cleanup(func() { shadowRepoLimit = old })
 }
 
-// Cell G13: the limit of repository folders is 128.
+// Measured: the limit of repository folders is 128.
 func TestShadowRepoLimitIs128(t *testing.T) {
 	if shadowRepoLimit != 128 {
 		t.Errorf("shadowRepoLimit = %d, want 128", shadowRepoLimit)
 	}
 }
 
-// Cell G13, with the limit at 2: a third repository removes the folder of the
+// Measured, here with the limit at 2: a third repository removes the folder of the
 // one with the oldest use, and a later use of that one removes the next. A
 // short-lived dot folder does not count. The order by use is that of 5fd08069
-// (EL2 cell 45, Linux VM).
+// (measured on Linux).
 func TestShadowRepoLimitEvictsOldestUse(t *testing.T) {
 	lowerRepoLimit(t, 2)
 	f := newRepoFolderFixture(t)
@@ -67,9 +67,9 @@ func TestShadowRepoLimitEvictsOldestUse(t *testing.T) {
 	sweptThere(t, c)
 }
 
-// A folder that a git child holds stays (E2L cell 37, Linux VM). With each
-// folder held the request gets the text of `repoLimitError`, and nothing goes
-// (E2L cell 36).
+// A folder that a git child holds stays (measured on Linux). With each folder
+// held the request gets the text of `repoLimitError`, and nothing goes
+// (measured).
 func TestShadowRepoLimitKeepsBusyFolders(t *testing.T) {
 	lowerRepoLimit(t, 2)
 	f := newRepoFolderFixture(t)

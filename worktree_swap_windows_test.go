@@ -11,10 +11,10 @@ import (
 
 // TestCheckpointHoldsLeafAndParent pins the Windows share modes of the create's
 // checkpoint handles. Both references hold the leaf and its parent open during a
-// create on a Windows VM (handle64). Under the handles of f6010b97 a rename of the leaf
-// succeeded, a delete-access open of the parent succeeded, and a rename of the
-// parent failed with "Access is denied." while the leaf was held inside it. After
-// the leaf was moved out, the parent rename succeeded.
+// create on Windows (handle64). Under the handles of f6010b97 a rename of the leaf
+// succeeded, a delete-access open of the parent succeeded, and a rename of the parent
+// failed with "Access is denied." while the leaf was held inside it. After the leaf was
+// moved out, the parent rename succeeded.
 func TestCheckpointHoldsLeafAndParent(t *testing.T) {
 	root := t.TempDir()
 	parent := filepath.Join(root, "worktrees")
@@ -67,7 +67,7 @@ func TestCheckpointHoldsLeafAndParent(t *testing.T) {
 // and that both rollbacks still delete the leaf under the held handles. Before the
 // checkpoint took the identity from its leaf handle, os.SameFile read both
 // identities from the path and took the replacement for the leaf (measured 5 of 5
-// on a Windows VM, where both references refused it).
+// on Windows, where both references refused it).
 func TestCheckpointCatchesReplacedLeaf(t *testing.T) {
 	t.Run("replaced_leaf_fails_the_check_and_is_removed", func(t *testing.T) {
 		leaf := filepath.Join(t.TempDir(), "worktrees", "w1")

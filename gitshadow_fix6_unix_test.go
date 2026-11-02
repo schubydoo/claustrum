@@ -15,11 +15,10 @@ import (
 // TestIncludeVersionCallOncePerDaemon: the `git version` call of the include
 // step runs in the first create of a daemon and in no later one, with or
 // without the member. On 5fd08069 the counts per create are 1 and 0 in 4 of 4
-// runs (cell v5-create of val-s3p2b2-5-linux2, Linux VM). With the member on
-// the first, the second and the fifth of five creates they are 1, 0, 0, 0 and
-// 0 (cell p3m-member of val-s3p2b2-6-linux, 2 of 2 runs). With the member on
-// the third of four they are 1, 0, 0 and 0 (cell p3-include of that round, 3
-// of 3 runs).
+// runs (measured on Linux). With the member on the first, the second and the
+// fifth of five creates they are 1, 0, 0, 0 and 0 (measured, 2 of 2 runs).
+// With the member on the third of four they are 1, 0, 0 and 0 (measured, 3 of
+// 3 runs).
 func TestIncludeVersionCallOncePerDaemon(t *testing.T) {
 	for _, row := range []struct {
 		name   string
@@ -67,8 +66,7 @@ func TestIncludeVersionCallOncePerDaemon(t *testing.T) {
 // one time. After a read with a syntax error one plain `git version` call
 // follows, each time. On 5fd08069 the calls per request are 1, 1, 1, 1 and 2
 // with format version 3. With a syntax error they are 2, 2, 2, 2 and 4. The
-// cells are x9-v3-own and x9-syntax-own of val-s3p2b2-5-linux2 (Linux VM), and
-// the rows E1 and E1b of val-s3p2b2-5-macos (macOS VM).
+// cases are measured on Linux and macOS.
 func TestRemoveReadsARefusedConfigTwice(t *testing.T) {
 	for _, row := range []struct {
 		name, config string
@@ -119,15 +117,14 @@ func TestRemoveReadsARefusedConfigTwice(t *testing.T) {
 // daemon makes before the `worktree add` call is made with mode 0777 before
 // the umask. With a `core.sharedrepository` line of the copy other than
 // `umask`, it then gets one mode call. The registration that git makes in it
-// takes the set-group-ID bit from it. The rows to `0640` are rows of group P5
-// of val-s3p2b2-6-linux (Linux VM, 5fd08069): section 0.2 item 6 of its report
-// has the table. Cell H3 of val-s3p2b2-5-linux has the row `group` too. The
-// next four rows are cells H1 of tier0-15, S1 and S2 of tier0-16 and C2 of
-// tier0-14 (Linux VM). C2 has nine values in its config. The last eight rows
-// are cells Q1 to Q7 and Q10 of tier0-18 (Linux VM). Q10 has its value in
-// `config.worktree` only. The registration is now staged, and it takes the
-// mode that git gave it in `.s<n>` (stagedEntryModes). For Q10 that is 2775,
-// where 5fd08069 gives 775 (claustrum's own, not measured on be1c1ca5).
+// takes the set-group-ID bit from it. The rows to `0640` are measured rows
+// (`5fd08069`, measured on Linux). A measurement has the row `group` too.
+// The next four rows are measured on Linux. The fourth has nine values in
+// its config. The last eight rows are measured on Linux. The last one has
+// its value in `config.worktree` only. The registration is now staged, and
+// it takes the mode that git gave it in `.s<n>` (stagedEntryModes). For Q10
+// that is 2775, where 5fd08069 gives 775 (claustrum's own, not measured on
+// be1c1ca5).
 func TestWorktreesFolderOfASharedRepository(t *testing.T) {
 	if runtime.GOOS != "linux" {
 		t.Skip("the rows are Linux cells")
@@ -215,9 +212,9 @@ func TestWorktreesFolderOfASharedRepository(t *testing.T) {
 
 // TestProbeFolderOrder: the entries of `.probe` are made in the order `refs`,
 // `objects`, `info`, `config`, `HEAD`. On 5fd08069 the birth times have that
-// order in 14 of 14 folders (row E2 of val-s3p2b2-5-macos, macOS VM). A folder
-// that takes no new entry names the first entry that is missing. A folder at
-// `HEAD` that cannot be removed shows that the config came before it.
+// order in 14 of 14 folders (measured on macOS). A folder that takes no new
+// entry names the first entry that is missing. A folder at `HEAD` that cannot
+// be removed shows that the config came before it.
 func TestProbeFolderOrder(t *testing.T) {
 	if os.Getuid() == 0 {
 		t.Skip("the root user makes an entry in a folder of mode 0500")

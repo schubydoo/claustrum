@@ -18,9 +18,9 @@ import (
 // ran on the host of the build: a Windows run must match the cell that each
 // row names.
 //
-// The deny rows of tables W3 and F1 of val-s3p2b2-7-windows have no test here:
-// they need a deny entry in the access list of the folder of the daemon, and
-// the read-only attribute of a folder does not stop a new entry in it.
+// The measured deny rows have no test here: they need a deny entry in the
+// access list of the folder of the daemon, and the read-only attribute of a
+// folder does not stop a new entry in it.
 // TestStagedAddWithAFolderThatTakesNoEntry has the text of that step on Linux
 // and macOS.
 
@@ -68,17 +68,17 @@ func copyGitDir(t *testing.T, from, to string) {
 	}
 }
 
-// TestCreateWithAJunctionAtTheGitDirOnWindows must match cells X1c-01 to
-// X1c-06 and X1c-09 to X1c-11 of val-s3p2b2-7-windows. T is a copy of the git
-// directory with an old entry `.claude-new-worktree-x`, its marker and one more
-// file. At one step of the create, `repo\.git` goes to `repo\.git-real` and a
-// junction to T takes its place. 5fd08069 then refuses the create with the
-// text of the row, removes nothing in T and makes nothing in T.
+// TestCreateWithAJunctionAtTheGitDirOnWindows must match the measured cases on
+// Windows. T is a copy of the git directory with an old entry
+// `.claude-new-worktree-x`, its marker and one more file. At one step of the
+// create, `repo\.git` goes to `repo\.git-real` and a junction to T takes its
+// place. 5fd08069 then refuses the create with the text of the row, removes
+// nothing in T and makes nothing in T.
 //
-// The last two rows are points 11 and 13 of 5fd08069 in the table of section 2
-// of val-s3p2b2-12-windows: the junction comes while the first listing of the
-// checkout runs, and after the read-tree call ended. The registration and the
-// branch stay in the real git directory, and the registration has no index.
+// The last two rows are points 11 and 13 of 5fd08069 (measured): the junction
+// comes while the first listing of the checkout runs, and after the read-tree
+// call ended. The registration and the branch stay in the real git directory,
+// and the registration has no index.
 //
 // The test removes nothing in T with the guards or without them: the removal
 // of the cleanup is a recorder.
@@ -183,13 +183,12 @@ func TestCreateWithAJunctionAtTheGitDirOnWindows(t *testing.T) {
 	}
 }
 
-// TestSymbolicLinkAtTheGitDirOnWindows must match cells D-symd-start and
-// DT-symd-late-to-T of val-s3p2b2-12-windows (Windows VM). `repo\.git` is a
-// directory symbolic link to T, a copy of the git directory with an old entry
-// `.claude-new-worktree-x`. The link is there before the first request, or it
-// takes the place of the git directory after one good git.info. 5fd08069
-// refuses each git method with the text of a junction there, and T stays as it
-// is.
+// TestSymbolicLinkAtTheGitDirOnWindows must match the measured cases (on
+// Windows). `repo\.git` is a directory symbolic link to T, a copy of the git
+// directory with an old entry `.claude-new-worktree-x`. The link is there
+// before the first request, or it takes the place of the git directory after
+// one good git.info. 5fd08069 refuses each git method with the text of a
+// junction there, and T stays as it is.
 //
 // The test is safe without the rule of gitDirIsSymlink. The create then makes
 // its worktree in T, which is a folder of the test, and the removal of the
@@ -283,12 +282,11 @@ func TestSymbolicLinkAtTheGitDirOnWindows(t *testing.T) {
 // git directory as a real directory. X gets no registration and no branch, and
 // no `worktree add` runs.
 //
-// Five rows are of 5fd08069 in part C and cells CX of val-s3p2b2-12-windows
-// (Windows VM): the file after `rev-parse --absolute-git-dir`, the file
-// before the add and at the listing of the add, and the directory symbolic
-// link after the first call and after `rev-parse --absolute-git-dir`. The
-// three other rows have no row of 5fd08069: their texts are those of the
-// junction rows of val-s3p2b2-7-windows (cells X1c-01, X1c-03 and X1c-06).
+// Five rows are of 5fd08069 (measured on Windows): the file after
+// `rev-parse --absolute-git-dir`, the file before the add and at the
+// listing of the add, and the directory symbolic link after the first call
+// and after `rev-parse --absolute-git-dir`. The three other rows have no
+// row of 5fd08069: their texts are those of the measured junction rows.
 func TestCreateWithAnotherGitDirAtThePathOnWindows(t *testing.T) {
 	const realDir = `".git" is a link or a file where Claude needs a real directory; put the directory itself in its place`
 	notPrepared := func(string) string {
@@ -376,12 +374,12 @@ func TestCreateWithAnotherGitDirAtThePathOnWindows(t *testing.T) {
 	}
 }
 
-// TestAttachWithAFileAtWorktreesOnWindows must match table S9 of
-// val-s3p2b2-12-windows (Windows VM, 2 of 2 runs). A create with
-// `existingBranch` finds a file at `.git\worktrees`. 5fd08069 answers the
-// text of that step one time and makes no second add with a new branch.
-// Without the rule of addNotPrepared the text has a second part, `(attaching
-// to the existing branch eb was refused first: …)`.
+// TestAttachWithAFileAtWorktreesOnWindows must match a measured case (on
+// Windows, 2 of 2 runs). A create with `existingBranch` finds a file at
+// `.git\worktrees`. 5fd08069 answers the text of that step one time and
+// makes no second add with a new branch. Without the rule of addNotPrepared
+// the text has a second part, `(attaching to the existing branch eb was
+// refused first: …)`.
 func TestAttachWithAFileAtWorktreesOnWindows(t *testing.T) {
 	f := newSeededShadowFixture(t)
 	runGit(t, f.repo, "branch", "eb")
@@ -422,11 +420,11 @@ func TestAttachWithAFileAtWorktreesOnWindows(t *testing.T) {
 
 // TestHeldGitDirTakesARenameOnWindows: another process can rename the git
 // directory that a create holds. On 5fd08069 a rename of `repo\.git` passes
-// during a create (60 swaps of val-s3p2b2-9-windows, Windows VM). With a hold
-// that os.OpenRoot opened by the path, the rename failed with `The process
+// during a create (60 measured swaps, Windows). With a hold that
+// os.OpenRoot opened by the path, the rename failed with `The process
 // cannot access the file because it is being used by another process`
-// (section 1.1 of that round). After the rename the held root still acts in
-// the folder, at its new name. A junction at the last name is not opened.
+// (measured on Windows). After the rename the held root still acts in the
+// folder, at its new name. A junction at the last name is not opened.
 func TestHeldGitDirTakesARenameOnWindows(t *testing.T) {
 	dir := filepath.Join(resolveTestRoot(t, t.TempDir()), "g")
 	if err := os.Mkdir(dir, 0o755); err != nil {
@@ -453,13 +451,13 @@ func TestHeldGitDirTakesARenameOnWindows(t *testing.T) {
 	}
 }
 
-// TestKeptProbeWithAJunctionAtTheGitDirOnWindows must match part Q of
-// val-s3p2b2-9-windows and its control cell Qk (Windows VM). With a junction
-// at `repo\.git`, a change of the folder behind it leaves the kept answer in
-// place: 5fd08069 makes no git call in the seven later requests. With a real
-// `.git` directory the same change ends the kept answer. The test sets the
-// time of the folder, where the driver of the cells ran a plain `git status`.
-// With probeStat for the `.git` entry the first row fails.
+// TestKeptProbeWithAJunctionAtTheGitDirOnWindows must match the measured
+// cases and their control (on Windows). With a junction at `repo\.git`, a
+// change of the folder behind it leaves the kept answer in place: 5fd08069
+// makes no git call in the seven later requests. With a real `.git` directory
+// the same change ends the kept answer. The test sets the time of the folder,
+// where the driver of the cells ran a plain `git status`. With probeStat for
+// the `.git` entry the first row fails.
 func TestKeptProbeWithAJunctionAtTheGitDirOnWindows(t *testing.T) {
 	for _, row := range []struct {
 		name     string
@@ -498,10 +496,9 @@ func TestKeptProbeWithAJunctionAtTheGitDirOnWindows(t *testing.T) {
 	}
 }
 
-// TestCreateWithAFileAtTheGitDirOnWindows must match cells X1b, X1c and X2 of
-// round task077-03 (Windows VM, 2 of 2 runs each). At one step of the create,
-// `repo\.git` goes to `repo\.git-real`, and a regular file `gitdir: <path>`
-// takes its place.
+// TestCreateWithAFileAtTheGitDirOnWindows must match the measured cases (on
+// Windows, 2 of 2 runs each). At one step of the create, `repo\.git` goes to
+// `repo\.git-real`, and a regular file `gitdir: <path>` takes its place.
 //
 //   - X1b and X1c: the file comes right after the add and names the git
 //     directory of a second repository with a branch w1. claustrum answers the

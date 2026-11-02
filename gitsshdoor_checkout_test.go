@@ -9,7 +9,7 @@ import (
 )
 
 // The ssh door of the checkout in the state shadow (gitsshdoor.go), with the
-// rows of be1c1ca5 (Linux and macOS VMs).
+// rows of be1c1ca5 (measured on Linux and macOS).
 
 // doorNames are the five names of the door, in the measured order.
 var doorNames = []string{"GIT_SSH_COMMAND", "CLAUDE_SSH_PERSONS_SSH", "CLAUDE_SSH_PERSONS_ENV", "CLAUDE_SSH_DOOR_MARK", "GIT_SSH_VARIANT"}

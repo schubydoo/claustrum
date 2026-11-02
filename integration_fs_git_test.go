@@ -221,8 +221,8 @@ func TestSocketGitBattery(t *testing.T) {
 // data: " M f" (unstaged) and "M  f" (staged) differ only in where the letter
 // sits. 7d193f89 passes the porcelain through verbatim, so EVERY line keeps its
 // leading space, the FIRST included. 5db5e4a dropped the first line's leading
-// space; re-measured against the reference
-// daemons 7d193f89 AND 4534d86, both keep it (scratch/probe/attrsrc).
+// space; re-measured against the reference daemons 7d193f89 AND 4534d86, both
+// keep it.
 //
 // Both halves need a fixture. The battery only ever produced "?? dirty.txt" — an
 // untracked entry, the one shape carrying no leading space — so the stale
@@ -644,7 +644,8 @@ func spawnReqArgsCwd(t *testing.T, id int, procID, mode, cwd string) string {
 // must NOT disturb them.
 //
 // files.read opens the path first, so its three texts start with "open".
-// 5fd08069 answers the same for the three triggers (Linux and macOS VMs).
+// 5fd08069 answers the same for the three triggers (measured on Linux and
+// macOS).
 func TestSocketStatErrorPropagation(t *testing.T) {
 	if runtime.GOOS == "windows" {
 		// "not a directory" / "file name too long" / "invalid argument" are the
@@ -839,8 +840,8 @@ func TestWorktreeResultFieldOrder(t *testing.T) {
 // TestSocketWorktreeRemoveBranch pins sweep gap F2: git.worktree_remove deletes
 // the branch named by branchName. claustrum once ignored the parameter entirely and
 // left both branches behind. Since 89cb6289 a branch with a commit that no other
-// branch reaches stays, and the reply says so with "branchKept":true (row R02 on
-// Linux, macOS and Windows VMs). A branch at another branch's tip goes (row R01).
+// branch reaches stays, and the reply says so with "branchKept":true (measured on
+// Linux, macOS and Windows). A branch at another branch's tip goes (measured).
 //
 // The end state is pinned through git.list_branches before and after, which is
 // where a client would actually notice.
@@ -887,8 +888,8 @@ func TestSocketWorktreeRemoveBranch(t *testing.T) {
 
 // TestSocketWorktreeRemoveKeepsBranchConfig pins that git.worktree_remove deletes the
 // branch via a raw ref delete (update-ref --no-deref -d), NOT `git branch -D`: the
-// ref and reflog go, but the branch's config section survives — matching 4534d86
-// (scratch/probe/gitmut). `git branch -D` would also drop [branch "<name>"].
+// ref and reflog go, but the branch's config section survives — matching 4534d86.
+// `git branch -D` would also drop [branch "<name>"].
 func TestSocketWorktreeRemoveKeepsBranchConfig(t *testing.T) {
 	requireGit(t)
 	root := resolveTestRoot(t, t.TempDir())
@@ -945,7 +946,7 @@ func TestWorktreeRemoveResultShape(t *testing.T) {
 	if want := `{"success":true}`; string(b) != want {
 		t.Errorf("worktreeRemoveResult (no error) = %s, want %s", b, want)
 	}
-	// branchKept follows error (89cb6289, row R19).
+	// branchKept follows error (`89cb6289`, measured).
 	b, _ = json.Marshal(worktreeRemoveResult{Success: false, Error: "e", BranchKept: true})
 	if want := `{"success":false,"error":"e","branchKept":true}`; string(b) != want {
 		t.Errorf("worktreeRemoveResult (kept) = %s, want %s", b, want)
@@ -1040,9 +1041,8 @@ func TestSocketWorktreeCreateFailureCarriesGitStderr(t *testing.T) {
 
 // A completed removal deletes the worktree, its entry and its branch, and keeps the
 // worktrees directory of the repository, empty. No `git worktree remove` runs, and git
-// removed that directory once it was empty. Measured against f6010b97 on a macOS VM
-// (rows K01 and K02). The worktreeRoot rows XS_r_reg and XS2_rt show the same on
-// Linux and macOS VMs.
+// removed that directory once it was empty. Measured against f6010b97 on macOS. The
+// worktreeRoot rows XS_r_reg and XS2_rt show the same on Linux and macOS.
 //
 // Cross-platform on purpose: nothing here is POSIX.
 func TestWorktreeRemoveKeepsEmptyWorktreesDir(t *testing.T) {

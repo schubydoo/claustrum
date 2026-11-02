@@ -15,11 +15,11 @@ func TestIncludeWindowsConstants(t *testing.T) {
 	}
 }
 
-// TestPlanIncludeScanBatchLayoutWindows replays the f6010b97 batch sizes that a
-// Windows VM measured. Each row uses the length of the `--exclude-from`
-// argument that its run had. It was 85 to 87 bytes with the default temp
-// directory, and 120 bytes with a longer TMP. The Bb and BbT rows are the one-byte
-// bisection: a batch of 24 576 bytes is one call, and 24 577 bytes splits.
+// TestPlanIncludeScanBatchLayoutWindows replays the f6010b97 batch sizes that
+// Windows measured. Each row uses the length of the `--exclude-from` argument that
+// its run had. It was 85 to 87 bytes with the default temp directory, and 120
+// bytes with a longer TMP. The Bb and BbT rows are the one-byte bisection: a batch
+// of 24 576 bytes is one call, and 24 577 bytes splits.
 func TestPlanIncludeScanBatchLayoutWindows(t *testing.T) {
 	names := func(n int, format string) []string {
 		out := make([]string, n)

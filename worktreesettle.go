@@ -13,15 +13,15 @@ import (
 // runs `diff-files --quiet --ignore-submodules=all` with the working directory and
 // the GIT_INDEX_FILE of the checkout. On Windows the argv carries
 // --git-dir=<repo>\.git and --work-tree=<leaf>. Exit 0 answers at once. Exit 1
-// makes the reply wait. Measured on Linux, macOS and Windows VMs.
+// makes the reply wait. Measured on Linux, macOS and Windows.
 var (
 	// settleMargin is the time that must still be left before the deadline of
 	// timeoutMs for the call to run. The call then gets that time less the
 	// margin, and at least settleMinLimit. The deadline starts before the first git
-	// call (worktreeCreateCtx). 683cc6a9 on a Linux VM: with timeoutMs 10700 no call
+	// call (worktreeCreateCtx). 683cc6a9 on Linux: with timeoutMs 10700 no call
 	// runs. From 12500 to 20000 SIGTERM comes timeoutMs less 10 s after the send of
-	// the request. With 11500 and 12000 it can come 1 s after the start of the
-	// call. With 15000, 19999 and 20000 a call of 3 s runs to its end.
+	// the request. With 11500 and 12000 it can come 1 s after the start of the call.
+	// With 15000, 19999 and 20000 a call of 3 s runs to its end.
 	settleMargin   = 10 * time.Second
 	settleMinLimit = time.Second
 	// settleWait is the time after the end of the read-tree call before which the
@@ -92,12 +92,12 @@ func settleLimit(ctx context.Context, s *gitStop) (limit time.Duration, ok bool)
 //
 // When the --attr-source probe of attrSourceArgs answers "not supported", no call
 // runs. On 683cc6a9 the probe exits 129, `git version` follows, and no diff-files
-// call comes (Linux VM). The rows quote no full argv, so its form is claustrum's
-// own. The option comes first. Then comes the form of the light calls of a
-// create: the items of a `config.worktree` file (gitUse.checkoutFront), the light
-// profile, and the --git-dir and --work-tree of the checkout. The environment is
-// the light environment of the checkout without its hook pins, filter items and
-// LANGUAGE=C (claustrum's own).
+// call comes (measured on Linux). The rows quote no full argv, so its form is
+// claustrum's own. The option comes first. Then comes the form of the light calls
+// of a create: the items of a `config.worktree` file (gitUse.checkoutFront), the
+// light profile, and the --git-dir and --work-tree of the checkout. The
+// environment is the light environment of the checkout without its hook pins,
+// filter items and LANGUAGE=C (claustrum's own).
 //
 // The stop is the one of gitRun on each system, SIGTERM on Linux and macOS, and a
 // kill gitStopGrace later. It does not go through the gitStop of the request, so no

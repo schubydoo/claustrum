@@ -76,7 +76,7 @@ func scopedCalls(calls []envCall) int {
 // repository config, or from a file that it includes, is refused. A filter
 // that the user config defines runs. A filter that git cannot see in the copy
 // does not run. No row makes a --show-scope listing, as on 5fd08069 in the
-// state shadow (round task084-01).
+// state shadow (measured).
 func TestShadowFilterRuleFailsClosed(t *testing.T) {
 	for _, row := range []struct {
 		name, attrs string
@@ -120,10 +120,10 @@ func TestShadowFilterRuleFailsClosed(t *testing.T) {
 			setIncludeFile(t, f.gitDir, "f.cfg", f.section(t, "m", "smudge"))
 			f.addConfig(t, "[includeIf \"gitdir:"+filepath.ToSlash(top)+"/\"]\n\tpath = f.cfg\n")
 		}, "m", false},
-		// Cell F1e of round task084-05 (Linux VM, 3 of 3 runs): a later
-		// `smudge = cat` in the repository config after the includeIf line. Each
-		// value of the filter comes from a file of the repository, and 5fd08069
-		// answers repository_only_filter with the three items and the rollback.
+		// Measured on Linux (3 of 3 runs): a later `smudge = cat` in the repository config after the
+		// includeIf line. Each value of the filter comes from a file of the
+		// repository, and 5fd08069 answers repository_only_filter with the three
+		// items and the rollback.
 		{"F1e a later smudge = cat after an includeIf file", "a.txt filter=m\n", func(t *testing.T, f shadowFilterFixture) {
 			top, err := filepath.EvalSymlinks(f.repo)
 			if err != nil {
@@ -132,14 +132,13 @@ func TestShadowFilterRuleFailsClosed(t *testing.T) {
 			setIncludeFile(t, f.gitDir, "m.cfg", f.section(t, "m", "smudge"))
 			f.addConfig(t, "[includeIf \"gitdir:"+filepath.ToSlash(top)+"/\"]\n\tpath = m.cfg\n[filter \"m\"]\n\tsmudge = cat\n")
 		}, "m", false},
-		// Cells Q8: in one file the last value counts, so a command and then
+		// Measured: in one file the last value counts, so a command and then
 		// `smudge = cat` in .git/config pass (lastLinePerFile).
 		{"Q8 a command and then cat in the repository config", "a.txt filter=m\n", func(t *testing.T, f shadowFilterFixture) {
 			f.addConfig(t, f.section(t, "m", "smudge")+"[filter \"m\"]\n\tsmudge = cat\n")
 		}, "", false},
-		// Cells F1g and F1h of round task084-06 (Linux VM, 3 of 3 runs): an
-		// includeIf file with `smudge = cat` and a command in .git/config, in
-		// either order. 5fd08069 refuses, whatever the order.
+		// Measured on Linux (3 of 3 runs): an includeIf file with `smudge = cat` and a command in
+		// .git/config, in either order. 5fd08069 refuses, whatever the order.
 		{"F1g cat in an includeIf file, then a command", "a.txt filter=m\n", func(t *testing.T, f shadowFilterFixture) {
 			setIncludeFile(t, f.gitDir, "c.cfg", "[filter \"m\"]\n\tsmudge = cat\n")
 			f.addConfig(t, "[includeIf \"gitdir:"+f.top(t)+"/\"]\n\tpath = c.cfg\n"+f.section(t, "m", "smudge"))
@@ -178,10 +177,10 @@ func TestShadowFilterRuleFailsClosed(t *testing.T) {
 	}
 }
 
-// In the state shadow (round task084-01) the stub fails or holds
-// every --show-scope listing. A create with no filter succeeds (cell R-Q4b).
-// A filter that only the repository defines is refused at once with a
-// timeoutMs that a held listing outlasts (cell R-Q4a).
+// In the state shadow (measured) the stub fails or holds every --show-scope
+// listing. A create with no filter succeeds (measured). A filter that only
+// the repository defines is refused at once with a timeoutMs that a held
+// listing outlasts (measured).
 func TestShadowCreateMakesNoScopedListing(t *testing.T) {
 	for _, tc := range []struct {
 		name, seam string
@@ -231,10 +230,10 @@ func TestShadowFilterRuleWithNoRead(t *testing.T) {
 	}
 }
 
-// Cell L6 of round task084-02 (Linux VM) and cell Q4bp (macOS VM). In the state
-// shadow the listing before the read-tree call fails. The create runs one `git
-// version` in the root folder, answers the hooks refusal of that listing and
-// rolls back. No second listing and no read-tree call follow.
+// Measured on Linux and macOS. In the state shadow the listing before the
+// read-tree call fails. The create runs one `git version` in the root folder,
+// answers the hooks refusal of that listing and rolls back. No second listing
+// and no read-tree call follow.
 func TestShadowFailedListingBeforeTheCheckout(t *testing.T) {
 	f := newShadowFilterFixture(t, "a.txt filter=m\n")
 	t.Setenv("CLAUSTRUM_GITSTUB_FAIL_LISTING", "full")
@@ -268,10 +267,10 @@ func TestShadowFailedListingBeforeTheCheckout(t *testing.T) {
 	}
 }
 
-// Cell E13 of round task083-01 (Linux VM). The first checkout listing fails, and
-// the `git version` after it fails too. 5fd08069 answers the text of that call
-// in the frame of a failed checkout and rolls back. Mutation: drop the
-// cannotRunText branch in hardenedGitCheckout.
+// Measured on Linux. The first checkout listing fails, and the `git version`
+// after it fails too. 5fd08069 answers the text of that call in the frame of
+// a failed checkout and rolls back. Mutation: drop the cannotRunText branch
+// in hardenedGitCheckout.
 func TestShadowFailedListingAndVersionBeforeTheCheckout(t *testing.T) {
 	f := newShadowFilterFixture(t, "a.txt filter=m\n")
 	t.Setenv("CLAUSTRUM_GITSTUB_FAIL_LISTING", "full")
@@ -286,9 +285,8 @@ func TestShadowFailedListingAndVersionBeforeTheCheckout(t *testing.T) {
 
 // The listing before the checkout fails, and the `git version` after it exits 0
 // while a child holds its output pipes past the wait for them. That call works, so
-// the create answers the hooks refusal of cell L6 of round task084-02, not the
-// cannot-run text (claustrum's own, not measured). Mutation: drop exitedInTime in
-// cannotRunText.
+// the create answers the hooks refusal, not the cannot-run text (claustrum's own,
+// not measured). Mutation: drop exitedInTime in cannotRunText.
 func TestShadowFailedListingWithAHeldVersion(t *testing.T) {
 	f := newShadowFilterFixture(t, "a.txt filter=m\n")
 	t.Setenv("CLAUSTRUM_GITSTUB_FAIL_LISTING", "full")
@@ -312,9 +310,9 @@ func sameDir(a, b string) bool {
 	return errA == nil && errB == nil && os.SameFile(fa, fb)
 }
 
-// Cell F1i of round task084-06 (Linux VM, 3 of 3 runs): the repository config
-// has only `smudge = cat` for the filter. With a settings copy the read-tree
-// call gets no item for it, as on 5fd08069, and the create succeeds.
+// Measured on Linux (3 of 3 runs): the repository config has only `smudge = cat` for the filter.
+// With a settings copy the read-tree call gets no item for it, as on
+// 5fd08069, and the create succeeds.
 func TestShadowAllCatFilterGetsNoItem(t *testing.T) {
 	f := newShadowFilterFixture(t, "a.txt filter=m\n")
 	f.addConfig(t, "[filter \"m\"]\n\tsmudge = cat\n")
@@ -339,10 +337,10 @@ func filterItems(calls []envCall) []string {
 	return items
 }
 
-// TestShadowFilterRulesOfRoundTask073: the cells of rounds task073-01 and
-// task073-02 (Linux VM) and G5a and G5b of round task073-07 (macOS VM) in the
-// state shadow, and rows that are not measured. "user" is the marker of the user
-// config and "repository" the one of .git/config.
+// TestShadowFilterRulesOfRoundTask073: the cells (measured on Linux) and G5a and
+// G5b (measured on macOS) in the state shadow, and rows that are not measured.
+// "user" is the marker of the user config and "repository" the one of
+// .git/config.
 func TestShadowFilterRulesOfRoundTask073(t *testing.T) {
 	off := []string{"filter.x.process=", "filter.x.required=true", "filter.x.smudge=false"}
 	for _, row := range []struct {
@@ -353,21 +351,22 @@ func TestShadowFilterRulesOfRoundTask073(t *testing.T) {
 		items   []string
 		userRan bool
 	}{
-		// Cell F1 (and C2a of round task073-01): the repository process program
-		// does not run, and the read-tree call gets no filter item.
+		// Measured: the repository process program does not run, and the
+		// read-tree call gets no filter item.
 		{"F1 a user smudge and a repository process", func(t *testing.T, f shadowFilterFixture, user, repo string) {
 			outside(t, sectionTo(t, "x", "smudge", user))
 			f.addConfig(t, sectionTo(t, "x", "process", repo))
 		}, false, nil, true},
-		// Cell F4: a user process = cat makes no definition outside.
+		// Measured: a user process = cat makes no definition
+		// outside.
 		{"F4 a user process = cat beside a user smudge", func(t *testing.T, f shadowFilterFixture, user, repo string) {
 			outside(t, sectionTo(t, "x", "smudge", user)+"\tprocess = cat\n")
 			f.addConfig(t, sectionTo(t, "x", "smudge", repo))
 		}, true, off, false},
-		// Close to cells F20 and F21 of round task073-06 (Linux VM), which have
-		// no user smudge. This fixture with a user smudge is not measured.
-		// Beside a user process = cat the repository values are judged alone,
-		// and values that pass give no refusal.
+		// Close to two measured cases (on Linux), which have no user smudge.
+		// This fixture with a user smudge is not measured. Beside a user
+		// process = cat the repository values are judged alone, and values that
+		// pass give no refusal.
 		{"a user process = cat and a repository smudge = cat", func(t *testing.T, f shadowFilterFixture, user, _ string) {
 			outside(t, sectionTo(t, "x", "smudge", user)+"\tprocess = cat\n")
 			f.addConfig(t, "[filter \"x\"]\n\tsmudge = cat\n")
@@ -376,9 +375,8 @@ func TestShadowFilterRulesOfRoundTask073(t *testing.T) {
 			outside(t, sectionTo(t, "x", "smudge", user)+"\tprocess = cat\n")
 			f.addConfig(t, "[filter \"x\"]\n\trequired = true\n")
 		}, false, nil, false},
-		// Cells G5a and G5b of round task073-07 (macOS VM): a bare smudge line
-		// in .git/config refuses beside smudge = cat in an includeIf file of
-		// the repository, in either order.
+		// Measured on macOS: a bare smudge line in .git/config refuses beside smudge =
+		// cat in an includeIf file of the repository, in either order.
 		{"G5a an includeIf file with smudge = cat, then a bare smudge line", func(t *testing.T, f shadowFilterFixture, _, _ string) {
 			setIncludeFile(t, f.gitDir, "inc.cfg", "[filter \"x\"]\n\tsmudge = cat\n")
 			f.addConfig(t, "[includeIf \"gitdir:"+f.top(t)+"/\"]\n\tpath = inc.cfg\n[filter \"x\"]\n\tsmudge\n")
@@ -387,17 +385,17 @@ func TestShadowFilterRulesOfRoundTask073(t *testing.T) {
 			setIncludeFile(t, f.gitDir, "inc.cfg", "[filter \"x\"]\n\tsmudge = cat\n")
 			f.addConfig(t, "[filter \"x\"]\n\tsmudge\n[includeIf \"gitdir:"+f.top(t)+"/\"]\n\tpath = inc.cfg\n")
 		}, true, off, false},
-		// Not measured, follows cells F6, F10 and F10b of round task073-02
-		// (Linux VM): in one file the last process line
-		// counts. The other line is an empty `process =`, a value that passes.
-		// A repository `process = cat` does not pass by itself.
+		// Not measured, follows measured cases (on Linux): in one file the
+		// last process line counts. The other line is an empty `process =`, a
+		// value that passes. A repository `process = cat` does not pass by
+		// itself.
 		{"a bare process line, then an empty process line in the same file", func(t *testing.T, f shadowFilterFixture, _, _ string) {
 			f.addConfig(t, "[filter \"x\"]\n\tprocess\n\tprocess =\n")
 		}, false, nil, false},
 		{"an empty process line, then a bare process line in the same file", func(t *testing.T, f shadowFilterFixture, _, _ string) {
 			f.addConfig(t, "[filter \"x\"]\n\tprocess =\n\tprocess\n")
 		}, true, off, false},
-		// Cells F5 (and C3 of round task073-01) and F6: a line with no "=".
+		// Measured: a line with no "=".
 		{"F5 a bare smudge line", func(t *testing.T, f shadowFilterFixture, _, _ string) {
 			f.addConfig(t, "[filter \"x\"]\n\tsmudge\n")
 		}, true, off, false},
@@ -426,15 +424,13 @@ func TestShadowFilterRulesOfRoundTask073(t *testing.T) {
 	}
 }
 
-// Cells F12 and F13 of round task073-02, and C4a and C4b of round task073-01
-// (Linux VM). A filter name that is not valid UTF-8, which only the
-// repository defines, is no refusal before the checkout. The read-tree call
-// gets the three items with the raw name. git fails, and the reply is git's
-// text with the bytes that are not valid UTF-8 dropped. On Windows a command
-// line cannot carry the raw name, so the items name another filter. git does
-// not see the filter in the copy, and the create succeeds with no filter run,
-// as 5fd08069 does in cell X1 of round val20-windows (cells F12 and F13 of round
-// task073-06, Windows VM).
+// Measured on Linux. A filter name that is not valid UTF-8, which only the
+// repository defines, is no refusal before the checkout. The read-tree call gets
+// the three items with the raw name. git fails, and the reply is git's text with
+// the bytes that are not valid UTF-8 dropped. On Windows a command line cannot
+// carry the raw name, so the items name another filter. git does not see the
+// filter in the copy, and the create succeeds with no filter run, as 5fd08069
+// does (measured on Windows).
 func TestShadowFilterNameThatIsNotUTF8(t *testing.T) {
 	for _, row := range []struct{ name, windowsName, text string }{
 		// windowsName is the name as git gets it on Windows: one U+FFFD for each

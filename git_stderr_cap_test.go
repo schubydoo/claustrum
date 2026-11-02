@@ -10,8 +10,8 @@ import (
 
 // worktreeGitText makes the git text of the git.worktree_create failure frames. Each
 // payload is the stderr bytes the git stub wrote, and each want is the text in the
-// frame, both from the raw data measured against f6010b97 and 90fca6e6 on a macOS VM.
-// The two builds agree on every row, and the checkout-failure, add-failure and
+// frame, both from the raw data measured against f6010b97 and 90fca6e6 on macOS. The
+// two builds agree on every row, and the checkout-failure, add-failure and
 // killed-checkout frames give the same text. errExit stands for the failed git's exec
 // error.
 func TestWorktreeGitText(t *testing.T) {
@@ -45,7 +45,7 @@ func TestWorktreeGitText(t *testing.T) {
 		// 4534d86: the two stderr lines of a refused add, on one line.
 		{"two lines", "Preparing worktree (new branch 'dup')\nfatal: a branch named 'dup' already exists\n", errExit,
 			"Preparing worktree (new branch 'dup') fatal: a branch named 'dup' already exists"},
-		// The killed checkout (Q5): invalid bytes go anywhere, and a text with no
+		// The killed checkout (measured): invalid bytes go anywhere, and a text with no
 		// printable rune falls back to the kill's exec error.
 		{"inval_mid", "abc\xffdef\n", errKilled, "abcdef"},
 		{"inval_c3", "abc\xc3(def\n", errKilled, "abc(def"},
@@ -53,7 +53,7 @@ func TestWorktreeGitText(t *testing.T) {
 		{"inval_lead", "\xffabc\n", errKilled, "abc"},
 		{"inval_end", "abc\xff", errKilled, "abc"},
 		{"killed ctlonly", "\x01\x02\x1b\n", errKilled, "signal: killed"},
-		// The two parts of the attach-fallback frame (Q3), each made on its own.
+		// The two parts of the attach-fallback frame (measured), each made on its own.
 		{"Q3 ctl attach", "A\r\nB\tC\x01D\n", errExit, "A  B C D"},
 		{"Q3 ctl fallback", "F\rG\tH\x1bI\n", errExit, "F G H I"},
 		{"Q3 inval attach", "att\xffA\xc3(\n", errExit, "attA("},
@@ -80,10 +80,10 @@ func TestWorktreeGitText(t *testing.T) {
 }
 
 // 7d193f89 caps git.worktree_create's failure stderr at 512 bytes, so a long git
-// error does not balloon the frame. A 600-char invalid
-// branch name makes `git worktree add` fail with >512 bytes of stderr; the reference
-// and claustrum both answer "git worktree add failed: " + a 512-byte head (total
-// 537). Measured byte-identical against 7d193f89 on an ephemeral VM.
+// error does not balloon the frame. A 600-char invalid branch name makes `git
+// worktree add` fail with >512 bytes of stderr; the reference and claustrum both
+// answer "git worktree add failed: " + a 512-byte head (total 537). Measured
+// byte-identical against 7d193f89.
 func TestWorktreeCreateCapsGitStderr(t *testing.T) {
 	requireGit(t)
 	repo := t.TempDir()

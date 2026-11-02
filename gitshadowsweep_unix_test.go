@@ -11,8 +11,8 @@ import (
 	"testing"
 )
 
-// Cell G4: a lock file that another process holds open with no flock does not
-// stop the sweep.
+// Measured: a lock file that another process holds open with no flock does
+// not stop the sweep.
 func TestShadowSweepIgnoresAnOpenFile(t *testing.T) {
 	f := newShadowFixture(t)
 	dead := plantFolder(t, f.run, deadFolderName(), true)
@@ -25,7 +25,8 @@ func TestShadowSweepIgnoresAnOpenFile(t *testing.T) {
 	sweptGone(t, dead)
 }
 
-// Cell G5: a folder of mode 000 stays, and it gets no lock file.
+// Measured: a folder of mode 000 stays, and it gets no lock
+// file.
 func TestShadowSweepKeepsAClosedFolder(t *testing.T) {
 	if os.Geteuid() == 0 {
 		t.Skip("root reads a folder of mode 000")
@@ -45,9 +46,9 @@ func TestShadowSweepKeepsAClosedFolder(t *testing.T) {
 	}
 }
 
-// Cell G6: a remove that fails at a subfolder of mode 000 removes the rest, and
-// the folder and that subfolder stay. Each request answers. 5fd08069 makes a
-// lock file there again at the next sweep and removes it again. claustrum
+// Measured: a remove that fails at a subfolder of mode 000 removes the rest,
+// and the folder and that subfolder stay. Each request answers. 5fd08069 makes
+// a lock file there again at the next sweep and removes it again. claustrum
 // skips that folder while it is new and has no lock file (shadowSweepNewAge).
 func TestShadowSweepLeavesWhatItCannotRemove(t *testing.T) {
 	if os.Geteuid() == 0 {
@@ -80,8 +81,7 @@ func TestShadowSweepLeavesWhatItCannotRemove(t *testing.T) {
 }
 
 // The lock file of the daemon is opened with no follow of the last name, so a
-// link there fails and its target stays (`O_NOFOLLOW` in round task075-01,
-// Linux VM).
+// link there fails and its target stays (`O_NOFOLLOW`, Linux).
 func TestShadowLockFollowsNoLink(t *testing.T) {
 	dir := t.TempDir()
 	v := filepath.Join(dir, "V")

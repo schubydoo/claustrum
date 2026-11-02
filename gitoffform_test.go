@@ -9,10 +9,10 @@ import (
 )
 
 // The off switch at each git command of git.status, git.worktree_create and
-// git.worktree_remove (cells of round task105-01, Linux VM). Request A runs on
-// the repository of the fixture without the member. Request B is a
-// git.list_branches on repository B with "shadowDirOff":true, and the second
-// rule of the stub holds its for-each-ref. While B is held the hold is live.
+// git.worktree_remove (measured on Linux). Request A runs on the repository of
+// the fixture without the member. Request B is a git.list_branches on
+// repository B with "shadowDirOff":true, and the second rule of the stub holds
+// its for-each-ref. While B is held the hold is live.
 
 // holdB makes the second rule of the stub hold the for-each-ref of B.
 func holdB(t *testing.T, h liveFixture) {
@@ -174,9 +174,8 @@ func (h liveFixture) createdText(t *testing.T, leaf string) string {
 
 // S1: a hold that starts while the `ls-files` of a git.status runs. Every later
 // command uses the git directory itself: the config listings, hash-object,
-// `rev-parse --verify` and `diff-index` (cell S1 of round task105-01, Linux VM).
-// Mutation: drop the call of req.keepLiveForm in gitStatus. The later commands
-// then name the copy.
+// `rev-parse --verify` and `diff-index` (measured on Linux). Mutation: drop the
+// call of req.keepLiveForm in gitStatus. The later commands then name the copy.
 func TestShadowStatusFollowsAHoldThatStarts(t *testing.T) {
 	h := newLiveFixture(t)
 	h.warm(t)
@@ -194,11 +193,11 @@ func TestShadowStatusFollowsAHoldThatStarts(t *testing.T) {
 // S2: a hold that ends while the `status` call of a git.status runs, on a
 // daemon with no start test. The next command runs the start test with no
 // call that asks git about the repository, and the later commands name the
-// copy. The copy has its link `worktrees` after the reply (cell S2 of round
-// task105-01, Linux VM). Mutation: drop the call of req.keepLiveForm in
-// gitStatus. Every command then keeps the git directory and no test runs. A
-// second mutation calls settingsGate with ask true in keepLiveForm: a call
-// about the repository then follows the test.
+// copy. The copy has its link `worktrees` after the reply (measured on
+// Linux). Mutation: drop the call of req.keepLiveForm in gitStatus. Every
+// command then keeps the git directory and no test runs. A second mutation
+// calls settingsGate with ask true in keepLiveForm: a call about the
+// repository then follows the test.
 func TestShadowStatusFollowsAHoldThatEnds(t *testing.T) {
 	h := newLiveFixture(t)
 	holdA(t, "status,--porcelain")
@@ -224,11 +223,11 @@ func TestShadowStatusFollowsAHoldThatEnds(t *testing.T) {
 // C1: a hold that starts while `rev-parse --absolute-git-dir` of a create runs.
 // The add and the read-tree use the git directory itself, the index is in
 // `claude-ssh-index-<n>` of the temporary folder, and one listing comes
-// before the read-tree (cell C1 of round task105-01, Linux VM). Mutation: drop
-// the call of req.keepLiveForm in gitWorktreeCreateLocked. Every call then
-// names the copy, with two listings and the index in `.index-<n>`. A second
-// mutation gives the add the use u in place of u.fixedForm() in worktreeAdd:
-// the add then keeps the copy.
+// before the read-tree (measured on Linux). Mutation: drop the call of
+// req.keepLiveForm in gitWorktreeCreateLocked. Every call then names the copy,
+// with two listings and the index in `.index-<n>`. A second mutation gives the
+// add the use u in place of u.fixedForm() in worktreeAdd: the add then keeps the
+// copy.
 func TestShadowCreateFollowsAHoldThatStartsBeforeTheAdd(t *testing.T) {
 	h := newLiveFixture(t)
 	h.warm(t)
@@ -249,10 +248,10 @@ func TestShadowCreateFollowsAHoldThatStartsBeforeTheAdd(t *testing.T) {
 
 // C2: a hold that starts while the `worktree add` of a create is held before
 // git runs. The add keeps the copy, and the read-tree uses the git directory
-// itself with the index in the temporary folder and one listing (cell C2 of
-// round task105-01, Linux VM). Mutation: in gitWorktreeCreateLocked, give the
-// checkout req.use in place of req.use.fixedForm(). The read-tree then names
-// the copy, with two listings.
+// itself with the index in the temporary folder and one listing (measured on
+// Linux). Mutation: in gitWorktreeCreateLocked, give the checkout req.use in
+// place of req.use.fixedForm(). The read-tree then names the copy, with two
+// listings.
 func TestShadowCreateFollowsAHoldThatStartsAtTheAdd(t *testing.T) {
 	h := newLiveFixture(t)
 	h.warm(t)
@@ -274,9 +273,9 @@ func TestShadowCreateFollowsAHoldThatStartsAtTheAdd(t *testing.T) {
 // daemon with no start test. The add uses the git directory itself. Then the
 // start test runs with no call that asks git about the repository, and the
 // read-tree names the copy, with the index in `.index-<n>` and two listings.
-// The copy has its link after the reply (cell C3 of round task105-01, Linux
-// VM). Mutation: drop the call of req.keepLiveForm in gitWorktreeCreateLocked.
-// The read-tree then keeps the git directory, with no start test.
+// The copy has its link after the reply (measured on Linux). Mutation: drop
+// the call of req.keepLiveForm in gitWorktreeCreateLocked. The read-tree then
+// keeps the git directory, with no start test.
 func TestShadowCreateFollowsAHoldThatEndsAtTheAdd(t *testing.T) {
 	h := newLiveFixture(t)
 	holdA(t, "worktree,add")
@@ -303,8 +302,8 @@ func TestShadowCreateFollowsAHoldThatEndsAtTheAdd(t *testing.T) {
 
 // C0: a create with no hold. Every call with a GIT_COMMON_DIR names the copy
 // or the folder .probe, the index is in `.index-<n>`, and two listings come
-// before the read-tree. Both builds do so (cell C0 of round task105-01, Linux
-// VM). This row is the control: it passes on the build before the change too.
+// before the read-tree. Both builds do so (measured on Linux). This row is
+// the control: it passes on the build before the change too.
 func TestShadowCreateWithNoHoldNamesTheCopy(t *testing.T) {
 	h := newLiveFixture(t)
 	h.warm(t)
@@ -349,10 +348,9 @@ func (h liveFixture) wantRemoved(t *testing.T, cell string) {
 
 // R1: a hold that starts while the for-each-ref of the branch step of a remove
 // runs. rev-list and update-ref use the git directory itself, and the branch
-// goes (cell R1 of round task105-01, Linux VM). Mutation: drop the call of
-// req.keepLiveForm in removeGate. rev-list and update-ref then name the copy.
-// Two more mutations drop the u.atCommand() of branchCheckGit, or that of
-// deleteBranchRef.
+// goes (measured on Linux). Mutation: drop the call of req.keepLiveForm in
+// removeGate. rev-list and update-ref then name the copy. Two more mutations
+// drop the u.atCommand() of branchCheckGit, or that of deleteBranchRef.
 func TestShadowRemoveFollowsAHoldThatStarts(t *testing.T) {
 	h := newLiveFixture(t)
 	h.warm(t)
@@ -370,13 +368,12 @@ func TestShadowRemoveFollowsAHoldThatStarts(t *testing.T) {
 // R2: a hold that ends while the `rev-parse --absolute-git-dir` of a remove
 // runs, on a daemon with no start test. The next command runs the start test,
 // then a call asks git about the repository, then for-each-ref, rev-list and
-// update-ref name the copy. The worktree and its branch go (cell R2 of round
-// task105-01, Linux VM). The call about the repository comes before the
-// daemon's own read of the config (cell R2b of round task105-04, Linux VM).
-// Mutation: drop the call of req.keepLiveForm in removeGate. Every call then
-// keeps the git directory, with no start test. A second mutation gives
-// settingsGate ask false in keepLiveForm: the read of the config then comes
-// first.
+// update-ref name the copy. The worktree and its branch go (measured on
+// Linux). The call about the repository comes before the daemon's own read of
+// the config (measured on Linux). Mutation: drop the call of req.keepLiveForm
+// in removeGate. Every call then keeps the git directory, with no start test.
+// A second mutation gives settingsGate ask false in keepLiveForm: the read of
+// the config then comes first.
 func TestShadowRemoveFollowsAHoldThatEnds(t *testing.T) {
 	h := newLiveFixture(t)
 	holdA(t, "rev-parse,--absolute-git-dir")
@@ -399,8 +396,8 @@ func TestShadowRemoveFollowsAHoldThatEnds(t *testing.T) {
 // wantProbeFirst tests that a call about the repository runs after the start
 // test that begins at the index test and before the index to. It comes before
 // the first read of the config there (envCall.configRead). 5fd08069 has that
-// order after a later start test (cells R2b and C5 of round task105-04, Linux
-// VM). The last call of the test is its own `worktree add --detach`.
+// order after a later start test (measured on Linux). The last call of the
+// test is its own `worktree add --detach`.
 func (h liveFixture) wantProbeFirst(t *testing.T, cell string, calls []envCall, test, to int) {
 	t.Helper()
 	end := h.callAt(calls, test, "worktree,add,--detach")
@@ -425,8 +422,8 @@ func (h liveFixture) wantProbeFirst(t *testing.T, cell string, calls []envCall, 
 }
 
 // dropFixtureWorktree removes the linked worktree of the fixture and its
-// registrations folder, as in the repository of cells C4 and C5: no pair of
-// calls then runs before the add (pairBeforeAdd).
+// registrations folder, as in the repository: no pair of calls then runs
+// before the add (pairBeforeAdd).
 func (h liveFixture) dropFixtureWorktree(t *testing.T) {
 	t.Helper()
 	buildGit(t, h.repo, "worktree", "remove", "--force", h.wt)
@@ -451,11 +448,10 @@ func wantLeafRepointed(t *testing.T, cell, leaf string) {
 // C4: a create whose gate ran under the hold, on a daemon with no start test.
 // The hold ends while `rev-parse --absolute-git-dir` runs. The next command runs
 // the start test, then a call about the repository, and the add and every later
-// command name the copy (cell C4 of round task105-04, Linux VM). The create
-// holds its git directory from that gate on, so the `.git` file of the leaf is
-// replaced as after a copy gate. Mutation: in worktreeAdd, take the form only
-// when u.accepted is set (the old choice). The add then keeps the git
-// directory.
+// command name the copy (measured on Linux). The create holds its git directory
+// from that gate on, so the `.git` file of the leaf is replaced as after a copy
+// gate. Mutation: in worktreeAdd, take the form only when u.accepted is set (the
+// old choice). The add then keeps the git directory.
 func TestShadowCreateFollowsAHoldThatEndsBeforeTheAdd(t *testing.T) {
 	h := newLiveFixture(t)
 	h.dropFixtureWorktree(t)
@@ -481,11 +477,11 @@ func TestShadowCreateFollowsAHoldThatEndsBeforeTheAdd(t *testing.T) {
 // C5: as C4, with the hold that ends while `rev-parse --is-inside-work-tree`
 // runs. After the start test and the call about the repository, the abbrev-ref
 // call, `rev-parse --absolute-git-dir`, the add and the read-tree name the copy
-// (cell C5 of round task105-04, Linux VM). Mutation: in keepLiveCreate, leave
-// keep false, so the create does not adopt the later gate. The add then names
-// the copy with no held git directory, and the `.git` file of the leaf keeps
-// the path of the copy (Linux). A second mutation gives settingsGate ask false
-// there: the read of the config then comes first.
+// (measured on Linux). Mutation: in keepLiveCreate, leave keep false, so the
+// create does not adopt the later gate. The add then names the copy with no
+// held git directory, and the `.git` file of the leaf keeps the path of the
+// copy (Linux). A second mutation gives settingsGate ask false there: the read
+// of the config then comes first.
 func TestShadowCreateFollowsAHoldThatEndsAtTheRepositoryTest(t *testing.T) {
 	h := newLiveFixture(t)
 	h.dropFixtureWorktree(t)

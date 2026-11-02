@@ -27,35 +27,36 @@ import (
 // custom attributes, submodules, or a global excludes/credential config, and this
 // project matches the reference as closely as possible even off the wire.
 //
-// The exact profiles and environment were captured with a logging `git` wrapper on
-// an ephemeral VM.
+// The exact profiles and environment were captured with a logging
+// `git` wrapper.
 
 // gitHardenLight is the `-c` list of the calls of git.worktree_create and of the
 // branch step. It is the list of 20 items that 5fd08069 sends, except that
-// core.fsmonitor= is empty (claustrum's own, not measured). s3-linux cells B0 and
-// B1 show it on a Linux VM. Cell 50 of s3p2b-edges shows it on macOS and Windows
-// VMs. The measured calls are `rev-parse --is-inside-work-tree`, `rev-parse
-// --abbrev-ref HEAD`, `worktree add`, `read-tree`, `for-each-ref --count=10001`,
-// `rev-list` and `update-ref`. `read-tree` and `rev-list` add their own items after
-// the list. The last three calls are in s3p2-linux2 cell L8 (Linux VM) and in cell
-// 50. With "shadowDirOff":true, val-s3p2b1 cell A3 shows the list on the calls of
-// existingBranch, of sourceBranch and of the .worktreeinclude step (Linux, macOS and
-// Windows VMs). Cell A4 shows it on the calls of worktreeRoot (Linux and macOS VMs).
+// core.fsmonitor= is empty (claustrum's own, not measured). Measurements show it
+// on Linux, macOS and Windows. The measured calls are `rev-parse
+// --is-inside-work-tree`, `rev-parse --abbrev-ref HEAD`, `worktree add`,
+// `read-tree`, `for-each-ref --count=10001`, `rev-list` and `update-ref`.
+// `read-tree` and `rev-list` add their own items after the list. The last three
+// calls are measured on Linux, macOS and Windows. With "shadowDirOff":true, a
+// measurement shows the list on the calls of existingBranch, of sourceBranch and
+// of the .worktreeinclude step (measured on Linux, macOS and Windows). A
+// measurement shows it on the calls of worktreeRoot (measured on Linux and
+// macOS).
 //
 // The advice.graftFileDeprecated item turns off git's graft-file hint: lines. So
 // the failure texts of git.worktree_create do not start with that hint. Those of
 // 5fd08069 do not either, and those of 89cb6289 start with 8 hint: lines
-// (val-s3p2b1 cell B2, Linux, macOS and Windows VMs).
+// (measured on Linux, macOS and Windows).
 //
 // With worktree.useRelativePaths=false a new worktree gets absolute paths, also
 // where the user's config sets the key. 5fd08069 does the same, and 89cb6289 writes
-// relative paths there (val-s3p2b1 cell B6, macOS and Windows VMs). With
-// core.longpaths=true a create with a tree path of 270 characters succeeds on
-// Windows, as on 5fd08069. 89cb6289 fails there (val-s3p2b1 cell B4, Windows VM).
+// relative paths there (measured on macOS and Windows). With core.longpaths=true a
+// create with a tree path of 270 characters succeeds on Windows, as on 5fd08069.
+// 89cb6289 fails there (measured on Windows).
 //
 // The core.excludesFile entry is a placeholder. profileArgsWithExcludes puts the
-// user's excludes file there (userExcludesFile). On the Windows VM 5fd08069 sends
-// the user's ignore file there (cell 50). core.hooksPath is hooksNullDevice.
+// user's excludes file there (userExcludesFile). On Windows 5fd08069 sends the
+// user's ignore file there (measured). core.hooksPath is hooksNullDevice.
 var gitHardenLight = []string{
 	"core.hooksPath=" + hooksNullDevice,
 	"core.fsmonitor=",
@@ -80,15 +81,13 @@ var gitHardenLight = []string{
 }
 
 // gitHardenHeavy is the `-c` list of the calls of git.info, git.status and
-// git.list_branches, and of each `rev-parse --absolute-git-dir`. It is the list of
-// 28 items that 5fd08069 sends on the same calls, except that core.fsmonitor=
-// is empty (claustrum's own, not measured). s3-linux cells B0 and B1 show it
-// on a Linux VM. Cell B1 of s3-macos and of s3-windows shows it for git.info and
-// git.list_branches on macOS and Windows VMs, with "shadowDirOff":true. On the
-// Windows VM 5fd08069 sends /dev/null in core.attributesFile (cell B1 of
-// s3-windows). core.hooksPath is hooksNullDevice. 89cb6289 sends 13 items for git.info and
-// git.list_branches, and 23 for git.status apart from its `rev-parse
-// --show-toplevel` pair.
+// git.list_branches, and of each `rev-parse --absolute-git-dir`. It is the list of 28
+// items that 5fd08069 sends on the same calls, except that core.fsmonitor= is empty
+// (claustrum's own, not measured). Measurements show it on Linux, and for git.info and
+// git.list_branches on macOS and Windows, with "shadowDirOff":true. On Windows 5fd08069
+// sends /dev/null in core.attributesFile (measured). core.hooksPath is hooksNullDevice.
+// 89cb6289 sends 13 items for git.info and git.list_branches, and 23 for git.status apart
+// from its `rev-parse --show-toplevel` pair.
 var gitHardenHeavy = []string{
 	"core.fsmonitor=",
 	"core.hooksPath=" + hooksNullDevice,
@@ -124,38 +123,34 @@ var gitHardenHeavy = []string{
 //
 // The heavy profile has six variables. It forbids every protocol, clears the
 // askpass helper, and turns off lazy fetch, replace objects and grafts. 5fd08069
-// sends them in this order on a Linux VM (s3-linux cell B1, with
-// "shadowDirOff":true). val-s3p2b1 cell A1 shows the same order on Linux and macOS
-// VMs, with that member. The Windows logs of 5fd08069 are sorted by name. They show
-// the same six values and no order (cell 50 of s3p2b-edges, and cell B1 of
-// s3-windows with "shadowDirOff":true). 89cb6289 sends four: it has no
-// GIT_NO_REPLACE_OBJECTS and no GIT_GRAFT_FILE there. So git.status of claustrum
-// reads the real objects now, also where refs/replace names others. 5fd08069
-// answers the same, and 89cb6289 answers against the replacement (val-s3p2b1 cell
-// B1, Linux, macOS and Windows VMs).
+// sends them in this order on Linux (measured, with "shadowDirOff":true). A
+// measurement shows the same order on Linux and macOS, with that member. The
+// Windows logs of 5fd08069 are sorted by name. They show the same six values and
+// no order (measured, also with "shadowDirOff":true). 89cb6289 sends four: it has
+// no GIT_NO_REPLACE_OBJECTS and no GIT_GRAFT_FILE there. So git.status of
+// claustrum reads the real objects now, also where refs/replace names others.
+// 5fd08069 answers the same, and 89cb6289 answers against the replacement
+// (measured on Linux, macOS and Windows).
 //
 // The light profile sets the protocol gate and terminal prompt suppression, and
 // turns off replace objects and grafts. git.worktree_create runs its hardened calls
 // under the light profile, except the heavy rev-parse --absolute-git-dir, the heavy
 // pair of gitDirWorkTreeToplevel and the calls of the branch step (branchStepEnv).
 // Its checkout thus uses the real blob and the real commit, even when refs/replace
-// or info/grafts name others. That was measured side by side against f6010b97 on a
-// Linux VM. 5fd08069 sends the same four with "shadowDirOff":true (cell B1 of
-// s3-linux, s3-macos and s3-windows, on Linux, macOS and Windows VMs). Without
-// that member its two rev-parse calls and its worktree add call carry the six
-// values. Its read-tree keeps the four (s3-linux cell B0, Linux VM). claustrum
-// sends the six there in the state shadow (gitUse.profileEnv).
+// or info/grafts name others. That was measured side by side against f6010b97 on
+// Linux. 5fd08069 sends the same four with "shadowDirOff":true (measured on Linux,
+// macOS and Windows). Without that member its two rev-parse calls and its worktree
+// add call carry the six values. Its read-tree keeps the four (measured on Linux).
+// claustrum sends the six there in the state shadow (gitUse.profileEnv).
 //
 // With the graft variable set, git prints its graft-file deprecation hint: lines
 // on stderr. The light list turns that hint off, and the heavy list does not. The
 // status, rev-parse and diff-index calls of git.status print it on 5fd08069 and on
-// claustrum. The repository there has no info/grafts file (val-s3p2b1 cell B8, Linux
-// and Windows VMs). No reply line of cells B5 and B8 holds it (Linux, macOS and
-// Windows VMs).
+// claustrum. The repository there has no info/grafts file (measured on Linux and
+// Windows). No reply line holds it (measured on Linux, macOS and Windows).
 //
 // The null device is os.DevNull: /dev/null, and NUL on Windows. 5fd08069 sets
-// GIT_GRAFT_FILE=NUL on a Windows VM (cell 50 of s3p2b-edges), and /dev/null on
-// Linux and macOS VMs.
+// GIT_GRAFT_FILE=NUL on Windows (measured), and /dev/null on Linux and macOS.
 func profileEnv(heavy bool) []string {
 	if heavy {
 		return []string{
@@ -175,16 +170,14 @@ func profileEnv(heavy bool) []string {
 	}
 }
 
-// precursorEnv is the environment of the configuration listing that runs before a
-// hardened call: listingEnvBase (the daemon's own environment after gitChildEnv,
-// without GIT_CONFIG, GIT_CONFIG_PARAMETERS, LC_ALL and LANGUAGE), the profile of the call that follows
-// it, pin, and then LC_ALL=C and LANGUAGE=C as the last two entries. git then prints
-// its listing errors in English whatever the daemon's locale (rows L01 to L03,
-// TestListingLocaleEnv). It
-// carries no hook pins, and the daemon's GIT_CONFIG_COUNT set is kept as it is. The
-// heavy set comes before a heavy call and the light set before a light call
-// (checkAlternation in TestHardenedGitCallShape). The call after the listing keeps
-// the daemon's own LC_ALL, LANGUAGE and LANG in their places.
+// precursorEnv is the environment of the configuration listing that runs before a hardened call:
+// listingEnvBase (the daemon's own environment after gitChildEnv, without GIT_CONFIG,
+// GIT_CONFIG_PARAMETERS, LC_ALL and LANGUAGE), the profile of the call that follows it, pin, and then
+// LC_ALL=C and LANGUAGE=C as the last two entries. git then prints its listing errors in English
+// whatever the daemon's locale (measured, TestListingLocaleEnv). It carries no hook pins, and the
+// daemon's GIT_CONFIG_COUNT set is kept as it is. The heavy set comes before a heavy call and the light
+// set before a light call (checkAlternation in TestHardenedGitCallShape). The call after the listing
+// keeps the daemon's own LC_ALL, LANGUAGE and LANG in their places.
 //
 // pin is the GIT_COMMON_DIR pin of the git-directory trust check (commonDirPinEnv),
 // or nil. gitUse.precursorEnv is this function with the profile of one request.
@@ -269,8 +262,8 @@ func hardenedEnvWith(daemon, profile, pin, hooks []string) []string {
 // After the daemon's own part come the light profile (profileEnv) without its
 // GIT_ALLOW_PROTOCOL entry, pin, the count, the inherited pairs and the hook pins of
 // hooks. Then come GIT_NO_LAZY_FETCH=1, GIT_ALLOW_PROTOCOL=denied_by_claude_ssh and
-// GIT_ASKPASS=. 89cb6289 has that order on Linux, macOS and Windows VMs (row R01).
-// sshOff adds GIT_SSH_COMMAND=false at the end (withSSHOff, gitUse.sshOff).
+// GIT_ASKPASS=. 89cb6289 has that order on Linux, macOS and Windows (measured). sshOff
+// adds GIT_SSH_COMMAND=false at the end (withSSHOff, gitUse.sshOff).
 func branchStepEnv(pin, hooks []string, sshOff bool) []string {
 	var profile []string
 	for _, kv := range profileEnv(false) {
@@ -284,11 +277,11 @@ func branchStepEnv(pin, hooks []string, sshOff bool) []string {
 
 // hardenedProfileArgs puts the profile's `-c` overrides before the git subcommand.
 // There is no `-C dir`: every hardened call selects its repository by its working
-// directory, as f6010b97 does on Linux, macOS and Windows VMs. The profile's
-// placeholder core.excludesFile is filled in with the user's resolved global
-// excludes (userExcludesFile) — 7d193f89 runs every git op with the user's
-// ~/.config/git/ignore in force, not /dev/null, so that e.g. git.status classifies
-// a globally-ignored file as ignored. On a host with no global excludes the resolver
+// directory, as f6010b97 does on Linux, macOS and Windows. The profile's placeholder
+// core.excludesFile is filled in with the user's resolved global excludes
+// (userExcludesFile) — 7d193f89 runs every git op with the user's
+// ~/.config/git/ignore in force, not /dev/null, so that e.g. git.status classifies a
+// globally-ignored file as ignored. On a host with no global excludes the resolver
 // returns the null device, leaving the old behaviour.
 func hardenedProfileArgs(heavy bool, args ...string) []string {
 	return profileArgsWithExcludes(heavy, userExcludesFile(), args...)
@@ -321,7 +314,7 @@ func profileArgsWithExcludes(heavy bool, excludes string, args ...string) []stri
 // listingRun.hooks.
 //
 // The user's global excludes are resolved first. f6010b97 reads them before its
-// first listing, measured on Linux and Windows VMs.
+// first listing, measured on Linux and Windows.
 func hookPrecursor(ctx context.Context, u gitUse, dir string, heavy bool) listingRun {
 	userExcludesFile()
 	u.recheck(dir)
@@ -332,7 +325,7 @@ func hookPrecursor(ctx context.Context, u gitUse, dir string, heavy bool) listin
 // precursor runs first, and the call pins the hooks of that listing. pre is the
 // listing of hostileConfigRefusal for the first call after it: that check is the
 // listing f6010b97 runs before that call, so the call gets no second one. Measured on
-// Linux, macOS and Windows VMs.
+// Linux, macOS and Windows.
 //
 // A call whose own listing runs here starts a git command, so it takes the form
 // of the off switch at this moment (gitUse.atCommand).
@@ -349,7 +342,7 @@ func hardenedGitCmd(ctx context.Context, u gitUse, dir string, heavy bool, pre *
 	// The listing before the call was its build, so a folder of the copy that
 	// went since then is not made again here: the start refuses (holdRepoCopy).
 	// On 5fd08069 no folder of a request with a normal reply went between a
-	// listing and the call after it (E3L cell 54, Linux VM).
+	// listing and the call after it (measured on Linux).
 	u.noRenew = true
 	cmd.Env = u.hardenedGitEnv(heavy, u.pin(dir), hooks)
 	return cmd
@@ -365,7 +358,7 @@ func hardenedGitContext(ctx context.Context, u gitUse, dir string, heavy bool, a
 // exited 0. Each caller parses the answer into a value or reads only the exit,
 // and no caller puts the text in an error. stderr is not part of the answer.
 // With a loader line on stderr, 5fd08069 answers "branch":"main" in git.info and
-// creates the worktree (round task004-01, cells M1 and M4, Linux VM).
+// creates the worktree (measured on Linux).
 func hardenedGitAnswer(ctx context.Context, u gitUse, dir string, heavy bool, pre *configListing, args ...string) (string, bool) {
 	out, err := gitOutput(ctx, hardenedGitCmd(ctx, u, dir, heavy, pre, args...))
 	return strings.TrimRight(string(out), "\n"), err == nil
@@ -381,17 +374,17 @@ func hardenedGitFirst(u gitUse, dir string, heavy bool, l configListing, args ..
 // gitDirWorkTreeToplevel runs `git --git-dir=<gitDir> config -z --list`, then the heavy
 // `git -c … --git-dir=<gitDir> --work-tree=<workTree> rev-parse --show-toplevel`. Both
 // run in gitDir and carry pin. It returns the answer of the second call. 89cb6289
-// runs this pair in git.info on Windows (row W01) and in git.worktree_create after a
-// mismatched admin record (row I07a, macOS VM).
+// runs this pair in git.info on Windows (measured) and in git.worktree_create after a
+// mismatched admin record (measured on macOS).
 //
 // 5fd08069 sends the six heavy variables on both calls and the 28 items on the
-// rev-parse call. With "shadowDirOff":true, cell B1 of s3-linux shows it in
-// git.status and in git.worktree_create (Linux VM). Cell G4-off-hook of s3p2-macos
-// shows it in the same two methods (macOS VM). Cell B1 of s3-windows shows it in
-// those two and in git.info (Windows VM). Cell 50 of s3p2b-edges has no such member
-// and shows it in create (macOS and Windows VMs). val-s3p2b1 cell A6 shows it in
-// git.worktree_remove, with "shadowDirOff":true (Linux, macOS and Windows VMs).
-// 89cb6289 sends the light profile there.
+// rev-parse call. With "shadowDirOff":true, a measurement shows it in git.status
+// and in git.worktree_create (measured on Linux). A measurement shows it in the
+// same two methods (measured on macOS). A measurement shows it in those two and in
+// git.info (measured on Windows). A measurement has no such member and shows it in
+// create (measured on macOS and Windows). A measurement shows it in
+// git.worktree_remove, with "shadowDirOff":true (measured on Linux, macOS and
+// Windows). 89cb6289 sends the light profile there.
 //
 // front are the `-c` items that come before the 28 items of the second call
 // (gitUse.gitDirFront), or nil. s holds the time limits of the request, or is nil.
@@ -422,16 +415,16 @@ func hardenedGit(u gitUse, dir string, heavy bool, args ...string) (string, bool
 // statusGitDirTempPrefix and checkoutIndexTempPrefix start the names of the
 // temporary git dir of git.status and the temporary index directory of the
 // git.worktree_create checkout. Each has the length of the prefix in the f6010b97
-// argv and env, measured on Linux, macOS and Windows VMs: 18 and 17 bytes.
+// argv and env, measured on Linux, macOS and Windows: 18 and 17 bytes.
 // os.MkdirTemp adds a random decimal suffix, as f6010b97 does.
 //
-// The index prefix is the one of 89cb6289 on Linux and macOS VMs. Cell X1 shows
-// it in a frame: "open <tmp>/claude-ssh-index-<n>/index: no such file or
+// The index prefix is the one of 89cb6289 on Linux and macOS. A measurement
+// shows it in a frame: "open <tmp>/claude-ssh-index-<n>/index: no such file or
 // directory". It is also in the GIT_INDEX_FILE of each read-tree there. The
 // constant is the same on Windows, where the name of 89cb6289 is not measured.
 // The prefix of git.status is the one of 5fd08069 with "shadowDirOff":true
-// (val-s3p2b1-linux row D5, Linux VM). In the state shadow both folders are in
-// the folder of the daemon, with other names (gitUse.requestDir).
+// (measured on Linux). In the state shadow both folders are in the folder of
+// the daemon, with other names (gitUse.requestDir).
 const (
 	statusGitDirTempPrefix  = "claude-ssh-gitdir-"
 	checkoutIndexTempPrefix = "claude-ssh-index-"
@@ -443,8 +436,7 @@ const (
 // output pipes, the reference caps the drain at a FIXED ~5.0s from the checkout git's
 // OWN exit — independent of the caller timeoutMs (measured 5.004 / 5.007 / 5.009s) —
 // then reaps the descendant (so the reply arrives at ~5s, not at the descendant's
-// lifetime), and only then gates the reply on timeoutMs
-// (scratch/probe/wt-success-lingering-4534d86.md).
+// lifetime), and only then gates the reply on timeoutMs (measured against 4534d86).
 //
 // This is the drain-cap grace period of exec.Cmd.WaitDelay, whose timer for a
 // pipe-drain overrun starts when the process itself exits — so the cap is measured
@@ -458,38 +450,36 @@ var worktreeCreateDrainCap = 5 * time.Second
 // measured to need it: the read-tree checkout can run a smudge/hook filter that
 // backgrounds a descendant which inherits the daemon's output pipes and outlives git.
 //
-// The call has the shape measured against f6010b97 and 90fca6e6 on a Windows VM. Its
+// The call has the shape measured against f6010b97 and 90fca6e6 on Windows. Its
 // working directory is the new worktree (leaf), it passes no -C, and its --git-dir is
 // gitDir, the git dir of baseRepo. The index goes to indexFile through GIT_INDEX_FILE.
-// The config precursor runs the same way: `--git-dir=<gitDir> config -z --list`
-// with the leaf as its working directory, and the light precursorEnv.
-// pin is the GIT_COMMON_DIR pin of baseRepo (commonDirPinEnv), or nil. Both calls
-// carry it. args carries the -c pins and options after the hardening profile, and
-// the read-tree subcommand itself. rule is the filter rule (gitfilter.go), or
-// nil. For a create with a settings copy its plan comes from the output of the
-// config precursor (filterRule.planFor). With no copy the scoped listing comes
-// first (filterRule.scopedPlan), and a refusal of the plan comes right after
-// the precursor (claustrum's own, not measured). The -c pairs come before the
-// profile, as on 5fd08069 (Linux and Windows VMs).
+// The config precursor runs the same way: `--git-dir=<gitDir> config -z --list` with
+// the leaf as its working directory, and the light precursorEnv. pin is the
+// GIT_COMMON_DIR pin of baseRepo (commonDirPinEnv), or nil. Both calls carry it. args
+// carries the -c pins and options after the hardening profile, and the read-tree
+// subcommand itself. rule is the filter rule (gitfilter.go), or nil. For a create with
+// a settings copy its plan comes from the output of the config precursor
+// (filterRule.planFor). With no copy the scoped listing comes first
+// (filterRule.scopedPlan), and a refusal of the plan comes right after the precursor
+// (claustrum's own, not measured). The -c pairs come before the profile, as on
+// 5fd08069 (measured on Linux and Windows).
 //
 // In the state shadow (u) the call differs in three points, as on 5fd08069
-// without "shadowDirOff". The rows are N3 and N4 of val-s3p2b1-linux with its
-// cell A3-create-plain (Linux VM), N2 and N3 of val-s3p2b1-macos, and N3 to N5
-// of val-s3p2b1-windows.
+// without "shadowDirOff". The rows are measured on Linux, macOS and
+// Windows.
 //
 //   - A second listing runs right before the read-tree call. It has the argv of
 //     the first one, and the variables of the read-tree call: the hook pins,
 //     GIT_INDEX_FILE and LANGUAGE=C, and no added LC_ALL. claustrum reads its
 //     output to the end and keeps none of it. A failure of it refuses the create (ownConfigListing). Then
 //     come the cap of the filter rule (tooManyFiltersText) and the other
-//     refusals of the plan. 5fd08069 has that order (round task008-03, cells R3
-//     to R5, Linux VM).
+//     refusals of the plan. 5fd08069 has that order (measured on Linux).
 //   - The read-tree call has the item lfs.storage=<git directory>/lfs before the
 //     list of the profile. The pairs of the filter rule come before that item
-//     (s3p2-linux2 cells G2 and L1, Linux VM). For a baseRepo that is a linked
-//     worktree the value is not measured: claustrum names the git directory of
-//     the repository. A user config that sets lfs.storage removes the item
-//     (round task008-01, cell C12, Linux, macOS and Windows VMs).
+//     (measured on Linux). For a baseRepo that is a linked worktree the value is
+//     not measured: claustrum names the git directory of the repository. A user
+//     config that sets lfs.storage removes the item (measured on Linux, macOS
+//     and Windows).
 //   - The read-tree call has LANGUAGE=C, and then the five entries of the
 //     ssh door (sshDoorEnv, measured on Linux).
 //
@@ -511,14 +501,14 @@ var worktreeCreateDrainCap = 5 * time.Second
 //
 // With no timeoutMs the drain ends gitDrainWait after git exited, and the
 // descendant gets no signal. On 5fd08069 the reply comes 2.0 s after the
-// read-tree call exited, and a child that holds its stderr runs on (cell T16 of
-// round task010-01, Linux VM). The read-tree call itself has no time limit
-// (cell T17, Linux and macOS VMs).
+// read-tree call exited, and a child that holds its stderr runs on (measured on
+// Linux). The read-tree call itself has no time limit (measured on Linux and
+// macOS).
 //
 // No call runs after a stopped call of the request (gitRun). The first listing
 // runs under the context of the request, not under ctx: the timeoutMs of the
 // caller does not end it. On 5fd08069 a listing held for 10 s with a timeoutMs of
-// 3000 runs to its end, and then the timeout frame comes (cell T12, Linux VM).
+// 3000 runs to its end, and then the timeout frame comes (measured on Linux).
 // checkoutListedSwap is gitUse.listedSwap. It is a variable so that a test on
 // every system can drive the two answers of the Windows test.
 var checkoutListedSwap = gitUse.listedSwap
@@ -532,18 +522,17 @@ func hardenedGitCheckout(ctx context.Context, u gitUse, leaf, gitDir, indexFile 
 	}
 	pre := runListing(u.stop.context(), leaf, gitDir, precursorEnv(false, pin))
 	// A listing that its limit stopped fails the checkout with the hooks
-	// refusal, and the rollback of a failed checkout runs (cell TA of round
-	// task010-02, Linux VM).
+	// refusal, and the rollback of a failed checkout runs (measured on
+	// Linux).
 	if err := u.stop.halted(); err != nil {
 		return "", false, err
 	}
 	// With a settings copy a listing that fails refuses the checkout, after one
 	// `git version` (cannotRunText). No second listing
 	// and no read-tree call follow, and the rollback of a failed checkout runs.
-	// 5fd08069 answers so (cell L6 of round task084-02, Linux VM, and cell Q4bp,
-	// macOS VM). If that `git version` fails too, its text replaces the hooks
-	// refusal (cell E13 of round task083-01, Linux VM). Without a copy the
-	// checkout goes on as before (not measured).
+	// 5fd08069 answers so (measured on Linux and macOS). If that `git version`
+	// fails too, its text replaces the hooks refusal (measured on Linux).
+	// Without a copy the checkout goes on as before (not measured).
 	//
 	// A listing whose repository folder went refuses with its own text, and
 	// no `git version` runs (from the code, not measured).
@@ -659,55 +648,51 @@ type checkoutRefusal string
 func (r checkoutRefusal) Error() string { return string(r) }
 
 // ownConfigBound ends the second listing of the checkout. On 5fd08069 a listing
-// held for 31 s ended at about 30 s, and one held for 29 s passed. Those are
-// cells C11 and C11b of round task008-01 (Linux and macOS VMs). On Windows
-// cells A4, A4h35 and A4x of round task111-08 are equal on both builds. It is
-// a variable so that a test can shrink it.
+// held for 31 s ended at about 30 s, and one held for 29 s passed. That is
+// measured on Linux and macOS. On Windows three measured cases are equal on
+// both builds. It is a variable so that a test can shrink it.
 var ownConfigBound = 30 * time.Second
 
 // ownConfigStopText is the cause of a second listing that ownConfigBound ended
-// (cell C11, Linux and macOS VMs).
+// (measured on Linux and macOS).
 const ownConfigStopText = "git took too long: Claude stopped git config after 30 seconds; try again"
 
 // ownConfigListing runs the second listing of the checkout under ownConfigBound
 // and returns the refusal text of a listing that failed, or "". A listing that
 // exits non-zero gives its exec error as the cause, for example `exit status 1`
-// (cell C10, Linux, macOS and Windows VMs). The stderr of git is not in the
+// (measured on Linux, macOS and Windows). The stderr of git is not in the
 // cause. That and the other kinds of failure are claustrum's own.
 //
 // The `timeoutMs` of the caller does not end the listing. With `timeoutMs`
 // 2000 and a listing held 5 s, 5fd08069 sends no signal, the listing ends by
-// itself, and then the cap or the timeout arm answers (round task008-05, cells
-// P1 and P2, Linux VM). A listing that fails after the deadline of the caller
-// gives this text too (not measured).
+// itself, and then the cap or the timeout arm answers (measured on Linux). A
+// listing that fails after the deadline of the caller gives this text too (not
+// measured).
 //
 // The listing holds the repository folder of the copy (runHeld). A listing
 // whose folder went gives its own text alone (from the code, not measured).
 //
 // The daemon reads the output of the listing to its end, so the read-tree call
 // starts only when the pipe closes. A child that holds it gets no signal
-// (cell A4 of round task101-01, Linux VM). git is reaped at the end of that
-// pipe (runToEOF). Both builds match in cell A4 of round task111-03 (Linux VM).
+// (measured on Linux). git is reaped at the end of that pipe (runToEOF). Both
+// builds match (measured on Linux).
 //
 // ownConfigBound ends only a git that still runs. A git that exited before it
 // counts by its exit status, however long a child holds stdout after it.
-// 5fd08069 then runs the read-tree call and answers success (cell A4-35 of
-// round task111-03, Linux VM, 3 of 3 runs). A git that exits non-zero there
-// gives its exit status, for example `exit status 1` (claustrum's own, not
-// measured).
+// 5fd08069 then runs the read-tree call and answers success (measured on
+// Linux, 3 of 3 runs). A git that exits non-zero there gives its exit status,
+// for example `exit status 1` (claustrum's own, not measured).
 //
 // A git that still runs at the bound gets the stop of stopThenKill: SIGTERM to
-// its pid, and SIGKILL gitStopGrace later. 5fd08069 does so in cell A4x of
-// round task111-05 (Linux VM, 3 of 3 runs) and of round task111-07 (macOS
-// VM), with the end about 2 s after the SIGTERM. An strace of round
-// task111-06 shows the SIGKILL 2.002 s after the SIGTERM (Linux VM). On Windows git ends at once
-// (cell A4x of round task111-08, Windows VM).
+// its pid, and SIGKILL gitStopGrace later. 5fd08069 does so (measured on Linux, 3 of 3 runs) and
+// (measured on macOS), with the end about 2 s after the SIGTERM. An strace shows the SIGKILL
+// 2.002 s after the SIGTERM (measured on Linux). On Windows git ends at once (measured on
+// Windows).
 //
 // The bound decides only the signals. The answer comes from how git ended. An
-// exit 0 is a success, also after the SIGTERM (cell A4x-t of rounds task111-06
-// and task111-10, Linux and macOS VMs). A git that the signal ended gives
-// ownConfigStopText. So does a git that exits 1 at the SIGTERM, on both builds
-// (cell A4x-x1 of round task111-09, Linux VM).
+// exit 0 is a success, also after the SIGTERM (measured on Linux and macOS). A
+// git that the signal ended gives ownConfigStopText. So does a git that exits
+// 1 at the SIGTERM, on both builds (measured on Linux).
 func ownConfigListing(leaf, gitDir string, env []string) string {
 	cmd := exec.Command("git", "--git-dir="+gitDir, "config", "-z", "--list")
 	cmd.Dir = leaf
@@ -757,11 +742,10 @@ func ownConfigListing(leaf, gitDir string, env []string) string {
 
 // Two errors of the checkout of a create, for a git directory that is no
 // longer the folder that the create holds. The Windows rows are of 5fd08069
-// with a junction at `repo\.git` (table of section 2 of val-s3p2b2-12-windows,
-// both forms of T, Windows VM, 3 of 3 runs). In both rows the leaf is gone at
-// the reply, and the registration and the branch stay. claustrum answers both
-// texts there (table X1 of val-s3p2b2-13-windows, points 10 and 12, Windows
-// VM, 2 runs for each form).
+// with a junction at `repo\.git` (measured with both forms of T, Windows, 3 of
+// 3 runs). In both rows the leaf is gone at the reply, and the registration
+// and the branch stay. claustrum answers both texts there (measured at points
+// 10 and 12, Windows, 2 runs for each form).
 //
 //   - errGitDirChanged, on Windows: the junction was put there while the first
 //     listing of the checkout ran (the call 11 of that build). No other call
@@ -773,16 +757,16 @@ func ownConfigListing(leaf, gitDir string, env []string) string {
 //     no index. The text is `git worktree add failed (checkout): ".git" is a
 //     link or a file where Claude needs a real directory; …` with the same
 //     undo text. With a symbolic link, 5fd08069 answers the same text and end
-//     state and makes no git call after the read-tree call (cells swp-copy and
-//     swp-marker of val-s3p2b2-13-linux2, Linux VM, 6 of 6 runs. Cells p-copy
-//     and p-marker of val-s3p2b2-13-macos, macOS VM, 11 of 11 runs).
+//     state and makes no git call after the read-tree call (measured on
+//     Linux, 6 of 6 runs, and on
+//     macOS, 11 of 11 runs).
 //
 // A regular file at `repo\.git` while the first listing runs does not give
 // errGitDirChanged there. 5fd08069 then runs the second listing, which fails
 // with exit 128. It answers the text of ownConfigListing with the undo text
-// above (cell X2 of round task077-03, Windows VM, 2 of 2 runs). A second
-// listing that passes there gives errGitDirChanged, so no read-tree call runs
-// (claustrum's own, not measured).
+// above (measured on Windows, 2 of 2 runs). A second listing that passes
+// there gives errGitDirChanged, so no read-tree call runs (claustrum's own,
+// not measured).
 //
 // A junction that is put there while the second listing runs gets no test:
 // the read-tree call then runs and fails by itself (points 11 and 12). A
@@ -859,20 +843,17 @@ func runWorktreeCheckout(ctx context.Context, u gitUse, leaf, workTree, gitDir, 
 // guardedInstallWorktreeIndex is installWorktreeIndex behind a guard. The guard has
 // two forms.
 //
-// With tested set, the tests after the add accepted the registration (Linux and
-// macOS, when git answered `rev-parse --absolute-git-dir`), or the staging step
-// moved it (Windows). The index then goes
-// into that registration with no read of its gitdir record. 89cb6289 places the
-// index too when the record is gone: in
-// cell B4 (Linux and macOS VMs) the record is removed after the read-tree: 89cb6289 answers
-// success, and the registration holds the index. In cell Z15 (Linux and macOS VMs)
-// the record is removed and the registration gets mode 0500: 89cb6289 answers
-// "openat w1/index: permission denied". One state places nothing: the folder at
-// the path is no longer the folder that the tests accepted (replacedIn, D24). The
-// placement tests that on the registrations folder that it opened
-// (installTestedWorktreeIndex). The
-// error text is claustrum's own, and the caller answers it as a failed checkout.
-// No cell measured a replaced folder at the placement.
+// With tested set, the tests after the add accepted the registration (Linux and macOS, when
+// git answered `rev-parse --absolute-git-dir`), or the staging step moved it (Windows). The
+// index then goes into that registration with no read of its gitdir record. 89cb6289 places
+// the index too when the record is gone: in one measured case (on Linux and macOS) the
+// record is removed after the read-tree: 89cb6289 answers success, and the registration
+// holds the index. In another (measured on Linux and macOS) the record is removed and the
+// registration gets mode 0500: 89cb6289 answers "openat w1/index: permission denied". One
+// state places nothing: the folder at the path is no longer the folder that the tests
+// accepted (replacedIn, D24). The placement tests that on the registrations folder that it
+// opened (installTestedWorktreeIndex). The error text is claustrum's own, and the caller
+// answers it as a failed checkout. No cell measured a replaced folder at the placement.
 //
 // With tested not set, the tests did not run. On Linux and macOS the
 // index then goes into the registration adminDir only if its gitdir record can be read
@@ -889,8 +870,8 @@ func runWorktreeCheckout(ctx context.Context, u gitUse, leaf, workTree, gitDir, 
 //
 // One state is apart in both forms: a registration folder whose stat fails. No index of it can be
 // reached then, and the placement runs and fails by itself. Its error is the measured
-// text of a registration that is gone (cell Z10) or of a registrations directory
-// without the search permission (cells Z11a and Z11b, macOS VM).
+// text of a registration that is gone or of a registrations directory without the search
+// permission (measured on macOS).
 func guardedInstallWorktreeIndex(idx, adminDir, leaf string, tested testedRegistration) error {
 	if tested.path != "" {
 		return installTestedWorktreeIndex(idx, tested)
@@ -906,15 +887,16 @@ func guardedInstallWorktreeIndex(idx, adminDir, leaf string, tested testedRegist
 // indexInstallText is the text after "git worktree add failed (checkout): " when
 // the placement of the index failed. The stderr of the checkout and the error are
 // joined with nothing between them, and the rule of worktreeGitText then applies to
-// the joined text. Measured against 89cb6289 on a Linux VM:
+// the joined text. Measured against 89cb6289 on Linux:
 //
-//   - A stderr that ends with one newline gives one space before the error (rows
-//     A14 and A14f). With no final newline there is no space (cell Y2a), and with
-//     two there are two (cell Y2b).
-//   - With no stderr, the text is the error alone (cell X2).
+//   - A stderr that ends with one newline gives one space before the error
+//     (measured). With no final newline there is no space (measured), and with
+//     two there are two.
+//   - With no stderr, the text is the error alone
+//     (measured).
 //   - The stderrHeadCap cut covers the error too. A stderr of 478 bytes keeps the
 //     whole error, 500 bytes keep its first 12 bytes, and 512 or 1509 bytes keep
-//     none of it (cells Y1b, Y1a, Y1c and X3).
+//     none of it (measured).
 func indexInstallText(stderr string, installErr error) string {
 	return worktreeGitText(stderr+installErr.Error(), nil)
 }
@@ -976,14 +958,12 @@ func hardenedGitRunIn(ctx context.Context, u gitUse, dir string, heavy bool, pre
 	return strings.TrimRight(string(out), "\n"), err
 }
 
-// statusExcludesFile is the core.excludesFile value of the status, ls-files and
-// diff-index calls of git.status. It is userExcludesFile, except that the null device is spelled /dev/null on every OS.
-// On Windows git status exits 128 with "fatal: cannot use NUL as an exclude file"
-// when core.excludesFile is NUL. It accepts /dev/null there. git ls-files and git
-// check-ignore accept NUL. Measured with Git for Windows 2.55.0 on a Windows 11 VM.
-// f6010b97 passes NUL to its status call on that VM and answers exit status 128.
-// This value on those three calls is the divergence D16. On Linux and macOS os.DevNull is /dev/null,
-// so nothing changes there.
+// statusExcludesFile is the core.excludesFile value of the status, ls-files and diff-index calls of git.status. It is
+// userExcludesFile, except that the null device is spelled /dev/null on every OS. On Windows git status exits 128 with
+// "fatal: cannot use NUL as an exclude file" when core.excludesFile is NUL. It accepts /dev/null there. git ls-files
+// and git check-ignore accept NUL. Measured with Git for Windows 2.55.0 on Windows 11. f6010b97 passes NUL to its
+// status call there and answers exit status 128. This value on those three calls is the divergence D16. On Linux and
+// macOS os.DevNull is /dev/null, so nothing changes there.
 func statusExcludesFile() string {
 	if e := userExcludesFile(); e != os.DevNull {
 		return e
@@ -1008,16 +988,16 @@ var (
 // the runtime git supports it, else nil. git.status runs it (4534d86 does) so a
 // repository's in-repo .gitattributes cannot influence the status: without it a
 // .gitattributes clean filter runs during `git status` and can both flip a file's
-// modified-ness (wire-visible) and execute an attacker-controlled command
-// (scratch/probe/attrsource-4534d86.md). It is a no-op on a repo with no attribute
-// rules, so status on an ordinary repo stays byte-identical.
+// modified-ness (wire-visible) and execute an attacker-controlled command (measured
+// against 4534d86). It is a no-op on a repo with no attribute rules, so status on
+// an ordinary repo stays byte-identical.
 //
 // git added --attr-source in 2.40, so support is probed with a
 // guard — `git --attr-source=<empty> version`, which errors on older git. The option
 // is a top-level one, the first argument of the status call, as f6010b97 emits it.
 //
 // The probe has the filtered environment of the daemon (gitChildEnv) and adds no
-// variable. f6010b97 adds none to it on Linux and Windows VMs. It runs in
+// variable. f6010b97 adds none to it on Linux and Windows. It runs in
 // gitVersionDir. It keeps "supported" and "not supported" for the life of the
 // daemon, and "unknown" not (claustrum's own, not measured). See probeAttrSource.
 func attrSourceArgs() []string {
@@ -1067,16 +1047,16 @@ var (
 // userExcludesFile resolves the user's global git excludes file: the configured
 // core.excludesFile if it is an absolute path, else $XDG_CONFIG_HOME/git/ignore or
 // $HOME/.config/git/ignore when that file exists, else the null device (os.DevNull:
-// /dev/null, and NUL on Windows, as f6010b97 passes on a Windows VM). This is the
-// excludes path 7d193f89 passes as core.excludesFile on every git invocation (observed
-// via a git-argv trace). hardenedProfileArgs substitutes it for every git op.
+// /dev/null, and NUL on Windows, as f6010b97 passes on Windows). This is the excludes
+// path 7d193f89 passes as core.excludesFile on every git invocation (observed via a
+// git-argv trace). hardenedProfileArgs substitutes it for every git op.
 //
 // A call that finds a stored result uses it. A call that finds none runs its own
 // read, also while the read of another request runs, and stores its result when
 // the read ends. 5fd08069 runs two reads for two git requests sent together, and
-// one read for requests 200 to 500 ms apart (rounds task103-01 to task103-03,
-// Linux VM). Each call uses the result of its own read. A later result replaces
-// an earlier one (claustrum's own, not measured).
+// one read for requests 200 to 500 ms apart (measured on Linux). Each call uses
+// the result of its own read. A later result replaces an earlier one
+// (claustrum's own, not measured).
 func userExcludesFile() string {
 	userExcludesMu.Lock()
 	if userExcludesDone {
@@ -1104,8 +1084,8 @@ func userExcludesFile() string {
 // configuredExcludesFile reads the configured core.excludesFile of the user: an
 // absolute value, or "" when there is none. The read has the filtered environment
 // of the daemon (gitChildEnv) and GIT_DIR=<null device>, and runs in gitVersionDir
-// (claustrum's own, not measured). f6010b97 adds GIT_DIR=NUL on a Windows VM and
-// runs it in the temporary directory on Linux and Windows VMs.
+// (claustrum's own, not measured). f6010b97 adds GIT_DIR=NUL on Windows and runs
+// it in the temporary directory on Linux and Windows.
 //
 // `config --includes --path` follows includes and expands a leading ~, matching the
 // reference. It runs WITHOUT the hardening profile so git reports the real global
@@ -1157,13 +1137,12 @@ type configCheck struct {
 	// "not a git repository". git.worktree_remove with worktreeRoot quotes it.
 	noRepoText string
 	// gitFileText is set beside refusal when the listing failed with the text of git
-	// 2.56 for a `.git` file that names no valid repository (saysGitFileNowhere). It
-	// is the error of a failed call about the repository, with git's lines.
-	// git.worktree_remove answers it in the cells GF and N04 of round tier0-27, as
-	// 5fd08069 does (Linux VM). The four other git methods answer it for a gone git
-	// dir that is no worktree entry (noRepoCalls, statusGitFileNowhere). With
-	// "shadowDirOff":true each of the five answers refusal there (round task039-02 part
-	// b for the four, cells GFOFF and N04OFF of round task039-03 for the remove).
+	// 2.56 for a `.git` file that names no valid repository (saysGitFileNowhere). It is
+	// the error of a failed call about the repository, with git's lines.
+	// git.worktree_remove answers it in two measured cases, as 5fd08069 does (measured
+	// on Linux). The four other git methods answer it for a gone git dir that is no
+	// worktree entry (noRepoCalls, statusGitFileNowhere). With "shadowDirOff":true each
+	// of the five answers refusal there (measured for the four and for the remove).
 	gitFileText string
 	// listing is the listing of a check that passed. The first hardened call after the
 	// check pins its hooks (hardenedGitFirst).
@@ -1183,34 +1162,33 @@ func (c configCheck) refused() bool {
 // comes first in a git method, and reads it. Callers phrase the method-specific frame
 // (a -32603 for the read methods, a worktreeResult for worktree_create, its own
 // message for worktree_remove). The outcomes, in the order 89cb6289 takes them on
-// Linux, macOS and Windows VMs:
+// Linux, macOS and Windows:
 //
-//  1. PATH holds no git: "no repository" (row L13). A Linux VM measured the other
-//     methods. Rows L13xa and L13xb are its removes without worktreeRoot.
+//  1. PATH holds no git: "no repository" (measured). A Linux test measured the other
+//     methods, with removes without worktreeRoot.
 //     git.worktree_remove with worktreeRoot does not come here with no git:
 //     externalWorkTreeRefusal answers first.
 //  2. The listing exits 128, names no git dir, and the daemon's own search finds no
 //     usable git dir: "no repository". 89cb6289 tested the text "fatal: not a git
 //     repository" instead. See listingRun.saysNoRepository.
 //  3. Any other failure: `git version` runs. If it fails too, the refusal starts with
-//     gitCannotRunPrefix, else with hooksRefusalPrefix (rows L10 to L12, L14c and L15).
-//  4. The listing succeeded but cannot be used: a key over configKeyMaxBytes (row
-//     L08c), or hook names over hookNameMaxCount or hookNameMaxBytes (rows L06b and
-//     L07b). The key refusal carries the listing prefix. The two hook refusals carry
-//     hooksPinPrefix only.
+//     gitCannotRunPrefix, else with hooksRefusalPrefix (measured).
+//  4. The listing succeeded but cannot be used: a key over configKeyMaxBytes
+//     (measured), or hook names over hookNameMaxCount or hookNameMaxBytes. The key
+//     refusal carries the listing prefix. The two hook refusals carry hooksPinPrefix
+//     only.
 //
 // In git.info, git.list_branches, git.worktree_create and git.worktree_remove, this
 // check is the first listing of the method, not an extra one. It stands in for the
 // precursor of the method's first hardened call: dir is its working directory, and
 // heavy is the profile of that call. f6010b97 makes one listing there, not two, on
-// Linux, macOS and Windows VMs. When the next call is on the same dir, the caller
-// runs it with no precursor of its own (hardenedGitFirst).
+// Linux, macOS and Windows. When the next call is on the same dir, the caller runs
+// it with no precursor of its own (hardenedGitFirst).
 //
 // In a request with time limits the listing ends at configListingLimit. On
 // 5fd08069 a listing held for 35 s gets SIGTERM at 30 s, and the method refuses
-// with the hooks refusal and the stop text. One held for 25 s passes (cells T10
-// and T11 of round task010-01, Linux and macOS VMs, and cell T10w on a Windows
-// VM).
+// with the hooks refusal and the stop text. One held for 25 s passes (measured
+// on Linux, macOS and Windows).
 //
 // The check of the daemon's own GIT_CONFIG_COUNT (daemonCountRefusal) comes
 // first. When it refuses, no listing runs, and a directory is refused with its text.
@@ -1269,21 +1247,19 @@ func failedListingCheck(u gitUse, r listingRun, dir string, heavy bool) configCh
 	// worktree_remove — NOT this refusal). Only a config git CAN reach but cannot parse
 	// (for example an `include.path` with no value) is refused here.
 	//
-	// 89cb6289 still runs `git version` after such a start failure, and its frames
-	// stay the same (rows L16a, L16b, L16d and L16f: a file and a folder of mode 0600).
-	// When that `git version` fails for a dir that exists, the method refuses with the
-	// "cannot run" text and the detail of the version call. 89cb6289 answers so for
-	// git.info on a regular file and on a folder of mode 0000 (rows A-M2 and A-X1 in
-	// phase P11, Linux and macOS VMs). It answers so for git.list_branches, git.status
-	// and git.worktree_create too: on a regular file (cell C-g, Linux and macOS VMs)
-	// and on a folder of mode 0000 (cell C-h in P11, Linux VM). git.worktree_remove
-	// is not measured on a regular file there. A dir that does not exist keeps its
-	// answer then (rows A-M1 and A-M3 to A-M5 in P11).
-	// Not measured: a path under a regular file with a failing `git version`. claustrum
-	// keeps its answer. A path that does not exist is measured on
-	// git.worktree_remove with worktreeRoot only for its calls. 89cb6289 runs no `git
-	// version` there (rows L13wa-g and L13wb-g), and that request does not come here
-	// (externalWorkTreeRefusal).
+	// 89cb6289 still runs `git version` after such a start failure, and its frames stay
+	// the same (measured: a file and a folder of mode 0600). When that `git version`
+	// fails for a dir that exists, the method refuses with the "cannot run" text and
+	// the detail of the version call. 89cb6289 answers so for git.info on a regular
+	// file and on a folder of mode 0000 (measured on Linux and macOS). It answers so
+	// for git.list_branches, git.status and git.worktree_create too: on a regular file
+	// (measured on Linux and macOS) and on a folder of mode 0000 (measured on Linux).
+	// git.worktree_remove is not measured on a regular file there. A dir that does not
+	// exist keeps its answer then (measured). Not measured: a path under a regular file
+	// with a failing `git version`. claustrum keeps its answer. A path that does not
+	// exist is measured on git.worktree_remove with worktreeRoot only for its calls.
+	// 89cb6289 runs no `git version` there (measured), and that request does not come
+	// here (externalWorkTreeRefusal).
 	//
 	// On Windows a dir that exists and is not a folder is not such an input: the start
 	// error of the listing is a refusal there (see unenterableDir).
@@ -1298,8 +1274,8 @@ func failedListingCheck(u gitUse, r listingRun, dir string, heavy bool) configCh
 	c := configCheck{refusal: failedListingText(u, r, heavy)}
 	if r.saysGitFileNowhere() {
 		// The text names the folder that holds `.git`, as askGit does, also for a
-		// subfolder (cell c18 of rounds task039-01 and task039-02, Linux and Windows
-		// VMs). A link spelling is not measured.
+		// subfolder (measured on Linux and Windows). A link spelling is not
+		// measured.
 		root, _ := gitWalkRoot(dir)
 		if root == "" {
 			root = dir
@@ -1313,16 +1289,14 @@ func failedListingCheck(u gitUse, r listingRun, dir string, heavy bool) configCh
 // dir does not exist, is not a directory, or cannot be searched. err is the listing's
 // exec error.
 //
-// With nonFolderStartRefuses (Windows), a dir that exists and is not a directory
-// reports false, so the start error of the listing is a refusal. 89cb6289 answers so
-// on a Windows VM for a regular file and a file symlink: the hooks refusal that ends
-// with `fork/exec <git.exe path>: The directory name is invalid.` (cells A-01 to A-04,
-// A-04b2, A-06 and A-10). The path NUL and the name of a file with one more dot at
-// its end get the same refusal (cells Wc). When `git version` fails too, it answers
-// the "cannot run" text (cells A-14 and Wa-infoF). A path that does not exist, a path under a file and a junction
-// whose target is gone keep their answer there (cells A-07m, A-07s and A-11). A folder
-// with a path of 296 characters gets the same refusal (cell A-13). From the code: that
-// folder passes os.Stat here, and the stat of "<dir>/." below passes too.
+// With nonFolderStartRefuses (Windows), a dir that exists and is not a directory reports false, so the start
+// error of the listing is a refusal. 89cb6289 answers so on Windows for a regular file and a file symlink: the
+// hooks refusal that ends with `fork/exec <git.exe path>: The directory name is invalid.` (measured). The path
+// NUL and the name of a file with one more dot at its end get the same refusal (measured). When `git version`
+// fails too, it answers the "cannot run" text (measured). A path that does not exist, a path under a file and a
+// junction whose target is gone keep their answer there (measured). A folder with a path of 296 characters gets
+// the same refusal (measured). From the code: that folder passes os.Stat here, and the stat of "<dir>/." below
+// passes too.
 func unenterableDir(dir string, err error) bool {
 	fi, statErr := os.Stat(dir)
 	if statErr != nil {
@@ -1355,7 +1329,7 @@ const stderrHeadCap = 512
 // worktreeGitText makes the git text of the git.worktree_create failure frames: the
 // checkout failure, the add failure, the killed checkout, and each of the two parts
 // of the attach-fallback frame. The rule was measured against f6010b97 and 90fca6e6
-// on a macOS VM, and both builds agree:
+// on macOS, and both builds agree:
 //
 //  1. Use stderr only. stdout is not quoted.
 //  2. Keep the first stderrHeadCap bytes.
@@ -1404,7 +1378,7 @@ func noRepositoryAt(u gitUse, dir string, l configListing) bool {
 // example "exit status 128". It answers nil where noRepositoryAt answers false.
 //
 // The call runs on the heavy profile, as f6010b97 runs it on Linux, macOS and
-// Windows VMs. pre is the listing of hostileConfigRefusal when this is the first call
+// Windows. pre is the listing of hostileConfigRefusal when this is the first call
 // after it on dir, else nil (see hardenedGitCmd).
 func repositoryCheckError(u gitUse, dir string, pre *configListing) error {
 	_, err := repositoryGitDir(u, dir, pre)

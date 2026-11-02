@@ -9,17 +9,16 @@ import (
 )
 
 // The Windows rules of the config read (gitrepoconfig.go). 5fd08069 answers
-// these three texts on a Windows VM (cells C3b, C3c, C3d and C4b).
+// these three texts on Windows (measured).
 
 // openNoTerminal adds nothing on Windows, where an open gives the daemon no
 // controlling terminal.
 const openNoTerminal = 0
 
-// configLinkDetail refuses a config file that is a symbolic link (cell C4b: a
-// file link made with mklink). A git directory that is a junction or a
-// directory symbolic link has its own test (gitDirLinkDetail). Another link in a folder above the file is
-// not measured, and claustrum does not test for it. An included file gets the
-// same test (not measured).
+// configLinkDetail refuses a config file that is a symbolic link (measured with a file link made with
+// mklink). A git directory that is a junction or a directory symbolic link has its own test
+// (gitDirLinkDetail). Another link in a folder above the file is not measured, and claustrum does not
+// test for it. An included file gets the same test (not measured).
 func configLinkDetail(path string) string {
 	if fi, err := os.Lstat(path); err == nil && fi.Mode()&os.ModeSymlink != 0 {
 		return quoteOperand(path) + configLinkTail
@@ -28,12 +27,12 @@ func configLinkDetail(path string) string {
 }
 
 // includeValueDetail refuses an `include.path` value that is not relative: an
-// absolute path, also to a file that is missing, and `~/x` (cells C3c, C3d and
+// absolute path, also to a file that is missing, and `~/x` (measured, also for
 // the missing include). A value that starts with a slash or with a drive letter
 // is not measured: claustrum refuses it the same way. `~root/x` gets this text
-// too (cells V8 and V12, Windows VM). The value is cut to its first 300
-// characters, as a path is. A value of 300 is whole, and one of 301 shows 300
-// (cells P7w, Windows VM).
+// too (measured on Windows). The value is cut to its first 300 characters, as a
+// path is. A value of 300 is whole, and one of 301 shows 300 (measured on
+// Windows).
 func includeValueDetail(file, value string) string {
 	if filepath.IsAbs(value) || filepath.VolumeName(value) != "" || strings.HasPrefix(value, "~") ||
 		strings.HasPrefix(value, "/") || strings.HasPrefix(value, `\`) {
@@ -45,12 +44,12 @@ func includeValueDetail(file, value string) string {
 }
 
 // includePlaceDetail refuses an included file that is outside the repository
-// (cell C3b: `../../outinc.cfg` in the config of <repo>\.git). The repository is
-// the folder that holds the `.git` folder. A relative include inside `.git`
-// passes (cell C3a). For a git directory with another name the repository is
-// that directory: a bare repository `bare.git` is measured so (cell W6, Windows
-// VM). The test is on the text of the paths, and no link is resolved (not
-// measured). The path in this text is the cleaned one (cells C3b and W1).
+// (measured with `../../outinc.cfg` in the config of <repo>\.git). The repository is
+// the folder that holds the `.git` folder. A relative include inside `.git` passes
+// (measured). For a git directory with another name the repository is that
+// directory: a bare repository `bare.git` is measured so (measured on Windows). The
+// test is on the text of the paths, and no link is resolved (not measured). The path
+// in this text is the cleaned one (measured).
 func includePlaceDetail(target, gitDir string) string {
 	repo := gitDir
 	if strings.EqualFold(filepath.Base(gitDir), ".git") {

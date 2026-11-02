@@ -8,7 +8,7 @@ import (
 )
 
 // TestRenameRetryBoundIsTwoSeconds pins the production bound of the retry
-// (round task009-01, Windows VM) and claustrum's own longest pause.
+// (measured on Windows) and claustrum's own longest pause.
 func TestRenameRetryBoundIsTwoSeconds(t *testing.T) {
 	if renameRetryBound != 2*time.Second {
 		t.Errorf("renameRetryBound = %v, want 2s", renameRetryBound)

@@ -15,10 +15,10 @@ import (
 // Linux and macOS only.
 
 // A FIFO, an absolute symlink that leaves the git directory, and a file
-// the daemon cannot read are refused with their reasons and the stray tail (rows T09,
-// T07a and T08). Mutation: reuse the tail of the entry text. A dangling symlink that is
-// absolute, or that leaves the git directory, is refused the same way (rows T07d and
-// T07e on a Linux VM). Mutation: count every dangling symlink as no commondir.
+// the daemon cannot read are refused with their reasons and the stray tail (measured).
+// Mutation: reuse the tail of the entry text. A dangling symlink that is absolute, or
+// that leaves the git directory, is refused the same way (measured on Linux). Mutation:
+// count every dangling symlink as no commondir.
 func TestStrayCommondirNotAPlainFileUnix(t *testing.T) {
 	t.Run("FIFO", func(t *testing.T) {
 		r := newTrustRepo(t)
@@ -61,7 +61,7 @@ func TestStrayCommondirNotAPlainFileUnix(t *testing.T) {
 }
 
 // A relative symlink that stays in the git directory is followed. Its
-// target holds ".", so the repository is served (row T07b). Mutation: refuse every
+// target holds ".", so the repository is served (measured). Mutation: refuse every
 // symlink.
 func TestStrayCommondirRelativeSymlink(t *testing.T) {
 	r := newTrustRepo(t)
@@ -77,7 +77,7 @@ func TestStrayCommondirRelativeSymlink(t *testing.T) {
 // A dangling relative symlink that stays in the git directory counts as no commondir.
 // The git directory is trusted
 // and pinned, and git itself then fails to read the file. Each answer is what the
-// existing code makes of git's failure (row T07c): info without branch, list_branches
+// existing code makes of git's failure (measured): info without branch, list_branches
 // "exit status 128", status the bare shape, create the failed add, and remove keeps
 // the branch. The text of the failed add is git's own, so the test pins only that it
 // names commondir. Mutation: treat the dangling symlink as not a small plain file.
@@ -98,12 +98,11 @@ func TestStrayCommondirDanglingSymlink(t *testing.T) {
 	wantResult(t, "remove(T)", remove(t, r.T, wt, "w1"), `{"success":true,"branchKept":true}`)
 }
 
-// Rows DG3-g and DG3x-g (89cb6289, Linux VM). The request is a remove without
-// worktreeRoot. The repository has a good HEAD and a dangling relative commondir
-// symlink that stays in `.git`. The answer is success with branchKept. The worktree folder and its entry are
-// deleted, and the branch stays, because git cannot list the refs. In row DG3x-g the
-// folder is gone before the request, and the entry is deleted. These are pins of rows
-// that were equal already. No fix stands behind them. The fixture lives in the test's
+// Measured cases (`89cb6289`, measured on Linux). The request is a remove without worktreeRoot. The
+// repository has a good HEAD and a dangling relative commondir symlink that stays in `.git`. The answer is
+// success with branchKept. The worktree folder and its entry are deleted, and the branch stays, because git
+// cannot list the refs. In a measurement, the folder is gone before the request, and the entry is deleted.
+// These are pins of rows that were equal already. No fix stands behind them. The fixture lives in the test's
 // temporary directory only.
 func TestStrayCommondirDanglingSymlinkRemoveInRepository(t *testing.T) {
 	for _, tc := range []struct {

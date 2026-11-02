@@ -11,7 +11,7 @@ import (
 // An invalid UTF-8 byte in the resolved path stays a byte in the refusal and is printed
 // \xff. JSON cannot carry the byte in the request, so the request names an ASCII alias
 // and the check resolves it. Linux only: macOS file systems refuse the name. Measured
-// side by side against f6010b97 on a Linux VM.
+// side by side against f6010b97 on Linux.
 func TestGitDirTrustInvalidUTF8Operand(t *testing.T) {
 	requireGit(t)
 	base := realTempDir(t)

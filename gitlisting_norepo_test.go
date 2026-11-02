@@ -13,9 +13,9 @@ import (
 )
 
 // A broken GIT_CONFIG_KEY_<n> in the daemon's environment, in a folder that holds no
-// repository. 89cb6289 was measured on Linux, macOS and Windows VMs. The phases P3,
-// P5, P6 and P7 are those of the rows. A row names its Windows cell in win. A row with
-// no Windows cell does not run on Windows. These tests set the daemon's environment, so
+// repository. 89cb6289 was measured on Linux, macOS and Windows. The phases P3, P5, P6
+// and P7 are those of the rows. A row names its Windows cell in win. A row with no
+// Windows cell does not run on Windows. These tests set the daemon's environment, so
 // none of them runs in parallel.
 
 // notMeasuredHere reports whether a row stays out on this system: the system is
@@ -61,9 +61,9 @@ func newNoRepoFixture(t *testing.T) noRepoFixture {
 func (f noRepoFixture) leaf() string     { return filepath.Join(f.n, ".claude", "worktrees", "w1") }
 func (f noRepoFixture) external() string { return filepath.Join(f.r, "cp", "w1") }
 
-// rootCreate is the request of the cells Wf (Windows VM): a git.worktree_create with
-// the plain folder as baseRepo and the empty worktreeRoot R0. Row A-N6 on the Linux VM
-// names the same paths.
+// rootCreate is the request of the cells Wf (measured on Windows): a
+// git.worktree_create with the plain folder as baseRepo and the empty worktreeRoot R0.
+// A measurement on Linux names the same paths.
 func (f noRepoFixture) rootCreate() map[string]any {
 	return map[string]any{"baseRepo": f.n, "branchName": "w1",
 		"worktreePath": filepath.Join(f.r0, "cp", "w1"), "worktreeRoot": f.r0}
@@ -129,8 +129,8 @@ func dirNames(t *testing.T, dir string) []string {
 }
 
 // noRepoRows runs the rows of a failed listing and compares each whole frame. text is
-// the refusal text that each frame carries. rootCell is the Windows cell of row A-N6
-// in the phase of the caller, or "".
+// the refusal text that each frame carries. rootCell is the Windows cell in the phase
+// of the caller, or "".
 func (f noRepoFixture) noRepoRows(t *testing.T, text, rootCell string) {
 	t.Helper()
 	keep := filepath.Join(f.external(), "keep.txt")
@@ -181,14 +181,11 @@ func (f noRepoFixture) noRepoRows(t *testing.T, text, rootCell string) {
 }
 
 // With a broken pair, the five git methods refuse in a plain folder with the hooks
-// refusal of the failed listing. The rows are A-N1 to A-N4, A-N6, A-S1 and A-X2 on
-// Linux and macOS VMs. Row A-N4 ran with a branchName on the Linux VM and without one
-// on the macOS VM. Rows A-N5b and A-N5c are from Linux and macOS VMs too, and they
-// have no Windows cell. On a Windows VM the cells are P3-infoN, P3-infoX, P3-lbN,
-// P3-statN, P3-crN and P3-rmN, and the same cells of P5 to P7. Cell P3-rmN ran with
-// no branchName. Row A-N6 has the Windows cell Wf-P3-crNroot in P3 only.
-// The text after "exit status 128: " is the stderr of the listing of the git on this
-// host. Mutations: answer "no repository" before the listing in each method.
+// refusal of the failed listing. The rows are measured on Linux and macOS, and
+// most of them on Windows too. Two rows have no Windows case. One create ran with a branchName on Linux and without one on macOS. The
+// Windows remove ran with no branchName. The text after "exit status 128: " is the
+// stderr of the listing of the git on this host. Mutations: answer "no repository"
+// before the listing in each method.
 func TestBrokenConfigPairRefusesInPlainFolder(t *testing.T) {
 	for i, ph := range brokenPairPhases {
 		t.Run(ph.name, func(t *testing.T) {
@@ -203,7 +200,7 @@ func TestBrokenConfigPairRefusesInPlainFolder(t *testing.T) {
 	}
 }
 
-// The frames of the phase P3 rows with the text of the git of the VMs. The stub prints
+// The measured frames with the text of the git of the test systems. The stub prints
 // that stderr for every listing, so the frames are the measured bytes on every git.
 func TestBrokenConfigPairMeasuredFrames(t *testing.T) {
 	f := newNoRepoFixture(t)
@@ -217,8 +214,8 @@ func TestBrokenConfigPairMeasuredFrames(t *testing.T) {
 	}
 }
 
-// A path that does not exist keeps its frames with a broken pair (rows A-M1 and A-M3
-// to A-M5, and cell P3-infoM on a Windows VM).
+// A path that does not exist keeps its frames with a broken pair (measured on
+// Windows).
 func TestBrokenConfigPairMissingPathKeepsFrames(t *testing.T) {
 	f := newNoRepoFixture(t)
 	plantEnv(t, brokenPairPhases[0].env...)
@@ -248,11 +245,10 @@ func TestBrokenConfigPairMissingPathKeepsFrames(t *testing.T) {
 	}
 }
 
-// With no GIT_CONFIG_* entry (P0), and in the phases P8 to P10, every frame of a
+// With no GIT_CONFIG_* entry (measured), and in the phases P8 to P10, every frame of a
 // plain folder stays as it was. The listing of git.info runs with the plain folder as
 // its working directory and GIT_DIR set to the null device, as in the call log of
-// 89cb6289. On a Windows VM the cells are those of P0 and P8 to P10. Cell P0-rmN ran
-// with no branchName. Row A-N6 has the Windows cell Wf-P0-crNroot in P0 only.
+// 89cb6289. It is measured on Windows too. The Windows remove ran with no branchName.
 func TestPlainFolderFramesWithoutBrokenPair(t *testing.T) {
 	for _, ph := range []struct {
 		name, rootCell string
@@ -363,8 +359,8 @@ func TestDaemonCommonDirKeepsNoRepoFrames(t *testing.T) {
 }
 
 // versionFails makes every `git version` exit 1 with the stderr of the Linux rows. On
-// a Windows VM the stderr of the stub was "boom", so the cells differ from these
-// frames in that text alone.
+// Windows the stderr of the stub was "boom", so the cells differ from these frames in
+// that text alone.
 func versionFails(t *testing.T) {
 	t.Helper()
 	slowGit(t, "version", "fail", 0, `git-stub: version fails\n`, "")
@@ -373,11 +369,10 @@ func versionFails(t *testing.T) {
 
 const versionFailsText = "git cannot run on this host; git not run: exit status 1: git-stub: version fails"
 
-// Row A-T1 in phase P11. In a repository, with a broken pair and a `git version` that
-// fails, the frame carries the exec error and the stderr of the version call, not
-// those of the listing. The version child gets no GIT_CONFIG_COUNT set. On a Windows
-// VM the cell is P11-infoT.
-// Mutations: quote the listing's detail, pass the daemon's set on.
+// Measured. In a repository, with a broken pair and a `git version` that fails, the
+// frame carries the exec error and the stderr of the version call, not those of the
+// listing. The version child gets no GIT_CONFIG_COUNT set. On Windows the cell is
+// P11-infoT. Mutations: quote the listing's detail, pass the daemon's set on.
 func TestGitVersionChildGetsNoConfigCountSet(t *testing.T) {
 	f := newNoRepoFixture(t)
 	versionFails(t)
@@ -402,9 +397,9 @@ func TestGitVersionChildGetsNoConfigCountSet(t *testing.T) {
 }
 
 // The plain-folder rows of phase P11 answer the "cannot run" text of the version call
-// too (rows A-N1 to A-N4 and A-S1 on Linux and macOS VMs). On a Windows VM the cells
-// are P11-infoN, Wa-lbN, Wa-statN and Wa-crN. git.worktree_remove has no Windows cell
-// there. Mutation: quote the detail of the listing in the "cannot run" text.
+// too (measured on Linux and macOS). On Windows the cells are P11-infoN, Wa-lbN,
+// Wa-statN and Wa-crN. git.worktree_remove has no Windows cell there. Mutation: quote
+// the detail of the listing in the "cannot run" text.
 func TestGitVersionFailsInPlainFolder(t *testing.T) {
 	f := newNoRepoFixture(t)
 	versionFails(t)
@@ -435,10 +430,10 @@ func TestGitVersionFailsInPlainFolder(t *testing.T) {
 	}
 }
 
-// Row A-M1 in phase P11 (Linux and macOS VMs) and cell Wa-infoM (Windows VM). With a
-// broken pair and a `git version` that fails, git.info on a path that does not exist
-// keeps its frame. Mutation: answer the "cannot run" text without the stat of the
-// path (failedListingCheck).
+// Measured on Linux, macOS and Windows. With a broken pair and a `git version`
+// that fails, git.info on a path that does not exist keeps its frame. Mutation:
+// answer the "cannot run" text without the stat of the path
+// (failedListingCheck).
 func TestGitVersionFailsMissingPathKeepsFrame(t *testing.T) {
 	f := newNoRepoFixture(t)
 	versionFails(t)
@@ -451,11 +446,11 @@ func TestGitVersionFailsMissingPathKeepsFrame(t *testing.T) {
 	}
 }
 
-// Cell C-c (Linux and macOS VMs) and cells Wb (Windows VM). GIT_CONFIG_GLOBAL names a
-// file that git cannot parse, and no GIT_CONFIG_COUNT is set. The listing fails, and
-// the `git version` child gets no GIT_CONFIG_GLOBAL, so it passes. The answer is the
-// hooks refusal with the detail of the listing, not the "cannot run" text. The text
-// after "exit status 128: " is that of the git on this host. Mutation: pass
+// Measured on Linux, macOS and Windows. GIT_CONFIG_GLOBAL names a file that git
+// cannot parse, and no GIT_CONFIG_COUNT is set. The listing fails, and the `git
+// version` child gets no GIT_CONFIG_GLOBAL, so it passes. The answer is the hooks
+// refusal with the detail of the listing, not the "cannot run" text. The text after
+// "exit status 128: " is that of the git on this host. Mutation: pass
 // GIT_CONFIG_GLOBAL on to `git version`.
 func TestGitVersionChildGetsNoGlobalConfig(t *testing.T) {
 	f := newNoRepoFixture(t)

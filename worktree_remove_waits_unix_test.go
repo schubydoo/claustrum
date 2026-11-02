@@ -11,11 +11,11 @@ import (
 	"time"
 )
 
-// These tests pin cells T3 (Linux and macOS VMs), T3M and T3C (Linux VM) of
-// round tier3-02. A create of w1 runs through the main repository T, and the
-// stub holds one of its git calls at a gate file. During that hold a remove of
-// the worktree r1 of the same git directory runs, through the linked worktree LW
-// (T3) or through T itself (T3M).
+// These tests pin measured cases (on Linux and macOS, and two on Linux). A
+// create of w1 runs through the main repository T, and the stub holds one of
+// its git calls at a gate file. During that hold a remove of the worktree r1
+// of the same git directory runs, through the linked worktree LW (measured) or
+// through T itself (T3M).
 //
 //   - T3 and T3M: the create is held in its `worktree add`. The leaf r1 goes
 //     during the hold. The registration r1, the branch rb and the reply come
@@ -84,8 +84,8 @@ func removeLine(t *testing.T, base, leaf, branch string) string {
 	return rpcLine(t, "git.worktree_remove", map[string]any{"baseRepo": base, "worktreePath": leaf, "branchName": branch})
 }
 
-// TestWorktreeRemoveWaitsForAddOfCreate pins cells T3 and T3M. Mutation: drop
-// the lock of the add step in gitWorktreeRemoveLocked. In both rows the
+// TestWorktreeRemoveWaitsForAddOfCreate pins measured cases. Mutation: drop
+// the lock of the add step in gitWorktreeRemoveLocked. In both cases the
 // registration and the branch then go during the hold, and the reply comes
 // during it. Mutation for T3M: take the per-repo lock in
 // withWorktreeCreateLock again. The leaf r1 then stays during the hold.
@@ -134,12 +134,11 @@ func TestWorktreeRemoveWaitsForAddOfCreate(t *testing.T) {
 	}
 }
 
-// TestWorktreeRemoveDoesNotWaitForCheckout pins cell T3C. The create is held at
-// its read-tree checkout, after the add, and the remove answers during that
-// hold. Mutation: hold the lock of the add step for the whole create in
-// gitWorktreeCreate. The remove then waits for the hold, and both rows fail.
-// Without this change the row through T fails too: the per-repo lock of the
-// create kept the remove out.
+// TestWorktreeRemoveDoesNotWaitForCheckout pins a measured case. The create is held at
+// its read-tree checkout, after the add, and the remove answers during that hold.
+// Mutation: hold the lock of the add step for the whole create in gitWorktreeCreate.
+// The remove then waits for the hold, and both rows fail. Without this change the row
+// through T fails too: the per-repo lock of the create kept the remove out.
 func TestWorktreeRemoveDoesNotWaitForCheckout(t *testing.T) {
 	for _, tc := range []struct {
 		name   string

@@ -26,8 +26,8 @@ var (
 	windowsForm = gitEnvForm{windows: true}
 )
 
-// The rows of Linux and macOS, rounds task004-01 and task004-02 (Linux and macOS
-// VMs). W is the folder of the logging wrapper there.
+// The rows of Linux and macOS (measured on Linux and macOS). W is the
+// folder of the logging wrapper there.
 func TestCleanGitChildEnvUnixRows(t *testing.T) {
 	const w = "/home/u/t4/W"
 	for _, tc := range []struct{ in, want string }{
@@ -63,8 +63,8 @@ func TestCleanGitChildEnvUnixRows(t *testing.T) {
 	}
 }
 
-// The rows of Windows, rounds task004-01 and task004-02 (Windows VM). This test
-// runs the rules of Windows on every system.
+// The rows of Windows (measured on Windows). This test runs the rules
+// of Windows on every system.
 func TestCleanGitChildEnvWindowsRows(t *testing.T) {
 	const w = `C:\o\wrap`
 	seven := strings.Join([]string{
@@ -376,7 +376,7 @@ func TestShadowTestEnvHasNoDaemonGitNames(t *testing.T) {
 // A hardened call reads its answer from stdout only. The stub writes a loader
 // line to stderr and runs the real git. git.info then answers the branch of
 // stdout, and isRepo sees "true". 5fd08069 answers "branch":"main" and creates
-// the worktree there (round task004-01, cells M1 and M4, Linux VM).
+// the worktree there (measured on Linux).
 func TestHardenedAnswerIsStdoutOnly(t *testing.T) {
 	requireGit(t)
 	realGit, err := exec.LookPath("git")
@@ -451,8 +451,8 @@ func TestGitMethodsCleanTheChildEnv(t *testing.T) {
 
 // With "shadowDirOff":true the config.worktree read of git.status has the form of
 // the read of a config file: the working directory gitVersionDir, GIT_DIR at the
-// null device, LC_ALL=C and LANGUAGE=C. 5fd08069 runs it so (cell V3 of round
-// task004-03, Linux, macOS and Windows VMs).
+// null device, LC_ALL=C and LANGUAGE=C. 5fd08069 runs it so (measured on Linux,
+// macOS and Windows).
 func TestStatusEntryConfigReadWithMember(t *testing.T) {
 	f := newListingFixture(t)
 	if _, calls := f.call(t, "git.worktree_create", map[string]any{"baseRepo": f.top, "worktreePath": f.wt(), "branchName": "w1"}); len(calls) == 0 {

@@ -10,7 +10,7 @@ import (
 // A worktree whose `.git` pointer is forged to name a SIBLING worktree's admin dir
 // (still under `<repo>/.git/worktrees`, so the containment check alone passes) must
 // NOT have that sibling's registration pruned when it is removed. 7d193f89 leaves the
-// sibling registered (measured on an ephemeral VM: sibling registration survives,
+// sibling registered (measured: sibling registration survives,
 // reply success:true); before the back-pointer check claustrum pruned it. The prune
 // is off-wire, so the reply is success:true either way — the divergence is the
 // filesystem side effect on an unrelated worktree.

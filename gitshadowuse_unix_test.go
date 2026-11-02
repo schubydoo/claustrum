@@ -35,15 +35,14 @@ func includeFixture(t *testing.T, repo string) {
 	}
 }
 
-// TestShadowRequestEntries pins where the short-lived entries of a request
-// are. It also pins that each is gone at the reply, after a good request and
-// after a failed one. In the state shadow 5fd08069 has them in the folder of the
-// daemon: `.gitdir-<n>` for a git.status (s3p2-linux cell B3a), `.index-<n>`
-// for a checkout and `.worktreeinclude-<n>/patterns` for the include step
-// (val-s3p2b1-linux cells A3-create-plain and A3-create-include, Linux VM). At
+// TestShadowRequestEntries pins where the short-lived entries of a request are.
+// It also pins that each is gone at the reply, after a good request and after a
+// failed one. In the state shadow 5fd08069 has them in the folder of the daemon:
+// `.gitdir-<n>` for a git.status (measured), `.index-<n>` for a checkout and
+// `.worktreeinclude-<n>/patterns` for the include step (measured on Linux). At
 // the reply the folder of the daemon holds none of them. With
-// "shadowDirOff":true they are in the temporary folder (rows D5 and D6 of that
-// round), and nothing is left there.
+// "shadowDirOff":true they are in the temporary folder (measured), and nothing
+// is left there.
 func TestShadowRequestEntries(t *testing.T) {
 	leafOf := func(f shadowFixture) string { return filepath.Join(f.repo, ".claude", "worktrees", "w1") }
 	create := func(f shadowFixture, extra map[string]any) map[string]any {
@@ -174,9 +173,8 @@ func TestShadowRequestEntries(t *testing.T) {
 // checkout in the state shadow, where git reads the daemon's copy. The rule
 // still sees a filter that only the repository's own config names. The create is refused
 // with the text of that rule and the filter program does not start, as on
-// 5fd08069 (s3p2-linux2 cell G2, Linux VM). The read-tree call carries the
-// three pairs of the filter before the lfs.storage item (the argv of that
-// cell).
+// 5fd08069 (measured on Linux). The read-tree call carries the three pairs of the filter
+// before the lfs.storage item (the argv of that cell).
 func TestShadowFilterRuleReadsTheRepositoryConfig(t *testing.T) {
 	f := newSeededShadowFixture(t)
 	marker := filepath.Join(t.TempDir(), "ran")

@@ -14,7 +14,7 @@ import (
 
 // On Windows forward slashes and backslashes are equal, and letter case is
 // ignored. A `\\?\` prefix and a path without a drive letter stay different. Measured
-// side by side against f6010b97 on a Windows 11 VM.
+// side by side against f6010b97 on Windows 11.
 func TestGitDirTrustCommondirWindowsSpelling(t *testing.T) {
 	for _, tc := range []struct {
 		name    string
@@ -50,11 +50,9 @@ func TestGitDirTrustCommondirWindowsSpelling(t *testing.T) {
 // `.git` file is trusted as a git directory that is not an entry. The daemon's own
 // tests of the git directory then refuse it, before any git call: its open as a
 // folder fails. 5fd08069 answers so on git.info, git.status, git.list_branches and
-// git.worktree_create with git 2.56 (cells c19 to c22 of round task039-01, and V-S3 of
-// round task039-02, Windows VM), and on git.info with git 2.55 (cell c25). 89cb6289 answered the "no
-// repository" shapes there (row E02w-rel). The main worktree keeps its answer (cells
-// c23 and c24). Mutation: drop the test of a git directory that is a file
-// (gitDirFilesDetail).
+// git.worktree_create with git 2.56 (measured on Windows), and on git.info with git 2.55. 89cb6289
+// answered the "no repository" shapes there (measured). The main worktree keeps its answer
+// (measured). Mutation: drop the test of a git directory that is a file (gitDirFilesDetail).
 func TestGitDirTrustRelativeGitDirOnLinkedWorktreeWindows(t *testing.T) {
 	r := newTrustRepo(t)
 	t.Setenv("GIT_DIR", ".git")
@@ -69,8 +67,8 @@ func TestGitDirTrustRelativeGitDirOnLinkedWorktreeWindows(t *testing.T) {
 
 // The state of the test above on git.worktree_remove from baseRepo TW, in the state
 // shadow. The refusal is the reason of the lock-check text, and nothing is deleted
-// (cell V-RM of round task039-02, Windows VM, equal on 5fd08069 and claustrum).
-// Mutation: drop the test of a git directory that is a file (gitDirFilesDetail).
+// (measured on Windows, equal on 5fd08069 and claustrum). Mutation: drop the test
+// of a git directory that is a file (gitDirFilesDetail).
 func TestGitDirTrustRelativeGitDirRemoveWindows(t *testing.T) {
 	r := newTrustRepo(t)
 	t.Setenv("GIT_DIR", ".git")
@@ -89,9 +87,8 @@ func TestGitDirTrustRelativeGitDirRemoveWindows(t *testing.T) {
 
 // A daemon GIT_DIR that names a regular file with no `gitdir:` line is refused by the
 // read of the config, with the error of its open as a folder. 5fd08069 answers so on
-// git.info and git.list_branches in T and on git.info in TW (cell V-Wd of round
-// task039-02, Windows VM). Mutation: drop the test in readRepoConfig, or apply the
-// class 2 refusal first.
+// git.info and git.list_branches in T and on git.info in TW (measured on Windows).
+// Mutation: drop the test in readRepoConfig, or apply the class 2 refusal first.
 func TestGitDirTrustDaemonGitDirPlainFileWindows(t *testing.T) {
 	r := newTrustRepo(t)
 	f := filepath.Join(r.base, "gitdir-file")
@@ -106,7 +103,7 @@ func TestGitDirTrustDaemonGitDirPlainFileWindows(t *testing.T) {
 
 // On Windows an entry replaced by a regular file is refused as an entry
 // without commondir (M3), where Linux and macOS answer no repository. 5fd08069
-// answers the same text (cell V-EF of round task039-02, Windows VM).
+// answers the same text (measured on Windows).
 func TestGitDirTrustEntryIsAFileWindows(t *testing.T) {
 	r := newTrustRepo(t)
 	if err := os.RemoveAll(r.entry()); err != nil {
@@ -142,7 +139,7 @@ func shortPathName(t *testing.T, p string) string {
 // name is not expanded, so the entry's commondir counts as stray, and its content "../.."
 // is refused with the short path. That answer follows from the stray-commondir rule of
 // 89cb6289 and is not measured on it. Measured side by
-// side against f6010b97 on a Windows 11 VM (rows K04 and K10).
+// side against f6010b97 on Windows 11.
 func TestGitDirTrustShortNameEntryWindows(t *testing.T) {
 	t.Run("gitfile", func(t *testing.T) {
 		r := newTrustRepo(t)
@@ -172,10 +169,10 @@ func TestResolveGitDirLinksKeepsShortNamesWindows(t *testing.T) {
 	}
 }
 
-// The GIT_COMMON_DIR pin keeps a daemon GIT_DIR as given, short names included (row
-// K09). A request directory named through short names is resolved, so the pin of the
-// git directory the walk finds is the long path (row K02). Measured side by side
-// against f6010b97 on a Windows 11 VM.
+// The GIT_COMMON_DIR pin keeps a daemon GIT_DIR as given, short names included
+// (measured). A request directory named through short names is resolved, so the pin
+// of the git directory the walk finds is the long path (measured). Measured side by
+// side against f6010b97 on Windows 11.
 func TestGitDirTrustShortNamePinWindows(t *testing.T) {
 	r := newTrustRepo(t)
 	shortGit := shortPathName(t, filepath.Join(r.T, ".git"))

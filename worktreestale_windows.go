@@ -9,8 +9,7 @@ import (
 
 // staleStepAfterGitDir is true on Windows. There the create runs the stale
 // step after `rev-parse --absolute-git-dir`, when the leaf folder already exists.
-// 5fd08069 removes the entry at that point (cell S1 of round tier3-02 and cell
-// D1K of round tier3-05, Windows VM, 3 runs each).
+// 5fd08069 removes the entry at that point (measured on Windows).
 const staleStepAfterGitDir = true
 
 // unlockQuote quotes the path of a `git worktree unlock` hint. Windows uses double
@@ -38,18 +37,17 @@ const genericHintChars = "$'"
 // "<worktree>/.git" (staleRegistryDir). Both paths are compared through
 // resolveAsFarAsExists, so a symlinked ancestor matches. Best-effort: any failure
 // leaves git to report its own error. 5fd08069 removes the entry of a separate
-// git directory in cell S1 of round tier3-02 (Windows VM). A linked worktree as
-// repo is not measured on Windows, and neither is a relative record.
+// git directory (measured on Windows). A linked worktree as repo is not measured
+// on Windows, and neither is a relative record.
 //
 // The entry goes only when it is the one entry that names the leaf and holds no
-// `locked` file (windowsStaleEntryGoes, cells S1L and S1T of round tier3-05).
-// The folder of the step must be a real folder by its Lstat: a junction or a
-// directory symbolic link there gets no listing and no delete. With such a link
-// at `.git\worktrees`, a stale entry behind it and "shadowDirOff":true,
-// 5fd08069 changes nothing behind the link (cells D1J and D1S of round
-// tier3-05, Windows VM, 3 runs each). It then refuses the create with the text
-// of offWorktreesRefusal. The same Lstat test runs in the state shadow, where
-// such a link is not measured (claustrum's own).
+// `locked` file (windowsStaleEntryGoes). The folder of the step must be a real
+// folder by its Lstat: a junction or a directory symbolic link there gets no
+// listing and no delete. With such a link at `.git\worktrees`, a stale entry
+// behind it and "shadowDirOff":true, 5fd08069 changes nothing behind the link
+// (measured on Windows). It then refuses the create with the text of
+// offWorktreesRefusal. The same Lstat test runs in the state shadow, where such
+// a link is not measured (claustrum's own).
 //
 // held is the git directory that the create holds, or nil. When the common git
 // directory of repo is the held folder (acceptedGitDir.isAt), the step goes
@@ -65,9 +63,9 @@ const genericHintChars = "$'"
 //
 // The compare ignores letter case (sameGitDirPath). 5fd08069 removes a stale
 // entry whose record differs from the leaf only in letter case, in one name or
-// in the whole path (cells R-Q4i and R-Q4i2 of round task084-01, Windows VM).
-// A create that holds no git directory is not measured there. An entry whose
-// record names a path that exists stays (staleRecordLive, D27).
+// in the whole path (measured on Windows). A create that holds no git
+// directory is not measured there. An entry whose record names a path that
+// exists stays (staleRecordLive, D27).
 //
 // matched reports that an entry names the leaf, also one that stays
 // (pairBeforeAdd).

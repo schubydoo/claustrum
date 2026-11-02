@@ -15,14 +15,13 @@ import (
 )
 
 // A FIFO where the daemon reads a `.git` file, a `commondir` file or a `gitdir`
-// record. The rows are B-C0 to B-L1 and the cells are N1, N9, N10 and N12, side by
-// side against 89cb6289 on Linux and macOS VMs. No test here opens a FIFO for
-// writing: the rows have no writer either. A read that waits for a writer therefore
-// fails its test at fifoAnswerLimit and stays parked until the test binary ends.
+// record. The rows are measured, side by side against 89cb6289 on Linux and macOS.
+// No test here opens a FIFO for writing: the rows have no writer either. A read
+// that waits for a writer therefore fails its test at fifoAnswerLimit and stays
+// parked until the test binary ends.
 
 // fifoAnswerLimit bounds each call that meets a FIFO. 89cb6289 answers in under 2 s
-// with a FIFO as a `.git` file (rows B-F1, B-F4, B-S2 and B-L1) or a `commondir` file
-// (row B-G3).
+// with a FIFO as a `.git` file (measured) or a `commondir` file.
 const fifoAnswerLimit = 20 * time.Second
 
 // doneWithin runs fn on another goroutine and fails the test when fn is not done at
@@ -144,7 +143,7 @@ func createParams(base, wt, branch string) map[string]any {
 	return map[string]any{"baseRepo": base, "worktreePath": wt, "branchName": branch}
 }
 
-// Row B-F1: <baseRepo>/.git is a FIFO. The create succeeds, and the worktree is made
+// Measured: <baseRepo>/.git is a FIFO. The create succeeds, and the worktree is made
 // in the repository above baseRepo.
 func TestFifoDotGitCreateSucceeds(t *testing.T) {
 	T := filepath.Join(realTempDir(t), "T")
@@ -158,7 +157,7 @@ func TestFifoDotGitCreateSucceeds(t *testing.T) {
 	wantFifo(t, filepath.Join(a, ".git"))
 }
 
-// Row B-S2: <baseRepo>/.git is a symlink to a FIFO. The create succeeds as in B-F1.
+// Measured: <baseRepo>/.git is a symlink to a FIFO. The create succeeds as in TestFifoDotGitCreateSucceeds.
 func TestSymlinkToFifoDotGitCreateSucceeds(t *testing.T) {
 	base := realTempDir(t)
 	T := filepath.Join(base, "T")
@@ -174,7 +173,7 @@ func TestSymlinkToFifoDotGitCreateSucceeds(t *testing.T) {
 	wantFifo(t, fifo)
 }
 
-// Row B-F4: baseRepo T lies inside an outer repository O, and T/.git is a FIFO. The
+// Measured: baseRepo T lies inside an outer repository O, and T/.git is a FIFO. The
 // create succeeds, and the worktree is made in O.
 func TestFifoDotGitCreateUsesOuterRepository(t *testing.T) {
 	O := filepath.Join(realTempDir(t), "O")
@@ -189,7 +188,7 @@ func TestFifoDotGitCreateUsesOuterRepository(t *testing.T) {
 	wantFifo(t, filepath.Join(T, ".git"))
 }
 
-// Row B-L1: a create as in B-F1, then a create in T itself with another leaf. Both
+// Measured: a create as in TestFifoDotGitCreateSucceeds, then a create in T itself with another leaf. Both
 // succeed.
 func TestFifoDotGitCreateThenSecondCreate(t *testing.T) {
 	T := filepath.Join(realTempDir(t), "T")
@@ -205,7 +204,7 @@ func TestFifoDotGitCreateThenSecondCreate(t *testing.T) {
 	wantCreatedIn(t, T, w2, "w2")
 }
 
-// Row B-G3: the `commondir` file of the registration to remove is a FIFO. The remove
+// Measured: the `commondir` file of the registration to remove is a FIFO. The remove
 // succeeds. The worktree, its registration and its branch go, and the worktrees
 // folder stays.
 func TestFifoCommondirRemoveSucceeds(t *testing.T) {
@@ -231,7 +230,7 @@ func TestFifoCommondirRemoveSucceeds(t *testing.T) {
 	}
 }
 
-// Row B-G2: a FIFO is the `gitdir` record of ANOTHER registration. The remove of a
+// Measured: a FIFO is the `gitdir` record of ANOTHER registration. The remove of a
 // real worktree succeeds, and the other entry stays.
 func TestFifoGitdirRecordOfOtherEntryRemoveSucceeds(t *testing.T) {
 	T := filepath.Join(realTempDir(t), "T")
@@ -273,7 +272,7 @@ func removeRefused(text string) string {
 	return `{"jsonrpc":"2.0","id":1,"result":{"success":false,"error":"` + text + `"}}`
 }
 
-// Cell N1: the `gitdir` record of the registration to remove is a FIFO, and the
+// Measured: the `gitdir` record of the registration to remove is a FIFO, and the
 // worktree is not locked. The remove succeeds. The folder and the branch go, and the
 // registration stays.
 func TestFifoOwnGitdirRecordRemoveSucceeds(t *testing.T) {
@@ -287,9 +286,9 @@ func TestFifoOwnGitdirRecordRemoveSucceeds(t *testing.T) {
 	}
 }
 
-// Cell N9: as N1, with a LOCKED worktree. The answer is {"success":true}, as on
-// 89cb6289 (Linux and macOS VMs). The folder and the branch go. The registration
-// and its `locked` file stay.
+// Measured: as N1, with a LOCKED worktree. The answer is {"success":true}, as on
+// 89cb6289 (measured on Linux and macOS). The folder and the branch go. The
+// registration and its `locked` file stay.
 func TestFifoOwnGitdirRecordOfLockedWorktreeRemoveSucceeds(t *testing.T) {
 	T, wt, entry := newFifoWorktree(t)
 	runGit(t, T, "worktree", "lock", wt)
@@ -303,7 +302,7 @@ func TestFifoOwnGitdirRecordOfLockedWorktreeRemoveSucceeds(t *testing.T) {
 	}
 }
 
-// Cell N10: a LOCKED worktree whose `commondir` file is a FIFO. The answer is the
+// Measured: a LOCKED worktree whose `commondir` file is a FIFO. The answer is the
 // locked refusal, and nothing is deleted.
 func TestFifoCommondirOfLockedWorktreeIsLockedRefusal(t *testing.T) {
 	T, wt, entry := newFifoWorktree(t)
@@ -319,7 +318,7 @@ func TestFifoCommondirOfLockedWorktreeIsLockedRefusal(t *testing.T) {
 	}
 }
 
-// Cell N12: a second entry w1b names the same worktree, and its `gitdir` record is a
+// Measured: a second entry w1b names the same worktree, and its `gitdir` record is a
 // FIFO. The remove succeeds. The folder, the entry w1 and the branch go, and w1b
 // stays.
 func TestFifoGitdirRecordOfTwinEntryRemoveSucceeds(t *testing.T) {
@@ -342,7 +341,7 @@ func TestFifoGitdirRecordOfTwinEntryRemoveSucceeds(t *testing.T) {
 	}
 }
 
-// Row B-F3: the worktree is made first, then <baseRepo>/.git becomes a FIFO. The
+// Measured: the worktree is made first, then <baseRepo>/.git becomes a FIFO. The
 // remove succeeds.
 func TestFifoDotGitRemoveSucceeds(t *testing.T) {
 	T := filepath.Join(realTempDir(t), "T")
@@ -362,7 +361,7 @@ func TestFifoDotGitRemoveSucceeds(t *testing.T) {
 	wantFifo(t, filepath.Join(a, ".git"))
 }
 
-// Row B-F2: git.info, git.list_branches and git.status with a FIFO `.git`.
+// Measured: git.info, git.list_branches and git.status with a FIFO `.git`.
 func TestFifoDotGitReadMethods(t *testing.T) {
 	T := filepath.Join(realTempDir(t), "T")
 	newFifoRepo(t, T)
@@ -378,8 +377,8 @@ func TestFifoDotGitReadMethods(t *testing.T) {
 		result(`{"isRepo":false,"clean":false}`))
 }
 
-// Rows B-F5 and B-S1: a FIFO `.git` with no repository above it, and a `.git` file
-// of 0 bytes. Both answer not_a_repo, and nothing is made.
+// Measured: a FIFO `.git` with no repository above it, and a `.git` file of 0
+// bytes. Both answer not_a_repo, and nothing is made.
 func TestFifoDotGitWithoutRepositoryIsNotARepo(t *testing.T) {
 	t.Run("B-F5 FIFO and no outer repository", func(t *testing.T) {
 		tmp := realTempDir(t)
@@ -402,10 +401,10 @@ func TestFifoDotGitWithoutRepositoryIsNotARepo(t *testing.T) {
 	})
 }
 
-// The read of row B-G1: a FIFO is the `gitdir` record of another registration, and a
-// create looks for a stale registration of its leaf. The look goes past the FIFO, and
-// the entry stays. The create then reaches `git worktree add`, which this test does
-// not run: on 89cb6289 that call waits.
+// The read: a FIFO is the `gitdir` record of another registration, and a create looks
+// for a stale registration of its leaf. The look goes past the FIFO, and the entry
+// stays. The create then reaches `git worktree add`, which this test does not run: on
+// 89cb6289 that call waits.
 func TestDropStaleRegistrationGoesPastFifoRecord(t *testing.T) {
 	T := filepath.Join(realTempDir(t), "T")
 	old := filepath.Join(T, ".git", "worktrees", "old", "gitdir")

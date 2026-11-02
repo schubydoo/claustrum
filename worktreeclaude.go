@@ -10,9 +10,8 @@ import (
 // Seeding a new worktree with the repo's `.claude/` directory, and the rule that
 // keeps Claude's own runtime state out of it.
 //
-// Both halves are measured against the reference on an ephemeral linux VM, with a
-// repo whose `.claude/` is git-ignored (scratch/probe/worktreecopy_probe.py and
-// scratch/probe/ref90_probe.py):
+// Both halves are measured against the reference on Linux, with a
+// repo whose `.claude/` is git-ignored:
 //
 //   - 19f30c46 and 90fca6e6 both copy the git-ignored files under `.claude/` into
 //     a new worktree, with no `.worktreeinclude` entry involved at all.
@@ -54,7 +53,7 @@ var claudeRuntimeStateNames = []string{
 //   - anchored directly under a `.claude/`, so `.claude/nested/mailbox/deep.txt`
 //     is COPIED
 //   - but that `.claude/` need not be the repo root's: `sub/.claude/mailbox/m1.txt`
-//     is DROPPED (scratch/probe/nestedclaude_probe.py)
+//     is DROPPED (measured)
 //   - case-insensitive, so a `Checkpoints` directory is DROPPED
 //
 // Only the manifest pass can reach a nested `.claude/`. copyClaudeDir's listing is
@@ -91,10 +90,10 @@ func isClaudeRuntimeState(rel string) bool {
 //
 // The pass names each child of `.claude/` as a literal pathspec and leaves out
 // `worktrees` in any case. If no other child exists, no git call runs.
-// f6010b97 names the same children (measured on Linux, macOS and Windows VMs).
-// Its order is not sorted on Linux or macOS, so claustrum keeps the order of
-// the directory read. The `worktrees` case rule was measured on Linux only.
-// See claudeDirChildren.
+// f6010b97 names the same children (measured on Linux, macOS and Windows). Its
+// order is not sorted on Linux or macOS, so claustrum keeps the order of the
+// directory read. The `worktrees` case rule was measured on Linux only. See
+// claudeDirChildren.
 //
 // The pathspecs go into batches, one git call per batch. See claudeDirPassCalls.
 // Each call runs through hardenedGitStdout, so the config precursor runs before
@@ -145,8 +144,7 @@ func claudeDirPassCalls(repo string, budget int) [][]string {
 // Two steps use this list. The `.claude/` pass names it. The directory batches
 // of the `.worktreeinclude` scan put it in place of the root `.claude` when that
 // directory opens (see openIncludeDirs). f6010b97 uses the same list in both
-// steps. Linux and macOS VMs measured this in C02, C03, C05, D23, I14b and I15d.
-// A Windows VM measured it in Cl_anydepth.
+// steps. Linux, macOS and Windows measured this.
 func claudeDirChildren(repo string) []string {
 	dir, err := os.Open(filepath.Join(repo, claudeDirName))
 	if err != nil {

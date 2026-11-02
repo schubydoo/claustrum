@@ -15,7 +15,7 @@ import (
 // passes the location checks. verb is "create" or "remove" — the only part of the
 // message that differs between the two methods.
 //
-// Confirmed byte-for-byte against reference build 7d193f89 on an ephemeral VM,
+// Confirmed byte-for-byte against reference build 7d193f89,
 // through git.worktree_create and git.worktree_remove. The enforced predicate is
 // "strictly inside baseRepo": worktreePath must be absolute, carry no ".."
 // component, and clean to a path *under* the repository directory. The message
@@ -58,8 +58,8 @@ func worktreePathRefusal(repo, worktreePath, verb string) string {
 // so 7d193f89 refuses it by name (verb is "create" or "remove"). The refusal text
 // is confirmed byte-for-byte against 7d193f89. A symlinked LEAF
 // is not caught here. Create refuses it as "already exists" (measured). Remove
-// refuses it as "is a symbolic link, not a worktree directory" (f6010b97, measured
-// on a macOS VM). A create shows the path in backticks (tickPath, be1c1ca5,
+// refuses it as "is a symbolic link, not a worktree directory" (`f6010b97`,
+// measured on macOS). A create shows the path in backticks (tickPath, be1c1ca5,
 // measured on Linux, macOS and Windows). A remove shows it as it is (not measured).
 func worktreeSymlinkRefusal(repo, worktreePath, verb string) string {
 	link := symlinkedComponent(repo, worktreePath)
@@ -116,7 +116,7 @@ const managedWorktreesRefusal = "baseRepo is inside a managed worktrees director
 // directory that holds a `.claude-managed-worktrees` marker file. 7d193f89 refuses
 // such a baseRepo on git.worktree_create (errorCode "nested_base_repo") and
 // git.worktree_remove (no errorCode). git.list_branches ignores a baseRepo member
-// (cells LB1 and LB2 of round task015-02, Linux VM).
+// (measured on Linux).
 func baseRepoUnderManagedWorktrees(repo string) bool {
 	p := canonicalPath(repo)
 	for {
@@ -140,17 +140,16 @@ func baseRepoUnderManagedWorktrees(repo string) bool {
 // f6010b97. There git.worktree_create and git.worktree_remove answer
 // managedWorktreesRefusal with no git call.
 //
-// On Linux and macOS, rows G1, G2 and G4 (remove) and G1c, G2c and G4c (create) got
-// that refusal. They send <T>/a.txt/.., <T>/loop/.. and a path through a directory
-// with mode 000, where os.Stat fails with ENOTDIR, ELOOP or EACCES. On Windows os.Stat
-// folds ".." by name, so <T>\missing\.. stats while the walk fails at "missing". On
-// the Windows VM, round 1 rows A1, A1f, A2, A3, O1 to O4, C1 and WR1 got the refusal.
-// So did round 2 rows K1, D1, D2, D4, J1 and J3.
+// On Linux and macOS, measured removes and creates got that refusal. They send
+// <T>/a.txt/.., <T>/loop/.. and a path through a directory with mode 000, where
+// os.Stat fails with ENOTDIR, ELOOP or EACCES. On Windows os.Stat folds ".." by
+// name, so <T>\missing\.. stats while the walk fails at "missing". On Windows, two
+// groups of measured cases got the refusal.
 //
-// A missing path skips the test. That is round 1 row A1 and rows G3 and G3c on Linux
-// and macOS, and round 1 row WX1 on the Windows VM. On the Windows VM, round 1 rows A4
-// and A8 stat and walk, and pass. So do round 2 rows K0, D3, J2, L1, L2, Q1, Q2 and
-// S1. repo is repoDir(): the baseRepo after the ~ expansion, or "." when it is absent.
+// A missing path skips the test. That is measured on Linux, macOS and
+// Windows. On Windows, other measured cases stat and walk, and pass.
+// repo is repoDir(): the baseRepo after the ~ expansion, or "." when it is
+// absent.
 //
 // On Windows, after its walk, filepath.EvalSymlinks looks up each component of the
 // resolved path with FindFirstFile, which lists its parent. So a parent that denies List to the

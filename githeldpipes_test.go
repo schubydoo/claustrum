@@ -13,10 +13,10 @@ import (
 )
 
 // The calls whose output the daemon reads to its end, and the config listing on
-// standard input with one bound from its start (round task101-01, Linux VM). A
-// child of the git stub holds the stdout and stderr of the matched call, as the
-// wrapper of the round does. The limits are shortened here. Each test first
-// sends its request with no held call, and then compares the reply.
+// standard input with one bound from its start (measured on Linux). A child of
+// the git stub holds the stdout and stderr of the matched call, as the wrapper
+// of the measurement does. The limits are shortened here. Each test first sends its
+// request with no held call, and then compares the reply.
 
 // heldPipe is the life of the child that holds the pipes in these tests. It is
 // longer than gitDrainWait, so the short wait for the pipes reads differently.
@@ -63,9 +63,8 @@ func timedCall(t *testing.T, f shadowFixture, method string, params map[string]a
 
 // TestShadowHookListingWaitsForHeldPipes: the config listing before a hardened
 // call exits 0 while a child holds its pipes past the 30 s limit. 5fd08069
-// gives the normal reply when the pipes close (cell A1 of round task101-01,
-// Linux VM: 45 s). Mutation: set the short wait for the pipes again in
-// gitRunLimited.
+// gives the normal reply when the pipes close (measured on Linux: 45 s).
+// Mutation: set the short wait for the pipes again in gitRunLimited.
 func TestShadowHookListingWaitsForHeldPipes(t *testing.T) {
 	f := newSeededShadowFixture(t)
 	want, _ := f.info(t, f.repo, nil)
@@ -82,9 +81,9 @@ func TestShadowHookListingWaitsForHeldPipes(t *testing.T) {
 
 // TestShadowHookListingStopTextAtPipeEOF: the listing still runs at its limit,
 // and a child holds its pipes. git gets the stop, the child gets no signal, and
-// the stop text comes when the pipes close (cell A2 of round task101-01, Linux
-// VM: the reply at 60 s, when the child ended). Mutation: set the short wait
-// for the pipes again in gitRunLimited.
+// the stop text comes when the pipes close (measured on Linux: the reply at 60 s,
+// when the child ended). Mutation: set the short wait for the pipes again in
+// gitRunLimited.
 func TestShadowHookListingStopTextAtPipeEOF(t *testing.T) {
 	f := newSeededShadowFixture(t)
 	setDuration(t, &configListingLimit, time.Second)
@@ -123,9 +122,9 @@ func TestShadowHookListingFailedExitPastLimit(t *testing.T) {
 
 // TestGitStatusScansWaitForHeldPipes: each of the three scans of git.status
 // exits 0 while a child holds its pipes. The reply is the normal one, after
-// the pipes close. 5fd08069 does so for `status` (cell A3 of round
-// task101-01, Linux VM). The other two scans are not measured. Mutation: drop
-// the untilPipeEOF of (*statusRun).git.
+// the pipes close. 5fd08069 does so for `status` (measured on Linux). The
+// other two scans are not measured. Mutation: drop the untilPipeEOF of
+// (*statusRun).git.
 func TestGitStatusScansWaitForHeldPipes(t *testing.T) {
 	for _, match := range []string{"status,--porcelain", "ls-files,-s,-z", "diff-index,--cached"} {
 		t.Run(match, func(t *testing.T) {
@@ -146,9 +145,9 @@ func TestGitStatusScansWaitForHeldPipes(t *testing.T) {
 
 // TestWorktreeCreateFilterListingWaitsForHeldPipes: the listing right before
 // the read-tree call exits 0 while a child holds its pipes. The read-tree call
-// starts when the pipes close, and the create succeeds (cell A4 of round
-// task101-01, Linux VM: read-tree 10.1 s after the exit). Mutation: drop the
-// cmd.Stdout of ownConfigListing.
+// starts when the pipes close, and the create succeeds (measured on Linux:
+// read-tree 10.1 s after the exit). Mutation: drop the cmd.Stdout of
+// ownConfigListing.
 func TestWorktreeCreateFilterListingWaitsForHeldPipes(t *testing.T) {
 	f := newCheckoutRuleFixture(t)
 	slowGit(t, "config,-z,--list", "hold", heldPipe, "", "")
@@ -172,11 +171,10 @@ func TestWorktreeCreateFilterListingWaitsForHeldPipes(t *testing.T) {
 // TestWorktreeCreateFilterListingHeldPastBound: the listing right before the
 // read-tree call exits 0 at once, and a child holds its pipes past the bound
 // of the listing. The bound ends only a git that still runs, so the create
-// succeeds (cell A4-35 of round task111-03, Linux VM). A listing that exits 1
-// at once counts by that exit status (claustrum's own, not measured). The seam
-// shrinks the bound of 30 s to heldPipe, and the child holds the pipes 2*heldPipe. Mutation: in ownConfigListing, end the
-// listing by exec.CommandContext again (both rows), or count it as stopped
-// whenever the bound fired (the row "holdfail").
+// succeeds (measured on Linux). A listing that exits 1 at once counts by that exit status (claustrum's own, not
+// measured). The seam shrinks the bound of 30 s to heldPipe, and the child holds the pipes 2*heldPipe. Mutation: in
+// ownConfigListing, end the listing by exec.CommandContext again (both rows), or count it as stopped whenever the bound
+// fired (the row "holdfail").
 func TestWorktreeCreateFilterListingHeldPastBound(t *testing.T) {
 	for _, mode := range []string{"hold", "holdfail"} {
 		t.Run(mode, func(t *testing.T) {
@@ -209,9 +207,9 @@ func TestWorktreeCreateFilterListingHeldPastBound(t *testing.T) {
 // TestGitStatusRepoConfigReadBoundFromStart: the listing of the repository
 // config on standard input exits 0, and a child holds its pipes past the bound.
 // The bound counts from the start of the call, so git.status answers the read
-// text and makes no folder of the repository in the settings copy (cell B1 of
-// round task101-01, Linux VM). Mutation: in runStartBound, kill only a git
-// that still runs at the bound, and wait for the pipes with no bound.
+// text and makes no folder of the repository in the settings copy (measured on
+// Linux). Mutation: in runStartBound, kill only a git that still runs at the
+// bound, and wait for the pipes with no bound.
 func TestGitStatusRepoConfigReadBoundFromStart(t *testing.T) {
 	f := newSeededShadowFixture(t)
 	setDuration(t, &repoReadBound, time.Second)
@@ -232,17 +230,16 @@ func TestGitStatusRepoConfigReadBoundFromStart(t *testing.T) {
 
 // TestShadowCallSevenBoundFromStart: call 7 of the start test exits 0 after a
 // time, and a child holds its pipes. The bound counts from the start of the
-// call, not from its exit, and the test fails with the read text (cell B2 of
-// rounds task101-01 and task101-02, Linux VM: the reply about 31 s after the
-// call started).
-// Call 7 exits only shortly before the bound, so a bound counted from its exit
-// ends at least callSevenExit later. The wait for the pipes of the other test
-// calls is long here, so a bound after the exit reads differently there too.
-// The time counts from the start of call 7, which the stub writes. 5fd08069
-// answers about 1 s after the bound, and so does the drain of runStartBound.
-// Mutation: give call 7 a WaitDelay of shadowCallBound+shadowCallDrain, run it
-// through boundedGitInput, start the bound at the exit of git, or close the
-// pipes at the bound with no drain.
+// call, not from its exit, and the test fails with the read text (measured on
+// Linux: the reply about 31 s after the call started). Call 7 exits only
+// shortly before the bound, so a bound counted from its exit ends at least
+// callSevenExit later. The wait for the pipes of the other test calls is long
+// here, so a bound after the exit reads differently there too. The time counts
+// from the start of call 7, which the stub writes. 5fd08069 answers about 1 s
+// after the bound, and so does the drain of runStartBound. Mutation: give call
+// 7 a WaitDelay of shadowCallBound+shadowCallDrain, run it through
+// boundedGitInput, start the bound at the exit of git, or close the pipes at
+// the bound with no drain.
 func TestShadowCallSevenBoundFromStart(t *testing.T) {
 	const callSevenExit = 2500 * time.Millisecond
 	f := newShadowFixture(t)
@@ -278,9 +275,8 @@ func TestShadowCallSevenBoundFromStart(t *testing.T) {
 // TestProbeAgainAfterALongHookListing: the kept answer of the call about the
 // repository is old after a hook listing that waited more than probeKeep for
 // its pipes, so a second such call follows. After a short wait none follows.
-// 5fd08069 makes the second call after the 45 s wait of cell A1 of round
-// task101-01 (Linux VM). Mutation: set the short wait for the pipes again in
-// gitRunLimited.
+// 5fd08069 makes the second call after the 45 s wait (measured on Linux).
+// Mutation: set the short wait for the pipes again in gitRunLimited.
 func TestProbeAgainAfterALongHookListing(t *testing.T) {
 	for _, row := range []struct {
 		name string
@@ -298,8 +294,8 @@ func TestProbeAgainAfterALongHookListing(t *testing.T) {
 	}
 }
 
-// TestStartTestCallsAndTheirPipes pins three rows of val-s3p2b2-8-linux2 (Linux
-// VM), with lowered times:
+// TestStartTestCallsAndTheirPipes pins three measured rows (on
+// Linux), with lowered times:
 //
 //   - N-a: a child keeps the output pipes of the `init` call open. The test
 //     goes on after the wait for the pipes and passes. Without the rule of
@@ -364,8 +360,8 @@ func TestStartTestCallsAndTheirPipes(t *testing.T) {
 // TestShadowHookListingStderrHolder: the config listing before a hardened call
 // exits 0, and a child holds its stderr alone. The call goes on gitDrainWait
 // after the exit of git, and the reply is the normal one. 5fd08069 goes on about
-// 2 s after the exit (cells A1-e of rounds task111-01 and task111-02, Linux and
-// macOS VMs). Mutation: in runToEOF, wait for the copy of stderr with no grace.
+// 2 s after the exit (measured on Linux and macOS). Mutation: in runToEOF, wait
+// for the copy of stderr with no grace.
 func TestShadowHookListingStderrHolder(t *testing.T) {
 	f := newSeededShadowFixture(t)
 	want, _ := f.info(t, f.repo, nil)
@@ -384,9 +380,8 @@ func TestShadowHookListingStderrHolder(t *testing.T) {
 // on standard input exits 0, and a child holds its stderr alone past the bound.
 // The read goes on startBoundDrain after the exit of git, and git.status gives
 // its normal reply. 5fd08069 goes on about 1.1 to 1.4 s after the exit and
-// answers the change list (cells B1-e of rounds task111-01 and task111-02,
-// Linux and macOS VMs). Mutation: in runStartBound, drop the cut of the stderr
-// copy after the reap.
+// answers the change list (measured on Linux and macOS). Mutation: in
+// runStartBound, drop the cut of the stderr copy after the reap.
 func TestGitStatusRepoConfigReadStderrHolder(t *testing.T) {
 	// Only the first request of a fixture reads the repository config, so the
 	// normal reply is written out here: the fixture repository is clean.
@@ -424,11 +419,11 @@ func TestRunToEOFOneWriterForBoth(t *testing.T) {
 }
 
 // TestGitStatusRepoConfigReadFailsWithStderrHolder: the listing of the
-// repository config on standard input writes a line to stderr and exits 1, and
-// a child holds its stderr alone. git.status answers the refusal with that line.
-// 5fd08069 does so about 1.1 s after the exit on Linux (cell B1e-x1 of round
-// task111-09), and round task111-10 has equal replies on macOS. Mutation: in
-// runStartBound, return the exec error with no heldStderrExit around it.
+// repository config on standard input writes a line to stderr and exits 1, and a
+// child holds its stderr alone. git.status answers the refusal with that line.
+// 5fd08069 does so about 1.1 s after the exit on Linux (measured), and a
+// measurement has equal replies on macOS. Mutation: in runStartBound, return the
+// exec error with no heldStderrExit around it.
 func TestGitStatusRepoConfigReadFailsWithStderrHolder(t *testing.T) {
 	f := newSeededShadowFixture(t)
 	m := f.fiveRequests(nil)[1]

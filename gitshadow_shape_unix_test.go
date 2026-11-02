@@ -17,17 +17,14 @@ import (
 // fallback-git. Each row is one call. It has the option list, the argv after
 // the list, the working directory and the variables that the daemon adds. The
 // variables are in the order of the environment. The rows of the state shadow
-// are those of 5fd08069 without the member on a Linux VM (val-s3p2b1-linux
-// cells A1, A3-create-plain and A4-remove-branch). The rows with the member
-// are those of 5fd08069 with it (the same cells). The state fallback-git has the variables of the
-// member on the read methods (s3p2-oldgit section 5, Linux VM). In that state
-// the light calls of a create and the listings of the branch step carry six
-// values, and the short-lived folders are in the folder of the daemon
-// (val-s3p2b2-1-macos cell S4-wt1-first-status, macOS VM, and val-s3p2b2-3-windows
-// cell Q-S4c, Windows VM). Those two call logs sort the variables, so the order
-// of the six values in that state is not measured.
+// are those of 5fd08069 without the member on Linux (measured). The rows with the member are
+// those of 5fd08069 with it (measured). The state fallback-git has the variables of the member on
+// the read methods (measured on Linux). In that state the light calls of a create and the
+// listings of the branch step carry six values, and the short-lived folders are in the folder of
+// the daemon (measured on macOS and Windows). Those two call logs sort the variables, so the
+// order of the six values in that state is not measured.
 //
-// The order of the variables is measured on Linux and macOS VMs only, so this
+// The order of the variables is measured on Linux and macOS only, so this
 // file has the unix tag. On Windows Go sorts the environment block (D23).
 //
 // The short forms of the rows:
@@ -208,7 +205,7 @@ func (f shapeFixture) line(t *testing.T, c envCall) string {
 	masks = append(masks, f.leaf, "<leaf>", f.wt, "<wt>", f.repo, "<repo>", cwd, "<cwd>",
 		// The temporary folder has no trailing separator in the mask. On macOS
 		// TMPDIR ends with a slash, and a mask with it took the separator of
-		// the row away (val-s3p2b2-3-macos part C).
+		// the row away (measured on macOS).
 		filepath.Clean(resolveTestRoot(t, os.TempDir())), "<tmp>", filepath.Clean(os.TempDir()), "<tmp>")
 	text = strings.NewReplacer(masks...).Replace(text)
 	text = shapeNumber.ReplaceAllString(text, "-<n>")
@@ -262,9 +259,8 @@ func rows(parts ...[]shapeRow) []shapeRow {
 }
 
 // The four pairs of git.info and the two of git.list_branches. In every state
-// they have the list of 28 items and the six heavy values (s3-linux cell B0,
-// Linux VM). In the state shadow the folder variables
-// are {D} {W}, else {G}.
+// they have the list of 28 items and the six heavy values (measured on
+// Linux). In the state shadow the folder variables are {D} {W}, else {G}.
 func infoRows() []shapeRow {
 	p := func(argv string) []shapeRow { return pair("P28", argv, "<repo>", "{A} {D} {W}", "{A} {G}") }
 	return rows(p("rev-parse --git-dir"), p("remote get-url origin"),
@@ -276,11 +272,11 @@ func listBranchesRows() []shapeRow {
 	return rows(p("rev-parse --git-dir"), p("for-each-ref --format=%(refname:short) --sort=refname refs/heads/"))
 }
 
-// The 21 calls of a first git.status on a linked worktree (val-s3p2b1-linux
-// cell A1). The first two have no --git-dir= and carry {D} {W} in the state
-// shadow. The 19 others have one and carry {D} only. The temporary git folder
-// is <S>/.gitdir-<n> in the state shadow, and <tmp>/claude-ssh-gitdir-<n> with
-// the member (row D5 of that round).
+// The 21 calls of a first git.status on a linked worktree (measured). The
+// first two have no --git-dir= and carry {D} {W} in the state shadow. The 19
+// others have one and carry {D} only. The temporary git folder is
+// <S>/.gitdir-<n> in the state shadow, and <tmp>/claude-ssh-gitdir-<n> with
+// the member (measured).
 func statusRows() []shapeRow {
 	out := rows(
 		pair("P28", "rev-parse --absolute-git-dir", "<repo>", "{A} {D} {W}", "{A} {G}"),
@@ -331,13 +327,12 @@ func statusRowsFor(state shapeState) []shapeRow {
 }
 
 // The calls of a plain git.worktree_create in a repository that has a linked
-// worktree. The rows of 5fd08069 are cell 50a of s3p2b-edges-linux and
-// val-s3p2b1-linux cell A3-create-plain.
+// worktree. The rows of 5fd08069 are measured on Linux.
 //
 // 5fd08069 runs the --show-toplevel pair after `rev-parse --absolute-git-dir`,
 // with and without the member, because the folder of the registrations exists
-// and no entry names the leaf (pairBeforeAdd, cell R-Q2b of round task084-01).
-// The state fallback-git gets no pair (claustrum's own, not measured).
+// and no entry names the leaf (pairBeforeAdd). The state fallback-git gets no
+// pair (claustrum's own, not measured).
 func createRows() []shapeRow {
 	const leaf = "<leaf>"
 	index := map[bool]string{true: " GIT_INDEX_FILE=<S>/.index-<n>/index", false: " GIT_INDEX_FILE=<tmp>/claude-ssh-index-<n>/index"}
@@ -401,10 +396,9 @@ func probeAfterCreate() []shapeRow {
 		shadow: "GIT_COMMON_DIR=<S>/.probe GIT_OBJECT_DIRECTORY=<S>/.probe/objects GIT_ALLOW_PROTOCOL=denied_by_claude_ssh GIT_NO_LAZY_FETCH=1 GIT_TERMINAL_PROMPT=0 {L}"}}
 }
 
-// The 8 calls of a git.worktree_remove with branchName (cell 45 of
-// s3p2b-edges2-linux and val-s3p2b1-linux cell A4-remove-branch). The three
-// listings of the branch step carry the six
-// values in the state shadow and the four with the member (row N2).
+// The 8 calls of a git.worktree_remove with branchName (measured). The
+// three listings of the branch step carry the six values in the state
+// shadow and the four with the member (measured).
 func removeRows() []shapeRow {
 	step := func(list, argv string) []shapeRow {
 		listing := same("none", "config -z --list", "<repo>", "{A2} {D} {W} {L}", "{C} {G} {L}")
@@ -476,9 +470,8 @@ func TestGitCallShapePerState(t *testing.T) {
 // TestShadowVersionCallAfterAFailedListing pins the `version` call that follows
 // a first listing which fails. In a create it carries the six values in the
 // order of the light calls of the state shadow. With the member it carries the
-// four values (val-s3p2b1-linux table A7 and row N10, Linux VM). In git.info it
-// carries the six heavy values in both. The call has no folder variable, no
-// hook pin and no LC_ALL.
+// four values (measured on Linux). In git.info it carries the six heavy values
+// in both. The call has no folder variable, no hook pin and no LC_ALL.
 func TestShadowVersionCallAfterAFailedListing(t *testing.T) {
 	for _, state := range []shapeState{stateShadow, stateOff} {
 		t.Run(state.String(), func(t *testing.T) {
@@ -512,10 +505,9 @@ func TestShadowVersionCallAfterAFailedListing(t *testing.T) {
 // TestShadowPairBeforeAdd pins the pair of 5fd08069 before the add of a create
 // in the state shadow (pairBeforeAdd). The pair runs right after `rev-parse
 // --absolute-git-dir` when the folder of the registrations exists and no entry
-// names the leaf (cell R-Q2b of round task084-01). An entry that names the leaf
-// gives no pair, and it goes before the add (cell R-Q2c). With the member the
-// pair runs too (cell 50a of s3p2b-edges-linux), and a missing folder gives
-// none (cell R-Q2a).
+// names the leaf (measured). An entry that names the leaf gives no pair, and it
+// goes before the add (measured). With the member the pair runs too (measured),
+// and a missing folder gives none.
 func TestShadowPairBeforeAdd(t *testing.T) {
 	vars := map[shapeState]string{stateShadow: "{A} {D}", stateOff: "{A} {G}"}
 	noFolder := func(t *testing.T, f shapeFixture) {
@@ -580,9 +572,9 @@ func TestShadowPairBeforeAdd(t *testing.T) {
 // TestShadowTopLevelPairOfARemove pins the variables of the --show-toplevel
 // pair of a git.worktree_remove, per state. In the state shadow both calls
 // carry {D} with no GIT_DIR and no GIT_WORK_TREE, and with the member {G}
-// (val-s3p2b1-linux table A6, Linux VM). The fixture is a folder under
-// .claude/worktrees that no registration names: the pair runs there before the
-// look at the registrations.
+// (measured on Linux). The fixture is a folder under .claude/worktrees that no
+// registration names: the pair runs there before the look at the
+// registrations.
 func TestShadowTopLevelPairOfARemove(t *testing.T) {
 	for _, state := range []shapeState{stateShadow, stateOff} {
 		t.Run(state.String(), func(t *testing.T) {
@@ -651,8 +643,8 @@ func TestShadowBothAddsNameTheCopy(t *testing.T) {
 // TestShadowRemoveWithWorktreeRootNamesTheCopy pins the 8 calls of a
 // git.worktree_remove with worktreeRoot in the state shadow. They carry the
 // four folder variables, and the light calls carry the six values, as on
-// 5fd08069 (cell N3 of val-s3p2b2-3-linux2, Linux VM: the table of the remove).
-// The call about the repository comes first, after the staged create.
+// 5fd08069 (measured on Linux: the table of the remove). The call about the
+// repository comes first, after the staged create.
 func TestShadowRemoveWithWorktreeRootNamesTheCopy(t *testing.T) {
 	f := newShapeFixture(t, stateShadow)
 	if raw, _ := f.request(t, "git.info", map[string]any{"path": f.repo}); !strings.Contains(raw, `"isRepo":true`) {

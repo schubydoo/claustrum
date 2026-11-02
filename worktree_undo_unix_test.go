@@ -16,7 +16,7 @@ import (
 
 // TestWorktreeCreateUndoCouldNotFinish pins the two undo texts of a rollback after
 // a successful add. The steps and texts were measured against f6010b97 and 90fca6e6
-// on a Windows VM, with a process holding a file or a directory in the leaf. Here a
+// on Windows, with a process holding a file or a directory in the leaf. Here a
 // read-only directory makes the same steps fail on Linux and macOS: the git stub
 // makes it during the call under test (gitStubAction "lock" and "lockparent").
 //
@@ -29,7 +29,7 @@ import (
 //
 // A read-only mode does not stop root, so the test skips as root. The OS error text
 // is the text Go gives for EACCES. Both references gave the same text on Linux and
-// macOS VMs.
+// macOS.
 func TestWorktreeCreateUndoCouldNotFinish(t *testing.T) {
 	if os.Geteuid() == 0 {
 		t.Skip("a read-only directory does not stop root")
@@ -156,7 +156,7 @@ func readSnap(t *testing.T, snap string) []string {
 // TestWorktreeUndoRawReadDirOrder pins the order of undo step A. Both references
 // delete the leaf's top-level entries in the order that the directory read returns
 // them, not sorted, and stop at the first entry that fails. The frame names that
-// entry. Measured against f6010b97 and 90fca6e6 on Linux ext4 and macOS APFS VMs.
+// entry. Measured against f6010b97 and 90fca6e6 on Linux ext4 and macOS APFS.
 //
 // The stub makes r0 to r7 in the leaf, in a mixed order, each read-only and
 // holding a file. It records the read order. The undo must fail at the first rN in
@@ -221,7 +221,7 @@ func TestWorktreeUndoRawReadDirOrder(t *testing.T) {
 // of worktreePath. Both references create the worktree for a path with a trailing
 // slash, "//" or "/./", and quote the path exactly as sent in the success frame
 // and in the undo texts. The removeat part names the base name w1. Measured
-// against f6010b97 and 90fca6e6 on Linux and macOS VMs.
+// against f6010b97 and 90fca6e6 on Linux and macOS.
 func TestWorktreeCreatePathSpelling(t *testing.T) {
 	if os.Geteuid() == 0 {
 		t.Skip("a read-only directory does not stop root")

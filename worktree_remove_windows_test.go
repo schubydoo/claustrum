@@ -29,7 +29,7 @@ func makeJunction(t *testing.T, link, target string) {
 
 // git.worktree_create refuses a junctioned .claude or .claude\worktrees at the parent
 // step and creates nothing: no directory in the junction target, no entry and no
-// branch. Measured against f6010b97 on a Windows VM (rows JCR1 and JCR2).
+// branch. Measured against f6010b97 on Windows.
 func TestWorktreeCreateRefusesJunctionParent(t *testing.T) {
 	for _, c := range []struct{ name, junction string }{
 		{"claude", ".claude"},
@@ -94,7 +94,7 @@ func shortPathOf(t *testing.T, p string) string {
 
 // A gone worktree whose parent directory is gone too, with a locked registration, is
 // refused when baseRepo is sent in its 8.3 short form. The branch stays. Measured
-// against f6010b97 on a Windows VM (row GL1).
+// against f6010b97 on Windows.
 func TestWorktreeRemoveGoneLockedShortBase(t *testing.T) {
 	requireGit(t)
 	repo := filepath.Join(resolveTestRoot(t, t.TempDir()), "longrepository1")
@@ -121,7 +121,7 @@ func TestWorktreeRemoveGoneLockedShortBase(t *testing.T) {
 
 // A registered leaf sent through its 8.3 short name is removed with its branch, but
 // its entry stays, because the short name does not match the long path git recorded.
-// Measured against f6010b97 on a Windows VM (row N83_leaf).
+// Measured against f6010b97 on Windows.
 func TestWorktreeRemoveShortNameKeepsEntry(t *testing.T) {
 	f := newRmFixture(t)
 	leaf := filepath.Join(filepath.Dir(f.wt), "longworktree1")
@@ -149,7 +149,8 @@ func TestWorktreeRemoveShortNameKeepsEntry(t *testing.T) {
 	if f.hasBranch("longworktree1") {
 		t.Error("branch longworktree1 is still there")
 	}
-	// The same leaf by its long name drops the entry (row K02).
+	// The same leaf by its long name drops the entry
+	// (measured).
 	if raw := removeFrame(t, map[string]any{"baseRepo": f.repo, "worktreePath": f.wt, "branchName": "wt1"}); raw != removeOK {
 		t.Errorf("reply = %s, want %s", raw, removeOK)
 	}
@@ -158,7 +159,7 @@ func TestWorktreeRemoveShortNameKeepsEntry(t *testing.T) {
 	}
 }
 
-// E8, battery row J2 (Windows VM, 89cb6289): baseRepo and worktreePath go through a
+// Measured (`89cb6289`, on Windows): baseRepo and worktreePath go through a
 // junction to the repository. The folder and its entry are both gone after the
 // removal.
 func TestWorktreeRemoveThroughJunctionDropsEntry(t *testing.T) {

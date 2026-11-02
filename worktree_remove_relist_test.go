@@ -9,8 +9,7 @@ import (
 )
 
 // git.worktree_remove lists the configuration again once when its first plain
-// listing fails. The cells are those of round tier3-13 (macOS VM), round tier3-17
-// (Linux VM, also G08b and CaP3) and round task111-09 (Linux VM) on 5fd08069.
+// listing fails. These are measured on macOS and Linux on 5fd08069.
 
 // relistFixture is a listing fixture with the worktree w1 at f.wt().
 func relistFixture(t *testing.T) listingFixture {
@@ -62,12 +61,11 @@ func relistCalls(calls []envCall) []string {
 
 // A second listing that succeeds lets the remove go on: the leaf and the
 // registration go, and the branch stays. After exit 1 `git version` runs before
-// the second listing (cell F1). After exit 128 it does too, in a repository, also
-// with the text of git where it finds no repository. claustrum decides by the folder,
-// not by the text (TestRemoveListingCheckNoRepository, claustrum's own, not measured). Mutations: call
-// hostileConfigRefusal in place of removeListingCheck in methods_git.go, keep the
-// "no repository" answer in removeListingCheck, or skip `git version` after any
-// exit 128 there.
+// the second listing (measured). After exit 128 it does too, in a repository, also with the text of
+// git where it finds no repository. claustrum decides by the folder, not by the text
+// (TestRemoveListingCheckNoRepository, claustrum's own, not measured). Mutations: call
+// hostileConfigRefusal in place of removeListingCheck in methods_git.go, keep the "no repository"
+// answer in removeListingCheck, or skip `git version` after any exit 128 there.
 func TestRemoveListsAgainAfterFailedListing(t *testing.T) {
 	for _, tc := range []struct {
 		name, code, stderr string
@@ -102,11 +100,11 @@ func TestRemoveListsAgainAfterFailedListing(t *testing.T) {
 }
 
 // A second listing that fails too answers its refusal after the words of the lock
-// check, after `git version`, with no third listing and nothing removed. In cell
-// F2 every plain listing exits 1. The case second-text is claustrum's own: the
-// first one exits 2 and the second one exits 1, so the text is that of the second
-// listing. Which listing's text 5fd08069 quotes is not measured. Mutation: answer
-// lockCheckRefusal for a retried check in methods_git.go.
+// check, after `git version`, with no third listing and nothing removed. In a
+// measurement, every plain listing exits 1. The case second-text is claustrum's
+// own: the first one exits 2 and the second one exits 1, so the text is that of
+// the second listing. Which listing's text 5fd08069 quotes is not measured.
+// Mutation: answer lockCheckRefusal for a retried check in methods_git.go.
 func TestRemoveSecondFailedListingRefuses(t *testing.T) {
 	for _, tc := range []struct {
 		name string
@@ -147,12 +145,12 @@ func TestRemoveSecondFailedListingRefuses(t *testing.T) {
 // A folder where the trust check finds no repository gets no second listing. The
 // first one fails, `git version` follows, and its text comes after the words of
 // the lock check. Nothing is removed. 5fd08069 shows it for a plain folder (cell
-// CaP3 of round tier3-17, Linux VM, an empty daemon GIT_CONFIG_KEY_0). The other
-// no-repository states are claustrum's own. The text of git 2.56 for a `.git`
-// file that names no valid repository gets one more listing and the lock-check
-// refusal (not measured, claustrum's own). Mutations: pass
-// false for noRepo to removeListingCheck in methods_git.go, or report final for
-// every noRepo listing in removeListingCheck.
+// CaP3, Linux, an empty daemon GIT_CONFIG_KEY_0). The other no-repository states
+// are claustrum's own. The text of git 2.56 for a `.git` file that names no
+// valid repository gets one more listing and the lock-check refusal (not
+// measured, claustrum's own). Mutations: pass false for noRepo to
+// removeListingCheck in methods_git.go, or report final for every noRepo listing
+// in removeListingCheck.
 func TestRemoveListsOnceInPlainFolder(t *testing.T) {
 	for _, tc := range []struct {
 		name, stderr string

@@ -11,9 +11,9 @@ import (
 )
 
 // The hooks refusal cuts git's raw stderr at 512 bytes before it trims white space.
-// Row HK_leadlong was measured side by side against f6010b97 with a stub git on a
-// Windows VM. There 40 newlines and 40 spaces come before 14 lines of 41 bytes. The
-// 80 bytes of white space count toward the cap, so the text ends inside line L11. A
+// Measured side by side against f6010b97 with a stub git on
+// Windows. There 40 newlines and 40 spaces come before 14 lines of 41 bytes. The 80
+// bytes of white space count toward the cap, so the text ends inside line L11. A
 // trim before the cap moves the cut into line L13.
 func TestHooksRefusalCapsBeforeTrim(t *testing.T) {
 	real, err := exec.LookPath("git")

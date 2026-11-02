@@ -13,11 +13,10 @@ import (
 	"time"
 )
 
-// The filter rule of the git.worktree_create checkout (gitfilter.go). The cell
-// names are those of the VM rounds, from a Linux VM with
-// 5fd08069. A Windows VM ran a part of the cells. Every filter program is this
-// test binary in the "filter-mark" helper mode. Its marker file proves whether
-// it ran.
+// The filter rule of the git.worktree_create checkout (gitfilter.go). The
+// cases were measured on Linux with 5fd08069, and a part of them on
+// Windows. Every filter program is this test binary in the "filter-mark"
+// helper mode. Its marker file proves whether it ran.
 
 // filterFixture is a wtFixture whose commit also holds z.txt and a .gitattributes
 // file. The user and the system config of the daemon's git calls are empty.
@@ -77,7 +76,7 @@ func outside(t *testing.T, text string) {
 }
 
 // filterRefusalFrame is the measured result of the refusal that names the filter
-// m (cell A1), byte for byte.
+// m, byte for byte.
 const filterRefusalFrame = `"result":{"success":false,"error":"Claude doesn't run the \"m\" git filter, because only this repository's own git config defines it. If you trust that filter, copy the [filter \"m\"] section from that config (usually .git/config) into ~/.gitconfig on the remote machine, then try again.","errorCode":"repository_only_filter"}}`
 
 func (f filterFixture) wantRefused(t *testing.T, raw, name string) {
@@ -96,7 +95,7 @@ func (f filterFixture) wantCreatedLeaf(t *testing.T, raw string) {
 	}
 }
 
-// Cells A1 and A2. A smudge or a process filter that only .git/config defines is
+// Measured. A smudge or a process filter that only .git/config defines is
 // refused with the measured frame, the filter does not run, and nothing is left.
 func TestWorktreeCreateRefusesRepositoryOnlyFilter(t *testing.T) {
 	for _, key := range []string{"smudge", "process"} {
@@ -138,7 +137,7 @@ func TestWorktreeCreateFilterRefusalQuotesTheName(t *testing.T) {
 	}
 }
 
-// The states that are not refused. Cells A3 to A5, Q8, C1, B6 and A7.
+// The states that are not refused (measured).
 func TestWorktreeCreateFilterStatesThatPass(t *testing.T) {
 	for _, tc := range []struct {
 		name  string
@@ -177,8 +176,8 @@ func TestWorktreeCreateFilterStatesThatPass(t *testing.T) {
 	}
 }
 
-// Cells A7 of part 3 and O6. With a definition in the repository and one outside
-// it, the create succeeds and the outside filter runs.
+// Measured. With a definition in the repository and one outside it,
+// the create succeeds and the outside filter runs.
 func TestWorktreeCreateOutsideFilterWins(t *testing.T) {
 	f := newFilterFixture(t, "t.txt filter=m\n")
 	f.own(t, "filter.m.smudge", f.marker(t, "local"))
@@ -192,7 +191,7 @@ func TestWorktreeCreateOutsideFilterWins(t *testing.T) {
 	}
 }
 
-// Cell Q3. A filter name with "=" that only the repository defines gets the
+// Measured. A filter name with "=" that only the repository defines gets the
 // measured text, and nothing is left.
 func TestWorktreeCreateRefusesFilterNameWithEquals(t *testing.T) {
 	f := newFilterFixture(t, "t.txt filter=a=b\n")
@@ -211,7 +210,7 @@ func TestWorktreeCreateRefusesFilterNameWithEquals(t *testing.T) {
 // A process key of the repository beside an outside smudge key, with no
 // settings copy, gets claustrum's own refusal, and no filter runs. That state
 // is claustrum's own, not measured. With a copy the create succeeds, as on
-// 5fd08069 (cell F1 of round task073-02, TestShadowFilterRulesOfRoundTask073).
+// 5fd08069 (measured, TestShadowFilterRulesOfRoundTask073).
 func TestWorktreeCreateRefusesFilterThatNoPairReplaces(t *testing.T) {
 	f := newFilterFixture(t, "t.txt filter=m\n")
 	f.own(t, "filter.m.process", f.marker(t, "local"))
@@ -224,12 +223,11 @@ func TestWorktreeCreateRefusesFilterThatNoPairReplaces(t *testing.T) {
 	f.assertRolledBack(t, []string{}, false)
 }
 
-// Cell Q7 (Linux VM): on 5fd08069 a cat first on PATH does not run. With smudge
-// = cat the create succeeds and no cat program starts. The required = true of
-// this fixture is in no cell: it is from the development host. The read-tree
-// call gets
-// three pairs that turn the filter off. A stand-in cat is first on PATH: this
-// test binary in the "cat-mark" helper mode.
+// Measured on Linux: on 5fd08069 a cat first on PATH does not run. With smudge = cat the
+// create succeeds and no cat program starts. The required = true of this
+// fixture is in no cell: it is from the development host. The read-tree call
+// gets three pairs that turn the filter off. A stand-in cat is first on PATH:
+// this test binary in the "cat-mark" helper mode.
 func TestWorktreeCreateSmudgeCatStartsNoProgram(t *testing.T) {
 	f := newFilterFixture(t, "t.txt filter=m\n")
 	f.own(t, "filter.m.smudge", "cat")
@@ -276,7 +274,7 @@ func (f filterFixture) assertRetryWithRuleOffRunsCat(t *testing.T) {
 	f.wantCreatedLeaf(t, raw)
 	if runtime.GOOS == "windows" {
 		// Git for Windows puts its own /usr/bin before the PATH of the caller, so its
-		// own cat runs and the stand-in cannot (cells W1, Windows VM).
+		// own cat runs and the stand-in cannot (measured on Windows).
 		t.Log("the marker half of the control does not run on Windows: Git for Windows finds its own cat first")
 		return
 	}
@@ -314,7 +312,7 @@ func TestWorktreeCreateRefusesFilterNameThatIsNotUTF8(t *testing.T) {
 	}
 }
 
-// Cells Q8. The last value of a key counts. cat and then a marker value is
+// Measured. The last value of a key counts. cat and then a marker value is
 // refused. The reverse order is a row of TestWorktreeCreateFilterStatesThatPass.
 func TestWorktreeCreateLastFilterValueCounts(t *testing.T) {
 	f := newFilterFixture(t, "t.txt filter=m\n")
@@ -327,9 +325,9 @@ func TestWorktreeCreateLastFilterValueCounts(t *testing.T) {
 	}
 }
 
-// Cells R1 and R-Q4h of round task084-01 (Linux and macOS VMs). A filter
-// that the user config defines through includeIf "gitdir:…" is outside the
-// repository: it runs, and the create succeeds.
+// Measured on Linux and macOS. A filter that the user config defines
+// through includeIf "gitdir:…" is outside the repository: it runs, and
+// the create succeeds.
 func TestWorktreeCreateFilterOfConditionalInclude(t *testing.T) {
 	f := newFilterFixture(t, "t.txt filter=m\n")
 	top, err := filepath.EvalSymlinks(f.top)
@@ -348,10 +346,8 @@ func TestWorktreeCreateFilterOfConditionalInclude(t *testing.T) {
 
 // A timeoutMs of the caller that expires during the listing before the
 // read-tree call answers the timeout frame. The repository has no filter. The
-// frame is the one of cells S2 (Linux VM). The deadline does not end that
-// listing: it runs to its end, as on 5fd08069 (cell T12 of round task010-01,
-// Linux VM, and cells R-Q4ax and Q4ap of round task084-01, Linux and macOS
-// VMs).
+// frame is the one measured on Linux. The deadline does not end that
+// listing: it runs to its end, as on 5fd08069 (measured on Linux and macOS).
 //
 // The stub holds that listing and no other call: its log has one "held" line.
 // The read of the config file is not held. The deadline fires when the held
@@ -395,7 +391,7 @@ func TestWorktreeCreateDeadlineDuringFilterListing(t *testing.T) {
 	}
 }
 
-// Cells A8, O4 and O5. A clean key, a required key or an empty smudge from
+// Measured. A clean key, a required key or an empty smudge from
 // outside is no definition, so the refusal stays.
 func TestWorktreeCreateOutsideKeysThatDefineNothing(t *testing.T) {
 	for _, line := range []string{"clean = cat", "required = true", "smudge ="} {
@@ -412,8 +408,8 @@ func TestWorktreeCreateOutsideKeysThatDefineNothing(t *testing.T) {
 	}
 }
 
-// Cells V2 to V6, V8 and V9. Each value is refused. No marker is in them, so the
-// reply is the proof.
+// Measured. Each value is refused. No marker is in them, so the reply
+// is the proof.
 func TestWorktreeCreateRefusedFilterValues(t *testing.T) {
 	// The rows share the git config isolation of the test, so they run in parallel.
 	isolateGitConfig(t)
@@ -470,9 +466,9 @@ func wantFirstPairs(t *testing.T, argv []string, pairs ...string) {
 	}
 }
 
-// Cells V7 and V13. Under the name lfs the two git-lfs values pass, and the
-// read-tree call gets each as a pair. The create does not need a git-lfs program:
-// a smudge filter that does not start is no failure for git.
+// Measured. Under the name lfs the two git-lfs values pass, and the read-tree
+// call gets each as a pair. The create does not need a git-lfs program: a smudge
+// filter that does not start is no failure for git.
 func TestWorktreeCreatePassesLfsFilterOn(t *testing.T) {
 	f := newFilterFixture(t, "t.txt filter=lfs\n")
 	f.own(t, "filter.lfs.smudge", "git-lfs smudge -- %f")
@@ -486,11 +482,11 @@ func TestWorktreeCreatePassesLfsFilterOn(t *testing.T) {
 	}
 }
 
-// Cells X4 and L1 (Windows VM). The repository's own config has a git-lfs key
-// that names a program. The lfs values then do not pass: the read-tree call gets
-// the three pairs, and the answer is the refusal that names lfs (cell L1 with
-// build D). The same keys in the user config change nothing. The rule
-// is claustrum's own. No git-lfs program is needed.
+// Measured on Windows. The repository's own config has a git-lfs key that names a
+// program. The lfs values then do not pass: the read-tree call gets the three pairs,
+// and the answer is the refusal that names lfs (measured with a later build). The
+// same keys in the user config change nothing. The rule is claustrum's own. No
+// git-lfs program is needed.
 func TestWorktreeCreateLfsWithTransferProgramOfRepository(t *testing.T) {
 	off := []string{"filter.lfs.process=", "filter.lfs.required=true", "filter.lfs.smudge=false"}
 	for _, tc := range []struct {
@@ -534,9 +530,9 @@ func TestWorktreeCreateLfsWithTransferProgramOfRepository(t *testing.T) {
 // with no such path the create succeeds, and another filter of the user config
 // still runs. With no such key, or with the keys in
 // the user config only, the outside filter runs and the call has no pair. The
-// outside filter is a marker, so no git-lfs program is needed. A Windows VM ran
-// the rule with a working git-lfs (cells L2 to L5 and L7). The lfs.extension row
-// is from the help text of git-lfs 3.7.1.
+// outside filter is a marker, so no git-lfs program is needed. A Windows test ran the
+// rule with a working git-lfs (measured). The lfs.extension row is from the help
+// text of git-lfs 3.7.1.
 func TestWorktreeCreateOutsideLfsWithTransferProgramOfRepository(t *testing.T) {
 	const urlKey = "lfs.https://example.invalid/r.standalonetransferagent"
 	userKeys := "[lfs]\n\tstandalonetransferagent = x\n[lfs \"customtransfer.x\"]\n\tpath = /no/such/agent\n"
@@ -588,9 +584,9 @@ func TestWorktreeCreateOutsideLfsWithTransferProgramOfRepository(t *testing.T) {
 	}
 }
 
-// Cells N1, N2 and N4. Every repository-only filter gets its three pairs, in
-// sorted order of the names and before the profile. The refusal names the filter
-// of the first path that git reports.
+// Measured. Every repository-only filter gets its three pairs, in sorted order
+// of the names and before the profile. The refusal names the filter of the first
+// path that git reports.
 func TestWorktreeCreateTwoRepositoryOnlyFilters(t *testing.T) {
 	pairs := []string{
 		"filter.b.process=", "filter.b.required=true", "filter.b.smudge=false",
@@ -615,10 +611,10 @@ func TestWorktreeCreateTwoRepositoryOnlyFilters(t *testing.T) {
 	}
 }
 
-// Cells D5 and Q4. A name over 200 bytes gets its own text with the first 40
-// bytes, and nothing is left. 5fd08069 makes no read-tree call there (Windows
-// VM). A name of 200 bytes gets the three pairs. Cell Q5: a name of 300 bytes
-// with smudge = cat is not refused.
+// Measured. A name over 200 bytes gets its own text with the first 40 bytes,
+// and nothing is left. 5fd08069 makes no read-tree call there (measured on
+// Windows). A name of 200 bytes gets the three pairs. Measured: a name of
+// 300 bytes with smudge = cat is not refused.
 func TestWorktreeCreateFilterNameBound(t *testing.T) {
 	long := strings.Repeat("n", 300)
 	f := newFilterFixture(t, "t.txt filter="+long+"\n")
@@ -646,7 +642,7 @@ func TestWorktreeCreateFilterNameBound(t *testing.T) {
 	}
 }
 
-// Cell E1. With shadowDirOff the read-tree call gets no filter pair, the filter
+// Measured. With shadowDirOff the read-tree call gets no filter pair, the filter
 // of the repository runs, and the create succeeds.
 func TestWorktreeCreateShadowDirOffRunsTheFilter(t *testing.T) {
 	f := newFilterFixture(t, "t.txt filter=m\n")
@@ -662,7 +658,7 @@ func TestWorktreeCreateShadowDirOffRunsTheFilter(t *testing.T) {
 // A shadowDirOff value that is not the
 // JSON value true is no error on a git method, and the frame is that of the
 // request with no member. On 5fd08069 the frame of git.info is also that of no
-// member with false and with {} (cells Q12, Linux VM).
+// member with false and with {} (measured on Linux).
 func TestShadowDirOffOtherValuesChangeNoFrame(t *testing.T) {
 	f := newFilterFixture(t, "t.txt filter=m\n")
 	s := newTestServer(t)
@@ -681,7 +677,7 @@ func TestShadowDirOffOtherValuesChangeNoFrame(t *testing.T) {
 }
 
 // Only the JSON value true turns the filter rule off. The string "true" and the
-// number 1 leave it on, as on 5fd08069 (cells Q12, Linux and Windows VMs).
+// number 1 leave it on, as on 5fd08069 (measured on Linux and Windows).
 func TestWorktreeCreateShadowDirOffNeedsTrue(t *testing.T) {
 	for _, v := range []any{"true", 1} {
 		f := newFilterFixture(t, "t.txt filter=m\n")
@@ -718,7 +714,7 @@ func TestWorktreeCreateFilterRefusalReadsGitText(t *testing.T) {
 }
 
 // The two listings as git prints them: the one that the checkout reads, and the
-// one with no repository in view. Cells B1 to B6, D3, V14, Q6 and Q9.
+// one with no repository in view (measured).
 func TestPlanFilters(t *testing.T) {
 	listing := func(recs ...string) map[string]filterValues {
 		return parseFilterListing([]byte(strings.Join(recs, "\x00") + "\x00"))
@@ -777,7 +773,7 @@ func TestPlanFilters(t *testing.T) {
 }
 
 // The scoped listing as git prints it. The scopes local and worktree are the
-// repository's own config. Cells B1 to B6 and R1.
+// repository's own config (measured).
 func TestSplitScopedListing(t *testing.T) {
 	scoped := strings.Join([]string{
 		"system", "filter.s.smudge\nsys",

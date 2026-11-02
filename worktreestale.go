@@ -18,11 +18,10 @@ import (
 // directory itself.
 //
 // With a linked worktree as repo, 5fd08069 removes the stale entry `old` of the
-// main repository (cell V9 of round tier0-10, Linux VM, and cell S1W of round
-// tier3-02, Linux and macOS VMs). With a separate git directory it removes the
-// entry of that directory (cell S1 of round tier3-02, Linux, macOS and Windows
-// VMs). With a submodule it removes the entry of .git/modules/<m> (cell S1M,
-// Linux VM). Not measured: a commondir file in a git directory that is not an
+// main repository (measured on Linux and macOS). With a separate git directory
+// it removes the entry of that directory (measured on Linux, macOS and
+// Windows). With a submodule it removes the entry of .git/modules/<m> (measured
+// on Linux). Not measured: a commondir file in a git directory that is not an
 // entry of a folder `worktrees`.
 func staleRegistryDir(repo string) string {
 	admin := worktreeAdminDir(repo)
@@ -68,10 +67,9 @@ func windowsStaleEntries(root *os.Root, dir, worktreePath string) (names []strin
 // only when it is the one entry there, holds no `locked` file and has no live
 // record (staleRecordLive, D27). 5fd08069 keeps an entry with a `locked` file
 // and keeps both of two entries, and the add then fails with the text of git
-// (cells S1L and S1T of round tier3-05, Windows VM, 3 runs each). Not
-// measured: a live record beside a second entry (both stay here), and a
-// `locked` test whose Lstat fails with another error than "does not exist"
-// (the entry stays).
+// (measured on Windows). Not measured: a live record beside a second entry
+// (both stay here), and a `locked` test whose Lstat fails with another error
+// than "does not exist" (the entry stays).
 func windowsStaleEntryGoes(root *os.Root, dir string, names []string, records [][]byte) bool {
 	if len(names) != 1 || staleRecordLive(records[0]) {
 		return false
@@ -84,9 +82,9 @@ func windowsStaleEntryGoes(root *os.Root, dir string, names []string, records []
 // entry names, as written, still exists (D27). The Windows step keeps such an
 // entry. Its compare ignores letter case, so in a folder with case sensitivity
 // on, a live worktree W1 matches a create of w1. 5fd08069 deletes the entry of
-// W1 there (cell W-CS of round task084-02, Windows VM). The guard is
-// claustrum's own, by the maintainer's decision of 2026-10-18. A Lstat that
-// fails with another error than "does not exist" keeps the entry too.
+// W1 there (measured on Windows). The guard is claustrum's own, by the
+// maintainer's decision of 2026-10-18. A Lstat that fails with another error
+// than "does not exist" keeps the entry too.
 func staleRecordLive(record []byte) bool {
 	_, err := os.Lstat(strings.TrimSpace(string(record)))
 	return !errors.Is(err, fs.ErrNotExist)

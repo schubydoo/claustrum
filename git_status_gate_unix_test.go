@@ -36,8 +36,8 @@ func statusWithin(t *testing.T, f statusFixture, fifo string) string {
 	}
 }
 
-// Rows n05a, C20a, C20b, n14b and o15b: a FIFO in place of an entry file answers
-// isRepo:false, and no read waits for a writer.
+// Measured: a FIFO in place of an entry file answers isRepo:false, and no read
+// waits for a writer.
 func TestGitStatusEntryFIFOAnswersAtOnce(t *testing.T) {
 	for _, name := range []string{"gitdir", "commondir", "config.worktree", "index", "HEAD"} {
 		t.Run(name, func(t *testing.T) {
@@ -63,13 +63,14 @@ func TestGitStatusLinkRows(t *testing.T) {
 		edit func(t *testing.T, f statusFixture) (path string)
 		want string
 	}{
-		// Row n06: path is a symlink to the worktree.
+		// Measured: path is a symlink to the worktree.
 		{"n06 path through a symlink", func(t *testing.T, f statusFixture) string {
 			l := filepath.Join(f.root, "L")
 			mustSymlink(t, f.W, l)
 			return l
 		}, statusClean},
-		// Row n02: the entry is a symlink to a folder elsewhere.
+		// Measured: the entry is a symlink to a folder
+		// elsewhere.
 		{"n02 symlinked entry", func(t *testing.T, f statusFixture) string {
 			aside := filepath.Join(f.T, ".git", "aside")
 			if err := os.Mkdir(aside, 0o755); err != nil {
@@ -81,7 +82,7 @@ func TestGitStatusLinkRows(t *testing.T) {
 			mustSymlink(t, "../aside/W", f.entry)
 			return f.W
 		}, statusNotRepo},
-		// Row n02b: a real entry folder that a symlink also points at counts once.
+		// Measured: a real entry folder that a symlink also points at counts once.
 		{"n02b real entry beside a symlink to it", func(t *testing.T, f statusFixture) string {
 			if err := os.Rename(f.entry, f.entry+".real"); err != nil {
 				t.Fatal(err)
@@ -90,7 +91,7 @@ func TestGitStatusLinkRows(t *testing.T) {
 			writeFile(t, filepath.Join(f.W, ".git"), "gitdir: "+f.entry+".real\n", 0o644)
 			return f.W
 		}, statusClean},
-		// Row n19e: commondir is a relative symlink. Row n19f: an absolute one.
+		// Measured: commondir is a relative symlink. Measured: an absolute one.
 		{"n19e commondir relative symlink", func(t *testing.T, f statusFixture) string {
 			if err := os.Rename(filepath.Join(f.entry, "commondir"), filepath.Join(f.entry, "cd.real")); err != nil {
 				t.Fatal(err)
@@ -105,7 +106,7 @@ func TestGitStatusLinkRows(t *testing.T) {
 			mustSymlink(t, filepath.Join(f.entry, "cd.real"), filepath.Join(f.entry, "commondir"))
 			return f.W
 		}, statusNotRepo},
-		// Row o15a: index is a symlink to a regular file in the entry.
+		// Measured: index is a symlink to a regular file in the entry.
 		{"o15a index symlink", func(t *testing.T, f statusFixture) string {
 			if err := os.Rename(filepath.Join(f.entry, "index"), filepath.Join(f.entry, "index.real")); err != nil {
 				t.Fatal(err)
@@ -113,7 +114,7 @@ func TestGitStatusLinkRows(t *testing.T) {
 			mustSymlink(t, "index.real", filepath.Join(f.entry, "index"))
 			return f.W
 		}, statusClean},
-		// Rows n07 and n07L: path lies inside baseRepo and .claude is a symlink.
+		// Measured: path lies inside baseRepo and .claude is a symlink.
 		{"n07 symlinked .claude inside baseRepo", func(t *testing.T, f statusFixture) string {
 			elsewhere := filepath.Join(f.root, "elsewhere")
 			if err := os.Mkdir(elsewhere, 0o755); err != nil {
@@ -138,7 +139,8 @@ func TestGitStatusLinkRows(t *testing.T) {
 	}
 }
 
-// Row n11b: baseRepo is a symlink to T. Row n11: a dangling symlink.
+// Measured: baseRepo is a symlink to T. Measured: a dangling
+// symlink.
 func TestGitStatusBaseRepoSymlink(t *testing.T) {
 	f := newStatusFixture(t)
 	bl, dl := filepath.Join(f.root, "BL"), filepath.Join(f.root, "DL")
@@ -173,8 +175,9 @@ func TestGitStatusInsidePathBelowSymlinkedParent(t *testing.T) {
 	}
 }
 
-// Rows y2 to y5 (Linux and macOS VMs) and y10 (Linux VM): a `..` component in a path
-// inside baseRepo answers isRepo:false. Outside baseRepo it passes, and so does a `.`.
+// Measured on Linux and macOS, and on Linux for one case: a `..` component in a
+// path inside baseRepo answers isRepo:false. Outside baseRepo it passes, and so
+// does a `.`.
 func TestGitStatusDotDotRows(t *testing.T) {
 	f := newStatusFixture(t)
 	wt := filepath.Join(f.T, ".claude", "worktrees")
@@ -197,9 +200,10 @@ func TestGitStatusDotDotRows(t *testing.T) {
 	}
 }
 
-// Rows r2 and r3 (macOS VM): the reftable rows that need a FIFO or a symlink.
+// Measured on macOS: the reftable rows that need a FIFO or a symlink.
 func TestGitStatusReftableLinkRows(t *testing.T) {
-	// Row r3: a table that is a symlink answers isRepo:false.
+	// Measured: a table that is a symlink answers
+	// isRepo:false.
 	t.Run("r3 table is a symlink", func(t *testing.T) {
 		f := newStatusFixtureInit(t, "status-reftable", "--ref-format=reftable")
 		dir := filepath.Join(f.entry, "reftable")
@@ -216,10 +220,10 @@ func TestGitStatusReftableLinkRows(t *testing.T) {
 			t.Errorf("git.status = %s\nwant %s", got, statusNotRepo)
 		}
 	})
-	// Row r2: a FIFO as tables.list is left out with no wait. The temporary folder
-	// then gets the table and no list. git decides the frame: git 2.50 on the macOS
-	// VM read every tracked file as added, and another git can exit non-zero. The
-	// test asserts only that the gate passed and that no read waited.
+	// Measured: a FIFO as tables.list is left out with no wait. The temporary
+	// folder then gets the table and no list. git decides the frame: git 2.50 on
+	// macOS read every tracked file as added, and another git can exit non-zero.
+	// The test asserts only that the gate passed and that no read waited.
 	t.Run("r2 tables.list is a FIFO", func(t *testing.T) {
 		f := newStatusFixtureInit(t, "status-reftable", "--ref-format=reftable")
 		list := filepath.Join(f.entry, "reftable", "tables.list")
@@ -240,9 +244,9 @@ func TestGitStatusReftableLinkRows(t *testing.T) {
 	})
 }
 
-// Rows w1 and w2 (Linux and macOS VMs): in a plain repository an entry `reftable`
-// that is a symlink out of the entry, or a regular file, counts as no folder. The
-// answer is the clean status.
+// Measured on Linux and macOS: in a plain repository an entry `reftable` that is a symlink out of
+// the entry, or a regular file, counts as no folder. The answer is the clean
+// status.
 func TestGitStatusReftableNotAFolder(t *testing.T) {
 	t.Run("w1 symlink out of the entry", func(t *testing.T) {
 		f := newStatusFixture(t)
@@ -260,9 +264,9 @@ func TestGitStatusReftableNotAFolder(t *testing.T) {
 			t.Errorf("git.status = %s\nwant %s", got, statusClean)
 		}
 	})
-	// Rows w1 and w1b (macOS VM): in a reftable repository the folder is moved out
-	// and a symlink takes its place. Nothing of it is copied and the gate passes.
-	// git decides the frame: on the VM it showed every tracked file as added.
+	// Measured on macOS: in a reftable repository the folder is moved out and a symlink
+	// takes its place. Nothing of it is copied and the gate passes. git decides
+	// the frame: in the measurement it showed every tracked file as added.
 	for name, keepList := range map[string]bool{"w1 moved out": true, "w1b moved out, no list": false} {
 		t.Run(name, func(t *testing.T) {
 			f := newStatusFixtureInit(t, "status-reftable", "--ref-format=reftable")
@@ -289,8 +293,8 @@ func TestGitStatusReftableNotAFolder(t *testing.T) {
 }
 
 // On 5fd08069 a sharedindex name with 40 hex digits that is a symlink passes, and
-// neither the link nor its target is copied. The target is missing in cell F of round
-// tier3-20 and a regular file of the entry in cell G of round tier3-23 (Linux VM).
+// neither the link nor its target is copied. The target is missing in one case
+// and a regular file of the entry in another (measured on Linux).
 func TestGitStatusSharedIndexLink(t *testing.T) {
 	for _, c := range []struct{ cell, target string }{{"F", "missing-target"}, {"G", "g-target"}} {
 		t.Run(c.cell, func(t *testing.T) {

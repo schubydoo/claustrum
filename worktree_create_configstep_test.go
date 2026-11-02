@@ -70,8 +70,8 @@ func ranReadTree(calls []envCall) bool {
 
 // TestConfigStepUnsetAllFailureFailsTheCreate: an `--unset-all` call that
 // fails fails the create with the prefix and its cause. No read-tree runs, and
-// the leaf, the registration and the branch go (cell C1 of round task007-01,
-// Linux, macOS and Windows VMs). The stub stands in for the wrapper.
+// the leaf, the registration and the branch go (measured on Linux, macOS and
+// Windows). The stub stands in for the wrapper.
 func TestConfigStepUnsetAllFailureFailsTheCreate(t *testing.T) {
 	f := newConfigStepFixture(t, "[core]\n\tbare = false\n")
 	t.Setenv("CLAUSTRUM_GITSTUB_MATCH2", "--unset-all,core.bare")
@@ -96,10 +96,9 @@ func TestConfigStepUnsetAllFailureFailsTheCreate(t *testing.T) {
 
 // TestConfigStepReplacesAnEntryAtTheDestination: a file and an empty folder at
 // `<registration>/config.worktree` before the copy get the copy, and the create
-// succeeds (cells C4 and C5 of round task007-01, Linux and macOS VMs, and C4
-// on a Windows VM). The seam puts the entry there at the step before the copy.
-// On Windows an empty folder fails the create with `openat config.worktree: is
-// a directory` (cell S9 of round task087-01, Windows VM).
+// succeeds (measured on Linux, macOS and Windows). The seam puts the entry
+// there at the step before the copy. On Windows an empty folder fails the
+// create with `openat config.worktree: is a directory` (measured on Windows).
 func TestConfigStepReplacesAnEntryAtTheDestination(t *testing.T) {
 	const filemode = "[core]\n\tfilemode = false\n"
 	for _, row := range []struct {

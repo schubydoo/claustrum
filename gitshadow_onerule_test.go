@@ -15,8 +15,8 @@ import (
 
 // The tests of the last steps of the start test. Each test stages the answer
 // of one or two test calls in the git stub, and no real git runs for a staged
-// call. Each names the cell of round tier0-5 (Linux VM) whose reply of 5fd08069
-// it follows.
+// call. Each names the cell (measured on Linux) whose reply of 5fd08069 it
+// follows.
 
 // stagedCall is one staged answer of the git stub. Match are exact argv words.
 // Copy "yes" takes only a call with a GIT_COMMON_DIR, and "no" only a call
@@ -185,7 +185,7 @@ func wantFailedTest(t *testing.T, f shadowFixture, raw string, after int, verb, 
 }
 
 // A first `config --get` that exits 1 with no output does not stop the
-// test. 5fd08069 runs all ten calls and the state is shadow (cell C3 of round tier0-5).
+// test. 5fd08069 runs all ten calls and the state is shadow (measured).
 func TestShadowQuietFirstGetGoesOn(t *testing.T) {
 	f := newShadowFixture(t)
 	stageGit(t, stagedCall{Match: stageGet, Copy: "yes", Nth: 1, Exit: 1})
@@ -201,7 +201,7 @@ func TestShadowQuietFirstGetGoesOn(t *testing.T) {
 }
 
 // A first `config --get` that works and prints `real` gives the state
-// fallback-git at once. It is the last of 6 test calls on 5fd08069 (cell C3b of round tier0-5).
+// fallback-git at once. It is the last of 6 test calls on 5fd08069 (measured).
 func TestShadowFirstGetThatPrintsRealGivesFallback(t *testing.T) {
 	f := newShadowFixture(t)
 	stageGit(t, stagedCall{Match: stageGet, Copy: "yes", Nth: 1, Stdout: "real\n"})
@@ -212,8 +212,8 @@ func TestShadowFirstGetThatPrintsRealGivesFallback(t *testing.T) {
 }
 
 // A second `config --get` that works and prints another text gives the
-// state fallback-git. It is the last of 8 test calls on 5fd08069 (cell C4 of
-// round tier0-5, the part with the text `x`).
+// state fallback-git. It is the last of 8 test calls on 5fd08069
+// (measured with the text `x`).
 func TestShadowSecondGetWithAnotherTextGivesFallback(t *testing.T) {
 	f := newShadowFixture(t)
 	stageGit(t, stagedCall{Match: stageGet, Copy: "yes", Nth: 2, Stdout: "x\n"})
@@ -224,8 +224,8 @@ func TestShadowSecondGetWithAnotherTextGivesFallback(t *testing.T) {
 }
 
 // After a second `config --get` that exits 1, one more `config --get`
-// runs on `real` alone, and the state is fallback-git. 5fd08069 makes 9 test
-// calls (cell C4 of round tier0-5, the part with exit 1).
+// runs on `real` alone, and the state is fallback-git. 5fd08069 makes 9
+// test calls (measured with exit 1).
 func TestShadowFailedSecondGetRunsOneGetOnRealAlone(t *testing.T) {
 	f := newShadowFixture(t)
 	stageGit(t, stagedCall{Match: stageGet, Copy: "yes", Nth: 2, Exit: 1})
@@ -236,7 +236,7 @@ func TestShadowFailedSecondGetRunsOneGetOnRealAlone(t *testing.T) {
 }
 
 // A `rev-parse` that works and prints another id gives the state
-// fallback-git with no second call. 5fd08069 makes 9 test calls (cell C2 of round tier0-5).
+// fallback-git with no second call. 5fd08069 makes 9 test calls (measured).
 func TestShadowRevParseWithAnotherIDGivesFallback(t *testing.T) {
 	f := newShadowFixture(t)
 	stageGit(t, stagedCall{Match: stageVerify, Copy: "yes", Stdout: strings.Repeat("0", 40) + "\n"})
@@ -248,7 +248,7 @@ func TestShadowRevParseWithAnotherIDGivesFallback(t *testing.T) {
 
 // A `rev-parse` that exits 128 with one error line, with a second call
 // that works, gives the state fallback-git. 5fd08069 makes 10 test calls and
-// no add (cell C1 of round tier0-5).
+// no add (measured).
 func TestShadowRevParseWithAnErrorLineGivesFallback(t *testing.T) {
 	f := newShadowFixture(t)
 	stageGit(t, stagedCall{Match: stageVerify, Copy: "yes", Exit: 128, Stderr: "fatal: forced rev-parse failure\n"})
@@ -260,7 +260,7 @@ func TestShadowRevParseWithAnErrorLineGivesFallback(t *testing.T) {
 
 // When both `rev-parse` calls fail, the cause names the first one. On
 // 5fd08069 the first exits 1 with no output and the second exits 128 with a
-// line, and the cause ends with `exit status 1` after 10 test calls (cell C9 of round tier0-5).
+// line, and the cause ends with `exit status 1` after 10 test calls (measured).
 func TestShadowTwoFailedRevParseCallsNameTheFirst(t *testing.T) {
 	f := newShadowFixture(t)
 	stageGit(t,
@@ -273,7 +273,7 @@ func TestShadowTwoFailedRevParseCallsNameTheFirst(t *testing.T) {
 }
 
 // An add that exits 0 and makes nothing gives the state fallback-git with
-// no add of `wt2`. 5fd08069 makes 10 test calls (cell C5 of round tier0-5).
+// no add of `wt2`. 5fd08069 makes 10 test calls (measured).
 func TestShadowAddThatMakesNothingGivesFallback(t *testing.T) {
 	f := newShadowFixture(t)
 	stageGit(t, stagedCall{Match: stageAdd, Copy: "yes"})
@@ -285,7 +285,7 @@ func TestShadowAddThatMakesNothingGivesFallback(t *testing.T) {
 
 // An add that exits 128 with `fatal: forced failure`, with an add of
 // `wt2` that works, gives the state fallback-git after 11 test calls on
-// 5fd08069 (cell N1-control of round tier0-5).
+// 5fd08069 (measured).
 func TestShadowRefusedAddWithAGoodSecondAddGivesFallback(t *testing.T) {
 	f := newShadowFixture(t)
 	stageGit(t, stagedCall{Match: stageAdd, Copy: "yes", Exit: 128, Stderr: "fatal: forced failure\n"})
@@ -301,8 +301,8 @@ func TestShadowRefusedAddWithAGoodSecondAddGivesFallback(t *testing.T) {
 // An add whose error text holds `No space left on device` fails the
 // test, also when the add of `wt2` works. The cause has the error text of the
 // first add, 11 test calls ran, and the request after the kept time runs the
-// whole test again. 5fd08069 answers so for a text of one line (cell N1 of round tier0-5) and
-// for the two lines of git on a full disk (cell N2 of round tier0-5).
+// whole test again. 5fd08069 answers so for a text of one line (measured) and for the two
+// lines of git on a full disk.
 func TestShadowAddWithNoSpaceLeftFailsTheTest(t *testing.T) {
 	for name, c := range map[string]struct{ stderr, cause string }{
 		"one line (N1)": {
@@ -336,7 +336,7 @@ func TestShadowAddWithNoSpaceLeftFailsTheTest(t *testing.T) {
 // The cause of a failed `mktree` has both of its error lines, joined by
 // one space, and the version text. After the failed call two `version` calls
 // run: one with no option, and one with the options and in the folder of a
-// test call. 5fd08069 makes those 5 test calls (cell C6 of round tier0-5).
+// test call. 5fd08069 makes those 5 test calls (measured).
 func TestShadowFailedMktreeHasAllLinesAndTheVersion(t *testing.T) {
 	f := newShadowFixture(t)
 	stageGit(t,
@@ -411,7 +411,7 @@ func TestGitInfoWithNoGitAndNoRunFolder(t *testing.T) {
 
 // With GIT_NAMESPACE and GIT_INDEX_FILE in the daemon, no call in the
 // folder of the test has either, and call 7 and the excludes read have both.
-// The nine such calls of 5fd08069 have neither (cell C8 of round tier0-5).
+// The nine such calls of 5fd08069 have neither (measured).
 func TestShadowTestCallsDropNamespaceAndIndexFile(t *testing.T) {
 	f := newShadowFixture(t)
 	t.Setenv("GIT_NAMESPACE", "x")
@@ -448,7 +448,7 @@ func TestShadowTestCallsDropNamespaceAndIndexFile(t *testing.T) {
 // With no git in the PATH of the daemon, git.info answers "no
 // repository" with no member, runs no test and logs no line about git. The
 // folder of the daemon holds the lock file only, and the next request gets
-// the same reply. 5fd08069 answers so in 3 of 3 runs (cell C7 of round tier0-5).
+// the same reply. 5fd08069 answers so in 3 of 3 runs (measured).
 func TestGitInfoWithNoGitInThePath(t *testing.T) {
 	f := newShadowFixture(t)
 	logs := captureLogBuf(t)

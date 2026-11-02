@@ -13,11 +13,11 @@ import (
 )
 
 // These tests pin the tests of git.worktree_create between `git worktree add` and
-// the checkout. The rows are those of 89cb6289 on a Linux VM with git 2.43 and a
-// macOS VM with git 2.50. With a registrations directory that is a symlink, git
-// 2.43 writes the path through the link into the .git file of the new worktree,
-// and git 2.50 writes the resolved path. The git stub writes that file after the
-// real add, so both shapes are staged on any git of the host.
+// the checkout. The rows are those of 89cb6289 on Linux with git 2.43 and macOS
+// with git 2.50. With a registrations directory that is a symlink, git 2.43
+// writes the path through the link into the .git file of the new worktree, and
+// git 2.50 writes the resolved path. The git stub writes that file after the real
+// add, so both shapes are staged on any git of the host.
 
 // postAddFixture makes the fixture, then starts the git stub, and returns the
 // fixture and the server. The fixture comes first, so its realGit is the git of the
@@ -42,7 +42,7 @@ func afterAdd(t *testing.T, file, content string, d time.Duration) {
 
 // linkRegistrations makes target, a new empty folder, and makes <git dir>/worktrees
 // of the fixture a symlink whose value is link. The caller gives a link that leads
-// to target: target itself, or a relative path such as ../../WTREG (row D-5).
+// to target: target itself, or a relative path such as ../../WTREG (measured).
 func (f wtFixture) linkRegistrations(t *testing.T, target, link string) {
 	t.Helper()
 	if err := os.MkdirAll(target, 0o755); err != nil {
@@ -117,13 +117,13 @@ func (f wtFixture) wantCreated(t *testing.T, raw, gitFile, reg string) {
 // the shape of git 2.50 (the resolved path) or of git 2.43 (the path through the
 // link).
 //
-//   - Rows D-1, D-4 and D-5 (macOS VM) and D-11 (Linux VM): the resolved path lies
-//     in a folder named WTREG or WORKTREES. The create is refused, and nothing is
-//     rolled back.
-//   - Row D-3 (macOS VM): the resolved path lies in a folder named worktrees. The
-//     create succeeds. D-3 against D-4 straddles the name.
-//   - Rows D-1, D-3, D-4 and D-5 (Linux VM): the path through the link. The create
-//     succeeds, and the index is in the link target.
+//   - Measured on macOS and Linux: the
+//     resolved path lies in a folder named WTREG or WORKTREES. The create is
+//     refused, and nothing is rolled back.
+//   - Measured on macOS: the resolved path lies in a folder named worktrees. The create
+//     succeeds. D-3 against D-4 straddles the name.
+//   - Measured on Linux: the path through the link. The create succeeds, and the index is
+//     in the link target.
 func TestWorktreeCreateRegistrationName(t *testing.T) {
 	for _, tc := range []struct {
 		name, target, link string
@@ -165,12 +165,12 @@ func TestWorktreeCreateRegistrationName(t *testing.T) {
 	}
 }
 
-// TestWorktreeCreateRegistrationCommonDir pins rows D-12 and D-13 (Linux and macOS
-// VMs), which straddle the second part of the test.
+// TestWorktreeCreateRegistrationCommonDir pins measured cases (on Linux
+// and macOS), which straddle the second part of the test.
 //
-//   - Row D-13: the commondir file of the registration holds "../../x". The create
+//   - Measured: the commondir file of the registration holds "../../x". The create
 //     is refused, and nothing is rolled back.
-//   - Row D-12: the .git file of the new worktree names /elsewhere/worktrees/w1,
+//   - Measured: the .git file of the new worktree names /elsewhere/worktrees/w1,
 //     which does not exist. The create succeeds, the .git file stays as it is, and
 //     the registration that git made holds the index.
 func TestWorktreeCreateRegistrationCommonDir(t *testing.T) {
@@ -199,12 +199,12 @@ func TestWorktreeCreateRegistrationCommonDir(t *testing.T) {
 }
 
 // TestWorktreeCreateRegistrationTestOrder pins the place of the test, in the state
-// of row D-1 with the resolved path (macOS VM).
+// with the resolved path (measured on macOS).
 //
-//   - Row D-9: timeoutMs expired during the add. The answer is the refusal, not the
-//     timeout frame, and nothing is rolled back.
-//   - Row D-2: a read-tree that fails. The answer is the refusal, and no read-tree
-//     runs.
+//   - Measured: timeoutMs expired during the add. The answer is the refusal, not
+//     the timeout frame, and nothing is rolled back.
+//   - Measured: a read-tree that fails. The answer is the refusal, and no
+//     read-tree runs.
 func TestWorktreeCreateRegistrationTestOrder(t *testing.T) {
 	stage := func(t *testing.T, d time.Duration) (wtFixture, *server, string, string) {
 		f, s := postAddFixture(t)
@@ -241,17 +241,16 @@ func TestWorktreeCreateRegistrationTestOrder(t *testing.T) {
 	})
 }
 
-// TestWorktreeCreateRegistrationInOtherRepository pins rows B-E1 and B-E3 (Linux
-// and macOS VMs, 10 of 10 runs each). The daemon has GIT_COMMON_DIR of another
-// repository X in its environment, and T and X hold a commit with the same id. git
-// then makes the registration in X, and T has none. The create is refused with the
-// "was not populated" text, and nothing is rolled back. In B-E3, X also has a
-// branch main.
+// TestWorktreeCreateRegistrationInOtherRepository pins measured cases (on Linux
+// and macOS, 10 of 10 runs each). The daemon has GIT_COMMON_DIR of another repository X
+// in its environment, and T and X hold a commit with the same id. git then makes
+// the registration in X, and T has none. The create is refused with the "was not
+// populated" text, and nothing is rolled back. In B-E3, X also has a branch main.
 //
-// The third case is not a measured cell. It is the state of row B-E1, and T holds a
-// second worktree, so T has a worktrees folder with an entry of another name and no
-// entry w1. claustrum answers the "does not name" text there. That is claustrum's
-// rule from cell P-p, where 89cb6289 answers that text with a worktrees folder that
+// The third case is not a measured cell. It is the state, and T holds a second
+// worktree, so T has a worktrees folder with an entry of another name and no entry
+// w1. claustrum answers the "does not name" text there. That is claustrum's rule
+// from cell P-p, where 89cb6289 answers that text with a worktrees folder that
 // holds no entry of the name.
 func TestWorktreeCreateRegistrationInOtherRepository(t *testing.T) {
 	for _, tc := range []struct {
@@ -382,12 +381,12 @@ func differentWorktreeText(leaf string) string {
 }
 
 // TestWorktreeCreateOldRegistrationOfSameName pins cells P-c, P-f to P-o and P-q
-// (89cb6289, Linux VM with git 2.43 and macOS VM with git 2.50). The state is that
-// of row B-E1, and T holds an old registration w1 of another worktree, with its own
-// index. git makes the new registration in X. Each cell changes one file of the old
-// registration before the request. In every cell the create is refused, nothing is
-// rolled back, no checkout runs, and the index of the old registration keeps its
-// bytes, its inode and its mtime.
+// (89cb6289, Linux with git 2.43 and macOS with git 2.50). The state is that, and T
+// holds an old registration w1 of another worktree, with its own index. git makes
+// the new registration in X. Each cell changes one file of the old registration
+// before the request. In every cell the create is refused, nothing is rolled back,
+// no checkout runs, and the index of the old registration keeps its bytes, its
+// inode and its mtime.
 //
 //   - P-c: no change. The "different worktree" text.
 //   - P-f: no change, timeoutMs is 1, and the add takes longer. The P-c refusal, not
@@ -575,9 +574,9 @@ func regFiles(t *testing.T, reg string) []string {
 	return out
 }
 
-// stageOldRegistrationOfSameName builds the disk state of cell P-c with D5 off: the
-// repositories T and X with equal commit ids, and in T the registration w1 of a
-// worktree on branch old1 whose folder is gone. It returns T, X and that registration.
+// stageOldRegistrationOfSameName builds the disk state of a measured case with the settings copy off: the
+// repositories T and X with equal commit ids, and in T the registration w1 of a worktree on branch old1
+// whose folder is gone. It returns T, X and that registration.
 func stageOldRegistrationOfSameName(t *testing.T) (string, string, string) {
 	t.Helper()
 	requireGit(t)
@@ -611,7 +610,7 @@ func stageOldRegistrationOfSameName(t *testing.T) (string, string, string) {
 // be read and names the leaf. In every other state of a registration that is there,
 // the guard answers its own error, and the index that is there keeps its bytes and
 // its inode. A registration that is gone takes the placement itself, whose error is
-// that of cell Z10 (macOS VM). No case opens a FIFO for writing.
+// that (measured on macOS). No case opens a FIFO for writing.
 func TestInstallWorktreeIndexGuard(t *testing.T) {
 	const guardText = "has no gitdir record that names this worktree"
 	for _, tc := range []struct {
@@ -694,7 +693,7 @@ func TestInstallWorktreeIndexGuard(t *testing.T) {
 // TestCreatedIndexDir pins the folder of the index, the first answer of
 // createdRegistrationRefusal. For a .git value in a folder named worktrees, it is
 // the registration of the git directory with the last name of the value, also when
-// the value names a folder that does not exist (row D-12). A value in a folder of
+// the value names a folder that does not exist (measured). A value in a folder of
 // another name is refused, and no folder is answered.
 func TestCreatedIndexDir(t *testing.T) {
 	root := t.TempDir()
@@ -712,18 +711,18 @@ func TestCreatedIndexDir(t *testing.T) {
 
 // TestCreatedRegistrationRefusalStates pins the tests of createdRegistrationRefusal.
 // A leaf with no .git value is not refused (not measured). With no registrations
-// directory the answer is the "was not populated" text (rows B-E1, B-E3 and D-8,
-// and cell D8e). With a registrations directory and no entry of the name it is the
-// "does not name" text. 89cb6289 answers that text in cell P-p. The state with an
-// entry of another name is not measured, and it gets the same text from the rule.
+// directory the answer is the "was not populated" text (measured). With a
+// registrations directory and no entry of the name it is the "does not name" text.
+// 89cb6289 answers that text in cell P-p. The state with an entry of another name is
+// not measured, and it gets the same text from the rule.
 //
 // The other states have a registration that is there. With no commondir file it is
-// refused (cell P-n). With a commondir file and no gitdir record, it is refused
-// (cell P-j). A commondir file that holds the absolute git directory passes, with a
+// refused (measured). With a commondir file and no gitdir record, it is refused
+// (measured). A commondir file that holds the absolute git directory passes, with a
 // record that can be read.
 //
 // Three more states need a user that is not root. A record of mode 0000 is refused
-// (cell P-o). So is a registration folder of mode 0000 (cell P-q): its stat
+// (measured). So is a registration folder of mode 0000 (measured): its stat
 // answers, and the commondir read fails. In a registrations directory of mode 0000
 // the stat of the entry fails with "permission denied". That state is not measured.
 // It gets the "does not name" text, not the "was not populated" text.
