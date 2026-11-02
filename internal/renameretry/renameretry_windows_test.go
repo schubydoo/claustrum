@@ -13,8 +13,7 @@ import (
 )
 
 // The Windows side of the retry of a held rename (measured on Windows). No
-// test of this file ran on the host of the build: a Windows run must match
-// the cell that each test names.
+// test of this file ran on the host of the build.
 
 // TestRenameHeldOnWindows pins the two errors that the retry tries again:
 // access denied and a sharing violation. Another error fails at once.

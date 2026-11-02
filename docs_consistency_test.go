@@ -55,6 +55,15 @@ func goSourceFiles(t *testing.T) []string {
 	return files
 }
 
+// TestDocsGoSourceFilesSeeInternal: the doc tests read the files under internal/ too,
+// so a method name or an error code in a moved file stays checked.
+func TestDocsGoSourceFilesSeeInternal(t *testing.T) {
+	want := filepath.Join("internal", "renameretry", "renameretry.go")
+	if !slices.Contains(goSourceFiles(t), want) {
+		t.Errorf("goSourceFiles misses %s", want)
+	}
+}
+
 // docFlat folds every run of white space into one space, so that a sentence that
 // the document wraps over several lines matches one pattern.
 func docFlat(s string) string {

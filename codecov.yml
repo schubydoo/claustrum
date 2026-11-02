@@ -74,11 +74,11 @@ comment:
 
 # Per-area coverage breakdown in the dashboard + PR comment. No `statuses` are
 # defined, so components add VISIBILITY only — they do NOT create extra
-# per-component PR status checks. claustrum is `package main` at the repo root plus
-# the packages under `internal/`, and paths are single files: a root file by its
-# name, a file under `internal/` by its path from the repo root. Every production
-# .go file must appear here exactly once, except `internal/testhelper/`, which
-# records no coverage. scripts/lint_codecov_components.py enforces that in CI.
+# per-component PR status checks. Paths are single files: a root file by its name,
+# a file under `internal/` or `handlers/` by its path from the repo root. Every
+# production .go file must appear here exactly once.
+# scripts/lint_codecov_components.py enforces that in CI for the root and
+# `internal/`. It does not check `handlers/prune.go`.
 component_management:
   individual_components:
     - component_id: rpc_dispatch

@@ -113,8 +113,8 @@ class LintCodecovComponentsTest(unittest.TestCase):
         self.assertEqual([p.split(":")[0] for p in problems], ["a.go", "internal/x/b.go"], problems)
 
     def test_internal_files_are_checked(self) -> None:
-        # A production file under internal/ that is not listed is missing. Its test file,
-        # the testdata folder and internal/testhelper/ are not checked.
+        # A production file under internal/ that is not listed is missing, also one in a
+        # nested package. Its test file and the testdata folder are not checked.
         self._write_repo(
             [
                 "a.go",
@@ -122,13 +122,21 @@ class LintCodecovComponentsTest(unittest.TestCase):
                 "internal/x/b.go",
                 "internal/x/a_test.go",
                 "internal/x/testdata/c.go",
-                "internal/testhelper/h.go",
+                "internal/x/y/d.go",
             ],
             _HEADER + _entries("a.go", "internal/x/a.go") + _TRAILER,
         )
         problems = lint.lint(self.root)
-        self.assertEqual(len(problems), 1, problems)
-        self.assertTrue(problems[0].startswith("internal/x/b.go: production file missing"), problems)
+        self.assertEqual(
+            [p.split(":")[0] for p in problems], ["internal/x/b.go", "internal/x/y/d.go"], problems
+        )
+
+    def test_nested_internal_entry_is_accepted(self) -> None:
+        self._write_repo(
+            ["a.go", "internal/x/y/d.go"],
+            _HEADER + _entries("a.go", "internal/x/y/d.go") + _TRAILER,
+        )
+        self.assertEqual(lint.lint(self.root), [])
 
     def test_internal_stale_entry_is_reported(self) -> None:
         self._write_repo(["a.go"], _HEADER + _entries("a.go", "internal/x/gone.go") + _TRAILER)
