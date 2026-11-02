@@ -166,13 +166,9 @@ func TestEnsureCLIRefusesVersionEscapingCliDir(t *testing.T) {
 // against the first version of this guard: the directory was destroyed and
 // replaced by the CLI binary.
 //
-// Unix-only for the fixture (os.Symlink on Windows needs a privilege the CI
-// runner does not have); the guard itself is platform-independent and
-// TestIsSingleComponent covers it everywhere.
+// The guard itself is platform-independent and TestIsSingleComponent covers
+// it everywhere.
 func TestEnsureCLIRefusesSymlinkTraversal(t *testing.T) {
-	if runtime.GOOS == "windows" {
-		t.Skip("creating a symlink on Windows needs SeCreateSymbolicLinkPrivilege")
-	}
 	root := t.TempDir()
 	cliDir := filepath.Join(root, "clidir")
 	outside := filepath.Join(root, "outside", "1.0.0")
@@ -186,9 +182,7 @@ func TestEnsureCLIRefusesSymlinkTraversal(t *testing.T) {
 	if err := os.WriteFile(keep, []byte("important"), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.Symlink(filepath.Join(root, "outside"), filepath.Join(cliDir, "link")); err != nil {
-		t.Fatal(err)
-	}
+	symlinkOrFailOnCI(t, filepath.Join(root, "outside"), filepath.Join(cliDir, "link"))
 	zstPath := filepath.Join(root, "cli.zst")
 	if err := os.WriteFile(zstPath, fakeCLIZst(t, 0), 0o600); err != nil {
 		t.Fatal(err)
@@ -208,12 +202,27 @@ func TestEnsureCLIRefusesSymlinkTraversal(t *testing.T) {
 	}
 }
 
+// symlinkOrFailOnCI makes the link. On Windows a link needs a privilege: without
+// it the test skips, and it fails when CI is set.
+func symlinkOrFailOnCI(t *testing.T, target, link string) {
+	t.Helper()
+	err := os.Symlink(target, link)
+	if err == nil {
+		return
+	}
+	if runtime.GOOS == "windows" && os.Getenv("CI") == "" {
+		t.Skipf("no symbolic link here: %v", err)
+	}
+	t.Fatal(err)
+}
+
 // A version that IS a symlink, as the final component, stays safe and is not
-// refused: os.RemoveAll unlinks a symlink rather than following it, so the
-// link's target keeps its contents and only the link is replaced.
+// refused. stageAndInstall reads the CLI path with os.Lstat, so a link to a
+// folder is not a folder: no RemoveAll and no home guard run, and the rename
+// replaces the link itself, so the target keeps its contents.
 func TestEnsureCLIFinalComponentSymlinkIsSafe(t *testing.T) {
 	if runtime.GOOS == "windows" {
-		t.Skip("creating a symlink on Windows needs SeCreateSymbolicLinkPrivilege")
+		t.Skip("a directory link at the CLI path: the rename onto it is refused on Windows (from the code, not measured)")
 	}
 	root := t.TempDir()
 	cliDir := filepath.Join(root, "clidir")
@@ -228,9 +237,8 @@ func TestEnsureCLIFinalComponentSymlinkIsSafe(t *testing.T) {
 	if err := os.WriteFile(keep, []byte("important"), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.Symlink(target, filepath.Join(cliDir, "1.0.0")); err != nil {
-		t.Fatal(err)
-	}
+	cli := installCLIPath(cliDir, "1.0.0")
+	symlinkOrFailOnCI(t, target, cli)
 	zstPath := filepath.Join(root, "cli.zst")
 	if err := os.WriteFile(zstPath, fakeCLIZst(t, 0), 0o600); err != nil {
 		t.Fatal(err)
@@ -245,7 +253,7 @@ func TestEnsureCLIFinalComponentSymlinkIsSafe(t *testing.T) {
 	if _, err := os.Stat(keep); err != nil {
 		t.Errorf("the symlink's target was emptied: %v", err)
 	}
-	if !isRegularFile(filepath.Join(cliDir, "1.0.0")) {
+	if !isRegularFile(cli) {
 		t.Error("cliPath should be the installed CLI, replacing the symlink")
 	}
 }

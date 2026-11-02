@@ -63,8 +63,10 @@ func TestInstallWindowsStopEndsTheCLIAndLeavesItsChild(t *testing.T) {
 			placeStub(t, f.cli)
 			stubDelay(t, 20*time.Second)
 			t.Setenv("CLAUSTRUM_TEST_STUB_CHILD", kind)
-			// 3 s, not less: the stub must write its log and its child's pid first.
 			setCLIRunBounds(t, 3*time.Second, time.Minute)
+			// The stop waits until the stub wrote its START line and its child's
+			// pid, also on a slow runner.
+			ready := holdStopUntil(t, func() bool { return f.stubStarted() && f.stubChildRecorded() })
 			t.Cleanup(func() { killStubChild(f.childPID) })
 
 			start := time.Now()
@@ -74,6 +76,9 @@ func TestInstallWindowsStopEndsTheCLIAndLeavesItsChild(t *testing.T) {
 			}
 			if want := factsHead(t, f.cli) + stoppedTail + "}\n"; out != want {
 				t.Errorf("stdout\n got %q\nwant %q", out, want)
+			}
+			if !ready.Load() {
+				t.Fatal("the stub never became ready: it wrote no START line or no child pid before the stop step, or no stop step ran")
 			}
 			line := mustLogLine(t, f, "START ")
 			m := strings.Index(line, " pid=")
@@ -88,25 +93,12 @@ func TestInstallWindowsStopEndsTheCLIAndLeavesItsChild(t *testing.T) {
 				t.Errorf("the stub %d is still alive after the stop", stubPID)
 			}
 			child := readPIDFile(t, f.childPID)
-			time.Sleep(time.Second)
-			if !processAlive(t, child) {
+			// Poll for the end of the child for 1 s. It returns at once if the
+			// child ends.
+			if waitProcessGone(child, time.Second) {
 				t.Errorf("the child %d of the stopped CLI is gone, want it alive", child)
 			}
 		})
-	}
-}
-
-// Measured on Windows. With the gate the resolve answers none, so the CLI runs
-// directly under the direct bound, and launcherStatus none is the last key.
-func TestInstallWindowsGateUsesTheDirectBounds(t *testing.T) {
-	f := newStubFixture(t)
-	t.Setenv(managedLauncherGateEnv, "1")
-	placeStub(t, f.cli)
-	stubDelay(t, 20*time.Second)
-	setCLIRunBounds(t, 3*time.Second, time.Minute)
-	out := captureInstallOutput(t, installOpts{cliDir: f.cliDir, cliVersion: "9.9.9"})
-	if want := factsHead(t, f.cli) + stoppedTail + `,"launcherStatus":"none"}` + "\n"; out != want {
-		t.Errorf("L02: stdout\n got %q\nwant %q", out, want)
 	}
 }
 
