@@ -219,12 +219,12 @@ have no flag and no key.
 - **Pointers.** [files.extract_tar](protocol/files-extract-tar.md),
   [git.worktree_remove](protocol/git-worktree-remove.md#where-the-paths-can-be),
   [INSTALL.md → -install](INSTALL.md#-install-ensure-the-agent-cli),
-  `homeguard_test.go` (the `wipeDestDir` seam keeps the suite safe against an
+  `internal/files/homeguard_test.go` (the `wipeDestDir` seam keeps the suite safe against an
   unfixed tree) and `install.go` (`stageAndInstall`).
 
 ### D3 · Make the `files.extract_tar` size cap opt-in { #d3 }
 
-- **Behavior.** `maxExtractBytes` caps the extraction output. An over-cap
+- **Behavior.** `MaxExtractBytes` caps the extraction output. An over-cap
   extraction returns
   `{"success":false,"fileCount":0,"error":"extraction size limit exceeded"}`
   and removes the truncated entry.
@@ -239,7 +239,7 @@ have no flag and no key.
 - **Reopen trigger.** An operator's cap that refuses a legitimate extraction, or
   the default that lets a size bomb through in normal use.
 - **Pointers.** [files.extract_tar](protocol/files-extract-tar.md#the-size-limit)
-  and `methods_files.go`.
+  and `internal/files/methods_files.go`.
 
 ### D6 · `-cli-version` must name a single path component (always-on) { #d6 }
 

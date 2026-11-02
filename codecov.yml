@@ -149,7 +149,8 @@ component_management:
         - peercheck.go
         - peercheck_linux.go
         - peercheck_other.go
-        - methods_files.go
+        - internal/files/methods_files.go
+        - compat_files.go
         - methods_git.go
         - gitparams.go
         - methods_process.go
@@ -285,22 +286,22 @@ component_management:
         - internal/pathcanon/pathcanon_windows.go
         - compat_pathcanon.go
         - compat_pathcanon_windows.go
-        - odirectory_unix.go
-        - odirectory_windows.go
-        - filesread_unix.go
-        - filesread_windows.go
-        - fileslist_unix.go
-        - fileslist_windows.go
-        - realpath.go
-        - realpath_unix.go
-        - realpath_windows.go
+        - internal/files/odirectory_unix.go
+        - internal/files/odirectory_windows.go
+        - internal/files/filesread_unix.go
+        - internal/files/filesread_windows.go
+        - internal/files/fileslist_unix.go
+        - internal/files/fileslist_windows.go
+        - internal/files/realpath.go
+        - internal/files/realpath_unix.go
+        - internal/files/realpath_windows.go
         - internal/pathcanon/netpath_windows.go
-        - filesreadreal_linux.go
-        - filesreadreal_other.go
+        - internal/files/filesreadreal_linux.go
+        - internal/files/filesreadreal_other.go
         # files.extract_tar: the remove of a destDir entry that Windows cannot read.
-        - extractunreadable.go
-        - extractunreadable_unix.go
-        - extractunreadable_windows.go
+        - internal/files/extractunreadable.go
+        - internal/files/extractunreadable_unix.go
+        - internal/files/extractunreadable_windows.go
     - component_id: process
       name: process supervisor
       paths:

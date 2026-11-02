@@ -13,6 +13,8 @@ import (
 	"os"
 	"path/filepath"
 	"runtime/debug"
+
+	"github.com/schubydoo/claustrum/internal/files"
 )
 
 // Version is the daemon's self-reported version (the real binary reports its vcs
@@ -255,7 +257,7 @@ func main() {
 		// -serve only: the cap governs files.extract_tar, which only the daemon
 		// serves. Set before runServe because the value is read deep in the
 		// method, not carried through the server struct.
-		maxExtractBytes = cfg.effectiveMaxExtractBytes(*maxExtract, cliSet["max-extract-bytes"])
+		files.MaxExtractBytes = cfg.effectiveMaxExtractBytes(*maxExtract, cliSet["max-extract-bytes"])
 		// -git-timeout and its config key are deprecated no-ops. They set nothing,
 		// so the git calls keep their time limits (gitstop.go).
 		warnDeprecatedGitTimeout(cliSet["git-timeout"], cfg.gitTimeoutSeen)

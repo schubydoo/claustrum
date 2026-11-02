@@ -149,30 +149,6 @@ func TestExpandPathsCoversEveryPathField(t *testing.T) {
 	t.Setenv("HOME", home)
 	under := func(rest string) string { return filepath.Join(home, rest) }
 
-	pp := &pathParams{Path: "~/p"}
-	pp.ExpandPaths()
-	if pp.Path != under("p") {
-		t.Errorf("pathParams.Path = %q", pp.Path)
-	}
-
-	lp := &listParams{Path: "~/l"}
-	lp.ExpandPaths()
-	if lp.Path != under("l") {
-		t.Errorf("listParams.Path = %q", lp.Path)
-	}
-
-	rp := &fileReadParams{Path: "~/r"}
-	rp.ExpandPaths()
-	if rp.Path != under("r") {
-		t.Errorf("fileReadParams.Path = %q", rp.Path)
-	}
-
-	et := &extractTarParams{ArchivePath: "~/a.tgz", DestDir: "~/d"}
-	et.ExpandPaths()
-	if et.ArchivePath != under("a.tgz") || et.DestDir != under("d") {
-		t.Errorf("extractTarParams = %+v", et)
-	}
-
 	gp := &gitParams{Path: "~/g", BaseRepo: "~/b", WorktreePath: "~/w", BranchName: "~keep", SourceBranch: "~keep2"}
 	gp.ExpandPaths()
 	if gp.Path != under("g") || gp.BaseRepo != under("b") || gp.WorktreePath != under("w") {

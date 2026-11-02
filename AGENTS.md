@@ -47,11 +47,11 @@ modes and the OS splits is in
 |------|------|
 | `rpc.go` | `request`, `gate` (read loop), `route` (`dispatchRequest`) |
 | `internal/rpc/` | error codes, reply types, result structs with fields in the order of the reference. Never a map |
-| `methods_*.go` | the 21 methods across `server.*` / `files.*` / `git.*` / `launcher.*` / `process.*` / `plugins.*` |
+| `methods_*.go`, `internal/files/` | the 21 methods across `server.*` / `files.*` / `git.*` / `launcher.*` / `process.*` / `plugins.*` |
 | `process.go` | spawn, stream frames, stdin queue, replay buffer, `reattach` |
 | `handlers/prune.go` | the params type of `plugins.prune`, whose name is in its `-32602` text |
 | `internal/homeguard/homeguard.go` | `WipesHomeDir` (`wipesHomeDir`), the home guard each RPC path to a recursive delete owes |
-| `methods_files.go` | the wipe of `destDir` and the `.synced` marker of `files.extract_tar` |
+| `internal/files/methods_files.go` | the wipe of `destDir` and the `.synced` marker of `files.extract_tar` |
 | `methods_plugins.go` | the delete of `plugins.prune` |
 | `worktreeremove.go` | the deletes of `git.worktree_remove` |
 | `worktreeverify.go` | the tests after the `worktree add` and both rollbacks of `git.worktree_create` |
@@ -67,8 +67,8 @@ Every OS serves the same JSON-RPC methods.
 ## Conventions
 
 - Byte-identical wire frames are the contract. Results are ordered structs,
-  not maps. Any change to `rpc.go` / `methods_*.go` / `process.go` /
-  `internal/rpc/` must keep the socket-integration suite and its golden
+  not maps. Any change to `rpc.go`, `methods_*.go`, `process.go`,
+  `internal/rpc/`, `internal/files/` must keep the socket-integration suite and its golden
   fixtures green (`make test`). An intentional
   divergence owes two things. Give it an entry with its decision rules in
   [`docs/DIVERGENCES.md`](docs/DIVERGENCES.md). Give it its wire frames in

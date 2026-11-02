@@ -275,7 +275,10 @@ func TestDecodeAndNeedParams(t *testing.T) {
 	}
 
 	// decodeParams treats absent params as a no-op (leaves zero value).
-	var p fileReadParams
+	var p struct {
+		Path     string `json:"path"`
+		MaxBytes int64  `json:"maxBytes"`
+	}
 	if err := decodeParams(&request{}, &p); err != nil {
 		t.Fatalf("decodeParams empty: %v", err)
 	}

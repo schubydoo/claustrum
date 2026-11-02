@@ -346,7 +346,7 @@ func TestSocketErrorTextParity(t *testing.T) {
 // TestSocketListNonDirErrorText pins the W5 non-directory wording. Since 7d193f89
 // files.list answers a non-directory with `open <p>: not a directory`. That
 // is a real wire change from the earlier `readdirent <p>: not a directory`, and
-// claustrum matches it (odirectory_unix.go).
+// claustrum matches it (internal/files/odirectory_unix.go).
 //
 // Gated to linux: the wording is verified against the reference on linux, and on
 // Windows there is no O_DIRECTORY (the flag is 0, so the failure lands elsewhere).
