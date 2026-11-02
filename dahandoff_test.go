@@ -14,7 +14,7 @@ import (
 // Unix only. On Windows Go removes the socket path at the close of the listener, and
 // the daemon records the socket with os.Stat. That identity reads the file id by the
 // path at the compare, so it matches a successor's file. Both binaries remove the new
-// rpc.sock at that stop (cell W3 of round task091-01, Windows VM).
+// rpc.sock at that stop (measured on Windows).
 func TestRemoveSocketIfOwned(t *testing.T) {
 	if runtime.GOOS == "windows" {
 		t.Skip("Windows: Go removes the socket path at the listener close, and an os.Stat identity reads the file id by the path at the compare")

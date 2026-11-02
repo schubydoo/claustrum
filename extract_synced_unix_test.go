@@ -11,7 +11,7 @@ import (
 
 // TestFilesExtractTarNotAlreadyCompleteForOtherKinds: a plugin folder whose
 // .synced is a link or a FIFO gets the normal wipe and unpack on 683cc6a9, and
-// the target of the link keeps its content (Linux VM).
+// the target of the link keeps its content (measured on Linux).
 func TestFilesExtractTarNotAlreadyCompleteForOtherKinds(t *testing.T) {
 	for _, tc := range []struct {
 		name  string
@@ -52,8 +52,8 @@ func TestFilesExtractTarNotAlreadyCompleteForOtherKinds(t *testing.T) {
 }
 
 // TestFilesExtractTarOldSyncedCannotBeRemoved holds the answer of 683cc6a9 for an
-// old .synced that cannot go: a folder of mode 0555 with a file (Linux and macOS
-// VMs). The rest of destDir stays.
+// old .synced that cannot go: a folder of mode 0555 with a file (measured on
+// Linux and macOS). The rest of destDir stays.
 func TestFilesExtractTarOldSyncedCannotBeRemoved(t *testing.T) {
 	skipIfRoot(t)
 	s := newTestServer(t)
@@ -75,9 +75,9 @@ func TestFilesExtractTarOldSyncedCannotBeRemoved(t *testing.T) {
 }
 
 // TestFilesExtractTarOldDestDirCannotBeOpened holds the answers of 683cc6a9 for
-// an old destDir of mode 0000 (Linux and macOS VMs). With content the answer is
-// the open failure and the content stays. An empty one goes, and the extract
-// succeeds.
+// an old destDir of mode 0000 (measured on Linux and macOS). With content the
+// answer is the open failure and the content stays. An empty one goes, and the
+// extract succeeds.
 func TestFilesExtractTarOldDestDirCannotBeOpened(t *testing.T) {
 	skipIfRoot(t)
 	for _, withContent := range []bool{true, false} {
@@ -121,7 +121,7 @@ func TestFilesExtractTarOldDestDirCannotBeOpened(t *testing.T) {
 // TestFilesExtractTarDestDirKindsGetAPlainRemove: a destDir that is a link to a
 // folder, a file or a FIFO is removed as that entry, and a new real folder gets
 // the content. Nothing is wiped through the link, and the folder that it names
-// keeps its content (683cc6a9 and 52d82f0a alike, Linux VM). The relative link
+// keeps its content (683cc6a9 and 52d82f0a alike, Linux). The relative link
 // names a folder in the same parent, which the handle of the parent follows.
 func TestFilesExtractTarDestDirKindsGetAPlainRemove(t *testing.T) {
 	for _, tc := range []struct {

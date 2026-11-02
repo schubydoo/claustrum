@@ -37,17 +37,17 @@ func procAbsent(err error) bool {
 }
 
 // unparseableStat is the reference's reason for a stat that does not parse
-// (`5fd08069`, cells H2d and H4, Linux VM).
+// (`5fd08069`, measured on Linux).
 const unparseableStat = "unparseable stat"
 
 // pidNamespace compares the pid namespace link of a child with the daemon's own. A
 // link of the child that does not exist gives procGone, which is claustrum's own
-// choice. `5fd08069` removes the record there and sends no signal, with no line (cell
-// H3, Linux VM). A link that cannot be read gives procNotChild. `5fd08069` drops the
-// record there with this reason and sends no signal, for "permission denied" (cell
-// H3v, Linux VM). claustrum does so for every other read error too (not measured).
-// Another namespace gives procNotOurs, as before. With no own link there is no test,
-// as before (not measured).
+// choice. `5fd08069` removes the record there and sends no signal, with no line
+// (measured on Linux). A link that cannot be read gives procNotChild. `5fd08069`
+// drops the record there with this reason and sends no signal, for "permission
+// denied" (measured on Linux). claustrum does so for every other read error too (not
+// measured). Another namespace gives procNotOurs, as before. With no own link there
+// is no test, as before (not measured).
 func pidNamespace(proc string) (state int, why string) {
 	self, err := os.Readlink(procRoot + "/self/ns/pid")
 	if err != nil {
@@ -72,16 +72,16 @@ func pidNamespace(proc string) (state int, why string) {
 //
 // Only a stat that does not exist is a process that is gone. A stat that does not
 // parse gives procUnknown. `5fd08069` keeps the record and sends no signal for a
-// group field of the child that is not an integer (cell H2d, Linux VM).
+// group field of the child that is not an integer (measured on Linux).
 //
 // A stat whose read answers "permission denied" gives procNotChild. `5fd08069` drops
-// the record of such a child with this reason text and sends no signal (cell P7 of
-// tier 0 round 3, Linux VM). Every other read error gives procUnknown, which is
-// claustrum's own, not measured.
+// the record of such a child with this reason text and sends no signal (measured on
+// Linux). Every other read error gives procUnknown, which is claustrum's own, not
+// measured.
 //
 // daemonAlive reads both states of a recorded daemon as alive. `5fd08069` keeps the
 // record of the child and sends no signal for a daemon stat that is a folder, has
-// mode 000 or does not parse (cells H2a to H2c, Linux VM).
+// mode 000 or does not parse (measured on Linux).
 func realReadLiveProc(pid int, wantEnv bool) liveProc {
 	lp := liveProc{state: procGone}
 	proc := procRoot + "/" + strconv.Itoa(pid)
@@ -121,7 +121,7 @@ func realReadLiveProc(pid int, wantEnv bool) liveProc {
 	if fields[20] == "0" { // vsize
 		return lp
 	}
-	// A group field that is not an integer does not parse (cell H2d).
+	// A group field that is not an integer does not parse (measured).
 	if lp.pgid, err = strconv.Atoi(fields[2]); err != nil { // field 5 (pgrp)
 		lp.state, lp.why = procUnknown, unparseableStat
 		return lp
@@ -156,7 +156,8 @@ func realReadLiveProc(pid int, wantEnv bool) liveProc {
 		if lp.state = endedOr(pid, procNotOurs); lp.state == procGone {
 			return lp
 		}
-		// The text is the reference's reason for this case (89cb6289, Linux row PG05a).
+		// The text is the reference's reason for this case (`89cb6289`, measured on
+		// Linux).
 		lp.unreadable = "environment unreadable: " + err.Error()
 		return lp
 	}
@@ -176,9 +177,9 @@ func realReadLiveProc(pid int, wantEnv bool) liveProc {
 // A new read of the stat tells the two cases apart. It returns procGone when the
 // process has ended, and state when it is still there and really is unreadable.
 //
-// Measured on Linux (rows K5 and ED04a, 2 of 52 cells): a child that exited on the
-// SIGTERM was read as not ours, and the reap logged it as a group that no longer
-// verifies. 89cb6289 counts such a group as ended on SIGTERM.
+// Measured on Linux: a child that exited on the SIGTERM was read as not ours, and
+// the reap logged it as a group that no longer verifies. 89cb6289 counts such a
+// group as ended on SIGTERM.
 func endedOr(pid, state int) int {
 	if realReadLiveProc(pid, false).state == procGone {
 		return procGone

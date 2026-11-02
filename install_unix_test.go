@@ -107,7 +107,7 @@ func TestEnsureCLIReportsUnclearablePath(t *testing.T) {
 	if !strings.Contains(err.Error(), "clearing stale dir at ") {
 		t.Errorf("error = %q, want the reference's \"clearing stale dir at \" prefix", err)
 	}
-	// On 5fd08069 the blob stays (cells L12 and M5, Linux and macOS VMs).
+	// On 5fd08069 the blob stays (measured on Linux and macOS).
 	if !isRegularFile(zstPath) {
 		t.Error("the -cli-zst blob was consumed by an install that failed at the clear")
 	}
@@ -150,8 +150,8 @@ func TestSha256FileDirectory(t *testing.T) {
 // The sweep never follows a symlink out of the cli-dir, and it removes only a
 // regular file. A link with a sweep name stays at every age, and so does its
 // target, a file or a directory with a file in it. On 5fd08069 the sweeps
-// remove regular files only (cells L8, M3a and W5). A link there is not
-// measured. 4534d86 through f6010b97 removed an old link (Linux VM).
+// remove regular files only (measured). A link there is not measured. 4534d86
+// through f6010b97 removed an old link (measured on Linux).
 //
 // Go has no portable lchtimes, so the link's age comes from the "now" handed to
 // the sweep: the link is created at real time, and the target's mtime is set.
@@ -226,11 +226,11 @@ func TestSweepFetchTempsJudgesTheLinkNotItsTarget(t *testing.T) {
 
 // The ldd probe's bound kills ldd's WHOLE process group and drops the output ldd
 // wrote. The stub prints a musl banner at once, backgrounds a sleeper that holds
-// the output pipe, and waits. Measured on a Linux VM from 19f30c46 on: the
-// reference answers at the bound, reports glibc (no marker), and leaves no
-// sleeper. Three things fail without the fix: a direct-child kill leaves the
-// sleeper alive and holding the pipe, no bound blocks for 30 s, and keeping the
-// partial output reports musl.
+// the output pipe, and waits. Measured on Linux from 19f30c46 on: the reference
+// answers at the bound, reports glibc (no marker), and leaves no sleeper. Three
+// things fail without the fix: a direct-child kill leaves the sleeper alive and
+// holding the pipe, no bound blocks for 30 s, and keeping the partial output
+// reports musl.
 func TestRunLddVersionKillsTheGroupAtTheBound(t *testing.T) {
 	dir := t.TempDir()
 	pidFile := filepath.Join(dir, "sleeper.pid")
@@ -269,10 +269,10 @@ func TestRunLddVersionKillsTheGroupAtTheBound(t *testing.T) {
 
 // The bound covers the ldd process only. An ldd that exits in time keeps its
 // output, even when a child holds the pipe and the answer lands past the bound.
-// Measured on a Linux VM against f6010b97: a stub that prints a musl banner,
-// exits at 3.5 s and leaves a `sleep` child on its stdout answers musl at 5.54 s,
-// and the child survives. The test scales that down: a 3 s bound and an exit
-// at 2 s, so the answer lands near 4 s, past the bound.
+// Measured on Linux against f6010b97: a stub that prints a musl banner, exits at
+// 3.5 s and leaves a `sleep` child on its stdout answers musl at 5.54 s, and the
+// child survives. The test scales that down: a 3 s bound and an exit at 2 s, so
+// the answer lands near 4 s, past the bound.
 func TestRunLddVersionKeepsOutputOfAnLddThatExitedInTime(t *testing.T) {
 	dir := t.TempDir()
 	pidFile := filepath.Join(dir, "child.pid")

@@ -23,17 +23,17 @@ const (
 	// the per-process async stdin queue is already full: it rejects the write with
 	// this frame rather than blocking the request. Measured against 4534d86 — a
 	// producer that outruns a non-reading child gets an error frame once ~16 MiB is
-	// queued (probe scratch/probe/stdincap).
+	// queued (measured).
 	codeStdinBackpressure = -32002 // stdin queue full (backpressure)
 	// codeLauncherUnusable is the process.spawn code for a launcher that the
 	// checks refuse, and for any launcher on a Windows host. codeLauncherStart is
 	// the code for a launcher that passes the checks but does not start. 89cb6289
-	// added both with the managed launcher. -32004 is VM-measured on Linux, macOS
+	// added both with the managed launcher. -32004 is measured on Linux, macOS
 	// and Windows, and -32005 on Linux and macOS.
 	codeLauncherUnusable = -32004
 	codeLauncherStart    = -32005
 	// codePeerRefused is the code of the frame of a caller that the peer check
-	// refuses (peercheck.go). 5fd08069 sends it on Linux (round task011-01).
+	// refuses (peercheck.go). 5fd08069 sends it on Linux (measured).
 	codePeerRefused = -32006
 )
 
@@ -94,16 +94,15 @@ type request struct {
 
 // offLive reports whether the off switch holds the daemon now: this request
 // or another git request with "shadowDirOff":true runs. On 5fd08069 the hold
-// changes the form of the git commands while a request runs (cells O1 and O2
-// of round task103-02, Linux VM).
+// changes the form of the git commands while a request runs (measured on
+// Linux).
 func (req *request) offLive() bool {
 	return req.offOwn || req.offHold != nil && req.offHold.Load() > 0
 }
 
 // runAtReply removes the short-lived folders that stay until the reply. On
 // 5fd08069 the folder `.index-<n>` of a create goes at the reply, also with an
-// include step and after a failed read-tree (cells V5 of val-s3p2b2-3-linux2
-// and val-s3p2b2-3-macos, cells V5i and E44 of val-s3p2b2-3-windows).
+// include step and after a failed read-tree (measured on Linux, macOS and Windows).
 func (req *request) runAtReply() {
 	for _, remove := range req.atReply {
 		remove()

@@ -10,11 +10,11 @@ import (
 	"time"
 )
 
-// TestReattachNewConnGetsNoLiveFrameBeforeReplayEnds pins cell R1 of rounds
-// tier3-03 and tier3-12 (5fd08069, macOS and Linux VMs). The seam starts a live
-// emit after p.mu goes and before the replay is written. That frame goes out after
-// the replay, and none is lost. The wait in the seam is a bound for a write that
-// does not come: the emit blocks on the write lock of the connection.
+// TestReattachNewConnGetsNoLiveFrameBeforeReplayEnds pins a measured case (`5fd08069`,
+// measured on Linux and macOS). The seam starts a live emit after p.mu goes and before
+// the replay is written. That frame goes out after the replay, and none is lost. The
+// wait in the seam is a bound for a write that does not come: the emit blocks on the
+// write lock of the connection.
 func TestReattachNewConnGetsNoLiveFrameBeforeReplayEnds(t *testing.T) {
 	m := newTestProcManager(t)
 	p := &managedProc{id: "r1", subs: map[*conn]struct{}{}, running: true}

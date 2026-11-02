@@ -53,9 +53,9 @@ func writeModeTgz(t *testing.T, path string, entries []modeEntry) {
 
 // TestFilesExtractTarKeepsExecuteBit holds the modes of the extracted entries. A
 // file whose archive mode has the execute bit of the owner arrives 0700, and each
-// other file arrives 0600. The rows are those of 5fd08069 on Linux and macOS
-// VMs. The row deep/er/f is from the Linux VM alone. The rows with the names g
-// and d0755/g show that a group or other execute bit alone gives 0600.
+// other file arrives 0600. The rows are those of 5fd08069 on Linux and macOS. The
+// row deep/er/f is from Linux alone. The rows with the names g and d0755/g show
+// that a group or other execute bit alone gives 0600.
 func TestFilesExtractTarKeepsExecuteBit(t *testing.T) {
 	// The daemon of the cell ran with umask 022. The umask is process-wide, so
 	// this test must not run in parallel with another test.
@@ -149,8 +149,7 @@ func TestFilesExtractTarKeepsExecuteBit(t *testing.T) {
 
 // TestFilesExtractTarDestDirNotSearchable holds the answer for a destDir that
 // the daemon cannot search. With a umask of 0100 the new destDir gets mode 0600.
-// The frame is the one of 5fd08069 in cell 2a1-modes-u0100 (Linux VM) and cell
-// 2a-modes-u100 (macOS VM). The disk is the one of those cells too.
+// The frame and the disk are the ones of 5fd08069 (measured on Linux and macOS).
 func TestFilesExtractTarDestDirNotSearchable(t *testing.T) {
 	skipIfRoot(t)
 	s := newTestServer(t)
@@ -190,7 +189,7 @@ func TestFilesExtractTarDestDirNotSearchable(t *testing.T) {
 
 // TestFilesExtractTarLastEntryGivesTheMode holds the mode of a file that the
 // archive names more than once. The file has the mode of the last entry, and its
-// content. The rows are those of 5fd08069 on Linux and macOS VMs. `a.txt` and
+// content. The rows are those of 5fd08069 on Linux and macOS. `a.txt` and
 // `./a.txt` are one name.
 func TestFilesExtractTarLastEntryGivesTheMode(t *testing.T) {
 	old := syscall.Umask(0o022)
@@ -229,7 +228,8 @@ func TestFilesExtractTarLastEntryGivesTheMode(t *testing.T) {
 }
 
 // TestFilesExtractTarMarkerModeIsFixed: a file entry .synced of mode 0755 ends as
-// the marker of mode 0600, as on 89cb6289 and 5fd08069 (Linux and macOS VMs).
+// the marker of mode 0600, as on 89cb6289 and 5fd08069 (measured on Linux and
+// macOS).
 func TestFilesExtractTarMarkerModeIsFixed(t *testing.T) {
 	old := syscall.Umask(0o022)
 	t.Cleanup(func() { syscall.Umask(old) })
@@ -401,9 +401,9 @@ func TestFilesExtractTarRefusesSwappedDestDir(t *testing.T) {
 
 // TestFilesExtractTarDestDirNotReadable holds the two answers for a daemon umask
 // of 0400. Each new folder then has mode 0300, so the daemon cannot open it for
-// a read. The frames and the disk are those of 5fd08069 on Linux and macOS VMs. In the first
-// row destDir alone is new. In the second row two folders above it are new too,
-// and the parent of destDir is the folder that cannot be opened.
+// a read. The frames and the disk are those of 5fd08069 on Linux and macOS. In the first row
+// destDir alone is new. In the second row two folders above it are new too, and the parent
+// of destDir is the folder that cannot be opened.
 func TestFilesExtractTarDestDirNotReadable(t *testing.T) {
 	skipIfRoot(t)
 	for _, tc := range []struct {

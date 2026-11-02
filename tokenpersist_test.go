@@ -105,15 +105,15 @@ func TestPersistTokenRoundTrip(t *testing.T) {
 	}
 }
 
-// dropOwnTokenFile must LEAVE the file when a restart's successor has already
-// republished daemon.token to a new inode — the departing predecessor's owned
-// FileInfo no longer os.SameFile-matches, so it must not delete the successor's token
-// out from under the new daemon. Extends claustrum's socket-ownership guard
-// (unlinkOwnSocket) to daemon.token. The successor's inode is forced distinct by creating
-// it ALONGSIDE the original, then renaming into place (a delete-recreate could reuse
-// the freed inode). On Windows this is cell W3 of round task091-01: 5fd08069 keeps
-// the token of the successor. An identity from os.Stat there reads the file id by
-// the path at the compare, so it named the successor's file and the token went.
+// dropOwnTokenFile must LEAVE the file when a restart's successor has already republished
+// daemon.token to a new inode — the departing predecessor's owned FileInfo no longer
+// os.SameFile-matches, so it must not delete the successor's token out from under the new
+// daemon. Extends claustrum's socket-ownership guard (unlinkOwnSocket) to daemon.token.
+// The successor's inode is forced distinct by creating it ALONGSIDE the original, then
+// renaming into place (a delete-recreate could reuse the freed inode). On Windows it is
+// measured: 5fd08069 keeps the token of the successor. An identity from os.Stat there
+// reads the file id by the path at the compare, so it named the successor's file and the
+// token went.
 func TestRemovePersistedTokenLeavesSuccessor(t *testing.T) {
 	dir := t.TempDir()
 	socket := filepath.Join(dir, "rpc.sock")
@@ -363,9 +363,9 @@ func TestOpenDaemonLog(t *testing.T) {
 	}
 }
 
-// An empty socket path opens no log and returns no error. A socket folder that does not
-// exist returns the error of the create, which fails the start (cell E6 of round
-// task015-04 shows that rule for a folder that cannot be written).
+// An empty socket path opens no log and returns no error. A socket folder that does not exist
+// returns the error of the create, which fails the start (a measurement shows that rule for a
+// folder that cannot be written).
 func TestOpenDaemonLogUnusablePath(t *testing.T) {
 	if f, err := openDaemonLog(""); f != nil || err != nil {
 		t.Errorf("empty socket path: openDaemonLog = %v, %v, want nil, nil", f, err)

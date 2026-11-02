@@ -40,7 +40,7 @@ func untilExit(t *testing.T, frames <-chan streamFrame) string {
 // TestExitLineAfterClientKill pins the exited line of a child that a client request
 // ended and that exited with code 0: ", asked to end by this daemon (client)" (build
 // 52d82f0a, measured on Linux and macOS for a farewell exit). 89cb6289 printed ", signalled at client
-// request" there (rows SP03a and SP03b).
+// request" there (measured).
 func TestExitLineAfterClientKill(t *testing.T) {
 	logs := captureLogBuf(t)
 	m := newTestProcManager(t)
@@ -189,8 +189,8 @@ func TestShutdownSweepKeepsReasonOfPlainKill(t *testing.T) {
 }
 
 // TestExitLineAfterOutsideSIGKILL pins the exited line of a child that a signal from
-// outside the daemon ended: ", terminated by SIGKILL" (89cb6289, Linux row SP04). The
-// test sends the signal to the one process it started itself.
+// outside the daemon ended: ", terminated by SIGKILL" (`89cb6289`, measured on
+// Linux). The test sends the signal to the one process it started itself.
 func TestExitLineAfterOutsideSIGKILL(t *testing.T) {
 	logs := captureLogBuf(t)
 	m := newTestProcManager(t)
@@ -213,8 +213,8 @@ func TestExitLineAfterOutsideSIGKILL(t *testing.T) {
 // TestTrampolineStartFailureAnswersWithDirectStart pins a spawn whose trampoline does
 // not start, with a cwd of mode 000: the daemon logs the trampoline line, starts the
 // command directly, and answers with the error of that direct start, which names the
-// command (89cb6289, Linux rows CW03 and CW03x2). Before, the frame named the
-// trampoline. No record is written.
+// command (89cb6289, measured on Linux). Before, the frame named the trampoline. No
+// record is written.
 func TestTrampolineStartFailureAnswersWithDirectStart(t *testing.T) {
 	if os.Geteuid() == 0 {
 		t.Skip("root can enter a folder of mode 000")

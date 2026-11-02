@@ -8,7 +8,7 @@ import (
 )
 
 // The two start lines of the files handler, as the rows quote them (build
-// 683cc6a9, Linux VM). The level of each line is claustrum's own, not measured.
+// 683cc6a9, Linux). The level of each line is claustrum's own, not measured.
 const (
 	filesRealPassLine = "[FilesHandler] files.realpath: using the OS's path for the open handle"
 	filesRealFailLine = "[FilesHandler] files.realpath: cannot read /proc/self/fd or mnt_id in /proc/self/fdinfo; falling back to filepath.EvalSymlinks, checked against the opened file; files.read will not return real"

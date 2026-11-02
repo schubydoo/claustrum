@@ -14,10 +14,10 @@ import (
 // The tests of a process that the reap cannot inspect. Every read and every signal
 // goes through a seam, so no real process gets a signal.
 
-// TestReapWaitKeepsGroupItCannotInspect is cell H4 (`5fd08069`, Linux VM): a group that
-// got SIGTERM and then cannot be inspected gets no SIGKILL, and its record stays. The
-// two lines are the reference's. The control case still passes the record test and
-// gets the SIGKILL at the end of the grace.
+// TestReapWaitKeepsGroupItCannotInspect is a measured case (`5fd08069`, measured on Linux): a
+// group that got SIGTERM and then cannot be inspected gets no SIGKILL, and its record
+// stays. The two lines are the reference's. The control case still passes the record
+// test and gets the SIGKILL at the end of the grace.
 func TestReapWaitKeepsGroupItCannotInspect(t *testing.T) {
 	for _, tc := range []struct {
 		name      string
@@ -139,7 +139,7 @@ func TestReapTargetsCannotInspectBeforeSIGTERM(t *testing.T) {
 
 // TestDaemonAliveCannotInspect: claustrum counts a recorded daemon that cannot be
 // inspected as alive. `5fd08069` keeps the record of the child and sends no signal
-// there (cells H2a to H2c, Linux VM). TestDaemonAlive has the gone case.
+// there (measured on Linux). TestDaemonAlive has the gone case.
 func TestDaemonAliveCannotInspect(t *testing.T) {
 	for _, state := range []int{procUnknown, procNotOurs} {
 		fakeLiveProcs(t, map[int]liveProc{800: {state: state}})
@@ -149,10 +149,10 @@ func TestDaemonAliveCannotInspect(t *testing.T) {
 	}
 }
 
-// TestNotLockHolderReapsAndRecordsNothing is cell H5 (`5fd08069`, Linux VM): a daemon
-// runs no reap and writes no child record while another process holds the flock of the
-// run-dir lock. The test holds the lock itself, so nothing is there to signal. The control is the same start
-// with a free lock: the recorded group gets its SIGTERM and the daemon writes a record.
+// TestNotLockHolderReapsAndRecordsNothing is a measured case (`5fd08069`, measured on Linux): a daemon runs no reap
+// and writes no child record while another process holds the flock of the run-dir lock. The test holds the
+// lock itself, so nothing is there to signal. The control is the same start with a free lock: the recorded
+// group gets its SIGTERM and the daemon writes a record.
 func TestNotLockHolderReapsAndRecordsNothing(t *testing.T) {
 	if node, _ := ownReapIdentity(); node == "" {
 		t.Skip("no node identity on this host")

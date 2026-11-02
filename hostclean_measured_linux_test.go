@@ -16,15 +16,15 @@ import (
 	"time"
 )
 
-// The cleaner lines and the retire call that a Linux VM measured against f6010b97 and
-// 89cb6289 (slice E of the 89cb6289 reconciliation). Each test names its rows. Every signal
-// in this file goes through a recording seam, with one exception. The pidfd test sends a
-// real signal to a helper process that it started itself.
+// The cleaner lines and the retire call that Linux measured against f6010b97 and 89cb6289.
+// Each test names its rows. Every signal in this file goes through a recording seam, with
+// one exception. The pidfd test sends a real signal to a helper process that it started
+// itself.
 
 // TestPassLogsTheProcessLimit: with more than 4096 processes of this user the pass prints
-// one line and tidies no run dir (rows HC24 and HC25). At 4096 it prints no line and the
-// tidy runs. Row HC24f has 4097 processes. In one earlier run of it 89cb6289 printed no
-// line. In five later runs both sides printed the line.
+// one line and tidies no run dir (measured). At 4096 it prints no line and the tidy runs.
+// A measurement has 4097 processes. In one earlier run of it 89cb6289 printed no line. In
+// five later runs both sides printed the line.
 func TestPassLogsTheProcessLimit(t *testing.T) {
 	const line = "[hostclean] more than 4096 processes for this user: this pass only acts on per-process facts (no run-dir retirement)\n"
 	for _, n := range []int{hcMaxSnapshot, hcMaxSnapshot + 1} {
@@ -59,7 +59,7 @@ func TestPassLogsTheProcessLimit(t *testing.T) {
 }
 
 // TestPassLogsTheOrphanGroupCap: 65 orphan groups give 64 SIGTERM and one line before the
-// first SIGTERM line (rows HC22c, HC22e and HC26). 64 groups give no line (row HC22).
+// first SIGTERM line (measured). 64 groups give no line (measured).
 func TestPassLogsTheOrphanGroupCap(t *testing.T) {
 	const line = "[hostclean] more orphaned Claude Code groups than one pass ends (64); leaving the rest for the next pass\n"
 	for _, n := range []int{hcMaxGroups, hcMaxGroups + 1} {
@@ -90,8 +90,8 @@ func TestPassLogsTheOrphanGroupCap(t *testing.T) {
 }
 
 // TestEndGroupsLogsTheSIGKILL: a group that is alive after the 3 s grace gets one line and
-// SIGKILL (row HC21a). A group whose leader ended in the grace gets SIGKILL from the wait
-// and no line (row HC21, the kid variant).
+// SIGKILL (measured). A group whose leader ended in the grace gets SIGKILL from the wait
+// and no line (measured, the kid variant).
 func TestEndGroupsLogsTheSIGKILL(t *testing.T) {
 	root, mk, _ := fakeProc(t)
 	oldGrp, oldClock, oldSleep := killGroup, hcClock, hcSleep
@@ -144,7 +144,7 @@ func TestEndGroupsLogsTheSIGKILL(t *testing.T) {
 }
 
 // TestTidyKeepsALockedDirWithTheMeasuredLine: a stale dir whose daemon.lock a live process
-// holds stays, with the reference's line (row HC03).
+// holds stays, with the reference's line.
 func TestTidyKeepsALockedDirWithTheMeasuredLine(t *testing.T) {
 	proot, _, _ := fakeProc(t)
 	c := hcTestCleaner(t, "/opt/claude")
@@ -183,7 +183,7 @@ func TestTidyKeepsALockedDirWithTheMeasuredLine(t *testing.T) {
 }
 
 // TestTidyRefusesAListenerOfAnotherBinary: a live listener that does not run the deployed
-// daemon binary is not retired, with the reference's line, and gets no signal (row HC04).
+// daemon binary is not retired, with the reference's line, and gets no signal (measured).
 func TestTidyRefusesAListenerOfAnotherBinary(t *testing.T) {
 	proot, mk, link := fakeProc(t)
 	c := hcTestCleaner(t, "/opt/claude")
@@ -339,8 +339,8 @@ func TestRetireChecksTheIdentityAfterThePidfdOpen(t *testing.T) {
 }
 
 // TestRetireSignalGoesThroughAPidfd: on linux the retire signal is pidfd_open and then
-// pidfd_send_signal, and no kill (rows HC10, HC12 to HC15, strace). The target is a helper
-// that this test started.
+// pidfd_send_signal, and no kill (measured with strace). The target is a helper that
+// this test started.
 func TestRetireSignalGoesThroughAPidfd(t *testing.T) {
 	cmd := hcStartSleeper(t)
 	pid := cmd.Process.Pid
@@ -421,9 +421,9 @@ func TestRetireSignalFallsBackToKill(t *testing.T) {
 }
 
 // TestHostCleaningOffLines: the cleaner stays off with one line that says why. A socket of
-// another shape names the socket (rows EV01a, ST08). A run-shaped socket with a binary that
-// is not under <root>/srv names the binary (every plain-layout row). A relative run-shaped
-// socket names the socket (row EV01h).
+// another shape names the socket (measured). A run-shaped socket with a binary that is not
+// under <root>/srv names the binary (every plain-layout row). A relative run-shaped socket
+// names the socket (measured).
 func TestHostCleaningOffLines(t *testing.T) {
 	exe, ok := hcSelfExe()
 	if !ok {
@@ -451,12 +451,11 @@ func TestHostCleaningOffLines(t *testing.T) {
 }
 
 // TestHostCleaningStartRows is the truth table of the cleaner gate. It holds the 24 start
-// rows that a Linux VM measured against 89cb6289. Nine socket shapes (a to i) run in the install layout
-// and in the plain layout, and six more rows move the executable. Each row gives the
-// reason of the "host cleaning off" line, or no reason when the cleaner runs. When it runs,
-// its root is the root of the socket. In two rows an older gate ran a pass that the
-// reference does not run: KREL (install layout, relative socket) and KXB (executable under
-// the srv of another root).
+// rows that Linux measured against 89cb6289. Nine socket shapes (a to i) run in the install layout and
+// in the plain layout, and six more rows move the executable. Each row gives the reason of the "host
+// cleaning off" line, or no reason when the cleaner runs. When it runs, its root is the root of the
+// socket. In two rows an older gate ran a pass that the reference does not run: the install layout
+// with a relative socket, and KXB (executable under the srv of another root).
 //
 // The executable here is what /proc/self/exe names, so rows l and u give the resolved path.
 func TestHostCleaningStartRows(t *testing.T) {
@@ -484,7 +483,7 @@ func TestHostCleaningStartRows(t *testing.T) {
 		{"f", R + "/run/c1/d/rpc.sock"},
 		{"g", R + "/RUN/c1/rpc.sock"},
 		{"h", "run/c1/rpc.sock"},
-		{"i", R + "/lnk/c1/rpc.sock"}, // lnk is a symlink to run on the VM: not resolved
+		{"i", R + "/lnk/c1/rpc.sock"}, // lnk is a symlink to run in the measurement: not resolved
 	}
 	type row struct{ name, socket, exe, off string }
 	var rows []row
@@ -573,12 +572,12 @@ func hcSymlinkFixture(t *testing.T) (R, Rl, anc, ancReal string) {
 	return R, Rl, anc, ancReal
 }
 
-// TestHostCleaningSymlinkRows holds the rows with a real symlink that a Linux VM measured
-// against 89cb6289. The cleaner is on when the socket path goes through a symlink to the
-// root (rows KS-m-e and KS-q-e). It is on when the binary does (row KS-u-e). It is also on with
-// a symlink one level above the root. The root list of claustrum then holds the root as
-// given and its real path. A binary under the srv of another folder keeps the cleaner off (row KXB).
-// So does a root whose resolution fails while the binary sits under the real path.
+// TestHostCleaningSymlinkRows holds the rows with a real symlink that Linux measured against
+// 89cb6289. The cleaner is on when the socket path goes through a symlink to the root (measured).
+// It is on when the binary does (measured). It is also on with a symlink one level above the
+// root. The root list of claustrum then holds the root as given and its real path. A binary under
+// the srv of another folder keeps the cleaner off (row KXB). So does a root whose resolution
+// fails while the binary sits under the real path.
 //
 // On Linux /proc/self/exe names the real path of the binary. macOS gives the path as it
 // was started. The rows with a binary path through the symlink hand in that form, and the
@@ -636,7 +635,7 @@ func TestHostCleaningSymlinkRows(t *testing.T) {
 }
 
 // TestTwoSpellingRootListTouchesEachRunDirOnce: the socket path goes through a symlink to
-// the root, so the root list holds two spellings of one folder (row KS-m-e). The pass lists
+// the root, so the root list holds two spellings of one folder (measured). The pass lists
 // each run folder once, in the spelling of the socket as given, and removes the stale one
 // once. 89cb6289 logged `removed run dir "<R>l/run/z1"` in that row. Every folder here is
 // under the temp dir of the test.

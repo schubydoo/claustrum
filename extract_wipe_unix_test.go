@@ -40,9 +40,9 @@ func chmodForRequest(t *testing.T, path string, mode os.FileMode) {
 
 // TestFilesExtractTarParentCannotBeOpened holds the answer for a parent folder
 // of destDir that the daemon cannot open for a read. The frames and the disk are
-// those of 5fd08069 on Linux and macOS VMs: destDir and its old content stay, and
-// no destDir is made where there was none. 89cb6289 extracts in the row with
-// mode 0300 and no destDir.
+// those of 5fd08069 on Linux and macOS: destDir and its old content stay, and no
+// destDir is made where there was none. 89cb6289 extracts in the row with mode
+// 0300 and no destDir.
 func TestFilesExtractTarParentCannotBeOpened(t *testing.T) {
 	skipIfRoot(t)
 	for _, mode := range []os.FileMode{0o300, 0o100, 0o000} {
@@ -90,9 +90,9 @@ func TestFilesExtractTarParentCannotBeOpened(t *testing.T) {
 
 // TestFilesExtractTarWipeFailure holds the text of a wipe that fails, and what
 // stays on disk. The text names the last name of destDir and no whole path. The
-// frames and the disk are those of 5fd08069 on Linux and macOS VMs, in the two
-// rows with no separator. The row with a separator after destDir is claustrum's
-// own. The entries that can go are gone, and destDir is the folder that it was.
+// frames and the disk are those of 5fd08069 on Linux and macOS, in the two rows
+// with no separator. The row with a separator after destDir is claustrum's own.
+// The entries that can go are gone, and destDir is the folder that it was.
 func TestFilesExtractTarWipeFailure(t *testing.T) {
 	skipIfRoot(t)
 	const text = "clean destDir: RemoveAll dest: permission denied"
@@ -160,8 +160,8 @@ func TestFilesExtractTarWipeFailure(t *testing.T) {
 }
 
 // TestFilesExtractTarMkdirFailure holds the text of a destDir that cannot be
-// made: the frame of 5fd08069 for a parent of mode 0500 and no destDir (Linux
-// and macOS VMs).
+// made: the frame of 5fd08069 for a parent of mode 0500 and no destDir
+// (measured on Linux and macOS).
 func TestFilesExtractTarMkdirFailure(t *testing.T) {
 	skipIfRoot(t)
 	s := newTestServer(t)
@@ -185,8 +185,8 @@ func TestFilesExtractTarMkdirFailure(t *testing.T) {
 // the preparation makes. A destDir over an old one of mode 0777 has mode 0700,
 // and each missing folder above destDir has mode 0700. The daemon umask is 0, so
 // the umask gives no bit away. The mode 0700 is from 89cb6289 and 5fd08069 on
-// Linux and macOS VMs. The rows with a umask of 0 are from a Linux VM, for the
-// new destDir alone.
+// Linux and macOS. The rows with a umask of 0 are from Linux, for the new
+// destDir alone.
 func TestFilesExtractTarNewFoldersHaveMode0700(t *testing.T) {
 	base := t.TempDir()
 	dest := filepath.Join(base, "m1", "m2", "dest")
@@ -230,10 +230,9 @@ func TestFilesExtractTarNewFoldersHaveMode0700(t *testing.T) {
 // A link in the old content goes as a link, a hard link loses one name, and a
 // destDir that is a link is replaced by a real folder. The folder outside keeps
 // its content in each row, as on 89cb6289 and 5fd08069. The two rows with no
-// separator are from Linux and macOS VMs. The row with a separator is from a
-// Linux VM for both builds, and from a macOS VM for 5fd08069.
-// The folder outside is a temp folder of this test, so a wrong wipe can reach
-// nothing else.
+// separator are from Linux and macOS. The row with a separator is from Linux for
+// both builds, and from macOS for 5fd08069. The folder outside is a temp folder
+// of this test, so a wrong wipe can reach nothing else.
 func TestFilesExtractTarWipeStaysInDestDir(t *testing.T) {
 	asLink := func(t *testing.T, dest, outside string) {
 		if err := os.Symlink(outside, dest); err != nil {
@@ -306,8 +305,8 @@ func TestFilesExtractTarWipeStaysInDestDir(t *testing.T) {
 
 // TestFilesExtractTarParentCannotBeMade holds the answer for a folder above
 // destDir that cannot be made. The frames are those of 89cb6289 and 5fd08069 on
-// a Linux VM: the prefix is "mkdir parent: ", and the text has the whole path of
-// the folder that fails. Nothing changes on disk in these cases, which fail at the
+// Linux: the prefix is "mkdir parent: ", and the text has the whole path of the
+// folder that fails. Nothing changes on disk in these cases, which fail at the
 // first missing folder, and an old destDir keeps its content.
 func TestFilesExtractTarParentCannotBeMade(t *testing.T) {
 	skipIfRoot(t)
@@ -415,7 +414,7 @@ func namesBelow(t *testing.T, dir string) string {
 // TestFilesExtractTarParentCannotBeSearched: a parent folder that the daemon
 // can open and cannot search gives no view of destDir. The frame is the one of
 // 5fd08069 for a parent of mode 0400 or 0600, with destDir present and absent
-// (Linux and macOS VMs). Nothing changes on disk. 89cb6289 answers a
+// (measured on Linux and macOS). Nothing changes on disk. 89cb6289 answers a
 // "clean destDir:" text there.
 func TestFilesExtractTarParentCannotBeSearched(t *testing.T) {
 	skipIfRoot(t)
@@ -517,7 +516,7 @@ func TestFilesExtractTarRefusesHomeByIdentity(t *testing.T) {
 // TestFilesExtractTarLastNameTooLong: a last name of destDir that the handle
 // cannot read gets the text of a remove of that name through the handle, and
 // nothing is made. The frame is the one of 5fd08069 for a name of 256 bytes
-// (Linux VM). 89cb6289 answers a text with the whole path there.
+// (measured on Linux). 89cb6289 answers a text with the whole path there.
 func TestFilesExtractTarLastNameTooLong(t *testing.T) {
 	s := newTestServer(t)
 	parent := t.TempDir()

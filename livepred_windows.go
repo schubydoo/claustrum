@@ -11,7 +11,7 @@ import (
 // livePredecessorPID is 0 on Windows, so the launcher ends its wait at the first
 // connect that works, also when the predecessor answers it. 5fd08069 does the same:
 // in 10 of 10 starts over a live predecessor both binaries exited 0 while the path
-// still led to the predecessor (round task006-01, cell C3, Windows VM).
+// still led to the predecessor (measured on Windows).
 func livePredecessorPID(string) int { return 0 }
 
 // keepSocketFileAtClose does nothing on Windows: the close of the listener removes the

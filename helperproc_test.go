@@ -837,7 +837,7 @@ func runWrapLauncher(args []string) int {
 }
 
 // runCLIStub implements the "cli-stub" helper mode, the shape of the stub of the
-// VM rows. Its environment steers it:
+// measured rows. Its environment steers it:
 //
 //   - CLAUSTRUM_TEST_STUB_LOG names a file. The stub appends a START line with
 //     its argv[0], its pid, the process ids of stubProcIDs and the launcher gate
@@ -1231,12 +1231,11 @@ func runHelper(mode string, args []string) int {
 		}
 		return 0
 	case "wrap":
-		// A managed-launcher stand-in, the shape of the VM rows' W: it writes
-		// "WRAP:<args>" to stderr, then runs args[0] with args[1:] and exits with
-		// its code. The run gets CLAUSTRUM_TEST_HELPER=$CLAUSTRUM_TEST_WRAP_NEXT, so
-		// the command is this binary in another mode. When CLAUSTRUM_TEST_WRAP_LOG
-		// names a file, a "LAUNCH <args>" line is appended to it first, to prove the
-		// launcher ran.
+		// A managed-launcher stand-in, the shape of the wrapper of the measured rows: it writes
+		// "WRAP:<args>" to stderr, then runs args[0] with args[1:] and exits with its code. The
+		// run gets CLAUSTRUM_TEST_HELPER=$CLAUSTRUM_TEST_WRAP_NEXT, so the command is this
+		// binary in another mode. When CLAUSTRUM_TEST_WRAP_LOG names a file, a "LAUNCH <args>"
+		// line is appended to it first, to prove the launcher ran.
 		return runWrapLauncher(args)
 	case "fail-launcher":
 		// A launcher that fails: it writes CLAUSTRUM_TEST_LAUNCH_STDERR to stderr and

@@ -232,8 +232,8 @@ func smallBlob(t *testing.T) []byte {
 	return zstdOf(t, raw)
 }
 
-// Row G11. A body that never yields a byte prints the leading bytes:0
-// line only. A tick prints nothing when the byte count equals the last printed
+// Measured. A body that never yields a byte prints the leading bytes:0 line
+// only. A tick prints nothing when the byte count equals the last printed
 // count. The body stays open for about 12 ticks.
 func TestWatchedBodyTickPrintsNothingWithoutNewBytes(t *testing.T) {
 	oldProg := installProgressInterval
@@ -253,10 +253,10 @@ func TestWatchedBodyTickPrintsNothingWithoutNewBytes(t *testing.T) {
 	}
 }
 
-// Rows G02, G06, G07. A body of two parts with a gap of many
-// ticks prints three lines. They are the leading 0, the first part on the next
-// tick, and the full count at the end. It does not print one line per tick. With no
-// Content-Length the lines carry no total key, and the count rule is the same.
+// Measured. A body of two parts with a gap of many ticks prints three lines. They
+// are the leading 0, the first part on the next tick, and the full count at the
+// end. It does not print one line per tick. With no Content-Length the lines carry
+// no total key, and the count rule is the same.
 func TestInstallProgressPrintsOnlyChangedCounts(t *testing.T) {
 	oldProg := installProgressInterval
 	installProgressInterval = 40 * time.Millisecond
@@ -302,7 +302,7 @@ func TestInstallProgressPrintsOnlyChangedCounts(t *testing.T) {
 	}
 }
 
-// Rows G04, G05. With parts that arrive faster than the tick, each tick
+// Measured. With parts that arrive faster than the tick, each tick
 // line shows a new count: no count is printed twice.
 func TestInstallProgressTicksShowNewCounts(t *testing.T) {
 	oldProg := installProgressInterval
@@ -339,7 +339,7 @@ func TestInstallProgressTicksShowNewCounts(t *testing.T) {
 	}
 }
 
-// Row G12. A server that reads the request and sends nothing is given up
+// Measured. A server that reads the request and sends nothing is given up
 // after the response-header limit. The cliError is the transport's text behind
 // "download failed: ", no progress line is printed, and fetch has bytes 0 and
 // longestPauseMs 0.
@@ -378,10 +378,10 @@ func TestInstallGivesUpWaitingForResponseHeaders(t *testing.T) {
 	}
 }
 
-// Row E07. A body read that ends with a transport error answers
-// "download interrupted after <got>/<total> bytes: <error>", with no
-// "download failed: " prefix. The wait from the last byte to the error counts for
-// longestPauseMs. One progress line is printed, and the cli folder stays empty.
+// Measured. A body read that ends with a transport error answers "download
+// interrupted after <got>/<total> bytes: <error>", with no "download failed: "
+// prefix. The wait from the last byte to the error counts for longestPauseMs. One
+// progress line is printed, and the cli folder stays empty.
 func TestInstallReportsAnInterruptedDownload(t *testing.T) {
 	body := zstdOf(t, bytes.Repeat([]byte("claustrum"), 4096))
 	half := len(body) / 2

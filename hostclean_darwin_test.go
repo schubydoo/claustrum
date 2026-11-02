@@ -309,8 +309,9 @@ func TestJudgeOrphanReadsDescriptorsOnceDarwin(t *testing.T) {
 	}
 }
 
-// TestStdioReadAnswersDarwin pins which stdio read is "no answer" (row E5). An abandoned
-// run and a run with no record for the pid answered, and they keep the earlier reason.
+// TestStdioReadAnswersDarwin pins which stdio read is "no answer" (measured). An
+// abandoned run and a run with no record for the pid answered, and they keep the earlier
+// reason.
 func TestStdioReadAnswersDarwin(t *testing.T) {
 	old := runLsof
 	t.Cleanup(func() { runLsof = old })
@@ -397,7 +398,7 @@ func TestHcSettledBusyDarwin(t *testing.T) {
 	}
 }
 
-// TestHcLockHeldAtDarwin pins the lock read against the rows of macOS VM runs (89cb6289).
+// TestHcLockHeldAtDarwin pins the lock read against the rows of macOS runs (89cb6289).
 // The arguments of the run stay as they were.
 func TestHcLockHeldAtDarwin(t *testing.T) {
 	old := runLsof
@@ -434,13 +435,13 @@ func TestHcLockHeldAtDarwin(t *testing.T) {
 	}
 }
 
-// TestTidyKeepsARunDirWhenTheLsofDeadlineEndsDarwin follows cells L1 and L2 (`5fd08069`,
-// macOS VM). The deadline ends the lsof run for the lock. The run dir stays with the line of
-// the reference, the remove seam is not called, and one lsof run happens. The stub
-// gives no output in the first stage. The stages
-// "a pid in the output" and "abandoned" are claustrum's own, not measured. The control is
-// a completed run that names no holder: the run dir goes through the seam, after a second
-// run on the renamed dir. The lsof run is a stub, and every path is under t.TempDir.
+// TestTidyKeepsARunDirWhenTheLsofDeadlineEndsDarwin follows measured cases (`5fd08069`, measured
+// on macOS). The deadline ends the lsof run for the lock. The run dir stays with the line of the
+// reference, the remove seam is not called, and one lsof run happens. The stub gives no output
+// in the first stage. The stages "a pid in the output" and "abandoned" are claustrum's own, not
+// measured. The control is a completed run that names no holder: the run dir goes through the
+// seam, after a second run on the renamed dir. The lsof run is a stub, and every path is under
+// t.TempDir.
 func TestTidyKeepsARunDirWhenTheLsofDeadlineEndsDarwin(t *testing.T) {
 	for _, tc := range []struct {
 		name               string
@@ -487,10 +488,10 @@ func TestTidyKeepsARunDirWhenTheLsofDeadlineEndsDarwin(t *testing.T) {
 
 // TestLsofRunThatDoesNotAnswerDarwin drives the REAL run. A command that cannot start, and
 // a command that writes to stderr, read as no answer. lockProbe then answers
-// hcLockUnexamined for a dir with a lock file (rows C3, D2p and D2f). A dir with no lock file
-// reads stale with no run. The busy read is then no reading, and the stdio read neither. The
-// control is this test binary as the command: it starts, writes nothing to stderr, and its
-// output is read.
+// hcLockUnexamined for a dir with a lock file (measured). A dir with no lock file reads stale
+// with no run. The busy read is then no reading, and the stdio read neither. The control is
+// this test binary as the command: it starts, writes nothing to stderr, and its output is
+// read.
 func TestLsofRunThatDoesNotAnswerDarwin(t *testing.T) {
 	exe, err := os.Executable()
 	if err != nil {
@@ -555,7 +556,7 @@ func TestLsofRunThatDoesNotAnswerDarwin(t *testing.T) {
 	}
 }
 
-// TestLockProbeUnopenableLockDarwin pins row D4: a lock file of mode 0000 reads as
+// TestLockProbeUnopenableLockDarwin pins a measured case: a lock file of mode 0000 reads as
 // hcLockUnexamined, with no lsof run.
 func TestLockProbeUnopenableLockDarwin(t *testing.T) {
 	if os.Getuid() == 0 {
@@ -574,7 +575,7 @@ func TestLockProbeUnopenableLockDarwin(t *testing.T) {
 	}
 }
 
-// TestRetireSendsNoSignalWithoutAnLsofAnswerDarwin pins rows D1i and D1k: when the lsof run
+// TestRetireSendsNoSignalWithoutAnLsofAnswerDarwin pins measured cases: when the lsof run
 // for the open files of a daemon does not answer, the retire refuses the daemon with the
 // measured reason, and NO signal goes out. The daemon is a fake pid behind the kinfo seams,
 // and the signal goes through the hcHoldPid seam, so nothing real is signalled. The control
@@ -628,13 +629,12 @@ func TestRetireSendsNoSignalWithoutAnLsofAnswerDarwin(t *testing.T) {
 	}
 }
 
-// TestRetireRefusesADaemonWhenTheBusyDeadlineEndsDarwin follows cells B1 and B2 (`5fd08069`,
-// macOS VM). The deadline ends the lsof run of the busy read. The retire refuses the daemon
-// with the measured reason after one lsof run, with no hold and no signal. The stage with
-// records in the output is claustrum's own, not measured. The pass read of the same run
-// answers "ended" and not "unread". The control is a completed run with no client record:
-// one SIGTERM at the seam. The daemon is a fake pid behind the kinfo seams, and the lsof run
-// is a stub.
+// TestRetireRefusesADaemonWhenTheBusyDeadlineEndsDarwin follows measured cases (`5fd08069`, measured
+// on macOS). The deadline ends the lsof run of the busy read. The retire refuses the daemon with the
+// measured reason after one lsof run, with no hold and no signal. The stage with records in the
+// output is claustrum's own, not measured. The pass read of the same run answers "ended" and not
+// "unread". The control is a completed run with no client record: one SIGTERM at the seam. The
+// daemon is a fake pid behind the kinfo seams, and the lsof run is a stub.
 func TestRetireRefusesADaemonWhenTheBusyDeadlineEndsDarwin(t *testing.T) {
 	const pid = 4400
 	const exe = "/opt/claude/srv/a/server"
@@ -733,7 +733,7 @@ func TestPeerOfDarwin(t *testing.T) {
 }
 
 // TestHostcleanLivePrimitivesDarwin runs the REAL darwin primitives (sysctl kinfo_proc,
-// KERN_PROCARGS2, lsof, LOCAL_PEERPID) against a real claustrum daemon, on a macOS VM. It is
+// KERN_PROCARGS2, lsof, LOCAL_PEERPID) against a real claustrum daemon, on macOS. It is
 // env-gated so it never runs in CI: set CLAUSTRUM_VM_LIVE=1 and CLAUSTRUM_BIN=<daemon path>.
 // It confirms the composed reads (which the seamed unit tests above cannot) match a live
 // process before the destructive judges act on them.
@@ -874,9 +874,9 @@ func TestRunLsofIsBounded(t *testing.T) {
 	// runLsof REPLACES the child's environment with hcLsofEnv, so the child inherits
 	// nothing from the test process. GORACE has to be forwarded by hand: TestMain
 	// publishes atexit_sleep_ms=0 into this process's environment, and without it a
-	// race-built helper sleeps tsan's default second on the way out. Measured on a
-	// macOS VM: the prompt fixture took 1.04s under -race without this, and 0.09s
-	// with it. CI runs -race on macos-latest, so that is a guaranteed red, not a flake.
+	// race-built helper sleeps tsan's default second on the way out. Measured on macOS:
+	// the prompt fixture took 1.04s under -race without this, and 0.09s with it. CI
+	// runs -race on macos-latest, so that is a guaranteed red, not a flake.
 	withHelper := func(mode string) {
 		hcLsofEnv = append(append([]string{}, oldEnv...),
 			"CLAUSTRUM_TEST_HELPER="+mode, "GORACE="+os.Getenv("GORACE"))
@@ -914,7 +914,7 @@ func TestRunLsofIsBounded(t *testing.T) {
 		if got != "" {
 			t.Errorf("runLsof of a stalled command = %q, want no output", got)
 		}
-		// The lock read keeps a run dir on this flag (cells L1 and L2).
+		// The lock read keeps a run dir on this flag (measured).
 		if !expired {
 			t.Error("a run the deadline ended did not report it")
 		}

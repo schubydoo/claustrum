@@ -12,12 +12,12 @@ import (
 	"time"
 )
 
-// The Windows side of the 89cb6289 -install measurement (Windows VM): the .exe
-// file name, what the stop of a direct run reaches, and -probe-cli on a path
-// with no file.
-// Each stand-in CLI is a copy of this test binary with a real .exe name.
+// The Windows side of the 89cb6289 -install measurement (measured on Windows):
+// the .exe file name, what the stop of a direct run reaches, and -probe-cli on
+// a path with no file. Each stand-in CLI is a copy of this test binary with a
+// real .exe name.
 
-// Row W01. The CLI file is <cli-dir>\<version>.exe: in cliPath, on disk
+// Measured. The CLI file is <cli-dir>\<version>.exe: in cliPath, on disk
 // and as the argv[0] of the --version run.
 func TestInstallWindowsCLIFileIsVersionExe(t *testing.T) {
 	f := newStubFixture(t)
@@ -35,7 +35,7 @@ func TestInstallWindowsCLIFileIsVersionExe(t *testing.T) {
 	}
 }
 
-// Row F12 on Windows. The "not runnable" text names the .exe path, and
+// Measured on Windows. The "not runnable" text names the .exe path, and
 // the "missing" text names the version with no suffix.
 func TestInstallWindowsErrorTextsNameTheExePath(t *testing.T) {
 	f := newStubFixture(t)
@@ -54,8 +54,8 @@ func TestInstallWindowsErrorTextsNameTheExePath(t *testing.T) {
 	}
 }
 
-// Rows B08, B09. At the bound the direct CLI process is ended. A child
-// that it started stays alive, in the process group of the CLI or in a new one.
+// Measured. At the bound the direct CLI process is ended. A child that it
+// started stays alive, in the process group of the CLI or in a new one.
 func TestInstallWindowsStopEndsTheCLIAndLeavesItsChild(t *testing.T) {
 	for _, kind := range []string{"group", "session"} {
 		t.Run(kind, func(t *testing.T) {
@@ -96,8 +96,8 @@ func TestInstallWindowsStopEndsTheCLIAndLeavesItsChild(t *testing.T) {
 	}
 }
 
-// Rows L02, L10 on Windows. With the gate the resolve answers none, so the
-// CLI runs directly under the direct bound, and launcherStatus none is the last key.
+// Measured on Windows. With the gate the resolve answers none, so the CLI runs
+// directly under the direct bound, and launcherStatus none is the last key.
 func TestInstallWindowsGateUsesTheDirectBounds(t *testing.T) {
 	f := newStubFixture(t)
 	t.Setenv(managedLauncherGateEnv, "1")
@@ -110,8 +110,8 @@ func TestInstallWindowsGateUsesTheDirectBounds(t *testing.T) {
 	}
 }
 
-// Rows W08a to W08d. -probe-cli answers __CLI_BAD__ and starts nothing
-// when no file exists at exactly the given path. It never adds ".exe".
+// Measured. -probe-cli answers __CLI_BAD__ and starts nothing when no
+// file exists at exactly the given path. It never adds ".exe".
 func TestProbeCLIWindowsNeedsTheExactPath(t *testing.T) {
 	probe := func(t *testing.T, path string) string {
 		t.Helper()

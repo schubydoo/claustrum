@@ -501,9 +501,9 @@ func TestRetireAbandonedReasonForAYoungDaemon(t *testing.T) {
 
 // ---- Orphan groups ----
 
-// TestPassEndsOnlyTheMeasuredOrphanGroups drives the four groups of the macOS VM orphan
-// fixture (issue 429). Only the ppid-1 group with pipe stdio on the flat ccd-cli/<version>
-// binary is ended. A live parent, non-pipe stdio, and the nested layout are all spared.
+// TestPassEndsOnlyTheMeasuredOrphanGroups drives the four groups of macOS orphan fixture
+// (issue 429). Only the ppid-1 group with pipe stdio on the flat ccd-cli/<version> binary
+// is ended. A live parent, non-pipe stdio, and the nested layout are all spared.
 func TestPassEndsOnlyTheMeasuredOrphanGroups(t *testing.T) {
 	f := hcNewPassFixture(t)
 	flat := filepath.Join(f.base, "ccd-cli", "2.1.0")
@@ -537,12 +537,12 @@ func TestPassEndsOnlyTheMeasuredOrphanGroups(t *testing.T) {
 	}
 }
 
-// ---- Log lines captured on the Linux VM (issue 429) ----
+// ---- Log lines captured on Linux (issue 429) ----
 
 // TestPassOwnSocketLines pins the pass-starting line and the own-socket line for a socket that
-// another process answers. The own-socket line was captured on the VM. The pass-starting line
-// is claustrum's own, not measured. The line for a socket that does not
-// lead anywhere is claustrum's own (origin/main wording); it is asserted separately below.
+// another process answers. The own-socket line was measured. The pass-starting line is
+// claustrum's own, not measured. The line for a socket that does not lead anywhere is
+// claustrum's own (origin/main wording); it is asserted separately below.
 func TestPassOwnSocketLines(t *testing.T) {
 	c := &hostCleaner{roots: &hostRoots{roots: []string{"/opt/claude"}}, ownSocket: "/opt/claude/run/self/rpc.sock", selfPid: 1}
 	oldDial := hcDial

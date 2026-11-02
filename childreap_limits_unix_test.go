@@ -67,7 +67,7 @@ func liveOrphan(sim *procSim, pid int, runDir string, sig syscall.Signal) {
 	sim.diesOn(pid, sig)
 }
 
-// TestReapHandles128NamesInDirectoryOrder pins row C1 (89cb6289, Linux): of 131 record
+// TestReapHandles128NamesInDirectoryOrder pins a rule of 89cb6289 (measured on Linux): of 131 record
 // names, one start handles the first 128 of the directory order and prints one line
 // for the rest. The live child among them gets SIGTERM, and the 127 others count as
 // dropped. A second start removes the last 3 and prints no line.
@@ -79,7 +79,7 @@ func TestReapHandles128NamesInDirectoryOrder(t *testing.T) {
 	children := filepath.Join(runDir, "children")
 	order, sorted := plantOrphanRecords(t, runDir, 800001000, 131)
 	sim := newProcSim(t)
-	live := pidOfName(t, order[97]) // row C1: the live record at place 97
+	live := pidOfName(t, order[97]) // measured: the live record at place 97
 	liveOrphan(sim, live, runDir, syscall.SIGTERM)
 
 	out := captureLog(t, func() { reapOrphans(runDir, "inst-self") })
@@ -114,7 +114,7 @@ func TestReapHandles128NamesInDirectoryOrder(t *testing.T) {
 	}
 }
 
-// TestReapEnds64GroupsInDirectoryOrder pins rows C2, C4 and MR03c (89cb6289, Linux):
+// TestReapEnds64GroupsInDirectoryOrder pins a rule of 89cb6289 (measured on Linux):
 // with 129 recorded live children, one start reads 128 records, sends SIGTERM to the
 // first 64 of the directory order, in that order, and prints the two limit lines first.
 // The summary counts the 64 verified groups that it left as kept.
@@ -165,7 +165,7 @@ func TestReapEnds64GroupsInDirectoryOrder(t *testing.T) {
 	)
 }
 
-// TestReapReadsAtMost4096BytesOfARecord pins rows C3a, C3b and ED14g (89cb6289, Linux).
+// TestReapReadsAtMost4096BytesOfARecord pins a rule of 89cb6289 (measured on Linux).
 // A record of more than 5000 bytes is removed with no signal and no line, also when
 // its program key names the live program. A valid record with blanks after it, 2 MiB
 // in all, is read and its child gets SIGTERM.
@@ -212,7 +212,7 @@ func TestReapReadsAtMost4096BytesOfARecord(t *testing.T) {
 	}
 }
 
-// TestReapRecordBoundIs4096Bytes pins row P8 (89cb6289, Linux): a record padded in an
+// TestReapRecordBoundIs4096Bytes pins a rule of 89cb6289 (measured on Linux): a record padded in an
 // added last field to 4096 bytes is read and its child gets SIGTERM. A record of 4097
 // bytes gets no signal and is removed.
 func TestReapRecordBoundIs4096Bytes(t *testing.T) {
@@ -251,7 +251,7 @@ func TestReapRecordBoundIs4096Bytes(t *testing.T) {
 	}
 }
 
-// TestReapRemovesRecordsOfSignalledGroupsTogether pins row RP04 (89cb6289, Linux): the
+// TestReapRemovesRecordsOfSignalledGroupsTogether pins a rule of 89cb6289 (measured on Linux): the
 // record of a group that ends on its SIGTERM stays while another group still waits for
 // its SIGKILL. Both records go when the last group is done.
 func TestReapRemovesRecordsOfSignalledGroupsTogether(t *testing.T) {
@@ -293,8 +293,8 @@ func TestReapRemovesRecordsOfSignalledGroupsTogether(t *testing.T) {
 	}
 }
 
-// TestReapLines pins the lines of one sweep with the texts of 89cb6289 (Linux and macOS
-// rows A4 and D1, and row RP07 for the order): the record line of a dropped record
+// TestReapLines pins the lines of one sweep with the texts of 89cb6289 (measured on Linux
+// and macOS, and on Linux for the order): the record line of a dropped record
 // first, the ending line of each group at its SIGTERM, the outlived line at the
 // SIGKILL, and the summary with its six numbers.
 func TestReapLines(t *testing.T) {
@@ -368,8 +368,8 @@ func TestReapSummaryOfASweepThatOnlyKeeps(t *testing.T) {
 }
 
 // TestReapRecordLineReasons pins the record line of the walk for each reason text of
-// 89cb6289 (Linux rows RP07, ED10a to ED10d, ED01a, ED04b, ED02a and ED07). A sweep
-// that only drops records prints no summary (row ED01a).
+// 89cb6289 (measured on Linux). A sweep that only drops records prints no summary
+// (measured).
 func TestReapRecordLineReasons(t *testing.T) {
 	if node, _ := ownReapIdentity(); node == "" {
 		t.Skip("no node identity on this host")

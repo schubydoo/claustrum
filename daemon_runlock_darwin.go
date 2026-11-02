@@ -16,7 +16,7 @@ import (
 //
 // The reference's macOS build does not verify the holder's command line before
 // signalling it: it sends SIGTERM to the recorded pid unverified (observed
-// on a macOS VM — it signals even a pid that is not a serve process). claustrum instead
+// on macOS — it signals even a pid that is not a serve process). claustrum instead
 // verifies via KERN_PROCARGS2 and refuses to signal a pid that is not our serve process.
 // That is an intentional hardening divergence — see docs/DIVERGENCES.md D15.
 

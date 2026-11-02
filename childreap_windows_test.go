@@ -9,7 +9,7 @@ import (
 )
 
 // TestReapOrphansWindowsNoop pins the verified windows contract: the startup reap ends no
-// process and forgets no record on windows. Measured on a windows VM, the 19f30c46 reference
+// process and forgets no record on windows. Measured on Windows, the 19f30c46 reference
 // daemon reports it is not the run-dir lock holder on windows: it leaves any predecessor's
 // recorded children alone (planted records survived a daemon startup untouched). The planted
 // record — foreign and long expired, so a linux/darwin reap would forget it — must remain

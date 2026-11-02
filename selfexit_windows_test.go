@@ -9,11 +9,10 @@ import (
 	"time"
 )
 
-// In cell K3 of round tier1-01 (Windows VM) a daemon whose socket file was deleted
-// wrote no line and was still alive after 14 min. The idle exit does not run on
-// Windows either (not measured). With
-// short timers and both exits due, exitWhenOrphaned returns at once and starts no
-// shutdown.
+// In a measurement on Windows, a daemon whose socket file was deleted wrote no
+// line and was still alive after 14 min. The idle exit does not run on Windows
+// either (not measured). With short timers and both exits due, exitWhenOrphaned
+// returns at once and starts no shutdown.
 func TestSelfExitOffOnWindows(t *testing.T) {
 	oi, og, oe := orphanCheckInterval, orphanGrace, idleExitAfter
 	orphanCheckInterval, orphanGrace, idleExitAfter = 5*time.Millisecond, 5*time.Millisecond, time.Millisecond

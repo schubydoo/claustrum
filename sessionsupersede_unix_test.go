@@ -62,11 +62,11 @@ func wantLogOrder(t *testing.T, logged string, parts ...string) {
 	}
 }
 
-// TestSupersedeWaitsForAVictimThatExitsOnTERM pins row B1 (89cb6289, Linux and macOS):
-// the victim exits on SIGTERM, and the spawn of the new process returns after that
-// end, with the exit line, then the supersedes line, then the started line. The grace
-// is 10 s here, so a slow runner does not reach it. The escalated=false of the
-// supersedes line is the proof that the victim ended on its SIGTERM.
+// TestSupersedeWaitsForAVictimThatExitsOnTERM pins a rule of 89cb6289 (measured on Linux and macOS):
+// the victim exits on SIGTERM, and the spawn of the new process returns after that end, with the
+// exit line, then the supersedes line, then the started line. The grace is 10 s here, so a slow
+// runner does not reach it. The escalated=false of the supersedes line is the proof that the victim
+// ended on its SIGTERM.
 func TestSupersedeWaitsForAVictimThatExitsOnTERM(t *testing.T) {
 	const grace = 10 * time.Second
 	_, took, logged := supersedeRun(t, "term-exit0", grace)
@@ -80,9 +80,9 @@ func TestSupersedeWaitsForAVictimThatExitsOnTERM(t *testing.T) {
 	)
 }
 
-// TestSupersedeWaitsForAVictimThatIgnoresTERM pins row B2: the victim ignores
-// SIGTERM, gets SIGKILL after the grace, and the spawn of the new process returns
-// only then.
+// TestSupersedeWaitsForAVictimThatIgnoresTERM pins a measured rule: the victim ignores
+// SIGTERM, gets SIGKILL after the grace, and the spawn of the new process returns only
+// then.
 func TestSupersedeWaitsForAVictimThatIgnoresTERM(t *testing.T) {
 	const grace = 300 * time.Millisecond
 	_, took, logged := supersedeRun(t, "ignore-term", grace)
@@ -96,9 +96,9 @@ func TestSupersedeWaitsForAVictimThatIgnoresTERM(t *testing.T) {
 	)
 }
 
-// TestSessionSpawnOfANonExecutableCommandSupersedesFirst pins Linux rows H4a to H4c
-// (89cb6289) for a command that exists and does not start: the pre-check of the
-// spawn tests existence only, so the supersede runs and the error comes after it.
+// TestSessionSpawnOfANonExecutableCommandSupersedesFirst pins a rule of 89cb6289 (measured on
+// Linux) for a command that exists and does not start: the pre-check of the spawn tests
+// existence only, so the supersede runs and the error comes after it.
 func TestSessionSpawnOfANonExecutableCommandSupersedesFirst(t *testing.T) {
 	m := newTestProcManager(t)
 	t.Cleanup(m.killAll)

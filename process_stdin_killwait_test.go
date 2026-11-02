@@ -92,13 +92,13 @@ func TestClampKillWaitMs(t *testing.T) {
 	if maxKillWaitMs != 30000 {
 		t.Errorf("maxKillWaitMs = %d, want 30000 (reference bracket (29500, 30500] at 5db5e4a)", maxKillWaitMs)
 	}
-	// Same argument for the post-SIGKILL reap grace, and it needs the pin MORE
-	// than the ceiling does: the branch killReapGrace bounds is unreachable in
-	// this suite (it needs a child SIGKILL cannot reap, which took a dm-delay
-	// device on a VM to build), so every escalation test reaps promptly, p.done
-	// wins the select, and the timeout arm is never taken. A refactor that puts
-	// this back to 5s — or folds it into exitDrainGrace, which it equalled until
-	// the parity fix — would stay green with nothing else to catch it.
+	// Same argument for the post-SIGKILL reap grace, and it needs the pin MORE than the
+	// ceiling does: the branch killReapGrace bounds is unreachable in this suite (it needs
+	// a child SIGKILL cannot reap, which took a dm-delay device on a throwaway test system
+	// to build), so every escalation test reaps promptly, p.done wins the select, and the
+	// timeout arm is never taken. A refactor that puts this back to 5s — or folds it into
+	// exitDrainGrace, which it equalled until the parity fix — would stay green with
+	// nothing else to catch it.
 	if killReapGrace != 7*time.Second {
 		t.Errorf("killReapGrace = %v, want 7s (measured against the reference 2026-08-06: reply at 7.51s with timeoutMs 500)", killReapGrace)
 	}
@@ -302,9 +302,9 @@ func TestSocketStdinOffsetUint64Edges(t *testing.T) {
 
 // TestSocketStdinBackpressureError pins the -32002 wire contract: once the async
 // stdin queue is full, process.stdin returns {code:-32002,"stdin backpressure:
-// queue full"} instead of blocking the request. Measured against 4534d86 (probe
-// scratch/probe/stdincap): the reference rejects once the queue exceeds 16 MiB.
-// Here the cap is shrunk so the queue fills without moving megabytes.
+// queue full"} instead of blocking the request. Measured against 4534d86: the
+// reference rejects once the queue exceeds 16 MiB. Here the cap is shrunk so the
+// queue fills without moving megabytes.
 func TestSocketStdinBackpressureError(t *testing.T) {
 	old := stdinQueueCap
 	stdinQueueCap = 8
@@ -347,11 +347,11 @@ func TestSocketStdinBackpressureError(t *testing.T) {
 
 // TestSocketStdinExitedProcessPrecedence pins that process.stdin evaluates the
 // offset idempotency verdict BEFORE the running check (decode → exists → offset →
-// running), matching 4534d86 (measured, scratch/probe/stdinprec). On an EXITED
-// process a gap still returns -32003 and a wholly-duplicate write still returns
-// success{duplicate:true}; only a write that would enqueue fresh bytes reports
-// "Process not running". claustrum previously checked running first and answered
-// "Process not running" for all three.
+// running), matching 4534d86 (measured). On an EXITED process a gap still returns
+// -32003 and a wholly-duplicate write still returns success{duplicate:true}; only
+// a write that would enqueue fresh bytes reports "Process not running". claustrum
+// previously checked running first and answered "Process not running" for all
+// three.
 func TestSocketStdinExitedProcessPrecedence(t *testing.T) {
 	sock := startSocketServer(t)
 	cl := dial(t, sock)
@@ -402,11 +402,10 @@ func TestSocketStdinExitedProcessPrecedence(t *testing.T) {
 	}
 }
 
-// TestSocketStdinEmptyAtAppliedIsDuplicate pins cells S2a to S2e of rounds
-// tier3-03 and tier3-12 (5fd08069, macOS and Linux VMs). A request with no bytes
-// and an offset equal to applied answers duplicate, on a live and on an exited
-// process. Without an offset the live process answers plain success and the
-// exited one -32602.
+// TestSocketStdinEmptyAtAppliedIsDuplicate pins measured cases (`5fd08069`,
+// measured on Linux and macOS). A request with no bytes and an offset equal to
+// applied answers duplicate, on a live and on an exited process. Without an
+// offset the live process answers plain success and the exited one -32602.
 func TestSocketStdinEmptyAtAppliedIsDuplicate(t *testing.T) {
 	sock := startSocketServer(t)
 	cl := dial(t, sock)
@@ -452,9 +451,9 @@ func TestSocketStdinEmptyAtAppliedIsDuplicate(t *testing.T) {
 }
 
 // A daemon with jobs on lists process.stdin.offset to server.instance_id, then
-// process.spawn.job. With jobs off the list has no job name (52d82f0a, Windows VM).
-// The jobs of -keep-children list the name too (claustrum's own). The job state is set
-// by hand here, so the rule is pinned on every system.
+// process.spawn.job. With jobs off the list has no job name (`52d82f0a`, measured on
+// Windows). The jobs of -keep-children list the name too (claustrum's own). The job
+// state is set by hand here, so the rule is pinned on every system.
 func TestCapabilitiesListTheJobNameOnlyWithJobs(t *testing.T) {
 	s := &server{procs: &procManager{}}
 	if got := s.featuresFor(); slices.Contains(got, jobFeature) {

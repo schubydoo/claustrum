@@ -9,12 +9,10 @@ import (
 )
 
 // TestFilesExtractTarEntryCollisionTexts holds the two texts of an archive whose
-// second entry collides with its first. The frames are the ones of 5fd08069 in
-// cells 2a2-10-file-then-below and 2a2-11-dir-then-file of the Linux VM. The
-// cells 2a-file-then-below and 2a-dir-then-file of the macOS VM and of the
-// Windows VM hold them too. The Linux cell names its directory x, and this test
-// names it d as the two other cells do. The third entry shows that the
-// extraction stops at the failure.
+// second entry collides with its first. The frames are the ones of 5fd08069,
+// measured on Linux, macOS and Windows. The Linux cell names its directory x,
+// and this test names it d as the two other cells do. The third entry shows that
+// the extraction stops at the failure.
 func TestFilesExtractTarEntryCollisionTexts(t *testing.T) {
 	createText := "create d: openat d: file exists"
 	if runtime.GOOS == "windows" {
@@ -68,9 +66,9 @@ func TestFilesExtractTarEntryCollisionTexts(t *testing.T) {
 
 // TestFilesExtractTarSecondFileEntryReplaces: a second file entry with the name
 // of an earlier one replaces the file. The rows are equal on 89cb6289 and
-// 5fd08069 in the reply and in the content (Linux, macOS and Windows VMs). The
-// file has the name of the last entry: on a Windows VM `a.txt` and then `A.TXT`
-// leave `A.TXT` on 5fd08069.
+// 5fd08069 in the reply and in the content (measured on Linux, macOS and
+// Windows). The file has the name of the last entry: on Windows `a.txt` and
+// then `A.TXT` leave `A.TXT` on 5fd08069.
 func TestFilesExtractTarSecondFileEntryReplaces(t *testing.T) {
 	type row struct {
 		name     string
@@ -118,9 +116,8 @@ func TestFilesExtractTarSecondFileEntryReplaces(t *testing.T) {
 
 // TestFilesExtractTarDirectoryEntryTexts holds the answer for a directory entry at
 // or below a file that the archive wrote before. The frames are the ones of
-// 5fd08069 on Linux, macOS and Windows VMs.
-// 89cb6289 has the prefix and the fileCount 0 too, with another text after the
-// prefix.
+// 5fd08069 on Linux, macOS and Windows. 89cb6289 has the prefix and the fileCount
+// 0 too, with another text after the prefix.
 func TestFilesExtractTarDirectoryEntryTexts(t *testing.T) {
 	below := "mkdir a/b/: openat a: not a directory"
 	if runtime.GOOS == "windows" {
@@ -158,8 +155,8 @@ func TestFilesExtractTarDirectoryEntryTexts(t *testing.T) {
 
 // TestFilesExtractTarMarkerReplacesArchiveEntry holds the marker rule. After the
 // entries, .synced at the top of destDir is an empty file, whatever the archive
-// put there. The rows are equal on 89cb6289 and 5fd08069 (Linux, macOS and
-// Windows VMs).
+// put there. The rows are equal on 89cb6289 and 5fd08069 (measured on Linux,
+// macOS and Windows).
 func TestFilesExtractTarMarkerReplacesArchiveEntry(t *testing.T) {
 	file := func(name, body string) tgzEntry { return tgzEntry{name: name, body: body} }
 	dir := func(name string) tgzEntry { return tgzEntry{name: name, dir: true} }

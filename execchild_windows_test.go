@@ -9,7 +9,7 @@ import (
 )
 
 // TestWrapCmdWithTrampolineWindowsInert pins the verified windows contract: the daemon
-// injects no environment markers on windows. Measured on a windows VM, the 19f30c46 reference
+// injects no environment markers on windows. Measured on Windows, the 19f30c46 reference
 // daemon reports it is not the run-dir lock holder on windows and stamps neither
 // CLAUDE_SSH_RUN_DIR nor CLAUDE_SSH_CHILD (a child's env under a run-shaped socket matched a
 // bare-socket child's). wrapCmdWithTrampoline returns no exec-error pipe and leaves the

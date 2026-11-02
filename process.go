@@ -25,17 +25,17 @@ type streamFrame struct {
 	Seq       uint64 `json:"seq"`
 	Data      string `json:"data,omitempty"`
 	ExitCode  *int   `json:"exitCode,omitempty"`
-	// Signal and KilledBy were added by the reference daemon in 4534d86 and appear
-	// on an exit frame only. Signal is the SIG-prefixed name of the terminating
-	// signal (omitted on a normal exit and always on Windows, which has no signal
-	// on the wait path). KilledBy names who requested the kill: "client" for
-	// process.kill / process.killAndWait, "shutdown" for the shutdown/killAll
-	// sweep. Both omitempty, so a normal exit stays byte-identical to the pre-4534d86
-	// frame. Provenance: the "client" values and the SIGTERM/SIGKILL names are
-	// live-measured against 4534d86. Other mapped signal names are not individually
-	// measured. The Windows signal-omission is VM-measured. The "shutdown" label of
-	// a waiting kill is measured on Linux in the log only, because the shutdown exit
-	// frame races connection teardown and is not client-observable.
+	// Signal and KilledBy were added by the reference daemon in 4534d86 and appear on
+	// an exit frame only. Signal is the SIG-prefixed name of the terminating signal
+	// (omitted on a normal exit and always on Windows, which has no signal on the
+	// wait path). KilledBy names who requested the kill: "client" for process.kill /
+	// process.killAndWait, "shutdown" for the shutdown/killAll sweep. Both omitempty,
+	// so a normal exit stays byte-identical to the pre-4534d86 frame. Provenance: the
+	// "client" values and the SIGTERM/SIGKILL names are live-measured against
+	// 4534d86. Other mapped signal names are not individually measured. The Windows
+	// signal-omission is measured. The "shutdown" label of a waiting kill is measured
+	// on Linux in the log only, because the shutdown exit frame races connection
+	// teardown and is not client-observable.
 	Signal   string `json:"signal,omitempty"`
 	KilledBy string `json:"killedBy,omitempty"`
 
@@ -102,9 +102,8 @@ const defaultBufferCap int64 = 16 * 1024 * 1024
 // a slow or non-reading child gets a -32002 "stdin backpressure: queue full" error
 // once this much data is queued, rather than letting the daemon's memory grow
 // without bound. This is a WIRE contract, not a log edge: the reference returns
-// that error frame (measured against 4534d86, probe scratch/probe/stdincap — the
-// reject fires once the queue exceeds 16 MiB). The cap is 16 MiB to match. var so
-// tests can shrink it.
+// that error frame (measured against 4534d86: the reject fires once the queue
+// exceeds 16 MiB). The cap is 16 MiB to match. var so tests can shrink it.
 var stdinQueueCap = 16 * 1024 * 1024
 
 type managedProc struct {
@@ -115,7 +114,7 @@ type managedProc struct {
 	//
 	// startTime is the daemon's wall clock (epoch seconds) captured at spawn,
 	// returned identically on spawn and reattach for the same process. It is an
-	// OPAQUE TOKEN for PID-reuse detection (CL-8): a client compares a persisted
+	// OPAQUE TOKEN for PID-reuse detection: a client compares a persisted
 	// daemon value against a later daemon value for the same id. Do NOT compare it
 	// against an independently-read OS process start time (e.g. psutil
 	// create_time) — the daemon's spawn-moment wall clock differs from the kernel's
@@ -273,7 +272,8 @@ type procManager struct {
 	// this daemon's children apart from its own. Read-only after startup.
 	instanceID string
 	// noRecords is set for a daemon that does not hold the run-dir lock: it writes
-	// no child record. That is measured for a held flock (`5fd08069`, Linux VM).
+	// no child record. That is measured for a held flock (`5fd08069`, measured on
+	// Linux).
 	noRecords bool
 	// jobs tells if spawn puts each child in a job of its own (Windows only, see
 	// childJobs). One job for each child follows 52d82f0a (measured on Windows). It is set
@@ -467,11 +467,10 @@ func (m *procManager) liveArgv() [][]string {
 // reaped guard suppresses that. The one exception is "signal":"KILL", which kills
 // the group at once (killGroupInDrain). With escalate true and the drain still
 // pending at the end of the grace, killGroupAfterExit still sends the group SIGKILL.
-// 5fd08069 answers the same in cells K1a to K1c and K2a of rounds tier3-03 and
-// tier3-12 (macOS and Linux VMs).
-// The other callers are internal (the session supersede, the shutdown log line).
-// Use signalIfLive, which holds p.mu across the reaped check and the delivery, to
-// decide whether it is safe to signal.
+// 5fd08069 answers the same (measured on Linux and macOS). The other callers are
+// internal (the session supersede, the shutdown log line). Use signalIfLive, which
+// holds p.mu across the reaped check and the delivery, to decide whether it is safe
+// to signal.
 func (p *managedProc) isRunning() bool {
 	p.mu.Lock()
 	defer p.mu.Unlock()
@@ -592,9 +591,9 @@ func (e *signalFailed) Unwrap() error { return e.err }
 // the exit drain pending.
 //
 // What is measured is the OUTCOME, not the absence of a guard: 89cb6289 sends the
-// group SIGKILL at the end of the grace in that state (Linux rows B3 and X1). It
-// sends none after a process that ended within the grace (Linux rows X2a and X2b),
-// and killAndWaitProc sends none there either.
+// group SIGKILL at the end of the grace in that state (measured on Linux). It
+// sends none after a process that ended within the grace (measured on Linux), and
+// killAndWaitProc sends none there either.
 //
 // It returns the error of the kill. On Unix that is a *signalFailed or nil. On Windows
 // it is the error of TerminateJobObject on the job, or of TerminateProcess on a
@@ -610,11 +609,10 @@ func (p *managedProc) killGroupAfterExit() error {
 
 // killGroupInDrain sends SIGKILL to the group of a process inside its exit drain:
 // reaped, and its exit frame not out yet. 5fd08069 kills the group at once for a
-// killAndWait with "signal":"KILL" there (cell K2a of rounds tier3-03 and
-// tier3-12, macOS and Linux VMs). Another signal reaches no member of the group
-// there (cells K1a to K1c). Not measured: whether 5fd08069 also signals the ended child, the
-// spelling "SIGKILL" and the Windows answer. A process.kill there still sends
-// nothing (not measured). On Windows the error is ignored.
+// killAndWait with "signal":"KILL" there (measured on Linux and macOS). Another signal
+// reaches no member of the group there (measured). Not measured: whether 5fd08069 also
+// signals the ended child, the spelling "SIGKILL" and the Windows answer. A process.kill
+// there still sends nothing (not measured). On Windows the error is ignored.
 func (p *managedProc) killGroupInDrain() {
 	p.mu.Lock()
 	defer p.mu.Unlock()
@@ -766,8 +764,7 @@ func (m *procManager) spawnVia(c *conn, id, command string, args []string, cwd s
 		// message rather than a wrapped ENOTDIR.
 		//
 		// The reference logs each of the two with its Failed to start line, and the
-		// text after the id is the frame message. Measured on Linux (rows CW01,
-		// CW02a, CW02c, CW04c, CW05) and on Windows (rows CW01, CW02a, CW02c, CW04c).
+		// text after the id is the frame message. Measured on Linux and on Windows.
 		fi, err := os.Stat(cwd)
 		if err != nil {
 			err = &cwdError{fmt.Errorf("chdir %s: %w", cwd, err)}
@@ -798,7 +795,7 @@ func (m *procManager) spawnVia(c *conn, id, command string, args []string, cwd s
 	} else if sessionKey != "" {
 		// The pre-check of a session spawn: a command that does not exist fails here,
 		// before the supersede below, so the prior process of the session gets no
-		// signal (89cb6289, Linux rows P3 and H1). A launched spawn has its own check above.
+		// signal (`89cb6289`, measured on Linux). A launched spawn has its own check above.
 		if err := missingCommandError(cmd); err != nil {
 			logErrorf("[process.Manager] Failed to start process %s: %v", id, err)
 			return nil, err
@@ -865,10 +862,10 @@ func (m *procManager) spawnVia(c *conn, id, command string, args []string, cwd s
 		return nil, errStartsStopped
 	}
 	// End the prior process of the same session and wait for its end, before the new
-	// process starts (89cb6289, rows B1 to B4). Non-session spawns (empty key) skip
+	// process starts (`89cb6289`, measured). Non-session spawns (empty key) skip
 	// this. The step comes after the pre-check above and before the start: a command
-	// that does not exist supersedes nothing (row P3). A command that exists and does
-	// not start supersedes first, and its error comes after (Linux rows H4a to H4c).
+	// that does not exist supersedes nothing (measured). A command that exists and
+	// does not start supersedes first, and its error comes after (measured on Linux).
 	m.supersedeSession(sessionKey, id)
 	// Once the shutdown began, no new child starts. The read lock is held to the
 	// return, so the teardown waits for a child that starts here and for its record.
@@ -884,11 +881,11 @@ func (m *procManager) spawnVia(c *conn, id, command string, args []string, cwd s
 	if err != nil && execErrR != nil {
 		// The start of the trampoline itself failed, so nothing ran. The reference
 		// logs that and starts the command directly, and the frame then holds the
-		// error of the direct start. Measured on Linux with a cwd of mode 000 (row
-		// CW03): the frame names the command, not /proc/self/exe. The text of the
-		// line is the reference's. Not measured: a direct start that then works.
-		// claustrum gives that child the run dir entry and no CLAUDE_SSH_CHILD entry,
-		// as the direct start for a daemon with no re-executable binary does.
+		// error of the direct start. Measured on Linux with a cwd of mode 000: the
+		// frame names the command, not /proc/self/exe. The text of the line is the
+		// reference's. Not measured: a direct start that then works. claustrum gives
+		// that child the run dir entry and no CLAUDE_SSH_CHILD entry, as the direct
+		// start for a daemon with no re-executable binary does.
 		logWarnf("[process.Manager] exec trampoline failed for %s (%v); starting it directly — a successor daemon will not be able to reap it", id, err)
 		closeExecErr()
 		execErrR, execErrW = nil, nil
@@ -1103,8 +1100,7 @@ func (p *managedProc) waitReapAndDrain(wg *sync.WaitGroup, stdoutR, stderrR *os.
 	// The child has ended, so its registry record goes now, before the drain wait
 	// below. Measured on Linux: the record of the reference is gone 60 ms after the
 	// end of a child whose grandchild holds the pipes, and the exit frame comes 5 s
-	// later (row SP05). A failed removal logs its line here, before the exit line
-	// (rows SP07a to SP07c).
+	// later. A failed removal logs its line here, before the exit line (measured).
 	if p.forgetRecord != nil {
 		p.forgetRecord()
 	}
@@ -1128,7 +1124,7 @@ func (p *managedProc) waitReapAndDrain(wg *sync.WaitGroup, stdoutR, stderrR *os.
 	case <-drained:
 	case <-time.After(grace):
 		// The text is the reference's, and it comes before the two read-error lines
-		// that the close below causes (measured on Linux, row SP05).
+		// that the close below causes (measured on Linux).
 		logWarnf("[process.Manager] Process %s: pipe drain grace expired (grandchild holding stdio?); force-closing", p.id)
 		closeAll(stdoutR, stderrR)
 	}
@@ -1179,16 +1175,15 @@ func (p *managedProc) waitReapAndDrain(wg *sync.WaitGroup, stdoutR, stderrR *os.
 // daemon (<killedBy>)" (measured on Linux). The older text, measured on Linux
 // against 89cb6289, follows. A process.kill or a
 // process.killAndWait that ends a child with exit code 0 gives ", signalled at
-// client request" (rows SP03a, SP03b). A SIGKILL from outside the daemon gives
-// ", terminated by SIGKILL" (row SP04). A plain exit gives no suffix (row SP01).
-// A line with both parts has the signal first: 89cb6289 printed ", terminated by
-// SIGKILL, signalled at shutdown request" in row STb, a server.shutdown request
-// with two children.
+// client request" (measured). A SIGKILL from outside the daemon gives ", terminated
+// by SIGKILL" (measured). A plain exit gives no suffix (measured). A line with both
+// parts has the signal first: 89cb6289 printed ", terminated by SIGKILL, signalled
+// at shutdown request" in a measurement, a server.shutdown request with two children.
 //
 // That shutdown line is a race on the reference, not a rule. 89cb6289 printed it in
-// row STb, and printed no exited line in two runs of rows RP11 and RP12a. claustrum
-// prints it when the exit goroutine reaches the line before the daemon exits. The
-// shutdown wait (shutdownRecordWait) ends earlier, at the removal of the record.
+// that measurement, and printed no exited line in two runs. claustrum prints it when the
+// exit goroutine reaches the line before the daemon exits. The shutdown wait
+// (shutdownRecordWait) ends earlier, at the removal of the record.
 func exitLogSuffix(sigName, killedBy string) string {
 	suffix := ""
 	if sigName != "" {
@@ -1317,7 +1312,7 @@ func (p *managedProc) enqueueStdinLocked(data []byte) (full bool) {
 // nothing (the reference returns -32002 rather than parking the request).
 //
 // The call site passes mp.isLive, not mp.isRunning: 90fca6e6 refuses a write inside
-// the exit drain (measured on a linux VM).
+// the exit drain (measured on Linux).
 func (p *managedProc) applyStdin(data []byte, offset *uint64, running func() bool) (applied uint64, duplicate, gap, full, notRunning bool) {
 	p.stdinMu.Lock()
 	cur := p.stdinApplied
@@ -1328,8 +1323,7 @@ func (p *managedProc) applyStdin(data []byte, offset *uint64, running func() boo
 			return cur, false, true, false, false
 		}
 		// An offset equal to applied with no bytes is a duplicate too, also on an
-		// exited process (5fd08069, cells S2b to S2d of rounds tier3-03 and
-		// tier3-12, macOS and Linux VMs).
+		// exited process (`5fd08069`, measured on Linux and macOS).
 		skip := cur - off
 		if skip >= uint64(len(data)) {
 			p.stdinMu.Unlock()
@@ -1358,7 +1352,7 @@ func (p *managedProc) applyStdin(data []byte, offset *uint64, running func() boo
 // life of the process. stdinDone (set when the process exits) stops it and
 // discards any unsent data. After a write error (the child closed its stdin) it
 // writes no more, and the queue keeps taking bytes until it is full. 5fd08069 does
-// the same (cell S1 of rounds tier3-03 and tier3-12, macOS and Linux VMs).
+// the same (measured on Linux and macOS).
 func (p *managedProc) stdinWriter() {
 	broken := false
 	p.stdinMu.Lock()
@@ -1485,7 +1479,7 @@ var maxKillWaitMs = 30000 // 30s
 // pipe-holding grandchild does NOT produce: the exit drain ends at 5s on both
 // binaries and the reply lands at 5.01s either way, so that route
 // proves nothing. The fixture that works is real uninterruptible sleep — a read
-// against a dm-delay device on an ephemeral VM. With timeoutMs 500:
+// against a dm-delay device on Linux. With timeoutMs 500:
 //
 //	reference        : reply at 7.51s  -> 7s grace
 //	claustrum (was)  : reply at 5.51s  -> 5s grace
@@ -1618,16 +1612,15 @@ func (m *procManager) signalAndWaitAs(p *managedProc, signal, label string, grac
 		// The process ended within the grace. Its group gets no SIGKILL here, with
 		// escalate true or false, except the KILL in the drain above. Measured on Linux with strace against 89cb6289: the
 		// child exits on SIGTERM, and a kid in its group has its own stdio. For
-		// process.killAndWait with the default (row X2b, 3 of 3 runs) and for the
-		// session supersede (row X2a, 4 of 4 runs), 89cb6289 sent the SIGTERM to the
-		// one process and made no other call. The kid was alive 5 s later. Rows B1
-		// and H4a to H4c show no group SIGKILL either.
+		// process.killAndWait with the default (measured, 3 of 3 runs) and for the session supersede (measured, 4 of 4
+		// runs), 89cb6289 sent the SIGTERM to the one process and made no other call. The kid was alive 5 s later.
+		// Measurements show no group SIGKILL either.
 		//
-		// Build ac5cadb of claustrum sent a group SIGKILL here, and that ended the
-		// kid. That sweep came from a run against 5db5e4a with a child that
-		// backgrounds a sleeper. Whether that sleeper held the pipes of the child is
-		// not recorded. macOS rows X2a to X2c give the same on both. Windows has no
-		// X2 row: there is no group, and the call ended nothing.
+		// Build ac5cadb of claustrum sent a group SIGKILL here, and that ended the kid.
+		// That sweep came from a run against 5db5e4a with a child that backgrounds a
+		// sleeper. Whether that sleeper held the pipes of the child is not recorded.
+		// Measurements on macOS give the same on both. Windows has no such case: there
+		// is no group, and the call ended nothing.
 		return true, true, false, false
 	case <-time.After(grace):
 	}
@@ -1638,9 +1631,9 @@ func (m *procManager) signalAndWaitAs(p *managedProc, signal, label string, grac
 	}
 	// The graceful signal did not finish the job within the grace — force-kill the
 	// group. 89cb6289 sends kill(-<pid>, SIGKILL) at the end of the grace when the
-	// process does not end (Linux row B2), and when it ended and a kid in its group
-	// holds its pipes (Linux row X1). In row B3 the holder of the pipes is in another
-	// group, and the call answers ESRCH.
+	// process does not end (measured on Linux), and when it ended and a kid in its
+	// group holds its pipes (measured on Linux). In a measurement, the holder of the
+	// pipes is in another group, and the call answers ESRCH.
 	//
 	// signalIfLive is deliberately NOT used here. By this point the child is very
 	// often already reaped: the graceful signal worked, but a grandchild still
@@ -1654,12 +1647,11 @@ func (m *procManager) signalAndWaitAs(p *managedProc, signal, label string, grac
 	// has ended already. TerminateProcess then fails, and the line below is the
 	// reference's. With a job the kill ends the job, which endRest emptied, and no line
 	// prints (claustrum's own, not measured).
-	// Measured on a Windows VM against 89cb6289, with kids of the child holding its
-	// stdout and stderr. The line was "KillAndWait c1: group kill failed:
-	// TerminateProcess: Access is denied.". On Linux and macOS a refused SIGKILL
-	// prints "group kill failed: operation not permitted" (52d82f0a, measured). A
-	// group that is gone (ESRCH) prints no line there, as before (claustrum's own,
-	// not measured).
+	// Measured on Windows against 89cb6289, with kids of the child holding its stdout
+	// and stderr. The line was "KillAndWait c1: group kill failed: TerminateProcess:
+	// Access is denied.". On Linux and macOS a refused SIGKILL prints "group kill
+	// failed: operation not permitted" (52d82f0a, measured). A group that is gone
+	// (ESRCH) prints no line there, as before (claustrum's own, not measured).
 	if err := p.killGroupAfterExit(); err != nil {
 		logWarnf("[process.Manager] KillAndWait %s: group kill failed: %v", p.id, err)
 	}
@@ -1747,10 +1739,9 @@ func (m *procManager) reattach(c *conn, id string, fromSeq uint64) (p *managedPr
 	// A new connection gets no live frame before its replay ends. The reattach
 	// keeps the write lock of c until the replay is written, so a live emit to c
 	// waits for it. 5fd08069 sends no frame above lastSeq before the stored frames
-	// end (cell R1 of rounds tier3-03 and tier3-12, macOS and Linux VMs). A
-	// reattach on a connection that is already attached keeps the old order, as
-	// on 5fd08069 (cell R2). A test that dispatches with no connection takes the
-	// old order too.
+	// end (measured on Linux and macOS). A reattach on a connection that is
+	// already attached keeps the old order, as on 5fd08069 (measured). A test that
+	// dispatches with no connection takes the old order too.
 	hold := !attached && c != nil
 	if c != nil && !hold {
 		c.wmu.Unlock()
@@ -1873,18 +1864,18 @@ func buildSpawnEnv(env map[string]string, noShellAgent bool) []string {
 		base = replaceOrAppendEnv(base, "PATH", lp)
 	}
 	// A caller key that the base holds replaces that entry in place. A new caller key
-	// goes to the end. Measured on Linux and macOS against 89cb6289 (rows F1 to F5).
+	// goes to the end. Measured on Linux and macOS against 89cb6289.
 	//
 	// Two or more new caller keys have no fixed order on 89cb6289. Measured on Linux, 20
 	// spawns per row. For the request order ZZ, AA, MM it gave ZZ, AA, MM 16 times,
-	// AA, MM, ZZ 3 times and MM, ZZ, AA once (row P9). For the request order ZZ, MM, AA
-	// it gave ZZ, MM, AA 16 times, MM, AA, ZZ 3 times and AA, ZZ, MM once (row N7).
+	// AA, MM, ZZ 3 times and MM, ZZ, AA once (measured). For the request order ZZ, MM,
+	// AA it gave ZZ, MM, AA 16 times, MM, AA, ZZ 3 times and AA, ZZ, MM once (measured).
 	// Each order in the two rows is a rotation of the request order. Name order is not
-	// one of the three orders of row N7, and 89cb6289 never gave it there.
+	// one of the three orders, and 89cb6289 never gave it there.
 	//
 	// claustrum iterates the decoded map and builds no order of its own. That gave a
-	// rotation of the request order in each of the 20 spawns of a row (Linux P9, N7, macOS
-	// row EV20). TestNewCallerKeysComeInARotation holds that. A request with more keys is
+	// rotation of the request order in each of the 20 spawns of a row (measured on Linux
+	// and macOS). TestNewCallerKeysComeInARotation holds that. A request with more keys is
 	// not measured on Linux and macOS. On Windows Go sorts the whole block by name, so no
 	// order built here is observable there (DIVERGENCES.md D23).
 	for k, v := range env {

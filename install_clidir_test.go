@@ -10,11 +10,11 @@ import (
 )
 
 // Tests for a cli-dir path that names something that is not a folder. The cells
-// are E12x-a to E12x-n of the 89cb6289 measurement (f6010b97 and 89cb6289, one
-// run each, on Linux, macOS and Windows). This file holds the cells with regular
-// files and folders, which run on every system. install_clidir_unix_test.go
-// holds the symlink, FIFO and permission cells. Windows has no FIFO cell and no
-// cell with a parent that is not writable.
+// are those of the 89cb6289 measurement (f6010b97 and 89cb6289, one run each, on
+// Linux, macOS and Windows). This file holds the cells with regular files and
+// folders, which run on every system. install_clidir_unix_test.go holds the
+// symlink, FIFO and permission cells. Windows has no FIFO cell and no cell with
+// a parent that is not writable.
 
 // cliDirCell is one cell: a parent folder with the entries of the row.
 type cliDirCell struct {
@@ -259,7 +259,7 @@ func TestInstallVersionGuardRunsBeforeTheCLIDirReplace(t *testing.T) {
 }
 
 // rawCLIDirCell is an existing empty folder D with the stub environment, for
-// the cells of round tier3-01 (install_clidir_raw_*_test.go).
+// the cells (install_clidir_raw_*_test.go).
 func rawCLIDirCell(t *testing.T) string {
 	t.Helper()
 	f := newStubFixture(t)

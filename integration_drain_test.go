@@ -17,13 +17,12 @@ import (
 // at once, and the grandchild holds the pipe, so the drain window stays open.
 // exitDrainGrace is RAISED here, not shrunk, so there is a window to call into.
 //
-// Measured against both reference binaries in scratch/probe/ref90-capture.md
-// section A: 19f30c46 answers {"success":true,"applied":6} and running:true
-// inside this window, 90fca6e6 answers -32602 and running:false.
-// waitForDrainWindow blocks until the daemon has reaped the process but has not yet
-// flipped running, which is the exit-drain window this test is about. It reads the
-// daemon's own flags rather than the wire, so the wire assertions stay independent
-// of it.
+// Measured against both reference binaries: 19f30c46 answers
+// {"success":true,"applied":6} and running:true inside this window, 90fca6e6
+// answers -32602 and running:false. waitForDrainWindow blocks until the daemon has
+// reaped the process but has not yet flipped running, which is the exit-drain
+// window this test is about. It reads the daemon's own flags rather than the wire,
+// so the wire assertions stay independent of it.
 func waitForDrainWindow(t *testing.T, s *server, processID string) {
 	t.Helper()
 	deadline := time.Now().Add(5 * time.Second)

@@ -75,11 +75,11 @@ func unsetEnv(t *testing.T, keys ...string) {
 }
 
 // TestChildEnvOnAnotherSocketShape pins the child environment of a daemon whose socket
-// is not run/<id>/rpc.sock (89cb6289, Linux and macOS rows F2, F5 and K3, with the
-// caller keys of rows EV02a and EV03a). The environment ends with CLAUDE_SSH_RUN_DIR
-// and then CLAUDE_SSH_CHILD. A caller key that the daemon environment holds keeps the
-// place of that entry. A new caller key comes after the daemon entries. A caller value
-// and a daemon value of the two entries do not reach the child.
+// is not run/<id>/rpc.sock (89cb6289, measured on Linux and macOS, with the
+// caller keys). The environment ends with CLAUDE_SSH_RUN_DIR and then
+// CLAUDE_SSH_CHILD. A caller key that the daemon environment holds keeps the place of
+// that entry. A new caller key comes after the daemon entries. A caller value and a
+// daemon value of the two entries do not reach the child.
 func TestChildEnvOnAnotherSocketShape(t *testing.T) {
 	// The daemon environment of the rows: EFX, then copies of the two entries, then
 	// CLAUDE_SSH_DAEMON_CHILD as the last entry.
@@ -90,7 +90,7 @@ func TestChildEnvOnAnotherSocketShape(t *testing.T) {
 	os.Setenv(daemonChildMarker, "1")
 	cl, dir := otherShapeServer(t)
 
-	for i := range 5 { // row F5: the order is the same in every spawn
+	for i := range 5 { // measured: the order is the same in every spawn
 		pid, got := spawnEnviron(t, cl, "e"+strconv.Itoa(i), map[string]string{
 			"ZZNEW": "1", "EFX": "q", daemonChildMarker: "", envChildMarker: "caller", envRunDir: "/caller",
 		})
@@ -98,7 +98,7 @@ func TestChildEnvOnAnotherSocketShape(t *testing.T) {
 			t.Fatalf("child environment has %d lines: %q", len(got), got)
 		}
 		// The key of the test helper is a new caller key too. The two new keys have no
-		// fixed order between them (rows P9 and N7).
+		// fixed order between them (measured).
 		tail := got[len(got)-5:]
 		start := regexp.MustCompile(`^` + envChildMarker + `=` + strconv.Itoa(pid) + `:\S.*$`)
 		newKeys := slices.Sorted(slices.Values(tail[1:3]))
@@ -127,7 +127,7 @@ func TestChildEnvOnAnotherSocketShape(t *testing.T) {
 	}
 }
 
-// TestChildEnvKeepsThePlaceOfAGoRuntimeVariable pins Linux rows P4a to P4c (89cb6289).
+// TestChildEnvKeepsThePlaceOfAGoRuntimeVariable pins a rule of 89cb6289, measured on Linux.
 // A GOGC of the daemon environment keeps its place there. A GOMAXPROCS of the spawn env
 // stands where a new caller key stands. CLAUDE_SSH_RUN_DIR and CLAUDE_SSH_CHILD are the
 // last two entries.
@@ -140,7 +140,7 @@ func TestChildEnvKeepsThePlaceOfAGoRuntimeVariable(t *testing.T) {
 
 	pid, got := spawnEnviron(t, cl, "e1", map[string]string{"GOMAXPROCS": "2"})
 	// The key of the test helper is a new caller key too. The two new keys have no
-	// fixed order between them (rows P9 and N7), so the test puts them in name order.
+	// fixed order between them (measured), so the test puts them in name order.
 	want := []string{"EFX=old", "GOGC=50", daemonChildMarker + "=1", "CLAUSTRUM_TEST_HELPER=environ",
 		"GOMAXPROCS=2", envRunDir + "=" + dir}
 	if len(got) < len(want)+1 {
@@ -157,8 +157,8 @@ func TestChildEnvKeepsThePlaceOfAGoRuntimeVariable(t *testing.T) {
 }
 
 // TestChildRecordOnAnotherSocketShape pins that the record of a child goes to
-// <folder of the socket>/children on a socket that is not run/<id>/rpc.sock (89cb6289,
-// Linux and macOS rows F2 and K3).
+// <folder of the socket>/children on a socket that is not run/<id>/rpc.sock
+// (`89cb6289`, measured on Linux and macOS).
 func TestChildRecordOnAnotherSocketShape(t *testing.T) {
 	cl, dir := otherShapeServer(t)
 	pid := spawnSleeper(t, cl, "c1")
@@ -173,7 +173,7 @@ func TestChildRecordOnAnotherSocketShape(t *testing.T) {
 	killChild(t, cl, "c1")
 }
 
-// TestChildRecordOnARelativeSocket pins row F3: a relative socket path s.sock gives
+// TestChildRecordOnARelativeSocket pins a measured rule: a relative socket path s.sock gives
 // CLAUDE_SSH_RUN_DIR=. and the record goes to children/ in the working folder.
 func TestChildRecordOnARelativeSocket(t *testing.T) {
 	base, err := os.MkdirTemp("", "cl")
@@ -197,8 +197,8 @@ func TestChildRecordOnARelativeSocket(t *testing.T) {
 }
 
 // TestReapOrphansOnAnotherSocketShape pins that the reap of a start runs on a socket
-// that is not run/<id>/rpc.sock (89cb6289, Linux and macOS rows EV01a to EV01i). The
-// run dir is the folder that execChildRunDir gives for such a socket.
+// that is not run/<id>/rpc.sock (`89cb6289`, measured on Linux and macOS). The run
+// dir is the folder that execChildRunDir gives for such a socket.
 func TestReapOrphansOnAnotherSocketShape(t *testing.T) {
 	if node, _ := ownReapIdentity(); node == "" {
 		t.Skip("no node identity on this host")

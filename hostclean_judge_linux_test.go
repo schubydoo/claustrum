@@ -95,7 +95,7 @@ func TestVerifyListenerServesAnotherSocket(t *testing.T) {
 	// A daemon that verifies in every respect except the socket it serves.
 	hcFakeDaemon(t, proot, mk, link, 73, "/opt/claude/srv/a/server",
 		[]string{"/opt/claude/srv/a/server", "--serve", "--socket", "/opt/claude/run/other/rpc.sock"}, true, "1")
-	// The reference's text, measured on a Linux VM (row ST06).
+	// The reference's text, measured on Linux.
 	want := "the listener could not be verified as a daemon of ours (not serving that socket)"
 	if reason := c.verifyListener(73, "/opt/claude/run/x/rpc.sock"); reason != want {
 		t.Errorf("verifyListener = %q, want %q", reason, want)

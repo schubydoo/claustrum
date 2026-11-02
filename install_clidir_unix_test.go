@@ -11,8 +11,8 @@ import (
 	"time"
 )
 
-// The symlink, FIFO and permission cells of the cli-dir rule (E12x-d, e, f, i
-// and k, Linux and macOS VMs, f6010b97 and 89cb6289). See install_clidir_test.go.
+// The symlink, FIFO and permission cases of the cli-dir rule (measured on Linux
+// and macOS, f6010b97 and 89cb6289). See install_clidir_test.go.
 
 // Cell d. A symlink to a regular file at the cli-dir path is removed as a link.
 // Its target stays with its content. The version file beside the link goes.

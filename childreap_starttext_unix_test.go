@@ -8,7 +8,7 @@ import (
 )
 
 // TestOneBlank pins the form of the darwin start text: one blank between its words
-// (macOS rows F1 to F4 and RP15c: 89cb6289 holds "Fri Oct 2 17:35:19 2026" where `ps`
+// (measured on macOS: 89cb6289 holds "Fri Oct 2 17:35:19 2026" where `ps`
 // prints two blanks before the day). A text with a day of two digits has one blank
 // already and stays as it is.
 func TestOneBlank(t *testing.T) {
@@ -25,7 +25,7 @@ func TestOneBlank(t *testing.T) {
 }
 
 // TestStartTextWithTwoBlanksDoesNotMatch pins the exact compare of the start text
-// (macOS rows TBr, TBe and N6, 89cb6289 and claustrum). A record and a CLAUDE_SSH_CHILD entry of an
+// (measured on macOS, 89cb6289 and claustrum). A record and a CLAUDE_SSH_CHILD entry of an
 // older claustrum build hold the `ps` text with two blanks, and the live read of this
 // build holds one blank. Such a record is not a child to end, its daemon reads as gone,
 // and the leader test before a signal refuses it.

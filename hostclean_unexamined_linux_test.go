@@ -13,12 +13,11 @@ import (
 	"time"
 )
 
-// TestTidyKeepsARunDirWhenProcLocksCannotBeRead follows cell Q6 (`5fd08069`, Linux VM:
-// there a lock table of mode 000 and an empty lock). The
-// lock table of the fake /proc is gone, so the holder of daemon.lock is not known. The run
-// dir stays with the line of the reference, and the remove seam is not called. The control
-// is the same run dir with a lock table that reads and names no holder: the run dir goes
-// through the seam. Every path is under t.TempDir.
+// TestTidyKeepsARunDirWhenProcLocksCannotBeRead follows a measured case (`5fd08069`, Linux: there
+// a lock table of mode 000 and an empty lock). The lock table of the fake /proc is gone, so the
+// holder of daemon.lock is not known. The run dir stays with the line of the reference, and the
+// remove seam is not called. The control is the same run dir with a lock table that reads and
+// names no holder: the run dir goes through the seam. Every path is under t.TempDir.
 func TestTidyKeepsARunDirWhenProcLocksCannotBeRead(t *testing.T) {
 	for _, readable := range []bool{false, true} {
 		proot, _, _ := fakeProc(t)
@@ -67,11 +66,11 @@ func hcStoppedStat(pid int, startTicks string) string {
 	return strings.Replace(hcRunningStat(pid, 1, pid, startTicks), ") R ", ") T ", 1)
 }
 
-// TestRetireRefusesAStoppedDaemon pins cell Q2 (`5fd08069`, Linux VM). A daemon of ours in
-// state T fails the listener check with the text of the reference, and the retire takes no
-// hold and sends no signal. The control is the same daemon in state R: the check passes and
-// one SIGTERM goes to the seam. The daemon is a fake pid in a temp /proc, and the hold is a
-// seam that only records.
+// TestRetireRefusesAStoppedDaemon pins a measured case (`5fd08069`, measured on Linux). A daemon of
+// ours in state T fails the listener check with the text of the reference, and the retire takes no
+// hold and sends no signal. The control is the same daemon in state R: the check passes and one
+// SIGTERM goes to the seam. The daemon is a fake pid in a temp /proc, and the hold is a seam that
+// only records.
 func TestRetireRefusesAStoppedDaemon(t *testing.T) {
 	for _, stopped := range []bool{true, false} {
 		proot, mk, link := fakeProc(t)
@@ -120,8 +119,8 @@ func TestRetireRefusesAStoppedDaemon(t *testing.T) {
 	}
 }
 
-// TestPassLeavesAStoppedDaemonAlone pins the first line and the count of cell Q2 (`5fd08069`,
-// Linux VM): an old daemon of ours in state T on an idle run dir gets the "left alone" line
+// TestPassLeavesAStoppedDaemonAlone pins the first line and the count (`5fd08069`, measured
+// on Linux): an old daemon of ours in state T on an idle run dir gets the "left alone" line
 // and counts as one undecided candidate. No signal goes out. The control is the same daemon
 // in state R: no line and no count.
 func TestPassLeavesAStoppedDaemonAlone(t *testing.T) {
@@ -156,9 +155,9 @@ func TestPassLeavesAStoppedDaemonAlone(t *testing.T) {
 	}
 }
 
-// TestBusyReadThatItsDeadlineEndedRefusesTheRetire pins the shared half of cells B1 and B2
-// (`5fd08069`, macOS VM): there the pass logs only the "not retired" line, after one lsof
-// run. The darwin answer "the deadline ended the busy read" is staged through
+// TestBusyReadThatItsDeadlineEndedRefusesTheRetire pins the shared half (`5fd08069`,
+// measured on macOS): there the pass logs only the "not retired" line, after one lsof run.
+// The darwin answer "the deadline ended the busy read" is staged through
 // hcDaemonFilesUnread. The pass logs no "left alone" line and counts nothing, and it marks
 // the daemon. The retire then refuses a marked daemon with the measured reason, with no
 // hold and no signal. The control is the same daemon with no mark: one SIGTERM goes to the

@@ -9,8 +9,8 @@ import (
 
 // TestSpawnChdirFailureIsLogged pins the Failed to start line of a spawn whose cwd is
 // not usable: the text after the id is the message of the error frame. Measured
-// against 89cb6289 on Linux (rows CW01 and CW02a) and on Windows (rows CW01 and
-// CW02a). Before, claustrum returned these two errors with no log line.
+// against 89cb6289 on Linux and on Windows. Before, claustrum returned these two
+// errors with no log line.
 func TestSpawnChdirFailureIsLogged(t *testing.T) {
 	dir := t.TempDir()
 	afile := filepath.Join(dir, "afile")
@@ -39,8 +39,8 @@ func TestSpawnChdirFailureIsLogged(t *testing.T) {
 }
 
 // TestExitLogSuffix pins the tail of the exited line for each pair of facts that the
-// exit frame holds. The first three rows are measured against 89cb6289 on Linux (rows
-// SP01 and SP04, and the signal part of the rows). The part with the daemon as the
+// exit frame holds. The first three rows are measured against 89cb6289 on Linux.
+// The part with the daemon as the
 // signaller follows build 52d82f0a, measured on Linux and macOS for SIGTERM at a
 // client kill and for code 0 after a farewell. The shutdown label is not measured.
 func TestExitLogSuffix(t *testing.T) {

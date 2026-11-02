@@ -15,9 +15,9 @@ import (
 // TestPeerCheckReachesTheDaemonizedChild: the launcher hands CLAUDE_SSH_PEER_CHECK=1
 // to the daemon that it starts. The daemon writes its one line directly before the
 // listening line and answers the state of its own text: "unavailable" on macOS and
-// "on" on Linux with all parts. On macOS that place is the one of 5fd08069 (macOS
-// VM). The test process is a caller in the same namespaces, so it is served. The daemon is the one that this test started, on a socket
-// in the test's own temp folder, and the test stops it over that socket.
+// "on" on Linux with all parts. On macOS that place is the one of 5fd08069 (measured on macOS). The test process is a caller in the
+// same namespaces, so it is served. The daemon is the one that this test started, on a socket in the test's own temp folder, and the
+// test stops it over that socket.
 func TestPeerCheckReachesTheDaemonizedChild(t *testing.T) {
 	if testing.Short() {
 		t.Skip("builds and spawns the real binary; skipped under -short")
@@ -98,9 +98,9 @@ func TestPeerCheckReachesTheDaemonizedChild(t *testing.T) {
 
 // TestGitChildDoesNotInheritPeerCheck: after the start of the daemon, the git calls
 // of a served git.info get no CLAUDE_SSH_PEER_CHECK. On 5fd08069 no git call of one
-// git.info had it for the daemon value 0 (Linux VM). A marker variable of the
-// daemon is the control: it arrives in every call. The stand-in git is this test
-// binary behind a PATH link named git. It records its environment and fails.
+// git.info had it for the daemon value 0 (measured on Linux). A marker variable of
+// the daemon is the control: it arrives in every call. The stand-in git is this
+// test binary behind a PATH link named git. It records its environment and fails.
 func TestGitChildDoesNotInheritPeerCheck(t *testing.T) {
 	const marker = "CLAUSTRUM_TEST_PEER_MARK"
 	exe, err := os.Executable()

@@ -117,7 +117,8 @@ func TestWipeDestDirCannotTakeTheParent(t *testing.T) {
 // the name in the handle of the parent must name one entry. If they differ,
 // nothing is deleted and nothing stays that the request made. The seam makes the
 // two views differ, as a Windows path with the `\\?\` prefix and a dot after its
-// last name does. Both reference builds extract for such a path (Windows VM).
+// last name does. Both reference builds extract for such a path (measured on
+// Windows).
 //
 // The step for an unreadable empty destDir or file is on in every row, also off
 // Windows. A view test that fails for another reason than a permission error
@@ -202,8 +203,9 @@ func TestFilesExtractTarWipeNeedsOneEntryInBothViews(t *testing.T) {
 // TestFilesExtractTarParentIsAFile holds the prefix of the answer for a folder
 // above destDir that cannot be made, on each system. A file is at the place of
 // the parent folder. 89cb6289 and 5fd08069 answer "mkdir parent: mkdir <path of
-// the file>: <reason>" there (Linux and Windows VMs). The reason is the text of
-// the system, so the test holds the prefix alone. The file keeps its content.
+// the file>: <reason>" there (measured on Linux and Windows). The reason is the
+// text of the system, so the test holds the prefix alone. The file keeps its
+// content.
 func TestFilesExtractTarParentIsAFile(t *testing.T) {
 	for _, rel := range []string{filepath.Join("f.txt", "dest"), filepath.Join("f.txt", "m1", "dest")} {
 		t.Run(filepath.ToSlash(rel), func(t *testing.T) {

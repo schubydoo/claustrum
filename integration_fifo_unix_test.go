@@ -15,8 +15,8 @@ import (
 )
 
 // TestSocketFilesReadNonRegular pins the rule of files.read for a path that is
-// not a regular file, as 5fd08069 answers it (Linux and macOS VMs). The open
-// comes first and the kind test follows it.
+// not a regular file, as 5fd08069 answers it (measured on Linux and macOS).
+// The open comes first and the kind test follows it.
 //
 //	row 2  a FIFO with no writer is refused, and the open does not wait
 //	row 3  a symlink to that FIFO is refused
@@ -74,7 +74,7 @@ func releaseFifoReader(path string) {
 // TestSocketFilesReadFifoWithWriter pins the order of the open and the kind
 // test. A writer waits in its open of the FIFO. files.read refuses the FIFO,
 // and the open of the writer returns: the daemon opened the FIFO before it
-// refused. 5fd08069 does the same (Linux and macOS VMs).
+// refused. 5fd08069 does the same (measured on Linux and macOS).
 func TestSocketFilesReadFifoWithWriter(t *testing.T) {
 	root := resolveTestRoot(t, t.TempDir())
 	fifo := filepath.Join(root, "fifo")
@@ -122,10 +122,10 @@ func TestSocketFilesReadFifoWithWriter(t *testing.T) {
 
 // TestFilesReadNullDeviceIsOneFile pins that the null device test is the
 // identity of the file. 5fd08069 refuses a second device node with the numbers
-// of /dev/null (Linux and macOS VMs). A device node needs root, so this test
-// uses the nullDevicePath seam and two FIFOs. Both have the same kind and the
-// same device numbers. The one that the seam names reads as empty content. The
-// other is refused.
+// of /dev/null (measured on Linux and macOS). A device node needs root, so
+// this test uses the nullDevicePath seam and two FIFOs. Both have the same
+// kind and the same device numbers. The one that the seam names reads as empty
+// content. The other is refused.
 func TestFilesReadNullDeviceIsOneFile(t *testing.T) {
 	root := t.TempDir()
 	named, other := filepath.Join(root, "named"), filepath.Join(root, "other")
@@ -177,7 +177,7 @@ func mustMkfifo(t *testing.T, path string) {
 
 // TestSocketFilesReadSocketErrorText pins a bound AF_UNIX socket: the open fails,
 // so the answer is -32603 with the text of the open and not the -32602 of the
-// kind test. 89cb6289 and 5fd08069 answer the same (Linux VM).
+// kind test. 89cb6289 and 5fd08069 answer the same (measured on Linux).
 //
 // Linux-only, for the same reason TestSocketListNonDirErrorText is: open() on a
 // socket returns a different errno per kernel — ENXIO "no such device or address"

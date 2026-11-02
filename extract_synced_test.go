@@ -31,9 +31,9 @@ func newFileArchive(t *testing.T) string {
 }
 
 // TestFilesExtractTarAlreadyComplete holds the answer of 683cc6a9 for a plugin
-// folder with a regular file .synced (Linux, macOS and Windows VMs). Nothing is
-// unpacked and nothing is deleted, and the archive is gone after the reply. The
-// wipe is behind its seam, so a wrong arm deletes nothing.
+// folder with a regular file .synced (measured on Linux, macOS and Windows).
+// Nothing is unpacked and nothing is deleted, and the archive is gone after the
+// reply. The wipe is behind its seam, so a wrong arm deletes nothing.
 func TestFilesExtractTarAlreadyComplete(t *testing.T) {
 	logs := captureLogBuf(t)
 	wiped := ""
@@ -66,9 +66,9 @@ func TestFilesExtractTarAlreadyComplete(t *testing.T) {
 }
 
 // TestFilesExtractTarNotAlreadyComplete holds the kinds that get the normal wipe
-// and unpack on 683cc6a9 (Linux VM, and the folder and abc rows on macOS and
-// Windows VMs): a last name that is not 16 lower-case hex characters, and a
-// .synced that is a folder.
+// and unpack on 683cc6a9 (Linux, and the folder and abc rows on macOS and
+// Windows): a last name that is not 16 lower-case hex characters, and a .synced
+// that is a folder.
 func TestFilesExtractTarNotAlreadyComplete(t *testing.T) {
 	for _, tc := range []struct {
 		name, last string
@@ -110,7 +110,8 @@ func TestFilesExtractTarNotAlreadyComplete(t *testing.T) {
 // TestFilesExtractTarSkipsEntriesThatReadAsSynced holds the shape of the shared
 // archive of 683cc6a9: 11 entries, 8 with a top-level name that reads as
 // .synced, 7 regular files, 5 of them skipped. Each system answers fileCount 7
-// and logs a skip count of 8, and x/.synced stays (Linux, macOS and Windows VMs).
+// and logs a skip count of 8, and x/.synced stays (measured on Linux, macOS and
+// Windows).
 func TestFilesExtractTarSkipsEntriesThatReadAsSynced(t *testing.T) {
 	logs := captureLogBuf(t)
 	s := newTestServer(t)
@@ -176,9 +177,9 @@ func TestReadsAsSynced(t *testing.T) {
 
 // TestFilesExtractTarRemovesSyncedAfterAFailure: a .synced that appears in the
 // new destDir during the request is gone after a failed request. 683cc6a9 does
-// that after an unsafe path (Linux, macOS and Windows VMs) and a cut archive
-// (Linux VM). The seam after the mkdir makes the .synced, and every file is in a
-// temp folder of this test.
+// that after an unsafe path (measured on Linux, macOS and Windows) and a cut
+// archive (measured on Linux). The seam after the mkdir makes the .synced, and
+// every file is in a temp folder of this test.
 func TestFilesExtractTarRemovesSyncedAfterAFailure(t *testing.T) {
 	big := strings.Repeat("b", 4096)
 	for _, tc := range []struct {

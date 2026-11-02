@@ -32,14 +32,14 @@ import (
 
 // Orphan-exit timing. Package vars so a test can shrink them.
 //
-// Measured on a Linux VM (rows ST09 and ST11, several runs). The reference prints the
-// "no longer leads to this daemon" line with "10m0s", then the "(1/2)" line. Then it
-// prints the "orphaned for" line and the two shutdown lines. In one run 89cb6289 printed
-// "(1/2)" 9 min 59 s after the first line and "orphaned for 11m0s" one minute later.
-// 89cb6289 printed "11m0s" in four rows and "12m0s" in three. f6010b97 printed "12m0s" in
-// its one row. The texts of these lines are the reference's. claustrum printed the same
-// texts in those rows, with "12m0s" in each of six rows. The cause of the 60 s
-// difference is not measured. The check interval of the reference is not measured.
+// Measured on Linux (several runs). The reference prints the "no longer leads to this
+// daemon" line with "10m0s", then the "(1/2)" line. Then it prints the "orphaned for"
+// line and the two shutdown lines. In one run 89cb6289 printed "(1/2)" 9 min 59 s after
+// the first line and "orphaned for 11m0s" one minute later. 89cb6289 printed "11m0s" in
+// four rows and "12m0s" in three. f6010b97 printed "12m0s" in its one row. The texts of
+// these lines are the reference's. claustrum printed the same texts in those rows, with
+// "12m0s" in each of six rows. The cause of the 60 s difference is not measured. The
+// check interval of the reference is not measured.
 var (
 	orphanCheckInterval = 60 * time.Second
 	orphanGrace         = 10 * time.Minute
@@ -120,7 +120,7 @@ func (s *server) selfExitCheck(socket string, w *selfExitWatch, now time.Duratio
 	}
 	// Orphaned while a client is connected: no line, and the grace and the two probes
 	// count again from this check. So the "no longer leads" line does not come after
-	// that client leaves (cell K2 of round tier1-01, Linux and macOS VMs).
+	// that client leaves (measured on Linux and macOS).
 	if clients > 0 {
 		*w = selfExitWatch{orphaned: true, orphanedAt: now}
 		return false

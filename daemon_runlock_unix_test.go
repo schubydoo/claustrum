@@ -288,8 +288,8 @@ func TestReadOwnerRecordMissingFile(t *testing.T) {
 	}
 }
 
-// TestClaimRunDirHappyPath pins the two forms of the owner record (89cb6289, Linux
-// and macOS rows D1 and XL). The claim writes pid, role and node only. complete adds
+// TestClaimRunDirHappyPath pins the two forms of the owner record (89cb6289, measured
+// on Linux and macOS). The claim writes pid, role and node only. complete adds
 // instanceId and startedAt. release leaves an empty file.
 func TestClaimRunDirHappyPath(t *testing.T) {
 	dir := shortTempDir(t)
@@ -458,7 +458,7 @@ func TestClaimRunDirEvictsPredecessor(t *testing.T) {
 }
 
 // TestClaimRunDirEvictionLogsMatchReference pins the #320 eviction log MESSAGE
-// wording against 4534d86 (runtime-captured, scratch/probe/runlock-log-4534d86.md):
+// wording against 4534d86 (runtime-captured):
 // the "[daemon] serve:" prefix, the instance id in the eviction line, and the
 // "previous owner of <rundir>: terminated" summary. Only the message text is
 // matched; claustrum keeps its own level tag. The old "[daemon] run dir:" prefix
@@ -501,8 +501,8 @@ func TestClaimRunDirEvictionLogsMatchReference(t *testing.T) {
 
 // TestEvictionLinesNameTheInstanceOnlyWhenTheRecordHasOne pins the two forms of the
 // eviction lines (89cb6289, Linux). A record with an instance gives `pid <n> (instance
-// "<hex>")` (row E3). The short record of a daemon that has not bound yet has no
-// instance, and gives `pid <n>` (row P5). Every signal and every wait is seamed.
+// "<hex>")` (measured). The short record of a daemon that has not bound yet has no
+// instance, and gives `pid <n>` (measured). Every signal and every wait is seamed.
 func TestEvictionLinesNameTheInstanceOnlyWhenTheRecordHasOne(t *testing.T) {
 	if nodeID() == "" {
 		t.Skip("run-dir eviction needs a machine identity (nodeID)")
@@ -536,12 +536,12 @@ func TestEvictionLinesNameTheInstanceOnlyWhenTheRecordHasOne(t *testing.T) {
 }
 
 // TestEvictionWaitsOnTheLockOfAHolderThatNobodyCollects pins the wait of the eviction
-// (89cb6289, Linux rows H7, P5 and N3, macOS row P5). The holder is a child of this test
-// and the test does not collect it until the claim has returned. Its pid therefore still
-// answers kill(pid, 0) after it ended, as the pid of a daemon under a launcher that
-// still runs does. The lock is free at that point, and the wait reads the lock.
+// (`89cb6289`, measured on Linux and macOS). The holder is a child of this test and the
+// test does not collect it until the claim has returned. Its pid therefore still answers
+// kill(pid, 0) after it ended, as the pid of a daemon under a launcher that still runs
+// does. The lock is free at that point, and the wait reads the lock.
 //
-// The record is the short one of a daemon that has not bound yet (rows P5 and N3).
+// The record is the short one of a daemon that has not bound yet (measured).
 // SAFETY: every signal goes to the holder that this test started.
 func TestEvictionWaitsOnTheLockOfAHolderThatNobodyCollects(t *testing.T) {
 	if nodeID() == "" {
@@ -919,7 +919,7 @@ func TestNewServerOnSocketWritesRunLock(t *testing.T) {
 }
 
 // TestEvictionTimingValues pins the shipped eviction timing, which every eviction test
-// sets for itself. Linux row H7 (89cb6289) measured the poll of 50 ms and the 2 s
+// sets for itself. A measurement on Linux (89cb6289) showed the poll of 50 ms and the 2 s
 // before SIGKILL. The 1 s after SIGKILL is claustrum's own.
 func TestEvictionTimingValues(t *testing.T) {
 	if runDirPollInterval != 50*time.Millisecond || runDirTermGrace != 2*time.Second || runDirKillGrace != 1*time.Second {

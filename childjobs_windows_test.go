@@ -56,8 +56,8 @@ func TestSpawnStartsSuspendedOnlyWithJobs(t *testing.T) {
 
 // TestJobEndsTheTree: with jobs, process.kill, process.killAndWait and the kill of a clean
 // stop end the child and the process that it started at once. That process holds the
-// pipes of the child, so without the job the exit waits for the drain grace. Measured on a
-// Windows VM against 52d82f0a: the kill reply comes in 11 ms with exitCode 1. killAndWait
+// pipes of the child, so without the job the exit waits for the drain grace. Measured on
+// Windows against 52d82f0a: the kill reply comes in 11 ms with exitCode 1. killAndWait
 // answers {"found":true,"died":true} in 21 ms. No process of the tree is left, and a
 // process outside the daemon stays.
 func TestJobEndsTheTree(t *testing.T) {
@@ -130,9 +130,9 @@ func TestJobEndsTheTree(t *testing.T) {
 
 // TestJobChildExitEndsTheRest: a child in a job exits at once and leaves a process that
 // holds its pipes. The rest of the job ends, and the exit comes at once, with no drain
-// grace. Measured on a Windows VM against 52d82f0a: `cmd /c "start /b ping …"` gives its
-// exit frame at 123 ms. No ping is left. With CLAUDE_SSH_NO_JOBS=1 the
-// frame comes after the 5 s drain grace, and the ping runs on.
+// grace. Measured on Windows against 52d82f0a: `cmd /c "start /b ping …"` gives its exit
+// frame at 123 ms. No ping is left. With CLAUDE_SSH_NO_JOBS=1 the frame comes after the
+// 5 s drain grace, and the ping runs on.
 func TestJobChildExitEndsTheRest(t *testing.T) {
 	oldDrain := exitDrainGrace
 	exitDrainGrace = 30 * time.Second
@@ -196,8 +196,8 @@ func TestJobCloseByMode(t *testing.T) {
 }
 
 // TestKilledDaemonByMode: a process that owns one spawned child in a job ends hard, as a
-// daemon under taskkill /F does. With jobsOn the child ends with it. Measured on a Windows
-// VM against 52d82f0a: after a taskkill /F of the daemon the tree is gone at 0, 2 and 5 s,
+// daemon under taskkill /F does. With jobsOn the child ends with it. Measured on Windows
+// against 52d82f0a: after a taskkill /F of the daemon the tree is gone at 0, 2 and 5 s,
 // and a process outside the daemon stays. With jobsKeep (-keep-children) the child lives
 // on (claustrum's own). The owner writes the job state of its child first, so the test
 // knows that the child was in a job. TestChildSurvivesAKilledDaemon has the child with no
@@ -345,8 +345,8 @@ func TestJobAllowsBreakaway(t *testing.T) {
 	}
 }
 
-// TestJobLineAtStart: the start logs one job line (52d82f0a, Windows VM). It ends "true
-// (off switch: false)" with no switch, and "false (off switch: true)" with
+// TestJobLineAtStart: the start logs one job line (`52d82f0a`, measured on Windows). It
+// ends "true (off switch: false)" with no switch, and "false (off switch: true)" with
 // CLAUDE_SSH_NO_JOBS=1. Only the text "1" is the switch (claustrum's own for "0").
 // -keep-children gives jobsKeep, and the line stays the same (claustrum's own).
 func TestJobLineAtStart(t *testing.T) {
@@ -383,7 +383,7 @@ func TestJobLineAtStart(t *testing.T) {
 }
 
 // TestJobLineFollowsTheLockLine: in a start the job line comes after the "not the run
-// dir's lock holder" line, as on 52d82f0a (Windows VM).
+// dir's lock holder" line, as on 52d82f0a (measured on Windows).
 func TestJobLineFollowsTheLockLine(t *testing.T) {
 	t.Setenv(childJobsOffEnv, "")
 	_ = os.Unsetenv(childJobsOffEnv)

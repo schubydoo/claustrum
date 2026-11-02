@@ -2,7 +2,7 @@
 
 package main
 
-// childJobsLine is the start line of the job mode. Measured on a Windows VM against
+// childJobsLine is the start line of the job mode. Measured on Windows against
 // 52d82f0a: it comes after the "not the run dir's lock holder" line and before the
 // listening line. It ends "true (off switch: false)", and with CLAUDE_SSH_NO_JOBS=1
 // "false (off switch: true)". Build c8e2f083 logs no such line.

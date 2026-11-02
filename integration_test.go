@@ -13,13 +13,12 @@ import (
 	"time"
 )
 
-// These tests exercise the *real* AF_UNIX wire path end to end — listener,
-// per-connection read loop, concurrent dispatch, in-band auth, newline framing,
-// and the process stream fan-out — complementing rpc_test.go, which calls
-// dispatch() in-process. The response/error battery is locked against a
-// committed golden (testdata/socket_responses.golden.json); the daemon is
-// independently proven byte-identical to the reference by scratch/, so the
-// golden's job here is to stop future refactors from silently drifting.
+// These tests exercise the *real* AF_UNIX wire path end to end — listener, per-connection
+// read loop, concurrent dispatch, in-band auth, newline framing, and the process stream
+// fan-out — complementing rpc_test.go, which calls dispatch() in-process. The response/error
+// battery is locked against a committed golden (testdata/socket_responses.golden.json); the
+// daemon is independently proven byte-identical to the reference by separate measurements,
+// so the golden's job here is to stop future refactors from silently drifting.
 
 var (
 	reVersion  = regexp.MustCompile(`"version":"[^"]*"`)

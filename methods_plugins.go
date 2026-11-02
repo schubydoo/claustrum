@@ -34,7 +34,7 @@ import (
 // its hash is listed (sorted). The caller's params.keep list does NOT protect a dir
 // and no plain file is swept, so `kept` and `staleArchives` stay 0 (accepted as
 // parity fields; their reference triggers are not pinned). Measured against
-// 19f30c46 on the VM and against a live Desktop session.
+// 19f30c46 and against a live Desktop session.
 
 // pluginHashRE matches a plugin content-hash directory name (16 lowercase hex).
 var pluginHashRE = regexp.MustCompile(`^[0-9a-f]{16}$`)
@@ -77,7 +77,7 @@ func (s *server) pluginsPrune(req *request) response {
 	// wire). This differs from the shared bindParams path, whose bare "Invalid params"
 	// the other methods use.
 	// No params member is "Invalid params: unexpected end of JSON input", as on
-	// 5fd08069 (cell P0 of round task015-01, Linux VM).
+	// 5fd08069 (measured on Linux).
 	var p handlers.PruneParams
 	if err := json.Unmarshal(req.Params, &p); err != nil {
 		return errResult(req.ID, codeInvalidParam, "Invalid params: "+err.Error())

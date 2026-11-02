@@ -4,7 +4,7 @@ package main
 
 // recordChild is a no-op on windows and other non-linux, non-darwin targets. Linux and
 // darwin gather the child's identity (childrecord_linux.go / childrecord_darwin.go) and
-// write a <runDir>/children/<pid>.json record. Measured on a windows VM: the 19f30c46
+// write a <runDir>/children/<pid>.json record. Measured on Windows: the 19f30c46
 // reference daemon reports it is not the run-dir lock holder on windows and records no
 // children (a child spawned under a run-shaped socket leaves children/ empty). Claustrum
 // holds no run-dir lock on windows either (its lockRunFolder is a no-op

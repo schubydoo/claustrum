@@ -44,7 +44,7 @@ func TestWrapCmdFallsBackWhenNoSelf(t *testing.T) {
 // the five Go-runtime vars (the child ends up with the daemon's values restored),
 // that non-held vars pass through untouched, and that no CLAUDE_SSH_HELD_ residue
 // survives — matching the measured child env, where GODEBUG round-tripped and no
-// held key remained. Each variable keeps its place (89cb6289, Linux rows P4a to P4c).
+// held key remained. Each variable keeps its place (`89cb6289`, measured on Linux).
 func TestHoldRestoreGoEnvRoundTrip(t *testing.T) {
 	in := []string{
 		"GODEBUG=x=1,y=2", "PATH=/usr/bin", "GOGC=50", "GOMAXPROCS=4", "FOO=bar",

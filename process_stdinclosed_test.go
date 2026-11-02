@@ -14,10 +14,10 @@ type failingStdin struct{}
 func (failingStdin) Write([]byte) (int, error) { return 0, errors.New("broken pipe") }
 func (failingStdin) Close() error              { return nil }
 
-// TestStdinQueueFillsAfterChildClosedStdin pins cell S1 of rounds tier3-03 and
-// tier3-12 (5fd08069, macOS and Linux VMs). After a write fails, process.stdin
-// keeps queuing bytes and applied rises. Once the queue is full the answer is
-// backpressure, and applied stays.
+// TestStdinQueueFillsAfterChildClosedStdin pins a measured case (`5fd08069`, measured
+// on Linux and macOS). After a write fails, process.stdin keeps queuing bytes and
+// applied rises. Once the queue is full the answer is backpressure, and applied
+// stays.
 func TestStdinQueueFillsAfterChildClosedStdin(t *testing.T) {
 	old := stdinQueueCap
 	stdinQueueCap = 8

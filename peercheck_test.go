@@ -19,9 +19,9 @@ import (
 // of them runs in parallel.
 
 // wantPeerCheckLine is the line of a start with CLAUDE_SSH_PEER_CHECK=1, as the
-// daemon log holds it. The text of macOS and Windows is the one of 5fd08069 (macOS
-// and Windows VMs). The Linux text is the one of 5fd08069 too (round task011-01,
-// Linux VM), with the own text of this host.
+// daemon log holds it. The text of macOS and Windows is the one of 5fd08069
+// (measured on macOS and Windows). The Linux text is the one of 5fd08069 too
+// (measured on Linux), with the own text of this host.
 func wantPeerCheckLine() string {
 	if own := daemonNSText(); own.names() {
 		return "INFO  [Server] serving only callers in \"" + own.String() + "\"\n"
@@ -62,7 +62,7 @@ func stubDaemonNSText(t *testing.T, own nsText) {
 	readDaemonNSText = func() nsText { return own }
 }
 
-// measuredOwn is the own text of 5fd08069 in round task011-01 (Linux VM).
+// measuredOwn is the own text of 5fd08069 (measured on Linux).
 var measuredOwn = nsText{user: "user:[4026531837]", net: "net:1", pidfd: true}
 
 // TestPeerCheckValueTable: only the exact value 1 of CLAUDE_SSH_PEER_CHECK changes
@@ -126,7 +126,7 @@ func TestPeerCheckValueTable(t *testing.T) {
 // TestPeerCheckStartServesEveryCaller: a daemon that starts with the value 1 writes
 // the line once and serves a caller in its own process. Over the socket it answers
 // the state of the own text of this host: "unavailable" with no peerCheckBy on
-// macOS and Windows (R0), and the parts of the kernel on Linux.
+// macOS and Windows, and the parts of the kernel on Linux.
 func TestPeerCheckStartServesEveryCaller(t *testing.T) {
 	t.Setenv(peerCheckEnv, "1")
 	logs := captureLogBuf(t)
@@ -178,8 +178,8 @@ func TestPeerCheckFailedRemovalLogsOneLine(t *testing.T) {
 }
 
 // TestPeerCheckOwnTextAndStates: the own text joins its parts with one space, as
-// 5fd08069 logs it (round task011-01, Linux VM). All parts give "on" with
-// ["network","pidfd"] (cell P1). The other rows are claustrum's own names.
+// 5fd08069 logs it (measured on Linux). All parts give "on" with
+// ["network","pidfd"] (measured). The other rows are claustrum's own names.
 func TestPeerCheckOwnTextAndStates(t *testing.T) {
 	cases := []struct {
 		own         nsText
@@ -231,7 +231,7 @@ func TestPeerCheckStateFrames(t *testing.T) {
 }
 
 // TestPeerRefusalLineBytes: the refusal frame of each reason, byte for byte, with
-// "id":null and the newline (round task011-01, cells P2, P3 and P7, Linux VM).
+// "id":null and the newline (measured on Linux).
 func TestPeerRefusalLineBytes(t *testing.T) {
 	for _, reason := range []string{"other_namespace", "unreadable", "lookup_failed"} {
 		want := `{"jsonrpc":"2.0","id":null,"error":{"code":-32006,"message":"Refused: this server could not confirm that the caller is in its own namespaces","data":{"reason":"` + reason + `"}}}` + "\n"
@@ -243,7 +243,7 @@ func TestPeerRefusalLineBytes(t *testing.T) {
 }
 
 // TestPeerRefusalLoggedNumbers: refusals 1 to 10 get a log line, and 11 and 12 do
-// not (cell P6).
+// not (measured).
 func TestPeerRefusalLoggedNumbers(t *testing.T) {
 	for n := int64(1); n <= 12; n++ {
 		want := n <= 10
@@ -316,10 +316,10 @@ func peerAdmitOnce(t *testing.T, g *peerGate) (bool, string) {
 }
 
 // TestPeerGateRefusalLinesAndCount: each refused caller gets the frame and an EOF.
-// The log has lines for the refusals 1 to 10 only (cell P6), and the line of
-// round task011-01 (cell P2, Linux VM). A caller that exited gets the frame with
-// lookup_failed and no line, and it counts (cell P7, the count is claustrum's
-// own). A caller with the own text is served and reads nothing.
+// The log has lines for the refusals 1 to 10 only (measured), and the line
+// (measured on Linux). A caller that exited gets the frame with lookup_failed and
+// no line, and it counts (measured, the count is claustrum's own). A caller with
+// the own text is served and reads nothing.
 func TestPeerGateRefusalLinesAndCount(t *testing.T) {
 	other := nsText{user: "user:[4026532385]", net: "net:1", pidfd: true}
 	var exited bool

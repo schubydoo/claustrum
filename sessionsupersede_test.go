@@ -146,9 +146,9 @@ func TestSocketSupersedeSameSession(t *testing.T) {
 	cl.waitResponses(5)
 }
 
-// TestSupersedeSameIDAndSessionSendsNoSignal pins row B4 (89cb6289, Linux and macOS): a
-// spawn with the id AND the session of a process that still runs supersedes nothing
-// and sends no signal.
+// TestSupersedeSameIDAndSessionSendsNoSignal pins a rule of 89cb6289 (measured on Linux and macOS): a
+// spawn with the id AND the session of a process that still runs supersedes nothing and sends no
+// signal.
 func TestSupersedeSameIDAndSessionSendsNoSignal(t *testing.T) {
 	m := newTestProcManager(t)
 	t.Cleanup(m.killAll)
@@ -185,12 +185,12 @@ func TestSupersedeSameIDAndSessionSendsNoSignal(t *testing.T) {
 // spawn against 89cb6289: a command that does not exist fails before the supersede.
 // The prior process of the session gets no signal and lives on.
 //
-//   - Linux rows P3 and H1, macOS row P3: a missing path answers "fork/exec <path>: no
+//   - Linux and macOS: a missing path answers "fork/exec <path>: no
 //     such file or directory".
-//   - Windows row SSm-path: a missing path that ends in .exe answers "fork/exec <path>:
+//   - Windows: a missing path that ends in .exe answers "fork/exec <path>:
 //     The system cannot find the file specified."
-//   - Windows row SSm-noext: a missing path with no extension answers the lookup error.
-//   - Linux row H9 and Windows row SSm-bare: a bare name answers the lookup error.
+//   - Windows: a missing path with no extension answers the lookup error.
+//   - Linux and Windows: a bare name answers the lookup error.
 func TestSessionSpawnOfAMissingCommandSupersedesNothing(t *testing.T) {
 	type spawnCase struct {
 		name, command string

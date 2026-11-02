@@ -12,7 +12,7 @@ import (
 // through that handle with "Access is denied.", before prepareOldDestDir runs.
 // On 683cc6a9 an empty folder there goes, and a regular file there goes, and the
 // extract goes on. A folder with content gives "clean destDir: RemoveAll <name>:
-// Access is denied." and stays (Windows VM, a token with no backup and restore
+// Access is denied." and stays (Windows, a token with no backup and restore
 // privileges). The maintainer approved this remove. unreadableDestDirGoes turns
 // the step on, on Windows only.
 //

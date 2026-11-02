@@ -16,7 +16,7 @@ import (
 
 // On Windows livePredecessorPID is 0 even with a live listener on the socket, so the
 // launcher wait ends at the first connect that works. 5fd08069 exits 0 there while the
-// path still leads to the predecessor (round task006-01, cell C3, Windows VM).
+// path still leads to the predecessor (measured on Windows).
 func TestLivePredecessorPIDZeroOnWindows(t *testing.T) {
 	dir, err := os.MkdirTemp("", "lp")
 	if err != nil {
@@ -51,8 +51,8 @@ func TestLivePredecessorPIDZeroOnWindows(t *testing.T) {
 
 // TestLauncherWaitsOverAStaleSocket: the stale socket file of a killed daemon is on disk.
 // The launcher wait does not take that file for the socket of the new daemon. It waits
-// until the new daemon binds, and dials it once. In rows WN03 and WN05 on a Windows VM,
-// the log of the new daemon holds one connection pair right after the listening line.
+// until the new daemon binds, and dials it once. In a measurement, on Windows, the log of
+// the new daemon holds one connection pair right after the listening line.
 func TestLauncherWaitsOverAStaleSocket(t *testing.T) {
 	dir, err := os.MkdirTemp("", "lp")
 	if err != nil {
