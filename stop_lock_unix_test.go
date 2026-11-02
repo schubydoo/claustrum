@@ -12,7 +12,7 @@ import (
 	"time"
 )
 
-// The -stop lock fallback, measured against f6010b97 and 90fca6e6 on a Linux VM.
+// The -stop lock fallback, measured against f6010b97 and 90fca6e6 on Linux.
 // After a failed connect, -stop reads daemon.lock:
 //
 //	lock missing or free                    none
@@ -145,7 +145,7 @@ func TestRunStopTerminatesLockHolder(t *testing.T) {
 }
 
 // A holder with a short record, a daemon that has not bound yet, gives the two lines
-// with no instance. Measured on Linux against 89cb6289 (row N5).
+// with no instance. Measured on Linux against 89cb6289.
 func TestRunStopLinesForAShortRecord(t *testing.T) {
 	requireNodeID(t)
 	oldGrace := stopTermGrace
@@ -235,7 +235,7 @@ func TestRunStopLeavesForeignHolderAlone(t *testing.T) {
 
 	stopPrints(t, sock, "survivor\n")
 
-	// On the survivor path -stop unlinks nothing (measured, T17e).
+	// On the survivor path -stop unlinks nothing (measured).
 	assertKept(t, sock, "socket")
 	assertKept(t, token, "daemon.token")
 
@@ -262,7 +262,7 @@ func TestRunStopLeavesForeignHolderAlone(t *testing.T) {
 // unlinks neither the socket nor daemon.token:
 //   - SIGTERM or SIGKILL does not reach a holder that is still present.
 //   - The holder is no longer our serve process before SIGKILL.
-//   - The lock is still held stopKillGrace after SIGKILL (measured, T19). This arm
+//   - The lock is still held stopKillGrace after SIGKILL (measured). This arm
 //     also checks the reference line and that the wait is stopKillGrace.
 //
 // The record names a pid that does not exist, and every signal goes through the

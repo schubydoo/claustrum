@@ -30,11 +30,11 @@ import (
 // therefore never reaches an unrelated process or path.
 //
 // This path is DESTRUCTIVE: the cleaner ends OTHER daemons under its roots. Every process read,
-// kill, dial, rename and remove goes through a package-var seam, so unit tests exercise the
-// whole decision without touching a real process. A test that lets a rename or a remove run
-// for real does so inside its own temp dir. The real sweep is validated only on
-// a throwaway VM; a cleaner-enabled -serve must never run on a host that also runs siblings.
-// Windows links no cleaner. It is a no-op (hostclean_other.go).
+// kill, dial, rename and remove goes through a package-var seam, so unit tests exercise the whole
+// decision without touching a real process. A test that lets a rename or a remove run for real does
+// so inside its own temp dir. The real sweep is validated only on a throwaway test system; a
+// cleaner-enabled -serve must never run on a host that also runs siblings. Windows links no
+// cleaner. It is a no-op (hostclean_other.go).
 
 // hostRoots is the containment envelope. roots is the root list. It holds the install
 // root dir that the cleaner acts within, as the socket path gives it. A daemon socket
@@ -74,17 +74,16 @@ const (
 // <root>/srv/<id>/<name> under one root of the list, with exactly one folder level between
 // srv and the file. An executable under the srv of another folder matches no root.
 //
-// The two error texts are the reasons of the "host cleaning off" line (startHostCleaner).
-// The executable text names the srv of the root as given. The decisions of the gate and both texts
-// equal those of 89cb6289 in the rows of a Linux VM. The start rows hold nine socket shapes in the
-// install layout and in the plain layout, and six places of the executable. Rows KREL,
-// KXB, KS-i-j, KS-i-k, KS-m-e, KS-q-e and KS-u-e ran with staged fixtures. A relative socket
-// is "not <root>/run/<id>/rpc.sock" in both layouts. A socket path through a symlink to
-// the root keeps the cleaner on (rows KS-m-e, KS-q-e). So does a symlink one level above
-// the root.
+// The two error texts are the reasons of the "host cleaning off" line (startHostCleaner). The
+// executable text names the srv of the root as given. The decisions of the gate and both texts
+// equal those of 89cb6289, measured on Linux. The start rows hold nine socket shapes in the
+// install layout and in the plain layout, and six places of the executable. Some rows ran with
+// staged fixtures. A relative socket is "not
+// <root>/run/<id>/rpc.sock" in both layouts. A socket path through a symlink to the root keeps the
+// cleaner on (measured). So does a symlink one level above the root.
 //
 // Not measured: a root whose resolution fails and an unreadable own executable (haveExe
-// false). A macOS VM measured nine gate shapes against 89cb6289 (rows GSa to GSg3).
+// false). A macOS test measured nine gate shapes against 89cb6289.
 func deriveRoots(socket, exe string, haveExe bool) (*hostRoots, error) {
 	socketShape := fmt.Errorf("socket path %q is not <root>/run/<id>/rpc.sock", socket)
 	socket = filepath.Clean(socket)
@@ -136,8 +135,8 @@ func (r *hostRoots) isDaemonBinary(exe string) bool {
 }
 
 // isCliBinary reports whether exe is a CLI binary directly in <root>/ccd-cli, the flat
-// <root>/ccd-cli/<version> layout. A nested <root>/ccd-cli/<dir>/<bin> is not one. On the
-// Linux VM the reference kept groups with that layout (issue 429). That this path rule is
+// <root>/ccd-cli/<version> layout. A nested <root>/ccd-cli/<dir>/<bin> is not one. On
+// Linux the reference kept groups with that layout (issue 429). That this path rule is
 // the reason is inferred from the outcome, not seen.
 func (r *hostRoots) isCliBinary(exe string) bool {
 	for _, root := range r.roots {
@@ -499,12 +498,12 @@ func lockProbe(dir string) (state int, rec *ownerRecord, present bool) {
 	// graceful exit, so an empty file is asked about its holder like any other. On linux,
 	// content that is present but does not parse stays indeterminate. That is claustrum's
 	// own answer, and the reference on linux is not measured for it. On darwin such content
-	// is asked about its holder too: on a macOS VM 89cb6289 removed a run dir whose lock
-	// held 7 bytes of text and had no holder (row C5, 3 of 3). On linux a starting daemon
-	// holds no flock between its open and its flock. So its lock reads stale in that window,
-	// empty or not. The post-rename lock probe in removeRunDir sees a flock taken between
-	// this read and the rename. It does not see one taken after it, and a leftover staging
-	// dir has no such probe.
+	// is asked about its holder too: on macOS 89cb6289 removed a run dir whose lock held 7
+	// bytes of text and had no holder (measured). On linux a starting daemon holds no flock
+	// between its open and its flock. So its lock reads stale in that window, empty or not.
+	// The post-rename lock probe in removeRunDir sees a flock taken between this read and
+	// the rename. It does not see one taken after it, and a leftover staging dir has no such
+	// probe.
 	if hcLockNeedsRecord && rec == nil && fi.Size() != 0 {
 		return hcLockUnknown, nil, true
 	}
@@ -553,9 +552,9 @@ func waitGone(entries []waitEntry, deadline time.Time) []waitEntry {
 // ---- the cleaner: lifecycle, summary, and the destructive enders ----
 
 // Timing and count gates. The 15 s first-pass delay matches the reference, as measured on
-// Linux and macOS VMs (issue 429). The 3 s grace after SIGTERM and the cap of 64 orphan
-// groups match the reference too. A Linux VM measured both against f6010b97 and 89cb6289
-// (rows HC21a and HC22). The other values are claustrum's own, not probe-measured.
+// Linux and macOS (issue 429). The 3 s grace after SIGTERM and the cap of 64 orphan
+// groups match the reference too. A Linux test measured both against f6010b97 and 89cb6289.
+// The other values are claustrum's own, not probe-measured.
 const (
 	hcMinAge     = 5 * time.Minute     // a daemon or orphan younger than this is never touched
 	hcIdleAge    = 30 * 24 * time.Hour // a run dir must be idle this long before tidy acts on it, unless its name carries the staging marker
@@ -637,9 +636,9 @@ func newHostCleaner(socket string) (*hostCleaner, error) {
 // termLog, when not empty, is a format with one %d (the pid) logged before each SIGTERM.
 // It returns the count signalled and the count that survived SIGKILL.
 //
-// The line before the SIGKILL is the reference's, measured on a Linux VM against f6010b97
-// and 89cb6289 (row HC21a). A group that waitGone ends early, because its leader is gone,
-// gets no line. The reference printed none there either (row HC21, the kid variant).
+// The line before the SIGKILL is the reference's, measured on Linux against f6010b97 and
+// 89cb6289. A group that waitGone ends early, because its leader is gone, gets no line.
+// The reference printed none there either (measured, the kid variant).
 func endGroupsTwoPhase(groups []tracked, label, termLog string) (signalled, survived int) {
 	var live []waitEntry
 	for _, g := range groups {
@@ -698,10 +697,10 @@ const hcDaemonChildMarker = "CLAUDE_SSH_DAEMON_CHILD=1"
 // daemons serving that socket, or a short reason otherwise. It is the strict gate before the
 // cleaner retires a live listener as our daemon.
 //
-// Two reasons are the reference's, measured on a Linux VM against f6010b97 and 89cb6289.
-// They are "not our daemon binary" (row HC04) and "not serving that socket" (row ST06).
-// A third is "not inspectable", for a stopped daemon on linux (`5fd08069`, cell Q2, Linux
-// VM). The other four keep claustrum's own wording. Their reference texts are not measured.
+// Two reasons are the reference's, measured on Linux against f6010b97 and 89cb6289. They
+// are "not our daemon binary" (measured) and "not serving that socket". A third is "not
+// inspectable", for a stopped daemon on linux (`5fd08069`, measured on Linux). The other
+// four keep claustrum's own wording. Their reference texts are not measured.
 func (c *hostCleaner) verifyListener(pid int, socket string) string {
 	t, res := inspect(pid, true)
 	if res != hcInspectOK {
@@ -714,7 +713,7 @@ func (c *hostCleaner) verifyListener(pid int, socket string) string {
 		return "the listener runs in another namespace"
 	}
 	if hcStoppedIsUninspected && t.stopped {
-		// The reference's text for a daemon in state T (`5fd08069`, cell Q2, Linux VM).
+		// The reference's text for a daemon in state T (`5fd08069`, measured on Linux).
 		return "the listener could not be verified as a daemon of ours (not inspectable)"
 	}
 	if t.exe == "" || !c.roots.isDaemonBinary(t.exe) {
@@ -794,9 +793,9 @@ func (c *hostCleaner) judgeOrphan(t hcTracked) (reap bool, reason string) {
 const hcPassStartLine = "[hostclean] pass starting (it probes its own socket first: a connection that never shows the token)"
 
 // hcOrphanUninspected is the reason for an orphan whose stdio read got no answer. The pass
-// prints it in the line of the reference, measured on a macOS VM against 89cb6289 (row E5):
-// there the lsof command did not start. A run that writes to stderr and exits 1 gives the
-// same line on both sides (row F3).
+// prints it in the line of the reference, measured on macOS against 89cb6289: there the
+// lsof command did not start. A run that writes to stderr and exits 1 gives the same line
+// on both sides (measured).
 const hcOrphanUninspected = "its descriptors could not be inspected"
 
 // hcGetppid is os.Getppid behind a seam. The cleaner never retires its own parent.
@@ -831,11 +830,11 @@ func (c *hostCleaner) retireAbandoned(e runDirEntry, pid int, uid uint32) (bool,
 		return false, ""
 	}
 	if hcClock().Sub(t.startWall) < hcMinAge {
-		// Measured on a macOS VM against f6010b97 (issue 429): the reference logs this reason.
+		// Measured on macOS against f6010b97 (issue 429): the reference logs this reason.
 		return false, "it is too young to judge"
 	}
 	// With an lsof that hangs, `5fd08069` runs one lsof for the daemon, sends no signal and
-	// logs this reason. Its pass takes 15.0 s (cells B1 and B2, macOS VM).
+	// logs this reason. Its pass takes 15.0 s (measured on macOS).
 	if c.busyEnded[pid] || hcSettledBusy(pid) {
 		return false, hcRetireBusyReason
 	}
@@ -847,8 +846,8 @@ func (c *hostCleaner) retireAbandoned(e runDirEntry, pid int, uid uint32) (bool,
 	//
 	// The order is: take the hold, check the identity, signal through the hold. On linux
 	// the hold is a pid file descriptor, so a pid that changes hands after the check gets
-	// no signal. On a Linux VM 89cb6289 made the same calls in that order in 26 of 26
-	// retires (strace). On darwin there is no such hold, and the check is the only guard.
+	// no signal. On Linux 89cb6289 made the same calls in that order in 26 of 26 retires
+	// (strace). On darwin there is no such hold, and the check is the only guard.
 	send, release := hcHoldPid(pid)
 	if !t.asTracked().same() {
 		release()
@@ -949,7 +948,7 @@ func (c *hostCleaner) runDirs() ([]runDirEntry, func()) {
 				continue
 			}
 			if len(out) >= hcMaxRunDirs {
-				// The reference's line, measured on a Linux VM (row HC06b).
+				// The reference's line, measured on Linux.
 				logInfof("[hostclean] more than %d run dirs under %s; only the first %d are examined", hcMaxRunDirs, runRoot, hcMaxRunDirs)
 				return out, closeAll
 			}
@@ -977,9 +976,8 @@ func (c *hostCleaner) tidyRunDirs(entries []runDirEntry, sum *hcSummary) {
 			continue // too fresh and not an interrupted removal
 		}
 		if tries >= hcMaxRetire {
-			// The reference's line, measured on a Linux VM (row HC14c). claustrum counts
-			// attempts, refused ones included. The reference count after a refused attempt
-			// is not measured.
+			// The reference's line, measured on Linux. claustrum counts attempts, refused
+			// ones included. The reference count after a refused attempt is not measured.
 			logInfof("[hostclean] run dir %q unused for %s: left for a later pass (%d retirements this pass already)", e.dirPath, hcDays(e.idle), tries)
 			continue
 		}
@@ -1021,13 +1019,12 @@ func (c *hostCleaner) tidyRunDirs(entries []runDirEntry, sum *hcSummary) {
 		}
 		switch ls, _, _ := lockProbe(e.dirPath); ls {
 		case hcLockHeld:
-			// The reference's line, measured on a Linux VM (row HC03).
+			// The reference's line, measured on Linux.
 			logInfof("[hostclean] run dir %q unused for %s: kept, a live process holds its %s", e.dirPath, hcDays(e.idle), runDirLockName)
 			continue
 		case hcLockUnexamined:
-			// The reference's line, measured on a macOS VM against 89cb6289 (rows C3, D2p,
-			// D2f, D4, E7a and E7b). On linux it is the line for a /proc/locks that cannot
-			// be read (`5fd08069`, cell Q6, Linux VM).
+			// The reference's line, measured on macOS against 89cb6289. On linux it is the
+			// line for a /proc/locks that cannot be read (`5fd08069`, measured on Linux).
 			logInfof("[hostclean] run dir %q unused for %s: kept, its %s could not be examined", e.dirPath, hcDays(e.idle), runDirLockName)
 			continue
 		case hcLockUnknown:
@@ -1086,7 +1083,7 @@ func (c *hostCleaner) undoRename(e runDirEntry, target, reason string) {
 		logInfof("[hostclean] run dir %q could not be restored (%s): %v", e.dirPath, reason, err)
 		return
 	}
-	// The line for a socket that appeared is the reference's, as measured on a Linux VM
+	// The line for a socket that appeared is the reference's, as measured on Linux
 	// against f6010b97 (issue 429). The lock reason is claustrum's own.
 	logInfof("[hostclean] run dir %q: kept, %s", e.dirPath, reason)
 }
@@ -1097,17 +1094,15 @@ func (c *hostCleaner) undoRename(e runDirEntry, target, reason string) {
 // the run dirs it listed.
 //
 // The pass ends no stranded daemon, and it signals no child of one. A stranded daemon is a
-// daemon whose socket path no longer leads to it. On a Linux VM, f6010b97 and 89cb6289
-// sent no signal to such a daemon or to its children. The rows are ST01, ST02, ST04 to
-// ST10, HC16 to HC19 and HC23 to HC26. The daemon ends by itself after its own timer
-// (exitWhenOrphaned). On a macOS VM the two references sent none either (rows ST01, ST09,
-// ST10, HC16, HC18).
+// daemon whose socket path no longer leads to it. On Linux, f6010b97 and 89cb6289 sent no
+// signal to such a daemon or to its children. The rows are measured on Linux. The daemon
+// ends by itself after its own timer (exitWhenOrphaned). On macOS the two references sent
+// none either (measured).
 //
-// The two lines about a limit are the reference's, measured on the Linux VM. One is for
-// more than hcMaxSnapshot processes (rows HC24 and HC25). The other is for more than
-// hcMaxGroups orphan groups (rows HC22 and HC26). Row HC24f has 4097 processes. In one
-// earlier run of it 89cb6289 printed no limit line. In five later runs both sides printed
-// the line, 5 of 5 each.
+// The two lines about a limit are the reference's, measured on Linux. One is for more
+// than hcMaxSnapshot processes (measured). The other is for more than hcMaxGroups orphan
+// groups (measured). A measurement has 4097 processes. In one earlier run of it 89cb6289
+// printed no limit line. In five later runs both sides printed the line, 5 of 5 each.
 func (c *hostCleaner) Pass() hcSummary {
 	var sum hcSummary
 	c.busyEnded = nil
@@ -1140,13 +1135,12 @@ func (c *hostCleaner) Pass() hcSummary {
 	defer closeAll()
 
 	// Other daemons of ours whose open files cannot be read. The line and the count are the
-	// reference's, measured on a macOS VM against 89cb6289 (rows D1i, D1k, E1, E2 and E5).
-	// There the line came before the orphan line and before every run dir line. Only a
-	// daemon that is old enough and serves an idle run dir gets the line. A daemon of about
-	// 33 s on a run dir of 40 days got none (row F1), and a daemon of 5 minutes on a fresh
-	// run dir got none (row F2). The loop does not run past the process limit, where the
-	// tidy does not run either: the line stays inside the state it was measured in. On linux
-	// hcDaemonFilesUnread is a constant false, false.
+	// reference's, measured on macOS against 89cb6289. There the line came before the orphan
+	// line and before every run dir line. Only a daemon that is old enough and serves an
+	// idle run dir gets the line. A daemon of about 33 s on a run dir of 40 days got none
+	// (measured), and a daemon of 5 minutes on a fresh run dir got none. The loop does not
+	// run past the process limit, where the tidy does not run either: the line stays inside
+	// the state it was measured in. On linux hcDaemonFilesUnread is a constant false, false.
 	for _, t := range procs {
 		socket := serveArgv(t.argv, c.roots.daemonBin)
 		if tooMany || t.pid < 2 || t.pid == c.selfPid || !t.sameUID || !c.roots.isDaemonBinary(t.exe) || socket == "" {
@@ -1166,7 +1160,7 @@ func (c *hostCleaner) Pass() hcSummary {
 			continue
 		}
 		if hcStoppedIsUninspected && t.stopped {
-			// The reference's line and count (`5fd08069`, cell Q2, Linux VM).
+			// The reference's line and count (`5fd08069`, measured on Linux).
 			logInfof("[hostclean] daemon pid %d left alone this pass: it could not be inspected (or is stopped)", t.pid)
 			sum.undecided++
 			continue
@@ -1174,7 +1168,7 @@ func (c *hostCleaner) Pass() hcSummary {
 		unread, ended := hcDaemonFilesUnread(t.pid)
 		if ended {
 			// No line and no count: the pass of `5fd08069` logs only the "not retired" line
-			// of the tidy there (cells B1 and B2, macOS VM).
+			// of the tidy there (measured on macOS).
 			if c.busyEnded == nil {
 				c.busyEnded = map[int]bool{}
 			}
@@ -1252,10 +1246,10 @@ func (c *hostCleaner) Start() {
 // deriveRoots for the measured rows).
 // Called from -serve startup, right after the listening line.
 //
-// The "host cleaning off" line and its two reasons are the reference's, measured on a Linux
-// VM against f6010b97 and 89cb6289. The reference printed it right after its listening
-// line. On Windows the reference printed no such line (rows WN03 and WN06), and
-// hostclean_other.go prints none.
+// The "host cleaning off" line and its two reasons are the reference's, measured on Linux
+// against f6010b97 and 89cb6289. The reference printed it right after its listening line.
+// On Windows the reference printed no such line (measured), and hostclean_other.go prints
+// none.
 func startHostCleaner(socket string) {
 	if socket == "" {
 		return

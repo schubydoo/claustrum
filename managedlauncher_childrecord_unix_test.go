@@ -11,11 +11,11 @@ import (
 	"testing"
 )
 
-// TestLauncherChildRecordNamesProgram pins S12: under a run-shaped socket the child
-// record of a launched spawn has argv0 = the launcher and a program field with the
-// command, after argv0 and before start. S12 was VM-measured on Linux only. On
-// darwin this test pins claustrum's own record format. A spawn without a launcher
-// keeps the 19f30c46 record with no program field (claustrum's choice).
+// TestLauncherChildRecordNamesProgram pins a measured rule: under a run-shaped socket the child
+// record of a launched spawn has argv0 = the launcher and a program field with the command,
+// after argv0 and before start. That was measured on Linux only. On darwin this test pins
+// claustrum's own record format. A spawn without a launcher keeps the 19f30c46 record with no
+// program field (claustrum's choice).
 func TestLauncherChildRecordNamesProgram(t *testing.T) {
 	base, err := os.MkdirTemp("", "cl")
 	if err != nil {

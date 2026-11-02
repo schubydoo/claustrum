@@ -15,10 +15,10 @@ import (
 	"time"
 )
 
-// The lock step of -stop after its shutdown request, as on 5fd08069 in cells S1 to S5
-// of round task034-01 (Linux and macOS VMs). The holder of the lock is a descriptor
-// of the test process itself, and every signal goes through the signalHolder seam,
-// so no test here sends a real signal.
+// The lock step of -stop after its shutdown request, as on 5fd08069 (measured on
+// Linux and macOS). The holder of the lock is a descriptor of the test process
+// itself, and every signal goes through the signalHolder seam, so no test here sends
+// a real signal.
 
 // holdLockOf takes the flock on daemon.lock of dir through its own open of the file.
 // A nil rec leaves the file empty. The returned func lets go of the lock once.
@@ -97,7 +97,7 @@ func stopRecordText() string {
 }
 
 // A lock that comes free during the tries gives "stopped" and no signal. -stop writes
-// nothing into daemon.lock, so the record of the holder stays (cells S1 and S5).
+// nothing into daemon.lock, so the record of the holder stays (measured).
 func TestStopAfterReplyTakesTheLockThatComesFree(t *testing.T) {
 	requireNodeID(t)
 	setStopLockWait(t, 10*time.Second)
@@ -131,9 +131,9 @@ func TestStopAfterReplyTakesTheLockThatComesFree(t *testing.T) {
 }
 
 // A daemon of this socket that still holds the lock after the tries gets SIGTERM.
-// The word is "terminated", and -stop removes the socket and daemon.token (cell S2).
+// The word is "terminated", and -stop removes the socket and daemon.token (measured).
 // Only after the signal does -stop write its own record, and release empties the file
-// (Linux cells S2 and S3, macOS cell S3).
+// (measured on Linux, and on macOS for "killed").
 func TestStopAfterReplyTerminatesTheHolder(t *testing.T) {
 	requireNodeID(t)
 	setStopLockWait(t, 200*time.Millisecond)
@@ -178,7 +178,7 @@ func TestStopAfterReplyTerminatesTheHolder(t *testing.T) {
 }
 
 // A holder that ignores SIGTERM gets SIGKILL after the SIGTERM grace, and the word
-// is "killed" (cell S3).
+// is "killed" (measured).
 func TestStopAfterReplyKillsAHolderThatIgnoresSIGTERM(t *testing.T) {
 	requireNodeID(t)
 	setStopLockWait(t, 100*time.Millisecond)
@@ -220,7 +220,7 @@ func TestStopAfterReplyKillsAHolderThatIgnoresSIGTERM(t *testing.T) {
 }
 
 // A holder whose lock file has no record gets no signal. The word is "survivor", and
-// -stop removes nothing (cell S4).
+// -stop removes nothing (measured).
 func TestStopAfterReplyLeavesAHolderThatIsNoDaemon(t *testing.T) {
 	setStopLockWait(t, 100*time.Millisecond)
 	setStopForeignWait(t, 50*time.Millisecond)
@@ -296,9 +296,8 @@ func TestRunStopWaitsForTheLockAfterTheReply(t *testing.T) {
 	}
 }
 
-// The shipped wait is 3 s (cells S2 to S4 of round task034-01), and 0.5 s more for a
-// holder that is no daemon (cell S4 of round task034-02). The tests shrink both, so
-// this pins the values themselves.
+// The shipped wait is 3 s (measured), and 0.5 s more for a holder that is no daemon.
+// The tests shrink both, so this pins the values themselves.
 func TestStopLockWaitIsThreeSeconds(t *testing.T) {
 	if stopLockWait != 3*time.Second {
 		t.Errorf("stopLockWait = %s, want 3s", stopLockWait)
@@ -316,7 +315,7 @@ func setStopForeignWait(t *testing.T, d time.Duration) {
 }
 
 // A holder that is no daemon gets stopForeignWait more of lock tries after the lock
-// wait, before "survivor" (cell S4 of round task034-02, Linux and macOS VMs).
+// wait, before "survivor" (measured on Linux and macOS).
 func TestStopAfterReplyTriesLongerForAHolderThatIsNoDaemon(t *testing.T) {
 	setStopLockWait(t, 100*time.Millisecond)
 	setStopForeignWait(t, 300*time.Millisecond)
@@ -369,8 +368,8 @@ func TestStopAfterReplyTakesTheLockInTheMoreTries(t *testing.T) {
 }
 
 // A lock that another daemon took during the SIGTERM wait gives "survivor" and the
-// line of 5fd08069 that names the new holder (cell S2b of round task034-02, Linux VM).
-// The new holder gets no signal, and the socket and daemon.token stay.
+// line of 5fd08069 that names the new holder (measured on Linux). The new holder gets
+// no signal, and the socket and daemon.token stay.
 func TestStopAfterReplyLeavesTheNewHolderOfALockThatChangedHands(t *testing.T) {
 	requireNodeID(t)
 	setStopLockWait(t, 50*time.Millisecond)

@@ -180,7 +180,7 @@ type conn struct {
 	//
 	// Measured at 5db5e4a: 20 stdin chunks pipelined back-to-back on one
 	// connection arrive in order on the reference and scrambled on claustrum
-	// (L02 L03 L00 L08 L04 …), because each request ran in its own goroutine and
+	// (chunks 2, 3, 0, 8, 4 …), because each request ran in its own goroutine and
 	// raced to the queue.
 	stdinMu     sync.Mutex
 	stdinCond   *sync.Cond
@@ -458,13 +458,12 @@ func runServe(socket, tokenFile string, tokenFd int, metricsAddr string, wlopt w
 	// in this shell, not in newServerOnSocket, so a test that boots a server never
 	// forks a login shell.
 	warmLoginPATHAtStart()
-	// Start the host cleaner. It is a background sweep that ends orphaned Claude Code
-	// process groups under this install's roots. It also retires abandoned daemons and
-	// tidies their stale run dirs. It runs unconditionally at startup, right after the listening line. It stays
-	// off, with one line, when the socket is not a deployed run-dir socket. It is a no-op
-	// off linux and darwin (see hostclean_*.go). DESTRUCTIVE and host-wide: validated only
-	// on a throwaway VM, never on a host that runs siblings. Kept in this shell, not in
-	// newServerOnSocket, so an in-process test boot starts no cleaner.
+	// Start the host cleaner. It is a background sweep that ends orphaned Claude Code process groups under this
+	// install's roots. It also retires abandoned daemons and tidies their stale run dirs. It runs
+	// unconditionally at startup, right after the listening line. It stays off, with one line, when the socket
+	// is not a deployed run-dir socket. It is a no-op off linux and darwin (see hostclean_*.go). DESTRUCTIVE
+	// and host-wide: validated only on a throwaway test system, never on a host that runs siblings. Kept in
+	// this shell, not in newServerOnSocket, so an in-process test boot starts no cleaner.
 	startHostCleaner(socket)
 	// The start test of files.read real, once and before the first connection line.
 	// Its place beside the banner and the cleaner line is claustrum's own, not measured.
@@ -474,9 +473,9 @@ func runServe(socket, tokenFile string, tokenFd int, metricsAddr string, wlopt w
 
 // listeningLine is the line the daemon prints on stdout when it is ready. It has no time and
 // no level tag. The suffix with the pid and the instance is the reference's, measured on
-// Linux, macOS and Windows VMs against f6010b97 and 89cb6289. The instance is the
-// instanceId of server.capabilities. The name "Claustrum" is claustrum's own: the
-// reference prints "Claude" there.
+// Linux, macOS and Windows against f6010b97 and 89cb6289. The instance is the instanceId of
+// server.capabilities. The name "Claustrum" is claustrum's own: the reference prints
+// "Claude" there.
 func (s *server) listeningLine(socket string) string {
 	return fmt.Sprintf("Claustrum remote server listening on %s (pid %d, instance %s)\n", socket, os.Getpid(), s.instanceID)
 }
@@ -558,11 +557,11 @@ func newServerOnSocket(socket, token, metricsAddr string, wlopt wireLogOptions, 
 	// nil-safe, so this is a no-op when logging is off.
 	ok := false
 	// The order of a start is: claim the run dir, reap, bind, complete the owner
-	// record, persist the token. Measured on Linux and macOS against 89cb6289 (rows
-	// D1 to D3, XA and XL). On Linux the order of the calls is the open of
-	// daemon.lock, the signals of the reap, the unlink of the old socket file, bind
-	// and listen (row D1, strace). The strace rows hold no write to the lock. The
-	// place of the last step comes from the startedAt of the full record (see below).
+	// record, persist the token. Measured on Linux and macOS against 89cb6289. On
+	// Linux the order of the calls is the open of daemon.lock, the signals of the
+	// reap, the unlink of the old socket file, bind and listen (measured with
+	// strace). The strace logs hold no write to the lock. The place of the last step
+	// comes from the startedAt of the full record (see below).
 	//
 	// The claim evicts a prior live sibling serve daemon, so a restart
 	// deterministically replaces it. Best-effort: lockRunFolder never fails the boot,
@@ -594,12 +593,13 @@ func newServerOnSocket(socket, token, metricsAddr string, wlopt wireLogOptions, 
 	// owning daemon is gone before it touches a child. Synchronous, and BEFORE the bind:
 	// while the reap waits for a group to end, the old socket file stays as it is and
 	// nothing listens. A client that connects in that wait gets ECONNREFUSED from a
-	// stale socket file, or ENOENT when there is none (rows D1a and D1b: the first
-	// connection worked 2.2 to 2.4 s after the start, for a child that ignores
-	// SIGTERM). A no-op off linux and darwin (see childreap_*.go).
+	// stale socket file, or ENOENT when there is none (measured: the first connection
+	// worked 2.2 to 2.4 s after the start, for a child that ignores SIGTERM). A no-op
+	// off linux and darwin (see childreap_*.go).
 	//
 	// A daemon that does not hold the run-dir lock runs no reap and writes no child
-	// record. Cell H5 measures that for a held flock (`5fd08069`, Linux VM).
+	// record. A measurement shows that for a held flock (`5fd08069`, measured on
+	// Linux).
 	procs.noRecords = !claim.holder
 	if claim.holder {
 		procs.reapOrphans()
@@ -625,8 +625,8 @@ func newServerOnSocket(socket, token, metricsAddr string, wlopt wireLogOptions, 
 	// server.capabilities answers, and the instance is the one of the listening line
 	// and of the child records (row D3: the four instance values are equal, and the
 	// startedAt of the lock equals the one of server.capabilities). startedAt is read
-	// right after the bind. Measured on Linux against 89cb6289 (rows D1 and D2, 8 of 8
-	// runs): the startedAt of the lock was within 1.5 ms of the listen call.
+	// right after the bind. Measured on Linux against 89cb6289 (8 of 8 runs): the
+	// startedAt of the lock was within 1.5 ms of the listen call.
 	startedAt := time.Now().UnixMilli()
 	claim.complete(instanceID, startedAt)
 
@@ -691,13 +691,10 @@ func newServerOnSocket(socket, token, metricsAddr string, wlopt wireLogOptions, 
 	return s, nil
 }
 
-// normalizeToken mirrors the reference daemon's token-file handling: it reads
-// the token as a line, so every trailing `\r` and `\n` from the SFTP-uploaded
-// file is stripped (the probe covered one `\n` or `\r\n`), while spaces and
-// other interior/surrounding whitespace are preserved verbatim (probe-verified — see
-// scratch/probe/contract_probe.sh). Without this, a token file that ends in a
-// newline would make every client request fail auth even though the client sent
-// the correct token.
+// normalizeToken mirrors the reference daemon's token-file handling: it reads the token as a line, so every trailing `\r`
+// and `\n` from the SFTP-uploaded file is stripped (the probe covered one `\n` or `\r\n`), while spaces and other
+// interior/surrounding whitespace are preserved verbatim (probe-verified). Without this, a token file that ends in a
+// newline would make every client request fail auth even though the client sent the correct token.
 func normalizeToken(b []byte) string {
 	return strings.TrimRight(string(b), "\r\n")
 }
@@ -719,8 +716,8 @@ func readTokenFD(fd int) (string, error) {
 
 // runDirNotHolderLine is the line of a daemon that does not hold the run-dir lock. The text
 // is the reference's (f6010b97 and 89cb6289). On Windows no daemon holds such a lock, and
-// the line is the first line of every start (row K11). On Linux the reference printed it
-// for a lock that another process holds (row ST02). See lockRunFolder.
+// the line is the first line of every start (measured). On Linux the reference printed it
+// for a lock that another process holds (measured). See lockRunFolder.
 const runDirNotHolderLine = "[daemon] serve: not the run dir's lock holder; leaving any predecessor's children alone and recording none"
 
 // daemonLogName is the file the daemonized child's stdout and stderr are
@@ -734,21 +731,21 @@ const daemonLogName = "remote-server.log"
 //
 // The prior log is renamed to remote-server.log.old first, and an error of that rename
 // is ignored, as on 4534d86 and 5fd08069. The rename acts on a link itself. Then an
-// exclusive create makes a fresh regular log, mode 0600 (round task015-03: cells E2 and
-// E4, Linux VM, and cell E0, macOS VM).
+// exclusive create makes a fresh regular log, mode 0600 (measured on Linux and macOS).
 //
 // If the create fails, claustrum judges the entry at the path by Lstat, so nothing is
-// opened first and a FIFO never blocks the launcher. Rounds task015-03 and task015-04
-// show this on the Linux and macOS VMs:
+// opened first and a FIFO never blocks the launcher. Measurements show this on Linux
+// and macOS:
 //   - Nothing at the path fails the start with the error of the create, as on 5fd08069
-//     (cell E6, Linux VM).
-//   - A folder fails the start with "is a directory", as on 5fd08069 (cell E3).
+//     (measured on Linux).
+//   - A folder fails the start with "is a directory", as on 5fd08069
+//     (measured).
 //   - openHeldDaemonLog opens an own regular file and an own link to an own file
-//     (cells E1 and E5).
-//   - A FIFO and any other kind fail the start with "permission denied" (cell S3, D8).
+//     (measured).
+//   - A FIFO and any other kind fail the start with "permission denied" (measured, D8).
 //
-// On Windows the rename moves a folder onto a regular .old, as on 5fd08069 (cell W1 of
-// round task015-04, Windows VM).
+// On Windows the rename moves a folder onto a regular .old, as on 5fd08069 (measured
+// on Windows).
 //
 // The log is NOT removed on shutdown; unlike the socket and daemon.token it
 // outlives the daemon, so a post-mortem is still readable.
@@ -777,19 +774,17 @@ func openDaemonLog(socket string) (*os.File, error) {
 	return openHeldDaemonLog(path, fi)
 }
 
-// daemonizeWithToken re-execs the binary detached from the terminal. If
-// forwardToken is non-empty (the -token-fd path) it is handed to the child over
-// an inherited pipe (child fd 3, named by tokenPipeEnv), so this handoff writes
-// the token to no disk, no argv, and no environment; an empty forwardToken means the child
-// reads its own -token-file as before.
-// daemonStartTimeout caps how long the -serve launcher waits for the daemonized
-// child to start accepting before it returns anyway. It is 12 s. Measured on Linux
-// against 89cb6289 (row P7): with a zero-byte -token-file the daemon child ends before
-// its bind, and the launcher exits 1 after 12.06 s in three forms (a stale socket
-// file, no socket file, an empty run folder). macOS row P7 gives 12.08 to 12.16 s, and
-// two Windows rows give 12.058 s. 5db5e4a gave up after 10.06 s in the
-// same case, and this value was 10 s until that row.
-// var so tests can shrink it.
+// daemonizeWithToken re-execs the binary detached from the terminal. If forwardToken is
+// non-empty (the -token-fd path) it is handed to the child over an inherited pipe (child
+// fd 3, named by tokenPipeEnv), so this handoff writes the token to no disk, no argv, and
+// no environment; an empty forwardToken means the child reads its own -token-file as
+// before. daemonStartTimeout caps how long the -serve launcher waits for the daemonized
+// child to start accepting before it returns anyway. It is 12 s. Measured on Linux against
+// 89cb6289: with a zero-byte -token-file the daemon child ends before its bind, and the
+// launcher exits 1 after 12.06 s in three forms (a stale socket file, no socket file, an
+// empty run folder). macOS gives 12.08 to 12.16 s, and two Windows measurements give
+// 12.058 s. 5db5e4a gave up after 10.06 s in the same case, and this value was 10 s until
+// that row. var so tests can shrink it.
 var daemonStartTimeout = 12 * time.Second
 
 // startDaemonChild is cmd.Start behind a seam over the re-exec below: the
@@ -841,7 +836,7 @@ func daemonizeWithToken(socket, forwardToken string) {
 	logFile, err := openDaemonLog(socket)
 	if err != nil {
 		// 5fd08069 prints "claude-ssh: open log: <err>" and exits 1 before any daemon
-		// starts (cells E3 and E6 of rounds task015-03 and task015-04).
+		// starts (measured).
 		fmt.Fprintf(os.Stderr, "claustrum: open log: %v\n", err)
 		osExit(1)
 	}
@@ -883,14 +878,13 @@ func daemonizeWithToken(socket, forwardToken string) {
 	}
 	accepted, sawPredecessor := waitForDaemonAccept(socket, predPID)
 	if !accepted {
-		// The reference reports this and exits 1, measured with a zero-byte
-		// -token-file, where its child refuses to start:
-		// "claude-ssh: timeout waiting for daemon to accept on <socket>", exit 1,
-		// after the full deadline (12.06 s on 89cb6289, Linux row P7). When a connect
-		// of the wait reached the predecessor, the text is "daemon did not take over"
-		// (round task006-01, cell C4, Linux and macOS). Otherwise it is the timeout
-		// text, also with a socket file that never accepted (cells C5 and C9n, Linux VM,
-		// C5 and C9, macOS VM).
+		// The reference reports this and exits 1, measured with a zero-byte -token-file,
+		// where its child refuses to start: "claude-ssh: timeout waiting for daemon to
+		// accept on <socket>", exit 1, after the full deadline (12.06 s on 89cb6289,
+		// measured on Linux). When a connect of the wait reached the predecessor, the text
+		// is "daemon did not take over" (measured on Linux and macOS). Otherwise it is the
+		// timeout text, also with a socket file that never accepted (measured on Linux and
+		// macOS).
 		if sawPredecessor {
 			fmt.Fprintf(os.Stderr, "claustrum: daemon did not take over %s (predecessor still owns it)\n", socket)
 		} else {
@@ -902,8 +896,8 @@ func daemonizeWithToken(socket, forwardToken string) {
 }
 
 // daemonStartPoll is the time between two connects of the launcher wait. 5fd08069
-// made 234 to 240 connects in its 12 s wait (round task006-01, cell C4, Linux and
-// macOS VMs). var so tests can shrink it.
+// made 234 to 240 connects in its 12 s wait (measured on Linux and macOS). var so
+// tests can shrink it.
 var daemonStartPoll = 50 * time.Millisecond
 
 // daemonPeerPID is connPeerPID behind a seam, so a test can stage a peer pid that
@@ -921,13 +915,13 @@ var daemonPeerPID = connPeerPID
 // A socket file that does not accept yet, a folder with content at the path and
 // a stale socket file do not end the wait. On 5fd08069 a client connect right after the launcher
 // exit worked when the listen was late, and the launcher timed out with a folder
-// with a file at the path (round task006-01, cells C7b and C9n, Linux VM).
+// with a file at the path (measured on Linux).
 //
 // predPID is the pid of the daemon that answered before the child started, or 0.
 // A connect to that pid does not end the wait, and sawPredecessor reports one. The
 // test is the peer pid, not the identity of the socket file: on ext4 the new
-// socket kept the inode of the old one in 40 of 40 starts of 5fd08069 (cell C3,
-// Linux VM). With predPID 0, as on Windows, the first connect that works ends the
+// socket kept the inode of the old one in 40 of 40 starts of 5fd08069 (measured on
+// Linux). With predPID 0, as on Windows, the first connect that works ends the
 // wait. With predPID set, a connect whose peer pid cannot be read does not end it:
 // claustrum's own, not measured. One case is a peer that closed at once on macOS,
 // which may give no pid (not measured).
@@ -1053,7 +1047,7 @@ func (s *server) acceptLoop(ln net.Listener) {
 		}
 		tempDelay = 0
 		// The peer check runs before any read, log line, count or tracking of the
-		// connection (round task011-01, cells P2 and P8, Linux VM).
+		// connection (measured on Linux).
 		if !s.peerCheck.admit(nc) {
 			continue
 		}
@@ -1144,17 +1138,17 @@ func (s *server) serveConn(c *conn) {
 		c.wlog.record(c.id, "in", raw)
 		// A line that fails the parse check or the auth check gets its reply
 		// here, on the read path, before the next read. A final newline does
-		// not change this. Measured against f6010b97 and 90fca6e6 on a Linux
-		// VM, the reference wrote these two error classes before it closed at
-		// a client half-close. It lost the reply for every later class there.
+		// not change this. Measured against f6010b97 and 90fca6e6 on Linux,
+		// the reference wrote these two error classes before it closed at a
+		// client half-close. It lost the reply for every later class there.
 		// Here every later class still goes to the concurrent dispatch below.
 		// At the idle close the connection is already closed, so this write
 		// fails and puts 0 bytes on the wire.
 		req, resp := s.gate(c, raw)
 		if resp != nil {
 			// A failed write of this reply ends the read loop and so the
-			// connection. Measured on a Linux VM with c8e2f083. A failed
-			// write of any other reply, which handleRequest writes, keeps it.
+			// connection. Measured on Linux with c8e2f083. A failed write of
+			// any other reply, which handleRequest writes, keeps it.
 			if c.writeResponse(*resp) {
 				break
 			}
@@ -1288,25 +1282,27 @@ func (s *server) signalShutdown() {
 // before the claim of the run dir, so a signal that comes before the bind does not end
 // the start. It handles one signal only.
 //
-// Measured on Linux against 89cb6289 (row P5, 5 of 5 runs). A second daemon sent
+// Measured on Linux against 89cb6289 (measured, 5 of 5 runs). A second daemon sent
 // SIGTERM to a first daemon that waited in the reap of its start. The first daemon
 // logged the "received" line at once. It then finished the reap (the SIGKILL to the
 // recorded group and the summary line), bound and listened, wrote its token, logged
 // "[Server] shutdown requested", printed the listening line, logged the cleanup line
-// and exited 0. The log lines came in that order. macOS row P5 gives the same lines.
+// and exited 0. The log lines came in that order. macOS gives the same lines.
 //
 // More Linux rows against 89cb6289, with the same result on claustrum build ac5cadb:
-//   - A SIGTERM or a SIGINT to one daemon in its reap: the same flow (rows H8a, H8b).
-//   - Two SIGTERM 0.3 s apart: one "received" line, the same flow (row H8c).
+//   - A SIGTERM or a SIGINT to one daemon in its reap: the same flow (measured).
+//   - Two SIGTERM 0.3 s apart: one "received" line, the same flow
+//     (measured).
 //   - A SIGTERM during the eviction wait: the daemon still sends the holder SIGKILL
-//     after the grace, takes the lock, reaps, binds and exits 0 (row N4).
-//   - A -stop during the reap: one SIGTERM, the same flow (row N5).
+//     after the grace, takes the lock, reaps, binds and exits 0 (measured).
+//   - A -stop during the reap: one SIGTERM, the same flow
+//     (measured).
 //
-// Both lines of the signal are the reference's for SIGTERM, measured on a Linux VM
-// against f6010b97 and 89cb6289 (rows RP11, RP12b and ST03) for a daemon that serves.
-// "received terminated" is the name of that signal. The line for SIGINT uses the same
-// sentence with the name of that signal: "received interrupt" (row H8b). With
-// -keep-children the first line says "kept". That flag is claustrum's own.
+// Both lines of the signal are the reference's for SIGTERM, measured on Linux against
+// f6010b97 and 89cb6289 for a daemon that serves. "received terminated" is the name
+// of that signal. The line for SIGINT uses the same sentence with the name of that
+// signal: "received interrupt" (measured). With -keep-children the first line says
+// "kept". That flag is claustrum's own.
 type signalWatch struct {
 	keepChildren bool
 
@@ -1374,19 +1370,18 @@ func (s *server) teardown(socket string) {
 // -keep-children), and connected clients. Split out of teardown (same pattern
 // as stopChildren) so the whole sequence is testable without the process exit.
 //
-// Its last log line is the reference's "cleanup:" line. Linux and Windows VMs measured it
+// Its last log line is the reference's "cleanup:" line. Linux and Windows measured it
 // against f6010b97 and 89cb6289 at every clean shutdown (-stop, SIGTERM, the orphan
 // self-exit). The first count is the connections that this shutdown closed, plus the
 // connection that sent server.shutdown if it already left (see dropConns). The second
-// count is the children that got the kill.
-// Not measured: the counts for a child that ended by itself just before the shutdown.
+// count is the children that got the kill. Not measured: the counts for a child that
+// ended by itself just before the shutdown.
 func (s *server) closeAll(socket string) {
 	s.ln.Close()
 	// Unlink the socket only if it still has the file identity that we bound. The
 	// test comes right after the listener close and before the connections close,
-	// as on 5fd08069 (cells L1 to L3 of round task091-01, Linux VM). On Windows the
-	// listener close already removed the path, so this guard does not apply there
-	// (cell W3, Windows VM).
+	// as on 5fd08069 (measured on Linux). On Windows the listener close already
+	// removed the path, so this guard does not apply there (measured on Windows).
 	unlinkOwnSocket(socket, s.sockInfo)
 	// Then drop every client, before the slower cleanup below. The server.shutdown
 	// handler returns its reply as soon as the stop has started, so the reply write
@@ -1448,11 +1443,11 @@ func (s *server) closeAll(socket string) {
 //
 // It returns the number of connections it closed, for the "cleanup:" line. A
 // connection that sent server.shutdown counts, also after its read loop ended.
-// 5fd08069 logs "closed 2" for one idle client and the -stop client (cell W-S2
-// of round tier3-01, Windows VM, 3 of 3 runs). Linux and macOS are measured with
-// the -stop client alone only, so the count with another client open there is
-// claustrum's own. A client that closes before it reads the reply can still end
-// its read loop before the mark (claustrum's own, not measured).
+// 5fd08069 logs "closed 2" for one idle client and the -stop client (measured on
+// Windows, 3 of 3 runs). Linux and macOS are measured with the -stop client
+// alone only, so the count with another client open there is claustrum's own. A
+// client that closes before it reads the reply can still end its read loop
+// before the mark (claustrum's own, not measured).
 func (s *server) dropConns() int {
 	s.mu.Lock()
 	defer s.mu.Unlock()

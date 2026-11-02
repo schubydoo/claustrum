@@ -15,10 +15,10 @@ import (
 	"golang.org/x/sys/windows"
 )
 
-// Windows jobs, as a Windows VM measured them against f6010b97 and 89cb6289. The rows are
-// WJ01 to WJ07, WN02 to WN05 and K11, and WJ08 on 89cb6289. Every process that a test here ends is one that the
-// test started. Each assertion names a job that the test made itself. The result therefore
-// does not depend on a job that a CI runner or an SSH server put around the test.
+// Windows jobs, as Windows measured them against f6010b97 and 89cb6289. The rows are measured, one of them
+// on 89cb6289 only. Every process that a test here ends is one that the test started. Each assertion names
+// a job that the test made itself. The result therefore does not depend on a job that a CI runner or an
+// SSH server put around the test.
 
 var procIsProcessInJob = windows.NewLazySystemDLL("kernel32.dll").NewProc("IsProcessInJob")
 
@@ -104,7 +104,7 @@ func launchInJob(t *testing.T, job windows.Handle) (int, string) {
 // TestDaemonChildLeavesTheLauncherJob: the launcher is in a job that ends its processes on
 // close and allows breakaway. The job of an SSH session is such a job (limit flags
 // 0x2800). The process that the launcher starts is outside that job, and it lives on after
-// the job closes (row WJ01).
+// the job closes (measured).
 func TestDaemonChildLeavesTheLauncherJob(t *testing.T) {
 	job := newTestJob(t, windows.JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE|windows.JOB_OBJECT_LIMIT_BREAKAWAY_OK)
 	closed := false
@@ -133,8 +133,8 @@ func TestDaemonChildLeavesTheLauncherJob(t *testing.T) {
 // TestDaemonChildStartsInAJobWithoutBreakaway: a job that does not allow breakaway refuses a
 // start with CREATE_BREAKAWAY_FROM_JOB. The start then runs again without the flag, so the
 // launcher still starts its child, inside the job, and prints one line on its stderr.
-// Measured on a Windows VM against 89cb6289 (row JB, a job with the limit flags 0x2000):
-// the serving process stays in the job, and the launcher prints that line.
+// Measured on Windows against 89cb6289 (a job with the limit flags 0x2000): the
+// serving process stays in the job, and the launcher prints that line.
 func TestDaemonChildStartsInAJobWithoutBreakaway(t *testing.T) {
 	job := newTestJob(t, windows.JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE)
 	closed := false
@@ -202,14 +202,12 @@ func spawnTreeFor(t *testing.T, owner testing.TB, m *procManager, id, mode strin
 
 // TestKillEndsOnlyTheDirectChild: process.kill, process.killAndWait and the kill of a
 // clean stop end the direct child, with exit code 1 and the "asked to end by this daemon (client)"
-// exit line. That line is claustrum's own on Windows (not measured), and a Linux VM measured
-// it for build 52d82f0a. 89cb6289 printed
-// ", signalled at client request" there. The grandchild is alive 1 s later. All rows run their kills first, and then
-// one wait of 1 s serves the check of every grandchild. Measured on a Windows VM against
-// 89cb6289: only the direct child ends, and the grandchild is alive at 1 s, 5 s and 15 s.
-// The rows are seven signal forms of process.kill, three forms of process.killAndWait,
-// -stop and server.shutdown. claustrum gave the same states in those rows. The manager
-// here has no job, the state of CLAUDE_SSH_NO_JOBS=1. TestJobEndsTheTree has the jobs.
+// exit line. That line is claustrum's own on Windows (not measured), and Linux measured it for build 52d82f0a.
+// 89cb6289 printed ", signalled at client request" there. The grandchild is alive 1 s later. All rows run their
+// kills first, and then one wait of 1 s serves the check of every grandchild. Measured on Windows against 89cb6289:
+// only the direct child ends, and the grandchild is alive at 1 s, 5 s and 15 s. The rows are seven signal forms of
+// process.kill, three forms of process.killAndWait, -stop and server.shutdown. claustrum gave the same states in
+// those rows. The manager here has no job, the state of CLAUDE_SSH_NO_JOBS=1. TestJobEndsTheTree has the jobs.
 func TestKillEndsOnlyTheDirectChild(t *testing.T) {
 	type result struct{ found, died, already, escalated bool }
 	// Each row has its own child id, so a child that another test or row left alive cannot
@@ -310,10 +308,10 @@ func exitLinesOf(log, id string) []string {
 
 // TestKillWithKidsHoldingThePipes: a grandchild holds the stdout and stderr of the child.
 // A kill ends the child at once, and the exit of the managed process waits for the drain
-// grace. Measured on a Windows VM against 89cb6289: process.kill answers at once and its
-// exit frame comes 5.002 s later. process.killAndWait answers after 5.005 s with
-// found, died and escalated, and the log holds the lines below. The graces are shrunk
-// here: the kill grace ends first, then the drain grace. The manager has no job. With
+// grace. Measured on Windows against 89cb6289: process.kill answers at once and its exit
+// frame comes 5.002 s later. process.killAndWait answers after 5.005 s with found, died
+// and escalated, and the log holds the lines below. The graces are shrunk here: the kill
+// grace ends first, then the drain grace. The manager has no job. With
 // CLAUDE_SSH_NO_JOBS=1, 52d82f0a logs the drain line too when the child exits by itself
 // (measured).
 func TestKillWithKidsHoldingThePipes(t *testing.T) {
@@ -400,10 +398,9 @@ func TestKillWithKidsHoldingThePipes(t *testing.T) {
 // TestSecondDaemonLogTruncatesTheHeldFile: a live daemon holds remote-server.log open, so
 // the launcher of a second daemon cannot rotate it. The launcher then opens that same file
 // and truncates it. Each daemon writes at the offset of its own handle, so a later line of
-// the first one leaves a block of NUL bytes. .old stays as it was. 5fd08069 does so (cell
-// W1 of round task015-01, Windows VM). Without that file the second daemon keeps the stdout
-// and stderr of its launcher. An ssh command that started it then does not return (rows
-// WN04 and WJ04 on a Windows VM).
+// the first one leaves a block of NUL bytes. .old stays as it was. 5fd08069 does so
+// (measured on Windows). Without that file the second daemon keeps the stdout and stderr of
+// its launcher. An ssh command that started it then does not return (measured on Windows).
 func TestSecondDaemonLogTruncatesTheHeldFile(t *testing.T) {
 	dir := t.TempDir()
 	sock := filepath.Join(dir, "rpc.sock")
@@ -440,8 +437,7 @@ func TestSecondDaemonLogTruncatesTheHeldFile(t *testing.T) {
 
 // TestDaemonLogTruncatesAFileThatAnotherProcessHolds: another handle holds the log open with
 // read and write share and no delete share. A new daemon truncates the log and writes only
-// its own lines. .old stays as it was. 5fd08069 does so (cell W3 of round task015-01, Windows
-// VM).
+// its own lines. .old stays as it was. 5fd08069 does so (measured on Windows).
 func TestDaemonLogTruncatesAFileThatAnotherProcessHolds(t *testing.T) {
 	dir := t.TempDir()
 	sock := filepath.Join(dir, "rpc.sock")
@@ -469,10 +465,10 @@ func TestDaemonLogTruncatesAFileThatAnotherProcessHolds(t *testing.T) {
 	}
 }
 
-// TestDaemonLogRefusesALinkOnWindows: cell W2 of round task015-04 (Windows VM). A folder at
-// .old stops the rename of a file symbolic link at the log path. The open then fails with
-// "permission denied", and the target keeps its bytes. 5fd08069 writes through the link
-// (D8). The fix is the type test of openHeldDaemonLog.
+// TestDaemonLogRefusesALinkOnWindows: measured on Windows. A folder at .old stops the
+// rename of a file symbolic link at the log path. The open then fails with "permission
+// denied", and the target keeps its bytes. 5fd08069 writes through the link (D8). The fix
+// is the type test of openHeldDaemonLog.
 func TestDaemonLogRefusesALinkOnWindows(t *testing.T) {
 	dir := t.TempDir()
 	sock := filepath.Join(dir, "rpc.sock")
@@ -540,7 +536,7 @@ func TestChildSurvivesAKilledDaemon(t *testing.T) {
 }
 
 // TestFirstLogLineOnWindows: the first log line of a daemon start is the "not the run dir's
-// lock holder" line (row K11 and every other daemon row).
+// lock holder" line (in every daemon start that was measured).
 func TestFirstLogLineOnWindows(t *testing.T) {
 	buf := captureLogBuf(t)
 	s, sock := bootLineServer(t, false)

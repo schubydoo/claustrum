@@ -12,13 +12,13 @@ import (
 )
 
 // eofParseErrFrame is the parse-error frame as the first line of a connection.
-// Measured against f6010b97 and 90fca6e6 on a Linux VM, the reference sent 76
-// bytes for a line that does not decode into a request. This line carries the
-// end member too (build 52d82f0a, measured on Linux, macOS and Windows).
+// Measured against f6010b97 and 90fca6e6 on Linux, the reference sent 76 bytes
+// for a line that does not decode into a request. This line carries the end
+// member too (build 52d82f0a, measured on Linux, macOS and Windows).
 var eofParseErrFrame = string(stampEnd([]byte(`{"jsonrpc":"2.0","id":null,"error":{"code":-32700,"message":"Parse error"}}`+"\n"), 0))
 
 // eofAuthErrFrame is the -32001 frame for a request with the id id, given as
-// raw JSON, as the first line of a connection. Measured against f6010b97 and 90fca6e6 on a Linux VM, the
+// raw JSON, as the first line of a connection. Measured against f6010b97 and 90fca6e6 on Linux, the
 // reference echoed the id, and sent null for a missing id.
 func eofAuthErrFrame(id string) string {
 	return string(stampEnd([]byte(`{"jsonrpc":"2.0","id":`+id+`,"error":{"code":-32001,"message":"Unauthorized: invalid or missing auth token"}}`+"\n"), 0))
@@ -166,7 +166,7 @@ func TestSocketEOFGateErrorOnReadPath(t *testing.T) {
 
 // A tail of only a carriage return, then SHUT_WR. The scanner reads it as a
 // blank line, so the wire carries 0 bytes and nothing is dispatched. Measured
-// against f6010b97 and 90fca6e6 on a Linux VM, the reference sent 0 bytes too.
+// against f6010b97 and 90fca6e6 on Linux, the reference sent 0 bytes too.
 func TestSocketEOFCarriageReturnTailIsSilent(t *testing.T) {
 	seen := holdDispatch(t)
 	sock := startSocketServer(t)
@@ -222,8 +222,8 @@ func TestSocketEOFParseErrorAfterValidLine(t *testing.T) {
 
 // O1: a request that blocks does not hold back the auth error for a later
 // line on the same open connection. The held seam blocks the first request.
-// Measured against f6010b97 and 90fca6e6 on a Linux VM, the reference sent
-// the later auth error while the earlier request was still blocked.
+// Measured against f6010b97 and 90fca6e6 on Linux, the reference sent the
+// later auth error while the earlier request was still blocked.
 func TestSocketAuthErrorNotHeldBehindBlockedRequest(t *testing.T) {
 	seen := holdDispatch(t)
 	sock := startSocketServer(t)
@@ -251,8 +251,8 @@ func TestSocketAuthErrorNotHeldBehindBlockedRequest(t *testing.T) {
 // Nothing is read as a line until the idle close. Then a valid request is
 // dispatched, and a bad tail gets its parse error on the read path. That
 // write comes after the close, so it fails. The wire carries 0 bytes in both.
-// Measured against f6010b97 and 90fca6e6 on a Linux VM, the reference sent 0
-// bytes in both cases too.
+// Measured against f6010b97 and 90fca6e6 on Linux, the reference sent 0 bytes
+// in both cases too.
 func TestSocketEOFUnterminatedAtIdleClose(t *testing.T) {
 	for _, tc := range []struct {
 		name, send string
@@ -333,15 +333,14 @@ func TestSocketEOFTerminatedBadLineControl(t *testing.T) {
 	}
 }
 
-// afunixEOFGap waits before a test closes a socket or stdin just after it
-// wrote. It waits on Windows only. Measured on a Windows VM, an AF_UNIX
-// reader got the bytes and then missed the EOF that came right after them.
-// It missed 0.1% to 1% of EOFs from shutdown(SD_SEND), and 3% to 4% from a
-// full close. A plain blocking WSARecv loop missed them too, so the loss is
-// below Go. A new read then returned the EOF. With a 1 or 2 ms wait before
-// the close, 0 EOFs in 3000 to 5000 runs were missed. A reference bridge run
-// also hung on that VM. So the gap keeps these tests on the behavior of the
-// bridge, not on the Windows race.
+// afunixEOFGap waits before a test closes a socket or stdin just after it wrote. It
+// waits on Windows only. Measured on Windows, an AF_UNIX reader got the bytes and
+// then missed the EOF that came right after them. It missed 0.1% to 1% of EOFs from
+// shutdown(SD_SEND), and 3% to 4% from a full close. A plain blocking WSARecv loop
+// missed them too, so the loss is below Go. A new read then returned the EOF. With a
+// 1 or 2 ms wait before the close, 0 EOFs in 3000 to 5000 runs were missed. A
+// reference bridge run also hung on that test system. So the gap keeps these tests
+// on the behavior of the bridge, not on the Windows race.
 func afunixEOFGap() {
 	if runtime.GOOS == "windows" {
 		time.Sleep(50 * time.Millisecond)
@@ -394,8 +393,8 @@ func runBridgeWith(t *testing.T, sock, in string) string {
 
 // Cases 7p and N5: the bridge keeps relaying after stdin EOF. So the frame the
 // daemon writes on the read path reaches stdout, and the bridge then returns
-// nil (exit 0). Measured against f6010b97 and 90fca6e6 on a Linux VM, the
-// reference bridge printed the same bytes for these tails.
+// nil (exit 0). Measured against f6010b97 and 90fca6e6 on Linux, the reference
+// bridge printed the same bytes for these tails.
 func TestBridgeEOFRelaysFinalGateError(t *testing.T) {
 	for _, tc := range []struct{ name, send, want string }{
 		{"partial object", `{"jsonrpc":"2.0","id":1,`, eofParseErrFrame},
@@ -438,8 +437,8 @@ func TestBridgeEOFValidPingLeavesStdoutEmpty(t *testing.T) {
 
 // N6: the daemon closes while the bridge's stdin is still open. The bridge
 // prints the frame that arrived before the close and returns nil (exit 0).
-// Measured against f6010b97 and 90fca6e6 on a Linux VM, the reference bridge
-// did the same. The daemon closed by SIGKILL or at the idle close there.
+// Measured against f6010b97 and 90fca6e6 on Linux, the reference bridge did
+// the same. The daemon closed by SIGKILL or at the idle close there.
 func TestBridgeExitsWhenDaemonClosesWithStdinOpen(t *testing.T) {
 	dir, err := os.MkdirTemp("", "cl")
 	if err != nil {

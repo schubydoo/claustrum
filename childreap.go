@@ -28,7 +28,7 @@ import (
 // This decision logic is shared across the unix targets; only how a live process is read
 // (readLiveProc: /proc on linux, ps on darwin) and how this daemon's own node/host
 // identity is gathered (ownReapIdentity) are OS-specific. On windows reapOrphans is a no-op
-// (childreap_other.go): the reference reaps nothing there (VM-measured, planted records
+// (childreap_other.go): the reference reaps nothing there (measured, planted records
 // survive a startup), so there is no reap to share.
 //
 // This path is DESTRUCTIVE: a wrong reap ends a live process. So a record is reaped only
@@ -46,8 +46,8 @@ import (
 
 // reapGrace is how long the reap waits for a group to exit after SIGTERM before it
 // escalates to SIGKILL. Measured on Linux against 89cb6289: the SIGKILL comes 2.04 to
-// 2.09 s after the start of the daemon (rows RP02, RP03, RP04, RP10). reapEscalate is how
-// long it waits after SIGKILL. That value is claustrum's own, not probe-measured.
+// 2.09 s after the start of the daemon. reapEscalate is how long it waits after SIGKILL.
+// That value is claustrum's own, not probe-measured.
 const (
 	reapGrace    = 2 * time.Second
 	reapEscalate = 1 * time.Second
@@ -65,28 +65,28 @@ const (
 )
 
 // maxReapTargets caps how many groups one start signals: 64. More verified groups stay
-// for the next start, with one line. Measured on Linux against 89cb6289 (row C4: 70
-// recorded children, 64 SIGTERM at the first start and 6 records left). A var so a test
+// for the next start, with one line. Measured on Linux against 89cb6289 (70 recorded
+// children, 64 SIGTERM at the first start and 6 records left). A var so a test
 // can shrink it to exercise the overflow path.
 var maxReapTargets = 64
 
 // maxReapRecords is how many record names one start handles: 128. One more name ends
 // the walk with one line, and the rest stays for the next start. Measured on Linux
-// against 89cb6289 (row C1: 131 names, the first 128 in directory order are gone after
+// against 89cb6289 (131 names, the first 128 in directory order are gone after
 // the first start and the last 3 after the second). A record that the daemon keeps
-// counts too (row P10: 128 kept records and then one live orphan. In two starts,
+// counts too (measured: 128 kept records and then one live orphan. In two starts,
 // 89cb6289 and claustrum sent no signal and removed no record).
 const maxReapRecords = 128
 
 // maxRecordBytes is how much of a record file the reap reads: 4096 bytes. A record
 // whose first 4096 bytes are not one JSON value is removed, with no signal and no line.
 // Measured on Linux against 89cb6289: records of 5259 and 5290 bytes were removed with
-// no signal and no line while their children lived (rows C3a, C3b). Both held an argv0
-// of 5000 characters, so the rows do not tell a read limit from a field limit. A valid
-// record with blanks after it, 2 MiB in all, was read and its child got SIGTERM (row
-// ED14g). Row P8 measured the bound with a pad in an added last field: records of
-// 4095 and 4096 bytes got SIGTERM, and records of 4097 and 5000 bytes got no signal
-// and no line and were removed. 89cb6289 and claustrum did the same in each size.
+// no signal and no line while their children lived. Both held an argv0 of 5000
+// characters, so the rows do not tell a read limit from a field limit. A valid record
+// with blanks after it, 2 MiB in all, was read and its child got SIGTERM (measured). A
+// measurement measured the bound with a pad in an added last field: records of 4095 and
+// 4096 bytes got SIGTERM, and records of 4097 and 5000 bytes got no signal and no line
+// and were removed. 89cb6289 and claustrum did the same in each size.
 const maxRecordBytes = 4096
 
 // maxPid is the largest usable pid (2^31 - 1). With the `pid < 2 || pid > maxPid` test it
@@ -175,7 +175,7 @@ type reapTarget struct {
 
 // reapCounts is the tally of one sweep. The six fields are the six numbers of the
 // summary line, in its order (see reapSummary). Measured on Linux and macOS against
-// 89cb6289 (rows A4, C1, C4 and D1).
+// 89cb6289.
 type reapCounts struct {
 	signalled      int // groups that got SIGTERM
 	reapedGrace    int // signalled groups that ended in the wait after SIGTERM ("ended on SIGTERM")
@@ -187,13 +187,13 @@ type reapCounts struct {
 
 // reapSummary is the summary line of a sweep. The text is the reference's, with its
 // long dash. It prints when the sweep sent a SIGTERM or kept a record, and not for a
-// sweep that only dropped records (89cb6289, Linux rows C1 start 2, ED01a and ED12a).
+// sweep that only dropped records (89cb6289, measured on Linux).
 //
 // Not measured: which number a record takes when no row shows it. claustrum counts
 // every record that it removes with no SIGTERM in "dropped": a dead pid, a record with
 // a reason line, a record that does not parse, an entry that is not a regular file, a
 // record of an earlier boot, and a group that no longer verifies after its SIGTERM. The
-// rows show the first two and the last (RP07, C1, PG05a).
+// rows show the first two and the last (measured).
 //
 // The levels of the reap lines are claustrum's own choice. The reference prints no
 // level. Not measured: the place of a record line when the 128 line and the 64 line
@@ -241,9 +241,8 @@ func openChildrenDir(root *os.Root) (*os.Root, error) {
 // that the daemon holds open, decides each record, ends the verified orphans in two
 // phases, and logs a summary. It runs on every socket shape: measured on Linux and
 // macOS against f6010b97 and 89cb6289, a new daemon on a socket of another shape ends
-// the recorded child of a dead daemon (rows EV01a to EV01i). It is a no-op for a
-// manager with no run dir, and when the children entry is absent or is not a real
-// folder.
+// the recorded child of a dead daemon. It is a no-op for a manager with no run dir,
+// and when the children entry is absent or is not a real folder.
 func (m *procManager) reapOrphans() {
 	if m.runDir == "" {
 		return
@@ -283,9 +282,8 @@ func (m *procManager) reapOrphans() {
 		// name is removed and never opened, so a record outside children/ cannot make
 		// the reap signal a process, and a FIFO cannot hold the start. The removal is
 		// one plain remove of the entry itself: a symlink goes and its target stays,
-		// and a folder goes only when it is empty. Measured on Linux (rows ED16a to
-		// ED16c): the reference removes each of the three, sends no signal and logs
-		// no line.
+		// and a folder goes only when it is empty. Measured on Linux: the reference
+		// removes each of the three, sends no signal and logs no line.
 		if !e.Type().IsRegular() {
 			c.forget(name)
 			counts.forgotten++
@@ -334,7 +332,7 @@ func (m *procManager) reapOrphans() {
 				logInfof("[process.Reaper] child %d (%s): %s", rec.Pid, name, why.own)
 				counts.skipped++ // the process disowns us; keep the record
 			case verdictUnknown:
-				// The text is the reference's (`5fd08069`, cell H2d, Linux VM).
+				// The text is the reference's (`5fd08069`, measured on Linux).
 				logInfof("[process.Registry] record %s: pid %d cannot be inspected now (%s); keeping the record, signalling nothing", name, rec.Pid, why.ref)
 				counts.skipped++
 			}
@@ -371,10 +369,10 @@ func (m *procManager) reapOrphans() {
 // still gives the entries before the failure.
 //
 // Measured on Linux against 89cb6289. The names that one start handles are the first
-// 128 of the directory order, not of the name order (row C1). The SIGTERM calls go out
-// in that order too (rows C2 and C4). An entry with another name stays: a file
-// <pid>.txt is there after the start (row ED15b). Not measured: whether such a name
-// counts among the 128. claustrum does not count it.
+// 128 of the directory order, not of the name order (measured). The SIGTERM calls go
+// out in that order too (measured). An entry with another name stays: a file <pid>.txt
+// is there after the start (measured). Not measured: whether such a name counts among
+// the 128. claustrum does not count it.
 func (c *reapCtx) recordEntries() (entries []fs.DirEntry, more bool) {
 	f, err := c.dir.Open(".")
 	if err != nil {
@@ -415,11 +413,10 @@ func verifyOrphan(rec childRecord, runDir string, ownDaemonPid, ownParentPid, ow
 	return verdict, why.own
 }
 
-// verify decides one record whose owning daemon is gone and whose node matches ours.
-// It returns a verdict and, for a skip, the reason. The reference texts are measured on
-// Linux against 89cb6289 (rows RP07, ED01a, ED02a, ED04b, ED07, ED10a to ED10d, and
-// PG05a for the unreadable environment). claustrum quotes each value with %q. Not
-// measured: a value that %q escapes.
+// verify decides one record whose owning daemon is gone and whose node matches ours. It
+// returns a verdict and, for a skip, the reason. The reference texts are measured on
+// Linux against 89cb6289, also for the unreadable environment. claustrum quotes each
+// value with %q. Not measured: a value that %q escapes.
 func (c *reapCtx) verify(rec childRecord) (int, skipReason) {
 	pid := rec.Pid
 	switch {
@@ -456,7 +453,7 @@ func (c *reapCtx) verify(rec childRecord) (int, skipReason) {
 		//
 		// A read can also fail because the process has just ended. So this arm settles
 		// like the skips below: a process that is gone after the pause has ended, and is
-		// never one that no longer verifies (Linux rows K5 and ED04a).
+		// never one that no longer verifies (measured on Linux).
 		if verdict, _ := settleThenVerdict(pid, verdictPassthrough, ""); verdict == verdictGone {
 			return verdictGone, skipReason{}
 		}
@@ -530,19 +527,19 @@ func programMatches(recorded, live string) bool {
 // Linux against 89cb6289:
 //
 //   - the process runs argv0, by its full argv[0] or by its base name
-//   - the process runs program, by its full argv[0] or by its base name (rows PG02a,
-//     ED03a, ED03b): a launcher that replaced itself with the command
-//   - one whole argument of the process equals program byte for byte (rows PG02b,
-//     ED04a, ED04e): a launcher that still runs and was given the command
+//   - the process runs program, by its full argv[0] or by its base name (measured):
+//     a launcher that replaced itself with the command
+//   - one whole argument of the process equals program byte for byte (measured):
+//     a launcher that still runs and was given the command
 //
 // On darwin the process is judged by the command text of `ps`, so "runs" and "one
 // whole argument" have the meaning that runsProgram gives.
 //
 // An argument does not match by its base name, by a cleaned path, or as a part of a
-// longer argument (rows ED04b, ED04c, ED04d). An empty program adds nothing (rows
-// ED06a, ED06b). The caller refuses an empty argv0 before it comes here, whatever
-// program holds (row ED02c). f6010b97 sends no signal in rows ED03a to ED04e. On macOS
-// the rows B1 to B8 measure the command text rule of runsProgram.
+// longer argument (measured). An empty program adds nothing (measured). The caller
+// refuses an empty argv0 before it comes here, whatever program holds (measured).
+// f6010b97 sends no signal in these cases (measured). On macOS measurements show the command text rule of
+// runsProgram.
 func recordMatchesLive(rec childRecord, lp liveProc) bool {
 	if runsProgram(rec.Argv0, lp) {
 		return true
@@ -564,18 +561,18 @@ func recordMatchesLive(rec childRecord, lp liveProc) bool {
 //
 //   - p equals the whole command text (a program with a blank in its path and no
 //     arguments)
-//   - the command text starts with p and one blank (rows PG04s and PG02s: a program
+//   - the command text starts with p and one blank (measured: a program
 //     at "/tmp/e/bin/my stub" is reaped)
-//   - p has the last path component of the first word (row PG05b: the same base name
+//   - p has the last path component of the first word (measured: the same base name
 //     in another folder)
 //
 // A program key with a blank is never "handed" on darwin, because no single word
-// equals it (row ED04e: no signal). On linux it is, because the argument is whole
-// (Linux row ED04e: SIGTERM).
+// equals it (measured: no signal). On linux it is, because the argument is whole
+// (measured on Linux: SIGTERM).
 //
 // One more case follows from the rule: a record that names "/tmp/e/bin/my" matches a
 // live process that runs "/tmp/e/bin/my stub", on darwin. Its first word is that path.
-// The macOS rows B2 and B2f measure it: SIGTERM on 89cb6289 and on claustrum.
+// Measured on macOS: SIGTERM on 89cb6289 and on claustrum.
 func runsProgram(p string, lp liveProc) bool {
 	if programMatches(p, lp.program) {
 		return true
@@ -585,7 +582,7 @@ func runsProgram(p string, lp liveProc) bool {
 
 // splitCommandText cuts the command text of `ps` into its words: the program, which is
 // the first word, and the arguments. A word ends at a blank, the space character, so two
-// blanks give an empty word. The macOS rows B4a to B4c measure two blanks and a tab, equal
+// blanks give an empty word. Measurements on macOS show two blanks and a tab, equal
 // on 89cb6289 and claustrum. There `ps` prints a tab as the four characters \011.
 func splitCommandText(text string) (program string, args []string) {
 	words := strings.Split(text, " ")
@@ -617,8 +614,8 @@ func parsePSLine(line string) (pgid int, stat, text string, ok bool) {
 // matches (a pid-reuse guard on the daemon itself).
 //
 // claustrum counts a daemon that is there and cannot be inspected as alive. `5fd08069`
-// keeps the record of the child and sends no signal there (cells H2a to H2c, Linux
-// VM). Not measured on macOS: claustrum does the same there.
+// keeps the record of the child and sends no signal there (measured on Linux). Not
+// measured on macOS: claustrum does the same there.
 func daemonAlive(daemonPid int, daemonStart string, ownDaemonPid int) bool {
 	if daemonPid < 2 || daemonPid == ownDaemonPid {
 		return false
@@ -671,14 +668,14 @@ func earlierBootOfThisMachine(recHost, recNode, ownHost, ownNode string) bool {
 // a process cannot be made to outlive SIGKILL on demand.)
 //
 // The records of the groups that got SIGTERM go together, when the last group is done,
-// and not one by one as each group ends. Measured on Linux against 89cb6289 (row RP04):
-// of five groups, two ended 0.5 s and 1.5 s after the start and three got SIGKILL at
-// 2.09 s, and all five records were gone at the 2.1 s poll, none earlier. A daemon that
-// is killed in its wait therefore leaves the records, and the next start signals the
-// groups again (row RP13).
+// and not one by one as each group ends. Measured on Linux against 89cb6289: of five
+// groups, two ended 0.5 s and 1.5 s after the start and three got SIGKILL at 2.09 s,
+// and all five records were gone at the 2.1 s poll, none earlier. A daemon that is
+// killed in its wait therefore leaves the records, and the next start signals the
+// groups again (measured).
 //
-// The two lines of a group are the reference's (89cb6289, Linux and macOS rows A4 and
-// D1): the ending line at its SIGTERM, and the outlived line at its SIGKILL.
+// The two lines of a group are the reference's (`89cb6289`, measured on Linux and
+// macOS): the ending line at its SIGTERM, and the outlived line at its SIGKILL.
 func reapTargets(c *reapCtx, targets []reapTarget, counts *reapCounts) {
 	if len(targets) == 0 {
 		return
@@ -713,8 +710,8 @@ func reapTargets(c *reapCtx, targets []reapTarget, counts *reapCounts) {
 	// Grace wait: poll, with the whole record test at each poll. A process can change
 	// after the SIGTERM: it can replace itself with another program. Such a group is
 	// given up at the poll that sees it, with the no-longer-verifies line, and is counted
-	// in forgotten, never as reaped. Its record goes at the end of the sweep (see drop). Measured on Linux against 89cb6289 (row PG05a,
-	// three sets of ten runs): in 21 runs the reference logs that line, sends nothing
+	// in forgotten, never as reaped. Its record goes at the end of the sweep (see drop). Measured on Linux against 89cb6289 (three
+	// sets of ten runs): in 21 runs the reference logs that line, sends nothing
 	// more and drops the record. In the last two sets the line comes 0.1 to 0.3 s after
 	// its start. The line and its reason are the reference's.
 	//
@@ -765,7 +762,7 @@ func reapTargets(c *reapCtx, targets []reapTarget, counts *reapCounts) {
 }
 
 // lookAgain prints the line of a signalled group that cannot be inspected, once for
-// each group. The text is the reference's (`5fd08069`, cell H4, Linux VM).
+// each group. The text is the reference's (`5fd08069`, measured on Linux).
 func (c *reapCtx) lookAgain(t reapTarget, reason string) {
 	if c.unknown[t.pid] {
 		return
@@ -779,7 +776,7 @@ func (c *reapCtx) lookAgain(t reapTarget, reason string) {
 
 // keepUnknown ends the wait for a signalled group that still cannot be inspected. The
 // group gets no SIGKILL, and its record stays for the next start, counted as kept.
-// The text is the reference's (`5fd08069`, cell H4, Linux VM).
+// The text is the reference's (`5fd08069`, measured on Linux).
 func (c *reapCtx) keepUnknown(t reapTarget, reason string, counts *reapCounts) {
 	c.lookAgain(t, reason)
 	logInfof("[process.Registry] group %d could still not be inspected when the wait was up; keeping its record for the next start", t.pid)
@@ -869,13 +866,13 @@ func (c *reapCtx) check(t reapTarget, full bool) (int, string) {
 // not counted reaped and its group gets no signal here.
 //
 // The pause is the guard of the group SIGKILL in reapGoneLeader. A read can take a live
-// leader for gone. Seen on the development host, not on the VM: the stat of a Go
+// leader for gone. Seen on the development host only: the stat of a Go
 // program that replaces its program shows state Z and a vsize of 0 for a moment, on
 // two reads in a row, while the group still answers a signal 0. A group SIGKILL in
 // that moment ends a live child that no longer runs the recorded program. Measured on
-// Linux (row PG05a): that outcome came in 2 of 10 runs of claustrum before this pause,
-// and in 9 of the first 30 of 89cb6289. With the pause it came in no measured run (D20). The
-// pause is a threshold: a replacement that takes longer than it still gets the SIGKILL.
+// Linux: that outcome came in 2 of 10 runs of claustrum before this pause, and in 9 of the
+// first 30 of 89cb6289. With the pause it came in no measured run (D20). The pause is a
+// threshold: a replacement that takes longer than it still gets the SIGKILL.
 //
 // The read after the pause also keeps the older guard: while the pid is absent, any
 // process still in group <pid> is a descendant of the original orphan, because a live
@@ -883,7 +880,7 @@ func (c *reapCtx) check(t reapTarget, full bool) (int, string) {
 // new group leader in the meantime, the leader reads alive and the group gets no signal.
 //
 // The cost: a leader that really ended, with members that linger, gets the group
-// SIGKILL one pause later (Linux row RP05a measures that SIGKILL right after the
+// SIGKILL one pause later (a measurement on Linux shows that SIGKILL right after the
 // SIGTERM, on 89cb6289 and on claustrum before this pause).
 func (c *reapCtx) settleGone(gone []reapTarget, reapedCounter *int) []reapTarget {
 	if len(gone) == 0 {
@@ -905,7 +902,7 @@ func (c *reapCtx) settleGone(gone []reapTarget, reapedCounter *int) []reapTarget
 // forgotten. With a reason it logs the reference's line for it. Its record goes with
 // the records of the other signalled groups, at the end of the sweep. That time is
 // claustrum's own choice. When the reference removes such a record is not measured:
-// row PG05a gives no time for it.
+// the measurement gives no time for it.
 func (c *reapCtx) drop(t reapTarget, reason string, counts *reapCounts) {
 	if reason != "" {
 		logInfof("[process.Registry] group %d no longer verifies (%s); nothing more is sent to it", t.pid, reason)

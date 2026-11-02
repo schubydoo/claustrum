@@ -26,8 +26,8 @@ func (c *statAtCloseConn) Close() error {
 }
 
 // The stop tests the socket right after the listener close, before it closes a
-// client connection (cells L1 to L3 of round task091-01, Linux VM). So when the
-// first connection closes, the socket of this daemon is already gone.
+// client connection (measured on Linux). So when the first connection closes,
+// the socket of this daemon is already gone.
 func TestCloseAllRemovesSocketBeforeConnections(t *testing.T) {
 	sock := filepath.Join(shortTempDir(t), "s.sock")
 	s, err := newServerOnSocket(sock, "tok", "", wireLogOptions{}, false, false)
@@ -51,8 +51,8 @@ func TestCloseAllRemovesSocketBeforeConnections(t *testing.T) {
 }
 
 // The stop ends the process groups of its children before it removes its token and
-// before it releases daemon.lock (cell L1k of round task091-01, Linux VM, 3 of 3
-// runs). The seam records the state of both at the kill of the child.
+// before it releases daemon.lock (measured on Linux, 3 of 3 runs). The seam
+// records the state of both at the kill of the child.
 func TestCloseAllKillsChildrenBeforeTokenAndLock(t *testing.T) {
 	var kills, tokenAtKill, releasedAtKill atomic.Int32
 	var released atomic.Bool

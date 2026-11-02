@@ -17,7 +17,7 @@ import (
 
 // killAndWait with escalate:true must send the group SIGKILL at the end of the grace
 // when the graceful signal already killed the managed process itself and its exit
-// drain is still pending (89cb6289, Linux rows B3 and X1).
+// drain is still pending (`89cb6289`, measured on Linux).
 //
 // This is the case that made the escalation a silent no-op. The child dies from
 // SIGTERM immediately, but a grandchild still holding its stdout pipe keeps the
@@ -122,10 +122,10 @@ func wantCleanExitLeavesTheKid(t *testing.T, sent []string, kid int) {
 	}
 }
 
-// TestKillAndWaitSendsNoGroupKillAfterACleanExit pins Linux row X2b (89cb6289, 3 of 3
-// runs): process.killAndWait with the default sends SIGTERM to the one process. The
-// process ends within the grace, and its group gets no SIGKILL. A kid in that group
-// with its own stdio stays alive. The reply has no escalated member.
+// TestKillAndWaitSendsNoGroupKillAfterACleanExit pins a rule of 89cb6289 (measured on Linux, 3 of 3
+// runs): process.killAndWait with the default sends SIGTERM to the one process. The process ends
+// within the grace, and its group gets no SIGKILL. A kid in that group with its own stdio stays
+// alive. The reply has no escalated member.
 func TestKillAndWaitSendsNoGroupKillAfterACleanExit(t *testing.T) {
 	m := newTestProcManager(t)
 	t.Cleanup(m.killAll)
@@ -140,10 +140,10 @@ func TestKillAndWaitSendsNoGroupKillAfterACleanExit(t *testing.T) {
 	wantCleanExitLeavesTheKid(t, sent(), kid)
 }
 
-// TestSupersedeSendsNoGroupKillAfterACleanExit pins Linux row X2a (89cb6289, 4 of 4
-// runs): the session supersede sends SIGTERM to the one old process. That process ends
-// within the grace, and its group gets no SIGKILL. A kid in that group with its own
-// stdio stays alive, and the supersedes line says escalated=false.
+// TestSupersedeSendsNoGroupKillAfterACleanExit pins a rule of 89cb6289 (measured on Linux, 4 of 4
+// runs): the session supersede sends SIGTERM to the one old process. That process ends within the
+// grace, and its group gets no SIGKILL. A kid in that group with its own stdio stays alive, and
+// the supersedes line says escalated=false.
 func TestSupersedeSendsNoGroupKillAfterACleanExit(t *testing.T) {
 	m := newTestProcManager(t)
 	m.supersedeGrace = 10 * time.Second

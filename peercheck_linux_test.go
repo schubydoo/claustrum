@@ -32,11 +32,11 @@ func peerDialCmd(t *testing.T, sock, arg string) *exec.Cmd {
 // TestPeerCheckRefusesOtherUserNamespace: a caller in another user namespace gets
 // the refusal frame and then the end of the connection. Its unauthenticated
 // server.shutdown does nothing, and the daemon goes on to serve a caller in its own
-// namespaces (round task011-01, cells P2, P4 and P8, Linux VM). The refused
-// connection is not counted, and the log has the refusal line. The caller is a
-// child of this test in a new user namespace. A host that refuses user namespaces
-// skips the test. The log capture is shared, so the test reads only the refusal
-// lines, and the server state for the rest.
+// namespaces (measured on Linux). The refused connection is not counted, and the
+// log has the refusal line. The caller is a child of this test in a new user
+// namespace. A host that refuses user namespaces skips the test. The log capture is
+// shared, so the test reads only the refusal lines, and the server state for the
+// rest.
 func TestPeerCheckRefusesOtherUserNamespace(t *testing.T) {
 	t.Setenv(peerCheckEnv, "1")
 	if !daemonNSText().names() || daemonNSText().user == "" {
@@ -97,9 +97,8 @@ func TestPeerCheckRefusesOtherUserNamespace(t *testing.T) {
 
 // TestPeerCheckLookupOfOwnAndExitedCaller: a caller in this process has the own
 // text and is served. A caller that exited before the check gets lookup_failed
-// and no log line (round task011-01, cell P7, Linux VM). The exited caller is a
-// child of this test that connects to the test's own socket and exits before the
-// accept.
+// and no log line (measured on Linux). The exited caller is a child of this test
+// that connects to the test's own socket and exits before the accept.
 func TestPeerCheckLookupOfOwnAndExitedCaller(t *testing.T) {
 	own := daemonNSText()
 	if !own.names() {

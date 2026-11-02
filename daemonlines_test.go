@@ -12,8 +12,8 @@ import (
 	"time"
 )
 
-// The daemon's own lines that VMs measured against f6010b97 and 89cb6289 (slice E of the
-// 89cb6289 reconciliation): the listening line and the lines of a clean shutdown. These
+// The daemon's own lines that were measured against f6010b97 and
+// 89cb6289: the listening line and the lines of a clean shutdown. These
 // tests run on linux, macOS and Windows. Every child here is a helper of this test binary
 // that the daemon under test spawned, and the daemon's own shutdown ends it.
 
@@ -83,8 +83,8 @@ func wantLinesInOrder(t *testing.T, got string, want ...string) {
 }
 
 // TestListeningLine: the listening line ends with the pid and the instance. The instance
-// is the instanceId of server.capabilities (Linux VM, 36 of 36 daemons of 89cb6289).
-// The name stays "Claustrum".
+// is the instanceId of server.capabilities (Linux, 36 of 36 daemons of 89cb6289). The
+// name stays "Claustrum".
 func TestListeningLine(t *testing.T) {
 	s, sock := bootLineServer(t, false)
 	t.Cleanup(func() { s.signalShutdown(); s.closeAll(sock) })
@@ -112,7 +112,7 @@ func TestListeningLine(t *testing.T) {
 }
 
 // TestShutdownBySignalLines: SIGTERM with two connections and two children gives the three
-// lines, with the counts of both (rows RP11, RP12b, ST03).
+// lines, with the counts of both (measured).
 func TestShutdownBySignalLines(t *testing.T) {
 	s, sock := bootLineServer(t, false)
 	spawnLineSleeper(t, sock, "c1")
@@ -168,7 +168,7 @@ func TestShutdownCountLeavesOutAnEndedChild(t *testing.T) {
 }
 
 // TestShutdownByRPCLines: server.shutdown, as -stop sends it, gives the cleanup line. The
-// count of connections includes the connection of the request (rows RP12a, WJ03, WN03).
+// count of connections includes the connection of the request (measured).
 func TestShutdownByRPCLines(t *testing.T) {
 	s, sock := bootLineServer(t, false)
 	spawnLineSleeper(t, sock, "c1")
@@ -188,7 +188,7 @@ func TestShutdownByRPCLines(t *testing.T) {
 		"[ServerHandler] server.shutdown received over RPC",
 		"[Server] shutdown requested",
 		"[Server] cleanup: closed 3 connection(s), killed 2 child process group(s)")
-	// A clean stop ends the children (row WJ03 on Windows, row RP12a on Linux).
+	// A clean stop ends the children (measured on Linux and Windows).
 	for _, id := range []string{"c1", "c2"} {
 		select {
 		case <-s.procs.get(id).done:
@@ -216,7 +216,7 @@ func waitConnsExactly(t *testing.T, s *server, n int) {
 
 // TestShutdownCountKeepsAClosedStopConnection: one idle client, and a client that sends
 // server.shutdown and closes after the reply, before the cleanup. The cleanup line still
-// counts both connections, as 5fd08069 does (cell W-S2 of round tier3-01, Windows VM).
+// counts both connections, as 5fd08069 does (measured on Windows).
 func TestShutdownCountKeepsAClosedStopConnection(t *testing.T) {
 	s, sock := bootLineServer(t, false)
 	dial(t, sock) // the idle client
@@ -236,7 +236,7 @@ func TestShutdownCountKeepsAClosedStopConnection(t *testing.T) {
 		"[Server] cleanup: closed 2 connection(s), killed 0 child process group(s)")
 }
 
-// TestShutdownLinesWithNoClient: no connection and no child give zeros (row ST03).
+// TestShutdownLinesWithNoClient: no connection and no child give zeros (measured).
 func TestShutdownLinesWithNoClient(t *testing.T) {
 	s, sock := bootLineServer(t, false)
 	buf := captureLogBuf(t)
@@ -278,8 +278,7 @@ func TestShutdownLinesKeepChildren(t *testing.T) {
 // TestExitLineOfAKilledChild: the exit line of a child that process.kill ended carries
 // ", asked to end by this daemon (client)". That is the text of build 52d82f0a, measured on
 // Linux and macOS. c8e2f083 printed ", signalled by this daemon (client)". 89cb6289 printed ", signalled at client request" there, measured on
-// a Windows VM in all 10 kill rows and on Linux (rows SP03a, SP03b). A child that ends by
-// itself gets no such tail.
+// Windows in all 10 kill rows and on Linux. A child that ends by itself gets no such tail.
 func TestExitLineOfAKilledChild(t *testing.T) {
 	m := newTestProcManager(t)
 	t.Cleanup(m.killAll)
@@ -314,8 +313,8 @@ func TestExitLineOfAKilledChild(t *testing.T) {
 
 // TestDrainGraceLine: a grandchild holds the stdout of a child that has ended. When the
 // drain grace is over, the daemon logs the reference's line and then closes the pipes.
-// Measured on Linux (row SP05) and on a Windows VM against 89cb6289 (the rows with kids
-// that inherit the stdout and stderr of the child).
+// Measured on Linux and on Windows against 89cb6289 (the rows with kids that inherit
+// the stdout and stderr of the child).
 func TestDrainGraceLine(t *testing.T) {
 	oldDrain := exitDrainGrace
 	exitDrainGrace = 200 * time.Millisecond

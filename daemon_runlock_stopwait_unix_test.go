@@ -28,8 +28,8 @@ func holdStopRecord(t *testing.T, dir string) int {
 }
 
 // A new daemon tries the lock of a "stop" holder again for the grace before it logs
-// the "has not let go" line and goes on without the lock (cells L2 and L3 of round
-// task091-01, Linux and macOS VMs).
+// the "has not let go" line and goes on without the lock (measured on Linux and
+// macOS).
 func TestClaimRunDirWaitsForStopHolder(t *testing.T) {
 	old := runDirStopGrace
 	runDirStopGrace = 300 * time.Millisecond

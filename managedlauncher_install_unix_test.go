@@ -18,11 +18,10 @@ import (
 	"time"
 )
 
-// -install and -probe-cli rows of the 89cb6289 VM captures (I and P rows), on unix.
-// The CLI and the launcher are symlinks to this test binary. The test sets the
-// helper mode in its own env, because -install and -probe-cli run them with the
-// daemon env: "cli-log" for a CLI run directly, "wrap" (then cli-log) for a CLI run
-// through the launcher.
+// -install and -probe-cli rows of the 89cb6289 captures, on unix. The CLI and the
+// launcher are symlinks to this test binary. The test sets the helper mode in its
+// own env, because -install and -probe-cli run them with the daemon env: "cli-log"
+// for a CLI run directly, "wrap" (then cli-log) for a CLI run through the launcher.
 
 type installFixture struct {
 	cliDir, cli, wrap, base string
@@ -119,10 +118,10 @@ func denySettingsRead(t *testing.T) {
 	t.Cleanup(func() { readManagedSettingsFile = old })
 }
 
-// TestInstallGateAndDirectRuns pins I0, I8 and I1: only CLAUDE_SSH_MANAGED_LAUNCHER=1
+// TestInstallGateAndDirectRuns pins measured rules: only CLAUDE_SSH_MANAGED_LAUNCHER=1
 // adds the launcher fields; without it the CLI runs directly even with a usable
 // launcher; with it and no settings the status is none, the CLI runs directly and
-// keeps the gate in its env (ENV-5).
+// keeps the gate in its env (measured).
 func TestInstallGateAndDirectRuns(t *testing.T) {
 	f := newInstallFixture(t)
 	f.settings(t, f.wrap)
@@ -172,7 +171,7 @@ func TestInstallThroughLauncher(t *testing.T) {
 	}
 }
 
-// TestInstallRefusedLauncherRunsNothing pins I3 and I4 (and INS-14): an unusable or
+// TestInstallRefusedLauncherRunsNothing pins measured rules: an unusable or
 // unreadable answer runs neither the CLI nor the launcher, keeps cliWasPresent true
 // and adds no cliError, and -install logs no [LauncherHandler] line.
 func TestInstallRefusedLauncherRunsNothing(t *testing.T) {
@@ -202,9 +201,9 @@ func TestInstallRefusedLauncherRunsNothing(t *testing.T) {
 }
 
 // TestInstallNoCliPathAddsNoLauncherField pins the rows without -cli-version, with
-// and without -cli-dir (Linux VM, 89cb6289). With the gate, the facts line of an
-// empty cliPath carries no launcher field. That holds for a usable launcher, an
-// unusable one and none. Nothing runs.
+// and without -cli-dir (`89cb6289`, measured on Linux). With the gate, the facts
+// line of an empty cliPath carries no launcher field. That holds for a usable
+// launcher, an unusable one and none. Nothing runs.
 func TestInstallNoCliPathAddsNoLauncherField(t *testing.T) {
 	f := newInstallFixture(t)
 	helperMode(t, "wrap", "cli-log")
@@ -291,12 +290,11 @@ func TestInstallLauncherRunStopped(t *testing.T) {
 
 // TestInstallFreshExtractThroughLauncher pins I10: a fresh install extracts, then
 // runs the CLI once through the launcher, and reports cliWasPresent false with the
-// usable fields. The launcher gets the final path, as on the reference (rows L06,
-// L08 to L10, Linux VM). The run right after the extract has its own bound: a
-// launcher that outlasts the cache-hit bound still ends as usable (row H4 measured
-// that with -cli-url). A run stopped at the first-run bound reports the
-// unresponsive cliError and names 123s in launcherReason. The CLI is installed all
-// the same (row H2, Linux VM).
+// usable fields. The launcher gets the final path, as on the reference (measured
+// on Linux). The run right after the extract has its own bound: a launcher that
+// outlasts the cache-hit bound still ends as usable (measured with -cli-url). A
+// run stopped at the first-run bound reports the unresponsive cliError and names
+// 123s in launcherReason. The CLI is installed all the same (measured on Linux).
 func TestInstallFreshExtractThroughLauncher(t *testing.T) {
 	f := newInstallFixture(t)
 	if err := os.Remove(f.cli); err != nil {
@@ -356,9 +354,9 @@ func TestInstallFreshExtractThroughLauncher(t *testing.T) {
 }
 
 // TestInstallFetchComesBeforeLauncherFields pins the -cli-url rows with the gate
-// (Linux VM, 89cb6289): fetch comes after cliError and cliUnresponsive and before
-// launcherStatus. Rows F-U (usable), F-E404 (a failed download) and H1 (a stopped
-// first run).
+// (`89cb6289`, measured on Linux): fetch comes after cliError and cliUnresponsive
+// and before launcherStatus. Rows F-U (usable), F-E404 (a failed download) and H1
+// (a stopped first run).
 func TestInstallFetchComesBeforeLauncherFields(t *testing.T) {
 	f := newInstallFixture(t)
 	if err := os.Remove(f.cli); err != nil {
@@ -416,7 +414,7 @@ func (f *installFixture) probe(t *testing.T) (string, string) {
 	return out.String(), errb.String()
 }
 
-// TestProbeCLIThroughLauncher pins P1-P6 and PRB-7's none case: with the gate a
+// TestProbeCLIThroughLauncher pins measured rules and a none case: with the gate a
 // usable launcher runs the probe and prints nothing; an unusable or unreadable
 // launcher prints __CLI_LAUNCHER__ and a reason without running the CLI; a failed
 // run prints __CLI_LAUNCHER__ and four stderr lines; a stopped run prints

@@ -35,7 +35,7 @@ import (
 // The logic here is shared across the unix targets; only the child's start-time token is
 // OS-specific (ownStartToken: /proc/self/stat clock ticks on linux, the ps start-time on
 // darwin). On windows this is a no-op (execchild_other.go): the reference stamps no marker
-// there (VM-measured, a windows child's env matches a bare-socket child's), so the daemon
+// there (measured, a windows child's env matches a bare-socket child's), so the daemon
 // spawns the target directly.
 const (
 	execChildFlag  = "--exec-child"
@@ -148,12 +148,12 @@ func wrapCmdWithTrampoline(cmd *exec.Cmd, runDir string) (execErrR, execErrW *os
 // earlier place. The trampoline then adds CLAUDE_SSH_CHILD after it.
 //
 // Measured on Linux and macOS against 89cb6289. The child environment ends with
-// CLAUDE_SSH_RUN_DIR and then CLAUDE_SSH_CHILD (rows F1 to F5). A caller value of
-// either one does not reach the child (rows EV02a, EV02e). A copy in the daemon
-// environment does not keep its place (rows EV03a, EV03e).
+// CLAUDE_SSH_RUN_DIR and then CLAUDE_SSH_CHILD (measured). A caller value of
+// either one does not reach the child (measured). A copy in the daemon
+// environment does not keep its place (measured).
 //
 // An environment that holds one of the five Go runtime variables ends with the same
-// two entries (Linux rows P4a to P4c, GOGC and GOMAXPROCS). holdGoEnv and
+// two entries (measured on Linux for GOGC and GOMAXPROCS). holdGoEnv and
 // restoreHeldEnv keep such a variable at its own place, before this entry.
 func runDirEnv(env []string, runDir string) []string {
 	env = removeEnvKey(removeEnvKey(env, envRunDir), envChildMarker)
@@ -165,8 +165,8 @@ func runDirEnv(env []string, runDir string) []string {
 // The command gets the run dir entry, and no CLAUDE_SSH_CHILD entry, because only the
 // trampoline can stamp that one. This is the same environment as the direct start in
 // wrapCmdWithTrampoline for a daemon with no re-executable binary. It is claustrum's
-// choice and is not measured: the one measured row (CW03, Linux) has a direct start
-// that fails too.
+// choice and is not measured: the one measured row (on Linux) has a direct start that
+// fails too.
 func trampolineFallbackEnv(env []string, runDir string) []string {
 	return runDirEnv(env, runDir)
 }
@@ -176,10 +176,10 @@ func trampolineFallbackEnv(env []string, runDir string) []string {
 // settings. runExecChild restores them before exec'ing the target.
 //
 // The held entry keeps the place of the variable, so the child gets the variable
-// where it was. Measured on Linux against 89cb6289 (rows P4a to P4c): a GOGC of the
-// daemon environment stays at its place there, before CLAUDE_SSH_DAEMON_CHILD. A
-// GOMAXPROCS of the spawn env stands where a new caller key stands, before
-// CLAUDE_SSH_RUN_DIR. The other three names are not measured. They get the same rule.
+// where it was. Measured on Linux against 89cb6289: a GOGC of the daemon environment
+// stays at its place there, before CLAUDE_SSH_DAEMON_CHILD. A GOMAXPROCS of the spawn
+// env stands where a new caller key stands, before CLAUDE_SSH_RUN_DIR. The other
+// three names are not measured. They get the same rule.
 func holdGoEnv(env []string) []string {
 	for _, name := range heldGoRuntimeEnv {
 		prefix := name + "="

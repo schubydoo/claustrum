@@ -12,8 +12,8 @@ import (
 )
 
 // -stop unlinks the socket path only after a FAILED connect. After a successful
-// connect it leaves the path alone. Measured against f6010b97 and 90fca6e6 on a
-// Linux VM:
+// connect it leaves the path alone. Measured against f6010b97 and 90fca6e6 on
+// Linux:
 //
 //	failed connect: stale socket         removed
 //	                own listener, 0000   removed (connect EACCES)

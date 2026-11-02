@@ -437,8 +437,8 @@ func TestSafeLoginShellLastResort(t *testing.T) {
 }
 
 // The reference prefers zsh over bash. Measured 2026-08-02 against 5db5e4a two
-// ways — stand-in shells bind-mounted over /usr/bin, and real bash+zsh in a
-// clean Ubuntu VM with a marker in each shell's own login profile — both with
+// ways — stand-in shells bind-mounted over /usr/bin, and real bash+zsh on a clean
+// Ubuntu system with a marker in each shell's own login profile — both with
 // single-shell controls that agreed. See the comment on fallbackShells.
 //
 // Pinning the shipped order directly is the point: this list was transcribed

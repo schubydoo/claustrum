@@ -13,9 +13,9 @@ import (
 
 // logOpenFixture is a folder with an entry at remote-server.log that the rotate cannot
 // move. A folder at .old stops the rename of a file, a link or a FIFO. A file at .old
-// stops the rename of a folder. Round task015-03 stages the same two states (cells E1
-// and E3) and a sticky folder of another user (cells S1 to S4). A test cannot make that
-// sticky folder without root, so the S tests use the .old folder to stop the rename.
+// stops the rename of a folder. A measurement stages the same two states and a sticky
+// folder of another user. A test cannot make that sticky folder without root, so the S
+// tests use the .old folder to stop the rename.
 func logOpenFixture(t *testing.T, oldIsFolder bool) (dir, sock, logPath string) {
 	t.Helper()
 	dir = shortTempDir(t)
@@ -54,7 +54,7 @@ func wantFileText(t *testing.T, path, want string) {
 	}
 }
 
-// Cell E1: the rename fails and an own regular file is at the log path. The file is
+// Measured: the rename fails and an own regular file is at the log path. The file is
 // truncated and gets the lines, with its inode and its mode kept, as on 5fd08069. The
 // second case is an own file in a folder that the user cannot write (not measured). The
 // fix is the call of openHeldDaemonLog: a nil file there sends the lines elsewhere.
@@ -101,7 +101,7 @@ func TestDaemonLogTruncatesAnOwnFileThatCannotRotate(t *testing.T) {
 	}
 }
 
-// Cell E3: a folder is at the log path and .old is a file. openDaemonLog fails with
+// Measured: a folder is at the log path and .old is a file. openDaemonLog fails with
 // "is a directory" and leaves both entries as they are. The fix is the folder case of
 // openDaemonLog.
 func TestDaemonLogFolderFailsTheOpen(t *testing.T) {
@@ -126,9 +126,9 @@ func stubLinksOfAnotherUser(t *testing.T) {
 	t.Cleanup(func() { daemonLogOwned = old })
 }
 
-// Cell E5: an own link at the log path to an own regular file. The file is truncated
-// and gets the lines, with its inode kept, and the link stays. 5fd08069 does so (round
-// task015-04, Linux VM). The fix is the link branch of openHeldDaemonLog.
+// Measured: an own link at the log path to an own regular file. The file is truncated
+// and gets the lines, with its inode kept, and the link stays. 5fd08069 does so
+// (measured on Linux). The fix is the link branch of openHeldDaemonLog.
 func TestDaemonLogOpensAnOwnLinkToAnOwnFile(t *testing.T) {
 	dir, sock, logPath := logOpenFixture(t, true)
 	target := filepath.Join(dir, "V")
@@ -160,7 +160,7 @@ func TestDaemonLogOpensAnOwnLinkToAnOwnFile(t *testing.T) {
 	}
 }
 
-// Cells S1 and S2, and the target tests of an own link: each link here fails the open
+// Measured cases, and the target tests of an own link: each link here fails the open
 // with "permission denied". The target keeps its bytes, a missing name is not made, and
 // the link stays. S1 and S2 are a link of another user, which the owner seam stages. The
 // target tests (a missing name, a folder, a file with two links) are claustrum's own.
@@ -217,11 +217,11 @@ func TestDaemonLogRefusesALink(t *testing.T) {
 	}
 }
 
-// Cell S3: a FIFO at the log path. The open fails with "permission denied" at
-// once and never opens the FIFO. 5fd08069 blocks in that open with the fs.protected
-// sysctls off and on macOS. The fixes are the Lstat before any open and the case of an
-// entry that is not a regular file. The wait has a limit, so a blocked open fails the
-// test and does not hang it.
+// Measured: a FIFO at the log path. The open fails with "permission denied" at once
+// and never opens the FIFO. 5fd08069 blocks in that open with the fs.protected sysctls
+// off and on macOS. The fixes are the Lstat before any open and the case of an entry
+// that is not a regular file. The wait has a limit, so a blocked open fails the test
+// and does not hang it.
 func TestDaemonLogRefusesAFIFOWithoutBlocking(t *testing.T) {
 	_, sock, logPath := logOpenFixture(t, true)
 	if err := syscall.Mkfifo(logPath, 0o666); err != nil {
@@ -260,7 +260,7 @@ func TestDaemonLogRefusesAFIFOWithoutBlocking(t *testing.T) {
 	}
 }
 
-// Cell S4: a regular file of another user at the log path. The open fails with
+// Measured: a regular file of another user at the log path. The open fails with
 // "permission denied" and the file keeps its bytes. A test cannot own a file as another
 // user without root, so the daemonLogOwned seam stages it. The fix is the owner test of
 // openHeldDaemonLog.
@@ -335,9 +335,9 @@ func TestDaemonLogOpenErrorFailsTheOpen(t *testing.T) {
 	wantFileText(t, logPath, "kept\n")
 }
 
-// Cells E3 and S2 at the launcher: a refused log open prints one line on stderr
-// and exits 1 before any child starts. So no daemon, socket, daemon.lock or daemon.token
-// comes. The fix is the error arm of daemonizeWithToken.
+// Measured cases at the launcher: a refused log open prints one line on stderr and exits
+// 1 before any child starts. So no daemon, socket, daemon.lock or daemon.token comes.
+// The fix is the error arm of daemonizeWithToken.
 func TestDaemonizeFailsWhenTheLogIsRefused(t *testing.T) {
 	for _, tc := range []struct {
 		name  string

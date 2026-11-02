@@ -395,8 +395,8 @@ func TestServeShutsDownOnSIGTERM(t *testing.T) {
 // TestOpenDaemonLogDoesNotFollowSymlink: a remote-server.log symlink in a writable
 // folder is never followed. os.Rename moves the link itself to .old and O_EXCL creates
 // a fresh regular file, so the target of the link keeps its bytes. 5fd08069 does the
-// same (cell E2 of round task015-03, Linux VM). A mutant that opened the path with
-// O_TRUNC without the rename truncates the target.
+// same (measured on Linux). A mutant that opened the path with O_TRUNC without the
+// rename truncates the target.
 func TestOpenDaemonLogDoesNotFollowSymlink(t *testing.T) {
 	dir := t.TempDir()
 	sock := filepath.Join(dir, "s.sock")

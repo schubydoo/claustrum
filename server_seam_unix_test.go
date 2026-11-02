@@ -45,7 +45,7 @@ func captureStderr(t *testing.T, fn func()) string {
 }
 
 // A socket whose 0600 tightening fails ends the start with the error "chmod socket:
-// <error>", and nothing listens (`5fd08069`, cell H6, Linux VM). The socket path is
+// <error>", and nothing listens (`5fd08069`, measured on Linux). The socket path is
 // gone too. The remove of the socket path is not measured. The start stops before the
 // token is persisted. The control is the same start with the real chmod: it serves.
 func TestNewServerOnSocketChmodFailureEndsTheStart(t *testing.T) {

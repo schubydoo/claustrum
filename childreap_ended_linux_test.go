@@ -108,8 +108,8 @@ func TestRealReadLiveProcChildEndsBetweenReads(t *testing.T) {
 // SIGTERM, with a real child and the real reads and signals. The child exits with
 // code 0 while the first poll of the grace reads it. It is counted as ended in the
 // grace, its record goes, and no line says that it no longer verifies. Measured on
-// Linux (rows K5 and ED04a): 89cb6289 logs "1 ended on SIGTERM" there, and the build
-// before this fix logged the child as a group that no longer verifies.
+// Linux: 89cb6289 logs "1 ended on SIGTERM" there, and the build before this fix
+// logged the child as a group that no longer verifies.
 //
 // The reap signals the group of the one child that this test started, and nothing else.
 func TestReapChildThatEndsOnSIGTERMIsReaped(t *testing.T) {
@@ -148,7 +148,7 @@ func TestReapChildThatEndsOnSIGTERMIsReaped(t *testing.T) {
 // SIGTERM and the first pause of the reap. The reap sends no SIGKILL, the child takes
 // the normal record test after the pause and gets the no-longer-verifies line, and it
 // is alive at the end. Before, two reads in a row with that reading led to a group
-// SIGKILL of the live child (Linux row PG05a, 2 of 10 runs).
+// SIGKILL of the live child (measured on Linux, 2 of 10 runs).
 //
 // The reap signals the group of the one child that this test started, and nothing else.
 func TestReapChildThatReplacesItsProgramGetsNoSIGKILL(t *testing.T) {

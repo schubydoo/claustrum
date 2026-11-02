@@ -123,7 +123,7 @@ func killOwnPid(pid int) {
 	_ = windows.CloseHandle(h)
 }
 
-// signal ends the direct child only. Its grandchild lives on. Measured on a Windows VM
+// signal ends the direct child only. Its grandchild lives on. Measured on Windows
 // against 89cb6289: every kill form ends only the direct child, and the grandchild is
 // alive 1 s, 5 s and 15 s later. The group here has no job.
 func TestSignalEndsOnlyTheDirectChild(t *testing.T) {
@@ -145,7 +145,7 @@ func TestSignalEndsOnlyTheDirectChild(t *testing.T) {
 }
 
 // TestSignalEndsTheJob: with a job, signal ends the child and its grandchild, before
-// any reap. Measured on a Windows VM against 52d82f0a: no process of the tree is left
+// any reap. Measured on Windows against 52d82f0a: no process of the tree is left
 // after a kill.
 func TestSignalEndsTheJob(t *testing.T) {
 	cmd, gpid, group := startConfinedTreeJobs(t, jobsOn)
@@ -167,7 +167,7 @@ func TestSignalEndsTheJob(t *testing.T) {
 }
 
 // A kill of a child that has ended, while its handle is still open, answers the text that
-// 89cb6289 logged on a Windows VM: "TerminateProcess: Access is denied.".
+// 89cb6289 logged on Windows: "TerminateProcess: Access is denied.".
 func TestSignalOnAnEndedChildIsAccessDenied(t *testing.T) {
 	cmd, _, group := startConfinedTree(t)
 
@@ -182,8 +182,8 @@ func TestSignalOnAnEndedChildIsAccessDenied(t *testing.T) {
 }
 
 // close drops the kill handle and ends nothing. The daemon's death closes the handle the
-// same way. The children of 89cb6289 survive a killed daemon (measured on a Windows
-// VM). That holds for a child with no job.
+// same way. The children of 89cb6289 survive a killed daemon (measured on Windows). That
+// holds for a child with no job.
 func TestCloseEndsNothing(t *testing.T) {
 	cmd, gpid, group := startConfinedTree(t)
 

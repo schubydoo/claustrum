@@ -273,9 +273,9 @@ func main() {
 		return
 	case *stop:
 		// -stop comes after -bridge and -serve. With -stop -bridge the references
-		// run the bridge, and with -stop -serve they run serve (measured against
-		// f6010b97 and 90fca6e6 on a Linux VM). -stop prints one word and exits 0
-		// in every state that its words name (see bridge.go).
+		// run the bridge, and with -stop -serve they run serve (`f6010b97`,
+		// `90fca6e6`, measured on Linux). -stop prints one word and exits 0 in
+		// every state that its words name (see bridge.go).
 		runStop(resolveSocket(), os.Stdout)
 		return
 	default:
@@ -320,10 +320,10 @@ func warnDeprecatedCLIProbe(flagSet, keySeen bool) {
 	}
 }
 
-// homeFailureExitCode is the exit code of a mode that cannot resolve the home
-// folder. `-install -cli-version <v>` with no -cli-dir needs the home folder for
-// its default cli folder, and it exits 2. That is row H07: a Linux VM, f6010b97
-// and 89cb6289, with HOME not in the environment. Every other case keeps exit 1.
+// homeFailureExitCode is the exit code of a mode that cannot resolve the home folder.
+// `-install -cli-version <v>` with no -cli-dir needs the home folder for its default cli
+// folder, and it exits 2. That is measured on Linux against f6010b97 and 89cb6289, with
+// HOME not in the environment. Every other case keeps exit 1.
 //
 // Not measured: a missing home folder together with -cli-dir, without
 // -cli-version, in another mode, on macOS, and a missing USERPROFILE on Windows.

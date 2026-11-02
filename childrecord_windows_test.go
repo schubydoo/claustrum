@@ -10,7 +10,7 @@ import (
 )
 
 // TestRecordChildWindowsNoop pins the verified windows contract: the daemon writes no child
-// record on windows. Measured on a windows VM, the 19f30c46 reference daemon reports it is
+// record on windows. Measured on Windows, the 19f30c46 reference daemon reports it is
 // not the run-dir lock holder on windows and records nothing (a spawned child left the
 // children dir empty). recordChild is a no-op even with a run dir set and a live pid. A
 // mutant that ported the linux/darwin record writer to windows would fail here.

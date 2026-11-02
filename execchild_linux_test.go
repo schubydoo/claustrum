@@ -116,7 +116,7 @@ func TestMaybeRunExecChildExecsTarget(t *testing.T) {
 }
 
 // TestSocketSpawnTrampolineEdgeCases pins the two frame divergences the wire-byte
-// review caught, measured against 19f30c46 on a VM. Class A: a resolvable-but-not-
+// review caught, measured against 19f30c46 on Linux. Class A: a resolvable-but-not-
 // execve-able command (a +x file that is not an executable format) must return the
 // identical -32603 "fork/exec …: exec format error" frame, NOT success + exit 127 —
 // the trampoline reports the target's exec failure over its error pipe. Class B: a

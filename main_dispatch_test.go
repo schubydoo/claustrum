@@ -301,9 +301,9 @@ func TestMainDispatch(t *testing.T) {
 }
 
 // Mode precedence: -bridge and -serve win over -stop. With -stop -bridge the
-// references run the bridge, and with -stop -serve they run serve (measured
-// against f6010b97 and 90fca6e6 on a Linux VM). Each winner here exits 1, where
-// -stop returns (exit 0), so the exit tells the modes apart.
+// references run the bridge, and with -stop -serve they run serve (`f6010b97`,
+// `90fca6e6`, measured on Linux). Each winner here exits 1, where -stop returns
+// (exit 0), so the exit tells the modes apart.
 //
 // SAFETY: every socket is in a temp dir. If -stop wins by mistake, it finds no
 // daemon there and prints "none". The -serve row takes the daemon-child path,
@@ -387,9 +387,9 @@ func TestMainExitsWhenHomeUnresolvable(t *testing.T) {
 
 // `-install -cli-version <v>` with no -cli-dir needs the home folder for its
 // default cli folder. With no home folder it exits 2, prints the reason on stderr
-// and prints nothing on stdout. Measured on a Linux VM against f6010b97 and
-// 89cb6289 (row H07, HOME not in the environment). The stderr prefix is
-// claustrum's own. Every other case keeps exit 1, and no row measures those.
+// and prints nothing on stdout. Measured on Linux against f6010b97 and 89cb6289
+// (HOME not in the environment). The stderr prefix is claustrum's own. Every
+// other case keeps exit 1, and no row measures those.
 func TestInstallExitsTwoWithoutHomeForTheDefaultCLIDir(t *testing.T) {
 	t.Setenv("HOME", "")
 	t.Setenv("USERPROFILE", "")
@@ -432,12 +432,12 @@ func TestInstallExitsTwoWithoutHomeForTheDefaultCLIDir(t *testing.T) {
 
 // main hands the home folder to runInstall, so `-install -cli-version <v>` with no
 // -cli-dir works in <home>/.claude/remote/ccd-cli. The run ends with the
-// "missing" answer and still makes the folder chain (rows H01 and H10).
+// "missing" answer and still makes the folder chain (measured).
 func TestInstallDefaultCLIDirComesFromTheHomeFolder(t *testing.T) {
 	home := t.TempDir()
 	other := t.TempDir()
 	if runtime.GOOS == "windows" {
-		// USERPROFILE is the home folder on Windows, and HOME is not read (H10).
+		// USERPROFILE is the home folder on Windows, and HOME is not read.
 		t.Setenv("USERPROFILE", home)
 		t.Setenv("HOME", other)
 	} else {

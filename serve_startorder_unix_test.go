@@ -30,13 +30,13 @@ func staleSocketFile(t *testing.T, path string) {
 	_ = ln.Close()
 }
 
-// TestStartReapsBeforeItBinds pins the order of a start (89cb6289, Linux and macOS
-// rows D1a, D1b, D3, XA and XL). A dead daemon left one recorded child that ignores
-// SIGTERM. While the new daemon waits for that child, nothing listens: a client gets
-// ECONNREFUSED from the stale socket file, or ENOENT when there is none. In that wait
-// daemon.lock holds pid, role and node only. After the start the lock holds the
-// instanceId and the startedAt that server.capabilities answers. Every signal and
-// every read of a process is seamed.
+// TestStartReapsBeforeItBinds pins the order of a start (89cb6289, measured on Linux
+// and macOS). A dead daemon left one recorded child that ignores SIGTERM. While the
+// new daemon waits for that child, nothing listens: a client gets ECONNREFUSED from
+// the stale socket file, or ENOENT when there is none. In that wait daemon.lock holds
+// pid, role and node only. After the start the lock holds the instanceId and the
+// startedAt that server.capabilities answers. Every signal and every read of a
+// process is seamed.
 func TestStartReapsBeforeItBinds(t *testing.T) {
 	if node, _ := ownReapIdentity(); node == "" {
 		t.Skip("no node identity on this host")
@@ -131,11 +131,11 @@ func TestStartReapsBeforeItBinds(t *testing.T) {
 	}
 }
 
-// TestRunServeHandlesASignalDuringItsStart pins Linux row P5 (89cb6289). A SIGTERM comes
-// while the daemon waits in the reap of its start. The daemon logs the "received" line
-// at once and does not end. It finishes the reap, binds, logs "shutdown requested",
-// prints the listening line, cleans up and exits 0. The signal goes through the
-// notifySignals seam, and every signal and every read of a process is seamed.
+// TestRunServeHandlesASignalDuringItsStart pins a rule of 89cb6289 (measured on Linux). A SIGTERM comes
+// while the daemon waits in the reap of its start. The daemon logs the "received" line at once and does
+// not end. It finishes the reap, binds, logs "shutdown requested", prints the listening line, cleans up
+// and exits 0. The signal goes through the notifySignals seam, and every signal and every read of a
+// process is seamed.
 func TestRunServeHandlesASignalDuringItsStart(t *testing.T) {
 	if node, _ := ownReapIdentity(); node == "" {
 		t.Skip("no node identity on this host")
@@ -270,9 +270,9 @@ func TestRunServeHandlesASignalDuringItsStart(t *testing.T) {
 	}
 }
 
-// TestSignalWatchHandlesOneSignal pins Linux row H8c (89cb6289): of two SIGTERM in the
-// start, the daemon handles one. It logs one "received" line, and the attach of the
-// server then logs one "shutdown requested" line. The second signal stays unread.
+// TestSignalWatchHandlesOneSignal pins a rule of 89cb6289 (measured on Linux): of two SIGTERM in the
+// start, the daemon handles one. It logs one "received" line, and the attach of the server then logs
+// one "shutdown requested" line. The second signal stays unread.
 func TestSignalWatchHandlesOneSignal(t *testing.T) {
 	logs := captureLogBuf(t)
 	sigc := make(chan os.Signal, 2)

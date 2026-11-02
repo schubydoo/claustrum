@@ -29,9 +29,9 @@ type capabilitiesResult struct {
 	// field itself is always present (never omitempty), on every OS.
 	Features []string `json:"features"`
 	// PeerCheck comes directly after features. 5fd08069 has the member there in
-	// every measured frame (Linux, macOS and Windows VMs). PeerCheckBy comes last,
-	// only when the peer check runs (round task011-01, cell P1, Linux VM). The
-	// values live in peercheck.go.
+	// every measured frame (measured on Linux, macOS and Windows). PeerCheckBy
+	// comes last, only when the peer check runs (measured on Linux). The values
+	// live in peercheck.go.
 	PeerCheck   string   `json:"peerCheck"`
 	PeerCheckBy []string `json:"peerCheckBy,omitempty"`
 }
@@ -60,7 +60,7 @@ type readResult struct {
 }
 
 // realpathResult is the files.realpath result. Real and WouldBe are never both
-// set. Measured on build 683cc6a9 (Linux, macOS and Windows VMs).
+// set. Measured on build 683cc6a9 (measured on Linux, macOS and Windows).
 type realpathResult struct {
 	Exists   bool   `json:"exists"`
 	Real     string `json:"real,omitempty"`
@@ -128,9 +128,9 @@ type gitInfoResult struct {
 	RepoSlug      string `json:"repoSlug"`
 	DefaultBranch string `json:"defaultBranch"`
 	// SettingsControl is the last member of the result. 5fd08069 sends it as
-	// "shadow", "fallback-git" or "off-switch" (s3-linux cell A1, s3p2-oldgit cell
-	// O1, Linux VM, and the macOS and Windows rounds). It is absent while the daemon
-	// has no state (shadowHost.control). No other method has it.
+	// "shadow", "fallback-git" or "off-switch" (measured on Linux, macOS and
+	// Windows). It is absent while the daemon has no state (shadowHost.control). No
+	// other method has it.
 	SettingsControl string `json:"settingsControl,omitempty"`
 }
 
@@ -174,7 +174,7 @@ type worktreeRemoveResult struct {
 	// BranchKept is true when the branch step kept the branch (89cb6289). That is
 	// every outcome except a delete, an absent branch, or a skipped name. It follows
 	// success, or error when error is present. It is only ever true, and absent
-	// otherwise (row R02 on Linux, macOS and Windows VMs, row R19 on a Linux VM).
+	// otherwise (measured on Linux, macOS and Windows).
 	BranchKept bool `json:"branchKept,omitempty"`
 }
 
@@ -190,9 +190,9 @@ type worktreeResult struct {
 	// carries error/errorCode instead. Measured against 19f30c46.
 	Branch string `json:"branch,omitempty"`
 	// BranchKept is true when a rollback kept the branch because it holds commits that
-	// no other ref reaches (89cb6289). It follows errorCode (rows C02, C04, C05 and
-	// B2-10). No measured frame with it has sourceBranch or branch. Its place after
-	// them is claustrum's choice (not measured).
+	// no other ref reaches (89cb6289). It follows errorCode (measured). No measured
+	// frame with it has sourceBranch or branch. Its place after them is claustrum's
+	// choice (not measured).
 	BranchKept bool `json:"branchKept,omitempty"`
 }
 
@@ -255,8 +255,8 @@ type killResult struct {
 //
 // SettingsControl is the last member, as in gitInfoResult. 5fd08069 sends
 // {"isRepo":false,"repoSlug":"","defaultBranch":"","settingsControl":"shadow"}
-// after its start test (s3-linux cell A1 request 3, Linux VM, and the macOS and
-// Windows rounds), and no such member before it.
+// after its start test (measured on Linux, macOS and Windows), and no such
+// member before it.
 type notRepoResult struct {
 	IsRepo          bool   `json:"isRepo"`
 	RepoSlug        string `json:"repoSlug"`
@@ -266,7 +266,7 @@ type notRepoResult struct {
 
 // managedLauncherResult is the launcher.resolve reply (89cb6289). One struct makes
 // all four shapes, because each shape keeps the fields in this order and drops the
-// empty ones. VM-measured on Linux and macOS:
+// empty ones. Measured on Linux and macOS:
 //
 //	{"status":"none"}
 //	{"status":"usable","argv":[…],"source":"<file>"}

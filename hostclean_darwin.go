@@ -24,7 +24,7 @@ import (
 //
 // This path is DESTRUCTIVE. Every enumeration, kinfo read and lsof shell-out goes through a
 // package-var seam, so unit tests drive the whole decision without a real process or lsof.
-// The real sweep is validated only on a throwaway macOS VM.
+// The real sweep is validated only on a throwaway macOS.
 
 // kinfo_proc offsets (darwin-amd64/arm64, verified against `ps` on the target SDK). The
 // struct is a stable legacy ABI; stride is sizeof(kinfo_proc).
@@ -58,7 +58,7 @@ var hcLsofEnv = []string{"LC_ALL=C", "LANG=C", "PATH=/bin:/usr/bin:/usr/sbin"}
 // The three bounds on one lsof run.
 //
 // claustrum bounds every lsof run with its own three values. 5fd08069 ends its pass 17 s after
-// it starts, its one lsof still hung (round tier4-01). Its cause is unknown, so it is no measured bound.
+// it starts, its one lsof still hung (measured). Its cause is unknown, so it is no measured bound.
 //
 // Why three and not two. The deadline kills the command. The wait delay then bounds
 // how long the run waits for the output pipe to close, which covers a child that
@@ -131,9 +131,9 @@ var (
 	//
 	// The third result says whether the run ANSWERED. It is false when the command did
 	// not start, and when it wrote to stderr. The exit code is no rule: lsof exits 1
-	// with no text when it finds no holder. On a macOS VM, 89cb6289 kept a run dir
-	// with a lock file in both cases (rows C3, D2p and D2f). For the busy read of a
-	// daemon, see hcBusyCheck.
+	// with no text when it finds no holder. On macOS, 89cb6289 kept a run dir with a
+	// lock file in both cases (measured). For the busy read of a daemon, see
+	// hcBusyCheck.
 	//
 	// The fourth result says that the deadline ended the run.
 	runLsof = func(args ...string) (out string, completed, answered, expired bool) {
@@ -388,9 +388,9 @@ func parseLsofFtn(out string) []lsofRec {
 //
 // An ABANDONED run answers busy. A run that finished and saw nothing and a run that was given
 // up on both produce no output. claustrum keeps them apart, because only the first is evidence.
-// 5fd08069 sends no SIGTERM there either (round tier4-01). This arm is reachable only when the
-// read failed outright. A run that did not answer reads as not busy here, and so does a
-// run that the deadline ended. hcBusyCheck tells them apart.
+// 5fd08069 sends no SIGTERM there either (measured). This arm is reachable only when the read
+// failed outright. A run that did not answer reads as not busy here, and so does a run that the
+// deadline ended. hcBusyCheck tells them apart.
 func hcBusy(pid int) bool {
 	busy, _ := hcBusyCheck(pid)
 	return busy
@@ -399,9 +399,9 @@ func hcBusy(pid int) bool {
 // hcBusyCheck is hcBusy plus whether the answer is a reading at all. An abandoned run is a
 // reading: it answers busy. A run that did not answer is no reading. The retire then
 // refuses the daemon, and no SIGTERM goes out. That is
-// what 89cb6289 did on a macOS VM, for a command that did not start (rows D1i and D1k) and
-// for a run that wrote to stderr (rows E3i and E3k), 3 of 3 each. A run that the deadline
-// ended is no reading either (hcBusyRead).
+// what 89cb6289 did on macOS, for a command that did not start (measured) and for a run
+// that wrote to stderr, 3 of 3 each. A run that the deadline ended is no reading either
+// (hcBusyRead).
 func hcBusyCheck(pid int) (busy, canRead bool) {
 	busy, canRead, _ = hcBusyRead(pid)
 	return busy, canRead
@@ -410,9 +410,8 @@ func hcBusyCheck(pid int) (busy, canRead bool) {
 // hcBusyRead is hcBusyCheck plus whether the deadline ended the lsof run. Such a run is no
 // reading, so the retire refuses the daemon after one run. With an lsof that hangs,
 // `5fd08069` runs one lsof and sends no signal, for a daemon with one client and with none
-// (cells B1 and B2, macOS VM). An ended run that wrote records gets the same answer, and so
-// does a run that exits by itself right at the deadline. Both are claustrum's own, not
-// measured.
+// (measured on macOS). An ended run that wrote records gets the same answer, and so does a
+// run that exits by itself right at the deadline. Both are claustrum's own, not measured.
 func hcBusyRead(pid int) (busy, canRead, ended bool) {
 	out, completed, answered, expired := runLsof("-p", strconv.Itoa(pid), "-F", "ftn")
 	if !completed {
@@ -438,11 +437,11 @@ func hcBusyRead(pid int) (busy, canRead, ended bool) {
 }
 
 // hcDaemonFilesUnread reports that the open files of a daemon could not be read. The pass
-// then logs that it leaves the daemon alone (rows D1i and D1k). ended says that the deadline
-// ended the read. The pass then logs no such line, and the retire refuses the daemon with
-// no second run. `5fd08069` sends no SIGTERM under an lsof that hangs (cells B1 and B2,
-// macOS VM), and claustrum gives the same result (round 8, macOS VM). It is a var so a
-// test on either OS can stage the answer.
+// then logs that it leaves the daemon alone (measured). ended says that the deadline ended
+// the read. The pass then logs no such line, and the retire refuses the daemon with no
+// second run. `5fd08069` sends no SIGTERM under an lsof that hangs (measured on macOS), and
+// claustrum gives the same result (measured on macOS). It is a var so a test on either OS
+// can stage the answer.
 var hcDaemonFilesUnread = func(pid int) (unread, ended bool) {
 	_, canRead, ended := hcBusyRead(pid)
 	return !canRead && !ended, ended
@@ -452,7 +451,7 @@ var hcDaemonFilesUnread = func(pid int) (unread, ended bool) {
 // daemon-spawned child. lsof names a pipe's type PIPE. canRead is false when the run was
 // abandoned, did not answer, or returned nothing for the pid. One lsof run answers both.
 // The third result is false for a run that did not answer. The pass then prints the line of
-// the reference (row E5: the command did not start). A run that the deadline ended reads
+// the reference (measured: the command did not start). A run that the deadline ended reads
 // here as a completed run. No cell measures the stdio read under an lsof that hangs.
 func hcStdioArePipes(pid int) (pipes, canRead, answered bool) {
 	out, completed, answered, _ := runLsof("-p", strconv.Itoa(pid), "-F", "ftn")
@@ -475,15 +474,15 @@ func hcStdioArePipes(pid int) (pipes, canRead, answered bool) {
 	return n == 3, true, true
 }
 
-// hcLockNeedsRecord says that lock content that is no record stops the holder read. On a
-// macOS VM 89cb6289 removed a run dir whose lock held 7 bytes of text (row C5, 3 of 3), so
-// on darwin it does not. It is a var only so a test can stage the other answer.
+// hcLockNeedsRecord says that lock content that is no record stops the holder read. On
+// macOS 89cb6289 removed a run dir whose lock held 7 bytes of text (measured), so on
+// darwin it does not. It is a var only so a test can stage the other answer.
 var hcLockNeedsRecord = false
 
 // hcLockUnreadState is the lock state for a lock that cannot be opened or is no regular file.
-// On a macOS VM 89cb6289 kept such a run dir with the "could not be examined" line: a lock
-// of mode 0000 (row D4), a symlink (row E7a) and a folder (row E7b), 3 of 3 each. So on
-// darwin it is that state. It is a var only so a test can stage it.
+// On macOS 89cb6289 kept such a run dir with the "could not be examined" line: a lock of mode
+// 0000 (measured), a symlink and a folder, 3 of 3 each. So on darwin it is that state. It is
+// a var only so a test can stage it.
 var hcLockUnreadState = hcLockUnexamined
 
 // hcStoppedIsUninspected says that a stopped daemon is not retired. On darwin it is false: a
@@ -493,19 +492,19 @@ var hcStoppedIsUninspected = false
 // hcLockHeldAt reports whether a live process holds path open (its run-dir lock). darwin has no
 // /proc/locks, so it asks lsof whether any process has the path open. fi is unused on darwin.
 //
-// The rules come from macOS VM runs against 89cb6289. asked is false when the lsof run did
-// not answer. The reference then kept each run dir that had a lock file: for a command that
-// did not start (row C3) and for a run that wrote to stderr (rows D2p and D2f), 3 of 3 each.
-// The pid of this process is no holder: the reference removed a run dir whose lock only the
-// cleaner itself held open (row C4, 3 of 3). A child of the cleaner that holds the lock is
-// a holder (row D3, 3 of 3).
+// The rules come from macOS runs against 89cb6289. asked is false when the lsof run did not
+// answer. The reference then kept each run dir that had a lock file: for a command that did
+// not start (measured) and for a run that wrote to stderr, 3 of 3 each. The pid of this
+// process is no holder: the reference removed a run dir whose lock only the cleaner itself
+// held open (measured). A child of the cleaner that holds the lock is a holder (measured, 3 of
+// 3).
 //
 // asked is false too when the deadline of claustrum ended the run. `5fd08069` keeps the
 // run dir under an lsof that hangs, with the "could not be examined" line, with no holder
-// and with a live holder. Its pass takes 15.0 s there (cells L1 and L2, macOS VM). A run
-// that claustrum gave up on gets the same answer, and so does an ended run that wrote a
-// pid. A run that exits by itself right at the deadline can read as ended, which keeps
-// the run dir. All three are claustrum's own, not measured.
+// and with a live holder. Its pass takes 15.0 s there (measured on macOS). A run that
+// claustrum gave up on gets the same answer, and so does an ended run that wrote a pid. A
+// run that exits by itself right at the deadline can read as ended, which keeps the run
+// dir. All three are claustrum's own, not measured.
 func hcLockHeldAt(path string, _ os.FileInfo) (held, asked bool) {
 	out, completed, answered, expired := runLsof("-F", "p", path)
 	if !completed || expired || !answered {
