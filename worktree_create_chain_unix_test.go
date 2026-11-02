@@ -82,7 +82,7 @@ func runChainCases(t *testing.T, cases []chainCase) {
 					abs = append(abs, p)
 				}
 			}
-			raw := dispatchRaw(t, newTestServer(t), rpcLine(t, "git.worktree_create",
+			raw := gitDispatch(t, newTestGitDeps(), rpcLine(t, "git.worktree_create",
 				map[string]any{"baseRepo": repo, "branchName": "b", "worktreePath": wp, "worktreeRoot": root}))
 			text, code := c.want(f)
 			if want := failFrame(t, text, code); raw != want {
@@ -541,7 +541,7 @@ func TestWorktreeCreateKeepsAnyMarkerEntry(t *testing.T) {
 			marker := filepath.Join(root, "d", managedWorktreesMarker)
 			c.setup(t, base, marker)
 			wp := filepath.Join(root, "d", "wt")
-			raw := dispatchRaw(t, newTestServer(t), rpcLine(t, "git.worktree_create",
+			raw := gitDispatch(t, newTestGitDeps(), rpcLine(t, "git.worktree_create",
 				map[string]any{"baseRepo": repo, "branchName": "k", "worktreePath": wp, "worktreeRoot": root}))
 			if !strings.Contains(raw, `"success":true`) {
 				t.Fatalf("create = %s, want success", raw)
@@ -627,7 +627,7 @@ func TestWorktreeCreateInRepoChainTexts(t *testing.T) {
 			if c.send != nil {
 				sendRepo, wp = c.send(base, repo)
 			}
-			raw := dispatchRaw(t, newTestServer(t), rpcLine(t, "git.worktree_create",
+			raw := gitDispatch(t, newTestGitDeps(), rpcLine(t, "git.worktree_create",
 				map[string]any{"baseRepo": sendRepo, "branchName": "b", "worktreePath": wp}))
 			if want := mkdirFailedFrame(t, c.text(repo)); raw != want {
 				t.Errorf("create frame\n got %s\nwant %s", raw, want)
@@ -655,7 +655,7 @@ func TestWorktreeCreateKeepsDirsMadeBeforeAFailure(t *testing.T) {
 		t.Cleanup(func() { _ = os.Chmod(filepath.Join(f, "a"), 0o755) })
 		root := filepath.Join(f, "a", "b", "R")
 		wp := filepath.Join(root, "cp", "w1")
-		raw := dispatchRaw(t, newTestServer(t), rpcLine(t, "git.worktree_create",
+		raw := gitDispatch(t, newTestGitDeps(), rpcLine(t, "git.worktree_create",
 			map[string]any{"baseRepo": repo, "branchName": "b", "worktreePath": wp, "worktreeRoot": root}))
 		if want := mkdirFailedFrame(t, "mkdirat a/b: permission denied"); raw != want {
 			t.Errorf("create frame\n got %s\nwant %s", raw, want)
@@ -668,7 +668,7 @@ func TestWorktreeCreateKeepsDirsMadeBeforeAFailure(t *testing.T) {
 	t.Run("F15i_in_repo", func(t *testing.T) {
 		t.Cleanup(func() { _ = os.Chmod(filepath.Join(repo, ".claude"), 0o755) })
 		wp := filepath.Join(repo, ".claude", "worktrees", "wt")
-		raw := dispatchRaw(t, newTestServer(t), rpcLine(t, "git.worktree_create",
+		raw := gitDispatch(t, newTestGitDeps(), rpcLine(t, "git.worktree_create",
 			map[string]any{"baseRepo": repo, "branchName": "b", "worktreePath": wp}))
 		if want := mkdirFailedFrame(t, "mkdirat worktrees: permission denied"); raw != want {
 			t.Errorf("create frame\n got %s\nwant %s", raw, want)
@@ -724,7 +724,7 @@ func TestWorktreeCreateInRepoClaudeLoop(t *testing.T) {
 	claude := filepath.Join(repo, ".claude")
 	symlinkForTest(t, claude, claude)
 	wp := filepath.Join(claude, "worktrees", "w1")
-	raw := dispatchRaw(t, newTestServer(t), rpcLine(t, "git.worktree_create",
+	raw := gitDispatch(t, newTestGitDeps(), rpcLine(t, "git.worktree_create",
 		map[string]any{"baseRepo": repo, "branchName": "b", "worktreePath": wp}))
 	text := "refusing to create worktree: `" + claude + "` is a symbolic link; a symlinked .claude or " +
 		".claude/worktrees inside the repository is not supported for SSH sessions, because a " +

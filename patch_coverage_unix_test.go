@@ -21,8 +21,8 @@ func TestWorktreeRemoveRefusesHomeUnderRepo(t *testing.T) {
 		t.Fatal(err)
 	}
 	t.Setenv("HOME", home)
-	s := newTestServer(t)
-	got := dispatchRaw(t, s, rpcLine(t, "git.worktree_remove",
+	h := newTestGitDeps()
+	got := gitDispatch(t, h, rpcLine(t, "git.worktree_remove",
 		map[string]any{"baseRepo": repo, "worktreePath": home}))
 	if !strings.Contains(got, "must not be or contain the home directory") {
 		t.Errorf("worktree_remove of home = %s, want the home-dir refusal", got)

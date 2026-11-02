@@ -178,7 +178,7 @@ func (fx *sourceFixture) create(extra map[string]any) string {
 	for k, v := range extra {
 		params[k] = v
 	}
-	got := dispatchRaw(fx.t, newTestServer(fx.t), rpcLine(fx.t, "git.worktree_create", params))
+	got := gitDispatch(fx.t, newTestGitDeps(), rpcLine(fx.t, "git.worktree_create", params))
 	var env struct {
 		Result json.RawMessage `json:"result"`
 	}

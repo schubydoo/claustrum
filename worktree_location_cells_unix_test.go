@@ -94,13 +94,13 @@ func (c *locCell) tree(t *testing.T, extra ...string) string {
 
 func (c *locCell) create(t *testing.T, base, root, path string) string {
 	t.Helper()
-	return dispatchRaw(t, newTestServer(t), rpcLine(t, "git.worktree_create", map[string]any{
+	return gitDispatch(t, newTestGitDeps(), rpcLine(t, "git.worktree_create", map[string]any{
 		"baseRepo": c.p(base), "worktreePath": c.p(path), "worktreeRoot": c.p(root), "branchName": "b20"}))
 }
 
 func (c *locCell) remove(t *testing.T, base, root, path string) string {
 	t.Helper()
-	return dispatchRaw(t, newTestServer(t), rpcLine(t, "git.worktree_remove", map[string]any{
+	return gitDispatch(t, newTestGitDeps(), rpcLine(t, "git.worktree_remove", map[string]any{
 		"baseRepo": c.p(base), "worktreePath": c.p(path), "worktreeRoot": c.p(root)}))
 }
 

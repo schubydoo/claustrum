@@ -30,8 +30,8 @@ func TestWorktreeRemoveForgedSiblingPointerNotPruned(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	s := newTestServer(t)
-	raw := dispatchRaw(t, s, rpcLine(t, "git.worktree_remove",
+	h := newTestGitDeps()
+	raw := gitDispatch(t, h, rpcLine(t, "git.worktree_remove",
 		map[string]any{"baseRepo": repo, "worktreePath": wtA}))
 	if !strings.Contains(raw, `"success":true`) {
 		t.Errorf("worktree_remove of forged A = %s, want success:true", raw)

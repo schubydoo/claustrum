@@ -23,7 +23,7 @@ func TestWorktreeCreateRegisteredLeaf(t *testing.T) {
 	if err := os.RemoveAll(filepath.Join(filepath.Dir(f.repo), "gone")); err != nil {
 		t.Fatal(err)
 	}
-	raw := dispatchRaw(t, newTestServer(t), rpcLine(t, "git.worktree_create",
+	raw := gitDispatch(t, newTestGitDeps(), rpcLine(t, "git.worktree_create",
 		map[string]any{"baseRepo": f.repo, "branchName": "b", "worktreePath": leaf}))
 	want := "cannot add a worktree: `" + leaf + "` is still registered in this repository as a worktree " +
 		"(entry \"x1\"); clear the stale registration first (git worktree prune), then try again"
@@ -58,7 +58,7 @@ func TestWorktreeCreateRegisteredLeafDaemonCommonDir(t *testing.T) {
 		t.Fatal(err)
 	}
 	t.Setenv("GIT_COMMON_DIR", filepath.Join(f.repo, ".git"))
-	raw := dispatchRaw(t, newTestServer(t), rpcLine(t, "git.worktree_create",
+	raw := gitDispatch(t, newTestGitDeps(), rpcLine(t, "git.worktree_create",
 		map[string]any{"baseRepo": f.repo, "branchName": "b", "worktreePath": leaf}))
 	text, code := createErrorField(t, raw)
 	if !strings.HasPrefix(text, "git worktree add failed: ") || !strings.Contains(text, "missing but locked worktree") ||

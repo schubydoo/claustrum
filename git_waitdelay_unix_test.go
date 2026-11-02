@@ -41,9 +41,9 @@ func runLingeringCreate(t *testing.T, base string, timeoutMs int) (string, time.
 	t.Helper()
 	shapeAsGitRepo(t, base)
 	wt := filepath.Join(base, ".claude", "worktrees", "wt")
-	s := newTestServer(t)
+	h := newTestGitDeps()
 	start := time.Now()
-	raw := dispatchRaw(t, s, rpcLine(t, "git.worktree_create", map[string]any{
+	raw := gitDispatch(t, h, rpcLine(t, "git.worktree_create", map[string]any{
 		"baseRepo": base, "branchName": "b", "worktreePath": wt, "timeoutMs": timeoutMs,
 	}))
 	return raw, time.Since(start)

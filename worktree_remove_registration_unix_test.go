@@ -45,7 +45,7 @@ func removeCallLog(t *testing.T, root string) func(method string, params map[str
 	resetUserExcludesCache(t)
 	ctxlog := filepath.Join(t.TempDir(), "ctx.log")
 	t.Setenv("CLAUSTRUM_GITSTUB_CTXLOG", ctxlog)
-	s := newTestServer(t)
+	h := newTestGitDeps()
 	return func(method string, params map[string]any) (string, []string) {
 		t.Helper()
 		if err := os.WriteFile(ctxlog, nil, 0o644); err != nil {
@@ -54,7 +54,7 @@ func removeCallLog(t *testing.T, root string) func(method string, params map[str
 		// The log of each request is that of a first request on its repository:
 		// no verdict of the config read is kept (TestRepoVerdictIsKept has the repeat).
 		forgetRepoVerdicts()
-		raw := dispatchRaw(t, s, rpcLine(t, method, params))
+		raw := gitDispatch(t, h, rpcLine(t, method, params))
 		if fi, err := os.Stat(ctxlog); err != nil || fi.Size() == 0 {
 			return raw, nil
 		}
@@ -314,10 +314,10 @@ func TestWorktreeRemoveMissingBaseRepoKeepsEntry(t *testing.T) {
 func TestWorktreeRemoveMissingBaseRepoLockedStillRefused(t *testing.T) {
 	f := newRegFixture(t)
 	runGit(t, f.T, "worktree", "lock", f.S)
-	s := newTestServer(t)
+	h := newTestGitDeps()
 	params := f.removeParams()
 	params["baseRepo"] = f.T + "/missing/.."
-	raw := dispatchRaw(t, s, rpcLine(t, "git.worktree_remove", params))
+	raw := gitDispatch(t, h, rpcLine(t, "git.worktree_remove", params))
 	if !strings.Contains(raw, "is locked (git worktree lock); unlock it to remove it") {
 		t.Errorf("frame = %s\nwant the locked refusal", raw)
 	}
@@ -717,11 +717,11 @@ func TestWorktreeRemoveMissingBaseRepoWithoutGitRefuses(t *testing.T) {
 			if err := os.Symlink("nowhere", filepath.Join(f.T, "dl")); err != nil {
 				t.Fatal(err)
 			}
-			s := newTestServer(t)
+			h := newTestGitDeps()
 			t.Setenv("PATH", t.TempDir())
 			params := f.removeParams()
 			params["baseRepo"] = f.T + "/" + c.base + "/.."
-			raw := dispatchRaw(t, s, rpcLine(t, "git.worktree_remove", params))
+			raw := gitDispatch(t, h, rpcLine(t, "git.worktree_remove", params))
 			want := `"error":"failed to remove worktree: could not check whether ` + f.S +
 				` is locked (its registrations could not be examined); retry"`
 			if !strings.Contains(raw, want) {

@@ -149,8 +149,8 @@ func (r r0RemoveRow) run(t *testing.T, wantSteps []string) {
 		base = r.base
 	}
 	calls := logGitArgv(t)
-	s := newTestServer(t)
-	got := dispatchRaw(t, s, rpcLine(t, "git.worktree_remove", map[string]any{
+	h := newTestGitDeps()
+	got := gitDispatch(t, h, rpcLine(t, "git.worktree_remove", map[string]any{
 		"baseRepo": f.expand(base), "worktreePath": f.expand(r.wp), "branchName": "wt1",
 		"worktreeRoot": f.expand(r.root)}))
 	if want := refusalFrame(t, f.expand(r.want)); got != want {
@@ -239,7 +239,7 @@ func TestWorktreeRemoveRootOutsideRepo(t *testing.T) {
 		f := newR0Fixture(t)
 		leaf := filepath.Join(f.B, "cp", "w1")
 		dirtyWorktree(t, f.T, leaf, "wt1")
-		got := dispatchRaw(t, newTestServer(t), rpcLine(t, "git.worktree_remove", map[string]any{
+		got := gitDispatch(t, newTestGitDeps(), rpcLine(t, "git.worktree_remove", map[string]any{
 			"baseRepo": f.T, "worktreePath": leaf, "branchName": "wt1", "worktreeRoot": f.B}))
 		if want := `{"jsonrpc":"2.0","id":1,"result":{"success":true}}`; got != want {
 			t.Errorf("remove = %s, want %s", got, want)
@@ -254,7 +254,7 @@ func TestWorktreeRemoveRootOutsideRepo(t *testing.T) {
 		r0Repo(t, f.T2)
 		leaf := filepath.Join(f.T2, ".claude", "cp", "w1")
 		dirtyWorktree(t, f.T2, leaf, "wt1")
-		got := dispatchRaw(t, newTestServer(t), rpcLine(t, "git.worktree_remove", map[string]any{
+		got := gitDispatch(t, newTestGitDeps(), rpcLine(t, "git.worktree_remove", map[string]any{
 			"baseRepo": f.T, "worktreePath": leaf, "branchName": "wt1",
 			"worktreeRoot": filepath.Join(f.T2, ".claude")}))
 		want := refusalFrame(t, f.expand("refusing to remove worktree: <T2>/.claude/cp/w1 is not a worktree of <T> "+
@@ -309,7 +309,7 @@ func TestWorktreeCreateRootInRepo(t *testing.T) {
 				base = r.base
 			}
 			wp := f.expand(r.wp)
-			got := dispatchRaw(t, newTestServer(t), rpcLine(t, "git.worktree_create", map[string]any{
+			got := gitDispatch(t, newTestGitDeps(), rpcLine(t, "git.worktree_create", map[string]any{
 				"baseRepo": f.expand(base), "worktreePath": wp, "branchName": "c1",
 				"worktreeRoot": f.expand(r.root)}))
 			want := `{"jsonrpc":"2.0","id":1,"result":{"success":false,"error":"` +

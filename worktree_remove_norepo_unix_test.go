@@ -26,8 +26,8 @@ func TestWorktreeRemoveUnsearchableBaseRepo(t *testing.T) {
 	}
 	t.Cleanup(func() { _ = os.Chmod(base, 0o755) })
 
-	s := newTestServer(t)
-	got := dispatchRaw(t, s, rpcLine(t, "git.worktree_remove",
+	h := newTestGitDeps()
+	got := gitDispatch(t, h, rpcLine(t, "git.worktree_remove",
 		map[string]any{"baseRepo": base, "worktreePath": target}))
 	want := `{"jsonrpc":"2.0","id":1,"result":{"success":false,"error":` +
 		`"failed to remove worktree: statat .claude: permission denied"}}`
@@ -60,8 +60,8 @@ func TestWorktreeRemoveUnopenableBaseRepo(t *testing.T) {
 	}
 	t.Cleanup(func() { _ = os.Chmod(base, 0o755) })
 
-	s := newTestServer(t)
-	got := dispatchRaw(t, s, rpcLine(t, "git.worktree_remove",
+	h := newTestGitDeps()
+	got := gitDispatch(t, h, rpcLine(t, "git.worktree_remove",
 		map[string]any{"baseRepo": base, "worktreePath": target}))
 	want := `{"jsonrpc":"2.0","id":1,"result":{"success":false,"error":` +
 		`"failed to remove worktree: open ` + jsonEscape(t, base) + `: permission denied"}}`
@@ -109,8 +109,8 @@ func TestWorktreeRemoveClaudeSymlinkDoesNotBlock(t *testing.T) {
 				t.Fatal(err)
 			}
 
-			s := newTestServer(t)
-			got := dispatchRaw(t, s, rpcLine(t, "git.worktree_remove",
+			h := newTestGitDeps()
+			got := gitDispatch(t, h, rpcLine(t, "git.worktree_remove",
 				map[string]any{"baseRepo": repo, "worktreePath": wt}))
 			if want := `{"jsonrpc":"2.0","id":1,"result":{"success":true}}`; got != want {
 				t.Errorf("got  %s\nwant %s", got, want)
@@ -147,15 +147,15 @@ func TestWorktreeRemoveExternalSearchOnlyBaseRepo(t *testing.T) {
 	}
 	t.Cleanup(func() { _ = os.Chmod(repo, 0o755) })
 
-	s := newTestServer(t)
+	h := newTestGitDeps()
 	gone := filepath.Join(root, "d", "absent")
-	got := dispatchRaw(t, s, rpcLine(t, "git.worktree_remove",
+	got := gitDispatch(t, h, rpcLine(t, "git.worktree_remove",
 		map[string]any{"baseRepo": repo, "worktreePath": gone, "worktreeRoot": root}))
 	if want := `{"jsonrpc":"2.0","id":1,"result":{"success":true}}`; got != want {
 		t.Errorf("with worktreeRoot:\n got  %s\n want %s", got, want)
 	}
 	inRepo := filepath.Join(repo, ".claude", "worktrees", "s0")
-	got = dispatchRaw(t, s, rpcLine(t, "git.worktree_remove",
+	got = gitDispatch(t, h, rpcLine(t, "git.worktree_remove",
 		map[string]any{"baseRepo": repo, "worktreePath": inRepo}))
 	want := `{"jsonrpc":"2.0","id":1,"result":{"success":false,"error":` +
 		`"failed to remove worktree: open ` + jsonEscape(t, repo) + `: permission denied"}}`

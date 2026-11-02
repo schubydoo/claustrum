@@ -54,9 +54,9 @@ func lockedWorktree(t *testing.T) (repo, wt string) {
 // both binaries returning byte-identical frames.
 func TestWorktreeRemoveLockedWorktreeIsRefused(t *testing.T) {
 	repo, wt := lockedWorktree(t)
-	s := newTestServer(t)
+	h := newTestGitDeps()
 
-	raw := dispatchRaw(t, s, rpcLine(t, "git.worktree_remove",
+	raw := gitDispatch(t, h, rpcLine(t, "git.worktree_remove",
 		map[string]any{"baseRepo": repo, "worktreePath": wt}))
 	const want = "is locked (git worktree lock); unlock it to remove it"
 	if !strings.Contains(raw, `"success":false`) || !strings.Contains(raw, want) {
@@ -78,8 +78,8 @@ func TestWorktreeRemoveDeletesNonWorktreeDir(t *testing.T) {
 	nd := filepath.Join(repo, ".claude", "worktrees", "nd") // never a worktree
 	writeFile(t, filepath.Join(nd, "KEEP.txt"), "x\n", 0o600)
 
-	s := newTestServer(t)
-	raw := dispatchRaw(t, s, rpcLine(t, "git.worktree_remove",
+	h := newTestGitDeps()
+	raw := gitDispatch(t, h, rpcLine(t, "git.worktree_remove",
 		map[string]any{"baseRepo": repo, "worktreePath": nd}))
 	if !strings.Contains(raw, `"success":true`) {
 		t.Errorf("reply = %s, want success:true", raw)

@@ -390,8 +390,8 @@ func TestHardenedAnswerIsStdoutOnly(t *testing.T) {
 	const line = `ERROR: ld.so: object 'libdoesnotexist.so' from LD_PRELOAD cannot be preloaded (cannot open shared object file): ignored.\n`
 
 	slowGit(t, "branch,--show-current", "pre", 0, line, "")
-	s := newTestServer(t)
-	if got := dispatchRaw(t, s, rpcLine(t, "git.info", map[string]any{"path": repo})); !strings.Contains(got, `"branch":"main"`) {
+	h := newTestGitDeps()
+	if got := gitDispatch(t, h, rpcLine(t, "git.info", map[string]any{"path": repo})); !strings.Contains(got, `"branch":"main"`) {
 		t.Errorf("git.info = %s, want \"branch\":\"main\"", got)
 	}
 

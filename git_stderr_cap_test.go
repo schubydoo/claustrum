@@ -91,8 +91,8 @@ func TestWorktreeCreateCapsGitStderr(t *testing.T) {
 	runGit(t, repo, "commit", "-q", "--allow-empty", "-m", "init")
 	long := strings.Repeat("b/", 300) // 600 chars, an invalid branch name
 
-	s := newTestServer(t)
-	raw := dispatchRaw(t, s, rpcLine(t, "git.worktree_create",
+	h := newTestGitDeps()
+	raw := gitDispatch(t, h, rpcLine(t, "git.worktree_create",
 		map[string]any{"baseRepo": repo, "branchName": long, "worktreePath": filepath.Join(repo, ".claude", "worktrees", "w")}))
 	if !strings.Contains(raw, `"errorCode":"worktree_add_failed"`) {
 		t.Fatalf("worktree_create = %s, want worktree_add_failed", raw)

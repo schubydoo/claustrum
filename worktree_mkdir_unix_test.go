@@ -32,8 +32,8 @@ func TestWorktreeCreateMkdirLeafFailure(t *testing.T) {
 	}
 	t.Cleanup(func() { _ = os.Chmod(holder, 0o700) })
 
-	s := newTestServer(t)
-	raw := dispatchRaw(t, s, rpcLine(t, "git.worktree_create",
+	h := newTestGitDeps()
+	raw := gitDispatch(t, h, rpcLine(t, "git.worktree_create",
 		map[string]any{"baseRepo": repo, "branchName": "x", "worktreePath": filepath.Join(holder, "wt")}))
 	if !strings.Contains(raw, `"errorCode":"mkdir_failed"`) ||
 		!strings.Contains(raw, "failed to create worktree directory: mkdirat wt:") {

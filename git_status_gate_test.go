@@ -79,7 +79,7 @@ func statusGitOut(t *testing.T, dir, stdin string, args ...string) string {
 
 func statusFrame(t *testing.T, path, baseRepo string) string {
 	t.Helper()
-	return dispatchRaw(t, newTestServer(t), rpcLine(t, "git.status", map[string]any{"path": path, "baseRepo": baseRepo}))
+	return gitDispatch(t, newTestGitDeps(), rpcLine(t, "git.status", map[string]any{"path": path, "baseRepo": baseRepo}))
 }
 
 func (f statusFixture) status(t *testing.T) string {

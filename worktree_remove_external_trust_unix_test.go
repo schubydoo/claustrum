@@ -75,8 +75,8 @@ func wrWrite(t *testing.T, p, body string) {
 // remove sends git.worktree_remove with worktreeRoot R and returns the frame.
 func (f *wrFixture) remove(t *testing.T, baseRepo, target, branch string) string {
 	t.Helper()
-	s := newTestServer(t)
-	return dispatchRaw(t, s, rpcLine(t, "git.worktree_remove", map[string]any{
+	h := newTestGitDeps()
+	return gitDispatch(t, h, rpcLine(t, "git.worktree_remove", map[string]any{
 		"baseRepo": baseRepo, "worktreePath": target, "branchName": branch, "worktreeRoot": f.R}))
 }
 
@@ -806,7 +806,7 @@ func TestWorktreeRemoveExternalNoGitOnPath(t *testing.T) {
 			if tc.noGit {
 				t.Setenv("PATH", t.TempDir())
 			}
-			got := dispatchRaw(t, newTestServer(t), rpcLine(t, "git.worktree_remove", map[string]any{
+			got := gitDispatch(t, newTestGitDeps(), rpcLine(t, "git.worktree_remove", map[string]any{
 				"baseRepo": row.base, "worktreePath": row.target, "branchName": "w1", "worktreeRoot": row.root}))
 			if got != row.want {
 				t.Errorf("got  %s\nwant %s", got, row.want)
@@ -1023,7 +1023,7 @@ func TestGitDirTrustDanglingCommondirWithBadHead(t *testing.T) {
 	})
 	t.Run("DG2i-g_remove_in_repository", func(t *testing.T) {
 		f, inRepo, _ := arm(t, true)
-		got := dispatchRaw(t, newTestServer(t), rpcLine(t, "git.worktree_remove", map[string]any{
+		got := gitDispatch(t, newTestGitDeps(), rpcLine(t, "git.worktree_remove", map[string]any{
 			"baseRepo": f.T, "worktreePath": inRepo, "branchName": "w1"}))
 		if want := refusalFrame(t, wantLockCheck(inRepo)); got != want {
 			t.Errorf("got  %s\nwant %s", got, want)

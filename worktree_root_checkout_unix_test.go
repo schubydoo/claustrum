@@ -154,7 +154,7 @@ func (r r0cRow) remove(t *testing.T) {
 	_, leafErr := os.Stat(leaf)
 	before := r0cState(t, f)
 	calls := logGitArgv(t)
-	got := dispatchRaw(t, newTestServer(t), rpcLine(t, "git.worktree_remove", r.params(f, branch)))
+	got := gitDispatch(t, newTestGitDeps(), rpcLine(t, "git.worktree_remove", r.params(f, branch)))
 	want := `{"jsonrpc":"2.0","id":1,"result":{"success":true}}`
 	if r.want != "" {
 		want = refusalFrame(t, f.expand(r.want))
@@ -192,7 +192,7 @@ func (r r0cRow) create(t *testing.T) {
 	f, leaf, branch := r.fixture(t)
 	before := r0cState(t, f)
 	calls := logGitArgv(t)
-	got := dispatchRaw(t, newTestServer(t), rpcLine(t, "git.worktree_create", r.params(f, "c1")))
+	got := gitDispatch(t, newTestGitDeps(), rpcLine(t, "git.worktree_create", r.params(f, "c1")))
 	want := `{"jsonrpc":"2.0","id":1,"result":{"success":false,"error":"` +
 		jsonEscape(t, f.expand(r.want)) + `","errorCode":"unsafe_path"}}`
 	if got != want {
@@ -487,7 +487,7 @@ func TestWorktreeCreateCheckoutCallKilled(t *testing.T) {
 			stubGitCall(t, r.call, "exec sleep 30")
 			shortGitLimit(t, 2*time.Second)
 			calls := logGitArgv(t)
-			got := dispatchRaw(t, newTestServer(t), rpcLine(t, "git.worktree_create", r.row.params(f, "c1")))
+			got := gitDispatch(t, newTestGitDeps(), rpcLine(t, "git.worktree_create", r.row.params(f, "c1")))
 			if want := failFrame(t, "failed to create parent directory: "+r.text, "mkdir_failed"); got != want {
 				t.Errorf("create =\n  %s\nwant\n  %s", got, want)
 			}

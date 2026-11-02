@@ -49,7 +49,7 @@ func TestWorktreeCreateExternalRoot(t *testing.T) {
 	if err := os.MkdirAll(root, 0o755); err != nil {
 		t.Fatal(err)
 	}
-	s := newTestServer(t)
+	h := newTestGitDeps()
 
 	// Wrong depth: worktreePath must be exactly <root>/<dir>/<name>.
 	for _, wp := range []string{
@@ -57,7 +57,7 @@ func TestWorktreeCreateExternalRoot(t *testing.T) {
 		filepath.Join(root, "d", "e", "wt"),     // three levels below root
 		filepath.Join(base, "other", "d", "wt"), // not beneath root
 	} {
-		raw := dispatchRaw(t, s, rpcLine(t, "git.worktree_create",
+		raw := gitDispatch(t, h, rpcLine(t, "git.worktree_create",
 			map[string]any{"baseRepo": repo, "branchName": "b", "worktreePath": wp, "worktreeRoot": root}))
 		// Match the decoded error so the literal angle brackets and the echoed root
 		// (a backslash path on Windows) compare without any wire-escaping.
@@ -71,7 +71,7 @@ func TestWorktreeCreateExternalRoot(t *testing.T) {
 	// Valid external create: success, and a marker carrying the reference's exact
 	// 285-byte body written into the <dir> level.
 	wp := filepath.Join(root, "d", "wt")
-	raw := dispatchRaw(t, s, rpcLine(t, "git.worktree_create",
+	raw := gitDispatch(t, h, rpcLine(t, "git.worktree_create",
 		map[string]any{"baseRepo": repo, "branchName": "ok", "worktreePath": wp, "worktreeRoot": root}))
 	if !strings.Contains(raw, `"success":true`) {
 		t.Fatalf("create(%s) = %s, want success", wp, raw)
@@ -85,7 +85,7 @@ func TestWorktreeCreateExternalRoot(t *testing.T) {
 	}
 
 	// Remove of the valid external worktree: success, and it is gone.
-	rr := dispatchRaw(t, s, rpcLine(t, "git.worktree_remove",
+	rr := gitDispatch(t, h, rpcLine(t, "git.worktree_remove",
 		map[string]any{"baseRepo": repo, "worktreePath": wp, "worktreeRoot": root}))
 	if !strings.Contains(rr, `"success":true`) {
 		t.Errorf("remove(%s) = %s, want success", wp, rr)
@@ -114,10 +114,10 @@ func TestWorktreeCreateExternalSpellingAndSymlink(t *testing.T) {
 	if err := os.MkdirAll(root, 0o755); err != nil {
 		t.Fatal(err)
 	}
-	s := newTestServer(t)
+	h := newTestGitDeps()
 
 	// A relative worktreeRoot names the root with the "worktree location" wording.
-	relRoot := dispatchRaw(t, s, rpcLine(t, "git.worktree_create",
+	relRoot := gitDispatch(t, h, rpcLine(t, "git.worktree_create",
 		map[string]any{"baseRepo": repo, "branchName": "a", "worktreePath": filepath.Join(root, "d", "wt"), "worktreeRoot": "mine"}))
 	if !strings.Contains(worktreeErrorField(t, relRoot), "mine is a relative path; choose the worktree location by its absolute path") {
 		t.Errorf("relative worktreeRoot = %s, want the root relative-path refusal", relRoot)
@@ -125,7 +125,7 @@ func TestWorktreeCreateExternalSpellingAndSymlink(t *testing.T) {
 
 	// A ".." in worktreePath is refused before the containment cleans it away. The
 	// path is built by concatenation, not filepath.Join, which would clean the "..".
-	dd := dispatchRaw(t, s, rpcLine(t, "git.worktree_create",
+	dd := gitDispatch(t, h, rpcLine(t, "git.worktree_create",
 		map[string]any{"baseRepo": repo, "branchName": "b", "worktreePath": root + "/d/../d/wt", "worktreeRoot": root}))
 	if !strings.Contains(worktreeErrorField(t, dd), `contains a ".." component`) ||
 		!strings.Contains(worktreeErrorField(t, dd), "session folder") {
@@ -133,7 +133,7 @@ func TestWorktreeCreateExternalSpellingAndSymlink(t *testing.T) {
 	}
 
 	// A ".." in an (absolute) worktreeRoot is refused with the root wording.
-	rootDD := dispatchRaw(t, s, rpcLine(t, "git.worktree_create",
+	rootDD := gitDispatch(t, h, rpcLine(t, "git.worktree_create",
 		map[string]any{"baseRepo": repo, "branchName": "d", "worktreePath": filepath.Join(root, "d", "wt"), "worktreeRoot": root + "/../mine"}))
 	if !strings.Contains(worktreeErrorField(t, rootDD), `contains a ".." component`) ||
 		!strings.Contains(worktreeErrorField(t, rootDD), "worktree location") {
@@ -141,7 +141,7 @@ func TestWorktreeCreateExternalSpellingAndSymlink(t *testing.T) {
 	}
 
 	// A relative worktreePath (root absolute) is refused with the session-folder wording.
-	relPath := dispatchRaw(t, s, rpcLine(t, "git.worktree_create",
+	relPath := gitDispatch(t, h, rpcLine(t, "git.worktree_create",
 		map[string]any{"baseRepo": repo, "branchName": "e", "worktreePath": "rel/wt", "worktreeRoot": root}))
 	if !strings.Contains(worktreeErrorField(t, relPath), "rel/wt is a relative path") ||
 		!strings.Contains(worktreeErrorField(t, relPath), "session folder") {
@@ -157,7 +157,7 @@ func TestWorktreeCreateExternalSpellingAndSymlink(t *testing.T) {
 	if err := os.Symlink(outside, filepath.Join(root, "dlink")); err != nil {
 		t.Skipf("symlinks unsupported: %v", err)
 	}
-	sym := dispatchRaw(t, s, rpcLine(t, "git.worktree_create",
+	sym := gitDispatch(t, h, rpcLine(t, "git.worktree_create",
 		map[string]any{"baseRepo": repo, "branchName": "c", "worktreePath": filepath.Join(root, "dlink", "wt"), "worktreeRoot": root}))
 	if !strings.Contains(worktreeErrorField(t, sym), "is a symbolic link; the directory under the worktree location must be a real directory") {
 		t.Errorf("symlinked <dir> = %s, want the symlink refusal", sym)
@@ -194,9 +194,9 @@ func TestWorktreeCreateExternalDirMustBeEmpty(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(dirty, "a.txt"), []byte("x"), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	s := newTestServer(t)
+	h := newTestGitDeps()
 	wp := filepath.Join(dirty, "wt")
-	raw := dispatchRaw(t, s, rpcLine(t, "git.worktree_create",
+	raw := gitDispatch(t, h, rpcLine(t, "git.worktree_create",
 		map[string]any{"baseRepo": repo, "branchName": "d", "worktreePath": wp, "worktreeRoot": root}))
 	if !strings.Contains(raw, `"errorCode":"unsafe_path"`) ||
 		!strings.Contains(worktreeErrorField(t, raw), `holds other files (for example "a.txt")`) ||
@@ -215,7 +215,7 @@ func TestWorktreeCreateExternalDirMustBeEmpty(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(marked, managedWorktreesMarker), []byte(managedWorktreesMarkerBody), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	ok := dispatchRaw(t, s, rpcLine(t, "git.worktree_create",
+	ok := gitDispatch(t, h, rpcLine(t, "git.worktree_create",
 		map[string]any{"baseRepo": repo, "branchName": "m", "worktreePath": filepath.Join(marked, "wt"), "worktreeRoot": root}))
 	if !strings.Contains(ok, `"success":true`) {
 		t.Errorf("create into a marked dir = %s, want success", ok)
@@ -239,8 +239,8 @@ func TestWorktreeRemoveExternalMissingGit(t *testing.T) {
 		t.Fatal(err)
 	}
 	writeFile(t, filepath.Join(stray, "keep.txt"), "keep\n", 0o644)
-	s := newTestServer(t)
-	rr := dispatchRaw(t, s, rpcLine(t, "git.worktree_remove",
+	h := newTestGitDeps()
+	rr := gitDispatch(t, h, rpcLine(t, "git.worktree_remove",
 		map[string]any{"baseRepo": repo, "worktreePath": stray, "worktreeRoot": filepath.Join(base, "mine")}))
 	if !strings.Contains(rr, "has no .git file") || !strings.Contains(rr, "left in place") {
 		t.Errorf("remove(%s) = %s, want the no-.git refusal", stray, rr)
@@ -254,7 +254,7 @@ func TestWorktreeRemoveExternalMissingGit(t *testing.T) {
 	// answers success:true (the reference treats it as nothing to do), not the
 	// no-.git refusal.
 	gone := filepath.Join(base, "mine", "d", "absent")
-	rg := dispatchRaw(t, s, rpcLine(t, "git.worktree_remove",
+	rg := gitDispatch(t, h, rpcLine(t, "git.worktree_remove",
 		map[string]any{"baseRepo": repo, "worktreePath": gone, "worktreeRoot": filepath.Join(base, "mine")}))
 	if !strings.Contains(rg, `"success":true`) {
 		t.Errorf("remove(%s) = %s, want success for an already-gone external worktree", gone, rg)
@@ -278,8 +278,8 @@ func TestWorktreeRemoveExternalWrongDepth(t *testing.T) {
 	if err := os.MkdirAll(wp, 0o755); err != nil {
 		t.Fatal(err)
 	}
-	s := newTestServer(t)
-	raw := dispatchRaw(t, s, rpcLine(t, "git.worktree_remove",
+	h := newTestGitDeps()
+	raw := gitDispatch(t, h, rpcLine(t, "git.worktree_remove",
 		map[string]any{"baseRepo": repo, "worktreePath": wp, "worktreeRoot": root}))
 	if !strings.Contains(worktreeErrorField(t, raw), "is not <worktree location>/<directory>/<name> beneath "+root) ||
 		strings.Contains(raw, `"errorCode"`) {
@@ -310,8 +310,8 @@ func TestWorktreeRemoveExternalVerifyTransient(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(wp, ".git"), []byte("gitdir: /foreign/.git/worktrees/x\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	s := newTestServer(t)
-	raw := dispatchRaw(t, s, rpcLine(t, "git.worktree_remove",
+	h := newTestGitDeps()
+	raw := gitDispatch(t, h, rpcLine(t, "git.worktree_remove",
 		map[string]any{"baseRepo": repo, "worktreePath": wp, "worktreeRoot": filepath.Join(base, "mine")}))
 	got := worktreeErrorField(t, raw)
 	if !strings.Contains(got, "could not verify that "+wp+" is a worktree of "+repo) ||

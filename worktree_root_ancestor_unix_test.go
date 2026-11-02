@@ -548,7 +548,7 @@ func (f *ancFixture) create(t *testing.T, base, root, wp string) string {
 	if root != "" {
 		params["worktreeRoot"] = root
 	}
-	return dispatchRaw(t, newTestServer(t), rpcLine(t, "git.worktree_create", params))
+	return gitDispatch(t, newTestGitDeps(), rpcLine(t, "git.worktree_create", params))
 }
 
 func ancFrame(t *testing.T, text, code string) string {
@@ -745,7 +745,7 @@ func TestWorktreeRemoveSkipsRootAncestor(t *testing.T) {
 	leaf := filepath.Join(root, "cp", "w1")
 	dirtyWorktree(t, f.T, leaf, "wt1")
 	ancDir(t, f.p("G"), 0o775)
-	got := dispatchRaw(t, newTestServer(t), rpcLine(t, "git.worktree_remove",
+	got := gitDispatch(t, newTestGitDeps(), rpcLine(t, "git.worktree_remove",
 		map[string]any{"baseRepo": f.T, "worktreePath": leaf, "worktreeRoot": root}))
 	wantFrame(t, got, `{"jsonrpc":"2.0","id":1,"result":{"success":true}}`)
 	if _, err := os.Lstat(leaf); err == nil {
