@@ -16,7 +16,7 @@ import (
 	"unicode/utf16"
 )
 
-// launcher.resolve and process.spawn rows of the 89cb6289 VM captures, on unix. The
+// launcher.resolve and process.spawn rows of the 89cb6289 captures, on unix. The
 // settings folder is a temp folder named by CLAUDE_SSH_E2E_MANAGED_SETTINGS_DIR, so
 // no test reads or writes a system folder. A launcher that runs is a symlink to
 // this test binary in a helper mode (helperproc_test.go), so no test depends on a
@@ -146,7 +146,7 @@ func checkResolve(t *testing.T, s *server, row, cliPath, want string) {
 	}
 }
 
-// TestLauncherResolveNoneShapes pins R4 (RES-9): an absent or empty folder, and a
+// TestLauncherResolveNoneShapes pins R4 (measured): an absent or empty folder, and a
 // base file of {}, of zero bytes or of white space only, answer none with no log.
 func TestLauncherResolveNoneShapes(t *testing.T) {
 	logs := captureLogBuf(t)
@@ -168,7 +168,7 @@ func TestLauncherResolveNoneShapes(t *testing.T) {
 
 // TestLauncherResolveKeysAndPrecedence pins R5, R6b, R6c and R6d: the env key beats
 // processWrapper in one file, in both key orders; an env value of "" counts as
-// unset; three spaces count as set with no launcher (T1), with a log line.
+// unset; three spaces count as set with no launcher (measured), with a log line.
 func TestLauncherResolveKeysAndPrecedence(t *testing.T) {
 	logs := captureLogBuf(t)
 	s := newTestServer(t)
@@ -199,9 +199,9 @@ func TestLauncherResolveKeysAndPrecedence(t *testing.T) {
 	}
 }
 
-// TestLauncherResolveDropIns pins R7a-R7e, R8, R12f and R12g: drop-ins in name order
-// win over the base file; the name filter; folder and FIFO entries are skipped;
-// symlinks are followed; one unreadable file makes the answer unreadable; a later
+// TestLauncherResolveDropIns pins measured rules: drop-ins in name order win over
+// the base file; the name filter; folder and FIFO entries are skipped; symlinks
+// are followed; one unreadable file makes the answer unreadable; a later
 // wrong-type value is skipped; a listing failure names the folder; a regular file
 // named managed-settings.d is ignored.
 func TestLauncherResolveDropIns(t *testing.T) {
@@ -303,9 +303,9 @@ func TestLauncherResolveDropIns(t *testing.T) {
 	checkResolve(t, s, "R12g", "/opt/claude/cli", usableFrame(base, w, "a"))
 }
 
-// TestLauncherResolveEscapesAndRawBytes pins RES-25 on the wire: R9g escapes `<`,
-// `&`, `>` and U+2028; R10i keeps U+FFFD raw (ef bf bd); R10g-0085 keeps U+0085 raw
-// (c2 85) inside the T11 reason; R9c's em dash stays raw.
+// TestLauncherResolveEscapesAndRawBytes pins RES-25 on the wire: R9g escapes `<`, `&`, `>` and
+// U+2028; R10i keeps U+FFFD raw (ef bf bd); R10g-0085 keeps U+0085 raw (c2 85) inside the
+// managedNotExecutable reason, and the em dash of a measured case stays raw.
 func TestLauncherResolveEscapesAndRawBytes(t *testing.T) {
 	s := newTestServer(t)
 	dir := tempManagedSettingsDir(t)
@@ -338,9 +338,9 @@ func TestLauncherResolveEscapesAndRawBytes(t *testing.T) {
 		unusableFrame(base, "the value contains an empty `\\\"\\\"` token \xe2\x80\x94 remove it, or fill in the value it was a placeholder for"))
 }
 
-// TestLauncherResolveLauncherChecks pins R11a-R11e: T8, T9 (a string compare that
-// runs before the absolute and existence checks), T10 (case-sensitive), T11 (missing,
-// folder, 0644), a symlink kept as its link path, and the long-path cut.
+// TestLauncherResolveLauncherChecks pins measured rules: the launcher texts, managedOwnPath (a string compare that runs
+// before the absolute and existence checks), managedScript (case-sensitive), managedNotExecutable (missing, folder, 0644), a
+// symlink kept as its link path, and the long-path cut.
 func TestLauncherResolveLauncherChecks(t *testing.T) {
 	s := newTestServer(t)
 	dir := tempManagedSettingsDir(t)
@@ -415,7 +415,7 @@ func TestLauncherResolveLauncherChecks(t *testing.T) {
 	checkResolve(t, s, "R11e-missing", "/opt/claude/cli", unusableFrame(base, "launcher `"+head+"\xe2\x80\xa6` does not exist or is not an executable regular file"))
 }
 
-// TestLauncherResolveBaseFileChecks pins R12a-R12e: permission denied (through the
+// TestLauncherResolveBaseFileChecks pins measured rules: permission denied (through the
 // read seam), a folder, a FIFO that is not opened, the 2 MiB limit on both sides,
 // invalid JSON, a non-object, and the byte order marks.
 func TestLauncherResolveBaseFileChecks(t *testing.T) {
@@ -520,9 +520,9 @@ func TestLauncherResolveNoCacheRunsNothing(t *testing.T) {
 	}
 }
 
-// TestLauncherResolveLogDedup pins R14 on one daemon: asks 1-3 unusable (T8), ask 4
-// usable, ask 5 T8 again, ask 6 unreadable JSON, ask 7 permission denied. Lines
-// appear on asks 1, 5, 6 and 7.
+// TestLauncherResolveLogDedup pins a measured rule on one daemon: asks 1-3 unusable (measured), ask 4
+// usable, ask 5 T8 again, ask 6 unreadable JSON, ask 7 permission denied. Lines appear on asks 1, 5,
+// 6 and 7.
 func TestLauncherResolveLogDedup(t *testing.T) {
 	logs := captureLogBuf(t)
 	s := newTestServer(t)
@@ -670,11 +670,10 @@ func TestSpawnThroughLauncher(t *testing.T) {
 	}
 }
 
-// TestSpawnLauncherRefusals pins S2, S3, S5 and S11: the relative-command check
-// (-32602) runs before any launcher check; the launcher checks answer -32004 with
-// the T texts, an empty launcher T1; both come before the cwd check, and a good
-// launcher meets the cwd check with the plain frame. Each refusal logs one
-// [process.Manager] line and no [LauncherHandler] line.
+// TestSpawnLauncherRefusals pins S2, S3, S5 and S11: the relative-command check (-32602) runs before
+// any launcher check; the launcher checks answer -32004 with the launcher texts, an empty launcher the
+// no-element text; both come before the cwd check, and a good launcher meets the cwd check with the
+// plain frame. Each refusal logs one [process.Manager] line and no [LauncherHandler] line.
 func TestSpawnLauncherRefusals(t *testing.T) {
 	logs := captureLogBuf(t)
 	s := newTestServer(t)
@@ -721,7 +720,7 @@ func TestSpawnLauncherRefusals(t *testing.T) {
 	}
 }
 
-// TestSpawnLauncherCannotStart pins S6a, S6b and S6c: a launcher that passes the
+// TestSpawnLauncherCannotStart pins measured rules: a launcher that passes the
 // checks but does not start is -32005, on a bare socket and through the exec-child
 // trampoline of a run-shaped socket.
 func TestSpawnLauncherCannotStart(t *testing.T) {
@@ -794,7 +793,7 @@ func TestSpawnLauncherBadCommand(t *testing.T) {
 	}
 }
 
-// TestSpawnStripsLauncherEnv pins S8 (ENV-1 to ENV-3): every child loses the gate
+// TestSpawnStripsLauncherEnv pins S8 (measured): every child loses the gate
 // and the E2E variable; a launched child also loses CLAUDE_CODE_PROCESS_WRAPPER;
 // the strip covers the daemon env and the spawn env param.
 func TestSpawnStripsLauncherEnv(t *testing.T) {

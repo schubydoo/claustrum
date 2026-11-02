@@ -101,10 +101,10 @@ func (*procGroup) close() {}
 //
 // The signal to the one process goes through its process handle (signalOne). On
 // Linux that is pidfd_send_signal, on the descriptor that the start of the child
-// gave. Measured on Linux with strace against 89cb6289 (rows E, A2 and B1): the
-// SIGTERM of process.kill, of process.killAndWait and of the supersede is
-// pidfd_send_signal(<fd>, SIGTERM, NULL, 0), and a SIGKILL is kill(-<pid>, SIGKILL).
-// macOS has no such call, and the handle sends kill(pid, sig) there.
+// gave. Measured on Linux with strace against 89cb6289: the SIGTERM of process.kill,
+// of process.killAndWait and of the supersede is pidfd_send_signal(<fd>, SIGTERM,
+// NULL, 0), and a SIGKILL is kill(-<pid>, SIGKILL). macOS has no such call, and the
+// handle sends kill(pid, sig) there.
 //
 // 52d82f0a keeps the split (measured on Linux and macOS): TERM, INT and HUP reach
 // the leader only, and KILL reaches its group but not a process in its own session.

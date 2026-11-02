@@ -110,8 +110,7 @@ func TestHcDirIdleIgnoresANonRegularLog(t *testing.T) {
 }
 
 // TestRunDirsCapLogNeedsA65thDir: the cap line fires only when a 65th candidate exists. The
-// text is the reference's, measured on a Linux VM (rows HC06b and HC07: 64 dirs give no
-// line, 65 give the line).
+// text is the reference's, measured on Linux (64 dirs give no line, 65 give the line).
 func TestRunDirsCapLogNeedsA65thDir(t *testing.T) {
 	oldClock := hcClock
 	t.Cleanup(func() { hcClock = oldClock })
@@ -172,7 +171,7 @@ func TestRunDirsEnumerationArms(t *testing.T) {
 		if err := os.MkdirAll(filepath.Join(runRoot, "a"), 0o755); err != nil {
 			t.Fatal(err)
 		}
-		// A second root that is a symlink to the first: both runRoots() entries list the
+		// A second root that is a symlink to the first: both runRoots entries list the
 		// same directory, and only the device+inode key can tell that.
 		alias := filepath.Join(t.TempDir(), "alias")
 		if err := os.Symlink(base, alias); err != nil {

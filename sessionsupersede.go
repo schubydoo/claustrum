@@ -16,22 +16,22 @@ import (
 // same stat calls and the same replies in each of these rows:
 //   - A session spawn whose command path does not exist answers "fork/exec <path>: no
 //     such file or directory". The prior process of the session gets no signal, lives
-//     on and keeps its record (rows P3 and H1, and macOS row P3).
+//     on and keeps its record (measured on macOS).
 //   - The test is one stat of the path as the request gives it. It is not joined with
 //     the cwd of the request: "./tool" that exists only under that cwd answers
-//     "fork/exec ./tool: no such file or directory" (row H3).
+//     "fork/exec ./tool: no such file or directory" (measured).
 //   - A spawn with no session key runs no stat. The same "./tool" request starts
-//     there (rows H2 and H3).
+//     there (measured).
 //   - The stat tests existence only. A file of mode 0644, a directory and a script
 //     with a missing interpreter pass it: the prior process gets its SIGTERM, and the
-//     error of the start comes after (rows H4a, H4b and H4c).
+//     error of the start comes after (measured).
 //   - A bare command name that the lookup did not find answers the lookup error, and
-//     the prior process gets no signal (row H9).
+//     the prior process gets no signal (measured).
 //   - The cwd test comes first, then the login-shell PATH read of the first spawn,
-//     then this stat (rows H3, H6 and H1).
+//     then this stat (measured).
 //
-// Windows is in statSpawnCommand of that system (rows SSm-path, SSm-bare, SSm-noext).
-// Not measured: a stat error other than a missing file. Its text answers.
+// Windows is in statSpawnCommand of that system (measured). Not measured:
+// a stat error other than a missing file. Its text answers.
 func missingCommandError(cmd *exec.Cmd) error {
 	if cmd.Err != nil {
 		return cmd.Err
@@ -151,15 +151,15 @@ func (m *procManager) lockSessionSpawn(key string) func() {
 // process, so the reply of the spawn comes after the end of the victim.
 //
 // Each victim gets killAndWait with the default grace: SIGTERM, then after 3 s a
-// SIGKILL to its group. Measured against 89cb6289 on Linux and macOS (rows B1 to B4):
+// SIGKILL to its group. Measured against 89cb6289 on Linux and macOS:
 //
-//   - A victim that exits on SIGTERM: the reply follows its exit frame at once (B1).
-//     Its group gets no SIGKILL (Linux row X2a).
-//   - A victim that ignores SIGTERM: SIGKILL to the group after 3 s, then the reply (B2).
+//   - A victim that exits on SIGTERM: the reply follows its exit frame at once.
+//     Its group gets no SIGKILL (measured on Linux).
+//   - A victim that ignores SIGTERM: SIGKILL to the group after 3 s, then the reply.
 //   - A victim that exits while a process in another group holds its pipes: the
-//     reply follows its exit frame, 5 s after the request (B3).
+//     reply follows its exit frame, 5 s after the request.
 //   - A spawn with the id and the session of a process that still runs supersedes
-//     nothing and sends no signal (B4). The id test below gives that.
+//     nothing and sends no signal. The id test below gives that.
 //
 // The log order of the rows is: the exit line of the victim, the supersedes line,
 // then the started line of the new process. The exit frame of the victim reaches its
@@ -167,9 +167,9 @@ func (m *procManager) lockSessionSpawn(key string) func() {
 //
 // On Linux and macOS the escalation ends the whole tree of the victim. On Windows with
 // no job the kill ends the direct child only, and its descendants live on. With a job
-// the kill ends the job (claustrum's own, not measured). A Windows VM measured
-// the same order against 89cb6289 (rows SS and SSInh, 3 runs each): the reply of the
-// new spawn comes after the exit frame of the victim.
+// the kill ends the job (claustrum's own, not measured). A Windows test measured the same
+// order against 89cb6289 (rows SS and SSInh, 3 runs each): the reply of the new spawn
+// comes after the exit frame of the victim.
 //
 // Not measured: two or more victims of one spawn. claustrum ends them one after the
 // other.

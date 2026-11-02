@@ -15,17 +15,16 @@ import (
 var machineIDPaths = []string{"/etc/machine-id", "/var/lib/dbus/machine-id"}
 
 // recordChild writes the orphan-registry record for a just-spawned child (reference
-// build 19f30c46), on every socket shape (89cb6289, Linux rows F1 to F4).
-// Best-effort and non-destructive: a
-// failure is logged, never fatal. It is a no-op when the manager has no run dir
-// (no socket), when pid < 2, or when the child's start-time
+// build 19f30c46), on every socket shape (`89cb6289`, measured on Linux). Best-effort
+// and non-destructive: a failure is logged, never fatal. It is a no-op when the
+// manager has no run dir (no socket), when pid < 2, or when the child's start-time
 // cannot be read. Without a pid-reuse-safe start-time, the record cannot identify the
 // child later. With no usable /proc it logs one line and makes no children folder
 // (be1c1ca5, measured on Linux). A start time that cannot be read while /proc works
-// logs nothing, as before: that case is not measured.
-// The record's identity (node, host, instance, the daemon's pid and start-time) is
-// what a later daemon uses to decide whether a leftover child of a since-exited
-// daemon is an orphan to reap. Reaping itself is a separate slice.
+// logs nothing, as before: that case is not measured. The record's identity (node,
+// host, instance, the daemon's pid and start-time) is what a later daemon uses to
+// decide whether a leftover child of a since-exited daemon is an orphan to reap.
+// Reaping itself is a separate slice.
 func (m *procManager) recordChild(pid int, argv0, program string) {
 	if m.runDir == "" || pid < 2 || m.noRecords {
 		return

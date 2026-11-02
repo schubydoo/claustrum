@@ -102,7 +102,7 @@ func TestRecordChildDarwin(t *testing.T) {
 
 // TestDarwinProcStartHasOneBlank pins the form of the start text: `ps` prints two
 // blanks before a day of one digit, and the record, the CLAUDE_SSH_CHILD entry and the
-// reap hold one blank (macOS rows F1 to F4 and RP15: 89cb6289 holds
+// reap hold one blank (measured on macOS: 89cb6289 holds
 // "Fri Oct 2 17:35:19 2026"). All three read it through darwinProcStart.
 func TestDarwinProcStartHasOneBlank(t *testing.T) {
 	old := darwinPSStart

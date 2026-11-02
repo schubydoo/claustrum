@@ -11,8 +11,8 @@ import (
 	"testing"
 )
 
-// The Windows rows of the 89cb6289 VM captures (win SW, RW, IW, X1-X5 and
-// the Windows recheck C2 row).
+// The Windows rows of the 89cb6289 captures, with the Windows
+// recheck.
 
 // noManagedPolicy is a no-op on Windows: there is no settings folder, so no
 // policy applies (managedlauncher_windows.go).
@@ -66,7 +66,7 @@ func TestSpawnLauncherRefusedOnWindows(t *testing.T) {
 }
 
 // managedWindowsFixture writes a settings file that names this test binary as the
-// launcher, in the E2E variable's folder. Windows ignores both (X1, X2).
+// launcher, in the E2E variable's folder. Windows ignores both (measured).
 func managedWindowsFixture(t *testing.T) {
 	t.Helper()
 	exe, err := os.Executable()

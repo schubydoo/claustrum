@@ -27,10 +27,10 @@ func TestRunStopSignalsShutdown(t *testing.T) {
 	}
 }
 
-// A failed connect with no daemon.lock prints "none" (measured against f6010b97
-// and 90fca6e6 on a Linux VM). It also removes a stale daemon.token beside the
-// socket path. The references delete it in this case, and a
-// pre-fix claustrum left it (measured, 10/10 each).
+// A failed connect with no daemon.lock prints "none" (`f6010b97`, `90fca6e6`,
+// measured on Linux). It also removes a stale daemon.token beside the socket
+// path. The references delete it in this case, and a pre-fix claustrum left it
+// (measured, 10/10 each).
 func TestRunStopNoneRemovesStaleToken(t *testing.T) {
 	dir := t.TempDir()
 	sock := filepath.Join(dir, "nope.sock")
@@ -62,8 +62,8 @@ func TestRunBridgeDialError(t *testing.T) {
 // its stdout. A real daemon's reply races its teardown, so this test uses a fake
 // listener that always replies. Every connect-success shape prints the same
 // word: a reply, garbage, a close with no reply, and the read deadline. That is
-// measured against f6010b97 and 90fca6e6 on a Linux VM. After a successful
-// connect, -stop leaves the socket path in place.
+// measured against f6010b97 and 90fca6e6 on Linux. After a successful connect,
+// -stop leaves the socket path in place.
 func TestRunStopConnectSuccessWords(t *testing.T) {
 	old := stopReplyTimeout
 	stopReplyTimeout = 200 * time.Millisecond

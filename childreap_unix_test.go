@@ -79,9 +79,9 @@ func TestRecordMatchesCommandText(t *testing.T) {
 		{"a prefix with no blank after it", "/tmp/e/bin/m", "", "/tmp/e/bin/my stub --log x", false},
 		{"a prefix that ends inside the second word", "/tmp/e/bin/my st", "", "/tmp/e/bin/my stub --log x", false},
 		{"follows from the rule (cell B2): the first word alone", "/tmp/e/bin/my", "", "/tmp/e/bin/my stub --log x", true},
-		// Two blanks in a row (macOS rows B4a and B4b), and a raw tab. A real `ps`
-		// prints a tab as the four characters \011 (macOS row B4c), so the two tab
-		// cases pin only how claustrum cuts a text that holds a raw tab.
+		// Two blanks in a row (measured on macOS), and a raw tab. A real `ps`
+		// prints a tab as the four characters \011 (measured on macOS), so the two
+		// tab cases pin only how claustrum cuts a text that holds a raw tab.
 		{"two blanks in the path, record with two", "/tmp/e/bin/my  stub", "", "/tmp/e/bin/my  stub --log x", true},
 		{"two blanks in the path, record with one", "/tmp/e/bin/my stub", "", "/tmp/e/bin/my  stub --log x", false},
 		{"a tab in the path, record with the tab", "/tmp/e/bin/my\tstub", "", "/tmp/e/bin/my\tstub --log x", true},
@@ -109,7 +109,8 @@ func TestRecordMatchesCommandText(t *testing.T) {
 		})
 	}
 	// The control: with no command text, as on linux, a program with a blank is one
-	// whole argument and is handed (Linux row ED04e), and a prefix of argv[0] is no match.
+	// whole argument and is handed (measured on Linux), and a prefix of argv[0] is no
+	// match.
 	linux := liveProc{state: procAlive, program: "/tmp/e/bin/sigstub", args: []string{"--log", "x", "/tmp/e/bin/my target"}}
 	if !recordMatchesLive(childRecord{Argv0: "/nonexistent/other", Program: "/tmp/e/bin/my target"}, linux) {
 		t.Error("linux: a whole argument with a blank was not handed")
@@ -143,7 +144,7 @@ func TestParsePSLine(t *testing.T) {
 	}
 }
 
-// TestVerifyOrphanEmptyArgv0BeforeProgram pins row ED02c: a record with an empty argv0
+// TestVerifyOrphanEmptyArgv0BeforeProgram pins a measured rule: a record with an empty argv0
 // is refused before its program key is read, also when the live process runs program.
 func TestVerifyOrphanEmptyArgv0BeforeProgram(t *testing.T) {
 	const pid, runDir = 424242, "/run/c1"
@@ -172,7 +173,7 @@ func orphanRecord(pid int, argv0, program string) childRecord {
 // TestReapOrphansEndsLauncherChild is the sweep for the gap that this rule closes: the
 // daemon writes a program key for a child that a launcher started, and the next start
 // must accept that record. Before, the sweep read argv0 only, so every launcher child
-// outlived a restart (89cb6289, Linux rows PG02a, PG02b and RP15g).
+// outlived a restart (`89cb6289`, measured on Linux).
 func TestReapOrphansEndsLauncherChild(t *testing.T) {
 	if node, _ := ownReapIdentity(); node == "" {
 		t.Skip("no node identity on this host")
@@ -209,7 +210,7 @@ func TestReapOrphansEndsLauncherChild(t *testing.T) {
 // The symlink has a <pid>.json name and leads to a valid record outside children/. The
 // live process passes every test of the sweep, so only the kind of the file can stop
 // the signal. The sweep removes the symlink, keeps its target and sends nothing
-// (89cb6289, Linux row ED16b). Before, the sweep read through the symlink and sent
+// (`89cb6289`, measured on Linux). Before, the sweep read through the symlink and sent
 // SIGTERM to the group that the outside record names.
 func TestReapOrphansSymlinkedRecord(t *testing.T) {
 	if node, _ := ownReapIdentity(); node == "" {
@@ -246,8 +247,8 @@ func TestReapOrphansSymlinkedRecord(t *testing.T) {
 }
 
 // TestReapOrphansFIFOAndFolder pins a FIFO and a folder with a <pid>.json name: the
-// sweep removes each one, sends nothing, and does not wait on the FIFO (89cb6289,
-// Linux rows ED16a and ED16c). Before, the read of the FIFO waited for a writer.
+// sweep removes each one, sends nothing, and does not wait on the FIFO (`89cb6289`,
+// measured on Linux). Before, the read of the FIFO waited for a writer.
 func TestReapOrphansFIFOAndFolder(t *testing.T) {
 	runDir := t.TempDir()
 	children := filepath.Join(runDir, "children")
@@ -376,12 +377,11 @@ func simTarget(t *testing.T) (*procSim, string, reapTarget) {
 // TestReapWaitDropsGroupThatNoLongerVerifies pins the record test inside the grace: a
 // group whose leader fails it is dropped at the poll that sees it, long before the
 // grace ends. It gets no SIGKILL, its record goes, it is counted in forgotten and never
-// as reaped, and the line holds the reference's reason text. The first case is Linux
-// row PG05a against 89cb6289: the child replaced itself with another program on the
+// as reaped, and the line holds the reference's reason text. The first case is measured
+// on Linux against 89cb6289: the child replaced itself with another program on the
 // SIGTERM, and the reference logged the line 0.2 s after its start. The other reason
-// texts come from rows ED04b, ED07, ED10a to ED10d, RP07 and PG05a (the unreadable
-// environment). A group that still passes gets the SIGKILL at the end of the grace, as
-// the control.
+// texts come (the unreadable environment). A group that still passes gets the SIGKILL
+// at the end of the grace, as the control.
 func TestReapWaitDropsGroupThatNoLongerVerifies(t *testing.T) {
 	const line = "[process.Registry] group 1001 no longer verifies (%s); nothing more is sent to it\n"
 	for _, tc := range []struct {
@@ -462,10 +462,10 @@ func TestReapWaitDropsGroupThatNoLongerVerifies(t *testing.T) {
 
 // TestReapWaitLiveLeaderIsNotReaped pins a read that takes a live leader for gone. The
 // linux reader does that for a process with no address space, which a process is for a
-// moment while it replaces its program. Measured on Linux (row PG05a): claustrum logged
-// such a leader as reaped in 2 of 10 runs while it was alive. The first read after the
-// SIGTERM says gone here, and every later read shows the live process with its new
-// program. The group is dropped with the line and is not counted reaped.
+// moment while it replaces its program. Measured on Linux: claustrum logged such a
+// leader as reaped in 2 of 10 runs while it was alive. The first read after the SIGTERM
+// says gone here, and every later read shows the live process with its new program. The
+// group is dropped with the line and is not counted reaped.
 func TestReapWaitLiveLeaderIsNotReaped(t *testing.T) {
 	sim, runDir, tg := simTarget(t)
 	sim.group[tg.pid] = true
@@ -529,11 +529,11 @@ func TestReapWaitEndedLeaderIsNotDropped(t *testing.T) {
 	}
 }
 
-// TestReapTargetsLeaderGoneMembersLinger pins the cleanup of row RP05a: the leader
-// exits on the SIGTERM and members of its group stay. The leader is still gone after
-// the settle pause, so the group gets the SIGKILL, and the target is counted as ended
-// in the grace (89cb6289 and claustrum, Linux row RP05a: SIGTERM, a signal 0 that
-// answers, SIGKILL).
+// TestReapTargetsLeaderGoneMembersLinger pins the cleanup: the leader exits on the
+// SIGTERM and members of its group stay. The leader is still gone after the settle
+// pause, so the group gets the SIGKILL, and the target is counted as ended in the
+// grace (89cb6289 and claustrum, measured on Linux: SIGTERM, a signal 0 that answers,
+// SIGKILL).
 func TestReapTargetsLeaderGoneMembersLinger(t *testing.T) {
 	sim, runDir, tg := simTarget(t)
 	sim.onKill[tg.pid] = func(sig syscall.Signal) error {
@@ -687,8 +687,8 @@ func TestReapTargetsChangedBeforeSIGKILL(t *testing.T) {
 }
 
 // TestReapOrphansUnreadableRecordAndRunDir covers two sweeps that read nothing. A
-// record of mode 000 is removed with no signal (89cb6289, Linux row ED16d). A run dir
-// that cannot be opened ends the sweep at once.
+// record of mode 000 is removed with no signal (`89cb6289`, measured on Linux). A run
+// dir that cannot be opened ends the sweep at once.
 func TestReapOrphansUnreadableRecordAndRunDir(t *testing.T) {
 	sim := newProcSim(t)
 	reapOrphans(filepath.Join(t.TempDir(), "gone"), "inst-self")
@@ -981,7 +981,7 @@ func TestReapTargetsTwoPhase(t *testing.T) {
 
 // TestReapOrphansForgetOnlyIsSilent proves the summary gate excludes forgotten: a sweep that
 // only forgets stale records (nothing signalled, left alive, or kept) logs no summary line,
-// matching reference build 19f30c46 (VM-confirmed). A mutant that puts forgotten back in the
+// matching reference build 19f30c46 (measured). A mutant that puts forgotten back in the
 // gate logs a summary here and fails this test.
 func TestReapOrphansForgetOnlyIsSilent(t *testing.T) {
 	runDir := t.TempDir()

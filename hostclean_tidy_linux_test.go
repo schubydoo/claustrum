@@ -165,7 +165,7 @@ func TestTidyRunDirsStopsAtTheRetireBudget(t *testing.T) {
 		t.Errorf("runDirsRemoved = %d, want %d: the entry past the budget is skipped", sum.runDirsRemoved, hcMaxRetire)
 	}
 	last := entries[hcMaxRetire].dirPath
-	// The reference's text, measured on a Linux VM (row HC14c).
+	// The reference's text, measured on Linux.
 	if want := fmt.Sprintf("run dir %q unused for 40 days: left for a later pass (%d retirements this pass already)", last, hcMaxRetire); !strings.Contains(buf.String(), want) {
 		t.Errorf("log = %q, want %q", buf.String(), want)
 	}
@@ -351,9 +351,9 @@ func TestPassBailsWhenTheProcessListIsUnreadable(t *testing.T) {
 // that vanishes mid-read. The counters and the signal lists together pin which arm handled
 // which.
 //
-// The stranded daemon and its child get no signal. On a Linux VM, f6010b97 and 89cb6289
-// sent none (rows ST01, ST10, HC16 and HC17). A pass with the old stranded judge fails
-// here: it sent SIGKILL to the daemon and SIGTERM to the child group.
+// The stranded daemon and its child get no signal. On Linux, f6010b97 and 89cb6289 sent
+// none (measured). A pass with the old stranded judge fails here: it sent SIGKILL to
+// the daemon and SIGTERM to the child group.
 func TestPassClassifiesAWholeHost(t *testing.T) {
 	proot, mk, link := fakeProc(t)
 
@@ -446,9 +446,9 @@ func TestPassClassifiesAWholeHost(t *testing.T) {
 
 // TestPassLeavesAStrandedDaemonAlone is the smallest stranded shape: one daemon that is
 // marked, old and idle, with no socket path and no lock, plus one child group. The pass
-// sends nothing and its summary reads "nothing to do" (rows ST01, ST02b, ST02c, ST07, ST10,
-// HC16 and HC17 on a Linux VM). The seams record every signal, so the test is safe without
-// the change: the old judge only reaches the recording seams.
+// sends nothing and its summary reads "nothing to do" (measured on Linux). The seams record
+// every signal, so the test is safe without the change: the old judge only reaches the
+// recording seams.
 func TestPassLeavesAStrandedDaemonAlone(t *testing.T) {
 	proot, mk, link := fakeProc(t)
 	oldRen, oldRm := hcRename, hcRemoveAll

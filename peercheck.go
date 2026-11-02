@@ -13,17 +13,17 @@ import (
 )
 
 // peerCheckEnv is the variable of the daemon's own environment that turns the
-// peer check on. On 5fd08069 it sets the peerCheck member too (Linux, macOS and
-// Windows VMs). The launcher hands its whole environment to the daemonized child
-// (daemonizeWithToken), so the variable reaches the daemon. The daemon reads it
-// and then removes it from its own environment (startPeerCheck).
+// peer check on. On 5fd08069 it sets the peerCheck member too (measured on
+// Linux, macOS and Windows). The launcher hands its whole environment to the
+// daemonized child (daemonizeWithToken), so the variable reaches the daemon. The
+// daemon reads it and then removes it from its own environment (startPeerCheck).
 const peerCheckEnv = "CLAUDE_SSH_PEER_CHECK"
 
 // The values of the peerCheck member of server.capabilities. 5fd08069 answers
 // "on" on Linux with the variable at 1, and "unavailable" on macOS and Windows
-// (round task011-01, Linux VM, and earlier macOS and Windows VMs). The values
-// "network_only" and "by_pid", and "unavailable" on Linux, are claustrum's own,
-// not measured. They name a kernel that lacks a part of the own text.
+// (measured on Linux, macOS and Windows). The values "network_only" and
+// "by_pid", and "unavailable" on Linux, are claustrum's own, not measured. They
+// name a kernel that lacks a part of the own text.
 const (
 	peerCheckOff         = "off"
 	peerCheckUnavailable = "unavailable"
@@ -34,15 +34,15 @@ const (
 
 // peerCheckUnavailableLine is the line of a daemon that starts with
 // CLAUDE_SSH_PEER_CHECK=1 and names no namespaces. The text is the one of
-// 5fd08069 on macOS and Windows VMs, where it came directly before the listening
+// 5fd08069 on macOS and Windows, where it came directly before the listening
 // line. On Linux it is the line of a kernel with no own text (claustrum's own,
 // not measured).
 const peerCheckUnavailableLine = "[Server] this system names no namespaces: cannot tell callers in a sandbox from others, serving all"
 
-// peerRefusedMessage is the message of that frame (round task011-01, Linux VM).
+// peerRefusedMessage is the message of that frame (measured on Linux).
 const peerRefusedMessage = "Refused: this server could not confirm that the caller is in its own namespaces"
 
-// The reasons of a refusal (round task011-01, cells P2, P3 and P7, Linux VM).
+// The reasons of a refusal (measured on Linux).
 const (
 	peerReasonOther      = "other_namespace"
 	peerReasonUnreadable = "unreadable"
@@ -63,7 +63,7 @@ type nsText struct {
 }
 
 // String joins the parts with one space, as "user:[4026531837] net:1 pidfd".
-// That is the measured text of 5fd08069 (round task011-01, Linux VM).
+// That is the measured text of 5fd08069 (measured on Linux).
 func (t nsText) String() string {
 	var parts []string
 	if t.user != "" {
@@ -83,8 +83,8 @@ func (t nsText) String() string {
 func (t nsText) names() bool { return t.user != "" || t.net != "" }
 
 // state is the peerCheck member of a daemon with this own text. All three parts
-// give "on" (round task011-01, cell P1, Linux VM). The other states are
-// claustrum's own, not measured.
+// give "on" (measured on Linux). The other states are claustrum's own, not
+// measured.
 func (t nsText) state() string {
 	switch {
 	case !t.names():
@@ -97,8 +97,8 @@ func (t nsText) state() string {
 	return peerCheckOn
 }
 
-// by is the peerCheckBy member. All parts give ["network","pidfd"] (cell P1).
-// The value for fewer parts is claustrum's own, not measured.
+// by is the peerCheckBy member. All parts give ["network","pidfd"]
+// (measured). The value for fewer parts is claustrum's own, not measured.
 func (t nsText) by() []string {
 	if !t.names() {
 		return nil
@@ -121,9 +121,9 @@ type peerGate struct {
 }
 
 // peerCheckAsked tells if the variable has the exact text "1". On 5fd08069 each of
-// these gave "off". Linux VM: no variable, "0", "off", the empty text, "true",
-// "yes", "on", "2", "01" and " 1". macOS VM: no variable, "0", "off", the empty
-// text and "true". Windows VM: no variable, "0" and "off".
+// these gave "off". Linux: no variable, "0", "off", the empty text, "true", "yes",
+// "on", "2", "01" and " 1". macOS: no variable, "0", "off", the empty text and
+// "true". Windows: no variable, "0" and "off".
 func peerCheckAsked() bool {
 	return os.Getenv(peerCheckEnv) == "1"
 }
@@ -145,12 +145,12 @@ var readDaemonNSText = daemonNSText
 // returns the gate. Otherwise it returns nil, and the daemon serves every caller.
 //
 // On 5fd08069 a process.spawn child had no such entry for the daemon values 1 and
-// 0 (Linux, macOS and Windows VMs). The git calls of one git.info had none for the
-// value 0 (Linux VM). A marker variable of the daemon arrived in each of them. The
-// start environment of that daemon process still showed the variable (Linux and
-// macOS VMs). The launcher runs and the login-shell read of 5fd08069 are not
-// measured. A spawn env param that names the variable reaches the child, as on
-// 5fd08069 (Linux, macOS and Windows VMs).
+// 0 (measured on Linux, macOS and Windows). The git calls of one git.info had none
+// for the value 0 (measured on Linux). A marker variable of the daemon arrived in
+// each of them. The start environment of that daemon process still showed the
+// variable (measured on Linux and macOS). The launcher runs and the login-shell
+// read of 5fd08069 are not measured. A spawn env param that names the variable
+// reaches the child, as on 5fd08069 (measured on Linux, macOS and Windows).
 //
 // A removal that fails gets one WARN line, claustrum's own. The children of the
 // daemon then inherit the variable.
@@ -160,8 +160,8 @@ var readDaemonNSText = daemonNSText
 // The levels are claustrum's own. From the code, the line comes after the lines
 // of the run-dir claim and of the reap, and before the listening line. On 5fd08069
 // the line came directly before the listening line on macOS and Windows. On Linux
-// it came after the open-files line (round task011-01, Linux VM). Its place among
-// the lines of a reap or of a failed token write was not measured.
+// it came after the open-files line (measured on Linux). Its place among the lines
+// of a reap or of a failed token write was not measured.
 func startPeerCheck() *peerGate {
 	asked := peerCheckAsked()
 	if err := unsetenv(peerCheckEnv); err != nil {
@@ -201,11 +201,11 @@ var errPeerExited = errors.New("the caller has exited")
 
 // judgePeer gives the reason of a refusal and the detail of its log line, or the
 // empty reason for a caller that the daemon serves. A lookup error that is a
-// permission error gives "unreadable" (cell P3). An exited caller gets
-// "lookup_failed" (cell P7). claustrum gives every other failure "lookup_failed"
+// permission error gives "unreadable" (measured). An exited caller gets
+// "lookup_failed" (measured). claustrum gives every other failure "lookup_failed"
 // too (claustrum's own, not measured). A peer text that is not the own text gives
-// "other_namespace" with the peer text in quotes (cell P2). The cells are of
-// round task011-01, Linux VM.
+// "other_namespace" with the peer text in quotes (measured). The cells are,
+// Linux.
 func judgePeer(own, peer nsText, err error) (reason, detail string) {
 	switch {
 	case err != nil && errors.Is(err, fs.ErrPermission):
@@ -235,8 +235,7 @@ type peerRefusalData struct {
 	Reason string `json:"reason"`
 }
 
-// peerRefusalLine is the refusal frame with its newline (round task011-01, cells
-// P2 to P8, Linux VM).
+// peerRefusalLine is the refusal frame with its newline (measured on Linux).
 func peerRefusalLine(reason string) []byte {
 	b, _ := json.Marshal(peerRefusalFrame{
 		JSONRPC: "2.0",
@@ -248,7 +247,7 @@ func peerRefusalLine(reason string) []byte {
 }
 
 // peerRefusalLogged tells if the refusal number n gets a log line. Refusals 1 to
-// 10 get a log line, and 11 and 12 do not (cell P6).
+// 10 get a log line, and 11 and 12 do not (measured).
 func peerRefusalLogged(n int64) bool {
 	return n <= 10
 }
@@ -256,9 +255,9 @@ func peerRefusalLogged(n int64) bool {
 // admit checks one accepted connection before the daemon reads from it. It
 // returns true for a caller that the daemon serves. A refused caller gets the
 // refusal frame, and then the connection closes with no read. A caller that
-// wrote first then reads a reset (cell P5). A refusal of a caller that exited
-// writes no line (cell P7) but counts (not measured). A gate that names no
-// namespace serves every caller.
+// wrote first then reads a reset (measured). A refusal of a caller that
+// exited writes no line (measured) but counts (not measured). A gate that
+// names no namespace serves every caller.
 func (g *peerGate) admit(nc net.Conn) bool {
 	if g == nil || !g.own.names() {
 		return true

@@ -28,7 +28,7 @@ import (
 // The seam returns nil, so p.group is asserted nil HERE. That is the pass-through
 // check, not a claim about production: Windows' confineProcess returns
 // &procGroup{} with a zero handle on every failure path, never nil (its
-// signal() then falls back to the parent). Both are nil-safe.
+// signal then falls back to the parent). Both are nil-safe.
 func TestSpawnSurvivesConfinementFailure(t *testing.T) {
 	errConfine := errors.New("open process: access is denied")
 	old := confineProc

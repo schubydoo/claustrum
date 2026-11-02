@@ -22,8 +22,8 @@ func fakePS(t *testing.T, start, fieldsLine string, env []string) {
 // TestRealReadLiveProcDarwinCommandText proves the darwin reader hands the record test
 // the command text of `ps` and its words, through the runPS seam. The line has the
 // padding that `ps` puts after the first two columns, and a program path with a blank.
-// The run on a Mac covers only this wiring. What a real `ps` prints is measured on the
-// VM, not here.
+// The run on a Mac covers only this wiring. What a real `ps` prints is measured on
+// macOS, not here.
 func TestRealReadLiveProcDarwinCommandText(t *testing.T) {
 	const start = "Sun Sep 13 08:32:51 2026"
 	fakePS(t, start, "54321 S    /tmp/e/bin/my stub --log /tmp/e/c1.log", nil)
@@ -34,7 +34,7 @@ func TestRealReadLiveProcDarwinCommandText(t *testing.T) {
 	if want := []string{"stub", "--log", "/tmp/e/c1.log"}; len(lp.args) != 3 || lp.args[0] != want[0] || lp.args[1] != want[1] || lp.args[2] != want[2] {
 		t.Errorf("args = %q, want %q", lp.args, want)
 	}
-	// Rows PG04s and PG02s: the record of a program with a blank in its path matches.
+	// Measured: the record of a program with a blank in its path matches.
 	if !recordMatchesLive(childRecord{Argv0: "/tmp/e/bin/my stub"}, lp) {
 		t.Error("a record of the program with a blank in its path did not match")
 	}
@@ -118,7 +118,7 @@ func procArgs2Buf(argv, env []string) []byte {
 
 // TestParseProcArgs2Env confirms the NUL-delimited read keeps a marker value intact even when
 // it contains spaces, '=', and a " NAME=" pattern all at once — the case a space-joined `ps -E`
-// line cannot disambiguate and the reference nonetheless reaps (VM-measured).
+// line cannot disambiguate and the reference nonetheless reaps (measured).
 func TestParseProcArgs2Env(t *testing.T) {
 	env := []string{
 		"PATH=/usr/bin",

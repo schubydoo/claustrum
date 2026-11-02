@@ -719,9 +719,8 @@ func TestKillAllTerminatesLiveProcess(t *testing.T) {
 
 // process.spawn with the id of a process that still runs replaces the table entry
 // (both spawns succeed) and sends the old process no signal. Measured against
-// 89cb6289 on Linux and macOS (rows A1 to A4) and on Windows (row EV). The shutdown
-// kill then reaches only the process of the table, so the old process stays alive
-// (row A3).
+// 89cb6289 on Linux and macOS and on Windows (row EV). The shutdown kill then
+// reaches only the process of the table, so the old process stays alive (measured).
 func TestSpawnDuplicateIDReplacesAndKeepsOld(t *testing.T) {
 	m := newTestProcManager(t)
 	t.Cleanup(m.killAll)
@@ -768,10 +767,10 @@ func TestSpawnDuplicateIDReplacesAndKeepsOld(t *testing.T) {
 	}
 }
 
-// TestSameIDKeepsTheFramesOfTheOldProcess pins Linux row P2 (89cb6289): after a spawn
-// took the id of a process that still runs, the stream frames and the exit frame of
-// the old process still reach its own connection, under the same processId. The
-// connection of the new process gets none of them.
+// TestSameIDKeepsTheFramesOfTheOldProcess pins a rule of 89cb6289 (measured on Linux): after a spawn
+// took the id of a process that still runs, the stream frames and the exit frame of the old process
+// still reach its own connection, under the same processId. The connection of the new process gets
+// none of them.
 func TestSameIDKeepsTheFramesOfTheOldProcess(t *testing.T) {
 	m := newTestProcManager(t)
 	t.Cleanup(m.killAll)
@@ -1192,10 +1191,10 @@ func TestKillAndWaitProcTargetsCapturedIdentity(t *testing.T) {
 // (uninterruptible sleep) reports not-yet-dead instead of wedging the dispatch
 // goroutine forever.
 //
-// p.done is never closed, which IS the fixture — a genuinely unreapable child
-// took a dm-delay device on a VM to build, so the wedge is modelled directly
-// rather than provoked. killReapGrace is shrunk so the test does not sit through
-// the production wait; its real value stays pinned by TestClampKillWaitMs.
+// p.done is never closed, which IS the fixture — a genuinely unreapable child took a dm-delay
+// device on a throwaway test system to build, so the wedge is modelled directly rather than
+// provoked. killReapGrace is shrunk so the test does not sit through the production wait; its
+// real value stays pinned by TestClampKillWaitMs.
 func TestKillAndWaitProcReportsUnreapedAfterKillGrace(t *testing.T) {
 	oldSignal := signalGroup
 	t.Cleanup(func() { signalGroup = oldSignal })
@@ -1236,7 +1235,7 @@ func TestKillAndWaitProcReportsUnreapedAfterKillGrace(t *testing.T) {
 // TestSignalIsAtomicWithTheReapedCheck pins that the check and the delivery
 // happen under one acquisition of p.mu.
 //
-// Checking isReaped() and then signalling leaves a gap the exit goroutine can
+// Checking isReaped and then signalling leaves a gap the exit goroutine can
 // reap in, which defeats the guard entirely for exactly the concurrent case it
 // exists to handle — the check would pass, the process would be reaped, and the
 // signal would go to whatever now owns the pgid. TryLock from inside the

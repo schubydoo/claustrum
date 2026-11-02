@@ -7,7 +7,7 @@ import (
 
 // TestExecChildRunDir pins the run-dir derivation: the run dir is the folder of the
 // socket path on every socket shape, cleaned and not made absolute. Each case is a row
-// of the Linux and macOS measurement of 89cb6289 (F1 to F4, K3). Only an empty socket
+// of the Linux and macOS measurement of 89cb6289. Only an empty socket
 // path gives no run dir. The function is the same code on every system, so the test
 // runs on every system. On Windows the wanted value has the separator of that system.
 func TestExecChildRunDir(t *testing.T) {

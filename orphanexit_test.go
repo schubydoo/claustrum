@@ -109,8 +109,7 @@ func TestExitWhenOrphanedRequiresTwoProbes(t *testing.T) {
 	if got := atomic.LoadInt64(probes); got != 2 {
 		t.Errorf("shut down after %d self-probes, want exactly 2", got)
 	}
-	// Pin the #321 orphan-exit log wording against 4534d86 (runtime-captured,
-	// scratch/probe/runlock-log-4534d86.md). Message text only; claustrum keeps its
+	// Pin the #321 orphan-exit log wording against 4534d86 (runtime-captured). Message text only; claustrum keeps its
 	// level tag.
 	got := buf.String()
 	for _, want := range []string{
@@ -413,11 +412,10 @@ func TestIdleExitWinsOverOrphanExit(t *testing.T) {
 	}
 }
 
-// Cell K2 of round tier1-01 (Linux and macOS VMs): after a client that was connected
-// while the socket was orphaned leaves, no "no longer leads" line comes. Here a check
-// that sees the client starts the grace again. This runs with the production grace.
-// The exact minutes and "11m0s" below pin claustrum's own tick model with exact
-// 60 s checks. They are not the K2 timing.
+// Measured: after a client that was connected while the socket was orphaned leaves, no
+// "no longer leads" line comes. Here a check that sees the client starts the grace
+// again. This runs with the production grace. The exact minutes and "11m0s" below pin
+// claustrum's own tick model with exact 60 s checks. They are not the measured timing.
 func TestOrphanGraceCountsFromLastClientCheck(t *testing.T) {
 	s, sock := bootOrphanServer(t)
 	if err := os.Remove(sock); err != nil {

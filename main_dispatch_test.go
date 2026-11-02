@@ -12,25 +12,25 @@ import (
 	"time"
 )
 
-// lastMainFlagSet is the FlagSet the most recent runMain handed to main(), kept
+// lastMainFlagSet is the FlagSet the most recent runMain handed to main, kept
 // after runMain restores flag.CommandLine so a test can inspect flag defaults.
 var lastMainFlagSet *flag.FlagSet
 
-// runMain drives the real main() with a synthetic argv. main registers its
-// flags on the global flag.CommandLine (already populated by the previous
-// call, and by the testing package), so each run gets a fresh FlagSet; Version
-// and BuildTime are restored because resolveVersion may stamp them from the
-// test binary's own build info; stdout is parked on /dev/null so -version and
+// runMain drives the real main with a synthetic argv. main registers its flags
+// on the global flag.CommandLine (already populated by the previous call, and
+// by the testing package), so each run gets a fresh FlagSet; Version and
+// BuildTime are restored because resolveVersion may stamp them from the test
+// binary's own build info; stdout is parked on /dev/null so -version and
 // -install output doesn't pollute the test log.
 //
-// The -install and -serve arms of main() also WRITE package globals
+// The -install and -serve arms of main also WRITE package globals
 // (cliDownloadTimeout, maxCLIBytes, maxExtractBytes) and never restore them, so
 // without the save/restore below a `-install` run here leaks its resolved values
 // into every later test. Reproduced 2026-08-07 with the cli-probe-timeout key,
 // which is retired since. A claustrum.conf beside a pre-built test binary made 4
 // of 6 -test.shuffle seeds fail a default-is-off assertion. Plain `go test` does
-// not reach it: loadConfig reads beside os.Executable(), the build-cache temp
-// dir. It goes live with -shuffle and with a pre-built binary that runs from a
+// not reach it: loadConfig reads beside os.Executable, the build-cache temp dir.
+// It goes live with -shuffle and with a pre-built binary that runs from a
 // directory with a conf. It also goes live when a case here passes such a flag.
 func runMain(t *testing.T, args ...string) (code int, exited bool) {
 	t.Helper()
@@ -38,7 +38,7 @@ func runMain(t *testing.T, args ...string) (code int, exited bool) {
 	oldArgs, oldFS := os.Args, flag.CommandLine
 	oldVersion, oldBuildTime := Version, BuildTime
 	// t.Cleanup, NOT the defer below: the defer runs when runMain returns, which
-	// would put the globals back before the caller can assert on what main()
+	// would put the globals back before the caller can assert on what main
 	// actually resolved. t.Cleanup still contains the leak to this one test.
 	oldDownload := cliDownloadTimeout
 	oldMaxCLI, oldMaxExtract := maxCLIBytes, maxExtractBytes
@@ -53,7 +53,7 @@ func runMain(t *testing.T, args ...string) (code int, exited bool) {
 	}
 	os.Args = append([]string{"claustrum"}, args...)
 	flag.CommandLine = flag.NewFlagSet("claustrum", flag.ExitOnError)
-	// Kept for assertions on the DECLARED defaults main() registers, which is a
+	// Kept for assertions on the DECLARED defaults main registers, which is a
 	// different question from the value it resolves: a claustrum.conf beside the
 	// binary legitimately changes the latter and must not fail such a test.
 	lastMainFlagSet = flag.CommandLine
@@ -70,7 +70,7 @@ func runMain(t *testing.T, args ...string) (code int, exited bool) {
 // The -install arm's flag-to-global wiring, which nothing else covers. Setting
 // the deadline directly (as the fetchCLI tests do) exercises the READ.
 // Asserting flag.DefValue covers the DECLARED default. The line that joins them
-// was unasserted: main() resolves each flag into its own global.
+// was unasserted: main resolves each flag into its own global.
 //
 // Three duration flags sit side by side in main's -install arm. Two of them are
 // deprecated no-ops: -cli-probe-timeout (D11, retired) and -libc-probe-timeout
@@ -200,7 +200,7 @@ func TestInstallWithoutDeprecatedFlagsLogsNoWarning(t *testing.T) {
 	}
 }
 
-// runMain restores the globals main() writes, and that restore is load-bearing:
+// runMain restores the globals main writes, and that restore is load-bearing:
 // without it a -install run here leaks its resolved values into every later test.
 // Asserting it needs the cleanup to have RUN, so the call goes in a subtest and
 // the assertion follows it — t.Cleanup fires at the subtest's end.
@@ -301,9 +301,9 @@ func TestMainDispatch(t *testing.T) {
 }
 
 // Mode precedence: -bridge and -serve win over -stop. With -stop -bridge the
-// references run the bridge, and with -stop -serve they run serve (measured
-// against f6010b97 and 90fca6e6 on a Linux VM). Each winner here exits 1, where
-// -stop returns (exit 0), so the exit tells the modes apart.
+// references run the bridge, and with -stop -serve they run serve (`f6010b97`,
+// `90fca6e6`, measured on Linux). Each winner here exits 1, where -stop returns
+// (exit 0), so the exit tells the modes apart.
 //
 // SAFETY: every socket is in a temp dir. If -stop wins by mistake, it finds no
 // daemon there and prints "none". The -serve row takes the daemon-child path,
@@ -336,7 +336,7 @@ func TestStopYieldsToBridgeAndServe(t *testing.T) {
 // no-op since D5 retired: it logs its warning once and sets nothing.
 //
 // The daemon-child sentinel makes this safe to drive: runServe takes the child
-// path, finds no token source, and exits 1 within milliseconds — after main() has
+// path, finds no token source, and exits 1 within milliseconds — after main has
 // already resolved both globals. No socket is bound and nothing daemonizes.
 //
 // Distinct values on purpose: equal ones would pass under a swap.
@@ -387,9 +387,9 @@ func TestMainExitsWhenHomeUnresolvable(t *testing.T) {
 
 // `-install -cli-version <v>` with no -cli-dir needs the home folder for its
 // default cli folder. With no home folder it exits 2, prints the reason on stderr
-// and prints nothing on stdout. Measured on a Linux VM against f6010b97 and
-// 89cb6289 (row H07, HOME not in the environment). The stderr prefix is
-// claustrum's own. Every other case keeps exit 1, and no row measures those.
+// and prints nothing on stdout. Measured on Linux against f6010b97 and 89cb6289
+// (HOME not in the environment). The stderr prefix is claustrum's own. Every
+// other case keeps exit 1, and no row measures those.
 func TestInstallExitsTwoWithoutHomeForTheDefaultCLIDir(t *testing.T) {
 	t.Setenv("HOME", "")
 	t.Setenv("USERPROFILE", "")
@@ -432,12 +432,12 @@ func TestInstallExitsTwoWithoutHomeForTheDefaultCLIDir(t *testing.T) {
 
 // main hands the home folder to runInstall, so `-install -cli-version <v>` with no
 // -cli-dir works in <home>/.claude/remote/ccd-cli. The run ends with the
-// "missing" answer and still makes the folder chain (rows H01 and H10).
+// "missing" answer and still makes the folder chain (measured).
 func TestInstallDefaultCLIDirComesFromTheHomeFolder(t *testing.T) {
 	home := t.TempDir()
 	other := t.TempDir()
 	if runtime.GOOS == "windows" {
-		// USERPROFILE is the home folder on Windows, and HOME is not read (H10).
+		// USERPROFILE is the home folder on Windows, and HOME is not read.
 		t.Setenv("USERPROFILE", home)
 		t.Setenv("HOME", other)
 	} else {

@@ -33,9 +33,9 @@ func TestCloseWhenIdle(t *testing.T) {
 		if _, err := ac.Read(make([]byte, 1)); err == nil {
 			t.Error("connection was not actually closed")
 		}
-		// The line of the reference (rows HC12a and HC12b on a Linux VM, 89cb6289):
-		// "[Server] closing connection idle 5m0s in both directions: @". Claustrum
-		// quotes the address (claustrum's own, not measured). The peer text of a net.Pipe is "pipe".
+		// The line of the reference (`89cb6289`, measured on Linux): "[Server] closing connection
+		// idle 5m0s in both directions: @". Claustrum quotes the address (claustrum's own, not
+		// measured). The peer text of a net.Pipe is "pipe".
 		if got := buf.String(); !regexp.MustCompile(`\[Server\] closing connection idle \d+s in both directions: "pipe"\n$`).MatchString(got) {
 			t.Errorf("log = %q, want the idle-close line", got)
 		}

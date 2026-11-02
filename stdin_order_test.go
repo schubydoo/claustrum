@@ -17,7 +17,7 @@ import (
 //
 // Measured at 5db5e4a with 20 chunks pipelined back-to-back on one connection:
 // the reference delivered all 20 in order, claustrum delivered all 20 scrambled
-// ("L02 L03 L00 L08 L04 …") because each request raced to the queue in its own
+// ("chunks 2, 3, 0, 8, 4 …") because each request raced to the queue in its own
 // goroutine.
 //
 // SCOPE, stated plainly: this is a SMOKE test, not the regression guard. The

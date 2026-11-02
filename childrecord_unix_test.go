@@ -76,8 +76,8 @@ func childrenNames(t *testing.T, dir string) []string {
 }
 
 // TestChildEndRemovesRecord pins that the end of a child removes its record, and that
-// the removal comes before the exit frame (89cb6289, Linux rows SP03a and SP06). The
-// record exists while the child runs. When the exit frame is here, the record is gone.
+// the removal comes before the exit frame (`89cb6289`, measured on Linux). The record
+// exists while the child runs. When the exit frame is here, the record is gone.
 func TestChildEndRemovesRecord(t *testing.T) {
 	_, cl, runDir := runShapedServer(t)
 	pid := spawnSleeper(t, cl, "c1")
@@ -92,7 +92,7 @@ func TestChildEndRemovesRecord(t *testing.T) {
 }
 
 // TestSameIDKeepsTheOldProcessAndItsRecord pins a second spawn with the id of a child
-// that still runs (89cb6289, Linux and macOS rows A1 and A2). The first child gets no
+// that still runs (`89cb6289`, measured on Linux and macOS). The first child gets no
 // signal and its record stays beside the record of the second. A process.kill of the
 // id ends the second child only, and only its record goes.
 func TestSameIDKeepsTheOldProcessAndItsRecord(t *testing.T) {
@@ -152,7 +152,7 @@ func TestSameIDKeepsTheOldProcessAndItsRecord(t *testing.T) {
 
 // TestChildEndRemovesRecordBeforeDrain pins when the record goes: at the end of the
 // child, not at the exit frame. The child leaves a grandchild on its stdout, so the
-// exit frame waits for the whole drain grace (89cb6289, Linux row SP05: the record
+// exit frame waits for the whole drain grace (89cb6289, measured on Linux: the record
 // went 60 ms after the end of the child and the frame came 5 s later). It also pins
 // the pipe-drain line and its place before the read-error line.
 func TestChildEndRemovesRecordBeforeDrain(t *testing.T) {
@@ -247,7 +247,7 @@ func TestChildEndRemovesRecordBeforeDrain(t *testing.T) {
 
 // TestShutdownRemovesChildRecords pins that a graceful shutdown leaves no record: the
 // daemon waits for the children it killed, and the end of each one removes its record
-// (89cb6289, Linux row RP12a: children/ is empty after a -stop).
+// (89cb6289, measured on Linux: children/ is empty after a -stop).
 func TestShutdownRemovesChildRecords(t *testing.T) {
 	// The wait ends as soon as both children are reaped. A wide bound keeps a slow
 	// runner from ending it first.
@@ -304,7 +304,7 @@ func TestRecordCallsWithNoUsableRunDir(t *testing.T) {
 // removal goes through the link, as on 89cb6289. A file <pid>.json in the target is
 // removed (Linux row SLb, macOS row KDb). With no such file, nothing is removed and no
 // line is logged (Linux row SLa, macOS row KDa). A symlink that leads out of the run
-// dir stays refused: TestChildrenNotADirectory pins that (row SP07b).
+// dir stays refused: TestChildrenNotADirectory pins that (measured).
 func TestRemoveRecordThroughChildrenSymlinkInsideRunDir(t *testing.T) {
 	logs := captureLogBuf(t)
 	m := newTestProcManager(t)
@@ -425,8 +425,8 @@ func TestAwaitRecordsRemovedIsBounded(t *testing.T) {
 
 // TestChildrenNotADirectory pins a children entry that is not a real folder: no record
 // is written, nothing is written through a symlink, and the two log lines come in
-// order (89cb6289, Linux rows SP07a and SP07b). The removal at the end of the child
-// is still tried, and its failure is logged before the exit line.
+// order (`89cb6289`, measured on Linux). The removal at the end of the child is still
+// tried, and its failure is logged before the exit line.
 func TestChildrenNotADirectory(t *testing.T) {
 	for _, tc := range []struct {
 		name    string
@@ -487,7 +487,7 @@ func TestChildrenNotADirectory(t *testing.T) {
 
 // TestChildrenMode000 pins a children folder that refuses every entry: no record, the
 // cannot-record line with the temp name, and the cannot-remove line at the end of the
-// child (89cb6289, Linux row SP07c).
+// child (`89cb6289`, measured on Linux).
 func TestChildrenMode000(t *testing.T) {
 	if os.Geteuid() == 0 {
 		t.Skip("root ignores the mode of a folder")
@@ -520,7 +520,7 @@ func TestChildrenMode000(t *testing.T) {
 
 // TestRecordFollowsRenamedRunDir pins a run dir that is renamed while the daemon runs:
 // the record goes under the new name, the old path is not made again, and the end of
-// the child still removes the record (89cb6289, Linux row SP08).
+// the child still removes the record (`89cb6289`, measured on Linux).
 func TestRecordFollowsRenamedRunDir(t *testing.T) {
 	_, cl, runDir := runShapedServer(t)
 	renamed := filepath.Join(filepath.Dir(runDir), "c9")

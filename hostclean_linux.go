@@ -376,10 +376,10 @@ var (
 // hcHoldDaemon opens a pid file descriptor for the single process pid (pidfd_open). The
 // send that it returns signals through that descriptor (pidfd_send_signal), and release
 // closes it. The reference retires a daemon with pidfd_send_signal(<fd>, SIGTERM, NULL, 0).
-// A Linux VM measured that with strace against f6010b97 and 89cb6289 (rows HC10, HC12 to
-// HC15). The host cleaner checks the identity of pid between the open and the send. The
-// serve eviction of the run-dir lock holder does the same (holdHolder, row P6). -stop
-// (realSignalHolder) does not: it checks before the open only.
+// A Linux test measured that with strace against f6010b97 and 89cb6289. The host cleaner checks
+// the identity of pid between the open and the send. The serve eviction of the run-dir lock
+// holder does the same (holdHolder). -stop (realSignalHolder) does not: it checks before
+// the open only.
 //
 // If the kernel has no such call (ENOSYS), the signal goes out with kill(pid, sig). That
 // fallback is claustrum's own choice. The reference on such a kernel is not measured. Any
@@ -423,13 +423,13 @@ var hcDaemonFilesUnread = func(int) (unread, ended bool) { return false, false }
 
 // hcStoppedIsUninspected says that a stopped daemon is not retired. With a daemon in state
 // T, `5fd08069` logs the two "left alone" and "not inspectable" lines and sends no signal
-// (`5fd08069`, cell Q2, Linux VM). State t takes the same arm (not measured).
+// (`5fd08069`, measured on Linux). State t takes the same arm (not measured).
 var hcStoppedIsUninspected = true
 
 // hcLockHeldAt reports whether the lock file at path (described by fi) is held by a live
 // process. On linux the answer comes from fi alone (via /proc/locks); path is unused. The
 // second result is false when /proc/locks cannot be read. The tidy then keeps the run dir,
-// also while a process holds the lock (`5fd08069`, cell Q6 and its extra row, Linux VM).
+// also while a process holds the lock (`5fd08069`, measured on Linux).
 func hcLockHeldAt(path string, fi os.FileInfo) (held, asked bool) {
 	return lockFileHeld(fi)
 }

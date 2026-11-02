@@ -27,14 +27,14 @@ func hcSiblingDaemon(t *testing.T, f *hcPassFix, pid int, name, startTicks strin
 		[]string{exe, "--serve", "--socket", filepath.Join(dir, rpcSockBasename)}, true, startTicks, f.uid)
 }
 
-// TestPassLeavesADaemonWithUnreadOpenFilesAlone pins the "left alone this pass" line of rows
-// D1i, D1k, E1 and E2 (macOS VM, 89cb6289). A daemon of ours that is old and serves an idle
-// run dir, and whose open files cannot be read, gets the line before any run dir line. It
-// counts as one undecided candidate, and no signal goes out. Row E2: two such daemons get
-// one line each. Row E1: a young daemon on a fresh run dir gets none. The answer of the
-// read is staged through hcDaemonFilesUnread, so the shared part of the rule runs on linux.
-// Every signal goes to a seam that only records. The control is the same host with open
-// files that read: no line and no count.
+// TestPassLeavesADaemonWithUnreadOpenFilesAlone pins the "left alone this pass" line
+// (`89cb6289`, measured on macOS). A daemon of ours that is old and serves an idle run dir,
+// and whose open files cannot be read, gets the line before any run dir line. It counts as
+// one undecided candidate, and no signal goes out. Measured: two such daemons get one line
+// each. Measured: a young daemon on a fresh run dir gets none. The answer of the read is
+// staged through hcDaemonFilesUnread, so the shared part of the rule runs on linux. Every
+// signal goes to a seam that only records. The control is the same host with open files that
+// read: no line and no count.
 func TestPassLeavesADaemonWithUnreadOpenFilesAlone(t *testing.T) {
 	for _, unread := range []bool{true, false} {
 		f := hcNewPassFixture(t)
@@ -90,10 +90,10 @@ func TestPassLeavesADaemonWithUnreadOpenFilesAlone(t *testing.T) {
 	}
 }
 
-// TestPassOrphanLineWithoutAStdioAnswer pins row E5 (macOS VM, 89cb6289): an orphaned group
-// whose stdio read got no answer gets the "left alone this pass" line of the reference, it
-// counts as undecided, and no signal goes out. The control is a read that answered and
-// could not read the descriptors: it keeps claustrum's own line. The read is staged through
+// TestPassOrphanLineWithoutAStdioAnswer pins a measured case (`89cb6289`, measured on macOS): an
+// orphaned group whose stdio read got no answer gets the "left alone this pass" line of the
+// reference, it counts as undecided, and no signal goes out. The control is a read that answered
+// and could not read the descriptors: it keeps claustrum's own line. The read is staged through
 // hcStdioRead, and every signal goes to a seam that only records.
 func TestPassOrphanLineWithoutAStdioAnswer(t *testing.T) {
 	for _, answered := range []bool{false, true} {

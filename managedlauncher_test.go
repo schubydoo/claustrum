@@ -8,10 +8,9 @@ import (
 	"testing"
 )
 
-// The managed launcher tests that run on every OS. The rows named here are the
-// Linux sub-steps of the 89cb6289 VM captures, on Linux and macOS. The fixture-driven resolve, spawn, -install and -probe-cli rows are in
-// managedlauncher_unix_test.go, and the Windows rows in
-// managedlauncher_windows_test.go.
+// The managed launcher tests that run on every OS. The rows here are from the 89cb6289 captures, on Linux and macOS. The
+// fixture-driven resolve, spawn, -install and -probe-cli rows are in managedlauncher_unix_test.go, and the Windows rows
+// in managedlauncher_windows_test.go.
 
 // TestManagedLauncherParseValue pins the tokenizer and the JSON-array form, row by
 // row. The value is the decoded settings string, so a JSON escape in a row's file
@@ -62,8 +61,8 @@ func TestManagedLauncherParseValue(t *testing.T) {
 }
 
 // TestManagedLauncherTexts pins every text the managed launcher emits, byte for
-// byte, as the VM captures show them. The em dash (e2 80 94) and the ellipsis
-// (e2 80 a6) are raw bytes, so the hex forms are checked too.
+// byte, as the captures show them. The em dash (e2 80 94) and the ellipsis (e2
+// 80 a6) are raw bytes, so the hex forms are checked too.
 func TestManagedLauncherTexts(t *testing.T) {
 	texts := map[string]string{
 		managedNoLauncher:                 "the value is set but contains no launcher \xe2\x80\x94 unset it to run without one, or set it to the absolute path of your launcher",
@@ -132,9 +131,9 @@ func TestManagedLauncherShownCut(t *testing.T) {
 	}
 }
 
-// TestLauncherResolveParams pins the params checks of launcher.resolve (R1, R2,
-// R3, C2, C3, the Linux and Windows recheck C2 rows). None of these reads a settings
-// file, so they hold on every OS.
+// TestLauncherResolveParams pins the params checks of launcher.resolve (measured,
+// also in the Linux and Windows recheck). None of these reads a settings file, so
+// they hold on every OS.
 func TestLauncherResolveParams(t *testing.T) {
 	s := newTestServer(t)
 	cases := []struct{ line, want string }{
@@ -168,7 +167,7 @@ func TestManagedLauncherEnvStrip(t *testing.T) {
 	}
 }
 
-// TestSpawnLauncherDecodeErrors pins S10: a non-array launcher or a non-string
+// TestSpawnLauncherDecodeErrors pins a measured rule: a non-array launcher or a non-string
 // element is -32602 Invalid params, with no [process.Manager] failure line.
 func TestSpawnLauncherDecodeErrors(t *testing.T) {
 	logs := captureLogBuf(t)
@@ -211,7 +210,7 @@ func TestCappedTextKeepsHeadAndCounts(t *testing.T) {
 }
 
 // TestManagedRunReasonExitStatus pins the launcherReason of a launcher that exits
-// non-zero: "exit status 3" (I5).
+// non-zero: "exit status 3" (measured).
 func TestManagedRunReasonExitStatus(t *testing.T) {
 	exe, err := os.Executable()
 	if err != nil {

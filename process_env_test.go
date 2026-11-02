@@ -12,10 +12,10 @@ import (
 // self-daemonize re-exec, and that marker is propagated verbatim into every
 // process.spawn child (observed in the real spawned agent's /proc/<pid>/environ).
 // claustrum sets the same marker (daemonChildMarker) on its re-exec in
-// daemonizeWithToken and buildEnv uses os.Environ() as the base, so it must leak
-// to children too. Pin that behavior: a regression that swapped buildEnv's base
-// for an empty []string or a curated allow-list — or that dropped the marker
-// when the internal CLAUSTRUM_DAEMON_CHILD sentinel was split out — would diverge
+// daemonizeWithToken and buildEnv uses os.Environ as the base, so it must leak to
+// children too. Pin that behavior: a regression that swapped buildEnv's base for
+// an empty []string or a curated allow-list — or that dropped the marker when the
+// internal CLAUSTRUM_DAEMON_CHILD sentinel was split out — would diverge
 // silently: no wire frame mentions the marker, but downstream tooling can detect
 // the absence by inspecting its own environment.
 
@@ -62,15 +62,15 @@ func TestBuildEnvMergesOverEnviron(t *testing.T) {
 	}
 }
 
-// TestNewCallerKeysComeInARotation pins the order of new caller keys (89cb6289, Linux
-// rows P9 and N7, 20 spawns each). For the request order ZZ, MM, AA the reference gave
-// ZZ, MM, AA, then MM, AA, ZZ, then AA, ZZ, MM: the three rotations of the request order.
-// It never gave name order, AA, MM, ZZ, which is not one of them.
+// TestNewCallerKeysComeInARotation pins the order of new caller keys (89cb6289, measured
+// on Linux, 20 spawns each). For the request order ZZ, MM, AA the reference gave ZZ, MM,
+// AA, then MM, AA, ZZ, then AA, ZZ, MM: the three rotations of the request order. It
+// never gave name order, AA, MM, ZZ, which is not one of them.
 //
-// buildEnv iterates the map that the request decodes into. This test holds what the
-// Go 1.26 toolchain does with that map: each order is a rotation of the request order.
-// If a toolchain changes the walk of a small map, this test fails. Rows P9 and N7 then
-// need a new look.
+// buildEnv iterates the map that the request decodes into. This test holds what the Go
+// 1.26 toolchain does with that map: each order is a rotation of the request order. If
+// a toolchain changes the walk of a small map, this test fails. The rule then needs a
+// new measurement.
 func TestNewCallerKeysComeInARotation(t *testing.T) {
 	request := []string{"CLAUSTRUM_TEST_ZZ", "CLAUSTRUM_TEST_MM", "CLAUSTRUM_TEST_AA"}
 	for _, k := range request {
@@ -144,10 +144,10 @@ func TestSpawnDoesNotInheritRPCToken(t *testing.T) {
 
 // TestSpawnDoesNotInheritPeerCheck: after the start of the daemon, a spawned child
 // gets no CLAUDE_SSH_PEER_CHECK of the daemon, for the values 1 and 0, as on
-// 5fd08069 (Linux, macOS and Windows VMs). A marker variable of the daemon is the
-// control: it arrives. A caller env param of that name arrives too, as on 5fd08069
-// (Linux, macOS and Windows VMs). The child is the helper of this test binary, and its
-// lookupenv mode tells an absent variable from an empty one.
+// 5fd08069 (measured on Linux, macOS and Windows). A marker variable of the daemon is
+// the control: it arrives. A caller env param of that name arrives too, as on 5fd08069
+// (measured on Linux, macOS and Windows). The child is the helper of this test binary,
+// and its lookupenv mode tells an absent variable from an empty one.
 func TestSpawnDoesNotInheritPeerCheck(t *testing.T) {
 	const marker = "CLAUSTRUM_TEST_PEER_MARK"
 	for _, value := range []string{"1", "0"} {

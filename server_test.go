@@ -6,10 +6,9 @@ import (
 )
 
 // normalizeToken must match the reference daemon's token-file handling exactly
-// (pinned by scratch/probe/contract_probe.sh): a single trailing newline / CRLF
-// is stripped, but spaces and leading whitespace are preserved. A mismatch here
-// silently breaks auth for every request when the uploaded token file ends in a
-// newline.
+// (probe-measured): a single trailing newline / CRLF is stripped, but spaces
+// and leading whitespace are preserved. A mismatch here silently breaks auth
+// for every request when the uploaded token file ends in a newline.
 func TestNormalizeToken(t *testing.T) {
 	cases := []struct {
 		name string
@@ -33,8 +32,8 @@ func TestNormalizeToken(t *testing.T) {
 }
 
 // TestLauncherBoundIs12Seconds pins the value of the launcher bound. 89cb6289 gives up
-// after 12.06 s when the daemon child ends before its bind (Linux row P7, three forms).
-// The macOS rows P7a to P7c give 12.08 to 12.16 s. The two Windows rows of a zero-byte
+// after 12.06 s when the daemon child ends before its bind (measured on Linux, three
+// forms). macOS gives 12.08 to 12.16 s. The two Windows measurements of a zero-byte
 // -token-file give 12.058 s. The bound is shared code, so the test has no build tag.
 func TestLauncherBoundIs12Seconds(t *testing.T) {
 	if daemonStartTimeout != 12*time.Second {
@@ -43,8 +42,7 @@ func TestLauncherBoundIs12Seconds(t *testing.T) {
 }
 
 // TestLauncherPollIs50Milliseconds pins the time between two connects of the launcher
-// wait. 5fd08069 made 234 to 240 connects in 12 s (round task006-01, cell C4, Linux and
-// macOS VMs).
+// wait. 5fd08069 made 234 to 240 connects in 12 s (measured on Linux and macOS).
 func TestLauncherPollIs50Milliseconds(t *testing.T) {
 	if daemonStartPoll != 50*time.Millisecond {
 		t.Errorf("daemonStartPoll = %v, want 50ms", daemonStartPoll)

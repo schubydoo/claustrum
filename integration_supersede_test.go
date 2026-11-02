@@ -19,8 +19,7 @@ import (
 // itself had it, and every supersede assertion passed while nothing was
 // superseded.
 //
-// Measured against both reference binaries on an ephemeral linux VM
-// (scratch/probe/ref90-capture.md section B): after a second connection
+// Measured against both reference binaries on Linux after a second connection
 // reattaches, 19f30c46 still answers server.ping on the first connection, and
 // 90fca6e6 fails the very next write to it.
 func TestSocketReattachSupersedesPreviousConnection(t *testing.T) {

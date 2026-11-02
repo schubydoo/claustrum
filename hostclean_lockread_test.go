@@ -13,11 +13,10 @@ import (
 	"time"
 )
 
-// The lock read of the tidy, as a macOS VM measured it against 89cb6289 (rows C2 to C6, D2p,
-// D2f and D4). Every test here stages the holder query through hcLockHolderRead, the content
-// rule through hcLockNeedsRecord and the open failure through hcLockUnreadState, so each
-// one runs on linux and on darwin. No real lsof runs, no
-// signal goes out, and every run dir is under t.TempDir.
+// The lock read of the tidy, as macOS measured it against 89cb6289. Every test here stages
+// the holder query through hcLockHolderRead, the content rule through hcLockNeedsRecord and
+// the open failure through hcLockUnreadState, so each one runs on linux and on darwin. No
+// real lsof runs, no signal goes out, and every run dir is under t.TempDir.
 
 // hcLockReadFix is a tidy over run dirs that are 40 days old, with no socket.
 type hcLockReadFix struct {
@@ -93,10 +92,10 @@ func hcRemovedLine(dir string) string {
 
 var hcDeadRecord = []byte(`{"pid":999999,"role":"daemon"}`)
 
-// TestTidyKeepsALockWhoseHolderQueryDidNotStart pins rows C3, D2p and D2f. The holder query
-// does not answer: it does not start, or it writes to stderr. A run dir with a lock file
-// stays, with the line of the reference. A run dir with no lock file needs no query, and it
-// goes. The control is row C3c: the query answers and finds no holder, and all three go.
+// TestTidyKeepsALockWhoseHolderQueryDidNotStart pins measured cases. The holder query does
+// not answer: it does not start, or it writes to stderr. A run dir with a lock file stays,
+// with the line of the reference. A run dir with no lock file needs no query, and it goes.
+// The control is a measured case: the query answers and finds no holder, and all three go.
 func TestTidyKeepsALockWhoseHolderQueryDidNotStart(t *testing.T) {
 	for _, started := range []bool{false, true} {
 		f := newHcLockReadFix(t, false, func(string) (bool, bool) { return false, started })
@@ -134,9 +133,9 @@ func TestTidyKeepsALockWhoseHolderQueryDidNotStart(t *testing.T) {
 	}
 }
 
-// TestTidyAsksAboutALockThatIsNoRecord pins row C5. Lock content that is no record does not
-// stop the holder query. With no holder the run dir goes. The second arm is the linux
-// answer, which this change keeps: there such content keeps the dir, and no query runs.
+// TestTidyAsksAboutALockThatIsNoRecord pins a measured case. Lock content that is no record does not
+// stop the holder query. With no holder the run dir goes. The second arm is the linux answer, which
+// this change keeps: there such content keeps the dir, and no query runs.
 func TestTidyAsksAboutALockThatIsNoRecord(t *testing.T) {
 	t.Run("the query runs and the dir goes", func(t *testing.T) {
 		f := newHcLockReadFix(t, false, func(string) (bool, bool) { return false, true })
@@ -160,9 +159,9 @@ func TestTidyAsksAboutALockThatIsNoRecord(t *testing.T) {
 	})
 }
 
-// TestTidyLockReadControls pins the two rows that stay equal. Row C2: a live process holds
-// the lock, and the dir stays with the held line. Row C6: the lock holds the record of a dead
-// pid and has no holder, and the dir goes.
+// TestTidyLockReadControls pins the two rows that stay equal. Measured: a live process holds
+// the lock, and the dir stays with the held line. Measured: the lock holds the record of a
+// dead pid and has no holder, and the dir goes.
 func TestTidyLockReadControls(t *testing.T) {
 	t.Run("C2: a holder keeps the dir", func(t *testing.T) {
 		f := newHcLockReadFix(t, false, func(string) (bool, bool) { return true, true })
@@ -185,7 +184,7 @@ func TestTidyLockReadControls(t *testing.T) {
 	})
 }
 
-// TestTidyKeepsALockThatCannotBeRead pins rows D4 and E7b: a lock file of mode 0000, and a
+// TestTidyKeepsALockThatCannotBeRead pins measured cases: a lock file of mode 0000, and a
 // lock that is a folder. On darwin the dir stays with the "could not be examined" line of
 // the reference, and no holder query runs. On linux each one keeps claustrum's own line.
 func TestTidyKeepsALockThatCannotBeRead(t *testing.T) {

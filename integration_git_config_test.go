@@ -8,9 +8,9 @@ import (
 
 // TestSocketGitConfigRefusal pins the frame of each of the five git methods for
 // a repository config that the daemon refuses: format version 2. 5fd08069
-// answers these frames for git.info and git.status (cell C2, Linux and Windows
-// VMs) and for git.worktree_create and git.worktree_remove (cell W7, Linux VM).
-// 5fd08069 answers the frame of git.list_branches in cell X1 (Linux VM).
+// answers these frames for git.info and git.status (measured on Linux and
+// Windows) and for git.worktree_create and git.worktree_remove (measured on
+// Linux). 5fd08069 answers the frame of git.list_branches (measured on Linux).
 //
 // The detail of this refusal holds no path, so the golden is the same on each
 // system. The worktree path of the remove text and the root both read <DIR>.

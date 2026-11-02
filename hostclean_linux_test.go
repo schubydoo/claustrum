@@ -918,7 +918,7 @@ func TestRemoveRunDirUndoOnReappear(t *testing.T) {
 	if c.removeRunDir(e, false, hcSockMissing) {
 		t.Error("removeRunDir returned true despite a socket appearing")
 	}
-	// The line captured on the Linux VM (issue 429).
+	// The line captured on Linux (issue 429).
 	if want := fmt.Sprintf("[hostclean] run dir %q: kept, a socket appeared in it during removal\n", e.dirPath); !strings.Contains(buf.String(), want) {
 		t.Errorf("log = %q, want %q", buf.String(), want)
 	}

@@ -24,7 +24,7 @@ func writeChildRecord(runDir string, rec childRecord) error {
 }
 
 // TestChildRecordTempName pins the temp name of a record: ".rec-<pid>.json." and 12
-// chars, inside children/ (89cb6289, Linux row SP06). Before, the name was
+// chars, inside children/ (`89cb6289`, measured on Linux). Before, the name was
 // "<pid>.<19 digits>.json". The two shapes differ at a daemon start: a leftover of
 // the old shape ends in ".json", so the reap reads it.
 //

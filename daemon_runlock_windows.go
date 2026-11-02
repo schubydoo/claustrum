@@ -2,13 +2,13 @@
 
 package main
 
-// lockRunFolder takes no lock on Windows. Measured on a Windows VM, the reference (4534d86)
-// writes no daemon.lock and evicts no predecessor. Windows relies on the socket remove-then-rebind
-// handoff for mutual exclusion, where a second -serve leaves the incumbent alive.
-// claustrum matches: it writes nothing here. Both funcs of the returned claim are no-ops.
+// lockRunFolder takes no lock on Windows. Measured on Windows, the reference (4534d86) writes no
+// daemon.lock and evicts no predecessor. Windows relies on the socket remove-then-rebind handoff
+// for mutual exclusion, where a second -serve leaves the incumbent alive. claustrum matches: it
+// writes nothing here. Both funcs of the returned claim are no-ops.
 //
 // It prints one line. On the reference that line is the first log line of every start. A
-// Windows VM measured it against f6010b97 and 89cb6289 (row K11 and every other daemon row).
+// Windows measured it against f6010b97 and 89cb6289 (in every daemon start that was measured).
 func lockRunFolder(socket, role string) runDirClaim {
 	logInfof("%s", runDirNotHolderLine)
 	return runDirClaim{release: func() {}, complete: func(string, int64) {}, stopLate: func() {}}
@@ -29,5 +29,5 @@ func stopRunDirHolder(socket string) (string, func()) { return stopWordNone, fun
 
 // stopAfterReply is the step of -stop after the read of the shutdown reply. Windows
 // has no run-dir lock to wait for, so the word is "stopped" at once. 5fd08069 prints
-// it at once too (cell W-S1 of round task034-01, Windows VM).
+// it at once too (measured on Windows).
 func stopAfterReply(socket string) (string, func()) { return stopWordStopped, func() {} }

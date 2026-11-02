@@ -41,7 +41,7 @@ func TestServeDaemonizeWithAmbientChildMarker(t *testing.T) {
 	bin := buildClaustrum(t)
 
 	// Short socket dir (/tmp/…) keeps the AF_UNIX path under the macOS sun_path
-	// limit, unlike t.TempDir()'s long test-name-embedding path.
+	// limit, unlike t.TempDir's long test-name-embedding path.
 	dir, err := os.MkdirTemp("", "cld")
 	if err != nil {
 		t.Fatalf("tempdir: %v", err)
@@ -83,7 +83,7 @@ func TestServeDaemonizeWithAmbientChildMarker(t *testing.T) {
 	nc := dialWithRetry(t, sock, 10*time.Second)
 	t.Cleanup(func() {
 		// Shut the detached daemon down via the wire — it is not our child, so we
-		// cannot Wait() it. server.shutdown also removes the socket.
+		// cannot Wait it. server.shutdown also removes the socket.
 		_, _ = nc.Write([]byte(`{"jsonrpc":"2.0","id":99,"method":"server.shutdown","auth":"` + token + `"}` + "\n"))
 		_ = nc.Close()
 	})
@@ -395,8 +395,8 @@ func TestServeShutsDownOnSIGTERM(t *testing.T) {
 // TestOpenDaemonLogDoesNotFollowSymlink: a remote-server.log symlink in a writable
 // folder is never followed. os.Rename moves the link itself to .old and O_EXCL creates
 // a fresh regular file, so the target of the link keeps its bytes. 5fd08069 does the
-// same (cell E2 of round task015-03, Linux VM). A mutant that opened the path with
-// O_TRUNC without the rename truncates the target.
+// same (measured on Linux). A mutant that opened the path with O_TRUNC without the
+// rename truncates the target.
 func TestOpenDaemonLogDoesNotFollowSymlink(t *testing.T) {
 	dir := t.TempDir()
 	sock := filepath.Join(dir, "s.sock")

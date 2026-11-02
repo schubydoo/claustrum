@@ -39,7 +39,7 @@ type spawnParams struct {
 	// WantPid is the CT-1 opt-in: when true the reply carries pid + startTime.
 	// Absent/false leaves the reply byte-identical to {"success":true}. Any other
 	// value counts as absent (claustrum's own). 5fd08069 has no such member and
-	// starts the process (cell P1 of round task015-01, Linux VM).
+	// starts the process (measured on Linux).
 	WantPid jsonTrueSwitch `json:"wantPid"`
 	// DisableShellAgentSocket turns off the login-shell SSH_AUTH_SOCK hand-off for
 	// this spawn (see shellagent.go). A non-bool value fails the decode, so it
@@ -86,7 +86,7 @@ func (s *server) processSpawn(c *conn, req *request) response {
 	}
 	mp, err := s.procs.spawnVia(c, p.ID, p.Command, p.Args, p.Cwd, p.Env, p.DisableShellAgentSocket, p.Launcher, linkTTL)
 	if errors.Is(err, errStartsStopped) {
-		// No frame. The teardown closes the connection (round task003-01).
+		// No frame. The teardown closes the connection (measured).
 		return response{noFrame: true}
 	}
 	if err != nil {
@@ -115,7 +115,7 @@ type stdinParams struct {
 	Offset *uint64 `json:"offset"`
 	// Attach is an optional member. A pointer so null and an absent member are alike,
 	// and 0 counts as present. Every process of claustrum answers a present attach as
-	// not found (see processStdin), and a Linux VM measured that answer for a plain
+	// not found (see processStdin), and Linux measured that answer for a plain
 	// process. A text or a negative number gets Invalid params from the decode
 	// (measured on Linux). A fractional number gets the same here (claustrum's own,
 	// not measured).
@@ -128,12 +128,12 @@ func (s *server) processStdin(c *conn, req *request) response {
 		return *bad
 	}
 	// Precedence is decode → exists → offset → running (probe-verified against
-	// 4534d86, scratch/probe/stdinprec). Invalid base64 is rejected before the
-	// process is even looked up. The offset idempotency verdict comes NEXT and is
-	// answered even for an EXITED process: a gap returns -32003 and a wholly
-	// duplicate write returns success{duplicate:true} regardless of running state.
-	// Only a write that would enqueue fresh bytes requires a live process — that is
-	// the one case that yields "Process not running".
+	// 4534d86). Invalid base64 is rejected before the process is even looked up.
+	// The offset idempotency verdict comes NEXT and is answered even for an EXITED
+	// process: a gap returns -32003 and a wholly duplicate write returns
+	// success{duplicate:true} regardless of running state. Only a write that would
+	// enqueue fresh bytes requires a live process — that is the one case that
+	// yields "Process not running".
 	data, err := base64.StdEncoding.DecodeString(p.Data)
 	if err != nil {
 		return errResult(req.ID, codeInvalidParam, "Invalid base64 data")
@@ -151,7 +151,7 @@ func (s *server) processStdin(c *conn, req *request) response {
 		return errResult(req.ID, codeInvalidParam, "Process not found")
 	}
 	// isLive, not isRunning: 90fca6e6 refuses a write inside the exit drain, after
-	// the child exits and before its exit frame goes out (measured on a linux VM).
+	// the child exits and before its exit frame goes out (measured on Linux).
 	applied, duplicate, gap, full, notRunning := mp.applyStdin(data, p.Offset, mp.isLive)
 	if gap {
 		return errResult(req.ID, codeStdinOffsetGap, "stdin offset gap: offset ahead of applied bytes")
@@ -261,13 +261,12 @@ type reattachParams struct {
 	FromSeq uint64 `json:"fromSeq"`
 	// WantPid mirrors spawnParams.WantPid — see there. When true and the process
 	// is found, the reply carries pid + startTime. 5fd08069 gives the reattach
-	// result with a wrong-typed wantPid (cell P2 of round task015-01, Linux VM).
+	// result with a wrong-typed wantPid (measured on Linux).
 	WantPid jsonTrueSwitch `json:"wantPid"`
 	// Attach, Fresh and Proof are optional members. Claustrum decodes them for the
-	// type test and acts on Proof only (see processReattach). A Linux VM measured the
-	// proof answer of a plain process. The type test of the decode comes before the empty-id test,
-	// and a negative or a fractional attach gets Invalid params there (claustrum's
-	// own, not measured).
+	// type test and acts on Proof only (see processReattach). A Linux test measured the proof answer of
+	// a plain process. The type test of the decode comes before the empty-id test, and a negative
+	// or a fractional attach gets Invalid params there (claustrum's own, not measured).
 	Attach *uint64 `json:"attach"`
 	Fresh  string  `json:"fresh"`
 	Proof  string  `json:"proof"`

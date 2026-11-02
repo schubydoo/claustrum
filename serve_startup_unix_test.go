@@ -52,7 +52,7 @@ func TestWaitForDaemonAcceptReturnsWhenListening(t *testing.T) {
 
 // A folder with a file at the socket path does not end the wait: no connect works
 // there, so the launcher gives up at its bound. 5fd08069 exited 1 after about 12 s
-// with the timeout text (round task006-01, cell C9n Linux VM, cell C9 macOS VM).
+// with the timeout text (measured on Linux and macOS).
 func TestWaitForDaemonAcceptWaitsOverAFolder(t *testing.T) {
 	old := daemonStartTimeout
 	daemonStartTimeout = 300 * time.Millisecond
@@ -139,8 +139,8 @@ func TestDaemonizeTimeoutPrintsToStderr(t *testing.T) {
 //
 // The predecessor here is a plain listener of the test process, and the stub child
 // never rebinds the path. So each connect of the wait reaches the pid that
-// livePredecessorPID read. 5fd08069 prints this text in that state (round
-// task006-01, cell C4, Linux and macOS VMs).
+// livePredecessorPID read. 5fd08069 prints this text in that state (measured on
+// Linux and macOS).
 func TestDaemonizePredecessorHandoffPrintsToStderr(t *testing.T) {
 	shortDaemonStart(t)
 	stubOsExit(t)
@@ -319,7 +319,7 @@ func countAccepts(ln net.Listener) *atomic.Int32 {
 
 // A socket file that is bound but does not accept yet does not end the wait. On
 // 5fd08069 with a listen delayed 0.5 s, a client connect right after the launcher exit
-// worked 10 of 10 times (round task006-01, cell C7b, Linux VM).
+// worked 10 of 10 times (measured on Linux).
 func TestWaitForDaemonAcceptWaitsForTheListen(t *testing.T) {
 	sock := filepath.Join(shortTempDir(t), "rpc.sock")
 	fd, err := syscall.Socket(syscall.AF_UNIX, syscall.SOCK_STREAM, 0)
@@ -353,9 +353,9 @@ func TestWaitForDaemonAcceptWaitsForTheListen(t *testing.T) {
 
 // A new daemon's socket counts as new when it has the device and inode of the socket
 // at the start. On ext4 the new socket of 5fd08069 kept the inode of the old one in
-// 40 of 40 take-overs, and its launcher exited 0 each time (round task006-01, cell
-// C3, Linux VM). Here the socket at the start and the one that answers are one file.
-// The recorded predecessor is the pid of the parent process, which does not listen.
+// 40 of 40 take-overs, and its launcher exited 0 each time (measured on Linux). Here
+// the socket at the start and the one that answers are one file. The recorded
+// predecessor is the pid of the parent process, which does not listen.
 func TestWaitForDaemonAcceptTakesANewSocketWithTheOldInode(t *testing.T) {
 	old := daemonStartTimeout
 	daemonStartTimeout = 3 * time.Second
@@ -391,7 +391,7 @@ func TestWaitForDaemonAcceptTakesANewSocketWithTheOldInode(t *testing.T) {
 
 // While the predecessor answers, the launcher connects about every 50 ms until its
 // bound, and then reports the predecessor. 5fd08069 made 234 to 240 connects to the
-// predecessor in its 12 s wait (round task006-01, cell C4, Linux and macOS VMs).
+// predecessor in its 12 s wait (measured on Linux and macOS).
 func TestWaitForDaemonAcceptConnectsEveryPoll(t *testing.T) {
 	old := daemonStartTimeout
 	daemonStartTimeout = 600 * time.Millisecond
@@ -490,8 +490,7 @@ func TestWaitForDaemonAcceptGoesOnAtAnUnknownPeerPID(t *testing.T) {
 }
 
 // With no predecessor pid, the first connect that works ends the wait, also when its
-// peer pid cannot be read. That is the Windows rule (round task006-01, cell C3,
-// Windows VM).
+// peer pid cannot be read. That is the Windows rule (measured on Windows).
 func TestWaitForDaemonAcceptUnknownPredecessorEndsAtFirstConnect(t *testing.T) {
 	old := daemonStartTimeout
 	daemonStartTimeout = 2 * time.Second

@@ -51,9 +51,9 @@ func skipWithoutPidfd(t *testing.T) {
 
 // TestChildHandleHoldsAPidfd pins what the SIGTERM of process.kill rests on: the
 // process handle of a started child holds a pid file descriptor, so the standard
-// library sends pidfd_send_signal on it (89cb6289, Linux rows E, A2 and B1). A
-// toolchain that stops doing so moves that call back to kill(pid, sig). The helper is
-// a child of this test.
+// library sends pidfd_send_signal on it (89cb6289, measured on Linux). A toolchain
+// that stops doing so moves that call back to kill(pid, sig). The helper is a child
+// of this test.
 func TestChildHandleHoldsAPidfd(t *testing.T) {
 	skipWithoutPidfd(t)
 	cmd := hcStartSleeper(t)
@@ -66,10 +66,10 @@ func TestChildHandleHoldsAPidfd(t *testing.T) {
 	}
 }
 
-// TestEvictionSignalGoesThroughAPidfd pins the hold of the lock holder (89cb6289, Linux
-// row E3, strace): pidfd_open and then pidfd_send_signal, and no kill. -stop sends
-// through realSignalHolder. The serve eviction opens the same hold earlier (see the
-// next test). The target is a helper that this test started.
+// TestEvictionSignalGoesThroughAPidfd pins the hold of the lock holder (89cb6289, measured
+// on Linux with strace): pidfd_open and then pidfd_send_signal, and no kill. -stop sends
+// through realSignalHolder. The serve eviction opens the same hold earlier (see the next
+// test). The target is a helper that this test started.
 func TestEvictionSignalGoesThroughAPidfd(t *testing.T) {
 	skipWithoutPidfd(t)
 	cmd := hcStartSleeper(t)
@@ -101,10 +101,10 @@ func TestEvictionSignalGoesThroughAPidfd(t *testing.T) {
 	}
 }
 
-// TestEvictionOpensThePidfdBeforeItReadsTheHolder pins row P6 (89cb6289, Linux, strace):
-// the eviction opens the pid file descriptor of the holder first, then reads its pid
-// namespace and its command line, then sends SIGTERM through the descriptor, with no
-// kill. The holder is a helper that this test started.
+// TestEvictionOpensThePidfdBeforeItReadsTheHolder pins a rule of 89cb6289 (measured on Linux with strace):
+// the eviction opens the pid file descriptor of the holder first, then reads its pid namespace and its
+// command line, then sends SIGTERM through the descriptor, with no kill. The holder is a helper that this
+// test started.
 func TestEvictionOpensThePidfdBeforeItReadsTheHolder(t *testing.T) {
 	skipWithoutPidfd(t)
 	if nodeID() == "" {

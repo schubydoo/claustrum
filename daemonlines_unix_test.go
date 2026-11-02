@@ -12,11 +12,11 @@ import (
 	"time"
 )
 
-// The daemon lines of the run-dir lock and of the orphan self-exit. A Linux VM measured
-// them against f6010b97 and 89cb6289 (rows ST02, ST09 and the start rows).
+// The daemon lines of the run-dir lock and of the orphan self-exit. A Linux test measured
+// them against f6010b97 and 89cb6289 (measured on Linux).
 
 // TestClaimRunDirHeldByANonDaemon: a process that is no daemon holds daemon.lock, and the
-// file holds no record (row ST02). The daemon signals nothing, serves without the lock and
+// file holds no record (measured). The daemon signals nothing, serves without the lock and
 // prints the three lines. This test holds the lock itself, so nothing is there to signal.
 func TestClaimRunDirHeldByANonDaemon(t *testing.T) {
 	dir := shortTempDir(t)
@@ -71,8 +71,8 @@ func TestClaimRunDirHolderGetsNoNotHolderLine(t *testing.T) {
 }
 
 // TestLockInstanceIsTheDaemonInstance: the instanceId in daemon.lock is the instanceId of
-// server.capabilities and of the listening line. On a Linux VM the three held one value
-// in 36 of 36 daemons of 89cb6289.
+// server.capabilities and of the listening line. On Linux the three held one value in 36
+// of 36 daemons of 89cb6289.
 func TestLockInstanceIsTheDaemonInstance(t *testing.T) {
 	dir := shortTempDir(t)
 	sock := filepath.Join(dir, "rpc.sock")
@@ -91,7 +91,7 @@ func TestLockInstanceIsTheDaemonInstance(t *testing.T) {
 }
 
 // TestOrphanExitLines: a daemon that lost its socket prints the reference's lines of its
-// self-exit in order, the "shutdown requested" line and the cleanup line included (row ST09).
+// self-exit in order, the "shutdown requested" line and the cleanup line included (measured).
 func TestOrphanExitLines(t *testing.T) {
 	shrinkOrphanTimers(t, 10*time.Millisecond, 20*time.Millisecond)
 	dir := shortTempDir(t)

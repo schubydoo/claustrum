@@ -28,14 +28,14 @@ func readExecChildError(r *os.File) error {
 // symlink is resolved. It is "" only for an empty socket path.
 //
 // The run dir is the CLAUDE_SSH_RUN_DIR value of a child, and the child records go to
-// its children folder. Measured on Linux and macOS against 89cb6289 (rows F1 to F4 and
-// K3): the socket <R>/b/s.sock gives <R>/b, the relative socket s.sock gives ".", and
+// its children folder. Measured on Linux and macOS against 89cb6289: the socket
+// <R>/b/s.sock gives <R>/b, the relative socket s.sock gives ".", and
 // <R>//run/./c1/rpc.sock gives <R>/run/c1. The record of the child is in the children
 // folder below that run dir in each row. No test of the socket shape decides it.
 //
 // A Linux abstract socket name (@name) gives the run dir "." here, with no special
-// case. The start then ends at the chmod of the socket, as on `5fd08069` (cell H6,
-// Linux VM).
+// case. The start then ends at the chmod of the socket, as on `5fd08069` (measured
+// on Linux).
 func execChildRunDir(socket string) string {
 	if socket == "" {
 		return ""

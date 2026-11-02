@@ -34,21 +34,20 @@ func managedLauncherGateOn() bool { return os.Getenv(managedLauncherGateEnv) == 
 // 150 s at 33.069 s (-probe-cli). The -install row is a cache hit. This is
 // reference behaviour. With a usable launcher the direct bounds (cliRunBound,
 // cliFirstRunBound) do not apply. A CLI that answers at 31 s through a launcher
-// passes (row L01, Linux and macOS).
-// A var only so tests shrink it.
+// passes (measured on Linux and macOS). A var only so tests shrink it.
 var managedRunBound = 33 * time.Second
 
 // managedFirstRunBound stops the launcher run of -install right after a fresh
 // install. The reference stopped a launcher that slept 300 s at 123.048 s after a
 // -cli-url install and at 123.066 s after a -cli-zst install. It let a launcher
-// that took 100 s finish (Linux VM). A var only so tests shrink it.
+// that took 100 s finish (measured on Linux). A var only so tests shrink it.
 var managedFirstRunBound = 123 * time.Second
 
 // managedRunStderrCap is how much launcher stderr -install reports (measured: 10000
 // bytes gave 8192 bytes and a tail naming the other 1808).
 const managedRunStderrCap = 8192
 
-// Launcher run texts, copied from VM captures.
+// Launcher run texts, copied from measured captures.
 const (
 	managedStatusProbeFailed  = "probe_failed"
 	managedStatusUnresponsive = "unresponsive"

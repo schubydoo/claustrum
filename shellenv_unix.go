@@ -43,7 +43,7 @@ var (
 // Measured 2026-08-02 against 5db5e4a, two independent instruments agreeing:
 //
 //	stand-in shells bind-mounted over /usr/bin (bwrap, no root)  ref zsh, claustrum bash
-//	real bash + zsh in a clean Ubuntu VM, markers in each        ref zsh, claustrum bash
+//	real bash + zsh on a clean Ubuntu system, markers in each    ref zsh, claustrum bash
 //	  shell's own login profile
 //
 // Each run carried single-shell controls — with only one of the two executable,

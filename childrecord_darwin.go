@@ -11,16 +11,15 @@ import (
 )
 
 // recordChild writes the orphan-registry record for a just-spawned child (reference
-// build 19f30c46, darwin), on every socket shape (89cb6289, macOS rows F1 to F4).
-// Best-effort and
-// non-destructive: a failure is logged, never fatal. It is a no-op when the manager
-// has no run dir (no socket), when pid < 2, or when the child's
+// build 19f30c46, darwin), on every socket shape (`89cb6289`, measured on macOS).
+// Best-effort and non-destructive: a failure is logged, never fatal. It is a no-op
+// when the manager has no run dir (no socket), when pid < 2, or when the child's
 // start-time cannot be read. The record's identity differs from linux because darwin
 // has no /proc: the node is the boot-session UUID, the host is the machine hostname,
-// and the start-times are the process start as a UTC date text (the text that
-// `ps -o lstart` prints under TZ=UTC, with one blank between its words: see
-// darwinProcStart) rather than /proc clock ticks. The
-// on-disk record (field order, string-vs-number typing, path) is identical to linux.
+// and the start-times are the process start as a UTC date text (the text that `ps -o
+// lstart` prints under TZ=UTC, with one blank between its words: see
+// darwinProcStart) rather than /proc clock ticks. The on-disk record (field order,
+// string-vs-number typing, path) is identical to linux.
 func (m *procManager) recordChild(pid int, argv0, program string) {
 	if m.runDir == "" || pid < 2 || m.noRecords {
 		return
@@ -79,12 +78,11 @@ const darwinPSPath = "/bin/ps"
 // text comes from `ps -o lstart` (darwinPSStart) with a pinned, UTC environment.
 //
 // The text has one blank between its words. `ps` prints two blanks before a day of one
-// digit ("Fri Oct  2 17:35:19 2026"). Measured on macOS (rows F1 to F4 and RP15):
-// f6010b97 and 89cb6289 hold "Fri Oct 2 17:35:19 2026" in the record and in
-// CLAUDE_SSH_CHILD. In rows F1 to F4 the two texts are byte-equal, on 89cb6289 and on
-// claustrum. Only days 1 and 2 of a month are measured. The record, the marker
-// and the read of a live process at the reap all come from this one function, so they
-// hold one form.
+// digit ("Fri Oct 2 17:35:19 2026"). Measured on macOS: f6010b97 and 89cb6289 hold
+// "Fri Oct 2 17:35:19 2026" in the record and in CLAUDE_SSH_CHILD. In a measurement,
+// the two texts are byte-equal, on 89cb6289 and on claustrum. Only days 1 and 2 of a
+// month are measured. The record, the marker and the read of a live process at the
+// reap all come from this one function, so they hold one form.
 //
 // Returns "" when the process is gone or ps fails. A seam so
 // tests never shell out. It is the darwin analogue of procStartTicks.

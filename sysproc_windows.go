@@ -24,17 +24,17 @@ func newSysProcAttr() *syscall.SysProcAttr {
 // statSpawnCommand is the stat of missingCommandError: one stat of the command path
 // that the start uses. It answers only for an absolute path that does not exist.
 //
-// Measured on a Windows VM against 89cb6289 (row SSm-path, 3 of 3 runs): a session
-// spawn of the missing path <dir>\nocmd.exe answers "fork/exec <dir>\nocmd.exe: The
-// system cannot find the file specified." and the prior process of the session lives
-// on. The lookup does not answer for that path: a path that ends in an executable
-// extension passes it with no test of the file. Build ac5cadb of claustrum ran no stat
-// here and ended the prior process first.
+// Measured on Windows against 89cb6289 (3 of 3 runs): a session spawn of the missing
+// path <dir>\nocmd.exe answers "fork/exec <dir>\nocmd.exe: The system cannot find the
+// file specified." and the prior process of the session lives on. The lookup does not
+// answer for that path: a path that ends in an executable extension passes it with no
+// test of the file. Build ac5cadb of claustrum ran no stat here and ended the prior
+// process first.
 //
 // A bare name and a path with no extension answer the lookup error before this stat
-// (rows SSm-bare and SSm-noext). Not measured: a relative path. It gets its extension
-// only at the start, so this stat leaves it alone. Not measured: a stat error other
-// than a missing file. It passes, and the start answers.
+// (measured). Not measured: a relative path. It gets its extension only at the
+// start, so this stat leaves it alone. Not measured: a stat error other than a
+// missing file. It passes, and the start answers.
 func statSpawnCommand(path string) error {
 	if !filepath.IsAbs(path) {
 		return nil
@@ -64,8 +64,8 @@ func reapProcessGroup(proc *os.Process) {}
 // 1. The end of the child ends the rest of its job (endRest). The job never holds the
 // daemon. One job for each child follows 52d82f0a (measured on Windows).
 //
-// Measured on a Windows VM against 52d82f0a. A process.kill of the tree `cmd /c "start
-// /b ping … & ping …"` answers in 11 ms. The exit frame has exitCode 1 and killedBy
+// Measured on Windows against 52d82f0a. A process.kill of the tree `cmd /c "start /b
+// ping … & ping …"` answers in 11 ms. The exit frame has exitCode 1 and killedBy
 // client. No ping is left 0.5 s later. process.killAndWait of that tree answers
 // {"found":true,"died":true} in 21 ms, and server.shutdown answers in 13 ms. Both pings
 // are gone, and a ping outside the daemon stays. When cmd exits and leaves a started
@@ -86,12 +86,12 @@ func reapProcessGroup(proc *os.Process) {}
 //
 // The job of a child has the limit flags 0x2800: JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE and
 // JOB_OBJECT_LIMIT_BREAKAWAY_OK. Only the daemon holds a handle of the job, so a daemon
-// that dies ends the trees of its children. Measured on a Windows VM against 52d82f0a:
-// the child reads 0x2800. After a taskkill /F of the daemon, cmd and both pings of the
-// tree are gone at 0, 2 and 5 s, in 3 of 3 runs. A ping outside the daemon stays. A
-// process that a child started with CREATE_BREAKAWAY_FROM_JOB is outside the job. It
-// outlives process.kill, process.killAndWait and the taskkill /F, and a plain grandchild
-// dies in all three. Each child has a job of its own: the kill of one leaves another.
+// that dies ends the trees of its children. Measured on Windows against 52d82f0a: the
+// child reads 0x2800. After a taskkill /F of the daemon, cmd and both pings of the tree
+// are gone at 0, 2 and 5 s, in 3 of 3 runs. A ping outside the daemon stays. A process
+// that a child started with CREATE_BREAKAWAY_FROM_JOB is outside the job. It outlives
+// process.kill, process.killAndWait and the taskkill /F, and a plain grandchild dies in
+// all three. Each child has a job of its own: the kill of one leaves another.
 //
 // With -keep-children (jobsKeep) the flags are 0x800, breakaway only. So a kept child
 // stays in its job after the daemon exits, and nothing ends it (claustrum's own).
@@ -119,7 +119,7 @@ func spawnSysProcAttr(jobs childJobs) *syscall.SysProcAttr {
 
 // confineProcess opens the kill handle of the just-started child and, with jobs on,
 // puts the child in a new job. It always returns a non-nil *procGroup. If the open
-// fails, the group has a zero handle, and signal() falls back to proc.Kill. If the job
+// fails, the group has a zero handle, and signal falls back to proc.Kill. If the job
 // cannot be made or joined, the group has no job, and a kill ends the direct child
 // only (claustrum's own, not measured). Neither fails the spawn. os.Process keeps its
 // own handle privately, so the process is opened again by pid. That pid cannot be

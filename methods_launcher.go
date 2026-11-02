@@ -29,9 +29,8 @@ import (
 //   - -install and -probe-cli run the CLI through the launcher, but only when
 //     CLAUDE_SSH_MANAGED_LAUNCHER=1 (managedlauncher_run.go).
 //
-// Every rule below is VM-measured against 89cb6289 unless its comment says
-// "claustrum's choice (not measured)". Every text is copied byte for byte from a VM
-// capture.
+// Every rule below is measured against 89cb6289 unless its comment says "claustrum's
+// choice (not measured)". Every text is copied byte for byte from a measured capture.
 //
 // The word "launcher" alone already names the -serve parent process in server.go
 // and dahandoff.go, so the identifiers here say "managed launcher".
@@ -67,9 +66,8 @@ const (
 	managedSettingsMaxBytes = 2 << 20
 )
 
-// The reason texts. Each is the exact `reason` value of the reply. On the wire the
-// JSON encoder escapes `&`, `<`, `>` and the `""` of T5 and T7. The log line writes
-// them raw, as the reference does.
+// The reason texts. Each is the exact `reason` value of the reply. On the wire the JSON encoder escapes `&`, `<`, `>`
+// and the `""` of the metacharacter text and the empty-word text. The log line writes them raw, as the reference does.
 const (
 	managedNoLauncher   = "the value is set but contains no launcher — unset it to run without one, or set it to the absolute path of your launcher"
 	managedEmptyElement = "the JSON array contains an empty element — remove it, or fill in the value it was a placeholder for"
@@ -88,7 +86,7 @@ const (
 	managedDropInsListed = "the drop-in directory could not be listed: "
 )
 
-// managedOwnPath, managedScript and managedNotExecutable are T9, T10 and T11. Each
+// managedOwnPath, managedScript and managedNotExecutable are three measured texts. Each
 // names argv[0] as parsed, in backticks, cut by managedShown.
 func managedOwnPath(a0 string) string {
 	return "launcher `" + managedShown(a0) + "` is Claude Code's own path"
@@ -104,9 +102,9 @@ func managedNotExecutable(a0 string) string {
 
 // managedShownMax bounds the launcher path inside a reason text. One row is
 // measured: a 300-byte path with a 3-byte character at bytes 254-256 kept its first
-// 254 bytes, then `…`. The byte limit is 254, 255 or 256, and the row does not
-// tell which. claustrum's choice (not measured): 256 bytes, cut back to the start
-// of a character, for T9, T10 and T11 alike.
+// 254 bytes, then `…`. The byte limit is 254, 255 or 256, and the row does not tell
+// which. claustrum's choice (not measured): 256 bytes, cut back to the start of a
+// character, for those three texts alike.
 const managedShownMax = 256
 
 func managedShown(s string) string {
@@ -341,10 +339,10 @@ func parseManagedLauncherValue(v string) ([]string, string) {
 // parseManagedLauncherJSON parses the JSON-array form. JSON escapes decode, and the
 // metacharacter check does not apply (measured).
 //
-// A value that is not one valid JSON document is T4. An element that is not a
-// string is T3. No element, or an empty first element, is T1. A later empty
-// element is T2. claustrum's choice (not measured): T4, T3, T1 and T2 are checked in
-// that order, and a null element is not a string.
+// A value that is not one valid JSON document, an element that is not a string, no
+// element or an empty first element, and a later empty element each have their own
+// measured text. claustrum's choice (not measured): they are checked in that order,
+// and a null element is not a string.
 func parseManagedLauncherJSON(t string) ([]string, string) {
 	var raw []any
 	if err := json.Unmarshal([]byte(t), &raw); err != nil {
@@ -370,7 +368,7 @@ func parseManagedLauncherJSON(t string) ([]string, string) {
 }
 
 // managedMetachars are the nine characters that refuse a plain value when they
-// stand outside double quotes (T5, each one measured).
+// stand outside double quotes (each one measured).
 const managedMetachars = ";|&$()`<>"
 
 // splitManagedLauncherWords parses the plain form. Measured rules:
@@ -381,8 +379,8 @@ const managedMetachars = ";|&$()`<>"
 //   - Outside double quotes a backslash is a plain character, and a " after it
 //     opens a quote.
 //   - Single quotes are plain characters.
-//   - An unquoted metacharacter is T5. An open quote at the end is T6.
-//   - No word, or an empty first word, is T1. A later empty word ("") is T7.
+//   - An unquoted metacharacter and an open quote at the end each have a text.
+//   - No word, or an empty first word, has the no-element text. A later empty word ("") has its own text.
 //
 // claustrum's choices (not measured): the white space is Go's unicode.IsSpace
 // without U+0085, plus U+FEFF. That set holds the three measured characters. The
@@ -443,7 +441,7 @@ func isManagedLauncherSpace(r rune) bool {
 	return (unicode.IsSpace(r) && r != '\u0085') || r == '\ufeff'
 }
 
-// managedScriptExts are the argv[0] endings of T10. The compare is case-sensitive
+// managedScriptExts are the argv[0] endings of managedScript. The compare is case-sensitive
 // (measured: X.JS is usable).
 var managedScriptExts = []string{".js", ".mjs", ".ts", ".tsx", ".jsx"}
 
@@ -455,7 +453,7 @@ var managedScriptExts = []string{".js", ".mjs", ".ts", ".tsx", ".jsx"}
 // resolved, so a symlink keeps its own path.
 //
 // claustrum's choice (not measured): the script check runs before the existence
-// check, so a missing x.js is T10.
+// check, so a missing x.js gets managedScript.
 func checkManagedLauncher(argv []string, ownPath string) string {
 	if len(argv) == 0 {
 		return managedNoLauncher
@@ -588,10 +586,10 @@ type spawnRefusal struct {
 
 func (e *spawnRefusal) Error() string { return e.msg }
 
-// refuseManagedLauncher runs the process.spawn checks of a launcher, before the cwd
-// check and before the env is built. The measured order: on Windows any launcher is
-// refused, before the cwd check. A relative command is -32602, before any launcher
-// check. Then the launcher checks give -32004. An empty launcher is T1.
+// refuseManagedLauncher runs the process.spawn checks of a launcher, before the cwd check
+// and before the env is built. The measured order: on Windows any launcher is refused,
+// before the cwd check. A relative command is -32602, before any launcher check. Then the
+// launcher checks give -32004. An empty launcher gets the no-element text.
 //
 // claustrum's choice (not measured): the Windows refusal comes before the relative
 // command check.

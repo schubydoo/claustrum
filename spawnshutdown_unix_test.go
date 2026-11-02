@@ -78,10 +78,9 @@ func awaitHeldSpawnEnd(t *testing.T, spawned <-chan *managedProc) {
 
 // TestShutdownLeavesNoRecordTempFile holds the record write of a spawn right after its
 // temp file exists, and runs the shutdown with the production trigger and teardown.
-// The teardown does not end while the write is open. After the release the write
-// ends, the kill of the teardown ends the child, and children/ is empty: no temp file
-// and no record (claustrum's own fix for round task003-01, macOS VM, a 0-byte temp
-// file left).
+// The teardown does not end while the write is open. After the release the write ends,
+// the kill of the teardown ends the child, and children/ is empty: no temp file and no
+// record (claustrum's own fix for a measured case on macOS, a 0-byte temp file left).
 func TestShutdownLeavesNoRecordTempFile(t *testing.T) {
 	// shutdownRecordWait keeps its production value. Without the fix the teardown
 	// then ends at that bound while the write is open.
@@ -129,8 +128,8 @@ func TestShutdownLeavesNoRecordTempFile(t *testing.T) {
 }
 
 // TestShutdownDropsConnectionsBeforeTheStartGate: a spawn that holds the start gate
-// does not delay the close of the connections. Round task003-01 measured the close
-// at the "shutdown requested" line on both builds (Linux VM, +0.0000 to +0.0001 s).
+// does not delay the close of the connections. A measurement measured the close at
+// the "shutdown requested" line on both builds (Linux, +0.0000 to +0.0001 s).
 func TestShutdownDropsConnectionsBeforeTheStartGate(t *testing.T) {
 	s, sock, _ := newTeardownServer(t)
 	nc, err := net.Dial("unix", sock)

@@ -83,7 +83,7 @@ func realReadLiveProc(pid int, wantEnv bool) liveProc {
 	// KERN_PROCARGS2, which returns each variable as a separate NUL-terminated entry, so a
 	// value that contains spaces or '=' stays intact — a run-dir path may hold either (a
 	// spaced home, or a path component with an '='), and the reference reaps such an orphan
-	// (VM-measured). A space-joined `ps -E` line could not tell those bytes from the next
+	// (measured). A space-joined `ps -E` line could not tell those bytes from the next
 	// environment entry.
 	env := readProcEnv(pid)
 	lp.runDir = envLookup(env, "CLAUDE_SSH_RUN_DIR=")

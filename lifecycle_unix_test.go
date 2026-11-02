@@ -361,9 +361,9 @@ func TestDaemonizeWithoutForwardedToken(t *testing.T) {
 	}
 }
 
-// Cell E6: the socket folder cannot be written and holds no log. The launcher prints
+// Measured: the socket folder cannot be written and holds no log. The launcher prints
 // the error of the log create on stderr and exits 1 at once, with no child. 5fd08069
-// does so (round task015-04, Linux VM). The fix is the return of that create error in
+// does so (measured on Linux). The fix is the return of that create error in
 // openDaemonLog, where an Lstat finds nothing at the path.
 func TestDaemonizeFailsWhenLogUnopenable(t *testing.T) {
 	skipIfRoot(t) // root creates the log in a 0500 directory regardless
@@ -395,7 +395,7 @@ func TestDaemonizeFailsWhenLogUnopenable(t *testing.T) {
 
 // The full detached-child lifecycle, end to end and in-process: runServe boots
 // off a -token-file, serves an authenticated ping, then a SIGTERM rides
-// run()'s signal goroutine into teardown, which retracts the socket and
+// run's signal goroutine into teardown, which retracts the socket and
 // daemon.token and exits 0.
 func TestRunServeChildFullLifecycle(t *testing.T) {
 	stubOsExit(t)

@@ -8,14 +8,14 @@ import (
 
 // idleConnTimeout is how long a connection may go with no read/write activity
 // before the daemon closes it. The reference closes a connection after 5 minutes
-// with no traffic, measured against f6010b97 on a linux VM. claustrum matches that
+// with no traffic, measured against f6010b97 on Linux. claustrum matches that
 // value and keeps it always-on.
 const idleConnTimeout = 5 * time.Minute
 
 // activityConn wraps a net.Conn and records the time of the last Read or Write, so
 // closeWhenIdle can tell whether the connection has gone silent. On the reference a
 // read alone and a write alone each keep a connection open, measured against f6010b97
-// on a linux VM.
+// on Linux.
 type activityConn struct {
 	net.Conn
 	last atomic.Int64 // last activity, unix nanoseconds
@@ -84,10 +84,10 @@ func (s *server) closeWhenIdle(a *activityConn, done <-chan struct{}) {
 				if !a.claimClose() {
 					return
 				}
-				// The text is the reference's, measured on a Linux VM against
-				// 89cb6289 (rows HC12a and HC12b, a connection idle for 5 minutes).
-				// Claustrum's own, not measured: the address is quoted, and a
-				// connection that never showed the token logs no line.
+				// The text is the reference's, measured on Linux against 89cb6289
+				// (a connection idle for 5 minutes). Claustrum's own, not
+				// measured: the address is quoted, and a connection that never
+				// showed the token logs no line.
 				if a.shown.Load() {
 					logInfof(fmtIdleClose,
 						idle.Round(time.Second), a.RemoteAddr())

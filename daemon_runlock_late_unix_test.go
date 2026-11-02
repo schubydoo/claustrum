@@ -16,8 +16,8 @@ import (
 )
 
 // runlockHoldEmptyFixture is the "runlock-hold-empty" helper mode. It holds the flock
-// on an empty daemon.lock, as the holder of round task005-01 did: a process that is not
-// a daemon. It lets go and exits 0 when the file args[2] appears.
+// on an empty daemon.lock, as the holder did: a process that is not a daemon. It lets
+// go and exits 0 when the file args[2] appears.
 func runlockHoldEmptyFixture(args []string) int {
 	lockPath, readyPath, letGoPath := args[0], args[1], args[2]
 	fd, err := syscall.Open(lockPath, syscall.O_RDWR|syscall.O_CREAT|syscall.O_CLOEXEC, 0o600)
@@ -136,11 +136,11 @@ func pollUntil(limit time.Duration, cond func() bool) bool {
 	}
 }
 
-// TestLateRunDirLockAfterHolderLetsGo follows cells L1 (Linux and macOS VMs) and L4
-// (Linux VM) of round task005-01 on 5fd08069. A start finds daemon.lock held by a process that is
-// not a daemon and serves without the lock. After the holder lets go, a later try takes
-// the lock, logs the late line once and writes the full record with the startedAt of the
-// start. The daemon holds the lock until its shutdown, which leaves an empty file.
+// TestLateRunDirLockAfterHolderLetsGo follows two cases of 5fd08069 (measured on Linux and
+// macOS, and on Linux). A start finds daemon.lock held by a process that is not a
+// daemon and serves without the lock. After the holder lets go, a later try takes the lock, logs
+// the late line once and writes the full record with the startedAt of the start. The daemon holds
+// the lock until its shutdown, which leaves an empty file.
 func TestLateRunDirLockAfterHolderLetsGo(t *testing.T) {
 	buf := captureLogBuf(t)
 	tries := shrinkLatePeriod(t)
@@ -185,7 +185,7 @@ func TestLateRunDirLockAfterHolderLetsGo(t *testing.T) {
 		t.Error("a late lock changed the decision of the start about child records")
 	}
 
-	// A good try ends the tries: no second late line (cell L6, Linux VM).
+	// A good try ends the tries: no second late line (measured on Linux).
 	after := tries.Load()
 	if pollUntil(20*runDirLatePeriod, func() bool { return tries.Load() > after }) {
 		t.Errorf("the daemon tried the lock again after a late try took it (%d tries, then %d)", after, tries.Load())
@@ -208,8 +208,8 @@ func TestLateRunDirLockAfterHolderLetsGo(t *testing.T) {
 	}
 }
 
-// TestLateRunDirLockSilentWhileHeld follows cell L3 of round task005-01 (5fd08069, Linux
-// VM): a try that finds the lock held logs nothing and writes nothing.
+// TestLateRunDirLockSilentWhileHeld follows a measured case (`5fd08069`, measured on Linux): a
+// try that finds the lock held logs nothing and writes nothing.
 func TestLateRunDirLockSilentWhileHeld(t *testing.T) {
 	buf := captureLogBuf(t)
 	tries := shrinkLatePeriod(t)
@@ -276,8 +276,8 @@ func TestLateRunDirLockStopsAtShutdown(t *testing.T) {
 	s.closeAll(sock)
 }
 
-// TestLateRunDirLockTwoSurvivorsOneWins follows cell L6 of round task005-01 (5fd08069,
-// Linux VM). Two starts serve without the lock. After the holder lets go, the first try
+// TestLateRunDirLockTwoSurvivorsOneWins follows a measured case (`5fd08069`, measured on
+// Linux). Two starts serve without the lock. After the holder lets go, the first try
 // wins. Only that claim logs the late line and writes its record. The other keeps
 // trying and fails in silence.
 func TestLateRunDirLockTwoSurvivorsOneWins(t *testing.T) {
@@ -323,8 +323,8 @@ func TestLateRunDirLockTwoSurvivorsOneWins(t *testing.T) {
 }
 
 // TestLateRunDirPeriodValue pins the shipped period of the late tries, which every
-// late-lock test sets for itself. 30 s is measured against 5fd08069 (round task005-01,
-// cells L1 and L2 on Linux and macOS VMs, cell L3 on a Linux VM).
+// late-lock test sets for itself. 30 s is measured against 5fd08069 (measured on Linux
+// and macOS).
 func TestLateRunDirPeriodValue(t *testing.T) {
 	if runDirLatePeriod != 30*time.Second {
 		t.Errorf("late period %v, want 30s", runDirLatePeriod)

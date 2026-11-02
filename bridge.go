@@ -16,11 +16,11 @@ import (
 //
 // At stdin EOF the bridge half-closes the socket. It keeps relaying the socket
 // to stdout. docs/protocol/flags.md (-bridge) gives the exit rule.
-// Measured against f6010b97 and 90fca6e6 on Linux and Windows VMs, the
-// reference bridge got stdin `{"jsonrpc":"2.0","id":1,` then EOF. It put the
-// 76-byte -32700 frame on stdout and exited 0. Measured on a Linux VM, the
-// reference bridge also exited 0 with stdin still open once the daemon closed.
-// It printed the frames that arrived before the close.
+// Measured against f6010b97 and 90fca6e6 on Linux and Windows, the reference
+// bridge got stdin `{"jsonrpc":"2.0","id":1,` then EOF. It put the 76-byte
+// -32700 frame on stdout and exited 0. Measured on Linux, the reference bridge
+// also exited 0 with stdin still open once the daemon closed. It printed the
+// frames that arrived before the close.
 //
 // A write to a closed stdout ends the relay with exit 0. On Linux and macOS main
 // ignores SIGPIPE for -bridge, and the copy to stdout uses plain writes
@@ -44,9 +44,9 @@ func runBridge(socket string) error {
 
 // The -stop stdout words. -stop prints exactly one of them, then a newline, and
 // exits 0 in every state that these words name. Measured against f6010b97 and
-// 90fca6e6 on a Linux VM.
+// 90fca6e6 on Linux.
 const (
-	stopWordStopped    = "stopped"    // the connect succeeded. On Linux and macOS daemon.lock also came free within 3 s (5fd08069, round task034-01), or there is no usable one (claustrum's own)
+	stopWordStopped    = "stopped"    // the connect succeeded. On Linux and macOS daemon.lock also came free within 3 s (5fd08069, measured), or there is no usable one (claustrum's own)
 	stopWordNone       = "none"       // the connect failed and daemon.lock is free or missing. claustrum's own rule: also when the lock cannot be opened or locked
 	stopWordTerminated = "terminated" // the lock holder exited after SIGTERM
 	stopWordKilled     = "killed"     // the lock holder ignored SIGTERM and got SIGKILL
@@ -81,15 +81,15 @@ func runStop(socket string, stdout io.Writer) {
 
 // stopDaemon does the work of -stop and returns the word to print.
 //
-// Measured against f6010b97 and 90fca6e6 on a Linux VM:
+// Measured against f6010b97 and 90fca6e6 on Linux:
 //
 //   - If the connect succeeds, -stop sends the request and does one read with a 2 s
 //     deadline. A live daemon removes its own socket when it stops.
 //   - Then -stop waits for daemon.lock on Linux and macOS (stopAfterReply), and
-//     prints "stopped" at once on Windows (5fd08069, round task034-01). On 5fd08069
-//     -stop prints "stopped" with rc 0 both when the reply arrives and when it gets
-//     EOF (cell R4). claustrum sends
-//     garbage, a reset and the deadline to the same step (not measured on 5fd08069).
+//     prints "stopped" at once on Windows (`5fd08069`, measured). On 5fd08069 -stop
+//     prints "stopped" with rc 0 both when the reply arrives and when it gets EOF
+//     (measured). claustrum sends garbage, a reset and the deadline to the same step
+//     (not measured on 5fd08069).
 //   - If the connect fails, -stop checks daemon.lock (stopRunDirHolder). Then it
 //     removes the socket path and daemon.token beside it, and prints the word
 //     from the lock check.

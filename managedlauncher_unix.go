@@ -20,7 +20,7 @@ var managedSystemSettingsDir = managedSettingsSystemDir
 // empty system folder does not count (row RXe, Linux). With the system folder
 // absent, the variable selects its folder (row RX, Linux and macOS). An empty value
 // counts as unset, and the system folder is read (row RY, Linux and macOS). A
-// hidden .json entry alone counts too, although the resolve skips it (row RXd2,
+// hidden .json entry alone counts too, although the resolve skips it (measured on
 // Linux). The second return is true when the variable was set and ignored, so the
 // caller logs the line.
 func managedSettingsDir() (dir string, ignoredVar bool) {
@@ -37,10 +37,10 @@ func managedSettingsDir() (dir string, ignoredVar bool) {
 // managedSystemFolderHoldsPolicy reports whether the system folder holds a policy.
 // The base file counts when its path exists (os.Lstat), a dangling symlink too. A
 // managed-settings.d counts when it holds an entry whose name ends in ".json" and
-// that is a file or a symlink, a dangling symlink too. A hidden name counts (row
-// RXd2, Linux). claustrum's choices (not measured) follow. A non-.json entry and a
-// folder entry do not count, as for the drop-in rule of the resolve. The dangling
-// symlinks count. A folder that cannot be listed does not count.
+// that is a file or a symlink, a dangling symlink too. A hidden name counts
+// (measured on Linux). claustrum's choices (not measured) follow. A non-.json
+// entry and a folder entry do not count, as for the drop-in rule of the resolve.
+// The dangling symlinks count. A folder that cannot be listed does not count.
 func managedSystemFolderHoldsPolicy() bool {
 	if _, err := os.Lstat(filepath.Join(managedSystemSettingsDir, managedSettingsBase)); err == nil {
 		return true

@@ -9,11 +9,10 @@ import (
 	"time"
 )
 
-// TestKillAndWaitKillInsideDrainKillsGroupAtOnce pins cells K2a and K1a of rounds
-// tier3-03 and tier3-12 (5fd08069, macOS and Linux VMs). Inside the exit drain
-// "signal":"KILL" kills the group at once and answers died with no escalation.
-// The default signal sends nothing and escalates at the end of the grace. The fake
-// kill ends the drain.
+// TestKillAndWaitKillInsideDrainKillsGroupAtOnce pins measured cases (`5fd08069`,
+// measured on Linux and macOS). Inside the exit drain "signal":"KILL" kills the
+// group at once and answers died with no escalation. The default signal sends
+// nothing and escalates at the end of the grace. The fake kill ends the drain.
 func TestKillAndWaitKillInsideDrainKillsGroupAtOnce(t *testing.T) {
 	oldSignal := signalGroup
 	t.Cleanup(func() { signalGroup = oldSignal })

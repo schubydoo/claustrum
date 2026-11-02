@@ -26,7 +26,7 @@ type childRecord struct {
 	DaemonStart string `json:"daemonStart"`
 	Argv0       string `json:"argv0"`
 	// Program is the command of a spawn with a launcher, where Argv0 is the
-	// launcher. 89cb6289 writes it after argv0 and before start (VM-measured on
+	// launcher. 89cb6289 writes it after argv0 and before start (measured on
 	// Linux). claustrum's choice (not measured): a spawn without a launcher omits
 	// it, so that record keeps its 19f30c46 bytes.
 	Program string `json:"program,omitempty"`
@@ -36,8 +36,7 @@ type childRecord struct {
 
 // childrenDirName is the registry folder inside the run dir. Every record call names
 // its file as "children/<file>" below a root that is the run dir. The error texts
-// then hold that relative name, as the measured log lines do (Linux rows SP07a to
-// SP07c).
+// then hold that relative name, as the measured log lines do (measured on Linux).
 const childrenDirName = "children"
 
 // errChildrenNotDir reports that <runDir>/children exists and is not a real folder: a
@@ -50,10 +49,9 @@ func childRecordName(pid int) string {
 }
 
 // childRecordTempName is the temp name of the record of pid, relative to the run dir:
-// "children/.rec-<pid>.json.<12 chars>". The shape is measured on Linux (row SP06).
-// The source of the 12 chars is NOT measured. claustrum uses the nanosecond clock in
-// base 36, which gives 12 chars at the present date.
-// A var so a test can read the name.
+// "children/.rec-<pid>.json.<12 chars>". The shape is measured on Linux. The source
+// of the 12 chars is NOT measured. claustrum uses the nanosecond clock in base 36,
+// which gives 12 chars at the present date. A var so a test can read the name.
 var childRecordTempName = func(pid int) string {
 	return childrenDirName + "/.rec-" + strconv.Itoa(pid) + ".json." + strconv.FormatInt(time.Now().UnixNano(), 36)
 }
@@ -68,9 +66,9 @@ var recordTempMade = func() {}
 //
 // Every step goes through the os.Root, so no step leaves the run dir. A children
 // entry that is not a real folder gets no record: the Lstat does not follow a
-// symlink, and the call returns errChildrenNotDir (Linux rows SP07a and SP07b). The
-// os.Root also holds the run dir itself, so a renamed run dir gets the record under
-// its new name (Linux row SP08).
+// symlink, and the call returns errChildrenNotDir (measured on Linux). The os.Root
+// also holds the run dir itself, so a renamed run dir gets the record under its new
+// name (measured on Linux).
 //
 // Uses encoding/json.Marshal, whose HTML escaping is inherited wire behaviour (see
 // docs/ARCHITECTURE.md), so the observable record bytes match 19f30c46's.
@@ -110,7 +108,7 @@ func writeChildRecordIn(root *os.Root, rec childRecord) error {
 // is one plain remove of one name, never recursive, and the os.Root keeps it inside the
 // run dir. A record that does not exist is not an error. As 89cb6289 does, the remove
 // goes through a children symlink that stays inside the run dir (Linux rows SLa, SLb,
-// macOS KDa, KDb). A symlink that leads out is refused (row SP07b).
+// macOS KDa, KDb). A symlink that leads out is refused (measured).
 func removeChildRecordIn(root *os.Root, pid int) error {
 	err := root.Remove(childRecordName(pid))
 	if errors.Is(err, fs.ErrNotExist) {

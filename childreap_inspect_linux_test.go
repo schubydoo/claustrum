@@ -11,8 +11,8 @@ import (
 	"testing"
 )
 
-// The cells of tier 0 round 2 (`5fd08069`, Linux VM) on a fake /proc tree. The reader is
-// the real one, and the signal is a seam, so no real process gets a signal.
+// The measured cases (`5fd08069`, measured on Linux) on a fake /proc tree. The
+// reader is the real one, and the signal is a seam, so no real process gets a signal.
 
 const (
 	inspChild  = 800000501 // the recorded child C
@@ -95,7 +95,7 @@ func TestReapInspectControl(t *testing.T) {
 	}
 }
 
-// TestReapKeepsChildOfDaemonItCannotInspect is cells H2a to H2c: the stat of the
+// TestReapKeepsChildOfDaemonItCannotInspect is a measured case: the stat of the
 // recorded daemon is there and cannot be read or parsed. claustrum counts the daemon
 // as alive. `5fd08069` keeps the record of the child and sends no signal there.
 func TestReapKeepsChildOfDaemonItCannotInspect(t *testing.T) {
@@ -131,7 +131,7 @@ func TestReapKeepsChildOfDaemonItCannotInspect(t *testing.T) {
 	}
 }
 
-// TestReapKeepsChildWithUnparseableGroup is cell H2d: the group field of the stat of
+// TestReapKeepsChildWithUnparseableGroup is a measured case: the group field of the stat of
 // the child is not an integer.
 func TestReapKeepsChildWithUnparseableGroup(t *testing.T) {
 	st := stageInspect(t)
@@ -144,9 +144,9 @@ func TestReapKeepsChildWithUnparseableGroup(t *testing.T) {
 	}
 }
 
-// TestReapDropsChildWithUnreadableStat is cell P7 of tier 0 round 3 (`5fd08069`, Linux
-// VM): the read of the stat of the child answers "permission denied". The record goes
-// with the line, no signal goes out, and there is no summary line.
+// TestReapDropsChildWithUnreadableStat is a measured case (`5fd08069`,
+// measured on Linux): the read of the stat of the child answers "permission denied".
+// The record goes with the line, no signal goes out, and there is no summary line.
 func TestReapDropsChildWithUnreadableStat(t *testing.T) {
 	noReadAsRoot(t)
 	st := stageInspect(t)
@@ -181,7 +181,7 @@ func TestReapKeepsChildWithStatThatIsAFolder(t *testing.T) {
 	st.wantUntouched(t)
 }
 
-// TestReapDropsChildWithNoNamespaceLink is cell H3: the pid namespace link of the child
+// TestReapDropsChildWithNoNamespaceLink is a measured case: the pid namespace link of the child
 // does not exist. The record goes, with no signal and no line.
 func TestReapDropsChildWithNoNamespaceLink(t *testing.T) {
 	st := stageInspect(t)
@@ -197,7 +197,7 @@ func TestReapDropsChildWithNoNamespaceLink(t *testing.T) {
 	}
 }
 
-// TestReapDropsChildWithUnreadableNamespaceLink is cell H3v: the read of the pid
+// TestReapDropsChildWithUnreadableNamespaceLink is a measured case: the read of the pid
 // namespace link of the child answers "permission denied".
 func TestReapDropsChildWithUnreadableNamespaceLink(t *testing.T) {
 	noReadAsRoot(t)

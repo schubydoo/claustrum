@@ -62,9 +62,9 @@ func dropConnsOnShutdown(tb testing.TB, s *server) {
 
 // The server.shutdown handler returns its reply as soon as the stop has started. It
 // does not wait for the close of the connections. 5fd08069 answers before the close
-// in part of the runs (cells R1, R2 and R4 of round task034-01). The stand-in
-// teardown here waits for the reply for at most 5 s after the shutdown signal.
-// Then it drops the connections. The reply must reach the client before that drop.
+// in part of the runs (measured). The stand-in teardown here waits for the reply
+// for at most 5 s after the shutdown signal. Then it drops the connections. The
+// reply must reach the client before that drop.
 func TestShutdownReplyIsWrittenBeforeTheClose(t *testing.T) {
 	const want = `{"jsonrpc":"2.0","id":7,"result":{"ok":true},"end":{"at":0,"len":44}}` + "\n"
 	s := newTestServer(t)

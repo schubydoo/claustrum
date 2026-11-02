@@ -14,7 +14,7 @@ func TestReadTokenFD(t *testing.T) {
 	// readTokenFD wraps the fd in an *os.File and closes it (it owns the fd, just
 	// like the daemonized child owns its inherited token pipe). So we must hand it
 	// a descriptor that nothing else owns: syscall.Open returns a bare fd with no
-	// competing *os.File finalizer. Passing an os.Pipe/os.Open file's .Fd() here
+	// competing *os.File finalizer. Passing an os.Pipe/os.Open file's .Fd here
 	// instead would give the fd two owners — readTokenFD's Close plus the source
 	// file's finalizer Close — and that double-close can, after fd-number reuse,
 	// clobber an unrelated descriptor (in CI, the coverage runtime's _cover_.out,
