@@ -189,20 +189,20 @@ func TestSpawnLauncherDecodeErrors(t *testing.T) {
 // then "\n[\u2026 1808 more bytes]". The kept part is the head: claustrum's choice (all
 // 10000 measured bytes were E, so head and tail looked the same).
 func TestCappedTextKeepsHeadAndCounts(t *testing.T) {
-	c := &cappedText{max: managedRunStderrCap}
+	c := &cappedText{Max: managedRunStderrCap}
 	_, _ = c.Write(bytes.Repeat([]byte("E"), 5000))
 	_, _ = c.Write(bytes.Repeat([]byte("E"), 5000))
 	want := strings.Repeat("E", 8192) + "\n[\xe2\x80\xa6 1808 more bytes]"
 	if got := c.String(); got != want {
 		t.Errorf("10000 bytes: len %d, tail %q; want len %d, tail %q", len(got), got[8180:], len(want), want[8180:])
 	}
-	c = &cappedText{max: 4}
+	c = &cappedText{Max: 4}
 	_, _ = c.Write([]byte("ab"))
 	_, _ = c.Write([]byte("cdef"))
 	if got := c.String(); got != "abcd\n[\xe2\x80\xa6 2 more bytes]" {
 		t.Errorf("head across writes: %q", got)
 	}
-	c = &cappedText{max: 4}
+	c = &cappedText{Max: 4}
 	_, _ = c.Write([]byte("abcd"))
 	if got := c.String(); got != "abcd" {
 		t.Errorf("exactly at the cap: %q, want no tail", got)

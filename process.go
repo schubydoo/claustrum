@@ -1520,17 +1520,6 @@ var resumeProc = resumeChild
 // that came back and does not abort the spawn. Production never reassigns it.
 var confineProc = confineProcess
 
-// closeAll closes every file, ignoring errors. Used on the spawn error paths and
-// to force a stalled drain to end. Closing an *os.File twice is safe — the second
-// call returns ErrClosed without touching the descriptor — so callers may close
-// defensively without tracking whether a pump got there first. A nil file is safe
-// too: Close of a nil *os.File returns ErrInvalid.
-func closeAll(fs ...*os.File) {
-	for _, f := range fs {
-		_ = f.Close()
-	}
-}
-
 // clampKillWaitMs maps a caller's timeoutMs onto the grace killAndWait actually
 // waits: non-positive → the default (probe-verified: 0 and -100 both wait 3000ms),
 // otherwise the value verbatim up to maxKillWaitMs.
@@ -1882,27 +1871,4 @@ func buildSpawnEnv(env map[string]string, noShellAgent bool) []string {
 		base = replaceOrAppendEnv(base, k, v)
 	}
 	return base
-}
-
-// removeEnvKey returns a copy of env with all entries whose key equals k removed.
-func removeEnvKey(env []string, k string) []string {
-	prefix := k + "="
-	out := make([]string, 0, len(env))
-	for _, e := range env {
-		if !strings.HasPrefix(e, prefix) {
-			out = append(out, e)
-		}
-	}
-	return out
-}
-
-func replaceOrAppendEnv(env []string, key, val string) []string {
-	prefix := key + "="
-	for i, e := range env {
-		if strings.HasPrefix(e, prefix) {
-			env[i] = prefix + val
-			return env
-		}
-	}
-	return append(env, prefix+val)
 }

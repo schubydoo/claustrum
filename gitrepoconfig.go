@@ -291,7 +291,7 @@ func (b *boundedListing) Write(p []byte) (int, error) {
 func listRepoConfigText(ctx context.Context, text []byte, dir string, env []string) (out, stderr []byte, err error) {
 	cmd := configTextCmd(ctx, dir, env)
 	listing := &boundedListing{max: repoListingMaxBytes}
-	errText := &cappedText{max: 1 << 16}
+	errText := &cappedText{Max: 1 << 16}
 	cmd.Stdout = listing
 	cmd.Stderr = errText
 	err = runConfigText(ctx, cmd, text)
@@ -299,7 +299,7 @@ func listRepoConfigText(ctx context.Context, text []byte, dir string, env []stri
 	if listing.over {
 		return out[:bytes.LastIndexByte(out, 0)+1], nil, errListingTooLarge
 	}
-	return out, errText.buf, err
+	return out, errText.Kept(), err
 }
 
 // repoConfigListEnv is the environment of the listing of one config file: the

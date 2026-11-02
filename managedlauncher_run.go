@@ -7,7 +7,6 @@ import (
 	"io"
 	"os"
 	"os/exec"
-	"strconv"
 	"time"
 )
 
@@ -93,7 +92,7 @@ func runViaManagedLauncher(argv []string, cli string, bound time.Duration) manag
 		return nil
 	}
 	cmd.WaitDelay = probeCLIKillGrace
-	eb := &cappedText{max: managedRunStderrCap}
+	eb := &cappedText{Max: managedRunStderrCap}
 	cmd.Stderr = eb
 	err := cmd.Run()
 	if err != nil && ctx.Err() == context.DeadlineExceeded {
@@ -111,37 +110,6 @@ func managedRunReason(err error) string {
 		return "terminated by " + sig
 	}
 	return err.Error()
-}
-
-// cappedText keeps the first max bytes written to it and counts the rest. Its text
-// is the kept bytes, then "\n[… N more bytes]" when some were dropped (measured with
-// 10000 bytes of stderr). claustrum's choices (not measured): the head is kept, not
-// the tail, and the "\n" is added even when the kept part ends in a newline.
-type cappedText struct {
-	max     int
-	buf     []byte
-	dropped int64
-}
-
-func (c *cappedText) Write(p []byte) (int, error) {
-	room := c.max - len(c.buf)
-	if room > len(p) {
-		room = len(p)
-	}
-	if room > 0 {
-		c.buf = append(c.buf, p[:room]...)
-	} else {
-		room = 0
-	}
-	c.dropped += int64(len(p) - room)
-	return len(p), nil
-}
-
-func (c *cappedText) String() string {
-	if c.dropped == 0 {
-		return string(c.buf)
-	}
-	return string(c.buf) + "\n[… " + strconv.FormatInt(c.dropped, 10) + " more bytes]"
 }
 
 // installManaged carries the launcher through one -install run. runInstall sets it

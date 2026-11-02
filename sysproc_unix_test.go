@@ -11,6 +11,8 @@ import (
 	"syscall"
 	"testing"
 	"time"
+
+	"github.com/schubydoo/claustrum/internal/sysproc"
 )
 
 func TestParseSignal(t *testing.T) {
@@ -58,18 +60,19 @@ func TestParseSignal(t *testing.T) {
 }
 
 // TestSignalToOneProcessGoesThroughItsHandle pins that every signal but SIGKILL goes
-// to the one process through its process handle (signalOne), not through kill(pid).
+// to the one process through its process handle (sysproc.SignalOne), not through
+// kill(pid).
 // On Linux the handle of a started child sends pidfd_send_signal (89cb6289, rows E,
 // A2 and B1). The seam takes the call, so no signal goes out.
 func TestSignalToOneProcessGoesThroughItsHandle(t *testing.T) {
-	old := signalOne
-	t.Cleanup(func() { signalOne = old })
+	old := sysproc.SignalOne
+	t.Cleanup(func() { sysproc.SignalOne = old })
 	type call struct {
 		proc *os.Process
 		sig  syscall.Signal
 	}
 	var calls []call
-	signalOne = func(proc *os.Process, sig syscall.Signal) error {
+	sysproc.SignalOne = func(proc *os.Process, sig syscall.Signal) error {
 		calls = append(calls, call{proc, sig})
 		return nil
 	}
@@ -80,7 +83,7 @@ func TestSignalToOneProcessGoesThroughItsHandle(t *testing.T) {
 	}
 	want := []syscall.Signal{syscall.SIGTERM, syscall.SIGTERM, syscall.SIGINT, syscall.SIGHUP}
 	if len(calls) != len(want) {
-		t.Fatalf("signalOne got %d calls, want %d", len(calls), len(want))
+		t.Fatalf("sysproc.SignalOne got %d calls, want %d", len(calls), len(want))
 	}
 	for i, c := range calls {
 		if c.proc != proc || c.sig != want[i] {
@@ -223,11 +226,4 @@ func waitProcessGone(pid int, d time.Duration) bool {
 func TestProcGroupCloseUnixIsNoOp(t *testing.T) {
 	(*procGroup)(nil).close()
 	(&procGroup{}).close()
-}
-
-// reapProcessGroup is nil-safe by the same contract: a command that never started has
-// a nil cmd.Process, and reading its Pid for the pgid would panic inside the drain
-// path, so the guard must come first.
-func TestReapProcessGroupNilIsNoOp(t *testing.T) {
-	reapProcessGroup(nil)
 }
