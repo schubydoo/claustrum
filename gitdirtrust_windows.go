@@ -85,7 +85,7 @@ func resolveGitDirLinks(g string) string {
 // Windows, 2 of 2 runs each).
 //
 // With "shadowDirOff":true in every request, both builds accept the link, and
-// git works in the folder behind it (section 1.2 of that round).
+// git works in the folder behind it (measured on Windows).
 //
 // Not measured: a link that a daemon GIT_DIR or a `.git` file names, and a
 // link in a folder above the git directory together with one at it. They get

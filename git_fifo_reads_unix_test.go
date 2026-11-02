@@ -157,7 +157,7 @@ func TestFifoDotGitCreateSucceeds(t *testing.T) {
 	wantFifo(t, filepath.Join(a, ".git"))
 }
 
-// Measured: <baseRepo>/.git is a symlink to a FIFO. The create succeeds as in B-F1.
+// Measured: <baseRepo>/.git is a symlink to a FIFO. The create succeeds as in TestFifoDotGitCreateSucceeds.
 func TestSymlinkToFifoDotGitCreateSucceeds(t *testing.T) {
 	base := realTempDir(t)
 	T := filepath.Join(base, "T")
@@ -188,7 +188,7 @@ func TestFifoDotGitCreateUsesOuterRepository(t *testing.T) {
 	wantFifo(t, filepath.Join(T, ".git"))
 }
 
-// Measured: a create as in B-F1, then a create in T itself with another leaf. Both
+// Measured: a create as in TestFifoDotGitCreateSucceeds, then a create in T itself with another leaf. Both
 // succeed.
 func TestFifoDotGitCreateThenSecondCreate(t *testing.T) {
 	T := filepath.Join(realTempDir(t), "T")

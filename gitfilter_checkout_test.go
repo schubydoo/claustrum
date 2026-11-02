@@ -14,7 +14,7 @@ import (
 // The rules for the checkout of git.worktree_create in the state shadow. They
 // are the cap on the filter names of the repository, the second listing, the
 // lfs.storage item and a filter that both configs define. The git stub stands
-// in for the wrapper of the round.
+// in for the wrapper of the measurement.
 
 // checkoutRuleFixture is a seeded shadow fixture with the paths of one create.
 type checkoutRuleFixture struct {

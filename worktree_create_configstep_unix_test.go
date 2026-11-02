@@ -97,7 +97,7 @@ func writeIn(t *testing.T, p, text string) {
 // `config.worktree` file fails the create with the prefix and its cause. No
 // read-tree runs, and the undo of a failed checkout runs. The rows are cells C2,
 // C6, C7, C9, C10 and C11 (measured on Linux and macOS). The stub or the seam
-// after the add stands in for the wrapper of the round. In two measured cases the
+// after the add stands in for the wrapper of the measurement. In two measured cases the
 // branch step reads the config again, gets its refusal and keeps the branch.
 // Another case is TestConfigStepUnsetAllFailureFailsTheCreate.
 func TestConfigStepFailureFailsTheCreate(t *testing.T) {

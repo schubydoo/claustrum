@@ -377,8 +377,7 @@ func gitOutput(ctx context.Context, cmd *exec.Cmd) ([]byte, error) {
 			cmd.Stdout = &out
 			// A call with no limits, as in git.worktree_remove, gets the same
 			// grace of stderr. 5fd08069 goes on about 2 s after the exit of a
-			// remove listing whose stderr a child holds (cell RMe and cell
-			// RMex1, Linux).
+			// remove listing whose stderr a child holds (measured on Linux).
 			err := runHeld(cmd, func() error { return runToEOF(cmd, gitDrainWait, func() {}) })
 			return out.Bytes(), err
 		}

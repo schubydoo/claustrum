@@ -15,7 +15,7 @@ import (
 
 // The measured cases (Linux, git 2.43.0): the states of the git directory of
 // baseRepo for git.worktree_create and git.worktree_remove. Each test stages
-// the cell of the round, sends the request of the cell to a server in the
+// the case of the measurement, sends the request of the cell to a server in the
 // state shadow, and compares the whole frame with the frame of 5fd08069 in
 // that cell. The disk checks are those of the measurement. H stands for the
 // home folder of the test system, a temp folder here. Four cases also ran on
@@ -48,7 +48,7 @@ func (f cellFixture) leaf() string {
 	return filepath.Join(f.repo, ".claude", "worktrees", "w1")
 }
 
-// create sends the default request of the round with the extra members.
+// create sends the default request of the measurement with the extra members.
 func (f cellFixture) create(t *testing.T, extra map[string]any) (string, []envCall) {
 	t.Helper()
 	params := map[string]any{"baseRepo": f.repo, "worktreePath": f.leaf(), "branchName": "b1", "sourceBranch": "main"}
@@ -243,7 +243,7 @@ func TestCreateWithAGitDirCopiedDuringTheAdd(t *testing.T) {
 		t.Fatal(err)
 	}
 	// The create makes the empty folder `worktrees` before the add, so the copy
-	// of the round, made at the add, holds it too.
+	// of the measurement, made at the add, holds it too.
 	if err := os.Mkdir(filepath.Join(copied, "worktrees"), 0o755); err != nil {
 		t.Fatal(err)
 	}

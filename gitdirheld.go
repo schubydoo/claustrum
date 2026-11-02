@@ -70,7 +70,7 @@ import (
 //
 // No measurement has a swap between the test of a step and one of
 // these acts. In the measured swaps on Windows the folder at the path
-// is unchanged on claustrum (section 1.3, Windows).
+// is unchanged on claustrum (measured on Windows).
 
 // removeHeldEntry removes the entry name with its content through root, the
 // held git directory. A test replaces it. Production never does.

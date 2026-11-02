@@ -423,8 +423,8 @@ func TestAttachWithAFileAtWorktreesOnWindows(t *testing.T) {
 // during a create (60 measured swaps, Windows). With a hold that
 // os.OpenRoot opened by the path, the rename failed with `The process
 // cannot access the file because it is being used by another process`
-// (section 1.1 of that round). After the rename the held root still acts in
-// the folder, at its new name. A junction at the last name is not opened.
+// (measured on Windows). After the rename the held root still acts in the
+// folder, at its new name. A junction at the last name is not opened.
 func TestHeldGitDirTakesARenameOnWindows(t *testing.T) {
 	dir := filepath.Join(resolveTestRoot(t, t.TempDir()), "g")
 	if err := os.Mkdir(dir, 0o755); err != nil {

@@ -500,11 +500,10 @@ func TestCreateWithAGitDirThatChangedAtTheAdd(t *testing.T) {
 // (measured on Linux). After `rev-parse --absolute-git-dir` the link is
 // replaced by a link to a copy T. The create is refused before its `worktree
 // add`, and no folder gets a branch, a registration or a leaf. That end state
-// is the one of 5fd08069 in cell dlink-swap (measured on Linux) and a measured
-// case (on macOS). The text is that of the nearest measured step: 5fd08069
-// answers another text there, after a `worktree add` and a rollback. Without
-// the test of the spelling of the request the create answers success in the
-// first git directory.
+// is the one of 5fd08069 (measured on Linux and macOS). The text is that of
+// the nearest measured step: 5fd08069 answers another text there, after a
+// `worktree add` and a rollback. Without the test of the spelling of the
+// request the create answers success in the first git directory.
 func TestCreateWithALinkedGitDirThatChanges(t *testing.T) {
 	f := newSeededShadowFixture(t)
 	realgd := filepath.Join(resolveTestRoot(t, t.TempDir()), "realgd")

@@ -16,7 +16,7 @@ import (
 // The Windows frames of the staging step of git.worktree_create, as on
 // 5fd08069 (measured on Windows). No test of this file ran on the host of the
 // build: a Windows run must match the cell that each test names. The step
-// hooks of the create (atStep) stand in for the wrapper of the round.
+// hooks of the create (atStep) stand in for the wrapper of the measurement.
 
 // stepCreate is a seeded shadow fixture after its first git.info, with the
 // leaf of a create of the branch w1.

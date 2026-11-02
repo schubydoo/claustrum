@@ -15,9 +15,9 @@ import (
 
 // These tests pin the cells (`5fd08069`, measured on Linux) for a
 // git.worktree_create or git.worktree_remove with a worktreeRoot. Each test stages
-// the cell as the round did, in a temp dir: <B> is that dir with its links
+// the case as the measurement did, in a temp dir: <B> is that dir with its links
 // resolved, <T> the repository and <X> the folder of the cell (mode 0700). A link
-// that the round put in /tmp is a link in <B>. The texts are the replies of
+// that the measurement put in /tmp is a link in <B>. The texts are the replies of
 // 5fd08069, and so are the folders that a cell made, kept or removed.
 
 type locCell struct {
@@ -577,9 +577,9 @@ func TestLocationCellSeparateGitDirNotListed(t *testing.T) {
 	}
 }
 
-// X1 and X2 (measured on Linux), and M3 of that round on macOS: the root goes through a
-// link that leads out of a checkout or out of the repository. 5fd08069 refuses and makes
-// nothing in the folder behind the link.
+// Measured on Linux and macOS: the root goes through a link that leads out of a checkout
+// or out of the repository. 5fd08069 refuses and makes nothing in the folder behind the
+// link.
 func TestLocationCellLinkOutOfCheckout(t *testing.T) {
 	requireWorktreeListZ(t)
 	for _, r := range []locCreateRow{

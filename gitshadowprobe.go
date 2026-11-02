@@ -45,11 +45,11 @@ var (
 	probeKeep = 5 * time.Second
 	// probeCallBound ends the call. shadowCallDrain is the wait for its output
 	// pipes after that. On 5fd08069 a call held for 29 s gave a normal reply at
-	// 29.30 s. A call held for 31 s or 40 s gave the error at 31.16 s and 31.15
-	// s. The sleep child of the wrapper lived on in that round (measured on
-	// Linux). A macOS test gave the error at 30.21 s and Windows 29.98 s after the
-	// start of the call (measured). The split into the two times is fitted, as
-	// for a call of the start test.
+	// 29.30 s. A call held for 31 s or 40 s gave the error at 31.16 s and 31.15 s.
+	// The sleep child of the wrapper lived on in that measurement (on Linux). A
+	// macOS test gave the error at 30.21 s and Windows 29.98 s after the start of
+	// the call (measured). The split into the two times is fitted, as for a call
+	// of the start test.
 	probeCallBound = 30 * time.Second
 	// probeSecondBound ends the second run of the call (secondProbe), counted
 	// from its own start. c8e2f083 killed a second run that did not end 30 s

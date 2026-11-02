@@ -249,19 +249,19 @@ func (a *acceptedGitDir) stands() bool {
 //     of the git directory, or a directory symbolic link to the git directory
 //     X of a second repository, was put at `.git` before the call. 5fd08069
 //     goes on and refuses at the step of the add with `git worktree add
-//     failed: this repository's git config cannot be used: …` (table of
-//     section 2, point 5, and part C, the symbolic link at point 5). With the
+//     failed: this repository's git config cannot be used: …` (measured
+//     at point 5, also with the symbolic link). With the
 //     junction it makes three calls on T first: one read of the config of T, a
 //     listing with `--git-dir=<T>` and `rev-parse --show-toplevel` in T.
 //     claustrum makes none of them (measured).
 //   - The path is a regular file now: a file `gitdir: <X>` was put at `.git`
 //     after the call. 5fd08069 goes on and refuses before the `worktree add`
-//     with the text of openAddStage (part C, the file at point 6). Its
+//     with the text of openAddStage (measured with the file at point 6). Its
 //     listing of the add carries GIT_DIR=<X> and a copy of X there. The
 //     listing of claustrum keeps the variables of the request.
 //
 // A link that was put there after the call keeps the refusal of this step
-// (point 6 of both forms, and the symbolic link at point 6 of part C).
+// (measured at point 6 for both forms, also with the symbolic link).
 // Another real directory at the path is not measured: it keeps that refusal
 // too.
 func answeredElsewhere(u gitUse, gitDir string) bool {

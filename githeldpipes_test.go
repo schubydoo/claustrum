@@ -15,7 +15,7 @@ import (
 // The calls whose output the daemon reads to its end, and the config listing on
 // standard input with one bound from its start (measured on Linux). A child of
 // the git stub holds the stdout and stderr of the matched call, as the wrapper
-// of the round does. The limits are shortened here. Each test first sends its
+// of the measurement does. The limits are shortened here. Each test first sends its
 // request with no held call, and then compares the reply.
 
 // heldPipe is the life of the child that holds the pipes in these tests. It is

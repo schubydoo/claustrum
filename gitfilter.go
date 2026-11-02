@@ -126,7 +126,7 @@ func (v filterValues) hasBare() bool {
 // letter case of the name and lowers the key (git 2.43.0 and 2.47.3). So a key
 // spelled `Smudge` counts as `smudge` here. A measurement shows only that the
 // value `cat` under `Smudge` is not refused. The names M and m are two filters
-// (cell D3).
+// (measured).
 //
 // A `required` key with no value counts as true, as git reads it (not measured).
 // A `smudge` or a `process` key with no value counts as empty, and bare marks
