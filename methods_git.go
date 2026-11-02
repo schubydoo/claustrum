@@ -2257,10 +2257,16 @@ func gitWorktreeRemove(req *request) response {
 	})
 }
 
-func gitWorktreeRemoveLocked(req *request, p *gitParams, repo string) response {
-	refuse := func(msg string) response {
+// removeRefusal gives the reply of a refused git.worktree_remove of req: success
+// false, with msg as its error.
+func removeRefusal(req *request) func(msg string) response {
+	return func(msg string) response {
 		return okResult(req.ID, worktreeRemoveResult{Success: false, Error: msg})
 	}
+}
+
+func gitWorktreeRemoveLocked(req *request, p *gitParams, repo string) response {
+	refuse := removeRefusal(req)
 	// 7d193f89 refuses a baseRepo inside a managed worktrees tree as an invalid trust
 	// root (no errorCode on remove). A baseRepo that does not exist skips the check.
 	// The reference was measured on a macOS VM (f6010b97, rows M01 and M02).
@@ -2758,9 +2764,7 @@ func gitWorktreeRemoveLocked(req *request, p *gitParams, repo string) response {
 // repository skips the registration (rows G05 and G05b). Measured on the reference,
 // f6010b97, on a macOS VM (rows G01 to G06).
 func removeGoneWorktree(req *request, p *gitParams, repo, path string) response {
-	refuse := func(msg string) response {
-		return okResult(req.ID, worktreeRemoveResult{Success: false, Error: msg})
-	}
+	refuse := removeRefusal(req)
 	lockCheck := func(reason string) response {
 		return refuse("failed to remove worktree: could not check whether " + p.WorktreePath +
 			" is locked (" + reason + "); retry")

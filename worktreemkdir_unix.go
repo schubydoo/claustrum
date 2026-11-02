@@ -56,7 +56,7 @@ func mkdirRepoWorktreeParents(repo, dir string) error {
 		// The containment refusal keeps dir inside repo, so only dir == repo gets here.
 		return nil
 	}
-	p := resolvedPath(repo)
+	p := resolvedDir(repo)
 	for _, name := range strings.Split(rel, string(filepath.Separator)) {
 		p = filepath.Join(p, name)
 		if fi, err := os.Stat(p); err == nil {
@@ -110,14 +110,6 @@ func mkdirExternalWorktreeParents(dir string) error {
 		}
 	}
 	return nil
-}
-
-// resolvedPath is p with its symlinks resolved, or p cleaned when that fails.
-func resolvedPath(p string) string {
-	if r, err := filepath.EvalSymlinks(p); err == nil {
-		return r
-	}
-	return filepath.Clean(p)
 }
 
 // pathErrno is the error inside a *fs.PathError, or err itself.

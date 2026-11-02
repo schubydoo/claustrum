@@ -227,7 +227,10 @@ func TestRemovePersistedTokenRemoveFailureIsNonFatal(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	dropOwnTokenFile(socket, owned) // stat ok, SameFile matches; remove fails
+	out := captureLog(t, func() { dropOwnTokenFile(socket, owned) }) // stat ok, SameFile matches; remove fails
+	if !strings.Contains(out, "[daemon] failed to remove persisted token: ") {
+		t.Errorf("log %q lacks the line of the failed token remove", out)
+	}
 	if _, err := os.Stat(tokDir); err != nil {
 		t.Fatalf("non-empty daemon.token dir should survive a failed remove: %v", err)
 	}

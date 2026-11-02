@@ -302,13 +302,6 @@ func stopThenKill(p *os.Process, mu *sync.Mutex, done *bool) (kill *time.Timer, 
 // of rounds task111-01 and task111-02, Linux and macOS VMs). Windows is not
 // measured.
 func runToEOF(cmd *exec.Cmd, grace time.Duration, started func()) error {
-	closeAll := func(fs ...*os.File) {
-		for _, f := range fs {
-			if f != nil {
-				_ = f.Close()
-			}
-		}
-	}
 	// own takes a writer of cmd that os/exec copies in a goroutine.
 	own := func(w *io.Writer) (io.Writer, *os.File, *os.File, error) {
 		if _, isFile := (*w).(*os.File); *w == nil || isFile {

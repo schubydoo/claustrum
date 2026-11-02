@@ -129,17 +129,24 @@ func statOpenFile(path string) (os.FileInfo, error) {
 // (persist failed → nothing to own) is a no-op, and a stat error (absent, or
 // unreadable) is silent; only a failed unlink of a file we DO own is logged.
 func dropOwnTokenFile(socket string, owned os.FileInfo) {
-	if owned == nil {
-		return
+	if err := removeIfStillOurs(filepath.Join(tokenFileDir(socket), persistedTokenName), owned); err != nil {
+		logErrorf("[daemon] failed to remove persisted token: %v", err)
 	}
-	path := filepath.Join(tokenFileDir(socket), persistedTokenName)
+}
+
+// removeIfStillOurs removes the file at path only when it is still the file owned
+// (os.SameFile). A nil owned and a failed stat remove nothing and return nil. The
+// error is that of the remove, and each caller logs it with its own text.
+func removeIfStillOurs(path string, owned os.FileInfo) error {
+	if owned == nil {
+		return nil
+	}
 	cur, err := os.Stat(path)
 	if err != nil {
-		return
+		return nil
 	}
-	if os.SameFile(cur, owned) {
-		if err := os.Remove(path); err != nil {
-			logErrorf("[daemon] failed to remove persisted token: %v", err)
-		}
+	if !os.SameFile(cur, owned) {
+		return nil
 	}
+	return os.Remove(path)
 }

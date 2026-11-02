@@ -586,7 +586,7 @@ var statusIndexSumMaxBytes int64 = 2 << 30
 // for example a dangling or escaping symbolic link, adds nothing to the sum
 // (claustrum's own, not measured).
 func statusIndexFiles(root *os.Root) ([]string, bool) {
-	names, err := statusDirNames(root, ".")
+	names, err := rootDirNames(root, ".")
 	if err != nil {
 		return nil, false
 	}
@@ -621,19 +621,6 @@ func statusIndexFiles(root *os.Root) ([]string, bool) {
 		return nil, false
 	}
 	return shared, true
-}
-
-// statusDirNames lists the folder dir of the entry that root holds, through the root,
-// and returns its names in sorted order.
-func statusDirNames(root *os.Root, dir string) ([]string, error) {
-	d, err := root.Open(dir)
-	if err != nil {
-		return nil, err
-	}
-	defer func() { _ = d.Close() }()
-	names, err := d.Readdirnames(-1)
-	slices.Sort(names)
-	return names, err
 }
 
 // statusEntryConfig judges the `config.worktree` file of the matched entry. present
@@ -761,7 +748,7 @@ func statusReftable(root *os.Root) (files []string, ok bool) {
 	if fi, err := root.Lstat("reftable"); err != nil || !fi.IsDir() {
 		return nil, true
 	}
-	names, err := statusDirNames(root, "reftable")
+	names, err := rootDirNames(root, "reftable")
 	if err != nil {
 		return nil, false
 	}

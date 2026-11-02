@@ -5,6 +5,7 @@ package main
 import (
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 )
 
@@ -26,7 +27,10 @@ func TestRemovePipeNameFileIfOwnedRemoveError(t *testing.T) {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { _ = os.Chmod(dir, 0o700) })
-	removePipeNameFileIfOwned(sock, owned)
+	out := captureLog(t, func() { removePipeNameFileIfOwned(sock, owned) })
+	if !strings.Contains(out, "[Server] failed to remove pipe-name file: ") {
+		t.Errorf("log %q lacks the line of the failed pipe-name remove", out)
+	}
 	if _, err := os.Stat(path); err != nil {
 		t.Errorf("file should survive a failed unlink: %v", err)
 	}
