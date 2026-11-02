@@ -160,7 +160,7 @@ func TestGitListBranchesMethodDropsGitStderr(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	resp := gitListBranches(&request{ID: json.RawMessage(`1`), Params: params})
+	resp := gitListBranches(&gitCall{request: &request{ID: json.RawMessage(`1`), Params: params}})
 
 	res, okType := resp.Result.(branchesResult)
 	if !okType {
@@ -227,7 +227,7 @@ func TestGitListBranchesPropagatesGitFailure(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	resp := gitListBranches(&request{ID: json.RawMessage(`1`), Params: params})
+	resp := gitListBranches(&gitCall{request: &request{ID: json.RawMessage(`1`), Params: params}})
 
 	if resp.Error == nil {
 		t.Fatalf("want an error frame, got result %#v", resp.Result)

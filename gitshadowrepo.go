@@ -568,7 +568,7 @@ func (h *shadowHost) dropCopy(st *shadowRepo, rel, file string) error {
 // (statusEntryConfig), and git.list_branches does not list it (measured). The
 // settings of the listing go to the calls of the request on that worktree as
 // `-c` items (gitUse.front).
-func (req *request) listEntryConfig(t gitDirTrust) {
+func (req *gitCall) listEntryConfig(t gitDirTrust) {
 	if req.repoRead == nil || !req.repoRead.worktreeConfig || t.worktreeEntry == "" {
 		return
 	}

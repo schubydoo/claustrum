@@ -415,7 +415,7 @@ func gitSubcommand(args []string) string {
 // git.list_branches, git.info and git.status answer -32603 with the stop text
 // (measured). git.worktree_create keeps the frame of the step whose call
 // stopped, with the stop text as its cause (measured).
-func (s *gitStop) reply(req *request, resp response) response {
+func (s *gitStop) reply(req *gitCall, resp response) response {
 	err := s.halted()
 	if err == nil || req.Method == "git.worktree_create" {
 		return resp
