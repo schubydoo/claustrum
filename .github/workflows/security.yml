@@ -13,15 +13,20 @@ on:
   push:
     branches: [main]
   pull_request:
+  # The merge queue tests each entry on a temporary gh-readonly-queue branch.
+  # The required check of this file must report there too.
+  merge_group:
+    types: [checks_requested]
   schedule:
     - cron: "37 4 * * 1"
 
 permissions:
   contents: read
 
+# A merge-group run gets a group of its own, and no other run cancels it.
 concurrency:
-  group: ${{ github.workflow }}-${{ github.head_ref || github.ref }}
-  cancel-in-progress: true
+  group: ${{ github.workflow }}-${{ github.event_name == 'merge_group' && format('merge-group-{0}', github.run_id) || github.head_ref || github.ref }}
+  cancel-in-progress: ${{ github.event_name != 'merge_group' }}
 
 jobs:
   changes:
@@ -33,19 +38,28 @@ jobs:
       workflows: ${{ steps.diff.outputs.workflows }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        if: github.event_name == 'pull_request'
+        if: github.event_name == 'pull_request' || github.event_name == 'merge_group'
         with:
           fetch-depth: 0
           persist-credentials: false
+      # A merge group diffs its base against its head, so the entries ahead of
+      # it in the queue count too.
       - name: Diff against base
         id: diff
-        if: github.event_name == 'pull_request'
+        if: github.event_name == 'pull_request' || github.event_name == 'merge_group'
         env:
+          EVENT_NAME: ${{ github.event_name }}
           BASE_REF: ${{ github.base_ref }}
+          GROUP_BASE_SHA: ${{ github.event.merge_group.base_sha }}
+          GROUP_HEAD_SHA: ${{ github.event.merge_group.head_sha }}
         run: |
           set -euo pipefail
-          git fetch origin "${BASE_REF}" --depth=50
-          files=$(git diff --name-only "origin/${BASE_REF}...HEAD")
+          if [ "${EVENT_NAME}" = merge_group ]; then
+            files=$(git diff --name-only "${GROUP_BASE_SHA}...${GROUP_HEAD_SHA}")
+          else
+            git fetch origin "${BASE_REF}" --depth=50
+            files=$(git diff --name-only "origin/${BASE_REF}...HEAD")
+          fi
           echo "Changed files:"
           printf '%s\n' "$files"
           deps=false
@@ -97,6 +111,9 @@ jobs:
 
   gitleaks:
     name: secret scan
+    # gitleaks-action exits 1 on an event outside push, pull_request,
+    # workflow_dispatch and schedule. The PR run scanned the same changes.
+    if: github.event_name != 'merge_group'
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:
@@ -116,8 +133,9 @@ jobs:
   trivy-fs:
     name: trivy filesystem scan
     needs: changes
-    # Skip on PRs that don't touch go.mod/go.sum; always run on push/schedule.
-    if: needs.changes.outputs.deps == 'true' || github.event_name != 'pull_request'
+    # Skip on PRs and merge groups that don't touch go.mod/go.sum. Always run on
+    # push/schedule.
+    if: needs.changes.outputs.deps == 'true' || (github.event_name != 'pull_request' && github.event_name != 'merge_group')
     runs-on: ubuntu-latest
     timeout-minutes: 5
     permissions:
@@ -146,8 +164,9 @@ jobs:
   zizmor:
     name: workflow audit
     needs: changes
-    # Skip on PRs that don't touch workflows; always run on push/schedule.
-    if: needs.changes.outputs.workflows == 'true' || github.event_name != 'pull_request'
+    # Skip on PRs and merge groups that don't touch workflows. Always run on
+    # push/schedule.
+    if: needs.changes.outputs.workflows == 'true' || (github.event_name != 'pull_request' && github.event_name != 'merge_group')
     runs-on: ubuntu-latest
     timeout-minutes: 5
     permissions:
@@ -181,6 +200,7 @@ jobs:
   dependency-review:
     name: dependency review
     # Only meaningful on PRs (compares HEAD vs base for new vulnerable deps).
+    # A merge group skips it: the PR run reviewed the same dependency change.
     if: github.event_name == 'pull_request'
     runs-on: ubuntu-latest
     timeout-minutes: 5
