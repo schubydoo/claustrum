@@ -849,6 +849,10 @@ func entryAlreadyGone(gitDir, commonDir string) bool {
 	return errors.Is(err, fs.ErrNotExist)
 }
 
+// leafOpenedHook is a test seam. It runs after the open of the leaf and before its
+// identity check in deleteWorktreeDir. Production never reassigns it.
+var leafOpenedHook func()
+
 // deleteWorktreeDir deletes the worktree directory leaf in parent. It deletes each
 // entry except `.git` first, in the order that the directory read gives, and it stops
 // at the first failure. Then it deletes the rest, `.git` included, and the directory.
@@ -859,6 +863,9 @@ func deleteWorktreeDir(parent *os.Root, leaf, path string) error {
 	leafDir, err := parent.OpenRoot(leaf)
 	if err != nil {
 		return parent.RemoveAll(leaf)
+	}
+	if leafOpenedHook != nil {
+		leafOpenedHook()
 	}
 	if err := checkLeafIdentity(parent, leaf, leafDir, path); err != nil {
 		_ = leafDir.Close()
