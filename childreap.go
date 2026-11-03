@@ -737,8 +737,9 @@ func reapTargets(c *reapCtx, targets []reapTarget, counts *reapCounts) {
 		}
 	}
 	// A leader that is alive again after the settle pause gets one last test. If that
-	// test cannot tell either, the target is dropped and gets no signal. That last arm
-	// and its text are claustrum's own, not measured.
+	// test cannot inspect the process, the target gets no signal. Its record stays for the
+	// next start, and it counts as kept (keepUnknown). This arm is claustrum's own (D20),
+	// not measured.
 	for _, t := range c.settleGone(gone, &counts.reapedGrace) {
 		verdict, reason := c.check(t, true)
 		switch verdict {
