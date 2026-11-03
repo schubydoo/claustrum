@@ -7,6 +7,8 @@ import (
 	"os"
 	"os/exec"
 	"syscall"
+
+	"github.com/schubydoo/claustrum/internal/logging"
 )
 
 // DETACHED_PROCESS detaches the child from the parent's console; combined with a
@@ -48,7 +50,7 @@ func startDetached(cmd *exec.Cmd) error {
 	}
 	// The line is the reference's, on the stderr of the launcher. Measured on Windows
 	// against 89cb6289 (a job with the limit flags 0x2000).
-	logWarnf("[daemon] detached spawn failed (%v); retrying without breakaway", err)
+	logging.Warnf("[daemon] detached spawn failed (%v); retrying without breakaway", err)
 	attr := *cmd.SysProcAttr
 	attr.CreationFlags &^= createBreakawayFromJob
 	retry := &exec.Cmd{

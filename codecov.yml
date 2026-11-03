@@ -439,7 +439,6 @@ component_management:
       paths:
         - compat_logging.go
         - compat_metrics.go
-        - compat_wirelog.go
         - internal/logging/logging.go
         - internal/metrics/metrics.go
         - internal/wirelog/wirelog.go

@@ -18,6 +18,8 @@ import (
 	"syscall"
 	"testing"
 	"time"
+
+	"github.com/schubydoo/claustrum/internal/wirelog"
 )
 
 // peerDialCmd is the peer-dial helper of this test binary on the socket sock.
@@ -266,7 +268,7 @@ func runPeerNetns() (peerNetnsResult, error) {
 		return res, err
 	}
 	sock := filepath.Join(dir, "s.sock")
-	s, err := newServerOnSocket(sock, testToken, "", wireLogOptions{}, false, false)
+	s, err := newServerOnSocket(sock, testToken, "", wirelog.Options{}, false, false)
 	if err != nil {
 		return res, err
 	}

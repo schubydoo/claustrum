@@ -4,6 +4,8 @@ import (
 	"net"
 	"sync/atomic"
 	"time"
+
+	"github.com/schubydoo/claustrum/internal/logging"
 )
 
 // idleConnTimeout is how long a connection may go with no read/write activity
@@ -89,7 +91,7 @@ func (s *server) closeWhenIdle(a *activityConn, done <-chan struct{}) {
 				// measured: the address is quoted, and a connection that never
 				// showed the token logs no line.
 				if a.shown.Load() {
-					logInfof(fmtIdleClose,
+					logging.Infof(fmtIdleClose,
 						idle.Round(time.Second), a.RemoteAddr())
 				}
 				_ = a.Close()

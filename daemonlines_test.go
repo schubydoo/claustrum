@@ -10,6 +10,9 @@ import (
 	"syscall"
 	"testing"
 	"time"
+
+	"github.com/schubydoo/claustrum/internal/shellenv"
+	"github.com/schubydoo/claustrum/internal/wirelog"
 )
 
 // The daemon's own lines that were measured against f6010b97 and
@@ -27,7 +30,7 @@ func bootLineServer(t *testing.T, keepChildren bool) (*server, string) {
 	}
 	t.Cleanup(func() { _ = os.RemoveAll(dir) })
 	sock := filepath.Join(dir, "s.sock")
-	s, err := newServerOnSocket(sock, testToken, "", wireLogOptions{}, keepChildren, false)
+	s, err := newServerOnSocket(sock, testToken, "", wirelog.Options{}, keepChildren, false)
 	if err != nil {
 		t.Fatalf("newServerOnSocket: %v", err)
 	}
@@ -386,7 +389,7 @@ func TestShutdownEndsTheLoginPATHRead(t *testing.T) {
 	s, sock := bootLineServer(t, false)
 	buf := captureLogBuf(t)
 	f := installPathReadFake(t)
-	warmLoginPATHAtStart()
+	shellenv.WarmAtStart()
 	r := startedRead(t, f)
 	s.signalShutdown()
 	s.closeAll(sock)
