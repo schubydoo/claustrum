@@ -23,7 +23,7 @@ their reopen triggers are in [`DIVERGENCES.md`](DIVERGENCES.md).
 - One request line has a cap of 1 MiB. The daemon serves a line of up to 1048575
   bytes. A line of 1048576 bytes or more closes the connection with no reply.
   Send a large `process.stdin` payload in chunks below this cap.
-- claustrum binds the socket, then sets mode `0600`. On Linux and macOS a failed chmod ends the start (from the code).
+- claustrum binds the socket, then sets mode `0600` (from the code).
 - The connection is persistent. It stays open after a response, and id-less
   stream notifications arrive on it at any time.
 - The daemon dispatches the requests of one connection concurrently. Responses

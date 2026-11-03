@@ -17,8 +17,8 @@ Only the latest release on `main` receives security fixes.
 ## Scope & threat model
 
 claustrum is trusted, host-local infrastructure, not a multi-tenant service. It
-listens on an `AF_UNIX` socket (mode `0600`, owner-only on Linux and macOS) and
-supervises child processes on its host.
+listens on an `AF_UNIX` socket (mode `0600`, owner-only) and supervises child
+processes on the host it runs on.
 
 ### Trust boundary
 
