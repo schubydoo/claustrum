@@ -11,6 +11,8 @@ import (
 	"sync"
 	"testing"
 	"time"
+
+	"github.com/schubydoo/claustrum/internal/rpc"
 )
 
 // splitEnd cuts the end member off one reply or stream line (no LF). It returns
@@ -105,7 +107,7 @@ func endPipeConn(t *testing.T) (*conn, func(int) string) {
 
 func TestConnLinesCarryRunningEndCount(t *testing.T) {
 	c, gotN := endPipeConn(t)
-	if c.writeResponse(pongResult{Pong: true}) {
+	if c.writeResponse(rpc.PongResult{Pong: true}) {
 		t.Fatal("writeResponse failed")
 	}
 	shared := []byte(`{"type":"stream","processId":"p","stream":"stdout","seq":1,"data":"AA=="}` + "\n")
@@ -143,9 +145,9 @@ func TestConnLinesCarryRunningEndCount(t *testing.T) {
 func TestEndCountIsPerConnection(t *testing.T) {
 	a, gotA := endPipeConn(t)
 	b, gotB := endPipeConn(t)
-	a.writeResponse(pongResult{Pong: true})
-	a.writeResponse(pongResult{Pong: true})
-	b.writeResponse(pongResult{Pong: true})
+	a.writeResponse(rpc.PongResult{Pong: true})
+	a.writeResponse(rpc.PongResult{Pong: true})
+	b.writeResponse(rpc.PongResult{Pong: true})
 	if want := `{"pong":true,"end":{"at":0,"len":12}}` + "\n" + `{"pong":true,"end":{"at":38,"len":12}}` + "\n"; gotA(2) != want {
 		t.Errorf("conn a wire = %q, want %q", gotA(2), want)
 	}

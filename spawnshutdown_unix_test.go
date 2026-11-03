@@ -14,6 +14,8 @@ import (
 	"syscall"
 	"testing"
 	"time"
+
+	"github.com/schubydoo/claustrum/internal/rpc"
 )
 
 // holdRecordWrite holds the next record write right after its temp file exists. It
@@ -218,7 +220,7 @@ func checkLateStartLeavesNoTrace(t *testing.T, keepChildren bool) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	got := make(chan *response, 1)
+	got := make(chan *rpc.Response, 1)
 	go func() { got <- s.dispatch(c, body) }()
 	var pid int
 	select {
@@ -228,7 +230,7 @@ func checkLateStartLeavesNoTrace(t *testing.T, keepChildren bool) {
 	}
 	s.requestShutdown()
 	letGo()
-	var resp *response
+	var resp *rpc.Response
 	select {
 	case resp = <-got:
 	case <-time.After(10 * time.Second):
@@ -291,7 +293,7 @@ func TestLateStartWithAnUnreapableChildDoesNotHoldTheTeardown(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	got := make(chan *response, 1)
+	got := make(chan *rpc.Response, 1)
 	go func() { got <- s.dispatch(c, body) }()
 	var pid int
 	select {

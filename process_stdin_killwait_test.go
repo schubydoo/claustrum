@@ -9,6 +9,8 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/schubydoo/claustrum/internal/rpc"
 )
 
 // Tests for the process-side wire surface added by the reference daemon in
@@ -110,7 +112,7 @@ func TestClampKillWaitMs(t *testing.T) {
 func TestCapabilitiesAdvertisesNewSurface(t *testing.T) {
 	s := newTestServer(t)
 	raw := dispatchRaw(t, s, rpcLine(t, "server.capabilities", map[string]any{}))
-	var got capabilitiesResult
+	var got rpc.CapabilitiesResult
 	decodeReply(t, []byte(raw), &got)
 
 	joined := strings.Join(got.Methods, ",")
@@ -158,7 +160,7 @@ func TestSocketProcessStdinOffset(t *testing.T) {
 		}
 		body, _ := json.Marshal(map[string]any{"jsonrpc": "2.0", "id": id, "method": "process.stdin", "params": p})
 		raw := cl.call(authed(string(body)))
-		var sr stdinResult
+		var sr rpc.StdinResult
 		env := decodeReply(t, raw, &sr)
 		if env.Error == nil {
 			env.Result, _ = json.Marshal(sr) // canonicalize field order for string compare
@@ -179,8 +181,8 @@ func TestSocketProcessStdinOffset(t *testing.T) {
 	if env := stdin(5, "PART\n", off(6)); string(env.Result) != `{"success":true,"applied":11}` {
 		t.Errorf("stdin partial result = %s", env.Result)
 	}
-	if env := stdin(6, "GAP\n", off(99)); env.Error == nil || env.Error.Code != codeStdinOffsetGap {
-		t.Errorf("stdin gap = %+v, want code %d", env.Error, codeStdinOffsetGap)
+	if env := stdin(6, "GAP\n", off(99)); env.Error == nil || env.Error.Code != rpc.CodeStdinOffsetGap {
+		t.Errorf("stdin gap = %+v, want code %d", env.Error, rpc.CodeStdinOffsetGap)
 	}
 
 	// Only the fresh bytes were echoed by cat: AAA + BBB + RT (never DUP/PART-head/
@@ -200,7 +202,7 @@ func TestSocketProcessStdinOffset(t *testing.T) {
 	// stdinApplied is checked on a SEPARATE connection so its replay doesn't
 	// pollute cl's frames.
 	b := dial(t, sock)
-	var ra reattachResult
+	var ra rpc.ReattachResult
 	decodeReply(t, b.call(authed(`{"jsonrpc":"2.0","id":7,"method":"process.reattach","params":{"id":"CAT","fromSeq":0}}`)), &ra)
 	if ra.StdinApplied != 11 {
 		t.Errorf("reattach stdinApplied = %d, want 11", ra.StdinApplied)
@@ -231,7 +233,7 @@ func TestSocketProcessKillAndWait(t *testing.T) {
 		t.Error("killAndWait without id = no error, want Process ID is required")
 	}
 
-	var kw killAndWaitResult
+	var kw rpc.KillAndWaitResult
 	decodeReply(t, cl.call(authed(`{"jsonrpc":"2.0","id":2,"method":"process.killAndWait","params":{"id":"ghost"}}`)), &kw)
 	if kw.Found || kw.Died {
 		t.Errorf("killAndWait unknown = %+v, want found:false died:false", kw)
@@ -240,7 +242,7 @@ func TestSocketProcessKillAndWait(t *testing.T) {
 	// already-exited: echo exits immediately; wait for its exit, then killAndWait.
 	cl.send(spawnReq(t, 3, "Q", "echo"))
 	cl.waitExit("Q")
-	kw = killAndWaitResult{}
+	kw = rpc.KillAndWaitResult{}
 	decodeReply(t, cl.call(authed(`{"jsonrpc":"2.0","id":4,"method":"process.killAndWait","params":{"id":"Q"}}`)), &kw)
 	if !kw.Found || !kw.Died || !kw.AlreadyExited {
 		t.Errorf("killAndWait already-exited = %+v, want found&died&alreadyExited", kw)
@@ -250,7 +252,7 @@ func TestSocketProcessKillAndWait(t *testing.T) {
 	// within the grace window, so no escalation. call() waits for the spawn reply
 	// before we kill, so the process is registered.
 	cl.call(spawnReqArgs(t, 5, "SL", "sleep", "30"))
-	kw = killAndWaitResult{}
+	kw = rpc.KillAndWaitResult{}
 	decodeReply(t, cl.call(authed(`{"jsonrpc":"2.0","id":6,"method":"process.killAndWait","params":{"id":"SL"}}`)), &kw)
 	if !kw.Found || !kw.Died || kw.AlreadyExited || kw.Escalated {
 		t.Errorf("killAndWait live = %+v, want found&died only", kw)
@@ -320,7 +322,7 @@ func TestSocketStdinBackpressureError(t *testing.T) {
 		data := base64.StdEncoding.EncodeToString(make([]byte, n))
 		raw := cl.call(authed(`{"jsonrpc":"2.0","id":` + strconv.Itoa(id) +
 			`,"method":"process.stdin","params":{"id":"BP","data":"` + data + `"}}`))
-		var sr stdinResult
+		var sr rpc.StdinResult
 		return decodeReply(t, raw, &sr)
 	}
 
@@ -337,8 +339,8 @@ func TestSocketStdinBackpressureError(t *testing.T) {
 	if !found {
 		t.Fatal("process.stdin never returned a backpressure error under a full queue")
 	}
-	if gotCode != codeStdinBackpressure {
-		t.Errorf("backpressure code = %d, want %d", gotCode, codeStdinBackpressure)
+	if gotCode != rpc.CodeStdinBackpressure {
+		t.Errorf("backpressure code = %d, want %d", gotCode, rpc.CodeStdinBackpressure)
 	}
 	if gotMsg != "stdin backpressure: queue full" {
 		t.Errorf("backpressure message = %q, want %q", gotMsg, "stdin backpressure: queue full")
@@ -374,22 +376,22 @@ func TestSocketStdinExitedProcessPrecedence(t *testing.T) {
 		t.Fatalf("initial stdin errored: %+v", env.Error)
 	}
 	// Kill and wait for exit; stdinApplied stays 4 on the exited process.
-	var kw killAndWaitResult
+	var kw rpc.KillAndWaitResult
 	decodeReply(t, cl.call(authed(`{"jsonrpc":"2.0","id":3,"method":"process.killAndWait","params":{"id":"EX"}}`)), &kw)
 	if !kw.Died && !kw.AlreadyExited {
 		t.Fatalf("killAndWait did not confirm exit: %+v", kw)
 	}
 
 	// gap on the EXITED process → -32003, NOT "Process not running".
-	if env := stdin(10, xyz, "99"); env.Error == nil || env.Error.Code != codeStdinOffsetGap {
-		t.Errorf("exited gap = %+v, want code %d", env.Error, codeStdinOffsetGap)
+	if env := stdin(10, xyz, "99"); env.Error == nil || env.Error.Code != rpc.CodeStdinOffsetGap {
+		t.Errorf("exited gap = %+v, want code %d", env.Error, rpc.CodeStdinOffsetGap)
 	}
 	// wholly-duplicate on the EXITED process → success{applied:4,duplicate:true}.
 	env := stdin(11, xyz, "0")
 	if env.Error != nil {
 		t.Fatalf("exited duplicate errored: %+v, want success", env.Error)
 	}
-	var sr stdinResult
+	var sr rpc.StdinResult
 	if err := json.Unmarshal(env.Result, &sr); err != nil {
 		t.Fatalf("decode duplicate result: %v", err)
 	}
@@ -436,7 +438,7 @@ func TestSocketStdinEmptyAtAppliedIsDuplicate(t *testing.T) {
 	wantResult("S2d", stdin("E1", "", "4"), `{"success":true,"applied":4,"duplicate":true}`)
 
 	for i, id := range []string{"E1", "E0"} {
-		var kw killAndWaitResult
+		var kw rpc.KillAndWaitResult
 		decodeReply(t, cl.call(authed(`{"jsonrpc":"2.0","id":`+strconv.Itoa(3+i)+
 			`,"method":"process.killAndWait","params":{"id":"`+id+`","signal":"KILL"}}`)), &kw)
 		if !kw.Died && !kw.AlreadyExited {
@@ -445,7 +447,7 @@ func TestSocketStdinEmptyAtAppliedIsDuplicate(t *testing.T) {
 	}
 	wantResult("S2c", stdin("E1", "", "4"), `{"success":true,"applied":4,"duplicate":true}`)
 	wantResult("S2b", stdin("E0", "", "0"), `{"success":true,"applied":0,"duplicate":true}`)
-	if env := stdin("E0", "", ""); env.Error == nil || env.Error.Code != codeInvalidParam || env.Error.Message != "Process not running" {
+	if env := stdin("E0", "", ""); env.Error == nil || env.Error.Code != rpc.CodeInvalidParam || env.Error.Message != "Process not running" {
 		t.Errorf("S2a: result %s, error %+v, want -32602 Process not running", env.Result, env.Error)
 	}
 }

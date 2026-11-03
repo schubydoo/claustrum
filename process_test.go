@@ -14,6 +14,8 @@ import (
 	"sync"
 	"testing"
 	"time"
+
+	"github.com/schubydoo/claustrum/internal/rpc"
 )
 
 // pipeConn returns a *conn whose writes are decoded into frames channel. It
@@ -275,7 +277,7 @@ func TestWriteResponseLogsOnWriteError(t *testing.T) {
 	c := &conn{nc: client}
 	c.bareShown.Store(true)
 
-	if !c.writeResponse(pongResult{Pong: true}) {
+	if !c.writeResponse(rpc.PongResult{Pong: true}) {
 		t.Error("writeResponse did not report the failed write")
 	}
 
@@ -298,7 +300,7 @@ func TestWriteResponseFailureLinesSkips(t *testing.T) {
 	}
 	t.Run("no_token_mark", func(t *testing.T) {
 		buf := captureLogBuf(t)
-		(&conn{nc: dead()}).writeResponse(pongResult{Pong: true})
+		(&conn{nc: dead()}).writeResponse(rpc.PongResult{Pong: true})
 		got := buf.String()
 		if strings.Contains(got, "[Server] writeResponse: wrote") {
 			t.Errorf("a connection with no token mark logged the writeResponse line: %q", got)
@@ -313,7 +315,7 @@ func TestWriteResponseFailureLinesSkips(t *testing.T) {
 		close(down)
 		c := &conn{nc: dead(), down: down}
 		c.bareShown.Store(true)
-		if !c.writeResponse(pongResult{Pong: true}) {
+		if !c.writeResponse(rpc.PongResult{Pong: true}) {
 			t.Error("writeResponse did not report the failed write")
 		}
 		if got := buf.String(); strings.Contains(got, "[Server]") {
@@ -367,7 +369,7 @@ func TestWriteResponseMarshalErrorAndClosed(t *testing.T) {
 		t.Errorf("marshal error not logged: %q", buf.String())
 	}
 	// A closed conn returns before writing (would otherwise block on the pipe).
-	(&conn{nc: client, closed: true}).writeResponse(pongResult{Pong: true})
+	(&conn{nc: client, closed: true}).writeResponse(rpc.PongResult{Pong: true})
 }
 
 // firstStdout drains frames until the first non-empty stdout frame and returns
@@ -823,7 +825,7 @@ func TestWriteJSONClosedConn(t *testing.T) {
 	client, server := net.Pipe()
 	t.Cleanup(func() { client.Close(); server.Close() })
 	c := &conn{nc: client, closed: true}
-	if err := c.writeJSON(pongResult{Pong: true}); err != net.ErrClosed {
+	if err := c.writeJSON(rpc.PongResult{Pong: true}); err != net.ErrClosed {
 		t.Errorf("writeJSON on closed conn = %v, want net.ErrClosed", err)
 	}
 }

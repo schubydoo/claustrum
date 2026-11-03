@@ -6,6 +6,8 @@ import (
 	"encoding/base64"
 	"testing"
 	"time"
+
+	"github.com/schubydoo/claustrum/internal/rpc"
 )
 
 // spawnIgnoreTerm spawns the ignore-term helper (ignores SIGTERM) and blocks until
@@ -26,9 +28,9 @@ func spawnIgnoreTerm(t *testing.T, cl *testClient, id string, reqID int) {
 	})
 }
 
-func killWait(t *testing.T, cl *testClient, body string) killAndWaitResult {
+func killWait(t *testing.T, cl *testClient, body string) rpc.KillAndWaitResult {
 	t.Helper()
-	var kw killAndWaitResult
+	var kw rpc.KillAndWaitResult
 	decodeReply(t, cl.call(authed(body)), &kw)
 	return kw
 }
@@ -69,7 +71,7 @@ func TestKillAndWaitNoEscalate(t *testing.T) {
 		t.Errorf("killAndWait escalate:false = %+v, want found, died:false, no escalated", kw)
 	}
 	// The process must still be alive (reattach reports running:true).
-	var ra reattachResult
+	var ra rpc.ReattachResult
 	decodeReply(t, cl.call(authed(`{"jsonrpc":"2.0","id":3,"method":"process.reattach","params":{"id":"NE","fromSeq":0}}`)), &ra)
 	if !ra.Found || !ra.Running {
 		t.Errorf("after escalate:false the process = %+v, want found && running", ra)

@@ -8,6 +8,8 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/schubydoo/claustrum/internal/rpc"
 )
 
 // pingLineOfLen builds a valid server.ping request whose line length (excluding
@@ -64,7 +66,7 @@ func TestHandlerPanicIsRecovered(t *testing.T) {
 	// not a happens-before edge). Which request panics is decided inside the
 	// replacement instead, so the second call needs no restore.
 	old := dispatchRequest
-	dispatchRequest = func(s *server, c *conn, raw []byte, req request) *response {
+	dispatchRequest = func(s *server, c *conn, raw []byte, req request) *rpc.Response {
 		if bytes.Contains(raw, []byte(`"id":7`)) {
 			panic("boom")
 		}
@@ -96,7 +98,7 @@ func TestHandlerPanicIsRecovered(t *testing.T) {
 // no reply and the daemon must still serve afterwards.
 func TestShutdownPanicWritesNoFrame(t *testing.T) {
 	old := dispatchRequest
-	dispatchRequest = func(s *server, c *conn, raw []byte, req request) *response {
+	dispatchRequest = func(s *server, c *conn, raw []byte, req request) *rpc.Response {
 		if bytes.Contains(raw, []byte(`"id":11`)) {
 			panic("boom")
 		}

@@ -11,6 +11,8 @@ import (
 	"sync/atomic"
 	"testing"
 	"time"
+
+	"github.com/schubydoo/claustrum/internal/rpc"
 )
 
 // sessionArgs are the argv tail that makes a spawn a stream-json session of SESS.
@@ -126,7 +128,7 @@ func TestSocketSupersedeSameSession(t *testing.T) {
 
 	// The superseding process s2 must SURVIVE its own spawn — supersede excludes the
 	// new proc (the id != newID guard). Without it, s2 would kill itself too.
-	var ra reattachResult
+	var ra rpc.ReattachResult
 	decodeReply(t, cl.call(authed(`{"jsonrpc":"2.0","id":90,"method":"process.reattach","params":{"id":"s2","fromSeq":0}}`)), &ra)
 	if !ra.Found || !ra.Running {
 		t.Fatalf("superseding process s2 did not survive its own spawn (id != newID guard): found=%v running=%v", ra.Found, ra.Running)

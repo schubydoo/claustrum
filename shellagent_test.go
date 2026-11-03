@@ -7,6 +7,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/schubydoo/claustrum/internal/rpc"
 	"github.com/schubydoo/claustrum/internal/shellenv"
 )
 
@@ -102,7 +103,7 @@ func TestSpawnParamsDisableShellAgentSocket(t *testing.T) {
 		var p spawnParams
 		bad := bindParams(&request{ID: 1, Params: json.RawMessage(tc.params)}, &p)
 		if tc.wantErr {
-			if bad == nil || bad.Error == nil || bad.Error.Code != codeInvalidParam || bad.Error.Message != "Invalid params" {
+			if bad == nil || bad.Error == nil || bad.Error.Code != rpc.CodeInvalidParam || bad.Error.Message != "Invalid params" {
 				t.Errorf("%s: got %+v, want -32602 Invalid params", tc.params, bad)
 			}
 			continue

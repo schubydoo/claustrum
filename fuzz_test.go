@@ -3,6 +3,8 @@ package main
 import (
 	"encoding/json"
 	"testing"
+
+	"github.com/schubydoo/claustrum/internal/rpc"
 )
 
 // fuzzSkipMethods are the methods FuzzDispatch must NOT actually execute, because
@@ -90,21 +92,21 @@ func FuzzBindParams(f *testing.F) {
 		f.Add([]byte(seed))
 	}
 
-	// pathExpander, not interface{}: bindParams now takes the interface so a
+	// rpc.PathExpander, not interface{}: bindParams now takes the interface so a
 	// params struct cannot skip `~` expansion (see expandpaths.go). Fuzzing
 	// through the same type keeps this exercising the real signature.
-	makers := []func() pathExpander{
-		func() pathExpander { return &spawnParams{} },
-		func() pathExpander { return &stdinParams{} },
-		func() pathExpander { return &killParams{} },
-		func() pathExpander { return &killAndWaitParams{} },
-		func() pathExpander { return &reattachParams{} },
+	makers := []func() rpc.PathExpander{
+		func() rpc.PathExpander { return &spawnParams{} },
+		func() rpc.PathExpander { return &stdinParams{} },
+		func() rpc.PathExpander { return &killParams{} },
+		func() rpc.PathExpander { return &killAndWaitParams{} },
+		func() rpc.PathExpander { return &reattachParams{} },
 	}
 	f.Fuzz(func(t *testing.T, raw []byte) {
 		req := &request{ID: json.RawMessage(`1`), Params: json.RawMessage(raw)}
 		for _, mk := range makers {
 			if bad := bindParams(req, mk()); bad != nil {
-				if bad.Error == nil || bad.Error.Code != codeInvalidParam {
+				if bad.Error == nil || bad.Error.Code != rpc.CodeInvalidParam {
 					t.Errorf("bindParams(%q) returned a non-Invalid-params response: %+v", raw, bad)
 				}
 			}
@@ -112,7 +114,7 @@ func FuzzBindParams(f *testing.F) {
 	})
 }
 
-func assertWellFormedResponse(t *testing.T, resp *response, raw []byte) {
+func assertWellFormedResponse(t *testing.T, resp *rpc.Response, raw []byte) {
 	t.Helper()
 	b, err := json.Marshal(resp)
 	if err != nil {

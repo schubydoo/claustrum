@@ -85,7 +85,6 @@ component_management:
       name: rpc & dispatch
       paths:
         - rpc.go
-        - compat_rpc.go
         - internal/rpc/rpc.go
         - internal/rpc/results.go
     - component_id: server
@@ -158,7 +157,6 @@ component_management:
         - internal/git/gitparams.go
         - internal/git/gitcall.go
         - internal/git/fortest.go
-        - compat_git.go
         - methods_process.go
         # The data.reason member of a refused process.spawn start, with its OS split.
         - spawnreason.go
