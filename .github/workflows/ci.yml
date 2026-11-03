@@ -12,24 +12,18 @@ on:
   push:
     branches: [main]
   pull_request:
-  # The merge queue tests each entry on a temporary gh-readonly-queue branch.
-  # The required check of this file must report there too.
-  merge_group:
-    types: [checks_requested]
 
 permissions:
   contents: read
 
-# A merge-group run gets a group of its own, and no other run cancels it.
 concurrency:
-  group: ci-${{ github.workflow }}-${{ github.event_name == 'merge_group' && format('merge-group-{0}', github.run_id) || github.head_ref || github.ref }}
-  cancel-in-progress: ${{ github.event_name != 'merge_group' }}
+  group: ci-${{ github.workflow }}-${{ github.head_ref || github.ref }}
+  cancel-in-progress: true
 
 jobs:
-  # A pull request or a merge group that changes only documentation skips test,
-  # cross-build and coverage (decision-051). The docs tests still run in the lint
-  # job. Any other path, a push to main, or a failed diff runs every job. A merge
-  # group diffs its base against its head, so the entries ahead of it count too.
+  # A pull request that changes only documentation skips test, cross-build and
+  # coverage (decision-051). The docs tests still run in the lint job. Any other
+  # path, a push to main, or a failed diff runs every job.
   changes:
     name: detect changes
     runs-on: ubuntu-latest
@@ -38,26 +32,19 @@ jobs:
       go: ${{ steps.diff.outputs.go }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        if: github.event_name == 'pull_request' || github.event_name == 'merge_group'
+        if: github.event_name == 'pull_request'
         with:
           fetch-depth: 0
           persist-credentials: false
       - name: Diff against base
         id: diff
-        if: github.event_name == 'pull_request' || github.event_name == 'merge_group'
+        if: github.event_name == 'pull_request'
         env:
-          EVENT_NAME: ${{ github.event_name }}
           BASE_REF: ${{ github.base_ref }}
-          GROUP_BASE_SHA: ${{ github.event.merge_group.base_sha }}
-          GROUP_HEAD_SHA: ${{ github.event.merge_group.head_sha }}
         run: |
           set -euo pipefail
-          if [ "${EVENT_NAME}" = merge_group ]; then
-            files=$(git diff --name-only "${GROUP_BASE_SHA}...${GROUP_HEAD_SHA}")
-          else
-            git fetch origin "${BASE_REF}" --depth=50
-            files=$(git diff --name-only "origin/${BASE_REF}...HEAD")
-          fi
+          git fetch origin "${BASE_REF}" --depth=50
+          files=$(git diff --name-only "origin/${BASE_REF}...HEAD")
           echo "Changed files:"
           printf '%s\n' "$files"
           go=false
@@ -315,10 +302,9 @@ jobs:
       # required check and upload flakiness must not fail CI. `!cancelled()` so a
       # FAILED test run still uploads: gotestsum writes junit.xml before exiting
       # non-zero, and a failing suite is exactly when the analytics matter. Skips
-      # knope's release-bot PRs, where code never moves. Skips merge groups too:
-      # their event names no PR author, and the push to main uploads the result.
+      # knope's release-bot PRs, where code never moves.
       - name: Upload test results to Codecov
-        if: ${{ !cancelled() && github.event_name != 'merge_group' && github.event.pull_request.user.login != 'claustrum-ci[bot]' }}
+        if: ${{ !cancelled() && github.event.pull_request.user.login != 'claustrum-ci[bot]' }}
         uses: codecov/codecov-action@303a32d7a59b442fa8d48b6a1cc6825c09c847a5 # v7.1.1
         with:
           files: junit.xml
@@ -434,11 +420,9 @@ jobs:
       # so codecov-action uploads tokenless as long as the Codecov org keeps
       # public-repo token-auth off (the default; "Global Upload Token" setting) — a
       # CODECOV_TOKEN secret is only needed if that's re-enabled. fail_ci_if_error
-      # above keeps a token/upload hiccup non-fatal either way. A merge group
-      # skips the upload too: its event names no PR author, and the push to main
-      # that follows the merge uploads the same tree.
+      # above keeps a token/upload hiccup non-fatal either way.
       - name: Upload coverage to Codecov
-        if: ${{ !cancelled() && github.event_name != 'merge_group' && github.event.pull_request.user.login != 'claustrum-ci[bot]' }}
+        if: ${{ !cancelled() && github.event.pull_request.user.login != 'claustrum-ci[bot]' }}
         uses: codecov/codecov-action@303a32d7a59b442fa8d48b6a1cc6825c09c847a5 # v7.1.1
         with:
           files: coverage.out

@@ -7,11 +7,7 @@ file maps to one GitHub ruleset:
   is no deletion, no force-push, and linear history. Changes land through
   squash-only PRs with all review threads resolved. Three required checks must
   pass (listed under Bootstrap order). They are `strict`, so the branch must be up to date
-  first. A merge queue merges the PRs: squash, `ALLGREEN` grouping, 1 to 5
-  entries built and merged at a time, a 5 minute wait for more entries, and a
-  60 minute time limit for the checks. Set the `AUTO_UPDATE` repo variable to
-  `off` while the merge queue is on, because a push into a queued PR removes it
-  from the queue.
+  first.
 - `tags.json` → ruleset `protect-version-tags` (tag). It makes `v*` release
   tags immutable: no deletion, no force-update.
 
@@ -32,8 +28,7 @@ The required checks are three aggregator jobs. They are
 `security required checks passed`
 ([`security.yml`](../workflows/security.yml)), and `conventional PR title`
 ([`pr-title.yml`](../workflows/pr-title.yml)). All three are integration
-`15368` (GitHub Actions). The three workflows also run on `merge_group`, so
-the checks report on the commit that the merge queue tests. Scorecard is deliberately not required, because it
+`15368` (GitHub Actions). Scorecard is deliberately not required, because it
 never runs on `pull_request`. If you rename an aggregator job, update
 `main.json` to match. Otherwise PRs can never go green.
 
