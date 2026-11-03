@@ -10,8 +10,9 @@ import (
 
 // Linux machine identity and holder verification for the run-dir lock, read from /proc.
 // Matches the reference's Linux build: the node is the boot id joined to the pid
-// namespace inode (nodeID, procinfo_linux.go), the holder's command line comes from /proc/<pid>/cmdline, and the
-// pid-namespace guard compares /proc/<pid>/ns/pid to our own.
+// namespace inode (nodeID, procinfo_linux.go), the holder's command line comes
+// from /proc/<pid>/cmdline, and the pid-namespace guard compares /proc/<pid>/ns/pid
+// to our own.
 
 // pidNamespaceRefusal returns a reason to refuse when pid is not verifiably in our own
 // pid namespace. A missing /proc/<pid> (ENOENT) means the holder already exited, which
