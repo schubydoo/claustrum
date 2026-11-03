@@ -61,6 +61,7 @@ modes and the OS splits is in
 | `githarden_index_*.go` | the placement of the index of a new worktree, and the registration delete of the second rollback (`removeCreatedRegistration`) |
 | `internal/install/install.go` | the CLI path delete, the sweeps, the prune and the blob remove of `-install` |
 | `gitshadow.go` (`removeEntry` and `removeLink`, which each delete there goes through) · `gitshadowsweep.go` · `gitshadowrepo.go` · `gitshadowuse.go` | the deletes in the folder `git-shadow` |
+| `hostclean*.go` | the run-dir delete (`removeRunDir`) and the signals of the host cleaner |
 
 Every OS serves the same JSON-RPC methods.
 
@@ -322,16 +323,24 @@ Detail: [-install](docs/INSTALL.md#staging-and-cleanup).
 
 ### `plugins.prune`
 
-`plugins.prune` is a further `os.RemoveAll` site, and it is safe by construction. It
-deletes `<socket-derived-root>/<hash>`. The root comes from the socket layout of the daemon
+`plugins.prune` is an `os.RemoveAll` site, and it is safe by construction. It
+deletes `<socket-derived-root>/<hash>`. The root comes from the socket layout
 and the leaf must match `^[0-9a-f]{16}$` (`pluginHashRE`). The path is never
 caller-supplied and never `~`-expanded, so it needs no `wipesHomeDir` guard.
 
 On Linux the legacy sweep of `plugins.prune` and the host cleaner dial a socket path over
 107 bytes through `/proc` (`dialSiblingSocket`, `hcDial`), as `be1c1ca5` does (measured on
-Linux). So the legacy sweep, the run-dir delete of the cleaner and its signals can act at a
-long root, with their guards unchanged (measured on Linux). The maintainer approved this on
-2026-11-01. macOS at a long root is not measured ([A long run root](docs/DAEMON.md#a-long-run-root)).
+Linux). The maintainer approved acting at a long root on 2026-11-01 ([A long run
+root](docs/DAEMON.md#a-long-run-root), [plugins.prune](docs/protocol/plugins-prune.md)).
+
+### The host cleaner
+
+On Linux and macOS the host cleaner removes a run dir by one `os.Root.RemoveAll` at
+socket-derived `<root>/run`, and signals orphaned groups and abandoned daemons. A
+directory read there gives the name, with no shape test. An identity test precedes
+each signal to a live process (from the code, [guards](docs/DAEMON.md#host-cleaner-off-wire-linux-and-macos)).
+
+Never widen: Build no run-dir name from a request value or an operator path.
 
 ### The `git-shadow` folder
 
@@ -469,27 +478,24 @@ copy](docs/protocol/git-worktree-create.md#the-settings-copy)).
 
 ### Auth and token
 
-Auth is in-band per request (`"auth":"<token>"`). The token comes from `-token-file`, which
-the daemon reads once and unlinks, or from `-token-fd`. No mode reads `CLAUDE_RPC_TOKEN`,
+Auth is in-band per request (`"auth":"<token>"`). No mode reads `CLAUDE_RPC_TOKEN`,
 and the daemon strips it from spawned children. `server.shutdown` is the one unauthenticated
-method, for parity with the reference, and `-stop` sends no `auth` member. Every other
+method, for parity with the reference. Every other
 method rejects an unauthenticated request `-32001`
 ([Authentication](docs/PROTOCOL.md#authentication)).
 
 ### Token persistence
 
 The daemon persists its token to `daemon.token` (mode `0600`) beside the socket
-(`tokenpersist.go`). The fixed name and location are the reconnect contract, so they are not
-configurable. On Windows `0600` is not an owner-only DACL. Do not "fix" that without an
+(`tokenpersist.go`). The name and location are the reconnect contract. Keep them fixed. On Windows `0600` is not an owner-only DACL. Do not "fix" that without an
 opt-in divergence. `daemon.lock` is parity with `4534d86`, not a claustrum fix. See [`docs/DAEMON.md`](docs/DAEMON.md#token-persistence-daemontoken).
 
 ### Concurrency and panics
 
 The requests of one connection dispatch concurrently, and replies can return out of order
-as in the reference. Do not serialize them. The read loop writes parse and auth errors. The
-per-request goroutine recovers from panics with `-32603 "recovered panic: <v>"`. For
-`server.shutdown` it writes no frame at all. That frame is claustrum's own and NOT a parity
-claim. No client can observe it, so add no golden. The tests provoke it through the
+as in the reference. Do not serialize them. The
+per-request goroutine recovers from panics (claustrum's own). For
+`server.shutdown` a panic writes no frame. No client can observe the panic frame, so add no golden. The tests provoke it through the
 `dispatchRequest` seam ([Handler panic
 recovery](docs/PROTOCOL.md#handler-panic-recovery)).
 
@@ -522,7 +528,7 @@ opt-in cap and bound in Part B.
 The git calls of `git.list_branches`, `git.info`, `git.status` and `git.worktree_create`
 have always-on time limits (`gitstop.go`), listed in [Time limits of git
 calls](docs/protocol/git-rules-calls.md#time-limits-of-git-calls). They are not the limiter
-of a divergence. `git.worktree_remove` gets none, and `-git-timeout` is a no-op that logs one
+of a divergence. `-git-timeout` is a no-op that logs one
 warning. The branch step has its own bounds ([Time limits of the branch
 step](docs/protocol/git-rules-calls.md#time-limits-of-the-branch-step)).
 
