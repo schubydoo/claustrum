@@ -50,7 +50,7 @@ func TestRealReadLiveProcStatArms(t *testing.T) {
 func TestKillGroupAndGroupAliveRealBodies(t *testing.T) {
 	self := syscall.Getpgrp()
 	if err := procinfo.KillGroup(self, 0); err != nil {
-		t.Errorf("killGroup(own group, 0) = %v, want nil", err)
+		t.Errorf("procinfo.KillGroup(own group, 0) = %v, want nil", err)
 	}
 	if !groupAlive(self) {
 		t.Error("groupAlive(own group) = false, want true")
@@ -61,7 +61,7 @@ func TestKillGroupAndGroupAliveRealBodies(t *testing.T) {
 	// unlike the reaped-pid arm below this one is race-free.
 	const impossible = 1 << 30
 	if err := procinfo.KillGroup(impossible, 0); !errors.Is(err, syscall.ESRCH) {
-		t.Errorf("killGroup(impossible group, 0) = %v, want ESRCH", err)
+		t.Errorf("procinfo.KillGroup(impossible group, 0) = %v, want ESRCH", err)
 	}
 	if groupAlive(impossible) {
 		t.Error("groupAlive(impossible group) = true, want false")
@@ -91,7 +91,7 @@ func TestKillGroupAndGroupAliveRealBodies(t *testing.T) {
 
 	// Alive: a real group, with a member.
 	if err := procinfo.KillGroup(pgid, 0); err != nil {
-		t.Errorf("killGroup(live group %d, 0) = %v, want nil", pgid, err)
+		t.Errorf("procinfo.KillGroup(live group %d, 0) = %v, want nil", pgid, err)
 	}
 	if !groupAlive(pgid) {
 		t.Errorf("groupAlive(live group %d) = false, want true", pgid)
@@ -99,7 +99,7 @@ func TestKillGroupAndGroupAliveRealBodies(t *testing.T) {
 
 	// End it the way the reap does, then reap the zombie so the pid is really released.
 	if err := procinfo.KillGroup(pgid, syscall.SIGKILL); err != nil {
-		t.Fatalf("killGroup(%d, SIGKILL) = %v", pgid, err)
+		t.Fatalf("procinfo.KillGroup(%d, SIGKILL) = %v", pgid, err)
 	}
 	if _, err := cmd.Process.Wait(); err != nil {
 		t.Fatalf("waiting for the killed helper: %v", err)
@@ -113,7 +113,7 @@ func TestKillGroupAndGroupAliveRealBodies(t *testing.T) {
 		t.Skipf("pid %d was reused before the assertion", pgid)
 	}
 	if err := procinfo.KillGroup(pgid, 0); !errors.Is(err, syscall.ESRCH) {
-		t.Skipf("killGroup(reaped group %d, 0) = %v, not ESRCH: the pid was reused mid-test", pgid, err)
+		t.Skipf("procinfo.KillGroup(reaped group %d, 0) = %v, not ESRCH: the pid was reused mid-test", pgid, err)
 	}
 	if groupAlive(pgid) {
 		t.Errorf("groupAlive(reaped group %d) = true, want false", pgid)

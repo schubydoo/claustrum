@@ -60,14 +60,14 @@ func TestKillGroupReachesEveryMemberOfTheGroup(t *testing.T) {
 	}
 
 	if err := procinfo.KillGroup(pgid, syscall.SIGKILL); err != nil {
-		t.Fatalf("killGroup(%d, SIGKILL) = %v", pgid, err)
+		t.Fatalf("procinfo.KillGroup(%d, SIGKILL) = %v", pgid, err)
 	}
 	var st *os.ProcessState
 	select {
 	case st = <-reaped:
 		leaderReaped = true
 	case <-time.After(5 * time.Second):
-		t.Fatalf("leader %d did not end within 5s of killGroup(%d, SIGKILL)", pgid, pgid)
+		t.Fatalf("leader %d did not end within 5s of procinfo.KillGroup(%d, SIGKILL)", pgid, pgid)
 	}
 	if st == nil {
 		t.Fatalf("waiting for the killed leader %d failed", pgid)
@@ -79,7 +79,7 @@ func TestKillGroupReachesEveryMemberOfTheGroup(t *testing.T) {
 	// The kid is a child of the leader. Once the leader is reaped, init or a subreaper
 	// reaps the dead kid, and signal 0 on its pid then fails.
 	if !waitProcessGone(kid, 5*time.Second) {
-		t.Fatalf("kid %d of group %d is still alive after killGroup(SIGKILL): the signal reached the leader only", kid, pgid)
+		t.Fatalf("kid %d of group %d is still alive after procinfo.KillGroup(SIGKILL): the signal reached the leader only", kid, pgid)
 	}
 	groupGone = true
 }
