@@ -531,6 +531,129 @@ func TestWorktreeRemoveBranchStepConcurrent(t *testing.T) {
 	}
 }
 
+// TestWorktreeBranchStepLockSerializesRollbackAndRemove pins the branch lock on its
+// own. A create rollback takes the branch lock and not the lock of the add step. A
+// remove through a linked worktree takes no lock of the create either. So the two meet
+// only at the branch lock. The rollback holds its branch step until the remove waits
+// for that lock. If the remove gets into its branch step first, the two steps overlap.
+// Every path of the test is under t.TempDir().
+func TestWorktreeBranchStepLockSerializesRollbackAndRemove(t *testing.T) {
+	realGit := realGitPath(t)
+	f := newWTFixture(t, false)
+	lw := filepath.Join(filepath.Dir(f.top), "LW")
+	runGit(t, f.top, "worktree", "add", "-q", "-b", "lw", lw)
+	wb := filepath.Join(lw, ".claude", "worktrees", "wb")
+	runGit(t, lw, "worktree", "add", "-q", "-b", "b", wb)
+
+	var entries atomic.Int32
+	var rollbackInside, overlap atomic.Bool
+	rollbackIn, removeIn, release := make(chan struct{}), make(chan struct{}), make(chan struct{})
+	var removeOnce sync.Once
+	branchStepEntered = func(string) {
+		if entries.Add(1) == 1 {
+			rollbackInside.Store(true)
+			close(rollbackIn)
+			<-release
+			rollbackInside.Store(false)
+			return
+		}
+		if rollbackInside.Load() {
+			overlap.Store(true)
+		}
+		removeOnce.Do(func() { close(removeIn) })
+	}
+	t.Cleanup(func() { branchStepEntered = nil })
+	releaseOnce := sync.OnceFunc(func() { close(release) })
+
+	installGitSlowStub(t, realGit)
+	t.Setenv("CLAUSTRUM_GITSTUB_EXIT", "128")
+	slowGit(t, "read-tree", "fail", 0, `fatal: synthetic checkout failure\n`, "")
+	createLine := rpcLine(t, "git.worktree_create", map[string]any{"baseRepo": f.base, "branchName": "w1", "worktreePath": f.leaf(), "timeoutMs": 0})
+	removeLine := rpcLine(t, "git.worktree_remove", map[string]any{"baseRepo": lw, "worktreePath": wb, "branchName": "b"})
+	h := newTestGitDeps()
+	var wg sync.WaitGroup
+	dispatch := func(line string, out *string) {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			raw, err := gitDispatchErr(h, line)
+			if err != nil {
+				raw = err.Error()
+			}
+			*out = raw
+		}()
+	}
+	var createRaw, removeRaw string
+	dispatch(createLine, &createRaw)
+	select {
+	case <-rollbackIn:
+	case <-time.After(60 * time.Second):
+	}
+	if entries.Load() == 0 {
+		releaseOnce()
+		wg.Wait()
+		t.Fatalf("the rollback ran no branch step, reply = %s", createRaw)
+	}
+	dispatch(removeLine, &removeRaw)
+	// The rollback goes on when the remove waits for the branch lock, or when it got
+	// into its branch step without that lock.
+	limit := time.After(60 * time.Second)
+	tick := time.NewTicker(2 * time.Millisecond)
+	defer tick.Stop()
+wait:
+	for !branchLockWaiter() {
+		select {
+		case <-removeIn:
+			break wait
+		case <-limit:
+			t.Error("the remove neither waited for the branch lock nor ran its branch step")
+			break wait
+		case <-tick.C:
+		}
+	}
+	releaseOnce()
+	wg.Wait()
+
+	if overlap.Load() {
+		t.Error("the branch step of the remove ran while the rollback held its own")
+	}
+	if n := entries.Load(); n != 2 {
+		t.Errorf("the branch step hook ran %d times, want 2", n)
+	}
+	if want := createFrame(t, checkoutFailed, "worktree_add_failed", false); createRaw != want {
+		t.Errorf("create reply = %s\nwant           %s", createRaw, want)
+	}
+	if removeRaw != removeOK {
+		t.Errorf("remove reply = %s, want %s", removeRaw, removeOK)
+	}
+	mustBeGone(t, wb)
+	for _, b := range []string{"w1", "b"} {
+		if got := refAt(t, realGit, f.top, b); got != "" {
+			t.Errorf("%s = %s, want it deleted", b, got)
+		}
+	}
+}
+
+// branchLockWaiter reports whether a goroutine of this test binary waits in
+// sync.Mutex.Lock for a branch lock (lockWorktreeBranchStep).
+func branchLockWaiter() bool {
+	buf := make([]byte, 1<<20)
+	for {
+		n := runtime.Stack(buf, true)
+		if n < len(buf) {
+			buf = buf[:n]
+			break
+		}
+		buf = make([]byte, 2*len(buf))
+	}
+	for _, g := range strings.Split(string(buf), "\n\n") {
+		if strings.Contains(g, "[sync.Mutex.Lock") && strings.Contains(g, ".lockWorktreeBranchStep(") {
+			return true
+		}
+	}
+	return false
+}
+
 // dispatchTogether dispatches each line with d on its own goroutine, as the read loop
 // of one connection does, and returns the replies in the order of lines.
 func dispatchTogether(d *Deps, lines []string) []string {
