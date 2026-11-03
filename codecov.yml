@@ -381,9 +381,16 @@ component_management:
         - hostclean_other.go
         # The process helpers of the child records, the reap, the host cleaner and the
         # run-dir lock: the group kill, the /proc mount, the node identity and the pidfd hold.
-        - procinfo_unix.go
-        - procinfo_linux.go
-        - procinfo_darwin.go
+        - internal/procinfo/procinfo.go
+        - internal/procinfo/procinfo_unix.go
+        - internal/procinfo/procinfo_linux.go
+        - internal/procinfo/procinfo_darwin.go
+        - internal/procinfo/export_unix.go
+        - internal/procinfo/export_linux.go
+        - internal/procinfo/fortest_unix.go
+        - internal/procinfo/fortest_linux.go
+        - compat_procinfo.go
+        - compat_procinfo_linux.go
     - component_id: bridge_cli
       name: bridge, CLI & config
       paths:

@@ -9,6 +9,8 @@ import (
 	"syscall"
 	"testing"
 	"time"
+
+	"github.com/schubydoo/claustrum/internal/procinfo"
 )
 
 // The fakes that the reap tests share on linux and darwin. They seam every read of a
@@ -76,9 +78,10 @@ func newProcSim(t *testing.T) *procSim {
 		onKill: map[int]func(syscall.Signal) error{},
 		now:    time.Now(), // realistic, so the foreign-record age check is meaningful
 	}
-	oldRead, oldKill, oldGroup, oldNow, oldSleep := readLiveProc, killGroup, groupAlive, reapNow, reapSleep
+	oldRead, oldKill, oldGroup, oldNow, oldSleep := readLiveProc, procinfo.KillGroupForTest(), groupAlive, reapNow, reapSleep
 	t.Cleanup(func() {
-		readLiveProc, killGroup, groupAlive, reapNow, reapSleep = oldRead, oldKill, oldGroup, oldNow, oldSleep
+		procinfo.SetKillGroupForTest(oldKill)
+		readLiveProc, groupAlive, reapNow, reapSleep = oldRead, oldGroup, oldNow, oldSleep
 	})
 	readLiveProc = func(pid int, wantEnv bool) liveProc {
 		if lp, ok := s.live[pid]; ok {
@@ -86,13 +89,13 @@ func newProcSim(t *testing.T) *procSim {
 		}
 		return liveProc{state: procGone}
 	}
-	killGroup = func(pid int, sig syscall.Signal) error {
+	procinfo.SetKillGroupForTest(func(pid int, sig syscall.Signal) error {
 		s.kills = append(s.kills, killRec{pid, sig})
 		if fn := s.onKill[pid]; fn != nil {
 			return fn(sig)
 		}
 		return nil
-	}
+	})
 	groupAlive = func(pid int) bool { return s.group[pid] }
 	reapNow = func() time.Time { return s.now }
 	reapSleep = func(d time.Duration) { s.now = s.now.Add(d) }

@@ -14,6 +14,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/schubydoo/claustrum/internal/procinfo"
 	"github.com/schubydoo/claustrum/internal/rpc"
 )
 
@@ -392,13 +393,13 @@ func TestKeepChildrenSkipsShutdownWait(t *testing.T) {
 
 	// The next daemon on this socket: its reap must send nothing. The signal is
 	// seamed, so a reap that finds a record ends no child of this test.
-	oldKill, oldSleep := killGroup, reapSleep
-	t.Cleanup(func() { killGroup, reapSleep = oldKill, oldSleep })
+	oldKill, oldSleep := procinfo.KillGroupForTest(), reapSleep
+	t.Cleanup(func() { procinfo.SetKillGroupForTest(oldKill); reapSleep = oldSleep })
 	var kills []killRec
-	killGroup = func(pid int, sig syscall.Signal) error {
+	procinfo.SetKillGroupForTest(func(pid int, sig syscall.Signal) error {
 		kills = append(kills, killRec{pid, sig})
 		return nil
-	}
+	})
 	reapSleep = func(time.Duration) {}
 	reapOrphans(runDir, "inst-next")
 	if len(kills) != 0 {
