@@ -62,7 +62,7 @@ token did not already give. See
   daemon with no token in its environment
   ([driver claim](docs/ARCHITECTURE.md#driver-claims-and-their-provenance)). Reaching the socket stops the
   daemon and drops every session, unless the Linux peer check refuses the
-  caller. `-stop` sends no token. An
+  caller. `-stop` sends no token. On Linux and macOS the socket mode confines this. An
   actor who already shares the uid can do strictly more through `process.spawn`.
   The optional Windows named-pipe transport shares this dispatch, so the same
   exception applies.

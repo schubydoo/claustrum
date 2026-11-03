@@ -411,7 +411,7 @@ The launcher is the `-serve` process that the operator starts. It re-execs its o
 binary as the detached daemon and waits for it. On Linux a launcher that cannot
 read `/proc/self/exe` prints `claustrum: locate self: <error>` and exits `1` before
 any write. macOS and Windows re-exec `os.Args[0]` instead (not measured). The
-launcher creates a missing socket folder with mode `0700`. Windows ignores that mode.
+launcher creates a missing socket folder with mode `0700`. Windows ignores that mode (from the code).
 
 ### The launcher wait
 
