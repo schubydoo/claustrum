@@ -10,6 +10,8 @@ import (
 	"strings"
 	"syscall"
 	"time"
+
+	"github.com/schubydoo/claustrum/internal/logging"
 )
 
 // Run-dir lock, matching the reference daemon (upstream 4534d86). A -serve daemon
@@ -29,8 +31,9 @@ import (
 //
 // This file is the shared core for both unix targets. The machine identity (nodeID)
 // and the holder-verification reads are OS-split: Linux uses /proc
-// (daemon_runlock_linux.go), macOS uses sysctl (daemon_runlock_darwin.go). Windows
-// ships no run-dir lock at all (daemon_runlock_windows.go).
+// (procinfo_linux.go, daemon_runlock_linux.go), macOS uses sysctl (procinfo_darwin.go,
+// daemon_runlock_darwin.go). Windows ships no run-dir lock at all
+// (daemon_runlock_windows.go).
 const runDirLockName = "daemon.lock"
 
 // Eviction timing: after SIGTERM the new daemon tries the lock again every
@@ -127,7 +130,7 @@ func lockRunFolder(socket, role string) runDirClaim {
 	path := filepath.Join(dir, runDirLockName)
 	// notHolder is the return of every arm that ends without the lock.
 	notHolder := func() runDirClaim {
-		logInfof("%s", runDirNotHolderLine)
+		logging.Infof("%s", runDirNotHolderLine)
 		return runDirClaim{release: func() {}, complete: func(string, int64) {}, stopLate: func() {}}
 	}
 
@@ -143,14 +146,14 @@ func lockRunFolder(socket, role string) runDirClaim {
 	// off-wire defense-in-depth rather than confirmed parity.
 	fd, err := syscall.Open(path, syscall.O_RDWR|syscall.O_CREAT|syscall.O_CLOEXEC|syscall.O_NOFOLLOW, 0o600)
 	if err != nil {
-		logWarnf("[daemon] serve: cannot open %s (%v); proceeding without run-dir ownership", path, err)
+		logging.Warnf("[daemon] serve: cannot open %s (%v); proceeding without run-dir ownership", path, err)
 		return notHolder()
 	}
 	locked, heldElsewhere := lockRunDir(fd, path, socket)
 	if !locked && heldElsewhere {
 		// Another process holds the lock and stays. The daemon keeps the descriptor and
 		// tries the lock again later (lateRunDirClaim).
-		logInfof("%s", runDirNotHolderLine)
+		logging.Infof("%s", runDirNotHolderLine)
 		return lateRunDirClaim(fd, role)
 	}
 	if !locked {
@@ -193,7 +196,7 @@ func lockRunDir(fd int, path, socket string) (locked, heldElsewhere bool) {
 		// The reference logs one line for ANY non-EWOULDBLOCK flock error and calls it
 		// "unsupported" with the errno text (measured 4534d86: EOPNOTSUPP/ENOLCK/EINVAL/
 		// EACCES all render the same line).
-		logWarnf("[daemon] serve: flock %s unsupported (%v); proceeding without run-dir ownership", path, err)
+		logging.Warnf("[daemon] serve: flock %s unsupported (%v); proceeding without run-dir ownership", path, err)
 		return false, false
 	}
 	gone, locked := evictRunDirHolder(fd, path, socket)
@@ -208,7 +211,7 @@ func lockRunDir(fd int, path, socket string) (locked, heldElsewhere bool) {
 	if err := syscall.Flock(fd, syscall.LOCK_EX|syscall.LOCK_NB); err != nil {
 		// This line's wording is claustrum's own. The reference's changed-hands line was
 		// not captured at runtime.
-		logWarnf("[daemon] serve: %s changed hands during eviction; proceeding without run-dir ownership", path)
+		logging.Warnf("[daemon] serve: %s changed hands during eviction; proceeding without run-dir ownership", path)
 		// Only a lock that another process holds is worth the late tries.
 		return false, err == syscall.EWOULDBLOCK
 	}
@@ -238,7 +241,7 @@ func evictRunDirHolder(fd int, path, socket string) (gone, locked bool) {
 	// (removed -> terminated/killed, left -> survivor).
 	rundir := filepath.Dir(socket)
 	summary := func(outcome string) {
-		logInfof("[daemon] serve: previous owner of %s: %s", rundir, outcome)
+		logging.Infof("[daemon] serve: previous owner of %s: %s", rundir, outcome)
 	}
 	holder, err := readOwnerRecord(path)
 	// A holder whose record names no daemon role is left alone. That covers a lock file
@@ -246,12 +249,12 @@ func evictRunDirHolder(fd int, path, socket string) (gone, locked bool) {
 	// Linux against f6010b97 and 89cb6289. In that row a helper holds the lock and the
 	// file is empty. A record with another role text is not measured.
 	if holder.Role != "serve" && holder.Role != "stop" {
-		logWarnf("[daemon] serve: WARNING %s is held by a live process we will not signal (its holder is not a daemon (role %q)); leaving it alone", path, holder.Role)
+		logging.Warnf("[daemon] serve: WARNING %s is held by a live process we will not signal (its holder is not a daemon (role %q)); leaving it alone", path, holder.Role)
 		summary("survivor")
 		return false, false
 	}
 	if err != nil || holder.Pid <= 1 {
-		logWarnf("[daemon] serve: %s is locked but its owner record is unusable; proceeding without run-dir ownership", path)
+		logging.Warnf("[daemon] serve: %s is locked but its owner record is unusable; proceeding without run-dir ownership", path)
 		return false, false
 	}
 	// A --stop that still holds the lock is left in place (measured 4534d86). Before
@@ -262,7 +265,7 @@ func evictRunDirHolder(fd int, path, socket string) (gone, locked bool) {
 		if waitHolderLock(fd, runDirStopGrace) {
 			return true, true
 		}
-		logWarnf("[daemon] serve: %s is held by a --stop (pid %d) that has not let go; leaving it", path, holder.Pid)
+		logging.Warnf("[daemon] serve: %s is held by a --stop (pid %d) that has not let go; leaving it", path, holder.Pid)
 		summary("survivor")
 		return false, false
 	}
@@ -278,7 +281,7 @@ func evictRunDirHolder(fd int, path, socket string) (gone, locked bool) {
 	// the process that had the pid at the open, so a process that takes the pid later
 	// gets no signal. On macOS the hold is kill(pid, sig), and the order has no effect.
 	refuse := func(reason string) {
-		logWarnf("[daemon] serve: not signaling pid %d, the holder of %s (%s); proceeding without run-dir ownership", holder.Pid, path, reason)
+		logging.Warnf("[daemon] serve: not signaling pid %d, the holder of %s (%s); proceeding without run-dir ownership", holder.Pid, path, reason)
 		summary("survivor")
 	}
 	if reason := holderRecordRefusal(holder); reason != "" {
@@ -292,7 +295,7 @@ func evictRunDirHolder(fd int, path, socket string) (gone, locked bool) {
 		return false, false
 	}
 	who := holderText(holder)
-	logInfof("[daemon] serve: run dir is held by a live daemon, %s; sending SIGTERM", who)
+	logging.Infof("[daemon] serve: run dir is held by a live daemon, %s; sending SIGTERM", who)
 	if !deliverToHolder(send, holder.Pid, syscall.SIGTERM) {
 		if holderGone(holder.Pid) {
 			summary("terminated")
@@ -307,7 +310,7 @@ func evictRunDirHolder(fd int, path, socket string) (gone, locked bool) {
 	if waitHolderLock(fd, runDirTermGrace) {
 		// Measured (Linux and macOS, 5 of 5 runs each): 89cb6289 prints this line
 		// when the lock comes within the grace.
-		logInfof("[daemon] serve: previous daemon %s exited after SIGTERM", who)
+		logging.Infof("[daemon] serve: previous daemon %s exited after SIGTERM", who)
 		summary("terminated")
 		return true, true
 	}
@@ -322,14 +325,14 @@ func evictRunDirHolder(fd int, path, socket string) (gone, locked bool) {
 	// alive but a holder-inspection read failed transiently, the retry flock simply fails
 	// and we serve without ownership — never an innocent SIGKILL.
 	if reason := holderSignalRefusal(holder, socket); reason != "" {
-		logInfof("[daemon] serve: pid %d is no longer our serve holder before SIGKILL (%s); treating the previous daemon as gone", holder.Pid, reason)
+		logging.Infof("[daemon] serve: pid %d is no longer our serve holder before SIGKILL (%s); treating the previous daemon as gone", holder.Pid, reason)
 		summary("terminated")
 		return true, false
 	}
 	// The text is the one of 89cb6289 (measured on Linux). The SIGKILL goes through
 	// the hold of the SIGTERM. Measurements show pidfd_send_signal with the same
 	// descriptor number for both signals.
-	logWarnf("[daemon] serve: WARNING previous daemon %s ignored SIGTERM for %s; sending SIGKILL (its Claude Code children, if any, are ended next, before this daemon serves)", who, runDirTermGrace)
+	logging.Warnf("[daemon] serve: WARNING previous daemon %s ignored SIGTERM for %s; sending SIGKILL (its Claude Code children, if any, are ended next, before this daemon serves)", who, runDirTermGrace)
 	if !deliverToHolder(send, holder.Pid, syscall.SIGKILL) {
 		if holderGone(holder.Pid) {
 			summary("killed")
@@ -349,7 +352,7 @@ func evictRunDirHolder(fd int, path, socket string) (gone, locked bool) {
 	// Not runtime-reproducible on a modern kernel (nothing survives SIGKILL); the exact
 	// reference wording for this line was not capturable, so claustrum's own message
 	// stands with the normalized prefix/tail.
-	logWarnf("[daemon] serve: previous daemon pid %d survived SIGKILL; proceeding without run-dir ownership", holder.Pid)
+	logging.Warnf("[daemon] serve: previous daemon pid %d survived SIGKILL; proceeding without run-dir ownership", holder.Pid)
 	summary("survivor")
 	return false, false
 }
@@ -430,20 +433,20 @@ func stopRunDirHolderFD(socket string) (string, int) {
 func stopSignalHolder(fd int, path, socket string) string {
 	holder, err := readOwnerRecord(path)
 	if err != nil || holderSignalRefusal(holder, socket) != "" {
-		logWarnf("[daemon] stop: WARNING %s is held by a live process we will not signal (pid %d is not a %s --serve process for %s); leaving it alone", path, holder.Pid, selfBase(), socket)
+		logging.Warnf("[daemon] stop: WARNING %s is held by a live process we will not signal (pid %d is not a %s --serve process for %s); leaving it alone", path, holder.Pid, selfBase(), socket)
 		return stopWordSurvivor
 	}
 	// The two lines below name the instance only when the record has one, as the serve
 	// eviction lines do. Measured on Linux against 89cb6289: for the short record of a
 	// daemon in its start, both lines hold `pid <n>` and no instance.
 	who := holderText(holder)
-	logInfof("[daemon] stop: run dir is held by a live daemon, %s; sending SIGTERM", who)
+	logging.Infof("[daemon] stop: run dir is held by a live daemon, %s; sending SIGTERM", who)
 	if !signalHolder(holder.Pid, syscall.SIGTERM) && !holderGone(holder.Pid) {
 		// The holder is present but SIGTERM did not reach it. -stop leaves it.
 		return stopWordSurvivor
 	}
 	if waitLockFree(fd, stopTermGrace) {
-		logInfof("[daemon] stop: previous daemon %s exited after SIGTERM", who)
+		logging.Infof("[daemon] stop: previous daemon %s exited after SIGTERM", who)
 		return stopWordTerminated
 	}
 	// Check the holder again before SIGKILL, as the serve eviction does. If its pid
@@ -453,18 +456,18 @@ func stopSignalHolder(fd int, path, socket string) string {
 		// new holder from its record. 5fd08069 prints it (measured on Linux). A record
 		// that names a holder with no instance is not measured.
 		if now, err := readOwnerRecord(path); err == nil && now.Pid != holder.Pid {
-			logWarnf("[daemon] stop: %s changed hands during eviction (now %s); leaving the new holder alone", path, holderText(now))
+			logging.Warnf("[daemon] stop: %s changed hands during eviction (now %s); leaving the new holder alone", path, holderText(now))
 			return stopWordSurvivor
 		}
-		logWarnf("[daemon] stop: pid %d is no longer our serve holder before SIGKILL (%s); leaving it alone", holder.Pid, reason)
+		logging.Warnf("[daemon] stop: pid %d is no longer our serve holder before SIGKILL (%s); leaving it alone", holder.Pid, reason)
 		return stopWordSurvivor
 	}
-	logWarnf("[daemon] stop: WARNING previous daemon pid %d (instance %q) ignored SIGTERM for %s; sending SIGKILL (its Claude Code children, if any, are ended next, before this daemon serves)", holder.Pid, holder.InstanceID, stopTermGrace)
+	logging.Warnf("[daemon] stop: WARNING previous daemon pid %d (instance %q) ignored SIGTERM for %s; sending SIGKILL (its Claude Code children, if any, are ended next, before this daemon serves)", holder.Pid, holder.InstanceID, stopTermGrace)
 	if !signalHolder(holder.Pid, syscall.SIGKILL) && !holderGone(holder.Pid) {
 		return stopWordSurvivor
 	}
 	if !waitLockFree(fd, stopKillGrace) {
-		logWarnf("[daemon] stop: WARNING previous daemon pid %d (instance %q) survived SIGKILL (uninterruptible?); proceeding without run-dir ownership", holder.Pid, holder.InstanceID)
+		logging.Warnf("[daemon] stop: WARNING previous daemon pid %d (instance %q) survived SIGKILL (uninterruptible?); proceeding without run-dir ownership", holder.Pid, holder.InstanceID)
 		return stopWordSurvivor
 	}
 	return stopWordKilled
@@ -526,7 +529,7 @@ func stopAfterReply(socket string) (string, func()) {
 		if locked, _ := tryLockFor(fd, stopForeignWait); locked {
 			return stopWordStopped, closeLock
 		}
-		logWarnf("[daemon] stop: WARNING %s is held by a live process we will not signal (its holder is not a daemon (role %q)); leaving it alone", path, holder.Role)
+		logging.Warnf("[daemon] stop: WARNING %s is held by a live process we will not signal (its holder is not a daemon (role %q)); leaving it alone", path, holder.Role)
 		return stopWordSurvivor, closeLock
 	}
 	word := stopSignalHolder(fd, path, socket)
@@ -615,7 +618,7 @@ func deliverToHolder(send func(syscall.Signal) error, pid int, sig syscall.Signa
 	if err == syscall.ESRCH {
 		return false // already gone
 	}
-	logWarnf("[daemon] serve: signal %d to pid %d failed (%v); proceeding without run-dir ownership", sig, pid, err)
+	logging.Warnf("[daemon] serve: signal %d to pid %d failed (%v); proceeding without run-dir ownership", sig, pid, err)
 	return false
 }
 

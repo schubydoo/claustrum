@@ -15,6 +15,8 @@ import (
 	"strings"
 	"syscall"
 	"time"
+
+	"github.com/schubydoo/claustrum/internal/logging"
 )
 
 // The orphan reap (reference build 19f30c46). At -serve startup, right after a daemon
@@ -150,9 +152,6 @@ var (
 	// readLiveProc reads a live process. wantEnv also reads the program and env markers.
 	// realReadLiveProc is OS-specific (childreap_linux.go / childreap_darwin.go).
 	readLiveProc = realReadLiveProc
-	// killGroup signals the whole process group led by pid (kill(-pid, sig)), the reap's
-	// only destructive call.
-	killGroup = func(pid int, sig syscall.Signal) error { return syscall.Kill(-pid, sig) }
 	// groupAlive reports whether the process group led by pid still has any member
 	// (kill(-pid, 0) succeeds). It stays true after the leader exits while a group member
 	// lingers, so the wait can clean up a survivor the leader's exit would otherwise hide.
@@ -257,7 +256,7 @@ func (m *procManager) reapOrphans() {
 		// 89cb6289 for a symlink to a folder, before the listening line. claustrum
 		// prints it for every children entry that is not a real folder. The other
 		// shapes are not measured. The level is that of the sibling line of a spawn.
-		logErrorf("[process.Registry] %s/%s is not a directory; reaping nothing", m.runDir, childrenDirName)
+		logging.Errorf("[process.Registry] %s/%s is not a directory; reaping nothing", m.runDir, childrenDirName)
 	}
 	if err != nil {
 		return // no registry dir means nothing was ever recorded here
@@ -271,7 +270,7 @@ func (m *procManager) reapOrphans() {
 
 	entries, more := c.recordEntries()
 	if more {
-		logWarnf("[process.Registry] more than %d records in %s; leaving the rest for the next start", maxReapRecords, childrenPath)
+		logging.Warnf("[process.Registry] more than %d records in %s; leaving the rest for the next start", maxReapRecords, childrenPath)
 	}
 	var counts reapCounts
 	var targets []reapTarget
@@ -323,17 +322,17 @@ func (m *procManager) reapOrphans() {
 			case verdictSkip:
 				// The text is the reference's, with its reason (see verify). The record
 				// goes at once, before any signal of this sweep.
-				logInfof("[process.Registry] record %s: pid %d is not a child to end (%s); dropping the record, signalling nothing", name, rec.Pid, why.ref)
+				logging.Infof("[process.Registry] record %s: pid %d is not a child to end (%s); dropping the record, signalling nothing", name, rec.Pid, why.ref)
 				c.forget(name)
 				counts.forgotten++
 			case verdictPassthrough:
 				// This line is claustrum's own. No row shows a record that the
 				// reference keeps for this cause at the first test.
-				logInfof("[process.Reaper] child %d (%s): %s", rec.Pid, name, why.own)
+				logging.Infof("[process.Reaper] child %d (%s): %s", rec.Pid, name, why.own)
 				counts.skipped++ // the process disowns us; keep the record
 			case verdictUnknown:
 				// The text is the reference's (`5fd08069`, measured on Linux).
-				logInfof("[process.Registry] record %s: pid %d cannot be inspected now (%s); keeping the record, signalling nothing", name, rec.Pid, why.ref)
+				logging.Infof("[process.Registry] record %s: pid %d cannot be inspected now (%s); keeping the record, signalling nothing", name, rec.Pid, why.ref)
 				counts.skipped++
 			}
 			continue
@@ -353,13 +352,13 @@ func (m *procManager) reapOrphans() {
 		counts.forgotten++
 	}
 	if over > 0 {
-		logWarnf("[process.Registry] %d more orphaned group(s) recorded in %s than the %d one start ends; leaving those for the next start", over, childrenPath, maxReapTargets)
+		logging.Warnf("[process.Registry] %d more orphaned group(s) recorded in %s than the %d one start ends; leaving those for the next start", over, childrenPath, maxReapTargets)
 	}
 
 	reapTargets(c, targets, &counts)
 
 	if counts.signalled > 0 || counts.skipped > 0 {
-		logInfof("%s", reapSummary(counts))
+		logging.Infof("%s", reapSummary(counts))
 	}
 }
 
@@ -693,7 +692,7 @@ func reapTargets(c *reapCtx, targets []reapTarget, counts *reapCounts) {
 			c.forget(t.name)
 		case verdictUnknown:
 			// Not measured at this test: the line is the one of the walk.
-			logInfof("[process.Registry] record %s: pid %d cannot be inspected now (%s); keeping the record, signalling nothing", t.name, t.pid, reason)
+			logging.Infof("[process.Registry] record %s: pid %d cannot be inspected now (%s); keeping the record, signalling nothing", t.name, t.pid, reason)
 			counts.skipped++
 		default: // verdictReap: still the same live leader
 			if err := killGroup(t.pid, syscall.SIGTERM); err != nil {
@@ -701,7 +700,7 @@ func reapTargets(c *reapCtx, targets []reapTarget, counts *reapCounts) {
 				c.forget(t.name)
 				continue
 			}
-			logInfof("[process.Registry] ending orphaned process group %d recorded by daemon instance %q (pid %d): SIGTERM", t.pid, t.rec.Instance, t.rec.DaemonPid)
+			logging.Infof("[process.Registry] ending orphaned process group %d recorded by daemon instance %q (pid %d): SIGTERM", t.pid, t.rec.Instance, t.rec.DaemonPid)
 			counts.signalled++
 			signaled = append(signaled, t)
 		}
@@ -757,7 +756,7 @@ func reapTargets(c *reapCtx, targets []reapTarget, counts *reapCounts) {
 	for _, t := range reapWait(c, killed, reapEscalate, &counts.reapedEscalate, counts, false) {
 		counts.survived++ // outlived SIGKILL (a zombie or an uninterruptible sleep)
 		// This line is claustrum's own: no row has a group that outlived SIGKILL.
-		logInfof("[process.Reaper] child %d (%s): still present after SIGKILL", t.pid, t.name)
+		logging.Infof("[process.Reaper] child %d (%s): still present after SIGKILL", t.pid, t.name)
 		// The record is KEPT so a later daemon can find a group this one could not end.
 	}
 }
@@ -772,7 +771,7 @@ func (c *reapCtx) lookAgain(t reapTarget, reason string) {
 		c.unknown = map[int]bool{}
 	}
 	c.unknown[t.pid] = true
-	logInfof("[process.Registry] group %d cannot be inspected now (%s); looking again until the wait is up, sending nothing more unless it verifies again or is seen gone", t.pid, reason)
+	logging.Infof("[process.Registry] group %d cannot be inspected now (%s); looking again until the wait is up, sending nothing more unless it verifies again or is seen gone", t.pid, reason)
 }
 
 // keepUnknown ends the wait for a signalled group that still cannot be inspected. The
@@ -780,14 +779,14 @@ func (c *reapCtx) lookAgain(t reapTarget, reason string) {
 // The text is the reference's (`5fd08069`, measured on Linux).
 func (c *reapCtx) keepUnknown(t reapTarget, reason string, counts *reapCounts) {
 	c.lookAgain(t, reason)
-	logInfof("[process.Registry] group %d could still not be inspected when the wait was up; keeping its record for the next start", t.pid)
+	logging.Infof("[process.Registry] group %d could still not be inspected when the wait was up; keeping its record for the next start", t.pid)
 	counts.skipped++
 }
 
 // killAfterGrace sends the SIGKILL to a group that still passes the record test at the
 // end of the grace, with the reference's line for it.
 func (c *reapCtx) killAfterGrace(t reapTarget) {
-	logWarnf("[process.Registry] group %d outlived SIGTERM for %s: SIGKILL", t.pid, reapGrace)
+	logging.Warnf("[process.Registry] group %d outlived SIGTERM for %s: SIGKILL", t.pid, reapGrace)
 	_ = killGroup(t.pid, syscall.SIGKILL)
 }
 
@@ -906,7 +905,7 @@ func (c *reapCtx) settleGone(gone []reapTarget, reapedCounter *int) []reapTarget
 // the measurement gives no time for it.
 func (c *reapCtx) drop(t reapTarget, reason string, counts *reapCounts) {
 	if reason != "" {
-		logInfof("[process.Registry] group %d no longer verifies (%s); nothing more is sent to it", t.pid, reason)
+		logging.Infof("[process.Registry] group %d no longer verifies (%s); nothing more is sent to it", t.pid, reason)
 	}
 	counts.forgotten++
 	c.forgetLater(t.name)

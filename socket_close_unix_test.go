@@ -7,6 +7,8 @@ import (
 	"os"
 	"path/filepath"
 	"testing"
+
+	"github.com/schubydoo/claustrum/internal/wirelog"
 )
 
 // TestCloseAllKeepsSuccessorSocket: a daemon that shuts down after a new daemon bound
@@ -14,7 +16,7 @@ import (
 func TestCloseAllKeepsSuccessorSocket(t *testing.T) {
 	dir := shortTempDir(t)
 	sock := filepath.Join(dir, "rpc.sock")
-	s, err := newServerOnSocket(sock, "tok", "", wireLogOptions{}, false, false)
+	s, err := newServerOnSocket(sock, "tok", "", wirelog.Options{}, false, false)
 	if err != nil {
 		t.Fatalf("newServerOnSocket: %v", err)
 	}

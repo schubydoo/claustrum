@@ -5,6 +5,8 @@ import (
 	"io/fs"
 	"os/exec"
 	"strings"
+
+	"github.com/schubydoo/claustrum/internal/logging"
 )
 
 // missingCommandError is the pre-check of a session spawn. It returns the error of a
@@ -192,7 +194,7 @@ func (m *procManager) supersedeSession(key, newID string) {
 
 	for _, vp := range victims {
 		_, died, alreadyExited, escalated := m.killAndWaitProc(vp, "SIGTERM", m.supersedeGrace, true)
-		logInfof("[process.Manager] process %s supersedes %s for session %s: died=%v escalated=%v alreadyExited=%v",
+		logging.Infof("[process.Manager] process %s supersedes %s for session %s: died=%v escalated=%v alreadyExited=%v",
 			newID, vp.id, key, died, escalated, alreadyExited)
 	}
 }

@@ -110,12 +110,26 @@ func TestSocketLinkBoundStaysOnLink(t *testing.T) {
 			t.Errorf("B got live frame %+v, want the stream on the link only", f)
 		}
 	}
-	// B ends the process. The exit frame goes to the link, and the record is gone
-	// at once, so B's next reattach answers found false.
+	// B ends the process. The exit frame goes to the link first (process.go, the
+	// emit of the exit frame), and the record goes right after it, in a separate
+	// step (forgetLinked). So a reattach that lands between the two still finds the
+	// record with running false; the test waits for the drop, then B's reattach
+	// answers found false (from the code, not measured).
 	b.call(authed(`{"jsonrpc":"2.0","id":6,"method":"process.kill","params":{"id":"lc","signal":"KILL"}}`))
 	a.waitExit("lc")
-	gone := string(b.call(authed(`{"jsonrpc":"2.0","id":7,"method":"process.reattach","params":{"id":"lc","fromSeq":0}}`)))
-	if want := `{"jsonrpc":"2.0","id":7,"result":{"found":false,"running":false,"firstSeq":0,"lastSeq":0,"stdinApplied":0}}`; gone != want {
+	want := `{"jsonrpc":"2.0","id":7,"result":{"found":false,"running":false,"firstSeq":0,"lastSeq":0,"stdinApplied":0}}`
+	var gone string
+	for deadline := time.Now().Add(5 * time.Second); ; {
+		gone = string(b.call(authed(`{"jsonrpc":"2.0","id":7,"method":"process.reattach","params":{"id":"lc","fromSeq":0}}`)))
+		if gone == want || time.Now().After(deadline) {
+			break
+		}
+		if inGap := `{"jsonrpc":"2.0","id":7,"result":{"found":true,"running":false,`; !strings.HasPrefix(gone, inGap) {
+			t.Fatalf("reattach between the exit frame and the drop = %s\nwant found true, running false", gone)
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+	if gone != want {
 		t.Errorf("reattach after the exit = %s\nwant %s", gone, want)
 	}
 }

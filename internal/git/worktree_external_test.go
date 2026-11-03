@@ -37,7 +37,7 @@ func worktreeErrorField(t *testing.T, raw string) string {
 // 7d193f89.
 func TestWorktreeCreateExternalRoot(t *testing.T) {
 	requireGit(t)
-	base := t.TempDir()
+	base := dropGroupWrite(t, t.TempDir())
 	requireTempOutsideCheckout(t, base)
 	repo := filepath.Join(base, "R")
 	if err := os.MkdirAll(repo, 0o755); err != nil {
@@ -102,7 +102,7 @@ func TestWorktreeCreateExternalRoot(t *testing.T) {
 // Measured byte-for-byte against 7d193f89.
 func TestWorktreeCreateExternalSpellingAndSymlink(t *testing.T) {
 	requireGit(t)
-	base := t.TempDir()
+	base := dropGroupWrite(t, t.TempDir())
 	requireTempOutsideCheckout(t, base)
 	repo := filepath.Join(base, "R")
 	if err := os.MkdirAll(repo, 0o755); err != nil {
@@ -173,7 +173,7 @@ func TestWorktreeCreateExternalSpellingAndSymlink(t *testing.T) {
 // order); a marked directory accepts a second worktree beside it.
 func TestWorktreeCreateExternalDirMustBeEmpty(t *testing.T) {
 	requireGit(t)
-	base := t.TempDir()
+	base := dropGroupWrite(t, t.TempDir())
 	requireTempOutsideCheckout(t, base)
 	repo := filepath.Join(base, "R")
 	if err := os.MkdirAll(repo, 0o755); err != nil {

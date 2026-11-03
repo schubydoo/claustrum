@@ -142,7 +142,7 @@ from the socket, as in `plugins.prune`.
 relative path with `filepath.Abs` first. It still permits a path under home,
 because `~/.claude/…` is the install path of the daemon itself. The guard is
 always-on, not opt-in. Any RPC path param that reaches a recursive delete owes
-this guard. `IsAbs && !isFilesystemRoot` is not a substitute: home passes both
+this guard. `IsAbs && !homeguard.IsFilesystemRoot` is not a substitute: home passes both
 tests, and neither test resolves a relative path. Before `7d193f89`,
 `worktreePath:".."` from a daemon whose working folder is home reached
 `os.RemoveAll` on the parent of home, so the guard resolves a relative path
@@ -325,7 +325,7 @@ Detail: [-install](docs/INSTALL.md#staging-and-cleanup).
 
 `plugins.prune` is an `os.RemoveAll` site, and it is safe by construction. It
 deletes `<socket-derived-root>/<hash>`. The root comes from the socket layout
-and the leaf must match `^[0-9a-f]{16}$` (`pluginHashRE`). The path is never
+and the leaf must match `^[0-9a-f]{16}$` (`files.PluginHashRE`). The path is never
 caller-supplied and never `~`-expanded, so it needs no `homeguard.WipesHomeDir` guard.
 
 On Linux the legacy sweep of `plugins.prune` and the host cleaner dial a socket path over

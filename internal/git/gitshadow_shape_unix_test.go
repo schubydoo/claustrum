@@ -650,7 +650,7 @@ func TestShadowRemoveWithWorktreeRootNamesTheCopy(t *testing.T) {
 	if raw, _ := f.request(t, "git.info", map[string]any{"path": f.repo}); !strings.Contains(raw, `"isRepo":true`) {
 		t.Fatalf("git.info = %s", raw)
 	}
-	root := resolveTestRoot(t, t.TempDir())
+	root := dropGroupWrite(t, resolveTestRoot(t, t.TempDir()))
 	requireTempOutsideCheckout(t, root)
 	ext := filepath.Join(root, "proj", "wx")
 	if raw, _ := f.request(t, "git.worktree_create", map[string]any{

@@ -609,7 +609,7 @@ func TestHardenedGitCallShape(t *testing.T) {
 		if runtime.GOOS == "windows" {
 			t.Skip("a worktreeRoot is refused on Windows before any git call")
 		}
-		root := t.TempDir()
+		root := dropGroupWrite(t, t.TempDir())
 		requireTempOutsideCheckout(t, root)
 		ext := filepath.Join(root, "proj", "e0")
 		raw, _ := run("git.worktree_create", map[string]any{
