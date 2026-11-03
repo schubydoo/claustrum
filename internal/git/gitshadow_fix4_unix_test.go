@@ -55,9 +55,11 @@ func entriesWith(dir, prefix string) []string {
 // TestShadowIncludeStepEntries: during the include step of a create the
 // pattern file has mode 0644, and the index folder of the checkout is still
 // there. 5fd08069 keeps `.index-<n>` until the reply, and its `patterns` file
-// is `f 0644 11` (measured on Linux and macOS). The stub holds each
-// `ls-files` call, and the test looks at the folder of the daemon in that
-// time.
+// is `f 0644 11` (measured on Linux and macOS). The stub holds the first
+// `ls-files` call that names the pattern file at a gate. The test looks at the
+// folder of the daemon while the stub waits, and opens the gate after a look
+// that saw the pattern file. The stub stops its wait after 10 s, a time that no
+// passing run reaches.
 func TestShadowIncludeStepEntries(t *testing.T) {
 	useUmask(t, 0o022)
 	f := newSeededShadowFixture(t)
@@ -66,11 +68,18 @@ func TestShadowIncludeStepEntries(t *testing.T) {
 		t.Fatalf("git.info = %s", raw)
 	}
 	dir := daemonFolder(t, f.run)
-	slowGit(t, "ls-files", "pre", 150*time.Millisecond, "", "")
+	gate := filepath.Join(t.TempDir(), "gate")
+	slowGit(t, "ls-files", "gate", 10*time.Second, "", "")
+	t.Setenv("CLAUSTRUM_GITSTUB_GATE", gate)
+	t.Setenv("CLAUSTRUM_GITSTUB_ARGEND", "/"+includePatternsName)
 	var modes []os.FileMode
 	withIndex := 0
+	held := false
 	leaf := filepath.Join(f.repo, ".claude", "worktrees", "w1")
 	raw := duringRequest(t, f, "git.worktree_create", map[string]any{"baseRepo": f.repo, "branchName": "w1", "worktreePath": leaf}, func() {
+		_, err := os.Lstat(gate + ".in")
+		waiting := err == nil
+		seen := len(modes)
 		for _, name := range entriesWith(dir, shadowIncludeDirPrefix) {
 			fi, err := os.Lstat(filepath.Join(dir, name, includePatternsName))
 			if err != nil {
@@ -81,11 +90,20 @@ func TestShadowIncludeStepEntries(t *testing.T) {
 				withIndex++
 			}
 		}
+		if waiting && len(modes) > seen && !held {
+			held = true
+			if err := os.WriteFile(gate, nil, 0o644); err != nil {
+				t.Error(err)
+			}
+		}
 	})
 	if !strings.Contains(raw, `"success":true`) {
 		t.Fatalf("git.worktree_create = %s", raw)
 	}
-	if len(modes) == 0 {
+	if _, err := os.Lstat(gate + ".in"); err != nil {
+		t.Fatal("no ls-files call of the include scan reached the gate")
+	}
+	if len(modes) == 0 || !held {
 		t.Fatal("the test never saw the pattern file")
 	}
 	if i := slices.IndexFunc(modes, func(m os.FileMode) bool { return m != 0o644 }); i >= 0 {
