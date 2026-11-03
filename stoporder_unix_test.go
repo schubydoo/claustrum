@@ -8,6 +8,8 @@ import (
 	"path/filepath"
 	"sync/atomic"
 	"testing"
+
+	"github.com/schubydoo/claustrum/internal/wirelog"
 )
 
 // statAtCloseConn is a client connection whose Close records whether the socket
@@ -30,7 +32,7 @@ func (c *statAtCloseConn) Close() error {
 // the socket of this daemon is already gone.
 func TestCloseAllRemovesSocketBeforeConnections(t *testing.T) {
 	sock := filepath.Join(shortTempDir(t), "s.sock")
-	s, err := newServerOnSocket(sock, "tok", "", wireLogOptions{}, false, false)
+	s, err := newServerOnSocket(sock, "tok", "", wirelog.Options{}, false, false)
 	if err != nil {
 		t.Fatalf("newServerOnSocket: %v", err)
 	}
@@ -76,7 +78,7 @@ func TestCloseAllKillsChildrenBeforeTokenAndLock(t *testing.T) {
 	}
 	t.Cleanup(func() { signalGroup = realSignal })
 
-	s, err := newServerOnSocket(sock, testToken, "", wireLogOptions{}, false, false)
+	s, err := newServerOnSocket(sock, testToken, "", wirelog.Options{}, false, false)
 	if err != nil {
 		t.Fatalf("newServerOnSocket: %v", err)
 	}

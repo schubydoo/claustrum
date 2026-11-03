@@ -12,6 +12,8 @@ import (
 	"syscall"
 	"testing"
 	"time"
+
+	"github.com/schubydoo/claustrum/internal/sysproc"
 )
 
 // TestReapOrphansRefusesRecordSwappedAfterTypeTest swaps a record file between the
@@ -25,12 +27,12 @@ func TestReapOrphansRefusesRecordSwappedAfterTypeTest(t *testing.T) {
 	if node, _ := ownReapIdentity(); node == "" {
 		t.Skip("no node identity on this host")
 	}
-	// The helper leads its own group (newSysProcAttr sets Setpgid) and starts no child.
+	// The helper leads its own group (sysproc.NewSysProcAttr sets Setpgid) and starts no child.
 	// Each signal goes through cmd.Process, which sends nothing once the helper is reaped.
 	exe, env := helperCommand(t, "sleep")
 	cmd := exec.Command(exe, "60")
 	cmd.Env = buildEnv(env)
-	cmd.SysProcAttr = newSysProcAttr()
+	cmd.SysProcAttr = sysproc.NewSysProcAttr()
 	if err := cmd.Start(); err != nil {
 		t.Fatalf("helper: %v", err)
 	}

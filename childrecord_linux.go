@@ -7,6 +7,8 @@ import (
 	"strconv"
 	"strings"
 	"time"
+
+	"github.com/schubydoo/claustrum/internal/logging"
 )
 
 // machineIDPaths are the files machineID reads, in order (/etc/machine-id, then
@@ -32,7 +34,7 @@ func (m *procManager) recordChild(pid int, argv0, program string) {
 	start := procStartTicks(pid)
 	if start == 0 {
 		if !procUsable() {
-			logWarnf("[process.Manager] cannot read the start time of pid %d (no /proc and no ps on this platform): a successor daemon will not be able to reap it", pid)
+			logging.Warnf("[process.Manager] cannot read the start time of pid %d (no /proc and no ps on this platform): a successor daemon will not be able to reap it", pid)
 		}
 		return
 	}

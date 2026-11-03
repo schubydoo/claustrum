@@ -3,6 +3,8 @@ package main
 import (
 	"os"
 	"path/filepath"
+
+	"github.com/schubydoo/claustrum/internal/logging"
 )
 
 // persistedTokenName is the fixed basename the daemon writes its auth token to,
@@ -90,12 +92,12 @@ func saveTokenFile(socket, token string) os.FileInfo {
 	dir := tokenFileDir(socket)
 	dest := filepath.Join(dir, persistedTokenName)
 	if err := writeFileViaTemp(createTokenTemp, dir, dest, token); err != nil {
-		logErrorf("[daemon] failed to persist token: %v", err)
+		logging.Errorf("[daemon] failed to persist token: %v", err)
 		return nil
 	}
 	fi, err := statPersistedToken(dest)
 	if err != nil {
-		logErrorf("[daemon] failed to stat persisted token: %v", err)
+		logging.Errorf("[daemon] failed to stat persisted token: %v", err)
 		return nil
 	}
 	return fi
@@ -130,7 +132,7 @@ func statOpenFile(path string) (os.FileInfo, error) {
 // unreadable) is silent; only a failed unlink of a file we DO own is logged.
 func dropOwnTokenFile(socket string, owned os.FileInfo) {
 	if err := removeIfStillOurs(filepath.Join(tokenFileDir(socket), persistedTokenName), owned); err != nil {
-		logErrorf("[daemon] failed to remove persisted token: %v", err)
+		logging.Errorf("[daemon] failed to remove persisted token: %v", err)
 	}
 }
 
