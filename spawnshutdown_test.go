@@ -12,6 +12,8 @@ import (
 	"sync/atomic"
 	"testing"
 	"time"
+
+	"github.com/schubydoo/claustrum/internal/rpc"
 )
 
 // newTeardownServer boots a server on <tmp>/run/c1/rpc.sock with the accept wrap of
@@ -90,7 +92,7 @@ func TestNoChildStartsAfterShutdownBegan(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	got := make(chan *response, 1)
+	got := make(chan *rpc.Response, 1)
 	go func() { got <- s.dispatch(c, body) }()
 	select {
 	case <-held:
@@ -102,7 +104,7 @@ func TestNoChildStartsAfterShutdownBegan(t *testing.T) {
 	s.closeAll(sock)
 	close(release)
 
-	var resp *response
+	var resp *rpc.Response
 	select {
 	case resp = <-got:
 	case <-time.After(10 * time.Second):
@@ -198,7 +200,7 @@ func TestHeldSpawnsLeaveNoTraceAtShutdown(t *testing.T) {
 	}
 	type result struct {
 		id   string
-		resp *response
+		resp *rpc.Response
 	}
 	results := make(chan result, past+before)
 	wait := func(ch chan string, n int) {
@@ -229,7 +231,7 @@ func TestHeldSpawnsLeaveNoTraceAtShutdown(t *testing.T) {
 		t.Fatal("the start of the shutdown blocked on the held spawns")
 	}
 	letBefore()
-	got := map[string]*response{}
+	got := map[string]*rpc.Response{}
 	for range before {
 		select {
 		case r := <-results:

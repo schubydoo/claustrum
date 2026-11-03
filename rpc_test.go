@@ -7,6 +7,8 @@ import (
 	"net"
 	"testing"
 	"time"
+
+	"github.com/schubydoo/claustrum/internal/rpc"
 )
 
 const testToken = "s3cret-token"
@@ -312,8 +314,8 @@ func TestIDForLog(t *testing.T) {
 		{"object renders with sorted keys", map[string]interface{}{"b": 1.0, "a": 2.0}, `{"a":2,"b":1}`},
 		{"array", []interface{}{1.0, "x"}, `[1,"x"]`},
 	} {
-		if got := idForLog(tc.id); got != tc.want {
-			t.Errorf("%s: idForLog(%#v) = %q, want %q", tc.name, tc.id, got, tc.want)
+		if got := rpc.IDForLog(tc.id); got != tc.want {
+			t.Errorf("%s: rpc.IDForLog(%#v) = %q, want %q", tc.name, tc.id, got, tc.want)
 		}
 	}
 }

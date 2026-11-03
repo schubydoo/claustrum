@@ -1421,7 +1421,7 @@ func (s *server) closeAll(socket string) {
 	// pipe survives. No-op if the pipe was never started this boot (pipeInfo nil).
 	removePipeNameFileIfOwned(socket, s.pipeInfo)
 	// The folder of this daemon below git-shadow goes too, and the empty git-shadow
-	// stays (shadowHost.Close). Its place among these removes is not measured.
+	// stays (ShadowHost.Close). Its place among these removes is not measured.
 	s.gitShadow.Close()
 	// With -keep-children the kept children lose their records while this daemon
 	// still holds the lock. A successor takes the lock only after the release below,

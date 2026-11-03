@@ -1543,7 +1543,7 @@ func clampKillWaitMs(ms int) int {
 //   - alreadyExited: it had already exited before we signalled (no kill needed)
 //   - escalated:     it ignored the graceful signal and had to be SIGKILL'd
 //
-// The wire result is killAndWaitResult; an unknown id is (false,false,false,false).
+// The wire result is rpc.KillAndWaitResult; an unknown id is (false,false,false,false).
 func (m *procManager) killAndWait(id, signal string, grace time.Duration, escalate bool) (found, died, alreadyExited, escalated bool) {
 	p := m.get(id)
 	if p == nil {

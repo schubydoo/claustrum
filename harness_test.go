@@ -12,6 +12,8 @@ import (
 	"sync"
 	"testing"
 	"time"
+
+	"github.com/schubydoo/claustrum/internal/git"
 )
 
 // updateGolden regenerates the testdata/*.golden.json fixtures from the live
@@ -61,7 +63,7 @@ func newRunningServerAt(t *testing.T, sock string) (*server, string) {
 	s.procs.holdRunDir()
 	s.procs.instanceID = s.instanceID
 	// The settings control of the git methods has the same run dir, as in production.
-	s.gitShadow = newShadowHost(execChildRunDir(sock))
+	s.gitShadow = git.NewShadowHost(execChildRunDir(sock))
 	go func() {
 		for {
 			nc, err := ln.Accept()

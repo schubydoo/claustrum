@@ -9,6 +9,8 @@ import (
 	"sync"
 	"testing"
 	"time"
+
+	"github.com/schubydoo/claustrum/internal/rpc"
 )
 
 // eofParseErrFrame is the parse-error frame as the first line of a connection.
@@ -40,7 +42,7 @@ func holdDispatch(t *testing.T) (seen func() []string) {
 	)
 	release := make(chan struct{})
 	old := dispatchRequest
-	dispatchRequest = func(s *server, c *conn, raw []byte, req request) *response {
+	dispatchRequest = func(s *server, c *conn, raw []byte, req request) *rpc.Response {
 		wg.Add(1)
 		defer wg.Done()
 		mu.Lock()
