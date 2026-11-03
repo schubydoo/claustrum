@@ -4,6 +4,7 @@ package main
 
 import (
 	"errors"
+	"io/fs"
 	"os"
 	"time"
 )
@@ -79,6 +80,19 @@ func (m *procManager) removeChildRecord(pid int) {
 	if err := removeChildRecordIn(root, pid); err != nil {
 		logWarnf("[process.Registry] cannot remove record of child %d: %v", pid, err)
 	}
+}
+
+// removeChildRecordIn removes children/<pid>.json below root, which is the run dir. It
+// is one plain remove of one name, never recursive, and the os.Root keeps it inside the
+// run dir. A record that does not exist is not an error. As 89cb6289 does, the remove
+// goes through a children symlink that stays inside the run dir (Linux rows SLa, SLb,
+// macOS KDa, KDb). A symlink that leads out is refused (measured).
+func removeChildRecordIn(root *os.Root, pid int) error {
+	err := root.Remove(childRecordName(pid))
+	if errors.Is(err, fs.ErrNotExist) {
+		return nil
+	}
+	return err
 }
 
 // awaitRecordsRemoved waits until the exit goroutine of every managed process has
