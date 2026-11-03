@@ -9,12 +9,14 @@ import (
 	"syscall"
 	"testing"
 	"time"
+
+	"github.com/schubydoo/claustrum/internal/procinfo"
 )
 
-// TestKillGroupReachesEveryMemberOfTheGroup pins that killGroup signals the whole
+// TestKillGroupReachesEveryMemberOfTheGroup pins that procinfo.KillGroup signals the whole
 // process group, not the leader alone. The leader is the "tree-stdout" helper, started
 // with Setpgid so that its pid is the id of a new group. Its kid does not set a group,
-// so it joins the group of the leader. A killGroup that signals only the pid ends the
+// so it joins the group of the leader. A procinfo.KillGroup that signals only the pid ends the
 // leader and leaves the kid running. The group holds only the two helpers that this
 // test started, so the SIGKILL reaches nothing else.
 func TestKillGroupReachesEveryMemberOfTheGroup(t *testing.T) {
@@ -57,7 +59,7 @@ func TestKillGroupReachesEveryMemberOfTheGroup(t *testing.T) {
 		t.Fatalf("Getpgid(kid %d) = %d, %v, want the group %d of the leader", kid, got, err, pgid)
 	}
 
-	if err := killGroup(pgid, syscall.SIGKILL); err != nil {
+	if err := procinfo.KillGroup(pgid, syscall.SIGKILL); err != nil {
 		t.Fatalf("killGroup(%d, SIGKILL) = %v", pgid, err)
 	}
 	var st *os.ProcessState

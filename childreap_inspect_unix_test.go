@@ -172,7 +172,7 @@ func TestNotLockHolderReapsAndRecordsNothing(t *testing.T) {
 			dir := shortTempDir(t)
 			sock := filepath.Join(dir, "rpc.sock")
 			if !tc.holder {
-				fd, err := syscall.Open(filepath.Join(dir, runDirLockName), syscall.O_RDWR|syscall.O_CREAT|syscall.O_CLOEXEC, 0o600)
+				fd, err := syscall.Open(filepath.Join(dir, runlock.LockName), syscall.O_RDWR|syscall.O_CREAT|syscall.O_CLOEXEC, 0o600)
 				if err != nil {
 					t.Fatal(err)
 				}

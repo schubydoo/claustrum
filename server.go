@@ -3,6 +3,7 @@ package main
 import (
 	"bufio"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net"
@@ -20,10 +21,14 @@ import (
 
 	"github.com/schubydoo/claustrum/internal/files"
 	"github.com/schubydoo/claustrum/internal/git"
+	"github.com/schubydoo/claustrum/internal/hostsweep"
 	"github.com/schubydoo/claustrum/internal/logging"
 	"github.com/schubydoo/claustrum/internal/metrics"
 	"github.com/schubydoo/claustrum/internal/rpc"
+	"github.com/schubydoo/claustrum/internal/runlock"
 	"github.com/schubydoo/claustrum/internal/shellenv"
+	"github.com/schubydoo/claustrum/internal/sockroute"
+	"github.com/schubydoo/claustrum/internal/tokenfile"
 	"github.com/schubydoo/claustrum/internal/wirelog"
 )
 
@@ -117,7 +122,7 @@ type server struct {
 
 	// sockInfo / tokenInfo / pipeInfo are the identities of the socket, daemon.token
 	// and rpc.pipe files this daemon published, so teardown unlinks each only if it is
-	// still the inode this daemon wrote (unlinkOwnSocket / dropOwnTokenFile /
+	// still the inode this daemon wrote (unlinkOwnSocket / tokenfile.DropOwn /
 	// removePipeNameFileIfOwned) — a restart's successor may have republished any of
 	// them to a new inode, and deleting a successor's file would break its handoff.
 	// tokenInfo/pipeInfo are nil when nothing was published (persist failed / no pipe).
@@ -472,7 +477,7 @@ func runServe(socket, tokenFile string, tokenFd int, metricsAddr string, wlopt w
 	// is not a deployed run-dir socket. It is a no-op off linux and darwin (see internal/hostsweep). DESTRUCTIVE
 	// and host-wide: validated only on a throwaway test system, never on a host that runs siblings. Kept in
 	// this shell, not in newServerOnSocket, so an in-process test boot starts no cleaner.
-	startHostCleaner(socket)
+	hostsweep.Start(socket)
 	// The start test of files.read real, once and before the first connection line.
 	// Its place beside the banner and the cleaner line is claustrum's own, not measured.
 	files.LogReadRealStart()
@@ -572,11 +577,11 @@ func newServerOnSocket(socket, token, metricsAddr string, wlopt wirelog.Options,
 	// comes from the startedAt of the full record (see below).
 	//
 	// The claim evicts a prior live sibling serve daemon, so a restart
-	// deterministically replaces it. Best-effort: lockRunFolder never fails the boot,
+	// deterministically replaces it. Best-effort: runlock.LockRunFolder never fails the boot,
 	// only logs and serves without ownership. It writes the short owner record. On
 	// Windows it takes no lock and prints one line (see internal/runlock).
 	instanceID := newDaemonInstanceID()
-	claim := lockRunFolder(socket, "serve")
+	claim := runlock.LockRunFolder(socket, "serve")
 	procs := newProcManager()
 	defer func() {
 		if !ok {
@@ -614,11 +619,11 @@ func newServerOnSocket(socket, token, metricsAddr string, wlopt wirelog.Options,
 	}
 
 	_ = os.Remove(socket) // clear a stale socket
-	ln, err := listenSocket(socket)
+	ln, err := sockroute.Listen(socket)
 	if err != nil {
 		return nil, fmt.Errorf("listen unix: %v", err)
 	}
-	keepSocketFileAtClose(ln)
+	sockroute.KeepSocketFileAtClose(ln)
 	// The identity of the socket that this start bound. It is nil only when the stat
 	// itself failed, and unlinkOwnSocket then removes the path with no test.
 	bound, _ := os.Stat(socket)
@@ -643,7 +648,7 @@ func newServerOnSocket(socket, token, metricsAddr string, wlopt wirelog.Options,
 	// was unlinked / the -token-fd pipe closed. Removed again in teardown, but only if
 	// still our inode (tokenInfo). Matches the reference daemon (upstream 5db5e4a);
 	// best-effort and non-fatal.
-	tokenFI := saveTokenFile(socket, token)
+	tokenFI := tokenfile.Save(socket, token)
 
 	// -listen-pipe is Windows-only. honorListenPipe returns the flag unchanged on
 	// Windows and false-with-a-warning elsewhere (the named-pipe transport has no
@@ -930,7 +935,7 @@ var daemonPeerPID = connPeerPID
 func waitForDaemonAccept(socket string, predPID int) (accepted, sawPredecessor bool) {
 	deadline := time.Now().Add(daemonStartTimeout)
 	for {
-		c, err := dialUnixPath(socket, max(time.Until(deadline), time.Millisecond))
+		c, err := sockroute.DialUnixPath(socket, max(time.Until(deadline), time.Millisecond))
 		exitOnChangeBack(err)
 		if err == nil {
 			pid := daemonPeerPID(c)
@@ -946,6 +951,16 @@ func waitForDaemonAccept(socket string, predPID int) (accepted, sawPredecessor b
 			return false, sawPredecessor
 		}
 		time.Sleep(daemonStartPoll)
+	}
+}
+
+// exitOnChangeBack ends a launcher whose connect could not change back to the
+// working folder, with exit 1 (claustrum's own, not measured). Other errors pass.
+func exitOnChangeBack(err error) {
+	var back *sockroute.ChangeBackError
+	if errors.As(err, &back) {
+		fmt.Fprintf(os.Stderr, "claustrum: %v\n", err)
+		osExit(1)
 	}
 }
 
@@ -1409,7 +1424,7 @@ func (s *server) closeAll(socket string) {
 	// count it (measured on Linux). Its place among these steps is claustrum's own
 	// (not measured).
 	shellenv.Stop()
-	dropOwnTokenFile(socket, s.tokenInfo)
+	tokenfile.DropOwn(socket, s.tokenInfo)
 	// Remove rpc.pipe on the same graceful path as rpc.sock/daemon.token, and with the
 	// same ownership guard: only if it is still the inode we published, so a successor's
 	// pipe survives. No-op if the pipe was never started this boot (pipeInfo nil).

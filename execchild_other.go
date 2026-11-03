@@ -13,7 +13,7 @@ import (
 // socket shape. Measured on Windows: the 19f30c46 reference daemon reports it is not the
 // run-dir lock holder on windows and stamps neither marker — a child spawned under a
 // run-shaped socket has an environment byte-identical to one spawned under a bare socket.
-// Claustrum holds no run-dir lock on windows either (its lockRunFolder is a no-op there), so
+// Claustrum holds no run-dir lock on windows either (its runlock.LockRunFolder is a no-op there), so
 // on windows these are no-ops and the daemon spawns the target directly.
 
 // maybeRunExecChild is a no-op on windows — there is no --exec-child mode to intercept.

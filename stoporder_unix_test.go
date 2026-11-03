@@ -9,6 +9,7 @@ import (
 	"sync/atomic"
 	"testing"
 
+	"github.com/schubydoo/claustrum/internal/tokenfile"
 	"github.com/schubydoo/claustrum/internal/wirelog"
 )
 
@@ -60,7 +61,7 @@ func TestCloseAllKillsChildrenBeforeTokenAndLock(t *testing.T) {
 	var released atomic.Bool
 	dir := shortTempDir(t)
 	sock := filepath.Join(dir, "rpc.sock")
-	token := filepath.Join(dir, persistedTokenName)
+	token := filepath.Join(dir, tokenfile.Name)
 	// The seam is set before the daemon starts, so no goroutine of the daemon reads
 	// it while the test writes it.
 	realSignal := signalGroup

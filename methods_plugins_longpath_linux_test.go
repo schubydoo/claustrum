@@ -7,6 +7,8 @@ import (
 	"path/filepath"
 	"regexp"
 	"testing"
+
+	"github.com/schubydoo/claustrum/internal/sockroute"
 )
 
 // On Linux the sibling test of plugins.prune dials a 120-byte sibling through /proc
@@ -20,7 +22,7 @@ func TestSiblingAtALongPathThroughProc(t *testing.T) {
 	if err := os.Remove(sock); err != nil {
 		t.Fatal(err)
 	}
-	ln, err := listenSocket(sock)
+	ln, err := sockroute.Listen(sock)
 	if err != nil {
 		t.Fatal(err)
 	}

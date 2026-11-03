@@ -7,6 +7,8 @@ import (
 	"net"
 	"os"
 	"time"
+
+	"github.com/schubydoo/claustrum/internal/sockroute"
 )
 
 // livePredecessorPID returns the pid of the daemon that answers a connect on the
@@ -16,7 +18,7 @@ import (
 // the 0 result are not measured. A connect that could not change back to the
 // working folder ends the launcher with exit 1 (claustrum's own, not measured).
 func livePredecessorPID(socket string) int {
-	c, err := dialUnixPath(socket, 200*time.Millisecond)
+	c, err := sockroute.DialUnixPath(socket, 200*time.Millisecond)
 	exitOnChangeBack(err)
 	if err != nil {
 		return 0

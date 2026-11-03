@@ -9,6 +9,8 @@ import (
 	"strconv"
 	"strings"
 	"syscall"
+
+	"github.com/schubydoo/claustrum/internal/procinfo"
 )
 
 // The linux-specific half of the orphan reap: it reads a live process from /proc and
@@ -23,7 +25,7 @@ var procReadFile = os.ReadFile
 // from the same linux sources childrecord writes: node = <boot_id>/pid:[<pidns-inode>],
 // host = "machine-id:<id>".
 func ownReapIdentity() (node, host string) {
-	return nodeID(), "machine-id:" + machineID()
+	return procinfo.NodeID(), "machine-id:" + machineID()
 }
 
 // procAbsent reports whether a read error of /proc means that the process does not
@@ -45,7 +47,7 @@ const unparseableStat = "unparseable stat"
 // measured). Another namespace gives procNotOurs, as before. With no own link there
 // is no test, as before (not measured).
 func pidNamespace(proc string) (state int, why string) {
-	self, err := os.Readlink(procRoot() + "/self/ns/pid")
+	self, err := os.Readlink(procinfo.Root() + "/self/ns/pid")
 	if err != nil {
 		return procAlive, ""
 	}
@@ -80,7 +82,7 @@ func pidNamespace(proc string) (state int, why string) {
 // mode 000 or does not parse (measured on Linux).
 func realReadLiveProc(pid int, wantEnv bool) liveProc {
 	lp := liveProc{state: procGone}
-	proc := procRoot() + "/" + strconv.Itoa(pid)
+	proc := procinfo.Root() + "/" + strconv.Itoa(pid)
 	stat, err := procReadFile(proc + "/stat")
 	if err != nil {
 		switch {

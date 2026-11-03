@@ -13,6 +13,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/schubydoo/claustrum/internal/runlock"
 	"golang.org/x/sys/windows"
 )
 
@@ -394,7 +395,7 @@ func TestJobLineFollowsTheLockLine(t *testing.T) {
 		t.Errorf("jobs = %d, want jobsOn", s.procs.jobs)
 	}
 	wantLinesInOrder(t, buf.String(),
-		runDirNotHolderLine,
+		runlock.NotHolderLine,
 		"[daemon] job objects for child processes as the socket opens: true (off switch: false)")
 }
 

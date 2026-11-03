@@ -7,11 +7,13 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/schubydoo/claustrum/internal/tokenfile"
 )
 
 // removePipeNameFileIfOwned removes rpc.pipe only when it is still the inode this
 // daemon published (os.SameFile) — so a restart's successor that republished it keeps
-// its own pointer. Mirrors dropOwnTokenFile / unlinkOwnSocket. The identity
+// its own pointer. Mirrors tokenfile.DropOwn / unlinkOwnSocket. The identity
 // is the one that the daemon records (pipeNameFileIdentity). On Windows an os.Stat
 // identity reads the file id by the path at the compare, so it named the successor's
 // file there.
@@ -172,7 +174,7 @@ func TestRemovePipeNameFileStatError(t *testing.T) {
 // errInjected drives the write and close failure arms of writePipeNameFile.
 var errInjected = errors.New("injected failure")
 
-// fakeTokenTemp is a tokenTempFile whose WriteString/Close can be told to fail.
+// fakeTokenTemp is a tokenfile.TempFile whose WriteString/Close can be told to fail.
 // name points at a real temp file so the error arms' os.Remove(tmp) still cleans
 // up, letting the test assert no temp leaks.
 type fakeTokenTemp struct {
@@ -206,7 +208,7 @@ func TestWritePipeNameFileWriteAndCloseErrors(t *testing.T) {
 			}
 			_ = real.Close()
 			restore := createPipeTemp
-			createPipeTemp = func(string) (tokenTempFile, error) {
+			createPipeTemp = func(string) (tokenfile.TempFile, error) {
 				return &fakeTokenTemp{name: real.Name(), writeErr: tc.writeErr, closeErr: tc.closeErr}, nil
 			}
 			t.Cleanup(func() { createPipeTemp = restore })

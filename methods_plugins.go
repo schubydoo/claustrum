@@ -18,6 +18,7 @@ import (
 	"github.com/schubydoo/claustrum/internal/files"
 	"github.com/schubydoo/claustrum/internal/logging"
 	"github.com/schubydoo/claustrum/internal/rpc"
+	"github.com/schubydoo/claustrum/internal/sockroute"
 )
 
 // plugins.prune (reference build 19f30c46) prunes cached CLI plugin directories
@@ -204,7 +205,7 @@ func siblingDaemonAlive(base, own string) string {
 			}
 			return "cannot inspect " + sock + ": " + serr.Error()
 		}
-		c, derr := dialSiblingSocket(sock, 300*time.Millisecond)
+		c, derr := sockroute.DialSiblingSocket(sock, 300*time.Millisecond)
 		if derr == nil {
 			_ = c.Close()
 			return rel + " answers"

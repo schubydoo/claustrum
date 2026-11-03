@@ -10,6 +10,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/schubydoo/claustrum/internal/procinfo"
 	"github.com/schubydoo/claustrum/internal/runlock"
 )
 
@@ -17,13 +18,15 @@ import (
 // start of a daemon. internal/runlock has its own copies for its own tests.
 
 // readOwnerRecord reads the owner record at path, as the daemon does.
-func readOwnerRecord(path string) (ownerRecord, error) { return runlock.ReadOwnerRecordForTest(path) }
+func readOwnerRecord(path string) (runlock.OwnerRecord, error) {
+	return runlock.ReadOwnerRecordForTest(path)
+}
 
 // writeOwnerRecord writes rec into the locked fd, as the daemon does.
-func writeOwnerRecord(fd int, rec ownerRecord) { runlock.WriteOwnerRecordForTest(fd, rec) }
+func writeOwnerRecord(fd int, rec runlock.OwnerRecord) { runlock.WriteOwnerRecordForTest(fd, rec) }
 
 // runlockHoldFixture is the "runlock-hold" helper mode: take the flock on args[0],
-// write an owner record naming this process a serve daemon, then linger so lockRunFolder
+// write an owner record naming this process a serve daemon, then linger so runlock.LockRunFolder
 // must evict it. args[1] == "term-ignore" swallows SIGTERM (the escalation case);
 // args[2] is a ready-file the parent waits on; an optional args[3] overrides the node
 // so the parent can exercise the machine-identity refusal guard.
@@ -38,11 +41,11 @@ func runlockHoldFixture(args []string) int {
 		fmt.Fprintln(os.Stderr, "flock:", err)
 		return 1
 	}
-	node := nodeID()
+	node := procinfo.NodeID()
 	if len(args) > 3 && args[3] != "" {
 		node = args[3]
 	}
-	writeOwnerRecord(fd, ownerRecord{
+	writeOwnerRecord(fd, runlock.OwnerRecord{
 		Pid:        os.Getpid(),
 		Role:       "serve",
 		Node:       node,
@@ -104,8 +107,8 @@ func waitForExit(pid int, grace time.Duration) bool {
 }
 
 // writeRecordFile stages an owner record into path via the production writer, so the
-// eviction tests read exactly the on-disk shape lockRunFolder writes.
-func writeRecordFile(t *testing.T, path string, rec ownerRecord) {
+// eviction tests read exactly the on-disk shape runlock.LockRunFolder writes.
+func writeRecordFile(t *testing.T, path string, rec runlock.OwnerRecord) {
 	t.Helper()
 	fd, err := syscall.Open(path, syscall.O_RDWR|syscall.O_CREAT|syscall.O_CLOEXEC, 0o600)
 	if err != nil {

@@ -13,6 +13,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/schubydoo/claustrum/internal/procinfo"
 	"github.com/schubydoo/claustrum/internal/runlock"
 	"github.com/schubydoo/claustrum/internal/wirelog"
 )
@@ -29,7 +30,7 @@ func TestNewServerOnSocketWritesRunLock(t *testing.T) {
 	}
 	t.Cleanup(func() { s.procs.killAll() })
 
-	lockPath := filepath.Join(dir, runDirLockName)
+	lockPath := filepath.Join(dir, runlock.LockName)
 	rec, err := readOwnerRecord(lockPath)
 	if err != nil {
 		t.Fatalf("daemon.lock not written at boot: %v", err)
@@ -110,7 +111,7 @@ func TestLateRunDirLockAfterHolderLetsGo(t *testing.T) {
 	tries := shrinkLatePeriod(t)
 	dir := shortTempDir(t)
 	sock := filepath.Join(dir, "s.sock")
-	lockPath := filepath.Join(dir, runDirLockName)
+	lockPath := filepath.Join(dir, runlock.LockName)
 	letGo := startEmptyLockHolder(t, lockPath)
 
 	s, err := newServerOnSocket(sock, "tok", "", wirelog.Options{}, false, false)
@@ -118,7 +119,7 @@ func TestLateRunDirLockAfterHolderLetsGo(t *testing.T) {
 		t.Fatalf("newServerOnSocket: %v", err)
 	}
 	t.Cleanup(func() { s.releaseRunDir(); s.procs.killAll() })
-	if !strings.Contains(buf.String(), runDirNotHolderLine) {
+	if !strings.Contains(buf.String(), runlock.NotHolderLine) {
 		t.Fatalf("log = %q, want the start without the lock", buf.String())
 	}
 
@@ -131,7 +132,7 @@ func TestLateRunDirLockAfterHolderLetsGo(t *testing.T) {
 		t.Errorf("late line = %q, want it to end with %q", got, want)
 	}
 
-	rec, err := json.Marshal(ownerRecord{Pid: os.Getpid(), Role: "serve", Node: nodeID(), InstanceID: s.instanceID, StartedAt: s.startedAt})
+	rec, err := json.Marshal(runlock.OwnerRecord{Pid: os.Getpid(), Role: "serve", Node: procinfo.NodeID(), InstanceID: s.instanceID, StartedAt: s.startedAt})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -179,7 +180,7 @@ func TestLateRunDirLockStopsAtShutdown(t *testing.T) {
 	tries := shrinkLatePeriod(t)
 	dir := shortTempDir(t)
 	sock := filepath.Join(dir, "s.sock")
-	lockPath := filepath.Join(dir, runDirLockName)
+	lockPath := filepath.Join(dir, runlock.LockName)
 	letGo := startEmptyLockHolder(t, lockPath)
 
 	s, err := newServerOnSocket(sock, "tok", "", wirelog.Options{}, false, false)

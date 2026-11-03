@@ -219,7 +219,7 @@ func TestRecordChildNoProcLogsAndWritesNothing(t *testing.T) {
 	m.runDir = runDir
 	m.instanceID = "x"
 
-	oldRoot := procRoot()
+	oldRoot := procinfo.Root()
 	t.Cleanup(func() { procinfo.SetRootForTest(oldRoot) })
 	procinfo.SetRootForTest(standIn)
 	out := captureLog(t, func() { m.recordChild(self, "/bin/sleep", "") })

@@ -17,6 +17,7 @@ import (
 	"time"
 
 	"github.com/schubydoo/claustrum/internal/logging"
+	"github.com/schubydoo/claustrum/internal/procinfo"
 )
 
 // The orphan reap (reference build 19f30c46). At -serve startup, right after a daemon
@@ -695,7 +696,7 @@ func reapTargets(c *reapCtx, targets []reapTarget, counts *reapCounts) {
 			logging.Infof("[process.Registry] record %s: pid %d cannot be inspected now (%s); keeping the record, signalling nothing", t.name, t.pid, reason)
 			counts.skipped++
 		default: // verdictReap: still the same live leader
-			if err := killGroup(t.pid, syscall.SIGTERM); err != nil {
+			if err := procinfo.KillGroup(t.pid, syscall.SIGTERM); err != nil {
 				counts.forgotten++
 				c.forget(t.name)
 				continue
@@ -787,7 +788,7 @@ func (c *reapCtx) keepUnknown(t reapTarget, reason string, counts *reapCounts) {
 // end of the grace, with the reference's line for it.
 func (c *reapCtx) killAfterGrace(t reapTarget) {
 	logging.Warnf("[process.Registry] group %d outlived SIGTERM for %s: SIGKILL", t.pid, reapGrace)
-	_ = killGroup(t.pid, syscall.SIGKILL)
+	_ = procinfo.KillGroup(t.pid, syscall.SIGKILL)
 }
 
 // forgetLater notes the record of a signalled group that is done. forgetLate removes
@@ -917,7 +918,7 @@ func (c *reapCtx) drop(t reapTarget, reason string, counts *reapCounts) {
 // the removal at the end of the sweep.
 func reapGoneLeader(c *reapCtx, t reapTarget, reapedCounter *int) {
 	if groupAlive(t.pid) {
-		_ = killGroup(t.pid, syscall.SIGKILL) // leader gone, group members linger
+		_ = procinfo.KillGroup(t.pid, syscall.SIGKILL) // leader gone, group members linger
 	}
 	*reapedCounter++
 	c.forgetLater(t.name)

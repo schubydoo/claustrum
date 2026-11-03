@@ -80,7 +80,7 @@ func endChildBeforeRead(t *testing.T, pid int, file string, end func()) {
 	t.Cleanup(func() { procReadFile = old })
 	ended := false
 	procReadFile = func(name string) ([]byte, error) {
-		if !ended && name == procRoot()+"/"+strconv.Itoa(pid)+"/"+file {
+		if !ended && name == procinfo.Root()+"/"+strconv.Itoa(pid)+"/"+file {
 			ended = true
 			end()
 		}
@@ -182,7 +182,7 @@ func TestReapChildThatReplacesItsProgramGetsNoSIGKILL(t *testing.T) {
 		termed = termed || sig == syscall.SIGTERM
 		return err
 	})
-	dir := procRoot() + "/" + strconv.Itoa(pid)
+	dir := procinfo.Root() + "/" + strconv.Itoa(pid)
 	procReadFile = func(name string) ([]byte, error) {
 		b, err := oldRead(name)
 		if i := strings.LastIndexByte(string(b), ')'); err == nil && termed && !paused && name == dir+"/stat" && i >= 0 && len(b) > i+2 {

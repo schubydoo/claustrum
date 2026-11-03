@@ -7,6 +7,10 @@ import (
 	"os"
 	"path/filepath"
 	"time"
+
+	"github.com/schubydoo/claustrum/internal/runlock"
+	"github.com/schubydoo/claustrum/internal/sockroute"
+	"github.com/schubydoo/claustrum/internal/tokenfile"
 )
 
 // runBridge is a dumb stdio<->unix-socket relay. It does NOT inject auth; the
@@ -27,7 +31,7 @@ import (
 // (bridgeStdout). That follows the measured outcome of build 52d82f0a: exit 0
 // after a write to a closed stdout. The claustrum bridge itself was not measured.
 func runBridge(socket string) error {
-	nc, err := dialUnixPath(socket, 0)
+	nc, err := sockroute.DialUnixPath(socket, 0)
 	if err != nil {
 		return fmt.Errorf("dial server: %w", err)
 	}
@@ -71,12 +75,12 @@ func runStop(socket string, stdout io.Writer) {
 //
 //   - If the connect succeeds, -stop sends the request and does one read with a 2 s
 //     deadline. A live daemon removes its own socket when it stops.
-//   - Then -stop waits for daemon.lock on Linux and macOS (stopAfterReply), and
+//   - Then -stop waits for daemon.lock on Linux and macOS (runlock.StopAfterReply), and
 //     prints "stopped" at once on Windows (`5fd08069`, measured). On 5fd08069 -stop
 //     prints "stopped" with rc 0 both when the reply arrives and when it gets EOF
 //     (measured). claustrum sends garbage, a reset and the deadline to the same step
 //     (not measured on 5fd08069).
-//   - If the connect fails, -stop checks daemon.lock (stopRunDirHolder). Then it
+//   - If the connect fails, -stop checks daemon.lock (runlock.StopRunDirHolder). Then it
 //     removes the socket path and daemon.token beside it, and prints the word
 //     from the lock check.
 //   - If the word is "survivor", -stop removes neither file. This is measured
@@ -88,13 +92,13 @@ func runStop(socket string, stdout io.Writer) {
 // directory. It keeps a non-empty directory and a path in a directory that
 // this user cannot write. The references do the same (measured).
 func stopDaemon(socket string) string {
-	nc, err := dialUnixPath(socket, 0)
+	nc, err := sockroute.DialUnixPath(socket, 0)
 	if err != nil {
-		// Remove while the lock is still held, then release it (see stopRunDirHolder).
-		word, release := stopRunDirHolder(socket)
-		if word != stopWordSurvivor {
+		// Remove while the lock is still held, then release it (see runlock.StopRunDirHolder).
+		word, release := runlock.StopRunDirHolder(socket)
+		if word != runlock.StopWordSurvivor {
 			_ = os.Remove(socket)
-			_ = os.Remove(filepath.Join(tokenFileDir(socket), persistedTokenName))
+			_ = os.Remove(filepath.Join(tokenfile.Dir(socket), tokenfile.Name))
 		}
 		release()
 		return word
@@ -123,7 +127,7 @@ func stopDaemon(socket string) string {
 	// relayed to stdout: -stop is a control command, not a relay.
 	buf := make([]byte, 4096)
 	_, _ = nc.Read(buf)
-	word, release := stopAfterReply(socket)
+	word, release := runlock.StopAfterReply(socket)
 	release()
 	return word
 }

@@ -5,6 +5,8 @@ import (
 	"path/filepath"
 	"testing"
 	"time"
+
+	"github.com/schubydoo/claustrum/internal/tokenfile"
 )
 
 // These tests run on linux, macOS and Windows. The other tests that see the token
@@ -16,7 +18,7 @@ import (
 func ownTokenFile(t *testing.T) (*server, string, string) {
 	t.Helper()
 	s, sock := bootLineServer(t, false)
-	token := filepath.Join(tokenFileDir(sock), persistedTokenName)
+	token := filepath.Join(tokenfile.Dir(sock), tokenfile.Name)
 	if s.tokenInfo == nil {
 		t.Fatal("the start kept no identity of daemon.token")
 	}
@@ -47,7 +49,7 @@ func TestShutdownRemovesOwnTokenFile(t *testing.T) {
 func TestShutdownKeepsSuccessorTokenFile(t *testing.T) {
 	s, sock, token := ownTokenFile(t)
 	// The successor writes its file the way every start does: a temp file and a rename.
-	if saveTokenFile(sock, "successor-tok") == nil {
+	if tokenfile.Save(sock, "successor-tok") == nil {
 		t.Fatal("the successor wrote no daemon.token")
 	}
 	s.signalShutdown()

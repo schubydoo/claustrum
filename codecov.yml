@@ -95,7 +95,6 @@ component_management:
         - selflocate_linux.go
         - selflocate_other.go
         - internal/tokenfile/tokenpersist.go
-        - compat_tokenfile.go
         - pipetransport.go
         - pipetransport_windows.go
         - pipetransport_other.go
@@ -110,7 +109,6 @@ component_management:
         - peerpid_linuxdarwin.go
         - peerpid_other.go
         # The listen and dial of a socket path over the limit of the system (OS-split).
-        - compat_sockroute.go
         - internal/sockroute/socketroute.go
         - internal/sockroute/socketroute_unix.go
         - internal/sockroute/socketroute_linux.go
@@ -132,8 +130,6 @@ component_management:
         - internal/runlock/names_unix.go
         - internal/runlock/names_linux.go
         - internal/runlock/fortest_unix.go
-        - compat_runlock.go
-        - compat_runlock_unix.go
         - orphanexit.go
         - selfexit_unix.go
         - selfexit_windows.go
@@ -388,8 +384,6 @@ component_management:
         - internal/hostsweep/names_unix.go
         - internal/hostsweep/names_linux.go
         - internal/hostsweep/peer_unix.go
-        - compat_hostsweep.go
-        - compat_hostsweep_unix.go
         # The process helpers of the child records, the reap, the host cleaner and the
         # run-dir lock: the group kill, the /proc mount, the node identity and the pidfd hold.
         - internal/procinfo/procinfo.go
@@ -400,8 +394,6 @@ component_management:
         - internal/procinfo/export_linux.go
         - internal/procinfo/fortest_unix.go
         - internal/procinfo/fortest_linux.go
-        - compat_procinfo.go
-        - compat_procinfo_linux.go
     - component_id: bridge_cli
       name: bridge, CLI & config
       paths:
