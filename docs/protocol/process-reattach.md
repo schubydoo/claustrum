@@ -71,7 +71,7 @@ Compare `firstSeq` with the last `seq` that you have. If `firstSeq` is more than
 ??? note "A process that finished and was forgotten"
     `"found": false` does not always mean that the process never existed. The daemon keeps an exited process that is not [link-bound](process-link-bound.md#the-spent-id) for some time. Then it forgets the process and its stored frames.
 
-    claustrum keeps it for 15 minutes after the `exit` frame, and up to about one minute more. After a long gap, read `"found": false` as "finished and forgotten". The daemon never forgets a running process.
+    claustrum keeps it for 15 minutes after the `exit` frame, and up to about one minute more. After a long gap, read `"found": false` as "finished and forgotten".
 
 ??? note "A frame that arrives twice"
     On a reattach from the connection that already receives the frames, a frame at or below `lastSeq` can arrive twice (measured on Linux and macOS). Drop a frame whose `seq` you already have. A new frame can arrive before the result (from the code) (not measured).
@@ -82,4 +82,4 @@ One entry of the [divergence catalog](../DIVERGENCES.md) applies to this method:
 
 - [CT-1](../DIVERGENCES.md#ct-1): the optional `wantPid` parameter with the members `pid` and `startTime`. A request without `wantPid` gets no such member.
 
-The exact time that the reference keeps a process that exited is not known: the measurements bracket it to more than 45 seconds and at most 960 seconds. The 15 minutes of claustrum and the extra time of up to about one minute are its own choice inside that range.
+The exact time that the reference keeps a plain exited process is not known: the measurements bracket it to more than 45 seconds and at most 960 seconds. The 15 minutes of claustrum and the extra time of up to about one minute are its own choice inside that range.
