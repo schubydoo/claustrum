@@ -323,21 +323,21 @@ Detail: [-install](docs/INSTALL.md#staging-and-cleanup).
 
 ### `plugins.prune`
 
-`plugins.prune` is a further `os.RemoveAll` site, and it is safe by construction. It
-deletes `<socket-derived-root>/<hash>`. The root comes from the socket layout of the daemon
+`plugins.prune` is an `os.RemoveAll` site, and it is safe by construction. It
+deletes `<socket-derived-root>/<hash>`. The root comes from the socket layout
 and the leaf must match `^[0-9a-f]{16}$` (`pluginHashRE`). The path is never
 caller-supplied and never `~`-expanded, so it needs no `wipesHomeDir` guard.
 
 On Linux the legacy sweep of `plugins.prune` and the host cleaner dial a socket path over
 107 bytes through `/proc` (`dialSiblingSocket`, `hcDial`), as `be1c1ca5` does (measured on
-Linux). The maintainer approved this on 2026-11-01 ([A long run
+Linux). The maintainer approved acting at a long root on 2026-11-01 ([A long run
 root](docs/DAEMON.md#a-long-run-root), [plugins.prune](docs/protocol/plugins-prune.md)).
 
 ### The host cleaner
 
 On Linux and macOS the host cleaner removes a run dir by one `os.Root.RemoveAll` at
-`<root>/run`, and signals orphaned groups and abandoned daemons. As in
-`plugins.prune`, a directory read of `<root>/run` gives the name. An identity test precedes
+socket-derived `<root>/run`, and signals orphaned groups and abandoned daemons. A
+directory read there gives the name, with no shape test. An identity test precedes
 each signal to a live process (from the code, [guards](docs/DAEMON.md#host-cleaner-off-wire-linux-and-macos)).
 
 Never widen: Build no run-dir name from a request value or an operator path.
