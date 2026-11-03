@@ -30,7 +30,7 @@ func ownTokenFile(t *testing.T) (*server, string, string) {
 // teardown remove the daemon.token that this daemon wrote.
 func TestShutdownRemovesOwnTokenFile(t *testing.T) {
 	s, sock, token := ownTokenFile(t)
-	dial(t, sock).send(`{"jsonrpc":"2.0","id":1,"method":"server.shutdown","params":{}}`)
+	dial(t, sock).send(`{"jsonrpc":"2.0","id":1,"method":"server.shutdown"}`)
 	select {
 	case <-s.shutdown:
 	case <-time.After(5 * time.Second):
