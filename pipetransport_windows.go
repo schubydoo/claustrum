@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"net"
+	"os"
 	"os/user"
 
 	"github.com/Microsoft/go-winio"
@@ -19,13 +20,13 @@ func honorListenPipe(requested bool) bool { return requested }
 // closed the connection rather than because the read genuinely failed. Windows
 // needs two sentinels, not one: a -listen-pipe conn is served by the same
 // serveConn as a socket conn and is dropped by the same closeAll, but go-winio
-// reports a read against a closed pipe as its own winio.ErrFileClosed, which is a
-// plain error value and does not satisfy errors.Is(err, net.ErrClosed). Without
+// reports a read against a closed pipe as os.ErrClosed (its deprecated alias
+// winio.ErrFileClosed), which does not satisfy errors.Is(err, net.ErrClosed). Without
 // this arm, a server.shutdown with -listen-pipe set would log one spurious
 // scanner-error line per connected client — the exact noise this predicate exists
 // to suppress on the socket.
 func isOurClose(err error) bool {
-	return errors.Is(err, net.ErrClosed) || errors.Is(err, winio.ErrFileClosed)
+	return errors.Is(err, net.ErrClosed) || errors.Is(err, os.ErrClosed)
 }
 
 // startPipeTransport creates the additional Windows named-pipe listener and
