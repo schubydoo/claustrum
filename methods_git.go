@@ -86,7 +86,7 @@ type gitParams struct {
 	// daemon's own read of the repository's config on the five git methods
 	// (repoConfigGate). Measurements show that on all five methods. It turns off the
 	// settings copy for the request too (shadowHost.control). Only the JSON value
-	// true sets it (jsonTrueSwitch). A request whose first git command starts while
+	// true sets it (rpc.JSONTrueSwitch). A request whose first git command starts while
 	// another one with it runs gets it too (bindGitParams). The five methods read the
 	// switch again at later commands (gitUse.atCommand).
 	ShadowDirOff rpc.JSONTrueSwitch `json:"shadowDirOff,omitempty"`
@@ -794,9 +794,6 @@ func unresolvable(p string) bool {
 	_, err := filepath.EvalSymlinks(p)
 	return err != nil
 }
-
-// canonicalPath resolves p to the spelling git reports — symlinks resolved and
-// (on Windows) 8.3 short names expanded. Defined per-OS in pathcanon_{unix,windows}.go.
 
 // samePath compares two paths after lexical cleaning. Callers that compare against
 // git's output canonicalize their operands first.
@@ -2965,7 +2962,7 @@ func adminRecordNames(adminDir string, b []byte, worktreePath string) bool {
 	if !filepath.IsAbs(record) {
 		record = filepath.Join(adminDir, record)
 	}
-	// sameCanonicalPath, not ==: on Windows git writes this record with forward slashes,
+	// pathcanon.Same, not ==: on Windows git writes this record with forward slashes,
 	// and once the worktree is deleted neither side can be resolved, so the two
 	// spellings differ only in slash direction. Measured against f6010b97 on Windows 11,
 	// where the reference deletes the entry.

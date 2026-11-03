@@ -374,7 +374,7 @@ func makeGoneWorktreeFolder(g goneWorktree) {
 
 // worktreeRootCheckoutRefusal is the refusal of a worktreeRoot that passes
 // worktreeRootInRepoRefusal but leads into a checkout of the repository, or "" when
-// the root passes. It resolves the root as canonicalPathOfGone does and tests each
+// the root passes. It resolves the root as pathcanon.OfGone does and tests each
 // folder of that path from "/" down with refusalAt. The first folder that fails
 // decides. The text names that folder, and worktreeRoot and baseRepo as sent.
 // f6010b97 and 89cb6289 send the same frames on Linux and macOS:
@@ -482,7 +482,7 @@ func repoTopLevelCall(u gitUse, repo string, pre *configListing) (top string, er
 }
 
 // sessionLocationRefusal is the refusal of a create whose worktreeRoot lies in a
-// session worktree, or "". It resolves the root as canonicalPathOfGone does and
+// session worktree, or "". It resolves the root as pathcanon.OfGone does and
 // tests each folder of that path from "/" down. The first folder below a folder
 // with a .claude-managed-worktrees file, or below .claude/worktrees, decides. A
 // folder that exists gets the "leads into" text, and a missing one the "would be
