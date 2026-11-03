@@ -6,6 +6,8 @@ import (
 	"os/exec"
 	"strings"
 	"syscall"
+
+	"github.com/schubydoo/claustrum/internal/rpc"
 )
 
 // spawnReason is the data member of an error that the start path of process.spawn
@@ -29,7 +31,7 @@ func (e *cwdError) Unwrap() error { return e.err }
 func spawnFailureReason(err error, cwd string) spawnReason {
 	var sr *spawnRefusal
 	if errors.As(err, &sr) {
-		if sr.code == codeInvalidParam {
+		if sr.code == rpc.CodeInvalidParam {
 			return spawnReason{"other"}
 		}
 		return spawnReason{"launcher"}

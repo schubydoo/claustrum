@@ -980,7 +980,7 @@ byte-for-byte frame battery caught `root`. The lesson: the battery is the
 authoritative gate, not the static check. A differential probe on 2026-07-02 ran
 the spawn refactor across three failure modes and found it byte-identical. The
 refactor kept the synchronous `-32603` and Go-exec-error-string contract that
-claustrum already emits (`methods_process.go` `processSpawn` → `codeInternal`).
+claustrum already emits (`methods_process.go` `processSpawn` → `rpc.CodeInternal`).
 Generalized lesson: a one-line ledger entry can under-record a build, because an
 off-wire change or a failure-path change never surfaces in the frame battery. The
 bump procedure therefore compares more than the wire (see

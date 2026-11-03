@@ -150,7 +150,6 @@ component_management:
         - peercheck_linux.go
         - peercheck_other.go
         - internal/files/methods_files.go
-        - compat_files.go
         - internal/git/methods_git.go
         - internal/git/gitparams.go
         - internal/git/gitcall.go
