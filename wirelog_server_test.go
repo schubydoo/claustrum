@@ -4,6 +4,8 @@ import (
 	"os"
 	"path/filepath"
 	"testing"
+
+	"github.com/schubydoo/claustrum/internal/wirelog"
 )
 
 // 0 in the config file is a real setting ("keep everything"), not "unset", so it
@@ -11,14 +13,14 @@ import (
 func TestEffectiveWireLogMaxStringZeroFromConfigWins(t *testing.T) {
 	zero := int64(0)
 	cfg := config{wireLogMaxString: &zero}
-	if got := cfg.effectiveWireLogMaxString(wireLogMaxString, false); got != 0 {
+	if got := cfg.effectiveWireLogMaxString(wirelog.MaxString, false); got != 0 {
 		t.Errorf("config 0 with unset CLI: got %d, want 0 (keep everything)", got)
 	}
 	if got := cfg.effectiveWireLogMaxString(256, true); got != 256 {
 		t.Errorf("explicit CLI: got %d, want 256", got)
 	}
-	if got := (config{}).effectiveWireLogMaxString(wireLogMaxString, false); got != wireLogMaxString {
-		t.Errorf("neither set: got %d, want the %d default", got, wireLogMaxString)
+	if got := (config{}).effectiveWireLogMaxString(wirelog.MaxString, false); got != wirelog.MaxString {
+		t.Errorf("neither set: got %d, want the %d default", got, wirelog.MaxString)
 	}
 }
 
@@ -27,10 +29,10 @@ func TestEffectiveWireLogMaxStringZeroFromConfigWins(t *testing.T) {
 // as "the client sent nothing" — the worst failure mode for a diagnostic.
 func TestWireLogUnopenablePathIsFatalNotSilent(t *testing.T) {
 	bad := filepath.Join(t.TempDir(), "no-such-dir", "wire.jsonl")
-	if _, err := openWireLog(wireLogOptions{Path: bad}); err == nil {
-		t.Fatal("openWireLog on an unopenable path returned nil error")
+	if _, err := wirelog.Open(wirelog.Options{Path: bad}); err == nil {
+		t.Fatal("wirelog.Open on an unopenable path returned nil error")
 	}
-	if _, err := newServerOnSocket(filepath.Join(t.TempDir(), "s.sock"), "tok", "", wireLogOptions{Path: bad}, false, false); err == nil {
+	if _, err := newServerOnSocket(filepath.Join(t.TempDir(), "s.sock"), "tok", "", wirelog.Options{Path: bad}, false, false); err == nil {
 		t.Fatal("newServerOnSocket accepted an unopenable -wire-log path")
 	}
 }
@@ -42,7 +44,7 @@ func TestWireLogUnopenablePathIsFatalNotSilent(t *testing.T) {
 func TestWireLogClosedWhenBootFailsAfterOpen(t *testing.T) {
 	good := filepath.Join(t.TempDir(), "wire.jsonl")
 	badSocket := filepath.Join(t.TempDir(), "no-such-dir", "rpc.sock")
-	if _, err := newServerOnSocket(badSocket, "tok", "", wireLogOptions{Path: good}, false, false); err == nil {
+	if _, err := newServerOnSocket(badSocket, "tok", "", wirelog.Options{Path: good}, false, false); err == nil {
 		t.Fatal("newServerOnSocket accepted an unlistenable socket")
 	}
 	// The capture opened, then boot failed; the deferred Close must have run. A

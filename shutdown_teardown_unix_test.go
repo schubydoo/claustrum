@@ -11,6 +11,8 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/schubydoo/claustrum/internal/wirelog"
 )
 
 // server.shutdown signals the teardown, and the teardown closes every connection
@@ -49,7 +51,7 @@ func waitConns(t *testing.T, s *server, n int) []*conn {
 // the child teardown.
 func TestShutdownTeardownClosesConnsBeforeCleanup(t *testing.T) {
 	sock := filepath.Join(shortTempDir(t), "s.sock")
-	s, err := newServerOnSocket(sock, "tok", "", wireLogOptions{}, false, false)
+	s, err := newServerOnSocket(sock, "tok", "", wirelog.Options{}, false, false)
 	if err != nil {
 		t.Fatalf("newServerOnSocket: %v", err)
 	}
@@ -95,7 +97,7 @@ func TestShutdownReplyRacesTeardown(t *testing.T) {
 	for i := 0; i < 10; i++ {
 		dir := shortTempDir(t)
 		sock := filepath.Join(dir, "s.sock")
-		s, err := newServerOnSocket(sock, "tok", "", wireLogOptions{}, false, false)
+		s, err := newServerOnSocket(sock, "tok", "", wirelog.Options{}, false, false)
 		if err != nil {
 			t.Fatalf("newServerOnSocket: %v", err)
 		}

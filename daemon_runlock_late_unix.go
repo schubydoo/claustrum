@@ -7,6 +7,8 @@ import (
 	"sync"
 	"syscall"
 	"time"
+
+	"github.com/schubydoo/claustrum/internal/logging"
 )
 
 // runDirLatePeriod is the period of the late tries of the run-dir lock. 30 s is
@@ -87,7 +89,7 @@ func (l *lateRunDirLock) try(rec ownerRecord) bool {
 	}
 	l.held = true
 	writeOwnerRecord(l.fd, rec)
-	logInfof("[daemon] run-dir lock acquired late (previous holder gone); recorded pid %d (instance %q)", rec.Pid, rec.InstanceID)
+	logging.Infof("[daemon] run-dir lock acquired late (previous holder gone); recorded pid %d (instance %q)", rec.Pid, rec.InstanceID)
 	return true
 }
 

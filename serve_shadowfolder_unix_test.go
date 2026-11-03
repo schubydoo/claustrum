@@ -10,6 +10,7 @@ import (
 	"testing"
 
 	"github.com/schubydoo/claustrum/internal/git"
+	"github.com/schubydoo/claustrum/internal/wirelog"
 )
 
 // plainServeRepo makes a repository with one empty commit with the real git
@@ -55,7 +56,7 @@ func TestServeDaemonRemovesItsShadowFolder(t *testing.T) {
 	repo := plainServeRepo(t)
 	run := resolveTestRoot(t, shortTempDir(t))
 	sock := filepath.Join(run, "s.sock")
-	s, err := newServerOnSocket(sock, "tok", "", wireLogOptions{}, false, false)
+	s, err := newServerOnSocket(sock, "tok", "", wirelog.Options{}, false, false)
 	if err != nil {
 		t.Fatalf("newServerOnSocket: %v", err)
 	}

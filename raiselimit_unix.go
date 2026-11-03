@@ -2,7 +2,11 @@
 
 package main
 
-import "syscall"
+import (
+	"syscall"
+
+	"github.com/schubydoo/claustrum/internal/logging"
+)
 
 // getRlimit and setRlimit are the RLIMIT_NOFILE syscalls held as variables so a
 // test can inject a failure to exercise the read-error and fallback paths.
@@ -38,5 +42,5 @@ func raiseInheritedFileLimit() {
 		_ = setRlimit(syscall.RLIMIT_NOFILE, &lim)
 		return
 	}
-	logInfof("[daemon] child processes will start with an open-files limit of %d", target)
+	logging.Infof("[daemon] child processes will start with an open-files limit of %d", target)
 }

@@ -19,7 +19,7 @@ import (
 // files.
 func TestWorktreeCreateExternalWorldWritable(t *testing.T) {
 	requireGit(t)
-	base := t.TempDir()
+	base := dropGroupWrite(t, t.TempDir())
 	requireTempOutsideCheckout(t, base)
 	repo := filepath.Join(base, "R")
 	if err := os.MkdirAll(repo, 0o755); err != nil {
@@ -110,7 +110,7 @@ func TestWorktreeExternalTrailingSlash(t *testing.T) {
 	requireGit(t)
 	// The paths are resolved: two of the refusals name the path with the symlinks
 	// of its parent folder resolved (measured).
-	base := realTempDir(t)
+	base := dropGroupWrite(t, realTempDir(t))
 	requireTempOutsideCheckout(t, base)
 	repo := filepath.Join(base, "T")
 	if err := os.MkdirAll(repo, 0o755); err != nil {

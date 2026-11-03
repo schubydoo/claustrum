@@ -7,6 +7,8 @@ import (
 	"io/fs"
 	"os"
 	"time"
+
+	"github.com/schubydoo/claustrum/internal/logging"
 )
 
 // The part of the child registry that linux and darwin share: the handle on the run
@@ -53,9 +55,9 @@ func (m *procManager) writeRecord(rec childRecord) {
 	switch {
 	case err == nil:
 	case errors.Is(err, errChildrenNotDir):
-		logErrorf("[process.Registry] %s/%s is not a directory; recording nothing", m.runDir, childrenDirName)
+		logging.Errorf("[process.Registry] %s/%s is not a directory; recording nothing", m.runDir, childrenDirName)
 	default:
-		logErrorf("[process.Registry] cannot record child %d: %v", rec.Pid, err)
+		logging.Errorf("[process.Registry] cannot record child %d: %v", rec.Pid, err)
 	}
 }
 
@@ -78,7 +80,7 @@ func (m *procManager) removeChildRecord(pid int) {
 		return
 	}
 	if err := removeChildRecordIn(root, pid); err != nil {
-		logWarnf("[process.Registry] cannot remove record of child %d: %v", pid, err)
+		logging.Warnf("[process.Registry] cannot remove record of child %d: %v", pid, err)
 	}
 }
 

@@ -6,6 +6,8 @@ import (
 	"errors"
 	"os"
 	"time"
+
+	"github.com/schubydoo/claustrum/internal/logging"
 )
 
 // Orphan-exit self-probe, matching reference build 4534d86. A -serve daemon whose socket
@@ -109,8 +111,8 @@ func (s *server) selfExitCheck(socket string, w *selfExitWatch, now time.Duratio
 	// The idle exit comes first, so a check where both exits are due writes the idle
 	// line and not the orphan lines. That order is not measured.
 	if idle := now - time.Duration(s.lastCounted.Load()); clients == 0 && idle >= idleExitAfter {
-		logInfof("[Server] no request for %s and no connections; shutting down", idle.Round(time.Second))
-		logInfof("[Server] shutdown requested")
+		logging.Infof("[Server] no request for %s and no connections; shutting down", idle.Round(time.Second))
+		logging.Infof("[Server] shutdown requested")
 		s.signalShutdown()
 		return true
 	}
@@ -127,7 +129,7 @@ func (s *server) selfExitCheck(socket string, w *selfExitWatch, now time.Duratio
 	}
 	if !w.orphaned {
 		*w = selfExitWatch{orphaned: true, orphanedAt: now}
-		logInfof("[Server] socket path %s no longer leads to this daemon; shutting down if that holds for %s with nobody connected", socket, orphanGrace)
+		logging.Infof("[Server] socket path %s no longer leads to this daemon; shutting down if that holds for %s with nobody connected", socket, orphanGrace)
 		return false
 	}
 	if now-w.orphanedAt < orphanGrace {
@@ -136,7 +138,7 @@ func (s *server) selfExitCheck(socket string, w *selfExitWatch, now time.Duratio
 	// Grace elapsed with no client connected: probe whether the path still reaches us.
 	reached, cannotDial := s.pathReachesUs(socket)
 	if reached {
-		logInfof("[Server] socket %s still reaches this daemon despite a changed file identity; not orphaned", socket)
+		logging.Infof("[Server] socket %s still reaches this daemon despite a changed file identity; not orphaned", socket)
 		*w = selfExitWatch{}
 		return false
 	}
@@ -146,18 +148,18 @@ func (s *server) selfExitCheck(socket string, w *selfExitWatch, now time.Duratio
 	// counts as a failed probe there (measured on macOS). A gone file counts as one too,
 	// and the grace starts again after this line (claustrum's own, not measured).
 	if cannotDial && s.socketFileUnmodified(socket) {
-		logInfof("[Server] socket path %s is too long for this daemon to dial, but its file is unmodified since this daemon bound it; not orphaned", socket)
+		logging.Infof("[Server] socket path %s is too long for this daemon to dial, but its file is unmodified since this daemon bound it; not orphaned", socket)
 		*w = selfExitWatch{}
 		return false
 	}
 	w.failedProbes++
 	if w.failedProbes < orphanProbeFailuresToExit {
-		logWarnf("[Server] socket path %s did not lead back to this daemon (%d/%d); re-checking before acting", socket, w.failedProbes, orphanProbeFailuresToExit)
+		logging.Warnf("[Server] socket path %s did not lead back to this daemon (%d/%d); re-checking before acting", socket, w.failedProbes, orphanProbeFailuresToExit)
 		return false
 	}
-	logWarnf("[Server] orphaned for %s (socket path gone or re-bound, %d self-probes failed, no connections); shutting down and killing %d child process(es)",
+	logging.Warnf("[Server] orphaned for %s (socket path gone or re-bound, %d self-probes failed, no connections); shutting down and killing %d child process(es)",
 		(now - w.orphanedAt).Round(time.Second), w.failedProbes, s.procs.runningCount())
-	logInfof("[Server] shutdown requested")
+	logging.Infof("[Server] shutdown requested")
 	s.signalShutdown()
 	return true
 }

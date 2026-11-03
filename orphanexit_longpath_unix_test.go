@@ -7,6 +7,8 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/schubydoo/claustrum/internal/wirelog"
 )
 
 // bootLongOrphanServer boots a listening daemon at a 120-byte socket path, with its
@@ -14,7 +16,7 @@ import (
 func bootLongOrphanServer(t *testing.T) (*server, string) {
 	t.Helper()
 	sock := longSocketPath(t, 120, "rpc.sock")
-	s, err := newServerOnSocket(sock, "orphan-tok", "", wireLogOptions{}, false, false)
+	s, err := newServerOnSocket(sock, "orphan-tok", "", wirelog.Options{}, false, false)
 	if err != nil {
 		t.Fatalf("newServerOnSocket: %v", err)
 	}

@@ -14,6 +14,8 @@ import (
 	"sync/atomic"
 	"testing"
 	"time"
+
+	"github.com/schubydoo/claustrum/internal/wirelog"
 )
 
 // fakeCapServer listens on path and answers each connection's one request with a
@@ -143,7 +145,7 @@ func bootOrphanServer(t *testing.T) (*server, string) {
 	t.Helper()
 	dir := shortTempDir(t)
 	sock := filepath.Join(dir, "s.sock")
-	s, err := newServerOnSocket(sock, "orphan-tok", "", wireLogOptions{}, false, false)
+	s, err := newServerOnSocket(sock, "orphan-tok", "", wirelog.Options{}, false, false)
 	if err != nil {
 		t.Fatalf("newServerOnSocket: %v", err)
 	}

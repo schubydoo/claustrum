@@ -16,6 +16,8 @@ import (
 
 	"github.com/schubydoo/claustrum/internal/files"
 	cliinstall "github.com/schubydoo/claustrum/internal/install"
+	"github.com/schubydoo/claustrum/internal/logging"
+	"github.com/schubydoo/claustrum/internal/wirelog"
 )
 
 // Version is the daemon's self-reported version (the real binary reports its vcs
@@ -119,6 +121,10 @@ func applyReleaseStamp(mainVersion, relVersion, relTime string) {
 	BuildTime = relTime
 }
 
+// runInstallArm is install.Run. It is a var only so a test of the -install arm
+// of main captures the Options and installs nothing.
+var runInstallArm = cliinstall.Run
+
 func main() {
 	// Intercept the exec-child trampoline before anything else (flag parsing
 	// included): when spawned as `<self> --exec-child <execPath> <argv...>` the
@@ -139,7 +145,7 @@ func main() {
 
 		metricsAddr = flag.String("metrics-addr", "", "If set (e.g. 127.0.0.1:9090), serve Prometheus counters at /metrics on this address. Off by default; -serve only. Counts only, no auth — bind to a trusted interface.")
 
-		wireLogMax = flag.Int64("wire-log-max-string", wireLogMaxString, "With -wire-log, keep at most this many `bytes` of any single string value; longer ones are replaced by a prefix plus their true length. 0 keeps every string whole — needed to reconstruct a session, since the remote CLI's whole stdio protocol rides inside process stream payloads, but the capture then grows at the rate of that session's output. -serve only; the wire-log-max-string key in claustrum.conf is the reachable way to set it.")
+		wireLogMax = flag.Int64("wire-log-max-string", wirelog.MaxString, "With -wire-log, keep at most this many `bytes` of any single string value; longer ones are replaced by a prefix plus their true length. 0 keeps every string whole — needed to reconstruct a session, since the remote CLI's whole stdio protocol rides inside process stream payloads, but the capture then grows at the rate of that session's output. -serve only; the wire-log-max-string key in claustrum.conf is the reachable way to set it.")
 
 		wireLogPath = flag.String("wire-log", "", "If set, append every JSON-RPC frame (both directions) to this `path` as JSONL. Off by default; -serve only. Pure side channel — frames on the wire are byte-identical either way. Credentials are redacted by key (the auth member and token-like env vars) and long strings are truncated, but a capture still contains the frames of both directions, such as a files.read reply and process.stdin, so it is set 0600 on every open and belongs somewhere private. Claude Desktop owns the argv, so the wire-log key in claustrum.conf is usually the reachable way to set this.")
 
@@ -197,10 +203,10 @@ func main() {
 		// Ignore SIGPIPE so a closed stdout does not kill the probe mid-write (the
 		// token goes to fd 1, which Go would otherwise let SIGPIPE terminate).
 		// With CLAUDE_SSH_MANAGED_LAUNCHER=1 the probe runs through the managed
-		// launcher (89cb6289, see runProbeCLI).
+		// launcher (89cb6289, see cliinstall.RunProbeCLI).
 		ignoreSigpipe()
 		_ = os.Unsetenv("CLAUDE_RPC_TOKEN")
-		runProbeCLI(os.Stdout, os.Stderr, *probeCLI)
+		cliinstall.RunProbeCLI(os.Stdout, os.Stderr, *probeCLI)
 		return
 	}
 
@@ -268,7 +274,7 @@ func main() {
 		warnDeprecatedReadRegularOnly(cliSet["files-read-regular-only"], cfg.filesReadRegularOnlySeen)
 		runServe(resolveSocket(), *tokenFile, *tokenFd,
 			cfg.effectiveMetricsAddr(*metricsAddr, cliSet["metrics-addr"]),
-			wireLogOptions{
+			wirelog.Options{
 				Path:      cfg.effectiveWireLog(*wireLogPath, cliSet["wire-log"]),
 				MaxString: int(cfg.effectiveWireLogMaxString(*wireLogMax, cliSet["wire-log-max-string"])),
 			},
@@ -293,7 +299,7 @@ func main() {
 // bounds the ldd probe at 5 s itself (since 19f30c46), so D14 is retired.
 func warnDeprecatedLibcProbe(flagSet, keySeen bool) {
 	if flagSet || keySeen {
-		logWarnf("[Install] -libc-probe-timeout is deprecated and ignored. The ldd probe always uses its 5s bound")
+		logging.Warnf("[Install] -libc-probe-timeout is deprecated and ignored. The ldd probe always uses its 5s bound")
 	}
 }
 
@@ -302,7 +308,7 @@ func warnDeprecatedLibcProbe(flagSet, keySeen bool) {
 // nothing: the rule of files.read is the rule of 5fd08069, so D4 is retired.
 func warnDeprecatedReadRegularOnly(flagSet, keySeen bool) {
 	if flagSet || keySeen {
-		logWarnf("[Server] -files-read-regular-only is deprecated and ignored. files.read refuses a file that is not regular with or without it")
+		logging.Warnf("[Server] -files-read-regular-only is deprecated and ignored. files.read refuses a file that is not regular with or without it")
 	}
 }
 
@@ -311,7 +317,7 @@ func warnDeprecatedReadRegularOnly(flagSet, keySeen bool) {
 // time limits of 5fd08069, so D5 is retired.
 func warnDeprecatedGitTimeout(flagSet, keySeen bool) {
 	if flagSet || keySeen {
-		logWarnf("[Server] -git-timeout is deprecated and ignored. The git calls always use their own time limits")
+		logging.Warnf("[Server] -git-timeout is deprecated and ignored. The git calls always use their own time limits")
 	}
 }
 
@@ -320,7 +326,7 @@ func warnDeprecatedGitTimeout(flagSet, keySeen bool) {
 // bounds the direct --version run itself, at 30 s and at 120 s, so D11 is retired.
 func warnDeprecatedCLIProbe(flagSet, keySeen bool) {
 	if flagSet || keySeen {
-		logWarnf("[Install] -cli-probe-timeout is deprecated and ignored. The direct --version run always uses its 30s and 120s bounds")
+		logging.Warnf("[Install] -cli-probe-timeout is deprecated and ignored. The direct --version run always uses its 30s and 120s bounds")
 	}
 }
 

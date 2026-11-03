@@ -289,7 +289,7 @@ func (p *extractTarParams) ExpandPaths() {
 //
 // The seam exists so that a test proving a destDir gate is actually WIRED INTO
 // filesExtractTar can send the very input the gate exists to refuse. For
-// isFilesystemRoot that input is a real filesystem root — on Windows, C:\\. For
+// homeguard.IsFilesystemRoot that input is a real filesystem root — on Windows, C:\\. For
 // homeguard.WipesHomeDir it is a home directory. If either guard stops holding, an
 // unstubbed test would answer the question by deleting the CI runner or the
 // developer's home. A test whose failure mode is destroying the machine is not

@@ -282,14 +282,11 @@ component_management:
         - internal/git/gitplainfile_unix.go
         - internal/git/gitplainfile_windows.go
         - internal/homeguard/homeguard.go
-        - compat_homeguard.go
         # cross-platform fs primitives for the git/files methods: path canon (git
         # frame spelling) and the O_DIRECTORY guard used by files.list.
         - internal/pathcanon/pathcanon.go
         - internal/pathcanon/pathcanon_unix.go
         - internal/pathcanon/pathcanon_windows.go
-        - compat_pathcanon.go
-        - compat_pathcanon_windows.go
         - internal/files/odirectory_unix.go
         - internal/files/odirectory_windows.go
         - internal/files/filesread_unix.go
@@ -381,6 +378,11 @@ component_management:
         - hostclean_linux.go
         - hostclean_darwin.go
         - hostclean_other.go
+        # The process helpers of the child records, the reap, the host cleaner and the
+        # run-dir lock: the group kill, the /proc mount, the node identity and the pidfd hold.
+        - procinfo_unix.go
+        - procinfo_linux.go
+        - procinfo_darwin.go
     - component_id: bridge_cli
       name: bridge, CLI & config
       paths:
@@ -442,7 +444,6 @@ component_management:
       paths:
         - compat_logging.go
         - compat_metrics.go
-        - compat_wirelog.go
         - internal/logging/logging.go
         - internal/metrics/metrics.go
         - internal/wirelog/wirelog.go

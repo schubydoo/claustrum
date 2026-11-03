@@ -22,7 +22,7 @@ type r0Fixture struct{ B, T, T2, X string }
 func newR0Fixture(t *testing.T) *r0Fixture {
 	t.Helper()
 	requireGit(t)
-	b, err := filepath.EvalSymlinks(t.TempDir())
+	b, err := filepath.EvalSymlinks(dropGroupWrite(t, t.TempDir()))
 	if err != nil {
 		t.Fatal(err)
 	}

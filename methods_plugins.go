@@ -15,6 +15,9 @@ import (
 	"time"
 
 	"github.com/schubydoo/claustrum/handlers"
+	"github.com/schubydoo/claustrum/internal/files"
+	"github.com/schubydoo/claustrum/internal/logging"
+	"github.com/schubydoo/claustrum/internal/rpc"
 )
 
 // plugins.prune (reference build 19f30c46) prunes cached CLI plugin directories
@@ -53,7 +56,7 @@ type pruneResult struct {
 	MinAgeDays    int      `json:"minAgeDays"`
 }
 
-func (s *server) handlePlugins(req *request) response {
+func (s *server) handlePlugins(req *request) rpc.Response {
 	switch req.Method {
 	case "plugins.prune":
 		return s.pluginsPrune(req)
@@ -67,7 +70,7 @@ func (s *server) handlePlugins(req *request) response {
 
 const pluginsSkipReason = "this daemon's socket is not under run/<clientId>/, so it has no per-install plugin root to prune"
 
-func (s *server) pluginsPrune(req *request) response {
+func (s *server) pluginsPrune(req *request) rpc.Response {
 	// plugins.prune decodes its own params so the -32602 body carries encoding/json's
 	// detail ("Invalid params: json: cannot unmarshal ..."), matching the reference —
 	// which is why PruneParams lives in package handlers (the type name reaches the
@@ -77,7 +80,7 @@ func (s *server) pluginsPrune(req *request) response {
 	// 5fd08069 (measured on Linux).
 	var p handlers.PruneParams
 	if err := json.Unmarshal(req.Params, &p); err != nil {
-		return errResult(req.ID, codeInvalidParam, "Invalid params: "+err.Error())
+		return rpc.ErrResult(req.ID, rpc.CodeInvalidParam, "Invalid params: "+err.Error())
 	}
 
 	res := pruneResult{Pruned: []string{}, PrunedLegacy: []string{}}
@@ -88,7 +91,7 @@ func (s *server) pluginsPrune(req *request) response {
 		// root stays "" and minAgeDays stays 0 — the clamp below never runs.
 		res.Legacy = "skipped: " + pluginsSkipReason
 		res.Skipped = pluginsSkipReason
-		return okResult(req.ID, res)
+		return rpc.OKResult(req.ID, res)
 	}
 	res.Root = root
 
@@ -124,7 +127,7 @@ func (s *server) pluginsPrune(req *request) response {
 
 	sort.Strings(res.Pruned)
 	sort.Strings(res.PrunedLegacy)
-	return okResult(req.ID, res)
+	return rpc.OKResult(req.ID, res)
 }
 
 // pluginClientIDRE matches the clientId folder of the socket: 8 lowercase hex.
@@ -297,7 +300,7 @@ func prunePluginRoot(root string, legacy bool, cutoff time.Time, live map[string
 	}
 	for _, e := range entries {
 		name := e.Name()
-		if !e.IsDir() || !pluginHashRE.MatchString(name) {
+		if !e.IsDir() || !files.PluginHashRE.MatchString(name) {
 			continue // only plugin content-hash directories are swept
 		}
 		pruneOnePluginDir(root, name, legacy, cutoff, live, res)
@@ -332,10 +335,10 @@ func pruneOnePluginDir(root, name string, legacy bool, cutoff time.Time, live ma
 	}
 	if legacy {
 		res.PrunedLegacy = append(res.PrunedLegacy, name)
-		logInfof("[Plugins] pruned legacy plugin dir %s (last used %s)", dir, lastUsed.Format(time.RFC3339))
+		logging.Infof("[Plugins] pruned legacy plugin dir %s (last used %s)", dir, lastUsed.Format(time.RFC3339))
 	} else {
 		res.Pruned = append(res.Pruned, name)
-		logInfof("[Plugins] pruned plugin dir %s (last used %s)", dir, lastUsed.Format(time.RFC3339))
+		logging.Infof("[Plugins] pruned plugin dir %s (last used %s)", dir, lastUsed.Format(time.RFC3339))
 	}
 }
 

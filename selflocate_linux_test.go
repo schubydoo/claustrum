@@ -8,6 +8,8 @@ import (
 	"strings"
 	"syscall"
 	"testing"
+
+	"github.com/schubydoo/claustrum/internal/wirelog"
 )
 
 // TestServeLauncherStopsWithoutSelfExe pins the rule (measured on Linux).
@@ -48,7 +50,7 @@ func TestServeLauncherStopsWithoutSelfExe(t *testing.T) {
 				t.Fatal(err)
 			}
 			os.Stderr = w
-			code, exited := catchExit(func() { runServe(sock, tf, -1, "", wireLogOptions{}, false, false) })
+			code, exited := catchExit(func() { runServe(sock, tf, -1, "", wirelog.Options{}, false, false) })
 			_ = w.Close()
 			os.Stderr = old
 
