@@ -1,6 +1,6 @@
 //go:build unix
 
-package main
+package runlock
 
 import (
 	"path/filepath"
@@ -15,7 +15,7 @@ import (
 // another open of the file conflicts with it, also in this process.
 func holdStopRecord(t *testing.T, dir string) int {
 	t.Helper()
-	fd, err := syscall.Open(filepath.Join(dir, runDirLockName), syscall.O_RDWR|syscall.O_CREAT|syscall.O_CLOEXEC, 0o600)
+	fd, err := syscall.Open(filepath.Join(dir, LockName), syscall.O_RDWR|syscall.O_CREAT|syscall.O_CLOEXEC, 0o600)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -23,7 +23,7 @@ func holdStopRecord(t *testing.T, dir string) int {
 		_ = syscall.Close(fd)
 		t.Fatal(err)
 	}
-	writeOwnerRecord(fd, ownerRecord{Pid: 999999, Role: "stop", Node: nodeID()})
+	writeOwnerRecord(fd, OwnerRecord{Pid: 999999, Role: "stop", Node: nodeID()})
 	return fd
 }
 
@@ -40,14 +40,14 @@ func TestClaimRunDirWaitsForStopHolder(t *testing.T) {
 
 	buf := captureLogBuf(t)
 	start := time.Now()
-	claim := lockRunFolder(filepath.Join(dir, "s.sock"), "serve")
+	claim := LockRunFolder(filepath.Join(dir, "s.sock"), "serve")
 	took := time.Since(start)
-	t.Cleanup(claim.release)
+	t.Cleanup(claim.Release)
 
 	if took < runDirStopGrace {
 		t.Errorf("the claim took %s, want at least the grace %s of tries", took, runDirStopGrace)
 	}
-	if claim.holder {
+	if claim.Holder {
 		t.Error("the claim holds the lock of a stop holder that kept it")
 	}
 	if got := buf.String(); !strings.Contains(got, "is held by a --stop (pid 999999) that has not let go; leaving it") {
@@ -67,10 +67,10 @@ func TestClaimRunDirTakesLockAStopHolderReleases(t *testing.T) {
 	t.Cleanup(func() { timer.Stop() })
 
 	buf := captureLogBuf(t)
-	claim := lockRunFolder(filepath.Join(dir, "s.sock"), "serve")
-	t.Cleanup(claim.release)
+	claim := LockRunFolder(filepath.Join(dir, "s.sock"), "serve")
+	t.Cleanup(claim.Release)
 
-	if !claim.holder {
+	if !claim.Holder {
 		t.Error("the claim did not take the lock that the stop holder let go")
 	}
 	if got := buf.String(); strings.Contains(got, "has not let go") {

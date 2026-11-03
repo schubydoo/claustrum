@@ -1,6 +1,6 @@
 //go:build unix
 
-package main
+package runlock
 
 import (
 	"encoding/json"
@@ -13,12 +13,10 @@ import (
 	"syscall"
 	"testing"
 	"time"
-
-	"github.com/schubydoo/claustrum/internal/wirelog"
 )
 
 // runlockHoldFixture is the "runlock-hold" helper mode: take the flock on args[0],
-// write an owner record naming this process a serve daemon, then linger so lockRunFolder
+// write an owner record naming this process a serve daemon, then linger so LockRunFolder
 // must evict it. args[1] == "term-ignore" swallows SIGTERM (the escalation case);
 // args[2] is a ready-file the parent waits on; an optional args[3] overrides the node
 // so the parent can exercise the machine-identity refusal guard.
@@ -37,7 +35,7 @@ func runlockHoldFixture(args []string) int {
 	if len(args) > 3 && args[3] != "" {
 		node = args[3]
 	}
-	writeOwnerRecord(fd, ownerRecord{
+	writeOwnerRecord(fd, OwnerRecord{
 		Pid:        os.Getpid(),
 		Role:       "serve",
 		Node:       node,
@@ -112,7 +110,7 @@ func TestMatchesServeArgv(t *testing.T) {
 func TestHolderSignalRefusal(t *testing.T) {
 	self := nodeID()
 	const sock = "/run/x/s.sock"
-	base := ownerRecord{Pid: 999999, Role: "serve", Node: self}
+	base := OwnerRecord{Pid: 999999, Role: "serve", Node: self}
 	// Only the cmdline check reads /proc; seam it true so the other guards are what
 	// each case isolates.
 	oldCmd := isServeCmdline
@@ -193,8 +191,8 @@ func TestHolderSignalRefusal(t *testing.T) {
 }
 
 // writeRecordFile stages an owner record into path via the production writer, so the
-// eviction tests read exactly the on-disk shape lockRunFolder writes.
-func writeRecordFile(t *testing.T, path string, rec ownerRecord) {
+// eviction tests read exactly the on-disk shape LockRunFolder writes.
+func writeRecordFile(t *testing.T, path string, rec OwnerRecord) {
 	t.Helper()
 	fd, err := syscall.Open(path, syscall.O_RDWR|syscall.O_CREAT|syscall.O_CLOEXEC, 0o600)
 	if err != nil {
@@ -207,7 +205,7 @@ func writeRecordFile(t *testing.T, path string, rec ownerRecord) {
 func TestLockRunDirFlockError(t *testing.T) {
 	// A flock failure that is not EWOULDBLOCK (here EBADF from a closed fd) is fatal to
 	// the claim: lockRunDir logs and gives up without attempting eviction.
-	fd, err := syscall.Open(filepath.Join(shortTempDir(t), runDirLockName),
+	fd, err := syscall.Open(filepath.Join(shortTempDir(t), LockName),
 		syscall.O_RDWR|syscall.O_CREAT|syscall.O_CLOEXEC, 0o600)
 	if err != nil {
 		t.Fatalf("open: %v", err)
@@ -226,7 +224,7 @@ func TestLockRunDirFlockError(t *testing.T) {
 
 func TestEvictRunDirHolderUnusableRecord(t *testing.T) {
 	dir := shortTempDir(t)
-	path := filepath.Join(dir, runDirLockName)
+	path := filepath.Join(dir, LockName)
 	// An empty file parses to no usable owner record: eviction refuses rather than
 	// signalling an unknown pid.
 	if err := os.WriteFile(path, nil, 0o600); err != nil {
@@ -242,11 +240,11 @@ func TestEvictRunDirHolderAbsentPid(t *testing.T) {
 		t.Skip("needs a machine identity (nodeID)")
 	}
 	dir := shortTempDir(t)
-	path := filepath.Join(dir, runDirLockName)
+	path := filepath.Join(dir, LockName)
 	// A record that passes every guard but names a pid that no longer exists: the
 	// SIGTERM attempt returns ESRCH, and evictRunDirHolder resolves that via holderGone
 	// as "the holder already exited", reporting a successful eviction.
-	writeRecordFile(t, path, ownerRecord{Pid: 1 << 30, Role: "serve", Node: nodeID()})
+	writeRecordFile(t, path, OwnerRecord{Pid: 1 << 30, Role: "serve", Node: nodeID()})
 	oldCmd := isServeCmdline
 	isServeCmdline = func(int, string) bool { return true }
 	t.Cleanup(func() { isServeCmdline = oldCmd })
@@ -265,7 +263,7 @@ func TestSignalHolderNonESRCHError(t *testing.T) {
 }
 
 func TestWriteOwnerRecordTruncateError(t *testing.T) {
-	path := filepath.Join(shortTempDir(t), runDirLockName)
+	path := filepath.Join(shortTempDir(t), LockName)
 	if err := os.WriteFile(path, []byte("stale"), 0o600); err != nil {
 		t.Fatal(err)
 	}
@@ -274,7 +272,7 @@ func TestWriteOwnerRecordTruncateError(t *testing.T) {
 		t.Fatalf("open: %v", err)
 	}
 	_ = syscall.Close(fd) // Ftruncate on the closed fd fails; the write must bail out.
-	writeOwnerRecord(fd, ownerRecord{Pid: 2, Role: "serve"})
+	writeOwnerRecord(fd, OwnerRecord{Pid: 2, Role: "serve"})
 	b, err := os.ReadFile(path)
 	if err != nil {
 		t.Fatal(err)
@@ -296,10 +294,10 @@ func TestReadOwnerRecordMissingFile(t *testing.T) {
 func TestClaimRunDirHappyPath(t *testing.T) {
 	dir := shortTempDir(t)
 	sock := filepath.Join(dir, "s.sock")
-	claim := lockRunFolder(sock, "serve")
-	t.Cleanup(claim.release)
+	claim := LockRunFolder(sock, "serve")
+	t.Cleanup(claim.Release)
 
-	lockPath := filepath.Join(dir, runDirLockName)
+	lockPath := filepath.Join(dir, LockName)
 	short, err := os.ReadFile(lockPath)
 	if err != nil {
 		t.Fatalf("read owner record: %v", err)
@@ -313,7 +311,7 @@ func TestClaimRunDirHappyPath(t *testing.T) {
 		t.Errorf("owner record after the claim = %q, want %q", short, wantShort)
 	}
 
-	claim.complete("0123456789abcdef0123456789abcdef", 1790962940734)
+	claim.Complete("0123456789abcdef0123456789abcdef", 1790962940734)
 	full, err := os.ReadFile(lockPath)
 	if err != nil {
 		t.Fatalf("read owner record: %v", err)
@@ -323,7 +321,7 @@ func TestClaimRunDirHappyPath(t *testing.T) {
 		t.Errorf("owner record after complete = %q, want %q", full, wantFull)
 	}
 
-	claim.release()
+	claim.Release()
 	fi, err := os.Stat(lockPath)
 	if err != nil {
 		t.Fatalf("lock file must survive release (truncate, not unlink): %v", err)
@@ -340,10 +338,10 @@ func TestClaimRunDirHappyPath(t *testing.T) {
 // smaller file.
 func TestCompleteDoesNotTruncateTheLock(t *testing.T) {
 	dir := shortTempDir(t)
-	claim := lockRunFolder(filepath.Join(dir, "s.sock"), "serve")
-	t.Cleanup(claim.release)
+	claim := LockRunFolder(filepath.Join(dir, "s.sock"), "serve")
+	t.Cleanup(claim.Release)
 
-	lockPath := filepath.Join(dir, runDirLockName)
+	lockPath := filepath.Join(dir, LockName)
 	f, err := os.OpenFile(lockPath, os.O_WRONLY|os.O_APPEND, 0)
 	if err != nil {
 		t.Fatal(err)
@@ -357,7 +355,7 @@ func TestCompleteDoesNotTruncateTheLock(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	claim.complete("0123456789abcdef0123456789abcdef", 1790962940734)
+	claim.Complete("0123456789abcdef0123456789abcdef", 1790962940734)
 
 	after, err := os.Stat(lockPath)
 	if err != nil {
@@ -435,7 +433,7 @@ func TestClaimRunDirEvictsPredecessor(t *testing.T) {
 	shrinkEvictionGraces(t)
 	dir := shortTempDir(t)
 	sock := filepath.Join(dir, "s.sock")
-	lockPath := filepath.Join(dir, runDirLockName)
+	lockPath := filepath.Join(dir, LockName)
 	holder := spawnLockHolder(t, lockPath, "", "")
 
 	// The holder's real argv is the test binary, not "-serve"; seam the cmdline check
@@ -444,7 +442,7 @@ func TestClaimRunDirEvictsPredecessor(t *testing.T) {
 	isServeCmdline = func(int, string) bool { return true }
 	t.Cleanup(func() { isServeCmdline = oldCmd })
 
-	release := lockRunFolder(sock, "serve").release
+	release := LockRunFolder(sock, "serve").Release
 	t.Cleanup(release)
 
 	if !waitForExit(holder.Process.Pid, 3*time.Second) {
@@ -472,14 +470,14 @@ func TestClaimRunDirEvictionLogsMatchReference(t *testing.T) {
 	shrinkEvictionGraces(t)
 	dir := shortTempDir(t)
 	sock := filepath.Join(dir, "s.sock")
-	lockPath := filepath.Join(dir, runDirLockName)
+	lockPath := filepath.Join(dir, LockName)
 	holder := spawnLockHolder(t, lockPath, "", "")
 	oldCmd := isServeCmdline
 	isServeCmdline = func(int, string) bool { return true }
 	t.Cleanup(func() { isServeCmdline = oldCmd })
 
 	buf := captureLogBuf(t)
-	release := lockRunFolder(sock, "serve").release // evicts synchronously, logging the ladder
+	release := LockRunFolder(sock, "serve").Release // evicts synchronously, logging the ladder
 	t.Cleanup(release)
 	_ = waitForExit(holder.Process.Pid, 3*time.Second)
 
@@ -523,8 +521,8 @@ func TestEvictionLinesNameTheInstanceOnlyWhenTheRecordHasOne(t *testing.T) {
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			dir := shortTempDir(t)
-			lockPath := filepath.Join(dir, runDirLockName)
-			writeRecordFile(t, lockPath, ownerRecord{Pid: 999999, Role: "serve", Node: nodeID(), InstanceID: tc.instance})
+			lockPath := filepath.Join(dir, LockName)
+			writeRecordFile(t, lockPath, OwnerRecord{Pid: 999999, Role: "serve", Node: nodeID(), InstanceID: tc.instance})
 			buf := captureLogBuf(t)
 			if gone, locked := evictRunDirHolder(-1, lockPath, filepath.Join(dir, "s.sock")); !gone || !locked {
 				t.Errorf("evictRunDirHolder = %v, %v, want true, true", gone, locked)
@@ -580,27 +578,27 @@ func TestEvictionWaitsOnTheLockOfAHolderThatNobodyCollects(t *testing.T) {
 				isServeCmdline = oldCmd
 			})
 			dir := shortTempDir(t)
-			lockPath := filepath.Join(dir, runDirLockName)
+			lockPath := filepath.Join(dir, LockName)
 			holder := startLockHolder(t, lockPath, tc.termMode, "")
 			t.Cleanup(func() {
 				_ = holder.Process.Kill()
 				_, _ = holder.Process.Wait()
 			})
 			pid := holder.Process.Pid
-			writeRecordFile(t, lockPath, ownerRecord{Pid: pid, Role: "serve", Node: nodeID()})
+			writeRecordFile(t, lockPath, OwnerRecord{Pid: pid, Role: "serve", Node: nodeID()})
 
 			buf := captureLogBuf(t)
 			start := time.Now()
-			claim := lockRunFolder(filepath.Join(dir, "s.sock"), "serve")
+			claim := LockRunFolder(filepath.Join(dir, "s.sock"), "serve")
 			took := time.Since(start)
-			t.Cleanup(claim.release)
+			t.Cleanup(claim.Release)
 
 			if took >= 30*time.Second {
 				t.Errorf("the claim took %s: it waited a whole grace on a holder that had ended", took)
 			}
 			got := buf.String()
 			wantLinesInOrder(t, got, tc.want(pid, dir)...)
-			for _, no := range []string{"survived SIGKILL", "no longer our serve holder", runDirNotHolderLine} {
+			for _, no := range []string{"survived SIGKILL", "no longer our serve holder", NotHolderLine} {
 				if strings.Contains(got, no) {
 					t.Errorf("log holds %q\n--- got ---\n%s", no, got)
 				}
@@ -623,13 +621,13 @@ func TestEvictRunDirHolderStopRoleLogs(t *testing.T) {
 	t.Cleanup(func() { runDirStopGrace = old })
 	dir := shortTempDir(t)
 	sock := filepath.Join(dir, "s.sock")
-	lockPath := filepath.Join(dir, runDirLockName)
+	lockPath := filepath.Join(dir, LockName)
 	fd, err := syscall.Open(lockPath, syscall.O_RDWR|syscall.O_CREAT, 0o600)
 	if err != nil {
 		t.Fatal(err)
 	}
 	// role=stop; the role gate returns before any signal, so the pid is never touched.
-	writeOwnerRecord(fd, ownerRecord{Pid: 999999, Role: "stop", Node: nodeID(), InstanceID: "x", StartedAt: 1})
+	writeOwnerRecord(fd, OwnerRecord{Pid: 999999, Role: "stop", Node: nodeID(), InstanceID: "x", StartedAt: 1})
 	_ = syscall.Close(fd)
 
 	buf := captureLogBuf(t)
@@ -652,14 +650,14 @@ func TestClaimRunDirEscalatesToSIGKILL(t *testing.T) {
 	shrinkEvictionGraces(t)
 	dir := shortTempDir(t)
 	sock := filepath.Join(dir, "s.sock")
-	lockPath := filepath.Join(dir, runDirLockName)
+	lockPath := filepath.Join(dir, LockName)
 	holder := spawnLockHolder(t, lockPath, "term-ignore", "")
 
 	oldCmd := isServeCmdline
 	isServeCmdline = func(int, string) bool { return true }
 	t.Cleanup(func() { isServeCmdline = oldCmd })
 
-	release := lockRunFolder(sock, "serve").release
+	release := LockRunFolder(sock, "serve").Release
 	t.Cleanup(release)
 
 	if !waitForExit(holder.Process.Pid, 3*time.Second) {
@@ -759,12 +757,12 @@ func TestEvictRunDirHolderSignalArms(t *testing.T) {
 
 			dir := shortTempDir(t)
 			sock := filepath.Join(dir, "s.sock")
-			lockPath := filepath.Join(dir, runDirLockName)
+			lockPath := filepath.Join(dir, LockName)
 			fd, err := syscall.Open(lockPath, syscall.O_RDWR|syscall.O_CREAT, 0o600)
 			if err != nil {
 				t.Fatal(err)
 			}
-			writeOwnerRecord(fd, ownerRecord{Pid: 999999, Role: "serve", Node: nodeID(), InstanceID: "x", StartedAt: 1})
+			writeOwnerRecord(fd, OwnerRecord{Pid: 999999, Role: "serve", Node: nodeID(), InstanceID: "x", StartedAt: 1})
 			_ = syscall.Close(fd)
 
 			buf := captureLogBuf(t)
@@ -801,16 +799,16 @@ func TestClaimRunDirRefusesSymlinkLock(t *testing.T) {
 	if err := os.WriteFile(victim, []byte("precious"), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.Symlink(victim, filepath.Join(dir, runDirLockName)); err != nil {
+	if err := os.Symlink(victim, filepath.Join(dir, LockName)); err != nil {
 		t.Fatal(err)
 	}
 
 	buf := captureLogBuf(t)
-	release := lockRunFolder(sock, "serve").release
+	release := LockRunFolder(sock, "serve").Release
 	t.Cleanup(release)
 	// The daemon serves without the lock, and says so.
-	if !strings.Contains(buf.String(), runDirNotHolderLine+"\n") {
-		t.Errorf("log = %q, want the line %q", buf.String(), runDirNotHolderLine)
+	if !strings.Contains(buf.String(), NotHolderLine+"\n") {
+		t.Errorf("log = %q, want the line %q", buf.String(), NotHolderLine)
 	}
 
 	got, err := os.ReadFile(victim)
@@ -835,7 +833,7 @@ func TestClaimRunDirDoesNotSIGKILLAReusedPid(t *testing.T) {
 	shrinkEvictionGraces(t)
 	dir := shortTempDir(t)
 	sock := filepath.Join(dir, "s.sock")
-	lockPath := filepath.Join(dir, runDirLockName)
+	lockPath := filepath.Join(dir, LockName)
 	holder := spawnLockHolder(t, lockPath, "term-ignore", "")
 
 	oldCmd := isServeCmdline
@@ -846,7 +844,7 @@ func TestClaimRunDirDoesNotSIGKILLAReusedPid(t *testing.T) {
 	}
 	t.Cleanup(func() { isServeCmdline = oldCmd })
 
-	release := lockRunFolder(sock, "serve").release
+	release := LockRunFolder(sock, "serve").Release
 	t.Cleanup(release)
 
 	if calls < 2 {
@@ -864,7 +862,7 @@ func TestClaimRunDirRefusesForeignHolder(t *testing.T) {
 	shrinkEvictionGraces(t)
 	dir := shortTempDir(t)
 	sock := filepath.Join(dir, "s.sock")
-	lockPath := filepath.Join(dir, runDirLockName)
+	lockPath := filepath.Join(dir, LockName)
 	// Force a foreign node so the machine-identity guard refuses, even though the
 	// cmdline check is seamed true.
 	holder := spawnLockHolder(t, lockPath, "", nodeID()+"-other")
@@ -873,7 +871,7 @@ func TestClaimRunDirRefusesForeignHolder(t *testing.T) {
 	isServeCmdline = func(int, string) bool { return true }
 	t.Cleanup(func() { isServeCmdline = oldCmd })
 
-	release := lockRunFolder(sock, "serve").release
+	release := LockRunFolder(sock, "serve").Release
 	t.Cleanup(release)
 
 	// The holder must be left alive, and it must still hold the lock (our claim gave
@@ -888,35 +886,6 @@ func TestClaimRunDirRefusesForeignHolder(t *testing.T) {
 	defer syscall.Close(fd)
 	if err := syscall.Flock(fd, syscall.LOCK_EX|syscall.LOCK_NB); err != syscall.EWOULDBLOCK {
 		t.Errorf("lock was free after a refused claim (flock err = %v), holder should still own it", err)
-	}
-}
-
-func TestNewServerOnSocketWritesRunLock(t *testing.T) {
-	dir := shortTempDir(t)
-	sock := filepath.Join(dir, "s.sock")
-	s, err := newServerOnSocket(sock, "tok", "", wirelog.Options{}, false, false)
-	if err != nil {
-		t.Fatalf("newServerOnSocket: %v", err)
-	}
-	t.Cleanup(func() { s.procs.killAll() })
-
-	lockPath := filepath.Join(dir, runDirLockName)
-	rec, err := readOwnerRecord(lockPath)
-	if err != nil {
-		t.Fatalf("daemon.lock not written at boot: %v", err)
-	}
-	if rec.Pid != os.Getpid() || rec.Role != "serve" {
-		t.Errorf("boot owner record = %+v, want our pid + role serve", rec)
-	}
-
-	s.signalShutdown()
-	s.closeAll(sock)
-	fi, err := os.Stat(lockPath)
-	if err != nil {
-		t.Fatalf("daemon.lock must survive closeAll (truncate, not unlink): %v", err)
-	}
-	if fi.Size() != 0 {
-		t.Errorf("daemon.lock size after closeAll = %d, want 0", fi.Size())
 	}
 }
 

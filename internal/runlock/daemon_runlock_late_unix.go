@@ -1,6 +1,6 @@
 //go:build unix
 
-package main
+package runlock
 
 import (
 	"os"
@@ -46,21 +46,21 @@ type lateRunDirLock struct {
 // drops the lock if a try took it. The claim stays holder false, so a late holder
 // writes no child record for a later spawn. 5fd08069 writes none either (measured on
 // Linux and macOS).
-func lateRunDirClaim(fd int, role string) runDirClaim {
+func lateRunDirClaim(fd int, role string) Claim {
 	l := &lateRunDirLock{fd: fd, role: role, done: make(chan struct{})}
-	return runDirClaim{release: l.release, complete: l.start, stopLate: l.stop}
+	return Claim{Release: l.release, Complete: l.start, StopLate: l.stop}
 }
 
 // start runs the tries in their own goroutine. The record of a good try is the full
 // record of a start that got the lock at once. Its startedAt is the start of the
 // daemon, not the time of the try (measured on Linux and macOS).
 func (l *lateRunDirLock) start(instanceID string, startedAt int64) {
-	rec := ownerRecord{Pid: os.Getpid(), Role: l.role, Node: nodeID(), InstanceID: instanceID, StartedAt: startedAt}
+	rec := OwnerRecord{Pid: os.Getpid(), Role: l.role, Node: nodeID(), InstanceID: instanceID, StartedAt: startedAt}
 	go l.tryEvery(runDirLatePeriod, rec)
 }
 
 // tryEvery tries the lock once each period until a try takes it or the tries stop.
-func (l *lateRunDirLock) tryEvery(period time.Duration, rec ownerRecord) {
+func (l *lateRunDirLock) tryEvery(period time.Duration, rec OwnerRecord) {
 	t := time.NewTicker(period)
 	defer t.Stop()
 	for {
@@ -78,7 +78,7 @@ func (l *lateRunDirLock) tryEvery(period time.Duration, rec ownerRecord) {
 // try makes one try. It reports whether the tries are over. A failed try logs nothing
 // and writes nothing (measured on Linux). A good try writes the record and logs one line, and the
 // daemon then holds the lock until it exits (measured on Linux and macOS).
-func (l *lateRunDirLock) try(rec ownerRecord) bool {
+func (l *lateRunDirLock) try(rec OwnerRecord) bool {
 	l.mu.Lock()
 	defer l.mu.Unlock()
 	if l.stopped {

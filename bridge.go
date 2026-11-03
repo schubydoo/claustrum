@@ -42,20 +42,6 @@ func runBridge(socket string) error {
 	return nil
 }
 
-// The -stop stdout words. -stop prints exactly one of them, then a newline, and
-// exits 0 in every state that these words name. Measured against f6010b97 and
-// 90fca6e6 on Linux.
-const (
-	stopWordStopped    = "stopped"    // the connect succeeded. On Linux and macOS daemon.lock also came free within 3 s (5fd08069, measured), or there is no usable one (claustrum's own)
-	stopWordNone       = "none"       // the connect failed and daemon.lock is free or missing. claustrum's own rule: also when the lock cannot be opened or locked
-	stopWordTerminated = "terminated" // the lock holder exited after SIGTERM
-	stopWordKilled     = "killed"     // the lock holder ignored SIGTERM and got SIGKILL
-	// stopWordSurvivor: the lock holder is a live process that -stop does not
-	// signal, or the lock is still held 1.5 s after SIGKILL. claustrum prints it
-	// too when a signal cannot reach a holder that is still there.
-	stopWordSurvivor = "survivor"
-)
-
 // closeWriteOrClose ends the write side of nc so the daemon reads EOF, and
 // keeps the read side open for its last replies. If the half-close fails, it
 // closes nc fully. The daemon still reads EOF then, and the bridge exits on

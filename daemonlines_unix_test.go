@@ -11,6 +11,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/schubydoo/claustrum/internal/runlock"
 	"github.com/schubydoo/claustrum/internal/wirelog"
 )
 
@@ -32,15 +33,15 @@ func TestClaimRunDirHeldByANonDaemon(t *testing.T) {
 	if err := syscall.Flock(fd, syscall.LOCK_EX|syscall.LOCK_NB); err != nil {
 		t.Fatalf("flock: %v", err)
 	}
-	oldHold := holdHolder
-	t.Cleanup(func() { holdHolder = oldHold })
+	oldHold := runlock.HoldHolderForTest()
+	t.Cleanup(func() { runlock.SetHoldHolderForTest(oldHold) })
 	signals := 0
-	holdHolder = func(int) (func(syscall.Signal) error, func()) {
+	runlock.SetHoldHolderForTest(func(int) (func(syscall.Signal) error, func()) {
 		return func(syscall.Signal) error { signals++; return syscall.ESRCH }, func() {}
-	}
+	})
 	buf := captureLogBuf(t)
 
-	release := lockRunFolder(sock, "serve").release
+	release := lockRunFolder(sock, "serve").Release
 	release()
 
 	wantLinesInOrder(t, buf.String(),
@@ -64,7 +65,7 @@ func TestClaimRunDirHeldByANonDaemon(t *testing.T) {
 func TestClaimRunDirHolderGetsNoNotHolderLine(t *testing.T) {
 	dir := shortTempDir(t)
 	buf := captureLogBuf(t)
-	release := lockRunFolder(filepath.Join(dir, "rpc.sock"), "serve").release
+	release := lockRunFolder(filepath.Join(dir, "rpc.sock"), "serve").Release
 	release()
 	// Another test can leave a goroutine that logs into this buffer. Look for the line only.
 	if got := buf.String(); strings.Contains(got, runDirNotHolderLine) {

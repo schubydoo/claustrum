@@ -123,11 +123,17 @@ component_management:
         # 4534d86 lifecycle additions: the run-dir lock (daemon.lock + owner record,
         # OS-split machine identity; a no-op on Windows, parity) and the orphan-exit
         # self-probe.
-        - daemon_runlock_unix.go
-        - daemon_runlock_late_unix.go
-        - daemon_runlock_linux.go
-        - daemon_runlock_darwin.go
-        - daemon_runlock_windows.go
+        - internal/runlock/runlock.go
+        - internal/runlock/daemon_runlock_unix.go
+        - internal/runlock/daemon_runlock_late_unix.go
+        - internal/runlock/daemon_runlock_linux.go
+        - internal/runlock/daemon_runlock_darwin.go
+        - internal/runlock/daemon_runlock_windows.go
+        - internal/runlock/names_unix.go
+        - internal/runlock/names_linux.go
+        - internal/runlock/fortest_unix.go
+        - compat_runlock.go
+        - compat_runlock_unix.go
         - orphanexit.go
         - selfexit_unix.go
         - selfexit_windows.go

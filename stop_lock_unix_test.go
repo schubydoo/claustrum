@@ -3,13 +3,18 @@
 package main
 
 import (
+	"bytes"
 	"fmt"
+	"net"
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 	"syscall"
 	"testing"
 	"time"
+
+	"github.com/schubydoo/claustrum/internal/runlock"
 )
 
 // The -stop lock fallback, measured against f6010b97 and 90fca6e6 on Linux.
@@ -37,9 +42,8 @@ func captureStopLog(t *testing.T) *syncBuffer {
 // Its real argv is the test binary, not "-serve -socket <sock>".
 func seamServeHolder(t *testing.T) {
 	t.Helper()
-	old := isServeCmdline
-	isServeCmdline = func(int, string) bool { return true }
-	t.Cleanup(func() { isServeCmdline = old })
+	old := runlock.SetIsServeCmdlineForTest(func(int, string) bool { return true })
+	t.Cleanup(func() { runlock.SetIsServeCmdlineForTest(old) })
 }
 
 func requireNodeID(t *testing.T) {
@@ -106,9 +110,8 @@ func TestRunStopMissingLockNotCreated(t *testing.T) {
 // host still reads as "terminated". The pin test keeps checking the 4 s value.
 func TestRunStopTerminatesLockHolder(t *testing.T) {
 	requireNodeID(t)
-	oldGrace := stopTermGrace
-	stopTermGrace = 10 * time.Second
-	t.Cleanup(func() { stopTermGrace = oldGrace })
+	oldGrace := runlock.SetStopTermGraceForTest(10 * time.Second)
+	t.Cleanup(func() { runlock.SetStopTermGraceForTest(oldGrace) })
 	dir := shortTempDir(t)
 	sock := filepath.Join(dir, "rpc.sock")
 	lockPath := filepath.Join(dir, runDirLockName)
@@ -148,9 +151,8 @@ func TestRunStopTerminatesLockHolder(t *testing.T) {
 // with no instance. Measured on Linux against 89cb6289.
 func TestRunStopLinesForAShortRecord(t *testing.T) {
 	requireNodeID(t)
-	oldGrace := stopTermGrace
-	stopTermGrace = 10 * time.Second
-	t.Cleanup(func() { stopTermGrace = oldGrace })
+	oldGrace := runlock.SetStopTermGraceForTest(10 * time.Second)
+	t.Cleanup(func() { runlock.SetStopTermGraceForTest(oldGrace) })
 	dir := shortTempDir(t)
 	sock := filepath.Join(dir, "rpc.sock")
 	lockPath := filepath.Join(dir, runDirLockName)
@@ -171,9 +173,8 @@ func TestRunStopLinesForAShortRecord(t *testing.T) {
 // -stop prints "killed". The grace is a seam, so the test does not wait 4 s.
 func TestRunStopKillsHolderThatIgnoresSIGTERM(t *testing.T) {
 	requireNodeID(t)
-	old, oldPoll := stopTermGrace, runDirPollInterval
-	stopTermGrace, runDirPollInterval = 300*time.Millisecond, 10*time.Millisecond
-	t.Cleanup(func() { stopTermGrace, runDirPollInterval = old, oldPoll })
+	old, oldPoll := runlock.SetStopTermGraceForTest(300*time.Millisecond), runlock.SetPollIntervalForTest(10*time.Millisecond)
+	t.Cleanup(func() { runlock.SetStopTermGraceForTest(old); runlock.SetPollIntervalForTest(oldPoll) })
 
 	dir := shortTempDir(t)
 	sock := filepath.Join(dir, "rpc.sock")
@@ -189,33 +190,17 @@ func TestRunStopKillsHolderThatIgnoresSIGTERM(t *testing.T) {
 
 	start := time.Now()
 	stopPrints(t, sock, "killed\n")
-	if el := time.Since(start); el < stopTermGrace {
-		t.Errorf("-stop returned after %s, before the %s SIGTERM grace", el, stopTermGrace)
+	if el := time.Since(start); el < runlock.StopTermGraceForTest() {
+		t.Errorf("-stop returned after %s, before the %s SIGTERM grace", el, runlock.StopTermGraceForTest())
 	}
 	if !waitForExit(holder.Process.Pid, 3*time.Second) {
 		t.Error("the lock holder is still alive after -stop printed killed")
 	}
-	want := fmt.Sprintf("[daemon] stop: WARNING previous daemon pid %d (instance %q) ignored SIGTERM for %s; sending SIGKILL (its Claude Code children, if any, are ended next, before this daemon serves)\n", rec.Pid, rec.InstanceID, stopTermGrace)
+	want := fmt.Sprintf("[daemon] stop: WARNING previous daemon pid %d (instance %q) ignored SIGTERM for %s; sending SIGKILL (its Claude Code children, if any, are ended next, before this daemon serves)\n", rec.Pid, rec.InstanceID, runlock.StopTermGraceForTest())
 	if got := logs.String(); !strings.Contains(got, want) {
 		t.Errorf("stderr missing %q\n--- got ---\n%s", want, got)
 	}
 	assertGone(t, token, "daemon.token")
-}
-
-// The shipped SIGTERM grace is 4 s (measured). The test above shrinks it, so
-// this pins the value itself.
-func TestStopTermGraceIsFourSeconds(t *testing.T) {
-	if stopTermGrace != 4*time.Second {
-		t.Errorf("stopTermGrace = %s, want 4s", stopTermGrace)
-	}
-}
-
-// The shipped post-SIGKILL wait is 1.5 s (measured). The arms test below shrinks
-// it, so this pins the value itself.
-func TestStopKillGraceIsOnePointFiveSeconds(t *testing.T) {
-	if stopKillGrace != 1500*time.Millisecond {
-		t.Errorf("stopKillGrace = %s, want 1.5s", stopKillGrace)
-	}
 }
 
 // A live holder that is not our serve process for this socket gets no signal.
@@ -243,7 +228,7 @@ func TestRunStopLeavesForeignHolderAlone(t *testing.T) {
 		t.Fatal("-stop signalled a lock holder that is not our serve process")
 	}
 	want := fmt.Sprintf("[daemon] stop: WARNING %s is held by a live process we will not signal (pid %d is not a %s --serve process for %s); leaving it alone\n",
-		lockPath, holder.Process.Pid, selfBase(), sock)
+		lockPath, holder.Process.Pid, runlock.SelfBaseForTest(), sock)
 	if got := logs.String(); !strings.Contains(got, want) {
 		t.Errorf("stderr missing %q\n--- got ---\n%s", want, got)
 	}
@@ -270,10 +255,16 @@ func TestRunStopLeavesForeignHolderAlone(t *testing.T) {
 func TestStopRunDirHolderUndeliverableArms(t *testing.T) {
 	requireNodeID(t)
 	restore := func() func() {
-		oc, osig, oh, og, ok, osk, op := isServeCmdline, signalHolder, holderGone, stopTermGrace, runDirKillGrace, stopKillGrace, runDirPollInterval
+		oc, osig, oh := runlock.IsServeCmdlineForTest(), runlock.SignalHolderForTest(), runlock.HolderGoneForTest()
+		og, ok, osk, op := runlock.StopTermGraceForTest(), runlock.KillGraceForTest(), runlock.StopKillGraceForTest(), runlock.PollIntervalForTest()
 		return func() {
-			isServeCmdline, signalHolder, holderGone = oc, osig, oh
-			stopTermGrace, runDirKillGrace, stopKillGrace, runDirPollInterval = og, ok, osk, op
+			runlock.SetIsServeCmdlineForTest(oc)
+			runlock.SetSignalHolderForTest(osig)
+			runlock.SetHolderGoneForTest(oh)
+			runlock.SetStopTermGraceForTest(og)
+			runlock.SetKillGraceForTest(ok)
+			runlock.SetStopKillGraceForTest(osk)
+			runlock.SetPollIntervalForTest(op)
 		}
 	}
 	const instance = "x"
@@ -295,18 +286,21 @@ func TestStopRunDirHolderUndeliverableArms(t *testing.T) {
 			t.Cleanup(restore())
 			// runDirKillGrace is short and stopKillGrace is long, so the timing check
 			// below tells the two apart.
-			stopTermGrace, runDirKillGrace, stopKillGrace, runDirPollInterval = 50*time.Millisecond, 50*time.Millisecond, 400*time.Millisecond, 10*time.Millisecond
+			runlock.SetStopTermGraceForTest(50 * time.Millisecond)
+			runlock.SetKillGraceForTest(50 * time.Millisecond)
+			runlock.SetStopKillGraceForTest(400 * time.Millisecond)
+			runlock.SetPollIntervalForTest(10 * time.Millisecond)
 			calls := 0
-			isServeCmdline = func(int, string) bool { calls++; return tc.serveCmd(calls) }
+			runlock.SetIsServeCmdlineForTest(func(int, string) bool { calls++; return tc.serveCmd(calls) })
 			var killedAt time.Time
-			signalHolder = func(_ int, sig syscall.Signal) bool {
+			runlock.SetSignalHolderForTest(func(_ int, sig syscall.Signal) bool {
 				if sig == syscall.SIGKILL {
 					killedAt = time.Now()
 					return tc.killOK
 				}
 				return tc.termOK
-			}
-			holderGone = func(int) bool { return false }
+			})
+			runlock.SetHolderGoneForTest(func(int) bool { return false })
 
 			dir := shortTempDir(t)
 			sock := filepath.Join(dir, "rpc.sock")
@@ -335,37 +329,70 @@ func TestStopRunDirHolderUndeliverableArms(t *testing.T) {
 			assertKept(t, sock, "socket")
 			assertKept(t, token, "daemon.token")
 			if tc.killOK {
-				if waited := done.Sub(killedAt); waited < stopKillGrace {
-					t.Errorf("-stop returned %s after SIGKILL, want at least stopKillGrace (%s)", waited, stopKillGrace)
+				if waited := done.Sub(killedAt); waited < runlock.StopKillGraceForTest() {
+					t.Errorf("-stop returned %s after SIGKILL, want at least stopKillGrace (%s)", waited, runlock.StopKillGraceForTest())
 				}
 			}
 		})
 	}
 }
 
-// A free lock stays held by -stop until release runs, so the removals of the
-// socket and daemon.token happen under the lock. A -serve that starts meanwhile
-// cannot take the lock, so it cannot bind a socket that -stop then removes.
-func TestStopHoldsFreeLockUntilRelease(t *testing.T) {
-	dir := shortTempDir(t)
-	lock := filepath.Join(dir, runDirLockName)
-	if err := os.WriteFile(lock, nil, 0o600); err != nil {
-		t.Fatal(err)
-	}
-	word, release := stopRunDirHolder(filepath.Join(dir, "rpc.sock"))
-	if word != stopWordNone {
-		t.Fatalf("word = %q, want %q for a free lock", word, stopWordNone)
-	}
-	other, err := syscall.Open(lock, syscall.O_RDWR|syscall.O_CLOEXEC, 0)
+// holdLockOf takes the flock on daemon.lock of dir through its own open of the file.
+// A nil rec leaves the file empty. The returned func lets go of the lock once.
+func holdLockOf(t *testing.T, dir string, rec *ownerRecord) func() {
+	t.Helper()
+	fd, err := syscall.Open(filepath.Join(dir, runDirLockName), syscall.O_RDWR|syscall.O_CREAT|syscall.O_CLOEXEC, 0o600)
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer func() { _ = syscall.Close(other) }()
-	if err := syscall.Flock(other, syscall.LOCK_EX|syscall.LOCK_NB); err != syscall.EWOULDBLOCK {
-		t.Fatalf("before release another fd took the lock (err %v): -stop does not hold it across the removals", err)
+	if err := syscall.Flock(fd, syscall.LOCK_EX|syscall.LOCK_NB); err != nil {
+		_ = syscall.Close(fd)
+		t.Fatal(err)
 	}
-	release()
-	if err := syscall.Flock(other, syscall.LOCK_EX|syscall.LOCK_NB); err != nil {
-		t.Fatalf("after release the lock is still held: %v", err)
+	if rec != nil {
+		writeOwnerRecord(fd, *rec)
+	}
+	var once sync.Once
+	letGo := func() { once.Do(func() { _ = syscall.Close(fd) }) }
+	t.Cleanup(letGo)
+	return letGo
+}
+
+func setStopLockWait(t *testing.T, d time.Duration) {
+	t.Helper()
+	old := runlock.SetStopLockWaitForTest(d)
+	t.Cleanup(func() { runlock.SetStopLockWaitForTest(old) })
+}
+
+// runStop goes to the lock step after the read of the reply. A listener that closes
+// at once and a lock that comes free at 150 ms give "stopped" no earlier than that.
+func TestRunStopWaitsForTheLockAfterTheReply(t *testing.T) {
+	setStopLockWait(t, 10*time.Second)
+	dir := shortTempDir(t)
+	sock := filepath.Join(dir, "rpc.sock")
+	ln, err := net.Listen("unix", sock)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = ln.Close() })
+	go func() {
+		c, err := ln.Accept()
+		if err == nil {
+			_ = c.Close()
+		}
+	}()
+	letGo := holdLockOf(t, dir, nil)
+	const after = 150 * time.Millisecond
+	start := time.Now()
+	timer := time.AfterFunc(after, letGo)
+	t.Cleanup(func() { timer.Stop() })
+
+	var out bytes.Buffer
+	runStop(sock, &out)
+	if took := time.Since(start); took < after {
+		t.Errorf("-stop returned after %s, before the lock came free at %s", took, after)
+	}
+	if got := out.String(); got != "stopped\n" {
+		t.Errorf("-stop printed %q, want %q", got, "stopped\n")
 	}
 }

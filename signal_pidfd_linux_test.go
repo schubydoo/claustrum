@@ -4,13 +4,10 @@ package main
 
 import (
 	"os"
-	"path/filepath"
-	"slices"
 	"strconv"
 	"strings"
 	"syscall"
 	"testing"
-	"time"
 
 	"github.com/schubydoo/claustrum/internal/procinfo"
 )
@@ -63,102 +60,6 @@ func TestChildHandleHoldsAPidfd(t *testing.T) {
 		t.Fatalf("no pid file descriptor for the child %d in this process", cmd.Process.Pid)
 	}
 	_ = signalProcessGroup(cmd.Process, "TERM")
-	if sig := hcWaitSignal(t, cmd); sig != syscall.SIGTERM {
-		t.Errorf("the helper ended with signal %v, want SIGTERM", sig)
-	}
-}
-
-// TestEvictionSignalGoesThroughAPidfd pins the hold of the lock holder (89cb6289, measured
-// on Linux with strace): pidfd_open and then pidfd_send_signal, and no kill. -stop sends
-// through realSignalHolder. The serve eviction opens the same hold earlier (see the next
-// test). The target is a helper that this test started.
-func TestEvictionSignalGoesThroughAPidfd(t *testing.T) {
-	skipWithoutPidfd(t)
-	cmd := hcStartSleeper(t)
-	pid := cmd.Process.Pid
-
-	oldOpen, oldSend, oldKill := procinfo.PidfdOpenForTest(), procinfo.PidfdSendForTest(), procinfo.KillPidForTest()
-	t.Cleanup(func() {
-		procinfo.SetPidfdOpenForTest(oldOpen)
-		procinfo.SetPidfdSendForTest(oldSend)
-		procinfo.SetKillPidForTest(oldKill)
-	})
-	var opened []int
-	var sent []syscall.Signal
-	kills := 0
-	procinfo.SetPidfdOpenForTest(func(p int) (int, error) { opened = append(opened, p); return oldOpen(p) })
-	procinfo.SetPidfdSendForTest(func(fd int, sig syscall.Signal) error { sent = append(sent, sig); return oldSend(fd, sig) })
-	procinfo.SetKillPidForTest(func(int, syscall.Signal) error { kills++; return nil })
-
-	if !realSignalHolder(pid, syscall.SIGTERM) {
-		t.Fatal("realSignalHolder reported no delivery to a live helper")
-	}
-	if len(opened) != 1 || opened[0] != pid {
-		t.Errorf("pidfd_open calls = %v, want one for the helper %d", opened, pid)
-	}
-	if len(sent) != 1 || sent[0] != syscall.SIGTERM {
-		t.Errorf("pidfd_send_signal calls = %v, want one SIGTERM", sent)
-	}
-	if kills != 0 {
-		t.Errorf("kill was called %d times, want 0", kills)
-	}
-	if sig := hcWaitSignal(t, cmd); sig != syscall.SIGTERM {
-		t.Errorf("the helper ended with signal %v, want SIGTERM", sig)
-	}
-}
-
-// TestEvictionOpensThePidfdBeforeItReadsTheHolder pins a rule of 89cb6289 (measured on Linux with strace):
-// the eviction opens the pid file descriptor of the holder first, then reads its pid namespace and its
-// command line, then sends SIGTERM through the descriptor, with no kill. The holder is a helper that this
-// test started.
-func TestEvictionOpensThePidfdBeforeItReadsTheHolder(t *testing.T) {
-	skipWithoutPidfd(t)
-	if nodeID() == "" {
-		t.Skip("run-dir eviction needs a machine identity (nodeID)")
-	}
-	cmd := hcStartSleeper(t)
-	pid := cmd.Process.Pid
-
-	oldOpen, oldSend, oldKill := procinfo.PidfdOpenForTest(), procinfo.PidfdSendForTest(), procinfo.KillPidForTest()
-	oldLink, oldCmdline, oldWait := procinfo.ReadlinkForTest(), isServeCmdline, waitHolderLock
-	t.Cleanup(func() {
-		procinfo.SetPidfdOpenForTest(oldOpen)
-		procinfo.SetPidfdSendForTest(oldSend)
-		procinfo.SetKillPidForTest(oldKill)
-		procinfo.SetReadlinkForTest(oldLink)
-		isServeCmdline, waitHolderLock = oldCmdline, oldWait
-	})
-	var calls []string
-	procinfo.SetPidfdOpenForTest(func(p int) (int, error) {
-		calls = append(calls, "pidfd_open "+strconv.Itoa(p))
-		return oldOpen(p)
-	})
-	procinfo.SetReadlinkForTest(func(name string) (string, error) {
-		if name == "/proc/"+strconv.Itoa(pid)+"/ns/pid" {
-			calls = append(calls, "read ns/pid")
-		}
-		return oldLink(name)
-	})
-	// The helper is the test binary, so the read of its command line is seamed.
-	isServeCmdline = func(int, string) bool { calls = append(calls, "read cmdline"); return true }
-	procinfo.SetPidfdSendForTest(func(fd int, sig syscall.Signal) error {
-		calls = append(calls, "pidfd_send_signal "+sig.String())
-		return oldSend(fd, sig)
-	})
-	procinfo.SetKillPidForTest(func(int, syscall.Signal) error { calls = append(calls, "kill"); return nil })
-	// The helper holds no lock, so the wait on the lock is seamed. Its end is read below.
-	waitHolderLock = func(int, time.Duration) bool { return true }
-
-	dir := shortTempDir(t)
-	lockPath := filepath.Join(dir, runDirLockName)
-	writeRecordFile(t, lockPath, ownerRecord{Pid: pid, Role: "serve", Node: nodeID()})
-	if !evictGone(lockPath, filepath.Join(dir, "s.sock")) {
-		t.Error("evictRunDirHolder = false, want true")
-	}
-	want := []string{"pidfd_open " + strconv.Itoa(pid), "read ns/pid", "read cmdline", "pidfd_send_signal terminated"}
-	if !slices.Equal(calls, want) {
-		t.Errorf("calls = %q, want %q", calls, want)
-	}
 	if sig := hcWaitSignal(t, cmd); sig != syscall.SIGTERM {
 		t.Errorf("the helper ended with signal %v, want SIGTERM", sig)
 	}

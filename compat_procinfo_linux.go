@@ -8,5 +8,3 @@ import "github.com/schubydoo/claustrum/internal/procinfo"
 // uses.
 
 func procRoot() string { return procinfo.Root() }
-
-func osReadlink(name string) (string, error) { return procinfo.Readlink(name) }

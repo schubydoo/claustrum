@@ -16,7 +16,7 @@ import (
 var procRoot = "/proc"
 
 // readBootID and osReadlink are seams over the /proc reads of NodeID below and of
-// pidNamespaceRefusal (daemon_runlock_linux.go, package main). On the hosts
+// pidNamespaceRefusal (daemon_runlock_linux.go, internal/runlock). On the hosts
 // this suite runs on the boot id is readable and non-empty and the pid-namespace
 // link resolves; a procfs mounted subset=pid (systemd ProcSubset=) hides the boot
 // id — the case the "" arms exist for — but no fixture can remount /proc, so
@@ -79,7 +79,7 @@ var (
 // closes it. The reference retires a daemon with pidfd_send_signal(<fd>, SIGTERM, NULL, 0).
 // A Linux test measured that with strace against f6010b97 and 89cb6289. The host cleaner checks
 // the identity of pid between the open and the send. The serve eviction of the run-dir lock
-// holder does the same (holdHolder, package main). -stop (realSignalHolder) does not: it checks before
+// holder does the same (holdHolder, internal/runlock). -stop (realSignalHolder) does not: it checks before
 // the open only.
 //
 // If the kernel has no such call (ENOSYS), the signal goes out with kill(pid, sig). That

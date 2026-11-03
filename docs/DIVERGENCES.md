@@ -378,9 +378,9 @@ have no flag and no key.
   The host cleaner has its own gate, which is parity
   ([Signals of the cleaner](DAEMON.md#signals-of-the-cleaner),
   `retireAbandoned`). Code:
-  `daemon_runlock_unix.go` (`holderSignalRefusal`, `stopRunDirHolder`),
-  `daemon_runlock_darwin.go` (`realIsServeCmdline`, `procArgv`) and
-  `daemon_runlock_linux.go`.
+  `internal/runlock/daemon_runlock_unix.go` (`holderSignalRefusal`, `StopRunDirHolder`),
+  `internal/runlock/daemon_runlock_darwin.go` (`realIsServeCmdline`, `procArgv`) and
+  `internal/runlock/daemon_runlock_linux.go`.
 
 ### D16 · `git.status` of a linked worktree returns the status on Windows, where the reference errors (Windows) { #d16 }
 

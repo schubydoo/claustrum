@@ -1,11 +1,9 @@
 //go:build unix
 
-package main
+package runlock
 
 import (
-	"bytes"
 	"fmt"
-	"net"
 	"os"
 	"path/filepath"
 	"strings"
@@ -22,9 +20,9 @@ import (
 
 // holdLockOf takes the flock on daemon.lock of dir through its own open of the file.
 // A nil rec leaves the file empty. The returned func lets go of the lock once.
-func holdLockOf(t *testing.T, dir string, rec *ownerRecord) func() {
+func holdLockOf(t *testing.T, dir string, rec *OwnerRecord) func() {
 	t.Helper()
-	fd, err := syscall.Open(filepath.Join(dir, runDirLockName), syscall.O_RDWR|syscall.O_CREAT|syscall.O_CLOEXEC, 0o600)
+	fd, err := syscall.Open(filepath.Join(dir, LockName), syscall.O_RDWR|syscall.O_CREAT|syscall.O_CLOEXEC, 0o600)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -85,7 +83,7 @@ func setStopLockWait(t *testing.T, d time.Duration) {
 
 func lockText(t *testing.T, dir string) string {
 	t.Helper()
-	b, err := os.ReadFile(filepath.Join(dir, runDirLockName))
+	b, err := os.ReadFile(filepath.Join(dir, LockName))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -102,7 +100,7 @@ func TestStopAfterReplyTakesTheLockThatComesFree(t *testing.T) {
 	requireNodeID(t)
 	setStopLockWait(t, 10*time.Second)
 	dir := shortTempDir(t)
-	letGo := holdLockOf(t, dir, &ownerRecord{Pid: 1 << 30, Role: "serve", Node: nodeID()})
+	letGo := holdLockOf(t, dir, &OwnerRecord{Pid: 1 << 30, Role: "serve", Node: nodeID()})
 	holderText := lockText(t, dir)
 	sigs := seamStopSignals(t, func(syscall.Signal) {})
 	const after = 150 * time.Millisecond
@@ -110,10 +108,10 @@ func TestStopAfterReplyTakesTheLockThatComesFree(t *testing.T) {
 	timer := time.AfterFunc(after, letGo)
 	t.Cleanup(func() { timer.Stop() })
 
-	word, release := stopAfterReply(filepath.Join(dir, "rpc.sock"))
+	word, release := StopAfterReply(filepath.Join(dir, "rpc.sock"))
 	took := time.Since(start)
-	if word != stopWordStopped {
-		t.Errorf("word = %q, want %q", word, stopWordStopped)
+	if word != StopWordStopped {
+		t.Errorf("word = %q, want %q", word, StopWordStopped)
 	}
 	if took < after {
 		t.Errorf("-stop returned after %s, before the holder let go at %s", took, after)
@@ -143,7 +141,7 @@ func TestStopAfterReplyTerminatesTheHolder(t *testing.T) {
 	stageStaleSocket(t, sock)
 	token := stageToken(t, sock)
 	const pid = 1 << 30
-	letGo := holdLockOf(t, dir, &ownerRecord{Pid: pid, Role: "serve", Node: nodeID(), InstanceID: "x", StartedAt: 1})
+	letGo := holdLockOf(t, dir, &OwnerRecord{Pid: pid, Role: "serve", Node: nodeID(), InstanceID: "x", StartedAt: 1})
 	sigs := seamStopSignals(t, func(sig syscall.Signal) {
 		if sig == syscall.SIGTERM {
 			letGo()
@@ -152,9 +150,9 @@ func TestStopAfterReplyTerminatesTheHolder(t *testing.T) {
 	logs := captureStopLog(t)
 
 	start := time.Now()
-	word, release := stopAfterReply(sock)
-	if word != stopWordTerminated {
-		t.Fatalf("word = %q, want %q", word, stopWordTerminated)
+	word, release := StopAfterReply(sock)
+	if word != StopWordTerminated {
+		t.Fatalf("word = %q, want %q", word, StopWordTerminated)
 	}
 	got, at := sigs.list()
 	if len(got) != 1 || got[0] != syscall.SIGTERM {
@@ -191,7 +189,7 @@ func TestStopAfterReplyKillsAHolderThatIgnoresSIGTERM(t *testing.T) {
 	stageStaleSocket(t, sock)
 	token := stageToken(t, sock)
 	const pid = 1 << 30
-	letGo := holdLockOf(t, dir, &ownerRecord{Pid: pid, Role: "serve", Node: nodeID(), InstanceID: "5ab5", StartedAt: 1})
+	letGo := holdLockOf(t, dir, &OwnerRecord{Pid: pid, Role: "serve", Node: nodeID(), InstanceID: "5ab5", StartedAt: 1})
 	sigs := seamStopSignals(t, func(sig syscall.Signal) {
 		if sig == syscall.SIGKILL {
 			letGo()
@@ -199,10 +197,10 @@ func TestStopAfterReplyKillsAHolderThatIgnoresSIGTERM(t *testing.T) {
 	})
 	logs := captureStopLog(t)
 
-	word, release := stopAfterReply(sock)
+	word, release := StopAfterReply(sock)
 	t.Cleanup(release)
-	if word != stopWordKilled {
-		t.Fatalf("word = %q, want %q", word, stopWordKilled)
+	if word != StopWordKilled {
+		t.Fatalf("word = %q, want %q", word, StopWordKilled)
 	}
 	got, at := sigs.list()
 	if len(got) != 2 || got[0] != syscall.SIGTERM || got[1] != syscall.SIGKILL {
@@ -232,15 +230,15 @@ func TestStopAfterReplyLeavesAHolderThatIsNoDaemon(t *testing.T) {
 	sigs := seamStopSignals(t, func(syscall.Signal) {})
 	logs := captureStopLog(t)
 
-	word, release := stopAfterReply(sock)
+	word, release := StopAfterReply(sock)
 	release()
-	if word != stopWordSurvivor {
-		t.Errorf("word = %q, want %q", word, stopWordSurvivor)
+	if word != StopWordSurvivor {
+		t.Errorf("word = %q, want %q", word, StopWordSurvivor)
 	}
 	if got, _ := sigs.list(); len(got) != 0 {
 		t.Errorf("-stop sent %v to a holder that is no daemon", got)
 	}
-	want := fmt.Sprintf(`[daemon] stop: WARNING %s is held by a live process we will not signal (its holder is not a daemon (role "")); leaving it alone`+"\n", filepath.Join(dir, runDirLockName))
+	want := fmt.Sprintf(`[daemon] stop: WARNING %s is held by a live process we will not signal (its holder is not a daemon (role "")); leaving it alone`+"\n", filepath.Join(dir, LockName))
 	if !strings.Contains(logs.String(), want) {
 		t.Errorf("log misses %q\n--- got ---\n%s", want, logs.String())
 	}
@@ -255,45 +253,12 @@ func TestStopAfterReplyLeavesAHolderThatIsNoDaemon(t *testing.T) {
 // (claustrum's own, not measured).
 func TestStopAfterReplyWithNoLockFile(t *testing.T) {
 	dir := shortTempDir(t)
-	word, release := stopAfterReply(filepath.Join(dir, "rpc.sock"))
+	word, release := StopAfterReply(filepath.Join(dir, "rpc.sock"))
 	release()
-	if word != stopWordStopped {
-		t.Errorf("word = %q, want %q", word, stopWordStopped)
+	if word != StopWordStopped {
+		t.Errorf("word = %q, want %q", word, StopWordStopped)
 	}
-	assertGone(t, filepath.Join(dir, runDirLockName), "a daemon.lock that -stop made")
-}
-
-// runStop goes to the lock step after the read of the reply. A listener that closes
-// at once and a lock that comes free at 150 ms give "stopped" no earlier than that.
-func TestRunStopWaitsForTheLockAfterTheReply(t *testing.T) {
-	setStopLockWait(t, 10*time.Second)
-	dir := shortTempDir(t)
-	sock := filepath.Join(dir, "rpc.sock")
-	ln, err := net.Listen("unix", sock)
-	if err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(func() { _ = ln.Close() })
-	go func() {
-		c, err := ln.Accept()
-		if err == nil {
-			_ = c.Close()
-		}
-	}()
-	letGo := holdLockOf(t, dir, nil)
-	const after = 150 * time.Millisecond
-	start := time.Now()
-	timer := time.AfterFunc(after, letGo)
-	t.Cleanup(func() { timer.Stop() })
-
-	var out bytes.Buffer
-	runStop(sock, &out)
-	if took := time.Since(start); took < after {
-		t.Errorf("-stop returned after %s, before the lock came free at %s", took, after)
-	}
-	if got := out.String(); got != "stopped\n" {
-		t.Errorf("-stop printed %q, want %q", got, "stopped\n")
-	}
+	assertGone(t, filepath.Join(dir, LockName), "a daemon.lock that -stop made")
 }
 
 // The shipped wait is 3 s (measured), and 0.5 s more for a holder that is no daemon.
@@ -324,11 +289,11 @@ func TestStopAfterReplyTriesLongerForAHolderThatIsNoDaemon(t *testing.T) {
 	sigs := seamStopSignals(t, func(syscall.Signal) {})
 
 	start := time.Now()
-	word, release := stopAfterReply(filepath.Join(dir, "rpc.sock"))
+	word, release := StopAfterReply(filepath.Join(dir, "rpc.sock"))
 	took := time.Since(start)
 	release()
-	if word != stopWordSurvivor {
-		t.Errorf("word = %q, want %q", word, stopWordSurvivor)
+	if word != StopWordSurvivor {
+		t.Errorf("word = %q, want %q", word, StopWordSurvivor)
 	}
 	if want := stopLockWait + stopForeignWait; took < want {
 		t.Errorf("-stop printed %q after %s, before the tries of %s", word, took, want)
@@ -353,10 +318,10 @@ func TestStopAfterReplyTakesTheLockInTheMoreTries(t *testing.T) {
 	timer := time.AfterFunc(after, letGo)
 	t.Cleanup(func() { timer.Stop() })
 
-	word, release := stopAfterReply(sock)
+	word, release := StopAfterReply(sock)
 	release()
-	if word != stopWordStopped {
-		t.Errorf("word = %q, want %q", word, stopWordStopped)
+	if word != StopWordStopped {
+		t.Errorf("word = %q, want %q", word, StopWordStopped)
 	}
 	if got, _ := sigs.list(); len(got) != 0 {
 		t.Errorf("-stop sent %v to a holder that let go", got)
@@ -387,26 +352,26 @@ func TestStopAfterReplyLeavesTheNewHolderOfALockThatChangedHands(t *testing.T) {
 	stageStaleSocket(t, sock)
 	token := stageToken(t, sock)
 	const oldPid, newPid = 1 << 30, 1<<30 + 1
-	letGo := holdLockOf(t, dir, &ownerRecord{Pid: oldPid, Role: "serve", Node: nodeID(), InstanceID: "aa", StartedAt: 1})
+	letGo := holdLockOf(t, dir, &OwnerRecord{Pid: oldPid, Role: "serve", Node: nodeID(), InstanceID: "aa", StartedAt: 1})
 	sigs := seamStopSignals(t, func(sig syscall.Signal) {
 		if sig == syscall.SIGTERM {
 			// The old holder lets go and the new one takes the lock before -stop
 			// tries it again, because the seam runs inside the signal call.
 			letGo()
-			holdLockOf(t, dir, &ownerRecord{Pid: newPid, Role: "serve", Node: nodeID(), InstanceID: "bb", StartedAt: 2})
+			holdLockOf(t, dir, &OwnerRecord{Pid: newPid, Role: "serve", Node: nodeID(), InstanceID: "bb", StartedAt: 2})
 		}
 	})
 	logs := captureStopLog(t)
 
-	word, release := stopAfterReply(sock)
+	word, release := StopAfterReply(sock)
 	release()
-	if word != stopWordSurvivor {
-		t.Errorf("word = %q, want %q", word, stopWordSurvivor)
+	if word != StopWordSurvivor {
+		t.Errorf("word = %q, want %q", word, StopWordSurvivor)
 	}
 	if got, _ := sigs.list(); len(got) != 1 || got[0] != syscall.SIGTERM {
 		t.Errorf("signals = %v, want the one SIGTERM to the old holder", got)
 	}
-	want := fmt.Sprintf(`WARN  [daemon] stop: %s changed hands during eviction (now pid %d (instance "bb")); leaving the new holder alone`+"\n", filepath.Join(dir, runDirLockName), newPid)
+	want := fmt.Sprintf(`WARN  [daemon] stop: %s changed hands during eviction (now pid %d (instance "bb")); leaving the new holder alone`+"\n", filepath.Join(dir, LockName), newPid)
 	if got := logs.String(); !strings.Contains(got, want) {
 		t.Errorf("log misses %q\n--- got ---\n%s", want, got)
 	}
