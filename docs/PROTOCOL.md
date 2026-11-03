@@ -1,15 +1,13 @@
 # claustrum protocol reference
 
-This page gives the rules that more than one method shares: the transport, the authentication, the message shapes, the error codes and the path handling. It lists the 21 methods with the page of each, and it links the pages for the error texts, the stream frames, the flags and the shared git rules.
+This page gives the rules that more than one method shares: the transport, the authentication, the message shapes, the error codes and the path handling. It lists the [21 methods](#methods-21) with the page of each.
 
 An untagged rule on this page matches build `5fd08069` or an earlier build. A section that names its systems or its build keeps that scope.
 
 claustrum uses newline-delimited JSON-RPC 2.0 over an `AF_UNIX`
-`SOCK_STREAM` socket. [Methods (21)](#methods-21) lists the page of each method.
-The three `server.*` methods share one page. This
-document holds the rules that more than one method shares. The [error texts](protocol/errors.md),
-the [stream frames](protocol/streams.md) and the [flags](protocol/flags.md) have their own pages. The shared
-git rules have their own pages: see [Shared rules of the git methods](#shared-rules-of-the-git-methods). The life
+`SOCK_STREAM` socket. The three `server.*` methods share one page. The [error texts](protocol/errors.md),
+the [stream frames](protocol/streams.md), the [flags](protocol/flags.md) and the
+[shared git rules](#shared-rules-of-the-git-methods) have their own pages. The life
 of the daemon off the wire is on [Running the daemon](DAEMON.md). The pinned
 reference build is `be1c1ca5`.
 A rule marked "claustrum's own" is not a parity claim: the reference has
@@ -25,7 +23,7 @@ their reopen triggers are in [`DIVERGENCES.md`](DIVERGENCES.md).
 - One request line has a cap of 1 MiB. The daemon serves a line of up to 1048575
   bytes. A line of 1048576 bytes or more closes the connection with no reply.
   Send a large `process.stdin` payload in chunks below this cap.
-- The `AF_UNIX` stream socket is created with mode `0600` (owner only).
+- claustrum binds the socket, then sets mode `0600`. On Linux and macOS a failed chmod ends the start (from the code).
 - The connection is persistent. It stays open after a response, and id-less
   stream notifications arrive on it at any time.
 - The daemon dispatches the requests of one connection concurrently. Responses
@@ -40,9 +38,7 @@ their reopen triggers are in [`DIVERGENCES.md`](DIVERGENCES.md).
   - The auth error (`-32001`) covers a request with a missing or wrong `auth`.
     The lines `null`, `{}` and `{"jsonrpc":"2.0"}` get it too. The frame echoes
     the request `id`, re-encoded as in [Message shapes](#message-shapes). A
-    `null` or missing `id` gives `"id":null`. An unauthenticated
-    `server.shutdown` is not an auth error (see
-    [Authentication](#authentication)).
+    `null` or missing `id` gives `"id":null`.
   - The client can half-close its write side right after the line. These two
     frames still reach the wire before the close, with or without a final
     newline. A reply from the concurrent dispatch races the close.
@@ -116,10 +112,9 @@ SSH command, with no `CLAUDE_RPC_TOKEN` in its environment
 ([driver claim](ARCHITECTURE.md#driver-claims-and-their-provenance)). The
 exemption covers auth only ([Validation precedence](#validation-precedence)).
 
-The server's expected token comes from `-token-file` or from `-token-fd`. With
-`-token-file` the daemon reads the file once at startup and then unlinks it. With
-`-token-fd` the daemon reads the token from an open descriptor and forwards it to
-the detached child over a pipe. That handoff never touches disk.
+The server's expected token comes from `-token-file` or from `-token-fd`
+([token source](protocol/flags.md#the-token-source)). With `-token-file` the daemon
+reads the file once at startup and then unlinks it.
 
 No claustrum mode reads `CLAUDE_RPC_TOKEN`: not `-serve`, not `-bridge` and not
 `-stop`. `-bridge` is a relay and adds no auth. The client that speaks through it
@@ -127,9 +122,6 @@ sends `"auth"` itself, from the [`daemon.token`](DAEMON.md#token-persistence-dae
 from its launcher. claustrum unsets the variable before it daemonizes, and it strips the
 variable from every spawned child. So a token never reaches a child through the
 environment.
-
-The files beside the socket and the rest of the daemon's life off the wire are on
-[Running the daemon](DAEMON.md).
 
 ## Message shapes
 
@@ -157,19 +149,21 @@ under [Stream notifications](protocol/streams.md#stream-notifications), is the w
 
 ### Error codes
 
-| code | meaning |
-|---|---|
-| `-32700` | parse error, a malformed JSON line (response `id` is `null`) |
-| `-32600` | `Invalid JSON-RPC version`, meaning `jsonrpc` is absent or not `"2.0"` |
-| `-32601` | `Invalid method format: <m>` (method has no `.`), `Unknown namespace: <ns>` (well-formed but unknown namespace), or `Unknown method: <ns>.<m>` (known namespace, unknown method) |
-| `-32602` | invalid params (see per-method messages) |
-| `-32603` | internal error, for example `open <path>: no such file or directory`. A recovered handler panic also gives this code, with `recovered panic: <v>` |
-| `-32002` | a full stdin queue, from `process.stdin` (see [Errors](protocol/process-stdin.md#errors)) |
-| `-32003` | an `offset` past the applied bytes, from `process.stdin` (see [Errors](protocol/process-stdin.md#errors)) |
-| `-32004` | a refused `launcher`, from `process.spawn` (see [The managed launcher](protocol/process-spawn.md#the-managed-launcher)) |
-| `-32005` | a launcher that does not start, from `process.spawn` (see [Errors](protocol/process-spawn.md#errors)) |
-| `-32006` | `Refused: this server could not confirm that the caller is in its own namespaces`, on Linux with `CLAUDE_SSH_PEER_CHECK=1` (see [A refused caller](protocol/server.md#a-refused-caller-linux)) |
-| `-32001` | `Unauthorized: invalid or missing auth token` |
+| code | meaning | send again |
+|---|---|---|
+| `-32700` | parse error, a malformed JSON line (response `id` is `null`) | no |
+| `-32600` | `Invalid JSON-RPC version`, meaning `jsonrpc` is absent or not `"2.0"` | no |
+| `-32601` | `Invalid method format: <m>` (method has no `.`), `Unknown namespace: <ns>` (well-formed but unknown namespace), or `Unknown method: <ns>.<m>` (known namespace, unknown method) | no |
+| `-32602` | invalid params (see per-method messages) | no for a fault in the request. A process or `files.read` refusal can pass after that state changes |
+| `-32603` | internal error, for example `open <path>: no such file or directory`. A recovered handler panic also gives this code, with `recovered panic: <v>` | depends on the text, see [error texts](protocol/errors.md) |
+| `-32002` | a full stdin queue, from `process.stdin` (see [Errors](protocol/process-stdin.md#errors)) | later, while the child reads its input |
+| `-32003` | an `offset` past the applied bytes, from `process.stdin` (see [Errors](protocol/process-stdin.md#errors)) | yes, from `applied` |
+| `-32004` | a refused `launcher`, from `process.spawn` (see [The managed launcher](protocol/process-spawn.md#the-managed-launcher)) | after its reason changes, never on Windows |
+| `-32005` | a launcher that does not start, from `process.spawn` (see [Errors](protocol/process-spawn.md#errors)) | depends on the reason |
+| `-32006` | `Refused: this server could not confirm that the caller is in its own namespaces`, on Linux with `CLAUDE_SSH_PEER_CHECK=1` (see [A refused caller](protocol/server.md#a-refused-caller-linux)) | no, the connection closes |
+| `-32001` | `Unauthorized: invalid or missing auth token` | not with the same token |
+
+The column *send again* is claustrum's own advice, read from its code.
 
 
 ### Handler panic recovery
