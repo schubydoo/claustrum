@@ -95,7 +95,8 @@ component_management:
         - lineend.go
         - selflocate_linux.go
         - selflocate_other.go
-        - tokenpersist.go
+        - internal/tokenfile/tokenpersist.go
+        - compat_tokenfile.go
         - pipetransport.go
         - pipetransport_windows.go
         - pipetransport_other.go

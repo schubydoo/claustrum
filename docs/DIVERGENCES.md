@@ -705,7 +705,7 @@ have no flag and no key.
 - **Reopen trigger.** None.
 - **Pointers.** [DAEMON.md → Token
   persistence](DAEMON.md#token-persistence-daemontoken) has the file and its
-  two caveats, and `tokenpersist.go`.
+  two caveats, and `internal/tokenfile/tokenpersist.go`.
 
 ### CT-5 · Opt-in `-listen-pipe` Windows named-pipe transport { #ct-5 }
 
