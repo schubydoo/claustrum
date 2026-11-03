@@ -18,6 +18,8 @@ import (
 	"syscall"
 	"testing"
 	"time"
+
+	"github.com/schubydoo/claustrum/internal/sysproc"
 )
 
 // TestServeDaemonizeWithAmbientChildMarker is the end-to-end regression guard for
@@ -67,7 +69,7 @@ func TestServeDaemonizeWithAmbientChildMarker(t *testing.T) {
 	// Reproduce the trigger: the ambient reference marker is present in the
 	// launcher's env (as a surrounding claude-ssh session would export it), while
 	// our private re-exec sentinel is guaranteed NOT pre-set.
-	env := removeEnvKey(os.Environ(), daemonChildEnv)
+	env := sysproc.RemoveEnvKey(os.Environ(), daemonChildEnv)
 	cmd.Env = append(env, daemonChildMarker+"=1")
 	// The launcher reads fd 0, re-execs the detached child, then exits 0. A
 	// non-zero exit means it took the child branch and died on the token read —
@@ -220,7 +222,7 @@ func TestServeWritesRemoteServerLog(t *testing.T) {
 	cmd := exec.Command(bin, "-serve", "-socket", sock, "-token-fd", "0")
 	cmd.Stdin = strings.NewReader(token + "\n")
 	cmd.Stdout, cmd.Stderr = outF, errF
-	cmd.Env = append(removeEnvKey(os.Environ(), daemonChildEnv), daemonChildMarker+"=1")
+	cmd.Env = append(sysproc.RemoveEnvKey(os.Environ(), daemonChildEnv), daemonChildMarker+"=1")
 	if runErr := cmd.Run(); runErr != nil {
 		t.Fatalf("launcher failed: %v", runErr)
 	}
@@ -330,7 +332,7 @@ func TestServeShutsDownOnSIGTERM(t *testing.T) {
 	const token = "sigterm-token"
 	cmd := exec.Command(bin, "-serve", "-socket", sock, "-token-fd", "0")
 	cmd.Stdin = strings.NewReader(token + "\n")
-	cmd.Env = append(removeEnvKey(os.Environ(), daemonChildEnv), daemonChildMarker+"=1")
+	cmd.Env = append(sysproc.RemoveEnvKey(os.Environ(), daemonChildEnv), daemonChildMarker+"=1")
 	if out, runErr := cmd.CombinedOutput(); runErr != nil {
 		t.Fatalf("launcher failed: %v\n%s", runErr, out)
 	}

@@ -12,10 +12,10 @@ import (
 // pipe seams next door this arm is deliberately NON-fatal: on Windows — the only
 // OS where it can fail — a failed confinement costs the kill handle and
 // kill falls back to proc.Kill, not the spawn (on Unix the process group
-// from newSysProcAttr is signalled whatever the handle), so the process must still
+// from sysproc.NewSysProcAttr is signalled whatever the handle), so the process must still
 // be registered with whatever group confinement handed back (nil from this seam;
 // see the last paragraph for production). On Unix the
-// call cannot fail at all — the process group came from newSysProcAttr and
+// call cannot fail at all — the process group came from sysproc.NewSysProcAttr and
 // confineProcess returns a nil error unconditionally — so no fixture reaches the
 // arm on the platform CI runs most.
 //

@@ -14,7 +14,7 @@ import (
 // process starts: the error is that of the folder test of os.StartProcess,
 // "chdir", not the "fork/exec" error of a start that failed. 5fd08069 starts no
 // process there (measured on Linux). Mutation: in runListing, set
-// cmd.SysProcAttr = newSysProcAttr(). The start then forks on Linux and macOS,
+// cmd.SysProcAttr = sysproc.NewSysProcAttr(). The start then forks on Linux and macOS,
 // and the error is "fork/exec". On Windows the error is a "fork/exec" error
 // too, and not ErrNotExist (from the code of Go).
 func TestMissingPathListingStartsNoProcess(t *testing.T) {

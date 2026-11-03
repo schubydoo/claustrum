@@ -143,7 +143,7 @@ func shellenvLines(buf *syncBuffer) string {
 // which is not the same as the first matching entry.
 //
 // buildEnv appends rather than rewrites when the spellings differ: on Windows
-// os.Environ() yields "Path=...", so replaceOrAppendEnv's "PATH=" prefix test
+// os.Environ() yields "Path=...", so sysproc.ReplaceOrAppendEnv's "PATH=" prefix test
 // misses and a second, correct "PATH=..." lands at the end. That slice is not
 // what reaches the process. exec.Cmd.environ() runs it through dedupEnv, which
 // on Windows folds keys case-insensitively and keeps the LAST occurrence
@@ -216,7 +216,7 @@ func TestEnvValueMatchesDedupEnvSemantics(t *testing.T) {
 func TestLoginPATHSpawnWaitIsBounded(t *testing.T) {
 	f := installPathReadFake(t)
 	t.Setenv("PATH", "/daemon/bin")
-	warmLoginPATHAtStart()
+	shellenv.WarmAtStart()
 	r := startedRead(t, f)
 
 	setSpawnWait(t, 200*time.Millisecond)
@@ -257,7 +257,7 @@ func TestSpawnWithDisableShellAgentSocketStopsTheRead(t *testing.T) {
 	buf := captureLogBuf(t)
 	f := installPathReadFake(t)
 	setSpawnWait(t, 100*time.Millisecond)
-	warmLoginPATHAtStart()
+	shellenv.WarmAtStart()
 	r := startedRead(t, f)
 	m := newTestProcManager(t)
 	t.Cleanup(m.killAll)

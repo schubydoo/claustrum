@@ -10,6 +10,8 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/schubydoo/claustrum/internal/sysproc"
 )
 
 // TestPeerCheckReachesTheDaemonizedChild: the launcher hands CLAUDE_SSH_PEER_CHECK=1
@@ -32,7 +34,7 @@ func TestPeerCheckReachesTheDaemonizedChild(t *testing.T) {
 	const token = "peer-check-token"
 	cmd := exec.Command(bin, "-serve", "-socket", sock, "-token-fd", "0")
 	cmd.Stdin = strings.NewReader(token + "\n")
-	env := removeEnvKey(removeEnvKey(os.Environ(), daemonChildEnv), peerCheckEnv)
+	env := sysproc.RemoveEnvKey(sysproc.RemoveEnvKey(os.Environ(), daemonChildEnv), peerCheckEnv)
 	cmd.Env = append(env, peerCheckEnv+"=1")
 	// The stop is unauthenticated server.shutdown on this test's own socket. It runs
 	// on every exit of the test, so a failed assertion leaves no daemon.

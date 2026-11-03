@@ -9,6 +9,8 @@ import (
 	"strconv"
 	"strings"
 	"syscall"
+
+	"github.com/schubydoo/claustrum/internal/sysproc"
 )
 
 // The exec-child trampoline (reference build 19f30c46). When the daemon spawns a child,
@@ -87,7 +89,7 @@ func runExecChild(argv []string) {
 	// The parent removed every CLAUDE_SSH_CHILD entry (runDirEnv), so this adds the
 	// entry at the end. It comes right after CLAUDE_SSH_RUN_DIR: restoreHeldEnv puts a
 	// held Go runtime variable back at its own place, before that entry.
-	env = replaceOrAppendEnv(env, envChildMarker, childIdentity())
+	env = sysproc.ReplaceOrAppendEnv(env, envChildMarker, childIdentity())
 	err := execChildExec(argv[0], argv[1:], env)
 	// Only reached when the target exec failed. Report it exactly as exec.Cmd.Start would
 	// (os.PathError{Op:"fork/exec", Path, Err}) so the parent's frame matches a direct
@@ -156,7 +158,7 @@ func wrapCmdWithTrampoline(cmd *exec.Cmd, runDir string) (execErrR, execErrW *os
 // two entries (measured on Linux for GOGC and GOMAXPROCS). holdGoEnv and
 // restoreHeldEnv keep such a variable at its own place, before this entry.
 func runDirEnv(env []string, runDir string) []string {
-	env = removeEnvKey(removeEnvKey(env, envRunDir), envChildMarker)
+	env = sysproc.RemoveEnvKey(sysproc.RemoveEnvKey(env, envRunDir), envChildMarker)
 	return append(env, envRunDir+"="+runDir)
 }
 

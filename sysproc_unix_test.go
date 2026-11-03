@@ -99,7 +99,7 @@ func TestDetachSysProcAttr(t *testing.T) {
 }
 
 // SIGKILL must reach the child's whole process group (negative pid), not just
-// the leader. We start a shell as a group leader (newSysProcAttr → Setpgid) that
+// the leader. We start a shell as a group leader (sysproc.NewSysProcAttr → Setpgid) that
 // backgrounds a grandchild sleep in the same group, then signal and assert the
 // grandchild dies too. A mutant that drops the negation leaves the grandchild
 // alive — which this test catches.
@@ -178,7 +178,7 @@ func TestSignalTermSparesTheGroup(t *testing.T) {
 // for whether the backgrounded child even lands in the leader's group.
 //
 // The "tree" mode waits for one byte on stdin before spawning, so stdin is
-// pre-loaded here; the group is set at fork by newSysProcAttr, so there is
+// pre-loaded here; the group is set at fork by sysproc.NewSysProcAttr, so there is
 // nothing this test needs to sequence behind that gate.
 func treeFixture(t *testing.T, pidFile string) *exec.Cmd {
 	t.Helper()
@@ -186,7 +186,7 @@ func treeFixture(t *testing.T, pidFile string) *exec.Cmd {
 	cmd := exec.Command(exe, pidFile)
 	cmd.Env = buildEnv(env)
 	cmd.Stdin = strings.NewReader("g")
-	cmd.SysProcAttr = newSysProcAttr()
+	cmd.SysProcAttr = sysproc.NewSysProcAttr()
 	return cmd
 }
 

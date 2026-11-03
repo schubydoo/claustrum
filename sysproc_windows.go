@@ -11,6 +11,7 @@ import (
 	"syscall"
 	"unsafe"
 
+	"github.com/schubydoo/claustrum/internal/sysproc"
 	"golang.org/x/sys/windows"
 )
 
@@ -89,11 +90,11 @@ type procGroup struct {
 	job windows.Handle // 0 with no job, once closed, or after a failed join
 }
 
-// spawnSysProcAttr is newSysProcAttr for process.spawn. With jobs on the child starts
+// spawnSysProcAttr is sysproc.NewSysProcAttr for process.spawn. With jobs on the child starts
 // suspended, so it joins its job before it can start a process (confineProcess), and
 // resumeChild lets it run. The suspended start is claustrum's own code, not measured.
 func spawnSysProcAttr(jobs childJobs) *syscall.SysProcAttr {
-	attr := newSysProcAttr()
+	attr := sysproc.NewSysProcAttr()
 	if jobs != jobsOff {
 		attr.CreationFlags |= windows.CREATE_SUSPENDED
 	}

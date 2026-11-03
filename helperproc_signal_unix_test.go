@@ -8,6 +8,8 @@ import (
 	"os/signal"
 	"syscall"
 	"time"
+
+	"github.com/schubydoo/claustrum/internal/sysproc"
 )
 
 // execOnSigterm makes the helper child replace its program with path when SIGTERM
@@ -18,7 +20,7 @@ func execOnSigterm(path string) {
 	signal.Notify(ch, syscall.SIGTERM)
 	go func() {
 		<-ch
-		env := replaceOrAppendEnv(os.Environ(), "CLAUSTRUM_TEST_HELPER", "sleep")
+		env := sysproc.ReplaceOrAppendEnv(os.Environ(), "CLAUSTRUM_TEST_HELPER", "sleep")
 		_ = syscall.Exec(path, []string{path, "60"}, env)
 		os.Exit(3)
 	}()

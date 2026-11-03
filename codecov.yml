@@ -310,7 +310,6 @@ component_management:
         - process.go
         - sysproc_unix.go
         - sysproc_windows.go
-        - compat_sysproc.go
         # The process group, the reap, the env and close helpers and the capped text.
         - internal/sysproc/sysproc.go
         - internal/sysproc/sysproc_unix.go
@@ -430,16 +429,14 @@ component_management:
         - internal/install/libc_linux.go
         - internal/install/libc_other.go
         - internal/install/libc_unix.go
-        # The test hooks of the settings reads, and the names of package main.
+        # The test hooks of the settings reads.
         - internal/install/fortest.go
         - internal/install/fortest_unix.go
-        - compat_install.go
     - component_id: env_compat
       name: shell-env & cross-platform
       paths:
         - internal/pathcanon/expandpath.go
         - expandpaths.go
-        - compat_shellenv.go
         - internal/shellenv/fortest.go
         - internal/shellenv/shellenv.go
         - internal/shellenv/shellenv_unix.go
@@ -450,8 +447,6 @@ component_management:
     - component_id: observability
       name: logging, metrics & wire log
       paths:
-        - compat_logging.go
-        - compat_metrics.go
         - internal/logging/logging.go
         - internal/metrics/metrics.go
         - internal/wirelog/wirelog.go

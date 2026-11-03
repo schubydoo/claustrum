@@ -15,6 +15,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/schubydoo/claustrum/internal/metrics"
 	"github.com/schubydoo/claustrum/internal/rpc"
 )
 
@@ -487,7 +488,7 @@ func TestWriteStdinRejectsWhenFull(t *testing.T) {
 	p.enqueueStdin([]byte("X"))
 	waitStdinQueueEmpty(t, p)
 
-	before := met.StdinBytes.Load()
+	before := metrics.Met.StdinBytes.Load()
 	accepted, rejected := 0, false
 	for i := 0; i < 100; i++ { // 200 bytes >> 8-byte cap → one must be rejected
 		if m.writeStdin("wf", []byte("ab")) {
@@ -501,7 +502,7 @@ func TestWriteStdinRejectsWhenFull(t *testing.T) {
 		t.Fatal("writeStdin never returned false despite an 8-byte cap — backpressure not propagated")
 	}
 	// The rejected write enqueued nothing, so only the accepted 2-byte writes count.
-	if got, want := met.StdinBytes.Load()-before, int64(accepted*2); got != want {
+	if got, want := metrics.Met.StdinBytes.Load()-before, int64(accepted*2); got != want {
 		t.Fatalf("stdinBytes delta = %d, want %d (a rejected write must not count)", got, want)
 	}
 }
@@ -897,11 +898,11 @@ func TestEmitFanOutSurvivesDeadSubscriber(t *testing.T) {
 // process-wide registry (counting is always-on); exits and stream bytes use ≥
 // because exit goroutines from earlier tests may still be landing.
 func TestMetricsCountProcessOps(t *testing.T) {
-	spawns0 := met.Spawns.Load()
-	exits0 := met.ProcessExits.Load()
-	stream0 := met.StreamBytes.Load()
-	stdin0 := met.StdinBytes.Load()
-	reatt0 := met.Reattaches.Load()
+	spawns0 := metrics.Met.Spawns.Load()
+	exits0 := metrics.Met.ProcessExits.Load()
+	stream0 := metrics.Met.StreamBytes.Load()
+	stdin0 := metrics.Met.StdinBytes.Load()
+	reatt0 := metrics.Met.Reattaches.Load()
 
 	m := newTestProcManager(t)
 	t.Cleanup(m.killAll)
@@ -936,19 +937,19 @@ func TestMetricsCountProcessOps(t *testing.T) {
 		}
 	}
 
-	if d := met.Spawns.Load() - spawns0; d != 1 {
+	if d := metrics.Met.Spawns.Load() - spawns0; d != 1 {
 		t.Errorf("spawns delta = %d, want 1", d)
 	}
-	if d := met.StdinBytes.Load() - stdin0; d != 6 {
+	if d := metrics.Met.StdinBytes.Load() - stdin0; d != 6 {
 		t.Errorf("stdinBytes delta = %d, want 6 (len of hello\\n)", d)
 	}
-	if d := met.StreamBytes.Load() - stream0; d < 6 {
+	if d := metrics.Met.StreamBytes.Load() - stream0; d < 6 {
 		t.Errorf("streamBytes delta = %d, want ≥ 6 (the echoed hello\\n)", d)
 	}
-	if d := met.Reattaches.Load() - reatt0; d != 1 {
+	if d := metrics.Met.Reattaches.Load() - reatt0; d != 1 {
 		t.Errorf("reattaches delta = %d, want 1 (a missing-process reattach must not count)", d)
 	}
-	if d := met.ProcessExits.Load() - exits0; d < 1 {
+	if d := metrics.Met.ProcessExits.Load() - exits0; d < 1 {
 		t.Errorf("processExits delta = %d, want ≥ 1", d)
 	}
 }
