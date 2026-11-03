@@ -978,7 +978,7 @@ func isObjectID(s string) bool {
 // `--git-dir=<temp> config -z --list` with `path` as its working directory (calls 7 to 9 of the
 // measured call log). The command runs in `path` with the --attr-source option, the heavy profile,
 // --git-dir=<temp> and --work-tree=<path as sent>. noLocks adds GIT_OPTIONAL_LOCKS=0: without it a
-// `git status` rewrites the index of the worktree. excludes is the core.excludesFile value.
+// `git status` rewrites the temporary copy of the index. excludes is the core.excludesFile value.
 //
 // The --attr-source value is the id that emptyTree gave right before. In a SHA-256
 // repository it has 64 hex characters (measured on Linux). The probe of
