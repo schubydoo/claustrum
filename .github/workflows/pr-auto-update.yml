@@ -24,11 +24,6 @@
 #     AUTO_UPDATE --body on` (or `gh variable delete AUTO_UPDATE`) resumes it.
 # Either way, a held/paused PR sits BEHIND main and can't merge under the
 # strict-up-to-date ruleset until it's updated by hand — that's the intent.
-#
-# With the merge queue on (.github/rulesets/main.json), the queue tests each
-# entry on top of main, and a push into a queued PR removes it from the queue.
-# So keep AUTO_UPDATE off while the queue is on. This script does not skip
-# queued PRs.
 name: Auto-update PRs
 
 on:
