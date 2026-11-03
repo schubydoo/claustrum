@@ -8,6 +8,10 @@ import (
 	"strings"
 	"sync"
 	"syscall"
+
+	"github.com/schubydoo/claustrum/internal/install"
+	"github.com/schubydoo/claustrum/internal/logging"
+	"github.com/schubydoo/claustrum/internal/rpc"
 )
 
 // The managed launcher (reference build 89cb6289). A host administrator names a
@@ -53,12 +57,12 @@ func (l *managedLauncherLog) firstIgnoredVar() bool {
 	return first
 }
 
-func (l *managedLauncherLog) note(res managedLauncherResult) {
+func (l *managedLauncherLog) note(res rpc.ManagedLauncherResult) {
 	line := ""
 	switch res.Status {
-	case managedStatusUnusable:
+	case install.StatusUnusable:
 		line = "[LauncherHandler] managed launcher from " + res.Source + " refused: " + res.Reason
-	case managedStatusUnreadable:
+	case install.StatusUnreadable:
 		line = "[LauncherHandler] managed settings unreadable: " + res.Path + ": " + res.Reason
 	}
 	l.mu.Lock()
@@ -68,7 +72,7 @@ func (l *managedLauncherLog) note(res managedLauncherResult) {
 	}
 	l.last = line
 	if line != "" {
-		logWarnf("%s", line)
+		logging.Warnf("%s", line)
 	}
 }
 
@@ -84,7 +88,7 @@ func (p *managedLauncherParams) ExpandPaths() {}
 // No params member, a non-object params or a non-string cliPath is -32602 "Invalid
 // params". {}, null params, a null or empty cliPath and a wrong key are -32602
 // "cliPath is required". Any other string is a cliPath, a relative one too.
-func (s *server) handleLauncher(req *request) response {
+func (s *server) handleLauncher(req *request) rpc.Response {
 	if req.Method != "launcher.resolve" {
 		return unknownMethod(req)
 	}
@@ -96,14 +100,14 @@ func (s *server) handleLauncher(req *request) response {
 		return *bad
 	}
 	if p.CliPath == "" {
-		return errResult(req.ID, codeInvalidParam, "cliPath is required")
+		return rpc.ErrResult(req.ID, rpc.CodeInvalidParam, "cliPath is required")
 	}
-	res, note := resolveManagedLauncherNoted(p.CliPath)
+	res, note := install.Resolve(p.CliPath)
 	if note != "" && s.managedLog.firstIgnoredVar() {
-		logInfof("%s", note)
+		logging.Infof("%s", note)
 	}
 	s.managedLog.note(res)
-	return okResult(req.ID, res)
+	return rpc.OKResult(req.ID, res)
 }
 
 // The process.spawn texts of the launcher param.
@@ -129,14 +133,14 @@ func (e *spawnRefusal) Error() string { return e.msg }
 // claustrum's choice (not measured): the Windows refusal comes before the relative
 // command check.
 func refuseManagedLauncher(launcher []string, command string) error {
-	if r := managedLauncherHostRefusal(); r != "" {
-		return &spawnRefusal{code: codeLauncherUnusable, msg: managedSpawnCannotUse + r}
+	if r := install.HostRefusal(); r != "" {
+		return &spawnRefusal{code: rpc.CodeLauncherUnusable, msg: managedSpawnCannotUse + r}
 	}
 	if !filepath.IsAbs(command) {
-		return &spawnRefusal{code: codeInvalidParam, msg: managedSpawnRelative}
+		return &spawnRefusal{code: rpc.CodeInvalidParam, msg: managedSpawnRelative}
 	}
-	if r := checkManagedLauncher(launcher, command); r != "" {
-		return &spawnRefusal{code: codeLauncherUnusable, msg: managedSpawnCannotUse + r}
+	if r := install.Check(launcher, command); r != "" {
+		return &spawnRefusal{code: rpc.CodeLauncherUnusable, msg: managedSpawnCannotUse + r}
 	}
 	return nil
 }
@@ -156,7 +160,7 @@ func launchedCommandError(command string) error {
 		}
 		return err
 	}
-	if !isExecutableRegular(command) {
+	if !install.IsExecutableRegular(command) {
 		return &fs.PathError{Op: "fork/exec", Path: command, Err: syscall.EACCES}
 	}
 	return nil
@@ -181,5 +185,5 @@ func managedLauncherStartError(a0 string, err error) error {
 	if reason == syscall.ENOENT.Error() {
 		reason = managedNoInterpreter
 	}
-	return &spawnRefusal{code: codeLauncherStart, msg: "the managed launcher " + a0 + " could not be started: " + reason}
+	return &spawnRefusal{code: rpc.CodeLauncherStart, msg: "the managed launcher " + a0 + " could not be started: " + reason}
 }
