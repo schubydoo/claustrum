@@ -74,7 +74,7 @@ prints. It also carries a failure, in `cliError`. See
 ## guard
 
 Noun. A guard is a test that claustrum runs before an operation that can cause
-damage. If the input is dangerous, the guard refuses it. `wipesHomeDir` is
+damage. If the input is dangerous, the guard refuses it. `homeguard.WipesHomeDir` is
 one. See [D2](DIVERGENCES.md#d2).
 
 ## held git directory

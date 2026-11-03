@@ -8,6 +8,8 @@ import (
 	"os"
 	"path/filepath"
 	"syscall"
+
+	"github.com/schubydoo/claustrum/internal/logging"
 )
 
 // stagedModeBits are the bits of a mode that the staging step copies.
@@ -35,18 +37,18 @@ func stagedEntryModes(reg, git *os.Root, staging string) {
 		if fi, err := git.Stat(worktreesSubdir); err == nil && fi.Mode()&fs.ModeSetgid != 0 {
 			if st, ok := fi.Sys().(*syscall.Stat_t); ok {
 				if err := chownStagedTree(git, staging, ".", int(st.Gid)); err != nil {
-					logWarnf("[GitHandler] the group of the new worktree's entry was not set: %v", err)
+					logging.Warnf("[GitHandler] the group of the new worktree's entry was not set: %v", err)
 				}
 			}
 		}
 		if fi, err := reg.Stat("."); err == nil {
 			if err := git.Chmod(staging, fi.Mode()&stagedModeBits); err != nil {
-				logWarnf("[GitHandler] the mode of the new worktree's entry was not set: %v", err)
+				logging.Warnf("[GitHandler] the mode of the new worktree's entry was not set: %v", err)
 			}
 		}
 	}
 	if err := copyStagedModes(reg, git, staging, ""); err != nil {
-		logWarnf("[GitHandler] the modes of the new worktree's files were not set: %v", err)
+		logging.Warnf("[GitHandler] the modes of the new worktree's files were not set: %v", err)
 	}
 }
 

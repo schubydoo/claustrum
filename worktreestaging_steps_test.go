@@ -388,7 +388,7 @@ func TestLeafGitFileGuards(t *testing.T) {
 }
 
 // TestRemoveOwnStagingKeepsAFolderThatHoldsHome: the staging remove runs
-// wipesHomeDir first. A staging folder that holds the home folder stays, and
+// homeguard.WipesHomeDir first. A staging folder that holds the home folder stays, and
 // one line is logged.
 func TestRemoveOwnStagingKeepsAFolderThatHoldsHome(t *testing.T) {
 	gitDir := t.TempDir()

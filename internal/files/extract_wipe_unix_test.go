@@ -462,7 +462,7 @@ func TestFilesExtractTarParentCannotBeSearched(t *testing.T) {
 
 // TestFilesExtractTarRefusesHomeByIdentity holds the home guard of the entry
 // that the wipe acts on. The destDir reaches the home folder, or its parent
-// folder, by a spelling that the text compare of wipesHomeDir does not see: a
+// folder, by a spelling that the text compare of homeguard.WipesHomeDir does not see: a
 // link stands for a folder above. The entry at the last name is the home folder
 // by identity, so the request gets the home refusal and the wipe is not reached.
 // The archive is gone, because this refusal comes after its open.

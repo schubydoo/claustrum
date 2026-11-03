@@ -22,7 +22,7 @@ import (
 // tests do not refuse. A folder with another type bit, such as the irregular bit
 // of a Windows cloud placeholder, is not a plain folder. A link, a junction and
 // an entry of any other kind take no step (claustrum's own, not measured). Under the deny ACE the identity read of that
-// folder can fail. Home and its parents then rely on wipesHomeDir and on the
+// folder can fail. Home and its parents then rely on homeguard.WipesHomeDir and on the
 // system, which refuses to remove a folder with content. A name that ends in a
 // dot or a space takes no step, because the handle and the path can name two
 // entries there (claustrum's own, not measured). True means the entry is gone.

@@ -60,7 +60,7 @@ const genericHintChars = "$'"
 // GIT_DIR of another repository (not measured). By the path the step opens one
 // os.Root at the folder and tests that it is the folder of the Lstat. The list,
 // the reads, the `locked` test and the remove go through that root. The remove
-// runs wipesHomeDir on the entry first (D2). The root is claustrum's own, not
+// runs homeguard.WipesHomeDir on the entry first (D2). The root is claustrum's own, not
 // measured.
 //
 // The compare ignores letter case (sameGitDirPath). 5fd08069 removes a stale

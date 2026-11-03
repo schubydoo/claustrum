@@ -115,7 +115,7 @@ privileged as the daemon's user. Four of those paths reach a recursive delete
   A file, a link or a junction goes with a plain remove, so the target of a
   junction stays.
 
-`wipesHomeDir` (`internal/homeguard/homeguard.go`) refuses any target that is or contains the home
+`homeguard.WipesHomeDir` (`internal/homeguard/homeguard.go`) refuses any target that is or contains the home
 directory. It is an always-on guard (D2). See
 [`docs/DIVERGENCES.md`](docs/DIVERGENCES.md). Paths
 under home stay allowed, because the daemon's own install path lives there.

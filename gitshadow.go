@@ -16,6 +16,10 @@ import (
 	"sync"
 	"sync/atomic"
 	"time"
+
+	"github.com/schubydoo/claustrum/internal/homeguard"
+	"github.com/schubydoo/claustrum/internal/logging"
+	"github.com/schubydoo/claustrum/internal/rpc"
 )
 
 // The settings control of the git methods, as 5fd08069 has it. That build keeps
@@ -274,9 +278,9 @@ func (h *shadowHost) gate(off bool) string {
 	if state != h.state {
 		h.state = state
 		if state == controlShadow {
-			logInfof(shadowStateLine)
+			logging.Infof(shadowStateLine)
 		} else {
-			logInfof(fallbackStateLine)
+			logging.Infof(fallbackStateLine)
 		}
 	}
 	return ""
@@ -457,10 +461,10 @@ func (h *shadowHost) dropLock() {
 // folder of the daemon returned, or a fixed name in `.probe`. It never comes
 // from a request. The delete
 // goes through a root at the folder of all daemons, so it follows no link out of
-// it. wipesHomeDir on the full path is defense in depth.
+// it. homeguard.WipesHomeDir on the full path is defense in depth.
 func (h *shadowHost) removeEntry(rel string) error {
 	base := filepath.Join(h.runDir, shadowRootName)
-	if wipesHomeDir(filepath.Join(base, rel)) {
+	if homeguard.WipesHomeDir(filepath.Join(base, rel)) {
 		return errors.New("refusing to delete a path that holds the home folder")
 	}
 	root, err := os.OpenRoot(base)
@@ -474,10 +478,10 @@ func (h *shadowHost) removeEntry(rel string) error {
 // removeLink deletes name, a link that a directory read of the folder of all
 // daemons returned. It is one plain remove through a root at that folder, so
 // it deletes the link and never what the link names (sweepLink).
-// wipesHomeDir on the full path is defense in depth.
+// homeguard.WipesHomeDir on the full path is defense in depth.
 func (h *shadowHost) removeLink(name string) error {
 	base := filepath.Join(h.runDir, shadowRootName)
-	if wipesHomeDir(filepath.Join(base, name)) {
+	if homeguard.WipesHomeDir(filepath.Join(base, name)) {
 		return errors.New("refusing to delete a path that holds the home folder")
 	}
 	root, err := os.OpenRoot(base)
@@ -490,11 +494,11 @@ func (h *shadowHost) removeLink(name string) error {
 
 // removeOneEntry deletes rel, a path below the folder of all daemons that this
 // daemon builds from fixed names. It is one plain remove through a root at that
-// folder, so a folder with content stays (prepareProbeFolder). wipesHomeDir on
+// folder, so a folder with content stays (prepareProbeFolder). homeguard.WipesHomeDir on
 // the full path is defense in depth.
 func (h *shadowHost) removeOneEntry(rel string) error {
 	base := filepath.Join(h.runDir, shadowRootName)
-	if wipesHomeDir(filepath.Join(base, rel)) {
+	if homeguard.WipesHomeDir(filepath.Join(base, rel)) {
 		return errors.New("refusing to delete a path that holds the home folder")
 	}
 	root, err := os.OpenRoot(base)
@@ -1096,14 +1100,14 @@ func writeShadowTestFiles(shadowDir string, head, config []byte) error {
 // In the state fallback-git the read of the config does not run
 // (readsRepoConfig), and the daemon keeps no folder of a repository: its own
 // folder holds the lock file only there (measured on Linux).
-func (req *gitCall) settingsGateRefusal(t gitDirTrust, off jsonTrueSwitch, dir string) (msg string, noRepo bool) {
+func (req *gitCall) settingsGateRefusal(t gitDirTrust, off rpc.JSONTrueSwitch, dir string) (msg string, noRepo bool) {
 	return req.settingsGate(t, off, dir, true)
 }
 
 // settingsGate is settingsGateRefusal. With ask false the gate makes no call
 // that asks git about the repository (askGit). keepLiveForm and keepLiveCreate
 // pass ask false only for a later gate at a call with --git-dir=.
-func (req *gitCall) settingsGate(t gitDirTrust, off jsonTrueSwitch, dir string, ask bool) (msg string, noRepo bool) {
+func (req *gitCall) settingsGate(t gitDirTrust, off rpc.JSONTrueSwitch, dir string, ask bool) (msg string, noRepo bool) {
 	req.gitRefused, req.configRefused = false, false
 	// git.info and git.list_branches skip the trust check with a GIT_COMMON_DIR
 	// in the daemon environment (requestGitDirTrust). With a GIT_DIR there too,

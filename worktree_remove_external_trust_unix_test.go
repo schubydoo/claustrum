@@ -418,7 +418,7 @@ func TestWorktreeRemoveExternalNoRepositoryGoneTarget(t *testing.T) {
 // A linked baseRepo changes only which worktrees directory the registration check
 // reads. It does not widen what the delete can reach. Each case is refused and
 // nothing is deleted:
-//   - a home directory that is a genuine worktree of the repository (wipesHomeDir),
+//   - a home directory that is a genuine worktree of the repository (homeguard.WipesHomeDir),
 //   - a relative worktreePath (the location check),
 //   - a genuine worktree of another repository, through an honest linked baseRepo,
 //   - the same worktree, through a linked baseRepo whose entry names that repository.

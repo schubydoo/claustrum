@@ -275,7 +275,7 @@ func (cfg config) effectiveMetricsAddr(cliVal string, cliSet bool) string {
 // daemon, so `wire-log = ~/wire.jsonl` is a natural thing to write; without
 // expansion os.OpenFile fails with ENOENT and, because an unopenable path is
 // deliberately fatal, a diagnostic knob would stop the daemon booting. expandPath
-// only rewrites the path (no delete), so wipesHomeDir does not apply.
+// only rewrites the path (no delete), so homeguard.WipesHomeDir does not apply.
 func (cfg config) effectiveWireLog(cliVal string, cliSet bool) string {
 	p := cliVal
 	if !cliSet && cfg.wireLog != "" {

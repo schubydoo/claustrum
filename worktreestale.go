@@ -95,7 +95,7 @@ func staleRecordLive(record []byte) bool {
 // resolveAsFarAsExists canonicalises p by resolving the symlinks of its deepest
 // existing ancestor and re-attaching the non-existent tail — so a path whose leaf is
 // gone (a deleted worktree) still resolves a symlinked ancestor such as macOS
-// /var -> /private/var, where canonicalPath alone falls back to the raw path.
+// /var -> /private/var, where pathcanon.Canonical alone falls back to the raw path.
 func resolveAsFarAsExists(p string) string {
 	p = filepath.Clean(p)
 	if r := pathcanon.Canonical(p); r != p {

@@ -50,7 +50,7 @@ modes and the OS splits is in
 | `methods_*.go`, `internal/files/` | the 21 methods across `server.*` / `files.*` / `git.*` / `launcher.*` / `process.*` / `plugins.*` |
 | `process.go` | spawn, stream frames, stdin queue, replay buffer, `reattach` |
 | `handlers/prune.go` | the params type of `plugins.prune`, whose name is in its `-32602` text |
-| `internal/homeguard/homeguard.go` | `WipesHomeDir` (`wipesHomeDir`), the home guard each RPC path to a recursive delete owes |
+| `internal/homeguard/homeguard.go` | `WipesHomeDir`, the home guard each RPC path to a recursive delete owes |
 | `internal/files/methods_files.go` | the wipe of `destDir` and the `.synced` marker of `files.extract_tar` |
 | `methods_plugins.go` | the delete of `plugins.prune` |
 | `worktreeremove.go` | the deletes of `git.worktree_remove` |
@@ -130,15 +130,15 @@ from the socket, as in `plugins.prune`.
 
 | Path | What is deleted | Who names it | Guard | Method page |
 |------|-----------------|--------------|-------|-------------|
-| `files.extract_tar` | the last name of `destDir` | the caller (RPC) | `wipesHomeDir`, `destEntryHoldsHome`, `checkDestViews` | [files.extract_tar](docs/protocol/files-extract-tar.md) |
-| `git.worktree_remove` | `worktreePath`, its registration | the caller (RPC) | `wipesHomeDir` on `worktreePath`, containment | [git.worktree_remove](docs/protocol/git-worktree-remove.md) |
-| `git.worktree_create` rollback | `worktreePath`, its registration, one stale entry, two staging removes | the caller (RPC) | `wipesHomeDir` (D2), identity tests, one exception (see Registration and index) | [git.worktree_create](docs/protocol/git-worktree-create.md#after-a-failure) |
-| `git.worktree_create` staging sweep | old staging entries of the `baseRepo` git directory | the caller (RPC): a good add in `shadow` | prefix, age, `wipesHomeDir` | [git.worktree_create](docs/protocol/git-worktree-create.md#after-a-failure) |
+| `files.extract_tar` | the last name of `destDir` | the caller (RPC) | `homeguard.WipesHomeDir`, `destEntryHoldsHome`, `checkDestViews` | [files.extract_tar](docs/protocol/files-extract-tar.md) |
+| `git.worktree_remove` | `worktreePath`, its registration | the caller (RPC) | `homeguard.WipesHomeDir` on `worktreePath`, containment | [git.worktree_remove](docs/protocol/git-worktree-remove.md) |
+| `git.worktree_create` rollback | `worktreePath`, its registration, one stale entry, two staging removes | the caller (RPC) | `homeguard.WipesHomeDir` (D2), identity tests, one exception (see Registration and index) | [git.worktree_create](docs/protocol/git-worktree-create.md#after-a-failure) |
+| `git.worktree_create` staging sweep | old staging entries of the `baseRepo` git directory | the caller (RPC): a good add in `shadow` | prefix, age, `homeguard.WipesHomeDir` | [git.worktree_create](docs/protocol/git-worktree-create.md#after-a-failure) |
 | `-install` | the CLI path | the operator | D6, `homeguard.FolderHoldsHome` | [-install](docs/INSTALL.md#staging-and-cleanup) |
 
 #### The home guard
 
-`wipesHomeDir` refuses a target that is home or contains home. It resolves a
+`homeguard.WipesHomeDir` refuses a target that is home or contains home. It resolves a
 relative path with `filepath.Abs` first. It still permits a path under home,
 because `~/.claude/…` is the install path of the daemon itself. The guard is
 always-on, not opt-in. Any RPC path param that reaches a recursive delete owes
@@ -157,7 +157,7 @@ tree, through a handle of its parent folder (`wipeDestDir`). The handle follows 
 junction and refuses the names `.` and `..`. On Windows it refuses a last name of dots and spaces
 alone too.
 
-Guards, in order: `wipesHomeDir` on `destDir` before any step. Then `destEntryHoldsHome`
+Guards, in order: `homeguard.WipesHomeDir` on `destDir` before any step. Then `destEntryHoldsHome`
 (identity, through `homeguard.FolderHoldsHome`) before the wipe. Then `checkDestViews`: the name in
 the handle and the cleaned path must name one entry, or nothing is deleted, with one exception:
 on Windows an empty folder or a regular file at `destDir` that the parent handle cannot read
@@ -186,7 +186,7 @@ refuses the remove before any delete. `"shadowDirOff":true` turns that refusal o
 does a remove that starts while such a request runs ([The repository
 checks](docs/protocol/git-worktree-remove.md#the-repository-checks)). On Windows a junction
 at any directory between `baseRepo` and the leaf is refused (D19, approved by the maintainer). Without `worktreeRoot`,
-the containment of the reference refuses a home path first, so `wipesHomeDir` fires only
+the containment of the reference refuses a home path first, so `homeguard.WipesHomeDir` fires only
 when a repo is an ancestor of home. With `worktreeRoot` it is the active home guard. Both
 branches run it before the delete. The location refusals of `worktreeRoot` delete nothing.
 
@@ -213,12 +213,12 @@ cannot be removed. The last two delete no registration (D24, and the maintainer'
 
 ##### Leaf, stale entry and refusals
 
-- **Leaf.** `wipesHomeDir` guards every delete of the leaf. Create tests the checkpoint
+- **Leaf.** `homeguard.WipesHomeDir` guards every delete of the leaf. Create tests the checkpoint
   identity of the leaf again and holds the leaf and its parent open until it answers. On
   Windows both handles share delete access. The empty-leaf rmdir tests only that the path
   still resolves to the leaf and the parent is still the held parent.
 - **Stale entry.** One `os.Root.RemoveAll` of one stale `worktrees` entry, after
-  `wipesHomeDir` on its path, through a root at that folder (the held folder when held).
+  `homeguard.WipesHomeDir` on its path, through a root at that folder (the held folder when held).
   Create removes that entry only if it is the only stale entry and holds no `locked` file.
   Windows keeps an entry with a `locked` file too (`windowsStaleEntryGoes`) and an entry
   whose record names a path that exists (D27). It deletes nothing behind a junction or a
@@ -243,7 +243,7 @@ cannot be removed. The last two delete no registration (D24, and the maintainer'
   the entry that the tests after the add accepted (after a failed show-toplevel, the one
   new name). The rollback reads neither the `.git` file nor the `gitdir` record again. That follows
   `89cb6289`, which removes that entry when either one changed. One `os.Root.RemoveAll` of that name through a root at the
-  registrations directory, after `wipesHomeDir`. The entry must still have its accepted
+  registrations directory, after `homeguard.WipesHomeDir`. The entry must still have its accepted
   identity after the open, and create holds the accepted folder open. If the open fails, the
   identity comes from a stat of the path (not measured). A folder that is not the accepted
   one stays (D24).
@@ -252,7 +252,7 @@ cannot be removed. The last two delete no registration (D24, and the maintainer'
   `.git` is no longer that folder. Otherwise, with no answer or on Windows, the folder is
   the one that the `.git` file names. It goes only if its `gitdir` record names the leaf and
   it resolves strictly inside the registrations directory. That delete runs no
-  `wipesHomeDir`. It acts on the verified resolved path, through a root with the checked
+  `homeguard.WipesHomeDir`. It acts on the verified resolved path, through a root with the checked
   identity on Linux and macOS, and by plain `os.RemoveAll` on Windows. With no answer of git, a registration
   whose back-pointer cannot be read is never deleted.
 - **Index** (Linux and macOS). One `os.Root.Remove` of the fixed name `index` in the
@@ -283,7 +283,7 @@ refused and nothing is made. On Linux and macOS a new real directory there that 
 gate takes the hold, and the move goes into it with no sweep. Any other swap there refuses
 the create (claustrum's own).
 Entries are read with `Lstat` through that root. The name must start with the prefix with
-the dash, and the write time must be 1 hour old or more. `wipesHomeDir` refuses an entry
+the dash, and the write time must be 1 hour old or more. `homeguard.WipesHomeDir` refuses an entry
 that is home or holds it. A failed removal logs one line, and the create goes on (not measured). `git.info` and
 `git.status` remove no entry. From the code: a failed add, a
 `"shadowDirOff":true` request (or one that starts while such a request runs and takes no
@@ -304,7 +304,7 @@ when the exited CLI holds it (claustrum's own, not measured).
 
 Guards, in order: D6 runs first, so the CLI path is a direct child of the cli-dir, but it
 does not test which folder that child is. Right before the tree delete, `homeguard.FolderHoldsHome`
-refuses a CLI path that is home or holds it. It runs `wipesHomeDir` and compares the folder at the CLI path with home and each parent of
+refuses a CLI path that is home or holds it. It runs `homeguard.WipesHomeDir` and compares the folder at the CLI path with home and each parent of
 home by identity (`os.SameFile`), for the given and the resolved home path (D2). The
 prune and the sweeps skip an entry that is home or holds it (`cliEntryHoldsHome`, claustrum's
 own, D2). The prune runs after a good install, before the fetch of a cache miss and after a
@@ -326,7 +326,7 @@ Detail: [-install](docs/INSTALL.md#staging-and-cleanup).
 `plugins.prune` is an `os.RemoveAll` site, and it is safe by construction. It
 deletes `<socket-derived-root>/<hash>`. The root comes from the socket layout
 and the leaf must match `^[0-9a-f]{16}$` (`pluginHashRE`). The path is never
-caller-supplied and never `~`-expanded, so it needs no `wipesHomeDir` guard.
+caller-supplied and never `~`-expanded, so it needs no `homeguard.WipesHomeDir` guard.
 
 On Linux the legacy sweep of `plugins.prune` and the host cleaner dial a socket path over
 107 bytes through `/proc` (`dialSiblingSocket`, `hcDial`), as `be1c1ca5` does (measured on
@@ -349,7 +349,7 @@ socket-derived like `plugins.prune`. Do not build a name below it from a request
 this daemon made, one that a directory read of `git-shadow` or of the folder of the daemon
 returned, or a fixed name in `.probe`. No part of the path comes from an RPC value or from
 an operator. Each
-delete is `wipesHomeDir` on the full path, then one call through a root at `<socket
+delete is `homeguard.WipesHomeDir` on the full path, then one call through a root at `<socket
 folder>/git-shadow` (`gitshadow.go`): `os.Root.RemoveAll` (`removeEntry`), a plain
 `os.Root.Remove` for a link that the sweep found (`removeLink`), or a plain `os.Root.Remove` that keeps a folder
 with content (`removeOneEntry`). The sites are the test folder `.check-<n>`, the folder of
@@ -379,7 +379,7 @@ short-lived folders are `os.MkdirTemp` folders, and each goes with `os.RemoveAll
 After the entries, `files.extract_tar` removes the fixed name `.synced` at the top of
 `destDir` as a tree (`writeSyncedMarker`) and creates the empty marker file. The remove is
 one `os.Root.RemoveAll` and the create is exclusive, both through a handle of `destDir`.
-After the open, `extractTarGz` tests the handle against the folder that `wipesHomeDir`
+After the open, `extractTarGz` tests the handle against the folder that `homeguard.WipesHomeDir`
 judged. If it differs, the request fails before any entry and the remove
 (claustrum's own, D2). A second file entry with the name of an earlier one removes that
 one regular file with a plain `os.Root.Remove`. After a failure past the handle test, `.synced`
@@ -471,7 +471,7 @@ copy](docs/protocol/git-worktree-create.md#the-settings-copy)).
   create that names the leaf. Linux and macOS give its entries modes, and Linux a group, by one `os.Root.Chmod`
   or `os.Root.Lchown` each. A failed step after its mkdir
   removes it as a tree through the held root, by the name that this call made, after
-  `wipesHomeDir`. If the `.git` file of the leaf cannot be made, the moved registration goes too,
+  `homeguard.WipesHomeDir`. If the `.git` file of the leaf cannot be made, the moved registration goes too,
   by its name. Its identity test against the held staging folder is claustrum's own. `locked`
   then goes by one plain `os.Root.Remove` through a root at the moved entry. The index is a
   new file of the moved registration. With none it is `index.tmp-<n>` and a rename.

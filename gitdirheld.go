@@ -99,7 +99,7 @@ func (a *acceptedGitDir) registrationName(path string) (string, bool) {
 
 // removeRegistration removes the registration name of the held git directory
 // as a tree: one RemoveAll of `worktrees/<name>` through the held root.
-// wipesHomeDir refuses an entry that is the home folder or holds it.
+// homeguard.WipesHomeDir refuses an entry that is the home folder or holds it.
 func (a *acceptedGitDir) removeRegistration(name string) {
 	if homeguard.WipesHomeDir(filepath.Join(a.path, worktreesSubdir, name)) {
 		return

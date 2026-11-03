@@ -18,6 +18,8 @@ import (
 	"strings"
 	"time"
 
+	"github.com/schubydoo/claustrum/internal/homeguard"
+	"github.com/schubydoo/claustrum/internal/logging"
 	"github.com/schubydoo/claustrum/internal/renameretry"
 )
 
@@ -705,7 +707,7 @@ var removeStagingEntry = func(root *os.Root, name string, tree bool) error {
 //  4. Only the write time of that entry counts (stagingEntryIsOld). Its access
 //     time, its creation time and the times of what is inside do not
 //     (measured).
-//  5. wipesHomeDir refuses an entry that is the home folder or holds it.
+//  5. homeguard.WipesHomeDir refuses an entry that is the home folder or holds it.
 //  6. Only a real folder goes with its content (goesAsTree), through
 //     Root.RemoveAll of the one name. A file, a link and a junction go through
 //     Root.Remove, so the target of a link stays.
@@ -733,12 +735,12 @@ func sweepOldStaging(git *os.Root, gitDir string, now time.Time) {
 		if err != nil || !stagingEntryIsOld(fi.ModTime(), now) {
 			continue
 		}
-		if wipesHomeDir(filepath.Join(gitDir, name)) {
-			logWarnf("[GitHandler] refusing to remove the old entry %s of the git folder: it holds the home folder", name)
+		if homeguard.WipesHomeDir(filepath.Join(gitDir, name)) {
+			logging.Warnf("[GitHandler] refusing to remove the old entry %s of the git folder: it holds the home folder", name)
 			continue
 		}
 		if err := removeStagingEntry(git, name, goesAsTree(fi.Mode())); err != nil {
-			logWarnf("[GitHandler] the old entry %s of the git folder was not removed: %v", name, err)
+			logging.Warnf("[GitHandler] the old entry %s of the git folder was not removed: %v", name, err)
 		}
 	}
 }
@@ -1115,22 +1117,22 @@ func writeLeafGitFile(leaf string, cp worktreeCheckpoint, text string) error {
 // That test is claustrum's own.
 func (st *addStage) removeMoved(target string, moved os.FileInfo) {
 	now, err := st.git.Lstat(target)
-	if err != nil || moved == nil || !os.SameFile(now, moved) || wipesHomeDir(filepath.Join(st.u.heldGitDir(), target)) {
+	if err != nil || moved == nil || !os.SameFile(now, moved) || homeguard.WipesHomeDir(filepath.Join(st.u.heldGitDir(), target)) {
 		return
 	}
 	_ = removeHeldEntry(st.git, target)
 }
 
 // removeOwnStaging removes the staging folder name that move made in the git
-// directory. It goes as a tree through the held root. wipesHomeDir runs first
+// directory. It goes as a tree through the held root. homeguard.WipesHomeDir runs first
 // as defense in depth. A remove that fails logs one line (not measured).
 func (st *addStage) removeOwnStaging(name string) {
-	if wipesHomeDir(filepath.Join(st.u.heldGitDir(), name)) {
-		logWarnf("[GitHandler] refusing to remove the staging folder %s of the git folder: it holds the home folder", name)
+	if homeguard.WipesHomeDir(filepath.Join(st.u.heldGitDir(), name)) {
+		logging.Warnf("[GitHandler] refusing to remove the staging folder %s of the git folder: it holds the home folder", name)
 		return
 	}
 	if err := st.git.RemoveAll(name); err != nil {
-		logWarnf("[GitHandler] the staging folder %s of the git folder was not removed: %v", name, err)
+		logging.Warnf("[GitHandler] the staging folder %s of the git folder was not removed: %v", name, err)
 	}
 }
 
