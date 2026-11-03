@@ -30,7 +30,7 @@ func pipeNameFilePath(socket string) string {
 }
 
 // createPipeTemp opens the temp file writePipeNameFile renames into place. A
-// package var (reusing the tokenTempFile seam from internal/tokenfile) so tests can
+// package var (reusing the TempFile seam of internal/tokenfile) so tests can
 // inject a writer that fails at a chosen step; production always uses
 // os.CreateTemp with the "rpc.pipe-*" pattern.
 var createPipeTemp = func(dir string) (tokenTempFile, error) {
