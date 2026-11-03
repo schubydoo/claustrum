@@ -551,7 +551,7 @@ var (
 // sendableErrorCodes returns each errorCode that the non-test files can put in a
 // response, with the file that names it first. It sees two forms: the literal in
 // "ErrorCode: "x"", and the last string of a return line in a file whose functions
-// return a "code string" result (worktreeexternal_unix.go), which feeds the field.
+// return a "code string" result (internal/git/worktreeexternal_unix.go), which feeds the field.
 func sendableErrorCodes(t *testing.T) map[string]string {
 	t.Helper()
 	files := goSourceFiles(t)

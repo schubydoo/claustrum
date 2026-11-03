@@ -302,7 +302,7 @@ have no flag and no key.
   the reference refusing these entries on every host, or the reference making
   no lock file through a link.
 - **Pointers.** `server.go` (`openDaemonLog`), `detach_unix.go`
-  (`openHeldDaemonLog`) and `gitshadowsweep.go` (`sweepLink`).
+  (`openHeldDaemonLog`) and `internal/git/gitshadowsweep.go` (`sweepLink`).
 
 ### D10 · Make the `-install` CLI size cap opt-in { #d10 }
 
@@ -405,7 +405,7 @@ have no flag and no key.
   reference stops at its `status` call, so its value for the other two is not
   measured.
 - **Pointers.** [git.status](protocol/git-status.md#differences-by-system),
-  `gitstatus.go` (`statusChanges`) and `githarden.go`.
+  `internal/git/gitstatus.go` (`statusChanges`) and `internal/git/githarden.go`.
 
 ### D19 · Refuse a junction between `baseRepo` and the leaf on remove (Windows, always-on) { #d19 }
 
@@ -441,7 +441,7 @@ have no flag and no key.
   this is parity), or deletes the tree through the junction. Or a Windows client
   depends on the success reply there.
 - **Pointers.** [git.worktree_remove](protocol/git-worktree-remove.md#error-texts)
-  and `worktreeremove.go` (`openRemoveParent`).
+  and `internal/git/worktreeremove.go` (`openRemoveParent`).
 
 ### D20 · Wait for a settle before the group `SIGKILL` of a leader that reads as gone (Linux and macOS) { #d20 }
 
@@ -519,7 +519,7 @@ have no flag and no key.
   these states. Or a measurement that shows the reference refusing there (then
   this is parity).
 - **Pointers.** [git.worktree_remove](protocol/git-worktree-remove.md#the-repository-checks)
-  and `worktreeremove.go` (`lockedInBaseRepo`).
+  and `internal/git/worktreeremove.go` (`lockedInBaseRepo`).
 
 ### D23 · The environment block of a child is in name order (Windows) { #d23 }
 

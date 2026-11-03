@@ -4,6 +4,7 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"runtime"
 	"strings"
@@ -125,7 +126,11 @@ func TestGitInfoBranchEdges(t *testing.T) {
 	writeFile(t, filepath.Join(det, "a.txt"), "x", 0o644)
 	runGit(t, det, "add", "-A")
 	runGit(t, det, "commit", "-m", "init")
-	sha, _ := git(det, "rev-parse", "--short", "HEAD")
+	out, err := exec.Command("git", "-C", det, "rev-parse", "--short", "HEAD").Output()
+	if err != nil {
+		t.Fatal(err)
+	}
+	sha := strings.TrimSpace(string(out))
 	runGit(t, det, "-c", "advice.detachedHead=false", "checkout", sha)
 	if got := dispatchRaw(t, s, rpcLine(t, "git.info", map[string]any{"path": det})); !strings.Contains(got, `"branch":"detached:`+sha+`"`) {
 		t.Errorf("detached git.info = %s, want branch=detached:%s", got, sha)

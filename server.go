@@ -129,7 +129,7 @@ type server struct {
 
 	// gitShadow is the settings control of the git methods: the state that git.info
 	// reports, the folder of this daemon beside the socket and the start test
-	// (gitshadow.go). It is nil for a server with no run folder.
+	// (internal/git/gitshadow.go). It is nil for a server with no run folder.
 	gitShadow *shadowHost
 
 	// peerCheck is the peer check of a daemon that started with
@@ -1413,8 +1413,8 @@ func (s *server) closeAll(socket string) {
 	// pipe survives. No-op if the pipe was never started this boot (pipeInfo nil).
 	removePipeNameFileIfOwned(socket, s.pipeInfo)
 	// The folder of this daemon below git-shadow goes too, and the empty git-shadow
-	// stays (shadowHost.close). Its place among these removes is not measured.
-	s.gitShadow.close()
+	// stays (shadowHost.Close). Its place among these removes is not measured.
+	s.gitShadow.Close()
 	// With -keep-children the kept children lose their records while this daemon
 	// still holds the lock. A successor takes the lock only after the release below,
 	// so its reap finds no record of a kept child (linux and darwin, a no-op

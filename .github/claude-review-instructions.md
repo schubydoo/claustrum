@@ -189,4 +189,4 @@ is posted: the grouped review, `review.json`, thread replies, the tally line and
 commands. Do not add posting rules here.
 
 Link code in this repo with the full SHA and a line range:
-`https://github.com/schubydoo/claustrum/blob/<full-sha>/methods_git.go#L40-L46`
+`https://github.com/schubydoo/claustrum/blob/<full-sha>/internal/git/methods_git.go#L40-L46`

@@ -261,7 +261,7 @@ func main() {
 		// method, not carried through the server struct.
 		files.MaxExtractBytes = cfg.effectiveMaxExtractBytes(*maxExtract, cliSet["max-extract-bytes"])
 		// -git-timeout and its config key are deprecated no-ops. They set nothing,
-		// so the git calls keep their time limits (gitstop.go).
+		// so the git calls keep their time limits (internal/git/gitstop.go).
 		warnDeprecatedGitTimeout(cliSet["git-timeout"], cfg.gitTimeoutSeen)
 		// -files-read-regular-only and its config key are deprecated no-ops. They
 		// set nothing: files.read has one rule, with or without them.

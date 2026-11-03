@@ -195,7 +195,7 @@ repository. The last `core.bare` of `config.worktree` follows, then the `[url]`
 blocks of rewritten URLs. The file ends with
 `[lfs]\n\trepositoryformatversion = 0\n`.
 
-- 41 keys are carried, each with one rule of accepted values (`gitshadowconfig.go`).
+- 41 keys are carried, each with one rule of accepted values (`internal/git/gitshadowconfig.go`).
   Only some of those rules are measured.
 - `remote.<name>.url`, `.lfsurl`, `.promisor` and `.partialclonefilter`,
   `lfs.<url>.access` and `branch.<name>.remote` are carried too. The length of a

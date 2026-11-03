@@ -14,9 +14,6 @@ type (
 	capabilitiesResult    = rpc.CapabilitiesResult
 	shutdownResult        = rpc.ShutdownResult
 	spawnResult           = rpc.SpawnResult
-	gitInfoResult         = rpc.GitInfoResult
-	gitStatusResult       = rpc.GitStatusResult
-	branchesResult        = rpc.BranchesResult
 	worktreeRemoveResult  = rpc.WorktreeRemoveResult
 	worktreeResult        = rpc.WorktreeResult
 	reattachResult        = rpc.ReattachResult

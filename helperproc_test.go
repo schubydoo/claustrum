@@ -137,9 +137,6 @@ func helperCommand(t *testing.T, mode string) (string, map[string]string) {
 // runHelper implements the fixture commands. Each mode's output is fixed and
 // newline-exact so stream assertions and goldens hold on every OS.
 func runHelper(mode string, args []string) int {
-	if code, ok := runGitHelper(mode, args); ok {
-		return code
-	}
 	switch mode {
 	case "echo": // /bin/echo: args joined by spaces, trailing newline
 		fmt.Print(strings.Join(args, " ") + "\n")
@@ -369,32 +366,6 @@ func runHelper(mode string, args []string) int {
 			return 1
 		}
 		if err := os.WriteFile(args[0], []byte(strconv.Itoa(child.Process.Pid)), 0o644); err != nil {
-			fmt.Fprintln(os.Stderr, err)
-			return 1
-		}
-	case "held-stdout":
-		// A git call that exits 0 while its child holds the stdout. args[0] gets
-		// the pid of this process and of the child, one per line. The child
-		// sleeps args[1] seconds. Its stderr is not that of this process.
-		exe, err := os.Executable()
-		if err != nil {
-			fmt.Fprintln(os.Stderr, err)
-			return 1
-		}
-		child := exec.Command(exe, args[1])
-		child.Env = buildEnv(map[string]string{"CLAUSTRUM_TEST_HELPER": "sleep"})
-		child.Stdout = os.Stdout
-		if err := child.Start(); err != nil {
-			fmt.Fprintln(os.Stderr, err)
-			return 1
-		}
-		fmt.Print("early\n")
-		pids := strconv.Itoa(os.Getpid()) + "\n" + strconv.Itoa(child.Process.Pid) + "\n"
-		if err := os.WriteFile(args[0]+".tmp", []byte(pids), 0o644); err != nil {
-			fmt.Fprintln(os.Stderr, err)
-			return 1
-		}
-		if err := os.Rename(args[0]+".tmp", args[0]); err != nil {
 			fmt.Fprintln(os.Stderr, err)
 			return 1
 		}

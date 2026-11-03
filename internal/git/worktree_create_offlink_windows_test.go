@@ -1,0 +1,13 @@
+//go:build windows
+
+package git
+
+import "testing"
+
+// offLinkKinds on Windows: a junction (measured) and a directory symbolic
+// link at the registrations folder. Each helper skips the test when mklink
+// cannot make the link. The attach rows on Windows are not measured.
+var offLinkKinds = []offLinkKind{
+	{"junction", func(t *testing.T, at, target string) { makeJunction(t, at, target) }},
+	{"dirsymlink", func(t *testing.T, at, target string) { makeDirSymlink(t, at, target) }},
+}

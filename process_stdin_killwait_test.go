@@ -20,7 +20,7 @@ import (
 // the "Features" section of the server.* page under docs/protocol/.
 
 // rpcEnvelope is a minimal reply decoder shared by the 7c2f88d wire-surface tests
-// (also used by git_repo_slug_test.go and killandwait_unix_test.go).
+// (also used by killandwait_unix_test.go).
 type rpcEnvelope struct {
 	Result json.RawMessage `json:"result"`
 	Error  *struct {

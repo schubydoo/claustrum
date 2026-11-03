@@ -47,20 +47,20 @@ modes and the OS splits is in
 |------|------|
 | `rpc.go` | `request`, `gate` (read loop), `route` (`dispatchRequest`) |
 | `internal/rpc/` | error codes, reply types, result structs with fields in the order of the reference. Never a map |
-| `methods_*.go`, `internal/files/` | the 21 methods across `server.*` / `files.*` / `git.*` / `launcher.*` / `process.*` / `plugins.*` |
+| `methods_*.go`, `internal/{files,git}/` | the 21 methods across `server.*` / `files.*` / `git.*` / `launcher.*` / `process.*` / `plugins.*` |
 | `process.go` | spawn, stream frames, stdin queue, replay buffer, `reattach` |
 | `handlers/prune.go` | the params type of `plugins.prune`, whose name is in its `-32602` text |
 | `internal/homeguard/homeguard.go` | `WipesHomeDir`, the home guard each RPC path to a recursive delete owes |
 | `internal/files/methods_files.go` | the wipe of `destDir` and the `.synced` marker of `files.extract_tar` |
 | `methods_plugins.go` | the delete of `plugins.prune` |
-| `worktreeremove.go` | the deletes of `git.worktree_remove` |
-| `worktreeverify.go` | the tests after the `worktree add` and both rollbacks of `git.worktree_create` |
-| `worktreestale*.go` | the stale registration step before the add |
-| `worktreestaging.go` | the staged add: its folder `.s<n>`, the staging folder and its move, and the cleanup of old staging entries |
-| `gitdirheld.go` | the held git directory and the list of the steps that act through it |
-| `githarden_index_*.go` | the placement of the index of a new worktree, and the registration delete of the second rollback (`removeCreatedRegistration`) |
+| `internal/git/worktreeremove.go` | the deletes of `git.worktree_remove` |
+| `internal/git/worktreeverify.go` | the tests after the `worktree add` and both rollbacks of `git.worktree_create` |
+| `internal/git/worktreestale*.go` | the stale registration step before the add |
+| `internal/git/worktreestaging.go` | the staged add: its folder `.s<n>`, the staging folder and its move, and the cleanup of old staging entries |
+| `internal/git/gitdirheld.go` | the held git directory and the list of the steps that act through it |
+| `internal/git/githarden_index_*.go` | the placement of the index of a new worktree, and the registration delete of the second rollback (`removeCreatedRegistration`) |
 | `internal/install/install.go` | the CLI path delete, the sweeps, the prune and the blob remove of `-install` |
-| `gitshadow.go` (`removeEntry` and `removeLink`, which each delete there goes through) · `gitshadowsweep.go` · `gitshadowrepo.go` · `gitshadowuse.go` | the deletes in the folder `git-shadow` |
+| `internal/git/gitshadow.go` (`removeEntry` and `removeLink`, which each delete there goes through) · `internal/git/gitshadowsweep.go` · `internal/git/gitshadowrepo.go` · `internal/git/gitshadowuse.go` | the deletes in the folder `git-shadow` |
 | `hostclean*.go` | the run-dir delete (`removeRunDir`) and the signals of the host cleaner |
 
 Every OS serves the same JSON-RPC methods.
@@ -205,7 +205,7 @@ stops at the first failure, deletes the registration, runs the branch step, and 
 empty leaf ([When a rollback leaves
 something](docs/protocol/git-worktree-create.md#after-a-failure)). The second rollback runs when `timeoutMs` expired by the end of the add, during the checkout or the
 copy step, after a post-checkout drain that exceeded that `timeoutMs`, a failed checkout, `config.worktree` copy or index placement, and a
-refusal of the filter rule (`gitfilter.go`, [Git
+refusal of the filter rule (`internal/git/gitfilter.go`, [Git
 filters](docs/protocol/git-worktree-create.md#git-filters)). It runs after three failures of
 the staging step too (`be1c1ca5`, measured on Linux): a `.git` that something put in the leaf,
 which goes with the leaf, an entry replaced right after its rename, and a `locked` file that
@@ -272,7 +272,7 @@ Detail: [git.worktree_create](docs/protocol/git-worktree-create.md#after-a-failu
 #### Path 4: the `git.worktree_create` staging sweep
 
 On every system (Linux and macOS since `be1c1ca5`) `git.worktree_create` removes old staging entries of the git directory of
-`baseRepo`, which the caller names (`sweepOldStaging`, `worktreestaging.go`). Their names
+`baseRepo`, which the caller names (`sweepOldStaging`, `internal/git/worktreestaging.go`). Their names
 start with `.claude-new-worktree-`, and the daemon did not make them. A real folder goes
 as a tree, by one `os.Root.RemoveAll`. A file, a link and a junction go with one plain
 `os.Root.Remove`, so the target of a junction stays.
@@ -350,10 +350,10 @@ this daemon made, one that a directory read of `git-shadow` or of the folder of 
 returned, or a fixed name in `.probe`. No part of the path comes from an RPC value or from
 an operator. Each
 delete is `homeguard.WipesHomeDir` on the full path, then one call through a root at `<socket
-folder>/git-shadow` (`gitshadow.go`): `os.Root.RemoveAll` (`removeEntry`), a plain
+folder>/git-shadow` (`internal/git/gitshadow.go`): `os.Root.RemoveAll` (`removeEntry`), a plain
 `os.Root.Remove` for a link that the sweep found (`removeLink`), or a plain `os.Root.Remove` that keeps a folder
 with content (`removeOneEntry`). The sites are the test folder `.check-<n>`, the folder of
-the daemon at shutdown (`shadowHost.close`) or after a failed lock step, a copy that this
+the daemon at shutdown (`ShadowHost.Close`) or after a failed lock step, a copy that this
 daemon wrote whose repository file is gone, the short-lived entries of one request
 (`.gitdir-<n>`, `.index-<n>`, `.worktreeinclude-<n>`, `.config-<n>`, `.s<n>`), each gone at the end of its step or at the reply (`.config-<n>`
 right after the file of the registration is written, or at the reply of a create refused
@@ -410,7 +410,7 @@ directory](docs/protocol/git-worktree-create.md#the-held-git-directory)). Hold t
 
 - Each delete, rename, new folder and file write of the create and of its rollback inside
   the git directory goes through the held folder, never the path. The comment at the top of
-  `gitdirheld.go` lists the steps.
+  `internal/git/gitdirheld.go` lists the steps.
 - By the path stay: git itself, a request that holds no git directory (the off switch, the
   state `fallback-git`), the stale step for a `worktrees` folder outside the held folder
   (from the code), and on Linux and macOS the index in a `worktrees` entry that is a
@@ -526,7 +526,7 @@ opt-in cap and bound in Part B.
 ### Time limits of the git calls
 
 The git calls of `git.list_branches`, `git.info`, `git.status` and `git.worktree_create`
-have always-on time limits (`gitstop.go`), listed in [Time limits of git
+have always-on time limits (`internal/git/gitstop.go`), listed in [Time limits of git
 calls](docs/protocol/git-rules-calls.md#time-limits-of-git-calls). They are not the limiter
 of a divergence. `-git-timeout` is a no-op that logs one
 warning. The branch step has its own bounds ([Time limits of the branch

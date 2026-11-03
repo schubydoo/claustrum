@@ -1,0 +1,427 @@
+package git
+
+import (
+	"bytes"
+	"context"
+	"encoding/json"
+	"errors"
+	"io"
+	"os"
+	"os/exec"
+	"strings"
+	"sync"
+	"sync/atomic"
+	"time"
+
+	"github.com/schubydoo/claustrum/internal/rpc"
+	"github.com/schubydoo/claustrum/internal/sysproc"
+)
+
+// The time limits of the git calls of git.list_branches, git.info, git.status and
+// git.worktree_create. A measurement measured them on 5fd08069 (measured on Linux,
+// macOS and Windows). git.worktree_remove gets none of these limits. Its first call
+// has the bound of 30 s of the call about the repository (measured on Linux). The
+// limits are always on. They are no limiter of an opt-in divergence.
+var (
+	// gitCallLimit ends one git call of those four methods. Measurements show the
+	// stop at 120 s. The read-tree call of a create has no such limit (measured).
+	gitCallLimit = 120 * time.Second
+	// gitWideLimit takes the place of gitCallLimit while a request with
+	// "shadowDirOff":true runs in the daemon. No call of the daemon then stops at
+	// 2 minutes, also on another repository (measured). The 30 minutes, and the
+	// end of the window when the last such request answers, are claustrum's own
+	// (not measured).
+	gitWideLimit = 1800 * time.Second
+	// configListingLimit ends each config listing before a hardened call: the
+	// first one of a request (measured) and the listing before the checkout
+	// (measured on Linux). The --show-scope listing of a create with the
+	// filter rule and no settings copy is no such listing: it has the 2
+	// minute limit and the timeoutMs (claustrum's own).
+	configListingLimit = 30 * time.Second
+	// includeScanLimit ends the scan of ignored files of the include step of a
+	// create (measured).
+	includeScanLimit = 600 * time.Second
+	// gitStopGrace is the time from the SIGTERM of a stopped call to its SIGKILL
+	// on Linux and macOS (measured: 2.005 s).
+	gitStopGrace = 2 * time.Second
+	// gitDrainWait is the time that a call waits for its output pipes after git
+	// exited (measured: 2.0 s). The child that holds them gets no signal. A
+	// call under untilPipeEOF waits so for stderr alone (runToEOF). There
+	// 5fd08069 goes on about 2.0 to 2.1 s after the exit (measured on Linux and
+	// macOS). For that wait of stderr alone the exact value of 2 s is
+	// claustrum's own.
+	gitDrainWait = 2 * time.Second
+)
+
+// gitLimit selects the limit of one call.
+type gitLimit int
+
+const (
+	// callLimit is gitCallLimit or gitWideLimit. A call that a limit stops stops
+	// the request: no later call of gitRun in the request starts.
+	callLimit gitLimit = iota
+	// listingLimit is configListingLimit. Its error carries the hooks refusal
+	// (gitStopped.listing).
+	listingLimit
+	// includeScan is includeScanLimit.
+	includeScan
+)
+
+// gitStopped is the error of a git call that its time limit stopped. The text is
+// that of 5fd08069, for example `git took too long: Claude stopped git
+// for-each-ref after 2 minutes; try again` (measured).
+type gitStopped struct {
+	sub   string
+	after string
+	// listing marks a stopped config listing. Its text starts with the hooks
+	// refusal (measured).
+	listing bool
+}
+
+func (e *gitStopped) Error() string {
+	text := "git took too long: Claude stopped git " + e.sub + " after " + e.after + "; try again"
+	if e.listing {
+		return hooksRefusalPrefix + text
+	}
+	return text
+}
+
+// isGitStop reports whether err is the error of a stopped call.
+func isGitStop(err error) bool {
+	var s *gitStopped
+	return errors.As(err, &s)
+}
+
+// gitStop holds the time limits of the git calls of one request. A nil *gitStop
+// sets no limit: each call runs as exec.Cmd runs it.
+type gitStop struct {
+	// wide is the count of the daemon's requests with "shadowDirOff":true that
+	// have not answered yet.
+	wide *atomic.Int32
+
+	mu      sync.Mutex
+	stopped *gitStopped
+}
+
+// limitedGitMethod reports whether the git calls of method get the time limits.
+func limitedGitMethod(method string) bool {
+	switch method {
+	case "git.list_branches", "git.info", "git.status", "git.worktree_create":
+		return true
+	}
+	return false
+}
+
+// offSwitchSet reports whether the params of a request hold "shadowDirOff":true.
+// A params object that does not parse reports false.
+func offSwitchSet(params json.RawMessage) bool {
+	var p struct {
+		ShadowDirOff rpc.JSONTrueSwitch `json:"shadowDirOff"`
+	}
+	return json.Unmarshal(params, &p) == nil && bool(p.ShadowDirOff)
+}
+
+type gitStopKey struct{}
+type gitLimitKey struct{}
+type pipeEOFKey struct{}
+
+// context is the context of the git calls of the request. gitRun and gitOutput
+// read the limits from it.
+func (s *gitStop) context() context.Context {
+	if s == nil {
+		return context.Background()
+	}
+	return context.WithValue(context.Background(), gitStopKey{}, s)
+}
+
+// withGitLimit is ctx with the limit kind for the calls that run under it.
+func withGitLimit(ctx context.Context, kind gitLimit) context.Context {
+	return context.WithValue(ctx, gitLimitKey{}, kind)
+}
+
+// untilPipeEOF is ctx for the calls whose output the daemon reads to its end.
+// Such a call goes on only when its stdout closes, also after git exited.
+// The child that holds it gets no signal. 5fd08069 does so for the config
+// listing before a hardened call (measured) and for the `status` scan of
+// git.status (measured on Linux). The `ls-files` and `diff-index` scans do the
+// same (claustrum's own, not measured).
+func untilPipeEOF(ctx context.Context) context.Context {
+	return context.WithValue(ctx, pipeEOFKey{}, true)
+}
+
+func gitStopOf(ctx context.Context) (*gitStop, gitLimit) {
+	s, _ := ctx.Value(gitStopKey{}).(*gitStop)
+	kind, _ := ctx.Value(gitLimitKey{}).(gitLimit)
+	return s, kind
+}
+
+// halted is the error of the stopped call of the request, or nil.
+func (s *gitStop) halted() error {
+	if s == nil {
+		return nil
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.stopped == nil {
+		return nil
+	}
+	return s.stopped
+}
+
+// limit is the duration of kind and its words in the stop text.
+func (s *gitStop) limit(kind gitLimit) (time.Duration, string) {
+	switch kind {
+	case listingLimit:
+		return configListingLimit, "30 seconds"
+	case includeScan:
+		return includeScanLimit, "10 minutes"
+	}
+	if s.wide != nil && s.wide.Load() > 0 {
+		// This limit and its text are claustrum's own (not measured).
+		return gitWideLimit, "30 minutes"
+	}
+	return gitCallLimit, "2 minutes"
+}
+
+// gitRun runs cmd under the limits of ctx. With no limits in ctx it is cmd.Run.
+//
+// After a stopped call or listing of the request no call of gitRun starts, and the error is that of the
+// stopped call. Other calls, such as those of the branch step of a rollback, still run (measured). At the
+// limit the call gets the stop: on Linux and macOS SIGTERM, and SIGKILL gitStopGrace later (measured). On
+// Windows the process is ended at once (measured).
+//
+// The wait for the output pipes after git exited ends at gitDrainWait. A call
+// that exited 0 then counts as a call that exited 0 (measured). Under
+// untilPipeEOF the wait for stdout has no end (runToEOF). A call that exited 0
+// gives its result when stdout closes, also past its limit. A call that the
+// limit stopped gives the stop text then (measured on Linux).
+//
+// Each call runs under the hold of its repository folder (runHeld).
+func gitRun(ctx context.Context, cmd *exec.Cmd) error {
+	s, kind := gitStopOf(ctx)
+	if s == nil {
+		return runHeld(cmd, cmd.Run)
+	}
+	if err := s.halted(); err != nil {
+		return err
+	}
+	toEOF, _ := ctx.Value(pipeEOFKey{}).(bool)
+	return runHeld(cmd, func() error { return gitRunLimited(s, kind, toEOF, cmd) })
+}
+
+// gitRunLimited is the start and the wait of cmd under the limit kind of s.
+// With toEOF the wait for the output pipes has no end (untilPipeEOF), and the
+// call runs through runToEOF.
+func gitRunLimited(s *gitStop, kind gitLimit, toEOF bool, cmd *exec.Cmd) error {
+	limit, after := s.limit(kind)
+	var mu sync.Mutex
+	done, fired := false, false
+	var kill, timer *time.Timer
+	arm := func() {
+		timer = time.AfterFunc(limit, func() {
+			mu.Lock()
+			defer mu.Unlock()
+			if done {
+				return
+			}
+			// The call counts as stopped also when git exited before the limit
+			// and only a child holds its pipes (under untilPipeEOF, or within
+			// gitDrainWait of the limit). A failed call then
+			// gives the stop text, and a call that exited 0 stays a success, on
+			// every system (claustrum's own, not measured).
+			fired = true
+			kill, _ = stopThenKill(cmd.Process, &mu, &done)
+		})
+	}
+	var err error
+	if toEOF {
+		started := false
+		err = runToEOF(cmd, gitDrainWait, func() { started = true; arm() })
+		if !started {
+			return err
+		}
+	} else {
+		cmd.WaitDelay = gitDrainWait
+		if err := cmd.Start(); err != nil {
+			return err
+		}
+		arm()
+		err = cmd.Wait()
+	}
+	mu.Lock()
+	done = true
+	timer.Stop()
+	if kill != nil {
+		kill.Stop()
+	}
+	stopped := fired
+	mu.Unlock()
+	if errors.Is(err, exec.ErrWaitDelay) && cmd.ProcessState != nil && cmd.ProcessState.Success() {
+		return nil
+	}
+	if stopped && err != nil {
+		e := &gitStopped{sub: gitSubcommand(cmd.Args), after: after, listing: kind == listingLimit}
+		s.mu.Lock()
+		if s.stopped == nil {
+			s.stopped = e
+		}
+		s.mu.Unlock()
+		return e
+	}
+	return err
+}
+
+// stopThenKill is the stop of a git call at its limit: stopGitProcess, and a
+// Kill gitStopGrace later while *done is false. The caller holds mu, and the
+// later Kill takes it. err is the error of stopGitProcess.
+func stopThenKill(p *os.Process, mu *sync.Mutex, done *bool) (kill *time.Timer, err error) {
+	err = stopGitProcess(p)
+	kill = time.AfterFunc(gitStopGrace, func() {
+		mu.Lock()
+		defer mu.Unlock()
+		if !*done {
+			_ = p.Kill()
+		}
+	})
+	return kill, err
+}
+
+// runToEOF starts cmd, calls started after a good start, and waits for it.
+// It is for a call whose stdout the daemon reads to its end. It sets no time
+// limit of its own.
+//
+// When cmd.Stdout is a writer that is not a file, the daemon reads stdout itself, through its own pipe, and reaps git only at the
+// end of that pipe. exec.Cmd.Wait reaps first, and only then waits for the copies of its pipes (from the code of Go). So git stays
+// a zombie while a child holds its stdout. 5fd08069 does so (measured on Linux and macOS).
+//
+// After the reap the copy of stderr gets at most grace. Then the call goes on
+// with what it read, and an exit 0 counts as a success. With a child that holds
+// stderr alone, 5fd08069 goes on about 2 s after the exit of git (measured on
+// Linux and macOS). Windows is not measured.
+func runToEOF(cmd *exec.Cmd, grace time.Duration, started func()) error {
+	// own takes a writer of cmd that os/exec copies in a goroutine.
+	own := func(w *io.Writer) (io.Writer, *os.File, *os.File, error) {
+		if _, isFile := (*w).(*os.File); *w == nil || isFile {
+			return nil, nil, nil, nil
+		}
+		r, pw, err := os.Pipe()
+		if err != nil {
+			return nil, nil, nil, err
+		}
+		sink := *w
+		*w = pw
+		return sink, r, pw, nil
+	}
+	same := sameWriter(cmd.Stdout, cmd.Stderr)
+	sink, outR, outW, err := own(&cmd.Stdout)
+	if err != nil {
+		return err
+	}
+	var errSink io.Writer
+	var errR, errW *os.File
+	if same && outW != nil {
+		// One writer for both takes one pipe, as in os/exec. So stderr is read
+		// to its end with stdout, and no two copies write to the writer.
+		cmd.Stderr = outW
+	} else if errSink, errR, errW, err = own(&cmd.Stderr); err != nil {
+		sysproc.CloseAll(outR, outW)
+		return err
+	}
+	err = cmd.Start()
+	sysproc.CloseAll(outW, errW)
+	if err != nil {
+		sysproc.CloseAll(outR, errR)
+		return err
+	}
+	started()
+	errDone := make(chan error, 1)
+	if errR != nil {
+		go func() {
+			_, e := io.Copy(errSink, errR)
+			_ = errR.Close()
+			errDone <- e
+		}()
+	}
+	var copyErr error
+	if outR != nil {
+		_, copyErr = io.Copy(sink, outR)
+		_ = outR.Close()
+	}
+	err = cmd.Wait()
+	if errR != nil {
+		cut := time.AfterFunc(grace, func() { _ = errR.Close() })
+		if e := <-errDone; cut.Stop() && copyErr == nil {
+			copyErr = e
+		}
+	}
+	if err == nil {
+		err = copyErr
+	}
+	return err
+}
+
+// sameWriter reports that a and b are one writer. A writer of a type that
+// cannot be compared is never the same.
+func sameWriter(a, b io.Writer) (same bool) {
+	defer func() {
+		if recover() != nil {
+			same = false
+		}
+	}()
+	return a != nil && a == b
+}
+
+// gitOutput is cmd.Output under the limits of ctx (gitRun). The stderr of git is
+// not in the error: no caller reads it there.
+func gitOutput(ctx context.Context, cmd *exec.Cmd) ([]byte, error) {
+	if s, _ := gitStopOf(ctx); s == nil {
+		if toEOF, _ := ctx.Value(pipeEOFKey{}).(bool); toEOF {
+			var out bytes.Buffer
+			cmd.Stdout = &out
+			// A call with no limits, as in git.worktree_remove, gets the same
+			// grace of stderr. 5fd08069 goes on about 2 s after the exit of a
+			// remove listing whose stderr a child holds (measured on Linux).
+			err := runHeld(cmd, func() error { return runToEOF(cmd, gitDrainWait, func() {}) })
+			return out.Bytes(), err
+		}
+		var out []byte
+		err := runHeld(cmd, func() error {
+			var err error
+			out, err = cmd.Output()
+			return err
+		})
+		return out, err
+	}
+	var out bytes.Buffer
+	cmd.Stdout = &out
+	err := gitRun(ctx, cmd)
+	return out.Bytes(), err
+}
+
+// gitSubcommand is the git subcommand in the argv args: the first word after
+// "git" that is no option and no value of -c or -C. The stop text names it, for
+// example `worktree` for `worktree add` (measured).
+func gitSubcommand(args []string) string {
+	for i := 1; i < len(args); i++ {
+		switch a := args[i]; {
+		case a == "-c" || a == "-C":
+			i++
+		case strings.HasPrefix(a, "-"):
+		default:
+			return a
+		}
+	}
+	return ""
+}
+
+// reply is the answer of a request whose call a limit stopped, or resp.
+// git.list_branches, git.info and git.status answer -32603 with the stop text
+// (measured). git.worktree_create keeps the frame of the step whose call
+// stopped, with the stop text as its cause (measured).
+func (s *gitStop) reply(req *gitCall, resp rpc.Response) rpc.Response {
+	err := s.halted()
+	if err == nil || req.Method == "git.worktree_create" {
+		return resp
+	}
+	return rpc.ErrResult(req.ID, rpc.CodeInternal, err.Error())
+}

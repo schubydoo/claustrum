@@ -737,7 +737,7 @@ func TestSocketGitRepoDetection(t *testing.T) {
 // refs/remotes/origin/HEAD, refs/remotes/origin/v1 or similar. "diverged" is used
 // although it is not an ancestor of HEAD. Measured against the reference at
 // 5db5e4a. The origin candidate and the start-commit choice are pinned in
-// worktreesource_test.go.
+// internal/git/worktreesource_test.go.
 func TestSocketWorktreeSourceBranch(t *testing.T) {
 	requireGit(t)
 	root := resolveTestRoot(t, t.TempDir())
