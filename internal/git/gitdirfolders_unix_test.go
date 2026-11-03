@@ -40,7 +40,7 @@ func newCellFixture(t *testing.T) cellFixture {
 	if _, err := os.Lstat(filepath.Join(f.gitDir, "worktrees")); !os.IsNotExist(err) {
 		t.Fatalf("the registrations folder of the fixture: %v, want none", err)
 	}
-	return cellFixture{shadowFixture: f, home: resolveTestRoot(t, t.TempDir())}
+	return cellFixture{shadowFixture: f, home: dropGroupWrite(t, resolveTestRoot(t, t.TempDir()))}
 }
 
 // leaf is the worktreePath of the default request.

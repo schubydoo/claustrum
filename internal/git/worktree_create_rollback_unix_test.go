@@ -1200,7 +1200,7 @@ func TestWorktreeCreateRootBehindSymlinkSpelling(t *testing.T) {
 	stage := func(t *testing.T) (repo, realCP, link string) {
 		t.Helper()
 		requireGit(t)
-		base := realTempDir(t)
+		base := dropGroupWrite(t, realTempDir(t))
 		requireTempOutsideCheckout(t, base)
 		repo = filepath.Join(base, "T")
 		mkdirForTest(t, repo)

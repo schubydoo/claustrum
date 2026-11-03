@@ -62,3 +62,9 @@ func makeJunction(t *testing.T, link, target string) {
 		t.Skipf("mklink /J %s %s: %v\n%s", link, target, err, out)
 	}
 }
+
+// dropGroupWrite returns dir. Windows has no group write bit.
+func dropGroupWrite(t *testing.T, dir string) string {
+	t.Helper()
+	return dir
+}

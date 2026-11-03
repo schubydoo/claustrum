@@ -16,7 +16,7 @@ import (
 func createModesRepo(t *testing.T) (base, repo string) {
 	t.Helper()
 	requireGit(t)
-	base = resolveTestRoot(t, t.TempDir())
+	base = dropGroupWrite(t, resolveTestRoot(t, t.TempDir()))
 	repo = filepath.Join(base, "repo")
 	copyFixtureTemplate(t, "worktree-create-modes", repo, func(t *testing.T, dir string) {
 		buildGit(t, dir, "init", "-q", "-b", "main")
