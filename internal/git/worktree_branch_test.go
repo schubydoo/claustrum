@@ -598,7 +598,7 @@ func TestWorktreeBranchStepLockSerializesRollbackAndRemove(t *testing.T) {
 	// The rollback goes on when the remove waits for the branch lock, or when it got
 	// into its branch step without that lock.
 	limit := time.After(60 * time.Second)
-	tick := time.NewTicker(2 * time.Millisecond)
+	tick := time.NewTicker(5 * time.Millisecond)
 	defer tick.Stop()
 wait:
 	for !branchLockWaiter() {
