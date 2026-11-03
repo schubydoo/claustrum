@@ -15,6 +15,7 @@ import (
 	"time"
 
 	"github.com/schubydoo/claustrum/internal/shellenv"
+	"github.com/schubydoo/claustrum/internal/wirelog"
 )
 
 // These tests drive the real daemon-lifecycle shells — runServe,
@@ -112,7 +113,7 @@ func TestNewServerOnSocketBootAndCloseAll(t *testing.T) {
 	dir := shortTempDir(t)
 	sock := filepath.Join(dir, "s.sock")
 
-	s, err := newServerOnSocket(sock, "boot-token", "127.0.0.1:0", wireLogOptions{}, false, false)
+	s, err := newServerOnSocket(sock, "boot-token", "127.0.0.1:0", wirelog.Options{}, false, false)
 	if err != nil {
 		t.Fatalf("newServerOnSocket: %v", err)
 	}
@@ -155,7 +156,7 @@ func TestNewServerOnSocketBootAndCloseAll(t *testing.T) {
 func TestNewServerOnSocketErrorArms(t *testing.T) {
 	dir := shortTempDir(t)
 	sock := filepath.Join(dir, "m.sock")
-	s, err := newServerOnSocket(sock, "tok", "127.0.0.1:99999999", wireLogOptions{}, false, false)
+	s, err := newServerOnSocket(sock, "tok", "127.0.0.1:99999999", wirelog.Options{}, false, false)
 	if err != nil {
 		t.Fatalf("newServerOnSocket with bad metrics addr: %v", err)
 	}
@@ -175,7 +176,7 @@ func TestNewServerOnSocketErrorArms(t *testing.T) {
 		t.Error("pipe stand-in listener still accepting after closeAll")
 	}
 
-	if _, err := newServerOnSocket(filepath.Join(dir, "absent", "x.sock"), "tok", "", wireLogOptions{}, false, false); err == nil ||
+	if _, err := newServerOnSocket(filepath.Join(dir, "absent", "x.sock"), "tok", "", wirelog.Options{}, false, false); err == nil ||
 		!strings.Contains(err.Error(), "listen unix") {
 		t.Errorf("newServerOnSocket into missing dir = %v, want listen unix error", err)
 	}
@@ -191,7 +192,7 @@ func TestRunServeChildFatalArms(t *testing.T) {
 	dir := shortTempDir(t)
 
 	code, exited := catchExit(func() {
-		runServe(filepath.Join(dir, "s.sock"), filepath.Join(dir, "absent-token"), -1, "", wireLogOptions{}, false, false)
+		runServe(filepath.Join(dir, "s.sock"), filepath.Join(dir, "absent-token"), -1, "", wirelog.Options{}, false, false)
 	})
 	if !exited || code != 1 {
 		t.Errorf("child with unreadable token: exited=%v code=%d, want exit 1", exited, code)
@@ -205,7 +206,7 @@ func TestRunServeChildFatalArms(t *testing.T) {
 	// The start installs its signal handler before the bind. Take it out again.
 	t.Cleanup(func() { signal.Reset(syscall.SIGTERM, syscall.SIGINT) })
 	code, exited = catchExit(func() {
-		runServe(filepath.Join(dir, "no-dir", "s.sock"), tf, -1, "", wireLogOptions{}, false, false)
+		runServe(filepath.Join(dir, "no-dir", "s.sock"), tf, -1, "", wirelog.Options{}, false, false)
 	})
 	if !exited || code != 1 {
 		t.Errorf("child with unbindable socket: exited=%v code=%d, want exit 1", exited, code)
@@ -228,7 +229,7 @@ func TestRunServeStartThatFailsStartsNoLoginShell(t *testing.T) {
 	// The start installs its signal handler before the bind. Take it out again.
 	t.Cleanup(func() { signal.Reset(syscall.SIGTERM, syscall.SIGINT) })
 	if code, exited := catchExit(func() {
-		runServe(filepath.Join(dir, "no-dir", "s.sock"), tf, -1, "", wireLogOptions{}, false, false)
+		runServe(filepath.Join(dir, "no-dir", "s.sock"), tf, -1, "", wirelog.Options{}, false, false)
 	}); !exited || code != 1 {
 		t.Fatalf("child with unbindable socket: exited=%v code=%d, want exit 1", exited, code)
 	}
@@ -253,7 +254,7 @@ func TestRunServeChildStartsTheLoginPATHRead(t *testing.T) {
 	t.Cleanup(func() { signal.Reset(syscall.SIGTERM, syscall.SIGINT) })
 	done := make(chan int, 1)
 	go func() {
-		code, _ := catchExit(func() { runServe(sock, tf, -1, "", wireLogOptions{}, false, false) })
+		code, _ := catchExit(func() { runServe(sock, tf, -1, "", wirelog.Options{}, false, false) })
 		done <- code
 	}()
 	r := startedRead(t, f)
@@ -291,7 +292,7 @@ func TestRunServeFatalGuards(t *testing.T) {
 
 	// An fd number far past any open descriptor: readTokenFD wraps it but the
 	// read fails (EBADF), so the parent dies before the re-exec.
-	if code, exited := catchExit(func() { runServe("s.sock", "", 1<<20, "", wireLogOptions{}, false, false) }); !exited || code != 1 {
+	if code, exited := catchExit(func() { runServe("s.sock", "", 1<<20, "", wirelog.Options{}, false, false) }); !exited || code != 1 {
 		t.Errorf("runServe with unreadable -token-fd: exited=%v code=%d, want exit 1", exited, code)
 	}
 }
@@ -332,7 +333,7 @@ func TestRunServeParentDaemonizes(t *testing.T) {
 	// The launcher opens the daemon log beside the socket. A socket in the temp
 	// folder keeps that log out of the package folder.
 	sock := filepath.Join(dir, "unused.sock")
-	code, exited := catchExit(func() { runServe(sock, "", fd, "", wireLogOptions{}, false, false) })
+	code, exited := catchExit(func() { runServe(sock, "", fd, "", wirelog.Options{}, false, false) })
 	if !exited || code != 1 {
 		t.Errorf("parent runServe: exited=%v code=%d, want exit 1 (the stub child never binds)", exited, code)
 	}
@@ -420,7 +421,7 @@ func TestRunServeChildFullLifecycle(t *testing.T) {
 	}
 	done := make(chan exitResult, 1)
 	go func() {
-		code, exited := catchExit(func() { runServe(sock, tf, -1, "", wireLogOptions{}, false, false) })
+		code, exited := catchExit(func() { runServe(sock, tf, -1, "", wirelog.Options{}, false, false) })
 		done <- exitResult{code, exited}
 	}()
 
@@ -528,7 +529,7 @@ func TestRunServeChildRejectsMissingTokenSource(t *testing.T) {
 
 	dir := shortTempDir(t)
 	code, exited := catchExit(func() {
-		runServe(filepath.Join(dir, "s.sock"), "", -1, "", wireLogOptions{}, false, false)
+		runServe(filepath.Join(dir, "s.sock"), "", -1, "", wirelog.Options{}, false, false)
 	})
 
 	if !exited || code != 1 {
@@ -561,7 +562,7 @@ func TestRunServeLauncherDaemonizesWithoutATokenSource(t *testing.T) {
 
 	dir := shortTempDir(t)
 	code, exited := catchExit(func() {
-		runServe(filepath.Join(dir, "s.sock"), "", -1, "", wireLogOptions{}, false, false)
+		runServe(filepath.Join(dir, "s.sock"), "", -1, "", wirelog.Options{}, false, false)
 	})
 
 	if !exited || code != 1 {

@@ -13,6 +13,8 @@ import (
 	"syscall"
 	"testing"
 	"time"
+
+	"github.com/schubydoo/claustrum/internal/wirelog"
 )
 
 // runlockHoldEmptyFixture is the "runlock-hold-empty" helper mode. It holds the flock
@@ -149,7 +151,7 @@ func TestLateRunDirLockAfterHolderLetsGo(t *testing.T) {
 	lockPath := filepath.Join(dir, runDirLockName)
 	letGo := startEmptyLockHolder(t, lockPath)
 
-	s, err := newServerOnSocket(sock, "tok", "", wireLogOptions{}, false, false)
+	s, err := newServerOnSocket(sock, "tok", "", wirelog.Options{}, false, false)
 	if err != nil {
 		t.Fatalf("newServerOnSocket: %v", err)
 	}
@@ -255,7 +257,7 @@ func TestLateRunDirLockStopsAtShutdown(t *testing.T) {
 	lockPath := filepath.Join(dir, runDirLockName)
 	letGo := startEmptyLockHolder(t, lockPath)
 
-	s, err := newServerOnSocket(sock, "tok", "", wireLogOptions{}, false, false)
+	s, err := newServerOnSocket(sock, "tok", "", wirelog.Options{}, false, false)
 	if err != nil {
 		t.Fatalf("newServerOnSocket: %v", err)
 	}

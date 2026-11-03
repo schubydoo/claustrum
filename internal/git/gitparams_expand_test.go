@@ -22,9 +22,9 @@ func TestGitParamsExpandPathsCoversEveryPathField(t *testing.T) {
 	t.Setenv("HOME", home)
 	under := func(rest string) string { return filepath.Join(home, rest) }
 
-	gp := &gitParams{Path: "~/g", BaseRepo: "~/b", WorktreePath: "~/w", BranchName: "~keep", SourceBranch: "~keep2"}
+	gp := &gitParams{Path: "~/g", BaseRepo: "~/b", WorktreePath: "~/w", WorktreeRoot: "~/r", BranchName: "~keep", SourceBranch: "~keep2"}
 	gp.ExpandPaths()
-	if gp.Path != under("g") || gp.BaseRepo != under("b") || gp.WorktreePath != under("w") {
+	if gp.Path != under("g") || gp.BaseRepo != under("b") || gp.WorktreePath != under("w") || gp.WorktreeRoot != under("r") {
 		t.Errorf("gitParams paths = %+v", gp)
 	}
 	// Branch names are refs, not paths: a branch legitimately called "~keep"

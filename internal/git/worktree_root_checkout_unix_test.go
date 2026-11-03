@@ -61,6 +61,7 @@ func (f *r0Fixture) linked(t *testing.T, path, branch string) {
 		t.Fatal(err)
 	}
 	runGit(t, f.T, "worktree", "add", "-q", "-b", branch, path)
+	dropGroupWrite(t, path)
 }
 
 // withW adds the linked worktree <B>/W on branch lw, with an untracked folder sub.

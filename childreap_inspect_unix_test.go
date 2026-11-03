@@ -9,6 +9,8 @@ import (
 	"strings"
 	"syscall"
 	"testing"
+
+	"github.com/schubydoo/claustrum/internal/wirelog"
 )
 
 // The tests of a process that the reap cannot inspect. Every read and every signal
@@ -189,7 +191,7 @@ func TestNotLockHolderReapsAndRecordsNothing(t *testing.T) {
 				program: "/n", runDir: dir, childMark: strconv.Itoa(orphan) + ":9000"}
 			sim.diesOn(orphan, syscall.SIGTERM)
 
-			s, err := newServerOnSocket(sock, "tok", "", wireLogOptions{}, false, false)
+			s, err := newServerOnSocket(sock, "tok", "", wirelog.Options{}, false, false)
 			if err != nil {
 				t.Fatal(err)
 			}

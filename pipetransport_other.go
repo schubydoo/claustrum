@@ -5,6 +5,8 @@ package main
 import (
 	"errors"
 	"net"
+
+	"github.com/schubydoo/claustrum/internal/logging"
 )
 
 // honorListenPipe forces -listen-pipe OFF everywhere except Windows. The
@@ -14,7 +16,7 @@ import (
 // warn.
 func honorListenPipe(requested bool) bool {
 	if requested {
-		logWarnf("[Server] -listen-pipe is only supported on Windows and is ignored: other platforms serve JSON-RPC over the AF_UNIX socket directly")
+		logging.Warnf("[Server] -listen-pipe is only supported on Windows and is ignored: other platforms serve JSON-RPC over the AF_UNIX socket directly")
 	}
 	return false
 }
