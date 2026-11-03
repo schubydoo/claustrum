@@ -15,6 +15,9 @@ import (
 	"strings"
 	"sync"
 	"time"
+
+	"github.com/schubydoo/claustrum/internal/rpc"
+	"github.com/schubydoo/claustrum/internal/sysproc"
 )
 
 // The daemon's own read of a repository's config, and its tests of three files of
@@ -151,7 +154,7 @@ func runStartBound(cmd *exec.Cmd, stdin []byte, bound time.Duration) (bool, erro
 	for range 3 {
 		r, w, err := os.Pipe()
 		if err != nil {
-			closeAll(files...)
+			sysproc.CloseAll(files...)
 			return false, err
 		}
 		files = append(files, r, w)
@@ -160,9 +163,9 @@ func runStartBound(cmd *exec.Cmd, stdin []byte, bound time.Duration) (bool, erro
 	sinks := []io.Writer{cmd.Stdout, cmd.Stderr}
 	cmd.Stdin, cmd.Stdout, cmd.Stderr = inR, outW, errW
 	err := cmd.Start()
-	closeAll(inR, outW, errW)
+	sysproc.CloseAll(inR, outW, errW)
 	if err != nil {
-		closeAll(inW, outR, errR)
+		sysproc.CloseAll(inW, outR, errR)
 		return false, err
 	}
 	var mu sync.Mutex
@@ -180,7 +183,7 @@ func runStartBound(cmd *exec.Cmd, stdin []byte, bound time.Duration) (bool, erro
 		ended = true
 		_ = cmd.Process.Kill()
 		_ = inW.Close()
-		drain = time.AfterFunc(startBoundDrain, func() { closeAll(outR, errR) })
+		drain = time.AfterFunc(startBoundDrain, func() { sysproc.CloseAll(outR, errR) })
 	})
 	go func() {
 		_, _ = inW.Write(stdin)
@@ -291,7 +294,7 @@ func (b *boundedListing) Write(p []byte) (int, error) {
 func listRepoConfigText(ctx context.Context, text []byte, dir string, env []string) (out, stderr []byte, err error) {
 	cmd := configTextCmd(ctx, dir, env)
 	listing := &boundedListing{max: repoListingMaxBytes}
-	errText := &cappedText{Max: 1 << 16}
+	errText := &sysproc.CappedText{Max: 1 << 16}
 	cmd.Stdout = listing
 	cmd.Stderr = errText
 	err = runConfigText(ctx, cmd, text)
@@ -1335,7 +1338,7 @@ func repoReadVerdict(t gitDirTrust, s *gitStop) *repoVerdict {
 // A server with no run folder has no state and no call of askGit. It reads the
 // config and answers its refusals the same way. No real daemon is such a
 // server, so that form is not measured.
-func repoConfigGate(t gitDirTrust, off jsonTrueSwitch, s *gitStop) (msg string, accepted *repoVerdict) {
+func repoConfigGate(t gitDirTrust, off rpc.JSONTrueSwitch, s *gitStop) (msg string, accepted *repoVerdict) {
 	if off || t.verdict != gitDirTrusted || t.pinCommonDir == "" {
 		return "", nil
 	}

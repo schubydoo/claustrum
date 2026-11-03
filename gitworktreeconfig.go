@@ -11,6 +11,8 @@ import (
 	"slices"
 	"strings"
 	"time"
+
+	"github.com/schubydoo/claustrum/internal/logging"
 )
 
 // The `config.worktree` file of a repository with the worktreeConfig switch, in
@@ -384,7 +386,7 @@ func placeWorktreeConfig(u gitUse, registration, leaf string, tested testedRegis
 	err := writeWorktreeConfigAt(u, registration, leaf, tested, text, written)
 	var refused registrationRefusal
 	if errors.As(err, &refused) {
-		logWarnf("[GitHandler] the config.worktree file of the new worktree was not written: %v", err)
+		logging.Warnf("[GitHandler] the config.worktree file of the new worktree was not written: %v", err)
 		return ""
 	}
 	if err != nil {

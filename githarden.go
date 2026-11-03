@@ -14,6 +14,8 @@ import (
 	"sync"
 	"time"
 	"unicode"
+
+	"github.com/schubydoo/claustrum/internal/sysproc"
 )
 
 // Git-invocation hardening. The call shape came from reference build 7d193f89, and
@@ -605,7 +607,7 @@ func hardenedGitCheckout(ctx context.Context, u gitUse, leaf, gitDir, indexFile 
 	// Own process group so the teardown below can SIGKILL the whole group and reap a
 	// descendant the checkout left holding the pipe — reproducing 4534d86's observed
 	// descendant reap.
-	cmd.SysProcAttr = newSysProcAttr()
+	cmd.SysProcAttr = sysproc.NewSysProcAttr()
 	_, deadlined := ctx.Deadline()
 	if !deadlined {
 		cmd.WaitDelay = gitDrainWait
@@ -615,13 +617,13 @@ func hardenedGitCheckout(ctx context.Context, u gitUse, leaf, gitDir, indexFile 
 		cmd.WaitDelay = worktreeCreateDrainCap
 		// When the deadline fires, kill git immediately and, on Unix, tear down its whole
 		// process group so a descendant is reaped too. cmd.Process.Kill() is what makes the
-		// interrupt land on every OS: reapProcessGroup is a no-op on Windows, so without the
+		// interrupt land on every OS: sysproc.ReapProcessGroup is a no-op on Windows, so without the
 		// direct kill a Windows deadline would leave git running until the WaitDelay fallback
 		// and answer the caller ~worktreeCreateDrainCap late. WaitDelay still bounds any
 		// post-kill pipe drain. Returning nil marks the interrupt as successful; Wait still
 		// prefers git's own "signal: killed" *ExitError, so the wire suffix is unchanged.
 		cmd.Cancel = func() error {
-			reapProcessGroup(cmd.Process)
+			sysproc.ReapProcessGroup(cmd.Process)
 			_ = cmd.Process.Kill()
 			return nil
 		}
@@ -635,7 +637,7 @@ func hardenedGitCheckout(ctx context.Context, u gitUse, leaf, gitDir, indexFile 
 		// git exited 0 but a descendant held the pipe past the cap. WaitDelay closed
 		// the daemon's own pipe ends but killed nothing; SIGKILL the group to reap the
 		// descendant, matching the reference's observed descendant reap.
-		reapProcessGroup(cmd.Process)
+		sysproc.ReapProcessGroup(cmd.Process)
 	}
 	return errBuf.String(), drained, err
 }
@@ -1160,7 +1162,7 @@ func (c configCheck) refused() bool {
 
 // hostileConfigRefusal runs the configuration listing (`git config -z --list`) that
 // comes first in a git method, and reads it. Callers phrase the method-specific frame
-// (a -32603 for the read methods, a worktreeResult for worktree_create, its own
+// (a -32603 for the read methods, an rpc.WorktreeResult for worktree_create, its own
 // message for worktree_remove). The outcomes, in the order 89cb6289 takes them on
 // Linux, macOS and Windows:
 //

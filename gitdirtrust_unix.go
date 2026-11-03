@@ -45,7 +45,7 @@ func sameGitDirPath(a, b string) bool {
 }
 
 // resolveGitDirLinks resolves the symlinks in the git directory g before the check
-// judges it, as canonicalPath does. A refusal then names the resolved path.
+// judges it, as pathcanon.Canonical does. A refusal then names the resolved path.
 func resolveGitDirLinks(g string) string {
 	return pathcanon.Canonical(g)
 }
