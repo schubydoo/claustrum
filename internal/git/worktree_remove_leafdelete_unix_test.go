@@ -14,8 +14,10 @@ import (
 // T takes its path. T has an entry with the name of the leaf. The delete takes
 // the leaf in the moved folder, and T keeps its entry. A delete by the path
 // (os.RemoveAll) follows the link and empties T. From the code, not measured.
-// The test is for Linux and macOS: Windows does not rename a folder that is
-// open.
+// The test is for Linux and macOS: on Windows os.OpenRoot shares no delete
+// access, so this fixture cannot rename parentDir. The parent that a remove
+// holds on Windows comes from Root.OpenRoot, which shares delete, so that swap
+// can happen there and has no pin yet.
 func TestDeleteWorktreeDirStaysInItsParentAfterASwap(t *testing.T) {
 	base := t.TempDir()
 	parentDir := filepath.Join(base, "worktrees")
