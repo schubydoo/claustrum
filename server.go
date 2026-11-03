@@ -128,11 +128,11 @@ type server struct {
 	// releaseRunDir drops the run-dir lock (daemon.lock) on graceful shutdown if
 	// this daemon holds it: it truncates the owner record and unlocks the fd,
 	// leaving the file in place.
-	// A no-op on Windows (which has no run-dir lock). See daemon_runlock_unix.go.
+	// A no-op on Windows (which has no run-dir lock). See internal/runlock.
 	releaseRunDir func()
 	// stopLateLock ends the late tries of the run-dir lock when the shutdown begins
 	// (signalShutdown). A no-op unless the daemon started without the lock while
-	// another process held it (Linux and macOS, see daemon_runlock_late_unix.go).
+	// another process held it (Linux and macOS, see internal/runlock).
 	stopLateLock func()
 
 	// gitShadow is the settings control of the git methods: the state that git.info
@@ -574,14 +574,14 @@ func newServerOnSocket(socket, token, metricsAddr string, wlopt wirelog.Options,
 	// The claim evicts a prior live sibling serve daemon, so a restart
 	// deterministically replaces it. Best-effort: lockRunFolder never fails the boot,
 	// only logs and serves without ownership. It writes the short owner record. On
-	// Windows it takes no lock and prints one line (see daemon_runlock_windows.go).
+	// Windows it takes no lock and prints one line (see internal/runlock).
 	instanceID := newDaemonInstanceID()
 	claim := lockRunFolder(socket, "serve")
 	procs := newProcManager()
 	defer func() {
 		if !ok {
 			wlog.Close()
-			claim.release()
+			claim.Release()
 			procs.close()
 		}
 	}()
@@ -608,8 +608,8 @@ func newServerOnSocket(socket, token, metricsAddr string, wlopt wirelog.Options,
 	// A daemon that does not hold the run-dir lock runs no reap and writes no child
 	// record. A measurement shows that for a held flock (`5fd08069`, measured on
 	// Linux).
-	procs.noRecords = !claim.holder
-	if claim.holder {
+	procs.noRecords = !claim.Holder
+	if claim.Holder {
 		procs.reapOrphans()
 	}
 
@@ -636,7 +636,7 @@ func newServerOnSocket(socket, token, metricsAddr string, wlopt wirelog.Options,
 	// right after the bind. Measured on Linux against 89cb6289 (8 of 8 runs): the
 	// startedAt of the lock was within 1.5 ms of the listen call.
 	startedAt := time.Now().UnixMilli()
-	claim.complete(instanceID, startedAt)
+	claim.Complete(instanceID, startedAt)
 
 	// Persist the token beside the now-listenable socket so a client can
 	// reconnect to this daemon and re-authenticate after the original -token-file
@@ -673,8 +673,8 @@ func newServerOnSocket(socket, token, metricsAddr string, wlopt wirelog.Options,
 		idleTimeout:   idleConnTimeout,
 		sockInfo:      sockFI,
 		tokenInfo:     tokenFI,
-		releaseRunDir: claim.release,
-		stopLateLock:  claim.stopLate,
+		releaseRunDir: claim.Release,
+		stopLateLock:  claim.StopLate,
 		instanceID:    instanceID,
 		startedAt:     startedAt,
 		gitShadow:     git.NewShadowHost(execChildRunDir(socket)),
@@ -721,12 +721,6 @@ func readTokenFD(fd int) (string, error) {
 	}
 	return normalizeToken(b), nil
 }
-
-// runDirNotHolderLine is the line of a daemon that does not hold the run-dir lock. The text
-// is the reference's (f6010b97 and 89cb6289). On Windows no daemon holds such a lock, and
-// the line is the first line of every start (measured). On Linux the reference printed it
-// for a lock that another process holds (measured). See lockRunFolder.
-const runDirNotHolderLine = "[daemon] serve: not the run dir's lock holder; leaving any predecessor's children alone and recording none"
 
 // daemonLogName is the file the daemonized child's stdout and stderr are
 // redirected to, alongside the socket. The fixed name and location are the

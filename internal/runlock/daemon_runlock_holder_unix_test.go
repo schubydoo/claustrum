@@ -1,6 +1,6 @@
 //go:build unix
 
-package main
+package runlock
 
 import (
 	"fmt"
@@ -26,7 +26,7 @@ func TestClaimRunDirRefusesAHolderThatIsNotOurServeProcess(t *testing.T) {
 	shrinkEvictionGraces(t)
 	dir := shortTempDir(t)
 	sock := filepath.Join(dir, "s.sock")
-	lockPath := filepath.Join(dir, runDirLockName)
+	lockPath := filepath.Join(dir, LockName)
 	holder := spawnLockHolder(t, lockPath, "", "")
 
 	var (
@@ -53,9 +53,9 @@ func TestClaimRunDirRefusesAHolderThatIsNotOurServeProcess(t *testing.T) {
 	waitHolderLock = func(int, time.Duration) bool { return false }
 
 	buf := captureLogBuf(t)
-	claim := lockRunFolder(sock, "serve")
-	t.Cleanup(claim.release)
-	t.Cleanup(claim.stopLate)
+	claim := LockRunFolder(sock, "serve")
+	t.Cleanup(claim.Release)
+	t.Cleanup(claim.StopLate)
 
 	mu.Lock()
 	defer mu.Unlock()
@@ -65,7 +65,7 @@ func TestClaimRunDirRefusesAHolderThatIsNotOurServeProcess(t *testing.T) {
 	if len(sent) != 0 {
 		t.Errorf("signals sent to the holder = %v, want none", sent)
 	}
-	if claim.holder {
+	if claim.Holder {
 		t.Error("the claim took the lock from a holder that is not our serve process")
 	}
 	got := buf.String()

@@ -10,6 +10,7 @@ import (
 	"syscall"
 	"testing"
 
+	"github.com/schubydoo/claustrum/internal/runlock"
 	"github.com/schubydoo/claustrum/internal/wirelog"
 )
 
@@ -179,11 +180,11 @@ func TestNotLockHolderReapsAndRecordsNothing(t *testing.T) {
 				if err := syscall.Flock(fd, syscall.LOCK_EX|syscall.LOCK_NB); err != nil {
 					t.Fatalf("flock: %v", err)
 				}
-				oldHold := holdHolder
-				t.Cleanup(func() { holdHolder = oldHold })
-				holdHolder = func(int) (func(syscall.Signal) error, func()) {
+				oldHold := runlock.HoldHolderForTest()
+				t.Cleanup(func() { runlock.SetHoldHolderForTest(oldHold) })
+				runlock.SetHoldHolderForTest(func(int) (func(syscall.Signal) error, func()) {
 					return func(syscall.Signal) error { return syscall.ESRCH }, func() {}
-				}
+				})
 			}
 			name := writeRec(t, dir, orphanRecord(orphan, "/n", ""))
 			sim := newProcSim(t)

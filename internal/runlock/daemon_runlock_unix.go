@@ -1,6 +1,6 @@
 //go:build unix
 
-package main
+package runlock
 
 import (
 	"encoding/json"
@@ -34,7 +34,7 @@ import (
 // (internal/procinfo, daemon_runlock_linux.go), macOS uses sysctl (internal/procinfo,
 // daemon_runlock_darwin.go). Windows ships no run-dir lock at all
 // (daemon_runlock_windows.go).
-const runDirLockName = "daemon.lock"
+const LockName = "daemon.lock"
 
 // Eviction timing: after SIGTERM the new daemon tries the lock again every
 // runDirPollInterval for up to runDirTermGrace. Then it sends SIGKILL and tries the lock
@@ -79,11 +79,11 @@ var (
 // var, so a test drives the ladder with no real signal.
 var holdHolder = hcHoldDaemon
 
-// ownerRecord is the JSON the daemon writes into daemon.lock. The field order reproduces
+// OwnerRecord is the JSON the daemon writes into daemon.lock. The field order reproduces
 // the reference's record so a successor daemon reading it sees the same shape. Pid
 // has no omitempty (a 0 pid is still emitted). Role is "serve" for a serve daemon.
 // Node is omitted when the machine identity is unknown.
-type ownerRecord struct {
+type OwnerRecord struct {
 	Pid        int    `json:"pid"`
 	Role       string `json:"role,omitempty"`
 	Node       string `json:"node,omitempty"`
@@ -91,27 +91,27 @@ type ownerRecord struct {
 	StartedAt  int64  `json:"startedAt,omitempty"`
 }
 
-// runDirClaim is what lockRunFolder gives back to the daemon.
-type runDirClaim struct {
-	// release truncates the owner record and drops the flock on graceful shutdown. The
+// Claim is what LockRunFolder gives back to the daemon.
+type Claim struct {
+	// Release truncates the owner record and drops the flock on graceful shutdown. The
 	// file itself stays in place (not unlinked).
-	release func()
-	// complete writes the full owner record: the short record plus instanceId and
+	Release func()
+	// Complete writes the full owner record: the short record plus instanceId and
 	// startedAt. The daemon calls it after the reap of its start and the bind.
-	complete func(instanceID string, startedAt int64)
-	// holder says that this daemon holds the run-dir lock at its start.
-	holder bool
-	// stopLate ends the late tries of a daemon that started without the lock (see
+	Complete func(instanceID string, startedAt int64)
+	// Holder says that this daemon holds the run-dir lock at its start.
+	Holder bool
+	// StopLate ends the late tries of a daemon that started without the lock (see
 	// lateRunDirClaim). The daemon calls it when its shutdown begins. It is a no-op
 	// for every other claim.
-	stopLate func()
+	StopLate func()
 }
 
-// lockRunFolder takes the run-dir lock and writes the short owner record of this daemon:
+// LockRunFolder takes the run-dir lock and writes the short owner record of this daemon:
 // pid, role and node only. It evicts a prior live sibling serve daemon if one holds the
 // lock. It runs BEFORE the reap of the start and before the socket is bound.
 //
-// The record gets instanceId and startedAt later, through complete. Measured on Linux
+// The record gets instanceId and startedAt later, through Complete. Measured on Linux
 // and macOS against 89cb6289: while the new daemon waits for the recorded children of
 // a dead daemon to end, daemon.lock holds {"pid":<n>,"role":"serve","node":"<node>"}.
 // After that wait the same record has "instanceId" and "startedAt" too.
@@ -123,21 +123,21 @@ type runDirClaim struct {
 // The reference printed it on Linux (`f6010b97`, `89cb6289`, measured). There a process with no
 // daemon record held the lock, and two other lines came first. claustrum prints it on every arm that
 // ends without the lock. The other arms are not measured. The line says "recording none". Such a
-// daemon runs no reap and writes no child record, see newServerOnSocket. claustrum does so on every
+// daemon runs no reap and writes no child record, see newServerOnSocket (package main). claustrum does so on every
 // arm. A measurement shows the arm of a held flock (`5fd08069`, measured on Linux).
-func lockRunFolder(socket, role string) runDirClaim {
+func LockRunFolder(socket, role string) Claim {
 	dir := filepath.Dir(socket)
-	path := filepath.Join(dir, runDirLockName)
+	path := filepath.Join(dir, LockName)
 	// notHolder is the return of every arm that ends without the lock.
-	notHolder := func() runDirClaim {
-		logging.Infof("%s", runDirNotHolderLine)
-		return runDirClaim{release: func() {}, complete: func(string, int64) {}, stopLate: func() {}}
+	notHolder := func() Claim {
+		logging.Infof("%s", NotHolderLine)
+		return Claim{Release: func() {}, Complete: func(string, int64) {}, StopLate: func() {}}
 	}
 
 	// O_NOFOLLOW: never follow a pre-existing daemon.lock symlink. If the socket dir is
 	// shared-writable, another local user could plant a symlink to a daemon-writable file
 	// and have startup truncate it; O_NOFOLLOW makes the open fail (ELOOP) instead. Since
-	// lockRunFolder only ever creates daemon.lock as a regular file, the honest path is
+	// LockRunFolder only ever creates daemon.lock as a regular file, the honest path is
 	// unaffected. This matches the reference's observable behavior: measured on linux, the
 	// reference refuses a planted daemon.lock symlink and leaves the target untouched
 	// (measured on Linux), where pre-fix claustrum
@@ -153,23 +153,23 @@ func lockRunFolder(socket, role string) runDirClaim {
 	if !locked && heldElsewhere {
 		// Another process holds the lock and stays. The daemon keeps the descriptor and
 		// tries the lock again later (lateRunDirClaim).
-		logging.Infof("%s", runDirNotHolderLine)
+		logging.Infof("%s", NotHolderLine)
 		return lateRunDirClaim(fd, role)
 	}
 	if !locked {
 		_ = syscall.Close(fd)
 		return notHolder()
 	}
-	short := ownerRecord{Pid: os.Getpid(), Role: role, Node: nodeID()}
+	short := OwnerRecord{Pid: os.Getpid(), Role: role, Node: nodeID()}
 	writeOwnerRecord(fd, short)
-	return runDirClaim{
-		holder:   true,
-		stopLate: func() {},
-		release: func() {
+	return Claim{
+		Holder:   true,
+		StopLate: func() {},
+		Release: func() {
 			_ = syscall.Ftruncate(fd, 0)
 			_ = syscall.Close(fd)
 		},
-		complete: func(instanceID string, startedAt int64) {
+		Complete: func(instanceID string, startedAt int64) {
 			full := short
 			full.InstanceID, full.StartedAt = instanceID, startedAt
 			// No truncate here. The full record is the short record plus two members, so
@@ -368,7 +368,7 @@ var stopTermGrace = 4 * time.Second
 // shrink it.
 var stopKillGrace = 1500 * time.Millisecond
 
-// stopRunDirHolder is the -stop fallback after the connect to the socket failed. It
+// StopRunDirHolder is the -stop fallback after the connect to the socket failed. It
 // returns the stdout word. Measured against f6010b97 and 90fca6e6 on Linux:
 //
 //   - If daemon.lock is missing or free, the word is "none".
@@ -403,7 +403,7 @@ var stopKillGrace = 1500 * time.Millisecond
 // the removals. A new -serve takes the lock before it binds, so it cannot bind a
 // socket that -stop then removes. Measured with strace on Linux, the reference
 // takes the lock and removes both files before it writes its word.
-func stopRunDirHolder(socket string) (string, func()) {
+func StopRunDirHolder(socket string) (string, func()) {
 	word, fd := stopRunDirHolderFD(socket)
 	if fd < 0 {
 		return word, func() {}
@@ -411,30 +411,30 @@ func stopRunDirHolder(socket string) (string, func()) {
 	return word, func() { _ = syscall.Close(fd) }
 }
 
-// stopRunDirHolderFD does the work of stopRunDirHolder. It returns the open lock
+// stopRunDirHolderFD does the work of StopRunDirHolder. It returns the open lock
 // fd, or -1 when daemon.lock could not be opened.
 func stopRunDirHolderFD(socket string) (string, int) {
-	path := filepath.Join(filepath.Dir(socket), runDirLockName)
+	path := filepath.Join(filepath.Dir(socket), LockName)
 	fd, err := syscall.Open(path, syscall.O_RDWR|syscall.O_CLOEXEC|syscall.O_NOFOLLOW, 0)
 	if err != nil {
-		return stopWordNone, -1
+		return StopWordNone, -1
 	}
 	if err := syscall.Flock(fd, syscall.LOCK_EX|syscall.LOCK_NB); err != syscall.EWOULDBLOCK {
 		// Free (this process now holds it until the deferred close), or flock is
 		// not supported here. No live daemon can be named either way.
-		return stopWordNone, fd
+		return StopWordNone, fd
 	}
 	return stopSignalHolder(fd, path, socket), fd
 }
 
 // stopSignalHolder is the signal ladder of -stop for a lock that another process
 // holds on fd. It returns the word. Both -stop paths use it: the one after a failed
-// connect and the one after the lock wait of stopAfterReply.
+// connect and the one after the lock wait of StopAfterReply.
 func stopSignalHolder(fd int, path, socket string) string {
 	holder, err := readOwnerRecord(path)
 	if err != nil || holderSignalRefusal(holder, socket) != "" {
 		logging.Warnf("[daemon] stop: WARNING %s is held by a live process we will not signal (pid %d is not a %s --serve process for %s); leaving it alone", path, holder.Pid, selfBase(), socket)
-		return stopWordSurvivor
+		return StopWordSurvivor
 	}
 	// The two lines below name the instance only when the record has one, as the serve
 	// eviction lines do. Measured on Linux against 89cb6289: for the short record of a
@@ -443,11 +443,11 @@ func stopSignalHolder(fd int, path, socket string) string {
 	logging.Infof("[daemon] stop: run dir is held by a live daemon, %s; sending SIGTERM", who)
 	if !signalHolder(holder.Pid, syscall.SIGTERM) && !holderGone(holder.Pid) {
 		// The holder is present but SIGTERM did not reach it. -stop leaves it.
-		return stopWordSurvivor
+		return StopWordSurvivor
 	}
 	if waitLockFree(fd, stopTermGrace) {
 		logging.Infof("[daemon] stop: previous daemon %s exited after SIGTERM", who)
-		return stopWordTerminated
+		return StopWordTerminated
 	}
 	// Check the holder again before SIGKILL, as the serve eviction does. If its pid
 	// now names another process, a SIGKILL hits that process instead.
@@ -457,20 +457,20 @@ func stopSignalHolder(fd int, path, socket string) string {
 		// that names a holder with no instance is not measured.
 		if now, err := readOwnerRecord(path); err == nil && now.Pid != holder.Pid {
 			logging.Warnf("[daemon] stop: %s changed hands during eviction (now %s); leaving the new holder alone", path, holderText(now))
-			return stopWordSurvivor
+			return StopWordSurvivor
 		}
 		logging.Warnf("[daemon] stop: pid %d is no longer our serve holder before SIGKILL (%s); leaving it alone", holder.Pid, reason)
-		return stopWordSurvivor
+		return StopWordSurvivor
 	}
 	logging.Warnf("[daemon] stop: WARNING previous daemon pid %d (instance %q) ignored SIGTERM for %s; sending SIGKILL (its Claude Code children, if any, are ended next, before this daemon serves)", holder.Pid, holder.InstanceID, stopTermGrace)
 	if !signalHolder(holder.Pid, syscall.SIGKILL) && !holderGone(holder.Pid) {
-		return stopWordSurvivor
+		return StopWordSurvivor
 	}
 	if !waitLockFree(fd, stopKillGrace) {
 		logging.Warnf("[daemon] stop: WARNING previous daemon pid %d (instance %q) survived SIGKILL (uninterruptible?); proceeding without run-dir ownership", holder.Pid, holder.InstanceID)
-		return stopWordSurvivor
+		return StopWordSurvivor
 	}
-	return stopWordKilled
+	return StopWordKilled
 }
 
 // stopLockWait is how long -stop tries daemon.lock after its shutdown request, before
@@ -483,7 +483,7 @@ var stopLockWait = 3 * time.Second
 // it.
 var stopForeignWait = 500 * time.Millisecond
 
-// stopAfterReply is the step of -stop after the read of the shutdown reply, on Linux
+// StopAfterReply is the step of -stop after the read of the shutdown reply, on Linux
 // and macOS. It returns the word and a release func. 5fd08069 does these steps
 // (measured on Linux and macOS):
 //
@@ -504,11 +504,11 @@ var stopForeignWait = 500 * time.Millisecond
 //
 // claustrum's own, not measured: no usable daemon.lock gives "stopped" at once. That
 // is a failed open, or a flock error other than EWOULDBLOCK.
-func stopAfterReply(socket string) (string, func()) {
-	path := filepath.Join(filepath.Dir(socket), runDirLockName)
+func StopAfterReply(socket string) (string, func()) {
+	path := filepath.Join(filepath.Dir(socket), LockName)
 	fd, err := syscall.Open(path, syscall.O_RDWR|syscall.O_CLOEXEC|syscall.O_NOFOLLOW, 0)
 	if err != nil {
-		return stopWordStopped, func() {}
+		return StopWordStopped, func() {}
 	}
 	closeLock := func() { _ = syscall.Close(fd) }
 	release := func() {
@@ -517,7 +517,7 @@ func stopAfterReply(socket string) (string, func()) {
 	}
 	locked, held := tryLockFor(fd, stopLockWait)
 	if locked || !held {
-		return stopWordStopped, closeLock
+		return StopWordStopped, closeLock
 	}
 	// The role test and its line are the ones of the serve eviction, with "stop:".
 	// The line is the one of 5fd08069 (measured on Linux).
@@ -527,16 +527,16 @@ func stopAfterReply(socket string) (string, func()) {
 		// Linux and macOS). A lock that comes free in these tries gives "stopped". That
 		// arm is claustrum's own, not measured.
 		if locked, _ := tryLockFor(fd, stopForeignWait); locked {
-			return stopWordStopped, closeLock
+			return StopWordStopped, closeLock
 		}
 		logging.Warnf("[daemon] stop: WARNING %s is held by a live process we will not signal (its holder is not a daemon (role %q)); leaving it alone", path, holder.Role)
-		return stopWordSurvivor, closeLock
+		return StopWordSurvivor, closeLock
 	}
 	word := stopSignalHolder(fd, path, socket)
-	if word != stopWordTerminated && word != stopWordKilled {
+	if word != StopWordTerminated && word != StopWordKilled {
 		return word, closeLock
 	}
-	writeOwnerRecord(fd, ownerRecord{Pid: os.Getpid(), Role: "stop", Node: nodeID()})
+	writeOwnerRecord(fd, OwnerRecord{Pid: os.Getpid(), Role: "stop", Node: nodeID()})
 	_ = os.Remove(socket)
 	_ = os.Remove(filepath.Join(tokenFileDir(socket), persistedTokenName))
 	return word, release
@@ -585,7 +585,7 @@ func waitLockFree(fd int, grace time.Duration) bool {
 // SIGKILL line. A record with no instance, the short record of a daemon that has not
 // bound yet, gives `pid <n>` in the SIGTERM line and the exited line (measured) and in
 // the SIGKILL line.
-func holderText(holder ownerRecord) string {
+func holderText(holder OwnerRecord) string {
 	if holder.InstanceID == "" {
 		return fmt.Sprintf("pid %d", holder.Pid)
 	}
@@ -638,7 +638,7 @@ func realHolderGone(pid int) bool { return syscall.Kill(pid, 0) == syscall.ESRCH
 // macOS); claustrum instead verifies via KERN_PROCARGS2, so it refuses to signal a pid
 // that is not our serve process. That is an intentional hardening divergence — see
 // docs/DIVERGENCES.md D15.
-func holderSignalRefusal(holder ownerRecord, socket string) string {
+func holderSignalRefusal(holder OwnerRecord, socket string) string {
 	if reason := holderRecordRefusal(holder); reason != "" {
 		return reason
 	}
@@ -647,7 +647,7 @@ func holderSignalRefusal(holder ownerRecord, socket string) string {
 
 // holderRecordRefusal holds the guards of holderSignalRefusal that test the record
 // only. They read nothing of the process of the holder.
-func holderRecordRefusal(holder ownerRecord) string {
+func holderRecordRefusal(holder OwnerRecord) string {
 	if holder.Role != "serve" {
 		return "holder is not a serve daemon"
 	}
@@ -669,7 +669,7 @@ func holderRecordRefusal(holder ownerRecord) string {
 
 // holderProcessRefusal holds the guards of holderSignalRefusal that read the process
 // of the holder: its pid namespace (Linux) and its command line.
-func holderProcessRefusal(holder ownerRecord, socket string) string {
+func holderProcessRefusal(holder OwnerRecord, socket string) string {
 	if reason := pidNamespaceRefusal(holder.Pid); reason != "" {
 		return reason
 	}
@@ -688,7 +688,7 @@ func matchesServeArgv(argv []string, socket, self string) bool {
 	if len(argv) == 0 || self == "" || filepath.Base(argv[0]) != self {
 		return false
 	}
-	// Compare socket paths by their cleaned form. lockRunFolder derives the lock path with
+	// Compare socket paths by their cleaned form. LockRunFolder derives the lock path with
 	// filepath.Join (which cleans) and the kernel cleans the bind path, so "/d/./rpc.sock"
 	// and "/d/rpc.sock" share one daemon.lock and one endpoint. An exact string compare
 	// would fail to recognise the holder across those equivalent spellings, refuse to
@@ -729,7 +729,7 @@ func selfBase() string {
 // already-locked fd, truncating first so a shorter record never leaves stale trailing
 // bytes. Best-effort: a marshal or write failure leaves the lock held but the record
 // empty, and the daemon still serves.
-func writeOwnerRecord(fd int, rec ownerRecord) {
+func writeOwnerRecord(fd int, rec OwnerRecord) {
 	data, err := json.Marshal(rec)
 	if err != nil {
 		return
@@ -742,8 +742,8 @@ func writeOwnerRecord(fd int, rec ownerRecord) {
 }
 
 // readOwnerRecord reads and parses the owner record from the lock file.
-func readOwnerRecord(path string) (ownerRecord, error) {
-	var rec ownerRecord
+func readOwnerRecord(path string) (OwnerRecord, error) {
+	var rec OwnerRecord
 	b, err := os.ReadFile(path)
 	if err != nil {
 		return rec, err

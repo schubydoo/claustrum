@@ -1,6 +1,6 @@
 //go:build linux
 
-package main
+package runlock
 
 import (
 	"os"
@@ -85,7 +85,7 @@ func TestHolderSignalRefusalUninspectablePidLinux(t *testing.T) {
 	isServeCmdline = func(int, string) bool { return true }
 	t.Cleanup(func() { isServeCmdline = old })
 
-	r := ownerRecord{Pid: 2, Role: "serve", Node: self}
+	r := OwnerRecord{Pid: 2, Role: "serve", Node: self}
 	if got := holderSignalRefusal(r, "/run/x/s.sock"); got != "holder cannot be inspected" {
 		t.Errorf("holderSignalRefusal(uninspectable pid) = %q, want the pid-namespace refusal", got)
 	}

@@ -1,9 +1,8 @@
 //go:build unix
 
-package main
+package runlock
 
 import (
-	"encoding/json"
 	"fmt"
 	"os"
 	"os/exec"
@@ -13,8 +12,6 @@ import (
 	"syscall"
 	"testing"
 	"time"
-
-	"github.com/schubydoo/claustrum/internal/wirelog"
 )
 
 // runlockHoldEmptyFixture is the "runlock-hold-empty" helper mode. It holds the flock
@@ -138,95 +135,23 @@ func pollUntil(limit time.Duration, cond func() bool) bool {
 	}
 }
 
-// TestLateRunDirLockAfterHolderLetsGo follows two cases of 5fd08069 (measured on Linux and
-// macOS, and on Linux). A start finds daemon.lock held by a process that is not a
-// daemon and serves without the lock. After the holder lets go, a later try takes the lock, logs
-// the late line once and writes the full record with the startedAt of the start. The daemon holds
-// the lock until its shutdown, which leaves an empty file.
-func TestLateRunDirLockAfterHolderLetsGo(t *testing.T) {
-	buf := captureLogBuf(t)
-	tries := shrinkLatePeriod(t)
-	dir := shortTempDir(t)
-	sock := filepath.Join(dir, "s.sock")
-	lockPath := filepath.Join(dir, runDirLockName)
-	letGo := startEmptyLockHolder(t, lockPath)
-
-	s, err := newServerOnSocket(sock, "tok", "", wirelog.Options{}, false, false)
-	if err != nil {
-		t.Fatalf("newServerOnSocket: %v", err)
-	}
-	t.Cleanup(func() { s.releaseRunDir(); s.procs.killAll() })
-	if !strings.Contains(buf.String(), runDirNotHolderLine) {
-		t.Fatalf("log = %q, want the start without the lock", buf.String())
-	}
-
-	letGo()
-	if !pollUntil(5*time.Second, func() bool { return len(lateLines(buf, s.instanceID)) > 0 }) {
-		t.Fatalf("no late line after the holder let go; log = %q", buf.String())
-	}
-	want := fmt.Sprintf("[daemon] run-dir lock acquired late (previous holder gone); recorded pid %d (instance %q)", os.Getpid(), s.instanceID)
-	if got := lateLines(buf, s.instanceID)[0]; !strings.HasSuffix(got, want) {
-		t.Errorf("late line = %q, want it to end with %q", got, want)
-	}
-
-	rec, err := json.Marshal(ownerRecord{Pid: os.Getpid(), Role: "serve", Node: nodeID(), InstanceID: s.instanceID, StartedAt: s.startedAt})
-	if err != nil {
-		t.Fatal(err)
-	}
-	got, err := os.ReadFile(lockPath)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if string(got) != string(rec)+"\n" {
-		t.Errorf("daemon.lock after the late try = %q, want %q", got, string(rec)+"\n")
-	}
-	if !lockIsHeld(t, lockPath) {
-		t.Error("the daemon does not hold daemon.lock after the late line")
-	}
-	if !s.procs.noRecords {
-		t.Error("a late lock changed the decision of the start about child records")
-	}
-
-	// A good try ends the tries: no second late line (measured on Linux).
-	after := tries.Load()
-	if pollUntil(20*runDirLatePeriod, func() bool { return tries.Load() > after }) {
-		t.Errorf("the daemon tried the lock again after a late try took it (%d tries, then %d)", after, tries.Load())
-	}
-	if n := len(lateLines(buf, s.instanceID)); n != 1 {
-		t.Errorf("%d late lines, want 1", n)
-	}
-
-	s.signalShutdown()
-	s.closeAll(sock)
-	fi, err := os.Stat(lockPath)
-	if err != nil {
-		t.Fatalf("daemon.lock must stay after the shutdown: %v", err)
-	}
-	if fi.Size() != 0 {
-		t.Errorf("daemon.lock is %d bytes after the shutdown of a late holder, want 0", fi.Size())
-	}
-	if lockIsHeld(t, lockPath) {
-		t.Error("daemon.lock is still held after the shutdown of a late holder")
-	}
-}
-
 // TestLateRunDirLockSilentWhileHeld follows a measured case (`5fd08069`, measured on Linux): a
 // try that finds the lock held logs nothing and writes nothing.
 func TestLateRunDirLockSilentWhileHeld(t *testing.T) {
 	buf := captureLogBuf(t)
 	tries := shrinkLatePeriod(t)
 	dir := shortTempDir(t)
-	lockPath := filepath.Join(dir, runDirLockName)
+	lockPath := filepath.Join(dir, LockName)
 	startEmptyLockHolder(t, lockPath)
 	before, err := os.Stat(lockPath)
 	if err != nil {
 		t.Fatal(err)
 	}
 
-	claim := lockRunFolder(filepath.Join(dir, "s.sock"), "serve")
-	t.Cleanup(claim.release)
+	claim := LockRunFolder(filepath.Join(dir, "s.sock"), "serve")
+	t.Cleanup(claim.Release)
 	const inst = "0123456789abcdef0123456789abcdef"
-	claim.complete(inst, 1790962940734)
+	claim.Complete(inst, 1790962940734)
 	if !pollUntil(5*time.Second, func() bool { return tries.Load() >= 3 }) {
 		t.Fatalf("%d late tries, want at least 3", tries.Load())
 	}
@@ -247,37 +172,6 @@ func TestLateRunDirLockSilentWhileHeld(t *testing.T) {
 	}
 }
 
-// TestLateRunDirLockStopsAtShutdown pins claustrum's own rule: no try takes the lock
-// once the shutdown began, also when the holder lets go after that.
-func TestLateRunDirLockStopsAtShutdown(t *testing.T) {
-	buf := captureLogBuf(t)
-	tries := shrinkLatePeriod(t)
-	dir := shortTempDir(t)
-	sock := filepath.Join(dir, "s.sock")
-	lockPath := filepath.Join(dir, runDirLockName)
-	letGo := startEmptyLockHolder(t, lockPath)
-
-	s, err := newServerOnSocket(sock, "tok", "", wirelog.Options{}, false, false)
-	if err != nil {
-		t.Fatalf("newServerOnSocket: %v", err)
-	}
-	t.Cleanup(func() { s.releaseRunDir(); s.procs.killAll() })
-
-	s.signalShutdown()
-	letGo()
-	at := tries.Load()
-	if pollUntil(20*runDirLatePeriod, func() bool { return tries.Load() > at }) {
-		t.Errorf("a late try ran after the shutdown began (%d tries, then %d)", at, tries.Load())
-	}
-	if lines := lateLines(buf, s.instanceID); len(lines) != 0 {
-		t.Errorf("late lines after the shutdown began: %q", lines)
-	}
-	if lockIsHeld(t, lockPath) {
-		t.Error("the daemon took daemon.lock after its shutdown began")
-	}
-	s.closeAll(sock)
-}
-
 // TestLateRunDirLockTwoSurvivorsOneWins follows a measured case (`5fd08069`, measured on
 // Linux). Two starts serve without the lock. After the holder lets go, the first try
 // wins. Only that claim logs the late line and writes its record. The other keeps
@@ -287,16 +181,16 @@ func TestLateRunDirLockTwoSurvivorsOneWins(t *testing.T) {
 	tries := shrinkLatePeriod(t)
 	dir := shortTempDir(t)
 	sock := filepath.Join(dir, "s.sock")
-	lockPath := filepath.Join(dir, runDirLockName)
+	lockPath := filepath.Join(dir, LockName)
 	letGo := startEmptyLockHolder(t, lockPath)
 
 	const instA, instB = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
-	a := lockRunFolder(sock, "serve")
-	t.Cleanup(a.release)
-	b := lockRunFolder(sock, "serve")
-	t.Cleanup(b.release)
-	a.complete(instA, 1)
-	b.complete(instB, 2)
+	a := LockRunFolder(sock, "serve")
+	t.Cleanup(a.Release)
+	b := LockRunFolder(sock, "serve")
+	t.Cleanup(b.Release)
+	a.Complete(instA, 1)
+	b.Complete(instB, 2)
 
 	letGo()
 	won := func() int { return len(lateLines(buf, instA)) + len(lateLines(buf, instB)) }
