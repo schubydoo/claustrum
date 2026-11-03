@@ -10,6 +10,8 @@ import (
 	"strings"
 	"syscall"
 	"testing"
+
+	"github.com/schubydoo/claustrum/internal/sysproc"
 )
 
 // TestRealReadLiveProcStatArms covers the two stat-level verdicts of the reap's process
@@ -65,7 +67,7 @@ func TestKillGroupAndGroupAliveRealBodies(t *testing.T) {
 	}
 
 	// A group this test creates and then ends, which is the shape the reap actually meets.
-	// newSysProcAttr sets Setpgid, so the helper LEADS its own group and its pid really is a
+	// sysproc.NewSysProcAttr sets Setpgid, so the helper LEADS its own group and its pid really is a
 	// process-group id; started without it the helper joins the test runner's group and its
 	// pid is a number that was never a pgid, so the "reaped group" answers below would prove
 	// nothing about a group. Its own group is also what makes the SIGKILL safe: it can reach
@@ -73,7 +75,7 @@ func TestKillGroupAndGroupAliveRealBodies(t *testing.T) {
 	exe, env := helperCommand(t, "sleep")
 	cmd := exec.Command(exe, "60")
 	cmd.Env = buildEnv(env)
-	cmd.SysProcAttr = newSysProcAttr()
+	cmd.SysProcAttr = sysproc.NewSysProcAttr()
 	if err := cmd.Start(); err != nil {
 		t.Fatalf("helper: %v", err)
 	}

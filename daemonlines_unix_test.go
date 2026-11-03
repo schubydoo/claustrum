@@ -10,6 +10,8 @@ import (
 	"syscall"
 	"testing"
 	"time"
+
+	"github.com/schubydoo/claustrum/internal/wirelog"
 )
 
 // The daemon lines of the run-dir lock and of the orphan self-exit. A Linux test measured
@@ -76,7 +78,7 @@ func TestClaimRunDirHolderGetsNoNotHolderLine(t *testing.T) {
 func TestLockInstanceIsTheDaemonInstance(t *testing.T) {
 	dir := shortTempDir(t)
 	sock := filepath.Join(dir, "rpc.sock")
-	s, err := newServerOnSocket(sock, "tok", "", wireLogOptions{}, false, false)
+	s, err := newServerOnSocket(sock, "tok", "", wirelog.Options{}, false, false)
 	if err != nil {
 		t.Fatalf("newServerOnSocket: %v", err)
 	}
@@ -96,7 +98,7 @@ func TestOrphanExitLines(t *testing.T) {
 	shrinkOrphanTimers(t, 10*time.Millisecond, 20*time.Millisecond)
 	dir := shortTempDir(t)
 	sock := filepath.Join(dir, "s.sock")
-	s, err := newServerOnSocket(sock, "orphan-tok", "", wireLogOptions{}, false, false)
+	s, err := newServerOnSocket(sock, "orphan-tok", "", wirelog.Options{}, false, false)
 	if err != nil {
 		t.Fatalf("newServerOnSocket: %v", err)
 	}
