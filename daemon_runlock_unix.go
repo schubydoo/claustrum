@@ -31,8 +31,9 @@ import (
 //
 // This file is the shared core for both unix targets. The machine identity (nodeID)
 // and the holder-verification reads are OS-split: Linux uses /proc
-// (daemon_runlock_linux.go), macOS uses sysctl (daemon_runlock_darwin.go). Windows
-// ships no run-dir lock at all (daemon_runlock_windows.go).
+// (procinfo_linux.go, daemon_runlock_linux.go), macOS uses sysctl (procinfo_darwin.go,
+// daemon_runlock_darwin.go). Windows ships no run-dir lock at all
+// (daemon_runlock_windows.go).
 const runDirLockName = "daemon.lock"
 
 // Eviction timing: after SIGTERM the new daemon tries the lock again every

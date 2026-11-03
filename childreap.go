@@ -152,9 +152,6 @@ var (
 	// readLiveProc reads a live process. wantEnv also reads the program and env markers.
 	// realReadLiveProc is OS-specific (childreap_linux.go / childreap_darwin.go).
 	readLiveProc = realReadLiveProc
-	// killGroup signals the whole process group led by pid (kill(-pid, sig)), the reap's
-	// only destructive call.
-	killGroup = func(pid int, sig syscall.Signal) error { return syscall.Kill(-pid, sig) }
 	// groupAlive reports whether the process group led by pid still has any member
 	// (kill(-pid, 0) succeeds). It stays true after the leader exits while a group member
 	// lingers, so the wait can clean up a survivor the leader's exit would otherwise hide.

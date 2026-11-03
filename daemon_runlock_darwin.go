@@ -5,32 +5,19 @@ package main
 import (
 	"bytes"
 	"encoding/binary"
-	"strings"
 
 	"golang.org/x/sys/unix"
 )
 
 // macOS machine identity and holder verification for the run-dir lock. macOS has no
-// /proc, so the node comes from sysctl kern.bootsessionuuid and the holder's command
-// line comes from sysctl KERN_PROCARGS2.
+// /proc, so the node comes from sysctl kern.bootsessionuuid (nodeID, procinfo_darwin.go)
+// and the holder's command line comes from sysctl KERN_PROCARGS2.
 //
 // The reference's macOS build does not verify the holder's command line before
 // signalling it: it sends SIGTERM to the recorded pid unverified (observed
 // on macOS — it signals even a pid that is not a serve process). claustrum instead
 // verifies via KERN_PROCARGS2 and refuses to signal a pid that is not our serve process.
 // That is an intentional hardening divergence — see docs/DIVERGENCES.md D15.
-
-// nodeID returns the macOS machine identity: the per-boot session UUID from sysctl
-// kern.bootsessionuuid, trimmed of a trailing NUL and surrounding whitespace. Unlike
-// Linux there is no pid-namespace component (macOS has no pid namespaces). It returns ""
-// on sysctl error, which makes the signal guard refuse eviction.
-func nodeID() string {
-	uuid, err := unix.Sysctl("kern.bootsessionuuid")
-	if err != nil {
-		return ""
-	}
-	return strings.TrimSpace(strings.Trim(uuid, "\x00"))
-}
 
 // pidNamespaceRefusal is a no-op on macOS: there are no pid namespaces to compare, so
 // this guard never refuses. The machine-identity (node) and command-line guards carry
