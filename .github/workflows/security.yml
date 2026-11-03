@@ -199,7 +199,11 @@ jobs:
 
   security-required-checks-passed:
     name: security required checks passed
-    if: always()
+    # Not always(). If the run is cancelled, this job ends cancelled, not failed
+    # (seen in runs of this repo, the GitHub docs do not say it). A cancelled
+    # context does not pass the gate. A failed or cancelled job in a run that
+    # goes on still fails this job.
+    if: ${{ !cancelled() }}
     needs:
       - changes
       - codeql
