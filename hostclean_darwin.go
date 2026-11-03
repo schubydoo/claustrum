@@ -519,13 +519,6 @@ func hcLockHeldAt(path string, _ os.FileInfo) (held, asked bool) {
 	return false, true
 }
 
-// hcHoldDaemon returns a send that signals the single process pid with kill. darwin has no
-// pid file descriptor, so there is no hold and release does nothing. Which call the macOS
-// reference uses to retire a daemon is not measured.
-func hcHoldDaemon(pid int) (send func(syscall.Signal) error, release func()) {
-	return func(sig syscall.Signal) error { return syscall.Kill(pid, sig) }, func() {}
-}
-
 // hcSelfExe returns this daemon's own executable path, from its KERN_PROCARGS2 exec path — the
 // same source inspect uses for other processes, so the deployed-daemon check is consistent.
 func hcSelfExe() (exe string, ok bool) {

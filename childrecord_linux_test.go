@@ -9,6 +9,8 @@ import (
 	"strconv"
 	"strings"
 	"testing"
+
+	"github.com/schubydoo/claustrum/internal/procinfo"
 )
 
 // TestMachineID pins the /etc/machine-id -> /var/lib/dbus/machine-id fallback:
@@ -217,9 +219,9 @@ func TestRecordChildNoProcLogsAndWritesNothing(t *testing.T) {
 	m.runDir = runDir
 	m.instanceID = "x"
 
-	oldRoot := procRoot
-	t.Cleanup(func() { procRoot = oldRoot })
-	procRoot = standIn
+	oldRoot := procRoot()
+	t.Cleanup(func() { procinfo.SetRootForTest(oldRoot) })
+	procinfo.SetRootForTest(standIn)
 	out := captureLog(t, func() { m.recordChild(self, "/bin/sleep", "") })
 	if !strings.Contains(out, line) {
 		t.Errorf("log = %q, want the line %q", out, line)
@@ -228,7 +230,7 @@ func TestRecordChildNoProcLogsAndWritesNothing(t *testing.T) {
 		t.Errorf("children folder: err = %v, want none made", err)
 	}
 
-	procRoot = oldRoot
+	procinfo.SetRootForTest(oldRoot)
 	out = captureLog(t, func() { m.recordChild(bogus, "/bin/sleep", "") })
 	if strings.Contains(out, "start time of pid "+strconv.Itoa(bogus)+" ") {
 		t.Errorf("log = %q, want no start-time line while /proc works", out)

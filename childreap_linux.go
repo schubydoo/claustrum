@@ -15,10 +15,6 @@ import (
 // gathers this daemon's node/host identity from the linux sources. The shared decision
 // logic (reapOrphans, verifyOrphan, the two-phase wait) lives in childreap.go.
 
-// procRoot is the /proc mount realReadLiveProc reads. A var so a test can point it at a
-// fake procfs tree and exercise the parse-error arms.
-var procRoot = "/proc"
-
 // procReadFile reads one file of a /proc/<pid> folder. A var so a test can let the
 // process end between two reads of one realReadLiveProc call.
 var procReadFile = os.ReadFile
@@ -49,7 +45,7 @@ const unparseableStat = "unparseable stat"
 // measured). Another namespace gives procNotOurs, as before. With no own link there
 // is no test, as before (not measured).
 func pidNamespace(proc string) (state int, why string) {
-	self, err := os.Readlink(procRoot + "/self/ns/pid")
+	self, err := os.Readlink(procRoot() + "/self/ns/pid")
 	if err != nil {
 		return procAlive, ""
 	}
@@ -84,7 +80,7 @@ func pidNamespace(proc string) (state int, why string) {
 // mode 000 or does not parse (measured on Linux).
 func realReadLiveProc(pid int, wantEnv bool) liveProc {
 	lp := liveProc{state: procGone}
-	proc := procRoot + "/" + strconv.Itoa(pid)
+	proc := procRoot() + "/" + strconv.Itoa(pid)
 	stat, err := procReadFile(proc + "/stat")
 	if err != nil {
 		switch {

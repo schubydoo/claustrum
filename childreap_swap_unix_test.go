@@ -13,6 +13,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/schubydoo/claustrum/internal/procinfo"
 	"github.com/schubydoo/claustrum/internal/sysproc"
 )
 
@@ -58,13 +59,13 @@ func TestReapOrphansRefusesRecordSwappedAfterTypeTest(t *testing.T) {
 	sim := newProcSim(t)
 	sim.addVerified(helper, "9000", runDir)
 	// A kill reaches the real helper only, and every other pid gets none.
-	killGroup = func(pid int, sig syscall.Signal) error {
+	procinfo.SetKillGroupForTest(func(pid int, sig syscall.Signal) error {
 		sim.kills = append(sim.kills, killRec{pid, sig})
 		if pid != helper {
 			return nil
 		}
 		return cmd.Process.Signal(sig)
-	}
+	})
 
 	swaps := 0
 	t.Run("swap", func(t *testing.T) {

@@ -10,39 +10,9 @@ import (
 
 // Linux machine identity and holder verification for the run-dir lock, read from /proc.
 // Matches the reference's Linux build: the node is the boot id joined to the pid
-// namespace inode, the holder's command line comes from /proc/<pid>/cmdline, and the
-// pid-namespace guard compares /proc/<pid>/ns/pid to our own.
-
-// readBootID and osReadlink are seams over the /proc reads below. On the hosts
-// this suite runs on the boot id is readable and non-empty and the pid-namespace
-// link resolves; a procfs mounted subset=pid (systemd ProcSubset=) hides the boot
-// id — the case the "" arms exist for — but no fixture can remount /proc, so
-// nodeID's three "" arms and pidNamespaceRefusal's unreadable-self arm are
-// unreachable without stand-ins.
-var (
-	readBootID = func() ([]byte, error) { return os.ReadFile("/proc/sys/kernel/random/boot_id") }
-	osReadlink = os.Readlink
-)
-
-// nodeID builds the machine-plus-pid-namespace identity the reference writes into the
-// owner record: the boot id joined to the pid-namespace
-// inode with a single "/". It returns "" when either part is unavailable, and an empty
-// node makes the signal guard refuse eviction.
-func nodeID() string {
-	boot, err := readBootID()
-	if err != nil {
-		return ""
-	}
-	b := strings.TrimSpace(string(boot))
-	if b == "" {
-		return ""
-	}
-	ns, err := osReadlink("/proc/self/ns/pid")
-	if err != nil {
-		return ""
-	}
-	return b + "/" + ns
-}
+// namespace inode (nodeID, internal/procinfo), the holder's command line comes
+// from /proc/<pid>/cmdline, and the pid-namespace guard compares /proc/<pid>/ns/pid
+// to our own.
 
 // pidNamespaceRefusal returns a reason to refuse when pid is not verifiably in our own
 // pid namespace. A missing /proc/<pid> (ENOENT) means the holder already exited, which

@@ -12,6 +12,8 @@ import (
 	"syscall"
 	"testing"
 	"time"
+
+	"github.com/schubydoo/claustrum/internal/procinfo"
 )
 
 // The run-dir tidy pass and the sweep orchestration. The tidy pass renames and deletes
@@ -330,7 +332,7 @@ func TestPassBailsWhenTheProcessListIsUnreadable(t *testing.T) {
 
 	// The self-probe succeeds (the socket leads to this process), and only then the process
 	// list turns out to be unreadable. The pass must stop there.
-	procRoot = filepath.Join(root, "gone")
+	procinfo.SetRootForTest(filepath.Join(root, "gone"))
 	c := &hostCleaner{
 		roots:     &hostRoots{roots: []string{base}, daemonBin: "server"},
 		ownSocket: ownSock, ownRunDir: filepath.Dir(ownSock), selfPid: os.Getpid(),

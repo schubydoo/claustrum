@@ -13,6 +13,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/schubydoo/claustrum/internal/procinfo"
 	"github.com/schubydoo/claustrum/internal/sysproc"
 )
 
@@ -79,7 +80,7 @@ func endChildBeforeRead(t *testing.T, pid int, file string, end func()) {
 	t.Cleanup(func() { procReadFile = old })
 	ended := false
 	procReadFile = func(name string) ([]byte, error) {
-		if !ended && name == procRoot+"/"+strconv.Itoa(pid)+"/"+file {
+		if !ended && name == procRoot()+"/"+strconv.Itoa(pid)+"/"+file {
 			ended = true
 			end()
 		}
@@ -171,17 +172,17 @@ func TestReapChildThatReplacesItsProgramGetsNoSIGKILL(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	oldKill, oldRead, oldSleep := killGroup, procReadFile, reapSleep
-	t.Cleanup(func() { killGroup, procReadFile, reapSleep = oldKill, oldRead, oldSleep })
+	oldKill, oldRead, oldSleep := procinfo.KillGroupForTest(), procReadFile, reapSleep
+	t.Cleanup(func() { procinfo.SetKillGroupForTest(oldKill); procReadFile, reapSleep = oldRead, oldSleep })
 	var kills []killRec
 	termed, paused := false, false
-	killGroup = func(p int, sig syscall.Signal) error {
+	procinfo.SetKillGroupForTest(func(p int, sig syscall.Signal) error {
 		kills = append(kills, killRec{p, sig})
 		err := oldKill(p, sig)
 		termed = termed || sig == syscall.SIGTERM
 		return err
-	}
-	dir := procRoot + "/" + strconv.Itoa(pid)
+	})
+	dir := procRoot() + "/" + strconv.Itoa(pid)
 	procReadFile = func(name string) ([]byte, error) {
 		b, err := oldRead(name)
 		if i := strings.LastIndexByte(string(b), ')'); err == nil && termed && !paused && name == dir+"/stat" && i >= 0 && len(b) > i+2 {
