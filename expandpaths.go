@@ -1,8 +1,10 @@
 package main
 
+import "github.com/schubydoo/claustrum/internal/pathcanon"
+
 // Each params struct has an ExpandPaths method, so it implements
 // rpc.PathExpander, the parameter type of rpc.Bind.
-func (p *spawnParams) ExpandPaths() { p.Cwd = expandPath(p.Cwd) }
+func (p *spawnParams) ExpandPaths() { p.Cwd = pathcanon.ExpandTilde(p.Cwd) }
 
 // The process-control params address a process by id and carry no filesystem
 // paths, so expansion is a no-op. Declared explicitly rather than omitted: the

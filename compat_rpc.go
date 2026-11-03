@@ -14,8 +14,6 @@ type (
 	capabilitiesResult    = rpc.CapabilitiesResult
 	shutdownResult        = rpc.ShutdownResult
 	spawnResult           = rpc.SpawnResult
-	worktreeRemoveResult  = rpc.WorktreeRemoveResult
-	worktreeResult        = rpc.WorktreeResult
 	reattachResult        = rpc.ReattachResult
 	stdinResult           = rpc.StdinResult
 	killAndWaitResult     = rpc.KillAndWaitResult

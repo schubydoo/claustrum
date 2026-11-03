@@ -4,6 +4,8 @@ import (
 	"path/filepath"
 	"runtime"
 	"testing"
+
+	"github.com/schubydoo/claustrum/internal/pathcanon"
 )
 
 // TestExpandPath pins the rule as a unit, alongside the socket-level golden.
@@ -61,8 +63,8 @@ func TestExpandPath(t *testing.T) {
 		{"empty", "", ""},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			if got := expandPath(tc.in); got != tc.want {
-				t.Errorf("expandPath(%q) = %q, want %q", tc.in, got, tc.want)
+			if got := pathcanon.ExpandTilde(tc.in); got != tc.want {
+				t.Errorf("pathcanon.ExpandTilde(%q) = %q, want %q", tc.in, got, tc.want)
 			}
 		})
 	}
@@ -105,14 +107,14 @@ func TestExpandPathBareTildeIsNotCleaned(t *testing.T) {
 		home := tc.home
 		t.Run(tc.name, func(t *testing.T) {
 			t.Setenv(homeVar, home)
-			if got := expandPath("~"); got != home {
-				t.Errorf("expandPath(%q) with HOME=%q = %q, want the home verbatim", "~", home, got)
+			if got := pathcanon.ExpandTilde("~"); got != home {
+				t.Errorf("pathcanon.ExpandTilde(%q) with HOME=%q = %q, want the home verbatim", "~", home, got)
 			}
 			// The control: the same home, one character more in the request, and
 			// the reference cleans it. If this ever equals the row above, the
 			// probe that produced both was blind and the pair proves nothing.
-			if got := expandPath("~/"); got != base {
-				t.Errorf("expandPath(%q) with HOME=%q = %q, want %q", "~/", home, got, base)
+			if got := pathcanon.ExpandTilde("~/"); got != base {
+				t.Errorf("pathcanon.ExpandTilde(%q) with HOME=%q = %q, want %q", "~/", home, got, base)
 			}
 		})
 	}
@@ -127,8 +129,8 @@ func TestExpandPathWithoutHome(t *testing.T) {
 		t.Setenv("USERPROFILE", "")
 	}
 	for _, in := range []string{"~", "~/", "~/f.txt"} {
-		if got := expandPath(in); got != in {
-			t.Errorf("expandPath(%q) with no home = %q, want it unchanged", in, got)
+		if got := pathcanon.ExpandTilde(in); got != in {
+			t.Errorf("pathcanon.ExpandTilde(%q) with no home = %q, want it unchanged", in, got)
 		}
 	}
 }

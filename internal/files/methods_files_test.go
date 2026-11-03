@@ -175,7 +175,7 @@ func TestFilesExtractTarErrors(t *testing.T) {
 		{"root destDir", filepath.Join(t.TempDir(), "no-such.tar.gz"), rootDestDirForOS(), "destDir must be an absolute, non-root path"},
 	}
 	// Stub the wipe for EVERY row. The root row sends a real filesystem root —
-	// C:\ on Windows — so if isFilesystemRoot ever stops holding, an unstubbed
+	// C:\ on Windows — so if homeguard.IsFilesystemRoot ever stops holding, an unstubbed
 	// run would answer that by recursively deleting the CI runner. The stub also
 	// makes the assertion sharper than "an error came back": the guard must
 	// refuse BEFORE any filesystem effect, which is what wiped records.

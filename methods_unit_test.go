@@ -9,6 +9,8 @@ import (
 	"runtime"
 	"strings"
 	"testing"
+
+	"github.com/schubydoo/claustrum/internal/homeguard"
 )
 
 // rpcLine builds a single authenticated JSON-RPC request line. params is
@@ -37,7 +39,7 @@ func rpcLine(t *testing.T, method string, params interface{}) string {
 	return string(b)
 }
 
-// isFilesystemRoot must recognise the platform's OWN root, not just "/".
+// homeguard.IsFilesystemRoot must recognise the platform's OWN root, not just "/".
 //
 // The gate it backs guards the wipe of destDir, a recursive delete. The previous spelling compared
 // against the literal "/", which a Windows volume root never equals — `C:\`
@@ -55,13 +57,13 @@ func TestIsFilesystemRoot(t *testing.T) {
 		nonRoots = []string{"/tmp", "/tmp/out", "/tmp/"}
 	}
 	for _, r := range roots {
-		if !isFilesystemRoot(r) {
-			t.Errorf("isFilesystemRoot(%q) = false, want true — a root destDir reaches the wipe", r)
+		if !homeguard.IsFilesystemRoot(r) {
+			t.Errorf("homeguard.IsFilesystemRoot(%q) = false, want true — a root destDir reaches the wipe", r)
 		}
 	}
 	for _, n := range nonRoots {
-		if isFilesystemRoot(n) {
-			t.Errorf("isFilesystemRoot(%q) = true, want false — this would refuse a legitimate destDir", n)
+		if homeguard.IsFilesystemRoot(n) {
+			t.Errorf("homeguard.IsFilesystemRoot(%q) = true, want false — this would refuse a legitimate destDir", n)
 		}
 	}
 }
