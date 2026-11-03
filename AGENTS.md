@@ -146,7 +146,7 @@ this guard. `IsAbs && !homeguard.IsFilesystemRoot` is not a substitute: home pas
 tests, and neither test resolves a relative path. Before `7d193f89`,
 `worktreePath:".."` from a daemon whose working folder is home reached
 `os.RemoveAll` on the parent of home, so the guard resolves a relative path
-first. A running daemon dials only with `dialSocketInDaemon`, which never changes the
+first. A running daemon dials only with `sockroute.DialSocketInDaemon`, which never changes the
 working folder that `filepath.Abs` reads.
 
 
@@ -329,7 +329,7 @@ and the leaf must match `^[0-9a-f]{16}$` (`files.PluginHashRE`). The path is nev
 caller-supplied and never `~`-expanded, so it needs no `homeguard.WipesHomeDir` guard.
 
 On Linux the legacy sweep of `plugins.prune` and the host cleaner dial a socket path over
-107 bytes through `/proc` (`dialSiblingSocket`, `hcDial`), as `be1c1ca5` does (measured on
+107 bytes through `/proc` (`sockroute.DialSiblingSocket`, `hcDial`), as `be1c1ca5` does (measured on
 Linux). The maintainer approved acting at a long root on 2026-11-01 ([A long run
 root](docs/DAEMON.md#a-long-run-root), [plugins.prune](docs/protocol/plugins-prune.md)).
 

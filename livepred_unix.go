@@ -25,17 +25,6 @@ func livePredecessorPID(socket string) int {
 	return connPeerPID(c)
 }
 
-// keepSocketFileAtClose turns off Go's removal of the socket path at the close of ln.
-// Go removes the path of a unix listener that made it, whatever file is at the path
-// then. A new daemon can bind the path while this one still shuts down, and the close
-// then removed the socket of the new daemon. closeAll removes the path itself
-// (unlinkOwnSocket).
-func keepSocketFileAtClose(ln net.Listener) {
-	if ul, ok := ln.(*net.UnixListener); ok {
-		ul.SetUnlinkOnClose(false)
-	}
-}
-
 // socketChmodFailed ends a start whose chmod of the socket failed. It closes the listener,
 // removes the socket path and returns the error of the start. `5fd08069` ends the start
 // there with that text (measured on Linux). On macOS that is not measured. The remove of
