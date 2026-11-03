@@ -404,7 +404,6 @@ reference.
 
 ## Daemon startup (`-serve`)
 
-This section holds what the launcher and the daemon do at a `-serve` start.
 The launcher wait and the self-locate are measured against `5fd08069`, and the other rules
 against `89cb6289`, on the systems that each rule names.
 
@@ -412,7 +411,7 @@ The launcher is the `-serve` process that the operator starts. It re-execs its o
 binary as the detached daemon and waits for it. On Linux a launcher that cannot
 read `/proc/self/exe` prints `claustrum: locate self: <error>` and exits `1` before
 any write. macOS and Windows re-exec `os.Args[0]` instead (not measured). The
-launcher creates a missing socket folder with mode `0700`.
+launcher creates a missing socket folder with mode `0700`. Windows ignores that mode.
 
 ### The launcher wait
 

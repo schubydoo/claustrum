@@ -131,7 +131,7 @@ func (s *server) gate(c *conn, raw []byte) (request, *response) {
 	//
 	// The token compare is constant-time (crypto/subtle) so the auth path can't
 	// leak the count of matching leading bytes through response latency — defense-
-	// in-depth. The local 0600 socket already gates any such
+	// in-depth. On Linux and macOS the local 0600 socket already gates any such
 	// oracle to the token's own user. The empty-auth short-circuit only fast-rejects
 	// an obvious miss and reveals nothing about the token; ConstantTimeCompare
 	// returns 0 on a length mismatch, so a wrong-length token is still rejected.

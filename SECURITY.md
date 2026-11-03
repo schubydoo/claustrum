@@ -55,14 +55,14 @@ token did not already give. See
   [`docs/DAEMON.md`](docs/DAEMON.md) → Token persistence. At a graceful
   shutdown, a daemon whose own file is still in place unlinks it. A `SIGKILL` or a crash leaves the file behind.
   The token therefore stays on disk longer than its source, so keep the socket
-  directory owner-only. On Windows `0600` is not an owner-only DACL for the socket or this file, so
-  the session directory's ACL confines both.
+  directory owner-only. On Windows `0600` sets no DACL. The socket and this file
+  inherit the ACL of that directory, and claustrum sets none.
 - `server.shutdown` is the one method the token does not gate. It is not
   authenticated. That is behavioral parity with the reference. Desktop stops the
   daemon with no token in its environment
   ([driver claim](docs/ARCHITECTURE.md#driver-claims-and-their-provenance)). Reaching the socket stops the
   daemon and drops every session, unless the Linux peer check refuses the
-  caller. `-stop` sends no token. The socket's permissions confine this. An
+  caller. `-stop` sends no token. An
   actor who already shares the uid can do strictly more through `process.spawn`.
   The optional Windows named-pipe transport shares this dispatch, so the same
   exception applies.
