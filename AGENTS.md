@@ -61,7 +61,7 @@ modes and the OS splits is in
 | `internal/git/githarden_index_*.go` | the placement of the index of a new worktree, and the registration delete of the second rollback (`removeCreatedRegistration`) |
 | `internal/install/install.go` | the CLI path delete, the sweeps, the prune and the blob remove of `-install` |
 | `internal/git/gitshadow.go` (`removeEntry` and `removeLink`, which each delete there goes through) · `internal/git/gitshadowsweep.go` · `internal/git/gitshadowrepo.go` · `internal/git/gitshadowuse.go` | the deletes in the folder `git-shadow` |
-| `hostclean*.go` | the run-dir delete (`removeRunDir`) and the signals of the host cleaner |
+| `internal/hostsweep/hostclean*.go` | the run-dir delete (`removeRunDir`) and the signals of the host cleaner |
 
 Every OS serves the same JSON-RPC methods.
 

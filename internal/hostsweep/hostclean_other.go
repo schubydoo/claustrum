@@ -1,6 +1,6 @@
 //go:build !linux && !darwin
 
-package main
+package hostsweep
 
 // startHostCleaner is a no-op on windows and other non-linux, non-darwin targets. The host
 // cleaner runs on linux (/proc) and darwin (sysctl + lsof).

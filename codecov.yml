@@ -380,10 +380,16 @@ component_management:
         # Every read, kill, dial, rename and remove is seamed so the
         # destructive paths are unit-tested without a real process or file (real behavior
         # validated on a throwaway VM).
-        - hostclean.go
-        - hostclean_linux.go
-        - hostclean_darwin.go
-        - hostclean_other.go
+        - internal/hostsweep/hostsweep.go
+        - internal/hostsweep/hostclean.go
+        - internal/hostsweep/hostclean_linux.go
+        - internal/hostsweep/hostclean_darwin.go
+        - internal/hostsweep/hostclean_other.go
+        - internal/hostsweep/names_unix.go
+        - internal/hostsweep/names_linux.go
+        - internal/hostsweep/peer_unix.go
+        - compat_hostsweep.go
+        - compat_hostsweep_unix.go
         # The process helpers of the child records, the reap, the host cleaner and the
         # run-dir lock: the group kill, the /proc mount, the node identity and the pidfd hold.
         - internal/procinfo/procinfo.go

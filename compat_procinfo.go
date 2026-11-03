@@ -14,7 +14,3 @@ import (
 func killGroup(pid int, sig syscall.Signal) error { return procinfo.KillGroup(pid, sig) }
 
 func nodeID() string { return procinfo.NodeID() }
-
-func hcHoldDaemon(pid int) (send func(syscall.Signal) error, release func()) {
-	return procinfo.HoldPID(pid)
-}
