@@ -572,21 +572,25 @@ func TestWorktreeBranchStepLockSerializesRollbackAndRemove(t *testing.T) {
 	removeLine := rpcLine(t, "git.worktree_remove", map[string]any{"baseRepo": lw, "worktreePath": wb, "branchName": "b"})
 	h := newTestGitDeps()
 	var wg sync.WaitGroup
-	dispatch := func(line string, out *string) {
+	dispatch := func(line string, out *string) <-chan struct{} {
+		done := make(chan struct{})
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
+			defer close(done)
 			raw, err := gitDispatchErr(h, line)
 			if err != nil {
 				raw = err.Error()
 			}
 			*out = raw
 		}()
+		return done
 	}
 	var createRaw, removeRaw string
-	dispatch(createLine, &createRaw)
+	createDone := dispatch(createLine, &createRaw)
 	select {
 	case <-rollbackIn:
+	case <-createDone:
 	case <-time.After(60 * time.Second):
 	}
 	if entries.Load() == 0 {
@@ -594,7 +598,7 @@ func TestWorktreeBranchStepLockSerializesRollbackAndRemove(t *testing.T) {
 		wg.Wait()
 		t.Fatalf("the rollback ran no branch step, reply = %s", createRaw)
 	}
-	dispatch(removeLine, &removeRaw)
+	removeDone := dispatch(removeLine, &removeRaw)
 	// The rollback goes on when the remove waits for the branch lock, or when it got
 	// into its branch step without that lock.
 	limit := time.After(60 * time.Second)
@@ -604,6 +608,9 @@ wait:
 	for !branchLockWaiter() {
 		select {
 		case <-removeIn:
+			break wait
+		case <-removeDone:
+			t.Errorf("the remove replied before its branch step: %s", removeRaw)
 			break wait
 		case <-limit:
 			t.Error("the remove neither waited for the branch lock nor ran its branch step")
