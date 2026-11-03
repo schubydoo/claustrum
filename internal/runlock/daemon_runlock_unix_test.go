@@ -289,8 +289,8 @@ func TestReadOwnerRecordMissingFile(t *testing.T) {
 }
 
 // TestClaimRunDirHappyPath pins the two forms of the owner record (89cb6289, measured
-// on Linux and macOS). The claim writes pid, role and node only. complete adds
-// instanceId and startedAt. release leaves an empty file.
+// on Linux and macOS). The claim writes pid, role and node only. Complete adds
+// instanceId and startedAt. Release leaves an empty file.
 func TestClaimRunDirHappyPath(t *testing.T) {
 	dir := shortTempDir(t)
 	sock := filepath.Join(dir, "s.sock")
@@ -331,10 +331,10 @@ func TestClaimRunDirHappyPath(t *testing.T) {
 	}
 }
 
-// TestCompleteDoesNotTruncateTheLock pins that complete replaces the short owner record
+// TestCompleteDoesNotTruncateTheLock pins that Complete replaces the short owner record
 // with one write and no truncate, so daemon.lock is never empty between the two forms.
 // No seam sits between a truncate and a write, so the test reads the file size. It adds
-// blanks after the short record. A truncate in complete removes them and shows as a
+// blanks after the short record. A truncate in Complete removes them and shows as a
 // smaller file.
 func TestCompleteDoesNotTruncateTheLock(t *testing.T) {
 	dir := shortTempDir(t)

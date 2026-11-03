@@ -10,16 +10,14 @@ import (
 	"time"
 )
 
-// The shipped SIGTERM grace is 4 s (measured). The test above shrinks it, so
-// this pins the value itself.
+// The shipped SIGTERM grace is 4 s (measured). This pins the value itself.
 func TestStopTermGraceIsFourSeconds(t *testing.T) {
 	if stopTermGrace != 4*time.Second {
 		t.Errorf("stopTermGrace = %s, want 4s", stopTermGrace)
 	}
 }
 
-// The shipped post-SIGKILL wait is 1.5 s (measured). The arms test below shrinks
-// it, so this pins the value itself.
+// The shipped post-SIGKILL wait is 1.5 s (measured). This pins the value itself.
 func TestStopKillGraceIsOnePointFiveSeconds(t *testing.T) {
 	if stopKillGrace != 1500*time.Millisecond {
 		t.Errorf("stopKillGrace = %s, want 1.5s", stopKillGrace)

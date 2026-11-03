@@ -111,7 +111,7 @@ type Claim struct {
 // pid, role and node only. It evicts a prior live sibling serve daemon if one holds the
 // lock. It runs BEFORE the reap of the start and before the socket is bound.
 //
-// The record gets instanceId and startedAt later, through complete. Measured on Linux
+// The record gets instanceId and startedAt later, through Complete. Measured on Linux
 // and macOS against 89cb6289: while the new daemon waits for the recorded children of
 // a dead daemon to end, daemon.lock holds {"pid":<n>,"role":"serve","node":"<node>"}.
 // After that wait the same record has "instanceId" and "startedAt" too.
@@ -123,7 +123,7 @@ type Claim struct {
 // The reference printed it on Linux (`f6010b97`, `89cb6289`, measured). There a process with no
 // daemon record held the lock, and two other lines came first. claustrum prints it on every arm that
 // ends without the lock. The other arms are not measured. The line says "recording none". Such a
-// daemon runs no reap and writes no child record, see newServerOnSocket. claustrum does so on every
+// daemon runs no reap and writes no child record, see newServerOnSocket (package main). claustrum does so on every
 // arm. A measurement shows the arm of a held flock (`5fd08069`, measured on Linux).
 func LockRunFolder(socket, role string) Claim {
 	dir := filepath.Dir(socket)

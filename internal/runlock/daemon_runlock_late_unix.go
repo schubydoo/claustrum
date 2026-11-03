@@ -42,8 +42,8 @@ type lateRunDirLock struct {
 }
 
 // lateRunDirClaim gives back the claim of a daemon that does not hold the lock at its
-// start. complete starts the tries, stopLate ends them, and release ends them and then
-// drops the lock if a try took it. The claim stays holder false, so a late holder
+// start. Complete starts the tries, StopLate ends them, and Release ends them and then
+// drops the lock if a try took it. The claim stays Holder false, so a late holder
 // writes no child record for a later spawn. 5fd08069 writes none either (measured on
 // Linux and macOS).
 func lateRunDirClaim(fd int, role string) Claim {
