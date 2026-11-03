@@ -7,6 +7,8 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+
+	"github.com/schubydoo/claustrum/internal/homeguard"
 )
 
 // The held git directory of a git.worktree_create (acceptedGitDir), and the
@@ -99,7 +101,7 @@ func (a *acceptedGitDir) registrationName(path string) (string, bool) {
 // as a tree: one RemoveAll of `worktrees/<name>` through the held root.
 // wipesHomeDir refuses an entry that is the home folder or holds it.
 func (a *acceptedGitDir) removeRegistration(name string) {
-	if wipesHomeDir(filepath.Join(a.path, worktreesSubdir, name)) {
+	if homeguard.WipesHomeDir(filepath.Join(a.path, worktreesSubdir, name)) {
 		return
 	}
 	// Nothing goes behind a registrations folder that is a symbolic link

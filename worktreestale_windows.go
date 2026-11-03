@@ -5,6 +5,8 @@ package main
 import (
 	"os"
 	"path/filepath"
+
+	"github.com/schubydoo/claustrum/internal/homeguard"
 )
 
 // staleStepAfterGitDir is true on Windows. There the create runs the stale
@@ -87,7 +89,7 @@ func dropStaleWorktreeRegistration(repo, worktreePath string, held *acceptedGitD
 		return false
 	}
 	names, records := windowsStaleEntries(root, ".", worktreePath)
-	if windowsStaleEntryGoes(root, ".", names, records) && !wipesHomeDir(filepath.Join(base, names[0])) {
+	if windowsStaleEntryGoes(root, ".", names, records) && !homeguard.WipesHomeDir(filepath.Join(base, names[0])) {
 		_ = removeHeldEntry(root, names[0])
 	}
 	return len(names) > 0

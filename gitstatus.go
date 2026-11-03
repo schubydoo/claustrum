@@ -13,6 +13,8 @@ import (
 	"slices"
 	"strconv"
 	"strings"
+
+	"github.com/schubydoo/claustrum/internal/pathcanon"
 )
 
 // git.status as 89cb6289 answers it. The request passes a gate first, and then four
@@ -88,7 +90,7 @@ func (r statusRefusal) Error() string { return string(r) }
 // tests baseRepo as sent and with its symlinks resolved. Not measured: a
 // baseRepo that reaches such a folder only through a symlink.
 func statusBaseInManagedTree(baseRepo string) bool {
-	for _, p := range []string{baseRepo, canonicalPath(baseRepo)} {
+	for _, p := range []string{baseRepo, pathcanon.Canonical(baseRepo)} {
 		abs, err := filepath.Abs(p)
 		if err != nil {
 			continue
@@ -246,7 +248,7 @@ func statusPathOf(path, baseRepo string) (statusPath, bool) {
 		return sp, true
 	}
 	sp.probeTree = resolvedDir(clean)
-	for _, s := range []string{sp.probeTree, finalDirPath(clean)} {
+	for _, s := range []string{sp.probeTree, pathcanon.FinalDir(clean)} {
 		if abs, err := filepath.Abs(s); err == nil {
 			sp.spellings = append(sp.spellings, abs)
 		}
@@ -507,7 +509,7 @@ func statusGitdirNames(root *os.Root, entry string, spellings []string) bool {
 	v := entryPathValue(entry, b)
 	holder := filepath.Dir(v)
 	return filepath.Base(v) == ".git" &&
-		slices.ContainsFunc(spellings, func(s string) bool { return sameCanonicalPath(s, holder) })
+		slices.ContainsFunc(spellings, func(s string) bool { return pathcanon.Same(s, holder) })
 }
 
 // statusEntryNamesCommon judges the `commondir` file of the matched entry. Its value

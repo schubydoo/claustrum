@@ -8,6 +8,9 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+
+	"github.com/schubydoo/claustrum/internal/homeguard"
+	"github.com/schubydoo/claustrum/internal/pathcanon"
 )
 
 // worktreeCheckpoint records how the freshly created worktree leaf looked right
@@ -97,7 +100,7 @@ func checkpointCreatedWorktree(worktreePath string) worktreeCheckpoint {
 // stays. f6010b97 and 90fca6e6 keep it after a failed attach add, in 20 of 20 runs
 // on Linux and macOS.
 func undoFailedAdd(worktreePath string, cp worktreeCheckpoint) {
-	if worktreePath == "" || wipesHomeDir(worktreePath) {
+	if worktreePath == "" || homeguard.WipesHomeDir(worktreePath) {
 		return
 	}
 	if cp.info != nil {
@@ -295,7 +298,7 @@ func undoFailedCheckout(u gitUse, repo, worktreePath, branch string, cp worktree
 // leafSafeToRemove is the guard of each delete of the leaf in a rollback after a
 // good add: the home guard (D2) and the checkpoint identity of the leaf.
 func leafSafeToRemove(worktreePath string, cp worktreeCheckpoint) bool {
-	return worktreePath != "" && !wipesHomeDir(worktreePath) && verifyCreatedWorktree(worktreePath, cp) == ""
+	return worktreePath != "" && !homeguard.WipesHomeDir(worktreePath) && verifyCreatedWorktree(worktreePath, cp) == ""
 }
 
 // removeCreatedLeaf removes the leaf of a create as steps A and C of
@@ -517,7 +520,7 @@ func (r testedRegistration) replacedIn(root *os.Root, name string) bool {
 // has nothing to delete. One that is a symbolic link is refused with an error,
 // so nothing is deleted and the branch stays (deleteRoot, not measured).
 func removeTestedRegistration(reg testedRegistration) error {
-	if wipesHomeDir(reg.path) {
+	if homeguard.WipesHomeDir(reg.path) {
 		return nil
 	}
 	root, err := reg.git.deleteRoot(filepath.Dir(reg.path))
@@ -650,7 +653,7 @@ func absoluteAdminDir(worktreePath, admin string) string {
 	if filepath.IsAbs(admin) {
 		return admin
 	}
-	return filepath.Join(canonicalPath(worktreePath), admin)
+	return filepath.Join(pathcanon.Canonical(worktreePath), admin)
 }
 
 // createdWorktreeAdminDir returns the admin dir (registration) of the worktree that
@@ -675,7 +678,7 @@ func createdWorktreeAdminDir(repo, worktreePath string) createdRegistration {
 	if dir := worktreeRegistryDir(repo); registrationsLinked(dir) {
 		return createdRegistration{unreadable: errors.New(realDirText(dir))}
 	}
-	reg := createdRegistration{resolved: canonicalPath(adminDir), registry: canonicalPath(worktreeRegistryDir(repo)),
+	reg := createdRegistration{resolved: pathcanon.Canonical(adminDir), registry: pathcanon.Canonical(worktreeRegistryDir(repo)),
 		spelled: worktreeRegistryDir(repo)}
 	// The identity comes first, so it is that of the directory that the read of the
 	// back-pointer goes through.
@@ -947,7 +950,7 @@ func compareAdminRecord(admin, worktreePath string, cleaned bool) adminRecord {
 		record = filepath.Clean(strings.TrimSpace(record))
 	}
 	if !filepath.IsAbs(record) {
-		record = filepath.Join(canonicalPath(admin), record)
+		record = filepath.Join(pathcanon.Canonical(admin), record)
 	}
 	if record == filepath.Join(resolved, ".git") {
 		return recordNamesLeaf
