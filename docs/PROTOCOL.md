@@ -95,7 +95,7 @@ socket. The framing, the field order and the `"auth"` member are the same.
   a successor keeps its own file. After a crash the file
   stays until the next start, and a dial of its name fails.
 - **Owner-only and local.** The pipe has an owner-only DACL, the analogue of the
-  socket's `0600`, and it refuses remote clients. See
+  socket's `0600` on Linux and macOS, and it refuses remote clients. See
   [SECURITY.md](https://github.com/schubydoo/claustrum/blob/main/SECURITY.md).
 
 ## Authentication

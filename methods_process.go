@@ -5,9 +5,11 @@ import (
 	"encoding/json"
 	"errors"
 	"time"
+
+	"github.com/schubydoo/claustrum/internal/rpc"
 )
 
-func (s *server) handleProcess(c *conn, req *request) response {
+func (s *server) handleProcess(c *conn, req *request) rpc.Response {
 	switch req.Method {
 	case "process.spawn", "process.stdin", "process.kill", "process.killAndWait", "process.reattach":
 	default:
@@ -40,7 +42,7 @@ type spawnParams struct {
 	// Absent/false leaves the reply byte-identical to {"success":true}. Any other
 	// value counts as absent (claustrum's own). 5fd08069 has no such member and
 	// starts the process (measured on Linux).
-	WantPid jsonTrueSwitch `json:"wantPid"`
+	WantPid rpc.JSONTrueSwitch `json:"wantPid"`
 	// DisableShellAgentSocket turns off the login-shell SSH_AUTH_SOCK hand-off for
 	// this spawn (see internal/shellenv/shellagent.go). A non-bool value fails the decode, so it
 	// answers -32602 like any other mistyped param; null is accepted as false.
@@ -56,20 +58,20 @@ type spawnParams struct {
 	// no object, or an unattendedSeconds that is no integer, gets Invalid params
 	// (claustrum's own, not measured: before, the member was ignored). Pty is read
 	// only for the refusal below, and a value other than true counts as absent.
-	LinkBound *linkBoundParams `json:"linkBound"`
-	Pty       jsonTrueSwitch   `json:"pty"`
+	LinkBound *linkBoundParams   `json:"linkBound"`
+	Pty       rpc.JSONTrueSwitch `json:"pty"`
 }
 
-func (s *server) processSpawn(c *conn, req *request) response {
+func (s *server) processSpawn(c *conn, req *request) rpc.Response {
 	var p spawnParams
 	if bad := bindParams(req, &p); bad != nil {
 		return *bad
 	}
 	if p.ID == "" {
-		return errResult(req.ID, codeInvalidParam, "Process ID is required")
+		return rpc.ErrResult(req.ID, rpc.CodeInvalidParam, "Process ID is required")
 	}
 	if p.Command == "" {
-		return errResult(req.ID, codeInvalidParam, "Command is required")
+		return rpc.ErrResult(req.ID, rpc.CodeInvalidParam, "Command is required")
 	}
 	// 683cc6a9 refuses linkBound with a launcher by this text and with "pty":true by
 	// plain Invalid params (measured on Linux). The order of the two tests and their
@@ -77,32 +79,32 @@ func (s *server) processSpawn(c *conn, req *request) response {
 	var linkTTL time.Duration
 	if p.LinkBound != nil {
 		if p.Launcher != nil {
-			return errResultData(req.ID, codeInvalidParam, "linkBound cannot be combined with pty or launcher", spawnReason{"other"})
+			return rpc.ErrResultData(req.ID, rpc.CodeInvalidParam, "linkBound cannot be combined with pty or launcher", spawnReason{"other"})
 		}
 		if p.Pty {
-			return errResult(req.ID, codeInvalidParam, "Invalid params")
+			return rpc.ErrResult(req.ID, rpc.CodeInvalidParam, "Invalid params")
 		}
 		linkTTL = unattendedTTL(p.LinkBound.UnattendedSeconds)
 	}
 	mp, err := s.procs.spawnVia(c, p.ID, p.Command, p.Args, p.Cwd, p.Env, p.DisableShellAgentSocket, p.Launcher, linkTTL)
 	if errors.Is(err, errStartsStopped) {
 		// No frame. The teardown closes the connection (measured).
-		return response{NoFrame: true}
+		return rpc.Response{NoFrame: true}
 	}
 	if err != nil {
 		reason := spawnFailureReason(err, p.Cwd)
 		var sr *spawnRefusal
 		if errors.As(err, &sr) {
-			return errResultData(req.ID, sr.code, sr.msg, reason)
+			return rpc.ErrResultData(req.ID, sr.code, sr.msg, reason)
 		}
-		return errResultData(req.ID, codeInternal, err.Error(), reason)
+		return rpc.ErrResultData(req.ID, rpc.CodeInternal, err.Error(), reason)
 	}
-	res := spawnResult{Success: true}
+	res := rpc.SpawnResult{Success: true}
 	if p.WantPid {
 		res.Pid = mp.pid
 		res.StartTime = mp.startTime
 	}
-	return okResult(req.ID, res)
+	return rpc.OKResult(req.ID, res)
 }
 
 type stdinParams struct {
@@ -122,7 +124,7 @@ type stdinParams struct {
 	Attach *uint64 `json:"attach"`
 }
 
-func (s *server) processStdin(c *conn, req *request) response {
+func (s *server) processStdin(c *conn, req *request) rpc.Response {
 	var p stdinParams
 	if bad := bindParams(req, &p); bad != nil {
 		return *bad
@@ -136,7 +138,7 @@ func (s *server) processStdin(c *conn, req *request) response {
 	// yields "Process not running".
 	data, err := base64.StdEncoding.DecodeString(p.Data)
 	if err != nil {
-		return errResult(req.ID, codeInvalidParam, "Invalid base64 data")
+		return rpc.ErrResult(req.ID, rpc.CodeInvalidParam, "Invalid base64 data")
 	}
 	// c8e2f083 answers "Process not found" to a present attach on a process without
 	// a terminal and on an unknown id, with nothing written (measured on Linux). The
@@ -148,21 +150,21 @@ func (s *server) processStdin(c *conn, req *request) response {
 	// "Process not found" (683cc6a9, measured on Linux).
 	mp := s.procs.get(p.ID)
 	if mp == nil || p.Attach != nil || !mp.takesFrom(c) {
-		return errResult(req.ID, codeInvalidParam, "Process not found")
+		return rpc.ErrResult(req.ID, rpc.CodeInvalidParam, "Process not found")
 	}
 	// isLive, not isRunning: 90fca6e6 refuses a write inside the exit drain, after
 	// the child exits and before its exit frame goes out (measured on Linux).
 	applied, duplicate, gap, full, notRunning := mp.applyStdin(data, p.Offset, mp.isLive)
 	if gap {
-		return errResult(req.ID, codeStdinOffsetGap, "stdin offset gap: offset ahead of applied bytes")
+		return rpc.ErrResult(req.ID, rpc.CodeStdinOffsetGap, "stdin offset gap: offset ahead of applied bytes")
 	}
 	if notRunning {
-		return errResult(req.ID, codeInvalidParam, "Process not running")
+		return rpc.ErrResult(req.ID, rpc.CodeInvalidParam, "Process not running")
 	}
 	if full {
-		return errResult(req.ID, codeStdinBackpressure, "stdin backpressure: queue full")
+		return rpc.ErrResult(req.ID, rpc.CodeStdinBackpressure, "stdin backpressure: queue full")
 	}
-	return okResult(req.ID, stdinResult{Success: true, Applied: applied, Duplicate: duplicate})
+	return rpc.OKResult(req.ID, rpc.StdinResult{Success: true, Applied: applied, Duplicate: duplicate})
 }
 
 type killParams struct {
@@ -174,7 +176,7 @@ type killParams struct {
 	GraceMs  json.RawMessage `json:"graceMs"`
 }
 
-func (s *server) processKill(req *request) response {
+func (s *server) processKill(req *request) rpc.Response {
 	var p killParams
 	if bad := bindParams(req, &p); bad != nil {
 		return *bad
@@ -186,17 +188,17 @@ func (s *server) processKill(req *request) response {
 		// farewell gets "invalid" (claustrum's own, not measured).
 		logFarewellNotSaid(p.ID, rule)
 		_ = s.procs.kill(p.ID, p.Signal)
-		return okResult(req.ID, killResult{Success: true, FarewellEnd: farewellInvalid})
+		return rpc.OKResult(req.ID, rpc.KillResult{Success: true, FarewellEnd: farewellInvalid})
 	case ask != nil:
-		return okResult(req.ID, killResult{Success: true, FarewellEnd: s.procs.killWithFarewell(p.ID, p.Signal, *ask)})
+		return rpc.OKResult(req.ID, rpc.KillResult{Success: true, FarewellEnd: s.procs.killWithFarewell(p.ID, p.Signal, *ask)})
 	}
 	// A signal that the system refused answers its text (52d82f0a, measured on Linux
 	// and macOS). The case of a bad farewell above keeps its success (claustrum's
 	// own, not measured).
 	if err := s.procs.kill(p.ID, p.Signal); err != nil {
-		return errResult(req.ID, codeInternal, err.Error())
+		return rpc.ErrResult(req.ID, rpc.CodeInternal, err.Error())
 	}
-	return okResult(req.ID, killResult{Success: true})
+	return rpc.OKResult(req.ID, rpc.KillResult{Success: true})
 }
 
 // killAndWaitParams is distinct from killParams: process.killAndWait accepts a
@@ -219,13 +221,13 @@ type killAndWaitParams struct {
 // timeoutMs sets the graceful-signal grace (non-positive/absent → the 3000ms
 // default); escalate (absent → true) chooses whether to SIGKILL after the grace —
 // escalate:false leaves a stubborn process running and reports died:false.
-func (s *server) processKillAndWait(req *request) response {
+func (s *server) processKillAndWait(req *request) rpc.Response {
 	var p killAndWaitParams
 	if bad := bindParams(req, &p); bad != nil {
 		return *bad
 	}
 	if p.ID == "" {
-		return errResult(req.ID, codeInvalidParam, "Process ID is required")
+		return rpc.ErrResult(req.ID, rpc.CodeInvalidParam, "Process ID is required")
 	}
 	ms := 0
 	if p.TimeoutMs != nil {
@@ -239,7 +241,7 @@ func (s *server) processKillAndWait(req *request) response {
 	// The farewell rules come after the id test, so the error reply stays as it was.
 	ask, rule := readFarewell(p.Farewell, p.GraceMs)
 	if ask != nil {
-		return okResult(req.ID, s.procs.killAndWaitFarewell(p.ID, p.Signal, grace, escalate, *ask))
+		return rpc.OKResult(req.ID, s.procs.killAndWaitFarewell(p.ID, p.Signal, grace, escalate, *ask))
 	}
 	if rule != "" {
 		// The plain kill path at once, as process.kill does (claustrum's own, not
@@ -251,7 +253,7 @@ func (s *server) processKillAndWait(req *request) response {
 	if rule != "" {
 		end = farewellInvalid
 	}
-	return okResult(req.ID, killAndWaitResult{
+	return rpc.OKResult(req.ID, rpc.KillAndWaitResult{
 		Found: found, Died: died, AlreadyExited: alreadyExited, Escalated: escalated, FarewellEnd: end,
 	})
 }
@@ -262,7 +264,7 @@ type reattachParams struct {
 	// WantPid mirrors spawnParams.WantPid — see there. When true and the process
 	// is found, the reply carries pid + startTime. 5fd08069 gives the reattach
 	// result with a wrong-typed wantPid (measured on Linux).
-	WantPid jsonTrueSwitch `json:"wantPid"`
+	WantPid rpc.JSONTrueSwitch `json:"wantPid"`
 	// Attach, Fresh and Proof are optional members. Claustrum decodes them for the
 	// type test and acts on Proof only (see processReattach). A Linux test measured the proof answer of
 	// a plain process. The type test of the decode comes before the empty-id test, and a negative
@@ -272,23 +274,23 @@ type reattachParams struct {
 	Proof  string  `json:"proof"`
 }
 
-func (s *server) processReattach(c *conn, req *request) response {
+func (s *server) processReattach(c *conn, req *request) rpc.Response {
 	var p reattachParams
 	if bad := bindParams(req, &p); bad != nil {
 		return *bad
 	}
 	if p.ID == "" {
-		return errResult(req.ID, codeInvalidParam, "Process ID is required")
+		return rpc.ErrResult(req.ID, rpc.CodeInvalidParam, "Process ID is required")
 	}
 	// A non-empty proof gets the zero result for a process without a terminal and for
 	// an unknown id: no replay, and the connection that holds the process keeps it
 	// (c8e2f083, measured on Linux). The order against the id test is not
 	// measured: the empty id keeps its error. Claustrum has no terminal process.
 	if p.Proof != "" {
-		return okResult(req.ID, reattachResult{})
+		return rpc.OKResult(req.ID, rpc.ReattachResult{})
 	}
 	mp, found, running, firstSeq, lastSeq, stdinApplied := s.procs.reattach(c, p.ID, p.FromSeq)
-	res := reattachResult{
+	res := rpc.ReattachResult{
 		Found: found, Running: running, FirstSeq: firstSeq, LastSeq: lastSeq,
 		StdinApplied: stdinApplied,
 	}
@@ -296,5 +298,5 @@ func (s *server) processReattach(c *conn, req *request) response {
 		res.Pid = mp.pid
 		res.StartTime = mp.startTime
 	}
-	return okResult(req.ID, res)
+	return rpc.OKResult(req.ID, res)
 }

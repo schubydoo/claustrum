@@ -1,4 +1,4 @@
-package main
+package sockroute
 
 import "testing"
 
@@ -7,7 +7,7 @@ func noFolderHandle(*testing.T) {}
 
 // The limit of macOS is the one in the text of `be1c1ca5` (measured on macOS).
 func TestMaxSocketPathDarwin(t *testing.T) {
-	if maxSocketPath != 103 {
-		t.Errorf("maxSocketPath = %d, want 103", maxSocketPath)
+	if MaxSocketPath != 103 {
+		t.Errorf("MaxSocketPath = %d, want 103", MaxSocketPath)
 	}
 }

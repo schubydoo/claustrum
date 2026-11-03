@@ -10,6 +10,9 @@ import (
 	"strings"
 	"sync/atomic"
 	"time"
+
+	"github.com/schubydoo/claustrum/internal/logging"
+	"github.com/schubydoo/claustrum/internal/rpc"
 )
 
 // peerCheckEnv is the variable of the daemon's own environment that turns the
@@ -165,17 +168,17 @@ var readDaemonNSText = daemonNSText
 func startPeerCheck() *peerGate {
 	asked := peerCheckAsked()
 	if err := unsetenv(peerCheckEnv); err != nil {
-		logWarnf("[Server] cannot remove %s from the daemon environment (%v): child processes inherit it", peerCheckEnv, err)
+		logging.Warnf("[Server] cannot remove %s from the daemon environment (%v): child processes inherit it", peerCheckEnv, err)
 	}
 	if !asked {
 		return nil
 	}
 	g := &peerGate{own: readDaemonNSText()}
 	if !g.own.names() {
-		logWarnf("%s", peerCheckUnavailableLine)
+		logging.Warnf("%s", peerCheckUnavailableLine)
 		return g
 	}
-	logInfof("[Server] serving only callers in %q", g.own.String())
+	logging.Infof("[Server] serving only callers in %q", g.own.String())
 	return g
 }
 
@@ -239,7 +242,7 @@ type peerRefusalData struct {
 func peerRefusalLine(reason string) []byte {
 	b, _ := json.Marshal(peerRefusalFrame{
 		JSONRPC: "2.0",
-		Error:   peerRefusalError{Code: codePeerRefused, Message: peerRefusedMessage, Data: peerRefusalData{Reason: reason}},
+		Error:   peerRefusalError{Code: rpc.CodePeerRefused, Message: peerRefusedMessage, Data: peerRefusalData{Reason: reason}},
 	})
 	// The refusal is the first line of its connection, so "at" is 0 (build
 	// 52d82f0a, measured on Linux). The check refuses on Linux only.
@@ -272,7 +275,7 @@ func (g *peerGate) admit(nc net.Conn) bool {
 	_ = nc.Close()
 	n := g.refused.Add(1)
 	if !exited && peerRefusalLogged(n) {
-		logWarnf("[Server] refused caller number %d (%s): %s; this server's namespaces are %q", n, reason, detail, g.own.String())
+		logging.Warnf("[Server] refused caller number %d (%s): %s; this server's namespaces are %q", n, reason, detail, g.own.String())
 	}
 	return false
 }

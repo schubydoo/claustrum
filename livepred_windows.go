@@ -14,10 +14,6 @@ import (
 // still led to the predecessor (measured on Windows).
 func livePredecessorPID(string) int { return 0 }
 
-// keepSocketFileAtClose does nothing on Windows: the close of the listener removes the
-// socket path there, as before.
-func keepSocketFileAtClose(net.Listener) {}
-
 // socketChmodFailed prints one line for a failed chmod of the socket, and the start
 // goes on. That is the rule that claustrum had before on every system. Nothing is
 // measured on Windows.

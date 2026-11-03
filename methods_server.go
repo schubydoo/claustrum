@@ -1,6 +1,12 @@
 package main
 
-import "slices"
+import (
+	"slices"
+
+	"github.com/schubydoo/claustrum/internal/files"
+	"github.com/schubydoo/claustrum/internal/logging"
+	"github.com/schubydoo/claustrum/internal/rpc"
+)
 
 var capabilityMethods = []string{
 	"server.ping", "server.capabilities", methodShutdown,
@@ -73,7 +79,7 @@ var capabilityFeatures = append(append([]string{
 	filesReadRealFeature,
 }, osCapabilityFeatures...), "server.instance_id")
 
-// filesReadRealFeature is listed only when filesReadRealAvailable is true. The
+// filesReadRealFeature is listed only when files.ReadRealAvailable is true. The
 // exact start test is claustrum's own.
 const filesReadRealFeature = "files.read.real"
 
@@ -86,7 +92,7 @@ const jobFeature = "process.spawn.job"
 // The jobs of -keep-children (jobsKeep) list it too (claustrum's own).
 func (s *server) featuresFor() []string {
 	list := capabilityFeatures
-	if !filesReadRealAvailable() {
+	if !files.ReadRealAvailable() {
 		list = slices.DeleteFunc(slices.Clone(list), func(f string) bool { return f == filesReadRealFeature })
 	}
 	if s.procs == nil || s.procs.jobs == jobsOff {
@@ -95,12 +101,12 @@ func (s *server) featuresFor() []string {
 	return append(slices.Clip(list), jobFeature)
 }
 
-func (s *server) handleServer(c *conn, req *request) *response {
+func (s *server) handleServer(c *conn, req *request) *rpc.Response {
 	switch req.Method {
 	case "server.ping":
-		return ptr(okResult(req.ID, pongResult{Pong: true}))
+		return rpc.Ptr(rpc.OKResult(req.ID, rpc.PongResult{Pong: true}))
 	case "server.capabilities":
-		return ptr(okResult(req.ID, capabilitiesResult{
+		return rpc.Ptr(rpc.OKResult(req.ID, rpc.CapabilitiesResult{
 			Version:     Version,
 			Methods:     capabilityMethods,
 			InstanceID:  s.instanceID,
@@ -121,8 +127,8 @@ func (s *server) handleServer(c *conn, req *request) *response {
 		// The two log lines come before the teardown starts, so they precede
 		// every connection close. The reference logged them in this order before
 		// its connection close (measured).
-		logInfof("[ServerHandler] server.shutdown received over RPC")
-		logInfof("[Server] shutdown requested")
+		logging.Infof("[ServerHandler] server.shutdown received over RPC")
+		logging.Infof("[Server] shutdown requested")
 		if c != nil {
 			// The cleanup count keeps this connection (dropConns).
 			s.mu.Lock()
@@ -130,8 +136,8 @@ func (s *server) handleServer(c *conn, req *request) *response {
 			s.mu.Unlock()
 		}
 		s.signalShutdown()
-		return ptr(okResult(req.ID, shutdownResult{OK: true}))
+		return rpc.Ptr(rpc.OKResult(req.ID, rpc.ShutdownResult{OK: true}))
 	default:
-		return ptr(unknownMethod(req))
+		return rpc.Ptr(unknownMethod(req))
 	}
 }
