@@ -342,7 +342,7 @@ func TestCheckoutRepositoryRequiresUserSmudge(t *testing.T) {
 // fails the create (measured on Linux).
 func TestCheckoutRequiredUserSmudgeFallbackGit(t *testing.T) {
 	f := newCheckoutRuleFixture(t)
-	h := f.s.gitShadow
+	h := f.d.Shadow
 	h.mu.Lock()
 	h.state, h.tested = controlFallback, shadowClock()
 	h.mu.Unlock()
@@ -386,7 +386,7 @@ func TestFallbackGitRunsTheRepositoryFilter(t *testing.T) {
 	} {
 		t.Run(row.cell, func(t *testing.T) {
 			f := newCheckoutRuleFixture(t)
-			h := f.s.gitShadow
+			h := f.d.Shadow
 			h.mu.Lock()
 			h.state, h.tested = controlFallback, shadowClock()
 			h.mu.Unlock()

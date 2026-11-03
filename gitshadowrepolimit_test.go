@@ -110,9 +110,9 @@ func TestShadowRepoLimitAfterReplies(t *testing.T) {
 		}
 	}
 	sweptGone(t, filepath.Join(daemonFolder(t, f.run), shadowRepoName(filepath.Join(f.repo, ".git"))))
-	f.s.gitShadow.repoMu.Lock()
-	busy := len(f.s.gitShadow.repoBusy)
-	f.s.gitShadow.repoMu.Unlock()
+	f.d.Shadow.repoMu.Lock()
+	busy := len(f.d.Shadow.repoBusy)
+	f.d.Shadow.repoMu.Unlock()
 	if busy != 0 {
 		t.Errorf("%d folders in use after the replies, want 0", busy)
 	}

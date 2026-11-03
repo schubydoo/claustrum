@@ -72,8 +72,8 @@ func TestGitDirTrustRelativeGitDirOnLinkedWorktreeWindows(t *testing.T) {
 func TestGitDirTrustRelativeGitDirRemoveWindows(t *testing.T) {
 	r := newTrustRepo(t)
 	t.Setenv("GIT_DIR", ".git")
-	s, _ := newSeededShadowServer(t)
-	got := trustCallOn(t, s, "git.worktree_remove", map[string]any{"baseRepo": r.TW, "worktreePath": r.SWW, "branchName": "s1"})
+	d, _ := newSeededShadowDeps(t)
+	got := trustCallOn(t, d, "git.worktree_remove", map[string]any{"baseRepo": r.TW, "worktreePath": r.SWW, "branchName": "s1"})
 	want, _ := json.Marshal(worktreeRemoveResult{Success: false, Error: "failed to remove worktree: could not check whether " + r.SWW +
 		" is locked: a file in this repository's .git directory cannot be used: open " + filepath.Join(r.TW, ".git") + ": not a directory"})
 	wantResult(t, "remove(TW,SWW)", got, string(want))
@@ -94,11 +94,11 @@ func TestGitDirTrustDaemonGitDirPlainFileWindows(t *testing.T) {
 	f := filepath.Join(r.base, "gitdir-file")
 	writeFile(t, f, "x", 0o644)
 	t.Setenv("GIT_DIR", f)
-	s, _ := newSeededShadowServer(t)
+	d, _ := newSeededShadowDeps(t)
 	want := "this repository's git config cannot be used: open " + f + ": not a directory"
-	wantRPCError(t, "info(T)", trustCallOn(t, s, "git.info", map[string]any{"path": r.T}), want)
-	wantRPCError(t, "list_branches(T)", trustCallOn(t, s, "git.list_branches", map[string]any{"path": r.T}), want)
-	wantRPCError(t, "info(TW)", trustCallOn(t, s, "git.info", map[string]any{"path": r.TW}), want)
+	wantRPCError(t, "info(T)", trustCallOn(t, d, "git.info", map[string]any{"path": r.T}), want)
+	wantRPCError(t, "list_branches(T)", trustCallOn(t, d, "git.list_branches", map[string]any{"path": r.T}), want)
+	wantRPCError(t, "info(TW)", trustCallOn(t, d, "git.info", map[string]any{"path": r.TW}), want)
 }
 
 // On Windows an entry replaced by a regular file is refused as an entry

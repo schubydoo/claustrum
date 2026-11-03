@@ -3,8 +3,6 @@
 package main
 
 import (
-	"encoding/json"
-	"errors"
 	"os"
 	"path/filepath"
 	"slices"
@@ -13,17 +11,6 @@ import (
 	"testing"
 	"time"
 )
-
-// dispatchErr is dispatchRaw for a goroutine that is not the test: it reports
-// a failure as an error and calls no method of t.
-func dispatchErr(s *server, line string) (string, error) {
-	resp := s.dispatch(nil, []byte(line))
-	if resp == nil {
-		return "", errors.New("no reply")
-	}
-	b, err := json.Marshal(*resp)
-	return string(b), err
-}
 
 // createWithin is create with a deadline of the test. The request runs in its
 // own goroutine. A request that has no reply by then fails the test. A
@@ -44,7 +31,7 @@ func (f configStepFixture) createWithin(t *testing.T, d time.Duration) (string, 
 	finished := make(chan struct{})
 	go func() {
 		defer close(finished)
-		raw, err := dispatchErr(f.s, line)
+		raw, err := gitDispatchErr(f.d, line)
 		done <- reply{raw, err}
 	}()
 	t.Cleanup(func() {

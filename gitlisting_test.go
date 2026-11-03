@@ -81,7 +81,7 @@ func (c envCall) pins(t *testing.T) []string {
 type listingFixture struct {
 	wtFixture
 	log string
-	s   *server
+	d   *gitDeps
 }
 
 func newListingFixture(t *testing.T) listingFixture {
@@ -100,7 +100,7 @@ func newListingFixture(t *testing.T) listingFixture {
 	resetUserExcludesCache(t)
 	log := filepath.Join(t.TempDir(), "env.log")
 	t.Setenv("CLAUSTRUM_GITSTUB_ENVLOG", log)
-	return listingFixture{wtFixture: f, log: log, s: newTestServer(t)}
+	return listingFixture{wtFixture: f, log: log, d: newTestGitDeps()}
 }
 
 // call dispatches method and returns the reply and the git calls it made.
@@ -109,7 +109,7 @@ func (f listingFixture) call(t *testing.T, method string, params map[string]any)
 	if err := os.WriteFile(f.log, nil, 0o644); err != nil {
 		t.Fatal(err)
 	}
-	raw := dispatchRaw(t, f.s, rpcLine(t, method, params))
+	raw := gitDispatch(t, f.d, rpcLine(t, method, params))
 	return raw, readEnvCalls(t, f.log)
 }
 

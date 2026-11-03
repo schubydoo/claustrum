@@ -116,7 +116,7 @@ func TestShutdownBeforeTheRepoFolderLeavesNoFolder(t *testing.T) {
 	}
 	dir := daemonFolder(t, f.run)
 	old := shadowRepoBeforeMkdir
-	shadowRepoBeforeMkdir = f.s.gitShadow.close
+	shadowRepoBeforeMkdir = f.d.Shadow.close
 	t.Cleanup(func() { shadowRepoBeforeMkdir = old })
 	raw, _ := f.info(t, f.repo, nil)
 	want := "cannot write its copy of the repository's git config: mkdir " + filepath.Join(dir, shadowRepoName(f.gitDir)) + ": no such file or directory"

@@ -119,8 +119,7 @@ func TestWorktreeCreateStaleEntryOfCommonGitDir(t *testing.T) {
 				h := newTestGitDeps()
 				held := false
 				if state != "" {
-					srv, _ := newSeededShadowServer(t)
-					h = srv.gitDeps()
+					h, _ = newSeededShadowDeps(t)
 					old := createStepHook
 					t.Cleanup(func() { createStepHook = old })
 					createStepHook = func(at string) { held = held || at == "stale" }

@@ -127,9 +127,9 @@ func TestProbeFolder(t *testing.T) {
 	// The handle of the lock file is closed first, so that the remove works on
 	// Windows too.
 	now := setProbeClock(t)
-	f.s.gitShadow.mu.Lock()
-	f.s.gitShadow.dropLock()
-	f.s.gitShadow.mu.Unlock()
+	f.d.Shadow.mu.Lock()
+	f.d.Shadow.dropLock()
+	f.d.Shadow.mu.Unlock()
 	if err := os.RemoveAll(dir); err != nil {
 		t.Fatal(err)
 	}
@@ -201,7 +201,7 @@ func TestProbeFolderIsWholeBeforeTheCall(t *testing.T) {
 	if err := os.Mkdir(probe, 0o700); err != nil {
 		t.Fatal(err)
 	}
-	h := f.s.gitShadow
+	h := f.d.Shadow
 	h.probeFolderMu.Lock()
 	type reply struct {
 		raw   string
@@ -219,7 +219,12 @@ func TestProbeFolderIsWholeBeforeTheCall(t *testing.T) {
 	case <-time.After(300 * time.Millisecond):
 	}
 	h.probeFolderMu.Unlock()
-	r := <-done
+	var r reply
+	select {
+	case r = <-done:
+	case <-time.After(30 * time.Second):
+		t.Fatal("git.info did not answer after the make of .probe") // a failed goroutine sends nothing
+	}
 	if !strings.Contains(r.raw, `"isRepo":true`) || len(probeCalls(r.calls)) != 1 {
 		t.Fatalf("git.info = %s with %d calls about the repository, want isRepo true and one call", r.raw, len(probeCalls(r.calls)))
 	}
@@ -788,7 +793,7 @@ func TestNoProbeOutsideTheStateShadow(t *testing.T) {
 	if _, calls := f.info(t, f.repo, map[string]any{"shadowDirOff": true}); len(probeCalls(calls)) != 0 {
 		t.Errorf("with the member: %d calls about the repository", len(probeCalls(calls)))
 	}
-	h := f.s.gitShadow
+	h := f.d.Shadow
 	h.mu.Lock()
 	h.state = controlFallback
 	h.mu.Unlock()

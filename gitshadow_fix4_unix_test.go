@@ -16,12 +16,23 @@ import (
 // request started.
 func duringRequest(t *testing.T, f shadowFixture, method string, params map[string]any, look func()) string {
 	t.Helper()
-	done := make(chan string, 1)
-	go func() { done <- dispatchRaw(t, f.s, rpcLine(t, method, params)) }()
+	line := rpcLine(t, method, params)
+	type reply struct {
+		raw string
+		err error
+	}
+	done := make(chan reply, 1)
+	go func() {
+		raw, err := gitDispatchErr(f.d, line)
+		done <- reply{raw, err}
+	}()
 	for {
 		select {
-		case raw := <-done:
-			return raw
+		case r := <-done:
+			if r.err != nil {
+				t.Fatal(r.err)
+			}
+			return r.raw
 		default:
 			look()
 			time.Sleep(2 * time.Millisecond)

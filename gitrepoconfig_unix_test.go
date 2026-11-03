@@ -23,13 +23,24 @@ func notRegularDetail(path string) string {
 
 // answerInTime runs one request and fails when it does not answer in 10 s. A
 // read that waits in the open of a FIFO gives no answer.
-func answerInTime(t *testing.T, s *server, method string, params map[string]any) string {
+func answerInTime(t *testing.T, d *gitDeps, method string, params map[string]any) string {
 	t.Helper()
-	done := make(chan string, 1)
-	go func() { done <- dispatchRaw(t, s, rpcLine(t, method, params)) }()
+	line := rpcLine(t, method, params)
+	type answer struct {
+		raw string
+		err error
+	}
+	done := make(chan answer, 1)
+	go func() {
+		raw, err := gitDispatchErr(d, line)
+		done <- answer{raw, err}
+	}()
 	select {
 	case got := <-done:
-		return got
+		if got.err != nil {
+			t.Fatal(got.err)
+		}
+		return got.raw
 	case <-time.After(10 * time.Second):
 		t.Fatalf("%s did not answer in 10 s", method)
 		return ""
@@ -62,13 +73,13 @@ func TestRepoConfigNotRegular(t *testing.T) {
 	if err := os.Rename(config, realFile); err != nil {
 		t.Fatal(err)
 	}
-	s := newTestServer(t)
+	d := newTestGitDeps()
 	quoted, _ := json.Marshal(repoConfigPrefix + notRegularDetail(config))
 	want := `"error":{"code":-32603,"message":` + string(quoted) + `}`
 	refused := func(state string) {
 		t.Helper()
 		for _, m := range f.fiveRequests(nil)[:2] {
-			if raw := answerInTime(t, s, m.method, m.params); !strings.Contains(raw, want) {
+			if raw := answerInTime(t, d, m.method, m.params); !strings.Contains(raw, want) {
 				t.Errorf("%s with a config that is %s = %s, want %s", m.method, state, raw, want)
 			}
 		}
@@ -95,7 +106,7 @@ func TestRepoConfigNotRegular(t *testing.T) {
 	for state, target := range map[string]string{"a link to a file": realFile, "a link to a link to a file": second,
 		"a dangling link": filepath.Join(filepath.Dir(f.repo), "no-such-file")} {
 		mustSymlink(t, target, config)
-		if raw := answerInTime(t, s, "git.info", map[string]any{"path": f.repo}); !strings.Contains(raw, `"result":{"isRepo":true,`) {
+		if raw := answerInTime(t, d, "git.info", map[string]any{"path": f.repo}); !strings.Contains(raw, `"result":{"isRepo":true,`) {
 			t.Errorf("git.info with a config that is %s = %s, want a repository", state, raw)
 		}
 		mustRemove(t, config)
@@ -215,7 +226,7 @@ func TestRepoConfigIncludeNotRegular(t *testing.T) {
 // not.
 func TestGitDirInfoFilesKinds(t *testing.T) {
 	f := newRefusalFixture(t)
-	s := newTestServer(t)
+	d := newTestGitDeps()
 	target := filepath.Join(filepath.Dir(f.repo), "target")
 	if err := os.WriteFile(target, nil, 0o644); err != nil {
 		t.Fatal(err)
@@ -233,7 +244,7 @@ func TestGitDirInfoFilesKinds(t *testing.T) {
 		// If a read waits in its open, this writer open lets it go at the end.
 		defer releaseFifoReader(path)
 		for _, m := range f.fiveRequests(nil)[:2] {
-			if raw := answerInTime(t, s, m.method, m.params); !strings.Contains(raw, want) {
+			if raw := answerInTime(t, d, m.method, m.params); !strings.Contains(raw, want) {
 				t.Errorf("%s with a FIFO as info/%s = %s, want %s", m.method, name, raw, want)
 			}
 		}
@@ -273,7 +284,7 @@ func TestGitDirInfoFilesKinds(t *testing.T) {
 // a dangling link are not refused.
 func TestGitDirShallowKinds(t *testing.T) {
 	f := newRefusalFixture(t)
-	s := newTestServer(t)
+	d := newTestGitDeps()
 	path := filepath.Join(f.gitDir, "shallow")
 	target := filepath.Join(filepath.Dir(f.repo), "target")
 	if err := os.WriteFile(target, nil, 0o644); err != nil {
@@ -285,7 +296,7 @@ func TestGitDirShallowKinds(t *testing.T) {
 	mustMkfifo(t, path)
 	defer releaseFifoReader(path)
 	for _, m := range f.fiveRequests(nil)[:2] {
-		if raw := answerInTime(t, s, m.method, m.params); !strings.Contains(raw, want) {
+		if raw := answerInTime(t, d, m.method, m.params); !strings.Contains(raw, want) {
 			t.Errorf("%s with a FIFO as shallow = %s, want %s", m.method, raw, want)
 		}
 	}

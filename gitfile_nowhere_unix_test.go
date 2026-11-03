@@ -59,8 +59,8 @@ func TestWorktreeRemoveGitFileNowhereStub(t *testing.T) {
 	t.Run("N04 without worktreeRoot", func(t *testing.T) {
 		stub(g)
 		wp := filepath.Join(g, ".claude", "worktrees", "w1")
-		s := newTestServer(t)
-		got := dispatchRaw(t, s, rpcLine(t, "git.worktree_remove", map[string]any{
+		d := newTestGitDeps()
+		got := gitDispatch(t, d, rpcLine(t, "git.worktree_remove", map[string]any{
 			"baseRepo": g, "worktreePath": wp, "branchName": "w1"}))
 		want := refusalFrame(t, "failed to remove worktree: could not check whether "+wp+" is locked: "+check)
 		if got != want {
@@ -71,8 +71,8 @@ func TestWorktreeRemoveGitFileNowhereStub(t *testing.T) {
 		"exit status 128: fatal: gitfile does not point to a valid repository: " + filepath.Join(g, ".git")
 	t.Run("GFOFF", func(t *testing.T) {
 		stub(g)
-		s, _ := newShadowServer(t)
-		got := dispatchRaw(t, s, rpcLine(t, "git.worktree_remove", map[string]any{
+		d, _ := newShadowDeps(t)
+		got := gitDispatch(t, d, rpcLine(t, "git.worktree_remove", map[string]any{
 			"baseRepo": g, "worktreePath": f.p0, "branchName": "", "worktreeRoot": f.R, "shadowDirOff": true}))
 		if want := refusalFrame(t, wtUnknown+hooks); got != want {
 			t.Errorf("got  %s\nwant %s", got, want)
@@ -84,8 +84,8 @@ func TestWorktreeRemoveGitFileNowhereStub(t *testing.T) {
 	t.Run("N04OFF", func(t *testing.T) {
 		stub(g)
 		wp := filepath.Join(g, ".claude", "worktrees", "w1")
-		s, _ := newShadowServer(t)
-		got := dispatchRaw(t, s, rpcLine(t, "git.worktree_remove", map[string]any{
+		d, _ := newShadowDeps(t)
+		got := gitDispatch(t, d, rpcLine(t, "git.worktree_remove", map[string]any{
 			"baseRepo": g, "worktreePath": wp, "branchName": "w1", "shadowDirOff": true}))
 		if want := refusalFrame(t, "failed to remove worktree: could not check whether "+wp+" is locked: "+hooks); got != want {
 			t.Errorf("got  %s\nwant %s", got, want)

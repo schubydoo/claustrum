@@ -52,7 +52,7 @@ func TestShadowFolderModesAndLock(t *testing.T) {
 	if err := take(); err != syscall.EWOULDBLOCK {
 		t.Fatalf("a second holder after one more request: %v, want EWOULDBLOCK", err)
 	}
-	f.s.gitShadow.close()
+	f.d.Shadow.close()
 	if err := take(); err != nil {
 		t.Errorf("the lock after the end of the daemon: %v, want it free", err)
 	}

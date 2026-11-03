@@ -52,8 +52,7 @@ func TestGitStatusIgnoresInRepoGitattributes(t *testing.T) {
 	runGit(t, repo, "worktree", "add", "-q", "--detach", wt)
 	writeFile(t, filepath.Join(wt, "data"), "aaaa\n", 0o644) // raw, same size as bbbb
 
-	sock := startSocketServer(t)
-	cl := dial(t, sock)
+	d, _ := newShadowDeps(t)
 	var resp struct {
 		Result struct {
 			IsRepo  bool     `json:"isRepo"`
@@ -61,7 +60,7 @@ func TestGitStatusIgnoresInRepoGitattributes(t *testing.T) {
 			Changes []string `json:"changes"`
 		} `json:"result"`
 	}
-	if err := json.Unmarshal(cl.call(req(1, "git.status", map[string]any{"path": wt, "baseRepo": repo})), &resp); err != nil {
+	if err := json.Unmarshal([]byte(gitDispatch(t, d, req(1, "git.status", map[string]any{"path": wt, "baseRepo": repo}))), &resp); err != nil {
 		t.Fatalf("unmarshal: %v", err)
 	}
 	if resp.Result.Clean || len(resp.Result.Changes) != 1 || resp.Result.Changes[0] != " M data" {

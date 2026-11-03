@@ -242,7 +242,7 @@ func TestStaleStepRunsAfterTheLeafIsMade(t *testing.T) {
 	}
 	old := filepath.Join(f.regDir, "old")
 	mustWrite(t, filepath.Join(old, "gitdir"), filepath.ToSlash(f.leaf())+"/.git\n")
-	srv, _ := newSeededShadowServer(t)
+	d, _ := newSeededShadowDeps(t)
 	prev := createStepHook
 	t.Cleanup(func() { createStepHook = prev })
 	ran, leafThere := false, false
@@ -251,7 +251,7 @@ func TestStaleStepRunsAfterTheLeafIsMade(t *testing.T) {
 			ran, leafThere = true, exists(f.leaf())
 		}
 	}
-	raw, _ := f.create(t, srv.gitDeps(), "w1", "", 0)
+	raw, _ := f.create(t, d, "w1", "", 0)
 	if !ran {
 		t.Fatalf("the step did not run with a held git directory, reply = %s", raw)
 	}

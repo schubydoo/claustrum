@@ -249,7 +249,7 @@ func TestShadowCallSevenBoundFromStart(t *testing.T) {
 	t.Setenv("CLAUSTRUM_GITSTUB_WAITMS", strconv.Itoa(int(callSevenExit/time.Millisecond)))
 	started := filepath.Join(t.TempDir(), "started")
 	t.Setenv("CLAUSTRUM_GITSTUB_STARTED", started)
-	msg := f.s.gitShadow.gate(false)
+	msg := f.d.Shadow.gate(false)
 	end := time.Now()
 	want := callSevenEndedText(t, f)
 	if !want.MatchString(msg) {
@@ -322,7 +322,7 @@ func TestStartTestCallsAndTheirPipes(t *testing.T) {
 		setDuration(t, &shadowCallDrain, 200*time.Millisecond)
 		slowGit(t, "init", "hold", 3*shadowCallBound, "", "")
 		start := time.Now()
-		if msg := f.s.gitShadow.gate(false); msg != "" {
+		if msg := f.d.Shadow.gate(false); msg != "" {
 			t.Errorf("the start test = %q, want it to pass", msg)
 		}
 		if d := time.Since(start); d >= shadowCallBound {
@@ -336,7 +336,7 @@ func TestStartTestCallsAndTheirPipes(t *testing.T) {
 		setDuration(t, &shadowCallDrain, 200*time.Millisecond)
 		slowGit(t, "--no-includes", "hold", 1500*time.Millisecond, "", "")
 		start := time.Now()
-		if msg := f.s.gitShadow.gate(false); msg != "" {
+		if msg := f.d.Shadow.gate(false); msg != "" {
 			t.Errorf("the start test = %q, want it to pass", msg)
 		}
 		if d := time.Since(start); d < 1400*time.Millisecond {
@@ -349,7 +349,7 @@ func TestStartTestCallsAndTheirPipes(t *testing.T) {
 		setDuration(t, &shadowCallBound, time.Second)
 		setDuration(t, &shadowCallDrain, 200*time.Millisecond)
 		slowGit(t, "--no-includes", "pre", 20*time.Second, "", "")
-		msg := f.s.gitShadow.gate(false)
+		msg := f.d.Shadow.gate(false)
 		want := callSevenEndedText(t, f)
 		if !want.MatchString(msg) {
 			t.Errorf("the start test = %q\nwant %s", msg, want)
