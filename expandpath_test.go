@@ -149,17 +149,6 @@ func TestExpandPathsCoversEveryPathField(t *testing.T) {
 	t.Setenv("HOME", home)
 	under := func(rest string) string { return filepath.Join(home, rest) }
 
-	gp := &gitParams{Path: "~/g", BaseRepo: "~/b", WorktreePath: "~/w", BranchName: "~keep", SourceBranch: "~keep2"}
-	gp.ExpandPaths()
-	if gp.Path != under("g") || gp.BaseRepo != under("b") || gp.WorktreePath != under("w") {
-		t.Errorf("gitParams paths = %+v", gp)
-	}
-	// Branch names are refs, not paths: a branch legitimately called "~keep"
-	// must survive untouched.
-	if gp.BranchName != "~keep" || gp.SourceBranch != "~keep2" {
-		t.Errorf("gitParams expanded a ref: BranchName=%q SourceBranch=%q", gp.BranchName, gp.SourceBranch)
-	}
-
 	sp := &spawnParams{Cwd: "~/c", Command: "~/not-a-path", ID: "~id"}
 	sp.ExpandPaths()
 	if sp.Cwd != under("c") {

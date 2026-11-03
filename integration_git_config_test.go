@@ -2,6 +2,7 @@ package main
 
 import (
 	"encoding/json"
+	"os"
 	"path/filepath"
 	"testing"
 )
@@ -15,9 +16,18 @@ import (
 // The detail of this refusal holds no path, so the golden is the same on each
 // system. The worktree path of the remove text and the root both read <DIR>.
 func TestSocketGitConfigRefusal(t *testing.T) {
-	f := newRefusalFixture(t)
-	setRepoConfig(t, f.gitDir, versionConfig("repositoryformatversion = 2"))
-	root := filepath.Dir(f.repo)
+	// A repository with one commit and the linked worktree wr, built here with
+	// runGit. Its config then holds format version 2.
+	requireGit(t)
+	root := resolveTestRoot(t, t.TempDir())
+	f := struct{ repo, wt string }{filepath.Join(root, "repo"), filepath.Join(root, "repo", ".claude", "worktrees", "wr")}
+	runGit(t, root, "init", "-q", "-b", "main", "repo")
+	runGit(t, f.repo, "commit", "-q", "--allow-empty", "-m", "init")
+	runGit(t, f.repo, "worktree", "add", "-q", f.wt, "-b", "wr")
+	config := "[core]\n\trepositoryformatversion = 2\n\tfilemode = true\n\tbare = false\n\tlogallrefupdates = true\n"
+	if err := os.WriteFile(filepath.Join(f.repo, ".git", "config"), []byte(config), 0o644); err != nil {
+		t.Fatal(err)
+	}
 
 	sock := startSocketServer(t)
 	cl := dial(t, sock)

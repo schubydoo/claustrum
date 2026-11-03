@@ -33,7 +33,7 @@ import (
 //     answers timeout "after the checkout finished" and rolls back.
 //
 // Every git call goes through the "git-slow" stub (runGitSlow in
-// helperproc_test.go). It runs the real git and slows the one call under test.
+// gitstub_test.go). It runs the real git and slows the one call under test.
 
 // wtFixture is a repository with a commit and a tracked .claude/settings.json.
 // baseRepo also holds an ignored, untracked .claude/settings.local.json, so the
@@ -95,7 +95,7 @@ var (
 // this test package, built a second time by `go test -c` without the race
 // detector. It runs the same code as this binary, but one start costs about a
 // third of the time. The stub takes all its behavior from its environment and
-// its arguments (runHelper and runGitSlow in helperproc_test.go), so one file
+// its arguments (runHelper, runGitHelper and runGitSlow), so one file
 // serves every test. A failed build fails every test that needs the stub: no
 // test falls back to this binary.
 func gitSlowStubDir(t *testing.T) string {
