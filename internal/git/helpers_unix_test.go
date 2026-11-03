@@ -72,9 +72,11 @@ func pollUntil(limit time.Duration, cond func() bool) bool {
 }
 
 // dropGroupWrite clears the group and other write bits of dir and returns dir.
-// Under umask 0002, t.TempDir() is mode 0775, and the worktreeRoot guard
-// refuses a folder that its group can write. The fixtures call this on their
-// temp folder, so the guard sees the mode that the test means.
+// Under umask 0002 with a shared primary group, t.TempDir() and the folders
+// that git makes are mode 0775. The worktreeRoot guard refuses a folder that a
+// shared group can write (the private group of the user is exempt). The
+// fixtures call this on those folders, so the guard sees the mode that the test
+// means.
 func dropGroupWrite(t *testing.T, dir string) string {
 	t.Helper()
 	fi, err := os.Stat(dir)
