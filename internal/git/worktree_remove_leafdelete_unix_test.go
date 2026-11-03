@@ -17,7 +17,8 @@ import (
 // The test is for Linux and macOS: on Windows os.OpenRoot shares no delete
 // access, so this fixture cannot rename parentDir. The parent that a remove
 // holds on Windows comes from Root.OpenRoot, which shares delete, so that swap
-// can happen there and has no pin yet.
+// can happen there. TestDeleteWorktreeDirStaysInItsParentAfterASwapOnWindows
+// pins it.
 func TestDeleteWorktreeDirStaysInItsParentAfterASwap(t *testing.T) {
 	base := t.TempDir()
 	parentDir := filepath.Join(base, "worktrees")
