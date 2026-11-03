@@ -9,7 +9,9 @@ file maps to one GitHub ruleset:
   pass (listed under Bootstrap order). They are `strict`, so the branch must be up to date
   first. A merge queue merges the PRs: squash, `ALLGREEN` grouping, 1 to 5
   entries built and merged at a time, a 5 minute wait for more entries, and a
-  60 minute time limit for the checks.
+  60 minute time limit for the checks. Set the `AUTO_UPDATE` repo variable to
+  `off` while the merge queue is on, because a push into a queued PR removes it
+  from the queue.
 - `tags.json` → ruleset `protect-version-tags` (tag). It makes `v*` release
   tags immutable: no deletion, no force-update.
 
