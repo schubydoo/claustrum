@@ -153,7 +153,7 @@ func (h liveFixture) wantCopyLink(t *testing.T) {
 	if !shadowLinksWorktrees {
 		return
 	}
-	daemon := daemonFolder(t, h.s.gitShadow.runDir)
+	daemon := daemonFolder(t, h.run)
 	for _, name := range entryNames(t, daemon) {
 		if fi, err := os.Lstat(filepath.Join(daemon, name, worktreesSubdir)); err == nil && fi.Mode()&os.ModeSymlink != 0 {
 			return

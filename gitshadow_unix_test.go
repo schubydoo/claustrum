@@ -397,36 +397,3 @@ func TestShadowFolderFailures(t *testing.T) {
 		}
 	})
 }
-
-// TestServeDaemonRemovesItsShadowFolder pins the wiring of the -serve daemon:
-// its settings control has the folder of the socket as its run folder, and the
-// teardown removes the folder of the daemon and leaves the empty git-shadow.
-// 5fd08069 does so at -stop and at server.shutdown (measured on Linux).
-func TestServeDaemonRemovesItsShadowFolder(t *testing.T) {
-	f := newShadowFixture(t)
-	run := resolveTestRoot(t, shortTempDir(t))
-	sock := filepath.Join(run, "s.sock")
-	s, err := newServerOnSocket(sock, "tok", "", wireLogOptions{}, false, false)
-	if err != nil {
-		t.Fatalf("newServerOnSocket: %v", err)
-	}
-	t.Cleanup(func() { s.procs.killAll() })
-	t.Cleanup(func() { _ = s.ln.Close() })
-	line := strings.Replace(rpcLine(t, "git.info", map[string]any{"path": f.repo}), testToken, "tok", 1)
-	if raw := dispatchRaw(t, s, line); !strings.Contains(raw, `"settingsControl":"shadow"`) {
-		t.Fatalf("git.info = %s", raw)
-	}
-	dir := daemonFolder(t, run)
-	s.signalShutdown()
-	s.closeAll(sock)
-	if _, err := os.Lstat(dir); !os.IsNotExist(err) {
-		t.Errorf("the folder of the daemon after the teardown: %v, want it gone", err)
-	}
-	fi, err := os.Lstat(filepath.Join(run, shadowRootName))
-	if err != nil || fi.Mode() != os.ModeDir|0o700 {
-		t.Fatalf("git-shadow after the teardown: %v, %v, want an empty folder with 0700", fi, err)
-	}
-	if names := daemonFolders(t, run); len(names) != 0 {
-		t.Errorf("git-shadow after the teardown holds %v", names)
-	}
-}

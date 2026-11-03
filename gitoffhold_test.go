@@ -4,20 +4,19 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
-	"strconv"
 	"strings"
 	"testing"
 	"time"
 )
 
-// offHoldFixture is a socket daemon in the state shadow with the stub git of
-// newSeededShadowFixture. Repository A is the repository of that fixture, and B
+// offHoldFixture is the git state of a daemon in the state shadow with the
+// stub git of newSeededShadowFixture. Each request runs in a goroutine of its
+// own on that one state. Repository A is the repository of that fixture, and B
 // is a second repository. The stub holds the first call that match names until
 // release runs.
 type offHoldFixture struct {
 	shadowFixture
-	s     *server
-	cl    *testClient
+	g     *gitRequests
 	repoB string
 	gate  string
 }
@@ -25,10 +24,6 @@ type offHoldFixture struct {
 func newOffHoldFixture(t *testing.T, match string) offHoldFixture {
 	t.Helper()
 	f := newSeededShadowFixture(t)
-	s, sock := newRunningServer(t)
-	s.gitShadow.mu.Lock()
-	s.gitShadow.state, s.gitShadow.tested = controlShadow, shadowClock()
-	s.gitShadow.mu.Unlock()
 	repoB, _ := configRepo(t)
 	dir := t.TempDir()
 	gate := filepath.Join(dir, "gate")
@@ -36,71 +31,43 @@ func newOffHoldFixture(t *testing.T, match string) offHoldFixture {
 	t.Setenv("CLAUSTRUM_GITSTUB_GATE", gate)
 	t.Setenv("CLAUSTRUM_GITSTUB_NTHFILE", filepath.Join(dir, "nth"))
 	t.Setenv("CLAUSTRUM_GITSTUB_NTH", "1")
-	h := offHoldFixture{shadowFixture: f, s: s, cl: dial(t, sock), repoB: repoB, gate: gate}
-	// The cleanup opens the gate and waits for the reply of the held request, so
-	// that no git call of it runs while t.TempDir removes the repositories.
+	h := offHoldFixture{shadowFixture: f, g: newGitRequests(f.d), repoB: repoB, gate: gate}
+	// The cleanup opens the gate and waits for every reply, so that no git call
+	// runs while t.TempDir removes the repositories.
 	t.Cleanup(func() {
 		h.release()
-		for end := time.Now().Add(time.Minute); time.Now().Before(end) && !h.replied(1); time.Sleep(5 * time.Millisecond) {
+		if !h.g.wait(time.Minute) {
+			t.Error("a request did not answer within 60 s of the release")
 		}
 	})
 	return h
 }
 
-// replied reports whether the reply with the id n came.
-func (h offHoldFixture) replied(n int) bool {
-	h.cl.mu.Lock()
-	defer h.cl.mu.Unlock()
-	for _, line := range h.cl.resp {
-		var r struct {
-			ID int `json:"id"`
-		}
-		if json.Unmarshal(line, &r) == nil && r.ID == n {
-			return true
-		}
-	}
-	return false
-}
-
-// send writes one request with the id n.
+// send starts one request with the id n.
 func (h offHoldFixture) send(t *testing.T, n int, method string, params map[string]any) {
 	t.Helper()
-	raw, err := json.Marshal(params)
-	if err != nil {
-		t.Fatal(err)
-	}
-	h.cl.send(authed(`{"jsonrpc":"2.0","id":` + strconv.Itoa(n) + `,"method":"` + method + `","params":` + string(raw) + `}`))
+	h.g.start(n, rpcLine(t, method, params))
 }
 
 // reply waits up to 60 s for the reply with the id n and returns its result.
 func (h offHoldFixture) reply(t *testing.T, n int) json.RawMessage {
 	t.Helper()
-	for end := time.Now().Add(time.Minute); time.Now().Before(end); time.Sleep(5 * time.Millisecond) {
-		h.cl.mu.Lock()
-		lines := append([]json.RawMessage(nil), h.cl.resp...)
-		h.cl.mu.Unlock()
-		for _, line := range lines {
-			var r struct {
-				ID     int             `json:"id"`
-				Result json.RawMessage `json:"result"`
-			}
-			if json.Unmarshal(line, &r) == nil && r.ID == n {
-				if r.Result == nil {
-					t.Fatalf("reply %d = %s, want a result", n, line)
-				}
-				return r.Result
-			}
-		}
+	line := h.g.reply(t, n)
+	var r struct {
+		Result json.RawMessage `json:"result"`
 	}
-	t.Fatalf("no reply with the id %d within 60 s", n)
-	return nil
+	if err := json.Unmarshal([]byte(line), &r); err != nil {
+		t.Fatal(err)
+	}
+	if r.Result == nil {
+		t.Fatalf("reply %d = %s, want a result", n, line)
+	}
+	return r.Result
 }
 
 // replies is the count of replies so far.
 func (h offHoldFixture) replies() int {
-	h.cl.mu.Lock()
-	defer h.cl.mu.Unlock()
-	return len(h.cl.resp)
+	return h.g.count()
 }
 
 // held waits up to 60 s until the stub holds the call.
@@ -155,7 +122,7 @@ func TestOffSwitchHoldsTheDaemonWhileARequestRuns(t *testing.T) {
 	if got := settingsControlOf(t, h.reply(t, 3)); got != controlShadow {
 		t.Errorf("H2: settingsControl of B after the reply of A = %q, want %q", got, controlShadow)
 	}
-	if n := h.s.offGitRequests.Load(); n != 0 {
+	if n := h.d.OffRequests.Load(); n != 0 {
 		t.Errorf("%d requests with the member after the replies, want 0", n)
 	}
 }
