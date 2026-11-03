@@ -12,6 +12,8 @@ import (
 	"sort"
 	"strings"
 	"testing"
+
+	"github.com/schubydoo/claustrum/internal/rpc"
 )
 
 // Increment B: hermetic coverage of the env-dependent namespaces (files.* and
@@ -487,7 +489,7 @@ func TestSocketTildeExpansion(t *testing.T) {
 		req(15, "files.stat", map[string]any{"path": "~/f.txt/"}),
 		req(16, "files.validate", map[string]any{"path": "~/f.txt/../f.txt"}),
 		// Id 17 is DOCUMENTARY, not discriminating: files.list re-joins every
-		// entry path, so it replies identically whether or not expandPath
+		// entry path, so it replies identically whether or not pathcanon.ExpandTilde
 		// cleaned "~//". Verified against a no-clean mutant, where 15/16/18/19
 		// all move and this row does not. Kept because "this one cannot tell"
 		// is worth recording next to four rows that can — but do not count it
@@ -557,7 +559,7 @@ func TestSocketTildeExpansion(t *testing.T) {
 	// answers instead, so this now asserts that the REFUSAL echoes
 	// the expanded, trailing-separator-cleaned path — the same wire-visibility the
 	// row has always pinned, one refusal earlier. The path expands under the repo
-	// (containment), and expandPath strips the trailing "/" for the tilde form.
+	// (containment), and pathcanon.ExpandTilde strips the trailing "/" for the tilde form.
 	const wtBase = "<DIR>/repo/.claude/worktrees/wt2"
 	wtErr := string(normPath(cl.call(req(22, "git.worktree_create", map[string]any{
 		"baseRepo": "~/repo", "branchName": "wt4", "worktreePath": "~/repo/.claude/worktrees/wt2/",
@@ -587,7 +589,7 @@ func TestSocketTildeExpansion(t *testing.T) {
 	//
 	// The positive check is anchored on the NORMALIZED home token, not a bare
 	// "/nope", so it says what its failure text says. Dropping expansion outright
-	// IS caught by the negative check above — expandPath then returns "~/nope/"
+	// IS caught by the negative check above — pathcanon.ExpandTilde then returns "~/nope/"
 	// verbatim, since the Clean lives inside the expansion branch. What a bare
 	// "/nope" would miss is a mutant that cleans WITHOUT expanding
 	// (filepath.Clean(p) in place of filepath.Join(home, p[2:])): that yields
@@ -823,7 +825,7 @@ func TestSocketWorktreeExistingBranch(t *testing.T) {
 // structs ARE the wire contract and an unreachable field order is still one that
 // a future input could expose.
 func TestWorktreeResultFieldOrder(t *testing.T) {
-	b, err := json.Marshal(worktreeResult{
+	b, err := json.Marshal(rpc.WorktreeResult{
 		Success: true, Path: "/p", Error: "e", ErrorCode: "c", SourceBranch: "s", Branch: "b", BranchKept: true,
 	})
 	if err != nil {
@@ -833,7 +835,7 @@ func TestWorktreeResultFieldOrder(t *testing.T) {
 	// is claustrum's choice (not measured).
 	const want = `{"success":true,"path":"/p","error":"e","errorCode":"c","sourceBranch":"s","branch":"b","branchKept":true}`
 	if string(b) != want {
-		t.Errorf("worktreeResult field order:\n got %s\nwant %s", b, want)
+		t.Errorf("rpc.WorktreeResult field order:\n got %s\nwant %s", b, want)
 	}
 }
 
@@ -931,25 +933,25 @@ func gitExitOK(repo string, args ...string) bool {
 // TestWorktreeRemoveResultShape pins the declared reply shape: field ORDER, and
 // that `error` is omitted when empty. The lenient cases still answer a bare
 // {"success":true}, which is what the committed goldens pin. `error` is populated
-// only on a refusal or failure branch (see worktreeRemoveResult). Asserted
+// only on a refusal or failure branch (see rpc.WorktreeRemoveResult). Asserted
 // directly so the order cannot drift on a path no golden covers.
 func TestWorktreeRemoveResultShape(t *testing.T) {
-	b, err := json.Marshal(worktreeRemoveResult{Success: true, Error: "e"})
+	b, err := json.Marshal(rpc.WorktreeRemoveResult{Success: true, Error: "e"})
 	if err != nil {
 		t.Fatal(err)
 	}
 	if want := `{"success":true,"error":"e"}`; string(b) != want {
-		t.Errorf("worktreeRemoveResult = %s, want %s", b, want)
+		t.Errorf("rpc.WorktreeRemoveResult = %s, want %s", b, want)
 	}
 	// omitempty: a reply with no error and no kept branch is a bare {"success":true}.
-	b, _ = json.Marshal(worktreeRemoveResult{Success: true})
+	b, _ = json.Marshal(rpc.WorktreeRemoveResult{Success: true})
 	if want := `{"success":true}`; string(b) != want {
-		t.Errorf("worktreeRemoveResult (no error) = %s, want %s", b, want)
+		t.Errorf("rpc.WorktreeRemoveResult (no error) = %s, want %s", b, want)
 	}
 	// branchKept follows error (`89cb6289`, measured).
-	b, _ = json.Marshal(worktreeRemoveResult{Success: false, Error: "e", BranchKept: true})
+	b, _ = json.Marshal(rpc.WorktreeRemoveResult{Success: false, Error: "e", BranchKept: true})
 	if want := `{"success":false,"error":"e","branchKept":true}`; string(b) != want {
-		t.Errorf("worktreeRemoveResult (kept) = %s, want %s", b, want)
+		t.Errorf("rpc.WorktreeRemoveResult (kept) = %s, want %s", b, want)
 	}
 }
 

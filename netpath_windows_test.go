@@ -58,8 +58,8 @@ func TestOnNetwork(t *testing.T) {
 		{`real\sub`, false},
 		{`\gone`, false},
 	} {
-		if got := onNetwork(tc.path); got != tc.want {
-			t.Errorf("onNetwork(%q) = %t, want %t", tc.path, got, tc.want)
+		if got := pathcanon.OnNetwork(tc.path); got != tc.want {
+			t.Errorf("pathcanon.OnNetwork(%q) = %t, want %t", tc.path, got, tc.want)
 		}
 	}
 }

@@ -282,14 +282,11 @@ component_management:
         - internal/git/gitplainfile_unix.go
         - internal/git/gitplainfile_windows.go
         - internal/homeguard/homeguard.go
-        - compat_homeguard.go
         # cross-platform fs primitives for the git/files methods: path canon (git
         # frame spelling) and the O_DIRECTORY guard used by files.list.
         - internal/pathcanon/pathcanon.go
         - internal/pathcanon/pathcanon_unix.go
         - internal/pathcanon/pathcanon_windows.go
-        - compat_pathcanon.go
-        - compat_pathcanon_windows.go
         - internal/files/odirectory_unix.go
         - internal/files/odirectory_windows.go
         - internal/files/filesread_unix.go
