@@ -55,7 +55,7 @@ func entriesWith(dir, prefix string) []string {
 // TestShadowIncludeStepEntries: during the include step of a create the
 // pattern file has mode 0644, and the index folder of the checkout is still
 // there. 5fd08069 keeps `.index-<n>` until the reply, and its `patterns` file
-// is `f 0644 11` (measured on Linux and macOS). The stub holds the first
+// is `f 0644 11` (measured on Linux and macOS). The stub holds each
 // `ls-files` call that names the pattern file at a gate. The test looks at the
 // folder of the daemon while the stub waits, and opens the gate after a look
 // that saw the pattern file. The stub stops its wait after 10 s, a time that no
