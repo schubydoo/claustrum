@@ -17,6 +17,14 @@ import (
 	"sync/atomic"
 	"syscall"
 	"time"
+
+	"github.com/schubydoo/claustrum/internal/files"
+	"github.com/schubydoo/claustrum/internal/git"
+	"github.com/schubydoo/claustrum/internal/logging"
+	"github.com/schubydoo/claustrum/internal/metrics"
+	"github.com/schubydoo/claustrum/internal/rpc"
+	"github.com/schubydoo/claustrum/internal/shellenv"
+	"github.com/schubydoo/claustrum/internal/wirelog"
 )
 
 // tokenPipeEnv names the file descriptor the daemonized child reads its auth
@@ -80,7 +88,7 @@ type server struct {
 	pipeLn       net.Listener // optional Windows named-pipe listener; nil unless -listen-pipe set (Windows-only)
 	keepChildren bool         // -keep-children: leave child processes running on graceful shutdown
 
-	wlog    *wireLog      // optional JSON-RPC frame recorder; nil unless -wire-log set
+	wlog    *wirelog.Log  // optional JSON-RPC frame recorder; nil unless -wire-log set
 	connSeq atomic.Uint64 // per-daemon connection counter, only to correlate wire-log records
 
 	// The per-daemon counters of the sampled log lines (logSampled). Each line kind
@@ -130,7 +138,7 @@ type server struct {
 	// gitShadow is the settings control of the git methods: the state that git.info
 	// reports, the folder of this daemon beside the socket and the start test
 	// (internal/git/gitshadow.go). It is nil for a server with no run folder.
-	gitShadow *shadowHost
+	gitShadow *git.ShadowHost
 
 	// peerCheck is the peer check of a daemon that started with
 	// CLAUDE_SSH_PEER_CHECK=1, and nil otherwise. It sets the peerCheck members of
@@ -170,7 +178,7 @@ type conn struct {
 	id uint64
 	// wlog is the server's recorder (nil when off), held here so the write paths
 	// can record without reaching back through the server.
-	wlog *wireLog
+	wlog *wirelog.Log
 
 	// process.stdin is the one method whose ARRIVAL ORDER is part of its meaning:
 	// the chunks are a byte stream, and delivering them out of order corrupts it.
@@ -213,7 +221,7 @@ func (c *conn) supersede(reason string) {
 	// not hypothetical: the socket harness handed serveConn a bare net.Conn until
 	// this change, so a future regression of the same shape says so out loud.
 	if c.ac == nil {
-		logWarnf("[Server] supersede on a connection with no activity wrapper; not closing it")
+		logging.Warnf("[Server] supersede on a connection with no activity wrapper; not closing it")
 		return
 	}
 	// Mark the writer closed whether or not we win the claim. Losing it means the
@@ -227,7 +235,7 @@ func (c *conn) supersede(reason string) {
 	if !c.ac.claimClose() {
 		return
 	}
-	logInfof("[Server] closing connection %s: %s", c.remoteLabel(), reason)
+	logging.Infof("[Server] closing connection %s: %s", c.remoteLabel(), reason)
 	_ = c.nc.Close()
 }
 
@@ -335,7 +343,7 @@ func (c *conn) writeResponse(v interface{}) (failed bool) {
 	b, err := json.Marshal(v)
 	if err != nil {
 		if !c.shuttingDown() {
-			logErrorf(fmtReplyFailed, err)
+			logging.Errorf(fmtReplyFailed, err)
 		}
 		return false
 	}
@@ -358,9 +366,9 @@ func (c *conn) writeResponse(v interface{}) (failed bool) {
 		// are skipped once the daemon shuts down.
 		if !c.shuttingDown() {
 			if c.tokenMark().Load() {
-				logDebugf(fmtWriteFailed, n, len(b), err)
+				logging.Debugf(fmtWriteFailed, n, len(b), err)
 			}
-			logErrorf(fmtReplyFailed, err)
+			logging.Errorf(fmtReplyFailed, err)
 		}
 		return true
 	}
@@ -370,7 +378,7 @@ func (c *conn) writeResponse(v interface{}) (failed bool) {
 // runServe self-daemonizes (reparenting to init) then runs the RPC server. The
 // child is marked with daemonChildEnv (CLAUSTRUM_DAEMON_CHILD) so we re-exec
 // exactly once — see that const for why it is not CLAUDE_SSH_DAEMON_CHILD.
-func runServe(socket, tokenFile string, tokenFd int, metricsAddr string, wlopt wireLogOptions, keepChildren, listenPipe bool) {
+func runServe(socket, tokenFile string, tokenFd int, metricsAddr string, wlopt wirelog.Options, keepChildren, listenPipe bool) {
 	if os.Getenv(daemonChildEnv) != "1" {
 		// Parent. An fd is only valid in this process and would not survive the
 		// re-exec, so read it now and forward the token to the child over an
@@ -457,7 +465,7 @@ func runServe(socket, tokenFile string, tokenFd int, metricsAddr string, wlopt w
 	// Linux. It comes after the listening line, so a start that fails before it leaves no shell. Kept
 	// in this shell, not in newServerOnSocket, so a test that boots a server never
 	// forks a login shell.
-	warmLoginPATHAtStart()
+	shellenv.WarmAtStart()
 	// Start the host cleaner. It is a background sweep that ends orphaned Claude Code process groups under this
 	// install's roots. It also retires abandoned daemons and tidies their stale run dirs. It runs
 	// unconditionally at startup, right after the listening line. It stays off, with one line, when the socket
@@ -467,7 +475,7 @@ func runServe(socket, tokenFile string, tokenFd int, metricsAddr string, wlopt w
 	startHostCleaner(socket)
 	// The start test of files.read real, once and before the first connection line.
 	// Its place beside the banner and the cleaner line is claustrum's own, not measured.
-	logFilesReadRealStart()
+	files.LogReadRealStart()
 	s.run(socket)
 }
 
@@ -506,7 +514,7 @@ func childToken(tokenFile string) (string, error) {
 		// consumed, and one left on disk is a credential the operator does not
 		// know is still there.
 		if err := os.Remove(tokenFile); err != nil {
-			logWarnf("[daemon] failed to remove --token-file %s: %v", tokenFile, err)
+			logging.Warnf("[daemon] failed to remove --token-file %s: %v", tokenFile, err)
 		}
 	}
 	// An empty token must be fatal. Otherwise the daemon comes up healthy and
@@ -542,12 +550,12 @@ var chmodSocket = os.Chmod
 // metrics and pipe listeners. It hands back the ready-to-run server. Split
 // out of runServe (same pattern as enablePipe/startAcceptLoops) so the whole
 // boot sequence is testable without the daemonize/osExit shell.
-func newServerOnSocket(socket, token, metricsAddr string, wlopt wireLogOptions, keepChildren, listenPipe bool) (*server, error) {
+func newServerOnSocket(socket, token, metricsAddr string, wlopt wirelog.Options, keepChildren, listenPipe bool) (*server, error) {
 	// Opened before the listener so a bad -wire-log path fails the boot rather
 	// than producing a daemon that serves happily and records nothing — an empty
 	// capture reads as "the client sent nothing", the worst failure for a
 	// diagnostic tool.
-	wlog, err := openWireLog(wlopt)
+	wlog, err := wirelog.Open(wlopt)
 	if err != nil {
 		return nil, err
 	}
@@ -669,7 +677,7 @@ func newServerOnSocket(socket, token, metricsAddr string, wlopt wireLogOptions, 
 		stopLateLock:  claim.stopLate,
 		instanceID:    instanceID,
 		startedAt:     startedAt,
-		gitShadow:     newShadowHost(execChildRunDir(socket)),
+		gitShadow:     git.NewShadowHost(execChildRunDir(socket)),
 
 		peerCheck: gate,
 	}
@@ -677,11 +685,11 @@ func newServerOnSocket(socket, token, metricsAddr string, wlopt wireLogOptions, 
 	// Optional Prometheus metrics endpoint (opt-in via -metrics-addr). A bind
 	// failure is non-fatal — the daemon's job is the socket, not the metrics.
 	if metricsAddr != "" {
-		if ln, err := startMetricsServer(metricsAddr); err != nil {
-			logErrorf("[Server] metrics: listen %s: %v", metricsAddr, err)
+		if ln, err := metrics.StartServer(metricsAddr); err != nil {
+			logging.Errorf("[Server] metrics: listen %s: %v", metricsAddr, err)
 		} else {
 			s.metricsLn = ln
-			logInfof("[Server] metrics: serving Prometheus counters on %s/metrics", metricsAddr)
+			logging.Infof("[Server] metrics: serving Prometheus counters on %s/metrics", metricsAddr)
 		}
 	}
 
@@ -972,7 +980,7 @@ func (s *server) enablePipe(socket string, listenPipe bool) {
 	}
 	pln, err := startPipeTransport(socket)
 	if err != nil {
-		logErrorf("[Server] named-pipe transport: %v", err)
+		logging.Errorf("[Server] named-pipe transport: %v", err)
 		// startPipeTransport writes rpc.pipe only on success, so any file present now
 		// is stale from a prior boot — clear it rather than leave a dead pointer.
 		removePipeNameFile(socket)
@@ -982,7 +990,7 @@ func (s *server) enablePipe(socket string, listenPipe bool) {
 	// Record rpc.pipe's identity so teardown removes it only if it is still ours
 	// (removePipeNameFileIfOwned), like the socket and daemon.token.
 	s.pipeInfo = pipeNameFileIdentity(socket)
-	logInfof("[Server] also listening on named pipe %s", pln.Addr())
+	logging.Infof("[Server] also listening on named pipe %s", pln.Addr())
 }
 
 // startAcceptLoops launches the accept loop for the socket and, when present, a
@@ -1041,7 +1049,7 @@ func (s *server) acceptLoop(ln net.Listener) {
 			if maxDelay := 1 * time.Second; tempDelay > maxDelay {
 				tempDelay = maxDelay
 			}
-			logWarnf("[Server] accept error (retrying in %v): %v", tempDelay, err)
+			logging.Warnf("[Server] accept error (retrying in %v): %v", tempDelay, err)
 			time.Sleep(tempDelay)
 			continue
 		}
@@ -1055,7 +1063,7 @@ func (s *server) acceptLoop(ln net.Listener) {
 		// read/write. The reference closes a connection idle for 5 minutes (f6010b97).
 		ac := newActivityConn(nc)
 		c := &conn{nc: ac, ac: ac, id: s.connSeq.Add(1), wlog: s.wlog, done: make(chan struct{}), down: s.shutdown}
-		met.Connections.Add(1)
+		metrics.Met.Connections.Add(1)
 		// The New connection line waits for the first request that shows the token
 		// (conn.showToken, claustrum's own, not measured).
 		s.mu.Lock()
@@ -1085,7 +1093,7 @@ func (p *spokeReader) Read(b []byte) (int, error) {
 // force a handler panic and prove the per-request recover keeps the daemon alive
 // (the panic path is otherwise unreachable, so it cannot be provoked by input).
 // Production never reassigns it.
-var dispatchRequest = func(s *server, c *conn, raw []byte, req request) *response { return s.route(c, req) }
+var dispatchRequest = func(s *server, c *conn, raw []byte, req request) *rpc.Response { return s.route(c, req) }
 
 func (s *server) serveConn(c *conn) {
 	var spoke spokeReader
@@ -1095,10 +1103,10 @@ func (s *server) serveConn(c *conn) {
 		// logs no close line. Its close counts on the sampled close line instead,
 		// but only when it sent a byte (measured on Linux, 683cc6a9).
 		if c.tokenMark().Load() {
-			logInfof(fmtConnClosed, c.remoteLabel())
+			logging.Infof(fmtConnClosed, c.remoteLabel())
 		} else if spoke.sent {
 			if n := s.tokenlessCl.Add(1); logSampled(n) {
-				logInfof(fmtTokenless, n, c.remoteLabel())
+				logging.Infof(fmtTokenless, n, c.remoteLabel())
 			}
 		}
 		c.wmu.Lock()
@@ -1185,7 +1193,7 @@ func (s *server) serveConn(c *conn) {
 	// Claustrum's own, not measured: the address and the error are quoted, and no
 	// line is logged for a connection that never showed the token or during the shutdown.
 	if err := sc.Err(); err != nil && !isOurClose(err) && c.tokenMark().Load() && !c.shuttingDown() {
-		logErrorf(fmtScannerErr, c.remoteLabel(), err)
+		logging.Errorf(fmtScannerErr, c.remoteLabel(), err)
 	}
 }
 
@@ -1221,7 +1229,7 @@ func (s *server) handleRequest(c *conn, raw []byte, req request, ordered bool, t
 	//
 	// The inner func is what keeps the release on a defer, so a panic in
 	// dispatch cannot strand the ticket and deadlock the connection.
-	var resp *response
+	var resp *rpc.Response
 	func() {
 		// Registered FIRST, so it unwinds LAST — after doneStdinTurn below,
 		// which means a panicking dispatch cannot strand a stdin ticket and
@@ -1237,18 +1245,18 @@ func (s *server) handleRequest(c *conn, raw []byte, req request, ordered bool, t
 			if r == nil {
 				return
 			}
-			logErrorf("[Server] recovered panic: method=%s id=%v: %v", method, idForLog(id), r)
+			logging.Errorf("[Server] recovered panic: method=%s id=%v: %v", method, rpc.IDForLog(id), r)
 			// The stack goes to DEBUG so the ERROR line keeps its shape while
 			// the operator can still get the fault location — a recovered
 			// panic here means an unreachable path became reachable, and
 			// method+id locate the request but not the fault.
-			logDebugf("[Server] recovered panic stack: method=%s id=%v\n%s", method, idForLog(id), debug.Stack())
+			logging.Debugf("[Server] recovered panic stack: method=%s id=%v\n%s", method, rpc.IDForLog(id), debug.Stack())
 			// server.shutdown's own reply is {"ok":true}, produced by the normal
 			// dispatch path, not here. Under a panic we emit NO frame for it.
 			if method == methodShutdown {
 				return
 			}
-			resp = ptr(errResult(id, codeInternal, fmt.Sprintf("recovered panic: %v", r)))
+			resp = rpc.Ptr(rpc.ErrResult(id, rpc.CodeInternal, fmt.Sprintf("recovered panic: %v", r)))
 		}()
 		if ordered {
 			c.awaitStdinTurn(ticket)
@@ -1329,7 +1337,7 @@ func (w *signalWatch) handle(sig os.Signal) {
 	if w.keepChildren {
 		fate = "kept"
 	}
-	logInfof("[daemon] received %v; shutting down (children will be %s)", sig, fate)
+	logging.Infof("[daemon] received %v; shutting down (children will be %s)", sig, fate)
 	w.mu.Lock()
 	w.fired = true
 	s := w.srv
@@ -1353,7 +1361,7 @@ func (w *signalWatch) attach(s *server) {
 
 // requestShutdown logs the second line of a shutdown by signal and requests the stop.
 func (s *server) requestShutdown() {
-	logInfof("[Server] shutdown requested")
+	logging.Infof("[Server] shutdown requested")
 	s.signalShutdown()
 }
 
@@ -1406,7 +1414,7 @@ func (s *server) closeAll(socket string) {
 	// macOS against 52d82f0a. Its shell is no child, so the cleanup line does not
 	// count it (measured on Linux). Its place among these steps is claustrum's own
 	// (not measured).
-	stopLoginPATH()
+	shellenv.Stop()
 	dropOwnTokenFile(socket, s.tokenInfo)
 	// Remove rpc.pipe on the same graceful path as rpc.sock/daemon.token, and with the
 	// same ownership guard: only if it is still the inode we published, so a successor's
@@ -1428,7 +1436,7 @@ func (s *server) closeAll(socket string) {
 		s.releaseRunDir()
 	}
 	s.procs.close() // end the prune sweep; idempotent
-	logInfof("[Server] cleanup: closed %d connection(s), killed %d child process group(s)", closed, killed)
+	logging.Infof("[Server] cleanup: closed %d connection(s), killed %d child process group(s)", closed, killed)
 	// Closed last, after every connection is down. Unlike the socket and
 	// daemon.token, the file itself is left in place. It is the artifact the
 	// operator asked for.
@@ -1477,7 +1485,7 @@ func (s *server) dropConns() int {
 func (s *server) stopChildren() int {
 	if s.keepChildren {
 		s.procs.endPendingFarewells()
-		logInfof("[Server] -keep-children: leaving %d running child process(es) alive across shutdown", s.procs.runningCount())
+		logging.Infof("[Server] -keep-children: leaving %d running child process(es) alive across shutdown", s.procs.runningCount())
 		return 0
 	}
 	killed := s.procs.killAllCount()

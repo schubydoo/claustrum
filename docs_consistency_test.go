@@ -162,10 +162,11 @@ var docNamespaceRE = regexp.MustCompile(`^(?:server|files|git|launcher|process|p
 // docNotMethods lists the spans of the form <namespace>.<name> that are not
 // methods and not advertised features. Each entry has its reason.
 var docNotMethods = map[string]string{
-	"server.version": "the documents name it as the method that 7d193f89 removed",
-	"server.go":      "a source file",
-	"process.go":     "a source file",
-	"git.exe":        "the Windows git program, inside an error text",
+	"server.version":     "the documents name it as the method that 7d193f89 removed",
+	"server.go":          "a source file",
+	"process.go":         "a source file",
+	"git.exe":            "the Windows git program, inside an error text",
+	"files.PluginHashRE": "a Go name of the package internal/files",
 	// The terminal of 683cc6a9, which claustrum does not build.
 	"process.resize":    "a method of the reference build 683cc6a9 that claustrum lacks",
 	"process.spawn.pty": "a feature of the reference build 683cc6a9 that claustrum lacks",

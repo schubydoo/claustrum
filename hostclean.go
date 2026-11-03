@@ -14,6 +14,8 @@ import (
 	"strings"
 	"syscall"
 	"time"
+
+	"github.com/schubydoo/claustrum/internal/logging"
 )
 
 // The host cleaner (reference build 19f30c46). The cleaner is a periodic,
@@ -649,7 +651,7 @@ func endGroupsTwoPhase(groups []tracked, label, termLog string) (signalled, surv
 			continue
 		}
 		if termLog != "" {
-			logInfof(termLog, g.pid)
+			logging.Infof(termLog, g.pid)
 		}
 		err := killGroup(g.pid, syscall.SIGTERM)
 		if err != nil {
@@ -657,7 +659,7 @@ func endGroupsTwoPhase(groups []tracked, label, termLog string) (signalled, surv
 				continue // already gone
 			}
 			if errors.Is(err, syscall.EPERM) {
-				logInfof("[hostclean] %s %d belongs to another owner; not signalling it", label, g.pid)
+				logging.Infof("[hostclean] %s %d belongs to another owner; not signalling it", label, g.pid)
 				continue
 			}
 			// Any other error: still wait to see whether it exits.
@@ -672,12 +674,12 @@ func endGroupsTwoPhase(groups []tracked, label, termLog string) (signalled, surv
 		if !g.same() {
 			continue // exited or was replaced during the grace: never SIGKILL a reused pid
 		}
-		logInfof("[hostclean] group %d outlived SIGTERM for %s: SIGKILL", g.pid, hcTermGrace)
+		logging.Infof("[hostclean] group %d outlived SIGTERM for %s: SIGKILL", g.pid, hcTermGrace)
 		_ = killGroup(g.pid, syscall.SIGKILL)
 	}
 	for _, g := range waitGone(survivors, hcClock().Add(hcKillSettle)) {
 		survived++
-		logInfof("[hostclean] %s %d survived SIGKILL", label, g.pid)
+		logging.Infof("[hostclean] %s %d survived SIGKILL", label, g.pid)
 	}
 	return signalled, survived
 }
@@ -853,7 +855,7 @@ func (c *hostCleaner) retireAbandoned(e runDirEntry, pid int, uid uint32) (bool,
 		release()
 		return false, "it is no longer the process that was inspected"
 	}
-	logInfof("[hostclean] retiring abandoned daemon pid %d: its run dir %q has seen no connection for %s: SIGTERM", pid, e.dirPath, hcDays(e.idle))
+	logging.Infof("[hostclean] retiring abandoned daemon pid %d: its run dir %q has seen no connection for %s: SIGTERM", pid, e.dirPath, hcDays(e.idle))
 	err := send(syscall.SIGTERM)
 	release()
 	if err != nil && !hcIsNoSuchProcess(err) {
@@ -949,7 +951,7 @@ func (c *hostCleaner) runDirs() ([]runDirEntry, func()) {
 			}
 			if len(out) >= hcMaxRunDirs {
 				// The reference's line, measured on Linux.
-				logInfof("[hostclean] more than %d run dirs under %s; only the first %d are examined", hcMaxRunDirs, runRoot, hcMaxRunDirs)
+				logging.Infof("[hostclean] more than %d run dirs under %s; only the first %d are examined", hcMaxRunDirs, runRoot, hcMaxRunDirs)
 				return out, closeAll
 			}
 			idle, ok := hcDirIdle(root, name, now)
@@ -978,16 +980,16 @@ func (c *hostCleaner) tidyRunDirs(entries []runDirEntry, sum *hcSummary) {
 		if tries >= hcMaxRetire {
 			// The reference's line, measured on Linux. claustrum counts attempts, refused
 			// ones included. The reference count after a refused attempt is not measured.
-			logInfof("[hostclean] run dir %q unused for %s: left for a later pass (%d retirements this pass already)", e.dirPath, hcDays(e.idle), tries)
+			logging.Infof("[hostclean] run dir %q unused for %s: left for a later pass (%d retirements this pass already)", e.dirPath, hcDays(e.idle), tries)
 			continue
 		}
 		idle, ok := hcDirIdle(e.root, e.name, hcClock())
 		if !ok {
-			logInfof("[hostclean] run dir %q kept: it is not a directory any more, or its age could not be read", e.dirPath)
+			logging.Infof("[hostclean] run dir %q kept: it is not a directory any more, or its age could not be read", e.dirPath)
 			continue
 		}
 		if idle < hcIdleAge && !staging {
-			logInfof("[hostclean] run dir %q: kept, in use again since this pass listed it", e.dirPath)
+			logging.Infof("[hostclean] run dir %q: kept, in use again since this pass listed it", e.dirPath)
 			continue
 		}
 		e.idle = idle
@@ -998,7 +1000,7 @@ func (c *hostCleaner) tidyRunDirs(entries []runDirEntry, sum *hcSummary) {
 			retired, reason := c.retireAbandoned(e, peer, uid)
 			if !retired {
 				if reason != "" {
-					logInfof("[hostclean] run dir %q unused for %s: its daemon (pid %d) was not retired: %s", e.dirPath, hcDays(e.idle), peer, reason)
+					logging.Infof("[hostclean] run dir %q unused for %s: its daemon (pid %d) was not retired: %s", e.dirPath, hcDays(e.idle), peer, reason)
 				}
 				continue
 			}
@@ -1007,37 +1009,37 @@ func (c *hostCleaner) tidyRunDirs(entries []runDirEntry, sum *hcSummary) {
 		}
 		switch state {
 		case hcSockUnknown:
-			logInfof("[hostclean] run dir %q kept: the probe of its socket was inconclusive", e.dirPath)
+			logging.Infof("[hostclean] run dir %q kept: the probe of its socket was inconclusive", e.dirPath)
 			continue
 		case hcSockLive:
-			logInfof("[hostclean] run dir %q kept: its socket still answers", e.dirPath)
+			logging.Infof("[hostclean] run dir %q kept: its socket still answers", e.dirPath)
 			continue
 		}
 		if firstProbe == hcSockLive && state != hcSockMissing {
-			logInfof("[hostclean] run dir %q kept: its socket is still there after its daemon was retired", e.dirPath)
+			logging.Infof("[hostclean] run dir %q kept: its socket is still there after its daemon was retired", e.dirPath)
 			continue
 		}
 		switch ls, _, _ := lockProbe(e.dirPath); ls {
 		case hcLockHeld:
 			// The reference's line, measured on Linux.
-			logInfof("[hostclean] run dir %q unused for %s: kept, a live process holds its %s", e.dirPath, hcDays(e.idle), runDirLockName)
+			logging.Infof("[hostclean] run dir %q unused for %s: kept, a live process holds its %s", e.dirPath, hcDays(e.idle), runDirLockName)
 			continue
 		case hcLockUnexamined:
 			// The reference's line, measured on macOS against 89cb6289. On linux it is the
 			// line for a /proc/locks that cannot be read (`5fd08069`, measured on Linux).
-			logInfof("[hostclean] run dir %q unused for %s: kept, its %s could not be examined", e.dirPath, hcDays(e.idle), runDirLockName)
+			logging.Infof("[hostclean] run dir %q unused for %s: kept, its %s could not be examined", e.dirPath, hcDays(e.idle), runDirLockName)
 			continue
 		case hcLockUnknown:
-			logInfof("[hostclean] run dir %q kept: whether a process holds its run-dir lock could not be determined", e.dirPath)
+			logging.Infof("[hostclean] run dir %q kept: whether a process holds its run-dir lock could not be determined", e.dirPath)
 			continue
 		}
 		idle, ok = hcDirIdle(e.root, e.name, hcClock())
 		if !ok {
-			logInfof("[hostclean] run dir %q kept: it is not a directory any more", e.dirPath)
+			logging.Infof("[hostclean] run dir %q kept: it is not a directory any more", e.dirPath)
 			continue
 		}
 		if idle < hcIdleAge && firstProbe != hcSockLive && !staging {
-			logInfof("[hostclean] run dir %q: kept, in use again since this pass listed it", e.dirPath)
+			logging.Infof("[hostclean] run dir %q: kept, in use again since this pass listed it", e.dirPath)
 			continue
 		}
 		if c.removeRunDir(e, staging, state) {
@@ -1056,7 +1058,7 @@ func (c *hostCleaner) removeRunDir(e runDirEntry, staging bool, probeState int) 
 	if !staging {
 		target = e.name + hcStagingMarker + strconv.Itoa(c.selfPid) + "-" + strconv.FormatInt(hcClock().UnixNano(), 36)
 		if err := hcRename(e.root, e.name, target); err != nil {
-			logInfof("[hostclean] run dir %q: could not stage it for removal: %v; kept", e.dirPath, err)
+			logging.Infof("[hostclean] run dir %q: could not stage it for removal: %v; kept", e.dirPath, err)
 			return false
 		}
 		if ls, _, _ := lockProbe(filepath.Join(filepath.Dir(e.dirPath), target)); ls != hcLockStale {
@@ -1069,10 +1071,10 @@ func (c *hostCleaner) removeRunDir(e runDirEntry, staging bool, probeState int) 
 		}
 	}
 	if err := hcRemoveAll(e.root, target); err != nil {
-		logInfof("[hostclean] run dir %q unused for %s: renamed to %q but removal failed: %v", e.dirPath, hcDays(e.idle), target, err)
+		logging.Infof("[hostclean] run dir %q unused for %s: renamed to %q but removal failed: %v", e.dirPath, hcDays(e.idle), target, err)
 		return false
 	}
-	logInfof("[hostclean] removed run dir %q: unused for %s, nothing answers on its socket, no process holds its lock", e.dirPath, hcDays(e.idle))
+	logging.Infof("[hostclean] removed run dir %q: unused for %s, nothing answers on its socket, no process holds its lock", e.dirPath, hcDays(e.idle))
 	return true
 }
 
@@ -1080,12 +1082,12 @@ func (c *hostCleaner) removeRunDir(e runDirEntry, staging bool, probeState int) 
 // because the dir came back into use. The "could not be restored" line is claustrum's own.
 func (c *hostCleaner) undoRename(e runDirEntry, target, reason string) {
 	if err := hcRename(e.root, target, e.name); err != nil {
-		logInfof("[hostclean] run dir %q could not be restored (%s): %v", e.dirPath, reason, err)
+		logging.Infof("[hostclean] run dir %q could not be restored (%s): %v", e.dirPath, reason, err)
 		return
 	}
 	// The line for a socket that appeared is the reference's, as measured on Linux
 	// against f6010b97 (issue 429). The lock reason is claustrum's own.
-	logInfof("[hostclean] run dir %q: kept, %s", e.dirPath, reason)
+	logging.Infof("[hostclean] run dir %q: kept, %s", e.dirPath, reason)
 }
 
 // Pass runs one host-wide sweep and returns what it did. It refuses to act unless its own
@@ -1106,22 +1108,22 @@ func (c *hostCleaner) undoRename(e runDirEntry, target, reason string) {
 func (c *hostCleaner) Pass() hcSummary {
 	var sum hcSummary
 	c.busyEnded = nil
-	logInfof(hcPassStartLine)
+	logging.Infof(hcPassStartLine)
 	switch state, peer, _ := probeSocket(c.ownSocket); {
 	case state != hcSockLive:
-		logInfof("[hostclean] own socket %q does not lead to this daemon (state %d, pid %d); skipping this pass", c.ownSocket, state, peer)
+		logging.Infof("[hostclean] own socket %q does not lead to this daemon (state %d, pid %d); skipping this pass", c.ownSocket, state, peer)
 		return sum
 	case peer != c.selfPid:
-		logInfof("[hostclean] own socket %q is answered by pid %d, not this daemon; skipping this pass", c.ownSocket, peer)
+		logging.Infof("[hostclean] own socket %q is answered by pid %d, not this daemon; skipping this pass", c.ownSocket, peer)
 		return sum
 	}
 	pids, tooMany, ok := hcSnapshot()
 	if !ok {
-		logInfof("[hostclean] could not enumerate this user's process list; skipping this sweep")
+		logging.Infof("[hostclean] could not enumerate this user's process list; skipping this sweep")
 		return sum
 	}
 	if tooMany {
-		logInfof("[hostclean] more than %d processes for this user: this pass only acts on per-process facts (no run-dir retirement)", hcMaxSnapshot)
+		logging.Infof("[hostclean] more than %d processes for this user: this pass only acts on per-process facts (no run-dir retirement)", hcMaxSnapshot)
 	}
 	procs := make([]hcTracked, 0, len(pids))
 	for _, pid := range pids {
@@ -1161,7 +1163,7 @@ func (c *hostCleaner) Pass() hcSummary {
 		}
 		if hcStoppedIsUninspected && t.stopped {
 			// The reference's line and count (`5fd08069`, measured on Linux).
-			logInfof("[hostclean] daemon pid %d left alone this pass: it could not be inspected (or is stopped)", t.pid)
+			logging.Infof("[hostclean] daemon pid %d left alone this pass: it could not be inspected (or is stopped)", t.pid)
 			sum.undecided++
 			continue
 		}
@@ -1174,7 +1176,7 @@ func (c *hostCleaner) Pass() hcSummary {
 			}
 			c.busyEnded[t.pid] = true
 		} else if unread {
-			logInfof("[hostclean] daemon pid %d left alone this pass: its open files could not be inspected", t.pid)
+			logging.Infof("[hostclean] daemon pid %d left alone this pass: its open files could not be inspected", t.pid)
 			sum.undecided++
 		}
 	}
@@ -1188,17 +1190,17 @@ func (c *hostCleaner) Pass() hcSummary {
 		}
 		reap, reason := c.judgeOrphan(t)
 		if reason == hcOrphanUninspected {
-			logInfof("[hostclean] process group %d left alone this pass: %s", t.pid, reason)
+			logging.Infof("[hostclean] process group %d left alone this pass: %s", t.pid, reason)
 			sum.undecided++
 		} else if reason != "" {
-			logInfof("[hostclean] spared process group %d this sweep: %s", t.pid, reason)
+			logging.Infof("[hostclean] spared process group %d this sweep: %s", t.pid, reason)
 			sum.undecided++
 		}
 		if !reap {
 			continue
 		}
 		if len(orphanGroups) >= hcMaxGroups {
-			logInfof("[hostclean] more orphaned Claude Code groups than one pass ends (%d); leaving the rest for the next pass", hcMaxGroups)
+			logging.Infof("[hostclean] more orphaned Claude Code groups than one pass ends (%d); leaving the rest for the next pass", hcMaxGroups)
 			break // per-pass cap on orphan groups ended
 		}
 		orphanGroups = append(orphanGroups, t.asTracked())
@@ -1215,7 +1217,7 @@ func (c *hostCleaner) Pass() hcSummary {
 func (c *hostCleaner) Keepalive() {
 	now := hcClock()
 	if err := hcChtimes(c.ownRunDir, now, now); err != nil {
-		logInfof("[hostclean] could not bump the mtime of own run dir %q (the keepalive that keeps the retire sweep off it): %v", c.ownRunDir, err)
+		logging.Infof("[hostclean] could not bump the mtime of own run dir %q (the keepalive that keeps the retire sweep off it): %v", c.ownRunDir, err)
 	}
 }
 
@@ -1233,7 +1235,7 @@ func (c *hostCleaner) Start() {
 		for {
 			start := hcClock()
 			sum := c.Pass()
-			logInfof("[hostclean] pass done in %s: %s", hcClock().Sub(start).Round(time.Millisecond), sum)
+			logging.Infof("[hostclean] pass done in %s: %s", hcClock().Sub(start).Round(time.Millisecond), sum)
 			hcSleep(hcPassEvery)
 		}
 	}()
@@ -1256,7 +1258,7 @@ func startHostCleaner(socket string) {
 	}
 	c, err := newHostCleaner(socket)
 	if err != nil {
-		logInfof("[daemon] host cleaning off: %v", err) // not a deployed run-dir daemon
+		logging.Infof("[daemon] host cleaning off: %v", err) // not a deployed run-dir daemon
 		return
 	}
 	c.Start()
