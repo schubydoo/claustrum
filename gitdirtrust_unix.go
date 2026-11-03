@@ -5,6 +5,7 @@ package main
 import (
 	"syscall"
 
+	"github.com/schubydoo/claustrum/internal/pathcanon"
 	"golang.org/x/sys/unix"
 )
 
@@ -46,7 +47,7 @@ func sameGitDirPath(a, b string) bool {
 // resolveGitDirLinks resolves the symlinks in the git directory g before the check
 // judges it, as canonicalPath does. A refusal then names the resolved path.
 func resolveGitDirLinks(g string) string {
-	return canonicalPath(g)
+	return pathcanon.Canonical(g)
 }
 
 // gitVersionDir is the working folder of the git calls outside a repository: the

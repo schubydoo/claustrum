@@ -6,6 +6,8 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+
+	"github.com/schubydoo/claustrum/internal/pathcanon"
 )
 
 // staleRegistryDir is the folder that the step before the add works on: the
@@ -96,12 +98,12 @@ func staleRecordLive(record []byte) bool {
 // /var -> /private/var, where canonicalPath alone falls back to the raw path.
 func resolveAsFarAsExists(p string) string {
 	p = filepath.Clean(p)
-	if r := canonicalPath(p); r != p {
+	if r := pathcanon.Canonical(p); r != p {
 		return r // p itself exists and had symlinks to resolve
 	}
 	dir, base := filepath.Split(p)
 	if dir == "" {
 		return p
 	}
-	return filepath.Join(canonicalPath(filepath.Clean(dir)), base)
+	return filepath.Join(pathcanon.Canonical(filepath.Clean(dir)), base)
 }

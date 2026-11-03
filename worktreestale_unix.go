@@ -9,6 +9,9 @@ import (
 	"path/filepath"
 	"slices"
 	"strings"
+
+	"github.com/schubydoo/claustrum/internal/homeguard"
+	"github.com/schubydoo/claustrum/internal/pathcanon"
 )
 
 // staleStepAfterGitDir is false on Linux and macOS. There the create runs the
@@ -114,7 +117,7 @@ func dropStaleWorktreeRegistration(repo, worktreePath string, held *acceptedGitD
 	}
 	// The order of os.ReadDir, which this step had before it used a root.
 	slices.SortFunc(ents, func(a, b fs.DirEntry) int { return strings.Compare(a.Name(), b.Name()) })
-	target := filepath.Join(canonicalPathOfGone(worktreePath), ".git")
+	target := filepath.Join(pathcanon.OfGone(worktreePath), ".git")
 	sent := filepath.Join(worktreePath, ".git")
 	var stale []string
 	for _, e := range ents {
@@ -130,7 +133,7 @@ func dropStaleWorktreeRegistration(repo, worktreePath string, held *acceptedGitD
 		}
 		record := strings.TrimSpace(string(b))
 		if !filepath.IsAbs(record) {
-			record = filepath.Join(canonicalPath(entry), record)
+			record = filepath.Join(pathcanon.Canonical(entry), record)
 		}
 		if named := filepath.Clean(record); named == target || named == sent {
 			stale = append(stale, e.Name())
@@ -147,7 +150,7 @@ func dropStaleWorktreeRegistration(repo, worktreePath string, held *acceptedGitD
 // folder, unless it holds a `locked` file. entry is the path of the entry, for the
 // home guard.
 func removeStaleRegistration(root *os.Root, name, entry string) {
-	if _, err := root.Lstat(name + "/locked"); errors.Is(err, fs.ErrNotExist) && !wipesHomeDir(entry) {
+	if _, err := root.Lstat(name + "/locked"); errors.Is(err, fs.ErrNotExist) && !homeguard.WipesHomeDir(entry) {
 		_ = removeHeldEntry(root, name)
 	}
 }
