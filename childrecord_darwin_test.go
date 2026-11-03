@@ -42,7 +42,7 @@ func TestRecordChildDarwin(t *testing.T) {
 	// raw key sequence, since a darwin build must not reorder it.
 	wantOrder := []string{"pid", "node", "host", "instance", "daemonPid", "daemonStart", "argv0", "start", "at"}
 	dec := json.NewDecoder(strings.NewReader(string(data)))
-	dec.Token() // opening {
+	_, _ = dec.Token() // opening {
 	var gotOrder []string
 	for i := 0; i < len(wantOrder); i++ {
 		tok, err := dec.Token()
@@ -50,7 +50,7 @@ func TestRecordChildDarwin(t *testing.T) {
 			break
 		}
 		gotOrder = append(gotOrder, tok.(string))
-		dec.Token() // value
+		_, _ = dec.Token() // value
 	}
 	if strings.Join(gotOrder, ",") != strings.Join(wantOrder, ",") {
 		t.Errorf("field order = %v, want %v", gotOrder, wantOrder)

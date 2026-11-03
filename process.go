@@ -282,9 +282,9 @@ type procManager struct {
 
 	// runRoot is the run dir, held open for the child records (linux and darwin, see
 	// childrecord_unix.go). runRootOnce guards the one open. Unused on windows.
-	runRootOnce sync.Once
-	runRoot     *os.Root
-	runRootErr  error
+	runRootOnce sync.Once //nolint:unused // used in childrecord_unix.go only
+	runRoot     *os.Root  //nolint:unused // used in childrecord_unix.go only
+	runRootErr  error     //nolint:unused // used in childrecord_unix.go only
 }
 
 // sessionSpawnLock is one per-session-key mutex plus a reference count, so the

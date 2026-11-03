@@ -417,6 +417,7 @@ component_management:
         - internal/install/managedlauncher_run.go
         - internal/install/libc_linux.go
         - internal/install/libc_other.go
+        - internal/install/libc_unix.go
         # The test hooks of the settings reads, and the names of package main.
         - internal/install/fortest.go
         - internal/install/fortest_unix.go
