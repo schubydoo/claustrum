@@ -237,7 +237,7 @@ func runInstall(o installOpts) {
 			//	install fails before the run   yes              no
 			//	install, good run              before the run   yes
 			//	install, stopped run           before the run   no
-			//	install, new CLI does not run  before the run   no
+			//	install, direct run fails      before the run   no
 			//
 			// stageAndInstall sweeps before the run of a new CLI and sets
 			// installSwept. Every other path sweeps here. The "<version>.zst.part"
@@ -1388,7 +1388,7 @@ func cliEntryHoldsHome(p string, fi os.FileInfo) bool {
 //     takes a keep place.
 //   - The order is the mtime, newest first. The keep value is how many stay.
 //     The new CLI takes its place in the order, and it always stays. With
-//     -cli-keep 0 the older version files go.
+//     -cli-keep 0 every version file but the new CLI goes.
 //   - A negative keep counts as 0.
 //   - Entries with the same mtime stay in name order, so the later name goes.
 //     The name order is the order of the bytes. That order is measured on

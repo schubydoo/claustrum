@@ -304,9 +304,7 @@ The hardening of `-cli-version` is [D6](DIVERGENCES.md#d6):
 - The version must be one path component. Otherwise claustrum answers
   `cli version "…" must be a single path component` (claustrum's own). It answers
   before the install writes or removes anything at a path built from the version,
-  and the blob stays. `2.0.0-beta.1` and `1.0.86+build.5` are accepted too. The
-  entry has the refused forms, the other accepted forms and what the reference
-  does.
+  and the blob stays. `2.0.0-beta.1` and `1.0.86+build.5` are accepted too.
 - A regular file at the joined path is first run with `--version`, as the cache-hit
   check. A run that passes answers `"cliWasPresent":true` with that path, as on the
   reference (Linux and macOS). A stopped run answers the unresponsive text. D6
@@ -324,9 +322,8 @@ The hardening of `-cli-version` is [D6](DIVERGENCES.md#d6):
   final path. That is one code path for `-cli-url` and `-cli-zst`. A download is
   decompressed into that file as it arrives, and no other file is made.
 - An install puts the new CLI at its final path, removes the `-cli-zst` blob and
-  runs the 10 minute sweep. Then `<final path> --version` runs. The `-cli-keep` prune needs a
-  good run. A direct run that does not start or exits non-zero removes the new CLI again with one plain
-  remove. A stopped run keeps the new CLI. On Windows claustrum can leave that file
+  runs the 10 minute sweep. Then `<final path> --version` runs. A direct run that does not
+  start or exits non-zero removes the new CLI again with one plain remove. A stopped run keeps the new CLI. On Windows claustrum can leave that file
   when the exited CLI holds it (claustrum's own).
 - What is at the final path goes before the new CLI runs. A folder there is removed
   as a tree, with its content. A file there that does not run is replaced by the
@@ -391,7 +388,8 @@ The `-cli-keep` prune:
   order of the name, so the later name goes. The new CLI takes its place in the
   order and always stays. `-cli-keep 0` and a negative value remove every
   version file but the new CLI, and the result line follows with exit `0` and an empty stderr.
-- A failed install, a stopped run and a cache hit take no `-cli-keep` prune.
+- A failed install, a stopped run and a cache hit take no `-cli-keep` prune. A fresh
+  install takes it after the launcher states `unusable`, `unreadable` and `probe_failed` (from the code).
 
 ### The prune of a cache miss
 
