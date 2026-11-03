@@ -16,6 +16,8 @@ import (
 	"syscall"
 	"testing"
 	"time"
+
+	"github.com/schubydoo/claustrum/internal/wirelog"
 )
 
 // staleSocketFile leaves a socket file at path that nothing listens on, as a killed
@@ -88,7 +90,7 @@ func TestStartReapsBeforeItBinds(t *testing.T) {
 				simSleep(d)
 			}
 
-			s, err := newServerOnSocket(sock, "tok", "", wireLogOptions{}, false, false)
+			s, err := newServerOnSocket(sock, "tok", "", wirelog.Options{}, false, false)
 			if err != nil {
 				t.Fatalf("newServerOnSocket: %v", err)
 			}
@@ -226,7 +228,7 @@ func TestRunServeHandlesASignalDuringItsStart(t *testing.T) {
 			_ = c.Close()
 		}
 	})
-	code, exited := catchExit(func() { runServe(sock, tf, -1, "", wireLogOptions{}, false, false) })
+	code, exited := catchExit(func() { runServe(sock, tf, -1, "", wirelog.Options{}, false, false) })
 	watchdog.Stop()
 	restore()
 
