@@ -9,7 +9,7 @@ import (
 	"testing"
 )
 
-// git.worktree_remove's wipesHomeDir guard is defense-in-depth here: it fires only
+// git.worktree_remove's homeguard.WipesHomeDir guard is defense-in-depth here: it fires only
 // when a repo is an ancestor of home, so a worktreePath that passes the containment
 // check still IS the home directory. With HOME under baseRepo, worktreePath=home
 // reaches the guard and is refused before any delete. os.UserHomeDir reads $HOME on

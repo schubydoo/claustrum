@@ -30,7 +30,7 @@ import (
 // process (the launcher, -bridge, -stop) and in the bind of a -serve start, before
 // any request is served. A running daemon dials with dialSocketInDaemon, which
 // never changes folder: a request resolves a relative path against the working
-// folder (wipesHomeDir).
+// folder (homeguard.WipesHomeDir).
 
 // folderChange serializes the routes that change the working folder of the process.
 var folderChange sync.Mutex

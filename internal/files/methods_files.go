@@ -290,7 +290,7 @@ func (p *extractTarParams) ExpandPaths() {
 // The seam exists so that a test proving a destDir gate is actually WIRED INTO
 // filesExtractTar can send the very input the gate exists to refuse. For
 // isFilesystemRoot that input is a real filesystem root — on Windows, C:\\. For
-// wipesHomeDir it is a home directory. If either guard stops holding, an
+// homeguard.WipesHomeDir it is a home directory. If either guard stops holding, an
 // unstubbed test would answer the question by deleting the CI runner or the
 // developer's home. A test whose failure mode is destroying the machine is not
 // a test, so the wipe is observable and stubbable instead: TestFilesExtractTarErrors
@@ -328,7 +328,7 @@ func errDestDirHoldsHome(destDir string) error {
 // the spelling of the path does not matter. On Linux and macOS that covers a
 // path through a link above the last name. On Windows it covers a path with
 // the `\\?\` prefix and the short 8.3 name of home, which the text compare of
-// wipesHomeDir lets pass (Windows, the test binary).
+// homeguard.WipesHomeDir lets pass (Windows, the test binary).
 //
 // A link or a junction at the name is not followed: the wipe removes the link
 // itself, and its target stays.
@@ -528,7 +528,7 @@ func extractTarGz(archivePath, destDir string) (n int, err error) {
 	// below are claustrum's. Each step runs only AFTER the gzip header validates
 	// above, so a missing archive or a file that is not gzip leaves an old
 	// destDir as it is (`89cb6289`, `5fd08069`, measured on Linux, macOS and
-	// Windows). filesExtractTar ran the root test and wipesHomeDir on destDir
+	// Windows). filesExtractTar ran the root test and homeguard.WipesHomeDir on destDir
 	// before this function, so no step runs for a destDir that they refuse.
 	//
 	//  1. The missing folders above destDir are made, each with mode 0700 less
@@ -577,7 +577,7 @@ func extractTarGz(archivePath, destDir string) (n int, err error) {
 	// names by itself. The handle and the system can read one name in two ways.
 	// On Windows the handle drops a dot or a space after a name, and a path with
 	// the `\\?\` prefix keeps it. The name in the handle is then a sibling that
-	// the path does not name, and wipesHomeDir judged the path. So the two views
+	// the path does not name, and homeguard.WipesHomeDir judged the path. So the two views
 	// are compared before the wipe. If they differ, nothing is deleted, and no
 	// destDir is made. The folders above destDir from the first step stay. This
 	// test and its text are claustrum's own. Both reference builds extract
@@ -653,7 +653,7 @@ func extractTarGz(archivePath, destDir string) (n int, err error) {
 	if err != nil {
 		return 0, fmt.Errorf("open destDir: %q could not be examined (%v)", destName, err)
 	}
-	// The parent is opened by path, and wipesHomeDir judged destDir as text.
+	// The parent is opened by path, and homeguard.WipesHomeDir judged destDir as text.
 	// Another process can put a link or a junction at destDir between the wipe
 	// and the open. The open through the parent refuses a link that leaves the
 	// parent, and it follows one that stays inside. The handle then names a
@@ -991,7 +991,7 @@ func entryNameStaysInside(name string) bool {
 // The remove is a recursive delete of the fixed name .synced, and the write is an
 // exclusive create of that name. Both go through the handle of destDir, so neither
 // follows a link out of destDir. extractTarGz tested that handle against the
-// folder that wipesHomeDir judged. Entries that read as .synced are skipped, so
+// folder that homeguard.WipesHomeDir judged. Entries that read as .synced are skipped, so
 // a normal run finds no entry of the archive there (from the code). Do not build
 // the name from a parameter or from the archive.
 func writeSyncedMarker(destRoot *os.Root) error {

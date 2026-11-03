@@ -20,7 +20,7 @@ import (
 // fails by deleting a temporary directory, never a real one. KEEP.txt is the
 // assertion, because it is the thing that would actually be gone. A TABLE,
 // not a single row, and the ancestor row is the load-bearing one: on this
-// method wipesHomeDir is the ONLY gate, where filesExtractTar still has IsAbs
+// method homeguard.WipesHomeDir is the ONLY gate, where filesExtractTar still has IsAbs
 // and isFilesystemRoot behind it. If the predicate ever narrows to "the home
 // directory itself", extract_tar's ancestor case is caught by its root check
 // and this one is not. Raised in review on #231.
@@ -65,7 +65,7 @@ func TestWorktreeRemoveRefusesHomeDir(t *testing.T) {
 			// baseRepo is a real directory but not a repository; the home path is
 			// outside it, so 7d193f89's location containment refuses it — with the
 			// reference's own "refusing to remove worktree:" wording — before git,
-			// the delete, or the wipesHomeDir guard is ever reached.
+			// the delete, or the homeguard.WipesHomeDir guard is ever reached.
 			// Containment is what protects home here now; the guard remains as
 			// defense-in-depth (and as the primary guard for files.extract_tar).
 			got := gitDispatch(t, h, rpcLine(t, "git.worktree_remove",
@@ -85,12 +85,12 @@ func TestWorktreeRemoveRefusesHomeDir(t *testing.T) {
 }
 
 // An OMITTED worktreePath is refused by the reference's own non-directory check,
-// NOT by claustrum's wipesHomeDir guard — and this row pins that ordering.
+// NOT by claustrum's homeguard.WipesHomeDir guard — and this row pins that ordering.
 //
 // 7d193f89 added a worktree-location check to git.worktree_remove that fails an
 // empty worktreePath as `failed to remove worktree: "" does not name a directory`
 // before anything is deleted. claustrum matches that frame, and matches it
-// FIRST: the empty case returns before the containment check, the wipesHomeDir
+// FIRST: the empty case returns before the containment check, the homeguard.WipesHomeDir
 // guard, and git. So even with the daemon's cwd and HOME set to the same
 // directory — the cwd that once made filepath.Abs("") resolve to home and the old
 // guard refuse — the reply is the reference's non-directory message, never a

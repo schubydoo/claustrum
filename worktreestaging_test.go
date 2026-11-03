@@ -375,7 +375,7 @@ func TestSweepOldStagingGuards(t *testing.T) {
 
 // TestSweepOldStagingRefusesHome pins the home guard of the cleanup: an old
 // entry that holds the home folder is not asked for. The removal is replaced,
-// so the test removes nothing without the guard. Without the wipesHomeDir call
+// so the test removes nothing without the guard. Without the homeguard.WipesHomeDir call
 // the entry is asked for as a tree.
 func TestSweepOldStagingRefusesHome(t *testing.T) {
 	f := newStagingSweepFixture(t)

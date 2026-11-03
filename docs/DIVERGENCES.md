@@ -155,7 +155,7 @@ have no flag and no key.
 
 ### D2 · Refuse a home directory as a destructive path target (always-on) { #d2 }
 
-- **Behavior.** `wipesHomeDir` (`internal/homeguard/homeguard.go`) refuses a target that is the
+- **Behavior.** `homeguard.WipesHomeDir` (`internal/homeguard/homeguard.go`) refuses a target that is the
   home directory or contains it. It resolves a relative path with
   `filepath.Abs` and then compares the text. It does not resolve symbolic links.
   On Windows `filepath.Abs` drops a dot or a space after a name, so home with a
