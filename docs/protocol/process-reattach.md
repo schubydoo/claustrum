@@ -69,9 +69,9 @@ Compare `firstSeq` with the last `seq` that you have. If `firstSeq` is more than
 ## Rare states
 
 ??? note "A process that finished and was forgotten"
-    `"found": false` does not always mean that the process never existed. The daemon keeps a process that exited for some time. Then it forgets the process and its stored frames.
+    `"found": false` does not always mean that the process never existed. The daemon keeps an exited process that is not [link-bound](process-link-bound.md#the-spent-id) for some time. Then it forgets the process and its stored frames.
 
-    claustrum keeps it for 15 minutes after the `exit` frame, and up to about one minute more. So after a long gap, read `"found": false` as "finished and forgotten". The daemon never forgets a process that still runs.
+    claustrum keeps it for 15 minutes after the `exit` frame, and up to about one minute more. After a long gap, read `"found": false` as "finished and forgotten". The daemon never forgets a running process.
 
 ??? note "A frame that arrives twice"
     On a reattach from the connection that already receives the frames, a frame at or below `lastSeq` can arrive twice (measured on Linux and macOS). Drop a frame whose `seq` you already have. A new frame can arrive before the result (from the code) (not measured).
