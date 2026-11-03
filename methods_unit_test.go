@@ -326,7 +326,7 @@ func TestProcessSpawnBindParamsError(t *testing.T) {
 	}
 }
 
-// process.spawn: valid params but the binary doesn't exist → codeInternal error.
+// process.spawn: valid params but the binary doesn't exist → rpc.CodeInternal error.
 func TestProcessSpawnFailed(t *testing.T) {
 	s := newTestServer(t)
 	got := dispatchRaw(t, s, rpcLine(t, "process.spawn", map[string]any{

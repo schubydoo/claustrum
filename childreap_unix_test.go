@@ -11,6 +11,8 @@ import (
 	"syscall"
 	"testing"
 	"time"
+
+	"github.com/schubydoo/claustrum/internal/procinfo"
 )
 
 // TestRecordMatchesLive pins which live process a record with a program key accepts.
@@ -918,10 +920,10 @@ func TestReapOrphansForgetsBadRecords(t *testing.T) {
 		t.Fatal(err)
 	}
 	fakeLiveProcs(t, map[int]liveProc{})
-	oldKill := killGroup
-	t.Cleanup(func() { killGroup = oldKill })
+	oldKill := procinfo.KillGroupForTest()
+	t.Cleanup(func() { procinfo.SetKillGroupForTest(oldKill) })
 	killed := 0
-	killGroup = func(int, syscall.Signal) error { killed++; return nil }
+	procinfo.SetKillGroupForTest(func(int, syscall.Signal) error { killed++; return nil })
 
 	reapOrphans(runDir, "inst")
 
@@ -1048,9 +1050,12 @@ func TestReapTargetsPreKillReuse(t *testing.T) {
 // TestReapOrphansNoop proves the two early returns: an empty run dir and a missing children
 // dir both do nothing (and never kill).
 func TestReapOrphansNoop(t *testing.T) {
-	oldKill := killGroup
-	t.Cleanup(func() { killGroup = oldKill })
-	killGroup = func(int, syscall.Signal) error { t.Fatal("killGroup called in a no-op sweep"); return nil }
+	oldKill := procinfo.KillGroupForTest()
+	t.Cleanup(func() { procinfo.SetKillGroupForTest(oldKill) })
+	procinfo.SetKillGroupForTest(func(int, syscall.Signal) error {
+		t.Fatal("killGroup called in a no-op sweep")
+		return nil
+	})
 	reapOrphans("", "inst")          // no run dir
 	reapOrphans(t.TempDir(), "inst") // run dir with no children/ subdir
 }
@@ -1133,9 +1138,10 @@ func TestReapWaitSkipsGroupKillOnLeaderReuse(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(dir, tg.name), []byte("{}"), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	oldRead, oldKill, oldGroup, oldNow, oldSleep := readLiveProc, killGroup, groupAlive, reapNow, reapSleep
+	oldRead, oldKill, oldGroup, oldNow, oldSleep := readLiveProc, procinfo.KillGroupForTest(), groupAlive, reapNow, reapSleep
 	t.Cleanup(func() {
-		readLiveProc, killGroup, groupAlive, reapNow, reapSleep = oldRead, oldKill, oldGroup, oldNow, oldSleep
+		procinfo.SetKillGroupForTest(oldKill)
+		readLiveProc, groupAlive, reapNow, reapSleep = oldRead, oldGroup, oldNow, oldSleep
 	})
 	reads := 0
 	readLiveProc = func(pid int, wantEnv bool) liveProc {
@@ -1146,7 +1152,7 @@ func TestReapWaitSkipsGroupKillOnLeaderReuse(t *testing.T) {
 		return liveProc{state: procAlive, startTicks: "999", pgid: tg.pid} // re-check: pid reused as a new leader
 	}
 	killed := 0
-	killGroup = func(int, syscall.Signal) error { killed++; return nil }
+	procinfo.SetKillGroupForTest(func(int, syscall.Signal) error { killed++; return nil })
 	groupAlive = func(int) bool { return true } // a group with this pgid exists (the reused leader's)
 	reapNow = time.Now
 	reapSleep = func(time.Duration) {}

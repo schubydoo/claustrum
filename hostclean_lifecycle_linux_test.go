@@ -15,6 +15,8 @@ import (
 	"syscall"
 	"testing"
 	"time"
+
+	"github.com/schubydoo/claustrum/internal/procinfo"
 )
 
 // The host cleaner's construction and its two background loops. Everything below drives the
@@ -212,15 +214,15 @@ func TestHcSignalPidRealBody(t *testing.T) {
 func TestEndGroupsTwoPhaseSignalArms(t *testing.T) {
 	t.Run("a group that is already gone is not counted as signalled", func(t *testing.T) {
 		root, mk, _ := fakeProc(t)
-		oldGrp, oldSig, oldClock, oldSleep := killGroup, hcHoldPid, hcClock, hcSleep
-		t.Cleanup(func() { killGroup, hcHoldPid, hcClock, hcSleep = oldGrp, oldSig, oldClock, oldSleep })
+		oldGrp, oldSig, oldClock, oldSleep := procinfo.KillGroupForTest(), hcHoldPid, hcClock, hcSleep
+		t.Cleanup(func() { procinfo.SetKillGroupForTest(oldGrp); hcHoldPid, hcClock, hcSleep = oldSig, oldClock, oldSleep })
 		now := time.Unix(2_000_000, 0)
 		hcClock = func() time.Time { return now }
 		hcSleep = func(d time.Duration) { now = now.Add(d) }
 		// The process is still in the fake tree (so the pre-signal identity check passes),
 		// but the kernel says it is gone by the time the signal lands.
 		mk(7001, "stat", hcRunningStat(7001, 1, 7001, "1"))
-		killGroup = func(int, syscall.Signal) error { return syscall.ESRCH }
+		procinfo.SetKillGroupForTest(func(int, syscall.Signal) error { return syscall.ESRCH })
 		hcHoldPid = holdWith(func(int, syscall.Signal) error { return syscall.ESRCH })
 
 		signalled, survived := endGroupsTwoPhase([]tracked{{pid: 7001, pgid: 7001, startTicks: "1"}}, "orphaned process group", "")
@@ -232,20 +234,20 @@ func TestEndGroupsTwoPhaseSignalArms(t *testing.T) {
 
 	t.Run("a pid reused during the grace is never SIGKILLed", func(t *testing.T) {
 		root, mk, _ := fakeProc(t)
-		oldGrp, oldSig, oldClock, oldSleep := killGroup, hcHoldPid, hcClock, hcSleep
-		t.Cleanup(func() { killGroup, hcHoldPid, hcClock, hcSleep = oldGrp, oldSig, oldClock, oldSleep })
+		oldGrp, oldSig, oldClock, oldSleep := procinfo.KillGroupForTest(), hcHoldPid, hcClock, hcSleep
+		t.Cleanup(func() { procinfo.SetKillGroupForTest(oldGrp); hcHoldPid, hcClock, hcSleep = oldSig, oldClock, oldSleep })
 
 		const pid = 7002
 		mk(pid, "stat", hcRunningStat(pid, 1, pid, "1"))
 
 		var sent []syscall.Signal
-		killGroup = func(_ int, sig syscall.Signal) error {
+		procinfo.SetKillGroupForTest(func(_ int, sig syscall.Signal) error {
 			if sig == 0 { // the hcGroupExists probe
 				return nil
 			}
 			sent = append(sent, sig)
 			return nil // SIGTERM lands but the process does not exit
-		}
+		})
 		hcHoldPid = holdWith(func(_ int, sig syscall.Signal) error { sent = append(sent, sig); return nil })
 
 		// The wait reads the clock once for the deadline, then once per poll after the

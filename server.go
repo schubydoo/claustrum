@@ -1213,7 +1213,7 @@ func (s *server) handleRequest(c *conn, raw []byte, req request, ordered bool, t
 	// claustrum's own panic sites are each either an unreachable stdlib
 	// timer guard or an already-bounds-guarded slice — so the path is
 	// unreachable and the frame is unobservable on the wire. -32603 is
-	// codeInternal, the JSON-RPC 2.0 standard "Internal error"; the message
+	// rpc.CodeInternal, the JSON-RPC 2.0 standard "Internal error"; the message
 	// and log line follow claustrum's own conventions. Nothing here can be
 	// probe-verified, and nothing here needs to be: an unreachable frame
 	// cannot diverge from anything. See docs/PROTOCOL.md → "Handler panic

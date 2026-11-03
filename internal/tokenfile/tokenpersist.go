@@ -1,4 +1,4 @@
-package main
+package tokenfile
 
 import (
 	"os"
@@ -7,7 +7,7 @@ import (
 	"github.com/schubydoo/claustrum/internal/logging"
 )
 
-// persistedTokenName is the fixed basename the daemon writes its auth token to,
+// Name is the fixed basename the daemon writes its auth token to,
 // in the socket's directory. A client reconnecting to an already-running daemon
 // (e.g. Claude Desktop reopened after a quit) can read it to recover the token
 // and re-authenticate — the original -token-file was unlinked and a -token-fd
@@ -26,35 +26,35 @@ import (
 // never share a parent in practice. On Windows the 0600 bits do not create an
 // owner-only DACL. There the session dir under the client's per-user app-data
 // provides the confinement instead.
-const persistedTokenName = "daemon.token"
+const Name = "daemon.token"
 
-// tokenFileDir returns the directory the persisted token lives in — the
+// Dir returns the directory the persisted token lives in — the
 // socket's directory, which is the per-session dir the client already knows.
-func tokenFileDir(socket string) string { return filepath.Dir(socket) }
+func Dir(socket string) string { return filepath.Dir(socket) }
 
-// tokenTempFile is the subset of *os.File that saveTokenFile needs. It exists as
+// TempFile is the subset of *os.File that Save needs. It exists as
 // an interface only so the constructor below can be a package var: a real
 // os.CreateTemp file can't be coerced into failing WriteString/Close on demand,
 // so the best-effort error arms would otherwise be untestable.
-type tokenTempFile interface {
+type TempFile interface {
 	Name() string
 	WriteString(string) (int, error)
 	Close() error
 }
 
-// createTokenTemp opens the O_EXCL 0600 temp file saveTokenFile renames into
+// createTokenTemp opens the O_EXCL 0600 temp file Save renames into
 // place. A package var so tests can inject a writer that fails at a chosen step.
 // Production always uses os.CreateTemp with the "daemon.token-*" pattern.
-var createTokenTemp = func(dir string) (tokenTempFile, error) {
+var createTokenTemp = func(dir string) (TempFile, error) {
 	return os.CreateTemp(dir, "daemon.token-*")
 }
 
-// writeFileViaTemp atomically writes content to dest via an O_EXCL temp file in
+// WriteViaTemp atomically writes content to dest via an O_EXCL temp file in
 // dir (from create) + rename, removing the temp on any failure so a partial file
 // is never left behind. Shared by the daemon.token and rpc.pipe writers, which
 // differ only in the temp pattern, the destination, and how they report the error
-// (saveTokenFile logs it; writePipeNameFile returns it).
-func writeFileViaTemp(create func(string) (tokenTempFile, error), dir, dest, content string) error {
+// (Save logs it; writePipeNameFile returns it).
+func WriteViaTemp(create func(string) (TempFile, error), dir, dest, content string) error {
 	f, err := create(dir)
 	if err != nil {
 		return err
@@ -76,7 +76,7 @@ func writeFileViaTemp(create func(string) (tokenTempFile, error), dir, dest, con
 	return nil
 }
 
-// saveTokenFile atomically writes the auth token to <dir(socket)>/daemon.token
+// Save atomically writes the auth token to <dir(socket)>/daemon.token
 // (0600) via a temp file + rename. os.CreateTemp with the "daemon.token-*"
 // pattern yields an O_EXCL 0600 temp. The rename makes the swap atomic, so a
 // reconnecting reader never sees a partial token.
@@ -88,10 +88,10 @@ func writeFileViaTemp(create func(string) (tokenTempFile, error), dir, dest, con
 // republished daemon.token to a new inode before this predecessor shuts down, and
 // deleting it would break the successor's reconnect auth. Returns nil on failure
 // (nothing was persisted to own). This mirrors the socket's sockInfo handoff.
-func saveTokenFile(socket, token string) os.FileInfo {
-	dir := tokenFileDir(socket)
-	dest := filepath.Join(dir, persistedTokenName)
-	if err := writeFileViaTemp(createTokenTemp, dir, dest, token); err != nil {
+func Save(socket, token string) os.FileInfo {
+	dir := Dir(socket)
+	dest := filepath.Join(dir, Name)
+	if err := WriteViaTemp(createTokenTemp, dir, dest, token); err != nil {
 		logging.Errorf("[daemon] failed to persist token: %v", err)
 		return nil
 	}
@@ -109,10 +109,10 @@ func saveTokenFile(socket, token string) os.FileInfo {
 // A stat of the handle holds the id of this file from the start. It is a seam,
 // because the rename right before it put dest in place, so the nil arm is
 // otherwise unreachable.
-var statPersistedToken = statOpenFile
+var statPersistedToken = StatOpen
 
-// statOpenFile opens path and returns the stat of the open handle.
-func statOpenFile(path string) (os.FileInfo, error) {
+// StatOpen opens path and returns the stat of the open handle.
+func StatOpen(path string) (os.FileInfo, error) {
 	f, err := os.Open(path)
 	if err != nil {
 		return nil, err
@@ -121,7 +121,7 @@ func statOpenFile(path string) (os.FileInfo, error) {
 	return f.Stat()
 }
 
-// dropOwnTokenFile unlinks the persisted token file on graceful shutdown ONLY
+// DropOwn unlinks the persisted token file on graceful shutdown ONLY
 // when the file on disk is still the inode this daemon wrote (os.SameFile against
 // owned) — the same inode-ownership protection unlinkOwnSocket already gives the
 // socket in the handoff. daemon.token is the socket's companion reconnect artifact, so
@@ -130,16 +130,16 @@ func statOpenFile(path string) (os.FileInfo, error) {
 // break the successor's reconnect auth — the whole point of the handoff). A nil owned
 // (persist failed → nothing to own) is a no-op, and a stat error (absent, or
 // unreadable) is silent; only a failed unlink of a file we DO own is logged.
-func dropOwnTokenFile(socket string, owned os.FileInfo) {
-	if err := removeIfStillOurs(filepath.Join(tokenFileDir(socket), persistedTokenName), owned); err != nil {
+func DropOwn(socket string, owned os.FileInfo) {
+	if err := RemoveIfStillOurs(filepath.Join(Dir(socket), Name), owned); err != nil {
 		logging.Errorf("[daemon] failed to remove persisted token: %v", err)
 	}
 }
 
-// removeIfStillOurs removes the file at path only when it is still the file owned
+// RemoveIfStillOurs removes the file at path only when it is still the file owned
 // (os.SameFile). A nil owned and a failed stat remove nothing and return nil. The
 // error is that of the remove, and each caller logs it with its own text.
-func removeIfStillOurs(path string, owned os.FileInfo) error {
+func RemoveIfStillOurs(path string, owned os.FileInfo) error {
 	if owned == nil {
 		return nil
 	}
