@@ -13,6 +13,8 @@ import (
 	"syscall"
 	"testing"
 	"time"
+
+	"github.com/schubydoo/claustrum/internal/procinfo"
 )
 
 // The error arms of the linux host-cleaner primitives (hostclean_linux.go). Each test here
@@ -195,7 +197,7 @@ func TestHcSnapshotSkipsNonPidEntries(t *testing.T) {
 
 func TestHcSnapshotUnreadableProc(t *testing.T) {
 	root, _, _ := fakeProc(t)
-	procRoot = filepath.Join(root, "does-not-exist")
+	procinfo.SetRootForTest(filepath.Join(root, "does-not-exist"))
 	pids, overflow, ok := hcSnapshot()
 	if ok {
 		t.Errorf("hcSnapshot on an unreadable /proc = %v overflow=%v ok=true, want not-ok", pids, overflow)
@@ -308,7 +310,7 @@ func TestHcPrimitivesOnAVanishedProcess(t *testing.T) {
 	mk(70, "stat", hcRunningStat(70, 1, 70, "9000")) // keep the fixture a plausible process
 
 	// lockFileHeld with no /proc/locks to read: not held, and the read did not answer.
-	if err := os.Remove(filepath.Join(procRoot, "locks")); err != nil {
+	if err := os.Remove(filepath.Join(procRoot(), "locks")); err != nil {
 		t.Fatal(err)
 	}
 	lockPath := filepath.Join(t.TempDir(), runDirLockName)

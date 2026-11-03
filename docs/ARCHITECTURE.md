@@ -18,11 +18,11 @@ the same JSON-RPC methods.
 |---|---|---|
 | Modes | `main.go`, `config.go`, `buildstamp.go`, `bridge.go`, `selflocate_*.go`, `ignorepipe*.go` | The flags and the mode switch. `claustrum.conf`. The version stamp. `-bridge` and `-stop`. The self-locate test of `-serve`. No exit on SIGPIPE in `-install`, `-probe-cli` and `-bridge`. |
 | Transport | `server.go`, `idleconn.go`, `detach_*.go`, `dahandoff.go`, `livepred_*.go`, `peerpid_*.go`, `peercheck*.go`, `pipetransport*.go`, `raiselimit_*.go`, `socketroute*.go` | The `AF_UNIX` listener and the connection loop. The idle close of a connection. The self-daemonize. The socket handoff between two daemons. The peer check. The opt-in Windows named pipe. The open-file limit that children inherit. |
-| Dispatch | `rpc.go`, `internal/rpc/`, `compat_rpc.go`, `methods_*.go`, `capfeatures_*.go`, `expandpaths.go`, `internal/homeguard/`, `internal/files/`, `compat_files.go`, `pluginsibling_*.go`, `handlers/prune.go` | The request and response types, the error codes, the dispatch order and the params gate. Result structs, whose field order is wire contract. `methods_*.go`, `internal/files/` and `internal/git/` have the 21 method handlers. The `server.capabilities` features. `ExpandPaths`. `homeguard.WipesHomeDir`. OS parts of `plugins.prune`. `methods_launcher.go` holds the `process.spawn` launcher checks. |
+| Dispatch | `rpc.go`, `internal/rpc/`, `compat_rpc.go`, `methods_*.go`, `capfeatures_*.go`, `expandpaths.go`, `internal/homeguard/`, `internal/files/`, `pluginsibling_*.go`, `handlers/prune.go` | The request and response types, the error codes, the dispatch order and the params gate. Result structs, whose field order is wire contract. `methods_*.go`, `internal/files/` and `internal/git/` have the 21 method handlers. The `server.capabilities` features. `ExpandPaths`. `homeguard.WipesHomeDir`. OS parts of `plugins.prune`. `methods_launcher.go` holds the `process.spawn` launcher checks. |
 | Process | `process.go`, `internal/sysproc/`, `*sysproc*.go`, `childjobs*.go`, `execchild*.go`, `sessionsupersede.go`, `internal/shellenv/`, `compat_shellenv.go` | The registry, seq, replay buffer and subscribers. The signal names. The kill of a child and its Windows job. The exec-child trampoline. The supersede of a session spawn. The login-shell PATH. The SSH agent hand-off. |
 | Git | `internal/git/`, `compat_git.go` | See [The git subsystem](#the-git-subsystem). |
 | Install | `internal/install/`, `compat_install.go` | `-install` and `-probe-cli`. The download. The file test of a cache hit. The libc probe. The managed launcher, its settings reader and the child env strip. |
-| Host and lock | `daemon_runlock_*.go`, `tokenpersist.go`, `childrecord*.go`, `childreap*.go`, `hostclean*.go`, `procinfo*.go`, `orphanexit.go`, `selfexit_*.go` | The run-dir lock. `daemon.token`. The child records and their reap. The host cleaner. The orphan exit and the idle exit. |
+| Host and lock | `daemon_runlock_*.go`, `internal/tokenfile/`, `compat_tokenfile.go`, `childrecord*.go`, `childreap*.go`, `hostclean*.go`, `internal/procinfo/`, `compat_procinfo*.go`, `orphanexit.go`, `selfexit_*.go` | The run-dir lock. `daemon.token`. The child records and their reap. The host cleaner. The orphan exit and the idle exit. |
 | Logs | `internal/logging/`, `internal/metrics/`, `internal/wirelog/`, `compat_logging.go`, `compat_metrics.go` | The leveled stderr logger. The opt-in `/metrics` counters. The opt-in `-wire-log` capture. |
 | Shared | `internal/renameretry/`, `internal/pathcanon/` | The Windows rename retry. The canonical form and `~` expansion of a path. |
 
@@ -95,7 +95,7 @@ flowchart TD
     I --> J["accept loops"]
 ```
 
-- **Token.** `-token-file` or `-token-fd` gives the token. `tokenpersist.go`
+- **Token.** `-token-file` or `-token-fd` gives the token. `internal/tokenfile/tokenpersist.go`
   writes `daemon.token` and unlinks it at a graceful stop if it is still its
   own file. See
   [The token source](protocol/flags.md#the-token-source) and

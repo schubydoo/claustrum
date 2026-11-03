@@ -59,4 +59,4 @@ At the exit the daemon removes the record of the process. Then:
 - A spawn with the `id` gets `-32602` `this id is in use, or was a terminal's or a link-bound process's: take a fresh one`, with `"data":{"reason":"other"}`. The command does not run.
 - A spawn 931.8 s after the exit starts the child.
 
-claustrum's own: the `id` is spent for 900 s, and the refusal logs the failed-start line. A spawn with the `id` of a link-bound process that runs gets the same error. The test comes after the `launcher` tests and before the `cwd` test.
+claustrum's own: the `id` is spent for 900 s, and the refusal logs the failed-start line. A spawn with the `id` of a link-bound process that runs gets the same error. The test comes after the `launcher` tests and before the `cwd` test. The record goes right after the `exit` frame, in a separate step: a reattach between the two answers `"found": true, "running": false` (from the code).

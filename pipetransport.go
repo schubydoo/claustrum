@@ -30,7 +30,7 @@ func pipeNameFilePath(socket string) string {
 }
 
 // createPipeTemp opens the temp file writePipeNameFile renames into place. A
-// package var (reusing the tokenTempFile seam from tokenpersist.go) so tests can
+// package var (reusing the TempFile seam of internal/tokenfile) so tests can
 // inject a writer that fails at a chosen step; production always uses
 // os.CreateTemp with the "rpc.pipe-*" pattern.
 var createPipeTemp = func(dir string) (tokenTempFile, error) {
@@ -63,7 +63,7 @@ func removePipeNameFile(socket string) {
 
 // pipeNameFileIdentity is the identity of rpc.pipe that removePipeNameFileIfOwned
 // compares with. It is the stat of an open handle, which holds the file id on Windows
-// (see statPersistedToken). It is nil when the stat fails.
+// (see statPersistedToken in internal/tokenfile). It is nil when the stat fails.
 func pipeNameFileIdentity(socket string) os.FileInfo {
 	fi, err := statOpenFile(pipeNameFilePath(socket))
 	if err != nil {

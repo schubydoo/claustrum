@@ -45,7 +45,7 @@ const unparseableStat = "unparseable stat"
 // measured). Another namespace gives procNotOurs, as before. With no own link there
 // is no test, as before (not measured).
 func pidNamespace(proc string) (state int, why string) {
-	self, err := os.Readlink(procRoot + "/self/ns/pid")
+	self, err := os.Readlink(procRoot() + "/self/ns/pid")
 	if err != nil {
 		return procAlive, ""
 	}
@@ -80,7 +80,7 @@ func pidNamespace(proc string) (state int, why string) {
 // mode 000 or does not parse (measured on Linux).
 func realReadLiveProc(pid int, wantEnv bool) liveProc {
 	lp := liveProc{state: procGone}
-	proc := procRoot + "/" + strconv.Itoa(pid)
+	proc := procRoot() + "/" + strconv.Itoa(pid)
 	stat, err := procReadFile(proc + "/stat")
 	if err != nil {
 		switch {
