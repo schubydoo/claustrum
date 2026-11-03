@@ -2,6 +2,7 @@ package main
 
 import (
 	"encoding/hex"
+	"errors"
 	"os"
 	"path/filepath"
 	"strings"
@@ -168,10 +169,26 @@ func TestRemovePipeNameFileStatError(t *testing.T) {
 	removePipeNameFile(filepath.Join(notDir, "rpc.sock"))
 }
 
+// errInjected drives the write and close failure arms of writePipeNameFile.
+var errInjected = errors.New("injected failure")
+
+// fakeTokenTemp is a tokenTempFile whose WriteString/Close can be told to fail.
+// name points at a real temp file so the error arms' os.Remove(tmp) still cleans
+// up, letting the test assert no temp leaks.
+type fakeTokenTemp struct {
+	name     string
+	writeErr error
+	closeErr error
+}
+
+func (f *fakeTokenTemp) Name() string                    { return f.name }
+func (f *fakeTokenTemp) WriteString(string) (int, error) { return 0, f.writeErr }
+func (f *fakeTokenTemp) Close() error                    { return f.closeErr }
+
 // TestWritePipeNameFileWriteAndCloseErrors drives the best-effort error arms via
 // the createPipeTemp seam (a real *os.File can't be coerced into failing
 // WriteString/Close), and asserts each arm cleans up its temp and surfaces the
-// error. Reuses fakeTokenTemp from tokenpersist_test.go.
+// error.
 func TestWritePipeNameFileWriteAndCloseErrors(t *testing.T) {
 	for _, tc := range []struct {
 		name               string

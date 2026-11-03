@@ -878,7 +878,7 @@ cases.
 unlinks it at graceful shutdown. A client can therefore reconnect to a daemon that
 already runs, and authenticate again after the original `-token-file` was
 unlinked or the `-token-fd` pipe closed. claustrum matches this in
-`tokenpersist.go`, wired through `runServe` and `teardown`.
+`internal/tokenfile/tokenpersist.go`, wired through `runServe` and `teardown`.
 [DAEMON.md → Token persistence](DAEMON.md#token-persistence-daemontoken)
 holds the wire contract.
 

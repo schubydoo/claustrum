@@ -1,4 +1,4 @@
-package main
+package tokenfile
 
 import (
 	"errors"
@@ -12,13 +12,13 @@ import (
 // is asserted against text this file owns.
 var errStatRefused = errors.New("seam: stat refused")
 
-// saveTokenFile's identity read happens AFTER the rename, so a failure there means
+// Save's identity read happens AFTER the rename, so a failure there means
 // the token file is on disk but this daemon cannot prove the inode is its own.
 // The contract for that case is "own nothing": return nil — which makes teardown
 // skip the unlink entirely — log the failure, and leave the written file alone.
 func TestPersistTokenStatFailureOwnsNothing(t *testing.T) {
 	// The stub hands back the file's REAL identity alongside the error on purpose:
-	// saveTokenFile must own nothing because the call failed, not because the
+	// Save must own nothing because the call failed, not because the
 	// payload happened to be nil. With a nil payload, dropping the error arm would
 	// still yield a nil FileInfo and the ownership assertions would prove nothing.
 	old := statPersistedToken
@@ -30,13 +30,13 @@ func TestPersistTokenStatFailureOwnsNothing(t *testing.T) {
 
 	dir := t.TempDir()
 	sock := filepath.Join(dir, "s.sock")
-	dest := filepath.Join(dir, persistedTokenName)
+	dest := filepath.Join(dir, Name)
 
 	var fi os.FileInfo
-	out := captureLog(t, func() { fi = saveTokenFile(sock, "stat-seam-token") })
+	out := captureLog(t, func() { fi = Save(sock, "stat-seam-token") })
 
 	if fi != nil {
-		t.Errorf("saveTokenFile = %v, want nil — a daemon that cannot identify the inode must own nothing", fi)
+		t.Errorf("Save = %v, want nil — a daemon that cannot identify the inode must own nothing", fi)
 	}
 	want := "failed to stat persisted token: " + errStatRefused.Error()
 	if !strings.Contains(out, want) {
@@ -48,16 +48,16 @@ func TestPersistTokenStatFailureOwnsNothing(t *testing.T) {
 	// client can still read it; only this daemon's teardown unlink is given up.
 	b, err := os.ReadFile(dest)
 	if err != nil {
-		t.Fatalf("%s missing after a failed stat: %v", persistedTokenName, err)
+		t.Fatalf("%s missing after a failed stat: %v", Name, err)
 	}
 	if string(b) != "stat-seam-token" {
-		t.Errorf("%s = %q, want the token that was written", persistedTokenName, b)
+		t.Errorf("%s = %q, want the token that was written", Name, b)
 	}
 
 	// And with nil ownership, teardown must leave that file for whoever does own
 	// it — the exact consequence of returning nil rather than a stale FileInfo.
-	dropOwnTokenFile(sock, fi)
+	DropOwn(sock, fi)
 	if _, err := os.Stat(dest); err != nil {
-		t.Errorf("dropOwnTokenFile deleted a file this daemon does not own: %v", err)
+		t.Errorf("DropOwn deleted a file this daemon does not own: %v", err)
 	}
 }

@@ -35,7 +35,7 @@ type hcStat struct {
 // after the last ')': the remaining fields start at 3 (state), so ppid is index 1, pgid is
 // index 2, and starttime (field 22) is index 19.
 func hcReadStat(pid int) hcStat {
-	b, err := os.ReadFile(procRoot + "/" + strconv.Itoa(pid) + "/stat")
+	b, err := os.ReadFile(procRoot() + "/" + strconv.Itoa(pid) + "/stat")
 	if err != nil {
 		return hcStat{}
 	}
@@ -63,7 +63,7 @@ func hcReadStat(pid int) hcStat {
 // hcReadExe resolves /proc/<pid>/exe, dropping a trailing " (deleted)" the kernel appends
 // when the binary was replaced.
 func hcReadExe(pid int) string {
-	t, err := os.Readlink(procRoot + "/" + strconv.Itoa(pid) + "/exe")
+	t, err := os.Readlink(procRoot() + "/" + strconv.Itoa(pid) + "/exe")
 	if err != nil {
 		return ""
 	}
@@ -73,7 +73,7 @@ func hcReadExe(pid int) string {
 // hcUptime returns the host uptime from /proc/uptime, used to turn a process's start-ticks
 // into a wall-clock age.
 func hcUptime() (time.Duration, bool) {
-	b, err := os.ReadFile(procRoot + "/uptime")
+	b, err := os.ReadFile(procRoot() + "/uptime")
 	if err != nil {
 		return 0, false
 	}
@@ -91,7 +91,7 @@ func hcUptime() (time.Duration, bool) {
 // hcFdTargets reads /proc/<pid>/fd and returns each fd name mapped to its link target. The
 // second result is false only when the directory itself cannot be opened (the process gone).
 func hcFdTargets(pid int) (map[string]string, bool) {
-	dir := procRoot + "/" + strconv.Itoa(pid) + "/fd"
+	dir := procRoot() + "/" + strconv.Itoa(pid) + "/fd"
 	ents, err := os.ReadDir(dir)
 	if err != nil {
 		return nil, false
@@ -161,7 +161,7 @@ func hcBusyCheck(pid int) (busy, canRead bool) {
 	if len(inodes) == 0 {
 		return false, true
 	}
-	b, err := os.ReadFile(procRoot + "/" + strconv.Itoa(pid) + "/net/unix")
+	b, err := os.ReadFile(procRoot() + "/" + strconv.Itoa(pid) + "/net/unix")
 	if err != nil {
 		return false, false
 	}
@@ -182,7 +182,7 @@ const hcClockTick = 10 * time.Millisecond
 
 // hcReadUID parses the real uid from the "Uid:" line of /proc/<pid>/status.
 func hcReadUID(pid int) (int, bool) {
-	b, err := os.ReadFile(procRoot + "/" + strconv.Itoa(pid) + "/status")
+	b, err := os.ReadFile(procRoot() + "/" + strconv.Itoa(pid) + "/status")
 	if err != nil {
 		return 0, false
 	}
@@ -203,8 +203,8 @@ func hcReadUID(pid int) (int, bool) {
 // process. The second result is false when a namespace link cannot be read.
 func hcSameNamespaces(pid int) (same, readable bool) {
 	for _, ns := range hcNamespaces {
-		self, e1 := os.Readlink(procRoot + "/self/ns/" + ns)
-		other, e2 := os.Readlink(procRoot + "/" + strconv.Itoa(pid) + "/ns/" + ns)
+		self, e1 := os.Readlink(procRoot() + "/self/ns/" + ns)
+		other, e2 := os.Readlink(procRoot() + "/" + strconv.Itoa(pid) + "/ns/" + ns)
 		if e1 != nil || e2 != nil {
 			return false, false
 		}
@@ -241,11 +241,11 @@ func inspect(pid int, wantEnv bool) (hcTracked, hcInspectResult) {
 			t.haveAge = true
 		}
 	}
-	if b, err := os.ReadFile(procRoot + "/" + strconv.Itoa(pid) + "/cmdline"); err == nil {
+	if b, err := os.ReadFile(procRoot() + "/" + strconv.Itoa(pid) + "/cmdline"); err == nil {
 		t.argv = splitNul(string(b))
 	}
 	if wantEnv {
-		if b, err := os.ReadFile(procRoot + "/" + strconv.Itoa(pid) + "/environ"); err == nil {
+		if b, err := os.ReadFile(procRoot() + "/" + strconv.Itoa(pid) + "/environ"); err == nil {
 			t.env = splitNul(string(b))
 		}
 	}
@@ -261,7 +261,7 @@ func inspect(pid int, wantEnv bool) (hcTracked, hcInspectResult) {
 // capped but a separate flag, not the slice length, signals "too many"). The uid filter keeps
 // the cleaner to this user's own processes. ok is false only when /proc is unreadable.
 func hcSnapshot() (pids []int, overflow bool, ok bool) {
-	ents, err := os.ReadDir(procRoot)
+	ents, err := os.ReadDir(procRoot())
 	if err != nil {
 		return nil, false, false
 	}
@@ -272,7 +272,7 @@ func hcSnapshot() (pids []int, overflow bool, ok bool) {
 		if err != nil || pid <= 0 {
 			continue
 		}
-		fi, err := os.Stat(procRoot + "/" + strconv.Itoa(pid))
+		fi, err := os.Stat(procRoot() + "/" + strconv.Itoa(pid))
 		if err != nil {
 			continue
 		}
@@ -322,7 +322,7 @@ func lockFileHeld(fi os.FileInfo) (held, read bool) {
 	if !ok {
 		return false, true
 	}
-	b, err := os.ReadFile(procRoot + "/locks")
+	b, err := os.ReadFile(procRoot() + "/locks")
 	if err != nil {
 		return false, false
 	}
@@ -381,7 +381,7 @@ func hcLockHeldAt(path string, fi os.FileInfo) (held, asked bool) {
 
 // hcSelfExe resolves this process's own executable path, dropping a trailing " (deleted)".
 func hcSelfExe() (exe string, ok bool) {
-	if p, err := os.Readlink(procRoot + "/self/exe"); err == nil {
+	if p, err := os.Readlink(procRoot() + "/self/exe"); err == nil {
 		return strings.TrimSuffix(p, " (deleted)"), true
 	}
 	return "", false

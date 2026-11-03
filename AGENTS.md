@@ -487,7 +487,7 @@ method rejects an unauthenticated request `-32001`
 ### Token persistence
 
 The daemon persists its token to `daemon.token` (mode `0600`) beside the socket
-(`tokenpersist.go`). The name and location are the reconnect contract. Keep them fixed. On Windows `0600` is not an owner-only DACL. Do not "fix" that without an
+(`internal/tokenfile/tokenpersist.go`). The name and location are the reconnect contract. Keep them fixed. On Windows `0600` is not an owner-only DACL. Do not "fix" that without an
 opt-in divergence. `daemon.lock` is parity with `4534d86`, not a claustrum fix. See [`docs/DAEMON.md`](docs/DAEMON.md#token-persistence-daemontoken).
 
 ### Concurrency and panics
