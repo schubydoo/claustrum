@@ -10,6 +10,8 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/schubydoo/claustrum/internal/tokenfile"
 )
 
 func TestRunStopSignalsShutdown(t *testing.T) {
@@ -34,7 +36,7 @@ func TestRunStopSignalsShutdown(t *testing.T) {
 func TestRunStopNoneRemovesStaleToken(t *testing.T) {
 	dir := t.TempDir()
 	sock := filepath.Join(dir, "nope.sock")
-	token := filepath.Join(dir, persistedTokenName)
+	token := filepath.Join(dir, tokenfile.Name)
 	if err := os.WriteFile(token, []byte("stale"), 0o600); err != nil {
 		t.Fatal(err)
 	}

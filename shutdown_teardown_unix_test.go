@@ -12,6 +12,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/schubydoo/claustrum/internal/tokenfile"
 	"github.com/schubydoo/claustrum/internal/wirelog"
 )
 
@@ -162,7 +163,7 @@ func TestShutdownReplyRacesTeardown(t *testing.T) {
 		case <-time.After(5 * time.Second):
 			t.Fatal("teardown did not finish")
 		}
-		for _, p := range []string{sock, filepath.Join(dir, persistedTokenName)} {
+		for _, p := range []string{sock, filepath.Join(dir, tokenfile.Name)} {
 			if _, err := os.Lstat(p); !os.IsNotExist(err) {
 				t.Errorf("run %d: %s survived the teardown (Lstat err = %v)", i, filepath.Base(p), err)
 			}

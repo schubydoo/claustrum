@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/schubydoo/claustrum/internal/logging"
+	"github.com/schubydoo/claustrum/internal/procinfo"
 )
 
 // machineIDPaths are the files machineID reads, in order (/etc/machine-id, then
@@ -40,7 +41,7 @@ func (m *procManager) recordChild(pid int, argv0, program string) {
 	}
 	m.writeRecord(childRecord{
 		Pid:         pid,
-		Node:        nodeID(),
+		Node:        procinfo.NodeID(),
 		Host:        "machine-id:" + machineID(),
 		Instance:    m.instanceID,
 		DaemonPid:   os.Getpid(),
@@ -71,16 +72,16 @@ func machineID() string {
 // shares its field-22 parser. Returns 0 when the process is gone or stat cannot be
 // parsed.
 func procStartTicks(pid int) int64 {
-	b, err := os.ReadFile(procRoot() + "/" + strconv.Itoa(pid) + "/stat")
+	b, err := os.ReadFile(procinfo.Root() + "/" + strconv.Itoa(pid) + "/stat")
 	if err != nil {
 		return 0
 	}
 	return parseStartTicks(string(b))
 }
 
-// procUsable reports whether procRoot answers for this process. A /proc with no
+// procUsable reports whether procinfo.Root answers for this process. A /proc with no
 // self/stat counts as no /proc (from the code).
 func procUsable() bool {
-	_, err := os.Stat(procRoot() + "/self/stat")
+	_, err := os.Stat(procinfo.Root() + "/self/stat")
 	return err == nil
 }

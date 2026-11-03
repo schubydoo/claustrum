@@ -17,12 +17,12 @@ import (
 // The fixtures of the host cleaner tests that tests of package main use too. The host
 // cleaner tests moved into internal/hostsweep with their own copies.
 
-// fakeProc points procRoot at a temp tree and returns a helper to populate a pid's files.
+// fakeProc points procinfo.Root at a temp tree and returns a helper to populate a pid's files.
 // The tree has an empty locks file: a lock table that can be read and names no holder.
 func fakeProc(t *testing.T) (root string, mk func(pid int, name, content string), link func(pid int, name, target string)) {
 	t.Helper()
 	root = t.TempDir()
-	old := procRoot()
+	old := procinfo.Root()
 	t.Cleanup(func() { procinfo.SetRootForTest(old) })
 	procinfo.SetRootForTest(root)
 	if err := os.WriteFile(filepath.Join(root, "locks"), nil, 0o644); err != nil {

@@ -12,6 +12,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/schubydoo/claustrum/internal/tokenfile"
 	"github.com/schubydoo/claustrum/internal/wirelog"
 )
 
@@ -83,8 +84,8 @@ func TestNewServerOnSocketChmodFailureEndsTheStart(t *testing.T) {
 		_ = c.Close()
 		t.Error("a listener still answers after a failed chmod")
 	}
-	if _, err := os.Lstat(filepath.Join(dir, persistedTokenName)); !errors.Is(err, os.ErrNotExist) {
-		t.Errorf("%s exists after a failed chmod: %v", persistedTokenName, err)
+	if _, err := os.Lstat(filepath.Join(dir, tokenfile.Name)); !errors.Is(err, os.ErrNotExist) {
+		t.Errorf("%s exists after a failed chmod: %v", tokenfile.Name, err)
 	}
 }
 

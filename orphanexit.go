@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/schubydoo/claustrum/internal/logging"
+	"github.com/schubydoo/claustrum/internal/sockroute"
 )
 
 // Orphan-exit self-probe, matching reference build 4534d86. A -serve daemon whose socket
@@ -195,13 +196,13 @@ func (s *server) socketFileUnmodified(socket string) bool {
 // when the reply's instanceId is our own — the path still leads back to THIS daemon. Any
 // dial, write, read, or parse failure, or a different instanceId, gives false.
 // cannotDial is true when the path is too long to dial without a change of folder
-// (dialSocketInDaemon). On Linux `be1c1ca5` ends the daemon at a long path when a
+// (sockroute.DialSocketInDaemon). On Linux `be1c1ca5` ends the daemon at a long path when a
 // plain file with the bound mtime is there (measured on Linux). This probe dials
 // through /proc there.
 func (s *server) pathReachesUs(socket string) (reached, cannotDial bool) {
-	c, err := dialSocketInDaemon(socket, orphanProbeTimeout)
+	c, err := sockroute.DialSocketInDaemon(socket, orphanProbeTimeout)
 	if err != nil {
-		var tooLong *socketTooLongError
+		var tooLong *sockroute.TooLongError
 		return false, errors.As(err, &tooLong)
 	}
 	defer c.Close()

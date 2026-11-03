@@ -17,6 +17,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/schubydoo/claustrum/internal/procinfo"
+	"github.com/schubydoo/claustrum/internal/runlock"
 	"github.com/schubydoo/claustrum/internal/wirelog"
 )
 
@@ -54,7 +56,7 @@ func TestStartReapsBeforeItBinds(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			dir := shortTempDir(t)
 			sock := filepath.Join(dir, "rpc.sock")
-			lock := filepath.Join(dir, runDirLockName)
+			lock := filepath.Join(dir, runlock.LockName)
 			if tc.stale {
 				staleSocketFile(t, sock)
 			}
@@ -102,7 +104,7 @@ func TestStartReapsBeforeItBinds(t *testing.T) {
 			if !errors.Is(dialErr, tc.want) {
 				t.Errorf("a dial in the wait gave %v, want %v", dialErr, tc.want)
 			}
-			wantShort := `{"pid":` + strconv.Itoa(os.Getpid()) + `,"role":"serve","node":"` + nodeID() + `"}` + "\n"
+			wantShort := `{"pid":` + strconv.Itoa(os.Getpid()) + `,"role":"serve","node":"` + procinfo.NodeID() + `"}` + "\n"
 			if string(lockInWait) != wantShort {
 				t.Errorf("daemon.lock in the wait = %q, want %q", lockInWait, wantShort)
 			}
@@ -267,7 +269,7 @@ func TestRunServeHandlesASignalDuringItsStart(t *testing.T) {
 			t.Errorf("%s is still there after the exit (err=%v)", name, err)
 		}
 	}
-	if b, err := os.ReadFile(filepath.Join(dir, runDirLockName)); err != nil || len(b) != 0 {
+	if b, err := os.ReadFile(filepath.Join(dir, runlock.LockName)); err != nil || len(b) != 0 {
 		t.Errorf("daemon.lock after the exit = %q (err=%v), want an empty file", b, err)
 	}
 }

@@ -24,7 +24,7 @@ import (
 func TestClaimRunDirHeldByANonDaemon(t *testing.T) {
 	dir := shortTempDir(t)
 	sock := filepath.Join(dir, "rpc.sock")
-	lockPath := filepath.Join(dir, runDirLockName)
+	lockPath := filepath.Join(dir, runlock.LockName)
 	fd, err := syscall.Open(lockPath, syscall.O_RDWR|syscall.O_CREAT|syscall.O_CLOEXEC, 0o600)
 	if err != nil {
 		t.Fatal(err)
@@ -41,7 +41,7 @@ func TestClaimRunDirHeldByANonDaemon(t *testing.T) {
 	})
 	buf := captureLogBuf(t)
 
-	release := lockRunFolder(sock, "serve").Release
+	release := runlock.LockRunFolder(sock, "serve").Release
 	release()
 
 	wantLinesInOrder(t, buf.String(),
@@ -65,10 +65,10 @@ func TestClaimRunDirHeldByANonDaemon(t *testing.T) {
 func TestClaimRunDirHolderGetsNoNotHolderLine(t *testing.T) {
 	dir := shortTempDir(t)
 	buf := captureLogBuf(t)
-	release := lockRunFolder(filepath.Join(dir, "rpc.sock"), "serve").Release
+	release := runlock.LockRunFolder(filepath.Join(dir, "rpc.sock"), "serve").Release
 	release()
 	// Another test can leave a goroutine that logs into this buffer. Look for the line only.
-	if got := buf.String(); strings.Contains(got, runDirNotHolderLine) {
+	if got := buf.String(); strings.Contains(got, runlock.NotHolderLine) {
 		t.Errorf("log = %q, want no \"not the lock holder\" line from a daemon that holds the lock", got)
 	}
 }
@@ -84,7 +84,7 @@ func TestLockInstanceIsTheDaemonInstance(t *testing.T) {
 		t.Fatalf("newServerOnSocket: %v", err)
 	}
 	t.Cleanup(func() { s.signalShutdown(); s.closeAll(sock) })
-	rec, err := readOwnerRecord(filepath.Join(dir, runDirLockName))
+	rec, err := readOwnerRecord(filepath.Join(dir, runlock.LockName))
 	if err != nil {
 		t.Fatalf("read owner record: %v", err)
 	}

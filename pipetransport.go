@@ -8,6 +8,7 @@ import (
 	"path/filepath"
 
 	"github.com/schubydoo/claustrum/internal/logging"
+	"github.com/schubydoo/claustrum/internal/tokenfile"
 )
 
 // pipeNameFileName is the fixed basename the daemon writes the chosen named-pipe
@@ -33,7 +34,7 @@ func pipeNameFilePath(socket string) string {
 // package var (reusing the TempFile seam of internal/tokenfile) so tests can
 // inject a writer that fails at a chosen step; production always uses
 // os.CreateTemp with the "rpc.pipe-*" pattern.
-var createPipeTemp = func(dir string) (tokenTempFile, error) {
+var createPipeTemp = func(dir string) (tokenfile.TempFile, error) {
 	return os.CreateTemp(dir, "rpc.pipe-*")
 }
 
@@ -42,7 +43,7 @@ var createPipeTemp = func(dir string) (tokenTempFile, error) {
 // daemon.token write. The name is not a secret (the owner-only pipe DACL is the
 // access control), but the file is created 0600 for tidiness/parity.
 func writePipeNameFile(socket, name string) error {
-	return writeFileViaTemp(createPipeTemp, filepath.Dir(socket), pipeNameFilePath(socket), name)
+	return tokenfile.WriteViaTemp(createPipeTemp, filepath.Dir(socket), pipeNameFilePath(socket), name)
 }
 
 // removePipeNameFile unlinks a stale rpc.pipe at start, when this boot serves no
@@ -65,7 +66,7 @@ func removePipeNameFile(socket string) {
 // compares with. It is the stat of an open handle, which holds the file id on Windows
 // (see statPersistedToken in internal/tokenfile). It is nil when the stat fails.
 func pipeNameFileIdentity(socket string) os.FileInfo {
-	fi, err := statOpenFile(pipeNameFilePath(socket))
+	fi, err := tokenfile.StatOpen(pipeNameFilePath(socket))
 	if err != nil {
 		return nil
 	}
@@ -74,14 +75,14 @@ func pipeNameFileIdentity(socket string) os.FileInfo {
 
 // removePipeNameFileIfOwned unlinks rpc.pipe on graceful shutdown ONLY when the file
 // on disk is still the inode this daemon published (os.SameFile against owned) — the
-// same handoff protection dropOwnTokenFile/unlinkOwnSocket apply to the token
+// same handoff protection tokenfile.DropOwn/unlinkOwnSocket apply to the token
 // and socket. rpc.pipe is claustrum's own CT-5 artifact, but a restart's successor can
 // republish it before this predecessor tears down, so it earns the same guard so the
 // departing daemon cannot delete the successor's pipe pointer. A nil owned (no pipe
 // served this boot) is a no-op; the unconditional removePipeNameFile above is used for
 // the startup stale-clear, where there is no successor to protect.
 func removePipeNameFileIfOwned(socket string, owned os.FileInfo) {
-	if err := removeIfStillOurs(pipeNameFilePath(socket), owned); err != nil {
+	if err := tokenfile.RemoveIfStillOurs(pipeNameFilePath(socket), owned); err != nil {
 		logging.Errorf("[Server] failed to remove pipe-name file: %v", err)
 	}
 }

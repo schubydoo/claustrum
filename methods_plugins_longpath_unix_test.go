@@ -15,7 +15,7 @@ import (
 func longSibling(t *testing.T) (base, sock string) {
 	t.Helper()
 	sock = longSocketPath(t, 120, "run/beef5678/rpc.sock")
-	ln, err := listenSocket(sock)
+	ln, err := sockroute.Listen(sock)
 	if err != nil {
 		t.Fatal(err)
 	}

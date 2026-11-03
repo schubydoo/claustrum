@@ -15,6 +15,7 @@ import (
 	"time"
 
 	"github.com/schubydoo/claustrum/internal/sockroute"
+	"github.com/schubydoo/claustrum/internal/tokenfile"
 	"github.com/schubydoo/claustrum/internal/wirelog"
 )
 
@@ -66,7 +67,7 @@ func TestCloseAllAtALongSocketPath(t *testing.T) {
 	if err != nil {
 		t.Fatalf("newServerOnSocket: %v", err)
 	}
-	token := filepath.Join(filepath.Dir(sock), persistedTokenName)
+	token := filepath.Join(filepath.Dir(sock), tokenfile.Name)
 	for _, p := range []string{sock, token} {
 		if _, err := os.Lstat(p); err != nil {
 			t.Fatalf("%s missing before the teardown: %v", p, err)
@@ -100,7 +101,7 @@ func TestServeBridgeStopAtALongSocketPath(t *testing.T) {
 	// The cleanup comes before the start, so a start that fails after the bind
 	// leaves no daemon.
 	t.Cleanup(func() {
-		if c, err := dialUnixPath(sock, time.Second); err == nil {
+		if c, err := sockroute.DialUnixPath(sock, time.Second); err == nil {
 			_, _ = io.WriteString(c, `{"jsonrpc":"2.0","id":1,"method":"server.shutdown"}`+"\n")
 			_ = c.Close()
 		}
@@ -137,7 +138,7 @@ func TestServeBridgeStopAtALongSocketPath(t *testing.T) {
 	if out, err := stop.Output(); err != nil || string(out) != "stopped\n" {
 		t.Fatalf("-stop: %v, %q", err, out)
 	}
-	for _, p := range []string{sock, filepath.Join(filepath.Dir(sock), persistedTokenName)} {
+	for _, p := range []string{sock, filepath.Join(filepath.Dir(sock), tokenfile.Name)} {
 		if _, err := os.Lstat(p); !errors.Is(err, os.ErrNotExist) {
 			t.Errorf("%s stays after -stop: %v", p, err)
 		}
@@ -148,7 +149,7 @@ func TestServeBridgeStopAtALongSocketPath(t *testing.T) {
 // does not take that daemon for the new one.
 func TestLivePredecessorPIDAtALongSocketPath(t *testing.T) {
 	sock := longSocketPath(t, 120, "rpc.sock")
-	ln, err := listenSocket(sock)
+	ln, err := sockroute.Listen(sock)
 	if err != nil {
 		t.Fatal(err)
 	}

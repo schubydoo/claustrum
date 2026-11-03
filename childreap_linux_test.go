@@ -43,7 +43,7 @@ func TestEarlierBootOfThisMachine(t *testing.T) {
 func TestReapOrphansGate(t *testing.T) {
 	runDir := t.TempDir()
 	const ownInstance = "inst-self"
-	ownNode := nodeID()
+	ownNode := procinfo.NodeID()
 	ownHost := "machine-id:" + machineID()
 	if ownNode == "" {
 		t.Skip("nodeID unavailable on this host")
@@ -153,7 +153,7 @@ func TestReapOrphansBatchOverflow(t *testing.T) {
 	maxReapTargets = 1
 
 	runDir := t.TempDir()
-	ownNode := nodeID()
+	ownNode := procinfo.NodeID()
 	if ownNode == "" {
 		t.Skip("nodeID unavailable on this host")
 	}
@@ -213,7 +213,7 @@ func TestRealReadLiveProc(t *testing.T) {
 // an unparseable stat, a zombie, an empty cmdline, and a full record with both markers.
 func TestRealReadLiveProcFakeProcfs(t *testing.T) {
 	root := t.TempDir()
-	oldRoot := procRoot()
+	oldRoot := procinfo.Root()
 	t.Cleanup(func() { procinfo.SetRootForTest(oldRoot) })
 	procinfo.SetRootForTest(root)
 
@@ -298,7 +298,7 @@ func TestRealReadLiveProcFakeProcfs(t *testing.T) {
 // every other case in the shared fake tree resolves the guard.
 func TestRealReadLiveProcOtherNamespace(t *testing.T) {
 	root := t.TempDir()
-	oldRoot := procRoot()
+	oldRoot := procinfo.Root()
 	t.Cleanup(func() { procinfo.SetRootForTest(oldRoot) })
 	procinfo.SetRootForTest(root)
 

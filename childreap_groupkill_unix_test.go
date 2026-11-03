@@ -9,12 +9,14 @@ import (
 	"syscall"
 	"testing"
 	"time"
+
+	"github.com/schubydoo/claustrum/internal/procinfo"
 )
 
-// TestKillGroupReachesEveryMemberOfTheGroup pins that killGroup signals the whole
+// TestKillGroupReachesEveryMemberOfTheGroup pins that procinfo.KillGroup signals the whole
 // process group, not the leader alone. The leader is the "tree-stdout" helper, started
 // with Setpgid so that its pid is the id of a new group. Its kid does not set a group,
-// so it joins the group of the leader. A killGroup that signals only the pid ends the
+// so it joins the group of the leader. A procinfo.KillGroup that signals only the pid ends the
 // leader and leaves the kid running. The group holds only the two helpers that this
 // test started, so the SIGKILL reaches nothing else.
 func TestKillGroupReachesEveryMemberOfTheGroup(t *testing.T) {
@@ -57,15 +59,15 @@ func TestKillGroupReachesEveryMemberOfTheGroup(t *testing.T) {
 		t.Fatalf("Getpgid(kid %d) = %d, %v, want the group %d of the leader", kid, got, err, pgid)
 	}
 
-	if err := killGroup(pgid, syscall.SIGKILL); err != nil {
-		t.Fatalf("killGroup(%d, SIGKILL) = %v", pgid, err)
+	if err := procinfo.KillGroup(pgid, syscall.SIGKILL); err != nil {
+		t.Fatalf("procinfo.KillGroup(%d, SIGKILL) = %v", pgid, err)
 	}
 	var st *os.ProcessState
 	select {
 	case st = <-reaped:
 		leaderReaped = true
 	case <-time.After(5 * time.Second):
-		t.Fatalf("leader %d did not end within 5s of killGroup(%d, SIGKILL)", pgid, pgid)
+		t.Fatalf("leader %d did not end within 5s of procinfo.KillGroup(%d, SIGKILL)", pgid, pgid)
 	}
 	if st == nil {
 		t.Fatalf("waiting for the killed leader %d failed", pgid)
@@ -77,7 +79,7 @@ func TestKillGroupReachesEveryMemberOfTheGroup(t *testing.T) {
 	// The kid is a child of the leader. Once the leader is reaped, init or a subreaper
 	// reaps the dead kid, and signal 0 on its pid then fails.
 	if !waitProcessGone(kid, 5*time.Second) {
-		t.Fatalf("kid %d of group %d is still alive after killGroup(SIGKILL): the signal reached the leader only", kid, pgid)
+		t.Fatalf("kid %d of group %d is still alive after procinfo.KillGroup(SIGKILL): the signal reached the leader only", kid, pgid)
 	}
 	groupGone = true
 }

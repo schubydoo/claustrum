@@ -14,7 +14,9 @@ import (
 	"testing"
 	"time"
 
+	"github.com/schubydoo/claustrum/internal/procinfo"
 	"github.com/schubydoo/claustrum/internal/runlock"
+	"github.com/schubydoo/claustrum/internal/tokenfile"
 )
 
 // The -stop lock fallback, measured against f6010b97 and 90fca6e6 on Linux.
@@ -48,7 +50,7 @@ func seamServeHolder(t *testing.T) {
 
 func requireNodeID(t *testing.T) {
 	t.Helper()
-	if nodeID() == "" {
+	if procinfo.NodeID() == "" {
 		t.Skip("the lock ladder needs a machine identity (nodeID)")
 	}
 }
@@ -56,7 +58,7 @@ func requireNodeID(t *testing.T) {
 // stageToken writes a daemon.token beside sock and returns its path.
 func stageToken(t *testing.T, sock string) string {
 	t.Helper()
-	p := filepath.Join(filepath.Dir(sock), persistedTokenName)
+	p := filepath.Join(filepath.Dir(sock), tokenfile.Name)
 	if err := os.WriteFile(p, []byte("tok"), 0o600); err != nil {
 		t.Fatal(err)
 	}
@@ -84,7 +86,7 @@ func TestRunStopFreeLockPrintsNone(t *testing.T) {
 	sock := filepath.Join(dir, "rpc.sock")
 	stageStaleSocket(t, sock)
 	token := stageToken(t, sock)
-	lockPath := filepath.Join(dir, runDirLockName)
+	lockPath := filepath.Join(dir, runlock.LockName)
 	if err := os.WriteFile(lockPath, nil, 0o600); err != nil {
 		t.Fatal(err)
 	}
@@ -101,7 +103,7 @@ func TestRunStopMissingLockNotCreated(t *testing.T) {
 	dir := shortTempDir(t)
 	sock := filepath.Join(dir, "rpc.sock")
 	stopPrints(t, sock, "none\n")
-	assertGone(t, filepath.Join(dir, runDirLockName), "a daemon.lock that -stop created")
+	assertGone(t, filepath.Join(dir, runlock.LockName), "a daemon.lock that -stop created")
 }
 
 // A live serve holder that exits on SIGTERM gives "terminated" and the two
@@ -114,7 +116,7 @@ func TestRunStopTerminatesLockHolder(t *testing.T) {
 	t.Cleanup(func() { runlock.SetStopTermGraceForTest(oldGrace) })
 	dir := shortTempDir(t)
 	sock := filepath.Join(dir, "rpc.sock")
-	lockPath := filepath.Join(dir, runDirLockName)
+	lockPath := filepath.Join(dir, runlock.LockName)
 	holder := spawnLockHolder(t, lockPath, "", "")
 	rec, err := readOwnerRecord(lockPath)
 	if err != nil {
@@ -155,10 +157,10 @@ func TestRunStopLinesForAShortRecord(t *testing.T) {
 	t.Cleanup(func() { runlock.SetStopTermGraceForTest(oldGrace) })
 	dir := shortTempDir(t)
 	sock := filepath.Join(dir, "rpc.sock")
-	lockPath := filepath.Join(dir, runDirLockName)
+	lockPath := filepath.Join(dir, runlock.LockName)
 	holder := spawnLockHolder(t, lockPath, "", "")
 	pid := holder.Process.Pid
-	writeRecordFile(t, lockPath, ownerRecord{Pid: pid, Role: "serve", Node: nodeID()})
+	writeRecordFile(t, lockPath, runlock.OwnerRecord{Pid: pid, Role: "serve", Node: procinfo.NodeID()})
 	seamServeHolder(t)
 	logs := captureStopLog(t)
 
@@ -178,7 +180,7 @@ func TestRunStopKillsHolderThatIgnoresSIGTERM(t *testing.T) {
 
 	dir := shortTempDir(t)
 	sock := filepath.Join(dir, "rpc.sock")
-	lockPath := filepath.Join(dir, runDirLockName)
+	lockPath := filepath.Join(dir, runlock.LockName)
 	holder := spawnLockHolder(t, lockPath, "term-ignore", "")
 	rec, err := readOwnerRecord(lockPath)
 	if err != nil {
@@ -212,7 +214,7 @@ func TestRunStopKillsHolderThatIgnoresSIGTERM(t *testing.T) {
 func TestRunStopLeavesForeignHolderAlone(t *testing.T) {
 	dir := shortTempDir(t)
 	sock := filepath.Join(dir, "rpc.sock")
-	lockPath := filepath.Join(dir, runDirLockName)
+	lockPath := filepath.Join(dir, runlock.LockName)
 	holder := spawnLockHolder(t, lockPath, "", "")
 	stageStaleSocket(t, sock)
 	token := stageToken(t, sock)
@@ -304,7 +306,7 @@ func TestStopRunDirHolderUndeliverableArms(t *testing.T) {
 
 			dir := shortTempDir(t)
 			sock := filepath.Join(dir, "rpc.sock")
-			lockPath := filepath.Join(dir, runDirLockName)
+			lockPath := filepath.Join(dir, runlock.LockName)
 			// The test holds the flock itself on a second open file description,
 			// so -stop sees it as held for the whole run.
 			fd, err := syscall.Open(lockPath, syscall.O_RDWR|syscall.O_CREAT, 0o600)
@@ -315,7 +317,7 @@ func TestStopRunDirHolderUndeliverableArms(t *testing.T) {
 			if err := syscall.Flock(fd, syscall.LOCK_EX|syscall.LOCK_NB); err != nil {
 				t.Fatal(err)
 			}
-			writeOwnerRecord(fd, ownerRecord{Pid: 1 << 30, Role: "serve", Node: nodeID(), InstanceID: instance, StartedAt: 1})
+			writeOwnerRecord(fd, runlock.OwnerRecord{Pid: 1 << 30, Role: "serve", Node: procinfo.NodeID(), InstanceID: instance, StartedAt: 1})
 			stageStaleSocket(t, sock)
 			token := stageToken(t, sock)
 			logs := captureStopLog(t)
@@ -339,9 +341,9 @@ func TestStopRunDirHolderUndeliverableArms(t *testing.T) {
 
 // holdLockOf takes the flock on daemon.lock of dir through its own open of the file.
 // A nil rec leaves the file empty. The returned func lets go of the lock once.
-func holdLockOf(t *testing.T, dir string, rec *ownerRecord) func() {
+func holdLockOf(t *testing.T, dir string, rec *runlock.OwnerRecord) func() {
 	t.Helper()
-	fd, err := syscall.Open(filepath.Join(dir, runDirLockName), syscall.O_RDWR|syscall.O_CREAT|syscall.O_CLOEXEC, 0o600)
+	fd, err := syscall.Open(filepath.Join(dir, runlock.LockName), syscall.O_RDWR|syscall.O_CREAT|syscall.O_CLOEXEC, 0o600)
 	if err != nil {
 		t.Fatal(err)
 	}

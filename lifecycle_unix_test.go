@@ -215,7 +215,7 @@ func TestRunServeChildFatalArms(t *testing.T) {
 
 // TestRunServeStartThatFailsStartsNoLoginShell: the read starts after the listening
 // line, so a start that fails before it leaves no shell. The run-dir claim never fails
-// the boot (lockRunFolder), so the failure here is the bind that comes after the claim.
+// the boot (runlock.LockRunFolder), so the failure here is the bind that comes after the claim.
 func TestRunServeStartThatFailsStartsNoLoginShell(t *testing.T) {
 	stubOsExit(t)
 	t.Setenv(daemonChildEnv, "1")

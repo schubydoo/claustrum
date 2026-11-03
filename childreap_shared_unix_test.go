@@ -58,7 +58,7 @@ type killRec struct {
 	sig syscall.Signal
 }
 
-// procSim is a stateful fake for the wait tests. It seams readLiveProc, killGroup,
+// procSim is a stateful fake for the wait tests. It seams readLiveProc, procinfo.KillGroup,
 // groupAlive, reapNow and reapSleep so a process can die (or be reused) in response to a
 // real signal while the wait polls, and the clock advances only when the wait sleeps, so
 // the two-phase loops terminate deterministically without real time.
@@ -107,7 +107,7 @@ func (s *procSim) add(pid int, start string) {
 	s.live[pid] = &liveProc{state: procAlive, startTicks: start, pgid: pid}
 }
 
-// diesOn makes the process exit (and its group empty) when killGroup signals it with
+// diesOn makes the process exit (and its group empty) when procinfo.KillGroup signals it with
 // dieSig; other signals are recorded but leave it running.
 func (s *procSim) diesOn(pid int, dieSig syscall.Signal) {
 	s.onKill[pid] = func(sig syscall.Signal) error {
