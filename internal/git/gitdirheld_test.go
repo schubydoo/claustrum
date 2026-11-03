@@ -308,3 +308,44 @@ func TestHeldFolderSpelling(t *testing.T) {
 		t.Error("a spelling that names another folder at the hold counts as the held folder")
 	}
 }
+
+// TestHeldRegistrationRemoveRefusesHome: removeRegistration asks for no
+// removal of a registration that is the home folder or holds it
+// (homeguard.WipesHomeDir). A third row with home elsewhere is the control:
+// the removal of the registration is asked through the held folder. The
+// removal is a recorder and home is a folder below t.TempDir, so a test
+// without the guard deletes nothing. From the code, not measured.
+func TestHeldRegistrationRemoveRefusesHome(t *testing.T) {
+	gitDir := filepath.Join(t.TempDir(), ".git")
+	reg := filepath.Join(gitDir, "worktrees", "wr")
+	mustWrite(t, filepath.Join(reg, "home", "file.txt"), "a file of home\n")
+	root, err := os.OpenRoot(gitDir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = root.Close() })
+	info, err := root.Stat(".")
+	if err != nil {
+		t.Fatal(err)
+	}
+	held := &acceptedGitDir{path: gitDir, root: root, info: info}
+	for _, tc := range []struct {
+		name, home, want string
+	}{
+		{"the registration is home", reg, ""},
+		{"the registration holds home", filepath.Join(reg, "home"), ""},
+		{"home is elsewhere", t.TempDir(), "worktrees/wr held"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			removals := recordHeldRemovals(t, info)
+			t.Setenv(homeEnvVar(), tc.home)
+			held.removeRegistration("wr")
+			if got := strings.Join(*removals, ","); got != tc.want {
+				t.Errorf("with home %s the step asked to remove %q, want %q", tc.home, got, tc.want)
+			}
+			// The disk too: a refused step leaves the registration whole, even if
+			// the recorder seam were bypassed.
+			mustExist(t, filepath.Join(reg, "home", "file.txt"))
+		})
+	}
+}

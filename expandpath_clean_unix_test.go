@@ -6,6 +6,8 @@ import (
 	"os"
 	"path/filepath"
 	"testing"
+
+	"github.com/schubydoo/claustrum/internal/pathcanon"
 )
 
 // A tilde path is cleaned LEXICALLY, so "~/link/../x" means "~/x" even when
@@ -18,7 +20,7 @@ import (
 //	~/link/../x.txt      reference "in-home"   claustrum "in-b"
 //	<abs>/link/../x.txt  reference "in-b"      claustrum "in-b"
 //
-// The second row is why the clean lives in expandPath and not in the callers:
+// The second row is why the clean lives in pathcanon.ExpandTilde and not in the callers:
 // an ABSOLUTE path keeps ordinary OS resolution on both daemons. An earlier
 // probe compared only tilde paths with no symlink in them, where lexical and OS
 // resolution agree — so it saw no difference and wrongly called this parity.
@@ -51,8 +53,8 @@ func TestExpandPathCleansTildeLexically(t *testing.T) {
 		{"~/a", filepath.Join(home, "a")},
 	}
 	for _, tc := range cases {
-		if got := expandPath(tc.in); got != tc.want {
-			t.Errorf("expandPath(%q) = %q, want %q", tc.in, got, tc.want)
+		if got := pathcanon.ExpandTilde(tc.in); got != tc.want {
+			t.Errorf("pathcanon.ExpandTilde(%q) = %q, want %q", tc.in, got, tc.want)
 		}
 	}
 
@@ -62,7 +64,7 @@ func TestExpandPathCleansTildeLexically(t *testing.T) {
 	// "in-b" — rather than a string comparison one layer upstream of it. Without
 	// this, the MkdirAll/Symlink above affect no assertion and could be deleted
 	// with the test still passing.
-	if got := readFile(t, expandPath("~/link/../x.txt")); got != "in-home" {
+	if got := readFile(t, pathcanon.ExpandTilde("~/link/../x.txt")); got != "in-home" {
 		t.Errorf("tilde form read %q, want %q — the clean did not happen lexically", got, "in-home")
 	}
 	// Literal concatenation again, for the same reason as below: filepath.Join
@@ -75,10 +77,10 @@ func TestExpandPathCleansTildeLexically(t *testing.T) {
 	// Non-tilde paths are returned untouched. Built as a literal, NOT with
 	// filepath.Join: Join cleans its own result, so a Join-built path arrives here
 	// already free of the "link/.." this is meant to prove survives, and the
-	// assertion would hold no matter what expandPath did.
+	// assertion would hold no matter what pathcanon.ExpandTilde did.
 	abs := home + "/link/../x.txt"
-	if got := expandPath(abs); got != abs {
-		t.Errorf("expandPath(%q) = %q, want it unchanged", abs, got)
+	if got := pathcanon.ExpandTilde(abs); got != abs {
+		t.Errorf("pathcanon.ExpandTilde(%q) = %q, want it unchanged", abs, got)
 	}
 }
 

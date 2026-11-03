@@ -21,7 +21,7 @@ import (
 // assertion, because it is the thing that would actually be gone. A TABLE,
 // not a single row, and the ancestor row is the load-bearing one: on this
 // method homeguard.WipesHomeDir is the ONLY gate, where filesExtractTar still has IsAbs
-// and isFilesystemRoot behind it. If the predicate ever narrows to "the home
+// and homeguard.IsFilesystemRoot behind it. If the predicate ever narrows to "the home
 // directory itself", extract_tar's ancestor case is caught by its root check
 // and this one is not. Raised in review on #231.
 func TestWorktreeRemoveRefusesHomeDir(t *testing.T) {

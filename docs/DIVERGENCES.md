@@ -207,7 +207,7 @@ have no flag and no key.
   honest caller has a use for it, but a caller can reach it by accident. On
   2026-08-02 an in-repo fuzzer sent `"destDir":"~"` to a live daemon and
   destroyed the maintainer's home directory. The old gate
-  `IsAbs && !isFilesystemRoot` passed it. Before `7d193f89`,
+  `IsAbs && !homeguard.IsFilesystemRoot` passed it. Before `7d193f89`,
   `"worktreePath":".."` from a daemon in home reached `os.RemoveAll` on the
   parent of home. That is why the guard resolves a relative path. It is not a
   security boundary: the socket and the token already grant `process.spawn`

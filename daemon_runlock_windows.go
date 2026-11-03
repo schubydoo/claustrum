@@ -2,6 +2,8 @@
 
 package main
 
+import "github.com/schubydoo/claustrum/internal/logging"
+
 // lockRunFolder takes no lock on Windows. Measured on Windows, the reference (4534d86) writes no
 // daemon.lock and evicts no predecessor. Windows relies on the socket remove-then-rebind handoff
 // for mutual exclusion, where a second -serve leaves the incumbent alive. claustrum matches: it
@@ -10,7 +12,7 @@ package main
 // It prints one line. On the reference that line is the first log line of every start.
 // Measured on Windows against f6010b97 and 89cb6289, in every measured start.
 func lockRunFolder(socket, role string) runDirClaim {
-	logInfof("%s", runDirNotHolderLine)
+	logging.Infof("%s", runDirNotHolderLine)
 	return runDirClaim{release: func() {}, complete: func(string, int64) {}, stopLate: func() {}}
 }
 

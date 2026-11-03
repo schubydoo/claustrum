@@ -7,8 +7,6 @@ import "github.com/schubydoo/claustrum/internal/shellenv"
 
 func warmLoginPATHAtStart() { shellenv.WarmAtStart() }
 
-func stopLoginPATH() { shellenv.Stop() }
-
 func awaitLoginPATH(noShellAgent bool) { shellenv.AwaitLoginPATH(noShellAgent) }
 
 func currentLoginPATH() string { return shellenv.CurrentLoginPATH() }

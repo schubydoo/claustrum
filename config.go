@@ -9,6 +9,9 @@ import (
 	"strconv"
 	"strings"
 	"time"
+
+	"github.com/schubydoo/claustrum/internal/logging"
+	"github.com/schubydoo/claustrum/internal/pathcanon"
 )
 
 // configFileName is an optional key=value file read from the directory that holds
@@ -274,7 +277,7 @@ func (cfg config) effectiveMetricsAddr(cliVal string, cliSet bool) string {
 // resolved path. The config key is sold as the reachable knob for a Desktop-launched
 // daemon, so `wire-log = ~/wire.jsonl` is a natural thing to write; without
 // expansion os.OpenFile fails with ENOENT and, because an unopenable path is
-// deliberately fatal, a diagnostic knob would stop the daemon booting. expandPath
+// deliberately fatal, a diagnostic knob would stop the daemon booting. pathcanon.ExpandTilde
 // only rewrites the path (no delete), so homeguard.WipesHomeDir does not apply.
 func (cfg config) effectiveWireLog(cliVal string, cliSet bool) string {
 	p := cliVal
@@ -284,7 +287,7 @@ func (cfg config) effectiveWireLog(cliVal string, cliSet bool) string {
 	if p == "" {
 		return ""
 	}
-	return expandPath(p)
+	return pathcanon.ExpandTilde(p)
 }
 
 // effectiveWireLogMaxString applies the same precedence for -wire-log-max-string.
@@ -322,7 +325,7 @@ func (cfg config) effectiveMaxExtractBytes(cliVal int64, cliSet bool) int64 {
 	// daemon as a negative while the config path rejected it; centralised in
 	// effectiveNumeric now, so the two paths cannot disagree about a negative.
 	return effectiveNumeric(cliVal, cliSet, cfg.maxExtractBytes, func() {
-		logWarnf("[Server] -max-extract-bytes %d is negative; treating it as 0 (cap disabled)", cliVal)
+		logging.Warnf("[Server] -max-extract-bytes %d is negative; treating it as 0 (cap disabled)", cliVal)
 	})
 }
 
@@ -333,7 +336,7 @@ func (cfg config) effectiveMaxCLIBytes(cliVal int64, cliSet bool) int64 {
 	// [Install], not [Server]: this cap governs zstdDecompress and fetchCLI of
 	// internal/install, and effectiveMaxCLIBytes is reached only from the -install arm.
 	return effectiveNumeric(cliVal, cliSet, cfg.maxCLIBytes, func() {
-		logWarnf("[Install] -max-cli-bytes %d is negative; treating it as 0 (cap disabled)", cliVal)
+		logging.Warnf("[Install] -max-cli-bytes %d is negative; treating it as 0 (cap disabled)", cliVal)
 	})
 }
 
@@ -342,7 +345,7 @@ func (cfg config) effectiveMaxCLIBytes(cliVal int64, cliSet bool) int64 {
 func (cfg config) effectiveCLIDownloadTimeout(cliVal time.Duration, cliSet bool) time.Duration {
 	// [Install], not [Server]: fetchCLI of internal/install is reached only from the -install arm.
 	return effectiveNumeric(cliVal, cliSet, cfg.cliDownloadTimeout, func() {
-		logWarnf("[Install] -cli-download-timeout %s is negative; treating it as 0 (no timeout)", cliVal)
+		logging.Warnf("[Install] -cli-download-timeout %s is negative; treating it as 0 (no timeout)", cliVal)
 	})
 }
 

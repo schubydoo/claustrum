@@ -12,6 +12,8 @@ import (
 	"syscall"
 	"testing"
 	"time"
+
+	"github.com/schubydoo/claustrum/internal/sysproc"
 )
 
 // ownChild starts the test binary in a helper mode as a child that leads its own
@@ -23,7 +25,7 @@ func ownChild(t *testing.T, mode, arg string) (pid int, reaped chan struct{}) {
 	exe, env := helperCommand(t, mode)
 	cmd := exec.Command(exe, arg)
 	cmd.Env = buildEnv(env)
-	cmd.SysProcAttr = newSysProcAttr()
+	cmd.SysProcAttr = sysproc.NewSysProcAttr()
 	out, err := cmd.StdoutPipe()
 	if err != nil {
 		t.Fatal(err)
