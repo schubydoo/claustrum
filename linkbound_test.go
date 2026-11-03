@@ -124,6 +124,9 @@ func TestSocketLinkBoundStaysOnLink(t *testing.T) {
 		if gone == want || time.Now().After(deadline) {
 			break
 		}
+		if inGap := `{"jsonrpc":"2.0","id":7,"result":{"found":true,"running":false,`; !strings.HasPrefix(gone, inGap) {
+			t.Fatalf("reattach between the exit frame and the drop = %s\nwant found true, running false", gone)
+		}
 		time.Sleep(10 * time.Millisecond)
 	}
 	if gone != want {
